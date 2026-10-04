@@ -1,0 +1,6 @@
+[
+	{
+		"match": {},
+		"reply": { "tool_calls": [{ "name": "submit_findings", "arguments": { "findings": [] } }] }
+	}
+]

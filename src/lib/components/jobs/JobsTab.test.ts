@@ -20,7 +20,10 @@ vi.mock('$lib/agent/jobs/runner.svelte', () => ({
 	getQueueDepth: () => 0,
 	getPendingQueue: () => [],
 	cancel: mocks.cancel,
-	clearCurrentRun: vi.fn()
+	clearCurrentRun: vi.fn(),
+	getRunningRunId: () => null,
+	removeQueuedRun: vi.fn(),
+	removeQueuedRunsForJob: vi.fn()
 }));
 
 const savedJob = {

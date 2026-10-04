@@ -1012,6 +1012,52 @@ describe('jobs runner — FIFO queue', () => {
 		expect(getPendingQueue().map((q) => q.jobId)).toEqual([4, 5, 2, 3, 6]);
 	});
 
+	it('never starts a queued run that was removed from the queue', async () => {
+		mocks.getJob.mockResolvedValueOnce(makeJob()).mockResolvedValueOnce(makeJob());
+		let resolveFirst!: (v: { finalText: string }) => void;
+		mocks.runEphemeralTurn.mockReturnValueOnce(
+			new Promise((res) => {
+				resolveFirst = res;
+			})
+		);
+
+		const { enqueue, getCurrentRun, getQueueDepth, removeQueuedRun, getRunningRunId } =
+			await freshRunner();
+		await enqueue(1);
+		const second = await enqueue(1);
+		expect(getQueueDepth()).toBe(1);
+		expect(getRunningRunId()).toBe(100);
+
+		expect(removeQueuedRun(second!)).toBe(true);
+		expect(getQueueDepth()).toBe(0);
+		expect(removeQueuedRun(second!)).toBe(false);
+
+		resolveFirst({ finalText: 'done' });
+		await tick();
+		await tick();
+		expect(getCurrentRun()?.id).toBe(100);
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		expect(getRunningRunId()).toBeNull();
+		expect(mocks.runEphemeralTurn).toHaveBeenCalledTimes(1);
+	});
+
+	it('removes every queued run of one job, and only that job', async () => {
+		mocks.getJob
+			.mockResolvedValueOnce(makeJob())
+			.mockResolvedValueOnce(makeJob())
+			.mockResolvedValueOnce(makeJob({ id: 2, name: 'Other' }))
+			.mockResolvedValueOnce(makeJob());
+		mocks.runEphemeralTurn.mockReturnValue(new Promise(() => {}));
+
+		const { enqueue, getPendingQueue, removeQueuedRunsForJob } = await freshRunner();
+		await enqueue(1);
+		await enqueue(1);
+		await enqueue(2);
+		await enqueue(1);
+		expect(removeQueuedRunsForJob(1)).toBe(2);
+		expect(getPendingQueue().map((q) => q.jobId)).toEqual([2]);
+	});
+
 	it('drains the next queued run when the current one succeeds', async () => {
 		mocks.getJob.mockResolvedValueOnce(makeJob()).mockResolvedValueOnce(makeJob());
 
@@ -4601,5 +4647,55 @@ describe('guided_planning — asset chain', () => {
 		// "Same as this job" for coding is the PLANNER's model, not the asset
 		// stage's override.
 		expect(cfg.chain_coding_model).toEqual(cols('http://big', 'big'));
+	});
+});
+
+describe('jobs runner — audit token stats', () => {
+	/**
+	 * An audit's samples and synthesis are separate steps that each close
+	 * through markRunStepFinished; each must carry what it spent. Run 91, an
+	 * audit, recorded nothing on any step.
+	 */
+	it('records what each audit sample spent when the step closes', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			makeJob({
+				job_type: 'audit',
+				type_config: JSON.stringify({ num_runs: 1 }),
+				steps: [{ id: 1, ordering: 0, prompt: 'audit this', deep_research: false }]
+			})
+		);
+		mocks.runEphemeralTurn.mockImplementation(async (opts: EphemeralTurnOptions) => {
+			opts.onCallStats?.({
+				durationMs: 1000,
+				completionTokens: 100,
+				promptTokens: 4000,
+				reasoningChars: 0,
+				answerChars: 40,
+				reasoningTokens: 0,
+				reasoningExact: true,
+				reasoningMs: 0
+			});
+			opts.onToolStart?.({ id: 's', name: 'submit_findings', arguments: { findings: [] } });
+			return { finalText: 'ok', rawText: 'ok' };
+		});
+		const closed: { ordering: number; stats: unknown }[] = [];
+		mocks.markRunStepFinished.mockImplementation(async (runId: number, ordering: number) => {
+			const provider = mocks.setStepStatsProvider.mock.calls.at(-1)?.[0] as (
+				r: number,
+				o: number
+			) => unknown;
+			closed.push({ ordering, stats: provider(runId, ordering) });
+		});
+
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await vi.waitFor(() => expect(closed.length).toBe(2), { timeout: 3000 });
+
+		expect(closed[0]).toMatchObject({
+			ordering: 0,
+			stats: { model_calls: 1, tokens_prompt: 4000 }
+		});
+		// Synthesis with nothing to verify makes no model calls: not recorded.
+		expect(closed[1]).toEqual({ ordering: 1, stats: null });
 	});
 });
