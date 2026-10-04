@@ -284,6 +284,19 @@ export class ApiError extends Error {
 }
 
 /**
+ * The answer stopped at the per-response output cap (finish reason `length`).
+ * Distinct from other failures because what was written so far is real
+ * output: a caller that can use a partial answer (a research step) keeps it
+ * instead of failing.
+ */
+export class ResponseCutOffError extends ApiError {
+	constructor(message: string) {
+		super(message);
+		this.name = 'ResponseCutOffError';
+	}
+}
+
+/**
  * Resolves the chat-completions endpoint + auth headers + model name from
  * the resolved backend descriptor at request time. This is the single choke
  * point for routing chat requests — the agent loop, chat store, and

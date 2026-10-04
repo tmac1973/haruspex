@@ -83,6 +83,7 @@ function jobTurnPolicy(job: JobWithSteps): {
 	reasoningEffort: string | null;
 	samplingSource: 'server' | 'profile' | 'custom';
 	samplingParams: SamplingParams | null;
+	scaleResponseToContext: boolean;
 } {
 	const advanced = parseModelAdvanced(job.model_advanced);
 	const mode = advanced.reasoning.mode;
@@ -90,7 +91,9 @@ function jobTurnPolicy(job: JobWithSteps): {
 		thinkingEnabled: mode === 'inherit' ? null : mode === 'on',
 		reasoningEffort: advanced.reasoning.effort,
 		samplingSource: advanced.sampling.source,
-		samplingParams: advanced.sampling.params
+		samplingParams: advanced.sampling.params,
+		// A job on a big-window model gets a response cap to match.
+		scaleResponseToContext: true
 	};
 }
 
