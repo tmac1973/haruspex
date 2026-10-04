@@ -84,20 +84,25 @@ async function runOneStep(
 	void markRunStepStarted(runId, stepIndex, startedAt, rendered);
 
 	try {
-		const { finalText } = await ctx.runJobTurn({
+		const { finalText, cutOff } = await ctx.runJobTurn({
 			userMessage: rendered,
 			contextSize,
 			deepResearch: step.deep_research,
 			visionSupported: ctx.visionSupported(),
+			// A report cut off at the response cap is still most of a report,
+			// and far more use to the next step than a failed run.
+			keepCutOffAnswer: true,
 			...ctx.buildStreamCallbacks(stepIndex)
 		});
 		const finishedAt = Date.now();
+		// The note is for the reader, not the next step's prompt.
+		const shown = cutOff ? `${finalText}\n\n---\n\n_Cut off: ${cutOff}_` : finalText;
 		ctx.patchStep(stepIndex, {
 			status: 'succeeded',
-			output: finalText,
+			output: shown,
 			finishedAt
 		});
-		void markRunStepFinished(runId, stepIndex, 'succeeded', finalText, null, finishedAt);
+		void markRunStepFinished(runId, stepIndex, 'succeeded', shown, null, finishedAt);
 		return { ok: true, output: finalText };
 	} catch (e) {
 		const { aborted, msg } = normalizeAbort(e);

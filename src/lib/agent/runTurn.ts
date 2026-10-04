@@ -13,6 +13,7 @@
 
 import { runAgentLoop, type AgentLoopOptions, type AgentStopReason } from '$lib/agent/loop';
 import { appendStreamDelta, createThinkStreamState } from '$lib/agent/think-stream';
+import { ResponseCutOffError } from '$lib/api';
 
 /** Loop options minus the streaming/lifecycle callbacks `runTurnCore` owns. */
 export type TurnLoopOptions = Omit<AgentLoopOptions, 'onStreamChunk' | 'onComplete' | 'onError'>;
@@ -22,12 +23,18 @@ export interface TurnHooks {
 	onAssistantDelta?: (full: string) => void;
 	/** Turn the raw accumulated stream into the final assistant text. */
 	finalize: (raw: string) => string;
+	/**
+	 * Return an answer cut off at the response cap, with `cutOff` saying so,
+	 * instead of throwing. For a caller that is better served by a partial
+	 * answer than by none.
+	 */
+	keepCutOffAnswer?: boolean;
 }
 
 export async function runTurnCore(
 	loop: TurnLoopOptions,
 	hooks: TurnHooks
-): Promise<{ finalText: string; rawText: string; stopReason: AgentStopReason }> {
+): Promise<{ finalText: string; rawText: string; stopReason: AgentStopReason; cutOff?: string }> {
 	let streamingContent = '';
 	const thinkState = createThinkStreamState();
 	let finalText = '';
@@ -53,6 +60,12 @@ export async function runTurnCore(
 		}
 	});
 
-	if (runError) throw runError;
+	if (runError) {
+		const err = runError as Error;
+		if (hooks.keepCutOffAnswer && err instanceof ResponseCutOffError && finalText.trim()) {
+			return { finalText, rawText, stopReason, cutOff: err.message };
+		}
+		throw err;
+	}
 	return { finalText, rawText, stopReason };
 }

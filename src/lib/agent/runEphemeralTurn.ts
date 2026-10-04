@@ -117,6 +117,13 @@ export interface EphemeralTurnOptions {
 	onReasoning?: (reasoning: string) => void;
 	onAssistantDelta?: (full: string) => void;
 	onToolStart?: (call: ResolvedToolCall) => void;
+	/**
+	 * Keep an answer cut off at the response cap rather than failing the turn;
+	 * the result's `cutOff` says it happened. See TurnHooks.keepCutOffAnswer.
+	 */
+	keepCutOffAnswer?: boolean;
+	/** See AgentLoopOptions.scaleResponseToContext. */
+	scaleResponseToContext?: boolean;
 	onToolEnd?: (
 		call: ResolvedToolCall,
 		result: string,
@@ -131,6 +138,11 @@ export interface EphemeralTurnResult {
 	finalText: string;
 	/** The unstripped buffer, `<think>` blocks intact, for UI that renders them. */
 	rawText: string;
+	/**
+	 * Set when the answer stopped at the response cap and the caller asked to
+	 * keep it (`keepCutOffAnswer`): why it stopped, in the user's terms.
+	 */
+	cutOff?: string;
 }
 
 /**
@@ -225,6 +237,7 @@ export async function runEphemeralTurn(
 			// Left undefined unless the caller pinned one: `buildLoopContext`
 			// resolves the ceiling from settings for every entry point.
 			maxResponseTokens: options.maxResponseTokens,
+			scaleResponseToContext: options.scaleResponseToContext,
 			maxIterations: options.maxIterations ?? (options.deepResearch ? 25 : 10),
 			deepResearch: options.deepResearch ?? false,
 			expectsFileOutput,
@@ -250,7 +263,8 @@ export async function runEphemeralTurn(
 		},
 		{
 			onAssistantDelta: options.onAssistantDelta,
-			finalize: (raw) => finalizeStreamText(raw).content
+			finalize: (raw) => finalizeStreamText(raw).content,
+			keepCutOffAnswer: options.keepCutOffAnswer
 		}
 	);
 }
