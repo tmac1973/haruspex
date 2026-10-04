@@ -254,22 +254,11 @@ jobs:
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml -- -D warnings
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
-      # The real-app tests (e2e/app), through msedgedriver matching this
-      # runner's WebView2 — fetched by the tool Tauri's WebDriver docs use.
-      - name: Real-app tests
-        shell: pwsh
-        run: |
-          cargo install tauri-driver --locked
-          cargo install --git https://github.com/chippers/msedgedriver-tool --locked
-          & "$env:USERPROFILE\.cargo\bin\msedgedriver-tool.exe"
-          $env:MSEDGEDRIVER = Join-Path $PWD 'msedgedriver.exe'
-          npm run e2e:app:build
-          npm run e2e:app
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: e2e-app-windows
-          path: e2e/app/output/
+      # No real-app tests here: on this hosted runner WebView2 never opens the
+      # debugging port msedgedriver waits for ("DevToolsActivePort file doesn't
+      # exist"), although the same build passes on a desktop Windows PC. They
+      # run on the self-hosted Windows test machine instead
+      # (scripts/ci-runner, suite e2e-app).
 
   # macOS gates, the counterpart of the Windows job: compile, lint and test the
   # `#[cfg(target_os = "macos")]` branches (screen capture, the orphan sweep's

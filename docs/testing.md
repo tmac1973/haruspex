@@ -129,6 +129,11 @@ npm run e2e:app         # start tauri-driver and run e2e/app/specs/*.e2e.mjs
     there.
 - **On the test machines:** `scripts/ci-runner/remote-test.sh windows
   e2e-app` runs it on the Windows PC, in your desktop session.
+- **Where it runs:**
+  - **Linux:** CI's `e2e-app` job, on every PR.
+  - **Windows:** the self-hosted test PC. On GitHub's hosted Windows
+    runner, WebView2 never opens the debugging port msedgedriver waits for,
+    although the same build passes on a desktop machine.
 - **Failures** leave a screenshot in `e2e/app/output/`, which CI uploads.
 
 **A new spec must be seen failing once.** Break what it asserts — rename the
