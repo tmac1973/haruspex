@@ -264,10 +264,16 @@ if ((${#todo[@]})); then
     printf 'Still to do:\n'
     printf '  - %s\n' "${todo[@]}"
 fi
+# The interface carrying the default route, not just en0: on a Mac mini en0
+# is Ethernet, and Wi-Fi is en1.
+iface=$(route -n get default 2>/dev/null | awk '/interface:/ {print $2}')
+addr=$(ipconfig getifaddr "${iface:-en0}" 2>/dev/null || echo '?')
 cat <<EOF
-On your Linux box, add to ~/.ssh/config:
+This Mac: hostname $(scutil --get LocalHostName 2>/dev/null || hostname -s), address $addr on ${iface:-?}
+On your Linux box, add to ~/.ssh/config (the hostname survives a new DHCP
+lease if your DNS registers DHCP clients; otherwise use the address):
   Host haruspex-mac
-      HostName $(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || hostname)
+      HostName $(scutil --get LocalHostName 2>/dev/null || hostname -s)
       User $(id -un)
       IdentityFile ~/.ssh/<the key you added>
 Then:  scripts/ci-runner/remote-test.sh mac

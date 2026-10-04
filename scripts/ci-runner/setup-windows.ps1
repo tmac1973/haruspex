@@ -209,11 +209,19 @@ if (-not $AllowSleep) {
 
 Step 'Done'
 foreach ($t in $todo) { Write-Host "Still to do: $t" -ForegroundColor Yellow }
-$ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.PrefixOrigin -in 'Dhcp', 'Manual' -and $_.IPAddress -notlike '169.*' } | Select-Object -First 1).IPAddress
+# The interface carrying the default route. The first IPv4 address can be a
+# WSL or Hyper-V virtual switch (172.16-31.x) that nothing else can reach.
+$route = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
+    Sort-Object RouteMetric | Select-Object -First 1
+$ip = if ($route) {
+    (Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $route.InterfaceIndex | Select-Object -First 1).IPAddress
+} else { '?' }
 Write-Host @"
-On your Linux box, add to ~/.ssh/config:
+This PC: hostname $env:COMPUTERNAME, address $ip
+On your Linux box, add to ~/.ssh/config (the hostname survives a new DHCP
+lease if your DNS registers DHCP clients; otherwise use the address):
   Host haruspex-win
-      HostName $ip
+      HostName $env:COMPUTERNAME
       User $env:USERNAME
       IdentityFile ~/.ssh/<the key you added>
 Then:  scripts/ci-runner/remote-test.sh windows
