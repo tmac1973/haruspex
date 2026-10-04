@@ -565,6 +565,30 @@ export function getQueueDepth(): number {
 	return pending.length;
 }
 
+/**
+ * Take a queued run out of the queue, so it never starts. True when it was
+ * queued. Deleting a queued run's row must come through here: the queue is
+ * in memory, and a run deleted only from the database still started when
+ * the run ahead of it finished.
+ */
+export function removeQueuedRun(runId: number): boolean {
+	const before = pending.length;
+	pending = pending.filter((q) => q.runId !== runId);
+	return pending.length < before;
+}
+
+/** Take every queued run of a job out of the queue. How many went. */
+export function removeQueuedRunsForJob(jobId: number): number {
+	const before = pending.length;
+	pending = pending.filter((q) => q.job.id !== jobId);
+	return before - pending.length;
+}
+
+/** The id of the run in progress, or null. Its row must not be deleted. */
+export function getRunningRunId(): number | null {
+	return current?.status === 'running' ? current.id : null;
+}
+
 export function clearCurrentRun(): void {
 	if (current?.status === 'running') return;
 	current = null;

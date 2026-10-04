@@ -9,6 +9,12 @@
 	import { formatDuration } from '$lib/utils/format';
 	import { activatable } from '$lib/actions/activatable';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import {
+		getCurrentRun,
+		getRunningRunId,
+		removeQueuedRun,
+		removeQueuedRunsForJob
+	} from '$lib/agent/jobs/runner.svelte';
 
 	interface Props {
 		jobId: number;
@@ -21,6 +27,10 @@
 	const { jobId, selectedRunId, onselect, onrundeleted, onallrunsdeleted }: Props = $props();
 
 	const runs = $derived(getRunsForJob(jobId));
+	// The run in progress can't be deleted from under the runner — it is
+	// cancelled first — and so this job's history can't be cleared while it runs.
+	const runningId = $derived(getRunningRunId());
+	const jobRunning = $derived(runningId !== null && getCurrentRun()?.jobId === jobId);
 
 	$effect(() => {
 		void loadRunsForJob(jobId);
@@ -52,6 +62,12 @@
 	const deleteDialog = $derived.by(() => {
 		if (!pendingDelete) return null;
 		if (pendingDelete.kind === 'run') {
+			if (pendingDelete.run.status === 'queued') {
+				return {
+					title: 'Remove queued run?',
+					message: 'It will not start, and it is removed from this list.'
+				};
+			}
 			const label = `${formatWhen(pendingDelete.run.queued_at)} (${pendingDelete.run.status})`;
 			return {
 				title: 'Delete run?',
@@ -80,9 +96,14 @@
 		pendingDelete = null;
 		if (!pending) return;
 		if (pending.kind === 'run') {
+			if (pending.run.id === getRunningRunId()) return;
+			// Out of the queue first, so it can't start in between.
+			removeQueuedRun(pending.run.id);
 			const ok = await deleteJobRun(jobId, pending.run.id);
 			if (ok) onrundeleted?.(pending.run.id);
 		} else {
+			if (jobRunning) return;
+			removeQueuedRunsForJob(jobId);
 			const ok = await deleteAllJobRuns(jobId);
 			if (ok) onallrunsdeleted?.();
 		}
@@ -97,7 +118,10 @@
 				type="button"
 				class="clear-all"
 				onclick={requestClearAll}
-				title="Delete every run in this list. Cannot be undone."
+				disabled={jobRunning}
+				title={jobRunning
+					? 'This job is running — cancel it first'
+					: 'Delete every run in this list. Cannot be undone.'}
 			>
 				Clear all
 			</button>
@@ -131,8 +155,13 @@
 						type="button"
 						class="delete-btn"
 						data-no-activate
-						aria-label="Delete run"
-						title="Delete this run"
+						aria-label={run.status === 'queued' ? 'Remove from queue' : 'Delete run'}
+						title={run.id === runningId
+							? 'This run is in progress — cancel it first'
+							: run.status === 'queued'
+								? 'Remove from the queue'
+								: 'Delete this run'}
+						disabled={run.id === runningId}
 						onclick={(e) => requestDeleteRun(run, e)}
 					>
 						×

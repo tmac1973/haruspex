@@ -1012,6 +1012,52 @@ describe('jobs runner — FIFO queue', () => {
 		expect(getPendingQueue().map((q) => q.jobId)).toEqual([4, 5, 2, 3, 6]);
 	});
 
+	it('never starts a queued run that was removed from the queue', async () => {
+		mocks.getJob.mockResolvedValueOnce(makeJob()).mockResolvedValueOnce(makeJob());
+		let resolveFirst!: (v: { finalText: string }) => void;
+		mocks.runEphemeralTurn.mockReturnValueOnce(
+			new Promise((res) => {
+				resolveFirst = res;
+			})
+		);
+
+		const { enqueue, getCurrentRun, getQueueDepth, removeQueuedRun, getRunningRunId } =
+			await freshRunner();
+		await enqueue(1);
+		const second = await enqueue(1);
+		expect(getQueueDepth()).toBe(1);
+		expect(getRunningRunId()).toBe(100);
+
+		expect(removeQueuedRun(second!)).toBe(true);
+		expect(getQueueDepth()).toBe(0);
+		expect(removeQueuedRun(second!)).toBe(false);
+
+		resolveFirst({ finalText: 'done' });
+		await tick();
+		await tick();
+		expect(getCurrentRun()?.id).toBe(100);
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		expect(getRunningRunId()).toBeNull();
+		expect(mocks.runEphemeralTurn).toHaveBeenCalledTimes(1);
+	});
+
+	it('removes every queued run of one job, and only that job', async () => {
+		mocks.getJob
+			.mockResolvedValueOnce(makeJob())
+			.mockResolvedValueOnce(makeJob())
+			.mockResolvedValueOnce(makeJob({ id: 2, name: 'Other' }))
+			.mockResolvedValueOnce(makeJob());
+		mocks.runEphemeralTurn.mockReturnValue(new Promise(() => {}));
+
+		const { enqueue, getPendingQueue, removeQueuedRunsForJob } = await freshRunner();
+		await enqueue(1);
+		await enqueue(1);
+		await enqueue(2);
+		await enqueue(1);
+		expect(removeQueuedRunsForJob(1)).toBe(2);
+		expect(getPendingQueue().map((q) => q.jobId)).toEqual([2]);
+	});
+
 	it('drains the next queued run when the current one succeeds', async () => {
 		mocks.getJob.mockResolvedValueOnce(makeJob()).mockResolvedValueOnce(makeJob());
 
