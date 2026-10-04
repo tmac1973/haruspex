@@ -26,7 +26,8 @@ $Src = Join-Path $Ci 'src'
 $Lock = Join-Path $Ci 'busy'
 $Log = Join-Path $Ci 'run.log'
 $Done = Join-Path $Ci 'done'
-$Task = 'Haruspex CI run'
+# The in-session task setup-windows.ps1 registers (its $RunTask).
+$Task = 'Haruspex test run'
 
 function Prepare {
     if (Test-Path $Lock) { [Console]::Error.WriteLine("busy: $(Get-Content $Lock)"); exit 75 }
