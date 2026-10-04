@@ -291,10 +291,31 @@ fn join_kill_on_close_job(_pid: u32) {}
 mod tests {
     use super::*;
 
+    /// A shell command line in the platform's own shell. `sh` and `sleep`
+    /// are on GitHub's Windows runners only through Git Bash; an ordinary
+    /// Windows machine has neither.
+    fn shell(line: &str) -> std::process::Command {
+        #[cfg(windows)]
+        {
+            let mut cmd = std::process::Command::new("cmd");
+            cmd.args(["/C", line]);
+            cmd
+        }
+        #[cfg(not(windows))]
+        {
+            let mut cmd = std::process::Command::new("sh");
+            cmd.args(["-c", line]);
+            cmd
+        }
+    }
+
     #[test]
     fn output_arrives_line_by_line_and_termination_comes_last() {
-        let mut cmd = std::process::Command::new("sh");
-        cmd.args(["-c", "echo one; echo two 1>&2; echo three; exit 3"]);
+        let cmd = if cfg!(windows) {
+            shell("echo one& echo two 1>&2& echo three& exit /b 3")
+        } else {
+            shell("echo one; echo two 1>&2; echo three; exit 3")
+        };
         // Through the same path the plugin command takes, minus the plugin.
         let (mut rx, _child) = spawn_std(cmd).unwrap();
         let mut out = Vec::new();
@@ -323,8 +344,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let reg = dir.join("running.json");
-        let mut cmd = std::process::Command::new("sleep");
-        cmd.arg("30");
+        // About 30 s either way; the test kills it long before.
+        let cmd = if cfg!(windows) {
+            shell("ping -n 31 127.0.0.1 >nul")
+        } else {
+            shell("sleep 30")
+        };
         let (_rx, child) = spawn_std_registered(cmd, Some(reg.clone())).unwrap();
         let pid = child.pid();
         assert_eq!(orphans::load(&reg)[0].pid, pid);
