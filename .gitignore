@@ -8,6 +8,7 @@ build/
 
 # Rust / Tauri
 src-tauri/target/
+src-tauri/target-e2e/
 
 # Model files (downloaded at runtime)
 checkpoints/
@@ -65,3 +66,4 @@ npm-debug.log*
 /test-results/
 /playwright-report/
 /blob-report/
+/e2e/app/output/

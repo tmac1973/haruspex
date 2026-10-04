@@ -26,7 +26,8 @@ $Src = Join-Path $Ci 'src'
 $Lock = Join-Path $Ci 'busy'
 $Log = Join-Path $Ci 'run.log'
 $Done = Join-Path $Ci 'done'
-$Task = 'Haruspex CI run'
+# The in-session task setup-windows.ps1 registers (its $RunTask).
+$Task = 'Haruspex test run'
 
 function Prepare {
     if (Test-Path $Lock) { [Console]::Error.WriteLine("busy: $(Get-Content $Lock)"); exit 75 }
@@ -89,9 +90,17 @@ switch ($Action) {
     }
     'run' {
         $requested = if (Test-Path (Join-Path $Ci 'request')) { (Get-Content (Join-Path $Ci 'request')).Trim() } else { 'unit' }
-        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Ci 'run-suite.ps1') -Suite $requested *> $Log
-        $code = $LASTEXITCODE
-        Set-Content $Done $code
-        Remove-Item -Force -ErrorAction SilentlyContinue $Lock
+        # As in 'direct': stderr is log, not an error. Under 'Stop' the first
+        # npm warning ended this block before it wrote $Done, and the waiting
+        # side waited forever on a run that had died, with the lock held.
+        $ErrorActionPreference = 'Continue'
+        $code = 1
+        try {
+            & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Ci 'run-suite.ps1') -Suite $requested *> $Log
+            $code = $LASTEXITCODE
+        } finally {
+            Set-Content $Done $code
+            Remove-Item -Force -ErrorAction SilentlyContinue $Lock
+        }
     }
 }
