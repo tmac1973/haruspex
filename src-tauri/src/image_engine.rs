@@ -246,14 +246,15 @@ impl ImageEngine {
         let libs = sd_libs_dir(app).ok_or_else(|| {
             ImageEngineError::SidecarMissing(format!("no {LIBS_SUBDIR} directory was bundled"))
         })?;
-        let sidecar_path = app
-            .shell()
-            .sidecar("haruspex-sd-server")
-            .map_err(|e| ImageEngineError::SidecarMissing(e.to_string()))
-            .and_then(|_| {
-                resolve_sidecar_binary(app)
-                    .ok_or_else(|| ImageEngineError::SidecarMissing("sd-server".into()))
-            })?;
+        // No `shell().sidecar(...)` probe first. It built a command only to
+        // throw it away, because this engine needs the path (see
+        // [`resolve_sidecar_binary`]) — and asking the shell plugin for a name
+        // it never spawns implied the capability allowlist had a say here,
+        // which it does not: that scope governs what the webview may invoke,
+        // and every spawn in this module is Rust-side. Finding the binary is
+        // the only thing that actually decides whether the engine can run.
+        let sidecar_path = resolve_sidecar_binary(app)
+            .ok_or_else(|| ImageEngineError::SidecarMissing("sd-server".into()))?;
         let exe = colocate(&sidecar_path, &libs)?;
 
         *self.status.lock().await = SidecarStatus::Starting;
