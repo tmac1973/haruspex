@@ -221,8 +221,13 @@
 							isStreaming={true}
 						/>
 					{:else if isLiveStep(step) && !step.reasoning}
-						<!-- Live, and nothing to show yet — not even reasoning. -->
-						<ThinkingIndicator bare />
+						<!-- Live, and nothing to show yet — not even reasoning. With
+						     reasoning off nothing ever streams, so "Thinking…" would
+						     sit there for the whole step. -->
+						<ThinkingIndicator
+							bare
+							caption={run.environment.modelThinking === false ? 'Working…' : 'Thinking…'}
+						/>
 					{:else if step.output}
 						<ChatMessage message={{ role: 'assistant', content: step.output }} />
 					{/if}

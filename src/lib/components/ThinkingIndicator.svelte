@@ -2,21 +2,23 @@
 	/**
 	 * The "model is doing something" indicator (bouncing dots). Default form has
 	 * the chat "Haruspex" label + chrome; `bare` is a compact inline form (dots +
-	 * a small "Thinking…" caption) for embedding inside a job-run step card.
+	 * a small caption) for embedding inside a job-run step card.
 	 */
 	interface Props {
 		bare?: boolean;
+		/** The `bare` form's caption. */
+		caption?: string;
 	}
 
-	const { bare = false }: Props = $props();
+	const { bare = false, caption = 'Thinking…' }: Props = $props();
 </script>
 
 {#if bare}
-	<div class="dots bare" role="status" aria-label="Thinking">
+	<div class="dots bare" role="status" aria-label={caption}>
 		<span class="dot"></span>
 		<span class="dot"></span>
 		<span class="dot"></span>
-		<span class="caption">Thinking…</span>
+		<span class="caption">{caption}</span>
 	</div>
 {:else}
 	<div class="thinking" role="status" aria-label="Thinking">
