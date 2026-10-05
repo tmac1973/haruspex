@@ -243,7 +243,7 @@ jobs:
             x86_64-pc-windows-msvc)    RUFF_ASSET="ruff-x86_64-pc-windows-msvc.zip"        ; RUFF_EXE="ruff.exe" ; RUFF_EXT=".exe" ;;
             *) echo "Unknown target $TARGET_TRIPLE — skipping ruff download"; exit 0 ;;
           esac
-          DEST="src-tauri/binaries/ruff-${TARGET_TRIPLE}${RUFF_EXT}"
+          DEST="src-tauri/binaries/haruspex-ruff-${TARGET_TRIPLE}${RUFF_EXT}"
           TMP=$(mktemp -d)
           curl -fsSL -o "$TMP/ruff.archive" \
             "https://github.com/astral-sh/ruff/releases/download/$RUFF_VERSION/$RUFF_ASSET"

@@ -448,7 +448,7 @@ impl LlamaServer {
     > {
         let cmd = app
             .shell()
-            .sidecar("llama-server")
+            .sidecar("haruspex-llama-server")
             .map_err(|e| format!("Failed to create sidecar command: {}", e))?
             .args(args);
         spawn_sidecar(

@@ -235,7 +235,7 @@ jobs:
         run: |
           $target = (rustc --print host-tuple)
           New-Item -ItemType Directory -Force -Path src-tauri/binaries | Out-Null
-          foreach ($name in 'llama-server', 'whisper-server', 'koko', 'ruff', 'node', 'uv', 'sd-server') {
+          foreach ($name in 'haruspex-llama-server', 'haruspex-whisper-server', 'haruspex-koko', 'haruspex-ruff', 'haruspex-node', 'haruspex-uv', 'haruspex-sd-server') {
             # externalBin resolves to `<name>-<triple>.exe` on Windows.
             Set-Content -Path "src-tauri/binaries/$name-$target.exe" -Value '@echo off'
           }
@@ -302,7 +302,7 @@ jobs:
         run: |
           TARGET=$(rustc --print host-tuple)
           mkdir -p src-tauri/binaries
-          for name in llama-server whisper-server koko ruff node uv sd-server; do
+          for name in haruspex-llama-server haruspex-whisper-server haruspex-koko haruspex-ruff haruspex-node haruspex-uv haruspex-sd-server; do
             echo '#!/bin/sh' > "src-tauri/binaries/${name}-${TARGET}"
             chmod +x "src-tauri/binaries/${name}-${TARGET}"
           done

@@ -40,9 +40,9 @@ case "$TARGET" in
     *)              EXT=""     ;;
 esac
 
-SD_BIN="$BINARIES_DIR/sd-server-${TARGET}${EXT}"
+SD_BIN="$BINARIES_DIR/haruspex-sd-server-${TARGET}${EXT}"
 SD_LIBS="$BINARIES_DIR/sd-libs"
-VERSION=$(cat "$BINARIES_DIR/sd-server-${TARGET}.version" 2>/dev/null || echo "")
+VERSION=$(cat "$BINARIES_DIR/haruspex-sd-server-${TARGET}.version" 2>/dev/null || echo "")
 
 if [ ! -x "$SD_BIN" ]; then
     echo "ERROR: $SD_BIN is missing. Run ./scripts/fetch-sdcpp.sh first."

@@ -36,13 +36,13 @@
     "active": true,
     "targets": "all",
     "externalBin": [
-      "binaries/llama-server",
-      "binaries/whisper-server",
-      "binaries/koko",
-      "binaries/ruff",
-      "binaries/node",
-      "binaries/uv",
-      "binaries/sd-server"
+      "binaries/haruspex-llama-server",
+      "binaries/haruspex-whisper-server",
+      "binaries/haruspex-koko",
+      "binaries/haruspex-ruff",
+      "binaries/haruspex-node",
+      "binaries/haruspex-uv",
+      "binaries/haruspex-sd-server"
     ],
     "resources": [
       "binaries/libs/*",

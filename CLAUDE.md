@@ -42,14 +42,23 @@ GDK_BACKEND=x11 npm run tauri dev
 
 ### Sidecar binaries (in src-tauri/binaries/)
 
+Every one is named `haruspex-<tool>-{triple}`. The deb and rpm bundlers install
+each `externalBin` into `/usr/bin` under its stem with the triple stripped, and
+rpm fails the whole transaction when two packages claim one path — so an
+unprefixed `node`, `uv`, `ruff`, `llama-server` or `koko` is an app that will
+not install on a machine that has the distro's package of the same name. A test
+in `runtimes.rs` guards the rule. The one thing it costs is covered by
+`runtimes::node_shim_dir`: npm hands a lifecycle script a `PATH` and lets it
+call plain `node`, so we link one into the app's data directory.
+
 | Binary | Source | GPU | Purpose |
 |---|---|---|---|
-| `llama-server-{triple}` | llama.cpp | Vulkan | LLM inference |
-| `whisper-server-{triple}` | whisper.cpp | Vulkan | Speech-to-text |
-| `koko-{triple}` | Kokoros | CPU | Text-to-speech |
-| `node-{triple}` | nodejs.org | — | Runs npm-packaged MCP servers |
-| `uv-{triple}` | astral-sh/uv | — | Runs PyPI-packaged MCP servers |
-| `sd-server-{triple}` | stable-diffusion.cpp | Vulkan / Metal | Local image generation |
+| `haruspex-llama-server-{triple}` | llama.cpp | Vulkan | LLM inference |
+| `haruspex-whisper-server-{triple}` | whisper.cpp | Vulkan | Speech-to-text |
+| `haruspex-koko-{triple}` | Kokoros | CPU | Text-to-speech |
+| `haruspex-node-{triple}` | nodejs.org | — | Runs npm-packaged MCP servers |
+| `haruspex-uv-{triple}` | astral-sh/uv | — | Runs PyPI-packaged MCP servers |
+| `haruspex-sd-server-{triple}` | stable-diffusion.cpp | Vulkan / Metal | Local image generation |
 
 `sd-server` is DOWNLOADED, not built — upstream ships a Vulkan/Metal binary for
 every triple we target. Its shared libraries live in `binaries/sd-libs/`, apart

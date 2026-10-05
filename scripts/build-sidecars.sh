@@ -35,8 +35,8 @@ WHISPER_VERSION=$(cat "$PROJECT_ROOT/WHISPER_CPP_VERSION" 2>/dev/null || echo "m
 # exactly one rebuild while an unchanged pin stays a fast no-op. (koko is not
 # pinned — it always tracks the cloned default branch and only rebuilds when
 # its binary is missing.)
-LLAMA_STAMP="$BINARIES_DIR/llama-server-${TARGET}.version"
-WHISPER_STAMP="$BINARIES_DIR/whisper-server-${TARGET}.version"
+LLAMA_STAMP="$BINARIES_DIR/haruspex-llama-server-${TARGET}.version"
+WHISPER_STAMP="$BINARIES_DIR/haruspex-whisper-server-${TARGET}.version"
 
 # True when the binary exists AND its recorded version matches the pin.
 sidecar_current() {
@@ -208,7 +208,7 @@ case "$TARGET" in
 esac
 
 # ---- llama-server ----
-LLAMA_BIN="$BINARIES_DIR/llama-server-${TARGET}${EXT}"
+LLAMA_BIN="$BINARIES_DIR/haruspex-llama-server-${TARGET}${EXT}"
 if sidecar_current "$LLAMA_BIN" "$LLAMA_STAMP" "$LLAMA_VERSION"; then
     echo ">> llama-server already built ($LLAMA_VERSION), skipping."
 else
@@ -293,7 +293,7 @@ fi
 echo
 
 # ---- whisper-server ----
-WHISPER_BIN="$BINARIES_DIR/whisper-server-${TARGET}${EXT}"
+WHISPER_BIN="$BINARIES_DIR/haruspex-whisper-server-${TARGET}${EXT}"
 if sidecar_current "$WHISPER_BIN" "$WHISPER_STAMP" "$WHISPER_VERSION"; then
     echo ">> whisper-server already built ($WHISPER_VERSION), skipping."
 else
@@ -379,7 +379,7 @@ fi
 echo
 
 # ---- koko (Kokoros TTS) ----
-KOKO_BIN="$BINARIES_DIR/koko-${TARGET}${EXT}"
+KOKO_BIN="$BINARIES_DIR/haruspex-koko-${TARGET}${EXT}"
 if [ -f "$KOKO_BIN" ]; then
     echo ">> koko already built, skipping."
 else
@@ -555,7 +555,7 @@ esac
 case "$TARGET" in
     *-apple-darwin)
         echo ">> Bundling external (Homebrew) dylibs for macOS..."
-        for sidecar_name in llama-server whisper-server koko; do
+        for sidecar_name in haruspex-llama-server haruspex-whisper-server haruspex-koko; do
             sidecar_path="$BINARIES_DIR/${sidecar_name}-${TARGET}"
             if [ -f "$sidecar_path" ]; then
                 bundle_external_dylibs_macos "$sidecar_path"

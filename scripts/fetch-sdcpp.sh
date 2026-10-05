@@ -62,8 +62,8 @@ case "$TARGET" in
         ;;
 esac
 
-SD_BIN="$BINARIES_DIR/sd-server-${TARGET}${EXT}"
-SD_STAMP="$BINARIES_DIR/sd-server-${TARGET}.version"
+SD_BIN="$BINARIES_DIR/haruspex-sd-server-${TARGET}${EXT}"
+SD_STAMP="$BINARIES_DIR/haruspex-sd-server-${TARGET}.version"
 
 # Its OWN directory, and this is not tidiness.
 #

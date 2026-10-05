@@ -18,7 +18,7 @@ pub async fn fs_lint_python(
     let workdir = workdir_path(&workdir)?;
     let abs = resolve_in_workdir(&workdir, &rel_path)?;
 
-    let sidecar = match app.shell().sidecar("ruff") {
+    let sidecar = match app.shell().sidecar("haruspex-ruff") {
         Ok(cmd) => cmd,
         Err(e) => {
             log::debug!("ruff sidecar unavailable: {}", e);
@@ -174,7 +174,7 @@ pub async fn lint_python_source(
         return Ok(Vec::new());
     }
 
-    let sidecar = match app.shell().sidecar("ruff") {
+    let sidecar = match app.shell().sidecar("haruspex-ruff") {
         Ok(cmd) => cmd,
         Err(e) => {
             let _ = tokio::fs::remove_file(&tmp).await;

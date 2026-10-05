@@ -65,7 +65,7 @@ if [ -z "$NODE_VERSION" ]; then
     exit 0
 fi
 
-NODE_DEST="$BINARIES_DIR/node-$TARGET_TRIPLE"
+NODE_DEST="$BINARIES_DIR/haruspex-node-$TARGET_TRIPLE"
 # Windows sidecars need the .exe suffix on top of the triple for Tauri.
 case "$TARGET_TRIPLE" in *windows*) NODE_DEST="$NODE_DEST.exe" ;; esac
 

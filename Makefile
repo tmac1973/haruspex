@@ -80,7 +80,7 @@ act-ci: ## Run the CI checks workflow locally via act
 .PHONY: ensure-sidecars
 ensure-sidecars: ## Rebuild sidecars only when missing or their pinned version changed
 	@stale=""; \
-	for pair in "llama-server:LLAMA_CPP_VERSION" "whisper-server:WHISPER_CPP_VERSION"; do \
+	for pair in "haruspex-llama-server:LLAMA_CPP_VERSION" "haruspex-whisper-server:WHISPER_CPP_VERSION"; do \
 		name=$${pair%%:*}; vf=$${pair##*:}; \
 		bin="src-tauri/binaries/$$name-$(TARGET)"; \
 		want=$$(cat "$$vf" 2>/dev/null); \
@@ -88,7 +88,7 @@ ensure-sidecars: ## Rebuild sidecars only when missing or their pinned version c
 			stale="$$stale $$name"; \
 		fi; \
 	done; \
-	if [ ! -x "src-tauri/binaries/koko-$(TARGET)" ]; then stale="$$stale koko"; fi; \
+	if [ ! -x "src-tauri/binaries/haruspex-koko-$(TARGET)" ]; then stale="$$stale koko"; fi; \
 	if [ -n "$$stale" ]; then \
 		echo ">> Sidecars missing or out of date:$$stale"; \
 		echo ">> Running build-sidecars.sh (up-to-date sidecars are skipped)..."; \
@@ -127,9 +127,9 @@ fmt: ## Auto-format all code
 
 .PHONY: clean
 clean: ## Remove built sidecars, forcing rebuild on next make sidecars
-	rm -f src-tauri/binaries/llama-server-*
-	rm -f src-tauri/binaries/whisper-server-*
-	rm -f src-tauri/binaries/koko-*
+	rm -f src-tauri/binaries/haruspex-llama-server-*
+	rm -f src-tauri/binaries/haruspex-whisper-server-*
+	rm -f src-tauri/binaries/haruspex-koko-*
 	rm -rf src-tauri/binaries/libs/*.so* src-tauri/binaries/libs/*.dylib src-tauri/binaries/libs/*.dll
 
 .PHONY: clean-all

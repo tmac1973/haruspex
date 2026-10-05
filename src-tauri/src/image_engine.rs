@@ -248,7 +248,7 @@ impl ImageEngine {
         })?;
         let sidecar_path = app
             .shell()
-            .sidecar("sd-server")
+            .sidecar("haruspex-sd-server")
             .map_err(|e| ImageEngineError::SidecarMissing(e.to_string()))
             .and_then(|_| {
                 resolve_sidecar_binary(app)
@@ -426,10 +426,11 @@ const LIB_PATH_SEP: &str = ":";
 /// libraries.
 ///
 /// Matched by PREFIX rather than by target triple. Tauri strips the triple
-/// when it bundles a sidecar, so the packaged name is `sd-server` while a dev
-/// tree holds `sd-server-x86_64-unknown-linux-gnu`; looking for both without
-/// knowing which is which avoids threading a build-time triple through for
-/// one comparison. The `.version` stamp that sits beside it is skipped.
+/// when it bundles a sidecar, so the packaged name is `haruspex-sd-server`
+/// while a dev tree holds `haruspex-sd-server-x86_64-unknown-linux-gnu`;
+/// looking for both without knowing which is which avoids threading a
+/// build-time triple through for one comparison. The `.version` stamp that
+/// sits beside it is skipped.
 fn resolve_sidecar_binary(app: &AppHandle) -> Option<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     if let Ok(exe) = std::env::current_exe() {
@@ -445,7 +446,7 @@ fn resolve_sidecar_binary(app: &AppHandle) -> Option<PathBuf> {
     dirs.into_iter().find_map(|d| first_sidecar_in(&d))
 }
 
-/// The `sd-server` binary in one directory, if there is one.
+/// The `haruspex-sd-server` binary in one directory, if there is one.
 fn first_sidecar_in(dir: &Path) -> Option<PathBuf> {
     let entries = std::fs::read_dir(dir).ok()?;
     let mut found: Vec<PathBuf> = entries
@@ -453,9 +454,9 @@ fn first_sidecar_in(dir: &Path) -> Option<PathBuf> {
         .map(|e| e.path())
         .filter(|p| {
             p.is_file()
-                && p.file_name()
-                    .and_then(|n| n.to_str())
-                    .is_some_and(|n| n.starts_with("sd-server") && !n.ends_with(".version"))
+                && p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                    n.starts_with("haruspex-sd-server") && !n.ends_with(".version")
+                })
         })
         .collect();
     // Deterministic across platforms: read_dir order is not.
