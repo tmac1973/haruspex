@@ -23,6 +23,8 @@ family with what the server is missing, and Install puts the files there:
   older custom node): the downloads are queued with Manager on the server. It
   shows no progress. On a server that does not listen on loopback, Manager
   only installs models when its `network_mode` is `personal_cloud`.
+  Setting up such a server step by step:
+  [`comfyui-server-setup.md`](comfyui-server-setup.md).
 - **Neither**: a list of files, folders and links to copy.
 
 **Bundled engine** is stable-diffusion.cpp, shipped with Haruspex. Pick it if
