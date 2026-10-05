@@ -328,9 +328,23 @@ describe('beginRepairCycle', () => {
 		expect(second.item.title).toContain(`2/${MAX_PHASE_REPAIR_CYCLES}`);
 	});
 
+	it('tells the repair that the plan outranks the tests', () => {
+		const { item } = beginRepairCycle(planFixture(), '01', 'boom');
+		expect(item.description).toContain('change the tests to match the plan');
+		expect(item.description).not.toContain('Previous repair note');
+	});
+
+	it("hands the previous repair's note to the next cycle, keeping its end", () => {
+		const note = `${'tried tuning game.py. '.repeat(300)}NEXT: edit tests lines 209 and 283.`;
+		const { item } = beginRepairCycle(planFixture(), '01', 'boom', note);
+		expect(item.description).toContain('Previous repair note');
+		expect(item.description).toContain('NEXT: edit tests lines 209 and 283.');
+		expect(item.description).toContain('[… start of note omitted]');
+	});
+
 	it('clips a runaway failure output', () => {
-		const { item } = beginRepairCycle(planFixture(), '01', 'x'.repeat(20_000));
-		expect(item.description.length).toBeLessThan(4000);
+		const { item } = beginRepairCycle(planFixture(), '01', 'x'.repeat(20_000), 'y'.repeat(20_000));
+		expect(item.description.length).toBeLessThan(8000);
 	});
 });
 

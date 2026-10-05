@@ -451,6 +451,8 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 		const maxTurns = cfg.max_turns ?? DEFAULT_MAX_TURNS;
 		let progress = (await readPlanFile(ctx, progressPath)) ?? '# Coding progress\n';
 		const recentNotes: string[] = [];
+		/** Each phase's latest repair note, handed whole to its next repair cycle. */
+		const lastRepairNote = new Map<string, string>();
 		// Every entry from THIS run, so the loop step's persisted output keeps
 		// the per-iteration notes after the live streaming view is gone.
 		const runEntries: string[] = [];
@@ -535,7 +537,7 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 							`${c.committed ? ' (work committed, marked UNVERIFIED)' : ''}\n\n${clipNote(v.output, 3000)}\n`
 					);
 				} else {
-					const r = beginRepairCycle(plan, phase.id, v.output);
+					const r = beginRepairCycle(plan, phase.id, v.output, lastRepairNote.get(phase.id));
 					plan = r.plan;
 					await record(
 						`## Phase ${phase.id} — ${phase.title}: verification FAILED (repair cycle ` +
@@ -641,6 +643,7 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 				if (r.blocked) note = `BLOCKED after ${attemptCap} failed attempt(s). ${note}`;
 			}
 
+			if (target.repair && target.phase) lastRepairNote.set(target.phase, note);
 			await record(
 				`## Iteration ${iteration} — ${target.id}. ${target.title}: ${status}\n\n${note.trim()}\n`,
 				`## Iteration ${iteration} — ${target.id}. ${target.title}: ${status}\n\n${clipNote(note)}\n`

@@ -375,7 +375,8 @@ export function recordPhaseBuild(plan: LoopPlan, phaseId: string): LoopPlan {
 export function beginRepairCycle(
 	plan: LoopPlan,
 	phaseId: string,
-	failureOutput: string
+	failureOutput: string,
+	previousRepairNote?: string
 ): { plan: LoopPlan; item: TaskItem } {
 	const phase = plan.phases.find((p) => p.id === phaseId);
 	const cycle = (phase?.repairs ?? 0) + 1;
@@ -389,6 +390,10 @@ export function beginRepairCycle(
 			`item regardless of the outcome you report. If the verification COMMAND itself ` +
 			`is broken (shell errors, wrong path), fix it under "## ${VERIFICATION_COMMAND_HEADING}" in ` +
 			`DECISIONS-coding.md — the runner re-reads it before every check.\n\n` +
+			`The phase plan is the specification; tests written during this run are not. If a ` +
+			`failing test asserts something the plan doesn't require, or two tests demand ` +
+			`opposite behaviour, change the tests to match the plan instead of bending the code.\n\n` +
+			previousRepairSection(previousRepairNote) +
 			`Verification output:\n${clipNote(failureOutput, 3000)}`,
 		status: 'todo',
 		attempts: 0,
@@ -405,6 +410,22 @@ export function beginRepairCycle(
 		},
 		item
 	};
+}
+
+/**
+ * The last repair's own diagnosis, for the next cycle. The prompt tail clips
+ * notes from the end, which is where a failed repair writes what to try next,
+ * so this keeps the end instead. Without it, cycles 3–5 of a run re-tried what
+ * cycle 2 had already said would not work.
+ */
+function previousRepairSection(note: string | undefined): string {
+	const t = note?.trim();
+	if (!t) return '';
+	const clipped = t.length <= 3000 ? t : `[… start of note omitted]\n${t.slice(-3000)}`;
+	return (
+		`The previous repair cycle failed. Don't repeat what it tried; if its note names ` +
+		`the fix, do that.\n\nPrevious repair note:\n${clipped}\n\n`
+	);
 }
 
 export interface LoopSummary {
