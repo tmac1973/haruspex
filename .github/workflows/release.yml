@@ -114,6 +114,11 @@ jobs:
     permissions:
       contents: write
     strategy:
+      # One platform's failure must not cancel the others. v0.2.3 shipped no
+      # artifacts at all because the macOS job failed and took a working Linux
+      # and Windows build down with it — on a release, a partial set of bundles
+      # is worth strictly more than none.
+      fail-fast: false
       matrix:
         include:
           # Linux build runs inside ubuntu:25.10 to bundle a webkit2gtk-4.1
@@ -274,6 +279,10 @@ jobs:
       # stable-diffusion.cpp version cannot drift between dev and release.
       - name: Download sd-server (bundled image engine)
         shell: bash
+        env:
+          # Resolves the asset through api.github.com, which allows only 60
+          # unauthenticated requests per hour per IP — and runners share IPs.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./scripts/fetch-sdcpp.sh --target ${{ matrix.target }}
 
       # Vendor the Pyodide runtime + wheels into static/pyodide/ (gitignored,

@@ -87,21 +87,50 @@ command -v unzip >/dev/null || { echo "ERROR: unzip is required"; exit 1; }
 
 echo ">> Fetching sd-server (stable-diffusion.cpp $SDCPP_VERSION) for $TARGET..."
 
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+
 API="https://api.github.com/repos/leejet/stable-diffusion.cpp/releases/tags/$SDCPP_VERSION"
-URL=$(curl -sSL "$API" \
-    | grep -o '"browser_download_url": *"[^"]*"' \
-    | sed 's/.*"browser_download_url": *"\([^"]*\)".*/\1/' \
+
+# Authenticate when a token is there, and CHECK THE STATUS.
+#
+# api.github.com allows 60 unauthenticated requests per hour per IP, and CI
+# runners share IPs, so a release build can get a 403 whose body is an error
+# object with no asset URLs in it. Read with `curl -sSL` and piped into grep
+# that looks exactly like "upstream renamed its assets" — which is what this
+# used to report, sending you to check a pattern that was never wrong.
+AUTH=()
+[ -n "${GITHUB_TOKEN:-}" ] && AUTH=(-H "Authorization: Bearer $GITHUB_TOKEN")
+
+CODE=$(curl -sSL -o "$TMP/release.json" -w '%{http_code}' \
+    -H "Accept: application/vnd.github+json" \
+    "${AUTH[@]}" "$API")
+
+if [ "$CODE" != "200" ]; then
+    echo "ERROR: the GitHub API returned HTTP $CODE for"
+    echo "       $API"
+    if grep -qi "rate limit" "$TMP/release.json"; then
+        echo "       Rate limited. Export GITHUB_TOKEN (any token raises the"
+        echo "       limit to 5000/hour); CI passes secrets.GITHUB_TOKEN."
+    fi
+    exit 1
+fi
+
+# Matched on the asset URLs only. Deliberately not the two-step
+# `grep -o '"browser_download_url": *"..."' | sed` this replaced: a quantified
+# space in a BRE is the kind of thing GNU and BSD grep disagree about, and this
+# script has to work on a macOS runner as well as a Linux one.
+URL=$(grep -o 'https://[^"]*\.zip' "$TMP/release.json" \
     | grep -E "$ASSET_RE" \
     | head -1)
 
 if [ -z "$URL" ]; then
     echo "ERROR: no asset matching /$ASSET_RE/ in release $SDCPP_VERSION."
-    echo "       Upstream may have renamed its assets; check the pattern above."
+    echo "       Upstream may have renamed its assets. It currently ships:"
+    grep -o 'https://[^"]*\.zip' "$TMP/release.json" | sed 's#.*/#         #'
     exit 1
 fi
 
-TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
 echo "   $URL"
 curl -sSL --fail -o "$TMP/sd.zip" "$URL"
 unzip -q -o "$TMP/sd.zip" -d "$TMP/sd"
