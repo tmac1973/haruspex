@@ -329,11 +329,11 @@ async function handoffToCoding(
 	entries: EntryOutcome[]
 ): Promise<string> {
 	const { job, runId } = ctx;
-	if (ctx.trigger !== 'chained') {
-		return 'Nothing chained — this run was started manually.';
-	}
 	if (!cfg.coding_run) {
 		return 'Nothing chained — this run carried no coding configuration.';
+	}
+	if (ctx.trigger !== 'chained' && cfg.hand_off === false) {
+		return 'Nothing chained — this run was started by hand, with the coding handoff off.';
 	}
 
 	// The coding run's preflight can see which art is missing, so it plans

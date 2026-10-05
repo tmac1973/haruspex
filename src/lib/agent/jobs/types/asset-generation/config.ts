@@ -67,6 +67,12 @@ export interface AssetGenerationConfig {
 	 * way guided planning carries its own. Null for a standalone run.
 	 */
 	coding_run: Record<string, unknown> | null;
+	/**
+	 * Whether a run started by hand still starts the coding run. A chained run
+	 * always does. Null means yes: re-running a chain's asset stage by hand is
+	 * how a broken chain is resumed.
+	 */
+	hand_off: boolean | null;
 	/** Set by a chain: the planning job's name, for the coding job's name. */
 	chain_base_name: string | null;
 	/**
@@ -126,6 +132,7 @@ export function parseAssetGenerationConfig(json: string | null): AssetGeneration
 			raw.coding_run && typeof raw.coding_run === 'object' && !Array.isArray(raw.coding_run)
 				? (raw.coding_run as Record<string, unknown>)
 				: null,
+		hand_off: optionalBool(raw.hand_off),
 		chain_base_name:
 			typeof raw.chain_base_name === 'string' && raw.chain_base_name.trim()
 				? raw.chain_base_name.trim()

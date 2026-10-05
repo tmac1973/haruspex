@@ -123,3 +123,14 @@ describe('coding_run', () => {
 		}
 	});
 });
+
+describe('hand_off', () => {
+	it('is null when absent, so a chain-made job hands off by default', () => {
+		expect(parseAssetGenerationConfig(null).hand_off).toBeNull();
+	});
+
+	it('keeps an explicit choice', () => {
+		expect(parseAssetGenerationConfig('{"hand_off":false}').hand_off).toBe(false);
+		expect(parseAssetGenerationConfig('{"hand_off":true}').hand_off).toBe(true);
+	});
+});

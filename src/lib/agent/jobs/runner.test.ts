@@ -3421,15 +3421,48 @@ describe('jobs runner — asset generation', () => {
 		expect(input.description).toContain('thing_0');
 	});
 
-	it('chains nothing on a manual run, and says so', async () => {
-		mocks.getJob.mockResolvedValueOnce(assetJob({ coding_run: { plan_dir: 'plan/x/' } }));
+	it('still hands off when a chain-made job is re-run by hand', async () => {
+		// Re-running the asset stage by hand is how a broken chain is resumed.
+		mocks.getJob.mockImplementation(async (id: number) =>
+			id === 1
+				? assetJob({ coding_run: { plan_dir: 'plan/x/' } })
+				: makeJob({ id: 901, job_type: 'autonomous_coding', steps: [], working_dir: '/repo' })
+		);
+		wireFs(goodSpec(), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(mocks.createJob).toHaveBeenCalledTimes(1);
+		const handoff = mocks.markRunStepFinished.mock.calls.filter((c: unknown[]) => c[1] === 4);
+		expect(String(handoff.at(-1)?.[3])).toContain('Started coding job');
+	});
+
+	it('chains nothing on a manual run with the handoff off, and says so', async () => {
+		mocks.getJob.mockResolvedValueOnce(
+			assetJob({ coding_run: { plan_dir: 'plan/x/' }, hand_off: false })
+		);
 		wireFs(goodSpec(), { recipe: goodRecipe() });
 		const { enqueue, getCurrentRun } = await freshRunner();
 		await enqueue(1);
 		await settle(getCurrentRun);
 
 		expect(mocks.createJob).not.toHaveBeenCalled();
-		expect(getCurrentRun()!.steps[4].output).toContain('started manually');
+		expect(getCurrentRun()!.steps[4].output).toContain('handoff off');
+	});
+
+	it('a chained run hands off even with the handoff off', async () => {
+		mocks.getJob.mockImplementation(async (id: number) =>
+			id === 1
+				? assetJob({ coding_run: { plan_dir: 'plan/x/' }, hand_off: false })
+				: makeJob({ id: 901, job_type: 'autonomous_coding', steps: [], working_dir: '/repo' })
+		);
+		wireFs(goodSpec(), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1, 'chained');
+		await settle(getCurrentRun);
+
+		expect(mocks.createJob).toHaveBeenCalledTimes(1);
 	});
 
 	it('chains nothing when it carried no coding configuration', async () => {
@@ -3865,7 +3898,7 @@ describe('jobs runner — asset generation', () => {
 		const steps = getCurrentRun()!.steps;
 		expect(steps).toHaveLength(5);
 		expect(steps.every((s) => s.status === 'succeeded')).toBe(true);
-		expect(steps[4].output).toContain('manually');
+		expect(steps[4].output).toContain('no coding configuration');
 	});
 
 	it('will not even enqueue when no image backend is configured', async () => {
