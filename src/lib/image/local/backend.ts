@@ -119,20 +119,36 @@ async function ensureRunning(): Promise<LocalFamily> {
  * means no origin, no preflight, and no CORS configuration to get wrong.
  */
 async function call(path: string, body: unknown, signal?: AbortSignal): Promise<unknown> {
-	if (signal?.aborted) throw new ImageBackendError('cancelled', 'Generation cancelled.');
-	try {
-		const text = await invoke<string>('image_engine_request', {
-			path,
-			body: JSON.stringify(body),
-			timeoutMs: GENERATE_TIMEOUT_MS
-		});
-		return JSON.parse(text);
-	} catch (e) {
+	for (let attempt = 1; ; attempt++) {
 		if (signal?.aborted) throw new ImageBackendError('cancelled', 'Generation cancelled.');
-		const msg = e instanceof Error ? e.message : String(e);
-		throw new ImageBackendError('unreachable', `The image engine failed ${path} — ${msg}`);
+		try {
+			const text = await invoke<string>('image_engine_request', {
+				path,
+				body: JSON.stringify(body),
+				timeoutMs: GENERATE_TIMEOUT_MS
+			});
+			return JSON.parse(text);
+		} catch (e) {
+			if (signal?.aborted) throw new ImageBackendError('cancelled', 'Generation cancelled.');
+			const msg = e instanceof Error ? e.message : String(e);
+			if (EMPTY_RESULT.test(msg) && attempt < EMPTY_RESULT_ATTEMPTS) {
+				await new Promise((r) => setTimeout(r, EMPTY_RESULT_RETRY_MS));
+				continue;
+			}
+			throw new ImageBackendError('unreachable', `The image engine failed ${path} — ${msg}`);
+		}
 	}
 }
+
+/**
+ * sd-server sometimes answers a 1024² Ming img2img with a 500 "generate_image
+ * returned no results" in a fifth of a second, before sampling starts, and the
+ * identical request succeeds straight after (2 of 9 in a row on 2026-10-05).
+ * It cost a whole asset run its style anchor, so it is retried, briefly.
+ */
+const EMPTY_RESULT = /generate_image returned no results/;
+const EMPTY_RESULT_ATTEMPTS = 3;
+const EMPTY_RESULT_RETRY_MS = 1000;
 
 /**
  * Make a texture tile: roll it by half so its seams cross in the middle, repaint
