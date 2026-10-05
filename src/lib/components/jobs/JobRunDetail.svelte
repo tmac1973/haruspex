@@ -3,21 +3,46 @@
 	import JobStepCard from '$lib/components/jobs/JobStepCard.svelte';
 	import { formatDuration } from '$lib/utils/format';
 	import { getJobRun, type JobRunStep, type JobRunWithSteps } from '$lib/stores/jobRuns.svelte';
-	import { getJobs } from '$lib/stores/jobs.svelte';
+	import { getJob, getJobs, type JobWithSteps } from '$lib/stores/jobs.svelte';
 	import JobRunStats from '$lib/components/jobs/JobRunStats.svelte';
-	import { stepStatsFromWire } from '$lib/agent/jobs/runner.svelte';
+	import { getCurrentRun, getPendingQueue, stepStatsFromWire } from '$lib/agent/jobs/runner.svelte';
+	import { canResumeChain } from '$lib/agent/jobs/chainResume';
 
 	interface Props {
 		runId: number;
 		onclose: () => void;
+		/** Run the job again as its chain would, so the chain carries on. */
+		onresume?: (jobId: number) => void;
 	}
 
-	const { runId, onclose }: Props = $props();
+	const { runId, onclose, onresume }: Props = $props();
 
 	let run = $state<JobRunWithSteps | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let expandedRendered = $state<Record<number, boolean>>({});
+
+	/** The full job, for its config: the summary list does not carry it. */
+	let fullJob = $state<JobWithSteps | null>(null);
+
+	const resumable = $derived(
+		!!run &&
+			!!fullJob &&
+			canResumeChain(
+				{
+					status: run.status,
+					trigger: run.trigger,
+					stepOutputs: run.steps.map((s) => s.output)
+				},
+				fullJob
+			)
+	);
+	/** Already running or waiting: a second copy would only run it twice. */
+	const jobBusy = $derived(
+		!!run &&
+			(getCurrentRun()?.jobId === run.job_id ||
+				getPendingQueue().some((q) => q.jobId === run!.job_id))
+	);
 
 	/**
 	 * Persisted rows mapped into the shape a live step carries, so the stats
@@ -55,10 +80,14 @@
 		loading = true;
 		run = null;
 		error = null;
+		fullJob = null;
 		getJobRun(id)
-			.then((r) => {
+			.then(async (r) => {
 				if (!r) error = 'Could not load run.';
-				else run = r;
+				else {
+					run = r;
+					fullJob = await getJob(r.job_id);
+				}
 			})
 			.finally(() => {
 				loading = false;
@@ -91,6 +120,20 @@
 			{/if}
 		</div>
 		<div class="header-right">
+			{#if resumable && onresume && run}
+				{@const jobId = run.job_id}
+				<button
+					type="button"
+					class="secondary"
+					disabled={jobBusy}
+					title={jobBusy
+						? 'This job is already running or queued'
+						: 'Run this stage again unattended, then start the next stage. Finished work is kept.'}
+					onclick={() => onresume(jobId)}
+				>
+					Resume chain
+				</button>
+			{/if}
 			<button type="button" class="secondary" onclick={onclose}>Close</button>
 		</div>
 	</div>
@@ -247,7 +290,17 @@
 		cursor: pointer;
 	}
 
-	button.secondary:hover {
+	button.secondary:hover:not(:disabled) {
 		border-color: var(--text-secondary);
+	}
+
+	button.secondary:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.header-right {
+		display: flex;
+		gap: 8px;
 	}
 </style>

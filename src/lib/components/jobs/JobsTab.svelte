@@ -82,10 +82,10 @@
 		void startRun(jobId);
 	}
 
-	async function startRun(jobId: number) {
+	async function startRun(jobId: number, trigger: 'manual' | 'chained' = 'manual') {
 		// Not blocked on a busy runner — the runner FIFO-queues behind the
 		// active run, and the queue badge is the feedback for that.
-		const runId = await enqueue(jobId, 'manual');
+		const runId = await enqueue(jobId, trigger);
 		if (runId !== null) {
 			selectedId = jobId;
 			selectedRunId = null;
@@ -134,7 +134,11 @@
 			<JobRunView ondone={() => (runViewOpen = false)} onhide={() => (runViewOpen = false)} />
 		{:else if selectedRunId !== null}
 			{#key selectedRunId}
-				<JobRunDetail runId={selectedRunId} onclose={closeRunDetail} />
+				<JobRunDetail
+					runId={selectedRunId}
+					onclose={closeRunDetail}
+					onresume={(jobId) => void startRun(jobId, 'chained')}
+				/>
 			{/key}
 		{:else if selectedId === null}
 			<div class="empty-state">
