@@ -4,6 +4,7 @@
 		".": {
 			"release-type": "node",
 			"package-name": "haruspex",
+			"last-release-sha": "6d54125b39608a7722078f2117339d5ea2301503",
 			"changelog-path": "CHANGELOG.md",
 			"include-component-in-tag": false,
 			"include-v-in-tag": true,
