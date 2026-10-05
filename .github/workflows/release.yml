@@ -144,7 +144,11 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           apt-get update
-          apt-get install -y git ca-certificates curl sudo
+          # unzip is for sd-server. Every other fetch script reaches for it only
+          # in a `*.zip)` branch, which no Linux target takes — they use
+          # tar.gz — so ubuntu:25.10 not carrying it went unnoticed until
+          # stable-diffusion.cpp, whose asset is a zip on every platform.
+          apt-get install -y git ca-certificates curl sudo unzip
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
