@@ -113,6 +113,7 @@ check: ## Run all checks (lint, format, typecheck, drift guards, test)
 	npm run check
 	node scripts/check-ipc.mjs
 	node scripts/check-constants.mjs
+	node scripts/check-sidecar-coverage.mjs
 	npm run test
 	cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 	cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings

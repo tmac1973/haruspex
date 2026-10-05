@@ -267,6 +267,15 @@ jobs:
           ./scripts/fetch-node.sh --target ${{ matrix.target }}
           ./scripts/fetch-uv.sh --target ${{ matrix.target }}
 
+      # The bundled image engine. Not optional in the way a missing feature is
+      # optional: tauri-build validates every externalBin path at compile time,
+      # so without this the whole build fails with "resource path ... doesn't
+      # exist". Calls the same script dev setup uses, so the pinned
+      # stable-diffusion.cpp version cannot drift between dev and release.
+      - name: Download sd-server (bundled image engine)
+        shell: bash
+        run: ./scripts/fetch-sdcpp.sh --target ${{ matrix.target }}
+
       # Vendor the Pyodide runtime + wheels into static/pyodide/ (gitignored,
       # so absent on a fresh checkout). vite build copies static/ verbatim,
       # so without this the shipped app has no local Pyodide assets and the
