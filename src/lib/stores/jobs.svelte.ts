@@ -311,6 +311,38 @@ export function getJob(id: number): Promise<JobWithSteps | null> {
 	});
 }
 
+/**
+ * Copy a stored job — config, model and steps — as a new manual job named
+ * "<name> (copy)". The schedule is dropped so the copy never fires on its own
+ * beside the original. Returns the new job's id, or null on failure.
+ */
+export async function duplicateJob(id: number): Promise<number | null> {
+	const job = await getJob(id);
+	if (!job) return null;
+	const input: JobInput = {
+		name: `${job.name} (copy)`,
+		description: job.description,
+		working_dir: job.working_dir,
+		auto_approve_tools: job.auto_approve_tools,
+		job_type: job.job_type,
+		schedule_kind: 'manual',
+		schedule_config: null,
+		next_due_at: null,
+		type_config: job.type_config,
+		model_remote_base_url: job.model_remote_base_url,
+		model_remote_api_key: job.model_remote_api_key,
+		model_remote_api_key_id: job.model_remote_api_key_id,
+		model_remote_model_id: job.model_remote_model_id,
+		model_remote_context_size: job.model_remote_context_size,
+		model_remote_vision_supported: job.model_remote_vision_supported,
+		model_advanced: job.model_advanced
+	};
+	const newId = await createJob(input);
+	if (newId === null || job.steps.length === 0) return newId;
+	const steps = job.steps.map((s) => ({ prompt: s.prompt, deep_research: s.deep_research }));
+	return (await replaceJobSteps(newId, steps)) ? newId : null;
+}
+
 export function listDueJobs(nowMs: number): Promise<JobSummary[]> {
 	return dbQuery<JobSummary[]>({
 		cmd: 'db_list_due_jobs',

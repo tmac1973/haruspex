@@ -357,4 +357,58 @@ describe('jobs store CRUD', () => {
 			nextDueAt: null
 		});
 	});
+
+	it('duplicateJob copies config, model and steps as a manual job', async () => {
+		const original: JobWithSteps = {
+			...baseInput,
+			id: 24,
+			created_at: 1,
+			updated_at: 2,
+			name: 'bronze liver',
+			job_type: 'autonomous_coding',
+			schedule_kind: 'daily',
+			schedule_config: '{"time":"09:00"}',
+			next_due_at: 5000,
+			type_config: '{"plan_dir":"plan/"}',
+			model_remote_base_url: 'http://compute:3000',
+			model_remote_model_id: 'flash',
+			model_advanced: '{"reasoning":"inherit"}',
+			steps: [{ id: 9, ordering: 0, prompt: 'go', deep_research: true }]
+		};
+		vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+			if (cmd === 'db_get_job') return original;
+			if (cmd === 'db_create_job') return 31;
+			if (cmd === 'db_list_jobs') return [];
+			return undefined;
+		});
+		const { duplicateJob } = await import('$lib/stores/jobs.svelte');
+		expect(await duplicateJob(24)).toBe(31);
+		const createArgs = vi.mocked(invoke).mock.calls.find((c) => c[0] === 'db_create_job')?.[1] as {
+			input: JobInput;
+		};
+		expect(createArgs.input).toMatchObject({
+			name: 'bronze liver (copy)',
+			job_type: 'autonomous_coding',
+			schedule_kind: 'manual',
+			schedule_config: null,
+			next_due_at: null,
+			type_config: '{"plan_dir":"plan/"}',
+			model_remote_base_url: 'http://compute:3000',
+			model_remote_model_id: 'flash',
+			model_advanced: '{"reasoning":"inherit"}'
+		});
+		expect(createArgs.input).not.toHaveProperty('id');
+		expect(invoke).toHaveBeenCalledWith('db_replace_job_steps', {
+			jobId: 31,
+			steps: [{ prompt: 'go', deep_research: true }]
+		});
+		vi.mocked(invoke).mockReset();
+	});
+
+	it('duplicateJob returns null when the job is gone', async () => {
+		vi.mocked(invoke).mockResolvedValueOnce(null);
+		const { duplicateJob } = await import('$lib/stores/jobs.svelte');
+		expect(await duplicateJob(99)).toBeNull();
+		expect(invoke).not.toHaveBeenCalledWith('db_create_job', expect.anything());
+	});
 });
