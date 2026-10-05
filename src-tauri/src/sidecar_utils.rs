@@ -532,15 +532,39 @@ mod tests {
         else {
             return; // no python3: nothing to hold the port with
         };
-        for _ in 0..50 {
+        // Wait until python3 is genuinely listening, and say so when it never
+        // is. `kill_process_on_port` returns `Ok(())` the moment nothing holds
+        // the port, so a holder that has not come up yet does not fail this
+        // test's subject — it panics on `expect_err` with `not ours: ()`, which
+        // names neither the port nor Python. The budget was one second, which a
+        // cold interpreter on a loaded CI runner can miss.
+        //
+        // The early-exit check matters as much as the budget: the port is found
+        // by binding a probe listener and dropping it, so python3 can lose the
+        // race for it and die with "Address already in use" — and then waiting
+        // longer cannot help.
+        let mut held = false;
+        for _ in 0..200 {
             if std::net::TcpStream::connect(localhost(port)).is_ok() {
+                held = true;
                 break;
             }
-            sleep(Duration::from_millis(20)).await;
+            if let Ok(Some(status)) = other.try_wait() {
+                eprintln!("skipping: python3 exited before binding {port} ({status})");
+                return;
+            }
+            sleep(Duration::from_millis(50)).await;
         }
+        if !held {
+            eprintln!("skipping: python3 never bound {port} within 10s");
+            let _ = other.kill();
+            let _ = other.wait();
+            return;
+        }
+
         let err = kill_process_on_port(port, "test-sidecar", None)
             .await
-            .expect_err("not ours");
+            .expect_err("a port held by python3 must be reported, not killed");
         // Named by its command line, whatever the platform calls Python
         // (macOS: ".../Python.app/Contents/MacOS/Python").
         assert!(
