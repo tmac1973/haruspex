@@ -148,6 +148,19 @@
 	/>
 </div>
 
+{#if cfg.coding_run}
+	<div class="field">
+		<label class="check">
+			<input type="checkbox" bind:checked={cfg.hand_off} />
+			<span>Start the coding run when done</span>
+		</label>
+		<Tooltip
+			label="About the coding handoff"
+			text="This job was made by a plan's chain. A run you start here creates and starts the coding job too, as the chain would have. A chained run always does."
+		/>
+	</div>
+{/if}
+
 <div class="field">
 	<label class="check">
 		<input type="checkbox" bind:checked={cfg.use_git} />

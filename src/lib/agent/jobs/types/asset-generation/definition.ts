@@ -1,4 +1,5 @@
 import type { JobTypeDefinition, PlannedStep } from '../types';
+import type { ModelColumns } from '../../chainModel';
 import { runAssetGenerationPipeline } from './pipeline';
 import {
 	parseAssetGenerationConfig,
@@ -25,6 +26,11 @@ export interface AssetGenerationEditorState {
 	concurrency: number;
 	vision_judge: boolean;
 	use_git: boolean;
+	hand_off: boolean;
+	/** Carried untouched: a chain sets these, and the editor has no fields for them. */
+	coding_run: Record<string, unknown> | null;
+	chain_base_name: string | null;
+	chain_coding_model: ModelColumns | null;
 }
 
 /**
@@ -93,7 +99,11 @@ export const assetGenerationJobType: JobTypeDefinition = {
 		anchor_attempts: DEFAULT_ANCHOR_ATTEMPTS,
 		concurrency: DEFAULT_CONCURRENCY,
 		vision_judge: true,
-		use_git: true
+		use_git: true,
+		hand_off: true,
+		coding_run: null,
+		chain_base_name: null,
+		chain_coding_model: null
 	}),
 	configFromJob: (typeConfig) => {
 		const c = parseAssetGenerationConfig(typeConfig);
@@ -106,7 +116,11 @@ export const assetGenerationJobType: JobTypeDefinition = {
 			anchor_attempts: c.anchor_attempts ?? DEFAULT_ANCHOR_ATTEMPTS,
 			concurrency: c.concurrency ?? DEFAULT_CONCURRENCY,
 			vision_judge: c.vision_judge ?? true,
-			use_git: c.use_git ?? true
+			use_git: c.use_git ?? true,
+			hand_off: c.hand_off ?? true,
+			coding_run: c.coding_run,
+			chain_base_name: c.chain_base_name,
+			chain_coding_model: c.chain_coding_model
 		};
 	},
 	configToJson: (config) => {
@@ -120,7 +134,16 @@ export const assetGenerationJobType: JobTypeDefinition = {
 			anchor_attempts: s.anchor_attempts,
 			concurrency: s.concurrency,
 			vision_judge: s.vision_judge,
-			use_git: s.use_git
+			use_git: s.use_git,
+			// Only meaningful, and only written, for a job a chain made.
+			...(s.coding_run
+				? {
+						hand_off: s.hand_off,
+						coding_run: s.coding_run,
+						chain_base_name: s.chain_base_name ?? undefined,
+						chain_coding_model: s.chain_coding_model ?? undefined
+					}
+				: {})
 		});
 	},
 	validate: ({ workingDir, config }) => {
