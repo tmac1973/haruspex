@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.2.3](https://github.com/tmac1973/haruspex/compare/v0.2.2...v0.2.3) (2026-10-05)
+
+
+### Features
+
+* **assets:** flag a sheet cut that has a neighbour stuck to it, and ask the judge ([#261](https://github.com/tmac1973/haruspex/issues/261)) ([4eb9e1c](https://github.com/tmac1973/haruspex/commit/4eb9e1cee34ffe0a79c1075244fc53b1bb8ca325))
+* **chat:** draw images with the configured image backend, inline and kept across reloads ([#262](https://github.com/tmac1973/haruspex/issues/262)) ([11a4ecb](https://github.com/tmac1973/haruspex/commit/11a4ecb6cf91f887f804122212dda59afe14c5fb))
+* **coding:** an unattended run is refused when its shell reaches Haruspex's own data or services ([#259](https://github.com/tmac1973/haruspex/issues/259)) ([352fffe](https://github.com/tmac1973/haruspex/commit/352fffe0bbf41376b2d252836f2b096ec8639314))
+* **email:** draft replies and new mail for the user to review and send ([#266](https://github.com/tmac1973/haruspex/issues/266)) ([8adc022](https://github.com/tmac1973/haruspex/commit/8adc0228854add71d8c7b44ce201e500501f96af))
+* **email:** keep account passwords in the system keychain ([#265](https://github.com/tmac1973/haruspex/issues/265)) ([49b7b27](https://github.com/tmac1973/haruspex/commit/49b7b27e01cc05d016c4cf8708ecc7179228a831))
+* **image:** generate a game's art: sprites, sheets and tiling textures, on ComfyUI or a bundled engine ([#252](https://github.com/tmac1973/haruspex/issues/252)) ([6f43106](https://github.com/tmac1973/haruspex/commit/6f43106ca4b625a72eb402eab18edf556e6f64a2))
+* **jobs:** browse and edit jobs while a run is live; chained stages go first in the queue ([#258](https://github.com/tmac1973/haruspex/issues/258)) ([3cdb3fe](https://github.com/tmac1973/haruspex/commit/3cdb3fea6497f6c10dd3db252b8ed210c627ce19))
+* **jobs:** duplicate a job from its editor ([#281](https://github.com/tmac1973/haruspex/issues/281)) ([5f65da4](https://github.com/tmac1973/haruspex/commit/5f65da434f84dc1ae9e63fba103fbd712f6cb110))
+* **jobs:** name chained coding jobs after the plan, and let each chained stage pick its model ([#256](https://github.com/tmac1973/haruspex/issues/256)) ([fbfaf07](https://github.com/tmac1973/haruspex/commit/fbfaf07568acbbff02ff0814bb615d3e62a53153))
+* **jobs:** record context pressure per step, and a lite verification mode for planning ([#267](https://github.com/tmac1973/haruspex/issues/267)) ([298ee38](https://github.com/tmac1973/haruspex/commit/298ee38c441ee6b1050ad0cd0184b4fea34dcc9c))
+* **planning:** show the outline as a readable list under a short question ([#257](https://github.com/tmac1973/haruspex/issues/257)) ([25a4f81](https://github.com/tmac1973/haruspex/commit/25a4f8185c31319854a258ca6af2407a19de7663))
+* **shell:** the code-mode assistant can make sprites, icons and textures into the project ([#263](https://github.com/tmac1973/haruspex/issues/263)) ([60ee040](https://github.com/tmac1973/haruspex/commit/60ee0400dbe87ea1539d1fbb3ace532483147fc1))
+
+
+### Bug Fixes
+
+* **image:** cancelling removes our own ComfyUI prompt instead of interrupting the server ([#260](https://github.com/tmac1973/haruspex/issues/260)) ([5ad71fb](https://github.com/tmac1973/haruspex/commit/5ad71fb0ebd1c960e01839b18ea78ac20d2916aa))
+* **jobs:** removing a queued run takes it out of the queue, so it never starts ([#275](https://github.com/tmac1973/haruspex/issues/275)) ([d33e3cc](https://github.com/tmac1973/haruspex/commit/d33e3ccee1c5f53898c42d82f94aaaa723d02ec0))
+* **jobs:** research steps finish their answer instead of failing at the response limit ([#277](https://github.com/tmac1973/haruspex/issues/277)) ([2181869](https://github.com/tmac1973/haruspex/commit/21818694bb60a4a3d3014f7a49bea3544270f0a6))
+* **packaging:** namespace bundled sidecars so installs don't claim system paths ([#282](https://github.com/tmac1973/haruspex/issues/282)) ([e34d884](https://github.com/tmac1973/haruspex/commit/e34d8849aa13b20d1f735b491b05c3ccf23f917b))
+* **runners:** print the hostname, and the default route's address ([#272](https://github.com/tmac1973/haruspex/issues/272)) ([570621e](https://github.com/tmac1973/haruspex/commit/570621e12bfbc1892e94f9f02b34842cec8e8916))
+* **sidecars:** sidecars die with the app, and a port is only freed from our own process ([#253](https://github.com/tmac1973/haruspex/issues/253)) ([de2a918](https://github.com/tmac1973/haruspex/commit/de2a918faf21e6ed86952598cc2bcb86c4ab383d))
+
+
+### Performance Improvements
+
+* **email:** list from headers and a short preview, bound every call, and make reads cancellable ([#264](https://github.com/tmac1973/haruspex/issues/264)) ([e864b53](https://github.com/tmac1973/haruspex/commit/e864b53f4fde66260082e790fd0c139db7d9129d))
+
+
+### Documentation
+
+* **email:** drop the read-only / Phase 10.1 wording from the code ([#270](https://github.com/tmac1973/haruspex/issues/270)) ([1609bec](https://github.com/tmac1973/haruspex/commit/1609bec88302f2389b76bc81de2cf7627521a9b8))
+* **plan:** phase 12 audit measurement — nothing crosses at 256K ([#276](https://github.com/tmac1973/haruspex/issues/276)) ([d96cc85](https://github.com/tmac1973/haruspex/commit/d96cc85131fed498dee381fd49a1ae743745971e))
+* **plan:** phase 12 coding measurement — nothing crosses; the measurement is complete ([#279](https://github.com/tmac1973/haruspex/issues/279)) ([86aa672](https://github.com/tmac1973/haruspex/commit/86aa672c5e8216123f3f97f18ffc534f8b08c6e2))
+* **plan:** phase 12 research measurement — nothing crosses; run 94's failure was the response cap ([#278](https://github.com/tmac1973/haruspex/issues/278)) ([ce477ec](https://github.com/tmac1973/haruspex/commit/ce477ecb5b065d5b4c700ae4cd31e667ec46e20d))
+* **plan:** phase 15 — the bundled image engine on another machine, and OpenAI-images-API servers ([#271](https://github.com/tmac1973/haruspex/issues/271)) ([5ac004c](https://github.com/tmac1973/haruspex/commit/5ac004cc02a54fad383f95e14d3df0f4b2cbf189))
+* **plan:** phase 16, faster coding runs ([#280](https://github.com/tmac1973/haruspex/issues/280)) ([c51f531](https://github.com/tmac1973/haruspex/commit/c51f531817504d6bd0bc4c233d9df28a53bff5ea))
+* **readme:** bring it up to date with this week's features ([#269](https://github.com/tmac1973/haruspex/issues/269)) ([eec3775](https://github.com/tmac1973/haruspex/commit/eec3775f0e781b1d3ea236eec1ed741d9f6d34e0))
+
 ## [0.2.2](https://github.com/tmac1973/haruspex/compare/v0.2.1...v0.2.2) (2026-09-21)
 
 
