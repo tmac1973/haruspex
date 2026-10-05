@@ -45,6 +45,11 @@ jobs:
       # fail CI when src/lib/ports.ts and sidecar_utils.rs disagree.
       - name: Check hand-synced constants
         run: node scripts/check-constants.mjs
+      # An externalBin nothing fetches fails the release build outright, and CI
+      # cannot see it: CI stubs every sidecar, and the build matrix only runs
+      # when a tag is cut. Checked here so the gap surfaces before the tag.
+      - name: Check sidecar release coverage
+        run: node scripts/check-sidecar-coverage.mjs
 
   # UI flows in a real browser, against mocked IPC and the scripted fake LLM
   # (e2e/, docs/testing.md). Inside the pinned Playwright image, so the
