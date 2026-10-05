@@ -134,7 +134,7 @@ impl TtsEngine {
 
         let sidecar = app
             .shell()
-            .sidecar("koko")
+            .sidecar("haruspex-koko")
             .map_err(|e| format!("Failed to create koko sidecar: {}", e))?
             .args(&args);
 

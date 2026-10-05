@@ -45,7 +45,7 @@ if [ -z "$UV_VERSION" ]; then
     exit 0
 fi
 
-UV_DEST="$BINARIES_DIR/uv-$TARGET_TRIPLE"
+UV_DEST="$BINARIES_DIR/haruspex-uv-$TARGET_TRIPLE"
 # Windows sidecars need the .exe suffix on top of the triple for Tauri.
 case "$TARGET_TRIPLE" in *windows*) UV_DEST="$UV_DEST.exe" ;; esac
 

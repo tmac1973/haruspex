@@ -24,6 +24,9 @@ export function stubBinary() {
 	return join(TARGET, `sidecar-stub${exe}`);
 }
 /** The sidecars the app can start, by the names Tauri gives them next to the app. */
-export const SIDECARS = ['llama-server', 'whisper-server', 'koko', 'sd-server'].map(
-	(n) => `${n}${exe}`
-);
+export const SIDECARS = [
+	'haruspex-llama-server',
+	'haruspex-whisper-server',
+	'haruspex-koko',
+	'haruspex-sd-server'
+].map((n) => `${n}${exe}`);

@@ -13,11 +13,21 @@
 //! filesystem paths instead.
 //!
 //! **Layouts.** Tauri copies `bundle.externalBin` entries next to the running
-//! executable — `target/debug/node` under `tauri dev`, the install's bin
-//! directory when packaged — so one lookup covers both. The npm tree is a
+//! executable — `target/debug/haruspex-node` under `tauri dev`, the install's
+//! bin directory when packaged — so one lookup covers both. The npm tree is a
 //! bundle *resource*, and resources are not staged into `target/` during dev,
 //! so it follows the source-tree-first pattern `shell::integration_dir` already
 //! uses.
+//!
+//! **Why every bundled binary is `haruspex-` prefixed.** That install bin
+//! directory is `/usr/bin` on Linux: the deb and rpm bundlers put the app and
+//! all of its sidecars there, under the externalBin stem with the target
+//! triple stripped. Shipping a file called `node` or `uv` means claiming a
+//! name the distribution has already given to a real package, and rpm refuses
+//! the whole transaction rather than let two packages own one path — so the
+//! app would not install at all on a machine that has nodejs or uv. The prefix
+//! keeps us inside our own namespace. [`node_shim_dir`] covers the one thing
+//! it costs.
 //!
 //! **npm is never a shim.** It is invoked as `node <npm-cli.js>`. The platform
 //! `npm` / `npm.cmd` wrappers resolve their own interpreter off `PATH`, and a
@@ -84,6 +94,14 @@ fn exe_name(stem: &str) -> String {
     }
 }
 
+/// The file name a tool is bundled under, from the name it is known by.
+///
+/// Every `bundle.externalBin` entry carries this prefix; see the module docs
+/// on why `node` and `uv` cannot be shipped under their own names.
+fn bundled_stem(tool: &str) -> String {
+    format!("haruspex-{tool}")
+}
+
 /// Look for a Tauri-staged sidecar directly inside `dir`. Tauri strips the
 /// target triple when it copies `externalBin`, so the name is the bare stem.
 fn binary_in(dir: &Path, stem: &str) -> Option<PathBuf> {
@@ -95,8 +113,9 @@ fn binary_in(dir: &Path, stem: &str) -> Option<PathBuf> {
 /// `src-tauri/binaries/`. Only used as a debug fallback: it covers `cargo run`
 /// and `cargo test` outside `tauri dev`, where nothing has staged the sidecars.
 ///
-/// `node-modules` lives in the same directory and shares the `node-` prefix, so
-/// directories are skipped rather than matched.
+/// Directories are skipped rather than matched. `node-modules` no longer
+/// shares a prefix with `haruspex-node-`, but a bundled stem that happens to
+/// prefix a sibling directory must not be handed back as an interpreter.
 ///
 /// Gated to match its only callers. A release build stages every sidecar beside
 /// the executable, so reaching back into the source tree there would mean
@@ -141,18 +160,19 @@ fn source_binaries_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries")
 }
 
-fn resolve_binary(stem: &str) -> Result<PathBuf, String> {
+fn resolve_binary(tool: &str) -> Result<PathBuf, String> {
+    let stem = bundled_stem(tool);
     if let Some(dir) = staged_dir() {
-        if let Some(found) = binary_in(&dir, stem) {
+        if let Some(found) = binary_in(&dir, &stem) {
             return Ok(found);
         }
     }
     #[cfg(debug_assertions)]
-    if let Some(found) = binary_in_source_tree(&source_binaries_dir(), stem) {
+    if let Some(found) = binary_in_source_tree(&source_binaries_dir(), &stem) {
         return Ok(found);
     }
     Err(format!(
-        "bundled {stem} not found — run ./scripts/dev-setup.sh --skip-build --skip-models, \
+        "bundled {tool} not found — run ./scripts/dev-setup.sh --skip-build --skip-models, \
          or reinstall the app"
     ))
 }
@@ -203,6 +223,72 @@ pub fn npm_cli_path(app: &AppHandle) -> Result<PathBuf, String> {
     )
 }
 
+/// Point `link` at `target`, cheaply and idempotently.
+///
+/// A symlink where there is one to be had. [`crate::image_engine::colocate`]
+/// copies for the same job, but it moves a 2 MB binary; Node is ~110 MB, and
+/// duplicating that into the user's data directory to work around a naming
+/// rule is not a trade worth making. Windows needs privileges for symlinks, so
+/// it gets a hard link and falls back to a copy across volumes.
+#[cfg(unix)]
+fn place_shim(target: &Path, link: &Path) -> std::io::Result<()> {
+    if std::fs::read_link(link).is_ok_and(|current| current == target) {
+        return Ok(());
+    }
+    let _ = std::fs::remove_file(link);
+    std::os::unix::fs::symlink(target, link)
+}
+
+#[cfg(windows)]
+fn place_shim(target: &Path, link: &Path) -> std::io::Result<()> {
+    // Size, as `colocate` does: enough to notice that an app upgrade replaced
+    // the interpreter this link was made from.
+    let same = match (std::fs::metadata(target), std::fs::metadata(link)) {
+        (Ok(a), Ok(b)) => a.len() == b.len(),
+        _ => false,
+    };
+    if same {
+        return Ok(());
+    }
+    let _ = std::fs::remove_file(link);
+    std::fs::hard_link(target, link).or_else(|_| std::fs::copy(target, link).map(|_| ()))
+}
+
+/// A directory holding the bundled Node under the name `node`, for npm's own
+/// children to find.
+///
+/// The one cost of the `haruspex-` prefix (see the module docs). npm puts
+/// `dirname(process.execPath)` on the `PATH` it gives a lifecycle script and
+/// then lets the script call plain `node`; that resolved before the prefix
+/// only because the unprefixed copy was sitting in `/usr/bin`, which is to say
+/// it worked by way of the packaging bug. A link under our own data directory
+/// restores it without claiming a name the distribution owns.
+///
+/// This is the deliberate exception to "never a `PATH` we do not control": the
+/// directory is one we create, holding one entry we put there, and it is
+/// *prepended*, so it wins over whatever node the user's shell would find.
+///
+/// Best effort — `None` costs a lifecycle script its interpreter, and an
+/// install with no build hooks still succeeds, which is most of them.
+fn node_shim_dir(app: &AppHandle) -> Option<PathBuf> {
+    let node = node_path().ok()?;
+    let dir = app.path().app_local_data_dir().ok()?.join("runtime-bin");
+    std::fs::create_dir_all(&dir).ok()?;
+    let link = dir.join(exe_name("node"));
+    place_shim(&node, &link).ok()?;
+    Some(dir)
+}
+
+/// Prepend `dir` to the `PATH` the child will see.
+fn prepend_path(cmd: &mut Command, dir: &Path) {
+    let existing = std::env::var_os("PATH").unwrap_or_default();
+    let mut entries = vec![dir.to_path_buf()];
+    entries.extend(std::env::split_paths(&existing));
+    if let Ok(joined) = std::env::join_paths(entries) {
+        cmd.env("PATH", joined);
+    }
+}
+
 /// Strip every environment variable that could redirect a bundled runtime
 /// somewhere we did not put it. Applied to every runtime spawn.
 fn scrub_runtime_env(cmd: &mut Command) {
@@ -224,6 +310,9 @@ pub fn npm_command(app: &AppHandle) -> Result<Command, String> {
     let mut cmd = Command::new(node);
     cmd.arg(npm_cli);
     scrub_runtime_env(&mut cmd);
+    if let Some(shim) = node_shim_dir(app) {
+        prepend_path(&mut cmd, &shim);
+    }
     Ok(cmd)
 }
 
@@ -270,24 +359,25 @@ mod tests {
     #[test]
     fn binary_in_finds_a_staged_sidecar() {
         let dir = temp_dir("staged");
-        touch(&dir.join(exe_name("node")));
+        let node = exe_name(&bundled_stem("node"));
+        touch(&dir.join(&node));
         assert_eq!(
-            binary_in(&dir, "node"),
-            Some(dir.join(exe_name("node"))),
+            binary_in(&dir, &bundled_stem("node")),
+            Some(dir.join(&node)),
             "the staged layout drops the target triple"
         );
-        assert_eq!(binary_in(&dir, "uv"), None);
+        assert_eq!(binary_in(&dir, &bundled_stem("uv")), None);
         fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn binary_in_ignores_directories() {
         let dir = temp_dir("staged_dir");
-        fs::create_dir_all(dir.join(exe_name("node"))).unwrap();
+        fs::create_dir_all(dir.join(exe_name(&bundled_stem("node")))).unwrap();
         assert_eq!(
-            binary_in(&dir, "node"),
+            binary_in(&dir, &bundled_stem("node")),
             None,
-            "a directory named node is not an interpreter"
+            "a directory named haruspex-node is not an interpreter"
         );
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -295,30 +385,31 @@ mod tests {
     #[test]
     fn source_tree_lookup_matches_the_triple_suffix() {
         let dir = temp_dir("source");
-        touch(&dir.join("node-x86_64-unknown-linux-gnu"));
-        touch(&dir.join("uv-x86_64-unknown-linux-gnu"));
+        touch(&dir.join("haruspex-node-x86_64-unknown-linux-gnu"));
+        touch(&dir.join("haruspex-uv-x86_64-unknown-linux-gnu"));
         assert_eq!(
-            binary_in_source_tree(&dir, "node"),
-            Some(dir.join("node-x86_64-unknown-linux-gnu"))
+            binary_in_source_tree(&dir, &bundled_stem("node")),
+            Some(dir.join("haruspex-node-x86_64-unknown-linux-gnu"))
         );
         assert_eq!(
-            binary_in_source_tree(&dir, "uv"),
-            Some(dir.join("uv-x86_64-unknown-linux-gnu"))
+            binary_in_source_tree(&dir, &bundled_stem("uv")),
+            Some(dir.join("haruspex-uv-x86_64-unknown-linux-gnu"))
         );
         fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
-    fn source_tree_lookup_skips_the_npm_tree() {
-        // `node-modules/` sits beside `node-<triple>` and shares the prefix.
-        // Matching it would hand back a directory as the interpreter.
+    fn source_tree_lookup_never_returns_a_directory() {
+        // A bundled stem that prefixes a sibling directory must not be handed
+        // back as an interpreter. `node-modules/` was that sibling before the
+        // `haruspex-` prefix separated them.
         let dir = temp_dir("source_npm");
-        fs::create_dir_all(dir.join("node-modules").join("npm")).unwrap();
-        assert_eq!(binary_in_source_tree(&dir, "node"), None);
-        touch(&dir.join("node-aarch64-apple-darwin"));
+        fs::create_dir_all(dir.join("haruspex-node-modules")).unwrap();
+        assert_eq!(binary_in_source_tree(&dir, &bundled_stem("node")), None);
+        touch(&dir.join("haruspex-node-aarch64-apple-darwin"));
         assert_eq!(
-            binary_in_source_tree(&dir, "node"),
-            Some(dir.join("node-aarch64-apple-darwin"))
+            binary_in_source_tree(&dir, &bundled_stem("node")),
+            Some(dir.join("haruspex-node-aarch64-apple-darwin"))
         );
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -326,11 +417,66 @@ mod tests {
     #[test]
     fn source_tree_lookup_is_stable_across_several_cross_builds() {
         let dir = temp_dir("source_multi");
-        touch(&dir.join("node-x86_64-unknown-linux-gnu"));
-        touch(&dir.join("node-aarch64-apple-darwin"));
-        let first = binary_in_source_tree(&dir, "node");
-        assert_eq!(first, binary_in_source_tree(&dir, "node"));
-        assert_eq!(first, Some(dir.join("node-aarch64-apple-darwin")));
+        touch(&dir.join("haruspex-node-x86_64-unknown-linux-gnu"));
+        touch(&dir.join("haruspex-node-aarch64-apple-darwin"));
+        let first = binary_in_source_tree(&dir, &bundled_stem("node"));
+        assert_eq!(first, binary_in_source_tree(&dir, &bundled_stem("node")));
+        assert_eq!(first, Some(dir.join("haruspex-node-aarch64-apple-darwin")));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The regression guard for the packaging bug this prefix exists to fix.
+    ///
+    /// The deb and rpm bundlers install every `externalBin` into `/usr/bin`
+    /// under its stem with the triple stripped, and rpm fails the whole
+    /// transaction when two packages claim one path. `node`, `uv`, `ruff`,
+    /// `llama-server` and `koko` are all names Fedora ships packages for, so
+    /// an unprefixed entry here is an app that cannot be installed.
+    #[test]
+    fn every_bundled_binary_stays_out_of_the_distro_namespace() {
+        let conf = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tauri.conf.json");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&conf).unwrap()).unwrap();
+        let external = parsed["bundle"]["externalBin"].as_array().unwrap();
+        assert!(!external.is_empty(), "externalBin should not be empty");
+        for entry in external {
+            let path = entry.as_str().unwrap();
+            let stem = path.rsplit('/').next().unwrap();
+            assert!(
+                stem.starts_with("haruspex-"),
+                "externalBin {path} installs /usr/bin/{stem}, a name we do not own"
+            );
+        }
+    }
+
+    #[test]
+    fn a_shim_link_resolves_to_the_bundled_interpreter() {
+        let dir = temp_dir("shim");
+        let real = dir.join(exe_name(&bundled_stem("node")));
+        touch(&real);
+        let link = dir.join(exe_name("node"));
+        place_shim(&real, &link).unwrap();
+        assert!(link.exists(), "npm's children need a plain `node` to find");
+        // Idempotent: repeated npm commands must not churn the link.
+        place_shim(&real, &link).unwrap();
+        assert!(link.exists());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_shim_directory_wins_over_the_users_own_node() {
+        let dir = temp_dir("shim_path");
+        let mut cmd = Command::new("true");
+        prepend_path(&mut cmd, &dir);
+        let path = cmd
+            .as_std()
+            .get_envs()
+            .find(|(k, _)| *k == std::ffi::OsStr::new("PATH"))
+            .and_then(|(_, v)| v)
+            .expect("PATH should be set")
+            .to_owned();
+        let first = std::env::split_paths(&path).next().unwrap();
+        assert_eq!(first, dir, "the shim must come before the ambient PATH");
         fs::remove_dir_all(&dir).unwrap();
     }
 

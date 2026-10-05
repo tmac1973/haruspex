@@ -18,19 +18,19 @@
 			"identifier": "shell:allow-spawn",
 			"allow": [
 				{
-					"name": "binaries/llama-server",
+					"name": "binaries/haruspex-llama-server",
 					"sidecar": true
 				},
 				{
-					"name": "binaries/whisper-server",
+					"name": "binaries/haruspex-whisper-server",
 					"sidecar": true
 				},
 				{
-					"name": "binaries/koko",
+					"name": "binaries/haruspex-koko",
 					"sidecar": true
 				},
 				{
-					"name": "binaries/ruff",
+					"name": "binaries/haruspex-ruff",
 					"sidecar": true,
 					"args": [
 						"check",
@@ -44,7 +44,7 @@
 					]
 				},
 				{
-					"name": "binaries/ruff",
+					"name": "binaries/haruspex-ruff",
 					"sidecar": true,
 					"args": [
 						"check",
@@ -67,7 +67,7 @@
 			"identifier": "shell:allow-execute",
 			"allow": [
 				{
-					"name": "binaries/ruff",
+					"name": "binaries/haruspex-ruff",
 					"sidecar": true,
 					"args": [
 						"check",
@@ -81,7 +81,7 @@
 					]
 				},
 				{
-					"name": "binaries/ruff",
+					"name": "binaries/haruspex-ruff",
 					"sidecar": true,
 					"args": [
 						"check",

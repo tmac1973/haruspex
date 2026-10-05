@@ -57,7 +57,7 @@ impl WhisperServer {
 
         let sidecar = app
             .shell()
-            .sidecar("whisper-server")
+            .sidecar("haruspex-whisper-server")
             .map_err(|e| format!("Failed to create whisper sidecar: {}", e))?
             .args(&args);
 

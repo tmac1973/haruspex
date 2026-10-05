@@ -198,7 +198,7 @@ feature.
 | Upstream | [leejet/stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) |
 | Pinned version | `master-929-3f8527a` |
 | Acquired by | `./scripts/fetch-sdcpp.sh` (a download, not a build) |
-| Lands at | `src-tauri/binaries/sd-server-<triple>` |
+| Lands at | `src-tauri/binaries/haruspex-sd-server-<triple>` |
 | Its libraries | `src-tauri/binaries/sd-libs/` |
 | Reserved port | 8767 |
 

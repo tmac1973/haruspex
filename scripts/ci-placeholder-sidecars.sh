@@ -8,7 +8,7 @@ bin="$(git rev-parse --show-toplevel)/src-tauri/binaries"
 mkdir -p "$bin"
 cd "$bin"
 TARGET=$(rustc --print host-tuple)
-for name in llama-server whisper-server koko ruff node uv sd-server; do
+for name in haruspex-llama-server haruspex-whisper-server haruspex-koko haruspex-ruff haruspex-node haruspex-uv haruspex-sd-server; do
     [[ -e "${name}-${TARGET}" ]] && continue
     echo '#!/bin/sh' >"${name}-${TARGET}"
     chmod +x "${name}-${TARGET}"

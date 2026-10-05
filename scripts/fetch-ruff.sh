@@ -44,7 +44,7 @@ if [ -z "$RUFF_VERSION" ]; then
     exit 0
 fi
 
-RUFF_DEST="$BINARIES_DIR/ruff-$TARGET_TRIPLE"
+RUFF_DEST="$BINARIES_DIR/haruspex-ruff-$TARGET_TRIPLE"
 # Windows sidecars need the .exe suffix on top of the triple for Tauri.
 case "$TARGET_TRIPLE" in *windows*) RUFF_DEST="$RUFF_DEST.exe" ;; esac
 

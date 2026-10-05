@@ -6,7 +6,7 @@ import { STUB_PIDS, appBinary } from '../paths.mjs';
 
 /**
  * Phase 13's guarantee: a sidecar dies with the app, however the app ends.
- * Local mode with a stub model file makes the app start "llama-server" (the
+ * Local mode with a stub model file makes the app start "haruspex-llama-server" (the
  * stub from e2e/sidecar-stub); then the app is killed outright — SIGKILL,
  * TerminateProcess — which no exit handler survives.
  */
@@ -18,7 +18,7 @@ describe('sidecars die with the app', () => {
 		await seed(LOCAL);
 
 		let server = null;
-		await browser.waitUntil(() => (server = stubPid(STUB_PIDS, 'llama-server')) !== null, {
+		await browser.waitUntil(() => (server = stubPid(STUB_PIDS, 'haruspex-llama-server')) !== null, {
 			timeout: 30_000,
 			timeoutMsg: 'the app never started its model server'
 		});
