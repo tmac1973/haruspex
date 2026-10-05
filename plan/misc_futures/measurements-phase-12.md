@@ -1,6 +1,6 @@
 # Phase 12 — context measurements
 
-**Status: audit (run 93) and research (run 95) measured; autonomous coding to do.** Step 3 of phase 12 is a person's job: run one
+**Status: complete. Research (run 95), audit (run 93) and autonomous coding (run 96) measured; nothing crosses the line, so there is no `perf` commit.** Step 3 of phase 12 is a person's job: run one
 real job of each type on the job model (Qwen3.8-Flash on vLLM, compute:3000)
 with the build that records context pressure, and fill in the tables below
 from each run's Tokens card (Export JSON has every figure).
@@ -68,16 +68,47 @@ would change that: at 32K, sample 2's peak is four times the window.
 Run 91, the same job with five samples, recorded no token figures: it ran in
 a dev session hot-reloaded underneath it. Not used.
 
-## Autonomous coding — a 3-phase plan
+## Autonomous coding — a 3-phase plan (run 96)
 
-Run id: — · plan: — · context window: — · date: —
+Run id: 96 · Qwen3.8-Flash-Next (MXFP4-FP8) on vLLM, compute:3000 · context
+window: 262,144 · reasoning effort medium · date: 2026-10-04 · 96 min
 
-| Phase | Peak % | Trims | Worst | Calls | Model time | Crosses? |
-|---|---|---|---|---|---|---|
-| | | | | | | |
+The plan: `~/Projects/bronze-liver`, a text adventure in three phases of
+seven steps each (engine; temple with light, locks and containers; the
+augury, endings, score, save and load). Standard library Python, verified by
+`python3 -m unittest discover -s tests -t . -v`. The run built all three
+phases, one commit each, with 148 tests passing; the game plays to the good
+ending (110 of 110) from the terminal.
+
+The three plan phases all run inside the one "Coding loop" step.
+
+| Step | Peak | Peak % | Trims | Worst | Calls | Model time | Crosses? |
+|---|---|---|---|---|---|---|---|
+| Preflight | 18,423 | 7.0% | 0 | — | 15 | 8 min | no |
+| Coding loop (3 phases) | 67,744 | 25.8% | 0 | — | 179 | 83 min | no |
+| Finalize | 10,852 | 4.1% | 0 | — | 8 | 1 min | no |
+| Document | 18,034 | 6.9% | 0 | — | 22 | 2 min | no |
+
+Nothing crosses: the longest-running turn peaks at a quarter of the window.
+The coding fix (end a phase turn at 70% and continue from the TODO) isn't
+needed on this model and window.
+
+Worth knowing, though not a context matter: reasoning was 233K of the coding
+loop's 310K output tokens (75%), at medium effort. If coding runs need to be
+faster, the effort setting is the lever, not context.
 
 ## Fixes applied
 
-None yet. For each pattern that crossed, record the fix from phase 12 step 4
-and the re-measured numbers here. If nothing crossed, say so, and there is no
-`perf` commit.
+None. No step of any job type came near 85% of the window or needed a forced
+fit, so phase 12 step 4 applies no fix and there is no `perf` commit.
+
+The one failure the measuring found was output, not context: run 94's
+research step was cut off at the 8K response cap. That was fixed separately
+in #277 (the forced final answer without reasoning, a cut-off research answer
+kept, and a job's response cap scaled with its window).
+
+**Caveat:** this is one model with a 256K window. On a small local model the
+same runs would cross. The audit's 130K peak is four times a 32K window. The
+telemetry from the first commit (trims and worst cut per step, on the Tokens
+card) is what will show it, and the step 4 fixes remain the plan for when it
+does.
