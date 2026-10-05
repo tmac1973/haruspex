@@ -150,6 +150,48 @@ describe('generate', () => {
 		expect(sent().body.prompt).toBe('grass');
 	});
 
+	it("retries the engine's transient empty result, and gives up after three", async () => {
+		settings.imageLocalModelId = 'ming';
+		vi.useFakeTimers();
+		try {
+			const empty = new Error(
+				'The image engine refused /sdapi/v1/img2img (500 Internal Server Error): ' +
+					'{"error":"generate_image returned no results"}'
+			);
+			const base = tauri.invoke.getMockImplementation()!;
+			let fails = 2;
+			tauri.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+				if (cmd === 'image_engine_request' && fails-- > 0) throw empty;
+				return base(cmd, args);
+			});
+			const ok = localBackend.generate({ prompt: 'a coin', width: 64, height: 64, seed: 1 });
+			await vi.runAllTimersAsync();
+			await expect(ok).resolves.toBeTruthy();
+
+			fails = 3;
+			const failed = localBackend.generate({ prompt: 'a coin', width: 64, height: 64, seed: 1 });
+			const settled = expect(failed).rejects.toThrow(/generate_image returned no results/);
+			await vi.runAllTimersAsync();
+			await settled;
+			expect(tauri.invoke.mock.calls.filter(([c]) => c === 'image_engine_request').length).toBe(6);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('does not retry other engine failures', async () => {
+		settings.imageLocalModelId = 'ming';
+		const base = tauri.invoke.getMockImplementation()!;
+		tauri.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+			if (cmd === 'image_engine_request') throw new Error('connection refused');
+			return base(cmd, args);
+		});
+		await expect(
+			localBackend.generate({ prompt: 'a coin', width: 64, height: 64, seed: 1 })
+		).rejects.toThrow(/connection refused/);
+		expect(tauri.invoke.mock.calls.filter(([c]) => c === 'image_engine_request').length).toBe(1);
+	});
+
 	it('refuses an id it cannot run, before starting anything', async () => {
 		settings.imageLocalModelId = 'sdxl';
 		await expect(
