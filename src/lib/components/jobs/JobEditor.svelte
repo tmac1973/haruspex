@@ -16,6 +16,7 @@
 		createJob,
 		updateJob,
 		deleteJob,
+		duplicateJob,
 		getJob,
 		replaceJobSteps,
 		scheduleToConfigJson,
@@ -43,9 +44,11 @@
 		onsaved: (id: number) => void;
 		ondeleted: () => void;
 		oncancel: () => void;
+		/** A copy of this job was created; the tab selects it. */
+		onduplicated: (id: number) => void;
 	}
 
-	const { jobId, onsaved, ondeleted, oncancel }: Props = $props();
+	const { jobId, onsaved, ondeleted, oncancel, onduplicated }: Props = $props();
 
 	let name = $state('');
 	let description = $state('');
@@ -381,6 +384,18 @@
 			saving = false;
 		}
 	}
+
+	async function duplicate() {
+		if (jobId === 'new') return;
+		saving = true;
+		try {
+			const id = await duplicateJob(jobId);
+			if (id !== null) onduplicated(id);
+			else error = 'Failed to duplicate job.';
+		} finally {
+			saving = false;
+		}
+	}
 </script>
 
 {#snippet collapseHead(id: SectionId, title: string, summary: string, pill: boolean = false)}
@@ -572,6 +587,17 @@
 					>
 						Delete
 					</button>
+					<button
+						type="button"
+						class="btn"
+						onclick={() => void duplicate()}
+						disabled={saving || dirty}
+						title={dirty
+							? 'Save or cancel your changes first'
+							: 'Create a copy of this job, without its run history'}
+					>
+						Duplicate
+					</button>
 				{/if}
 			</div>
 			<div class="actions-right">
@@ -757,6 +783,7 @@
 		background: var(--bg-primary);
 	}
 
+	.actions-left,
 	.actions-right {
 		display: flex;
 		gap: 8px;

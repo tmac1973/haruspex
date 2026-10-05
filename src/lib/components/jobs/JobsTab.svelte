@@ -158,6 +158,7 @@
 					onsaved={(id) => (selectedId = id)}
 					ondeleted={clearSelection}
 					oncancel={clearSelection}
+					onduplicated={(id) => (selectedId = id)}
 				/>
 			{/key}
 		{/if}
