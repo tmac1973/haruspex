@@ -259,13 +259,15 @@ pub fn engine_args(models_dir: &Path, id: &str) -> Option<Vec<String>> {
         args.push("--backend".to_string());
         args.push("te=cpu".to_string());
     }
-    // Qwen's VAE (Wan's) needs ~5.4 GB to ENCODE a 1024 image, and with Qwen's
-    // weights loaded only ~4 GB is left on a 16 GB card: every img2img — the
-    // seam pass on a texture — failed at once with "vae encode compute
-    // failed". Tiled, it fits. txt2img never encodes, so sprites were fine.
-    if entry.family == "qwen21" {
-        args.push("--vae-tiling".to_string());
-    }
+    // Encoding a 1024 image untiled needs several GB on top of the weights.
+    // Qwen's VAE (Wan's) needs ~5.4 GB with only ~4 GB left on a 16 GB card:
+    // every img2img — the seam pass on a texture — failed at once with "vae
+    // encode compute failed". Ming fits only while the desktop leaves it
+    // room: on 2026-10-05, with ~6.5 GB free, its 1024 img2img (every
+    // transparent sprite sheet) failed in 0.2 s with "generate_image returned
+    // no results", first now and then and then every time, while 512 and
+    // txt2img still worked. Tiled, both fit.
+    args.push("--vae-tiling".to_string());
     Some(args)
 }
 
@@ -472,9 +474,9 @@ mod tests {
     }
 
     #[test]
-    fn qwen_encodes_in_tiles_and_ming_does_not() {
-        // Qwen's VAE cannot encode a 1024 image untiled beside its weights on a
-        // 16 GB card; every img2img (the seam pass) failed.
+    fn both_families_encode_in_tiles() {
+        // Neither VAE reliably encodes a 1024 image untiled beside its weights
+        // on a 16 GB card; img2img (seams, transparent sheets) failed.
         let dir = temp("tiling");
         for id in ["ming", "qwen21"] {
             let m = image_registry().into_iter().find(|m| m.id == id).unwrap();
@@ -490,7 +492,7 @@ mod tests {
                 .contains(&"--vae-tiling".into())
         };
         assert!(tiles("qwen21"));
-        assert!(!tiles("ming"));
+        assert!(tiles("ming"));
         std::fs::remove_dir_all(&dir).ok();
     }
 }
