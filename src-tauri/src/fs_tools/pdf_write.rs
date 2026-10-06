@@ -469,6 +469,9 @@ fn layout_pages(
                         scale_x: Some(display_w_pt / natural_w_pt),
                         scale_y: Some(display_h_pt / natural_h_pt),
                         dpi: Some(dpi),
+                        // Keep printpdf's unit-square → pixel-size scale, which the
+                        // scale factors above are computed against.
+                        no_auto_scale: false,
                     },
                 });
                 current_ops.push(Op::StartTextSection);
