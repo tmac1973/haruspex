@@ -32,6 +32,7 @@ vi.mock('./jobs.svelte', () => ({
 import { getApiKeyValue, getApiKeys, getSettings, updateSettings } from './settings';
 import {
 	addStoredApiKey,
+	apiKeyValueWarning,
 	deleteStoredApiKey,
 	migrateApiKeys,
 	migrateJobApiKeys,
@@ -93,5 +94,18 @@ describe('migrateJobApiKeys', () => {
 		const created = getApiKeys().find((k) => k.name === 'Job: Digest');
 		expect(created?.stored).toBe(true);
 		expect(state.refs[1]).toEqual({ id: 2, keyId: created!.id });
+	});
+});
+
+describe('apiKeyValueWarning', () => {
+	it('flags a value with a space in it, such as a label pasted with the key', () => {
+		expect(apiKeyValueWarning('coding - sk-or-v1-abc')).toMatch(/space/);
+		expect(apiKeyValueWarning('sk-or-v1-abc\tdef')).toMatch(/space/);
+	});
+
+	it('accepts a plain key, ignoring surrounding whitespace', () => {
+		expect(apiKeyValueWarning('sk-or-v1-abc')).toBeNull();
+		expect(apiKeyValueWarning('  sk-or-v1-abc \n')).toBeNull();
+		expect(apiKeyValueWarning('')).toBeNull();
 	});
 });
