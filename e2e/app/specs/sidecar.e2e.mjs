@@ -24,7 +24,7 @@ describe('sidecars die with the app', () => {
 		});
 		expect(alive(server)).toBe(true);
 
-		const app = await appPid(appBinary());
+		const app = await appPid(appBinary(), server);
 		expect(app).not.toBeNull();
 		process.kill(app, 'SIGKILL');
 

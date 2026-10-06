@@ -83,31 +83,32 @@ export function alive(pid) {
 }
 
 /**
- * The pid of the running test build, found by its executable path — never by
- * name, so the user's own Haruspex can never be the one killed.
+ * The pid of the test build that spawned `child`: its parent, checked against
+ * the build's executable path so the user's own Haruspex can never be the one
+ * killed. Searching by path alone is not enough — the previous spec's app can
+ * still be exiting, and killing that one leaves this spec's app, and its
+ * sidecar, running.
  */
-export async function appPid(binary) {
-	const { readdirSync, readlinkSync } = await import('node:fs');
+export async function appPid(binary, child) {
+	const { readFileSync, readlinkSync } = await import('node:fs');
 	const { execFileSync } = await import('node:child_process');
 	if (process.platform === 'win32') {
-		const out = execFileSync(
-			'powershell',
-			[
-				'-NoProfile',
-				'-Command',
-				`(Get-Process | Where-Object { $_.Path -eq '${binary.replace(/'/g, "''")}' } | Select-Object -First 1).Id`
-			],
-			{ encoding: 'utf8' }
-		).trim();
-		return out ? Number(out) : null;
+		const ps = (cmd) =>
+			execFileSync('powershell', ['-NoProfile', '-Command', cmd], { encoding: 'utf8' }).trim();
+		const parent = ps(
+			`(Get-CimInstance Win32_Process -Filter "ProcessId=${Number(child)}").ParentProcessId`
+		);
+		if (!parent) return null;
+		const path = ps(`(Get-Process -Id ${Number(parent)}).Path`);
+		return path.toLowerCase() === binary.toLowerCase() ? Number(parent) : null;
 	}
-	for (const entry of readdirSync('/proc')) {
-		if (!/^\d+$/.test(entry)) continue;
-		try {
-			if (readlinkSync(`/proc/${entry}/exe`) === binary) return Number(entry);
-		} catch {
-			// Not ours to read, or gone.
-		}
+	try {
+		// The fields after the parenthesised command name: state, then ppid.
+		const stat = readFileSync(`/proc/${child}/stat`, 'utf8');
+		const parent = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[1]);
+		return readlinkSync(`/proc/${parent}/exe`) === binary ? parent : null;
+	} catch {
+		// The child is gone, or its parent is not ours to read.
+		return null;
 	}
-	return null;
 }
