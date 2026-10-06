@@ -101,9 +101,9 @@
 	{#if keychain === false}
 		<p
 			class="section-help small"
-			title="On Linux, run a Secret Service such as GNOME Keyring or KWallet and restart Haruspex."
+			title="Neither the system keychain nor Haruspex's data folder could be written. On Linux, a Secret Service such as GNOME Keyring or KWallet provides a keychain."
 		>
-			No system keychain found — passwords are kept in Haruspex's settings.
+			No place to keep passwords outside Haruspex's settings, so they are kept there.
 		</p>
 	{/if}
 

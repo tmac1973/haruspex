@@ -81,6 +81,7 @@ const TABLE: Record<string, Handler> = {
 	list_audio_input_devices: empty,
 	email_list_providers: empty,
 	secret_available: () => true,
+	secret_store_kind: () => 'keychain',
 	mcp_catalog: empty,
 	mcp_runtimes_available: () => ({ node: true, npm: true, uv: true }),
 	download_status: none,

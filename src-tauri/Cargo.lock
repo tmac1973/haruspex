@@ -3129,6 +3129,7 @@ dependencies = [
  "qrcode",
  "quick-xml 0.42.0",
  "reqwest 0.13.2",
+ "ring",
  "rmcp",
  "rodio",
  "rrule",

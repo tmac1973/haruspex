@@ -59,8 +59,11 @@ describe('EmailAccountForm password', () => {
 		await fireEvent.click(screen.getByText('Save password'));
 		await waitFor(() => expect(onChange).toHaveBeenCalled());
 		// Tested with the new password before it is kept.
-		expect(commands().slice(0, 1)).toEqual(['email_test_connection']);
-		expect(state.invoke.mock.calls[0][1].account).toMatchObject({ password: 'new-pw' });
+		// The form asks where secrets go when it opens; that touches no secret.
+		const secretCalls = commands().filter((c) => c !== 'secret_store_kind');
+		expect(secretCalls.slice(0, 1)).toEqual(['email_test_connection']);
+		const test = state.invoke.mock.calls.find((c) => c[0] === 'email_test_connection');
+		expect(test?.[1].account).toMatchObject({ password: 'new-pw' });
 		expect(state.invoke).toHaveBeenCalledWith('secret_set', { key: 'email:a1', value: 'new-pw' });
 		expect(onChange.mock.calls.at(-1)?.[0]).toMatchObject({
 			password: '',

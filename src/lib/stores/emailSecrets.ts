@@ -1,28 +1,23 @@
 /**
- * Email passwords in the system keychain.
+ * Email passwords, kept out of the settings (see `./secrets`).
  *
- * Where the operating system has a keychain, an account's password is kept
- * there under `email:<account id>` and the stored account carries only that
- * reference (`passwordRef`) and an empty `password`. Rust reads the password
- * back when it connects; the webview never holds it again. Without a
- * keychain it stays inline in the settings, as it always has.
+ * An account's password is stored under `email:<account id>` and the stored
+ * account carries only that reference (`passwordRef`) and an empty
+ * `password`. Rust reads the password back when it connects; the webview
+ * never holds it again. Only where no secret store works at all does it stay
+ * inline in the settings.
  */
 import { invoke } from '@tauri-apps/api/core';
 import { getSettings, setEmailAccounts, type EmailAccount } from './settings';
+import { secretStoreAvailable } from './secrets';
 
 /** The keychain entry for an account's password. */
 export function emailSecretKey(accountId: string): string {
 	return `email:${accountId}`;
 }
 
-/** Whether this machine has a working keychain. Rust probes once per run. */
-export async function keychainAvailable(): Promise<boolean> {
-	try {
-		return await invoke<boolean>('secret_available');
-	} catch {
-		return false;
-	}
-}
+/** Whether passwords can be kept out of the settings here. */
+export const keychainAvailable = secretStoreAvailable;
 
 /**
  * The account as it should be stored with `password`: in the keychain when

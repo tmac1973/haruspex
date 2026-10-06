@@ -235,6 +235,7 @@ export const IPC = {
 	secret_available: 'secret_available',
 	secret_delete: 'secret_delete',
 	secret_set: 'secret_set',
+	secret_store_kind: 'secret_store_kind',
 	shell_get_context: 'shell_get_context',
 	shell_get_recent_commands: 'shell_get_recent_commands',
 	shell_get_recent_history: 'shell_get_recent_history',
