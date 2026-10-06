@@ -1,11 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, waitFor } from '@testing-library/svelte';
 import SearchStep from './SearchStep.svelte';
 import type { SearchStep as Step } from '$lib/agent/loop';
 import type { Artifact } from '$lib/sandbox/protocol';
 
 // SearchStep pulls rerun/cancel actions from the chat store, whose module
 // graph reaches Tauri IPC. Mock just the two functions the component uses.
+const tauri = vi.hoisted(() => ({
+	invoke: vi.fn(async (cmd: string) => (cmd === 'artifact_register' ? 'artifact-1' : null))
+}));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+
 vi.mock('$lib/stores/chat.svelte', () => ({
 	rerunSandboxStep: vi.fn().mockResolvedValue(undefined),
 	cancelActiveSandboxRun: vi.fn()
@@ -57,18 +62,24 @@ describe('SearchStep artifacts', () => {
 		expect((window as unknown as Record<string, unknown>).__pwned).toBeUndefined();
 	});
 
-	it('renders interactive artifacts in a sandboxed iframe without allow-same-origin', () => {
+	it('renders interactive artifacts in a sandboxed iframe from their own scheme', async () => {
 		const chartHtml = '<html><body><script>plot()</script></body></html>';
 		render(SearchStep, {
 			steps: [makeStep([{ kind: 'html', html: chartHtml, interactive: true }])]
 		});
-		const iframe = document.querySelector<HTMLIFrameElement>('iframe.artifact-iframe')!;
-		expect(iframe).toBeTruthy();
+		const iframe = await waitFor(() => {
+			const f = document.querySelector<HTMLIFrameElement>('iframe.artifact-iframe');
+			if (!f) throw new Error('no iframe yet');
+			return f;
+		});
+		// Served by Rust with a CSP of its own, never inlined with srcdoc: a
+		// srcdoc document would inherit (and so loosen) the app's own policy.
+		expect(tauri.invoke).toHaveBeenCalledWith('artifact_register', { html: chartHtml });
+		expect(iframe.getAttribute('src')).toMatch(/haruspex-artifact.*\/artifact-1$/);
+		expect(iframe.hasAttribute('srcdoc')).toBe(false);
 		const sandbox = iframe.getAttribute('sandbox')!;
 		expect(sandbox).toBe('allow-scripts');
 		expect(sandbox).not.toContain('allow-same-origin');
-		// srcdoc carries the raw artifact HTML (executed as a fresh document)
-		expect(iframe.getAttribute('srcdoc')).toBe(chartHtml);
 		// The interactive branch must not also render the {@html} branch
 		expect(document.querySelector('.artifact-html')).toBeNull();
 	});
