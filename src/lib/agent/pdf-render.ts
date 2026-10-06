@@ -40,7 +40,17 @@ export async function renderPdfPages(workdir: string, relPath: string): Promise<
 	const b64 = await invoke<string>('fs_read_pdf_bytes', { workdir, relPath });
 	const bytes = base64ToBytes(b64);
 
-	const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+	// The loading task owns the document and its worker; destroying it frees
+	// both, including when a page fails to render.
+	const task = pdfjsLib.getDocument({ data: bytes });
+	try {
+		return await renderPages(await task.promise);
+	} finally {
+		await task.destroy();
+	}
+}
+
+async function renderPages(pdf: pdfjsLib.PDFDocumentProxy): Promise<string[]> {
 	const pageCount = Math.min(pdf.numPages, MAX_PAGES);
 	const pages: string[] = [];
 
@@ -75,8 +85,6 @@ export async function renderPdfPages(workdir: string, relPath: string): Promise<
 
 		page.cleanup();
 	}
-
-	await pdf.destroy();
 	return pages;
 }
 
