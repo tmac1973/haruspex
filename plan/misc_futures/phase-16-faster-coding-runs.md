@@ -208,6 +208,74 @@ mechanical.
 - `pipeline.test.ts`: chained with a contract → the short path; chained without one → the
   full path; a failing check → the full path.
 
+## Part F — a graphical project proves it draws something
+
+**What prompted it.** dark_times_5 (Go and Ebitengine) finished all 10 phases
+with green tests and opened to a black window. The UI font was built with
+`opentype.FaceOptions{Size: 12}` and no `DPI`. `golang.org/x/image` reads a
+DPI of 0 as a scale of 0, so every glyph had zero size, and the opening
+screen is all text. The map drew correctly. Nothing in the run looked at a
+frame: the game's `-headless` flag draws a frame but never reads it back, so
+"drew a frame" passed with a blank screen.
+
+**The check that found it** (2026-10-05, by hand): run the real game loop for
+90 frames and read the screen back at frames 20 and 80. Before the fix, the
+creation screen had 0 of 666,624 pixels that weren't black. After it, 10,004
+were. About 40 lines of Go.
+
+### Files touched
+
+- `src/lib/agent/jobs/types/guided-planning/pipeline.ts`: the planning
+  prompt's verification step, and phase 01 of a graphical plan.
+- `src/lib/agent/jobs/types/autonomous-coding/prompts.ts`: preflight and the
+  phase prompt.
+
+### Steps
+
+1. **Guided planning recognises a graphical project.** A game engine (Ebiten,
+   Bevy, Pygame, raylib, SDL, Godot export, a canvas or WebGL app) or a GUI
+   toolkit makes it graphical. The plan's phase 01 then includes a frame
+   smoke test, and the verification command runs it:
+   - start the real render loop, not a headless stand-in;
+   - draw a fixed number of frames of each screen the game opens on, then the
+     first in-play frame;
+   - read the pixels back;
+   - fail when a frame is a single colour, or fewer than 0.5% of its pixels
+     differ from the background;
+   - exit by itself.
+
+   Name the screens it checks, so a later phase that adds a screen adds it to
+   the test.
+2. **What it looks like per stack,** given to the planner as examples, one line
+   each:
+   - Ebiten: `RunGame` with a wrapper whose `Update` returns
+     `ebiten.Termination` after N frames and whose `Draw` calls
+     `ReadPixels`;
+   - Bevy: a system that requests a `Screenshot` and exits;
+   - Pygame: `pygame.display.flip`, then `surfarray`;
+   - a browser canvas: a headless browser reading back `getImageData`.
+3. **It needs a display.** The test reads `DISPLAY` or `WAYLAND_DISPLAY`. Without
+   one it fails with "no display — run under xvfb-run", rather than passing
+   by skipping. Preflight checks that the verification command can open a
+   window here (it can on the user's desktop), and records `xvfb-run` in the
+   command when there is no display.
+4. **Preflight enforces it.** For a graphical plan whose verification command
+   runs no frame check, preflight writes one into DECISIONS-coding.md as an
+   open finding, and the phase that sets up rendering builds it.
+5. **The phase prompt says what a pass means.** A green build of a graphical
+   project is not evidence that anything is visible. When a phase changes
+   rendering, fonts, the camera or a screen, the frame test must still pass,
+   and the phase's own test adds the screen it introduced.
+
+### Tests
+
+- Prompt snapshots: a plan naming Ebitengine gets the frame-test step; a CLI
+  plan doesn't.
+- Preflight: a graphical plan with `go test ./...` as its only verification
+  gets the open finding.
+- Live: re-run the dark_times_5 plan, with the font bug put back, to its
+  rendering phase. The frame test fails, naming the creation screen.
+
 ## Not in this phase
 
 **Parallel steps.** The server has 15 idle sequences, and independent phases (assets vs.
@@ -233,10 +301,11 @@ One per part: `docs(plan): phase 16 benchmark results`,
 `feat(jobs): adaptive reasoning for coding turns`,
 `feat(jobs): job-length command timeouts and scoped phase gates`,
 `feat(planning): run-time estimate and MVP-first`,
-`feat(jobs): a short preflight for chained coding runs`.
+`feat(jobs): a short preflight for chained coding runs`,
+`feat(planning): a frame smoke test for graphical projects`.
 
 ## Rollback
 
-Each part reverts on its own. Part B's mode is a new enum value, so its config parser must
+Each part reverts on its own. Part F is prompt text only. Part B's mode is a new enum value, so its config parser must
 map an unknown mode to `inherit`; then a job saved with `adaptive` still loads after a
 revert.

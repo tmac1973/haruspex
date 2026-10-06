@@ -116,7 +116,7 @@ and a lighter verification mode for guided planning.
 | 13 | Sidecars die with the app | — |
 | 14 | Automated end-to-end testing | — |
 | 15 | Image generation on other servers: the bundled engine remote, and OpenAI-images-API servers | 07, 10 |
-| 16 | Faster coding runs: a model benchmark, adaptive reasoning, builds that don't time out, a cost estimate with MVP-first, a short chained preflight | 12 |
+| 16 | Faster coding runs: a model benchmark, adaptive reasoning, builds that don't time out, a cost estimate with MVP-first, a short chained preflight, a frame smoke test for graphical projects | 12 |
 | 17 | Code-drawn textures from a recipe, with tile variants; objects become sprites | — |
 
 The phases are independent except where noted, so they can be done in any
