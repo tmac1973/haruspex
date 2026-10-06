@@ -79,6 +79,7 @@ pub(super) const AUTO_ENGINES: &[&str] = &["yahoo", "brave_html", "duckduckgo"];
 /// can edit them between calls and there's no hot path here.
 #[derive(Clone, Default, Deserialize, ts_rs::TS)]
 #[ts(export)]
+#[serde(rename_all = "camelCase")]
 pub struct ProxyConfig {
     #[serde(default)]
     #[ts(type = "\"none\" | \"manual\"")]
@@ -87,13 +88,47 @@ pub struct ProxyConfig {
     pub url: String,
     #[serde(default)]
     pub bypass: String,
+    /// Where the proxy's password is kept (`"proxy:network"`,
+    /// `"proxy:search"`), with `url` holding everything but the password.
+    /// `None` for a proxy with no password, or one kept inline where no
+    /// secret store works.
+    #[serde(default)]
+    #[ts(optional)]
+    pub password_ref: Option<String>,
+}
+
+impl ProxyConfig {
+    /// The URL to connect through, with the stored password put back in.
+    /// Read through the secret cache, so only the first request after a
+    /// change waits on the keychain.
+    pub fn effective_url(&self) -> Result<String, String> {
+        let url = self.url.trim();
+        let Some(key) = self.password_ref.as_deref() else {
+            return Ok(url.to_string());
+        };
+        let password = crate::secrets::get_blocking(key)?.ok_or_else(|| {
+            "The proxy password is missing from Haruspex's secret store — enter it again in \
+             Settings → Network."
+                .to_string()
+        })?;
+        let mut parsed = reqwest::Url::parse(url).map_err(|e| format!("Invalid proxy URL: {e}"))?;
+        parsed
+            .set_password(Some(&password))
+            .map_err(|_| "This proxy URL cannot carry a password".to_string())?;
+        Ok(parsed.to_string())
+    }
 }
 
 /// By hand: a proxy URL can carry `user:pass@`, so `{:?}` shows only its
 /// scheme and host.
 impl std::fmt::Debug for ProxyConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Self { mode, url, bypass } = self;
+        let Self {
+            mode,
+            url,
+            bypass,
+            password_ref,
+        } = self;
         let url = if url.is_empty() {
             String::new()
         } else {
@@ -103,6 +138,60 @@ impl std::fmt::Debug for ProxyConfig {
             .field("mode", mode)
             .field("url", &url)
             .field("bypass", bypass)
+            .field("password_ref", password_ref)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg(url: &str, password_ref: Option<&str>) -> ProxyConfig {
+        ProxyConfig {
+            mode: "manual".into(),
+            url: url.into(),
+            bypass: String::new(),
+            password_ref: password_ref.map(Into::into),
+        }
+    }
+
+    #[test]
+    fn the_stored_password_goes_back_into_the_url() {
+        crate::secrets::seed_for_test("proxy:test-roundtrip", "p@ss:word");
+        let url = cfg(
+            "http://alice@proxy.example:3128",
+            Some("proxy:test-roundtrip"),
+        )
+        .effective_url()
+        .unwrap();
+        let parsed = reqwest::Url::parse(&url).unwrap();
+        assert_eq!(parsed.username(), "alice");
+        // Percent-encoded in the URL, so the proxy sees exactly the password.
+        assert_eq!(
+            urlencoding::decode(parsed.password().unwrap()).unwrap(),
+            "p@ss:word"
+        );
+        assert_eq!(parsed.host_str(), Some("proxy.example"));
+    }
+
+    #[test]
+    fn a_url_without_a_reference_is_used_as_it_is() {
+        assert_eq!(
+            cfg(" http://proxy.example:3128 ", None)
+                .effective_url()
+                .unwrap(),
+            "http://proxy.example:3128"
+        );
+    }
+
+    #[test]
+    fn debug_shows_the_reference_not_the_password() {
+        let shown = format!(
+            "{:?}",
+            cfg("http://a:secret@proxy.example", Some("proxy:network"))
+        );
+        assert!(!shown.contains("secret"), "{shown}");
+        assert!(shown.contains("proxy:network"), "{shown}");
     }
 }

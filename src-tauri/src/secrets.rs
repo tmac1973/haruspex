@@ -327,6 +327,59 @@ pub fn store() -> Layered<Keychain, EncryptedFile> {
     }
 }
 
+/// Values read this run, so a credential used on every request (a search
+/// key, a proxy password) costs one keychain round trip, not one per request.
+/// Every write and delete through the commands below clears its entry.
+fn cache() -> &'static Mutex<HashMap<String, String>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+/// A secret's value, from the cache or the store, read off the async runtime.
+/// `Ok(None)` when nothing is stored under `key`.
+pub async fn get(key: &str) -> Result<Option<String>, String> {
+    if let Some(v) = cache().lock_or_recover().get(key) {
+        return Ok(Some(v.clone()));
+    }
+    let k = key.to_string();
+    let found = tokio::task::spawn_blocking(move || store().get(&k))
+        .await
+        .map_err(|e| e.to_string())??;
+    if let Some(v) = &found {
+        cache().lock_or_recover().insert(key.to_string(), v.clone());
+    }
+    Ok(found)
+}
+
+/// [`get`] for a caller that cannot await, such as building a proxied HTTP
+/// client. Blocks on the store only on a cache miss.
+pub fn get_blocking(key: &str) -> Result<Option<String>, String> {
+    if let Some(v) = cache().lock_or_recover().get(key) {
+        return Ok(Some(v.clone()));
+    }
+    let found = store().get(key)?;
+    if let Some(v) = &found {
+        cache().lock_or_recover().insert(key.to_string(), v.clone());
+    }
+    Ok(found)
+}
+
+/// Seed the cache, so a test can resolve a secret without a real store.
+#[cfg(test)]
+pub fn seed_for_test(key: &str, value: &str) {
+    cache()
+        .lock_or_recover()
+        .insert(key.to_string(), value.to_string());
+}
+
+/// [`get`], for a secret a setting says exists: missing is an error naming
+/// what to re-enter.
+pub async fn require(key: &str, what: &str) -> Result<String, String> {
+    get(key).await?.ok_or_else(|| {
+        format!("The saved {what} is missing from Haruspex's secret store — enter it again.")
+    })
+}
+
 /// The kinds of secret, by key prefix. One namespace per kind, so a webview
 /// bug cannot overwrite an entry it does not own, and a fixed list, so a key
 /// the app does not use cannot be written at all.
@@ -380,6 +433,7 @@ pub async fn secret_store_kind() -> &'static str {
 #[tauri::command]
 pub async fn secret_set(key: String, value: String) -> Result<(), String> {
     check_key(&key)?;
+    cache().lock_or_recover().remove(&key);
     tokio::task::spawn_blocking(move || store().set(&key, &value))
         .await
         .map_err(|e| e.to_string())?
@@ -389,6 +443,7 @@ pub async fn secret_set(key: String, value: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn secret_delete(key: String) -> Result<(), String> {
     check_key(&key)?;
+    cache().lock_or_recover().remove(&key);
     tokio::task::spawn_blocking(move || store().delete(&key))
         .await
         .map_err(|e| e.to_string())?

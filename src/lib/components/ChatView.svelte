@@ -44,6 +44,7 @@
 	import {
 		getActiveLocalModelFilename,
 		getSettings,
+		hasBraveApiKey,
 		setActiveLocalModel
 	} from '$lib/stores/settings';
 	import { getDebugLogsForTurn } from '$lib/debug-log';
@@ -185,7 +186,7 @@
 	// to avoid bot-detection trips, which makes deep research noticeably
 	// slower — the user should know why.
 	const searchProviderSlowMode = $derived(
-		exhaustiveResearch && getSettings().searchProvider === 'auto' && !getSettings().braveApiKey
+		exhaustiveResearch && getSettings().searchProvider === 'auto' && !hasBraveApiKey()
 	);
 
 	$effect(() => {

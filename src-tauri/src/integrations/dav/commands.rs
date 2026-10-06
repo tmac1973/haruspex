@@ -105,6 +105,7 @@ pub async fn dav_discover_collections(
     if !account.is_usable() {
         return Err("This account still needs an address, username and password.".into());
     }
+    let account = account.resolved().await?;
     let client = DavClient::new(&account, proxy.as_ref())?;
 
     let mut problems = Vec::new();
@@ -285,6 +286,7 @@ async fn fetch_account_contacts(
     account: &DavAccount,
     proxy: Option<&ProxyConfig>,
 ) -> Result<Vec<Contact>, String> {
+    let account = &account.resolved().await?;
     let client = DavClient::new(account, proxy)?;
     let books = discovery::discover_address_books(&client, account).await?;
 
@@ -313,6 +315,7 @@ async fn fetch_account(
     local: Tz,
     proxy: Option<&ProxyConfig>,
 ) -> Result<Vec<CalendarEvent>, String> {
+    let account = &account.resolved().await?;
     let client = DavClient::new(account, proxy)?;
     let calendars = discovery::discover_calendars(&client, account).await?;
 

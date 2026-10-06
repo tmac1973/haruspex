@@ -262,6 +262,9 @@ export interface SearchProxyConfig {
 	mode: 'none' | 'network' | 'manual';
 	url: string;
 	bypass: string;
+	/** Where the password is kept, with `url` holding the rest (see
+	 *  `stores/proxySecrets`). */
+	passwordRef?: string;
 }
 
 export interface AppSettings {
@@ -280,7 +283,10 @@ export interface AppSettings {
 	uiScale: number;
 	ttsVoice: string;
 	searchProvider: SearchProvider;
+	/** Inline only where no secret store works; otherwise empty, with the key
+	 *  kept under `brave:key` and `braveApiKeySaved` set. */
 	braveApiKey: string;
+	braveApiKeySaved: boolean;
 	searxngUrl: string;
 	/**
 	 * Path to the Chrome/Chromium executable browser-assisted search should
@@ -570,7 +576,10 @@ export interface AppSettings {
 	 * header on HTTP requests and never anywhere else — in particular never in
 	 * a URL, which would write it into logs and histories.
 	 */
+	/** Inline only where no secret store works; otherwise empty, with the key
+	 *  kept under `comfy:key` and `imageBackendApiKeySaved` set. */
 	imageBackendApiKey: string;
+	imageBackendApiKeySaved: boolean;
 	/** Checkpoint a request with no explicit model resolves to. */
 	imageComfyCheckpoint: string;
 	/**
@@ -692,6 +701,7 @@ const defaults: AppSettings = {
 	remoteAccessPort: 8787,
 	remoteAccessToken: '',
 	braveApiKey: '',
+	braveApiKeySaved: false,
 	searxngUrl: DEFAULT_SEARXNG_URL,
 	contextSize: DEFAULT_CONTEXT_SIZE,
 	allowSpillToSystemRam: false,
@@ -743,6 +753,7 @@ const defaults: AppSettings = {
 	imageBackendKind: 'none',
 	imageBackendBaseUrl: '',
 	imageBackendApiKey: '',
+	imageBackendApiKeySaved: false,
 	imageComfyCheckpoint: '',
 	imageComfyWorkflowPath: '',
 	imageComfyFieldMapPath: '',
@@ -1107,7 +1118,12 @@ export function updateSearchProxy(partial: Partial<SearchProxyConfig>): void {
 export function getSearchProxy(): ProxyConfig {
 	const sp = settings.searchProxy;
 	if (sp.mode === 'network') return settings.proxy;
-	return { mode: sp.mode === 'manual' ? 'manual' : 'none', url: sp.url, bypass: sp.bypass };
+	return {
+		mode: sp.mode === 'manual' ? 'manual' : 'none',
+		url: sp.url,
+		bypass: sp.bypass,
+		passwordRef: sp.passwordRef
+	};
 }
 
 export function applyTheme(theme?: ThemeMode): void {
@@ -1563,4 +1579,9 @@ export function getResponseFormatPrompt(): string {
 		default:
 			return 'Format your responses using markdown where helpful (headings, bullet points, code blocks). Keep formatting clean and readable.';
 	}
+}
+
+/** Whether a Brave Search key is configured, wherever it is kept. */
+export function hasBraveApiKey(s: AppSettings = settings): boolean {
+	return s.braveApiKey !== '' || s.braveApiKeySaved;
 }

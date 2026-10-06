@@ -34,9 +34,15 @@ address: string,
  */
 username: string, 
 /**
- * App password, plaintext, in the settings blob. See the module docs.
+ * App password, inline. Empty when it is kept in the secret store under
+ * `password_ref` — the usual case. Inline only where no store works.
  */
 password: string, 
+/**
+ * The secret-store key holding the password (`"dav:<id>"`). Rust reads
+ * it back just before connecting; see [`DavAccount::resolved`].
+ */
+passwordRef?: string, 
 /**
  * A URL the user supplied by hand, skipping discovery.
  *

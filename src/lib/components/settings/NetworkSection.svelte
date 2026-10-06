@@ -20,6 +20,7 @@
 		type SearchProxyConfig
 	} from '$lib/stores/settings';
 	import ModeSelector from '$lib/components/ModeSelector.svelte';
+	import { saveProxyUrl } from '$lib/stores/proxySecrets';
 
 	let proxyMode = $state<ProxyMode>(getSettings().proxy.mode);
 	let proxyUrl = $state(getSettings().proxy.url);
@@ -61,7 +62,10 @@
 			onblur={saveUrl}
 			placeholder="http://host:port or http://user:pass@host:port"
 		/>
-		<p class="hint">
+		<p
+			class="hint"
+			title="The password is kept in the system keychain, or Haruspex's encrypted secrets file, and removed from the URL shown here."
+		>
 			Used for HTTP and HTTPS. Include <code>user:pass@</code> if the proxy needs credentials.
 		</p>
 	</div>
@@ -111,7 +115,7 @@
 			proxyBypass,
 			(v) => (proxyUrl = v),
 			(v) => (proxyBypass = v),
-			() => updateProxy({ url: proxyUrl.trim() }),
+			() => void saveProxyUrl('network', proxyUrl).then(() => (proxyUrl = getSettings().proxy.url)),
 			() => updateProxy({ bypass: proxyBypass })
 		)}
 	{/if}
@@ -143,7 +147,10 @@
 			searchBypass,
 			(v) => (searchUrl = v),
 			(v) => (searchBypass = v),
-			() => updateSearchProxy({ url: searchUrl.trim() }),
+			() =>
+				void saveProxyUrl('search', searchUrl).then(
+					() => (searchUrl = getSettings().searchProxy.url)
+				),
 			() => updateSearchProxy({ bypass: searchBypass })
 		)}
 	{/if}

@@ -132,12 +132,17 @@ pub(crate) fn apply_proxy_with(
     if cfg.mode != "manual" {
         return Ok(builder);
     }
-    let trimmed = cfg.url.trim();
-    if trimmed.is_empty() {
+    if cfg.url.trim().is_empty() {
         return Ok(builder);
     }
-    let proxy_url = reqwest::Url::parse(trimmed)
-        .map_err(|e| format!("Invalid proxy URL '{}': {}", trimmed, e))?;
+    let effective = cfg.effective_url()?;
+    let proxy_url = reqwest::Url::parse(&effective).map_err(|e| {
+        format!(
+            "Invalid proxy URL '{}': {}",
+            crate::text_util::url_for_log(&effective),
+            e
+        )
+    })?;
     let bypass = parse_bypass_list(&cfg.bypass);
     // "Always" overrides the Proxy Bypass List, but never the loopback
     // carve-out: routing 127.0.0.1 through a proxy is not what anyone picks it
@@ -255,6 +260,7 @@ mod tests {
             mode: "manual".to_string(),
             url: "http://proxy.example:8080".to_string(),
             bypass: String::new(),
+            password_ref: None,
         };
         // An unparseable URL would error under Auto; Never returns before the
         // config is read at all, which is what proves it short-circuits.
@@ -281,6 +287,7 @@ mod tests {
             mode: "manual".to_string(),
             url: "not a url".to_string(),
             bypass: String::new(),
+            password_ref: None,
         };
         assert!(
             apply_proxy_with(reqwest::Client::builder(), Some(&cfg), ProxyUse::Always).is_err()
@@ -293,6 +300,7 @@ mod tests {
             mode: "manual".to_string(),
             url: "http://proxy.example:8080".to_string(),
             bypass: String::new(),
+            password_ref: None,
         };
         assert!(apply_proxy(reqwest::Client::builder(), Some(&cfg)).is_ok());
         assert!(apply_proxy_with(reqwest::Client::builder(), Some(&cfg), ProxyUse::Auto).is_ok());
@@ -304,6 +312,7 @@ mod tests {
             mode: "none".to_string(),
             url: "http://proxy.example:8080".to_string(),
             bypass: String::new(),
+            password_ref: None,
         };
         // Just verifies apply_proxy accepts the config and returns Ok;
         // we can't inspect whether a proxy was attached to the builder,
@@ -317,6 +326,7 @@ mod tests {
             mode: "manual".to_string(),
             url: "not a url".to_string(),
             bypass: String::new(),
+            password_ref: None,
         };
         assert!(apply_proxy(reqwest::Client::builder(), Some(&cfg)).is_err());
     }
@@ -327,6 +337,7 @@ mod tests {
             mode: "manual".to_string(),
             url: "   ".to_string(),
             bypass: String::new(),
+            password_ref: None,
         };
         assert!(apply_proxy(reqwest::Client::builder(), Some(&cfg)).is_ok());
     }

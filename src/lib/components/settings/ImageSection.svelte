@@ -3,6 +3,12 @@
 	import { errMessage } from '$lib/utils/error';
 	import { invoke } from '@tauri-apps/api/core';
 	import { getSettings, updateSettings } from '$lib/stores/settings';
+	import { comfyApiKey } from '$lib/stores/imageSecrets';
+	import {
+		savedSecretPlaceholder,
+		secretStoreKind,
+		type SecretStoreKind
+	} from '$lib/stores/secrets';
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import ComfyModels from './ComfyModels.svelte';
 	import DownloadProgressBar from './DownloadProgressBar.svelte';
@@ -21,7 +27,28 @@
 
 	let imageBackendKind = $state(getSettings().imageBackendKind);
 	let imageBackendBaseUrl = $state(getSettings().imageBackendBaseUrl);
-	let imageBackendApiKey = $state(getSettings().imageBackendApiKey);
+	/** A key being typed. Stored when the field loses focus, then cleared. */
+	let apiKeyDraft = $state('');
+	let apiKeySaved = $state(comfyApiKey.configured());
+	let storeKind = $state<SecretStoreKind>('keychain');
+	void secretStoreKind().then((k) => (storeKind = k));
+
+	async function saveApiKey() {
+		const value = apiKeyDraft.trim();
+		if (!value) return;
+		try {
+			await comfyApiKey.save(value);
+			apiKeyDraft = '';
+			apiKeySaved = true;
+		} catch (e) {
+			probeResult = { ok: false, detail: `Could not save the key: ${errMessage(e)}` };
+		}
+	}
+
+	async function removeApiKey() {
+		await comfyApiKey.remove();
+		apiKeySaved = false;
+	}
 	let imageComfyCheckpoint = $state(getSettings().imageComfyCheckpoint);
 	let imageLocalModelId = $state(getSettings().imageLocalModelId);
 
@@ -373,10 +400,15 @@
 			<input
 				id="image-key"
 				type="password"
-				placeholder="only if the server needs one"
-				bind:value={imageBackendApiKey}
-				onblur={() => persist({ imageBackendApiKey: imageBackendApiKey.trim() })}
+				placeholder={apiKeySaved
+					? savedSecretPlaceholder(storeKind)
+					: 'only if the server needs one'}
+				bind:value={apiKeyDraft}
+				onblur={saveApiKey}
 			/>
+			{#if apiKeySaved}
+				<button type="button" onclick={removeApiKey}>Remove key</button>
+			{/if}
 
 			<label for="image-model">
 				Model:
