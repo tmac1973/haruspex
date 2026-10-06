@@ -351,6 +351,27 @@ pub async fn get(key: &str) -> Result<Option<String>, String> {
     Ok(found)
 }
 
+/// [`get`] for a caller that cannot await, such as building a proxied HTTP
+/// client. Blocks on the store only on a cache miss.
+pub fn get_blocking(key: &str) -> Result<Option<String>, String> {
+    if let Some(v) = cache().lock_or_recover().get(key) {
+        return Ok(Some(v.clone()));
+    }
+    let found = store().get(key)?;
+    if let Some(v) = &found {
+        cache().lock_or_recover().insert(key.to_string(), v.clone());
+    }
+    Ok(found)
+}
+
+/// Seed the cache, so a test can resolve a secret without a real store.
+#[cfg(test)]
+pub fn seed_for_test(key: &str, value: &str) {
+    cache()
+        .lock_or_recover()
+        .insert(key.to_string(), value.to_string());
+}
+
 /// [`get`], for a secret a setting says exists: missing is an error naming
 /// what to re-enter.
 pub async fn require(key: &str, what: &str) -> Result<String, String> {

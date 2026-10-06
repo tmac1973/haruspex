@@ -262,6 +262,9 @@ export interface SearchProxyConfig {
 	mode: 'none' | 'network' | 'manual';
 	url: string;
 	bypass: string;
+	/** Where the password is kept, with `url` holding the rest (see
+	 *  `stores/proxySecrets`). */
+	passwordRef?: string;
 }
 
 export interface AppSettings {
@@ -1115,7 +1118,12 @@ export function updateSearchProxy(partial: Partial<SearchProxyConfig>): void {
 export function getSearchProxy(): ProxyConfig {
 	const sp = settings.searchProxy;
 	if (sp.mode === 'network') return settings.proxy;
-	return { mode: sp.mode === 'manual' ? 'manual' : 'none', url: sp.url, bypass: sp.bypass };
+	return {
+		mode: sp.mode === 'manual' ? 'manual' : 'none',
+		url: sp.url,
+		bypass: sp.bypass,
+		passwordRef: sp.passwordRef
+	};
 }
 
 export function applyTheme(theme?: ThemeMode): void {

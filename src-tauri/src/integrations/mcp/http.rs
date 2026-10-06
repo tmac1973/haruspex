@@ -236,6 +236,7 @@ mod tests {
             mode: "manual".into(),
             url: "not a url".into(),
             bypass: String::new(),
+            password_ref: None,
         };
         let err = match transport(&config, Some(&proxy), ProxyUse::Auto) {
             Err(e) => e,

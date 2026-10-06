@@ -49,10 +49,17 @@ pub fn proxy_env(proxy: Option<&ProxyConfig>, mode: ProxyUse) -> Vec<(String, St
     if cfg.mode != "manual" {
         return Vec::new();
     }
-    let url = cfg.url.trim();
-    if url.is_empty() {
+    if cfg.url.trim().is_empty() {
         return Vec::new();
     }
+    // A password that cannot be read leaves the child without the proxy's
+    // credentials rather than without the proxy: it then fails at the proxy
+    // with a 407, which names the problem.
+    let url = cfg.effective_url().unwrap_or_else(|e| {
+        log::warn!("MCP proxy: {e}");
+        cfg.url.trim().to_string()
+    });
+    let url = url.as_str();
 
     let mut env = Vec::new();
     for name in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"] {
@@ -102,6 +109,7 @@ mod tests {
             mode: "manual".to_string(),
             url: url.to_string(),
             bypass: bypass.to_string(),
+            password_ref: None,
         }
     }
 
@@ -121,6 +129,7 @@ mod tests {
             mode: "none".to_string(),
             url: "http://proxy:8080".to_string(),
             bypass: String::new(),
+            password_ref: None,
         };
         assert!(proxy_env(Some(&off), ProxyUse::Auto).is_empty());
     }

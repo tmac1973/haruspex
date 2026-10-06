@@ -980,6 +980,7 @@ mod tests {
             mode: "manual".into(),
             url: "http://proxy:8080".into(),
             bypass: String::new(),
+            password_ref: None,
         }
     }
 

@@ -8,4 +8,11 @@
  * entries are parsed per request; we don't cache them because the user
  * can edit them between calls and there's no hot path here.
  */
-export type ProxyConfig = { mode: "none" | "manual", url: string, bypass: string, };
+export type ProxyConfig = { mode: "none" | "manual", url: string, bypass: string, 
+/**
+ * Where the proxy's password is kept (`"proxy:network"`,
+ * `"proxy:search"`), with `url` holding everything but the password.
+ * `None` for a proxy with no password, or one kept inline where no
+ * secret store works.
+ */
+passwordRef?: string, };
