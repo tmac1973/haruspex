@@ -187,7 +187,13 @@ pub fn library_paths(app: &AppHandle) -> Vec<String> {
 /// process still finds system libraries. Every sidecar spawn routes
 /// through this so the path logic lives in exactly one place.
 pub fn with_library_paths(cmd: Command, app: &AppHandle) -> Command {
-    let mut parts = library_paths(app);
+    let (var, value) = library_path_env(library_paths(app));
+    cmd.env(var, value)
+}
+
+/// The platform's shared-library search-path variable, and its value with
+/// `dirs` searched first and the inherited value after them.
+pub fn library_path_env(mut dirs: Vec<String>) -> (&'static str, String) {
     #[cfg(target_os = "linux")]
     let (var, sep) = ("LD_LIBRARY_PATH", ":");
     #[cfg(target_os = "macos")]
@@ -196,9 +202,9 @@ pub fn with_library_paths(cmd: Command, app: &AppHandle) -> Command {
     let (var, sep) = ("PATH", ";");
     let existing = std::env::var(var).unwrap_or_default();
     if !existing.is_empty() {
-        parts.push(existing);
+        dirs.push(existing);
     }
-    cmd.env(var, parts.join(sep))
+    (var, dirs.join(sep))
 }
 
 /// Kill a sidecar's child process if one is running, clearing the handle.
@@ -286,6 +292,39 @@ pub async fn drive_status_on_health(status: &Arc<Mutex<SidecarStatus>>, ok: bool
     } else if *s == SidecarStatus::Starting {
         error!("{name} health check timed out");
         *s = SidecarStatus::Error("Health check timed out".to_string());
+    }
+}
+
+/// Spawn the task that health-polls a freshly started sidecar and drives its
+/// status from `Starting` to `Ready`, or to `Error` on timeout. It gives up
+/// early if something else (a `stop()`, a ready marker in the log) moves the
+/// status first. `accept_any` counts any HTTP answer, not just 2xx, as up.
+pub fn watch_health(
+    status: &Arc<Mutex<SidecarStatus>>,
+    url: String,
+    name: &'static str,
+    timeout: Duration,
+    accept_any: bool,
+) {
+    let status = Arc::clone(status);
+    tauri::async_runtime::spawn(async move {
+        let check = Arc::clone(&status);
+        let ok = poll_health(&url, name, timeout, accept_any, move || {
+            let s = Arc::clone(&check);
+            async move { *s.lock().await == SidecarStatus::Starting }
+        })
+        .await;
+        drive_status_on_health(&status, ok, name).await;
+    });
+}
+
+/// `Ok` when the sidecar is `Ready`; otherwise `Err(not_ready)`. The guard in
+/// front of every request a sidecar serves.
+pub async fn require_ready(status: &Mutex<SidecarStatus>, not_ready: &str) -> Result<(), String> {
+    if *status.lock().await == SidecarStatus::Ready {
+        Ok(())
+    } else {
+        Err(not_ready.to_string())
     }
 }
 
@@ -445,6 +484,19 @@ where
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn library_path_env_searches_the_given_dirs_first() {
+        let (var, value) = library_path_env(vec!["/first".into(), "/second".into()]);
+        #[cfg(target_os = "linux")]
+        assert_eq!(var, "LD_LIBRARY_PATH");
+        #[cfg(target_os = "macos")]
+        assert_eq!(var, "DYLD_LIBRARY_PATH");
+        #[cfg(target_os = "windows")]
+        assert_eq!(var, "PATH");
+        let sep = if cfg!(windows) { ";" } else { ":" };
+        assert!(value.starts_with(&format!("/first{sep}/second")), "{value}");
+    }
+
     use super::*;
     use crate::orphans::RunningServer;
 
