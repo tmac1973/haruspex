@@ -42,6 +42,8 @@ export function unregisterTool(name: string): void {
  */
 interface ToolFilterOpts {
 	hasWorkingDir: boolean;
+	/** A live user is present, who can answer `ask_user_question`. */
+	interactive: boolean;
 	deepResearch: boolean;
 	visionSupported: boolean;
 	shellMode: boolean;
@@ -118,6 +120,9 @@ function shouldIncludeShellTool(reg: ToolRegistration, opts: ToolFilterOpts): bo
 		// Code-mode capability (see shouldIncludeCodeTool / CODE_TOOLS).
 		return SHELL_FS_READS.has(name);
 	}
+	// Asking the person at the terminal a multiple-choice question, in the
+	// modal rather than as chat text.
+	if (reg.category === 'interaction') return opts.interactive;
 	// Email, sandbox, etc. are intentionally hidden in Shell mode.
 	return false;
 }
@@ -128,6 +133,9 @@ function shouldIncludeCodeTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	// that can see images.
 	if (reg.requiresVision && !opts.visionSupported) return false;
 	if (CODE_TOOLS.has(name)) return true;
+	// ask_user_question. Code mode is where "ask me one question at a time"
+	// is most often said; without this the model asked in chat text instead.
+	if (reg.category === 'interaction') return opts.interactive;
 	// Interactive terminal control only when Code mode drives a live shell
 	// session (shellMode), where there's a real PTY to send input/signals to.
 	if (SHELL_INTERACTIVE_TOOLS.has(name)) return opts.shellMode;
@@ -224,8 +232,10 @@ export function getToolSchemas(opts: {
 		}
 		return schemas;
 	}
+	const interactive = opts.interactive ?? false;
 	const filter: ToolFilterOpts = {
 		hasWorkingDir: opts.hasWorkingDir,
+		interactive,
 		deepResearch: opts.deepResearch ?? false,
 		visionSupported: opts.visionSupported ?? true,
 		shellMode: opts.shellMode ?? false,
@@ -234,8 +244,8 @@ export function getToolSchemas(opts: {
 		hasCalendar: hasEnabledCalendarAccount(),
 		hasContacts: hasEnabledContactsAccount(),
 		screenCapture: getSettings().screenCaptureEnabled,
-		imageGeneration: (opts.interactive ?? false) && getSettings().imageBackendKind !== 'none',
-		sendableEmail: (opts.interactive ?? false) && hasSendableEmailAccount(),
+		imageGeneration: interactive && getSettings().imageBackendKind !== 'none',
+		sendableEmail: interactive && hasSendableEmailAccount(),
 		sandboxEnabled: getSettings().sandboxEnabled,
 		memoryWritable: memoryActive()
 	};
