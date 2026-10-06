@@ -8,6 +8,11 @@ server, installs the model files through Manager, and picks the workflows.
 Written for Linux with an AMD GPU (ROCm). Notes for NVIDIA and Windows are at
 the end.
 
+The same steps work with ComfyUI on the Haruspex machine itself — use
+`http://127.0.0.1:8188` as the server address. Step 3 is then unnecessary:
+Manager only restricts model installs when ComfyUI is listening on something
+other than loopback.
+
 ## What Haruspex needs from the server
 
 - **ComfyUI, a current release.** The bundled workflows use only ComfyUI's own
@@ -28,9 +33,21 @@ On the server:
 ```bash
 git clone https://github.com/comfyanonymous/ComfyUI.git ~/ComfyUI
 cd ~/ComfyUI
-python3 -m venv venv
+python3.13 -m venv venv        # name the version; see below
 source venv/bin/activate
 ```
+
+**Name the interpreter rather than using `python3`.** ComfyUI's README puts it
+plainly: 3.13 is "very well supported", 3.12 is what to fall back to if custom
+node dependencies give trouble, and 3.14 "works but some custom nodes may have
+issues". `python3` on a current distribution may already be 3.14 — Fedora 44
+ships it as the default — so `python3 -m venv` picks the least-supported option
+without saying so.
+
+Nothing Haruspex asks of the server needs a custom node, so 3.14 would probably
+be fine; there is just no reason to find out the hard way. Install whichever
+version you name if the distribution does not ship it (`sudo dnf install
+python3.13`, `sudo apt install python3.13-venv`).
 
 Install PyTorch for your GPU **before** ComfyUI's requirements, so pip does not
 pull the default CUDA build. For an AMD card, use the ROCm index that
@@ -38,8 +55,20 @@ pull the default CUDA build. For an AMD card, use the ROCm index that
 lists for the current release. For example:
 
 ```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.4
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm7.0
 ```
+
+The indexes do not all carry the same torch release — rocm7.0 had 2.10.0 while
+rocm6.4 was still on 2.9.1 — and a given index only has wheels for some Python
+versions. Both are worth checking before you commit to a venv:
+
+```bash
+curl -s https://download.pytorch.org/whl/rocm7.0/torch/ \
+  | grep -oE 'torch-[0-9][^"<>]*cp313[^"<>]*\.whl' | sort -V | tail -2
+```
+
+An empty result means that index has nothing for that Python, and pip will fall
+back to a PyPI build with the wrong GPU runtime.
 
 The ROCm wheels carry their own ROCm runtime. The machine needs only the
 `amdgpu` kernel driver, which current kernels include, and your user in the
@@ -99,7 +128,8 @@ stop it and find the file:
 find ~/ComfyUI/user -name config.ini -path '*anager*'
 ```
 
-In that file's `[default]` section, set:
+On a current install that is `~/ComfyUI/user/__manager/config.ini`. In its
+`[default]` section, change `network_mode` — it is written as `public`:
 
 ```ini
 network_mode = personal_cloud
@@ -217,4 +247,12 @@ Then Probe again in Haruspex. ComfyUI picks up new files without a restart.
   (`plan/local-image-generation/TODO.md`, phase 27).
 - The remote case, with `network_mode = personal_cloud`, follows Manager's
   documented rules, but hasn't been tried end to end yet.
-- Ming on ComfyUI has not been tried on an RX 7900 XTX specifically.
+- This install path was followed on Fedora 44 with an RX 7900 XTX
+  (gfx1100, 24 GB): Python 3.12, `torch 2.10.0+rocm7.0`, ComfyUI 0.39.0
+  serving `/system_stats` and reporting the card as `native`, and Manager
+  answering `/v2/manager/version` with `V4.2.2`. Every requirement resolved as
+  a wheel — nothing built from source. An fp16 matmul ran at 18.7 TFLOP/s,
+  which is worth checking separately: ROCm can enumerate a card and still
+  fault on compute.
+- Ming itself has not been generated with on that card. The install above
+  stops short of the model weights, which Haruspex fetches through Manager.
