@@ -208,7 +208,7 @@ export class WorkerManager {
 	} = {
 		ready: () => this.handleReady(),
 		load_error: (m) => this.handleLoadError(m),
-		get_proxy_mode: () => this.handleProxyModeRequest(),
+		get_runtime_config: () => this.handleRuntimeConfigRequest(),
 		stdout: (m) => this.pending.get(m.id)?.onStdout?.(m.data),
 		stderr: (m) => this.pending.get(m.id)?.onStderr?.(m.data),
 		pkg_phase_start: (m) => this.handlePkgPhaseStart(m),
@@ -240,11 +240,10 @@ export class WorkerManager {
 		this.readyWaiters.splice(0).forEach((fn) => fn());
 	}
 
-	private handleProxyModeRequest(): void {
+	private handleRuntimeConfigRequest(): void {
 		if (this.worker) {
 			this.worker.postMessage({
-				kind: 'proxy_mode',
-				mode: getSettings().proxy?.mode ?? 'none',
+				kind: 'runtime_config',
 				workingDirSet: !!getWorkingDir()
 			});
 		}
@@ -369,6 +368,7 @@ export class WorkerManager {
 			});
 			void this.waitForReady()
 				.then(async () => {
+					await this.pushNetworkPolicy();
 					// Pre-run working-dir sync. Only happens for actual code runs
 					// (not install_package / reset_python), and only when a
 					// working dir is set. Failures here don't block the run —
@@ -401,6 +401,25 @@ export class WorkerManager {
 					}
 				});
 		});
+	}
+
+	/**
+	 * Hand Rust the network proxy and access level (Settings → Agent) before
+	 * a run. The `haruspexfetch:` scheme behind sync `requests`/`urllib`
+	 * receives nothing from the webview, so both fetch paths read them from
+	 * there. A failure leaves the previous policy in force, never an open one:
+	 * the Rust default is the default access level with no proxy.
+	 */
+	private async pushNetworkPolicy(): Promise<void> {
+		const s = getSettings();
+		try {
+			await invoke('sandbox_set_network', {
+				proxy: s.proxy,
+				access: s.sandboxNetAccess
+			});
+		} catch (e) {
+			logDebug('sandbox', 'sandbox_set_network failed', { error: errMessage(e) });
+		}
 	}
 
 	private static readonly SYNC_PER_FILE_CAP_BYTES = 50 * 1024 * 1024;
@@ -667,12 +686,9 @@ export class WorkerManager {
 		}): void => this.respondTo(msg, 'fetch_response', resp);
 		try {
 			const bodyBytes = msg.init.body ? Array.from(msg.init.body) : undefined;
-			const proxy = getSettings().proxy;
 			logDebug('sandbox', 'sandbox_fetch invoke', {
-				url: msg.url,
-				method: msg.init.method ?? 'GET',
-				proxyMode: proxy?.mode ?? '(none)',
-				proxyUrl: proxy?.url || '(empty)'
+				url: urlForLog(msg.url),
+				method: msg.init.method ?? 'GET'
 			});
 			const result = await invoke<{
 				status: number;
@@ -685,11 +701,10 @@ export class WorkerManager {
 					method: msg.init.method,
 					headers: msg.init.headers,
 					body: bodyBytes
-				},
-				proxy
+				}
 			});
 			logDebug('sandbox', 'sandbox_fetch response', {
-				url: msg.url,
+				url: urlForLog(msg.url),
 				status: result.status,
 				finalUrl: result.url,
 				bodyLen: result.body.length
@@ -723,5 +738,15 @@ export class WorkerManager {
 
 	get hasWorker(): boolean {
 		return this.worker !== null;
+	}
+}
+
+/** Scheme, host and path only: a query string can carry an API key. */
+function urlForLog(url: string): string {
+	try {
+		const u = new URL(url);
+		return `${u.protocol}//${u.host}${u.pathname}`;
+	} catch {
+		return '(not a valid URL)';
 	}
 }

@@ -15,6 +15,7 @@ const SECRETS = [
 	'searx-user',
 	'searx-pass',
 	'proxy-pass',
+	'search-proxy-pass',
 	'email-pass',
 	'dav-pass',
 	'ghp_mcp_token',
@@ -34,6 +35,7 @@ function plantSecrets(): void {
 			remoteBaseUrl: 'https://remote-user:remote-pass@api.example.com/v1?key=url-query-key'
 		},
 		proxy: { ...s.proxy, mode: 'manual', url: 'http://u:proxy-pass@proxy.example.com:8080' },
+		searchProxy: { mode: 'manual', url: 'http://u:search-proxy-pass@vpn.example.com', bypass: '' },
 		integrations: {
 			...s.integrations,
 			email: {

@@ -27,7 +27,7 @@ use std::time::Instant;
 use tauri::Emitter;
 
 pub use bypass::ProxyUse;
-pub(crate) use bypass::{apply_proxy, apply_proxy_with};
+pub(crate) use bypass::{apply_proxy, apply_proxy_with, routes_through_proxy};
 pub(crate) use child_env::proxy_env;
 pub use config::ProxyConfig;
 use config::RATE_LIMIT_INTERVAL;

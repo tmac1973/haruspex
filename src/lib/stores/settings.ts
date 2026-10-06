@@ -12,6 +12,7 @@ import type { ImageBackendKind } from '$lib/image/types';
 import type { DavAccount } from '$lib/ipc/gen/DavAccount';
 import type { EmailProvider } from '$lib/ipc/gen/EmailProvider';
 import type { ProxyConfig } from '$lib/ipc/gen/ProxyConfig';
+import type { SandboxNetAccess } from '$lib/ipc/gen/SandboxNetAccess';
 import type { TlsMode } from '$lib/ipc/gen/TlsMode';
 import type { ShellSelection } from '$lib/ipc/gen/ShellSelection';
 
@@ -231,7 +232,9 @@ export interface IntegrationsConfig {
 }
 
 /**
- * Network proxy for outbound web traffic (search, URL fetch, image search).
+ * The network proxy, for every outbound request except web search (model and
+ * runtime downloads, MCP servers, CalDAV/CardDAV, ComfyUI installs, the
+ * Python sandbox). Web search has its own, `SearchProxyConfig`.
  * `mode: 'none'` bypasses the proxy entirely; `mode: 'manual'` routes every
  * egress request through `url` unless the target matches an entry in
  * `bypass`. The bypass list is free-form text — one entry per line or
@@ -246,6 +249,20 @@ export interface IntegrationsConfig {
 export type ProxyMode = ProxyConfig['mode'];
 
 export type { ProxyConfig };
+export type { SandboxNetAccess };
+
+/**
+ * The web search proxy: web_search, fetch_url and image search, which talk to
+ * search engines and the pages they return. Kept apart from the network proxy
+ * because the two do different jobs: a search proxy keeps engines from rate
+ * limiting or profiling one address, a network proxy is how traffic leaves a
+ * network at all. `'network'` follows the network proxy.
+ */
+export interface SearchProxyConfig {
+	mode: 'none' | 'network' | 'manual';
+	url: string;
+	bypass: string;
+}
 
 export interface AppSettings {
 	responseFormat: ResponseFormat;
@@ -371,6 +388,11 @@ export interface AppSettings {
 	 */
 	sandboxTimeoutSeconds: number;
 	/**
+	 * What model-written Python may reach: public addresses only, those and
+	 * the local network, or this machine's own services as well.
+	 */
+	sandboxNetAccess: SandboxNetAccess;
+	/**
 	 * Whether to enable Qwen 3's reasoning/thinking mode. When on, the
 	 * model emits a <think> block before its answer, which helps with
 	 * code-heavy tasks (planning Python sandbox calls, debugging
@@ -441,6 +463,7 @@ export interface AppSettings {
 	apiKeys: StoredApiKey[];
 	integrations: IntegrationsConfig;
 	proxy: ProxyConfig;
+	searchProxy: SearchProxyConfig;
 	/**
 	 * Optional path to the shell binary the Shell tab launches. Empty
 	 * string means "auto-detect from $SHELL with /bin/bash fallback"
@@ -609,6 +632,12 @@ const defaultProxy: ProxyConfig = {
 	bypass: ''
 };
 
+const defaultSearchProxy: SearchProxyConfig = {
+	mode: 'network',
+	url: '',
+	bypass: ''
+};
+
 // Canonical user-facing defaults. These are the single source of truth for
 // values that also have to satisfy a Tauri command on the Rust side: the TS
 // caller always resolves to these before invoking, so the Rust command no
@@ -681,6 +710,7 @@ const defaults: AppSettings = {
 	sandboxEnabled: false,
 	sandboxApproval: 'once-per-chat',
 	sandboxTimeoutSeconds: 60,
+	sandboxNetAccess: 'lan',
 	thinkingEnabled: true,
 	mtpEnabled: true,
 	// Not `null` ("model default"): Qwen 3.8 defaults itself to `xhigh`, which
@@ -694,6 +724,7 @@ const defaults: AppSettings = {
 	apiKeys: [],
 	integrations: defaultIntegrations,
 	proxy: defaultProxy,
+	searchProxy: defaultSearchProxy,
 	shellBinary: '',
 	shellSelection: null,
 	shellHistoryTurnsForPrompt: 3,
@@ -783,10 +814,19 @@ function load(): AppSettings {
 					accounts: parsedIntegrations.dav?.accounts ?? []
 				}
 			};
-			const mergedProxy: ProxyConfig = {
+			const storedProxy: ProxyConfig = {
 				...defaultProxy,
 				...(parsed.proxy ?? {})
 			};
+			// One proxy used to cover everything, though it was meant for
+			// search. Installs from before the split move it to the search
+			// proxy and leave the network proxy off (its URL kept, for a
+			// user who did mean it for everything to switch back on).
+			const splitNow = parsed.searchProxy === undefined && storedProxy.mode === 'manual';
+			const mergedProxy: ProxyConfig = splitNow ? { ...storedProxy, mode: 'none' } : storedProxy;
+			const mergedSearchProxy: SearchProxyConfig = splitNow
+				? { mode: 'manual', url: storedProxy.url, bypass: storedProxy.bypass }
+				: { ...defaultSearchProxy, ...(parsed.searchProxy ?? {}) };
 			// Effort used to be OpenRouter-only, stored inside the backend
 			// config. One selector now covers every backend that publishes
 			// levels, so adopt the old value rather than silently resetting an
@@ -822,7 +862,8 @@ function load(): AppSettings {
 				inferenceBackend: mergedInference,
 				apiKeys,
 				integrations: mergedIntegrations,
-				proxy: mergedProxy
+				proxy: mergedProxy,
+				searchProxy: mergedSearchProxy
 			};
 		}
 	} catch {
@@ -1048,6 +1089,25 @@ export function updateProxy(partial: Partial<ProxyConfig>): void {
 		...settings,
 		proxy: { ...current, ...partial }
 	});
+}
+
+/** Merge a partial update into the search proxy. */
+export function updateSearchProxy(partial: Partial<SearchProxyConfig>): void {
+	commit({
+		...settings,
+		searchProxy: { ...settings.searchProxy, ...partial }
+	});
+}
+
+/**
+ * The proxy web search, page fetches and image search use, as the Rust side
+ * takes it: the network proxy under `'network'`, otherwise the search proxy's
+ * own.
+ */
+export function getSearchProxy(): ProxyConfig {
+	const sp = settings.searchProxy;
+	if (sp.mode === 'network') return settings.proxy;
+	return { mode: sp.mode === 'manual' ? 'manual' : 'none', url: sp.url, bypass: sp.bypass };
 }
 
 export function applyTheme(theme?: ThemeMode): void {

@@ -229,6 +229,7 @@ export const IPC = {
 	sandbox_delete_in_workdir: 'sandbox_delete_in_workdir',
 	sandbox_fetch: 'sandbox_fetch',
 	sandbox_save: 'sandbox_save',
+	sandbox_set_network: 'sandbox_set_network',
 	sandbox_sync_workdir: 'sandbox_sync_workdir',
 	save_export_file: 'save_export_file',
 	secret_available: 'secret_available',

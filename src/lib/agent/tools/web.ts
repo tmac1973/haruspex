@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { isAbortError } from '$lib/utils/error';
 import { type ChatMessage } from '$lib/api';
 import { detectPaywall } from '$lib/agent/paywall';
-import { getSettings, DEFAULT_SEARXNG_URL } from '$lib/stores/settings';
+import { getSettings, DEFAULT_SEARXNG_URL, getSearchProxy } from '$lib/stores/settings';
 import type { ImageSearchResult } from '$lib/ipc/gen/ImageSearchResult';
 import type { PageImage } from '$lib/ipc/gen/PageImage';
 import type { SearchResult } from '$lib/ipc/gen/SearchResult';
@@ -84,7 +84,7 @@ registerTool({
 				instanceUrl: settings.searxngUrl || DEFAULT_SEARXNG_URL,
 				recency: settings.searchRecency || null,
 				deepResearch: ctx.deepResearch,
-				proxy: settings.proxy,
+				proxy: getSearchProxy(),
 				// Only meaningful for the 'browser' provider; ignored otherwise.
 				browserPath: settings.browserPath || null
 			});
@@ -251,7 +251,7 @@ registerTool({
 			const results = await invoke<ImageSearchResult[]>('proxy_image_search', {
 				query,
 				maxResults: maxResults ?? null,
-				proxy: getSettings().proxy
+				proxy: getSearchProxy()
 			});
 			if (results.length === 0) {
 				return toolResult(
@@ -294,7 +294,7 @@ registerTool({
 		try {
 			const images = await invoke<PageImage[]>('proxy_fetch_url_images', {
 				url,
-				proxy: getSettings().proxy
+				proxy: getSearchProxy()
 			});
 			if (images.length === 0) {
 				return toolResult(

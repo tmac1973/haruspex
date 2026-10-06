@@ -4,11 +4,12 @@ import type { MainToWorker, ToolResult, WorkerToMain } from './protocol';
 // Worker-manager pulls in a few app singletons; stub them so the manager is
 // exercised in isolation. getWorkingDir → null keeps the pre-run workdir sync
 // a no-op (so runPython drives straight through to `send`).
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+const invokeMock = vi.hoisted(() => vi.fn());
+vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
 vi.mock('$lib/stores/session.svelte', () => ({ getWorkingDir: () => null }));
 vi.mock('$lib/stores/settings', async (importOriginal) => ({
 	...(await importOriginal<typeof import('$lib/stores/settings')>()),
-	getSettings: () => ({ proxy: { mode: 'none' } })
+	getSettings: () => ({ proxy: { mode: 'none' }, sandboxNetAccess: 'internet' })
 }));
 vi.mock('$lib/debug-log', async (importOriginal) => ({
 	...(await importOriginal<typeof import('$lib/debug-log')>()),
@@ -89,6 +90,20 @@ describe('WorkerManager message dispatch', () => {
 		expect(stdout).toEqual(['hi\n']);
 	});
 
+	it('hands Rust the network policy before the code runs', async () => {
+		// The haruspexfetch: scheme behind sync requests/urllib reads it from
+		// there, so it has to be in place before any Python executes.
+		const wm = makeManager();
+		void wm.runPython('print(1)', {});
+		fake.emit({ kind: 'ready' });
+		await tick();
+		expect(invokeMock).toHaveBeenCalledWith('sandbox_set_network', {
+			proxy: { mode: 'none' },
+			access: 'internet'
+		});
+		expect(fake.postedKinds()).toContain('run');
+	});
+
 	it('accumulates artifacts into the resolved result', async () => {
 		const wm = makeManager();
 		const p = wm.runPython('plot()');
@@ -111,13 +126,13 @@ describe('WorkerManager message dispatch', () => {
 		expect(result.artifactsList[0]).toMatchObject({ kind: 'html', html: '<b>table</b>' });
 	});
 
-	it('replies to a get_proxy_mode request with the current settings', async () => {
+	it('replies to a get_runtime_config request with the current settings', async () => {
 		const wm = makeManager();
 		wm.runPython('x').catch(() => {}); // spawns the worker + registers the listener
 		fake.emit({ kind: 'ready' });
-		fake.emit({ kind: 'get_proxy_mode' });
-		const reply = fake.posted.find((m) => m.kind === 'proxy_mode');
-		expect(reply).toMatchObject({ kind: 'proxy_mode', mode: 'none', workingDirSet: false });
+		fake.emit({ kind: 'get_runtime_config' });
+		const reply = fake.posted.find((m) => m.kind === 'runtime_config');
+		expect(reply).toMatchObject({ kind: 'runtime_config', workingDirSet: false });
 	});
 
 	it('does not arm the interrupt buffer when not cross-origin-isolated', async () => {

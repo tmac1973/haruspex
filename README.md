@@ -350,7 +350,7 @@ One account covers both. If your server offers only one of them, only that one's
 
 Each server's tools stay off until you turn them on, and a tool that is not declared read-only asks before it runs. Servers speak the 2026-07-28 protocol. Blender and Godot bridge to the running application through its own addon; the Settings row tells you whether the app is actually attached.
 
-Traffic can go through your proxy per server (`Settings → Network` holds the proxy itself). Connections to your own machine never use it.
+Traffic can go through your proxy per server (`Settings → Network` holds the network proxy itself; web search has its own). Connections to your own machine never use it.
 
 `Settings → Logs → MCP` shows both sides of the conversation with each server.
 

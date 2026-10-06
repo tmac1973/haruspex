@@ -963,3 +963,65 @@ describe('image backend settings', () => {
 		updateSettings({ imageBackendKind: 'none', imageBackendBaseUrl: '' });
 	});
 });
+
+/**
+ * One proxy used to cover everything, though it was meant for search. The
+ * split moves an existing proxy to the search side and leaves the network
+ * proxy off, once.
+ */
+describe('load-time proxy split', () => {
+	let priorRaw: string | null;
+
+	beforeEach(() => {
+		priorRaw = localStorage.getItem(SETTINGS_KEY);
+	});
+
+	afterEach(() => {
+		if (priorRaw === null) localStorage.removeItem(SETTINGS_KEY);
+		else localStorage.setItem(SETTINGS_KEY, priorRaw);
+		vi.resetModules();
+	});
+
+	async function loadWith(stored: Record<string, unknown>) {
+		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
+		vi.resetModules();
+		return await import('$lib/stores/settings');
+	}
+
+	const manual = { mode: 'manual', url: 'http://vpn:3128', bypass: 'example.com' };
+
+	it('moves a pre-split proxy to search and turns the network proxy off', async () => {
+		const m = await loadWith({ proxy: manual });
+		const s = m.getSettings();
+		expect(s.searchProxy).toEqual(manual);
+		expect(s.proxy).toEqual({ ...manual, mode: 'none' });
+		expect(m.getSearchProxy()).toEqual(manual);
+	});
+
+	it('runs once: a network proxy set after the split stays on', async () => {
+		const m = await loadWith({
+			proxy: manual,
+			searchProxy: { mode: 'network', url: '', bypass: '' }
+		});
+		expect(m.getSettings().proxy).toEqual(manual);
+		expect(m.getSearchProxy()).toEqual(manual);
+	});
+
+	it('gives a new install no proxy, with search following the network proxy', async () => {
+		localStorage.removeItem(SETTINGS_KEY);
+		vi.resetModules();
+		const m = await import('$lib/stores/settings');
+		expect(m.getSettings().proxy.mode).toBe('none');
+		expect(m.getSettings().searchProxy.mode).toBe('network');
+		expect(m.getSearchProxy().mode).toBe('none');
+		expect(m.getSettings().sandboxNetAccess).toBe('lan');
+	});
+
+	it('resolves a search proxy of none to no proxy even with a network proxy on', async () => {
+		const m = await loadWith({
+			proxy: manual,
+			searchProxy: { mode: 'none', url: 'http://ignored', bypass: '' }
+		});
+		expect(m.getSearchProxy().mode).toBe('none');
+	});
+});

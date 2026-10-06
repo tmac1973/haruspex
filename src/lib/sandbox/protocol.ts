@@ -45,7 +45,7 @@ export interface SyncSkipped {
 
 export type MainToWorker =
 	| { kind: 'set_interrupt_buffer'; buffer: SharedArrayBuffer }
-	| { kind: 'proxy_mode'; mode: string; workingDirSet: boolean }
+	| { kind: 'runtime_config'; workingDirSet: boolean }
 	| {
 			kind: 'sync_workdir_files';
 			sync_id: string;
@@ -104,7 +104,7 @@ export interface ArtifactMessage {
 export type WorkerToMain =
 	| { kind: 'ready' }
 	| { kind: 'load_error'; error: string }
-	| { kind: 'get_proxy_mode' }
+	| { kind: 'get_runtime_config' }
 	| { kind: 'sync_workdir_ack'; sync_id: string; error?: string }
 	| { kind: 'stdout'; id: string; data: string }
 	| { kind: 'stderr'; id: string; data: string }

@@ -10,7 +10,7 @@ import type { MainToWorker } from './protocol';
 function mockHandlers(): WorkerMessageHandlers {
 	return {
 		setInterruptBuffer: vi.fn(),
-		resolveProxyMode: vi.fn(),
+		resolveRuntimeConfig: vi.fn(),
 		syncWorkdir: vi.fn(),
 		run: vi.fn(),
 		install: vi.fn(),
@@ -38,10 +38,10 @@ describe('dispatchWorkerMessage', () => {
 		expect(h.interrupt).toHaveBeenCalledOnce();
 	});
 
-	it('unpacks proxy_mode and set_interrupt_buffer args', () => {
+	it('unpacks runtime_config and set_interrupt_buffer args', () => {
 		const h = mockHandlers();
-		dispatchWorkerMessage({ kind: 'proxy_mode', mode: 'manual', workingDirSet: true }, h);
-		expect(h.resolveProxyMode).toHaveBeenCalledWith('manual', true);
+		dispatchWorkerMessage({ kind: 'runtime_config', workingDirSet: true }, h);
+		expect(h.resolveRuntimeConfig).toHaveBeenCalledWith(true);
 		const buffer = new SharedArrayBuffer(4);
 		dispatchWorkerMessage({ kind: 'set_interrupt_buffer', buffer }, h);
 		expect(h.setInterruptBuffer).toHaveBeenCalledWith(buffer);
