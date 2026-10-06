@@ -24,6 +24,7 @@
 	import { initChatStore } from '$lib/stores/chat.svelte';
 	import { migrateEmailSecrets } from '$lib/stores/emailSecrets';
 	import { migrateDavSecrets } from '$lib/stores/davSecrets';
+	import { migrateBraveApiKey } from '$lib/stores/searchSecrets';
 	import { reclaimOwnWindowSlots } from '$lib/agent/inferenceQueue.svelte';
 	import { recoverOrphanRuns } from '$lib/stores/jobRuns.svelte';
 	import { startScheduler } from '$lib/agent/jobs/scheduler.svelte';
@@ -242,6 +243,7 @@
 		// one. Idempotent, so it runs at every start.
 		void migrateEmailSecrets();
 		void migrateDavSecrets();
+		void migrateBraveApiKey();
 		// Sweep any job runs left at 'queued' / 'running' by a previous
 		// session (hard close, crash). Fire-and-forget — the JobsTab loads
 		// run history on demand and will pick up the recovered statuses.

@@ -70,6 +70,9 @@ where
 
 // Tauri commands
 
+/// Where the Brave Search key is kept in the secret store.
+const BRAVE_KEY: &str = "brave:key";
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn proxy_search(
@@ -106,7 +109,13 @@ pub async fn proxy_search(
 
     let results = match provider {
         "brave" => {
-            let key = api_key.as_deref().unwrap_or("");
+            // Inline only where no secret store works; otherwise it is kept
+            // under `brave:key` and never crosses from the webview.
+            let stored = match api_key.filter(|k| !k.is_empty()) {
+                Some(k) => k,
+                None => crate::secrets::get(BRAVE_KEY).await?.unwrap_or_default(),
+            };
+            let key = stored.as_str();
             if key.is_empty() {
                 return Err("Brave Search API key not configured".to_string());
             }

@@ -280,7 +280,10 @@ export interface AppSettings {
 	uiScale: number;
 	ttsVoice: string;
 	searchProvider: SearchProvider;
+	/** Inline only where no secret store works; otherwise empty, with the key
+	 *  kept under `brave:key` and `braveApiKeySaved` set. */
 	braveApiKey: string;
+	braveApiKeySaved: boolean;
 	searxngUrl: string;
 	/**
 	 * Path to the Chrome/Chromium executable browser-assisted search should
@@ -692,6 +695,7 @@ const defaults: AppSettings = {
 	remoteAccessPort: 8787,
 	remoteAccessToken: '',
 	braveApiKey: '',
+	braveApiKeySaved: false,
 	searxngUrl: DEFAULT_SEARXNG_URL,
 	contextSize: DEFAULT_CONTEXT_SIZE,
 	allowSpillToSystemRam: false,
@@ -1563,4 +1567,9 @@ export function getResponseFormatPrompt(): string {
 		default:
 			return 'Format your responses using markdown where helpful (headings, bullet points, code blocks). Keep formatting clean and readable.';
 	}
+}
+
+/** Whether a Brave Search key is configured, wherever it is kept. */
+export function hasBraveApiKey(s: AppSettings = settings): boolean {
+	return s.braveApiKey !== '' || s.braveApiKeySaved;
 }

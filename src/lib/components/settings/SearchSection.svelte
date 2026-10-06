@@ -2,6 +2,7 @@
 	import {
 		getSettings,
 		updateSettings,
+		hasBraveApiKey,
 		DEFAULT_SEARXNG_URL,
 		type AppSettings,
 		type SearchProvider
@@ -12,10 +13,21 @@
 	import type { DetectedBrowser } from '$lib/ipc/gen/DetectedBrowser';
 	import type { BrowserDetectionFailure } from '$lib/ipc/gen/BrowserDetectionFailure';
 	import type { BrowserFallbackState } from '$lib/ipc/gen/BrowserFallbackState';
+	import { removeBraveApiKey, saveBraveApiKey } from '$lib/stores/searchSecrets';
+	import {
+		savedSecretPlaceholder,
+		secretStoreKind,
+		type SecretStoreKind
+	} from '$lib/stores/secrets';
 
 	let searchProvider = $state<SearchProvider>(getSettings().searchProvider);
 	let searchRecency = $state(getSettings().searchRecency);
-	let braveApiKey = $state(getSettings().braveApiKey);
+	/** A key being typed. Stored when the field loses focus, then cleared. */
+	let braveDraft = $state('');
+	let braveSaved = $state(hasBraveApiKey());
+	let braveError = $state('');
+	let storeKind = $state<SecretStoreKind>('keychain');
+	void secretStoreKind().then((k) => (storeKind = k));
 	let searxngUrl = $state(getSettings().searxngUrl);
 
 	let browserPath = $state(getSettings().browserPath);
@@ -65,8 +77,22 @@
 		if (provider === 'browser' && !browser && !browserFailure) void probeBrowser();
 	}
 
-	function saveBraveKey() {
-		updateSettings({ braveApiKey });
+	async function saveBraveKey() {
+		const value = braveDraft.trim();
+		if (!value) return;
+		braveError = '';
+		try {
+			await saveBraveApiKey(value);
+			braveDraft = '';
+			braveSaved = true;
+		} catch (e) {
+			braveError = `Could not save the key: ${String(e)}`;
+		}
+	}
+
+	async function removeBraveKey() {
+		await removeBraveApiKey();
+		braveSaved = false;
 	}
 
 	function saveSearxngUrl() {
@@ -96,7 +122,7 @@
 		</select>
 	</div>
 
-	{#if searchProvider === 'auto' && !braveApiKey}
+	{#if searchProvider === 'auto' && !braveSaved}
 		<div class="provider-nudge">
 			Free public search engines are unreliable — they get rate-limited and their HTML changes break
 			scrapers. For stable results, configure
@@ -113,10 +139,14 @@
 			<input
 				id="brave-key"
 				type="password"
-				bind:value={braveApiKey}
+				bind:value={braveDraft}
 				onblur={saveBraveKey}
-				placeholder="BSA..."
+				placeholder={braveSaved ? savedSecretPlaceholder(storeKind) : 'BSA...'}
 			/>
+			{#if braveSaved}
+				<button type="button" onclick={removeBraveKey}>Remove key</button>
+			{/if}
+			{#if braveError}<p class="hint">{braveError}</p>{/if}
 			<p class="hint">Get a free key at brave.com/search/api (2,000 queries/month)</p>
 		</div>
 	{/if}

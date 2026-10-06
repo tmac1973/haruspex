@@ -20,7 +20,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
-import { getSettings } from '$lib/stores/settings';
+import { getSettings, hasBraveApiKey } from '$lib/stores/settings';
 import { getDebugLogs } from '$lib/debug-log';
 
 const REPO = 'tmac1973/haruspex';
@@ -169,7 +169,7 @@ function buildSettingsSnapshot(): string {
 		},
 		searchProvider: s.searchProvider,
 		searxngUrl: urlForReport(s.searxngUrl),
-		braveApiKeyConfigured: s.braveApiKey.length > 0,
+		braveApiKeyConfigured: hasBraveApiKey(s),
 		ttsVoice: s.ttsVoice,
 		ttsReadTablesByColumn: s.ttsReadTablesByColumn,
 		audioOutputDevice: s.audioOutputDevice,
