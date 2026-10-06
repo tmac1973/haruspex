@@ -1042,11 +1042,16 @@ describe('textures drawn in code', () => {
 		let n = 0;
 		const judge = vi.fn(async () => ({ ok: n++ > 0, reason: 'looks like carpet' }));
 		const h = codeHarness(
-			{ revise: vi.fn(async () => revised) },
+			{ revise: vi.fn(async () => ({ recipe: revised, drawn: 'dark tiles' })) },
 			{ judge: { enabled: true, visionSupported: true, judge } }
 		);
 		const [r] = await generateEntries(specOf([{ kind: 'texture', recipe: RECIPE }]), h.deps);
-		expect(r.outcome).toMatchObject({ status: 'done', attempts: 2, recipe: revised });
+		expect(r.outcome).toMatchObject({
+			status: 'done',
+			attempts: 2,
+			recipe: revised,
+			drawn: 'dark tiles'
+		});
 		expect(h.render).toHaveBeenCalledTimes(2);
 		expect(h.render.mock.calls[1][0]).toBe(revised);
 	});
@@ -1054,7 +1059,7 @@ describe('textures drawn in code', () => {
 	it('keeps the tiles and marks them rejected after a second no', async () => {
 		const judge = vi.fn(async () => ({ ok: false, reason: 'looks like carpet' }));
 		const h = codeHarness(
-			{ revise: vi.fn(async () => RECIPE) },
+			{ revise: vi.fn(async () => ({ recipe: RECIPE, drawn: '' })) },
 			{ judge: { enabled: true, visionSupported: true, judge } }
 		);
 		const [r] = await generateEntries(specOf([{ kind: 'texture', recipe: RECIPE }]), h.deps);
@@ -1064,6 +1069,30 @@ describe('textures drawn in code', () => {
 			reason: 'looks like carpet'
 		});
 		expect(judge).toHaveBeenCalledTimes(2);
+	});
+
+	it('judges the tile against what the recipe draws, not the prompt', async () => {
+		// "graffiti-covered subway wall" drawn as plain tiles was rejected for
+		// lacking graffiti no recipe can draw (run 111).
+		const seen: string[] = [];
+		const judge = vi.fn(async (e: AssetEntry) => {
+			seen.push(e.prompt);
+			return { ok: true, reason: '' };
+		});
+		const h = codeHarness({}, { judge: { enabled: true, visionSupported: true, judge } });
+		await generateEntries(
+			specOf([
+				{
+					kind: 'texture',
+					prompt: 'graffiti-covered subway tile wall',
+					recipe: RECIPE,
+					drawn: 'white tile wall with a rusted pipe'
+				},
+				{ kind: 'texture', prompt: 'cracked asphalt', recipe: RECIPE }
+			]),
+			h.deps
+		);
+		expect(seen).toEqual(['white tile wall with a rusted pipe', 'cracked asphalt']);
 	});
 
 	it('draws the same seed for the same entry, run after run', async () => {

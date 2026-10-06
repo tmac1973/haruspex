@@ -65,6 +65,7 @@ function entry(raw: unknown): AssetEntry | null {
 		...(e.recipe && typeof e.recipe === 'object' && !Array.isArray(e.recipe)
 			? { recipe: e.recipe as AssetEntry['recipe'] }
 			: {}),
+		...(optionalStr(e.drawn) ? { drawn: str(e.drawn) } : {}),
 		...(Array.isArray(e.variants) && e.variants.every((v) => typeof v === 'string')
 			? { variants: e.variants as string[] }
 			: {})

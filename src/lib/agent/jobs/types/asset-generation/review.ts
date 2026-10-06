@@ -61,7 +61,7 @@ export function dropRecipes(spec: AssetSpec, ids: string[]): AssetSpec {
 		entries: spec.entries.map((e): AssetEntry => {
 			if (!drop.has(e.id)) return e;
 			// eslint-disable-next-line @typescript-eslint/no-unused-vars
-			const { recipe, ...rest } = e;
+			const { recipe, drawn, ...rest } = e;
 			return rest;
 		})
 	};

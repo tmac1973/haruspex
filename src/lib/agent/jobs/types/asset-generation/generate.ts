@@ -63,8 +63,11 @@ export interface CodeTextureDeps {
 	variants: number;
 	/** PNG bytes for each variant, base first. */
 	render: (recipe: TextureRecipe, seed: number, variants: number) => Promise<Uint8Array[]>;
-	/** A new recipe after the judge's no, or null. */
-	revise: (entry: AssetEntry, reason: string) => Promise<TextureRecipe | null>;
+	/** A new recipe after the judge's no, with what it draws, or null. */
+	revise: (
+		entry: AssetEntry,
+		reason: string
+	) => Promise<{ recipe: TextureRecipe; drawn: string } | null>;
 	/** Why an entry has no recipe, when the recipe stage gave up on it. */
 	recipeFailures: Map<string, string>;
 }

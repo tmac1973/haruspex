@@ -139,6 +139,7 @@ describe('round trip', () => {
 					notes: 'for the shop screen',
 					rejected: 'that is a hammer',
 					recipe: { base: { ramp: ['#000000', '#ffffff'] }, layers: [] },
+					drawn: 'black and white noise',
 					variants: ['o.png', 'o_1.png']
 				}
 			]

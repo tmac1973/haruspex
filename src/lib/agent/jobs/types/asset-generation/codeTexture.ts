@@ -67,12 +67,16 @@ export async function runCodeTexture(index: number, ctx: CodeTextureContext): Pr
 	};
 
 	let recipe = entry.recipe;
+	let drawn = entry.drawn;
 	let revised: TextureRecipe | undefined;
 	const degraded: string[] = [];
 	try {
 		let first = await draw(recipe);
 		for (let attempt = 1; ; attempt++) {
-			const judged = await maybeJudge(entry, first, deps.judge, false, CODE_TEXTURE_HINT);
+			// Judged against what the recipe draws, when the model said: the
+			// prompt may name details no recipe can draw ("graffiti-covered").
+			const subject = drawn ? { ...entry, prompt: drawn } : entry;
+			const judged = await maybeJudge(subject, first, deps.judge, false, CODE_TEXTURE_HINT);
 			if (judged.unavailable) degraded.push(judgeUnavailable(judged.unavailable));
 			const verdict = judged.verdict;
 			const base = {
@@ -81,13 +85,14 @@ export async function runCodeTexture(index: number, ctx: CodeTextureContext): Pr
 				degraded,
 				codeDrawn: true,
 				variants: paths,
-				...(revised ? { recipe: revised } : {})
+				...(revised ? { recipe: revised, ...(drawn ? { drawn } : {}) } : {})
 			};
 			if (!verdict || verdict.ok) {
 				record(index, started, { status: 'done', ...base }, null);
 				return;
 			}
-			const next = attempt === 1 ? await code.revise({ ...entry, recipe }, verdict.reason) : null;
+			const next =
+				attempt === 1 ? await code.revise({ ...entry, recipe, drawn }, verdict.reason) : null;
 			if (!next) {
 				// The tiles stay: they tile, which is more than the image
 				// model's would. The spec marks them for Review assets.
@@ -100,7 +105,8 @@ export async function runCodeTexture(index: number, ctx: CodeTextureContext): Pr
 				record(index, started, outcome, null);
 				return;
 			}
-			recipe = revised = next;
+			recipe = revised = next.recipe;
+			drawn = next.drawn || drawn;
 			first = await draw(recipe);
 		}
 	} catch (e) {

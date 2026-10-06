@@ -51,6 +51,8 @@ export interface EntryOutcome {
 	variants?: string[];
 	/** The recipe, when the judge's no made the run revise it. */
 	recipe?: TextureRecipe;
+	/** What the revised recipe draws, for the spec. */
+	drawn?: string;
 }
 
 /**

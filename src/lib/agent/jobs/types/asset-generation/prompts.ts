@@ -244,6 +244,12 @@ export function recipePrompt(
 		'',
 		'Keep each recipe simple: a base and one to three layers reads best at 32',
 		'pixels. Do not draw objects: no doors, signs, furniture or vehicles.',
+		'A description may name things no layer can draw (graffiti, a sign, a',
+		'window). Leave those out and draw the material under them.',
+		'',
+		'With each recipe, give `drawn`: one line saying what the recipe actually',
+		'shows, from the layers you used ("white brick wall with a rusted pipe").',
+		'The tile is checked against that line, so name only what is there.',
 		'',
 		'Examples:',
 		...RECIPE_EXAMPLES.map(([what, r]) => `- ${what}: ${JSON.stringify(r)}`),
@@ -254,6 +260,7 @@ export function recipePrompt(
 			return `- ${t.id}: ${t.prompt}${fix ? `\n  Your last recipe for this needs changing: ${fix}` : ''}`;
 		}),
 		'',
-		'Call `submit_texture_recipes` once, with a recipe for every id above.'
+		'Call `submit_texture_recipes` once, with a recipe and its `drawn` line for',
+		'every id above.'
 	].join('\n');
 }

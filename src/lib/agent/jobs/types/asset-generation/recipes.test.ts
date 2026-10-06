@@ -9,6 +9,7 @@ import {
 	writeRecipes,
 	type RecipeDeps
 } from './recipes';
+import { parseRecipes } from './tools';
 
 const R = { base: { ramp: ['#000000', '#ffffff'] }, layers: [] };
 
@@ -30,7 +31,12 @@ function deps(answers: Array<Record<string, unknown>>, bad: Set<unknown> = new S
 	return {
 		ask: vi.fn(
 			async () =>
-				new Map(Object.entries(answers.shift() ?? {})) as Map<string, Record<string, unknown>>
+				new Map(
+					Object.entries(answers.shift() ?? {}).map(([id, recipe]) => [
+						id,
+						{ recipe: recipe as Record<string, unknown>, drawn: `drawn ${id}` }
+					])
+				)
 		),
 		validate: vi.fn(async (r: unknown) => (bad.has(r) ? 'base.ramp: too few' : null))
 	};
@@ -41,6 +47,7 @@ describe('writeRecipes', () => {
 		const d = deps([{ street: R, grass: R }]);
 		const r = await writeRecipes(spec(), d);
 		expect(r.written.sort()).toEqual(['grass', 'street']);
+		expect(r.spec.entries[0].drawn).toBe('drawn street');
 		expect(r.failed.size).toBe(0);
 		expect(r.spec.entries.find((e) => e.id === 'rat')).not.toHaveProperty('recipe');
 		expect(d.ask).toHaveBeenCalledTimes(1);
@@ -82,7 +89,7 @@ describe('reviseRecipe', () => {
 		const d = deps([{ street: R }]);
 		const s = spec();
 		const got = await reviseRecipe(s, { ...s.entries[0], recipe: R }, 'looks like carpet', d);
-		expect(got).toBe(R);
+		expect(got).toEqual({ recipe: R, drawn: 'drawn street' });
 		const prompt = vi.mocked(d.ask).mock.calls[0][0];
 		expect(prompt).toContain('looks like carpet');
 		expect(prompt).toContain('"ramp":["#000000","#ffffff"]');
@@ -124,5 +131,21 @@ describe('helpers', () => {
 		});
 		expect(next?.entries[2]).not.toHaveProperty('variants');
 		expect(applyCodeTextures(spec(), [{ id: 'rat' }])).toBeNull();
+	});
+});
+
+describe('parseRecipes', () => {
+	it('reads each recipe with its drawn line, and drops malformed ones', () => {
+		const got = parseRecipes({
+			recipes: [
+				{ id: ' street ', recipe: R, drawn: ' cracked asphalt ' },
+				{ id: 'grass', recipe: R },
+				{ id: 'bad', recipe: 'not an object' },
+				{ recipe: R }
+			]
+		});
+		expect([...got.keys()]).toEqual(['street', 'grass']);
+		expect(got.get('street')?.drawn).toBe('cracked asphalt');
+		expect(got.get('grass')?.drawn).toBe('');
 	});
 });
