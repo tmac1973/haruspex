@@ -130,6 +130,23 @@ fn base(url: &str) -> &str {
     url.trim().trim_end_matches('/')
 }
 
+/// Where the API key is kept in the secret store.
+const API_KEY_SECRET: &str = "comfy:key";
+
+/// The key to send: the one the webview gave (inline only where no secret
+/// store works), else the stored one, else none.
+async fn effective_api_key(given: &str) -> String {
+    let given = given.trim();
+    if !given.is_empty() {
+        return given.to_string();
+    }
+    crate::secrets::get(API_KEY_SECRET)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+}
+
 /// Make the call and return the body's bytes, or why not.
 async fn send(call: &ComfyCall) -> Result<Vec<u8>, ComfyError> {
     let url = format!("{}{}", base(&call.base_url), call.path);
@@ -138,8 +155,9 @@ async fn send(call: &ComfyCall) -> Result<Vec<u8>, ComfyError> {
         _ => client().get(&url),
     };
     // Absent rather than empty: a bare local ComfyUI has no auth.
-    if !call.api_key.trim().is_empty() {
-        req = req.bearer_auth(call.api_key.trim());
+    let key = effective_api_key(&call.api_key).await;
+    if !key.is_empty() {
+        req = req.bearer_auth(key);
     }
     if let Some(body) = &call.body {
         req = req.json(body);
@@ -290,8 +308,9 @@ pub async fn comfy_subscribe(
         .map_err(|e| ComfyError::Unreachable {
             message: format!("Bad image backend URL {base_url}: {e}"),
         })?;
-    if !api_key.trim().is_empty() {
-        let value = format!("Bearer {}", api_key.trim());
+    let api_key = effective_api_key(&api_key).await;
+    if !api_key.is_empty() {
+        let value = format!("Bearer {api_key}");
         request.headers_mut().insert(
             "Authorization",
             value.parse().map_err(|_| ComfyError::Unreachable {

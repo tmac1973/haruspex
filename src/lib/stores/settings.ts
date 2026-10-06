@@ -573,7 +573,10 @@ export interface AppSettings {
 	 * header on HTTP requests and never anywhere else — in particular never in
 	 * a URL, which would write it into logs and histories.
 	 */
+	/** Inline only where no secret store works; otherwise empty, with the key
+	 *  kept under `comfy:key` and `imageBackendApiKeySaved` set. */
 	imageBackendApiKey: string;
+	imageBackendApiKeySaved: boolean;
 	/** Checkpoint a request with no explicit model resolves to. */
 	imageComfyCheckpoint: string;
 	/**
@@ -747,6 +750,7 @@ const defaults: AppSettings = {
 	imageBackendKind: 'none',
 	imageBackendBaseUrl: '',
 	imageBackendApiKey: '',
+	imageBackendApiKeySaved: false,
 	imageComfyCheckpoint: '',
 	imageComfyWorkflowPath: '',
 	imageComfyFieldMapPath: '',
