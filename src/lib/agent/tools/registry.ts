@@ -232,9 +232,10 @@ export function getToolSchemas(opts: {
 		}
 		return schemas;
 	}
+	const interactive = opts.interactive ?? false;
 	const filter: ToolFilterOpts = {
 		hasWorkingDir: opts.hasWorkingDir,
-		interactive: opts.interactive ?? false,
+		interactive,
 		deepResearch: opts.deepResearch ?? false,
 		visionSupported: opts.visionSupported ?? true,
 		shellMode: opts.shellMode ?? false,
@@ -243,8 +244,8 @@ export function getToolSchemas(opts: {
 		hasCalendar: hasEnabledCalendarAccount(),
 		hasContacts: hasEnabledContactsAccount(),
 		screenCapture: getSettings().screenCaptureEnabled,
-		imageGeneration: (opts.interactive ?? false) && getSettings().imageBackendKind !== 'none',
-		sendableEmail: (opts.interactive ?? false) && hasSendableEmailAccount(),
+		imageGeneration: interactive && getSettings().imageBackendKind !== 'none',
+		sendableEmail: interactive && hasSendableEmailAccount(),
 		sandboxEnabled: getSettings().sandboxEnabled,
 		memoryWritable: memoryActive()
 	};
