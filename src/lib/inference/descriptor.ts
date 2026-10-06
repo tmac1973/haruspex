@@ -10,7 +10,7 @@
  * strings — so a capability quirk like the Qwen-tuned sampling profile can
  * never again leak to a backend it wasn't resolved for (#172).
  *
- * The `'remote'` pseudo server status in `stores/server.svelte.ts` is NOT
+ * The `'remote'` pseudo server status in `stores/llamaServer.svelte.ts` is NOT
  * part of this seam: it's a UI badge concern only.
  */
 

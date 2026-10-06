@@ -77,7 +77,7 @@ koko `3001`.
 - Prettier: **tabs**, single quotes, no trailing commas, printWidth 100
   (`.prettierrc`). Rust: 4-space indent, 100 char (`rustfmt.toml`).
 - Svelte 5 runes mode is forced on for all non-`node_modules` files via
-  `svelte.config.js` `compilerOptions.runes`. Use `$state` / `$derived` /
+  `sveltekit.config.js` `compilerOptions.runes`. Use `$state` / `$derived` /
   `$effect` — `prefer-const` is off for `.svelte.ts` because `$state()`
   requires `let` even when never reassigned.
 - ESLint `max-lines` (400) and `max-lines-per-function` (80) are enforced on

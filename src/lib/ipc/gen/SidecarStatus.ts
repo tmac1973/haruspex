@@ -6,7 +6,7 @@
  * Serialized with `#[serde(tag = "type", content = "message")]` so the
  * frontend can pattern-match by `payload.type === "Ready"` for unit
  * variants and `payload.type === "Error"` + `payload.message` for the
- * failure variant. `MicButton.svelte` and `server.svelte.ts` consume
+ * failure variant. `MicButton.svelte` and `llamaServer.svelte.ts` consume
  * this shape directly.
  */
 export type SidecarStatus = { "type": "Stopped" } | { "type": "Starting" } | { "type": "Ready" } | { "type": "Error", "message": string };

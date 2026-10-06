@@ -37,7 +37,7 @@
 		isActiveConversationRemote,
 		setConversationMemoryEnabled
 	} from '$lib/stores/chat.svelte';
-	import { getServerState, startServer, stopServer } from '$lib/stores/server.svelte';
+	import { getServerState, startServer, stopServer } from '$lib/stores/llamaServer.svelte';
 	import { showToast } from '$lib/stores/toasts.svelte';
 	import { openLogViewer } from '$lib/stores/logViewer.svelte';
 	import { errMessage } from '$lib/utils/error';

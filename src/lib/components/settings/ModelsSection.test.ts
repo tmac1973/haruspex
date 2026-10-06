@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import ModelsSection from './ModelsSection.svelte';
 import { invoke } from '@tauri-apps/api/core';
-import { stopServer } from '$lib/stores/server.svelte';
+import { stopServer } from '$lib/stores/llamaServer.svelte';
 import type { ModelInfo } from '$lib/ipc/gen/ModelInfo';
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -16,7 +16,7 @@ vi.mock('$lib/models/download', () => ({
 	downloadModelWithProgress: vi.fn()
 }));
 
-vi.mock('$lib/stores/server.svelte', () => ({
+vi.mock('$lib/stores/llamaServer.svelte', () => ({
 	restartServerWhenIdle: vi.fn(),
 	stopServer: vi.fn()
 }));

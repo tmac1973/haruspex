@@ -10,7 +10,7 @@
 		restartServerWhenIdle,
 		getPendingRestart,
 		cancelPendingRestart
-	} from '$lib/stores/server.svelte';
+	} from '$lib/stores/llamaServer.svelte';
 	import { PORTS } from '$lib/ports';
 	import {
 		getActiveLocalModelFilename,

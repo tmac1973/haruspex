@@ -21,7 +21,7 @@
 	} from '$lib/stores/downloads.svelte';
 	import DownloadProgressBar from './DownloadProgressBar.svelte';
 	import { onMount } from 'svelte';
-	import { restartServerWhenIdle, stopServer } from '$lib/stores/server.svelte';
+	import { restartServerWhenIdle, stopServer } from '$lib/stores/llamaServer.svelte';
 	import {
 		getActiveLocalModelFilename,
 		getLegacyModelNoticeDismissed,

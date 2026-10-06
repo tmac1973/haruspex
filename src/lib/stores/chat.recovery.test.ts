@@ -68,7 +68,7 @@ describe('chat store error recovery', () => {
 
 	/** The live $state proxy — mutating it drives the store's watcher. */
 	async function serverState() {
-		return (await import('$lib/stores/server.svelte')).getServerState();
+		return (await import('$lib/stores/llamaServer.svelte')).getServerState();
 	}
 
 	/** Force the module-scope $effect watcher to run against fresh state. */
