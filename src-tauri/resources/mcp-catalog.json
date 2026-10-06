@@ -137,6 +137,80 @@
       }
     },
     {
+      "id": "google-calendar",
+      "name": "Google Calendar",
+      "description": "Read your Google calendars, search events and check when you are free.",
+      "homepage": "https://github.com/nspady/google-calendar-mcp",
+      "acquisition": {
+        "kind": "npm",
+        "package": "@cocal/google-calendar-mcp",
+        "version": "2.7.0",
+        "bin": "@cocal/google-calendar-mcp/build/index.js"
+      },
+      "command": {
+        "args": [
+          "start"
+        ],
+        "env": {
+          "GOOGLE_OAUTH_CREDENTIALS": "$serverDir/gcp-oauth.keys.json",
+          "GOOGLE_CALENDAR_MCP_TOKEN_PATH": "$serverDir/tokens.json"
+        }
+      },
+      "defaultTools": [
+        "list-calendars",
+        "list-events",
+        "search-events",
+        "get-event",
+        "get-freebusy",
+        "get-current-time"
+      ],
+      "setup": [
+        {
+          "kind": "instruction",
+          "title": "Create a Google Cloud project",
+          "text": "Open the Google Cloud console and create a new project, or reuse the one from Google Drive & Sheets. This is free, and it is what lets your own account authorise Haruspex.",
+          "link": "https://console.cloud.google.com/projectcreate"
+        },
+        {
+          "kind": "instruction",
+          "title": "Enable the Calendar API",
+          "text": "In the same project, enable the Google Calendar API. Without it the sign-in will succeed and every request will fail.",
+          "link": "https://console.cloud.google.com/apis/library/calendar-json.googleapis.com"
+        },
+        {
+          "kind": "instruction",
+          "title": "Add yourself as a test user",
+          "text": "Under Google Auth Platform → Audience, add your Google account as a test user. While the app is in testing, Google ends the sign-in after 7 days; publishing the app removes that limit.",
+          "link": "https://console.cloud.google.com/auth/audience"
+        },
+        {
+          "kind": "instruction",
+          "title": "Create an OAuth client",
+          "text": "Under APIs & Services → Credentials, create an OAuth client ID with application type 'Desktop app' (or reuse the Drive one). Then download the client's JSON file — you will need it in the next step.",
+          "link": "https://console.cloud.google.com/apis/credentials"
+        },
+        {
+          "kind": "file",
+          "label": "OAuth client JSON file",
+          "filename": "gcp-oauth.keys.json",
+          "help": "The file you just downloaded. Haruspex copies it into this server's own folder; the original is left where it is."
+        },
+        {
+          "kind": "command",
+          "label": "Sign in to Google",
+          "args": [
+            "auth"
+          ],
+          "help": "Opens your browser so you can grant access to your calendars. Finish the sign-in there; this step completes when Google sends you back."
+        }
+      ],
+      "provenance": {
+        "maintainer": "nspady/google-calendar-mcp",
+        "license": "MIT",
+        "firstParty": false
+      }
+    },
+    {
       "id": "blender",
       "name": "Blender",
       "description": "Inspect and edit the scene in a running copy of Blender.",

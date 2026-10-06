@@ -566,7 +566,53 @@ pub fn setup_command_config(
     args: Vec<String>,
     proxy: Option<&ProxyConfig>,
 ) -> Result<SpawnConfig, String> {
-    setup_command_in(&server_dir(app, &config.id)?, config, args, proxy)
+    let mut spawn = setup_command_in(&server_dir(app, &config.id)?, config, args, proxy)?;
+    add_desktop_session_env(&mut spawn.env, |var| std::env::var(var).ok());
+    Ok(spawn)
+}
+
+/// What a setup command needs from the desktop session to open a browser or
+/// find an app's config folder.
+///
+/// A setup step is a one-off the user started — a Google sign-in, an add-on
+/// install — not a server, so the cleared environment that keeps servers
+/// reproducible works against it: with no display, D-Bus or `PATH`, a sign-in
+/// prints "browser opened" and xdg-open silently fails, and the user waits on a
+/// URL they can't see. Only these pass through, and never over a value the
+/// catalog set.
+const DESKTOP_SESSION_VARS: &[&str] = &[
+    "PATH",
+    "HOME",
+    "USER",
+    "LANG",
+    "BROWSER",
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    "XDG_RUNTIME_DIR",
+    "XDG_SESSION_TYPE",
+    "XDG_CURRENT_DESKTOP",
+    "XDG_DATA_DIRS",
+    "XDG_CONFIG_DIRS",
+    "DBUS_SESSION_BUS_ADDRESS",
+    // Windows: `start` and the shell's file associations.
+    "SystemRoot",
+    "windir",
+    "COMSPEC",
+    "PATHEXT",
+    "USERPROFILE",
+    "APPDATA",
+    "LOCALAPPDATA",
+];
+
+fn add_desktop_session_env(env: &mut Vec<(String, String)>, get: impl Fn(&str) -> Option<String>) {
+    for var in DESKTOP_SESSION_VARS {
+        if env.iter().any(|(k, _)| k == var) {
+            continue;
+        }
+        if let Some(value) = get(var).filter(|v| !v.is_empty()) {
+            env.push((var.to_string(), value));
+        }
+    }
 }
 
 /// `setup_command_config` against a resolved server directory: the server's
@@ -695,12 +741,19 @@ pub fn catalog_spawn_config(
 ///
 /// A server that needs a config or credentials directory has to be told where
 /// its one is, and the guided setup's `file` step writes into exactly that
-/// place. Whole-value only, like `$secret.*`: a partial match would make a
-/// literal path containing the token unrepresentable.
+/// place. `$serverDir/<path>` names a file inside it, for a server that wants
+/// the file rather than the folder. Only at the start of a value, like
+/// `$secret.*`: matching anywhere would make a literal path containing the
+/// token unrepresentable.
 fn substitute_server_dir(env: &mut [(String, String)], dir: &Path) {
     for (_, value) in env.iter_mut() {
         if value == SERVER_DIR_PLACEHOLDER {
             *value = dir.to_string_lossy().to_string();
+        } else if let Some(rest) = value
+            .strip_prefix(SERVER_DIR_PLACEHOLDER)
+            .and_then(|r| r.strip_prefix('/'))
+        {
+            *value = dir.join(rest).to_string_lossy().to_string();
         }
     }
 }
@@ -1062,11 +1115,20 @@ mod tests {
             // A literal that merely mentions the token stays literal, the same
             // rule `$secret.*` follows.
             ("NOTE".to_string(), "under $serverDir/creds".to_string()),
+            // A file inside the directory, for a server that wants the path.
+            ("KEYS".to_string(), "$serverDir/keys.json".to_string()),
+            // Not the placeholder followed by a path: a different token.
+            ("OTHER".to_string(), "$serverDirectory".to_string()),
         ];
         substitute_server_dir(&mut env, Path::new("/data/mcp/servers/x"));
         assert_eq!(env[0].1, "/data/mcp/servers/x");
         assert_eq!(env[1].1, "stdio");
         assert_eq!(env[2].1, "under $serverDir/creds");
+        assert_eq!(
+            Path::new(&env[3].1),
+            Path::new("/data/mcp/servers/x").join("keys.json")
+        );
+        assert_eq!(env[4].1, "$serverDirectory");
     }
 
     #[test]
@@ -1153,6 +1215,43 @@ mod tests {
         let mut expected = server.args[..server.args.len() - 1].to_vec();
         expected.extend(["auth".to_string(), "login".to_string()]);
         assert_eq!(setup.args, expected);
+    }
+
+    #[test]
+    fn a_setup_command_gets_the_desktop_session_without_overriding_the_catalog() {
+        let mut env = vec![("HOME".to_string(), "/data/mcp/servers/x".to_string())];
+        add_desktop_session_env(&mut env, |var| match var {
+            "HOME" => Some("/home/me".into()),
+            "DISPLAY" => Some(":0".into()),
+            "WAYLAND_DISPLAY" => Some(String::new()),
+            "AWS_SECRET_ACCESS_KEY" => Some("leak".into()),
+            _ => None,
+        });
+        assert_eq!(
+            env,
+            vec![
+                ("HOME".to_string(), "/data/mcp/servers/x".to_string()),
+                ("DISPLAY".to_string(), ":0".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_google_calendar_entry_points_at_files_in_its_own_directory() {
+        let catalog = super::super::catalog::load().unwrap();
+        let entry = catalog.entry("google-calendar").unwrap();
+        let mut env = super::super::catalog::resolve_env(entry, &BTreeMap::new()).unwrap();
+        let dir = Path::new("/data/mcp/servers/cal");
+        substitute_server_dir(&mut env, dir);
+        let get = |k: &str| env.iter().find(|(var, _)| var == k).map(|(_, v)| v.clone());
+        assert_eq!(
+            get("GOOGLE_OAUTH_CREDENTIALS").map(PathBuf::from),
+            Some(dir.join("gcp-oauth.keys.json"))
+        );
+        assert_eq!(
+            get("GOOGLE_CALENDAR_MCP_TOKEN_PATH").map(PathBuf::from),
+            Some(dir.join("tokens.json"))
+        );
     }
 }
 
