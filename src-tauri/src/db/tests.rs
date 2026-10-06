@@ -2171,7 +2171,10 @@ fn a_jobs_inline_key_becomes_a_reference_and_nothing_else_changes() {
     let job = db.get_job(id).unwrap();
     assert_eq!(job.model_remote_api_key, None);
     assert_eq!(job.model_remote_api_key_id.as_deref(), Some("key_1"));
-    assert_eq!(job.model_remote_base_url.as_deref(), Some("https://api.example.com"));
+    assert_eq!(
+        job.model_remote_base_url.as_deref(),
+        Some("https://api.example.com")
+    );
     assert_eq!(job.model_remote_model_id.as_deref(), Some("m"));
     assert!(db.set_job_api_key_ref(id + 999, "key_1").is_err());
 }
