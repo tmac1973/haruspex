@@ -50,8 +50,32 @@ pub fn truncate_chars(mut s: String, max_chars: usize, marker: &str) -> String {
     s
 }
 
+/// The part of a URL that is safe to log: scheme and host, nothing else.
+/// Paths and query strings carry search terms, signed tokens and personal
+/// data, and the app log goes into the feedback bundle users attach to public
+/// issues.
+pub fn url_for_log(url: &str) -> String {
+    match reqwest::Url::parse(url) {
+        Ok(u) => match u.host_str() {
+            Some(host) => format!("{}://{host}", u.scheme()),
+            None => format!("{}:", u.scheme()),
+        },
+        Err(_) => "<unparsable url>".to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn url_for_log_keeps_only_scheme_and_host() {
+        assert_eq!(
+            url_for_log("https://user:pw@example.com:8443/a/b?token=x#frag"),
+            "https://example.com"
+        );
+        assert_eq!(url_for_log("javascript:alert(1)"), "javascript:");
+        assert_eq!(url_for_log("not a url"), "<unparsable url>");
+    }
+
     use super::*;
 
     #[test]

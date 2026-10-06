@@ -51,7 +51,7 @@ import { resolveBackendDescriptor, type BackendDescriptor } from '$lib/inference
 import { splitThinkChannels, stripThinkBlocks, stripToolCallArtifacts } from '$lib/markdown';
 import { appendStreamDelta, createThinkStreamState } from '$lib/agent/think-stream';
 import { isAbortError } from '$lib/utils/error';
-import { logDebug } from '$lib/debug-log';
+import { isVerbosePayloads, logDebug } from '$lib/debug-log';
 import { MAX_TRUNCATION_RETRIES, NudgeState } from './nudges';
 import type { AgentLoopOptions, CompletionMeta } from '../loop';
 
@@ -1463,7 +1463,11 @@ async function executeToolCalls(
 	for (const call of toolCalls) {
 		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
-		logDebug('agent', `tool start: ${call.name}`, { args: call.arguments });
+		// Arguments carry email bodies, file contents and shell commands, and this
+		// buffer goes into the feedback bundle: the keys are enough by default.
+		logDebug('agent', `tool start: ${call.name}`, {
+			args: isVerbosePayloads() ? call.arguments : Object.keys(call.arguments ?? {})
+		});
 		// Coerced, as the executor will see them. A stage that captures a
 		// structured answer here read the model's raw arguments: an `entries`
 		// array sent as a JSON string was walked character by character, and

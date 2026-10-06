@@ -1,5 +1,5 @@
 import type { SearchStep } from '$lib/agent/loop';
-import { logDebug } from '$lib/debug-log';
+import { isVerbosePayloads, logDebug } from '$lib/debug-log';
 
 export type Diagnosis = { type: 'commit'; content: string } | { type: 'error'; message: string };
 
@@ -104,18 +104,9 @@ export function diagnoseEmptyResponse(
 ): Diagnosis {
 	const outcomes = summarizeStepOutcomes(searchSteps);
 
-	if (streamingContent) {
-		console.warn(
-			'[empty-final-content] streamingContent length=',
-			streamingContent.length,
-			'first 500 chars:',
-			streamingContent.slice(0, 500)
-		);
-	}
-
 	logDebug('diagnose', 'diagnoseEmptyResponse called', {
 		streamingContentLen: streamingContent.length,
-		streamingContentPreview: streamingContent.slice(0, 2000),
+		streamingContentPreview: isVerbosePayloads() ? streamingContent.slice(0, 2000) : undefined,
 		toolsRun: searchSteps.filter((s) => s.status === 'done').map((s) => s.toolName),
 		successfulWrite: !!outcomes.successfulWrite,
 		emailListed: outcomes.emailListed,

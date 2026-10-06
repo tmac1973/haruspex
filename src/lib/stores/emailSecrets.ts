@@ -46,7 +46,7 @@ export async function forgetStoredPassword(account: EmailAccount): Promise<void>
 	try {
 		await invoke('secret_delete', { key: account.passwordRef });
 	} catch (e) {
-		console.warn(`Could not delete the kept password for ${account.emailAddress}:`, e);
+		console.warn(`Could not delete the kept password for account ${account.id}:`, e);
 	}
 }
 
@@ -68,7 +68,7 @@ export async function migrateEmailSecrets(): Promise<void> {
 			await invoke('secret_set', { key, value: a.password });
 			moved.set(a.id, { password: a.password, key });
 		} catch (e) {
-			console.warn(`Could not move the password for ${a.emailAddress} to the keychain:`, e);
+			console.warn(`Could not move the password for account ${a.id} to the keychain:`, e);
 		}
 	}
 	if (moved.size === 0) return;
