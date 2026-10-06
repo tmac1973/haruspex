@@ -3,9 +3,13 @@
 	import { onMount } from 'svelte';
 	import ShellPane from './ShellPane.svelte';
 	import ShellTabStrip from './ShellTabStrip.svelte';
-	import { getActiveTab } from '$lib/stores/activeTab.svelte';
-	import { getShellSessions, getActiveShellId, ensureShellSession } from '$lib/stores/shell.svelte';
-	import { listenForReattach } from '$lib/shell/windows';
+	import { getActiveTab } from '#lib/stores/activeTab.svelte.ts';
+	import {
+		getShellSessions,
+		getActiveShellId,
+		ensureShellSession
+	} from '#lib/stores/shell.svelte.ts';
+	import { listenForReattach } from '#lib/shell/windows.ts';
 	import type { UnlistenFn } from '@tauri-apps/api/event';
 
 	// Default to true so the placeholder doesn't flash on a supported platform

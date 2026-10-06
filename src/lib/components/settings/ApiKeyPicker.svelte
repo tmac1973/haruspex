@@ -5,7 +5,7 @@
 	 * per-job model override. Keys are managed in Settings → Inference →
 	 * API Keys; this component is selection-only.
 	 */
-	import { getApiKeys, type StoredApiKey } from '$lib/stores/settings';
+	import { getApiKeys, type StoredApiKey } from '#lib/stores/settings.ts';
 
 	interface Props {
 		/** Currently selected key id, or null for "no key". */

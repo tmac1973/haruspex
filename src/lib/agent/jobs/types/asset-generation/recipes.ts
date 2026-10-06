@@ -8,8 +8,8 @@
  * on, and that texture fails with the reason in the report.
  */
 
-import type { AssetEntry, AssetSpec } from '$lib/assets/spec/types';
-import type { TextureRecipe } from '$lib/ipc/gen/TextureRecipe';
+import type { AssetEntry, AssetSpec } from '#lib/assets/spec/types.ts';
+import type { TextureRecipe } from '#lib/ipc/gen/TextureRecipe.ts';
 import { recipePrompt } from './prompts';
 import type { SubmittedRecipe } from './tools';
 

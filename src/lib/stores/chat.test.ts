@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('$lib/agent/loop', () => ({
+vi.mock('#lib/agent/loop.ts', () => ({
 	runAgentLoop: vi.fn()
 }));
 
-vi.mock('$lib/agent/inferenceQueue.svelte', () => ({
+vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => ({
 	// The queue gate now talks to Rust; tests for it live in
 	// inferenceQueue.test.ts. Here we just want a pass-through so sendMessage
 	// runs its turn without the Tauri command round-trip.
@@ -26,11 +26,11 @@ vi.mock('$lib/agent/inferenceQueue.svelte', () => ({
  * getServerState() returns the live $state proxy, so mutating it works.
  */
 async function setServerReady(): Promise<void> {
-	const { getServerState } = await import('$lib/stores/llamaServer.svelte');
+	const { getServerState } = await import('#lib/stores/llamaServer.svelte.ts');
 	getServerState().status = 'ready';
 }
 
-vi.mock('$lib/api', () => ({
+vi.mock('#lib/api.ts', () => ({
 	mergeLeadingSystemMessages: (messages: { role: string; content: unknown }[]) => {
 		const merged: { role: string; content: unknown }[] = [];
 		for (const m of messages) {
@@ -100,7 +100,7 @@ const sandboxMocks = vi.hoisted(() => ({
 	cancelActiveRun: vi.fn()
 }));
 
-vi.mock('$lib/sandbox/sandbox', () => sandboxMocks);
+vi.mock('#lib/sandbox/sandbox.ts', () => sandboxMocks);
 
 const imageMocks = vi.hoisted(() => ({
 	rehydrateImages: vi.fn().mockResolvedValue(undefined),
@@ -108,7 +108,7 @@ const imageMocks = vi.hoisted(() => ({
 	sweepImages: vi.fn().mockResolvedValue(undefined)
 }));
 
-vi.mock('$lib/images/resolve.svelte', () => imageMocks);
+vi.mock('#lib/images/resolve.svelte.ts', () => imageMocks);
 
 describe('chat store', () => {
 	beforeEach(() => {
@@ -116,7 +116,7 @@ describe('chat store', () => {
 	});
 
 	it('createConversation returns unique IDs', async () => {
-		const { createConversation } = await import('$lib/stores/chat.svelte');
+		const { createConversation } = await import('#lib/stores/chat.svelte.ts');
 		const id1 = createConversation();
 		const id2 = createConversation();
 		expect(id1).not.toBe(id2);
@@ -125,7 +125,7 @@ describe('chat store', () => {
 
 	it('createConversation adds to conversations list', async () => {
 		const { createConversation, getConversations, getActiveConversationId } =
-			await import('$lib/stores/chat.svelte');
+			await import('#lib/stores/chat.svelte.ts');
 		const id = createConversation();
 		expect(getConversations()).toHaveLength(1);
 		expect(getConversations()[0].id).toBe(id);
@@ -134,7 +134,7 @@ describe('chat store', () => {
 
 	it('deleteConversation removes it and updates active', async () => {
 		const { createConversation, deleteConversation, getConversations, getActiveConversationId } =
-			await import('$lib/stores/chat.svelte');
+			await import('#lib/stores/chat.svelte.ts');
 
 		const id1 = createConversation();
 		const id2 = createConversation();
@@ -147,7 +147,7 @@ describe('chat store', () => {
 
 	it('clearAllConversations empties everything', async () => {
 		const { createConversation, clearAllConversations, getConversations, getActiveConversationId } =
-			await import('$lib/stores/chat.svelte');
+			await import('#lib/stores/chat.svelte.ts');
 
 		createConversation();
 		createConversation();
@@ -159,7 +159,7 @@ describe('chat store', () => {
 
 	it('setActiveConversation switches conversation', async () => {
 		const { createConversation, setActiveConversation, getActiveConversationId } =
-			await import('$lib/stores/chat.svelte');
+			await import('#lib/stores/chat.svelte.ts');
 
 		const id1 = createConversation();
 		createConversation();
@@ -170,7 +170,7 @@ describe('chat store', () => {
 
 	it('setActiveConversation ignores invalid IDs', async () => {
 		const { createConversation, setActiveConversation, getActiveConversationId } =
-			await import('$lib/stores/chat.svelte');
+			await import('#lib/stores/chat.svelte.ts');
 
 		const id = createConversation();
 		await setActiveConversation('nonexistent');
@@ -179,7 +179,7 @@ describe('chat store', () => {
 	});
 
 	it('sendMessage creates conversation if none active', async () => {
-		const { runAgentLoop } = await import('$lib/agent/loop');
+		const { runAgentLoop } = await import('#lib/agent/loop.ts');
 
 		vi.mocked(runAgentLoop).mockImplementation(async (options) => {
 			options.onStreamChunk({ delta: { content: 'Hi!' }, finish_reason: null });
@@ -187,7 +187,7 @@ describe('chat store', () => {
 		});
 
 		const { sendMessage, getConversations, getActiveConversation } =
-			await import('$lib/stores/chat.svelte');
+			await import('#lib/stores/chat.svelte.ts');
 		await setServerReady();
 
 		await sendMessage('Hello');
@@ -203,14 +203,14 @@ describe('chat store', () => {
 	});
 
 	it('sendMessage sets title from first user message', async () => {
-		const { runAgentLoop } = await import('$lib/agent/loop');
+		const { runAgentLoop } = await import('#lib/agent/loop.ts');
 
 		vi.mocked(runAgentLoop).mockImplementation(async (options) => {
 			options.onStreamChunk({ delta: { content: 'response' }, finish_reason: null });
 			options.onComplete();
 		});
 
-		const { sendMessage, getActiveConversation } = await import('$lib/stores/chat.svelte');
+		const { sendMessage, getActiveConversation } = await import('#lib/stores/chat.svelte.ts');
 		await setServerReady();
 
 		await sendMessage('What is the meaning of life?');
@@ -219,7 +219,7 @@ describe('chat store', () => {
 	});
 
 	it('sendMessage ignores empty messages', async () => {
-		const { sendMessage, getConversations } = await import('$lib/stores/chat.svelte');
+		const { sendMessage, getConversations } = await import('#lib/stores/chat.svelte.ts');
 
 		await sendMessage('');
 		await sendMessage('   ');
@@ -229,7 +229,7 @@ describe('chat store', () => {
 
 	it('renameConversation updates title', async () => {
 		const { createConversation, renameConversation, getActiveConversation } =
-			await import('$lib/stores/chat.svelte');
+			await import('#lib/stores/chat.svelte.ts');
 
 		createConversation();
 		await renameConversation(getActiveConversation()!.id, 'New title');
@@ -238,7 +238,7 @@ describe('chat store', () => {
 	});
 
 	it('sendMessage tracks search steps from tool calls', async () => {
-		const { runAgentLoop } = await import('$lib/agent/loop');
+		const { runAgentLoop } = await import('#lib/agent/loop.ts');
 
 		vi.mocked(runAgentLoop).mockImplementation(async (options) => {
 			options.onToolStart({
@@ -270,7 +270,7 @@ describe('chat store', () => {
 		});
 
 		const { sendMessage, getSearchSteps, getSourceUrls, getActiveConversation } =
-			await import('$lib/stores/chat.svelte');
+			await import('#lib/stores/chat.svelte.ts');
 		await setServerReady();
 
 		await sendMessage('Search for something');
@@ -299,7 +299,7 @@ describe('chat store', () => {
 			sandboxMocks.resetSandbox.mockClear();
 			// Restore replays sandbox tool calls — gated on the sandbox
 			// setting being on. Default is off, so flip it for this block.
-			const { updateSettings } = await import('$lib/stores/settings');
+			const { updateSettings } = await import('#lib/stores/settings.ts');
 			updateSettings({ sandboxEnabled: true });
 		});
 
@@ -310,12 +310,12 @@ describe('chat store', () => {
 
 		it('replays prior install_package and run_python calls in order on chat switch', async () => {
 			const { createConversation, setActiveConversation, getActiveConversation } =
-				await import('$lib/stores/chat.svelte');
+				await import('#lib/stores/chat.svelte.ts');
 			const a = createConversation();
 			const b = createConversation();
 
 			// Seed conversation A with a couple of prior sandbox tool calls.
-			const convA = (await import('$lib/stores/chat.svelte'))
+			const convA = (await import('#lib/stores/chat.svelte.ts'))
 				.getConversations()
 				.find((c) => c.id === a)!;
 			convA.messages.push({
@@ -367,13 +367,14 @@ describe('chat store', () => {
 			expect(sandboxMocks.runPython).toHaveBeenCalledWith('import numpy');
 			// Successful restore implies prior approval — chat marked approved
 			// in the sandbox-approval store.
-			const { isChatSandboxApproved } = await import('$lib/stores/sandboxApproval.svelte');
+			const { isChatSandboxApproved } = await import('#lib/stores/sandboxApproval.svelte.ts');
 			expect(isChatSandboxApproved(a)).toBe(true);
 			expect(getActiveConversation()?.isRestoringSession).toBe(false);
 		});
 
 		it('does nothing when the chat has no prior sandbox tool calls', async () => {
-			const { createConversation, setActiveConversation } = await import('$lib/stores/chat.svelte');
+			const { createConversation, setActiveConversation } =
+				await import('#lib/stores/chat.svelte.ts');
 			const a = createConversation();
 			const b = createConversation();
 			await setActiveConversation(b);
@@ -389,10 +390,10 @@ describe('chat store', () => {
 
 		it('skips replay and flags sessionRestoreSkipped when over the cap', async () => {
 			const { createConversation, setActiveConversation, getActiveConversation } =
-				await import('$lib/stores/chat.svelte');
+				await import('#lib/stores/chat.svelte.ts');
 			const a = createConversation();
 			const b = createConversation();
-			const convA = (await import('$lib/stores/chat.svelte'))
+			const convA = (await import('#lib/stores/chat.svelte.ts'))
 				.getConversations()
 				.find((c) => c.id === a)!;
 			// Push 51 fake run_python calls (cap is 50).
@@ -462,7 +463,7 @@ describe('image rehydration on load', () => {
 			return [];
 		});
 
-		const { initChatStore } = await import('$lib/stores/chat.svelte');
+		const { initChatStore } = await import('#lib/stores/chat.svelte.ts');
 		await initChatStore();
 
 		expect(imageMocks.rehydrateImages).toHaveBeenCalled();
@@ -474,7 +475,7 @@ describe('image rehydration on load', () => {
 
 describe('computeMessageStats', () => {
 	it('measures the rate over the final call but reports the whole turn as elapsed', async () => {
-		const { computeMessageStats } = await import('$lib/stores/chat.svelte');
+		const { computeMessageStats } = await import('#lib/stores/chat.svelte.ts');
 		// A code-mode turn: 4s of final generation inside a 90s turn that also
 		// ran tools. Reporting the call as "elapsed" would understate it 20x.
 		const stats = computeMessageStats({ durationMs: 4000, completionTokens: 200 }, 90_000);
@@ -484,14 +485,14 @@ describe('computeMessageStats', () => {
 	});
 
 	it('omits elapsedMs when the caller has no turn clock', async () => {
-		const { computeMessageStats } = await import('$lib/stores/chat.svelte');
+		const { computeMessageStats } = await import('#lib/stores/chat.svelte.ts');
 		const stats = computeMessageStats({ durationMs: 2000, completionTokens: 100 });
 		expect(stats?.tokensPerSecond).toBe(50);
 		expect(stats && 'elapsedMs' in stats).toBe(false);
 	});
 
 	it('still returns null when the call has no usable timing', async () => {
-		const { computeMessageStats } = await import('$lib/stores/chat.svelte');
+		const { computeMessageStats } = await import('#lib/stores/chat.svelte.ts');
 		expect(computeMessageStats(null, 5000)).toBeNull();
 		expect(computeMessageStats({ durationMs: 0, completionTokens: 10 }, 5000)).toBeNull();
 		expect(computeMessageStats({ durationMs: 100, completionTokens: 0 }, 5000)).toBeNull();

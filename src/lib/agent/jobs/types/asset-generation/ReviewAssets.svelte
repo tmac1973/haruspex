@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { errMessage } from '$lib/utils/error';
+	import { errMessage } from '#lib/utils/error.ts';
 	import { invoke } from '@tauri-apps/api/core';
-	import Modal from '$lib/components/Modal.svelte';
-	import Tooltip from '$lib/components/Tooltip.svelte';
-	import { parseAssetSpec } from '$lib/assets/spec/parse';
-	import { renderAssetSpec } from '$lib/assets/spec/write';
-	import type { AssetEntry, AssetSpec } from '$lib/assets/spec/types';
-	import { enqueue } from '$lib/agent/jobs/runner.svelte';
-	import { resolveImageBackend } from '$lib/image';
+	import Modal from '#lib/components/Modal.svelte';
+	import Tooltip from '#lib/components/Tooltip.svelte';
+	import { parseAssetSpec } from '#lib/assets/spec/parse.ts';
+	import { renderAssetSpec } from '#lib/assets/spec/write.ts';
+	import type { AssetEntry, AssetSpec } from '#lib/assets/spec/types.ts';
+	import { enqueue } from '#lib/agent/jobs/runner.svelte.ts';
+	import { resolveImageBackend } from '#lib/image/index.ts';
 	import { regenerateMarked, type ReviewMark } from './review';
 
 	// Look through a finished set and send the ones you do not like back.

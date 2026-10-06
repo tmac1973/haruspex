@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getServerState } from '$lib/stores/llamaServer.svelte';
+	import { getServerState } from '#lib/stores/llamaServer.svelte.ts';
 
 	interface Props {
 		/** Opens the Log Viewer — same handler as the header logs icon. */

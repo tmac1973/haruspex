@@ -9,11 +9,11 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 // Side-effect import registers capture_screen in the shared registry.
-import '$lib/agent/tools/screen';
-import { normalizeTarget } from '$lib/agent/tools/screen';
-import { executeTool, getToolSchemas } from '$lib/agent/tools/registry';
-import { updateSettings } from '$lib/stores/settings';
-import type { ToolContext } from '$lib/agent/tools/types';
+import '#lib/agent/tools/screen.ts';
+import { normalizeTarget } from '#lib/agent/tools/screen.ts';
+import { executeTool, getToolSchemas } from '#lib/agent/tools/registry.ts';
+import { updateSettings } from '#lib/stores/settings.ts';
+import type { ToolContext } from '#lib/agent/tools/types.ts';
 
 function context(): ToolContext {
 	return {

@@ -7,8 +7,8 @@
 	 * is this row, so a failure says what went wrong in words first, with the
 	 * raw log available behind a disclosure rather than shouted.
 	 */
-	import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
-	import type { CatalogEntry } from '$lib/ipc/gen/CatalogEntry';
+	import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
+	import type { CatalogEntry } from '#lib/ipc/gen/CatalogEntry.ts';
 	import {
 		companionWarning,
 		mcpServerLogs,
@@ -17,8 +17,8 @@
 		removeMcpServer,
 		startMcpServer,
 		statusLabel
-	} from '$lib/stores/mcpServers.svelte';
-	import { addonStepIndex, pickAndInstallAddon } from '$lib/stores/mcpAddon';
+	} from '#lib/stores/mcpServers.svelte.ts';
+	import { addonStepIndex, pickAndInstallAddon } from '#lib/stores/mcpAddon.ts';
 	import McpToolList from './McpToolList.svelte';
 	import McpSetupWizard from './McpSetupWizard.svelte';
 

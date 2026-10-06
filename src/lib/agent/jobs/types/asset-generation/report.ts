@@ -8,8 +8,8 @@
  * reintroduce it in the document that reports on it.
  */
 
-import type { CheckReport } from '$lib/ipc/gen/CheckReport';
-import type { AssetSpec } from '$lib/assets/spec/types';
+import type { CheckReport } from '#lib/ipc/gen/CheckReport.ts';
+import type { AssetSpec } from '#lib/assets/spec/types.ts';
 import { describeFailures } from './gate';
 import type { AnchorOutcome, EntryOutcome, SheetOutcome } from './types';
 

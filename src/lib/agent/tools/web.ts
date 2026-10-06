@@ -1,11 +1,11 @@
 import { invoke } from '@tauri-apps/api/core';
-import { isAbortError } from '$lib/utils/error';
-import { type ChatMessage } from '$lib/api';
-import { detectPaywall } from '$lib/agent/paywall';
-import { getSettings, DEFAULT_SEARXNG_URL, getSearchProxy } from '$lib/stores/settings';
-import type { ImageSearchResult } from '$lib/ipc/gen/ImageSearchResult';
-import type { PageImage } from '$lib/ipc/gen/PageImage';
-import type { SearchResult } from '$lib/ipc/gen/SearchResult';
+import { isAbortError } from '#lib/utils/error.ts';
+import { type ChatMessage } from '#lib/api.ts';
+import { detectPaywall } from '#lib/agent/paywall.ts';
+import { getSettings, DEFAULT_SEARXNG_URL, getSearchProxy } from '#lib/stores/settings.ts';
+import type { ImageSearchResult } from '#lib/ipc/gen/ImageSearchResult.ts';
+import type { PageImage } from '#lib/ipc/gen/PageImage.ts';
+import type { SearchResult } from '#lib/ipc/gen/SearchResult.ts';
 import { labelArg, proxyFetch, runSubAgent, toolInvokeError, ensureUrlScheme } from './_helpers';
 import { registerTool } from './registry';
 import { fetchResult, toolResult } from './types';

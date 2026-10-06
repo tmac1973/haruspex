@@ -11,25 +11,25 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { errMessage } from '$lib/utils/error';
+import { errMessage } from '#lib/utils/error.ts';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
-import { runEphemeralTurn } from '$lib/agent/runEphemeralTurn';
-import type { ResolvedToolCall } from '$lib/agent/parser';
-import type { ToolContext } from '$lib/agent/tools';
-import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
-import { resolveBackendDescriptor } from '$lib/inference/descriptor';
+import { runEphemeralTurn } from '#lib/agent/runEphemeralTurn.ts';
+import type { ResolvedToolCall } from '#lib/agent/parser.ts';
+import type { ToolContext } from '#lib/agent/tools/index.ts';
+import { withInferenceSlot } from '#lib/agent/inferenceQueue.svelte.ts';
+import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import {
 	dbCreateConversation,
 	dbSetConversationMemoryEnabled,
 	dbLoadMessages,
 	dbReplaceMessages,
 	dbSaveMessage
-} from '$lib/stores/db';
-import { noteExternalConversation } from '$lib/stores/chat.svelte';
+} from '#lib/stores/db.ts';
+import { noteExternalConversation } from '#lib/stores/chat.svelte.ts';
 import { conversationIdFor, prepareHistory, titleFor } from './conversation';
 import { noteAdmitted, noteAnswer, noteFinished, notePrompt } from './activity.svelte';
-import { logDebug } from '$lib/debug-log';
+import { logDebug } from '#lib/debug-log.ts';
 
 export interface RemotePromptEvent {
 	sessionId: string;

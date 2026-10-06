@@ -13,7 +13,7 @@
  * a regeneration can come out worse, and the one before must be recoverable.
  */
 
-import type { AssetEntry, AssetSpec } from '$lib/assets/spec/types';
+import type { AssetEntry, AssetSpec } from '#lib/assets/spec/types.ts';
 
 /** One asset the person wants made again. */
 export interface ReviewMark {

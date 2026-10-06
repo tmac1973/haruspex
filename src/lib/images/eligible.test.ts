@@ -7,7 +7,7 @@ import {
 	resolvableFromReply,
 	stripCandidates
 } from './eligible';
-import type { SearchStep } from '$lib/agent/loop';
+import type { SearchStep } from '#lib/agent/loop.ts';
 
 function step(partial: Partial<SearchStep> & { toolName: string }): SearchStep {
 	return {

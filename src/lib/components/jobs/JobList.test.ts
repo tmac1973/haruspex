@@ -15,7 +15,7 @@ const job = {
 	step_count: 0
 };
 
-vi.mock('$lib/stores/jobs.svelte', () => ({
+vi.mock('#lib/stores/jobs.svelte.ts', () => ({
 	getJobs: () => [job]
 }));
 
@@ -24,13 +24,13 @@ const runner = vi.hoisted(() => ({
 	queue: [] as Array<{ jobName: string }>
 }));
 
-vi.mock('$lib/agent/jobs/runner.svelte', () => ({
+vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({
 	getCurrentRun: () => runner.current,
 	getQueueDepth: () => runner.queue.length,
 	getPendingQueue: () => runner.queue
 }));
 
-vi.mock('$lib/agent/jobs/types', () => ({
+vi.mock('#lib/agent/jobs/types/index.ts', () => ({
 	ensureTypeAvailabilityLoaded: () => Promise.resolve(),
 	getJobType: () => ({
 		badgeLabel: 'Plan',

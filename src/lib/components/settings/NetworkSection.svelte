@@ -18,9 +18,9 @@
 		updateSearchProxy,
 		type ProxyMode,
 		type SearchProxyConfig
-	} from '$lib/stores/settings';
-	import ModeSelector from '$lib/components/ModeSelector.svelte';
-	import { saveProxyUrl } from '$lib/stores/proxySecrets';
+	} from '#lib/stores/settings.ts';
+	import ModeSelector from '#lib/components/ModeSelector.svelte';
+	import { saveProxyUrl } from '#lib/stores/proxySecrets.ts';
 
 	let proxyMode = $state<ProxyMode>(getSettings().proxy.mode);
 	let proxyUrl = $state(getSettings().proxy.url);

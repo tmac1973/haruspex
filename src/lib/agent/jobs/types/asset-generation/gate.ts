@@ -12,10 +12,10 @@
  * user does not have.
  */
 
-import type { CheckName } from '$lib/ipc/gen/CheckName';
-import { errMessage, isAbortError } from '$lib/utils/error';
-import type { CheckReport } from '$lib/ipc/gen/CheckReport';
-import type { AssetEntry } from '$lib/assets/spec/types';
+import type { CheckName } from '#lib/ipc/gen/CheckName.ts';
+import { errMessage, isAbortError } from '#lib/utils/error.ts';
+import type { CheckReport } from '#lib/ipc/gen/CheckReport.ts';
+import type { AssetEntry } from '#lib/assets/spec/types.ts';
 import type { AssetJudgement } from './tools';
 
 /**

@@ -6,9 +6,9 @@ import {
 	sheetName,
 	type PlanDerivePayload
 } from './derive';
-import { coerceCallArguments } from '$lib/agent/tools';
+import { coerceCallArguments } from '#lib/agent/tools/index.ts';
 import { SUBMIT_PLAN_ASSET_SPEC_TOOL } from './tools';
-import type { NormalizeProfile } from '$lib/ipc/gen/NormalizeProfile';
+import type { NormalizeProfile } from '#lib/ipc/gen/NormalizeProfile.ts';
 
 describe('sheetName', () => {
 	it('slugifies a group name rather than failing the derivation over it', () => {

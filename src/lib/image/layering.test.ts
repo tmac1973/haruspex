@@ -72,7 +72,7 @@ describe('the image layer knows nothing about assets', () => {
 	it('imports nothing from the jobs layer', () => {
 		const offenders = files.filter((f) => {
 			const src = readFileSync(f, 'utf8');
-			return /from\s+['"]\$lib\/agent\/jobs/.test(src) || /from\s+['"][./]*agent\/jobs/.test(src);
+			return /from\s+['"]#lib\/agent\/jobs/.test(src) || /from\s+['"][./]*agent\/jobs/.test(src);
 		});
 		expect(offenders).toEqual([]);
 	});

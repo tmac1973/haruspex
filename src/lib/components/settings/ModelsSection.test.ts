@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import ModelsSection from './ModelsSection.svelte';
 import { invoke } from '@tauri-apps/api/core';
-import { stopServer } from '$lib/stores/llamaServer.svelte';
-import type { ModelInfo } from '$lib/ipc/gen/ModelInfo';
+import { stopServer } from '#lib/stores/llamaServer.svelte.ts';
+import type { ModelInfo } from '#lib/ipc/gen/ModelInfo.ts';
 
 vi.mock('@tauri-apps/api/core', () => ({
 	invoke: vi.fn()
@@ -12,17 +12,17 @@ vi.mock('@tauri-apps/api/event', () => ({
 	listen: vi.fn(async () => () => {})
 }));
 
-vi.mock('$lib/models/download', () => ({
+vi.mock('#lib/models/download.ts', () => ({
 	downloadModelWithProgress: vi.fn()
 }));
 
-vi.mock('$lib/stores/llamaServer.svelte', () => ({
+vi.mock('#lib/stores/llamaServer.svelte.ts', () => ({
 	restartServerWhenIdle: vi.fn(),
 	stopServer: vi.fn()
 }));
 
-vi.mock('$lib/stores/settings', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/stores/settings')>()),
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getActiveLocalModelFilename: vi.fn(() => 'a.gguf'),
 	getLegacyModelNoticeDismissed: vi.fn(() => true),
 	getSettings: vi.fn(() => ({ contextSize: 8192, mtpEnabled: true })),

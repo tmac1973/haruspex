@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({ invoke: vi.fn(), open: vi.fn() }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: mocks.open }));
-vi.mock('$lib/stores/jobs.svelte', () => ({
+vi.mock('#lib/stores/jobs.svelte.ts', () => ({
 	getJobs: () => [],
 	getJob: vi.fn()
 }));

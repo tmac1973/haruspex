@@ -1,5 +1,5 @@
-import type { StreamChunk } from '$lib/api';
-import { stripThinkBlocks } from '$lib/markdown';
+import type { StreamChunk } from '#lib/api.ts';
+import { stripThinkBlocks } from '#lib/markdown.ts';
 
 /**
  * Per-turn memo of which think tags have already been appended, so

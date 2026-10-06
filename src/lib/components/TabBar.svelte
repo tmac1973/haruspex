@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { getActiveTab, setActiveTab, type ActiveTab } from '$lib/stores/activeTab.svelte';
-	import { getCurrentRun, getQueueDepth } from '$lib/agent/jobs/runner.svelte';
+	import { getActiveTab, setActiveTab, type ActiveTab } from '#lib/stores/activeTab.svelte.ts';
+	import { getCurrentRun, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
 
 	interface Tab {
 		id: ActiveTab;

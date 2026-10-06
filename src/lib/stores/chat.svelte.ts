@@ -4,64 +4,71 @@ import {
 	ApiError,
 	messageText,
 	mergeLeadingSystemMessages
-} from '$lib/api';
+} from '#lib/api.ts';
 import {
 	runAgentLoop,
 	type SearchStep,
 	type AgentLoopOptions,
 	type AgentStopReason
-} from '$lib/agent/loop';
-import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
-import { markStepDone, markStepProgress, newRunningStep } from '$lib/agent/steps';
-import { shouldCompact, compactConversation, remapIndexedRecords } from '$lib/agent/compaction';
+} from '#lib/agent/loop.ts';
+import { withInferenceSlot } from '#lib/agent/inferenceQueue.svelte.ts';
+import { markStepDone, markStepProgress, newRunningStep } from '#lib/agent/steps.ts';
+import { shouldCompact, compactConversation, remapIndexedRecords } from '#lib/agent/compaction.ts';
 import {
 	estimateMessagesTokens,
 	describeContextManaged,
 	getTokenCalibration
-} from '$lib/agent/context-budget';
+} from '#lib/agent/context-budget.ts';
 import {
 	buildSystemPrompt,
 	looksLikeFileOutputRequest,
 	injectMessageHints
-} from '$lib/agent/system-prompt';
-import { diagnoseEmptyResponse } from '$lib/agent/diagnostics';
-import { beginTurn, logDebug } from '$lib/debug-log';
-import { noteConversationLeft, noteTurnFinished } from '$lib/agent/memory/scheduler';
+} from '#lib/agent/system-prompt.ts';
+import { diagnoseEmptyResponse } from '#lib/agent/diagnostics.ts';
+import { beginTurn, logDebug } from '#lib/debug-log.ts';
+import { noteConversationLeft, noteTurnFinished } from '#lib/agent/memory/scheduler.ts';
 import {
 	MEMORY_RECALL_STEP,
 	recallForTurn,
 	renderMemorySection,
 	type RecalledMemory
-} from '$lib/agent/memory/recall';
-import { rehydrateImages, resolveReplyImages, sweepImages } from '$lib/images/resolve.svelte';
-import { placeGeneratedImages } from '$lib/images/eligible';
-import { getSettings, SETTINGS_KEY } from '$lib/stores/settings';
-import { resolveBackendDescriptor } from '$lib/inference/descriptor';
+} from '#lib/agent/memory/recall.ts';
+import { rehydrateImages, resolveReplyImages, sweepImages } from '#lib/images/resolve.svelte.ts';
+import { placeGeneratedImages } from '#lib/images/eligible.ts';
+import { getSettings, SETTINGS_KEY } from '#lib/stores/settings.ts';
+import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import {
 	getActiveConversationId,
 	setActiveConversationId,
 	getWorkingDir,
 	setWorkingDirState
-} from '$lib/stores/session.svelte';
+} from '#lib/stores/session.svelte.ts';
 // Re-export the read accessors so existing importers of the chat store keep
 // working; the backing state now lives in the session leaf store.
 export { getActiveConversationId, getWorkingDir };
-import { approveChatSandbox, forgetChatSandboxApproval } from '$lib/stores/sandboxApproval.svelte';
-import { processCitations, renderMarkdown, stripToolCallArtifacts } from '$lib/markdown';
-import { appendStreamDelta, createThinkStreamState } from '$lib/agent/think-stream';
-import { isFetchFailureResult } from '$lib/agent/tools/_helpers';
-import { errMessage, isAbortError } from '$lib/utils/error';
-import { formatSandboxResult } from '$lib/sandbox/format-result';
+import {
+	approveChatSandbox,
+	forgetChatSandboxApproval
+} from '#lib/stores/sandboxApproval.svelte.ts';
+import { processCitations, renderMarkdown, stripToolCallArtifacts } from '#lib/markdown.ts';
+import { appendStreamDelta, createThinkStreamState } from '#lib/agent/think-stream.ts';
+import { isFetchFailureResult } from '#lib/agent/tools/_helpers.ts';
+import { errMessage, isAbortError } from '#lib/utils/error.ts';
+import { formatSandboxResult } from '#lib/sandbox/format-result.ts';
 import {
 	runPython,
 	installPackage,
 	resetSandbox,
 	hasLiveWorkerFor,
 	cancelActiveRun
-} from '$lib/sandbox/sandbox';
-import { updateContextUsage, resetContextUsage, setContextUsage } from '$lib/stores/context.svelte';
-import { getServerState } from '$lib/stores/llamaServer.svelte';
-import { showToast } from '$lib/stores/toasts.svelte';
+} from '#lib/sandbox/sandbox.ts';
+import {
+	updateContextUsage,
+	resetContextUsage,
+	setContextUsage
+} from '#lib/stores/context.svelte.ts';
+import { getServerState } from '#lib/stores/llamaServer.svelte.ts';
+import { showToast } from '#lib/stores/toasts.svelte.ts';
 import {
 	initDb,
 	dbSaveMessage,
@@ -75,7 +82,7 @@ import {
 	dbGetConversationMemoryEnabled,
 	dbSetConversationMemoryEnabled,
 	type DbConversationSummary
-} from '$lib/stores/db';
+} from '#lib/stores/db.ts';
 
 export interface Conversation {
 	id: string;

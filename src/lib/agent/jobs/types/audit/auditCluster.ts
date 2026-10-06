@@ -15,7 +15,7 @@
  * is anchored to one location, and that location is the dedup key.
  */
 
-import type { AuditFinding, FindingSeverity } from '$lib/agent/tools/audit';
+import type { AuditFinding, FindingSeverity } from '#lib/agent/tools/audit.ts';
 
 /** A finding paired with the index of the sample run that produced it. */
 export interface ClusterMember extends AuditFinding {

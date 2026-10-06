@@ -4,7 +4,7 @@ import { renderAssetSpec } from './write';
 import { validateAssetSpec } from './validate';
 import { defaultOutPath, slugify, uniqueId, DEFAULT_ANCHOR_IMAGE } from './paths';
 import { joinNegativePrompts, type AssetSpec } from './types';
-import type { NormalizeProfile } from '$lib/ipc/gen/NormalizeProfile';
+import type { NormalizeProfile } from '#lib/ipc/gen/NormalizeProfile.ts';
 
 /** A profile shaped like the Rust default; the spec only carries it. */
 const profile = (): NormalizeProfile =>

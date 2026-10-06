@@ -6,9 +6,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
-vi.mock('$lib/models/download', () => ({ downloadModelWithProgress: mocks.download }));
+vi.mock('#lib/models/download.ts', () => ({ downloadModelWithProgress: mocks.download }));
 // The ready poll waits 500 ms a tick; the tests only care about the sequence.
-vi.mock('$lib/utils/async', () => ({ sleep: () => Promise.resolve() }));
+vi.mock('#lib/utils/async.ts', () => ({ sleep: () => Promise.resolve() }));
 
 import {
 	cancelDownload,
@@ -25,7 +25,7 @@ import {
 	runTestQuery,
 	startDownload
 } from './setup.svelte';
-import { getSettings } from '$lib/stores/settings';
+import { getSettings } from '#lib/stores/settings.ts';
 
 /** Route each IPC command to a handler; anything unlisted is a test bug. */
 function ipc(handlers: Record<string, (args?: Record<string, unknown>) => unknown>) {

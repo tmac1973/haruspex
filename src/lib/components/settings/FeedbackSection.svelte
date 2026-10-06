@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { openFeedbackIssue, saveFullDiagnostics } from '$lib/feedback';
-	import { errMessage } from '$lib/utils/error';
+	import { openFeedbackIssue, saveFullDiagnostics } from '#lib/feedback.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	type Status =
 		| { kind: 'idle' }

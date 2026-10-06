@@ -11,20 +11,20 @@
 -->
 <script lang="ts">
 	import { save } from '@tauri-apps/plugin-dialog';
-	import { errMessage } from '$lib/utils/error';
+	import { errMessage } from '#lib/utils/error.ts';
 	import { invoke } from '@tauri-apps/api/core';
-	import { formatDuration, formatTokens } from '$lib/utils/format';
+	import { formatDuration, formatTokens } from '#lib/utils/format.ts';
 	import type {
 		ContextPressure,
 		RunEnvironment,
 		StepThinkingStats
-	} from '$lib/agent/jobs/runner.svelte';
+	} from '#lib/agent/jobs/runner.svelte.ts';
 	import {
 		buildStatsExport,
 		statsExportFilename,
 		tokensPerSecond,
 		type StatsExportMeta
-	} from '$lib/agent/jobs/statsExport';
+	} from '#lib/agent/jobs/statsExport.ts';
 
 	export interface StatsRow {
 		label: string;

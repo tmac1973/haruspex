@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { AgentLoopOptions } from '$lib/agent/loop';
+import type { AgentLoopOptions } from '#lib/agent/loop.ts';
 
 const mocks = vi.hoisted(() => ({
 	runAgentLoop: vi.fn(),
@@ -8,24 +8,24 @@ const mocks = vi.hoisted(() => ({
 	stripToolCallArtifacts: vi.fn((s: string) => s.replace(/<tc>[\s\S]*?<\/tc>/g, ''))
 }));
 
-vi.mock('$lib/agent/loop', () => ({
+vi.mock('#lib/agent/loop.ts', () => ({
 	runAgentLoop: mocks.runAgentLoop
 }));
 
-vi.mock('$lib/agent/inferenceQueue.svelte', () => ({
+vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => ({
 	withInferenceSlot: mocks.withInferenceSlot
 }));
 
-vi.mock('$lib/stores/context.svelte', () => ({
+vi.mock('#lib/stores/context.svelte.ts', () => ({
 	updateContextUsage: mocks.updateContextUsage
 }));
 
-vi.mock('$lib/markdown', () => ({
+vi.mock('#lib/markdown.ts', () => ({
 	stripToolCallArtifacts: mocks.stripToolCallArtifacts
 }));
 
-import { runShellTurn, type ShellTurnOptions } from '$lib/shell/runShellTurn';
-import type { ChatMessage } from '$lib/api';
+import { runShellTurn, type ShellTurnOptions } from '#lib/shell/runShellTurn.ts';
+import type { ChatMessage } from '#lib/api.ts';
 
 const messages: ChatMessage[] = [{ role: 'user', content: 'why is sshd down?' }];
 

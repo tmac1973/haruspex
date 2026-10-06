@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { imageSrc } from '$lib/images/url';
-	import { errMessage } from '$lib/utils/error';
+	import { imageSrc } from '#lib/images/url.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 	import { invoke } from '@tauri-apps/api/core';
-	import { getSettings, updateSettings } from '$lib/stores/settings';
-	import { comfyApiKey } from '$lib/stores/imageSecrets';
+	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
+	import { comfyApiKey } from '#lib/stores/imageSecrets.ts';
 	import {
 		savedSecretPlaceholder,
 		secretStoreKind,
 		type SecretStoreKind
-	} from '$lib/stores/secrets';
-	import Tooltip from '$lib/components/Tooltip.svelte';
+	} from '#lib/stores/secrets.ts';
+	import Tooltip from '#lib/components/Tooltip.svelte';
 	import ComfyModels from './ComfyModels.svelte';
 	import DownloadProgressBar from './DownloadProgressBar.svelte';
 	import {
@@ -17,13 +17,13 @@
 		getActiveDownload,
 		runDownload,
 		syncDownloads
-	} from '$lib/stores/downloads.svelte';
-	import { resolveImageBackend } from '$lib/image';
-	import { invalidateTypeAvailability } from '$lib/agent/jobs/types/availability.svelte';
-	import { generateOneImage } from '$lib/image/generateOne';
-	import type { ImageBackendCapabilities, ImageBackendKind } from '$lib/image/types';
-	import type { ModelOption, ProbeResult } from '$lib/image/backend';
-	import type { ImageModelInfo } from '$lib/ipc/gen/ImageModelInfo';
+	} from '#lib/stores/downloads.svelte.ts';
+	import { resolveImageBackend } from '#lib/image/index.ts';
+	import { invalidateTypeAvailability } from '#lib/agent/jobs/types/availability.svelte.ts';
+	import { generateOneImage } from '#lib/image/generateOne.ts';
+	import type { ImageBackendCapabilities, ImageBackendKind } from '#lib/image/types.ts';
+	import type { ModelOption, ProbeResult } from '#lib/image/backend.ts';
+	import type { ImageModelInfo } from '#lib/ipc/gen/ImageModelInfo.ts';
 
 	let imageBackendKind = $state(getSettings().imageBackendKind);
 	let imageBackendBaseUrl = $state(getSettings().imageBackendBaseUrl);

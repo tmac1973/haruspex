@@ -7,8 +7,8 @@
 		createShellSession,
 		closeShellSession,
 		type ShellSession
-	} from '$lib/stores/shell.svelte';
-	import { openDetachedShell } from '$lib/shell/windows';
+	} from '#lib/stores/shell.svelte.ts';
+	import { openDetachedShell } from '#lib/shell/windows.ts';
 	import ShellPicker from './ShellPicker.svelte';
 
 	const sessions = $derived(getShellSessions());

@@ -10,10 +10,10 @@
  * they left off instead of starting a stranger's conversation.
  */
 
-import type { ChatMessage } from '$lib/api';
-import { compactConversation, shouldCompact } from '$lib/agent/compaction';
-import { estimateMessagesTokens, getTokenCalibration } from '$lib/agent/context-budget';
-import { logDebug } from '$lib/debug-log';
+import type { ChatMessage } from '#lib/api.ts';
+import { compactConversation, shouldCompact } from '#lib/agent/compaction.ts';
+import { estimateMessagesTokens, getTokenCalibration } from '#lib/agent/context-budget.ts';
+import { logDebug } from '#lib/debug-log.ts';
 
 /**
  * Turns kept verbatim when a session is summarised. Matches the local chat

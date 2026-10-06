@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // The store is module-level $state — re-import fresh per test so a
 // pending prompt or per-chat approval can't leak between tests.
 async function freshStore() {
-	return import('$lib/stores/sandboxApproval.svelte');
+	return import('#lib/stores/sandboxApproval.svelte.ts');
 }
 
 describe('sandbox approval prompts', () => {

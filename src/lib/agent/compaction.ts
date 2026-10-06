@@ -1,6 +1,6 @@
-import { chatCompletion, messageText, type ChatMessage } from '$lib/api';
-import { getChatTemplateKwargs } from '$lib/stores/settings';
-import { resolveBackendDescriptor } from '$lib/inference/descriptor';
+import { chatCompletion, messageText, type ChatMessage } from '#lib/api.ts';
+import { getChatTemplateKwargs } from '#lib/stores/settings.ts';
+import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 
 const COMPACTION_THRESHOLD = 0.8;
 const PROTECTED_TURNS = 4;

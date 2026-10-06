@@ -1,6 +1,6 @@
-import type { BackendOverride, ToolDefinition } from '$lib/api';
-import type { Artifact } from '$lib/sandbox/sandbox';
-import type { LintIssue } from '$lib/sandbox/lint';
+import type { BackendOverride, ToolDefinition } from '#lib/api.ts';
+import type { Artifact } from '#lib/sandbox/sandbox.ts';
+import type { LintIssue } from '#lib/sandbox/lint.ts';
 
 export type { Artifact, LintIssue };
 

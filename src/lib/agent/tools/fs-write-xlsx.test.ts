@@ -9,8 +9,8 @@ vi.mock('@tauri-apps/api/core', () => ({
 	invoke: mocks.invoke
 }));
 
-vi.mock('$lib/debug-log', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/debug-log')>()),
+vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
 	logDebug: mocks.logDebug
 }));
 
@@ -31,7 +31,7 @@ beforeEach(() => {
 });
 
 async function callXlsx(args: unknown) {
-	const { executeTool } = await import('$lib/agent/tools');
+	const { executeTool } = await import('#lib/agent/tools/index.ts');
 	return executeTool('fs_write_xlsx', args as Record<string, unknown>, ctx);
 }
 

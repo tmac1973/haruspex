@@ -12,9 +12,9 @@
  * unit-testable without a Svelte runtime or a live database.
  */
 
-import type { ChatMessage } from '$lib/api';
-import type { SearchStep, AgentStopReason } from '$lib/agent/loop';
-import type { MessageStats } from '$lib/stores/chat.svelte';
+import type { ChatMessage } from '#lib/api.ts';
+import type { SearchStep, AgentStopReason } from '#lib/agent/loop.ts';
+import type { MessageStats } from '#lib/stores/chat.svelte.ts';
 
 /**
  * Bumped when the payload shape changes incompatibly. A row written by a

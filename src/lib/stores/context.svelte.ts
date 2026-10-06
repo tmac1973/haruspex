@@ -1,4 +1,4 @@
-import type { Usage } from '$lib/api';
+import type { Usage } from '#lib/api.ts';
 
 interface ContextUsage {
 	promptTokens: number;

@@ -5,15 +5,15 @@
  * On first failure the run halts; remaining steps stay `pending`.
  */
 
-import type { JobWithSteps } from '$lib/stores/jobs.svelte';
-import { normalizeAbort } from '$lib/utils/error';
+import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
+import { normalizeAbort } from '#lib/utils/error.ts';
 import {
 	markRunStarted,
 	markRunStepFinished,
 	markRunStepStarted,
 	type JobRunStepStatus
-} from '$lib/stores/jobRuns.svelte';
-import { logDebug } from '$lib/debug-log';
+} from '#lib/stores/jobRuns.svelte.ts';
+import { logDebug } from '#lib/debug-log.ts';
 import type { JobRunContext, PlannedStep } from '../types';
 import type { RunStatus } from '../../runner.svelte';
 

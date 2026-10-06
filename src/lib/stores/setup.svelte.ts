@@ -1,18 +1,18 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { DownloadProgress } from '$lib/ipc/gen/DownloadProgress';
-import { downloadModelWithProgress } from '$lib/models/download';
-import type { ModelInfo } from '$lib/ipc/gen/ModelInfo';
-import type { SidecarStatus } from '$lib/ipc/gen/SidecarStatus';
-import { errMessage, isAbortError } from '$lib/utils/error';
-import { sleep } from '$lib/utils/async';
-import { readSseData } from '$lib/api';
-import { PORTS, baseUrl } from '$lib/ports';
+import type { DownloadProgress } from '#lib/ipc/gen/DownloadProgress.ts';
+import { downloadModelWithProgress } from '#lib/models/download.ts';
+import type { ModelInfo } from '#lib/ipc/gen/ModelInfo.ts';
+import type { SidecarStatus } from '#lib/ipc/gen/SidecarStatus.ts';
+import { errMessage, isAbortError } from '#lib/utils/error.ts';
+import { sleep } from '#lib/utils/async.ts';
+import { readSseData } from '#lib/api.ts';
+import { PORTS, baseUrl } from '#lib/ports.ts';
 import {
 	getActiveLocalModelFilename,
 	getSettings,
 	setActiveLocalModel,
 	updateSettings
-} from '$lib/stores/settings';
+} from '#lib/stores/settings.ts';
 
 export type SetupStep = 'welcome' | 'hardware' | 'download' | 'test' | 'remote' | 'done';
 export type TestResult = 'pending' | 'running' | 'success' | 'error';

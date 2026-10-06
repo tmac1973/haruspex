@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { ToolResult } from '$lib/sandbox/sandbox';
-import { updateSettings } from '$lib/stores/settings';
+import type { ToolResult } from '#lib/sandbox/sandbox.ts';
+import { updateSettings } from '#lib/stores/settings.ts';
 
 const mocks = vi.hoisted(() => ({
 	runPython: vi.fn(),
@@ -9,13 +9,13 @@ const mocks = vi.hoisted(() => ({
 	askApproval: vi.fn().mockResolvedValue('allow_chat' as const)
 }));
 
-vi.mock('$lib/sandbox/sandbox', () => ({
+vi.mock('#lib/sandbox/sandbox.ts', () => ({
 	runPython: mocks.runPython,
 	installPackage: mocks.installPackage,
 	resetSandbox: mocks.resetSandbox
 }));
 
-vi.mock('$lib/stores/sandboxApproval.svelte', () => ({
+vi.mock('#lib/stores/sandboxApproval.svelte.ts', () => ({
 	askApproval: mocks.askApproval,
 	// No chat is approved by default, so once-per-chat mode prompts.
 	isChatSandboxApproved: () => false,
@@ -65,7 +65,7 @@ describe('sandbox tools', () => {
 
 	it('refuses run_python and skips runPython when the sandbox is disabled', async () => {
 		updateSettings({ sandboxEnabled: false });
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_python', { code: '1+1' }, ctx);
 		expect(JSON.parse(out.result).error).toMatch(/sandbox is disabled/i);
 		expect(mocks.runPython).not.toHaveBeenCalled();
@@ -73,7 +73,7 @@ describe('sandbox tools', () => {
 
 	it('routes run_python to runPython and formats stdout + result', async () => {
 		mocks.runPython.mockResolvedValue(ok({ stdout: 'hello\n', result: '4' }));
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_python', { code: 'print("hello"); 2+2' }, ctx);
 		expect(mocks.runPython).toHaveBeenCalledWith(
 			'print("hello"); 2+2',
@@ -89,7 +89,7 @@ describe('sandbox tools', () => {
 		mocks.runPython.mockResolvedValue(
 			ok({ error: 'NameError: name "x" is not defined', stderr: 'Traceback...' })
 		);
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_python', { code: 'print(x)' }, ctx);
 		expect(out.result).toContain('Error:');
 		expect(out.result).toContain('NameError');
@@ -97,7 +97,7 @@ describe('sandbox tools', () => {
 	});
 
 	it('rejects empty code with a structured error', async () => {
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_python', { code: '   ' }, ctx);
 		expect(JSON.parse(out.result)).toHaveProperty('error');
 		expect(mocks.runPython).not.toHaveBeenCalled();
@@ -110,7 +110,7 @@ describe('sandbox tools', () => {
 				notes: ['DataFrame truncated to 200 of 5000 rows']
 			})
 		);
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_python', { code: 'df' }, ctx);
 		expect(out.result).toContain('2 figures/artifacts');
 		expect(out.result).toContain('do NOT embed');
@@ -119,7 +119,7 @@ describe('sandbox tools', () => {
 
 	it('routes reset_python to resetSandbox', async () => {
 		mocks.resetSandbox.mockResolvedValue(undefined);
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('reset_python', {}, ctx);
 		expect(mocks.resetSandbox).toHaveBeenCalled();
 		expect(out.result).toMatch(/reset/i);
@@ -127,7 +127,7 @@ describe('sandbox tools', () => {
 
 	it('routes install_package to installPackage', async () => {
 		mocks.installPackage.mockResolvedValue(ok({ result: 'installed numpy' }));
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('install_package', { package: 'numpy' }, ctx);
 		expect(mocks.installPackage).toHaveBeenCalledWith(
 			'numpy',
@@ -137,7 +137,7 @@ describe('sandbox tools', () => {
 	});
 
 	it('rejects empty package name', async () => {
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('install_package', { package: '' }, ctx);
 		expect(JSON.parse(out.result)).toHaveProperty('error');
 		expect(mocks.installPackage).not.toHaveBeenCalled();
@@ -145,7 +145,7 @@ describe('sandbox tools', () => {
 
 	it('returns "User denied code execution" and skips runPython on deny', async () => {
 		mocks.askApproval.mockResolvedValueOnce('deny');
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_python', { code: '1+1' }, ctx);
 		expect(JSON.parse(out.result)).toEqual({ error: 'User denied code execution.' });
 		expect(mocks.runPython).not.toHaveBeenCalled();
@@ -153,9 +153,9 @@ describe('sandbox tools', () => {
 
 	it('skips the approval prompt and runs Python when auto-approve is active', async () => {
 		mocks.runPython.mockResolvedValue(ok({ result: 'job ok' }));
-		const { runWithAutoApprove } = await import('$lib/stores/approvalOverride');
-		const { executeTool } = await import('$lib/agent/tools');
-		const { updateSettings } = await import('$lib/stores/settings');
+		const { runWithAutoApprove } = await import('#lib/stores/approvalOverride.ts');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const { updateSettings } = await import('#lib/stores/settings.ts');
 		// Force the every-run mode so we'd normally prompt every time.
 		updateSettings({ sandboxApproval: 'every-run' });
 		try {
@@ -171,8 +171,8 @@ describe('sandbox tools', () => {
 	});
 
 	it('exposes sandbox tool schemas via getToolSchemas regardless of working dir', async () => {
-		const { getToolSchemas } = await import('$lib/agent/tools');
-		const { updateSettings } = await import('$lib/stores/settings');
+		const { getToolSchemas } = await import('#lib/agent/tools/index.ts');
+		const { updateSettings } = await import('#lib/stores/settings.ts');
 		updateSettings({ sandboxEnabled: true });
 		try {
 			const schemas = getToolSchemas({ hasWorkingDir: false });
@@ -191,8 +191,8 @@ describe('sandbox tools', () => {
 		// (wrong fpdf API, latin-1 encoding errors, install thrash). The
 		// dedicated writers produce much better output and should always
 		// be the model's first choice for documents.
-		const { getToolSchemas } = await import('$lib/agent/tools');
-		const { updateSettings } = await import('$lib/stores/settings');
+		const { getToolSchemas } = await import('#lib/agent/tools/index.ts');
+		const { updateSettings } = await import('#lib/stores/settings.ts');
 		updateSettings({ sandboxEnabled: true });
 		try {
 			const schemas = getToolSchemas({ hasWorkingDir: true });
@@ -208,8 +208,8 @@ describe('sandbox tools', () => {
 	});
 
 	it('exposes fs_write_pdf / fs_write_pptx when the Python sandbox is disabled', async () => {
-		const { getToolSchemas } = await import('$lib/agent/tools');
-		const { updateSettings } = await import('$lib/stores/settings');
+		const { getToolSchemas } = await import('#lib/agent/tools/index.ts');
+		const { updateSettings } = await import('#lib/stores/settings.ts');
 		updateSettings({ sandboxEnabled: false });
 		const schemas = getToolSchemas({ hasWorkingDir: true });
 		const names = schemas.map((s) => s.function.name);

@@ -3,12 +3,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // Same isolation as the shell store's own tests: we're exercising the
 // registry + handoff, not the inference pipeline or the Tauri boundary.
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('$lib/shell/runShellTurn', () => ({ runShellTurn: vi.fn() }));
-vi.mock('$lib/shell/system-prompt', () => ({
+vi.mock('#lib/shell/runShellTurn.ts', () => ({ runShellTurn: vi.fn() }));
+vi.mock('#lib/shell/system-prompt.ts', () => ({
 	buildShellSystemPrompt: () => ({ role: 'system', content: 'sys' })
 }));
-vi.mock('$lib/stores/settings', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/stores/settings')>()),
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: () => ({
 		shellCodeModeDefault: false,
 		shellHistoryTurnsForPrompt: 3,
@@ -19,18 +19,18 @@ vi.mock('$lib/stores/settings', async (importOriginal) => ({
 	getActiveLocalModelFilename: () => '',
 	getApiKeyValue: () => undefined
 }));
-vi.mock('$lib/agent/tools', () => ({ getDisplayLabel: () => 'tool' }));
-vi.mock('$lib/agent/context-budget', () => ({ describeContextManaged: () => 'managed' }));
-vi.mock('$lib/debug-log', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/debug-log')>()),
+vi.mock('#lib/agent/tools/index.ts', () => ({ getDisplayLabel: () => 'tool' }));
+vi.mock('#lib/agent/context-budget.ts', () => ({ describeContextManaged: () => 'managed' }));
+vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
 	logDebug: vi.fn()
 }));
 
 import { openShellFromChat } from './fromChat';
-import { getShellSessions, closeShellSession, getActiveShellId } from '$lib/stores/shell.svelte';
-import { getActiveTab, setActiveTab } from '$lib/stores/activeTab.svelte';
-import { setWorkingDirState } from '$lib/stores/session.svelte';
-import type { ChatMessage } from '$lib/api';
+import { getShellSessions, closeShellSession, getActiveShellId } from '#lib/stores/shell.svelte.ts';
+import { getActiveTab, setActiveTab } from '#lib/stores/activeTab.svelte.ts';
+import { setWorkingDirState } from '#lib/stores/session.svelte.ts';
+import type { ChatMessage } from '#lib/api.ts';
 
 beforeEach(() => {
 	for (const s of [...getShellSessions()]) closeShellSession(s.id);

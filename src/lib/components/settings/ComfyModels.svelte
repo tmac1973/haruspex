@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
-	import { errMessage } from '$lib/utils/error';
+	import { errMessage } from '#lib/utils/error.ts';
 	import { listen } from '@tauri-apps/api/event';
-	import Tooltip from '$lib/components/Tooltip.svelte';
-	import { getSettings } from '$lib/stores/settings';
-	import type { ComfyModelFile } from '$lib/ipc/gen/ComfyModelFile';
-	import type { ComfyModelSet } from '$lib/ipc/gen/ComfyModelSet';
-	import type { DownloadProgress } from '$lib/ipc/gen/DownloadProgress';
+	import Tooltip from '#lib/components/Tooltip.svelte';
+	import { getSettings } from '#lib/stores/settings.ts';
+	import type { ComfyModelFile } from '#lib/ipc/gen/ComfyModelFile.ts';
+	import type { ComfyModelSet } from '#lib/ipc/gen/ComfyModelSet.ts';
+	import type { DownloadProgress } from '#lib/ipc/gen/DownloadProgress.ts';
 	import {
 		chooseRoute,
 		installDirect,
@@ -18,7 +18,7 @@
 		type DitFamily,
 		type InstallRoute,
 		type ManagerApi
-	} from '$lib/image/comfyui/provision';
+	} from '#lib/image/comfyui/provision.ts';
 
 	interface Props {
 		/** Bumped by the parent after each probe, so the rows re-check. */

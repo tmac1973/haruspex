@@ -4,12 +4,12 @@ import { render, screen } from '@testing-library/svelte';
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), imageKind: 'none' }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
-vi.mock('$lib/stores/jobs.svelte', () => ({
+vi.mock('#lib/stores/jobs.svelte.ts', () => ({
 	getJobs: () => [],
 	getJob: vi.fn()
 }));
 
-vi.mock('$lib/image', () => ({ resolveImageBackend: () => ({ kind: mocks.imageKind }) }));
+vi.mock('#lib/image/index.ts', () => ({ resolveImageBackend: () => ({ kind: mocks.imageKind }) }));
 
 import Editor from './Editor.svelte';
 import { emptyModelForm } from '../../jobModelForm';

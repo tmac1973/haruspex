@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 
 import { loadPyodide, type PyodideInterface } from 'pyodide';
-import { errMessage } from '$lib/utils/error';
+import { errMessage } from '#lib/utils/error.ts';
 import type { InstallPhase, MainToWorker, ToolResult, WorkerToMain } from './protocol';
 import {
 	dispatchWorkerMessage,

@@ -7,9 +7,9 @@
  * retries and file writes.
  */
 
-import { joinNegativePrompts } from '$lib/assets/spec/types';
-import type { AssetEntry, AssetSpec, NormalizeProfile } from '$lib/assets/spec/types';
-import type { ImageBackendCapabilities, ImageRequest, LoraRef } from '$lib/image/types';
+import { joinNegativePrompts } from '#lib/assets/spec/types.ts';
+import type { AssetEntry, AssetSpec, NormalizeProfile } from '#lib/assets/spec/types.ts';
+import type { ImageBackendCapabilities, ImageRequest, LoraRef } from '#lib/image/types.ts';
 import { colourWord } from './anchor';
 import { fitStyle } from './promptBudget';
 

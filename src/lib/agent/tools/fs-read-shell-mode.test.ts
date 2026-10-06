@@ -47,7 +47,7 @@ beforeEach(() => {
 describe('fs_read tools in Chat mode', () => {
 	it('fs_read_text dispatches to the workdir-relative Tauri command', async () => {
 		mocks.invoke.mockResolvedValue('file contents');
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('fs_read_text', { path: 'config.json' }, chatCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_text', {
 			workdir: '/tmp/work',
@@ -57,7 +57,7 @@ describe('fs_read tools in Chat mode', () => {
 	});
 
 	it('fs_read_text forwards offset/limit when provided, omits them otherwise', async () => {
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		mocks.invoke.mockResolvedValue('windowed');
 		await executeTool('fs_read_text', { path: 'big.log', offset: 10, limit: 5 }, chatCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_text', {
@@ -76,7 +76,7 @@ describe('fs_read tools in Chat mode', () => {
 	});
 
 	it('fs_read_text label shows the line range when windowed', async () => {
-		const { getDisplayLabel } = await import('$lib/agent/tools');
+		const { getDisplayLabel } = await import('#lib/agent/tools/index.ts');
 		expect(getDisplayLabel('fs_read_text', { path: 'a.ts' })).toBe('a.ts');
 		expect(getDisplayLabel('fs_read_text', { path: 'a.ts', offset: 10, limit: 40 })).toBe(
 			'a.ts:10-49'
@@ -87,7 +87,7 @@ describe('fs_read tools in Chat mode', () => {
 
 	it('fs_list_dir dispatches to the workdir-relative command', async () => {
 		mocks.invoke.mockResolvedValue({ path: '.', entries: [], truncated: false });
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('fs_list_dir', { path: '.' }, chatCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith('fs_list_dir', {
 			workdir: '/tmp/work',
@@ -99,7 +99,7 @@ describe('fs_read tools in Chat mode', () => {
 describe('fs_read tools in Shell mode', () => {
 	it('fs_read_text dispatches to the absolute-path Tauri command', async () => {
 		mocks.invoke.mockResolvedValue('NAME="Fedora Linux"\n');
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('fs_read_text', { path: '/etc/os-release' }, shellCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_text_absolute', {
 			path: '/etc/os-release'
@@ -109,14 +109,14 @@ describe('fs_read tools in Shell mode', () => {
 
 	it('fs_list_dir dispatches to the absolute-path command', async () => {
 		mocks.invoke.mockResolvedValue({ path: '/etc', entries: [], truncated: false });
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('fs_list_dir', { path: '/etc' }, shellCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith('fs_list_dir_absolute', { path: '/etc' });
 	});
 
 	it('fs_read_pdf dispatches to the absolute-path command', async () => {
 		mocks.invoke.mockResolvedValue('pdf body');
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('fs_read_pdf', { path: '/var/spool/file.pdf' }, shellCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_pdf_absolute', {
 			path: '/var/spool/file.pdf'
@@ -125,7 +125,7 @@ describe('fs_read tools in Shell mode', () => {
 
 	it('resolves a relative path against the shell cwd before dispatching', async () => {
 		mocks.invoke.mockResolvedValue('contents');
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool(
 			'fs_read_text',
 			{ path: 'notes.txt' },
@@ -138,7 +138,7 @@ describe('fs_read tools in Shell mode', () => {
 
 	it('leaves an absolute path untouched even when a shell cwd is known', async () => {
 		mocks.invoke.mockResolvedValue('contents');
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool(
 			'fs_read_text',
 			{ path: '/etc/hosts' },
@@ -149,14 +149,14 @@ describe('fs_read tools in Shell mode', () => {
 
 	it('passes a relative path through unchanged when no cwd is known (graceful fallback)', async () => {
 		mocks.invoke.mockResolvedValue('contents');
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('fs_read_text', { path: 'notes.txt' }, shellCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_text_absolute', { path: 'notes.txt' });
 	});
 
 	it('fs_write_text resolves a relative path against the shell cwd', async () => {
 		mocks.invoke.mockResolvedValue(undefined);
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool(
 			'fs_write_text',
 			{ path: 'snake_game.py', content: 'print("hi")' },
@@ -171,7 +171,7 @@ describe('fs_read tools in Shell mode', () => {
 	});
 
 	it('fs tools are exposed even without a working directory', async () => {
-		const { getToolSchemas } = await import('$lib/agent/tools');
+		const { getToolSchemas } = await import('#lib/agent/tools/index.ts');
 		const schemas = getToolSchemas({ hasWorkingDir: false, shellMode: true });
 		const names = schemas.map((s) => s.function.name);
 		expect(names).toContain('fs_read_text');
@@ -180,14 +180,14 @@ describe('fs_read tools in Shell mode', () => {
 	});
 
 	it('fs tools are hidden when shellMode=false and no workingDir', async () => {
-		const { getToolSchemas } = await import('$lib/agent/tools');
+		const { getToolSchemas } = await import('#lib/agent/tools/index.ts');
 		const schemas = getToolSchemas({ hasWorkingDir: false, shellMode: false });
 		const names = schemas.map((s) => s.function.name);
 		expect(names).not.toContain('fs_read_text');
 	});
 
 	it('write tools are hidden in the plain (read-only) shell assistant', async () => {
-		const { getToolSchemas } = await import('$lib/agent/tools');
+		const { getToolSchemas } = await import('#lib/agent/tools/index.ts');
 		const schemas = getToolSchemas({
 			hasWorkingDir: false,
 			shellMode: true
@@ -198,7 +198,7 @@ describe('fs_read tools in Shell mode', () => {
 	});
 
 	it('write tools are exposed when a shell session is in Code mode', async () => {
-		const { getToolSchemas } = await import('$lib/agent/tools');
+		const { getToolSchemas } = await import('#lib/agent/tools/index.ts');
 		const schemas = getToolSchemas({
 			hasWorkingDir: false,
 			shellMode: true,
@@ -210,7 +210,7 @@ describe('fs_read tools in Shell mode', () => {
 	});
 
 	it('document builders and sandbox are hidden in shell mode', async () => {
-		const { getToolSchemas } = await import('$lib/agent/tools');
+		const { getToolSchemas } = await import('#lib/agent/tools/index.ts');
 		const schemas = getToolSchemas({
 			hasWorkingDir: false,
 			shellMode: true,
@@ -226,7 +226,7 @@ describe('fs_read tools in Shell mode', () => {
 
 	it('fs_write_text dispatches to the absolute command in shell-mode Code mode', async () => {
 		mocks.invoke.mockResolvedValue(undefined);
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool(
 			'fs_write_text',
 			{ path: '/tmp/test.conf', content: 'foo', overwrite: true },
@@ -241,7 +241,7 @@ describe('fs_read tools in Shell mode', () => {
 
 	it('fs_edit_text dispatches to the absolute command in shell-mode Code mode', async () => {
 		mocks.invoke.mockResolvedValue(undefined);
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool(
 			'fs_edit_text',
 			{ path: '/etc/hosts', old_str: 'old', new_str: 'new' },
@@ -257,10 +257,10 @@ describe('fs_read tools in Shell mode', () => {
 
 describe('fs tools in a WSL Shell session', () => {
 	it('pass the distro so in-distro paths resolve through the WSL share', async () => {
-		const { updateSettings } = await import('$lib/stores/settings');
+		const { updateSettings } = await import('#lib/stores/settings.ts');
 		updateSettings({ shellSelection: { kind: 'wsl', distro: 'Ubuntu-24.04' } });
 		try {
-			const { executeTool } = await import('$lib/agent/tools');
+			const { executeTool } = await import('#lib/agent/tools/index.ts');
 			mocks.invoke.mockResolvedValue({ path: '/home/tim', entries: [], truncated: false });
 			await executeTool('fs_list_dir', { path: '/home/tim' }, shellCtx);
 			expect(mocks.invoke).toHaveBeenCalledWith('fs_list_dir_absolute', {

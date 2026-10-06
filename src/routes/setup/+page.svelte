@@ -20,15 +20,15 @@
 		cancelDownload,
 		importModel,
 		runTestQuery
-	} from '$lib/stores/setup.svelte';
+	} from '#lib/stores/setup.svelte.ts';
 	import {
 		getSettings,
 		updateInferenceBackend,
 		type InferenceBackendConfig
-	} from '$lib/stores/settings';
-	import { enterRemoteMode } from '$lib/stores/llamaServer.svelte';
-	import { formatBytes, formatBytesPerSecond } from '$lib/utils/format';
-	import InferenceBackendForm from '$lib/components/InferenceBackendForm.svelte';
+	} from '#lib/stores/settings.ts';
+	import { enterRemoteMode } from '#lib/stores/llamaServer.svelte.ts';
+	import { formatBytes, formatBytesPerSecond } from '#lib/utils/format.ts';
+	import InferenceBackendForm from '#lib/components/InferenceBackendForm.svelte';
 
 	const step = $derived(getStep());
 	const hardware = $derived(getHardware());

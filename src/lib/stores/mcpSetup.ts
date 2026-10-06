@@ -15,8 +15,8 @@
  * state.
  */
 
-import type { SetupStep } from '$lib/ipc/gen/SetupStep';
-import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
+import type { SetupStep } from '#lib/ipc/gen/SetupStep.ts';
+import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 
 /**
  * Everything the wizard needs to decide whether a step is done.

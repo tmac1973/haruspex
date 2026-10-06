@@ -8,17 +8,17 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { sleep } from '$lib/utils/async';
-import { getSettings } from '$lib/stores/settings';
-import { truncateCapturedOutput } from '$lib/shell/truncate';
-import { toPtyPaste } from '$lib/shell/commandBlock';
-import { classifyNestedSession, describeNestedSession } from '$lib/shell/nestedSession';
+import { sleep } from '#lib/utils/async.ts';
+import { getSettings } from '#lib/stores/settings.ts';
+import { truncateCapturedOutput } from '#lib/shell/truncate.ts';
+import { toPtyPaste } from '#lib/shell/commandBlock.ts';
+import { classifyNestedSession, describeNestedSession } from '#lib/shell/nestedSession.ts';
 import {
 	classifyNestedShell,
 	unhookableShellMessage,
 	type NestedShell
-} from '$lib/shell/nestedShell';
-import { setPtyBusy } from '$lib/stores/shellPtyBusy.svelte';
+} from '#lib/shell/nestedShell.ts';
+import { setPtyBusy } from '#lib/stores/shellPtyBusy.svelte.ts';
 import type { ToolContext } from './types';
 
 /** Inline output budget before middle-truncation + temp-file spill. */

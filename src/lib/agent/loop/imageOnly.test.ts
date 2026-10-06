@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { looksLikeImageOnlyRequest } from '$lib/agent/loop/iteration';
+import { looksLikeImageOnlyRequest } from '#lib/agent/loop/iteration.ts';
 
 describe('looksLikeImageOnlyRequest', () => {
 	// Must match: nudging these into research would be wrong.
@@ -32,7 +32,7 @@ describe('looksLikeImageOnlyRequest', () => {
 	});
 });
 
-import { wroteRemoteImageMarkdown } from '$lib/agent/loop/iteration';
+import { wroteRemoteImageMarkdown } from '#lib/agent/loop/iteration.ts';
 
 describe('wroteRemoteImageMarkdown', () => {
 	it('detects an invented remote image link', () => {

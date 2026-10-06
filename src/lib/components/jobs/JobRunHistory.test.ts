@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
-import type { JobRunSummary } from '$lib/stores/jobRuns.svelte';
+import type { JobRunSummary } from '#lib/stores/jobRuns.svelte.ts';
 
 const state = vi.hoisted(() => ({
 	runs: [] as JobRunSummary[],
@@ -8,7 +8,7 @@ const state = vi.hoisted(() => ({
 	order: [] as string[]
 }));
 
-vi.mock('$lib/stores/jobRuns.svelte', () => ({
+vi.mock('#lib/stores/jobRuns.svelte.ts', () => ({
 	getRunsForJob: () => state.runs,
 	loadRunsForJob: vi.fn(),
 	deleteJobRun: vi.fn(async (_job: number, id: number) => {
@@ -20,7 +20,7 @@ vi.mock('$lib/stores/jobRuns.svelte', () => ({
 		return true;
 	})
 }));
-vi.mock('$lib/agent/jobs/runner.svelte', () => ({
+vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({
 	getRunningRunId: () => state.runningId,
 	getCurrentRun: () => (state.runningId ? { jobId: 1, status: 'running' } : null),
 	removeQueuedRun: vi.fn((id: number) => {

@@ -11,16 +11,16 @@
 	 * sites in sync.
 	 */
 	import { untrack } from 'svelte';
-	import type { InferenceBackendConfig, InferenceBackendKind } from '$lib/stores/settings';
+	import type { InferenceBackendConfig, InferenceBackendKind } from '#lib/stores/settings.ts';
 	import {
 		pickProbedModel,
 		probeInferenceServer,
 		probedModelCaps,
 		type NormalizedModel,
 		type ProbeResult
-	} from '$lib/inferenceProbe';
-	import ApiKeyPicker from '$lib/components/settings/ApiKeyPicker.svelte';
-	import ToggleField from '$lib/components/ToggleField.svelte';
+	} from '#lib/inferenceProbe.ts';
+	import ApiKeyPicker from '#lib/components/settings/ApiKeyPicker.svelte';
+	import ToggleField from '#lib/components/ToggleField.svelte';
 
 	interface Props {
 		config: InferenceBackendConfig;

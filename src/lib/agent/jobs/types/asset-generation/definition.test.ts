@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 // The definition imports the pipeline, which reaches Tauri and the stores.
 vi.mock('./pipeline', () => ({ runAssetGenerationPipeline: vi.fn() }));
 vi.mock('./Editor.svelte', () => ({ default: {} }));
-vi.mock('$lib/image', () => ({ resolveImageBackend: () => ({ kind: 'none' }) }));
+vi.mock('#lib/image/index.ts', () => ({ resolveImageBackend: () => ({ kind: 'none' }) }));
 
 import { assetGenerationJobType } from './definition';
 

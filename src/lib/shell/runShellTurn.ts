@@ -11,15 +11,15 @@
  * behind chat and jobs on a single-slot local llama-server.
  */
 
-import type { ChatMessage } from '$lib/api';
-import type { ResolvedToolCall } from '$lib/agent/parser';
-import type { Artifact } from '$lib/agent/tools';
-import type { AgentStopReason } from '$lib/agent/loop';
-import { runTurnCore } from '$lib/agent/runTurn';
-import type { ContextManagedInfo } from '$lib/agent/context-budget';
-import { withInferenceSlot, type InferenceTicket } from '$lib/agent/inferenceQueue.svelte';
-import { updateContextUsage } from '$lib/stores/context.svelte';
-import { stripToolCallArtifacts } from '$lib/markdown';
+import type { ChatMessage } from '#lib/api.ts';
+import type { ResolvedToolCall } from '#lib/agent/parser.ts';
+import type { Artifact } from '#lib/agent/tools/index.ts';
+import type { AgentStopReason } from '#lib/agent/loop.ts';
+import { runTurnCore } from '#lib/agent/runTurn.ts';
+import type { ContextManagedInfo } from '#lib/agent/context-budget.ts';
+import { withInferenceSlot, type InferenceTicket } from '#lib/agent/inferenceQueue.svelte.ts';
+import { updateContextUsage } from '#lib/stores/context.svelte.ts';
+import { stripToolCallArtifacts } from '#lib/markdown.ts';
 
 export interface ShellTurnOptions {
 	messages: ChatMessage[];

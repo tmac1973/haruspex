@@ -8,10 +8,10 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { IPC } from '$lib/ipc/commands';
-import type { Contact } from '$lib/ipc/gen/Contact';
-import type { ContactQueryResult } from '$lib/ipc/gen/ContactQueryResult';
-import { getSettings } from '$lib/stores/settings';
+import { IPC } from '#lib/ipc/commands.ts';
+import type { Contact } from '#lib/ipc/gen/Contact.ts';
+import type { ContactQueryResult } from '#lib/ipc/gen/ContactQueryResult.ts';
+import { getSettings } from '#lib/stores/settings.ts';
 import { resolveDavAccounts } from './calendar';
 import { registerTool } from './registry';
 import { toolResult, toolError } from './types';

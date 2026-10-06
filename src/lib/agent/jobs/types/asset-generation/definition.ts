@@ -13,8 +13,8 @@ import {
 	MIN_TARGET_SIZE,
 	type AssetRunMode
 } from './config';
-import { DEFAULT_SPEC_PATH } from '$lib/assets/spec/paths';
-import { resolveImageBackend } from '$lib/image';
+import { DEFAULT_SPEC_PATH } from '#lib/assets/spec/paths.ts';
+import { resolveImageBackend } from '#lib/image/index.ts';
 import Editor from './Editor.svelte';
 
 /** The editor's working state (concrete values; '' = unset). */

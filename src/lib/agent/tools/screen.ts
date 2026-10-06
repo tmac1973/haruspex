@@ -9,9 +9,9 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { IPC } from '$lib/ipc/commands';
-import type { ScreenCapture } from '$lib/ipc/gen/ScreenCapture';
-import type { CaptureTarget } from '$lib/ipc/gen/CaptureTarget';
+import { IPC } from '#lib/ipc/commands.ts';
+import type { ScreenCapture } from '#lib/ipc/gen/ScreenCapture.ts';
+import type { CaptureTarget } from '#lib/ipc/gen/CaptureTarget.ts';
 import { registerTool } from './registry';
 import { toolResult, toolError } from './types';
 import { MAX_PENDING_IMAGES } from './fs-read';

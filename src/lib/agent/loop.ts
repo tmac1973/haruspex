@@ -13,12 +13,12 @@
  * `loop/nudges.ts`.
  */
 
-import type { BackendOverride, StreamChunk, Usage } from '$lib/api';
-import type { ResolvedToolCall } from '$lib/agent/parser';
-import type { Artifact, LintIssue, ToolContext } from '$lib/agent/tools';
+import type { BackendOverride, StreamChunk, Usage } from '#lib/api.ts';
+import type { ResolvedToolCall } from '#lib/agent/parser.ts';
+import type { Artifact, LintIssue, ToolContext } from '#lib/agent/tools/index.ts';
 import type { ContextManagedInfo } from './context-budget';
-import type { SamplingParams } from '$lib/stores/settings';
-import { logDebug } from '$lib/debug-log';
+import type { SamplingParams } from '#lib/stores/settings.ts';
+import { logDebug } from '#lib/debug-log.ts';
 import { NudgeState } from './loop/nudges';
 import {
 	buildLoopContext,
@@ -133,7 +133,7 @@ export interface SearchStep {
 }
 
 export interface AgentLoopOptions {
-	messages: import('$lib/api').ChatMessage[];
+	messages: import('#lib/api.ts').ChatMessage[];
 	workingDir?: string | null;
 	onToolStart: (call: ResolvedToolCall) => void;
 	/**
@@ -282,7 +282,7 @@ export interface AgentLoopOptions {
 	 * profile). 'server' sends no sampling fields at all, so a server whose
 	 * operator configured its own values keeps them; 'custom' sends
 	 * `samplingParams` verbatim. Set per job — see
-	 * `$lib/agent/jobs/modelAdvanced`.
+	 * `#lib/agent/jobs/modelAdvanced`.
 	 */
 	samplingSource?: 'server' | 'profile' | 'custom';
 	/** Values for `samplingSource: 'custom'`; ignored otherwise. */

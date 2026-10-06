@@ -26,8 +26,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 
-import type { BackendOverride } from '$lib/api';
-import { resolveBackendDescriptor } from '$lib/inference/descriptor';
+import type { BackendOverride } from '#lib/api.ts';
+import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 
 export type InferenceConsumer =
 	| 'chat'

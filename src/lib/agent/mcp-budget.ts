@@ -13,7 +13,7 @@
  * toggles.
  */
 
-import type { ToolDefinition } from '$lib/api';
+import type { ToolDefinition } from '#lib/api.ts';
 import { estimateTokens } from './context-budget';
 
 /**

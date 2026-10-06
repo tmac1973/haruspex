@@ -10,15 +10,15 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 // _helpers.runSubAgent drives the summarizer through chatCompletion.
-vi.mock('$lib/api', () => ({
+vi.mock('#lib/api.ts', () => ({
 	chatCompletion: mocks.chatCompletion
 }));
 
 // Side-effect import registers the email tools in the shared registry.
-import '$lib/agent/tools/email';
-import { executeTool } from '$lib/agent/tools/registry';
-import { setEmailAccounts, type EmailAccount } from '$lib/stores/settings';
-import type { ToolContext } from '$lib/agent/tools/types';
+import '#lib/agent/tools/email.ts';
+import { executeTool } from '#lib/agent/tools/registry.ts';
+import { setEmailAccounts, type EmailAccount } from '#lib/stores/settings.ts';
+import type { ToolContext } from '#lib/agent/tools/types.ts';
 
 const ctx: ToolContext = {
 	workingDir: null,

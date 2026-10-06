@@ -1,16 +1,16 @@
 <script lang="ts">
-	import type { SearchStep } from '$lib/agent/loop';
+	import type { SearchStep } from '#lib/agent/loop.ts';
 	import { stepLabel, stepIcon } from './searchStepLabels';
 	import hljs from 'highlight.js/lib/core';
 	import python from 'highlight.js/lib/languages/python';
-	import { rerunSandboxStep, cancelActiveSandboxRun } from '$lib/stores/chat.svelte';
-	import { createKeyedCopyAction } from '$lib/utils/clipboard.svelte';
-	import { isToolErrorResult } from '$lib/agent/tools/_helpers';
-	import { sanitizeHtml } from '$lib/sanitize';
+	import { rerunSandboxStep, cancelActiveSandboxRun } from '#lib/stores/chat.svelte.ts';
+	import { createKeyedCopyAction } from '#lib/utils/clipboard.svelte.ts';
+	import { isToolErrorResult } from '#lib/agent/tools/_helpers.ts';
+	import { sanitizeHtml } from '#lib/sanitize.ts';
 	import ImageViewerModal from './ImageViewerModal.svelte';
 	import ArtifactFrame from './ArtifactFrame.svelte';
 	import MemoryRecallStep from './MemoryRecallStep.svelte';
-	import { MEMORY_RECALL_STEP } from '$lib/agent/memory/recall';
+	import { MEMORY_RECALL_STEP } from '#lib/agent/memory/recall.ts';
 
 	hljs.registerLanguage('python', python);
 

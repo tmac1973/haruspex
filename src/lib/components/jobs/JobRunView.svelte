@@ -1,21 +1,21 @@
 <script lang="ts">
-	import ChatMessage from '$lib/components/ChatMessage.svelte';
-	import SearchStepView from '$lib/components/SearchStep.svelte';
-	import ThinkingIndicator from '$lib/components/ThinkingIndicator.svelte';
-	import JobStepCard from '$lib/components/jobs/JobStepCard.svelte';
-	import ContextGauge from '$lib/components/ContextGauge.svelte';
-	import { hasStreamingAnswer } from '$lib/agent/think-stream';
-	import JobRunStats from '$lib/components/jobs/JobRunStats.svelte';
-	import ThinkingPanel from '$lib/components/ThinkingPanel.svelte';
-	import { splitThinkChannels } from '$lib/markdown';
-	import { formatDuration, formatTokens } from '$lib/utils/format';
+	import ChatMessage from '#lib/components/ChatMessage.svelte';
+	import SearchStepView from '#lib/components/SearchStep.svelte';
+	import ThinkingIndicator from '#lib/components/ThinkingIndicator.svelte';
+	import JobStepCard from '#lib/components/jobs/JobStepCard.svelte';
+	import ContextGauge from '#lib/components/ContextGauge.svelte';
+	import { hasStreamingAnswer } from '#lib/agent/think-stream.ts';
+	import JobRunStats from '#lib/components/jobs/JobRunStats.svelte';
+	import ThinkingPanel from '#lib/components/ThinkingPanel.svelte';
+	import { splitThinkChannels } from '#lib/markdown.ts';
+	import { formatDuration, formatTokens } from '#lib/utils/format.ts';
 	import {
 		cancel,
 		clearCurrentRun,
 		getCurrentRun,
 		type RunStepState,
 		type StepThinkingStats
-	} from '$lib/agent/jobs/runner.svelte';
+	} from '#lib/agent/jobs/runner.svelte.ts';
 
 	interface Props {
 		ondone: () => void;

@@ -25,7 +25,7 @@ describe('executeTool', () => {
 		const mockResults = [{ title: 'Result 1', url: 'https://example.com', snippet: 'A result' }];
 		vi.mocked(invoke).mockResolvedValue(mockResults);
 
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const output = await executeTool('web_search', { query: 'test query' }, defaultCtx);
 
 		expect(invoke).toHaveBeenCalledWith(
@@ -42,7 +42,7 @@ describe('executeTool', () => {
 		// was already doing, so a page without one simply reports null.
 		vi.mocked(invoke).mockResolvedValue({ text: 'page content', hero_image: null });
 
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const output = await executeTool('fetch_url', { url: 'https://example.com' }, defaultCtx);
 
 		expect(invoke).toHaveBeenCalledWith(
@@ -59,14 +59,14 @@ describe('executeTool', () => {
 			hero_image: 'https://cdn.example.com/hero.jpg'
 		});
 
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const output = await executeTool('fetch_url', { url: 'https://example.com' }, defaultCtx);
 
 		expect(output.heroImage).toBe('https://cdn.example.com/hero.jpg');
 	});
 
 	it('returns error for unknown tool', async () => {
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const output = await executeTool('unknown_tool', {}, defaultCtx);
 		const parsed = JSON.parse(output.result);
 		expect(parsed.error).toContain('Unknown tool');

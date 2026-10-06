@@ -1,4 +1,4 @@
-import type { ChatCompletionResponse, ToolDefinition } from '$lib/api';
+import type { ChatCompletionResponse, ToolDefinition } from '#lib/api.ts';
 
 export interface ParsedToolCall {
 	name: string;

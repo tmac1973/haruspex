@@ -17,7 +17,7 @@
 	 */
 	import Modal from './Modal.svelte';
 	import ModalButton from './ModalButton.svelte';
-	import { getPendingConflict, resolveConflict } from '$lib/stores/fileConflict.svelte';
+	import { getPendingConflict, resolveConflict } from '#lib/stores/fileConflict.svelte.ts';
 
 	const pending = $derived(getPendingConflict());
 </script>

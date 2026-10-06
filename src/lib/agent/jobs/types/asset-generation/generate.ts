@@ -7,10 +7,10 @@
  * rather than a stack trace. The only thing that stops the loop is the user.
  */
 
-import { checkImage, effectiveProfile, normalizeImage } from '$lib/assets/normalize';
-import type { AssetEntry, AssetSpec, NormalizeProfile } from '$lib/assets/spec/types';
-import type { CheckReport } from '$lib/ipc/gen/CheckReport';
-import type { ImageBackendCapabilities, ImageRequest, ImageResult } from '$lib/image/types';
+import { checkImage, effectiveProfile, normalizeImage } from '#lib/assets/normalize.ts';
+import type { AssetEntry, AssetSpec, NormalizeProfile } from '#lib/assets/spec/types.ts';
+import type { CheckReport } from '#lib/ipc/gen/CheckReport.ts';
+import type { ImageBackendCapabilities, ImageRequest, ImageResult } from '#lib/image/types.ts';
 import { NOT_SEAMLESS, buildEntryRequest, checkProfile } from './request';
 import {
 	amendForRetry,
@@ -22,11 +22,11 @@ import {
 	type JudgeDeps
 } from './gate';
 import { escapesWorkdir, isCancellation, isTransient, keepBest } from './guards';
-import { errMessage } from '$lib/utils/error';
+import { errMessage } from '#lib/utils/error.ts';
 import { planSheets, type SheetPlan } from './sheets';
 import { runSheet as runSheetLoop } from './sheetLoop';
 import type { EntryOutcome, SheetOutcome } from './types';
-import type { TextureRecipe } from '$lib/ipc/gen/TextureRecipe';
+import type { TextureRecipe } from '#lib/ipc/gen/TextureRecipe.ts';
 import { runCodeTexture } from './codeTexture';
 
 export { escapesWorkdir } from './guards';

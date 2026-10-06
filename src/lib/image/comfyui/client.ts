@@ -18,9 +18,9 @@
  */
 
 import { Channel, invoke, isTauri } from '@tauri-apps/api/core';
-import { errMessage } from '$lib/utils/error';
-import type { ComfyError } from '$lib/ipc/gen/ComfyError';
-import type { ComfySocketEvent } from '$lib/ipc/gen/ComfySocketEvent';
+import { errMessage } from '#lib/utils/error.ts';
+import type { ComfyError } from '#lib/ipc/gen/ComfyError.ts';
+import type { ComfySocketEvent } from '#lib/ipc/gen/ComfySocketEvent.ts';
 import { ImageBackendError, type ImageProgress } from '../types';
 import type { ComfyGraph } from './fieldMap';
 

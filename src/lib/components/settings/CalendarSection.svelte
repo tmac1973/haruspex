@@ -13,16 +13,16 @@
 	 * could only fail.
 	 */
 	import { invoke } from '@tauri-apps/api/core';
-	import { IPC } from '$lib/ipc/commands';
-	import { getSettings, setDavAccounts, snapshot } from '$lib/stores/settings';
-	import type { DavAccount } from '$lib/ipc/gen/DavAccount';
-	import type { DavCollections } from '$lib/ipc/gen/DavCollections';
-	import { forgetDavPassword, withStoredDavPassword } from '$lib/stores/davSecrets';
+	import { IPC } from '#lib/ipc/commands.ts';
+	import { getSettings, setDavAccounts, snapshot } from '#lib/stores/settings.ts';
+	import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
+	import type { DavCollections } from '#lib/ipc/gen/DavCollections.ts';
+	import { forgetDavPassword, withStoredDavPassword } from '#lib/stores/davSecrets.ts';
 	import {
 		savedSecretPlaceholder,
 		secretStoreKind,
 		type SecretStoreKind
-	} from '$lib/stores/secrets';
+	} from '#lib/stores/secrets.ts';
 
 	let accounts = $state<DavAccount[]>(snapshot(getSettings().integrations.dav.accounts));
 	let checking = $state<string | null>(null);

@@ -13,9 +13,9 @@
 	 * for.
 	 */
 	import { invoke } from '@tauri-apps/api/core';
-	import type { SearchStep } from '$lib/agent/loop';
-	import type { RecalledMemory } from '$lib/agent/memory/recall';
-	import { refreshMemoryCount } from '$lib/stores/memory.svelte';
+	import type { SearchStep } from '#lib/agent/loop.ts';
+	import type { RecalledMemory } from '#lib/agent/memory/recall.ts';
+	import { refreshMemoryCount } from '#lib/stores/memory.svelte.ts';
 
 	interface Props {
 		step: SearchStep;

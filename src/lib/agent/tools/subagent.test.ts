@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const api = vi.hoisted(() => ({ chatCompletion: vi.fn() }));
-vi.mock('$lib/api', () => ({ chatCompletion: api.chatCompletion }));
+vi.mock('#lib/api.ts', () => ({ chatCompletion: api.chatCompletion }));
 const descriptor = vi.hoisted(() => ({ resolveBackendDescriptor: vi.fn(() => ({ kind: 'x' })) }));
-vi.mock('$lib/inference/descriptor', () => descriptor);
-vi.mock('$lib/stores/settings', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/stores/settings')>()),
+vi.mock('#lib/inference/descriptor.ts', () => descriptor);
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: () => ({}),
 	getSamplingParams: () => ({}),
 	getChatTemplateKwargs: () => ({})

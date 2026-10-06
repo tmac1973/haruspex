@@ -1,7 +1,7 @@
 <script lang="ts">
-	import PromptCatalog from '$lib/components/jobs/PromptCatalog.svelte';
-	import Tooltip from '$lib/components/Tooltip.svelte';
-	import type { JobStepInput } from '$lib/stores/jobs.svelte';
+	import PromptCatalog from '#lib/components/jobs/PromptCatalog.svelte';
+	import Tooltip from '#lib/components/Tooltip.svelte';
+	import type { JobStepInput } from '#lib/stores/jobs.svelte.ts';
 	import { DEFAULT_SAMPLE_INSTRUCTIONS, DEFAULT_VERIFY_INSTRUCTIONS } from './auditPipeline';
 	import type { AuditEditorState } from './definition';
 

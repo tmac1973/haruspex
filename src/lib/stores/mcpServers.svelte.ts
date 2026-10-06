@@ -14,15 +14,15 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { IPC } from '$lib/ipc/commands';
-import type { SidecarStatus } from '$lib/ipc/gen/SidecarStatus';
-import type { McpConnectionInfo } from '$lib/ipc/gen/McpConnectionInfo';
-import type { McpToolDescriptor } from '$lib/ipc/gen/McpToolDescriptor';
-import type { CompanionStatus } from '$lib/ipc/gen/CompanionStatus';
-import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
-import type { CatalogEntry } from '$lib/ipc/gen/CatalogEntry';
-import { registerMcpTools, setToolFailureHook, unregisterMcpServer } from '$lib/agent/tools/mcp';
-import { mcpDefaultTools } from '$lib/agent/tools/mcp-names';
+import { IPC } from '#lib/ipc/commands.ts';
+import type { SidecarStatus } from '#lib/ipc/gen/SidecarStatus.ts';
+import type { McpConnectionInfo } from '#lib/ipc/gen/McpConnectionInfo.ts';
+import type { McpToolDescriptor } from '#lib/ipc/gen/McpToolDescriptor.ts';
+import type { CompanionStatus } from '#lib/ipc/gen/CompanionStatus.ts';
+import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
+import type { CatalogEntry } from '#lib/ipc/gen/CatalogEntry.ts';
+import { registerMcpTools, setToolFailureHook, unregisterMcpServer } from '#lib/agent/tools/mcp.ts';
+import { mcpDefaultTools } from '#lib/agent/tools/mcp-names.ts';
 import { forgetServerApprovals } from './mcpApproval.svelte';
 import { getSettings, startableMcpServers } from './settings';
 import { forgetMcpSecrets } from './mcpSecrets';

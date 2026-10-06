@@ -26,10 +26,10 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { IPC } from '$lib/ipc/commands';
-import type { McpToolDescriptor } from '$lib/ipc/gen/McpToolDescriptor';
-import type { McpCallOutcome } from '$lib/ipc/gen/McpCallOutcome';
-import type { McpInputRequest } from '$lib/ipc/gen/McpInputRequest';
+import { IPC } from '#lib/ipc/commands.ts';
+import type { McpToolDescriptor } from '#lib/ipc/gen/McpToolDescriptor.ts';
+import type { McpCallOutcome } from '#lib/ipc/gen/McpCallOutcome.ts';
+import type { McpInputRequest } from '#lib/ipc/gen/McpInputRequest.ts';
 import { registerTool, unregisterTool } from './registry';
 import { clearMcpDefaultTools, mcpToolName, setMcpDefaultTools } from './mcp-names';
 import { toolResult, toolError, type ToolContext, type ToolExecOutput } from './types';
@@ -38,7 +38,7 @@ import {
 	isAlwaysAllowed,
 	rememberAlwaysAllow,
 	requiresApproval
-} from '$lib/stores/mcpApproval.svelte';
+} from '#lib/stores/mcpApproval.svelte.ts';
 
 /**
  * Maximum MRTR round trips for one tool call.

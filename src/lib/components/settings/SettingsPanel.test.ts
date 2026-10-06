@@ -32,7 +32,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 	listen: vi.fn(async () => () => {})
 }));
 
-import SettingsPanel from '$lib/components/settings/SettingsPanel.svelte';
+import SettingsPanel from '#lib/components/settings/SettingsPanel.svelte';
 
 /** Click a settings rail item by its visible label. */
 function rail(label: string): HTMLElement {

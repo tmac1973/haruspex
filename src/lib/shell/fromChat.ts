@@ -9,11 +9,11 @@
  * in the workspace finds this session already active and doesn't add a second.
  */
 
-import type { ChatMessage } from '$lib/api';
-import { setActiveTab } from '$lib/stores/activeTab.svelte';
-import { getWorkingDir } from '$lib/stores/session.svelte';
-import { createShellSession, type ShellSession } from '$lib/stores/shell.svelte';
-import { prepareChatHandoff, shellNameForConversation } from '$lib/shell/chatHandoff';
+import type { ChatMessage } from '#lib/api.ts';
+import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
+import { getWorkingDir } from '#lib/stores/session.svelte.ts';
+import { createShellSession, type ShellSession } from '#lib/stores/shell.svelte.ts';
+import { prepareChatHandoff, shellNameForConversation } from '#lib/shell/chatHandoff.ts';
 
 export interface ChatHandoffSource {
 	title?: string;

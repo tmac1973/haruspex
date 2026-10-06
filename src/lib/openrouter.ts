@@ -20,7 +20,7 @@
  * a 24 h TTL; the form re-fetches on demand.
  */
 
-import { readErrorText } from '$lib/utils/http';
+import { readErrorText } from '#lib/utils/http.ts';
 
 /**
  * Default model after a catalog (re)load: keep the current selection if the

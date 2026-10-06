@@ -2,7 +2,7 @@
 // per-chat WorkerPool (one Web Worker per chat, LRU cap 3) scoped to
 // the active conversation.
 
-import { getActiveConversationId } from '$lib/stores/session.svelte';
+import { getActiveConversationId } from '#lib/stores/session.svelte.ts';
 import { getWorkerPool } from './worker-pool';
 import type { RunOptions } from './worker-manager';
 import type { ToolResult } from './protocol';
@@ -59,7 +59,7 @@ export function hasLiveWorkerFor(chatId: string): boolean {
 
 // Legacy test seam — kept exported so importers don't break, but a no-op.
 // Tests that need to mock the sandbox now mock the whole module via
-// vi.mock('$lib/sandbox/sandbox', ...) (see chat.test.ts / sandbox.test.ts).
+// vi.mock('#lib/sandbox/sandbox.ts', ...) (see chat.test.ts / sandbox.test.ts).
 export function __setManagerForTesting(): void {
 	// no-op
 }

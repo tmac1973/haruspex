@@ -14,17 +14,17 @@
  *     wants a live preview (the runner does, the UI reflects it).
  */
 
-import { mergeLeadingSystemMessages } from '$lib/api';
-import type { BackendOverride, ChatMessage, Usage } from '$lib/api';
-import type { CallStats } from '$lib/agent/loop';
-import type { ContextManagedInfo } from '$lib/agent/context-budget';
-import type { SamplingParams } from '$lib/stores/settings';
-import type { ResolvedToolCall } from '$lib/agent/parser';
-import type { Artifact, LintIssue, ToolContext } from '$lib/agent/tools';
-import { runTurnCore } from '$lib/agent/runTurn';
-import { buildSystemPrompt, looksLikeFileOutputRequest } from '$lib/agent/system-prompt';
-import { finalizeStreamText } from '$lib/markdown';
-import { formatTodayLong } from '$lib/utils/format';
+import { mergeLeadingSystemMessages } from '#lib/api.ts';
+import type { BackendOverride, ChatMessage, Usage } from '#lib/api.ts';
+import type { CallStats } from '#lib/agent/loop.ts';
+import type { ContextManagedInfo } from '#lib/agent/context-budget.ts';
+import type { SamplingParams } from '#lib/stores/settings.ts';
+import type { ResolvedToolCall } from '#lib/agent/parser.ts';
+import type { Artifact, LintIssue, ToolContext } from '#lib/agent/tools/index.ts';
+import { runTurnCore } from '#lib/agent/runTurn.ts';
+import { buildSystemPrompt, looksLikeFileOutputRequest } from '#lib/agent/system-prompt.ts';
+import { finalizeStreamText } from '#lib/markdown.ts';
+import { formatTodayLong } from '#lib/utils/format.ts';
 
 export interface EphemeralTurnOptions {
 	userMessage: string;

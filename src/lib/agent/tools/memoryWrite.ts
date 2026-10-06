@@ -24,20 +24,20 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import type { MemoryHit } from '$lib/ipc/gen/MemoryHit';
+import type { MemoryHit } from '#lib/ipc/gen/MemoryHit.ts';
 import { registerTool } from './registry';
 import { toolResult, toolError } from './types';
 import { MEMORY_CATEGORIES, type MemoryCategory } from './memory';
-import { refreshMemoryCount } from '$lib/stores/memory.svelte';
+import { refreshMemoryCount } from '#lib/stores/memory.svelte.ts';
 import {
 	askMemoryApproval,
 	approveMemorySession,
 	isMemorySessionApproved
-} from '$lib/stores/memoryApproval.svelte';
-import { getSettings } from '$lib/stores/settings';
-import { getActiveConversationId } from '$lib/stores/session.svelte';
-import { showToast } from '$lib/stores/toasts.svelte';
-import { logDebug } from '$lib/debug-log';
+} from '#lib/stores/memoryApproval.svelte.ts';
+import { getSettings } from '#lib/stores/settings.ts';
+import { getActiveConversationId } from '#lib/stores/session.svelte.ts';
+import { showToast } from '#lib/stores/toasts.svelte.ts';
+import { logDebug } from '#lib/debug-log.ts';
 
 export const REMEMBER_TOOL = 'remember_this';
 

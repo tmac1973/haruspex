@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { AgentLoopOptions } from '$lib/agent/loop';
+import type { AgentLoopOptions } from '#lib/agent/loop.ts';
 
 const mocks = vi.hoisted(() => ({
 	runAgentLoop: vi.fn()
 }));
 
-vi.mock('$lib/agent/loop', () => ({
+vi.mock('#lib/agent/loop.ts', () => ({
 	runAgentLoop: mocks.runAgentLoop
 }));
 
-vi.mock('$lib/agent/system-prompt', () => ({
+vi.mock('#lib/agent/system-prompt.ts', () => ({
 	buildSystemPrompt: (workingDir: string | null) => ({
 		role: 'system' as const,
 		content: workingDir ? `sys prompt for ${workingDir}` : 'sys prompt'
@@ -17,13 +17,13 @@ vi.mock('$lib/agent/system-prompt', () => ({
 	looksLikeFileOutputRequest: (s: string) => /pdf/i.test(s)
 }));
 
-vi.mock('$lib/markdown', () => ({
+vi.mock('#lib/markdown.ts', () => ({
 	processCitations: (text: string) => ({ content: text, citedUrls: [] }),
 	stripToolCallArtifacts: (s: string) => s,
 	finalizeStreamText: (raw: string) => ({ content: raw.trim(), citedUrls: [] })
 }));
 
-import { runEphemeralTurn, ambientContextNote } from '$lib/agent/runEphemeralTurn';
+import { runEphemeralTurn, ambientContextNote } from '#lib/agent/runEphemeralTurn.ts';
 
 beforeEach(() => {
 	mocks.runAgentLoop.mockReset();

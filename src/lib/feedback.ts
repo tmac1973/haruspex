@@ -20,8 +20,8 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
-import { getSettings, hasBraveApiKey } from '$lib/stores/settings';
-import { getDebugLogs } from '$lib/debug-log';
+import { getSettings, hasBraveApiKey } from '#lib/stores/settings.ts';
+import { getDebugLogs } from '#lib/debug-log.ts';
 
 const REPO = 'tmac1973/haruspex';
 const ISSUE_URL_BASE = `https://github.com/${REPO}/issues/new`;

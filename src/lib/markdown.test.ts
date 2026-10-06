@@ -9,7 +9,7 @@ import {
 	splitThinkChannels,
 	extractThinkBlocks,
 	stripToolCallArtifacts
-} from '$lib/markdown';
+} from '#lib/markdown.ts';
 
 describe('renderMarkdown', () => {
 	it('renders paragraphs', () => {

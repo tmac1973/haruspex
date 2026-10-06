@@ -1,24 +1,24 @@
 import { invoke } from '@tauri-apps/api/core';
-import { isAbortError } from '$lib/utils/error';
+import { isAbortError } from '#lib/utils/error.ts';
 import { labelArg, toolInvokeError, wslDistroArg } from './_helpers';
 import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
 import type { ToolContext, ToolExecOutput } from './types';
-import { getSettings } from '$lib/stores/settings';
-import { classifyShellRisk, type RiskMatch } from '$lib/shell/risky-commands';
-import { checkBoundary, protectedTargets, reportBoundaryRefusal } from '$lib/shell/boundary';
-import { isAutoApproveActive } from '$lib/stores/approvalOverride';
+import { getSettings } from '#lib/stores/settings.ts';
+import { classifyShellRisk, type RiskMatch } from '#lib/shell/risky-commands.ts';
+import { checkBoundary, protectedTargets, reportBoundaryRefusal } from '#lib/shell/boundary.ts';
+import { isAutoApproveActive } from '#lib/stores/approvalOverride.ts';
 import {
 	askCommandApproval,
 	isSessionApproved,
 	approveSession
-} from '$lib/stores/codeCommandApproval.svelte';
+} from '#lib/stores/codeCommandApproval.svelte.ts';
 import { runInPty, runInPtyBackground, shouldUsePty, spillIfLarge } from './pty-exec';
-import { registerWatch } from '$lib/shell/backgroundWatch';
+import { registerWatch } from '#lib/shell/backgroundWatch.ts';
 import { withLocalScopeNote } from './nested-session';
-import type { RunCommandResult } from '$lib/ipc/gen/RunCommandResult';
-import type { GrepResult } from '$lib/ipc/gen/GrepResult';
-import type { GlobResult } from '$lib/ipc/gen/GlobResult';
+import type { RunCommandResult } from '#lib/ipc/gen/RunCommandResult.ts';
+import type { GrepResult } from '#lib/ipc/gen/GrepResult.ts';
+import type { GlobResult } from '#lib/ipc/gen/GlobResult.ts';
 
 /**
  * The directory the code tools operate in: the live shell CWD when driven from

@@ -15,9 +15,9 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { errMessage } from '$lib/utils/error';
-import { getSettings, updateSettings } from '$lib/stores/settings';
-import { logDebug } from '$lib/debug-log';
+import { errMessage } from '#lib/utils/error.ts';
+import { getSettings, updateSettings } from '#lib/stores/settings.ts';
+import { logDebug } from '#lib/debug-log.ts';
 
 /**
  * - `unknown`     — not checked yet this session (the initial render)

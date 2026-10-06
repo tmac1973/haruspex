@@ -15,10 +15,10 @@
  * duplicates — so a sheet is always 1024.
  */
 
-import type { AssetEntry, AssetKind, AssetSpec } from '$lib/assets/spec/types';
-import { joinNegativePrompts } from '$lib/assets/spec/types';
-import type { ImageRequest } from '$lib/image/types';
-import type { SheetPiece } from '$lib/ipc/gen/SheetPiece';
+import type { AssetEntry, AssetKind, AssetSpec } from '#lib/assets/spec/types.ts';
+import { joinNegativePrompts } from '#lib/assets/spec/types.ts';
+import type { ImageRequest } from '#lib/image/types.ts';
+import type { SheetPiece } from '#lib/ipc/gen/SheetPiece.ts';
 
 /** Subjects per sheet. */
 export const SHEET_SIZE = 9;

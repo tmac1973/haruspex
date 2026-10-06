@@ -24,7 +24,7 @@
 	 * wrap at the boundary, and close restores the opener's focus.
 	 */
 	import { tick, type Snippet } from 'svelte';
-	import { dismissable as dismissableAction } from '$lib/actions/dismissable';
+	import { dismissable as dismissableAction } from '#lib/actions/dismissable.ts';
 
 	interface Props {
 		open: boolean;

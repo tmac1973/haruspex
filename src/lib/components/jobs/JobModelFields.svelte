@@ -1,28 +1,28 @@
 <script lang="ts">
-	import { probeInferenceServer, pickProbedModel, probedModelCaps } from '$lib/inferenceProbe';
-	import type { NormalizedModel } from '$lib/inferenceProbe';
+	import { probeInferenceServer, pickProbedModel, probedModelCaps } from '#lib/inferenceProbe.ts';
+	import type { NormalizedModel } from '#lib/inferenceProbe.ts';
 	import {
 		OPENROUTER_BASE_URL,
 		fetchOpenRouterCatalog,
 		openRouterModelCaps,
 		pickOpenRouterModel,
 		type OpenRouterModel
-	} from '$lib/openrouter';
+	} from '#lib/openrouter.ts';
 	import {
 		defaultSourceForCaps,
 		describeSamplingProfile,
 		type SamplingSource
-	} from '$lib/agent/jobs/modelAdvanced';
+	} from '#lib/agent/jobs/modelAdvanced.ts';
 	import {
 		isOpenRouterUrl,
 		type JobModelForm,
 		type ModelSource
-	} from '$lib/agent/jobs/jobModelForm';
-	import OpenRouterModelPicker from '$lib/components/settings/OpenRouterModelPicker.svelte';
-	import ApiKeyPicker from '$lib/components/settings/ApiKeyPicker.svelte';
-	import ModeSelector from '$lib/components/ModeSelector.svelte';
-	import { getSettings } from '$lib/stores/settings';
-	import { KNOWN_EFFORT_LEVELS, resolveBackendDescriptor } from '$lib/inference/descriptor';
+	} from '#lib/agent/jobs/jobModelForm.ts';
+	import OpenRouterModelPicker from '#lib/components/settings/OpenRouterModelPicker.svelte';
+	import ApiKeyPicker from '#lib/components/settings/ApiKeyPicker.svelte';
+	import ModeSelector from '#lib/components/ModeSelector.svelte';
+	import { getSettings } from '#lib/stores/settings.ts';
+	import { KNOWN_EFFORT_LEVELS, resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 
 	// Where a job's model calls go, and how it behaves: the server, model,
 	// context and vision, plus reasoning and sampling. Used for a job's own

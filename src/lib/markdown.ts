@@ -1,7 +1,7 @@
 import { Marked } from 'marked';
 import hljs from 'highlight.js/lib/core';
-import { classifyShellRisk } from '$lib/shell/risky-commands';
-import { sanitizeHtml } from '$lib/sanitize';
+import { classifyShellRisk } from '#lib/shell/risky-commands.ts';
+import { sanitizeHtml } from '#lib/sanitize.ts';
 
 // Register only the languages we need to keep the bundle small
 import javascript from 'highlight.js/lib/languages/javascript';

@@ -14,10 +14,10 @@
 		snapshot,
 		type EmailAccount,
 		type EmailProviderId
-	} from '$lib/stores/settings';
-	import type { EmailProviderPreset } from '$lib/ipc/gen/EmailProviderPreset';
-	import EmailAccountForm from '$lib/components/EmailAccountForm.svelte';
-	import { forgetStoredPassword, keychainAvailable } from '$lib/stores/emailSecrets';
+	} from '#lib/stores/settings.ts';
+	import type { EmailProviderPreset } from '#lib/ipc/gen/EmailProviderPreset.ts';
+	import EmailAccountForm from '#lib/components/EmailAccountForm.svelte';
+	import { forgetStoredPassword, keychainAvailable } from '#lib/stores/emailSecrets.ts';
 
 	let emailAccounts = $state<EmailAccount[]>(snapshot(getSettings().integrations.email.accounts));
 	let emailPresets = $state<EmailProviderPreset[]>([]);

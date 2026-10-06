@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseSSE, type StreamChunk } from '$lib/api';
+import { parseSSE, type StreamChunk } from '#lib/api.ts';
 // @ts-expect-error — a plain .mjs script with no type declarations.
 import { createFakeLlm, pickTurn } from './server.mjs';
 

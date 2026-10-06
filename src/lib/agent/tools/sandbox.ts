@@ -1,17 +1,17 @@
-import { runPython, installPackage, resetSandbox } from '$lib/sandbox/sandbox';
-import { lintSandboxCode, formatLintFailure } from '$lib/sandbox/lint';
+import { runPython, installPackage, resetSandbox } from '#lib/sandbox/sandbox.ts';
+import { lintSandboxCode, formatLintFailure } from '#lib/sandbox/lint.ts';
 import { registerTool } from './registry';
 import { toolResult, toolError } from './types';
-import { getSettings } from '$lib/stores/settings';
-import { getActiveConversationId } from '$lib/stores/session.svelte';
+import { getSettings } from '#lib/stores/settings.ts';
+import { getActiveConversationId } from '#lib/stores/session.svelte.ts';
 import {
 	askApproval,
 	isChatSandboxApproved,
 	approveChatSandbox
-} from '$lib/stores/sandboxApproval.svelte';
-import { isAutoApproveActive } from '$lib/stores/approvalOverride';
-import { errMessage } from '$lib/utils/error';
-import { formatSandboxResult } from '$lib/sandbox/format-result';
+} from '#lib/stores/sandboxApproval.svelte.ts';
+import { isAutoApproveActive } from '#lib/stores/approvalOverride.ts';
+import { errMessage } from '#lib/utils/error.ts';
+import { formatSandboxResult } from '#lib/sandbox/format-result.ts';
 
 function firstLine(code: string, max = 60): string {
 	const line = code.split('\n')[0]?.trim() ?? '';

@@ -9,13 +9,13 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 // Side-effect import registers the calendar tools in the shared registry.
-import '$lib/agent/tools/calendar';
-import { formatEvent, formatResult, resolveDavAccounts } from '$lib/agent/tools/calendar';
-import { executeTool, getToolSchemas } from '$lib/agent/tools/registry';
-import { setDavAccounts } from '$lib/stores/settings';
-import type { DavAccount } from '$lib/ipc/gen/DavAccount';
-import type { CalendarEvent } from '$lib/ipc/gen/CalendarEvent';
-import type { ToolContext } from '$lib/agent/tools/types';
+import '#lib/agent/tools/calendar.ts';
+import { formatEvent, formatResult, resolveDavAccounts } from '#lib/agent/tools/calendar.ts';
+import { executeTool, getToolSchemas } from '#lib/agent/tools/registry.ts';
+import { setDavAccounts } from '#lib/stores/settings.ts';
+import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
+import type { CalendarEvent } from '#lib/ipc/gen/CalendarEvent.ts';
+import type { ToolContext } from '#lib/agent/tools/types.ts';
 
 const ctx: ToolContext = {
 	workingDir: null,

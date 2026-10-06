@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { ComfyModelSet } from '$lib/ipc/gen/ComfyModelSet';
+import type { ComfyModelSet } from '#lib/ipc/gen/ComfyModelSet.ts';
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock('@tauri-apps/api/core', async (orig) => ({

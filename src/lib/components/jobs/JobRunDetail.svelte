@@ -1,13 +1,17 @@
 <script lang="ts">
-	import ChatMessage from '$lib/components/ChatMessage.svelte';
-	import JobStepCard from '$lib/components/jobs/JobStepCard.svelte';
-	import { formatDuration } from '$lib/utils/format';
-	import { errMessage } from '$lib/utils/error';
-	import { getJobRun, type JobRunStep, type JobRunWithSteps } from '$lib/stores/jobRuns.svelte';
-	import { getJob, getJobs, type JobWithSteps } from '$lib/stores/jobs.svelte';
-	import JobRunStats from '$lib/components/jobs/JobRunStats.svelte';
-	import { getCurrentRun, getPendingQueue, stepStatsFromWire } from '$lib/agent/jobs/runner.svelte';
-	import { canResumeChain } from '$lib/agent/jobs/chainResume';
+	import ChatMessage from '#lib/components/ChatMessage.svelte';
+	import JobStepCard from '#lib/components/jobs/JobStepCard.svelte';
+	import { formatDuration } from '#lib/utils/format.ts';
+	import { errMessage } from '#lib/utils/error.ts';
+	import { getJobRun, type JobRunStep, type JobRunWithSteps } from '#lib/stores/jobRuns.svelte.ts';
+	import { getJob, getJobs, type JobWithSteps } from '#lib/stores/jobs.svelte.ts';
+	import JobRunStats from '#lib/components/jobs/JobRunStats.svelte';
+	import {
+		getCurrentRun,
+		getPendingQueue,
+		stepStatsFromWire
+	} from '#lib/agent/jobs/runner.svelte.ts';
+	import { canResumeChain } from '#lib/agent/jobs/chainResume.ts';
 
 	interface Props {
 		runId: number;

@@ -1,6 +1,6 @@
 /** Autonomous-coding prompts: preflight, decompose, the loop, finalize. */
 
-import type { BoundaryRefusal } from '$lib/shell/boundary';
+import type { BoundaryRefusal } from '#lib/shell/boundary.ts';
 import { STEP_CHECK_HEADING, VERIFICATION_COMMAND_HEADING } from './planParse';
 import { interviewResearchRules, writeResearchRules } from '../webResearch';
 

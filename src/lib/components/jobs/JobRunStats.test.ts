@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import JobRunStats from './JobRunStats.svelte';
-import type { StepThinkingStats } from '$lib/agent/jobs/runner.svelte';
+import type { StepThinkingStats } from '#lib/agent/jobs/runner.svelte.ts';
 
 function stats(over: Partial<StepThinkingStats> = {}): StepThinkingStats {
 	return {

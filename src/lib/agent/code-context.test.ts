@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { isCodeContext } from '$lib/agent/loop';
-import type { ChatMessage } from '$lib/api';
+import { isCodeContext } from '#lib/agent/loop.ts';
+import type { ChatMessage } from '#lib/api.ts';
 
 const user = (content: string): ChatMessage => ({ role: 'user', content });
 const assistantToolCalls = (calls: Array<{ name: string; args: object }>): ChatMessage => ({

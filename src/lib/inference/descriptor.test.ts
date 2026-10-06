@@ -5,8 +5,8 @@ import {
 	setActiveLocalModel,
 	updateInferenceBackend,
 	updateSettings
-} from '$lib/stores/settings';
-import { resolveBackendDescriptor } from '$lib/inference/descriptor';
+} from '#lib/stores/settings.ts';
+import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 
 /** Reset the persisted settings store to a known local-mode baseline. */
 function resetToLocalDefaults(): void {

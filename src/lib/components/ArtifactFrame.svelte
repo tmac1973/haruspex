@@ -11,7 +11,7 @@
 	 * opaque origin that can reach neither the app nor IPC.
 	 */
 	import { invoke } from '@tauri-apps/api/core';
-	import { artifactUrl } from '$lib/sandbox/artifactUrl';
+	import { artifactUrl } from '#lib/sandbox/artifactUrl.ts';
 
 	let { html }: { html: string } = $props();
 

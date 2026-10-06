@@ -7,7 +7,7 @@
  * something that does not exist.
  */
 
-import type { AssetSpecEntryArg } from '$lib/agent/tools/coding';
+import type { AssetSpecEntryArg } from '#lib/agent/tools/coding.ts';
 import type { PlanAssetEntryArg } from './tools';
 import {
 	ASSET_KINDS,
@@ -15,14 +15,14 @@ import {
 	type AssetEntry,
 	type AssetKind,
 	type AssetSpec
-} from '$lib/assets/spec/types';
+} from '#lib/assets/spec/types.ts';
 import {
 	DEFAULT_ANCHOR_IMAGE,
 	DEFAULT_ANCHOR_RECIPE,
 	defaultOutPath,
 	uniqueId
-} from '$lib/assets/spec/paths';
-import type { NormalizeProfile } from '$lib/ipc/gen/NormalizeProfile';
+} from '#lib/assets/spec/paths.ts';
+import type { NormalizeProfile } from '#lib/ipc/gen/NormalizeProfile.ts';
 
 export interface DerivePayload {
 	style?: { prompt?: string; negativePrompt?: string };

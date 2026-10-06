@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { JobSummary } from '$lib/stores/jobs.svelte';
+import type { JobSummary } from '#lib/stores/jobs.svelte.ts';
 
 const mocks = vi.hoisted(() => ({
 	listDueJobs: vi.fn(),
@@ -7,12 +7,13 @@ const mocks = vi.hoisted(() => ({
 	enqueue: vi.fn()
 }));
 
-vi.mock('$lib/stores/jobs.svelte', async () => {
+vi.mock('#lib/stores/jobs.svelte.ts', async () => {
 	// Re-export real schedule helpers so the scheduler's
 	// configJsonToSchedule + computeNextDueAt work, but mock the
 	// invoke-backed CRUD.
-	const actual =
-		await vi.importActual<typeof import('$lib/stores/jobs.svelte')>('$lib/stores/jobs.svelte');
+	const actual = await vi.importActual<typeof import('#lib/stores/jobs.svelte.ts')>(
+		'#lib/stores/jobs.svelte.ts'
+	);
 	return {
 		...actual,
 		listDueJobs: mocks.listDueJobs,
@@ -20,11 +21,11 @@ vi.mock('$lib/stores/jobs.svelte', async () => {
 	};
 });
 
-vi.mock('$lib/agent/jobs/runner.svelte', () => ({
+vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({
 	enqueue: mocks.enqueue
 }));
 
-import { tick, startScheduler, stopScheduler } from '$lib/agent/jobs/scheduler.svelte';
+import { tick, startScheduler, stopScheduler } from '#lib/agent/jobs/scheduler.svelte.ts';
 
 function dueJob(overrides: Partial<JobSummary>): JobSummary {
 	return {

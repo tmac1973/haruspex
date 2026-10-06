@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { getSettings, updateSettings } from '$lib/stores/settings';
+import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 import { registerImageBackend } from './registry';
 import { generateOneImage, DEFAULT_EDGE } from './generateOne';
 import { ImageBackendError, type ImageRequest } from './types';
@@ -7,7 +7,7 @@ import type { ImageBackend } from './backend';
 
 /**
  * `src/lib/image/generateOne.ts` and its imports, without a bundler. Only the
- * two import shapes this tree uses need resolving: `$lib/...` and relative.
+ * two import shapes this tree uses need resolving: `#lib/...` and relative.
  */
 const nodeFs = 'node:fs';
 const { readFileSync, existsSync } = (await import(nodeFs)) as {
@@ -17,7 +17,7 @@ const { readFileSync, existsSync } = (await import(nodeFs)) as {
 
 function resolveSpecifier(importPath: string, from: string): string | null {
 	let base: string;
-	if (importPath.startsWith('$lib/')) {
+	if (importPath.startsWith('#lib/')) {
 		base = `src/lib/${importPath.slice(5)}`;
 	} else if (importPath.startsWith('.')) {
 		const dir = from.split('/').slice(0, -1);

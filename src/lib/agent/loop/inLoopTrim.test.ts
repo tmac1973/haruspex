@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { inLoopTrimBudget } from './iteration';
-import { trimOldToolMessages, estimateMessagesTokens } from '$lib/agent/context-budget';
-import type { ChatMessage } from '$lib/api';
+import { trimOldToolMessages, estimateMessagesTokens } from '#lib/agent/context-budget.ts';
+import type { ChatMessage } from '#lib/api.ts';
 
 /**
  * The in-loop trim is PRE-EMPTIVE: the request that triggers it fit fine. It

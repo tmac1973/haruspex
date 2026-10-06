@@ -43,7 +43,7 @@ and fail CI if the name isn't registered in Rust.
 - **No chat-store imports from sandbox/agent-tools.** `src/lib/sandbox/` and
   `src/lib/agent/tools/` must NOT import `stores/chat.svelte`. CI has a grep
   guard (audit findings A1/A6). Read ambient session id / workdir from
-  `stores/session.svelte` instead. (`madge` can't see `$lib` aliases, so the
+  `stores/session.svelte` instead. (`madge` can't see `#lib` imports, so the
   grep guard is the real check.)
 - Rust `cargo clippy` runs with `-D warnings` — warnings are errors in CI
   and `make check`.

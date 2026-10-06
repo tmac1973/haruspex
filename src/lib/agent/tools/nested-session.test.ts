@@ -38,7 +38,7 @@ beforeEach(() => {
 describe('file tools while the terminal is inside an ssh session', () => {
 	it('refuses fs_write_text instead of writing to the local machine', async () => {
 		mockShell('ssh box');
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool(
 			'fs_write_text',
 			{ path: '/etc/nginx/nginx.conf', content: 'server {}' },
@@ -51,7 +51,7 @@ describe('file tools while the terminal is inside an ssh session', () => {
 
 	it('refuses fs_edit_text the same way', async () => {
 		mockShell('ssh box');
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool(
 			'fs_edit_text',
 			{ path: '/etc/hosts', old_str: 'a', new_str: 'b' },
@@ -63,7 +63,7 @@ describe('file tools while the terminal is inside an ssh session', () => {
 
 	it('labels a read as coming from the local machine', async () => {
 		mockShell('ssh box', { fs_read_text_absolute: 'local contents' });
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('fs_read_text', { path: '/etc/hosts' }, shellCodeCtx);
 		expect(out.result).toContain('local contents');
 		expect(out.result).toContain('NOT from that host');
@@ -71,7 +71,7 @@ describe('file tools while the terminal is inside an ssh session', () => {
 
 	it('leaves tools alone at a local prompt', async () => {
 		mockShell(null, { fs_write_text_absolute: null });
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool(
 			'fs_write_text',
 			{ path: '/home/tim/proj/a.txt', content: 'hi' },
@@ -82,7 +82,7 @@ describe('file tools while the terminal is inside an ssh session', () => {
 
 	it('leaves tools alone while a plain local command is running', async () => {
 		mockShell('npm run dev', { fs_read_text_absolute: 'local contents' });
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('fs_read_text', { path: '/home/tim/proj/a.ts' }, shellCodeCtx);
 		expect(out.result).toBe('local contents');
 	});

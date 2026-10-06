@@ -10,9 +10,9 @@
  * `src/lib/image/` (the backend layer); the reverse is forbidden and tested.
  */
 
-import type { TextureRecipe } from '$lib/ipc/gen/TextureRecipe';
-import type { LoraRef, SamplerSettings } from '$lib/image/types';
-import type { NormalizeProfile } from '$lib/ipc/gen/NormalizeProfile';
+import type { TextureRecipe } from '#lib/ipc/gen/TextureRecipe.ts';
+import type { LoraRef, SamplerSettings } from '#lib/image/types.ts';
+import type { NormalizeProfile } from '#lib/ipc/gen/NormalizeProfile.ts';
 
 export type { NormalizeProfile };
 

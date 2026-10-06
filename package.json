@@ -9,6 +9,10 @@
 		"url": "git+https://github.com/tmac1973/haruspex.git"
 	},
 	"type": "module",
+	"imports": {
+		"#lib": "./src/lib/index.ts",
+		"#lib/*": "./src/lib/*"
+	},
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",

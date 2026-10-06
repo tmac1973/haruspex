@@ -7,17 +7,17 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { chatCompletion, type BackendOverride, type ChatMessage } from '$lib/api';
+import { chatCompletion, type BackendOverride, type ChatMessage } from '#lib/api.ts';
 import {
 	getChatTemplateKwargs,
 	getSamplingParams,
 	getSettings,
 	getSearchProxy
-} from '$lib/stores/settings';
-import type { FetchedPage } from '$lib/ipc/gen/FetchedPage';
-import { resolveBackendDescriptor } from '$lib/inference/descriptor';
-import { errMessage } from '$lib/utils/error';
-import { stripThinkBlocks } from '$lib/markdown';
+} from '#lib/stores/settings.ts';
+import type { FetchedPage } from '#lib/ipc/gen/FetchedPage.ts';
+import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
+import { errMessage } from '#lib/utils/error.ts';
+import { stripThinkBlocks } from '#lib/markdown.ts';
 import { toolError } from './types';
 
 /**

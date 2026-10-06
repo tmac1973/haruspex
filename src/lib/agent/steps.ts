@@ -1,6 +1,6 @@
-import type { ResolvedToolCall } from '$lib/agent/parser';
-import type { SearchStep } from '$lib/agent/loop';
-import { getDisplayLabel, type Artifact, type LintIssue } from '$lib/agent/tools';
+import type { ResolvedToolCall } from '#lib/agent/parser.ts';
+import type { SearchStep } from '#lib/agent/loop.ts';
+import { getDisplayLabel, type Artifact, type LintIssue } from '#lib/agent/tools/index.ts';
 
 /**
  * Build the `SearchStep` for a tool call that just started. Shared by every

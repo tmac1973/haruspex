@@ -9,8 +9,8 @@ vi.mock('@tauri-apps/api/core', () => ({
 	invoke: mocks.invoke
 }));
 
-vi.mock('$lib/debug-log', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/debug-log')>()),
+vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
 	logDebug: mocks.logDebug
 }));
 
@@ -33,7 +33,7 @@ beforeEach(() => {
 });
 
 async function call(tool: string, args: unknown) {
-	const { executeTool } = await import('$lib/agent/tools');
+	const { executeTool } = await import('#lib/agent/tools/index.ts');
 	return executeTool(tool, args as Record<string, unknown>, ctx);
 }
 
@@ -201,7 +201,7 @@ describe('writeRoot confinement applies to edits, not just writes', () => {
 	const rooted = { ...ctx, writeRoot: 'plan/my-feature/' };
 
 	async function callRooted(tool: string, args: Record<string, unknown>) {
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		return executeTool(tool, args, rooted);
 	}
 

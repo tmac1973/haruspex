@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { renderMarkdown, splitThinkChannels, stripMarkdownForTTS } from '$lib/markdown';
-	import { resolvedImages, stripFor } from '$lib/images/figure';
+	import { renderMarkdown, splitThinkChannels, stripMarkdownForTTS } from '#lib/markdown.ts';
+	import { resolvedImages, stripFor } from '#lib/images/figure.ts';
 	import ChatImageStrip from './ChatImageStrip.svelte';
-	import type { SearchStep } from '$lib/agent/loop';
-	import ThinkingPanel from '$lib/components/ThinkingPanel.svelte';
-	import SpeakerButton from '$lib/components/SpeakerButton.svelte';
-	import { getSettings } from '$lib/stores/settings';
-	import { createCopyAction } from '$lib/utils/clipboard.svelte';
-	import { formatDuration } from '$lib/utils/format';
-	import { messageText, type ChatMessage, type MessageContentPart } from '$lib/api';
+	import type { SearchStep } from '#lib/agent/loop.ts';
+	import ThinkingPanel from '#lib/components/ThinkingPanel.svelte';
+	import SpeakerButton from '#lib/components/SpeakerButton.svelte';
+	import { getSettings } from '#lib/stores/settings.ts';
+	import { createCopyAction } from '#lib/utils/clipboard.svelte.ts';
+	import { formatDuration } from '#lib/utils/format.ts';
+	import { messageText, type ChatMessage, type MessageContentPart } from '#lib/api.ts';
 
 	interface Props {
 		message: ChatMessage;

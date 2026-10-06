@@ -2,10 +2,10 @@
 	import { onMount } from 'svelte';
 	import { getCurrentWindow } from '@tauri-apps/api/window';
 	import { page } from '$app/state';
-	import ShellPane from '$lib/components/shell/ShellPane.svelte';
-	import { setActiveTab } from '$lib/stores/activeTab.svelte';
-	import { reattachShellSession, getActiveShellSession } from '$lib/stores/shell.svelte';
-	import { handBackToMain } from '$lib/shell/windows';
+	import ShellPane from '#lib/components/shell/ShellPane.svelte';
+	import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
+	import { reattachShellSession, getActiveShellSession } from '#lib/stores/shell.svelte.ts';
+	import { handBackToMain } from '#lib/shell/windows.ts';
 
 	// The route param is the live PTY session id this window adopts.
 	const ptyId = Number(page.params.id);

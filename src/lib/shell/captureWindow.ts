@@ -11,9 +11,9 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { IPC } from '$lib/ipc/commands';
-import type { CaptureWindow } from '$lib/ipc/gen/CaptureWindow';
-import type { ScreenCapture } from '$lib/ipc/gen/ScreenCapture';
+import { IPC } from '#lib/ipc/commands.ts';
+import type { CaptureWindow } from '#lib/ipc/gen/CaptureWindow.ts';
+import type { ScreenCapture } from '#lib/ipc/gen/ScreenCapture.ts';
 
 /** What is sent with the picture when the composer is empty. */
 export const CAPTURE_PROMPT =

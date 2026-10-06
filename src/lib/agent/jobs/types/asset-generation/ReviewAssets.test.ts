@@ -23,9 +23,9 @@ const mocks = vi.hoisted(() => ({
 	enqueue: vi.fn(async () => 7),
 	probe: vi.fn(async () => ({ ok: true, detail: 'Connected.' }))
 }));
-vi.mock('$lib/image', () => ({ resolveImageBackend: () => ({ probe: mocks.probe }) }));
+vi.mock('#lib/image/index.ts', () => ({ resolveImageBackend: () => ({ probe: mocks.probe }) }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
-vi.mock('$lib/agent/jobs/runner.svelte', () => ({ enqueue: mocks.enqueue }));
+vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({ enqueue: mocks.enqueue }));
 
 import ReviewAssets from './ReviewAssets.svelte';
 

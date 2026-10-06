@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { ToolDefinition } from '$lib/api';
+import type { ToolDefinition } from '#lib/api.ts';
 import {
 	BUDGET_TIERS,
 	DEFAULT_MAX_TOOLS,

@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import UserQuestionModal from './UserQuestionModal.svelte';
-import { askUserQuestion, cancelUserQuestion } from '$lib/stores/userQuestion.svelte';
+import { askUserQuestion, cancelUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
 
 afterEach(() => {
 	cancelUserQuestion();

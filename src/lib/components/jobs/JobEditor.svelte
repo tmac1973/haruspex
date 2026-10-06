@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
 	import { open } from '@tauri-apps/plugin-dialog';
-	import JobModelFields from '$lib/components/jobs/JobModelFields.svelte';
+	import JobModelFields from '#lib/components/jobs/JobModelFields.svelte';
 	import {
 		emptyModelForm,
 		modelColumnsFromForm,
@@ -9,9 +9,9 @@
 		modelFormSummary,
 		modelAdvancedOf,
 		type JobModelForm
-	} from '$lib/agent/jobs/jobModelForm';
-	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
-	import JobScheduleField from '$lib/components/jobs/JobScheduleField.svelte';
+	} from '#lib/agent/jobs/jobModelForm.ts';
+	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
+	import JobScheduleField from '#lib/components/jobs/JobScheduleField.svelte';
 	import {
 		createJob,
 		updateJob,
@@ -26,14 +26,14 @@
 		type JobInput,
 		type JobStepInput,
 		type JobType
-	} from '$lib/stores/jobs.svelte';
-	import { getCurrentRun } from '$lib/agent/jobs/runner.svelte';
+	} from '#lib/stores/jobs.svelte.ts';
+	import { getCurrentRun } from '#lib/agent/jobs/runner.svelte.ts';
 	import {
 		ensureTypeAvailabilityLoaded,
 		getJobType,
 		isJobTypeAvailable,
 		listJobTypes
-	} from '$lib/agent/jobs/types';
+	} from '#lib/agent/jobs/types/index.ts';
 
 	// Platform-gated types (autonomous coding) hide from the picker until
 	// their probe says otherwise; idempotent, so fire per mount.

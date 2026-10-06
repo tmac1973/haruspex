@@ -6,8 +6,8 @@ import type {
 	StreamChunk,
 	ToolDefinition,
 	Usage
-} from '$lib/api';
-import { runAgentLoop, type AgentLoopOptions } from '$lib/agent/loop';
+} from '#lib/api.ts';
+import { runAgentLoop, type AgentLoopOptions } from '#lib/agent/loop.ts';
 
 // ---------------------------------------------------------------------------
 // Mock seams. iteration.ts talks to the model via chatCompletion (the
@@ -29,7 +29,7 @@ const toolsMock = vi.hoisted(() => ({
 	coerceCallArguments: vi.fn((_name: string, args: Record<string, unknown>) => args)
 }));
 
-vi.mock('$lib/api', () => ({
+vi.mock('#lib/api.ts', () => ({
 	ApiError: class ApiError extends Error {
 		statusCode?: number;
 		constructor(message: string, statusCode?: number) {
@@ -59,14 +59,14 @@ vi.mock('$lib/api', () => ({
 	}
 }));
 
-vi.mock('$lib/agent/tools', () => ({
+vi.mock('#lib/agent/tools/index.ts', () => ({
 	executeTool: toolsMock.executeTool,
 	getToolSchemas: toolsMock.getToolSchemas,
 	coerceCallArguments: toolsMock.coerceCallArguments
 }));
 
-vi.mock('$lib/stores/settings', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/stores/settings')>()),
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getChatTemplateKwargs: vi.fn(() => ({ enable_thinking: true })),
 	getSamplingParams: vi.fn(() => ({
 		temperature: 0.6,
@@ -86,11 +86,11 @@ vi.mock('$lib/stores/settings', async (importOriginal) => ({
 	hasEnabledContactsAccount: vi.fn(() => false)
 }));
 
-vi.mock('$lib/markdown', async (importOriginal) => ({
+vi.mock('#lib/markdown.ts', async (importOriginal) => ({
 	// Keep the real reasoning splitter: it is pure, it defines the
 	// reasoning/answer contract the loop reports against, and faking it here
 	// would let the two drift without any test noticing.
-	...(await importOriginal<typeof import('$lib/markdown')>()),
+	...(await importOriginal<typeof import('#lib/markdown.ts')>()),
 	stripToolCallArtifacts: (text: string) =>
 		text
 			.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
@@ -98,8 +98,8 @@ vi.mock('$lib/markdown', async (importOriginal) => ({
 			.trim()
 }));
 
-vi.mock('$lib/debug-log', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/debug-log')>()),
+vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
 	logDebug: vi.fn(),
 	isVerbosePayloads: () => false
 }));
@@ -999,7 +999,7 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 			toolCallResponse([{ id: 'c1', name: 'fetch_url', args: '{"url":"https://a.dev"}' }])
 		);
 		streamQueue.push([contentChunk('Summary of findings.', 'stop')]);
-		const settings = await import('$lib/stores/settings');
+		const settings = await import('#lib/stores/settings.ts');
 		const kwargs = vi.mocked(settings.getChatTemplateKwargs);
 		const { options } = makeOptions({ maxIterations: 1, thinkingEnabled: true });
 

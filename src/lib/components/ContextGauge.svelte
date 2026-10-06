@@ -14,7 +14,7 @@
 		compact?: boolean;
 	}
 
-	import { formatTokens } from '$lib/utils/format';
+	import { formatTokens } from '#lib/utils/format.ts';
 
 	const { promptTokens, contextSize, label, compact = false }: Props = $props();
 

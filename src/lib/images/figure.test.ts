@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { figureHtml } from './figure';
 import { captionFor } from './caption';
-import type { ImageRow } from '$lib/ipc/gen/ImageRow';
+import type { ImageRow } from '#lib/ipc/gen/ImageRow.ts';
 
 const HASH = '0123456789abcdef'.repeat(4);
 

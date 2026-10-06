@@ -123,7 +123,7 @@ registerTool({
 			);
 		}
 
-		const ask = ctx.askUser ?? (await import('$lib/stores/userQuestion.svelte')).askUserQuestion;
+		const ask = ctx.askUser ?? (await import('#lib/stores/userQuestion.svelte.ts')).askUserQuestion;
 		const answer = await ask(
 			{
 				question,

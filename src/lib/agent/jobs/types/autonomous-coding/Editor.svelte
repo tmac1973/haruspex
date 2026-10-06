@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { open } from '@tauri-apps/plugin-dialog';
-	import Tooltip from '$lib/components/Tooltip.svelte';
-	import { getJob, getJobs } from '$lib/stores/jobs.svelte';
+	import Tooltip from '#lib/components/Tooltip.svelte';
+	import { getJob, getJobs } from '#lib/stores/jobs.svelte.ts';
 	import { parseGuidedPlanningConfig } from '../guided-planning/config';
 	import { planDirFromPicked } from './config';
 	import type { AutonomousCodingEditorState } from './definition';
@@ -17,7 +17,7 @@
 		workingDir = ''
 	}: {
 		config: Record<string, unknown>;
-		steps?: import('$lib/stores/jobs.svelte').JobStepInput[];
+		steps?: import('#lib/stores/jobs.svelte.ts').JobStepInput[];
 		workingDir?: string;
 	} = $props();
 	void steps; // declared only because JobEditor binds it on every type's editor

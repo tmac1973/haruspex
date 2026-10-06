@@ -11,10 +11,10 @@
 	import { untrack } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
-	import { IPC } from '$lib/ipc/commands';
-	import { getSettings } from '$lib/stores/settings';
-	import type { SetupStep } from '$lib/ipc/gen/SetupStep';
-	import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
+	import { IPC } from '#lib/ipc/commands.ts';
+	import { getSettings } from '#lib/stores/settings.ts';
+	import type { SetupStep } from '#lib/ipc/gen/SetupStep.ts';
+	import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 	import {
 		clearSetupProgress,
 		isSetupComplete,
@@ -23,9 +23,9 @@
 		saveStepIndex,
 		setupStateOf,
 		stepLabel
-	} from '$lib/stores/mcpSetup';
-	import { pickAndInstallAddon } from '$lib/stores/mcpAddon';
-	import { hasMcpSecret, storeMcpSecret } from '$lib/stores/mcpSecrets';
+	} from '#lib/stores/mcpSetup.ts';
+	import { pickAndInstallAddon } from '#lib/stores/mcpAddon.ts';
+	import { hasMcpSecret, storeMcpSecret } from '#lib/stores/mcpSecrets.ts';
 
 	interface Props {
 		config: McpServerConfig;

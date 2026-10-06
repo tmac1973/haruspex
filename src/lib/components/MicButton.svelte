@@ -4,7 +4,7 @@
 		getVoiceCaptureStatus,
 		startVoiceCapture,
 		stopAndTranscribe
-	} from '$lib/audio/voiceCapture.svelte';
+	} from '#lib/audio/voiceCapture.svelte.ts';
 
 	interface Props {
 		onTranscription: (text: string) => void;

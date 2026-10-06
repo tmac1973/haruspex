@@ -4,7 +4,7 @@ import { render, screen, fireEvent } from '@testing-library/svelte';
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
-vi.mock('$lib/stores/memory.svelte', () => ({ refreshMemoryCount: vi.fn() }));
+vi.mock('#lib/stores/memory.svelte.ts', () => ({ refreshMemoryCount: vi.fn() }));
 
 import MemoryRecallStep from './MemoryRecallStep.svelte';
 

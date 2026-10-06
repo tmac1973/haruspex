@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getToolSchemas } from '$lib/agent/tools';
+import { getToolSchemas } from '#lib/agent/tools/index.ts';
 
 function names(opts: Parameters<typeof getToolSchemas>[0]): string[] {
 	return getToolSchemas(opts).map((s) => s.function.name);

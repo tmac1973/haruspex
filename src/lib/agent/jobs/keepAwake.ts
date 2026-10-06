@@ -7,8 +7,8 @@
  * run's acquire.
  */
 import { invoke } from '@tauri-apps/api/core';
-import { IPC } from '$lib/ipc/commands';
-import { logDebug } from '$lib/debug-log';
+import { IPC } from '#lib/ipc/commands.ts';
+import { logDebug } from '#lib/debug-log.ts';
 
 let desired = false;
 let applied = false;

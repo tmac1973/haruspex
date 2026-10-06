@@ -15,7 +15,7 @@
 	 */
 	import Modal from './Modal.svelte';
 	import ModalButton from './ModalButton.svelte';
-	import { getPendingApproval, resolveApproval } from '$lib/stores/sandboxApproval.svelte';
+	import { getPendingApproval, resolveApproval } from '#lib/stores/sandboxApproval.svelte.ts';
 
 	const pending = $derived(getPendingApproval());
 </script>

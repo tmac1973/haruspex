@@ -18,10 +18,10 @@
 		getActiveDownload,
 		runDownload,
 		syncDownloads
-	} from '$lib/stores/downloads.svelte';
+	} from '#lib/stores/downloads.svelte.ts';
 	import DownloadProgressBar from './DownloadProgressBar.svelte';
 	import { onMount } from 'svelte';
-	import { restartServerWhenIdle, stopServer } from '$lib/stores/llamaServer.svelte';
+	import { restartServerWhenIdle, stopServer } from '#lib/stores/llamaServer.svelte.ts';
 	import {
 		getActiveLocalModelFilename,
 		getLegacyModelNoticeDismissed,
@@ -29,10 +29,10 @@
 		setActiveLocalModel,
 		setLegacyModelNoticeDismissed,
 		updateSettings
-	} from '$lib/stores/settings';
-	import { formatBytes } from '$lib/utils/format';
-	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
-	import type { ModelInfo } from '$lib/ipc/gen/ModelInfo';
+	} from '#lib/stores/settings.ts';
+	import { formatBytes } from '#lib/utils/format.ts';
+	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
+	import type { ModelInfo } from '#lib/ipc/gen/ModelInfo.ts';
 
 	let models = $state<ModelInfo[]>([]);
 	let activeModelPath = $state<string | null>(null);

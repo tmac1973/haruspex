@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
 const settings = vi.hoisted(() => ({ imageLocalModelId: 'ming' }));
-vi.mock('$lib/stores/settings', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/stores/settings')>()),
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: () => settings
 }));
 

@@ -8,7 +8,7 @@
  * handing them to the webview.
  */
 import { getSettings, setMcpServers } from './settings';
-import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
+import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import { deleteSecret, keepSecret, secretStoreAvailable, setSecret } from './secrets';
 
 export function mcpSecretKey(serverId: string, key: string): string {

@@ -13,9 +13,9 @@
 	 * on it.
 	 */
 	import { invoke } from '@tauri-apps/api/core';
-	import { errMessage } from '$lib/utils/error';
-	import type { MemoryMeta } from '$lib/ipc/gen/MemoryMeta';
-	import { refreshMemoryCount } from '$lib/stores/memory.svelte';
+	import { errMessage } from '#lib/utils/error.ts';
+	import type { MemoryMeta } from '#lib/ipc/gen/MemoryMeta.ts';
+	import { refreshMemoryCount } from '#lib/stores/memory.svelte.ts';
 	import MemoryRow from './MemoryRow.svelte';
 
 	const PAGE_SIZE = 25;

@@ -9,8 +9,8 @@ vi.mock('@tauri-apps/api/core', () => ({
 	invoke: mocks.invoke
 }));
 
-vi.mock('$lib/debug-log', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/debug-log')>()),
+vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
 	logDebug: mocks.logDebug
 }));
 
@@ -19,7 +19,7 @@ const MM_PREFIX = '\x00MM\x00';
 // `available` is module-level state set by initDb — re-import fresh per
 // test so the available/unavailable paths don't bleed into each other.
 async function freshDb() {
-	return import('$lib/stores/db');
+	return import('#lib/stores/db.ts');
 }
 
 /** Import the module and run a successful initDb so `available` is true. */

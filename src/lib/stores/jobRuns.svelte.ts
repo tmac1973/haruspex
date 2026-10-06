@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { logDebug } from '$lib/debug-log';
+import { logDebug } from '#lib/debug-log.ts';
 import { dbMutate, dbQuery } from './dbCall';
 
 export type JobRunStatus =

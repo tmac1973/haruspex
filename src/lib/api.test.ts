@@ -5,8 +5,8 @@ import {
 	chatCompletionStream,
 	ApiError,
 	mergeLeadingSystemMessages
-} from '$lib/api';
-import type { ChatMessage } from '$lib/api';
+} from '#lib/api.ts';
+import type { ChatMessage } from '#lib/api.ts';
 
 // Mock the settings module so resolveChatEndpoint (via resolveBackendDescriptor)
 // sees the backend we want. vi.hoisted ensures the mock fns are available when
@@ -18,8 +18,8 @@ const { getSettingsMock, getApiKeyValueMock } = vi.hoisted(() => ({
 	})),
 	getApiKeyValueMock: vi.fn<() => string | undefined>(() => undefined)
 }));
-vi.mock('$lib/stores/settings', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/stores/settings')>()),
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: getSettingsMock,
 	getApiKeyValue: getApiKeyValueMock,
 	getActiveLocalModelFilename: () => ''

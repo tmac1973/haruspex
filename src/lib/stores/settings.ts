@@ -1,21 +1,21 @@
 // App settings — persisted to localStorage
 
 import { getCurrentWebview } from '@tauri-apps/api/webview';
-import type { OpenRouterModel, OpenRouterKeyStatus } from '$lib/openrouter';
+import type { OpenRouterModel, OpenRouterKeyStatus } from '#lib/openrouter.ts';
 // Type-only import — descriptor.ts imports this module's runtime values, so
 // keeping this side type-only avoids a circular runtime dependency.
-import type { BackendDescriptor, EffortCaps } from '$lib/inference/descriptor';
+import type { BackendDescriptor, EffortCaps } from '#lib/inference/descriptor.ts';
 
-import type { EmailAccount } from '$lib/ipc/gen/EmailAccount';
-import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
-import type { ImageBackendKind } from '$lib/image/types';
-import type { DavAccount } from '$lib/ipc/gen/DavAccount';
-import type { EmailProvider } from '$lib/ipc/gen/EmailProvider';
-import type { ProxyConfig } from '$lib/ipc/gen/ProxyConfig';
-import type { SandboxNetAccess } from '$lib/ipc/gen/SandboxNetAccess';
+import type { EmailAccount } from '#lib/ipc/gen/EmailAccount.ts';
+import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
+import type { ImageBackendKind } from '#lib/image/types.ts';
+import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
+import type { EmailProvider } from '#lib/ipc/gen/EmailProvider.ts';
+import type { ProxyConfig } from '#lib/ipc/gen/ProxyConfig.ts';
+import type { SandboxNetAccess } from '#lib/ipc/gen/SandboxNetAccess.ts';
 import { rememberedApiKey } from './apiKeyMemory';
-import type { TlsMode } from '$lib/ipc/gen/TlsMode';
-import type { ShellSelection } from '$lib/ipc/gen/ShellSelection';
+import type { TlsMode } from '#lib/ipc/gen/TlsMode.ts';
+import type { ShellSelection } from '#lib/ipc/gen/ShellSelection.ts';
 
 export type ResponseFormat = 'minimal' | 'standard' | 'rich';
 export type ThemeMode = 'system' | 'light' | 'dark';
@@ -1335,7 +1335,7 @@ interface ModelSamplingProfiles {
 
 /**
  * The tuned sampling-profile families we ship. `BackendDescriptor.samplingFamily`
- * is typed against this — the resolver in `$lib/inference/descriptor` is the
+ * is typed against this — the resolver in `#lib/inference/descriptor` is the
  * only code that maps model identities to a family.
  */
 export type QwenSamplingFamily = 'qwen3.5' | 'qwen-dense-27b';
@@ -1417,7 +1417,7 @@ export function setActiveLocalModel(filenameOrPath: string | null): void {
  * Persisted filename (basename) of the model the user last activated.
  * Empty string if no choice has been recorded yet — callers should
  * fall back to a disk scan in that case. Also the resolver's input for
- * local model-family detection (see `$lib/inference/descriptor`).
+ * local model-family detection (see `#lib/inference/descriptor`).
  */
 export function getActiveLocalModelFilename(): string {
 	return settings.activeLocalModelFilename;
@@ -1456,7 +1456,7 @@ export interface SamplingOptions {
 	 * the historical behavior) resolves discovered presets over the built-in
 	 * family profile; 'server' sends nothing at all, leaving the serving
 	 * backend's own configuration untouched; 'custom' sends exactly
-	 * `samplingParams`. Set per job — see `$lib/agent/jobs/modelAdvanced`.
+	 * `samplingParams`. Set per job — see `#lib/agent/jobs/modelAdvanced`.
 	 */
 	samplingSource?: 'server' | 'profile' | 'custom';
 	/** The values for `samplingSource: 'custom'`; ignored otherwise. */

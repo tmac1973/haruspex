@@ -22,8 +22,8 @@
  */
 
 import { extractMemories } from './extraction';
-import { memoryActive } from '$lib/stores/memory.svelte';
-import { logDebug } from '$lib/debug-log';
+import { memoryActive } from '#lib/stores/memory.svelte.ts';
+import { logDebug } from '#lib/debug-log.ts';
 
 /** How long a conversation must sit still before it is distilled. */
 const IDLE_DELAY_MS = 120_000;

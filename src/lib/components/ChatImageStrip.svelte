@@ -13,10 +13,10 @@
 	 * outcome, so `stripFor` returns nothing whenever the answer embedded an
 	 * image of its own.
 	 */
-	import type { ImageRow } from '$lib/ipc/gen/ImageRow';
-	import { captionFor } from '$lib/images/caption';
-	import { imageSrc } from '$lib/images/url';
-	import { VIEW_IMAGE_EVENT } from '$lib/markdown-actions';
+	import type { ImageRow } from '#lib/ipc/gen/ImageRow.ts';
+	import { captionFor } from '#lib/images/caption.ts';
+	import { imageSrc } from '#lib/images/url.ts';
+	import { VIEW_IMAGE_EVENT } from '#lib/markdown-actions.ts';
 
 	/**
 	 * Same event the inline images raise, so one viewer at the chat level

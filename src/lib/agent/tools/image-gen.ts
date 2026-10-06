@@ -9,12 +9,12 @@
  * asked for is never lost to a forgetful model.
  */
 import { invoke } from '@tauri-apps/api/core';
-import { errMessage } from '$lib/utils/error';
+import { errMessage } from '#lib/utils/error.ts';
 import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
-import { generateForTool } from '$lib/image/forTool';
-import { ImageBackendError } from '$lib/image/types';
-import { registerLocalImage } from '$lib/images/resolve.svelte';
+import { generateForTool } from '#lib/image/forTool.ts';
+import { ImageBackendError } from '#lib/image/types.ts';
+import { registerLocalImage } from '#lib/images/resolve.svelte.ts';
 
 const SHAPES = {
 	square: { width: 1024, height: 1024 },

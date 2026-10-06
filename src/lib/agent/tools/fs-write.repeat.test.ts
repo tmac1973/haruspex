@@ -7,11 +7,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
-vi.mock('$lib/stores/approvalOverride', () => ({
+vi.mock('#lib/stores/approvalOverride.ts', () => ({
 	isAutoApproveActive: mocks.isAutoApproveActive
 }));
 
-vi.mock('$lib/stores/fileConflict.svelte', () => ({
+vi.mock('#lib/stores/fileConflict.svelte.ts', () => ({
 	askFileConflict: mocks.askFileConflict
 }));
 

@@ -9,7 +9,7 @@ import {
 	getIsGenerating,
 	getLastTurnFailed,
 	retryLastTurn
-} from '$lib/stores/chat.svelte';
+} from '#lib/stores/chat.svelte.ts';
 
 vi.mock('@tauri-apps/api/core', () => ({
 	invoke: vi.fn().mockRejectedValue(new Error('not available'))
@@ -19,7 +19,7 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 // The real chat store pulls in Tauri IPC + the server store; ChatView (and
 // its children ConversationSidebar / WorkingDirButton) only need the
 // functions they import, so mock the whole module.
-vi.mock('$lib/stores/chat.svelte', () => ({
+vi.mock('#lib/stores/chat.svelte.ts', () => ({
 	getActiveConversation: vi.fn(),
 	getIsGenerating: vi.fn(() => false),
 	getIsWaitingForSlot: vi.fn(() => false),
@@ -58,7 +58,7 @@ vi.mock('$lib/stores/chat.svelte', () => ({
 // The handoff pulls in the shell registry + the activeTab store; here we only
 // care that the button wires to it with the conversation.
 const openShellFromChat = vi.hoisted(() => vi.fn());
-vi.mock('$lib/shell/fromChat', () => ({ openShellFromChat }));
+vi.mock('#lib/shell/fromChat.ts', () => ({ openShellFromChat }));
 
 const conversation = {
 	id: 'c1',

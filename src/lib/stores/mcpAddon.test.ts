@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
-import type { SetupStep } from '$lib/ipc/gen/SetupStep';
+import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
+import type { SetupStep } from '#lib/ipc/gen/SetupStep.ts';
 
 const invoke = vi.hoisted(() => vi.fn());
 const openFileDialog = vi.hoisted(() => vi.fn());
 vi.mock('@tauri-apps/api/core', () => ({ invoke }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: openFileDialog }));
-vi.mock('$lib/stores/settings', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/stores/settings')>()),
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: () => ({ proxy: { mode: 'off' } })
 }));
 

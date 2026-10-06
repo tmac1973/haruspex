@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue('') }));
-vi.mock('$lib/stores/settings', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/stores/settings')>()),
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: () => ({ proxy: { mode: 'none', url: '', bypass: '' } }),
 	hasEnabledEmailAccount: () => false,
 	hasEnabledCalendarAccount: () => false,

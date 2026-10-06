@@ -1,9 +1,9 @@
 <script lang="ts">
-	import TabBar from '$lib/components/TabBar.svelte';
-	import ChatView from '$lib/components/ChatView.svelte';
-	import JobsTab from '$lib/components/jobs/JobsTab.svelte';
-	import ShellWorkspace from '$lib/components/shell/ShellWorkspace.svelte';
-	import { getActiveTab } from '$lib/stores/activeTab.svelte';
+	import TabBar from '#lib/components/TabBar.svelte';
+	import ChatView from '#lib/components/ChatView.svelte';
+	import JobsTab from '#lib/components/jobs/JobsTab.svelte';
+	import ShellWorkspace from '#lib/components/shell/ShellWorkspace.svelte';
+	import { getActiveTab } from '#lib/stores/activeTab.svelte.ts';
 
 	const activeTab = $derived(getActiveTab());
 

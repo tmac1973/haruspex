@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { stripFor } from './figure';
 import { clearResolvedImages, getResolvedImages } from './resolve.svelte';
-import type { SearchStep } from '$lib/agent/loop';
-import type { ImageRow } from '$lib/ipc/gen/ImageRow';
+import type { SearchStep } from '#lib/agent/loop.ts';
+import type { ImageRow } from '#lib/ipc/gen/ImageRow.ts';
 
 const HASH = '0123456789abcdef'.repeat(4);
 const THUMB = 'https://e.test/960px.jpg';

@@ -1,10 +1,10 @@
 /**
  * Saved prompt catalog store. Wraps the `db_*_prompt` IPC commands and keeps a
  * reactive list of the user's saved prompts. Built-in starter prompts live in
- * `$lib/agent/jobs/promptCatalog` and are merged in at the UI layer.
+ * `#lib/agent/jobs/promptCatalog` and are merged in at the UI layer.
  */
 
-import type { PromptScope } from '$lib/agent/jobs/promptCatalog';
+import type { PromptScope } from '#lib/agent/jobs/promptCatalog.ts';
 import { dbMutate, dbQuery } from './dbCall';
 
 export interface SavedPrompt {

@@ -8,9 +8,9 @@
 	 * interruption after they have answered it.
 	 */
 	import { onMount } from 'svelte';
-	import { getSettings, updateSettings } from '$lib/stores/settings';
-	import { cancelAllExtraction } from '$lib/agent/memory/scheduler';
-	import { resetMemoryApproval } from '$lib/stores/memoryApproval.svelte';
+	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
+	import { cancelAllExtraction } from '#lib/agent/memory/scheduler.ts';
+	import { resetMemoryApproval } from '#lib/stores/memoryApproval.svelte.ts';
 	import MemoryList from './MemoryList.svelte';
 	import {
 		disableMemory,
@@ -21,7 +21,7 @@
 		getModelStatus,
 		refreshMemoryCount,
 		refreshModelStatus
-	} from '$lib/stores/memory.svelte';
+	} from '#lib/stores/memory.svelte.ts';
 
 	let memoryEnabled = $state(getSettings().memoryEnabled);
 	let busy = $state(false);

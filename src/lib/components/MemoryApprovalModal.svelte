@@ -17,7 +17,7 @@
 	import {
 		getPendingMemoryApproval,
 		resolveMemoryApproval
-	} from '$lib/stores/memoryApproval.svelte';
+	} from '#lib/stores/memoryApproval.svelte.ts';
 
 	const pending = $derived(getPendingMemoryApproval());
 </script>

@@ -8,9 +8,9 @@
 		MIN_MAX_RESPONSE_TOKENS,
 		MAX_MAX_RESPONSE_TOKENS,
 		type SandboxNetAccess
-	} from '$lib/stores/settings';
-	import { KNOWN_EFFORT_LEVELS, resolveBackendDescriptor } from '$lib/inference/descriptor';
-	import { clampInt } from '$lib/utils/clampInt';
+	} from '#lib/stores/settings.ts';
+	import { KNOWN_EFFORT_LEVELS, resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
+	import { clampInt } from '#lib/utils/clampInt.ts';
 
 	let thinkingEnabled = $state(getSettings().thinkingEnabled);
 	// The active backend may report that its model has no reasoning mode (an

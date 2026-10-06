@@ -17,10 +17,10 @@
  */
 
 import { describe, it, expect, afterAll } from 'vitest';
-import { getSettings, updateSettings } from '$lib/stores/settings';
-import { comfyUiBackend } from '$lib/image/comfyui/backend';
+import { getSettings, updateSettings } from '#lib/stores/settings.ts';
+import { comfyUiBackend } from '#lib/image/comfyui/backend.ts';
 import { sheetRequest } from './sheets';
-import type { AssetEntry, AssetSpec } from '$lib/assets/spec/types';
+import type { AssetEntry, AssetSpec } from '#lib/assets/spec/types.ts';
 
 declare const process: { env: Record<string, string | undefined> };
 

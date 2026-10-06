@@ -8,7 +8,7 @@ import {
 	anchorEdge,
 	specSummary
 } from './anchor';
-import type { AssetSpec, NormalizeProfile } from '$lib/assets/spec/types';
+import type { AssetSpec, NormalizeProfile } from '#lib/assets/spec/types.ts';
 
 function profile(over: Partial<NormalizeProfile> = {}): NormalizeProfile {
 	return {

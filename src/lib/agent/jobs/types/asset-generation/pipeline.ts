@@ -9,15 +9,15 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { createJob } from '$lib/stores/jobs.svelte';
+import { createJob } from '#lib/stores/jobs.svelte.ts';
 import { modelColumnsOf } from '../../chainModel';
-import { normalizeAbort, errMessage } from '$lib/utils/error';
+import { normalizeAbort, errMessage } from '#lib/utils/error.ts';
 import {
 	markRunStarted,
 	markRunStepFinished,
 	markRunStepStarted,
 	type JobRunStepStatus
-} from '$lib/stores/jobRuns.svelte';
+} from '#lib/stores/jobRuns.svelte.ts';
 import type { JobRunContext } from '../types';
 import type { RunStatus } from '../../runner.svelte';
 import type { AssetGenerationConfig } from './config';
@@ -31,16 +31,16 @@ import {
 	DEFAULT_VISION_JUDGE,
 	MAX_GENERATION_EDGE
 } from './config';
-import { parseAssetSpec } from '$lib/assets/spec/parse';
-import { renderAssetSpec } from '$lib/assets/spec/write';
+import { parseAssetSpec } from '#lib/assets/spec/parse.ts';
+import { renderAssetSpec } from '#lib/assets/spec/write.ts';
 import { markRejections } from './review';
-import { validateAssetSpec } from '$lib/assets/spec/validate';
-import type { AssetSpec } from '$lib/assets/spec/types';
-import { contactSheet, defaultProfile } from '$lib/assets/normalize';
-import { resolveImageBackend } from '$lib/image';
-import { getSettings } from '$lib/stores/settings';
-import { SUBMIT_ASSET_SPEC_TOOL } from '$lib/agent/tools/coding';
-import type { ResolvedToolCall } from '$lib/agent/parser';
+import { validateAssetSpec } from '#lib/assets/spec/validate.ts';
+import type { AssetSpec } from '#lib/assets/spec/types.ts';
+import { contactSheet, defaultProfile } from '#lib/assets/normalize.ts';
+import { resolveImageBackend } from '#lib/image/index.ts';
+import { getSettings } from '#lib/stores/settings.ts';
+import { SUBMIT_ASSET_SPEC_TOOL } from '#lib/agent/tools/coding.ts';
+import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import { deriveSpec, type DerivePayload } from './derive';
 import { judgePrompt, specDerivationPrompt, specRetryPrompt } from './prompts';
 import { establishAnchor } from './anchor';
@@ -54,8 +54,8 @@ import {
 } from './tools';
 import { applyCodeTextures, reviseRecipe, writeRecipes, type RecipeDeps } from './recipes';
 import { DEFAULT_TEXTURE_VARIANTS } from './config';
-import type { TextureRecipe } from '$lib/ipc/gen/TextureRecipe';
-import type { AssetEntry } from '$lib/assets/spec/types';
+import type { TextureRecipe } from '#lib/ipc/gen/TextureRecipe.ts';
+import type { AssetEntry } from '#lib/assets/spec/types.ts';
 import { generateEntries } from './generate';
 import { fitStyle } from './promptBudget';
 import { applyJobSize, nativeEdgeFor, upscaleForEdge } from './nativeEdge';

@@ -15,7 +15,7 @@
  * calls). A second overlapping ask rejects.
  */
 
-import type { RiskMatch } from '$lib/shell/risky-commands';
+import type { RiskMatch } from '#lib/shell/risky-commands.ts';
 
 export type CommandApprovalChoice = 'allow_once' | 'allow_session' | 'deny';
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isAutoApproveActive, runWithAutoApprove } from '$lib/stores/approvalOverride';
+import { isAutoApproveActive, runWithAutoApprove } from '#lib/stores/approvalOverride.ts';
 
 describe('approvalOverride', () => {
 	it('is inactive by default', () => {

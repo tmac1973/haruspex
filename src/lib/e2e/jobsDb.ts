@@ -9,8 +9,8 @@ import type {
 	JobStepInput,
 	JobSummary,
 	JobWithSteps
-} from '$lib/stores/jobs.svelte';
-import type { JobRunStep, JobRunSummary } from '$lib/stores/jobRuns.svelte';
+} from '#lib/stores/jobs.svelte.ts';
+import type { JobRunStep, JobRunSummary } from '#lib/stores/jobRuns.svelte.ts';
 
 type Args = Record<string, unknown> | undefined;
 

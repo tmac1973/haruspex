@@ -7,7 +7,7 @@
  * Both sides import this instead, and it imports only settings.
  */
 
-import { startableMcpServers } from '$lib/stores/settings';
+import { startableMcpServers } from '#lib/stores/settings.ts';
 
 /** Separator between the prefix, the server id and the tool name. */
 const NAME_SEP = '__';

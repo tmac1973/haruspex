@@ -15,21 +15,21 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn() }));
-vi.mock('$lib/agent/runEphemeralTurn', () => ({ runEphemeralTurn: mocks.runEphemeralTurn }));
-vi.mock('$lib/agent/inferenceQueue.svelte', () => ({
+vi.mock('#lib/agent/runEphemeralTurn.ts', () => ({ runEphemeralTurn: mocks.runEphemeralTurn }));
+vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => ({
 	withInferenceSlot: mocks.withInferenceSlot
 }));
-vi.mock('$lib/inference/descriptor', () => ({
+vi.mock('#lib/inference/descriptor.ts', () => ({
 	resolveBackendDescriptor: mocks.resolveBackendDescriptor
 }));
-vi.mock('$lib/stores/db', () => ({
+vi.mock('#lib/stores/db.ts', () => ({
 	dbCreateConversation: mocks.dbCreateConversation,
 	dbSetConversationMemoryEnabled: mocks.dbSetConversationMemoryEnabled,
 	dbLoadMessages: mocks.dbLoadMessages,
 	dbSaveMessage: mocks.dbSaveMessage,
 	dbReplaceMessages: mocks.dbReplaceMessages
 }));
-vi.mock('$lib/stores/chat.svelte', () => ({
+vi.mock('#lib/stores/chat.svelte.ts', () => ({
 	noteExternalConversation: mocks.noteExternalConversation
 }));
 
@@ -39,8 +39,8 @@ import {
 	deliverAnswer,
 	describeToolCall,
 	REMOTE_TOOLS
-} from '$lib/remote/driver';
-import type { EphemeralTurnOptions } from '$lib/agent/runEphemeralTurn';
+} from '#lib/remote/driver.ts';
+import type { EphemeralTurnOptions } from '#lib/agent/runEphemeralTurn.ts';
 
 const prompt = { sessionId: 'guest1', turnId: 'guest1#0', message: 'what is a haruspex?' };
 

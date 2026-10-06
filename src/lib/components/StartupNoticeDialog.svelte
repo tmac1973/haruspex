@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Modal from './Modal.svelte';
-	import { updateSettings } from '$lib/stores/settings';
+	import { updateSettings } from '#lib/stores/settings.ts';
 
 	interface Props {
 		onclose: () => void;

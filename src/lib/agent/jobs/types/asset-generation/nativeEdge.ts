@@ -13,8 +13,8 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { getSettings } from '$lib/stores/settings';
-import type { AssetSpec } from '$lib/assets/spec/types';
+import { getSettings } from '#lib/stores/settings.ts';
+import type { AssetSpec } from '#lib/assets/spec/types.ts';
 import { MAX_GENERATION_EDGE } from './config';
 
 /** What a catalogue entry tells us about the model it names. */

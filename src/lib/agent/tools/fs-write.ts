@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { IPC } from '$lib/ipc/commands';
+import { IPC } from '#lib/ipc/commands.ts';
 import {
 	labelArg,
 	resolveShellPath,
@@ -12,10 +12,10 @@ import { toolError, toolResult } from './types';
 import type { ToolContext, ToolExecOutput } from './types';
 import { IMAGE_EXT_RE } from './fs-read';
 import { lintPythonIfApplicable } from './python-lint';
-import { isAutoApproveActive } from '$lib/stores/approvalOverride';
+import { isAutoApproveActive } from '#lib/stores/approvalOverride.ts';
 import { localWriteBlocked } from './nested-session';
-import type { EditResult } from '$lib/ipc/gen/EditResult';
-import { errMessage } from '$lib/utils/error';
+import type { EditResult } from '#lib/ipc/gen/EditResult.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 /**
  * True when a relative write path stays inside `root` (a relative dir prefix).
@@ -116,7 +116,7 @@ export async function resolveWritePathInteractive(
 		return { kind: 'ok', finalPath: relPath, overwrite: true };
 	}
 
-	const { askFileConflict } = await import('$lib/stores/fileConflict.svelte');
+	const { askFileConflict } = await import('#lib/stores/fileConflict.svelte.ts');
 	const choice = await askFileConflict(relPath);
 	if (choice === 'cancel') {
 		return { kind: 'canceled' };

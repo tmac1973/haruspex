@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { finalizeStreamText } from '$lib/markdown';
+import { finalizeStreamText } from '#lib/markdown.ts';
 import {
 	classifyFindings,
 	renderOutline,

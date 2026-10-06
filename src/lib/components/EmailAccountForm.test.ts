@@ -5,7 +5,7 @@ const state = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
 
 import EmailAccountForm from './EmailAccountForm.svelte';
-import type { EmailAccount } from '$lib/stores/settings';
+import type { EmailAccount } from '#lib/stores/settings.ts';
 
 function account(over: Partial<EmailAccount> = {}): EmailAccount {
 	return {

@@ -114,6 +114,9 @@ cargo fmt -- --check # Rust format check
 
 - SvelteKit SPA mode (SSR disabled, static adapter with `fallback: 'index.html'`)
 - Svelte 5 runes mode everywhere
+- Imports from `src/lib` use `#lib/...` (package.json `imports`) with the file's
+  extension: `#lib/stores/settings.ts`, `#lib/components/Foo.svelte`. Vite resolves
+  an extensionless `#lib/agent/loop` to the `loop/` folder, not `loop.ts`.
 - Tabs for indentation, single quotes, no trailing commas (Prettier)
 - Rust: 4-space indent, 100 char line width
 - Tests co-located with source: `foo.ts` → `foo.test.ts`

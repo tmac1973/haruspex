@@ -4,7 +4,7 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ save: vi.fn() }));
 
 import { buildFeedbackUrl, buildFullBundle, urlForReport, type Diagnostics } from './feedback';
-import { getSettings, updateSettings } from '$lib/stores/settings';
+import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 
 const SECRETS = [
 	'sk-remote-key',

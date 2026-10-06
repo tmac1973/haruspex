@@ -7,7 +7,7 @@
  * and run `HARUSPEX_MANAGER_URL=http://127.0.0.1:8189 npx vitest run provision.live`.
  */
 import { describe, it, expect } from 'vitest';
-import type { ComfyModelSet } from '$lib/ipc/gen/ComfyModelSet';
+import type { ComfyModelSet } from '#lib/ipc/gen/ComfyModelSet.ts';
 import { installViaManager, managerApi, missingFiles } from './provision';
 
 declare const process: { env: Record<string, string | undefined> };
