@@ -59,9 +59,12 @@ async fn capture_via_portal(target: CaptureTarget) -> Result<Capture, PortalErro
         // chance to say *which* screen. Both reasons to leave it on.
         .interactive(true)
         .modal(true);
-    if target == CaptureTarget::Window {
-        // A hint only: portals below version 3 ignore it, and in interactive
-        // mode the user's choice in the picker wins regardless.
+    // A hint only, and only where the portal says it takes one. KDE's portal
+    // (version 2, AvailableTargets 0 on Plasma, 2026-10-06) rejects any
+    // target with "Unavailable screenshot target 2" rather than ignoring it,
+    // which failed every window capture. Without it the picker still lets the
+    // user choose the window.
+    if target == CaptureTarget::Window && window_target_available().await {
         request = request.target(AvailableTargets::Window);
     }
 
@@ -82,6 +85,24 @@ async fn capture_via_portal(target: CaptureTarget) -> Result<Capture, PortalErro
     // happens whether the read above succeeded or not.
     discard(&path);
     capture
+}
+
+/// Whether the portal advertises a window target. False when it cannot say:
+/// `AvailableTargets` is new in version 3, and an older portal may reject the
+/// option outright.
+async fn window_target_available() -> bool {
+    use ashpd::desktop::screenshot::ScreenshotProxy;
+    let Ok(proxy) = ScreenshotProxy::new().await else {
+        return false;
+    };
+    takes_window_target(proxy.available_targets().await.ok())
+}
+
+/// The decision, apart from D-Bus: a window hint only when the portal lists it.
+fn takes_window_target(
+    targets: Option<ashpd::enumflags2::BitFlags<ashpd::desktop::screenshot::AvailableTargets>>,
+) -> bool {
+    targets.is_some_and(|t| t.contains(ashpd::desktop::screenshot::AvailableTargets::Window))
 }
 
 /// Map an ashpd error onto what the user should be told.
@@ -475,5 +496,15 @@ mod tests {
         // explanation of what the server actually did.
         let err = to_rgb(&[0, 0, 0, 0], 4, 4, 32, false).unwrap_err();
         assert!(err.contains("4x4"), "got {err}");
+    }
+
+    #[test]
+    fn a_window_hint_is_sent_only_to_a_portal_that_lists_it() {
+        use ashpd::desktop::screenshot::AvailableTargets as T;
+        // KDE: version 2, no AvailableTargets property to read.
+        assert!(!takes_window_target(None));
+        // A version-3 portal that lists targets but not windows.
+        assert!(!takes_window_target(Some(T::Screen | T::Area)));
+        assert!(takes_window_target(Some(T::Screen | T::Window)));
     }
 }
