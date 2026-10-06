@@ -376,12 +376,17 @@ describe('run_command PTY driving', () => {
 	};
 
 	it('drives the live PTY and reports the captured exit code', async () => {
-		let ctxCalls = 0;
+		// The command completes once it has been written to the terminal.
+		let written = false;
 		mocks.invoke.mockImplementation((cmd: string) => {
+			if (cmd === 'shell_write') written = true;
 			if (cmd === 'shell_platform_supported') return Promise.resolve(true);
 			if (cmd === 'shell_get_context') {
-				ctxCalls++;
-				return Promise.resolve({ completed_total: ctxCalls >= 2 ? 1 : 0, current_cwd: '/proj' });
+				return Promise.resolve({
+					completed_total: written ? 1 : 0,
+					marker_count: 2,
+					current_cwd: '/proj'
+				});
 			}
 			if (cmd === 'shell_get_recent_commands')
 				return Promise.resolve([
@@ -422,6 +427,7 @@ describe('run_command PTY driving', () => {
 			// The busy check reads just the command line — asking for the recent
 			// commands would serialize the in-flight command's whole output.
 			if (cmd === 'shell_pending_command') return Promise.resolve('go run main.go');
+			if (cmd === 'shell_get_context') return Promise.resolve({ marker_count: 2 });
 			return Promise.resolve();
 		});
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
@@ -448,7 +454,7 @@ describe('run_command PTY driving', () => {
 		mocks.invoke.mockImplementation((cmd: string) => {
 			if (cmd === 'shell_platform_supported') return Promise.resolve(true);
 			if (cmd === 'shell_get_context')
-				return Promise.resolve({ completed_total: 0, current_cwd: '/proj' });
+				return Promise.resolve({ completed_total: 0, marker_count: 2, current_cwd: '/proj' });
 			// Idle terminal (no pending command) so the busy-guard lets us inject.
 			if (cmd === 'shell_get_recent_commands') return Promise.resolve([]);
 			return Promise.resolve();
@@ -484,13 +490,19 @@ describe('run_command background / watch', () => {
 
 	// Mock the PTY so runInPtyBackground's wrapper "runs" and the captured
 	// output carries the HSP_BG marker line it parses for pid/log/done.
-	function mockBackgroundPty() {
-		let ctxCalls = 0;
+	function mockBackgroundPty(context?: { shellPath: string; shellName: string }) {
+		// The command completes once it has been written to the terminal.
+		let written = false;
 		mocks.invoke.mockImplementation((cmd: string) => {
+			if (cmd === 'shell_write') written = true;
 			if (cmd === 'shell_platform_supported') return Promise.resolve(true);
 			if (cmd === 'shell_get_context') {
-				ctxCalls++;
-				return Promise.resolve({ completed_total: ctxCalls >= 2 ? 1 : 0, current_cwd: '/proj' });
+				return Promise.resolve({
+					completed_total: written ? 1 : 0,
+					marker_count: 2,
+					current_cwd: '/proj',
+					context
+				});
 			}
 			if (cmd === 'shell_get_recent_commands')
 				return Promise.resolve([
@@ -540,6 +552,99 @@ describe('run_command background / watch', () => {
 				donePath: '/tmp/hsp-bg-AAA.done'
 			})
 		);
+	});
+
+	it('reports a line the shell rejected instead of waiting out the timeout', async () => {
+		// Fish refusing bash syntax: the prompt is redrawn (new markers) but
+		// nothing starts and nothing finishes.
+		let written = false;
+		mocks.invoke.mockImplementation((cmd: string) => {
+			if (cmd === 'shell_write') written = true;
+			if (cmd === 'shell_platform_supported') return Promise.resolve(true);
+			if (cmd === 'shell_pending_command') return Promise.resolve(null);
+			if (cmd === 'shell_get_context') {
+				return Promise.resolve({
+					completed_total: 0,
+					marker_count: 2,
+					marker_total: written ? 4 : 2,
+					output_total: 100,
+					current_cwd: '/proj',
+					context: { shellPath: '/usr/bin/fish', shellName: 'fish' }
+				});
+			}
+			if (cmd === 'shell_output_since')
+				return Promise.resolve("fish: Unsupported use of '='. In fish, please use 'set x 1'.");
+			return Promise.resolve();
+		});
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const started = Date.now();
+		const out = await executeTool('run_command', { command: 'x=1', timeout_secs: 30 }, ptyCtx);
+		expect(Date.now() - started).toBeLessThan(5000);
+		expect(out.result).toContain('did not run this command');
+		expect(out.result).toContain("Unsupported use of '='");
+		expect(out.result).toContain('runs fish');
+		expect(mocks.invoke).toHaveBeenCalledWith('shell_output_since', { sessionId: 1, from: 100 });
+	});
+
+	it('does not read a running command as rejected', async () => {
+		// New markers while the command is still pending are its own start
+		// marker, not a refusal.
+		let written = false;
+		let polls = 0;
+		mocks.invoke.mockImplementation((cmd: string) => {
+			if (cmd === 'shell_write') written = true;
+			if (cmd === 'shell_platform_supported') return Promise.resolve(true);
+			if (cmd === 'shell_pending_command') return Promise.resolve(written ? 'sleep 1' : null);
+			if (cmd === 'shell_get_context') {
+				polls++;
+				return Promise.resolve({
+					completed_total: polls >= 6 ? 1 : 0,
+					marker_count: 2,
+					marker_total: polls > 1 ? 3 : 2,
+					output_total: 0,
+					current_cwd: '/proj'
+				});
+			}
+			if (cmd === 'shell_get_recent_commands')
+				return Promise.resolve([
+					{ commandLine: 'sleep 1', output: '', exitCode: 0, cwd: '/proj', truncated: false }
+				]);
+			return Promise.resolve();
+		});
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const out = await executeTool('run_command', { command: 'sleep 1' }, ptyCtx);
+		expect(out.result).toContain('Exit code: 0');
+		expect(mocks.invoke).not.toHaveBeenCalledWith('shell_output_since', expect.anything());
+	});
+
+	it('falls back to one-shot in auto mode when the shell never sent a marker', async () => {
+		mocks.invoke.mockImplementation((cmd: string) => {
+			if (cmd === 'shell_platform_supported') return Promise.resolve(true);
+			if (cmd === 'shell_get_context')
+				return Promise.resolve({ completed_total: 0, marker_count: 0, marker_total: 0 });
+			if (cmd === 'run_command_capture') return Promise.resolve(runResultDefaults());
+			return Promise.resolve();
+		});
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		await executeTool('run_command', { command: 'ls' }, ptyCtx);
+		expect(mocks.invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
+		expect(mocks.invoke).not.toHaveBeenCalledWith('shell_write', expect.anything());
+	});
+
+	it('hands the background wrapper to bash under fish', async () => {
+		mockBackgroundPty({ shellPath: '/usr/bin/fish', shellName: 'fish' });
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const out = await executeTool(
+			'run_command',
+			{ command: 'npm run dev', background: true },
+			ptyCtx
+		);
+		expect(out.result).toContain('Started in the background');
+		const writes = mocks.invoke.mock.calls.filter((c) => c[0] === 'shell_write');
+		const data = String((writes[0][1] as { data: string }).data);
+		expect(data).toMatch(/echo [A-Za-z0-9+/=]+ \| base64 -d \| bash/);
+		const encoded = data.match(/echo ([A-Za-z0-9+/=]+)/)![1];
+		expect(Buffer.from(encoded, 'base64').toString('utf8')).toContain('npm run dev');
 	});
 
 	it('rejects background without a live terminal session', async () => {

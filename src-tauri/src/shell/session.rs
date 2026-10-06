@@ -276,6 +276,20 @@ impl Session {
             .and_then(|i| i.pending_command_line())
     }
 
+    pub fn output_bytes_total(&self) -> u64 {
+        self.integration
+            .lock()
+            .map(|i| i.output_bytes_total())
+            .unwrap_or(0)
+    }
+
+    pub fn output_text_since(&self, from: u64, max_bytes: usize) -> String {
+        self.integration
+            .lock()
+            .map(|i| i.output_text_since(from, max_bytes))
+            .unwrap_or_default()
+    }
+
     pub fn marker_count(&self) -> usize {
         self.integration
             .lock()

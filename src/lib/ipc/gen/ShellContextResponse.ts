@@ -28,4 +28,9 @@ completed_total: number,
  * redraw emits A+B and no D, so `completed_total` can't see it; the
  * nested-shell hook check in run_command watches this instead.
  */
-marker_total: number, };
+marker_total: number, 
+/**
+ * Absolute end offset of the terminal output seen so far. Taken before a
+ * write and passed to `shell_output_since` to read what followed it.
+ */
+output_total: number, };

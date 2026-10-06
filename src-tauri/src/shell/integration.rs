@@ -282,6 +282,24 @@ impl Integration {
         self.marker_total
     }
 
+    /// Absolute offset of the end of the output seen so far: a watermark a
+    /// caller can take before writing to the terminal and read back from.
+    pub fn output_bytes_total(&self) -> u64 {
+        self.output_first_offset + self.output.len() as u64
+    }
+
+    /// Everything the terminal printed from `from` on, as clean text — at most
+    /// the last `max_bytes` of it, and from the start of the ring if `from`
+    /// has already fallen off it. For output outside any command region, such
+    /// as a shell's complaint about a line it refused to run.
+    pub fn output_text_since(&self, from: u64, max_bytes: usize) -> String {
+        let end = self.output_bytes_total();
+        let start = from
+            .max(self.output_first_offset)
+            .max(end.saturating_sub(max_bytes as u64));
+        bytes_to_clean_text(&self.slice_output(start, end).unwrap_or_default())
+    }
+
     #[allow(dead_code)] // Used by tests + future debug overlay
     pub fn markers(&self) -> impl Iterator<Item = &Marker> {
         self.markers.iter()
@@ -729,6 +747,38 @@ fn apply_csi(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn output_since_a_watermark_reads_a_rejected_line() {
+        // Fish refusing bash syntax: no C/D, just its complaint and a new
+        // prompt (A/B), with ST-terminated OSC 133 as fish 4 sends them.
+        let mut integ = Integration::new();
+        integ.ingest(b"\x1B]133;A;click_events=1\x1B\\$ \x1B]133;B\x1B\\");
+        let mark = integ.output_bytes_total();
+        let before_markers = integ.marker_total();
+        integ.ingest(
+            b"x=1\r\r\nfish: Unsupported use of '='. In fish, please use 'set x 1'.\r\n\
+              \x1B]133;A;click_events=1\x1B\\$ \x1B]133;B\x1B\\",
+        );
+        assert_eq!(integ.output_end_total(), 0, "nothing ran");
+        assert!(
+            integ.marker_total() > before_markers,
+            "the prompt was redrawn"
+        );
+        assert!(integ.pending_command_line().is_none());
+        let text = integ.output_text_since(mark, 4096);
+        assert!(text.contains("Unsupported use of '='"), "{text:?}");
+        assert!(!text.contains('\x1B'), "{text:?}");
+    }
+
+    #[test]
+    fn output_since_is_capped_to_the_tail() {
+        let mut integ = Integration::new();
+        integ.ingest(&[b'a'; 10_000]);
+        integ.ingest(b"tail");
+        let text = integ.output_text_since(0, 8);
+        assert_eq!(text, "aaaatail");
+    }
 
     fn marker_kinds(integ: &Integration) -> Vec<MarkerKind> {
         integ.markers().map(|m| m.kind).collect()
