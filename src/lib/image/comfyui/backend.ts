@@ -13,6 +13,7 @@
 
 import { getSettings } from '$lib/stores/settings';
 import { errMessage } from '$lib/utils/error';
+import { sleep } from '$lib/utils/async';
 import {
 	ImageBackendError,
 	type ImageBackendCapabilities,
@@ -302,7 +303,7 @@ export const comfyUiBackend: ImageBackend = {
 						`The image backend did not finish within ${api.GENERATION_TIMEOUT_MS / 1000}s.`
 					);
 				}
-				await new Promise((r) => setTimeout(r, api.HISTORY_POLL_MS));
+				await sleep(api.HISTORY_POLL_MS);
 				if (!socketAlive) opts.onProgress?.({ phase: 'running' });
 				images = await api.history(cfg, promptId, template.map.outputNode, opts.signal);
 			}

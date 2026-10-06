@@ -116,3 +116,34 @@ export function getDebugLogsForTurn(turnId: number): string[] {
 export function clearDebugLogs(): void {
 	buffer.length = 0;
 }
+
+/**
+ * Copy `console.warn` / `console.error` into this buffer as well as the
+ * devtools console. In a release build devtools are rarely open, so a
+ * component's caught error otherwise reaches no log a user can see or attach.
+ * Errors are recorded by message: `JSON.stringify` of an Error is `{}`.
+ * Idempotent.
+ */
+export function forwardConsoleToDebugLog(): void {
+	if (consoleForwarded) return;
+	consoleForwarded = true;
+	for (const level of ['warn', 'error'] as const) {
+		const original = console[level].bind(console);
+		console[level] = (...args: unknown[]) => {
+			original(...args);
+			logDebug(`console.${level}`, args.map(consoleArg).join(' '));
+		};
+	}
+}
+
+let consoleForwarded = false;
+
+function consoleArg(a: unknown): string {
+	if (typeof a === 'string') return a;
+	if (a instanceof Error) return `${a.name}: ${a.message}`;
+	try {
+		return JSON.stringify(a, jsonReplacer) ?? String(a);
+	} catch {
+		return String(a);
+	}
+}
