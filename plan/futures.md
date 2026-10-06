@@ -31,6 +31,18 @@ Running list of things to address. Status annotations added 2026-07-19.
   - animated water from `waves` variants;
   - a way to turn an existing spec's object textures into sprites. The kind rule only reaches asset lists written after it, and dark_times_5's seven were changed by hand.
 
+- **Shell tab: which session the assistant restores is confusing** (added 2026-10-06). Turn on code mode in the home directory and its previous session is restored. `cd` into a project directory that has its own previous session, and the assistant keeps the home directory's session. If you then choose not to keep that one, it shows the project's session. The session should follow the directory you are working in, and the choice of which to keep should be clear before anything is restored.
+
+- **Shell tab: the agent writes bash in a fish shell** (added 2026-10-06). With fish as the login shell, the agent keeps running bash syntax. It fails, and the turn seems to hang. The likely cause is that a fish parse error isn't reported back like a failed command (exit code and stderr), so the agent never learns why. Switching the terminal to bash by hand and repeating the request works. Options:
+  - make shell parse errors come back to the agent as failures it can read;
+  - tell the agent which shell the session runs, firmly;
+  - run the agent's commands through `bash -c`;
+  - force bash in shell sessions. The user isn't keen on this one.
+
+- **Asset generation is locked to one tile size** (added 2026-10-06). A chain's asset job gets its size from what guided planning infers, so today the size has to be written into the planning prompt and hoped for. Two parts:
+  - **Tile size as a guided-planning setting,** passed along the chain to the asset job, rather than inferred from prose.
+  - **Assets of other sizes and shapes:** splash screens, title art, UI panels, portraits, or a graphical adventure game whose scenes are all different sizes. The spec already has a per-entry `size` override, but planning doesn't use it, and the pipeline assumes square tiles of one size (sheets, the anchor, normalization to `target_size`). A chain should be able to ask for these, and the asset job should make them at their own dimensions.
+
 ## Partially done
 
 - **Move API keys to the OS keychain** (added 2026-10-03). Phase 10 built the `secrets` store and moved email passwords onto it. The rest are still plain text in the settings blob: stored API keys, the remote inference key, the Brave key and the image backend key.
