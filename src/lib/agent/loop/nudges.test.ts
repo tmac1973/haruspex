@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { MAX_TRUNCATION_RETRIES, NudgeState, RUN_PYTHON_FAILURE_NUDGE_THRESHOLD } from './nudges';
+import { NUDGE_NOTE, automaticCheck } from './nudges';
 
 const HINT_MARKER = '[Haruspex hint]';
 
@@ -164,5 +165,15 @@ describe('phantom image nudge', () => {
 		expect(n.needsPhantomImageNudge(true)).toBe(true);
 		n.consumePhantomImageNudge();
 		expect(n.needsPhantomImageNudge(true)).toBe(false);
+	});
+});
+
+describe('automaticCheck', () => {
+	it('marks a nudge as an automatic check the user never sees', () => {
+		const text = automaticCheck('STOP. Call image_search.');
+		expect(text.startsWith('STOP. Call image_search.')).toBe(true);
+		expect(text.endsWith(NUDGE_NOTE)).toBe(true);
+		expect(NUDGE_NOTE).toMatch(/not from the user/);
+		expect(NUDGE_NOTE).toMatch(/Do not mention/);
 	});
 });
