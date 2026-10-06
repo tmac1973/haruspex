@@ -97,27 +97,37 @@ and a lighter verification mode for guided planning.
 - **The Windows/macOS pass for inline chat images.** That's manual testing and
   stays in `futures.md`.
 
+## Closed 2026-10-06
+
+The plan is closed for the 0.2.4 release. Everything not built has moved to
+`plan/futures.md` with its state: phase 15, phase 16 parts B–F, phase 14
+part 3 and the Mac UI tests. Two manual checks are still owed before they
+can be called verified: phase 10 (an email password in the system keychain)
+and phase 11 (composing and sending, after review). The manual checks for 01,
+04, 07 and 08 were covered by real use in the week of 2026-10-05: chained
+runs, unattended coding runs, and images in Chat and the Shell.
+
 ## Shape
 
-| # | Phase | Depends on |
-| --- | --- | --- |
-| 01 | Chain naming and a model per chained stage | — |
-| 02 | A readable outline approval | — |
-| 03 | Browse the jobs tab while a run is live | — |
-| 04 | A boundary for unattended coding runs | — |
-| 05 | Cancel only our own ComfyUI prompt | — |
-| 06 | Catch a small object cut out with a sprite | — |
-| 07 | Image generation in Chat | — |
-| 08 | Image generation for the Shell assistant | 07 |
-| 09 | Email: cheaper, bounded, cancellable reads | — |
-| 10 | A secret store; email passwords move into it | — |
-| 11 | Email: compose and send, after review | 09, 10 |
-| 12 | Context audit and verification lite | — |
-| 13 | Sidecars die with the app | — |
-| 14 | Automated end-to-end testing | — |
-| 15 | Image generation on other servers: the bundled engine remote, and OpenAI-images-API servers | 07, 10 |
-| 16 | Faster coding runs: a model benchmark, adaptive reasoning, builds that don't time out, a cost estimate with MVP-first, a short chained preflight, a frame smoke test for graphical projects | 12 |
-| 17 | Code-drawn textures from a recipe, with tile variants; objects become sprites | — |
+| # | Phase | Depends on | Status |
+| --- | --- | --- | --- |
+| 01 | Chain naming and a model per chained stage | — | Done |
+| 02 | A readable outline approval | — | Done |
+| 03 | Browse the jobs tab while a run is live | — | Done |
+| 04 | A boundary for unattended coding runs | — | Done |
+| 05 | Cancel only our own ComfyUI prompt | — | Done |
+| 06 | Catch a small object cut out with a sprite | — | Done |
+| 07 | Image generation in Chat | — | Done |
+| 08 | Image generation for the Shell assistant | 07 | Done |
+| 09 | Email: cheaper, bounded, cancellable reads | — | Done |
+| 10 | A secret store; email passwords move into it | — | Done; manual keychain check owed |
+| 11 | Email: compose and send, after review | 09, 10 | Done; manual send check owed |
+| 12 | Context audit and verification lite | — | Done (`measurements-phase-12.md`) |
+| 13 | Sidecars die with the app | — | Done |
+| 14 | Automated end-to-end testing | — | Parts 1–2 done; part 3 and Mac UI deferred |
+| 15 | Image generation on other servers: the bundled engine remote, and OpenAI-images-API servers | 07, 10 | Deferred (`futures.md`) |
+| 16 | Faster coding runs: a model benchmark, adaptive reasoning, builds that don't time out, a cost estimate with MVP-first, a short chained preflight, a frame smoke test for graphical projects | 12 | Part A measured (`measurements-phase-16.md`); B–F deferred |
+| 17 | Code-drawn textures from a recipe, with tile variants; objects become sprites | — | Done; run live as asset run 111 |
 
 The phases are independent except where noted, so they can be done in any
 order. 07 lays down the single-image core that 08 reuses. 11 needs 09's
