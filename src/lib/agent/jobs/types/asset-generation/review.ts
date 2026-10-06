@@ -107,3 +107,34 @@ export async function regenerateMarked(
 	}
 	return { moved, amended, runId: await deps.run() };
 }
+
+/**
+ * The spec after a run: an entry whose best rejected attempt was kept is
+ * marked `rejected` with why, and one generated and accepted is unmarked.
+ * Entries the run skipped or could not make keep whatever they had. Returns
+ * null when nothing changed, so the file is not rewritten for nothing.
+ */
+export function markRejections(
+	spec: AssetSpec,
+	outcomes: Array<{ id: string; status: string; kept?: boolean; reason?: string }>
+): AssetSpec | null {
+	const byId = new Map(outcomes.map((o) => [o.id, o]));
+	let changed = false;
+	const entries = spec.entries.map((e): AssetEntry => {
+		const o = byId.get(e.id);
+		if (o?.kept) {
+			const rejected = (o.reason ?? 'rejected by the checks').trim();
+			if (e.rejected === rejected) return e;
+			changed = true;
+			return { ...e, rejected };
+		}
+		if (o?.status === 'done' && e.rejected !== undefined) {
+			changed = true;
+			// eslint-disable-next-line @typescript-eslint/no-unused-vars
+			const { rejected, ...rest } = e;
+			return rest;
+		}
+		return e;
+	});
+	return changed ? { ...spec, entries } : null;
+}

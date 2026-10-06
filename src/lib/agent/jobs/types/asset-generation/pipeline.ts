@@ -33,6 +33,7 @@ import {
 } from './config';
 import { parseAssetSpec } from '$lib/assets/spec/parse';
 import { renderAssetSpec } from '$lib/assets/spec/write';
+import { markRejections } from './review';
 import { validateAssetSpec } from '$lib/assets/spec/validate';
 import type { AssetSpec } from '$lib/assets/spec/types';
 import { contactSheet, defaultProfile } from '$lib/assets/normalize';
@@ -338,7 +339,7 @@ async function handoffToCoding(
 
 	// The coding run's preflight can see which art is missing, so it plans
 	// around a gap instead of writing code that loads a file nobody made.
-	const missing = entries.filter((e) => e.status !== 'done' && e.status !== 'skipped');
+	const missing = entries.filter((e) => e.status !== 'done' && e.status !== 'skipped' && !e.kept);
 	const note = missing.length
 		? ` ${missing.length} asset(s) could not be produced and are NOT on disk: ` +
 			`${missing.map((e) => e.id).join(', ')}.`
@@ -606,6 +607,13 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 				: undefined
 		});
 		entries = generated.map((g) => g.outcome);
+		// Kept-but-rejected entries are marked in the spec, for Review assets
+		// and for the coding run; ones accepted this time are unmarked.
+		const marked = markRejections(spec, entries);
+		if (marked) {
+			spec = marked;
+			await writeWorkdirFile(ctx, specPath, renderAssetSpec(spec));
+		}
 		const tally = countByStatus(entries);
 		finishStep(
 			GENERATE,
@@ -646,8 +654,9 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 		// Failed (the backend or a write gave up) and unresolved (never passed
 		// its checks) are both assets the run did not produce.
 		const missing = entries.filter(
-			(e) => e.status === 'unresolved' || e.status === 'failed'
+			(e) => (e.status === 'unresolved' || e.status === 'failed') && !e.kept
 		).length;
+		const kept = entries.filter((e) => e.kept).length;
 		finishStep(
 			REPORT,
 			[
@@ -655,7 +664,12 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 				// that asks the user to do something.
 				missing > 0
 					? `${missing} asset(s) could not be produced — see ${reportPath}.`
-					: 'Every asset passed.',
+					: kept > 0
+						? 'Every asset is on disk.'
+						: 'Every asset passed.',
+				...(kept > 0
+					? [`${kept} kept despite failing their checks — marked for Review assets.`]
+					: []),
 				`Report: ${reportPath}` + (sheetPath ? `, contact sheet: ${sheetPath}` : '')
 			].join('\n')
 		);

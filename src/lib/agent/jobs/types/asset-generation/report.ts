@@ -176,7 +176,9 @@ function commonCause(bad: ReportInput['entries']): string[] {
 }
 
 function unresolvedSection(input: ReportInput): string[] {
-	const bad = input.entries.filter((e) => e.status === 'unresolved' || e.status === 'failed');
+	const bad = input.entries.filter(
+		(e) => (e.status === 'unresolved' || e.status === 'failed') && !e.kept
+	);
 	if (bad.length === 0) return [];
 	const lines = bad.map((e) => {
 		const report = input.reports.get(e.id);
@@ -192,6 +194,28 @@ function unresolvedSection(input: ReportInput): string[] {
 		);
 	});
 	return ['## Not produced', '', ...commonCause(bad), ...lines, ''];
+}
+
+/** Assets on disk that never passed: the best attempt, kept for the code to load. */
+function keptSection(input: ReportInput): string[] {
+	const kept = input.entries.filter((e) => e.kept);
+	if (kept.length === 0) return [];
+	const lines = kept.map((e) => {
+		const entry = input.spec.entries.find((x) => x.id === e.id);
+		return (
+			`- **\`${e.id}\`** (${e.attempts} attempt(s)) — ${sentence(e.reason ?? 'no reason recorded')}` +
+			(entry ? `\n  The best attempt is at \`${entry.out}\`.` : '')
+		);
+	});
+	return [
+		'## Kept, but rejected',
+		'',
+		'Every attempt at these failed its checks. The best one was kept so the code has a file to ' +
+			'load, and the spec marks it `rejected`. Review assets offers them to be made again.',
+		'',
+		...lines,
+		''
+	];
 }
 
 /**
@@ -325,6 +349,7 @@ export function renderAssetReport(input: ReportInput): string {
 	lines.push(...sheetSection(input.sheets ?? []));
 	lines.push('## Assets', '', ...entryTable(input), '');
 	lines.push(...unresolvedSection(input));
+	lines.push(...keptSection(input));
 	lines.push(...degradedSection(input));
 	lines.push(...licensingSection(input.licensing));
 	return lines.join('\n');

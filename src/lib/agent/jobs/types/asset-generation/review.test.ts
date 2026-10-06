@@ -1,6 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { AssetSpec } from '$lib/assets/spec/types';
-import { amendPrompt, applyNotes, historyPath, regenerateMarked, stamp } from './review';
+import {
+	amendPrompt,
+	applyNotes,
+	historyPath,
+	markRejections,
+	regenerateMarked,
+	stamp
+} from './review';
 
 function spec(): AssetSpec {
 	return {
@@ -98,5 +105,33 @@ describe('regenerateMarked', () => {
 		await expect(regenerateMarked(spec(), [{ id: 'player', note: 'x' }], d)).rejects.toThrow();
 		expect(d.move).not.toHaveBeenCalled();
 		expect(d.run).not.toHaveBeenCalled();
+	});
+});
+
+describe('markRejections', () => {
+	it('marks what a run kept despite its checks, with why', () => {
+		const next = markRejections(spec(), [
+			{ id: 'coin', status: 'unresolved', kept: true, reason: 'that is a hammer' }
+		]);
+		expect(next?.entries.find((e) => e.id === 'coin')?.rejected).toBe('that is a hammer');
+		expect(next?.entries.find((e) => e.id === 'player')?.rejected).toBeUndefined();
+	});
+
+	it('unmarks an entry generated and accepted this time', () => {
+		const s = spec();
+		s.entries[1] = { ...s.entries[1], rejected: 'old reason' };
+		const next = markRejections(s, [{ id: 'coin', status: 'done' }]);
+		expect(next?.entries[1]).not.toHaveProperty('rejected');
+	});
+
+	it('leaves skipped and failed entries as they were', () => {
+		const s = spec();
+		s.entries[1] = { ...s.entries[1], rejected: 'old reason' };
+		expect(
+			markRejections(s, [
+				{ id: 'coin', status: 'skipped' },
+				{ id: 'player', status: 'failed', reason: 'engine down' }
+			])
+		).toBeNull();
 	});
 });

@@ -136,7 +136,8 @@ describe('round trip', () => {
 					seamless: false,
 					seed: 7,
 					negativePrompt: 'n',
-					notes: 'for the shop screen'
+					notes: 'for the shop screen',
+					rejected: 'that is a hammer'
 				}
 			]
 		});

@@ -190,6 +190,8 @@ function assetSpecStep(
 		'  Say which. The game must run without the file. Do NOT try to generate',
 		'  art; you have no tool for it, and a silently invented file is worse than',
 		'  a missing one.',
+		'- An entry with a `rejected` field has a file: the best attempt, which failed',
+		'  its checks. Use it like any other; it may be replaced later.',
 		'- Where the spec lists an asset the plan never mentions, leave it alone.'
 	];
 }

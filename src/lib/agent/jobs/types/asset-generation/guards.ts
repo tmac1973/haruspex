@@ -29,3 +29,23 @@ export function isCancellation(e: unknown): boolean {
 export function reasonOf(e: unknown): string {
 	return e instanceof Error ? e.message : String(e);
 }
+
+/**
+ * Write an entry's best rejected attempt to its `out` path, so the code built
+ * on the set has a file to load. False when there was nothing to write or the
+ * write failed — the entry is then simply missing, as before.
+ */
+export async function keepBest(
+	writeBytes: (relPath: string, bytes: Uint8Array) => Promise<void>,
+	out: string,
+	bytes: Uint8Array | undefined
+): Promise<boolean> {
+	if (!bytes) return false;
+	try {
+		await writeBytes(out, bytes);
+		return true;
+	} catch (e) {
+		if (isCancellation(e)) throw e;
+		return false;
+	}
+}

@@ -84,6 +84,11 @@
 					}
 				})
 			);
+			// What a run kept despite its checks starts marked: it is what the
+			// person most likely came here to fix.
+			marks = Object.fromEntries(
+				parsed.spec.entries.filter((e) => e.rejected).map((e) => [e.id, ''])
+			);
 		} catch (e) {
 			error = `Could not read ${specPath}: ${e instanceof Error ? e.message : String(e)}`;
 		}
@@ -161,6 +166,9 @@
 						<span class="missing">not made</span>
 					{/if}
 					<span class="name">{t.entry.id}</span>
+					{#if t.entry.rejected}
+						<span class="rejected" title={t.entry.rejected}>rejected</span>
+					{/if}
 				</button>
 				{#if marked}
 					<input
@@ -209,6 +217,10 @@
 		cursor: pointer;
 	}
 
+	.rejected {
+		font-size: 0.7rem;
+		color: var(--error-text, #c0392b);
+	}
 	.tile.marked .pick {
 		border-color: var(--accent, #6a7dff);
 	}
