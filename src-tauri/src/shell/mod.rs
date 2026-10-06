@@ -288,6 +288,10 @@ pub struct ShellContextResponse {
     /// nested-shell hook check in run_command watches this instead.
     #[ts(type = "number")]
     pub marker_total: u64,
+    /// Absolute end offset of the terminal output seen so far. Taken before a
+    /// write and passed to `shell_output_since` to read what followed it.
+    #[ts(type = "number")]
+    pub output_total: u64,
 }
 
 #[tauri::command]
@@ -303,7 +307,24 @@ pub fn shell_get_context(
             completed_commands: session.completed_command_count(),
             completed_total: session.completed_command_total(),
             marker_total: session.marker_total(),
+            output_total: session.output_bytes_total(),
         })
+    })
+}
+
+/// What the terminal printed since `from` (an `output_total` watermark), as
+/// clean text, capped to the last few KB. For output no command region holds:
+/// `run_command` reads it when the shell redraws its prompt without running
+/// the line it was sent (fish rejecting bash syntax, say).
+#[tauri::command]
+pub fn shell_output_since(
+    state: State<'_, ShellManager>,
+    session_id: SessionId,
+    from: u64,
+) -> Result<String, String> {
+    const MAX_BYTES: usize = 4096;
+    state.with_session(session_id, |session| {
+        Ok(session.output_text_since(from, MAX_BYTES))
     })
 }
 

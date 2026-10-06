@@ -14,6 +14,7 @@
  *    in the UI, so suggested commands should go in fenced blocks.
  */
 
+import { isFish } from '#lib/shell/fish.ts';
 import type { ChatMessage } from '#lib/api.ts';
 import type { SessionContext } from '#lib/ipc/gen/SessionContext.ts';
 import { getSettings } from '#lib/stores/settings.ts';
@@ -214,5 +215,11 @@ function describeEnvironment(ctx: ShellSessionContext): string {
 	];
 	if (ctx.hostname) lines.push(`Hostname: ${ctx.hostname}`);
 	if (ctx.home) lines.push(`Home directory: ${ctx.home}`);
+	if (isFish(ctx)) lines.push(FISH_NOTE);
 	return lines.join('\n');
 }
+
+const FISH_NOTE =
+	'This shell is fish, not bash. Write fish syntax: `set x 1` (not `x=1`), ' +
+	'`for x in a b; …; end`, `if test …; …; end`, `$status` (not `$?`), no heredocs. ' +
+	"For anything bash-only, run it as `bash -c '…'`. A line fish cannot parse is not run at all.";

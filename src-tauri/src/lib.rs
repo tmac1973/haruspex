@@ -436,6 +436,7 @@ pub fn run() {
             shell::shell_get_context,
             shell::shell_get_recent_commands,
             shell::shell_pending_command,
+            shell::shell_output_since,
             shell::shell_integration_hook,
             shell::shell_get_recent_history,
             shell::shell_get_scrollback,

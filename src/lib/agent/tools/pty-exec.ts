@@ -20,6 +20,7 @@ import {
 } from '#lib/shell/nestedShell.ts';
 import { setPtyBusy } from '#lib/stores/shellPtyBusy.svelte.ts';
 import type { ToolContext } from './types';
+import { isFish } from '#lib/shell/fish.ts';
 
 /** Inline output budget before middle-truncation + temp-file spill. */
 export const RUN_OUTPUT_MAX_BYTES = 16 * 1024;
@@ -36,7 +37,11 @@ const HOOK_WAIT_MS = 3000;
 interface ShellCtxSnapshot {
 	completed_total: number;
 	marker_total: number;
+	/** OSC 133 markers currently held; 0 means the shell has never sent one. */
+	marker_count: number;
+	output_total: number;
 	current_cwd: string | null;
+	context?: { shellPath: string; shellName: string };
 }
 interface CapturedRegion {
 	commandLine: string;
@@ -67,9 +72,18 @@ export async function shouldUsePty(ctx: ToolContext): Promise<boolean> {
 	const mode = getSettings().codeCommandExec;
 	if (mode === 'oneshot') return false;
 	if (mode === 'pty') return true;
-	// auto: only when the platform's shell integration is supported.
+	// auto: only when the platform's shell integration is supported, AND this
+	// session's shell actually reports its commands. A shell that has never
+	// sent an OSC 133 marker (fish before 4, nushell, anything without a hook)
+	// would leave run_command waiting out its whole timeout for a "finished"
+	// signal that never comes, and its errors would never reach the model. A
+	// one-shot capture always returns output and an exit code.
 	try {
-		return await invoke<boolean>('shell_platform_supported');
+		if (!(await invoke<boolean>('shell_platform_supported'))) return false;
+		const snap = await invoke<ShellCtxSnapshot>('shell_get_context', {
+			sessionId: ctx.shellSessionId
+		});
+		return snap.marker_count > 0 || snap.marker_total > 0;
 	} catch {
 		return false;
 	}
@@ -217,20 +231,24 @@ export async function runInPty(
 		}
 		if (inflight) return busyMessage(inflight);
 
-		const before = (await invoke<ShellCtxSnapshot>('shell_get_context', { sessionId }))
-			.completed_total;
+		const start = await invoke<ShellCtxSnapshot>('shell_get_context', { sessionId });
+		const before = start.completed_total;
 		await invoke('shell_write', { sessionId, data: toPtyPaste(command, { execute: true }) });
 
 		// Poll for completion — check first, then sleep, so a fast command isn't
 		// held for a full interval after it already finished.
 		const deadline = Date.now() + timeoutSecs * 1000;
 		let completed = false;
+		const rejected = rejectionWatch(sessionId, start);
 		while (!signal?.aborted) {
-			const now = (await invoke<ShellCtxSnapshot>('shell_get_context', { sessionId }))
-				.completed_total;
-			if (now > before) {
+			const now = await invoke<ShellCtxSnapshot>('shell_get_context', { sessionId });
+			if (now.completed_total > before) {
 				completed = true;
 				break;
+			}
+			if (await rejected(now)) {
+				release();
+				return await rejectedLineResult(sessionId, start);
 			}
 			if (Date.now() >= deadline) break;
 			await sleep(PTY_POLL_MS);
@@ -255,6 +273,54 @@ export async function runInPty(
 		signal?.removeEventListener('abort', onAbort);
 		release();
 	}
+}
+
+/**
+ * Spots a line the shell refused to run. The prompt came back (new markers)
+ * but no command started and none finished — fish handed bash syntax, say,
+ * which it reports as a parse error and a fresh prompt with no "finished"
+ * marker at all. Held over two polls so a stray repaint (a resize) between
+ * paste and start can't read as a rejection, then re-checked once more
+ * because the command could finish between the reads; the caller's next poll
+ * picks that up.
+ */
+function rejectionWatch(
+	sessionId: number,
+	start: ShellCtxSnapshot
+): (now: ShellCtxSnapshot) => Promise<boolean> {
+	let promptOnly = 0;
+	return async (now) => {
+		const quiet = now.marker_total > start.marker_total && !(await pendingCommand(sessionId));
+		promptOnly = quiet ? promptOnly + 1 : 0;
+		if (promptOnly < 2) return false;
+		const recheck = await invoke<ShellCtxSnapshot>('shell_get_context', { sessionId });
+		return recheck.completed_total <= start.completed_total;
+	};
+}
+
+/**
+ * The result for a line the shell refused to run: what it printed instead,
+ * reported as a failure the model can act on, with a pointer at the likely
+ * cause when the shell is fish.
+ */
+async function rejectedLineResult(sessionId: number, start: ShellCtxSnapshot): Promise<string> {
+	let said = '';
+	try {
+		said = (
+			await invoke<string>('shell_output_since', { sessionId, from: start.output_total })
+		).trim();
+	} catch {
+		// The explanation below still stands without the shell's own words.
+	}
+	const fish = start.context ? isFish(start.context) : false;
+	const hint = fish
+		? "\n\nThis terminal runs fish, which does not accept bash syntax. Rewrite the command in fish syntax, or run it as `bash -c '…'`."
+		: '';
+	return (
+		'Exit code: none — the shell did not run this command; it rejected the line.' +
+		(said ? `\nShell output:\n${said}` : '') +
+		hint
+	);
 }
 
 export interface BackgroundHandle {
@@ -316,7 +382,15 @@ export async function runInPtyBackground(
 		'__hspl="$(mktemp "${TMPDIR:-/tmp}/hsp-bg-XXXXXX")"; __hspd="${__hspl}.done"; ' +
 		`{ ${command} ; printf %s "$?" > "$__hspd" ; } > "$__hspl" 2>&1 & ` +
 		`printf 'HSP_BG pid=%s log=%s done=%s\\n' "$!" "$__hspl" "$__hspd"`;
-	const out = await runInPty(sessionId, wrapper, 10, signal);
+	// The wrapper is POSIX shell. Fish can't parse it, so under fish it goes to
+	// bash: base64 through a pipe rather than `bash -c '…'`, because fish
+	// rewrites backslashes inside single quotes and the wrapper has a `\n`.
+	const start = await invoke<ShellCtxSnapshot>('shell_get_context', { sessionId });
+	const line =
+		start.context && isFish(start.context)
+			? `echo ${toBase64(wrapper)} | base64 -d | bash`
+			: wrapper;
+	const out = await runInPty(sessionId, line, 10, signal);
 	const m = out.match(BG_MARKER);
 	if (!m) {
 		return `Tried to background the command but couldn't confirm it started. Terminal said:\n${out}`;
@@ -373,4 +447,9 @@ export async function spillIfLarge(header: string, body: string): Promise<string
 		// Temp-file write failed; the in-band truncation marker still stands.
 	}
 	return `${header}\n${truncated.text}${overflowNote}`;
+}
+
+/** UTF-8 safe base64, for handing a script to `base64 -d`. */
+function toBase64(text: string): string {
+	return btoa(String.fromCharCode(...new TextEncoder().encode(text)));
 }
