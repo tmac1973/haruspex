@@ -87,3 +87,24 @@ describe('tool allowlist + audit tools', () => {
 		expect(names({ hasWorkingDir: true, toolAllowlist: [] })).toEqual([]);
 	});
 });
+
+describe('asking the user a question', () => {
+	it('is offered to the Shell assistant, in Code mode or not, when someone is there', () => {
+		for (const mode of [
+			{ codeMode: true, shellMode: true },
+			{ codeMode: true, shellMode: false },
+			{ shellMode: true }
+		]) {
+			expect(names({ hasWorkingDir: true, interactive: true, ...mode })).toContain(
+				'ask_user_question'
+			);
+			expect(names({ hasWorkingDir: true, interactive: false, ...mode })).not.toContain(
+				'ask_user_question'
+			);
+		}
+	});
+
+	it('is still offered in Chat', () => {
+		expect(names({ hasWorkingDir: false, interactive: true })).toContain('ask_user_question');
+	});
+});
