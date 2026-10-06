@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use tauri::AppHandle;
 
-use crate::models::ModelManager;
+use crate::models::{ModelManager, VerifiedFile};
 
 /// Where image weights live, under the shared models directory. Each entry
 /// gets its own folder beneath this.
@@ -97,13 +97,60 @@ pub struct ImageModelInfo {
     pub downloaded: bool,
 }
 
+/// A model's licence: the one-line summary shown, the full text's URL, and
+/// whether commercial use is allowed. Shared with `comfy_models`, which
+/// installs the same two models for ComfyUI, so the two cannot disagree.
+pub struct Licence {
+    pub text: &'static str,
+    pub url: &'static str,
+    pub commercial_use: bool,
+}
+
+pub const MING_LICENCE: Licence = Licence {
+    text: "MIT — commercial use allowed.",
+    url: "https://huggingface.co/inclusionAI/Ming-Image-0.1-Design",
+    commercial_use: true,
+};
+
+pub const QWEN21_LICENCE: Licence = Licence {
+    text: "Qwen Research License — research and evaluation only.",
+    url: "https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE",
+    commercial_use: false,
+};
+
+/// A published weight file: URL, SHA-256 and size from the publisher's
+/// Hugging Face metadata.
+pub struct WeightFile {
+    pub url: &'static str,
+    pub sha256: &'static str,
+    pub size_bytes: u64,
+}
+
+/// The VAEs, which both engines load as the same bf16 safetensors.
+pub const MING_VAE: WeightFile = WeightFile {
+    url: "https://huggingface.co/Comfy-Org/Ming-Image/resolve/main/vae/ming_image_vae_bf16.safetensors",
+    sha256: "7f5bed402dc8c77dc2e0ab1929a85d4df433b7cf7b599dfa8c353da98db0b90a",
+    size_bytes: 253_816_696,
+};
+
+pub const QWEN21_VAE: WeightFile = WeightFile {
+    url: "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors",
+    sha256: "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+    size_bytes: 675_509_688,
+};
+
+/// The file name a download is saved under: the URL's last segment.
+pub fn filename_of(url: &str) -> String {
+    url.rsplit('/').next().unwrap_or(url).to_string()
+}
+
 const MING_GGUF: &str =
     "https://huggingface.co/voltaire321/Ming-Image-0.1-Design-GGUF/resolve/main";
 
 fn file(role: ImageFileRole, url: &str, sha256: &str, size_bytes: u64) -> ImageModelFile {
     ImageModelFile {
         role,
-        filename: url.rsplit('/').next().unwrap_or(url).to_string(),
+        filename: filename_of(url),
         url: url.to_string(),
         sha256: sha256.to_string(),
         size_bytes,
@@ -114,8 +161,7 @@ fn entry(
     id: &str,
     family: &str,
     description: &str,
-    license: (&str, &str),
-    commercial_use: bool,
+    licence: &Licence,
     vram_mb: u32,
     files: Vec<ImageModelFile>,
 ) -> ImageModelInfo {
@@ -123,9 +169,9 @@ fn entry(
         id: id.into(),
         family: family.into(),
         description: description.into(),
-        license: license.0.into(),
-        license_url: license.1.into(),
-        commercial_use,
+        license: licence.text.into(),
+        license_url: licence.url.into(),
+        commercial_use: licence.commercial_use,
         native_edge: 1024,
         vram_mb,
         size_bytes: files.iter().map(|f| f.size_bytes).sum(),
@@ -144,11 +190,7 @@ pub fn image_registry() -> Vec<ImageModelInfo> {
             "ming",
             "ming",
             "Ming-Image 0.1 Design — transparent sprites, the default (~17 GB)",
-            (
-                "MIT — commercial use allowed.",
-                "https://huggingface.co/inclusionAI/Ming-Image-0.1-Design",
-            ),
-            true,
+            &MING_LICENCE,
             // Measured: 7.2 GB peak with the text encoder on the CPU, which
             // then needs ~10 GB of RAM.
             8_192,
@@ -165,12 +207,7 @@ pub fn image_registry() -> Vec<ImageModelInfo> {
                     "70f7ea31d3e1ffa917e70b961e5d422b2a8b19327c3522033a381b1a4b766002",
                     10_518_620_096,
                 ),
-                file(
-                    Vae,
-                    "https://huggingface.co/Comfy-Org/Ming-Image/resolve/main/vae/ming_image_vae_bf16.safetensors",
-                    "7f5bed402dc8c77dc2e0ab1929a85d4df433b7cf7b599dfa8c353da98db0b90a",
-                    253_816_696,
-                ),
+                file(Vae, MING_VAE.url, MING_VAE.sha256, MING_VAE.size_bytes),
                 file(
                     Tokenizer,
                     "https://huggingface.co/inclusionAI/Ming-Image-0.1-Design/resolve/main/mllm/tokenizer.json",
@@ -183,11 +220,7 @@ pub fn image_registry() -> Vec<ImageModelInfo> {
             "qwen21",
             "qwen21",
             "Qwen-Image 2.1 — transparent by prompt, non-commercial (~10 GB)",
-            (
-                "Qwen Research License — research and evaluation only.",
-                "https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE",
-            ),
-            false,
+            &QWEN21_LICENCE,
             10_240,
             vec![
                 file(
@@ -202,12 +235,7 @@ pub fn image_registry() -> Vec<ImageModelInfo> {
                     "67d1659bfe71b89d50b45a4ad1a9e5b997e5bb16ce5da66a6a6167abd569e9e2",
                     5_027_784_800,
                 ),
-                file(
-                    Vae,
-                    "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors",
-                    "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
-                    675_509_688,
-                ),
+                file(Vae, QWEN21_VAE.url, QWEN21_VAE.sha256, QWEN21_VAE.size_bytes),
             ],
         ),
     ]
@@ -298,31 +326,24 @@ pub async fn download_image_model(
         .into_iter()
         .find(|m| m.id == id)
         .ok_or_else(|| format!("Unknown image model: {id}"))?;
-    let _slot = state.begin_download(&format!("image:{id}"))?;
     let dir = model_dir(state.models_dir(), &id);
     tokio::fs::create_dir_all(&dir)
         .await
         .map_err(|e| format!("Could not create {}: {e}", dir.display()))?;
-    state.set_proxy(proxy).await;
-    state.reset_cancel().await;
-    let count = entry.files.len();
-    for (i, f) in entry.files.iter().enumerate() {
-        // "2 of 4" in the label, so a screen can say which file it is on.
-        let of = format!("{} of {count}: {}", i + 1, f.filename);
-        state
-            .download_into(
-                &app,
-                &f.url,
-                &dir,
-                &f.filename,
-                f.size_bytes,
-                &f.sha256,
-                &format!("Downloading {of}"),
-                &format!("Verifying {of}"),
-            )
-            .await?;
-    }
-    Ok(())
+    let files: Vec<VerifiedFile> = entry
+        .files
+        .iter()
+        .map(|f| VerifiedFile {
+            url: &f.url,
+            dir: &dir,
+            filename: &f.filename,
+            size_bytes: f.size_bytes,
+            sha256: &f.sha256,
+        })
+        .collect();
+    state
+        .download_set(&app, &format!("image:{id}"), proxy, &files)
+        .await
 }
 
 /// Delete an entry's files. Stopping the engine first is the caller's job —

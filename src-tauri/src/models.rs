@@ -852,6 +852,16 @@ fn download_speed_bps(downloaded: u64, existing_size: u64, elapsed_secs: f64) ->
     }
 }
 
+/// One file of a [`ModelManager::download_set`]: where it comes from, where
+/// it goes, and what it must hash to.
+pub struct VerifiedFile<'a> {
+    pub url: &'a str,
+    pub dir: &'a Path,
+    pub filename: &'a str,
+    pub size_bytes: u64,
+    pub sha256: &'a str,
+}
+
 impl ModelManager {
     pub fn new(app: &AppHandle) -> Result<Self, String> {
         let models_dir = app
@@ -1258,6 +1268,38 @@ impl ModelManager {
     /// Clear a cancel left over from an earlier download.
     pub async fn reset_cancel(&self) {
         *self.cancel_flag.lock().await = false;
+    }
+
+    /// Download a set of files, each verified, as one download: one slot under
+    /// `key`, one proxy and cancel flag, and a label that says which file of
+    /// the set is in flight ("2 of 4: x.gguf"). Files already on disk are
+    /// skipped by `download_into`.
+    pub async fn download_set(
+        &self,
+        app: &AppHandle,
+        key: &str,
+        proxy: Option<crate::proxy::ProxyConfig>,
+        files: &[VerifiedFile<'_>],
+    ) -> Result<(), String> {
+        let _slot = self.begin_download(key)?;
+        self.set_proxy(proxy).await;
+        self.reset_cancel().await;
+        let count = files.len();
+        for (i, f) in files.iter().enumerate() {
+            let of = format!("{} of {count}: {}", i + 1, f.filename);
+            self.download_into(
+                app,
+                f.url,
+                f.dir,
+                f.filename,
+                f.size_bytes,
+                f.sha256,
+                &format!("Downloading {of}"),
+                &format!("Verifying {of}"),
+            )
+            .await?;
+        }
+        Ok(())
     }
 
     /// Download one file into `dir`, which need not be the models directory —

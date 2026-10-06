@@ -18,7 +18,10 @@ use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
 use crate::comfy::{comfy_json, ComfyCall};
-use crate::models::ModelManager;
+use crate::image_models::{
+    filename_of, WeightFile, MING_LICENCE, MING_VAE, QWEN21_LICENCE, QWEN21_VAE,
+};
+use crate::models::{ModelManager, VerifiedFile};
 
 /// A ComfyUI model folder kind, as `/internal/folder_paths` names it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ts_rs::TS)]
@@ -77,12 +80,24 @@ fn file(
     sha256: &str,
     size_bytes: u64,
 ) -> ComfyModelFile {
+    let url = format!("https://huggingface.co/{repo}/resolve/main/{path}");
     ComfyModelFile {
         folder,
-        filename: path.rsplit('/').next().unwrap_or(path).to_string(),
-        url: format!("https://huggingface.co/{repo}/resolve/main/{path}"),
+        filename: filename_of(&url),
+        url,
         sha256: sha256.to_string(),
         size_bytes,
+    }
+}
+
+/// A file both engines share, from `image_models`.
+fn shared(folder: ComfyFolder, w: &WeightFile) -> ComfyModelFile {
+    ComfyModelFile {
+        folder,
+        filename: filename_of(w.url),
+        url: w.url.to_string(),
+        sha256: w.sha256.to_string(),
+        size_bytes: w.size_bytes,
     }
 }
 
@@ -95,9 +110,9 @@ pub fn comfy_model_sets() -> Vec<ComfyModelSet> {
         ComfyModelSet {
             family: "ming".into(),
             label: "Ming-Image 0.1 Design".into(),
-            license: "MIT — commercial use allowed.".into(),
-            license_url: "https://huggingface.co/inclusionAI/Ming-Image-0.1-Design".into(),
-            commercial_use: true,
+            license: MING_LICENCE.text.into(),
+            license_url: MING_LICENCE.url.into(),
+            commercial_use: MING_LICENCE.commercial_use,
             // Phase 17 §5: ~7 GB VRAM, ~24 GB RAM with the encoder on the CPU.
             vram_mb: 8_192,
             ram_mb: 24_576,
@@ -118,21 +133,15 @@ pub fn comfy_model_sets() -> Vec<ComfyModelSet> {
                     "91de4cd0718bec1452b74ff3b0df0dfde280493dab384f0eb4007c18bf932ccd",
                     12_813_574_339,
                 ),
-                file(
-                    Vae,
-                    MING,
-                    "vae/ming_image_vae_bf16.safetensors",
-                    "7f5bed402dc8c77dc2e0ab1929a85d4df433b7cf7b599dfa8c353da98db0b90a",
-                    253_816_696,
-                ),
+                shared(Vae, &MING_VAE),
             ],
         },
         ComfyModelSet {
             family: "qwen21".into(),
             label: "Qwen-Image 2.1".into(),
-            license: "Qwen Research License — research and evaluation only.".into(),
-            license_url: "https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE".into(),
-            commercial_use: false,
+            license: QWEN21_LICENCE.text.into(),
+            license_url: QWEN21_LICENCE.url.into(),
+            commercial_use: QWEN21_LICENCE.commercial_use,
             vram_mb: 10_240,
             ram_mb: 24_576,
             files: vec![
@@ -150,13 +159,7 @@ pub fn comfy_model_sets() -> Vec<ComfyModelSet> {
                     "8bfd0f6e12abf2d2d697ecc888e5e90b0d6741d6708f05799f53afa560452e8f",
                     9_350_798_360,
                 ),
-                file(
-                    Vae,
-                    QWEN,
-                    "vae/qwen_image_2.1_vae_bf16.safetensors",
-                    "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
-                    675_509_688,
-                ),
+                shared(Vae, &QWEN21_VAE),
             ],
         },
     ]
@@ -285,35 +288,52 @@ pub async fn comfy_install_direct(
     let answer = folder_answer(&base_url, &api_key).await?;
     let folders = local_folders(&answer)
         .ok_or("ComfyUI's model folders are not on this machine, or cannot be written.")?;
-    let _slot = state.begin_download(&format!("comfy:{family}"))?;
-    state.set_proxy(proxy).await;
-    state.reset_cancel().await;
-    let mut installed = Vec::new();
     let todo = missing(&set, &folders);
-    let count = todo.len();
-    for (i, f) in todo.into_iter().enumerate() {
-        let of = format!("{} of {count}: {}", i + 1, f.filename);
-        let dir = &folders[&f.folder][0];
-        state
-            .download_into(
-                &app,
-                &f.url,
-                dir,
-                &f.filename,
-                f.size_bytes,
-                &f.sha256,
-                &format!("Downloading {of}"),
-                &format!("Verifying {of}"),
-            )
-            .await?;
-        installed.push(f.filename.clone());
-    }
-    Ok(installed)
+    let files: Vec<VerifiedFile> = todo
+        .iter()
+        .map(|f| VerifiedFile {
+            url: &f.url,
+            dir: &folders[&f.folder][0],
+            filename: &f.filename,
+            size_bytes: f.size_bytes,
+            sha256: &f.sha256,
+        })
+        .collect();
+    state
+        .download_set(&app, &format!("comfy:{family}"), proxy, &files)
+        .await?;
+    Ok(todo.into_iter().map(|f| f.filename.clone()).collect())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn both_engines_agree_on_each_familys_licence_and_vae() {
+        let bundled = crate::image_models::image_registry();
+        for set in comfy_model_sets() {
+            let entry = bundled
+                .iter()
+                .find(|m| m.family == set.family)
+                .unwrap_or_else(|| panic!("{} has no bundled-engine entry", set.family));
+            assert_eq!(set.license, entry.license, "{}", set.family);
+            assert_eq!(set.license_url, entry.license_url, "{}", set.family);
+            assert_eq!(set.commercial_use, entry.commercial_use, "{}", set.family);
+            let vae = set
+                .files
+                .iter()
+                .find(|f| f.folder == ComfyFolder::Vae)
+                .unwrap();
+            let bundled_vae = entry
+                .files
+                .iter()
+                .find(|f| f.role == crate::image_models::ImageFileRole::Vae)
+                .unwrap();
+            assert_eq!(vae.url, bundled_vae.url);
+            assert_eq!(vae.sha256, bundled_vae.sha256);
+        }
+    }
 
     #[test]
     fn every_file_can_be_downloaded_and_verified() {
