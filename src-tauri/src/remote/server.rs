@@ -44,7 +44,7 @@ const MAX_SPEECH_CHARS: usize = 4000;
 const TTS_PORT: u16 = crate::sidecar_utils::ports::TTS;
 const DEFAULT_VOICE: &str = "af_heart";
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteConfig {
     pub port: u16,
@@ -54,6 +54,22 @@ pub struct RemoteConfig {
     /// Bind `0.0.0.0` rather than loopback. False is useful for testing the
     /// server without exposing anything to the network.
     pub bind_all: bool,
+}
+
+/// By hand, so a `{:?}` in a log or an error never prints the access token.
+impl std::fmt::Debug for RemoteConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            port,
+            token,
+            bind_all,
+        } = self;
+        f.debug_struct("RemoteConfig")
+            .field("port", port)
+            .field("token", &crate::text_util::redacted(token))
+            .field("bind_all", bind_all)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

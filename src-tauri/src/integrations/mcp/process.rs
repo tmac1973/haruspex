@@ -90,7 +90,7 @@ pub const APP_LOG_PREFIX: &str = "[haruspex]";
 ///
 /// Phase 04 builds these from catalog entries and user configuration; nothing
 /// stores them yet.
-#[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
+#[derive(Clone, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct SpawnConfig {
@@ -108,6 +108,28 @@ pub struct SpawnConfig {
     pub env: Vec<(String, String)>,
     #[serde(default)]
     pub cwd: Option<PathBuf>,
+}
+
+/// By hand: `env` carries resolved `$secret.*` values and proxy credentials,
+/// so `{:?}` names the variables but never prints them.
+impl std::fmt::Debug for SpawnConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            id,
+            program,
+            args,
+            env,
+            cwd,
+        } = self;
+        let env: Vec<&str> = env.iter().map(|(k, _)| k.as_str()).collect();
+        f.debug_struct("SpawnConfig")
+            .field("id", id)
+            .field("program", program)
+            .field("args", args)
+            .field("env", &env)
+            .field("cwd", cwd)
+            .finish()
+    }
 }
 
 /// One supervised server.
@@ -696,6 +718,20 @@ async fn log_tail(log: &LogBuffer) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debug_names_env_variables_but_never_prints_their_values() {
+        let spawn = SpawnConfig {
+            id: "s".into(),
+            program: "/bin/srv".into(),
+            args: vec!["stdio".into()],
+            env: vec![("GITHUB_TOKEN".into(), "ghp_secret".into())],
+            cwd: None,
+        };
+        let shown = format!("{spawn:?}");
+        assert!(shown.contains("GITHUB_TOKEN"), "{shown}");
+        assert!(!shown.contains("ghp_secret"), "{shown}");
+    }
     use crate::integrations::mcp::types::McpProtocolEra;
     use std::time::Duration;
 

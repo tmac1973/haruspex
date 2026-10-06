@@ -34,7 +34,7 @@ use crate::secrets::{Keychain, Store};
 /// `src/lib/stores/settings.ts`. Field names use camelCase via serde
 /// rename so a single JSON object can be produced/consumed on both
 /// sides without a translation layer.
-#[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
+#[derive(Clone, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct EmailAccount {
@@ -82,6 +82,44 @@ pub struct EmailAccount {
     pub smtp_host: String,
     pub smtp_port: u16,
     pub smtp_tls: TlsMode,
+}
+
+/// By hand, so a `{:?}` in a log or an error never prints the password.
+impl std::fmt::Debug for EmailAccount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            id,
+            label,
+            enabled,
+            send_enabled,
+            provider,
+            email_address,
+            password,
+            password_ref,
+            imap_host,
+            imap_port,
+            imap_tls,
+            smtp_host,
+            smtp_port,
+            smtp_tls,
+        } = self;
+        f.debug_struct("EmailAccount")
+            .field("id", id)
+            .field("label", label)
+            .field("enabled", enabled)
+            .field("send_enabled", send_enabled)
+            .field("provider", provider)
+            .field("email_address", email_address)
+            .field("password", &crate::text_util::redacted(password))
+            .field("password_ref", password_ref)
+            .field("imap_host", imap_host)
+            .field("imap_port", imap_port)
+            .field("imap_tls", imap_tls)
+            .field("smtp_host", smtp_host)
+            .field("smtp_port", smtp_port)
+            .field("smtp_tls", smtp_tls)
+            .finish()
+    }
 }
 
 impl EmailAccount {
@@ -189,6 +227,13 @@ mod tests {
     #[test]
     fn valid_account_passes() {
         assert!(sample_account().validate().is_ok());
+    }
+
+    #[test]
+    fn debug_never_prints_the_password() {
+        let shown = format!("{:?}", sample_account());
+        assert!(!shown.contains("hunter2"), "{shown}");
+        assert!(shown.contains("alice@example.com"), "{shown}");
     }
 
     #[test]

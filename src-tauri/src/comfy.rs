@@ -24,7 +24,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
 
 /// One HTTP call. `id` lets the caller cancel it with [`comfy_cancel`].
-#[derive(Clone, Debug, Deserialize, ts_rs::TS)]
+#[derive(Clone, Deserialize, ts_rs::TS)]
 #[ts(export)]
 pub struct ComfyCall {
     pub base_url: String,
@@ -36,6 +36,31 @@ pub struct ComfyCall {
     pub body: Option<serde_json::Value>,
     pub timeout_ms: u64,
     pub id: Option<String>,
+}
+
+/// By hand, so a `{:?}` in a log or an error never prints the API key or the
+/// request body.
+impl std::fmt::Debug for ComfyCall {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            base_url,
+            api_key,
+            method,
+            path,
+            body,
+            timeout_ms,
+            id,
+        } = self;
+        f.debug_struct("ComfyCall")
+            .field("base_url", base_url)
+            .field("api_key", &crate::text_util::redacted(api_key))
+            .field("method", method)
+            .field("path", path)
+            .field("body", &body.as_ref().map(|_| "<body>"))
+            .field("timeout_ms", timeout_ms)
+            .field("id", id)
+            .finish()
+    }
 }
 
 /// Why a call failed, in the kinds `ImageBackendError` already has.
