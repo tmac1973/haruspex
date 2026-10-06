@@ -64,7 +64,17 @@ pub fn sandbox_set_network(
     proxy: Option<ProxyConfig>,
     access: SandboxNetAccess,
 ) {
-    *state.0.lock_or_recover() = NetPolicy { proxy, access };
+    let mut current = state.0.lock_or_recover();
+    let proxied = proxy.as_ref().is_some_and(|p| p.mode == "manual");
+    if current.access != access
+        || current.proxy.as_ref().is_some_and(|p| p.mode == "manual") != proxied
+    {
+        log::info!(
+            "sandbox network: access {access:?}, network proxy {}",
+            if proxied { "on" } else { "off" }
+        );
+    }
+    *current = NetPolicy { proxy, access };
 }
 
 #[derive(Default, Deserialize)]
