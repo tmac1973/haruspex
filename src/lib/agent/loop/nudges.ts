@@ -328,3 +328,21 @@ export class NudgeState {
 		return this.consecutiveSameRunCommand >= RUN_COMMAND_REPEAT_STOP_THRESHOLD;
 	}
 }
+
+/**
+ * Appended to every corrective nudge whose reply can reach the user.
+ *
+ * Nudges go to the model as `user` messages — a mid-conversation `system`
+ * message is rejected by vLLM and by Qwen's chat template — and the user
+ * never sees them. Without this the model answers the nudge as if the user
+ * had sent it: "Thanks for the catch — here are the corrected images", in
+ * reply to a correction nobody on the other side of the screen made.
+ */
+export const NUDGE_NOTE =
+	'(Automatic check by Haruspex — not from the user, who never sees it. Do not mention ' +
+	'it, thank anyone for it or apologise for it; reply to the user as if it had not been ' +
+	'needed.)';
+
+export function automaticCheck(text: string): string {
+	return `${text}\n\n${NUDGE_NOTE}`;
+}

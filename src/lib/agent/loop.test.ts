@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { NUDGE_NOTE, automaticCheck } from './loop/nudges';
 import type {
 	ChatCompletionResponse,
 	ChatMessage,
@@ -877,6 +878,9 @@ describe('runAgentLoop: recovery nudges', () => {
 				m.content.includes('You MUST now call fetch_url')
 		);
 		expect(nudge).toBeDefined();
+		// Marked as an automatic check, so the answer is not addressed to a
+		// user who never saw it ("Thanks for the catch…").
+		expect(String(nudge?.content).endsWith(NUDGE_NOTE)).toBe(true);
 		// The model self-corrected with a real fetch on iteration 3, so the
 		// fourth call carries its sourced result and the turn completes.
 		const fourth = nonStreamSnapshots[3];
@@ -975,9 +979,10 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 		const last = streamSnapshots[0][streamSnapshots[0].length - 1];
 		expect(last).toEqual({
 			role: 'user',
-			content:
+			content: automaticCheck(
 				'Now please provide your complete answer based on everything you have researched. ' +
-				'Do not search for anything else.'
+					'Do not search for anything else.'
+			)
 		});
 		expect(streamedText(cb)).toBe('Summary of findings.');
 		expect(cb.onComplete).toHaveBeenCalledTimes(1);

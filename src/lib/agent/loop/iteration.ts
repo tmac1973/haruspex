@@ -52,7 +52,7 @@ import { splitThinkChannels, stripThinkBlocks, stripToolCallArtifacts } from '$l
 import { appendStreamDelta, createThinkStreamState } from '$lib/agent/think-stream';
 import { isAbortError } from '$lib/utils/error';
 import { isVerbosePayloads, logDebug } from '$lib/debug-log';
-import { MAX_TRUNCATION_RETRIES, NudgeState } from './nudges';
+import { MAX_TRUNCATION_RETRIES, NudgeState, automaticCheck } from './nudges';
 import type { AgentLoopOptions, CompletionMeta } from '../loop';
 
 // Trim older tool results when context usage crosses this fraction.
@@ -1042,9 +1042,14 @@ function pushNudge(
 	// the content would render a second, nested block inside the template's own.
 	if (stripThinking) content = stripThinkBlocks(content).trimStart();
 	messages.push({ role: 'assistant', content });
-	messages.push({ role: 'user', content: nudge });
+	// "Continue." is joined onto the text it continues; the note would only
+	// invite a preamble there.
+	messages.push({ role: 'user', content: nudge === CONTINUE ? nudge : automaticCheck(nudge) });
 	return 'continue';
 }
+
+/** The bare continuation nudge for a response cut off at the token limit. */
+const CONTINUE = 'Continue.';
 
 /**
  * Max-tokens truncation: the model was cut off mid-response, so continue the
@@ -1088,7 +1093,7 @@ function tryContinueOnLength(
 		logDebug('agent', `iteration ${iteration} branch=continue-on-length nudge`, {
 			usedTools: state.usedTools
 		});
-		return pushNudge(ctx.messages, response, 'Continue.', false, true);
+		return pushNudge(ctx.messages, response, CONTINUE, false, true);
 	}
 
 	// Cut off while still reasoning, with no answer to resume.
@@ -1106,12 +1111,13 @@ function tryContinueOnLength(
 	// content would be an empty message.
 	ctx.messages.push({
 		role: 'user',
-		content:
+		content: automaticCheck(
 			`Your previous response was cut off at the ${ctx.maxResponseTokens}-token ` +
-			`limit while you were still thinking, so none of it reached me. Answer now: ` +
-			`keep your reasoning short and spend the response on the answer itself. If ` +
-			`the full answer will not fit in one response, say so first and give me the ` +
-			`most important part.`
+				`limit while you were still thinking, so none of it reached the user. Answer ` +
+				`now: keep your reasoning short and spend the response on the answer itself. ` +
+				`If the full answer will not fit in one response, say so first and give the ` +
+				`most important part.`
+		)
 	});
 	return 'continue';
 }
@@ -1609,7 +1615,7 @@ export async function runMaxIterationsFinalSynthesis(
 		const finalPrompt = ctx.shellMode
 			? 'Wrap up now using what you have found so far. If your investigation is incomplete, briefly say so and suggest the next command or file the user could share with you to continue.'
 			: 'Now please provide your complete answer based on everything you have researched. Do not search for anything else.';
-		ctx.messages.push({ role: 'user', content: finalPrompt });
+		ctx.messages.push({ role: 'user', content: automaticCheck(finalPrompt) });
 	}
 	// Reasoning off: the thinking happened over the whole turn, and this call
 	// writes it up. With it on, a model at the end of a long research turn
