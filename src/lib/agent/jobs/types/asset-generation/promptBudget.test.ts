@@ -86,8 +86,8 @@ describe('the instructions that produce a style', () => {
 		expect(derivation).toMatch(/SHORT|short/);
 
 		// And the tool schema the model actually fills in.
-		const { getToolSchemas } = await import('$lib/agent/tools/registry');
-		await import('$lib/agent/tools/coding');
+		const { getToolSchemas } = await import('#lib/agent/tools/registry.ts');
+		await import('#lib/agent/tools/coding.ts');
 		const schema = getToolSchemas({
 			hasWorkingDir: true,
 			toolAllowlist: ['submit_asset_spec']

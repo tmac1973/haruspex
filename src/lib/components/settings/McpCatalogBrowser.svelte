@@ -9,10 +9,10 @@
 	 * half-configured — and a half-configured server is worse than none, because
 	 * it sits in the list looking broken.
 	 */
-	import type { CatalogEntry } from '$lib/ipc/gen/CatalogEntry';
-	import type { RuntimeAvailability } from '$lib/ipc/gen/RuntimeAvailability';
-	import type { DownloadProgress } from '$lib/ipc/gen/DownloadProgress';
-	import { describeSetup } from '$lib/stores/mcpSetup';
+	import type { CatalogEntry } from '#lib/ipc/gen/CatalogEntry.ts';
+	import type { RuntimeAvailability } from '#lib/ipc/gen/RuntimeAvailability.ts';
+	import type { DownloadProgress } from '#lib/ipc/gen/DownloadProgress.ts';
+	import { describeSetup } from '#lib/stores/mcpSetup.ts';
 
 	interface Props {
 		entries: CatalogEntry[];

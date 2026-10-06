@@ -9,8 +9,8 @@
  * it again IS resuming it.
  */
 
-import type { JobRunStatus } from '$lib/stores/jobRuns.svelte';
-import type { JobType } from '$lib/stores/jobs.svelte';
+import type { JobRunStatus } from '#lib/stores/jobRuns.svelte.ts';
+import type { JobType } from '#lib/stores/jobs.svelte.ts';
 
 export interface ChainRunFacts {
 	status: JobRunStatus;

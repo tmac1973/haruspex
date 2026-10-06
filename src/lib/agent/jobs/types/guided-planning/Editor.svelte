@@ -1,9 +1,9 @@
 <script lang="ts">
-	import Tooltip from '$lib/components/Tooltip.svelte';
-	import { resolveImageBackend } from '$lib/image';
+	import Tooltip from '#lib/components/Tooltip.svelte';
+	import { resolveImageBackend } from '#lib/image/index.ts';
 	import type { GuidedPlanningEditorState } from './definition';
-	import JobModelFields from '$lib/components/jobs/JobModelFields.svelte';
-	import { emptyModelForm } from '$lib/agent/jobs/jobModelForm';
+	import JobModelFields from '#lib/components/jobs/JobModelFields.svelte';
+	import { emptyModelForm } from '#lib/agent/jobs/jobModelForm.ts';
 
 	type StageKey = 'chain_assets_model' | 'chain_coding_model';
 
@@ -18,7 +18,7 @@
 		jobName = ''
 	}: {
 		config: Record<string, unknown>;
-		steps?: import('$lib/stores/jobs.svelte').JobStepInput[];
+		steps?: import('#lib/stores/jobs.svelte.ts').JobStepInput[];
 		jobName?: string;
 	} = $props();
 

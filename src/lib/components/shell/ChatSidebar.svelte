@@ -1,27 +1,27 @@
 <script lang="ts">
 	import { onDestroy, onMount, untrack } from 'svelte';
-	import ChatMessage from '$lib/components/ChatMessage.svelte';
-	import StopIndicator from '$lib/components/StopIndicator.svelte';
-	import { imageDropTarget } from '$lib/utils/imageDrop';
-	import MicButton from '$lib/components/MicButton.svelte';
-	import SearchStepComponent from '$lib/components/SearchStep.svelte';
-	import ThinkingIndicator from '$lib/components/ThinkingIndicator.svelte';
+	import ChatMessage from '#lib/components/ChatMessage.svelte';
+	import StopIndicator from '#lib/components/StopIndicator.svelte';
+	import { imageDropTarget } from '#lib/utils/imageDrop.ts';
+	import MicButton from '#lib/components/MicButton.svelte';
+	import SearchStepComponent from '#lib/components/SearchStep.svelte';
+	import ThinkingIndicator from '#lib/components/ThinkingIndicator.svelte';
 	import {
 		messageText,
 		type ChatMessage as ChatMessageType,
 		type MessageContentPart
-	} from '$lib/api';
-	import { getSettings, updateSettings } from '$lib/stores/settings';
-	import { imageFileToDataUrl, imageFilesFrom } from '$lib/utils/image';
-	import { showToast } from '$lib/stores/toasts.svelte';
-	import { errMessage } from '$lib/utils/error';
-	import type { CaptureWindow } from '$lib/ipc/gen/CaptureWindow';
+	} from '#lib/api.ts';
+	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
+	import { imageFileToDataUrl, imageFilesFrom } from '#lib/utils/image.ts';
+	import { showToast } from '#lib/stores/toasts.svelte.ts';
+	import { errMessage } from '#lib/utils/error.ts';
+	import type { CaptureWindow } from '#lib/ipc/gen/CaptureWindow.ts';
 	import {
 		captureMessage,
 		captureWindowImage,
 		windowLabel,
 		windowsToPick
-	} from '$lib/shell/captureWindow';
+	} from '#lib/shell/captureWindow.ts';
 
 	const SHELL_PREAMBLE_MARKER = 'Recent shell activity (oldest first):';
 	const SHELL_PREAMBLE_SEP = '\n\n---\n\n';
@@ -99,8 +99,8 @@
 			}
 		};
 	}
-	import type { ShellSession } from '$lib/stores/shell.svelte';
-	import type { InferenceTicket } from '$lib/agent/inferenceQueue.svelte';
+	import type { ShellSession } from '#lib/stores/shell.svelte.ts';
+	import type { InferenceTicket } from '#lib/agent/inferenceQueue.svelte.ts';
 
 	const { session }: { session: ShellSession } = $props();
 

@@ -1,7 +1,7 @@
 /** Asset-generation `type_config` JSON shape. */
 
 import { parseModelColumns, type ModelColumns } from '../../chainModel';
-import { DEFAULT_SPEC_PATH } from '$lib/assets/spec/paths';
+import { DEFAULT_SPEC_PATH } from '#lib/assets/spec/paths.ts';
 
 /** Which checkpoints the run stops at. */
 export type AssetRunMode = 'attended' | 'unattended';

@@ -11,16 +11,16 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { onMount, onDestroy } from 'svelte';
-	import { IPC } from '$lib/ipc/commands';
-	import { getSettings, setMcpServers, snapshot } from '$lib/stores/settings';
-	import { storeMcpSecret } from '$lib/stores/mcpSecrets';
-	import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
-	import type { CatalogEntry } from '$lib/ipc/gen/CatalogEntry';
-	import type { RuntimeAvailability } from '$lib/ipc/gen/RuntimeAvailability';
-	import type { DownloadProgress } from '$lib/ipc/gen/DownloadProgress';
+	import { IPC } from '#lib/ipc/commands.ts';
+	import { getSettings, setMcpServers, snapshot } from '#lib/stores/settings.ts';
+	import { storeMcpSecret } from '#lib/stores/mcpSecrets.ts';
+	import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
+	import type { CatalogEntry } from '#lib/ipc/gen/CatalogEntry.ts';
+	import type { RuntimeAvailability } from '#lib/ipc/gen/RuntimeAvailability.ts';
+	import type { DownloadProgress } from '#lib/ipc/gen/DownloadProgress.ts';
 	import McpServerRow from './McpServerRow.svelte';
 	import McpCatalogBrowser from './McpCatalogBrowser.svelte';
-	import { probeCompanion } from '$lib/stores/mcpServers.svelte';
+	import { probeCompanion } from '#lib/stores/mcpServers.svelte.ts';
 
 	const INSTALL_PROGRESS_EVENT = 'mcp-install-progress';
 

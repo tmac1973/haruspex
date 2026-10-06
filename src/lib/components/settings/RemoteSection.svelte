@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 
-	import { getSettings, updateSettings } from '$lib/stores/settings';
+	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import {
 		disconnectRemoteSession,
 		generateRemoteToken,
@@ -14,14 +14,14 @@
 		type QrMatrix,
 		type RemoteSession,
 		type RemoteStatus
-	} from '$lib/remote/api';
-	import { syncRemoteServer } from '$lib/remote/service';
-	import { getRemoteToken, remoteToken } from '$lib/stores/remoteSecrets';
+	} from '#lib/remote/api.ts';
+	import { syncRemoteServer } from '#lib/remote/service.ts';
+	import { getRemoteToken, remoteToken } from '#lib/stores/remoteSecrets.ts';
 	import {
 		forgetRemoteActivity,
 		getRemoteActivity,
 		type RemoteActivity
-	} from '$lib/remote/activity.svelte';
+	} from '#lib/remote/activity.svelte.ts';
 
 	let enabled = $state(getSettings().remoteAccessEnabled);
 	let port = $state(getSettings().remoteAccessPort);

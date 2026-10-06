@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import JobList from '$lib/components/jobs/JobList.svelte';
-	import JobEditor from '$lib/components/jobs/JobEditor.svelte';
-	import JobRunView from '$lib/components/jobs/JobRunView.svelte';
-	import JobRunHistory from '$lib/components/jobs/JobRunHistory.svelte';
-	import JobRunDetail from '$lib/components/jobs/JobRunDetail.svelte';
-	import LiveRunBar from '$lib/components/jobs/LiveRunBar.svelte';
-	import UnsavedChangesDialog from '$lib/components/jobs/UnsavedChangesDialog.svelte';
-	import { isJobsLoaded, loadJobs } from '$lib/stores/jobs.svelte';
-	import { enqueue, getCurrentRun } from '$lib/agent/jobs/runner.svelte';
+	import JobList from '#lib/components/jobs/JobList.svelte';
+	import JobEditor from '#lib/components/jobs/JobEditor.svelte';
+	import JobRunView from '#lib/components/jobs/JobRunView.svelte';
+	import JobRunHistory from '#lib/components/jobs/JobRunHistory.svelte';
+	import JobRunDetail from '#lib/components/jobs/JobRunDetail.svelte';
+	import LiveRunBar from '#lib/components/jobs/LiveRunBar.svelte';
+	import UnsavedChangesDialog from '#lib/components/jobs/UnsavedChangesDialog.svelte';
+	import { isJobsLoaded, loadJobs } from '#lib/stores/jobs.svelte.ts';
+	import { enqueue, getCurrentRun } from '#lib/agent/jobs/runner.svelte.ts';
 
 	let selectedId = $state<number | 'new' | null>(null);
 	let selectedRunId = $state<number | null>(null);

@@ -10,8 +10,8 @@
 	 * Cancel takes initial focus, so Enter never commits a choice about
 	 * unsaved work by accident (same rule as ConfirmDialog).
 	 */
-	import Modal from '$lib/components/Modal.svelte';
-	import ModalButton from '$lib/components/ModalButton.svelte';
+	import Modal from '#lib/components/Modal.svelte';
+	import ModalButton from '#lib/components/ModalButton.svelte';
 
 	interface Props {
 		open: boolean;

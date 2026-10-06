@@ -14,9 +14,9 @@
  * part of this seam: it's a UI badge concern only.
  */
 
-import type { BackendOverride } from '$lib/api';
-import type { OpenRouterModel } from '$lib/openrouter';
-import { PORTS, baseUrl } from '$lib/ports';
+import type { BackendOverride } from '#lib/api.ts';
+import type { OpenRouterModel } from '#lib/openrouter.ts';
+import { PORTS, baseUrl } from '#lib/ports.ts';
 import {
 	getActiveLocalModelFilename,
 	getApiKeyValue,
@@ -27,7 +27,7 @@ import {
 	type QwenSamplingFamily,
 	type RemoteReasoningCaps,
 	type RemoteSamplingCaps
-} from '$lib/stores/settings';
+} from '#lib/stores/settings.ts';
 
 export type BackendKind = 'local' | 'remote' | 'openrouter';
 

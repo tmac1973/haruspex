@@ -16,12 +16,7 @@ const config = {
 	},
 	adapter: adapter({
 		fallback: 'index.html'
-	}),
-	// SvelteKit 3 replaced the built-in `$lib` with `#lib`. Every import here
-	// uses `$lib`, so it is kept as an explicit alias rather than rewritten.
-	alias: {
-		$lib: 'src/lib'
-	}
+	})
 };
 
 export default config;

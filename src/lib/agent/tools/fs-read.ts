@@ -248,7 +248,7 @@ registerTool({
 			);
 		}
 		try {
-			const { renderPdfPages } = await import('$lib/agent/pdf-render');
+			const { renderPdfPages } = await import('#lib/agent/pdf-render.ts');
 			const pages = await renderPdfPages(ctx.workingDir!, args.path as string);
 			for (let i = 0; i < pages.length; i++) {
 				ctx.pendingImages.push({

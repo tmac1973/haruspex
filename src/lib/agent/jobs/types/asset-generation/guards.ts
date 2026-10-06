@@ -6,8 +6,8 @@
  * retry or what escapes the working directory.
  */
 
-import { ImageBackendError } from '$lib/image/types';
-import { isAbortError } from '$lib/utils/error';
+import { ImageBackendError } from '#lib/image/types.ts';
+import { isAbortError } from '#lib/utils/error.ts';
 
 /** Absolute, drive-lettered, or climbing out of the working directory. */
 export function escapesWorkdir(p: string): boolean {

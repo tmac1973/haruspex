@@ -15,7 +15,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import type { DownloadProgress } from '$lib/ipc/gen/DownloadProgress';
+import type { DownloadProgress } from '#lib/ipc/gen/DownloadProgress.ts';
 
 export interface ActiveDownload {
 	key: string;

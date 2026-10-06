@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getCurrentRun, getQueueDepth } from '$lib/agent/jobs/runner.svelte';
+	import { getCurrentRun, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
 
 	// The way back to a live run while you browse other jobs. Shown by the
 	// Jobs tab whenever a run is going and its view is hidden.

@@ -5,7 +5,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 import { invoke } from '@tauri-apps/api/core';
-import type { JobRunSummary, JobRunWithSteps } from '$lib/stores/jobRuns.svelte';
+import type { JobRunSummary, JobRunWithSteps } from '#lib/stores/jobRuns.svelte.ts';
 
 const summary = (id: number, jobId = 1, overrides: Partial<JobRunSummary> = {}): JobRunSummary => ({
 	id,
@@ -34,7 +34,7 @@ describe('jobRuns store', () => {
 		const rows = [summary(2), summary(1)];
 		vi.mocked(invoke).mockResolvedValueOnce(rows);
 
-		const { loadRunsForJob, getRunsForJob } = await import('$lib/stores/jobRuns.svelte');
+		const { loadRunsForJob, getRunsForJob } = await import('#lib/stores/jobRuns.svelte.ts');
 		await loadRunsForJob(1);
 
 		expect(invoke).toHaveBeenCalledWith('db_list_job_runs', { jobId: 1 });
@@ -44,13 +44,13 @@ describe('jobRuns store', () => {
 	it('loadRunsForJob falls back to empty on error', async () => {
 		vi.mocked(invoke).mockRejectedValueOnce(new Error('db down'));
 
-		const { loadRunsForJob, getRunsForJob } = await import('$lib/stores/jobRuns.svelte');
+		const { loadRunsForJob, getRunsForJob } = await import('#lib/stores/jobRuns.svelte.ts');
 		await loadRunsForJob(9);
 		expect(getRunsForJob(9)).toEqual([]);
 	});
 
 	it('getRunsForJob returns [] for an unloaded job', async () => {
-		const { getRunsForJob } = await import('$lib/stores/jobRuns.svelte');
+		const { getRunsForJob } = await import('#lib/stores/jobRuns.svelte.ts');
 		expect(getRunsForJob(42)).toEqual([]);
 	});
 
@@ -59,7 +59,7 @@ describe('jobRuns store', () => {
 			.mockResolvedValueOnce(77) // db_create_job_run
 			.mockResolvedValueOnce([summary(77)]); // automatic loadRunsForJob refresh
 
-		const { createJobRun } = await import('$lib/stores/jobRuns.svelte');
+		const { createJobRun } = await import('#lib/stores/jobRuns.svelte.ts');
 		const id = await createJobRun(1, 'scheduled', ['a', 'b']);
 
 		expect(id).toBe(77);
@@ -73,14 +73,14 @@ describe('jobRuns store', () => {
 
 	it('createJobRun returns null on failure', async () => {
 		vi.mocked(invoke).mockRejectedValueOnce(new Error('insert failed'));
-		const { createJobRun } = await import('$lib/stores/jobRuns.svelte');
+		const { createJobRun } = await import('#lib/stores/jobRuns.svelte.ts');
 		const id = await createJobRun(1, 'manual', ['only']);
 		expect(id).toBeNull();
 	});
 
 	it('markRunStarted invokes db_mark_run_started with start time', async () => {
 		vi.mocked(invoke).mockResolvedValueOnce(undefined);
-		const { markRunStarted } = await import('$lib/stores/jobRuns.svelte');
+		const { markRunStarted } = await import('#lib/stores/jobRuns.svelte.ts');
 		await markRunStarted(5, 9999);
 		expect(invoke).toHaveBeenCalledWith('db_mark_run_started', { runId: 5, startedAt: 9999 });
 	});
@@ -90,7 +90,7 @@ describe('jobRuns store', () => {
 			.mockResolvedValueOnce(undefined) // db_mark_run_finished
 			.mockResolvedValueOnce([summary(5)]); // db_list_job_runs
 
-		const { markRunFinished } = await import('$lib/stores/jobRuns.svelte');
+		const { markRunFinished } = await import('#lib/stores/jobRuns.svelte.ts');
 		await markRunFinished(5, 1, 'failed', 12345, 'oops');
 
 		expect(invoke).toHaveBeenNthCalledWith(1, 'db_mark_run_finished', {
@@ -104,7 +104,7 @@ describe('jobRuns store', () => {
 
 	it('markRunStepStarted forwards run + ordering + rendered prompt', async () => {
 		vi.mocked(invoke).mockResolvedValueOnce(undefined);
-		const { markRunStepStarted } = await import('$lib/stores/jobRuns.svelte');
+		const { markRunStepStarted } = await import('#lib/stores/jobRuns.svelte.ts');
 		await markRunStepStarted(5, 2, 500, 'rendered prompt');
 		expect(invoke).toHaveBeenCalledWith('db_mark_run_step_started', {
 			runId: 5,
@@ -116,7 +116,7 @@ describe('jobRuns store', () => {
 
 	it('markRunStepFinished forwards status, output, error, finishedAt', async () => {
 		vi.mocked(invoke).mockResolvedValueOnce(undefined);
-		const { markRunStepFinished } = await import('$lib/stores/jobRuns.svelte');
+		const { markRunStepFinished } = await import('#lib/stores/jobRuns.svelte.ts');
 		await markRunStepFinished(5, 0, 'succeeded', 'out', null, 600);
 		expect(invoke).toHaveBeenCalledWith('db_mark_run_step_finished', {
 			runId: 5,
@@ -133,7 +133,7 @@ describe('jobRuns store', () => {
 
 	it('attaches the registered provider’s stats to the finish call', async () => {
 		vi.mocked(invoke).mockResolvedValueOnce(undefined);
-		const mod = await import('$lib/stores/jobRuns.svelte');
+		const mod = await import('#lib/stores/jobRuns.svelte.ts');
 		const stats = {
 			tokens_prompt: 41200,
 			tokens_completion: 3100,
@@ -189,7 +189,7 @@ describe('jobRuns store', () => {
 		};
 		vi.mocked(invoke).mockResolvedValueOnce(full);
 
-		const { getJobRun } = await import('$lib/stores/jobRuns.svelte');
+		const { getJobRun } = await import('#lib/stores/jobRuns.svelte.ts');
 		const result = await getJobRun(10);
 		expect(invoke).toHaveBeenCalledWith('db_get_job_run', { runId: 10 });
 		expect(result).toEqual(full);
@@ -197,13 +197,13 @@ describe('jobRuns store', () => {
 
 	it('getJobRun returns null on failure', async () => {
 		vi.mocked(invoke).mockRejectedValueOnce(new Error('not found'));
-		const { getJobRun } = await import('$lib/stores/jobRuns.svelte');
+		const { getJobRun } = await import('#lib/stores/jobRuns.svelte.ts');
 		expect(await getJobRun(999)).toBeNull();
 	});
 
 	it('recoverOrphanRuns invokes the command and returns the swept count', async () => {
 		vi.mocked(invoke).mockResolvedValueOnce(3);
-		const { recoverOrphanRuns } = await import('$lib/stores/jobRuns.svelte');
+		const { recoverOrphanRuns } = await import('#lib/stores/jobRuns.svelte.ts');
 		const swept = await recoverOrphanRuns();
 		expect(invoke).toHaveBeenCalledWith('db_recover_orphan_runs');
 		expect(swept).toBe(3);
@@ -211,7 +211,7 @@ describe('jobRuns store', () => {
 
 	it('recoverOrphanRuns returns 0 and swallows errors', async () => {
 		vi.mocked(invoke).mockRejectedValueOnce(new Error('db down'));
-		const { recoverOrphanRuns } = await import('$lib/stores/jobRuns.svelte');
+		const { recoverOrphanRuns } = await import('#lib/stores/jobRuns.svelte.ts');
 		const swept = await recoverOrphanRuns();
 		expect(swept).toBe(0);
 	});

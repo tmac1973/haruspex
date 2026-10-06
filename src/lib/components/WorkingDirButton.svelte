@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { open } from '@tauri-apps/plugin-dialog';
-	import { getWorkingDir, setWorkingDir } from '$lib/stores/chat.svelte';
+	import { getWorkingDir, setWorkingDir } from '#lib/stores/chat.svelte.ts';
 
 	interface Props {
 		/** Directory source. Omit to use the Chat tab's working-dir store. */

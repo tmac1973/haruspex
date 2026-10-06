@@ -4,7 +4,7 @@ import {
 	builtinsFor,
 	promptAppliesTo,
 	type PromptScope
-} from '$lib/agent/jobs/promptCatalog';
+} from '#lib/agent/jobs/promptCatalog.ts';
 
 describe('prompt catalog', () => {
 	it('every built-in has a unique id, a name, and a non-empty prompt', () => {

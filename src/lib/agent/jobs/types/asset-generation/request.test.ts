@@ -10,8 +10,8 @@ import {
 	wantsIsolation,
 	ISOLATION_NEGATIVE
 } from './request';
-import type { AssetEntry, AssetSpec, NormalizeProfile } from '$lib/assets/spec/types';
-import type { ImageBackendCapabilities } from '$lib/image/types';
+import type { AssetEntry, AssetSpec, NormalizeProfile } from '#lib/assets/spec/types.ts';
+import type { ImageBackendCapabilities } from '#lib/image/types.ts';
 
 function profile(over: Partial<NormalizeProfile> = {}): NormalizeProfile {
 	return {

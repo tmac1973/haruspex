@@ -13,7 +13,7 @@
 	import {
 		getPendingCommandApproval,
 		resolveCommandApproval
-	} from '$lib/stores/codeCommandApproval.svelte';
+	} from '#lib/stores/codeCommandApproval.svelte.ts';
 
 	const pending = $derived(getPendingCommandApproval());
 	const reasons = $derived(pending?.reasons.map((r) => r.label).join(', ') ?? '');

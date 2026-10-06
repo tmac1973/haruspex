@@ -11,9 +11,9 @@
  * drop them, which is the failure this whole layer is arranged to prevent.
  */
 
-import { getSettings } from '$lib/stores/settings';
-import { errMessage } from '$lib/utils/error';
-import { sleep } from '$lib/utils/async';
+import { getSettings } from '#lib/stores/settings.ts';
+import { errMessage } from '#lib/utils/error.ts';
+import { sleep } from '#lib/utils/async.ts';
 import {
 	ImageBackendError,
 	type ImageBackendCapabilities,

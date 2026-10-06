@@ -7,8 +7,8 @@
 		type ResponseFormat,
 		type ThemeMode,
 		type AccentColor
-	} from '$lib/stores/settings';
-	import ModeSelector from '$lib/components/ModeSelector.svelte';
+	} from '#lib/stores/settings.ts';
+	import ModeSelector from '#lib/components/ModeSelector.svelte';
 
 	let responseFormat = $state<ResponseFormat>(getSettings().responseFormat);
 	let theme = $state<ThemeMode>(getSettings().theme);

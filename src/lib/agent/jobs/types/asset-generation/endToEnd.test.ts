@@ -14,12 +14,12 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { escapesWorkdir } from './generate';
-import { validateAssetSpec } from '$lib/assets/spec/validate';
-import { parseAssetSpec } from '$lib/assets/spec/parse';
-import { renderAssetSpec } from '$lib/assets/spec/write';
+import { validateAssetSpec } from '#lib/assets/spec/validate.ts';
+import { parseAssetSpec } from '#lib/assets/spec/parse.ts';
+import { renderAssetSpec } from '#lib/assets/spec/write.ts';
 import { anchorPrompt, anchorNegativePrompt } from './anchor';
 import { entryPrompt } from './request';
-import type { AssetSpec, NormalizeProfile } from '$lib/assets/spec/types';
+import type { AssetSpec, NormalizeProfile } from '#lib/assets/spec/types.ts';
 
 declare const process: { env: Record<string, string | undefined> };
 

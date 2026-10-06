@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import type { DownloadProgress } from '$lib/ipc/gen/DownloadProgress';
-import { getSettings } from '$lib/stores/settings';
+import type { DownloadProgress } from '#lib/ipc/gen/DownloadProgress.ts';
+import { getSettings } from '#lib/stores/settings.ts';
 
 /**
  * Download `modelId`, forwarding each `download-progress` event to `onProgress`

@@ -12,7 +12,7 @@
  */
 
 import type { FindingCluster } from './auditCluster';
-import type { AuditVerdict } from '$lib/agent/tools/audit';
+import type { AuditVerdict } from '#lib/agent/tools/audit.ts';
 
 export interface VerifiedCluster extends FindingCluster {
 	verdict: AuditVerdict;

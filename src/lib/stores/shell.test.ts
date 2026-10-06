@@ -8,17 +8,17 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 const runShellTurn = vi.hoisted(() => vi.fn());
-vi.mock('$lib/shell/runShellTurn', () => ({ runShellTurn }));
+vi.mock('#lib/shell/runShellTurn.ts', () => ({ runShellTurn }));
 
-vi.mock('$lib/shell/system-prompt', () => ({
+vi.mock('#lib/shell/system-prompt.ts', () => ({
 	buildShellSystemPrompt: () => ({ role: 'system', content: 'sys' }),
 	// Code mode picks this builder instead; needed by the persistence tests,
 	// which all run with codeMode on.
 	buildShellCodeSystemPrompt: () => ({ role: 'system', content: 'code-sys' })
 }));
 
-vi.mock('$lib/stores/settings', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/stores/settings')>()),
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: () => ({
 		shellCodeModeDefault: false,
 		shellHistoryTurnsForPrompt: 3,
@@ -37,12 +37,12 @@ const dbMock = vi.hoisted(() => ({
 	dbLoadShellSession: vi.fn<(cwd: string) => Promise<string | null>>(async () => null),
 	dbDeleteShellSession: vi.fn(async () => {})
 }));
-vi.mock('$lib/stores/db', () => dbMock);
+vi.mock('#lib/stores/db.ts', () => dbMock);
 
-vi.mock('$lib/agent/tools', () => ({ getDisplayLabel: () => 'tool' }));
-vi.mock('$lib/agent/context-budget', () => ({ describeContextManaged: () => 'managed' }));
-vi.mock('$lib/debug-log', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/debug-log')>()),
+vi.mock('#lib/agent/tools/index.ts', () => ({ getDisplayLabel: () => 'tool' }));
+vi.mock('#lib/agent/context-budget.ts', () => ({ describeContextManaged: () => 'managed' }));
+vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
 	logDebug: vi.fn()
 }));
 
@@ -58,14 +58,14 @@ import {
 	getActiveShellSession,
 	getActiveShellId,
 	ensureShellSession
-} from '$lib/stores/shell.svelte';
+} from '#lib/stores/shell.svelte.ts';
 import {
 	approveSession,
 	isSessionApproved,
 	resetSessionApproval
-} from '$lib/stores/codeCommandApproval.svelte';
-import { setPtyBusy } from '$lib/stores/shellPtyBusy.svelte';
-import type { ChatMessage } from '$lib/api';
+} from '#lib/stores/codeCommandApproval.svelte.ts';
+import { setPtyBusy } from '#lib/stores/shellPtyBusy.svelte.ts';
+import type { ChatMessage } from '#lib/api.ts';
 
 beforeEach(() => {
 	// Drain the module-level registry between tests.

@@ -19,9 +19,9 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import type { ComfyModelFile } from '$lib/ipc/gen/ComfyModelFile';
-import type { ComfyModelSet } from '$lib/ipc/gen/ComfyModelSet';
-import type { ProxyConfig } from '$lib/ipc/gen/ProxyConfig';
+import type { ComfyModelFile } from '#lib/ipc/gen/ComfyModelFile.ts';
+import type { ComfyModelSet } from '#lib/ipc/gen/ComfyModelSet.ts';
+import type { ProxyConfig } from '#lib/ipc/gen/ProxyConfig.ts';
 import { ImageBackendError } from '../types';
 import * as api from './client';
 import { familyOf, hasCompanions, listDiffusionModels, type ModelFamily } from './families';

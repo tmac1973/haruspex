@@ -9,9 +9,9 @@ import {
 	RETRY_AMENDMENTS,
 	CHECK_LABELS
 } from './gate';
-import type { CheckName } from '$lib/ipc/gen/CheckName';
-import type { CheckReport } from '$lib/ipc/gen/CheckReport';
-import type { AssetEntry } from '$lib/assets/spec/types';
+import type { CheckName } from '#lib/ipc/gen/CheckName.ts';
+import type { CheckReport } from '#lib/ipc/gen/CheckReport.ts';
+import type { AssetEntry } from '#lib/assets/spec/types.ts';
 
 const ALL: CheckName[] = ['alpha_low', 'alpha_high', 'entropy', 'palette_distance'];
 

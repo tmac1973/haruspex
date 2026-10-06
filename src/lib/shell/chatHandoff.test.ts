@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { ChatMessage } from '$lib/api';
+import type { ChatMessage } from '#lib/api.ts';
 import {
 	prepareChatHandoff,
 	shellNameForConversation,

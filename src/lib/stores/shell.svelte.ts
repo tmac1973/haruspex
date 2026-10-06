@@ -17,37 +17,37 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { SvelteSet } from 'svelte/reactivity';
-import { isPtyBusy } from '$lib/stores/shellPtyBusy.svelte';
+import { isPtyBusy } from '#lib/stores/shellPtyBusy.svelte.ts';
 
-import { mergeLeadingSystemMessages, type ChatMessage } from '$lib/api';
-import type { ShellContextResponse } from '$lib/ipc/gen/ShellContextResponse';
-import type { InferenceTicket } from '$lib/agent/inferenceQueue.svelte';
-import type { SearchStep, AgentStopReason } from '$lib/agent/loop';
-import { markStepDone, markStepProgress, newRunningStep } from '$lib/agent/steps';
-import { describeContextManaged } from '$lib/agent/context-budget';
-import { logDebug } from '$lib/debug-log';
-import { getSettings } from '$lib/stores/settings';
-import { resolveBackendDescriptor } from '$lib/inference/descriptor';
-import { remapIndexedRecords } from '$lib/agent/compaction';
-import { computeMessageStats, type MessageStats } from '$lib/stores/chat.svelte';
-import { errMessage } from '$lib/utils/error';
-import { formatDuration } from '$lib/utils/format';
+import { mergeLeadingSystemMessages, type ChatMessage } from '#lib/api.ts';
+import type { ShellContextResponse } from '#lib/ipc/gen/ShellContextResponse.ts';
+import type { InferenceTicket } from '#lib/agent/inferenceQueue.svelte.ts';
+import type { SearchStep, AgentStopReason } from '#lib/agent/loop.ts';
+import { markStepDone, markStepProgress, newRunningStep } from '#lib/agent/steps.ts';
+import { describeContextManaged } from '#lib/agent/context-budget.ts';
+import { logDebug } from '#lib/debug-log.ts';
+import { getSettings } from '#lib/stores/settings.ts';
+import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
+import { remapIndexedRecords } from '#lib/agent/compaction.ts';
+import { computeMessageStats, type MessageStats } from '#lib/stores/chat.svelte.ts';
+import { errMessage } from '#lib/utils/error.ts';
+import { formatDuration } from '#lib/utils/format.ts';
 import {
 	buildShellSystemPrompt,
 	buildShellCodeSystemPrompt,
 	type ShellSessionContext
-} from '$lib/shell/system-prompt';
-import { classifyNestedSession, type NestedSession } from '$lib/shell/nestedSession';
-import { resetSessionApproval } from '$lib/stores/codeCommandApproval.svelte';
-import { runShellTurn } from '$lib/shell/runShellTurn';
-import { truncateCapturedOutput } from '$lib/shell/truncate';
+} from '#lib/shell/system-prompt.ts';
+import { classifyNestedSession, type NestedSession } from '#lib/shell/nestedSession.ts';
+import { resetSessionApproval } from '#lib/stores/codeCommandApproval.svelte.ts';
+import { runShellTurn } from '#lib/shell/runShellTurn.ts';
+import { truncateCapturedOutput } from '#lib/shell/truncate.ts';
 import {
 	encodeCodeSession,
 	decodeCodeSession,
 	countTurns,
 	type CodeSessionState
-} from '$lib/shell/codeSession';
-import { dbSaveShellSession, dbLoadShellSession, dbDeleteShellSession } from '$lib/stores/db';
+} from '#lib/shell/codeSession.ts';
+import { dbSaveShellSession, dbLoadShellSession, dbDeleteShellSession } from '#lib/stores/db.ts';
 import {
 	setWatchCompletionHandler,
 	peekCompletedWatches,
@@ -55,7 +55,7 @@ import {
 	clearWatchesForSession,
 	readWatchLog,
 	type BackgroundWatch
-} from '$lib/shell/backgroundWatch';
+} from '#lib/shell/backgroundWatch.ts';
 
 interface CapturedRegion {
 	commandLine: string;

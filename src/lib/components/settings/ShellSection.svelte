@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { getSettings, updateSettings } from '$lib/stores/settings';
-	import { clampInt } from '$lib/utils/clampInt';
+	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
+	import { clampInt } from '#lib/utils/clampInt.ts';
 
 	let shellBinary = $state(getSettings().shellBinary);
 	let shellHistoryTurnsForPrompt = $state(getSettings().shellHistoryTurnsForPrompt);

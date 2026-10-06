@@ -1,7 +1,7 @@
 <script lang="ts">
-	import Tooltip from '$lib/components/Tooltip.svelte';
-	import PromptCatalog from '$lib/components/jobs/PromptCatalog.svelte';
-	import type { JobStepInput } from '$lib/stores/jobs.svelte';
+	import Tooltip from '#lib/components/Tooltip.svelte';
+	import PromptCatalog from '#lib/components/jobs/PromptCatalog.svelte';
+	import type { JobStepInput } from '#lib/stores/jobs.svelte.ts';
 
 	// The research-specific section of the job editor: the step-pipeline list
 	// (see JobTypeEditorProps — research has no type config, so only `steps`

@@ -1,12 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import type { SidecarStatus } from '$lib/ipc/gen/SidecarStatus';
-import type { ContextBackoffState } from '$lib/ipc/gen/ContextBackoffState';
-import { PORTS } from '$lib/ports';
-import { DEFAULT_CONTEXT_SIZE, getSettings, updateSettings } from '$lib/stores/settings';
-import { setContextSize as setIndicatorContextSize } from '$lib/stores/context.svelte';
-import { showToast } from '$lib/stores/toasts.svelte';
-import { getRunningCount } from '$lib/agent/inferenceQueue.svelte';
+import type { SidecarStatus } from '#lib/ipc/gen/SidecarStatus.ts';
+import type { ContextBackoffState } from '#lib/ipc/gen/ContextBackoffState.ts';
+import { PORTS } from '#lib/ports.ts';
+import { DEFAULT_CONTEXT_SIZE, getSettings, updateSettings } from '#lib/stores/settings.ts';
+import { setContextSize as setIndicatorContextSize } from '#lib/stores/context.svelte.ts';
+import { showToast } from '#lib/stores/toasts.svelte.ts';
+import { getRunningCount } from '#lib/agent/inferenceQueue.svelte.ts';
 
 /**
  * Server status visible to the UI. The first four mirror the Rust-side
@@ -19,7 +19,7 @@ import { getRunningCount } from '$lib/agent/inferenceQueue.svelte';
  *
  * `'remote'` is strictly a UI badge concern: no request-path or agent
  * code may branch on server status or backend mode strings — that all
- * goes through `resolveBackendDescriptor` in `$lib/inference/descriptor`.
+ * goes through `resolveBackendDescriptor` in `#lib/inference/descriptor`.
  */
 export type ServerStatusType = 'stopped' | 'starting' | 'ready' | 'error' | 'remote';
 

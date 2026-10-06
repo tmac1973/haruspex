@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import ServerStatusBadge from './ServerStatusBadge.svelte';
-import { getServerState, type ServerState } from '$lib/stores/llamaServer.svelte';
+import { getServerState, type ServerState } from '#lib/stores/llamaServer.svelte.ts';
 
 // The real store module imports Tauri IPC and event listeners; the badge
 // only needs getServerState(), so mock the whole module with just that.
-vi.mock('$lib/stores/llamaServer.svelte', () => ({
+vi.mock('#lib/stores/llamaServer.svelte.ts', () => ({
 	getServerState: vi.fn()
 }));
 

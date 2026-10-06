@@ -7,9 +7,9 @@
  * lives here.
  */
 
-import type { ImageRow } from '$lib/ipc/gen/ImageRow';
-import type { ResolvedImages } from '$lib/markdown';
-import type { SearchStep } from '$lib/agent/loop';
+import type { ImageRow } from '#lib/ipc/gen/ImageRow.ts';
+import type { ResolvedImages } from '#lib/markdown.ts';
+import type { SearchStep } from '#lib/agent/loop.ts';
 import { captionFor } from './caption';
 import { imageUrlsInText, stripCandidates } from './eligible';
 import { getResolvedImages } from './resolve.svelte';

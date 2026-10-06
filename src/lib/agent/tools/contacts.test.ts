@@ -9,14 +9,14 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 // Side-effect import registers the contact tools in the shared registry.
-import '$lib/agent/tools/contacts';
-import { formatBrief, formatFull, formatResult } from '$lib/agent/tools/contacts';
-import { executeTool, getToolSchemas } from '$lib/agent/tools/registry';
-import { setDavAccounts } from '$lib/stores/settings';
-import type { DavAccount } from '$lib/ipc/gen/DavAccount';
-import type { Contact } from '$lib/ipc/gen/Contact';
-import type { ContactQueryResult } from '$lib/ipc/gen/ContactQueryResult';
-import type { ToolContext } from '$lib/agent/tools/types';
+import '#lib/agent/tools/contacts.ts';
+import { formatBrief, formatFull, formatResult } from '#lib/agent/tools/contacts.ts';
+import { executeTool, getToolSchemas } from '#lib/agent/tools/registry.ts';
+import { setDavAccounts } from '#lib/stores/settings.ts';
+import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
+import type { Contact } from '#lib/ipc/gen/Contact.ts';
+import type { ContactQueryResult } from '#lib/ipc/gen/ContactQueryResult.ts';
+import type { ToolContext } from '#lib/agent/tools/types.ts';
 
 const ctx: ToolContext = {
 	workingDir: null,

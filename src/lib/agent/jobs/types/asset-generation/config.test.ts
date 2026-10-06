@@ -6,7 +6,7 @@ import {
 	MAX_TARGET_SIZE,
 	MIN_TARGET_SIZE
 } from './config';
-import { DEFAULT_SPEC_PATH } from '$lib/assets/spec/paths';
+import { DEFAULT_SPEC_PATH } from '#lib/assets/spec/paths.ts';
 
 const cfg = (json: string) => parseAssetGenerationConfig(json);
 

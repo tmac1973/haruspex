@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
-import type { MemoryMeta } from '$lib/ipc/gen/MemoryMeta';
+import type { MemoryMeta } from '#lib/ipc/gen/MemoryMeta.ts';
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
-vi.mock('$lib/stores/memory.svelte', () => ({ refreshMemoryCount: vi.fn() }));
+vi.mock('#lib/stores/memory.svelte.ts', () => ({ refreshMemoryCount: vi.fn() }));
 
 import MemoryList from './MemoryList.svelte';
 

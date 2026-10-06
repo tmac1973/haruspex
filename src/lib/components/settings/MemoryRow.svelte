@@ -8,7 +8,7 @@
 	 * a handful of bad extractions tedious enough that people stop doing it.
 	 * Clear-all is the destructive action that gets a confirm.
 	 */
-	import type { MemoryMeta } from '$lib/ipc/gen/MemoryMeta';
+	import type { MemoryMeta } from '#lib/ipc/gen/MemoryMeta.ts';
 
 	interface Props {
 		memory: MemoryMeta;

@@ -18,7 +18,7 @@
  *     nobody verified.
  */
 
-import type { ImageRow } from '$lib/ipc/gen/ImageRow';
+import type { ImageRow } from '#lib/ipc/gen/ImageRow.ts';
 
 /** Human-readable licence names for the codes `image_cache::license` emits. */
 const LICENSE_LABELS: Record<string, string> = {

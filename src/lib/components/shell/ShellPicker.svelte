@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
-	import { getSettings, updateSettings } from '$lib/stores/settings';
-	import type { ShellCatalogEntry } from '$lib/ipc/gen/ShellCatalogEntry';
+	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
+	import type { ShellCatalogEntry } from '#lib/ipc/gen/ShellCatalogEntry.ts';
 
 	// Called after the user picks an installed shell (and the selection has been
 	// persisted) so the caller can restart the active session as that shell.

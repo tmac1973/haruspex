@@ -7,7 +7,7 @@
 	 * is whether the *assistant* may ask for the screen on its own, which is a
 	 * different thing and the one worth a switch.
 	 */
-	import { getSettings, updateSettings } from '$lib/stores/settings';
+	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 
 	let enabled = $state(getSettings().screenCaptureEnabled);
 

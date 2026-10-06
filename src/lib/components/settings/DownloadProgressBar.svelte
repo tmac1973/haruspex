@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { DownloadProgress } from '$lib/ipc/gen/DownloadProgress';
-	import { formatBytes, formatBytesPerSecond } from '$lib/utils/format';
+	import type { DownloadProgress } from '#lib/ipc/gen/DownloadProgress.ts';
+	import { formatBytes, formatBytesPerSecond } from '#lib/utils/format.ts';
 
 	// One download's progress: a bar, what it is doing, how much and how fast.
 	let {

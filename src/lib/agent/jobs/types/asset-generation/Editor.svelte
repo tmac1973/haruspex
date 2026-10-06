@@ -1,8 +1,8 @@
 <script lang="ts">
-	import Tooltip from '$lib/components/Tooltip.svelte';
+	import Tooltip from '#lib/components/Tooltip.svelte';
 	import type { AssetGenerationEditorState } from './definition';
 	import ReviewAssets from './ReviewAssets.svelte';
-	import { DEFAULT_SPEC_PATH } from '$lib/assets/spec/paths';
+	import { DEFAULT_SPEC_PATH } from '#lib/assets/spec/paths.ts';
 
 	// The asset-generation section of the job editor (see JobTypeEditorProps).
 	// The job's working dir is the project the assets are written into.
@@ -13,7 +13,7 @@
 		jobId = 'new'
 	}: {
 		config: Record<string, unknown>;
-		steps?: import('$lib/stores/jobs.svelte').JobStepInput[];
+		steps?: import('#lib/stores/jobs.svelte.ts').JobStepInput[];
 		workingDir?: string;
 		jobId?: number | 'new';
 	} = $props();

@@ -6,19 +6,19 @@
 		DEFAULT_SEARXNG_URL,
 		type AppSettings,
 		type SearchProvider
-	} from '$lib/stores/settings';
+	} from '#lib/stores/settings.ts';
 	import { invoke } from '@tauri-apps/api/core';
 	import { onMount } from 'svelte';
 	import { listen } from '@tauri-apps/api/event';
-	import type { DetectedBrowser } from '$lib/ipc/gen/DetectedBrowser';
-	import type { BrowserDetectionFailure } from '$lib/ipc/gen/BrowserDetectionFailure';
-	import type { BrowserFallbackState } from '$lib/ipc/gen/BrowserFallbackState';
-	import { removeBraveApiKey, saveBraveApiKey } from '$lib/stores/searchSecrets';
+	import type { DetectedBrowser } from '#lib/ipc/gen/DetectedBrowser.ts';
+	import type { BrowserDetectionFailure } from '#lib/ipc/gen/BrowserDetectionFailure.ts';
+	import type { BrowserFallbackState } from '#lib/ipc/gen/BrowserFallbackState.ts';
+	import { removeBraveApiKey, saveBraveApiKey } from '#lib/stores/searchSecrets.ts';
 	import {
 		savedSecretPlaceholder,
 		secretStoreKind,
 		type SecretStoreKind
-	} from '$lib/stores/secrets';
+	} from '#lib/stores/secrets.ts';
 
 	let searchProvider = $state<SearchProvider>(getSettings().searchProvider);
 	let searchRecency = $state(getSettings().searchRecency);

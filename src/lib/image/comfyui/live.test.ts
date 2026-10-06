@@ -17,7 +17,7 @@
  */
 
 import { describe, it, expect, afterAll } from 'vitest';
-import { getSettings, updateSettings } from '$lib/stores/settings';
+import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 import { comfyUiBackend } from './backend';
 
 declare const process: { env: Record<string, string | undefined> };

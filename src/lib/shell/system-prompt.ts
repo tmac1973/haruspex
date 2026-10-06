@@ -14,11 +14,11 @@
  *    in the UI, so suggested commands should go in fenced blocks.
  */
 
-import type { ChatMessage } from '$lib/api';
-import type { SessionContext } from '$lib/ipc/gen/SessionContext';
-import { getSettings } from '$lib/stores/settings';
+import type { ChatMessage } from '#lib/api.ts';
+import type { SessionContext } from '#lib/ipc/gen/SessionContext.ts';
+import { getSettings } from '#lib/stores/settings.ts';
 import { nestedSessionPromptBlock, type NestedSession } from './nestedSession';
-import { formatTodayLong } from '$lib/utils/format';
+import { formatTodayLong } from '#lib/utils/format.ts';
 
 /** Re-export of the ts-rs-generated Rust `SessionContext` under the
  *  name this module historically used. */

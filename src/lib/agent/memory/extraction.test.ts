@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ConversationWithMessages } from '$lib/ipc/gen/ConversationWithMessages';
+import type { ConversationWithMessages } from '#lib/ipc/gen/ConversationWithMessages.ts';
 
 const mocks = vi.hoisted(() => ({
 	invoke: vi.fn(),
@@ -8,18 +8,18 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
-vi.mock('$lib/debug-log', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/debug-log')>()),
+vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
 	logDebug: vi.fn()
 }));
-vi.mock('$lib/agent/runEphemeralTurn', () => ({ runEphemeralTurn: mocks.runEphemeralTurn }));
-vi.mock('$lib/agent/inferenceQueue.svelte', () => ({
+vi.mock('#lib/agent/runEphemeralTurn.ts', () => ({ runEphemeralTurn: mocks.runEphemeralTurn }));
+vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => ({
 	withInferenceSlot: async <T>(_opts: unknown, fn: () => Promise<T>): Promise<T> => fn()
 }));
-vi.mock('$lib/inference/descriptor', () => ({
+vi.mock('#lib/inference/descriptor.ts', () => ({
 	resolveBackendDescriptor: () => ({ contextSize: 32768 })
 }));
-vi.mock('$lib/stores/memory.svelte', () => ({
+vi.mock('#lib/stores/memory.svelte.ts', () => ({
 	memoryActive: mocks.memoryActive,
 	refreshMemoryCount: vi.fn()
 }));

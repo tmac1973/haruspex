@@ -3,7 +3,7 @@ import {
 	askFileConflict,
 	getPendingConflict,
 	resolveConflict
-} from '$lib/stores/fileConflict.svelte';
+} from '#lib/stores/fileConflict.svelte.ts';
 
 describe('fileConflict store', () => {
 	beforeEach(() => {

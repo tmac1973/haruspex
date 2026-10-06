@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectPaywall, RUST_PAYWALL_SENTINEL } from '$lib/agent/paywall';
+import { detectPaywall, RUST_PAYWALL_SENTINEL } from '#lib/agent/paywall.ts';
 
 describe('detectPaywall', () => {
 	it('picks up the Rust-emitted paywall sentinel', () => {

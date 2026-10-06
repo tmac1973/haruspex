@@ -15,15 +15,15 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import type { ConversationWithMessages } from '$lib/ipc/gen/ConversationWithMessages';
-import type { MemoryCursor } from '$lib/ipc/gen/MemoryCursor';
-import type { MemoryHit } from '$lib/ipc/gen/MemoryHit';
-import { runEphemeralTurn } from '$lib/agent/runEphemeralTurn';
-import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
-import { resolveBackendDescriptor } from '$lib/inference/descriptor';
-import { parseSubmittedMemories, SUBMIT_MEMORIES_TOOL } from '$lib/agent/tools/memory';
-import { memoryActive, refreshMemoryCount } from '$lib/stores/memory.svelte';
-import { logDebug } from '$lib/debug-log';
+import type { ConversationWithMessages } from '#lib/ipc/gen/ConversationWithMessages.ts';
+import type { MemoryCursor } from '#lib/ipc/gen/MemoryCursor.ts';
+import type { MemoryHit } from '#lib/ipc/gen/MemoryHit.ts';
+import { runEphemeralTurn } from '#lib/agent/runEphemeralTurn.ts';
+import { withInferenceSlot } from '#lib/agent/inferenceQueue.svelte.ts';
+import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
+import { parseSubmittedMemories, SUBMIT_MEMORIES_TOOL } from '#lib/agent/tools/memory.ts';
+import { memoryActive, refreshMemoryCount } from '#lib/stores/memory.svelte.ts';
+import { logDebug } from '#lib/debug-log.ts';
 import { extractionSystemPrompt, extractionUserMessage } from './extractionPrompt';
 
 /**

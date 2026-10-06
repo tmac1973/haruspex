@@ -5,16 +5,16 @@
 		getRunsForJob,
 		loadRunsForJob,
 		type JobRunSummary
-	} from '$lib/stores/jobRuns.svelte';
-	import { formatDuration } from '$lib/utils/format';
-	import { activatable } from '$lib/actions/activatable';
-	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	} from '#lib/stores/jobRuns.svelte.ts';
+	import { formatDuration } from '#lib/utils/format.ts';
+	import { activatable } from '#lib/actions/activatable.ts';
+	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 	import {
 		getCurrentRun,
 		getRunningRunId,
 		removeQueuedRun,
 		removeQueuedRunsForJob
-	} from '$lib/agent/jobs/runner.svelte';
+	} from '#lib/agent/jobs/runner.svelte.ts';
 
 	interface Props {
 		jobId: number;

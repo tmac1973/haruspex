@@ -6,11 +6,11 @@ import {
 	deleteConversation,
 	getConversations,
 	renameConversation
-} from '$lib/stores/chat.svelte';
+} from '#lib/stores/chat.svelte.ts';
 
 // The real chat store pulls in Tauri IPC; the sidebar only needs the
 // handful of functions it imports, so mock the whole module.
-vi.mock('$lib/stores/chat.svelte', () => ({
+vi.mock('#lib/stores/chat.svelte.ts', () => ({
 	clearAllConversations: vi.fn(),
 	createConversation: vi.fn(),
 	deleteConversation: vi.fn(),

@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue(null) }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 
-vi.mock('$lib/agent/jobs/runner.svelte', () => ({
+vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({
 	enqueue: mocks.enqueue,
 	getCurrentRun: () => mocks.currentRun,
 	getQueueDepth: () => 0,
@@ -46,8 +46,8 @@ const savedJob = {
 	steps: [{ prompt: 'Summarize the news', deep_research: false }]
 };
 
-vi.mock('$lib/stores/jobs.svelte', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/stores/jobs.svelte')>();
+vi.mock('#lib/stores/jobs.svelte.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/stores/jobs.svelte.ts')>();
 	return {
 		...actual,
 		getJobs: () => [savedJob, { ...savedJob, id: 8, name: 'Other job' }],

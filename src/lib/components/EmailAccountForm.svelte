@@ -17,15 +17,15 @@
 	 */
 	import { invoke } from '@tauri-apps/api/core';
 	import { untrack } from 'svelte';
-	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
-	import type { EmailAccount, EmailProviderId, EmailTlsMode } from '$lib/stores/settings';
-	import type { EmailProviderPreset } from '$lib/ipc/gen/EmailProviderPreset';
-	import { withStoredPassword } from '$lib/stores/emailSecrets';
+	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
+	import type { EmailAccount, EmailProviderId, EmailTlsMode } from '#lib/stores/settings.ts';
+	import type { EmailProviderPreset } from '#lib/ipc/gen/EmailProviderPreset.ts';
+	import { withStoredPassword } from '#lib/stores/emailSecrets.ts';
 	import {
 		savedSecretPlaceholder,
 		secretStoreKind,
 		type SecretStoreKind
-	} from '$lib/stores/secrets';
+	} from '#lib/stores/secrets.ts';
 
 	type ProviderPreset = EmailProviderPreset;
 

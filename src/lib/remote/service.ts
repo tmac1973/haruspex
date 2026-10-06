@@ -7,9 +7,9 @@
  * unrelated does not drop live guests mid-answer.
  */
 
-import { getSettings } from '$lib/stores/settings';
-import { logDebug } from '$lib/debug-log';
-import { getRemoteToken, remoteToken } from '$lib/stores/remoteSecrets';
+import { getSettings } from '#lib/stores/settings.ts';
+import { logDebug } from '#lib/debug-log.ts';
+import { getRemoteToken, remoteToken } from '#lib/stores/remoteSecrets.ts';
 
 import { generateRemoteToken, startRemoteServer, stopRemoteServer, type RemoteStatus } from './api';
 import { startRemoteDriver } from './driver';

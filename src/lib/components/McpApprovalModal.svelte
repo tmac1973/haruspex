@@ -15,7 +15,7 @@
 	 */
 	import Modal from './Modal.svelte';
 	import ModalButton from './ModalButton.svelte';
-	import { getPendingMcpApproval, resolveMcpApproval } from '$lib/stores/mcpApproval.svelte';
+	import { getPendingMcpApproval, resolveMcpApproval } from '#lib/stores/mcpApproval.svelte.ts';
 
 	const pending = $derived(getPendingMcpApproval());
 

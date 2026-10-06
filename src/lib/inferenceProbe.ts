@@ -11,13 +11,13 @@
  * live here.
  */
 import { invoke } from '@tauri-apps/api/core';
-import { getApiKeyValue } from '$lib/stores/settings';
-import { apiKeysReady } from '$lib/stores/apiKeySecrets';
+import { getApiKeyValue } from '#lib/stores/settings.ts';
+import { apiKeysReady } from '#lib/stores/apiKeySecrets.ts';
 import type {
 	InferenceBackendKind,
 	RemoteReasoningCaps,
 	RemoteSamplingCaps
-} from '$lib/stores/settings';
+} from '#lib/stores/settings.ts';
 
 /** A single model entry as normalized by `probe_inference_server`. */
 export interface NormalizedModel {

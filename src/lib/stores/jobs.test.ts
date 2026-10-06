@@ -13,7 +13,7 @@ import {
 	type JobSummary,
 	type JobWithSteps,
 	type JobInput
-} from '$lib/stores/jobs.svelte';
+} from '#lib/stores/jobs.svelte.ts';
 
 const baseInput: JobInput = {
 	name: 'Test job',
@@ -185,7 +185,7 @@ describe('jobs store CRUD', () => {
 		const rows = [summary(1, 'A'), summary(2, 'B')];
 		vi.mocked(invoke).mockResolvedValueOnce(rows);
 
-		const { loadJobs, getJobs, isJobsLoaded } = await import('$lib/stores/jobs.svelte');
+		const { loadJobs, getJobs, isJobsLoaded } = await import('#lib/stores/jobs.svelte.ts');
 		await loadJobs();
 
 		expect(invoke).toHaveBeenCalledWith('db_list_jobs');
@@ -196,7 +196,7 @@ describe('jobs store CRUD', () => {
 	it('loadJobs returns an empty list when the invoke fails', async () => {
 		vi.mocked(invoke).mockRejectedValueOnce(new Error('db gone'));
 
-		const { loadJobs, getJobs, isJobsLoaded } = await import('$lib/stores/jobs.svelte');
+		const { loadJobs, getJobs, isJobsLoaded } = await import('#lib/stores/jobs.svelte.ts');
 		await loadJobs();
 
 		expect(getJobs()).toEqual([]);
@@ -208,7 +208,7 @@ describe('jobs store CRUD', () => {
 			.mockResolvedValueOnce(42) // db_create_job
 			.mockResolvedValueOnce([summary(42, 'Test job')]); // db_list_jobs
 
-		const { createJob, getJobs } = await import('$lib/stores/jobs.svelte');
+		const { createJob, getJobs } = await import('#lib/stores/jobs.svelte.ts');
 		const id = await createJob(baseInput);
 
 		expect(id).toBe(42);
@@ -220,7 +220,7 @@ describe('jobs store CRUD', () => {
 	it('createJob returns null when the invoke fails', async () => {
 		vi.mocked(invoke).mockRejectedValueOnce(new Error('insert failed'));
 
-		const { createJob } = await import('$lib/stores/jobs.svelte');
+		const { createJob } = await import('#lib/stores/jobs.svelte.ts');
 		const id = await createJob(baseInput);
 
 		expect(id).toBeNull();
@@ -231,7 +231,7 @@ describe('jobs store CRUD', () => {
 			.mockResolvedValueOnce(undefined) // db_update_job
 			.mockResolvedValueOnce([summary(7, 'Renamed')]); // db_list_jobs
 
-		const { updateJob, getJobs } = await import('$lib/stores/jobs.svelte');
+		const { updateJob, getJobs } = await import('#lib/stores/jobs.svelte.ts');
 		const renamedInput = { ...baseInput, name: 'Renamed' };
 		const ok = await updateJob(7, renamedInput);
 
@@ -245,7 +245,7 @@ describe('jobs store CRUD', () => {
 			.mockResolvedValueOnce(undefined) // db_delete_job
 			.mockResolvedValueOnce([]); // db_list_jobs
 
-		const { deleteJob, getJobs } = await import('$lib/stores/jobs.svelte');
+		const { deleteJob, getJobs } = await import('#lib/stores/jobs.svelte.ts');
 		const ok = await deleteJob(3);
 
 		expect(ok).toBe(true);
@@ -278,7 +278,7 @@ describe('jobs store CRUD', () => {
 		};
 		vi.mocked(invoke).mockResolvedValueOnce(full);
 
-		const { getJob } = await import('$lib/stores/jobs.svelte');
+		const { getJob } = await import('#lib/stores/jobs.svelte.ts');
 		const result = await getJob(1);
 
 		expect(invoke).toHaveBeenCalledWith('db_get_job', { id: 1 });
@@ -288,7 +288,7 @@ describe('jobs store CRUD', () => {
 	it('getJob returns null on failure', async () => {
 		vi.mocked(invoke).mockRejectedValueOnce(new Error('not found'));
 
-		const { getJob } = await import('$lib/stores/jobs.svelte');
+		const { getJob } = await import('#lib/stores/jobs.svelte.ts');
 		const result = await getJob(999);
 		expect(result).toBeNull();
 	});
@@ -298,7 +298,7 @@ describe('jobs store CRUD', () => {
 			.mockResolvedValueOnce(undefined) // db_replace_job_steps
 			.mockResolvedValueOnce([summary(5, 'After step replace', { step_count: 2 })]); // db_list_jobs
 
-		const { replaceJobSteps, getJobs } = await import('$lib/stores/jobs.svelte');
+		const { replaceJobSteps, getJobs } = await import('#lib/stores/jobs.svelte.ts');
 		const steps = [
 			{ prompt: 'step a', deep_research: false },
 			{ prompt: 'step b', deep_research: true }
@@ -318,7 +318,7 @@ describe('jobs store CRUD', () => {
 
 	it('replaceJobSteps returns false on failure', async () => {
 		vi.mocked(invoke).mockRejectedValueOnce(new Error('boom'));
-		const { replaceJobSteps } = await import('$lib/stores/jobs.svelte');
+		const { replaceJobSteps } = await import('#lib/stores/jobs.svelte.ts');
 		const ok = await replaceJobSteps(5, [{ prompt: 'x', deep_research: false }]);
 		expect(ok).toBe(false);
 	});
@@ -326,7 +326,7 @@ describe('jobs store CRUD', () => {
 	it('listDueJobs forwards nowMs and returns the rows', async () => {
 		const rows = [summary(1, 'A')];
 		vi.mocked(invoke).mockResolvedValueOnce(rows);
-		const { listDueJobs } = await import('$lib/stores/jobs.svelte');
+		const { listDueJobs } = await import('#lib/stores/jobs.svelte.ts');
 		const result = await listDueJobs(12345);
 		expect(invoke).toHaveBeenCalledWith('db_list_due_jobs', { nowMs: 12345 });
 		expect(result).toEqual(rows);
@@ -334,13 +334,13 @@ describe('jobs store CRUD', () => {
 
 	it('listDueJobs returns [] on failure', async () => {
 		vi.mocked(invoke).mockRejectedValueOnce(new Error('db down'));
-		const { listDueJobs } = await import('$lib/stores/jobs.svelte');
+		const { listDueJobs } = await import('#lib/stores/jobs.svelte.ts');
 		expect(await listDueJobs(0)).toEqual([]);
 	});
 
 	it('setJobNextDueAt forwards jobId + nextDueAt', async () => {
 		vi.mocked(invoke).mockResolvedValueOnce(undefined);
-		const { setJobNextDueAt } = await import('$lib/stores/jobs.svelte');
+		const { setJobNextDueAt } = await import('#lib/stores/jobs.svelte.ts');
 		await setJobNextDueAt(7, 99999);
 		expect(invoke).toHaveBeenCalledWith('db_set_job_next_due_at', {
 			jobId: 7,
@@ -350,7 +350,7 @@ describe('jobs store CRUD', () => {
 
 	it('setJobNextDueAt passes null through', async () => {
 		vi.mocked(invoke).mockResolvedValueOnce(undefined);
-		const { setJobNextDueAt } = await import('$lib/stores/jobs.svelte');
+		const { setJobNextDueAt } = await import('#lib/stores/jobs.svelte.ts');
 		await setJobNextDueAt(7, null);
 		expect(invoke).toHaveBeenCalledWith('db_set_job_next_due_at', {
 			jobId: 7,
@@ -381,7 +381,7 @@ describe('jobs store CRUD', () => {
 			if (cmd === 'db_list_jobs') return [];
 			return undefined;
 		});
-		const { duplicateJob } = await import('$lib/stores/jobs.svelte');
+		const { duplicateJob } = await import('#lib/stores/jobs.svelte.ts');
 		expect(await duplicateJob(24)).toBe(31);
 		const createArgs = vi.mocked(invoke).mock.calls.find((c) => c[0] === 'db_create_job')?.[1] as {
 			input: JobInput;
@@ -407,7 +407,7 @@ describe('jobs store CRUD', () => {
 
 	it('duplicateJob returns null when the job is gone', async () => {
 		vi.mocked(invoke).mockResolvedValueOnce(null);
-		const { duplicateJob } = await import('$lib/stores/jobs.svelte');
+		const { duplicateJob } = await import('#lib/stores/jobs.svelte.ts');
 		expect(await duplicateJob(99)).toBeNull();
 		expect(invoke).not.toHaveBeenCalledWith('db_create_job', expect.anything());
 	});

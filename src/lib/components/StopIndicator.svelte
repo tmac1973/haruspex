@@ -5,7 +5,7 @@
 	 * model finishing on its own — so the user can tell "it was interrupted"
 	 * apart from "it gave up", and resume with one click.
 	 */
-	import type { AgentStopReason } from '$lib/agent/loop';
+	import type { AgentStopReason } from '#lib/agent/loop.ts';
 
 	interface Props {
 		reason: AgentStopReason;

@@ -8,20 +8,20 @@
  * for pictures; this is for a project's files.
  */
 import { invoke } from '@tauri-apps/api/core';
-import { errMessage } from '$lib/utils/error';
+import { errMessage } from '#lib/utils/error.ts';
 import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
 import { resolveShellPath, toolInvokeError, wslDistroArg } from './_helpers';
 import { localWriteBlocked } from './nested-session';
 import { MAX_PENDING_IMAGES } from './fs-read';
-import { extractPalette } from '$lib/assets/normalize';
+import { extractPalette } from '#lib/assets/normalize.ts';
 import {
 	DEFAULT_SIZE,
 	makeSingleAsset,
 	type SingleAssetInput,
 	type SingleKind
-} from '$lib/assets/single';
-import { ImageBackendError } from '$lib/image/types';
+} from '#lib/assets/single.ts';
+import { ImageBackendError } from '#lib/image/types.ts';
 
 const KINDS: SingleKind[] = ['sprite', 'icon', 'texture', 'image'];
 

@@ -7,13 +7,13 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import type { ResolvedToolCall } from '$lib/agent/parser';
+import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import {
 	SUBMIT_FINDINGS_TOOL,
 	SUBMIT_VERDICT_TOOL,
 	type AuditFinding,
 	type AuditVerdict
-} from '$lib/agent/tools/audit';
+} from '#lib/agent/tools/audit.ts';
 import type { FindingCluster } from './auditCluster';
 import {
 	orchestrateAudit,
@@ -21,15 +21,15 @@ import {
 	buildVerifyPrompt,
 	DEFAULT_AUDIT_SYNTHESIS_PROMPT
 } from './auditPipeline';
-import type { JobWithSteps } from '$lib/stores/jobs.svelte';
+import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 import { parseAuditConfig, type AuditConfig } from './config';
-import { errMessage, normalizeAbort } from '$lib/utils/error';
+import { errMessage, normalizeAbort } from '#lib/utils/error.ts';
 import {
 	markRunStarted,
 	markRunStepFinished,
 	markRunStepStarted,
 	type JobRunStepStatus
-} from '$lib/stores/jobRuns.svelte';
+} from '#lib/stores/jobRuns.svelte.ts';
 import type { JobRunContext, PlannedStep } from '../types';
 import type { RunStatus } from '../../runner.svelte';
 

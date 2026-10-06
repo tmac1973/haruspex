@@ -1,6 +1,6 @@
 /**
  * Small fetch helpers shared by the OpenAI-compatible clients
- * (`$lib/api`, `$lib/openrouter`).
+ * (`#lib/api`, `#lib/openrouter`).
  */
 
 /** Best-effort error body of a non-2xx response ('Unknown error' if unreadable). */

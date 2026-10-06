@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { RunCommandResult } from '$lib/ipc/gen/RunCommandResult';
+import type { RunCommandResult } from '#lib/ipc/gen/RunCommandResult.ts';
 
 const mocks = vi.hoisted(() => ({
 	invoke: vi.fn(),
@@ -10,12 +10,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
-vi.mock('$lib/stores/codeCommandApproval.svelte', () => ({
+vi.mock('#lib/stores/codeCommandApproval.svelte.ts', () => ({
 	askCommandApproval: mocks.askCommandApproval,
 	isSessionApproved: mocks.isSessionApproved,
 	approveSession: mocks.approveSession
 }));
-vi.mock('$lib/shell/backgroundWatch', () => ({ registerWatch: mocks.registerWatch }));
+vi.mock('#lib/shell/backgroundWatch.ts', () => ({ registerWatch: mocks.registerWatch }));
 
 const codeCtx = {
 	workingDir: '/work',
@@ -54,7 +54,7 @@ beforeEach(() => {
 
 describe('run_command risk gate', () => {
 	it('runs a safe command without prompting', async () => {
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'ls -la' }, codeCtx);
 		expect(mocks.askCommandApproval).not.toHaveBeenCalled();
 		expect(mocks.invoke).toHaveBeenCalledWith(
@@ -70,8 +70,8 @@ describe('run_command risk gate', () => {
 		// Under runWithAutoApprove (how every job turn executes) the gate must
 		// deny-with-guidance, never open a modal — and never auto-run: shell
 		// commands are not sandboxed to the working dir the way fs writes are.
-		const { runWithAutoApprove } = await import('$lib/stores/approvalOverride');
-		const { executeTool } = await import('$lib/agent/tools');
+		const { runWithAutoApprove } = await import('#lib/stores/approvalOverride.ts');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await runWithAutoApprove(() =>
 			executeTool('run_command', { command: 'rm -rf build' }, codeCtx)
 		);
@@ -82,8 +82,8 @@ describe('run_command risk gate', () => {
 	});
 
 	it('still runs SAFE commands in an unattended run', async () => {
-		const { runWithAutoApprove } = await import('$lib/stores/approvalOverride');
-		const { executeTool } = await import('$lib/agent/tools');
+		const { runWithAutoApprove } = await import('#lib/stores/approvalOverride.ts');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await runWithAutoApprove(() =>
 			executeTool('run_command', { command: 'ls -la' }, codeCtx)
 		);
@@ -96,8 +96,8 @@ describe('run_command risk gate', () => {
 		// commands. A real preflight was denied with "nobody is present to
 		// approve" while the user sat at the keyboard.
 		mocks.askCommandApproval.mockResolvedValue('deny');
-		const { runWithAutoApprove } = await import('$lib/stores/approvalOverride');
-		const { executeTool } = await import('$lib/agent/tools');
+		const { runWithAutoApprove } = await import('#lib/stores/approvalOverride.ts');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await runWithAutoApprove(() =>
 			executeTool('run_command', { command: 'rm -rf build' }, { ...codeCtx, interactive: true })
 		);
@@ -106,7 +106,7 @@ describe('run_command risk gate', () => {
 
 	it('prompts on a risky command and aborts on deny', async () => {
 		mocks.askCommandApproval.mockResolvedValue('deny');
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'rm -rf /' }, codeCtx);
 		expect(mocks.askCommandApproval).toHaveBeenCalled();
 		expect(mocks.invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
@@ -115,7 +115,7 @@ describe('run_command risk gate', () => {
 
 	it('runs after allow_once without flipping session approval', async () => {
 		mocks.askCommandApproval.mockResolvedValue('allow_once');
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('run_command', { command: 'sudo reboot' }, codeCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
 		expect(mocks.approveSession).not.toHaveBeenCalled();
@@ -123,13 +123,13 @@ describe('run_command risk gate', () => {
 
 	it('flips session approval on allow_session', async () => {
 		mocks.askCommandApproval.mockResolvedValue('allow_session');
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('run_command', { command: 'sudo reboot' }, codeCtx);
 		expect(mocks.approveSession).toHaveBeenCalled();
 	});
 
 	it('skips the prompt when codeAutoApprove is on', async () => {
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool(
 			'run_command',
 			{ command: 'rm -rf /' },
@@ -141,7 +141,7 @@ describe('run_command risk gate', () => {
 
 	it('skips the prompt when the session is already approved', async () => {
 		mocks.isSessionApproved.mockReturnValue(true);
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('run_command', { command: 'rm -rf /' }, codeCtx);
 		expect(mocks.askCommandApproval).not.toHaveBeenCalled();
 		expect(mocks.invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
@@ -155,7 +155,7 @@ describe('run_command output handling', () => {
 				return Promise.resolve(runResultDefaults({ stdout: '', stderr: '', exit_code: 0 }));
 			return Promise.resolve();
 		});
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: './my-gui' }, codeCtx);
 		expect(out.result).toContain('succeeded with no output');
 	});
@@ -166,7 +166,7 @@ describe('run_command output handling', () => {
 				return Promise.resolve(runResultDefaults({ killed: true, exit_code: null }));
 			return Promise.resolve();
 		});
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'sleep 99' }, codeCtx);
 		expect(out.result).toContain('killed');
 	});
@@ -178,7 +178,7 @@ describe('run_command output handling', () => {
 			if (cmd === 'code_write_overflow') return Promise.resolve('/tmp/overflow.txt');
 			return Promise.resolve();
 		});
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'cat big' }, codeCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith('code_write_overflow', expect.anything());
 		expect(out.result).toContain('/tmp/overflow.txt');
@@ -192,7 +192,7 @@ describe('run_command output handling', () => {
 			if (cmd === 'run_command_capture') return new Promise((r) => (resolveRun = r));
 			return Promise.resolve();
 		});
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const p = executeTool(
 			'run_command',
 			{ command: 'sleep 99' },
@@ -217,7 +217,7 @@ describe('code_grep / code_glob formatting', () => {
 			total: 0,
 			files: []
 		});
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('code_grep', { pattern: 'needle' }, codeCtx);
 		expect(out.result).toBe('src/a.rs:12: fn needle()');
 	});
@@ -233,7 +233,7 @@ describe('code_grep / code_glob formatting', () => {
 			total: 3,
 			files: []
 		});
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('code_grep', { pattern: 'x', count: true }, codeCtx);
 		expect(out.result).toBe('src/a.rs: 2\nsrc/b.rs: 1\nTotal: 3 in 2 files');
 	});
@@ -246,7 +246,7 @@ describe('code_grep / code_glob formatting', () => {
 			total: 0,
 			files: ['src/a.rs', 'src/b.rs']
 		});
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('code_grep', { pattern: 'x', files_only: true }, codeCtx);
 		expect(out.result).toBe('src/a.rs\nsrc/b.rs');
 	});
@@ -263,14 +263,14 @@ describe('code_grep / code_glob formatting', () => {
 			total: 0,
 			files: []
 		});
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('code_grep', { pattern: 'needle', context: 1 }, codeCtx);
 		expect(out.result).toBe('a.rs-1: fn main() {\na.rs:2: needle();\na.rs-3: }');
 	});
 
 	it('reports no grep matches', async () => {
 		mocks.invoke.mockResolvedValueOnce({ matches: [], truncated: false });
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('code_grep', { pattern: 'zzz' }, codeCtx);
 		expect(out.result).toBe('No matches.');
 	});
@@ -280,14 +280,14 @@ describe('code_grep / code_glob formatting', () => {
 			matches: [{ path: 'a', line: 1, text: 'x' }],
 			truncated: true
 		});
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('code_grep', { pattern: 'x' }, codeCtx);
 		expect(out.result).toContain('truncated');
 	});
 
 	it('formats glob paths and the empty case', async () => {
 		mocks.invoke.mockResolvedValueOnce({ paths: ['src/a.ts', 'src/b.ts'], truncated: false });
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('code_glob', { pattern: '**/*.ts' }, codeCtx);
 		expect(out.result).toBe('src/a.ts\nsrc/b.ts');
 
@@ -311,7 +311,7 @@ describe('Shell + Code combined mode', () => {
 
 	it('code_grep roots at the live shell CWD', async () => {
 		mocks.invoke.mockResolvedValueOnce({ matches: [], truncated: false });
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('code_grep', { pattern: 'x' }, shellCodeCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith(
 			'code_grep',
@@ -320,10 +320,10 @@ describe('Shell + Code combined mode', () => {
 	});
 
 	it('code_grep / code_glob pass the WSL distro only for a shell-cwd root', async () => {
-		const { updateSettings } = await import('$lib/stores/settings');
+		const { updateSettings } = await import('#lib/stores/settings.ts');
 		updateSettings({ shellSelection: { kind: 'wsl', distro: 'Ubuntu-24.04' } });
 		try {
-			const { executeTool } = await import('$lib/agent/tools');
+			const { executeTool } = await import('#lib/agent/tools/index.ts');
 			mocks.invoke.mockResolvedValue({ matches: [], truncated: false });
 			await executeTool('code_grep', { pattern: 'x' }, shellCodeCtx);
 			expect(mocks.invoke).toHaveBeenCalledWith(
@@ -352,7 +352,7 @@ describe('Shell + Code combined mode', () => {
 			line_after: 'b',
 			used_fuzzy: false
 		});
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('fs_edit_text', { path: 'foo.ts', old_str: 'a', new_str: 'b' }, shellCodeCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith('fs_edit_text_absolute', {
 			path: '/proj/foo.ts',
@@ -389,7 +389,7 @@ describe('run_command PTY driving', () => {
 				]);
 			return Promise.resolve();
 		});
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'ls' }, ptyCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith(
 			'shell_write',
@@ -401,13 +401,13 @@ describe('run_command PTY driving', () => {
 	});
 
 	it('falls back to one-shot when codeCommandExec is "oneshot"', async () => {
-		const { updateSettings } = await import('$lib/stores/settings');
+		const { updateSettings } = await import('#lib/stores/settings.ts');
 		updateSettings({ codeCommandExec: 'oneshot' });
 		mocks.invoke.mockImplementation((cmd: string) => {
 			if (cmd === 'run_command_capture') return Promise.resolve(runResultDefaults());
 			return Promise.resolve();
 		});
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('run_command', { command: 'ls' }, ptyCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith(
 			'run_command_capture',
@@ -424,7 +424,7 @@ describe('run_command PTY driving', () => {
 			if (cmd === 'shell_pending_command') return Promise.resolve('go run main.go');
 			return Promise.resolve();
 		});
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'kill %1' }, ptyCtx);
 		expect(out.result).toContain('busy running');
 		expect(out.result).toContain('go run main.go');
@@ -438,7 +438,7 @@ describe('run_command PTY driving', () => {
 			if (cmd === 'run_command_capture') return Promise.resolve(runResultDefaults());
 			return Promise.resolve();
 		});
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('run_command', { command: 'ls' }, ptyCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
 	});
@@ -453,7 +453,7 @@ describe('run_command PTY driving', () => {
 			if (cmd === 'shell_get_recent_commands') return Promise.resolve([]);
 			return Promise.resolve();
 		});
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const p = executeTool(
 			'run_command',
 			{ command: 'sleep 99', timeout_secs: 2 },
@@ -508,7 +508,7 @@ describe('run_command background / watch', () => {
 
 	it('background:true detaches and returns the pid + log path, without watching', async () => {
 		mockBackgroundPty();
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool(
 			'run_command',
 			{ command: 'npm run dev', background: true },
@@ -527,7 +527,7 @@ describe('run_command background / watch', () => {
 
 	it('watch:true also registers a watch for the owning session', async () => {
 		mockBackgroundPty();
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'pytest -q', watch: true }, ptyCtx);
 		expect(out.result).toContain('watch on');
 		expect(out.result).toContain('12345');
@@ -543,7 +543,7 @@ describe('run_command background / watch', () => {
 	});
 
 	it('rejects background without a live terminal session', async () => {
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool(
 			'run_command',
 			{ command: 'npm run dev', background: true },
@@ -569,7 +569,7 @@ describe('Code-mode tool filtering', () => {
 	].sort();
 
 	it('codeMode exposes exactly the CODE_TOOLS allowlist', async () => {
-		const { getToolSchemas } = await import('$lib/agent/tools');
+		const { getToolSchemas } = await import('#lib/agent/tools/index.ts');
 		const names = getToolSchemas({ hasWorkingDir: true, codeMode: true })
 			.map((s) => s.function.name)
 			.sort();
@@ -577,7 +577,7 @@ describe('Code-mode tool filtering', () => {
 	});
 
 	it('codeMode wins over shellMode and exposes the code toolset plus interactive PTY tools', async () => {
-		const { getToolSchemas } = await import('$lib/agent/tools');
+		const { getToolSchemas } = await import('#lib/agent/tools/index.ts');
 		const names = getToolSchemas({ hasWorkingDir: false, shellMode: true, codeMode: true }).map(
 			(s) => s.function.name
 		);
@@ -595,7 +595,7 @@ describe('Code-mode tool filtering', () => {
 	});
 
 	it('run_command (exec) never leaks into Chat or Shell schemas', async () => {
-		const { getToolSchemas } = await import('$lib/agent/tools');
+		const { getToolSchemas } = await import('#lib/agent/tools/index.ts');
 		const chat = getToolSchemas({ hasWorkingDir: true }).map((s) => s.function.name);
 		const shell = getToolSchemas({ hasWorkingDir: false, shellMode: true }).map(
 			(s) => s.function.name
@@ -617,7 +617,7 @@ describe('run_command boundary', () => {
 	const DB = 'sqlite3 ~/.local/share/com.haruspex.app/haruspex.db .tables';
 
 	beforeEach(async () => {
-		(await import('$lib/shell/boundary'))._resetBoundary();
+		(await import('#lib/shell/boundary.ts'))._resetBoundary();
 		mocks.invoke.mockImplementation((cmd: string) => {
 			if (cmd === 'app_protected_targets') return Promise.resolve(targets);
 			if (cmd === 'run_command_capture') return Promise.resolve(runResultDefaults());
@@ -626,9 +626,9 @@ describe('run_command boundary', () => {
 	});
 
 	it('refuses an unattended command that reaches Haruspex, even with auto-approve on', async () => {
-		const { runWithAutoApprove } = await import('$lib/stores/approvalOverride');
-		const { executeTool } = await import('$lib/agent/tools');
-		const { onBoundaryRefusal } = await import('$lib/shell/boundary');
+		const { runWithAutoApprove } = await import('#lib/stores/approvalOverride.ts');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const { onBoundaryRefusal } = await import('#lib/shell/boundary.ts');
 		const refused: string[] = [];
 		const stop = onBoundaryRefusal((r) => refused.push(r.command));
 		const out = await runWithAutoApprove(() =>
@@ -646,7 +646,7 @@ describe('run_command boundary', () => {
 	it('asks when someone is there, and "allow for this session" does not cover it', async () => {
 		mocks.isSessionApproved.mockReturnValue(true);
 		mocks.askCommandApproval.mockResolvedValue('allow_session');
-		const { executeTool } = await import('$lib/agent/tools');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool(
 			'run_command',
 			{ command: 'curl localhost:8767/sdapi/v1/sd-models' },
@@ -663,8 +663,8 @@ describe('run_command boundary', () => {
 	});
 
 	it('leaves the project’s own commands to the usual rules', async () => {
-		const { runWithAutoApprove } = await import('$lib/stores/approvalOverride');
-		const { executeTool } = await import('$lib/agent/tools');
+		const { runWithAutoApprove } = await import('#lib/stores/approvalOverride.ts');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await runWithAutoApprove(() =>
 			executeTool('run_command', { command: 'npm test' }, codeCtx)
 		);
@@ -672,8 +672,8 @@ describe('run_command boundary', () => {
 	});
 
 	it('names the risk in words, not "[object Object]"', async () => {
-		const { runWithAutoApprove } = await import('$lib/stores/approvalOverride');
-		const { executeTool } = await import('$lib/agent/tools');
+		const { runWithAutoApprove } = await import('#lib/stores/approvalOverride.ts');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await runWithAutoApprove(() =>
 			executeTool('run_command', { command: 'rm -rf build' }, codeCtx)
 		);

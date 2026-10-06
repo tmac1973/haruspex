@@ -12,9 +12,9 @@
  * catches the run that forgets.
  */
 import { invoke } from '@tauri-apps/api/core';
-import type { ProtectedTargets } from '$lib/ipc/gen/ProtectedTargets';
-import type { ProtectedPort } from '$lib/ipc/gen/ProtectedPort';
-import { getSettings } from '$lib/stores/settings';
+import type { ProtectedTargets } from '#lib/ipc/gen/ProtectedTargets.ts';
+import type { ProtectedPort } from '#lib/ipc/gen/ProtectedPort.ts';
+import { getSettings } from '#lib/stores/settings.ts';
 
 export interface BoundaryCheck {
 	matched: boolean;

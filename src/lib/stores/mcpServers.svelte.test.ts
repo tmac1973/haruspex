@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
-import type { CatalogEntry } from '$lib/ipc/gen/CatalogEntry';
-import type { McpToolDescriptor } from '$lib/ipc/gen/McpToolDescriptor';
-import { IPC } from '$lib/ipc/commands';
+import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
+import type { CatalogEntry } from '#lib/ipc/gen/CatalogEntry.ts';
+import type { McpToolDescriptor } from '#lib/ipc/gen/McpToolDescriptor.ts';
+import { IPC } from '#lib/ipc/commands.ts';
 import {
 	companionWarning,
 	startConfiguredMcpServers,
@@ -16,8 +16,8 @@ import {
 	stopMcpServer,
 	type McpRuntimeState
 } from './mcpServers.svelte';
-import { registeredMcpToolNames } from '$lib/agent/tools/mcp';
-import { mcpDefaultTools } from '$lib/agent/tools/mcp-names';
+import { registeredMcpToolNames } from '#lib/agent/tools/mcp.ts';
+import { mcpDefaultTools } from '#lib/agent/tools/mcp-names.ts';
 import { setMcpServers } from './settings';
 import { isAlwaysAllowed, rememberAlwaysAllow } from './mcpApproval.svelte';
 

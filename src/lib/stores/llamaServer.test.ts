@@ -23,7 +23,7 @@ describe('server store', () => {
 	it('invoke is called with correct command for startServer', async () => {
 		const mockInvoke = vi.mocked(invoke).mockResolvedValue(undefined);
 
-		const { startServer } = await import('$lib/stores/llamaServer.svelte');
+		const { startServer } = await import('#lib/stores/llamaServer.svelte.ts');
 		await startServer('/path/to/model.gguf');
 
 		expect(mockInvoke).toHaveBeenCalledWith(
@@ -37,7 +37,7 @@ describe('server store', () => {
 	it('invoke is called with correct command for stopServer', async () => {
 		const mockInvoke = vi.mocked(invoke).mockResolvedValue(undefined);
 
-		const { stopServer } = await import('$lib/stores/llamaServer.svelte');
+		const { stopServer } = await import('#lib/stores/llamaServer.svelte.ts');
 		await stopServer();
 
 		expect(mockInvoke).toHaveBeenCalledWith('stop_server');
@@ -52,7 +52,7 @@ describe('server store', () => {
 
 		// Reset the module to clear the listenerInitialized flag
 		vi.resetModules();
-		const { initServerStore } = await import('$lib/stores/llamaServer.svelte');
+		const { initServerStore } = await import('#lib/stores/llamaServer.svelte.ts');
 		await initServerStore();
 
 		expect(mockInvoke).toHaveBeenCalledWith('get_server_status');
@@ -63,7 +63,7 @@ describe('server store', () => {
 		const mockLogs = ['line 1', 'line 2'];
 		vi.mocked(invoke).mockResolvedValue(mockLogs);
 
-		const { getServerLogs } = await import('$lib/stores/llamaServer.svelte');
+		const { getServerLogs } = await import('#lib/stores/llamaServer.svelte.ts');
 		const logs = await getServerLogs();
 
 		expect(logs).toEqual(mockLogs);
@@ -73,7 +73,7 @@ describe('server store', () => {
 	it('getServerLogs returns empty array on error', async () => {
 		vi.mocked(invoke).mockRejectedValue(new Error('not available'));
 
-		const { getServerLogs } = await import('$lib/stores/llamaServer.svelte');
+		const { getServerLogs } = await import('#lib/stores/llamaServer.svelte.ts');
 		const logs = await getServerLogs();
 
 		expect(logs).toEqual([]);

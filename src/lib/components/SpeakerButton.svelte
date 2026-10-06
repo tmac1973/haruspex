@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { isTtsInitializing, isTtsPlaying, toggleTts } from '$lib/audio/ttsControl.svelte';
+	import { isTtsInitializing, isTtsPlaying, toggleTts } from '#lib/audio/ttsControl.svelte.ts';
 
 	interface Props {
 		text: string;

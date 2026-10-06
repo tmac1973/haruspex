@@ -24,7 +24,7 @@
  * calls). A second overlapping ask rejects.
  */
 
-import type { MemoryCategory } from '$lib/agent/tools/memory';
+import type { MemoryCategory } from '#lib/agent/tools/memory.ts';
 
 export type MemoryApprovalChoice = 'allow_once' | 'allow_session' | 'deny';
 

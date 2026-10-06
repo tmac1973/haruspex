@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { AgentLoopOptions } from '$lib/agent/loop';
-import { ApiError, ResponseCutOffError } from '$lib/api';
+import type { AgentLoopOptions } from '#lib/agent/loop.ts';
+import { ApiError, ResponseCutOffError } from '#lib/api.ts';
 
 const loop = vi.hoisted(() => ({ run: vi.fn() }));
-vi.mock('$lib/agent/loop', () => ({ runAgentLoop: loop.run }));
+vi.mock('#lib/agent/loop.ts', () => ({ runAgentLoop: loop.run }));
 
 import { runTurnCore } from './runTurn';
 

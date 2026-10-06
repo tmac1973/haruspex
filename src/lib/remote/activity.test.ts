@@ -8,7 +8,7 @@ import {
 	noteAnswer,
 	noteFinished,
 	notePrompt
-} from '$lib/remote/activity.svelte';
+} from '#lib/remote/activity.svelte.ts';
 
 beforeEach(() => forgetRemoteActivity());
 

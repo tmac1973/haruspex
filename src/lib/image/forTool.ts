@@ -12,9 +12,9 @@
  * pass the asset job's requests through unchanged (phase 08).
  */
 import { resolveImageBackend } from './backend';
-import { errMessage } from '$lib/utils/error';
+import { errMessage } from '#lib/utils/error.ts';
 import { ImageBackendError, type ImageProgress, type ImageRequest } from './types';
-import { getSettings } from '$lib/stores/settings';
+import { getSettings } from '#lib/stores/settings.ts';
 import { familyOf } from './comfyui/families';
 
 export interface ToolImage {

@@ -22,10 +22,10 @@ import {
 	listDueJobs,
 	setJobNextDueAt,
 	type JobSummary
-} from '$lib/stores/jobs.svelte';
-import { enqueue } from '$lib/agent/jobs/runner.svelte';
-import { getJobType } from '$lib/agent/jobs/types';
-import { logDebug } from '$lib/debug-log';
+} from '#lib/stores/jobs.svelte.ts';
+import { enqueue } from '#lib/agent/jobs/runner.svelte.ts';
+import { getJobType } from '#lib/agent/jobs/types/index.ts';
+import { logDebug } from '#lib/debug-log.ts';
 
 const TICK_MS = 30_000;
 

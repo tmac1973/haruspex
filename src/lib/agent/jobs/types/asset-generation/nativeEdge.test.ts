@@ -1,4 +1,4 @@
-import type { AssetSpec } from '$lib/assets/spec/types';
+import type { AssetSpec } from '#lib/assets/spec/types.ts';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { applyJobSize, nativeEdgeFor, upscaleForEdge } from './nativeEdge';
 
@@ -9,8 +9,8 @@ const settings = vi.hoisted(() => ({
 	imageComfyCheckpoint: '',
 	imageLocalModelId: ''
 }));
-vi.mock('$lib/stores/settings', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/stores/settings')>()),
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: () => settings
 }));
 

@@ -1,4 +1,4 @@
-import { errMessage } from '$lib/utils/error';
+import { errMessage } from '#lib/utils/error.ts';
 
 /**
  * Clipboard copy with transient "copied / failed" feedback. Replaces the

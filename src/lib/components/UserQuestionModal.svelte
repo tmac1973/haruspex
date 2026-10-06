@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { renderMarkdown } from '$lib/markdown';
+	import { renderMarkdown } from '#lib/markdown.ts';
 	/**
 	 * Modal for the reusable ask_user_question primitive. Mounted once in the
 	 * root layout — subscribes to the userQuestion store and opens whenever a
@@ -24,7 +24,7 @@
 		getPendingQuestion,
 		resolveUserQuestion,
 		cancelUserQuestion
-	} from '$lib/stores/userQuestion.svelte';
+	} from '#lib/stores/userQuestion.svelte.ts';
 
 	const pending = $derived(getPendingQuestion());
 

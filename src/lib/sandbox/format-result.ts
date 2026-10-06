@@ -1,11 +1,11 @@
 /**
  * Render a sandbox run result as the text handed back to the model / stored
  * in the transcript. This is a leaf module (no imports) on purpose: both the
- * run_python tool (`$lib/agent/tools/sandbox`) and the chat store need it,
+ * run_python tool (`#lib/agent/tools/sandbox`) and the chat store need it,
  * and the chat store must not import the agent tools module (circular).
  */
 
-/** Structural subset of `ToolResult` (from `$lib/sandbox/sandbox`) needed to render. */
+/** Structural subset of `ToolResult` (from `#lib/sandbox/sandbox`) needed to render. */
 export interface SandboxRunOutput {
 	stdout: string;
 	stderr: string;

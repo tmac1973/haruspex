@@ -7,11 +7,11 @@
 	import { WebLinksAddon } from '@xterm/addon-web-links';
 	import { SerializeAddon } from '@xterm/addon-serialize';
 	import '@xterm/xterm/css/xterm.css';
-	import { getSettings } from '$lib/stores/settings';
-	import { isPtyBusy, ptyBusyCommand } from '$lib/stores/shellPtyBusy.svelte';
-	import type { SessionContext } from '$lib/ipc/gen/SessionContext';
-	import type { ShellContextResponse } from '$lib/ipc/gen/ShellContextResponse';
-	import type { ShellSpawnResult } from '$lib/ipc/gen/ShellSpawnResult';
+	import { getSettings } from '#lib/stores/settings.ts';
+	import { isPtyBusy, ptyBusyCommand } from '#lib/stores/shellPtyBusy.svelte.ts';
+	import type { SessionContext } from '#lib/ipc/gen/SessionContext.ts';
+	import type { ShellContextResponse } from '#lib/ipc/gen/ShellContextResponse.ts';
+	import type { ShellSpawnResult } from '#lib/ipc/gen/ShellSpawnResult.ts';
 
 	interface Props {
 		onReady?: (handle: TerminalHandle) => void;

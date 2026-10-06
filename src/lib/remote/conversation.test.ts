@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ChatMessage } from '$lib/api';
+import type { ChatMessage } from '#lib/api.ts';
 
 const mocks = vi.hoisted(() => ({
 	compactConversation: vi.fn(),
@@ -8,16 +8,16 @@ const mocks = vi.hoisted(() => ({
 	getTokenCalibration: vi.fn(() => 1)
 }));
 
-vi.mock('$lib/agent/compaction', () => ({
+vi.mock('#lib/agent/compaction.ts', () => ({
 	compactConversation: mocks.compactConversation,
 	shouldCompact: mocks.shouldCompact
 }));
-vi.mock('$lib/agent/context-budget', () => ({
+vi.mock('#lib/agent/context-budget.ts', () => ({
 	estimateMessagesTokens: mocks.estimateMessagesTokens,
 	getTokenCalibration: mocks.getTokenCalibration
 }));
 
-import { conversationIdFor, prepareHistory, titleFor } from '$lib/remote/conversation';
+import { conversationIdFor, prepareHistory, titleFor } from '#lib/remote/conversation.ts';
 
 function history(turns: number): ChatMessage[] {
 	return Array.from({ length: turns * 2 }, (_, i) => ({

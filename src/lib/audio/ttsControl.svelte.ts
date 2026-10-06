@@ -7,7 +7,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { getSettings, DEFAULT_TTS_VOICE } from '$lib/stores/settings';
+import { getSettings, DEFAULT_TTS_VOICE } from '#lib/stores/settings.ts';
 
 let playing = $state(false);
 let initializing = $state(false);

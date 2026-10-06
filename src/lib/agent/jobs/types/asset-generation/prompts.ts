@@ -1,6 +1,6 @@
 /** Asset-generation prompts. */
 
-import type { AssetKind } from '$lib/assets/spec/types';
+import type { AssetKind } from '#lib/assets/spec/types.ts';
 
 /**
  * The spec-derivation turn.

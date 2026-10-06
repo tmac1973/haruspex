@@ -10,8 +10,8 @@
 import type { AssetEntry, AssetKind, AssetSpec, AssetStyle } from './types';
 import { ASSET_KINDS } from './types';
 import { DEFAULT_ANCHOR_IMAGE, DEFAULT_ANCHOR_RECIPE } from './paths';
-import type { LoraRef } from '$lib/image/types';
-import type { NormalizeProfile } from '$lib/ipc/gen/NormalizeProfile';
+import type { LoraRef } from '#lib/image/types.ts';
+import type { NormalizeProfile } from '#lib/ipc/gen/NormalizeProfile.ts';
 
 export type ParseResult = { spec: AssetSpec } | { errors: string[] };
 

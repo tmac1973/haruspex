@@ -16,8 +16,8 @@ import {
 	detachShellSession,
 	reattachShellSession,
 	type ShellSession
-} from '$lib/stores/shell.svelte';
-import { getSettings } from '$lib/stores/settings';
+} from '#lib/stores/shell.svelte.ts';
+import { getSettings } from '#lib/stores/settings.ts';
 
 /** Target width for the terminal half of a freshly detached window. */
 const DETACHED_TERMINAL_TARGET = 760;

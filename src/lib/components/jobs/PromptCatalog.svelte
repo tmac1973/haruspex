@@ -4,14 +4,14 @@
 	 * prompt, or save the current text for reuse. Scoped to the job type so only
 	 * relevant prompts show.
 	 */
-	import { builtinsFor, promptAppliesTo } from '$lib/agent/jobs/promptCatalog';
+	import { builtinsFor, promptAppliesTo } from '#lib/agent/jobs/promptCatalog.ts';
 	import {
 		ensureSavedPromptsLoaded,
 		getSavedPrompts,
 		createSavedPrompt,
 		deleteSavedPrompt
-	} from '$lib/stores/promptCatalog.svelte';
-	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	} from '#lib/stores/promptCatalog.svelte.ts';
+	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 
 	interface Props {
 		jobType: 'audit' | 'research';

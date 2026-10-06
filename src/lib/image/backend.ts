@@ -8,7 +8,7 @@
  * which is the whole reason it is a separate layer.
  */
 
-import { getSettings } from '$lib/stores/settings';
+import { getSettings } from '#lib/stores/settings.ts';
 import { getImageBackend } from './registry';
 import { noneBackend } from './none';
 import type {

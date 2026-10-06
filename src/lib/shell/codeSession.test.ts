@@ -6,7 +6,7 @@ import {
 	CODE_SESSION_VERSION,
 	type CodeSessionState
 } from './codeSession';
-import type { ChatMessage } from '$lib/api';
+import type { ChatMessage } from '#lib/api.ts';
 
 function state(over: Partial<CodeSessionState> = {}): CodeSessionState {
 	return {

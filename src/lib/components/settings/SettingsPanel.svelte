@@ -1,20 +1,20 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import GeneralSection from '$lib/components/settings/GeneralSection.svelte';
-	import InferenceSection from '$lib/components/settings/InferenceSection.svelte';
-	import AgentSection from '$lib/components/settings/AgentSection.svelte';
-	import MemorySection from '$lib/components/settings/MemorySection.svelte';
-	import AudioSection from '$lib/components/settings/AudioSection.svelte';
-	import SearchSection from '$lib/components/settings/SearchSection.svelte';
-	import NetworkSection from '$lib/components/settings/NetworkSection.svelte';
-	import EmailSection from '$lib/components/settings/EmailSection.svelte';
-	import McpSection from '$lib/components/settings/McpSection.svelte';
-	import CalendarSection from '$lib/components/settings/CalendarSection.svelte';
-	import DesktopSection from '$lib/components/settings/DesktopSection.svelte';
-	import ShellSection from '$lib/components/settings/ShellSection.svelte';
-	import ImageSection from '$lib/components/settings/ImageSection.svelte';
-	import RemoteSection from '$lib/components/settings/RemoteSection.svelte';
-	import FeedbackSection from '$lib/components/settings/FeedbackSection.svelte';
+	import GeneralSection from '#lib/components/settings/GeneralSection.svelte';
+	import InferenceSection from '#lib/components/settings/InferenceSection.svelte';
+	import AgentSection from '#lib/components/settings/AgentSection.svelte';
+	import MemorySection from '#lib/components/settings/MemorySection.svelte';
+	import AudioSection from '#lib/components/settings/AudioSection.svelte';
+	import SearchSection from '#lib/components/settings/SearchSection.svelte';
+	import NetworkSection from '#lib/components/settings/NetworkSection.svelte';
+	import EmailSection from '#lib/components/settings/EmailSection.svelte';
+	import McpSection from '#lib/components/settings/McpSection.svelte';
+	import CalendarSection from '#lib/components/settings/CalendarSection.svelte';
+	import DesktopSection from '#lib/components/settings/DesktopSection.svelte';
+	import ShellSection from '#lib/components/settings/ShellSection.svelte';
+	import ImageSection from '#lib/components/settings/ImageSection.svelte';
+	import RemoteSection from '#lib/components/settings/RemoteSection.svelte';
+	import FeedbackSection from '#lib/components/settings/FeedbackSection.svelte';
 
 	// Rendered as an overlay over the main page (so the Shell tab's PTY stays
 	// mounted underneath). `onclose` dismisses the overlay; the page never

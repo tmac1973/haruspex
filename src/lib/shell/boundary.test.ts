@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { checkBoundary } from './boundary';
-import type { ProtectedTargets } from '$lib/ipc/gen/ProtectedTargets';
+import type { ProtectedTargets } from '#lib/ipc/gen/ProtectedTargets.ts';
 
 const linux: ProtectedTargets = {
 	home: '/home/tim',

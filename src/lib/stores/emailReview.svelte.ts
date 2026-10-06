@@ -13,7 +13,7 @@
  * overlapping request rejects.
  */
 
-import type { EmailAccount } from '$lib/stores/settings';
+import type { EmailAccount } from '#lib/stores/settings.ts';
 
 export interface EmailDraft {
 	/** The account it goes from; one of `accounts`. */

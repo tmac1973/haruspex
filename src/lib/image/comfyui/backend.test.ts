@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getSettings, updateSettings } from '$lib/stores/settings';
+import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 import { comfyUiBackend, DEFAULT_SAMPLER } from './backend';
 import { TEMPLATES } from './templates';
 import type { ImageRequest } from '../types';

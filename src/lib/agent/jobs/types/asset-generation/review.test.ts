@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { AssetSpec } from '$lib/assets/spec/types';
+import type { AssetSpec } from '#lib/assets/spec/types.ts';
 import {
 	amendPrompt,
 	applyNotes,

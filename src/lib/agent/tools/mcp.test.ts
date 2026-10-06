@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import type { McpToolDescriptor } from '$lib/ipc/gen/McpToolDescriptor';
-import type { McpCallOutcome } from '$lib/ipc/gen/McpCallOutcome';
-import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
-import { setMcpServers } from '$lib/stores/settings';
+import type { McpToolDescriptor } from '#lib/ipc/gen/McpToolDescriptor.ts';
+import type { McpCallOutcome } from '#lib/ipc/gen/McpCallOutcome.ts';
+import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
+import { setMcpServers } from '#lib/stores/settings.ts';
 import { mcpToolName, parseMcpToolName } from './mcp-names';
 import {
 	registerMcpTools,
@@ -22,7 +22,7 @@ import {
 	requiresApproval,
 	resolveMcpApproval,
 	type McpApprovalChoice
-} from '$lib/stores/mcpApproval.svelte';
+} from '#lib/stores/mcpApproval.svelte.ts';
 import type { ToolContext } from './types';
 
 const invoke = vi.hoisted(() => vi.fn());

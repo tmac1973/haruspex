@@ -1,6 +1,6 @@
 /**
  * Guard for the split between "what the terminal is in" and "what the file
- * tools touch". See `$lib/shell/nestedSession` for why they diverge.
+ * tools touch". See `#lib/shell/nestedSession` for why they diverge.
  *
  * Every fs_ and code_ tool in Shell mode resolves its path against the tracked
  * shell cwd and then goes to the LOCAL filesystem. Once the user is inside
@@ -15,7 +15,7 @@ import {
 	nestedReadNote,
 	nestedWriteBlockedMessage,
 	type NestedSession
-} from '$lib/shell/nestedSession';
+} from '#lib/shell/nestedSession.ts';
 import type { ToolContext } from './types';
 
 /**

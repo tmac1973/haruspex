@@ -19,9 +19,9 @@
  * Stage index constants must match CODING_STAGES in ./definition.ts.
  */
 
-import { onBoundaryRefusal, type BoundaryRefusal } from '$lib/shell/boundary';
+import { onBoundaryRefusal, type BoundaryRefusal } from '#lib/shell/boundary.ts';
 import { invoke } from '@tauri-apps/api/core';
-import type { ResolvedToolCall } from '$lib/agent/parser';
+import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import {
 	SUBMIT_ITERATION_RESULT_TOOL,
 	SUBMIT_PHASE_RESULT_TOOL,
@@ -29,17 +29,17 @@ import {
 	SUBMIT_TASK_LIST_TOOL,
 	type IterationResultArg,
 	type PreflightResultArg
-} from '$lib/agent/tools/coding';
+} from '#lib/agent/tools/coding.ts';
 import { withWebResearch } from '../webResearch';
-import { getSettings } from '$lib/stores/settings';
-import { normalizeAbort, errMessage } from '$lib/utils/error';
+import { getSettings } from '#lib/stores/settings.ts';
+import { normalizeAbort, errMessage } from '#lib/utils/error.ts';
 import {
 	markRunStarted,
 	markRunStepFinished,
 	markRunStepStarted,
 	type JobRunStepStatus
-} from '$lib/stores/jobRuns.svelte';
-import { notify } from '$lib/notify';
+} from '#lib/stores/jobRuns.svelte.ts';
+import { notify } from '#lib/notify.ts';
 import type { JobRunContext } from '../types';
 import type { StepChecklistEntry } from '../../runner.svelte';
 import {

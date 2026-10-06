@@ -1,45 +1,45 @@
 <script lang="ts">
-	import favicon from '$lib/assets/favicon.svg';
-	import ServerStatusBadge from '$lib/components/ServerStatusBadge.svelte';
-	import ContextIndicator from '$lib/components/ContextIndicator.svelte';
-	import FileConflictModal from '$lib/components/FileConflictModal.svelte';
-	import SandboxApprovalModal from '$lib/components/SandboxApprovalModal.svelte';
-	import CommandApprovalModal from '$lib/components/CommandApprovalModal.svelte';
-	import McpApprovalModal from '$lib/components/McpApprovalModal.svelte';
-	import MemoryApprovalModal from '$lib/components/MemoryApprovalModal.svelte';
-	import EmailReviewModal from '$lib/components/EmailReviewModal.svelte';
-	import UserQuestionModal from '$lib/components/UserQuestionModal.svelte';
-	import LogViewer from '$lib/components/LogViewer.svelte';
-	import HelpModal from '$lib/components/HelpModal.svelte';
-	import SettingsPanel from '$lib/components/settings/SettingsPanel.svelte';
-	import StartupNoticeDialog from '$lib/components/StartupNoticeDialog.svelte';
-	import Toasts from '$lib/components/Toasts.svelte';
-	import { showToast } from '$lib/stores/toasts.svelte';
+	import favicon from '#lib/assets/favicon.svg';
+	import ServerStatusBadge from '#lib/components/ServerStatusBadge.svelte';
+	import ContextIndicator from '#lib/components/ContextIndicator.svelte';
+	import FileConflictModal from '#lib/components/FileConflictModal.svelte';
+	import SandboxApprovalModal from '#lib/components/SandboxApprovalModal.svelte';
+	import CommandApprovalModal from '#lib/components/CommandApprovalModal.svelte';
+	import McpApprovalModal from '#lib/components/McpApprovalModal.svelte';
+	import MemoryApprovalModal from '#lib/components/MemoryApprovalModal.svelte';
+	import EmailReviewModal from '#lib/components/EmailReviewModal.svelte';
+	import UserQuestionModal from '#lib/components/UserQuestionModal.svelte';
+	import LogViewer from '#lib/components/LogViewer.svelte';
+	import HelpModal from '#lib/components/HelpModal.svelte';
+	import SettingsPanel from '#lib/components/settings/SettingsPanel.svelte';
+	import StartupNoticeDialog from '#lib/components/StartupNoticeDialog.svelte';
+	import Toasts from '#lib/components/Toasts.svelte';
+	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import {
 		isLogViewerOpen,
 		openLogViewer,
 		closeLogViewer,
 		toggleLogViewer
-	} from '$lib/stores/logViewer.svelte';
-	import { initChatStore } from '$lib/stores/chat.svelte';
-	import { migrateEmailSecrets } from '$lib/stores/emailSecrets';
-	import { migrateDavSecrets } from '$lib/stores/davSecrets';
-	import { migrateBraveApiKey } from '$lib/stores/searchSecrets';
-	import { comfyApiKey } from '$lib/stores/imageSecrets';
-	import { migrateProxyPasswords } from '$lib/stores/proxySecrets';
-	import { migrateMcpSecrets } from '$lib/stores/mcpSecrets';
-	import { apiKeysReady, migrateApiKeys, migrateJobApiKeys } from '$lib/stores/apiKeySecrets';
-	import { remoteToken } from '$lib/stores/remoteSecrets';
-	import { reclaimOwnWindowSlots } from '$lib/agent/inferenceQueue.svelte';
-	import { recoverOrphanRuns } from '$lib/stores/jobRuns.svelte';
-	import { startScheduler } from '$lib/agent/jobs/scheduler.svelte';
-	import { releaseStaleInhibit } from '$lib/agent/jobs/keepAwake';
+	} from '#lib/stores/logViewer.svelte.ts';
+	import { initChatStore } from '#lib/stores/chat.svelte.ts';
+	import { migrateEmailSecrets } from '#lib/stores/emailSecrets.ts';
+	import { migrateDavSecrets } from '#lib/stores/davSecrets.ts';
+	import { migrateBraveApiKey } from '#lib/stores/searchSecrets.ts';
+	import { comfyApiKey } from '#lib/stores/imageSecrets.ts';
+	import { migrateProxyPasswords } from '#lib/stores/proxySecrets.ts';
+	import { migrateMcpSecrets } from '#lib/stores/mcpSecrets.ts';
+	import { apiKeysReady, migrateApiKeys, migrateJobApiKeys } from '#lib/stores/apiKeySecrets.ts';
+	import { remoteToken } from '#lib/stores/remoteSecrets.ts';
+	import { reclaimOwnWindowSlots } from '#lib/agent/inferenceQueue.svelte.ts';
+	import { recoverOrphanRuns } from '#lib/stores/jobRuns.svelte.ts';
+	import { startScheduler } from '#lib/agent/jobs/scheduler.svelte.ts';
+	import { releaseStaleInhibit } from '#lib/agent/jobs/keepAwake.ts';
 	import {
 		enterRemoteMode,
 		initServerStore,
 		maybeFlushPendingRestart,
 		startServer
-	} from '$lib/stores/llamaServer.svelte';
+	} from '#lib/stores/llamaServer.svelte.ts';
 	import {
 		applyAccent,
 		applyTheme,
@@ -50,30 +50,30 @@
 		setActiveLocalModel,
 		stepUiScale,
 		updateSettings
-	} from '$lib/stores/settings';
-	import { checkForUpdate, type UpdateInfo } from '$lib/updates';
+	} from '#lib/stores/settings.ts';
+	import { checkForUpdate, type UpdateInfo } from '#lib/updates.ts';
 	import { invoke } from '@tauri-apps/api/core';
 	import { getVersion } from '@tauri-apps/api/app';
 	import { getCurrentWindow } from '@tauri-apps/api/window';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import { syncRemoteServer } from '$lib/remote/service';
-	import { messageText, type ChatMessage } from '$lib/api';
-	import { installMarkdownActions } from '$lib/markdown-actions';
+	import { syncRemoteServer } from '#lib/remote/service.ts';
+	import { messageText, type ChatMessage } from '#lib/api.ts';
+	import { installMarkdownActions } from '#lib/markdown-actions.ts';
 	import {
 		isVoiceCaptureActive,
 		startVoiceCapture,
 		stopAndTranscribe
-	} from '$lib/audio/voiceCapture.svelte';
-	import { toggleTts } from '$lib/audio/ttsControl.svelte';
-	import { getActiveTab } from '$lib/stores/activeTab.svelte';
-	import { getActiveConversation, sendMessage } from '$lib/stores/chat.svelte';
-	import { getActiveShellSession } from '$lib/stores/shell.svelte';
+	} from '#lib/audio/voiceCapture.svelte.ts';
+	import { toggleTts } from '#lib/audio/ttsControl.svelte.ts';
+	import { getActiveTab } from '#lib/stores/activeTab.svelte.ts';
+	import { getActiveConversation, sendMessage } from '#lib/stores/chat.svelte.ts';
+	import { getActiveShellSession } from '#lib/stores/shell.svelte.ts';
 	import {
 		listenForMcpToolChanges,
 		startConfiguredMcpServers
-	} from '$lib/stores/mcpServers.svelte';
+	} from '#lib/stores/mcpServers.svelte.ts';
 
 	let { children } = $props();
 	// Log Viewer visibility lives in the logViewer store (not local state)

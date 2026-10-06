@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
 	import { onMount } from 'svelte';
-	import { getSettings, updateSettings } from '$lib/stores/settings';
+	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 
 	const voiceOptions = [
 		{ id: 'af_heart', name: 'Heart (Female)' },

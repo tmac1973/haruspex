@@ -6,11 +6,11 @@ import {
 	getVoiceCaptureStatus,
 	startVoiceCapture,
 	stopAndTranscribe
-} from '$lib/audio/voiceCapture.svelte';
+} from '#lib/audio/voiceCapture.svelte.ts';
 
 // The real capture module drives Tauri IPC; MicButton only needs the
 // status getter and the start / stop / cancel actions.
-vi.mock('$lib/audio/voiceCapture.svelte', () => ({
+vi.mock('#lib/audio/voiceCapture.svelte.ts', () => ({
 	cancelVoiceCapture: vi.fn(async () => {}),
 	getVoiceCaptureStatus: vi.fn(() => 'idle'),
 	startVoiceCapture: vi.fn(async () => {}),

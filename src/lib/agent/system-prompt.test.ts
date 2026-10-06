@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-vi.mock('$lib/stores/settings', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/stores/settings')>()),
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: () => ({ customSystemPrompt: '', sandboxEnabled: false }),
 	getResponseFormatPrompt: () => '',
 	getIncludeImagesPrompt: () => '\n\nIMAGES:\n- When the answer is about something visual',
@@ -25,9 +25,9 @@ vi.mock('$lib/stores/settings', async (importOriginal) => ({
 }));
 
 import { buildSystemPrompt } from './system-prompt';
-import { registerMcpTools, unregisterMcpServer } from '$lib/agent/tools/mcp';
-import { getToolSchemas } from '$lib/agent/tools/registry';
-import type { McpToolDescriptor } from '$lib/ipc/gen/McpToolDescriptor';
+import { registerMcpTools, unregisterMcpServer } from '#lib/agent/tools/mcp.ts';
+import { getToolSchemas } from '#lib/agent/tools/registry.ts';
+import type { McpToolDescriptor } from '#lib/ipc/gen/McpToolDescriptor.ts';
 
 /**
  * Memory is a PARAMETER, not something this module fetches. Job runs, remote

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { compareVersions } from '$lib/updates';
+import { compareVersions } from '#lib/updates.ts';
 
 describe('compareVersions', () => {
 	it('returns 0 for equal versions', () => {

@@ -5,14 +5,14 @@
 	import {
 		registerTerminalSnapshot,
 		clearTerminalSnapshot
-	} from '$lib/stores/shellTerminalSnapshot';
+	} from '#lib/stores/shellTerminalSnapshot.ts';
 	import ChatSidebar from './ChatSidebar.svelte';
-	import Modal from '$lib/components/Modal.svelte';
-	import ModalButton from '$lib/components/ModalButton.svelte';
-	import { classifyShellRisk, type RiskMatch } from '$lib/shell/risky-commands';
-	import { stripCommandComments, toPtyPaste } from '$lib/shell/commandBlock';
-	import { getActiveTab } from '$lib/stores/activeTab.svelte';
-	import { getActiveShellId, type ShellSession } from '$lib/stores/shell.svelte';
+	import Modal from '#lib/components/Modal.svelte';
+	import ModalButton from '#lib/components/ModalButton.svelte';
+	import { classifyShellRisk, type RiskMatch } from '#lib/shell/risky-commands.ts';
+	import { stripCommandComments, toPtyPaste } from '#lib/shell/commandBlock.ts';
+	import { getActiveTab } from '#lib/stores/activeTab.svelte.ts';
+	import { getActiveShellId, type ShellSession } from '#lib/stores/shell.svelte.ts';
 
 	const {
 		session,

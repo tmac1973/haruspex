@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import Toasts from './Toasts.svelte';
-import { showToast, dismissToast, getToasts } from '$lib/stores/toasts.svelte';
+import { showToast, dismissToast, getToasts } from '#lib/stores/toasts.svelte.ts';
 
 describe('Toasts host', () => {
 	afterEach(() => {

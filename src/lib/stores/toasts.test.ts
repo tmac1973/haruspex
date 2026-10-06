@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // Module-level $state — re-import fresh per test so visible toasts,
 // queued toasts, and timers can't leak between tests.
 async function freshStore() {
-	return import('$lib/stores/toasts.svelte');
+	return import('#lib/stores/toasts.svelte.ts');
 }
 
 describe('toasts store', () => {

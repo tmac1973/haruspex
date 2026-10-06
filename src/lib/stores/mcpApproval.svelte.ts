@@ -23,7 +23,7 @@
  * reasoned about when they clicked.
  */
 
-import type { McpToolAnnotations } from '$lib/ipc/gen/McpToolAnnotations';
+import type { McpToolAnnotations } from '#lib/ipc/gen/McpToolAnnotations.ts';
 
 export type McpApprovalChoice = 'allow_once' | 'allow_always' | 'deny';
 

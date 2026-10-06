@@ -20,8 +20,8 @@
  * guard that must keep us under a hard wall.
  */
 
-import { messageText, type ChatMessage, type ToolDefinition } from '$lib/api';
-import { truncateCapturedOutput } from '$lib/shell/truncate';
+import { messageText, type ChatMessage, type ToolDefinition } from '#lib/api.ts';
+import { truncateCapturedOutput } from '#lib/shell/truncate.ts';
 
 // Bytes per token. Real English is ~4 bytes/token; dividing by a smaller
 // number over-estimates tokens, so we trim a touch early — safe.

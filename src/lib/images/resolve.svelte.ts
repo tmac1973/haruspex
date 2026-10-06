@@ -14,12 +14,12 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { errMessage } from '$lib/utils/error';
-import type { SearchStep } from '$lib/agent/loop';
-import type { ImageRequest } from '$lib/ipc/gen/ImageRequest';
-import type { ImageRow } from '$lib/ipc/gen/ImageRow';
-import { getSearchProxy } from '$lib/stores/settings';
-import { logDebug } from '$lib/debug-log';
+import { errMessage } from '#lib/utils/error.ts';
+import type { SearchStep } from '#lib/agent/loop.ts';
+import type { ImageRequest } from '#lib/ipc/gen/ImageRequest.ts';
+import type { ImageRow } from '#lib/ipc/gen/ImageRow.ts';
+import { getSearchProxy } from '#lib/stores/settings.ts';
+import { logDebug } from '#lib/debug-log.ts';
 import { SvelteMap } from 'svelte/reactivity';
 import { imageSrc } from './url';
 import {

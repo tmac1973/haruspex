@@ -7,7 +7,7 @@
  * already-tested pure helpers `clusterFindings` and `buildAuditReport`.
  */
 
-import type { AuditFinding, AuditVerdict } from '$lib/agent/tools/audit';
+import type { AuditFinding, AuditVerdict } from '#lib/agent/tools/audit.ts';
 import { clusterFindings, type ClusterOptions, type FindingCluster } from './auditCluster';
 import { buildAuditReport, type VerifiedCluster } from './auditReport';
 

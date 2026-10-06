@@ -4,15 +4,15 @@
 	 * settings section. Lets the user add, rename, update, and delete named
 	 * keys that are referenced by inference backends and per-job overrides.
 	 */
-	import { getApiKeys, updateApiKey } from '$lib/stores/settings';
+	import { getApiKeys, updateApiKey } from '#lib/stores/settings.ts';
 	import {
 		addStoredApiKey,
 		apiKeyValueWarning,
 		deleteStoredApiKey,
 		setStoredApiKeyValue
-	} from '$lib/stores/apiKeySecrets';
-	import type { StoredApiKey } from '$lib/stores/settings';
-	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	} from '#lib/stores/apiKeySecrets.ts';
+	import type { StoredApiKey } from '#lib/stores/settings.ts';
+	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 
 	let keys = $state<StoredApiKey[]>(getApiKeys());
 	let newName = $state('');

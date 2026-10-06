@@ -18,13 +18,13 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { sleep } from '$lib/utils/async';
+import { sleep } from '#lib/utils/async.ts';
 import { labelArg, toolInvokeError } from './_helpers';
 import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
 import type { ToolContext, ToolExecOutput } from './types';
 import { spillIfLarge } from './pty-exec';
-import { snapshotTerminal } from '$lib/stores/shellTerminalSnapshot';
+import { snapshotTerminal } from '#lib/stores/shellTerminalSnapshot.ts';
 
 /** Cap on images buffered into one turn — too many exhausts model context. */
 const MAX_PENDING_IMAGES = 4;

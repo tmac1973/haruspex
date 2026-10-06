@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { DavAccount } from '$lib/ipc/gen/DavAccount';
+import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
 
 const state = vi.hoisted(() => ({
 	available: true,

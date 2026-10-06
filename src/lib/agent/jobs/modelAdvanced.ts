@@ -18,7 +18,11 @@
  * work for any model.
  */
 
-import type { RemoteReasoningCaps, RemoteSamplingCaps, SamplingParams } from '$lib/stores/settings';
+import type {
+	RemoteReasoningCaps,
+	RemoteSamplingCaps,
+	SamplingParams
+} from '#lib/stores/settings.ts';
 
 /**
  * Where a job's sampling parameters come from.

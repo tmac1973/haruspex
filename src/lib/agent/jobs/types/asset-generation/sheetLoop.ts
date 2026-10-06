@@ -10,14 +10,14 @@
  * path in `generate.ts`, which owns the bookkeeping this module reports into.
  */
 
-import { checkImage, normalizeImage, splitSheet } from '$lib/assets/normalize';
-import type { AssetEntry, AssetSpec, NormalizeProfile } from '$lib/assets/spec/types';
-import type { CheckReport } from '$lib/ipc/gen/CheckReport';
-import type { ImageResult } from '$lib/image/types';
+import { checkImage, normalizeImage, splitSheet } from '#lib/assets/normalize.ts';
+import type { AssetEntry, AssetSpec, NormalizeProfile } from '#lib/assets/spec/types.ts';
+import type { CheckReport } from '#lib/ipc/gen/CheckReport.ts';
+import type { ImageResult } from '#lib/image/types.ts';
 import { betterReport, judgeUnavailable, maybeJudge, rejectionReason } from './gate';
 import type { GenerateDeps } from './generate';
 import { escapesWorkdir, isCancellation, isTransient, keepBest } from './guards';
-import { errMessage } from '$lib/utils/error';
+import { errMessage } from '#lib/utils/error.ts';
 import { assignCells, padding, sheetRequest, type CellResult, type SheetPlan } from './sheets';
 import type { EntryOutcome, SheetOutcome } from './types';
 

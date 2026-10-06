@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { SetupStep } from '$lib/ipc/gen/SetupStep';
+import type { SetupStep } from '#lib/ipc/gen/SetupStep.ts';
 import {
 	clearSetupProgress,
 	describeSetup,

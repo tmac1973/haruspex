@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { renderAssetReport, type ReportInput } from './report';
-import type { AssetSpec } from '$lib/assets/spec/types';
-import type { CheckReport } from '$lib/ipc/gen/CheckReport';
+import type { AssetSpec } from '#lib/assets/spec/types.ts';
+import type { CheckReport } from '#lib/ipc/gen/CheckReport.ts';
 import type { AnchorOutcome, EntryOutcome, SheetOutcome } from './types';
 
 function spec(): AssetSpec {

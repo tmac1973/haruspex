@@ -1,12 +1,12 @@
 // llama-server OpenAI-compatible API client wrapper
-import { resolveBackendDescriptor } from '$lib/inference/descriptor';
-import type { RemoteReasoningCaps, RemoteSamplingCaps } from '$lib/stores/settings';
-import { logDebug, isVerbosePayloads } from '$lib/debug-log';
-import { apiKeysReady } from '$lib/stores/apiKeySecrets';
-import { baseUrl } from '$lib/ports';
-import { OPENROUTER_ATTRIBUTION_HEADERS } from '$lib/openrouter';
-import { isAbortError } from '$lib/utils/error';
-import { readErrorText } from '$lib/utils/http';
+import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
+import type { RemoteReasoningCaps, RemoteSamplingCaps } from '#lib/stores/settings.ts';
+import { logDebug, isVerbosePayloads } from '#lib/debug-log.ts';
+import { apiKeysReady } from '#lib/stores/apiKeySecrets.ts';
+import { baseUrl } from '#lib/ports.ts';
+import { OPENROUTER_ATTRIBUTION_HEADERS } from '#lib/openrouter.ts';
+import { isAbortError } from '#lib/utils/error.ts';
+import { readErrorText } from '#lib/utils/http.ts';
 
 let nextRequestId = 1;
 

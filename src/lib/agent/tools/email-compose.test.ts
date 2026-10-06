@@ -6,12 +6,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
-vi.mock('$lib/stores/emailReview.svelte', () => ({ askEmailReview: mocks.askEmailReview }));
+vi.mock('#lib/stores/emailReview.svelte.ts', () => ({ askEmailReview: mocks.askEmailReview }));
 
-import '$lib/agent/tools/email-compose';
-import { executeTool, getToolSchemas } from '$lib/agent/tools/registry';
-import { setEmailAccounts, type EmailAccount } from '$lib/stores/settings';
-import type { ToolContext } from '$lib/agent/tools/types';
+import '#lib/agent/tools/email-compose.ts';
+import { executeTool, getToolSchemas } from '#lib/agent/tools/registry.ts';
+import { setEmailAccounts, type EmailAccount } from '#lib/stores/settings.ts';
+import type { ToolContext } from '#lib/agent/tools/types.ts';
 
 const ctx: ToolContext = {
 	workingDir: null,

@@ -7,18 +7,18 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
-vi.mock('$lib/stores/settings', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/stores/settings')>();
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
 	return {
 		...actual,
 		getSettings: () => ({ ...actual.getSettings(), imageBackendKind: state.backend })
 	};
 });
-vi.mock('$lib/image/forTool', () => ({ generateForTool: state.generate }));
+vi.mock('#lib/image/forTool.ts', () => ({ generateForTool: state.generate }));
 
-import { executeTool, getToolSchemas } from '$lib/agent/tools';
+import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import type { ToolContext } from './types';
-import { ImageBackendError } from '$lib/image/types';
+import { ImageBackendError } from '#lib/image/types.ts';
 
 const HASH = 'b'.repeat(64);
 const ctx: ToolContext = {

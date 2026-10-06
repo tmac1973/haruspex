@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { diagnoseEmptyResponse } from './diagnostics';
-import type { SearchStep } from '$lib/agent/loop';
+import type { SearchStep } from '#lib/agent/loop.ts';
 
 // The streamingContent branch logs via console.warn; keep test output quiet.
 vi.spyOn(console, 'warn').mockImplementation(() => {});

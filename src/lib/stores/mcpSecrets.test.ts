@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
+import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 
 const state = vi.hoisted(() => ({ available: true, stored: new Map<string, string>() }));
 

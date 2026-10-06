@@ -5,8 +5,8 @@
 	 * free for UI widgets. Renders a text input that filters the dropdown list
 	 * by name or id; selecting an entry calls back with the model id.
 	 */
-	import type { OpenRouterModel } from '$lib/openrouter';
-	import { isOpenRouterFreeModel, isOpenRouterToolCapable } from '$lib/openrouter';
+	import type { OpenRouterModel } from '#lib/openrouter.ts';
+	import { isOpenRouterFreeModel, isOpenRouterToolCapable } from '#lib/openrouter.ts';
 
 	interface Props {
 		models: OpenRouterModel[];

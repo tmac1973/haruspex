@@ -7,8 +7,8 @@ import {
 	stripToolCallXml,
 	resolveToolCalls,
 	type ToolCallResolution
-} from '$lib/agent/parser';
-import type { ChatCompletionResponse, ToolDefinition } from '$lib/api';
+} from '#lib/agent/parser.ts';
+import type { ChatCompletionResponse, ToolDefinition } from '#lib/api.ts';
 
 /**
  * Unwrap a resolution to its calls, so the assertions below read the same as

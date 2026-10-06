@@ -1,4 +1,4 @@
-import { logDebug } from '$lib/debug-log';
+import { logDebug } from '#lib/debug-log.ts';
 import { WorkerManager, type RunOptions, type WorkerFactory } from './worker-manager';
 import type { ToolResult } from './protocol';
 

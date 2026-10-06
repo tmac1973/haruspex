@@ -8,30 +8,30 @@
  * registered pipeline (./types). Nothing here branches on job_type.
  */
 
-import type { ResolvedToolCall } from '$lib/agent/parser';
-import type { Artifact, LintIssue } from '$lib/agent/tools';
-import type { CallStats, SearchStep } from '$lib/agent/loop';
-import type { ContextManagedInfo } from '$lib/agent/context-budget';
+import type { ResolvedToolCall } from '#lib/agent/parser.ts';
+import type { Artifact, LintIssue } from '#lib/agent/tools/index.ts';
+import type { CallStats, SearchStep } from '#lib/agent/loop.ts';
+import type { ContextManagedInfo } from '#lib/agent/context-budget.ts';
 import {
 	runEphemeralTurn,
 	type EphemeralTurnOptions,
 	type EphemeralTurnResult
-} from '$lib/agent/runEphemeralTurn';
-import type { BackendOverride, Usage } from '$lib/api';
-import { withInferenceSlot } from '$lib/agent/inferenceQueue.svelte';
-import { runWithAutoApprove } from '$lib/stores/approvalOverride';
-import { getJob, type JobWithSteps, type JobType } from '$lib/stores/jobs.svelte';
-import { resolveBackendDescriptor } from '$lib/inference/descriptor';
+} from '#lib/agent/runEphemeralTurn.ts';
+import type { BackendOverride, Usage } from '#lib/api.ts';
+import { withInferenceSlot } from '#lib/agent/inferenceQueue.svelte.ts';
+import { runWithAutoApprove } from '#lib/stores/approvalOverride.ts';
+import { getJob, type JobWithSteps, type JobType } from '#lib/stores/jobs.svelte.ts';
+import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import {
 	getActiveLocalModelFilename,
 	getSettings,
 	type SamplingParams
-} from '$lib/stores/settings';
+} from '#lib/stores/settings.ts';
 import { parseModelAdvanced } from './modelAdvanced';
 // The registration barrel, deliberately — importing it registers the built-in
 // job types before the first dispatch can happen.
 import { getJobType, type JobRunContext, type PlannedStep } from './types';
-import { markStepDone, newRunningStep } from '$lib/agent/steps';
+import { markStepDone, newRunningStep } from '#lib/agent/steps.ts';
 import {
 	createJobRun,
 	markRunFinished,
@@ -40,8 +40,8 @@ import {
 	type JobRunStatus,
 	type StepStats,
 	type TurnKindStats
-} from '$lib/stores/jobRuns.svelte';
-import { logDebug } from '$lib/debug-log';
+} from '#lib/stores/jobRuns.svelte.ts';
+import { logDebug } from '#lib/debug-log.ts';
 import { setKeepAwake } from './keepAwake';
 
 export type RunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled' | 'needs_input';

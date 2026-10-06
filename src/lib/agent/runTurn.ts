@@ -11,9 +11,9 @@
  * commit, diagnostics) and is intentionally NOT routed through this.
  */
 
-import { runAgentLoop, type AgentLoopOptions, type AgentStopReason } from '$lib/agent/loop';
-import { appendStreamDelta, createThinkStreamState } from '$lib/agent/think-stream';
-import { ResponseCutOffError } from '$lib/api';
+import { runAgentLoop, type AgentLoopOptions, type AgentStopReason } from '#lib/agent/loop.ts';
+import { appendStreamDelta, createThinkStreamState } from '#lib/agent/think-stream.ts';
+import { ResponseCutOffError } from '#lib/api.ts';
 
 /** Loop options minus the streaming/lifecycle callbacks `runTurnCore` owns. */
 export type TurnLoopOptions = Omit<AgentLoopOptions, 'onStreamChunk' | 'onComplete' | 'onError'>;

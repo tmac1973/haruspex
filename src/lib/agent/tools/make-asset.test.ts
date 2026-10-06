@@ -8,21 +8,21 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
-vi.mock('$lib/stores/settings', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/stores/settings')>();
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
 	return {
 		...actual,
 		getSettings: () => ({ ...actual.getSettings(), imageBackendKind: state.backend })
 	};
 });
-vi.mock('$lib/assets/single', () => ({
+vi.mock('#lib/assets/single.ts', () => ({
 	DEFAULT_SIZE: { sprite: 64, icon: 32, texture: 128, image: 1024 },
 	makeSingleAsset: state.make
 }));
 
-import { executeTool, getToolSchemas } from '$lib/agent/tools';
+import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import type { ToolContext } from './types';
-import { ImageBackendError } from '$lib/image/types';
+import { ImageBackendError } from '#lib/image/types.ts';
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
 const PALETTE = [0xff0000ff, 0x00ff00ff];

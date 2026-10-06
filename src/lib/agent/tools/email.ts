@@ -1,9 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
-import { isAbortError } from '$lib/utils/error';
-import { type ChatMessage } from '$lib/api';
-import { getSettings } from '$lib/stores/settings';
+import { isAbortError } from '#lib/utils/error.ts';
+import { type ChatMessage } from '#lib/api.ts';
+import { getSettings } from '#lib/stores/settings.ts';
 import { runSubAgent, toolInvokeError } from './_helpers';
-import type { EmailAccount } from '$lib/stores/settings';
+import type { EmailAccount } from '#lib/stores/settings.ts';
 import { registerTool } from './registry';
 import { toolResult, toolError } from './types';
 

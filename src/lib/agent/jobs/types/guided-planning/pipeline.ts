@@ -8,25 +8,25 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { createJob } from '$lib/stores/jobs.svelte';
-import { resolveImageBackend } from '$lib/image';
-import { defaultProfile } from '$lib/assets/normalize';
-import { renderAssetSpec } from '$lib/assets/spec/write';
-import { validateAssetSpec } from '$lib/assets/spec/validate';
+import { createJob } from '#lib/stores/jobs.svelte.ts';
+import { resolveImageBackend } from '#lib/image/index.ts';
+import { defaultProfile } from '#lib/assets/normalize.ts';
+import { renderAssetSpec } from '#lib/assets/spec/write.ts';
+import { validateAssetSpec } from '#lib/assets/spec/validate.ts';
 import { derivePlanSpec, type PlanDerivePayload } from '../asset-generation/derive';
 import { KIND_RULE } from '../asset-generation/prompts';
 import { SUBMIT_PLAN_ASSET_SPEC_TOOL } from '../asset-generation/tools';
-import type { ResolvedToolCall } from '$lib/agent/parser';
-import { SUBMIT_PLAN_OUTLINE_TOOL, type PlanOutlinePhaseArg } from '$lib/agent/tools/planning';
-import type { JobWithSteps } from '$lib/stores/jobs.svelte';
-import { askUserQuestion } from '$lib/stores/userQuestion.svelte';
-import { normalizeAbort } from '$lib/utils/error';
+import type { ResolvedToolCall } from '#lib/agent/parser.ts';
+import { SUBMIT_PLAN_OUTLINE_TOOL, type PlanOutlinePhaseArg } from '#lib/agent/tools/planning.ts';
+import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
+import { askUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
+import { normalizeAbort } from '#lib/utils/error.ts';
 import {
 	markRunStarted,
 	markRunStepFinished,
 	markRunStepStarted,
 	type JobRunStepStatus
-} from '$lib/stores/jobRuns.svelte';
+} from '#lib/stores/jobRuns.svelte.ts';
 import type { JobRunContext } from '../types';
 import { parseGuidedPlanningConfig, RUN_MODE_LABELS, type GuidedPlanningConfig } from './config';
 import { describeStageModel, stageModelColumns } from '../../chainModel';
@@ -844,7 +844,7 @@ export function assetSpecPrompt(outDir: string, specPath: string): string {
  * Relies on `finalText` having reasoning stripped: a model that emits a
  * `<think>` block would otherwise never match this prefix, so every run
  * burned all MAX_VERIFY_ROUNDS and fired a revise turn against files that
- * were already correct. See `stripThinkBlocks` in $lib/markdown.
+ * were already correct. See `stripThinkBlocks` in #lib/markdown.
  */
 /** What a verification pass ended with. */
 export interface VerifyOutcome {

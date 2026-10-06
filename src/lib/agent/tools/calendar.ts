@@ -12,11 +12,11 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { IPC } from '$lib/ipc/commands';
-import type { CalendarQueryResult } from '$lib/ipc/gen/CalendarQueryResult';
-import type { CalendarEvent } from '$lib/ipc/gen/CalendarEvent';
-import type { DavAccount } from '$lib/ipc/gen/DavAccount';
-import { enabledDavAccounts, getSettings } from '$lib/stores/settings';
+import { IPC } from '#lib/ipc/commands.ts';
+import type { CalendarQueryResult } from '#lib/ipc/gen/CalendarQueryResult.ts';
+import type { CalendarEvent } from '#lib/ipc/gen/CalendarEvent.ts';
+import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
+import { enabledDavAccounts, getSettings } from '#lib/stores/settings.ts';
 import { registerTool } from './registry';
 import { toolResult, toolError } from './types';
 

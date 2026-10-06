@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { clusterFindings, parseLineRange } from './auditCluster';
-import type { AuditFinding } from '$lib/agent/tools/audit';
+import type { AuditFinding } from '#lib/agent/tools/audit.ts';
 
 function f(partial: Partial<AuditFinding> & { file: string; title: string }): AuditFinding {
 	return { severity: 'medium', ...partial };

@@ -7,10 +7,10 @@ import type {
 	ToolResult,
 	WorkerToMain
 } from './protocol';
-import { getWorkingDir } from '$lib/stores/session.svelte';
-import { getSettings } from '$lib/stores/settings';
-import { logDebug } from '$lib/debug-log';
-import { errMessage } from '$lib/utils/error';
+import { getWorkingDir } from '#lib/stores/session.svelte.ts';
+import { getSettings } from '#lib/stores/settings.ts';
+import { logDebug } from '#lib/debug-log.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 export interface RunOptions {
 	timeoutMs?: number;

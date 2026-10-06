@@ -18,8 +18,8 @@
 		getConversations,
 		renameConversation,
 		setActiveConversation
-	} from '$lib/stores/chat.svelte';
-	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	} from '#lib/stores/chat.svelte.ts';
+	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 
 	let collapsed = $state(false);
 	let renamingId = $state<string | null>(null);

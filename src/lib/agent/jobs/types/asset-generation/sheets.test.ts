@@ -9,8 +9,8 @@ import {
 	sheetRequest,
 	SHEET_EDGE
 } from './sheets';
-import type { AssetEntry, AssetSpec } from '$lib/assets/spec/types';
-import type { SheetPiece } from '$lib/ipc/gen/SheetPiece';
+import type { AssetEntry, AssetSpec } from '#lib/assets/spec/types.ts';
+import type { SheetPiece } from '#lib/ipc/gen/SheetPiece.ts';
 
 function entry(id: string, over: Partial<AssetEntry> = {}): AssetEntry {
 	return { id, kind: 'sprite', prompt: `a ${id}`, out: `out/${id}.png`, ...over };

@@ -4,11 +4,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // queue-and-auto-send-while-starting path, and the send gate for a
 // stopped/errored backend. Mock setup mirrors chat.test.ts.
 
-vi.mock('$lib/agent/loop', () => ({
+vi.mock('#lib/agent/loop.ts', () => ({
 	runAgentLoop: vi.fn()
 }));
 
-vi.mock('$lib/agent/inferenceQueue.svelte', () => ({
+vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => ({
 	withInferenceSlot: async <T>(
 		opts: { onAdmitted?: () => void },
 		fn: () => Promise<T>
@@ -19,7 +19,7 @@ vi.mock('$lib/agent/inferenceQueue.svelte', () => ({
 	getRunningCount: () => 0
 }));
 
-vi.mock('$lib/api', () => ({
+vi.mock('#lib/api.ts', () => ({
 	mergeLeadingSystemMessages: (messages: { role: string; content: unknown }[]) => {
 		const merged: { role: string; content: unknown }[] = [];
 		for (const m of messages) {
@@ -63,12 +63,12 @@ describe('chat store error recovery', () => {
 	});
 
 	async function importChat() {
-		return await import('$lib/stores/chat.svelte');
+		return await import('#lib/stores/chat.svelte.ts');
 	}
 
 	/** The live $state proxy — mutating it drives the store's watcher. */
 	async function serverState() {
-		return (await import('$lib/stores/llamaServer.svelte')).getServerState();
+		return (await import('#lib/stores/llamaServer.svelte.ts')).getServerState();
 	}
 
 	/** Force the module-scope $effect watcher to run against fresh state. */
@@ -80,7 +80,7 @@ describe('chat store error recovery', () => {
 	}
 
 	async function mockAnswer(text: string) {
-		const { runAgentLoop } = await import('$lib/agent/loop');
+		const { runAgentLoop } = await import('#lib/agent/loop.ts');
 		vi.mocked(runAgentLoop).mockImplementation(async (options) => {
 			options.onStreamChunk({ delta: { content: text }, finish_reason: null });
 			options.onComplete();
@@ -89,7 +89,7 @@ describe('chat store error recovery', () => {
 	}
 
 	it('retryLastTurn re-runs the failed turn without duplicating the user message', async () => {
-		const { runAgentLoop } = await import('$lib/agent/loop');
+		const { runAgentLoop } = await import('#lib/agent/loop.ts');
 		vi.mocked(runAgentLoop)
 			.mockRejectedValueOnce(new Error('boom'))
 			.mockImplementationOnce(async (options) => {
@@ -163,7 +163,7 @@ describe('chat store error recovery', () => {
 		expect(chat.getQueuedForStartup()).toBe(false);
 		expect(chat.getErrorMessage()).toBe('The model failed to start: model exploded');
 		expect(chat.getLastTurnFailed()).toBe(true);
-		const { runAgentLoop } = await import('$lib/agent/loop');
+		const { runAgentLoop } = await import('#lib/agent/loop.ts');
 		expect(runAgentLoop).not.toHaveBeenCalled();
 		// The user message stays in history for Retry.
 		expect(chat.getActiveConversation()!.messages).toHaveLength(1);
@@ -187,7 +187,7 @@ describe('chat store error recovery', () => {
 		// The server coming ready later must NOT fire the cancelled send.
 		server.status = 'ready';
 		await flushEffects();
-		const { runAgentLoop } = await import('$lib/agent/loop');
+		const { runAgentLoop } = await import('#lib/agent/loop.ts');
 		expect(runAgentLoop).not.toHaveBeenCalled();
 	});
 
@@ -199,7 +199,7 @@ describe('chat store error recovery', () => {
 
 		expect(accepted).toBe(false);
 		expect(chat.getConversations()).toHaveLength(0);
-		const { getToasts } = await import('$lib/stores/toasts.svelte');
+		const { getToasts } = await import('#lib/stores/toasts.svelte.ts');
 		expect(getToasts().some((t) => t.kind === 'error' && t.message.includes("isn't running"))).toBe(
 			true
 		);

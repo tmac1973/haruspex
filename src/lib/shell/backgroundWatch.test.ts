@@ -10,7 +10,7 @@ import {
 	clearWatchesForSession,
 	setWatchCompletionHandler,
 	_resetForTests
-} from '$lib/shell/backgroundWatch';
+} from '#lib/shell/backgroundWatch.ts';
 
 beforeEach(() => {
 	_resetForTests();

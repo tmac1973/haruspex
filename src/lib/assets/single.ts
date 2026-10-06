@@ -10,12 +10,12 @@
  */
 import type { AssetEntry, AssetKind, AssetSpec, NormalizeProfile } from './spec/types';
 import { checkImage, defaultProfile, effectiveProfile, normalizeImage } from './normalize';
-import { buildEntryRequest, checkProfile } from '$lib/agent/jobs/types/asset-generation/request';
-import { sheetRequest } from '$lib/agent/jobs/types/asset-generation/sheets';
-import { FALLBACK_STYLE } from '$lib/agent/jobs/types/asset-generation/derive';
-import { generateForTool } from '$lib/image/forTool';
-import { resolveImageBackend } from '$lib/image/backend';
-import type { ImageProgress } from '$lib/image/types';
+import { buildEntryRequest, checkProfile } from '#lib/agent/jobs/types/asset-generation/request.ts';
+import { sheetRequest } from '#lib/agent/jobs/types/asset-generation/sheets.ts';
+import { FALLBACK_STYLE } from '#lib/agent/jobs/types/asset-generation/derive.ts';
+import { generateForTool } from '#lib/image/forTool.ts';
+import { resolveImageBackend } from '#lib/image/backend.ts';
+import type { ImageProgress } from '#lib/image/types.ts';
 
 export type SingleKind = AssetKind | 'image';
 

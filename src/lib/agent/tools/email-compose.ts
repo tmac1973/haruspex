@@ -6,9 +6,9 @@
  * Offered only in an attended Chat with an account that has Allow sending on
  * (`registry.ts`), and refused here too when nobody is present.
  */
-import { getSettings, type EmailAccount } from '$lib/stores/settings';
-import { askEmailReview, type EmailDraft } from '$lib/stores/emailReview.svelte';
-import type { ReplyContext } from '$lib/ipc/gen/ReplyContext';
+import { getSettings, type EmailAccount } from '#lib/stores/settings.ts';
+import { askEmailReview, type EmailDraft } from '#lib/stores/emailReview.svelte.ts';
+import type { ReplyContext } from '#lib/ipc/gen/ReplyContext.ts';
 import { toolInvokeError } from './_helpers';
 import { emailCall, resolveEmailAccounts } from './email';
 import { registerTool } from './registry';

@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { getJobs, type JobSummary } from '$lib/stores/jobs.svelte';
-	import { getCurrentRun, getPendingQueue, getQueueDepth } from '$lib/agent/jobs/runner.svelte';
+	import { getJobs, type JobSummary } from '#lib/stores/jobs.svelte.ts';
+	import { getCurrentRun, getPendingQueue, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
 	import {
 		ensureTypeAvailabilityLoaded,
 		getJobType,
 		isJobTypeAvailable
-	} from '$lib/agent/jobs/types';
-	import { activatable } from '$lib/actions/activatable';
+	} from '#lib/agent/jobs/types/index.ts';
+	import { activatable } from '#lib/actions/activatable.ts';
 
 	void ensureTypeAvailabilityLoaded();
 

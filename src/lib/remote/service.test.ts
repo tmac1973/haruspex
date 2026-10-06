@@ -9,15 +9,15 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn() }));
-vi.mock('$lib/stores/settings', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/stores/settings')>()),
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: mocks.getSettings,
 	updateSettings: mocks.updateSettings
 }));
-vi.mock('$lib/remote/driver', () => ({ startRemoteDriver: mocks.startRemoteDriver }));
+vi.mock('#lib/remote/driver.ts', () => ({ startRemoteDriver: mocks.startRemoteDriver }));
 
-import { syncRemoteServer } from '$lib/remote/service';
-import { qrPath, remoteLink, generateRemoteToken } from '$lib/remote/api';
+import { syncRemoteServer } from '#lib/remote/service.ts';
+import { qrPath, remoteLink, generateRemoteToken } from '#lib/remote/api.ts';
 
 const RUNNING = { running: true, port: 8787, bindAll: true, sessions: 0 };
 const STOPPED = { running: false, port: null, bindAll: false, sessions: 0 };

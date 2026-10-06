@@ -7,8 +7,8 @@
  * when both live in the same folder.
  */
 
-import { registerTool } from '$lib/agent/tools/registry';
-import { toolResult } from '$lib/agent/tools/types';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { toolResult } from '#lib/agent/tools/types.ts';
 
 export const SUBMIT_ASSET_JUDGEMENT_TOOL = 'submit_asset_judgement';
 

@@ -1,17 +1,17 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
-	import { IPC } from '$lib/ipc/commands';
+	import { IPC } from '#lib/ipc/commands.ts';
 	import { onMount } from 'svelte';
-	import { dismissable } from '$lib/actions/dismissable';
-	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
-	import { clearDebugLogs, getDebugLogs } from '$lib/debug-log';
-	import { createCopyAction } from '$lib/utils/clipboard.svelte';
-	import { getSettings } from '$lib/stores/settings';
-	import type { CombinedSearchStats } from '$lib/ipc/gen/CombinedSearchStats';
-	import type { EngineLifetimeStats } from '$lib/ipc/gen/EngineLifetimeStats';
-	import type { EngineSessionStats } from '$lib/ipc/gen/EngineSessionStats';
-	import type { GlobalCounters } from '$lib/ipc/gen/GlobalCounters';
-	import type { SearchFailureKind } from '$lib/ipc/gen/SearchFailureKind';
+	import { dismissable } from '#lib/actions/dismissable.ts';
+	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
+	import { clearDebugLogs, getDebugLogs } from '#lib/debug-log.ts';
+	import { createCopyAction } from '#lib/utils/clipboard.svelte.ts';
+	import { getSettings } from '#lib/stores/settings.ts';
+	import type { CombinedSearchStats } from '#lib/ipc/gen/CombinedSearchStats.ts';
+	import type { EngineLifetimeStats } from '#lib/ipc/gen/EngineLifetimeStats.ts';
+	import type { EngineSessionStats } from '#lib/ipc/gen/EngineSessionStats.ts';
+	import type { GlobalCounters } from '#lib/ipc/gen/GlobalCounters.ts';
+	import type { SearchFailureKind } from '#lib/ipc/gen/SearchFailureKind.ts';
 
 	type LogTab = 'app' | 'llm' | 'tts' | 'whisper' | 'mcp' | 'crashes' | 'debug' | 'tools' | 'stats';
 

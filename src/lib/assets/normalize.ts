@@ -12,14 +12,14 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import type { NormalizeProfile } from '$lib/ipc/gen/NormalizeProfile';
-import type { NormalizeResult } from '$lib/ipc/gen/NormalizeResult';
-import type { AssetKind } from '$lib/ipc/gen/AssetKind';
-import type { CheckReport } from '$lib/ipc/gen/CheckReport';
-import type { ImageStats } from '$lib/ipc/gen/ImageStats';
-import type { PaletteSpread } from '$lib/ipc/gen/PaletteSpread';
-import type { SheetPiece } from '$lib/ipc/gen/SheetPiece';
-import type { SplitResult } from '$lib/ipc/gen/SplitResult';
+import type { NormalizeProfile } from '#lib/ipc/gen/NormalizeProfile.ts';
+import type { NormalizeResult } from '#lib/ipc/gen/NormalizeResult.ts';
+import type { AssetKind } from '#lib/ipc/gen/AssetKind.ts';
+import type { CheckReport } from '#lib/ipc/gen/CheckReport.ts';
+import type { ImageStats } from '#lib/ipc/gen/ImageStats.ts';
+import type { PaletteSpread } from '#lib/ipc/gen/PaletteSpread.ts';
+import type { SheetPiece } from '#lib/ipc/gen/SheetPiece.ts';
+import type { SplitResult } from '#lib/ipc/gen/SplitResult.ts';
 
 export type {
 	NormalizeProfile,

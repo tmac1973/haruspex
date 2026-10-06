@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { generateEntries, escapesWorkdir, type GenerateDeps } from './generate';
 import type { SheetOutcome } from './types';
-import type { AssetEntry, AssetSpec, NormalizeProfile } from '$lib/assets/spec/types';
-import { ImageBackendError } from '$lib/image/types';
-import type { ImageBackendCapabilities, ImageRequest } from '$lib/image/types';
+import type { AssetEntry, AssetSpec, NormalizeProfile } from '#lib/assets/spec/types.ts';
+import { ImageBackendError } from '#lib/image/types.ts';
+import type { ImageBackendCapabilities, ImageRequest } from '#lib/image/types.ts';
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock('@tauri-apps/api/core', () => ({ invoke }));

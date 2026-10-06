@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Schedule, ScheduleKind, Weekday } from '$lib/stores/jobs.svelte';
+	import type { Schedule, ScheduleKind, Weekday } from '#lib/stores/jobs.svelte.ts';
 
 	interface Props {
 		schedule: Schedule;

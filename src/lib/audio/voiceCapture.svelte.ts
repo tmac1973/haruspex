@@ -9,10 +9,10 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { sleep } from '$lib/utils/async';
-import { getSettings } from '$lib/stores/settings';
-import { showToast } from '$lib/stores/toasts.svelte';
-import type { SidecarStatus } from '$lib/ipc/gen/SidecarStatus';
+import { sleep } from '#lib/utils/async.ts';
+import { getSettings } from '#lib/stores/settings.ts';
+import { showToast } from '#lib/stores/toasts.svelte.ts';
+import type { SidecarStatus } from '#lib/ipc/gen/SidecarStatus.ts';
 
 export type VoiceCaptureStatus = 'idle' | 'recording' | 'processing' | 'downloading';
 

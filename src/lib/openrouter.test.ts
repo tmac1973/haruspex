@@ -8,7 +8,7 @@ import {
 	OPENROUTER_CATALOG_TTL_MS,
 	FREE_MODEL_RPM,
 	type OpenRouterModel
-} from '$lib/openrouter';
+} from '#lib/openrouter.ts';
 
 const toolModel = (id: string, name: string): OpenRouterModel => ({
 	id,

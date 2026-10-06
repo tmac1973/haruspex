@@ -4,7 +4,7 @@
  * just before connecting.
  */
 import { getSettings, setDavAccounts } from './settings';
-import type { DavAccount } from '$lib/ipc/gen/DavAccount';
+import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
 import { deleteSecret, keepSecret, migrateInlineSecrets } from './secrets';
 
 export function davSecretKey(accountId: string): string {

@@ -21,8 +21,8 @@ const mocks = vi.hoisted(() => ({
 	eventHandler: undefined as ((e: { payload: unknown }) => void) | undefined
 }));
 
-vi.mock('$lib/stores/settings', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/stores/settings')>()),
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: () => ({
 		contextSize: 32768,
 		inferenceBackend: {
@@ -81,7 +81,7 @@ import {
 	getQueueSnapshot,
 	getRunningCount,
 	_resetForTests
-} from '$lib/agent/inferenceQueue.svelte';
+} from '#lib/agent/inferenceQueue.svelte.ts';
 
 function tick() {
 	return new Promise((r) => setTimeout(r, 0));

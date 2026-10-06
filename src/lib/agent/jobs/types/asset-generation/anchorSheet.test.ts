@@ -1,21 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { AssetEntry, AssetSpec, NormalizeProfile } from '$lib/assets/spec/types';
-import type { ImageBackendCapabilities, ImageRequest } from '$lib/image/types';
+import type { AssetEntry, AssetSpec, NormalizeProfile } from '#lib/assets/spec/types.ts';
+import type { ImageBackendCapabilities, ImageRequest } from '#lib/image/types.ts';
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock('@tauri-apps/api/core', () => ({ invoke }));
 
 const asked = vi.hoisted(() => ({ answers: [] as string[], questions: 0 }));
-vi.mock('$lib/stores/userQuestion.svelte', () => ({
+vi.mock('#lib/stores/userQuestion.svelte.ts', () => ({
 	askUserQuestion: async () => {
 		asked.questions++;
 		return { kind: 'selected', labels: [asked.answers.shift() ?? 'Approve'] };
 	}
 }));
-vi.mock('$lib/images/resolve.svelte', () => ({ registerLocalImage: () => 'haruspex-img://x' }));
+vi.mock('#lib/images/resolve.svelte.ts', () => ({ registerLocalImage: () => 'haruspex-img://x' }));
 
 const backend = vi.hoisted(() => ({ requests: [] as ImageRequest[] }));
-vi.mock('$lib/image', () => ({
+vi.mock('#lib/image/index.ts', () => ({
 	resolveImageBackend: () => ({
 		generate: async (req: ImageRequest) => {
 			backend.requests.push(req);

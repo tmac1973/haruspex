@@ -7,7 +7,7 @@
  * run did not do.
  */
 
-import type { TextureRecipe } from '$lib/ipc/gen/TextureRecipe';
+import type { TextureRecipe } from '#lib/ipc/gen/TextureRecipe.ts';
 
 /** How the run got its style anchor. */
 export interface AnchorOutcome {

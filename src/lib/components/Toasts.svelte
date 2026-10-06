@@ -9,7 +9,7 @@
 	 * animation is a plain CSS `animation` so a global reduced-motion
 	 * override can disable it wholesale.
 	 */
-	import { getToasts, dismissToast, type Toast } from '$lib/stores/toasts.svelte';
+	import { getToasts, dismissToast, type Toast } from '#lib/stores/toasts.svelte.ts';
 
 	const toasts = $derived(getToasts());
 

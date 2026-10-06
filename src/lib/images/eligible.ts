@@ -20,9 +20,9 @@
  * simply never resolve, and the renderer shows nothing.
  */
 
-import type { SearchStep } from '$lib/agent/loop';
-import type { ImageRequest } from '$lib/ipc/gen/ImageRequest';
-import type { ImageSearchResult } from '$lib/ipc/gen/ImageSearchResult';
+import type { SearchStep } from '#lib/agent/loop.ts';
+import type { ImageRequest } from '#lib/ipc/gen/ImageRequest.ts';
+import type { ImageSearchResult } from '#lib/ipc/gen/ImageSearchResult.ts';
 
 /**
  * Markdown image refs. Global, as `matchAll` requires — it iterates over a

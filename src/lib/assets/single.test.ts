@@ -9,8 +9,8 @@ const state = vi.hoisted(() => ({
 	effective: vi.fn()
 }));
 
-vi.mock('$lib/image/forTool', () => ({ generateForTool: state.generate }));
-vi.mock('$lib/image/backend', () => ({
+vi.mock('#lib/image/forTool.ts', () => ({ generateForTool: state.generate }));
+vi.mock('#lib/image/backend.ts', () => ({
 	resolveImageBackend: () => ({ capabilities: async () => state.caps })
 }));
 vi.mock('./normalize', () => ({

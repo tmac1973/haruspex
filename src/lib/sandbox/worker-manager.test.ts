@@ -6,13 +6,13 @@ import type { MainToWorker, ToolResult, WorkerToMain } from './protocol';
 // a no-op (so runPython drives straight through to `send`).
 const invokeMock = vi.hoisted(() => vi.fn());
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
-vi.mock('$lib/stores/session.svelte', () => ({ getWorkingDir: () => null }));
-vi.mock('$lib/stores/settings', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/stores/settings')>()),
+vi.mock('#lib/stores/session.svelte.ts', () => ({ getWorkingDir: () => null }));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: () => ({ proxy: { mode: 'none' }, sandboxNetAccess: 'internet' })
 }));
-vi.mock('$lib/debug-log', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/debug-log')>()),
+vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
 	logDebug: () => {}
 }));
 

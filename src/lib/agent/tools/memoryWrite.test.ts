@@ -9,26 +9,26 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
-vi.mock('$lib/stores/toasts.svelte', () => ({ showToast: mocks.showToast }));
-vi.mock('$lib/stores/memory.svelte', () => ({
+vi.mock('#lib/stores/toasts.svelte.ts', () => ({ showToast: mocks.showToast }));
+vi.mock('#lib/stores/memory.svelte.ts', () => ({
 	refreshMemoryCount: vi.fn(),
 	memoryActive: mocks.memoryActive
 }));
-vi.mock('$lib/stores/session.svelte', () => ({ getActiveConversationId: () => 'conv-7' }));
-vi.mock('$lib/stores/settings', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/stores/settings')>()),
+vi.mock('#lib/stores/session.svelte.ts', () => ({ getActiveConversationId: () => 'conv-7' }));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: () => mocks.settings,
 	hasEnabledEmailAccount: () => false,
 	hasEnabledCalendarAccount: () => false,
 	hasEnabledContactsAccount: () => false
 }));
-vi.mock('$lib/debug-log', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/debug-log')>()),
+vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
 	logDebug: vi.fn()
 }));
 
 const approval = vi.hoisted(() => ({ session: false }));
-vi.mock('$lib/stores/memoryApproval.svelte', () => ({
+vi.mock('#lib/stores/memoryApproval.svelte.ts', () => ({
 	askMemoryApproval: mocks.askMemoryApproval,
 	approveMemorySession: () => (approval.session = true),
 	isMemorySessionApproved: () => approval.session

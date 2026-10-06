@@ -1,17 +1,17 @@
 <script lang="ts">
-	import ChatMessage from '$lib/components/ChatMessage.svelte';
-	import ConversationSidebar from '$lib/components/ConversationSidebar.svelte';
-	import ThinkingIndicator from '$lib/components/ThinkingIndicator.svelte';
-	import SearchStepComponent from '$lib/components/SearchStep.svelte';
-	import ImageViewerModal from '$lib/components/ImageViewerModal.svelte';
-	import { VIEW_IMAGE_EVENT } from '$lib/markdown-actions';
-	import SourceChip from '$lib/components/SourceChip.svelte';
-	import MicButton from '$lib/components/MicButton.svelte';
-	import WorkingDirButton from '$lib/components/WorkingDirButton.svelte';
-	import StopIndicator from '$lib/components/StopIndicator.svelte';
-	import { imageDropTarget } from '$lib/utils/imageDrop';
-	import { hasStreamingAnswer } from '$lib/agent/think-stream';
-	import { messageText } from '$lib/api';
+	import ChatMessage from '#lib/components/ChatMessage.svelte';
+	import ConversationSidebar from '#lib/components/ConversationSidebar.svelte';
+	import ThinkingIndicator from '#lib/components/ThinkingIndicator.svelte';
+	import SearchStepComponent from '#lib/components/SearchStep.svelte';
+	import ImageViewerModal from '#lib/components/ImageViewerModal.svelte';
+	import { VIEW_IMAGE_EVENT } from '#lib/markdown-actions.ts';
+	import SourceChip from '#lib/components/SourceChip.svelte';
+	import MicButton from '#lib/components/MicButton.svelte';
+	import WorkingDirButton from '#lib/components/WorkingDirButton.svelte';
+	import StopIndicator from '#lib/components/StopIndicator.svelte';
+	import { imageDropTarget } from '#lib/utils/imageDrop.ts';
+	import { hasStreamingAnswer } from '#lib/agent/think-stream.ts';
+	import { messageText } from '#lib/api.ts';
 	import {
 		getActiveConversation,
 		getIsGenerating,
@@ -36,24 +36,24 @@
 		isActiveConversationRemembered,
 		isActiveConversationRemote,
 		setConversationMemoryEnabled
-	} from '$lib/stores/chat.svelte';
-	import { getServerState, startServer, stopServer } from '$lib/stores/llamaServer.svelte';
-	import { showToast } from '$lib/stores/toasts.svelte';
-	import { openLogViewer } from '$lib/stores/logViewer.svelte';
-	import { errMessage } from '$lib/utils/error';
+	} from '#lib/stores/chat.svelte.ts';
+	import { getServerState, startServer, stopServer } from '#lib/stores/llamaServer.svelte.ts';
+	import { showToast } from '#lib/stores/toasts.svelte.ts';
+	import { openLogViewer } from '#lib/stores/logViewer.svelte.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 	import {
 		getActiveLocalModelFilename,
 		getSettings,
 		hasBraveApiKey,
 		setActiveLocalModel
-	} from '$lib/stores/settings';
-	import { getDebugLogsForTurn } from '$lib/debug-log';
-	import { createCopyAction } from '$lib/utils/clipboard.svelte';
-	import { imageFileToDataUrl, imageFilesFrom } from '$lib/utils/image';
-	import { openShellFromChat } from '$lib/shell/fromChat';
+	} from '#lib/stores/settings.ts';
+	import { getDebugLogsForTurn } from '#lib/debug-log.ts';
+	import { createCopyAction } from '#lib/utils/clipboard.svelte.ts';
+	import { imageFileToDataUrl, imageFilesFrom } from '#lib/utils/image.ts';
+	import { openShellFromChat } from '#lib/shell/fromChat.ts';
 	import { invoke } from '@tauri-apps/api/core';
-	import { IPC } from '$lib/ipc/commands';
-	import type { ScreenCapture } from '$lib/ipc/gen/ScreenCapture';
+	import { IPC } from '#lib/ipc/commands.ts';
+	import type { ScreenCapture } from '#lib/ipc/gen/ScreenCapture.ts';
 	import { onMount, onDestroy, tick, untrack } from 'svelte';
 
 	let inputText = $state('');

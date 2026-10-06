@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { buildLoopContext } from './iteration';
-import { updateSettings, getSettings } from '$lib/stores/settings';
-import type { AgentLoopOptions } from '$lib/agent/loop';
+import { updateSettings, getSettings } from '#lib/stores/settings.ts';
+import type { AgentLoopOptions } from '#lib/agent/loop.ts';
 
 /**
  * The ceiling is resolved in `buildLoopContext` rather than in

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { JobWithSteps } from '$lib/stores/jobs.svelte';
+import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 import type { JobTypeDefinition } from './types';
 
 // The registry itself is pure; reset modules per test so registrations from

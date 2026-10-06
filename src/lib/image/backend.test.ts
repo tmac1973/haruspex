@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { getSettings, updateSettings } from '$lib/stores/settings';
+import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 import { registerImageBackend } from './registry';
 import { resolveImageBackend } from './backend';
 import { noneBackend } from './none';

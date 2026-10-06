@@ -4,9 +4,9 @@
 	// — a job may run against a different model with a different window than
 	// Settings has active, and reporting the Settings numbers there was simply
 	// wrong (futures.md, open item #1).
-	import ContextGauge from '$lib/components/ContextGauge.svelte';
-	import { getContextUsage } from '$lib/stores/context.svelte';
-	import { getCurrentRun } from '$lib/agent/jobs/runner.svelte';
+	import ContextGauge from '#lib/components/ContextGauge.svelte';
+	import { getContextUsage } from '#lib/stores/context.svelte.ts';
+	import { getCurrentRun } from '#lib/agent/jobs/runner.svelte.ts';
 
 	interface Props {
 		/** True when the Jobs tab is the active view. */

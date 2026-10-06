@@ -1,6 +1,6 @@
 import { beforeAll, describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { JobWithSteps } from '$lib/stores/jobs.svelte';
-import type { EphemeralTurnOptions } from '$lib/agent/runEphemeralTurn';
+import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
+import type { EphemeralTurnOptions } from '#lib/agent/runEphemeralTurn.ts';
 
 const mocks = vi.hoisted(() => ({
 	runEphemeralTurn: vi.fn(),
@@ -21,20 +21,20 @@ vi.mock('@tauri-apps/api/core', () => ({
 	invoke: mocks.invoke
 }));
 
-vi.mock('$lib/agent/runEphemeralTurn', () => ({
+vi.mock('#lib/agent/runEphemeralTurn.ts', () => ({
 	runEphemeralTurn: mocks.runEphemeralTurn
 }));
 
-vi.mock('$lib/stores/userQuestion.svelte', () => ({
+vi.mock('#lib/stores/userQuestion.svelte.ts', () => ({
 	askUserQuestion: mocks.askUserQuestion
 }));
 
-vi.mock('$lib/stores/jobs.svelte', () => ({
+vi.mock('#lib/stores/jobs.svelte.ts', () => ({
 	getJob: mocks.getJob,
 	createJob: mocks.createJob
 }));
 
-vi.mock('$lib/stores/jobRuns.svelte', () => ({
+vi.mock('#lib/stores/jobRuns.svelte.ts', () => ({
 	createJobRun: mocks.createJobRun,
 	markRunStarted: mocks.markRunStarted,
 	markRunFinished: mocks.markRunFinished,
@@ -59,7 +59,7 @@ const settingsState = vi.hoisted(() => ({
 /**
  * The image backend, mocked at the module rather than registered.
  *
- * `freshRunner()` resets modules, so the `$lib/image` barrel re-runs and
+ * `freshRunner()` resets modules, so the `#lib/image` barrel re-runs and
  * re-registers the real ComfyUI backend — a stub put in the registry by
  * `beforeEach` is clobbered on the next fresh import and the tests end up
  * talking to a backend that tries to reach a server.
@@ -80,8 +80,8 @@ const imageState = vi.hoisted(() => ({
 	}
 }));
 
-vi.mock('$lib/image', async () => {
-	const { ImageBackendError } = await import('$lib/image/types');
+vi.mock('#lib/image/index.ts', async () => {
+	const { ImageBackendError } = await import('#lib/image/types.ts');
 	return {
 		resolveImageBackend: () => ({
 			kind: imageState.kind,
@@ -118,8 +118,8 @@ vi.mock('$lib/image', async () => {
 	};
 });
 
-vi.mock('$lib/stores/settings', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/stores/settings')>()),
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: () => ({
 		contextSize: 8192,
 		imageBackendKind: settingsState.imageBackendKind,
@@ -139,16 +139,16 @@ vi.mock('$lib/stores/settings', async (importOriginal) => ({
 	getApiKeyValue: () => undefined
 }));
 
-vi.mock('$lib/agent/tools', () => ({
+vi.mock('#lib/agent/tools/index.ts', () => ({
 	getDisplayLabel: (name: string) => name
 }));
 
-vi.mock('$lib/stores/approvalOverride', () => ({
+vi.mock('#lib/stores/approvalOverride.ts', () => ({
 	runWithAutoApprove: async <T>(fn: () => Promise<T>): Promise<T> => fn(),
 	isAutoApproveActive: () => false
 }));
 
-vi.mock('$lib/agent/inferenceQueue.svelte', () => ({
+vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => ({
 	// Tests for the queue itself live in inferenceQueue.test.ts; here we
 	// just want a pass-through so the runner's pipeline scheduling stays
 	// observable without the queue's await-ready microtask in the middle.
@@ -192,12 +192,12 @@ function makeJob(overrides: Partial<JobWithSteps> = {}): JobWithSteps {
 // Windows. Pay it once here; later imports after resetModules reuse the
 // transformed modules.
 beforeAll(async () => {
-	await import('$lib/agent/jobs/runner.svelte');
+	await import('#lib/agent/jobs/runner.svelte.ts');
 }, 60_000);
 
 async function freshRunner() {
 	vi.resetModules();
-	return import('$lib/agent/jobs/runner.svelte');
+	return import('#lib/agent/jobs/runner.svelte.ts');
 }
 
 function tick() {

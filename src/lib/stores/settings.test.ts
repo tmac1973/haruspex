@@ -18,15 +18,15 @@ import {
 	hasEnabledMcpServer,
 	startableMcpServers,
 	type SamplingOptions
-} from '$lib/stores/settings';
-import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
-import { resolveBackendDescriptor } from '$lib/inference/descriptor';
+} from '#lib/stores/settings.ts';
+import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
+import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 
 // The sampling/template/reasoning readers now take a resolved backend
 // descriptor instead of re-reading the settings mode themselves. These
 // tests still drive configuration through the real settings store and
 // resolve fresh — the resolver matrix itself is covered in
-// $lib/inference/descriptor.test.ts.
+// #lib/inference/descriptor.test.ts.
 const sampling = (opts?: SamplingOptions) => getSamplingParams(resolveBackendDescriptor(), opts);
 const kwargs = (thinking?: boolean | null, effort?: string | null) =>
 	getChatTemplateKwargs(resolveBackendDescriptor(), thinking, effort);
@@ -634,14 +634,14 @@ describe('load-time reasoning-effort default', () => {
 	async function loadWith(stored: Record<string, unknown>) {
 		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
 		vi.resetModules();
-		const fresh = await import('$lib/stores/settings');
+		const fresh = await import('#lib/stores/settings.ts');
 		return fresh.getSettings();
 	}
 
 	it('ships medium, so Qwen 3.8 does not think at its own xhigh default', async () => {
 		localStorage.removeItem(SETTINGS_KEY);
 		vi.resetModules();
-		const fresh = await import('$lib/stores/settings');
+		const fresh = await import('#lib/stores/settings.ts');
 		expect(fresh.getSettings().reasoningEffort).toBe('medium');
 	});
 
@@ -688,7 +688,7 @@ describe('load-time file-write ceiling migration', () => {
 	async function loadWith(stored: Record<string, unknown>) {
 		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
 		vi.resetModules();
-		const fresh = await import('$lib/stores/settings');
+		const fresh = await import('#lib/stores/settings.ts');
 		return fresh.getSettings();
 	}
 
@@ -741,7 +741,7 @@ describe('load-time remoteServerUrls seeding', () => {
 	async function loadWith(inferenceBackend: Record<string, unknown>) {
 		localStorage.setItem(SETTINGS_KEY, JSON.stringify({ inferenceBackend }));
 		vi.resetModules();
-		const fresh = await import('$lib/stores/settings');
+		const fresh = await import('#lib/stores/settings.ts');
 		return fresh.getSettings().inferenceBackend;
 	}
 
@@ -815,7 +815,7 @@ describe('response token ceilings', () => {
 	it('applies defaults to a settings blob saved before these fields existed', async () => {
 		localStorage.setItem(SETTINGS_KEY, JSON.stringify({ contextSize: 65536, braveApiKey: 'kept' }));
 		vi.resetModules();
-		const fresh = await import('$lib/stores/settings');
+		const fresh = await import('#lib/stores/settings.ts');
 		const s = fresh.getSettings();
 		expect(s.maxResponseTokens).toBe(DEFAULT_MAX_RESPONSE_TOKENS);
 		expect(s.maxResponseTokensFileWrite).toBe(DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE);
@@ -985,7 +985,7 @@ describe('load-time proxy split', () => {
 	async function loadWith(stored: Record<string, unknown>) {
 		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
 		vi.resetModules();
-		return await import('$lib/stores/settings');
+		return await import('#lib/stores/settings.ts');
 	}
 
 	const manual = { mode: 'manual', url: 'http://vpn:3128', bypass: 'example.com' };
@@ -1010,7 +1010,7 @@ describe('load-time proxy split', () => {
 	it('gives a new install no proxy, with search following the network proxy', async () => {
 		localStorage.removeItem(SETTINGS_KEY);
 		vi.resetModules();
-		const m = await import('$lib/stores/settings');
+		const m = await import('#lib/stores/settings.ts');
 		expect(m.getSettings().proxy.mode).toBe('none');
 		expect(m.getSettings().searchProxy.mode).toBe('network');
 		expect(m.getSearchProxy().mode).toBe('none');

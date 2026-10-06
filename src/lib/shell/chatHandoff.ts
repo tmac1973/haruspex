@@ -27,7 +27,7 @@
  *    work already done in this PTY.
  */
 
-import type { ChatMessage } from '$lib/api';
+import type { ChatMessage } from '#lib/api.ts';
 
 /** How many prose bubbles (user + assistant answers) the handoff carries. */
 export const HANDOFF_KEEP_PROSE = 14;

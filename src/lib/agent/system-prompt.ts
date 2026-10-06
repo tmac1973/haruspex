@@ -1,4 +1,4 @@
-import { type ChatMessage, messageText } from '$lib/api';
+import { type ChatMessage, messageText } from '#lib/api.ts';
 import {
 	getIncludeImagesPrompt,
 	getResponseFormatPrompt,
@@ -7,8 +7,8 @@ import {
 	hasSendableEmailAccount,
 	hasEnabledCalendarAccount,
 	hasEnabledContactsAccount
-} from '$lib/stores/settings';
-import { formatTodayLong } from '$lib/utils/format';
+} from '#lib/stores/settings.ts';
+import { formatTodayLong } from '#lib/utils/format.ts';
 import { registeredMcpServerLabels } from './tools/mcp';
 
 const REVIEW_PATTERNS =

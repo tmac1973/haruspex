@@ -9,8 +9,8 @@ import {
 	askEmailReview,
 	resolveEmailReview,
 	type EmailDraft
-} from '$lib/stores/emailReview.svelte';
-import type { EmailAccount } from '$lib/stores/settings';
+} from '#lib/stores/emailReview.svelte.ts';
+import type { EmailAccount } from '#lib/stores/settings.ts';
 
 const sender: EmailAccount = {
 	id: 'a1',

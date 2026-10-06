@@ -312,7 +312,7 @@ message; don't duplicate that string.
 
 1. Create `components/settings/<Name>Section.svelte`.
 2. Read/write settings via `getSettings()` / `setSettings()` from
-   `$lib/stores/settings` — no prop drilling.
+   `#lib/stores/settings` — no prop drilling.
 3. Mount it from `settings/+page.svelte` inside the existing layout grid.
 4. Don't add a new section directly to `settings/+page.svelte` — every
    new setting that owns more than ~30 LOC of UI becomes its own component.
@@ -898,7 +898,7 @@ already in the area.
   (welcome/hardware/download/test/chat). Each `if (currentStep === 'foo')`
   block becomes a `<XStep>` component under `components/setup/`.
 - **`chat.svelte.ts` split** (12g) — only if fan-in justifies it
-  (`grep -rnE "from '\\$lib/stores/chat'" src | wc -l ≥ 5`). Target:
+  (`grep -rnE "from '#lib/stores/chat'" src | wc -l ≥ 5`). Target:
   `state.svelte.ts` + `actions.ts` + `persistence.ts` + `index.ts`.
 - **`attachThumbnailIfImage` helper** (12h) — extract the `IMAGE_EXT_RE`
   check + `invoke('fs_read_image')` that appears in both `fs-read.ts` and

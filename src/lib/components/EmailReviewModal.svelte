@@ -15,9 +15,9 @@
 		isAddress,
 		parseAddresses,
 		resolveEmailReview
-	} from '$lib/stores/emailReview.svelte';
-	import type { OutgoingMessage } from '$lib/ipc/gen/OutgoingMessage';
-	import type { SendOutcome } from '$lib/ipc/gen/SendOutcome';
+	} from '#lib/stores/emailReview.svelte.ts';
+	import type { OutgoingMessage } from '#lib/ipc/gen/OutgoingMessage.ts';
+	import type { SendOutcome } from '#lib/ipc/gen/SendOutcome.ts';
 
 	const pending = $derived(getPendingEmailReview());
 

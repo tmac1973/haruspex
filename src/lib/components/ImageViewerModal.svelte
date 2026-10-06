@@ -3,7 +3,7 @@
 	// distinct from the confirmation Modal which deliberately resists
 	// dismissal.
 
-	import { dismissable } from '$lib/actions/dismissable';
+	import { dismissable } from '#lib/actions/dismissable.ts';
 
 	interface Props {
 		src: string | null;

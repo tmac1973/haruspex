@@ -7,9 +7,9 @@
 	 * CORS-open and the Rust probe would 404/429 against it.
 	 */
 	import { untrack } from 'svelte';
-	import type { InferenceBackendConfig } from '$lib/stores/settings';
-	import { getApiKeyValue, getSettings, updateSettings } from '$lib/stores/settings';
-	import { apiKeysReady } from '$lib/stores/apiKeySecrets';
+	import type { InferenceBackendConfig } from '#lib/stores/settings.ts';
+	import { getApiKeyValue, getSettings, updateSettings } from '#lib/stores/settings.ts';
+	import { apiKeysReady } from '#lib/stores/apiKeySecrets.ts';
 	import {
 		fetchOpenRouterCatalog,
 		fetchOpenRouterKeyStatus,
@@ -22,10 +22,10 @@
 		pickOpenRouterModel,
 		type OpenRouterModel,
 		type OpenRouterKeyStatus
-	} from '$lib/openrouter';
-	import OpenRouterModelPicker from '$lib/components/settings/OpenRouterModelPicker.svelte';
-	import ApiKeyPicker from '$lib/components/settings/ApiKeyPicker.svelte';
-	import ToggleField from '$lib/components/ToggleField.svelte';
+	} from '#lib/openrouter.ts';
+	import OpenRouterModelPicker from '#lib/components/settings/OpenRouterModelPicker.svelte';
+	import ApiKeyPicker from '#lib/components/settings/ApiKeyPicker.svelte';
+	import ToggleField from '#lib/components/ToggleField.svelte';
 
 	interface Props {
 		config: InferenceBackendConfig;

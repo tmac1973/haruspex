@@ -10,7 +10,7 @@ export type ScheduleKind = 'manual' | 'hourly' | 'daily' | 'weekly' | 'interval'
  * `autonomous_coding` = an unattended coding loop over a folder of plan files
  * (decisions resolved up front via a preflight interview).
  *
- * Each type's behavior lives in its module under `$lib/agent/jobs/types/<id>/`.
+ * Each type's behavior lives in its module under `#lib/agent/jobs/types/<id>/`.
  */
 export type JobType =
 	| 'research'
@@ -65,7 +65,7 @@ export interface JobSummary extends JobCore {
 
 /**
  * Type-specific config as opaque JSON, owned entirely by the job-type modules
- * (`$lib/agent/jobs/types/<id>/`) — each parses and serializes its own shape.
+ * (`#lib/agent/jobs/types/<id>/`) — each parses and serializes its own shape.
  * Rust stores it verbatim, so adding a job type requires no Rust changes.
  */
 export interface TypeConfigColumn {
@@ -106,7 +106,7 @@ export interface ModelOverrideConfig {
 	/**
 	 * Advanced model behavior as opaque JSON — reasoning override, sampling
 	 * source, and the last probe's discovered capabilities. Parsed by
-	 * `$lib/agent/jobs/modelAdvanced`; null = every default. Applies to the
+	 * `#lib/agent/jobs/modelAdvanced`; null = every default. Applies to the
 	 * global backend too, not just overrides: the reasoning override is
 	 * meaningful for any job.
 	 */

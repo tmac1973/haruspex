@@ -10,8 +10,8 @@
 		restartServerWhenIdle,
 		getPendingRestart,
 		cancelPendingRestart
-	} from '$lib/stores/llamaServer.svelte';
-	import { PORTS } from '$lib/ports';
+	} from '#lib/stores/llamaServer.svelte.ts';
+	import { PORTS } from '#lib/ports.ts';
 	import {
 		getActiveLocalModelFilename,
 		getSettings,
@@ -20,18 +20,18 @@
 		setActiveLocalModel,
 		type InferenceBackendConfig,
 		type InferenceMode
-	} from '$lib/stores/settings';
-	import { resolveBackendDescriptor } from '$lib/inference/descriptor';
-	import { setContextSize as setIndicatorContextSize } from '$lib/stores/context.svelte';
-	import { showToast } from '$lib/stores/toasts.svelte';
-	import { openLogViewer } from '$lib/stores/logViewer.svelte';
-	import { errMessage } from '$lib/utils/error';
-	import InferenceBackendForm from '$lib/components/InferenceBackendForm.svelte';
-	import ModeSelector from '$lib/components/ModeSelector.svelte';
-	import OpenRouterForm from '$lib/components/settings/OpenRouterForm.svelte';
-	import ApiKeysSection from '$lib/components/settings/ApiKeysSection.svelte';
-	import { OPENROUTER_BASE_URL } from '$lib/openrouter';
-	import ModelsSection from '$lib/components/settings/ModelsSection.svelte';
+	} from '#lib/stores/settings.ts';
+	import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
+	import { setContextSize as setIndicatorContextSize } from '#lib/stores/context.svelte.ts';
+	import { showToast } from '#lib/stores/toasts.svelte.ts';
+	import { openLogViewer } from '#lib/stores/logViewer.svelte.ts';
+	import { errMessage } from '#lib/utils/error.ts';
+	import InferenceBackendForm from '#lib/components/InferenceBackendForm.svelte';
+	import ModeSelector from '#lib/components/ModeSelector.svelte';
+	import OpenRouterForm from '#lib/components/settings/OpenRouterForm.svelte';
+	import ApiKeysSection from '#lib/components/settings/ApiKeysSection.svelte';
+	import { OPENROUTER_BASE_URL } from '#lib/openrouter.ts';
+	import ModelsSection from '#lib/components/settings/ModelsSection.svelte';
 
 	const serverState = $derived(getServerState());
 	let contextSize = $state(getSettings().contextSize);

@@ -6,10 +6,10 @@
 	 * is where the user can act on it: the sentence says "turn off the ones you
 	 * do not need below", and below is this list.
 	 */
-	import type { McpToolDescriptor } from '$lib/ipc/gen/McpToolDescriptor';
-	import { getToolSchemas } from '$lib/agent/tools';
-	import { evaluateToolBudget } from '$lib/agent/mcp-budget';
-	import { getSettings } from '$lib/stores/settings';
+	import type { McpToolDescriptor } from '#lib/ipc/gen/McpToolDescriptor.ts';
+	import { getToolSchemas } from '#lib/agent/tools/index.ts';
+	import { evaluateToolBudget } from '#lib/agent/mcp-budget.ts';
+	import { getSettings } from '#lib/stores/settings.ts';
 
 	interface Props {
 		tools: McpToolDescriptor[];

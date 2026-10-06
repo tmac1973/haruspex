@@ -19,17 +19,17 @@ import {
 	type ChatMessage,
 	type ChatCompletionResponse,
 	type Usage
-} from '$lib/api';
-import { resolveToolCalls, type ResolvedToolCall } from '$lib/agent/parser';
+} from '#lib/api.ts';
+import { resolveToolCalls, type ResolvedToolCall } from '#lib/agent/parser.ts';
 import {
 	coerceCallArguments,
 	executeTool,
 	getToolSchemas,
 	type PendingImage,
 	type ToolContext
-} from '$lib/agent/tools';
-import { isFetchFailureResult, isToolErrorResult } from '$lib/agent/tools/_helpers';
-import type { ToolDefinition } from '$lib/api';
+} from '#lib/agent/tools/index.ts';
+import { isFetchFailureResult, isToolErrorResult } from '#lib/agent/tools/_helpers.ts';
+import type { ToolDefinition } from '#lib/api.ts';
 import {
 	fitMessagesToBudget,
 	trimOldToolMessages,
@@ -38,7 +38,7 @@ import {
 	parseContextOverflow,
 	getTokenCalibration,
 	TOKEN_BYTES_RATIO
-} from '$lib/agent/context-budget';
+} from '#lib/agent/context-budget.ts';
 import {
 	getChatTemplateKwargs,
 	getSamplingParams,
@@ -46,12 +46,12 @@ import {
 	getSettings,
 	type SamplingOptions,
 	type SamplingParams
-} from '$lib/stores/settings';
-import { resolveBackendDescriptor, type BackendDescriptor } from '$lib/inference/descriptor';
-import { splitThinkChannels, stripThinkBlocks, stripToolCallArtifacts } from '$lib/markdown';
-import { appendStreamDelta, createThinkStreamState } from '$lib/agent/think-stream';
-import { isAbortError } from '$lib/utils/error';
-import { isVerbosePayloads, logDebug } from '$lib/debug-log';
+} from '#lib/stores/settings.ts';
+import { resolveBackendDescriptor, type BackendDescriptor } from '#lib/inference/descriptor.ts';
+import { splitThinkChannels, stripThinkBlocks, stripToolCallArtifacts } from '#lib/markdown.ts';
+import { appendStreamDelta, createThinkStreamState } from '#lib/agent/think-stream.ts';
+import { isAbortError } from '#lib/utils/error.ts';
+import { isVerbosePayloads, logDebug } from '#lib/debug-log.ts';
 import { MAX_TRUNCATION_RETRIES, NudgeState, automaticCheck } from './nudges';
 import type { AgentLoopOptions, CompletionMeta } from '../loop';
 
@@ -524,7 +524,7 @@ function raceWithAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T>
 	});
 }
 
-// `trimOldToolMessages` now lives in $lib/agent/context-budget alongside
+// `trimOldToolMessages` now lives in #lib/agent/context-budget alongside
 // the pre-send guard that shares it.
 
 /**

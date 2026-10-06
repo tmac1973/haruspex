@@ -11,10 +11,10 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { errMessage } from '$lib/utils/error';
-import { sleep } from '$lib/utils/async';
-import type { ImageEngineStatus } from '$lib/ipc/gen/ImageEngineStatus';
-import { getSettings } from '$lib/stores/settings';
+import { errMessage } from '#lib/utils/error.ts';
+import { sleep } from '#lib/utils/async.ts';
+import type { ImageEngineStatus } from '#lib/ipc/gen/ImageEngineStatus.ts';
+import { getSettings } from '#lib/stores/settings.ts';
 import { registerImageBackend } from '../registry';
 import type { ImageBackend, GenerateOptions } from '../backend';
 import {
