@@ -147,11 +147,9 @@ pub(super) fn reject_if_irrelevant(
         return Ok(results);
     }
     warn!(
-        "{} answered '{}' with {} results about something else (first: {:?}) — discarding",
+        "{} answered with {} results about something else — discarding",
         engine,
-        query,
-        results.len(),
-        results.first().map(|r| r.title.as_str()).unwrap_or("")
+        results.len()
     );
     Err(SearchFailure::new(
         SearchFailureKind::Irrelevant,
@@ -933,8 +931,8 @@ pub(super) async fn search_auto(
         .filter(|engine| state.is_engine_healthy(engine, cooldown))
         .collect();
     info!(
-        "Auto-search engines for '{}' (slow_mode={}): {:?}",
-        query, slow_mode, engines
+        "Auto-search engines (slow_mode={}): {:?}",
+        slow_mode, engines
     );
     if engines.is_empty() {
         record_global_both(stats, sink, GlobalCounter::AllEnginesFailed);
@@ -963,10 +961,7 @@ pub(super) async fn search_auto(
             rate_interval
         };
         state.rate_limit_engine(engine, interval).await;
-        info!(
-            "Auto-search trying {} for: {} (recency: {})",
-            engine, query, recency
-        );
+        info!("Auto-search trying {} (recency: {})", engine, recency);
 
         let position = if idx == 0 {
             AutoPosition::First

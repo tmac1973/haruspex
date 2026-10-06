@@ -11,6 +11,7 @@
 -->
 <script lang="ts">
 	import { save } from '@tauri-apps/plugin-dialog';
+	import { errMessage } from '$lib/utils/error';
 	import { invoke } from '@tauri-apps/api/core';
 	import { formatDuration, formatTokens } from '$lib/utils/format';
 	import type {
@@ -72,7 +73,7 @@
 			exportNote = `Saved to ${chosen}`;
 			exportState = 'saved';
 		} catch (e) {
-			exportNote = e instanceof Error ? e.message : String(e);
+			exportNote = errMessage(e);
 			exportState = 'error';
 		}
 	}

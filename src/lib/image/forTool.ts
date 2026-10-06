@@ -12,6 +12,7 @@
  * pass the asset job's requests through unchanged (phase 08).
  */
 import { resolveImageBackend } from './backend';
+import { errMessage } from '$lib/utils/error';
 import { ImageBackendError, type ImageProgress, type ImageRequest } from './types';
 import { getSettings } from '$lib/stores/settings';
 import { familyOf } from './comfyui/families';
@@ -77,7 +78,7 @@ export async function generateForTool(
 	try {
 		result = await backend.generate(request, { signal: opts.signal, onProgress: opts.onProgress });
 	} catch (e) {
-		const detail = e instanceof Error ? e.message : String(e);
+		const detail = errMessage(e);
 		if (backend.kind === 'local' && GPU_FULL.test(detail)) {
 			throw new ImageBackendError('unreachable', `${GPU_FULL_SENTENCE} (${detail})`);
 		}

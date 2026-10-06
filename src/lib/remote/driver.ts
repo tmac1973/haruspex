@@ -11,6 +11,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { errMessage } from '$lib/utils/error';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import { runEphemeralTurn } from '$lib/agent/runEphemeralTurn';
@@ -266,7 +267,7 @@ export async function runRemoteTurn(event: RemotePromptEvent): Promise<void> {
 			noteFinished(sessionId, 'done', lastText);
 			await invoke('remote_turn_done', { turnId, text: lastText }).catch(() => {});
 		} else {
-			const messageText = error instanceof Error ? error.message : String(error);
+			const messageText = errMessage(error);
 			noteFinished(sessionId, 'failed', messageText);
 			await invoke('remote_turn_error', { turnId, message: messageText }).catch(() => {});
 		}

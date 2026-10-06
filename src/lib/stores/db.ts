@@ -38,7 +38,8 @@ function dbMessageToChatMessage(msg: DbMessage): ChatMessage {
 		try {
 			chatMsg.tool_calls = JSON.parse(msg.tool_calls);
 		} catch {
-			// ignore
+			// The message still loads; only its tool calls are lost.
+			logDebug('db', `message ${msg.id} has unparsable tool_calls; dropped`);
 		}
 	}
 	if (msg.tool_call_id) {

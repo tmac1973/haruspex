@@ -10,7 +10,9 @@
 export const PORTS = {
 	llama: 8765,
 	whisper: 8766,
-	tts: 3001
+	tts: 3001,
+	/** The bundled image engine (sd-server), when it runs. */
+	image: 8767
 } as const;
 
 /** Loopback host the sidecars bind to. Mirrors the Rust `LOOPBACK` const. */

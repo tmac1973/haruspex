@@ -97,7 +97,8 @@ vi.mock('$lib/markdown', async (importOriginal) => ({
 }));
 
 vi.mock('$lib/debug-log', () => ({
-	logDebug: vi.fn()
+	logDebug: vi.fn(),
+	isVerbosePayloads: () => false
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({

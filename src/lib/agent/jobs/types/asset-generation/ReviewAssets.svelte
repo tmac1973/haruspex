@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { errMessage } from '$lib/utils/error';
 	import { invoke } from '@tauri-apps/api/core';
 	import Modal from '$lib/components/Modal.svelte';
 	import Tooltip from '$lib/components/Tooltip.svelte';
@@ -49,7 +50,7 @@
 			const probe = await resolveImageBackend().probe();
 			notReady = probe.ok ? '' : probe.detail;
 		} catch (e) {
-			notReady = e instanceof Error ? e.message : String(e);
+			notReady = errMessage(e);
 		}
 	}
 
@@ -90,7 +91,7 @@
 				parsed.spec.entries.filter((e) => e.rejected).map((e) => [e.id, ''])
 			);
 		} catch (e) {
-			error = `Could not read ${specPath}: ${e instanceof Error ? e.message : String(e)}`;
+			error = `Could not read ${specPath}: ${errMessage(e)}`;
 		}
 	}
 
@@ -132,7 +133,7 @@
 			});
 			onclose();
 		} catch (e) {
-			error = e instanceof Error ? e.message : String(e);
+			error = errMessage(e);
 		} finally {
 			busy = false;
 		}

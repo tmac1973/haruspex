@@ -11,7 +11,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { createJob } from '$lib/stores/jobs.svelte';
 import { modelColumnsOf } from '../../chainModel';
-import { normalizeAbort } from '$lib/utils/error';
+import { normalizeAbort, errMessage } from '$lib/utils/error';
 import {
 	markRunStarted,
 	markRunStepFinished,
@@ -310,7 +310,7 @@ function recipeDeps(ctx: JobRunContext): RecipeDeps {
 				await invoke('texture_validate', { recipe });
 				return null;
 			} catch (e) {
-				return e instanceof Error ? e.message : String(e);
+				return errMessage(e);
 			}
 		}
 	};

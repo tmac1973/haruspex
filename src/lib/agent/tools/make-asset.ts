@@ -8,6 +8,7 @@
  * for pictures; this is for a project's files.
  */
 import { invoke } from '@tauri-apps/api/core';
+import { errMessage } from '$lib/utils/error';
 import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
 import { resolveShellPath, toolInvokeError, wslDistroArg } from './_helpers';
@@ -72,7 +73,7 @@ async function writeAsset(
 		});
 		return null;
 	} catch (e) {
-		const msg = e instanceof Error ? e.message : String(e);
+		const msg = errMessage(e);
 		return /exists/i.test(msg)
 			? `${path} already exists. Choose another name, or pass overwrite: true.`
 			: `Could not write ${path}: ${msg}`;
@@ -157,9 +158,7 @@ registerTool({
 			asset = await makeSingleAsset({ ...input.asset, palette }, { signal: ctx.signal });
 		} catch (e) {
 			if (e instanceof ImageBackendError && e.kind === 'cancelled') throw e;
-			return toolResult(
-				toolError(`Could not make it: ${e instanceof Error ? e.message : String(e)}`)
-			);
+			return toolResult(toolError(`Could not make it: ${errMessage(e)}`));
 		} finally {
 			clearInterval(tick);
 		}

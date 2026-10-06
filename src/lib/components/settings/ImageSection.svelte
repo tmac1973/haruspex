@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { imageSrc } from '$lib/images/url';
+	import { errMessage } from '$lib/utils/error';
 	import { invoke } from '@tauri-apps/api/core';
 	import { getSettings, updateSettings } from '$lib/stores/settings';
 	import Tooltip from '$lib/components/Tooltip.svelte';
@@ -68,7 +69,7 @@
 			);
 			await selectModel(m);
 		} catch (e) {
-			downloadError = e instanceof Error ? e.message : String(e);
+			downloadError = errMessage(e);
 		} finally {
 			await refreshModels();
 		}
@@ -83,7 +84,15 @@
 	async function deleteModel(m: ImageModel) {
 		// The engine holds the file open while it runs.
 		await invoke('image_engine_stop').catch(() => {});
-		await invoke('delete_image_model', { id: m.id }).catch(() => {});
+		downloadError = '';
+		try {
+			await invoke('delete_image_model', { id: m.id });
+		} catch (e) {
+			downloadError = errMessage(e);
+			await refreshModels();
+			await refreshEngine();
+			return;
+		}
 		if (imageLocalModelId === m.id) {
 			imageLocalModelId = '';
 			persist({ imageLocalModelId: '' });
@@ -205,7 +214,7 @@
 			}
 			capabilities = probeResult.ok ? await backend.capabilities() : null;
 		} catch (e) {
-			probeResult = { ok: false, detail: e instanceof Error ? e.message : String(e) };
+			probeResult = { ok: false, detail: errMessage(e) };
 		} finally {
 			probing = false;
 		}
@@ -262,7 +271,7 @@
 				height: img.height
 			});
 		} catch (e) {
-			testError = e instanceof Error ? e.message : String(e);
+			testError = errMessage(e);
 		} finally {
 			generating = false;
 			testProgress = '';

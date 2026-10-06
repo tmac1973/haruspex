@@ -53,7 +53,7 @@ pub async fn proxy_fetch_url_images(
     proxy: Option<ProxyConfig>,
 ) -> Result<Vec<PageImage>, String> {
     validate_url(&url)?;
-    info!("fetch_url_images: {}", url);
+    info!("fetch_url_images: {}", crate::text_util::url_for_log(&url));
 
     let client = super::extract::build_fetch_client(proxy.as_ref())?;
 
@@ -241,7 +241,7 @@ pub async fn proxy_image_search(
     proxy: Option<ProxyConfig>,
 ) -> Result<Vec<ImageSearchResult>, String> {
     let limit = max_results.unwrap_or(5).clamp(1, 20);
-    info!("image_search q={:?} limit={}", query, limit);
+    info!("image_search limit={}", limit);
 
     let client = super::extract::build_fetch_client(proxy.as_ref())?;
 
@@ -278,8 +278,7 @@ pub async fn proxy_image_search(
     // it — a source that returned nothing and one that was never reached look
     // identical downstream.
     info!(
-        "image_search q={:?} → openverse={} commons={} wikipedia={}, merged={}",
-        query,
+        "image_search → openverse={} commons={} wikipedia={}, merged={}",
         lists.first().map(Vec::len).unwrap_or(0),
         lists.get(1).map(Vec::len).unwrap_or(0),
         lists.get(2).map(Vec::len).unwrap_or(0),

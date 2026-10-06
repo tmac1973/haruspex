@@ -94,7 +94,7 @@ pub async fn proxy_search(
     // Check cache
     let cache_key = format!("{}:{}", query, recency.as_deref().unwrap_or("any"));
     if let Some(cached) = state.get_cached_search(&cache_key) {
-        info!("Search cache hit for: {}", query);
+        info!("Search cache hit");
         record_global_both(&stats, sink, GlobalCounter::CacheHit);
         return Ok(cached);
     }
@@ -110,7 +110,7 @@ pub async fn proxy_search(
             if key.is_empty() {
                 return Err("Brave Search API key not configured".to_string());
             }
-            info!("Searching Brave for: {} (recency: {})", query, recency);
+            info!("Searching Brave (recency: {})", recency);
             timed_search(
                 &stats,
                 sink,
@@ -128,8 +128,9 @@ pub async fn proxy_search(
                 return Err("SearXNG instance URL not configured".to_string());
             }
             info!(
-                "Searching SearXNG ({}) for: {} (recency: {})",
-                url, query, recency
+                "Searching SearXNG ({}) (recency: {})",
+                crate::text_util::url_for_log(url),
+                recency
             );
             timed_search(
                 &stats,
@@ -140,10 +141,7 @@ pub async fn proxy_search(
             .await?
         }
         "browser" => {
-            info!(
-                "Browser-assisted search for: {} (recency: {})",
-                query, recency
-            );
+            info!("Browser-assisted search (recency: {})", recency);
             match browser::search::search_via_browser(
                 &session,
                 &state,
@@ -219,7 +217,7 @@ pub async fn proxy_search(
             state
                 .rate_limit_engine("duckduckgo", RATE_LIMIT_INTERVAL)
                 .await;
-            info!("Searching DDG for: {} (recency: {})", query, recency);
+            info!("Searching DDG (recency: {})", recency);
             timed_search(
                 &stats,
                 sink,
@@ -231,7 +229,7 @@ pub async fn proxy_search(
     };
 
     if results.is_empty() {
-        warn!("No search results for: {}", query);
+        warn!("Search returned no results");
     }
 
     state.cache_search(&cache_key, &results);
@@ -322,11 +320,19 @@ pub async fn proxy_fetch(
 
     // Check cache
     if let Some(cached) = state.get_cached_fetch(&url) {
-        info!("Fetch cache hit ({}) for: {}", caller_tag, url);
+        info!(
+            "Fetch cache hit ({}) for: {}",
+            caller_tag,
+            crate::text_util::url_for_log(&url)
+        );
         return Ok(cached);
     }
 
-    info!("Fetching URL ({}): {}", caller_tag, url);
+    info!(
+        "Fetching URL ({}): {}",
+        caller_tag,
+        crate::text_util::url_for_log(&url)
+    );
     let content = fetch_and_extract(&url, proxy.as_ref()).await?;
 
     state.cache_fetch(&url, &content);

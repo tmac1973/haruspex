@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 
 import { loadPyodide, type PyodideInterface } from 'pyodide';
+import { errMessage } from '$lib/utils/error';
 import type { InstallPhase, MainToWorker, ToolResult, WorkerToMain } from './protocol';
 import {
 	dispatchWorkerMessage,
@@ -1202,7 +1203,7 @@ async function init(): Promise<void> {
 		await py.runPythonAsync(HARUSPEX_INIT_PY);
 		post({ kind: 'ready' });
 	} catch (err) {
-		post({ kind: 'load_error', error: err instanceof Error ? err.message : String(err) });
+		post({ kind: 'load_error', error: errMessage(err) });
 	}
 }
 
@@ -1292,7 +1293,7 @@ async function handleSyncWorkdir(msg: {
 		post({
 			kind: 'sync_workdir_ack',
 			sync_id: msg.sync_id,
-			error: err instanceof Error ? err.message : String(err)
+			error: errMessage(err)
 		});
 	}
 }
@@ -1394,7 +1395,7 @@ async function runWithImportRetry(
 			postExecStart();
 			return await pyodide.runPythonAsync(code);
 		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
+			const message = errMessage(err);
 			const pkg = extractMissingPackage(message);
 			if (!pkg) throw err;
 			if (tried.has(pkg)) throw err;
@@ -1453,7 +1454,7 @@ function postNotLoaded(id: string): void {
 /** Map a thrown error to a `done` result, timed from `t0`. Shared catch body
  * for the run/install handlers so a failure always becomes a `done`. */
 function postRunError(id: string, t0: number, err: unknown): void {
-	const message = err instanceof Error ? err.message : String(err);
+	const message = errMessage(err);
 	post({ kind: 'done', id, result: emptyResult(Math.round(performance.now() - t0), message) });
 }
 
@@ -1483,10 +1484,7 @@ async function handleRun(id: string, code: string): Promise<void> {
 				'await _haruspex_auto_install_missing(_haruspex_user_code_for_imports)'
 			);
 		} catch (installErr) {
-			currentStderr +=
-				'[haruspex] auto-install pass failed: ' +
-				(installErr instanceof Error ? installErr.message : String(installErr)) +
-				'\n';
+			currentStderr += '[haruspex] auto-install pass failed: ' + errMessage(installErr) + '\n';
 		}
 		// Re-install the matplotlib show-capture hook each run; idempotent
 		// in Python (guarded by a sentinel attribute), so the cost is one
@@ -1506,10 +1504,7 @@ async function handleRun(id: string, code: string): Promise<void> {
 		try {
 			await pyodide.runPythonAsync('await _haruspex_drain_pending_saves()');
 		} catch (drainErr) {
-			currentStderr +=
-				'\n[haruspex] drain failed: ' +
-				(drainErr instanceof Error ? drainErr.message : String(drainErr)) +
-				'\n';
+			currentStderr += '\n[haruspex] drain failed: ' + errMessage(drainErr) + '\n';
 		}
 		const result = emptyResult(Math.round(performance.now() - t0));
 		// Pass the value back to Python so it can detect rich representations

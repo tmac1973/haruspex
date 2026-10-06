@@ -580,7 +580,7 @@ async function sendChatRequest(
 		if (!response.ok) {
 			const text = await readErrorText(response);
 			logDebug('api', `${label} request #${reqId} HTTP ${response.status}`, {
-				body: text,
+				body: previewText(text),
 				attempt
 			});
 			const err = new ApiError(`Server error: ${text}`, response.status);

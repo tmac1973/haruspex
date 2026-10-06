@@ -18,6 +18,7 @@
  */
 
 import { Channel, invoke, isTauri } from '@tauri-apps/api/core';
+import { errMessage } from '$lib/utils/error';
 import type { ComfyError } from '$lib/ipc/gen/ComfyError';
 import type { ComfySocketEvent } from '$lib/ipc/gen/ComfySocketEvent';
 import { ImageBackendError, type ImageProgress } from '../types';
@@ -91,10 +92,6 @@ function trimUrl(base: string): string {
 	return base.trim().replace(/\/+$/, '');
 }
 
-function describe(e: unknown): string {
-	return e instanceof Error ? e.message : String(e);
-}
-
 // ---- Through Rust (the app) -------------------------------------------------
 
 let nextId = 0;
@@ -118,7 +115,7 @@ function fromRust(e: unknown, path: string, signal?: AbortSignal): ImageBackendE
 			if (signal?.aborted) return new ImageBackendError('cancelled', 'Generation cancelled.');
 			return new ImageBackendError(
 				'unreachable',
-				`The request to the image backend failed — ${describe(e)}`
+				`The request to the image backend failed — ${errMessage(e)}`
 			);
 	}
 }
@@ -184,7 +181,7 @@ async function viaFetch(cfg: ClientConfig, call: Call, signal?: AbortSignal): Pr
 			timedOut ? 'timeout' : 'unreachable',
 			timedOut
 				? `The image backend did not answer ${call.path} within ${HTTP_TIMEOUT_MS / 1000}s.`
-				: `Could not reach the image backend at ${trimUrl(cfg.baseUrl)} — ${describe(e)}. Is ComfyUI running there?`
+				: `Could not reach the image backend at ${trimUrl(cfg.baseUrl)} — ${errMessage(e)}. Is ComfyUI running there?`
 		);
 	} finally {
 		clearTimeout(timer);

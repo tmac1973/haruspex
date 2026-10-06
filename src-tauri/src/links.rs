@@ -20,16 +20,16 @@ use log::{error, info};
 
 #[tauri::command]
 pub async fn open_url(url: String) -> Result<(), String> {
-    info!("open_url: {}", url);
+    let logged = crate::text_util::url_for_log(&url);
+    info!("open_url: {}", logged);
 
     if !url.starts_with("http://") && !url.starts_with("https://") {
-        let msg = format!("refusing non-http(s) URL: {}", url);
-        error!("{}", msg);
-        return Err(msg);
+        error!("refusing non-http(s) URL: {}", logged);
+        return Err(format!("refusing non-http(s) URL: {}", url));
     }
 
     spawn_url_handler(&url).map_err(|e| {
-        error!("open_url failed for {}: {}", url, e);
+        error!("open_url failed for {}: {}", logged, e);
         e
     })
 }

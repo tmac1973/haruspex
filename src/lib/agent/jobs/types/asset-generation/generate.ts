@@ -21,7 +21,8 @@ import {
 	retrySeed,
 	type JudgeDeps
 } from './gate';
-import { escapesWorkdir, isCancellation, isTransient, keepBest, reasonOf } from './guards';
+import { escapesWorkdir, isCancellation, isTransient, keepBest } from './guards';
+import { errMessage } from '$lib/utils/error';
 import { planSheets, type SheetPlan } from './sheets';
 import { runSheet as runSheetLoop } from './sheetLoop';
 import type { EntryOutcome, SheetOutcome } from './types';
@@ -209,7 +210,7 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 					return;
 				}
 				finish(
-					{ status: 'failed', attempts: attempt, seed: lastSeed, degraded, reason: reasonOf(e) },
+					{ status: 'failed', attempts: attempt, seed: lastSeed, degraded, reason: errMessage(e) },
 					best
 				);
 				return;
@@ -232,7 +233,7 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 				if (isCancellation(e)) throw e;
 				// Normalization refuses an image with nothing left in it, which
 				// is a rejection like any other — retried, not fatal.
-				lastReason = reasonOf(e);
+				lastReason = errMessage(e);
 				if (attempt >= deps.maxAttempts) {
 					const kept = await keepBest(deps.writeBytes, entry.out, bestBytes);
 					finish(
@@ -268,7 +269,7 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 							attempts: attempt,
 							seed: lastSeed,
 							degraded,
-							reason: reasonOf(e)
+							reason: errMessage(e)
 						},
 						report
 					);

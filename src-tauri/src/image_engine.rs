@@ -30,12 +30,9 @@ use tauri_plugin_shell::ShellExt;
 
 use crate::sidecar_utils::{
     base_url, http_client, kill_child, kill_process_on_port, new_log_buffer, poll_health,
-    snapshot_logs, spawn_log_reader, LogBuffer, SidecarStatus,
+    ports::IMAGE as IMAGE_PORT, snapshot_logs, spawn_log_reader, LogBuffer, SidecarStatus,
+    LOOPBACK,
 };
-
-/// Reserved in `CLAUDE.md`'s localhost table; the next free port after
-/// whisper's 8766.
-pub const IMAGE_PORT: u16 = 8767;
 
 /// Readiness. sd-server serves no `/health`; this is the cheapest route it
 /// does serve, and it only answers once the weights are loaded — which is the
@@ -265,7 +262,7 @@ impl ImageEngine {
             .into_iter()
             .chain([
                 "--listen-ip".to_string(),
-                "127.0.0.1".to_string(),
+                LOOPBACK.to_string(),
                 "--listen-port".to_string(),
                 IMAGE_PORT.to_string(),
             ])

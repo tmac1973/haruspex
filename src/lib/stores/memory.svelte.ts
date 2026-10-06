@@ -15,6 +15,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { errMessage } from '$lib/utils/error';
 import { getSettings, updateSettings } from '$lib/stores/settings';
 import { logDebug } from '$lib/debug-log';
 
@@ -99,7 +100,7 @@ export async function downloadModel(): Promise<boolean> {
 		// Surfaced in the card rather than swallowed: the most likely cause is
 		// no network, and a toggle that silently refuses to move is worse than
 		// one that says why.
-		state.error = e instanceof Error ? e.message : String(e);
+		state.error = errMessage(e);
 		state.status = 'error';
 		logDebug('memory', 'model download failed', { error: state.error });
 		return false;

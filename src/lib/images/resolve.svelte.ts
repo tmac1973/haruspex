@@ -14,6 +14,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { errMessage } from '$lib/utils/error';
 import type { SearchStep } from '$lib/agent/loop';
 import type { ImageRequest } from '$lib/ipc/gen/ImageRequest';
 import type { ImageRow } from '$lib/ipc/gen/ImageRow';
@@ -270,6 +271,6 @@ async function rehydrateLocalImages(
 		if (!isStillActive()) return;
 		for (const row of rows) registerLocalImage(row.hash, row);
 	} catch (e) {
-		logDebug('images', `rehydrate local: ${e instanceof Error ? e.message : String(e)}`);
+		logDebug('images', `rehydrate local: ${errMessage(e)}`);
 	}
 }

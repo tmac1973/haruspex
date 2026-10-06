@@ -2,6 +2,7 @@
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import JobStepCard from '$lib/components/jobs/JobStepCard.svelte';
 	import { formatDuration } from '$lib/utils/format';
+	import { errMessage } from '$lib/utils/error';
 	import { getJobRun, type JobRunStep, type JobRunWithSteps } from '$lib/stores/jobRuns.svelte';
 	import { getJob, getJobs, type JobWithSteps } from '$lib/stores/jobs.svelte';
 	import JobRunStats from '$lib/components/jobs/JobRunStats.svelte';
@@ -81,17 +82,27 @@
 		run = null;
 		error = null;
 		fullJob = null;
-		getJobRun(id)
-			.then(async (r) => {
-				if (!r) error = 'Could not load run.';
-				else {
-					run = r;
-					fullJob = await getJob(r.job_id);
+		let stale = false;
+		void (async () => {
+			try {
+				const r = await getJobRun(id);
+				if (stale) return;
+				if (!r) {
+					error = 'Could not load run.';
+					return;
 				}
-			})
-			.finally(() => {
-				loading = false;
-			});
+				run = r;
+				const j = await getJob(r.job_id);
+				if (!stale) fullJob = j;
+			} catch (e) {
+				if (!stale) error = errMessage(e);
+			} finally {
+				if (!stale) loading = false;
+			}
+		})();
+		return () => {
+			stale = true;
+		};
 	});
 
 	function formatWhen(ms: number | null): string {

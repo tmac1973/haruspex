@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
+	import { errMessage } from '$lib/utils/error';
 	import { listen } from '@tauri-apps/api/event';
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { getSettings } from '$lib/stores/settings';
@@ -54,7 +55,7 @@
 			({ route, manager } = await chooseRoute(cfg()));
 		} catch (e) {
 			rows = [];
-			error = e instanceof Error ? e.message : String(e);
+			error = errMessage(e);
 		}
 	}
 
@@ -113,7 +114,7 @@
 				if (still.length > 0) error = managerRefusalHint(cfg());
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : String(e);
+			error = errMessage(e);
 		} finally {
 			unlisten();
 			busy = null;
@@ -128,8 +129,12 @@
 	}
 
 	async function copy(row: Row) {
-		await navigator.clipboard.writeText(manualList(row.missing)).catch(() => {});
-		status = 'Copied.';
+		try {
+			await navigator.clipboard.writeText(manualList(row.missing));
+			status = 'Copied.';
+		} catch {
+			error = 'Could not copy the file list.';
+		}
 	}
 </script>
 
