@@ -108,6 +108,19 @@ export async function downloadModel(): Promise<boolean> {
 }
 
 /**
+ * Memory is on by default, so a new install needs the model before it can do
+ * anything. Only the setup wizard calls this — it is the step where the user
+ * expects downloads. Settings restored onto another machine never trigger a
+ * download on their own. Runs in the background; a failure shows in
+ * Settings → Memory.
+ */
+export async function fetchModelForDefault(): Promise<void> {
+	if (!getSettings().memoryEnabled) return;
+	await refreshModelStatus();
+	if (state.status === 'absent' || state.status === 'error') await downloadModel();
+}
+
+/**
  * Turn memory on, downloading the model first if it is missing.
  *
  * Returns false when the model could not be obtained — the caller leaves the

@@ -25,6 +25,7 @@ import {
 	disableMemory,
 	downloadModel,
 	enableMemory,
+	fetchModelForDefault,
 	getMemoryCount,
 	getModelError,
 	getModelStatus,
@@ -193,5 +194,29 @@ describe('memory count', () => {
 		mocks.invoke.mockRejectedValueOnce(new Error('db locked'));
 		await refreshMemoryCount();
 		expect(getMemoryCount()).toBe(7);
+	});
+});
+
+describe('fetching the model for the on-by-default setting', () => {
+	it('downloads the model when memory is on and the model is missing', async () => {
+		mocks.settings.memoryEnabled = true;
+		mocks.invoke.mockImplementation((cmd: string) =>
+			Promise.resolve(cmd === 'memory_model_present' ? false : undefined)
+		);
+		await fetchModelForDefault();
+		expect(mocks.invoke).toHaveBeenCalledWith('memory_download_model');
+		expect(getModelStatus()).toBe('ready');
+	});
+
+	it('leaves a model already on disk alone', async () => {
+		mocks.settings.memoryEnabled = true;
+		mocks.invoke.mockResolvedValue(true);
+		await fetchModelForDefault();
+		expect(mocks.invoke).not.toHaveBeenCalledWith('memory_download_model');
+	});
+
+	it('downloads nothing when the user turned memory off', async () => {
+		await fetchModelForDefault();
+		expect(mocks.invoke).not.toHaveBeenCalled();
 	});
 });

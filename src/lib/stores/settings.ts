@@ -274,7 +274,7 @@ export interface SearchProxyConfig {
 export interface AppSettings {
 	responseFormat: ResponseFormat;
 	/**
-	 * Ask the model to put relevant pictures in its answers. Off by default.
+	 * Ask the model to put relevant pictures in its answers. On by default.
 	 *
 	 * Purely a prompt nudge: the image tools are in the schema either way, so
 	 * with this off "show me a picture of X" still works and the model may
@@ -372,17 +372,17 @@ export interface AppSettings {
 	 */
 	legacyModelNoticeDismissed: boolean;
 	/**
-	 * Master switch for the Python code sandbox. When false, run_python
-	 * / install_package / reset_python are filtered out of the model's
-	 * tool list entirely, the same way fs tools are when no working
-	 * directory is set.
-	 */
-	/**
 	 * Master switch for screen capture. Off by default: an assistant that can
 	 * see the screen is a different thing from one that cannot, and that has
 	 * to be a decision the user made rather than one they inherited.
 	 */
 	screenCaptureEnabled: boolean;
+	/**
+	 * Master switch for the Python code sandbox. On by default. When false,
+	 * run_python / install_package / reset_python are filtered out of the
+	 * model's tool list entirely, the same way fs tools are when no working
+	 * directory is set.
+	 */
 	sandboxEnabled: boolean;
 	/**
 	 * Controls when the user is prompted before the Python sandbox runs
@@ -533,9 +533,8 @@ export interface AppSettings {
 	shellCodeModeDefault: boolean;
 	/**
 	 * Cross-chat memory: extract stable facts from conversations and recall
-	 * them in later ones. Off by default — it is the only setting that makes
-	 * the app carry what you said into a conversation you have not had yet,
-	 * and enabling it also requires downloading an embedding model. See
+	 * them in later ones. On by default for new installs: the setup wizard
+	 * fetches the embedding model it needs (`fetchModelForDefault`). See
 	 * `stores/memory.svelte.ts` and `plan/archive/agentic-memory/`.
 	 *
 	 * True here is necessary but not sufficient: the embedding model must
@@ -696,7 +695,7 @@ export const DEFAULT_TTS_VOICE = 'af_heart';
 
 const defaults: AppSettings = {
 	responseFormat: 'standard',
-	includeImages: false,
+	includeImages: true,
 	theme: 'system',
 	accentColor: 'teal',
 	uiScale: 1,
@@ -725,7 +724,7 @@ const defaults: AppSettings = {
 	activeLocalModelFilename: '',
 	legacyModelNoticeDismissed: false,
 	screenCaptureEnabled: false,
-	sandboxEnabled: false,
+	sandboxEnabled: true,
 	sandboxApproval: 'once-per-chat',
 	sandboxTimeoutSeconds: 60,
 	sandboxNetAccess: 'lan',
@@ -754,7 +753,7 @@ const defaults: AppSettings = {
 	codeRunCommandTimeoutSecs: 30,
 	codeCommandExec: 'auto',
 	codeMaxIterations: 40,
-	memoryEnabled: false,
+	memoryEnabled: true,
 	memoryConfirmWrites: true,
 	// Image generation is entirely opt-in: 'none' means no process, no
 	// download and no startup cost for anyone who never turns it on.

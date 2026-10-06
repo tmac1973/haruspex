@@ -24,11 +24,11 @@ Haruspex is a desktop AI researcher and coding tool that runs entirely local by 
 
 - **Web research** — Ask a question, and it searches the web, reads the results and answers. Turn on **deep research** for a slower, more thorough answer that uses more sources.
 - **Files (you opt in)** — Pick a working directory in the chat tab and the model can read and write files there, and only there. It handles text, PDF, Word, Excel, PowerPoint, OpenDocument and images. Great for creating reports from your research. ([details](#local-files))
-- **Python sandbox** — The model can write and run Python inside the app, in a sandboxed Pyodide environment. It can install packages on demand and make HTTP requests. Use it to make charts, do maths, or build documents. It asks before each run, and it is **off by default** (Settings → Agent → Python Sandbox). Works best with a larger model.
-- **Pictures in answers (off by default)** — Turn on **Include images** in Settings → General and answers about visual things — a place, an animal, an object, a person — come with one to three relevant pictures. They come from Openverse, Wikimedia Commons and Wikipedia, and each one shows who made it and under what licence. Haruspex downloads them itself, so the site never sees your computer, and it keeps them on this device. Small models often look for a picture and then forget to put it in the answer, so when that happens the pictures it found appear under the answer instead of beside the paragraph — you still get them.
+- **Python sandbox** — The model can write and run Python inside the app, in a sandboxed Pyodide environment. It can install packages on demand and make HTTP requests. Use it to make charts, do maths, or build documents. It asks before each run, and it is on by default (Settings → Agent → Python Sandbox). Works best with a larger model.
+- **Pictures in answers** — With **Include images** on (Settings → General), answers about visual things — a place, an animal, an object, a person — come with one to three relevant pictures. They come from Openverse, Wikimedia Commons and Wikipedia, and each one shows who made it and under what licence. Haruspex downloads them itself, so the site never sees your computer, and it keeps them on this device. Small models often look for a picture and then forget to put it in the answer, so when that happens the pictures it found appear under the answer instead of beside the paragraph — you still get them.
 - **Vision** — Show it an image or a scanned PDF and it can describe or read it.
 - **Voice** — Speak your question with push-to-talk, and have answers read aloud.
-- **Memory (off by default)** — When you turn it on, Haruspex quietly reads your finished conversations, keeps the stable facts (your preferences, your corrections, ongoing project details) and brings the relevant ones into later chats. You can also just say "remember that…". All of it stays on this device — the text never leaves it. You can mark a single chat as incognito, and you can read, edit or delete anything it remembered. ([details](#memory))
+- **Memory** — Haruspex quietly reads your finished conversations, keeps the stable facts (your preferences, your corrections, ongoing project details) and brings the relevant ones into later chats. You can also just say "remember that…". All of it stays on this device — the text never leaves it. You can mark a single chat as incognito, and you can read, edit or delete anything it remembered. ([details](#memory))
 - **Open in shell** — If an answer ends with "run this command", press the `>_` button to open the whole conversation in a new Shell tab, where the commands become buttons you can run.
 - **Remote access (off by default)** — Let other devices on your home network chat with your Haruspex through a web page, using your computer's GPU. Useful when your main machine is busy with a game and you want to ask a question from a phone or laptop. Share a link or scan a QR code. ([details](#remote-access))
 - **Email (off by default)** — Connect an IMAP account (Gmail, Fastmail, iCloud, Yahoo or custom) so the model can summarise and search your recent messages. Turn on **Allow sending** and it can also draft replies and new mail — but every draft opens for you to edit, and only your click on Send sends it. ([details](#email-integration))
@@ -243,11 +243,11 @@ The working directory belongs to one conversation and is not remembered after yo
 
 ## Memory
 
-Memory is **off by default**. Turn it on in Settings → Memory.
+Memory is on by default; turn it off in Settings → Memory.
 
 When it is on, Haruspex reads your finished conversations in the background, picks out the facts that are likely to matter later — your preferences, corrections you made, ongoing project context — and brings the relevant ones into your next chat. You can also ask directly: "remember that I use fish, not bash."
 
-Everything stays on this device. The text is never sent anywhere, and the embeddings used to find the right memory later are calculated on your machine. Turning memory on downloads a small embedding model once.
+Everything stays on this device. The text is never sent anywhere, and the embeddings used to find the right memory later are calculated on your machine. Setup downloads a small embedding model for it once.
 
 You can switch any single conversation to incognito so it is never read, ask to be prompted before anything is saved, and read, edit or delete every stored memory from the settings panel.
 

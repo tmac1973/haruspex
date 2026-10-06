@@ -6,6 +6,7 @@ import type { SidecarStatus } from '#lib/ipc/gen/SidecarStatus.ts';
 import { errMessage, isAbortError } from '#lib/utils/error.ts';
 import { sleep } from '#lib/utils/async.ts';
 import { readSseData } from '#lib/api.ts';
+import { fetchModelForDefault } from '#lib/stores/memory.svelte.ts';
 import { PORTS, baseUrl } from '#lib/ports.ts';
 import {
 	getActiveLocalModelFilename,
@@ -146,6 +147,9 @@ export async function importModel(path: string): Promise<boolean> {
 }
 
 export async function runTestQuery(): Promise<void> {
+	// Every local path through the wizard lands here; the remote path calls
+	// it from finishRemoteSetup.
+	void fetchModelForDefault();
 	testResult = 'running';
 	testResponse = '';
 	testStatusMessage = 'Looking for model...';

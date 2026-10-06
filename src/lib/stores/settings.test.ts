@@ -844,11 +844,12 @@ describe('include images setting', () => {
 		localStorage.clear();
 	});
 
-	it('is off by default', () => {
-		expect(getSettings().includeImages).toBe(false);
+	it('is on by default', () => {
+		expect(getSettings().includeImages).toBe(true);
 	});
 
-	it('produces no prompt fragment while off', () => {
+	it('produces no prompt fragment once switched off', () => {
+		updateSettings({ includeImages: false });
 		expect(getIncludeImagesPrompt()).toBe('');
 	});
 
