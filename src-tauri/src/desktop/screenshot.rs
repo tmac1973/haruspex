@@ -82,6 +82,80 @@ pub struct ScreenCapture {
     pub height: u32,
 }
 
+/// A window the user can pick to capture, where the platform has no picker of
+/// its own.
+#[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureWindow {
+    pub id: u32,
+    pub title: String,
+    pub app: String,
+}
+
+/// The windows to offer in a pick list. Empty on Linux, where the desktop
+/// portal shows its own picker and the user clicks the window there.
+#[tauri::command]
+pub async fn list_capture_windows() -> Result<Vec<CaptureWindow>, String> {
+    list_windows().await
+}
+
+/// Capture one window the user picked from [`list_capture_windows`].
+///
+/// Like [`capture_screen`], only ever called from a button the user pressed:
+/// the Shell tab's "capture a window" button, with the window they chose.
+#[tauri::command]
+pub async fn capture_window(id: u32) -> Result<ScreenCapture, String> {
+    let capture = grab_window(id).await?;
+    encode(capture).await
+}
+
+async fn encode(capture: Capture) -> Result<ScreenCapture, String> {
+    let (width, height) = (capture.source_width, capture.source_height);
+    let long_edge = target_long_edge(width, height);
+    let data_url = tokio::task::spawn_blocking(move || {
+        crate::fs_tools::images::encode_jpeg_data_url(capture.image, long_edge)
+    })
+    .await
+    .map_err(|e| format!("screenshot encoding failed: {e}"))??;
+    Ok(ScreenCapture {
+        data_url,
+        width,
+        height,
+    })
+}
+
+#[cfg(target_os = "linux")]
+async fn list_windows() -> Result<Vec<CaptureWindow>, String> {
+    Ok(Vec::new())
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+async fn list_windows() -> Result<Vec<CaptureWindow>, String> {
+    super::external::list_windows().await
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+async fn list_windows() -> Result<Vec<CaptureWindow>, String> {
+    Ok(Vec::new())
+}
+
+#[cfg(target_os = "linux")]
+async fn grab_window(_id: u32) -> Result<Capture, String> {
+    // The portal picks the window itself; there is no id to capture by.
+    super::linux::capture(CaptureTarget::Window).await
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+async fn grab_window(id: u32) -> Result<Capture, String> {
+    super::external::capture_window(id).await
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+async fn grab_window(_id: u32) -> Result<Capture, String> {
+    Err("Screen capture is not supported on this platform.".into())
+}
+
 /// Capture the screen or the focused window.
 ///
 /// Called from exactly two places, both of them something the user just did:
@@ -90,23 +164,9 @@ pub struct ScreenCapture {
 #[tauri::command]
 pub async fn capture_screen(target: Option<CaptureTarget>) -> Result<ScreenCapture, String> {
     let target = target.unwrap_or_default();
-    let capture = grab(target).await?;
-    let (width, height) = (capture.source_width, capture.source_height);
-    let long_edge = target_long_edge(width, height);
-
-    // Downscaling a 4K frame is tens of milliseconds of CPU; off the async
-    // runtime so it cannot stall the UI thread's other work.
-    let data_url = tokio::task::spawn_blocking(move || {
-        crate::fs_tools::images::encode_jpeg_data_url(capture.image, long_edge)
-    })
-    .await
-    .map_err(|e| format!("screenshot encoding failed: {e}"))??;
-
-    Ok(ScreenCapture {
-        data_url,
-        width,
-        height,
-    })
+    // Downscaling a 4K frame is tens of milliseconds of CPU; `encode` does it
+    // off the async runtime so it cannot stall the UI thread's other work.
+    encode(grab(target).await?).await
 }
 
 #[cfg(target_os = "linux")]
