@@ -2,10 +2,31 @@ name: CI
 on:
   push:
     branches: [main]
+    paths:
+      # Everything except prose. A change that only touches markdown, plan/ or
+      # docs/ has nothing for these jobs to check — prettier covers src/ only,
+      # and no test reads plan/ — so it skips the half-hour of builds.
+      # The one exception: check-constants.mjs reads the pinned sd-server
+      # version out of docs/image-generation.md, so that file still counts.
+      - '**'
+      - '!plan/**'
+      - '!docs/**'
+      - '!audits/**'
+      - '!**/*.md'
+      - 'docs/image-generation.md'
   pull_request:
     # `labeled` so adding windows-ci / macos-ci starts that job straight away,
     # rather than on the PR's next push.
     types: [opened, synchronize, reopened, labeled]
+    # The same list as push, spelled out: YAML anchors in workflows are recent
+    # enough not to rely on.
+    paths:
+      - '**'
+      - '!plan/**'
+      - '!docs/**'
+      - '!audits/**'
+      - '!**/*.md'
+      - 'docs/image-generation.md'
   workflow_dispatch:
 
 jobs:
