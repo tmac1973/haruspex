@@ -61,10 +61,10 @@ rusqlite = { version = "0.39.0", features = ["bundled"] }
 cpal = "0.17.1"
 rodio = "0.21.1"
 hound = "3.5.1"
-pdf-extract = "0.9"
+pdf-extract = "0.12"
 pdfium-render = "0.9"
-printpdf = { version = "0.9", features = ["png", "jpeg", "gif"] }
-calamine = "0.30"
+printpdf = { version = "0.12", features = ["png", "jpeg", "gif"] }
+calamine = "0.36"
 zip = "4.6"
 image = "0.25"
 base64 = "0.22"
