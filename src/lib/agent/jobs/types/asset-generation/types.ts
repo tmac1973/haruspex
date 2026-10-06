@@ -7,6 +7,8 @@
  * run did not do.
  */
 
+import type { TextureRecipe } from '$lib/ipc/gen/TextureRecipe';
+
 /** How the run got its style anchor. */
 export interface AnchorOutcome {
 	source: 'reused' | 'generated';
@@ -43,6 +45,12 @@ export interface EntryOutcome {
 	 * is something to load. The spec marks it `rejected` for review.
 	 */
 	kept?: boolean;
+	/** Drawn by code from a recipe rather than by the image model. */
+	codeDrawn?: boolean;
+	/** A code-drawn texture's tile files, `out` first. */
+	variants?: string[];
+	/** The recipe, when the judge's no made the run revise it. */
+	recipe?: TextureRecipe;
 }
 
 /**

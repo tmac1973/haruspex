@@ -24,6 +24,9 @@ export const DEFAULT_VISION_JUDGE = true;
  * everything tested. 32 stays available per spec and per entry.
  */
 export const DEFAULT_TARGET_SIZE = 64;
+/** Tiles drawn per code-drawn texture, unless the job says otherwise. */
+export const DEFAULT_TEXTURE_VARIANTS = 4;
+export const MAX_TEXTURE_VARIANTS = 8;
 export const MIN_TARGET_SIZE = 8;
 export const MAX_TARGET_SIZE = 512;
 /** Mirrors the Rust clamp; the anchor sheet obeys it too. */
@@ -62,6 +65,13 @@ export interface AssetGenerationConfig {
 	vision_judge: boolean | null;
 	/** Use git at all. */
 	use_git: boolean | null;
+	/**
+	 * Draw textures in code from a recipe instead of with the image model.
+	 * Null (an older job) means no; new jobs and chains set it true.
+	 */
+	code_textures: boolean | null;
+	/** Tiles per code-drawn texture, 1 to 8. */
+	texture_variants: number | null;
 	/**
 	 * An autonomous-coding configuration to start after this job, carried the
 	 * way guided planning carries its own. Null for a standalone run.
@@ -128,6 +138,8 @@ export function parseAssetGenerationConfig(json: string | null): AssetGeneration
 		concurrency: clampInt(raw.concurrency, 1, 8),
 		vision_judge: optionalBool(raw.vision_judge),
 		use_git: optionalBool(raw.use_git),
+		code_textures: optionalBool(raw.code_textures),
+		texture_variants: clampInt(raw.texture_variants, 1, MAX_TEXTURE_VARIANTS),
 		coding_run:
 			raw.coding_run && typeof raw.coding_run === 'object' && !Array.isArray(raw.coding_run)
 				? (raw.coding_run as Record<string, unknown>)

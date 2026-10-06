@@ -14,6 +14,7 @@ import { defaultProfile } from '$lib/assets/normalize';
 import { renderAssetSpec } from '$lib/assets/spec/write';
 import { validateAssetSpec } from '$lib/assets/spec/validate';
 import { derivePlanSpec, type PlanDerivePayload } from '../asset-generation/derive';
+import { KIND_RULE } from '../asset-generation/prompts';
 import { SUBMIT_PLAN_ASSET_SPEC_TOOL } from '../asset-generation/tools';
 import type { ResolvedToolCall } from '$lib/agent/parser';
 import { SUBMIT_PLAN_OUTLINE_TOOL, type PlanOutlinePhaseArg } from '$lib/agent/tools/planning';
@@ -817,9 +818,7 @@ export function assetSpecPrompt(outDir: string, specPath: string): string {
 		'     will load the file by this name, so an id you improved is a file',
 		'     nothing opens. If the plan does not name an id for something it plainly',
 		'     needs, coin one in that form and use it consistently.',
-		'   - `kind`: `sprite` for an object or character needing a transparent',
-		'     background, `texture` for ground or walls that must tile seamlessly,',
-		'     `icon` for a small UI symbol.',
+		...KIND_RULE,
 		'   - `prompt`: the SUBJECT only, with its own colours. The shared style is',
 		'     added automatically, so repeating it here dilutes both. For a texture,',
 		'     name the surface, not "seamless" or "tiling" — those draw a grid of tiles.',
@@ -1696,6 +1695,9 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				type_config: JSON.stringify({
 					spec_path: specPath,
 					run_mode: 'unattended',
+					// A chain draws its textures in code: nobody is there to
+					// review a tile the image model drew as a picture.
+					code_textures: true,
 					// The asset run creates the coding job when it finishes:
 					// it names it after the plan, and runs it on the coding
 					// stage's model, which it has no other way to know.

@@ -22,6 +22,15 @@ describe('defaults', () => {
 		expect(c.vision_judge).toBeNull();
 		expect(c.use_git).toBeNull();
 		expect(c.coding_run).toBeNull();
+		// An older job never chose code textures; it keeps the image model.
+		expect(c.code_textures).toBeNull();
+		expect(c.texture_variants).toBeNull();
+	});
+
+	it('clamps tile variants to 1–8', () => {
+		expect(cfg('{"texture_variants": 0}').texture_variants).toBe(1);
+		expect(cfg('{"texture_variants": 20}').texture_variants).toBe(8);
+		expect(cfg('{"code_textures": true}').code_textures).toBe(true);
 	});
 
 	it('behaves like no config when the JSON is malformed', () => {

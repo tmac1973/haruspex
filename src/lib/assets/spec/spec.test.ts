@@ -137,7 +137,9 @@ describe('round trip', () => {
 					seed: 7,
 					negativePrompt: 'n',
 					notes: 'for the shop screen',
-					rejected: 'that is a hammer'
+					rejected: 'that is a hammer',
+					recipe: { base: { ramp: ['#000000', '#ffffff'] }, layers: [] },
+					variants: ['o.png', 'o_1.png']
 				}
 			]
 		});
