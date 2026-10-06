@@ -175,6 +175,8 @@ function buildSettingsSnapshot(): string {
 		audioOutputDevice: s.audioOutputDevice,
 		audioInputDevice: s.audioInputDevice,
 		proxy: { mode: s.proxy.mode, hasUrl: s.proxy.url.length > 0 },
+		searchProxy: { mode: s.searchProxy.mode, hasUrl: s.searchProxy.url.length > 0 },
+		sandboxNetAccess: s.sandboxNetAccess,
 		emailAccountCount: s.integrations.email.accounts.length,
 		emailEnabledCount: s.integrations.email.accounts.filter((a) => a.enabled).length
 	};

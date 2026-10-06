@@ -70,9 +70,13 @@ pub fn run() {
         // (requests / urllib via pyodide-http's XMLHttpRequest transport).
         // The worker rewrites cross-origin XHRs onto this scheme; the
         // handler fetches via reqwest (no browser CORS). See sandbox_fetch.
-        .register_asynchronous_uri_scheme_protocol("haruspexfetch", |_ctx, request, responder| {
+        .register_asynchronous_uri_scheme_protocol("haruspexfetch", |ctx, request, responder| {
+            let net = ctx
+                .app_handle()
+                .state::<sandbox_fetch::SandboxNet>()
+                .current();
             tauri::async_runtime::spawn(async move {
-                responder.respond(sandbox_fetch::handle_fetch_scheme(request).await);
+                responder.respond(sandbox_fetch::handle_fetch_scheme(request, net).await);
             });
         })
         // Serves cached chat images by content hash. Registered as a scheme
@@ -173,6 +177,7 @@ pub fn run() {
             }
         })
         .manage(LlamaServer::new())
+        .manage(sandbox_fetch::SandboxNet::default())
         // Nothing starts here: the image engine spawns on demand only.
         .manage(image_engine::ImageEngine::new())
         .manage(McpInstaller::new())
@@ -384,6 +389,7 @@ pub fn run() {
             lint::fs_lint_python,
             lint::lint_python_source,
             sandbox_fetch::sandbox_fetch,
+            sandbox_fetch::sandbox_set_network,
             sandbox_save::sandbox_save,
             sandbox_save::sandbox_delete_in_workdir,
             sandbox_sync::sandbox_sync_workdir,

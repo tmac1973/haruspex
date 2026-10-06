@@ -18,7 +18,7 @@ import { errMessage } from '$lib/utils/error';
 import type { SearchStep } from '$lib/agent/loop';
 import type { ImageRequest } from '$lib/ipc/gen/ImageRequest';
 import type { ImageRow } from '$lib/ipc/gen/ImageRow';
-import { getSettings } from '$lib/stores/settings';
+import { getSearchProxy } from '$lib/stores/settings';
 import { logDebug } from '$lib/debug-log';
 import { SvelteMap } from 'svelte/reactivity';
 import { imageSrc } from './url';
@@ -235,7 +235,7 @@ async function runResolve(
 		const rows = await invoke<ImageRow[]>('image_resolve', {
 			conversationId,
 			requests,
-			proxy: getSettings().proxy,
+			proxy: getSearchProxy(),
 			lookupOnly
 		});
 		// The conversation changed while we were away. Dropping the results is

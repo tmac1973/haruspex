@@ -6,7 +6,8 @@
 		DEFAULT_MAX_RESPONSE_TOKENS,
 		DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE,
 		MIN_MAX_RESPONSE_TOKENS,
-		MAX_MAX_RESPONSE_TOKENS
+		MAX_MAX_RESPONSE_TOKENS,
+		type SandboxNetAccess
 	} from '$lib/stores/settings';
 	import { KNOWN_EFFORT_LEVELS, resolveBackendDescriptor } from '$lib/inference/descriptor';
 	import { clampInt } from '$lib/utils/clampInt';
@@ -46,6 +47,7 @@
 	let sandboxEnabled = $state(getSettings().sandboxEnabled);
 	let sandboxApproval = $state(getSettings().sandboxApproval);
 	let sandboxTimeoutSeconds = $state(getSettings().sandboxTimeoutSeconds);
+	let sandboxNetAccess = $state(getSettings().sandboxNetAccess);
 	let maxResponseTokens = $state(getSettings().maxResponseTokens);
 	let maxResponseTokensFileWrite = $state(getSettings().maxResponseTokensFileWrite);
 
@@ -92,6 +94,11 @@
 	function toggleSandboxEnabled() {
 		sandboxEnabled = !sandboxEnabled;
 		updateSettings({ sandboxEnabled });
+	}
+
+	function setSandboxNetAccess(access: SandboxNetAccess) {
+		sandboxNetAccess = access;
+		updateSettings({ sandboxNetAccess: access });
 	}
 
 	function setSandboxApproval(mode: 'off' | 'once-per-chat' | 'every-run') {
@@ -271,6 +278,26 @@
 			Code runs locally in your browser's WebView, isolated from the host filesystem except where it
 			explicitly writes (those writes flush to your working directory after the script finishes).
 			The prompt is your gate; "off" only makes sense if you fully trust the model on this machine.
+		</p>
+
+		<div class="search-provider">
+			<label for="sandbox-net">Network access:</label>
+			<select
+				id="sandbox-net"
+				value={sandboxNetAccess}
+				onchange={(e) =>
+					setSandboxNetAccess((e.target as HTMLSelectElement).value as SandboxNetAccess)}
+			>
+				<option value="internet">Internet only</option>
+				<option value="lan">Internet and local network</option>
+				<option value="all">Everything, including this computer</option>
+			</select>
+		</div>
+		<p
+			class="hint"
+			title="This computer includes Haruspex's own model, speech and remote-access servers."
+		>
+			What Python code may connect to. Uses the network proxy in Settings → Network.
 		</p>
 
 		<div class="search-provider">

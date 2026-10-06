@@ -51,8 +51,8 @@ interface PendingFetch {
 }
 const pendingFetches = new Map<string, PendingFetch>();
 
-// Resolved by the manager's reply to our 'get_proxy_mode' query during init.
-let proxyModeWaiter: ((cfg: { mode: string; workingDirSet: boolean }) => void) | null = null;
+// Resolved by the manager's reply to our 'get_runtime_config' query during init.
+let runtimeConfigWaiter: ((cfg: { workingDirSet: boolean }) => void) | null = null;
 
 // Python-side helpers: install matplotlib's plt.show capture lazily (only if
 // matplotlib is importable), and inspect the value of a run's last expression
@@ -197,48 +197,19 @@ except ImportError:
 # fails with "urllib.error.URLError: unknown url type: https" because
 # the WASM environment has no real socket layer.
 #
-# Skipped when the user has an app proxy configured: pyodide-http uses
-# sync XMLHttpRequest internally, which goes around our pyfetch
-# override and therefore bypasses the proxy. Leaving urllib unpatched
-# in that case forces the model to use pyodide.http.pyfetch directly,
-# which IS proxy-aware (override → fetch_request → sandbox_fetch).
-if not _haruspex_skip_http_patch:
-    try:
-        import micropip as _micropip_for_http_patch
-        await _micropip_for_http_patch.install('pyodide-http')
-        import pyodide_http
-        pyodide_http.patch_all()
-    except Exception as _patch_err:
-        import sys as _sys_for_warn
-        print('WARNING: pyodide-http patch failed: ' + str(_patch_err), file=_sys_for_warn.stderr)
-        print('  → urllib/requests/httpx will not work; use pyodide.http.pyfetch directly.',
-              file=_sys_for_warn.stderr)
-else:
-    # Proxy is configured. Replace urllib.request.urlopen with a stub that
-    # raises a SPECIFIC error naming pyfetch as the fix. The default
-    # "URLError: unknown url type: https" is too generic for the model to
-    # interpret as "use the other API"; it tends to abandon Python entirely
-    # and fall back to web_search, which then hallucinates from
-    # documentation pages.
-    import urllib.request as _urllib_request
-
-    def _haruspex_urlopen_proxy_block(*args, **kwargs):
-        raise OSError(
-            "urllib.request.urlopen is disabled in this sandbox because an "
-            "app proxy is configured (urllib uses synchronous XMLHttpRequest "
-            "which can't be routed through the proxy). Use "
-            "pyodide.http.pyfetch instead — it routes through the proxy "
-            "correctly. Top-level await works in this sandbox; the exact "
-            "pattern is: "
-            "import pyodide.http, json; "
-            "response = await pyodide.http.pyfetch(url); "
-            "data = json.loads(await response.string()); "
-            "print(data). "
-            "Do NOT use asyncio.run() — there's already an event loop running. "
-            "Just await the call directly at the top level."
-        )
-
-    _urllib_request.urlopen = _haruspex_urlopen_proxy_block
+# Its sync XMLHttpRequest goes through the haruspexfetch: scheme, which
+# applies the network proxy and the sandbox's network access level, the
+# same as pyfetch does.
+try:
+    import micropip as _micropip_for_http_patch
+    await _micropip_for_http_patch.install('pyodide-http')
+    import pyodide_http
+    pyodide_http.patch_all()
+except Exception as _patch_err:
+    import sys as _sys_for_warn
+    print('WARNING: pyodide-http patch failed: ' + str(_patch_err), file=_sys_for_warn.stderr)
+    print('  → urllib/requests/httpx will not work; use pyodide.http.pyfetch directly.',
+          file=_sys_for_warn.stderr)
 
 # ----------------------------------------------------------------------
 # Doc-creation wheels — install fpdf2 + python-pptx (and their non-Pyodide
@@ -1102,20 +1073,12 @@ function registerHostBridges(py: PyodideInterface): void {
 	});
 }
 
-/**
- * Ask main for the current proxy mode so the init script can decide whether
- * to install the urllib/requests/httpx → pyfetch bridge (pyodide-http).
- * When a proxy is configured we deliberately leave urllib unpatched:
- * pyodide-http uses sync XMLHttpRequest under the hood, which bypasses our
- * pyfetch override (and therefore the proxy). Forcing the model to use
- * pyodide.http.pyfetch directly is the only path that respects the proxy.
- */
+/** Ask main what the init script needs to know about this chat. */
 async function applyRuntimeConfig(py: PyodideInterface): Promise<void> {
-	const runtimeCfg = await new Promise<{ mode: string; workingDirSet: boolean }>((resolve) => {
-		proxyModeWaiter = resolve;
-		post({ kind: 'get_proxy_mode' });
+	const runtimeCfg = await new Promise<{ workingDirSet: boolean }>((resolve) => {
+		runtimeConfigWaiter = resolve;
+		post({ kind: 'get_runtime_config' });
 	});
-	py.globals.set('_haruspex_skip_http_patch', runtimeCfg.mode === 'manual');
 	py.globals.set('_haruspex_working_dir_set', runtimeCfg.workingDirSet);
 }
 
@@ -1561,11 +1524,11 @@ async function handleInstall(id: string, packageName: string): Promise<void> {
 // unit-testable without booting Pyodide.
 const workerHandlers: WorkerMessageHandlers = {
 	setInterruptBuffer: (buffer) => applyInterruptBuffer(buffer),
-	resolveProxyMode: (mode, workingDirSet) => {
-		if (proxyModeWaiter) {
-			const w = proxyModeWaiter;
-			proxyModeWaiter = null;
-			w({ mode, workingDirSet });
+	resolveRuntimeConfig: (workingDirSet) => {
+		if (runtimeConfigWaiter) {
+			const w = runtimeConfigWaiter;
+			runtimeConfigWaiter = null;
+			w({ workingDirSet });
 		}
 	},
 	syncWorkdir: (msg) => void handleSyncWorkdir(msg),

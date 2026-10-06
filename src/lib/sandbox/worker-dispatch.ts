@@ -14,7 +14,7 @@ type FetchResponseMsg = Extract<MainToWorker, { kind: 'fetch_response' }>;
 /** The side effects the worker performs for each inbound message kind. */
 export interface WorkerMessageHandlers {
 	setInterruptBuffer(buffer: SharedArrayBuffer): void;
-	resolveProxyMode(mode: string, workingDirSet: boolean): void;
+	resolveRuntimeConfig(workingDirSet: boolean): void;
 	syncWorkdir(msg: SyncWorkdirMsg): void;
 	run(id: string, code: string): void;
 	install(id: string, packageName: string): void;
@@ -31,8 +31,8 @@ export function dispatchWorkerMessage(msg: MainToWorker, h: WorkerMessageHandler
 	switch (msg.kind) {
 		case 'set_interrupt_buffer':
 			return h.setInterruptBuffer(msg.buffer);
-		case 'proxy_mode':
-			return h.resolveProxyMode(msg.mode, msg.workingDirSet);
+		case 'runtime_config':
+			return h.resolveRuntimeConfig(msg.workingDirSet);
 		case 'sync_workdir_files':
 			return h.syncWorkdir(msg);
 		case 'run':

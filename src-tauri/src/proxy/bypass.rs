@@ -100,6 +100,18 @@ pub enum ProxyUse {
     Always,
 }
 
+/// Whether `apply_proxy` would send a request for `target` through the proxy.
+/// For a caller that needs to know who resolves the host: through a proxy it
+/// is the proxy, not us.
+pub(crate) fn routes_through_proxy(proxy: Option<&ProxyConfig>, target: &reqwest::Url) -> bool {
+    let Some(cfg) = proxy else { return false };
+    if cfg.mode != "manual" || cfg.url.trim().is_empty() {
+        return false;
+    }
+    let loopback = target.host_str().is_some_and(is_loopback);
+    !loopback && !should_bypass(target, &parse_bypass_list(&cfg.bypass))
+}
+
 pub(crate) fn apply_proxy(
     builder: reqwest::ClientBuilder,
     proxy: Option<&ProxyConfig>,

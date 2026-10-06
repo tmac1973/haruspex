@@ -8,7 +8,12 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { chatCompletion, type BackendOverride, type ChatMessage } from '$lib/api';
-import { getChatTemplateKwargs, getSamplingParams, getSettings } from '$lib/stores/settings';
+import {
+	getChatTemplateKwargs,
+	getSamplingParams,
+	getSettings,
+	getSearchProxy
+} from '$lib/stores/settings';
 import type { FetchedPage } from '$lib/ipc/gen/FetchedPage';
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 import { errMessage } from '$lib/utils/error';
@@ -159,7 +164,7 @@ export function ensureUrlScheme(url: string): string {
 
 /**
  * Invoke the Rust-side `proxy_fetch` command with the standard payload
- * (url + caller + current proxy settings). Caller identifies the
+ * (url + caller + the web search proxy). Caller identifies the
  * originating tool for the proxy state's per-call accounting.
  *
  * Returns the page text plus the hero image the page declares about itself
@@ -171,6 +176,6 @@ export async function proxyFetch(url: string, caller: string): Promise<FetchedPa
 	return invoke<FetchedPage>('proxy_fetch', {
 		url: ensureUrlScheme(url),
 		caller,
-		proxy: getSettings().proxy
+		proxy: getSearchProxy()
 	});
 }
