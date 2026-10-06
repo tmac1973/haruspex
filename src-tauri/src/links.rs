@@ -85,3 +85,23 @@ fn sanitize_appimage_env(cmd: &mut std::process::Command) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn only_web_links_are_handed_to_the_system() {
+        for url in [
+            "javascript:alert(1)",
+            "file:///etc/passwd",
+            "data:text/html,hi",
+            "ftp://example.com/",
+            " https://example.com/",
+            "",
+        ] {
+            let err = open_url(url.to_string()).await.unwrap_err();
+            assert!(err.contains("refusing non-http(s) URL"), "{url}: {err}");
+        }
+    }
+}

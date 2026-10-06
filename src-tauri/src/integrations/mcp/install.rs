@@ -432,11 +432,15 @@ pub async fn place_setup_file(
 ) -> Result<(), String> {
     // The name comes from the catalog, but a badly edited catalog must not be
     // able to write outside the server's own directory.
+    place_setup_file_in(&server_dir(app, server_id)?, source, filename).await
+}
+
+/// `place_setup_file` against a resolved server directory.
+async fn place_setup_file_in(dir: &Path, source: &Path, filename: &str) -> Result<(), String> {
     if !is_plain_filename(filename) {
         return Err(format!("'{filename}' is not a plain file name"));
     }
-    let dir = server_dir(app, server_id)?;
-    tokio::fs::create_dir_all(&dir)
+    tokio::fs::create_dir_all(dir)
         .await
         .map_err(|e| format!("could not create {}: {e}", dir.display()))?;
     tokio::fs::copy(source, dir.join(filename))
@@ -562,7 +566,19 @@ pub fn setup_command_config(
     args: Vec<String>,
     proxy: Option<&ProxyConfig>,
 ) -> Result<SpawnConfig, String> {
-    let mut spawn = build_spawn_config(&server_dir(app, &config.id)?, config, proxy)?;
+    setup_command_in(&server_dir(app, &config.id)?, config, args, proxy)
+}
+
+/// `setup_command_config` against a resolved server directory: the server's
+/// own spawn configuration with the catalog's trailing arguments swapped for
+/// the setup step's.
+fn setup_command_in(
+    dir: &Path,
+    config: &McpServerConfig,
+    args: Vec<String>,
+    proxy: Option<&ProxyConfig>,
+) -> Result<SpawnConfig, String> {
+    let mut spawn = build_spawn_config(dir, config, proxy)?;
     let entry_args = catalog_command_args(config);
     spawn
         .args
@@ -1079,6 +1095,62 @@ mod tests {
             assert!(bin.ends_with("bin"));
             assert!(venv_python(venv).ends_with("python"));
         }
+    }
+
+    #[test]
+    fn a_setup_file_name_is_one_plain_component() {
+        for ok in ["credentials.json", ".env", "a..b"] {
+            assert!(is_plain_filename(ok), "{ok}");
+        }
+        for bad in ["", ".", "..", "../x", "a/b", "/etc/passwd", "a/"] {
+            assert!(!is_plain_filename(bad), "{bad}");
+        }
+        #[cfg(windows)]
+        for bad in ["a\\b", "C:\\x", "C:x"] {
+            assert!(!is_plain_filename(bad), "{bad}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_setup_file_is_copied_into_the_server_dir_and_nowhere_else() {
+        let root = std::env::temp_dir().join("haruspex_mcp_place_test");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let source = root.join("picked.json");
+        std::fs::write(&source, b"{}").unwrap();
+        let dir = root.join("servers").join("s1");
+
+        place_setup_file_in(&dir, &source, "credentials.json")
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(dir.join("credentials.json")).unwrap(), b"{}");
+
+        let err = place_setup_file_in(&dir, &source, "../escaped.json")
+            .await
+            .unwrap_err();
+        assert!(err.contains("not a plain file name"), "{err}");
+        assert!(!root.join("servers").join("escaped.json").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_setup_command_swaps_the_catalog_arguments_for_the_steps() {
+        let mut config = custom_server(ProxyUse::Auto);
+        config.source = McpServerSource::Catalog {
+            entry_id: "github".into(),
+        };
+        config.secrets = BTreeMap::from([("token".into(), "ghp_x".into())]);
+        let dir = Path::new("/data/mcp/servers/c1");
+        let server = build_spawn_config(dir, &config, None).unwrap();
+        assert_eq!(server.args.last().map(String::as_str), Some("stdio"));
+
+        let setup =
+            setup_command_in(dir, &config, vec!["auth".into(), "login".into()], None).unwrap();
+        assert_eq!(setup.program, server.program);
+        assert_eq!(setup.env, server.env);
+        let mut expected = server.args[..server.args.len() - 1].to_vec();
+        expected.extend(["auth".to_string(), "login".to_string()]);
+        assert_eq!(setup.args, expected);
     }
 }
 

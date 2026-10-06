@@ -36,16 +36,27 @@ pub async fn sandbox_save(
             .to_string()
     })?;
 
-    if content.len() > MAX_SANDBOX_SAVE_BYTES {
+    save_capped(&workdir, &rel_path, content, MAX_SANDBOX_SAVE_BYTES).await
+}
+
+/// `sandbox_save` with the cap as a parameter, so a test can exercise it
+/// without a 100 MB buffer.
+async fn save_capped(
+    workdir: &str,
+    rel_path: &str,
+    content: Vec<u8>,
+    max: usize,
+) -> Result<SandboxSaveResult, String> {
+    if content.len() > max {
         return Err(format!(
             "Save too large ({} bytes). Maximum is {} bytes.",
             content.len(),
-            MAX_SANDBOX_SAVE_BYTES
+            max
         ));
     }
 
-    let workdir_path = PathBuf::from(&workdir);
-    let resolved = resolve_in_workdir(&workdir_path, &rel_path)?;
+    let workdir_path = PathBuf::from(workdir);
+    let resolved = resolve_in_workdir(&workdir_path, rel_path)?;
 
     if let Some(parent) = resolved.parent() {
         if !parent.exists() {
@@ -111,4 +122,123 @@ pub async fn sandbox_delete_in_workdir(
     Ok(SandboxDeleteResult {
         path: resolved.to_string_lossy().to_string(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("haruspex_sandbox_save_test_{name}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.canonicalize().unwrap()
+    }
+
+    fn s(p: &std::path::Path) -> Option<String> {
+        Some(p.to_string_lossy().into_owned())
+    }
+
+    #[tokio::test]
+    async fn saving_needs_a_working_directory() {
+        let err = sandbox_save(None, "a.txt".into(), b"x".to_vec())
+            .await
+            .err()
+            .unwrap();
+        assert!(err.contains("No working directory"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn a_save_lands_in_the_workdir_creating_parents() {
+        let dir = temp_dir("nested");
+        let r = sandbox_save(s(&dir), "out/plots/a.png".into(), b"png".to_vec())
+            .await
+            .unwrap();
+        assert_eq!(r.bytes, 3);
+        assert_eq!(std::fs::read(dir.join("out/plots/a.png")).unwrap(), b"png");
+    }
+
+    #[tokio::test]
+    async fn a_save_over_the_cap_writes_nothing() {
+        let dir = temp_dir("cap");
+        let err = save_capped(dir.to_str().unwrap(), "big.bin", vec![0; 5], 4)
+            .await
+            .err()
+            .unwrap();
+        assert!(err.contains("too large"), "{err}");
+        assert!(!dir.join("big.bin").exists());
+    }
+
+    #[tokio::test]
+    async fn a_save_cannot_leave_the_workdir() {
+        let dir = temp_dir("escape");
+        let outside = dir
+            .parent()
+            .unwrap()
+            .join("haruspex_sandbox_save_escaped.txt");
+        let _ = std::fs::remove_file(&outside);
+        for rel in [
+            "../haruspex_sandbox_save_escaped.txt",
+            outside.to_str().unwrap(),
+        ] {
+            assert!(
+                sandbox_save(s(&dir), rel.into(), b"x".to_vec())
+                    .await
+                    .is_err(),
+                "{rel} was accepted"
+            );
+        }
+        assert!(!outside.exists());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_save_cannot_follow_a_symlink_out() {
+        let dir = temp_dir("symlink");
+        let target = temp_dir("symlink_target");
+        std::os::unix::fs::symlink(&target, dir.join("link")).unwrap();
+        assert!(sandbox_save(s(&dir), "link/a.txt".into(), b"x".to_vec())
+            .await
+            .is_err());
+        assert!(!target.join("a.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn deleting_removes_a_file_and_tolerates_a_missing_one() {
+        let dir = temp_dir("delete");
+        std::fs::write(dir.join("a.txt"), b"x").unwrap();
+        sandbox_delete_in_workdir(s(&dir), "a.txt".into())
+            .await
+            .unwrap();
+        assert!(!dir.join("a.txt").exists());
+        // Already gone: still success.
+        sandbox_delete_in_workdir(s(&dir), "a.txt".into())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn deleting_refuses_directories_and_escapes() {
+        let dir = temp_dir("delete_refuse");
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        let err = sandbox_delete_in_workdir(s(&dir), "sub".into())
+            .await
+            .err()
+            .unwrap();
+        assert!(err.contains("Refusing to delete directory"), "{err}");
+        assert!(dir.join("sub").exists());
+
+        let outside = dir
+            .parent()
+            .unwrap()
+            .join("haruspex_sandbox_delete_victim.txt");
+        std::fs::write(&outside, b"keep").unwrap();
+        assert!(
+            sandbox_delete_in_workdir(s(&dir), "../haruspex_sandbox_delete_victim.txt".into())
+                .await
+                .is_err()
+        );
+        assert!(outside.exists());
+        let _ = std::fs::remove_file(outside);
+    }
 }

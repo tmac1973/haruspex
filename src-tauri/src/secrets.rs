@@ -223,5 +223,10 @@ mod tests {
         assert!(check_key("email:3f2a-77b1").is_ok());
         assert!(check_key("haruspex:probe").is_err());
         assert!(check_key("email:a\nb").is_err());
+        assert!(check_key("email:../x").is_err());
+        assert!(check_key("email:a/b").is_err());
+        assert!(check_key("email:é").is_err());
+        assert!(check_key(&format!("email:{}", "a".repeat(194))).is_ok());
+        assert!(check_key(&format!("email:{}", "a".repeat(195))).is_err());
     }
 }
