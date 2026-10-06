@@ -15,13 +15,17 @@ vi.mock('$lib/stores/memory.svelte', () => ({
 	memoryActive: mocks.memoryActive
 }));
 vi.mock('$lib/stores/session.svelte', () => ({ getActiveConversationId: () => 'conv-7' }));
-vi.mock('$lib/stores/settings', () => ({
+vi.mock('$lib/stores/settings', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/stores/settings')>()),
 	getSettings: () => mocks.settings,
 	hasEnabledEmailAccount: () => false,
 	hasEnabledCalendarAccount: () => false,
 	hasEnabledContactsAccount: () => false
 }));
-vi.mock('$lib/debug-log', () => ({ logDebug: vi.fn() }));
+vi.mock('$lib/debug-log', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/debug-log')>()),
+	logDebug: vi.fn()
+}));
 
 const approval = vi.hoisted(() => ({ session: false }));
 vi.mock('$lib/stores/memoryApproval.svelte', () => ({

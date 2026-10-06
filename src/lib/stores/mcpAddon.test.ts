@@ -6,7 +6,10 @@ const invoke = vi.hoisted(() => vi.fn());
 const openFileDialog = vi.hoisted(() => vi.fn());
 vi.mock('@tauri-apps/api/core', () => ({ invoke }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: openFileDialog }));
-vi.mock('$lib/stores/settings', () => ({ getSettings: () => ({ proxy: { mode: 'off' } }) }));
+vi.mock('$lib/stores/settings', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/stores/settings')>()),
+	getSettings: () => ({ proxy: { mode: 'off' } })
+}));
 
 const { addonStepIndex, pickAndInstallAddon } = await import('./mcpAddon');
 

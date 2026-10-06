@@ -23,7 +23,8 @@ vi.mock('./backend', () => ({
 		generate: state.generate
 	})
 }));
-vi.mock('$lib/stores/settings', () => ({
+vi.mock('$lib/stores/settings', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/stores/settings')>()),
 	getSettings: () => ({
 		imageBackendKind: state.kind,
 		imageLocalModelId: state.localModel,

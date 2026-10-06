@@ -18,7 +18,8 @@ const { getSettingsMock, getApiKeyValueMock } = vi.hoisted(() => ({
 	})),
 	getApiKeyValueMock: vi.fn<() => string | undefined>(() => undefined)
 }));
-vi.mock('$lib/stores/settings', () => ({
+vi.mock('$lib/stores/settings', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/stores/settings')>()),
 	getSettings: getSettingsMock,
 	getApiKeyValue: getApiKeyValueMock,
 	getActiveLocalModelFilename: () => ''

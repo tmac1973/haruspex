@@ -4,7 +4,8 @@ const api = vi.hoisted(() => ({ chatCompletion: vi.fn() }));
 vi.mock('$lib/api', () => ({ chatCompletion: api.chatCompletion }));
 const descriptor = vi.hoisted(() => ({ resolveBackendDescriptor: vi.fn(() => ({ kind: 'x' })) }));
 vi.mock('$lib/inference/descriptor', () => descriptor);
-vi.mock('$lib/stores/settings', () => ({
+vi.mock('$lib/stores/settings', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/stores/settings')>()),
 	getSettings: () => ({}),
 	getSamplingParams: () => ({}),
 	getChatTemplateKwargs: () => ({})

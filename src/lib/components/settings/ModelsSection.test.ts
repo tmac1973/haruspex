@@ -21,7 +21,8 @@ vi.mock('$lib/stores/server.svelte', () => ({
 	stopServer: vi.fn()
 }));
 
-vi.mock('$lib/stores/settings', () => ({
+vi.mock('$lib/stores/settings', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/stores/settings')>()),
 	getActiveLocalModelFilename: vi.fn(() => 'a.gguf'),
 	getLegacyModelNoticeDismissed: vi.fn(() => true),
 	getSettings: vi.fn(() => ({ contextSize: 8192, mtpEnabled: true })),

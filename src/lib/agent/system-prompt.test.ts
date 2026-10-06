@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-vi.mock('$lib/stores/settings', () => ({
+vi.mock('$lib/stores/settings', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/stores/settings')>()),
 	getSettings: () => ({ customSystemPrompt: '', sandboxEnabled: false }),
 	getResponseFormatPrompt: () => '',
 	getIncludeImagesPrompt: () => '\n\nIMAGES:\n- When the answer is about something visual',

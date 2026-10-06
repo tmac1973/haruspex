@@ -118,7 +118,8 @@ vi.mock('$lib/image', async () => {
 	};
 });
 
-vi.mock('$lib/stores/settings', () => ({
+vi.mock('$lib/stores/settings', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/stores/settings')>()),
 	getSettings: () => ({
 		contextSize: 8192,
 		imageBackendKind: settingsState.imageBackendKind,
