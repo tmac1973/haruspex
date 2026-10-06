@@ -125,6 +125,21 @@ function buildSystemBlock(d: Diagnostics): string {
 }
 
 /**
+ * A configured URL as it may appear in a public issue: scheme, host, port and
+ * path. Userinfo (`user:pass@`), the query string (`?key=…`) and the fragment
+ * go, since any of them can hold a credential.
+ */
+export function urlForReport(url: string): string {
+	if (!url) return '';
+	try {
+		const u = new URL(url);
+		return `${u.protocol}//${u.host}${u.pathname === '/' ? '' : u.pathname}`;
+	} catch {
+		return '(not a valid URL)';
+	}
+}
+
+/**
  * Subset of settings worth including in a bug report, with credentials
  * stripped. Pulled from the localStorage store synchronously.
  */
@@ -145,7 +160,7 @@ function buildSettingsSnapshot(): string {
 		activeLocalModelFilename: s.activeLocalModelFilename,
 		inferenceBackend: {
 			mode: inf.mode,
-			remoteBaseUrl: inf.remoteBaseUrl,
+			remoteBaseUrl: urlForReport(inf.remoteBaseUrl),
 			remoteModelId: inf.remoteModelId,
 			remoteContextSize: inf.remoteContextSize,
 			remoteVisionSupported: inf.remoteVisionSupported,
@@ -153,7 +168,7 @@ function buildSettingsSnapshot(): string {
 			remoteApiKeyConfigured: inf.remoteApiKey.length > 0
 		},
 		searchProvider: s.searchProvider,
-		searxngUrl: s.searxngUrl,
+		searxngUrl: urlForReport(s.searxngUrl),
 		braveApiKeyConfigured: s.braveApiKey.length > 0,
 		ttsVoice: s.ttsVoice,
 		ttsReadTablesByColumn: s.ttsReadTablesByColumn,
