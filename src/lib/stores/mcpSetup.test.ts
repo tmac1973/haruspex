@@ -53,7 +53,14 @@ const addon: SetupStep = {
 };
 
 function state(over: Partial<SetupState> = {}): SetupState {
-	return { secrets: {}, filesPlaced: [], commandsRun: [], addonProjects: [], ...over };
+	return {
+		secrets: {},
+		storedSecrets: [],
+		filesPlaced: [],
+		commandsRun: [],
+		addonProjects: [],
+		...over
+	};
 }
 
 beforeEach(() => {

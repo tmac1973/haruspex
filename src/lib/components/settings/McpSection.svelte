@@ -13,6 +13,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { IPC } from '$lib/ipc/commands';
 	import { getSettings, setMcpServers, snapshot } from '$lib/stores/settings';
+	import { storeMcpSecret } from '$lib/stores/mcpSecrets';
 	import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
 	import type { CatalogEntry } from '$lib/ipc/gen/CatalogEntry';
 	import type { RuntimeAvailability } from '$lib/ipc/gen/RuntimeAvailability';
@@ -148,7 +149,7 @@
 		showCustom = false;
 	}
 
-	function addRemote(): void {
+	async function addRemote(): Promise<void> {
 		const url = remoteUrl.trim();
 		if (!url) return;
 		let label = url;
@@ -159,23 +160,24 @@
 			// what was typed; falling back to the raw string keeps the row
 			// identifiable until then.
 		}
-		persist([
-			...servers,
-			{
-				id: newId(),
-				label,
-				enabled: true,
-				addonProjects: [],
-				source: { kind: 'remote', url },
-				// The pasted credential is a secret like any other, under the key
-				// the backend reads.
-				secrets: remoteToken.trim() ? { remoteToken: remoteToken.trim() } : {},
-				toolEnabled: {},
-				proxyUse: 'auto',
-				// Nothing to install and no setup steps, so it is ready at once.
-				setupComplete: true
-			}
-		]);
+		let server: McpServerConfig = {
+			id: newId(),
+			label,
+			enabled: true,
+			addonProjects: [],
+			source: { kind: 'remote', url },
+			secrets: {},
+			toolEnabled: {},
+			proxyUse: 'auto',
+			// Nothing to install and no setup steps, so it is ready at once.
+			setupComplete: true
+		};
+		// The pasted credential is a secret like any other, under the key the
+		// backend reads, and kept out of the settings like the rest.
+		if (remoteToken.trim()) {
+			server = await storeMcpSecret(server, 'remoteToken', remoteToken.trim());
+		}
+		persist([...servers, server]);
 		remoteUrl = '';
 		remoteToken = '';
 		showRemote = false;

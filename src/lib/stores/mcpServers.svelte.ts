@@ -16,7 +16,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { IPC } from '$lib/ipc/commands';
 import type { SidecarStatus } from '$lib/ipc/gen/SidecarStatus';
-import type { SpawnConfig } from '$lib/ipc/gen/SpawnConfig';
 import type { McpConnectionInfo } from '$lib/ipc/gen/McpConnectionInfo';
 import type { McpToolDescriptor } from '$lib/ipc/gen/McpToolDescriptor';
 import type { CompanionStatus } from '$lib/ipc/gen/CompanionStatus';
@@ -26,6 +25,7 @@ import { registerMcpTools, setToolFailureHook, unregisterMcpServer } from '$lib/
 import { mcpDefaultTools } from '$lib/agent/tools/mcp-names';
 import { forgetServerApprovals } from './mcpApproval.svelte';
 import { getSettings, startableMcpServers } from './settings';
+import { forgetMcpSecrets } from './mcpSecrets';
 
 /** Everything the UI knows about one server right now. */
 export interface McpRuntimeState {
@@ -110,11 +110,12 @@ export async function startMcpServer(
 			// The proxy goes with a stdio server too: it is composed into the
 			// child's environment so the server can honour it for the calls it
 			// makes on its own account. Best effort — see child_env.rs.
-			const spawn = await invoke<SpawnConfig>(IPC.mcp_spawn_config, {
+			// Rust builds the spawn configuration itself, stored secrets
+			// included, so they never come back to the webview.
+			await invoke(IPC.mcp_start_server, {
 				config,
 				proxy: getSettings().proxy
 			});
-			await invoke(IPC.mcp_start_server, { config: spawn });
 		}
 
 		const [connection, tools] = await Promise.all([
@@ -244,12 +245,14 @@ export async function stopMcpServer(serverId: string): Promise<void> {
 export async function removeMcpServer(serverId: string): Promise<void> {
 	await stopMcpServer(serverId);
 	forgetServerApprovals(serverId);
+	const config = configs[serverId];
 	try {
 		await invoke(IPC.mcp_uninstall_server, { serverId });
 	} catch (e) {
 		patch(serverId, { error: String(e) });
 		return;
 	}
+	if (config) void forgetMcpSecrets(config);
 	delete configs[serverId];
 	delete states[serverId];
 }

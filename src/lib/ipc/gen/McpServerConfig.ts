@@ -28,6 +28,12 @@ enabled: boolean, source: McpServerSource,
  */
 secrets: { [key in string]?: string }, 
 /**
+ * The `secrets` keys whose values are kept in the secret store, under
+ * `mcp:<id>:<key>`, with an empty value in `secrets`. Rust reads them only
+ * when it launches the server, runs a setup command or connects.
+ */
+storedSecrets?: Array<string>, 
+/**
  * Per-tool enablement, keyed by the tool's own name. A tool absent from
  * this map has never been decided on and falls back to the catalog
  * entry's tested `defaultTools`; Phase 05 owns that resolution.
