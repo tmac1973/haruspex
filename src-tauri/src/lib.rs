@@ -425,6 +425,7 @@ pub fn run() {
             app_log::get_app_logs,
             app_log::clear_app_logs,
             links::open_url,
+            links::open_folder,
             feedback::get_diagnostics,
             feedback::save_export_file,
             shell::shell_spawn,

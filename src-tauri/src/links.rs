@@ -1,4 +1,4 @@
-//! External URL opener.
+//! External URL and folder opener.
 //!
 //! Replaces tauri-plugin-shell's `open()` for inline reference / citation
 //! links so we can:
@@ -32,6 +32,52 @@ pub async fn open_url(url: String) -> Result<(), String> {
         error!("open_url failed for {}: {}", logged, e);
         e
     })
+}
+
+/// Opens a directory in the system file manager. Only an existing directory is
+/// accepted — never a file, which the handler would execute or open with
+/// whatever app claims it.
+#[tauri::command]
+pub async fn open_folder(path: String) -> Result<(), String> {
+    let dir = std::fs::canonicalize(&path).map_err(|e| format!("{path}: {e}"))?;
+    if !dir.is_dir() {
+        return Err(format!("not a folder: {}", dir.display()));
+    }
+    info!("open_folder: {}", dir.display());
+    spawn_folder_handler(&dir).map_err(|e| {
+        error!("open_folder failed for {}: {}", dir.display(), e);
+        e
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn spawn_folder_handler(dir: &std::path::Path) -> Result<(), String> {
+    let mut cmd = std::process::Command::new("xdg-open");
+    cmd.arg(dir);
+    sanitize_appimage_env(&mut cmd);
+    cmd.spawn()
+        .map(|_| ())
+        .map_err(|e| format!("xdg-open spawn failed: {}", e))
+}
+
+#[cfg(target_os = "macos")]
+fn spawn_folder_handler(dir: &std::path::Path) -> Result<(), String> {
+    std::process::Command::new("open")
+        .arg(dir)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("open spawn failed: {}", e))
+}
+
+/// Explorer directly rather than `cmd /C start`: cmd would read `&` or `^` in
+/// a folder name as its own syntax.
+#[cfg(target_os = "windows")]
+fn spawn_folder_handler(dir: &std::path::Path) -> Result<(), String> {
+    std::process::Command::new("explorer")
+        .arg(dir)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("explorer spawn failed: {}", e))
 }
 
 #[cfg(target_os = "linux")]
@@ -103,5 +149,18 @@ mod tests {
             let err = open_url(url.to_string()).await.unwrap_err();
             assert!(err.contains("refusing non-http(s) URL"), "{url}: {err}");
         }
+    }
+
+    #[tokio::test]
+    async fn only_existing_folders_are_opened() {
+        let dir = std::env::temp_dir().join(format!("haruspex-open-folder-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("run.sh");
+        std::fs::write(&file, "#!/bin/sh\n").unwrap();
+        let err = open_folder(file.display().to_string()).await.unwrap_err();
+        let missing = open_folder(dir.join("nope").display().to_string()).await;
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(err.contains("not a folder"), "{err}");
+        assert!(missing.is_err());
     }
 }
