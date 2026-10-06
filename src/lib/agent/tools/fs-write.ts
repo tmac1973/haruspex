@@ -15,17 +15,17 @@ import { lintPythonIfApplicable } from './python-lint';
 import { isAutoApproveActive } from '$lib/stores/approvalOverride';
 import { localWriteBlocked } from './nested-session';
 import type { EditResult } from '$lib/ipc/gen/EditResult';
+import { errMessage } from '$lib/utils/error';
 
 /**
  * True when a relative write path stays inside `root` (a relative dir prefix).
  * Rejects absolute paths and `..` traversal. Backs ToolContext.writeRoot.
  */
 export function isUnderWriteRoot(relPath: string, root: string): boolean {
-	if (relPath.startsWith('/')) return false;
-	const np = relPath
-		.replace(/\\/g, '/')
-		.replace(/^\.?\/+/, '')
-		.replace(/\/+/g, '/');
+	const slashed = relPath.replace(/\\/g, '/');
+	// After the backslash swap, so a leading backslash and a drive letter count.
+	if (slashed.startsWith('/') || /^[a-zA-Z]:/.test(slashed)) return false;
+	const np = slashed.replace(/^\.\/+/, '').replace(/\/+/g, '/');
 	if (np.split('/').includes('..')) return false;
 	const nr = root
 		.replace(/\\/g, '/')
@@ -128,8 +128,15 @@ export async function resolveWritePathInteractive(
 		const newPath = await invoke<string>('fs_find_available_path', { workdir, relPath });
 		return { kind: 'ok', finalPath: newPath, overwrite: false };
 	} catch (e) {
-		console.error('fs_find_available_path failed:', e);
-		return { kind: 'ok', finalPath: relPath, overwrite: true };
+		// The user chose to keep the existing file. Overwriting it because no
+		// free name was found would do the one thing they declined.
+		return {
+			kind: 'rejected',
+			message:
+				`"${relPath}" already exists and no free name could be found next to it ` +
+				`(${errMessage(e)}). The existing file was left alone — ask the user for a ` +
+				`different filename.`
+		};
 	}
 }
 

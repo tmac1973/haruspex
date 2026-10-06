@@ -2,12 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
 	invoke: vi.fn(),
-	isAutoApproveActive: vi.fn(() => true)
+	isAutoApproveActive: vi.fn(() => true),
+	askFileConflict: vi.fn()
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('$lib/stores/approvalOverride', () => ({
 	isAutoApproveActive: mocks.isAutoApproveActive
+}));
+
+vi.mock('$lib/stores/fileConflict.svelte', () => ({
+	askFileConflict: mocks.askFileConflict
 }));
 
 import { resolveWritePathInteractive } from './fs-write';
@@ -82,5 +87,59 @@ describe('repeat-write guard', () => {
 			expect(r.overwrite).toBe(true);
 			expect(r.finalPath).toBe('existing.md');
 		}
+	});
+});
+
+describe('an existing file, with someone at the keyboard', () => {
+	beforeEach(() => {
+		mocks.isAutoApproveActive.mockReturnValue(false);
+		mocks.askFileConflict.mockReset();
+	});
+
+	function disk(opts: { available?: string | Error }) {
+		mocks.invoke.mockImplementation(async (cmd: string) => {
+			if (cmd === 'fs_path_exists') return true;
+			if (cmd === 'fs_find_available_path') {
+				if (opts.available instanceof Error) throw opts.available;
+				return opts.available;
+			}
+			throw new Error(`unexpected invoke: ${cmd}`);
+		});
+	}
+
+	it('overwrites only when the user says so', async () => {
+		disk({});
+		mocks.askFileConflict.mockResolvedValue('overwrite');
+		const r = await resolveWritePathInteractive('/w', 'a.md', new Set());
+		expect(r).toEqual({ kind: 'ok', finalPath: 'a.md', overwrite: true });
+	});
+
+	it('stops when the user cancels', async () => {
+		disk({});
+		mocks.askFileConflict.mockResolvedValue('cancel');
+		const r = await resolveWritePathInteractive('/w', 'a.md', new Set());
+		expect(r.kind).toBe('canceled');
+	});
+
+	it('writes beside the existing file when the user keeps both', async () => {
+		disk({ available: 'a (1).md' });
+		mocks.askFileConflict.mockResolvedValue('counter');
+		const r = await resolveWritePathInteractive('/w', 'a.md', new Set());
+		expect(r).toEqual({ kind: 'ok', finalPath: 'a (1).md', overwrite: false });
+	});
+
+	it('never overwrites a file the user chose to keep, even when no free name is found', async () => {
+		disk({ available: new Error('directory is read-only') });
+		mocks.askFileConflict.mockResolvedValue('counter');
+		const r = await resolveWritePathInteractive('/w', 'a.md', new Set());
+		expect(r.kind).toBe('rejected');
+		if (r.kind === 'rejected') expect(r.message).toContain('left alone');
+	});
+
+	it('does not ask when the file does not exist', async () => {
+		mocks.invoke.mockResolvedValue(false);
+		const r = await resolveWritePathInteractive('/w', 'new.md', new Set());
+		expect(r).toEqual({ kind: 'ok', finalPath: 'new.md', overwrite: false });
+		expect(mocks.askFileConflict).not.toHaveBeenCalled();
 	});
 });
