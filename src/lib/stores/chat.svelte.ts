@@ -60,7 +60,7 @@ import {
 	cancelActiveRun
 } from '$lib/sandbox/sandbox';
 import { updateContextUsage, resetContextUsage, setContextUsage } from '$lib/stores/context.svelte';
-import { getServerState } from '$lib/stores/server.svelte';
+import { getServerState } from '$lib/stores/llamaServer.svelte';
 import { showToast } from '$lib/stores/toasts.svelte';
 import {
 	initDb,

@@ -12,6 +12,8 @@
 	// from the job name (plan/<slug>/) until the user edits it by hand.
 	let {
 		config = $bindable(),
+		// Part of every job-type editor's bindable props; this one has no steps.
+		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		steps = $bindable([]),
 		jobName = ''
 	}: {

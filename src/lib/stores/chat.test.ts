@@ -26,7 +26,7 @@ vi.mock('$lib/agent/inferenceQueue.svelte', () => ({
  * getServerState() returns the live $state proxy, so mutating it works.
  */
 async function setServerReady(): Promise<void> {
-	const { getServerState } = await import('$lib/stores/server.svelte');
+	const { getServerState } = await import('$lib/stores/llamaServer.svelte');
 	getServerState().status = 'ready';
 }
 

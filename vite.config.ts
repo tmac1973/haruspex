@@ -1,5 +1,6 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig, type Plugin } from 'vite';
+import kitConfig from './sveltekit.config.js';
 
 // Phase 11 sandbox: SvelteKit's Vite plugin handles HTML responses itself
 // and ignores Vite's `server.headers` config, so we need a middleware that
@@ -19,7 +20,7 @@ const isolationHeaders = (): Plugin => ({
 });
 
 export default defineConfig({
-	plugins: [isolationHeaders(), sveltekit()],
+	plugins: [isolationHeaders(), sveltekit(kitConfig)],
 	clearScreen: false,
 	server: {
 		port: 1420,

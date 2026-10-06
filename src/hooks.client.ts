@@ -7,7 +7,7 @@
  * constant: in every other build the branch, and the import with it, is
  * removed — CI greps the production output to make sure.
  */
-import type { HandleClientError } from '@sveltejs/kit';
+import type { HandleClientError } from '@sveltejs/kit/hooks';
 import { forwardConsoleToDebugLog } from '$lib/debug-log';
 
 /**

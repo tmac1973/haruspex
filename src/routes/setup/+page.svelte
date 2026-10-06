@@ -26,7 +26,7 @@
 		updateInferenceBackend,
 		type InferenceBackendConfig
 	} from '$lib/stores/settings';
-	import { enterRemoteMode } from '$lib/stores/server.svelte';
+	import { enterRemoteMode } from '$lib/stores/llamaServer.svelte';
 	import { formatBytes, formatBytesPerSecond } from '$lib/utils/format';
 	import InferenceBackendForm from '$lib/components/InferenceBackendForm.svelte';
 

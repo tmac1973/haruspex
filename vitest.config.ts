@@ -1,12 +1,13 @@
 import { defineConfig } from 'vitest/config';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { svelteTesting } from '@testing-library/svelte/vite';
+import kitConfig from './sveltekit.config.js';
 
 export default defineConfig({
 	// svelteTesting() resolves Svelte to its client (browser) build under
 	// jsdom — without it component mount() fails with SSR lifecycle errors —
 	// and auto-cleans the DOM between tests.
-	plugins: [sveltekit(), svelteTesting()],
+	plugins: [sveltekit(kitConfig), svelteTesting()],
 	test: {
 		include: ['src/**/*.test.ts', 'e2e/fake-llm/**/*.test.ts'],
 		environment: 'jsdom',

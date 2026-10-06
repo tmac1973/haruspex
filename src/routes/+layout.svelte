@@ -39,7 +39,7 @@
 		initServerStore,
 		maybeFlushPendingRestart,
 		startServer
-	} from '$lib/stores/server.svelte';
+	} from '$lib/stores/llamaServer.svelte';
 	import {
 		applyAccent,
 		applyTheme,
