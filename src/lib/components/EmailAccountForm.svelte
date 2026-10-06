@@ -252,6 +252,9 @@
 				{saving ? 'Saving…' : 'Save password'}
 			</button>
 		</div>
+		{#if password && !saving}
+			<p class="hint" role="status">Not saved yet — press Save password.</p>
+		{/if}
 	</div>
 
 	<details class="advanced">

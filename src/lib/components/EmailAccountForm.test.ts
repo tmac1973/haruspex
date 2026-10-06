@@ -50,6 +50,16 @@ describe('EmailAccountForm password', () => {
 		expect(field.placeholder).toBe('Saved in the system keychain');
 	});
 
+	it('says a typed password is not saved until Save is pressed', async () => {
+		const { field } = renderForm();
+		expect(screen.queryByText(/Not saved yet/)).toBeNull();
+		await fireEvent.input(field, { target: { value: 'new-pw' } });
+		expect(screen.getByText('Not saved yet — press Save password.')).toBeTruthy();
+
+		await fireEvent.click(screen.getByText('Save password'));
+		await waitFor(() => expect(screen.queryByText(/Not saved yet/)).toBeNull());
+	});
+
 	it('touches no secret while typing, only on Save', async () => {
 		const { field, onChange } = renderForm();
 		await fireEvent.input(field, { target: { value: 'new-pw' } });
