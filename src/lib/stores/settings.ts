@@ -13,6 +13,7 @@ import type { DavAccount } from '$lib/ipc/gen/DavAccount';
 import type { EmailProvider } from '$lib/ipc/gen/EmailProvider';
 import type { ProxyConfig } from '$lib/ipc/gen/ProxyConfig';
 import type { SandboxNetAccess } from '$lib/ipc/gen/SandboxNetAccess';
+import { rememberedApiKey } from './apiKeyMemory';
 import type { TlsMode } from '$lib/ipc/gen/TlsMode';
 import type { ShellSelection } from '$lib/ipc/gen/ShellSelection';
 
@@ -30,7 +31,10 @@ export type SearchProvider = 'auto' | 'duckduckgo' | 'brave' | 'searxng' | 'brow
 export interface StoredApiKey {
 	id: string;
 	name: string;
+	/** Inline only where no secret store works; otherwise empty, with the key
+	 *  kept under `apikey:<id>` and `stored` set. */
 	value: string;
+	stored?: boolean;
 }
 
 /**
@@ -307,7 +311,10 @@ export interface AppSettings {
 	 * The shared secret embedded in the link the host hands out. Minted here
 	 * (Web Crypto) rather than in Rust, so rotating it is a settings write.
 	 */
+	/** Inline only where no secret store works; otherwise empty, with the
+	 *  token kept under `remote:token` and `remoteAccessTokenSaved` set. */
 	remoteAccessToken: string;
+	remoteAccessTokenSaved: boolean;
 	contextSize: number;
 	/**
 	 * Allow the local llama-server to run a context larger than fits in VRAM,
@@ -700,6 +707,7 @@ const defaults: AppSettings = {
 	// Unprivileged, memorable, and not something else's default.
 	remoteAccessPort: 8787,
 	remoteAccessToken: '',
+	remoteAccessTokenSaved: false,
 	braveApiKey: '',
 	braveApiKeySaved: false,
 	searxngUrl: DEFAULT_SEARXNG_URL,
@@ -1059,7 +1067,9 @@ export function getApiKeys(): StoredApiKey[] {
 /** Look up a key's value by id. Returns undefined when not found. */
 export function getApiKeyValue(id: string | null | undefined): string | undefined {
 	if (!id) return undefined;
-	return settings.apiKeys.find((k) => k.id === id)?.value;
+	const k = settings.apiKeys.find((k) => k.id === id);
+	if (!k) return undefined;
+	return k.value || (k.stored ? rememberedApiKey(id) : undefined);
 }
 
 /** Add a new key and return its id. */
@@ -1075,7 +1085,7 @@ export function addApiKey(name: string, value: string): string {
 /** Update an existing key's name and/or value. */
 export function updateApiKey(
 	id: string,
-	patch: Partial<Pick<StoredApiKey, 'name' | 'value'>>
+	patch: Partial<Pick<StoredApiKey, 'name' | 'value' | 'stored'>>
 ): void {
 	commit({
 		...settings,

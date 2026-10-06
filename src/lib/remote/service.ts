@@ -7,8 +7,9 @@
  * unrelated does not drop live guests mid-answer.
  */
 
-import { getSettings, updateSettings } from '$lib/stores/settings';
+import { getSettings } from '$lib/stores/settings';
 import { logDebug } from '$lib/debug-log';
+import { getRemoteToken, remoteToken } from '$lib/stores/remoteSecrets';
 
 import { generateRemoteToken, startRemoteServer, stopRemoteServer, type RemoteStatus } from './api';
 import { startRemoteDriver } from './driver';
@@ -27,10 +28,10 @@ export async function syncRemoteServer(): Promise<RemoteStatus | null> {
 
 	// Minted on first enable rather than at install time: a token that exists
 	// before anyone asked for remote access is a secret with no owner.
-	let token = settings.remoteAccessToken;
+	let token = await getRemoteToken();
 	if (!token) {
 		token = generateRemoteToken();
-		updateSettings({ remoteAccessToken: token });
+		await remoteToken.save(token);
 	}
 
 	try {

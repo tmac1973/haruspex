@@ -165,7 +165,7 @@ function buildSettingsSnapshot(): string {
 			remoteContextSize: inf.remoteContextSize,
 			remoteVisionSupported: inf.remoteVisionSupported,
 			remoteBackendKind: inf.remoteBackendKind,
-			remoteApiKeyConfigured: inf.remoteApiKey.length > 0
+			remoteApiKeyConfigured: inf.remoteApiKey.length > 0 || !!inf.remoteApiKeyId
 		},
 		searchProvider: s.searchProvider,
 		searxngUrl: urlForReport(s.searxngUrl),

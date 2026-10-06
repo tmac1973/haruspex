@@ -9,6 +9,7 @@
 	import { untrack } from 'svelte';
 	import type { InferenceBackendConfig } from '$lib/stores/settings';
 	import { getApiKeyValue, getSettings, updateSettings } from '$lib/stores/settings';
+	import { apiKeysReady } from '$lib/stores/apiKeySecrets';
 	import {
 		fetchOpenRouterCatalog,
 		fetchOpenRouterKeyStatus,
@@ -97,6 +98,7 @@
 	}
 
 	async function testKey() {
+		await apiKeysReady();
 		const resolvedKey = getApiKeyValue(apiKeyId);
 		if (!resolvedKey) {
 			error = 'Select an API key first.';

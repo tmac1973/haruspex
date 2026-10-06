@@ -2,6 +2,7 @@
 import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 import type { RemoteReasoningCaps, RemoteSamplingCaps } from '$lib/stores/settings';
 import { logDebug, isVerbosePayloads } from '$lib/debug-log';
+import { apiKeysReady } from '$lib/stores/apiKeySecrets';
 import { baseUrl } from '$lib/ports';
 import { OPENROUTER_ATTRIBUTION_HEADERS } from '$lib/openrouter';
 import { isAbortError } from '$lib/utils/error';
@@ -608,6 +609,8 @@ export async function* chatCompletionStream(
 	signal?: AbortSignal,
 	port?: number
 ): AsyncGenerator<StreamChunk> {
+	// Stored keys are read into memory once per run; wait for that.
+	await apiKeysReady();
 	const endpoint = resolveChatEndpoint(port, options.backend);
 	const body = buildRequestBody(
 		{ ...options, stream: true },
@@ -661,6 +664,8 @@ export async function chatCompletion(
 	signal?: AbortSignal,
 	port?: number
 ): Promise<ChatCompletionResponse> {
+	// Stored keys are read into memory once per run; wait for that.
+	await apiKeysReady();
 	const endpoint = resolveChatEndpoint(port, options.backend);
 	const body = buildRequestBody(
 		{ ...options, stream: false },

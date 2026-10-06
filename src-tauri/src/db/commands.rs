@@ -156,6 +156,19 @@ pub async fn db_update_job(
     on_pool(db, move |db| db.update_job(id, &input)).await
 }
 
+/// Replace a job's inline API key with a reference to one in the key list,
+/// leaving every other column alone. Used once, to move legacy inline keys
+/// out of the database.
+#[tauri::command]
+pub async fn db_set_job_api_key_ref(
+    state: tauri::State<'_, Database>,
+    id: i64,
+    key_id: String,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.set_job_api_key_ref(id, &key_id)).await
+}
+
 #[tauri::command]
 pub async fn db_delete_job(state: tauri::State<'_, Database>, id: i64) -> Result<(), String> {
     let db = state.inner().clone();

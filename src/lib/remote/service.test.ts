@@ -66,11 +66,16 @@ describe('turning remote access on and off', () => {
 		mocks.getSettings.mockReturnValue(settings({ remoteAccessToken: '' }));
 		await syncRemoteServer();
 
-		const minted = mocks.updateSettings.mock.calls[0][0].remoteAccessToken;
-		expect(minted).toMatch(/^[a-z0-9]{20}$/);
 		// A secret with no owner is not created before anyone asks for remote
 		// access, and the freshly minted one is what the server gets.
-		expect(invocations('remote_start')[0].config.token).toBe(minted);
+		const minted = invocations('remote_start')[0].config.token;
+		expect(minted).toMatch(/^[a-z0-9]{20}$/);
+		// Kept in the secret store, not the settings.
+		expect(invocations('secret_set')[0]).toEqual({ key: 'remote:token', value: minted });
+		expect(mocks.updateSettings).toHaveBeenCalledWith({
+			remoteAccessToken: '',
+			remoteAccessTokenSaved: true
+		});
 	});
 
 	it('survives a port that is already taken', async () => {

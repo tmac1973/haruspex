@@ -82,6 +82,7 @@ const TABLE: Record<string, Handler> = {
 	email_list_providers: empty,
 	secret_available: () => true,
 	secret_store_kind: () => 'keychain',
+	secret_get: none,
 	mcp_catalog: empty,
 	mcp_runtimes_available: () => ({ node: true, npm: true, uv: true }),
 	download_status: none,

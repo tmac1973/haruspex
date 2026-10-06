@@ -5,10 +5,12 @@
 //! directory instead ([`EncryptedFile`]). Either way they are out of the
 //! settings blob, which lives in webview storage.
 //!
-//! Values only leave the store inside Rust. The frontend can ask whether a
-//! store exists, put a value in and delete one — there is deliberately no
-//! command that reads one back, so a stored password never reaches the
-//! webview again.
+//! Values only leave the store inside Rust, with one narrow exception. The
+//! frontend can ask whether a store exists, put a value in and delete one;
+//! it can read one back only for the two kinds of secret the webview itself
+//! uses ([`READABLE`]): inference API keys, sent by the webview's own chat
+//! requests, and the remote-access token, shown as a link and QR code. Every
+//! other stored password never reaches the webview again.
 //!
 //! **Every call runs on a thread of its own, with a time limit.** keyring's
 //! Secret Service backend drives zbus on tokio, and called from a tokio
@@ -387,6 +389,19 @@ const NAMESPACES: &[&str] = &[
     "email:", "dav:", "mcp:", "apikey:", "proxy:", "brave:", "comfy:", "remote:",
 ];
 
+/// The namespaces the webview may read back, because it is what uses them.
+const READABLE: &[&str] = &["apikey:", "remote:"];
+
+/// Read a secret the webview itself needs. Refused for every other kind.
+#[tauri::command]
+pub async fn secret_get(key: String) -> Result<Option<String>, String> {
+    check_key(&key)?;
+    if !READABLE.iter().any(|ns| key.starts_with(ns)) {
+        return Err(format!("{key:?} is not readable from the webview"));
+    }
+    get(&key).await
+}
+
 /// Keys the frontend may write.
 fn check_key(key: &str) -> Result<(), String> {
     let ok = NAMESPACES
@@ -611,6 +626,10 @@ mod tests {
         }
         for bad in ["haruspex:probe", "email:", "dav:", "other:x", "emailx:a"] {
             assert!(check_key(bad).is_err(), "{bad}");
+        }
+        for unreadable in ["email:a", "dav:a", "mcp:s:t", "proxy:network", "brave:key"] {
+            let r = tauri::async_runtime::block_on(secret_get(unreadable.into()));
+            assert!(r.is_err(), "{unreadable} was readable");
         }
         assert!(check_key("email:3f2a-77b1").is_ok());
         assert!(check_key("haruspex:probe").is_err());
