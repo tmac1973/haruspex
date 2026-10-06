@@ -12,6 +12,7 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import { getApiKeyValue } from '$lib/stores/settings';
+import { apiKeysReady } from '$lib/stores/apiKeySecrets';
 import type {
 	InferenceBackendKind,
 	RemoteReasoningCaps,
@@ -60,11 +61,12 @@ export function pickProbedModel<M extends { id: string; loaded: boolean | null }
  * blank means no Authorization header. Shared by the Settings backend form
  * and the per-job model override.
  */
-export function probeInferenceServer(
+export async function probeInferenceServer(
 	baseUrl: string,
 	apiKeyId: string | null,
 	inlineKey = ''
 ): Promise<ProbeResult> {
+	await apiKeysReady();
 	const resolvedKey = getApiKeyValue(apiKeyId) ?? inlineKey;
 	return invoke<ProbeResult>('probe_inference_server', {
 		baseUrl,

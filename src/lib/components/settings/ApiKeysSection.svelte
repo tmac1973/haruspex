@@ -4,7 +4,12 @@
 	 * settings section. Lets the user add, rename, update, and delete named
 	 * keys that are referenced by inference backends and per-job overrides.
 	 */
-	import { getApiKeys, addApiKey, updateApiKey, deleteApiKey } from '$lib/stores/settings';
+	import { getApiKeys, updateApiKey } from '$lib/stores/settings';
+	import {
+		addStoredApiKey,
+		deleteStoredApiKey,
+		setStoredApiKeyValue
+	} from '$lib/stores/apiKeySecrets';
 	import type { StoredApiKey } from '$lib/stores/settings';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 
@@ -19,17 +24,17 @@
 		keys = getApiKeys();
 	}
 
-	function add() {
+	async function add() {
 		if (!newValue.trim()) return;
-		addApiKey(newName.trim() || 'Untitled', newValue.trim());
+		await addStoredApiKey(newName.trim() || 'Untitled', newValue.trim());
 		refresh();
 		newName = '';
 		newValue = '';
 	}
 
-	function confirmRemove() {
+	async function confirmRemove() {
 		if (!pendingDelete) return;
-		deleteApiKey(pendingDelete.id);
+		await deleteStoredApiKey(pendingDelete.id);
 		pendingDelete = null;
 		refresh();
 	}
@@ -41,11 +46,13 @@
 		}
 	}
 
-	function onValueBlur(k: StoredApiKey, value: string) {
-		if (value !== k.value) {
-			updateApiKey(k.id, { value });
-			refresh();
-		}
+	/** A typed value replaces the key; an untouched (empty) field keeps it. */
+	async function onValueBlur(k: StoredApiKey, input: HTMLInputElement) {
+		const value = input.value.trim();
+		if (!value || value === k.value) return;
+		await setStoredApiKeyValue(k.id, value);
+		input.value = '';
+		refresh();
 	}
 </script>
 
@@ -69,9 +76,9 @@
 					/>
 					<input
 						type="password"
-						value={k.value}
-						onblur={(e) => onValueBlur(k, (e.currentTarget as HTMLInputElement).value)}
-						placeholder="Key value"
+						value=""
+						onblur={(e) => onValueBlur(k, e.currentTarget as HTMLInputElement)}
+						placeholder={k.stored || k.value ? 'Saved — type to replace' : 'Key value'}
 					/>
 					<button class="btn btn-danger btn-small" onclick={() => (pendingDelete = k)}>
 						Delete

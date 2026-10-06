@@ -16,6 +16,7 @@
 		type RemoteStatus
 	} from '$lib/remote/api';
 	import { syncRemoteServer } from '$lib/remote/service';
+	import { getRemoteToken, remoteToken } from '$lib/stores/remoteSecrets';
 	import {
 		forgetRemoteActivity,
 		getRemoteActivity,
@@ -24,7 +25,8 @@
 
 	let enabled = $state(getSettings().remoteAccessEnabled);
 	let port = $state(getSettings().remoteAccessPort);
-	let token = $state(getSettings().remoteAccessToken);
+	/** Read back from the secret store on mount; needed for the link and QR. */
+	let token = $state('');
 
 	let status = $state<RemoteStatus | null>(null);
 	let address = $state<string | null>(null);
@@ -72,17 +74,18 @@
 		busy = true;
 		error = null;
 		try {
+			// A rotated token is stored before the server restarts with it.
+			if (token && token !== (await getRemoteToken())) await remoteToken.save(token);
 			updateSettings({
 				remoteAccessEnabled: enabled,
-				remoteAccessPort: port,
-				remoteAccessToken: token
+				remoteAccessPort: port
 			});
 			const result = await syncRemoteServer();
 			if (enabled && !result?.running) {
 				error = `Could not start on port ${port}. Another program may already be using it.`;
 			}
 			// The token is minted on first enable, so read back what was stored.
-			token = getSettings().remoteAccessToken;
+			token = await getRemoteToken();
 			await refresh();
 			await refreshLink();
 		} finally {
@@ -146,6 +149,7 @@
 	}
 
 	onMount(async () => {
+		token = await getRemoteToken();
 		await refresh();
 		await refreshLink();
 		timer = setInterval(refresh, POLL_MS);

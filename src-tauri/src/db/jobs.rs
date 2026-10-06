@@ -242,6 +242,22 @@ impl Database {
         Ok(())
     }
 
+    /// See `db_set_job_api_key_ref`.
+    pub fn set_job_api_key_ref(&self, job_id: i64, key_id: &str) -> Result<(), String> {
+        let affected = self
+            .conn()
+            .execute(
+                "UPDATE jobs SET model_remote_api_key = NULL, model_remote_api_key_id = ?1 \
+                 WHERE id = ?2",
+                rusqlite::params![key_id, job_id],
+            )
+            .map_err(|e| format!("Job update failed: {e}"))?;
+        if affected == 0 {
+            return Err(format!("No job with id {job_id}"));
+        }
+        Ok(())
+    }
+
     pub fn set_job_next_due_at(&self, job_id: i64, next_due_at: Option<i64>) -> Result<(), String> {
         let conn = self.conn();
         let affected = conn

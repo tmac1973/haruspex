@@ -2156,3 +2156,22 @@ fn deleting_a_shell_session_leaves_no_restorable_row() {
     // Deleting again is not an error.
     db.delete_shell_code_session("/work").unwrap();
 }
+
+#[test]
+fn a_jobs_inline_key_becomes_a_reference_and_nothing_else_changes() {
+    let db = test_db();
+    let mut input = sample_job_input("Remote job");
+    input.model_remote_base_url = Some("https://api.example.com".into());
+    input.model_remote_api_key = Some("sk-inline".into());
+    input.model_remote_model_id = Some("m".into());
+    let id = db.create_job(&input).unwrap();
+
+    db.set_job_api_key_ref(id, "key_1").unwrap();
+
+    let job = db.get_job(id).unwrap();
+    assert_eq!(job.model_remote_api_key, None);
+    assert_eq!(job.model_remote_api_key_id.as_deref(), Some("key_1"));
+    assert_eq!(job.model_remote_base_url.as_deref(), Some("https://api.example.com"));
+    assert_eq!(job.model_remote_model_id.as_deref(), Some("m"));
+    assert!(db.set_job_api_key_ref(id + 999, "key_1").is_err());
+}
