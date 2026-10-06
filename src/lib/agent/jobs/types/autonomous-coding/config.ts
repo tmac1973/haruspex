@@ -55,6 +55,12 @@ export interface AutonomousCodingConfig {
 	 */
 	asset_spec_path: string | null;
 	/**
+	 * Spec entry ids the asset run could not produce, set by its handoff. They
+	 * are still in the spec, so without this the run would load files that
+	 * were never written.
+	 */
+	missing_assets: string[];
+	/**
 	 * Offer web_search and research_url to the preflight interview, so it can
 	 * check versions and APIs past the model's training cutoff. The coding loop
 	 * has them regardless. null = default (true).
@@ -123,7 +129,10 @@ export function parseAutonomousCodingConfig(json: string | null): AutonomousCodi
 		asset_spec_path:
 			typeof raw.asset_spec_path === 'string' && raw.asset_spec_path.trim().length > 0
 				? raw.asset_spec_path.trim()
-				: null
+				: null,
+		missing_assets: Array.isArray(raw.missing_assets)
+			? raw.missing_assets.filter((a): a is string => typeof a === 'string' && a.trim().length > 0)
+			: []
 	};
 }
 

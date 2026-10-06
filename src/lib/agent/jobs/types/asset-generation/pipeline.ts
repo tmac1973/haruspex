@@ -364,7 +364,9 @@ async function handoffToCoding(
 			// Set here, not carried: this run is the thing that knows where the
 			// spec ended up, and the preflight checks the plan's asset ids
 			// against it.
-			asset_spec_path: specPath
+			asset_spec_path: specPath,
+			// Still listed in the spec, but no file was written.
+			missing_assets: missing.map((e) => e.id)
 		})
 	});
 	if (codingJobId === null) return 'Could not create the coding job — nothing was started.';

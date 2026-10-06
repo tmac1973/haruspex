@@ -67,7 +67,8 @@ export function preflightPrompt(
 	webResearch: boolean,
 	interactive: boolean = true,
 	openFindings: string[] = [],
-	assetSpecPath: string | null = null
+	assetSpecPath: string | null = null,
+	missingAssets: string[] = []
 ): string {
 	return [
 		'You are running the PREFLIGHT for an autonomous coding job. After this',
@@ -138,7 +139,7 @@ export function preflightPrompt(
 		// would then have to present — interviewResearchRules ends in an
 		// ask_user_question it has no tool for.
 		...openFindingsStep(openFindings, decisionsPath),
-		...assetSpecStep(assetSpecPath, decisionsPath),
+		...assetSpecStep(assetSpecPath, decisionsPath, missingAssets),
 		...(webResearch
 			? interactive
 				? interviewResearchRules('the plan or any answer the user gives')
@@ -163,21 +164,32 @@ export function preflightPrompt(
  * from the spec means the asset run could not produce it, and inventing a
  * placeholder would hide that from the person reading the report.
  */
-function assetSpecStep(specPath: string | null, decisionsPath: string): string[] {
+function assetSpecStep(
+	specPath: string | null,
+	decisionsPath: string,
+	missing: string[] = []
+): string[] {
 	if (!specPath) return [];
 	return [
 		'',
 		'ART WAS GENERATED FOR THIS PLAN:',
-		`The asset spec is \`${specPath}\`, and the images it lists are already on`,
-		'disk at the `out` path of each entry. Before writing code:',
+		`The asset spec is \`${specPath}\`. Each entry's image is at its \`out\` path —`,
+		'when the asset run managed to make it. Before writing code:',
 		'- Read the spec. Every asset the plan references by id must appear in it,',
 		'  with the SAME id. Load images by that `out` path — never invent a path,',
 		'  and never rename an id to something you find tidier.',
-		'- Where the plan names an asset the spec does not list, that image does',
-		`  NOT exist. Record it in \`${decisionsPath}\` and decide what the code does`,
-		'  without it — a placeholder drawn in code, or the feature left out. Say',
-		'  which. Do NOT try to generate art; you have no tool for it, and a',
-		'  silently invented file is worse than a missing one.',
+		...(missing.length
+			? [
+					`- These entries are in the spec but were NOT produced, and have no file: ${missing.join(', ')}.`
+				]
+			: []),
+		'- Check that each `out` file exists (code_glob or fs_list_dir). An entry',
+		'  with no file, or one the plan names that the spec does not list, does',
+		`  NOT exist. Record each in \`${decisionsPath}\` and decide what the code`,
+		'  does without it — a placeholder drawn in code, or the feature left out.',
+		'  Say which. The game must run without the file. Do NOT try to generate',
+		'  art; you have no tool for it, and a silently invented file is worse than',
+		'  a missing one.',
 		'- Where the spec lists an asset the plan never mentions, leave it alone.'
 	];
 }

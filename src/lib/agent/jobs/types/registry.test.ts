@@ -148,7 +148,10 @@ describe('registration barrel', () => {
 			web_research: true,
 			use_git: true,
 			max_turns: 200,
-			mute_preflight: false
+			mute_preflight: false,
+			open_findings: [],
+			asset_spec_path: null,
+			missing_assets: []
 		});
 		expect(coding.configFromJob(null)).toEqual({
 			plan_dir: '',
@@ -159,7 +162,10 @@ describe('registration barrel', () => {
 			web_research: true,
 			use_git: true,
 			max_turns: 200,
-			mute_preflight: false
+			mute_preflight: false,
+			open_findings: [],
+			asset_spec_path: null,
+			missing_assets: []
 		});
 		const json = coding.configToJson({
 			plan_dir: ' plan/x/ ',
