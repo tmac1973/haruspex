@@ -17,6 +17,7 @@ use super::profile::{
 use super::sheet::contact_sheet;
 use super::split::{split_sheet, SplitOptions};
 use super::stats::ImageStats;
+use super::texture::{render as render_texture, validate as validate_texture, TextureRecipe};
 
 #[derive(Debug, Serialize, ts_rs::TS)]
 #[ts(export)]
@@ -341,6 +342,33 @@ pub fn image_default_profile() -> NormalizeProfile {
 #[tauri::command]
 pub fn image_effective_profile(profile: NormalizeProfile, kind: AssetKind) -> NormalizeProfile {
     effective_profile(&profile, kind)
+}
+
+/// Draw a texture's tiles from its recipe: PNG bytes, the base first, then
+/// variants 1..n. `palette` is packed `0xRRGGBBAA`; empty keeps the recipe's
+/// own colours. The seed is a u32 so it survives a JavaScript number.
+#[tauri::command]
+pub fn texture_render(
+    recipe: TextureRecipe,
+    size: u32,
+    seed: u32,
+    variants: u32,
+    palette: Vec<u32>,
+) -> Result<Vec<Vec<u8>>, String> {
+    render_texture(&recipe, size, seed as u64, variants, &palette)?
+        .iter()
+        .map(encode)
+        .collect()
+}
+
+/// Check a recipe a model wrote, before anything is drawn. Takes raw JSON so a
+/// shape error ("unknown variant `lava`") comes back as a message to quote to
+/// the model, not as a failed IPC call.
+#[tauri::command]
+pub fn texture_validate(recipe: serde_json::Value) -> Result<(), String> {
+    let r: TextureRecipe =
+        serde_json::from_value(recipe).map_err(|e| format!("Not a texture recipe: {e}"))?;
+    validate_texture(&r)
 }
 
 #[cfg(test)]
@@ -678,5 +706,24 @@ mod tests {
         assert_eq!(img.dimensions(), (64, 32));
         assert!(img.pixels().all(|p| p.0[3] == 0));
         assert!(image_clear_canvas(0, 32).is_err());
+    }
+
+    #[test]
+    fn texture_commands_draw_and_refuse() {
+        let recipe: TextureRecipe = serde_json::from_str(
+            r##"{"base":{"ramp":["#2a2a2d","#3e3e44"]},"layers":[{"type":"speckle","color":"#4c4c52","amount":0.05}]}"##,
+        )
+        .unwrap();
+        let tiles = texture_render(recipe, 32, 1, 3, vec![]).unwrap();
+        assert_eq!(tiles.len(), 3);
+        let img = image::load_from_memory(&tiles[0]).unwrap().to_rgba8();
+        assert_eq!(img.dimensions(), (32, 32));
+
+        let bad = serde_json::json!({"base": {"ramp": ["#000000", "#ffffff"]}, "layers": [{"type": "lava"}]});
+        assert!(texture_validate(bad)
+            .unwrap_err()
+            .starts_with("Not a texture recipe"));
+        let off = serde_json::json!({"base": {"ramp": ["#000000"]}});
+        assert!(texture_validate(off).unwrap_err().contains("base.ramp"));
     }
 }

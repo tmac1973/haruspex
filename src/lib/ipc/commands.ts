@@ -255,6 +255,8 @@ export const IPC = {
 	start_whisper: 'start_whisper',
 	stop_recording: 'stop_recording',
 	stop_server: 'stop_server',
+	texture_render: 'texture_render',
+	texture_validate: 'texture_validate',
 	transcribe_audio: 'transcribe_audio',
 	tts_initialize: 'tts_initialize',
 	tts_is_initialized: 'tts_is_initialized',

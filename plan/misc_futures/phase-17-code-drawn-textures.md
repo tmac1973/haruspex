@@ -2,6 +2,35 @@
 
 Depends on: — / Enables: —
 
+## As built — Part A notes
+
+- **SplitMix64, not ChaCha8.** The app has no `rand` crate, and a 10-line
+  SplitMix64 gives the same guarantee: the same recipe and seed produce the
+  same pixels on every platform. Seeds cross IPC as `u32`, so they survive a
+  JavaScript number.
+- **The commands.** `texture_render(recipe, size, seed, variants, palette)`
+  returns PNG bytes, base first. `texture_validate(recipe)` takes raw JSON,
+  so a shape error comes back as a sentence to quote to the model.
+- **Every measure is in 32-pixel-tile units,** wave frequency included. At
+  16 px, 5 waves to the tile went finer than a pixel and aliased.
+- **Cells partition the tile exactly** (`noise::cell_of`), so bricks, grids,
+  dashes and bevels wrap at any size. A running bond needs an even row count,
+  so odd counts are rounded down.
+- **Tiling is tested two ways.** For noise layers, the seam is no rougher than
+  the interior averaged over 20 seeds: the README's measure, at 1.25× plus 1.
+  Bricks, grids and bevels put a line beside the seam by design, so their
+  seam is held to the sharpest interior step, at 1.15× plus 1. A wall face
+  tiles across only; it is the bottom edge of a wall.
+- **"Within 5%" was a guess.** Variants of the cracked asphalt differ by up to
+  0.30 in colour-histogram L1, about 15% of pixels changing shade, because
+  the noise is re-normalized per variant. The test bound is 0.4.
+- **The repeating stains are fixed:** `blotches` is never coarser than 4
+  cells.
+- **The prototype's twelve recipes parse unchanged** (a fixture in
+  `texture/fixtures/`). An ignored test writes them tiled, with variants
+  mixed 4×4 by a position hash, for a person to look at:
+  `TEXTURE_PREVIEW_DIR=/tmp/t cargo test --lib write_previews -- --ignored`.
+
 ## Goal
 
 Ground and wall textures that a game can actually tile, drawn by code rather
