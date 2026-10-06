@@ -1,3 +1,4 @@
+use crate::sync_util::LockExt;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::SampleFormat as CpalSampleFormat;
 use hound::{SampleFormat, WavSpec, WavWriter};
@@ -149,10 +150,10 @@ impl AudioRecorder {
 
         // Clear previous samples
         {
-            let mut samples = self.samples.lock().unwrap();
+            let mut samples = self.samples.lock_or_recover();
             samples.clear();
         }
-        *self.native_rate.lock().unwrap() = native_rate;
+        *self.native_rate.lock_or_recover() = native_rate;
 
         let err_fn = |err: cpal::StreamError| error!("Audio input error: {}", err);
 
@@ -166,7 +167,7 @@ impl AudioRecorder {
                         if !is_recording.load(Ordering::SeqCst) {
                             return;
                         }
-                        let mut buf = samples.lock().unwrap();
+                        let mut buf = samples.lock_or_recover();
                         if channels <= 1 {
                             buf.extend(data.iter().map(|s| $to_f32(*s)));
                         } else {
@@ -201,7 +202,7 @@ impl AudioRecorder {
         })?;
 
         self.is_recording.store(true, Ordering::SeqCst);
-        *self.stream.lock().unwrap() = Some(stream);
+        *self.stream.lock_or_recover() = Some(stream);
 
         info!("Recording started");
         Ok(())
@@ -215,13 +216,13 @@ impl AudioRecorder {
         self.is_recording.store(false, Ordering::SeqCst);
 
         // Drop the stream to stop recording
-        *self.stream.lock().unwrap() = None;
+        *self.stream.lock_or_recover() = None;
 
         let samples = {
-            let mut buf = self.samples.lock().unwrap();
+            let mut buf = self.samples.lock_or_recover();
             std::mem::take(&mut *buf)
         };
-        let native_rate = *self.native_rate.lock().unwrap();
+        let native_rate = *self.native_rate.lock_or_recover();
 
         info!(
             "Recording stopped: {} samples ({:.1}s @ {} Hz)",

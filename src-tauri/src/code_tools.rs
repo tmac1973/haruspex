@@ -9,6 +9,7 @@
 //! context small.
 
 use crate::shell::kind::ShellSelection;
+use crate::sync_util::LockExt;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -151,7 +152,7 @@ pub async fn run_command_capture(
         .map_err(|e| format!("Failed to spawn command: {e}"))?;
     let pid = child.id();
     if let Some(pid) = pid {
-        registry().lock().unwrap().insert(command_id.clone(), pid);
+        registry().lock_or_recover().insert(command_id.clone(), pid);
     }
 
     // Drain both pipes concurrently so a chatty command can't deadlock on a
@@ -183,7 +184,7 @@ pub async fn run_command_capture(
                 .map_err(|e| format!("Failed to reap killed command: {e}"))?
         }
     };
-    registry().lock().unwrap().remove(&command_id);
+    registry().lock_or_recover().remove(&command_id);
 
     // Collect output with a grace window; if a lingering child still holds a
     // pipe open, kill the tree and return what we have.
@@ -218,7 +219,7 @@ pub async fn run_command_capture(
 /// from the tool's abort handler. No-op if the command already finished.
 #[tauri::command]
 pub fn run_command_cancel(command_id: String) -> Result<(), String> {
-    let pid = registry().lock().unwrap().get(&command_id).copied();
+    let pid = registry().lock_or_recover().get(&command_id).copied();
     if let Some(pid) = pid {
         kill_process_tree(pid);
     }

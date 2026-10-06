@@ -34,6 +34,7 @@ mod server;
 mod shell;
 mod sidecar_process;
 mod sidecar_utils;
+mod sync_util;
 mod text_util;
 mod time_util;
 mod tts;
@@ -86,8 +87,11 @@ pub fn run() {
             });
         })
         .setup(|app| {
-            app.manage(ModelManager::new(app.handle()));
-            let database = Database::new(app.handle()).expect("Failed to initialize database");
+            // A failure here ends startup with the reason in the log, rather
+            // than a panic backtrace.
+            app.manage(ModelManager::new(app.handle())?);
+            let database = Database::new(app.handle())
+                .map_err(|e| format!("Failed to initialize database: {e}"))?;
             // The proxy records search stats through the StatSink trait
             // (audit A3); Database is a cloneable handle to one shared
             // connection, so both managed states hit the same SQLite file.

@@ -9,6 +9,7 @@
 //! deliberately knows nothing about the db layer — the dependency points
 //! the other way (db implements this module's trait).
 
+use crate::sync_util::LockExt;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -368,28 +369,28 @@ impl SearchStats {
     }
 
     pub fn record_query(&self) {
-        let mut g = self.globals.lock().unwrap();
+        let mut g = self.globals.lock_or_recover();
         g.total_queries += 1;
     }
 
     pub fn record_cache_hit(&self) {
-        let mut g = self.globals.lock().unwrap();
+        let mut g = self.globals.lock_or_recover();
         g.cache_hits += 1;
     }
 
     pub fn record_all_engines_failed(&self) {
-        let mut g = self.globals.lock().unwrap();
+        let mut g = self.globals.lock_or_recover();
         g.all_engines_failed += 1;
     }
 
     pub fn record_browser_fallback(&self) {
-        let mut g = self.globals.lock().unwrap();
+        let mut g = self.globals.lock_or_recover();
         g.browser_fallbacks += 1;
     }
 
     pub fn record_outcome(&self, engine: &str, outcome: &RecordedOutcome) {
         let now = now_ms();
-        let mut engines = self.engines.lock().unwrap();
+        let mut engines = self.engines.lock_or_recover();
         let entry = engines
             .entry(engine.to_string())
             .or_insert_with(|| EngineSessionStats {
@@ -428,8 +429,8 @@ impl SearchStats {
     }
 
     pub fn snapshot(&self) -> SessionStatsSnapshot {
-        let engines = self.engines.lock().unwrap();
-        let globals = self.globals.lock().unwrap();
+        let engines = self.engines.lock_or_recover();
+        let globals = self.globals.lock_or_recover();
         let mut list: Vec<EngineSessionStats> = engines.values().cloned().collect();
         list.sort_by(|a, b| a.core.engine.cmp(&b.core.engine));
         SessionStatsSnapshot {

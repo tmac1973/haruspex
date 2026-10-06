@@ -23,6 +23,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use crate::sync_util::LockExt;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
@@ -339,7 +340,7 @@ impl Relay {
         if !Self::valid_session_id(session_id) {
             return Err(RelayError::BadSessionId);
         }
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock_or_recover();
         if !inner.sessions.contains_key(session_id) && inner.sessions.len() >= MAX_SESSIONS {
             return Err(RelayError::TooManySessions);
         }
@@ -353,7 +354,7 @@ impl Relay {
     }
 
     pub fn unsubscribe(&self, session_id: &str) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock_or_recover();
         if let Some(session) = inner.sessions.get_mut(session_id) {
             session.subscribers = session.subscribers.saturating_sub(1);
             session.last_seen = Instant::now();
@@ -362,7 +363,7 @@ impl Relay {
 
     /// Current snapshot without subscribing — used to resync a lagged stream.
     pub fn snapshot(&self, session_id: &str) -> Option<RemoteEvent> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock_or_recover();
         inner.sessions.get(session_id).map(|s| s.snapshot())
     }
 
@@ -377,7 +378,7 @@ impl Relay {
         if !Self::valid_session_id(session_id) {
             return Err(RelayError::BadSessionId);
         }
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock_or_recover();
 
         let now = Instant::now();
         inner
@@ -437,7 +438,7 @@ impl Relay {
     /// buffer — the client gets a fresh snapshot instead of a delta that would
     /// corrupt what it has.
     pub fn push_text(&self, turn_id: &str, full_text: &str) -> Result<(), RelayError> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock_or_recover();
         let session_id = inner
             .turns
             .get(turn_id)
@@ -475,7 +476,7 @@ impl Relay {
     /// Record a tool call's progress. A repeated id updates that step rather
     /// than appending, so "searching" becomes "searched" in place.
     pub fn push_step(&self, turn_id: &str, step: Step) -> Result<(), RelayError> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock_or_recover();
         let (tx, turn) = Self::turn_mut(&mut inner, turn_id)?;
         match turn.steps.iter_mut().find(|s| s.id == step.id) {
             Some(existing) => *existing = step.clone(),
@@ -494,7 +495,7 @@ impl Relay {
 
     /// Park the turn on a question for the guest.
     pub fn ask(&self, turn_id: &str, question: Question) -> Result<(), RelayError> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock_or_recover();
         let (tx, turn) = Self::turn_mut(&mut inner, turn_id)?;
         turn.question = Some(question.clone());
         let _ = tx.send(RemoteEvent::Question {
@@ -511,7 +512,7 @@ impl Relay {
     /// stale tab — is rejected rather than delivered, since the turn has
     /// already moved on and a late answer would be applied to the wrong thing.
     pub fn answer(&self, session_id: &str, answer: &Answer) -> Result<String, RelayError> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock_or_recover();
         let session = inner
             .sessions
             .get_mut(session_id)
@@ -531,7 +532,7 @@ impl Relay {
 
     /// Drop a pending question without an answer — the turn gave up waiting.
     pub fn clear_question(&self, turn_id: &str) -> Result<(), RelayError> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock_or_recover();
         let (tx, turn) = Self::turn_mut(&mut inner, turn_id)?;
         turn.question = None;
         let _ = tx.send(RemoteEvent::QuestionCleared {
@@ -568,7 +569,7 @@ impl Relay {
     }
 
     pub fn set_status(&self, turn_id: &str, status: TurnStatus) -> Result<(), RelayError> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock_or_recover();
         let session_id = inner
             .turns
             .get(turn_id)
@@ -606,7 +607,7 @@ impl Relay {
         text: String,
         message: Option<String>,
     ) -> Result<(), RelayError> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock_or_recover();
         let session_id = inner.turns.remove(turn_id).ok_or(RelayError::UnknownTurn)?;
         let session = inner
             .sessions
@@ -644,7 +645,7 @@ impl Relay {
     /// [`EVENT_CANCEL`]; the driver's abort path does the actual stopping and
     /// reports back through [`Relay::fail`].
     pub fn in_flight_turn(&self, session_id: &str) -> Option<String> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock_or_recover();
         inner
             .sessions
             .get(session_id)
@@ -656,7 +657,7 @@ impl Relay {
     /// Sessions nobody is listening to. Returns turn ids to cancel, and forgets
     /// sessions idle past [`IDLE_TIMEOUT`].
     pub fn reap(&self) -> Vec<String> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock_or_recover();
         let now = Instant::now();
         let mut orphaned = Vec::new();
 
@@ -688,7 +689,7 @@ impl Relay {
     /// cancel, if there was one. Dropping the session closes its SSE stream;
     /// the conversation it was writing to is a database row and stays.
     pub fn disconnect(&self, session_id: &str) -> Option<String> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock_or_recover();
         let session = inner.sessions.remove(session_id)?;
         inner.turns.retain(|_, sid| sid != session_id);
         // Dropping the sender ends every subscriber's stream.
@@ -701,7 +702,7 @@ impl Relay {
 
     /// Who is connected, for the host's activity panel.
     pub fn sessions(&self) -> Vec<SessionInfo> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock_or_recover();
         let mut sessions: Vec<SessionInfo> = inner
             .sessions
             .iter()
@@ -719,13 +720,13 @@ impl Relay {
     /// Drop everything — used when the server stops, so a restart does not
     /// inherit sessions whose clients are long gone.
     pub fn clear(&self) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock_or_recover();
         inner.sessions.clear();
         inner.turns.clear();
     }
 
     pub fn session_count(&self) -> usize {
-        self.inner.lock().unwrap().sessions.len()
+        self.inner.lock_or_recover().sessions.len()
     }
 }
 

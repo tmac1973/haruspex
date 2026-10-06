@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use super::config::{AUTO_ENGINES, FETCH_CACHE_TTL, SEARCH_CACHE_TTL};
 use super::SearchResult;
+use crate::sync_util::LockExt;
 
 struct CacheEntry<T> {
     value: T,
@@ -51,13 +52,13 @@ impl ProxyState {
     /// every engine is tried once. Does NOT advance the cursor — call
     /// advance_rotation_cursor() after a successful search.
     pub(super) fn rotation_order(&self) -> Vec<&'static str> {
-        let cursor = *self.auto_rotation_cursor.lock().unwrap();
+        let cursor = *self.auto_rotation_cursor.lock_or_recover();
         let n = AUTO_ENGINES.len();
         (0..n).map(|i| AUTO_ENGINES[(cursor + i) % n]).collect()
     }
 
     pub(super) fn advance_rotation_cursor(&self) {
-        let mut cursor = self.auto_rotation_cursor.lock().unwrap();
+        let mut cursor = self.auto_rotation_cursor.lock_or_recover();
         *cursor = (*cursor + 1) % AUTO_ENGINES.len();
     }
 
@@ -67,7 +68,7 @@ impl ProxyState {
         // guard, which blocked a tokio worker thread for up to 6 s and
         // serialized searches across *all* engines (they share the one map).
         let wait = {
-            let mut last_times = self.last_search_time.lock().unwrap();
+            let mut last_times = self.last_search_time.lock_or_recover();
             let now = Instant::now();
             let next = match last_times.get(engine) {
                 Some(last) => (*last + interval).max(now),
@@ -92,14 +93,14 @@ impl ProxyState {
         if len == 0 {
             return 0;
         }
-        *self.browser_rotation_cursor.lock().unwrap() % len
+        *self.browser_rotation_cursor.lock_or_recover() % len
     }
 
     pub(super) fn advance_browser_rotation_cursor(&self, len: usize) {
         if len == 0 {
             return;
         }
-        let mut cursor = self.browser_rotation_cursor.lock().unwrap();
+        let mut cursor = self.browser_rotation_cursor.lock_or_recover();
         *cursor = (*cursor + 1) % len;
     }
 
@@ -111,7 +112,7 @@ impl ProxyState {
     /// notifications. The persistent card carries the ongoing state; the event
     /// only marks the moment it started.
     pub(super) fn begin_browser_fallback(&self, reason: &str) -> bool {
-        let mut current = self.browser_fallback.lock().unwrap();
+        let mut current = self.browser_fallback.lock_or_recover();
         if current.as_deref() == Some(reason) {
             return false;
         }
@@ -123,16 +124,16 @@ impl ProxyState {
     /// degraded, so the caller can clear the card. Recovery is deliberately
     /// quiet — the card simply goes away.
     pub(super) fn clear_browser_fallback(&self) -> bool {
-        self.browser_fallback.lock().unwrap().take().is_some()
+        self.browser_fallback.lock_or_recover().take().is_some()
     }
 
     pub(super) fn record_failure(&self, engine: &str) {
-        let mut failures = self.engine_failures.lock().unwrap();
+        let mut failures = self.engine_failures.lock_or_recover();
         failures.insert(engine.to_string(), Instant::now());
     }
 
     pub(super) fn is_engine_healthy(&self, engine: &str, cooldown: Duration) -> bool {
-        let failures = self.engine_failures.lock().unwrap();
+        let failures = self.engine_failures.lock_or_recover();
         match failures.get(engine) {
             Some(failed_at) => failed_at.elapsed() >= cooldown,
             None => true,
@@ -140,7 +141,7 @@ impl ProxyState {
     }
 
     pub(super) fn get_cached_search(&self, query: &str) -> Option<Vec<SearchResult>> {
-        let cache = self.search_cache.lock().unwrap();
+        let cache = self.search_cache.lock_or_recover();
         cache.get(query).and_then(|entry| {
             if entry.expires_at > Instant::now() {
                 Some(entry.value.clone())
@@ -151,7 +152,7 @@ impl ProxyState {
     }
 
     pub(super) fn cache_search(&self, query: &str, results: &[SearchResult]) {
-        let mut cache = self.search_cache.lock().unwrap();
+        let mut cache = self.search_cache.lock_or_recover();
         cache.insert(
             query.to_string(),
             CacheEntry {
@@ -162,7 +163,7 @@ impl ProxyState {
     }
 
     pub(super) fn get_cached_fetch(&self, url: &str) -> Option<super::extract::FetchedPage> {
-        let cache = self.fetch_cache.lock().unwrap();
+        let cache = self.fetch_cache.lock_or_recover();
         cache.get(url).and_then(|entry| {
             if entry.expires_at > Instant::now() {
                 Some(entry.value.clone())
@@ -173,7 +174,7 @@ impl ProxyState {
     }
 
     pub(super) fn cache_fetch(&self, url: &str, content: &super::extract::FetchedPage) {
-        let mut cache = self.fetch_cache.lock().unwrap();
+        let mut cache = self.fetch_cache.lock_or_recover();
         cache.insert(
             url.to_string(),
             CacheEntry {
