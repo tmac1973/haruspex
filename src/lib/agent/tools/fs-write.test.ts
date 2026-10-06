@@ -23,4 +23,17 @@ describe('isUnderWriteRoot', () => {
 		expect(isUnderWriteRoot('../secret.md', root)).toBe(false);
 		expect(isUnderWriteRoot('/etc/passwd', root)).toBe(false);
 	});
+
+	it('treats Windows-rooted paths as absolute, whatever the slashes', () => {
+		expect(isUnderWriteRoot('\\plan\\my-feature\\x.md', root)).toBe(false);
+		expect(isUnderWriteRoot('C:/plan/my-feature/x.md', root)).toBe(false);
+		expect(isUnderWriteRoot('C:plan/my-feature/x.md', root)).toBe(false);
+		expect(isUnderWriteRoot('plan\\my-feature\\x.md', root)).toBe(true);
+		expect(isUnderWriteRoot('plan\\my-feature\\..\\..\\x.md', root)).toBe(false);
+	});
+
+	it('accepts a root written with leading ./, backslashes or a trailing slash', () => {
+		expect(isUnderWriteRoot('plan/my-feature/x.md', './plan\\my-feature/')).toBe(true);
+		expect(isUnderWriteRoot('plan//my-feature///x.md', 'plan/my-feature')).toBe(true);
+	});
 });
