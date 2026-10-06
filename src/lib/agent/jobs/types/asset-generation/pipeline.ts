@@ -49,7 +49,8 @@ import {
 	parseRecipes,
 	SUBMIT_ASSET_JUDGEMENT_TOOL,
 	SUBMIT_TEXTURE_RECIPES_TOOL,
-	type AssetJudgement
+	type AssetJudgement,
+	type SubmittedRecipe
 } from './tools';
 import { applyCodeTextures, reviseRecipe, writeRecipes, type RecipeDeps } from './recipes';
 import { DEFAULT_TEXTURE_VARIANTS } from './config';
@@ -289,7 +290,7 @@ async function judgeAsset(
 function recipeDeps(ctx: JobRunContext): RecipeDeps {
 	return {
 		ask: async (prompt) => {
-			let got = new Map<string, Record<string, unknown>>();
+			let got = new Map<string, SubmittedRecipe>();
 			await ctx.runJobTurn({
 				userMessage: prompt,
 				contextSize: ctx.contextSize(),

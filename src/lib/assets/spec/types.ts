@@ -75,6 +75,13 @@ export interface AssetEntry {
 	 */
 	recipe?: TextureRecipe;
 	/**
+	 * What the recipe actually draws, in one line ("white brick wall with a
+	 * rusted pipe"). The judge checks a code-drawn tile against this, not the
+	 * prompt: a prompt can name details no recipe can draw ("graffiti-covered"),
+	 * and a tile should not be rejected for lacking them.
+	 */
+	drawn?: string;
+	/**
 	 * Every tile file of a code-drawn texture, `out` first. Interchangeable:
 	 * a map picks one per cell.
 	 */

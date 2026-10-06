@@ -27,6 +27,7 @@ function orderedEntry(e: AssetEntry): Record<string, unknown> {
 		notes: e.notes,
 		rejected: e.rejected,
 		recipe: e.recipe,
+		drawn: e.drawn,
 		variants: e.variants
 	});
 }

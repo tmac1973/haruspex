@@ -218,9 +218,15 @@ registerTool({
 								recipe: {
 									type: 'object',
 									description: 'The recipe: { base, layers, wall_face? }.'
+								},
+								drawn: {
+									type: 'string',
+									description:
+										'One line saying what this recipe actually draws, e.g. "white brick ' +
+										'wall with a rusted pipe" — only what the layers can show.'
 								}
 							},
-							required: ['id', 'recipe']
+							required: ['id', 'recipe', 'drawn']
 						}
 					}
 				},
@@ -237,17 +243,27 @@ registerTool({
 	}
 });
 
-/** Read the recipes out of a tool call: id → recipe object. Others dropped. */
+/** One submitted recipe, unchecked, with the model's line on what it draws. */
+export interface SubmittedRecipe {
+	recipe: Record<string, unknown>;
+	/** Empty when the model left it out; the judge then falls back to the prompt. */
+	drawn: string;
+}
+
+/** Read the recipes out of a tool call, by id. Malformed ones are dropped. */
 export function parseRecipes(
 	args: Record<string, unknown> | undefined
-): Map<string, Record<string, unknown>> {
-	const out = new Map<string, Record<string, unknown>>();
+): Map<string, SubmittedRecipe> {
+	const out = new Map<string, SubmittedRecipe>();
 	if (!args || !Array.isArray(args.recipes)) return out;
 	for (const r of args.recipes) {
 		if (!r || typeof r !== 'object') continue;
-		const { id, recipe } = r as { id?: unknown; recipe?: unknown };
+		const { id, recipe, drawn } = r as { id?: unknown; recipe?: unknown; drawn?: unknown };
 		if (typeof id === 'string' && recipe && typeof recipe === 'object' && !Array.isArray(recipe)) {
-			out.set(id.trim(), recipe as Record<string, unknown>);
+			out.set(id.trim(), {
+				recipe: recipe as Record<string, unknown>,
+				drawn: typeof drawn === 'string' ? drawn.trim() : ''
+			});
 		}
 	}
 	return out;

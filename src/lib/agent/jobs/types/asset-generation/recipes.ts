@@ -11,12 +11,19 @@
 import type { AssetEntry, AssetSpec } from '$lib/assets/spec/types';
 import type { TextureRecipe } from '$lib/ipc/gen/TextureRecipe';
 import { recipePrompt } from './prompts';
+import type { SubmittedRecipe } from './tools';
 
 export interface RecipeDeps {
 	/** One model turn with `prompt`; the recipes it submitted, by id. */
-	ask: (prompt: string) => Promise<Map<string, Record<string, unknown>>>;
+	ask: (prompt: string) => Promise<Map<string, SubmittedRecipe>>;
 	/** Null when the recipe is good, else what is wrong with it. */
 	validate: (recipe: unknown) => Promise<string | null>;
+}
+
+/** A recipe that passed Rust's check, and the model's line on what it draws. */
+export interface DrawnRecipe {
+	recipe: TextureRecipe;
+	drawn: string;
 }
 
 export interface RecipeResult {
@@ -42,7 +49,7 @@ async function askFor(
 	entries: AssetEntry[],
 	deps: RecipeDeps,
 	feedback?: Map<string, string>
-): Promise<{ good: Map<string, TextureRecipe>; refused: Map<string, string> }> {
+): Promise<{ good: Map<string, DrawnRecipe>; refused: Map<string, string> }> {
 	const prompt = recipePrompt(
 		entries.map((e) => ({ id: e.id, prompt: e.prompt })),
 		paletteOf(spec),
@@ -50,7 +57,7 @@ async function askFor(
 		feedback
 	);
 	const got = await deps.ask(prompt);
-	const good = new Map<string, TextureRecipe>();
+	const good = new Map<string, DrawnRecipe>();
 	const refused = new Map<string, string>();
 	for (const e of entries) {
 		const r = got.get(e.id);
@@ -58,9 +65,9 @@ async function askFor(
 			refused.set(e.id, 'No recipe was submitted for it.');
 			continue;
 		}
-		const why = await deps.validate(r);
-		if (why) refused.set(e.id, `${why} The recipe was: ${JSON.stringify(r)}`);
-		else good.set(e.id, r as unknown as TextureRecipe);
+		const why = await deps.validate(r.recipe);
+		if (why) refused.set(e.id, `${why} The recipe was: ${JSON.stringify(r.recipe)}`);
+		else good.set(e.id, { recipe: r.recipe as unknown as TextureRecipe, drawn: r.drawn });
 	}
 	return { good, refused };
 }
@@ -82,9 +89,10 @@ export async function writeRecipes(spec: AssetSpec, deps: RecipeDeps): Promise<R
 	return {
 		spec: {
 			...spec,
-			entries: spec.entries.map((e) =>
-				recipes.has(e.id) ? { ...e, recipe: recipes.get(e.id)! } : e
-			)
+			entries: spec.entries.map((e) => {
+				const r = recipes.get(e.id);
+				return r ? { ...e, recipe: r.recipe, ...(r.drawn ? { drawn: r.drawn } : {}) } : e;
+			})
 		},
 		written: [...recipes.keys()],
 		failed
@@ -100,7 +108,7 @@ export async function reviseRecipe(
 	entry: AssetEntry,
 	reason: string,
 	deps: RecipeDeps
-): Promise<TextureRecipe | null> {
+): Promise<DrawnRecipe | null> {
 	const feedback = new Map([
 		[
 			entry.id,
@@ -142,7 +150,13 @@ export function textureSeed(entry: AssetEntry): number {
  */
 export function applyCodeTextures(
 	spec: AssetSpec,
-	outcomes: Array<{ id: string; codeDrawn?: boolean; variants?: string[]; recipe?: TextureRecipe }>
+	outcomes: Array<{
+		id: string;
+		codeDrawn?: boolean;
+		variants?: string[];
+		recipe?: TextureRecipe;
+		drawn?: string;
+	}>
 ): AssetSpec | null {
 	const byId = new Map(outcomes.filter((o) => o.codeDrawn).map((o) => [o.id, o]));
 	if (byId.size === 0) return null;
@@ -152,9 +166,15 @@ export function applyCodeTextures(
 		if (!o) return e;
 		const variants = o.variants ?? e.variants;
 		const recipe = o.recipe ?? e.recipe;
-		if (JSON.stringify(variants) === JSON.stringify(e.variants) && recipe === e.recipe) return e;
+		const drawn = o.drawn ?? e.drawn;
+		if (
+			JSON.stringify(variants) === JSON.stringify(e.variants) &&
+			recipe === e.recipe &&
+			drawn === e.drawn
+		)
+			return e;
 		changed = true;
-		return { ...e, variants, recipe };
+		return { ...e, variants, recipe, ...(drawn ? { drawn } : {}) };
 	});
 	return changed ? { ...spec, entries } : null;
 }
