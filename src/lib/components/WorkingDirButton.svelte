@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { invoke } from '@tauri-apps/api/core';
 	import { open } from '@tauri-apps/plugin-dialog';
 	import { getWorkingDir, setWorkingDir } from '#lib/stores/chat.svelte.ts';
 
@@ -40,15 +41,50 @@
 		if (onClear) onClear();
 		else setWorkingDir(null);
 	}
+
+	// Right-click menu, in place of the webview's own (which offers only
+	// "Inspect Element").
+	let menu = $state<{ x: number; y: number } | null>(null);
+
+	function openMenu(e: MouseEvent) {
+		e.preventDefault();
+		menu = { x: e.clientX, y: e.clientY };
+	}
+
+	function closeMenu() {
+		menu = null;
+	}
+
+	async function openInFileManager() {
+		closeMenu();
+		if (!workingDir) return;
+		try {
+			await invoke('open_folder', { path: workingDir });
+		} catch (e) {
+			console.error('Failed to open folder:', e);
+		}
+	}
+
+	function onMenuPick(action: () => void) {
+		closeMenu();
+		action();
+	}
 </script>
+
+<svelte:window
+	onclick={closeMenu}
+	onkeydown={(e) => e.key === 'Escape' && closeMenu()}
+	onblur={closeMenu}
+/>
 
 <div class="workingdir-container">
 	<button
 		class="workingdir-btn"
 		class:active={workingDir !== null}
 		onclick={pickDirectory}
+		oncontextmenu={openMenu}
 		title={workingDir
-			? `Working directory: ${workingDir}\nClick to change`
+			? `Working directory: ${workingDir}\nClick to change, right-click for more`
 			: 'Select a working directory to enable file tools'}
 	>
 		<svg
@@ -79,6 +115,21 @@
 			<span class="clear-btn" onclick={clearDirectory} title="Clear working directory">×</span>
 		{/if}
 	</button>
+	{#if menu}
+		<div class="context-menu" style="left: {menu.x}px; top: {menu.y}px" role="menu">
+			<button role="menuitem" onclick={openInFileManager} disabled={!workingDir}>
+				Open in file manager
+			</button>
+			<button role="menuitem" onclick={() => onMenuPick(pickDirectory)}>
+				{workingDir ? 'Change folder…' : 'Choose folder…'}
+			</button>
+			{#if workingDir}
+				<button role="menuitem" onclick={(e) => onMenuPick(() => clearDirectory(e))}>
+					Clear
+				</button>
+			{/if}
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -139,5 +190,37 @@
 	.clear-btn:hover {
 		background: color-mix(in srgb, var(--accent) 25%, transparent);
 		color: var(--text-primary);
+	}
+
+	.context-menu {
+		position: fixed;
+		background: var(--bg-primary);
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+		z-index: 100;
+		min-width: 170px;
+		padding: 4px 0;
+	}
+
+	.context-menu button {
+		appearance: none;
+		background: none;
+		border: 0;
+		color: var(--text-primary);
+		padding: 6px 14px;
+		font-size: 0.8rem;
+		width: 100%;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.context-menu button:hover:not(:disabled) {
+		background: var(--bg-secondary);
+	}
+
+	.context-menu button:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 </style>

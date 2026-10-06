@@ -200,6 +200,7 @@ export const IPC = {
 	memory_touch: 'memory_touch',
 	memory_unload_model: 'memory_unload_model',
 	memory_update: 'memory_update',
+	open_folder: 'open_folder',
 	open_url: 'open_url',
 	power_inhibit_acquire: 'power_inhibit_acquire',
 	power_inhibit_release: 'power_inhibit_release',
