@@ -38,10 +38,10 @@ const MAX_MESSAGE_BYTES: usize = 32 * 1024;
 /// Longest answer read aloud in one request — around four minutes of speech.
 const MAX_SPEECH_CHARS: usize = 4000;
 
-/// The TTS sidecar's port, and the app's default voice. Kept local rather than
-/// threaded through the config so that changing the host's voice in Settings
-/// cannot restart the server and drop a guest mid-answer.
-const TTS_PORT: u16 = 3001;
+/// The TTS sidecar's port, and the app's default voice. Kept out of the config
+/// so that changing the host's voice in Settings cannot restart the server and
+/// drop a guest mid-answer.
+const TTS_PORT: u16 = crate::sidecar_utils::ports::TTS;
 const DEFAULT_VOICE: &str = "af_heart";
 
 #[derive(Debug, Clone, Deserialize)]

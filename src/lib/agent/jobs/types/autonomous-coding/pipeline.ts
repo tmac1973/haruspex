@@ -32,7 +32,7 @@ import {
 } from '$lib/agent/tools/coding';
 import { withWebResearch } from '../webResearch';
 import { getSettings } from '$lib/stores/settings';
-import { normalizeAbort } from '$lib/utils/error';
+import { normalizeAbort, errMessage } from '$lib/utils/error';
 import {
 	markRunStarted,
 	markRunStepFinished,
@@ -703,7 +703,7 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 			readmeNote = 'Wrote README.md';
 		} catch (e) {
 			if (abort.signal.aborted) throw e;
-			readmeNote = `README.md was not written — ${e instanceof Error ? e.message : String(e)}`;
+			readmeNote = `README.md was not written — ${errMessage(e)}`;
 		}
 		finishStep(DOCUMENT, readmeNote);
 

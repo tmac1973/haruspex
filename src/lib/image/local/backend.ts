@@ -11,6 +11,8 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { errMessage } from '$lib/utils/error';
+import type { ImageEngineStatus } from '$lib/ipc/gen/ImageEngineStatus';
 import { getSettings } from '$lib/stores/settings';
 import { registerImageBackend } from '../registry';
 import type { ImageBackend, GenerateOptions } from '../backend';
@@ -34,21 +36,11 @@ import {
 	type LocalFamily
 } from './adapter';
 
-/** Mirrors `image_engine::IMAGE_PORT`. Used by the UI, not to build URLs —
- *  the Rust side owns the address. */
-export const LOCAL_PORT = 8767;
-
 /** One generation, weights already loaded. Startup has its own budget. */
 const GENERATE_TIMEOUT_MS = 600_000;
 
-interface EngineStatus {
-	status: { type: string; message?: string };
-	model: string | null;
-	available: boolean;
-}
-
-async function engineStatus(): Promise<EngineStatus> {
-	return await invoke<EngineStatus>('image_engine_status');
+async function engineStatus(): Promise<ImageEngineStatus> {
+	return await invoke<ImageEngineStatus>('image_engine_status');
 }
 
 /**
@@ -130,7 +122,7 @@ async function call(path: string, body: unknown, signal?: AbortSignal): Promise<
 			return JSON.parse(text);
 		} catch (e) {
 			if (signal?.aborted) throw new ImageBackendError('cancelled', 'Generation cancelled.');
-			const msg = e instanceof Error ? e.message : String(e);
+			const msg = errMessage(e);
 			if (EMPTY_RESULT.test(msg) && attempt < EMPTY_RESULT_ATTEMPTS) {
 				await new Promise((r) => setTimeout(r, EMPTY_RESULT_RETRY_MS));
 				continue;
@@ -259,7 +251,7 @@ export const localBackend: ImageBackend = {
 				if (opts.signal?.aborted) throw e;
 				// Keep the texture the engine did draw. Losing it over the seam
 				// pass cost a run all nine of its textures.
-				seamFailed = e instanceof Error ? e.message : String(e);
+				seamFailed = errMessage(e);
 			}
 		}
 

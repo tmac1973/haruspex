@@ -342,7 +342,7 @@ fn try_select_text(document: &Html, selector_str: &str) -> Option<String> {
 fn extract_body_text(document: &Html) -> String {
     // Remove script, style, nav, header, footer, aside elements by collecting
     // text only from visible content elements
-    let body_selector = Selector::parse("body").unwrap();
+    let body_selector = Selector::parse("body").expect("static selector");
 
     if let Some(body) = document.select(&body_selector).next() {
         body.text().collect::<String>()

@@ -9,13 +9,11 @@
 //! # Secrets
 //!
 //! Secrets collected during guided setup live in this struct, and therefore in
-//! the settings blob — the same trust level as the existing Brave key, the
-//! remote-inference key and IMAP passwords. That is a deliberate consistency
-//! choice, not an oversight. Moving credentials to the OS keyring is worth
-//! doing, but it is a cross-cutting change for *all* of them at once; adding a
-//! second storage location for one integration would make that migration
-//! harder, not easier. `email/auth.rs` says the same thing about the same
-//! decision.
+//! the settings blob — the same trust level as the Brave key, the
+//! remote-inference key and CalDAV passwords. Email passwords have since moved
+//! to the system keychain (`secrets.rs`, `email/auth.rs`); the rest are meant
+//! to follow by the same route, all at once, rather than one integration at a
+//! time.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

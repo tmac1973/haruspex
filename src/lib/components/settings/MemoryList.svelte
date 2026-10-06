@@ -13,6 +13,7 @@
 	 * on it.
 	 */
 	import { invoke } from '@tauri-apps/api/core';
+	import { errMessage } from '$lib/utils/error';
 	import type { MemoryMeta } from '$lib/ipc/gen/MemoryMeta';
 	import { refreshMemoryCount } from '$lib/stores/memory.svelte';
 	import MemoryRow from './MemoryRow.svelte';
@@ -48,7 +49,7 @@
 			// not. Cheaper than a second count query per page.
 			hasMore = page.length === PAGE_SIZE;
 		} catch (e) {
-			error = e instanceof Error ? e.message : String(e);
+			error = errMessage(e);
 		} finally {
 			loading = false;
 		}

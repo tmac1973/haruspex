@@ -12,14 +12,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { sleep } from '$lib/utils/async';
 import { getSettings } from '$lib/stores/settings';
 import { showToast } from '$lib/stores/toasts.svelte';
+import type { SidecarStatus } from '$lib/ipc/gen/SidecarStatus';
 
 export type VoiceCaptureStatus = 'idle' | 'recording' | 'processing' | 'downloading';
-
-type WhisperStatusResponse =
-	| { type: 'Stopped' }
-	| { type: 'Starting' }
-	| { type: 'Ready' }
-	| { type: 'Error'; message: string };
 
 let status = $state<VoiceCaptureStatus>('idle');
 
@@ -99,7 +94,7 @@ export async function stopAndTranscribe(): Promise<string | null> {
 
 async function ensureWhisperReady(): Promise<boolean> {
 	try {
-		const s = await invoke<WhisperStatusResponse>('get_whisper_status');
+		const s = await invoke<SidecarStatus>('get_whisper_status');
 		if (s.type === 'Ready') return true;
 
 		let modelPath = await invoke<string | null>('get_whisper_model_path');
@@ -119,7 +114,7 @@ async function ensureWhisperReady(): Promise<boolean> {
 
 		for (let i = 0; i < 30; i++) {
 			await sleep(500);
-			const next = await invoke<WhisperStatusResponse>('get_whisper_status');
+			const next = await invoke<SidecarStatus>('get_whisper_status');
 			if (next.type === 'Ready') return true;
 			if (next.type === 'Error') return false;
 		}

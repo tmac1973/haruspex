@@ -9,6 +9,7 @@
  * asked for is never lost to a forgetful model.
  */
 import { invoke } from '@tauri-apps/api/core';
+import { errMessage } from '$lib/utils/error';
 import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
 import { generateForTool } from '$lib/image/forTool';
@@ -91,9 +92,7 @@ registerTool({
 			);
 		} catch (e) {
 			if (e instanceof ImageBackendError && e.kind === 'cancelled') throw e;
-			return toolResult(
-				toolError(`Could not draw it: ${e instanceof Error ? e.message : String(e)}`)
-			);
+			return toolResult(toolError(`Could not draw it: ${errMessage(e)}`));
 		} finally {
 			clearInterval(tick);
 		}

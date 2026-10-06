@@ -18,12 +18,15 @@ use tauri_plugin_shell::process::{Command, CommandEvent};
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 
-/// Default ports for the three sidecars. Kept in one place so any
-/// process trying to find a sidecar agrees on the number.
+/// Default ports for the sidecars. Kept in one place so any process trying
+/// to find a sidecar agrees on the number. Mirrored by `PORTS` in
+/// `src/lib/ports.ts`.
 pub mod ports {
     pub const LLAMA: u16 = 8765;
     pub const WHISPER: u16 = 8766;
     pub const TTS: u16 = 3001;
+    /// The bundled image engine (sd-server), when it runs.
+    pub const IMAGE: u16 = 8767;
 }
 
 /// Common timeouts. Tweak in one place rather than chasing magic

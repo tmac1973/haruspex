@@ -16,7 +16,8 @@ import type { CheckReport } from '$lib/ipc/gen/CheckReport';
 import type { ImageResult } from '$lib/image/types';
 import { betterReport, judgeUnavailable, maybeJudge, rejectionReason } from './gate';
 import type { GenerateDeps } from './generate';
-import { escapesWorkdir, isCancellation, isTransient, keepBest, reasonOf } from './guards';
+import { escapesWorkdir, isCancellation, isTransient, keepBest } from './guards';
+import { errMessage } from '$lib/utils/error';
 import { assignCells, padding, sheetRequest, type CellResult, type SheetPlan } from './sheets';
 import type { EntryOutcome, SheetOutcome } from './types';
 
@@ -129,7 +130,7 @@ async function processCell(
 		report = await checkImage(normalized.stats, ctx.profile, entry.kind);
 	} catch (e) {
 		if (isCancellation(e)) throw e;
-		return { done: false, reason: reasonOf(e), report: null, rejected: true };
+		return { done: false, reason: errMessage(e), report: null, rejected: true };
 	}
 	// A suspect piece — found by position alone because the layout did not
 	// come out as asked, or sharing its cell — is shown to the judge whenever
@@ -190,7 +191,7 @@ async function generateRound(
 				attempts,
 				seed: null,
 				degraded: [],
-				reason: reasonOf(e)
+				reason: errMessage(e)
 			};
 			ctx.record(i, started, outcome, tally.best.get(i) ?? null);
 		}
@@ -220,7 +221,7 @@ async function settleCell(
 			attempts,
 			seed,
 			degraded: [],
-			reason: reasonOf(e)
+			reason: errMessage(e)
 		};
 		ctx.record(i, started, outcome, null);
 		return false;

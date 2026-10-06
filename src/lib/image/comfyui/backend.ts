@@ -12,6 +12,7 @@
  */
 
 import { getSettings } from '$lib/stores/settings';
+import { errMessage } from '$lib/utils/error';
 import {
 	ImageBackendError,
 	type ImageBackendCapabilities,
@@ -73,7 +74,7 @@ async function customTemplate(family: ModelFamily): Promise<WorkflowTemplate | n
 	} catch (e) {
 		throw new ImageBackendError(
 			'unconfigured',
-			`Could not read the custom workflow — ${e instanceof Error ? e.message : String(e)}`
+			`Could not read the custom workflow — ${errMessage(e)}`
 		);
 	}
 	return {
@@ -144,7 +145,7 @@ async function probeModel(
 		try {
 			await resolveCompanions(cfg, family);
 		} catch (e) {
-			return e instanceof Error ? e.message : String(e);
+			return errMessage(e);
 		}
 	}
 	return null;
@@ -233,7 +234,7 @@ export const comfyUiBackend: ImageBackend = {
 		try {
 			templates = await activeTemplates(family);
 		} catch (e) {
-			return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+			return { ok: false, detail: errMessage(e) };
 		}
 		// Validate before reaching the network: a template out of sync with its
 		// map must fail here, not forty images into an overnight run.
@@ -254,7 +255,7 @@ export const comfyUiBackend: ImageBackend = {
 			if (bad) return { ok: false, detail: bad, models };
 			return { ok: true, detail: `Connected — ${device}.`, models };
 		} catch (e) {
-			return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+			return { ok: false, detail: errMessage(e) };
 		}
 	},
 

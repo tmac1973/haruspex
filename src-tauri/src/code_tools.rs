@@ -325,7 +325,7 @@ pub fn app_protected_targets(
             label: "text-to-speech server".into(),
         },
         ProtectedPort {
-            port: crate::image_engine::IMAGE_PORT,
+            port: crate::sidecar_utils::ports::IMAGE,
             label: "image engine".into(),
         },
     ];

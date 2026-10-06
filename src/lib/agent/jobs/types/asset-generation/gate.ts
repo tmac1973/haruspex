@@ -13,6 +13,7 @@
  */
 
 import type { CheckName } from '$lib/ipc/gen/CheckName';
+import { errMessage, isAbortError } from '$lib/utils/error';
 import type { CheckReport } from '$lib/ipc/gen/CheckReport';
 import type { AssetEntry } from '$lib/assets/spec/types';
 import type { AssetJudgement } from './tools';
@@ -171,8 +172,8 @@ export async function maybeJudge(
 	try {
 		return { verdict: await deps.judge(entry, image, hint) };
 	} catch (e) {
-		if (e instanceof DOMException && e.name === 'AbortError') throw e;
-		return { verdict: null, unavailable: e instanceof Error ? e.message : String(e) };
+		if (isAbortError(e)) throw e;
+		return { verdict: null, unavailable: errMessage(e) };
 	}
 }
 

@@ -10,7 +10,8 @@ import type { CheckReport } from '$lib/ipc/gen/CheckReport';
 import type { TextureRecipe } from '$lib/ipc/gen/TextureRecipe';
 import { judgeUnavailable, maybeJudge } from './gate';
 import type { CodeTextureDeps, GenerateDeps } from './generate';
-import { escapesWorkdir, isCancellation, reasonOf } from './guards';
+import { escapesWorkdir, isCancellation } from './guards';
+import { errMessage } from '$lib/utils/error';
 import { textureSeed, variantPaths } from './recipes';
 import type { EntryOutcome } from './types';
 
@@ -111,6 +112,6 @@ export async function runCodeTexture(index: number, ctx: CodeTextureContext): Pr
 		}
 	} catch (e) {
 		if (isCancellation(e)) throw e;
-		fail(reasonOf(e));
+		fail(errMessage(e));
 	}
 }
