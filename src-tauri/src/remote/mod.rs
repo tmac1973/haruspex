@@ -24,6 +24,7 @@ use std::sync::{Arc, Mutex};
 pub use commands::*;
 pub use server::{RemoteConfig, RemoteStatus};
 
+use crate::sync_util::LockExt;
 use relay::Relay;
 use server::Running;
 
@@ -53,7 +54,7 @@ impl RemoteServer {
     }
 
     pub fn status(&self) -> RemoteStatus {
-        let running = self.running.lock().unwrap();
+        let running = self.running.lock_or_recover();
         match running.as_ref() {
             Some(r) => RemoteStatus {
                 running: true,
@@ -73,7 +74,7 @@ impl RemoteServer {
     /// True when a server is already up on this exact configuration, so a
     /// settings write that changed nothing does not drop live sessions.
     pub fn matches(&self, config: &RemoteConfig) -> bool {
-        let running = self.running.lock().unwrap();
+        let running = self.running.lock_or_recover();
         running.as_ref().is_some_and(|r| {
             r.port == config.port && r.bind_all == config.bind_all && r.token == config.token
         })
@@ -81,7 +82,7 @@ impl RemoteServer {
 
     pub fn install(&self, server: Running) {
         let previous = {
-            let mut running = self.running.lock().unwrap();
+            let mut running = self.running.lock_or_recover();
             running.replace(server)
         };
         if let Some(previous) = previous {
@@ -93,7 +94,7 @@ impl RemoteServer {
     /// their clients are gone the moment the port closes.
     pub fn shutdown(&self) {
         let previous = {
-            let mut running = self.running.lock().unwrap();
+            let mut running = self.running.lock_or_recover();
             running.take()
         };
         if let Some(previous) = previous {

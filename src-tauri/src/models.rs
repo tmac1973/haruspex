@@ -853,19 +853,19 @@ fn download_speed_bps(downloaded: u64, existing_size: u64, elapsed_secs: f64) ->
 }
 
 impl ModelManager {
-    pub fn new(app: &AppHandle) -> Self {
+    pub fn new(app: &AppHandle) -> Result<Self, String> {
         let models_dir = app
             .path()
             .app_data_dir()
-            .expect("Failed to resolve app data dir")
+            .map_err(|e| format!("Failed to resolve app data dir: {e}"))?
             .join("models");
 
-        Self {
+        Ok(Self {
             models_dir,
             cancel_flag: Arc::new(Mutex::new(false)),
             proxy: Arc::new(Mutex::new(None)),
             active: Arc::new(std::sync::Mutex::new(None)),
-        }
+        })
     }
 
     /// Take the download slot for `key` (`llm:<id>`, `image:<id>`, `comfy:<family>`).
