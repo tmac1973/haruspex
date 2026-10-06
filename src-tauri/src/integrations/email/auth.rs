@@ -26,7 +26,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::provider::{EmailProvider, TlsMode};
-use crate::secrets::{Keychain, Store};
+use crate::secrets::Store;
 
 /// Credentials and endpoint configuration for a single email account.
 ///
@@ -195,7 +195,7 @@ pub async fn resolve(account: &EmailAccount) -> Result<EmailAccount, String> {
         return Ok(account.clone());
     }
     let account = account.clone();
-    tokio::task::spawn_blocking(move || account.resolved_from(&Keychain))
+    tokio::task::spawn_blocking(move || account.resolved_from(&crate::secrets::store()))
         .await
         .map_err(|e| e.to_string())?
 }

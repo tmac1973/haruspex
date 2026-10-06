@@ -21,6 +21,11 @@
 	import type { EmailAccount, EmailProviderId, EmailTlsMode } from '$lib/stores/settings';
 	import type { EmailProviderPreset } from '$lib/ipc/gen/EmailProviderPreset';
 	import { withStoredPassword } from '$lib/stores/emailSecrets';
+	import {
+		savedSecretPlaceholder,
+		secretStoreKind,
+		type SecretStoreKind
+	} from '$lib/stores/secrets';
 
 	type ProviderPreset = EmailProviderPreset;
 
@@ -136,7 +141,7 @@
 		}
 	}
 
-	/** Test with the new password, then keep it — in the keychain if there is one. */
+	/** Test with the new password, then keep it out of the settings. */
 	async function savePassword() {
 		saving = true;
 		testError = null;
@@ -153,9 +158,12 @@
 		}
 	}
 
+	let storeKind = $state<SecretStoreKind>('keychain');
+	void secretStoreKind().then((k) => (storeKind = k));
+
 	const passwordPlaceholder = $derived(
 		account.passwordRef
-			? 'Saved in the system keychain'
+			? savedSecretPlaceholder(storeKind)
 			: account.password
 				? 'Saved in Haruspex settings'
 				: '16-character app password'
@@ -239,7 +247,7 @@
 				class="btn"
 				onclick={savePassword}
 				disabled={!password || saving}
-				title="Tests the connection, then keeps the password in the system keychain where there is one."
+				title="Tests the connection, then keeps the password in the system keychain, or Haruspex's encrypted secrets file where there is none."
 			>
 				{saving ? 'Saving…' : 'Save password'}
 			</button>

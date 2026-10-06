@@ -93,6 +93,9 @@ pub fn run() {
         .setup(|app| {
             // A failure here ends startup with the reason in the log, rather
             // than a panic backtrace.
+            if let Ok(dir) = app.path().app_data_dir() {
+                secrets::init(dir);
+            }
             app.manage(ModelManager::new(app.handle())?);
             let database = Database::new(app.handle())
                 .map_err(|e| format!("Failed to initialize database: {e}"))?;
@@ -404,6 +407,7 @@ pub fn run() {
             integrations::email::commands::email_send,
             integrations::email::commands::email_reply_context,
             secrets::secret_available,
+            secrets::secret_store_kind,
             secrets::secret_set,
             secrets::secret_delete,
             app_log::get_app_logs,
