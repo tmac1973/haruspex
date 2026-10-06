@@ -120,3 +120,15 @@ export async function migrateJobApiKeys(): Promise<void> {
 	}
 	await loadJobs();
 }
+
+/**
+ * A warning for a pasted key value, or null. No provider's API key contains
+ * whitespace, so a space means something came along with the key — a label
+ * copied from the provider's dashboard, say — and the server will reject it
+ * with a 401 that says nothing about why.
+ */
+export function apiKeyValueWarning(value: string): string | null {
+	return /\s/.test(value.trim())
+		? 'This contains a space; API keys do not. Paste only the key.'
+		: null;
+}

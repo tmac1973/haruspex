@@ -7,6 +7,7 @@
 	import { getApiKeys, updateApiKey } from '$lib/stores/settings';
 	import {
 		addStoredApiKey,
+		apiKeyValueWarning,
 		deleteStoredApiKey,
 		setStoredApiKeyValue
 	} from '$lib/stores/apiKeySecrets';
@@ -16,6 +17,9 @@
 	let keys = $state<StoredApiKey[]>(getApiKeys());
 	let newName = $state('');
 	let newValue = $state('');
+	/** What is being typed into an existing key's value field, per key. */
+	let drafts = $state<Record<string, string>>({});
+	const newValueWarning = $derived(apiKeyValueWarning(newValue));
 
 	// Key awaiting delete confirmation via ConfirmDialog.
 	let pendingDelete = $state<StoredApiKey | null>(null);
@@ -52,6 +56,7 @@
 		if (!value || value === k.value) return;
 		await setStoredApiKeyValue(k.id, value);
 		input.value = '';
+		drafts = { ...drafts, [k.id]: '' };
 		refresh();
 	}
 </script>
@@ -77,6 +82,7 @@
 					<input
 						type="password"
 						value=""
+						oninput={(e) => (drafts = { ...drafts, [k.id]: e.currentTarget.value })}
 						onblur={(e) => onValueBlur(k, e.currentTarget as HTMLInputElement)}
 						placeholder={k.stored || k.value ? 'Saved — type to replace' : 'Key value'}
 					/>
@@ -84,6 +90,8 @@
 						Delete
 					</button>
 				</div>
+				{@const warning = apiKeyValueWarning(drafts[k.id] ?? '')}
+				{#if warning}<p class="key-warning" role="alert">{warning}</p>{/if}
 			{/each}
 		</div>
 	{:else}
@@ -99,6 +107,7 @@
 			Add key
 		</button>
 	</div>
+	{#if newValueWarning}<p class="key-warning" role="alert">{newValueWarning}</p>{/if}
 </section>
 
 <ConfirmDialog
@@ -115,6 +124,11 @@
 <style>
 	.hint {
 		margin: 0 0 12px 0;
+	}
+	.key-warning {
+		margin: 2px 0 6px;
+		font-size: 0.8rem;
+		color: var(--error-text, #c97);
 	}
 
 	.key-list {
