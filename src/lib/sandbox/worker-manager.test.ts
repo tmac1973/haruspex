@@ -6,8 +6,14 @@ import type { MainToWorker, ToolResult, WorkerToMain } from './protocol';
 // a no-op (so runPython drives straight through to `send`).
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 vi.mock('$lib/stores/session.svelte', () => ({ getWorkingDir: () => null }));
-vi.mock('$lib/stores/settings', () => ({ getSettings: () => ({ proxy: { mode: 'none' } }) }));
-vi.mock('$lib/debug-log', () => ({ logDebug: () => {} }));
+vi.mock('$lib/stores/settings', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/stores/settings')>()),
+	getSettings: () => ({ proxy: { mode: 'none' } })
+}));
+vi.mock('$lib/debug-log', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/debug-log')>()),
+	logDebug: () => {}
+}));
 
 import { WorkerManager } from './worker-manager';
 

@@ -6,7 +6,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('./extraction', () => ({ extractMemories: mocks.extractMemories }));
-vi.mock('$lib/debug-log', () => ({ logDebug: vi.fn() }));
+vi.mock('$lib/debug-log', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/debug-log')>()),
+	logDebug: vi.fn()
+}));
 vi.mock('$lib/stores/memory.svelte', () => ({ memoryActive: mocks.memoryActive }));
 
 import {

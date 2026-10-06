@@ -9,7 +9,10 @@ const settings = vi.hoisted(() => ({
 	imageComfyCheckpoint: '',
 	imageLocalModelId: ''
 }));
-vi.mock('$lib/stores/settings', () => ({ getSettings: () => settings }));
+vi.mock('$lib/stores/settings', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/stores/settings')>()),
+	getSettings: () => settings
+}));
 
 const CATALOGUE = [
 	{ id: 'sd15', filename: 'v1-5-pruned-emaonly-fp16.safetensors', native_edge: 512 },

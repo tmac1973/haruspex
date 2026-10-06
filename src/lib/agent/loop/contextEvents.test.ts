@@ -58,7 +58,8 @@ vi.mock('$lib/agent/tools', () => ({
 	coerceCallArguments: toolsMock.coerceCallArguments
 }));
 
-vi.mock('$lib/stores/settings', () => ({
+vi.mock('$lib/stores/settings', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/stores/settings')>()),
 	getChatTemplateKwargs: vi.fn(() => ({ enable_thinking: true })),
 	getSamplingParams: vi.fn(() => ({
 		temperature: 0.6,
@@ -90,7 +91,8 @@ vi.mock('$lib/markdown', async (importOriginal) => ({
 			.trim()
 }));
 
-vi.mock('$lib/debug-log', () => ({
+vi.mock('$lib/debug-log', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/debug-log')>()),
 	logDebug: vi.fn()
 }));
 

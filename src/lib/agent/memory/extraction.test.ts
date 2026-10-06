@@ -8,7 +8,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
-vi.mock('$lib/debug-log', () => ({ logDebug: vi.fn() }));
+vi.mock('$lib/debug-log', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/debug-log')>()),
+	logDebug: vi.fn()
+}));
 vi.mock('$lib/agent/runEphemeralTurn', () => ({ runEphemeralTurn: mocks.runEphemeralTurn }));
 vi.mock('$lib/agent/inferenceQueue.svelte', () => ({
 	withInferenceSlot: async <T>(_opts: unknown, fn: () => Promise<T>): Promise<T> => fn()

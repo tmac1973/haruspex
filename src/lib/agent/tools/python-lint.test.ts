@@ -8,7 +8,8 @@ vi.mock('@tauri-apps/api/core', () => ({
 	invoke: mocks.invoke
 }));
 
-vi.mock('$lib/debug-log', () => ({
+vi.mock('$lib/debug-log', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/debug-log')>()),
 	logDebug: vi.fn()
 }));
 

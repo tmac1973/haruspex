@@ -5,7 +5,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
-vi.mock('$lib/debug-log', () => ({ logDebug: vi.fn() }));
+vi.mock('$lib/debug-log', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/debug-log')>()),
+	logDebug: vi.fn()
+}));
 
 /**
  * The module keeps its reconciliation state at module scope, so every test

@@ -7,7 +7,8 @@ vi.mock('$lib/shell/runShellTurn', () => ({ runShellTurn: vi.fn() }));
 vi.mock('$lib/shell/system-prompt', () => ({
 	buildShellSystemPrompt: () => ({ role: 'system', content: 'sys' })
 }));
-vi.mock('$lib/stores/settings', () => ({
+vi.mock('$lib/stores/settings', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/stores/settings')>()),
 	getSettings: () => ({
 		shellCodeModeDefault: false,
 		shellHistoryTurnsForPrompt: 3,
@@ -20,7 +21,10 @@ vi.mock('$lib/stores/settings', () => ({
 }));
 vi.mock('$lib/agent/tools', () => ({ getDisplayLabel: () => 'tool' }));
 vi.mock('$lib/agent/context-budget', () => ({ describeContextManaged: () => 'managed' }));
-vi.mock('$lib/debug-log', () => ({ logDebug: vi.fn() }));
+vi.mock('$lib/debug-log', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/debug-log')>()),
+	logDebug: vi.fn()
+}));
 
 import { openShellFromChat } from './fromChat';
 import { getShellSessions, closeShellSession, getActiveShellId } from '$lib/stores/shell.svelte';

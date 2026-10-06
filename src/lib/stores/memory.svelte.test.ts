@@ -7,8 +7,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
-vi.mock('$lib/debug-log', () => ({ logDebug: vi.fn() }));
-vi.mock('$lib/stores/settings', () => ({
+vi.mock('$lib/debug-log', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/debug-log')>()),
+	logDebug: vi.fn()
+}));
+vi.mock('$lib/stores/settings', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/stores/settings')>()),
 	getSettings: () => mocks.settings,
 	updateSettings: (patch: Record<string, unknown>) => {
 		Object.assign(mocks.settings, patch);

@@ -7,7 +7,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('$lib/utils/async', () => ({ sleep: mocks.sleep }));
-vi.mock('$lib/stores/settings', () => ({ getSettings: () => ({ codeCommandExec: 'pty' }) }));
+vi.mock('$lib/stores/settings', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/stores/settings')>()),
+	getSettings: () => ({ codeCommandExec: 'pty' })
+}));
 
 const HOOK_PATH = '/opt/haruspex/resources/shell-integration/haruspex.bash';
 

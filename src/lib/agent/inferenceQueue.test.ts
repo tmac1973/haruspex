@@ -21,7 +21,8 @@ const mocks = vi.hoisted(() => ({
 	eventHandler: undefined as ((e: { payload: unknown }) => void) | undefined
 }));
 
-vi.mock('$lib/stores/settings', () => ({
+vi.mock('$lib/stores/settings', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/stores/settings')>()),
 	getSettings: () => ({
 		contextSize: 32768,
 		inferenceBackend: {
