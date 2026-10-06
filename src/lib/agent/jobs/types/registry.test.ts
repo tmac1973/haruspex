@@ -240,7 +240,9 @@ describe('registration barrel', () => {
 		expect(stages.every((s) => (s.description ?? '').length > 0)).toBe(true);
 
 		const defaults = assets.configDefaults();
-		expect(assets.configFromJob(null)).toEqual(defaults);
+		// A stored job that never chose keeps the image model for textures; only a
+		// new job starts with code-drawn ones.
+		expect(assets.configFromJob(null)).toEqual({ ...defaults, code_textures: false });
 		const json = assets.configToJson({ ...defaults, description: 'a pixel-art roguelike' });
 		expect(JSON.parse(json!).description).toBe('a pixel-art roguelike');
 

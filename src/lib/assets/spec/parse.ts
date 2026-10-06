@@ -59,7 +59,15 @@ function entry(raw: unknown): AssetEntry | null {
 		...(optionalStr(e.negativePrompt) ? { negativePrompt: str(e.negativePrompt) } : {}),
 		...(optionalStr(e.notes) ? { notes: str(e.notes) } : {}),
 		...(optionalStr(e.sheet) ? { sheet: str(e.sheet) } : {}),
-		...(optionalStr(e.rejected) ? { rejected: str(e.rejected) } : {})
+		...(optionalStr(e.rejected) ? { rejected: str(e.rejected) } : {}),
+		// Shape is Rust's to check (`texture_validate`); a recipe here is only
+		// required to be an object.
+		...(e.recipe && typeof e.recipe === 'object' && !Array.isArray(e.recipe)
+			? { recipe: e.recipe as AssetEntry['recipe'] }
+			: {}),
+		...(Array.isArray(e.variants) && e.variants.every((v) => typeof v === 'string')
+			? { variants: e.variants as string[] }
+			: {})
 	};
 }
 

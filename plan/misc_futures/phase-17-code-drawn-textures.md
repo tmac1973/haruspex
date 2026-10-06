@@ -31,6 +31,38 @@ Depends on: — / Enables: —
   mixed 4×4 by a position hash, for a person to look at:
   `TEXTURE_PREVIEW_DIR=/tmp/t cargo test --lib write_previews -- --ignored`.
 
+## As built — Part B and C notes
+
+- **The palette is offered, not imposed.** It comes from the anchor, a sheet
+  of sprites. Run 108's 32 colours came from six monsters, and a set like that
+  has no water blue or grass green. The recipe prompt lists the colours and
+  says to prefer them; the renderer doesn't snap to them. This departs from
+  Part A step 6.
+- **One recipe turn for the set,** through `submit_texture_recipes`, then one
+  retry for refused ids, with Rust's refusal quoted. A texture still without a
+  recipe fails with that reason. Recipes are saved in the spec before
+  generation starts.
+- **The code path lives in `codeTexture.ts`.** Like the sheet loop, it shares
+  only the bookkeeping with `generate.ts`. A texture's seed is its pinned
+  seed, or FNV-1a of its id, so a re-run draws the same tiles.
+- **The judge sees variant 0 with a hint:** the tile was drawn from simple
+  layers, so judge the material, not the detail. On a no, the recipe is
+  revised once; a second no keeps the tiles and marks the entry `rejected`
+  (#301).
+- **Review assets shows a texture tiled 2×2.** "Make again" drops its recipe,
+  adds the note to its prompt, and moves every variant to `.history`, so the
+  next run writes a new recipe. The same recipe and seed would draw the same
+  pixels.
+- **Old jobs keep the image model:** an absent `code_textures` reads as off,
+  and new jobs and chains set it to on. `configFromJob(null)` therefore
+  differs from `configDefaults()` in that one field, and the registry test
+  says so.
+- **Part C is one prompt paragraph** in `assetSpecStep`: pick a variant by a
+  hash of the cell's coordinates and the map seed, and record the hash in
+  DECISIONS-coding.md.
+- **Not yet run live.** The recipe stage hasn't been through a real model; the
+  unit tests stub the turn.
+
 ## Goal
 
 Ground and wall textures that a game can actually tile, drawn by code rather

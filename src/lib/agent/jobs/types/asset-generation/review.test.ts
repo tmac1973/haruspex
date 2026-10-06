@@ -135,3 +135,34 @@ describe('markRejections', () => {
 		).toBeNull();
 	});
 });
+
+describe('making a code-drawn texture again', () => {
+	it('drops its recipe and moves every tile aside', async () => {
+		const s = spec();
+		s.entries[2] = {
+			...s.entries[2],
+			recipe: { base: { ramp: ['#000000', '#ffffff'] }, layers: [] },
+			variants: ['assets/generated/texture/grass.png', 'assets/generated/texture/grass_1.png']
+		};
+		const written: AssetSpec[] = [];
+		const moves: string[] = [];
+		await regenerateMarked(s, [{ id: 'grass', note: 'greener' }], {
+			exists: async () => true,
+			move: async (from) => {
+				moves.push(from);
+			},
+			writeSpec: async (x) => {
+				written.push(x);
+			},
+			run: async () => 1,
+			now: () => new Date(2026, 9, 5, 12, 0, 0)
+		});
+		const grass = written[0].entries[2];
+		expect(grass).not.toHaveProperty('recipe');
+		expect(grass.prompt).toBe('grass, greener');
+		expect(moves).toEqual([
+			'assets/generated/texture/grass.png',
+			'assets/generated/texture/grass_1.png'
+		]);
+	});
+});

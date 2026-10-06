@@ -25,7 +25,9 @@ function orderedEntry(e: AssetEntry): Record<string, unknown> {
 		seamless: e.seamless,
 		seed: e.seed,
 		notes: e.notes,
-		rejected: e.rejected
+		rejected: e.rejected,
+		recipe: e.recipe,
+		variants: e.variants
 	});
 }
 

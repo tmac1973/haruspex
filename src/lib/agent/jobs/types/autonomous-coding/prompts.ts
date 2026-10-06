@@ -190,6 +190,11 @@ function assetSpecStep(
 		'  Say which. The game must run without the file. Do NOT try to generate',
 		'  art; you have no tool for it, and a silently invented file is worse than',
 		'  a missing one.',
+		'- An entry with `variants` is a tile with that many interchangeable files.',
+		"  Use them all: pick one per map cell from a hash of the cell's coordinates",
+		"  and the map's seed — never an unseeded random number — so a saved map",
+		'  looks the same when it is loaded. Record that hash in',
+		`  \`${decisionsPath}\` so every phase uses the same one.`,
 		'- An entry with a `rejected` field has a file: the best attempt, which failed',
 		'  its checks. Use it like any other; it may be replaced later.',
 		'- Where the spec lists an asset the plan never mentions, leave it alone.'

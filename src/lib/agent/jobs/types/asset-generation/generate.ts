@@ -25,6 +25,8 @@ import { escapesWorkdir, isCancellation, isTransient, keepBest, reasonOf } from 
 import { planSheets, type SheetPlan } from './sheets';
 import { runSheet as runSheetLoop } from './sheetLoop';
 import type { EntryOutcome, SheetOutcome } from './types';
+import type { TextureRecipe } from '$lib/ipc/gen/TextureRecipe';
+import { runCodeTexture } from './codeTexture';
 
 export { escapesWorkdir } from './guards';
 
@@ -49,6 +51,22 @@ export interface GenerateDeps {
 	 * so the assets cut from it are the ones the user approved.
 	 */
 	pregenerated?: Map<string, ImageResult>;
+	/**
+	 * Textures drawn by code from their recipe. Absent: textures go to the
+	 * image model like everything else.
+	 */
+	codeTextures?: CodeTextureDeps;
+}
+
+export interface CodeTextureDeps {
+	/** Tiles per texture. */
+	variants: number;
+	/** PNG bytes for each variant, base first. */
+	render: (recipe: TextureRecipe, seed: number, variants: number) => Promise<Uint8Array[]>;
+	/** A new recipe after the judge's no, or null. */
+	revise: (entry: AssetEntry, reason: string) => Promise<TextureRecipe | null>;
+	/** Why an entry has no recipe, when the recipe stage gave up on it. */
+	recipeFailures: Map<string, string>;
 }
 
 /** What one entry produced, plus the gate's verdict on it. */
@@ -330,7 +348,12 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 	const sheets = deps.caps.transparency ? planSheets(spec.entries) : [];
 	const onSheets = new Set(sheets.flatMap((p) => p.entries));
 	const singles = spec.entries.map((_, i) => i).filter((i) => !onSheets.has(spec.entries[i]));
-	await pool(singles, deps.concurrency, (i) => runOne(i, false));
+	const code = deps.codeTextures;
+	await pool(singles, deps.concurrency, (i) =>
+		code && spec.entries[i].kind === 'texture'
+			? runCodeTexture(i, { spec, deps, code, record })
+			: runOne(i, false)
+	);
 	await pool(
 		sheets.map((_, k) => k),
 		deps.concurrency,

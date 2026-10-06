@@ -190,3 +190,65 @@ registerTool({
 		return toolResult('Asset spec recorded.');
 	}
 });
+
+export const SUBMIT_TEXTURE_RECIPES_TOOL = 'submit_texture_recipes';
+
+/**
+ * The recipe stage's answer: one recipe per texture entry. The recipe's shape
+ * is Rust's (`texture_validate`); the schema here only says it is an object, so
+ * a malformed one comes back with Rust's words rather than a schema refusal
+ * the model cannot act on.
+ */
+registerTool({
+	category: 'coding',
+	schema: {
+		type: 'function',
+		function: {
+			name: SUBMIT_TEXTURE_RECIPES_TOOL,
+			description: 'Submit a recipe for every texture you were given. Call this exactly once.',
+			parameters: {
+				type: 'object',
+				properties: {
+					recipes: {
+						type: 'array',
+						items: {
+							type: 'object',
+							properties: {
+								id: { type: 'string', description: 'The texture id, exactly as given.' },
+								recipe: {
+									type: 'object',
+									description: 'The recipe: { base, layers, wall_face? }.'
+								}
+							},
+							required: ['id', 'recipe']
+						}
+					}
+				},
+				required: ['recipes']
+			}
+		}
+	},
+	displayLabel: (args) => {
+		const n = Array.isArray(args.recipes) ? args.recipes.length : 0;
+		return `texture recipes: ${n}`;
+	},
+	async execute() {
+		return toolResult('Recipes recorded.');
+	}
+});
+
+/** Read the recipes out of a tool call: id → recipe object. Others dropped. */
+export function parseRecipes(
+	args: Record<string, unknown> | undefined
+): Map<string, Record<string, unknown>> {
+	const out = new Map<string, Record<string, unknown>>();
+	if (!args || !Array.isArray(args.recipes)) return out;
+	for (const r of args.recipes) {
+		if (!r || typeof r !== 'object') continue;
+		const { id, recipe } = r as { id?: unknown; recipe?: unknown };
+		if (typeof id === 'string' && recipe && typeof recipe === 'object' && !Array.isArray(recipe)) {
+			out.set(id.trim(), recipe as Record<string, unknown>);
+		}
+	}
+	return out;
+}

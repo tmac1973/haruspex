@@ -196,6 +196,34 @@ function unresolvedSection(input: ReportInput): string[] {
 	return ['## Not produced', '', ...commonCause(bad), ...lines, ''];
 }
 
+/** Textures drawn by code: which layers, how many tiles, and the judge's word. */
+function codeTextureSection(input: ReportInput): string[] {
+	const drawn = input.entries.filter((e) => e.codeDrawn);
+	if (drawn.length === 0) return [];
+	const rows = drawn.map((e) => {
+		const recipe = input.spec.entries.find((x) => x.id === e.id)?.recipe;
+		const layers = recipe?.layers?.map((l) => l.type).join(', ') || 'base only';
+		const verdict =
+			e.status === 'done'
+				? e.recipe
+					? 'passed after one revision'
+					: 'passed'
+				: `kept, rejected: ${e.reason ?? ''}`;
+		return `| \`${e.id}\` | ${layers} | ${e.variants?.length ?? 1} | ${verdict} |`;
+	});
+	return [
+		'## Textures drawn in code',
+		'',
+		'Drawn from a recipe rather than by the image model, so each tiles and is seen from above. ' +
+			'The tiles of one texture are interchangeable.',
+		'',
+		'| Texture | Layers | Tiles | Verdict |',
+		'| --- | --- | --- | --- |',
+		...rows,
+		''
+	];
+}
+
 /** Assets on disk that never passed: the best attempt, kept for the code to load. */
 function keptSection(input: ReportInput): string[] {
 	const kept = input.entries.filter((e) => e.kept);
@@ -350,6 +378,7 @@ export function renderAssetReport(input: ReportInput): string {
 	lines.push('## Assets', '', ...entryTable(input), '');
 	lines.push(...unresolvedSection(input));
 	lines.push(...keptSection(input));
+	lines.push(...codeTextureSection(input));
 	lines.push(...degradedSection(input));
 	lines.push(...licensingSection(input.licensing));
 	return lines.join('\n');

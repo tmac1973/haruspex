@@ -10,6 +10,27 @@ import type { AssetKind } from '$lib/assets/spec/types';
  * from the description alone will name things the code never asks for while
  * missing things it does.
  */
+/**
+ * What a texture is, said the same way by both prompts that write a spec.
+ *
+ * Run 108 asked for "subway entrance", "camp" and "building" as textures and
+ * got a staircase seen from the front, tents round a fire and a façade: each
+ * is an object, and an object cannot tile. Indented to sit under a `kind`
+ * bullet.
+ */
+export const KIND_RULE: string[] = [
+	'   - `kind`: `texture` ONLY for a surface seen from directly above that',
+	'     fills the tile edge to edge: ground, floor, road, grass, water, roof,',
+	'     the top of a wall. Anything with an outline is a `sprite`, drawn over a',
+	'     floor texture: an entrance, exit, door, stairs, hatch, camp, tent,',
+	'     furniture, vehicle, sign, crate or building seen as a whole. `icon` for',
+	'     a small UI symbol.',
+	'     Good textures: "cracked grey asphalt", "short green grass", "white',
+	'     subway wall tiles". Not textures: "subway entrance" (a sprite over a',
+	'     floor), "survivor camp" (tent and fire sprites over dirt), "building"',
+	'     (a roof texture, or a building sprite).'
+];
+
 export function specDerivationPrompt(description: string, specPath: string): string {
 	return [
 		'You are listing the images a project needs, so they can be generated.',
@@ -34,9 +55,7 @@ export function specDerivationPrompt(description: string, specPath: string): str
 		'   Good: "16-bit pixel art, flat shading, bold dark outline, muted colours".',
 		'   Too long: anything with semicolons, or a list of six clauses.',
 		'3. List every image the project needs, and nothing it does not. Each entry:',
-		'   - `kind`: `sprite` for an object or character that needs a transparent',
-		'     background, `texture` for ground or walls that must tile seamlessly,',
-		'     `icon` for a small UI symbol.',
+		...KIND_RULE,
 		'   - `prompt`: the SUBJECT only, with its own colours ("green weeds",',
 		'     "rusty red barrel"). The shared style is added automatically, so',
 		'     repeating it here just dilutes both. For a texture, name the surface,',
@@ -117,5 +136,124 @@ export function judgePrompt(
 			: 'wrong or absent, or the style plainly does not match.',
 		'',
 		`Call ${'submit_asset_judgement'} exactly once with your answer.`
+	].join('\n');
+}
+
+/** Three recipes from the phase 17 prototype, as the recipe stage's examples. */
+const RECIPE_EXAMPLES = [
+	[
+		'cracked asphalt with a worn yellow centre line',
+		{
+			base: { ramp: ['#2a2a2d', '#34343a', '#3e3e44'], cells: 4 },
+			layers: [
+				{ type: 'speckle', color: '#4c4c52', amount: 0.05 },
+				{ type: 'cracks', color: '#1d1d20', cells: 3, coverage: 0.55 },
+				{
+					type: 'stripes',
+					axis: 'x',
+					pos: 15,
+					width: 2,
+					dash: [8, 8],
+					color: '#b89a2e',
+					wear: 0.25
+				}
+			]
+		}
+	],
+	[
+		'white subway wall tiles, grimy',
+		{
+			base: { ramp: ['#c9c4b4', '#d6d1c1'], cells: 4 },
+			layers: [
+				{
+					type: 'bricks',
+					w: 8,
+					h: 4,
+					gap: 1,
+					offset: true,
+					colors: ['#c2bcaa', '#d1ccbc', '#b8b2a0'],
+					mortar: '#6e6a60'
+				},
+				{ type: 'blotches', color: '#8a8270', cells: 4, threshold: 0.85 }
+			]
+		}
+	],
+	[
+		'dark river water',
+		{
+			base: { ramp: ['#1d3446', '#24405a', '#2c4c68'], cells: 2 },
+			layers: [{ type: 'waves', color: '#4f7690', freq: 5, threshold: 0.9 }]
+		}
+	]
+] as const;
+
+/** `#rrggbb` for a packed `0xRRGGBBAA`. */
+export function hexOf(packed: number): string {
+	return `#${((packed >>> 8) & 0xffffff).toString(16).padStart(6, '0')}`;
+}
+
+/**
+ * The recipe stage: one recipe per texture, from a fixed vocabulary of layers
+ * that all wrap at the tile edge (`src-tauri/src/image_gen/texture/`).
+ *
+ * The palette is offered, not imposed. It comes from the anchor, which is a
+ * sheet of sprites: a set of monsters has no water blue or grass green, and a
+ * river forced into their colours is brown.
+ */
+export function recipePrompt(
+	textures: Array<{ id: string; prompt: string }>,
+	palette: number[],
+	stylePrompt: string,
+	feedback?: Map<string, string>
+): string {
+	return [
+		'You are designing tileable ground and wall textures for a top-down 2D game.',
+		'Each texture is drawn by code from a recipe you write: a base material,',
+		'then layers over it. Every layer wraps at the tile edge, so the tile always',
+		'tiles; your job is to make it read as the right material from above.',
+		'',
+		`The set's style: ${stylePrompt}`,
+		...(palette.length
+			? [
+					`The set's colours, from its sprites: ${palette.map(hexOf).join(' ')}.`,
+					'Prefer these. Use another colour only where the material needs one the',
+					'list lacks (water, grass), and keep it as muted as these are.'
+				]
+			: []),
+		'',
+		'A recipe is JSON: { "base": {...}, "layers": [...], "wall_face": {...} }.',
+		'Sizes and positions are in pixels of a 32-pixel tile.',
+		'- base: { ramp: 2–8 colours "#rrggbb", darkest first, close in value;',
+		'  cells: 1–16, noise cells across the tile (2 broad, 8 fine), default 4;',
+		'  octaves: 1–4, default 3; dither: true/false, default true }',
+		'Layers, in drawing order, at most 8:',
+		'- { type: "speckle", color, amount: 0–0.5 } — scattered single pixels: grit.',
+		'- { type: "cracks", color, cells: 1–12, coverage: 0–1, width?: 0.2–4 } —',
+		'  thin cracks along irregular cells; higher coverage, fewer cracks.',
+		'- { type: "blotches", color, cells: 4–16, threshold: 0–1 } — stains, moss,',
+		'  puddles; higher threshold, fewer and smaller.',
+		'- { type: "bricks", w, h, gap: 0–4, offset: true/false, colors: 1–6, mortar }',
+		'  — bricks, blocks or tiles in rows; offset staggers alternate rows.',
+		'- { type: "stripes", axis: "x" or "y", pos, width, dash?: [on, off], color,',
+		'  wear?: 0–0.9 } — a painted line: "x" runs left to right at row pos.',
+		'- { type: "waves", color, freq: 1–16, threshold: -1–1 } — water ripples.',
+		'- { type: "grid", step, width?: 1–4, color } — seams: floor tiles, panels.',
+		'- { type: "bevel", step: 4–32, light, dark } — raised plates or tiles.',
+		'- wall_face: { height: 1–16, shade: 0–1 } — ONLY for a wall drawn with a',
+		'  front face; darkens a band at the bottom. Omit it for anything flat.',
+		'',
+		'Keep each recipe simple: a base and one to three layers reads best at 32',
+		'pixels. Do not draw objects: no doors, signs, furniture or vehicles.',
+		'',
+		'Examples:',
+		...RECIPE_EXAMPLES.map(([what, r]) => `- ${what}: ${JSON.stringify(r)}`),
+		'',
+		'The textures:',
+		...textures.map((t) => {
+			const fix = feedback?.get(t.id);
+			return `- ${t.id}: ${t.prompt}${fix ? `\n  Your last recipe for this needs changing: ${fix}` : ''}`;
+		}),
+		'',
+		'Call `submit_texture_recipes` once, with a recipe for every id above.'
 	].join('\n');
 }

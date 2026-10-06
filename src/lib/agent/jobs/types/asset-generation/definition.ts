@@ -7,6 +7,8 @@ import {
 	DEFAULT_CONCURRENCY,
 	DEFAULT_MAX_ATTEMPTS,
 	DEFAULT_TARGET_SIZE,
+	DEFAULT_TEXTURE_VARIANTS,
+	MAX_TEXTURE_VARIANTS,
 	MAX_TARGET_SIZE,
 	MIN_TARGET_SIZE,
 	type AssetRunMode
@@ -26,6 +28,8 @@ export interface AssetGenerationEditorState {
 	concurrency: number;
 	vision_judge: boolean;
 	use_git: boolean;
+	code_textures: boolean;
+	texture_variants: number;
 	hand_off: boolean;
 	/** Carried untouched: a chain sets these, and the editor has no fields for them. */
 	coding_run: Record<string, unknown> | null;
@@ -77,6 +81,27 @@ function isPowerOfTwo(n: number): boolean {
 	return Number.isInteger(n) && n > 0 && (n & (n - 1)) === 0;
 }
 
+/** The first attempt or concurrency count out of range, or null. */
+function countsProblem(s: AssetGenerationEditorState): string | null {
+	if (!Number.isFinite(s.max_attempts) || s.max_attempts < 1 || s.max_attempts > 10) {
+		return 'Attempts per asset must be between 1 and 10.';
+	}
+	if (!Number.isFinite(s.anchor_attempts) || s.anchor_attempts < 1 || s.anchor_attempts > 10) {
+		return 'Anchor attempts must be between 1 and 10.';
+	}
+	if (!Number.isFinite(s.concurrency) || s.concurrency < 1 || s.concurrency > 8) {
+		return 'Simultaneous requests must be between 1 and 8.';
+	}
+	return null;
+}
+
+/** Why the variant count cannot be saved, or null. Only asked when textures are code-drawn. */
+function variantsProblem(s: AssetGenerationEditorState): string | null {
+	const n = s.texture_variants;
+	if (!s.code_textures || (Number.isInteger(n) && n >= 1 && n <= MAX_TEXTURE_VARIANTS)) return null;
+	return `Tile variants must be a whole number from 1 to ${MAX_TEXTURE_VARIANTS}.`;
+}
+
 export const assetGenerationJobType: JobTypeDefinition = {
 	id: 'asset_generation',
 	label: 'Asset generation',
@@ -100,6 +125,8 @@ export const assetGenerationJobType: JobTypeDefinition = {
 		concurrency: DEFAULT_CONCURRENCY,
 		vision_judge: true,
 		use_git: true,
+		code_textures: true,
+		texture_variants: DEFAULT_TEXTURE_VARIANTS,
 		hand_off: true,
 		coding_run: null,
 		chain_base_name: null,
@@ -117,6 +144,9 @@ export const assetGenerationJobType: JobTypeDefinition = {
 			concurrency: c.concurrency ?? DEFAULT_CONCURRENCY,
 			vision_judge: c.vision_judge ?? true,
 			use_git: c.use_git ?? true,
+			// An older job never chose; it keeps the image model until edited.
+			code_textures: c.code_textures ?? false,
+			texture_variants: c.texture_variants ?? DEFAULT_TEXTURE_VARIANTS,
 			hand_off: c.hand_off ?? true,
 			coding_run: c.coding_run,
 			chain_base_name: c.chain_base_name,
@@ -135,6 +165,8 @@ export const assetGenerationJobType: JobTypeDefinition = {
 			concurrency: s.concurrency,
 			vision_judge: s.vision_judge,
 			use_git: s.use_git,
+			code_textures: s.code_textures,
+			texture_variants: s.texture_variants,
 			// Only meaningful, and only written, for a job a chain made.
 			...(s.coding_run
 				? {
@@ -161,16 +193,7 @@ export const assetGenerationJobType: JobTypeDefinition = {
 		) {
 			return `Asset size must be a power of two between ${MIN_TARGET_SIZE} and ${MAX_TARGET_SIZE}.`;
 		}
-		if (!Number.isFinite(s.max_attempts) || s.max_attempts < 1 || s.max_attempts > 10) {
-			return 'Attempts per asset must be between 1 and 10.';
-		}
-		if (!Number.isFinite(s.anchor_attempts) || s.anchor_attempts < 1 || s.anchor_attempts > 10) {
-			return 'Anchor attempts must be between 1 and 10.';
-		}
-		if (!Number.isFinite(s.concurrency) || s.concurrency < 1 || s.concurrency > 8) {
-			return 'Simultaneous requests must be between 1 and 8.';
-		}
-		return null;
+		return variantsProblem(s) ?? countsProblem(s);
 	},
 	planSteps: planAssetSteps,
 	runPipeline: runAssetGenerationPipeline

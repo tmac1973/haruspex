@@ -10,6 +10,7 @@
  * `src/lib/image/` (the backend layer); the reverse is forbidden and tested.
  */
 
+import type { TextureRecipe } from '$lib/ipc/gen/TextureRecipe';
 import type { LoraRef, SamplerSettings } from '$lib/image/types';
 import type { NormalizeProfile } from '$lib/ipc/gen/NormalizeProfile';
 
@@ -67,6 +68,17 @@ export interface AssetEntry {
 	 * again; the next accepted generation clears this.
 	 */
 	rejected?: string;
+	/**
+	 * Textures drawn by code: the recipe they are drawn from. Written by the
+	 * run's recipe stage, kept so a re-run draws the same tiles, and editable
+	 * by hand. Validated by Rust (`texture_validate`), not here.
+	 */
+	recipe?: TextureRecipe;
+	/**
+	 * Every tile file of a code-drawn texture, `out` first. Interchangeable:
+	 * a map picks one per cell.
+	 */
+	variants?: string[];
 }
 
 /** Where the committed anchor lives, relative to the working directory. */

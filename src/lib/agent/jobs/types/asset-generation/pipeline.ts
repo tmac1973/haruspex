@@ -44,7 +44,16 @@ import type { ResolvedToolCall } from '$lib/agent/parser';
 import { deriveSpec, type DerivePayload } from './derive';
 import { judgePrompt, specDerivationPrompt, specRetryPrompt } from './prompts';
 import { establishAnchor } from './anchor';
-import { parseJudgement, SUBMIT_ASSET_JUDGEMENT_TOOL, type AssetJudgement } from './tools';
+import {
+	parseJudgement,
+	parseRecipes,
+	SUBMIT_ASSET_JUDGEMENT_TOOL,
+	SUBMIT_TEXTURE_RECIPES_TOOL,
+	type AssetJudgement
+} from './tools';
+import { applyCodeTextures, reviseRecipe, writeRecipes, type RecipeDeps } from './recipes';
+import { DEFAULT_TEXTURE_VARIANTS } from './config';
+import type { TextureRecipe } from '$lib/ipc/gen/TextureRecipe';
 import type { AssetEntry } from '$lib/assets/spec/types';
 import { generateEntries } from './generate';
 import { fitStyle } from './promptBudget';
@@ -274,6 +283,54 @@ async function judgeAsset(
 		}
 	});
 	return verdict;
+}
+
+/** The recipe stage's model turn and Rust's check, for `recipes.ts`. */
+function recipeDeps(ctx: JobRunContext): RecipeDeps {
+	return {
+		ask: async (prompt) => {
+			let got = new Map<string, Record<string, unknown>>();
+			await ctx.runJobTurn({
+				userMessage: prompt,
+				contextSize: ctx.contextSize(),
+				visionSupported: false,
+				toolAllowlist: [SUBMIT_TEXTURE_RECIPES_TOOL],
+				forceFinalTool: SUBMIT_TEXTURE_RECIPES_TOOL,
+				maxIterations: 1,
+				turnKind: 'asset.recipes',
+				onToolStart: (call: ResolvedToolCall) => {
+					if (call.name === SUBMIT_TEXTURE_RECIPES_TOOL) got = parseRecipes(call.arguments);
+				}
+			});
+			return got;
+		},
+		validate: async (recipe) => {
+			try {
+				await invoke('texture_validate', { recipe });
+				return null;
+			} catch (e) {
+				return e instanceof Error ? e.message : String(e);
+			}
+		}
+	};
+}
+
+/** Draw a recipe's tiles in Rust: PNG bytes, base first. */
+async function renderTexture(
+	recipe: TextureRecipe,
+	size: number,
+	seed: number,
+	variants: number,
+	palette: number[]
+): Promise<Uint8Array[]> {
+	const tiles = await invoke<number[][]>('texture_render', {
+		recipe,
+		size,
+		seed,
+		variants,
+		palette
+	});
+	return tiles.map((t) => new Uint8Array(t));
 }
 
 /**
@@ -584,6 +641,24 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 
 		startStep(GENERATE);
 		abortIfCancelled();
+		// Textures drawn in code need a recipe first, written by the model in
+		// one turn for the whole set. Saved in the spec, so a re-run reuses them.
+		const codeTextures = cfg.code_textures === true;
+		const recipesFailed = new Map<string, string>();
+		if (codeTextures) {
+			ctx.patchStep(GENERATE, { streaming: 'Writing texture recipes…' });
+			const rd = recipeDeps(ctx);
+			const r = await writeRecipes(spec, rd);
+			for (const [id, why] of r.failed) recipesFailed.set(id, why);
+			if (r.written.length > 0) {
+				spec = r.spec;
+				await writeWorkdirFile(ctx, specPath, renderAssetSpec(spec));
+			}
+			abortIfCancelled();
+		}
+		const variants = cfg.texture_variants ?? DEFAULT_TEXTURE_VARIANTS;
+		// The renderer draws up to 256 px; a tile is never bigger in practice.
+		const tileSize = Math.min(256, spec.normalize.target_size || DEFAULT_TARGET_SIZE);
 		const sheets: SheetOutcome[] = [];
 		const generated = await generateEntries(spec, {
 			caps,
@@ -604,14 +679,26 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 			onSheet: (o) => sheets.push(o),
 			pregenerated: anchored.pregenerated
 				? new Map([[anchored.pregenerated.sheetId, anchored.pregenerated.result]])
+				: undefined,
+			codeTextures: codeTextures
+				? {
+						variants,
+						// The recipe chooses its colours from the set's (the prompt
+						// offers them); not snapped to the palette, which comes from
+						// a sheet of sprites and can lack water blue or grass green.
+						render: (recipe, seed, n) => renderTexture(recipe, tileSize, seed, n, []),
+						revise: (entry, reason) => reviseRecipe(spec, entry, reason, recipeDeps(ctx)),
+						recipeFailures: recipesFailed
+					}
 				: undefined
 		});
 		entries = generated.map((g) => g.outcome);
 		// Kept-but-rejected entries are marked in the spec, for Review assets
 		// and for the coding run; ones accepted this time are unmarked.
-		const marked = markRejections(spec, entries);
-		if (marked) {
-			spec = marked;
+		const drawn = applyCodeTextures(spec, entries);
+		const marked = markRejections(drawn ?? spec, entries);
+		if (marked || drawn) {
+			spec = marked ?? drawn!;
 			await writeWorkdirFile(ctx, specPath, renderAssetSpec(spec));
 		}
 		const tally = countByStatus(entries);
@@ -620,6 +707,12 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 			[
 				`${tally.done} generated, ${tally.skipped} already present, ` +
 					`${tally.failed} failed of ${entryCount}.`,
+				...(codeTextures && entries.some((e) => e.codeDrawn)
+					? [
+							`${entries.filter((e) => e.codeDrawn).length} texture(s) drawn in code, ` +
+								`${variants} tile(s) each.`
+						]
+					: []),
 				...(sheets.length > 0 ? [sheetSummary(sheets)] : []),
 				...(degradedSummary(entries) ? [degradedSummary(entries)] : [])
 			].join('\n')

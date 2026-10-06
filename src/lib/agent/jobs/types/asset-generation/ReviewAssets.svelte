@@ -160,7 +160,15 @@
 					aria-pressed={marked}
 					title={t.entry.prompt}
 				>
-					{#if t.url}
+					{#if t.url && t.entry.recipe}
+						<!-- A tile is judged tiled: one alone hides how it repeats. -->
+						<span
+							class="tiled"
+							role="img"
+							aria-label={t.entry.id}
+							style:background-image={`url(${t.url})`}
+						></span>
+					{:else if t.url}
 						<img src={t.url} alt={t.entry.id} />
 					{:else}
 						<span class="missing">not made</span>
@@ -225,6 +233,13 @@
 		border-color: var(--accent, #6a7dff);
 	}
 
+	.tiled {
+		width: 96px;
+		height: 96px;
+		background-size: 48px 48px;
+		background-repeat: repeat;
+		image-rendering: pixelated;
+	}
 	/* A checkerboard, so transparency reads as transparency. */
 	img,
 	.missing {

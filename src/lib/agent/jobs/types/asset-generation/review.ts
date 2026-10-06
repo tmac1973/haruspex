@@ -52,6 +52,21 @@ export function amendPrompt(prompt: string, note: string | undefined): string {
 	return `${base}, ${n}`;
 }
 
+/** The spec with these entries' recipes removed, so the next run writes new ones. */
+export function dropRecipes(spec: AssetSpec, ids: string[]): AssetSpec {
+	if (ids.length === 0) return spec;
+	const drop = new Set(ids);
+	return {
+		...spec,
+		entries: spec.entries.map((e): AssetEntry => {
+			if (!drop.has(e.id)) return e;
+			// eslint-disable-next-line @typescript-eslint/no-unused-vars
+			const { recipe, ...rest } = e;
+			return rest;
+		})
+	};
+}
+
 /** The spec with each marked asset's note folded into its prompt. */
 export function applyNotes(spec: AssetSpec, marks: ReviewMark[]): AssetSpec {
 	const notes = new Map(marks.map((m) => [m.id, m.note]));
@@ -94,16 +109,23 @@ export async function regenerateMarked(
 	const byId = new Map(spec.entries.map((e) => [e.id, e]));
 	const chosen = marks.filter((m) => byId.has(m.id));
 	const amended = chosen.filter((m) => (m.note ?? '').trim()).map((m) => m.id);
-	if (amended.length > 0) await deps.writeSpec(applyNotes(spec, chosen));
+	// A code-drawn texture is made again from a new recipe, never the same
+	// one: the same recipe and seed draw the same pixels.
+	const redraw = chosen.filter((m) => byId.get(m.id)!.recipe).map((m) => m.id);
+	if (amended.length > 0 || redraw.length > 0) {
+		await deps.writeSpec(dropRecipes(applyNotes(spec, chosen), redraw));
+	}
 
 	const when = stamp((deps.now ?? (() => new Date()))());
 	const moved: ReviewResult['moved'] = [];
 	for (const m of chosen) {
-		const out = byId.get(m.id)!.out;
-		if (!(await deps.exists(out))) continue;
-		const to = historyPath(out, when);
-		await deps.move(out, to);
-		moved.push({ from: out, to });
+		const entry = byId.get(m.id)!;
+		for (const out of entry.variants ?? [entry.out]) {
+			if (!(await deps.exists(out))) continue;
+			const to = historyPath(out, when);
+			await deps.move(out, to);
+			moved.push({ from: out, to });
+		}
 	}
 	return { moved, amended, runId: await deps.run() };
 }

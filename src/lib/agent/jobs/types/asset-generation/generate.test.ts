@@ -983,3 +983,94 @@ describe('sheets', () => {
 		expect((call![1].profile as NormalizeProfile).palette).toEqual([0xff0000ff]);
 	});
 });
+
+describe('textures drawn in code', () => {
+	const RECIPE = { base: { ramp: ['#000000', '#ffffff'] }, layers: [] };
+	const tiles = (n: number) => Array.from({ length: n }, (_, k) => new Uint8Array([k]));
+
+	function codeHarness(
+		code: Partial<NonNullable<GenerateDeps['codeTextures']>>,
+		over: Partial<GenerateDeps> = {},
+		present: string[] = []
+	) {
+		const render = vi.fn(async (_r: unknown, _seed: number, n: number) => tiles(n));
+		const revise = vi.fn(async () => null);
+		const h = harness(
+			{
+				codeTextures: { variants: 4, render, revise, recipeFailures: new Map(), ...code },
+				...over
+			},
+			present
+		);
+		return { ...h, render, revise };
+	}
+
+	it('never sends a texture to the image model, and writes every variant', async () => {
+		const h = codeHarness({});
+		const [r] = await generateEntries(specOf([{ kind: 'texture', recipe: RECIPE }]), h.deps);
+		expect(h.requests).toHaveLength(0);
+		expect(h.written).toEqual(['out/e0.png', 'out/e0_1.png', 'out/e0_2.png', 'out/e0_3.png']);
+		expect(r.outcome).toMatchObject({
+			status: 'done',
+			codeDrawn: true,
+			variants: ['out/e0.png', 'out/e0_1.png', 'out/e0_2.png', 'out/e0_3.png']
+		});
+	});
+
+	it('still sends sprites to the image model', async () => {
+		const h = codeHarness({});
+		await generateEntries(specOf([{ kind: 'texture', recipe: RECIPE }, {}]), h.deps);
+		expect(h.requests).toHaveLength(1);
+	});
+
+	it('fails a texture the recipe stage gave up on, with its reason', async () => {
+		const h = codeHarness({ recipeFailures: new Map([['e0', 'layers[0].color: bad']]) });
+		const [r] = await generateEntries(specOf([{ kind: 'texture' }]), h.deps);
+		expect(r.outcome).toMatchObject({ status: 'failed', reason: 'layers[0].color: bad' });
+		expect(h.written).toEqual([]);
+	});
+
+	it('skips a texture already on disk', async () => {
+		const h = codeHarness({}, {}, ['out/e0.png']);
+		const [r] = await generateEntries(specOf([{ kind: 'texture', recipe: RECIPE }]), h.deps);
+		expect(r.outcome.status).toBe('skipped');
+		expect(h.render).not.toHaveBeenCalled();
+	});
+
+	it('revises the recipe once on a no, and keeps the revision', async () => {
+		const revised = { base: { ramp: ['#111111', '#eeeeee'] }, layers: [] };
+		let n = 0;
+		const judge = vi.fn(async () => ({ ok: n++ > 0, reason: 'looks like carpet' }));
+		const h = codeHarness(
+			{ revise: vi.fn(async () => revised) },
+			{ judge: { enabled: true, visionSupported: true, judge } }
+		);
+		const [r] = await generateEntries(specOf([{ kind: 'texture', recipe: RECIPE }]), h.deps);
+		expect(r.outcome).toMatchObject({ status: 'done', attempts: 2, recipe: revised });
+		expect(h.render).toHaveBeenCalledTimes(2);
+		expect(h.render.mock.calls[1][0]).toBe(revised);
+	});
+
+	it('keeps the tiles and marks them rejected after a second no', async () => {
+		const judge = vi.fn(async () => ({ ok: false, reason: 'looks like carpet' }));
+		const h = codeHarness(
+			{ revise: vi.fn(async () => RECIPE) },
+			{ judge: { enabled: true, visionSupported: true, judge } }
+		);
+		const [r] = await generateEntries(specOf([{ kind: 'texture', recipe: RECIPE }]), h.deps);
+		expect(r.outcome).toMatchObject({
+			status: 'unresolved',
+			kept: true,
+			reason: 'looks like carpet'
+		});
+		expect(judge).toHaveBeenCalledTimes(2);
+	});
+
+	it('draws the same seed for the same entry, run after run', async () => {
+		const a = codeHarness({});
+		await generateEntries(specOf([{ kind: 'texture', recipe: RECIPE, id: 'street' }]), a.deps);
+		const b = codeHarness({});
+		await generateEntries(specOf([{ kind: 'texture', recipe: RECIPE, id: 'street' }]), b.deps);
+		expect(a.render.mock.calls[0][1]).toBe(b.render.mock.calls[0][1]);
+	});
+});

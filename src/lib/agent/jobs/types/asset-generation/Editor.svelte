@@ -148,6 +148,36 @@
 	/>
 </div>
 
+<div class="field">
+	<label class="check">
+		<input type="checkbox" bind:checked={cfg.code_textures} />
+		<span>Draw textures in code</span>
+	</label>
+	<Tooltip
+		label="About code-drawn textures"
+		text="Ground and wall textures are drawn from a recipe the model writes, so they tile and are seen from above. Sprites and icons still come from the image model. Off sends textures to the image model too."
+	/>
+</div>
+
+{#if cfg.code_textures}
+	<div class="field">
+		<span class="label">
+			Tile variants
+			<Tooltip
+				label="About tile variants"
+				text="How many interchangeable tiles to draw of each texture, so a map can mix them and not repeat. The coding run picks one per map cell."
+			/>
+		</span>
+		<input
+			type="number"
+			min="1"
+			max="8"
+			bind:value={cfg.texture_variants}
+			aria-label="Tile variants"
+		/>
+	</div>
+{/if}
+
 {#if cfg.coding_run}
 	<div class="field">
 		<label class="check">
