@@ -27,6 +27,7 @@
 		type InferenceBackendConfig
 	} from '#lib/stores/settings.ts';
 	import { enterRemoteMode } from '#lib/stores/llamaServer.svelte.ts';
+	import { fetchModelForDefault } from '#lib/stores/memory.svelte.ts';
 	import { formatBytes, formatBytesPerSecond } from '#lib/utils/format.ts';
 	import InferenceBackendForm from '#lib/components/InferenceBackendForm.svelte';
 
@@ -147,6 +148,7 @@
 		// status badge switches over without needing a reload.
 		updateInferenceBackend({ ...remoteConfig, mode: 'remote' });
 		enterRemoteMode(remoteConfig.remoteBaseUrl, remoteConfig.remoteModelId);
+		void fetchModelForDefault();
 		goto('/');
 	}
 </script>

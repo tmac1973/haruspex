@@ -232,9 +232,7 @@
 </section>
 
 <section class="settings-section">
-	<h2>
-		Python Sandbox <span class="experimental-badge">experimental</span>
-	</h2>
+	<h2>Python Sandbox</h2>
 	<label
 		class="toggle-row"
 		title={'When on, the model can run Python code locally in a Pyodide WebAssembly ' +
@@ -243,8 +241,7 @@
 			'and python-pptx — so the model can analyze data, plot charts, and build PDFs / ' +
 			'PowerPoint decks programmatically. Files written from Python land in your ' +
 			'working directory. With the sandbox ON, the legacy fs_write_pdf / fs_write_pptx ' +
-			'tools are hidden in favor of the richer Python path. Experimental: behavior, ' +
-			'defaults, and UI are still in flux.'}
+			'tools are hidden in favor of the richer Python path.'}
 	>
 		<input type="checkbox" checked={sandboxEnabled} onchange={toggleSandboxEnabled} />
 		<div>
@@ -322,19 +319,6 @@
 <style>
 	.hint {
 		margin: 0 0 16px 0;
-	}
-
-	.experimental-badge {
-		font-size: 0.65rem;
-		font-weight: 500;
-		padding: 1px 6px;
-		border-radius: 4px;
-		background: var(--bg-secondary);
-		color: var(--text-secondary);
-		border: 1px solid var(--border);
-		text-transform: uppercase;
-		vertical-align: middle;
-		margin-left: 6px;
 	}
 
 	/* Global .toggle-row supplies the base style; sections add row padding. */

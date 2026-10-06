@@ -85,10 +85,10 @@
 		<span>Carry facts and preferences from one conversation into the next</span>
 	</label>
 	<p class="help">
-		Off by default. When on, Haruspex reads your finished conversations in the background, distils
-		the stable facts — preferences, corrections, standing project context — and brings the relevant
-		ones into later chats. Everything stays on this device: the text never leaves it, and the
-		embeddings are computed here.
+		When on, Haruspex reads your finished conversations in the background, distils the stable facts
+		— preferences, corrections, standing project context — and brings the relevant ones into later
+		chats. Everything stays on this device: the text never leaves it, and the embeddings are
+		computed here.
 	</p>
 	<p class="help">
 		You can exclude any single chat with its incognito switch, and review, edit or delete everything
