@@ -17,11 +17,40 @@
 	import { getSettings, setDavAccounts, snapshot } from '$lib/stores/settings';
 	import type { DavAccount } from '$lib/ipc/gen/DavAccount';
 	import type { DavCollections } from '$lib/ipc/gen/DavCollections';
+	import { forgetDavPassword, withStoredDavPassword } from '$lib/stores/davSecrets';
+	import {
+		savedSecretPlaceholder,
+		secretStoreKind,
+		type SecretStoreKind
+	} from '$lib/stores/secrets';
 
 	let accounts = $state<DavAccount[]>(snapshot(getSettings().integrations.dav.accounts));
 	let checking = $state<string | null>(null);
 	let found = $state<Record<string, DavCollections>>({});
 	let errors = $state<Record<string, string>>({});
+	/** A password being typed, per account. Kept here, not in the settings,
+	 *  until the field loses focus and it goes to the secret store. */
+	let drafts = $state<Record<string, string>>({});
+	let storeKind = $state<SecretStoreKind>('keychain');
+	void secretStoreKind().then((k) => (storeKind = k));
+
+	async function savePassword(id: string): Promise<void> {
+		const draft = drafts[id];
+		const account = accounts.find((a) => a.id === id);
+		if (!draft || !account) return;
+		try {
+			const stored = await withStoredDavPassword(account, draft);
+			update(id, { password: stored.password, passwordRef: stored.passwordRef });
+			drafts = { ...drafts, [id]: '' };
+		} catch (e) {
+			errors = { ...errors, [id]: `Could not save the password: ${String(e)}` };
+		}
+	}
+
+	function remove(account: DavAccount): void {
+		persist(accounts.filter((a) => a.id !== account.id));
+		void forgetDavPassword(account);
+	}
 
 	function persist(next: DavAccount[]): void {
 		accounts = next;
@@ -56,6 +85,8 @@
 
 	async function check(account: DavAccount): Promise<void> {
 		checking = account.id;
+		await savePassword(account.id);
+		account = accounts.find((a) => a.id === account.id) ?? account;
 		errors = { ...errors, [account.id]: '' };
 		try {
 			const collections = await invoke<DavCollections>(IPC.dav_discover_collections, {
@@ -147,8 +178,12 @@
 			<input
 				id="dav-pass-{account.id}"
 				type="password"
-				value={account.password}
-				oninput={(e) => update(account.id, { password: e.currentTarget.value })}
+				value={drafts[account.id] ?? ''}
+				oninput={(e) => (drafts = { ...drafts, [account.id]: e.currentTarget.value })}
+				onblur={() => savePassword(account.id)}
+				placeholder={account.passwordRef || account.password
+					? savedSecretPlaceholder(storeKind)
+					: ''}
 			/>
 		</div>
 		<div class="field">
@@ -193,13 +228,7 @@
 			<button type="button" disabled={checking === account.id} onclick={() => check(account)}>
 				{checking === account.id ? 'Checking…' : 'Check'}
 			</button>
-			<button
-				type="button"
-				class="danger"
-				onclick={() => persist(accounts.filter((a) => a.id !== account.id))}
-			>
-				Remove
-			</button>
+			<button type="button" class="danger" onclick={() => remove(account)}> Remove </button>
 		</div>
 	</section>
 {/each}

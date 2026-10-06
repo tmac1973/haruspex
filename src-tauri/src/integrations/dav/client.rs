@@ -663,6 +663,7 @@ mod tests {
             address: "http://127.0.0.1:1".into(),
             username: "u".into(),
             password: "p".into(),
+            password_ref: None,
             calendar_url: None,
             contacts_url: None,
             has_calendars: None,

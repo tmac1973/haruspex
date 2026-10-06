@@ -51,8 +51,15 @@ pub struct DavAccount {
     /// username, and guessing wrong produces an auth failure nobody can debug.
     pub username: String,
 
-    /// App password, plaintext, in the settings blob. See the module docs.
+    /// App password, inline. Empty when it is kept in the secret store under
+    /// `password_ref` — the usual case. Inline only where no store works.
     pub password: String,
+
+    /// The secret-store key holding the password (`"dav:<id>"`). Rust reads
+    /// it back just before connecting; see [`DavAccount::resolved`].
+    #[serde(default)]
+    #[ts(optional)]
+    pub password_ref: Option<String>,
 
     /// A URL the user supplied by hand, skipping discovery.
     ///
@@ -91,6 +98,7 @@ impl std::fmt::Debug for DavAccount {
             address,
             username,
             password,
+            password_ref,
             calendar_url,
             contacts_url,
             has_calendars,
@@ -103,6 +111,7 @@ impl std::fmt::Debug for DavAccount {
             .field("address", address)
             .field("username", username)
             .field("password", &crate::text_util::redacted(password))
+            .field("password_ref", password_ref)
             .field("calendar_url", calendar_url)
             .field("contacts_url", contacts_url)
             .field("has_calendars", has_calendars)
@@ -130,7 +139,21 @@ impl DavAccount {
         self.enabled
             && !self.address.trim().is_empty()
             && !self.username.trim().is_empty()
-            && !self.password.is_empty()
+            && (!self.password.is_empty() || self.password_ref.is_some())
+    }
+
+    /// This account with its password read from the secret store, when it is
+    /// kept there. Called just before connecting, so the password crosses
+    /// from the store to the request and nowhere else.
+    pub async fn resolved(&self) -> Result<DavAccount, String> {
+        match self.password_ref.as_deref() {
+            Some(key) if self.password.is_empty() => Ok(DavAccount {
+                password: crate::secrets::require(key, &format!("password for {}", self.label))
+                    .await?,
+                ..self.clone()
+            }),
+            _ => Ok(self.clone()),
+        }
     }
 
     /// Whether calendar tools should reach this account.
@@ -185,6 +208,7 @@ mod tests {
             address: "me@fastmail.com".into(),
             username: "me@fastmail.com".into(),
             password: "app-password".into(),
+            password_ref: None,
             calendar_url: None,
             contacts_url: None,
             has_calendars: None,
