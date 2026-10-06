@@ -25,19 +25,33 @@ use crate::sync_util::LockExt;
 /// Room for a long session's plots; each is a few MB with plotly inlined.
 const MAX_TOTAL_BYTES: usize = 256 * 1024 * 1024;
 
+/// The app's own origin, which artifact documents may load scripts from: the
+/// sandbox points plotly figures at the bundled `/plotly/plotly.min.js` there
+/// so they need no network. `tauri:` and its Windows form in a release build;
+/// the Vite dev server as well in a debug one.
+#[cfg(debug_assertions)]
+const APP_ORIGINS: &str = "tauri: http://tauri.localhost http://localhost:1420";
+#[cfg(not(debug_assertions))]
+const APP_ORIGINS: &str = "tauri: http://tauri.localhost";
+
 /// What an artifact document may do. Everything a plotting library needs —
-/// inline and CDN scripts, eval, wasm — and nothing that reaches back: no
-/// forms, no nested frames, no `<base>`, and only HTTPS outward.
-const ARTIFACT_CSP: &str = "default-src 'none'; \
-     script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https: blob: data:; \
-     style-src 'unsafe-inline' https:; \
-     img-src data: blob: https:; \
-     font-src data: https:; \
-     connect-src https:; \
-     worker-src blob:; \
-     frame-src 'none'; \
-     form-action 'none'; \
-     base-uri 'none'";
+/// inline and CDN scripts, the app's bundled plotly.js, eval, wasm — and
+/// nothing that reaches back: no forms, no nested frames, no `<base>`, and
+/// only HTTPS outward.
+fn artifact_csp() -> String {
+    format!(
+        "default-src 'none'; \
+         script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https: blob: data: {APP_ORIGINS}; \
+         style-src 'unsafe-inline' https:; \
+         img-src data: blob: https:; \
+         font-src data: https:; \
+         connect-src https:; \
+         worker-src blob:; \
+         frame-src 'none'; \
+         form-action 'none'; \
+         base-uri 'none'"
+    )
+}
 
 #[derive(Default)]
 pub struct ArtifactFrames(Mutex<Store>);
@@ -84,7 +98,7 @@ impl ArtifactFrames {
             Some(html) => builder
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-                .header("Content-Security-Policy", ARTIFACT_CSP)
+                .header("Content-Security-Policy", artifact_csp())
                 .body(html.into_bytes()),
             None => builder
                 .status(StatusCode::NOT_FOUND)
@@ -131,6 +145,8 @@ mod tests {
         let csp = r.headers()["content-security-policy"].to_str().unwrap();
         assert!(csp.contains("script-src 'unsafe-inline'"), "{csp}");
         assert!(csp.contains("form-action 'none'"), "{csp}");
+        // The bundled plotly.js is loaded from the app's own origin.
+        assert!(csp.contains("tauri:"), "{csp}");
         assert_eq!(
             r.headers()["cross-origin-embedder-policy"],
             "credentialless"
