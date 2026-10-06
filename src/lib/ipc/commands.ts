@@ -183,7 +183,6 @@ export const IPC = {
 	mcp_server_dir: 'mcp_server_dir',
 	mcp_server_logs: 'mcp_server_logs',
 	mcp_server_status: 'mcp_server_status',
-	mcp_spawn_config: 'mcp_spawn_config',
 	mcp_start_server: 'mcp_start_server',
 	mcp_stop_server: 'mcp_stop_server',
 	mcp_uninstall_server: 'mcp_uninstall_server',

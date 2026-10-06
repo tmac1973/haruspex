@@ -28,6 +28,8 @@ import type { McpServerConfig } from '$lib/ipc/gen/McpServerConfig';
  */
 export interface SetupState {
 	secrets: Record<string, string | undefined>;
+	/** Secret keys kept in the secret store, whose values are not in `secrets`. */
+	storedSecrets: string[];
 	/** Filenames already copied into the server's directory. */
 	filesPlaced: string[];
 	/** Indices of `command` steps that have been run. */
@@ -109,7 +111,9 @@ export function isStepSatisfied(step: SetupStep, state: SetupState, index: numbe
 		case 'instruction':
 			return true;
 		case 'secret':
-			return (state.secrets[step.key] ?? '').trim().length > 0;
+			return (
+				(state.secrets[step.key] ?? '').trim().length > 0 || state.storedSecrets.includes(step.key)
+			);
 		case 'file':
 			return state.filesPlaced.includes(step.filename);
 		case 'command':
@@ -189,6 +193,7 @@ export function setupStateOf(
 ): SetupState {
 	return {
 		secrets: config.secrets,
+		storedSecrets: config.storedSecrets ?? [],
 		filesPlaced,
 		commandsRun,
 		addonProjects: config.addonProjects ?? []

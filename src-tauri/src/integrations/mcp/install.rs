@@ -968,6 +968,7 @@ mod tests {
                 args: vec!["--stdio".into()],
             },
             secrets: BTreeMap::new(),
+            stored_secrets: None,
             tool_enabled: BTreeMap::new(),
             proxy_use,
             addon_projects: Vec::new(),

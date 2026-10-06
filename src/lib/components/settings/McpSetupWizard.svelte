@@ -25,6 +25,7 @@
 		stepLabel
 	} from '$lib/stores/mcpSetup';
 	import { pickAndInstallAddon } from '$lib/stores/mcpAddon';
+	import { hasMcpSecret, storeMcpSecret } from '$lib/stores/mcpSecrets';
 
 	interface Props {
 		config: McpServerConfig;
@@ -54,8 +55,18 @@
 	const canAdvance = $derived(step !== null && isStepSatisfied(step, setupState, index));
 	const complete = $derived(isSetupComplete(steps, setupState));
 
-	function setSecret(key: string, value: string): void {
-		onchange({ ...config, secrets: { ...config.secrets, [key]: value } });
+	/** A secret being typed, per key. Stored when the field loses focus. */
+	let drafts = $state<Record<string, string>>({});
+
+	async function saveSecret(key: string): Promise<void> {
+		const value = (drafts[key] ?? '').trim();
+		if (!value) return;
+		try {
+			onchange(await storeMcpSecret(config, key, value));
+			drafts = { ...drafts, [key]: '' };
+		} catch (e) {
+			error = `Could not save it: ${String(e)}`;
+		}
 	}
 
 	function advance(): void {
@@ -160,9 +171,10 @@
 				{#if step.help}<p class="help">{step.help}</p>{/if}
 				<input
 					type="password"
-					value={config.secrets[step.key] ?? ''}
-					oninput={(e) => setSecret(step.key, e.currentTarget.value)}
-					placeholder={step.label}
+					value={drafts[step.key] ?? ''}
+					oninput={(e) => (drafts = { ...drafts, [step.key]: e.currentTarget.value })}
+					onblur={() => saveSecret(step.key)}
+					placeholder={hasMcpSecret(config, step.key) ? 'Saved' : step.label}
 				/>
 			{:else if step.kind === 'file'}
 				<h4>{step.label}</h4>

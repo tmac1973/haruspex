@@ -76,6 +76,13 @@ pub struct McpServerConfig {
     #[serde(default)]
     pub secrets: BTreeMap<String, String>,
 
+    /// The `secrets` keys whose values are kept in the secret store, under
+    /// `mcp:<id>:<key>`, with an empty value in `secrets`. Rust reads them only
+    /// when it launches the server, runs a setup command or connects.
+    #[serde(default)]
+    #[ts(optional)]
+    pub stored_secrets: Option<Vec<String>>,
+
     /// Per-tool enablement, keyed by the tool's own name. A tool absent from
     /// this map has never been decided on and falls back to the catalog
     /// entry's tested `defaultTools`; Phase 05 owns that resolution.
@@ -121,6 +128,7 @@ impl std::fmt::Debug for McpServerConfig {
             enabled,
             source,
             secrets,
+            stored_secrets,
             tool_enabled,
             proxy_use,
             setup_complete,
@@ -136,6 +144,7 @@ impl std::fmt::Debug for McpServerConfig {
             .field("enabled", enabled)
             .field("source", source)
             .field("secrets", &secrets)
+            .field("stored_secrets", stored_secrets)
             .field("tool_enabled", tool_enabled)
             .field("proxy_use", proxy_use)
             .field("setup_complete", setup_complete)
@@ -144,7 +153,28 @@ impl std::fmt::Debug for McpServerConfig {
     }
 }
 
+/// Where a server's setup secret is kept in the secret store.
+pub fn secret_store_key(server_id: &str, key: &str) -> String {
+    format!("mcp:{server_id}:{key}")
+}
+
 impl McpServerConfig {
+    /// This config with every stored secret read back into `secrets`. Called
+    /// at the point of use, inside Rust, so the values never cross to the
+    /// webview.
+    pub async fn resolved(&self) -> Result<McpServerConfig, String> {
+        let mut out = self.clone();
+        for key in self.stored_secrets.iter().flatten() {
+            let value = crate::secrets::require(
+                &secret_store_key(&self.id, key),
+                &format!("'{key}' value for {}", self.label),
+            )
+            .await?;
+            out.secrets.insert(key.clone(), value);
+        }
+        Ok(out)
+    }
+
     /// Whether this server should be started: enabled, and finished being set
     /// up. Custom and remote servers have no setup steps, so they are complete
     /// by construction — but the flag is still what decides, so every path
@@ -180,11 +210,27 @@ mod tests {
                 entry_id: "github".into(),
             },
             secrets: BTreeMap::from([("token".into(), "ghp_x".into())]),
+            stored_secrets: None,
             tool_enabled: BTreeMap::new(),
             proxy_use: crate::proxy::ProxyUse::Auto,
             setup_complete: true,
             addon_projects: Vec::new(),
         }
+    }
+
+    #[tokio::test]
+    async fn stored_secrets_are_read_back_at_the_point_of_use() {
+        crate::secrets::seed_for_test(
+            "mcp:11111111-1111-1111-1111-111111111111:token",
+            "ghp_stored",
+        );
+        let mut config = catalog_server();
+        config.secrets = BTreeMap::from([("token".into(), String::new())]);
+        config.stored_secrets = Some(vec!["token".into()]);
+        let resolved = config.resolved().await.unwrap();
+        assert_eq!(resolved.secrets["token"], "ghp_stored");
+        // The config the webview holds is untouched.
+        assert_eq!(config.secrets["token"], "");
     }
 
     #[test]

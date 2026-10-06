@@ -71,8 +71,6 @@ const TOOLS: McpToolDescriptor[] = [
 function mockHappyStart(): void {
 	invoke.mockImplementation((cmd: string) => {
 		switch (cmd) {
-			case IPC.mcp_spawn_config:
-				return Promise.resolve({ id: ID, program: '/x/node', args: [], env: [], cwd: null });
 			case IPC.mcp_start_server:
 				return Promise.resolve(null);
 			case IPC.mcp_connection_info:
@@ -132,8 +130,6 @@ describe('starting a server', () => {
 		// is the worst of both: the row says fine and the model has nothing.
 		invoke.mockImplementation((cmd: string) => {
 			if (cmd === IPC.mcp_list_tools) return Promise.reject('tools/list failed');
-			if (cmd === IPC.mcp_spawn_config)
-				return Promise.resolve({ id: ID, program: '/x/node', args: [], env: [], cwd: null });
 			return Promise.resolve(null);
 		});
 		await startMcpServer(config(), entry());
@@ -171,7 +167,6 @@ describe('a backend that outlived the frontend', () => {
 
 		const called = invoke.mock.calls.map((c) => c[0]);
 		expect(called).not.toContain(IPC.mcp_start_server);
-		expect(called).not.toContain(IPC.mcp_spawn_config);
 		expect(mcpState(ID).status.type).toBe('Ready');
 		expect(mcpState(ID).connection?.protocolVersion).toBe('2026-07-28');
 		expect(registeredMcpToolNames()).toContain('mcp__srv-1__search');
@@ -181,8 +176,6 @@ describe('a backend that outlived the frontend', () => {
 	it('starts normally when the backend has nothing running', async () => {
 		invoke.mockImplementation((cmd: string) => {
 			if (cmd === IPC.mcp_server_status) return Promise.resolve({ type: 'Stopped' });
-			if (cmd === IPC.mcp_spawn_config)
-				return Promise.resolve({ id: ID, program: '/x/node', args: [], env: [], cwd: null });
 			if (cmd === IPC.mcp_list_tools) return Promise.resolve(TOOLS);
 			if (cmd === IPC.mcp_connection_info) return Promise.resolve(null);
 			return Promise.resolve(null);
@@ -199,7 +192,7 @@ describe('a backend that outlived the frontend', () => {
 		invoke.mockImplementation((cmd: string) => {
 			if (cmd === IPC.mcp_server_status)
 				return Promise.resolve({ type: 'Error', message: 'it died' });
-			if (cmd === IPC.mcp_spawn_config) return Promise.reject('still broken');
+			if (cmd === IPC.mcp_start_server) return Promise.reject('still broken');
 			return Promise.resolve(null);
 		});
 
@@ -342,7 +335,7 @@ describe('proxy handling', () => {
 		// server honours it is up to its author.
 		mockHappyStart();
 		await startMcpServer(config(), entry());
-		const call = invoke.mock.calls.find((c) => c[0] === IPC.mcp_spawn_config);
+		const call = invoke.mock.calls.find((c) => c[0] === IPC.mcp_start_server);
 		expect(call?.[1]).toHaveProperty('proxy');
 		await stopMcpServer(ID);
 	});
@@ -370,7 +363,6 @@ describe('remote servers', () => {
 
 		const called = invoke.mock.calls.map((c) => c[0]);
 		expect(called).toContain(IPC.mcp_connect_remote_server);
-		expect(called).not.toContain(IPC.mcp_spawn_config);
 		expect(called).not.toContain(IPC.mcp_start_server);
 		expect(mcpState('remote-1').status.type).toBe('Ready');
 		await stopMcpServer('remote-1');
@@ -410,10 +402,8 @@ describe('starting everything on launch', () => {
 		const second = config({ id: 'b', label: 'B' });
 		invoke.mockImplementation((cmd: string, args?: Record<string, unknown>) => {
 			const cfg = args?.config as { id?: string } | undefined;
-			if (cmd === IPC.mcp_spawn_config) {
-				return cfg?.id === 'a'
-					? Promise.reject('a is broken')
-					: Promise.resolve({ id: 'b', program: '/x/node', args: [], env: [], cwd: null });
+			if (cmd === IPC.mcp_start_server) {
+				return cfg?.id === 'a' ? Promise.reject('a is broken') : Promise.resolve(null);
 			}
 			if (cmd === IPC.mcp_list_tools) return Promise.resolve([]);
 			if (cmd === IPC.mcp_connection_info) return Promise.resolve(null);
@@ -437,8 +427,6 @@ describe('starting at app launch', () => {
 		setMcpServers([config({ id: 'boot-1' })]);
 		invoke.mockImplementation((cmd: string) => {
 			if (cmd === IPC.mcp_catalog) return Promise.resolve([entry()]);
-			if (cmd === IPC.mcp_spawn_config)
-				return Promise.resolve({ id: 'boot-1', program: '/x/node', args: [], env: [], cwd: null });
 			if (cmd === IPC.mcp_list_tools) return Promise.resolve([]);
 			if (cmd === IPC.mcp_connection_info) return Promise.resolve(null);
 			return Promise.resolve(null);

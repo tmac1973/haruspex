@@ -43,14 +43,23 @@ pub fn spawn_tools_changed_bridge(app: AppHandle) -> tokio::sync::mpsc::Unbounde
     tx
 }
 
-/// Spawn a server and negotiate with it. Resolves once it is `Ready` or has
-/// failed; a slow legacy handshake can take a few seconds.
+/// Build a configured server's spawn configuration, stored secrets included,
+/// and start it. Resolves once it is `Ready` or has failed; a slow legacy
+/// handshake can take a few seconds.
+///
+/// One command rather than "get the spawn config, then start it": the
+/// configuration carries the resolved secrets in its environment, and handing
+/// it to the webview and back put every one of them across IPC twice.
 #[tauri::command]
 pub async fn mcp_start_server(
+    app: AppHandle,
     supervisor: State<'_, McpSupervisor>,
-    config: SpawnConfig,
+    config: McpServerConfig,
+    proxy: Option<ProxyConfig>,
 ) -> Result<(), String> {
-    supervisor.start(config).await
+    let config = config.resolved().await?;
+    let spawn = install::spawn_config_for(&app, &config, proxy.as_ref())?;
+    supervisor.start(spawn).await
 }
 
 #[tauri::command]
@@ -178,20 +187,6 @@ pub async fn mcp_server_dir(app: AppHandle, server_id: String) -> Result<String,
         .to_string())
 }
 
-/// Build the spawn configuration for a configured server, catalog or custom.
-///
-/// Exposed rather than folded into `mcp_start_server` so the settings UI can
-/// show exactly what will be run, and so a missing secret or an unfinished
-/// setup surfaces as a setup problem before anything is spawned.
-#[tauri::command]
-pub async fn mcp_spawn_config(
-    app: AppHandle,
-    config: McpServerConfig,
-    proxy: Option<ProxyConfig>,
-) -> Result<SpawnConfig, String> {
-    install::spawn_config_for(&app, &config, proxy.as_ref())
-}
-
 /// Copy a file the user picked in the setup wizard into the server's directory.
 #[tauri::command]
 pub async fn mcp_place_setup_file(
@@ -253,6 +248,7 @@ pub async fn mcp_run_setup_command(
 ) -> Result<String, String> {
     // A setup command is usually a sign-in that talks to the service, so it
     // needs the proxy as much as the server does.
+    let config = config.resolved().await?;
     let spawn = install::setup_command_config(&app, &config, args, proxy.as_ref())?;
     run_setup(&spawn).await
 }
@@ -414,6 +410,7 @@ pub async fn mcp_connect_remote_server(
     if !config.is_startable() {
         return Err(format!("{} is turned off", config.label));
     }
+    let config = config.resolved().await?;
     let url = config
         .remote_url()
         .ok_or_else(|| format!("{} is not a remote server", config.label))?;
