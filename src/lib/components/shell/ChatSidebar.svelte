@@ -13,6 +13,15 @@
 	} from '$lib/api';
 	import { getSettings, updateSettings } from '$lib/stores/settings';
 	import { imageFileToDataUrl, imageFilesFrom } from '$lib/utils/image';
+	import { showToast } from '$lib/stores/toasts.svelte';
+	import { errMessage } from '$lib/utils/error';
+	import type { CaptureWindow } from '$lib/ipc/gen/CaptureWindow';
+	import {
+		captureMessage,
+		captureWindowImage,
+		windowLabel,
+		windowsToPick
+	} from '$lib/shell/captureWindow';
 
 	const SHELL_PREAMBLE_MARKER = 'Recent shell activity (oldest first):';
 	const SHELL_PREAMBLE_SEP = '\n\n---\n\n';
@@ -190,6 +199,42 @@
 	/** Attach already-encoded image data URLs (from a native file drop). */
 	function addImageUrls(urls: string[]) {
 		pendingImages = [...pendingImages, ...urls.map((url) => ({ id: imgSeq++, url }))];
+	}
+
+	// Capture a window and send it. A person pressing a button is not the
+	// Settings → Screen question, which is about the assistant asking.
+	let capturing = $state(false);
+	/** The pick list, on platforms without a picker of their own. */
+	let windowChoices = $state<CaptureWindow[] | null>(null);
+
+	async function startCapture() {
+		if (capturing || submitting) return;
+		capturing = true;
+		try {
+			const windows = await windowsToPick();
+			if (windows.length === 0) await captureAndSend(null);
+			else windowChoices = windows;
+		} catch (e) {
+			showToast(errMessage(e), { kind: 'error' });
+		} finally {
+			capturing = false;
+		}
+	}
+
+	async function captureAndSend(id: number | null) {
+		windowChoices = null;
+		capturing = true;
+		try {
+			const url = await captureWindowImage(id);
+			addImageUrls([url]);
+			await doSend(captureMessage(composerText));
+		} catch (e) {
+			// Cancelling the desktop's own picker lands here too: a decision,
+			// said plainly, not an error to dig into.
+			showToast(errMessage(e), { kind: 'error' });
+		} finally {
+			capturing = false;
+		}
 	}
 
 	/** Single send path (button, Enter, voice) — folds in attached images. */
@@ -492,6 +537,24 @@
 			class:drag-over={dragOver}
 			use:imageDropTarget={{ onImages: addImageUrls, onDragChange: (over) => (dragOver = over) }}
 		>
+			{#if windowChoices}
+				<div class="window-picker" role="listbox" aria-label="Pick a window to capture">
+					<div class="picker-head">
+						<span>Capture which window?</span>
+						<button class="picker-close" onclick={() => (windowChoices = null)} aria-label="Cancel"
+							>×</button
+						>
+					</div>
+					{#each windowChoices as w (w.id)}
+						<button
+							class="picker-item"
+							role="option"
+							aria-selected="false"
+							onclick={() => captureAndSend(w.id)}>{windowLabel(w)}</button
+						>
+					{/each}
+				</div>
+			{/if}
 			{#if pendingImages.length}
 				<div class="attachments">
 					{#each pendingImages as img (img.id)}
@@ -535,6 +598,29 @@
 				>
 					<polyline points="4 17 10 11 4 5"></polyline>
 					<line x1="12" y1="19" x2="20" y2="19"></line>
+				</svg>
+			</button>
+			<button
+				class="ctx-btn"
+				onclick={startCapture}
+				disabled={submitting || capturing}
+				title="Capture a window and send it to the assistant. With text in the box, that is sent with it."
+				aria-label="Capture a window and send it"
+			>
+				<svg
+					width="18"
+					height="18"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<path
+						d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"
+					></path>
+					<circle cx="12" cy="13" r="4"></circle>
 				</svg>
 			</button>
 			<MicButton onTranscription={(text) => doSend(text)} disabled={submitting} />
@@ -951,6 +1037,52 @@
 		justify-content: center;
 		flex-shrink: 0;
 		transition: all 0.15s;
+	}
+
+	.window-picker {
+		flex-basis: 100%;
+		display: flex;
+		flex-direction: column;
+		max-height: 220px;
+		overflow-y: auto;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--bg-secondary);
+	}
+
+	.picker-head {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 4px 8px;
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+	}
+
+	.picker-close {
+		border: none;
+		background: none;
+		color: var(--text-secondary);
+		cursor: pointer;
+		font-size: 1rem;
+	}
+
+	.picker-item {
+		text-align: left;
+		padding: 6px 8px;
+		border: none;
+		border-top: 1px solid var(--border);
+		background: none;
+		color: var(--text-primary);
+		cursor: pointer;
+		font-size: 0.85rem;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.picker-item:hover {
+		background: var(--bg-primary);
 	}
 
 	.ctx-btn:hover:not(:disabled) {

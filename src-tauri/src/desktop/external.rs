@@ -12,7 +12,57 @@
 //! screen would then confidently describe an empty desktop, so the grant is
 //! checked before capturing and its absence reported as what it is.
 
-use super::screenshot::{Capture, CaptureTarget};
+use super::screenshot::{Capture, CaptureTarget, CaptureWindow};
+
+/// Visible windows other than Haruspex's own, for the user to pick from.
+pub async fn list_windows() -> Result<Vec<CaptureWindow>, String> {
+    require_screen_recording_permission()?;
+    tokio::task::spawn_blocking(|| {
+        let ours = std::process::id();
+        let windows =
+            xcap::Window::all().map_err(|e| format!("could not list the windows: {e}"))?;
+        Ok(windows
+            .iter()
+            .filter(|w| !w.is_minimized().unwrap_or(true))
+            .filter(|w| w.pid().map(|p| p != ours).unwrap_or(true))
+            .filter_map(|w| {
+                let title = w.title().unwrap_or_default();
+                let app = w.app_name().unwrap_or_default();
+                // An untitled window with no app name is a tooltip, a shadow or
+                // an overlay: nothing a person would pick.
+                if title.trim().is_empty() && app.trim().is_empty() {
+                    return None;
+                }
+                Some(CaptureWindow {
+                    id: w.id().ok()?,
+                    title,
+                    app,
+                })
+            })
+            .collect())
+    })
+    .await
+    .map_err(|e| format!("the window list task failed: {e}"))?
+}
+
+/// Capture the window with this id, as listed by [`list_windows`].
+pub async fn capture_window(id: u32) -> Result<Capture, String> {
+    require_screen_recording_permission()?;
+    tokio::task::spawn_blocking(move || {
+        let windows =
+            xcap::Window::all().map_err(|e| format!("could not list the windows: {e}"))?;
+        let window = windows
+            .iter()
+            .find(|w| w.id().ok() == Some(id))
+            .ok_or("That window is gone; pick it again.")?;
+        let image = window
+            .capture_image()
+            .map_err(|e| format!("the window could not be captured: {e}"))?;
+        Ok(from_rgba(image))
+    })
+    .await
+    .map_err(|e| format!("the capture task failed: {e}"))?
+}
 
 pub async fn capture(target: CaptureTarget) -> Result<Capture, String> {
     require_screen_recording_permission()?;
