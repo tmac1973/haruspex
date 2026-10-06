@@ -550,3 +550,23 @@ describe('the project boundary', () => {
 		);
 	});
 });
+
+describe('generated art in preflight', () => {
+	it('says a spec entry may have no file, and to check', () => {
+		const p = flat(
+			preflightPrompt('plan/x', 'plan/x/D.md', 'phase', false, false, [], 'plan/x/assets.json')
+		);
+		expect(p).toContain('Check that each `out` file exists');
+		expect(p).not.toContain('were NOT produced');
+	});
+
+	it('names the entries the asset run could not produce', () => {
+		const p = flat(
+			preflightPrompt('plan/x', 'plan/x/D.md', 'phase', false, false, [], 'plan/x/assets.json', [
+				'tower_entrance',
+				'human'
+			])
+		);
+		expect(p).toContain('were NOT produced, and have no file: tower_entrance, human');
+	});
+});

@@ -20,6 +20,10 @@ export interface AutonomousCodingEditorState {
 	web_research: boolean;
 	max_turns: number;
 	mute_preflight: boolean;
+	/** Carried untouched: a chain sets these, and the editor has no fields for them. */
+	open_findings: string[];
+	asset_spec_path: string | null;
+	missing_assets: string[];
 }
 
 /**
@@ -93,7 +97,10 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 		web_research: true,
 		use_git: true,
 		max_turns: DEFAULT_MAX_TURNS,
-		mute_preflight: false
+		mute_preflight: false,
+		open_findings: [],
+		asset_spec_path: null,
+		missing_assets: []
 	}),
 	configFromJob: (typeConfig) => {
 		const c = parseAutonomousCodingConfig(typeConfig);
@@ -106,7 +113,10 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 			web_research: c.web_research ?? true,
 			use_git: c.use_git ?? true,
 			max_turns: c.max_turns ?? DEFAULT_MAX_TURNS,
-			mute_preflight: c.mute_preflight ?? false
+			mute_preflight: c.mute_preflight ?? false,
+			open_findings: c.open_findings,
+			asset_spec_path: c.asset_spec_path,
+			missing_assets: c.missing_assets
 		};
 	},
 	configToJson: (config) => {
@@ -120,7 +130,12 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 			web_research: s.web_research,
 			use_git: s.use_git,
 			max_turns: s.max_turns,
-			mute_preflight: s.mute_preflight
+			mute_preflight: s.mute_preflight,
+			// Saving from the editor used to drop these, so a chain's coding job
+			// edited by hand lost the plan review's findings and its art.
+			open_findings: s.open_findings?.length ? s.open_findings : undefined,
+			asset_spec_path: s.asset_spec_path ?? undefined,
+			missing_assets: s.missing_assets?.length ? s.missing_assets : undefined
 		});
 	},
 	validate: ({ workingDir, config }) => {

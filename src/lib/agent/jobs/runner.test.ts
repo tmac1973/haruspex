@@ -3419,6 +3419,8 @@ describe('jobs runner — asset generation', () => {
 		const input = mocks.createJob.mock.calls[0][0];
 		expect(input.description).toContain('could not be produced');
 		expect(input.description).toContain('thing_0');
+		// The description is for the person; the run reads its config.
+		expect(JSON.parse(input.type_config).missing_assets).toContain('thing_0');
 	});
 
 	it('still hands off when a chain-made job is re-run by hand', async () => {
