@@ -12,6 +12,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '$lib/utils/error';
+import { sleep } from '$lib/utils/async';
 import type { ImageEngineStatus } from '$lib/ipc/gen/ImageEngineStatus';
 import { getSettings } from '$lib/stores/settings';
 import { registerImageBackend } from '../registry';
@@ -124,7 +125,7 @@ async function call(path: string, body: unknown, signal?: AbortSignal): Promise<
 			if (signal?.aborted) throw new ImageBackendError('cancelled', 'Generation cancelled.');
 			const msg = errMessage(e);
 			if (EMPTY_RESULT.test(msg) && attempt < EMPTY_RESULT_ATTEMPTS) {
-				await new Promise((r) => setTimeout(r, EMPTY_RESULT_RETRY_MS));
+				await sleep(EMPTY_RESULT_RETRY_MS);
 				continue;
 			}
 			throw new ImageBackendError('unreachable', `The image engine failed ${path} — ${msg}`);

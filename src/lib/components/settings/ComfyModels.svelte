@@ -39,6 +39,8 @@
 	let busy = $state<string | null>(null);
 	let status = $state('');
 	let error = $state('');
+	/** The family whose file list was just copied, for a brief confirmation. */
+	let copied = $state<string | null>(null);
 
 	const cfg = () => ({
 		baseUrl: getSettings().imageBackendBaseUrl,
@@ -131,7 +133,10 @@
 	async function copy(row: Row) {
 		try {
 			await navigator.clipboard.writeText(manualList(row.missing));
-			status = 'Copied.';
+			copied = row.set.family;
+			setTimeout(() => {
+				if (copied === row.set.family) copied = null;
+			}, 1500);
 		} catch {
 			error = 'Could not copy the file list.';
 		}
@@ -166,6 +171,7 @@
 					<div class="actions">
 						{#if route === 'manual'}
 							<button onclick={() => copy(row)}>Copy file list</button>
+							{#if copied === row.set.family}<span class="detail">Copied.</span>{/if}
 						{:else if busy === row.set.family}
 							{#if route === 'direct'}<button onclick={cancel}>Cancel</button>{/if}
 						{:else}

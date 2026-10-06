@@ -8,6 +8,7 @@
  * removed — CI greps the production output to make sure.
  */
 import type { HandleClientError } from '@sveltejs/kit';
+import { forwardConsoleToDebugLog } from '$lib/debug-log';
 
 /**
  * What SvelteKit does when no hook is given: log it. Exported because the
@@ -19,6 +20,7 @@ export const handleError: HandleClientError = ({ error }) => {
 };
 
 export async function init(): Promise<void> {
+	forwardConsoleToDebugLog();
 	if (import.meta.env.MODE === 'e2e') {
 		const { installMocks } = await import('$lib/e2e/installMocks');
 		installMocks();

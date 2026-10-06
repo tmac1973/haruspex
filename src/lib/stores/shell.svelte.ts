@@ -31,6 +31,7 @@ import { resolveBackendDescriptor } from '$lib/inference/descriptor';
 import { remapIndexedRecords } from '$lib/agent/compaction';
 import { computeMessageStats, type MessageStats } from '$lib/stores/chat.svelte';
 import { errMessage } from '$lib/utils/error';
+import { formatDuration } from '$lib/utils/format';
 import {
 	buildShellSystemPrompt,
 	buildShellCodeSystemPrompt,
@@ -1023,14 +1024,6 @@ async function buildWatchNotification(completed: BackgroundWatch[]): Promise<str
 			'If nothing is needed, a one-line acknowledgement is fine.'
 	);
 	return lines.join('\n');
-}
-
-function formatDuration(ms: number): string {
-	const s = Math.max(0, Math.round(ms / 1000));
-	if (s < 60) return `${s}s`;
-	const m = Math.floor(s / 60);
-	const rem = s % 60;
-	return rem ? `${m}m ${rem}s` : `${m}m`;
 }
 
 function describeAgo(atMs: number): string {
