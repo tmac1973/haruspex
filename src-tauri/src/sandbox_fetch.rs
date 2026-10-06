@@ -99,25 +99,36 @@ async fn perform_fetch(
         .filter_map(|(k, v)| v.to_str().ok().map(|s| (k.to_string(), s.to_string())))
         .collect();
 
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| format!("Failed to read response body: {}", e))?;
-
-    if bytes.len() > MAX_FETCH_BYTES {
-        return Err(format!(
-            "Response too large ({} bytes); maximum is {} bytes",
-            bytes.len(),
-            MAX_FETCH_BYTES
-        ));
-    }
+    let body = read_capped(resp, MAX_FETCH_BYTES).await?;
 
     Ok(SandboxFetchResponse {
         status,
         headers,
-        body: bytes.to_vec(),
+        body,
         url: final_url,
     })
+}
+
+/// Read a response body, failing as soon as it passes `max` bytes. Chunk by
+/// chunk, so a runaway download is cut off at the cap instead of being held
+/// in memory whole and only then rejected.
+async fn read_capped(mut resp: reqwest::Response, max: usize) -> Result<Vec<u8>, String> {
+    let too_large = || format!("Response too large; maximum is {max} bytes");
+    if resp.content_length().is_some_and(|n| n > max as u64) {
+        return Err(too_large());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .map_err(|e| format!("Failed to read response body: {}", e))?
+    {
+        if body.len() + chunk.len() > max {
+            return Err(too_large());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
 }
 
 // ----------------------------------------------------------------------
@@ -233,4 +244,167 @@ fn cors_response(
     builder
         .body(body)
         .unwrap_or_else(|_| Response::new(Vec::new()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// A one-shot HTTP server on loopback: answers the first request with
+    /// `response` and hands back the raw request it read.
+    async fn serve_once(response: Vec<u8>) -> (String, tokio::task::JoinHandle<String>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let handle = tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 8192];
+            let n = sock.read(&mut buf).await.unwrap();
+            let _ = sock.write_all(&response).await;
+            let _ = sock.shutdown().await;
+            String::from_utf8_lossy(&buf[..n]).into_owned()
+        });
+        (url, handle)
+    }
+
+    fn http_ok(body: &str) -> Vec<u8> {
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        )
+        .into_bytes()
+    }
+
+    #[test]
+    fn the_target_comes_from_the_u_parameter_decoded() {
+        assert_eq!(
+            extract_target_url("x=1&u=https%3A%2F%2Fexample.com%2Fa%3Fb%3D2").as_deref(),
+            Some("https://example.com/a?b=2")
+        );
+        assert_eq!(extract_target_url("x=1"), None);
+        assert_eq!(extract_target_url(""), None);
+    }
+
+    #[test]
+    fn browser_headers_that_reveal_the_sandbox_are_not_forwarded() {
+        let mut h = HeaderMap::new();
+        for (k, v) in [
+            ("Host", "tauri.localhost"),
+            ("Origin", "http://tauri.localhost"),
+            ("Referer", "http://tauri.localhost/"),
+            ("Connection", "keep-alive"),
+            ("Content-Length", "3"),
+            ("Sec-Fetch-Mode", "cors"),
+            ("Sec-Fetch-Site", "cross-site"),
+            ("Sec-Fetch-Dest", "empty"),
+            ("Accept", "application/json"),
+            ("X-Api-Key", "k"),
+        ] {
+            h.insert(
+                header::HeaderName::from_bytes(k.as_bytes()).unwrap(),
+                v.parse().unwrap(),
+            );
+        }
+        let mut kept: Vec<String> = forward_headers(&h).into_keys().collect();
+        kept.sort();
+        assert_eq!(kept, ["accept", "x-api-key"]);
+    }
+
+    #[test]
+    fn every_reply_carries_the_cors_and_corp_headers() {
+        let r = cors_response(StatusCode::OK, Some("text/plain"), b"hi".to_vec());
+        let h = r.headers();
+        assert_eq!(h["access-control-allow-origin"], "*");
+        assert_eq!(h["cross-origin-resource-policy"], "cross-origin");
+        assert_eq!(h[header::CONTENT_TYPE], "text/plain");
+    }
+
+    #[tokio::test]
+    async fn a_preflight_is_answered_without_fetching_anything() {
+        let req = Request::builder()
+            .method(Method::OPTIONS)
+            .uri("haruspexfetch://localhost/?u=http%3A%2F%2F127.0.0.1%3A1%2F")
+            .body(Vec::new())
+            .unwrap();
+        let r = handle_fetch_scheme(req).await;
+        assert_eq!(r.status(), StatusCode::NO_CONTENT);
+        assert_eq!(r.headers()["access-control-allow-origin"], "*");
+    }
+
+    #[tokio::test]
+    async fn a_request_without_a_target_is_a_400() {
+        let req = Request::builder()
+            .uri("haruspexfetch://localhost/?x=1")
+            .body(Vec::new())
+            .unwrap();
+        let r = handle_fetch_scheme(req).await;
+        assert_eq!(r.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn an_unreachable_target_is_a_502_with_cors() {
+        // Port 1 on loopback: nothing listens, the connect is refused.
+        let req = Request::builder()
+            .uri("haruspexfetch://localhost/?u=http%3A%2F%2F127.0.0.1%3A1%2F")
+            .body(Vec::new())
+            .unwrap();
+        let r = handle_fetch_scheme(req).await;
+        assert_eq!(r.status(), StatusCode::BAD_GATEWAY);
+        assert_eq!(r.headers()["access-control-allow-origin"], "*");
+    }
+
+    #[tokio::test]
+    async fn the_scheme_relays_status_content_type_and_body() {
+        let (url, server) = serve_once(http_ok("pong")).await;
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!(
+                "haruspexfetch://localhost/?u={}",
+                urlencoding::encode(&url)
+            ))
+            .header("Origin", "http://tauri.localhost")
+            .header("X-Test", "1")
+            .body(b"ping".to_vec())
+            .unwrap();
+        let r = handle_fetch_scheme(req).await;
+        assert_eq!(r.status(), StatusCode::OK);
+        assert_eq!(r.headers()[header::CONTENT_TYPE], "text/plain");
+        assert_eq!(r.body(), b"pong");
+
+        let seen = server.await.unwrap().to_ascii_lowercase();
+        assert!(seen.starts_with("post / "), "{seen}");
+        assert!(seen.contains("x-test: 1"), "{seen}");
+        assert!(!seen.contains("origin:"), "{seen}");
+        assert!(seen.ends_with("ping"), "{seen}");
+    }
+
+    #[tokio::test]
+    async fn an_invalid_method_is_refused_before_any_request() {
+        let Err(err) = perform_fetch("http://127.0.0.1:1/", "BAD METHOD", None, None, None).await
+        else {
+            panic!("an invalid method was accepted");
+        };
+        assert!(err.contains("Invalid HTTP method"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn a_body_over_the_cap_is_refused() {
+        // Declared length over the cap: refused before reading.
+        let (url, _server) = serve_once(http_ok("0123456789")).await;
+        let resp = reqwest::get(&url).await.unwrap();
+        let err = read_capped(resp, 4).await.unwrap_err();
+        assert!(err.contains("too large"), "{err}");
+
+        // No declared length: refused while streaming.
+        let (url, _server) =
+            serve_once(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n0123456789".to_vec()).await;
+        let resp = reqwest::get(&url).await.unwrap();
+        let err = read_capped(resp, 4).await.unwrap_err();
+        assert!(err.contains("too large"), "{err}");
+
+        // At the cap: fine.
+        let (url, _server) = serve_once(http_ok("0123")).await;
+        let resp = reqwest::get(&url).await.unwrap();
+        assert_eq!(read_capped(resp, 4).await.unwrap(), b"0123");
+    }
 }

@@ -225,33 +225,11 @@ pub async fn mcp_install_addon(
     proxy: Option<ProxyConfig>,
 ) -> Result<String, String> {
     let catalog = catalog::load()?;
-    let entry = catalog
-        .entry(&entry_id)
-        .ok_or_else(|| format!("no catalog entry named '{entry_id}'"))?;
-    let Some(catalog::SetupStep::Addon {
-        label,
-        url,
-        sha256,
-        marker,
-        install_path,
-        ..
-    }) = entry.setup.get(step_index)
-    else {
-        return Err(format!(
-            "step {step_index} of {entry_id} is not an addon step"
-        ));
-    };
-
+    let spec = addon_step(&catalog, &entry_id, step_index)?;
     let installed = installer
         .install_addon(
             &app,
-            &install::AddonSpec {
-                label,
-                url,
-                sha256,
-                marker,
-                install_path,
-            },
+            &spec,
             std::path::Path::new(&target_dir),
             proxy.as_ref(),
         )
@@ -276,6 +254,43 @@ pub async fn mcp_run_setup_command(
     // A setup command is usually a sign-in that talks to the service, so it
     // needs the proxy as much as the server does.
     let spawn = install::setup_command_config(&app, &config, args, proxy.as_ref())?;
+    run_setup(&spawn).await
+}
+
+/// Look up a catalog entry's addon step by position.
+fn addon_step<'a>(
+    catalog: &'a catalog::Catalog,
+    entry_id: &str,
+    step_index: usize,
+) -> Result<install::AddonSpec<'a>, String> {
+    let entry = catalog
+        .entry(entry_id)
+        .ok_or_else(|| format!("no catalog entry named '{entry_id}'"))?;
+    let Some(catalog::SetupStep::Addon {
+        label,
+        url,
+        sha256,
+        marker,
+        install_path,
+        ..
+    }) = entry.setup.get(step_index)
+    else {
+        return Err(format!(
+            "step {step_index} of {entry_id} is not an addon step"
+        ));
+    };
+    Ok(install::AddonSpec {
+        label,
+        url,
+        sha256,
+        marker,
+        install_path,
+    })
+}
+
+/// Run a setup command to completion in exactly the environment `spawn`
+/// gives it, and fold both output streams into the answer.
+async fn run_setup(spawn: &SpawnConfig) -> Result<String, String> {
     let mut cmd = tokio::process::Command::new(&spawn.program);
     cmd.args(&spawn.args);
     cmd.env_clear();
@@ -406,4 +421,83 @@ pub async fn mcp_connect_remote_server(
     supervisor
         .connect_remote(&config.id, &http, proxy.as_ref(), config.proxy_use)
         .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_addon_step_comes_from_the_catalog_by_position() {
+        let catalog = catalog::load().unwrap();
+        let godot = catalog.entry("godot").unwrap();
+        let index = godot
+            .setup
+            .iter()
+            .position(|s| matches!(s, catalog::SetupStep::Addon { .. }))
+            .unwrap();
+        let spec = addon_step(&catalog, "godot", index).unwrap();
+        assert!(spec.url.starts_with("https://"), "{}", spec.url);
+        assert_eq!(spec.sha256.len(), 64);
+
+        let err = addon_step(&catalog, "godot", 0).err().unwrap();
+        assert!(err.contains("is not an addon step"), "{err}");
+        assert!(addon_step(&catalog, "godot", 99).is_err());
+        let err = addon_step(&catalog, "no-such-entry", 0).err().unwrap();
+        assert!(err.contains("no catalog entry"), "{err}");
+    }
+
+    #[cfg(unix)]
+    fn sh(script: &str, env: Vec<(String, String)>) -> SpawnConfig {
+        SpawnConfig {
+            id: "t".into(),
+            program: "/bin/sh".into(),
+            args: vec!["-c".into(), script.into()],
+            env,
+            cwd: None,
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_setup_command_sees_only_the_environment_it_was_given() {
+        std::env::set_var("HARUSPEX_SETUP_TEST_LEAK", "leaked");
+        let out = run_setup(&sh(
+            "echo \"given=$GIVEN leak=$HARUSPEX_SETUP_TEST_LEAK\"",
+            vec![("GIVEN".into(), "yes".into())],
+        ))
+        .await
+        .unwrap();
+        assert_eq!(out.trim(), "given=yes leak=");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn both_streams_come_back_on_success_and_on_failure() {
+        let ok = run_setup(&sh("echo out; echo err >&2", vec![]))
+            .await
+            .unwrap();
+        assert_eq!(ok, "out\n\nerr\n");
+
+        let failed = run_setup(&sh("echo signed out >&2; exit 3", vec![]))
+            .await
+            .unwrap_err();
+        assert_eq!(failed.trim(), "signed out");
+
+        let silent = run_setup(&sh("exit 4", vec![])).await.unwrap_err();
+        assert!(silent.contains("exited with"), "{silent}");
+    }
+
+    #[tokio::test]
+    async fn a_missing_program_is_reported_by_path() {
+        let spawn = SpawnConfig {
+            id: "t".into(),
+            program: "/no/such/haruspex-setup-program".into(),
+            args: vec![],
+            env: vec![],
+            cwd: None,
+        };
+        let err = run_setup(&spawn).await.unwrap_err();
+        assert!(err.contains("haruspex-setup-program"), "{err}");
+    }
 }
