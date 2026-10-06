@@ -245,8 +245,6 @@ Then Probe again in Haruspex. ComfyUI picks up new files without a restart.
 - Haruspex's Manager route is live-tested against Manager 4.2.2 with the
   server on loopback, installing Ming's VAE and checking its SHA-256
   (`plan/local-image-generation/TODO.md`, phase 27).
-- The remote case, with `network_mode = personal_cloud`, follows Manager's
-  documented rules, but hasn't been tried end to end yet.
 - This install path was followed on Fedora 44 with an RX 7900 XTX
   (gfx1100, 24 GB): Python 3.12, `torch 2.10.0+rocm7.0`, ComfyUI 0.39.0
   serving `/system_stats` and reporting the card as `native`, and Manager
@@ -254,5 +252,6 @@ Then Probe again in Haruspex. ComfyUI picks up new files without a restart.
   a wheel — nothing built from source. An fp16 matmul ran at 18.7 TFLOP/s,
   which is worth checking separately: ROCm can enumerate a card and still
   fault on compute.
-- Ming itself has not been generated with on that card. The install above
-  stops short of the model weights, which Haruspex fetches through Manager.
+- The remote case was verified end to end on 2026-10-05, on that server:
+  Haruspex, on another machine, installed Ming-Image through Manager, and
+  Settings → Image generated a test image on it.
