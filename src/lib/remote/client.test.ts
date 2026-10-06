@@ -7,7 +7,7 @@
  * copy would pass while the served page was broken.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 
 // The page exactly as Rust serves it, from where Rust reads it.
 import html from '../../../src-tauri/src/remote/client/index.html?raw';
@@ -46,7 +46,10 @@ interface Client {
 	transcript: { role: string; text: string; failed?: boolean }[];
 }
 
-function start(options: { token?: string | null; fetch?: ReturnType<typeof vi.fn> } = {}) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- what vitest 3's vi.fn() was
+type FetchMock = Mock<(...args: any[]) => any>;
+
+function start(options: { token?: string | null; fetch?: FetchMock } = {}) {
 	const token = options.token === undefined ? 'link-token' : options.token;
 	const fetchMock =
 		options.fetch ??
@@ -54,7 +57,7 @@ function start(options: { token?: string | null; fetch?: ReturnType<typeof vi.fn
 	const client = boot({
 		document,
 		storage: localStorage,
-		fetch: fetchMock,
+		fetch: fetchMock as unknown as typeof fetch,
 		EventSource: FakeStream,
 		search: token ? `?t=${token}` : ''
 	}) as Client;

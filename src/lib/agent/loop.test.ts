@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { NUDGE_NOTE, automaticCheck } from './loop/nudges';
 import type {
 	ChatCompletionResponse,
@@ -146,15 +146,19 @@ function usageChunk(usage: Usage): StreamChunk {
 	return { delta: {}, finish_reason: null, usage };
 }
 
+/** A callback mock that can stand in for any of the loop's typed callbacks. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- what vitest 3's vi.fn() was
+type CallbackMock = Mock<(...args: any[]) => any>;
+
 interface LoopCallbacks {
-	onToolStart: ReturnType<typeof vi.fn>;
-	onToolEnd: ReturnType<typeof vi.fn>;
-	onStreamChunk: ReturnType<typeof vi.fn>;
-	onComplete: ReturnType<typeof vi.fn>;
-	onError: ReturnType<typeof vi.fn>;
-	onUsageUpdate: ReturnType<typeof vi.fn>;
-	onCallStats: ReturnType<typeof vi.fn>;
-	onReasoning: ReturnType<typeof vi.fn>;
+	onToolStart: CallbackMock;
+	onToolEnd: CallbackMock;
+	onStreamChunk: CallbackMock;
+	onComplete: CallbackMock;
+	onError: CallbackMock;
+	onUsageUpdate: CallbackMock;
+	onCallStats: CallbackMock;
+	onReasoning: CallbackMock;
 }
 
 function makeOptions(overrides: Partial<AgentLoopOptions> = {}): {
