@@ -7,9 +7,9 @@ use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
 
 use crate::sidecar_utils::{
-    base_url, clear_logs, drive_status_on_health, health_url, http_client, kill_child,
-    kill_process_on_port, new_log_buffer, poll_health, ports, snapshot_logs, spawn_log_reader,
-    timing, with_library_paths, LogBuffer, SidecarStatus, LOOPBACK,
+    base_url, clear_logs, health_url, http_client, kill_child, kill_process_on_port,
+    new_log_buffer, ports, require_ready, snapshot_logs, spawn_log_reader, timing, watch_health,
+    with_library_paths, LogBuffer, SidecarStatus, LOOPBACK,
 };
 
 const WHISPER_PORT: u16 = ports::WHISPER;
@@ -80,26 +80,13 @@ impl WhisperServer {
             &[],
         );
 
-        // Health poll: drive the status from Starting → Ready (or Error
-        // on timeout). Bails out early if another path (e.g. an explicit
-        // stop()) moves the status away from Starting first.
-        let status_for_health = Arc::clone(&self.status);
-        tauri::async_runtime::spawn(async move {
-            let url = health_url(WHISPER_PORT);
-            let status_check = Arc::clone(&status_for_health);
-            let ok = poll_health(
-                &url,
-                "whisper-server",
-                timing::HEALTH_POLL_TIMEOUT,
-                false,
-                move || {
-                    let s = Arc::clone(&status_check);
-                    async move { *s.lock().await == WhisperStatus::Starting }
-                },
-            )
-            .await;
-            drive_status_on_health(&status_for_health, ok, "whisper-server").await;
-        });
+        watch_health(
+            &self.status,
+            health_url(WHISPER_PORT),
+            "whisper-server",
+            timing::HEALTH_POLL_TIMEOUT,
+            false,
+        );
 
         Ok(())
     }
@@ -123,11 +110,7 @@ impl WhisperServer {
     }
 
     pub async fn transcribe(&self, audio_data: Vec<u8>) -> Result<String, String> {
-        let status = self.status.lock().await;
-        if *status != WhisperStatus::Ready {
-            return Err("Whisper server is not ready".to_string());
-        }
-        drop(status);
+        require_ready(&self.status, "Whisper server is not ready").await?;
 
         let client = http_client(Duration::from_secs(30));
 

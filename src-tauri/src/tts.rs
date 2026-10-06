@@ -10,9 +10,9 @@ use tokio::sync::Mutex;
 use tokio::time::sleep;
 
 use crate::sidecar_utils::{
-    base_url, clear_logs, http_client, kill_child, kill_process_on_port, new_log_buffer,
-    poll_health, ports, snapshot_logs, spawn_log_reader, timing, with_library_paths, LogBuffer,
-    SidecarStatus, LOOPBACK,
+    base_url, clear_logs, http_client, kill_child, kill_process_on_port, new_log_buffer, ports,
+    require_ready, snapshot_logs, spawn_log_reader, timing, watch_health, with_library_paths,
+    LogBuffer, SidecarStatus, LOOPBACK,
 };
 
 const TTS_PORT: u16 = ports::TTS;
@@ -20,6 +20,10 @@ const TTS_PORT: u16 = ports::TTS;
 /// Lifecycle state of the koko TTS sidecar. Aliased onto the shared
 /// `SidecarStatus` so all three sidecars share one wire shape.
 type TtsStatus = SidecarStatus;
+
+/// How long `start_and_wait` waits for koko to load its model: 30 s.
+const READY_ATTEMPTS: usize = 60;
+const READY_INTERVAL: Duration = Duration::from_millis(500);
 
 // TtsEngine is Send + Sync because it only contains Send+Sync types.
 // Audio playback happens on a dedicated thread (not stored in the struct).
@@ -175,27 +179,13 @@ impl TtsEngine {
         // "listening" stdout sniff in the reader above — this just
         // covers the case where koko buffers stdout past the moment it
         // starts accepting connections.
-        let status_for_health = Arc::clone(&self.status);
-        tauri::async_runtime::spawn(async move {
-            // accept_any: koko's `/` may answer 4xx yet still mean "up".
-            let url = format!("{}/", base_url(TTS_PORT));
-            let status_check = Arc::clone(&status_for_health);
-            let ok = poll_health(&url, "koko", timing::HEALTH_POLL_TIMEOUT, true, move || {
-                let s = Arc::clone(&status_check);
-                async move { *s.lock().await == TtsStatus::Starting }
-            })
-            .await;
-            let mut status = status_for_health.lock().await;
-            if ok {
-                if *status == TtsStatus::Starting {
-                    *status = TtsStatus::Ready;
-                    info!("Kokoro TTS server ready (health poll)");
-                }
-            } else if *status == TtsStatus::Starting {
-                *status = TtsStatus::Error("TTS server startup timed out".to_string());
-                error!("Kokoro TTS server startup timed out");
-            }
-        });
+        watch_health(
+            &self.status,
+            format!("{}/", base_url(TTS_PORT)),
+            "koko",
+            timing::HEALTH_POLL_TIMEOUT,
+            true,
+        );
 
         Ok(())
     }
@@ -209,6 +199,20 @@ impl TtsEngine {
 
     pub async fn is_ready(&self) -> bool {
         *self.status.lock().await == TtsStatus::Ready
+    }
+
+    /// Start the server if it is not up, and wait for it to be ready, so the
+    /// caller can synthesize as soon as this returns. The local app and a
+    /// remote guest both come through here.
+    pub async fn start_and_wait(&self, app: &AppHandle) -> Result<(), String> {
+        self.start(app).await?;
+        for _ in 0..READY_ATTEMPTS {
+            if self.is_ready().await {
+                return Ok(());
+            }
+            sleep(READY_INTERVAL).await;
+        }
+        Err("TTS server failed to become ready".to_string())
     }
 
     pub async fn get_logs(&self) -> Vec<String> {
@@ -225,11 +229,7 @@ impl TtsEngine {
         voice: &str,
         output_device: Option<&str>,
     ) -> Result<(), String> {
-        let status = self.status.lock().await;
-        if *status != TtsStatus::Ready {
-            return Err("TTS server not ready".to_string());
-        }
-        drop(status);
+        require_ready(&self.status, "TTS server not ready").await?;
 
         if text.trim().is_empty() {
             return Err("No text to speak".to_string());
@@ -365,17 +365,7 @@ pub async fn tts_initialize(
     app: AppHandle,
     state: tauri::State<'_, TtsEngine>,
 ) -> Result<(), String> {
-    state.start(&app).await?;
-
-    // Wait for the server to become ready before returning,
-    // so the caller can immediately synthesize after this resolves.
-    for _ in 0..60 {
-        if state.is_ready().await {
-            return Ok(());
-        }
-        sleep(Duration::from_millis(500)).await;
-    }
-    Err("TTS server failed to become ready".to_string())
+    state.start_and_wait(&app).await
 }
 
 #[tauri::command]

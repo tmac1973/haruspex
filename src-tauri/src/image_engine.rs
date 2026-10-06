@@ -29,9 +29,9 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::ShellExt;
 
 use crate::sidecar_utils::{
-    base_url, http_client, kill_child, kill_process_on_port, new_log_buffer, poll_health,
-    ports::IMAGE as IMAGE_PORT, snapshot_logs, spawn_log_reader, LogBuffer, SidecarStatus,
-    LOOPBACK,
+    base_url, http_client, kill_child, kill_process_on_port, library_path_env, new_log_buffer,
+    poll_health, ports::IMAGE as IMAGE_PORT, snapshot_logs, spawn_log_reader, LogBuffer,
+    SidecarStatus, LOOPBACK,
 };
 
 /// Readiness. sd-server serves no `/health`; this is the cheapest route it
@@ -344,21 +344,15 @@ impl ImageEngine {
         args: &[String],
         vk: Option<String>,
     ) -> Result<(), ImageEngineError> {
-        let libs_str = libs.to_string_lossy().to_string();
-        // sd-libs FIRST. The exe directory carries llama.cpp's ggml under the
-        // same sonames at a different ABI; putting it first resolves
-        // sd-server against the wrong library.
-        let existing = std::env::var(LIB_PATH_VAR).unwrap_or_default();
-        let lib_path = if existing.is_empty() {
-            libs_str.clone()
-        } else {
-            format!("{libs_str}{LIB_PATH_SEP}{existing}")
-        };
+        // sd-libs only, not `with_library_paths`. The exe directory carries
+        // llama.cpp's ggml under the same sonames at a different ABI; putting
+        // it on the path resolves sd-server against the wrong library.
+        let (lib_var, lib_path) = library_path_env(vec![libs.to_string_lossy().to_string()]);
 
         let mut cmd = app
             .shell()
             .command(exe.to_string_lossy().to_string())
-            .env(LIB_PATH_VAR, lib_path)
+            .env(lib_var, lib_path)
             .current_dir(libs)
             .args(args);
         if let Some(ids) = vk {
@@ -404,18 +398,6 @@ impl ImageEngine {
         *self.model.lock().await = None;
     }
 }
-
-#[cfg(target_os = "linux")]
-const LIB_PATH_VAR: &str = "LD_LIBRARY_PATH";
-#[cfg(target_os = "macos")]
-const LIB_PATH_VAR: &str = "DYLD_LIBRARY_PATH";
-#[cfg(target_os = "windows")]
-const LIB_PATH_VAR: &str = "PATH";
-
-#[cfg(target_os = "windows")]
-const LIB_PATH_SEP: &str = ";";
-#[cfg(not(target_os = "windows"))]
-const LIB_PATH_SEP: &str = ":";
 
 /// Where the bundled `sd-server` binary is on disk.
 ///
@@ -597,16 +579,6 @@ mod tests {
         assert!(ImageEngineError::Timeout("no devices".into())
             .to_string()
             .contains("no devices"));
-    }
-
-    #[test]
-    fn the_library_path_variable_matches_the_platform() {
-        #[cfg(target_os = "linux")]
-        assert_eq!(LIB_PATH_VAR, "LD_LIBRARY_PATH");
-        #[cfg(target_os = "macos")]
-        assert_eq!(LIB_PATH_VAR, "DYLD_LIBRARY_PATH");
-        #[cfg(target_os = "windows")]
-        assert_eq!(LIB_PATH_VAR, "PATH");
     }
 
     #[test]

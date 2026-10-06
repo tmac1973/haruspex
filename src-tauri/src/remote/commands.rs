@@ -9,7 +9,6 @@
 //! of these block, but the async form removes the question.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -62,15 +61,10 @@ impl Host for AppBridge {
                 return Ok(());
             }
             log::info!("[remote] starting the speech engine for a guest");
-            engine.start(&app).await?;
-            // Same wait the local path allows: the sidecar loads a model.
-            for _ in 0..SPEECH_START_ATTEMPTS {
-                if engine.is_ready().await {
-                    return Ok(());
-                }
-                tokio::time::sleep(Duration::from_millis(500)).await;
-            }
-            Err("the speech engine did not become ready".to_string())
+            engine
+                .start_and_wait(&app)
+                .await
+                .map_err(|_| "the speech engine did not become ready".to_string())
         })
     }
 }
@@ -85,9 +79,6 @@ struct AnswerEvent<'a> {
     #[serde(flatten)]
     answer: &'a Answer,
 }
-
-/// 30 seconds at 500ms apart, matching what the app's own TTS startup allows.
-const SPEECH_START_ATTEMPTS: usize = 60;
 
 #[tauri::command]
 pub async fn remote_start(
