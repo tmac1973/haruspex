@@ -6,6 +6,7 @@
 
 export const IPC = {
 	app_protected_targets: 'app_protected_targets',
+	artifact_register: 'artifact_register',
 	cancel_download: 'cancel_download',
 	capture_screen: 'capture_screen',
 	capture_window: 'capture_window',

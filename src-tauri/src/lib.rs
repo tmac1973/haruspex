@@ -1,4 +1,5 @@
 mod app_log;
+mod artifact_frame;
 mod audio;
 mod clipboard;
 mod code_tools;
@@ -84,6 +85,13 @@ pub fn run() {
         // images stream from disk instead of sitting in webview memory. See
         // image_cache::protocol for the URL shape and why the hash is in the
         // path rather than the host.
+        // Interactive Python artifacts, each served with a CSP of its own so
+        // the app window's can stay strict. See artifact_frame.
+        .register_uri_scheme_protocol("haruspex-artifact", |ctx, request| {
+            ctx.app_handle()
+                .state::<artifact_frame::ArtifactFrames>()
+                .handle(&request)
+        })
         .register_asynchronous_uri_scheme_protocol("haruspex-img", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             tauri::async_runtime::spawn_blocking(move || {
@@ -181,6 +189,7 @@ pub fn run() {
         })
         .manage(LlamaServer::new())
         .manage(sandbox_fetch::SandboxNet::default())
+        .manage(artifact_frame::ArtifactFrames::default())
         // Nothing starts here: the image engine spawns on demand only.
         .manage(image_engine::ImageEngine::new())
         .manage(McpInstaller::new())
@@ -394,6 +403,7 @@ pub fn run() {
             lint::lint_python_source,
             sandbox_fetch::sandbox_fetch,
             sandbox_fetch::sandbox_set_network,
+            artifact_frame::artifact_register,
             sandbox_save::sandbox_save,
             sandbox_save::sandbox_delete_in_workdir,
             sandbox_sync::sandbox_sync_workdir,

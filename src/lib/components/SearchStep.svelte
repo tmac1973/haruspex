@@ -8,6 +8,7 @@
 	import { isToolErrorResult } from '$lib/agent/tools/_helpers';
 	import { sanitizeHtml } from '$lib/sanitize';
 	import ImageViewerModal from './ImageViewerModal.svelte';
+	import ArtifactFrame from './ArtifactFrame.svelte';
 	import MemoryRecallStep from './MemoryRecallStep.svelte';
 	import { MEMORY_RECALL_STEP } from '$lib/agent/memory/recall';
 
@@ -276,18 +277,11 @@
 								</div>
 							{:else if artifact.interactive}
 								<!--
-								Interactive HTML (plotly / bokeh / altair / folium output) renders
-								inside a sandboxed srcdoc iframe so the browser loads it as a fresh
-								document and executes the embedded <script> tags natively. sandbox=
-								"allow-scripts" lets the chart's JS run but no allow-same-origin →
-								the iframe can't reach the parent.
+								Interactive HTML (plotly / bokeh / altair / folium output) renders in
+								a sandboxed iframe served from its own scheme, with a CSP of its own,
+								so its <script> tags run without the app window having to allow them.
 							-->
-								<iframe
-									class="artifact-iframe"
-									srcdoc={artifact.html}
-									sandbox="allow-scripts"
-									title="interactive plot"
-								></iframe>
+								<ArtifactFrame html={artifact.html} />
 							{:else}
 								<div class="artifact-html">
 									{#if artifact.truncated}
@@ -510,14 +504,6 @@
 	}
 	.clickable:hover {
 		opacity: 0.9;
-	}
-
-	.artifact-iframe {
-		width: 100%;
-		height: 480px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: white;
 	}
 
 	.artifact-html {
