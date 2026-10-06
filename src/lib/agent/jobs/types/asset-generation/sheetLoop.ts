@@ -16,7 +16,7 @@ import type { CheckReport } from '$lib/ipc/gen/CheckReport';
 import type { ImageResult } from '$lib/image/types';
 import { betterReport, judgeUnavailable, maybeJudge, rejectionReason } from './gate';
 import type { GenerateDeps } from './generate';
-import { escapesWorkdir, isCancellation, isTransient, reasonOf } from './guards';
+import { escapesWorkdir, isCancellation, isTransient, keepBest, reasonOf } from './guards';
 import { assignCells, padding, sheetRequest, type CellResult, type SheetPlan } from './sheets';
 import type { EntryOutcome, SheetOutcome } from './types';
 
@@ -39,6 +39,8 @@ export interface SheetLoopContext {
 interface Tally {
 	attempts: Map<number, number>;
 	best: Map<number, CheckReport | null>;
+	/** The piece behind each `best`, written if every round is rejected. */
+	bestBytes: Map<number, Uint8Array>;
 }
 
 /**
@@ -75,7 +77,14 @@ async function admit(plan: SheetPlan, ctx: SheetLoopContext, started: number): P
 /** What one cell came to: written, or a reason to try again. */
 type CellVerdict =
 	| { done: true; report: CheckReport; degraded: string[] }
-	| { done: false; reason: string; report: CheckReport | null; rejected: boolean };
+	| {
+			done: false;
+			reason: string;
+			report: CheckReport | null;
+			rejected: boolean;
+			/** The normalized piece, when there was one to judge. */
+			bytes?: Uint8Array;
+	  };
 
 /** The degradation for a piece that looks joined to a neighbour nobody judged. */
 export const MAY_BE_JOINED = 'may be joined to a neighbour';
@@ -131,7 +140,13 @@ async function processCell(
 		: { verdict: null };
 	const verdict = judged.verdict;
 	if (!report.passed || (verdict && !verdict.ok)) {
-		return { done: false, reason: rejectionReason(report, verdict), report, rejected: true };
+		return {
+			done: false,
+			reason: rejectionReason(report, verdict),
+			report,
+			rejected: true,
+			bytes
+		};
 	}
 	const degraded = judged.unavailable ? [judgeUnavailable(judged.unavailable)] : [];
 	// Nobody looked, and it looks joined: written, but the report says so and
@@ -216,14 +231,21 @@ async function settleCell(
 		return false;
 	}
 	if (verdict.rejected) sheet.rejected++;
-	if (verdict.report) tally.best.set(i, betterReport(tally.best.get(i) ?? null, verdict.report));
+	if (verdict.report) {
+		const nextBest = betterReport(tally.best.get(i) ?? null, verdict.report);
+		if (nextBest === verdict.report && verdict.bytes) tally.bestBytes.set(i, verdict.bytes);
+		tally.best.set(i, nextBest);
+	}
 	if (attempts < ctx.deps.maxAttempts) return true;
+	const entry = ctx.spec.entries[i];
+	const kept = await keepBest(ctx.deps.writeBytes, entry.out, tally.bestBytes.get(i));
 	const outcome: Outcome = {
 		status: 'unresolved',
 		attempts,
 		seed,
 		degraded: [],
-		reason: verdict.reason
+		reason: verdict.reason,
+		...(kept ? { kept } : {})
 	};
 	ctx.record(i, started, outcome, tally.best.get(i) ?? null);
 	return false;
@@ -231,7 +253,7 @@ async function settleCell(
 
 export async function runSheet(plan: SheetPlan, ctx: SheetLoopContext): Promise<void> {
 	const started = Date.now();
-	const tally: Tally = { attempts: new Map(), best: new Map() };
+	const tally: Tally = { attempts: new Map(), best: new Map(), bestBytes: new Map() };
 	let pending = await admit(plan, ctx, started);
 
 	for (let round = 1; pending.length > 0; round++) {

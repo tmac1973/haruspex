@@ -21,7 +21,7 @@ import {
 	retrySeed,
 	type JudgeDeps
 } from './gate';
-import { escapesWorkdir, isCancellation, isTransient, reasonOf } from './guards';
+import { escapesWorkdir, isCancellation, isTransient, keepBest, reasonOf } from './guards';
 import { planSheets, type SheetPlan } from './sheets';
 import { runSheet as runSheetLoop } from './sheetLoop';
 import type { EntryOutcome, SheetOutcome } from './types';
@@ -164,6 +164,8 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 		let negativePrompt = request.negativePrompt ?? '';
 		let seed = request.seed;
 		let best: CheckReport | null = null;
+		/** The image behind `best`, written if every attempt is rejected. */
+		let bestBytes: Uint8Array | undefined;
 		let lastReason = '';
 		let lastSeed: number | null = null;
 
@@ -211,13 +213,15 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 				// is a rejection like any other — retried, not fatal.
 				lastReason = reasonOf(e);
 				if (attempt >= deps.maxAttempts) {
+					const kept = await keepBest(deps.writeBytes, entry.out, bestBytes);
 					finish(
 						{
 							status: 'unresolved',
 							attempts: attempt,
 							seed: lastSeed,
 							degraded,
-							reason: lastReason
+							reason: lastReason,
+							...(kept ? { kept } : {})
 						},
 						best
 					);
@@ -253,18 +257,23 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 				return;
 			}
 
-			best = betterReport(best, report);
+			const nextBest = betterReport(best, report);
+			if (nextBest === report) bestBytes = bytes;
+			best = nextBest;
 			lastReason = rejectionReason(report, verdict);
 			if (attempt >= deps.maxAttempts) {
-				// Nothing is written. A half-good PNG on disk would be skipped
-				// by the next run's skip-existing rule and never retried.
+				// The best attempt is written, so the code has a file to load,
+				// and the spec marks it rejected: a re-run skips a file on disk,
+				// so it is Review assets that sends it back, not the next run.
+				const kept = await keepBest(deps.writeBytes, entry.out, bestBytes);
 				finish(
 					{
 						status: 'unresolved',
 						attempts: attempt,
 						seed: lastSeed,
 						degraded,
-						reason: lastReason
+						reason: lastReason,
+						...(kept ? { kept } : {})
 					},
 					best
 				);

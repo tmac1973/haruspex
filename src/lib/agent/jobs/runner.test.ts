@@ -3340,8 +3340,8 @@ describe('jobs runner — asset generation', () => {
 		expect(getCurrentRun()!.steps[3].output).toContain('Every asset passed');
 	});
 
-	it('leads with the unresolved count and writes no file for those assets', async () => {
-		// The only number in the report that asks the user to do something.
+	it('keeps the best attempt of what never passed, marks it rejected, and says so', async () => {
+		// The code built on the set needs a file to load; Review assets sends it back.
 		mocks.getJob.mockResolvedValueOnce(assetJob({ max_attempts: 2 }));
 		const written = wireFs(goodSpec(2), { recipe: goodRecipe() }, [], {
 			passed: false,
@@ -3353,11 +3353,15 @@ describe('jobs runner — asset generation', () => {
 
 		// The work that was done is real, so the run still succeeded.
 		expect(getCurrentRun()?.status).toBe('succeeded');
-		expect(getCurrentRun()!.steps[3].output).toMatch(/^2 asset\(s\) could not be produced/);
-		expect(written.bytes).not.toContain('assets/generated/thing_0.png');
+		expect(getCurrentRun()!.steps[3].output).toMatch(
+			/^Every asset is on disk\.\n2 kept despite failing their checks/
+		);
+		expect(written.bytes).toContain('assets/generated/thing_0.png');
 		const report = written.find((w) => w.relPath === 'assets/REPORT-assets.md')!;
-		expect(report.content).toContain('## Not produced');
-		expect(report.content).toContain('Nothing was written to `assets/generated/thing_0.png`');
+		expect(report.content).toContain('## Kept, but rejected');
+		expect(report.content).not.toContain('## Not produced');
+		const spec = written.filter((w) => w.relPath === SPEC_PATH).at(-1)!;
+		expect(JSON.parse(spec.content).entries[0].rejected).toBeTruthy();
 		// Two entries, two attempts each.
 		expect(entryCalls()).toHaveLength(4);
 	});
@@ -3403,7 +3407,7 @@ describe('jobs runner — asset generation', () => {
 		expect(String(handoff.at(-1)?.[3])).toContain('Started coding job');
 	});
 
-	it('tells the coding run which art is missing', async () => {
+	it('does not tell the coding run that kept art is missing', async () => {
 		// So its preflight plans around the gap instead of writing code that
 		// loads a file nobody made.
 		mocks.getJob.mockImplementation(async (id: number) =>
@@ -3416,11 +3420,10 @@ describe('jobs runner — asset generation', () => {
 		await enqueue(1, 'chained');
 		await settle(getCurrentRun);
 
+		// Rejected, but its best attempt is on disk for the code to load.
 		const input = mocks.createJob.mock.calls[0][0];
-		expect(input.description).toContain('could not be produced');
-		expect(input.description).toContain('thing_0');
-		// The description is for the person; the run reads its config.
-		expect(JSON.parse(input.type_config).missing_assets).toContain('thing_0');
+		expect(input.description).not.toContain('could not be produced');
+		expect(JSON.parse(input.type_config).missing_assets).toEqual([]);
 	});
 
 	it('still hands off when a chain-made job is re-run by hand', async () => {

@@ -60,6 +60,13 @@ export interface AssetEntry {
 	 * so it is not mistaken for a knob nothing consumes.
 	 */
 	notes?: string;
+	/**
+	 * Set by a run when every attempt at this entry was rejected: why the last
+	 * check failed. The file at `out` is then the best rejected attempt, kept
+	 * so the code has something to load. Review assets offers it to be made
+	 * again; the next accepted generation clears this.
+	 */
+	rejected?: string;
 }
 
 /** Where the committed anchor lives, relative to the working directory. */

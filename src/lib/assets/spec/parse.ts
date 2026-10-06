@@ -58,7 +58,8 @@ function entry(raw: unknown): AssetEntry | null {
 		...(typeof e.seed === 'number' || e.seed === null ? { seed: e.seed as number | null } : {}),
 		...(optionalStr(e.negativePrompt) ? { negativePrompt: str(e.negativePrompt) } : {}),
 		...(optionalStr(e.notes) ? { notes: str(e.notes) } : {}),
-		...(optionalStr(e.sheet) ? { sheet: str(e.sheet) } : {})
+		...(optionalStr(e.sheet) ? { sheet: str(e.sheet) } : {}),
+		...(optionalStr(e.rejected) ? { rejected: str(e.rejected) } : {})
 	};
 }
 

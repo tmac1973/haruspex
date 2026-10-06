@@ -38,6 +38,11 @@ export interface EntryOutcome {
 	/** Coherence layers this entry had to do without, in plain words. */
 	degraded: string[];
 	reason?: string;
+	/**
+	 * Unresolved, but its best rejected attempt was written to `out` so there
+	 * is something to load. The spec marks it `rejected` for review.
+	 */
+	kept?: boolean;
 }
 
 /**

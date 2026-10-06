@@ -498,17 +498,40 @@ describe('the quality gate', () => {
 		expect(h.requests[1].prompt.split('flat pixel art').length - 1).toBe(2);
 	});
 
-	it('writes NOTHING for an entry that never passes', async () => {
-		// A half-good PNG on disk would be skipped by the next run's
-		// skip-existing rule and never retried.
+	it('keeps the best attempt of an entry that never passes, and says so', async () => {
+		// The code built on the set needs a file to load; the spec marks it
+		// rejected so Review assets can send it back.
 		failing([{ passed: false, failed: ['alpha_low'] }]);
 		const h = harness({ maxAttempts: 3 });
 		const [r] = await generateEntries(specOf([{}]), h.deps);
 
 		expect(r.outcome.status).toBe('unresolved');
 		expect(r.outcome.attempts).toBe(3);
-		expect(h.written).toEqual([]);
+		expect(r.outcome.kept).toBe(true);
+		expect(h.written).toEqual(['out/e0.png']);
 		expect(h.requests).toHaveLength(3);
+	});
+
+	it('writes the best attempt, not the last', async () => {
+		failing([
+			{ passed: false, failed: ['alpha_low', 'entropy'] },
+			{ passed: false, failed: ['entropy'] },
+			{ passed: false, failed: ['alpha_low', 'entropy', 'palette_distance'] }
+		]);
+		let n = 0;
+		const base = invoke.getMockImplementation()!;
+		invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) =>
+			cmd === 'image_normalize' ? { bytes: [++n], stats: STATS } : base(cmd, args)
+		);
+		const bytes: number[][] = [];
+		const h = harness({
+			maxAttempts: 3,
+			writeBytes: async (_rel: string, b: Uint8Array) => {
+				bytes.push([...b]);
+			}
+		});
+		await generateEntries(specOf([{}]), h.deps);
+		expect(bytes).toEqual([[2]]);
 	});
 
 	it('keeps the best report across attempts, not the last', async () => {
@@ -600,7 +623,8 @@ describe('the vision judge', () => {
 		const [r] = await generateEntries(specOf([{}]), h.deps);
 		expect(r.outcome.status).toBe('unresolved');
 		expect(r.outcome.reason).toBe('that is a hammer');
-		expect(h.written).toEqual([]);
+		expect(r.outcome.kept).toBe(true);
+		expect(h.written).toEqual(['out/e0.png']);
 	});
 
 	it('is handed the normalized bytes, not the raw generation', async () => {
@@ -713,7 +737,29 @@ describe('sheets', () => {
 		const results = await generateEntries(specOf([{}, {}, {}]), h.deps);
 		expect(results[1].outcome).toMatchObject({ status: 'unresolved', attempts: 1 });
 		expect(results[1].outcome.reason).toMatch(/Missing from its sheet/);
+		// Nothing was drawn for it, so there is nothing to keep.
+		expect(results[1].outcome.kept).toBeUndefined();
 		expect(h.written).not.toContain('out/e1.png');
+	});
+
+	it('keeps the best cut of a subject every sheet rejected', async () => {
+		splits.push({ pieces: THREE });
+		const h = harness({
+			caps: SHEETS,
+			maxAttempts: 1,
+			judge: {
+				visionSupported: true,
+				enabled: true,
+				judge: async (e) => ({ ok: e.id !== 'e1', reason: 'that is a hammer' })
+			}
+		});
+		const results = await generateEntries(specOf([{}, {}, {}]), h.deps);
+		expect(results[1].outcome).toMatchObject({
+			status: 'unresolved',
+			kept: true,
+			reason: 'that is a hammer'
+		});
+		expect(h.written).toContain('out/e1.png');
 	});
 
 	it('keeps textures on their own path', async () => {
