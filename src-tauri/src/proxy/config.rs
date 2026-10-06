@@ -77,7 +77,7 @@ pub(super) const AUTO_ENGINES: &[&str] = &["yahoo", "brave_html", "duckduckgo"];
 /// typo can't accidentally force traffic through an invalid URL. Bypass
 /// entries are parsed per request; we don't cache them because the user
 /// can edit them between calls and there's no hot path here.
-#[derive(Clone, Debug, Default, Deserialize, ts_rs::TS)]
+#[derive(Clone, Default, Deserialize, ts_rs::TS)]
 #[ts(export)]
 pub struct ProxyConfig {
     #[serde(default)]
@@ -87,4 +87,22 @@ pub struct ProxyConfig {
     pub url: String,
     #[serde(default)]
     pub bypass: String,
+}
+
+/// By hand: a proxy URL can carry `user:pass@`, so `{:?}` shows only its
+/// scheme and host.
+impl std::fmt::Debug for ProxyConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self { mode, url, bypass } = self;
+        let url = if url.is_empty() {
+            String::new()
+        } else {
+            crate::text_util::url_for_log(url)
+        };
+        f.debug_struct("ProxyConfig")
+            .field("mode", mode)
+            .field("url", &url)
+            .field("bypass", bypass)
+            .finish()
+    }
 }

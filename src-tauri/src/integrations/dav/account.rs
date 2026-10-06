@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 /// A server the account talks to, for both calendars and (from Phase 11)
 /// contacts. One account, one set of credentials, both collection types —
 /// which is how every server this targets actually works.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct DavAccount {
@@ -79,6 +79,36 @@ pub struct DavAccount {
     pub has_calendars: Option<bool>,
     #[serde(default)]
     pub has_contacts: Option<bool>,
+}
+
+/// By hand, so a `{:?}` in a log or an error never prints the password.
+impl std::fmt::Debug for DavAccount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            id,
+            label,
+            enabled,
+            address,
+            username,
+            password,
+            calendar_url,
+            contacts_url,
+            has_calendars,
+            has_contacts,
+        } = self;
+        f.debug_struct("DavAccount")
+            .field("id", id)
+            .field("label", label)
+            .field("enabled", enabled)
+            .field("address", address)
+            .field("username", username)
+            .field("password", &crate::text_util::redacted(password))
+            .field("calendar_url", calendar_url)
+            .field("contacts_url", contacts_url)
+            .field("has_calendars", has_calendars)
+            .field("has_contacts", has_contacts)
+            .finish()
+    }
 }
 
 impl DavAccount {
@@ -160,6 +190,13 @@ mod tests {
             has_calendars: None,
             has_contacts: None,
         }
+    }
+
+    #[test]
+    fn debug_never_prints_the_password() {
+        let shown = format!("{:?}", account());
+        assert!(!shown.contains("app-password"), "{shown}");
+        assert!(shown.contains("me@fastmail.com"), "{shown}");
     }
 
     #[test]

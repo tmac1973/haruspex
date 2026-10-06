@@ -52,7 +52,7 @@ pub enum McpServerSource {
 pub const REMOTE_TOKEN_KEY: &str = "remoteToken";
 
 /// A server the user has added.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct McpServerConfig {
@@ -111,6 +111,39 @@ pub struct McpServerConfig {
     pub addon_projects: Vec<String>,
 }
 
+/// By hand, so a `{:?}` in a log or an error shows which secrets are set but
+/// never their values.
+impl std::fmt::Debug for McpServerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            id,
+            label,
+            enabled,
+            source,
+            secrets,
+            tool_enabled,
+            proxy_use,
+            setup_complete,
+            addon_projects,
+        } = self;
+        let secrets: BTreeMap<&str, &str> = secrets
+            .iter()
+            .map(|(k, v)| (k.as_str(), crate::text_util::redacted(v)))
+            .collect();
+        f.debug_struct("McpServerConfig")
+            .field("id", id)
+            .field("label", label)
+            .field("enabled", enabled)
+            .field("source", source)
+            .field("secrets", &secrets)
+            .field("tool_enabled", tool_enabled)
+            .field("proxy_use", proxy_use)
+            .field("setup_complete", setup_complete)
+            .field("addon_projects", addon_projects)
+            .finish()
+    }
+}
+
 impl McpServerConfig {
     /// Whether this server should be started: enabled, and finished being set
     /// up. Custom and remote servers have no setup steps, so they are complete
@@ -152,6 +185,13 @@ mod tests {
             setup_complete: true,
             addon_projects: Vec::new(),
         }
+    }
+
+    #[test]
+    fn debug_names_secrets_but_never_prints_them() {
+        let shown = format!("{:?}", catalog_server());
+        assert!(!shown.contains("ghp_x"), "{shown}");
+        assert!(shown.contains("\"token\": \"<redacted>\""), "{shown}");
     }
 
     #[test]

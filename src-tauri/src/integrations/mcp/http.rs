@@ -45,12 +45,26 @@ use crate::proxy::{apply_proxy_with, ProxyConfig, ProxyUse};
 const HTTP_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Everything needed to reach one remote server.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct HttpConfig {
     pub url: String,
     /// The full `Authorization` header value, e.g. `Bearer ghp_…`. `None` for a
     /// server that needs no credential.
     pub auth_header: Option<String>,
+}
+
+/// By hand, so a `{:?}` in a log or an error never prints the credential.
+impl std::fmt::Debug for HttpConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self { url, auth_header } = self;
+        f.debug_struct("HttpConfig")
+            .field("url", url)
+            .field(
+                "auth_header",
+                &auth_header.as_deref().map(crate::text_util::redacted),
+            )
+            .finish()
+    }
 }
 
 impl HttpConfig {

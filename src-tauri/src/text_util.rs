@@ -50,6 +50,16 @@ pub fn truncate_chars(mut s: String, max_chars: usize, marker: &str) -> String {
     s
 }
 
+/// What a hand-written `Debug` prints in place of a secret: whether one is
+/// set, never what it is.
+pub fn redacted(secret: &str) -> &'static str {
+    if secret.is_empty() {
+        "<empty>"
+    } else {
+        "<redacted>"
+    }
+}
+
 /// The part of a URL that is safe to log: scheme and host, nothing else.
 /// Paths and query strings carry search terms, signed tokens and personal
 /// data, and the app log goes into the feedback bundle users attach to public
