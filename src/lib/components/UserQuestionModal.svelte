@@ -186,6 +186,10 @@
 		font-weight: normal;
 		line-height: 1.5;
 		margin: 0.25rem 0 0.75rem;
+		/* A whole plan document can sit here; it scrolls on its own so the
+		   options below stay in reach. */
+		max-height: 45vh;
+		overflow-y: auto;
 	}
 
 	/* Headings inside the body never outrank the question. */
