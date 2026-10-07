@@ -83,7 +83,8 @@ export function preflightPrompt(
 					'The ONLY way to ask is to CALL the `ask_user_question` tool with a `question`',
 					'string and an `options` array of {label, description}. The user cannot answer',
 					'prose — a question written as text is discarded and the session stalls. Ask',
-					'EXACTLY ONE question per tool call.'
+					'EXACTLY ONE question per tool call. For a "which of these…" question where',
+					'several answers can apply, set `allow_multiple: true` (checkboxes).'
 				]
 			: [
 					'NOBODY IS AVAILABLE NOW EITHER. This run was started automatically by a',

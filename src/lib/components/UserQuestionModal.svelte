@@ -6,11 +6,12 @@
 	 * question is pending.
 	 *
 	 * Supports single- or multi-select options (each with an optional description
-	 * and a "recommended" highlight) plus an always-present "Write your own
-	 * answer" choice. That choice is a member of the same selection group (the
-	 * "Other (please specify)" pattern), so exactly one thing is ever active and
-	 * submission is unambiguous: choosing it deselects the options and reveals a
-	 * text box; choosing an option hides it.
+	 * and a "recommended" highlight) plus an always-present way to type an answer.
+	 * In a single-choice question that is a member of the same group (the "Other
+	 * (please specify)" pattern): choosing it deselects the options, choosing an
+	 * option hides it. In a multi-select question it is one more checkbox, "Add
+	 * something else", whose text travels alongside the ticks — "these two, and
+	 * also…" is the ordinary answer to a which-of-these question.
 	 *
 	 * Escape hatch: a "×" in the corner, a "Cancel run" action, and the Esc key
 	 * all call `cancelUserQuestion`, which rejects the awaiting caller with an
@@ -55,7 +56,7 @@
 	function toggleOption(label: string) {
 		const p = pending;
 		if (!p) return;
-		useFreeText = false;
+		if (!p.allowMultiple) useFreeText = false;
 		if (p.allowMultiple) {
 			selected = selected.includes(label)
 				? selected.filter((l) => l !== label)
@@ -66,18 +67,33 @@
 	}
 
 	function chooseFreeText() {
+		if (pending?.allowMultiple) {
+			useFreeText = !useFreeText;
+			return;
+		}
 		useFreeText = true;
 		selected = [];
 	}
 
-	const canSubmit = $derived(useFreeText ? freeText.trim().length > 0 : selected.length > 0);
+	const typed = $derived(useFreeText ? freeText.trim() : '');
+	const canSubmit = $derived(
+		pending?.allowMultiple
+			? selected.length > 0 || typed.length > 0
+			: useFreeText
+				? typed.length > 0
+				: selected.length > 0
+	);
 
 	function submit() {
 		if (!pending || !canSubmit) return;
-		if (useFreeText) {
-			resolveUserQuestion({ kind: 'freeText', text: freeText.trim() });
+		if (selected.length > 0 && (pending.allowMultiple || !useFreeText)) {
+			resolveUserQuestion({
+				kind: 'selected',
+				labels: selected,
+				...(pending.allowMultiple && typed ? { note: typed } : {})
+			});
 		} else {
-			resolveUserQuestion({ kind: 'selected', labels: selected });
+			resolveUserQuestion({ kind: 'freeText', text: typed });
 		}
 	}
 
@@ -121,7 +137,7 @@
 					<div class="qbody-text markdown">{@html renderMarkdown(pending.body)}</div>
 				{/if}
 				{#if pending.allowMultiple}
-					<p class="hint">Select one or more, or write your own answer.</p>
+					<p class="hint">Tick all that apply.</p>
 				{/if}
 
 				<div class="options">
@@ -129,7 +145,9 @@
 						<button
 							type="button"
 							class="option"
-							class:selected={!useFreeText && selected.includes(opt.label)}
+							class:selected={(pending.allowMultiple || !useFreeText) &&
+								selected.includes(opt.label)}
+							aria-pressed={selected.includes(opt.label)}
 							onclick={() => toggleOption(opt.label)}
 						>
 							<span class="marker" class:multi={pending.allowMultiple} aria-hidden="true"></span>
@@ -143,19 +161,24 @@
 						</button>
 					{/each}
 
-					<!-- "Other" — a member of the same group so selection stays unambiguous.
-				     Always a radio (round) marker: it's an exclusive alternative even when
-				     the prefilled options are multi-select checkboxes. -->
+					<!-- "Other". Single choice: an exclusive alternative, round marker.
+				     Multi-select: one more checkbox whose text joins the ticks. -->
 					<button
 						type="button"
 						class="option"
 						class:selected={useFreeText}
+						aria-pressed={useFreeText}
 						onclick={chooseFreeText}
 					>
-						<span class="marker" aria-hidden="true"></span>
+						<span class="marker" class:multi={pending.allowMultiple} aria-hidden="true"></span>
 						<span class="body">
-							<span class="label">Write your own answer</span>
-							<span class="desc">Type a different answer instead of picking above.</span>
+							{#if pending.allowMultiple}
+								<span class="label">Add something else</span>
+								<span class="desc">Type an answer of your own, alongside any ticks.</span>
+							{:else}
+								<span class="label">Write your own answer</span>
+								<span class="desc">Type a different answer instead of picking above.</span>
+							{/if}
 						</span>
 					</button>
 				</div>
