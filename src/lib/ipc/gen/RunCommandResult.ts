@@ -8,4 +8,13 @@ exit_code: number | null,
 /**
  * True on timeout or cancellation.
  */
-killed: boolean, duration_ms: number, };
+killed: boolean, duration_ms: number, 
+/**
+ * The kernel killed the command, or something it started, for going
+ * over `memory_limit_mb`.
+ */
+out_of_memory: boolean, 
+/**
+ * The ceiling the command ran under; None when it ran without one.
+ */
+memory_limit_mb: number | null, };

@@ -32,7 +32,9 @@ const okResult: RunCommandResult = {
 	stderr: '',
 	exit_code: 0,
 	killed: false,
-	duration_ms: 5
+	duration_ms: 5,
+	out_of_memory: false,
+	memory_limit_mb: 32768
 };
 
 function runResultDefaults(over: Partial<RunCommandResult> = {}): RunCommandResult {
@@ -63,6 +65,28 @@ describe('run_command risk gate', () => {
 		);
 		expect(out.result).toContain('Exit code: 0');
 		expect(out.result).toContain('hello');
+	});
+
+	it('passes the memory limit, and tells the model when a command outgrew it', async () => {
+		// A coding run's go test hit a loop that never ended, filled RAM and
+		// swap, and took the app down with it. Killed under a ceiling, the
+		// model has to hear why, or it re-runs the same command.
+		mocks.invoke.mockImplementation((cmd: string) =>
+			cmd === 'run_command_capture'
+				? Promise.resolve(
+						runResultDefaults({ exit_code: 1, stdout: 'signal: killed', out_of_memory: true })
+					)
+				: Promise.resolve()
+		);
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const out = await executeTool('run_command', { command: 'go test ./...' }, codeCtx);
+		expect(mocks.invoke).toHaveBeenCalledWith(
+			'run_command_capture',
+			expect.objectContaining({ memoryLimitPercent: 50 })
+		);
+		expect(out.result).toContain('went over its 32.0 GB memory limit');
+		expect(out.result).toContain('do not re-run it unchanged');
+		expect(out.result).toContain('signal: killed');
 	});
 
 	it('denies a risky command WITHOUT prompting during an unattended run', async () => {

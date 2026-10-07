@@ -8,6 +8,7 @@
 //! returns locations/exit-codes, never whole file bodies, to keep model
 //! context small.
 
+use crate::command_scope;
 use crate::shell::kind::ShellSelection;
 use crate::sync_util::LockExt;
 use serde::Serialize;
@@ -50,12 +51,24 @@ pub struct RunCommandResult {
     /// True on timeout or cancellation.
     pub killed: bool,
     pub duration_ms: u32,
+    /// The kernel killed the command, or something it started, for going
+    /// over `memory_limit_mb`.
+    pub out_of_memory: bool,
+    /// The ceiling the command ran under; None when it ran without one.
+    pub memory_limit_mb: Option<u32>,
 }
 
-/// Host default shell: `sh -c` on unix, `cmd /C` on windows.
+/// Host default shell: bash where it's installed, else `sh`, on unix; `cmd /C`
+/// on windows. Models write bash — `[[ ]]`, arrays, `source`, `pipefail` —
+/// and `/bin/sh` is dash on Debian and Ubuntu, where all of that fails.
 #[cfg(unix)]
 fn default_shell_command(command: &str) -> tokio::process::Command {
-    let mut c = tokio::process::Command::new("sh");
+    static BASH: OnceLock<bool> = OnceLock::new();
+    let bash = *BASH.get_or_init(|| {
+        std::env::var_os("PATH")
+            .is_some_and(|p| std::env::split_paths(&p).any(|d| d.join("bash").is_file()))
+    });
+    let mut c = tokio::process::Command::new(if bash { "bash" } else { "sh" });
     c.arg("-c").arg(command);
     c
 }
@@ -121,6 +134,7 @@ pub async fn run_command_capture(
     timeout_secs: Option<u64>,
     command_id: String,
     shell: Option<ShellSelection>,
+    memory_limit_percent: Option<u8>,
 ) -> Result<RunCommandResult, String> {
     // A WSL session runs inside the distro: its cwd is a Linux path the Windows
     // host can't stat, and the dir is set via `wsl --cd` rather than current_dir.
@@ -135,7 +149,11 @@ pub async fn run_command_capture(
     );
     let start = Instant::now();
 
-    let mut cmd = build_shell_command(&command, &cwd, shell.as_ref());
+    let cmd = build_shell_command(&command, &cwd, shell.as_ref());
+    let (mut cmd, scope) = match memory_limit_percent.and_then(command_scope::limit_bytes) {
+        Some(limit) => command_scope::wrap(cmd, &command_id, limit),
+        None => (cmd, None),
+    };
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -200,9 +218,16 @@ pub async fn run_command_capture(
     };
 
     let exit_code = status.code();
+    // A command that outgrew its ceiling usually still exits: the kernel kills
+    // the biggest process (the test binary), and whatever ran it reports a
+    // failure. Only the scope knows why.
+    let out_of_memory = match &scope {
+        Some(scope) if !killed && exit_code != Some(0) => scope.out_of_memory().await,
+        _ => false,
+    };
     // A tree-kill leaves no exit code (signaled) on unix — treat as killed even
     // if the cancel raced ahead of our own timeout branch.
-    if exit_code.is_none() {
+    if exit_code.is_none() && !out_of_memory {
         killed = true;
     }
 
@@ -212,6 +237,8 @@ pub async fn run_command_capture(
         exit_code,
         killed,
         duration_ms: start.elapsed().as_millis() as u32,
+        out_of_memory,
+        memory_limit_mb: scope.map(|s| (s.limit_bytes >> 20) as u32),
     })
 }
 
@@ -786,6 +813,7 @@ mod tests {
             Some(10),
             "t-echo".to_string(),
             None,
+            None,
         )
         .await
         .unwrap();
@@ -801,6 +829,7 @@ mod tests {
             std::env::temp_dir().to_string_lossy().into_owned(),
             Some(10),
             "t-exit".to_string(),
+            None,
             None,
         )
         .await
@@ -818,6 +847,7 @@ mod tests {
             Some(1),
             "t-timeout".to_string(),
             None,
+            None,
         )
         .await
         .unwrap();
@@ -833,6 +863,7 @@ mod tests {
             "/no/such/dir/at/all".to_string(),
             Some(5),
             "t-badcwd".to_string(),
+            None,
             None,
         )
         .await

@@ -598,9 +598,16 @@ export interface AppSettings {
 	 * How the Code-mode `run_command` tool executes when driven from a Shell
 	 * session: `'auto'` drives the interactive PTY when shell integration is
 	 * available and falls back to a one-shot capture otherwise; `'pty'` forces
-	 * the terminal path; `'oneshot'` forces a fresh `sh -c` capture.
+	 * the terminal path; `'oneshot'` forces a fresh `bash -c` capture.
 	 */
 	codeCommandExec: 'auto' | 'pty' | 'oneshot';
+	/**
+	 * The most memory one agent command may use, as a percentage of RAM; 0 is
+	 * no limit. Applies to one-shot commands (jobs, and Code mode when it isn't
+	 * driving the terminal) on Linux with a systemd user session — see
+	 * `src-tauri/src/command_scope.rs`.
+	 */
+	commandMemoryLimitPercent: number;
 	/**
 	 * Which image backend generates pictures, if any. `'none'` is not a
 	 * placeholder — it is the shipped default and the correct state for every
@@ -785,6 +792,7 @@ const defaults: AppSettings = {
 	codeAutoApprove: false,
 	codeRunCommandTimeoutSecs: 30,
 	codeCommandExec: 'auto',
+	commandMemoryLimitPercent: 50,
 	codeMaxIterations: 40,
 	memoryEnabled: true,
 	memoryConfirmWrites: true,
