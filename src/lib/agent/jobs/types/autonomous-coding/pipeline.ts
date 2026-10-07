@@ -32,6 +32,7 @@ import {
 } from '#lib/agent/tools/coding.ts';
 import { withWebResearch } from '../webResearch';
 import { getSettings } from '#lib/stores/settings.ts';
+import { commandMemoryLimitPercent, outOfMemoryNote } from '#lib/shell/memoryLimit.ts';
 import { normalizeAbort, errMessage } from '#lib/utils/error.ts';
 import {
 	markRunStarted,
@@ -1246,6 +1247,8 @@ interface ExecResult {
 	exit_code: number | null;
 	duration_ms: number;
 	killed: boolean;
+	out_of_memory: boolean;
+	memory_limit_mb: number | null;
 }
 
 function execInWorkdir(
@@ -1260,7 +1263,8 @@ function execInWorkdir(
 		commandId: crypto.randomUUID(),
 		// Route through the session's shell selection (WSL/PowerShell on
 		// Windows); null on Linux/macOS → host default shell.
-		shell: getSettings().shellSelection
+		shell: getSettings().shellSelection,
+		memoryLimitPercent: commandMemoryLimitPercent()
 	});
 }
 
@@ -1305,7 +1309,7 @@ async function runCheckCommand(
 ): Promise<{ passed: boolean; output: string }> {
 	try {
 		const r = await execInWorkdir(ctx, command, VERIFY_TIMEOUT_SECS);
-		const output = [r.stdout, r.stderr].filter(Boolean).join('\n').trim();
+		const output = [outOfMemoryNote(r), r.stdout, r.stderr].filter(Boolean).join('\n').trim();
 		return { passed: r.exit_code === 0, output: output || `(no output, exit ${r.exit_code})` };
 	} catch (e) {
 		return { passed: false, output: `Check command failed to run: ${String(e)}` };

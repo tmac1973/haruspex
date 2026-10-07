@@ -5,6 +5,7 @@ mod clipboard;
 mod code_tools;
 mod comfy;
 mod comfy_models;
+mod command_scope;
 mod db;
 mod desktop;
 mod env_util;

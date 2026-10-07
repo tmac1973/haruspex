@@ -17,6 +17,7 @@ import { runInPty, runInPtyBackground, shouldUsePty, spillIfLarge } from './pty-
 import { registerWatch } from '#lib/shell/backgroundWatch.ts';
 import { withLocalScopeNote } from './nested-session';
 import type { RunCommandResult } from '#lib/ipc/gen/RunCommandResult.ts';
+import { commandMemoryLimitPercent, outOfMemoryNote } from '#lib/shell/memoryLimit.ts';
 import type { GrepResult } from '#lib/ipc/gen/GrepResult.ts';
 import type { GlobResult } from '#lib/ipc/gen/GlobResult.ts';
 
@@ -150,7 +151,8 @@ async function runHostCommand(
 			// Route the one-shot through the session's shell (Windows): PowerShell
 			// or, for WSL, bash inside the distro — not `cmd /C`. Null on
 			// Linux/macOS → the host default shell.
-			shell: getSettings().shellSelection
+			shell: getSettings().shellSelection,
+			memoryLimitPercent: commandMemoryLimitPercent()
 		});
 	} finally {
 		signal?.removeEventListener('abort', onAbort);
@@ -159,9 +161,12 @@ async function runHostCommand(
 
 /** Format a command result, leading with the exit code (highest signal). */
 async function formatRunResult(res: RunCommandResult): Promise<string> {
-	const header = res.killed
-		? `Command killed (timeout or cancellation) after ${res.duration_ms}ms.`
-		: `Exit code: ${res.exit_code ?? 'unknown'} (${res.duration_ms}ms)`;
+	const oom = outOfMemoryNote(res);
+	const header = oom
+		? `Exit code: ${res.exit_code ?? 'none'} (${res.duration_ms}ms). ${oom}`
+		: res.killed
+			? `Command killed (timeout or cancellation) after ${res.duration_ms}ms.`
+			: `Exit code: ${res.exit_code ?? 'unknown'} (${res.duration_ms}ms)`;
 
 	// Combine streams, labeling stderr so the model can tell them apart.
 	const parts: string[] = [];

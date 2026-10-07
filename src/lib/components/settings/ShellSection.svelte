@@ -32,6 +32,7 @@
 	let codeCommandExec = $state(getSettings().codeCommandExec);
 	let codeRunCommandTimeoutSecs = $state(getSettings().codeRunCommandTimeoutSecs);
 	let codeMaxIterations = $state(getSettings().codeMaxIterations);
+	let commandMemoryLimitPercent = $state(getSettings().commandMemoryLimitPercent);
 
 	function persistCodeModeDefault() {
 		updateSettings({ shellCodeModeDefault });
@@ -46,6 +47,11 @@
 	}
 	function persistCodeCommandExec() {
 		updateSettings({ codeCommandExec });
+	}
+	function persistMemoryLimit() {
+		const clamped = clampInt(commandMemoryLimitPercent, 0, 90);
+		commandMemoryLimitPercent = clamped;
+		updateSettings({ commandMemoryLimitPercent: clamped });
 	}
 	function persistCodeTimeout() {
 		const clamped = clampInt(codeRunCommandTimeoutSecs, 5, 1800);
@@ -162,7 +168,7 @@
 	<p class="help">
 		How the coding agent's <code>run_command</code> runs. <strong>Auto</strong> drives your live
 		interactive terminal (sharing the activated venv / env / cwd, visible in your scrollback) when
-		shell integration is available, falling back to a one-shot <code>sh -c</code> otherwise.
+		shell integration is available, falling back to a one-shot <code>bash -c</code> otherwise.
 		<strong>Terminal</strong> forces the PTY path; <strong>One-shot</strong> always runs a fresh isolated
 		process.
 	</p>
@@ -194,6 +200,26 @@
 		/
 		<code>watch</code> instead so nothing blocks. Default <code>30</code>. 5–1800 seconds.
 	</p>
+</section>
+
+<section class="settings-section">
+	<h2>Memory limit per command</h2>
+	<label
+		class="row"
+		title="The system stops a one-shot command that goes over this, and the agent is told why. Needs Linux with a systemd user session; commands typed into your terminal aren't limited. 0 turns it off."
+	>
+		<input
+			type="number"
+			min="0"
+			max="90"
+			step="5"
+			bind:value={commandMemoryLimitPercent}
+			onblur={persistMemoryLimit}
+			onkeydown={(e) => e.key === 'Enter' && persistMemoryLimit()}
+		/>
+		<span>% of RAM</span>
+	</label>
+	<p class="help">Stops a runaway build or test before it takes the app down with it.</p>
 </section>
 
 <section class="settings-section">
