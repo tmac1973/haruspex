@@ -258,7 +258,8 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 					? [...options.toolAllowlist, options.forceFinalTool]
 					: options.toolAllowlist,
 			skillNames: options.skills?.catalog.map((s) => s.name),
-			skillFileNames: options.skills && readableSkills(options.skills, options.messages)
+			skillFileNames: options.skills && readableSkills(options.skills, options.messages),
+			hasSkills: options.skills !== undefined
 		}),
 		signal: options.signal,
 		workingDir,

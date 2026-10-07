@@ -12,8 +12,8 @@ use std::collections::BTreeMap;
 
 use serde_norway::Value;
 
-const NAME_MAX: usize = 64;
-const DESCRIPTION_MAX: usize = 1024;
+pub(super) const NAME_MAX: usize = 64;
+pub(super) const DESCRIPTION_MAX: usize = 1024;
 const COMPATIBILITY_MAX: usize = 500;
 
 /// What a `SKILL.md` says about itself, plus anything wrong with it.
@@ -99,7 +99,7 @@ pub fn parse_skill(text: &str, folder: &str) -> ParsedSkill {
 }
 
 /// The YAML between the opening and closing `---`, and everything after.
-fn split_frontmatter(text: &str) -> Result<(&str, &str), String> {
+pub(super) fn split_frontmatter(text: &str) -> Result<(&str, &str), String> {
     let rest = text
         .strip_prefix("---")
         .filter(|r| r.starts_with('\n') || r.trim_start_matches([' ', '\t']).starts_with('\n'))

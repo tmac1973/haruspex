@@ -802,7 +802,8 @@ describe('runAgentLoop: tool-call round trip', () => {
 			visionSupported: false,
 			shellMode: false,
 			codeMode: false,
-			interactive: false
+			interactive: false,
+			hasSkills: false
 		});
 	});
 
