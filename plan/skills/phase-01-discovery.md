@@ -29,8 +29,10 @@ the spec, and serves it to the frontend. Nothing in a turn changes yet.
     trusted project root — `.agents/skills/` and `.claude/skills/` under it).
     One level deep: `<source>/<name>/SKILL.md`. Skip symlinks that leave the
     source folder.
-  - Precedence: built-in < user < extra folders < project. The overridden
-    entry is kept in the list, marked as shadowed.
+  - Precedence, lowest first: built-in < extra folders < `~/.agents/skills/`
+    < `<app data>/skills/` < project. Project overrides user, per the
+    convention; Haruspex's own folder overrides folders shared with other
+    tools. The overridden entry is kept in the list, marked as shadowed.
   - Read the body at activation, not at discovery, so an edit to a skill is
     picked up without a restart.
 - Tauri commands:

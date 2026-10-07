@@ -69,13 +69,15 @@ agentskills.io (`client-implementation/adding-skills-support`), from lowest to
 highest precedence:
 
 1. Built-in: shipped in the app (`/init`).
-2. User: `<app data>/skills/` (Haruspex's own; agent-written skills land here)
-   and `~/.agents/skills/` (the cross-client convention, so skills installed by
-   other tools just appear).
-3. Extra folders the user adds in Settings — offered as a one-click add for
+2. Extra folders the user adds in Settings — offered as a one-click add for
    `~/.claude/skills/`, which many existing skills live in. Off until added,
    since those skills may assume Claude Code's tools.
-4. Project, in Shell Code mode only: `.agents/skills/` and `.claude/skills/`
+3. `~/.agents/skills/`: the cross-client convention, so skills installed by
+   other tools just appear.
+4. `<app data>/skills/`: Haruspex's own; agent-written skills land here. It
+   overrides the shared folders above, so a skill the user (or the model)
+   wrote for Haruspex wins over one borrowed from another tool.
+5. Project, in Shell Code mode only: `.agents/skills/` and `.claude/skills/`
    under the repo root. **Project overrides user**, the convention every
    existing client follows. A collision is shown in Settings as shadowed.
 
