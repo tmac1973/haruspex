@@ -218,6 +218,52 @@ describe('chat store', () => {
 		expect(getActiveConversation()!.title).toBe('What is the meaning of life?');
 	});
 
+	it('sendMessage with a /name skill sends its instructions, titled by what was typed', async () => {
+		const { runAgentLoop } = await import('#lib/agent/loop.ts');
+		let sent = '';
+		vi.mocked(runAgentLoop).mockImplementation(async (options) => {
+			sent = String(options.messages.findLast((m) => m.role === 'user')!.content);
+			options.onStreamChunk({ delta: { content: 'done' }, finish_reason: null });
+			options.onComplete();
+		});
+		const { sendMessage, getActiveConversation } = await import('#lib/stores/chat.svelte.ts');
+		const { typedText } = await import('#lib/skills/content.ts');
+		await setServerReady();
+
+		const skill = {
+			name: 'haiku',
+			body: 'Answer in a haiku.',
+			dir: null,
+			compatibility: null,
+			files: [],
+			filesTruncated: false
+		};
+		await sendMessage('/haiku about rain', [], skill);
+
+		const conv = getActiveConversation()!;
+		expect(conv.title).toBe('/haiku about rain');
+		expect(sent).toContain('<skill_content name="haiku">');
+		expect(sent).toContain('Answer in a haiku.');
+		expect(typedText(String(conv.messages[0].content))).toBe('/haiku about rain');
+	});
+
+	it('addLocalNote answers without a model call, and the next message still titles the chat', async () => {
+		const { runAgentLoop } = await import('#lib/agent/loop.ts');
+		vi.mocked(runAgentLoop).mockReset();
+		const { addLocalNote, getActiveConversation } = await import('#lib/stores/chat.svelte.ts');
+
+		addLocalNote('Skills you can run: …');
+		const conv = getActiveConversation()!;
+		expect(conv.messages).toEqual([{ role: 'assistant', content: 'Skills you can run: …' }]);
+		expect(runAgentLoop).not.toHaveBeenCalled();
+
+		vi.mocked(runAgentLoop).mockImplementation(async (options) => options.onComplete());
+		const { sendMessage } = await import('#lib/stores/chat.svelte.ts');
+		await setServerReady();
+		await sendMessage('hello there');
+		expect(getActiveConversation()!.title).toBe('hello there');
+	});
+
 	it('sendMessage ignores empty messages', async () => {
 		const { sendMessage, getConversations } = await import('#lib/stores/chat.svelte.ts');
 

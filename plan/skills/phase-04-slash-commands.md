@@ -28,6 +28,21 @@ boxes, with autocomplete.
   that starts with `/` still works. The autocomplete simply shows nothing.
 - Works whatever the autonomous-use setting is.
 
+## Decisions made while building it
+
+- **Files of a slash-run skill:** the turn offers `read_skill_file`, though
+  not `load_skill`, for any skill in the conversation that came with files.
+  This holds even with autonomous use off, since its instructions may point
+  at those files.
+- **`/skills`:** answers with an assistant message added locally, with no
+  model call. The first message the user then sends still titles the chat.
+- **Leading space:** allowed before the slash.
+- **Project skills:** in Shell Code mode, they come only from a repo already
+  trusted. Typing in the box never pops up the trust prompt; a new repo's
+  first turn asks.
+- **Request text:** recall, the file-output check and memory extraction see
+  what the user typed (`typedText`), not the skill's instructions.
+
 ## Tests
 
 - Parsing: `/name`, `/name args`, a leading space, `/` mid-message, an

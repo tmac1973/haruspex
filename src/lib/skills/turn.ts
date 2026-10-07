@@ -12,32 +12,36 @@ import type { BackendOverride } from '#lib/api.ts';
 import { listSkills, skillsAutonomous, usableSkills } from './client';
 
 export interface TurnSkills {
-	/** Skills the model may load, by name and description. Never empty. */
+	/**
+	 * Skills the model may load by itself, by name and description. Empty
+	 * when autonomous use is off or none is usable: the turn still carries
+	 * skills the user ran with `/name`, and may read their files.
+	 */
 	catalog: { name: string; description: string }[];
 	/** The trusted repo the turn's project skills come from, if any. */
 	projectRoot: string | null;
 }
 
 /**
- * The turn's skills, or undefined when the model shouldn't see any: autonomous
- * use is off for this backend, or no usable skill exists. A failure to list
- * skills costs the turn its skills, not the turn.
+ * The turn's skills. The catalog is empty when the model shouldn't pick any
+ * by itself: autonomous use is off for this backend, or no usable skill
+ * exists. A failure to list skills costs the turn its catalog, not the turn.
  */
 export async function prepareTurnSkills(opts: {
 	backend?: BackendOverride;
 	/** Code mode: the trusted repo (`trustedProjectRoot`) whose skills count. */
 	projectRoot?: string | null;
-}): Promise<TurnSkills | undefined> {
-	if (!skillsAutonomous(opts.backend)) return undefined;
+}): Promise<TurnSkills> {
 	const projectRoot = opts.projectRoot ?? null;
+	if (!skillsAutonomous(opts.backend)) return { catalog: [], projectRoot };
 	const all = await listSkills(projectRoot).catch(() => []);
 	const catalog = usableSkills(all).map((s) => ({ name: s.name, description: s.description }));
-	return catalog.length > 0 ? { catalog, projectRoot } : undefined;
+	return { catalog, projectRoot };
 }
 
 /** The system-prompt section listing the turn's skills; empty without any. */
 export function skillsPromptSection(skills: TurnSkills | undefined): string {
-	if (!skills) return '';
+	if (!skills?.catalog.length) return '';
 	const list = skills.catalog.map((s) => `- ${s.name}: ${s.description}`).join('\n');
 	return `
 

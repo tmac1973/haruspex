@@ -1,4 +1,6 @@
 import { prepareTurnSkills, skillsPromptSection } from '#lib/skills/turn.ts';
+import { renderSlashMessage, typedText } from '#lib/skills/content.ts';
+import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
 import {
 	type ChatMessage,
 	type Usage,
@@ -907,13 +909,20 @@ function ensureSendableConversation(content: string, hasImages: boolean): Conver
  * Set the conversation title on the first turn, push the user message,
  * and persist it. Mutates the conversation in place.
  */
-function finalizeUserTurn(conversation: Conversation, content: string, images: string[]): void {
-	if (conversation.messages.length === 0) {
+function finalizeUserTurn(
+	conversation: Conversation,
+	content: string,
+	images: string[],
+	skill?: SkillDoc
+): void {
+	// The first message the user sends titles the chat, even after a `/skills`
+	// note opened it.
+	if (!conversation.messages.some((m) => m.role === 'user')) {
 		const title = generateTitle(content || 'Image');
 		conversation.title = title;
 		dbRenameConversation(conversation.id, title);
 	}
-	const text = content.trim();
+	const text = skill ? renderSlashMessage(skill, content.trim()) : content.trim();
 	// Plain string when there are no images (the common case); otherwise a
 	// multimodal content-parts array the API forwards as image_url parts.
 	const userMessage: ChatMessage = {
@@ -1238,7 +1247,7 @@ export function continueTurn(): Promise<boolean> {
 function lastUserText(conversation: Conversation): string {
 	for (let i = conversation.messages.length - 1; i >= 0; i--) {
 		const m = conversation.messages[i];
-		if (m.role === 'user') return messageText(m.content);
+		if (m.role === 'user') return typedText(messageText(m.content));
 	}
 	return '';
 }
@@ -1298,13 +1307,18 @@ export async function retryLastTurn(): Promise<void> {
  * caller keeps its composer text. The rejected path resolves synchronously
  * (before any awaits), so callers can clear optimistically and restore.
  */
-export async function sendMessage(content: string, images: string[] = []): Promise<boolean> {
+export async function sendMessage(
+	content: string,
+	images: string[] = [],
+	/** A skill the user ran with `/name`, sent ahead of what they typed. */
+	skill?: SkillDoc
+): Promise<boolean> {
 	const conversation = ensureSendableConversation(content, images.length > 0);
 	if (!conversation) return false;
 
 	contextNotice = null;
 	await compactIfNeeded();
-	finalizeUserTurn(conversation, content, images);
+	finalizeUserTurn(conversation, content, images, skill);
 
 	// Locked startup behavior: a send while llama-server is still starting
 	// stays visible in history and is auto-dispatched by the module-scope
@@ -1319,6 +1333,22 @@ export async function sendMessage(content: string, images: string[] = []): Promi
 }
 
 /**
+ * Add a note to the conversation without a model call — what `/skills`
+ * answers with. Stored as an assistant message, so it reads as a reply and
+ * later turns see it as one.
+ */
+export function addLocalNote(text: string): void {
+	if (isGenerating || isCompacting) return;
+	if (!getActiveConversationId()) createConversation();
+	const conversation = getActiveConversation();
+	if (!conversation) return;
+	const note: ChatMessage = { role: 'assistant', content: text };
+	conversation.messages.push(note);
+	conversation.updatedAt = Date.now();
+	dbSaveMessage(conversation.id, note);
+}
+
+/**
  * The user's own recent messages, oldest first, excluding the one being sent.
  *
  * Recall needs them because a follow-up is often unintelligible alone: "and
@@ -1329,7 +1359,7 @@ export async function sendMessage(content: string, images: string[] = []): Promi
 function priorUserTexts(conversation: Conversation): string[] {
 	const texts = conversation.messages
 		.filter((m) => m.role === 'user')
-		.map((m) => messageText(m.content));
+		.map((m) => typedText(messageText(m.content)));
 	// The last one is the message being sent; recall already has it.
 	return texts.slice(0, -1).slice(-2);
 }

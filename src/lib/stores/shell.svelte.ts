@@ -17,6 +17,9 @@
 
 import { prepareTurnSkills, skillsPromptSection, type TurnSkills } from '#lib/skills/turn.ts';
 import { setRepoTrusted, shellProject } from '#lib/skills/project.ts';
+import { renderSlashMessage } from '#lib/skills/content.ts';
+import { knownTrustedRoot } from '#lib/slash/slash.ts';
+import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
 import { agentsMdPromptSection } from '#lib/skills/agentsMd.ts';
 import type { AgentsMd } from '#lib/ipc/gen/AgentsMd.ts';
 import { invoke } from '@tauri-apps/api/core';
@@ -668,7 +671,12 @@ export class ShellSession {
 	 * settings.shellHistoryTurnsForPrompt) so the agent has fresh context
 	 * without the user having to copy-paste anything.
 	 */
-	submitChatMessage = async (text: string, images: string[] = []): Promise<void> => {
+	submitChatMessage = async (
+		text: string,
+		images: string[] = [],
+		/** A skill the user ran with `/name`, sent ahead of what they typed. */
+		skill?: SkillDoc
+	): Promise<void> => {
 		const trimmed = text.trim();
 		if (!trimmed && images.length === 0) return;
 		const pre = await this.prepareSubmit();
@@ -693,7 +701,8 @@ export class ShellSession {
 		// over because of the limit) so they aren't re-attached next turn.
 		this.lastAttachedCommandTotal = live.completedTotal;
 		const maxBytesPerCapture = Math.max(0, getSettings().shellMaxBytesPerCapture);
-		const body = `${formatRecentCommands(recent, maxBytesPerCapture)}${trimmed}`;
+		const request = skill ? renderSlashMessage(skill, trimmed) : trimmed;
+		const body = `${formatRecentCommands(recent, maxBytesPerCapture)}${request}`;
 
 		await this.submitShell({
 			body,
@@ -703,6 +712,27 @@ export class ShellSession {
 			nestedSession: live.nestedSession,
 			images
 		});
+	};
+
+	/**
+	 * Add a note to the thread without a model call — what `/skills` answers
+	 * with. An assistant message, so it reads as a reply.
+	 */
+	addLocalNote = (text: string): void => {
+		if (this.isSubmitting) return;
+		this.messages = [...this.messages, { role: 'assistant', content: text }];
+		this.persistCodeThread(null);
+	};
+
+	/**
+	 * The trusted repo whose project skills `/name` may run here: Code mode
+	 * only, like the skills a turn lists, and never by asking — a repo not
+	 * yet answered for gets its prompt from the first turn.
+	 */
+	slashProjectRoot = async (): Promise<string | null> => {
+		if (!this.codeMode) return null;
+		const live = await this.fetchLiveContext();
+		return knownTrustedRoot(live?.currentCwd ?? null);
 	};
 
 	/** Resume after a turn-limit / forced stop — the button on the stop

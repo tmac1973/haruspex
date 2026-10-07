@@ -25,6 +25,7 @@ function ctx(skills?: ToolContext['skills']): ToolContext {
 
 const turnSkills = (): NonNullable<ToolContext['skills']> => ({
 	names: ['deploy'],
+	readable: ['deploy'],
 	projectRoot: '/code/repo',
 	loaded: new Set()
 });
@@ -42,10 +43,21 @@ describe('skills tool schemas', () => {
 		expect(names({ hasWorkingDir: false })).not.toContain('load_skill');
 		expect(names({ hasWorkingDir: false, skillNames: [] })).not.toContain('load_skill');
 		for (const mode of [{}, { shellMode: true }, { shellMode: true, codeMode: true }]) {
-			const n = names({ hasWorkingDir: true, ...mode, skillNames: ['deploy'] });
+			const n = names({
+				hasWorkingDir: true,
+				...mode,
+				skillNames: ['deploy'],
+				skillFileNames: ['deploy']
+			});
 			expect(n).toContain('load_skill');
 			expect(n).toContain('read_skill_file');
 		}
+	});
+
+	it('offer read_skill_file alone for a skill run with /name, autonomous use off', () => {
+		const n = names({ hasWorkingDir: false, skillNames: [], skillFileNames: ['deploy'] });
+		expect(n).toContain('read_skill_file');
+		expect(n).not.toContain('load_skill');
 	});
 
 	it("limit the name to the turn's skills", () => {

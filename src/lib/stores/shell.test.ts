@@ -415,6 +415,33 @@ describe('command auto-attach de-duplication', () => {
 		expect(s.messages[4].content).toContain('Recent shell activity');
 	});
 
+	it('sends a /name skill between the shell activity and the question', async () => {
+		installInvoke({ completedTotal: 1, recentLimits: [] });
+		const s = createShellSession();
+		bindCtx(s, 11);
+		const skill = {
+			name: 'triage',
+			body: 'Check the logs first.',
+			dir: null,
+			compatibility: null,
+			files: [],
+			filesTruncated: false
+		};
+		await s.submitChatMessage('/triage nginx is down', [], skill);
+		const content = String(s.messages[0].content);
+		expect(content.indexOf('Recent shell activity')).toBeLessThan(
+			content.indexOf('<skill_content name="triage">')
+		);
+		expect(content.endsWith('/triage nginx is down')).toBe(true);
+	});
+
+	it('adds a /skills note without a turn', () => {
+		const s = createShellSession();
+		s.addLocalNote('Skills you can run: …');
+		expect(s.messages).toEqual([{ role: 'assistant', content: 'Skills you can run: …' }]);
+		expect(runShellTurn).not.toHaveBeenCalled();
+	});
+
 	it('attaches an in-flight command (e.g. an ssh session) even when none completed', async () => {
 		// User is sitting inside `ssh server`: no command has *completed* since
 		// the last attach, but the in-flight session's scrollback is exactly what

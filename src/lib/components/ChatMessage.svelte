@@ -9,6 +9,7 @@
 	import { createCopyAction } from '#lib/utils/clipboard.svelte.ts';
 	import { formatDuration } from '#lib/utils/format.ts';
 	import { messageText, type ChatMessage, type MessageContentPart } from '#lib/api.ts';
+	import { typedText } from '#lib/skills/content.ts';
 
 	interface Props {
 		message: ChatMessage;
@@ -42,6 +43,8 @@
 
 	// Extract plain text from the message (handles both string and content array)
 	let textContent = $derived(messageText(message.content));
+	// A skill run with `/name` travels in the message; show what was typed.
+	let userText = $derived(typedText(textContent));
 	// Extract any image URLs from multimodal content for display
 	let imageUrls = $derived(
 		typeof message.content === 'string'
@@ -102,8 +105,8 @@
 					{/each}
 				</div>
 			{/if}
-			{#if textContent}
-				<p>{textContent}</p>
+			{#if userText}
+				<p>{userText}</p>
 			{/if}
 		{:else}
 			{#if channels.reasoning.trim() && !thinkingOnly}

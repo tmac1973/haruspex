@@ -632,6 +632,22 @@ describe('runAgentLoop: skills', () => {
 		expect([...ctx.skills.loaded]).toEqual(['lint']);
 	});
 
+	it('lets a skill run with /name read its files, with autonomous use off', async () => {
+		nonStreamQueue.push(textResponse('Done.'));
+		const withFiles =
+			'<skill_content name="pdf">\nbody\n<skill_resources>\n  <file>ref.md</file>\n</skill_resources>\n</skill_content>';
+		const { options } = makeOptions({
+			messages: [{ role: 'user', content: `${withFiles}\n\n/pdf merge` }],
+			skills: { catalog: [], projectRoot: null }
+		});
+
+		await runAgentLoop(options);
+
+		expect(toolsMock.getToolSchemas).toHaveBeenCalledWith(
+			expect.objectContaining({ skillNames: [], skillFileNames: ['pdf'] })
+		);
+	});
+
 	it('offers none without them', async () => {
 		nonStreamQueue.push(textResponse('Done.'));
 		await runAgentLoop(makeOptions().options);

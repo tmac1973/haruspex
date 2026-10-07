@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import ChatMessage from './ChatMessage.svelte';
+import { renderSlashMessage } from '#lib/skills/content.ts';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue(null) }));
 
@@ -36,6 +37,23 @@ describe('ChatMessage', () => {
 		expect(html).not.toContain('<script');
 		expect(html).not.toContain('javascript:');
 		expect((window as unknown as Record<string, unknown>).__pwned).toBeUndefined();
+	});
+
+	it('shows what was typed for a /name message, not the skill it carries', () => {
+		const content = renderSlashMessage(
+			{
+				name: 'haiku',
+				body: 'SECRET INSTRUCTIONS',
+				dir: null,
+				compatibility: null,
+				files: [],
+				filesTruncated: false
+			},
+			'/haiku about rain'
+		);
+		render(ChatMessage, { message: { role: 'user', content } });
+		expect(screen.getByText('/haiku about rain')).toBeTruthy();
+		expect(screen.queryByText(/SECRET INSTRUCTIONS/)).toBeNull();
 	});
 
 	it('labels user and assistant messages', () => {

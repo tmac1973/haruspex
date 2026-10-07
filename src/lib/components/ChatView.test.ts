@@ -20,6 +20,7 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 // its children ConversationSidebar / WorkingDirButton) only need the
 // functions they import, so mock the whole module.
 vi.mock('#lib/stores/chat.svelte.ts', () => ({
+	addLocalNote: vi.fn(),
 	getActiveConversation: vi.fn(),
 	getIsGenerating: vi.fn(() => false),
 	getIsWaitingForSlot: vi.fn(() => false),
