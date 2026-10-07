@@ -93,6 +93,8 @@ unicode-normalization = "0.1"
 grep = "0.3"
 ignore = "0.4"
 globset = "0.4"
+# YAML frontmatter in SKILL.md files. The maintained fork of serde_yaml.
+serde_norway = "0.9"
 tauri-plugin-notification = "2.3.3"
 # Holds off OS idle-sleep while a job run is in flight (logind Inhibit on
 # Linux, IOPMAssertion on macOS, SetThreadExecutionState on Windows). No

@@ -1026,3 +1026,33 @@ describe('load-time proxy split', () => {
 		expect(m.getSearchProxy().mode).toBe('none');
 	});
 });
+
+describe('load-time skills defaults', () => {
+	let priorRaw: string | null;
+
+	beforeEach(() => {
+		priorRaw = localStorage.getItem(SETTINGS_KEY);
+	});
+
+	afterEach(() => {
+		if (priorRaw === null) localStorage.removeItem(SETTINGS_KEY);
+		else localStorage.setItem(SETTINGS_KEY, priorRaw);
+		vi.resetModules();
+	});
+
+	async function loadWith(stored: Record<string, unknown>) {
+		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
+		vi.resetModules();
+		return await import('#lib/stores/settings.ts');
+	}
+
+	it('gives an install from before skills the defaults', async () => {
+		const m = await loadWith({ theme: 'dark' });
+		expect(m.getSettings().skills).toEqual(m.defaultSkills);
+	});
+
+	it('fills in a field added after the block was stored', async () => {
+		const m = await loadWith({ skills: { disabled: ['x'] } });
+		expect(m.getSettings().skills).toEqual({ ...m.defaultSkills, disabled: ['x'] });
+	});
+});
