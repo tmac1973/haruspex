@@ -83,9 +83,12 @@ highest precedence:
 
 **A repo is untrusted until the user says otherwise.** A freshly cloned repo's
 skills and `AGENTS.md` are instructions written by a stranger, injected into
-every turn. The first time Code mode finds either in a repo, it asks once:
+every turn. The first time a Shell turn finds either in a repo, it asks:
 "Use this repo's AGENTS.md and skills?" The answer is remembered per repo
-root and can be changed in Settings → Skills.
+root, along with the repo's `origin` URL and its project skills, and it is
+asked again when a different repo turns up at that path or a trusted repo
+gains a skill. AGENTS.md edits don't re-ask. It can be changed in Settings →
+Skills → Repos, or stopped from the AGENTS.md badge in the Shell sidebar.
 
 **Lenient parsing, visible problems.** Per the client guide: a name that
 doesn't match its folder or runs long gets a warning and loads anyway (many

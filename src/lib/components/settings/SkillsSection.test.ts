@@ -87,11 +87,11 @@ describe('Settings → Skills', () => {
 	});
 
 	it('changes or forgets a repo decision', async () => {
-		updateSkills({ trustedRepos: { '/code/repo': true } });
+		updateSkills({ trustedRepos: { '/code/repo': { trusted: true } } });
 		render(SkillsSection);
 		const select = (await screen.findByDisplayValue('Use')) as HTMLSelectElement;
 		await fireEvent.change(select, { target: { value: 'ignore' } });
-		expect(getSettings().skills.trustedRepos).toEqual({ '/code/repo': false });
+		expect(getSettings().skills.trustedRepos).toEqual({ '/code/repo': { trusted: false } });
 		await fireEvent.click(screen.getByText('Forget'));
 		expect(getSettings().skills.trustedRepos).toEqual({});
 	});

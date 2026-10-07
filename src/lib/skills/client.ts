@@ -21,7 +21,7 @@ import { getSettings } from '#lib/stores/settings.ts';
  * asked, undefined before.
  */
 export function repoTrust(root: string): boolean | undefined {
-	return getSettings().skills.trustedRepos[root];
+	return getSettings().skills.trustedRepos[root]?.trusted;
 }
 
 /** The folders Rust may search: extra folders always, the project only if trusted. */

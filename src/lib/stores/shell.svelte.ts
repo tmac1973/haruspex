@@ -16,7 +16,7 @@
  */
 
 import { prepareTurnSkills, skillsPromptSection, type TurnSkills } from '#lib/skills/turn.ts';
-import { shellProject } from '#lib/skills/project.ts';
+import { setRepoTrusted, shellProject } from '#lib/skills/project.ts';
 import { agentsMdPromptSection } from '#lib/skills/agentsMd.ts';
 import type { AgentsMd } from '#lib/ipc/gen/AgentsMd.ts';
 import { invoke } from '@tauri-apps/api/core';
@@ -186,6 +186,8 @@ export class ShellSession {
 	contextNotice = $state<string | null>(null);
 	/** The repo's AGENTS.md as the last Code mode turn carried it. */
 	agentsMd = $state<AgentsMd | null>(null);
+	/** The trusted repo the last turn took instructions from. */
+	projectRoot = $state<string | null>(null);
 	integrationMarkerCount = $state(0);
 	integrationCompletedCommands = $state(0);
 	// Code mode: swaps the assistant to the coding toolset + prompt and drives
@@ -336,6 +338,18 @@ export class ShellSession {
 		// relevant: the shell may have been bound long before, in plain mode.
 		// Same single path as everywhere else; it no-ops on a non-empty thread.
 		if (this.codeMode) void this.refreshIntegrationStatus();
+	};
+
+	/**
+	 * Stop using the current repo's AGENTS.md and project skills, from the
+	 * sidebar badge. Recorded like "Ignore them" in the trust prompt, so every
+	 * shell in that repo stops; the next turn goes without them.
+	 */
+	ignoreProject = (): void => {
+		if (!this.projectRoot) return;
+		setRepoTrusted(this.projectRoot, false);
+		this.projectRoot = null;
+		this.agentsMd = null;
 	};
 
 	toggleThinking = (): void => {
@@ -879,6 +893,7 @@ export class ShellSession {
 		// mostly drive edits and commands, so only Code mode lists them.
 		const project = await shellProject(payload.currentCwd);
 		this.agentsMd = project.agentsMd;
+		this.projectRoot = project.root;
 		const skills = await prepareTurnSkills({
 			projectRoot: this.codeMode ? project.root : null
 		});

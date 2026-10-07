@@ -15,6 +15,7 @@
 	import type { SkillSummary } from '#lib/ipc/gen/SkillSummary.ts';
 	import type { SkillSource } from '#lib/ipc/gen/SkillSource.ts';
 	import { listSkills, readSkill } from '#lib/skills/client.ts';
+	import { setRepoTrust, setRepoTrusted } from '#lib/skills/project.ts';
 	import { getSettings, updateSkills, type SkillsConfig } from '#lib/stores/settings.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
@@ -110,10 +111,9 @@
 	}
 
 	function setTrust(root: string, trusted: boolean | null) {
-		const trustedRepos = { ...config.trustedRepos };
-		if (trusted === null) delete trustedRepos[root];
-		else trustedRepos[root] = trusted;
-		save({ trustedRepos });
+		if (trusted === null) setRepoTrust(root, null);
+		else setRepoTrusted(root, trusted);
+		config = structuredClone(getSettings().skills);
 	}
 
 	const repos = $derived(
@@ -243,11 +243,11 @@
 		<p class="hint">You'll be asked the first time a repo has any.</p>
 	{:else}
 		<ul class="plain-list">
-			{#each repos as [root, trusted] (root)}
+			{#each repos as [root, answer] (root)}
 				<li>
-					<code>{root}</code>
+					<code title={answer.origin ?? undefined}>{root}</code>
 					<select
-						value={trusted ? 'use' : 'ignore'}
+						value={answer.trusted ? 'use' : 'ignore'}
 						onchange={(e) => setTrust(root, e.currentTarget.value === 'use')}
 					>
 						<option value="use">Use</option>

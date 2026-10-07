@@ -1,7 +1,8 @@
 <script lang="ts">
 	/**
-	 * Asks once per repo whether its own instructions may reach a turn. Mounted
-	 * in the root layout; see `stores/repoTrust.svelte.ts` for why.
+	 * Asks whether a repo's own instructions may reach a turn: once per repo,
+	 * and again when the answer no longer fits it. Mounted in the root layout;
+	 * see `stores/repoTrust.svelte.ts` for why.
 	 *
 	 * Backdrop and Esc don't dismiss: the turn is waiting on the answer.
 	 */
@@ -18,12 +19,28 @@
 		if (pending.agentsMd) parts.push('an AGENTS.md');
 		return parts.join(' and ');
 	});
+
+	const remote = (url: string | null) => url ?? 'no origin remote';
 </script>
 
 <Modal open={pending != null} maxWidth={560} labelledBy="repo-trust-title">
 	{#if pending}
-		<h2 id="repo-trust-title">Use this repo's instructions?</h2>
-		<p>This repo has {what} for the assistant to follow:</p>
+		{#if pending.change?.kind === 'origin'}
+			<h2 id="repo-trust-title">A different repo is in this folder</h2>
+			<p>
+				You answered for <code>{remote(pending.change.was)}</code>; it now holds
+				<code>{remote(pending.change.now)}</code>, with {what}:
+			</p>
+		{:else if pending.change?.kind === 'skills'}
+			<h2 id="repo-trust-title">This repo has new skills</h2>
+			<p>
+				Added since you said yes: {pending.change.added.join(', ')}. Use them, along with the rest
+				of its instructions?
+			</p>
+		{:else}
+			<h2 id="repo-trust-title">Use this repo's instructions?</h2>
+			<p>This repo has {what} for the assistant to follow:</p>
+		{/if}
 		<p class="root">{pending.root}</p>
 		<div class="button-row">
 			<ModalButton onclick={() => resolveRepoTrust(true)}>

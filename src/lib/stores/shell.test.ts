@@ -54,7 +54,8 @@ vi.mock('#lib/agent/tools/index.ts', () => ({ getDisplayLabel: () => 'tool' }));
 const project = vi.hoisted(() => ({
 	shellProject: vi.fn<(cwd: string | null) => Promise<{ root: string | null; agentsMd: unknown }>>(
 		async () => ({ root: null, agentsMd: null })
-	)
+	),
+	setRepoTrusted: vi.fn()
 }));
 vi.mock('#lib/skills/project.ts', () => project);
 // Wrapped, not replaced, so a test can see which repo's skills a turn asked for.
@@ -876,6 +877,18 @@ describe('AGENTS.md in the Shell assistant', () => {
 		const sent = runShellTurn.mock.calls.at(-1)![0].messages as ChatMessage[];
 		expect(String(sent[0].content)).toContain('Run make check.');
 		expect(s.agentsMd).toEqual(md);
+	});
+
+	it('stops using the repo from the badge, for every later turn', async () => {
+		project.shellProject.mockResolvedValueOnce({ root: '/code/repo', agentsMd: md });
+		const s = createShellSession();
+		await submit(s);
+		expect(s.projectRoot).toBe('/code/repo');
+
+		s.ignoreProject();
+		expect(project.setRepoTrusted).toHaveBeenCalledWith('/code/repo', false);
+		expect(s.agentsMd).toBeNull();
+		expect(s.projectRoot).toBeNull();
 	});
 
 	it('carries them in the troubleshooting assistant too, without project skills', async () => {

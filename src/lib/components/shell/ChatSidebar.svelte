@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { describeAgentsMd } from '#lib/skills/agentsMd.ts';
+	import AgentsMdBadge from './AgentsMdBadge.svelte';
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
 	import StopIndicator from '#lib/components/StopIndicator.svelte';
@@ -399,11 +399,7 @@
 					{integrationLabel}
 				</span>
 				{#if agentsMd}
-					<span
-						class="agents-badge"
-						class:warn={agentsMd.truncated}
-						title={describeAgentsMd(agentsMd)}>AGENTS.md</span
-					>
+					<AgentsMdBadge {agentsMd} root={session.projectRoot} onIgnore={session.ignoreProject} />
 				{/if}
 				<button
 					class="toggle"
@@ -781,19 +777,6 @@
 		color: var(--text-secondary);
 		font-style: italic;
 		padding: 8px 4px;
-	}
-
-	.agents-badge {
-		font-size: 0.7rem;
-		padding: 1px 6px;
-		border-radius: 4px;
-		background: var(--bg-secondary);
-		color: var(--text-secondary);
-		font-family: monospace;
-	}
-
-	.agents-badge.warn {
-		color: var(--warning);
 	}
 
 	.context-notice {

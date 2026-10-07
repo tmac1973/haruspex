@@ -17,6 +17,7 @@
 
 mod agents_md;
 mod discover;
+mod origin;
 mod parse;
 
 use std::fs;
@@ -235,16 +236,20 @@ pub async fn skill_read_file(
     .await
 }
 
-/// What a repo would contribute to a turn, so the frontend knows whether
-/// there is anything to ask the user to trust.
+/// What a repo would contribute to a turn, and which repo it is, so the
+/// frontend knows whether there is anything to ask the user to trust — and
+/// whether an earlier answer still applies.
 #[derive(Clone, Debug, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ProjectInstructions {
-    /// Skill folders under `.agents/skills/` and `.claude/skills/`.
-    pub skills: u32,
+    /// Names of the skills under `.agents/skills/` and `.claude/skills/`,
+    /// sorted, each once.
+    pub skill_names: Vec<String>,
     /// An `AGENTS.md` (or, failing that, a `CLAUDE.md`) at the root.
     pub agents_md: bool,
+    /// The `origin` remote's URL; None for a repo without one.
+    pub origin: Option<String>,
 }
 
 /// The repo `cwd` is in: the nearest ancestor (or `cwd` itself) holding a
@@ -257,23 +262,27 @@ pub fn find_project_root(cwd: &Path) -> Option<PathBuf> {
 }
 
 fn project_instructions(root: &Path) -> ProjectInstructions {
-    let skills = [".agents", ".claude"]
+    let roots: Vec<Root> = [".agents", ".claude"]
         .iter()
-        .map(|sub| {
-            discover::discover(
-                &[Root {
-                    source: SkillSource::Project,
-                    dir: root.join(sub).join("skills"),
-                }],
-                &[],
-            )
-            .len() as u32
+        .map(|sub| Root {
+            source: SkillSource::Project,
+            dir: root.join(sub).join("skills"),
         })
-        .sum();
+        .collect();
+    let mut skill_names: Vec<String> = discover::discover(&roots, &[])
+        .into_iter()
+        .map(|f| f.parsed.name)
+        .collect();
+    skill_names.sort();
+    skill_names.dedup();
     let agents_md = ["AGENTS.md", "CLAUDE.md"]
         .iter()
         .any(|f| root.join(f).is_file());
-    ProjectInstructions { skills, agents_md }
+    ProjectInstructions {
+        skill_names,
+        agents_md,
+        origin: origin::origin_url(root),
+    }
 }
 
 /// The repo root for a shell sitting in `cwd`, or None outside a repo.
@@ -427,12 +436,18 @@ mod tests {
     fn reports_what_a_repo_would_contribute() {
         let base = temp_dir("info");
         let info = project_instructions(&base);
-        assert_eq!((info.skills, info.agents_md), (0, false));
-        write_skill(&base.join(".agents/skills/a"));
+        assert!(info.skill_names.is_empty() && !info.agents_md && info.origin.is_none());
         write_skill(&base.join(".claude/skills/b"));
+        write_skill(&base.join(".agents/skills/a"));
+        // The same name in both folders is one skill.
+        write_skill(&base.join(".claude/skills/a"));
         fs::write(base.join("CLAUDE.md"), "x").unwrap();
+        fs::create_dir_all(base.join(".git")).unwrap();
+        fs::write(base.join(".git/config"), "[remote \"origin\"]\n\turl = u\n").unwrap();
         let info = project_instructions(&base);
-        assert_eq!((info.skills, info.agents_md), (2, true));
+        assert_eq!(info.skill_names, vec!["a", "b"]);
+        assert!(info.agents_md);
+        assert_eq!(info.origin.as_deref(), Some("u"));
     }
 
     #[test]
