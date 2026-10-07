@@ -399,3 +399,27 @@ describe('describeContextManaged', () => {
 		expect(text).toContain('tool results');
 	});
 });
+
+describe('loaded skills survive trimming', () => {
+	const skill = (name: string) =>
+		`<skill_content name="${name}">\n${'Follow these steps. '.repeat(400)}\n</skill_content>`;
+
+	it('never stubs a tool result holding a skill', () => {
+		const msgs = [
+			tool(skill('deploy'), 's'),
+			tool('x'.repeat(4000), 'a'),
+			tool('b'),
+			tool('c'),
+			tool('d')
+		];
+		trimOldToolMessages(msgs);
+		expect(msgs[0].content).toBe(skill('deploy'));
+		expect(msgs[1].content as string).toContain('[Trimmed:');
+	});
+
+	it('leaves a skill whole when the fit truncates oversized messages', () => {
+		const msgs = [sys('s'), user(skill('deploy')), asst('ok'), user('x'.repeat(40_000))];
+		fitMessagesToBudget(msgs, 6000, { reserveOutput: 500 });
+		expect(msgs.some((m) => m.content === skill('deploy'))).toBe(true);
+	});
+});

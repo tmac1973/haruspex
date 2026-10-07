@@ -19,6 +19,7 @@ import './contacts';
 import './screen';
 import './image-gen';
 import './make-asset';
+import './skills';
 
 // Re-export registry API
 export { getToolSchemas, executeTool, getDisplayLabel, coerceCallArguments } from './registry';

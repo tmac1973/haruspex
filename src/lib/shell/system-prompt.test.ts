@@ -41,3 +41,17 @@ describe('shell system prompts under fish', () => {
 		}
 	});
 });
+
+describe('shell system prompts — skills section', () => {
+	const base = { sessionContext: ctx('/bin/bash', 'bash'), currentCwd: '/proj', recentHistory: [] };
+
+	it('carries the section in both modes when given one, and nothing otherwise', () => {
+		const section = '\n\nSKILLS:\n- deploy: Ship it.';
+		for (const build of [buildShellCodeSystemPrompt, buildShellSystemPrompt]) {
+			expect(String(build({ ...base, skillsSection: section }).content)).toContain(
+				'- deploy: Ship it.'
+			);
+			expect(String(build(base).content)).not.toContain('SKILLS:');
+		}
+	});
+});

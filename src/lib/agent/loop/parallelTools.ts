@@ -28,7 +28,11 @@ const PARALLEL_SAFE_TOOLS = new Set([
 	'fs_read_text',
 	'fs_read_pdf',
 	'fs_read_docx',
-	'fs_read_xlsx'
+	'fs_read_xlsx',
+	// Read-only; `load_skill` marks a skill loaded before it reads, so two
+	// calls for one skill in a batch load it once.
+	'load_skill',
+	'read_skill_file'
 ]);
 
 /** The most calls one response runs at once, even on an unbounded lane. */

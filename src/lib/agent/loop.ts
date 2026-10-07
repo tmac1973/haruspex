@@ -13,6 +13,7 @@
  * `loop/nudges.ts`.
  */
 
+import type { TurnSkills } from '#lib/skills/turn.ts';
 import type { BackendOverride, StreamChunk, Usage } from '#lib/api.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import type { Artifact, LintIssue, ToolContext } from '#lib/agent/tools/index.ts';
@@ -250,6 +251,11 @@ export interface AgentLoopOptions {
 	 * `ToolContext.askUser`.
 	 */
 	askUser?: ToolContext['askUser'];
+	/**
+	 * Skills the model may load this turn. Set only by Chat and Shell (see
+	 * `#lib/skills/turn.ts`); without it the skills tools are not offered.
+	 */
+	skills?: TurnSkills;
 	/**
 	 * When set, file writes are confined to this directory (relative to the
 	 * working dir). fs_write_text rejects writes outside it. Used by

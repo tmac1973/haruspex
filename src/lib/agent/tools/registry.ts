@@ -220,6 +220,11 @@ export function getToolSchemas(opts: {
 	 * submit_verdict). Names not registered are silently ignored.
 	 */
 	toolAllowlist?: Iterable<string>;
+	/**
+	 * The skills this turn may load. The skills tools are offered only when
+	 * it is non-empty, with `name` narrowed to these.
+	 */
+	skillNames?: string[];
 }): ToolDefinition[] {
 	if (opts.toolAllowlist) {
 		const allow = new Set(opts.toolAllowlist);
@@ -251,9 +256,46 @@ export function getToolSchemas(opts: {
 	};
 	const schemas: ToolDefinition[] = [];
 	for (const reg of tools.values()) {
-		if (shouldIncludeTool(reg, filter)) schemas.push(reg.schema);
+		const schema = schemaFor(reg, filter, opts.skillNames);
+		if (schema) schemas.push(schema);
 	}
 	return schemas;
+}
+
+/**
+ * The schema `reg` contributes to this turn, or null. Skills tools follow the
+ * turn's skills rather than its mode: offered whenever the caller handed some
+ * over, never otherwise.
+ */
+function schemaFor(
+	reg: ToolRegistration,
+	filter: ToolFilterOpts,
+	skillNames: string[] | undefined
+): ToolDefinition | null {
+	if (reg.category === 'skills') {
+		return skillNames?.length ? withSkillEnum(reg.schema, skillNames) : null;
+	}
+	return shouldIncludeTool(reg, filter) ? reg.schema : null;
+}
+
+/**
+ * A skills tool's schema with `name` limited to the turn's skills, so the
+ * model picks from what exists instead of inventing a plausible name.
+ */
+function withSkillEnum(schema: ToolDefinition, names: string[]): ToolDefinition {
+	const params = schema.function.parameters as {
+		properties: Record<string, Record<string, unknown>>;
+	};
+	return {
+		...schema,
+		function: {
+			...schema.function,
+			parameters: {
+				...params,
+				properties: { ...params.properties, name: { ...params.properties.name, enum: names } }
+			}
+		}
+	};
 }
 
 /**
@@ -295,6 +337,12 @@ export async function executeTool(
 					'Nothing was saved. The user can turn it on in Settings → Remember across chats.'
 			)
 		);
+	}
+
+	// Skills reach only the turns that were handed some; a call from any
+	// other turn is one the model was never offered.
+	if (reg.category === 'skills' && !ctx.skills) {
+		return toolResult(toolError('Skills are not available in this conversation.'));
 	}
 
 	// The same hard gate for calendars. Schema filtering does not stop

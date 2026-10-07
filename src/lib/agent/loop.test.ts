@@ -605,6 +605,42 @@ describe('runAgentLoop: parallel tool calls', () => {
 	});
 });
 
+describe('runAgentLoop: skills', () => {
+	it("offers the turn's skills and hands them to the tools", async () => {
+		nonStreamQueue.push(
+			toolCallResponse([{ id: 'c1', name: 'load_skill', args: '{"name":"deploy"}' }]),
+			textResponse('Done.')
+		);
+		const { options } = makeOptions({
+			messages: [
+				{ role: 'user', content: '<skill_content name="lint">\nold\n</skill_content>\nhi' }
+			],
+			skills: { catalog: [{ name: 'deploy', description: 'd' }], projectRoot: '/repo' }
+		});
+
+		await runAgentLoop(options);
+
+		expect(toolsMock.getToolSchemas).toHaveBeenCalledWith(
+			expect.objectContaining({ skillNames: ['deploy'] })
+		);
+		const ctx = toolsMock.executeTool.mock.calls[0][2] as {
+			skills: { names: string[]; projectRoot: string; loaded: Set<string> };
+		};
+		expect(ctx.skills.names).toEqual(['deploy']);
+		expect(ctx.skills.projectRoot).toBe('/repo');
+		// Skills already in the conversation count as loaded.
+		expect([...ctx.skills.loaded]).toEqual(['lint']);
+	});
+
+	it('offers none without them', async () => {
+		nonStreamQueue.push(textResponse('Done.'));
+		await runAgentLoop(makeOptions().options);
+		expect(toolsMock.getToolSchemas).toHaveBeenCalledWith(
+			expect.objectContaining({ skillNames: undefined })
+		);
+	});
+});
+
 describe('runAgentLoop: tool-call round trip', () => {
 	it('executes the tool and threads the assistant/tool messages into the next call', async () => {
 		nonStreamQueue.push(

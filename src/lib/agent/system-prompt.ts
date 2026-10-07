@@ -36,6 +36,12 @@ export function looksLikeFileOutputRequest(content: string): boolean {
 export interface SystemPromptOptions {
 	memorySection?: string;
 	/**
+	 * The turn's skill list (`skillsPromptSection`). Passed in rather than
+	 * looked up, for the same reason as `memorySection`: only Chat builds one,
+	 * so jobs and remote guests can't get it by accident.
+	 */
+	skillsSection?: string;
+	/**
 	 * Whether to add the IMAGES block. A PARAMETER for the same reason
 	 * `memorySection` is one: chat is the only surface images apply to, and
 	 * job runs, remote guests and the shell assistant all build their prompts
@@ -147,7 +153,7 @@ ${getSettings().customSystemPrompt.trim()}
 `
 		: ''
 }
-${getResponseFormatPrompt()}${imagesSection}${memorySection}`
+${[getResponseFormatPrompt(), imagesSection, memorySection, opts.skillsSection].join('')}`
 	};
 }
 

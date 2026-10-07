@@ -5,6 +5,7 @@ const SECTIONS = [
 	'Inference',
 	'Agent',
 	'Memory',
+	'Skills',
 	'Audio',
 	'Search',
 	'Network',

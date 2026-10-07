@@ -84,6 +84,9 @@ const TABLE: Record<string, Handler> = {
 	secret_store_kind: () => 'keychain',
 	// No OAuth client in a test build, so Settings → Calendar offers no Google sign-in.
 	google_sign_in_available: () => false,
+	// No skills installed: chat turns list none, Settings → Skills shows an empty list.
+	skills_list: empty,
+	skills_user_dir: () => '/e2e/skills',
 	secret_get: none,
 	mcp_catalog: empty,
 	mcp_runtimes_available: () => ({ node: true, npm: true, uv: true }),

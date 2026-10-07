@@ -206,3 +206,12 @@ describe('buildSystemPrompt — connected integrations', () => {
 		expect(schema?.function.description).toContain('(via GitHub)');
 	});
 });
+
+describe('buildSystemPrompt — skills section', () => {
+	it('appears only when the caller passes one', () => {
+		expect(buildSystemPrompt(null).content as string).not.toContain('SKILLS:');
+		const prompt = buildSystemPrompt(null, { skillsSection: '\n\nSKILLS:\n- deploy: Ship it.' })
+			.content as string;
+		expect(prompt).toContain('- deploy: Ship it.');
+	});
+});
