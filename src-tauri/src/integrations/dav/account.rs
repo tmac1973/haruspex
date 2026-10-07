@@ -215,12 +215,8 @@ impl DavAccount {
         super::discovery::base_url(&self.address)
     }
 
-    /// The address-book home to use instead of discovering one: the user's
-    /// override, or for Google the home built from the signed-in email.
+    /// The address-book home to use instead of discovering one.
     pub fn contacts_home(&self) -> Option<String> {
-        if self.is_google() {
-            return Some(super::google::carddav_home(&self.address));
-        }
         self.contacts_url
             .as_deref()
             .map(str::trim)

@@ -11,19 +11,18 @@ in their browser; they never touch the Google Cloud console.
   PKCE, and trades the returned code for a refresh token. The refresh token goes
   straight to the secret store under `dav:<account id>`; the frontend only gets
   its key. Access tokens are refreshed on demand and cached in memory.
-- **Scopes**: `openid email` (to name the account),
-  `calendar.readonly` and `carddav`.
+- **Scopes**: `openid email` (to name the account), `calendar.readonly` and
+  `contacts.readonly`. Nothing that can write.
 - **Calendars** come from the Google Calendar API (`google_calendar.rs`), not
   CalDAV. Google's CalDAV lists calendars for a read-only token but refuses to
   return events without the full read-write `calendar` scope, whose consent
   screen asks to "see, edit, share and permanently delete" calendars. The
   Calendar API serves events under `calendar.readonly` and expands recurrence
   itself.
-- **Contacts** come from Google's CardDAV. Google ignores the usual
-  `addressbook-query`, so `carddav.rs` falls back to listing the cards and
-  fetching them with `addressbook-multiget`. The address-book home is built from
-  the signed-in email (`google::carddav_home`), because Google has no
-  account-independent CardDAV entry point.
+- **Contacts** come from the People API (`google_contacts.rs`), not CardDAV.
+  Google's CardDAV accepts only the `carddav` scope, which the consent screen
+  describes as "see, edit, download, and permanently delete your contacts".
+  The People API reads "My contacts" under `contacts.readonly`.
 
 ## The OAuth client
 
@@ -50,12 +49,12 @@ picks it up.
 
 In the Cloud console, for the Haruspex project:
 
-- **APIs enabled**: Google Calendar API and Google Contacts CardDAV API. The
-  CalDAV API isn't used.
+- **APIs enabled**: Google Calendar API and People API. The CalDAV and
+  CardDAV APIs aren't used and can be disabled.
 - **Google Auth Platform → Audience**: External. While the app is in **Testing**,
   only listed test users can sign in (up to 100), and Google shows an "unverified
   app" screen first.
-- **Data access**: `…/auth/calendar.readonly` and `…/auth/carddav`.
+- **Data access**: `…/auth/calendar.readonly` and `…/auth/contacts.readonly`.
 
 ### Branding and the public site
 
@@ -72,6 +71,10 @@ one sends the app to brand review before anything else can change.
 The privacy policy is what a verification reviewer reads. Keep it accurate if
 the scopes change or Google data starts going anywhere new.
 
+### Verification
+
+What to submit is in [google-verification.md](google-verification.md).
+
 ### Before a public release
 
 Both scopes are *sensitive*, not *restricted*, so verification needs no
@@ -83,7 +86,8 @@ third-party security assessment. It does need:
 - submitting the app for verification under Google Auth Platform → Verification
   Center.
 
-Until then, the app works for test users only.
+Until then the app is published but unverified: any Google account can sign in
+after an "unverified app" screen, up to 100 users in total.
 
 ## Testing against a real account
 

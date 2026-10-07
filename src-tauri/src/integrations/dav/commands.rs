@@ -14,7 +14,7 @@ use super::client::DavClient;
 use super::discovery::{self, CalendarCollection};
 use super::ical::{parse_events, CalendarEvent, EventSource};
 use super::vcard::{Contact, ContactSource};
-use super::{caldav, carddav, google_calendar, ics_feed, vcard};
+use super::{caldav, carddav, google_calendar, google_contacts, ics_feed, vcard};
 use crate::proxy::ProxyConfig;
 
 /// The most contacts a search hands back.
@@ -119,14 +119,8 @@ pub async fn dav_discover_collections(
             Vec::new()
         }
     };
-    let address_books = match discovery::discover_address_books(&client, &account).await {
-        Ok(found) => found
-            .into_iter()
-            .map(|b| DiscoveredAddressBook {
-                url: b.url,
-                name: b.name,
-            })
-            .collect(),
+    let address_books = match discover_address_book_names(&client, &account, proxy.as_ref()).await {
+        Ok(found) => found,
         Err(e) => {
             problems.push(format!("Contacts: {e}"));
             Vec::new()
@@ -169,6 +163,30 @@ async fn discover_calendar_names(
         .await?
         .into_iter()
         .map(DiscoveredCalendar::from)
+        .collect())
+}
+
+/// The address books an account can see, for the settings card. A Google
+/// account has one, read through the People API; see `google_contacts.rs`.
+async fn discover_address_book_names(
+    client: &DavClient,
+    account: &DavAccount,
+    proxy: Option<&ProxyConfig>,
+) -> Result<Vec<DiscoveredAddressBook>, String> {
+    if account.is_google() {
+        google_contacts::check(&account.password, proxy).await?;
+        return Ok(vec![DiscoveredAddressBook {
+            url: String::new(),
+            name: google_contacts::ADDRESS_BOOK_NAME.into(),
+        }]);
+    }
+    Ok(discovery::discover_address_books(client, account)
+        .await?
+        .into_iter()
+        .map(|b| DiscoveredAddressBook {
+            url: b.url,
+            name: b.name,
+        })
         .collect())
 }
 
@@ -343,6 +361,14 @@ async fn fetch_account_contacts(
     proxy: Option<&ProxyConfig>,
 ) -> Result<Vec<Contact>, String> {
     let account = &account.resolved(proxy).await?;
+    if account.is_google() {
+        let source = ContactSource {
+            account_id: account.id.clone(),
+            account_label: account.label.clone(),
+            address_book: google_contacts::ADDRESS_BOOK_NAME.into(),
+        };
+        return google_contacts::fetch_contacts(&account.password, &source, proxy).await;
+    }
     let client = DavClient::new(account, proxy)?;
     let books = discovery::discover_address_books(&client, account).await?;
 

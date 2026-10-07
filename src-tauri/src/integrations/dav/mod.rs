@@ -17,6 +17,7 @@ pub mod commands;
 pub mod discovery;
 pub mod google;
 pub mod google_calendar;
+pub mod google_contacts;
 pub mod ical;
 pub mod ics_feed;
 pub mod vcard;
