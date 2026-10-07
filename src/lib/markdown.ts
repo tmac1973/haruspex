@@ -706,5 +706,7 @@ export function renderMarkdown(text: string, resolved?: ResolvedImages): string 
 	// marked passes raw HTML in the source text through verbatim, and this
 	// output lands in the DOM via {@html} — sanitize the final HTML so
 	// model-authored markup can't execute in the privileged webview.
-	return sanitizeHtml(marked.parse(withFixedTables) as string);
+	// `breaks`: a single newline is a line break, so a poem or an address
+	// keeps its lines rather than running together as one paragraph.
+	return sanitizeHtml(marked.parse(withFixedTables, { breaks: true }) as string);
 }

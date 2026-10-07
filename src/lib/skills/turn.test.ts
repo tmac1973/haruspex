@@ -213,6 +213,7 @@ describe('skillsPromptSection', () => {
 		expect(text).toContain('SKILLS:');
 		expect(text).toContain('- deploy: Ship it.');
 		expect(text).toContain('load_skill');
+		expect(text).toContain('without calling load_skill');
 		expect(skillsPromptSection(undefined)).toBe('');
 	});
 });
