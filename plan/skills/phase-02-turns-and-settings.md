@@ -23,11 +23,12 @@ autonomous use is on, and the user can manage skills in Settings.
   - Offered in Chat, Shell and Code mode when autonomous use is on. Not in jobs
     or remote turns. Re-checked in `executeTool`, as `remember_this` is.
   - Both are read-only, so they join `PARALLEL_SAFE_TOOLS` if #353 has merged.
-- **Project root and trust.** Code mode passes the git root of the shell's
-  cwd (or the cwd when there is no repo) to `skills_list`; Chat and Shell pass
-  none. The first time a repo has project skills or an `AGENTS.md` (phase 3),
-  a modal asks once whether to use them; the answer goes in
-  `skills.trustedRepos`.
+- **Project root and trust.** Code mode passes the root of the repo the
+  shell's cwd is in (the nearest folder with a `.git` entry) to `skills_list`;
+  outside a repo there is no project, so `~` is never treated as one. Chat and
+  Shell pass none. The first time a repo has project skills, a modal asks once
+  whether to use them; the answer goes in `skills.trustedRepos`. (Phase 3
+  extends the question to the repo's `AGENTS.md`.)
 - **Keeping skills in context.** The in-loop trimmer and the pre-send fit skip
   messages carrying `<skill_content`, so a long turn doesn't silently drop
   the instructions it is following.
