@@ -11,6 +11,7 @@
  * behind chat and jobs on a single-slot local llama-server.
  */
 
+import type { TurnSkills } from '#lib/skills/turn.ts';
 import type { ChatMessage } from '#lib/api.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import type { Artifact } from '#lib/agent/tools/index.ts';
@@ -33,6 +34,8 @@ export interface ShellTurnOptions {
 	sessionId?: number | null;
 	/** Code mode: expose the code toolset + drive the PTY for run_command. */
 	codeMode?: boolean;
+	/** Skills the model may load this turn (`#lib/skills/turn.ts`). */
+	skills?: TurnSkills;
 	/** Code mode: skip the run_command risk-approval prompt. */
 	codeAutoApprove?: boolean;
 	/** Per-session reasoning override (the assistant's Think toggle). */
@@ -98,6 +101,7 @@ async function drive(options: ShellTurnOptions): Promise<ShellTurnResult> {
 			shellSessionId: options.sessionId ?? null,
 			codeMode: options.codeMode ?? false,
 			codeAutoApprove: options.codeAutoApprove ?? false,
+			skills: options.skills,
 			thinkingEnabled: options.thinkingEnabled,
 			maxResponseTokens: options.maxResponseTokens,
 			// Deliberately false even in Code mode. This flag arms the file-write

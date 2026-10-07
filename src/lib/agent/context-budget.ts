@@ -20,6 +20,7 @@
  * guard that must keep us under a hard wall.
  */
 
+import { holdsSkillContent } from '#lib/skills/content.ts';
 import { messageText, type ChatMessage, type ToolDefinition } from '#lib/api.ts';
 import { truncateCapturedOutput } from '#lib/shell/truncate.ts';
 
@@ -125,6 +126,9 @@ function trimCandidates(messages: ChatMessage[]): TrimCandidate[] {
 	for (const idx of older) {
 		const text = messageText(messages[idx].content);
 		if (text.startsWith('[Trimmed:')) continue;
+		// A loaded skill is instructions the turn is still following. Stubbing
+		// it would leave the model working without them and nothing to show it.
+		if (holdsSkillContent(text)) continue;
 		out.push({ idx, text, tokens: messageTokens(messages[idx]) });
 	}
 	return out;
@@ -315,7 +319,12 @@ export function fitMessagesToBudget(
 		const oversizedTokenCap = Math.max(1, Math.floor(effectiveBudget * OVERSIZED_MESSAGE_FRACTION));
 		const candidates = messages
 			.map((m, i) => ({ i, m, tokens: messageTokens(m) }))
-			.filter((c) => typeof c.m.content === 'string' && c.tokens > oversizedTokenCap)
+			.filter(
+				(c) =>
+					typeof c.m.content === 'string' &&
+					c.tokens > oversizedTokenCap &&
+					!holdsSkillContent(c.m.content)
+			)
 			.sort((a, b) => b.tokens - a.tokens);
 		const maxBytes = Math.floor(oversizedTokenCap * TOKEN_BYTES_RATIO);
 		for (const c of candidates) {

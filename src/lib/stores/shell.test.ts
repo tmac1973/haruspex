@@ -24,7 +24,8 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 		shellHistoryTurnsForPrompt: 3,
 		shellMaxBytesPerCapture: 1000,
 		contextSize: 8192,
-		inferenceBackend: { mode: 'local' }
+		inferenceBackend: { mode: 'local' },
+		skills: { extraDirs: [], disabled: [], autonomous: 'auto', trustedRepos: {} }
 	}),
 	// Read by resolveBackendDescriptor, which the shell store now uses for
 	// the turn's context size.

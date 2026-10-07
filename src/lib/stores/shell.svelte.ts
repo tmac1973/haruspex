@@ -15,6 +15,7 @@
  * the handle into multiple subtrees.
  */
 
+import { prepareTurnSkills, skillsPromptSection, type TurnSkills } from '#lib/skills/turn.ts';
 import { invoke } from '@tauri-apps/api/core';
 import { SvelteSet } from 'svelte/reactivity';
 import { isPtyBusy } from '#lib/stores/shellPtyBusy.svelte.ts';
@@ -864,17 +865,25 @@ export class ShellSession {
 	 * beginning.`). Folding happens here, on the outgoing copy only, so the
 	 * sidebar still renders those notes as their own entries.
 	 */
-	private buildTurnMessages(payload: ShellSubmission): ChatMessage[] {
+	private async buildTurnMessages(
+		payload: ShellSubmission
+	): Promise<{ messages: ChatMessage[]; skills: TurnSkills | undefined }> {
+		// Code mode may take project skills from the repo the shell is in; that
+		// can ask the user to trust the repo, once.
+		const skills = await prepareTurnSkills({
+			projectCwd: this.codeMode ? payload.currentCwd : null
+		});
 		const promptOpts = {
 			sessionContext: payload.sessionContext,
 			currentCwd: payload.currentCwd,
 			recentHistory: payload.recentHistory,
-			nestedSession: payload.nestedSession ?? null
+			nestedSession: payload.nestedSession ?? null,
+			skillsSection: skillsPromptSection(skills)
 		};
 		const systemPrompt = this.codeMode
 			? buildShellCodeSystemPrompt(promptOpts)
 			: buildShellSystemPrompt(promptOpts);
-		return mergeLeadingSystemMessages([systemPrompt, ...this.messages]);
+		return { messages: mergeLeadingSystemMessages([systemPrompt, ...this.messages]), skills };
 	}
 
 	/**
@@ -911,7 +920,7 @@ export class ShellSession {
 			};
 		}
 
-		const turnMessages = this.buildTurnMessages(payload);
+		const { messages: turnMessages, skills } = await this.buildTurnMessages(payload);
 		// The agent loop mutates `turnMessages` in place, appending this turn's
 		// assistant tool_calls + tool results after the user message. Remember the
 		// pre-loop length so we can recover those appended pairs afterwards.
@@ -936,6 +945,7 @@ export class ShellSession {
 				cwd: payload.currentCwd,
 				sessionId: this.boundSessionId,
 				codeMode: this.codeMode,
+				skills,
 				maxIterations: this.codeMode ? getSettings().codeMaxIterations : undefined,
 				codeAutoApprove: getSettings().codeAutoApprove,
 				thinkingEnabled: this.thinkingEnabled,

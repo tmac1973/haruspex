@@ -55,6 +55,7 @@ import { isVerbosePayloads, logDebug } from '#lib/debug-log.ts';
 import { MAX_TRUNCATION_RETRIES, NudgeState, automaticCheck } from './nudges';
 import { planToolBatches, runToolBatch, toolCallConcurrency } from './parallelTools';
 import { createSlotLender, laneConcurrency } from '#lib/agent/inferenceQueue.svelte.ts';
+import { loadedSkillNames } from '#lib/skills/content.ts';
 import type { AgentLoopOptions, CompletionMeta } from '../loop';
 
 // Trim older tool results when context usage crosses this fraction.
@@ -128,6 +129,8 @@ export interface LoopContext {
 	conversationId?: string;
 	/** Alternate route to a human for `ask_user_question`. See `ToolContext.askUser`. */
 	askUser?: ToolContext['askUser'];
+	/** The turn's skills, with those already in the conversation. */
+	skills: ToolContext['skills'];
 	/** Confine file writes to this dir (relative to workingDir); null = no extra limit. */
 	writeRoot: string | null;
 	/** Per-turn reasoning override; null = use the global thinkingEnabled. */
@@ -241,7 +244,8 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 			toolAllowlist:
 				options.toolAllowlist && options.forceFinalTool
 					? [...options.toolAllowlist, options.forceFinalTool]
-					: options.toolAllowlist
+					: options.toolAllowlist,
+			skillNames: options.skills?.catalog.map((s) => s.name)
 		}),
 		signal: options.signal,
 		workingDir,
@@ -253,6 +257,11 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		interactive: options.interactive ?? false,
 		conversationId: options.conversationId,
 		askUser: options.askUser,
+		skills: options.skills && {
+			names: options.skills.catalog.map((s) => s.name),
+			projectRoot: options.skills.projectRoot,
+			loaded: loadedSkillNames(options.messages)
+		},
 		writeRoot: options.writeRoot ?? null,
 		thinkingEnabled: options.thinkingEnabled ?? null,
 		reasoningEffort: options.reasoningEffort ?? null,
@@ -1510,6 +1519,7 @@ async function executeToolCalls(
 				backend: ctx.backend,
 				runInSlot,
 				askUser: ctx.askUser,
+				skills: ctx.skills,
 				writeRoot: ctx.writeRoot,
 				shellCwd: ctx.shellCwd,
 				shellSessionId: ctx.shellSessionId,

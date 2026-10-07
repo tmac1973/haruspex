@@ -120,6 +120,17 @@ export interface ToolContext {
 	 */
 	runInSlot?: <T>(fn: () => Promise<T>) => Promise<T>;
 	/**
+	 * The skills this turn may load: Chat and Shell turns with autonomous use
+	 * on (see `#lib/skills/turn.ts`). Absent everywhere else, and the skills
+	 * tools refuse without it.
+	 */
+	skills?: {
+		names: string[];
+		projectRoot: string | null;
+		/** Skills already in the conversation, so one isn't loaded twice. */
+		loaded: Set<string>;
+	};
+	/**
 	 * Where `ask_user_question` sends its question, when the person who can
 	 * answer is not at this keyboard.
 	 *
@@ -190,7 +201,9 @@ export interface ToolRegistration {
 		| 'contacts'
 		| 'desktop'
 		/** Uses the image backend (Settings → Image). Chat only, and only interactive. */
-		| 'image';
+		| 'image'
+		/** Loading skills. Only for a turn that carries `ToolContext.skills`. */
+		| 'skills';
 	requiresVision?: boolean;
 }
 

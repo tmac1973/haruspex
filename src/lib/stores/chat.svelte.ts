@@ -1,3 +1,4 @@
+import { prepareTurnSkills, skillsPromptSection } from '#lib/skills/turn.ts';
 import {
 	type ChatMessage,
 	type Usage,
@@ -958,12 +959,14 @@ function buildApiPrompt(
 	conversation: Conversation,
 	workingDir: string | null,
 	keepRecentTools: boolean,
-	memorySection: string
+	memorySection: string,
+	skillsSection = ''
 ): { messages: ChatMessage[]; baseMessageCount: number } {
 	const historyMessages = conversation.messages.filter((m) => m.role !== 'tool' && !m.tool_calls);
 	let messagesForApi: ChatMessage[] = [
 		buildSystemPrompt(workingDir, {
 			memorySection,
+			skillsSection,
 			// Chat tab only. Jobs, remote guests and the shell assistant build
 			// their prompts through the same function and must not get this.
 			includeImages: getSettings().includeImages
@@ -1390,11 +1393,15 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 		});
 		recordRecallStep(conversation, recalled);
 
+		// Chat always uses the Settings backend, and has no project.
+		const skills = await prepareTurnSkills({});
+
 		const { messages: messagesForApi, baseMessageCount } = buildApiPrompt(
 			conversation,
 			currentWorkingDir,
 			keepRecentTools,
-			renderMemorySection(recalled)
+			renderMemorySection(recalled),
+			skillsPromptSection(skills)
 		);
 		const visionSupported = backendDescriptor.vision;
 
@@ -1418,6 +1425,7 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 					visionSupported,
 					interactive: true,
 					conversationId: conversation.id,
+					skills,
 					signal,
 					...buildAgentLoopCallbacks(conversation, activeCtxSize, turnStats)
 				})

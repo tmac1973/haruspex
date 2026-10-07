@@ -33,6 +33,8 @@ export interface BuildShellPromptOpts {
 	 *  moment of the turn — the environment the PTY tools act on is then not
 	 *  the one the file tools act on, and the agent has to be told. */
 	nestedSession?: NestedSession | null;
+	/** The turn's skill list (`skillsPromptSection`), when it has one. */
+	skillsSection?: string;
 }
 
 /**
@@ -133,7 +135,7 @@ HOW TO WORK:
 - Verify your work: after editing, run the project's own build / test / lint via run_command and fix what breaks before reporting done.
 - Keep context small: read slices not whole files; don't dump large command output.
 - SCRATCHPAD: for multi-step tasks, write a brief plan or notes to NOTES.md / PLAN.md with fs_write_text and re-read slices, rather than holding everything in your head.
-- Make the smallest change that solves the task, and explain what you changed and why — concisely.${customBlock}`
+- Make the smallest change that solves the task, and explain what you changed and why — concisely.${customBlock}${opts.skillsSection ?? ''}`
 	};
 }
 
@@ -199,7 +201,7 @@ INLINE CITATIONS:
 CONVERSATION RULES:
 - The chat thread keeps growing across submissions in this troubleshooting session, so you have context from earlier turns. Refer back when it helps.
 - Be concise. Admin work is interrupt-driven — short answers with a clear next step beat a wall of background.
-- If you don't know, say so. Suggest a probing command that would reveal the answer.`
+- If you don't know, say so. Suggest a probing command that would reveal the answer.${opts.skillsSection ?? ''}`
 	};
 }
 
