@@ -55,3 +55,28 @@ describe('shell system prompts — skills section', () => {
 		}
 	});
 });
+
+describe('shell Code mode prompt — project instructions', () => {
+	const base = { sessionContext: ctx('/bin/bash', 'bash'), currentCwd: '/proj', recentHistory: [] };
+
+	it('comes after the fixed rules and before the skill list', () => {
+		const text = String(
+			buildShellCodeSystemPrompt({
+				...base,
+				projectInstructions: '\n\nPROJECT INSTRUCTIONS:\nrules',
+				skillsSection: '\n\nSKILLS:\n- deploy: d'
+			}).content
+		);
+		const at = (s: string) => text.indexOf(s);
+		expect(at('HOW TO WORK:')).toBeLessThan(at('PROJECT INSTRUCTIONS:'));
+		expect(at('PROJECT INSTRUCTIONS:')).toBeLessThan(at('SKILLS:'));
+	});
+
+	it('is only in Code mode', () => {
+		const text = String(
+			buildShellSystemPrompt({ ...base, projectInstructions: '\n\nPROJECT INSTRUCTIONS:\nx' })
+				.content
+		);
+		expect(text).not.toContain('PROJECT INSTRUCTIONS:');
+	});
+});

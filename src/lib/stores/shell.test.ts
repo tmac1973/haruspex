@@ -13,8 +13,12 @@ vi.mock('#lib/shell/runShellTurn.ts', () => ({ runShellTurn }));
 vi.mock('#lib/shell/system-prompt.ts', () => ({
 	buildShellSystemPrompt: () => ({ role: 'system', content: 'sys' }),
 	// Code mode picks this builder instead; needed by the persistence tests,
-	// which all run with codeMode on.
-	buildShellCodeSystemPrompt: () => ({ role: 'system', content: 'code-sys' })
+	// which all run with codeMode on. It echoes the repo's instructions so a
+	// test can see them arrive.
+	buildShellCodeSystemPrompt: (opts: { projectInstructions?: string }) => ({
+		role: 'system',
+		content: `code-sys${opts.projectInstructions ?? ''}`
+	})
 }));
 
 vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
@@ -41,6 +45,15 @@ const dbMock = vi.hoisted(() => ({
 vi.mock('#lib/stores/db.ts', () => dbMock);
 
 vi.mock('#lib/agent/tools/index.ts', () => ({ getDisplayLabel: () => 'tool' }));
+// Repo trust and AGENTS.md have their own tests (skills/turn.test.ts); here the
+// shell is outside any trusted repo unless a test says otherwise, so no turn
+// waits on the trust prompt.
+const project = vi.hoisted(() => ({
+	codeModeProject: vi.fn<
+		(cwd: string | null) => Promise<{ root: string | null; agentsMd: unknown }>
+	>(async () => ({ root: null, agentsMd: null }))
+}));
+vi.mock('#lib/skills/project.ts', () => project);
 vi.mock('#lib/agent/context-budget.ts', () => ({ describeContextManaged: () => 'managed' }));
 vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
@@ -825,5 +838,41 @@ describe('outgoing prompt shape', () => {
 		expect(sent[0].content).toBe('sys\n\n[moved here from the Chat tab]');
 		// The sidebar still renders the note as its own entry.
 		expect(s.messages[0].role).toBe('system');
+	});
+});
+
+describe('AGENTS.md in Code mode', () => {
+	const md = {
+		files: ['AGENTS.md'],
+		text: 'From AGENTS.md:\nRun make check.',
+		truncated: false,
+		totalBytes: 31
+	};
+	const submit = (s: ReturnType<typeof createShellSession>) =>
+		s.submitShell({
+			body: 'run the tests',
+			sessionContext: {} as never,
+			currentCwd: '/code/repo/src',
+			recentHistory: []
+		});
+
+	it("carries the trusted repo's instructions and shows them in the sidebar", async () => {
+		project.codeModeProject.mockResolvedValueOnce({ root: '/code/repo', agentsMd: md });
+		const s = createShellSession();
+		s.codeMode = true;
+		await submit(s);
+
+		expect(project.codeModeProject).toHaveBeenCalledWith('/code/repo/src');
+		const sent = runShellTurn.mock.calls.at(-1)![0].messages as ChatMessage[];
+		expect(String(sent[0].content)).toContain('Run make check.');
+		expect(s.agentsMd).toEqual(md);
+	});
+
+	it("doesn't look for a repo outside Code mode", async () => {
+		project.codeModeProject.mockClear();
+		const s = createShellSession();
+		await submit(s);
+		expect(project.codeModeProject).not.toHaveBeenCalled();
+		expect(s.agentsMd).toBeNull();
 	});
 });

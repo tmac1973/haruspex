@@ -16,6 +16,9 @@
  */
 
 import { prepareTurnSkills, skillsPromptSection, type TurnSkills } from '#lib/skills/turn.ts';
+import { codeModeProject } from '#lib/skills/project.ts';
+import { agentsMdPromptSection } from '#lib/skills/agentsMd.ts';
+import type { AgentsMd } from '#lib/ipc/gen/AgentsMd.ts';
 import { invoke } from '@tauri-apps/api/core';
 import { SvelteSet } from 'svelte/reactivity';
 import { isPtyBusy } from '#lib/stores/shellPtyBusy.svelte.ts';
@@ -181,6 +184,8 @@ export class ShellSession {
 	// Transient notice when the pre-send guard reduced history to fit the
 	// model's context window. Cleared at the start of each turn.
 	contextNotice = $state<string | null>(null);
+	/** The repo's AGENTS.md as the last Code mode turn carried it. */
+	agentsMd = $state<AgentsMd | null>(null);
 	integrationMarkerCount = $state(0);
 	integrationCompletedCommands = $state(0);
 	// Code mode: swaps the assistant to the coding toolset + prompt and drives
@@ -868,17 +873,20 @@ export class ShellSession {
 	private async buildTurnMessages(
 		payload: ShellSubmission
 	): Promise<{ messages: ChatMessage[]; skills: TurnSkills | undefined }> {
-		// Code mode may take project skills from the repo the shell is in; that
-		// can ask the user to trust the repo, once.
-		const skills = await prepareTurnSkills({
-			projectCwd: this.codeMode ? payload.currentCwd : null
-		});
+		// Code mode takes AGENTS.md and project skills from the repo the shell is
+		// in; the first turn in a repo that has either asks to trust it.
+		const project = this.codeMode
+			? await codeModeProject(payload.currentCwd)
+			: { root: null, agentsMd: null };
+		this.agentsMd = project.agentsMd;
+		const skills = await prepareTurnSkills({ projectRoot: project.root });
 		const promptOpts = {
 			sessionContext: payload.sessionContext,
 			currentCwd: payload.currentCwd,
 			recentHistory: payload.recentHistory,
 			nestedSession: payload.nestedSession ?? null,
-			skillsSection: skillsPromptSection(skills)
+			skillsSection: skillsPromptSection(skills),
+			projectInstructions: agentsMdPromptSection(project.agentsMd)
 		};
 		const systemPrompt = this.codeMode
 			? buildShellCodeSystemPrompt(promptOpts)

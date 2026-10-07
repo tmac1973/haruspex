@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { describeAgentsMd } from '#lib/skills/agentsMd.ts';
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
 	import StopIndicator from '#lib/components/StopIndicator.svelte';
@@ -129,6 +130,7 @@
 	const markerCount = $derived(session.integrationMarkerCount);
 	const completedCommands = $derived(session.integrationCompletedCommands);
 	const codeMode = $derived(session.codeMode);
+	const agentsMd = $derived(codeMode ? session.agentsMd : null);
 	const thinkingEnabled = $derived(session.thinkingEnabled);
 	// Three-state badge:
 	//   - red "no integration"    : marker_count is 0 → hook didn't load
@@ -396,6 +398,13 @@
 				>
 					{integrationLabel}
 				</span>
+				{#if agentsMd}
+					<span
+						class="agents-badge"
+						class:warn={agentsMd.truncated}
+						title={describeAgentsMd(agentsMd)}>AGENTS.md</span
+					>
+				{/if}
 				<button
 					class="toggle"
 					class:active={codeMode}
@@ -772,6 +781,19 @@
 		color: var(--text-secondary);
 		font-style: italic;
 		padding: 8px 4px;
+	}
+
+	.agents-badge {
+		font-size: 0.7rem;
+		padding: 1px 6px;
+		border-radius: 4px;
+		background: var(--bg-secondary);
+		color: var(--text-secondary);
+		font-family: monospace;
+	}
+
+	.agents-badge.warn {
+		color: var(--warning);
 	}
 
 	.context-notice {
