@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Privacy Policy · Haruspex</title>
+		<link rel="icon" href="../icon.png" />
+		<link rel="stylesheet" href="../style.css" />
+	</head>
+	<body>
+		<main>
+			<header>
+				<img src="../icon.png" alt="" />
+				<a href="../">Haruspex</a>
+			</header>
+
+			<h1>Privacy policy</h1>
+			<p class="muted">Effective 6 October 2026</p>
+
+			<p>
+				Haruspex is a desktop application that runs on your own computer. The Haruspex project runs
+				no servers, has no user accounts and collects no telemetry. <strong>We never receive your
+				data.</strong> This policy explains what the app does with your information on your device,
+				and what it sends to other services when you use features that need them.
+			</p>
+
+			<h2>What stays on your device</h2>
+			<p>
+				Your conversations, the model's answers, your settings, files you work with, and anything you
+				ask Haruspex to remember are stored only on your computer. Passwords, API keys and sign-in
+				tokens are kept in your operating system's keychain or, where none is available, in an
+				encrypted file in the app's data folder.
+			</p>
+
+			<h2>What leaves your device</h2>
+			<p>Haruspex contacts other services only to do things you use it for:</p>
+			<ul>
+				<li>
+					<strong>Models.</strong> Model files are downloaded from Hugging Face. By default the model
+					runs on your computer. If you choose a remote model server or a cloud provider such as
+					OpenRouter, your prompts and the content the assistant reads, including any email,
+					calendar or contact details, are sent to that server or provider and handled under its
+					privacy policy.
+				</li>
+				<li>
+					<strong>Web research.</strong> Search queries go to the search provider you choose, and the
+					pages it finds are fetched from their websites. You can route this through a proxy.
+				</li>
+				<li>
+					<strong>Accounts you connect.</strong> Email, calendar and contact accounts are reached
+					directly from your computer, using credentials stored on your computer. Integrations you
+					add (MCP servers) run on your computer with the access you give them.
+				</li>
+				<li>
+					<strong>Update check.</strong> At startup the app asks GitHub for the latest release
+					number.
+				</li>
+			</ul>
+
+			<h2>Google user data</h2>
+			<p>
+				If you choose <em>Sign in with Google</em>, Haruspex asks Google for permission to:
+			</p>
+			<ul>
+				<li>see your calendars and their events (<code>calendar.readonly</code>);</li>
+				<li>see your contacts (<code>carddav</code>; Haruspex only reads with it);</li>
+				<li>see your email address, to show which account is connected.</li>
+			</ul>
+			<p>
+				<strong>How it is used.</strong> Haruspex reads your calendar events and contacts only when
+				the assistant needs them to answer your question, for example "what's on my calendar this
+				week?" It never creates, changes or deletes anything in your Google account.
+			</p>
+			<p>
+				<strong>Where it goes.</strong> Google data travels directly between Google and your
+				computer. It is never sent to the Haruspex project. The events or contacts the assistant
+				reads become part of that conversation, which is stored on your device. The only case in
+				which Google data leaves your device is the one you configure: if you use a remote model
+				server or cloud AI provider, the content the assistant reads is sent to it so it can answer
+				you.
+			</p>
+			<p>
+				<strong>Storage.</strong> Haruspex keeps a sign-in token in your system keychain so it can
+				reach your calendar later. It does not keep its own copy of your calendar or contacts; it
+				fetches them when asked.
+			</p>
+			<p>
+				<strong>No other use.</strong> Google data is not sold, not used for advertising, not used
+				to train AI models, and not shared with anyone except as described above.
+			</p>
+			<p>
+				Haruspex's use and transfer to any other app of information received from Google APIs will
+				adhere to the
+				<a href="https://developers.google.com/terms/api-services-user-data-policy"
+					>Google API Services User Data Policy</a
+				>, including the Limited Use requirements.
+			</p>
+			<p>
+				<strong>Removing access.</strong> Remove the account in Settings → Integrations → Calendar
+				&amp; Contacts. That deletes the token from your device and revokes it at Google. You can
+				also revoke access at any time at
+				<a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.
+			</p>
+
+			<h2>Deleting your data</h2>
+			<p>
+				Because everything is stored on your computer, you control it: delete conversations,
+				memories and accounts in the app, or uninstall Haruspex and remove its data folder.
+			</p>
+
+			<h2>Children</h2>
+			<p>Haruspex is not directed at children under 13.</p>
+
+			<h2>Changes</h2>
+			<p>
+				Changes to this policy are published on this page with a new effective date. The history is
+				in the project's
+				<a href="https://github.com/tmac1973/haruspex/commits/main/site/privacy/index.html"
+					>source repository</a
+				>.
+			</p>
+
+			<h2>Contact</h2>
+			<p>
+				Questions about privacy:
+				<a href="https://github.com/tmac1973/haruspex/issues">open an issue on GitHub</a>.
+			</p>
+
+			<footer>
+				<a href="../">Home</a>
+				<a href="../terms/">Terms of service</a>
+			</footer>
+		</main>
+	</body>
+</html>
