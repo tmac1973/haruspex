@@ -15,6 +15,7 @@
 //! Project overrides user, the convention every client follows; Haruspex's
 //! own folder overrides folders shared with other tools.
 
+mod agents_md;
 mod discover;
 mod parse;
 
@@ -282,6 +283,16 @@ pub async fn skills_project_root(cwd: String) -> Result<Option<String>, String> 
         Ok(find_project_root(Path::new(&cwd)).map(|p| p.to_string_lossy().into_owned()))
     })
     .await
+}
+
+/// The `AGENTS.md` instructions for a Code mode turn in `cwd`, inside the
+/// repo at `root`. The frontend passes only a root the user trusts.
+#[tauri::command]
+pub async fn skills_agents_md(
+    root: String,
+    cwd: String,
+) -> Result<Option<agents_md::AgentsMd>, String> {
+    blocking(move || Ok(agents_md::read(Path::new(&root), Path::new(&cwd)))).await
 }
 
 /// What the repo at `root` has that would need the user's trust.

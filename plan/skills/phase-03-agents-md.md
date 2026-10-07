@@ -22,9 +22,11 @@ Every Code mode turn carries the repo's own instructions.
 - `buildShellCodeSystemPrompt` gets a PROJECT INSTRUCTIONS section with the
   file's path and contents, placed after the fixed rules so the repo can
   refine them.
-- Re-read when the shell's cwd moves to a different repo, not on every turn.
-- The Shell sidebar shows "Using AGENTS.md" (with the path, and a note when it
-  was cut short) so the user knows it is in play.
+- Read on every Code mode turn: it is one small file, and an edit to
+  `AGENTS.md` takes effect on the next message without a restart.
+- The Shell sidebar header shows an `AGENTS.md` badge, with the files in its
+  tooltip and a note when the text was cut short, so the user knows it is in
+  play.
 
 ## Tests
 

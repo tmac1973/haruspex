@@ -386,6 +386,7 @@ pub fn run() {
             skills::skill_read_file,
             skills::skills_project_root,
             skills::skills_project_info,
+            skills::skills_agents_md,
             skills::skill_delete_user,
             skills::skills_user_dir,
             fs_tools::pdf_read::fs_read_pdf,

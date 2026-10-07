@@ -264,6 +264,7 @@ export const IPC = {
 	skill_delete_user: 'skill_delete_user',
 	skill_read: 'skill_read',
 	skill_read_file: 'skill_read_file',
+	skills_agents_md: 'skills_agents_md',
 	skills_list: 'skills_list',
 	skills_project_info: 'skills_project_info',
 	skills_project_root: 'skills_project_root',

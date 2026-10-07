@@ -10,7 +10,6 @@
 
 import type { BackendOverride } from '#lib/api.ts';
 import { listSkills, skillsAutonomous, usableSkills } from './client';
-import { trustedProjectRoot } from './project';
 
 export interface TurnSkills {
 	/** Skills the model may load, by name and description. Never empty. */
@@ -26,11 +25,11 @@ export interface TurnSkills {
  */
 export async function prepareTurnSkills(opts: {
 	backend?: BackendOverride;
-	/** Code mode: the shell's cwd, whose repo may contribute project skills. */
-	projectCwd?: string | null;
+	/** Code mode: the trusted repo (`trustedProjectRoot`) whose skills count. */
+	projectRoot?: string | null;
 }): Promise<TurnSkills | undefined> {
 	if (!skillsAutonomous(opts.backend)) return undefined;
-	const projectRoot = opts.projectCwd ? await trustedProjectRoot(opts.projectCwd) : null;
+	const projectRoot = opts.projectRoot ?? null;
 	const all = await listSkills(projectRoot).catch(() => []);
 	const catalog = usableSkills(all).map((s) => ({ name: s.name, description: s.description }));
 	return catalog.length > 0 ? { catalog, projectRoot } : undefined;

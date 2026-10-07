@@ -35,6 +35,8 @@ export interface BuildShellPromptOpts {
 	nestedSession?: NestedSession | null;
 	/** The turn's skill list (`skillsPromptSection`), when it has one. */
 	skillsSection?: string;
+	/** Code mode: the repo's AGENTS.md (`agentsMdPromptSection`), when trusted. */
+	projectInstructions?: string;
 }
 
 /**
@@ -135,7 +137,7 @@ HOW TO WORK:
 - Verify your work: after editing, run the project's own build / test / lint via run_command and fix what breaks before reporting done.
 - Keep context small: read slices not whole files; don't dump large command output.
 - SCRATCHPAD: for multi-step tasks, write a brief plan or notes to NOTES.md / PLAN.md with fs_write_text and re-read slices, rather than holding everything in your head.
-- Make the smallest change that solves the task, and explain what you changed and why — concisely.${customBlock}${opts.skillsSection ?? ''}`
+- Make the smallest change that solves the task, and explain what you changed and why — concisely.${[customBlock, opts.projectInstructions, opts.skillsSection].join('')}`
 	};
 }
 
