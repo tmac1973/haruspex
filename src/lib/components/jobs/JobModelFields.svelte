@@ -267,7 +267,9 @@
 			</div>
 			{#if orCatalog}
 				<div class="model-row">
-					<label class="model-field grow">
+					<!-- A div, not a label: a label forwards every click inside it to the
+					     picker's trigger button, which re-opened the list after a pick. -->
+					<div class="model-field grow">
 						<span class="sublabel">Model</span>
 						<OpenRouterModelPicker
 							models={orCatalog}
@@ -275,7 +277,7 @@
 							onSelect={onOpenRouterModelSelect}
 							toolsOnly={false}
 						/>
-					</label>
+					</div>
 				</div>
 			{/if}
 			{#if orError}
