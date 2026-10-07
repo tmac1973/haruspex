@@ -44,7 +44,7 @@ the spec, and serves it to the frontend. Nothing in a turn changes yet.
     resolves outside the folder. Size-capped like `fs_read_text`.
 - `#[ts(export)]` the structs and run `./scripts/export-ipc-types.sh`.
 - Settings: `skills: { extraDirs: string[], disabled: string[], autonomous:
-  'auto' | 'on' | 'off', trustedRepos: Record<string, boolean> }` with
+'auto' | 'on' | 'off', trustedRepos: Record<string, boolean> }` with
   defaults. `auto` resolves to on for remote and OpenRouter backends and off
   for local.
 

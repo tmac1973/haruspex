@@ -113,14 +113,14 @@ with a note saying so, and Settings shows that it was.
 
 ## Phases
 
-| # | Phase | Size |
-|---|---|---|
-| 1 | [Finding and parsing skills](phase-01-discovery.md) | ~1 day |
-| 2 | [Skills in turns, and Settings → Skills](phase-02-turns-and-settings.md) | ~1 day |
-| 3 | [AGENTS.md in Shell Code mode](phase-03-agents-md.md) | ~half a day |
-| 4 | [Slash commands](phase-04-slash-commands.md) | ~1–1.5 days |
-| 5 | [The model writing skills](phase-05-authoring.md) | ~1 day |
-| 6 | [`/init`](phase-06-init.md) | ~half a day |
+| #   | Phase                                                                    | Size        |
+| --- | ------------------------------------------------------------------------ | ----------- |
+| 1   | [Finding and parsing skills](phase-01-discovery.md)                      | ~1 day      |
+| 2   | [Skills in turns, and Settings → Skills](phase-02-turns-and-settings.md) | ~1 day      |
+| 3   | [AGENTS.md in Shell Code mode](phase-03-agents-md.md)                    | ~half a day |
+| 4   | [Slash commands](phase-04-slash-commands.md)                             | ~1–1.5 days |
+| 5   | [The model writing skills](phase-05-authoring.md)                        | ~1 day      |
+| 6   | [`/init`](phase-06-init.md)                                              | ~half a day |
 
 Each phase is one PR and leaves the app shippable. 1 → 2 is the critical path;
 3 is independent; 4 needs 2; 5 needs 2; 6 needs 3 and 4.
