@@ -12,6 +12,11 @@ import {
 } from '#lib/markdown.ts';
 
 describe('renderMarkdown', () => {
+	it('keeps single line breaks, so a poem keeps its lines', () => {
+		const html = renderMarkdown('Mounts unlock hidden drives\nStorage waits for the view');
+		expect(html).toMatch(/drives<br\s*\/?>\s*Storage/);
+	});
+
 	it('renders paragraphs', () => {
 		const result = renderMarkdown('Hello world');
 		expect(result).toContain('<p>Hello world</p>');

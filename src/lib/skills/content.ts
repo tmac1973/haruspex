@@ -61,10 +61,10 @@ const CLOSE = '</skill_content>';
 
 /** The line between a skill run by `/name` and what the user typed. */
 function slashNote(name: string): string {
-	return `The user ran the "${name}" skill. Follow its instructions above for this message:`;
+	return `The user ran the "${name}" skill. Its instructions above take priority over your usual way of answering, including whether to search or cite sources. Follow them for this message:`;
 }
-const SLASH_NOTE =
-	/^\n\nThe user ran the "[^"]*" skill\. Follow its instructions above for this message:\n\n/;
+/** Matches this note and the shorter one older messages were stored with. */
+const SLASH_NOTE = /^\n\nThe user ran the "[^"]*" skill\.[^\n]*:\n\n/;
 
 /**
  * The user message for `/name …`: the skill's instructions, then what the

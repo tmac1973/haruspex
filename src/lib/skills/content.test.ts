@@ -60,10 +60,15 @@ describe('renderSlashMessage / typedText', () => {
 	it('puts the skill ahead of what was typed, and gives back only the typing', () => {
 		const text = renderSlashMessage(doc(), '/pdf-tools merge a.pdf b.pdf');
 		expect(text.startsWith('<skill_content name="pdf-tools">')).toBe(true);
-		expect(text).toContain('Follow its instructions above');
+		expect(text).toContain('take priority over your usual way of answering');
 		expect(text.endsWith('/pdf-tools merge a.pdf b.pdf')).toBe(true);
 		expect(holdsSkillContent(text)).toBe(true);
 		expect(typedText(text)).toBe('/pdf-tools merge a.pdf b.pdf');
+	});
+
+	it('gives back the typing from a message stored with the older note', () => {
+		const old = `${renderSkillContent(doc())}\n\nThe user ran the "pdf-tools" skill. Follow its instructions above for this message:\n\n/pdf-tools merge`;
+		expect(typedText(old)).toBe('/pdf-tools merge');
 	});
 
 	it('leaves other text alone, a load_skill result included', () => {

@@ -46,6 +46,6 @@ export function skillsPromptSection(skills: TurnSkills | undefined): string {
 	return `
 
 SKILLS:
-These skills hold instructions for specific tasks. When the request matches one, call load_skill with its name before you start, then follow what it says.
+These skills hold instructions for specific tasks. When the request matches one, call load_skill with its name before you start, then follow what it says. A skill already in the conversation inside <skill_content> is loaded: follow it without calling load_skill.
 ${list}`;
 }
