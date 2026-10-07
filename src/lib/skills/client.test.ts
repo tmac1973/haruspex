@@ -46,7 +46,7 @@ describe('which folders Rust searches', () => {
 			projectRoot: null
 		});
 
-		updateSkills({ trustedRepos: { '/code/repo': true } });
+		updateSkills({ trustedRepos: { '/code/repo': { trusted: true } } });
 		await readSkill('deploy', '/code/repo');
 		expect(invoke).toHaveBeenLastCalledWith('skill_read', {
 			name: 'deploy',
@@ -56,7 +56,7 @@ describe('which folders Rust searches', () => {
 	});
 
 	it('treats a declined repo like an unasked one', async () => {
-		updateSkills({ trustedRepos: { '/code/repo': false } });
+		updateSkills({ trustedRepos: { '/code/repo': { trusted: false } } });
 		await readSkillFile('deploy', 'scripts/run.sh', '/code/repo');
 		expect(vi.mocked(invoke).mock.calls[0][1]).toMatchObject({ projectRoot: null });
 		expect(repoTrust('/code/repo')).toBe(false);

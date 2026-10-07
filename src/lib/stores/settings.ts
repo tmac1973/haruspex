@@ -289,11 +289,36 @@ export interface SkillsConfig {
 	 */
 	autonomous: 'auto' | 'on' | 'off';
 	/**
-	 * Repo roots whose `AGENTS.md` and project skills may reach a turn, keyed
-	 * by absolute path. Absent means the user hasn't been asked yet; a cloned
-	 * repo's instructions are a stranger's until they say yes.
+	 * The user's answer for each repo root whose `AGENTS.md` and project
+	 * skills could reach a turn, keyed by absolute path. Absent means they
+	 * haven't been asked yet; a cloned repo's instructions are a stranger's
+	 * until they say yes.
 	 */
-	trustedRepos: Record<string, boolean>;
+	trustedRepos: Record<string, RepoTrust>;
+}
+
+/**
+ * One answer about a repo, and what the repo was when it was given: a
+ * different `origin` means a different repo now sits at that path, and a
+ * skill that wasn't there was never agreed to. See `skills/project.ts`.
+ */
+export interface RepoTrust {
+	trusted: boolean;
+	/** The `origin` URL; null for a repo without one. Absent on answers given
+	 *  before it was recorded, and filled in on the next turn there. */
+	origin?: string | null;
+	/** The project skills' names; absent likewise. */
+	skills?: string[];
+}
+
+/** Answers were plain booleans before the repo's identity was recorded. */
+function migrateTrustedRepos(repos: Record<string, unknown>): Record<string, RepoTrust> {
+	return Object.fromEntries(
+		Object.entries(repos).map(([root, v]) => [
+			root,
+			typeof v === 'boolean' ? { trusted: v } : (v as RepoTrust)
+		])
+	);
 }
 
 export const defaultSkills: SkillsConfig = {
@@ -924,7 +949,11 @@ function load(): AppSettings {
 				integrations: mergedIntegrations,
 				proxy: mergedProxy,
 				searchProxy: mergedSearchProxy,
-				skills: { ...defaultSkills, ...(parsed.skills ?? {}) }
+				skills: {
+					...defaultSkills,
+					...(parsed.skills ?? {}),
+					trustedRepos: migrateTrustedRepos(parsed.skills?.trustedRepos ?? {})
+				}
 			};
 		}
 	} catch {

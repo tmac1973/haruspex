@@ -645,6 +645,20 @@ describe('load-time reasoning-effort default', () => {
 		expect(fresh.getSettings().reasoningEffort).toBe('medium');
 	});
 
+	it('turns repo trust stored as true/false into records', async () => {
+		const s = await loadWith({
+			skills: {
+				trustedRepos: { '/a': true, '/b': false, '/c': { trusted: true, origin: null, skills: [] } }
+			}
+		});
+		expect(s.skills.trustedRepos).toEqual({
+			'/a': { trusted: true },
+			'/b': { trusted: false },
+			'/c': { trusted: true, origin: null, skills: [] }
+		});
+		expect(s.skills.autonomous).toBe('auto');
+	});
+
 	it('adopts medium for an install that predates the flag and chose nothing', async () => {
 		const s = await loadWith({ reasoningEffort: null });
 		expect(s.reasoningEffort).toBe('medium');

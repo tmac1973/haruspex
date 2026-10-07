@@ -5,17 +5,27 @@
  * written by whoever wrote the repo. For the user's own project that is the
  * point; for a freshly cloned one it is a stranger's instructions injected
  * into every turn. So the first Shell turn in a repo that has either asks
- * once, and the answer is kept in Settings → Skills.
+ * once, and the answer is kept in Settings → Skills — and asked again when
+ * it no longer fits the repo (`skills/project.ts`).
  *
  * Same shape as the other approval stores: the caller awaits a promise, a
  * modal mounted in the root layout renders the pending ask, and a button
  * resolves it. Asks about the same repo share one prompt.
  */
 
+/** Why a repo the user already answered about is being asked about again. */
+export type RepoTrustChange =
+	/** A different repo now sits at that path. */
+	| { kind: 'origin'; was: string | null; now: string | null }
+	/** Skills that weren't there when the user said yes. */
+	| { kind: 'skills'; added: string[] };
+
 export interface RepoTrustAsk {
 	root: string;
 	skills: number;
 	agentsMd: boolean;
+	/** Set when asking again; absent the first time. */
+	change?: RepoTrustChange;
 }
 
 interface Pending extends RepoTrustAsk {

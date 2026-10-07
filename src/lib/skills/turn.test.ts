@@ -4,7 +4,7 @@ import type { SkillSummary } from '#lib/ipc/gen/SkillSummary.ts';
 const mocks = vi.hoisted(() => ({
 	list: [] as SkillSummary[],
 	root: null as string | null,
-	info: { skills: 0, agentsMd: false },
+	info: { skillNames: [] as string[], agentsMd: false, origin: null as string | null },
 	agentsMd: null as unknown,
 	ask: vi.fn(async () => true)
 }));
@@ -47,7 +47,7 @@ beforeEach(() => {
 	mocks.ask.mockClear().mockResolvedValue(true);
 	mocks.list = [skill('deploy'), skill('broken', { error: 'no description' })];
 	mocks.root = null;
-	mocks.info = { skills: 0, agentsMd: false };
+	mocks.info = { skillNames: [], agentsMd: false, origin: null };
 	mocks.agentsMd = null;
 	updateSkills({ ...defaultSkills, autonomous: 'on', trustedRepos: {} });
 });
@@ -75,7 +75,7 @@ describe('prepareTurnSkills', () => {
 	});
 
 	it("lists a trusted repo's skills for Code mode", async () => {
-		updateSkills({ trustedRepos: { '/code/repo': true } });
+		updateSkills({ trustedRepos: { '/code/repo': { trusted: true } } });
 		const skills = await prepareTurnSkills({ projectRoot: '/code/repo' });
 		expect(skills?.projectRoot).toBe('/code/repo');
 		expect(invoke).toHaveBeenCalledWith('skills_list', {
@@ -100,14 +100,72 @@ describe('trustedProjectRoot', () => {
 
 	it('asks once and remembers the answer', async () => {
 		mocks.root = '/code/repo';
-		mocks.info = { skills: 2, agentsMd: true };
+		mocks.info = { skillNames: ['a', 'b'], agentsMd: true, origin: 'git@x:me/repo.git' };
 		mocks.ask.mockResolvedValueOnce(false);
 		expect(await trustedProjectRoot('/code/repo')).toBeNull();
 		expect(mocks.ask).toHaveBeenCalledWith({ root: '/code/repo', skills: 2, agentsMd: true });
-		expect(getSettings().skills.trustedRepos).toEqual({ '/code/repo': false });
+		expect(getSettings().skills.trustedRepos).toEqual({
+			'/code/repo': { trusted: false, origin: 'git@x:me/repo.git', skills: ['a', 'b'] }
+		});
 
 		expect(await trustedProjectRoot('/code/repo')).toBeNull();
 		expect(mocks.ask).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('trustedProjectRoot — when an answer no longer fits', () => {
+	const origin = 'git@x:me/repo.git';
+	const answer = (trusted: boolean, skills = ['a']) => ({ trusted, origin, skills });
+	beforeEach(() => {
+		mocks.root = '/code/repo';
+		mocks.info = { skillNames: ['a'], agentsMd: true, origin };
+	});
+
+	it('asks again when a different repo sits at the path, trusted or not', async () => {
+		for (const trusted of [true, false]) {
+			mocks.ask.mockClear();
+			updateSkills({ trustedRepos: { '/code/repo': answer(trusted) } });
+			mocks.info = { skillNames: ['a'], agentsMd: true, origin: 'git@x:else/other.git' };
+			mocks.ask.mockResolvedValueOnce(true);
+			expect(await trustedProjectRoot('/code/repo')).toBe('/code/repo');
+			expect(mocks.ask).toHaveBeenCalledWith(
+				expect.objectContaining({
+					change: { kind: 'origin', was: origin, now: 'git@x:else/other.git' }
+				})
+			);
+			expect(getSettings().skills.trustedRepos['/code/repo'].origin).toBe('git@x:else/other.git');
+		}
+	});
+
+	it('asks again when a trusted repo gains a skill, naming it', async () => {
+		updateSkills({ trustedRepos: { '/code/repo': answer(true) } });
+		mocks.info = { skillNames: ['a', 'deploy'], agentsMd: true, origin };
+		mocks.ask.mockResolvedValueOnce(false);
+		expect(await trustedProjectRoot('/code/repo')).toBeNull();
+		expect(mocks.ask).toHaveBeenCalledWith(
+			expect.objectContaining({ change: { kind: 'skills', added: ['deploy'] } })
+		);
+		expect(getSettings().skills.trustedRepos['/code/repo']).toEqual(answer(false, ['a', 'deploy']));
+	});
+
+	it("doesn't ask about new skills in a repo the user ignores", async () => {
+		updateSkills({ trustedRepos: { '/code/repo': answer(false) } });
+		mocks.info = { skillNames: ['a', 'deploy'], agentsMd: true, origin };
+		expect(await trustedProjectRoot('/code/repo')).toBeNull();
+		expect(mocks.ask).not.toHaveBeenCalled();
+	});
+
+	it('keeps the record current without asking: removed skills, older answers', async () => {
+		updateSkills({ trustedRepos: { '/code/repo': answer(true, ['a', 'gone']) } });
+		expect(await trustedProjectRoot('/code/repo')).toBe('/code/repo');
+		expect(getSettings().skills.trustedRepos['/code/repo']).toEqual(answer(true, ['a']));
+
+		// An answer from before origins were recorded is taken as it stands.
+		updateSkills({ trustedRepos: { '/code/repo': { trusted: true } } });
+		mocks.info = { skillNames: ['a', 'b'], agentsMd: true, origin };
+		expect(await trustedProjectRoot('/code/repo')).toBe('/code/repo');
+		expect(getSettings().skills.trustedRepos['/code/repo']).toEqual(answer(true, ['a', 'b']));
+		expect(mocks.ask).not.toHaveBeenCalled();
 	});
 });
 
@@ -122,7 +180,7 @@ describe('shellProject', () => {
 	it('asks about a repo that has only an AGENTS.md, whatever the skills setting', async () => {
 		updateSkills({ autonomous: 'off' });
 		mocks.root = '/code/repo';
-		mocks.info = { skills: 0, agentsMd: true };
+		mocks.info = { skillNames: [], agentsMd: true, origin: null };
 		mocks.agentsMd = md;
 		expect(await shellProject('/code/repo/src')).toEqual({ root: '/code/repo', agentsMd: md });
 		expect(mocks.ask).toHaveBeenCalledWith({ root: '/code/repo', skills: 0, agentsMd: true });
@@ -135,7 +193,7 @@ describe('shellProject', () => {
 	it('reads nothing from a declined repo', async () => {
 		mocks.root = '/code/repo';
 		mocks.agentsMd = md;
-		updateSkills({ trustedRepos: { '/code/repo': false } });
+		updateSkills({ trustedRepos: { '/code/repo': { trusted: false } } });
 		expect(await shellProject('/code/repo')).toEqual({ root: null, agentsMd: null });
 		expect(invoke).not.toHaveBeenCalledWith('skills_agents_md', expect.anything());
 	});
