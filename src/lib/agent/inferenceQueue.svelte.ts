@@ -40,7 +40,12 @@ export type InferenceConsumer =
 	 * never compete with a turn the user is waiting on — it is the one
 	 * consumer nobody asked for, so it always yields.
 	 */
-	| 'memory';
+	| 'memory'
+	/**
+	 * A tool's own model call (research_url's page summary) running beside
+	 * others from the same turn. See `createSlotLender`.
+	 */
+	| 'subagent';
 
 export interface InferenceTicket {
 	/** `<windowLabel>:<n>` — unique across windows. */
@@ -118,6 +123,15 @@ function laneFor(backend?: BackendOverride): { lane: string; maxParallel: number
 	// is unknown: exceeding a known slot count doesn't buy concurrency, it just
 	// moves the queue inside the server where nothing can report it.
 	return { lane: `remote:${descriptor.baseUrl}`, maxParallel: descriptor.parallelSlots };
+}
+
+/**
+ * How many turns `backend`'s lane admits at once: 1 for a serialized lane
+ * (always the local llama-server), the advertised slot count, or null when
+ * the lane is parallel and its limit unknown.
+ */
+export function laneConcurrency(backend?: BackendOverride): number | null {
+	return laneFor(backend).maxParallel;
 }
 
 // --- cross-window queue snapshot (event-mirrored) -------------------------
@@ -257,6 +271,35 @@ export async function withInferenceSlot<T>(
 		// Harmless no-op server-side if the ticket was never admitted.
 		void invoke('inference_release', { reqId }).catch(() => {});
 	}
+}
+
+/**
+ * Slots for the model calls tools make while their turn runs them side by
+ * side (several research_url summaries at once).
+ *
+ * The turn already holds a slot, and it sits idle while tools run, so one
+ * child at a time borrows it without a ticket. Every other child queues for
+ * its own, so N concurrent summaries cost N slots — never more than the lane
+ * admits. Only for parallel lanes: on a serialized lane a second child would
+ * wait for the parent's slot, which is not released until the children
+ * finish.
+ */
+export function createSlotLender(options: {
+	backend?: BackendOverride;
+	signal?: AbortSignal;
+}): <T>(fn: () => Promise<T>) => Promise<T> {
+	let borrowed = false;
+	return async <T>(fn: () => Promise<T>): Promise<T> => {
+		if (!borrowed) {
+			borrowed = true;
+			try {
+				return await fn();
+			} finally {
+				borrowed = false;
+			}
+		}
+		return withInferenceSlot({ consumer: 'subagent', ...options }, fn);
+	};
 }
 
 /** Test-only hook to reset module state between cases. */

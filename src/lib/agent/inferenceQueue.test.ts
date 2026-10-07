@@ -80,6 +80,8 @@ import {
 	withInferenceSlot,
 	getQueueSnapshot,
 	getRunningCount,
+	createSlotLender,
+	laneConcurrency,
 	_resetForTests
 } from '#lib/agent/inferenceQueue.svelte.ts';
 
@@ -289,5 +291,63 @@ describe('inferenceQueue client — snapshot mirror', () => {
 
 		admit('main:1');
 		await p;
+	});
+});
+
+describe('inferenceQueue client — lane concurrency', () => {
+	it('is 1 on the local lane, whatever the parallel setting says', () => {
+		mocks.allowParallelInference = true;
+		expect(laneConcurrency()).toBe(1);
+	});
+
+	it('is unknown (null) on a parallel remote lane with no slot count', () => {
+		mocks.mode = 'remote';
+		mocks.allowParallelInference = true;
+		expect(laneConcurrency()).toBeNull();
+	});
+
+	it('is 1 on a remote lane without parallel inference', () => {
+		mocks.mode = 'remote';
+		expect(laneConcurrency()).toBe(1);
+	});
+});
+
+describe('inferenceQueue client — slot lender', () => {
+	function acquires() {
+		return vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === 'inference_acquire');
+	}
+
+	it("runs one child at a time on the parent's slot, without a ticket", async () => {
+		const lend = createSlotLender({});
+		expect(await lend(async () => 'a')).toBe('a');
+		expect(await lend(async () => 'b')).toBe('b');
+		expect(acquires()).toHaveLength(0);
+	});
+
+	it('queues a concurrent child for a slot of its own', async () => {
+		mocks.mode = 'remote';
+		mocks.allowParallelInference = true;
+		const lend = createSlotLender({});
+		const first = deferred<string>();
+		const p1 = lend(() => first.promise);
+		const p2 = lend(async () => 'second');
+		await tick();
+
+		expect(acquires()).toHaveLength(1);
+		expect(acquires()[0][1]).toMatchObject({ consumer: 'subagent' });
+		admit('main:1');
+		expect(await p2).toBe('second');
+
+		first.resolve('first');
+		expect(await p1).toBe('first');
+		expect(acquires()).toHaveLength(1);
+	});
+
+	it('lends the slot again once the borrower is done', async () => {
+		const lend = createSlotLender({});
+		await lend(async () => 'a').catch(() => {});
+		await expect(lend(async () => Promise.reject(new Error('boom')))).rejects.toThrow('boom');
+		expect(await lend(async () => 'c')).toBe('c');
+		expect(acquires()).toHaveLength(0);
 	});
 });

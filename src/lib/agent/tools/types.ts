@@ -114,6 +114,12 @@ export interface ToolContext {
 	 */
 	backend?: BackendOverride | null;
 	/**
+	 * Runs a tool's own model call in an inference slot, when the turn is
+	 * running its tools side by side. Absent when tools run one at a time,
+	 * and the call simply uses the turn's slot.
+	 */
+	runInSlot?: <T>(fn: () => Promise<T>) => Promise<T>;
+	/**
 	 * Where `ask_user_question` sends its question, when the person who can
 	 * answer is not at this keyboard.
 	 *

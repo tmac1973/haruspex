@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach, onTestFinished, type Mock } from 'vitest';
 import { NUDGE_NOTE, automaticCheck } from './loop/nudges';
 import type {
 	ChatCompletionResponse,
@@ -530,6 +530,78 @@ describe('runAgentLoop: what onToolStart sees', () => {
 			name: 'submit_plan_asset_spec',
 			arguments: { entries: [{ id: 'coin' }] }
 		});
+	});
+});
+
+describe('runAgentLoop: parallel tool calls', () => {
+	const researchCalls = ['a', 'b', 'c'].map((id) => ({
+		id,
+		name: 'research_url',
+		args: JSON.stringify({ url: `https://${id}.example`, focus: 'x' })
+	}));
+
+	/** executeTool that records how many calls overlap, finishing in reverse. */
+	function overlappingTools() {
+		let inFlight = 0;
+		let peak = 0;
+		const contexts: Array<{ runInSlot?: unknown }> = [];
+		toolsMock.executeTool.mockImplementation(
+			async (_name: string, args: { url: string }, ctx: { runInSlot?: unknown }) => {
+				contexts.push(ctx);
+				peak = Math.max(peak, ++inFlight);
+				// Later calls finish sooner, so arrival order is the reverse of call order.
+				const wait = { 'https://a.example': 30, 'https://b.example': 20 }[args.url] ?? 10;
+				await new Promise((r) => setTimeout(r, wait));
+				inFlight--;
+				return { result: `findings for ${args.url}` };
+			}
+		);
+		return { peak: () => peak, contexts };
+	}
+
+	function toolMessages(): string[] {
+		return nonStreamSnapshots[1]
+			.filter((m) => m.role === 'tool')
+			.map((m) => m.tool_call_id as string);
+	}
+
+	it('runs read-only calls side by side on a parallel lane, results in call order', async () => {
+		const settings = await import('#lib/stores/settings.ts');
+		const local = vi.mocked(settings.getSettings).getMockImplementation()!;
+		onTestFinished(() => {
+			vi.mocked(settings.getSettings).mockImplementation(local);
+		});
+		vi.mocked(settings.getSettings).mockReturnValue({
+			contextSize: 32768,
+			inferenceBackend: {
+				mode: 'remote',
+				remoteBaseUrl: 'http://compute:3000',
+				allowParallelInference: true
+			}
+		} as never);
+		nonStreamQueue.push(toolCallResponse(researchCalls), textResponse('Done.'));
+		const tools = overlappingTools();
+		const { options, cb } = makeOptions();
+
+		await runAgentLoop(options);
+
+		expect(tools.peak()).toBe(3);
+		expect(toolMessages()).toEqual(['a', 'b', 'c']);
+		expect(tools.contexts.every((c) => typeof c.runInSlot === 'function')).toBe(true);
+		// The UI hears each call finish as it does.
+		expect(cb.onToolEnd.mock.calls.map((c) => c[0].id)).toEqual(['c', 'b', 'a']);
+	});
+
+	it('runs them one at a time on the local lane', async () => {
+		nonStreamQueue.push(toolCallResponse(researchCalls), textResponse('Done.'));
+		const tools = overlappingTools();
+		const { options } = makeOptions();
+
+		await runAgentLoop(options);
+
+		expect(tools.peak()).toBe(1);
+		expect(toolMessages()).toEqual(['a', 'b', 'c']);
+		expect(tools.contexts.every((c) => c.runInSlot === undefined)).toBe(true);
 	});
 });
 

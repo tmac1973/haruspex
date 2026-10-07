@@ -122,23 +122,26 @@ export async function runSubAgent(
 	messages: ChatMessage[],
 	maxTokens: number,
 	signal?: AbortSignal,
-	backend?: BackendOverride | null
+	backend?: BackendOverride | null,
+	runInSlot?: <T>(fn: () => Promise<T>) => Promise<T>
 ): Promise<string> {
 	// On the calling turn's model: a job's own server, or Settings when the
 	// turn has no override (chat).
 	const descriptor = resolveBackendDescriptor(backend ?? undefined);
 	const sampling = getSamplingParams(descriptor);
-	const response = await chatCompletion(
-		{
-			messages,
-			backend: backend ?? undefined,
-			...sampling,
-			max_tokens: maxTokens,
-			// Force thinking off (second arg) rather than inheriting the global setting.
-			chat_template_kwargs: getChatTemplateKwargs(descriptor, false)
-		},
-		signal
-	);
+	const call = () =>
+		chatCompletion(
+			{
+				messages,
+				backend: backend ?? undefined,
+				...sampling,
+				max_tokens: maxTokens,
+				// Force thinking off (second arg) rather than inheriting the global setting.
+				chat_template_kwargs: getChatTemplateKwargs(descriptor, false)
+			},
+			signal
+		);
+	const response = runInSlot ? await runInSlot(call) : await call();
 	// Defensively strip any reasoning block: some models/backends emit an inline
 	// <think>…</think> even with the template kwarg set, and the API layer also
 	// packs a separate reasoning_content field into one. Either way the caller

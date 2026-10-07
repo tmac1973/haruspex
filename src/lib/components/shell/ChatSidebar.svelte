@@ -115,6 +115,7 @@
 		if (consumer === 'chat') return 'a chat turn';
 		if (consumer === 'shell') return 'another shell turn';
 		if (consumer === 'memory') return 'a memory extraction pass';
+		if (consumer === 'subagent') return 'a research sub-agent';
 		return consumer.kind === 'job' ? `job "${consumer.jobName}"` : 'a remote guest';
 	}
 	const lastError = $derived(session.lastError);

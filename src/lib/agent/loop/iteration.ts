@@ -53,6 +53,8 @@ import { appendStreamDelta, createThinkStreamState } from '#lib/agent/think-stre
 import { isAbortError } from '#lib/utils/error.ts';
 import { isVerbosePayloads, logDebug } from '#lib/debug-log.ts';
 import { MAX_TRUNCATION_RETRIES, NudgeState, automaticCheck } from './nudges';
+import { planToolBatches, runToolBatch, toolCallConcurrency } from './parallelTools';
+import { createSlotLender, laneConcurrency } from '#lib/agent/inferenceQueue.svelte.ts';
 import type { AgentLoopOptions, CompletionMeta } from '../loop';
 
 // Trim older tool results when context usage crosses this fraction.
@@ -1425,10 +1427,12 @@ async function finalizeNoToolCalls(
 }
 
 /**
- * Execute the model's tool calls in order: append the assistant tool_calls
- * message, then run each tool (raced against the abort signal), stream its
- * result back through the callbacks, update nudge bookkeeping, and append
- * the tool result message. Throws AbortError if the signal fires mid-tool.
+ * Execute the model's tool calls: append the assistant tool_calls message,
+ * then run each tool (raced against the abort signal), stream its result back
+ * through the callbacks, update nudge bookkeeping, and append the tool result
+ * message. Consecutive read-only calls may run side by side (see
+ * `parallelTools`); their results are still appended in call order. Throws
+ * AbortError if the signal fires mid-tool.
  *
  * Returns `allWebReadsBlocked: true` when EVERY call this iteration was a web
  * read (fetch_url / research_url / web_search) that came back externally
@@ -1466,7 +1470,13 @@ async function executeToolCalls(
 			: {})
 	});
 
-	for (const call of toolCalls) {
+	// Read-only calls run side by side when the lane takes parallel requests;
+	// everything else, and every call on a serialized lane, one at a time.
+	const concurrency = toolCallConcurrency(laneConcurrency(ctx.backend ?? undefined));
+	const runInSlot =
+		concurrency > 1 ? createSlotLender({ backend: ctx.backend ?? undefined, signal }) : undefined;
+
+	const runCall = async (call: ResolvedToolCall) => {
 		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
 		// Arguments carry email bodies, file contents and shell commands, and this
@@ -1498,6 +1508,7 @@ async function executeToolCalls(
 				interactive: ctx.interactive,
 				conversationId: ctx.conversationId,
 				backend: ctx.backend,
+				runInSlot,
 				askUser: ctx.askUser,
 				writeRoot: ctx.writeRoot,
 				shellCwd: ctx.shellCwd,
@@ -1521,7 +1532,11 @@ async function executeToolCalls(
 			output.lintIssues,
 			output.heroImage
 		);
+		return output;
+	};
 
+	// In call order, whatever order the calls finished in.
+	const recordResult = (call: ResolvedToolCall, output: Awaited<ReturnType<typeof runCall>>) => {
 		// Track successful file-write calls so the hallucination check
 		// knows a real write happened.
 		if (call.name.startsWith('fs_write_') && !output.result.includes('"error"')) {
@@ -1576,6 +1591,10 @@ async function executeToolCalls(
 			tool_call_id: call.id,
 			content: toolContent
 		});
+	};
+
+	for (const batch of planToolBatches(toolCalls)) {
+		await runToolBatch(batch, concurrency, runCall, recordResult);
 	}
 
 	// Whole iteration spent on web reads that were all blocked → signal the

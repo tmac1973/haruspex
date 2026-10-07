@@ -33,4 +33,18 @@ describe('runSubAgent', () => {
 		expect(api.chatCompletion.mock.calls[0][0].backend).toBeUndefined();
 		expect(descriptor.resolveBackendDescriptor).toHaveBeenCalledWith(undefined);
 	});
+
+	it('makes its model call inside the slot it is handed', async () => {
+		const order: string[] = [];
+		api.chatCompletion.mockImplementation(async () => {
+			order.push('call');
+			return { content: 'findings' };
+		});
+		const runInSlot = async <T>(fn: () => Promise<T>): Promise<T> => {
+			order.push('slot');
+			return fn();
+		};
+		expect(await runSubAgent([], 100, undefined, undefined, runInSlot)).toBe('findings');
+		expect(order).toEqual(['slot', 'call']);
+	});
 });

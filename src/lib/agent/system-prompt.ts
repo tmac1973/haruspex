@@ -195,7 +195,8 @@ export function injectMessageHints(
 				'For every source you read, use research_url (not fetch_url) and pass a ' +
 				'specific focus describing what you are looking for on that page — for ' +
 				'example "pricing tiers and free plan limits", "criticisms or downsides", ' +
-				'or "verbatim claims about deployment latency". Each call processes one URL.'
+				'or "verbatim claims about deployment latency". Each call processes one URL; ' +
+				'put the calls for several sources in one response.'
 		);
 	}
 
