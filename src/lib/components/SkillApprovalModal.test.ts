@@ -26,6 +26,7 @@ const TEXT = '---\nname: deploy-check\n---\n\nRun the checks.\n';
 function ask(over: Partial<Parameters<typeof askSkillApproval>[0]> = {}) {
 	const save = vi.fn().mockResolvedValue(undefined);
 	const done = askSkillApproval({
+		kind: 'skill',
 		update: false,
 		name: 'deploy-check',
 		dir: '/data/skills/deploy-check',
@@ -87,5 +88,21 @@ describe('SkillApprovalModal', () => {
 		expect(screen.getByText('OLD SKILL TEXT')).toBeTruthy();
 		await fireEvent.click(screen.getByText('Reject'));
 		await done;
+	});
+
+	it('asks about an AGENTS.md as a repo file, with its length', async () => {
+		render(SkillApprovalModal);
+		const { save, done } = ask({
+			kind: 'agentsMd',
+			name: 'AGENTS.md',
+			dir: '/code/repo/AGENTS.md',
+			project: true,
+			text: '# Build\n\n- `npm test`\n'
+		});
+		expect(await screen.findByText('Add an AGENTS.md to this repo?')).toBeTruthy();
+		expect(screen.getByText(/3 lines/)).toBeTruthy();
+		await fireEvent.click(screen.getByText('Save AGENTS.md'));
+		expect(await done).toEqual({ kind: 'saved', edited: false });
+		expect(save).toHaveBeenCalledWith('# Build\n\n- `npm test`\n');
 	});
 });

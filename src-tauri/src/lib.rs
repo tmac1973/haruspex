@@ -387,6 +387,8 @@ pub fn run() {
             skills::skill_read_file,
             skills::skill_draft,
             skills::skill_save,
+            skills::agents_md_draft,
+            skills::agents_md_save,
             skills::skills_project_root,
             skills::skills_project_info,
             skills::skills_agents_md,

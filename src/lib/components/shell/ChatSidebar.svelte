@@ -246,6 +246,7 @@
 
 	const slashHost: SlashHost = {
 		projectRoot: () => session.slashProjectRoot(),
+		codeMode: () => session.codeMode,
 		newConversation: () => session.newChat(),
 		addNote: (text) => session.addLocalNote(text)
 	};
@@ -596,6 +597,7 @@
 				bind:this={slashMenu}
 				text={composerText}
 				projectRoot={slashHost.projectRoot}
+				{codeMode}
 				onPick={(t) => {
 					composerText = t;
 					composerEl?.focus();

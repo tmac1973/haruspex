@@ -13,7 +13,13 @@
 
 import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
 import { invoke } from '@tauri-apps/api/core';
-import { listSkills, readSkill, repoTrust, usableSkills } from '#lib/skills/client.ts';
+import {
+	codeModeOnly,
+	listSkills,
+	readSkill,
+	repoTrust,
+	usableSkills
+} from '#lib/skills/client.ts';
 
 export type BuiltinName = 'new' | 'skills';
 
@@ -47,8 +53,11 @@ export function typingName(text: string): string | null {
 }
 
 /** Built-ins, then usable skills, each name once. */
-export async function slashItems(projectRoot: string | null): Promise<SlashItem[]> {
-	const skills = usableSkills(await listSkills(projectRoot).catch(() => []))
+export async function slashItems(
+	projectRoot: string | null,
+	codeMode = false
+): Promise<SlashItem[]> {
+	const skills = usableSkills(await listSkills(projectRoot).catch(() => []), codeMode)
 		.filter((s) => !BUILTINS.some((b) => b.name === s.name))
 		.map((s) => ({ name: s.name, description: s.description, builtin: false }));
 	return [...BUILTINS, ...skills];
@@ -63,19 +72,28 @@ export function matchItems(items: SlashItem[], prefix: string): SlashItem[] {
 export type SlashAction =
 	| { kind: 'builtin'; name: BuiltinName }
 	| { kind: 'skill'; doc: SkillDoc }
+	/** A built-in skill that only works in Code mode, outside it. */
+	| { kind: 'needsCodeMode'; name: string }
 	| { kind: 'none' };
 
 /**
  * What sending `text` should do. A skill that can't be read throws, so the
  * caller can say so and keep the text rather than send it without its skill.
  */
-export async function resolveSlash(text: string, projectRoot: string | null): Promise<SlashAction> {
+export async function resolveSlash(
+	text: string,
+	projectRoot: string | null,
+	codeMode = false
+): Promise<SlashAction> {
 	const parsed = parseSlash(text);
 	if (!parsed) return { kind: 'none' };
 	const builtin = BUILTINS.find((b) => b.name === parsed.name);
 	if (builtin) return { kind: 'builtin', name: builtin.name as BuiltinName };
-	const usable = usableSkills(await listSkills(projectRoot).catch(() => []));
-	if (!usable.some((s) => s.name === parsed.name)) return { kind: 'none' };
+	const all = await listSkills(projectRoot).catch(() => []);
+	if (!usableSkills(all, codeMode).some((s) => s.name === parsed.name)) {
+		const codeOnly = usableSkills(all, true).some((s) => s.name === parsed.name && codeModeOnly(s));
+		return codeOnly ? { kind: 'needsCodeMode', name: parsed.name } : { kind: 'none' };
+	}
 	return { kind: 'skill', doc: await readSkill(parsed.name, projectRoot) };
 }
 
@@ -104,6 +122,8 @@ export async function knownTrustedRoot(cwd: string | null): Promise<string | nul
 export interface SlashHost {
 	/** The trusted repo whose project skills count, if any. */
 	projectRoot: () => Promise<string | null>;
+	/** Code mode is on; absent in Chat, which has none. */
+	codeMode?: () => boolean;
 	/** `/new`: a fresh conversation (Chat) or an empty thread (Shell). */
 	newConversation: () => void;
 	/** `/skills`: put a note in the conversation without a model call. */
@@ -124,10 +144,15 @@ export type SlashOutcome =
 export async function runSlash(text: string, host: SlashHost): Promise<SlashOutcome> {
 	if (!parseSlash(text)) return { kind: 'send' };
 	const projectRoot = await host.projectRoot();
-	const action = await resolveSlash(text, projectRoot);
+	const codeMode = host.codeMode?.() ?? false;
+	const action = await resolveSlash(text, projectRoot, codeMode);
 	if (action.kind === 'skill') return { kind: 'send', skill: action.doc };
 	if (action.kind === 'none') return { kind: 'send' };
-	if (action.name === 'new') host.newConversation();
-	else host.addNote(describeSkills(await slashItems(projectRoot)));
+	if (action.kind === 'needsCodeMode') {
+		host.addNote(
+			`\`/${action.name}\` needs Code mode: switch it on in a Shell tab's assistant, inside the repo.`
+		);
+	} else if (action.name === 'new') host.newConversation();
+	else host.addNote(describeSkills(await slashItems(projectRoot, codeMode)));
 	return { kind: 'handled' };
 }

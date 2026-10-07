@@ -927,6 +927,9 @@ describe('AGENTS.md in the Shell assistant', () => {
 		const sent = runShellTurn.mock.calls.at(-1)![0].messages as ChatMessage[];
 		expect(String(sent[0].content)).toContain('Run make check.');
 		expect(s.agentsMd).toEqual(md);
-		expect(skillsTurn.prepareTurnSkills).toHaveBeenLastCalledWith({ projectRoot: null });
+		expect(skillsTurn.prepareTurnSkills).toHaveBeenLastCalledWith({
+			projectRoot: null,
+			codeMode: false
+		});
 	});
 });

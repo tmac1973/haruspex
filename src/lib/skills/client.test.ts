@@ -78,6 +78,15 @@ describe('usableSkills', () => {
 	});
 });
 
+describe('usableSkills in and out of Code mode', () => {
+	it("keeps the built-in init to Code mode, but not a user's own init", () => {
+		const builtin = skill('init', { source: 'builtin', dir: null });
+		expect(usableSkills([builtin])).toEqual([]);
+		expect(usableSkills([builtin], true)).toEqual([builtin]);
+		expect(usableSkills([skill('init')])).toHaveLength(1);
+	});
+});
+
 describe('skillsAutonomous', () => {
 	it('auto is off for the local model and on for a remote one', () => {
 		expect(skillsAutonomous()).toBe(false);

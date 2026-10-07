@@ -31,11 +31,16 @@ export async function prepareTurnSkills(opts: {
 	backend?: BackendOverride;
 	/** Code mode: the trusted repo (`trustedProjectRoot`) whose skills count. */
 	projectRoot?: string | null;
+	/** Code mode, which also lists the built-ins that need it (`/init`). */
+	codeMode?: boolean;
 }): Promise<TurnSkills> {
 	const projectRoot = opts.projectRoot ?? null;
 	if (!skillsAutonomous(opts.backend)) return { catalog: [], projectRoot };
 	const all = await listSkills(projectRoot).catch(() => []);
-	const catalog = usableSkills(all).map((s) => ({ name: s.name, description: s.description }));
+	const catalog = usableSkills(all, opts.codeMode ?? false).map((s) => ({
+		name: s.name,
+		description: s.description
+	}));
 	return { catalog, projectRoot };
 }
 

@@ -12,6 +12,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { BackendOverride } from '#lib/api.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
+import type { AgentsMdDraft } from '#lib/ipc/gen/AgentsMdDraft.ts';
 import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
 import type { SkillDraft } from '#lib/ipc/gen/SkillDraft.ts';
 import type { SkillSummary } from '#lib/ipc/gen/SkillSummary.ts';
@@ -39,10 +40,22 @@ export function listSkills(projectRoot?: string | null): Promise<SkillSummary[]>
 	return invoke<SkillSummary[]>('skills_list', searchArgs(projectRoot));
 }
 
-/** Skills a turn may use: parsed, not overridden, not switched off. */
-export function usableSkills(all: SkillSummary[]): SkillSummary[] {
+/** Built-in skills that only work in Code mode: `/init` writes the repo's AGENTS.md. */
+const CODE_MODE_BUILTINS = new Set(['init']);
+
+export function codeModeOnly(skill: SkillSummary): boolean {
+	return skill.source === 'builtin' && CODE_MODE_BUILTINS.has(skill.name);
+}
+
+/**
+ * Skills a turn may use: parsed, not overridden, not switched off, and
+ * outside Code mode not one that needs it.
+ */
+export function usableSkills(all: SkillSummary[], codeMode = false): SkillSummary[] {
 	const disabled = new Set(getSettings().skills.disabled);
-	return all.filter((s) => !s.error && !s.shadowed && !disabled.has(s.name));
+	return all.filter(
+		(s) => !s.error && !s.shadowed && !disabled.has(s.name) && (codeMode || !codeModeOnly(s))
+	);
 }
 
 export function readSkill(name: string, projectRoot?: string | null): Promise<SkillDoc> {
@@ -75,6 +88,16 @@ export function saveSkill(
 	projectRoot?: string | null
 ): Promise<string> {
 	return invoke<string>('skill_save', { request, text, ...searchArgs(projectRoot) });
+}
+
+/** Where `write_agents_md` writes for a shell in `cwd`, and what is there now. */
+export function draftAgentsMd(cwd: string): Promise<AgentsMdDraft> {
+	return invoke<AgentsMdDraft>('agents_md_draft', { cwd });
+}
+
+/** Write the repo's AGENTS.md as the user approved it; resolves to its path. */
+export function saveAgentsMd(cwd: string, text: string): Promise<string> {
+	return invoke<string>('agents_md_save', { cwd, text });
 }
 
 /**

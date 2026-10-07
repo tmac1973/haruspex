@@ -5,6 +5,8 @@
 // (executor factories, command maps) so the name provably exists in Rust.
 
 export const IPC = {
+	agents_md_draft: 'agents_md_draft',
+	agents_md_save: 'agents_md_save',
 	app_protected_targets: 'app_protected_targets',
 	artifact_register: 'artifact_register',
 	cancel_download: 'cancel_download',

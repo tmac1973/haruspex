@@ -31,7 +31,7 @@ use discover::{Found, Root};
 use write::{Destinations, SkillDraft, SkillWriteRequest};
 
 /// Skills shipped in the app: (name, SKILL.md text).
-const BUILTINS: &[(&str, &str)] = &[];
+const BUILTINS: &[(&str, &str)] = &[("init", include_str!("builtin/init/SKILL.md"))];
 
 /// Where a skill came from. Declaration order is precedence order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, ts_rs::TS)]
@@ -284,6 +284,22 @@ pub async fn skill_save(
     .await
 }
 
+/// Where `/init` would write the repo's `AGENTS.md` for a shell in `cwd`, and
+/// what is there now.
+#[tauri::command]
+pub async fn agents_md_draft(cwd: String) -> Result<agents_md::AgentsMdDraft, String> {
+    blocking(move || agents_md::draft(Path::new(&cwd))).await
+}
+
+/// Write the `AGENTS.md` text the user approved, returning the file's path.
+#[tauri::command]
+pub async fn agents_md_save(cwd: String, text: String) -> Result<String, String> {
+    blocking(move || {
+        agents_md::save(Path::new(&cwd), &text).map(|p| p.to_string_lossy().into_owned())
+    })
+    .await
+}
+
 /// What a repo would contribute to a turn, and which repo it is, so the
 /// frontend knows whether there is anything to ask the user to trust — and
 /// whether an earlier answer still applies.
@@ -404,6 +420,31 @@ fn delete_user_skill(user_dir: &Path, name: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ships_a_valid_init_skill_a_user_skill_overrides() {
+        let all = discover::discover(&[], BUILTINS);
+        let init = discover::find(&all, "init").expect("built-in init");
+        assert_eq!(init.source, SkillSource::Builtin);
+        assert!(
+            init.parsed.warnings.is_empty(),
+            "{:?}",
+            init.parsed.warnings
+        );
+        assert!(init.parsed.body.contains("write_agents_md"));
+
+        let base = temp_dir("builtin_override");
+        write_skill(&base.join("init"));
+        let roots = [Root {
+            source: SkillSource::User,
+            dir: base,
+        }];
+        let all = discover::discover(&roots, BUILTINS);
+        assert_eq!(
+            discover::find(&all, "init").unwrap().source,
+            SkillSource::User
+        );
+    }
 
     #[test]
     fn expands_home() {

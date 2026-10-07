@@ -925,7 +925,8 @@ export class ShellSession {
 		this.agentsMd = project.agentsMd;
 		this.projectRoot = project.root;
 		const skills = await prepareTurnSkills({
-			projectRoot: this.codeMode ? project.root : null
+			projectRoot: this.codeMode ? project.root : null,
+			codeMode: this.codeMode
 		});
 		const promptOpts = {
 			sessionContext: payload.sessionContext,

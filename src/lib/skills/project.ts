@@ -41,6 +41,24 @@ export function noteProjectSkill(root: string, name: string): void {
 }
 
 /**
+ * After the user approves an AGENTS.md for the repo `cwd` is in: whether
+ * turns there will read it. A repo never asked about had nothing to trust, so
+ * the file the user just approved is taken as trusted rather than asked about
+ * on the next turn. An earlier answer stands, a "no" included.
+ */
+export async function trustApprovedAgentsMd(cwd: string): Promise<boolean> {
+	const root = await invoke<string | null>('skills_project_root', { cwd }).catch(() => null);
+	if (!root) return false;
+	const known = getSettings().skills.trustedRepos[root];
+	if (known) return known.trusted;
+	const info = await invoke<ProjectInstructions>('skills_project_info', { root }).catch(() => null);
+	// Skills the user hasn't seen still need the prompt.
+	if (!info || info.skillNames.length > 0) return false;
+	setRepoTrust(root, { trusted: true, origin: info.origin, skills: [] });
+	return true;
+}
+
+/**
  * What makes an earlier answer about this path out of date, or null. Answers
  * from before the origin and skills were recorded are taken as they stand.
  */
