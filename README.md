@@ -330,7 +330,7 @@ Haruspex can read your calendar and address book from a CalDAV/CardDAV server. I
 
 Tested against Nextcloud, Fastmail, iCloud, Radicale, Baikal and Synology. Like email, it wants an **app password** rather than your login password.
 
-**Google Calendar is not supported here**, because its CalDAV endpoint requires OAuth. Add it from the MCP catalogue instead (`Settings → Integrations → MCP`). Google Contacts is not supported yet.
+**Google Calendar and Google Contacts are not supported here.** Their endpoints require OAuth. Add them under MCP integrations instead.
 
 **Setup.** `Settings → Integrations → Calendar & Contacts`, click "Add an account", enter your address (`me@fastmail.com`) or your server URL, your username and app password, then click "Check". Check finds your calendars and address books and lists them. If your server does not answer discovery, you can enter the collection URL by hand.
 
@@ -344,7 +344,7 @@ One account covers both. If your server offers only one of them, only that one's
 
 `Settings → Integrations → MCP` has three buttons:
 
-- **Add an integration** — pick from a built-in catalogue with guided setup (GitHub, Google Drive, Google Calendar, Blender, Godot).
+- **Add an integration** — pick from a built-in catalogue with guided setup (GitHub, Google Drive, Blender, Godot).
 - **Add a custom server** — a command on your machine that Haruspex starts and stops.
 - **Add a remote server** — an MCP server reachable over HTTP.
 

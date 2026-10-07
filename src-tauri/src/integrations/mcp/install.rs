@@ -741,19 +741,12 @@ pub fn catalog_spawn_config(
 ///
 /// A server that needs a config or credentials directory has to be told where
 /// its one is, and the guided setup's `file` step writes into exactly that
-/// place. `$serverDir/<path>` names a file inside it, for a server that wants
-/// the file rather than the folder. Only at the start of a value, like
-/// `$secret.*`: matching anywhere would make a literal path containing the
-/// token unrepresentable.
+/// place. Whole-value only, like `$secret.*`: a partial match would make a
+/// literal path containing the token unrepresentable.
 fn substitute_server_dir(env: &mut [(String, String)], dir: &Path) {
     for (_, value) in env.iter_mut() {
         if value == SERVER_DIR_PLACEHOLDER {
             *value = dir.to_string_lossy().to_string();
-        } else if let Some(rest) = value
-            .strip_prefix(SERVER_DIR_PLACEHOLDER)
-            .and_then(|r| r.strip_prefix('/'))
-        {
-            *value = dir.join(rest).to_string_lossy().to_string();
         }
     }
 }
@@ -1115,20 +1108,11 @@ mod tests {
             // A literal that merely mentions the token stays literal, the same
             // rule `$secret.*` follows.
             ("NOTE".to_string(), "under $serverDir/creds".to_string()),
-            // A file inside the directory, for a server that wants the path.
-            ("KEYS".to_string(), "$serverDir/keys.json".to_string()),
-            // Not the placeholder followed by a path: a different token.
-            ("OTHER".to_string(), "$serverDirectory".to_string()),
         ];
         substitute_server_dir(&mut env, Path::new("/data/mcp/servers/x"));
         assert_eq!(env[0].1, "/data/mcp/servers/x");
         assert_eq!(env[1].1, "stdio");
         assert_eq!(env[2].1, "under $serverDir/creds");
-        assert_eq!(
-            Path::new(&env[3].1),
-            Path::new("/data/mcp/servers/x").join("keys.json")
-        );
-        assert_eq!(env[4].1, "$serverDirectory");
     }
 
     #[test]
@@ -1233,24 +1217,6 @@ mod tests {
                 ("HOME".to_string(), "/data/mcp/servers/x".to_string()),
                 ("DISPLAY".to_string(), ":0".to_string()),
             ]
-        );
-    }
-
-    #[test]
-    fn the_google_calendar_entry_points_at_files_in_its_own_directory() {
-        let catalog = super::super::catalog::load().unwrap();
-        let entry = catalog.entry("google-calendar").unwrap();
-        let mut env = super::super::catalog::resolve_env(entry, &BTreeMap::new()).unwrap();
-        let dir = Path::new("/data/mcp/servers/cal");
-        substitute_server_dir(&mut env, dir);
-        let get = |k: &str| env.iter().find(|(var, _)| var == k).map(|(_, v)| v.clone());
-        assert_eq!(
-            get("GOOGLE_OAUTH_CREDENTIALS").map(PathBuf::from),
-            Some(dir.join("gcp-oauth.keys.json"))
-        );
-        assert_eq!(
-            get("GOOGLE_CALENDAR_MCP_TOKEN_PATH").map(PathBuf::from),
-            Some(dir.join("tokens.json"))
         );
     }
 }

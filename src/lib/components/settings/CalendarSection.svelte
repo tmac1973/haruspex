@@ -122,8 +122,11 @@
 		Read your calendar and address book from a CalDAV/CardDAV server. Works with Nextcloud,
 		Fastmail, iCloud, Radicale, Baikal and Synology.
 	</p>
-	<p class="section-help" title="Google's CalDAV endpoint requires OAuth, which this does not do.">
-		For Google Calendar, add it from the catalog in Settings → Integrations → MCP.
+	<p
+		class="section-help"
+		title="Their CalDAV and CardDAV endpoints require OAuth, which this does not do."
+	>
+		For Google Calendar and Google Contacts, add them under MCP integrations instead.
 	</p>
 	{#if accounts.length === 0}
 		<p class="section-help">No accounts yet.</p>
