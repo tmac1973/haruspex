@@ -56,7 +56,7 @@ describe('shell system prompts — skills section', () => {
 	});
 });
 
-describe('shell Code mode prompt — project instructions', () => {
+describe('shell prompts — project instructions', () => {
 	const base = { sessionContext: ctx('/bin/bash', 'bash'), currentCwd: '/proj', recentHistory: [] };
 
 	it('comes after the fixed rules and before the skill list', () => {
@@ -72,11 +72,15 @@ describe('shell Code mode prompt — project instructions', () => {
 		expect(at('PROJECT INSTRUCTIONS:')).toBeLessThan(at('SKILLS:'));
 	});
 
-	it('is only in Code mode', () => {
+	it('is in the troubleshooting prompt too, before the skill list', () => {
 		const text = String(
-			buildShellSystemPrompt({ ...base, projectInstructions: '\n\nPROJECT INSTRUCTIONS:\nx' })
-				.content
+			buildShellSystemPrompt({
+				...base,
+				projectInstructions: '\n\nPROJECT INSTRUCTIONS:\nx',
+				skillsSection: '\n\nSKILLS:\n- deploy: d'
+			}).content
 		);
-		expect(text).not.toContain('PROJECT INSTRUCTIONS:');
+		expect(text.indexOf('CONVERSATION RULES:')).toBeLessThan(text.indexOf('PROJECT INSTRUCTIONS:'));
+		expect(text.indexOf('PROJECT INSTRUCTIONS:')).toBeLessThan(text.indexOf('SKILLS:'));
 	});
 });

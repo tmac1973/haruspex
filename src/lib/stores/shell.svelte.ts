@@ -16,7 +16,7 @@
  */
 
 import { prepareTurnSkills, skillsPromptSection, type TurnSkills } from '#lib/skills/turn.ts';
-import { codeModeProject } from '#lib/skills/project.ts';
+import { shellProject } from '#lib/skills/project.ts';
 import { agentsMdPromptSection } from '#lib/skills/agentsMd.ts';
 import type { AgentsMd } from '#lib/ipc/gen/AgentsMd.ts';
 import { invoke } from '@tauri-apps/api/core';
@@ -873,13 +873,15 @@ export class ShellSession {
 	private async buildTurnMessages(
 		payload: ShellSubmission
 	): Promise<{ messages: ChatMessage[]; skills: TurnSkills | undefined }> {
-		// Code mode takes AGENTS.md and project skills from the repo the shell is
-		// in; the first turn in a repo that has either asks to trust it.
-		const project = this.codeMode
-			? await codeModeProject(payload.currentCwd)
-			: { root: null, agentsMd: null };
+		// Both modes take AGENTS.md from the repo the shell is in — "how do I run
+		// the tests?" is a troubleshooting question too — and the first turn in a
+		// repo with AGENTS.md or project skills asks to trust it. Project skills
+		// mostly drive edits and commands, so only Code mode lists them.
+		const project = await shellProject(payload.currentCwd);
 		this.agentsMd = project.agentsMd;
-		const skills = await prepareTurnSkills({ projectRoot: project.root });
+		const skills = await prepareTurnSkills({
+			projectRoot: this.codeMode ? project.root : null
+		});
 		const promptOpts = {
 			sessionContext: payload.sessionContext,
 			currentCwd: payload.currentCwd,

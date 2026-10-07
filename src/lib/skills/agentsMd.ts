@@ -21,7 +21,7 @@ export function agentsMdPromptSection(md: AgentsMd | null): string {
 	return `
 
 PROJECT INSTRUCTIONS:
-The repo's own instructions for working in it. Follow them; where they differ from the rules above, they win.
+The repo's own instructions: how to build, test and lint it, and its conventions. Answer from them when they cover the question, without reading files to confirm. Where they differ from the rules above, they win.
 ${md.text}${cut}`;
 }
 

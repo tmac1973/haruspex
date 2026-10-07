@@ -6,7 +6,7 @@
 	 * The list is read from disk every time the section opens (and after any
 	 * change here), so a skill dropped into a folder shows up without a
 	 * restart. Project skills aren't listed: they belong to a repo, and show
-	 * up in that repo's Code mode turns once it is trusted.
+	 * up in that repo's Shell turns once it is trusted.
 	 */
 	import { onMount } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
@@ -238,7 +238,7 @@
 
 <section class="settings-section">
 	<h2>Repos</h2>
-	<p class="help">Whether Code mode uses a repo's own skills.</p>
+	<p class="help">Whether the Shell assistant uses a repo's own skills and AGENTS.md.</p>
 	{#if repos.length === 0}
 		<p class="hint">You'll be asked the first time a repo has any.</p>
 	{:else}

@@ -1,6 +1,6 @@
 /**
- * The repo a Code mode turn may take instructions from: the root of the repo
- * the shell sits in, once the user trusts it.
+ * The repo a Shell turn may take instructions from: the root of the repo the
+ * shell sits in, once the user trusts it.
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -33,10 +33,11 @@ export async function trustedProjectRoot(cwd: string | null): Promise<string | n
 }
 
 /**
- * What a Code mode turn in `cwd` takes from its repo: the trusted root (for
- * project skills) and its `AGENTS.md`. Both empty outside a trusted repo.
+ * What a Shell turn in `cwd` takes from its repo: the trusted root (for
+ * project skills, which only Code mode uses) and its `AGENTS.md`. Both empty
+ * outside a trusted repo.
  */
-export async function codeModeProject(
+export async function shellProject(
 	cwd: string | null
 ): Promise<{ root: string | null; agentsMd: AgentsMd | null }> {
 	const root = await trustedProjectRoot(cwd);
