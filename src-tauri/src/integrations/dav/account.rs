@@ -7,17 +7,19 @@
 //! trust level as the existing IMAP passwords. A user who has added an email
 //! account should find nothing surprising here.
 //!
-//! # Auth is basic / app-password only
+//! # Three kinds of account
 //!
-//! No OAuth is added to the tree. That covers Nextcloud, Fastmail, iCloud,
-//! Radicale, Baikal and Synology — the self-hosted and privacy-oriented
-//! services this app exists for.
-//!
-//! **Google's CalDAV endpoint requires OAuth2**, so a Google address is caught
-//! before it fails with a generic authentication error. A Google calendar can
-//! still be added read-only as a calendar link — see [`DavKind::Ics`].
+//! - **Server** ([`DavKind::Dav`]): basic auth with an app password. Covers
+//!   Nextcloud, Fastmail, iCloud, Radicale, Baikal and Synology — the
+//!   self-hosted and privacy-oriented services this app exists for. A Google
+//!   address is caught here before it fails with a generic auth error.
+//! - **Calendar link** ([`DavKind::Ics`]): one read-only iCal feed.
+//! - **Google** ([`DavKind::Google`]): OAuth through Haruspex's own client;
+//!   see `google.rs`.
 
 use serde::{Deserialize, Serialize};
+
+use crate::proxy::ProxyConfig;
 
 /// What sort of account this is.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
@@ -32,6 +34,15 @@ pub enum DavKind {
     /// anyone holding it can read the calendar — so it is kept where a
     /// password would be (`password` / `password_ref`), never in `address`.
     Ics,
+    /// A Google account, signed in through Haruspex's own OAuth client. The
+    /// secret is a refresh token, swapped for an access token just before each
+    /// request; `address` is the signed-in email. See `google.rs`.
+    Google,
+}
+
+/// The secret-store key for an account's password, link or token.
+pub fn secret_key(account_id: &str) -> String {
+    format!("dav:{account_id}")
 }
 
 /// A server the account talks to, for both calendars and (from Phase 11)
@@ -141,9 +152,13 @@ impl std::fmt::Debug for DavAccount {
 }
 
 impl DavAccount {
-    /// The `Authorization` header value for this account.
+    /// The `Authorization` header value for this account. For a Google account
+    /// `password` holds an access token by now — see [`DavAccount::resolved`].
     pub fn auth_header(&self) -> String {
         use base64::Engine;
+        if self.is_google() {
+            return format!("Bearer {}", self.password);
+        }
         let raw = format!("{}:{}", self.username, self.password);
         format!(
             "Basic {}",
@@ -156,7 +171,7 @@ impl DavAccount {
     /// account half-filled-in produces a message about the missing field
     /// instead of a 401.
     pub fn is_usable(&self) -> bool {
-        if self.is_link() {
+        if self.is_link() || self.is_google() {
             return self.enabled && (!self.password.is_empty() || self.password_ref.is_some());
         }
         self.enabled
@@ -165,18 +180,57 @@ impl DavAccount {
             && (!self.password.is_empty() || self.password_ref.is_some())
     }
 
-    /// This account with its password read from the secret store, when it is
-    /// kept there. Called just before connecting, so the password crosses
-    /// from the store to the request and nowhere else.
-    pub async fn resolved(&self) -> Result<DavAccount, String> {
+    /// The account's secret — password, link or refresh token — read from the
+    /// secret store when it is kept there.
+    pub async fn stored_secret(&self) -> Result<String, String> {
         match self.password_ref.as_deref() {
-            Some(key) if self.password.is_empty() => Ok(DavAccount {
-                password: crate::secrets::require(key, &format!("password for {}", self.label))
-                    .await?,
-                ..self.clone()
-            }),
-            _ => Ok(self.clone()),
+            Some(key) if self.password.is_empty() => {
+                crate::secrets::require(key, &format!("password for {}", self.label)).await
+            }
+            _ => Ok(self.password.clone()),
         }
+    }
+
+    /// This account ready to connect: its secret read from the secret store,
+    /// and for Google swapped for a current access token. Called just before
+    /// connecting, so the secret crosses from the store to the request and
+    /// nowhere else.
+    pub async fn resolved(&self, proxy: Option<&ProxyConfig>) -> Result<DavAccount, String> {
+        let mut secret = self.stored_secret().await?;
+        if self.is_google() {
+            secret = super::google::access_token(&secret, proxy).await?;
+        }
+        Ok(DavAccount {
+            password: secret,
+            ..self.clone()
+        })
+    }
+
+    /// Where discovery starts. A Google account's calendars live on Google's
+    /// own DAV host, not on the host of its email address.
+    pub fn discovery_base(&self) -> Result<String, String> {
+        if self.is_google() {
+            return Ok(super::google::CALDAV_BASE.to_string());
+        }
+        super::discovery::base_url(&self.address)
+    }
+
+    /// The address-book home to use instead of discovering one: the user's
+    /// override, or for Google the home built from the signed-in email.
+    pub fn contacts_home(&self) -> Option<String> {
+        if self.is_google() {
+            return Some(super::google::carddav_home(&self.address));
+        }
+        self.contacts_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|u| !u.is_empty())
+            .map(str::to_string)
+    }
+
+    /// Whether this is a Google account signed in through OAuth.
+    pub fn is_google(&self) -> bool {
+        self.kind == Some(DavKind::Google)
     }
 
     /// Whether this is a read-only calendar link rather than a server account.
@@ -204,7 +258,7 @@ impl DavAccount {
     /// caught while a self-hosted server that merely *mentions* Google in a
     /// path is not.
     pub fn needs_oauth(&self) -> bool {
-        !self.is_link() && oauth_only_host(&self.address)
+        self.kind.unwrap_or_default() == DavKind::Dav && oauth_only_host(&self.address)
     }
 }
 

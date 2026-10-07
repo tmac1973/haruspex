@@ -14,7 +14,7 @@ use super::client::DavClient;
 use super::discovery::{self, CalendarCollection};
 use super::ical::{parse_events, CalendarEvent, EventSource};
 use super::vcard::{Contact, ContactSource};
-use super::{caldav, carddav, ics_feed, vcard};
+use super::{caldav, carddav, google_calendar, ics_feed, vcard};
 use crate::proxy::ProxyConfig;
 
 /// The most contacts a search hands back.
@@ -97,8 +97,8 @@ pub async fn dav_discover_collections(
 ) -> Result<DavCollections, String> {
     if account.needs_oauth() {
         return Err(
-            "Google Calendar needs OAuth, which a server account does not do. \
-             Add it as a calendar link instead."
+            "Google needs its own sign-in, which a server account does not do. \
+             Use Sign in with Google, or add a calendar link."
                 .into(),
         );
     }
@@ -108,12 +108,12 @@ pub async fn dav_discover_collections(
     if !account.is_usable() {
         return Err("This account still needs an address, username and password.".into());
     }
-    let account = account.resolved().await?;
+    let account = account.resolved(proxy.as_ref()).await?;
     let client = DavClient::new(&account, proxy.as_ref())?;
 
     let mut problems = Vec::new();
-    let calendars = match discovery::discover_calendars(&client, &account).await {
-        Ok(found) => found.into_iter().map(DiscoveredCalendar::from).collect(),
+    let calendars = match discover_calendar_names(&client, &account, proxy.as_ref()).await {
+        Ok(found) => found,
         Err(e) => {
             problems.push(format!("Calendars: {e}"));
             Vec::new()
@@ -147,6 +147,31 @@ pub async fn dav_discover_collections(
     })
 }
 
+/// The calendars an account can see, for the settings card. Google's come
+/// from its Calendar API; see `google_calendar.rs` for why.
+async fn discover_calendar_names(
+    client: &DavClient,
+    account: &DavAccount,
+    proxy: Option<&ProxyConfig>,
+) -> Result<Vec<DiscoveredCalendar>, String> {
+    if account.is_google() {
+        return Ok(google_calendar::list_calendars(&account.password, proxy)
+            .await?
+            .into_iter()
+            .map(|c| DiscoveredCalendar {
+                url: String::new(),
+                name: c.name,
+                color: c.color,
+            })
+            .collect());
+    }
+    Ok(discovery::discover_calendars(client, account)
+        .await?
+        .into_iter()
+        .map(DiscoveredCalendar::from)
+        .collect())
+}
+
 /// "Check" for a calendar link: fetch it once and name the calendar it holds.
 async fn check_link(
     account: &DavAccount,
@@ -155,7 +180,7 @@ async fn check_link(
     if !account.is_usable() {
         return Err("Paste the calendar link first.".into());
     }
-    let account = account.resolved().await?;
+    let account = account.resolved(proxy).await?;
     let ics = ics_feed::fetch_feed(&account.password, proxy).await?;
     Ok(DavCollections {
         calendars: vec![DiscoveredCalendar {
@@ -317,7 +342,7 @@ async fn fetch_account_contacts(
     account: &DavAccount,
     proxy: Option<&ProxyConfig>,
 ) -> Result<Vec<Contact>, String> {
-    let account = &account.resolved().await?;
+    let account = &account.resolved(proxy).await?;
     let client = DavClient::new(account, proxy)?;
     let books = discovery::discover_address_books(&client, account).await?;
 
@@ -346,9 +371,12 @@ async fn fetch_account(
     local: Tz,
     proxy: Option<&ProxyConfig>,
 ) -> Result<Vec<CalendarEvent>, String> {
-    let account = &account.resolved().await?;
+    let account = &account.resolved(proxy).await?;
     if account.is_link() {
         return fetch_link(account, from, to, calendar_filter, local, proxy).await;
+    }
+    if account.is_google() {
+        return fetch_google(account, from, to, calendar_filter, local, proxy).await;
     }
     let client = DavClient::new(account, proxy)?;
     let calendars = discovery::discover_calendars(&client, account).await?;
@@ -368,6 +396,37 @@ async fn fetch_account(
         // calendar rather than the whole answer.
         if let Ok(mut found) =
             caldav::fetch_events(&client, collection, &source, *from, *to, local).await
+        {
+            events.append(&mut found);
+        }
+    }
+    Ok(events)
+}
+
+/// A Google account's events in the window, from its Calendar API.
+async fn fetch_google(
+    account: &DavAccount,
+    from: &DateTime<Utc>,
+    to: &DateTime<Utc>,
+    calendar_filter: Option<&str>,
+    local: Tz,
+    proxy: Option<&ProxyConfig>,
+) -> Result<Vec<CalendarEvent>, String> {
+    let token = &account.password;
+    let mut events = Vec::new();
+    for calendar in google_calendar::list_calendars(token, proxy)
+        .await?
+        .iter()
+        .filter(|c| name_matches(&c.name, calendar_filter))
+    {
+        let source = EventSource {
+            account_id: account.id.clone(),
+            account_label: account.label.clone(),
+            calendar_name: calendar.name.clone(),
+        };
+        // As with CalDAV: one unreadable calendar costs that calendar only.
+        if let Ok(mut found) =
+            google_calendar::fetch_events(token, calendar, &source, *from, *to, local, proxy).await
         {
             events.append(&mut found);
         }

@@ -271,7 +271,7 @@ pub async fn discover_calendars(
     client: &DavClient,
     account: &DavAccount,
 ) -> Result<Vec<CalendarCollection>, String> {
-    let base = base_url(&account.address)?;
+    let base = account.discovery_base()?;
 
     // The override skips discovery entirely — it exists for servers whose
     // discovery is incomplete, so running discovery first would defeat it.
@@ -308,15 +308,15 @@ pub async fn discover_address_books(
     client: &DavClient,
     account: &DavAccount,
 ) -> Result<Vec<AddressBook>, String> {
-    let base = base_url(&account.address)?;
+    let home_override = account.contacts_home();
+    let base = match &home_override {
+        // Google's contacts live on another host than its calendars.
+        Some(home) if account.is_google() => base_url(home)?,
+        _ => account.discovery_base()?,
+    };
 
-    let home = match account
-        .contacts_url
-        .as_deref()
-        .map(str::trim)
-        .filter(|u| !u.is_empty())
-    {
-        Some(url) => absolutize(&base, url),
+    let home = match home_override {
+        Some(url) => absolutize(&base, &url),
         None => discover_home_set(client, &base, Protocol::CardDav).await?,
     };
 

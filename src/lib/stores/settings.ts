@@ -1033,13 +1033,16 @@ export function hasEnabledContactsAccount(): boolean {
  * The accounts a calendar query should fan out over: switched on, and holding
  * what they need to connect. The secret counts whether it is inline or in the
  * secret store (`passwordRef`) — the usual case since passwords moved there.
- * A calendar link needs nothing but its URL, which is that secret.
+ * A calendar link needs nothing but its URL, which is that secret; a Google
+ * account, its refresh token.
  */
 export function enabledDavAccounts(): DavAccount[] {
 	return settings.integrations.dav.accounts.filter((a) => {
 		const hasSecret = !!(a.password || a.passwordRef);
 		if (!a.enabled || !hasSecret) return false;
-		return a.kind === 'ics' || (!!a.address.trim() && !!a.username.trim());
+		// A link or a Google sign-in needs nothing but its secret.
+		if (a.kind === 'ics' || a.kind === 'google') return true;
+		return !!a.address.trim() && !!a.username.trim();
 	});
 }
 

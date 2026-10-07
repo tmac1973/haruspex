@@ -3,4 +3,4 @@
 /**
  * What sort of account this is.
  */
-export type DavKind = "dav" | "ics";
+export type DavKind = "dav" | "ics" | "google";

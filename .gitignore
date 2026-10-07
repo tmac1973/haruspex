@@ -66,3 +66,8 @@ npm-debug.log*
 /playwright-report/
 /blob-report/
 /e2e/app/output/
+
+# Haruspex's Google OAuth desktop client (see docs/google-sign-in.md). Not
+# confidential by Google's rules, but kept out of git so secret scanning
+# does not flag it; release CI writes it from a repository secret.
+/src-tauri/google-oauth.json

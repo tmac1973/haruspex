@@ -256,7 +256,7 @@ fn parse_date(value: &str) -> Option<NaiveDate> {
 }
 
 /// An all-day event's start, as an instant in the user's zone.
-fn all_day_start(date: NaiveDate, local: Tz) -> Option<DateTime<Utc>> {
+pub(crate) fn all_day_start(date: NaiveDate, local: Tz) -> Option<DateTime<Utc>> {
     local
         .from_local_datetime(&date.and_hms_opt(0, 0, 0)?)
         .earliest()

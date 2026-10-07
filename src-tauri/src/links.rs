@@ -18,6 +18,12 @@
 
 use log::{error, info};
 
+/// Open a web address in the user's browser, for flows that start inside the
+/// app (a sign-in) rather than from a link the model wrote.
+pub(crate) fn open_in_browser(url: &str) -> Result<(), String> {
+    spawn_url_handler(url)
+}
+
 #[tauri::command]
 pub async fn open_url(url: String) -> Result<(), String> {
     let logged = crate::text_util::url_for_log(&url);
@@ -99,16 +105,16 @@ fn spawn_url_handler(url: &str) -> Result<(), String> {
         .map_err(|e| format!("open spawn failed: {}", e))
 }
 
+/// `rundll32 url.dll,FileProtocolHandler` rather than `cmd /C start`: cmd
+/// reads `&` as a command separator, and nearly every URL with a query string
+/// has one — an OAuth sign-in URL always does.
 #[cfg(target_os = "windows")]
 fn spawn_url_handler(url: &str) -> Result<(), String> {
-    // The leading "" is the title arg `start` expects when the next
-    // argument might look like a quoted path; without it, a URL with
-    // spaces would be misparsed as the window title.
-    std::process::Command::new("cmd")
-        .args(["/C", "start", "", url])
+    std::process::Command::new("rundll32")
+        .args(["url.dll,FileProtocolHandler", url])
         .spawn()
         .map(|_| ())
-        .map_err(|e| format!("start spawn failed: {}", e))
+        .map_err(|e| format!("rundll32 spawn failed: {}", e))
 }
 
 /// Strip AppImage-mangled variables (LD_LIBRARY_PATH, PYTHONHOME /

@@ -12,15 +12,21 @@
 	 * offered, so a calendar-only account stops presenting contact tools that
 	 * could only fail.
 	 *
-	 * A calendar link is the other kind: one read-only calendar from its iCal
-	 * address — the easy way in for Google, whose CalDAV needs OAuth. The link
-	 * is the credential, so it is kept where a password is.
+	 * A calendar link is the second kind: one read-only calendar from its iCal
+	 * address. The link is the credential, so it is kept where a password is.
+	 *
+	 * A Google account is the third: "Sign in with Google" runs the consent in
+	 * the browser, and Rust keeps the refresh token in the secret store — only
+	 * its key comes back here. Offered only by builds that carry Haruspex's
+	 * OAuth client.
 	 */
+	import { onMount } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { IPC } from '#lib/ipc/commands.ts';
 	import { getSettings, setDavAccounts, snapshot } from '#lib/stores/settings.ts';
 	import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
 	import type { DavKind } from '#lib/ipc/gen/DavKind.ts';
+	import type { GoogleSignIn } from '#lib/ipc/gen/GoogleSignIn.ts';
 	import type { DavCollections } from '#lib/ipc/gen/DavCollections.ts';
 	import { forgetDavPassword, withStoredDavPassword } from '#lib/stores/davSecrets.ts';
 	import {
@@ -38,6 +44,58 @@
 	let drafts = $state<Record<string, string>>({});
 	let storeKind = $state<SecretStoreKind>('keychain');
 	void secretStoreKind().then((k) => (storeKind = k));
+	let googleAvailable = $state(false);
+	/** The account a Google sign-in is running for, while the browser is open. */
+	let signingIn = $state<string | null>(null);
+	/** A sign-in that failed before its account existed. */
+	let googleError = $state('');
+
+	onMount(() => {
+		invoke<boolean>(IPC.google_sign_in_available)
+			.then((ok) => (googleAvailable = ok))
+			.catch(() => (googleAvailable = false));
+	});
+
+	function newId(): string {
+		return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+			? crypto.randomUUID()
+			: `dav-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+	}
+
+	/** Sign in to Google, for a new account or again for an existing one. */
+	async function signInWithGoogle(existing?: DavAccount): Promise<void> {
+		const id = existing?.id ?? newId();
+		signingIn = id;
+		googleError = '';
+		errors = { ...errors, [id]: '' };
+		try {
+			const result = await invoke<GoogleSignIn>(IPC.google_sign_in, {
+				accountId: id,
+				proxy: getSettings().proxy
+			});
+			const account: DavAccount = {
+				id,
+				kind: 'google',
+				label: existing?.label || 'Google',
+				enabled: true,
+				address: result.email,
+				username: result.email,
+				password: result.password,
+				passwordRef: result.passwordRef ?? undefined,
+				calendarUrl: null,
+				contactsUrl: null,
+				hasCalendars: result.hasCalendars,
+				hasContacts: result.hasContacts
+			};
+			persist(existing ? accounts.map((a) => (a.id === id ? account : a)) : [...accounts, account]);
+			await check(account);
+		} catch (e) {
+			if (existing) errors = { ...errors, [id]: String(e) };
+			else googleError = String(e);
+		} finally {
+			signingIn = null;
+		}
+	}
 
 	async function savePassword(id: string): Promise<void> {
 		const draft = drafts[id];
@@ -53,8 +111,12 @@
 		}
 	}
 
-	function remove(account: DavAccount): void {
+	async function remove(account: DavAccount): Promise<void> {
 		persist(accounts.filter((a) => a.id !== account.id));
+		// Tell Google first, while the token can still be read.
+		if (account.kind === 'google') {
+			await invoke(IPC.google_sign_out, { account, proxy: getSettings().proxy }).catch(() => {});
+		}
 		void forgetDavPassword(account);
 	}
 
@@ -68,10 +130,7 @@
 	}
 
 	function add(kind: DavKind): void {
-		const id =
-			typeof crypto !== 'undefined' && 'randomUUID' in crypto
-				? crypto.randomUUID()
-				: `dav-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const id = newId();
 		persist([
 			...accounts,
 			{
@@ -93,7 +152,7 @@
 
 	async function check(account: DavAccount): Promise<void> {
 		checking = account.id;
-		await savePassword(account.id);
+		if (account.kind !== 'google') await savePassword(account.id);
 		account = accounts.find((a) => a.id === account.id) ?? account;
 		errors = { ...errors, [account.id]: '' };
 		try {
@@ -136,15 +195,32 @@
 		class="section-help"
 		title="In Google Calendar: Settings → your calendar → Integrate calendar → Secret address in iCal format. Google's CalDAV needs OAuth, so a server account cannot reach it."
 	>
-		For Google Calendar, add a calendar link.
+		{googleAvailable
+			? 'For Google, sign in with Google or add a calendar link.'
+			: 'For Google Calendar, add a calendar link.'}
 	</p>
 	{#if accounts.length === 0}
 		<p class="section-help">No accounts yet.</p>
 	{/if}
 	<div class="actions">
+		{#if googleAvailable}
+			<button
+				type="button"
+				disabled={signingIn !== null}
+				onclick={() => signInWithGoogle()}
+				title="Opens Google in your browser. Haruspex asks to read your calendars and contacts, never to change them."
+			>
+				{signingIn && !accounts.some((a) => a.id === signingIn)
+					? 'Waiting for Google…'
+					: 'Sign in with Google'}
+			</button>
+		{/if}
 		<button type="button" onclick={() => add('ics')}>Add a calendar link</button>
 		<button type="button" onclick={() => add('dav')}>Add a server account</button>
 	</div>
+	{#if googleError}
+		<p class="error">{googleError}</p>
+	{/if}
 </section>
 
 {#each accounts as account (account.id)}
@@ -168,7 +244,9 @@
 				placeholder="Work"
 			/>
 		</div>
-		{#if account.kind === 'ics'}
+		{#if account.kind === 'google'}
+			<p class="section-help">Signed in as {account.address}.</p>
+		{:else if account.kind === 'ics'}
 			<div class="field">
 				<label
 					for="dav-link-{account.id}"
@@ -263,6 +341,15 @@
 			<button type="button" disabled={checking === account.id} onclick={() => check(account)}>
 				{checking === account.id ? 'Checking…' : 'Check'}
 			</button>
+			{#if account.kind === 'google' && googleAvailable}
+				<button
+					type="button"
+					disabled={signingIn !== null}
+					onclick={() => signInWithGoogle(account)}
+				>
+					{signingIn === account.id ? 'Waiting for Google…' : 'Sign in again'}
+				</button>
+			{/if}
 			<button type="button" class="danger" onclick={() => remove(account)}> Remove </button>
 		</div>
 	</section>
