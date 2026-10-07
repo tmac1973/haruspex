@@ -13,7 +13,9 @@ import { invoke } from '@tauri-apps/api/core';
 import type { BackendOverride } from '#lib/api.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
+import type { SkillDraft } from '#lib/ipc/gen/SkillDraft.ts';
 import type { SkillSummary } from '#lib/ipc/gen/SkillSummary.ts';
+import type { SkillWriteRequest } from '#lib/ipc/gen/SkillWriteRequest.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 
 /**
@@ -53,6 +55,26 @@ export function readSkillFile(
 	projectRoot?: string | null
 ): Promise<string> {
 	return invoke<string>('skill_read_file', { name, path, ...searchArgs(projectRoot) });
+}
+
+/**
+ * Check what the model asked to write and build the `SKILL.md` to show the
+ * user. Rejects with the reason the request was turned back.
+ */
+export function draftSkill(
+	request: SkillWriteRequest,
+	projectRoot?: string | null
+): Promise<SkillDraft> {
+	return invoke<SkillDraft>('skill_draft', { request, ...searchArgs(projectRoot) });
+}
+
+/** Write the text the user approved; resolves to the file written. */
+export function saveSkill(
+	request: SkillWriteRequest,
+	text: string,
+	projectRoot?: string | null
+): Promise<string> {
+	return invoke<string>('skill_save', { request, text, ...searchArgs(projectRoot) });
 }
 
 /**

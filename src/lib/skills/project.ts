@@ -31,6 +31,16 @@ export function setRepoTrusted(root: string, trusted: boolean): void {
 }
 
 /**
+ * Count a project skill the user just approved as one the repo already had,
+ * so saving it doesn't make the next turn ask about a new skill.
+ */
+export function noteProjectSkill(root: string, name: string): void {
+	const known = getSettings().skills.trustedRepos[root];
+	if (!known?.trusted || !known.skills || known.skills.includes(name)) return;
+	setRepoTrust(root, { ...known, skills: [...known.skills, name].sort() });
+}
+
+/**
  * What makes an earlier answer about this path out of date, or null. Answers
  * from before the origin and skills were recorded are taken as they stand.
  */

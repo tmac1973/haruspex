@@ -8,6 +8,7 @@
 	import McpApprovalModal from '#lib/components/McpApprovalModal.svelte';
 	import MemoryApprovalModal from '#lib/components/MemoryApprovalModal.svelte';
 	import RepoTrustModal from '#lib/components/RepoTrustModal.svelte';
+	import SkillApprovalModal from '#lib/components/SkillApprovalModal.svelte';
 	import EmailReviewModal from '#lib/components/EmailReviewModal.svelte';
 	import UserQuestionModal from '#lib/components/UserQuestionModal.svelte';
 	import FileEditorModal from '#lib/components/FileEditorModal.svelte';
@@ -639,6 +640,7 @@
 	<McpApprovalModal />
 	<MemoryApprovalModal />
 	<RepoTrustModal />
+	<SkillApprovalModal />
 	<EmailReviewModal />
 	<UserQuestionModal />
 	<FileEditorModal />

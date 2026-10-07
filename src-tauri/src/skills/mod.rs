@@ -19,6 +19,7 @@ mod agents_md;
 mod discover;
 mod origin;
 mod parse;
+mod write;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -27,6 +28,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
 use discover::{Found, Root};
+use write::{Destinations, SkillDraft, SkillWriteRequest};
 
 /// Skills shipped in the app: (name, SKILL.md text).
 const BUILTINS: &[(&str, &str)] = &[];
@@ -232,6 +234,52 @@ pub async fn skill_read_file(
             .as_deref()
             .ok_or_else(|| format!("\"{name}\" is built in and has no other files"))?;
         discover::read_file(dir, &path)
+    })
+    .await
+}
+
+/// Check a `create_skill` or `update_skill` request and build the `SKILL.md`
+/// to show the user. An error is the reason to give the model.
+#[tauri::command]
+pub async fn skill_draft(
+    app: AppHandle,
+    request: SkillWriteRequest,
+    extra_dirs: Vec<String>,
+    project_root: Option<String>,
+) -> Result<SkillDraft, String> {
+    let roots = roots(&app, &extra_dirs, project_root.as_deref());
+    let user = user_skills_dir(&app).ok_or("the app data folder is unavailable")?;
+    blocking(move || {
+        let all = discover::discover(&roots, BUILTINS);
+        let dest = Destinations {
+            user: &user,
+            project_root: project_root.as_deref().map(Path::new),
+        };
+        write::draft(&all, &dest, &request)
+    })
+    .await
+}
+
+/// Write the `SKILL.md` text the user approved for `request`, returning the
+/// file's path. The folder is worked out again here rather than taken from
+/// the draft.
+#[tauri::command]
+pub async fn skill_save(
+    app: AppHandle,
+    request: SkillWriteRequest,
+    text: String,
+    extra_dirs: Vec<String>,
+    project_root: Option<String>,
+) -> Result<String, String> {
+    let roots = roots(&app, &extra_dirs, project_root.as_deref());
+    let user = user_skills_dir(&app).ok_or("the app data folder is unavailable")?;
+    blocking(move || {
+        let all = discover::discover(&roots, BUILTINS);
+        let dest = Destinations {
+            user: &user,
+            project_root: project_root.as_deref().map(Path::new),
+        };
+        write::save(&all, &dest, &request, &text).map(|p| p.to_string_lossy().into_owned())
     })
     .await
 }

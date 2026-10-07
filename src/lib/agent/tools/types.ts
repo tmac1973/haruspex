@@ -207,7 +207,10 @@ export interface ToolRegistration {
 		/** Uses the image backend (Settings → Image). Chat only, and only interactive. */
 		| 'image'
 		/** Loading skills. Only for a turn that carries `ToolContext.skills`. */
-		| 'skills';
+		| 'skills'
+		/** Writing skills, each one approved by the user. Interactive Chat and
+		 *  Shell turns only: one that carries `skills` and has someone there. */
+		| 'skills-write';
 	requiresVision?: boolean;
 }
 

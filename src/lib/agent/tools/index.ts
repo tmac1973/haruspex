@@ -20,6 +20,7 @@ import './screen';
 import './image-gen';
 import './make-asset';
 import './skills';
+import './skillsWrite';
 
 // Re-export registry API
 export { getToolSchemas, executeTool, getDisplayLabel, coerceCallArguments } from './registry';

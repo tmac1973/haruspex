@@ -227,15 +227,23 @@ export function getToolSchemas(opts: {
 	skillNames?: string[];
 	/** The skills whose files it may read; the same for `read_skill_file`. */
 	skillFileNames?: string[];
+	/**
+	 * The turn carries skills (Chat or Shell). With `interactive`, it gets
+	 * `create_skill` and `update_skill`.
+	 */
+	hasSkills?: boolean;
 }): ToolDefinition[] {
 	if (opts.toolAllowlist) {
 		const allow = new Set(opts.toolAllowlist);
 		const schemas: ToolDefinition[] = [];
 		for (const reg of tools.values()) {
 			const name = reg.schema.function.name;
-			// Sending is reviewed by a person at the keyboard, and an allowlisted
-			// turn is a job's: no allowlist can grant it.
-			if (allow.has(name) && name !== 'email_compose') schemas.push(reg.schema);
+			// Sending, and writing a skill, are reviewed by a person at the
+			// keyboard, and an allowlisted turn is a job's: no allowlist can
+			// grant them.
+			if (allow.has(name) && name !== 'email_compose' && reg.category !== 'skills-write') {
+				schemas.push(reg.schema);
+			}
 		}
 		return schemas;
 	}
@@ -272,14 +280,31 @@ export function getToolSchemas(opts: {
 function schemaFor(
 	reg: ToolRegistration,
 	filter: ToolFilterOpts,
-	skills: { skillNames?: string[]; skillFileNames?: string[] }
+	skills: { skillNames?: string[]; skillFileNames?: string[]; hasSkills?: boolean }
 ): ToolDefinition | null {
+	if (reg.category === 'skills-write') {
+		if (!skills.hasSkills || !filter.interactive) return null;
+		// A repo's skills folder is only a destination in Code mode.
+		return filter.codeMode ? reg.schema : withoutWhere(reg.schema);
+	}
 	if (reg.category === 'skills') {
 		const names =
 			reg.schema.function.name === 'read_skill_file' ? skills.skillFileNames : skills.skillNames;
 		return names?.length ? withSkillEnum(reg.schema, names) : null;
 	}
 	return shouldIncludeTool(reg, filter) ? reg.schema : null;
+}
+
+/** A schema without its `where` parameter, if it has one. */
+function withoutWhere(schema: ToolDefinition): ToolDefinition {
+	const params = schema.function.parameters as { properties: Record<string, unknown> };
+	if (!('where' in params.properties)) return schema;
+	const properties = { ...params.properties };
+	delete properties.where;
+	return {
+		...schema,
+		function: { ...schema.function, parameters: { ...params, properties } }
+	};
 }
 
 /**
@@ -347,6 +372,14 @@ export async function executeTool(
 	// other turn is one the model was never offered.
 	if (reg.category === 'skills' && !ctx.skills) {
 		return toolResult(toolError('Skills are not available in this conversation.'));
+	}
+
+	// Writing a skill needs someone to approve it: a job or a remote guest's
+	// turn never gets these tools, and must not run them by guessing the name.
+	if (reg.category === 'skills-write' && (!ctx.skills || !ctx.interactive)) {
+		return toolResult(
+			toolError('Skills can only be saved in a conversation with the user in Chat or Shell.')
+		);
 	}
 
 	// The same hard gate for calendars. Schema filtering does not stop
