@@ -106,3 +106,63 @@ describe('ask_user_question body', () => {
 		expect('body' in asked[1]).toBe(false);
 	});
 });
+
+describe('ask_user_question multi-select', () => {
+	function ctxAnswering(answer: import('./types').UserAnswer, asked: unknown[] = []) {
+		const askUser = async (req: unknown) => {
+			asked.push(req);
+			return answer;
+		};
+		return { ...baseCtx, interactive: true, askUser } as ToolContext;
+	}
+	const options = [{ label: 'Saves' }, { label: 'Leaderboard, global' }, { label: 'Sound' }];
+
+	it('tells the model which tool flag gives checkboxes', async () => {
+		const { getToolSchemas } = await import('./registry');
+		const schema = getToolSchemas({
+			hasWorkingDir: false,
+			toolAllowlist: ['ask_user_question']
+		}).find((s) => s.function.name === 'ask_user_question')!;
+		expect(schema.function.description).toContain('allow_multiple');
+		expect(schema.function.description).toContain('which of these');
+	});
+
+	it('asks with checkboxes when the model sets allow_multiple, even as a string', async () => {
+		const asked: Array<{ allowMultiple?: boolean }> = [];
+		const ctx = ctxAnswering({ kind: 'selected', labels: ['Saves'] }, asked);
+		await executeTool(
+			'ask_user_question',
+			{ question: 'Which features?', options, allow_multiple: 'true' },
+			ctx
+		);
+		expect(asked[0].allowMultiple).toBe(true);
+	});
+
+	it('lists several picks one per line, so a comma in a label cannot split it', async () => {
+		const ctx = ctxAnswering({ kind: 'selected', labels: ['Saves', 'Leaderboard, global'] });
+		const out = await executeTool(
+			'ask_user_question',
+			{ question: 'Which features?', options, allow_multiple: true },
+			ctx
+		);
+		expect(out.result).toContain('selected 2 of the options');
+		expect(out.result).toContain('- Saves\n- Leaderboard, global');
+	});
+
+	it('passes on what the user typed alongside their ticks', async () => {
+		const ctx = ctxAnswering({ kind: 'selected', labels: ['Sound'], note: 'and a pause menu' });
+		const out = await executeTool(
+			'ask_user_question',
+			{ question: 'Which features?', options, allow_multiple: true },
+			ctx
+		);
+		expect(out.result).toContain('- Sound');
+		expect(out.result).toContain('They also wrote: and a pause menu');
+	});
+
+	it('keeps the single-choice answer as it was', async () => {
+		const ctx = ctxAnswering({ kind: 'selected', labels: ['Sound'] });
+		const out = await executeTool('ask_user_question', { question: 'One?', options }, ctx);
+		expect(out.result).toBe('The user selected: Sound');
+	});
+});

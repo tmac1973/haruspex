@@ -1,5 +1,5 @@
 import { registerTool } from './registry';
-import { toolResult, toolError } from './types';
+import { toolResult, toolError, type UserAnswer } from './types';
 
 /**
  * `ask_user_question` — the agent-facing half of the reusable human-in-the-loop
@@ -27,12 +27,14 @@ registerTool({
 		function: {
 			name: 'ask_user_question',
 			description:
-				'Ask the user a single multiple-choice question and wait for their answer. ' +
-				'Ask exactly ONE question per call. The user can always type a free-text ' +
-				'answer instead of picking an option, so offer the most likely choices ' +
-				'rather than trying to be exhaustive. Use this only to resolve a genuine ' +
-				'decision you cannot make confidently from context — not for trivia, and ' +
-				'not to confirm things the user already told you.',
+				'Ask the user one question with a list of choices and wait for their answer. ' +
+				'By default the user picks ONE choice. For a "which of these…" question where ' +
+				'several choices can apply at once (features to include, platforms to support), ' +
+				'set allow_multiple to true and the user gets checkboxes. Ask exactly ONE ' +
+				'question per call. The user can always type their own answer as well, so offer ' +
+				'the most likely choices rather than trying to be exhaustive. Use this only to ' +
+				'resolve a genuine decision you cannot make confidently from context — not for ' +
+				'trivia, and not to confirm things the user already told you.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -63,7 +65,8 @@ registerTool({
 					},
 					allow_multiple: {
 						type: 'boolean',
-						description: 'Set true if the user may pick more than one option.'
+						description:
+							'true when several options can be chosen together (checkboxes); omit or false for a single choice.'
 					}
 				},
 				required: ['question', 'options']
@@ -134,10 +137,19 @@ registerTool({
 			ctx.signal
 		);
 
-		const text =
-			answer.kind === 'freeText'
-				? `The user wrote a custom answer: ${answer.text}`
-				: `The user selected: ${answer.labels.join(', ')}`;
-		return toolResult(text);
+		return toolResult(describeAnswer(answer, args.allow_multiple === true));
 	}
 });
+
+/**
+ * The answer as the model reads it. A multi-select answer is a list, one
+ * choice per line, so a label containing a comma cannot be misread as two;
+ * a note the user added alongside their ticks follows it.
+ */
+export function describeAnswer(answer: UserAnswer, multiple: boolean): string {
+	if (answer.kind === 'freeText') return `The user wrote a custom answer: ${answer.text}`;
+	const note = answer.note?.trim() ? `\nThey also wrote: ${answer.note.trim()}` : '';
+	if (!multiple) return `The user selected: ${answer.labels.join(', ')}${note}`;
+	const picked = answer.labels.map((l) => `- ${l}`).join('\n');
+	return `The user selected ${answer.labels.length} of the options:\n${picked}${note}`;
+}

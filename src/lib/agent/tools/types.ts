@@ -59,7 +59,8 @@ export interface UserQuestionRequest {
 }
 
 export type UserAnswer =
-	| { kind: 'selected'; labels: string[] }
+	/** `note`: text the user added alongside a multi-select answer. */
+	| { kind: 'selected'; labels: string[]; note?: string }
 	| { kind: 'freeText'; text: string };
 
 export interface ToolContext {

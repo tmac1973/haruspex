@@ -189,6 +189,8 @@ export function overviewStagePrompt(
 		'`question` string and an `options` array of {label, description}. The user',
 		'cannot answer prose — if you write a question, or its options, as text it is',
 		'discarded and the session stalls. Ask EXACTLY ONE question per tool call.',
+		'For a "which of these…" question where several answers can apply, set',
+		'`allow_multiple: true` and the user ticks as many as they want.',
 		'',
 		'Process:',
 		'1. If this is an existing project, briefly ground yourself in the working',
