@@ -12,9 +12,9 @@ use chrono_tz::Tz;
 use super::account::DavAccount;
 use super::client::DavClient;
 use super::discovery::{self, CalendarCollection};
-use super::ical::{CalendarEvent, EventSource};
+use super::ical::{parse_events, CalendarEvent, EventSource};
 use super::vcard::{Contact, ContactSource};
-use super::{caldav, carddav, vcard};
+use super::{caldav, carddav, ics_feed, vcard};
 use crate::proxy::ProxyConfig;
 
 /// The most contacts a search hands back.
@@ -97,10 +97,13 @@ pub async fn dav_discover_collections(
 ) -> Result<DavCollections, String> {
     if account.needs_oauth() {
         return Err(
-            "Google Calendar needs OAuth, which this integration does not do. \
-             Add it under MCP integrations instead."
+            "Google Calendar needs OAuth, which a server account does not do. \
+             Add it as a calendar link instead."
                 .into(),
         );
+    }
+    if account.is_link() {
+        return check_link(&account, proxy.as_ref()).await;
     }
     if !account.is_usable() {
         return Err("This account still needs an address, username and password.".into());
@@ -142,6 +145,34 @@ pub async fn dav_discover_collections(
         address_books,
         problems,
     })
+}
+
+/// "Check" for a calendar link: fetch it once and name the calendar it holds.
+async fn check_link(
+    account: &DavAccount,
+    proxy: Option<&ProxyConfig>,
+) -> Result<DavCollections, String> {
+    if !account.is_usable() {
+        return Err("Paste the calendar link first.".into());
+    }
+    let account = account.resolved().await?;
+    let ics = ics_feed::fetch_feed(&account.password, proxy).await?;
+    Ok(DavCollections {
+        calendars: vec![DiscoveredCalendar {
+            // Not the link: it is the secret, and the settings UI only shows names.
+            url: String::new(),
+            name: link_calendar_name(&account, &ics),
+            color: None,
+        }],
+        address_books: Vec::new(),
+        problems: Vec::new(),
+    })
+}
+
+/// What a calendar link's events say they came from: the feed's own name, or
+/// the account's label when the feed has none.
+fn link_calendar_name(account: &DavAccount, ics: &str) -> String {
+    ics_feed::feed_name(ics).unwrap_or_else(|| account.label.clone())
 }
 
 /// Events across every enabled account, in a window.
@@ -316,6 +347,9 @@ async fn fetch_account(
     proxy: Option<&ProxyConfig>,
 ) -> Result<Vec<CalendarEvent>, String> {
     let account = &account.resolved().await?;
+    if account.is_link() {
+        return fetch_link(account, from, to, calendar_filter, local, proxy).await;
+    }
     let client = DavClient::new(account, proxy)?;
     let calendars = discovery::discover_calendars(&client, account).await?;
 
@@ -341,14 +375,44 @@ async fn fetch_account(
     Ok(events)
 }
 
+/// A calendar link's events in the window. The whole feed comes down in one
+/// request — a feed has no query to narrow it — and `ical.rs` keeps what falls
+/// inside the window, expanding recurrences as it does for CalDAV.
+async fn fetch_link(
+    account: &DavAccount,
+    from: &DateTime<Utc>,
+    to: &DateTime<Utc>,
+    calendar_filter: Option<&str>,
+    local: Tz,
+    proxy: Option<&ProxyConfig>,
+) -> Result<Vec<CalendarEvent>, String> {
+    let ics = ics_feed::fetch_feed(&account.password, proxy).await?;
+    let name = link_calendar_name(account, &ics);
+    // The filter names a calendar the way a user would; a link has one, known
+    // by its feed name or the label the user gave it.
+    if !name_matches(&name, calendar_filter) && !name_matches(&account.label, calendar_filter) {
+        return Ok(Vec::new());
+    }
+    let source = EventSource {
+        account_id: account.id.clone(),
+        account_label: account.label.clone(),
+        calendar_name: name,
+    };
+    Ok(parse_events(&ics, &source, *from, *to, local))
+}
+
 /// Whether a calendar matches what the caller named.
 ///
 /// Substring, case-insensitive: the model passes whatever the user said, and
 /// "work" should find "Work Calendar".
 fn matches_filter(calendar: &CalendarCollection, filter: Option<&str>) -> bool {
+    name_matches(&calendar.name, filter)
+}
+
+fn name_matches(name: &str, filter: Option<&str>) -> bool {
     match filter.map(str::trim).filter(|f| !f.is_empty()) {
         None => true,
-        Some(f) => calendar.name.to_lowercase().contains(&f.to_lowercase()),
+        Some(f) => name.to_lowercase().contains(&f.to_lowercase()),
     }
 }
 

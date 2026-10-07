@@ -1026,14 +1026,21 @@ export function hasEnabledCalendarAccount(): boolean {
  * can only fail.
  */
 export function hasEnabledContactsAccount(): boolean {
-	return enabledDavAccounts().some((a) => a.hasContacts !== false);
+	return enabledDavAccounts().some((a) => a.kind !== 'ics' && a.hasContacts !== false);
 }
 
-/** The accounts a calendar query should fan out over. */
+/**
+ * The accounts a calendar query should fan out over: switched on, and holding
+ * what they need to connect. The secret counts whether it is inline or in the
+ * secret store (`passwordRef`) — the usual case since passwords moved there.
+ * A calendar link needs nothing but its URL, which is that secret.
+ */
 export function enabledDavAccounts(): DavAccount[] {
-	return settings.integrations.dav.accounts.filter(
-		(a) => a.enabled && a.address.trim() && a.username.trim() && a.password
-	);
+	return settings.integrations.dav.accounts.filter((a) => {
+		const hasSecret = !!(a.password || a.passwordRef);
+		if (!a.enabled || !hasSecret) return false;
+		return a.kind === 'ics' || (!!a.address.trim() && !!a.username.trim());
+	});
 }
 
 /**

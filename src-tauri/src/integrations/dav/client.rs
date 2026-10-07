@@ -658,6 +658,7 @@ mod tests {
     async fn an_unreachable_server_fails_readably_instead_of_hanging() {
         let account = DavAccount {
             id: "x".into(),
+            kind: None,
             label: "Unreachable".into(),
             enabled: true,
             address: "http://127.0.0.1:1".into(),

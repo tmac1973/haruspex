@@ -11,11 +11,16 @@
 	 * calendars and contacts alike. Check records which the server actually
 	 * offered, so a calendar-only account stops presenting contact tools that
 	 * could only fail.
+	 *
+	 * A calendar link is the other kind: one read-only calendar from its iCal
+	 * address — the easy way in for Google, whose CalDAV needs OAuth. The link
+	 * is the credential, so it is kept where a password is.
 	 */
 	import { invoke } from '@tauri-apps/api/core';
 	import { IPC } from '#lib/ipc/commands.ts';
 	import { getSettings, setDavAccounts, snapshot } from '#lib/stores/settings.ts';
 	import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
+	import type { DavKind } from '#lib/ipc/gen/DavKind.ts';
 	import type { DavCollections } from '#lib/ipc/gen/DavCollections.ts';
 	import { forgetDavPassword, withStoredDavPassword } from '#lib/stores/davSecrets.ts';
 	import {
@@ -43,7 +48,8 @@
 			update(id, { password: stored.password, passwordRef: stored.passwordRef });
 			drafts = { ...drafts, [id]: '' };
 		} catch (e) {
-			errors = { ...errors, [id]: `Could not save the password: ${String(e)}` };
+			const what = account.kind === 'ics' ? 'link' : 'password';
+			errors = { ...errors, [id]: `Could not save the ${what}: ${String(e)}` };
 		}
 	}
 
@@ -61,7 +67,7 @@
 		persist(accounts.map((a) => (a.id === id ? { ...a, ...patch } : a)));
 	}
 
-	function add(): void {
+	function add(kind: DavKind): void {
 		const id =
 			typeof crypto !== 'undefined' && 'randomUUID' in crypto
 				? crypto.randomUUID()
@@ -70,6 +76,7 @@
 			...accounts,
 			{
 				id,
+				kind,
 				label: 'Calendar',
 				enabled: false,
 				address: '',
@@ -78,7 +85,8 @@
 				calendarUrl: null,
 				contactsUrl: null,
 				hasCalendars: null,
-				hasContacts: null
+				// A link is one calendar and never an address book.
+				hasContacts: kind === 'ics' ? false : null
 			}
 		]);
 	}
@@ -118,20 +126,25 @@
 
 <section class="settings-section">
 	<h2>Calendar &amp; Contacts</h2>
-	<p class="section-help">
-		Read your calendar and address book from a CalDAV/CardDAV server. Works with Nextcloud,
-		Fastmail, iCloud, Radicale, Baikal and Synology.
+	<p
+		class="section-help"
+		title="A server account works with Nextcloud, Fastmail, iCloud, Radicale, Baikal and Synology, and reads contacts too. A calendar link is read-only and works with Google, Outlook, iCloud and anything that publishes an iCal feed."
+	>
+		Read your calendars from a CalDAV/CardDAV server account or a calendar link.
 	</p>
 	<p
 		class="section-help"
-		title="Their CalDAV and CardDAV endpoints require OAuth, which this does not do."
+		title="In Google Calendar: Settings → your calendar → Integrate calendar → Secret address in iCal format. Google's CalDAV needs OAuth, so a server account cannot reach it."
 	>
-		For Google Calendar and Google Contacts, add them under MCP integrations instead.
+		For Google Calendar, add a calendar link.
 	</p>
 	{#if accounts.length === 0}
 		<p class="section-help">No accounts yet.</p>
 	{/if}
-	<button type="button" onclick={add}>Add an account</button>
+	<div class="actions">
+		<button type="button" onclick={() => add('ics')}>Add a calendar link</button>
+		<button type="button" onclick={() => add('dav')}>Add a server account</button>
+	</div>
 </section>
 
 {#each accounts as account (account.id)}
@@ -155,55 +168,77 @@
 				placeholder="Work"
 			/>
 		</div>
-		<div class="field">
-			<label for="dav-address-{account.id}">Address or server URL</label>
-			<input
-				id="dav-address-{account.id}"
-				value={account.address}
-				oninput={(e) => update(account.id, { address: e.currentTarget.value })}
-				placeholder="me@fastmail.com or https://cloud.example.com"
-			/>
-		</div>
-		<div class="field">
-			<label for="dav-user-{account.id}">Username</label>
-			<input
-				id="dav-user-{account.id}"
-				value={account.username}
-				oninput={(e) => update(account.id, { username: e.currentTarget.value })}
-				placeholder="Often the same as the address"
-			/>
-		</div>
-		<div class="field">
-			<label for="dav-pass-{account.id}">App password</label>
-			<input
-				id="dav-pass-{account.id}"
-				type="password"
-				value={drafts[account.id] ?? ''}
-				oninput={(e) => (drafts = { ...drafts, [account.id]: e.currentTarget.value })}
-				onblur={() => savePassword(account.id)}
-				placeholder={account.passwordRef || account.password
-					? savedSecretPlaceholder(storeKind)
-					: ''}
-			/>
-		</div>
-		<div class="field">
-			<label for="dav-url-{account.id}">Calendar URL (optional)</label>
-			<input
-				id="dav-url-{account.id}"
-				value={account.calendarUrl ?? ''}
-				oninput={(e) => update(account.id, { calendarUrl: e.currentTarget.value || null })}
-				placeholder="Only if your server is not found automatically"
-			/>
-		</div>
-		<div class="field">
-			<label for="dav-contacts-url-{account.id}">Contacts URL (optional)</label>
-			<input
-				id="dav-contacts-url-{account.id}"
-				value={account.contactsUrl ?? ''}
-				oninput={(e) => update(account.id, { contactsUrl: e.currentTarget.value || null })}
-				placeholder="Only if your server is not found automatically"
-			/>
-		</div>
+		{#if account.kind === 'ics'}
+			<div class="field">
+				<label
+					for="dav-link-{account.id}"
+					title="Read-only. Anyone with this link can read the calendar, so Haruspex keeps it like a password."
+				>
+					Calendar link
+				</label>
+				<input
+					id="dav-link-{account.id}"
+					type="password"
+					autocomplete="off"
+					value={drafts[account.id] ?? ''}
+					oninput={(e) => (drafts = { ...drafts, [account.id]: e.currentTarget.value })}
+					onblur={() => savePassword(account.id)}
+					placeholder={account.passwordRef || account.password
+						? savedSecretPlaceholder(storeKind)
+						: 'https://… or webcal://…'}
+				/>
+			</div>
+		{:else}
+			<div class="field">
+				<label for="dav-address-{account.id}">Address or server URL</label>
+				<input
+					id="dav-address-{account.id}"
+					value={account.address}
+					oninput={(e) => update(account.id, { address: e.currentTarget.value })}
+					placeholder="me@fastmail.com or https://cloud.example.com"
+				/>
+			</div>
+			<div class="field">
+				<label for="dav-user-{account.id}">Username</label>
+				<input
+					id="dav-user-{account.id}"
+					value={account.username}
+					oninput={(e) => update(account.id, { username: e.currentTarget.value })}
+					placeholder="Often the same as the address"
+				/>
+			</div>
+			<div class="field">
+				<label for="dav-pass-{account.id}">App password</label>
+				<input
+					id="dav-pass-{account.id}"
+					type="password"
+					value={drafts[account.id] ?? ''}
+					oninput={(e) => (drafts = { ...drafts, [account.id]: e.currentTarget.value })}
+					onblur={() => savePassword(account.id)}
+					placeholder={account.passwordRef || account.password
+						? savedSecretPlaceholder(storeKind)
+						: ''}
+				/>
+			</div>
+			<div class="field">
+				<label for="dav-url-{account.id}">Calendar URL (optional)</label>
+				<input
+					id="dav-url-{account.id}"
+					value={account.calendarUrl ?? ''}
+					oninput={(e) => update(account.id, { calendarUrl: e.currentTarget.value || null })}
+					placeholder="Only if your server is not found automatically"
+				/>
+			</div>
+			<div class="field">
+				<label for="dav-contacts-url-{account.id}">Contacts URL (optional)</label>
+				<input
+					id="dav-contacts-url-{account.id}"
+					value={account.contactsUrl ?? ''}
+					oninput={(e) => update(account.id, { contactsUrl: e.currentTarget.value || null })}
+					placeholder="Only if your server is not found automatically"
+				/>
+			</div>
+		{/if}
 
 		{#if errors[account.id]}
 			<p class="error">{errors[account.id]}</p>

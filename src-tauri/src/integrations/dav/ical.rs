@@ -18,6 +18,7 @@
 use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// One concrete occurrence of an event, in the window that was requested.
 ///
@@ -92,14 +93,26 @@ pub fn parse_events(
     to: DateTime<Utc>,
     local: Tz,
 ) -> Vec<CalendarEvent> {
-    let mut out = Vec::new();
     let reader = ical::IcalParser::new(std::io::Cursor::new(ics.as_bytes()));
-    for calendar in reader.flatten() {
-        for event in &calendar.events {
-            // A single bad VEVENT is skipped; the rest of the calendar still
-            // answers the question.
-            out.extend(expand_event(event, source, from, to, local));
+    let calendars: Vec<_> = reader.flatten().collect();
+    let events = || calendars.iter().flat_map(|c| &c.events);
+
+    // A moved or edited occurrence of a series is its own VEVENT with the same
+    // UID and a RECURRENCE-ID naming the slot it replaces. Those slots come out
+    // of the series' expansion, or the meeting shows twice: once where it was,
+    // once where it went.
+    let mut replaced: HashMap<String, Vec<DateTime<Utc>>> = HashMap::new();
+    for raw in events().filter_map(read_raw) {
+        if let Some(slot) = recurrence_slot(&raw, local) {
+            replaced.entry(raw.uid).or_default().push(slot);
         }
+    }
+
+    let mut out = Vec::new();
+    for event in events() {
+        // A single bad VEVENT is skipped; the rest of the calendar still
+        // answers the question.
+        out.extend(expand_event(event, source, from, to, local, &replaced));
     }
     out.sort_by(|a, b| a.start.cmp(&b.start));
     out
@@ -122,6 +135,10 @@ struct RawEvent {
     duration: Option<String>,
     rrule: Option<String>,
     exdates: Vec<String>,
+    /// Set on an override of one occurrence of a series: the slot it replaces.
+    recurrence_id: Option<String>,
+    recurrence_id_tzid: Option<String>,
+    recurrence_id_is_date: bool,
 }
 
 fn read_raw(event: &ical::parser::ical::component::IcalEvent) -> Option<RawEvent> {
@@ -141,6 +158,9 @@ fn read_raw(event: &ical::parser::ical::component::IcalEvent) -> Option<RawEvent
         duration: None,
         rrule: None,
         exdates: Vec::new(),
+        recurrence_id: None,
+        recurrence_id_tzid: None,
+        recurrence_id_is_date: false,
     };
 
     for prop in &event.properties {
@@ -178,6 +198,12 @@ fn read_raw(event: &ical::parser::ical::component::IcalEvent) -> Option<RawEvent
             "DURATION" => raw.duration = non_empty(value),
             "RRULE" => raw.rrule = non_empty(value),
             "EXDATE" => raw.exdates.push(value),
+            "RECURRENCE-ID" => {
+                raw.recurrence_id_is_date =
+                    param("VALUE").is_some_and(|v| v.eq_ignore_ascii_case("DATE"));
+                raw.recurrence_id_tzid = param("TZID");
+                raw.recurrence_id = non_empty(value);
+            }
             _ => {}
         }
     }
@@ -291,10 +317,12 @@ fn expand_event(
     from: DateTime<Utc>,
     to: DateTime<Utc>,
     local: Tz,
+    replaced: &HashMap<String, Vec<DateTime<Utc>>>,
 ) -> Vec<CalendarEvent> {
     let Some(raw) = read_raw(event) else {
         return Vec::new();
     };
+    let is_override = raw.recurrence_id.is_some();
 
     let Some((start, anchor)) = event_start(&raw, local) else {
         // A start we cannot read means we cannot place the event on a day, so
@@ -303,7 +331,13 @@ fn expand_event(
     };
 
     let length = event_length(&raw, start, local);
-    let excluded = exdates(&raw, local);
+    let mut excluded = exdates(&raw, local);
+    // An override stands in for its slot; only the series loses that slot.
+    if !is_override {
+        if let Some(slots) = replaced.get(&raw.uid) {
+            excluded.extend(slots);
+        }
+    }
     let starts = occurrence_starts(&raw, start, &anchor, from, to);
 
     starts
@@ -325,9 +359,19 @@ fn expand_event(
             organizer: raw.organizer.clone(),
             attendees: raw.attendees.clone(),
             status: raw.status.clone(),
-            recurring: raw.rrule.is_some(),
+            recurring: raw.rrule.is_some() || is_override,
         })
         .collect()
+}
+
+/// The series slot an override replaces, read the way `EXDATE` is.
+fn recurrence_slot(raw: &RawEvent, local: Tz) -> Option<DateTime<Utc>> {
+    let value = raw.recurrence_id.as_deref()?;
+    if raw.recurrence_id_is_date {
+        parse_date(value).and_then(|d| all_day_start(d, local))
+    } else {
+        parse_datetime(value, raw.recurrence_id_tzid.as_deref(), local)
+    }
 }
 
 /// Where a recurrence rule is anchored: the wall-clock time it repeats at, and
@@ -569,6 +613,49 @@ mod tests {
         );
         assert!(events[0].start.starts_with("2026-09-01"));
         assert!(events[3].start.starts_with("2026-09-22"));
+    }
+
+    #[test]
+    fn a_moved_occurrence_replaces_its_slot_instead_of_doubling() {
+        // Google exports "this week's sync moved to Thursday" as a second
+        // VEVENT with the same UID and a RECURRENCE-ID naming the Tuesday.
+        let doc = ics("BEGIN:VEVENT\r\nUID:7\r\nSUMMARY:Weekly sync\r\n\
+             DTSTART;TZID=Europe/London:20260901T100000\r\nDTEND;TZID=Europe/London:20260901T110000\r\n\
+             RRULE:FREQ=WEEKLY;BYDAY=TU\r\nEND:VEVENT\r\n\
+             BEGIN:VEVENT\r\nUID:7\r\nSUMMARY:Weekly sync (moved)\r\n\
+             RECURRENCE-ID;TZID=Europe/London:20260908T100000\r\n\
+             DTSTART;TZID=Europe/London:20260910T150000\r\nDTEND;TZID=Europe/London:20260910T160000\r\n\
+             END:VEVENT");
+        let (from, to) = window("2026-09-07T00:00:00Z", "2026-09-14T00:00:00Z");
+        let events = parse_events(&doc, &source(), from, to, UTC_TZ);
+
+        assert_eq!(events.len(), 1, "{events:?}");
+        assert_eq!(events[0].summary, "Weekly sync (moved)");
+        assert!(
+            events[0].start.starts_with("2026-09-10T14:00"),
+            "{}",
+            events[0].start
+        );
+        assert!(events[0].recurring, "still part of the series");
+    }
+
+    #[test]
+    fn an_override_only_touches_its_own_series() {
+        // Another series at the same time is not replaced by someone else's
+        // override.
+        let doc = ics("BEGIN:VEVENT\r\nUID:a\r\nSUMMARY:A\r\n\
+             DTSTART:20260901T100000Z\r\nRRULE:FREQ=WEEKLY\r\nEND:VEVENT\r\n\
+             BEGIN:VEVENT\r\nUID:b\r\nSUMMARY:B\r\n\
+             DTSTART:20260901T100000Z\r\nRRULE:FREQ=WEEKLY\r\nEND:VEVENT\r\n\
+             BEGIN:VEVENT\r\nUID:a\r\nSUMMARY:A moved\r\nRECURRENCE-ID:20260908T100000Z\r\n\
+             DTSTART:20260908T120000Z\r\nEND:VEVENT");
+        let (from, to) = window("2026-09-08T00:00:00Z", "2026-09-09T00:00:00Z");
+        let mut names: Vec<_> = parse_events(&doc, &source(), from, to, UTC_TZ)
+            .into_iter()
+            .map(|e| e.summary)
+            .collect();
+        names.sort();
+        assert_eq!(names, ["A moved", "B"]);
     }
 
     #[test]

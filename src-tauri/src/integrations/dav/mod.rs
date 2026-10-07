@@ -16,4 +16,5 @@ pub mod client;
 pub mod commands;
 pub mod discovery;
 pub mod ical;
+pub mod ics_feed;
 pub mod vcard;

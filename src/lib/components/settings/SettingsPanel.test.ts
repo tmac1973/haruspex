@@ -84,7 +84,7 @@ describe('settings navigation', () => {
 		rail('Integrations').click();
 		await settle();
 
-		screen.getByText('Add an account').click();
+		screen.getByText('Add a calendar link').click();
 		await settle();
 
 		rail('General').click();
