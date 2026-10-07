@@ -32,6 +32,59 @@ pub struct AgentsMd {
     pub total_bytes: u32,
 }
 
+/// Where `/init` writes, and what is there now.
+#[derive(Clone, Debug, Serialize, PartialEq, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AgentsMdDraft {
+    pub path: String,
+    /// The file as it is now; None when there isn't one.
+    pub current: Option<String>,
+}
+
+/// The root `AGENTS.md` of the repo `cwd` is in.
+fn target(cwd: &Path) -> Result<PathBuf, String> {
+    super::find_project_root(cwd)
+        .map(|root| root.join("AGENTS.md"))
+        .ok_or_else(|| "the shell is not in a git repo; AGENTS.md goes at a repo's root".into())
+}
+
+pub fn draft(cwd: &Path) -> Result<AgentsMdDraft, String> {
+    let path = target(cwd)?;
+    let current = match fs::read_to_string(&path) {
+        Ok(text) => Some(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e.to_string()),
+    };
+    Ok(AgentsMdDraft {
+        path: path.to_string_lossy().into_owned(),
+        current,
+    })
+}
+
+/// Write `text` as the repo's `AGENTS.md`. Text over the cap is refused, since
+/// a turn would only read part of it.
+pub fn save(cwd: &Path, text: &str) -> Result<PathBuf, String> {
+    if text.trim().is_empty() {
+        return Err("AGENTS.md is empty".into());
+    }
+    if text.len() > MAX_BYTES {
+        return Err(format!(
+            "AGENTS.md is {} KB; turns read only the first {} KB, so shorten it",
+            text.len().div_ceil(1024),
+            MAX_BYTES / 1024
+        ));
+    }
+    let path = target(cwd)?;
+    let tmp = path.with_file_name(".AGENTS.md.tmp");
+    fs::write(&tmp, text).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, &path).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        e.to_string()
+    })?;
+    Ok(path)
+}
+
 /// The instructions file in `dir`: `AGENTS.md`, else `CLAUDE.md`.
 fn instructions_in(dir: &Path) -> Option<PathBuf> {
     ["AGENTS.md", "CLAUDE.md"]
@@ -99,6 +152,31 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir.canonicalize().unwrap()
+    }
+
+    #[test]
+    fn drafts_and_saves_the_root_file_from_a_subfolder() {
+        let base = temp_dir("write");
+        fs::create_dir_all(base.join(".git")).unwrap();
+        fs::create_dir_all(base.join("src/deep")).unwrap();
+        let cwd = base.join("src/deep");
+        let d = draft(&cwd).unwrap();
+        assert_eq!(d.path, base.join("AGENTS.md").to_string_lossy());
+        assert_eq!(d.current, None);
+        save(&cwd, "# Build\n").unwrap();
+        assert_eq!(draft(&cwd).unwrap().current.as_deref(), Some("# Build\n"));
+        assert!(!base.join(".AGENTS.md.tmp").exists());
+    }
+
+    #[test]
+    fn refuses_to_write_outside_a_repo_or_past_the_cap() {
+        let base = temp_dir("write_refused");
+        assert!(draft(&base).unwrap_err().contains("not in a git repo"));
+        fs::create_dir_all(base.join(".git")).unwrap();
+        assert!(save(&base, " ").unwrap_err().contains("empty"));
+        let long = "x".repeat(MAX_BYTES + 1);
+        assert!(save(&base, &long).unwrap_err().contains("shorten it"));
+        assert!(!base.join("AGENTS.md").exists());
     }
 
     #[test]

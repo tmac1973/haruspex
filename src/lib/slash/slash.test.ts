@@ -120,6 +120,34 @@ describe('resolveSlash', () => {
 	});
 });
 
+describe('/init, a built-in for Code mode', () => {
+	beforeEach(() => {
+		mocks.list.push(skill('init', { source: 'builtin', dir: null }));
+	});
+
+	it('is listed and run only in Code mode', async () => {
+		expect((await slashItems(null)).map((i) => i.name)).not.toContain('init');
+		expect((await slashItems(null, true)).map((i) => i.name)).toContain('init');
+		expect(await resolveSlash('/init', null, true)).toEqual({ kind: 'skill', doc });
+	});
+
+	it('says it needs Code mode anywhere else, and sends nothing', async () => {
+		expect(await resolveSlash('/init', null)).toEqual({ kind: 'needsCodeMode', name: 'init' });
+		const addNote = vi.fn();
+		const host = { projectRoot: async () => null, newConversation: vi.fn(), addNote };
+		expect(await runSlash('/init', host)).toEqual({ kind: 'handled' });
+		expect(addNote).toHaveBeenCalledWith(expect.stringContaining('needs Code mode'));
+		const code = { ...host, codeMode: () => true };
+		expect(await runSlash('/init', code)).toEqual({ kind: 'send', skill: doc });
+	});
+
+	it("doesn't hold back a user's own init skill", async () => {
+		mocks.list = mocks.list.filter((s) => s.name !== 'init');
+		mocks.list.push(skill('init'));
+		expect((await slashItems(null)).map((i) => i.name)).toContain('init');
+	});
+});
+
 describe('runSlash', () => {
 	const host = () => ({
 		projectRoot: vi.fn(async () => null),

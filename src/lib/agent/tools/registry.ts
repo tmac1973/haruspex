@@ -284,6 +284,10 @@ function schemaFor(
 ): ToolDefinition | null {
 	if (reg.category === 'skills-write') {
 		if (!skills.hasSkills || !filter.interactive) return null;
+		// The repo's AGENTS.md is a Code mode file, like the repo itself.
+		if (reg.schema.function.name === 'write_agents_md') {
+			return filter.codeMode ? reg.schema : null;
+		}
 		// A repo's skills folder is only a destination in Code mode.
 		return filter.codeMode ? reg.schema : withoutWhere(reg.schema);
 	}

@@ -12,9 +12,11 @@
  */
 
 export interface SkillApprovalRequest {
+	/** A skill, or the repo's AGENTS.md (`write_agents_md`). */
+	kind: 'skill' | 'agentsMd';
 	update: boolean;
 	name: string;
-	/** The skill's folder. */
+	/** The skill's folder, or the AGENTS.md file. */
 	dir: string;
 	/** Goes in the repo rather than the user's skills. */
 	project: boolean;

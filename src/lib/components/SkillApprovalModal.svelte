@@ -1,10 +1,10 @@
 <script lang="ts">
 	/**
-	 * Asks before `create_skill` or `update_skill` writes anything. Mounted in
-	 * the root layout; see `stores/skillApproval.svelte.ts` for why every write
-	 * is asked about.
+	 * Asks before `create_skill`, `update_skill` or `write_agents_md` writes
+	 * anything. Mounted in the root layout; see `stores/skillApproval.svelte.ts`
+	 * for why every write is asked about.
 	 *
-	 * Shows the whole `SKILL.md` in the editor, so the user approves what they
+	 * Shows the whole file in the editor, so the user approves what they
 	 * can read and may change it first. Saving happens here: if the edited text
 	 * can't be saved, the error shows and the prompt stays open.
 	 *
@@ -20,6 +20,8 @@
 	import { errMessage } from '#lib/utils/error.ts';
 
 	const pending = $derived(getPendingSkillApproval());
+	const agentsMd = $derived(pending?.kind === 'agentsMd');
+	const file = $derived(agentsMd ? 'AGENTS.md' : 'SKILL.md');
 
 	let text = $state('');
 	let reason = $state('');
@@ -27,6 +29,7 @@
 	let saving = $state(false);
 	let showCurrent = $state(false);
 	let loadedFor: unknown = null;
+	const lines = $derived(text.trimEnd().split('\n').length);
 
 	$effect(() => {
 		if (pending && loadedFor !== pending) {
@@ -56,15 +59,26 @@
 
 <Modal open={pending != null} maxWidth={760} labelledBy="skill-approval-title">
 	{#if pending}
-		<h2 id="skill-approval-title">
-			{pending.update ? 'Change' : 'Save'} the "{pending.name}" skill?
-		</h2>
-		<p>
-			It will be {pending.update ? 'changed' : 'saved'}
-			{pending.project ? 'in this repo, for anyone who works on it' : 'in your skills'}, and can
-			steer later conversations. Edit it here first if you like.
-		</p>
-		<p class="dir">{pending.dir}</p>
+		{#if agentsMd}
+			<h2 id="skill-approval-title">
+				{pending.update ? "Change this repo's AGENTS.md?" : 'Add an AGENTS.md to this repo?'}
+			</h2>
+			<p>
+				Every coding turn in this repo reads it, here and in other agents. Edit it here first if you
+				like.
+			</p>
+			<p class="dir">{pending.dir} <span class="count">· {lines} lines</span></p>
+		{:else}
+			<h2 id="skill-approval-title">
+				{pending.update ? 'Change' : 'Save'} the "{pending.name}" skill?
+			</h2>
+			<p>
+				It will be {pending.update ? 'changed' : 'saved'}
+				{pending.project ? 'in this repo, for anyone who works on it' : 'in your skills'}, and can
+				steer later conversations. Edit it here first if you like.
+			</p>
+			<p class="dir">{pending.dir}</p>
+		{/if}
 		{#if pending.current !== null}
 			<button class="link" onclick={() => (showCurrent = !showCurrent)}>
 				{showCurrent ? 'Show the new version' : 'Show the current version'}
@@ -72,9 +86,9 @@
 		{/if}
 		<div class="editor">
 			{#if showCurrent && pending.current !== null}
-				<pre class="current" aria-label="Current SKILL.md">{pending.current}</pre>
+				<pre class="current" aria-label="Current {file}">{pending.current}</pre>
 			{:else}
-				<CodeEditor value={text} onchange={(v) => (text = v)} onsave={save} label="SKILL.md" />
+				<CodeEditor value={text} onchange={(v) => (text = v)} onsave={save} label={file} />
 			{/if}
 		</div>
 		{#if error}
@@ -86,8 +100,14 @@
 		</label>
 		<div class="button-row">
 			<ModalButton onclick={save}>
-				{#snippet title()}{pending.update ? 'Save changes' : 'Save skill'}{/snippet}
-				{#snippet subtitle()}Run it with /{pending.name}{/snippet}
+				{#snippet title()}{pending.update
+						? 'Save changes'
+						: agentsMd
+							? 'Save AGENTS.md'
+							: 'Save skill'}{/snippet}
+				{#snippet subtitle()}{agentsMd
+						? 'Read from the next turn'
+						: `Run it with /${pending.name}`}{/snippet}
 			</ModalButton>
 			<ModalButton
 				variant="danger"
@@ -97,7 +117,9 @@
 				{#snippet subtitle()}Nothing is written; the model is told why{/snippet}
 			</ModalButton>
 		</div>
-		<p class="help">Settings → Skills lists and deletes skills.</p>
+		{#if !agentsMd}
+			<p class="help">Settings → Skills lists and deletes skills.</p>
+		{/if}
 	{/if}
 </Modal>
 
@@ -111,6 +133,11 @@
 		font-family: monospace;
 		font-size: 0.85rem;
 		word-break: break-all;
+	}
+
+	.count {
+		color: var(--text-secondary);
+		font-family: inherit;
 	}
 
 	.link {

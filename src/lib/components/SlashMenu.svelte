@@ -12,12 +12,15 @@
 	let {
 		text,
 		projectRoot = async () => null,
+		codeMode = false,
 		onPick
 	}: {
 		/** The input box's current text. */
 		text: string;
 		/** The trusted repo whose project skills to list, found when the list opens. */
 		projectRoot?: () => Promise<string | null>;
+		/** Code mode is on, which lists the built-ins that need it. */
+		codeMode?: boolean;
 		/** Replace the input's text with the chosen `/name `. */
 		onPick: (text: string) => void;
 	} = $props();
@@ -41,7 +44,7 @@
 		if (loadedFor) return;
 		loadedFor = true;
 		void projectRoot()
-			.then(slashItems)
+			.then((root) => slashItems(root, codeMode))
 			.then((list) => (items = list));
 	});
 

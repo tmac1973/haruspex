@@ -61,6 +61,14 @@ describe('prepareTurnSkills', () => {
 		});
 	});
 
+	it('lists the built-in init only in Code mode', async () => {
+		mocks.list.push(skill('init', { source: 'builtin', dir: null }));
+		const names = async (codeMode: boolean) =>
+			(await prepareTurnSkills({ codeMode })).catalog.map((s) => s.name);
+		expect(await names(false)).not.toContain('init');
+		expect(await names(true)).toContain('init');
+	});
+
 	it('lists nothing, and asks nothing, when autonomous use is off', async () => {
 		// The turn still carries skills: one run with `/name` may read its files.
 		updateSkills({ autonomous: 'off' });

@@ -5,10 +5,12 @@ const client = vi.hoisted(() => ({
 	readSkill: vi.fn(),
 	readSkillFile: vi.fn(),
 	draftSkill: vi.fn(),
-	saveSkill: vi.fn()
+	saveSkill: vi.fn(),
+	draftAgentsMd: vi.fn(),
+	saveAgentsMd: vi.fn()
 }));
 vi.mock('#lib/skills/client.ts', () => client);
-const project = vi.hoisted(() => ({ noteProjectSkill: vi.fn() }));
+const project = vi.hoisted(() => ({ noteProjectSkill: vi.fn(), trustApprovedAgentsMd: vi.fn() }));
 vi.mock('#lib/skills/project.ts', () => project);
 
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
@@ -55,6 +57,11 @@ beforeEach(() => {
 	client.draftSkill.mockReset().mockResolvedValue(draft);
 	client.saveSkill.mockReset().mockResolvedValue('/data/skills/deploy-check/SKILL.md');
 	project.noteProjectSkill.mockReset();
+	project.trustApprovedAgentsMd.mockReset().mockResolvedValue(true);
+	client.draftAgentsMd
+		.mockReset()
+		.mockResolvedValue({ path: '/code/repo/AGENTS.md', current: null });
+	client.saveAgentsMd.mockReset().mockResolvedValue('/code/repo/AGENTS.md');
 	resolveSkillApproval({ kind: 'rejected', reason: '' });
 });
 
@@ -179,5 +186,75 @@ describe('create_skill and update_skill', () => {
 		expect((await run).result).toContain('declined');
 		expect(getPendingSkillApproval()).toBeNull();
 		expect(client.saveSkill).not.toHaveBeenCalled();
+	});
+});
+
+describe('write_agents_md', () => {
+	const code = (over: Partial<ToolContext> = {}) =>
+		ctx({ codeMode: true, shellCwd: '/code/repo/src', ...over });
+	const md = { content: '# Build\n\n- `npm test`\n' };
+
+	it('is offered in Code mode only', () => {
+		const offered = (codeMode: boolean) =>
+			getToolSchemas({ hasWorkingDir: true, interactive: true, hasSkills: true, codeMode })
+				.map((s) => s.function.name)
+				.includes('write_agents_md');
+		expect(offered(true)).toBe(true);
+		expect(offered(false)).toBe(false);
+	});
+
+	it('is refused outside Code mode', async () => {
+		const out = await executeTool('write_agents_md', md, ctx());
+		expect(out.result).toContain('only be written in Code mode');
+		expect(client.draftAgentsMd).not.toHaveBeenCalled();
+	});
+
+	it('asks even when Code mode auto-approves, and saves what was approved', async () => {
+		const result = await runAnswering(
+			'write_agents_md',
+			md,
+			async (p) => {
+				expect(p.kind).toBe('agentsMd');
+				expect(p.update).toBe(false);
+				expect(p.dir).toBe('/code/repo/AGENTS.md');
+				expect(p.text).toBe(md.content);
+				await p.save(p.text);
+				resolveSkillApproval({ kind: 'saved', edited: false });
+			},
+			code({ codeAutoApprove: true })
+		);
+		expect(client.draftAgentsMd).toHaveBeenCalledWith('/code/repo/src');
+		expect(client.saveAgentsMd).toHaveBeenCalledWith('/code/repo/src', md.content);
+		expect(result).toContain('Saved /code/repo/AGENTS.md');
+		expect(result).toContain('from the next one');
+	});
+
+	it('shows the current file, and says when the repo is switched off', async () => {
+		client.draftAgentsMd.mockResolvedValue({ path: '/code/repo/AGENTS.md', current: '# Old\n' });
+		project.trustApprovedAgentsMd.mockResolvedValue(false);
+		const result = await runAnswering(
+			'write_agents_md',
+			md,
+			async (p) => {
+				expect(p.update).toBe(true);
+				expect(p.current).toBe('# Old\n');
+				await p.save(p.text);
+				resolveSkillApproval({ kind: 'saved', edited: false });
+			},
+			code()
+		);
+		expect(result).toContain('switched off');
+	});
+
+	it('writes nothing when the user rejects it', async () => {
+		const result = await runAnswering(
+			'write_agents_md',
+			md,
+			async () => resolveSkillApproval({ kind: 'rejected', reason: '' }),
+			code()
+		);
+		expect(result).toContain('declined');
+		expect(client.saveAgentsMd).not.toHaveBeenCalled();
+		expect(project.trustApprovedAgentsMd).not.toHaveBeenCalled();
 	});
 });

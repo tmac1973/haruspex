@@ -11,7 +11,8 @@ vi.mock('#lib/stores/settings.ts', () => ({
 }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 
-import { noteProjectSkill } from './project';
+import { invoke } from '@tauri-apps/api/core';
+import { noteProjectSkill, trustApprovedAgentsMd } from './project';
 
 beforeEach(() => {
 	settings.updateSkills.mockReset();
@@ -33,6 +34,41 @@ describe('noteProjectSkill', () => {
 			'/no': { trusted: false, skills: [] }
 		};
 		for (const root of ['/known', '/old', '/no', '/unknown']) noteProjectSkill(root, 'a');
+		expect(settings.updateSkills).not.toHaveBeenCalled();
+	});
+});
+
+describe('trustApprovedAgentsMd', () => {
+	function repo(info: { skillNames: string[]; origin: string | null } | null) {
+		vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+			if (cmd === 'skills_project_root') return '/r';
+			if (cmd === 'skills_project_info') return info && { ...info, agentsMd: true };
+			return null;
+		});
+	}
+
+	it('trusts a repo never asked about, as the user just approved its file', async () => {
+		settings.repos = {};
+		repo({ skillNames: [], origin: 'u' });
+		expect(await trustApprovedAgentsMd('/r/src')).toBe(true);
+		expect(settings.updateSkills).toHaveBeenCalledWith({
+			trustedRepos: { '/r': { trusted: true, origin: 'u', skills: [] } }
+		});
+	});
+
+	it('stands by an earlier answer, a no included', async () => {
+		repo({ skillNames: [], origin: 'u' });
+		settings.repos = { '/r': { trusted: false } };
+		expect(await trustApprovedAgentsMd('/r')).toBe(false);
+		settings.repos = { '/r': { trusted: true } };
+		expect(await trustApprovedAgentsMd('/r')).toBe(true);
+		expect(settings.updateSkills).not.toHaveBeenCalled();
+	});
+
+	it('leaves skills the user has not seen to the trust prompt', async () => {
+		settings.repos = {};
+		repo({ skillNames: ['x'], origin: null });
+		expect(await trustApprovedAgentsMd('/r')).toBe(false);
 		expect(settings.updateSkills).not.toHaveBeenCalled();
 	});
 });
