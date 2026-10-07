@@ -1,7 +1,8 @@
 //! "Sign in with Google" for calendars and contacts.
 //!
-//! Google's CalDAV and CardDAV endpoints take an OAuth bearer token instead of
-//! a password. Haruspex registers one desktop OAuth client for everyone, so a
+//! Google's data takes an OAuth bearer token instead of a password. Calendars
+//! come from its Calendar API (`google_calendar.rs`) and contacts from its
+//! People API (`google_contacts.rs`), both read-only. Haruspex registers one desktop OAuth client for everyone, so a
 //! user's whole setup is a browser consent screen — no Cloud project of their
 //! own. The flow is the installed-app one Google documents: a loopback
 //! redirect to a port we listen on, PKCE, and a refresh token kept in the
@@ -25,29 +26,17 @@ const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const REVOKE_URL: &str = "https://oauth2.googleapis.com/revoke";
 
-/// Read-only calendars, contacts, and who signed in. `carddav` is the only
-/// scope Google's CardDAV accepts; Haruspex never writes with it.
+/// Read-only calendars, read-only contacts, and who signed in.
 const SCOPES: &str = "openid email \
     https://www.googleapis.com/auth/calendar.readonly \
-    https://www.googleapis.com/auth/carddav";
+    https://www.googleapis.com/auth/contacts.readonly";
 const CALENDAR_SCOPE: &str = "https://www.googleapis.com/auth/calendar.readonly";
-const CONTACTS_SCOPE: &str = "https://www.googleapis.com/auth/carddav";
+const CONTACTS_SCOPE: &str = "https://www.googleapis.com/auth/contacts.readonly";
 
 /// Where calendar discovery starts for a Google account. Google serves no
 /// `.well-known/caldav`, but this path answers the principal query, so the
 /// usual principal → home-set ladder runs from here.
 pub const CALDAV_BASE: &str = "https://apidata.googleusercontent.com/caldav/v2";
-
-/// A Google account's address-book home. CardDAV has no account-independent
-/// entry point at Google — its `.well-known` lands on one address book and
-/// refuses the principal query — so the home is built from the email the
-/// sign-in returned.
-pub fn carddav_home(email: &str) -> String {
-    format!(
-        "https://www.googleapis.com/carddav/v1/principals/{}/lists/",
-        urlencoding::encode(email.trim())
-    )
-}
 
 /// How long the browser consent may take before the sign-in gives up.
 const CONSENT_TIMEOUT: Duration = Duration::from_secs(300);

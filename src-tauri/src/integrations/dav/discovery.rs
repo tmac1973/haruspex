@@ -309,11 +309,7 @@ pub async fn discover_address_books(
     account: &DavAccount,
 ) -> Result<Vec<AddressBook>, String> {
     let home_override = account.contacts_home();
-    let base = match &home_override {
-        // Google's contacts live on another host than its calendars.
-        Some(home) if account.is_google() => base_url(home)?,
-        _ => account.discovery_base()?,
-    };
+    let base = account.discovery_base()?;
 
     let home = match home_override {
         Some(url) => absolutize(&base, &url),
