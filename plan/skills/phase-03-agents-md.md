@@ -1,8 +1,11 @@
-# Phase 3 — AGENTS.md in Shell Code mode
+# Phase 3 — AGENTS.md in the Shell assistant
 
 ## Goal
 
-Every Code mode turn carries the repo's own instructions.
+Every Shell turn, in either mode, carries the repo's own instructions.
+Code mode only at first; troubleshooting questions ("how do I run the
+tests?") need them just as much, so both modes read it. Project skills
+stay Code mode only.
 
 ## Work
 
@@ -22,7 +25,7 @@ Every Code mode turn carries the repo's own instructions.
 - `buildShellCodeSystemPrompt` gets a PROJECT INSTRUCTIONS section with the
   file's path and contents, placed after the fixed rules so the repo can
   refine them.
-- Read on every Code mode turn: it is one small file, and an edit to
+- Read on every Shell turn: it is one small file, and an edit to
   `AGENTS.md` takes effect on the next message without a restart.
 - The Shell sidebar header shows an `AGENTS.md` badge, with the files in its
   tooltip and a note when the text was cut short, so the user knows it is in

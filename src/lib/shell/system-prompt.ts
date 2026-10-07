@@ -35,7 +35,7 @@ export interface BuildShellPromptOpts {
 	nestedSession?: NestedSession | null;
 	/** The turn's skill list (`skillsPromptSection`), when it has one. */
 	skillsSection?: string;
-	/** Code mode: the repo's AGENTS.md (`agentsMdPromptSection`), when trusted. */
+	/** The repo's AGENTS.md (`agentsMdPromptSection`), when trusted. */
 	projectInstructions?: string;
 }
 
@@ -203,7 +203,7 @@ INLINE CITATIONS:
 CONVERSATION RULES:
 - The chat thread keeps growing across submissions in this troubleshooting session, so you have context from earlier turns. Refer back when it helps.
 - Be concise. Admin work is interrupt-driven — short answers with a clear next step beat a wall of background.
-- If you don't know, say so. Suggest a probing command that would reveal the answer.${opts.skillsSection ?? ''}`
+- If you don't know, say so. Suggest a probing command that would reveal the answer.${[opts.projectInstructions, opts.skillsSection].join('')}`
 	};
 }
 

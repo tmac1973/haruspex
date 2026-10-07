@@ -130,7 +130,7 @@
 	const markerCount = $derived(session.integrationMarkerCount);
 	const completedCommands = $derived(session.integrationCompletedCommands);
 	const codeMode = $derived(session.codeMode);
-	const agentsMd = $derived(codeMode ? session.agentsMd : null);
+	const agentsMd = $derived(session.agentsMd);
 	const thinkingEnabled = $derived(session.thinkingEnabled);
 	// Three-state badge:
 	//   - red "no integration"    : marker_count is 0 → hook didn't load

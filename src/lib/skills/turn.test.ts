@@ -23,7 +23,7 @@ vi.mock('#lib/stores/repoTrust.svelte.ts', () => ({ askRepoTrust: mocks.ask }));
 import { invoke } from '@tauri-apps/api/core';
 import { defaultSkills, getSettings, updateSkills } from '#lib/stores/settings.ts';
 import { prepareTurnSkills, skillsPromptSection } from './turn';
-import { codeModeProject, trustedProjectRoot } from './project';
+import { shellProject, trustedProjectRoot } from './project';
 
 function skill(name: string, extra: Partial<SkillSummary> = {}): SkillSummary {
 	return {
@@ -111,7 +111,7 @@ describe('trustedProjectRoot', () => {
 	});
 });
 
-describe('codeModeProject', () => {
+describe('shellProject', () => {
 	const md = {
 		files: ['AGENTS.md'],
 		text: 'From AGENTS.md:\nrules',
@@ -124,7 +124,7 @@ describe('codeModeProject', () => {
 		mocks.root = '/code/repo';
 		mocks.info = { skills: 0, agentsMd: true };
 		mocks.agentsMd = md;
-		expect(await codeModeProject('/code/repo/src')).toEqual({ root: '/code/repo', agentsMd: md });
+		expect(await shellProject('/code/repo/src')).toEqual({ root: '/code/repo', agentsMd: md });
 		expect(mocks.ask).toHaveBeenCalledWith({ root: '/code/repo', skills: 0, agentsMd: true });
 		expect(invoke).toHaveBeenCalledWith('skills_agents_md', {
 			root: '/code/repo',
@@ -136,7 +136,7 @@ describe('codeModeProject', () => {
 		mocks.root = '/code/repo';
 		mocks.agentsMd = md;
 		updateSkills({ trustedRepos: { '/code/repo': false } });
-		expect(await codeModeProject('/code/repo')).toEqual({ root: null, agentsMd: null });
+		expect(await shellProject('/code/repo')).toEqual({ root: null, agentsMd: null });
 		expect(invoke).not.toHaveBeenCalledWith('skills_agents_md', expect.anything());
 	});
 });

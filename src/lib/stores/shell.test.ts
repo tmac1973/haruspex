@@ -11,10 +11,13 @@ const runShellTurn = vi.hoisted(() => vi.fn());
 vi.mock('#lib/shell/runShellTurn.ts', () => ({ runShellTurn }));
 
 vi.mock('#lib/shell/system-prompt.ts', () => ({
-	buildShellSystemPrompt: () => ({ role: 'system', content: 'sys' }),
+	// Both echo the repo's instructions so a test can see them arrive.
+	buildShellSystemPrompt: (opts: { projectInstructions?: string }) => ({
+		role: 'system',
+		content: `sys${opts.projectInstructions ?? ''}`
+	}),
 	// Code mode picks this builder instead; needed by the persistence tests,
-	// which all run with codeMode on. It echoes the repo's instructions so a
-	// test can see them arrive.
+	// which all run with codeMode on.
 	buildShellCodeSystemPrompt: (opts: { projectInstructions?: string }) => ({
 		role: 'system',
 		content: `code-sys${opts.projectInstructions ?? ''}`
@@ -49,11 +52,18 @@ vi.mock('#lib/agent/tools/index.ts', () => ({ getDisplayLabel: () => 'tool' }));
 // shell is outside any trusted repo unless a test says otherwise, so no turn
 // waits on the trust prompt.
 const project = vi.hoisted(() => ({
-	codeModeProject: vi.fn<
-		(cwd: string | null) => Promise<{ root: string | null; agentsMd: unknown }>
-	>(async () => ({ root: null, agentsMd: null }))
+	shellProject: vi.fn<(cwd: string | null) => Promise<{ root: string | null; agentsMd: unknown }>>(
+		async () => ({ root: null, agentsMd: null })
+	)
 }));
 vi.mock('#lib/skills/project.ts', () => project);
+// Wrapped, not replaced, so a test can see which repo's skills a turn asked for.
+const skillsTurn = vi.hoisted(() => ({ prepareTurnSkills: vi.fn() }));
+vi.mock('#lib/skills/turn.ts', async (importOriginal) => {
+	const real = await importOriginal<typeof import('#lib/skills/turn.ts')>();
+	skillsTurn.prepareTurnSkills.mockImplementation(real.prepareTurnSkills);
+	return { ...real, prepareTurnSkills: skillsTurn.prepareTurnSkills };
+});
 vi.mock('#lib/agent/context-budget.ts', () => ({ describeContextManaged: () => 'managed' }));
 vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
@@ -841,7 +851,7 @@ describe('outgoing prompt shape', () => {
 	});
 });
 
-describe('AGENTS.md in Code mode', () => {
+describe('AGENTS.md in the Shell assistant', () => {
 	const md = {
 		files: ['AGENTS.md'],
 		text: 'From AGENTS.md:\nRun make check.',
@@ -857,22 +867,26 @@ describe('AGENTS.md in Code mode', () => {
 		});
 
 	it("carries the trusted repo's instructions and shows them in the sidebar", async () => {
-		project.codeModeProject.mockResolvedValueOnce({ root: '/code/repo', agentsMd: md });
+		project.shellProject.mockResolvedValueOnce({ root: '/code/repo', agentsMd: md });
 		const s = createShellSession();
 		s.codeMode = true;
 		await submit(s);
 
-		expect(project.codeModeProject).toHaveBeenCalledWith('/code/repo/src');
+		expect(project.shellProject).toHaveBeenCalledWith('/code/repo/src');
 		const sent = runShellTurn.mock.calls.at(-1)![0].messages as ChatMessage[];
 		expect(String(sent[0].content)).toContain('Run make check.');
 		expect(s.agentsMd).toEqual(md);
 	});
 
-	it("doesn't look for a repo outside Code mode", async () => {
-		project.codeModeProject.mockClear();
+	it('carries them in the troubleshooting assistant too, without project skills', async () => {
+		project.shellProject.mockResolvedValueOnce({ root: '/code/repo', agentsMd: md });
 		const s = createShellSession();
+		s.codeMode = false;
 		await submit(s);
-		expect(project.codeModeProject).not.toHaveBeenCalled();
-		expect(s.agentsMd).toBeNull();
+
+		const sent = runShellTurn.mock.calls.at(-1)![0].messages as ChatMessage[];
+		expect(String(sent[0].content)).toContain('Run make check.');
+		expect(s.agentsMd).toEqual(md);
+		expect(skillsTurn.prepareTurnSkills).toHaveBeenLastCalledWith({ projectRoot: null });
 	});
 });
