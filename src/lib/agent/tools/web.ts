@@ -135,7 +135,7 @@ registerTool({
 		function: {
 			name: 'research_url',
 			description:
-				'Read a web page through a focused research assistant that extracts only the information relevant to a specific question. Returns concise findings instead of the full page text. Preferred over fetch_url when researching across multiple sources — dramatically reduces context usage per page.',
+				'Read a web page through a focused research assistant that extracts only the information relevant to a specific question. Returns concise findings instead of the full page text. Preferred over fetch_url when researching across multiple sources — dramatically reduces context usage per page. To read several pages, put all their research_url calls in one response.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -203,7 +203,8 @@ registerTool({
 				messages,
 				RESEARCH_AGENT_MAX_TOKENS,
 				ctx.signal,
-				ctx.backend
+				ctx.backend,
+				ctx.runInSlot
 			);
 			if (!findings) {
 				return toolResult(`Sub-agent returned no findings for ${url}.`);
