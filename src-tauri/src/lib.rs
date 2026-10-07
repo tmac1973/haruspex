@@ -35,6 +35,7 @@ mod server;
 mod shell;
 mod sidecar_process;
 mod sidecar_utils;
+mod skills;
 mod sync_util;
 mod text_util;
 mod time_util;
@@ -380,6 +381,9 @@ pub fn run() {
             code_tools::app_protected_targets,
             code_tools::code_grep,
             code_tools::code_glob,
+            skills::skills_list,
+            skills::skill_read,
+            skills::skill_read_file,
             fs_tools::pdf_read::fs_read_pdf,
             fs_tools::docx::fs_read_docx,
             fs_tools::xlsx::fs_read_xlsx,

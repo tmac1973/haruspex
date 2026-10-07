@@ -271,6 +271,38 @@ export interface SearchProxyConfig {
 	passwordRef?: string;
 }
 
+/**
+ * Agent Skills (`SKILL.md` folders; see `src-tauri/src/skills/` and
+ * `plan/skills/`). Which skills exist is read from disk; this only holds the
+ * user's choices about them.
+ */
+export interface SkillsConfig {
+	/** Extra folders to read skills from, such as `~/.claude/skills`. */
+	extraDirs: string[];
+	/** Names of skills the user switched off. */
+	disabled: string[];
+	/**
+	 * Whether the model sees the skill list and may load a skill by itself.
+	 * `auto`: on for a remote or OpenRouter backend, off for the local model,
+	 * which follows "notice, load, then follow" poorly. `/name` works in every
+	 * case.
+	 */
+	autonomous: 'auto' | 'on' | 'off';
+	/**
+	 * Repo roots whose `AGENTS.md` and project skills may reach a turn, keyed
+	 * by absolute path. Absent means the user hasn't been asked yet; a cloned
+	 * repo's instructions are a stranger's until they say yes.
+	 */
+	trustedRepos: Record<string, boolean>;
+}
+
+export const defaultSkills: SkillsConfig = {
+	extraDirs: [],
+	disabled: [],
+	autonomous: 'auto',
+	trustedRepos: {}
+};
+
 export interface AppSettings {
 	responseFormat: ResponseFormat;
 	/**
@@ -549,6 +581,7 @@ export interface AppSettings {
 	 * silently. Turn it off to save without confirming.
 	 */
 	memoryConfirmWrites: boolean;
+	skills: SkillsConfig;
 	/**
 	 * Code tab: when true, `run_command` runs risk-flagged commands without
 	 * prompting. Off by default — the user opts into a "trust the model on
@@ -755,6 +788,7 @@ const defaults: AppSettings = {
 	codeMaxIterations: 40,
 	memoryEnabled: true,
 	memoryConfirmWrites: true,
+	skills: defaultSkills,
 	// Image generation is entirely opt-in: 'none' means no process, no
 	// download and no startup cost for anyone who never turns it on.
 	imageBackendKind: 'none',
@@ -881,7 +915,8 @@ function load(): AppSettings {
 				apiKeys,
 				integrations: mergedIntegrations,
 				proxy: mergedProxy,
-				searchProxy: mergedSearchProxy
+				searchProxy: mergedSearchProxy,
+				skills: { ...defaultSkills, ...(parsed.skills ?? {}) }
 			};
 		}
 	} catch {
@@ -1050,6 +1085,10 @@ export function enabledDavAccounts(): DavAccount[] {
  * Merge a partial update into the inferenceBackend sub-object. Callers
  * shouldn't have to rebuild the full config just to flip one field.
  */
+export function updateSkills(partial: Partial<SkillsConfig>): void {
+	commit({ ...settings, skills: { ...settings.skills, ...partial } });
+}
+
 export function updateInferenceBackend(partial: Partial<InferenceBackendConfig>): void {
 	const current = settings.inferenceBackend;
 	commit({
