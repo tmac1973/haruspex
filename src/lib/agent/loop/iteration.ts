@@ -55,13 +55,25 @@ import { isVerbosePayloads, logDebug } from '#lib/debug-log.ts';
 import { MAX_TRUNCATION_RETRIES, NudgeState, automaticCheck } from './nudges';
 import { planToolBatches, runToolBatch, toolCallConcurrency } from './parallelTools';
 import { createSlotLender, laneConcurrency } from '#lib/agent/inferenceQueue.svelte.ts';
-import { loadedSkillNames } from '#lib/skills/content.ts';
+import { loadedSkillNames, skillsWithFiles } from '#lib/skills/content.ts';
+import type { TurnSkills } from '#lib/skills/turn.ts';
 import type { AgentLoopOptions, CompletionMeta } from '../loop';
 
 // Trim older tool results when context usage crosses this fraction.
 // Lower than the conversation-level compaction threshold (0.8) so we
 // act before a single deep-research turn can blow context.
 const IN_LOOP_TRIM_THRESHOLD = 0.7;
+
+/**
+ * Skills whose files the model may read this turn: those it may load, and
+ * any already in the conversation with files — a skill the user ran with
+ * `/name` is readable whether or not autonomous use is on.
+ */
+function readableSkills(skills: TurnSkills, messages: ChatMessage[]): string[] {
+	const names = new Set(skills.catalog.map((s) => s.name));
+	for (const name of skillsWithFiles(messages)) names.add(name);
+	return [...names];
+}
 
 /**
  * The token budget the in-loop trim should aim at, or null when no trim is
@@ -245,7 +257,8 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 				options.toolAllowlist && options.forceFinalTool
 					? [...options.toolAllowlist, options.forceFinalTool]
 					: options.toolAllowlist,
-			skillNames: options.skills?.catalog.map((s) => s.name)
+			skillNames: options.skills?.catalog.map((s) => s.name),
+			skillFileNames: options.skills && readableSkills(options.skills, options.messages)
 		}),
 		signal: options.signal,
 		workingDir,
@@ -259,6 +272,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		askUser: options.askUser,
 		skills: options.skills && {
 			names: options.skills.catalog.map((s) => s.name),
+			readable: readableSkills(options.skills, options.messages),
 			projectRoot: options.skills.projectRoot,
 			loaded: loadedSkillNames(options.messages)
 		},

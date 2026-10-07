@@ -35,8 +35,11 @@
 		retryLastTurn,
 		isActiveConversationRemembered,
 		isActiveConversationRemote,
-		setConversationMemoryEnabled
+		setConversationMemoryEnabled,
+		addLocalNote
 	} from '#lib/stores/chat.svelte.ts';
+	import SlashMenu from './SlashMenu.svelte';
+	import { runSlash, type SlashHost } from '#lib/slash/slash.ts';
 	import { getServerState, startServer, stopServer } from '#lib/stores/llamaServer.svelte.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { openLogViewer } from '#lib/stores/logViewer.svelte.ts';
@@ -115,11 +118,31 @@
 		}
 	}
 
+	let slashMenu = $state<SlashMenu>();
+
+	/** Chat has no project, so only Settings' skills run here. */
+	const slashHost: SlashHost = {
+		projectRoot: async () => null,
+		newConversation: () => createConversation(),
+		addNote: addLocalNote
+	};
+
 	/** Single send path for the button, Enter, and voice — folds in any
 	 *  attached images and clears the composer. */
 	async function doSend(text: string) {
 		const images = pendingImages;
 		if ((!text.trim() && images.length === 0) || isGenerating || isCompacting) return;
+		let slash;
+		try {
+			slash = await runSlash(text, slashHost);
+		} catch (e) {
+			showToast(`Couldn't run that skill: ${errMessage(e)}`, { kind: 'error' });
+			return;
+		}
+		if (slash.kind === 'handled') {
+			inputText = '';
+			return;
+		}
 		// Clear optimistically so the composer empties the moment the send is
 		// accepted. When the store rejects the send without consuming it (the
 		// backend is down — it resolves `false` synchronously, before running
@@ -129,7 +152,8 @@
 		autoScroll = true;
 		const accepted = await sendMessage(
 			text,
-			images.map((p) => p.url)
+			images.map((p) => p.url),
+			slash.skill
 		);
 		if (!accepted) {
 			inputText = text;
@@ -229,6 +253,7 @@
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
+		if (slashMenu?.handleKey(e)) return;
 		if (e.key === 'Enter' && !e.shiftKey) {
 			e.preventDefault();
 			handleSend();
@@ -623,6 +648,12 @@
 				</div>
 			{/if}
 			<div class="input-row">
+				<SlashMenu
+					bind:this={slashMenu}
+					text={inputText}
+					projectRoot={slashHost.projectRoot}
+					onPick={(t) => (inputText = t)}
+				/>
 				<textarea
 					bind:value={inputText}
 					onkeydown={handleKeydown}
@@ -1078,6 +1109,7 @@
 	}
 
 	.input-row {
+		position: relative;
 		display: flex;
 		gap: 8px;
 		align-items: flex-end;

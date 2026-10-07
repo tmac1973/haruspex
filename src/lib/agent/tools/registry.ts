@@ -221,10 +221,12 @@ export function getToolSchemas(opts: {
 	 */
 	toolAllowlist?: Iterable<string>;
 	/**
-	 * The skills this turn may load. The skills tools are offered only when
-	 * it is non-empty, with `name` narrowed to these.
+	 * The skills this turn may load. `load_skill` is offered only when it is
+	 * non-empty, with `name` narrowed to these.
 	 */
 	skillNames?: string[];
+	/** The skills whose files it may read; the same for `read_skill_file`. */
+	skillFileNames?: string[];
 }): ToolDefinition[] {
 	if (opts.toolAllowlist) {
 		const allow = new Set(opts.toolAllowlist);
@@ -256,7 +258,7 @@ export function getToolSchemas(opts: {
 	};
 	const schemas: ToolDefinition[] = [];
 	for (const reg of tools.values()) {
-		const schema = schemaFor(reg, filter, opts.skillNames);
+		const schema = schemaFor(reg, filter, opts);
 		if (schema) schemas.push(schema);
 	}
 	return schemas;
@@ -270,10 +272,12 @@ export function getToolSchemas(opts: {
 function schemaFor(
 	reg: ToolRegistration,
 	filter: ToolFilterOpts,
-	skillNames: string[] | undefined
+	skills: { skillNames?: string[]; skillFileNames?: string[] }
 ): ToolDefinition | null {
 	if (reg.category === 'skills') {
-		return skillNames?.length ? withSkillEnum(reg.schema, skillNames) : null;
+		const names =
+			reg.schema.function.name === 'read_skill_file' ? skills.skillFileNames : skills.skillNames;
+		return names?.length ? withSkillEnum(reg.schema, names) : null;
 	}
 	return shouldIncludeTool(reg, filter) ? reg.schema : null;
 }

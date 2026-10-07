@@ -61,17 +61,22 @@ describe('prepareTurnSkills', () => {
 		});
 	});
 
-	it('gives nothing, and asks nothing, when autonomous use is off', async () => {
+	it('lists nothing, and asks nothing, when autonomous use is off', async () => {
+		// The turn still carries skills: one run with `/name` may read its files.
 		updateSkills({ autonomous: 'off' });
-		expect(await prepareTurnSkills({ projectRoot: '/code/repo' })).toBeUndefined();
+		expect(await prepareTurnSkills({ projectRoot: '/code/repo' })).toEqual({
+			catalog: [],
+			projectRoot: '/code/repo'
+		});
 		expect(invoke).not.toHaveBeenCalled();
 	});
 
-	it('gives nothing when no skill is usable, or listing fails', async () => {
+	it('lists nothing when no skill is usable, or listing fails', async () => {
 		mocks.list = [skill('x', { shadowed: true })];
-		expect(await prepareTurnSkills({})).toBeUndefined();
+		expect((await prepareTurnSkills({})).catalog).toEqual([]);
 		vi.mocked(invoke).mockRejectedValueOnce(new Error('disk gone'));
-		expect(await prepareTurnSkills({})).toBeUndefined();
+		expect((await prepareTurnSkills({})).catalog).toEqual([]);
+		expect(skillsPromptSection({ catalog: [], projectRoot: null })).toBe('');
 	});
 
 	it("lists a trusted repo's skills for Code mode", async () => {

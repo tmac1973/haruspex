@@ -15,6 +15,8 @@
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import { imageFileToDataUrl, imageFilesFrom } from '#lib/utils/image.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
+	import SlashMenu from '#lib/components/SlashMenu.svelte';
+	import { runSlash, type SlashHost } from '#lib/slash/slash.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import type { CaptureWindow } from '#lib/ipc/gen/CaptureWindow.ts';
 	import {
@@ -240,14 +242,30 @@
 		}
 	}
 
+	let slashMenu = $state<SlashMenu>();
+
+	const slashHost: SlashHost = {
+		projectRoot: () => session.slashProjectRoot(),
+		newConversation: () => session.newChat(),
+		addNote: (text) => session.addLocalNote(text)
+	};
+
 	/** Single send path (button, Enter, voice) — folds in attached images. */
 	async function doSend(text: string) {
 		const images = pendingImages.map((p) => p.url);
 		if ((!text.trim() && images.length === 0) || submitting) return;
+		let slash;
+		try {
+			slash = await runSlash(text, slashHost);
+		} catch (e) {
+			showToast(`Couldn't run that skill: ${errMessage(e)}`, { kind: 'error' });
+			return;
+		}
 		composerText = '';
-		pendingImages = [];
 		autosize();
-		await session.submitChatMessage(text, images);
+		if (slash.kind === 'handled') return;
+		pendingImages = [];
+		await session.submitChatMessage(text, images, slash.skill);
 	}
 	let threadEl = $state<HTMLDivElement | null>(null);
 	const MIN_WIDTH = 320;
@@ -347,6 +365,7 @@
 	}
 
 	function onComposerKeydown(event: KeyboardEvent) {
+		if (slashMenu?.handleKey(event)) return;
 		if (event.key === 'Enter' && !event.shiftKey) {
 			event.preventDefault();
 			handleSend();
@@ -573,6 +592,15 @@
 					{/each}
 				</div>
 			{/if}
+			<SlashMenu
+				bind:this={slashMenu}
+				text={composerText}
+				projectRoot={slashHost.projectRoot}
+				onPick={(t) => {
+					composerText = t;
+					composerEl?.focus();
+				}}
+			/>
 			<textarea
 				bind:this={composerEl}
 				bind:value={composerText}
@@ -956,6 +984,7 @@
 	}
 
 	.composer {
+		position: relative;
 		display: flex;
 		flex-wrap: wrap;
 		gap: 6px;

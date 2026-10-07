@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
-import { holdsSkillContent, loadedSkillNames, renderSkillContent } from './content';
+import {
+	holdsSkillContent,
+	loadedSkillNames,
+	renderSkillContent,
+	renderSlashMessage,
+	skillsWithFiles,
+	typedText
+} from './content';
 
 const doc = (over: Partial<SkillDoc> = {}): SkillDoc => ({
 	name: 'pdf-tools',
@@ -46,5 +53,35 @@ describe('loadedSkillNames', () => {
 		expect([...names].sort()).toEqual(['deploy', 'pdf-tools']);
 		expect(holdsSkillContent(renderSkillContent(doc()))).toBe(true);
 		expect(holdsSkillContent('<skill_content>')).toBe(false);
+	});
+});
+
+describe('renderSlashMessage / typedText', () => {
+	it('puts the skill ahead of what was typed, and gives back only the typing', () => {
+		const text = renderSlashMessage(doc(), '/pdf-tools merge a.pdf b.pdf');
+		expect(text.startsWith('<skill_content name="pdf-tools">')).toBe(true);
+		expect(text).toContain('Follow its instructions above');
+		expect(text.endsWith('/pdf-tools merge a.pdf b.pdf')).toBe(true);
+		expect(holdsSkillContent(text)).toBe(true);
+		expect(typedText(text)).toBe('/pdf-tools merge a.pdf b.pdf');
+	});
+
+	it('leaves other text alone, a load_skill result included', () => {
+		expect(typedText('hello')).toBe('hello');
+		const loaded = renderSkillContent(doc());
+		expect(typedText(loaded)).toBe(loaded);
+	});
+});
+
+describe('skillsWithFiles', () => {
+	it('names the loaded skills that came with files', () => {
+		const messages = [
+			{
+				role: 'user' as const,
+				content: renderSlashMessage(doc({ files: ['a.md'] }), '/pdf-tools')
+			},
+			{ role: 'tool' as const, content: renderSkillContent(doc({ name: 'plain' })) }
+		];
+		expect(skillsWithFiles(messages)).toEqual(new Set(['pdf-tools']));
 	});
 });

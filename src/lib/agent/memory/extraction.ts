@@ -24,6 +24,7 @@ import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { parseSubmittedMemories, SUBMIT_MEMORIES_TOOL } from '#lib/agent/tools/memory.ts';
 import { memoryActive, refreshMemoryCount } from '#lib/stores/memory.svelte.ts';
 import { logDebug } from '#lib/debug-log.ts';
+import { typedText } from '#lib/skills/content.ts';
 import { extractionSystemPrompt, extractionUserMessage } from './extractionPrompt';
 
 /**
@@ -97,7 +98,9 @@ export function renderTranscript(messages: TranscriptMessage[]): string {
 	let total = 0;
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const m = messages[i];
-		const line = `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.trim()}`;
+		// A skill run with `/name` is instructions, not something the user said.
+		const content = m.role === 'user' ? typedText(m.content) : m.content;
+		const line = `${m.role === 'user' ? 'User' : 'Assistant'}: ${content.trim()}`;
 		if (total + line.length > MAX_TRANSCRIPT_CHARS) break;
 		lines.unshift(line);
 		total += line.length;

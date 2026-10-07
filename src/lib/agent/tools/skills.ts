@@ -2,9 +2,11 @@
  * `load_skill` and `read_skill_file`: the model loading a skill's
  * instructions, then the files they point at.
  *
- * Offered only to a turn that carries skills (`ToolContext.skills`) — Chat and
- * Shell, with autonomous use on — and the registry narrows `name` to an enum
- * of that turn's skills, so the model can't call one that doesn't exist. The
+ * Offered only to a turn that carries skills (`ToolContext.skills`): Chat and
+ * Shell. `load_skill` needs autonomous use on; `read_skill_file` is also
+ * offered for a skill already in the conversation with files, such as one the
+ * user ran with `/name`. The registry narrows `name` to an enum of each
+ * tool's skills, so the model can't call one that doesn't exist. The
  * executors re-check, because a model can emit a call it was never offered.
  *
  * Per the CI grep guard, nothing under `tools/` may import `stores/chat`.
@@ -19,11 +21,15 @@ import { toolError, toolResult, type ToolContext } from './types';
 export const LOAD_SKILL_TOOL = 'load_skill';
 export const READ_SKILL_FILE_TOOL = 'read_skill_file';
 
-/** The turn's skills, or the error to return when `name` isn't one of them. */
-function checkSkill(ctx: ToolContext, name: unknown): string | null {
+/**
+ * The error to return when `name` isn't one of `which` skills this turn —
+ * those it may load, or those whose files it may read — else null.
+ */
+function checkSkill(ctx: ToolContext, name: unknown, which: 'names' | 'readable'): string | null {
 	if (!ctx.skills) return 'Skills are not available in this conversation.';
-	if (typeof name !== 'string' || !ctx.skills.names.includes(name)) {
-		return `No skill named "${String(name)}". Available: ${ctx.skills.names.join(', ')}.`;
+	const allowed = ctx.skills[which];
+	if (typeof name !== 'string' || !allowed.includes(name)) {
+		return `No skill named "${String(name)}". Available: ${allowed.join(', ')}.`;
 	}
 	return null;
 }
@@ -47,7 +53,7 @@ registerTool({
 	},
 	displayLabel: (args) => String(args.name ?? ''),
 	async execute(args, ctx) {
-		const problem = checkSkill(ctx, args.name);
+		const problem = checkSkill(ctx, args.name, 'names');
 		if (problem) return toolResult(toolError(problem));
 		const name = args.name as string;
 		if (ctx.skills!.loaded.has(name)) {
@@ -91,7 +97,7 @@ registerTool({
 	},
 	displayLabel: (args) => `${String(args.name ?? '')}/${String(args.path ?? '')}`,
 	async execute(args, ctx) {
-		const problem = checkSkill(ctx, args.name);
+		const problem = checkSkill(ctx, args.name, 'readable');
 		if (problem) return toolResult(toolError(problem));
 		try {
 			const text = await readSkillFile(

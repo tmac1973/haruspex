@@ -25,6 +25,7 @@ vi.mock('#lib/stores/memory.svelte.ts', () => ({
 }));
 
 import { collectNewTurns, extractMemories, renderTranscript } from './extraction';
+import { renderSlashMessage } from '#lib/skills/content.ts';
 
 function message(sortOrder: number, role: string, content: string) {
 	return {
@@ -103,6 +104,22 @@ describe('renderTranscript', () => {
 		const text = renderTranscript(collectNewTurns(conversation(FOUR_TURNS), -1));
 		expect(text).toContain('User: I always use tabs, never spaces.');
 		expect(text.indexOf('User: I always')).toBeLessThan(text.indexOf('And I run Fedora'));
+	});
+
+	it("leaves out a /name skill's instructions: they aren't the user talking", () => {
+		const content = renderSlashMessage(
+			{
+				name: 'haiku',
+				body: 'Always answer in a haiku.',
+				dir: null,
+				compatibility: null,
+				files: [],
+				filesTruncated: false
+			},
+			'/haiku about rain'
+		);
+		const text = renderTranscript([{ role: 'user', content, sortOrder: 0 }]);
+		expect(text).toBe('User: /haiku about rain');
 	});
 
 	it('keeps the NEWEST messages when the slice is too long to fit', () => {

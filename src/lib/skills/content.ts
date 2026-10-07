@@ -56,3 +56,57 @@ export function renderSkillContent(doc: SkillDoc): string {
 	lines.push('</skill_content>');
 	return lines.join('\n');
 }
+
+const CLOSE = '</skill_content>';
+
+/** The line between a skill run by `/name` and what the user typed. */
+function slashNote(name: string): string {
+	return `The user ran the "${name}" skill. Follow its instructions above for this message:`;
+}
+const SLASH_NOTE =
+	/^\n\nThe user ran the "[^"]*" skill\. Follow its instructions above for this message:\n\n/;
+
+/**
+ * The user message for `/name …`: the skill's instructions, then what the
+ * user typed. Stored this way, so a later turn still has the skill, and the
+ * trimmer leaves the message alone (`holdsSkillContent`).
+ */
+export function renderSlashMessage(doc: SkillDoc, typed: string): string {
+	return `${renderSkillContent(doc)}\n\n${slashNote(doc.name)}\n\n${typed}`;
+}
+
+/**
+ * What the user typed, without the skill a `/name` put ahead of it — for
+ * showing the message, titling the chat, and anything else that wants the
+ * request rather than the instructions. Other text comes back unchanged.
+ */
+export function typedText(text: string): string {
+	if (!text.startsWith(OPEN)) return text;
+	const end = text.indexOf(CLOSE);
+	if (end < 0) return text;
+	const after = text.slice(end + CLOSE.length);
+	const note = SLASH_NOTE.exec(after);
+	return note ? after.slice(note[0].length) : text;
+}
+
+/**
+ * Loaded skills in `messages` that came with files of their own, whose
+ * instructions may point the model at them.
+ */
+export function skillsWithFiles(messages: ChatMessage[]): Set<string> {
+	const names = new Set<string>();
+	for (const m of messages) {
+		const text = messageText(m.content);
+		let at = text.indexOf(OPEN);
+		while (at >= 0) {
+			const nameEnd = text.indexOf('"', at + OPEN.length);
+			const end = text.indexOf(CLOSE, at);
+			if (nameEnd < 0 || end < 0) break;
+			if (text.slice(at, end).includes('<skill_resources>')) {
+				names.add(text.slice(at + OPEN.length, nameEnd));
+			}
+			at = text.indexOf(OPEN, end);
+		}
+	}
+	return names;
+}

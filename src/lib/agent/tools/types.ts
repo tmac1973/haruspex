@@ -125,7 +125,11 @@ export interface ToolContext {
 	 * tools refuse without it.
 	 */
 	skills?: {
+		/** Skills it may load (`load_skill`). */
 		names: string[];
+		/** Skills whose files it may read (`read_skill_file`): those, plus any
+		 *  already in the conversation with files, such as one run by `/name`. */
+		readable: string[];
 		projectRoot: string | null;
 		/** Skills already in the conversation, so one isn't loaded twice. */
 		loaded: Set<string>;
