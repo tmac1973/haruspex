@@ -32,7 +32,7 @@ Haruspex is a desktop AI researcher and coding tool that runs entirely local by 
 - **Open in shell** — If an answer ends with "run this command", press the `>_` button to open the whole conversation in a new Shell tab, where the commands become buttons you can run.
 - **Remote access (off by default)** — Let other devices on your home network chat with your Haruspex through a web page, using your computer's GPU. Useful when your main machine is busy with a game and you want to ask a question from a phone or laptop. Share a link or scan a QR code. ([details](#remote-access))
 - **Email (off by default)** — Connect an IMAP account (Gmail, Fastmail, iCloud, Yahoo or custom) so the model can summarise and search your recent messages. Turn on **Allow sending** and it can also draft replies and new mail — but every draft opens for you to edit, and only your click on Send sends it. ([details](#email-integration))
-- **Calendar and contacts (off by default, read-only)** — Connect a CalDAV/CardDAV account (Nextcloud, Fastmail, iCloud, Radicale, Baikal, Synology) and ask what is on this week or how to reach someone. ([details](#calendar-and-contacts))
+- **Calendar and contacts (off by default, read-only)** — Connect a CalDAV/CardDAV account (Nextcloud, Fastmail, iCloud, Radicale, Baikal, Synology) or paste a calendar link (Google, Outlook) and ask what is on this week or how to reach someone. ([details](#calendar-and-contacts))
 - **MCP integrations (off by default)** — Connect other services through MCP servers. Haruspex installs and runs them itself, so you never need a terminal. ([details](#mcp-integrations))
 - **Screen capture (off by default)** — Ask about what is on your screen. There is also a camera button in the chat box for attaching a screenshot yourself. ([details](#screen-capture))
 - **Conversations are saved** — Chat history lives in a local SQLite database and survives restarts.
@@ -326,13 +326,13 @@ All three are hidden from the model completely unless an account is switched on.
 
 ## Calendar and contacts
 
-Haruspex can read your calendar and address book from a CalDAV/CardDAV server. It is **off by default** and **read-only** — it never creates, moves or deletes anything.
+Haruspex can read your calendar and address book from a CalDAV/CardDAV server, or a calendar from its link. It is **off by default** and **read-only** — it never creates, moves or deletes anything.
 
 Tested against Nextcloud, Fastmail, iCloud, Radicale, Baikal and Synology. Like email, it wants an **app password** rather than your login password.
 
-**Google Calendar and Google Contacts are not supported here.** Their endpoints require OAuth. Add them under MCP integrations instead.
+**Calendar links.** For Google Calendar, Outlook, or anything that publishes an iCal feed, click "Add a calendar link" and paste the calendar's iCal address. In Google Calendar that is Settings → your calendar → Integrate calendar → **Secret address in iCal format**. A link is one calendar, read-only, with no contacts. Anyone with the link can read the calendar, so Haruspex stores it like a password. Google Contacts is not supported yet.
 
-**Setup.** `Settings → Integrations → Calendar & Contacts`, click "Add an account", enter your address (`me@fastmail.com`) or your server URL, your username and app password, then click "Check". Check finds your calendars and address books and lists them. If your server does not answer discovery, you can enter the collection URL by hand.
+**Server accounts.** `Settings → Integrations → Calendar & Contacts`, click "Add a server account", enter your address (`me@fastmail.com`) or your server URL, your username and app password, then click "Check". Check finds your calendars and address books and lists them. If your server does not answer discovery, you can enter the collection URL by hand.
 
 One account covers both. If your server offers only one of them, only that one's tools appear.
 
