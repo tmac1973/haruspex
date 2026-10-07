@@ -9,6 +9,7 @@
 	import MemoryApprovalModal from '#lib/components/MemoryApprovalModal.svelte';
 	import EmailReviewModal from '#lib/components/EmailReviewModal.svelte';
 	import UserQuestionModal from '#lib/components/UserQuestionModal.svelte';
+	import FileEditorModal from '#lib/components/FileEditorModal.svelte';
 	import LogViewer from '#lib/components/LogViewer.svelte';
 	import HelpModal from '#lib/components/HelpModal.svelte';
 	import SettingsPanel from '#lib/components/settings/SettingsPanel.svelte';
@@ -638,6 +639,7 @@
 	<MemoryApprovalModal />
 	<EmailReviewModal />
 	<UserQuestionModal />
+	<FileEditorModal />
 {/if}
 
 <!-- Toast host lives outside the detached-shell branch: each webview

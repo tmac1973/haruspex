@@ -20,6 +20,7 @@ import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import { SUBMIT_PLAN_OUTLINE_TOOL, type PlanOutlinePhaseArg } from '#lib/agent/tools/planning.ts';
 import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 import { askUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
+import { editWorkdirFiles } from '#lib/stores/fileEditor.svelte.ts';
 import { normalizeAbort } from '#lib/utils/error.ts';
 import {
 	markRunStarted,
@@ -68,6 +69,9 @@ export interface PlanningState {
  * exec, sandbox, email, or web-write tools — planning writes markdown only.
  * Read-only web research is added per job — see guidedPlanningToolsets.
  */
+/** The checkpoint option that opens the plan in the in-app editor. */
+export const EDIT_HERE = 'Edit here';
+
 export const GUIDED_PLANNING_TOOLS = [
 	'fs_read_text',
 	'fs_list_dir',
@@ -1282,6 +1286,34 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	const isPhaseFile = (relPath: string): boolean =>
 		/(^|\/)phase-\d+[^/]*\.md$/.test(relPath.trim());
 
+	/** The phase files in the output directory, in phase order. */
+	const listPhaseFiles = async (): Promise<string[]> => {
+		if (!job.working_dir) return [];
+		const dir = outDir.endsWith('/') ? outDir : `${outDir}/`;
+		try {
+			const listing = await invoke<{ entries: { name: string; is_dir: boolean }[] }>(
+				'fs_list_dir',
+				{ workdir: job.working_dir, relPath: outDir }
+			);
+			return listing.entries
+				.filter((e) => !e.is_dir && isPhaseFile(e.name))
+				.map((e) => `${dir}${e.name}`)
+				.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+		} catch {
+			return [];
+		}
+	};
+
+	/**
+	 * Open plan files in the in-app editor, from a checkpoint. Only offered
+	 * when the job has a working directory, which every guided-planning run
+	 * that reaches a checkpoint does.
+	 */
+	const editPlanFiles = async (files: string[], title: string): Promise<void> => {
+		if (!job.working_dir || files.length === 0) return;
+		await editWorkdirFiles({ workdir: job.working_dir, files, title }, abort.signal);
+	};
+
 	/**
 	 * Run a turn, reporting which phase files it actually wrote.
 	 *
@@ -1798,13 +1830,18 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		let approved = false;
 		while (!approved) {
 			abortIfCancelled();
+			// The overview itself, not just its path: the question is "is this
+			// right?", and it should be answerable without leaving the modal.
+			const overviewText = (await readWorkdirFile(overviewPath))?.trim();
 			const answer = await askUserQuestion(
 				{
 					question:
 						`I wrote the project overview to ${overviewPath}. Review it, then approve ` +
 						`to continue — or type what you'd like changed and I'll revise it.`,
+					body: overviewText || undefined,
 					options: [
 						{ label: 'Approve', description: 'The overview looks good.', recommended: true },
+						{ label: EDIT_HERE, description: 'Open the overview in the editor.' },
 						{
 							label: 'I edited it myself — re-read',
 							description: 'I changed the file on disk; re-read it before asking again.'
@@ -1816,6 +1853,8 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			abortIfCancelled();
 			if (answer.kind === 'selected' && answer.labels[0] === 'Approve') {
 				approved = true;
+			} else if (answer.kind === 'selected' && answer.labels[0] === EDIT_HERE) {
+				await editPlanFiles([overviewPath], 'Project overview');
 			} else if (answer.kind === 'freeText') {
 				await turn(
 					OVERVIEW,
@@ -1993,14 +2032,19 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			let planApproved = false;
 			while (!planApproved) {
 				abortIfCancelled();
+				const phaseFiles = await listPhaseFiles();
 				const answer = await askUserQuestion(
 					{
 						question:
 							`I wrote the phased implementation plan to ${outDir} (phase-NN-*.md), ` +
 							`ordered by dependency and checked for unresolved decisions. Review it, ` +
 							`then approve — or type what you'd like changed.`,
+						body: phaseFiles.length
+							? phaseFiles.map((f) => `- \`${f.split('/').pop()}\``).join('\n')
+							: undefined,
 						options: [
 							{ label: 'Approve', description: 'The plan looks good — finish.', recommended: true },
+							{ label: EDIT_HERE, description: 'Open the phase files in the editor.' },
 							{
 								label: 'I edited it myself — re-check',
 								description: 'I changed files on disk; re-read them before asking again.'
@@ -2012,6 +2056,8 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				abortIfCancelled();
 				if (answer.kind === 'selected' && answer.labels[0] === 'Approve') {
 					planApproved = true;
+				} else if (answer.kind === 'selected' && answer.labels[0] === EDIT_HERE) {
+					await editPlanFiles(phaseFiles, 'Implementation plan');
 				} else if (answer.kind === 'freeText') {
 					await turn(
 						APPROVAL,
