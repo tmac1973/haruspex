@@ -82,6 +82,8 @@ const TABLE: Record<string, Handler> = {
 	email_list_providers: empty,
 	secret_available: () => true,
 	secret_store_kind: () => 'keychain',
+	// No OAuth client in a test build, so Settings → Calendar offers no Google sign-in.
+	google_sign_in_available: () => false,
 	secret_get: none,
 	mcp_catalog: empty,
 	mcp_runtimes_available: () => ({ node: true, npm: true, uv: true }),

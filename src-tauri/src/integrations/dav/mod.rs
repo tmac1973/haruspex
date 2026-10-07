@@ -15,6 +15,8 @@ pub mod carddav;
 pub mod client;
 pub mod commands;
 pub mod discovery;
+pub mod google;
+pub mod google_calendar;
 pub mod ical;
 pub mod ics_feed;
 pub mod vcard;

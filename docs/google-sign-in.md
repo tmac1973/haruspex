@@ -1,0 +1,86 @@
+# Sign in with Google
+
+Settings → Integrations → Calendar & Contacts → **Sign in with Google** connects
+a Google account's calendars and contacts, read-only. The user approves access
+in their browser; they never touch the Google Cloud console.
+
+## How it works
+
+- **OAuth** (`src-tauri/src/integrations/dav/google.rs`): Google's installed-app
+  flow. Haruspex listens on a random loopback port, opens the consent page with
+  PKCE, and trades the returned code for a refresh token. The refresh token goes
+  straight to the secret store under `dav:<account id>`; the frontend only gets
+  its key. Access tokens are refreshed on demand and cached in memory.
+- **Scopes**: `openid email` (to name the account),
+  `calendar.readonly` and `carddav`.
+- **Calendars** come from the Google Calendar API (`google_calendar.rs`), not
+  CalDAV. Google's CalDAV lists calendars for a read-only token but refuses to
+  return events without the full read-write `calendar` scope, whose consent
+  screen asks to "see, edit, share and permanently delete" calendars. The
+  Calendar API serves events under `calendar.readonly` and expands recurrence
+  itself.
+- **Contacts** come from Google's CardDAV. Google ignores the usual
+  `addressbook-query`, so `carddav.rs` falls back to listing the cards and
+  fetching them with `addressbook-multiget`. The address-book home is built from
+  the signed-in email (`google::carddav_home`), because Google has no
+  account-independent CardDAV entry point.
+
+## The OAuth client
+
+Haruspex has one Google Cloud project ("Haruspex") with a **Desktop app** OAuth
+client. `build.rs` compiles it in from `src-tauri/google-oauth.json`:
+
+```json
+{
+	"clientId": "….apps.googleusercontent.com",
+	"clientSecret": "GOCSPX-…"
+}
+```
+
+Google does not treat a desktop client's secret as confidential, because it ships
+inside the app. It is still gitignored, because GitHub's secret scanning flags
+the `GOCSPX-` pattern. Release CI writes the file from the `GOOGLE_OAUTH_JSON`
+repository secret, which holds the same JSON.
+
+A build without the file works, but doesn't offer Google sign-in. After adding
+the file to a checkout for the first time, `touch src-tauri/build.rs` so Cargo
+picks it up.
+
+### Project settings
+
+In the Cloud console, for the Haruspex project:
+
+- **APIs enabled**: Google Calendar API and Google Contacts CardDAV API. The
+  CalDAV API isn't used.
+- **Google Auth Platform → Audience**: External. While the app is in **Testing**,
+  only listed test users can sign in (up to 100), and Google shows an "unverified
+  app" screen first.
+- **Data access**: `…/auth/calendar.readonly` and `…/auth/carddav`.
+
+### Before a public release
+
+Both scopes are *sensitive*, not *restricted*, so verification needs no
+third-party security assessment. It does need:
+
+- a homepage and a privacy policy on a domain you control, linked under Branding;
+- the domain verified in Search Console;
+- a short video showing the consent screen and how the data is used;
+- submitting the app for verification under Google Auth Platform → Verification
+  Center.
+
+Until then, the app works for test users only.
+
+## Testing against a real account
+
+`google::tests::live_google_sign_in_and_discovery` is `#[ignore]`d. It opens a
+browser for consent, then lists events and contacts through the same commands
+the model calls:
+
+```bash
+cd src-tauri
+HARUSPEX_GOOGLE_TOKEN_FILE=/tmp/google-token HARUSPEX_GOOGLE_EMAIL=you@gmail.com \
+  cargo test live_google_sign_in_and_discovery -- --ignored --nocapture
+```
+
+The token file keeps the refresh token, so later runs skip the consent screen.
+Delete the file when you're done.

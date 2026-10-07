@@ -76,4 +76,19 @@ describe('enabledDavAccounts', () => {
 		setDavAccounts([link({ enabled: false })]);
 		expect(enabledDavAccounts()).toEqual([]);
 	});
+
+	it('takes a Google account with nothing but its stored token', () => {
+		setDavAccounts([
+			server({
+				id: 'g',
+				kind: 'google',
+				address: 'me@gmail.com',
+				username: '',
+				passwordRef: 'dav:g',
+				hasContacts: true
+			})
+		]);
+		expect(enabledDavAccounts().map((a) => a.id)).toEqual(['g']);
+		expect(hasEnabledContactsAccount()).toBe(true);
+	});
 });

@@ -198,7 +198,12 @@ fn describe_transport_error(url: &str, e: &reqwest::Error) -> String {
 /// carry the body, truncated, because a DAV error body is occasionally the only
 /// thing that explains a misconfiguration.
 fn describe_status(url: &str, status: u16, body: &str) -> String {
+    let detail: String = strip_markup(body).chars().take(300).collect();
     match status {
+        // A 403 with something to say is usually not about the password —
+        // Google's "this API is not enabled for the project" is one — so its
+        // own words beat a guess.
+        403 if !detail.is_empty() => format!("{url} refused access (HTTP 403): {detail}"),
         401 | 403 => format!(
             "{url} rejected the username or password. \
              Most servers need an app password rather than your account password."
@@ -214,6 +219,25 @@ fn describe_status(url: &str, status: u16, body: &str) -> String {
             }
         }
     }
+}
+
+/// An error body as one readable line: tags dropped, whitespace collapsed.
+/// An empty DAV `<error/>` element reads as nothing.
+fn strip_markup(body: &str) -> String {
+    let mut text = String::new();
+    let mut in_tag = false;
+    for c in body.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => {
+                in_tag = false;
+                text.push(' ');
+            }
+            _ if !in_tag => text.push(c),
+            _ => {}
+        }
+    }
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// PROPFIND body asking who the authenticated user is.
@@ -697,6 +721,33 @@ mod tests {
         let message = describe_status("https://dav.example.com/", 401, "");
         assert!(message.contains("app password"), "got {message}");
         assert!(describe_status("https://x/", 403, "").contains("app password"));
+        // An empty DAV error element is still nothing to say.
+        assert!(describe_status(
+            "https://x/",
+            403,
+            "<?xml version=\"1.0\"?><D:error xmlns:D=\"DAV:\"/>"
+        )
+        .contains("app password"));
+    }
+
+    #[test]
+    fn a_403_that_explains_itself_is_not_blamed_on_the_password() {
+        let google = r#"<?xml version="1.0" encoding="UTF-8"?>
+<errors xmlns="http://schemas.google.com/g/2005">
+ <error><domain>GData</domain><code>accessNotConfigured</code>
+  <internalReason>CalDAV API has not been used in project 1 before or it is disabled.</internalReason>
+ </error></errors>"#;
+        let message = describe_status(
+            "https://apidata.googleusercontent.com/caldav/v2/",
+            403,
+            google,
+        );
+        assert!(
+            message.contains("CalDAV API has not been used"),
+            "{message}"
+        );
+        assert!(!message.contains("app password"), "{message}");
+        assert!(!message.contains('<'), "{message}");
     }
 
     #[test]
