@@ -88,10 +88,22 @@ describe('load_skill', () => {
 		expect(client.readSkill).not.toHaveBeenCalled();
 	});
 
-	it('reports a read failure without throwing', async () => {
+	it('reports a read failure without throwing, and can try again', async () => {
+		const skills = turnSkills();
 		client.readSkill.mockRejectedValueOnce('no skill named "deploy"');
-		const out = await executeTool('load_skill', { name: 'deploy' }, ctx(turnSkills()));
+		const out = await executeTool('load_skill', { name: 'deploy' }, ctx(skills));
 		expect(out.result).toContain('Could not load');
+		expect(skills.loaded.has('deploy')).toBe(false);
+	});
+
+	it('loads one copy when two calls for the same skill run side by side', async () => {
+		const skills = turnSkills();
+		const [a, b] = await Promise.all([
+			executeTool('load_skill', { name: 'deploy' }, ctx(skills)),
+			executeTool('load_skill', { name: 'deploy' }, ctx(skills))
+		]);
+		expect(client.readSkill).toHaveBeenCalledTimes(1);
+		expect([a.result, b.result].filter((r) => r.includes('<skill_content')).length).toBe(1);
 	});
 });
 

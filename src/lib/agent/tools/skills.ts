@@ -55,11 +55,14 @@ registerTool({
 				`The "${name}" skill is already loaded earlier in this conversation. Follow those instructions.`
 			);
 		}
+		// Marked before the read, so a second call in the same parallel batch
+		// sees it and doesn't load a duplicate copy.
+		ctx.skills!.loaded.add(name);
 		try {
 			const doc = await readSkill(name, ctx.skills!.projectRoot);
-			ctx.skills!.loaded.add(name);
 			return toolResult(renderSkillContent(doc));
 		} catch (e) {
+			ctx.skills!.loaded.delete(name);
 			return toolResult(toolError(`Could not load the "${name}" skill: ${errMessage(e)}`));
 		}
 	}
