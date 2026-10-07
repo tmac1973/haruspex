@@ -57,6 +57,21 @@ In the Cloud console, for the Haruspex project:
   app" screen first.
 - **Data access**: `…/auth/calendar.readonly` and `…/auth/carddav`.
 
+### Branding and the public site
+
+Google Auth Platform → Branding links to three pages, served by GitHub Pages
+from `site/` (deployed by `.github/workflows/pages.yml`):
+
+- Home page: `https://tmac1973.github.io/haruspex/`
+- Privacy policy: `https://tmac1973.github.io/haruspex/privacy/`
+- Terms of service: `https://tmac1973.github.io/haruspex/terms/`
+
+The authorized domain is `tmac1973.github.io`. Leave the logo empty: uploading
+one sends the app to brand review before anything else can change.
+
+The privacy policy is what a verification reviewer reads. Keep it accurate if
+the scopes change or Google data starts going anywhere new.
+
 ### Before a public release
 
 Both scopes are *sensitive*, not *restricted*, so verification needs no
