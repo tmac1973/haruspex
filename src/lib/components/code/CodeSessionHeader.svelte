@@ -1,46 +1,37 @@
 <script lang="ts">
 	/**
-	 * One session's header: its folder, model and reasoning effort, the
+	 * One session's header: its folder, model (see CodeModelPicker) and reasoning effort, the
 	 * repo's AGENTS.md, how full the context is, and its background processes.
 	 */
 	import { invoke } from '@tauri-apps/api/core';
 	import AgentsMdBadge from '#lib/components/shell/AgentsMdBadge.svelte';
 	import ContextGauge from '#lib/components/ContextGauge.svelte';
 	import BackgroundChip from './BackgroundChip.svelte';
-	import { backendChoices, backendKey } from '#lib/code/backends.ts';
+	import CodeModelPicker from './CodeModelPicker.svelte';
 	import { folderName } from '#lib/code/sessionList.ts';
 	import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 	import type { CodeSession } from '#lib/stores/code.svelte.ts';
-	import { getSettings } from '#lib/stores/settings.ts';
+	import { getLiveSettings } from '#lib/stores/settings.ts';
 	import { setRepoTrusted } from '#lib/skills/project.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
 	let { session }: { session: CodeSession } = $props();
 
-	const choices = $derived(backendChoices(getSettings(), session.backend));
-	const selectedKey = $derived(backendKey(session.backend));
-
-	const effortCaps = $derived(
-		resolveBackendDescriptor(session.backend ?? undefined).reasoningEffort
-	);
+	// Read live so a session following Settings re-resolves when Settings
+	// changes model; the descriptor itself reads settings untracked.
+	const settings = $derived(getLiveSettings());
+	const effortCaps = $derived.by(() => {
+		void settings;
+		return resolveBackendDescriptor(session.backend ?? undefined).reasoningEffort;
+	});
 	const effortLevels = $derived.by(() => {
 		const levels = effortCaps?.levels ?? [];
 		return session.effort && !levels.includes(session.effort)
 			? [...levels, session.effort]
 			: levels;
 	});
-	const globalEffort = $derived(getSettings().reasoningEffort ?? 'model default');
-
-	async function pickBackend(key: string) {
-		const choice = choices.find((c) => c.key === key);
-		if (!choice) return;
-		try {
-			await session.setBackend(choice.backend);
-		} catch (e) {
-			showToast(`Couldn't change the model: ${errMessage(e)}`, { kind: 'error' });
-		}
-	}
+	const globalEffort = $derived(settings.reasoningEffort ?? 'model default');
 
 	async function pickEffort(value: string) {
 		try {
@@ -82,18 +73,7 @@
 		<span>{folderName(session.root)}</span>
 	</button>
 
-	<select
-		class="pick"
-		aria-label="Model"
-		title="This session's model. Applies from the next message."
-		value={selectedKey}
-		disabled={session.busy}
-		onchange={(e) => pickBackend(e.currentTarget.value)}
-	>
-		{#each choices as c (c.key)}
-			<option value={c.key} title={c.title}>{c.label}</option>
-		{/each}
-	</select>
+	<CodeModelPicker {session} />
 
 	<select
 		class="pick"

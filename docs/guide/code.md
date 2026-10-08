@@ -36,7 +36,7 @@ A dot on a session's tab shows it is working (filled) or waiting for another tur
 The header above the conversation holds:
 
 - the **folder** — click it to open it in your file manager;
-- the **model** — **Settings** follows Settings → Inference. When Settings uses the local model, the remote server saved in Settings → Inference can be picked for this session. The local model itself can't change per session;
+- the **model** — the button names the session's model. Click it to pick **Settings model** (follows Settings → Inference, whatever it is set to), **Remote server** (a server saved in Settings → Inference: click **Probe** and pick a model) or **OpenRouter (cloud)** (click **Load models** and pick one), then **Save**. The local model is only reachable through **Settings model**, and picking a model here never starts it;
 - **Effort** — how hard the model thinks, for models that publish effort levels;
 - the **AGENTS.md** badge when the repo's instructions are in use (see the `skills` page), and how full the context is.
 

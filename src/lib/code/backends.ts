@@ -1,28 +1,19 @@
 /**
- * The models a Code session can pick in its header. Null is "whatever
- * Settings uses"; anything else is a remote `BackendOverride` (overrides are
- * remote-only: the local model is global, because swapping it restarts
- * llama-server under every session).
+ * A Code session's model. Null follows Settings → Inference; anything else is
+ * a remote `BackendOverride`. Overrides are remote-only: the local model is
+ * reached only through Settings, because only Settings starts llama-server.
+ *
+ * The session picks its model with the Jobs model picker, so the form here is
+ * the Jobs form (`JobModelForm`), converted to and from the override.
  */
 import type { BackendOverride } from '#lib/api.ts';
 import type { AppSettings } from '#lib/stores/settings.ts';
+import {
+	emptyModelForm,
+	isOpenRouterUrl,
+	type JobModelForm
+} from '#lib/agent/jobs/jobModelForm.ts';
 import { folderName } from '#lib/code/sessionList.ts';
-
-export interface BackendChoice {
-	/** Stable select value. */
-	key: string;
-	label: string;
-	title: string;
-	backend: BackendOverride | null;
-}
-
-export const SETTINGS_KEY = 'settings';
-
-/** Select value for a backend; the same server and model give the same key. */
-export function backendKey(b: BackendOverride | null): string {
-	if (!b) return SETTINGS_KEY;
-	return `${b.baseUrl.replace(/\/+$/, '')}|${b.modelId ?? ''}`;
-}
 
 function host(url: string): string {
 	try {
@@ -32,57 +23,83 @@ function host(url: string): string {
 	}
 }
 
-/** What the global backend is, for the "Settings" option's label. */
-export function settingsBackendLabel(settings: AppSettings): string {
+/** "Qwen3.5-9B-Q4_K_M.gguf" → "qwen3.5-9b". */
+export function localModelName(filename: string): string {
+	const name = filename
+		.trim()
+		.replace(/\.gguf$/i, '')
+		.replace(/-(i?q\d[\w.]*|bf16|f16|f32)$/i, '')
+		.toLowerCase();
+	return name || 'local model';
+}
+
+/** The model Settings → Inference has active, in a few words. */
+export function settingsModelName(settings: AppSettings): string {
 	const inf = settings.inferenceBackend;
-	if (inf.mode === 'remote' && inf.remoteBaseUrl) {
-		return inf.remoteModelId || host(inf.remoteBaseUrl);
+	if (inf.mode === 'remote' && inf.remoteBaseUrl.trim()) {
+		return inf.remoteModelId.trim() || host(inf.remoteBaseUrl);
 	}
-	return 'local model';
+	return localModelName(settings.activeLocalModelFilename);
+}
+
+/** The header button's label and tooltip for a session's model. */
+export function sessionModelLabel(
+	backend: BackendOverride | null,
+	settings: AppSettings
+): { label: string; title: string } {
+	if (!backend) {
+		const inf = settings.inferenceBackend;
+		const where =
+			inf.mode === 'remote' && inf.remoteBaseUrl.trim()
+				? inf.remoteBaseUrl.trim()
+				: 'the local model';
+		return {
+			label: `Settings · ${settingsModelName(settings)}`,
+			title: `Follows Settings → Inference (now ${where}). Click to change.`
+		};
+	}
+	const model = backend.modelId?.trim() || 'default';
+	const kind = isOpenRouterUrl(backend.baseUrl) ? 'OpenRouter' : host(backend.baseUrl);
+	return {
+		label: `${model} · ${kind}`,
+		title: `This session's model: ${model} on ${backend.baseUrl}. Click to change.`
+	};
+}
+
+/** The picker's form for a session's backend. */
+export function modelFormFromBackend(backend: BackendOverride | null): JobModelForm {
+	const form = emptyModelForm();
+	const url = backend?.baseUrl.trim();
+	if (!backend || !url) return form;
+	const d = backend.discovered;
+	return {
+		...form,
+		source: isOpenRouterUrl(url) ? 'openrouter' : 'remote',
+		baseUrl: url,
+		apiKey: backend.apiKey ?? '',
+		apiKeyId: backend.apiKeyId ?? null,
+		modelId: backend.modelId ?? '',
+		contextSize: backend.contextSize ?? '',
+		vision: backend.visionSupported == null ? 'auto' : backend.visionSupported ? 'yes' : 'no',
+		discovered: d ? { reasoning: d.reasoning ?? null, sampling: d.sampling ?? null } : null
+	};
 }
 
 /**
- * Settings' model, the remote server saved in Settings → Inference when
- * Settings is on the local model, and the session's own choice if it is
- * neither (picked when Settings looked different).
+ * The picker's form as the session's backend: null for the Settings model (or
+ * a remote source with no server picked), an override otherwise. Holds the
+ * same fields a job's override does.
  */
-export function backendChoices(
-	settings: AppSettings,
-	current: BackendOverride | null
-): BackendChoice[] {
-	const choices: BackendChoice[] = [
-		{
-			key: SETTINGS_KEY,
-			label: `Settings (${settingsBackendLabel(settings)})`,
-			title: 'Follows Settings → Inference.',
-			backend: null
-		}
-	];
-	const inf = settings.inferenceBackend;
-	if (inf.mode !== 'remote' && inf.remoteBaseUrl.trim() && inf.remoteModelId.trim()) {
-		const remote: BackendOverride = {
-			baseUrl: inf.remoteBaseUrl.trim(),
-			modelId: inf.remoteModelId.trim(),
-			apiKeyId: inf.remoteApiKeyId ?? undefined,
-			apiKey: inf.remoteApiKey || undefined,
-			contextSize: inf.remoteContextSize,
-			visionSupported: inf.remoteVisionSupported,
-			discovered: { reasoning: inf.remoteReasoning, sampling: inf.remoteSampling }
-		};
-		choices.push({
-			key: backendKey(remote),
-			label: `${remote.modelId} (${host(remote.baseUrl)})`,
-			title: `The remote server saved in Settings → Inference: ${remote.baseUrl}`,
-			backend: remote
-		});
-	}
-	if (current && !choices.some((c) => c.key === backendKey(current))) {
-		choices.push({
-			key: backendKey(current),
-			label: `${current.modelId || 'default'} (${host(current.baseUrl)})`,
-			title: `This session's model: ${current.baseUrl}`,
-			backend: current
-		});
-	}
-	return choices;
+export function backendFromModelForm(form: JobModelForm): BackendOverride | null {
+	const url = form.source === 'settings' ? '' : form.baseUrl.trim();
+	if (!url) return null;
+	return {
+		baseUrl: url,
+		apiKey: form.apiKey.trim() || undefined,
+		apiKeyId: form.apiKeyId ?? undefined,
+		modelId: form.modelId.trim() || undefined,
+		contextSize: typeof form.contextSize === 'number' ? form.contextSize : undefined,
+		visionSupported: form.vision === 'auto' ? undefined : form.vision === 'yes',
+		discovered: form.discovered ?? undefined
+	};
 }
