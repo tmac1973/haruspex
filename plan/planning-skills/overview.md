@@ -91,19 +91,19 @@ Settings → Skills labels these skills "Shipped with Haruspex". A **Restore**
 action puts one back as shipped, after a confirm when that overwrites the
 user's edits. "Restore shipped skills" brings back any that were deleted.
 
-## Open question
-
-`/init` is a built-in compiled into the app (`include_str!`), so it can be
-overridden but not edited or deleted. Moving it to the same shipped-on-disk
-path would make it consistent with these skills. Code mode gating would
-then key on a frontmatter field (`metadata.haruspex-mode: code`) instead of
-the built-in source. Recommended, but it's a change to phase 6's decision,
-so it waits for Tim's answer.
+**`/init` moves to the same path** (decided with Tim). Today it is compiled
+into the app (`include_str!`), so it can be overridden but not edited or
+deleted. It becomes a shipped skill on disk like the planning skills.
+Whether a skill is Code mode only is then set by a frontmatter field,
+`metadata.haruspex-mode: code`, rather than by its being built in, and any
+skill can use that field. A user's own `init` folder still wins, as it
+already does.
 
 ## Phases
 
 1. **Shipped skills** — bundling, seeding into the user's folder, the record,
-   update and delete rules, Settings label and Restore.
+   update and delete rules, Settings label and Restore; `/init` moves onto
+   it, with Code mode gating from frontmatter.
 2. **Planning skills in guided planning** — the editor dropdown, the snapshot,
    the stage 1, outline and verifier prompts.
 3. **The shipped planning skills** — writing `plan-2d-game`, `plan-web-app`

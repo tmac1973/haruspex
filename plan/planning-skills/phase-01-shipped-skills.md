@@ -28,6 +28,18 @@ updates only when the user hasn't touched them.
     "deleted" state and seeds them again.
 - **IPC**: `skills_shipped` (names, and whether each is edited) and
   `skill_restore_shipped(name | null)`. Run `./scripts/export-ipc-types.sh`.
+- **`/init` moves here**:
+  - `src-tauri/src/skills/builtin/init/` becomes
+    `resources/skills/init/`, and `BUILTINS` is emptied. The built-in
+    source and its plumbing stay, unused, for a skill that must never be
+    edited.
+  - The `init` body gains `metadata.haruspex-mode: code`.
+  - Code mode gating (`codeModeOnly` in `skills/client.ts`) reads a new
+    `SkillSummary.codeModeOnly`, set by Rust from that field, instead of
+    `source === 'builtin'` plus a name list. A user's own `init` is gated
+    only if it sets the field too.
+  - Phase 6's tests that expect a built-in `init` move to the shipped
+    path.
 - **Deleting** a shipped skill in Settings uses the existing
   `skill_delete_user` and leaves the record, so the next start doesn't
   re-add it.
@@ -40,9 +52,14 @@ updates only when the user hasn't touched them.
 - Deleted skills stay deleted across restarts until restored.
 - A new release's text replaces an unedited skill, but not an edited one.
 - Restore puts back the shipped text, files included.
+- `metadata.haruspex-mode: code` keeps a skill out of Chat and plain Shell
+  (the `/` list, the catalog), and `/init` there still says it needs Code
+  mode.
+- A shipped `init` that the user deleted stays gone, and `/init` is then
+  unknown, like any other missing skill.
 
 ## Done when
 
-A fresh profile shows the shipped skills in Settings and in `/`
-autocomplete. After deleting one and editing another, a restart keeps
+A fresh profile shows the shipped skills, `init` included, in Settings and
+in Code mode's `/` autocomplete. After deleting one and editing another, a restart keeps
 both changes, and Restore undoes them.
