@@ -26,8 +26,21 @@ fi
 # Fix MSVC link.exe PATH conflict on Windows
 source "$SCRIPT_DIR/msvc-path-fix.sh"
 
-LLAMA_VERSION=$(cat "$PROJECT_ROOT/LLAMA_CPP_VERSION" 2>/dev/null || echo "master")
-WHISPER_VERSION=$(cat "$PROJECT_ROOT/WHISPER_CPP_VERSION" 2>/dev/null || echo "master")
+# The pins are mandatory: building whatever master happens to be produces a
+# sidecar whose flags nobody has checked against `ServerConfig::build_args`.
+LLAMA_VERSION=$(cat "$PROJECT_ROOT/LLAMA_CPP_VERSION")
+WHISPER_VERSION=$(cat "$PROJECT_ROOT/WHISPER_CPP_VERSION")
+
+# Shallow-clone a pinned tag, or stop. There is deliberately no fallback to
+# the default branch: a typo'd or deleted tag must fail the build, not ship
+# master under the pinned version's stamp.
+clone_pinned() {
+    local repo="$1" tag="$2" dest="$3"
+    if ! git clone --depth 1 --branch "$tag" "$repo" "$dest" 2>&1; then
+        echo "ERROR: could not clone $repo at pinned tag '$tag'"
+        exit 1
+    fi
+}
 
 # Version stamps: a small file written next to each pinned sidecar recording
 # the version it was built at. The skip check below compares the stamp to the
@@ -217,8 +230,7 @@ else
     # Wipe any cached checkout so a version bump re-clones at the new pinned
     # branch — a shallow --branch clone can't be re-pointed to another tag.
     rm -rf "$LLAMA_SRC"
-    git clone --depth 1 --branch "$LLAMA_VERSION" https://github.com/ggml-org/llama.cpp.git "$LLAMA_SRC" 2>/dev/null || \
-    git clone --depth 1 https://github.com/ggml-org/llama.cpp.git "$LLAMA_SRC" 2>/dev/null
+    clone_pinned https://github.com/ggml-org/llama.cpp.git "$LLAMA_VERSION" "$LLAMA_SRC"
 
     rm -rf "$BUILD_DIR/llama"
     mkdir -p "$BUILD_DIR/llama"
@@ -301,8 +313,7 @@ else
     WHISPER_SRC="${BUILD_DIR}/whisper.cpp"
     # Wipe any cached checkout so a version bump re-clones at the new pin.
     rm -rf "$WHISPER_SRC"
-    git clone --depth 1 --branch "$WHISPER_VERSION" https://github.com/ggml-org/whisper.cpp.git "$WHISPER_SRC" 2>/dev/null || \
-    git clone --depth 1 https://github.com/ggml-org/whisper.cpp.git "$WHISPER_SRC" 2>/dev/null
+    clone_pinned https://github.com/ggml-org/whisper.cpp.git "$WHISPER_VERSION" "$WHISPER_SRC"
 
     rm -rf "$BUILD_DIR/whisper"
     mkdir -p "$BUILD_DIR/whisper"
