@@ -1,6 +1,6 @@
 <script lang="ts">
 	import AgentsMdBadge from './AgentsMdBadge.svelte';
-	import { onDestroy, onMount, untrack } from 'svelte';
+	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
 	import StopIndicator from '#lib/components/StopIndicator.svelte';
 	import { imageDropTarget } from '#lib/utils/imageDrop.ts';
@@ -17,6 +17,8 @@
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import SlashMenu from '#lib/components/SlashMenu.svelte';
 	import { runSlash, type SlashHost } from '#lib/slash/slash.ts';
+	import { InputHistory, placeCaret, sentHistory } from '#lib/inputHistory.ts';
+	import { typedText } from '#lib/skills/content.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import type { CaptureWindow } from '#lib/ipc/gen/CaptureWindow.ts';
 	import {
@@ -264,6 +266,7 @@
 		}
 		composerText = '';
 		autosize();
+		history.reset();
 		if (slash.kind === 'handled') return;
 		pendingImages = [];
 		await session.submitChatMessage(text, images, slash.skill);
@@ -365,8 +368,36 @@
 		await doSend(composerText);
 	}
 
+	/**
+	 * Up and Down through what was asked in this tab (see inputHistory.ts):
+	 * the question only, without the shell output sent along with it.
+	 */
+	const history = new InputHistory(() =>
+		sentHistory(
+			session.messages
+				.filter((m) => m.role === 'user')
+				.map((m) => typedText(userMessageView(m).question))
+		)
+	);
+
+	/** True when Up or Down recalled a question into the box. */
+	function recallHistory(event: KeyboardEvent): boolean {
+		const el = composerEl;
+		const recall = el && history.key(event, el);
+		if (!el || !recall) return false;
+		event.preventDefault();
+		composerText = recall.text;
+		slashMenu?.dismiss(recall.text);
+		void tick().then(() => {
+			autosize();
+			placeCaret(el, recall.caret);
+		});
+		return true;
+	}
+
 	function onComposerKeydown(event: KeyboardEvent) {
 		if (slashMenu?.handleKey(event)) return;
+		if (recallHistory(event)) return;
 		if (event.key === 'Enter' && !event.shiftKey) {
 			event.preventDefault();
 			handleSend();

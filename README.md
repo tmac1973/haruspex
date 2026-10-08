@@ -181,6 +181,7 @@ Press **F1** (or click the **?** in the header) to see this list in the app at a
 | `Ctrl`/`Cmd` + `+` / `-`                      | Zoom the interface in / out                            | Everywhere             |
 | `Ctrl`/`Cmd` + `0`                            | Reset the zoom                                         | Everywhere             |
 | `Enter` / `Shift`+`Enter`                     | Send message / new line                                | Chat & Shell composers |
+| `↑` / `↓`                                     | Recall messages sent in this conversation              | Chat & Shell composers |
 | `Esc`                                         | Stop generating · close dialogs                        | Everywhere             |
 | `Ctrl`+`Shift`+`A`                            | Show or hide the assistant sidebar                     | Shell tab              |
 | `` Ctrl+` ``                                  | Move focus between terminal and assistant              | Shell tab              |

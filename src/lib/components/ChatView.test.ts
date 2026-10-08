@@ -150,3 +150,35 @@ describe('ChatView "Open in shell"', () => {
 		expect(btn.disabled).toBe(true);
 	});
 });
+
+describe('ChatView input history', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.mocked(getActiveConversation).mockReturnValue({
+			...conversation!,
+			messages: [
+				{ role: 'user', content: 'first question' },
+				{ role: 'assistant', content: 'an answer' },
+				{ role: 'user', content: 'second question' }
+			]
+		} as unknown as ReturnType<typeof getActiveConversation>);
+		vi.mocked(getConversations).mockReturnValue([]);
+		vi.mocked(getErrorMessage).mockReturnValue(null as unknown as string);
+		vi.mocked(getIsGenerating).mockReturnValue(false);
+	});
+
+	it('steps back through what was sent with Up, and forward to the draft with Down', async () => {
+		render(ChatView);
+		const box = screen.getByRole('textbox') as HTMLTextAreaElement;
+		await fireEvent.input(box, { target: { value: 'draft' } });
+		await fireEvent.keyDown(box, { key: 'ArrowUp' });
+		expect(box.value).toBe('second question');
+		box.setSelectionRange(0, 0);
+		await fireEvent.keyDown(box, { key: 'ArrowUp' });
+		expect(box.value).toBe('first question');
+		box.setSelectionRange(box.value.length, box.value.length);
+		await fireEvent.keyDown(box, { key: 'ArrowDown' });
+		await fireEvent.keyDown(box, { key: 'ArrowDown' });
+		expect(box.value).toBe('draft');
+	});
+});
