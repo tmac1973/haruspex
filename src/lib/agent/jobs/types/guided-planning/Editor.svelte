@@ -259,15 +259,6 @@
 		</label>
 
 		<label class="sub">
-			Context mode
-			<select bind:value={cfg.coding_context_mode} aria-label="Context mode">
-				<option value="">Let the coding job decide</option>
-				<option value="phase">One continuous context per phase</option>
-				<option value="step">A fresh context per checklist item</option>
-			</select>
-		</label>
-
-		<label class="sub">
 			Max model steps per turn
 			<input
 				type="number"

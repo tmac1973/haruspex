@@ -23,16 +23,14 @@ function flat(s: string): string {
  * scripts whose assertions string-matched their own source; after that was
  * forbidden, the next run maintained one 271-line validator against a 93-line
  * program, editing and re-running it every step. Verification is therefore
- * settled once at preflight and EXECUTED BY THE RUNNER — per-step cheap check,
- * per-phase deep verification — and the model never owns it.
+ * settled once at preflight and EXECUTED BY THE RUNNER at each phase boundary,
+ * and the model never owns it.
  */
-describe('iterationPrompt — runner-executed verification (both commands set)', () => {
-	const prompt = flat(iterationPrompt('npm run lint', 'npm test', 'plan/x/'));
+describe('iterationPrompt — runner-executed verification (command set)', () => {
+	const prompt = flat(iterationPrompt('npm test', 'plan/x/'));
 
-	it('names the step check and who runs it', () => {
-		expect(prompt).toContain('`npm run lint`');
+	it('says who runs verification', () => {
 		expect(prompt).toContain("Verification is the RUNNER's job");
-		expect(prompt).toContain('recorded as failed');
 	});
 
 	it('says deep verification is per phase, not per item', () => {
@@ -51,8 +49,8 @@ describe('iterationPrompt — runner-executed verification (both commands set)',
 	});
 });
 
-describe('iterationPrompt — no commands settled (bounded self-judgment fallback)', () => {
-	const prompt = flat(iterationPrompt(null, null, 'plan/x/'));
+describe('iterationPrompt — no command settled (bounded self-judgment fallback)', () => {
+	const prompt = flat(iterationPrompt(null, 'plan/x/'));
 
 	it('still requires verification', () => {
 		expect(prompt).toContain('Unverified ≠ done');
@@ -90,9 +88,8 @@ describe('iterationPrompt — no commands settled (bounded self-judgment fallbac
 
 describe('iterationPrompt — invariants across branches', () => {
 	for (const [label, prompt] of [
-		['both commands', iterationPrompt('lint', 'test', 'plan/x/')],
-		['step check only', iterationPrompt('lint', null, 'plan/x/')],
-		['no commands', iterationPrompt(null, null, 'plan/x/')]
+		['verification command', iterationPrompt('test', 'plan/x/')],
+		['no command', iterationPrompt(null, 'plan/x/')]
 	] as const) {
 		it(`${label}: keeps the runner's ownership rules intact`, () => {
 			const f = flat(prompt);
@@ -129,9 +126,9 @@ describe('iterationPrompt — invariants across branches', () => {
  */
 describe('shell safety rules — every stage that can run commands', () => {
 	for (const [label, raw] of [
-		['preflight', preflightPrompt('plan/x', 'plan/x/D.md', 'step', false)],
-		['iteration (both commands)', iterationPrompt('lint', 'test', 'plan/x/')],
-		['iteration (no commands)', iterationPrompt(null, null, 'plan/x/')],
+		['preflight', preflightPrompt('plan/x', 'plan/x/D.md', false)],
+		['iteration (with command)', iterationPrompt('test', 'plan/x/')],
+		['iteration (no command)', iterationPrompt(null, 'plan/x/')],
 		['phase turn', phaseTurnPrompt('npm test', 'plan/x/')]
 	] as const) {
 		const prompt = flat(raw);
@@ -154,90 +151,14 @@ describe('shell safety rules — every stage that can run commands', () => {
 	}
 
 	it('tells the unattended stages the command is blocked outright', () => {
-		expect(flat(iterationPrompt('lint', 'test', 'plan/x/'))).toContain(
-			'nobody is present to approve one'
-		);
+		expect(flat(iterationPrompt('test', 'plan/x/'))).toContain('nobody is present to approve one');
 	});
 
 	it('tells preflight it would interrupt the user instead', () => {
-		const prompt = flat(preflightPrompt('plan/x', 'plan/x/D.md', 'step', false));
+		const prompt = flat(preflightPrompt('plan/x', 'plan/x/D.md', false));
 		expect(prompt).toContain('stops the run on an approval modal');
 		expect(prompt).not.toContain('nobody is present to approve one');
 	});
-});
-
-describe('preflightPrompt — settling the two-command contract', () => {
-	// There is no configured command to echo any more: preflight settles both,
-	// every time. A user with a preference states it in the plan or the build
-	// prompt, where it is context the model reasons about rather than a field
-	// it obeys.
-	const bothBlankRaw = preflightPrompt('plan/x', 'plan/x/D.md', 'step', false);
-	const bothBlank = flat(bothBlankRaw);
-
-	it('defines both tiers and their cadence', () => {
-		expect(bothBlank).toContain('STEP CHECK: runs before EVERY commit');
-		expect(bothBlank).toContain('PHASE VERIFICATION: runs when each phase of the plan completes');
-		expect(bothBlank).toContain('NOT per step');
-	});
-
-	it('tells preflight both commands are its to settle', () => {
-		expect(bothBlank).toContain('Both are yours to settle');
-	});
-
-	it('requires running every candidate before adopting it', () => {
-		expect(bothBlank).toContain('RUN each candidate once with run_command');
-		expect(bothBlank).toContain('never executed is a guess');
-	});
-
-	it('does not let a failing candidate be silently swapped out', () => {
-		expect(bothBlank).toContain('do NOT silently substitute');
-		expect(bothBlank).toContain('ask ONE `ask_user_question`');
-	});
-
-	it("says both commands are preflight's to settle", () => {
-		expect(bothBlank).toContain('Both are yours to settle');
-	});
-
-	it('composes multi-stack repos into one && command', () => {
-		expect(bothBlank).toContain('joining with `&&`');
-		expect(bothBlank).toContain('One command, one exit code');
-	});
-
-	it('prefers the cheapest check that catches a real breakage', () => {
-		expect(bothBlank).toContain('PREFER THE CHEAPEST CHECK');
-		expect(bothBlank).toContain('not be maximal from step one');
-		expect(bothBlank).toContain('`node --check`');
-	});
-
-	it('ranks a hand-written validator last and forbids unasked scaffolding', () => {
-		expect(bothBlank).toContain('LAST resort');
-		expect(bothBlank).toContain('hand-written validation script');
-		expect(bothBlank).toContain('NOT scaffold a test framework without asking');
-		expect(bothBlank).toContain('Preflight writes no code');
-	});
-
-	for (const [label, prompt, raw] of [['blank', bothBlank, bothBlankRaw]] as const) {
-		it(`${label}: requires side-effect-free, fast, idempotent commands`, () => {
-			// Preflight once recorded `git init && node --check ...`, so every
-			// step of the run re-ran git init.
-			expect(prompt).toContain('READ-ONLY and free of side effects');
-			expect(prompt).toContain('No `git` commands');
-			expect(prompt).toContain('Seconds, not minutes');
-		});
-
-		it(`${label}: records both commands where the RUNNER parses them`, () => {
-			expect(prompt).toContain('## Step check command');
-			expect(prompt).toContain('## Verification command');
-			expect(prompt).toContain('EXACTLY ONE fenced code block');
-			expect(prompt).toContain('submit_preflight');
-		});
-
-		it(`${label}: numbers the process 1-5 with no gaps`, () => {
-			for (const n of [1, 2, 3, 4, 5]) {
-				expect(raw).toMatch(new RegExp(`^${n}\\. `, 'm'));
-			}
-		});
-	}
 });
 
 describe('decomposePrompt — no repo-setup busywork', () => {
@@ -319,16 +240,17 @@ describe('phaseTurnPrompt — build whole phase, runner verifies and commits', (
 	});
 });
 
-describe('preflightPrompt — per-phase context mode', () => {
-	const phase = flat(preflightPrompt('plan/x', 'plan/x/D.md', 'phase', false));
+describe('preflightPrompt — the verification contract', () => {
+	const phaseRaw = preflightPrompt('plan/x', 'plan/x/D.md', false);
+	const phase = flat(phaseRaw);
 
 	it('settles only the verification command — no step check exists to ask about', () => {
-		// A real preflight asked the user "what should the step check be?" in a
-		// mode that no longer has per-step checks.
+		// A real preflight asked the user "what should the step check be?" after
+		// per-step checks were gone.
 		expect(phase).toContain('Settle the ONE command');
-		expect(phase).toContain('NO per-step check in this mode');
+		expect(phase).toContain('no per-step check');
 		expect(phase).toContain('do not ask the user about one');
-		expect(phase).not.toContain('STEP CHECK: runs before EVERY commit');
+		expect(phase).not.toContain('STEP CHECK');
 	});
 
 	it('records only the verification section', () => {
@@ -342,17 +264,25 @@ describe('preflightPrompt — per-phase context mode', () => {
 		expect(phase).toContain('phase-agnostic');
 	});
 
-	it('uses the two-command contract for per-step mode', () => {
-		// The mode parameter is required on purpose: a defaulted param once let
-		// the preflight RETRY turn silently receive the step contract while the
-		// main turn ran the phase contract.
-		const step = flat(preflightPrompt('plan/x', 'plan/x/D.md', 'step', false));
-		expect(step).toContain('Settle the TWO commands');
+	it('records the command where the RUNNER parses it', () => {
+		expect(phase).toContain('EXACTLY ONE fenced code block');
+		expect(phase).toContain('submit_preflight');
+	});
+
+	it('does not let a failing candidate be silently swapped out', () => {
+		expect(phase).toContain('do NOT silently substitute');
+		expect(phase).toContain('ask ONE `ask_user_question`');
+	});
+
+	it('numbers the process 1-5 with no gaps', () => {
+		for (const n of [1, 2, 3, 4, 5]) {
+			expect(phaseRaw).toMatch(new RegExp(`^${n}\\. `, 'm'));
+		}
 	});
 });
 
 describe('preflightPrompt — web research', () => {
-	const onRaw = preflightPrompt('plan/x', 'plan/x/D.md', 'phase', true);
+	const onRaw = preflightPrompt('plan/x', 'plan/x/D.md', true);
 	const on = flat(onRaw);
 
 	it('adds the research rules when the job allows it', () => {
@@ -361,7 +291,7 @@ describe('preflightPrompt — web research', () => {
 	});
 
 	it('says nothing about the web when off', () => {
-		expect(preflightPrompt('plan/x', 'plan/x/D.md', 'phase', false)).not.toContain('WEB RESEARCH');
+		expect(preflightPrompt('plan/x', 'plan/x/D.md', false)).not.toContain('WEB RESEARCH');
 	});
 
 	it('keeps the process numbered 1-5 with the block added', () => {
@@ -379,7 +309,7 @@ describe('preflightPrompt — web research', () => {
  * not interactivity.
  */
 describe('preflightPrompt — non-interactive variant', () => {
-	const args = ['plan/x/', 'plan/x/DECISIONS-coding.md', 'phase', false] as const;
+	const args = ['plan/x/', 'plan/x/DECISIONS-coding.md', false] as const;
 	const asking = preflightPrompt(...args, true);
 	const mute = preflightPrompt(...args, false);
 
@@ -412,17 +342,12 @@ describe('preflightPrompt — non-interactive variant', () => {
 	});
 
 	it('still settles the verification command in both variants', () => {
-		// Phase mode settles ONE command; step mode settles two. Both must keep
-		// the contract — muting the interview must not mute the job.
+		// Muting the interview must not mute the job.
 		for (const p of [asking, mute]) {
 			// Flattened: the prompt is hard-wrapped, so this phrase spans a line.
 			expect(flat(p)).toContain('Settle the ONE command');
 			expect(flat(p)).toContain('A command you never executed is a guess');
 		}
-		const stepMute = preflightPrompt('plan/x/', 'd.md', 'step', false, false);
-		expect(stepMute).toContain('Both are yours to settle');
-		expect(stepMute).toContain('Settle the TWO commands');
-		expect(stepMute).not.toContain('ask_user_question');
 	});
 });
 
@@ -433,7 +358,7 @@ describe('preflightPrompt — non-interactive variant', () => {
  * preflight settles them before any code is written.
  */
 describe('preflightPrompt — findings carried from planning', () => {
-	const args = ['plan/x/', 'plan/x/DECISIONS-coding.md', 'phase', false, false] as const;
+	const args = ['plan/x/', 'plan/x/DECISIONS-coding.md', false, false] as const;
 	const FINDINGS = [
 		'(a) phase-11.md: uses SPRITE_FALLBACK, which phase 12 creates. Either move the assertion into phase 12 or list 12 as a dependency.',
 		'(d) phase-15.md: the bot uses `Action::Use`, which does not exist — the model defines `UseConsumable`.'
@@ -519,10 +444,7 @@ describe('readmePrompt', () => {
 
 describe('the project boundary', () => {
 	it('tells every shell-using turn where its boundary is', () => {
-		for (const prompt of [
-			iterationPrompt(null, null, 'plan/x/'),
-			phaseTurnPrompt(null, 'plan/x/')
-		]) {
+		for (const prompt of [iterationPrompt(null, 'plan/x/'), phaseTurnPrompt(null, 'plan/x/')]) {
 			const p = flat(prompt);
 			expect(p).toContain('YOUR BOUNDARY IS THE PROJECT DIRECTORY');
 			// The failure it exists for: making missing art some other way.
@@ -554,7 +476,7 @@ describe('the project boundary', () => {
 describe('generated art in preflight', () => {
 	it('says a spec entry may have no file, and to check', () => {
 		const p = flat(
-			preflightPrompt('plan/x', 'plan/x/D.md', 'phase', false, false, [], 'plan/x/assets.json')
+			preflightPrompt('plan/x', 'plan/x/D.md', false, false, [], 'plan/x/assets.json')
 		);
 		expect(p).toContain('Check that each `out` file exists');
 		expect(p).not.toContain('were NOT produced');
@@ -562,7 +484,7 @@ describe('generated art in preflight', () => {
 
 	it('names the entries the asset run could not produce', () => {
 		const p = flat(
-			preflightPrompt('plan/x', 'plan/x/D.md', 'phase', false, false, [], 'plan/x/assets.json', [
+			preflightPrompt('plan/x', 'plan/x/D.md', false, false, [], 'plan/x/assets.json', [
 				'tower_entrance',
 				'human'
 			])

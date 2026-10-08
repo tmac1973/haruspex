@@ -6,13 +6,6 @@ export interface AutonomousCodingConfig {
 	/** Failed attempts per item before it's marked BLOCKED. null = default (3). */
 	max_attempts: number | null;
 	/**
-	 * Loop context strategy: 'phase' (default) = one continuous context builds
-	 * each plan phase, which the runner then verifies and commits as a unit;
-	 * 'step' = a fresh context per checklist item with per-item checks and
-	 * commits. null = default.
-	 */
-	context_mode: 'step' | 'phase' | null;
-	/**
 	 * What the runner does when commit signing fails mid-run (expired
 	 * 1Password/gpg-agent authorization): 'unsigned' commits with signing
 	 * disabled (re-sign before pushing); 'skip' never commits unsigned — the
@@ -110,7 +103,6 @@ export function parseAutonomousCodingConfig(json: string | null): AutonomousCodi
 			typeof raw.max_attempts === 'number' && Number.isFinite(raw.max_attempts)
 				? raw.max_attempts
 				: null,
-		context_mode: parseContextMode(raw.context_mode),
 		signing_fallback:
 			raw.signing_fallback === 'skip' || raw.signing_fallback === 'unsigned'
 				? raw.signing_fallback
@@ -134,10 +126,6 @@ export function parseAutonomousCodingConfig(json: string | null): AutonomousCodi
 			? raw.missing_assets.filter((a): a is string => typeof a === 'string' && a.trim().length > 0)
 			: []
 	};
-}
-
-function parseContextMode(v: unknown): 'step' | 'phase' | null {
-	return v === 'phase' || v === 'step' ? v : null;
 }
 
 function parseOptionalBool(v: unknown): boolean | null {

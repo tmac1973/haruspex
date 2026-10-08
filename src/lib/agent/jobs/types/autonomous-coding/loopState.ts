@@ -47,8 +47,7 @@ export interface PhaseInfo {
 	/** Repair cycles consumed (repair item + re-verification = one cycle). */
 	repairs: number;
 	/**
-	 * Phase-context build turns spent on this phase, including ones that
-	 * produced nothing. Zero in per-step mode, which has no phase-wide turn.
+	 * Build turns spent on this phase, including ones that produced nothing.
 	 */
 	builds: number;
 }
@@ -253,8 +252,8 @@ export function nextActionable(items: TaskItem[]): TaskItem | null {
 }
 
 /**
- * Mark every item of a phase done — phase-context mode's bulk transition when
- * its build turn ends. "Done" records that the work happened; whether it
+ * Mark every item of a phase done — the bulk transition when the phase's
+ * build turn ends. "Done" records that the work happened; whether it
  * WORKS is the phase's `verify` status, settled by verification afterwards.
  */
 export function markPhaseItemsDone(plan: LoopPlan, phaseId: string): LoopPlan {

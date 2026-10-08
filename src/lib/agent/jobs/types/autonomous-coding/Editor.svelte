@@ -95,20 +95,6 @@
 	{/if}
 </div>
 
-<div class="field context">
-	<span class="label">
-		Context
-		<Tooltip
-			label="About context mode"
-			text="How much conversation context each unit of work gets. Continuous per phase keeps everything the model just learned in view, avoiding per-step re-reading, at the cost of a growing context. Fresh per step gives every checklist item a clean context that re-reads what it needs. Commits, step checks and phase verification are identical in both modes."
-		/>
-	</span>
-	<select bind:value={cfg.context_mode} aria-label="Context mode">
-		<option value="phase">Continuous per phase — one context per plan phase (default)</option>
-		<option value="step">Fresh per step — clean context per checklist item</option>
-	</select>
-</div>
-
 <div class="field use-git">
 	<label class="check">
 		<input type="checkbox" bind:checked={cfg.use_git} />
@@ -259,8 +245,7 @@
 		color: var(--text-secondary);
 	}
 
-	.signing select,
-	.context select {
+	.signing select {
 		align-self: flex-start;
 		min-width: 300px;
 	}

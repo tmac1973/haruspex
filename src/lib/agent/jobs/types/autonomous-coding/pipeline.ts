@@ -43,12 +43,7 @@ import {
 import { notify } from '#lib/notify.ts';
 import type { JobRunContext } from '../types';
 import type { StepChecklistEntry } from '../../runner.svelte';
-import {
-	DEFAULT_MAX_TURNS,
-	normalizePlanDir,
-	parseAutonomousCodingConfig,
-	type AutonomousCodingConfig
-} from './config';
+import { DEFAULT_MAX_TURNS, normalizePlanDir, parseAutonomousCodingConfig } from './config';
 import {
 	beginRepairCycle,
 	clipNote,
@@ -75,7 +70,6 @@ import {
 	extractDecisionCommand,
 	parseGuidedPlan,
 	PHASE_FILE_RE,
-	STEP_CHECK_HEADING,
 	VERIFICATION_COMMAND_HEADING,
 	type PlanFile
 } from './planParse';
@@ -203,7 +197,7 @@ const DEFAULT_MAX_ATTEMPTS = 3;
 const PROGRESS_TAIL_ENTRIES = 12;
 /** Timeout for runner-driven git commands. */
 const GIT_TIMEOUT_SECS = 120;
-/** Timeout for the runner-driven step check / phase verification commands.
+/** Timeout for the runner-driven phase verification command.
  *  Generous: a phase verification may run a real test suite. */
 const VERIFY_TIMEOUT_SECS = 600;
 
@@ -243,36 +237,28 @@ function toChecklist(
 }
 
 /**
- * Resolve both verification commands. Precedence per command: the preflight's
- * DECISIONS file > (phase only) the guided-planning overview, where planning
- * settled the command — the runner reading it directly means the contract
- * survives a preflight that fumbles the transcription. Files are read fresh at
- * every call, since a repair item may fix a broken command there.
+ * Resolve the phase verification command. Precedence: the preflight's
+ * DECISIONS file > the guided-planning overview, where planning settled the
+ * command — the runner reading it directly means the contract survives a
+ * preflight that fumbles the transcription. Files are read fresh at every
+ * call, since a repair item may fix a broken command there.
  *
  * There is deliberately no job-config layer. Asking a user to type a test
  * command up front is asking them to guess before anything exists; preflight
  * can see the repo, run a candidate to check it works, and record what it
  * chose. A user with a preference states it in the plan or the build prompt,
  * where it is context the model reasons about rather than a field it obeys.
- *
- * In phase mode the step check is null by design (the preflight contract
- * forbids recording one) — resolved here so the runner agrees.
  */
-async function resolveCommands(
+async function resolveVerifyCommand(
 	ctx: JobRunContext,
-	contextMode: 'step' | 'phase',
-	cfg: AutonomousCodingConfig,
 	planDir: string,
 	decisionsPath: string
-): Promise<{ step: string | null; phase: string | null }> {
+): Promise<string | null> {
 	const text = (await readPlanFile(ctx, decisionsPath)) ?? '';
-	const phaseFromDecisions = extractDecisionCommand(text, VERIFICATION_COMMAND_HEADING);
-	const overviewText =
-		phaseFromDecisions === null ? ((await readPlanFile(ctx, `${planDir}overview.md`)) ?? '') : '';
-	return {
-		step: contextMode === 'phase' ? null : extractDecisionCommand(text, STEP_CHECK_HEADING),
-		phase: phaseFromDecisions ?? extractDecisionCommand(overviewText, VERIFICATION_COMMAND_HEADING)
-	};
+	const fromDecisions = extractDecisionCommand(text, VERIFICATION_COMMAND_HEADING);
+	if (fromDecisions !== null) return fromDecisions;
+	const overviewText = (await readPlanFile(ctx, `${planDir}overview.md`)) ?? '';
+	return extractDecisionCommand(overviewText, VERIFICATION_COMMAND_HEADING);
 }
 
 /**
@@ -293,9 +279,6 @@ export async function runAutonomousCodingPipeline(ctx: JobRunContext): Promise<v
 async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Promise<void> {
 	const { job, runId, abort } = ctx;
 	const cfg = parseAutonomousCodingConfig(job.type_config);
-	// Resolved once — the single source of the mode default. Every consumer
-	// (preflight contract, loop branch, command resolution) reads this.
-	const contextMode: 'step' | 'phase' = cfg.context_mode ?? 'phase';
 	// A chained run was started by a guided-planning run that has already
 	// finished — there is nobody to interview. `mute_preflight` is the same
 	// state, chosen deliberately: a re-run against a plan whose decisions are
@@ -351,7 +334,6 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 			ctx,
 			planDir,
 			decisionsPath,
-			contextMode,
 			webResearch,
 			interactive,
 			cfg.open_findings,
@@ -371,7 +353,6 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 			systemPrompt: preflightPrompt(
 				planDir,
 				decisionsPath,
-				contextMode,
 				webResearch,
 				interactive,
 				cfg.open_findings,
@@ -480,54 +461,55 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 		// looped to cancellation). The flip side — a model could WEAKEN a
 		// command mid-run — is surfaced by logging every change loudly into
 		// PROGRESS rather than forbidding it.
-		let knownCommands: { step: string | null; phase: string | null } | null = null;
-		const currentCommands = async (): Promise<{ step: string | null; phase: string | null }> => {
-			const cmds = await resolveCommands(ctx, contextMode, cfg, planDir, decisionsPath);
-			if (!knownCommands && !cmds.step && !cmds.phase) {
+		let knownCommand: string | null = null;
+		let sawCommand = false;
+		const currentCommand = async (): Promise<string | null> => {
+			const cmd = await resolveVerifyCommand(ctx, planDir, decisionsPath);
+			if (!sawCommand && !cmd) {
 				await record(
-					'## No verification commands available\n\nNeither a step check nor a phase ' +
-						'verification command could be resolved from job config or ' +
-						'DECISIONS-coding.md — steps will commit unchecked and phases will NOT be ' +
-						'verified. If this is unexpected, check the two command sections in the ' +
-						'decisions file.\n',
+					'## No verification command available\n\nNo phase verification command ' +
+						'could be resolved from DECISIONS-coding.md or the plan overview — ' +
+						'phases will NOT be verified. If this is unexpected, check the ' +
+						`"## ${VERIFICATION_COMMAND_HEADING}" section of the decisions file.\n`,
 					undefined,
 					{ logOnly: true }
 				);
 			}
-			const diff = knownCommands ? formatCommandChange(knownCommands, cmds) : null;
+			const diff = sawCommand ? formatCommandChange(knownCommand, cmd) : null;
 			if (diff) {
 				await record(
-					`## Verification commands changed mid-run\n\n${diff}\n\nA repair item may ` +
+					`## Verification command changed mid-run\n\n${diff}\n\nA repair item may ` +
 						`legitimately fix a broken command; review this change when the run finishes.\n`,
 					undefined,
 					{ logOnly: true }
 				);
 			}
-			knownCommands = cmds;
-			return cmds;
+			knownCommand = cmd;
+			sawCommand = true;
+			return cmd;
 		};
 
 		ctx.patchStep(LOOP, { checklist: toChecklist(plan.items, null, maxAttempts) });
 		for (;;) {
 			abortIfCancelled();
-			const cmds = await currentCommands();
+			const verifyCmd = await currentCommand();
 
 			// Phase verification outranks the next item: a phase whose last item
 			// just landed is verified before any new work starts, so a breakage
 			// is caught while the culprit set is still one phase wide.
-			const phase = cmds.phase ? phaseNeedingVerify(plan) : null;
-			if (phase && cmds.phase != null) {
+			const phase = verifyCmd ? phaseNeedingVerify(plan) : null;
+			if (phase && verifyCmd != null) {
 				ctx.patchStep(LOOP, {
-					streaming: `Verifying phase ${phase.id} — ${phase.title} (\`${cmds.phase}\`)`
+					streaming: `Verifying phase ${phase.id} — ${phase.title} (\`${verifyCmd}\`)`
 				});
-				const v = await runCheckCommand(ctx, cmds.phase);
+				const v = await runCheckCommand(ctx, verifyCmd);
 				abortIfCancelled();
 				if (v.passed) {
 					plan = setPhaseVerify(plan, phase.id, 'passed');
 					const c = await commitPhaseOutcome(ctx, phase, true, git);
 					await record(
 						`## Phase ${phase.id} — ${phase.title}: verification PASSED` +
-							`${c.committed ? ' — phase committed' : ''}\n`
+							`${c.committed ? ' — phase committed' : ''}${c.note}\n`
 					);
 				} else if (phase.repairs >= MAX_PHASE_REPAIR_CYCLES) {
 					plan = setPhaseVerify(plan, phase.id, 'blocked');
@@ -537,7 +519,8 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 					await record(
 						`## Phase ${phase.id} — ${phase.title}: verification still failing after ` +
 							`${MAX_PHASE_REPAIR_CYCLES} repair cycle(s) — phase BLOCKED` +
-							`${c.committed ? ' (work committed, marked UNVERIFIED)' : ''}\n\n${clipNote(v.output, 3000)}\n`
+							`${c.committed ? ' (work committed, marked UNVERIFIED)' : ''}${c.note}\n\n` +
+							`${clipNote(v.output, 3000)}\n`
 					);
 				} else {
 					const r = beginRepairCycle(plan, phase.id, v.output, lastRepairNote.get(phase.id));
@@ -553,12 +536,14 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 
 			const target = nextActionable(plan.items);
 			if (!target) break;
-			if (contextMode === 'phase' && !target.repair && target.phase) {
+			// Every item works in its phase's one continuous context. Only a
+			// repair item, injected by a failed verification, gets a turn of its own.
+			if (!target.repair && target.phase) {
 				await runPhaseContextTurn(
 					{
 						ctx,
 						planDir,
-						phaseVerifyCommand: cmds.phase,
+						phaseVerifyCommand: verifyCmd,
 						getPlan: () => plan,
 						setPlan: (p) => {
 							plan = p;
@@ -594,8 +579,7 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 			const result = await runIterationTurn(
 				ctx,
 				planDir,
-				cmds.step,
-				cmds.phase,
+				verifyCmd,
 				plan,
 				target,
 				recentNotes,
@@ -611,20 +595,6 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 				note =
 					`Reported a result for "${result.itemId}" instead of the assigned ` +
 					`item ${target.id} — counted as a failed attempt. Original note: ${note}`;
-			}
-			// Re-resolve before the check: the iteration itself may have repaired a
-			// broken command in DECISIONS-coding.md.
-			const checkCmds = await currentCommands();
-			if (status === 'done' && checkCmds.step) {
-				// Runner-enforced, not model-trusted: no broken file ever lands.
-				const check = await runCheckCommand(ctx, checkCmds.step);
-				abortIfCancelled();
-				if (!check.passed) {
-					status = 'failed';
-					note =
-						`Step check failed (\`${checkCmds.step}\`) — the work is NOT committed ` +
-						`until it passes.\n\n${clipNote(check.output, 3000)}\n\nOriginal note: ${note}`;
-				}
 			}
 			if (status === 'done') {
 				const commit = await commitStepWork(ctx, target, plan.items.length, headBefore, git);
@@ -738,7 +708,6 @@ async function runPreflightTurn(
 	ctx: JobRunContext,
 	planDir: string,
 	decisionsPath: string,
-	contextMode: 'step' | 'phase',
 	webResearch: boolean,
 	interactive: boolean,
 	openFindings: string[],
@@ -763,7 +732,6 @@ async function runPreflightTurn(
 		systemPrompt: preflightPrompt(
 			planDir,
 			decisionsPath,
-			contextMode,
 			webResearch,
 			interactive,
 			openFindings,
@@ -846,27 +814,18 @@ async function obtainTaskList(
 	);
 }
 
-/** Human-readable diff of the two verification commands, or null when unchanged. */
-function formatCommandChange(
-	prev: { step: string | null; phase: string | null },
-	next: { step: string | null; phase: string | null }
-): string | null {
-	const lines = [
-		prev.step !== next.step
-			? `- step check: \`${prev.step ?? '(none)'}\` → \`${next.step ?? '(none)'}\``
-			: '',
-		prev.phase !== next.phase
-			? `- phase verification: \`${prev.phase ?? '(none)'}\` → \`${next.phase ?? '(none)'}\``
-			: ''
-	].filter(Boolean);
-	return lines.length > 0 ? lines.join('\n') : null;
+/** Human-readable diff of the verification command, or null when unchanged. */
+function formatCommandChange(prev: string | null, next: string | null): string | null {
+	return prev === next
+		? null
+		: `- phase verification: \`${prev ?? '(none)'}\` → \`${next ?? '(none)'}\``;
 }
 
 /**
  * Commit whatever the phase left staged-able, as a unit, on its verification
- * outcome. In phase-context mode this IS the phase's commit (the build turn
- * commits nothing); in per-step mode the work is already committed per item
- * and this quietly picks up strays (repair leftovers), or does nothing.
+ * outcome. This IS the phase's commit — the build turn commits nothing — and
+ * the run's only routine commit path, which is why a signing fallback here
+ * must never be silent.
  */
 /**
  * Refresh .gitignore for any stack introduced since the last commit, stage
@@ -886,11 +845,11 @@ async function commitPhaseOutcome(
 	phase: { id: string; title: string },
 	verified: boolean,
 	git: GitPolicy
-): Promise<{ committed: boolean }> {
+): Promise<{ committed: boolean; note: string }> {
 	// Before stagePending: that runs `git add -A`, which has nothing to add to
 	// in a directory that is not a repo.
-	if (!git.enabled) return { committed: false };
-	if (!(await stagePending(ctx))) return { committed: false };
+	if (!git.enabled) return { committed: false, note: '' };
+	if (!(await stagePending(ctx))) return { committed: false, note: '' };
 	const marker = verified ? '' : ' [UNVERIFIED — phase verification failed]';
 	// commitTitle: phase.title is model-authored — sanitize before it is
 	// interpolated into `git commit -m "…"`, exactly like the step path does.
@@ -899,7 +858,17 @@ async function commitPhaseOutcome(
 		`feat: ${commitTitle(`Phase ${phase.id} — ${phase.title}`)}${marker}`,
 		git
 	);
-	return { committed: c.committed };
+	// An unreported UNSIGNED commit would mean waking up to a branch that
+	// cannot be pushed, with nothing saying why.
+	const note = c.unsigned
+		? '\n\nNOTE: commit made UNSIGNED — the signing authorization (e.g. 1Password) was ' +
+			"unavailable. Re-sign before pushing (e.g. git rebase --exec 'git commit --amend " +
+			"--no-edit -S')."
+		: c.skipped
+			? '\n\nNOTE: commit SKIPPED — the signing authorization was unavailable and this job ' +
+				"never commits unsigned. The phase's work remains uncommitted in the working tree."
+			: '';
+	return { committed: c.committed, note };
 }
 
 /** Everything a phase-context turn needs from the running pipeline. */
@@ -932,7 +901,7 @@ const SELF_REPORTED_FAILURE =
 	/^\W*(not implemented|stuck\b|nothing (was )?(implemented|written|built)|no code (was )?written|blocked\b)/i;
 
 /**
- * Phase-context mode: ONE continuous turn builds the whole phase — no
+ * The phase build turn: ONE continuous turn builds the whole phase — no
  * per-item checks or reports (an earlier step-report protocol interleaved
  * bookkeeping with building and real models treated it as an obstacle; it
  * failed twice). When the turn ends HAVING BUILT SOMETHING, every item of the
@@ -1032,7 +1001,6 @@ async function runPhaseContextTurn(deps: PhaseTurnDeps, phaseId: string): Promis
 async function runIterationTurn(
 	ctx: JobRunContext,
 	planDir: string,
-	stepCheckCommand: string | null,
 	phaseVerifyCommand: string | null,
 	plan: LoopPlan,
 	target: TaskItem,
@@ -1044,9 +1012,6 @@ async function runIterationTurn(
 		`Work on EXACTLY ONE checklist item: ${target.id}. ${target.title}`,
 		phase ? `(Phase ${phase.id} — ${phase.title})` : '',
 		target.description ? `\nWhat "done" means: ${target.description}` : '',
-		stepCheckCommand
-			? `\nThe runner runs \`${stepCheckCommand}\` before committing your work.`
-			: '',
 		'',
 		'Current checklist:',
 		'```markdown',
@@ -1063,7 +1028,7 @@ async function runIterationTurn(
 		contextSize: ctx.contextSize(),
 		visionSupported: ctx.visionSupported(),
 		maxIterations: maxTurns,
-		systemPrompt: iterationPrompt(stepCheckCommand, phaseVerifyCommand, planDir),
+		systemPrompt: iterationPrompt(phaseVerifyCommand, planDir),
 		toolAllowlist: LOOP_TOOLS,
 		forceFinalTool: SUBMIT_ITERATION_RESULT_TOOL,
 		...base,

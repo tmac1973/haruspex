@@ -41,14 +41,13 @@ describe('guided-planning Editor', () => {
 					jobName: 'Test job'
 				}
 			});
-			expect(screen.queryByLabelText('Context mode')).toBeNull();
+			expect(screen.queryByLabelText('Max attempts per step')).toBeNull();
 			unmount();
 		}
 	});
 
 	it('shows it in the chain mode, where it is the only chance to set it', () => {
 		mount({ run_mode: 'unattended_chain' });
-		expect(screen.getByLabelText('Context mode')).toBeTruthy();
 		expect(screen.getByLabelText('Max attempts per step')).toBeTruthy();
 	});
 

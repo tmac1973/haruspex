@@ -1,7 +1,7 @@
 /** Autonomous-coding prompts: preflight, decompose, the loop, finalize. */
 
 import type { BoundaryRefusal } from '#lib/shell/boundary.ts';
-import { STEP_CHECK_HEADING, VERIFICATION_COMMAND_HEADING } from './planParse';
+import { VERIFICATION_COMMAND_HEADING } from './planParse';
 import { interviewResearchRules, writeResearchRules } from '../webResearch';
 
 /**
@@ -57,13 +57,12 @@ function shellSafetyRules(stage: 'preflight' | 'unattended'): string[] {
  * the user via ask_user_question, record the answers, then report readiness
  * via submit_preflight.
  *
- * `webResearch` is required, like `contextMode`, so the retry turn in
+ * `webResearch` is required so the retry turn in
  * ensureFileWritten can't silently get a prompt that disagrees with its tools.
  */
 export function preflightPrompt(
 	planDir: string,
 	decisionsPath: string,
-	contextMode: 'step' | 'phase',
 	webResearch: boolean,
 	interactive: boolean = true,
 	openFindings: string[] = [],
@@ -123,7 +122,7 @@ export function preflightPrompt(
 					'   stall on anything: an unsettled decision becomes a guess made later,',
 					'   in a worse position, by a run that cannot ask either.'
 				]),
-		...verificationContractStep(contextMode, interactive),
+		...verificationContract(interactive),
 		`4. Write \`${decisionsPath}\` with fs_write_text: a "# Coding decisions"`,
 		'   heading, then one "## <question>" section per decision with the chosen',
 		'   answer (including defaults you settled). If there were genuinely no open',
@@ -267,83 +266,16 @@ function settleOrAsk(interactive: boolean, ask: string, settle: string): string 
 	return interactive ? ask : settle;
 }
 
-function verificationContractStep(contextMode: 'step' | 'phase', interactive: boolean): string[] {
-	if (contextMode === 'phase') {
-		return phaseContextContract(interactive);
-	}
-	return [
-		'3. Settle the TWO commands the runner executes mechanically all night:',
-		'   - STEP CHECK: runs before EVERY commit. A cheap static check — its only',
-		'     job is "no broken file ever lands". Its cost is multiplied by the',
-		'     step count, so: an existing lint/check script if the project has one,',
-		'     else a toolchain check (`node --check`, `tsc --noEmit`, `cargo check`,',
-		'     `python -m py_compile`). Near-zero cost, nothing written or maintained.',
-		'   - PHASE VERIFICATION: runs when each phase of the plan completes — NOT',
-		'     per step. The real proof: the test suite if one exists.',
-		'   Both are yours to settle — there is no configured value to honour.',
-		"   For the phase verification, FIRST check the plan's overview.md for a",
-		`   "## ${VERIFICATION_COMMAND_HEADING}" section — guided planning settles it during`,
-		'   the planning interview. If present, RUN it and adopt it unless it fails.',
-		'   a. Detect the stack(s) from what is actually in the working directory —',
-		'      package.json (check its "scripts"), Cargo.toml, pyproject.toml,',
-		'      requirements.txt, go.mod, Makefile, and any existing test directory.',
-		'      A repo can have SEVERAL; cover every stack found, joining with `&&`',
-		'      so any failure fails the check. One command, one exit code.',
-		'   b. RUN each candidate once with run_command. A command you never',
-		'      executed is a guess. If a candidate the plan named fails, do NOT',
-		'      silently substitute your own: show what',
-		settleOrAsk(
-			interactive,
-			'      happened and ask ONE `ask_user_question` offering a corrected\n' +
-				'      command, a fallback, or running anyway.',
-			'      happened and settle on the best alternative you can verify by\n' +
-				'      running it, recording what you rejected and why.'
-		),
-		'   c. PREFER THE CHEAPEST CHECK THAT WOULD CATCH A REAL BREAKAGE. Depth of',
-		'      verification should match what exists, not be maximal from step one.',
-		'      When the repo has NO test suite, the honest options for phase',
-		'      verification are: a scaffolded test framework (only if the project is',
-		'      big enough to earn the dependency), the same toolchain check as the',
-		'      step check (fine for a small project), or — LAST resort, and say',
-		'      why — a hand-written validation script.',
-		settleOrAsk(
-			interactive,
-			'   d. Ask the user ONE `ask_user_question` presenting both proposals with\n' +
-				'      concrete options, cheapest first. Do NOT scaffold a test framework\n' +
-				'      without asking — it adds dependencies to a project that may not want\n' +
-				'      them.',
-			'   d. Choose the cheapest of the two proposals that would catch a real\n' +
-				'      breakage. Do NOT scaffold a test framework: nobody is available to\n' +
-				'      approve adding dependencies to a project that may not want them.'
-		),
-		'   e. If they choose scaffolding, the scaffold itself is work the RUN does,',
-		'      not you: note it in the decisions file so it becomes the first thing',
-		'      the loop builds. Preflight writes no code.',
-		`   Record them under "## ${STEP_CHECK_HEADING}" and "## ${VERIFICATION_COMMAND_HEADING}"`,
-		'   — those exact section names.',
-		'   Both recorded commands MUST be:',
-		'   - READ-ONLY and free of side effects. No `git` commands, no installs, no',
-		'     file writes, no servers, no network. They run over and over; running',
-		'     one 20 times in a row must leave the repo exactly as it found it.',
-		'   - Fast. Seconds, not minutes — the step check is paid on every step.',
-		'   - Idempotent and order-independent: no `&&`-chained setup, only checks.',
-		'   - PHASE-AGNOSTIC: the verification command runs for EVERY phase of the',
-		'     plan, so never scope or name it to a single phase.',
-		'   - A real command, not an embedded program: no inline `-c "…"` code',
-		'     strings — that is a hand-written validator smuggled into a command.',
-		'     If a small helper script is genuinely required, that is scaffold work',
-		'     for the RUN (ask, as above) — preflight writes no code.'
-	];
-}
-
-/** The single-command contract for continuous per-phase context runs. */
-function phaseContextContract(interactive: boolean): string[] {
+/**
+ * The verification contract: the ONE command the runner executes. The model
+ * builds a whole phase in one context, then the runner verifies it.
+ */
+function verificationContract(interactive: boolean): string[] {
 	return [
 		'3. Settle the ONE command the runner executes mechanically all night.',
-		'   This run uses continuous per-phase context: the model builds a whole',
-		'   phase, then the runner runs PHASE VERIFICATION — the real proof, the',
-		'   test suite if one exists. There is NO per-step check in this mode; do',
-		'   not ask the user about one and do not record one.',
+		'   The model builds a whole phase, then the runner runs PHASE',
+		'   VERIFICATION — the real proof, the test suite if one exists. There is',
+		'   no per-step check; do not ask the user about one and do not record one.',
 		'   It is yours to settle — there is no configured value to honour.',
 		'   FIRST check the plan\'s overview.md for a "## Verification command"',
 		'   section: guided planning settles this during the planning interview,',
@@ -411,7 +343,7 @@ export function decomposePrompt(planDir: string, decisionsPath: string): string 
 		'   "Core engine", "UI", "Polish").',
 		'3. Steps must be PRODUCT work. The runner already owns the repository and the',
 		'   commits: it initializes git, takes a baseline, writes .gitignore, and',
-		'   commits after every verified step. Never emit a step for `git init`,',
+		'   commits each phase once it verifies. Never emit a step for `git init`,',
 		'   committing, branching, or repo setup — such a step wastes an iteration',
 		'   doing work that is already done. Likewise do not emit a step to set up',
 		'   verification UNLESS the decisions file explicitly says a harness is to be',
@@ -425,15 +357,12 @@ export function decomposePrompt(planDir: string, decisionsPath: string): string 
 }
 
 /**
- * Stage 2 system prompt: one fresh-context iteration of the loop. The runner
- * picks the item, owns TODO/PROGRESS bookkeeping, and makes the git commits —
- * the model implements and verifies exactly one item, then reports.
+ * Stage 2 system prompt: one fresh-context iteration of the loop — a repair
+ * item, injected when a phase fails verification (a phase's own items are
+ * built in one phase-context turn). The runner owns TODO/PROGRESS bookkeeping
+ * and makes the git commits — the model works exactly one item, then reports.
  */
-export function iterationPrompt(
-	stepCheckCommand: string | null,
-	phaseVerifyCommand: string | null,
-	planDir: string
-): string {
+export function iterationPrompt(phaseVerifyCommand: string | null, planDir: string): string {
 	return [
 		'You are ONE iteration of an unattended coding loop. There is NO human',
 		'available — never ask questions; make the call yourself using the plan',
@@ -446,9 +375,9 @@ export function iterationPrompt(
 		'   more. Resist fixing unrelated things; later items will get their turn.',
 		'2. Read before you write: check the relevant files and the progress notes',
 		'   (earlier attempts of this item may have left diagnostics for you).',
-		...verifyRule(stepCheckCommand, phaseVerifyCommand),
+		...verifyRule(phaseVerifyCommand),
 		'4. Do NOT run git commit, git init, or any history-rewriting command — the',
-		'   runner commits your work after each verified step.',
+		'   runner commits the phase once its verification passes.',
 		`5. Do NOT edit \`${planDir}TODO-coding.md\` or \`${planDir}PROGRESS-coding.md\``,
 		'   — the runner owns them.',
 		'6. If this item cannot proceed because it depends on a BLOCKED item, report',
@@ -510,39 +439,26 @@ export function phaseTurnPrompt(phaseVerifyCommand: string | null, planDir: stri
 /**
  * Rule 3 — how this iteration's work gets verified.
  *
- * With settled commands, verification is RUNNER-EXECUTED: the runner runs the
- * step check before committing and the phase verification when a phase's last
- * item lands. The model neither owns nor improvises verification — earlier
+ * With a settled command, verification is RUNNER-EXECUTED: the runner runs
+ * the phase verification when a phase's last item lands. The model neither owns nor improvises verification — earlier
  * contracts that trusted it to did not survive contact: one run built 13
  * single-use scripts whose assertions string-matched their own source; the
  * next maintained one 271-line validator against a 93-line program, editing
  * and re-running it every step.
  *
- * The no-commands branch (preflight could not settle any) keeps the old
+ * The no-command branch (preflight could not settle one) keeps the old
  * bounded self-judgment as a last resort.
  */
-function verifyRule(stepCheckCommand: string | null, phaseVerifyCommand: string | null): string[] {
-	if (stepCheckCommand || phaseVerifyCommand) {
+function verifyRule(phaseVerifyCommand: string | null): string[] {
+	if (phaseVerifyCommand) {
 		return [
 			"3. Verification is the RUNNER's job, not yours — do not build or maintain",
 			'   verification machinery of any kind:',
-			...(stepCheckCommand
-				? [
-						`   - Before committing your work the runner runs \`${stepCheckCommand}\`.`,
-						'     If it fails, this iteration is recorded as failed with its output.',
-						'     Run it yourself (run_command) just before finishing so you are not',
-						'     surprised.'
-					]
-				: []),
-			...(phaseVerifyCommand
-				? [
-						`   - Deep verification (\`${phaseVerifyCommand}\`) runs automatically when`,
-						"     the phase's last item lands — NOT after every item. Do not run the",
-						'     full suite per item, and do not re-prove earlier steps.',
-						'     If your step needs new TEST coverage, add it to the suite that',
-						'     command already runs — never a standalone verification script.'
-					]
-				: []),
+			`   - Deep verification (\`${phaseVerifyCommand}\`) runs automatically when`,
+			"     the phase's last item lands — NOT after every item. Do not run the",
+			'     full suite per item, and do not re-prove earlier steps.',
+			'     If your step needs new TEST coverage, add it to the suite that',
+			'     command already runs — never a standalone verification script.',
 			'   A quick sanity check of what you just changed (run_command) is fine;',
 			'   bespoke harnesses, validators and verify scripts are not.',
 			'   This includes checklist items that are THEMSELVES "validate/verify X"',
