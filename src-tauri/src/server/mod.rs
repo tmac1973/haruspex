@@ -141,8 +141,10 @@ impl ServerConfig {
             // /v1/chat/completions request whenever context checkpoints are
             // enabled. Qwen3.8-27B is the reported repro and is one of the
             // models we ship, so this would land as "the app crashes the moment
-            // you send a message". Upstream is still open as of llama.cpp
-            // v0.3.0; `--ctx-checkpoints 0` is the maintainers' workaround.
+            // you send a message". `--ctx-checkpoints 0` is the maintainers'
+            // workaround. Upstream is still open as of llama.cpp v0.6.0, though
+            // the reporter saw it stop at b11026 (v0.6.0 is b11429); drop this
+            // once a Windows run of the 27B confirms it.
             //
             // The cost is recomputing prefix state that a checkpoint would have
             // restored — slower reprocessing after a cache miss, no behaviour
