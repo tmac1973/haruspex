@@ -147,6 +147,8 @@ export interface AgentLoopOptions {
 	 * Code-mode run_command tool can drive the live terminal.
 	 */
 	shellSessionId?: number | null;
+	/** The Code session running this turn; see ToolContext.codeSessionId. */
+	codeSessionId?: string;
 	/**
 	 * Optional progress channel for a running tool call. Wired to the
 	 * tool's ToolContext.onProgress so a long-running tool can update its
