@@ -16,6 +16,7 @@ const ORDER = [
 	'models',
 	'chat',
 	'shell',
+	'code',
 	'skills',
 	'jobs',
 	'memory',

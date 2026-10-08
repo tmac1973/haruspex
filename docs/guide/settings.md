@@ -5,7 +5,7 @@ description: What each Settings section holds, its most-used options with their 
 
 # Settings reference
 
-Settings has fourteen sections, listed down the left side. Each one below gives the main options, their defaults and the page with more detail.
+Settings has fifteen sections, listed down the left side. Each one below gives the main options, their defaults and the page with more detail.
 
 ## Open Settings
 
@@ -122,11 +122,20 @@ The Shell tab's terminal and its assistant, including Code mode.
 
 - **Shell binary**: blank, which uses your `$SHELL`.
 - **Enable Code mode by default in new shells**: off.
-- **Memory limit**: 50 % of RAM. **Max steps per task**: 40.
-- **run_command timeout**: 30 seconds.
-- **Auto-approve commands**: off.
+- **Memory limit**: 50 % of RAM.
 
 See the `shell` page.
+
+## Code
+
+How the coding agent runs commands, in the Code tab and in the Shell's Code mode.
+
+- **run_command timeout**: 30 seconds.
+- **Max steps per task**: 40.
+- **Background log size**: 5 MB per process.
+- **Auto-approve commands**: off.
+
+See the `code` page.
 
 ## Image
 

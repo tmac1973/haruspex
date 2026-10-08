@@ -1,6 +1,6 @@
 ---
 title: Keyboard shortcuts
-description: Every keyboard shortcut in Haruspex — global keys, voice, chat, the Shell tab, dialogs and the / command list.
+description: Every keyboard shortcut in Haruspex — global keys, switching tabs, voice, chat, the Shell and Code tabs, dialogs and the / command list.
 ---
 
 # Keyboard shortcuts
@@ -15,6 +15,7 @@ Press **F1**, or click the **?** in the header, to see the shortcut list in the 
 | F2 (hold) | Push-to-talk voice input; release to send |
 | F3 | Read the last reply aloud (press again to stop) |
 | Ctrl / ⌘ + N | New conversation (Chat tab) |
+| Ctrl / ⌘ + 1–4 | Switch to the Chat, Jobs, Shell or Code tab |
 | Ctrl / ⌘ + + / − | Zoom the interface in / out |
 | Ctrl / ⌘ + 0 | Reset the zoom |
 | Ctrl + Shift + I / ⌘ + ⌥ + I | Open the web inspector (developer tools) |
@@ -41,13 +42,20 @@ Press **F1**, or click the **?** in the header, to see the shortcut list in the 
 | ↑ / ↓ | Step back and forward through the questions you asked in this tab |
 | Esc | Stop the assistant |
 
+## Code tab
+
+| Keys | What it does |
+|---|---|
+| Enter | Send; while the agent works, queue it as a steering message |
+| Esc | Stop the agent |
+
 ## Recall what you sent
 
 Up recalls your last message when the cursor is on the first line of the input box, and each press goes one further back; Down goes forward again, and past the newest brings back whatever you had typed. In a message with several lines, the arrows move the cursor until it reaches the first or last line. In the Shell tab, only your question comes back, not the shell output sent with it. Edit a recalled message and press Enter to send it as a new one.
 
 ## The / command list
 
-Typing `/` at the start of the Chat or Shell input box opens a list of commands and skills (see the `skills` page). While it is open:
+Typing `/` at the start of the Chat, Shell or Code input box opens a list of commands and skills (see the `skills` page). While it is open:
 
 | Keys | What it does |
 |---|---|

@@ -33,9 +33,9 @@ Click **Code** in the sidebar header to turn on Code mode for that tab. It is of
 
 In Code mode the assistant runs commands in your live terminal, so they share your folder, environment and venv and show in your scrollback. Commands that look safe run on their own. A risky one opens **Run this command?** with **Allow for this session**, **Allow once** or **Deny** (the model is told it was denied). A command that reaches outside the project always asks.
 
-Settings → Shell → Auto-approve commands ("Run risk-flagged commands without prompting") skips that prompt. It is off by default; only turn it on if you fully trust the model on this machine.
+Settings → Code → Auto-approve commands ("Run risk-flagged commands without prompting") skips that prompt. It is off by default; only turn it on if you fully trust the model on this machine.
 
-For servers and long builds the assistant can start a command in the background, and ask to be told when it finishes, so the terminal isn't blocked. Each command has a time limit (Settings → Shell → run_command timeout, 30 seconds by default), and a task stops after a number of steps (Settings → Shell → Max steps per task, 40 by default).
+For servers and long builds the assistant can start a command in the background, and ask to be told when it finishes, so the terminal isn't blocked. Each command has a time limit (Settings → Code → run_command timeout, 30 seconds by default), and a task stops after a number of steps (Settings → Code → Max steps per task, 40 by default). Those settings, and auto-approve, are shared with the Code tab (see the `code` page).
 
 When you return to a folder with an earlier coding session, the sidebar offers **Keep** or **Start fresh**.
 
