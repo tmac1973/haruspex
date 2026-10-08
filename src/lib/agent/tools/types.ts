@@ -171,6 +171,11 @@ export interface ToolContext {
 	 */
 	shellSessionId?: number | null;
 	/**
+	 * The Code session running this turn. Owns the background processes
+	 * `run_command` starts without a terminal (`code_bg_*`).
+	 */
+	codeSessionId?: string;
+	/**
 	 * Optional progress channel for long-running tools. The agent loop
 	 * wires this to the currently-running tool card so a tool can surface
 	 * transient status (e.g. run_python reporting "Installing plotly…"

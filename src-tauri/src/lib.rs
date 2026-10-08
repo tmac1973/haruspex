@@ -133,6 +133,19 @@ pub fn run() {
             // The same for the sidecars: an orphaned image engine otherwise
             // holds its VRAM until the next image is asked for.
             orphans::sweep(app.handle(), orphans::SIDECARS);
+            // The coding tools' background processes: kill what a crash left
+            // running, then hold the registry for this run.
+            {
+                use code_tools::background::{self, CodeBgManager};
+                let log_dir = app
+                    .path()
+                    .app_cache_dir()
+                    .unwrap_or_else(|_| std::env::temp_dir().join("haruspex"))
+                    .join("code-bg");
+                let registry = orphans::registry_path(app.handle(), background::ORPHAN_KIND).ok();
+                background::sweep_orphans(&log_dir, registry.as_deref());
+                app.manage(CodeBgManager::new(log_dir, registry));
+            }
             // The supervisor holds the orphan-registry path rather than an
             // AppHandle, which is what lets it be driven in tests; resolving it
             // needs the handle, so it is managed here rather than in the
@@ -330,6 +343,13 @@ pub fn run() {
             db::db_save_shell_session,
             db::db_load_shell_session,
             db::db_delete_shell_session,
+            db::code_session_list,
+            db::code_session_create,
+            db::code_session_load,
+            db::code_session_save,
+            db::code_session_update_meta,
+            db::code_session_delete,
+            db::code_session_fork,
             db::db_replace_messages,
             db::db_create_job,
             db::db_list_jobs,
@@ -391,8 +411,13 @@ pub fn run() {
             code_tools::run_command_cancel,
             code_tools::code_write_overflow,
             code_tools::app_protected_targets,
-            code_tools::code_grep,
-            code_tools::code_glob,
+            code_tools::search::code_grep,
+            code_tools::search::code_glob,
+            code_tools::background::code_bg_start,
+            code_tools::background::code_bg_status,
+            code_tools::background::code_bg_tail,
+            code_tools::background::code_bg_stop,
+            code_tools::background::code_bg_stop_owner,
             skills::skills_list,
             skills::skill_read,
             skills::skill_read_file,
@@ -541,6 +566,10 @@ pub fn run() {
                     // ~7 GB of VRAM for Ming: left behind, it outlived the app.
                     app.state::<image_engine::ImageEngine>().stop().await;
                     browser.shutdown().await;
+                    // Background commands never outlive their session.
+                    app.state::<code_tools::background::CodeBgManager>()
+                        .stop_all()
+                        .await;
                 });
             }
         });

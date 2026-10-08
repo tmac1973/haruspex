@@ -163,6 +163,7 @@ export interface LoopContext {
 	maxResponseTokens: number;
 	shellCwd: string | null;
 	shellSessionId: number | null;
+	codeSessionId?: string;
 	expectsFileOutput: boolean;
 	pendingImages: PendingImage[];
 	filesWrittenThisTurn: Set<string>;
@@ -291,6 +292,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		maxResponseTokens: resolveMaxResponseTokens(options, expectsFileOutput),
 		shellCwd: options.shellCwd ?? null,
 		shellSessionId: options.shellSessionId ?? null,
+		codeSessionId: options.codeSessionId,
 		expectsFileOutput,
 		pendingImages: [],
 		filesWrittenThisTurn: new Set(),
@@ -1600,6 +1602,7 @@ async function executeToolCalls(
 				writeRoot: ctx.writeRoot,
 				shellCwd: ctx.shellCwd,
 				shellSessionId: ctx.shellSessionId,
+				codeSessionId: ctx.codeSessionId,
 				filesWrittenThisTurn: ctx.filesWrittenThisTurn,
 				onProgress: (status: string) => options.onToolProgress?.(call, status)
 			}),
