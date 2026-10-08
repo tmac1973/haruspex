@@ -124,6 +124,15 @@ pub struct ModelInfo {
     #[serde(skip)]
     #[ts(skip)]
     pub kv_bytes_per_token: u64,
+    /// Bytes of MoE expert weights (`ffn_*_exps` tensors) in the GGUF, for a
+    /// mixture-of-experts model; `None` for a dense one. These are what
+    /// llama.cpp's fit moves to system RAM first, and only a few experts run
+    /// per token, so a MoE whose *other* weights fit in VRAM still runs at a
+    /// usable speed with the rest in RAM. Measured from each file's tensor
+    /// table. Rust-internal, like `kv_bytes_per_token`.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub expert_bytes: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, ts_rs::TS)]
@@ -281,6 +290,7 @@ fn model_registry() -> Vec<ModelInfo> {
             mmproj_size_bytes: Some(QWEN_4B_MMPROJ_SIZE),
             mtp: MtpSource::None,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
+            expert_bytes: None,
         },
         // 8 GB VRAM — the default recommendation
         ModelInfo {
@@ -299,6 +309,7 @@ fn model_registry() -> Vec<ModelInfo> {
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
             mtp: MtpSource::None,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
+            expert_bytes: None,
         },
         // 12 GB VRAM — the mid 9B, for cards that can't hold Q8
         ModelInfo {
@@ -316,6 +327,7 @@ fn model_registry() -> Vec<ModelInfo> {
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
             mtp: MtpSource::None,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
+            expert_bytes: None,
         },
         // 16 GB VRAM — Gemma 4 12B at Q6. Replaced a dense 27B at IQ3_XXS and
         // a 26B-A4B MoE, both of which spent the tier's whole VRAM budget on
@@ -350,6 +362,7 @@ fn model_registry() -> Vec<ModelInfo> {
                 sha256: GEMMA4_12B_MTP_SHA256.to_string(),
             },
             kv_bytes_per_token: KV_PER_TOKEN_GEMMA4_12B,
+            expert_bytes: None,
         },
         // 24 GB VRAM — sparse MoE, the recommended large model
         ModelInfo {
@@ -368,6 +381,7 @@ fn model_registry() -> Vec<ModelInfo> {
             mmproj_size_bytes: Some(QWEN_35B_A3B_MMPROJ_SIZE),
             mtp: MtpSource::None,
             kv_bytes_per_token: KV_PER_TOKEN_35B_A3B,
+            expert_bytes: Some(15_474_884_608),
         },
         // 24 GB VRAM — dense alternative for those who want it. Was
         // `Qwen3.8-27B-IQ4_NL` until Unsloth dropped that quant from the
@@ -388,6 +402,7 @@ fn model_registry() -> Vec<ModelInfo> {
             mmproj_size_bytes: Some(QWEN_38_27B_MMPROJ_SIZE),
             mtp: MtpSource::Bundled,
             kv_bytes_per_token: KV_PER_TOKEN_DENSE_27B,
+            expert_bytes: None,
         },
         // 32 GB VRAM — the same sparse MoE the 24 GB tier defaults to, but at
         // Q5 instead of IQ4. A 32 GB card was previously handed the 24 GB pick
@@ -409,6 +424,7 @@ fn model_registry() -> Vec<ModelInfo> {
             mmproj_size_bytes: Some(QWEN_35B_A3B_MMPROJ_SIZE),
             mtp: MtpSource::None,
             kv_bytes_per_token: KV_PER_TOKEN_35B_A3B,
+            expert_bytes: Some(23_903_338_496),
         },
         // 32 GB VRAM — dense alternative. Q4_K_XL needs this tier to breathe:
         // on a 24 GB card it reaches the same 128k rung as UD-IQ4_XS with only
@@ -430,6 +446,7 @@ fn model_registry() -> Vec<ModelInfo> {
             mmproj_size_bytes: Some(QWEN_38_27B_MMPROJ_SIZE),
             mtp: MtpSource::Bundled,
             kv_bytes_per_token: KV_PER_TOKEN_DENSE_27B,
+            expert_bytes: None,
         },
     ]
 }
@@ -460,6 +477,7 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_size_bytes: Some(QWEN_4B_MMPROJ_SIZE),
             mtp: MtpSource::None,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
+            expert_bytes: None,
         },
         ModelInfo {
             id: "Qwen3.5-4B-Q6_K".to_string(),
@@ -476,6 +494,7 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_size_bytes: Some(QWEN_4B_MMPROJ_SIZE),
             mtp: MtpSource::None,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
+            expert_bytes: None,
         },
         ModelInfo {
             id: "Qwen3.5-9B-Q4_K_M".to_string(),
@@ -493,6 +512,7 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
             mtp: MtpSource::None,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
+            expert_bytes: None,
         },
         ModelInfo {
             id: "Qwen3.5-9B-Q5_K_M".to_string(),
@@ -510,6 +530,7 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
             mtp: MtpSource::None,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
+            expert_bytes: None,
         },
         ModelInfo {
             id: "Qwen3.5-9B-Q6_K".to_string(),
@@ -526,6 +547,7 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
             mtp: MtpSource::None,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
+            expert_bytes: None,
         },
         ModelInfo {
             id: "Qwen3.5-9B-Q8_0".to_string(),
@@ -542,6 +564,7 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
             mtp: MtpSource::None,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
+            expert_bytes: None,
         },
         // Superseded at the 16 GB tier by the dense Qwen 3.8 27B, which
         // fits three times the parameters in less VRAM. Kept so an existing
@@ -561,6 +584,7 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_size_bytes: Some(QWEN_9B_MMPROJ_SIZE),
             mtp: MtpSource::None,
             kv_bytes_per_token: KV_PER_TOKEN_SMALL,
+            expert_bytes: None,
         },
         // DEAD URL — Unsloth removed this quant from the repo, so the
         // download 404s. Unlike every other legacy entry it cannot be
@@ -582,6 +606,7 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_size_bytes: Some(QWEN_38_27B_MMPROJ_SIZE),
             mtp: MtpSource::Bundled,
             kv_bytes_per_token: KV_PER_TOKEN_DENSE_27B,
+            expert_bytes: None,
         },
         // Superseded by Qwen 3.8 27B, which is the same architecture at a
         // near-identical footprint. Kept so a 16 GB download isn't lost.
@@ -600,6 +625,7 @@ fn legacy_registry() -> Vec<ModelInfo> {
             mmproj_size_bytes: Some(QWEN_27B_MMPROJ_SIZE),
             mtp: MtpSource::None,
             kv_bytes_per_token: KV_PER_TOKEN_DENSE_27B,
+            expert_bytes: None,
         },
     ]
 }
@@ -797,6 +823,33 @@ pub fn context_ceiling_for(model_id: &str, vram_bytes: u64, opts: FitOptions) ->
             .copied()
             .unwrap_or(MIN_CONTEXT),
     )
+}
+
+/// Largest ladder rung at which MoE `model_id` runs with *only its experts*
+/// in system RAM: everything else — attention, shared weights, projector, KV
+/// cache — stays in `vram_bytes`, and the experts fit in `ram_budget_bytes`.
+/// That is the layout where offload costs little speed, since each token
+/// reads only a few experts. `None` for a dense or unknown model, or when
+/// either pool is too small for even [`MIN_CONTEXT`].
+pub fn expert_offload_context(
+    model_id: &str,
+    vram_bytes: u64,
+    ram_budget_bytes: u64,
+    opts: FitOptions,
+) -> Option<u32> {
+    let registry = full_registry();
+    let model = registry.iter().find(|m| m.id == model_id)?;
+    let experts = model.expert_bytes?;
+    if model.kv_bytes_per_token == KV_PER_TOKEN_UNKNOWN || experts > ram_budget_bytes {
+        return None;
+    }
+    let fixed = fixed_vram_bytes(model, opts).saturating_sub(experts);
+    let max_ctx_fit = vram_bytes.saturating_sub(fixed) / model.kv_bytes_per_token;
+    CONTEXT_LADDER
+        .iter()
+        .rev()
+        .find(|&&rung| rung as u64 <= max_ctx_fit)
+        .copied()
 }
 
 /// Largest standard context size for `model_id` that should fit in
@@ -1405,6 +1458,7 @@ impl ModelManager {
             // Unknown architecture — nothing to predict a context fit from.
             mtp: MtpSource::None,
             kv_bytes_per_token: KV_PER_TOKEN_UNKNOWN,
+            expert_bytes: None,
         })
     }
 
@@ -2147,6 +2201,7 @@ mod tests {
             mmproj_size_bytes: Some(1_193_058_784),
             mtp,
             kv_bytes_per_token: KV_PER_TOKEN_35B_A3B,
+            expert_bytes: None,
         }
     }
 
@@ -2228,6 +2283,39 @@ mod tests {
         )
         .unwrap();
         assert!(cpu > gpu, "expected a bigger ceiling, got {cpu} vs {gpu}");
+    }
+
+    /// Expert sizes are measured per file; a MoE entry without one can't be
+    /// offered as an offload alternative, so catch the omission here.
+    #[test]
+    fn moe_entries_declare_their_expert_bytes() {
+        for model in full_registry() {
+            let moe = model.id.contains("-A3B");
+            assert_eq!(model.expert_bytes.is_some(), moe, "{}", model.id);
+            if let Some(experts) = model.expert_bytes {
+                assert!(experts < model.size_bytes, "{}", model.id);
+            }
+        }
+    }
+
+    #[test]
+    fn expert_offload_context_needs_a_moe_and_room_for_the_experts() {
+        let gb = 1024 * 1024 * 1024u64;
+        let moe = "Qwen3.6-35B-A3B-UD-IQ4_NL";
+        let opts = FitOptions::default();
+        // Dense: nothing to offload by expert.
+        assert_eq!(
+            expert_offload_context("Qwen3.8-27B-UD-IQ4_XS", 16 * gb, 24 * gb, opts),
+            None
+        );
+        // 15.5 GB of experts don't fit in a 10 GB budget.
+        assert_eq!(expert_offload_context(moe, 12 * gb, 10 * gb, opts), None);
+        // An 8 GB card holds the 2.6 GB of non-expert weights, the projector
+        // and a long KV cache: this model's KV is small (10 KB per token).
+        let ctx = expert_offload_context(moe, 8 * gb, 24 * gb, opts).unwrap();
+        assert!(ctx >= 65536, "got {ctx}");
+        // A 4 GB card can't hold even the non-expert part with the projector.
+        assert_eq!(expert_offload_context(moe, 4 * gb, 24 * gb, opts), None);
     }
 
     #[test]

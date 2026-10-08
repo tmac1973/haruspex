@@ -21,6 +21,8 @@ You can also point it at a model server you already run, or at OpenRouter. See t
 The first time you open Haruspex, a wizard asks how you want to run the model:
 
 1. **Download a model** (recommended). Haruspex checks your hardware (GPU, VRAM and RAM), shows the model it recommends, and lets you pick another from the list. You can also choose **Use existing GGUF file** to use a model you already have.
+
+   With a graphics card of 8 to 24 GB and at least 32 GB of RAM, the wizard also offers **Larger model using system RAM**: Qwen 3.6 35B-A3B, which is smarter but slower. **Use this instead** picks it and turns on Settings → Inference → **Let models use system RAM**.
 2. **Connect to an existing server** (advanced). Enter the address of an OpenAI-compatible server. Nothing is downloaded.
 
 After a download, the wizard sends a short test question to the model. If the test fails, you can **Retry** or **Skip**; the model may still work. Then press **Start chatting**.

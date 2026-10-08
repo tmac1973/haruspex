@@ -12,6 +12,7 @@ vi.mock('#lib/utils/async.ts', () => ({ sleep: () => Promise.resolve() }));
 
 import {
 	cancelDownload,
+	chooseOffloadAlternative,
 	detectHardware,
 	getDownloadError,
 	getDownloadProgress,
@@ -23,9 +24,10 @@ import {
 	getTestStatusMessage,
 	resetSetup,
 	runTestQuery,
+	setSelectedModel,
 	startDownload
 } from './setup.svelte';
-import { getSettings } from '#lib/stores/settings.ts';
+import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 
 /** Route each IPC command to a handler; anything unlisted is a test bug. */
 function ipc(handlers: Record<string, (args?: Record<string, unknown>) => unknown>) {
@@ -74,7 +76,8 @@ describe('detectHardware', () => {
 				total_ram_mb: 32000,
 				available_ram_mb: 16000,
 				recommended_quant: 'Qwen3.5-4B-Q4_K_M',
-				recommended_context_size: 16384
+				recommended_context_size: 16384,
+				offload_alternative: null
 			}),
 			list_models: () => [{ id: 'Qwen3.5-4B-Q4_K_M' }]
 		});
@@ -82,6 +85,52 @@ describe('detectHardware', () => {
 		expect(getSelectedModel()).toBe('Qwen3.5-4B-Q4_K_M');
 		expect(getSettings().contextSize).toBe(16384);
 		expect(getModels()).toHaveLength(1);
+	});
+});
+
+describe('offload alternative', () => {
+	async function detectWithAlternative() {
+		ipc({
+			cmd_detect_hardware: () => ({
+				gpu_available: true,
+				gpu_name: 'GPU',
+				gpu_api: 'vulkan',
+				gpu_vram_mb: 12000,
+				gpu_integrated: false,
+				total_ram_mb: 32000,
+				available_ram_mb: 20000,
+				recommended_quant: 'Qwen3.5-9B-UD-Q6_K_XL',
+				recommended_context_size: 32768,
+				offload_alternative: { model_id: 'Qwen3.6-35B-A3B-UD-IQ4_NL', context_size: 131072 }
+			}),
+			list_models: () => [],
+			recommended_context_size: () => 65536
+		});
+		await detectHardware();
+	}
+
+	beforeEach(() => updateSettings({ allowSpillToSystemRam: false }));
+
+	it('picks the MoE, turns on system RAM and uses its context', async () => {
+		await detectWithAlternative();
+		chooseOffloadAlternative();
+		expect(getSelectedModel()).toBe('Qwen3.6-35B-A3B-UD-IQ4_NL');
+		expect(getSettings().allowSpillToSystemRam).toBe(true);
+		expect(getSettings().contextSize).toBe(131072);
+	});
+
+	it('turns system RAM back off when another model is picked', async () => {
+		await detectWithAlternative();
+		chooseOffloadAlternative();
+		await setSelectedModel('Qwen3.5-9B-UD-Q6_K_XL');
+		expect(getSettings().allowSpillToSystemRam).toBe(false);
+	});
+
+	it('leaves a switch the user set in Settings alone', async () => {
+		updateSettings({ allowSpillToSystemRam: true });
+		await detectWithAlternative();
+		await setSelectedModel('Qwen3.5-9B-IQ4_NL');
+		expect(getSettings().allowSpillToSystemRam).toBe(true);
 	});
 });
 
@@ -148,9 +197,13 @@ describe('runTestQuery', () => {
 		});
 		fetchMock.mockResolvedValue(sse([{ content: 'ok' }]));
 		await runTestQuery();
+		const settings = getSettings();
 		expect(mocks.invoke).toHaveBeenCalledWith('start_server', {
 			modelPath: '/models/a.gguf',
-			ctxSize: getSettings().contextSize
+			ctxSize: settings.contextSize,
+			mtp: settings.mtpEnabled,
+			mmprojOnCpu: settings.visionProjectorInSystemRam,
+			ramOffload: settings.allowSpillToSystemRam
 		});
 		expect(getTestResult()).toBe('success');
 	});

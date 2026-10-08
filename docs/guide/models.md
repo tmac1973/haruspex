@@ -45,7 +45,7 @@ When a conversation gets long, Haruspex summarises older parts so it still fits.
 
 ## Run a model bigger than your VRAM
 
-Turn on Settings → Inference → **Let models use system RAM**. Haruspex keeps what it can in VRAM and moves the rest into system RAM, and the context sizes unlock up to what both can hold. Replies get slower. Qwen 3.6 35B-A3B slows the least, because only a few of its experts run for each word; dense models slow down a lot. It does not help on integrated graphics, which already use system RAM.
+Turn on Settings → Inference → **Let models use system RAM**, or pick the larger model the setup wizard offers. Haruspex keeps what it can in VRAM and moves the rest into system RAM, and the context sizes unlock up to what both can hold. Replies get slower. Qwen 3.6 35B-A3B slows the least, because only a few of its experts run for each word; dense models slow down a lot. It does not help on integrated graphics, which already use system RAM.
 
 ## Response length
 

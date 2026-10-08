@@ -29,6 +29,9 @@ export interface HardwareInfo {
 	available_ram_mb: number;
 	recommended_quant: string;
 	recommended_context_size: number;
+	/** A bigger MoE model to offer beside the recommendation, running with
+	 *  its experts in system RAM. See `hardware::offload_alternative`. */
+	offload_alternative: { model_id: string; context_size: number } | null;
 }
 
 // ts-rs-generated mirrors of the Rust structs, re-exported so existing
@@ -38,6 +41,11 @@ export type { DownloadProgress, ModelInfo };
 let step = $state<SetupStep>('welcome');
 let hardware = $state<HardwareInfo | null>(null);
 let selectedModel = $state('Qwen3.5-9B-IQ4_NL');
+// True while the selection is the offload alternative this wizard turned
+// "Let models use system RAM" on for. Picking another model turns it back
+// off — but only then, so re-running the wizard never clears a switch the
+// user set themselves in Settings.
+let offloadChosen = $state(false);
 let downloadProgress = $state<DownloadProgress | null>(null);
 let downloadError = $state<string | null>(null);
 let testResult = $state<TestResult>('pending');
@@ -77,8 +85,27 @@ export function setStep(s: SetupStep): void {
 	step = s;
 }
 
+export function isOffloadChosen(): boolean {
+	return offloadChosen;
+}
+
+/** Pick the hardware step's offload alternative: the MoE, with "Let models
+ *  use system RAM" on and the context that keeps everything but its experts
+ *  in VRAM. */
+export function chooseOffloadAlternative(): void {
+	const alt = hardware?.offload_alternative;
+	if (!alt) return;
+	selectedModel = alt.model_id;
+	offloadChosen = true;
+	updateSettings({ allowSpillToSystemRam: true, contextSize: alt.context_size });
+}
+
 export async function setSelectedModel(id: string): Promise<void> {
 	selectedModel = id;
+	if (offloadChosen) {
+		offloadChosen = false;
+		updateSettings({ allowSpillToSystemRam: false });
+	}
 	// Re-derive the recommended context for the newly chosen model — picking a
 	// larger model than the hardware recommendation needs a smaller context to
 	// stay within VRAM, so we can't keep the recommended model's value.
@@ -173,9 +200,15 @@ export async function runTestQuery(): Promise<void> {
 		const initialStatus = await invoke<SidecarStatus>('get_server_status');
 		if (initialStatus.type !== 'Ready') {
 			testStatusMessage = 'Starting the AI model (this may take a minute)...';
+			// Same preferences every later start passes, so the first run
+			// loads the model the way the app will from then on.
+			const settings = getSettings();
 			await invoke('start_server', {
 				modelPath,
-				ctxSize: getSettings().contextSize
+				ctxSize: settings.contextSize,
+				mtp: settings.mtpEnabled,
+				mmprojOnCpu: settings.visionProjectorInSystemRam,
+				ramOffload: settings.allowSpillToSystemRam
 			});
 		}
 
@@ -351,6 +384,7 @@ export function resetSetup(): void {
 	step = 'welcome';
 	hardware = null;
 	selectedModel = 'Qwen3.5-9B-IQ4_NL';
+	offloadChosen = false;
 	downloadProgress = null;
 	downloadError = null;
 	testResult = 'pending';
