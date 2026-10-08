@@ -38,7 +38,7 @@ const GPU_FULL =
 
 export const GPU_FULL_SENTENCE =
 	'The image engine ran out of GPU memory beside the chat model. A smaller chat model in ' +
-	'Settings → Models, or ComfyUI on another machine in Settings → Image, would leave room.';
+	'Settings → Inference → Models, or ComfyUI on another machine in Settings → Image, would leave room.';
 
 /** The configured model can't be used commercially. */
 export function nonCommercialModel(): boolean {

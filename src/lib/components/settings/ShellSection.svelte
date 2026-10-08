@@ -67,8 +67,8 @@
 		<code>$SHELL</code>
 		(falling back to <code>/bin/bash</code> if unset). Override with an absolute path to launch a
 		different shell — e.g. <code>/usr/bin/fish</code> or <code>/usr/bin/nu</code>. Bash and zsh get
-		the OSC 133 shell-integration hooks; other shells still work as terminals but lose the
-		smart-default capture (use mouse selection instead).
+		the OSC 133 shell-integration hooks, and fish 4 sends them itself; other shells still work as
+		terminals but lose the smart-default capture (use mouse selection instead).
 	</p>
 	<input
 		type="text"

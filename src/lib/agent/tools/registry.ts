@@ -367,7 +367,7 @@ export async function executeTool(
 		return toolResult(
 			toolError(
 				'Long-term memory is off, or its embedding model has not been downloaded. ' +
-					'Nothing was saved. The user can turn it on in Settings → Remember across chats.'
+					'Nothing was saved. The user can turn it on in Settings → Memory.'
 			)
 		);
 	}
