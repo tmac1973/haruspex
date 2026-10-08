@@ -9,6 +9,7 @@ import { readSseData } from '#lib/api.ts';
 import { fetchModelForDefault } from '#lib/stores/memory.svelte.ts';
 import { PORTS, baseUrl } from '#lib/ports.ts';
 import { localServerKey, localServerKeyReady } from '#lib/inference/localServerKey.ts';
+import { splitServerArgs } from '#lib/inference/serverArgs.ts';
 import {
 	getActiveLocalModelFilename,
 	getSettings,
@@ -174,6 +175,12 @@ export async function importModel(path: string): Promise<boolean> {
 	}
 }
 
+/** The extra-arguments setting as `start_server` takes it. */
+function extraArgsOrNull(text: string): string[] | null {
+	const args = splitServerArgs(text);
+	return args.length > 0 ? args : null;
+}
+
 export async function runTestQuery(): Promise<void> {
 	// Every local path through the wizard lands here; the remote path calls
 	// it from finishRemoteSetup.
@@ -208,7 +215,9 @@ export async function runTestQuery(): Promise<void> {
 				ctxSize: settings.contextSize,
 				mtp: settings.mtpEnabled,
 				mmprojOnCpu: settings.visionProjectorInSystemRam,
-				ramOffload: settings.allowSpillToSystemRam
+				ramOffload: settings.allowSpillToSystemRam,
+				parallel: settings.localParallelSlots,
+				extraArgs: extraArgsOrNull(settings.llamaServerExtraArgs)
 			});
 		}
 

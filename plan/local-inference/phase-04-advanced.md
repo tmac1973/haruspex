@@ -41,3 +41,22 @@ Test: compaction never runs while another holder owns the local lane.
 Docs: `docs/guide/models.md` (parallel and extra args under Context size, or a
 short "Advanced" heading), `troubleshooting.md` (clear extra args if the model
 won't start).
+
+## As built (2026-10-08)
+
+- **Every stream gets the full context.** Checked in llama.cpp v0.6.0: when a
+  shared unified pool fills, `server-context.cpp` fails *every* active slot
+  with "Context size has been exceeded.", which the app has no retry for. So
+  with N > 1 we pass `--ctx-size ctx×N --kv-unified --kv-unified-per-slot ctx`
+  (decided with Tim). Verified live: "n_slots = 2, n_ctx_slot = 16384,
+  kv_unified = 'true'", two concurrent replies at 134 tok/s each on the 4B.
+  `FitOptions::parallel` multiplies the KV cost, so the picker greys out what
+  N streams can't hold.
+- The local lane admits `parallelSlots` turns; sub-agent slot lending
+  (`createSlotLender`) follows automatically.
+- Compaction takes its own inference slot rather than moving into the turn's,
+  because it rewrites the conversation before the turn's prompt is built.
+- Extra args are split by `splitServerArgs`: quotes group, backslashes kept
+  (for `-ot` regexes). The Server section names them when the server errors.
+- The flaky chat tests (#409) are 5 s timeouts on the chat store's import
+  under full parallel load.

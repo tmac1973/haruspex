@@ -64,6 +64,8 @@ The app is not code-signed. On Windows, click **More info → Run anyway** at th
 
 The status badge at the top of the window shows **Ready**, **Starting…**, **Error** or **Stopped**. Click it to open the logs. Settings → Inference → Server has **Restart Server**, **Start Server** and **Stop Server**, and **Run Setup Wizard** to pick a model again.
 
+If you set Settings → Inference → **Extra llama-server arguments**, clear them and restart: a mistyped argument stops the server starting.
+
 ## Find the logs
 
 Click the terminal icon in the toolbar (tooltip "Sidecar Logs"), or click the status badge. The log viewer lists its logs on the left: Haruspex's own (App, Debug, Tools, and search Stats), then the servers (LLM, TTS, Whisper, Image, MCP), then Crashes. **Image** shows either the bundled engine's output or the calls made to your ComfyUI server. Each one has **Copy all** to copy its log for a bug report.

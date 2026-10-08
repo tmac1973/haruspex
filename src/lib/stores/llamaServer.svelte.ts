@@ -7,6 +7,7 @@ import { DEFAULT_CONTEXT_SIZE, getSettings, updateSettings } from '#lib/stores/s
 import { setContextSize as setIndicatorContextSize } from '#lib/stores/context.svelte.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import { getRunningCount } from '#lib/agent/inferenceQueue.svelte.ts';
+import { splitServerArgs } from '#lib/inference/serverArgs.ts';
 
 /**
  * Server status visible to the UI. The first four mirror the Rust-side
@@ -159,6 +160,8 @@ export async function startServer(
 	ctxSize?: number,
 	extraArgs?: string[]
 ): Promise<void> {
+	const settings = getSettings();
+	const args = extraArgs ?? splitServerArgs(settings.llamaServerExtraArgs);
 	serverState.status = 'starting';
 	serverState.errorMessage = undefined;
 	// Clear the CPU-fallback banner up front. Rust also emits
@@ -171,15 +174,16 @@ export async function startServer(
 		await invoke('start_server', {
 			modelPath,
 			ctxSize: ctxSize ?? DEFAULT_CONTEXT_SIZE,
-			extraArgs: extraArgs || null,
+			extraArgs: args.length > 0 ? args : null,
 			// The preference only; Rust ANDs it with the model's own capability.
-			mtp: getSettings().mtpEnabled,
+			mtp: settings.mtpEnabled,
 			// Only reaches llama-server for models that actually have a
 			// projector — Rust attaches it alongside `--mmproj`.
-			mmprojOnCpu: getSettings().visionProjectorInSystemRam,
+			mmprojOnCpu: settings.visionProjectorInSystemRam,
 			// On: Rust omits --n-gpu-layers so llama.cpp's fit can place
 			// layers and MoE experts in system RAM.
-			ramOffload: getSettings().allowSpillToSystemRam
+			ramOffload: settings.allowSpillToSystemRam,
+			parallel: settings.localParallelSlots
 		});
 	} catch (e) {
 		serverState.status = 'error';
@@ -210,7 +214,7 @@ export async function stopServer(): Promise<void> {
  * this — they act immediately and clear any pending restart.
  */
 /** What the user changed to need a restart — drives the banner copy. */
-export type RestartReason = 'model' | 'context' | 'projector' | 'memory';
+export type RestartReason = 'model' | 'context' | 'projector' | 'memory' | 'parallel' | 'arguments';
 
 export interface PendingRestart {
 	modelPath: string;

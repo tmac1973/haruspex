@@ -574,7 +574,12 @@ async function compactIfNeeded(): Promise<void> {
 
 	isCompacting = true;
 	try {
-		const { summary, removedCount } = await compactConversation(conversation.messages);
+		// Summarising is a model call like any other, so it queues for the
+		// same inference slot: otherwise it runs straight past a job or
+		// memory pass that holds the local server's only stream.
+		const { summary, removedCount } = await withInferenceSlot({ consumer: 'chat' }, () =>
+			compactConversation(conversation.messages)
+		);
 		if (!summary || removedCount === 0) return;
 
 		const remaining = conversation.messages.filter(

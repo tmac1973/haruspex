@@ -203,7 +203,9 @@ describe('runTestQuery', () => {
 			ctxSize: settings.contextSize,
 			mtp: settings.mtpEnabled,
 			mmprojOnCpu: settings.visionProjectorInSystemRam,
-			ramOffload: settings.allowSpillToSystemRam
+			ramOffload: settings.allowSpillToSystemRam,
+			parallel: settings.localParallelSlots,
+			extraArgs: null
 		});
 		expect(getTestResult()).toBe('success');
 	});

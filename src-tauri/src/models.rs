@@ -721,6 +721,16 @@ pub struct FitOptions {
     /// System RAM llama.cpp's fit may fill with weights when the user lets
     /// models use system RAM; 0 when they don't. See [`ram_offload_budget`].
     pub ram_budget_bytes: u64,
+    /// Concurrent streams. Each gets the full context, so the KV cache
+    /// grows by this factor. 0 is treated as 1.
+    pub parallel: u32,
+}
+
+impl FitOptions {
+    /// KV-cache bytes per token of context across every stream.
+    fn kv_bytes_per_context_token(self, model: &ModelInfo) -> u64 {
+        model.kv_bytes_per_token * self.parallel.max(1) as u64
+    }
 }
 
 impl FitOptions {
@@ -730,6 +740,7 @@ impl FitOptions {
             mtp_enabled,
             mmproj_on_cpu: false,
             ram_budget_bytes: 0,
+            parallel: 1,
         }
     }
 }
@@ -801,10 +812,10 @@ pub fn context_ceiling_for(model_id: &str, vram_bytes: u64, opts: FitOptions) ->
     let registry = full_registry();
     let model = registry.iter().find(|m| m.id == model_id)?;
     // 0 = architecture unknown (an imported model): can't predict, fail open.
-    let kv_per_tok = match model.kv_bytes_per_token {
-        KV_PER_TOKEN_UNKNOWN => return None,
-        n => n,
-    };
+    if model.kv_bytes_per_token == KV_PER_TOKEN_UNKNOWN {
+        return None;
+    }
+    let kv_per_tok = opts.kv_bytes_per_context_token(model);
     let fixed = fixed_vram_bytes(model, opts);
     // With offload on, llama.cpp's fit moves MoE experts first and then whole
     // layers, each taking its share of the KV cache with it. So what bounds
@@ -844,7 +855,7 @@ pub fn expert_offload_context(
         return None;
     }
     let fixed = fixed_vram_bytes(model, opts).saturating_sub(experts);
-    let max_ctx_fit = vram_bytes.saturating_sub(fixed) / model.kv_bytes_per_token;
+    let max_ctx_fit = vram_bytes.saturating_sub(fixed) / opts.kv_bytes_per_context_token(model);
     CONTEXT_LADDER
         .iter()
         .rev()
@@ -1579,8 +1590,10 @@ fn fit_options(
     mtp: Option<bool>,
     mmproj_on_cpu: Option<bool>,
     ram_offload: Option<bool>,
+    parallel: Option<u32>,
 ) -> FitOptions {
     FitOptions {
+        parallel: parallel.unwrap_or(1).clamp(1, crate::server::MAX_PARALLEL),
         mtp_enabled: mtp.unwrap_or(true),
         mmproj_on_cpu: mmproj_on_cpu.unwrap_or(false),
         ram_budget_bytes: if ram_offload.unwrap_or(false) {
@@ -1609,8 +1622,9 @@ pub async fn recommended_context_size(
     mtp: Option<bool>,
     mmproj_on_cpu: Option<bool>,
     ram_offload: Option<bool>,
+    parallel: Option<u32>,
 ) -> Result<u32, ()> {
-    let opts = fit_options(mtp, mmproj_on_cpu, ram_offload);
+    let opts = fit_options(mtp, mmproj_on_cpu, ram_offload, parallel);
     Ok(match vram_mb {
         Some(mb) => recommended_context_for(&model_id, mb * 1024 * 1024, opts),
         None => MIN_CONTEXT,
@@ -1628,8 +1642,9 @@ pub async fn context_fit_ceiling(
     mtp: Option<bool>,
     mmproj_on_cpu: Option<bool>,
     ram_offload: Option<bool>,
+    parallel: Option<u32>,
 ) -> Result<Option<u32>, ()> {
-    let opts = fit_options(mtp, mmproj_on_cpu, ram_offload);
+    let opts = fit_options(mtp, mmproj_on_cpu, ram_offload, parallel);
     Ok(match vram_mb {
         Some(mb) => context_ceiling_for(&model_id, mb * 1024 * 1024, opts),
         None => None,
@@ -2316,6 +2331,26 @@ mod tests {
         assert!(ctx >= 65536, "got {ctx}");
         // A 4 GB card can't hold even the non-expert part with the projector.
         assert_eq!(expert_offload_context(moe, 4 * gb, 24 * gb, opts), None);
+    }
+
+    /// Every stream holds the full context, so two streams need twice the
+    /// KV cache: the ceiling can only drop, by at most one rung per doubling.
+    #[test]
+    fn parallel_streams_share_the_kv_budget() {
+        let gb = 1024 * 1024 * 1024u64;
+        let id = "Qwen3.5-9B-UD-Q6_K_XL";
+        let one = context_ceiling_for(id, 12 * gb, FitOptions::default()).unwrap();
+        let two = context_ceiling_for(
+            id,
+            12 * gb,
+            FitOptions {
+                parallel: 2,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(two < one, "expected {two} < {one}");
+        assert!(two >= one / 2 || two == MIN_CONTEXT, "{two} vs {one}");
     }
 
     #[test]

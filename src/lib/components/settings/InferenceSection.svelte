@@ -38,6 +38,8 @@
 	let contextSize = $state(getSettings().contextSize);
 	let allowSpill = $state(getSettings().allowSpillToSystemRam);
 	let projectorInRam = $state(getSettings().visionProjectorInSystemRam);
+	let parallelSlots = $state(getSettings().localParallelSlots);
+	let extraArgs = $state(getSettings().llamaServerExtraArgs);
 	let inferenceBackend = $state<InferenceBackendConfig>(getSettings().inferenceBackend);
 
 	// Predictive memory cap: detected total VRAM (MB) and the largest context the
@@ -68,7 +70,9 @@
 				// A CPU-resident projector isn't competing for VRAM, so it
 				// doesn't count against the KV budget.
 				mmprojOnCpu: projectorInRam,
-				ramOffload: allowSpill
+				ramOffload: allowSpill,
+				// Every stream holds the full context, so more streams lower it.
+				parallel: parallelSlots
 			});
 		} catch {
 			ctxCeiling = null;
@@ -149,6 +153,30 @@
 		await restartActiveModel('memory');
 	}
 
+	async function setParallelSlots(n: number) {
+		if (n === parallelSlots) return;
+		parallelSlots = n;
+		updateSettings({ localParallelSlots: n });
+		await refreshCtxCeiling();
+		if (ctxCeiling !== null && contextSize > ctxCeiling) {
+			showToast(
+				`${n} streams of ${formatCtx(contextSize)} don't fit — using ${formatCtx(ctxCeiling)} each.`,
+				{ kind: 'info' }
+			);
+			await setContextSize(ctxCeiling);
+			return;
+		}
+		await restartActiveModel('parallel');
+	}
+
+	async function commitExtraArgs() {
+		const next = extraArgs.trim();
+		if (next === getSettings().llamaServerExtraArgs) return;
+		extraArgs = next;
+		updateSettings({ llamaServerExtraArgs: next });
+		await restartActiveModel('arguments');
+	}
+
 	// The Rust supervisor may back the context size down during startup
 	// (context-backoff: the configured size didn't fit in memory). The
 	// server store already persisted the smaller size; mirror it into the
@@ -171,6 +199,8 @@
 		if (reason === 'model') return 'Model change';
 		if (reason === 'projector') return 'Vision projector change';
 		if (reason === 'memory') return 'System RAM change';
+		if (reason === 'parallel') return 'Parallel streams change';
+		if (reason === 'arguments') return 'Server arguments change';
 		return 'Context size change';
 	}
 
@@ -453,6 +483,47 @@
 				</span>
 			</span>
 		</label>
+
+		<div
+			class="sub-setting"
+			title="Each stream gets the whole context size, so 2 streams need twice the memory for context and some sizes may grey out. Streams share the GPU, so each reply is slower while another runs."
+		>
+			<span class="toggle-label">
+				Parallel streams
+				<span class="toggle-sub">
+					Lets a background job run beside chat. 1 by default; restarts the server.
+				</span>
+			</span>
+			<div class="stream-options">
+				{#each [1, 2, 4] as n (n)}
+					<button
+						class="ctx-btn stream-btn"
+						class:selected={parallelSlots === n}
+						onclick={() => void setParallelSlots(n)}
+					>
+						<strong>{n}</strong>
+					</button>
+				{/each}
+			</div>
+		</div>
+
+		<label class="sub-setting extra-args">
+			<span
+				class="toggle-label"
+				title="Passed to llama-server after Haruspex's own arguments, so these override them. Quotes group an argument; backslashes are kept as typed. Takes effect on restart."
+			>
+				Extra llama-server arguments
+				<span class="toggle-sub">For advanced users. Empty by default; restarts the server.</span>
+			</span>
+			<input
+				type="text"
+				spellcheck="false"
+				autocomplete="off"
+				placeholder="--n-cpu-moe 10"
+				bind:value={extraArgs}
+				onchange={() => void commitExtraArgs()}
+			/>
+		</label>
 	</section>
 
 	<section class="settings-section">
@@ -461,6 +532,12 @@
 			<span>Status</span>
 			<span class="status-value" data-status={serverState.status}>{serverState.status}</span>
 		</div>
+		{#if serverState.status === 'error' && extraArgs.trim()}
+			<p class="hint">
+				Extra llama-server arguments are set ({extraArgs.trim()}). If the server won't start, clear
+				Settings → Inference → Extra llama-server arguments.
+			</p>
+		{/if}
 		<div class="info-row">
 			<span>Port</span>
 			<span>{PORTS.llama}</span>
@@ -584,6 +661,33 @@
 	.toggle-label {
 		font-size: 0.85rem;
 		color: var(--text-primary);
+	}
+
+	.sub-setting {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		margin-top: 16px;
+	}
+
+	.stream-options {
+		display: flex;
+		gap: 8px;
+	}
+
+	.stream-btn {
+		min-width: 56px;
+	}
+
+	.extra-args input {
+		width: 100%;
+		padding: 6px 10px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--bg-primary);
+		color: var(--text-primary);
+		font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+		font-size: 0.85rem;
 	}
 
 	.toggle-sub {
