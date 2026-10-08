@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import type { StreamChunk } from '#lib/api.ts';
-import { StreamResponseAssembler, combineReasoningAndContent } from '#lib/streamAssembly.ts';
+import {
+	ReasoningDetailsAssembler,
+	StreamResponseAssembler,
+	combineReasoningAndContent
+} from '#lib/streamAssembly.ts';
 
 const c = (delta: StreamChunk['delta'], finish_reason: string | null = null): StreamChunk => ({
 	delta,
@@ -97,7 +101,7 @@ describe('StreamResponseAssembler', () => {
 		expect(res.tool_calls![0].function.arguments).toBe('{"path":"a.ts","content":"abc');
 	});
 
-	it('takes the last usage, defaults the finish reason, and carries no reasoning_details', () => {
+	it('takes the last usage, defaults the finish reason, and carries no reasoning_details without any', () => {
 		const usage = { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 };
 		const res = assemble([c({ content: 'Hi' }), { delta: {}, finish_reason: null, usage }]);
 		expect(res).toEqual({
@@ -114,5 +118,89 @@ describe('StreamResponseAssembler', () => {
 		expect(a.partial(0)).toBeNull();
 		a.push(c({ tool_calls: [{ index: 0, id: 'a', function: { name: 'x', arguments: '{"p' } }] }));
 		expect(a.partial(0)).toEqual({ id: 'a', name: 'x', argsSoFar: '{"p' });
+	});
+});
+
+describe('streamed reasoning_details', () => {
+	const F = 'anthropic-claude-v1';
+	const rd = (...items: unknown[]) => c({ reasoning_details: items });
+
+	it('joins a text block split across chunks and keeps its signature', () => {
+		const res = assemble([
+			c({ reasoning: 'Let me ' }),
+			rd({ type: 'reasoning.text', text: 'Let me ', format: F, index: 0 }),
+			c({ reasoning: 'look.' }),
+			rd({ type: 'reasoning.text', text: 'look.', format: F, index: 0 }),
+			rd({ type: 'reasoning.text', text: '', signature: 'sig-abc', format: F, index: 0 }),
+			c({ tool_calls: [{ index: 0, id: 'a', function: { name: 'x', arguments: '{}' } }] }),
+			c({}, 'tool_calls')
+		]);
+		expect(res.reasoning_details).toEqual([
+			{ type: 'reasoning.text', text: 'Let me look.', signature: 'sig-abc', format: F, index: 0 }
+		]);
+		// The plain reasoning text is folded as before.
+		expect(res.content).toBe('<think>Let me look.</think>');
+	});
+
+	it('keeps an encrypted block whole after a text block', () => {
+		const res = assemble([
+			rd({ type: 'reasoning.text', text: 'Thinking', format: F, index: 0 }),
+			rd({ type: 'reasoning.text', signature: 'sig-1', format: F, index: 0 }),
+			rd({ type: 'reasoning.encrypted', data: 'EncRyPt3d==', id: 'rs_1', format: F, index: 1 }),
+			c({}, 'stop')
+		]);
+		expect(res.reasoning_details).toEqual([
+			{ type: 'reasoning.text', text: 'Thinking', signature: 'sig-1', format: F, index: 0 },
+			{ type: 'reasoning.encrypted', data: 'EncRyPt3d==', id: 'rs_1', format: F, index: 1 }
+		]);
+	});
+
+	it('merges interleaved indices into separate items, in index order', () => {
+		const O = 'openai-responses-v1';
+		const res = assemble([
+			rd({ type: 'reasoning.summary', summary: '**Plan** ', id: 'rs_9', format: O, index: 0 }),
+			rd({ type: 'reasoning.encrypted', data: 'gAAA', id: 'rs_9', format: O, index: 1 }),
+			rd(
+				{ type: 'reasoning.summary', summary: 'read the file', format: O, index: 0 },
+				{ type: 'reasoning.summary', summary: 'Then', format: O, index: 2 }
+			),
+			rd({ type: 'reasoning.summary', summary: ' fix it.', format: O, index: 2 }),
+			c({}, 'stop')
+		]);
+		expect(res.reasoning_details).toEqual([
+			{
+				type: 'reasoning.summary',
+				summary: '**Plan** read the file',
+				id: 'rs_9',
+				format: O,
+				index: 0
+			},
+			{ type: 'reasoning.encrypted', data: 'gAAA', id: 'rs_9', format: O, index: 1 },
+			{ type: 'reasoning.summary', summary: 'Then fix it.', format: O, index: 2 }
+		]);
+	});
+
+	it('sorts an index that arrives late and continues index-less fragments by type', () => {
+		const a = new ReasoningDetailsAssembler();
+		a.push({ type: 'reasoning.encrypted', data: 'zz', index: 1 });
+		a.push({ type: 'reasoning.text', text: 'a', index: 0 });
+		a.push({ type: 'reasoning.text', text: 'b', index: 0 });
+		a.push({ type: 'reasoning.summary', summary: 'x' });
+		a.push({ type: 'reasoning.summary', summary: 'y' });
+		a.push(null);
+		a.push('junk');
+		expect(a.finish()).toEqual([
+			{ type: 'reasoning.text', text: 'ab', index: 0 },
+			{ type: 'reasoning.encrypted', data: 'zz', index: 1 },
+			{ type: 'reasoning.summary', summary: 'xy' }
+		]);
+	});
+
+	it('returns copies, so finishing twice does not share state', () => {
+		const a = new ReasoningDetailsAssembler();
+		a.push({ type: 'reasoning.text', text: 'a', index: 0 });
+		const first = a.finish()!;
+		(first[0] as { text: string }).text = 'mutated';
+		expect(a.finish()).toEqual([{ type: 'reasoning.text', text: 'a', index: 0 }]);
 	});
 });

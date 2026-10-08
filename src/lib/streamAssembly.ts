@@ -65,6 +65,7 @@ export class StreamResponseAssembler {
 	private readonly calls = new Map<number, PartialToolCall>();
 	private finishReason: string | null = null;
 	private usage: Usage | undefined;
+	private readonly details = new ReasoningDetailsAssembler();
 
 	push(chunk: StreamChunk): void {
 		const { delta } = chunk;
@@ -73,6 +74,7 @@ export class StreamResponseAssembler {
 		if (reasoning) this.reasoning += reasoning;
 		if (delta.content) this.content += delta.content;
 		for (const tc of delta.tool_calls ?? []) this.pushCall(tc);
+		for (const item of delta.reasoning_details ?? []) this.details.push(item);
 		if (chunk.finish_reason) this.finishReason = chunk.finish_reason;
 		if (chunk.usage) this.usage = chunk.usage;
 	}
@@ -105,10 +107,69 @@ export class StreamResponseAssembler {
 			tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
 			finish_reason: this.finishReason ?? 'stop',
 			usage: this.usage,
-			// OpenRouter streams `reasoning_details` as fragments; echoing them back
-			// would need merging that nobody has verified, so a streamed round
-			// carries none — as a local llama-server response never does.
-			reasoning_details: null
+			reasoning_details: this.details.finish()
 		};
+	}
+}
+
+/** An OpenRouter reasoning item, as far as merging needs to know it. */
+type ReasoningDetail = Record<string, unknown> & { type?: string; index?: number };
+
+/** Fields whose deltas are appended; every other field keeps its latest value. */
+const CONCATENATED = ['text', 'summary'] as const;
+
+/**
+ * Folds OpenRouter's streamed `delta.reasoning_details` fragments into the
+ * array a non-streaming response carries in `message.reasoning_details`, which
+ * the loop sends back verbatim on the next request.
+ *
+ * Fragments belong to the item with the same `index`: `text` (`reasoning.text`)
+ * and `summary` (`reasoning.summary`) are deltas and are concatenated; `data`
+ * (`reasoning.encrypted`), `signature`, `id`, `format` and anything else are
+ * whole values, kept as the latest non-empty one. A fragment without an index
+ * continues the last item of its type, or starts a new one. Items come out in
+ * index order.
+ */
+export class ReasoningDetailsAssembler {
+	private readonly items: ReasoningDetail[] = [];
+
+	push(fragment: unknown): void {
+		if (!fragment || typeof fragment !== 'object' || Array.isArray(fragment)) return;
+		const frag = fragment as ReasoningDetail;
+		const item = this.itemFor(frag);
+		for (const [key, value] of Object.entries(frag)) {
+			if (value === undefined || value === null || value === '') continue;
+			if ((CONCATENATED as readonly string[]).includes(key) && typeof value === 'string') {
+				const prev = item[key];
+				item[key] = typeof prev === 'string' ? prev + value : value;
+			} else if (key !== 'index' || item.index === undefined) {
+				item[key] = value;
+			}
+		}
+	}
+
+	private itemFor(frag: ReasoningDetail): ReasoningDetail {
+		const found =
+			typeof frag.index === 'number'
+				? this.items.find((it) => it.index === frag.index)
+				: this.items.findLast((it) => it.index === undefined && it.type === frag.type);
+		if (found) return found;
+		const item: ReasoningDetail = {};
+		this.items.push(item);
+		return item;
+	}
+
+	/** The merged items, or null when the stream carried none. */
+	finish(): unknown[] | null {
+		if (this.items.length === 0) return null;
+		// Stable: items without an index keep their place after indexed ones.
+		return [...this.items]
+			.map((item, order) => ({ item, order }))
+			.sort(
+				(a, b) =>
+					(a.item.index ?? Number.MAX_SAFE_INTEGER) - (b.item.index ?? Number.MAX_SAFE_INTEGER) ||
+					a.order - b.order
+			)
+			.map(({ item }) => ({ ...item }));
 	}
 }

@@ -255,6 +255,11 @@ export interface StreamChunk {
 		/** OpenRouter-normalized reasoning text (alias for reasoning_content). */
 		reasoning?: string;
 		tool_calls?: ToolCallDelta[];
+		/**
+		 * OpenRouter reasoning items, in fragments: `StreamResponseAssembler`
+		 * merges them into a response's `reasoning_details`.
+		 */
+		reasoning_details?: unknown[];
 	};
 	finish_reason: string | null;
 	usage?: Usage;

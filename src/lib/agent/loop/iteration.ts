@@ -23,6 +23,7 @@ import {
 	type Usage
 } from '#lib/api.ts';
 import { StreamResponseAssembler } from '#lib/streamAssembly.ts';
+import { toolRoundText } from '#lib/agent/textToolCalls.ts';
 import { resolveToolCalls, type ResolvedToolCall } from '#lib/agent/parser.ts';
 import {
 	coerceCallArguments,
@@ -735,7 +736,7 @@ async function forceFinalToolCall(
 	let response: ChatCompletionResponse;
 	const callStartMs = Date.now();
 	try {
-		response = await chatCompletion(
+		response = await completionSender(ctx)(
 			{
 				messages: ctx.messages,
 				tools: offered,
@@ -775,7 +776,7 @@ async function forceFinalToolCall(
 		ctx.options.onComplete(meta);
 		return;
 	}
-	await executeToolCalls(ctx, nudges, calls);
+	await executeToolCalls(ctx, nudges, calls, response);
 	ctx.options.onComplete(meta);
 }
 
@@ -898,6 +899,13 @@ function forwardToolRoundChunk(
 	}
 }
 
+/** How a model call that offers tools is sent: streamed when the caller opted in. */
+function completionSender(ctx: LoopContext): CompletionSender {
+	return ctx.options.streamToolRounds
+		? (opts, signal) => streamToolRound(ctx, opts, signal)
+		: chatCompletion;
+}
+
 /**
  * Send the tool-check completion (streamed when the caller opted in), report usage/timing, trim
  * older tool messages when nearing the context wall, and parse out any tool
@@ -919,9 +927,7 @@ async function runModelCall(
 }> {
 	const { tools, options } = ctx;
 	const callStartMs = Date.now();
-	const send: CompletionSender = options.streamToolRounds
-		? (opts, signal) => streamToolRound(ctx, opts, signal)
-		: chatCompletion;
+	const send = completionSender(ctx);
 	const response = await sendGuardedCompletion(
 		ctx,
 		tools,
@@ -1083,12 +1089,7 @@ export async function runIteration(
 	// Model emitted real tool_calls — clear any pending narrate-recovery
 	// so we don't fire it spuriously on a later no-tool-calls iteration.
 	nudges.consumeNarrateRecovery();
-	const { allWebReadsBlocked } = await executeToolCalls(
-		ctx,
-		nudges,
-		toolCalls,
-		response.reasoning_details
-	);
+	const { allWebReadsBlocked } = await executeToolCalls(ctx, nudges, toolCalls, response);
 	state.allWebReadsBlocked = allWebReadsBlocked;
 	// The forced-final tool IS the turn's terminus: its arguments are the
 	// result, and the contract every caller states is "call it exactly once,
@@ -1597,28 +1598,30 @@ async function executeToolCalls(
 	ctx: LoopContext,
 	nudges: NudgeState,
 	toolCalls: ResolvedToolCall[],
-	reasoningDetails?: unknown[] | null
+	response?: ChatCompletionResponse
 ): Promise<{ allWebReadsBlocked: boolean }> {
 	const { messages, signal, options } = ctx;
 	// Count calls that were web reads blocked by an external resource. When
 	// this equals toolCalls.length, the whole iteration was wasted on blocks.
 	let blockedWebReads = 0;
 
-	// Append assistant message with tool calls (but NOT the content —
-	// the model should regenerate its answer after seeing tool results).
+	// Append assistant message with tool calls. Its text is dropped (the model
+	// regenerates its answer after seeing tool results) unless the caller
+	// streamed the round: then the user has read it, and it stays part of the
+	// conversation, minus reasoning and any calls written as text.
 	// For OpenRouter reasoning models, echo `reasoning_details` back
 	// unmodified so multi-turn reasoning quality is preserved across the
 	// tool loop (OpenRouter docs: reasoning_details must be threaded verbatim).
 	messages.push({
 		role: 'assistant',
-		content: '',
+		content: options.streamToolRounds ? toolRoundText(response?.content) : '',
 		tool_calls: toolCalls.map((tc) => ({
 			id: tc.id,
 			type: 'function' as const,
 			function: { name: tc.name, arguments: JSON.stringify(tc.arguments) }
 		})),
-		...(reasoningDetails && reasoningDetails.length > 0
-			? { reasoning_details: reasoningDetails }
+		...(response?.reasoning_details?.length
+			? { reasoning_details: response.reasoning_details }
 			: {})
 	});
 

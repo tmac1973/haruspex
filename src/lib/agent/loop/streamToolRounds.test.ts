@@ -269,6 +269,83 @@ describe('streamed tool rounds', () => {
 	});
 });
 
+describe('what a streamed round keeps', () => {
+	it('keep the text written alongside the calls on the message carrying them', async () => {
+		streams.push(toolRound('a', 'src/a.ts'), answerRound('Fixed.'));
+		await runAgentLoop(options());
+
+		// Without reasoning: that goes back only through reasoning_details.
+		expect(sent[1].at(-2)).toEqual({
+			role: 'assistant',
+			content: 'Reading.',
+			tool_calls: [
+				{
+					id: 'a',
+					type: 'function',
+					function: { name: 'fs_read_text', arguments: '{"path":"src/a.ts"}' }
+				}
+			]
+		});
+	});
+
+	it('keep the text but not a call the model wrote as text', async () => {
+		const call =
+			'<tool_call>\n{"name": "fs_read_text", "arguments": {"path": "b.ts"}}\n</tool_call>';
+		streams.push(
+			[c({ content: 'Let me look at b.\n' }), c({ content: call }), c({}, 'stop')],
+			answerRound('Fixed.')
+		);
+		await runAgentLoop(options());
+
+		expect(toolsMock.executeTool).toHaveBeenCalledWith(
+			'fs_read_text',
+			{ path: 'b.ts' },
+			expect.anything()
+		);
+		expect(sent[1].at(-2)).toMatchObject({ role: 'assistant', content: 'Let me look at b.' });
+	});
+
+	it('send OpenRouter reasoning_details back, merged from the fragments', async () => {
+		const F = 'anthropic-claude-v1';
+		streams.push(
+			[
+				c({ reasoning_details: [{ type: 'reasoning.text', text: 'Look ', format: F, index: 0 }] }),
+				c({ reasoning_details: [{ type: 'reasoning.text', text: 'first.', format: F, index: 0 }] }),
+				c({
+					reasoning_details: [{ type: 'reasoning.text', signature: 'sig', format: F, index: 0 }]
+				}),
+				...toolRound('a', 'src/a.ts')
+			],
+			answerRound('Fixed.')
+		);
+		await runAgentLoop(options());
+
+		expect(sent[1].at(-2)?.reasoning_details).toEqual([
+			{ type: 'reasoning.text', text: 'Look first.', signature: 'sig', format: F, index: 0 }
+		]);
+	});
+
+	it('stream the forced final tool call too', async () => {
+		const submit: ToolDefinition = {
+			type: 'function',
+			function: { name: 'submit', description: '', parameters: {} }
+		};
+		toolsMock.getToolSchemas.mockReturnValue([...TOOLS, submit]);
+		streams.push(answerRound('Nothing to report.'), [
+			c({ tool_calls: [{ index: 0, id: 's', function: { name: 'submit', arguments: '{}' } }] }),
+			c({}, 'tool_calls')
+		]);
+		const onToolCallDelta = vi.fn();
+		const opts = options({ forceFinalTool: 'submit', onToolCallDelta });
+
+		await runAgentLoop(opts);
+
+		expect(api.chatCompletion).not.toHaveBeenCalled();
+		expect(onToolCallDelta).toHaveBeenCalledWith(0, { id: 's', name: 'submit', argsSoFar: '{}' });
+		expect(opts.onToolStart).toHaveBeenCalledWith(expect.objectContaining({ name: 'submit' }));
+	});
+});
+
 describe('without streamToolRounds', () => {
 	const text = (content: string): ChatCompletionResponse => ({ content, finish_reason: 'stop' });
 
@@ -312,6 +389,9 @@ describe('without streamToolRounds', () => {
 		}
 		expect(onToolCallDelta).not.toHaveBeenCalled();
 		expect(onToolRoundStart).not.toHaveBeenCalled();
+		// The call's message carries no text, as before.
+		const second = api.chatCompletion.mock.calls[1][0] as { messages: ChatMessage[] };
+		expect(second.messages.at(-2)).toMatchObject({ role: 'assistant', content: '' });
 		const calls = vi.mocked(opts.onStreamChunk).mock.calls;
 		expect(calls).toEqual([[{ delta: { content: 'Fixed.' }, finish_reason: 'stop' }]]);
 	});
