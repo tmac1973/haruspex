@@ -42,4 +42,15 @@ test.describe('@visual', () => {
 			mask: VOLATILE.map((s) => app.locator(s))
 		});
 	});
+
+	// The header holds every button the open tab needs; this catches it
+	// outgrowing the window again. The log text itself changes run to run.
+	test('logs', async ({ app }) => {
+		await app.getByTitle('Sidecar Logs').first().click();
+		await app.getByRole('button', { name: 'Image', exact: true }).click();
+		await expect(app.getByRole('heading', { name: /Logs/ })).toBeVisible();
+		await expect(app).toHaveScreenshot('logs.png', {
+			mask: [...VOLATILE, '.log-area'].map((s) => app.locator(s))
+		});
+	});
 });
