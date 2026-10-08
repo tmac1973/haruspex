@@ -25,6 +25,7 @@ Long sessions show their last 20 turns; **Show earlier** brings back older ones.
 - **Commands** show as a card with the command, its exit code, how long it took and its output. Long output shows its last 20 lines until you click **Show all**. **Copy** copies the command.
 - Searches and file reads show as a short step list, as in Chat.
 - **Reasoning** that led to a step sits above it, collapsed. While the agent thinks, it shows live as **Thinking…**.
+- What the agent **says** before a step (its plan, what it is about to change) sits above the step, under the reasoning, and is kept when the step runs.
 - A call still being written shows as a row: **Writing** with the file and its size so far, **Editing** with the file, or **Preparing command…** with the command once it arrives.
 
 ## Steer or stop the agent

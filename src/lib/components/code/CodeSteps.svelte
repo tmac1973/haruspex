@@ -3,10 +3,12 @@
 	 * A turn's tool steps: commands as command cards, edits and writes as
 	 * diff cards, and everything else (grep, reads, web) as the usual step
 	 * list, in the order they ran. The reasoning behind a batch of calls sits
-	 * above it, and calls the model is still writing (`pending`) come last.
+	 * above it, then the text the model wrote with it, and calls the model is
+	 * still writing (`pending`) come last.
 	 */
 	import SearchStepComponent from '#lib/components/SearchStep.svelte';
 	import ThinkingPanel from '#lib/components/ThinkingPanel.svelte';
+	import ChatMessage from '#lib/components/ChatMessage.svelte';
 	import { stepIcon } from '#lib/components/searchStepLabels.ts';
 	import { describePendingCall, type PendingToolCall } from '#lib/code/pendingCall.ts';
 	import CommandCard from './CommandCard.svelte';
@@ -18,6 +20,7 @@
 
 	type Block =
 		| { kind: 'reasoning'; text: string }
+		| { kind: 'lead'; text: string }
 		| { kind: 'command'; step: SearchStep }
 		| { kind: 'diff'; step: SearchStep; diff: FileDiff }
 		| { kind: 'steps'; steps: SearchStep[] };
@@ -33,6 +36,7 @@
 		const out: Block[] = [];
 		for (const step of steps) {
 			if (step.reasoning?.trim()) out.push({ kind: 'reasoning', text: step.reasoning.trim() });
+			if (step.lead?.trim()) out.push({ kind: 'lead', text: step.lead.trim() });
 			const diff = diffOf(step);
 			if (step.toolName === 'run_command') out.push({ kind: 'command', step });
 			else if (diff) out.push({ kind: 'diff', step, diff });
@@ -50,6 +54,8 @@
 	{#each blocks as block, i (i)}
 		{#if block.kind === 'reasoning'}
 			<ThinkingPanel text={block.text} />
+		{:else if block.kind === 'lead'}
+			<ChatMessage message={{ role: 'assistant', content: block.text }} />
 		{:else if block.kind === 'command'}
 			<CommandCard step={block.step} />
 		{:else if block.kind === 'diff'}

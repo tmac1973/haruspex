@@ -480,6 +480,73 @@ describe('a streamed tool round', () => {
 		expect(s.messageSteps[s.messages.length - 1][0].reasoning).toBe('Write it.');
 	});
 
+	it('saves what the model said with its calls, on the calls and on their step', async () => {
+		const s = await newSession('/proj');
+		const said = 'The import is wrong. Fixing it.';
+		const edit = { id: 'e', name: 'fs_edit_text', arguments: { path: 'a.ts' } };
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
+			o.onToolRoundStart!();
+			o.onStreamChunk({ delta: { content: said }, finish_reason: null }, { provisional: true });
+			o.messages.push({
+				role: 'assistant',
+				content: said,
+				tool_calls: [
+					{ id: 'e', type: 'function', function: { name: 'fs_edit_text', arguments: '{}' } }
+				]
+			});
+			o.onToolStart(edit);
+			o.messages.push({ role: 'tool', tool_call_id: 'e', content: 'ok' });
+			o.onToolEnd(edit, 'ok');
+			o.onToolRoundStart!();
+			o.onStreamChunk(chunk('Fixed.'));
+			o.onComplete();
+		});
+
+		await s.send('fix the import');
+
+		const saved = storedThread(s.id)!;
+		expect(saved.messages.map((m) => [m.role, m.content])).toEqual([
+			['user', 'fix the import'],
+			['assistant', said],
+			['tool', 'ok'],
+			['assistant', 'Fixed.']
+		]);
+		const steps = saved.messageSteps[saved.messages.length - 1];
+		expect(steps.map((st) => st.lead)).toEqual([said]);
+	});
+
+	it('shows a call written as text as a pending row, not as text', async () => {
+		const s = await newSession('/proj');
+		const seen: { pending: string[]; round: string }[] = [];
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
+			o.onToolRoundStart!();
+			for (const part of [
+				'Running it.\n<tool',
+				'_call>\n{"name": "run_command", ',
+				'"arguments": {"command": "python main.py"}}\n</tool_call>'
+			]) {
+				o.onStreamChunk({ delta: { content: part }, finish_reason: null }, { provisional: true });
+				seen.push({
+					pending: s.pendingToolCalls.map((c) => `${c.name}:${c.argsSoFar}`),
+					round: s.roundText
+				});
+			}
+			o.onComplete();
+		});
+
+		await s.send('run it');
+
+		expect(seen).toEqual([
+			{ pending: [], round: 'Running it.\n' },
+			// The name is whole: a row, before the arguments arrive.
+			{ pending: ['run_command:'], round: 'Running it.\n' },
+			{
+				pending: ['run_command:{"command": "python main.py"}}\n'],
+				round: 'Running it.\n'
+			}
+		]);
+	});
+
 	it('clears a call being written when the turn is stopped', async () => {
 		const s = await newSession('/proj');
 		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {

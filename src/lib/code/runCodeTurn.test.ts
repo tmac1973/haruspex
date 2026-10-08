@@ -170,6 +170,74 @@ describe('runCodeTurn', () => {
 		]);
 	});
 
+	it('keeps the text written with a batch of calls, and leads the batch with it once', async () => {
+		const answers: string[] = [];
+		const onToolStart = vi.fn();
+		const said: ChatMessage = {
+			role: 'assistant',
+			content: 'The loop is off by one. Fixing it, then running it.',
+			tool_calls: [
+				{ id: 'w', type: 'function', function: { name: 'fs_edit_text', arguments: '{}' } },
+				{ id: 'r', type: 'function', function: { name: 'run_command', arguments: '{}' } }
+			]
+		};
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
+			const live = { provisional: true as const };
+			o.onToolRoundStart!();
+			o.onStreamChunk({ delta: { content: String(said.content) }, finish_reason: null }, live);
+			// The loop pushes the calls' message, then starts them.
+			o.messages.push(said);
+			o.onToolStart({ id: 'w', name: 'fs_edit_text', arguments: {} });
+			o.onToolStart({ id: 'r', name: 'run_command', arguments: {} });
+			o.messages.push(result('w'), result('r'));
+			o.onToolRoundStart!();
+			o.onStreamChunk({ delta: { content: 'Fixed.' }, finish_reason: null }, live);
+			o.onStreamChunk(chunk('Fixed.'));
+			o.onComplete();
+		});
+		const res = await runCodeTurn(opts({ onToolStart, onAssistantDelta: (t) => answers.push(t) }));
+		expect(onToolStart.mock.calls).toEqual([
+			[{ id: 'w', name: 'fs_edit_text', arguments: {} }, said.content],
+			[{ id: 'r', name: 'run_command', arguments: {} }, undefined]
+		]);
+		// Said once, on the calls' message; the answer is only the answer.
+		expect(answers).toEqual(['Fixed.']);
+		expect(res.added).toEqual([
+			said,
+			result('w'),
+			result('r'),
+			{ role: 'assistant', content: 'Fixed.' }
+		]);
+	});
+
+	it('keeps steering in place after a round that said something', async () => {
+		const queue = ['use pnpm'];
+		const said: ChatMessage = { ...call('c1'), content: 'Installing first.' };
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
+			const live = { provisional: true as const };
+			o.onToolRoundStart!();
+			o.onStreamChunk({ delta: { content: 'Installing first.' }, finish_reason: null }, live);
+			o.messages.push(said);
+			o.onToolStart({ id: 'c1', name: 'run_command', arguments: {} });
+			o.messages.push(result('c1'));
+			// The iteration boundary: steering goes in after the results.
+			const texts = o.takeSteering!();
+			for (const t of texts) o.messages.push({ role: 'user', content: t });
+			o.onSteering!(texts);
+			o.onToolRoundStart!();
+			o.onStreamChunk({ delta: { content: 'Switched.' }, finish_reason: null }, live);
+			o.onStreamChunk(chunk('Switched to pnpm.'));
+			o.onComplete();
+		});
+		const res = await runCodeTurn(opts({ takeSteering: () => queue.splice(0) }));
+		expect(res.added).toEqual([
+			said,
+			result('c1'),
+			{ role: 'user', content: 'use pnpm' },
+			{ role: 'assistant', content: 'Switched to pnpm.' }
+		]);
+	});
+
 	it('passes steering through and keeps it in the thread', async () => {
 		const queue = ['use pnpm'];
 		const onSteering = vi.fn();

@@ -15,6 +15,7 @@
 
 import {
 	mergeLeadingSystemMessages,
+	messageText,
 	type BackendOverride,
 	type ChatMessage,
 	type StreamChunk,
@@ -79,7 +80,11 @@ export interface CodeTurnOptions {
 	onCallStats?: (stats: { durationMs: number; completionTokens: number }) => void;
 	onUsage?: (usage: Usage, contextSize: number) => void;
 	onContextManaged?: (info: ContextManagedInfo) => void;
-	onToolStart?: (call: ResolvedToolCall) => void;
+	/**
+	 * A tool starts. `lead` is the text the model wrote alongside the calls,
+	 * given with the first call of the batch it belongs to.
+	 */
+	onToolStart?: (call: ResolvedToolCall, lead?: string) => void;
 	onToolProgress?: (call: ResolvedToolCall, status: string) => void;
 	onToolEnd?: (
 		call: ResolvedToolCall,
@@ -121,7 +126,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 	// Where the answer the turn ends on starts in `stream`. Moves past text the
 	// model wrote before a steering message, which the thread already holds.
 	let answerStart = 0;
-	const live = liveRound(o);
+	const live = liveRound(o, () => messages);
 	let stopReason: AgentStopReason = 'complete';
 	let undelivered: string[] = [];
 	let loopError: Error | null = null;
@@ -205,7 +210,6 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 					onUsageUpdate: (usage) => o.onUsage?.(usage, contextSize),
 					onCallStats: (stats) => o.onCallStats?.(stats),
 					onContextManaged: (info) => o.onContextManaged?.(info),
-					onToolStart: (call) => o.onToolStart?.(call),
 					onToolProgress: (call, status) => o.onToolProgress?.(call, status),
 					onToolEnd: (call, res, thumb, artifacts, _lint, _hero, fileDiff) =>
 						o.onToolEnd?.(call, res, thumb, artifacts, fileDiff)
@@ -226,15 +230,19 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
  * from the answer: it is shown while it is written, but only what the loop
  * commits afterwards is the answer.
  */
-function liveRound(o: CodeTurnOptions): {
+function liveRound(
+	o: CodeTurnOptions,
+	messages: () => ChatMessage[]
+): {
 	options: Pick<
 		AgentLoopOptions,
-		'streamToolRounds' | 'onToolRoundStart' | 'onToolCallDelta' | 'onReasoning'
+		'streamToolRounds' | 'onToolRoundStart' | 'onToolCallDelta' | 'onReasoning' | 'onToolStart'
 	>;
 	take: (chunk: StreamChunk, meta?: StreamChunkMeta) => boolean;
 } {
 	let round = '';
 	let think = createThinkStreamState();
+	const leads = batchLeads(messages);
 	return {
 		options: {
 			streamToolRounds: true,
@@ -244,13 +252,37 @@ function liveRound(o: CodeTurnOptions): {
 				o.onRoundStart?.();
 			},
 			onToolCallDelta: (index, call) => o.onToolCallDelta?.(index, call),
-			onReasoning: (reasoning) => o.onReasoning?.(reasoning)
+			onReasoning: (reasoning) => o.onReasoning?.(reasoning),
+			// With the text its batch was written with (see `batchLeads`).
+			onToolStart: (call) => o.onToolStart?.(call, leads.take(call.id))
 		},
 		take: (chunk, meta) => {
 			if (!meta?.provisional) return false;
 			round = appendStreamDelta(round, chunk.delta, think);
 			o.onRoundDelta?.(round);
 			return true;
+		}
+	};
+}
+
+/**
+ * The text each batch of calls was written with, once per batch: `take` finds
+ * the assistant message carrying the call (the loop pushes it just before the
+ * calls start) and hands its text over the first time.
+ */
+function batchLeads(messages: () => ChatMessage[]): {
+	take: (callId: string) => string | undefined;
+} {
+	const given = new Set<ChatMessage>();
+	return {
+		take: (callId) => {
+			const m = messages().findLast(
+				(m) => m.role === 'assistant' && m.tool_calls?.some((c) => c.id === callId)
+			);
+			if (!m || given.has(m)) return undefined;
+			given.add(m);
+			const text = messageText(m.content).trim();
+			return text || undefined;
 		}
 	};
 }

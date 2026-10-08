@@ -162,4 +162,41 @@ describe('CodeTranscript live tool round', () => {
 		render(CodeTranscript, { session });
 		expect(screen.getByText('Find where foo is defined.')).toBeTruthy();
 	});
+
+	it('shows what the model said with its calls once, as markdown, above the steps', () => {
+		const said = 'The **import** is wrong. Fixing it.';
+		const messages: ChatMessage[] = [
+			{ role: 'user', content: 'fix it' },
+			{
+				role: 'assistant',
+				content: said,
+				tool_calls: [
+					{ id: 'g', type: 'function', function: { name: 'code_grep', arguments: '{}' } }
+				]
+			},
+			{ role: 'tool', tool_call_id: 'g', content: 'a.ts:1' },
+			{ role: 'assistant', content: 'Fixed.' }
+		];
+		const messageSteps = {
+			3: [
+				{
+					id: 'g',
+					toolName: 'code_grep',
+					query: 'import',
+					status: 'done' as const,
+					result: 'a.ts:1',
+					lead: said
+				}
+			]
+		};
+		const { container } = render(CodeTranscript, {
+			session: fakeSession({ messages, messageSteps })
+		});
+		const bold = screen.getAllByText('import').filter((el) => el.tagName === 'STRONG');
+		expect(bold).toHaveLength(1);
+		expect(container.textContent?.split('Fixing it.').length).toBe(2);
+		// Above the step, and the answer after both.
+		const text = container.textContent ?? '';
+		expect(text.indexOf('Fixing it.')).toBeLessThan(text.indexOf('Fixed.'));
+	});
 });

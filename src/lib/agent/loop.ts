@@ -160,6 +160,12 @@ export interface SearchStep {
 	 * batch. Set by the Code tab, which shows it above the step.
 	 */
 	reasoning?: string;
+	/**
+	 * The text the model wrote alongside this call's batch, on its first step.
+	 * Set by the Code tab, which shows it between the reasoning and the step.
+	 * The thread keeps it too, on the message carrying the calls.
+	 */
+	lead?: string;
 }
 
 export interface AgentLoopOptions {
