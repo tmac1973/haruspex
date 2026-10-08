@@ -1,5 +1,11 @@
 <script lang="ts">
-	import { getActiveTab, setActiveTab, type ActiveTab } from '#lib/stores/activeTab.svelte.ts';
+	import {
+		codeTabAvailable,
+		getActiveTab,
+		setActiveTab,
+		type ActiveTab
+	} from '#lib/stores/activeTab.svelte.ts';
+	import { getOpenSessions } from '#lib/stores/code.svelte.ts';
 	import { getCurrentRun, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
 
 	interface Tab {
@@ -10,8 +16,12 @@
 	const tabs: Tab[] = [
 		{ id: 'chat', label: 'Chat' },
 		{ id: 'jobs', label: 'Jobs' },
-		{ id: 'shell', label: 'Shell' }
+		{ id: 'shell', label: 'Shell' },
+		...(codeTabAvailable() ? [{ id: 'code' as const, label: 'Code' }] : [])
 	];
+
+	// A dot on Code while any session's turn runs or waits.
+	const codeBusy = $derived(getOpenSessions().some((s) => s.status !== 'idle'));
 
 	const active = $derived(getActiveTab());
 
@@ -40,6 +50,9 @@
 			{tab.label}
 			{#if tab.id === 'jobs' && jobsBadge !== null}
 				<span class="badge" title="Jobs running or queued">{jobsBadge}</span>
+			{/if}
+			{#if tab.id === 'code' && codeBusy}
+				<span class="badge" title="A Code session is working">●</span>
 			{/if}
 		</button>
 	{/each}

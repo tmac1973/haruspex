@@ -12,6 +12,7 @@ import { toolError, toolResult } from './types';
 import type { ToolContext, ToolExecOutput } from './types';
 import { registerCodeBgWatch } from '#lib/shell/backgroundWatch.ts';
 import { commandMemoryLimitPercent } from '#lib/shell/memoryLimit.ts';
+import { getSettings } from '#lib/stores/settings.ts';
 import type { BgStarted } from '#lib/ipc/gen/BgStarted.ts';
 import type { BgProcess } from '#lib/ipc/gen/BgProcess.ts';
 
@@ -26,7 +27,8 @@ export async function startCodeBackground(
 		owner,
 		cwd,
 		command,
-		memoryLimitPercent: commandMemoryLimitPercent()
+		memoryLimitPercent: commandMemoryLimitPercent(),
+		logCapMb: getSettings().codeBgLogCapMb
 	});
 	if (watch) {
 		registerCodeBgWatch({

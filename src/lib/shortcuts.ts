@@ -22,6 +22,7 @@ export const SHORTCUTS: ShortcutSection[] = [
 			{ keys: 'F2 (hold)', action: 'Push-to-talk — voice input, release to send' },
 			{ keys: 'F3', action: 'Read the last reply aloud (toggle)' },
 			{ keys: 'Ctrl / ⌘ + N', action: 'New conversation (Chat tab)' },
+			{ keys: 'Ctrl / ⌘ + 1–4', action: 'Switch to the Chat, Jobs, Shell or Code tab' },
 			{ keys: 'Ctrl / ⌘ + + / −', action: 'Zoom the UI in / out' },
 			{ keys: 'Ctrl / ⌘ + 0', action: 'Reset UI zoom' },
 			{ keys: 'Ctrl + Shift + I / ⌘ + ⌥ + I', action: 'Open the web inspector (devtools)' }
@@ -50,6 +51,13 @@ export const SHORTCUTS: ShortcutSection[] = [
 			{ keys: 'Enter', action: 'Send to assistant (Shift + Enter for new line)' },
 			{ keys: '↑ / ↓', action: 'Recall questions asked in this tab' },
 			{ keys: 'Esc', action: 'Stop the assistant' }
+		]
+	},
+	{
+		title: 'Code tab',
+		items: [
+			{ keys: 'Enter', action: 'Send; while the agent works, queue it as a steering message' },
+			{ keys: 'Esc', action: 'Stop the agent' }
 		]
 	},
 	{

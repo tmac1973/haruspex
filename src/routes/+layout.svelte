@@ -70,7 +70,8 @@
 		stopAndTranscribe
 	} from '#lib/audio/voiceCapture.svelte.ts';
 	import { toggleTts } from '#lib/audio/ttsControl.svelte.ts';
-	import { getActiveTab } from '#lib/stores/activeTab.svelte.ts';
+	import { getActiveTab, mainTabs, setActiveTab } from '#lib/stores/activeTab.svelte.ts';
+	import { getActiveSession as getActiveCodeSession } from '#lib/stores/code.svelte.ts';
 	import { getActiveConversation, sendMessage } from '#lib/stores/chat.svelte.ts';
 	import { getActiveShellSession } from '#lib/stores/shell.svelte.ts';
 	import {
@@ -344,6 +345,8 @@
 		const tab = getActiveTab();
 		if (tab === 'shell') {
 			void getActiveShellSession()?.submitChatMessage(text);
+		} else if (tab === 'code') {
+			void getActiveCodeSession()?.send(text);
 		} else if (tab === 'chat') {
 			sendMessage(text);
 		}
@@ -355,7 +358,9 @@
 		const messages =
 			tab === 'shell'
 				? (getActiveShellSession()?.messages ?? [])
-				: (getActiveConversation()?.messages ?? []);
+				: tab === 'code'
+					? (getActiveCodeSession()?.messages ?? [])
+					: (getActiveConversation()?.messages ?? []);
 		for (let i = messages.length - 1; i >= 0; i--) {
 			const m = messages[i] as ChatMessage;
 			if (m.role === 'assistant') {
@@ -429,6 +434,21 @@
 		return false;
 	}
 
+	/**
+	 * Ctrl / ⌘ + 1–4 picks a main tab. In the capture phase, so it works while
+	 * a terminal has focus: xterm takes Ctrl+3 and Ctrl+4 as control codes.
+	 */
+	function onTabSwitchKeydown(event: KeyboardEvent) {
+		const modifier = isMac ? event.metaKey : event.ctrlKey;
+		if (!modifier || event.altKey || event.shiftKey || (isMac && event.ctrlKey)) return;
+		if (!/^[1-4]$/.test(event.key) || detached || !isMainPage() || showSettings) return;
+		const tab = mainTabs()[Number(event.key) - 1];
+		if (!tab) return;
+		event.preventDefault();
+		event.stopPropagation();
+		setActiveTab(tab);
+	}
+
 	function onGlobalKeydown(event: KeyboardEvent) {
 		// UI zoom works everywhere — every page, every window, before any
 		// page guard.
@@ -481,6 +501,7 @@
 
 <svelte:window
 	onkeydown={onGlobalKeydown}
+	onkeydowncapture={onTabSwitchKeydown}
 	onkeyup={onGlobalKeyup}
 	ondragover={onWindowDragOver}
 	ondrop={onWindowDrop}

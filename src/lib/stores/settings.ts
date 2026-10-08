@@ -690,6 +690,17 @@ export interface AppSettings {
 	 * compaction keeps context bounded across iterations.
 	 */
 	codeMaxIterations: number;
+	/**
+	 * Code tab: the most a background process's log keeps, in MiB; past it
+	 * the oldest output is dropped. Clamped 1–1024 here and in Rust.
+	 */
+	codeBgLogCapMb: number;
+	/** Code tab: the folder the last new session used, offered for the next. */
+	codeLastRoot: string;
+	/** Code tab: the session sidebar's width in px. */
+	codeSidebarWidth: number;
+	/** Code tab: whether the session sidebar is shown. */
+	codeSidebarOpen: boolean;
 }
 
 /** Exported for the chat store's one-time legacy working-dir migration. */
@@ -837,6 +848,10 @@ const defaults: AppSettings = {
 	codeCommandExec: 'auto',
 	commandMemoryLimitPercent: 50,
 	codeMaxIterations: 40,
+	codeBgLogCapMb: 5,
+	codeLastRoot: '',
+	codeSidebarWidth: 240,
+	codeSidebarOpen: true,
 	memoryEnabled: true,
 	memoryConfirmWrites: true,
 	skills: defaultSkills,

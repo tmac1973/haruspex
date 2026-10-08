@@ -3,6 +3,7 @@
 	import ChatView from '#lib/components/ChatView.svelte';
 	import JobsTab from '#lib/components/jobs/JobsTab.svelte';
 	import ShellWorkspace from '#lib/components/shell/ShellWorkspace.svelte';
+	import CodeWorkspace from '#lib/components/code/CodeWorkspace.svelte';
 	import { getActiveTab } from '#lib/stores/activeTab.svelte.ts';
 
 	const activeTab = $derived(getActiveTab());
@@ -14,6 +15,12 @@
 	let shellEverOpened = $state(false);
 	$effect(() => {
 		if (activeTab === 'shell') shellEverOpened = true;
+	});
+	// The Code tab likewise: its sessions run turns and background processes
+	// that must not stop because the user looked at another tab.
+	let codeEverOpened = $state(false);
+	$effect(() => {
+		if (activeTab === 'code') codeEverOpened = true;
 	});
 </script>
 
@@ -27,6 +34,11 @@
 	{#if shellEverOpened}
 		<div class="shell-host" class:hidden={activeTab !== 'shell'}>
 			<ShellWorkspace />
+		</div>
+	{/if}
+	{#if codeEverOpened}
+		<div class="shell-host" class:hidden={activeTab !== 'code'}>
+			<CodeWorkspace />
 		</div>
 	{/if}
 </div>
