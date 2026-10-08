@@ -21,11 +21,16 @@ import type { MemoryHit } from '#lib/ipc/gen/MemoryHit.ts';
 import { runEphemeralTurn } from '#lib/agent/runEphemeralTurn.ts';
 import { withInferenceSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
-import { parseSubmittedMemories, SUBMIT_MEMORIES_TOOL } from '#lib/agent/tools/memory.ts';
+import {
+	parseSubmittedMemories,
+	SUBMIT_MEMORIES_TOOL,
+	type SubmittedMemory
+} from '#lib/agent/tools/memory.ts';
 import { memoryActive, refreshMemoryCount } from '#lib/stores/memory.svelte.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import { typedText } from '#lib/skills/content.ts';
 import { extractionSystemPrompt, extractionUserMessage } from './extractionPrompt';
+import { closeMemories, reviewCandidates, type Decision, type ReviewItem } from './dedupe';
 
 /**
  * Two exchanges. Below this there is rarely a durable fact, and an extraction
@@ -54,6 +59,8 @@ export interface ExtractionResult {
 	added: number;
 	/** Candidates that matched something already known, and bumped it instead. */
 	deduped: number;
+	/** Candidates that added a detail to a stored memory, which was rewritten. */
+	merged?: number;
 	/** Why the pass did nothing, when it did nothing. */
 	skipped?: 'inactive' | 'incognito' | 'too-short' | 'no-model' | 'failed';
 }
@@ -180,16 +187,19 @@ export async function extractMemories(conversationId: string): Promise<Extractio
 /**
  * Store the candidates that are actually new.
  *
- * A near-duplicate bumps the existing row instead of adding another: the same
- * preference stated in three conversations is one fact observed three times,
- * and recording it three times would let it dominate every recall.
+ * A near-word-for-word repeat bumps the existing row instead of adding
+ * another: the same preference stated in three conversations is one fact
+ * observed three times, and recording it three times would let it dominate
+ * every recall. A candidate that only reads like stored memories goes to the
+ * model to judge (`dedupe.ts`), since paraphrases and added details score
+ * below the repeat threshold.
  */
 async function storeCandidates(
 	candidates: ReturnType<typeof parseSubmittedMemories>,
 	conversationId: string
 ): Promise<ExtractionResult> {
-	let added = 0;
-	let deduped = 0;
+	const counts = { added: 0, deduped: 0, merged: 0 };
+	const toReview: ReviewItem[] = [];
 	for (const candidate of candidates) {
 		try {
 			const existing = await invoke<MemoryHit | null>('memory_find_similar', {
@@ -198,17 +208,12 @@ async function storeCandidates(
 			});
 			if (existing) {
 				await invoke('memory_touch', { id: existing.id });
-				deduped++;
+				counts.deduped++;
 				continue;
 			}
-			await invoke('memory_add', {
-				content: candidate.content,
-				category: candidate.category,
-				sourceConversationId: conversationId,
-				// This pass inferred it; remember_this is the other origin.
-				origin: 'extracted'
-			});
-			added++;
+			const neighbors = await closeMemories(candidate.content);
+			if (neighbors.length > 0) toReview.push({ candidate, neighbors });
+			else await addCandidate(candidate, conversationId, counts);
 		} catch (e) {
 			// One bad candidate must not abandon the rest of the batch.
 			logDebug('memory', 'storing a candidate failed', {
@@ -217,5 +222,59 @@ async function storeCandidates(
 			});
 		}
 	}
-	return { added, deduped };
+	if (toReview.length > 0) await applyReview(toReview, conversationId, counts);
+	return counts;
+}
+
+async function addCandidate(
+	candidate: SubmittedMemory,
+	conversationId: string,
+	counts: { added: number }
+): Promise<void> {
+	await invoke('memory_add', {
+		content: candidate.content,
+		category: candidate.category,
+		sourceConversationId: conversationId,
+		// This pass inferred it; remember_this is the other origin.
+		origin: 'extracted'
+	});
+	counts.added++;
+}
+
+/**
+ * Judge the candidates that read like stored memories, and act on it. If the
+ * review fails they are stored as new, as they were before it existed.
+ */
+async function applyReview(
+	items: ReviewItem[],
+	conversationId: string,
+	counts: { added: number; deduped: number; merged: number }
+): Promise<void> {
+	let decisions: Decision[];
+	try {
+		decisions = await reviewCandidates(items);
+	} catch (e) {
+		logDebug('memory', 'duplicate review failed; storing as new', { error: String(e) });
+		decisions = items.map(() => ({ action: 'new' }));
+	}
+	for (const [i, item] of items.entries()) {
+		const d = decisions[i];
+		try {
+			if (d.action === 'same') {
+				await invoke('memory_touch', { id: d.id });
+				counts.deduped++;
+			} else if (d.action === 'update') {
+				await invoke('memory_update', { id: d.id, content: d.content });
+				await invoke('memory_touch', { id: d.id });
+				counts.merged++;
+			} else {
+				await addCandidate(item.candidate, conversationId, counts);
+			}
+		} catch (e) {
+			logDebug('memory', 'acting on a duplicate decision failed', {
+				content: item.candidate.content.slice(0, 60),
+				error: String(e)
+			});
+		}
+	}
 }

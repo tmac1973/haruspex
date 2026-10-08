@@ -2178,3 +2178,58 @@ fn a_jobs_inline_key_becomes_a_reference_and_nothing_else_changes() {
     assert_eq!(job.model_remote_model_id.as_deref(), Some("m"));
     assert!(db.set_job_api_key_ref(id + 999, "key_1").is_err());
 }
+
+#[test]
+fn neighbors_are_the_closest_first_and_dont_count_as_used() {
+    let db = test_db();
+    let near = db
+        .insert_memory("near", "fact", &blend(0.1), MODEL, None, "extracted", 1_000)
+        .unwrap();
+    db.insert_memory("mid", "fact", &blend(0.4), MODEL, None, "extracted", 1_000)
+        .unwrap();
+    db.insert_memory(
+        "far",
+        "fact",
+        &axis_vector(2),
+        MODEL,
+        None,
+        "extracted",
+        1_000,
+    )
+    .unwrap();
+    let hits = db.neighbors(&blend(0.0), MODEL, 5, 0.5, 2_000).unwrap();
+    let names: Vec<&str> = hits.iter().map(|h| h.memory.content.as_str()).collect();
+    assert_eq!(names, ["near", "mid"]);
+    assert_eq!(
+        db.neighbors(&blend(0.0), MODEL, 1, 0.5, 2_000)
+            .unwrap()
+            .len(),
+        1
+    );
+    let listed = db.list_memories(0, 10, None).unwrap();
+    let near_row = listed.iter().find(|m| m.id == near).unwrap();
+    assert_eq!(near_row.use_count, 0);
+}
+
+#[test]
+fn similar_pairs_find_lookalikes_most_alike_first() {
+    let db = test_db();
+    for (name, v) in [
+        ("a", blend(0.0)),
+        ("a2", blend(0.05)),
+        ("a3", blend(0.3)),
+        ("other", axis_vector(3)),
+    ] {
+        db.insert_memory(name, "fact", &v, MODEL, None, "extracted", 1_000)
+            .unwrap();
+    }
+    let pairs = db.similar_pairs(MODEL, 0.8, 10).unwrap();
+    let named: Vec<(String, String)> = pairs
+        .iter()
+        .map(|p| (p.a.content.clone(), p.b.content.clone()))
+        .collect();
+    assert_eq!(named[0], ("a".into(), "a2".into()));
+    assert!(named.iter().all(|(x, y)| x != "other" && y != "other"));
+    assert!(pairs.windows(2).all(|w| w[0].similarity >= w[1].similarity));
+    assert_eq!(db.similar_pairs(MODEL, 0.8, 1).unwrap().len(), 1);
+}

@@ -51,6 +51,7 @@ What the assistant remembers between chats.
 
 - **Carry facts and preferences from one conversation into the next**: on. It needs a small embedding model (about 65 MB), downloaded only when you ask.
 - **Ask before saving something you asked me to remember**: on.
+- **Find duplicates**: merges memories that say the same thing, after you approve each.
 - A list of everything remembered, to edit or delete.
 
 See the `memory` page.
