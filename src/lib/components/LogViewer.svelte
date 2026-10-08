@@ -232,6 +232,17 @@
 		whisper: IPC.clear_whisper_logs
 	};
 
+	/**
+	 * The tabs as the sidebar groups them: Haruspex's own logs and stats, then
+	 * the servers it runs or talks to, then crash reports. A sidebar rather
+	 * than a tab strip, so the header's buttons always fit.
+	 */
+	const TAB_GROUPS: { label: string; tabs: LogTab[] }[] = [
+		{ label: 'Haruspex', tabs: ['app', 'debug', 'tools', 'stats'] },
+		{ label: 'Servers', tabs: ['llm', 'tts', 'whisper', 'image', 'mcp'] },
+		{ label: '', tabs: ['crashes'] }
+	];
+
 	const tabLabels: Record<LogTab, string> = {
 		app: 'App',
 		llm: 'LLM',
@@ -503,13 +514,7 @@
 	>
 		<div class="modal" role="dialog" tabindex="-1" onkeydown={handleKeydown}>
 			<div class="modal-header">
-				<div class="tabs">
-					{#each ['app', 'llm', 'tts', 'whisper', 'image', 'mcp', 'crashes', 'debug', 'tools', 'stats'] as const as tab (tab)}
-						<button class="tab" class:active={activeTab === tab} onclick={() => switchTab(tab)}>
-							{tabLabels[tab]}
-						</button>
-					{/each}
-				</div>
+				<h2 class="title">Logs <span class="title-tab">· {tabLabels[activeTab]}</span></h2>
 				<div class="header-actions">
 					{#if STRUCTURED_TABS.has(activeTab)}
 						<button
@@ -592,232 +597,257 @@
 					<button class="modal-close" onclick={onclose} title="Close">&times;</button>
 				</div>
 			</div>
-			{#if activeTab !== 'stats'}
-				<div class="filter-bar">
-					<input
-						class="filter-input"
-						type="text"
-						placeholder="Find in log…"
-						bind:this={filterInput}
-						bind:value={filterText}
-					/>
-					{#if STRUCTURED_TABS.has(activeTab)}
-						<select class="filter-select" bind:value={turnFilter} title="Filter by agent turn">
-							<option value="">All turns</option>
-							{#each availableTurns as t (t)}
-								<option value={t}>turn {t}</option>
-							{/each}
-						</select>
-						<select class="filter-select" bind:value={categoryFilter} title="Filter by category">
-							<option value="">All categories</option>
-							{#each availableCategories as c (c)}
-								<option value={c}>{c}</option>
-							{/each}
-						</select>
-					{/if}
-					{#if filtersActive}
-						<span class="filter-count">{filteredLines.length} / {logLines.length}</span>
-						<button class="filter-clear" onclick={clearFilters} title="Clear filters">Clear</button>
-					{/if}
-				</div>
-			{/if}
-			<div class="log-area" bind:this={logContainer} onscroll={handleScroll}>
-				{#snippet dailyTable(daily: CombinedSearchStats['daily'])}
-					{@const grid = dailyGrid(daily)}
-					{#if grid.days.length === 0}
-						<div class="stats-empty">No searches in the last 14 days.</div>
-					{:else}
-						<table class="stats-table">
-							<thead>
-								<tr>
-									<th>Day</th>
-									<th>Queries</th>
-									<th>All failed</th>
-									{#each grid.engines as engine (engine)}
-										<th>{engine}</th>
+			<div class="body">
+				<nav class="tab-nav" aria-label="Logs">
+					{#each TAB_GROUPS as group (group.label)}
+						{#if group.label}<div class="group-label">{group.label}</div>{/if}
+						{#each group.tabs as tab (tab)}
+							<button
+								class="tab"
+								class:active={activeTab === tab}
+								aria-current={activeTab === tab ? 'page' : undefined}
+								onclick={() => switchTab(tab)}
+							>
+								{tabLabels[tab]}
+							</button>
+						{/each}
+					{/each}
+				</nav>
+				<div class="pane">
+					{#if activeTab !== 'stats'}
+						<div class="filter-bar">
+							<input
+								class="filter-input"
+								type="text"
+								placeholder="Find in log…"
+								bind:this={filterInput}
+								bind:value={filterText}
+							/>
+							{#if STRUCTURED_TABS.has(activeTab)}
+								<select class="filter-select" bind:value={turnFilter} title="Filter by agent turn">
+									<option value="">All turns</option>
+									{#each availableTurns as t (t)}
+										<option value={t}>turn {t}</option>
 									{/each}
-								</tr>
-							</thead>
-							<tbody>
-								{#each grid.days as day (day)}
-									<tr>
-										<td>{day}</td>
-										<td>{grid.global(day, 'total_queries')}</td>
-										<td>{grid.global(day, 'all_engines_failed')}</td>
-										{#each grid.engines as engine (engine)}
-											{@const c = grid.cell(day, engine)}
-											{#if c && c.attempts > 0}
-												<td
-													class={okBand(c.successes, c.attempts)}
-													title={`${pct(c.successes, c.attempts)} working. Failed: ${c.fail_rate_limited} rate-limited, ${c.fail_empty} empty, ${c.fail_other} other.`}
-													>{c.successes}/{c.attempts}</td
-												>
-											{:else}
-												<td class="zero">—</td>
-											{/if}
-										{/each}
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					{/if}
-				{/snippet}
-				{#snippet engineTable(rows: UnifiedRow[], globals: GlobalCounters)}
-					{#if rows.length === 0}
-						<div class="stats-empty">No engine activity recorded yet.</div>
-					{:else}
-						<table class="stats-table">
-							<thead>
-								<tr>
-									<th>Engine</th>
-									<th>Att</th>
-									<th>OK</th>
-									<th>OK%</th>
-									<th>Mean ms</th>
-									<th>Max ms</th>
-									<th>Last OK</th>
-									<th>Last fail</th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each rows as r (r.engine)}
-									<tr>
-										<td>{r.engine}</td>
-										<td>{r.attempts}</td>
-										<td>{r.successes}</td>
-										<td>{pct(r.successes, r.attempts)}</td>
-										<td>{meanMs(r)}</td>
-										<td>{r.max_latency_ms || '—'}</td>
-										<td>{age(r.last_success_at)}</td>
-										<td>{age(r.last_failure_at)}</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-
-						<table class="stats-table stats-sub">
-							<thead>
-								<tr>
-									<th>Failures by kind</th>
-									{#each FAILURE_KEYS as k (k)}
-										<th>{FAILURE_LABELS[k]}</th>
+								</select>
+								<select
+									class="filter-select"
+									bind:value={categoryFilter}
+									title="Filter by category"
+								>
+									<option value="">All categories</option>
+									{#each availableCategories as c (c)}
+										<option value={c}>{c}</option>
 									{/each}
-								</tr>
-							</thead>
-							<tbody>
-								{#each rows as r (r.engine)}
-									<tr>
-										<td>{r.engine}</td>
-										{#each FAILURE_KEYS as k (k)}
-											<td class:zero={r.failures[k] === 0}>{r.failures[k]}</td>
-										{/each}
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-
-						<table class="stats-table stats-sub">
-							<thead>
-								<tr>
-									<th>Auto-rotate</th>
-									<th>First choice</th>
-									<th>Fallback</th>
-									<th>Fallback recovery%</th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each rows as r (r.engine)}
-									<tr>
-										<td>{r.engine}</td>
-										<td>{r.first_choice_attempts}</td>
-										<td>{r.fallback_attempts}</td>
-										<td>{pct(r.fallback_successes, r.fallback_attempts)}</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					{/if}
-
-					<div class="stats-globals">
-						<div>Total queries: <b>{globals.total_queries}</b></div>
-						<div>
-							Cache hits: <b>{globals.cache_hits}</b>
-							{#if globals.total_queries > 0}
-								<span class="muted">({pct(globals.cache_hits, globals.total_queries)})</span>
+								</select>
+							{/if}
+							{#if filtersActive}
+								<span class="filter-count">{filteredLines.length} / {logLines.length}</span>
+								<button class="filter-clear" onclick={clearFilters} title="Clear filters"
+									>Clear</button
+								>
 							{/if}
 						</div>
-						<div>All-engines failures: <b>{globals.all_engines_failed}</b></div>
-						{#if globals.browser_fallbacks > 0}
-							<!-- Only shown once it has happened: a permanent zero would
-							     be noise for everyone not using browser-assisted search. -->
-							<div>Browser-search fallbacks: <b>{globals.browser_fallbacks}</b></div>
-						{/if}
-					</div>
-				{/snippet}
-
-				{#if activeTab === 'stats'}
-					{#if statsData}
-						<div class="stats-scope">
-							<h3 class="stats-heading">
-								Session <span class="muted">(since app start)</span>
-							</h3>
-							{@render engineTable(
-								statsData.session.engines.map(normalizeSession),
-								statsData.session.globals
-							)}
-						</div>
-						<div class="stats-scope">
-							<h3 class="stats-heading">
-								Lifetime <span class="muted">(persisted, all-time)</span>
-							</h3>
-							{@render engineTable(
-								statsData.lifetime.engines.map(normalizeLifetime),
-								lifetimeGlobalsObj(statsData.lifetime.globals)
-							)}
-						</div>
-						<div class="stats-scope">
-							<h3 class="stats-heading">
-								By day <span class="muted">(last 14 days, working / tried)</span>
-							</h3>
-							{@render dailyTable(statsData.daily)}
-						</div>
-					{:else}
-						<div class="log-line log-empty">Loading stats…</div>
 					{/if}
-				{:else if humanReadable && STRUCTURED_TABS.has(activeTab)}
-					{#each filteredLines as line, i (`${activeTab}-${i}`)}
-						{@const parsed = parseLine(line)}
-						{#if parsed.timestamp}
-							<div class="log-entry">
-								<div class="entry-header">
-									<span class="ts">{formatTimestamp(parsed.timestamp)}</span>
-									{#if parsed.turn}<span class="turn">turn {parsed.turn}</span>{/if}
-									<span class="cat">{parsed.category}</span>
+					<div class="log-area" bind:this={logContainer} onscroll={handleScroll}>
+						{#snippet dailyTable(daily: CombinedSearchStats['daily'])}
+							{@const grid = dailyGrid(daily)}
+							{#if grid.days.length === 0}
+								<div class="stats-empty">No searches in the last 14 days.</div>
+							{:else}
+								<table class="stats-table">
+									<thead>
+										<tr>
+											<th>Day</th>
+											<th>Queries</th>
+											<th>All failed</th>
+											{#each grid.engines as engine (engine)}
+												<th>{engine}</th>
+											{/each}
+										</tr>
+									</thead>
+									<tbody>
+										{#each grid.days as day (day)}
+											<tr>
+												<td>{day}</td>
+												<td>{grid.global(day, 'total_queries')}</td>
+												<td>{grid.global(day, 'all_engines_failed')}</td>
+												{#each grid.engines as engine (engine)}
+													{@const c = grid.cell(day, engine)}
+													{#if c && c.attempts > 0}
+														<td
+															class={okBand(c.successes, c.attempts)}
+															title={`${pct(c.successes, c.attempts)} working. Failed: ${c.fail_rate_limited} rate-limited, ${c.fail_empty} empty, ${c.fail_other} other.`}
+															>{c.successes}/{c.attempts}</td
+														>
+													{:else}
+														<td class="zero">—</td>
+													{/if}
+												{/each}
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							{/if}
+						{/snippet}
+						{#snippet engineTable(rows: UnifiedRow[], globals: GlobalCounters)}
+							{#if rows.length === 0}
+								<div class="stats-empty">No engine activity recorded yet.</div>
+							{:else}
+								<table class="stats-table">
+									<thead>
+										<tr>
+											<th>Engine</th>
+											<th>Att</th>
+											<th>OK</th>
+											<th>OK%</th>
+											<th>Mean ms</th>
+											<th>Max ms</th>
+											<th>Last OK</th>
+											<th>Last fail</th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each rows as r (r.engine)}
+											<tr>
+												<td>{r.engine}</td>
+												<td>{r.attempts}</td>
+												<td>{r.successes}</td>
+												<td>{pct(r.successes, r.attempts)}</td>
+												<td>{meanMs(r)}</td>
+												<td>{r.max_latency_ms || '—'}</td>
+												<td>{age(r.last_success_at)}</td>
+												<td>{age(r.last_failure_at)}</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+
+								<table class="stats-table stats-sub">
+									<thead>
+										<tr>
+											<th>Failures by kind</th>
+											{#each FAILURE_KEYS as k (k)}
+												<th>{FAILURE_LABELS[k]}</th>
+											{/each}
+										</tr>
+									</thead>
+									<tbody>
+										{#each rows as r (r.engine)}
+											<tr>
+												<td>{r.engine}</td>
+												{#each FAILURE_KEYS as k (k)}
+													<td class:zero={r.failures[k] === 0}>{r.failures[k]}</td>
+												{/each}
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+
+								<table class="stats-table stats-sub">
+									<thead>
+										<tr>
+											<th>Auto-rotate</th>
+											<th>First choice</th>
+											<th>Fallback</th>
+											<th>Fallback recovery%</th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each rows as r (r.engine)}
+											<tr>
+												<td>{r.engine}</td>
+												<td>{r.first_choice_attempts}</td>
+												<td>{r.fallback_attempts}</td>
+												<td>{pct(r.fallback_successes, r.fallback_attempts)}</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							{/if}
+
+							<div class="stats-globals">
+								<div>Total queries: <b>{globals.total_queries}</b></div>
+								<div>
+									Cache hits: <b>{globals.cache_hits}</b>
+									{#if globals.total_queries > 0}
+										<span class="muted">({pct(globals.cache_hits, globals.total_queries)})</span>
+									{/if}
 								</div>
-								{#if parsed.message}
-									<div class="entry-message">{parsed.message}</div>
-								{/if}
-								{#if parsed.pretty}
-									<pre class="entry-data">{parsed.pretty}</pre>
+								<div>All-engines failures: <b>{globals.all_engines_failed}</b></div>
+								{#if globals.browser_fallbacks > 0}
+									<!-- Only shown once it has happened: a permanent zero would
+							     be noise for everyone not using browser-assisted search. -->
+									<div>Browser-search fallbacks: <b>{globals.browser_fallbacks}</b></div>
 								{/if}
 							</div>
+						{/snippet}
+
+						{#if activeTab === 'stats'}
+							{#if statsData}
+								<div class="stats-scope">
+									<h3 class="stats-heading">
+										Session <span class="muted">(since app start)</span>
+									</h3>
+									{@render engineTable(
+										statsData.session.engines.map(normalizeSession),
+										statsData.session.globals
+									)}
+								</div>
+								<div class="stats-scope">
+									<h3 class="stats-heading">
+										Lifetime <span class="muted">(persisted, all-time)</span>
+									</h3>
+									{@render engineTable(
+										statsData.lifetime.engines.map(normalizeLifetime),
+										lifetimeGlobalsObj(statsData.lifetime.globals)
+									)}
+								</div>
+								<div class="stats-scope">
+									<h3 class="stats-heading">
+										By day <span class="muted">(last 14 days, working / tried)</span>
+									</h3>
+									{@render dailyTable(statsData.daily)}
+								</div>
+							{:else}
+								<div class="log-line log-empty">Loading stats…</div>
+							{/if}
+						{:else if humanReadable && STRUCTURED_TABS.has(activeTab)}
+							{#each filteredLines as line, i (`${activeTab}-${i}`)}
+								{@const parsed = parseLine(line)}
+								{#if parsed.timestamp}
+									<div class="log-entry">
+										<div class="entry-header">
+											<span class="ts">{formatTimestamp(parsed.timestamp)}</span>
+											{#if parsed.turn}<span class="turn">turn {parsed.turn}</span>{/if}
+											<span class="cat">{parsed.category}</span>
+										</div>
+										{#if parsed.message}
+											<div class="entry-message">{parsed.message}</div>
+										{/if}
+										{#if parsed.pretty}
+											<pre class="entry-data">{parsed.pretty}</pre>
+										{/if}
+									</div>
+								{:else}
+									<div class="log-entry"><div class="entry-message">{line}</div></div>
+								{/if}
+							{:else}
+								<div class="log-line log-empty">
+									{filtersActive ? 'No lines match the filter.' : 'No log output yet.'}
+								</div>
+							{/each}
 						{:else}
-							<div class="log-entry"><div class="entry-message">{line}</div></div>
+							{#each filteredLines as line, i (`${activeTab}-${i}`)}
+								<div class="log-line">{line}</div>
+							{:else}
+								<div class="log-line log-empty">
+									{filtersActive ? 'No lines match the filter.' : 'No log output yet.'}
+								</div>
+							{/each}
 						{/if}
-					{:else}
-						<div class="log-line log-empty">
-							{filtersActive ? 'No lines match the filter.' : 'No log output yet.'}
-						</div>
-					{/each}
-				{:else}
-					{#each filteredLines as line, i (`${activeTab}-${i}`)}
-						<div class="log-line">{line}</div>
-					{:else}
-						<div class="log-line log-empty">
-							{filtersActive ? 'No lines match the filter.' : 'No log output yet.'}
-						</div>
-					{/each}
-				{/if}
+					</div>
+				</div>
 			</div>
 		</div>
 	</div>
@@ -871,16 +901,61 @@
 		color: var(--text-secondary);
 		font-size: 0.75rem;
 	}
-	.tabs {
+	.title {
+		margin: 0;
+		font-size: 0.9rem;
+		font-weight: 600;
+		white-space: nowrap;
+	}
+
+	.title-tab {
+		color: var(--text-secondary);
+		font-weight: 500;
+	}
+
+	.body {
+		flex: 1;
 		display: flex;
-		gap: 4px;
+		min-height: 0;
+	}
+
+	.tab-nav {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		width: 120px;
+		flex-shrink: 0;
+		padding: 8px;
+		border-right: 1px solid var(--border);
+		overflow-y: auto;
+	}
+
+	.group-label {
+		margin: 8px 6px 2px;
+		font-size: 0.65rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--text-secondary);
+	}
+
+	.group-label:first-child {
+		margin-top: 0;
+	}
+
+	.pane {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
 	}
 
 	.tab {
 		background: none;
 		border: 1px solid transparent;
 		border-radius: 6px;
-		padding: 6px 14px;
+		padding: 5px 10px;
+		text-align: left;
 		cursor: pointer;
 		color: var(--text-secondary);
 		font-size: 0.8rem;
@@ -900,8 +975,11 @@
 
 	.header-actions {
 		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
 		align-items: center;
 		gap: 6px;
+		min-width: 0;
 	}
 
 	.copy-btn,

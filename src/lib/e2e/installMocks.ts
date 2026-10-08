@@ -88,6 +88,10 @@ const TABLE: Record<string, Handler> = {
 	skills_list: empty,
 	skills_user_dir: () => '/e2e/skills',
 	skills_shipped: empty,
+	// The log viewer: nothing logged yet.
+	get_app_logs: empty,
+	image_engine_logs: empty,
+	comfy_logs: empty,
 	// Not in a repo: the guided-planning skill picker lists only user skills.
 	skills_project_root: none,
 	secret_get: none,
