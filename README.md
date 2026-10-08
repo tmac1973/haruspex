@@ -24,11 +24,11 @@ Haruspex is a desktop AI researcher and coding tool that runs entirely local by 
 
 - **Web research** — Ask a question, and it searches the web, reads the results and answers. Turn on **deep research** for a slower, more thorough answer that uses more sources.
 - **Files (you opt in)** — Pick a working directory in the chat tab and the model can read and write files there, and only there. It handles text, PDF, Word, Excel, PowerPoint, OpenDocument and images. Great for creating reports from your research. ([details](#local-files))
-- **Python sandbox** — The model can write and run Python inside the app, in a sandboxed Pyodide environment. It can install packages on demand and make HTTP requests. Use it to make charts, do maths, or build documents. It asks before each run, and it is on by default (Settings → Agent → Python Sandbox). Works best with a larger model.
+- **Python sandbox** — The model can write and run Python inside the app, in a sandboxed Pyodide environment. It can install packages on demand and make HTTP requests. Use it to make charts, do maths, or build documents. It is on by default and asks once per chat before running code; Settings → Agent → Python Sandbox can make it ask every time, or turn it off. Works best with a larger model.
 - **Pictures in answers** — With **Include images** on (Settings → General), answers about visual things — a place, an animal, an object, a person — come with one to three relevant pictures. They come from Openverse, Wikimedia Commons and Wikipedia, and each one shows who made it and under what licence. Haruspex downloads them itself, so the site never sees your computer, and it keeps them on this device. Small models often look for a picture and then forget to put it in the answer, so when that happens the pictures it found appear under the answer instead of beside the paragraph — you still get them.
 - **Vision** — Show it an image or a scanned PDF and it can describe or read it.
 - **Voice** — Speak your question with push-to-talk, and have answers read aloud.
-- **Memory** — Haruspex quietly reads your finished conversations, keeps the stable facts (your preferences, your corrections, ongoing project details) and brings the relevant ones into later chats. You can also just say "remember that…". All of it stays on this device — the text never leaves it. You can mark a single chat as incognito, and you can read, edit or delete anything it remembered. ([details](#memory))
+- **Memory** — Haruspex quietly reads your finished conversations, keeps the stable facts (your preferences, your corrections, ongoing project details) and brings the relevant ones into later chats. You can also just say "remember that…". What it remembers is stored only on this device. The pass that picks out facts runs on the same model as Chat, so with a remote server or OpenRouter your conversation goes there for that, as it does when you chat. You can mark a single chat as incognito, and you can read, edit or delete anything it remembered. ([details](#memory))
 - **Open in shell** — If an answer ends with "run this command", press the `>_` button to open the whole conversation in a new Shell tab, where the commands become buttons you can run.
 - **Remote access (off by default)** — Let other devices on your home network chat with your Haruspex through a web page, using your computer's GPU. Useful when your main machine is busy with a game and you want to ask a question from a phone or laptop. Share a link or scan a QR code. ([details](#remote-access))
 - **Email (off by default)** — Connect an IMAP account (Gmail, Fastmail, iCloud, Yahoo or custom) so the model can summarise and search your recent messages. Turn on **Allow sending** and it can also draft replies and new mail — but every draft opens for you to edit, and only your click on Send sends it. ([details](#email-integration))
@@ -40,7 +40,7 @@ Haruspex is a desktop AI researcher and coding tool that runs entirely local by 
 ### Shell
 
 - **A real terminal** _(Linux, macOS and Windows — PowerShell and WSL2 on Windows)_ with an assistant beside it. Open several shell tabs at once.
-- **Send output to the assistant** — One click sends the last command and its output, or a selection, to the assistant to explain.
+- **Send output to the assistant** — One click (or `F4`) sends recent commands and their output to the assistant to explain.
 - **Read-only by default** — The assistant can read config files and logs anywhere on your system and suggest fixes, but it never runs anything. Suggested commands appear as cards you click to paste at your prompt. Risky patterns (`sudo`, `rm -rf`, `dd of=`, `curl | sh`, `Remove-Item -Recurse -Force`) get a red chip.
 - **Code mode (off by default)** — Turn it on per session to let the assistant edit files and **run commands in your live terminal**. Commands it considers risky stop and ask you first; commands it considers safe run on their own. ⚠️ Please read the [AI safety disclaimer](#ai-safety-disclaimer) first. This is a coding feature — expect much better results with a larger model.
 - **Repo instructions** — In a git repo with an `AGENTS.md` (or `CLAUDE.md`), the assistant reads it into every turn, so it knows how the project builds, tests and lints. The first time, it asks whether you trust the repo; a badge in the sidebar shows when the file is in use, and lets you stop using it. ([details](#skills))
@@ -148,9 +148,9 @@ Haruspex runs the model on your GPU. How much VRAM you have decides which model 
 | 24 GB             | Qwen 3.6 35B-A3B _or_ Qwen 3.8 27B                                     | Everything, including the coding features.                                |
 | 32 GB and up      | The same two models, at higher-quality quants                          | The best local quality Haruspex offers.                                   |
 
-The first-run wizard picks one of these for you. You can change it later in Settings → Models, and you can re-run the wizard from Settings → Inference.
+The first-run wizard picks one of these for you. You can change it later in Settings → Inference → Models, and re-run the wizard from Settings → Inference.
 
-**From 24 GB up, each tier offers two models.** The default is the sparse mixture-of-experts model, which activates only a fraction of its parameters per token and so answers faster; the alternative is a dense model of similar size, which some people prefer. Both are listed in Settings → Models with their sizes.
+**From 24 GB up, each tier offers two models.** The default is the sparse mixture-of-experts model, which activates only a fraction of its parameters per token and so answers faster; the alternative is a dense model of similar size, which some people prefer. Both are listed in Settings → Inference → Models with their sizes.
 
 **Why a 12B at 16 GB and not something bigger?** A bigger model has to fit its weights *and* the conversation in the same VRAM, and the conversation is not free. Gemma 4 12B keeps only 8 of its 48 attention layers at full range, so its share of the memory grows about four times more slowly per word than a 27B's — which is what lets this tier hold a very long conversation instead of spending everything on parameters and running out of room mid-task.
 
@@ -202,7 +202,7 @@ Guided planning can run unattended and **chain** into asset generation and then 
 
 **These job types work much better with a bigger model.** Audit, guided planning and autonomous coding all involve reading and writing code, which is where the 4B and 9B models are weakest. You can still use these jobs with a small model but don't expect great results.
 
-**Scheduling.** Run a job by hand, or on a preset (hourly / daily / weekly) or a fixed interval while the app is open. While a job is running, Haruspex keeps your machine from going to sleep. Autonomous coding cannot be scheduled, because it starts by asking you questions.
+**Scheduling.** Run a job by hand, or on a preset (hourly / daily / weekly) or a fixed interval while the app is open. While a job is running, Haruspex keeps your machine from going to sleep. Guided planning, autonomous coding and asset generation can't be scheduled, because they start by asking you questions. A run that comes due while the app is closed is skipped, not run later.
 
 **Per-job model.** By default a job uses your global backend (Settings → Inference backend). Any job can instead point at its own OpenAI-compatible server: base URL, optional API key, model ID, context size and whether it can see images. This is useful for sending a heavy audit or planning job to a bigger or faster model. Because that remote model and your local `llama-server` are separate, a job running remotely **does not block the Chat or Shell tabs** from using your local model at the same time.
 
@@ -266,10 +266,12 @@ You can switch any single conversation to incognito so it is never read, ask to 
 
 A skill is a folder holding a `SKILL.md`: a name, a description of when to use it, and instructions. Haruspex reads skills from, in order of precedence:
 
-1. its own folder (Settings → Skills → Open skills folder);
-2. `~/.agents/skills/`, shared with other tools;
-3. folders you add in Settings → Skills, with one click for `~/.claude/skills/`;
-4. in Code mode, a trusted repo's `.agents/skills/` and `.claude/skills/`.
+1. in Code mode, a trusted repo's `.agents/skills/` and `.claude/skills/`;
+2. its own folder (Settings → Skills → Open skills folder);
+3. `~/.agents/skills/`, shared with other tools;
+4. folders you add in Settings → Skills, with one click for `~/.claude/skills/`.
+
+When two skills share a name, the one higher in this list is used.
 
 Settings → Skills lists every skill with where it came from, switches each one on or off, and shows why a broken one can't be used.
 
@@ -356,7 +358,7 @@ Microsoft 365 and Outlook.com are **not** supported. Microsoft turned off basic 
 - `email_summarize_message` — summarises one full message in a separate call, the same way web pages are summarised.
 - `email_read_full` — returns one full message as-is, when a summary is not enough.
 
-All three are hidden from the model completely unless an account is switched on. A list reads only each message's headers and the start of its text, so it stays quick on a large inbox, and reading a huge message skips its attachments. A slow server fails within half a minute instead of hanging, and stopping a reply stops the fetch. Email passwords are kept in the system keychain (GNOME Keyring or KWallet on Linux, Keychain on macOS, Credential Manager on Windows) where there is one, and in the local settings file otherwise; calendar and contacts credentials are in the settings file. Messages are fetched with `BODY.PEEK`, so reading one never marks it as read.
+All three are hidden from the model completely unless an account is switched on. A list reads only each message's headers and the start of its text, so it stays quick on a large inbox, and reading a huge message skips its attachments. A slow server fails within half a minute instead of hanging, and stopping a reply stops the fetch. Email, calendar and contacts passwords are kept in the system keychain (GNOME Keyring or KWallet on Linux, Keychain on macOS, Credential Manager on Windows) where there is one, and in an encrypted file in the app's data folder otherwise. Messages are fetched with `BODY.PEEK`, so reading one never marks it as read.
 
 **Sending.** Sending is off until you turn on **Allow sending** for an account, which also asks for its SMTP server. The model then gets `email_compose`, which opens a draft — a reply or a new message — in a review dialog. You can edit everything, and nothing goes out until you click **Send**; discarding it tells the model you declined. Replies thread under the original, and a copy is filed in Sent. Jobs never get the tool, and auto-approve does not apply to it.
 
@@ -381,15 +383,15 @@ One account covers both. If your server offers only one of them, only that one's
 
 `Settings → Integrations → MCP` has three buttons:
 
-- **Add an integration** — pick from a built-in catalogue with guided setup (GitHub, Google Drive, Blender, Godot).
-- **Add a custom server** — a command on your machine that Haruspex starts and stops.
-- **Add a remote server** — an MCP server reachable over HTTP.
+- **Add from the catalog** — pick from a built-in catalogue with guided setup (GitHub, Google Drive, Blender, Godot).
+- **Add a server on this computer** — a command on your machine that Haruspex starts and stops.
+- **Add a server on your network** — an MCP server reachable over HTTP.
 
-Each server's tools stay off until you turn them on, and a tool that is not declared read-only asks before it runs. Servers speak the 2026-07-28 protocol. Blender and Godot bridge to the running application through its own addon; the Settings row tells you whether the app is actually attached.
+A server from the catalog starts with a recommended set of its tools on; any other server's tools stay off until you turn them on, and a tool that is not declared read-only asks before it runs. Servers speak the 2026-07-28 protocol. Blender and Godot bridge to the running application through its own addon; the Settings row tells you whether the app is actually attached.
 
 Traffic can go through your proxy per server (`Settings → Network` holds the network proxy itself; web search has its own). Connections to your own machine never use it.
 
-`Settings → Logs → MCP` shows both sides of the conversation with each server.
+The log viewer's **MCP** tab (the terminal icon in the toolbar) shows both sides of the conversation with each server.
 
 ## Screen capture
 
