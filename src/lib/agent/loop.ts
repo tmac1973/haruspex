@@ -20,6 +20,7 @@ import type { Artifact, LintIssue, ToolContext } from '#lib/agent/tools/index.ts
 import type { ContextManagedInfo } from './context-budget';
 import type { SamplingParams } from '#lib/stores/settings.ts';
 import { logDebug } from '#lib/debug-log.ts';
+import { isAbortError } from '#lib/utils/error.ts';
 import { NudgeState } from './loop/nudges';
 import {
 	buildLoopContext,
@@ -80,6 +81,18 @@ export interface CallStats {
  *  apart from a system-forced stop and label the turn accordingly. */
 export interface CompletionMeta {
 	stopReason: AgentStopReason;
+	/**
+	 * Steering texts (see `AgentLoopOptions.takeSteering`) still queued when
+	 * the turn ended, which the model never saw. Present only when non-empty,
+	 * so the caller can put them back in the input box rather than lose them.
+	 */
+	undeliveredSteering?: string[];
+	/**
+	 * The turn was cancelled. Set only on the `onComplete` an aborted loop
+	 * makes to hand back `undeliveredSteering`; the loop still throws its
+	 * AbortError afterwards.
+	 */
+	aborted?: boolean;
 }
 
 export interface SearchStep {
@@ -331,9 +344,61 @@ export interface AgentLoopOptions {
 	 * backend — the mechanism behind per-job model selection. Absent → Settings.
 	 */
 	backend?: BackendOverride;
+	/**
+	 * Steering: messages the user typed while the turn was running. Drained at
+	 * the iteration boundary — after a tool batch's results are appended,
+	 * before the next model call — and appended as `user` messages. Never
+	 * drained mid-stream or mid-tool. If the model finishes while texts are
+	 * still queued, the loop runs one more iteration instead of completing.
+	 * Whatever is still queued when the turn ends (or is aborted) comes back
+	 * in `onComplete`'s `meta.undeliveredSteering`. Returns and clears the
+	 * queue; an empty array means nothing is waiting.
+	 */
+	takeSteering?: () => string[];
+	/** Fired with the texts each time steering is delivered to the model. */
+	onSteering?: (texts: string[]) => void;
+}
+
+/** Drain a steering queue, dropping blank entries (the loop never sends them). */
+function queuedSteering(take: () => string[]): string[] {
+	return take().filter((t) => t.trim() !== '');
+}
+
+/**
+ * Wrap `onComplete` so a turn that ends with steering still queued hands it
+ * back in `meta.undeliveredSteering`. Identity when the caller doesn't steer.
+ */
+function withSteeringHandback(options: AgentLoopOptions): AgentLoopOptions {
+	const take = options.takeSteering;
+	if (!take) return options;
+	return {
+		...options,
+		onComplete: (meta) => {
+			const left = queuedSteering(take);
+			options.onComplete(
+				left.length > 0 ? { stopReason: 'complete', ...meta, undeliveredSteering: left } : meta
+			);
+		}
+	};
 }
 
 export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
+	try {
+		await runLoop(withSteeringHandback(options));
+	} catch (e) {
+		// Cancelled with steering still queued: give it back before the abort
+		// propagates, so the UI can restore it to the input box.
+		if (isAbortError(e) && options.takeSteering) {
+			const left = queuedSteering(options.takeSteering);
+			if (left.length > 0) {
+				options.onComplete({ stopReason: 'complete', aborted: true, undeliveredSteering: left });
+			}
+		}
+		throw e;
+	}
+}
+
+async function runLoop(options: AgentLoopOptions): Promise<void> {
 	const ctx = buildLoopContext(options);
 	const state = new LoopState();
 	const nudges = new NudgeState();
@@ -383,6 +448,10 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<void> {
 				freeRetries,
 				maxFreeRetries
 			});
+		} else if (state.steeringContinue) {
+			// The model had finished, but the user had more to say: answering it
+			// is the user's turn continuing, not the model spending its budget.
+			logDebug('agent', 'steering: extra iteration for queued input', { iteration });
 		} else {
 			consumed++;
 		}
