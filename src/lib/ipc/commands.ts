@@ -140,6 +140,7 @@ export const IPC = {
 	get_app_logs: 'get_app_logs',
 	get_cpu_fallback_state: 'get_cpu_fallback_state',
 	get_diagnostics: 'get_diagnostics',
+	get_llama_api_key: 'get_llama_api_key',
 	get_llama_crash_log: 'get_llama_crash_log',
 	get_models_dir: 'get_models_dir',
 	get_search_stats: 'get_search_stats',

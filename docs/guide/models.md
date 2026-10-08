@@ -67,6 +67,8 @@ Enter the **Server URL** and an optional **API Key**, then press **Probe connect
 
 Switching to a remote server stops the local model and frees your VRAM. Switching back to **Local** starts it again.
 
+The built-in model server answers only Haruspex: other programs and web pages can't use it. To share one model with other apps, run your own server and point Haruspex at it.
+
 ## OpenRouter (cloud)
 
 **OpenRouter (cloud)** gives access to hundreds of large hosted models. **Your prompts and the model's answers leave your device** and are handled by OpenRouter and the model provider under their privacy policies. It is off by default and labelled while in use.

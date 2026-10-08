@@ -17,6 +17,7 @@
 import type { BackendOverride } from '#lib/api.ts';
 import type { OpenRouterModel } from '#lib/openrouter.ts';
 import { PORTS, baseUrl } from '#lib/ports.ts';
+import { localServerKey } from '#lib/inference/localServerKey.ts';
 import {
 	getActiveLocalModelFilename,
 	getApiKeyValue,
@@ -291,7 +292,7 @@ function resolveLocalDescriptor(settings: AppSettings): BackendDescriptor {
 	return {
 		kind: 'local',
 		baseUrl: baseUrl(PORTS.llama),
-		apiKey: undefined,
+		apiKey: localServerKey(),
 		// llama-server serves a single model and ignores the name.
 		modelId: 'default',
 		contextSize: globalContextSize(settings),
