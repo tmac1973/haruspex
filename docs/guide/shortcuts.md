@@ -5,7 +5,7 @@ description: Every keyboard shortcut in Haruspex — global keys, voice, chat, t
 
 # Keyboard shortcuts
 
-Press **F1**, or click the **?** in the header, to see the shortcut list in the app at any time. On macOS, ⌘ is the Cmd key and ⌥ the Option key.
+Press **F1**, or click the **?** in the header, to see the shortcut list in the app at any time. It opens with a link to this guide online. On macOS, ⌘ is the Cmd key and ⌥ the Option key.
 
 ## Everywhere
 
