@@ -76,6 +76,9 @@ pub struct SkillSummary {
     pub created_by_model: bool,
     /// Only for Code mode (`metadata.haruspex-mode: code`), such as `init`.
     pub code_mode_only: bool,
+    /// Written for guided planning (`metadata.haruspex-job: guided-planning`),
+    /// which lists these first in its skill picker.
+    pub for_guided_planning: bool,
 }
 
 /// A skill's instructions, as loaded into a turn.
@@ -109,6 +112,8 @@ impl From<&Found> for SkillSummary {
             shadowed: f.shadowed,
             created_by_model: p.metadata.get("created-by").map(String::as_str) == Some("haruspex"),
             code_mode_only: p.metadata.get("haruspex-mode").map(String::as_str) == Some("code"),
+            for_guided_planning: p.metadata.get("haruspex-job").map(String::as_str)
+                == Some("guided-planning"),
         }
     }
 }
@@ -476,8 +481,10 @@ mod tests {
         let init = SkillSummary::from(discover::find(&all, "init").expect("init"));
         assert_eq!(init.source, SkillSource::User);
         assert!(init.code_mode_only);
+        assert!(!init.for_guided_planning);
         let plan = SkillSummary::from(discover::find(&all, "plan-2d-game").unwrap());
         assert!(!plan.code_mode_only);
+        assert!(plan.for_guided_planning);
     }
 
     #[test]

@@ -832,3 +832,39 @@ describe('outline rendering', () => {
 		);
 	});
 });
+
+describe('planning skill in the prompts', () => {
+	const skill = {
+		name: 'plan-game',
+		body: '## Questions\n### Camera\nAsk.\n## Plan requirements\n- Camera stays in the world.'
+	};
+
+	it('changes nothing without a skill', () => {
+		expect(overviewStagePrompt('plan/x/', 'plan/x/overview.md', false, null)).toBe(
+			overviewStagePrompt('plan/x/', 'plan/x/overview.md', false)
+		);
+		expect(outlineStagePrompt('plan/x/', 'plan/x/overview.md', false, null)).toBe(
+			outlineStagePrompt('plan/x/', 'plan/x/overview.md', false)
+		);
+		expect(verifierPrompt('plan/x/', 'plan/x/overview.md', null, null)).toContain(
+			'exactly four kinds'
+		);
+	});
+
+	it('gives the interview the skill, and the outline its requirements', () => {
+		const overview = overviewStagePrompt('plan/x/', 'plan/x/overview.md', false, skill);
+		expect(overview).toContain('<skill_content name="plan-game">');
+		const outline = outlineStagePrompt('plan/x/', 'plan/x/overview.md', false, skill);
+		expect(outline).toContain('Camera stays in the world.');
+		expect(outline).not.toContain('<skill_content');
+	});
+
+	it('has the verifier check the requirements, as a blocking finding', () => {
+		const v = verifierPrompt('plan/x/', 'plan/x/overview.md', null, '- Camera stays in the world.');
+		expect(v).toContain('exactly five kinds');
+		expect(v).toContain('MISSING PLAN REQUIREMENT');
+		expect(v).toContain('- Camera stays in the world.');
+		const found = classifyFindings('- (e) phase-02-world.md: no phase clamps the camera');
+		expect(found.blocking).toHaveLength(1);
+	});
+});

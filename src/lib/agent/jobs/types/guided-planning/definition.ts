@@ -27,6 +27,8 @@ export interface GuidedPlanningEditorState {
 	/** A chained stage's model; null = same as this job. */
 	chain_assets_model: JobModelForm | null;
 	chain_coding_model: JobModelForm | null;
+	/** The planning skill's name; '' for none. */
+	planning_skill: string;
 }
 
 /** A stage's form as stored, or undefined for "same as this job". */
@@ -138,7 +140,8 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 		coding_context_mode: '',
 		coding_max_turns: DEFAULT_MAX_TURNS,
 		chain_assets_model: null,
-		chain_coding_model: null
+		chain_coding_model: null,
+		planning_skill: ''
 	}),
 	configFromJob: (typeConfig) => {
 		const c = parseGuidedPlanningConfig(typeConfig);
@@ -156,7 +159,10 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 			chain_assets_model: c.chain_models.assets
 				? modelFormFromColumns(c.chain_models.assets)
 				: null,
-			chain_coding_model: c.chain_models.coding ? modelFormFromColumns(c.chain_models.coding) : null
+			chain_coding_model: c.chain_models.coding
+				? modelFormFromColumns(c.chain_models.coding)
+				: null,
+			planning_skill: c.planning_skill ?? ''
 		};
 	},
 	configToJson: (config) => {
@@ -180,7 +186,8 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 							assets: stageModelJson(s.chain_assets_model),
 							coding: stageModelJson(s.chain_coding_model)
 						}
-					: undefined
+					: undefined,
+			planning_skill: s.planning_skill || undefined
 		});
 	},
 	validate: ({ workingDir, config }) => {

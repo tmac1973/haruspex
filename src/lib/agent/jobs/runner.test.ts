@@ -129,7 +129,10 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 		// What a job inherits when it sets no reasoning policy of its own —
 		// the runner records the RESOLVED values with the run.
 		thinkingEnabled: true,
-		reasoningEffort: 'medium'
+		reasoningEffort: 'medium',
+		// A planning skill is read through the skills client, which asks which
+		// folders it may search.
+		skills: { extraDirs: [], disabled: [], autonomous: 'auto', trustedRepos: {} }
 	}),
 	// Read by resolveBackendDescriptor, which the runner now maps job
 	// context-size / vision decisions through, and by the run environment —
@@ -2585,6 +2588,90 @@ describe('guided_planning — run mode', () => {
 		// Same precedent as a skipped verification: the stage runs and reports,
 		// rather than renumbering the stages around it.
 		expect(mocks.markRunStepStarted.mock.calls.some((c: unknown[]) => c[1] === 4)).toBe(true);
+	});
+});
+
+describe('guided_planning — planning skill', () => {
+	const BODY = [
+		'# Planning a 2D game',
+		'## Questions',
+		'### Camera',
+		'Ask about the camera.',
+		'## Plan requirements',
+		'- The player cannot leave the playable area.'
+	].join('\n');
+
+	function planningJob() {
+		return makeJob({
+			job_type: 'guided_planning',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({
+				initial_description: 'A top-down shooter',
+				plan_output_dir: 'plan/x/',
+				planning_skill: 'plan-2d-game'
+			})
+		});
+	}
+
+	function withSkill(read: () => Promise<unknown>) {
+		const base = mocks.invoke.getMockImplementation()!;
+		mocks.invoke.mockImplementation(async (cmd: string, args?: unknown) => {
+			if (cmd === 'skill_read') return read();
+			if (cmd === 'skills_project_root') return '/repo';
+			return base(cmd, args);
+		});
+	}
+
+	const prompts = () =>
+		mocks.runEphemeralTurn.mock.calls.map(([o]) =>
+			String((o as EphemeralTurnOptions).systemPrompt)
+		);
+
+	it('reads the skill once, and gives each stage its part', async () => {
+		withSkill(async () => ({ name: 'plan-2d-game', body: BODY, files: [] }));
+		mocks.getJob.mockResolvedValueOnce(planningJob());
+		mocks.runEphemeralTurn.mockImplementation(
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		const reads = mocks.invoke.mock.calls.filter((c: unknown[]) => c[0] === 'skill_read');
+		expect(reads).toHaveLength(1);
+		expect(reads[0][1]).toMatchObject({ name: 'plan-2d-game', projectRoot: null });
+
+		const overview = prompts().find((p) => p.includes('STAGE 1 of'))!;
+		expect(overview).toContain('<skill_content name="plan-2d-game">');
+		expect(overview).toContain('Ask about the camera.');
+		const outline = prompts().find((p) => p.includes('part A: produce the OUTLINE'))!;
+		expect(outline).toContain('The player cannot leave the playable area.');
+		expect(outline).not.toContain('Ask about the camera.');
+		const verifier = prompts().find((p) => p.includes('INDEPENDENT reviewer'))!;
+		expect(verifier).toContain('MISSING PLAN REQUIREMENT');
+		expect(verifier).toContain('The player cannot leave the playable area.');
+
+		const overviewStep = mocks.markRunStepFinished.mock.calls.find((c: unknown[]) => c[1] === 0);
+		expect(String(overviewStep?.[3])).toContain('planning skill: plan-2d-game');
+	});
+
+	it('fails before the interview when the skill cannot be read', async () => {
+		withSkill(async () => {
+			throw 'no skill named "plan-2d-game"';
+		});
+		mocks.getJob.mockResolvedValueOnce(planningJob());
+		mocks.runEphemeralTurn.mockImplementation(
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+
+		expect(mocks.runEphemeralTurn).not.toHaveBeenCalled();
+		const finished = mocks.markRunFinished.mock.calls[0];
+		expect(finished[2]).toBe('failed');
+		expect(JSON.stringify(finished)).toContain("Couldn't read the planning skill");
 	});
 });
 

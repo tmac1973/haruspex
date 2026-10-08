@@ -30,6 +30,13 @@ import {
 } from '#lib/stores/jobRuns.svelte.ts';
 import type { JobRunContext } from '../types';
 import { parseGuidedPlanningConfig, RUN_MODE_LABELS, type GuidedPlanningConfig } from './config';
+import {
+	interviewSkillSection,
+	loadPlanningSkill,
+	outlineRequirementsSection,
+	verifierRequirements,
+	type PlanningSkill
+} from './planningSkill';
 import { describeStageModel, stageModelColumns } from '../../chainModel';
 import { interviewResearchRules, withWebResearch, writeResearchRules } from '../webResearch';
 import {
@@ -178,7 +185,8 @@ function guidedPlanOutputDir(job: JobWithSteps, cfg: GuidedPlanningConfig): stri
 export function overviewStagePrompt(
 	outDir: string,
 	overviewPath: string,
-	webResearch: boolean
+	webResearch: boolean,
+	skill: PlanningSkill | null = null
 ): string {
 	return [
 		'You are running an interactive guided-planning session. This is STAGE 1 of',
@@ -244,7 +252,8 @@ export function overviewStagePrompt(
 		'   the implementation plan — that is stage 2, after the user reviews this.',
 		...(webResearch
 			? interviewResearchRules('the project description or any answer the user gives')
-			: [])
+			: []),
+		...(skill ? [interviewSkillSection(skill)] : [])
 	].join('\n');
 }
 
@@ -276,7 +285,8 @@ function overviewRevisePrompt(outDir: string, overviewPath: string, webResearch:
 export function outlineStagePrompt(
 	outDir: string,
 	overviewPath: string,
-	webResearch: boolean
+	webResearch: boolean,
+	skill: PlanningSkill | null = null
 ): string {
 	return [
 		'You are running an interactive guided-planning session. This is STAGE 2 of 2,',
@@ -308,12 +318,17 @@ export function outlineStagePrompt(
 		'4. Report the outline by calling `submit_plan_outline` exactly once, with',
 		'   every phase (id "01", "02", …; title; depends_on; a 1–3 sentence summary).',
 		'   Do NOT write any phase files — that happens next, one phase at a time.',
-		...(webResearch ? interviewResearchRules('the overview or any answer the user gives') : [])
+		...(webResearch ? interviewResearchRules('the overview or any answer the user gives') : []),
+		...(skill ? [outlineRequirementsSection(skill)] : [])
 	].join('\n');
 }
 
 /** Re-run the outline turn after the user asks for a change at the checkpoint. */
-function outlineRevisePrompt(overviewPath: string, webResearch: boolean): string {
+function outlineRevisePrompt(
+	overviewPath: string,
+	webResearch: boolean,
+	skill: PlanningSkill | null = null
+): string {
 	return [
 		'You are revising the implementation-plan OUTLINE. Planning only — write no',
 		'files, edit no code.',
@@ -323,7 +338,8 @@ function outlineRevisePrompt(overviewPath: string, webResearch: boolean): string
 		'   full end-to-end project coverage.',
 		'3. Call `submit_plan_outline` exactly once with the COMPLETE revised phase',
 		'   list — every phase, not just the ones that changed.',
-		...(webResearch ? interviewResearchRules('the change the user asked for') : [])
+		...(webResearch ? interviewResearchRules('the change the user asked for') : []),
+		...(skill ? [outlineRequirementsSection(skill)] : [])
 	].join('\n');
 }
 
@@ -513,8 +529,11 @@ export function phaseWritePrompt(
 export function verifierPrompt(
 	outDir: string,
 	overviewPath: string,
-	overviewText?: string | null
+	overviewText?: string | null,
+	/** The planning skill's `## Plan requirements`, when the run has one. */
+	requirements?: string | null
 ): string {
+	const kinds = requirements ? 'five' : 'four';
 	return [
 		'You are an INDEPENDENT reviewer of a phased implementation plan. You did not',
 		'write it. Review it with fresh eyes and check ONLY what is listed below.',
@@ -529,7 +548,7 @@ export function verifierPrompt(
 					`1. Read the overview at \`${overviewPath}\`, then list \`${outDir}\` and read`,
 					'   every phase-NN-*.md file in it.'
 				]),
-		'2. Look for exactly four kinds of problem:',
+		`2. Look for exactly ${kinds} kinds of problem:`,
 		'   a. ORDERING — any phase that depends on work introduced in a LATER phase',
 		'      (its "Depends on" names a higher-numbered phase, or its steps need',
 		'      something a later phase creates).',
@@ -553,6 +572,14 @@ export function verifierPrompt(
 		'      Example: "Return `GuessResult(...)`" followed by "After this, check',
 		'      whether the game should end in WON" — the check is dead. Quote the',
 		'      step and say what the correct order or resolution is.',
+		...(requirements
+			? [
+					'   e. MISSING PLAN REQUIREMENT — a requirement under PLAN REQUIREMENTS',
+					'      below that no phase file meets. Not a problem when the',
+					"      overview's ## Decisions records the user choosing otherwise. Quote",
+					'      the requirement and say which phase should meet it.'
+				]
+			: []),
 		'',
 		'You write NOTHING to disk. Then respond:',
 		'- If there are NO problems, your ENTIRE reply must be exactly: PLAN OK',
@@ -562,7 +589,15 @@ export function verifierPrompt(
 		'    - (a) phase-02-api.md: depends on phase 03, which is written later',
 		'    - (c) phase-04-engine.md: the "update loop" block is a full',
 		'      implementation — specify the signature and the rules instead',
-		'Report only those four kinds of problem — not style or scope opinions.',
+		`Report only those ${kinds} kinds of problem — not style or scope opinions.`,
+		...(requirements
+			? [
+					'',
+					'--- PLAN REQUIREMENTS (from the planning skill the user chose) ---',
+					requirements,
+					'--- END PLAN REQUIREMENTS ---'
+				]
+			: []),
 		...(overviewText
 			? ['', `--- OVERVIEW (${overviewPath}) ---`, overviewText, '--- END OVERVIEW ---']
 			: [])
@@ -732,17 +767,17 @@ export function phaseFileProblem(relPath: string, text: string): string | null {
  * Split a verifier verdict into findings that must block an unattended run and
  * findings that merely want attention.
  *
- * Severity rides on the four categories the verifier already reports rather
- * than a taxonomy of its own. (a) ordering, (b) deferred decisions and (d)
- * contradictory or unreachable steps block; (c) embedded implementation code
- * is advisory. The deciding question is what an UNATTENDED coding run could
+ * Severity rides on the categories the verifier already reports rather than
+ * a taxonomy of its own. (a) ordering, (b) deferred decisions, (d)
+ * contradictory or unreachable steps and (e) a missed planning-skill
+ * requirement block; (c) embedded implementation code is advisory. The deciding question is what an UNATTENDED coding run could
  * survive: it cannot resolve a "TBD", because `ask_user_question` is not in
  * its toolset, so it would silently invent the decision. Over-specified code
  * in a plan file is a quality problem, not a stop.
  *
  * Fails safe in two directions. Only lines that are bullets are considered, so
  * a model's preamble cannot invent findings; and a bullet with no tag, or a
- * letter outside a-d, counts as BLOCKING — a verdict the runner cannot read
+ * letter outside a-e, counts as BLOCKING — a verdict the runner cannot read
  * must never read as permission to proceed.
  */
 export function classifyFindings(verdict: string): { blocking: string[]; advisory: string[] } {
@@ -998,6 +1033,12 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		};
 	}
 	const toolsets = guidedPlanningToolsets(webResearch);
+	/**
+	 * The planning skill the user picked, read once when the run starts (in the
+	 * try below, so a skill that can't be read fails the run with the reason).
+	 * Every stage reads this copy: an edit to the skill mid-run changes nothing.
+	 */
+	let planningSkill: PlanningSkill | null = null;
 	// A survey the user asked for ("research the PDF libraries and give me a
 	// choice") is a dozen search and read calls on top of the interview itself.
 	const interviewIterations = webResearch ? 60 : 40;
@@ -1237,7 +1278,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 					`the first tests created in phase 01, alongside the first product code, and ` +
 					`extended by the phases that follow — not gathered into one testing phase at ` +
 					`the end. Keep strict dependency order and full end-to-end coverage.`,
-				outlineRevisePrompt(overviewPath, webResearch)
+				outlineRevisePrompt(overviewPath, webResearch, planningSkill)
 			);
 		}
 		return current;
@@ -1369,7 +1410,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		const verdict = await turn(
 			VERIFY,
 			`Review the phase files in ${outDir} against ${overviewPath}.`,
-			verifierPrompt(outDir, overviewPath, overviewText),
+			verifierPrompt(outDir, overviewPath, overviewText, verifierRequirements(planningSkill)),
 			25,
 			{
 				tools: toolsets.verifier,
@@ -1510,7 +1551,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			msg =
 				`You did not call submit_plan_outline, so no phases were recorded. Call it ` +
 				`now with the COMPLETE dependency-ordered phase list for the whole project.`;
-			prompt = outlineRevisePrompt(overviewPath, webResearch);
+			prompt = outlineRevisePrompt(overviewPath, webResearch, planningSkill);
 		}
 		throw new Error(
 			`The model never produced a plan outline (no submit_plan_outline call) after ` +
@@ -1808,10 +1849,13 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 	try {
 		// Stage 1 — Overview: interview + write, then the review checkpoint loop.
 		startStep(OVERVIEW);
+		if (cfg.planning_skill) {
+			planningSkill = await loadPlanningSkill(cfg.planning_skill, job.working_dir ?? null);
+		}
 		await turn(
 			OVERVIEW,
 			cfg.initial_description?.trim() || 'Plan this project.',
-			overviewStagePrompt(outDir, overviewPath, webResearch),
+			overviewStagePrompt(outDir, overviewPath, webResearch, planningSkill),
 			interviewIterations,
 			{ expectsFileOutput: true, kind: 'overview.interview' }
 		);
@@ -1822,7 +1866,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				`I don't see ${overviewPath} on disk yet — you may have described writing the ` +
 				`overview without actually calling the fs_write_text tool. Do NOT ask any more ` +
 				`questions; call fs_write_text now to write the overview to ${overviewPath}, then stop.`,
-			overviewStagePrompt(outDir, overviewPath, webResearch),
+			overviewStagePrompt(outDir, overviewPath, webResearch, planningSkill),
 			() =>
 				`The overview was never written to ${overviewPath} after ${MAX_WRITE_ATTEMPTS} attempts. ` +
 				`The selected model may be too small to follow the write step reliably — try a larger model.`,
@@ -1867,7 +1911,11 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				);
 			}
 		}
-		finishStep(OVERVIEW, `Overview approved → ${overviewPath}`);
+		finishStep(
+			OVERVIEW,
+			`Overview approved → ${overviewPath}` +
+				(planningSkill ? ` · planning skill: ${planningSkill.name}` : '')
+		);
 
 		// Stage 2a — Outline: interview + structured phase list, then the dep-map
 		// approval checkpoint. The outline is what makes the per-phase write loop
@@ -1876,7 +1924,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		let outline = await repairOutlineOrdering(
 			await obtainOutline(
 				`The overview at ${overviewPath} is approved. Now design the phased plan OUTLINE.`,
-				outlineStagePrompt(outDir, overviewPath, webResearch)
+				outlineStagePrompt(outDir, overviewPath, webResearch, planningSkill)
 			)
 		);
 		let outlineApproved = false;
@@ -1904,7 +1952,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			} else if (answer.kind === 'freeText') {
 				outline = await obtainOutline(
 					`Please revise the outline. The user asked for: ${answer.text}`,
-					outlineRevisePrompt(overviewPath, webResearch)
+					outlineRevisePrompt(overviewPath, webResearch, planningSkill)
 				);
 			}
 		}

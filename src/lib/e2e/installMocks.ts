@@ -88,6 +88,8 @@ const TABLE: Record<string, Handler> = {
 	skills_list: empty,
 	skills_user_dir: () => '/e2e/skills',
 	skills_shipped: empty,
+	// Not in a repo: the guided-planning skill picker lists only user skills.
+	skills_project_root: none,
 	secret_get: none,
 	mcp_catalog: empty,
 	mcp_runtimes_available: () => ({ node: true, npm: true, uv: true }),

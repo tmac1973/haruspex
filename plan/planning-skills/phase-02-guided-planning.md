@@ -60,3 +60,22 @@ A 2D game plan run with `plan-2d-game` asks about the window, camera and
 HUD without being told to. The overview's Decisions records the answers.
 The verifier flags a hand-edited phase file that drops the camera
 requirement.
+
+## Decisions made while building it
+
+- **The run keeps its copy in memory, not in `PlanningState`.** That record
+  is defined but never persisted (resume isn't wired), so the skill is read
+  once at the start of stage 1 and held for the run. When resume is wired,
+  the copy belongs in that record.
+- **A missing skill doesn't block saving the job.** The editor's
+  `validate` is synchronous and can't read disk. The picker shows a missing
+  skill as "(missing)" with a one-line hint instead, and the run fails before
+  the interview with the reason.
+- **The verifier's fifth category is (e)**, and `classifyFindings` already
+  blocks every letter but (c).
+- **The outline revise turn gets the requirements too**, so a change the
+  user asks for doesn't drop one.
+- **Code mode skills (`init`) aren't offered** in the picker; every other
+  usable skill is, with skills tagged for guided planning listed first.
+- **`knownTrustedRoot` moved to `skills/project.ts`**, shared by the slash
+  autocomplete and the job editor; neither ever opens the trust prompt.
