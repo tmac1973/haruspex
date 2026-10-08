@@ -71,3 +71,7 @@ npm-debug.log*
 # confidential by Google's rules, but kept out of git so secret scanning
 # does not flag it; release CI writes it from a repository secret.
 /src-tauri/google-oauth.json
+
+# The user guide's web pages, built from docs/guide/ by scripts/build-guide.mjs
+# when the site is published.
+site/guide/

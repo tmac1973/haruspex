@@ -1,6 +1,7 @@
 name: pages
 
-# The public site in site/: home page, privacy policy and terms of service.
+# The public site in site/: home page, privacy policy, terms of service, and
+# the user guide, rendered from docs/guide/ into site/guide/ at publish time.
 # Google's OAuth consent screen links to these, so they must stay reachable
 # at https://tmac1973.github.io/haruspex/. See docs/google-sign-in.md.
 
@@ -9,6 +10,8 @@ on:
     branches: [main]
     paths:
       - 'site/**'
+      - 'docs/guide/**'
+      - 'scripts/build-guide.mjs'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -29,6 +32,14 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # Only `marked` is needed; --ignore-scripts skips every install hook.
+      - run: npm ci --ignore-scripts
+      # The user guide: docs/guide/*.md rendered into site/guide/.
+      - run: node scripts/build-guide.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
