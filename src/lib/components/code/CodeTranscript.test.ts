@@ -200,3 +200,19 @@ describe('CodeTranscript live tool round', () => {
 		expect(text.indexOf('Fixing it.')).toBeLessThan(text.indexOf('Fixed.'));
 	});
 });
+
+describe('slash command notes', () => {
+	it('stay where they were added, above what was sent after them', () => {
+		const messages: ChatMessage[] = [
+			{ role: 'user', content: 'first ask' },
+			{ role: 'assistant', content: 'first answer' },
+			{ role: 'user', content: 'later ask' },
+			{ role: 'assistant', content: 'later answer' }
+		];
+		const session = fakeSession({ messages });
+		render(CodeTranscript, { session, notes: [{ text: 'SKILLS LIST', at: 2 }] });
+		const text = screen.getByTestId('code-transcript').textContent ?? '';
+		expect(text.indexOf('first answer')).toBeLessThan(text.indexOf('SKILLS LIST'));
+		expect(text.indexOf('SKILLS LIST')).toBeLessThan(text.indexOf('later ask'));
+	});
+});

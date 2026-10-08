@@ -1,3 +1,11 @@
+<script lang="ts" module>
+	/** A slash command's note, drawn before the message at index `at`. */
+	export interface TranscriptNote {
+		text: string;
+		at: number;
+	}
+</script>
+
 <script lang="ts">
 	/**
 	 * A Code session's conversation: messages, the tool cards each answer
@@ -15,7 +23,7 @@
 	import { TURNS_PER_PAGE, turnsBefore, windowStart } from '#lib/code/sessionList.ts';
 	import type { CodeSession } from '#lib/stores/code.svelte.ts';
 
-	let { session, notes = [] }: { session: CodeSession; notes?: string[] } = $props();
+	let { session, notes = [] }: { session: CodeSession; notes?: TranscriptNote[] } = $props();
 
 	let turnsShown = $state(TURNS_PER_PAGE);
 	const messages = $derived(session.messages);
@@ -67,8 +75,25 @@
 
 	const ticket = $derived(session.ticket);
 
-	// Keep the newest output in view.
+	const notesAt = (i: number) => notes.filter((n) => n.at === i);
+	const trailingNotes = $derived(notes.filter((n) => n.at >= messages.length));
+
+	// Keep the newest output in view, but only while the reader is at the
+	// bottom: scrolling up to read stops the follow, and sending a message (or
+	// scrolling back down) resumes it.
 	let threadEl = $state<HTMLDivElement | null>(null);
+	let follow = true;
+	let seenLength = 0;
+	function onThreadScroll() {
+		if (!threadEl) return;
+		follow = threadEl.scrollHeight - threadEl.scrollTop - threadEl.clientHeight < 48;
+	}
+	$effect(() => {
+		if (messages.length > seenLength && messages[messages.length - 1]?.role === 'user') {
+			follow = true;
+		}
+		seenLength = messages.length;
+	});
 	$effect(() => {
 		void messages.length;
 		void streamText;
@@ -77,7 +102,7 @@
 		void session.searchSteps.length;
 		void session.steering.length;
 		void notes.length;
-		if (!threadEl) return;
+		if (!threadEl || !follow) return;
 		queueMicrotask(() => {
 			if (threadEl) threadEl.scrollTop = threadEl.scrollHeight;
 		});
@@ -88,7 +113,7 @@
 	}
 </script>
 
-<div class="thread" bind:this={threadEl} data-testid="code-transcript">
+<div class="thread" bind:this={threadEl} onscroll={onThreadScroll} data-testid="code-transcript">
 	{#if messages.length === 0 && !session.busy}
 		<div class="placeholder">
 			Ask for a change in <code>{session.root}</code>. Hold <kbd>F2</kbd> to speak.
@@ -103,6 +128,9 @@
 		>
 	{/if}
 	{#each shown as { msg, i } (i)}
+		{#each notesAt(i) as note, k (k)}
+			<div class="note">{note.text}</div>
+		{/each}
 		{#if msg.role !== 'tool' && !msg.tool_calls}
 			{#if msg.role === 'system'}
 				<div class="note">{messageText(msg.content)}</div>
@@ -126,6 +154,9 @@
 				{/if}
 			{/if}
 		{/if}
+	{/each}
+	{#each trailingNotes as note, k (k)}
+		<div class="note">{note.text}</div>
 	{/each}
 	{#if session.searchSteps.length > 0}
 		<CodeSteps steps={session.searchSteps} />
@@ -172,9 +203,6 @@
 	{#if session.contextNotice}
 		<div class="hint">ⓘ {session.contextNotice}</div>
 	{/if}
-	{#each notes as note, k (k)}
-		<div class="note">{note}</div>
-	{/each}
 	{#if session.lastError}
 		<div class="error">{session.lastError}</div>
 	{/if}
