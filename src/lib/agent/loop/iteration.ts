@@ -17,9 +17,12 @@ import {
 	messageText,
 	type BackendOverride,
 	type ChatMessage,
+	type ChatCompletionOptions,
 	type ChatCompletionResponse,
+	type StreamChunk,
 	type Usage
 } from '#lib/api.ts';
+import { StreamResponseAssembler } from '#lib/streamAssembly.ts';
 import { resolveToolCalls, type ResolvedToolCall } from '#lib/agent/parser.ts';
 import {
 	coerceCallArguments,
@@ -596,7 +599,16 @@ type CompletionParams = {
 };
 
 /**
- * Non-streaming completion with the full context defense:
+ * A completion request that resolves to the whole response: `chatCompletion`,
+ * or `streamToolRound` when the caller opted into streaming tool rounds.
+ */
+type CompletionSender = (
+	options: ChatCompletionOptions,
+	signal: AbortSignal | undefined
+) => Promise<ChatCompletionResponse>;
+
+/**
+ * A completion with the full context defense:
  *   1. Pre-send guard shrinks the prompt to the calibrated budget.
  *   2. On success, feed the real `prompt_tokens` back into calibration so
  *      our byte estimate self-corrects for this content's density.
@@ -608,16 +620,16 @@ async function sendGuardedCompletion(
 	ctx: LoopContext,
 	tools: ToolDefinition[] | undefined,
 	params: CompletionParams,
-	reserveOutput: number
+	reserveOutput: number,
+	send: CompletionSender
 ): Promise<ChatCompletionResponse> {
 	applyContextGuard(ctx, reserveOutput, tools);
 	const backend = ctx.backend ?? undefined;
 	let sentEstimate = estimateMessagesTokens(ctx.messages, tools);
 	try {
-		const res = await chatCompletion(
-			{ messages: ctx.messages, tools, backend, ...params },
-			ctx.signal
-		);
+		// A streamed send fails here too when the server refuses the prompt:
+		// the overflow 400 comes back before any stream data.
+		const res = await send({ messages: ctx.messages, tools, backend, ...params }, ctx.signal);
 		if (res.usage) recordTokenCalibration(sentEstimate, res.usage.prompt_tokens);
 		return res;
 	} catch (e) {
@@ -633,10 +645,7 @@ async function sendGuardedCompletion(
 		const info = fitMessagesToBudget(ctx.messages, ctx.contextSize, { reserveOutput, tools });
 		if (info) ctx.options.onContextManaged?.(info);
 		sentEstimate = estimateMessagesTokens(ctx.messages, tools);
-		const res = await chatCompletion(
-			{ messages: ctx.messages, tools, backend, ...params },
-			ctx.signal
-		);
+		const res = await send({ messages: ctx.messages, tools, backend, ...params }, ctx.signal);
 		if (res.usage) recordTokenCalibration(sentEstimate, res.usage.prompt_tokens);
 		return res;
 	}
@@ -839,7 +848,58 @@ async function streamFinalSynthesis(
 }
 
 /**
- * Send the non-streaming tool-check completion, report usage/timing, trim
+ * One tool round, streamed: forwards the reasoning and text to
+ * `onStreamChunk` as provisional, each tool call's progress to
+ * `onToolCallDelta`, and resolves to the response `chatCompletion` would have
+ * returned (see `StreamResponseAssembler`). Usage is reported by the caller
+ * from that response, once, as for a non-streaming call.
+ */
+async function streamToolRound(
+	ctx: LoopContext,
+	options: ChatCompletionOptions,
+	signal: AbortSignal | undefined
+): Promise<ChatCompletionResponse> {
+	ctx.options.onToolRoundStart?.();
+	const assembler = new StreamResponseAssembler();
+	for await (const chunk of chatCompletionStream(options, signal)) {
+		// An in-band error (OpenRouter, after the 200) would otherwise assemble
+		// into an empty response and be handled as a model that said nothing.
+		if (chunk.error) {
+			throw new ApiError(chunk.error.message ?? 'The model stream failed.', chunk.error.code);
+		}
+		assembler.push(chunk);
+		forwardToolRoundChunk(ctx, chunk, assembler);
+	}
+	const response = assembler.finish();
+	logDebug('agent', 'streamed tool round assembled', {
+		finish_reason: response.finish_reason,
+		content_len: response.content?.length ?? 0,
+		tool_calls: response.tool_calls?.map((c) => ({
+			name: c.function.name,
+			argsLen: c.function.arguments.length
+		}))
+	});
+	return response;
+}
+
+function forwardToolRoundChunk(
+	ctx: LoopContext,
+	chunk: StreamChunk,
+	assembler: StreamResponseAssembler
+): void {
+	const { delta } = chunk;
+	if (delta.content || delta.reasoning_content || delta.reasoning) {
+		ctx.options.onStreamChunk(chunk, { provisional: true });
+	}
+	if (!ctx.options.onToolCallDelta) return;
+	for (const tc of delta.tool_calls ?? []) {
+		const call = assembler.partial(tc.index);
+		if (call) ctx.options.onToolCallDelta(tc.index, call);
+	}
+}
+
+/**
+ * Send the tool-check completion (streamed when the caller opted in), report usage/timing, trim
  * older tool messages when nearing the context wall, and parse out any tool
  * calls. The guarded helper shrinks the prompt to fit, self-calibrates the
  * token estimate from reported usage, and retries once on a context-overflow
@@ -859,6 +919,9 @@ async function runModelCall(
 }> {
 	const { tools, options } = ctx;
 	const callStartMs = Date.now();
+	const send: CompletionSender = options.streamToolRounds
+		? (opts, signal) => streamToolRound(ctx, opts, signal)
+		: chatCompletion;
 	const response = await sendGuardedCompletion(
 		ctx,
 		tools,
@@ -868,7 +931,8 @@ async function runModelCall(
 			chat_template_kwargs: templateKwargs,
 			reasoning
 		},
-		ctx.maxResponseTokens
+		ctx.maxResponseTokens,
+		send
 	);
 	const callDurationMs = Date.now() - callStartMs;
 
