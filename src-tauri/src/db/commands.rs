@@ -407,3 +407,80 @@ pub async fn db_delete_shell_session(
     let db = state.inner().clone();
     on_pool(db, move |db| db.delete_shell_code_session(&cwd)).await
 }
+
+// --- Code-tab sessions ---------------------------------------------------
+// Keyed by id; see db/code_sessions.rs.
+
+#[tauri::command]
+pub async fn code_session_list(
+    state: tauri::State<'_, Database>,
+) -> Result<Vec<CodeSessionSummary>, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.list_code_sessions()).await
+}
+
+#[tauri::command]
+pub async fn code_session_create(
+    state: tauri::State<'_, Database>,
+    root: String,
+    backend: Option<String>,
+    effort: Option<String>,
+) -> Result<CodeSessionRow, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| {
+        db.create_code_session(&root, backend.as_deref(), effort.as_deref())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn code_session_load(
+    state: tauri::State<'_, Database>,
+    id: String,
+) -> Result<CodeSessionRow, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.load_code_session(&id)).await
+}
+
+#[tauri::command]
+pub async fn code_session_save(
+    state: tauri::State<'_, Database>,
+    id: String,
+    thread: String,
+    title: Option<String>,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| {
+        db.save_code_session(&id, &thread, title.as_deref())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn code_session_update_meta(
+    state: tauri::State<'_, Database>,
+    id: String,
+    patch: CodeSessionMetaPatch,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.update_code_session_meta(&id, &patch)).await
+}
+
+#[tauri::command]
+pub async fn code_session_delete(
+    state: tauri::State<'_, Database>,
+    id: String,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.delete_code_session(&id)).await
+}
+
+#[tauri::command]
+pub async fn code_session_fork(
+    state: tauri::State<'_, Database>,
+    id: String,
+    at: usize,
+) -> Result<CodeSessionRow, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.fork_code_session(&id, at)).await
+}
