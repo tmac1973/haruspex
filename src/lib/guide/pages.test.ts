@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { SHORTCUTS } from '#lib/shortcuts.ts';
 
 /**
  * The user guide in `docs/guide/`, checked as files: the shape every page
@@ -90,6 +91,13 @@ describe('the user guide', () => {
 		const settings = pages.find((p) => p.name === 'settings')!.raw;
 		for (const label of sections) {
 			expect(settings, label).toContain(`## ${label}`);
+		}
+	});
+
+	it('lists every keyboard shortcut the app has, keyed as the app shows it', () => {
+		const page = pages.find((p) => p.name === 'shortcuts')!.raw;
+		for (const { items } of SHORTCUTS) {
+			for (const { keys } of items) expect(page, keys).toContain(`| ${keys} |`);
 		}
 	});
 });

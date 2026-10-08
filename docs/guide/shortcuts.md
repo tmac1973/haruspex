@@ -5,7 +5,7 @@ description: Every keyboard shortcut in Haruspex — global keys, voice, chat, t
 
 # Keyboard shortcuts
 
-Press **F1**, or click the **?** in the header, to see the shortcut list in the app at any time. On macOS, use Cmd where a shortcut says Ctrl / Cmd.
+Press **F1**, or click the **?** in the header, to see the shortcut list in the app at any time. On macOS, ⌘ is the Cmd key and ⌥ the Option key.
 
 ## Everywhere
 
@@ -14,10 +14,10 @@ Press **F1**, or click the **?** in the header, to see the shortcut list in the 
 | F1 | Show the keyboard shortcuts |
 | F2 (hold) | Push-to-talk voice input; release to send |
 | F3 | Read the last reply aloud (press again to stop) |
-| Ctrl / Cmd + N | New conversation (Chat tab) |
-| Ctrl / Cmd + `+` / `-` | Zoom the interface in / out |
-| Ctrl / Cmd + 0 | Reset the zoom |
-| Ctrl + Shift + I (Cmd + Option + I on macOS) | Open the web inspector (developer tools) |
+| Ctrl / ⌘ + N | New conversation (Chat tab) |
+| Ctrl / ⌘ + + / − | Zoom the interface in / out |
+| Ctrl / ⌘ + 0 | Reset the zoom |
+| Ctrl + Shift + I / ⌘ + ⌥ + I | Open the web inspector (developer tools) |
 
 ## Chat
 
