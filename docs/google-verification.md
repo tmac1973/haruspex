@@ -40,33 +40,24 @@ Keep the file there for good: Google re-checks ownership.
 The home page must describe what the app does and link the privacy policy;
 it does both.
 
-## 3. Scope justifications
+## 3. Scope justification
 
-Paste into Data access → each scope's justification field.
+Data access has one justification field for both scopes, limited to 1,000
+characters. Paste this (984 characters):
 
-**`https://www.googleapis.com/auth/calendar.readonly`**
+> Haruspex is a desktop AI assistant that runs on the user's computer. Both scopes let it answer questions about the user's own data, only when the user asks.
+>
+> calendar.readonly: for "what's on my calendar this week?", the app reads events in that date range. It also lists the user's calendars to say which one an event is from, which calendar.events.readonly can't do.
+>
+> contacts.readonly: for "what's Sam's email?", the app looks the person up in the user's contacts.
+>
+> The app never creates, changes or deletes anything, so it requests only these read-only scopes, the narrowest available for this data.
+>
+> Google data goes directly between Google and the user's device and is never sent to the developer. The app keeps no copy of calendars or contacts; what the assistant reads stays in that conversation on the device. If the user chooses a remote AI provider, that content is sent to it, as the privacy policy explains. Google data is not sold, used for ads or used to train models.
 
-> Haruspex is a desktop AI assistant that runs on the user's own computer.
-> When the user asks about their schedule ("what's on my calendar this
-> week?", "when am I free on Thursday?"), the assistant reads the events in
-> the requested date range from the user's calendars to answer. It never
-> creates, changes or deletes events, so it requests the read-only calendar
-> scope. Events are fetched from Google directly by the app on the user's
-> device, only when the user asks, and are not stored or sent to the
-> developer.
-
-**`https://www.googleapis.com/auth/contacts.readonly`**
-
-> When the user asks the assistant about a person ("what's Sam's email?",
-> "who works at Acme?"), Haruspex reads the user's contacts to find the
-> answer. It never creates, changes or deletes contacts, so it requests the
-> read-only contacts scope. Contacts are fetched from Google directly by the
-> app on the user's device, only when needed, and are not stored or sent to
-> the developer.
-
-**Why not a narrower scope?** Both are already Google's narrowest read-only
-scopes for the data. `calendar.events.readonly` would not list which calendars
-a user has, which is how the assistant names where an event comes from.
+It mentions the remote AI provider case because the privacy policy does:
+reviewers check the two against each other. Keep both in step if either
+changes.
 
 ## 4. Demo video
 
