@@ -38,3 +38,16 @@ flag.
 
 Docs: `docs/guide/models.md` hardware table note, `getting-started.md` wizard
 step.
+
+## As built (2026-10-08)
+
+- `ModelInfo::expert_bytes` (Rust-only) on every entry; the two 35B-A3B quants
+  carry the measured sizes from phase 02, and a test requires every `-A3B` id
+  to declare one.
+- `models::expert_offload_context`: largest rung with non-expert weights,
+  projector and KV in VRAM and the experts within the RAM budget. It is also
+  the alternative's context, so choosing it never spills attention to RAM.
+- `hardware::offload_alternative`: discrete GPU, 7168 ≤ VRAM < 23552 MB,
+  total RAM ≥ 31744 MB, and `expert_offload_context` returns a rung.
+- The wizard only turns the switch off again if it turned it on itself, so
+  re-running the wizard never clears a switch set in Settings.

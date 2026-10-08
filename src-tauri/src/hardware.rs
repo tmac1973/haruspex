@@ -18,6 +18,57 @@ pub struct HardwareInfo {
     pub available_ram_mb: u64,
     pub recommended_quant: String,
     pub recommended_context_size: u32,
+    /// A bigger MoE model the wizard can offer beside the recommendation,
+    /// running with its experts in system RAM. See [`offload_alternative`].
+    pub offload_alternative: Option<OffloadAlternative>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct OffloadAlternative {
+    pub model_id: String,
+    pub context_size: u32,
+}
+
+/// The MoE the wizard offers with its experts in system RAM.
+const OFFLOAD_CANDIDATE: &str = "Qwen3.6-35B-A3B-UD-IQ4_NL";
+/// Smallest card worth offering it on: an "8 GB" card, reported short.
+const OFFLOAD_MIN_VRAM_MB: u64 = 7168;
+/// From this much VRAM the tier table already recommends the MoE itself.
+const OFFLOAD_MAX_VRAM_MB: u64 = 23552;
+/// "32 GB" of RAM, reported short. Below it the experts would leave too
+/// little for the OS, the browser and everything else the user runs.
+const OFFLOAD_MIN_RAM_MB: u64 = 31744;
+
+/// The larger model the hardware step offers as a second choice: the MoE
+/// with its experts in RAM, when the card is discrete with 8–24 GB, the
+/// machine has 32 GB of RAM or more, and the non-expert part plus a usable
+/// context fits in VRAM. Not for integrated GPUs (their "VRAM" is the same
+/// RAM) or unknown VRAM (macOS reports none; its unified memory already
+/// serves the tier table).
+fn offload_alternative(
+    vram_mb: Option<u64>,
+    integrated: bool,
+    total_ram_mb: u64,
+    recommended: &str,
+) -> Option<OffloadAlternative> {
+    let vram_mb = vram_mb.filter(|_| !integrated)?;
+    if !(OFFLOAD_MIN_VRAM_MB..OFFLOAD_MAX_VRAM_MB).contains(&vram_mb)
+        || total_ram_mb < OFFLOAD_MIN_RAM_MB
+        || recommended == OFFLOAD_CANDIDATE
+    {
+        return None;
+    }
+    let mb = 1024 * 1024;
+    let context_size = crate::models::expert_offload_context(
+        OFFLOAD_CANDIDATE,
+        vram_mb * mb,
+        crate::models::ram_offload_budget(total_ram_mb * mb),
+        crate::models::FitOptions::with_mtp(true),
+    )?;
+    Some(OffloadAlternative {
+        model_id: OFFLOAD_CANDIDATE.to_string(),
+        context_size,
+    })
 }
 
 struct GpuInfo {
@@ -122,6 +173,12 @@ pub fn detect_hardware() -> HardwareInfo {
         available_ram_mb,
         recommended_quant: recommended_quant.to_string(),
         recommended_context_size,
+        offload_alternative: offload_alternative(
+            gpu.vram_mb,
+            gpu.integrated,
+            total_ram_mb,
+            recommended_quant,
+        ),
     }
 }
 
@@ -486,6 +543,26 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn offload_alternative_on_mid_range_discrete_cards_with_32gb() {
+        let alt = offload_alternative(Some(12_000), false, 32_000, "Qwen3.5-9B-UD-Q6_K_XL")
+            .expect("12 GB card + 32 GB RAM gets the MoE");
+        assert_eq!(alt.model_id, OFFLOAD_CANDIDATE);
+        assert!(alt.context_size >= crate::models::MIN_CONTEXT);
+        assert!(offload_alternative(Some(8_100), false, 64_000, "Qwen3.5-9B-IQ4_NL").is_some());
+    }
+
+    #[test]
+    fn no_offload_alternative_where_it_would_not_help() {
+        // Integrated graphics, unknown VRAM, too little VRAM or RAM.
+        assert!(offload_alternative(Some(12_000), true, 64_000, "Qwen3.5-4B-IQ4_NL").is_none());
+        assert!(offload_alternative(None, false, 64_000, "Qwen3.5-9B-IQ4_NL").is_none());
+        assert!(offload_alternative(Some(6_000), false, 64_000, "Qwen3.5-4B-IQ4_NL").is_none());
+        assert!(offload_alternative(Some(12_000), false, 16_000, "Qwen3.5-9B-IQ4_NL").is_none());
+        // 24 GB cards are already recommended the MoE outright.
+        assert!(offload_alternative(Some(24_000), false, 64_000, OFFLOAD_CANDIDATE).is_none());
     }
 
     /// Every id the tier table can return has to resolve in the registry, or

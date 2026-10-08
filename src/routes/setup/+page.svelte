@@ -15,6 +15,8 @@
 		getModels,
 		setStep,
 		setSelectedModel,
+		chooseOffloadAlternative,
+		isOffloadChosen,
 		detectHardware,
 		startDownload,
 		cancelDownload,
@@ -40,6 +42,12 @@
 	const testResponse = $derived(getTestResponse());
 	const testStatusMessage = $derived(getTestStatusMessage());
 	const models = $derived(getModels());
+	const offloadChosen = $derived(isOffloadChosen());
+	const offloadModel = $derived(
+		hardware?.offload_alternative
+			? models.find((m) => m.id === hardware.offload_alternative?.model_id)
+			: undefined
+	);
 
 	// Only the recommended lineup. `list_models` returns retired models too
 	// (so Settings can offer to re-download one already on disk), but a fresh
@@ -287,6 +295,20 @@
 							</option>
 						{/each}
 					</select>
+					{#if offloadModel}
+						<p
+							class="offload-alt"
+							title={`${offloadModel.description}. Turns on Settings → Inference → Let models use system RAM.`}
+						>
+							{#if offloadChosen}
+								Using system RAM for the larger model: smarter, slower.
+							{:else}
+								Larger model using system RAM: smarter, slower.
+								<button class="link-btn" onclick={chooseOffloadAlternative}>Use this instead</button
+								>
+							{/if}
+						</p>
+					{/if}
 				</div>
 
 				<div class="actions">
@@ -705,6 +727,16 @@
 	.model-select select option {
 		background-color: var(--bg-primary);
 		color: var(--text-primary);
+	}
+
+	.offload-alt {
+		margin: 8px 0 0;
+		font-size: 0.85rem;
+		color: var(--text-secondary);
+	}
+
+	.offload-alt .link-btn {
+		margin-top: 0;
 	}
 
 	/* Progress */
