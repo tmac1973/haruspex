@@ -2233,3 +2233,77 @@ fn similar_pairs_find_lookalikes_most_alike_first() {
     assert!(pairs.windows(2).all(|w| w[0].similarity >= w[1].similarity));
     assert_eq!(db.similar_pairs(MODEL, 0.8, 1).unwrap().len(), 1);
 }
+
+#[test]
+fn daily_stats_count_each_outcome_against_its_day() {
+    let db = test_db();
+    let now = chrono::Local::now().timestamp_millis();
+    let yesterday = now - 24 * 60 * 60 * 1000;
+    let attempt = |ms: i64, success: bool, failure: Option<&'static str>| EngineStatDelta {
+        attempt: true,
+        success,
+        failure_column: failure,
+        now_ms: ms,
+        ..Default::default()
+    };
+    db.update_engine_stat("yahoo/browser", &attempt(now, true, None))
+        .unwrap();
+    db.update_engine_stat("yahoo/browser", &attempt(now, false, Some("fail_empty")))
+        .unwrap();
+    db.update_engine_stat(
+        "brave_html/browser",
+        &attempt(now, false, Some("fail_rate_limited")),
+    )
+    .unwrap();
+    db.update_engine_stat("yahoo/browser", &attempt(now, false, Some("fail_http")))
+        .unwrap();
+    db.update_engine_stat("yahoo/browser", &attempt(yesterday, true, None))
+        .unwrap();
+    db.increment_global("total_queries").unwrap();
+
+    let snap = db.daily_stats_snapshot(14).unwrap();
+    assert_eq!(snap.engines.len(), 3);
+    let today = &snap.engines[0].day;
+    assert!(snap.engines[2].day < *today, "newest day first");
+    let yahoo = snap
+        .engines
+        .iter()
+        .find(|e| e.engine == "yahoo/browser" && e.day == *today)
+        .unwrap();
+    assert_eq!(
+        (
+            yahoo.attempts,
+            yahoo.successes,
+            yahoo.fail_empty,
+            yahoo.fail_other
+        ),
+        (3, 1, 1, 1)
+    );
+    let brave = snap
+        .engines
+        .iter()
+        .find(|e| e.engine == "brave_html/browser")
+        .unwrap();
+    assert_eq!(brave.fail_rate_limited, 1);
+    assert_eq!(snap.globals.len(), 1);
+    assert_eq!(snap.globals[0].value, 1);
+    // A one-day window holds only today.
+    assert!(db
+        .daily_stats_snapshot(1)
+        .unwrap()
+        .engines
+        .iter()
+        .all(|e| e.day == *today));
+    // The lifetime totals are unchanged by any of this.
+    let life = db.lifetime_stats_snapshot().unwrap();
+    let yahoo_life = life
+        .engines
+        .iter()
+        .find(|e| e.core.engine == "yahoo/browser")
+        .unwrap();
+    assert_eq!(yahoo_life.core.attempts, 4);
+
+    db.reset_lifetime_stats().unwrap();
+    let after = db.daily_stats_snapshot(14).unwrap();
+    assert!(after.engines.is_empty() && after.globals.is_empty());
+}

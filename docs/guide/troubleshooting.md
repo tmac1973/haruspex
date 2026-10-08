@@ -66,7 +66,7 @@ The status badge at the top of the window shows **Ready**, **Starting…**, **Er
 
 ## Find the logs
 
-Click the terminal icon in the toolbar (tooltip "Sidecar Logs"), or click the status badge. The log viewer has tabs for the app, the model server (LLM), speech (TTS, Whisper), MCP servers, crashes, and more. Each tab has a button to copy its log for a bug report.
+Click the terminal icon in the toolbar (tooltip "Sidecar Logs"), or click the status badge. The log viewer has tabs for the app, the model server (LLM), speech (TTS, Whisper), image generation, MCP servers, crashes, and more. The **Image** tab shows either the bundled engine's output or the calls made to your ComfyUI server. Each tab has a button to copy its log for a bug report.
 
 ## Report a bug
 

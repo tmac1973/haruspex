@@ -539,6 +539,13 @@ pub async fn image_engine_logs(state: tauri::State<'_, ImageEngine>) -> Result<V
     Ok(state.logs().await)
 }
 
+/// Empty the engine's log, for the log viewer's Clear.
+#[tauri::command]
+pub async fn image_engine_clear_logs(state: tauri::State<'_, ImageEngine>) -> Result<(), ()> {
+    crate::sidecar_utils::clear_logs(&state.log).await;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -19,7 +19,7 @@ Pick one in Settings → Search → **Search provider**:
 | SearXNG | Instance URL | Unlimited, if you host it yourself. |
 | Browser-assisted | Chrome or Chromium | Drives a hidden browser, so it can reach engines that block simple requests (it adds Startpage). |
 
-Free public engines are unreliable: they rate-limit and change their pages. If searches keep failing, use a Brave key or SearXNG.
+Free public engines are unreliable: they rate-limit and change their pages. If searches keep failing, use a Brave key or SearXNG. To see how each engine is doing, open the log viewer's **Stats** tab: it shows totals for this session and all time, and a **By day** table of how many searches worked out of how many were tried, so an engine that broke today stands out.
 
 **Brave Search:** paste the key into **Brave API Key**. It is saved when you leave the field. **Remove key** deletes it.
 

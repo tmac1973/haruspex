@@ -1,6 +1,7 @@
 use super::*;
 use crate::proxy::stats::{
-    EngineLifetimeStats, EngineStatDelta, EngineStatsCore, LifetimeStatsSnapshot, StatSink,
+    DailyEngineStats, DailyGlobal, DailyStatsSnapshot, EngineLifetimeStats, EngineStatDelta,
+    EngineStatsCore, LifetimeStatsSnapshot, StatSink,
 };
 use log::warn;
 use rusqlite::params;
@@ -16,6 +17,23 @@ const VALID_FAILURE_COLUMNS: &[&str] = &[
     "fail_timeout",
     "fail_other",
 ];
+
+/// Per-day rows are kept this long, then dropped.
+const DAILY_KEEP_DAYS: u32 = 90;
+
+/// The local date of `now_ms`, or of now when it is 0, as `YYYY-MM-DD`.
+fn local_day(now_ms: i64) -> String {
+    use chrono::TimeZone;
+    let at = if now_ms > 0 {
+        chrono::Local
+            .timestamp_millis_opt(now_ms)
+            .single()
+            .unwrap_or_else(chrono::Local::now)
+    } else {
+        chrono::Local::now()
+    };
+    at.format("%Y-%m-%d").to_string()
+}
 
 impl Database {
     /// UPSERT a single engine's stats row with the given delta. Runs as
@@ -102,6 +120,33 @@ impl Database {
         )
         .map_err(|e| format!("Stats update failed: {}", e))?;
 
+        // The same outcome, counted against today too.
+        let day = local_day(delta.now_ms);
+        conn.execute(
+            "INSERT INTO search_stats_daily
+                (day, engine, attempts, successes, fail_rate_limited, fail_empty, fail_other)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(day, engine) DO UPDATE SET
+                attempts = attempts + excluded.attempts,
+                successes = successes + excluded.successes,
+                fail_rate_limited = fail_rate_limited + excluded.fail_rate_limited,
+                fail_empty = fail_empty + excluded.fail_empty,
+                fail_other = fail_other + excluded.fail_other",
+            params![
+                day,
+                engine,
+                attempt_inc as i64,
+                success_inc as i64,
+                fail("fail_rate_limited"),
+                fail("fail_empty"),
+                delta
+                    .failure_column
+                    .is_some_and(|c| c != "fail_rate_limited" && c != "fail_empty")
+                    as i64,
+            ],
+        )
+        .map_err(|e| format!("Daily stats update failed: {}", e))?;
+
         Ok(())
     }
 
@@ -113,7 +158,71 @@ impl Database {
             params![key],
         )
         .map_err(|e| format!("Globals upsert failed: {}", e))?;
+        conn.execute(
+            "INSERT INTO search_stats_daily_globals (day, key, value) VALUES (?1, ?2, 1)
+             ON CONFLICT(day, key) DO UPDATE SET value = value + 1",
+            params![local_day(0), key],
+        )
+        .map_err(|e| format!("Daily globals upsert failed: {}", e))?;
         Ok(())
+    }
+
+    /// The last `days` local days of per-engine and global counts, newest
+    /// first. Rows older than [`DAILY_KEEP_DAYS`] are dropped on the way.
+    pub fn daily_stats_snapshot(&self, days: u32) -> Result<DailyStatsSnapshot, String> {
+        let conn = self.conn();
+        let cutoff = |n: u32| {
+            (chrono::Local::now().date_naive() - chrono::Days::new(u64::from(n)))
+                .format("%Y-%m-%d")
+                .to_string()
+        };
+        let keep = cutoff(DAILY_KEEP_DAYS);
+        conn.execute_batch(&format!(
+            "DELETE FROM search_stats_daily WHERE day < '{keep}';
+             DELETE FROM search_stats_daily_globals WHERE day < '{keep}';"
+        ))
+        .map_err(|e| format!("Daily stats prune failed: {}", e))?;
+        // `days` counts today: the window starts `days - 1` days back.
+        let from = cutoff(days.saturating_sub(1));
+        let mut stmt = conn
+            .prepare(
+                "SELECT day, engine, attempts, successes, fail_rate_limited, fail_empty, fail_other
+                 FROM search_stats_daily WHERE day >= ?1 ORDER BY day DESC, engine",
+            )
+            .map_err(|e| format!("Daily stats prepare failed: {}", e))?;
+        let engines = stmt
+            .query_map(params![from], |row| {
+                Ok(DailyEngineStats {
+                    day: row.get(0)?,
+                    engine: row.get(1)?,
+                    attempts: row.get::<_, i64>(2)? as u64,
+                    successes: row.get::<_, i64>(3)? as u64,
+                    fail_rate_limited: row.get::<_, i64>(4)? as u64,
+                    fail_empty: row.get::<_, i64>(5)? as u64,
+                    fail_other: row.get::<_, i64>(6)? as u64,
+                })
+            })
+            .map_err(|e| format!("Daily stats query failed: {}", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Daily stats row read failed: {}", e))?;
+        let mut gstmt = conn
+            .prepare(
+                "SELECT day, key, value FROM search_stats_daily_globals
+                 WHERE day >= ?1 ORDER BY day DESC, key",
+            )
+            .map_err(|e| format!("Daily globals prepare failed: {}", e))?;
+        let globals = gstmt
+            .query_map(params![from], |row| {
+                Ok(DailyGlobal {
+                    day: row.get(0)?,
+                    key: row.get(1)?,
+                    value: row.get::<_, i64>(2)? as u64,
+                })
+            })
+            .map_err(|e| format!("Daily globals query failed: {}", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Daily globals row read failed: {}", e))?;
+        Ok(DailyStatsSnapshot { engines, globals })
     }
 
     pub fn lifetime_stats_snapshot(&self) -> Result<LifetimeStatsSnapshot, String> {
@@ -180,8 +289,11 @@ impl Database {
 
     pub fn reset_lifetime_stats(&self) -> Result<(), String> {
         let conn = self.conn();
-        conn.execute_batch("DELETE FROM search_stats_engines; DELETE FROM search_stats_globals;")
-            .map_err(|e| format!("Reset failed: {}", e))?;
+        conn.execute_batch(
+            "DELETE FROM search_stats_engines; DELETE FROM search_stats_globals;
+             DELETE FROM search_stats_daily; DELETE FROM search_stats_daily_globals;",
+        )
+        .map_err(|e| format!("Reset failed: {}", e))?;
         Ok(())
     }
 }
@@ -210,5 +322,9 @@ impl StatSink for Database {
 
     fn reset_lifetime(&self) -> Result<(), String> {
         self.reset_lifetime_stats()
+    }
+
+    fn daily_snapshot(&self, days: u32) -> Result<DailyStatsSnapshot, String> {
+        self.daily_stats_snapshot(days)
     }
 }

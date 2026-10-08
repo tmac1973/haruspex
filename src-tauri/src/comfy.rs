@@ -23,6 +23,8 @@ use tokio::task::AbortHandle;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
 
+use crate::sidecar_utils::{clear_logs, new_log_buffer, push_log, snapshot_logs, LogBuffer};
+
 /// One HTTP call. `id` lets the caller cancel it with [`comfy_cancel`].
 #[derive(Clone, Deserialize, ts_rs::TS)]
 #[ts(export)]
@@ -214,8 +216,55 @@ fn root_cause(e: &(dyn std::error::Error + 'static)) -> String {
     cur.to_string()
 }
 
+/// What ComfyUI was asked and how it went, for the log viewer's Image tab:
+/// the method, server, path, outcome, time taken and size. Never the API key,
+/// and never a body: prompts can be long, and they are the user's.
+fn comfy_log() -> &'static LogBuffer {
+    static LOG: OnceLock<LogBuffer> = OnceLock::new();
+    LOG.get_or_init(new_log_buffer)
+}
+
+async fn log_line(line: String) {
+    let stamped = format!("{} {line}", crate::app_log::timestamp());
+    push_log(&mut *comfy_log().lock().await, &stamped);
+}
+
+/// `url`'s scheme, host and port, without any username or password in it.
+fn server(url: &str) -> String {
+    match reqwest::Url::parse(base(url)) {
+        Ok(mut u) => {
+            let _ = u.set_username("");
+            let _ = u.set_password(None);
+            u.origin().ascii_serialization()
+        }
+        Err(_) => "(bad address)".into(),
+    }
+}
+
+/// One line for a finished call.
+fn call_line(call: &ComfyCall, out: &Result<Vec<u8>, ComfyError>, elapsed: Duration) -> String {
+    let what = format!("{} {}{}", call.method, server(&call.base_url), call.path);
+    let ms = elapsed.as_millis();
+    match out {
+        Ok(bytes) => format!("{what} → ok in {ms} ms, {} bytes", bytes.len()),
+        Err(ComfyError::Rejected { status, body }) => {
+            let body: String = body.chars().take(300).collect();
+            format!("{what} → {status} in {ms} ms: {body}")
+        }
+        Err(ComfyError::Cancelled) => format!("{what} → cancelled after {ms} ms"),
+        Err(e) => format!("{what} → failed after {ms} ms: {e}"),
+    }
+}
+
 /// Run `call` as a task registered under its id, so [`comfy_cancel`] can stop it.
 async fn cancellable(call: ComfyCall) -> Result<Vec<u8>, ComfyError> {
+    let started = std::time::Instant::now();
+    let out = cancellable_unlogged(call.clone()).await;
+    log_line(call_line(&call, &out, started.elapsed())).await;
+    out
+}
+
+async fn cancellable_unlogged(call: ComfyCall) -> Result<Vec<u8>, ComfyError> {
     let id = call.id.clone();
     let task = tokio::spawn(async move { send(&call).await });
     if let Some(id) = &id {
@@ -287,6 +336,17 @@ fn socket_event(text: &str) -> Option<ComfySocketEvent> {
     })
 }
 
+/// The ComfyUI call log, oldest first.
+#[tauri::command]
+pub async fn comfy_logs() -> Vec<String> {
+    snapshot_logs(comfy_log()).await
+}
+
+#[tauri::command]
+pub async fn comfy_clear_logs() {
+    clear_logs(comfy_log()).await;
+}
+
 /// Open the progress socket and forward its messages on `channel` until
 /// [`comfy_cancel`] closes it or the server does. Fails when the handshake
 /// does, so the caller can fall back to polling at once.
@@ -328,6 +388,8 @@ pub async fn comfy_subscribe(
             message: format!("The image backend's progress socket refused: {e}"),
         })?;
 
+    let where_ = server(&base_url);
+    log_line(format!("progress socket opened to {where_}")).await;
     let task = tokio::spawn(async move {
         while let Some(frame) = socket.next().await {
             match frame {
@@ -344,6 +406,7 @@ pub async fn comfy_subscribe(
             }
         }
         let _ = channel.send(ComfySocketEvent::Closed);
+        log_line(format!("progress socket to {where_} closed")).await;
     });
     running()
         .lock()
@@ -355,6 +418,37 @@ pub async fn comfy_subscribe(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn logs_name_the_server_without_credentials() {
+        assert_eq!(
+            server("http://user:secret@gpu.lan:8188/"),
+            "http://gpu.lan:8188"
+        );
+        let call = ComfyCall {
+            base_url: "http://user:secret@gpu.lan:8188".into(),
+            api_key: "sk-SECRET".into(),
+            method: "POST".into(),
+            path: "/prompt".into(),
+            body: Some(serde_json::json!({"prompt": "a private prompt"})),
+            timeout_ms: 1000,
+            id: None,
+        };
+        let ok = call_line(&call, &Ok(vec![0; 42]), Duration::from_millis(7));
+        assert_eq!(ok, "POST http://gpu.lan:8188/prompt → ok in 7 ms, 42 bytes");
+        let refused = call_line(
+            &call,
+            &Err(ComfyError::Rejected {
+                status: 400,
+                body: "missing node".into(),
+            }),
+            Duration::from_millis(3),
+        );
+        assert!(refused.ends_with("→ 400 in 3 ms: missing node"));
+        for line in [ok, refused] {
+            assert!(!line.contains("secret") && !line.contains("sk-") && !line.contains("private"));
+        }
+    }
     use axum::routing::{get, post};
     use axum::Router;
 

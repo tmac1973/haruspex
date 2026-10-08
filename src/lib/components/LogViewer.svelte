@@ -13,7 +13,22 @@
 	import type { GlobalCounters } from '#lib/ipc/gen/GlobalCounters.ts';
 	import type { SearchFailureKind } from '#lib/ipc/gen/SearchFailureKind.ts';
 
-	type LogTab = 'app' | 'llm' | 'tts' | 'whisper' | 'mcp' | 'crashes' | 'debug' | 'tools' | 'stats';
+	type LogTab =
+		| 'app'
+		| 'llm'
+		| 'tts'
+		| 'whisper'
+		| 'image'
+		| 'mcp'
+		| 'crashes'
+		| 'debug'
+		| 'tools'
+		| 'stats';
+	/**
+	 * The Image tab's two sources: the bundled engine's own output, and the
+	 * calls Haruspex makes to a ComfyUI server (comfy.rs).
+	 */
+	type ImageLogSource = 'engine' | 'comfyui';
 
 	interface Props {
 		open: boolean;
@@ -62,6 +77,10 @@
 
 	let { open, onclose }: Props = $props();
 	let activeTab = $state<LogTab>('app');
+	// Opens on the backend Settings → Image has chosen.
+	let imageSource = $state<ImageLogSource>(
+		getSettings().imageBackendKind === 'comfyui' ? 'comfyui' : 'engine'
+	);
 	let logLines = $state<string[]>([]);
 	let statsData = $state<CombinedStats | null>(null);
 	let logContainer: HTMLDivElement | undefined = $state();
@@ -194,7 +213,7 @@
 	);
 
 	const tabCommands: Record<
-		Exclude<LogTab, 'mcp' | 'crashes' | 'debug' | 'tools' | 'stats'>,
+		Exclude<LogTab, 'image' | 'mcp' | 'crashes' | 'debug' | 'tools' | 'stats'>,
 		string
 	> = {
 		app: IPC.get_app_logs,
@@ -204,7 +223,7 @@
 	};
 
 	const clearCommands: Record<
-		Exclude<LogTab, 'mcp' | 'crashes' | 'debug' | 'tools' | 'stats'>,
+		Exclude<LogTab, 'image' | 'mcp' | 'crashes' | 'debug' | 'tools' | 'stats'>,
 		string
 	> = {
 		app: IPC.clear_app_logs,
@@ -218,6 +237,7 @@
 		llm: 'LLM',
 		tts: 'TTS',
 		whisper: 'Whisper',
+		image: 'Image',
 		mcp: 'MCP',
 		crashes: 'Crashes',
 		debug: 'Debug',
@@ -246,6 +266,10 @@
 				logLines = selectedMcpServer
 					? await invoke<string[]>(IPC.mcp_server_logs, { id: selectedMcpServer.id })
 					: [];
+			} else if (activeTab === 'image') {
+				logLines = await invoke<string[]>(
+					imageSource === 'engine' ? IPC.image_engine_logs : IPC.comfy_logs
+				);
 			} else if (activeTab === 'tools') {
 				// Same buffer, narrowed to tool start/end lines so you can
 				// see exactly what arguments the model passed to each tool
@@ -336,6 +360,30 @@
 		return `${Math.floor(s / 86400)}d ago`;
 	}
 
+	/**
+	 * The per-day stats as a grid: days newest first, engines busiest first,
+	 * and a lookup for each day's engine row and global counter.
+	 */
+	function dailyGrid(daily: CombinedSearchStats['daily']) {
+		const days = [...new Set(daily.engines.map((e) => e.day))];
+		for (const g of daily.globals) if (!days.includes(g.day)) days.push(g.day);
+		days.sort().reverse();
+		const tries: Record<string, number> = {};
+		for (const e of daily.engines) tries[e.engine] = (tries[e.engine] ?? 0) + e.attempts;
+		const engines = Object.keys(tries).sort((a, b) => tries[b] - tries[a]);
+		const cell = (day: string, engine: string) =>
+			daily.engines.find((e) => e.day === day && e.engine === engine);
+		const global = (day: string, key: string) =>
+			daily.globals.find((g) => g.day === day && g.key === key)?.value ?? 0;
+		return { days, engines, cell, global };
+	}
+
+	/** A cell's colour band: green from 80% working, amber from 50%, red below. */
+	function okBand(successes: number, attempts: number): string {
+		const rate = successes / attempts;
+		return rate >= 0.8 ? 'ok-good' : rate >= 0.5 ? 'ok-warn' : 'ok-bad';
+	}
+
 	function lifetimeGlobalsObj(g: CombinedSearchStats['lifetime']['globals']): GlobalCounters {
 		return {
 			cache_hits: g.cache_hits ?? 0,
@@ -413,6 +461,9 @@
 				// empties them both.
 				clearDebugLogs();
 				logLines = [];
+			} else if (activeTab === 'image') {
+				await invoke(imageSource === 'engine' ? IPC.image_engine_clear_logs : IPC.comfy_clear_logs);
+				logLines = [];
 			} else if (activeTab === 'mcp') {
 				if (selectedMcpServer) {
 					await invoke(IPC.mcp_clear_server_logs, { id: selectedMcpServer.id });
@@ -453,7 +504,7 @@
 		<div class="modal" role="dialog" tabindex="-1" onkeydown={handleKeydown}>
 			<div class="modal-header">
 				<div class="tabs">
-					{#each ['app', 'llm', 'tts', 'whisper', 'mcp', 'crashes', 'debug', 'tools', 'stats'] as const as tab (tab)}
+					{#each ['app', 'llm', 'tts', 'whisper', 'image', 'mcp', 'crashes', 'debug', 'tools', 'stats'] as const as tab (tab)}
 						<button class="tab" class:active={activeTab === tab} onclick={() => switchTab(tab)}>
 							{tabLabels[tab]}
 						</button>
@@ -493,6 +544,21 @@
 							{clearState === 'cleared' ? 'Cleared' : 'Clear'}
 						{/if}
 					</button>
+					{#if activeTab === 'image'}
+						<select
+							class="mcp-picker"
+							aria-label="Image log"
+							value={imageSource}
+							onchange={(e) => {
+								imageSource = e.currentTarget.value as ImageLogSource;
+								logLines = [];
+								void fetchLogs();
+							}}
+						>
+							<option value="engine">Bundled engine</option>
+							<option value="comfyui">ComfyUI calls</option>
+						</select>
+					{/if}
 					{#if activeTab === 'mcp' && mcpServers.length > 1}
 						<select
 							class="mcp-picker"
@@ -556,6 +622,46 @@
 				</div>
 			{/if}
 			<div class="log-area" bind:this={logContainer} onscroll={handleScroll}>
+				{#snippet dailyTable(daily: CombinedSearchStats['daily'])}
+					{@const grid = dailyGrid(daily)}
+					{#if grid.days.length === 0}
+						<div class="stats-empty">No searches in the last 14 days.</div>
+					{:else}
+						<table class="stats-table">
+							<thead>
+								<tr>
+									<th>Day</th>
+									<th>Queries</th>
+									<th>All failed</th>
+									{#each grid.engines as engine (engine)}
+										<th>{engine}</th>
+									{/each}
+								</tr>
+							</thead>
+							<tbody>
+								{#each grid.days as day (day)}
+									<tr>
+										<td>{day}</td>
+										<td>{grid.global(day, 'total_queries')}</td>
+										<td>{grid.global(day, 'all_engines_failed')}</td>
+										{#each grid.engines as engine (engine)}
+											{@const c = grid.cell(day, engine)}
+											{#if c && c.attempts > 0}
+												<td
+													class={okBand(c.successes, c.attempts)}
+													title={`${pct(c.successes, c.attempts)} working. Failed: ${c.fail_rate_limited} rate-limited, ${c.fail_empty} empty, ${c.fail_other} other.`}
+													>{c.successes}/{c.attempts}</td
+												>
+											{:else}
+												<td class="zero">—</td>
+											{/if}
+										{/each}
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					{/if}
+				{/snippet}
 				{#snippet engineTable(rows: UnifiedRow[], globals: GlobalCounters)}
 					{#if rows.length === 0}
 						<div class="stats-empty">No engine activity recorded yet.</div>
@@ -668,6 +774,12 @@
 								statsData.lifetime.engines.map(normalizeLifetime),
 								lifetimeGlobalsObj(statsData.lifetime.globals)
 							)}
+						</div>
+						<div class="stats-scope">
+							<h3 class="stats-heading">
+								By day <span class="muted">(last 14 days, working / tried)</span>
+							</h3>
+							{@render dailyTable(statsData.daily)}
 						</div>
 					{:else}
 						<div class="log-line log-empty">Loading stats…</div>
@@ -975,6 +1087,18 @@
 		border-collapse: collapse;
 		font-size: 0.72rem;
 		margin-bottom: 10px;
+	}
+
+	.stats-table td.ok-good {
+		color: #4ec9b0;
+	}
+
+	.stats-table td.ok-warn {
+		color: #d7ba7d;
+	}
+
+	.stats-table td.ok-bad {
+		color: #f48771;
 	}
 
 	.stats-table.stats-sub {

@@ -208,6 +208,46 @@ pub struct LifetimeStatsSnapshot {
     pub globals: HashMap<String, u64>,
 }
 
+/// One engine's outcomes on one local day: the per-day view the Stats tab
+/// shows beside the all-time totals, where a breakage that started today is
+/// plain rather than buried in months of history.
+#[derive(Clone, Debug, Default, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct DailyEngineStats {
+    /// Local date, `YYYY-MM-DD`.
+    pub day: String,
+    pub engine: String,
+    #[ts(type = "number")]
+    pub attempts: u64,
+    #[ts(type = "number")]
+    pub successes: u64,
+    #[ts(type = "number")]
+    pub fail_rate_limited: u64,
+    #[ts(type = "number")]
+    pub fail_empty: u64,
+    /// Every other failure kind: HTTP, parse, irrelevant, network, timeout.
+    #[ts(type = "number")]
+    pub fail_other: u64,
+}
+
+/// A day's global counters (`total_queries`, `all_engines_failed`, …).
+#[derive(Clone, Debug, Default, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct DailyGlobal {
+    pub day: String,
+    pub key: String,
+    #[ts(type = "number")]
+    pub value: u64,
+}
+
+#[derive(Clone, Debug, Default, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct DailyStatsSnapshot {
+    /// Newest day first.
+    pub engines: Vec<DailyEngineStats>,
+    pub globals: Vec<DailyGlobal>,
+}
+
 /// Lifetime persistence seam for search stats. The proxy records through
 /// this trait instead of touching the db layer directly; `Database`
 /// implements it in `db/stats.rs` (db depends on proxy, not vice-versa).
@@ -222,8 +262,12 @@ pub trait StatSink: Send + Sync {
     fn record_global(&self, counter: &str);
     /// Read the full lifetime snapshot (for the stats UI).
     fn lifetime_snapshot(&self) -> Result<LifetimeStatsSnapshot, String>;
-    /// Reset all lifetime stats.
+    /// Reset all lifetime stats, the per-day ones included.
     fn reset_lifetime(&self) -> Result<(), String>;
+    /// The last `days` local days, newest first.
+    fn daily_snapshot(&self, _days: u32) -> Result<DailyStatsSnapshot, String> {
+        Ok(DailyStatsSnapshot::default())
+    }
 }
 
 /// Managed-state wrapper so Tauri commands can inject the sink without

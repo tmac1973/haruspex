@@ -499,6 +499,24 @@ impl Database {
                 value INTEGER NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS search_stats_daily (
+                day TEXT NOT NULL,
+                engine TEXT NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                successes INTEGER NOT NULL DEFAULT 0,
+                fail_rate_limited INTEGER NOT NULL DEFAULT 0,
+                fail_empty INTEGER NOT NULL DEFAULT 0,
+                fail_other INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (day, engine)
+            );
+
+            CREATE TABLE IF NOT EXISTS search_stats_daily_globals (
+                day TEXT NOT NULL,
+                key TEXT NOT NULL,
+                value INTEGER NOT NULL,
+                PRIMARY KEY (day, key)
+            );
+
             CREATE TABLE IF NOT EXISTS jobs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
