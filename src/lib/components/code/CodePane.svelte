@@ -32,7 +32,8 @@
 	};
 </script>
 
-<div class="pane">
+<!-- data-status: what scripts/drive.mjs waits on (idle, queued, running, waiting-shell). -->
+<div class="pane" data-session-id={session.id} data-status={session.status}>
 	<CodeSessionHeader {session} />
 	<CodeTranscript {session} {notes} />
 	<CodeComposer {session} {slashHost} />

@@ -30,6 +30,7 @@
 		"e2e:app:build": "node e2e/app/build.mjs",
 		"e2e:app": "wdio run e2e/app/wdio.conf.mjs",
 		"e2e:fake-llm": "node e2e/fake-llm/server.mjs",
+		"drive": "node scripts/drive.mjs",
 		"tauri": "tauri"
 	},
 	"devDependencies": {
@@ -55,7 +56,8 @@
 		"typescript": "~6.0.0",
 		"typescript-eslint": "^8.71.1",
 		"vite": "^8.0.12",
-		"vitest": "^5.0.3"
+		"vitest": "^5.0.3",
+		"webdriverio": "^10.0.0"
 	},
 	"dependencies": {
 		"@codemirror/lang-markdown": "^6.5.2",

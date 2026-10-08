@@ -138,3 +138,41 @@ npm run e2e:app         # start tauri-driver and run e2e/app/specs/*.e2e.mjs
 
 **A new spec must be seen failing once.** Break what it asserts — rename the
 scripted answer, say — and check the failure says plainly what is wrong.
+
+## Driving the app with a real model
+
+`scripts/drive.mjs` runs the same e2e build through tauri-driver, but against
+a real OpenAI-compatible server, to reproduce what an agent does in the Code
+tab. It is a tool for a developer (or an agent) to run by hand, not a test.
+
+```bash
+npm run e2e:app:build    # once, and after any frontend or Rust change
+npm run drive -- run --base-url http://compute:3000 \
+	--prompt "Fix the bug in the project and run it to check." \
+	[--prompt "a follow-up"] [--model ID] [--api-key-env NAME] [--folder PATH] \
+	[--timeout 600] [--verbose-payloads] [--no-auto-approve] [--show]
+```
+
+- **Isolated as the specs are:** it wipes the e2e identifier's data first,
+  never starts a local model server, and uses tauri-driver ports of its own.
+- **The backend** is what Settings → Inference → Test connection would save:
+  the app's own probe of `--base-url`, with `--model` or the first model
+  `/v1/models` lists.
+- **The folder** defaults to a fresh temp copy of `e2e/fixtures/average-bug`
+  (`index.js` fails until the loop in `stats.js` is fixed). The copy is kept,
+  so you can look at what the model changed.
+- **Headless by default,** on a private X server (Xvfb, or TigerVNC's Xvnc with
+  no network port). `--show` opens the window on your desktop.
+- **Settings → Code → auto-approve is on,** so risky commands don't wait for a
+  click nobody will make. `--no-auto-approve` turns it off.
+- **Each prompt** is typed into the session's input box, and the next one goes
+  once the session is idle again (`data-status` on the Code pane).
+- **Results** go to `e2e/drive-output/<timestamp>/` (gitignored):
+  `transcript.md` (messages, reasoning, tool calls and results, diffs),
+  `session.json` (the session as the store has it), `debug.log` (the agent
+  debug log, `src/lib/debug-log.ts`), `screenshot.png` and
+  `tauri-driver.log`. A summary goes to stdout.
+
+The page side is `src/lib/e2e/driveHooks.ts`, on `window.__haruspexDrive`.
+Only a build with `VITE_HARUSPEX_E2E=1`, which `e2e/app/build.mjs` sets,
+carries it.
