@@ -48,6 +48,12 @@ Built on `runAgentLoop` directly, borrowing the relevant pieces of
   (same "wait for an opportunity" rule as the shell).
 - `closeSession` → `code_bg_stop_owner` (ask first in the UI if any are running).
 
+## Empty threads
+
+A fresh session and a fork at message 0 store a snapshot with no messages, and
+`decodeCodeSession` returns `null` for that. Loading must treat `null` as an
+empty session, not a missing or corrupt one.
+
 ## Queue state
 
 `status = 'queued'` while the turn's first inference request is waiting in
