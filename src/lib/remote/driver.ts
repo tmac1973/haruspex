@@ -69,7 +69,9 @@ export const REMOTE_TOOLS = [
 	// screen — see `askGuest`. Without it the model has to guess what an
 	// ambiguous question meant, which is exactly the case a clarifying question
 	// is for.
-	'ask_user_question'
+	'ask_user_question',
+	// The user guide, without the host's setup status (see tools/guide.ts).
+	'haruspex_docs'
 ] as const;
 
 /**
@@ -238,6 +240,7 @@ export async function runRemoteTurn(event: RemotePromptEvent): Promise<void> {
 					// a modal on the host's screen — which they could not see
 					// and would not understand.
 					askUser: askGuest(turnId, abort.signal),
+					guidePrompt: true,
 					onToolStart: (call) => {
 						reportStep(turnId, call, 'running');
 					},

@@ -215,3 +215,14 @@ describe('buildSystemPrompt — skills section', () => {
 		expect(prompt).toContain('- deploy: Ship it.');
 	});
 });
+
+describe('buildSystemPrompt — the user guide', () => {
+	const text = (opts?: Parameters<typeof buildSystemPrompt>[1]) =>
+		String(buildSystemPrompt(null, opts).content);
+
+	it('points Chat and remote guests at haruspex_docs, and nobody else', () => {
+		expect(text({ guide: true })).toContain('call haruspex_docs');
+		// A job builds its prompt here too, and is never offered the tool.
+		expect(text()).not.toContain('haruspex_docs');
+	});
+});

@@ -20,6 +20,7 @@ import type { SessionContext } from '#lib/ipc/gen/SessionContext.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { nestedSessionPromptBlock, type NestedSession } from './nestedSession';
 import { formatTodayLong } from '#lib/utils/format.ts';
+import { GUIDE_PROMPT } from '#lib/guide/prompt.ts';
 
 /** Re-export of the ts-rs-generated Rust `SessionContext` under the
  *  name this module historically used. */
@@ -102,6 +103,8 @@ export function buildShellCodeSystemPrompt(opts: BuildShellPromptOpts): ChatMess
 		role: 'system',
 		content: `You are Haruspex's coding agent, working in the user's live interactive terminal. Today is ${today}.
 
+${GUIDE_PROMPT}
+
 SESSION:
 ${sessionBlock}
 
@@ -165,6 +168,8 @@ export function buildShellSystemPrompt(opts: BuildShellPromptOpts): ChatMessage 
 		content: `You are Haruspex's shell troubleshooting assistant. The user is working in a real interactive terminal and asking you questions about what they just did and what to do next.
 
 Today's date is ${today}.
+
+${GUIDE_PROMPT}
 
 SESSION CONTEXT:
 ${sessionBlock}

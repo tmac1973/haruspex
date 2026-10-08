@@ -56,3 +56,19 @@ questions are answered from the guide and the app's live state.
 On the local 9B and a larger model, "how do I connect a Google calendar?"
 and "is memory on?" are answered correctly from the tool, and a question the
 guide doesn't cover is answered with "the guide doesn't say".
+
+## Decisions made while building it
+
+- **The tool is offered by `interactive`, not by mode.** Chat, Shell and Code
+  mode all get it when someone is there. Jobs don't. Remote guests get it
+  through their allowlist (`REMOTE_TOOLS`), and their default prompt gets
+  the line through `runEphemeralTurn`'s `guidePrompt`.
+- **The status is shown when `ctx.interactive`,** which is true only at this
+  keyboard. So a remote guest, or anything else without the host present,
+  gets the index without it.
+- **The prompt line lives in `#lib/guide/prompt.ts`,** so the prompt builders
+  don't load the pages or register tools to get one sentence.
+- **The local model's status names the GGUF file.** A remote or OpenRouter
+  backend names the model ID, never the server URL.
+- **`getting-started` gained an "Ask Haruspex about itself" section,** so the
+  feature is in the guide it reads from.

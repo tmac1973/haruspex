@@ -978,7 +978,8 @@ function buildApiPrompt(
 			skillsSection,
 			// Chat tab only. Jobs, remote guests and the shell assistant build
 			// their prompts through the same function and must not get this.
-			includeImages: getSettings().includeImages
+			includeImages: getSettings().includeImages,
+			guide: true
 		}),
 		...historyMessages
 	];
