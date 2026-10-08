@@ -118,6 +118,12 @@ export type IterationOutcome = 'continue' | 'break' | 'complete';
 export class LoopState {
 	usedTools = false;
 	allWebReadsBlocked = false;
+	/**
+	 * Set fresh each iteration — true when the model had finished but queued
+	 * steering kept the turn going. The driver doesn't charge that iteration
+	 * to the budget.
+	 */
+	steeringContinue = false;
 }
 
 /**
@@ -951,6 +957,7 @@ export async function runIteration(
 	// the driver on a 'continue' outcome to decide whether this turn counts
 	// against the iteration budget.
 	state.allWebReadsBlocked = false;
+	state.steeringContinue = false;
 
 	// If images were loaded on the previous iteration, attach them to the
 	// most recent user message before sending. This is how multimodal
@@ -1045,7 +1052,29 @@ export async function runIteration(
 		logDebug('agent', 'branch=run-command-repeat stop', {});
 		return 'break';
 	}
+	// The iteration boundary: tool results are in, the next model call hasn't
+	// gone out. Checked after the two terminal branches above so a turn that is
+	// ending anyway hands queued texts back rather than swallowing them.
+	deliverSteering(ctx, iteration);
 	return 'continue';
+}
+
+/** Drain the caller's steering queue, dropping blank entries. */
+function takeQueuedSteering(ctx: LoopContext): string[] {
+	return (ctx.options.takeSteering?.() ?? []).filter((t) => t.trim() !== '');
+}
+
+/** Append steering texts as `user` messages and tell the caller they went. */
+function appendSteering(ctx: LoopContext, texts: string[], iteration: number): void {
+	for (const content of texts) ctx.messages.push({ role: 'user', content });
+	logDebug('agent', `iteration ${iteration} steering delivered`, { count: texts.length });
+	ctx.options.onSteering?.(texts);
+}
+
+/** Deliver whatever steering is queued, at the iteration boundary. */
+function deliverSteering(ctx: LoopContext, iteration: number): void {
+	const texts = takeQueuedSteering(ctx);
+	if (texts.length > 0) appendSteering(ctx, texts, iteration);
 }
 
 /**
@@ -1394,6 +1423,9 @@ async function finalizeNoToolCalls(
 		return pushNudge(messages, response, diversityNudgePrompt(fetchedCount));
 	}
 
+	const steered = continueForSteering(ctx, state, response, iteration);
+	if (steered) return steered;
+
 	// Audit-style turns: the model is trying to answer in prose, but only a
 	// forced-tool call carries a usable result. Pin the tool instead of
 	// committing the prose (which the caller would discard).
@@ -1450,6 +1482,36 @@ async function finalizeNoToolCalls(
 		options.onError(new ResponseCutOffError(outOfTokensMessage(ctx, postTools)));
 	}
 	return 'complete';
+}
+
+/**
+ * Steering must never be held past the turn. When some is queued at the point
+ * the model would finish, show the
+ * answer it gave (through the stream callback, without a finish reason),
+ * echo it into the thread, and append the queued texts so the next iteration
+ * answers them. Null when nothing is queued.
+ */
+function continueForSteering(
+	ctx: LoopContext,
+	state: LoopState,
+	response: ChatCompletionResponse,
+	iteration: number
+): IterationOutcome | null {
+	// With nothing queued the normal completion paths own the answer.
+	const pending = takeQueuedSteering(ctx);
+	if (pending.length === 0) return null;
+	const content = response.content ?? '';
+	logDebug('agent', `iteration ${iteration} branch=steering-continue`, {
+		count: pending.length
+	});
+	if (hasNonThinkingContent(content)) {
+		ctx.options.onStreamChunk({ delta: { content }, finish_reason: null });
+		// Re-sent to the model, so without the reasoning (see pushNudge).
+		ctx.messages.push({ role: 'assistant', content: stripThinkBlocks(content).trimStart() });
+	}
+	appendSteering(ctx, pending, iteration);
+	state.steeringContinue = true;
+	return 'continue';
 }
 
 /**
