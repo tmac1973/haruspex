@@ -13,6 +13,7 @@
 		type CodeSession,
 		type CodeSessionStatus
 	} from '#lib/stores/code.svelte.ts';
+	import { sessionLabel } from '#lib/code/sessionList.ts';
 
 	let { onNew }: { onNew: () => void } = $props();
 
@@ -34,10 +35,6 @@
 		if (session.background.some((p) => p.running)) confirming = session;
 		else void closeSession(session.id);
 	}
-
-	function label(s: CodeSession): string {
-		return s.title || 'New session';
-	}
 </script>
 
 <div class="strip" role="tablist" aria-label="Code sessions">
@@ -48,7 +45,7 @@
 			role="tab"
 			aria-selected={session.id === activeId}
 			tabindex="0"
-			title="{label(session)} — {session.root}"
+			title="{sessionLabel(session)} — {session.root}"
 			onclick={() => setActiveSession(session.id)}
 			onkeydown={(e) => {
 				if (e.key === 'Enter' || e.key === ' ') {
@@ -65,11 +62,11 @@
 					aria-label={statusTitle(session.status)}
 				></span>
 			{/if}
-			<span class="label">{label(session)}</span>
+			<span class="label">{sessionLabel(session)}</span>
 			<button
 				class="close"
 				title="Close session (it stays in the list)"
-				aria-label="Close {label(session)}"
+				aria-label="Close {sessionLabel(session)}"
 				onclick={(e) => close(e, session)}>×</button
 			>
 		</div>

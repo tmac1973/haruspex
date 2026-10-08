@@ -18,6 +18,21 @@ export function folderName(root: string): string {
 	return root.split(/[/\\]/).filter(Boolean).pop() ?? root;
 }
 
+/**
+ * True while a session has no title of its own. A title that starts with `/`
+ * counts as none: older sessions were named after their first message even
+ * when it was a slash command.
+ */
+export function isUnsetTitle(title: string): boolean {
+	const t = title.trim();
+	return t === '' || t.startsWith('/');
+}
+
+/** What the sidebar and tab call a session: its title, or `blog · new session`. */
+export function sessionLabel(s: { title: string; root: string }): string {
+	return isUnsetTitle(s.title) ? `${folderName(s.root)} · new session` : s.title.trim();
+}
+
 /** Sessions grouped by folder. Folders with the newest session go first. */
 export function groupByRoot(list: CodeSessionSummary[]): SessionGroup[] {
 	const sorted = [...list].sort((a, b) => b.updated_at - a.updated_at);

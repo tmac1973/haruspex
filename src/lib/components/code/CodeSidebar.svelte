@@ -6,7 +6,7 @@
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 	import { deleteCodeSession, listCodeSessions, updateCodeSessionMeta } from '#lib/code/db.ts';
 	import type { CodeSessionSummary } from '#lib/code/db.ts';
-	import { groupByRoot } from '#lib/code/sessionList.ts';
+	import { groupByRoot, isUnsetTitle, sessionLabel } from '#lib/code/sessionList.ts';
 	import {
 		closeSession,
 		getActiveSessionId,
@@ -101,7 +101,7 @@
 	async function startRename(session: CodeSessionSummary) {
 		menu = null;
 		renamingId = session.id;
-		renameText = session.title;
+		renameText = isUnsetTitle(session.title) ? '' : session.title;
 		await tick();
 		renameInput?.select();
 	}
@@ -136,7 +136,7 @@
 	}
 
 	function label(s: CodeSessionSummary): string {
-		return s.title || 'New session';
+		return sessionLabel(s);
 	}
 </script>
 

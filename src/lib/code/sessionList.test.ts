@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage } from '#lib/api.ts';
-import { folderName, groupByRoot, turnsBefore, windowStart } from './sessionList';
+import {
+	folderName,
+	groupByRoot,
+	isUnsetTitle,
+	sessionLabel,
+	turnsBefore,
+	windowStart
+} from './sessionList';
 
 const s = (id: string, root: string, updated_at: number) => ({
 	id,
@@ -26,6 +33,20 @@ describe('groupByRoot', () => {
 	it('names a folder by its last component', () => {
 		expect(folderName('/home/me/blog/')).toBe('blog');
 		expect(folderName('C:\\code\\site')).toBe('site');
+	});
+});
+
+describe('session titles', () => {
+	it('counts an empty title or a slash command as no title', () => {
+		expect(isUnsetTitle('')).toBe(true);
+		expect(isUnsetTitle('/init')).toBe(true);
+		expect(isUnsetTitle('Fix the build')).toBe(false);
+	});
+
+	it('labels an unnamed session by its folder', () => {
+		expect(sessionLabel({ title: '', root: '/p/blog' })).toBe('blog · new session');
+		expect(sessionLabel({ title: '/init', root: '/p/blog' })).toBe('blog · new session');
+		expect(sessionLabel({ title: 'New post', root: '/p/blog' })).toBe('New post');
 	});
 });
 

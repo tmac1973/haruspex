@@ -15,6 +15,7 @@ test('a Code session edits a file and runs a command, shown as cards', async ({ 
 	await app.getByRole('button', { name: 'New session' }).first().click();
 	await expect(app.getByText('/e2e/project')).toBeVisible();
 	await app.getByRole('button', { name: 'Start session' }).click();
+	await expect(app.getByRole('tab', { name: /project · new session/ })).toBeVisible();
 
 	const input = app.getByRole('textbox', { name: 'Message' });
 	await input.fill('fix the readme typo');
@@ -31,8 +32,9 @@ test('a Code session edits a file and runs a command, shown as cards', async ({ 
 	await expect(command).toContainText('cat README.md');
 	await expect(command).toContainText('exit 0');
 
-	// The session is saved under its folder in the sidebar, named by the message.
+	// The model names the session after its first turn, in the sidebar and the tab.
 	const sidebar = app.getByRole('complementary', { name: 'Code sessions' });
-	await expect(sidebar.getByText('project')).toBeVisible();
-	await expect(sidebar.getByRole('button', { name: 'fix the readme typo' })).toBeVisible();
+	const row = sidebar.getByRole('button', { name: 'Fix README typo' });
+	await expect(row).toBeVisible();
+	await expect(app.getByRole('tab', { name: /Fix README typo/ })).toBeVisible();
 });

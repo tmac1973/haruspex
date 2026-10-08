@@ -11,7 +11,7 @@ The Code tab is a coding agent that works in one project folder. It reads and ed
 
 Click **New session** (or **+** next to the open sessions) and pick the project folder. The dialog starts from the last folder you used. The folder is fixed for the life of the session: the agent can't read or write outside it.
 
-Type what you want and press `Enter`. The first message names the session. Each session is saved after every reply, so closing the app, or a crash, loses nothing that was finished.
+Type what you want and press `Enter`. Until it has a name, a session shows as `<folder> · new session`. After the first reply, the session's model names it in a few words, in one short extra call; if that fails, the first message becomes the name. Slash commands such as `/init` don't name a session, and a name you gave it by renaming is never replaced. Each session is saved after every reply, so closing the app, or a crash, loses nothing that was finished.
 
 ## Find and reopen sessions
 

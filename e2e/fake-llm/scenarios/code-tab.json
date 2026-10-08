@@ -1,6 +1,10 @@
 [
 	{
-		"match": { "lastUser": "fix the readme typo" },
+		"match": { "lastUser": "^Title this coding session" },
+		"reply": { "content": "\"Fix README typo.\"" }
+	},
+	{
+		"match": { "lastUser": "^fix the readme typo" },
 		"reply": {
 			"tool_calls": [
 				{

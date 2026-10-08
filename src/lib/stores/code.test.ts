@@ -73,6 +73,7 @@ const mocks = vi.hoisted(() => ({
 	invoke: vi.fn(),
 	runAgentLoop: vi.fn(),
 	withInferenceSlot: vi.fn(),
+	nameSession: vi.fn(),
 	watchHandlers: new Map<string, () => void>(),
 	completedWatches: [] as { id: string }[],
 	consumeWatches: vi.fn(),
@@ -83,6 +84,10 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('#lib/agent/loop.ts', () => ({ runAgentLoop: mocks.runAgentLoop }));
 vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => ({
 	withInferenceSlot: mocks.withInferenceSlot
+}));
+vi.mock('#lib/code/sessionTitle.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/code/sessionTitle.ts')>()),
+	nameSession: mocks.nameSession
 }));
 vi.mock('#lib/agent/tools/index.ts', () => ({ getDisplayLabel: () => 'tool' }));
 vi.mock('#lib/skills/project.ts', () => ({
@@ -129,8 +134,7 @@ import {
 	getActiveSession,
 	getOpenSessions,
 	newSession,
-	openSession,
-	titleFromMessage
+	openSession
 } from '#lib/stores/code.svelte.ts';
 import { decodeCodeSession } from '#lib/code/session.ts';
 import {
@@ -185,6 +189,7 @@ beforeEach(async () => {
 			o.onAdmitted?.();
 			return fn();
 		});
+	mocks.nameSession.mockReset().mockResolvedValue('Find where x lives');
 	mocks.completedWatches = [];
 	mocks.consumeWatches.mockReset();
 	mocks.clearCodeWatches.mockReset();
@@ -219,7 +224,7 @@ describe('a Code session', () => {
 		expect(again).not.toBe(s);
 		expect(again.messages).toEqual(s.messages);
 		expect(again.messageSteps).toEqual(s.messageSteps);
-		expect(again.title).toBe('where is x defined?');
+		expect(again.title).toBe('Find where x lives');
 	});
 
 	it('opens a session with an empty thread as an empty session', async () => {
@@ -238,15 +243,62 @@ describe('a Code session', () => {
 		expect(getOpenSessions()).toHaveLength(2);
 	});
 
-	it('names itself from the first message only', async () => {
-		const s = await newSession('/proj');
-		await s.send(`  fix   the\nbuild ${'x'.repeat(80)}`);
-		expect(s.title).toBe(titleFromMessage(`fix the build ${'x'.repeat(80)}`));
-		expect(s.title).toHaveLength(60);
-		expect(db.rows.get(s.id)!.title).toBe(s.title);
+	it('names itself once, after its first turn, on its own backend', async () => {
+		const backend = { baseUrl: 'http://box:8080', modelId: 'qwen' };
+		const s = await newSession('/proj', { backend });
+		await s.send('fix the build');
+		expect(mocks.nameSession).toHaveBeenCalledTimes(1);
+		expect(mocks.nameSession).toHaveBeenCalledWith('fix the build', backend);
+		expect(mocks.runAgentLoop).toHaveBeenCalledTimes(1);
+		expect(s.title).toBe('Find where x lives');
+		expect(db.rows.get(s.id)!.title).toBe('Find where x lives');
 		await s.send('something else');
-		expect(s.title).toHaveLength(60);
-		expect(s.title.startsWith('fix the build')).toBe(true);
+		expect(mocks.nameSession).toHaveBeenCalledTimes(1);
+		expect(s.title).toBe('Find where x lives');
+	});
+
+	it('stays unnamed while it has only had slash commands', async () => {
+		const s = await newSession('/proj');
+		await s.send('/init');
+		await s.send('  /review the diff');
+		expect(mocks.nameSession).not.toHaveBeenCalled();
+		expect(s.title).toBe('');
+		expect(db.rows.get(s.id)!.title).toBe('');
+		await s.send('now add a test');
+		expect(mocks.nameSession).toHaveBeenCalledExactlyOnceWith('now add a test', null);
+		expect(s.title).toBe('Find where x lives');
+	});
+
+	it('never overwrites a name the user gave it', async () => {
+		const s = await newSession('/proj');
+		await s.rename('Lint fixes');
+		await s.send('fix the lint');
+		expect(mocks.nameSession).not.toHaveBeenCalled();
+		expect(s.title).toBe('Lint fixes');
+	});
+
+	it('keeps a rename made while the naming call runs', async () => {
+		const s = await newSession('/proj');
+		let answer!: (t: string) => void;
+		mocks.nameSession.mockReturnValueOnce(new Promise<string>((r) => (answer = r)));
+		const sending = s.send('fix the lint');
+		await vi.waitFor(() => expect(mocks.nameSession).toHaveBeenCalled());
+		await s.rename('Mine');
+		answer('Model title');
+		await sending;
+		expect(s.title).toBe('Mine');
+		expect(db.rows.get(s.id)!.title).toBe('Mine');
+	});
+
+	it('treats a saved title from a slash command as no title', async () => {
+		const s = await newSession('/proj');
+		db.rows.get(s.id)!.title = '/init';
+		await closeSession(s.id);
+		const again = await openSession(s.id);
+		expect(again.title).toBe('');
+		await again.send('add a readme');
+		expect(mocks.nameSession).toHaveBeenCalledExactlyOnceWith('add a readme', null);
+		expect(db.rows.get(s.id)!.title).toBe('Find where x lives');
 	});
 
 	it('queues messages sent during a turn as steering for the loop', async () => {
