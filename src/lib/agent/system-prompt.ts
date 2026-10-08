@@ -9,6 +9,7 @@ import {
 	hasEnabledContactsAccount
 } from '#lib/stores/settings.ts';
 import { formatTodayLong } from '#lib/utils/format.ts';
+import { GUIDE_PROMPT } from '#lib/guide/prompt.ts';
 import { registeredMcpServerLabels } from './tools/mcp';
 
 const REVIEW_PATTERNS =
@@ -50,6 +51,17 @@ export interface SystemPromptOptions {
 	 * signature rather than by a check someone has to remember.
 	 */
 	includeImages?: boolean;
+	/**
+	 * Tell the model about `haruspex_docs`. Only for turns that are offered it:
+	 * Chat and remote guests. A job builds its prompt here too, and gets
+	 * neither the tool nor the line.
+	 */
+	guide?: boolean;
+}
+
+/** The `haruspex_docs` line, for a turn offered the tool; empty otherwise. */
+function guideSection(guide: boolean | undefined): string {
+	return guide ? `\n\n${GUIDE_PROMPT}` : '';
 }
 
 export function buildSystemPrompt(
@@ -113,7 +125,7 @@ CONNECTED INTEGRATIONS: ${connected.join(', ')}
 		role: 'system',
 		content: `You are Haruspex, a helpful, private AI assistant running on the user's computer.
 
-Today's date is ${today}. Your training data has a cutoff, so your memory of the world may be incomplete, wrong, or out of date.
+Today's date is ${today}. Your training data has a cutoff, so your memory of the world may be incomplete, wrong, or out of date.${guideSection(opts.guide)}
 
 SEARCH RULES:
 - Search before answering any question about the world — a person, place, animal, plant, organisation, product, event, or how something works. "Tell me about X" is one of these. Your recollection is not a source; a citation is.

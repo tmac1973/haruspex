@@ -59,6 +59,11 @@ export interface EphemeralTurnOptions {
 	 * `ToolContext.askUser`.
 	 */
 	askUser?: ToolContext['askUser'];
+	/**
+	 * Tell the default system prompt about `haruspex_docs`, for a turn whose
+	 * allowlist offers it (a remote guest). Ignored with a `systemPrompt`.
+	 */
+	guidePrompt?: boolean;
 	/** Confine writes to this dir (relative to workingDir). See AgentLoopOptions. */
 	writeRoot?: string | null;
 	/**
@@ -218,7 +223,7 @@ export async function runEphemeralTurn(
 							writeRoot: options.writeRoot
 						})
 				}
-			: buildSystemPrompt(options.workingDir),
+			: buildSystemPrompt(options.workingDir, { guide: options.guidePrompt }),
 		...(options.history ?? []),
 		{ role: 'user', content: options.userMessage }
 	]);

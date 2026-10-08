@@ -82,11 +82,14 @@ describe('the remote turn driver', () => {
 		await runRemoteTurn(prompt);
 		const options = turnOptions();
 		expect(options.toolAllowlist).toBe(REMOTE_TOOLS);
+		// The guide is in the allowlist, so the prompt says when to use it.
+		expect(options.guidePrompt).toBe(true);
 		expect([...REMOTE_TOOLS]).toEqual([
 			'web_search',
 			'fetch_url',
 			'research_url',
-			'ask_user_question'
+			'ask_user_question',
+			'haruspex_docs'
 		]);
 		// The three that would make a guest dangerous, stated explicitly so
 		// widening the list is a deliberate act rather than an accident.

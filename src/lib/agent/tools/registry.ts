@@ -282,6 +282,9 @@ function schemaFor(
 	filter: ToolFilterOpts,
 	skills: { skillNames?: string[]; skillFileNames?: string[]; hasSkills?: boolean }
 ): ToolDefinition | null {
+	// The user guide answers the person asking, in any mode; a job has nobody
+	// asking. Remote guests get it through their allowlist.
+	if (reg.category === 'guide') return filter.interactive ? reg.schema : null;
 	if (reg.category === 'skills-write') {
 		if (!skills.hasSkills || !filter.interactive) return null;
 		// The repo's AGENTS.md is a Code mode file, like the repo itself.

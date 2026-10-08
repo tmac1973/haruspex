@@ -45,6 +45,10 @@ AI models make mistakes. They can state wrong facts with confidence, misread fil
 
 The Shell assistant runs nothing by default. If you turn on **Code mode**, it runs commands in your real terminal: commands it flags as risky ask you first, but commands it thinks are safe run on their own. Only use Code mode on machines and projects you are willing to let the model change. Read every command before you run it, and keep backups.
 
+## Ask Haruspex about itself
+
+In Chat or the Shell assistant, ask things like "how do I add a calendar?" or "is memory on?". The assistant reads this guide, and how this copy of Haruspex is set up (the model, which features are on), before it answers, and says so when the guide doesn't cover something. Remote guests get the guide but not your setup.
+
 ## Where to go next
 
 - `models` — choosing and downloading models, context size, using your own server or OpenRouter.

@@ -84,3 +84,11 @@ describe('shell prompts — project instructions', () => {
 		expect(text.indexOf('PROJECT INSTRUCTIONS:')).toBeLessThan(text.indexOf('SKILLS:'));
 	});
 });
+
+describe('shell system prompts — the user guide', () => {
+	it('point the model at haruspex_docs in both modes', () => {
+		for (const code of [true, false]) {
+			expect(promptFor(ctx('/bin/bash', 'bash'), code)).toContain('call haruspex_docs');
+		}
+	});
+});

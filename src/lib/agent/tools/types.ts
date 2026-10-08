@@ -210,7 +210,9 @@ export interface ToolRegistration {
 		| 'skills'
 		/** Writing skills, each one approved by the user. Interactive Chat and
 		 *  Shell turns only: one that carries `skills` and has someone there. */
-		| 'skills-write';
+		| 'skills-write'
+		/** Haruspex's own user guide (`haruspex_docs`). Any turn with someone there. */
+		| 'guide';
 	requiresVision?: boolean;
 }
 
