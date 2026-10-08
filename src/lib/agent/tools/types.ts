@@ -1,6 +1,7 @@
 import type { BackendOverride, ToolDefinition } from '#lib/api.ts';
 import type { Artifact } from '#lib/sandbox/sandbox.ts';
 import type { LintIssue } from '#lib/sandbox/lint.ts';
+import type { FileDiff } from '#lib/code/diff.ts';
 
 export type { Artifact, LintIssue };
 
@@ -39,6 +40,12 @@ export interface ToolExecOutput {
 	 * downloaded to produce this.
 	 */
 	heroImage?: string;
+	/**
+	 * What a write changed, for the Code tab's diff card. Set by
+	 * `fs_write_text` in a Code session only, which reads the file before
+	 * writing it. Shown, never sent to the model.
+	 */
+	fileDiff?: FileDiff;
 }
 
 /**

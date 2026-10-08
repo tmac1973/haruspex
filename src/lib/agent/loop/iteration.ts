@@ -1620,7 +1620,8 @@ async function executeToolCalls(
 			output.thumbDataUrl,
 			output.artifacts,
 			output.lintIssues,
-			output.heroImage
+			output.heroImage,
+			output.fileDiff
 		);
 		return output;
 	};

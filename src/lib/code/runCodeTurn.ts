@@ -22,6 +22,7 @@ import {
 import type { AgentsMd } from '#lib/ipc/gen/AgentsMd.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import type { Artifact } from '#lib/agent/tools/index.ts';
+import type { FileDiff } from './diff';
 import { runAgentLoop, type AgentStopReason } from '#lib/agent/loop.ts';
 import type { ContextManagedInfo } from '#lib/agent/context-budget.ts';
 import { appendStreamDelta, createThinkStreamState } from '#lib/agent/think-stream.ts';
@@ -62,7 +63,8 @@ export interface CodeTurnOptions {
 		call: ResolvedToolCall,
 		result: string,
 		thumbDataUrl?: string,
-		artifacts?: Artifact[]
+		artifacts?: Artifact[],
+		fileDiff?: FileDiff
 	) => void;
 }
 
@@ -180,7 +182,8 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 					onContextManaged: (info) => o.onContextManaged?.(info),
 					onToolStart: (call) => o.onToolStart?.(call),
 					onToolProgress: (call, status) => o.onToolProgress?.(call, status),
-					onToolEnd: (call, res, thumb, artifacts) => o.onToolEnd?.(call, res, thumb, artifacts)
+					onToolEnd: (call, res, thumb, artifacts, _lint, _hero, fileDiff) =>
+						o.onToolEnd?.(call, res, thumb, artifacts, fileDiff)
 				})
 		);
 	} catch (e) {

@@ -18,6 +18,7 @@ import type { BackendOverride, StreamChunk, Usage } from '#lib/api.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import type { Artifact, LintIssue, ToolContext } from '#lib/agent/tools/index.ts';
 import type { ContextManagedInfo } from './context-budget';
+import type { FileDiff } from '#lib/code/diff.ts';
 import type { SamplingParams } from '#lib/stores/settings.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import { isAbortError } from '#lib/utils/error.ts';
@@ -144,6 +145,8 @@ export interface SearchStep {
 	 * conversation is allowed to fetch. See `images/eligible`.
 	 */
 	heroImage?: string;
+	/** The line diff a Code-tab write attached (`ToolExecOutput.fileDiff`). */
+	fileDiff?: FileDiff;
 }
 
 export interface AgentLoopOptions {
@@ -174,7 +177,8 @@ export interface AgentLoopOptions {
 		thumbDataUrl?: string,
 		artifacts?: Artifact[],
 		lintIssues?: LintIssue[],
-		heroImage?: string
+		heroImage?: string,
+		fileDiff?: FileDiff
 	) => void;
 	onStreamChunk: (chunk: StreamChunk) => void;
 	/** Called once the turn settles. `meta.stopReason` distinguishes a natural

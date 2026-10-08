@@ -354,8 +354,13 @@ export class CodeSession {
 				onToolProgress: (call, status) => {
 					this.searchSteps = markStepProgress(this.searchSteps, call, status);
 				},
-				onToolEnd: (call, res, thumb, artifacts) => {
+				onToolEnd: (call, res, thumb, artifacts, fileDiff) => {
 					this.searchSteps = markStepDone(this.searchSteps, call, res, thumb, artifacts);
+					if (fileDiff) {
+						this.searchSteps = this.searchSteps.map((s) =>
+							s.id === call.id ? { ...s, fileDiff } : s
+						);
+					}
 					if (BG_TOOLS.has(call.name)) void this.refreshBackground();
 				}
 			});

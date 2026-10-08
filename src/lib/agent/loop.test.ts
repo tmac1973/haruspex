@@ -688,6 +688,8 @@ describe('runAgentLoop: tool-call round trip', () => {
 			undefined,
 			undefined,
 			// heroImage — this page declared none.
+			undefined,
+			// fileDiff — only Code-tab writes carry one.
 			undefined
 		);
 

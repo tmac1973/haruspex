@@ -16,6 +16,7 @@ import { isAutoApproveActive } from '#lib/stores/approvalOverride.ts';
 import { localWriteBlocked } from './nested-session';
 import type { EditResult } from '#lib/ipc/gen/EditResult.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { buildWriteDiff } from '#lib/code/diff.ts';
 
 /**
  * True when a relative write path stays inside `root` (a relative dir prefix).
@@ -157,11 +158,13 @@ async function fsWriteWithConflictCheck(
 	workdir: string,
 	relPath: string,
 	payload: Record<string, unknown>,
-	filesWrittenThisTurn: Set<string>
+	filesWrittenThisTurn: Set<string>,
+	diffAfter?: string
 ): Promise<ToolExecOutput> {
 	const resolved = await resolveWritePathInteractive(workdir, relPath, filesWrittenThisTurn);
 	if (resolved.kind === 'canceled') return userCanceledWriteError(relPath, command);
 	if (resolved.kind === 'rejected') return toolResult(toolError(resolved.message));
+	const before = diffAfter === undefined ? undefined : await previousContent(workdir, resolved);
 	try {
 		await invoke(command, {
 			workdir,
@@ -171,9 +174,30 @@ async function fsWriteWithConflictCheck(
 		});
 		filesWrittenThisTurn.add(resolved.finalPath);
 		const diag = await lintPythonIfApplicable(workdir, resolved.finalPath);
-		return toolResult(`Wrote: ${resolved.finalPath}${diag}`);
+		const out = toolResult(`Wrote: ${resolved.finalPath}${diag}`);
+		if (diffAfter !== undefined && before !== undefined) {
+			out.fileDiff = buildWriteDiff(resolved.finalPath, before, diffAfter);
+		}
+		return out;
 	} catch (e) {
 		return toolResult(toolInvokeError(command, e));
+	}
+}
+
+/**
+ * The file a write is about to replace, for its diff card: null when the
+ * write creates it, undefined when it exists but can't be read as text (no
+ * diff then, rather than a wrong one).
+ */
+async function previousContent(
+	workdir: string,
+	resolved: { finalPath: string; overwrite: boolean }
+): Promise<string | null | undefined> {
+	if (!resolved.overwrite) return null;
+	try {
+		return await invoke<string>(IPC.fs_read_text_full, { workdir, relPath: resolved.finalPath });
+	} catch {
+		return undefined;
 	}
 }
 
@@ -390,7 +414,9 @@ function textWriteExecutor(
 			ctx.workingDir!,
 			args.path as string,
 			payload(args),
-			ctx.filesWrittenThisTurn
+			ctx.filesWrittenThisTurn,
+			// The Code tab shows each write as a diff against what was there.
+			ctx.codeSessionId && command === IPC.fs_write_text ? (args.content as string) : undefined
 		);
 	};
 }
