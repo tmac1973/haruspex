@@ -21,6 +21,8 @@ import {
 import { setPtyBusy } from '#lib/stores/shellPtyBusy.svelte.ts';
 import type { ToolContext } from './types';
 import { isFish } from '#lib/shell/fish.ts';
+import { outOfMemoryNote } from '#lib/shell/memoryLimit.ts';
+import type { ShellMemoryStatus } from '#lib/ipc/gen/ShellMemoryStatus.ts';
 
 /** Inline output budget before middle-truncation + temp-file spill. */
 export const RUN_OUTPUT_MAX_BYTES = 16 * 1024;
@@ -64,6 +66,34 @@ async function pendingCommand(sessionId: number): Promise<string | null> {
 	} catch {
 		return null;
 	}
+}
+
+/**
+ * The terminal's memory ceiling and kill count, or null without a ceiling.
+ * The whole terminal shares one ceiling (see `command_scope.rs`), so a kill
+ * between the reads before and after a command is taken as that command's.
+ */
+async function memoryStatus(sessionId: number): Promise<ShellMemoryStatus | null> {
+	try {
+		return await invoke<ShellMemoryStatus | null>('shell_memory_status', { sessionId });
+	} catch {
+		return null;
+	}
+}
+
+/** `result`, plus the out-of-memory note when the terminal's kill count rose since `before`. */
+async function withOomNote(
+	sessionId: number,
+	before: ShellMemoryStatus | null,
+	result: string
+): Promise<string> {
+	if (!before) return result;
+	const after = await memoryStatus(sessionId);
+	const note = outOfMemoryNote({
+		out_of_memory: !!after && after.oomKills > before.oomKills,
+		memory_limit_mb: after?.limitMb ?? null
+	});
+	return note ? `${result}\n\n${note}` : result;
 }
 
 /** Whether to drive the live PTY for this run vs. a one-shot capture. */
@@ -233,6 +263,7 @@ export async function runInPty(
 
 		const start = await invoke<ShellCtxSnapshot>('shell_get_context', { sessionId });
 		const before = start.completed_total;
+		const memBefore = await memoryStatus(sessionId);
 		await invoke('shell_write', { sessionId, data: toPtyPaste(command, { execute: true }) });
 
 		// Poll for completion — check first, then sleep, so a fast command isn't
@@ -264,11 +295,12 @@ export async function runInPty(
 			limit: 1
 		});
 		const region = regions[regions.length - 1] ?? null;
-		return await formatPtyResult(region, {
+		const result = await formatPtyResult(region, {
 			completed,
 			aborted: !!signal?.aborted,
 			timeoutSecs
 		});
+		return await withOomNote(sessionId, memBefore, result);
 	} finally {
 		signal?.removeEventListener('abort', onAbort);
 		release();

@@ -12,6 +12,7 @@ use tauri::{AppHandle, Emitter};
 use super::context::SessionContext;
 use super::integration::{CapturedRegion, Integration};
 use super::pty::{plan_integration, SpawnPlan};
+use crate::command_scope::{self, TerminalScope};
 
 pub type SessionId = u32;
 
@@ -80,6 +81,8 @@ pub struct Session {
     // Kept alive so the rcfile / zdotdir survive for the shell's
     // lifetime. Cleaned up in Drop.
     _tempdirs: Vec<PathBuf>,
+    /// The memory-limited scope the shell runs in, when it has one.
+    memory: Option<TerminalScope>,
 }
 
 /// Strip AppImage-mangled variables out of the spawned shell's env.
@@ -124,6 +127,9 @@ impl Session {
         wsl_distro: Option<&str>,
         cols: u16,
         rows: u16,
+        // The ceiling for everything run in this terminal, in bytes. None for
+        // no ceiling, and ignored where scopes aren't available.
+        memory_limit: Option<u64>,
     ) -> Result<Self, String> {
         let plan = integration_dir
             .map(|d| plan_integration(shell, d))
@@ -139,7 +145,18 @@ impl Session {
             })
             .map_err(|e| format!("openpty failed: {e}"))?;
 
-        let mut cmd = CommandBuilder::new(shell);
+        // In a scope, systemd-run execs the shell in place: the PTY's child,
+        // its PID and its process group are the shell's own.
+        let scoped = memory_limit.and_then(|limit| command_scope::terminal(&id.to_string(), limit));
+        let (mut cmd, memory) = match scoped {
+            Some((args, scope)) => {
+                let mut cmd = CommandBuilder::new("systemd-run");
+                cmd.args(args);
+                cmd.arg(shell);
+                (cmd, Some(scope))
+            }
+            None => (CommandBuilder::new(shell), None),
+        };
         cmd.cwd(cwd);
         for var in &["HOME", "USER", "LOGNAME", "PATH", "LANG", "LC_ALL"] {
             if let Ok(v) = std::env::var(var) {
@@ -204,7 +221,15 @@ impl Session {
             replay,
             scrollback,
             _tempdirs: plan.tempdirs,
+            memory,
         })
+    }
+
+    /// The terminal's memory ceiling in bytes, and how many processes the
+    /// kernel has killed in it for going over; None without a ceiling.
+    pub fn memory_status(&self) -> Option<(u64, u64)> {
+        let scope = self.memory.as_ref()?;
+        Some((scope.limit_bytes, scope.oom_kills()?))
     }
 
     /// Signal that the frontend has attached its output listener and reply

@@ -454,6 +454,7 @@ pub fn run() {
             shell::shell_resize,
             shell::shell_kill,
             shell::shell_restart,
+            shell::shell_memory_status,
             shell::shell_get_context,
             shell::shell_get_recent_commands,
             shell::shell_pending_command,

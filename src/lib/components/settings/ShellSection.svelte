@@ -203,10 +203,10 @@
 </section>
 
 <section class="settings-section">
-	<h2>Memory limit per command</h2>
+	<h2>Memory limit</h2>
 	<label
 		class="row"
-		title="The system stops a one-shot command that goes over this, and the agent is told why. Needs Linux with a systemd user session; commands typed into your terminal aren't limited. 0 turns it off."
+		title="Applies to each command the agent runs on its own, and to each Shell tab's terminal as a whole, your own commands included. Over it, the system stops the process using the memory, and the agent is told why. Tabs opened after a change use the new limit. Needs Linux with a systemd user session. 0 turns it off."
 	>
 		<input
 			type="number"

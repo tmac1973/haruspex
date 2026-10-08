@@ -51,6 +51,7 @@ impl ShellManager {
     /// (which only differs by first dropping the old session) so the 9-arg
     /// `Session::spawn` call lives in one place. `cwd_override` is the Chat
     /// tab's working directory on the "Open in shell" path; None means $HOME.
+    #[allow(clippy::too_many_arguments)]
     fn spawn_session(
         &self,
         app: AppHandle,
@@ -59,6 +60,7 @@ impl ShellManager {
         shell_override: Option<String>,
         selection: Option<kind::ShellSelection>,
         cwd_override: Option<String>,
+        memory_limit_percent: Option<u8>,
     ) -> Result<ShellSpawnResult, String> {
         let id = self.alloc_id();
         let (program, base_args, wsl_distro) = resolve_spawn_target(selection, shell_override);
@@ -74,6 +76,7 @@ impl ShellManager {
             wsl_distro.as_deref(),
             cols,
             rows,
+            memory_limit_percent.and_then(crate::command_scope::limit_bytes),
         )?;
         let context = session.context.clone();
         self.sessions
@@ -176,6 +179,8 @@ fn resolve_spawn_target(
     }
 }
 
+// Over clippy's limit for the same reason as `shell_restart` below.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub fn shell_spawn(
     app: AppHandle,
@@ -185,8 +190,18 @@ pub fn shell_spawn(
     shell_override: Option<String>,
     selection: Option<kind::ShellSelection>,
     cwd: Option<String>,
+    // Settings → Shell's memory limit, as a share of RAM; None or 0 for none.
+    memory_limit_percent: Option<u8>,
 ) -> Result<ShellSpawnResult, String> {
-    state.spawn_session(app, cols, rows, shell_override, selection, cwd)
+    state.spawn_session(
+        app,
+        cols,
+        rows,
+        shell_override,
+        selection,
+        cwd,
+        memory_limit_percent,
+    )
 }
 
 #[tauri::command]
@@ -251,13 +266,49 @@ pub fn shell_restart(
     shell_override: Option<String>,
     selection: Option<kind::ShellSelection>,
     cwd: Option<String>,
+    memory_limit_percent: Option<u8>,
 ) -> Result<ShellSpawnResult, String> {
     // Drop the old session (its Drop impl kills the PTY + cleans tempdirs).
     {
         let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
         sessions.remove(&session_id);
     }
-    state.spawn_session(app, cols, rows, shell_override, selection, cwd)
+    state.spawn_session(
+        app,
+        cols,
+        rows,
+        shell_override,
+        selection,
+        cwd,
+        memory_limit_percent,
+    )
+}
+
+/// A terminal's memory ceiling and its count of processes killed for going
+/// over it. The agent reads the count before and after a command it runs.
+#[derive(Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ShellMemoryStatus {
+    pub limit_mb: u32,
+    #[ts(type = "number")]
+    pub oom_kills: u64,
+}
+
+/// None for a terminal without a ceiling, or when the count can't be read.
+#[tauri::command]
+pub fn shell_memory_status(
+    state: State<'_, ShellManager>,
+    session_id: SessionId,
+) -> Result<Option<ShellMemoryStatus>, String> {
+    state.with_session(session_id, |session| {
+        Ok(session
+            .memory_status()
+            .map(|(limit, kills)| ShellMemoryStatus {
+                limit_mb: (limit / (1024 * 1024)) as u32,
+                oom_kills: kills,
+            }))
+    })
 }
 
 #[derive(Serialize, ts_rs::TS)]

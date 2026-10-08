@@ -252,6 +252,7 @@ export const IPC = {
 	shell_kill: 'shell_kill',
 	shell_list_shells: 'shell_list_shells',
 	shell_mark_ready: 'shell_mark_ready',
+	shell_memory_status: 'shell_memory_status',
 	shell_output_since: 'shell_output_since',
 	shell_pending_command: 'shell_pending_command',
 	shell_platform_supported: 'shell_platform_supported',
