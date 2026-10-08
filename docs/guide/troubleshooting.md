@@ -42,7 +42,7 @@ If the command really needs more, raise Settings → Shell → Memory limit (a p
 
 ## Pictures in answers are missing or wrong
 
-The picture sources are good for places, animals, landmarks and general subjects, and weak for new products and recent events. If no good picture exists, the answer comes without one. Small models sometimes pick a loosely related picture. Turning off Settings → General → Include images stops them being added unasked.
+The picture sources are good for places, animals, landmarks and general subjects, and weak for new products and recent events. If no good picture exists, the answer comes without one. Small models sometimes pick a loosely related picture. Turning off Settings → Agent → Pictures in answers → Include images in answers stops them being added unasked.
 
 ## Presentations with images are unreliable
 

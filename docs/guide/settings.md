@@ -18,7 +18,6 @@ Appearance and how replies are formatted.
 - **Theme**: System (default), Light or Dark.
 - **Highlight color**: the accent color. Default Teal.
 - **Response Format**: Minimal, Standard (default) or Rich.
-- **Include images in answers**: on.
 
 See the `chat` page.
 
@@ -36,12 +35,13 @@ See the `models` page.
 
 ## Agent
 
-How the model reasons and how long its replies may be. Also the Python sandbox.
+How the model reasons and how long its replies may be, the Python sandbox, and pictures in answers.
 
 - **Reasoning mode**: on. **Reasoning effort**: medium.
 - **Additional system prompt**: empty.
 - **Max response tokens**: 8192. **Max response tokens (file writes)**: 65536.
 - **Enable Python sandbox**: on. **Approval prompt**: Once per chat. **Network access**: Internet and local network. **Execution timeout (seconds)**: 60.
+- **Pictures in answers** → **Include images in answers**: on.
 
 See the `chat` page.
 
