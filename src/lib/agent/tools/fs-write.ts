@@ -81,7 +81,8 @@ type WriteResolution =
 export async function resolveWritePathInteractive(
 	workdir: string,
 	relPath: string,
-	filesWrittenThisTurn: Set<string>
+	filesWrittenThisTurn: Set<string>,
+	opts: { askBeforeOverwrite?: boolean } = {}
 ): Promise<WriteResolution> {
 	// Second write to the same path in one turn. This used to short-circuit to
 	// overwrite:true and still report "Wrote: <path>", so a model emitting a
@@ -114,6 +115,11 @@ export async function resolveWritePathInteractive(
 	// conflicts as "overwrite". The job authoring UI surfaces this so the
 	// user knows what they're opting into.
 	if (isAutoApproveActive()) {
+		return { kind: 'ok', finalPath: relPath, overwrite: true };
+	}
+	// A Code session edits a project: rewriting a file is the job, and the
+	// write shows as a diff card against what was there, so it doesn't ask.
+	if (opts.askBeforeOverwrite === false) {
 		return { kind: 'ok', finalPath: relPath, overwrite: true };
 	}
 
@@ -159,9 +165,12 @@ async function fsWriteWithConflictCheck(
 	relPath: string,
 	payload: Record<string, unknown>,
 	filesWrittenThisTurn: Set<string>,
+	askBeforeOverwrite: boolean,
 	diffAfter?: string
 ): Promise<ToolExecOutput> {
-	const resolved = await resolveWritePathInteractive(workdir, relPath, filesWrittenThisTurn);
+	const resolved = await resolveWritePathInteractive(workdir, relPath, filesWrittenThisTurn, {
+		askBeforeOverwrite
+	});
 	if (resolved.kind === 'canceled') return userCanceledWriteError(relPath, command);
 	if (resolved.kind === 'rejected') return toolResult(toolError(resolved.message));
 	const before = diffAfter === undefined ? undefined : await previousContent(workdir, resolved);
@@ -377,7 +386,8 @@ function spreadsheetWriteExecutor(command: string) {
 			ctx.workingDir!,
 			args.path as string,
 			{ sheets },
-			ctx.filesWrittenThisTurn
+			ctx.filesWrittenThisTurn,
+			!ctx.codeSessionId
 		);
 	};
 }
@@ -415,6 +425,7 @@ function textWriteExecutor(
 			args.path as string,
 			payload(args),
 			ctx.filesWrittenThisTurn,
+			!ctx.codeSessionId,
 			// The Code tab shows each write as a diff against what was there.
 			ctx.codeSessionId && command === IPC.fs_write_text ? (args.content as string) : undefined
 		);
@@ -600,7 +611,8 @@ function slidesWriteExecutor(command: string) {
 			ctx.workingDir!,
 			args.path as string,
 			{ slides },
-			ctx.filesWrittenThisTurn
+			ctx.filesWrittenThisTurn,
+			!ctx.codeSessionId
 		);
 	};
 }
@@ -905,7 +917,8 @@ registerTool({
 		const resolved = await resolveWritePathInteractive(
 			ctx.workingDir!,
 			relPath,
-			ctx.filesWrittenThisTurn
+			ctx.filesWrittenThisTurn,
+			{ askBeforeOverwrite: !ctx.codeSessionId }
 		);
 		if (resolved.kind === 'canceled') return userCanceledWriteError(relPath, 'fs_download_url');
 		if (resolved.kind === 'rejected') return toolResult(toolError(resolved.message));

@@ -143,3 +143,25 @@ describe('an existing file, with someone at the keyboard', () => {
 		expect(mocks.askFileConflict).not.toHaveBeenCalled();
 	});
 });
+
+describe('a Code session overwriting a file', () => {
+	it('overwrites without asking, even with someone at the keyboard', async () => {
+		mocks.isAutoApproveActive.mockReturnValue(false);
+		mocks.askFileConflict.mockReset();
+		existsReturns(true);
+		const r = await resolveWritePathInteractive('/w', 'src/game.js', new Set<string>(), {
+			askBeforeOverwrite: false
+		});
+		expect(r).toEqual({ kind: 'ok', finalPath: 'src/game.js', overwrite: true });
+		expect(mocks.askFileConflict).not.toHaveBeenCalled();
+	});
+
+	it('still refuses a second write to the same file in one turn', async () => {
+		mocks.isAutoApproveActive.mockReturnValue(false);
+		existsReturns(true);
+		const r = await resolveWritePathInteractive('/w', 'src/game.js', new Set(['src/game.js']), {
+			askBeforeOverwrite: false
+		});
+		expect(r.kind).toBe('rejected');
+	});
+});
