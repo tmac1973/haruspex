@@ -13,6 +13,7 @@
 
 import { GUIDE_PAGES, guideIndex, guidePage } from '#lib/guide/guide.ts';
 import { guideStatus } from '#lib/guide/status.ts';
+import { GUIDE_URL } from '#lib/guide/prompt.ts';
 import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
 
@@ -54,7 +55,7 @@ registerTool({
 			? await guideStatus()
 			: "## This Haruspex right now\nNot shown here: it is the host's own setup.";
 		return toolResult(
-			`${status}\n\n## Guide pages\nCall haruspex_docs with \`page\` set to one of these.\n${guideIndex()}`
+			`${status}\n\n## Guide pages\nCall haruspex_docs with \`page\` set to one of these. The same guide is online at ${GUIDE_URL}, for the user to read.\n${guideIndex()}`
 		);
 	}
 });

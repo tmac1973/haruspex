@@ -1,12 +1,15 @@
 <script lang="ts">
 	/**
-	 * Keyboard-shortcuts help: the list in `#lib/shortcuts.ts`. Keep the
+	 * Keyboard-shortcuts help: the list in `#lib/shortcuts.ts`, under a link
+	 * to the online user guide. Keep the
 	 * README's "Keyboard shortcuts" section in step with it too. Opened with F1 (global) or the header
 	 * "?" button; closes on Esc, F1 again, the × button, or backdrop click
 	 * (the last three via the shared Modal).
 	 */
 	import Modal from './Modal.svelte';
+	import { invoke } from '@tauri-apps/api/core';
 	import { SHORTCUTS } from '#lib/shortcuts.ts';
+	import { GUIDE_URL } from '#lib/guide/prompt.ts';
 
 	interface Props {
 		open: boolean;
@@ -24,6 +27,14 @@
 	maxWidth={560}
 	labelledBy="help-title"
 >
+	<p class="guide">
+		The <button
+			type="button"
+			class="link"
+			title={GUIDE_URL}
+			onclick={() => void invoke('open_url', { url: GUIDE_URL }).catch(() => {})}>user guide</button
+		> explains every feature and setting. You can also ask the assistant about Haruspex.
+	</p>
 	{#each SHORTCUTS as section (section.title)}
 		<section>
 			<h3>{section.title}</h3>
@@ -40,6 +51,22 @@
 </Modal>
 
 <style>
+	.guide {
+		margin: 0 0 4px;
+		font-size: 0.9rem;
+		color: var(--text-secondary);
+	}
+
+	.link {
+		padding: 0;
+		border: none;
+		background: none;
+		color: var(--accent);
+		font: inherit;
+		text-decoration: underline;
+		cursor: pointer;
+	}
+
 	section {
 		margin-top: 14px;
 	}
