@@ -1,6 +1,7 @@
 /**
- * The Code tab sidebar's view of the saved sessions: grouped by folder, and
- * how much of a long thread the transcript renders.
+ * The Code tab sidebar's view of the saved sessions: what each is called, a
+ * flat list that groups a folder only when it has several, and how much of a
+ * long thread the transcript renders.
  */
 import type { ChatMessage } from '#lib/api.ts';
 import type { CodeSessionSummary } from '#lib/code/db.ts';
@@ -46,6 +47,37 @@ export function groupByRoot(list: CodeSessionSummary[]): SessionGroup[] {
 		g.sessions.push(s);
 	}
 	return [...groups.values()];
+}
+
+/** A row of the sidebar: one session, or a folder that has several. */
+export type SidebarEntry =
+	| { kind: 'session'; session: CodeSessionSummary }
+	| ({ kind: 'folder' } & SessionGroup);
+
+/** Sessions a folder needs before they are grouped under it. */
+export const GROUP_AT = 2;
+
+/**
+ * The sidebar, newest first: a session on its own row, unless its folder has
+ * `GROUP_AT` or more, which then sit under one folder row placed by their
+ * newest.
+ */
+export function sidebarEntries(list: CodeSessionSummary[]): SidebarEntry[] {
+	return groupByRoot(list).map((g) =>
+		g.sessions.length >= GROUP_AT
+			? { kind: 'folder', ...g }
+			: { kind: 'session', session: g.sessions[0] }
+	);
+}
+
+/** When a session was last active, short: `just now`, `5m ago`, `3h ago`, `2d ago`. */
+export function lastActive(at: number, now = Date.now()): string {
+	const s = Math.max(0, Math.floor((now - at) / 1000));
+	if (s < 60) return 'just now';
+	if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+	if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+	if (s < 30 * 86400) return `${Math.floor(s / 86400)}d ago`;
+	return new Date(at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 }
 
 /** Turns the transcript renders at first, and adds per "Show earlier". */

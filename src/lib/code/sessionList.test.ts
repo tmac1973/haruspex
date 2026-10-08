@@ -4,17 +4,19 @@ import {
 	folderName,
 	groupByRoot,
 	isUnsetTitle,
+	lastActive,
 	sessionLabel,
+	sidebarEntries,
 	turnsBefore,
 	windowStart
 } from './sessionList';
 
-const s = (id: string, root: string, updated_at: number) => ({
+const s = (id: string, root: string, updated_at: number, forked_from: string | null = null) => ({
 	id,
 	title: id,
 	root,
 	updated_at,
-	forked_from: null
+	forked_from
 });
 
 describe('groupByRoot', () => {
@@ -36,6 +38,34 @@ describe('groupByRoot', () => {
 	});
 });
 
+describe('sidebarEntries', () => {
+	it('lists sessions flat, newest first, while each folder has one', () => {
+		const entries = sidebarEntries([s('a', '/p/alpha', 1), s('b', '/p/blog', 5)]);
+		expect(entries.map((e) => (e.kind === 'session' ? e.session.id : e.name))).toEqual(['b', 'a']);
+	});
+
+	it('groups a folder with two or more, placed by its newest session', () => {
+		const entries = sidebarEntries([
+			s('a1', '/p/alpha', 1),
+			s('b1', '/p/blog', 5),
+			s('a2', '/p/alpha', 3, 'a1'),
+			s('c1', '/p/cli', 9)
+		]);
+		expect(entries.map((e) => e.kind)).toEqual(['session', 'session', 'folder']);
+		const folder = entries[2];
+		expect(folder.kind === 'folder' && folder.root).toBe('/p/alpha');
+		expect(folder.kind === 'folder' && folder.sessions.map((x) => x.id)).toEqual(['a2', 'a1']);
+
+		// A newer session moves the whole folder up.
+		const again = sidebarEntries([
+			s('a1', '/p/alpha', 1),
+			s('a2', '/p/alpha', 10),
+			s('c1', '/p/cli', 9)
+		]);
+		expect(again.map((e) => e.kind)).toEqual(['folder', 'session']);
+	});
+});
+
 describe('session titles', () => {
 	it('counts an empty title or a slash command as no title', () => {
 		expect(isUnsetTitle('')).toBe(true);
@@ -47,6 +77,14 @@ describe('session titles', () => {
 		expect(sessionLabel({ title: '', root: '/p/blog' })).toBe('blog · new session');
 		expect(sessionLabel({ title: '/init', root: '/p/blog' })).toBe('blog · new session');
 		expect(sessionLabel({ title: 'New post', root: '/p/blog' })).toBe('New post');
+	});
+
+	it('says when a session was last active', () => {
+		const now = 1_000_000_000_000;
+		expect(lastActive(now - 10_000, now)).toBe('just now');
+		expect(lastActive(now - 5 * 60_000, now)).toBe('5m ago');
+		expect(lastActive(now - 3 * 3_600_000, now)).toBe('3h ago');
+		expect(lastActive(now - 2 * 86_400_000, now)).toBe('2d ago');
 	});
 });
 

@@ -15,7 +15,7 @@ Type what you want and press `Enter`. Until it has a name, a session shows as `<
 
 ## Find and reopen sessions
 
-The list on the left holds every saved session, grouped by folder, newest first. Click one to open it as a tab above the conversation. Right-click a session to **Rename** or **Delete** it; deleting removes the conversation, not any files. Closing a tab (**×**) keeps the session in the list. The **‹** button hides the list.
+The list on the left holds every saved session, newest first, each with its folder and when it was last active underneath. A folder with two or more sessions keeps them under one row showing the folder's name and how many; hover it for the full path, click it to fold it away. Click a session to open it as a tab above the conversation. Right-click a session to **Rename** or **Delete** it; deleting removes the conversation, not any files. Closing a tab (**×**) keeps the session in the list. The **‹** button hides the list.
 
 Long sessions show their last 20 turns; **Show earlier** brings back older ones.
 

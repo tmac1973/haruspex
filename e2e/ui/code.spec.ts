@@ -32,9 +32,11 @@ test('a Code session edits a file and runs a command, shown as cards', async ({ 
 	await expect(command).toContainText('cat README.md');
 	await expect(command).toContainText('exit 0');
 
-	// The model names the session after its first turn, in the sidebar and the tab.
+	// The model names the session after its first turn; the sidebar row shows
+	// the folder underneath, and the tab takes the name too.
 	const sidebar = app.getByRole('complementary', { name: 'Code sessions' });
 	const row = sidebar.getByRole('button', { name: 'Fix README typo' });
 	await expect(row).toBeVisible();
+	await expect(row).toContainText(/project · /);
 	await expect(app.getByRole('tab', { name: /Fix README typo/ })).toBeVisible();
 });

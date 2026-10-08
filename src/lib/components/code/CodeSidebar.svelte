@@ -1,12 +1,19 @@
 <script lang="ts">
 	/**
-	 * Saved Code sessions, grouped by folder, newest first. Click opens one as
-	 * a sub-tab; right-click renames or deletes it.
+	 * Saved Code sessions, newest first, each with its folder and when it was
+	 * last active. A folder with several sessions holds them under one row.
+	 * Click opens a session as a sub-tab; right-click renames or deletes it.
 	 */
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 	import { deleteCodeSession, listCodeSessions, updateCodeSessionMeta } from '#lib/code/db.ts';
 	import type { CodeSessionSummary } from '#lib/code/db.ts';
-	import { groupByRoot, isUnsetTitle, sessionLabel } from '#lib/code/sessionList.ts';
+	import {
+		folderName,
+		isUnsetTitle,
+		lastActive,
+		sessionLabel,
+		sidebarEntries
+	} from '#lib/code/sessionList.ts';
 	import {
 		closeSession,
 		getActiveSessionId,
@@ -22,7 +29,7 @@
 
 	let list = $state<CodeSessionSummary[]>([]);
 	let loadError = $state<string | null>(null);
-	const groups = $derived(groupByRoot(list));
+	const entries = $derived(sidebarEntries(list));
 	const activeId = $derived(getActiveSessionId());
 	const openIds = $derived(new Set(getOpenSessions().map((s) => s.id)));
 	let collapsedRoots = $state<Record<string, boolean>>({});
@@ -135,10 +142,48 @@
 		}
 	}
 
-	function label(s: CodeSessionSummary): string {
-		return sessionLabel(s);
-	}
+	// "5m ago" goes stale while the list sits open; tick it each minute.
+	let now = $state(Date.now());
+	$effect(() => {
+		const timer = setInterval(() => (now = Date.now()), 60_000);
+		return () => clearInterval(timer);
+	});
 </script>
+
+{#snippet row(s: CodeSessionSummary, grouped: boolean)}
+	<li>
+		{#if renamingId === s.id}
+			<input
+				class="rename"
+				class:grouped
+				bind:this={renameInput}
+				bind:value={renameText}
+				aria-label="Session name"
+				onblur={commitRename}
+				onkeydown={(e) => {
+					if (e.key === 'Enter') commitRename();
+					if (e.key === 'Escape') renamingId = null;
+				}}
+			/>
+		{:else}
+			<button
+				class="session"
+				class:grouped
+				class:active={s.id === activeId}
+				class:open={openIds.has(s.id)}
+				aria-label={sessionLabel(s)}
+				title="{sessionLabel(s)} — {s.root}. Right-click to rename or delete."
+				onclick={() => openOne(s.id)}
+				oncontextmenu={(e) => openMenu(e, s)}
+			>
+				<span class="name">{sessionLabel(s)}</span>
+				<span class="meta"
+					>{grouped ? '' : `${folderName(s.root)} · `}{lastActive(s.updated_at, now)}</span
+				>
+			</button>
+		{/if}
+	</li>
+{/snippet}
 
 <svelte:window
 	onclick={() => (menu = null)}
@@ -158,52 +203,36 @@
 		<div class="list">
 			{#if loadError}
 				<p class="empty">Couldn't load sessions: {loadError}</p>
-			{:else if groups.length === 0}
+			{:else if entries.length === 0}
 				<p class="empty">No sessions yet.</p>
 			{/if}
-			{#each groups as group (group.root)}
-				<div class="group">
-					<button
-						class="folder"
-						title={group.root}
-						aria-expanded={!collapsedRoots[group.root]}
-						onclick={() => (collapsedRoots[group.root] = !collapsedRoots[group.root])}
-					>
-						<span class="chev">{collapsedRoots[group.root] ? '▸' : '▾'}</span>
-						<span class="folder-name">{group.name}</span>
-					</button>
-					{#if !collapsedRoots[group.root]}
-						<ul>
-							{#each group.sessions as s (s.id)}
-								<li>
-									{#if renamingId === s.id}
-										<input
-											class="rename"
-											bind:this={renameInput}
-											bind:value={renameText}
-											aria-label="Session name"
-											onblur={commitRename}
-											onkeydown={(e) => {
-												if (e.key === 'Enter') commitRename();
-												if (e.key === 'Escape') renamingId = null;
-											}}
-										/>
-									{:else}
-										<button
-											class="session"
-											class:active={s.id === activeId}
-											class:open={openIds.has(s.id)}
-											title="{label(s)} — right-click to rename or delete"
-											onclick={() => openOne(s.id)}
-											oncontextmenu={(e) => openMenu(e, s)}>{label(s)}</button
-										>
-									{/if}
-								</li>
-							{/each}
-						</ul>
+			<ul>
+				{#each entries as entry (entry.kind === 'folder' ? `dir:${entry.root}` : entry.session.id)}
+					{#if entry.kind === 'session'}
+						{@render row(entry.session, false)}
+					{:else}
+						<li class="group">
+							<button
+								class="folder"
+								title={entry.root}
+								aria-expanded={!collapsedRoots[entry.root]}
+								onclick={() => (collapsedRoots[entry.root] = !collapsedRoots[entry.root])}
+							>
+								<span class="chev">{collapsedRoots[entry.root] ? '▸' : '▾'}</span>
+								<span class="folder-name">{entry.name}</span>
+								<span class="count">{entry.sessions.length}</span>
+							</button>
+							{#if !collapsedRoots[entry.root]}
+								<ul>
+									{#each entry.sessions as s (s.id)}
+										{@render row(s, true)}
+									{/each}
+								</ul>
+							{/if}
+						</li>
 					{/if}
-				</div>
-			{/each}
+				{/each}
+			</ul>
 		</div>
 		<button
 			class="resize-handle"
@@ -237,7 +266,7 @@
 	open={deleting !== null}
 	title="Delete session?"
 	message={deleting
-		? `"${label(deleting)}" and its conversation will be deleted. Files in the folder stay.`
+		? `"${sessionLabel(deleting)}" and its conversation will be deleted. Files in the folder stay.`
 		: ''}
 	confirmLabel="Delete"
 	destructive
@@ -338,6 +367,12 @@
 		white-space: nowrap;
 	}
 
+	.count {
+		margin-left: auto;
+		font-weight: 500;
+		letter-spacing: 0;
+	}
+
 	ul {
 		list-style: none;
 		margin: 0;
@@ -345,21 +380,37 @@
 	}
 
 	.session {
-		display: block;
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
 		width: 100%;
 		appearance: none;
 		background: none;
 		border: 0;
 		border-left: 2px solid transparent;
 		border-radius: 0 4px 4px 0;
-		padding: 5px 8px 5px 18px;
+		padding: 5px 8px;
 		font-size: 0.8rem;
 		color: var(--text-secondary);
 		text-align: left;
 		cursor: pointer;
+	}
+
+	.session.grouped {
+		padding-left: 18px;
+	}
+
+	.name,
+	.meta {
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.meta {
+		font-size: 0.7rem;
+		color: var(--text-secondary);
+		opacity: 0.8;
 	}
 
 	.session:hover {
@@ -378,8 +429,8 @@
 	}
 
 	.rename {
-		width: calc(100% - 22px);
-		margin: 2px 4px 2px 18px;
+		width: calc(100% - 12px);
+		margin: 2px 4px 2px 8px;
 		padding: 3px 6px;
 		font-size: 0.8rem;
 		border: 1px solid var(--accent);
@@ -387,6 +438,11 @@
 		background: var(--bg-input);
 		color: var(--text-primary);
 		outline: none;
+	}
+
+	.rename.grouped {
+		width: calc(100% - 22px);
+		margin-left: 18px;
 	}
 
 	.resize-handle {
