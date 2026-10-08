@@ -263,7 +263,7 @@ When it is on, Haruspex reads your finished conversations in the background, pic
 
 Everything stays on this device. The text is never sent anywhere, and the embeddings used to find the right memory later are calculated on your machine. Setup downloads a small embedding model for it once.
 
-You can switch any single conversation to incognito so it is never read, ask to be prompted before anything is saved, and read, edit or delete every stored memory from the settings panel.
+You can switch any single conversation to incognito so it is never read, ask to be prompted before anything is saved, and read, edit or delete every stored memory from the settings panel. A new fact that reads like one already stored is checked by the model and merged rather than added again, and **Find duplicates** in Settings → Memory merges older ones after you approve each.
 
 ## Skills
 

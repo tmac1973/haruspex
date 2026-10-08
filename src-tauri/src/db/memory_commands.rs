@@ -145,6 +145,73 @@ pub async fn memory_find_similar(
     .await
 }
 
+/// The `k` stored memories most like `content`, at least `min_similarity`
+/// alike: what the extraction pass's duplicate review shows the model beside
+/// a new fact. Doesn't count as the memories being used.
+#[tauri::command]
+pub async fn memory_neighbors(
+    app: AppHandle,
+    state: tauri::State<'_, Database>,
+    content: String,
+    k: usize,
+    min_similarity: f32,
+) -> Result<Vec<MemoryHit>, String> {
+    let db = state.inner().clone();
+    on_pool_with_model(&app, db, move |db, dir| {
+        let vector = embed_one(&dir, &content)?;
+        db.neighbors(
+            &vector,
+            embedder::EMBEDDING_MODEL_NAME,
+            k,
+            min_similarity,
+            now_ms(),
+        )
+    })
+    .await
+}
+
+/// Pairs of stored memories that read alike, most alike first: the
+/// candidates for Settings → Memory's tidy-up.
+#[tauri::command]
+pub async fn memory_similar_pairs(
+    state: tauri::State<'_, Database>,
+    min_similarity: f32,
+    limit: usize,
+) -> Result<Vec<MemoryPair>, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| {
+        db.similar_pairs(embedder::EMBEDDING_MODEL_NAME, min_similarity, limit)
+    })
+    .await
+}
+
+/// Merge duplicates into one: `keep_id` takes `content` (re-embedded) and
+/// every id in `delete_ids` is removed.
+#[tauri::command]
+pub async fn memory_merge(
+    app: AppHandle,
+    state: tauri::State<'_, Database>,
+    keep_id: String,
+    delete_ids: Vec<String>,
+    content: String,
+) -> Result<(), String> {
+    if delete_ids.contains(&keep_id) {
+        return Err("the memory kept can't also be deleted".into());
+    }
+    let db = state.inner().clone();
+    on_pool_with_model(&app, db, move |db, dir| {
+        let vector = embed_one(&dir, &content)?;
+        if !db.update_memory_content(&keep_id, &content, &vector, embedder::EMBEDDING_MODEL_NAME)? {
+            return Err("that memory no longer exists".into());
+        }
+        for id in &delete_ids {
+            db.delete_memory(id)?;
+        }
+        Ok(())
+    })
+    .await
+}
+
 /// Record that a memory was seen again — bumps recency and use count.
 #[tauri::command]
 pub async fn memory_touch(state: tauri::State<'_, Database>, id: String) -> Result<(), String> {

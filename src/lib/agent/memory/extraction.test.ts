@@ -165,6 +165,20 @@ describe('extractMemories — gates', () => {
 	});
 });
 
+/**
+ * The memory store, answering by command: nothing similar and no close
+ * memories unless a test says so. Calls past the once-queued cursor and
+ * conversation land here.
+ */
+function store(opts: { neighbors?: Record<string, unknown[]>; failAdd?: string } = {}) {
+	mocks.invoke.mockImplementation(async (cmd: string, args?: { content?: string }) => {
+		if (cmd === 'memory_neighbors') return opts.neighbors?.[args?.content ?? ''] ?? [];
+		if (cmd === 'memory_add' && args?.content === opts.failAdd) throw new Error('db locked');
+		if (cmd === 'memory_add') return 'mem-new';
+		return null;
+	});
+}
+
 describe('extractMemories — storing', () => {
 	beforeEach(() => {
 		mocks.invoke
@@ -174,7 +188,7 @@ describe('extractMemories — storing', () => {
 
 	it('stores a new fact with its source conversation', async () => {
 		turnSubmits([{ content: 'Prefers tabs over spaces.', category: 'preference' }]);
-		mocks.invoke.mockResolvedValueOnce(null).mockResolvedValueOnce('mem-1');
+		store();
 
 		const result = await extractMemories('conv-1');
 
@@ -209,11 +223,7 @@ describe('extractMemories — storing', () => {
 			{ content: 'First durable fact here.', category: 'fact' },
 			{ content: 'Second durable fact here.', category: 'fact' }
 		]);
-		mocks.invoke
-			.mockResolvedValueOnce(null)
-			.mockRejectedValueOnce(new Error('db locked'))
-			.mockResolvedValueOnce(null)
-			.mockResolvedValueOnce('mem-2');
+		store({ failAdd: 'First durable fact here.' });
 
 		const result = await extractMemories('conv-1');
 		expect(result.added).toBe(1);
@@ -271,5 +281,92 @@ describe('extractMemories — storing', () => {
 			'memory_add',
 			expect.objectContaining({ content: 'A perfectly good durable fact.', category: 'fact' })
 		);
+	});
+});
+
+describe('extractMemories — the duplicate review', () => {
+	const FACT = 'Is building Haruspex and adding 3D model generation to it.';
+	const learned = { id: 'mem-learned', content: 'Builds Haruspex.', origin: 'extracted' };
+	const saved = { id: 'mem-saved', content: 'Builds Haruspex.', origin: 'explicit' };
+
+	/** The extraction turn submits FACT; the review turn answers with `decisions`. */
+	function turns(decisions: unknown, reviewFails = false) {
+		mocks.runEphemeralTurn.mockImplementation(
+			async (opts: {
+				forceFinalTool?: string;
+				userMessage?: string;
+				onToolStart?: (c: { name: string; arguments: unknown }) => void;
+			}) => {
+				if (opts.forceFinalTool === 'resolve_memories') {
+					if (reviewFails) throw new Error('model gone');
+					opts.onToolStart?.({ name: 'resolve_memories', arguments: { decisions } });
+				} else {
+					opts.onToolStart?.({
+						name: 'submit_memories',
+						arguments: { memories: [{ content: FACT, category: 'project' }] }
+					});
+				}
+				return { finalText: '', rawText: '' };
+			}
+		);
+	}
+
+	beforeEach(() => {
+		mocks.invoke
+			.mockResolvedValueOnce({ memory_enabled: true, memory_extracted_to: -1 })
+			.mockResolvedValueOnce(conversation(FOUR_TURNS));
+	});
+
+	it('stores nothing when the model says a stored memory already holds it', async () => {
+		store({ neighbors: { [FACT]: [learned] } });
+		turns([{ fact: 1, action: 'same', memory_id: 'mem-learned' }]);
+		const result = await extractMemories('conv-1');
+		expect(result).toMatchObject({ added: 0, deduped: 1 });
+		expect(mocks.invoke).toHaveBeenCalledWith('memory_touch', { id: 'mem-learned' });
+		const review = mocks.runEphemeralTurn.mock.calls[1][0];
+		expect(review.userMessage).toContain(FACT);
+		expect(review.userMessage).toContain('[mem-learned] Builds Haruspex. (learned)');
+	});
+
+	it('rewrites a learned memory that the new fact adds to', async () => {
+		store({ neighbors: { [FACT]: [learned] } });
+		turns([
+			{
+				fact: 1,
+				action: 'update',
+				memory_id: 'mem-learned',
+				content: 'Builds Haruspex and is adding 3D model generation to it.'
+			}
+		]);
+		const result = await extractMemories('conv-1');
+		expect(result).toMatchObject({ added: 0, merged: 1 });
+		expect(mocks.invoke).toHaveBeenCalledWith('memory_update', {
+			id: 'mem-learned',
+			content: 'Builds Haruspex and is adding 3D model generation to it.'
+		});
+	});
+
+	it('never rewrites a memory the user saved', async () => {
+		store({ neighbors: { [FACT]: [saved] } });
+		turns([{ fact: 1, action: 'update', memory_id: 'mem-saved', content: 'Something longer.' }]);
+		const result = await extractMemories('conv-1');
+		expect(result).toMatchObject({ added: 0, deduped: 1 });
+		expect(mocks.invoke).not.toHaveBeenCalledWith('memory_update', expect.anything());
+	});
+
+	it('stores the fact as new when the review fails, or names a memory it was not shown', async () => {
+		for (const [decisions, fails] of [
+			[[], true],
+			[[{ fact: 1, action: 'same', memory_id: 'mem-elsewhere' }], false]
+		] as const) {
+			// Reset, not clear: a cleared mock keeps its queued once-values.
+			mocks.invoke.mockReset();
+			mocks.invoke
+				.mockResolvedValueOnce({ memory_enabled: true, memory_extracted_to: -1 })
+				.mockResolvedValueOnce(conversation(FOUR_TURNS));
+			store({ neighbors: { [FACT]: [learned] } });
+			turns(decisions, fails);
+			expect((await extractMemories('conv-1')).added).toBe(1);
+		}
 	});
 });

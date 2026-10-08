@@ -12,6 +12,7 @@
 	import { cancelAllExtraction } from '#lib/agent/memory/scheduler.ts';
 	import { resetMemoryApproval } from '#lib/stores/memoryApproval.svelte.ts';
 	import MemoryList from './MemoryList.svelte';
+	import MemoryTidy from './MemoryTidy.svelte';
 	import {
 		disableMemory,
 		downloadModel,
@@ -24,6 +25,7 @@
 	} from '#lib/stores/memory.svelte.ts';
 
 	let memoryEnabled = $state(getSettings().memoryEnabled);
+	let list = $state<MemoryList>();
 	let busy = $state(false);
 
 	const status = $derived(getModelStatus());
@@ -87,8 +89,9 @@
 	<p class="help">
 		When on, Haruspex reads your finished conversations in the background, distils the stable facts
 		— preferences, corrections, standing project context — and brings the relevant ones into later
-		chats. Everything stays on this device: the text never leaves it, and the embeddings are
-		computed here.
+		chats. What it remembers is stored only on this device, and the embeddings are computed here.
+		The pass that picks out facts runs on the same model as Chat, so with a remote model your
+		conversation goes there for it, as it does when you chat.
 	</p>
 	<p class="help">
 		You can exclude any single chat with its incognito switch, and review, edit or delete everything
@@ -115,8 +118,12 @@
 	{/if}
 </section>
 
+{#if status === 'ready' && count > 1}
+	<MemoryTidy onMerged={() => void list?.reload()} />
+{/if}
+
 {#if status === 'ready' && count > 0}
-	<MemoryList />
+	<MemoryList bind:this={list} />
 {/if}
 
 {#if status !== 'ready'}

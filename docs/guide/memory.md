@@ -16,6 +16,8 @@ A couple of minutes after a chat goes quiet, or when you switch to another chat,
 - **project** — ongoing work you will come back to
 - **correction** — something the assistant had wrong
 
+Before a fact is saved, Haruspex checks it against what it already remembers. A near-exact repeat is dropped. A fact that reads like stored memories goes to the model, which decides whether it says the same thing (nothing is saved), adds a detail (the stored memory is rewritten to hold both), or is new. A memory you asked it to save is never rewritten this way.
+
 Very short chats are skipped. Only what you and the assistant wrote is read: web pages and files the assistant opened are not, so a page saying "remember this" cannot add to your memory.
 
 ## How memories are used
@@ -40,6 +42,8 @@ Click the eye button in the chat box to make that chat incognito. It will not be
 
 Settings → Memory lists every stored fact under **Remembered facts**, with its kind and whether you asked for it or it was inferred. You can filter the list, and each fact has **Edit**, **Copy** and **Delete**.
 
+**Find duplicates** (Settings → Memory → Duplicates) looks for memories that say the same thing. The model groups them and suggests one sentence for each group; edit it if you like, then **Merge**, or **Skip**. Merging keeps one memory (one you saved, if there is one) and deletes the rest. Nothing changes until you press Merge.
+
 **Forget everything…** at the bottom deletes every memory. You type `delete` to confirm, and it cannot be undone. Your conversations are not touched.
 
 ## The embedding model
@@ -50,7 +54,7 @@ Memory needs a small embedding model (about 65 MB) to tell which facts are relev
 
 Memories are stored on your computer, and the embeddings are calculated on your computer. Nothing is uploaded to a memory service.
 
-One limit: finding facts in a chat is done by the model that Chat uses. With the local model that stays on your machine. If you use a remote server or OpenRouter, the conversation already goes there, and so does this background pass.
+One limit: finding facts in a chat is done by the model that Chat uses. With the local model that stays on your machine. If you use a remote server or OpenRouter, the conversation already goes there, and so does this background pass. The duplicate checks also run on that model, and send it the memories being compared.
 
 ## Turn memory off
 

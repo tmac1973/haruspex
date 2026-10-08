@@ -116,3 +116,109 @@ export function parseSubmittedMemories(
 	}
 	return out;
 }
+
+export const RESOLVE_MEMORIES_TOOL = 'resolve_memories';
+export const GROUP_MEMORIES_TOOL = 'group_memories';
+
+/**
+ * The extraction pass's duplicate review: for each new fact that reads like
+ * memories already stored, whether it is one of them, adds to one, or is new.
+ * Same pattern as `submit_memories`: only ever pinned in by an allowlist, and
+ * the pipeline reads the arguments (see `agent/memory/dedupe.ts`).
+ */
+registerTool({
+	category: 'memory',
+	schema: {
+		type: 'function',
+		function: {
+			name: RESOLVE_MEMORIES_TOOL,
+			description:
+				'Say, for each new fact, whether it repeats a stored memory, adds detail to one, or ' +
+				'is new. Call this exactly once.',
+			parameters: {
+				type: 'object',
+				properties: {
+					decisions: {
+						type: 'array',
+						items: {
+							type: 'object',
+							properties: {
+								fact: { type: 'number', description: "The new fact's number." },
+								action: {
+									type: 'string',
+									enum: ['same', 'update', 'new'],
+									description:
+										'same = a stored memory already says this; update = it adds detail to a ' +
+										'stored memory, so rewrite that memory to hold both; new = neither.'
+								},
+								memory_id: {
+									type: 'string',
+									description: 'For same and update: the stored memory it matches.'
+								},
+								content: {
+									type: 'string',
+									description:
+										'For update: the stored memory rewritten as one sentence that keeps ' +
+										'everything true from both.'
+								}
+							},
+							required: ['fact', 'action']
+						}
+					}
+				},
+				required: ['decisions']
+			}
+		}
+	},
+	displayLabel: () => 'duplicate check',
+	async execute() {
+		return toolResult('Decisions recorded.');
+	}
+});
+
+/**
+ * Settings → Memory's tidy-up: which stored memories say the same thing, and
+ * the one sentence each group should become. The user approves every merge.
+ */
+registerTool({
+	category: 'memory',
+	schema: {
+		type: 'function',
+		function: {
+			name: GROUP_MEMORIES_TOOL,
+			description:
+				'Report the groups of stored memories that say the same thing about the user, each ' +
+				'with one sentence to replace them. Call this exactly once; an empty list is fine.',
+			parameters: {
+				type: 'object',
+				properties: {
+					groups: {
+						type: 'array',
+						items: {
+							type: 'object',
+							properties: {
+								ids: {
+									type: 'array',
+									items: { type: 'string' },
+									description: 'Two or more memory ids that are duplicates.'
+								},
+								content: {
+									type: 'string',
+									description:
+										'One sentence, third person about the user, that keeps everything true ' +
+										'from the group. Where they disagree, keep what is most likely right.'
+								}
+							},
+							required: ['ids', 'content']
+						}
+					}
+				},
+				required: ['groups']
+			}
+		}
+	},
+	displayLabel: () => 'duplicate groups',
+	async execute() {
+		return toolResult('Groups recorded.');
+	}
+});

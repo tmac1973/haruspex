@@ -234,13 +234,13 @@ impl Database {
     /// Score every stored memory against `query`, keeping those at or above
     /// `min_similarity`. Shared by search and dedupe so the two can never
     /// disagree about what "similar" means.
-    fn score_all(
+    /// Every memory embedded with `embedding_model`, with its vector. A row
+    /// whose vector is unreadable or the wrong width is left out rather than
+    /// scored: there is no honest similarity to report for it.
+    fn rows_with_vectors(
         &self,
-        query: &[f32],
         embedding_model: &str,
-        min_similarity: f32,
-        now: i64,
-    ) -> Result<Vec<MemoryHit>, String> {
+    ) -> Result<Vec<(MemoryMeta, Vec<f32>)>, String> {
         let conn = self.conn();
         let mut stmt = conn
             .prepare(&format!(
@@ -253,16 +253,25 @@ impl Database {
                 Ok((read_meta(row)?, row.get::<_, Vec<u8>>(8)?))
             })
             .map_err(|e| format!("Memory search failed: {}", e))?;
-
-        let mut hits = Vec::new();
+        let mut out = Vec::new();
         for row in rows {
             let (meta, blob) = row.map_err(|e| format!("Memory row read failed: {}", e))?;
-            // A row whose vector is unreadable or the wrong width is skipped
-            // rather than scored: there is no honest similarity to report, and
-            // a wrong one would be indistinguishable from a real weak match.
-            let Some(vector) = decode_embedding(&blob) else {
-                continue;
-            };
+            if let Some(vector) = decode_embedding(&blob) {
+                out.push((meta, vector));
+            }
+        }
+        Ok(out)
+    }
+
+    fn score_all(
+        &self,
+        query: &[f32],
+        embedding_model: &str,
+        min_similarity: f32,
+        now: i64,
+    ) -> Result<Vec<MemoryHit>, String> {
+        let mut hits = Vec::new();
+        for (meta, vector) in self.rows_with_vectors(embedding_model)? {
             let Some(similarity) = cosine_similarity(query, &vector) else {
                 continue;
             };
@@ -277,6 +286,52 @@ impl Database {
             });
         }
         Ok(hits)
+    }
+
+    /// The `k` memories most like `embedding`, at least `min_similarity`
+    /// alike, most alike first. For the extraction pass's duplicate review:
+    /// unlike search, it doesn't count as the memories being used.
+    pub fn neighbors(
+        &self,
+        embedding: &[f32],
+        embedding_model: &str,
+        k: usize,
+        min_similarity: f32,
+        now: i64,
+    ) -> Result<Vec<MemoryHit>, String> {
+        let mut hits = self.score_all(embedding, embedding_model, min_similarity, now)?;
+        hits.sort_by(|a, b| b.similarity.total_cmp(&a.similarity));
+        hits.truncate(k);
+        Ok(hits)
+    }
+
+    /// Pairs of stored memories at least `min_similarity` alike, most alike
+    /// first, at most `limit`: the candidates Settings → Memory's tidy-up
+    /// shows the model. Quadratic, which is fine at the sizes memory reaches.
+    pub fn similar_pairs(
+        &self,
+        embedding_model: &str,
+        min_similarity: f32,
+        limit: usize,
+    ) -> Result<Vec<MemoryPair>, String> {
+        let rows = self.rows_with_vectors(embedding_model)?;
+        let mut pairs = Vec::new();
+        for (i, (a, va)) in rows.iter().enumerate() {
+            for (b, vb) in &rows[i + 1..] {
+                if let Some(similarity) = cosine_similarity(va, vb) {
+                    if similarity >= min_similarity {
+                        pairs.push(MemoryPair {
+                            a: a.clone(),
+                            b: b.clone(),
+                            similarity,
+                        });
+                    }
+                }
+            }
+        }
+        pairs.sort_by(|x, y| y.similarity.total_cmp(&x.similarity));
+        pairs.truncate(limit);
+        Ok(pairs)
     }
 
     fn mark_used(&self, hits: &[MemoryHit], now: i64) -> Result<(), String> {

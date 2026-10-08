@@ -346,6 +346,16 @@ pub struct MemoryHit {
     pub similarity: f32,
 }
 
+/// Two stored memories that read alike: a duplicate candidate for the
+/// tidy-up in Settings → Memory.
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct MemoryPair {
+    pub a: MemoryMeta,
+    pub b: MemoryMeta,
+    pub similarity: f32,
+}
+
 /// Per-conversation memory state: the incognito flag and the extraction
 /// watermark, read together because every caller needs both.
 #[derive(Clone, Debug, Serialize, ts_rs::TS)]
