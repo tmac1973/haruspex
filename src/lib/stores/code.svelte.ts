@@ -39,7 +39,8 @@ import {
 	type CodeSessionRecord
 } from '#lib/code/db.ts';
 import { decodeCodeSession, encodeCodeSession, type CodeSessionState } from '#lib/code/session.ts';
-import { runCodeTurn, type CodeTurnResult } from '#lib/code/runCodeTurn.ts';
+import { runCodeTurn, type CodeTurnOptions, type CodeTurnResult } from '#lib/code/runCodeTurn.ts';
+import { dropPendingCall, upsertPendingCall, type PendingToolCall } from '#lib/code/pendingCall.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
@@ -96,6 +97,14 @@ export class CodeSession {
 	background = $state<BgProcess[]>([]);
 
 	streamingContent = $state('');
+	/**
+	 * The model call in flight while it may still end in tool calls: its
+	 * reasoning in `<think>` tags, then any text. Display only; cleared when
+	 * its calls start or the answer begins.
+	 */
+	roundText = $state('');
+	/** Tool calls that round is writing, until each starts running. */
+	pendingToolCalls = $state<PendingToolCall[]>([]);
 	searchSteps = $state<SearchStep[]>([]);
 	lastError = $state<string | null>(null);
 	/** Set when the last thread save failed, so the UI can say so. */
@@ -119,6 +128,8 @@ export class CodeSession {
 	private flushing = false;
 	private bgTimer: ReturnType<typeof setTimeout> | null = null;
 	private readonly unwatch: () => void;
+	/** Reasoning from model calls since the last tool started, for its step. */
+	private reasoningForStep = '';
 
 	constructor(record: CodeSessionRecord) {
 		this.id = record.id;
@@ -297,9 +308,7 @@ export class CodeSession {
 	private async turn(opening: ChatMessage): Promise<void> {
 		this.lastError = null;
 		this.contextNotice = null;
-		this.streamingContent = '';
-		this.searchSteps = [];
-		this.steeringDelivered = [];
+		this.clearLive();
 		this.returnedSteering = [];
 		this.messages = [...this.messages, opening];
 
@@ -336,7 +345,7 @@ export class CodeSession {
 					this.ticket = null;
 					this.status = 'running';
 				},
-				onAssistantDelta: (full) => (this.streamingContent = full),
+				...this.liveCallbacks(),
 				onCallStats: (stats) => (lastCallStats = stats),
 				onUsage: (usage: Usage, contextSize) => {
 					this.usage = {
@@ -349,7 +358,13 @@ export class CodeSession {
 					if (info.kind === 'fit') this.contextNotice = describeContextManaged(info);
 				},
 				onToolStart: (call) => {
-					this.searchSteps = [...this.searchSteps, newRunningStep(call)];
+					const step = newRunningStep(call);
+					// The reasoning that led to this batch of calls shows above its first.
+					if (this.reasoningForStep) step.reasoning = this.reasoningForStep;
+					this.reasoningForStep = '';
+					this.searchSteps = [...this.searchSteps, step];
+					this.pendingToolCalls = dropPendingCall(this.pendingToolCalls, call);
+					this.roundText = '';
 				},
 				onToolProgress: (call, status) => {
 					this.searchSteps = markStepProgress(this.searchSteps, call, status);
@@ -371,13 +386,48 @@ export class CodeSession {
 			logDebug('code', 'turn threw', { id: this.id, error: this.lastError });
 		} finally {
 			this.abortController = null;
-			this.streamingContent = '';
-			this.searchSteps = [];
-			this.steeringDelivered = [];
+			this.clearLive();
 			this.ticket = null;
 			await this.persist();
 			void this.refreshBackground();
 		}
+	}
+
+	/** What the turn shows while the model writes: the answer, and each tool round. */
+	private liveCallbacks(): Pick<
+		CodeTurnOptions,
+		'onAssistantDelta' | 'onRoundStart' | 'onRoundDelta' | 'onToolCallDelta' | 'onReasoning'
+	> {
+		return {
+			onAssistantDelta: (full) => {
+				this.streamingContent = full;
+				this.roundText = '';
+				this.pendingToolCalls = [];
+			},
+			onRoundStart: () => {
+				this.roundText = '';
+				this.pendingToolCalls = [];
+			},
+			onRoundDelta: (full) => (this.roundText = full),
+			onToolCallDelta: (index, call) => {
+				this.pendingToolCalls = upsertPendingCall(this.pendingToolCalls, index, call);
+			},
+			onReasoning: (reasoning) => {
+				const prev = this.reasoningForStep;
+				// One step can follow several calls (a nudge, a retry); keep them apart.
+				this.reasoningForStep = prev ? `${prev}\n\n---\n\n${reasoning}` : reasoning;
+			}
+		};
+	}
+
+	/** Forget everything shown only while a turn runs. */
+	private clearLive(): void {
+		this.streamingContent = '';
+		this.roundText = '';
+		this.pendingToolCalls = [];
+		this.reasoningForStep = '';
+		this.searchSteps = [];
+		this.steeringDelivered = [];
 	}
 
 	/** Add a finished (or stopped) turn to the thread. */

@@ -24,6 +24,8 @@ Long sessions show their last 20 turns; **Show earlier** brings back older ones.
 - **Edits** show as a diff: removed lines in red, added lines in green, with line numbers. A new file shows as all added. Diffs past 40 lines show **Show all … lines**.
 - **Commands** show as a card with the command, its exit code, how long it took and its output. Long output shows its last 20 lines until you click **Show all**. **Copy** copies the command.
 - Searches and file reads show as a short step list, as in Chat.
+- **Reasoning** that led to a step sits above it, collapsed. While the agent thinks, it shows live as **Thinking…**.
+- A call still being written shows as a row: **Writing** with the file and its size so far, **Editing** with the file, or **Preparing command…** with the command once it arrives.
 
 ## Steer or stop the agent
 

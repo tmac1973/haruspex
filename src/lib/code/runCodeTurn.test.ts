@@ -127,6 +127,49 @@ describe('runCodeTurn', () => {
 		expect(res.added).toEqual([call('c1'), result('c1'), { role: 'assistant', content: 'Fixed.' }]);
 	});
 
+	it('streams tool rounds for display without adding them to the answer', async () => {
+		const rounds: string[] = [];
+		const answers: string[] = [];
+		const onRoundStart = vi.fn();
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
+			const live = { provisional: true as const };
+			o.onToolRoundStart!();
+			o.onStreamChunk({ delta: { reasoning_content: 'Check it.' }, finish_reason: null }, live);
+			o.onStreamChunk({ delta: { content: 'Running the tests.' }, finish_reason: null }, live);
+			o.messages.push(call('c1'), result('c1'));
+			o.onToolRoundStart!();
+			o.onStreamChunk({ delta: { reasoning_content: 'Passed.' }, finish_reason: null }, live);
+			o.onStreamChunk({ delta: { content: 'All green.' }, finish_reason: null }, live);
+			// The loop then commits the last round's text, as without streaming.
+			o.onStreamChunk({
+				delta: { content: '<think>Passed.</think>\n\nAll green.' },
+				finish_reason: 'stop'
+			});
+			o.onComplete();
+		});
+		const res = await runCodeTurn(
+			opts({
+				onRoundStart,
+				onRoundDelta: (t) => rounds.push(t),
+				onAssistantDelta: (t) => answers.push(t)
+			})
+		);
+		expect(loopOptions().streamToolRounds).toBe(true);
+		expect(onRoundStart).toHaveBeenCalledTimes(2);
+		expect(rounds).toEqual([
+			'<think>Check it.',
+			'<think>Check it.</think>\n\nRunning the tests.',
+			'<think>Passed.',
+			'<think>Passed.</think>\n\nAll green.'
+		]);
+		expect(answers).toEqual(['<think>Passed.</think>\n\nAll green.']);
+		expect(res.added).toEqual([
+			call('c1'),
+			result('c1'),
+			{ role: 'assistant', content: '<think>Passed.</think>\n\nAll green.' }
+		]);
+	});
+
 	it('passes steering through and keeps it in the thread', async () => {
 		const queue = ['use pnpm'];
 		const onSteering = vi.fn();

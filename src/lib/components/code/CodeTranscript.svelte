@@ -26,28 +26,44 @@
 	// Throttled streaming, as the Shell sidebar does: re-rendering markdown
 	// on every token is O(length) per chunk and stalls long answers.
 	const STREAM_RENDER_MS = 150;
-	let streamText = $state('');
-	let streamTimer: ReturnType<typeof setTimeout> | null = null;
-	$effect(() => {
-		const current = session.streamingContent;
-		untrack(() => {
-			if (!current) {
-				streamText = '';
-				if (streamTimer !== null) clearTimeout(streamTimer);
-				streamTimer = null;
-			} else if (!streamText) {
-				streamText = current;
-			} else if (streamTimer === null) {
-				streamTimer = setTimeout(() => {
-					streamText = session.streamingContent;
-					streamTimer = null;
-				}, STREAM_RENDER_MS);
-			}
+
+	/** `read()`, re-read at most every STREAM_RENDER_MS; empty at once. */
+	function throttled(read: () => string): { readonly value: string } {
+		let shown = $state('');
+		let timer: ReturnType<typeof setTimeout> | null = null;
+		$effect(() => {
+			const current = read();
+			untrack(() => {
+				if (!current) {
+					shown = '';
+					if (timer !== null) clearTimeout(timer);
+					timer = null;
+				} else if (!shown) {
+					shown = current;
+				} else if (timer === null) {
+					timer = setTimeout(() => {
+						shown = read();
+						timer = null;
+					}, STREAM_RENDER_MS);
+				}
+			});
 		});
-	});
-	onDestroy(() => {
-		if (streamTimer !== null) clearTimeout(streamTimer);
-	});
+		onDestroy(() => {
+			if (timer !== null) clearTimeout(timer);
+		});
+		return {
+			get value() {
+				return shown;
+			}
+		};
+	}
+
+	const answerStream = throttled(() => session.streamingContent);
+	// The tool round in flight: its reasoning and text while it is written.
+	const roundStream = throttled(() => session.roundText ?? '');
+	const streamText = $derived(answerStream.value);
+	const roundText = $derived(roundStream.value);
+	const pending = $derived(session.pendingToolCalls ?? []);
 
 	const ticket = $derived(session.ticket);
 
@@ -56,6 +72,8 @@
 	$effect(() => {
 		void messages.length;
 		void streamText;
+		void roundText;
+		void pending.length;
 		void session.searchSteps.length;
 		void session.steering.length;
 		void notes.length;
@@ -120,8 +138,15 @@
 	{/each}
 	{#if streamText}
 		<ChatMessage message={{ role: 'assistant', content: streamText }} isStreaming />
-	{:else if session.status === 'running'}
+	{/if}
+	{#if roundText}
+		<!-- Only alongside the answer after steering: the answer clears it. -->
+		<ChatMessage message={{ role: 'assistant', content: roundText }} isStreaming />
+	{:else if !streamText && session.status === 'running' && pending.length === 0}
 		<ThinkingIndicator />
+	{/if}
+	{#if pending.length > 0}
+		<CodeSteps steps={[]} {pending} />
 	{/if}
 	{#each session.steering as text, k (k)}
 		<div class="steer pending" title="Given to the agent at its next step.">

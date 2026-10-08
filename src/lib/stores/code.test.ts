@@ -412,3 +412,89 @@ describe('closing a session', () => {
 		expect(storedThread(s.id)?.messages).toEqual([{ role: 'user', content: 'long job' }]);
 	});
 });
+
+describe('a streamed tool round', () => {
+	it('shows calls as they are written, until each starts or the turn ends', async () => {
+		const s = await newSession('/proj');
+		const seen: { pending: string[]; round: string }[] = [];
+		const look = () =>
+			seen.push({
+				pending: s.pendingToolCalls.map((c) => `${c.index}:${c.name}:${c.argsSoFar}`),
+				round: s.roundText
+			});
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
+			expect(o.streamToolRounds).toBe(true);
+			o.onToolRoundStart!();
+			o.onStreamChunk(
+				{ delta: { reasoning_content: 'Write it.' }, finish_reason: null },
+				{
+					provisional: true
+				}
+			);
+			o.onToolCallDelta!(0, { id: 'w', name: 'fs_write_text', argsSoFar: '{"path":"a' });
+			o.onToolCallDelta!(1, { id: 'r', name: 'run_command', argsSoFar: '' });
+			o.onToolCallDelta!(0, { id: 'w', name: 'fs_write_text', argsSoFar: '{"path":"a.ts"}' });
+			look();
+			o.onReasoning!('Write it.');
+			const write = { id: 'w', name: 'fs_write_text', arguments: { path: 'a.ts' } };
+			o.onToolStart(write);
+			look();
+			o.messages.push(
+				{
+					role: 'assistant',
+					content: '',
+					tool_calls: [
+						{ id: 'w', type: 'function', function: { name: 'fs_write_text', arguments: '{}' } }
+					]
+				},
+				{ role: 'tool', tool_call_id: 'w', content: 'ok' }
+			);
+			o.onToolEnd(write, 'ok');
+			// The next round starts; the call it never ran is stale.
+			o.onToolRoundStart!();
+			look();
+			o.onStreamChunk({ delta: { content: 'Done' }, finish_reason: null }, { provisional: true });
+			look();
+			o.onStreamChunk(chunk('Done'));
+			look();
+			o.onComplete();
+		});
+
+		await s.send('write a.ts');
+
+		expect(seen).toEqual([
+			{
+				pending: ['0:fs_write_text:{"path":"a.ts"}', '1:run_command:'],
+				round: '<think>Write it.'
+			},
+			{ pending: ['1:run_command:'], round: '' },
+			{ pending: [], round: '' },
+			{ pending: [], round: 'Done' },
+			{ pending: [], round: '' }
+		]);
+		expect(s.pendingToolCalls).toEqual([]);
+		expect(s.roundText).toBe('');
+		// The round's reasoning sits on the step it led to; the answer is said once.
+		const answer = s.messages.at(-1)!;
+		expect(answer).toEqual({ role: 'assistant', content: 'Done' });
+		expect(s.messageSteps[s.messages.length - 1][0].reasoning).toBe('Write it.');
+	});
+
+	it('clears a call being written when the turn is stopped', async () => {
+		const s = await newSession('/proj');
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
+			o.onToolRoundStart!();
+			o.onToolCallDelta!(0, { id: 'w', name: 'fs_write_text', argsSoFar: '{' });
+			await new Promise<void>((resolve) =>
+				o.signal!.addEventListener('abort', () => resolve(), { once: true })
+			);
+			throw new DOMException('Aborted', 'AbortError');
+		});
+		const sending = s.send('go');
+		await vi.waitFor(() => expect(s.pendingToolCalls).toHaveLength(1));
+		s.stop();
+		await sending;
+		expect(s.pendingToolCalls).toEqual([]);
+		expect(s.roundText).toBe('');
+	});
+});

@@ -17,13 +17,20 @@ import {
 	mergeLeadingSystemMessages,
 	type BackendOverride,
 	type ChatMessage,
+	type StreamChunk,
 	type Usage
 } from '#lib/api.ts';
 import type { AgentsMd } from '#lib/ipc/gen/AgentsMd.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import type { Artifact } from '#lib/agent/tools/index.ts';
 import type { FileDiff } from './diff';
-import { runAgentLoop, type AgentStopReason } from '#lib/agent/loop.ts';
+import {
+	runAgentLoop,
+	type AgentLoopOptions,
+	type AgentStopReason,
+	type PartialToolCall,
+	type StreamChunkMeta
+} from '#lib/agent/loop.ts';
 import type { ContextManagedInfo } from '#lib/agent/context-budget.ts';
 import { appendStreamDelta, createThinkStreamState } from '#lib/agent/think-stream.ts';
 import { withInferenceSlot, type InferenceTicket } from '#lib/agent/inferenceQueue.svelte.ts';
@@ -54,6 +61,21 @@ export interface CodeTurnOptions {
 	onTicket?: (ticket: InferenceTicket) => void;
 	onAdmitted?: () => void;
 	onAssistantDelta?: (full: string) => void;
+	/**
+	 * A model call that may still end in tool calls has started; whatever the
+	 * last one showed through `onRoundDelta` / `onToolCallDelta` is stale.
+	 */
+	onRoundStart?: () => void;
+	/**
+	 * The round in flight so far — reasoning in `<think>` tags, then any text.
+	 * Display only: it is not the answer, which still arrives through
+	 * `onAssistantDelta`.
+	 */
+	onRoundDelta?: (full: string) => void;
+	/** A tool call in the round in flight, as far as it is written. */
+	onToolCallDelta?: (index: number, call: PartialToolCall) => void;
+	/** A model call's reasoning, once the call returns. */
+	onReasoning?: (reasoning: string) => void;
 	onCallStats?: (stats: { durationMs: number; completionTokens: number }) => void;
 	onUsage?: (usage: Usage, contextSize: number) => void;
 	onContextManaged?: (info: ContextManagedInfo) => void;
@@ -99,6 +121,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 	// Where the answer the turn ends on starts in `stream`. Moves past text the
 	// model wrote before a steering message, which the thread already holds.
 	let answerStart = 0;
+	const live = liveRound(o);
 	let stopReason: AgentStopReason = 'complete';
 	let undelivered: string[] = [];
 	let loopError: Error | null = null;
@@ -166,7 +189,9 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 						answerStart = stream.length;
 						o.onSteering?.(texts);
 					},
-					onStreamChunk: (chunk) => {
+					...live.options,
+					onStreamChunk: (chunk, meta) => {
+						if (live.take(chunk, meta)) return;
 						stream = appendStreamDelta(stream, chunk.delta, think);
 						o.onAssistantDelta?.(stream.slice(answerStart));
 					},
@@ -193,6 +218,41 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 	if (o.signal.aborted) return result('aborted', 'if-any');
 	if (loopError) return result('error', 'if-any', errMessage(loopError));
 	return result('complete', 'always');
+}
+
+/**
+ * The loop options that stream tool rounds to the caller, and `take`, which
+ * claims a chunk that belongs to the round in flight. That round is kept apart
+ * from the answer: it is shown while it is written, but only what the loop
+ * commits afterwards is the answer.
+ */
+function liveRound(o: CodeTurnOptions): {
+	options: Pick<
+		AgentLoopOptions,
+		'streamToolRounds' | 'onToolRoundStart' | 'onToolCallDelta' | 'onReasoning'
+	>;
+	take: (chunk: StreamChunk, meta?: StreamChunkMeta) => boolean;
+} {
+	let round = '';
+	let think = createThinkStreamState();
+	return {
+		options: {
+			streamToolRounds: true,
+			onToolRoundStart: () => {
+				round = '';
+				think = createThinkStreamState();
+				o.onRoundStart?.();
+			},
+			onToolCallDelta: (index, call) => o.onToolCallDelta?.(index, call),
+			onReasoning: (reasoning) => o.onReasoning?.(reasoning)
+		},
+		take: (chunk, meta) => {
+			if (!meta?.provisional) return false;
+			round = appendStreamDelta(round, chunk.delta, think);
+			o.onRoundDelta?.(round);
+			return true;
+		}
+	};
 }
 
 /**

@@ -118,3 +118,48 @@ describe('CodeTranscript tool cards', () => {
 		expect(screen.getByTestId('command-card').textContent).toContain('passed');
 	});
 });
+
+describe('CodeTranscript live tool round', () => {
+	it('shows the round being written and the calls it is writing', () => {
+		const session = fakeSession({
+			status: 'running',
+			busy: true,
+			roundText: '<think>Read the file first.',
+			pendingToolCalls: [
+				{
+					index: 0,
+					id: 'w',
+					name: 'fs_write_text',
+					argsSoFar: `{"path":"src/foo.ts","content":"${'x'.repeat(4300)}`
+				},
+				{ index: 1, id: 'r', name: 'run_command', argsSoFar: '{"command":"npm test' }
+			]
+		});
+		render(CodeTranscript, { session });
+		expect(screen.getByText('Read the file first.')).toBeTruthy();
+		const rows = screen
+			.getAllByTestId('pending-call')
+			.map((r) => r.textContent?.replace(/\s+/g, ' ').trim());
+		expect(rows[0]).toContain('Writing src/foo.ts… 4.2 KB');
+		expect(rows[1]).toContain('Preparing command…');
+		expect(screen.getByText('npm test')).toBeTruthy();
+	});
+
+	it('shows the reasoning behind a step above it', () => {
+		const session = fakeSession({
+			status: 'running',
+			busy: true,
+			searchSteps: [
+				{
+					id: 'a',
+					toolName: 'code_grep',
+					query: 'foo',
+					status: 'running',
+					reasoning: 'Find where foo is defined.'
+				}
+			]
+		});
+		render(CodeTranscript, { session });
+		expect(screen.getByText('Find where foo is defined.')).toBeTruthy();
+	});
+});
