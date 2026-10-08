@@ -13,7 +13,6 @@ import Editor from './Editor.svelte';
 export interface AutonomousCodingEditorState {
 	plan_dir: string;
 	max_attempts: number;
-	context_mode: 'step' | 'phase';
 	signing_fallback: 'unsigned' | 'skip';
 	create_branch: boolean;
 	use_git: boolean;
@@ -91,7 +90,6 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 	configDefaults: (): AutonomousCodingEditorState & Record<string, unknown> => ({
 		plan_dir: '',
 		max_attempts: 3,
-		context_mode: 'phase',
 		signing_fallback: 'unsigned',
 		create_branch: true,
 		web_research: true,
@@ -107,7 +105,6 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 		return {
 			plan_dir: c.plan_dir ?? '',
 			max_attempts: c.max_attempts ?? 3,
-			context_mode: c.context_mode ?? 'phase',
 			signing_fallback: c.signing_fallback ?? 'unsigned',
 			create_branch: c.create_branch ?? true,
 			web_research: c.web_research ?? true,
@@ -124,7 +121,6 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 		return JSON.stringify({
 			plan_dir: s.plan_dir.trim() || undefined,
 			max_attempts: s.max_attempts,
-			context_mode: s.context_mode,
 			signing_fallback: s.signing_fallback,
 			create_branch: s.create_branch,
 			web_research: s.web_research,

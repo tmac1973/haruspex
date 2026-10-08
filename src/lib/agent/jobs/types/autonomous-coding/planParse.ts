@@ -31,7 +31,6 @@ export interface PlanFile {
  * command extraction for a whole overnight run.
  */
 export const VERIFICATION_COMMAND_HEADING = 'Verification command';
-export const STEP_CHECK_HEADING = 'Step check command';
 
 /** Filename shape of a guided-planning phase file (shared with the pipeline's dir filter). */
 export const PHASE_FILE_RE = /^phase-\d+.*\.md$/i;

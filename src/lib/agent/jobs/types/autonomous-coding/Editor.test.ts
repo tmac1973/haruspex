@@ -43,7 +43,7 @@ describe('autonomous-coding Editor', () => {
 	it('renders every field without throwing', () => {
 		mount();
 		expect(screen.getByLabelText('Plan directory')).toBeTruthy();
-		expect(screen.getByLabelText('Context mode')).toBeTruthy();
+		expect(screen.queryByLabelText('Context mode')).toBeNull();
 		expect(screen.getByLabelText('Signing fallback')).toBeTruthy();
 		expect(screen.getByLabelText('Max attempts per step')).toBeTruthy();
 	});
@@ -94,17 +94,11 @@ describe('autonomous-coding Editor — no command fields', () => {
 	 * project exists. A preference goes in the plan or the build prompt, where
 	 * it is context the model reasons about rather than a field it obeys.
 	 */
-	it('offers neither command field, in either context mode', () => {
-		for (const context_mode of ['phase', 'step']) {
-			const { unmount } = render(Editor, {
-				props: {
-					config: { ...autonomousCodingJobType.configDefaults!(), context_mode },
-					workingDir: '/repo'
-				}
-			});
-			expect(screen.queryByLabelText('Phase verification command')).toBeNull();
-			expect(screen.queryByLabelText('Step check command')).toBeNull();
-			unmount();
-		}
+	it('offers no verification command field', () => {
+		render(Editor, {
+			props: { config: autonomousCodingJobType.configDefaults!(), workingDir: '/repo' }
+		});
+		expect(screen.queryByLabelText('Phase verification command')).toBeNull();
+		expect(screen.queryByLabelText('Step check command')).toBeNull();
 	});
 });

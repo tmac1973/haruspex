@@ -1,6 +1,7 @@
 import { beforeAll, describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 import type { EphemeralTurnOptions } from '#lib/agent/runEphemeralTurn.ts';
+import { MAX_PHASE_REPAIR_CYCLES } from '#lib/agent/jobs/types/autonomous-coding/loopState.ts';
 
 const mocks = vi.hoisted(() => ({
 	runEphemeralTurn: vi.fn(),
@@ -1383,15 +1384,28 @@ describe('jobs runner — audit jobs', () => {
 });
 
 describe('jobs runner — autonomous coding', () => {
+	/** The phase verification command these runs settle on at preflight. */
+	const VERIFY_CMD = 'npm test';
+
+	/** A DECISIONS file in the shape preflight writes, so the runner resolves
+	 *  the phase verification command the way a real run does. */
+	const DECISIONS_WITH_VERIFY = [
+		'# Coding decisions',
+		'',
+		'## Verification command',
+		'',
+		'```',
+		VERIFY_CMD,
+		'```',
+		''
+	].join('\n');
+
 	function codingJob(over: Partial<JobWithSteps> = {}): JobWithSteps {
 		return makeJob({
 			job_type: 'autonomous_coding',
 			steps: [],
 			working_dir: '/repo',
-			// These integration tests exercise the per-step machinery (iteration
-			// turns, per-item commits, attempts). Pin the mode: the job default is
-			// now 'phase'.
-			type_config: JSON.stringify({ plan_dir: 'plan/x/', context_mode: 'step' }),
+			type_config: JSON.stringify({ plan_dir: 'plan/x/' }),
 			...over
 		});
 	}
@@ -1403,17 +1417,24 @@ describe('jobs runner — autonomous coding', () => {
 	/**
 	 * Git-aware run_command_capture mock; `staged` controls the diff check,
 	 * `signFails` makes `git commit` fail unless signing is disabled via
-	 * `-c commit.gpgsign=false` (an expired 1Password authorization).
+	 * `-c commit.gpgsign=false` (an expired 1Password authorization), and
+	 * `verifyFails` fails the phase verification command.
 	 */
-	function wireGit(opts: { staged?: boolean; signFails?: boolean } = {}) {
+	function wireGit(opts: { staged?: boolean; signFails?: boolean; verifyFails?: boolean } = {}) {
 		const commands: string[] = [];
 		mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
 			if (cmd === 'fs_path_exists') return true;
 			if (cmd === 'shell_platform_supported') return true;
+			if (cmd === 'fs_read_text_full' && String(args?.relPath).includes('DECISIONS')) {
+				return DECISIONS_WITH_VERIFY;
+			}
 			if (cmd === 'run_command_capture') {
 				const command = String(args?.command ?? '');
 				commands.push(command);
 				const ok = { stdout: '', stderr: '', exit_code: 0, duration_ms: 1, killed: false };
+				if (command === VERIFY_CMD) {
+					return opts.verifyFails ? { ...ok, exit_code: 1, stdout: '1 test failed' } : ok;
+				}
 				// `git diff --cached --quiet` exits 1 when changes are staged.
 				if (command.includes('--cached')) {
 					return { ...ok, exit_code: (opts.staged ?? true) ? 1 : 0 };
@@ -1435,8 +1456,9 @@ describe('jobs runner — autonomous coding', () => {
 	}
 
 	/**
-	 * A runEphemeralTurn that drives the whole pipeline: preflight ready,
-	 * a two-item decompose, and per-item iteration results from `verdict`.
+	 * A runEphemeralTurn that drives the whole pipeline: preflight ready, a
+	 * two-item decompose, then a phase build turn that writes a file. `verdict`
+	 * answers the per-item iteration turns, which only REPAIR items reach.
 	 */
 	function codingTurns(verdict: (itemId: string, attempt: number) => 'done' | 'failed') {
 		const attempts: Record<string, number> = {};
@@ -1463,8 +1485,21 @@ describe('jobs runner — autonomous coding', () => {
 				});
 				return { finalText: 'list' };
 			}
+			if (opts.forceFinalTool === 'submit_phase_result') {
+				opts.onToolStart?.({
+					id: 'w',
+					name: 'fs_write_text',
+					arguments: { path: 'src/app.ts' }
+				});
+				opts.onToolStart?.({
+					id: 'ph',
+					name: 'submit_phase_result',
+					arguments: { note: 'phase built' }
+				});
+				return { finalText: 'phase' };
+			}
 			if (opts.forceFinalTool === 'submit_iteration_result') {
-				const id = /checklist item: (\d+)\./.exec(opts.userMessage)?.[1] ?? '??';
+				const id = /checklist item: ([\w.]+)\./.exec(opts.userMessage)?.[1] ?? '??';
 				attempts[id] = (attempts[id] ?? 0) + 1;
 				opts.onToolStart?.({
 					id: 'i',
@@ -1543,7 +1578,7 @@ describe('jobs runner — autonomous coding', () => {
 		expect(run.steps[0].status).toBe('failed');
 	});
 
-	it('runs preflight → decompose → loop → finalize, committing each verified step', async () => {
+	it('runs preflight → decompose → phase build → verify → commit → finalize', async () => {
 		mocks.getJob.mockResolvedValueOnce(codingJob());
 		const commands = wireGit();
 		mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
@@ -1558,26 +1593,34 @@ describe('jobs runner — autonomous coding', () => {
 		expect(run.steps[1].output).toContain('1 phase(s) / 2 step(s)');
 		expect(run.steps[1].output).toContain('01. One'); // the checklist persists
 		expect(run.steps[2].output).toContain('2 done, 0 blocked of 2');
-		// Per-iteration notes persist into the loop step's output.
-		expect(run.steps[2].output).toContain('Iteration 1 — 01. One: done');
-		expect(run.steps[2].output).toContain('attempt 1');
+		// The phase is built in one turn, then verified and committed by the
+		// runner.
+		expect(run.steps[2].output).toContain('build turn finished');
+		expect(run.steps[2].output).toContain('verification PASSED');
+		expect(run.steps[2].output).toContain('phase committed');
+		expect(commands).toContain(VERIFY_CMD);
 		expect(run.steps[3].output).toContain('Done — plan/x/REPORT-coding.md');
 
 		// The preflight turn is the ONLY interactive one; the loop cannot ask.
-		const iterOpts = mocks.runEphemeralTurn.mock.calls
+		const phaseOpts = mocks.runEphemeralTurn.mock.calls
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			.map(([o]: any[]) => o)
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			.find((o: any) => o.forceFinalTool === 'submit_iteration_result');
-		expect(iterOpts.interactive).toBeUndefined();
-		expect([...iterOpts.toolAllowlist]).toContain('run_command');
-		expect([...iterOpts.toolAllowlist]).not.toContain('ask_user_question');
-		expect(iterOpts.systemPrompt).toContain('unattended coding loop');
+			.find((o: any) => o.forceFinalTool === 'submit_phase_result');
+		expect(phaseOpts.interactive).toBeUndefined();
+		expect([...phaseOpts.toolAllowlist]).toContain('run_command');
+		expect([...phaseOpts.toolAllowlist]).not.toContain('ask_user_question');
+		// No per-item turns: those are only for repairs.
+		expect(
+			mocks.runEphemeralTurn.mock.calls.some(
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				([o]: any[]) => o.forceFinalTool === 'submit_iteration_result'
+			)
+		).toBe(false);
 
-		// Runner-driven commits: one per verified step, then the report.
+		// Runner-driven commits: one per verified phase, then the report.
 		const commits = commands.filter((c) => c.startsWith('git commit'));
-		expect(commits.some((c) => c.includes('feat: One [ralph 01/02]'))).toBe(true);
-		expect(commits.some((c) => c.includes('feat: Two [ralph 02/02]'))).toBe(true);
+		expect(commits.some((c) => c.includes('feat: Phase 01'))).toBe(true);
 		expect(commits.some((c) => c.includes('docs'))).toBe(true);
 
 		// The loop stage's live sub-checklist ends with every item done.
@@ -1608,7 +1651,7 @@ describe('jobs runner — autonomous coding', () => {
 		// The run survives the 3am signing expiry instead of dying at a commit.
 		expect(run.status).toBe('succeeded');
 		expect(run.steps[2].output).toContain('2 done, 0 blocked of 2');
-		// The fallback is recorded in the iteration notes...
+		// The fallback is recorded against the phase commit...
 		expect(run.steps[2].output).toContain('UNSIGNED');
 		// ...and the retries actually disabled signing for those commits.
 		expect(commands.some((c) => c.includes('-c commit.gpgsign=false commit'))).toBe(true);
@@ -1617,11 +1660,7 @@ describe('jobs runner — autonomous coding', () => {
 	it("skip mode: never commits unsigned — work continues uncommitted, and it's recorded", async () => {
 		mocks.getJob.mockResolvedValueOnce(
 			codingJob({
-				type_config: JSON.stringify({
-					plan_dir: 'plan/x/',
-					context_mode: 'step',
-					signing_fallback: 'skip'
-				})
+				type_config: JSON.stringify({ plan_dir: 'plan/x/', signing_fallback: 'skip' })
 			})
 		);
 		const commands = wireGit({ signFails: true });
@@ -1634,22 +1673,17 @@ describe('jobs runner — autonomous coding', () => {
 		const run = getCurrentRun()!;
 		expect(run.status).toBe('succeeded');
 		expect(run.steps[2].output).toContain('2 done, 0 blocked of 2');
-		// The skip is recorded per iteration, and no unsigned commit ever ran.
+		// The skip is recorded against the phase, and no unsigned commit ever ran.
 		expect(run.steps[2].output).toContain('commit SKIPPED');
 		expect(commands.some((c) => c.includes('commit.gpgsign=false'))).toBe(false);
 	});
 
-	it('blocks a step after max_attempts failures and finishes with blockers', async () => {
-		mocks.getJob.mockResolvedValueOnce(
-			codingJob({
-				type_config: JSON.stringify({ plan_dir: 'plan/x/', context_mode: 'step', max_attempts: 2 })
-			})
-		);
-		wireGit();
-		// Item 01 never succeeds; item 02 works first try.
-		mocks.runEphemeralTurn.mockImplementation(
-			codingTurns((id) => (id === '01' ? 'failed' : 'done'))
-		);
+	it('repairs a failing phase, then blocks it after the repair cycles run out', async () => {
+		// The only route to a per-item iteration turn: phase verification fails,
+		// the runner injects a repair item, and THAT gets a turn of its own.
+		mocks.getJob.mockResolvedValueOnce(codingJob());
+		wireGit({ verifyFails: true });
+		mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
 
 		const { enqueue, getCurrentRun } = await freshRunner();
 		await enqueue(1);
@@ -1659,33 +1693,17 @@ describe('jobs runner — autonomous coding', () => {
 		// Done-with-blockers is a SUCCEEDED run — maximum progress plus a list
 		// of what needs a human, not a failure.
 		expect(run.status).toBe('succeeded');
-		expect(run.steps[2].output).toContain('1 done, 1 blocked of 2');
-		expect(run.steps[3].output).toContain('Done with blockers (1)');
-		// 2 failed attempts at item 01 + 1 done for item 02 = 3 iterations.
+		expect(run.steps[2].output).toContain('verification FAILED');
+		expect(run.steps[2].output).toContain(`after ${MAX_PHASE_REPAIR_CYCLES} repair cycle(s)`);
+		expect(run.steps[2].output).toContain('phase BLOCKED');
+		// The unverified work is still committed, loudly marked.
+		expect(run.steps[2].output).toContain('marked UNVERIFIED');
+		// Each repair cycle ran one iteration turn.
 		const iterations = mocks.runEphemeralTurn.mock.calls.filter(
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			([o]: any[]) => o.forceFinalTool === 'submit_iteration_result'
 		);
-		expect(iterations).toHaveLength(3);
-	});
-
-	it('downgrades a "done" that changed nothing to a failed attempt', async () => {
-		mocks.getJob.mockResolvedValueOnce(
-			codingJob({
-				type_config: JSON.stringify({ plan_dir: 'plan/x/', context_mode: 'step', max_attempts: 1 })
-			})
-		);
-		wireGit({ staged: false }); // no diff, no new commit — nothing happened
-		mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
-
-		const { enqueue, getCurrentRun } = await freshRunner();
-		await enqueue(1);
-		await settle(getCurrentRun);
-
-		const run = getCurrentRun()!;
-		expect(run.status).toBe('succeeded');
-		// Every "done" was hollow → each item blocks after its 1 allowed attempt.
-		expect(run.steps[2].output).toContain('0 done, 2 blocked of 2');
+		expect(iterations).toHaveLength(MAX_PHASE_REPAIR_CYCLES);
 	});
 
 	it('resumes from an existing TODO-coding.md instead of re-decomposing', async () => {
@@ -1702,6 +1720,8 @@ describe('jobs runner — autonomous coding', () => {
 			if (cmd === 'shell_platform_supported') return true;
 			if (cmd === 'fs_read_text_full' && String(args?.relPath).includes('TODO'))
 				return existingTodo;
+			if (cmd === 'fs_read_text_full' && String(args?.relPath).includes('DECISIONS'))
+				return DECISIONS_WITH_VERIFY;
 			if (cmd === 'run_command_capture') {
 				const command = String(args?.command ?? '');
 				const ok = { stdout: '', stderr: '', exit_code: 0, duration_ms: 1, killed: false };
@@ -1720,13 +1740,13 @@ describe('jobs runner — autonomous coding', () => {
 		const run = getCurrentRun()!;
 		expect(run.status).toBe('succeeded');
 		expect(run.steps[1].output).toContain('Resumed plan/x/TODO-coding.md');
-		// No decompose turn ran; only item 02 needed an iteration.
+		// No decompose turn ran; the remaining item is built by a phase turn.
 		const byTool = mocks.runEphemeralTurn.mock.calls.map(
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			([o]: any[]) => o.forceFinalTool
 		);
 		expect(byTool).not.toContain('submit_task_list');
-		expect(byTool.filter((t: string) => t === 'submit_iteration_result')).toHaveLength(1);
+		expect(byTool.filter((t: string) => t === 'submit_phase_result')).toHaveLength(1);
 		expect(run.steps[2].output).toContain('2 done, 0 blocked of 2');
 	});
 
@@ -1740,7 +1760,6 @@ describe('jobs runner — autonomous coding', () => {
 			codingJob({
 				type_config: JSON.stringify({
 					plan_dir: 'plan/x/',
-					context_mode: 'step',
 					use_git: false
 				})
 			})
@@ -1805,7 +1824,6 @@ describe('jobs runner — autonomous coding', () => {
 			codingJob({
 				type_config: JSON.stringify({
 					plan_dir: 'plan/x/',
-					context_mode: 'step',
 					mute_preflight: true
 				})
 			});
@@ -1897,15 +1915,14 @@ describe('jobs runner — autonomous coding', () => {
 	});
 
 	/**
-	 * Phase-context mode — the DEFAULT, and until now the only mode with no
-	 * integration test. A 12-hour run committed five phases whose build turns
+	 * The phase build turn's own checks. A 12-hour run committed five phases whose build turns
 	 * had written nothing and said so, because this path marked every item
 	 * done the moment the turn returned.
 	 */
-	describe('phase-context mode', () => {
+	describe('phase build turn', () => {
 		function phaseJob(over: Record<string, unknown> = {}): JobWithSteps {
 			return codingJob({
-				type_config: JSON.stringify({ plan_dir: 'plan/x/', context_mode: 'phase', ...over })
+				type_config: JSON.stringify({ plan_dir: 'plan/x/', ...over })
 			});
 		}
 
@@ -4149,9 +4166,9 @@ describe('guided_planning — chained coding run settings', () => {
 	}
 
 	it('passes the pinned overrides to the created job', async () => {
-		const cfg = await runIt(planningJob({ max_attempts: 5, context_mode: 'step' }));
+		const cfg = await runIt(planningJob({ max_attempts: 5, max_turns: 300 }));
 		expect(cfg.max_attempts).toBe(5);
-		expect(cfg.context_mode).toBe('step');
+		expect(cfg.max_turns).toBe(300);
 	});
 
 	it('omits what was never pinned, so the coding defaults apply', async () => {
@@ -4160,7 +4177,7 @@ describe('guided_planning — chained coding run settings', () => {
 		// default", and its preflight settles the commands as it would for any
 		// hand-created job.
 		expect('max_attempts' in cfg).toBe(false);
-		expect('context_mode' in cfg).toBe(false);
+		expect('max_turns' in cfg).toBe(false);
 	});
 
 	/** A job's model columns pointing at `model` on `url`. */

@@ -25,7 +25,6 @@ export interface GuidedPlanningChainModels {
 /** Overrides applied to the coding job a chained run creates. */
 export interface GuidedPlanningCodingRun {
 	max_attempts: number | null;
-	context_mode: 'step' | 'phase' | null;
 	max_turns: number | null;
 }
 
@@ -158,8 +157,6 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 			typeof cr.max_attempts === 'number' && Number.isFinite(cr.max_attempts)
 				? cr.max_attempts
 				: null,
-		context_mode:
-			cr.context_mode === 'step' || cr.context_mode === 'phase' ? cr.context_mode : null,
 		// Not clamped here: the coding job's own parser clamps, and this is the
 		// same value flowing to the same place.
 		max_turns:
