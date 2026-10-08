@@ -494,6 +494,21 @@ mod tests {
         std::env::temp_dir().to_string_lossy().into_owned()
     }
 
+    /// Wait for the shell's command line to carry the orphan marker, reporting
+    /// what it does show when it never does.
+    async fn wait_for_marker(program: &str, pid: u32) {
+        for _ in 0..200 {
+            if orphans::command_matches(program, orphans::pid_command(pid).as_deref()) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        panic!(
+            "pid {pid} never showed {program:?}; its command line is {:?}",
+            orphans::pid_command(pid)
+        );
+    }
+
     async fn wait_until(mut f: impl FnMut() -> bool) {
         for _ in 0..200 {
             if f() {
@@ -544,10 +559,7 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].pid, started.pid);
         // The marker is in the shell's command line, so a sweep would match.
-        assert!(orphans::command_matches(
-            &entries[0].program,
-            orphans::pid_command(started.pid).as_deref()
-        ));
+        wait_for_marker(&entries[0].program, started.pid).await;
         mgr.stop(&started.id).await.unwrap();
         assert!(orphans::load(&reg).is_empty());
         assert!(!Path::new(&started.log_path).exists());
@@ -647,6 +659,8 @@ mod tests {
             .unwrap();
         // Simulate a crash: the manager is forgotten without stopping anything.
         let pid = started.pid;
+        let program = orphans::load(&dir.join("running.json"))[0].program.clone();
+        wait_for_marker(&program, pid).await;
         std::mem::forget(mgr);
         sweep_orphans(&dir.join("logs"), Some(&dir.join("running.json")));
         wait_until(|| {
