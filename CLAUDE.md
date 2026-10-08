@@ -130,6 +130,16 @@ cargo fmt -- --check # Rust format check
 - Changing a Tauri command or a `#[ts(export)]` struct means running
   `./scripts/export-ipc-types.sh`, or CI fails on drift.
 
+## Outstanding work
+
+Open work lives in GitHub issues, not in session notes. Before ending a
+session, file anything left undone (follow-ups, hand tests, the user's own
+pending steps) with `gh issue create`, grouping related items into one issue
+with a checklist rather than one issue each, and add to an existing open issue
+when it already covers the area. Check `gh issue list` at the start of a
+session to see what's pending, and close an issue (or tick its box) in the PR
+that finishes it.
+
 ## User guide
 
 `docs/guide/` is the user guide: compiled into the app, where the model reads
