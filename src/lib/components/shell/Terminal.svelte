@@ -8,6 +8,7 @@
 	import { SerializeAddon } from '@xterm/addon-serialize';
 	import '@xterm/xterm/css/xterm.css';
 	import { getSettings } from '#lib/stores/settings.ts';
+	import { commandMemoryLimitPercent } from '#lib/shell/memoryLimit.ts';
 	import { isPtyBusy, ptyBusyCommand } from '#lib/stores/shellPtyBusy.svelte.ts';
 	import type { SessionContext } from '#lib/ipc/gen/SessionContext.ts';
 	import type { ShellContextResponse } from '#lib/ipc/gen/ShellContextResponse.ts';
@@ -410,7 +411,8 @@
 			rows: term.rows,
 			shellOverride,
 			selection,
-			cwd
+			cwd,
+			memoryLimitPercent: commandMemoryLimitPercent()
 		});
 		await attachSession(term, fit, spawn.session_id, spawn.context);
 	}
@@ -444,7 +446,8 @@
 				rows: t.rows,
 				shellOverride,
 				selection,
-				cwd
+				cwd,
+				memoryLimitPercent: commandMemoryLimitPercent()
 			});
 
 			if (cancelled) {

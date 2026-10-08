@@ -165,3 +165,38 @@ describe('run_command with a shell the user opened by hand', () => {
 		expect(out).toContain('shell_interrupt');
 	});
 });
+
+describe('run_command in a terminal with a memory limit', () => {
+	/** The fake PTY, plus a terminal ceiling whose kill count the command can bump. */
+	function withMemory(killedByCommand: boolean | null) {
+		const writes = mockPty({ pending: null });
+		const base = mocks.invoke.getMockImplementation()!;
+		let kills = 0;
+		mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+			if (cmd === 'shell_memory_status') {
+				return killedByCommand === null ? null : { limitMb: 8192, oomKills: kills };
+			}
+			const out = await base(cmd, args);
+			if (cmd === 'shell_write' && killedByCommand) kills += 1;
+			return out;
+		});
+		return writes;
+	}
+
+	it('tells the model when the system killed what the command ran', async () => {
+		withMemory(true);
+		const { runInPty } = await import('./pty-exec');
+		const out = await runInPty(1, 'go test ./...', 30, undefined);
+		expect(out).toContain('Killed: this command went over its 8.0 GB memory limit');
+	});
+
+	it('says nothing more when nothing was killed, or there is no limit', async () => {
+		const { runInPty } = await import('./pty-exec');
+		for (const killed of [false, null]) {
+			withMemory(killed);
+			const out = await runInPty(1, 'echo hi', 30, undefined);
+			expect(out).not.toContain('Killed');
+			expect(out).toContain('Exit code: 0');
+		}
+	});
+});

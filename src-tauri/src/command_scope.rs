@@ -1,4 +1,5 @@
-//! A memory ceiling for the agent's one-shot commands.
+//! A memory ceiling for the agent's one-shot commands, and for each Shell
+//! tab's terminal.
 //!
 //! A command runs in the app's own cgroup, so one that allocates without bound
 //! takes the app down with it: a coding run's `go test` hit a line-drawing
@@ -10,6 +11,17 @@
 //! off, so the kernel kills the command and nothing else. When the scope ends
 //! with `Result=oom-kill` the caller is told, and the model can find the
 //! runaway instead of re-running it. Everywhere else this is a no-op.
+//!
+//! A Shell tab's terminal can't be wrapped command by command: the agent
+//! types into the user's own shell so that `cd`, `export` and venvs carry
+//! over, and a per-command wrapper would run each one in a fresh shell. So
+//! the whole terminal runs in one scope (`terminal`), with `OOMPolicy=continue`
+//! so a kill takes only the runaway process and leaves the shell and its
+//! scrollback. The cgroup's `oom_kill` count, read before and after a command,
+//! says whether that command was the one killed.
+
+use std::path::PathBuf;
+use std::sync::Mutex;
 
 use tokio::process::Command;
 
@@ -63,6 +75,12 @@ fn unit_name(command_id: &str) -> String {
 }
 
 fn scope_args(unit: &str, limit_bytes: u64) -> Vec<String> {
+    let mut args = scope_options(unit, limit_bytes);
+    args.push("--".into());
+    args
+}
+
+fn scope_options(unit: &str, limit_bytes: u64) -> Vec<String> {
     vec![
         "--user".into(),
         "--scope".into(),
@@ -75,8 +93,83 @@ fn scope_args(unit: &str, limit_bytes: u64) -> Vec<String> {
         // Swap only stretches a runaway out, slowing the whole desktop while
         // it fills, before the same kill.
         "--property=MemorySwapMax=0".into(),
-        "--".into(),
     ]
+}
+
+/// A Shell tab's terminal, running in its own memory-limited scope.
+pub struct TerminalScope {
+    unit: String,
+    pub limit_bytes: u64,
+    /// The scope's cgroup under `/sys/fs/cgroup`, once found.
+    cgroup: Mutex<Option<PathBuf>>,
+}
+
+/// The `systemd-run` arguments, up to and including `--`, that start a
+/// terminal's shell in a scope limited to `limit_bytes`; None where scopes
+/// aren't available. `key` must be unique among this app's terminals.
+pub fn terminal(key: &str, limit_bytes: u64) -> Option<(Vec<String>, TerminalScope)> {
+    if !imp::available() {
+        return None;
+    }
+    let unit = terminal_unit(key);
+    let mut args = scope_options(&unit, limit_bytes);
+    // The default stops the whole scope on an OOM kill: the shell, and the
+    // tab with it. Continue leaves everything but the process killed.
+    args.push("--property=OOMPolicy=continue".into());
+    args.push("--".into());
+    Some((
+        args,
+        TerminalScope {
+            unit,
+            limit_bytes,
+            cgroup: Mutex::new(None),
+        },
+    ))
+}
+
+/// Unique across app restarts too, since a terminal from an earlier run can
+/// outlive it: the app's PID goes in the name.
+fn terminal_unit(key: &str) -> String {
+    let key: String = key
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .take(32)
+        .collect();
+    format!("haruspex-term-{}-{key}.scope", std::process::id())
+}
+
+impl TerminalScope {
+    /// How many processes the kernel has killed in this terminal for going
+    /// over the limit; None when that can't be read.
+    pub fn oom_kills(&self) -> Option<u64> {
+        let mut cgroup = self.cgroup.lock().ok()?;
+        if cgroup.is_none() {
+            let out = std::process::Command::new("systemctl")
+                .args([
+                    "--user",
+                    "show",
+                    "--property=ControlGroup",
+                    "--value",
+                    &self.unit,
+                ])
+                .output()
+                .ok()?;
+            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if path.is_empty() {
+                return None;
+            }
+            *cgroup = Some(PathBuf::from("/sys/fs/cgroup").join(path.trim_start_matches('/')));
+        }
+        let events = std::fs::read_to_string(cgroup.as_ref()?.join("memory.events")).ok()?;
+        oom_kill_count(&events)
+    }
+}
+
+fn oom_kill_count(events: &str) -> Option<u64> {
+    events
+        .lines()
+        .find_map(|l| l.strip_prefix("oom_kill "))
+        .and_then(|n| n.trim().parse().ok())
 }
 
 impl Scope {
@@ -159,6 +252,22 @@ mod tests {
     }
 
     #[test]
+    fn terminal_scopes_keep_the_shell_alive_and_read_the_kill_count() {
+        assert!(terminal_unit("7").starts_with("haruspex-term-"));
+        assert!(terminal_unit("7").ends_with("-7.scope"));
+        assert_eq!(terminal_unit("a b/c"), terminal_unit("abc"));
+        let events = "low 0\nhigh 0\nmax 3\noom 1\noom_kill 2\noom_group_kill 0\n";
+        assert_eq!(oom_kill_count(events), Some(2));
+        assert_eq!(oom_kill_count("low 0\n"), None);
+        if let Some((args, scope)) = terminal("t", 1024) {
+            assert!(args.contains(&"--property=OOMPolicy=continue".to_string()));
+            assert!(args.contains(&"--property=MemoryMax=1024".to_string()));
+            assert_eq!(args.last().unwrap(), "--");
+            assert_eq!(scope.limit_bytes, 1024);
+        }
+    }
+
+    #[test]
     fn args_turn_off_expansion_and_swap_and_end_options() {
         let args = scope_args("u.scope", 1024);
         assert!(args.contains(&"--expand-environment=no".to_string()));
@@ -191,5 +300,31 @@ mod tests {
         assert!(scope.out_of_memory().await, "{out:?}");
         let printed = String::from_utf8_lossy(&out.stdout);
         assert!(printed.trim().parse::<u32>().is_ok(), "{printed:?}");
+    }
+
+    /// The real thing for a terminal: the runaway dies, the shell around it
+    /// carries on, and the kill count goes up. Ignored by default, like the
+    /// one above.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "makes the kernel kill a process; run with --ignored"]
+    fn a_terminal_survives_its_runaway() {
+        let Some((args, scope)) = terminal(&format!("test{}", std::process::id()), 64 << 20) else {
+            return;
+        };
+        let child = std::process::Command::new("systemd-run")
+            .args(args)
+            .args([
+                "sh",
+                "-c",
+                "sh -c 'y=$(head -c 400000000 /dev/zero | tr \"\\\\0\" a)'; sleep 3; echo alive",
+            ])
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        assert_eq!(scope.oom_kills(), Some(1));
+        let out = child.wait_with_output().unwrap();
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "alive");
     }
 }
