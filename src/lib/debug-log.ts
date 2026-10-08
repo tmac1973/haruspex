@@ -86,6 +86,43 @@ export function logDebug(category: string, message: string, data?: unknown): voi
 	}
 	if (buffer.length >= RING_CAPACITY) buffer.shift();
 	buffer.push({ line, turnId: activeTurnId });
+	fileQueue?.push(line);
+}
+
+/** Lines waiting for the next file flush; null while mirroring is off. */
+let fileQueue: string[] | null = null;
+const FILE_FLUSH_MS = 1000;
+
+/**
+ * Mirror the buffer to `<app data>/logs/agent-debug.log` when the build allows
+ * it (dev builds, or `HARUSPEX_DEBUG_LOG_FILE` set), so a session can be read
+ * after the app closes. Lines are batched and flushed once a second. Returns
+ * the file's path, or null when mirroring is off.
+ */
+export async function startDebugLogFile(
+	invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>
+): Promise<string | null> {
+	if (fileQueue) return null;
+	let path: string | null;
+	try {
+		path = (await invoke('debug_log_file_path')) as string | null;
+	} catch {
+		return null;
+	}
+	if (!path) return null;
+	fileQueue = buffer.map((e) => e.line);
+	const flush = (): void => {
+		if (!fileQueue || fileQueue.length === 0) return;
+		const lines = fileQueue;
+		fileQueue = [];
+		invoke('debug_log_append', { lines }).catch(() => {
+			// A failing write would fail again every second: stop mirroring.
+			fileQueue = null;
+			clearInterval(timer);
+		});
+	};
+	const timer = setInterval(flush, FILE_FLUSH_MS);
+	return path;
 }
 
 /**

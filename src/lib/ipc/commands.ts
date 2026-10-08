@@ -88,6 +88,8 @@ export const IPC = {
 	db_set_run_environment: 'db_set_run_environment',
 	db_update_job: 'db_update_job',
 	db_update_last_message_steps: 'db_update_last_message_steps',
+	debug_log_append: 'debug_log_append',
+	debug_log_file_path: 'debug_log_file_path',
 	delete_image_model: 'delete_image_model',
 	delete_model: 'delete_model',
 	detect_browser: 'detect_browser',
