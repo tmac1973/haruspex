@@ -38,6 +38,7 @@ function skill(name: string, extra: Partial<SkillSummary> = {}): SkillSummary {
 		error: null,
 		shadowed: false,
 		createdByModel: false,
+		codeModeOnly: false,
 		...extra
 	};
 }
@@ -62,7 +63,7 @@ describe('prepareTurnSkills', () => {
 	});
 
 	it('lists the built-in init only in Code mode', async () => {
-		mocks.list.push(skill('init', { source: 'builtin', dir: null }));
+		mocks.list.push(skill('init', { codeModeOnly: true }));
 		const names = async (codeMode: boolean) =>
 			(await prepareTurnSkills({ codeMode })).catalog.map((s) => s.name);
 		expect(await names(false)).not.toContain('init');

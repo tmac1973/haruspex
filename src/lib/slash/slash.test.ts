@@ -42,6 +42,7 @@ function skill(name: string, extra: Partial<SkillSummary> = {}): SkillSummary {
 		error: null,
 		shadowed: false,
 		createdByModel: false,
+		codeModeOnly: false,
 		...extra
 	};
 }
@@ -120,9 +121,9 @@ describe('resolveSlash', () => {
 	});
 });
 
-describe('/init, a built-in for Code mode', () => {
+describe('/init, a Code mode skill', () => {
 	beforeEach(() => {
-		mocks.list.push(skill('init', { source: 'builtin', dir: null }));
+		mocks.list.push(skill('init', { codeModeOnly: true }));
 	});
 
 	it('is listed and run only in Code mode', async () => {
@@ -141,7 +142,7 @@ describe('/init, a built-in for Code mode', () => {
 		expect(await runSlash('/init', code)).toEqual({ kind: 'send', skill: doc });
 	});
 
-	it("doesn't hold back a user's own init skill", async () => {
+	it("doesn't hold back an init skill without the Code mode field", async () => {
 		mocks.list = mocks.list.filter((s) => s.name !== 'init');
 		mocks.list.push(skill('init'));
 		expect((await slashItems(null)).map((i) => i.name)).toContain('init');

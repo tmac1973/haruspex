@@ -73,9 +73,9 @@ directory is a repo the user trusts, the same rule as Shell Code mode.
 | 2b, phase writes | nothing new | the outline already reflects the requirements |
 | Verifier | `## Plan requirements` | a requirement the plan misses is a finding |
 
-**Shipped skills live on disk, not in the binary.** They are bundled as app
-resources under `resources/skills/<name>/SKILL.md` and copied into
-`<app data>/skills/` at startup. A record of what was shipped,
+**Shipped skills live on disk, where the user can change them.** Their
+source is `src-tauri/resources/skills/<name>/`, compiled into the app by
+`build.rs`, and copied into `<app data>/skills/` at startup. A record of what was shipped,
 `<app data>/shipped-skills.json` (outside the skills folder), stores each
 skill's name and the hash of the text last copied in. Rules:
 

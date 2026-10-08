@@ -1,6 +1,52 @@
 fn main() {
     google_oauth_client();
+    shipped_skills();
     tauri_build::build()
+}
+
+/// Compile in the skills under `resources/skills/`, which `skills::shipped`
+/// copies into the user's skills folder. Embedded rather than bundled as
+/// resources, so dev and every installer find them the same way.
+///
+/// Writes `$OUT_DIR/shipped_skills.rs`: `SHIPPED`, each file's path relative
+/// to `resources/skills/` and its bytes, sorted by path.
+fn shipped_skills() {
+    use std::path::{Path, PathBuf};
+    let root = Path::new("resources/skills");
+    println!("cargo:rerun-if-changed={}", root.display());
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else {
+                out.push(path);
+            }
+        }
+    }
+    let mut files = Vec::new();
+    walk(root, &mut files);
+    files.sort();
+    let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let mut code = String::from("pub const SHIPPED: &[(&str, &[u8])] = &[\n");
+    for file in &files {
+        let rel = file
+            .strip_prefix(root)
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        let abs = Path::new(&manifest).join(file);
+        code.push_str(&format!(
+            "    ({rel:?}, include_bytes!({:?})),\n",
+            abs.to_string_lossy()
+        ));
+    }
+    code.push_str("];\n");
+    let out = Path::new(&std::env::var("OUT_DIR").unwrap()).join("shipped_skills.rs");
+    std::fs::write(out, code).unwrap();
 }
 
 /// Compile in Haruspex's Google OAuth desktop client, when this checkout has

@@ -21,6 +21,7 @@ function skill(name: string, extra: Partial<SkillSummary> = {}): SkillSummary {
 		error: null,
 		shadowed: false,
 		createdByModel: false,
+		codeModeOnly: false,
 		...extra
 	};
 }
@@ -55,6 +56,28 @@ describe('Settings → Skills', () => {
 		expect(screen.getByText('name does not match its folder "x"')).toBeTruthy();
 		// Only skills in Haruspex's own folder can be deleted.
 		expect(screen.getAllByText('Delete')).toHaveLength(1);
+	});
+
+	it('labels shipped skills, and restores an edited or deleted one', async () => {
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		listed.push(skill('plan-2d-game'), skill('init'));
+		const shipped = [
+			{ name: 'init', state: 'installed' },
+			{ name: 'plan-2d-game', state: 'edited' },
+			{ name: 'plan-web-app', state: 'deleted' }
+		];
+		const base = vi.mocked(invoke).getMockImplementation()!;
+		vi.mocked(invoke).mockImplementation(async (cmd, args) =>
+			cmd === 'skills_shipped' ? shipped : base(cmd, args)
+		);
+		render(SkillsSection);
+		expect(await screen.findByText('Shipped with Haruspex')).toBeTruthy();
+		expect(screen.getByText('Shipped with Haruspex, edited')).toBeTruthy();
+		// Only the edited one has something to restore.
+		await fireEvent.click(screen.getByText('Restore'));
+		expect(invoke).toHaveBeenCalledWith('skill_restore_shipped', { name: 'plan-2d-game' });
+		await fireEvent.click(screen.getByText('Restore deleted shipped skills'));
+		expect(invoke).toHaveBeenCalledWith('skill_restore_shipped', { name: null });
 	});
 
 	it('switches a skill off and on', async () => {
