@@ -135,6 +135,18 @@ export async function trustedProjectRoot(cwd: string | null): Promise<string | n
 }
 
 /**
+ * `shellProject` without ever asking: what the next turn in `cwd` would take
+ * from a repo the user already trusts. For refreshing the badge after a turn
+ * changed the repo's instructions.
+ */
+export async function knownShellProject(
+	cwd: string | null
+): Promise<{ root: string | null; agentsMd: AgentsMd | null }> {
+	const root = await knownTrustedRoot(cwd);
+	return { root, agentsMd: root ? await loadAgentsMd(root, cwd) : null };
+}
+
+/**
  * What a Shell turn in `cwd` takes from its repo: the trusted root (for
  * project skills, which only Code mode uses) and its `AGENTS.md`. Both empty
  * outside a trusted repo.

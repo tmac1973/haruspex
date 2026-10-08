@@ -12,7 +12,7 @@ vi.mock('#lib/stores/settings.ts', () => ({
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 
 import { invoke } from '@tauri-apps/api/core';
-import { noteProjectSkill, trustApprovedAgentsMd } from './project';
+import { knownShellProject, noteProjectSkill, trustApprovedAgentsMd } from './project';
 
 beforeEach(() => {
 	settings.updateSkills.mockReset();
@@ -69,6 +69,31 @@ describe('trustApprovedAgentsMd', () => {
 		settings.repos = {};
 		repo({ skillNames: ['x'], origin: null });
 		expect(await trustApprovedAgentsMd('/r')).toBe(false);
+		expect(settings.updateSkills).not.toHaveBeenCalled();
+	});
+});
+
+describe('knownShellProject', () => {
+	const md = { files: ['AGENTS.md'], text: 'x', truncated: false, totalBytes: 1 };
+	beforeEach(() => {
+		vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+			if (cmd === 'skills_project_root') return '/r';
+			if (cmd === 'skills_agents_md') return md;
+			return null;
+		});
+	});
+
+	it("reads a trusted repo's AGENTS.md without asking", async () => {
+		settings.repos = { '/r': { trusted: true } };
+		expect(await knownShellProject('/r/src')).toEqual({ root: '/r', agentsMd: md });
+	});
+
+	it('gives nothing for a repo not trusted, or never asked about', async () => {
+		const answers: Record<string, RepoTrust>[] = [{ '/r': { trusted: false } }, {}];
+		for (const repos of answers) {
+			settings.repos = repos;
+			expect(await knownShellProject('/r')).toEqual({ root: null, agentsMd: null });
+		}
 		expect(settings.updateSkills).not.toHaveBeenCalled();
 	});
 });

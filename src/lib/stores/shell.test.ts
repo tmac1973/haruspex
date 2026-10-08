@@ -55,7 +55,10 @@ const project = vi.hoisted(() => ({
 	shellProject: vi.fn<(cwd: string | null) => Promise<{ root: string | null; agentsMd: unknown }>>(
 		async () => ({ root: null, agentsMd: null })
 	),
-	setRepoTrusted: vi.fn()
+	setRepoTrusted: vi.fn(),
+	knownShellProject: vi.fn<
+		(cwd: string | null) => Promise<{ root: string | null; agentsMd: unknown }>
+	>(async () => ({ root: null, agentsMd: null }))
 }));
 vi.mock('#lib/skills/project.ts', () => project);
 // Wrapped, not replaced, so a test can see which repo's skills a turn asked for.
@@ -916,6 +919,36 @@ describe('AGENTS.md in the Shell assistant', () => {
 		expect(project.setRepoTrusted).toHaveBeenCalledWith('/code/repo', false);
 		expect(s.agentsMd).toBeNull();
 		expect(s.projectRoot).toBeNull();
+	});
+
+	it('shows the AGENTS.md a turn wrote without waiting for the next turn', async () => {
+		const s = createShellSession();
+		s.codeMode = true;
+		project.knownShellProject.mockResolvedValueOnce({ root: '/code/repo', agentsMd: md });
+		// The agent loop appends the turn's tool calls to the messages it was given.
+		runShellTurn.mockImplementationOnce(async (opts: { messages: ChatMessage[] }) => {
+			const call = {
+				id: 'a',
+				type: 'function',
+				function: { name: 'write_agents_md', arguments: '{}' }
+			};
+			opts.messages.push(
+				{ role: 'assistant', content: '', tool_calls: [call] } as ChatMessage,
+				{ role: 'tool', content: 'Saved.', tool_call_id: 'a' } as ChatMessage
+			);
+			return { finalText: 'done', rawText: 'done' };
+		});
+		await submit(s);
+		await vi.waitFor(() => expect(s.agentsMd).toEqual(md));
+		expect(project.knownShellProject).toHaveBeenCalledOnce();
+		expect(s.projectRoot).toBe('/code/repo');
+	});
+
+	it("doesn't look again after a turn that left AGENTS.md alone", async () => {
+		const s = createShellSession();
+		project.knownShellProject.mockClear();
+		await submit(s);
+		expect(project.knownShellProject).not.toHaveBeenCalled();
 	});
 
 	it('carries them in the troubleshooting assistant too, without project skills', async () => {
