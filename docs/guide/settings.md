@@ -29,6 +29,8 @@ Where the model runs, which model is used and how big the context is.
 - **Models**: download and switch local models.
 - **Context Size**: 32K by default (8K to 256K).
 - **Let models use system RAM**: off.
+- **Parallel streams**: 1 (also 2 or 4). More lets a background job run beside chat. Each stream gets the full context size, so it needs more memory and larger sizes may grey out, and replies are slower while two run.
+- **Extra llama-server arguments**: empty. For advanced users: added after Haruspex's own arguments, so they override them. Takes effect when the server restarts.
 - **Server**: status, port and Restart Server; **Run Setup Wizard**.
 
 See the `models` page.

@@ -286,6 +286,12 @@ export function resolveBackendDescriptor(override?: BackendOverride): BackendDes
 	return resolveRemoteDescriptor(settings, inf, remoteBase);
 }
 
+/** The local llama-server's stream count, clamped to what Rust accepts. */
+function localParallelSlots(settings: AppSettings): number {
+	const n = Math.floor(settings.localParallelSlots ?? 1);
+	return Math.min(Math.max(Number.isFinite(n) ? n : 1, 1), 4);
+}
+
 function resolveLocalDescriptor(settings: AppSettings): BackendDescriptor {
 	const traits = modelTraitsFromId(getActiveLocalModelFilename() || null);
 	const family = traits?.family ?? LOCAL_DEFAULT_FAMILY;
@@ -307,8 +313,10 @@ function resolveLocalDescriptor(settings: AppSettings): BackendDescriptor {
 		// about which tuned numbers fit, whereas an effort level is a string the
 		// model's template either accepts or throws on.
 		reasoningEffort: traits?.effort ?? null,
-		allowParallel: false,
-		parallelSlots: 1
+		// Settings → Inference → Parallel streams. Every stream has the full
+		// context, so a lane admitting this many never starves one.
+		allowParallel: localParallelSlots(settings) > 1,
+		parallelSlots: localParallelSlots(settings)
 	};
 }
 

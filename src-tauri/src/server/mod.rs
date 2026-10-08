@@ -65,6 +65,10 @@ pub struct ServerConfig {
     /// [`cache_ram_mib`].
     pub cache_ram_mib: u32,
     pub flash_attn: bool,
+    /// Concurrent streams (`--parallel`). 1 is one conversation at a time.
+    /// Above 1, every stream gets the full `ctx_size`: see
+    /// [`ServerConfig::build_args_for`].
+    pub parallel: u32,
     /// Drive the model's multi-token-prediction head as a self-speculative
     /// draft. Only ever true for a model that actually has one, and for a
     /// sibling drafter only when its file is on disk — see
@@ -98,6 +102,7 @@ impl Default for ServerConfig {
             n_gpu_layers: Some(ALL_GPU_LAYERS),
             cache_ram_mib: CACHE_RAM_MAX_MIB,
             flash_attn: true,
+            parallel: 1,
             mtp: false,
             mtp_draft_path: None,
             mmproj_on_cpu: false,
@@ -121,26 +126,35 @@ impl ServerConfig {
             "--port".to_string(),
             self.port.to_string(),
             "--ctx-size".to_string(),
-            self.ctx_size.to_string(),
+            (self.ctx_size * self.parallel.max(1)).to_string(),
             "--cache-ram".to_string(),
             self.cache_ram_mib.to_string(),
             "--cache-type-k".to_string(),
             "q8_0".to_string(),
             "--cache-type-v".to_string(),
             "q8_0".to_string(),
-            // Haruspex only runs one conversation through llama-server at a
-            // time, so we don't benefit from multiple parallel slots. Forcing
-            // --parallel 1 gives the single slot the full KV budget and
-            // eliminates the "failed to find free space in the KV cache /
-            // purging slot N" warnings that show up in stderr whenever stale
-            // slots from earlier turns get evicted to make room for a new
-            // batch.
+            // Pinned rather than left to llama.cpp's `auto` (4 slots sharing
+            // one pool). By default Haruspex runs one conversation through
+            // llama-server at a time; see below for more.
             "--parallel".to_string(),
-            "1".to_string(),
+            self.parallel.max(1).to_string(),
             "--jinja".to_string(),
             "--host".to_string(),
             sidecar_utils::LOOPBACK.to_string(),
         ];
+
+        if self.parallel > 1 {
+            // Each stream gets the whole context the user chose: the pool is
+            // `ctx_size × parallel` (set above) and no slot may take more than
+            // `ctx_size` of it. A pool shared without that cap fails *every*
+            // active stream with "Context size has been exceeded." once two
+            // long ones fill it, which reaches the user as a reply dying
+            // mid-way. An explicit `--parallel` turns unified KV off upstream
+            // unless `--kv-unified` is also given.
+            args.push("--kv-unified".to_string());
+            args.push("--kv-unified-per-slot".to_string());
+            args.push(self.ctx_size.to_string());
+        }
 
         if let Some(layers) = self.n_gpu_layers {
             args.push("--n-gpu-layers".to_string());
@@ -1107,6 +1121,8 @@ pub async fn start_server(
     // The user's "let models use system RAM" preference. `None` means off:
     // every layer pinned to VRAM.
     ram_offload: Option<bool>,
+    // Concurrent streams, 1-4. `None` means 1.
+    parallel: Option<u32>,
 ) -> Result<(), String> {
     let filename = Path::new(&model_path)
         .file_name()
@@ -1158,6 +1174,7 @@ pub async fn start_server(
             Some(ALL_GPU_LAYERS)
         },
         cache_ram_mib: cache_ram_mib(crate::hardware::total_ram_bytes(), offloaded_bytes),
+        parallel: parallel.unwrap_or(1).clamp(1, MAX_PARALLEL),
         mtp: mtp_on,
         mtp_draft_path: if mtp_on { draft_path } else { None },
         mmproj_on_cpu: mmproj_on_cpu.unwrap_or(false),
@@ -1167,6 +1184,9 @@ pub async fn start_server(
     };
     state.start(&app, &model_path, Some(config)).await
 }
+
+/// Most concurrent streams Settings offers.
+pub(crate) const MAX_PARALLEL: u32 = 4;
 
 /// `--n-gpu-layers` value that keeps every layer in VRAM.
 const ALL_GPU_LAYERS: i32 = 99;
@@ -1385,13 +1405,9 @@ mod tests {
         assert!(args.contains(&"on".to_string()));
         assert!(args.contains(&"--cache-type-k".to_string()));
         assert!(args.contains(&"q8_0".to_string()));
-        // Parallel must be pinned to 1 — Haruspex only runs one conversation
-        // through llama-server at a time and the KV cache gets fragmented by
-        // stale slots otherwise, producing "failed to find free space"
-        // warnings in stderr.
-        assert!(args.contains(&"--parallel".to_string()));
-        let parallel_idx = args.iter().position(|a| a == "--parallel").unwrap();
-        assert_eq!(args[parallel_idx + 1], "1");
+        // One stream by default, pinned rather than llama.cpp's `auto` (4).
+        assert_eq!(flag_value(&args, "--parallel"), Some("1"));
+        assert!(!args.iter().any(|a| a == "--kv-unified"));
         assert!(args.contains(&"--jinja".to_string()));
         assert!(args.contains(&"--host".to_string()));
         assert!(args.contains(&"127.0.0.1".to_string()));
@@ -1678,6 +1694,21 @@ mod tests {
         };
         let args = config.build_args("/path/to/model.gguf");
         assert!(!args.iter().any(|a| a == "--n-gpu-layers"));
+    }
+
+    /// Two streams: a pool twice the chosen context, each slot capped at it.
+    #[test]
+    fn build_args_give_every_stream_the_full_context() {
+        let args = ServerConfig {
+            ctx_size: 32768,
+            parallel: 2,
+            ..Default::default()
+        }
+        .build_args("/path/to/model.gguf");
+        assert_eq!(flag_value(&args, "--parallel"), Some("2"));
+        assert_eq!(flag_value(&args, "--ctx-size"), Some("65536"));
+        assert!(args.iter().any(|a| a == "--kv-unified"));
+        assert_eq!(flag_value(&args, "--kv-unified-per-slot"), Some("32768"));
     }
 
     #[test]

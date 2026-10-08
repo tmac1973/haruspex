@@ -396,6 +396,20 @@ export interface AppSettings {
 	 */
 	visionProjectorInSystemRam: boolean;
 	/**
+	 * Concurrent streams on the local llama-server: 1, 2 or 4. Above 1 a
+	 * background job or memory pass can run beside chat. Each stream gets the
+	 * full `contextSize`, so the KV cache grows by this factor and the
+	 * Context Size picker counts it. Restarts the server. See
+	 * `ServerConfig::build_args_for`.
+	 */
+	localParallelSlots: number;
+	/**
+	 * Raw arguments appended to the local llama-server's command line, after
+	 * Haruspex's own so they override them. Split by `splitServerArgs`.
+	 * Takes effect on the next restart.
+	 */
+	llamaServerExtraArgs: string;
+	/**
 	 * Max output tokens for a normal agent turn. Distinct from `contextSize`,
 	 * which bounds the whole window — this bounds only what the model generates
 	 * in one response.
@@ -780,6 +794,8 @@ const defaults: AppSettings = {
 	contextSize: DEFAULT_CONTEXT_SIZE,
 	allowSpillToSystemRam: false,
 	visionProjectorInSystemRam: false,
+	localParallelSlots: 1,
+	llamaServerExtraArgs: '',
 	maxResponseTokens: DEFAULT_MAX_RESPONSE_TOKENS,
 	maxResponseTokensFileWrite: DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE,
 	ttsReadTablesByColumn: true,

@@ -16,7 +16,8 @@
 //!   - Each lane carries a capacity the frontend supplies on every acquire
 //!     (last-writer-wins per lane), mirroring the old "re-read setting at
 //!     every acquire" semantics. 1 serializes — the local llama-server lane is
-//!     always 1. A parallel-capable remote lane uses the slot count the server
+//!     1 unless Settings → Inference → Parallel streams raises it to match the
+//!     server's `--parallel`. A parallel-capable remote lane uses the slot count the server
 //!     advertises, falling back to unbounded only when that count is unknown
 //!     (OpenRouter, whose concurrency is not ours to model). Unbounded against
 //!     a server with N slots would let request N+1 queue *inside* the server,
