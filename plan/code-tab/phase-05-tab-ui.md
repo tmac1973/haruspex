@@ -81,3 +81,29 @@ A user can open the Code tab, start a session in a folder, have the agent edit
 files and run commands with diffs and command cards shown, steer it, switch
 model/effort, close and reopen the session from the sidebar, and quit and
 relaunch to find it intact.
+
+## As built
+
+- `components/code/`: `CodeWorkspace` (lazy-mounted like the Shell), `CodeSidebar`,
+  `CodeTabStrip`, `NewSessionDialog`, `CodePane` → `CodeSessionHeader` (+
+  `BackgroundChip`), `CodeTranscript` (+ `CodeSteps` → `CommandCard` / `DiffCard`),
+  `CodeComposer`. Pure helpers in `code/diff.ts`, `code/commandResult.ts`,
+  `code/sessionList.ts`, `code/backends.ts`.
+- Write diffs: `fs_write_text` reads the old file in a Code session only
+  (`ctx.codeSessionId`) and returns `ToolExecOutput.fileDiff`; the loop passes it
+  as `onToolEnd`'s 7th argument and the session stores it on the step. Rows are
+  capped at 2000 (the thread is saved whole). No `diff` package: an LCS.
+- Render window: the last 20 turns (user messages), "Show earlier" adds 20.
+- Backend picker: Settings, the remote server saved in Settings → Inference
+  (when Settings is on local), and the session's own pick. OpenRouter's catalog
+  is not listed per session.
+- Settings: `codeLastRoot`, `codeSidebarWidth`, `codeSidebarOpen`,
+  `codeBgLogCapMb` (→ `code_bg_start`'s new `logCapMb`). Settings → Code took
+  timeout, max steps and auto-approve; memory limit, Code-mode default and
+  command execution stay in Settings → Shell (they are terminal settings).
+- Shortcuts: there was no main-tab switcher, so Ctrl / ⌘ + 1–4 is new (capture
+  phase, so xterm can't eat Ctrl+3/4). F2 / F3 work in the Code tab.
+- Fixed a phase-4 bug: `runCodeTurn` passed the absolute root as `writeRoot`,
+  which is relative to the working dir, so every write and edit was refused.
+- Platform gate is the user agent; the Playwright spec sets a Linux one because
+  Playwright's desktop Chrome reports Windows.
