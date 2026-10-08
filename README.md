@@ -32,7 +32,7 @@ Haruspex is a desktop AI researcher and coding tool that runs entirely local by 
 - **Open in shell** — If an answer ends with "run this command", press the `>_` button to open the whole conversation in a new Shell tab, where the commands become buttons you can run.
 - **Remote access (off by default)** — Let other devices on your home network chat with your Haruspex through a web page, using your computer's GPU. Useful when your main machine is busy with a game and you want to ask a question from a phone or laptop. Share a link or scan a QR code. ([details](#remote-access))
 - **Email (off by default)** — Connect an IMAP account (Gmail, Fastmail, iCloud, Yahoo or custom) so the model can summarise and search your recent messages. Turn on **Allow sending** and it can also draft replies and new mail — but every draft opens for you to edit, and only your click on Send sends it. ([details](#email-integration))
-- **Calendar and contacts (off by default, read-only)** — Connect a CalDAV/CardDAV account (Nextcloud, Fastmail, iCloud, Radicale, Baikal, Synology) sign in with Google, or paste a calendar link (Outlook, iCloud) and ask what is on this week or how to reach someone. ([details](#calendar-and-contacts))
+- **Calendar and contacts (off by default, read-only)** — Connect a CalDAV/CardDAV account (Nextcloud, Fastmail, iCloud, Radicale, Baikal, Synology), sign in with Google, or paste a calendar link (Outlook, iCloud) and ask what is on this week or how to reach someone. ([details](#calendar-and-contacts))
 - **MCP integrations (off by default)** — Connect other services through MCP servers. Haruspex installs and runs them itself, so you never need a terminal. ([details](#mcp-integrations))
 - **Screen capture (off by default)** — Ask about what is on your screen. There is also a camera button in the chat box for attaching a screenshot yourself. ([details](#screen-capture))
 - **Conversations are saved** — Chat history lives in a local SQLite database and survives restarts.
@@ -43,6 +43,17 @@ Haruspex is a desktop AI researcher and coding tool that runs entirely local by 
 - **Send output to the assistant** — One click sends the last command and its output, or a selection, to the assistant to explain.
 - **Read-only by default** — The assistant can read config files and logs anywhere on your system and suggest fixes, but it never runs anything. Suggested commands appear as cards you click to paste at your prompt. Risky patterns (`sudo`, `rm -rf`, `dd of=`, `curl | sh`, `Remove-Item -Recurse -Force`) get a red chip.
 - **Code mode (off by default)** — Turn it on per session to let the assistant edit files and **run commands in your live terminal**. Commands it considers risky stop and ask you first; commands it considers safe run on their own. ⚠️ Please read the [AI safety disclaimer](#ai-safety-disclaimer) first. This is a coding feature — expect much better results with a larger model.
+- **Repo instructions** — In a git repo with an `AGENTS.md` (or `CLAUDE.md`), the assistant reads it into every turn, so it knows how the project builds, tests and lints. The first time, it asks whether you trust the repo; a badge in the sidebar shows when the file is in use, and lets you stop using it. ([details](#skills))
+- **Memory limit** _(Linux)_ — Each Shell tab's terminal, and every command the assistant runs on its own, can use at most half your RAM by default (Settings → Shell → Memory limit). A runaway build or test is stopped before it takes the app or your desktop down, the shell around it keeps going, and the assistant is told why so it looks for the bug instead of re-running it.
+
+### Skills and repo instructions
+
+- **Skills** — Folders of instructions for a task, in the open [Agent Skills](https://agentskills.io) format other AI tools use. A skill written for another tool usually works unchanged. ([details](#skills))
+- **Run one by name** — Type `/` in Chat or Shell for a list of your skills, then `/name what you want`. Works on any model. `/new` starts over and `/skills` lists what you have.
+- **Let the model pick** — With Settings → Skills → "When the model uses skills" on, the model sees your skills and loads one when a request matches. Automatic turns this on for remote models only, since small local models handle it poorly.
+- **Save a procedure as a skill** — Ask "save what we just did as a skill called deploy-check". The model drafts it, and nothing is written until you have read it, edited it if you like, and approved it.
+- **`/init`** — In Code mode, drafts a short `AGENTS.md` for a repo from its manifests, CI and README, for you to review before it is saved.
+- **Planning skills** — Pick one when you create a guided planning job (2D game, 3D game, web app, CLI tool, API service), and the interview asks the questions that matter for that kind of project — the window and camera for a game, sign-in and storage for a web app — and the plan is checked against its requirements.
 
 ### Jobs and schedules
 
@@ -182,7 +193,7 @@ There are five kinds of job:
 
 - **Research** — A list of steps that run in order. Each step is a fresh conversation that receives the previous step's output, so you can chain "search → summarise → write a report" into one run. Each step can turn on deep research on its own.
 - **Audit** — Used to audit code bases. Runs one prompt many times independently, groups the findings, checks each group against the source, and writes one report sorted into confirmed / refuted / uncertain. Running it many times cancels out the noise a small model produces in any single run. You can set the number of runs, the step budget per run, a read-only tool restriction, your own instructions, and an output file.
-- **Guided planning** — Turns a rough idea into a written project overview and a plan split into phases, in the right dependency order. It asks you one question at a time and reads your codebase as it goes. It writes an `overview.md` and `phase-NN-*.md` files, and stops at checkpoints so you can review or change things. A separate reviewer then reads the plan fresh, looking for missing steps and decisions still marked "TBD". **Full** verification revises until the reviewer is satisfied; **Lite** reads once and revises once, and hands anything it found to the coding run; **Skip** leaves it to you. It only plans — it never writes code. A long run picks up where it left off if the app restarts.
+- **Guided planning** — Turns a rough idea into a written project overview and a plan split into phases, in the right dependency order. It asks you one question at a time and reads your codebase as it goes. It writes an `overview.md` and `phase-NN-*.md` files, and stops at checkpoints so you can review or change things. A separate reviewer then reads the plan fresh, looking for missing steps and decisions still marked "TBD". **Full** verification revises until the reviewer is satisfied; **Lite** reads once and revises once, and hands anything it found to the coding run; **Skip** leaves it to you. It only plans — it never writes code. A long run picks up where it left off if the app restarts. Pick a **planning skill** for the kind of project and the interview covers that kind's questions too, and the reviewer checks the plan meets its requirements. ([details](#skills))
 - **Autonomous coding** — Takes a folder of plan files (usually from a guided planning job), asks you about every open decision up front, then writes the code unattended: one small step at a time, each one checked and committed, with a deeper check at the end of every phase. Each run gets its own git branch. It finishes by writing a report of what it built, what is blocked and why, and what comes next.
 
 - **Asset generation** — Draws the images a project needs from a spec: sprites and icons in sheets, textures that tile. It writes the spec itself if you describe what you want, or a guided planning job writes one with the plan. See [Image generation](#image-generation).
@@ -250,6 +261,31 @@ When it is on, Haruspex reads your finished conversations in the background, pic
 Everything stays on this device. The text is never sent anywhere, and the embeddings used to find the right memory later are calculated on your machine. Setup downloads a small embedding model for it once.
 
 You can switch any single conversation to incognito so it is never read, ask to be prompted before anything is saved, and read, edit or delete every stored memory from the settings panel.
+
+## Skills
+
+A skill is a folder holding a `SKILL.md`: a name, a description of when to use it, and instructions. Haruspex reads skills from, in order of precedence:
+
+1. its own folder (Settings → Skills → Open skills folder);
+2. `~/.agents/skills/`, shared with other tools;
+3. folders you add in Settings → Skills, with one click for `~/.claude/skills/`;
+4. in Code mode, a trusted repo's `.agents/skills/` and `.claude/skills/`.
+
+Settings → Skills lists every skill with where it came from, switches each one on or off, and shows why a broken one can't be used.
+
+**Running a skill.** Type `/` in the Chat or Shell input box and pick from the list, or type `/name` followed by what you want. The skill's instructions go along with your message, so this works on every model and whatever the setting below says.
+
+**Letting the model choose.** Settings → Skills → "When the model uses skills" puts your skills' names and descriptions in front of the model, which loads one when your request matches it. **Automatic** turns this on for remote and OpenRouter models and off for the local model, because small models often load a skill and then don't follow it.
+
+**Writing skills.** Ask the model to save a procedure as a skill, or to improve one. Every write opens a review window with the whole file in an editor: change it, save it, or reject it with a reason that goes back to the model. Skills the model wrote are labelled in Settings. It can only change skills in your own folder or a trusted repo.
+
+**Skills that ship with Haruspex.** `init` and the planning skills are copied into your skills folder on first run. They are ordinary files: edit them, delete them, or replace them with your own of the same name. An update replaces only the ones you haven't touched, and Settings → Skills can restore one as shipped.
+
+**Repo instructions (`AGENTS.md`).** In a git repo with an `AGENTS.md` at its root (or a `CLAUDE.md`), the Shell assistant reads it into every turn, in both modes. A repo's instructions and skills were written by whoever made the repo, so the first time Haruspex finds them it asks whether to use them. It asks again if a different repo appears at that path, or the repo gains a skill. The answer is kept in Settings → Skills → Repos, and the **AGENTS.md** badge in the Shell sidebar shows when the file is in use and stops using it. The file is capped at 8 KB per turn.
+
+**`/init`.** In Code mode, `/init` reads the repo's manifests, CI workflows, README and any other agent files, and drafts an `AGENTS.md` of under 60 lines: the real build, test and lint commands, conventions the linters don't catch, and gotchas. It opens for review before anything is written, and changes an existing file rather than rewriting it.
+
+**Planning skills.** In a guided planning job, pick a planning skill under the project description. Its questions join the interview — anything your description already answers is skipped — and its requirements are checked by the reviewer, so "the camera never shows past the edge of the world" can't quietly drop out of a game plan. Shipped: `plan-2d-game`, `plan-3d-game`, `plan-web-app`, `plan-cli-tool` and `plan-api-service`. Any skill tagged `metadata: { haruspex-job: guided-planning }` is listed first.
 
 ## Remote access
 
