@@ -274,7 +274,12 @@ pub struct BrowserFallbackState {
 pub struct CombinedSearchStats {
     pub session: stats::SessionStatsSnapshot,
     pub lifetime: stats::LifetimeStatsSnapshot,
+    /// The last [`DAILY_STATS_DAYS`] days, for spotting an engine that broke.
+    pub daily: stats::DailyStatsSnapshot,
 }
+
+/// How many days the Stats tab's per-day table covers.
+const DAILY_STATS_DAYS: u32 = 14;
 
 #[tauri::command]
 pub fn get_search_stats(
@@ -283,7 +288,12 @@ pub fn get_search_stats(
 ) -> Result<CombinedSearchStats, String> {
     let session = stats.snapshot();
     let lifetime = sink.0.lifetime_snapshot()?;
-    Ok(CombinedSearchStats { session, lifetime })
+    let daily = sink.0.daily_snapshot(DAILY_STATS_DAYS)?;
+    Ok(CombinedSearchStats {
+        session,
+        lifetime,
+        daily,
+    })
 }
 
 #[tauri::command]
