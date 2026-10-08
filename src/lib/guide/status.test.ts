@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: async () => '0.2.3' }));
 vi.mock('#lib/inference/descriptor.ts', () => ({
-	resolveBackendDescriptor: () => ({
-		kind: 'remote',
-		modelId: 'qwen-big',
+	resolveBackendDescriptor: (o?: { modelId?: string; baseUrl: string }) => ({
+		kind: o ? (o.baseUrl.includes('openrouter') ? 'openrouter' : 'remote') : 'remote',
+		modelId: o?.modelId ?? 'qwen-big',
 		contextSize: 65536,
 		vision: true,
 		baseUrl: 'https://gpu.secret.example:8443',
@@ -60,5 +60,16 @@ describe('guideStatus', () => {
 		for (const secret of ['secret', 'hunter2', 'sk-', 'ghp_', '@', 'https://', 'GitHub']) {
 			expect(s, secret).not.toContain(secret);
 		}
+	});
+
+	it('names the model the turn runs on when it has its own pick', async () => {
+		const s = await guideStatus({
+			baseUrl: 'https://openrouter.ai/api',
+			modelId: 'qwen/qwen-plus'
+		});
+		expect(s).toContain(
+			'Model: qwen/qwen-plus, through OpenRouter (cloud), picked for this conversation'
+		);
+		expect(s).not.toContain('qwen-big');
 	});
 });
