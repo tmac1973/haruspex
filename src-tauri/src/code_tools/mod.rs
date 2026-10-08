@@ -9,6 +9,7 @@
 //! returns locations/exit-codes, never whole file bodies, to keep model
 //! context small.
 
+pub mod background;
 pub mod search;
 
 use crate::command_scope;

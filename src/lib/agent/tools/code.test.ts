@@ -6,7 +6,8 @@ const mocks = vi.hoisted(() => ({
 	askCommandApproval: vi.fn(),
 	isSessionApproved: vi.fn(() => false),
 	approveSession: vi.fn(),
-	registerWatch: vi.fn(() => 'watch-1')
+	registerWatch: vi.fn(() => 'watch-1'),
+	registerCodeBgWatch: vi.fn(() => 'watch-2')
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
@@ -15,7 +16,10 @@ vi.mock('#lib/stores/codeCommandApproval.svelte.ts', () => ({
 	isSessionApproved: mocks.isSessionApproved,
 	approveSession: mocks.approveSession
 }));
-vi.mock('#lib/shell/backgroundWatch.ts', () => ({ registerWatch: mocks.registerWatch }));
+vi.mock('#lib/shell/backgroundWatch.ts', () => ({
+	registerWatch: mocks.registerWatch,
+	registerCodeBgWatch: mocks.registerCodeBgWatch
+}));
 
 const codeCtx = {
 	workingDir: '/work',
@@ -47,6 +51,7 @@ beforeEach(() => {
 	mocks.isSessionApproved.mockReset().mockReturnValue(false);
 	mocks.approveSession.mockReset();
 	mocks.registerWatch.mockReset().mockReturnValue('watch-1');
+	mocks.registerCodeBgWatch.mockReset().mockReturnValue('watch-2');
 	mocks.invoke.mockImplementation((cmd: string) => {
 		if (cmd === 'run_command_capture') return Promise.resolve(runResultDefaults());
 		if (cmd === 'code_write_overflow') return Promise.resolve('/tmp/overflow.txt');
@@ -807,5 +812,146 @@ describe('run_command boundary', () => {
 			executeTool('run_command', { command: 'rm -rf build' }, codeCtx)
 		);
 		expect(out.result).not.toContain('[object Object]');
+	});
+});
+
+describe('run_command without a terminal (Code session)', () => {
+	const sessionCtx = { ...codeCtx, codeSessionId: 'sess-1' };
+	const bgProc = {
+		id: 'bg-1',
+		owner: 'sess-1',
+		command: 'npm run dev',
+		cwd: '/work',
+		pid: 4242,
+		started_at: Date.now(),
+		running: true,
+		exit_code: null,
+		log_path: '/cache/code-bg/bg-1.log'
+	};
+
+	beforeEach(() => {
+		mocks.invoke.mockImplementation((cmd: string) => {
+			if (cmd === 'code_bg_start')
+				return Promise.resolve({ id: 'bg-1', pid: 4242, log_path: '/cache/code-bg/bg-1.log' });
+			if (cmd === 'code_bg_status') return Promise.resolve([bgProc]);
+			if (cmd === 'code_bg_tail') return Promise.resolve('listening on :5173\n');
+			if (cmd === 'run_command_capture') return Promise.resolve(runResultDefaults());
+			return Promise.resolve();
+		});
+	});
+
+	it('background:true starts a code_bg process owned by the session', async () => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const out = await executeTool(
+			'run_command',
+			{ command: 'npm run dev', background: true },
+			sessionCtx
+		);
+		expect(mocks.invoke).toHaveBeenCalledWith(
+			'code_bg_start',
+			expect.objectContaining({ owner: 'sess-1', cwd: '/work', command: 'npm run dev' })
+		);
+		expect(out.result).toContain('id bg-1');
+		expect(out.result).toContain('command_output');
+		expect(mocks.registerCodeBgWatch).not.toHaveBeenCalled();
+		expect(mocks.registerWatch).not.toHaveBeenCalled();
+	});
+
+	it('watch:true also registers a code_bg watch for the session', async () => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const out = await executeTool('run_command', { command: 'npm test', watch: true }, sessionCtx);
+		expect(mocks.registerCodeBgWatch).toHaveBeenCalledWith(
+			expect.objectContaining({ owner: 'sess-1', processId: 'bg-1', command: 'npm test' })
+		);
+		expect(out.result).toContain('do NOT poll');
+	});
+
+	it('still refuses background with neither a terminal nor a session', async () => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const out = await executeTool(
+			'run_command',
+			{ command: 'npm run dev', background: true },
+			codeCtx
+		);
+		expect(out.result).toContain('live terminal session');
+		expect(mocks.invoke).not.toHaveBeenCalledWith('code_bg_start', expect.anything());
+	});
+
+	it('appends the terminal hint when a one-shot sudo fails for want of a TTY', async () => {
+		mocks.invoke.mockImplementation((cmd: string) =>
+			cmd === 'run_command_capture'
+				? Promise.resolve(
+						runResultDefaults({
+							stdout: '',
+							stderr:
+								'sudo: a terminal is required to read the password; either use the -S option to read from standard input or configure an askpass helper\nsudo: a password is required\n',
+							exit_code: 1
+						})
+					)
+				: Promise.resolve()
+		);
+		mocks.askCommandApproval.mockResolvedValue('allow_once');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const out = await executeTool('run_command', { command: 'sudo dnf install foo' }, sessionCtx);
+		expect(out.result).toContain('Exit code: 1');
+		expect(out.result).toContain('Shell tab');
+	});
+
+	it('adds no terminal hint for an ordinary failure', async () => {
+		mocks.invoke.mockImplementation((cmd: string) =>
+			cmd === 'run_command_capture'
+				? Promise.resolve(runResultDefaults({ stderr: 'boom\n', exit_code: 2 }))
+				: Promise.resolve()
+		);
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const out = await executeTool('run_command', { command: 'make' }, sessionCtx);
+		expect(out.result).not.toContain('Shell tab');
+	});
+
+	it('command_output tails the log with a status line', async () => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const out = await executeTool('command_output', { id: 'bg-1' }, sessionCtx);
+		expect(mocks.invoke).toHaveBeenCalledWith('code_bg_status', { owner: 'sess-1' });
+		expect(mocks.invoke).toHaveBeenCalledWith('code_bg_tail', { id: 'bg-1', bytes: 8192 });
+		expect(out.result).toContain('Running for');
+		expect(out.result).toContain('PID 4242');
+		expect(out.result).toContain('listening on :5173');
+	});
+
+	it('command_output reports how a finished process ended', async () => {
+		mocks.invoke.mockImplementation((cmd: string) => {
+			if (cmd === 'code_bg_status')
+				return Promise.resolve([{ ...bgProc, running: false, exit_code: 3 }]);
+			if (cmd === 'code_bg_tail') return Promise.resolve('');
+			return Promise.resolve();
+		});
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const out = await executeTool('command_output', { id: 'bg-1' }, sessionCtx);
+		expect(out.result).toContain('exit code 3');
+		expect(out.result).toContain('(no output yet)');
+	});
+
+	it('command_output refuses another session’s process', async () => {
+		mocks.invoke.mockImplementation((cmd: string) =>
+			cmd === 'code_bg_status' ? Promise.resolve([]) : Promise.resolve()
+		);
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const out = await executeTool('command_output', { id: 'bg-9' }, sessionCtx);
+		expect(out.result).toContain('No background command with id bg-9');
+		expect(mocks.invoke).not.toHaveBeenCalledWith('code_bg_tail', expect.anything());
+	});
+
+	it('command_stop stops the process', async () => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const out = await executeTool('command_stop', { id: 'bg-1' }, sessionCtx);
+		expect(mocks.invoke).toHaveBeenCalledWith('code_bg_stop', { id: 'bg-1' });
+		expect(out.result).toContain('Stopped bg-1');
+	});
+
+	it('command_stop needs a Code session', async () => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const out = await executeTool('command_stop', { id: 'bg-1' }, codeCtx);
+		expect(out.result).toContain('Code session');
+		expect(mocks.invoke).not.toHaveBeenCalledWith('code_bg_stop', expect.anything());
 	});
 });

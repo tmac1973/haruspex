@@ -9,6 +9,11 @@ import {
 	consumeWatches,
 	clearWatchesForSession,
 	setWatchCompletionHandler,
+	registerCodeBgWatch,
+	peekCompletedCodeWatches,
+	setCodeWatchCompletionHandler,
+	clearCodeWatches,
+	readCodeBgLog,
 	_resetForTests
 } from '#lib/shell/backgroundWatch.ts';
 
@@ -93,5 +98,114 @@ describe('backgroundWatch', () => {
 		await vi.advanceTimersByTimeAsync(8000);
 		expect(fired).toEqual([]);
 		expect(peekCompletedWatches(2)).toHaveLength(0);
+	});
+});
+
+describe('backgroundWatch with a code_bg source', () => {
+	function proc(id: string, running: boolean, exit_code: number | null = null) {
+		return {
+			id,
+			owner: 'sess-a',
+			command: 'npm test',
+			cwd: '/work',
+			pid: 100,
+			started_at: 0,
+			running,
+			exit_code,
+			log_path: `/cache/code-bg/${id}.log`
+		};
+	}
+
+	function register(processId: string, owner = 'sess-a') {
+		return registerCodeBgWatch({
+			owner,
+			processId,
+			command: 'npm test',
+			logPath: `/cache/code-bg/${processId}.log`,
+			startedAtMs: 0
+		});
+	}
+
+	it('polls code_bg_status and fires only the owner’s handler', async () => {
+		let status = [proc('bg-1', true)];
+		invokeMock.mockImplementation(async (cmd: string) =>
+			cmd === 'code_bg_status' ? status : undefined
+		);
+		let fired = 0;
+		let otherFired = 0;
+		let ptyFired = 0;
+		setCodeWatchCompletionHandler('sess-a', () => fired++);
+		setCodeWatchCompletionHandler('sess-b', () => otherFired++);
+		setWatchCompletionHandler(() => ptyFired++);
+		register('bg-1');
+
+		await vi.advanceTimersByTimeAsync(4000);
+		expect(fired).toBe(0);
+		// No sentinel reads for a code_bg watch.
+		expect(invokeMock).not.toHaveBeenCalledWith('fs_read_text_absolute', expect.anything());
+
+		status = [proc('bg-1', false, 2)];
+		await vi.advanceTimersByTimeAsync(4000);
+		expect(fired).toBe(1);
+		expect(otherFired).toBe(0);
+		expect(ptyFired).toBe(0);
+		const done = peekCompletedCodeWatches('sess-a');
+		expect(done).toHaveLength(1);
+		expect(done[0].exitCode).toBe(2);
+		expect(peekCompletedWatches(100)).toHaveLength(0);
+		expect(peekCompletedCodeWatches('sess-b')).toHaveLength(0);
+	});
+
+	it('reports a signal kill as -1', async () => {
+		invokeMock.mockResolvedValue([proc('bg-2', false, null)]);
+		register('bg-2');
+		await vi.advanceTimersByTimeAsync(4000);
+		expect(peekCompletedCodeWatches('sess-a')[0]?.exitCode).toBe(-1);
+	});
+
+	it('drops a watch whose process was stopped, without a notification', async () => {
+		invokeMock.mockResolvedValue([]);
+		let fired = 0;
+		setCodeWatchCompletionHandler('sess-a', () => fired++);
+		register('bg-3');
+		await vi.advanceTimersByTimeAsync(4000);
+		expect(fired).toBe(0);
+		expect(peekCompletedCodeWatches('sess-a')).toHaveLength(0);
+		invokeMock.mockClear();
+		await vi.advanceTimersByTimeAsync(8000);
+		expect(invokeMock).not.toHaveBeenCalled(); // polling stopped
+	});
+
+	it('clearCodeWatches drops only that session’s watches', async () => {
+		invokeMock.mockResolvedValue([
+			proc('bg-4', false, 0),
+			{ ...proc('bg-5', false, 0), owner: 'sess-b' }
+		]);
+		register('bg-4');
+		register('bg-5', 'sess-b');
+		clearCodeWatches('sess-a');
+		await vi.advanceTimersByTimeAsync(4000);
+		expect(peekCompletedCodeWatches('sess-a')).toHaveLength(0);
+		expect(peekCompletedCodeWatches('sess-b')).toHaveLength(1);
+	});
+
+	it('removing a handler stops its notifications', async () => {
+		invokeMock.mockResolvedValue([proc('bg-6', false, 0)]);
+		let fired = 0;
+		const off = setCodeWatchCompletionHandler('sess-a', () => fired++);
+		off();
+		register('bg-6');
+		await vi.advanceTimersByTimeAsync(4000);
+		expect(fired).toBe(0);
+		// Still queued for when the session comes back.
+		expect(peekCompletedCodeWatches('sess-a')).toHaveLength(1);
+	});
+
+	it('reads the log through code_bg_tail, empty on failure', async () => {
+		invokeMock.mockResolvedValueOnce('tail of log');
+		expect(await readCodeBgLog('bg-7', 100)).toBe('tail of log');
+		expect(invokeMock).toHaveBeenCalledWith('code_bg_tail', { id: 'bg-7', bytes: 100 });
+		invokeMock.mockRejectedValueOnce(new Error('gone'));
+		expect(await readCodeBgLog('bg-7')).toBe('');
 	});
 });
