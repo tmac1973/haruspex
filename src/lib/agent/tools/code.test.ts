@@ -733,12 +733,12 @@ describe('Code-mode tool filtering', () => {
 		'research_url'
 	].sort();
 
-	it('codeMode exposes exactly the CODE_TOOLS allowlist', async () => {
+	it('the Code tab exposes the CODE_TOOLS allowlist plus its background-process tools', async () => {
 		const { getToolSchemas } = await import('#lib/agent/tools/index.ts');
 		const names = getToolSchemas({ hasWorkingDir: true, codeMode: true })
 			.map((s) => s.function.name)
 			.sort();
-		expect(names).toEqual(CODE_TOOLS);
+		expect(names).toEqual([...CODE_TOOLS, 'command_output', 'command_stop'].sort());
 	});
 
 	it('codeMode wins over shellMode and exposes the code toolset plus interactive PTY tools', async () => {
