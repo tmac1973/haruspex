@@ -43,7 +43,7 @@ The header above the conversation holds:
 - **Effort** — how hard the model thinks, for models that publish effort levels;
 - the **AGENTS.md** badge when the repo's instructions are in use (see the `skills` page), and how full the context is.
 
-Changes apply from the next message.
+Changes apply from the next message. While the session is in view, the status badge at the top of the window names its model too.
 
 ## Background processes
 

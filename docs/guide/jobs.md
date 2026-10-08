@@ -19,7 +19,7 @@ Audit, guided planning, autonomous coding and asset generation need a **Working 
 
 ## Give a job its own model
 
-Under **Model**, a job uses the Settings model by default. It can instead use a **Remote server** (any OpenAI-compatible server: URL, model, optional API key, context size, vision) or **OpenRouter (cloud)**, where prompts leave your device. Use this to send a heavy audit or planning job to a bigger or faster model. A job on a remote model does not block the Chat or Shell tabs from using your local model at the same time.
+Under **Model**, a job uses the Settings model by default. It can instead use a **Remote server** (any OpenAI-compatible server: URL, model, optional API key, context size, vision) or **OpenRouter (cloud)**, where prompts leave your device. Use this to send a heavy audit or planning job to a bigger or faster model. A job on a remote model does not block the Chat or Shell tabs from using your local model at the same time. While the job is selected, the status badge at the top of the window names its model.
 
 These job types work much better with a bigger model. Audit, guided planning and autonomous coding read and write code, which is where the 4B and 9B models are weakest.
 

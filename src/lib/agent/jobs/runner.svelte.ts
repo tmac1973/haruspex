@@ -17,7 +17,7 @@ import {
 	type EphemeralTurnOptions,
 	type EphemeralTurnResult
 } from '#lib/agent/runEphemeralTurn.ts';
-import type { BackendOverride, Usage } from '#lib/api.ts';
+import type { Usage } from '#lib/api.ts';
 import { withInferenceSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 import { runWithAutoApprove } from '#lib/stores/approvalOverride.ts';
 import { getJob, type JobWithSteps, type JobType } from '#lib/stores/jobs.svelte.ts';
@@ -28,6 +28,7 @@ import {
 	type SamplingParams
 } from '#lib/stores/settings.ts';
 import { parseModelAdvanced } from './modelAdvanced';
+import { jobBackendOverride } from './jobBackend';
 // The registration barrel, deliberately — importing it registers the built-in
 // job types before the first dispatch can happen.
 import { getJobType, type JobRunContext, type PlannedStep } from './types';
@@ -46,31 +47,6 @@ import { setKeepAwake } from './keepAwake';
 
 export type RunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled' | 'needs_input';
 export type StepStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled';
-
-/**
- * The remote backend a job should run against, or undefined to use the global
- * Settings backend. Active iff the job has a non-blank remote base URL — the
- * override is remote-only by design (local jobs follow Settings). Applies to
- * every turn the job runs, regardless of job type.
- */
-function jobBackendOverride(job: JobWithSteps): BackendOverride | undefined {
-	const url = job.model_remote_base_url?.trim();
-	if (!url) return undefined;
-	return {
-		baseUrl: url,
-		apiKey: job.model_remote_api_key?.trim() || undefined,
-		apiKeyId: job.model_remote_api_key_id ?? undefined,
-		modelId: job.model_remote_model_id?.trim() || undefined,
-		contextSize: job.model_remote_context_size ?? undefined,
-		visionSupported: job.model_remote_vision_supported ?? undefined,
-		// What the editor's last probe of this server reported. Without it the
-		// descriptor can only guess the model's reasoning mechanism from its
-		// id, and guesses "none" for anything off the built-in Qwen list.
-		// Omitted rather than null when never probed — absent is what the
-		// descriptor reads as "fall back to the id guess".
-		discovered: parseModelAdvanced(job.model_advanced).discovered ?? undefined
-	};
-}
 
 /**
  * The per-job model behavior every turn of this job runs under. Resolved

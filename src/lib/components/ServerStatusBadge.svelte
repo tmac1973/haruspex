@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { getServerState } from '#lib/stores/llamaServer.svelte.ts';
+	import { getLiveSettings } from '#lib/stores/settings.ts';
+	import { getModelInView } from '#lib/stores/modelInView.svelte.ts';
+	import { statusBadge } from '#lib/components/serverStatusBadge.ts';
 
 	interface Props {
 		/** Opens the Log Viewer — same handler as the header logs icon. */
@@ -9,29 +12,19 @@
 	let { onOpenLogs }: Props = $props();
 
 	const state = $derived(getServerState());
+	const badge = $derived(statusBadge(getModelInView(), state, getLiveSettings()));
+	const showLogsLink = $derived(badge.status === 'error');
 </script>
 
 <button
 	class="status-badge"
-	data-status={state.status}
-	title="Open sidecar logs"
+	data-status={badge.status}
+	title={badge.title}
 	onclick={() => onOpenLogs?.()}
 >
 	<span class="dot"></span>
-	<span class="label" aria-live="polite">
-		{#if state.status === 'ready'}
-			Ready
-		{:else if state.status === 'starting'}
-			Starting…
-		{:else if state.status === 'error'}
-			Error{state.errorMessage ? `: ${state.errorMessage}` : ''}
-		{:else if state.status === 'remote'}
-			Remote{state.remoteLabel ? ` · ${state.remoteLabel}` : ''}
-		{:else}
-			Stopped
-		{/if}
-	</span>
-	{#if state.status === 'error'}
+	<span class="label" aria-live="polite">{badge.label}</span>
+	{#if showLogsLink}
 		<span class="view-logs">View logs</span>
 	{/if}
 </button>
@@ -50,6 +43,8 @@
 		color: inherit;
 		background: var(--bg-secondary);
 		cursor: pointer;
+		min-width: 0;
+		max-width: 100%;
 	}
 
 	.status-badge:hover {
@@ -87,7 +82,8 @@
 	}
 
 	.label {
-		max-width: 300px;
+		min-width: 0;
+		max-width: 260px;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -98,6 +94,14 @@
 		color: var(--accent);
 		text-decoration: underline;
 		font-size: 0.75rem;
+	}
+
+	/* Narrow windows: the header still has to fit the context ring and the
+	   icon buttons beside the badge. The full text is in the title. */
+	@media (max-width: 720px) {
+		.label {
+			max-width: 140px;
+		}
 	}
 
 	@keyframes pulse {

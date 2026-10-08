@@ -1225,6 +1225,7 @@
 		display: flex;
 		align-items: center;
 		gap: 10px;
+		min-width: 0;
 	}
 
 	.header-icon-btn {

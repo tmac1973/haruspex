@@ -15,7 +15,8 @@ import {
 } from '#lib/agent/jobs/jobModelForm.ts';
 import { folderName } from '#lib/code/sessionList.ts';
 
-function host(url: string): string {
+/** A URL's host, or the last path segment of something that isn't a URL. */
+export function host(url: string): string {
 	try {
 		return new URL(url).host;
 	} catch {
@@ -42,6 +43,13 @@ export function settingsModelName(settings: AppSettings): string {
 	return localModelName(settings.activeLocalModelFilename);
 }
 
+/** An override's model and where it runs: "gpt-5 · OpenRouter", "qwen3 · box:8080". */
+export function overrideModelLabel(backend: BackendOverride): { model: string; label: string } {
+	const model = backend.modelId?.trim() || 'default';
+	const kind = isOpenRouterUrl(backend.baseUrl) ? 'OpenRouter' : host(backend.baseUrl);
+	return { model, label: `${model} · ${kind}` };
+}
+
 /** The header button's label and tooltip for a session's model. */
 export function sessionModelLabel(
 	backend: BackendOverride | null,
@@ -58,10 +66,9 @@ export function sessionModelLabel(
 			title: `Follows Settings → Inference (now ${where}). Click to change.`
 		};
 	}
-	const model = backend.modelId?.trim() || 'default';
-	const kind = isOpenRouterUrl(backend.baseUrl) ? 'OpenRouter' : host(backend.baseUrl);
+	const { model, label } = overrideModelLabel(backend);
 	return {
-		label: `${model} · ${kind}`,
+		label,
 		title: `This session's model: ${model} on ${backend.baseUrl}. Click to change.`
 	};
 }
