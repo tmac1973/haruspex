@@ -222,6 +222,7 @@ pub fn run() {
             server::get_server_logs,
             server::clear_server_logs,
             server::get_cpu_fallback_state,
+            server::get_llama_api_key,
             server::get_llama_crash_log,
             server::clear_llama_crash_log,
             models::list_models,

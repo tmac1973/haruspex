@@ -3,6 +3,7 @@ import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import type { RemoteReasoningCaps, RemoteSamplingCaps } from '#lib/stores/settings.ts';
 import { logDebug, isVerbosePayloads } from '#lib/debug-log.ts';
 import { apiKeysReady } from '#lib/stores/apiKeySecrets.ts';
+import { localServerKeyReady } from '#lib/inference/localServerKey.ts';
 import { baseUrl } from '#lib/ports.ts';
 import { OPENROUTER_ATTRIBUTION_HEADERS } from '#lib/openrouter.ts';
 import { isAbortError } from '#lib/utils/error.ts';
@@ -609,8 +610,8 @@ export async function* chatCompletionStream(
 	signal?: AbortSignal,
 	port?: number
 ): AsyncGenerator<StreamChunk> {
-	// Stored keys are read into memory once per run; wait for that.
-	await apiKeysReady();
+	// Stored keys and llama-server's key are read once per run; wait for that.
+	await Promise.all([apiKeysReady(), localServerKeyReady()]);
 	const endpoint = resolveChatEndpoint(port, options.backend);
 	const body = buildRequestBody(
 		{ ...options, stream: true },
@@ -664,8 +665,8 @@ export async function chatCompletion(
 	signal?: AbortSignal,
 	port?: number
 ): Promise<ChatCompletionResponse> {
-	// Stored keys are read into memory once per run; wait for that.
-	await apiKeysReady();
+	// Stored keys and llama-server's key are read once per run; wait for that.
+	await Promise.all([apiKeysReady(), localServerKeyReady()]);
 	const endpoint = resolveChatEndpoint(port, options.backend);
 	const body = buildRequestBody(
 		{ ...options, stream: false },

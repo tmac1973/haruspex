@@ -8,6 +8,7 @@ import { sleep } from '#lib/utils/async.ts';
 import { readSseData } from '#lib/api.ts';
 import { fetchModelForDefault } from '#lib/stores/memory.svelte.ts';
 import { PORTS, baseUrl } from '#lib/ports.ts';
+import { localServerKey, localServerKeyReady } from '#lib/inference/localServerKey.ts';
 import {
 	getActiveLocalModelFilename,
 	getSettings,
@@ -245,9 +246,13 @@ async function streamTestMessage(): Promise<void> {
 	};
 
 	try {
+		await localServerKeyReady();
 		const response = await fetch(`${baseUrl(PORTS.llama)}/v1/chat/completions`, {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: `Bearer ${localServerKey() ?? ''}`
+			},
 			body: JSON.stringify({
 				model: 'default',
 				messages: [
