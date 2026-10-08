@@ -45,7 +45,7 @@
 			</ModalButton>
 		</div>
 		<p class="help">
-			Everything remembered can be reviewed, edited or deleted in Settings → Remember across chats.
+			Everything remembered can be reviewed, edited or deleted in Settings → Memory.
 		</p>
 	{/if}
 </Modal>
