@@ -14,7 +14,9 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('#lib/stores/codeCommandApproval.svelte.ts', () => ({
 	askCommandApproval: mocks.askCommandApproval,
 	isSessionApproved: mocks.isSessionApproved,
-	approveSession: mocks.approveSession
+	approveSession: mocks.approveSession,
+	codeApprovalKey: (id: string) => `code:${id}`,
+	SHELL_APPROVAL_KEY: 'shell'
 }));
 vi.mock('#lib/shell/backgroundWatch.ts', () => ({
 	registerWatch: mocks.registerWatch,
@@ -154,7 +156,19 @@ describe('run_command risk gate', () => {
 		mocks.askCommandApproval.mockResolvedValue('allow_session');
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('run_command', { command: 'sudo reboot' }, codeCtx);
-		expect(mocks.approveSession).toHaveBeenCalled();
+		expect(mocks.approveSession).toHaveBeenCalledWith('shell');
+	});
+
+	it("keys a Code session's approval by its id", async () => {
+		mocks.askCommandApproval.mockResolvedValue('allow_session');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		await executeTool(
+			'run_command',
+			{ command: 'sudo reboot' },
+			{ ...codeCtx, codeSessionId: 's1' }
+		);
+		expect(mocks.isSessionApproved).toHaveBeenCalledWith('code:s1');
+		expect(mocks.approveSession).toHaveBeenCalledWith('code:s1');
 	});
 
 	it('skips the prompt when codeAutoApprove is on', async () => {

@@ -15,6 +15,7 @@
  * calls). A second overlapping ask rejects.
  */
 
+import { SvelteSet } from 'svelte/reactivity';
 import type { RiskMatch } from '#lib/shell/risky-commands.ts';
 
 export type CommandApprovalChoice = 'allow_once' | 'allow_session' | 'deny';
@@ -55,20 +56,29 @@ export function resolveCommandApproval(choice: CommandApprovalChoice): void {
 	current.resolve(choice);
 }
 
-// Session-wide "allow all" memory. In-memory only — re-prompts on app restart.
-// The Code tab works against one project at a time, so a single flag matches
-// the user's mental model ("I trust this session"). Reset when the working
-// directory changes (see the Code view).
-let approvedForSession = false;
+// "Allow for this session" memory. In-memory only — re-prompts on app restart.
+// Keyed by an opaque string naming the session that gave it: the Shell passes
+// `SHELL_APPROVAL_KEY` (one flag across its tabs, reset when Code mode is
+// toggled or a chat cleared), a Code-tab session `codeApprovalKey(id)`, so
+// trusting one coding session never trusts another.
+const approvedSessions = new SvelteSet<string>();
 
-export function isSessionApproved(): boolean {
-	return approvedForSession;
+/** The Shell's key: one approval shared by every Shell tab, as before. */
+export const SHELL_APPROVAL_KEY = 'shell';
+
+/** A Code-tab session's key. */
+export function codeApprovalKey(sessionId: string): string {
+	return `code:${sessionId}`;
 }
 
-export function approveSession(): void {
-	approvedForSession = true;
+export function isSessionApproved(key: string): boolean {
+	return approvedSessions.has(key);
 }
 
-export function resetSessionApproval(): void {
-	approvedForSession = false;
+export function approveSession(key: string): void {
+	approvedSessions.add(key);
+}
+
+export function resetSessionApproval(key: string): void {
+	approvedSessions.delete(key);
 }

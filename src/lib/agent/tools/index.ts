@@ -6,6 +6,7 @@ import './email';
 import './email-compose';
 import './sandbox';
 import './code';
+import './code-bg';
 import './shell-interactive';
 import './audit';
 import './planning';

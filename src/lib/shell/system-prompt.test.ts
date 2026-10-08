@@ -1,9 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import {
-	buildShellCodeSystemPrompt,
-	buildShellSystemPrompt,
-	type ShellSessionContext
-} from '#lib/shell/system-prompt.ts';
+import { buildShellSystemPrompt, type ShellSessionContext } from '#lib/shell/system-prompt.ts';
+import { buildShellCodeSystemPrompt } from '#lib/code/system-prompt.ts';
 
 function ctx(shellPath: string, shellName: string): ShellSessionContext {
 	return {

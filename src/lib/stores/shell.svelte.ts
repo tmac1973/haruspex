@@ -38,14 +38,13 @@ import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { remapIndexedRecords } from '#lib/agent/compaction.ts';
 import { computeMessageStats, type MessageStats } from '#lib/stores/chat.svelte.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import { formatDuration } from '#lib/utils/format.ts';
-import {
-	buildShellSystemPrompt,
-	buildShellCodeSystemPrompt,
-	type ShellSessionContext
-} from '#lib/shell/system-prompt.ts';
+import { buildShellSystemPrompt, type ShellSessionContext } from '#lib/shell/system-prompt.ts';
+import { buildShellCodeSystemPrompt } from '#lib/code/system-prompt.ts';
 import { classifyNestedSession, type NestedSession } from '#lib/shell/nestedSession.ts';
-import { resetSessionApproval } from '#lib/stores/codeCommandApproval.svelte.ts';
+import {
+	resetSessionApproval,
+	SHELL_APPROVAL_KEY
+} from '#lib/stores/codeCommandApproval.svelte.ts';
 import { runShellTurn } from '#lib/shell/runShellTurn.ts';
 import { truncateCapturedOutput } from '#lib/shell/truncate.ts';
 import {
@@ -60,8 +59,7 @@ import {
 	peekCompletedWatches,
 	consumeWatches,
 	clearWatchesForSession,
-	readWatchLog,
-	type BackgroundWatch
+	buildWatchNotification
 } from '#lib/shell/backgroundWatch.ts';
 
 interface CapturedRegion {
@@ -339,7 +337,7 @@ export class ShellSession {
 		this.codeMode = !this.codeMode;
 		// Leaving Code mode (or re-entering) clears any "allow all this session"
 		// command approval so the guard re-arms.
-		resetSessionApproval();
+		resetSessionApproval(SHELL_APPROVAL_KEY);
 		// Switching Code mode ON is the other moment a stored thread becomes
 		// relevant: the shell may have been bound long before, in plain mode.
 		// Same single path as everywhere else; it no-ops on a non-empty thread.
@@ -567,7 +565,7 @@ export class ShellSession {
 		this.lastPendingOutputEnd = 0;
 		// A fresh chat is a fresh session: re-arm the per-command approval so an
 		// earlier "allow for this session" doesn't carry into the new chat.
-		resetSessionApproval();
+		resetSessionApproval(SHELL_APPROVAL_KEY);
 		// Release the persistence key so the next turn pins a fresh one. The
 		// stored row is deliberately left alone — only `startFreshCodeThread`
 		// deletes it.
@@ -1084,40 +1082,6 @@ export class ShellSession {
 			queueMicrotask(() => void this.tryFlushWatchNotifications());
 		}
 	};
-}
-
-/**
- * Build the user-facing body for a background-watch completion turn: one block
- * per finished command with its exit code, when it ran, and its output tail.
- */
-async function buildWatchNotification(completed: BackgroundWatch[]): Promise<string> {
-	const lines: string[] = [
-		completed.length === 1
-			? 'A background command you started with watch has finished.'
-			: `${completed.length} background commands you started with watch have finished.`
-	];
-	for (const w of completed) {
-		const tail = truncateCapturedOutput(await readWatchLog(w.logPath, w.wslDistro), 4096);
-		const finishedMs = w.completedAtMs ?? Date.now();
-		lines.push(
-			`\n$ ${w.command}\n` +
-				`exit code: ${w.exitCode} · started ${new Date(w.startedAtMs).toLocaleTimeString()}, ` +
-				`ran ${formatDuration(finishedMs - w.startedAtMs)}, finished ${describeAgo(finishedMs)}\n` +
-				`--- output ---\n${tail.text || '(no output)'}\n---`
-		);
-	}
-	lines.push(
-		'\nReact as needed: report the result, fix a failure, or run the next step. ' +
-			'If nothing is needed, a one-line acknowledgement is fine.'
-	);
-	return lines.join('\n');
-}
-
-function describeAgo(atMs: number): string {
-	const s = Math.max(0, Math.round((Date.now() - atMs) / 1000));
-	if (s < 5) return 'just now';
-	if (s < 60) return `${s}s ago`;
-	return `${Math.floor(s / 60)}m ago`;
 }
 
 // --- registry -------------------------------------------------------------
