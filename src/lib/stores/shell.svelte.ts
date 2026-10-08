@@ -16,7 +16,7 @@
  */
 
 import { prepareTurnSkills, skillsPromptSection, type TurnSkills } from '#lib/skills/turn.ts';
-import { setRepoTrusted, shellProject } from '#lib/skills/project.ts';
+import { knownShellProject, setRepoTrusted, shellProject } from '#lib/skills/project.ts';
 import { renderSlashMessage } from '#lib/skills/content.ts';
 import { knownTrustedRoot } from '#lib/slash/slash.ts';
 import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
@@ -187,7 +187,10 @@ export class ShellSession {
 	// Transient notice when the pre-send guard reduced history to fit the
 	// model's context window. Cleared at the start of each turn.
 	contextNotice = $state<string | null>(null);
-	/** The repo's AGENTS.md as the last Code mode turn carried it. */
+	/**
+	 * The repo's AGENTS.md as the last turn carried it, or as the next will
+	 * after a turn wrote it (`/init`).
+	 */
 	agentsMd = $state<AgentsMd | null>(null);
 	/** The trusted repo the last turn took instructions from. */
 	projectRoot = $state<string | null>(null);
@@ -834,6 +837,10 @@ export class ShellSession {
 		const toolPairs = turnMessages
 			.slice(baseTurnLen)
 			.filter((m) => m.role === 'tool' || (m.role === 'assistant' && m.tool_calls));
+		const wroteAgentsMd = toolPairs.some((m) =>
+			m.tool_calls?.some((c) => c.function?.name === 'write_agents_md')
+		);
+		if (wroteAgentsMd) void this.showWrittenAgentsMd();
 		// `rawText`, not `finalText`: the renderer turns `<think>` blocks into the
 		// collapsible reasoning UI (convertThinkingBlocks), which finalizeStreamText
 		// now strips. Storing finalText here would silently drop reasoning display.
@@ -940,6 +947,20 @@ export class ShellSession {
 			? buildShellCodeSystemPrompt(promptOpts)
 			: buildShellSystemPrompt(promptOpts);
 		return { messages: mergeLeadingSystemMessages([systemPrompt, ...this.messages]), skills };
+	}
+
+	/**
+	 * After a turn saved the repo's AGENTS.md (`/init`; the tool is named as a
+	 * string, since importing its module registers tools, which a store must
+	 * not). The badge shows what the turn started with, which didn't have the
+	 * file, so read it again. Never the trust prompt: approving the file
+	 * already trusted a repo nobody had asked about, and an earlier "no" stands.
+	 */
+	private async showWrittenAgentsMd(): Promise<void> {
+		const live = await this.fetchLiveContext().catch(() => null);
+		const project = await knownShellProject(live?.currentCwd ?? null);
+		this.projectRoot = project.root;
+		this.agentsMd = project.agentsMd;
 	}
 
 	/**
