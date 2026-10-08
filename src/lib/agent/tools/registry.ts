@@ -15,6 +15,7 @@ import { isMcpToolEnabled } from './mcp-names';
 // The predicate, not the tool module: memoryWrite.ts registers THROUGH this
 // file, so importing it here would be a cycle.
 import { memoryActive } from '#lib/stores/memory.svelte.ts';
+import { CODE_TAB_ONLY, CODE_TAB_DESCRIPTIONS, type DescriptionOverride } from './codeTabProfile';
 
 const tools = new Map<string, ToolRegistration>();
 
@@ -197,7 +198,15 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	return true;
 }
 
+/** The Code tab: the code toolset with no live terminal behind it. */
+function isCodeTab(opts: ToolFilterOpts): boolean {
+	return opts.codeMode && !opts.shellMode;
+}
+
 function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
+	// Background-process and hand-off tools belong to the Code tab alone. Shell
+	// Code mode has a real terminal for both, and Chat and Shell run nothing.
+	if (CODE_TAB_ONLY.has(reg.schema.function.name)) return isCodeTab(opts);
 	// codeMode wins over shellMode: the Shell assistant in Code mode exposes the
 	// code toolset (resolved against the live shell CWD), not the plain shell set.
 	if (opts.codeMode) return shouldIncludeCodeTool(reg, opts);
@@ -299,7 +308,35 @@ function schemaFor(
 			reg.schema.function.name === 'read_skill_file' ? skills.skillFileNames : skills.skillNames;
 		return names?.length ? withSkillEnum(reg.schema, names) : null;
 	}
-	return shouldIncludeTool(reg, filter) ? reg.schema : null;
+	return shouldIncludeTool(reg, filter) ? profileSchema(reg.schema, filter) : null;
+}
+
+/**
+ * The registered wording is Shell Code mode's (a live terminal); the Code tab
+ * swaps in its own where a tool behaves differently there.
+ */
+function profileSchema(schema: ToolDefinition, filter: ToolFilterOpts): ToolDefinition {
+	const override = isCodeTab(filter) ? CODE_TAB_DESCRIPTIONS[schema.function.name] : undefined;
+	return override ? withDescription(schema, override) : schema;
+}
+
+/** A schema with its description, and any named parameters', replaced. */
+function withDescription(schema: ToolDefinition, override: DescriptionOverride): ToolDefinition {
+	const params = schema.function.parameters as {
+		properties: Record<string, Record<string, unknown>>;
+	};
+	const properties = { ...params.properties };
+	for (const [name, description] of Object.entries(override.params ?? {})) {
+		if (properties[name]) properties[name] = { ...properties[name], description };
+	}
+	return {
+		...schema,
+		function: {
+			...schema.function,
+			description: override.description,
+			parameters: { ...params, properties }
+		}
+	};
 }
 
 /** A schema without its `where` parameter, if it has one. */

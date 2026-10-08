@@ -386,6 +386,37 @@ describe('Shell + Code combined mode', () => {
 	});
 });
 
+describe('the Code tab root (codeMode without shellMode)', () => {
+	// A stale shell cwd must not leak in: outside shell mode the tools root
+	// at the session's working directory, whatever else the context carries.
+	const tabCtx = { ...codeCtx, shellCwd: '/elsewhere' };
+
+	it('code_grep and code_glob root at the working directory, not the shell cwd', async () => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		mocks.invoke.mockResolvedValueOnce({ matches: [], truncated: false });
+		await executeTool('code_grep', { pattern: 'x' }, tabCtx);
+		expect(mocks.invoke).toHaveBeenCalledWith(
+			'code_grep',
+			expect.objectContaining({ root: '/work' })
+		);
+		mocks.invoke.mockResolvedValueOnce({ paths: [], truncated: false });
+		await executeTool('code_glob', { pattern: '*' }, tabCtx);
+		expect(mocks.invoke).toHaveBeenCalledWith(
+			'code_glob',
+			expect.objectContaining({ root: '/work' })
+		);
+	});
+
+	it('run_command runs in the working directory', async () => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		await executeTool('run_command', { command: 'pwd' }, tabCtx);
+		expect(mocks.invoke).toHaveBeenCalledWith(
+			'run_command_capture',
+			expect.objectContaining({ cwd: '/work' })
+		);
+	});
+});
+
 describe('run_command PTY driving', () => {
 	const ptyCtx = {
 		workingDir: null,
