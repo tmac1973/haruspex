@@ -51,3 +51,22 @@ The CI script's path matching runs on a fixture list of changed files:
 
 A test PR touching a Settings section fails `guide`, passes after a guide
 edit, and passes with `no-docs` instead.
+
+## Decisions made while building it
+
+- **The check is its own workflow, `guide.yml`, not a job in `ci.yml`.**
+  Adding or removing `no-docs` (`labeled` / `unlabeled`) then re-runs only
+  this check. It also sees every PR: `ci.yml`'s path filter skips prose-only
+  ones, but a guide-only PR is exactly what it should pass.
+- **`ci.yml` now runs for `docs/guide/**`.** The guide is compiled into the
+  app and tested (`src/lib/guide/`), so a PR that only edits a page still
+  needs the tests for size, format and drift. That's the same exception
+  `docs/image-generation.md` already had.
+- **The matching lives in `scripts/guide-check.mjs`,** a plain module that
+  the workflow pipes `git diff --name-only` into, and that
+  `src/lib/guide/check.test.ts` imports to test the rules.
+- **Tool plumbing doesn't count:** `registry`, `types`, `index`, `coerce`,
+  `_helpers` and `mcp-names` under `agent/tools/`, and any `*.test.ts`.
+- **Shortcuts moved to `src/lib/shortcuts.ts`.** The `shortcuts` page now
+  writes keys exactly as the app does (⌘, ⌥), so the drift test can match
+  them as written.

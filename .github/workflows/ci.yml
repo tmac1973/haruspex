@@ -6,8 +6,9 @@ on:
       # Everything except prose. A change that only touches markdown, plan/ or
       # docs/ has nothing for these jobs to check — prettier covers src/ only,
       # and no test reads plan/ — so it skips the half-hour of builds.
-      # The one exception: check-constants.mjs reads the pinned sd-server
-      # version out of docs/image-generation.md, so that file still counts.
+      # The exceptions: check-constants.mjs reads the pinned sd-server version
+      # out of docs/image-generation.md, and the user guide is compiled into
+      # the app, so both still count.
       - '**'
       - '!plan/**'
       - '!docs/**'
@@ -15,6 +16,8 @@ on:
       - '!audits/**'
       - '!**/*.md'
       - 'docs/image-generation.md'
+      # The user guide is compiled into the app and tested (src/lib/guide/).
+      - 'docs/guide/**'
   pull_request:
     # `labeled` so adding windows-ci / macos-ci starts that job straight away,
     # rather than on the PR's next push.
@@ -29,6 +32,8 @@ on:
       - '!audits/**'
       - '!**/*.md'
       - 'docs/image-generation.md'
+      # The user guide is compiled into the app and tested (src/lib/guide/).
+      - 'docs/guide/**'
   workflow_dispatch:
 
 jobs:

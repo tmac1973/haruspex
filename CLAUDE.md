@@ -129,3 +129,22 @@ cargo fmt -- --check # Rust format check
   settings blob throws and wedges the panel.
 - Changing a Tauri command or a `#[ts(export)]` struct means running
   `./scripts/export-ipc-types.sh`, or CI fails on drift.
+
+## User guide
+
+`docs/guide/` is the user guide: compiled into the app, where the model reads
+it through `haruspex_docs` to answer questions about Haruspex, and published
+on the website. It has to describe the app as it is.
+
+- A change users can see (a setting, a tool, a job type, a slash command, a
+  shortcut, a shipped skill, or different behaviour) updates its page in the
+  same PR, and the PR body names the page. The `Guide` check
+  (`scripts/guide-check.mjs`) fails a PR that touches those paths without
+  touching `docs/guide/`; label it `no-docs` when nothing a user sees changed.
+- Keyboard shortcuts live in `src/lib/shortcuts.ts`; the `shortcuts` page
+  writes each key exactly as that list does, and a test holds them together.
+- Writing: headings say what the user wants to do; Settings paths in full
+  ("Settings → Shell → Memory limit"); plain words, no marketing; say what it
+  doesn't do as well. Each page stands alone, since the model reads one at a
+  time: point at others by name ("see the `skills` page"). Every page has
+  `title` and `description` frontmatter, and stays under 6 KB.

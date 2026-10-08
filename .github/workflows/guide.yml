@@ -1,0 +1,34 @@
+# Does a PR that changes something users can see also update the user guide?
+#
+# The guide in docs/guide/ is compiled into the app and read by its model to
+# answer questions about Haruspex, so it has to keep up with the app. See
+# scripts/guide-check.mjs for which paths count.
+#
+# Its own workflow, not a job in ci.yml: adding or removing the `no-docs`
+# label then re-runs only this check, and it has to see every PR, prose-only
+# ones included, which ci.yml's path filter skips.
+name: Guide
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  guide:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check the user guide kept up
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+        # LABELS is split on purpose: one argument per label.
+        run: git diff --name-only "$BASE...$HEAD" | node scripts/guide-check.mjs $LABELS
