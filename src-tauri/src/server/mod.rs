@@ -54,7 +54,16 @@ pub struct ContextBackoffState {
 pub struct ServerConfig {
     pub port: u16,
     pub ctx_size: u32,
-    pub n_gpu_layers: i32,
+    /// `Some(n)` pins `--n-gpu-layers n`: 99 keeps every layer in VRAM, 0 is
+    /// the CPU fallback. `None` omits the flag so llama.cpp's own fit
+    /// (`--fit`, on by default) places layers and MoE experts across VRAM
+    /// and system RAM. Fit aborts the moment the layer count is set
+    /// explicitly, so this is the only way to get it.
+    pub n_gpu_layers: Option<i32>,
+    /// `--cache-ram`, in MiB: the host-RAM prompt cache. llama.cpp defaults
+    /// to 8 GiB, which competes with weights offloaded to RAM. See
+    /// [`cache_ram_mib`].
+    pub cache_ram_mib: u32,
     pub flash_attn: bool,
     /// Drive the model's multi-token-prediction head as a self-speculative
     /// draft. Only ever true for a model that actually has one, and for a
@@ -86,7 +95,8 @@ impl Default for ServerConfig {
             // every real `start_server` overrides this with the caller's
             // value. The user-facing default lives in TS (`DEFAULT_CONTEXT_SIZE`).
             ctx_size: 16384,
-            n_gpu_layers: 99,
+            n_gpu_layers: Some(ALL_GPU_LAYERS),
+            cache_ram_mib: CACHE_RAM_MAX_MIB,
             flash_attn: true,
             mtp: false,
             mtp_draft_path: None,
@@ -112,8 +122,8 @@ impl ServerConfig {
             self.port.to_string(),
             "--ctx-size".to_string(),
             self.ctx_size.to_string(),
-            "--n-gpu-layers".to_string(),
-            self.n_gpu_layers.to_string(),
+            "--cache-ram".to_string(),
+            self.cache_ram_mib.to_string(),
             "--cache-type-k".to_string(),
             "q8_0".to_string(),
             "--cache-type-v".to_string(),
@@ -131,6 +141,11 @@ impl ServerConfig {
             "--host".to_string(),
             sidecar_utils::LOOPBACK.to_string(),
         ];
+
+        if let Some(layers) = self.n_gpu_layers {
+            args.push("--n-gpu-layers".to_string());
+            args.push(layers.to_string());
+        }
 
         args.push("--flash-attn".to_string());
         args.push(if self.flash_attn { "on" } else { "off" }.to_string());
@@ -704,7 +719,10 @@ impl LlamaServer {
             signal,
             status_before: format!("{:?}", state.status),
             model_path: model_path.to_string(),
-            n_gpu_layers: state.config.n_gpu_layers,
+            n_gpu_layers: state
+                .config
+                .n_gpu_layers
+                .map_or_else(|| "auto".to_string(), |n| n.to_string()),
             ctx_size: state.config.ctx_size,
             flash_attn: state.config.flash_attn,
             cpu_fallback_active: state.cpu_fallback_active,
@@ -879,11 +897,11 @@ impl LlamaServer {
         if state.status == ServerStatus::Starting
             && !state.gpu_fallback_attempted
             && state.gpu_error_detected
-            && state.config.n_gpu_layers != 0
+            && state.config.n_gpu_layers != Some(0)
         {
             state.gpu_fallback_attempted = true;
             state.gpu_error_detected = false;
-            state.config.n_gpu_layers = 0;
+            state.config.n_gpu_layers = Some(0);
             true
         } else {
             false
@@ -1068,6 +1086,8 @@ impl LlamaServer {
 
 // Tauri commands
 
+// Each optional flag is its own IPC argument so the TS side can name them.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn start_server(
     app: AppHandle,
@@ -1084,6 +1104,9 @@ pub async fn start_server(
     // The user's "keep the vision projector in system RAM" preference.
     // `None` (first-run setup) means the default: projector on the GPU.
     mmproj_on_cpu: Option<bool>,
+    // The user's "let models use system RAM" preference. `None` means off:
+    // every layer pinned to VRAM.
+    ram_offload: Option<bool>,
 ) -> Result<(), String> {
     let filename = Path::new(&model_path)
         .file_name()
@@ -1119,8 +1142,22 @@ pub async fn start_server(
     // Both have to agree: the user hasn't turned it off AND this GGUF
     // actually has a head to draft from.
     let mtp_on = mtp.unwrap_or(true) && mtp_usable;
+    let ram_offload = ram_offload.unwrap_or(false);
+    // With offload on, assume the whole file may land in RAM: fit decides how
+    // much actually does, and over-counting only shrinks the prompt cache.
+    let offloaded_bytes = if ram_offload {
+        std::fs::metadata(&model_path).map(|m| m.len()).unwrap_or(0)
+    } else {
+        0
+    };
     let config = ServerConfig {
         ctx_size,
+        n_gpu_layers: if ram_offload {
+            None
+        } else {
+            Some(ALL_GPU_LAYERS)
+        },
+        cache_ram_mib: cache_ram_mib(crate::hardware::total_ram_bytes(), offloaded_bytes),
         mtp: mtp_on,
         mtp_draft_path: if mtp_on { draft_path } else { None },
         mmproj_on_cpu: mmproj_on_cpu.unwrap_or(false),
@@ -1129,6 +1166,27 @@ pub async fn start_server(
         ..Default::default()
     };
     state.start(&app, &model_path, Some(config)).await
+}
+
+/// `--n-gpu-layers` value that keeps every layer in VRAM.
+const ALL_GPU_LAYERS: i32 = 99;
+
+/// Ceiling for the host-RAM prompt cache. It only saves re-reading a prompt
+/// after switching between conversations, so it never earns more than this.
+pub(crate) const CACHE_RAM_MAX_MIB: u32 = 2048;
+
+/// RAM left to the OS, the webview and everything else before any goes to
+/// the prompt cache.
+const CACHE_RAM_HEADROOM_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+
+/// `--cache-ram` for a machine with `total_ram` bytes when up to
+/// `offloaded_bytes` of model weights may sit in RAM: a quarter of what is
+/// left after the weights and [`CACHE_RAM_HEADROOM_BYTES`], capped at
+/// [`CACHE_RAM_MAX_MIB`]. 0 disables the cache, which is what a machine
+/// already short of RAM wants.
+pub(crate) fn cache_ram_mib(total_ram: u64, offloaded_bytes: u64) -> u32 {
+    let spare = total_ram.saturating_sub(offloaded_bytes + CACHE_RAM_HEADROOM_BYTES);
+    ((spare / 4) / (1024 * 1024)).min(CACHE_RAM_MAX_MIB as u64) as u32
 }
 
 /// The key the webview sends to llama-server as `Authorization: Bearer`.
@@ -1305,7 +1363,7 @@ mod tests {
         let config = ServerConfig::default();
         assert_eq!(config.port, 8765);
         assert_eq!(config.ctx_size, 16384);
-        assert_eq!(config.n_gpu_layers, 99);
+        assert_eq!(config.n_gpu_layers, Some(99));
         assert!(config.flash_attn);
         assert!(config.extra_args.is_empty());
     }
@@ -1603,11 +1661,48 @@ mod tests {
     #[test]
     fn build_args_cpu_only() {
         let config = ServerConfig {
-            n_gpu_layers: 0,
+            n_gpu_layers: Some(0),
             ..Default::default()
         };
         let args = config.build_args("/path/to/model.gguf");
-        assert!(args.contains(&"0".to_string()));
+        assert_eq!(flag_value(&args, "--n-gpu-layers"), Some("0"));
+    }
+
+    /// RAM offload works by leaving the layer count to llama.cpp's fit, which
+    /// aborts on any explicit value — so the flag must be absent, not `auto`.
+    #[test]
+    fn build_args_omit_gpu_layers_for_ram_offload() {
+        let config = ServerConfig {
+            n_gpu_layers: None,
+            ..Default::default()
+        };
+        let args = config.build_args("/path/to/model.gguf");
+        assert!(!args.iter().any(|a| a == "--n-gpu-layers"));
+    }
+
+    #[test]
+    fn build_args_always_set_the_prompt_cache_size() {
+        let args = ServerConfig {
+            cache_ram_mib: 512,
+            ..Default::default()
+        }
+        .build_args("/path/to/model.gguf");
+        assert_eq!(flag_value(&args, "--cache-ram"), Some("512"));
+    }
+
+    #[test]
+    fn cache_ram_scales_with_spare_ram_and_caps() {
+        let gib = 1024 * 1024 * 1024u64;
+        // 64 GB, nothing offloaded: plenty spare, capped.
+        assert_eq!(cache_ram_mib(64 * gib, 0), CACHE_RAM_MAX_MIB);
+        // 16 GB, nothing offloaded: (16 - 8) / 4 = 2 GiB, right at the cap.
+        assert_eq!(cache_ram_mib(16 * gib, 0), 2048);
+        // 32 GB with an 18 GB MoE in RAM: (32 - 18 - 8) / 4 = 1.5 GiB.
+        assert_eq!(cache_ram_mib(32 * gib, 18 * gib), 1536);
+        // 16 GB with an 18 GB model offloaded: no room, cache off.
+        assert_eq!(cache_ram_mib(16 * gib, 18 * gib), 0);
+        // 8 GB machine: under the headroom, cache off.
+        assert_eq!(cache_ram_mib(8 * gib, 0), 0);
     }
 
     #[test]
