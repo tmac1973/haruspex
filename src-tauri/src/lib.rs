@@ -121,6 +121,10 @@ pub fn run() {
                 fs_tools::init_pdfium(&resource_dir);
             }
 
+            // The skills Haruspex ships, copied into the user's skills folder
+            // before any window lists skills. See skills::shipped.
+            skills::seed_shipped(app.handle());
+
             // Reap MCP servers left running by a previous launch that never
             // got to clean up (SIGKILL, a crash, a hard power-off). Must run
             // before anything spawns, so a fresh pid is never mistaken for a
@@ -389,6 +393,8 @@ pub fn run() {
             skills::skill_save,
             skills::agents_md_draft,
             skills::agents_md_save,
+            skills::skills_shipped,
+            skills::skill_restore_shipped,
             skills::skills_project_root,
             skills::skills_project_info,
             skills::skills_agents_md,

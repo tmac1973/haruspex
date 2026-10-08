@@ -63,3 +63,20 @@ updates only when the user hasn't touched them.
 A fresh profile shows the shipped skills, `init` included, in Settings and
 in Code mode's `/` autocomplete. After deleting one and editing another, a restart keeps
 both changes, and Restore undoes them.
+
+## Decisions made while building it
+
+- **Compiled in, not bundled as resources.** `build.rs` embeds every file
+  under `resources/skills/`, and the shipped copy is written out from
+  there. Dev builds and every installer then find the skills the same way,
+  with none of the resource-folder layout differences that
+  `shell::integration_dir` has to work around.
+- **One hash per skill** covers every file in its folder, so a file the
+  user adds counts as an edit, and a release then leaves the skill alone.
+- **A seed that can't write a skill is logged** and the app starts anyway.
+  Writes go to a sibling folder first and are renamed into place, so a
+  failure never leaves half a skill.
+- **"Never shipped, folder already there" isn't recorded.** If the user
+  later deletes their own folder, the next start copies ours in, which is
+  what an empty name would get anyway.
+- **`BUILTINS` is empty but kept**, for a skill that must never be edited.

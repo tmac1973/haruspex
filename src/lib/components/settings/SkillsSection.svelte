@@ -7,11 +7,15 @@
 	 * change here), so a skill dropped into a folder shows up without a
 	 * restart. Project skills aren't listed: they belong to a repo, and show
 	 * up in that repo's Shell turns once it is trusted.
+	 *
+	 * Skills Haruspex ships sit in the user's folder like any other, labelled,
+	 * with Restore to undo an edit or bring back a deleted one.
 	 */
 	import { onMount } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { open as openFolderDialog } from '@tauri-apps/plugin-dialog';
 	import CodeEditor from '#lib/components/CodeEditor.svelte';
+	import type { ShippedSkill } from '#lib/ipc/gen/ShippedSkill.ts';
 	import type { SkillSummary } from '#lib/ipc/gen/SkillSummary.ts';
 	import type { SkillSource } from '#lib/ipc/gen/SkillSource.ts';
 	import { listSkills, readSkill } from '#lib/skills/client.ts';
@@ -31,12 +35,18 @@
 
 	let config = $state<SkillsConfig>(structuredClone(getSettings().skills));
 	let skills = $state<SkillSummary[]>([]);
+	let shipped = $state<ShippedSkill[]>([]);
 	let loadError = $state<string | null>(null);
 	let viewing = $state<{ name: string; body: string } | null>(null);
 
 	async function refresh() {
 		try {
-			skills = await listSkills(null);
+			[skills, shipped] = await Promise.all([
+				listSkills(null),
+				invoke<ShippedSkill[] | null>('skills_shipped')
+					.then((r) => r ?? [])
+					.catch(() => [])
+			]);
 			loadError = null;
 		} catch (e) {
 			loadError = errMessage(e);
@@ -98,6 +108,26 @@
 		}
 	}
 
+	/** How a shipped skill in the user's folder stands; undefined for any other. */
+	function shippedState(skill: SkillSummary) {
+		if (skill.source !== 'user') return undefined;
+		const state = shipped.find((s) => s.name === skill.name)?.state;
+		return state === 'installed' || state === 'edited' ? state : undefined;
+	}
+
+	const deletedShipped = $derived(shipped.filter((s) => s.state === 'deleted').map((s) => s.name));
+
+	async function restore(name: string | null) {
+		if (name && !confirm(`Put "${name}" back as shipped? Your changes to it are lost.`)) return;
+		try {
+			await invoke('skill_restore_shipped', { name });
+			if (viewing?.name === name) viewing = null;
+			await refresh();
+		} catch (e) {
+			loadError = errMessage(e);
+		}
+	}
+
 	async function addFolder(path?: string) {
 		const chosen = path ?? (await openFolderDialog({ directory: true, multiple: false }));
 		if (typeof chosen !== 'string' || config.extraDirs.includes(chosen)) return;
@@ -146,6 +176,13 @@
 	<div class="actions">
 		<button class="btn btn-small" onclick={openUserFolder}>Open skills folder</button>
 		<button class="btn btn-small" onclick={refresh}>Refresh</button>
+		{#if deletedShipped.length > 0}
+			<button
+				class="btn btn-small"
+				onclick={() => restore(null)}
+				title="Brings back {deletedShipped.join(', ')}.">Restore deleted shipped skills</button
+			>
+		{/if}
 	</div>
 	{#if loadError}
 		<p class="error-text">{loadError}</p>
@@ -171,6 +208,11 @@
 						{#if skill.createdByModel}
 							<span class="badge">Written by the model</span>
 						{/if}
+						{#if shippedState(skill)}
+							<span class="badge" title="A newer release updates it unless you've edited it."
+								>Shipped with Haruspex{shippedState(skill) === 'edited' ? ', edited' : ''}</span
+							>
+						{/if}
 						{#if skill.shadowed}
 							<span class="badge" title="Another skill with this name takes precedence."
 								>Overridden</span
@@ -184,6 +226,9 @@
 						{/if}
 						{#if skill.dir}
 							<button class="btn btn-small" onclick={() => openFolder(skill.dir!)}>Folder</button>
+						{/if}
+						{#if shippedState(skill) === 'edited'}
+							<button class="btn btn-small" onclick={() => restore(skill.name)}>Restore</button>
 						{/if}
 						{#if skill.source === 'user'}
 							<button class="btn btn-danger btn-small" onclick={() => remove(skill.name)}

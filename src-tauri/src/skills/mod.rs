@@ -19,6 +19,7 @@ mod agents_md;
 mod discover;
 mod origin;
 mod parse;
+mod shipped;
 mod write;
 
 use std::fs;
@@ -30,8 +31,11 @@ use tauri::{AppHandle, Manager};
 use discover::{Found, Root};
 use write::{Destinations, SkillDraft, SkillWriteRequest};
 
-/// Skills shipped in the app: (name, SKILL.md text).
-const BUILTINS: &[(&str, &str)] = &[("init", include_str!("builtin/init/SKILL.md"))];
+/// Skills compiled into the app: (name, SKILL.md text). None today: the
+/// skills Haruspex ships are copied into the user's folder instead
+/// (`shipped`), where they can be edited and deleted. This stays for a skill
+/// that must never change.
+const BUILTINS: &[(&str, &str)] = &[];
 
 /// Where a skill came from. Declaration order is precedence order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, ts_rs::TS)]
@@ -70,6 +74,8 @@ pub struct SkillSummary {
     pub shadowed: bool,
     /// Written by Haruspex's model (`metadata.created-by: haruspex`).
     pub created_by_model: bool,
+    /// Only for Code mode (`metadata.haruspex-mode: code`), such as `init`.
+    pub code_mode_only: bool,
 }
 
 /// A skill's instructions, as loaded into a turn.
@@ -102,6 +108,7 @@ impl From<&Found> for SkillSummary {
             error: p.error.clone(),
             shadowed: f.shadowed,
             created_by_model: p.metadata.get("created-by").map(String::as_str) == Some("haruspex"),
+            code_mode_only: p.metadata.get("haruspex-mode").map(String::as_str) == Some("code"),
         }
     }
 }
@@ -300,6 +307,39 @@ pub async fn agents_md_save(cwd: String, text: String) -> Result<String, String>
     .await
 }
 
+/// `<app data>/shipped-skills.json`: what was last copied in from `shipped`.
+fn shipped_record(app: &AppHandle) -> Option<PathBuf> {
+    Some(app.path().app_data_dir().ok()?.join("shipped-skills.json"))
+}
+
+/// Copy the skills this build ships into the user's folder, at startup.
+/// Problems are logged; a skill that can't be copied never stops the app.
+pub fn seed_shipped(app: &AppHandle) {
+    let (Some(user), Some(record)) = (user_skills_dir(app), shipped_record(app)) else {
+        return;
+    };
+    for e in shipped::seed(&user, &record, shipped::SHIPPED) {
+        log::warn!("shipped skill not copied: {e}");
+    }
+}
+
+/// The skills Haruspex ships, and where each stands on this machine.
+#[tauri::command]
+pub async fn skills_shipped(app: AppHandle) -> Result<Vec<shipped::ShippedSkill>, String> {
+    let user = user_skills_dir(&app).ok_or("the app data folder is unavailable")?;
+    let record = shipped_record(&app).ok_or("the app data folder is unavailable")?;
+    blocking(move || Ok(shipped::status(&user, &record, shipped::SHIPPED))).await
+}
+
+/// Put back the shipped skill `name` as shipped, or with None every shipped
+/// skill the user deleted.
+#[tauri::command]
+pub async fn skill_restore_shipped(app: AppHandle, name: Option<String>) -> Result<(), String> {
+    let user = user_skills_dir(&app).ok_or("the app data folder is unavailable")?;
+    let record = shipped_record(&app).ok_or("the app data folder is unavailable")?;
+    blocking(move || shipped::restore(&user, &record, shipped::SHIPPED, name.as_deref())).await
+}
+
 /// What a repo would contribute to a turn, and which repo it is, so the
 /// frontend knows whether there is anything to ask the user to trust — and
 /// whether an earlier answer still applies.
@@ -422,28 +462,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ships_a_valid_init_skill_a_user_skill_overrides() {
-        let all = discover::discover(&[], BUILTINS);
-        let init = discover::find(&all, "init").expect("built-in init");
-        assert_eq!(init.source, SkillSource::Builtin);
-        assert!(
-            init.parsed.warnings.is_empty(),
-            "{:?}",
-            init.parsed.warnings
-        );
-        assert!(init.parsed.body.contains("write_agents_md"));
-
-        let base = temp_dir("builtin_override");
-        write_skill(&base.join("init"));
+    fn init_ships_on_disk_and_only_for_code_mode() {
+        let base = temp_dir("shipped_init");
+        let record = base.join("shipped-skills.json");
+        let user = base.join("skills");
+        fs::create_dir_all(&user).unwrap();
+        assert!(shipped::seed(&user, &record, shipped::SHIPPED).is_empty());
         let roots = [Root {
             source: SkillSource::User,
-            dir: base,
+            dir: user,
         }];
         let all = discover::discover(&roots, BUILTINS);
-        assert_eq!(
-            discover::find(&all, "init").unwrap().source,
-            SkillSource::User
-        );
+        let init = SkillSummary::from(discover::find(&all, "init").expect("init"));
+        assert_eq!(init.source, SkillSource::User);
+        assert!(init.code_mode_only);
+        let plan = SkillSummary::from(discover::find(&all, "plan-2d-game").unwrap());
+        assert!(!plan.code_mode_only);
     }
 
     #[test]

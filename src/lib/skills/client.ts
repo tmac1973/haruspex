@@ -40,11 +40,9 @@ export function listSkills(projectRoot?: string | null): Promise<SkillSummary[]>
 	return invoke<SkillSummary[]>('skills_list', searchArgs(projectRoot));
 }
 
-/** Built-in skills that only work in Code mode: `/init` writes the repo's AGENTS.md. */
-const CODE_MODE_BUILTINS = new Set(['init']);
-
+/** Only for Code mode (`metadata.haruspex-mode: code`), such as `/init`. */
 export function codeModeOnly(skill: SkillSummary): boolean {
-	return skill.source === 'builtin' && CODE_MODE_BUILTINS.has(skill.name);
+	return skill.codeModeOnly;
 }
 
 /**

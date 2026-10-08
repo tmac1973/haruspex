@@ -1,6 +1,8 @@
 ---
 name: init
 description: Draft or improve this repo's AGENTS.md, the instructions every coding turn here reads. Use when the user runs /init or asks for an AGENTS.md.
+metadata:
+  haruspex-mode: code
 ---
 
 # Write the repo's AGENTS.md

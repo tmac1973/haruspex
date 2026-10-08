@@ -27,6 +27,7 @@ function skill(name: string, extra: Partial<SkillSummary> = {}): SkillSummary {
 		error: null,
 		shadowed: false,
 		createdByModel: false,
+		codeModeOnly: false,
 		...extra
 	};
 }
@@ -79,10 +80,10 @@ describe('usableSkills', () => {
 });
 
 describe('usableSkills in and out of Code mode', () => {
-	it("keeps the built-in init to Code mode, but not a user's own init", () => {
-		const builtin = skill('init', { source: 'builtin', dir: null });
-		expect(usableSkills([builtin])).toEqual([]);
-		expect(usableSkills([builtin], true)).toEqual([builtin]);
+	it('keeps a Code mode skill to Code mode, whatever its name', () => {
+		const init = skill('init', { codeModeOnly: true });
+		expect(usableSkills([init])).toEqual([]);
+		expect(usableSkills([init], true)).toEqual([init]);
 		expect(usableSkills([skill('init')])).toHaveLength(1);
 	});
 });

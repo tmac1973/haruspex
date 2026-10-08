@@ -87,6 +87,7 @@ const TABLE: Record<string, Handler> = {
 	// No skills installed: chat turns list none, Settings → Skills shows an empty list.
 	skills_list: empty,
 	skills_user_dir: () => '/e2e/skills',
+	skills_shipped: empty,
 	secret_get: none,
 	mcp_catalog: empty,
 	mcp_runtimes_available: () => ({ node: true, npm: true, uv: true }),

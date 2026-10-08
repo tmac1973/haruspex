@@ -24,4 +24,8 @@ shadowed: boolean,
 /**
  * Written by Haruspex's model (`metadata.created-by: haruspex`).
  */
-createdByModel: boolean, };
+createdByModel: boolean, 
+/**
+ * Only for Code mode (`metadata.haruspex-mode: code`), such as `init`.
+ */
+codeModeOnly: boolean, };
