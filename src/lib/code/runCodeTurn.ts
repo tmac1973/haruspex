@@ -134,8 +134,11 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 			() =>
 				runAgentLoop({
 					messages,
+					// The folder is the write boundary as the working directory: the
+					// fs commands resolve every path inside it. Not `writeRoot`, which
+					// is a folder *relative* to it and refused every write when given
+					// the absolute root.
 					workingDir: o.root,
-					writeRoot: o.root,
 					codeSessionId: o.sessionId,
 					contextSize,
 					maxIterations: settings.codeMaxIterations,

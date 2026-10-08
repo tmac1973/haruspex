@@ -84,7 +84,6 @@ describe('runCodeTurn', () => {
 			codeMode: true,
 			shellMode: false,
 			workingDir: '/proj',
-			writeRoot: '/proj',
 			codeSessionId: 's1',
 			interactive: true,
 			backend,
@@ -95,6 +94,8 @@ describe('runCodeTurn', () => {
 			contextSize: 16384
 		});
 		expect(mocks.withInferenceSlot.mock.calls[0][0]).toMatchObject({ consumer: 'code', backend });
+		// writeRoot is relative to the working dir; the absolute root refused every write.
+		expect(o.writeRoot ?? null).toBeNull();
 	});
 
 	it('leads with the coding prompt for the folder', async () => {
