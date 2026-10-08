@@ -153,6 +153,68 @@ pub async fn clear_app_logs() -> Result<(), ()> {
     Ok(())
 }
 
+/// Where dev builds mirror the webview's agent debug log (`debug-log.ts`),
+/// so a session can be read after the fact instead of being copied out of the
+/// Log Viewer before the app closes. Off in release builds unless
+/// `HARUSPEX_DEBUG_LOG_FILE` is set: a whole agent turn's log is large, and it
+/// holds the conversation.
+const DEBUG_LOG_FILE: &str = "agent-debug.log";
+
+/// Past this the file is rotated to `agent-debug.log.1`, replacing the old one.
+const DEBUG_LOG_CAP: u64 = 20 * 1024 * 1024;
+
+fn debug_log_file_enabled() -> bool {
+    cfg!(debug_assertions) || std::env::var_os("HARUSPEX_DEBUG_LOG_FILE").is_some()
+}
+
+fn debug_log_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    use tauri::Manager;
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("no app data dir: {e}"))?
+        .join("logs");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("could not create {}: {e}", dir.display()))?;
+    Ok(dir.join(DEBUG_LOG_FILE))
+}
+
+/// Append `lines` to `path`, rotating it first when it has grown past `cap`.
+fn append_debug_lines(path: &std::path::Path, lines: &[String], cap: u64) -> std::io::Result<()> {
+    use std::io::Write;
+    if std::fs::metadata(path).is_ok_and(|m| m.len() > cap) {
+        std::fs::rename(path, path.with_extension("log.1"))?;
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    let mut out = String::new();
+    for line in lines {
+        out.push_str(line);
+        out.push('\n');
+    }
+    file.write_all(out.as_bytes())
+}
+
+/// The mirror file's path, or None when mirroring is off for this build.
+#[tauri::command]
+pub async fn debug_log_file_path(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    if !debug_log_file_enabled() {
+        return Ok(None);
+    }
+    Ok(Some(debug_log_path(&app)?.to_string_lossy().into_owned()))
+}
+
+#[tauri::command]
+pub async fn debug_log_append(app: tauri::AppHandle, lines: Vec<String>) -> Result<(), String> {
+    if !debug_log_file_enabled() || lines.is_empty() {
+        return Ok(());
+    }
+    let path = debug_log_path(&app)?;
+    append_debug_lines(&path, &lines, DEBUG_LOG_CAP).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,5 +251,24 @@ mod tests {
         assert!(!is_sidecar_passthrough(
             "Spawning llama-server child process"
         ));
+    }
+
+    #[test]
+    fn debug_lines_append_and_rotate_past_the_cap() {
+        let dir = std::env::temp_dir().join(format!("haruspex-debuglog-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(DEBUG_LOG_FILE);
+        append_debug_lines(&path, &["one".into(), "two".into()], 1024).unwrap();
+        append_debug_lines(&path, &["three".into()], 1024).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "one\ntwo\nthree\n");
+        // Over the cap: the next append starts a fresh file and keeps one old one.
+        append_debug_lines(&path, &["four".into()], 4).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "four\n");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("agent-debug.log.1")).unwrap(),
+            "one\ntwo\nthree\n"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

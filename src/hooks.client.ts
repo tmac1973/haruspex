@@ -8,7 +8,7 @@
  * removed — CI greps the production output to make sure.
  */
 import type { HandleClientError } from '@sveltejs/kit/hooks';
-import { forwardConsoleToDebugLog } from '#lib/debug-log.ts';
+import { forwardConsoleToDebugLog, startDebugLogFile } from '#lib/debug-log.ts';
 
 /**
  * What SvelteKit does when no hook is given: log it. Exported because the
@@ -24,5 +24,8 @@ export async function init(): Promise<void> {
 	if (import.meta.env.MODE === 'e2e') {
 		const { installMocks } = await import('#lib/e2e/installMocks.ts');
 		installMocks();
+	} else {
+		const { invoke } = await import('@tauri-apps/api/core');
+		void startDebugLogFile(invoke);
 	}
 }

@@ -476,6 +476,8 @@ pub fn run() {
             secrets::secret_delete,
             app_log::get_app_logs,
             app_log::clear_app_logs,
+            app_log::debug_log_file_path,
+            app_log::debug_log_append,
             links::open_url,
             links::open_folder,
             feedback::get_diagnostics,
