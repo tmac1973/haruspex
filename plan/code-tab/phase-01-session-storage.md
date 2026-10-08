@@ -39,7 +39,7 @@ and nothing queries inside a thread. Fork copies a prefix in Rust.
 | `code_session_create { root, backend?, effort? }` | Canonicalizes `root`, errors if not a directory |
 | `code_session_load { id }` | Full row |
 | `code_session_save { id, thread, title? }` | Bumps `updated_at` |
-| `code_session_update_meta { id, title?, backend?, effort? }` | Header edits without rewriting the thread |
+| `code_session_update_meta { id, patch }` | Header edits without rewriting the thread. `patch` fields: absent = unchanged, `null` = back to global, value = set (Tauri can't tell an absent arg from `null`, hence the object). Doesn't bump `updated_at`. |
 | `code_session_delete { id }` | |
 | `code_session_fork { id, at }` | New row; thread truncated to messages `[0, at)` with sidecars filtered to those indices; title `"<title> (fork)"` |
 
@@ -64,3 +64,12 @@ one place; it parses the snapshot just enough to slice it (version check,
 ## Done when
 
 Commands exist, are typed, tested, and unused.
+
+## As built (9c3fa72)
+
+- `code/db.ts` wrappers throw instead of logging and returning a fallback, so the
+  store can tell when a save failed.
+- Create writes a valid empty snapshot. A fork at 0 yields empty `messages`,
+  which `decodeCodeSession` reads as `null` — see phase 4.
+- Ids are v4 UUIDs from `ring`; list order is `updated_at DESC`.
+- Root uses plain `canonicalize` (`\\?\` on Windows) — revisit in phase 10.
