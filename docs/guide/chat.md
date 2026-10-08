@@ -37,7 +37,7 @@ Before code runs you see **Allow code execution?** By default it asks once per c
 
 ## Get pictures in answers
 
-With Settings → General → Images → **Include images in answers** on (the default), answers about visual things — a place, an animal, a building — can include one to three pictures from Openverse, Wikimedia Commons and Wikipedia, with credit and licence. Haruspex downloads them itself, so those sites never see your computer. Coverage is thin for new products and recent events. Turning the setting off stops the assistant offering pictures; asking for one still works.
+With Settings → Agent → Pictures in answers → **Include images in answers** on (the default), answers about visual things — a place, an animal, a building — can include one to three pictures from Openverse, Wikimedia Commons and Wikipedia, with credit and licence. Haruspex downloads them itself, so those sites never see your computer. Coverage is thin for new products and recent events. Turning the setting off stops the assistant offering pictures; asking for one still works.
 
 To have the assistant draw a picture instead, see the `images` page.
 

@@ -27,7 +27,7 @@ The **[user guide](https://tmac1973.github.io/haruspex/guide/)** explains every 
 - **Web research** — Ask a question, and it searches the web, reads the results and answers. Turn on **deep research** for a slower, more thorough answer that uses more sources.
 - **Files (you opt in)** — Pick a working directory in the chat tab and the model can read and write files there, and only there. It handles text, PDF, Word, Excel, PowerPoint, OpenDocument and images. Great for creating reports from your research. ([details](#local-files))
 - **Python sandbox** — The model can write and run Python inside the app, in a sandboxed Pyodide environment. It can install packages on demand and make HTTP requests. Use it to make charts, do maths, or build documents. It is on by default and asks once per chat before running code; Settings → Agent → Python Sandbox can make it ask every time, or turn it off. Works best with a larger model.
-- **Pictures in answers** — With **Include images** on (Settings → General), answers about visual things — a place, an animal, an object, a person — come with one to three relevant pictures. They come from Openverse, Wikimedia Commons and Wikipedia, and each one shows who made it and under what licence. Haruspex downloads them itself, so the site never sees your computer, and it keeps them on this device. Small models often look for a picture and then forget to put it in the answer, so when that happens the pictures it found appear under the answer instead of beside the paragraph — you still get them.
+- **Pictures in answers** — With **Include images in answers** on (Settings → Agent → Pictures in answers), answers about visual things — a place, an animal, an object, a person — come with one to three relevant pictures. They come from Openverse, Wikimedia Commons and Wikipedia, and each one shows who made it and under what licence. Haruspex downloads them itself, so the site never sees your computer, and it keeps them on this device. Small models often look for a picture and then forget to put it in the answer, so when that happens the pictures it found appear under the answer instead of beside the paragraph — you still get them.
 - **Vision** — Show it an image or a scanned PDF and it can describe or read it.
 - **Voice** — Speak your question with push-to-talk, and have answers read aloud.
 - **Memory** — Haruspex quietly reads your finished conversations, keeps the stable facts (your preferences, your corrections, ongoing project details) and brings the relevant ones into later chats. You can also just say "remember that…". What it remembers is stored only on this device. The pass that picks out facts runs on the same model as Chat, so with a remote server or OpenRouter your conversation goes there for that, as it does when you chat. You can mark a single chat as incognito, and you can read, edit or delete anything it remembered. ([details](#memory))
@@ -431,8 +431,8 @@ figures and general subjects, and weak on very recent products and events. If
 no good picture exists, the answer simply arrives without one.
 
 On the 9B the model also sometimes picks a loosely related image, or puts one
-in an answer that did not need it. Turning **Include images** off in Settings →
-General stops it volunteering; asking for a picture directly still works.
+in an answer that did not need it. Turning **Include images in answers** off in Settings →
+Agent stops it volunteering; asking for a picture directly still works.
 
 ### Smaller models need multiple prompts in series to do complex tasks
 

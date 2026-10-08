@@ -13,6 +13,7 @@
 	import { clampInt } from '#lib/utils/clampInt.ts';
 
 	let thinkingEnabled = $state(getSettings().thinkingEnabled);
+	let includeImages = $state(getSettings().includeImages);
 	// The active backend may report that its model has no reasoning mode (an
 	// llama-toolchest non-reasoning model); hide the toggle in that case since
 	// it would have no effect. Local + other remote backends are assumed
@@ -114,6 +115,10 @@
 
 	const customSystemPromptPlaceholder =
 		'e.g. "Always answer in British English. Prefer Rust examples when explaining systems code."';
+
+	function toggleIncludeImages() {
+		updateSettings({ includeImages });
+	}
 </script>
 
 <section class="settings-section">
@@ -314,6 +319,22 @@
 			seconds. The default 30s is generous for most code; raise it for long installs or simulations.
 		</p>
 	{/if}
+</section>
+
+<section class="settings-section">
+	<h2>Pictures in answers</h2>
+	<label class="toggle-row">
+		<input type="checkbox" bind:checked={includeImages} onchange={toggleIncludeImages} />
+		<span>Include images in answers</span>
+	</label>
+	<!-- Said next to the switch because it is the obvious worry for anyone
+	     who chose this app: turning pictures on must not start leaking your
+	     browsing to whichever sites host them. -->
+	<p class="hint">
+		When on, answers may include a few relevant pictures from freely-licensed sources. Haruspex
+		downloads them itself — the page never sees your computer — and keeps them on this device. Works
+		best with a larger model.
+	</p>
 </section>
 
 <style>
