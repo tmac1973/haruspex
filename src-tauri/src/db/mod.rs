@@ -473,6 +473,25 @@ impl Database {
                 updated_at INTEGER NOT NULL
             );
 
+            -- Code-tab sessions, keyed by id (never by folder). The thread is
+            -- one snapshot blob; see db/code_sessions.rs. forked_from is not
+            -- a foreign key: a fork outlives a deleted source.
+            CREATE TABLE IF NOT EXISTS code_sessions (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                root TEXT NOT NULL,
+                backend TEXT,
+                reasoning_effort TEXT,
+                thread TEXT NOT NULL,
+                forked_from TEXT,
+                forked_at INTEGER,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_code_sessions_root
+                ON code_sessions(root, updated_at);
+
             CREATE TABLE IF NOT EXISTS search_stats_engines (
                 engine TEXT PRIMARY KEY,
                 attempts INTEGER NOT NULL DEFAULT 0,
@@ -798,6 +817,7 @@ fn chrono_now() -> i64 {
     crate::time_util::now_ms()
 }
 
+mod code_sessions;
 mod commands;
 mod conversations;
 mod images;
@@ -809,6 +829,7 @@ mod runs;
 mod shell_sessions;
 mod stats;
 
+pub use code_sessions::{CodeSessionMetaPatch, CodeSessionRow, CodeSessionSummary};
 pub use commands::*;
 pub use images::ImageRow;
 pub use memory_commands::*;

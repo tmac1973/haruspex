@@ -2307,3 +2307,280 @@ fn daily_stats_count_each_outcome_against_its_day() {
     let after = db.daily_stats_snapshot(14).unwrap();
     assert!(after.engines.is_empty() && after.globals.is_empty());
 }
+
+// --- Code-tab sessions ---------------------------------------------------
+
+/// A fresh, empty directory under the system temp dir, removed on drop.
+struct TempDir(std::path::PathBuf);
+
+impl TempDir {
+    fn new(tag: &str) -> Self {
+        let dir = std::env::temp_dir().join(format!(
+            "haruspex-code-session-{tag}-{}-{}",
+            std::process::id(),
+            crate::time_util::now_ms()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        TempDir(dir)
+    }
+    fn path(&self) -> &str {
+        self.0.to_str().unwrap()
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// A version-1 snapshot of `n` messages, with a sidecar entry on every
+/// message in every index-keyed map.
+fn snapshot(n: usize) -> String {
+    let messages: Vec<serde_json::Value> = (0..n)
+        .map(|i| serde_json::json!({ "role": "user", "content": format!("m{i}") }))
+        .collect();
+    let map = |v: serde_json::Value| -> serde_json::Value {
+        (0..n)
+            .map(|i| (i.to_string(), v.clone()))
+            .collect::<serde_json::Map<_, _>>()
+            .into()
+    };
+    serde_json::json!({
+        "version": 1,
+        "savedAt": 42,
+        "messages": messages,
+        "messageSteps": map(serde_json::json!([{ "name": "run_command" }])),
+        "messageStats": map(serde_json::json!({ "durationMs": 1 })),
+        "messageStops": map(serde_json::json!("turn-limit")),
+        "messageHistorySent": map(serde_json::json!(["a"]))
+    })
+    .to_string()
+}
+
+fn sidecar_keys(snap: &serde_json::Value, field: &str) -> Vec<usize> {
+    let mut k: Vec<usize> = snap[field]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(|k| k.parse().unwrap())
+        .collect();
+    k.sort();
+    k
+}
+
+const SIDECARS: [&str; 4] = [
+    "messageSteps",
+    "messageStats",
+    "messageStops",
+    "messageHistorySent",
+];
+
+#[test]
+fn code_session_create_list_load_save_delete_round_trip() {
+    let db = test_db();
+    let dir = TempDir::new("roundtrip");
+    let created = db
+        .create_code_session(dir.path(), Some("{\"baseUrl\":\"x\"}"), Some("low"))
+        .unwrap();
+    assert_eq!(created.id.len(), 36);
+    assert_eq!(&created.id[14..15], "4", "v4 uuid");
+    assert_eq!(created.title, "");
+    assert_eq!(
+        created.root,
+        std::fs::canonicalize(dir.path()).unwrap().to_str().unwrap()
+    );
+    assert_eq!(created.forked_from, None);
+    // A fresh session's thread is a valid, empty snapshot.
+    let empty: serde_json::Value = serde_json::from_str(&created.thread).unwrap();
+    assert_eq!(empty["version"], 1);
+    assert_eq!(empty["messages"].as_array().unwrap().len(), 0);
+
+    assert_eq!(db.load_code_session(&created.id).unwrap(), created);
+
+    let list = db.list_code_sessions().unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].id, created.id);
+    assert_eq!(list[0].root, created.root);
+
+    db.save_code_session(&created.id, &snapshot(2), Some("Add tests"))
+        .unwrap();
+    let saved = db.load_code_session(&created.id).unwrap();
+    assert_eq!(saved.thread, snapshot(2));
+    assert_eq!(saved.title, "Add tests");
+    assert!(saved.updated_at >= created.updated_at);
+
+    // A save without a title keeps the one the session has.
+    db.save_code_session(&created.id, &snapshot(3), None)
+        .unwrap();
+    assert_eq!(
+        db.load_code_session(&created.id).unwrap().title,
+        "Add tests"
+    );
+
+    db.delete_code_session(&created.id).unwrap();
+    assert!(db.load_code_session(&created.id).is_err());
+    assert!(db.list_code_sessions().unwrap().is_empty());
+    // Deleting again is not an error; saving a deleted session is.
+    db.delete_code_session(&created.id).unwrap();
+    assert!(db.save_code_session(&created.id, "{}", None).is_err());
+}
+
+#[test]
+fn code_session_create_rejects_a_missing_folder_and_a_file() {
+    let db = test_db();
+    let dir = TempDir::new("reject");
+    assert!(db
+        .create_code_session(&format!("{}/nope", dir.path()), None, None)
+        .is_err());
+    let file = format!("{}/file.txt", dir.path());
+    std::fs::write(&file, "x").unwrap();
+    assert!(db.create_code_session(&file, None, None).is_err());
+    assert!(db.list_code_sessions().unwrap().is_empty());
+}
+
+#[test]
+fn code_session_create_canonicalizes_the_root() {
+    let db = test_db();
+    let dir = TempDir::new("canon");
+    std::fs::create_dir(format!("{}/sub", dir.path())).unwrap();
+    let a = db.create_code_session(dir.path(), None, None).unwrap();
+    let b = db
+        .create_code_session(&format!("{}/sub/..", dir.path()), None, None)
+        .unwrap();
+    assert_eq!(a.root, b.root);
+    assert_ne!(a.id, b.id, "two sessions may share a folder");
+}
+
+#[test]
+fn code_session_meta_patch_sets_clears_and_leaves_alone() {
+    let db = test_db();
+    let dir = TempDir::new("meta");
+    let s = db
+        .create_code_session(dir.path(), Some("B"), Some("high"))
+        .unwrap();
+
+    // Absent fields are left alone.
+    let patch: CodeSessionMetaPatch = serde_json::from_str(r#"{"title":"Renamed"}"#).unwrap();
+    db.update_code_session_meta(&s.id, &patch).unwrap();
+    let row = db.load_code_session(&s.id).unwrap();
+    assert_eq!(row.title, "Renamed");
+    assert_eq!(row.backend.as_deref(), Some("B"));
+    assert_eq!(row.reasoning_effort.as_deref(), Some("high"));
+    assert_eq!(row.thread, s.thread);
+
+    // null clears back to the global setting; a value sets.
+    let patch: CodeSessionMetaPatch =
+        serde_json::from_str(r#"{"backend":null,"effort":"low"}"#).unwrap();
+    db.update_code_session_meta(&s.id, &patch).unwrap();
+    let row = db.load_code_session(&s.id).unwrap();
+    assert_eq!(row.title, "Renamed");
+    assert_eq!(row.backend, None);
+    assert_eq!(row.reasoning_effort.as_deref(), Some("low"));
+
+    assert!(db
+        .update_code_session_meta("missing", &CodeSessionMetaPatch::default())
+        .is_err());
+}
+
+#[test]
+fn code_session_fork_cuts_messages_and_sidecars_at_the_fork_point() {
+    let db = test_db();
+    let dir = TempDir::new("fork");
+    let src = db
+        .create_code_session(dir.path(), Some("B"), Some("low"))
+        .unwrap();
+    db.save_code_session(&src.id, &snapshot(4), Some("Refactor"))
+        .unwrap();
+
+    for at in [0usize, 2, 4] {
+        let fork = db.fork_code_session(&src.id, at).unwrap();
+        assert_ne!(fork.id, src.id);
+        assert_eq!(fork.title, "Refactor (fork)");
+        assert_eq!(fork.root, src.root);
+        assert_eq!(fork.backend.as_deref(), Some("B"));
+        assert_eq!(fork.reasoning_effort.as_deref(), Some("low"));
+        assert_eq!(fork.forked_from.as_deref(), Some(src.id.as_str()));
+        assert_eq!(fork.forked_at, Some(at as i64));
+
+        let snap: serde_json::Value = serde_json::from_str(&fork.thread).unwrap();
+        assert_eq!(snap["version"], 1);
+        assert_eq!(
+            snap["savedAt"], 42,
+            "fields fork does not know pass through"
+        );
+        let msgs = snap["messages"].as_array().unwrap();
+        assert_eq!(msgs.len(), at);
+        if at > 0 {
+            assert_eq!(msgs[at - 1]["content"], format!("m{}", at - 1));
+        }
+        let expected: Vec<usize> = (0..at).collect();
+        for field in SIDECARS {
+            assert_eq!(sidecar_keys(&snap, field), expected, "{field} at {at}");
+        }
+    }
+
+    // The source is untouched, and a fork survives its source's deletion.
+    assert_eq!(db.load_code_session(&src.id).unwrap().thread, snapshot(4));
+    let fork = db.fork_code_session(&src.id, 1).unwrap();
+    db.delete_code_session(&src.id).unwrap();
+    assert!(db.load_code_session(&fork.id).is_ok());
+}
+
+#[test]
+fn code_session_fork_rejects_a_point_past_the_end_and_a_missing_source() {
+    let db = test_db();
+    let dir = TempDir::new("fork-end");
+    let src = db.create_code_session(dir.path(), None, None).unwrap();
+    db.save_code_session(&src.id, &snapshot(2), None).unwrap();
+    assert!(db.fork_code_session(&src.id, 3).is_err());
+    assert!(db.fork_code_session("missing", 0).is_err());
+    assert_eq!(db.list_code_sessions().unwrap().len(), 1);
+}
+
+#[test]
+fn code_session_fork_of_an_unnamed_session_has_no_leading_space() {
+    let db = test_db();
+    let dir = TempDir::new("fork-title");
+    let src = db.create_code_session(dir.path(), None, None).unwrap();
+    assert_eq!(db.fork_code_session(&src.id, 0).unwrap().title, "(fork)");
+}
+
+#[test]
+fn fork_thread_drops_sidecars_past_the_cut_even_when_sparse() {
+    // Sidecars exist for only some indices, including ones past the cut and
+    // a stray non-numeric key; only numeric keys below the cut survive, and
+    // a null or absent map comes back as an empty one.
+    let thread = serde_json::json!({
+        "version": 1,
+        "savedAt": 1,
+        "messages": [{"role":"user"},{"role":"assistant"},{"role":"user"},{"role":"assistant"}],
+        "messageSteps": { "1": [], "3": [], "junk": [] },
+        "messageStats": { "3": {} },
+        "messageStops": null
+    })
+    .to_string();
+    let out: serde_json::Value =
+        serde_json::from_str(&code_sessions::fork_thread(&thread, 2).unwrap()).unwrap();
+    assert_eq!(sidecar_keys(&out, "messageSteps"), vec![1]);
+    for field in &SIDECARS[1..] {
+        assert_eq!(sidecar_keys(&out, field), Vec::<usize>::new(), "{field}");
+    }
+}
+
+#[test]
+fn fork_thread_rejects_another_version_and_malformed_threads() {
+    for bad in [
+        r#"{"version":2,"messages":[]}"#,
+        r#"{"messages":[]}"#,
+        r#"{"version":1}"#,
+        r#"{"version":1,"messages":{}}"#,
+        "[]",
+        "not json",
+    ] {
+        assert!(
+            code_sessions::fork_thread(bad, 0).is_err(),
+            "accepted {bad}"
+        );
+    }
+}

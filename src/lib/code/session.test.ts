@@ -5,7 +5,7 @@ import {
 	countTurns,
 	CODE_SESSION_VERSION,
 	type CodeSessionState
-} from './codeSession';
+} from '#lib/code/session.ts';
 import type { ChatMessage } from '#lib/api.ts';
 
 function state(over: Partial<CodeSessionState> = {}): CodeSessionState {
