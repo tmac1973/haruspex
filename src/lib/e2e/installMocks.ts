@@ -40,6 +40,8 @@ const TABLE: Record<string, Handler> = {
 	'plugin:window|set_title': none,
 	get_server_status: () => ({ type: 'Stopped' }),
 	get_cpu_fallback_state: none,
+	// Asked for on every chat request; unused in remote mode.
+	get_llama_api_key: () => 'e2e-key',
 	inference_release_window: none,
 	power_inhibit_release: none,
 	power_inhibit_acquire: none,
