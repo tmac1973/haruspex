@@ -71,6 +71,10 @@ pub struct ServerConfig {
     /// the turns that actually contain an image. Text-only turns never touch
     /// the projector either way.
     pub mmproj_on_cpu: bool,
+    /// The one origin allowed to read llama-server's responses: the main
+    /// webview's, which calls it with `fetch`. `None` when the window's URL
+    /// can't be read, which leaves the API key as the only guard.
+    pub cors_origin: Option<String>,
     pub extra_args: Vec<String>,
 }
 
@@ -87,6 +91,7 @@ impl Default for ServerConfig {
             mtp: false,
             mtp_draft_path: None,
             mmproj_on_cpu: false,
+            cors_origin: None,
             extra_args: Vec::new(),
         }
     }
@@ -176,10 +181,88 @@ impl ServerConfig {
             args.push("draft-mtp".to_string());
         }
 
+        args.extend(cors_args(self.cors_origin.as_deref()));
+
         // Last, so a power user's extra args can still override anything above.
         args.extend(self.extra_args.clone());
         args
     }
+}
+
+/// Environment variable llama-server reads its `--api-key` from. The key goes
+/// in the environment rather than argv because `/proc/<pid>/cmdline` is
+/// readable by every user on the machine; `environ` is not.
+const API_KEY_ENV: &str = "LLAMA_API_KEY";
+
+/// The key llama-server demands on every request but `/health`, made fresh
+/// for each run of the app. Without it, any web page open in the user's
+/// browser could POST to the loopback port: CORS only stops a page reading
+/// the reply, and a `text/plain` POST needs no preflight, so the generation
+/// would still run. Only the webview (through `get_llama_api_key`) knows it.
+pub fn api_key() -> &'static str {
+    static KEY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    KEY.get_or_init(|| {
+        use ring::rand::{SecureRandom, SystemRandom};
+        let mut b = [0u8; 32];
+        SystemRandom::new()
+            .fill(&mut b)
+            .expect("the OS random source failed");
+        b.iter().map(|x| format!("{x:02x}")).collect()
+    })
+}
+
+/// llama-server's CORS flags (llama.cpp#25655), which by default let every
+/// origin read every response.
+///
+/// `--cors-origins` takes a single literal origin despite its help text: any
+/// value but `*` or `localhost` is copied into `Access-Control-Allow-Origin`
+/// as is, so a comma-separated list matches nothing. Its `localhost` mode
+/// won't do either: it rejects `tauri://` origins outright, and it would admit
+/// any other web server on the machine. `Authorization` is listed by name
+/// because a `*` in `Access-Control-Allow-Headers` never covers it, and
+/// nothing here uses cookies, so credentials are off.
+fn cors_args(origin: Option<&str>) -> Vec<String> {
+    let mut args = Vec::new();
+    if let Some(origin) = origin {
+        args.push("--cors-origins".to_string());
+        args.push(origin.to_string());
+    }
+    args.extend(
+        [
+            "--cors-methods",
+            "GET, POST, OPTIONS",
+            "--cors-headers",
+            "Authorization, Content-Type",
+            "--no-cors-credentials",
+        ]
+        .map(String::from),
+    );
+    args
+}
+
+/// The origin a page at `url` sends in its `Origin` header:
+/// `http://localhost:1420` in dev, `tauri://localhost` packaged on Linux and
+/// macOS, `http://tauri.localhost` on Windows. Built by hand because the `url`
+/// crate calls the origin of a non-special scheme like `tauri:` opaque.
+fn webview_origin(url: &url::Url) -> Option<String> {
+    let host = url.host_str()?;
+    Some(match url.port() {
+        Some(port) => format!("{}://{host}:{port}", url.scheme()),
+        None => format!("{}://{host}", url.scheme()),
+    })
+}
+
+/// The main webview's origin, or `None` (logged) when it can't be read.
+fn main_webview_origin(app: &AppHandle) -> Option<String> {
+    use tauri::Manager;
+    let origin = app
+        .get_webview_window("main")
+        .and_then(|w| w.url().ok())
+        .and_then(|u| webview_origin(&u));
+    if origin.is_none() {
+        warn!("Could not read the main window's origin; llama-server CORS stays open");
+    }
+    origin
 }
 
 struct ServerInner {
@@ -450,7 +533,8 @@ impl LlamaServer {
             .shell()
             .sidecar("haruspex-llama-server")
             .map_err(|e| format!("Failed to create sidecar command: {}", e))?
-            .args(args);
+            .args(args)
+            .env(API_KEY_ENV, api_key());
         spawn_sidecar(
             sidecar_utils::with_library_paths(cmd, app),
             "llama-server",
@@ -1038,10 +1122,18 @@ pub async fn start_server(
         mtp: mtp_on,
         mtp_draft_path: if mtp_on { draft_path } else { None },
         mmproj_on_cpu: mmproj_on_cpu.unwrap_or(false),
+        cors_origin: main_webview_origin(&app),
         extra_args: extra_args.unwrap_or_default(),
         ..Default::default()
     };
     state.start(&app, &model_path, Some(config)).await
+}
+
+/// The key the webview sends to llama-server as `Authorization: Bearer`.
+/// See `api_key`.
+#[tauri::command]
+pub fn get_llama_api_key() -> String {
+    api_key().to_string()
 }
 
 #[tauri::command]
@@ -1408,6 +1500,90 @@ mod tests {
             .rposition(|a| a == "--ctx-checkpoints")
             .expect("flag present");
         assert_eq!(args[last + 1], "8");
+    }
+
+    /// The value following `flag` in `args`, if the flag is there.
+    fn flag_value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
+        let i = args.iter().position(|a| a == flag)?;
+        args.get(i + 1).map(String::as_str)
+    }
+
+    #[test]
+    fn build_args_pin_cors_to_the_webview_origin() {
+        let cfg = ServerConfig {
+            cors_origin: Some("tauri://localhost".to_string()),
+            ..Default::default()
+        };
+        let args = cfg.build_args_for("/models/qwen.gguf", false);
+        assert_eq!(
+            flag_value(&args, "--cors-origins"),
+            Some("tauri://localhost")
+        );
+        assert_eq!(
+            flag_value(&args, "--cors-methods"),
+            Some("GET, POST, OPTIONS")
+        );
+        // `*` never covers Authorization, so it has to be named.
+        assert_eq!(
+            flag_value(&args, "--cors-headers"),
+            Some("Authorization, Content-Type")
+        );
+        assert!(args.iter().any(|a| a == "--no-cors-credentials"));
+    }
+
+    #[test]
+    fn build_args_without_an_origin_still_drop_credentials() {
+        let args = ServerConfig::default().build_args_for("/models/qwen.gguf", false);
+        assert!(!args.iter().any(|a| a == "--cors-origins"));
+        assert!(args.iter().any(|a| a == "--no-cors-credentials"));
+    }
+
+    #[test]
+    fn build_args_never_carry_the_api_key() {
+        // It travels in the environment; argv is world-readable in /proc.
+        let args = ServerConfig::default().build_args_for("/models/qwen.gguf", false);
+        assert!(!args.iter().any(|a| a == "--api-key" || a == api_key()));
+    }
+
+    #[test]
+    fn extra_args_can_reopen_cors() {
+        let cfg = ServerConfig {
+            cors_origin: Some("tauri://localhost".to_string()),
+            extra_args: vec!["--cors-origins".to_string(), "*".to_string()],
+            ..Default::default()
+        };
+        let args = cfg.build_args_for("/models/qwen.gguf", false);
+        let last = args.iter().rposition(|a| a == "--cors-origins").unwrap();
+        assert_eq!(args[last + 1], "*");
+    }
+
+    #[test]
+    fn api_key_is_stable_and_unguessable() {
+        assert_eq!(api_key(), api_key());
+        assert_eq!(api_key().len(), 64);
+        assert!(api_key().chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn webview_origin_matches_what_each_platform_sends() {
+        let origin = |s: &str| webview_origin(&url::Url::parse(s).unwrap());
+        assert_eq!(
+            origin("http://localhost:1420/chat").as_deref(),
+            Some("http://localhost:1420")
+        );
+        assert_eq!(
+            origin("tauri://localhost/").as_deref(),
+            Some("tauri://localhost")
+        );
+        assert_eq!(
+            origin("http://tauri.localhost/settings?x=1").as_deref(),
+            Some("http://tauri.localhost")
+        );
+        assert_eq!(
+            origin("https://tauri.localhost/").as_deref(),
+            Some("https://tauri.localhost")
+        );
+        assert_eq!(origin("about:blank"), None);
     }
 
     #[test]
