@@ -248,17 +248,6 @@
 		</p>
 
 		<label class="sub">
-			Max attempts per step
-			<input
-				type="number"
-				min="1"
-				max="10"
-				bind:value={cfg.coding_max_attempts}
-				aria-label="Max attempts per step"
-			/>
-		</label>
-
-		<label class="sub">
 			Max model steps per turn
 			<input
 				type="number"

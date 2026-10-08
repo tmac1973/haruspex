@@ -4166,8 +4166,7 @@ describe('guided_planning — chained coding run settings', () => {
 	}
 
 	it('passes the pinned overrides to the created job', async () => {
-		const cfg = await runIt(planningJob({ max_attempts: 5, max_turns: 300 }));
-		expect(cfg.max_attempts).toBe(5);
+		const cfg = await runIt(planningJob({ max_turns: 300 }));
 		expect(cfg.max_turns).toBe(300);
 	});
 
@@ -4176,7 +4175,6 @@ describe('guided_planning — chained coding run settings', () => {
 		// Absent, not null: the coding parser reads a missing key as "use the
 		// default", and its preflight settles the commands as it would for any
 		// hand-created job.
-		expect('max_attempts' in cfg).toBe(false);
 		expect('max_turns' in cfg).toBe(false);
 	});
 

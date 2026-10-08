@@ -21,7 +21,6 @@ export interface GuidedPlanningEditorState {
 	run_mode: GuidedPlanningRunMode;
 	// Concrete strings/numbers in the editor ('' and 0 = unset), converted back
 	// to nulls by configToJson.
-	coding_max_attempts: number;
 	coding_max_turns: number;
 	/** A chained stage's model; null = same as this job. */
 	chain_assets_model: JobModelForm | null;
@@ -96,8 +95,6 @@ const GUIDED_STAGES: ReadonlyArray<{ title: string; description: string }> = [
 function codingRunJson(s: GuidedPlanningEditorState): Record<string, unknown> | undefined {
 	const out: Record<string, unknown> = {};
 	// Stored only when it differs from what the coding job would pick anyway.
-	if (s.coding_max_attempts > 0 && s.coding_max_attempts !== 3)
-		out.max_attempts = s.coding_max_attempts;
 	if (s.coding_max_turns > 0 && s.coding_max_turns !== DEFAULT_MAX_TURNS)
 		out.max_turns = s.coding_max_turns;
 	return Object.keys(out).length > 0 ? out : undefined;
@@ -132,9 +129,7 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 		use_git: true,
 		generate_assets: false,
 		run_mode: 'attended',
-		// The coding job's own default, shown as itself. A 0 here meant "unset"
-		// and read on screen as "zero attempts", which is not a thing.
-		coding_max_attempts: 3,
+		// The coding job's own default, shown as itself, not a 0 meaning "unset".
 		coding_max_turns: DEFAULT_MAX_TURNS,
 		chain_assets_model: null,
 		chain_coding_model: null,
@@ -150,7 +145,6 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 			use_git: c.use_git,
 			generate_assets: c.generate_assets,
 			run_mode: c.run_mode,
-			coding_max_attempts: c.coding_run.max_attempts ?? 3,
 			coding_max_turns: c.coding_run.max_turns ?? DEFAULT_MAX_TURNS,
 			chain_assets_model: c.chain_models.assets
 				? modelFormFromColumns(c.chain_models.assets)

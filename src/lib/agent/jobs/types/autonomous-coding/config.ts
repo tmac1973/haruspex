@@ -3,8 +3,6 @@
 export interface AutonomousCodingConfig {
 	/** Folder of .md plan files, relative to working_dir. Required to run. */
 	plan_dir: string | null;
-	/** Failed attempts per item before it's marked BLOCKED. null = default (3). */
-	max_attempts: number | null;
 	/**
 	 * What the runner does when commit signing fails mid-run (expired
 	 * 1Password/gpg-agent authorization): 'unsigned' commits with signing
@@ -99,10 +97,6 @@ export function parseAutonomousCodingConfig(json: string | null): AutonomousCodi
 	}
 	return {
 		plan_dir: typeof raw.plan_dir === 'string' && raw.plan_dir.length > 0 ? raw.plan_dir : null,
-		max_attempts:
-			typeof raw.max_attempts === 'number' && Number.isFinite(raw.max_attempts)
-				? raw.max_attempts
-				: null,
 		signing_fallback:
 			raw.signing_fallback === 'skip' || raw.signing_fallback === 'unsigned'
 				? raw.signing_fallback

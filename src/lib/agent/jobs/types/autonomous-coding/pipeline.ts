@@ -6,13 +6,12 @@
  * Stage 1 (Decompose): a forced submit_task_list turn breaks the plan into
  * the atomic checklist (TODO-coding.md); an existing parseable TODO on disk
  * is resumed instead (the plan dir, not the DB, carries loop state).
- * Stage 2 (Loop): fresh-context iterations — the RUNNER picks the first
- * actionable item, the model implements + verifies exactly that item and
- * reports via a forced submit_iteration_result, and the runner does the
- * bookkeeping: git commit per verified step, TODO/PROGRESS updates, attempt
- * counting, and the three-strikes → BLOCKED transition. No iteration cap:
- * every iteration consumes one attempt on one item, so items × max_attempts
- * bounds the loop structurally.
+ * Stage 2 (Loop): one continuous turn builds each plan phase, then the RUNNER
+ * runs the phase verification and commits the phase. A failed verification
+ * injects a repair item, worked in a fresh-context iteration turn with one
+ * attempt; repair cycles per phase are bounded, so the loop is too. The runner
+ * owns the bookkeeping: commits, TODO/PROGRESS updates, attempt counting and
+ * the BLOCKED transition.
  * Finalize: the model writes REPORT-coding.md (write-verified), the runner
  * commits it, and the run ends "done" / "done with blockers (k)".
  *
@@ -191,8 +190,10 @@ const DOCUMENT_MAX_ITERATIONS = 60;
 
 /** Bounded retries for write guards / missing structured calls. */
 const MAX_WRITE_ATTEMPTS = 3;
-/** Default per-item failure limit before BLOCKED (configurable 1–10). */
-const DEFAULT_MAX_ATTEMPTS = 3;
+/** Failures before a non-repair item worked on its own is BLOCKED. Only an
+ *  item with no phase gets such a turn, which a parsed or decomposed plan
+ *  never produces; repair items get one attempt. */
+const ITEM_MAX_ATTEMPTS = 3;
 /** How many recent progress entries ride along in each iteration prompt. */
 const PROGRESS_TAIL_ENTRIES = 12;
 /** Timeout for runner-driven git commands. */
@@ -431,7 +432,7 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 		// a rollback point.
 		startStep(LOOP);
 		abortIfCancelled();
-		const maxAttempts = Math.max(1, Math.min(cfg.max_attempts ?? DEFAULT_MAX_ATTEMPTS, 10));
+		const maxAttempts = ITEM_MAX_ATTEMPTS;
 		const maxTurns = cfg.max_turns ?? DEFAULT_MAX_TURNS;
 		let progress = (await readPlanFile(ctx, progressPath)) ?? '# Coding progress\n';
 		const recentNotes: string[] = [];

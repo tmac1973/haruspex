@@ -45,7 +45,7 @@ describe('autonomous-coding Editor', () => {
 		expect(screen.getByLabelText('Plan directory')).toBeTruthy();
 		expect(screen.queryByLabelText('Context mode')).toBeNull();
 		expect(screen.getByLabelText('Signing fallback')).toBeTruthy();
-		expect(screen.getByLabelText('Max attempts per step')).toBeTruthy();
+		expect(screen.queryByLabelText('Max attempts per step')).toBeNull();
 	});
 
 	it('offers web research in preflight, on by default', () => {

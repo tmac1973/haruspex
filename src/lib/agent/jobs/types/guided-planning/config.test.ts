@@ -111,7 +111,6 @@ describe('unattended_chain requires verification', () => {
 describe('coding_run overrides', () => {
 	it('is all-null when unset', () => {
 		expect(parseGuidedPlanningConfig(null).coding_run).toEqual({
-			max_attempts: null,
 			max_turns: null
 		});
 	});
@@ -119,10 +118,10 @@ describe('coding_run overrides', () => {
 	it('round-trips a populated object', () => {
 		const cfg = parseGuidedPlanningConfig(
 			JSON.stringify({
-				coding_run: { max_attempts: 5, max_turns: 300 }
+				coding_run: { max_turns: 300 }
 			})
 		);
-		expect(cfg.coding_run).toEqual({ max_attempts: 5, max_turns: 300 });
+		expect(cfg.coding_run).toEqual({ max_turns: 300 });
 	});
 
 	it('degrades a malformed object to all-null rather than throwing', () => {
@@ -132,10 +131,9 @@ describe('coding_run overrides', () => {
 			'{"coding_run":"nonsense"}',
 			'{"coding_run":[]}',
 			'{"coding_run":null}',
-			'{"coding_run":{"max_attempts":"five","max_turns":"many"}}'
+			'{"coding_run":{"max_turns":"many"}}'
 		]) {
 			expect(parseGuidedPlanningConfig(raw).coding_run).toEqual({
-				max_attempts: null,
 				max_turns: null
 			});
 		}
