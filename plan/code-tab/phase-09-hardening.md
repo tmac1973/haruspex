@@ -17,6 +17,9 @@
 - Session folder deleted or moved: the session opens read-only with a banner
   ("Folder not found") and can be deleted; no tool runs.
 - A background process that ignores SIGTERM is SIGKILLed.
+- Two sessions hitting a risky command at once: the approval modal takes one
+  prompt at a time, so the second currently gets a tool error. Queue the
+  prompts instead (found in phase 4).
 
 ## Docs and follow-ups
 

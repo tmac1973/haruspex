@@ -76,3 +76,30 @@ only when idle; close stops background processes.
 
 A test can create a session, run a mocked turn, reload it by id, and get the
 same thread.
+
+## As built
+
+- `stores/code.svelte.ts`: registry (`getOpenSessions`, `getActiveSession(Id)`,
+  `setActiveSession`, `openSession`, `newSession`, `closeSession`) and
+  `CodeSession`. `send` while a turn runs queues steering; undelivered steering
+  comes back in `returnedSteering` (`takeReturnedSteering()` for the input box).
+  Per-session `usage` for the context gauge (the global context store is left
+  alone). `saveError` is set when a save fails.
+- `code/runCodeTurn.ts` calls `runAgentLoop` directly (not `runTurnCore`) to
+  read `CompletionMeta` and keep a stopped turn's finished part. It never
+  throws: it returns `added` messages plus `outcome`. Delivered steering and the
+  answer it interrupted stay in the thread; loop nudges don't.
+- Queue state needed no new signal: `withInferenceSlot`'s `onTicket` /
+  `onAdmitted` give `queued` → `running`. New consumer `'code'`.
+- `code/system-prompt.ts` holds both coding prompts; the Shell's is unchanged
+  byte for byte. The tab variant drops the terminal tools, the two-environments
+  block and PID kills, and names `command_output` / `command_stop`.
+- Session approval: `isSessionApproved(key)` / `approveSession(key)` /
+  `resetSessionApproval(key)`. Shell uses `SHELL_APPROVAL_KEY`, a session
+  `codeApprovalKey(id)`.
+- `buildWatchNotification` moved to `shell/backgroundWatch.ts`, shared by both.
+- `agent/tools/code-bg.ts` now holds the Code tab's background tools.
+- Not done here: the rendered-thread trim the Shell does at 40 messages (the
+  saved thread is the whole session; phase 5 decides how much to render), and
+  the approval modal still takes one prompt at a time, so two sessions asking
+  at once get a tool error for the second (phase 9).

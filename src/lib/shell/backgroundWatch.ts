@@ -22,6 +22,8 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import type { BgProcess } from '#lib/ipc/gen/BgProcess.ts';
+import { truncateCapturedOutput } from '#lib/shell/truncate.ts';
+import { formatDuration } from '#lib/utils/format.ts';
 
 interface WatchBase {
 	id: string;
@@ -55,7 +57,7 @@ export interface CodeBgWatch extends WatchBase {
 	processId: string;
 }
 
-type AnyWatch = BackgroundWatch | CodeBgWatch;
+export type AnyWatch = BackgroundWatch | CodeBgWatch;
 
 const POLL_MS = 4000;
 
@@ -165,6 +167,48 @@ export async function readCodeBgLog(processId: string, bytes = 4096): Promise<st
 	} catch {
 		return '';
 	}
+}
+
+/**
+ * Build the user-facing body for a background-watch completion turn: one block
+ * per finished command with its exit code, when it ran, and its output tail.
+ * Shared by the Shell's Code mode and the Code tab.
+ */
+export async function buildWatchNotification(completed: AnyWatch[]): Promise<string> {
+	const lines: string[] = [
+		completed.length === 1
+			? 'A background command you started with watch has finished.'
+			: `${completed.length} background commands you started with watch have finished.`
+	];
+	for (const w of completed) {
+		const tail = truncateCapturedOutput(await readWatchOutput(w), 4096);
+		const finishedMs = w.completedAtMs ?? Date.now();
+		lines.push(
+			`\n$ ${w.command}\n` +
+				`exit code: ${w.exitCode} · started ${new Date(w.startedAtMs).toLocaleTimeString()}, ` +
+				`ran ${formatDuration(finishedMs - w.startedAtMs)}, finished ${describeAgo(finishedMs)}\n` +
+				`--- output ---\n${tail.text || '(no output)'}\n---`
+		);
+	}
+	lines.push(
+		'\nReact as needed: report the result, fix a failure, or run the next step. ' +
+			'If nothing is needed, a one-line acknowledgement is fine.'
+	);
+	return lines.join('\n');
+}
+
+function describeAgo(atMs: number): string {
+	const s = Math.max(0, Math.round((Date.now() - atMs) / 1000));
+	if (s < 5) return 'just now';
+	if (s < 60) return `${s}s ago`;
+	return `${Math.floor(s / 60)}m ago`;
+}
+
+/** A finished watch's output: the PTY log file, or the end of a code_bg log. */
+function readWatchOutput(w: AnyWatch): Promise<string> {
+	return w.source === 'pty'
+		? readWatchLog(w.logPath, w.wslDistro)
+		: readCodeBgLog(w.processId, 65536);
 }
 
 function ensurePolling(): void {

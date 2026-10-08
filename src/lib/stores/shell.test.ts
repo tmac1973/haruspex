@@ -10,14 +10,16 @@ vi.mock('@tauri-apps/api/core', () => ({
 const runShellTurn = vi.hoisted(() => vi.fn());
 vi.mock('#lib/shell/runShellTurn.ts', () => ({ runShellTurn }));
 
+// Both builders echo the repo's instructions so a test can see them arrive.
 vi.mock('#lib/shell/system-prompt.ts', () => ({
-	// Both echo the repo's instructions so a test can see them arrive.
 	buildShellSystemPrompt: (opts: { projectInstructions?: string }) => ({
 		role: 'system',
 		content: `sys${opts.projectInstructions ?? ''}`
-	}),
-	// Code mode picks this builder instead; needed by the persistence tests,
-	// which all run with codeMode on.
+	})
+}));
+// Code mode picks this builder instead; needed by the persistence tests,
+// which all run with codeMode on.
+vi.mock('#lib/code/system-prompt.ts', () => ({
 	buildShellCodeSystemPrompt: (opts: { projectInstructions?: string }) => ({
 		role: 'system',
 		content: `code-sys${opts.projectInstructions ?? ''}`
@@ -90,7 +92,8 @@ import {
 import {
 	approveSession,
 	isSessionApproved,
-	resetSessionApproval
+	resetSessionApproval,
+	SHELL_APPROVAL_KEY
 } from '#lib/stores/codeCommandApproval.svelte.ts';
 import { setPtyBusy } from '#lib/stores/shellPtyBusy.svelte.ts';
 import type { ChatMessage } from '#lib/api.ts';
@@ -104,16 +107,16 @@ beforeEach(() => {
 		return { finalText: 'done', rawText: 'done' };
 	});
 	vi.mocked(invoke).mockClear();
-	resetSessionApproval();
+	resetSessionApproval(SHELL_APPROVAL_KEY);
 });
 
 describe('command approval', () => {
 	it('newChat re-arms the per-command approval ("allow for session" does not leak)', () => {
 		const s = createShellSession();
-		approveSession();
-		expect(isSessionApproved()).toBe(true);
+		approveSession(SHELL_APPROVAL_KEY);
+		expect(isSessionApproved(SHELL_APPROVAL_KEY)).toBe(true);
 		s.newChat();
-		expect(isSessionApproved()).toBe(false);
+		expect(isSessionApproved(SHELL_APPROVAL_KEY)).toBe(false);
 	});
 });
 
