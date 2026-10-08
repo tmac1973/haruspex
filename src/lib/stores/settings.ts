@@ -374,11 +374,13 @@ export interface AppSettings {
 	remoteAccessTokenSaved: boolean;
 	contextSize: number;
 	/**
-	 * Allow the local llama-server to run a context larger than fits in VRAM,
-	 * spilling the overflow into system RAM (GTT over PCIe on AMD). Off by
-	 * default: the Context Size picker disables sizes the model can't fit in
-	 * VRAM. On: those sizes become selectable but part of the context is
-	 * served from system RAM, which is slower. See `InferenceSection`.
+	 * "Let models use system RAM". On: `start_server` omits `--n-gpu-layers`,
+	 * so llama.cpp's fit keeps what it can in VRAM and moves the rest —
+	 * MoE experts first, then whole layers — to system RAM, and the Context
+	 * Size picker's ceiling counts spare RAM as well as VRAM. Off (default):
+	 * every layer is pinned to VRAM and the picker disables sizes that don't
+	 * fit there. The name predates the switch doing anything beyond unlocking
+	 * picker sizes; kept to avoid a settings migration. See `InferenceSection`.
 	 */
 	allowSpillToSystemRam: boolean;
 	/**

@@ -9,7 +9,8 @@
 		exitRemoteMode,
 		restartServerWhenIdle,
 		getPendingRestart,
-		cancelPendingRestart
+		cancelPendingRestart,
+		type RestartReason
 	} from '#lib/stores/llamaServer.svelte.ts';
 	import { PORTS } from '#lib/ports.ts';
 	import {
@@ -39,11 +40,11 @@
 	let projectorInRam = $state(getSettings().visionProjectorInSystemRam);
 	let inferenceBackend = $state<InferenceBackendConfig>(getSettings().inferenceBackend);
 
-	// Predictive VRAM cap: detected total VRAM (MB) and the largest context the
-	// active model fits in it *without* spilling to system RAM. A `null` ceiling
-	// means "can't predict" (unknown VRAM or an unrecognized model) — in that
-	// case we leave every size selectable rather than ghosting choices we can't
-	// reason about.
+	// Predictive memory cap: detected total VRAM (MB) and the largest context the
+	// active model fits in it — plus system RAM when models may use it. A `null`
+	// ceiling means "can't predict" (unknown VRAM or an unrecognized model) — in
+	// that case we leave every size selectable rather than ghosting choices we
+	// can't reason about.
 	let gpuVramMb = $state<number | null>(null);
 	let ctxCeiling = $state<number | null>(null);
 
@@ -66,16 +67,16 @@
 				vramMb: gpuVramMb,
 				// A CPU-resident projector isn't competing for VRAM, so it
 				// doesn't count against the KV budget.
-				mmprojOnCpu: projectorInRam
+				mmprojOnCpu: projectorInRam,
+				ramOffload: allowSpill
 			});
 		} catch {
 			ctxCeiling = null;
 		}
 	}
 
-	// On mount: detect VRAM, derive the ceiling, and — when spill is off — snap a
-	// previously-saved oversized context down to what actually fits, so we never
-	// silently keep spilling just because the saved setting predates this cap.
+	// On mount: detect VRAM, derive the ceiling, and snap a previously-saved
+	// oversized context down to what actually fits.
 	$effect(() => {
 		void (async () => {
 			try {
@@ -85,9 +86,11 @@
 				gpuVramMb = null;
 			}
 			await refreshCtxCeiling();
-			if (!allowSpill && ctxCeiling !== null && contextSize > ctxCeiling) {
+			if (ctxCeiling !== null && contextSize > ctxCeiling) {
 				showToast(
-					`${formatCtx(contextSize)} context needs more VRAM than your GPU has — using ${formatCtx(ctxCeiling)}. Turn on "Allow spill to system RAM" below to keep the larger size.`,
+					allowSpill
+						? `${formatCtx(contextSize)} context needs more memory than this machine has — using ${formatCtx(ctxCeiling)}.`
+						: `${formatCtx(contextSize)} context needs more VRAM than your GPU has — using ${formatCtx(ctxCeiling)}. Turn on "Let models use system RAM" below to keep the larger size.`,
 					{ kind: 'info' }
 				);
 				await setContextSize(ctxCeiling);
@@ -111,7 +114,7 @@
 		// against the KV budget or it doesn't — so re-derive before deciding
 		// whether the current selection still fits.
 		await refreshCtxCeiling();
-		if (!allowSpill && ctxCeiling !== null && contextSize > ctxCeiling) {
+		if (ctxCeiling !== null && contextSize > ctxCeiling) {
 			// Moving the projector back onto the GPU shrank the budget. Snap
 			// down like the spill toggle does; that restarts the server too,
 			// so there's nothing left to do here.
@@ -125,14 +128,25 @@
 		await restartActiveModel('projector');
 	}
 
-	function onToggleSpill(next: boolean) {
+	async function onToggleSpill(next: boolean) {
 		allowSpill = next;
 		updateSettings({ allowSpillToSystemRam: next });
-		// Turning spill off with an oversized selection: snap down to the cap so
-		// we're not left running a context the user just said shouldn't spill.
-		if (!next && ctxCeiling !== null && contextSize > ctxCeiling) {
-			void setContextSize(ctxCeiling);
+		// The ceiling moves with the flag: system RAM either counts or it
+		// doesn't.
+		await refreshCtxCeiling();
+		if (ctxCeiling !== null && contextSize > ctxCeiling) {
+			// Turning it off with a selection only RAM could hold: snap down.
+			// That restarts the server too, so there's nothing left to do.
+			showToast(
+				`${formatCtx(contextSize)} doesn't fit in VRAM alone — using ${formatCtx(ctxCeiling)}.`,
+				{ kind: 'info' }
+			);
+			await setContextSize(ctxCeiling);
+			return;
 		}
+		// The flag changes how llama-server places the model, so it only takes
+		// effect on restart.
+		await restartActiveModel('memory');
 	}
 
 	// The Rust supervisor may back the context size down during startup
@@ -153,9 +167,10 @@
 	const genericRemoteMode = $derived(remoteMode && !openrouterMode);
 	const pendingRestart = $derived(getPendingRestart());
 
-	function restartReasonLabel(reason: 'model' | 'context' | 'projector'): string {
+	function restartReasonLabel(reason: RestartReason): string {
 		if (reason === 'model') return 'Model change';
 		if (reason === 'projector') return 'Vision projector change';
+		if (reason === 'memory') return 'System RAM change';
 		return 'Context size change';
 	}
 
@@ -275,7 +290,7 @@
 	 *  don't abort the user's response mid-stream (restartServerWhenIdle
 	 *  queues it and the banner above shows it's waiting). A no-op when the
 	 *  server isn't running — the change applies on the next start. */
-	async function restartActiveModel(reason: 'context' | 'projector') {
+	async function restartActiveModel(reason: Exclude<RestartReason, 'model'>) {
 		if (serverState.status !== 'ready' && serverState.status !== 'starting') return;
 		const modelPath = await invoke<string | null>('get_active_model_path', {
 			preferredFilename: getActiveLocalModelFilename() || null
@@ -386,19 +401,23 @@
 		</p>
 		<div class="context-options">
 			{#each [{ value: 8192, label: '8K', desc: 'Low VRAM' }, { value: 16384, label: '16K', desc: 'Standard' }, { value: 32768, label: '32K', desc: 'Recommended' }, { value: 65536, label: '64K', desc: '16+ GB VRAM' }, { value: 131072, label: '128K', desc: '24+ GB VRAM' }, { value: 262144, label: '256K', desc: 'Maximum' }] as opt (opt.value)}
-				{@const overCeiling = !allowSpill && ctxCeiling !== null && opt.value > ctxCeiling}
+				{@const overCeiling = ctxCeiling !== null && opt.value > ctxCeiling}
 				<button
 					class="ctx-btn"
 					class:selected={contextSize === opt.value}
 					class:over-ceiling={overCeiling}
 					disabled={overCeiling}
 					title={overCeiling
-						? "Exceeds your GPU's VRAM. Turn on “Allow spill to system RAM” to use this size."
+						? allowSpill
+							? "Exceeds your GPU's VRAM and spare system RAM together."
+							: "Exceeds your GPU's VRAM. Turn on “Let models use system RAM” to use this size."
 						: undefined}
 					onclick={() => setContextSize(opt.value)}
 				>
 					<strong>{opt.label}</strong>
-					<span>{overCeiling ? 'Needs more VRAM' : opt.desc}</span>
+					<span
+						>{overCeiling ? (allowSpill ? 'Needs more memory' : 'Needs more VRAM') : opt.desc}</span
+					>
 				</button>
 			{/each}
 		</div>
@@ -406,13 +425,16 @@
 			<input
 				type="checkbox"
 				checked={allowSpill}
-				onchange={(e) => onToggleSpill(e.currentTarget.checked)}
+				onchange={(e) => void onToggleSpill(e.currentTarget.checked)}
 			/>
-			<span class="toggle-label">
-				Allow spill to system RAM
+			<span
+				class="toggle-label"
+				title="llama.cpp keeps what it can in VRAM and moves the rest to system RAM. Mixture-of-experts models such as Qwen 3.6 35B-A3B lose the least speed, because only a few experts run per token. Dense models slow down a lot."
+			>
+				Let models use system RAM
 				<span class="toggle-sub">
-					Lets you pick context sizes larger than your VRAM. The overflow runs from system RAM
-					(slower on every token). Off by default.
+					Runs bigger models and contexts than your VRAM holds, more slowly. Off by default;
+					restarts the server.
 				</span>
 			</span>
 		</label>

@@ -176,7 +176,10 @@ export async function startServer(
 			mtp: getSettings().mtpEnabled,
 			// Only reaches llama-server for models that actually have a
 			// projector — Rust attaches it alongside `--mmproj`.
-			mmprojOnCpu: getSettings().visionProjectorInSystemRam
+			mmprojOnCpu: getSettings().visionProjectorInSystemRam,
+			// On: Rust omits --n-gpu-layers so llama.cpp's fit can place
+			// layers and MoE experts in system RAM.
+			ramOffload: getSettings().allowSpillToSystemRam
 		});
 	} catch (e) {
 		serverState.status = 'error';
@@ -206,11 +209,14 @@ export async function stopServer(): Promise<void> {
  * The explicit Start / Stop / Restart buttons deliberately bypass all of
  * this — they act immediately and clear any pending restart.
  */
+/** What the user changed to need a restart — drives the banner copy. */
+export type RestartReason = 'model' | 'context' | 'projector' | 'memory';
+
 export interface PendingRestart {
 	modelPath: string;
 	ctxSize: number;
 	/** What the user changed — drives the banner copy. */
-	reason: 'model' | 'context' | 'projector';
+	reason: RestartReason;
 }
 
 let pendingRestart = $state<PendingRestart | null>(null);
@@ -233,7 +239,7 @@ export function cancelPendingRestart(): void {
 export async function restartServerWhenIdle(
 	modelPath: string,
 	ctxSize: number,
-	reason: 'model' | 'context' | 'projector'
+	reason: RestartReason
 ): Promise<boolean> {
 	if (getRunningCount() > 0) {
 		pendingRestart = { modelPath, ctxSize, reason };

@@ -40,7 +40,8 @@ pub struct CrashReport {
     /// which tells us whether it died during model load or mid-request.
     pub status_before: String,
     pub model_path: String,
-    pub n_gpu_layers: i32,
+    /// `--n-gpu-layers` as passed, or `auto` when llama.cpp's fit chose.
+    pub n_gpu_layers: String,
     pub ctx_size: u32,
     pub flash_attn: bool,
     pub cpu_fallback_active: bool,

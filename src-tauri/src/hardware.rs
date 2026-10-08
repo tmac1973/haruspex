@@ -58,6 +58,14 @@ fn tier_lookup<T: Copy>(table: &[(u64, T)], vram_mb: u64) -> T {
         .expect("tier table must end with a u64::MAX sentinel")
 }
 
+/// Installed system RAM in bytes. Cheap: reads memory counters only, unlike
+/// [`detect_hardware`], which also probes the GPU.
+pub fn total_ram_bytes() -> u64 {
+    let mut sys = sysinfo::System::new();
+    sys.refresh_memory();
+    sys.total_memory()
+}
+
 pub fn detect_hardware() -> HardwareInfo {
     use sysinfo::System;
 

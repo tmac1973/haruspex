@@ -28,7 +28,7 @@ Where the model runs, which model is used and how big the context is.
 - **Inference backend**: Local (Haruspex-managed) (default), Remote server (advanced) or OpenRouter (cloud).
 - **Models**: download and switch local models.
 - **Context Size**: 32K by default (8K to 256K).
-- **Allow spill to system RAM**: off.
+- **Let models use system RAM**: off.
 - **Server**: status, port and Restart Server; **Run Setup Wizard**.
 
 See the `models` page.

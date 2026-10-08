@@ -68,3 +68,32 @@ stays to avoid a settings migration.
 
 Docs: `docs/guide/models.md` (context section), `troubleshooting.md` if it
 mentions spill.
+
+## As built (2026-10-08)
+
+One change from the steps above: **no `expert_bytes` in this phase.** With
+offload on, fit moves experts first and then whole dense layers, each taking
+its KV share with it, so what bounds the context is VRAM + RAM together for
+MoE and dense alike. `context_ceiling_for` adds `FitOptions::ram_budget_bytes`
+(`ram_offload_budget`: total RAM − 6 GiB − the 2 GiB cache cap) to VRAM.
+`--cache-ram` counts the whole model file as offloaded when the switch is on,
+which only errs towards a smaller cache. Per-model expert sizes are still
+needed for phase 03's "runs well" rule, so they move there:
+
+| Quant | File | Experts (`ffn_*_exps`) | Non-expert |
+|---|---|---|---|
+| Qwen3.6-35B-A3B-UD-IQ4_NL | 18,029,898,240 | 15,474,884,608 (85.8%) | 2,555,013,632 |
+| Qwen3.6-35B-A3B-UD-Q5_K_XL | 26,581,518,848 | 23,903,338,496 (89.9%) | 2,678,180,352 |
+
+Measured from the GGUF tensor tables (Q5 from a range read of the header,
+the parser cross-checked exactly against the full IQ4_NL file).
+
+Fit on v0.6.0, RX 7900 XTX, IQ4_NL MoE at 32K, q8_0 KV, no `-ngl`,
+`--fit-target 6144` to leave ≈9.6 GB usable:
+
+- "context size set by user to 32768 -> no change"; experts overflow to CPU.
+  Peak VRAM ≈10.1 GB, so the target holds. Fit adds ≈4 s to startup.
+- 38.6 tok/s with the default load mode; 36.6 with `--load-mode none`, which
+  llama.cpp's warning suggests. Default kept.
+- Fit's own log lines only show at `-lv 4`; success reads "successfully fit
+  params". The benign classifier pattern is now just "already set by user".

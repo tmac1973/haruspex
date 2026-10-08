@@ -38,10 +38,14 @@ To use a GGUF file you already have, run Settings → Inference → **Run Setup 
 
 Settings → Inference → Context Size sets how much of the conversation the model can see at once: 8K, 16K, 32K (the default), 64K, 128K or 256K. Bigger needs more VRAM, and changing it restarts the model once any reply in progress finishes. Sizes your GPU cannot hold are greyed out.
 
-- **Allow spill to system RAM** (off by default) unlocks larger sizes, but every reply gets slower.
+- **Let models use system RAM** (off by default) unlocks larger sizes. See below.
 - **Keep the vision projector in system RAM** (off by default) frees about 1 GB of VRAM, usually buying a longer conversation. Only messages with an image get slower.
 
 When a conversation gets long, Haruspex summarises older parts so it still fits.
+
+## Run a model bigger than your VRAM
+
+Turn on Settings → Inference → **Let models use system RAM**. Haruspex keeps what it can in VRAM and moves the rest into system RAM, and the context sizes unlock up to what both can hold. Replies get slower. Qwen 3.6 35B-A3B slows the least, because only a few of its experts run for each word; dense models slow down a lot. It does not help on integrated graphics, which already use system RAM.
 
 ## Response length
 

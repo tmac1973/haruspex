@@ -692,6 +692,9 @@ pub struct FitOptions {
     /// `--no-mmproj-offload` is on: the vision projector loads onto the CPU
     /// backend, so its weights never occupy VRAM.
     pub mmproj_on_cpu: bool,
+    /// System RAM llama.cpp's fit may fill with weights when the user lets
+    /// models use system RAM; 0 when they don't. See [`ram_offload_budget`].
+    pub ram_budget_bytes: u64,
 }
 
 impl FitOptions {
@@ -700,6 +703,7 @@ impl FitOptions {
         Self {
             mtp_enabled,
             mmproj_on_cpu: false,
+            ram_budget_bytes: 0,
         }
     }
 }
@@ -721,8 +725,20 @@ impl FitOptions {
 // wasn't in the list — silently disabling the context-fit prediction for the
 // next model added.
 
-/// Largest ladder rung that fits in `vram_bytes` for `model_id` *without
-/// spilling KV/weights into system RAM*, or `None` when we can't model the fit
+/// RAM kept back from offloaded weights for the OS, the app and its webview.
+const RAM_RESERVE_BYTES: u64 = 6 * 1024 * 1024 * 1024;
+
+/// System RAM llama.cpp's fit may fill with weights on a machine with
+/// `total_ram` bytes: everything but [`RAM_RESERVE_BYTES`] and the largest
+/// prompt cache we ever ask for.
+pub fn ram_offload_budget(total_ram: u64) -> u64 {
+    let cache = crate::server::CACHE_RAM_MAX_MIB as u64 * 1024 * 1024;
+    total_ram.saturating_sub(RAM_RESERVE_BYTES + cache)
+}
+
+/// Largest ladder rung that fits for `model_id` in `vram_bytes` plus, when
+/// offload is on, `opts.ram_budget_bytes` of system RAM, or `None` when we
+/// can't model the fit
 /// (the model isn't in the registry, or its architecture is unknown). Accounts
 /// for the weights, vision projector, per-token KV growth, and fixed runtime
 /// overhead.
@@ -764,10 +780,15 @@ pub fn context_ceiling_for(model_id: &str, vram_bytes: u64, opts: FitOptions) ->
         n => n,
     };
     let fixed = fixed_vram_bytes(model, opts);
-    if vram_bytes <= fixed {
+    // With offload on, llama.cpp's fit moves MoE experts first and then whole
+    // layers, each taking its share of the KV cache with it. So what bounds
+    // the context is the two pools together; how fast it runs is the user's
+    // trade, which they made by opting in.
+    let budget = vram_bytes + opts.ram_budget_bytes;
+    if budget <= fixed {
         return Some(MIN_CONTEXT);
     }
-    let max_ctx_fit = ((vram_bytes - fixed) / kv_per_tok) as u32;
+    let max_ctx_fit = ((budget - fixed) / kv_per_tok) as u32;
     Some(
         CONTEXT_LADDER
             .iter()
@@ -1498,6 +1519,24 @@ async fn validate_gguf(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// The fit commands' optional flags resolved to [`FitOptions`], reading
+/// installed RAM only when offload is on.
+fn fit_options(
+    mtp: Option<bool>,
+    mmproj_on_cpu: Option<bool>,
+    ram_offload: Option<bool>,
+) -> FitOptions {
+    FitOptions {
+        mtp_enabled: mtp.unwrap_or(true),
+        mmproj_on_cpu: mmproj_on_cpu.unwrap_or(false),
+        ram_budget_bytes: if ram_offload.unwrap_or(false) {
+            ram_offload_budget(crate::hardware::total_ram_bytes())
+        } else {
+            0
+        },
+    }
+}
+
 // Tauri commands
 
 #[tauri::command]
@@ -1515,19 +1554,17 @@ pub async fn recommended_context_size(
     vram_mb: Option<u64>,
     mtp: Option<bool>,
     mmproj_on_cpu: Option<bool>,
+    ram_offload: Option<bool>,
 ) -> Result<u32, ()> {
-    let opts = FitOptions {
-        mtp_enabled: mtp.unwrap_or(true),
-        mmproj_on_cpu: mmproj_on_cpu.unwrap_or(false),
-    };
+    let opts = fit_options(mtp, mmproj_on_cpu, ram_offload);
     Ok(match vram_mb {
         Some(mb) => recommended_context_for(&model_id, mb * 1024 * 1024, opts),
         None => MIN_CONTEXT,
     })
 }
 
-/// Predictive context cap for Settings: the largest size that fits in VRAM
-/// *without* spilling to system RAM. `None` means "don't restrict" — either
+/// Predictive context cap for Settings: the largest size that fits in VRAM,
+/// plus system RAM when offload is on. `None` means "don't restrict" — either
 /// VRAM is unknown or the model isn't one we can model — so the UI leaves
 /// every size selectable rather than ghosting choices we can't reason about.
 #[tauri::command]
@@ -1536,11 +1573,9 @@ pub async fn context_fit_ceiling(
     vram_mb: Option<u64>,
     mtp: Option<bool>,
     mmproj_on_cpu: Option<bool>,
+    ram_offload: Option<bool>,
 ) -> Result<Option<u32>, ()> {
-    let opts = FitOptions {
-        mtp_enabled: mtp.unwrap_or(true),
-        mmproj_on_cpu: mmproj_on_cpu.unwrap_or(false),
-    };
+    let opts = fit_options(mtp, mmproj_on_cpu, ram_offload);
     Ok(match vram_mb {
         Some(mb) => context_ceiling_for(&model_id, mb * 1024 * 1024, opts),
         None => None,
@@ -2074,8 +2109,8 @@ mod tests {
     fn mmproj_on_cpu_never_lowers_the_ceiling() {
         let gb = 1024 * 1024 * 1024u64;
         let on_cpu = FitOptions {
-            mtp_enabled: false,
             mmproj_on_cpu: true,
+            ..Default::default()
         };
         for model in full_registry() {
             for vram in [8 * gb, 12 * gb, 16 * gb, 24 * gb] {
@@ -2187,12 +2222,60 @@ mod tests {
             id,
             vram,
             FitOptions {
-                mtp_enabled: false,
                 mmproj_on_cpu: true,
+                ..Default::default()
             },
         )
         .unwrap();
         assert!(cpu > gpu, "expected a bigger ceiling, got {cpu} vs {gpu}");
+    }
+
+    #[test]
+    fn ram_offload_budget_keeps_the_reserve_and_cache() {
+        let gib = 1024 * 1024 * 1024u64;
+        // 6 GiB reserve + 2 GiB prompt cache come off the top.
+        assert_eq!(ram_offload_budget(32 * gib), 24 * gib);
+        assert_eq!(ram_offload_budget(8 * gib), 0);
+        assert_eq!(ram_offload_budget(4 * gib), 0);
+    }
+
+    /// Letting models use system RAM can only add room.
+    #[test]
+    fn ram_offload_never_lowers_the_ceiling() {
+        let gb = 1024 * 1024 * 1024u64;
+        let offload = FitOptions {
+            ram_budget_bytes: 24 * gb,
+            ..Default::default()
+        };
+        for model in full_registry() {
+            for vram in [8 * gb, 12 * gb, 16 * gb, 24 * gb] {
+                let (Some(vram_only), Some(with_ram)) = (
+                    context_ceiling_for(&model.id, vram, FitOptions::default()),
+                    context_ceiling_for(&model.id, vram, offload),
+                ) else {
+                    continue;
+                };
+                assert!(with_ram >= vram_only, "{} at {vram}", model.id);
+            }
+        }
+    }
+
+    /// The case offload exists for: the 18 GB MoE on a 12 GB card. VRAM alone
+    /// can't hold the weights, so it floors; with 24 GB of RAM to spill into
+    /// it reaches the 256K architectural limit.
+    #[test]
+    fn ram_offload_opens_the_moe_on_a_12gb_card() {
+        let gb = 1024 * 1024 * 1024u64;
+        let id = "Qwen3.6-35B-A3B-UD-IQ4_NL";
+        assert_eq!(
+            context_ceiling_for(id, 12 * gb, FitOptions::default()),
+            Some(MIN_CONTEXT)
+        );
+        let offload = FitOptions {
+            ram_budget_bytes: 24 * gb,
+            ..Default::default()
+        };
+        assert_eq!(context_ceiling_for(id, 12 * gb, offload), Some(262144));
     }
 
     #[test]

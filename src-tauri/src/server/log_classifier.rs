@@ -27,11 +27,16 @@ const GPU_ERROR_PATTERNS: &[&str] = &[
 /// Known-benign lines that contain error words but signal nothing wrong.
 /// llama.cpp's auto-fit step (`common_fit_params`) logs "failed to fit
 /// params to free device memory: n_gpu_layers already set by user to 99,
-/// abort" on every start because we pass --n-gpu-layers explicitly — the
-/// "abort" is the fit *step* declining to override our value, after which
-/// loading proceeds normally. Without this exclusion the line matches the
-/// GPU patterns ("gpu" + "fail") and arms a spurious CPU fallback.
-const BENIGN_PATTERNS: &[&str] = &["common_fit_params", "failed to fit params"];
+/// abort" whenever we pin the layer count — the "abort" is the fit *step*
+/// declining to override our value, after which loading proceeds normally.
+/// The same happens for a tensor split or `-ot` override a power user puts
+/// in extra args. Without this exclusion the line matches the GPU patterns
+/// ("gpu" + "fail") and arms a spurious CPU fallback.
+///
+/// Only the "already set by user" form is benign. With RAM offload on we
+/// leave the layer count to fit, and a fit that genuinely fails is a real
+/// warning sign; if the load then dies, the CPU fallback is the right answer.
+const BENIGN_PATTERNS: &[&str] = &["already set by user"];
 
 /// Substring patterns that name multi-token prediction / speculative
 /// decoding as the failing subsystem. Only reachable when the supervisor
@@ -219,6 +224,26 @@ mod tests {
                  n_gpu_layers already set by user to 99, abort"
             ),
             LogSignal::None
+        );
+        assert_eq!(
+            classify(
+                "common_fit_params: failed to fit params to free device memory: \
+                 model_params::tensor_buft_overrides already set by user, abort"
+            ),
+            LogSignal::None
+        );
+    }
+
+    /// A fit that fails for any other reason under RAM offload is not
+    /// excused: if the GPU load then dies, the CPU fallback has to arm.
+    #[test]
+    fn a_genuine_fit_failure_is_not_excused() {
+        assert_eq!(
+            classify(
+                "common_fit_params: failed to fit params to free device memory: \
+                 cannot fit model on gpu"
+            ),
+            LogSignal::GpuError
         );
     }
 }
