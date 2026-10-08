@@ -14,14 +14,14 @@ describe('editor round trip', () => {
 		const stored = JSON.stringify({
 			spec_path: 'plan/x/assets.json',
 			run_mode: 'unattended',
-			coding_run: { plan_dir: 'plan/x/', max_attempts: 5 },
+			coding_run: { plan_dir: 'plan/x/', max_turns: 300 },
 			chain_base_name: 'dark times',
 			chain_coding_model: { model_remote_model_id: 'thinking-cap' }
 		});
 		const state = assetGenerationJobType.configFromJob(stored);
 		expect(state.hand_off).toBe(true);
 		const saved = JSON.parse(assetGenerationJobType.configToJson(state)!);
-		expect(saved.coding_run).toEqual({ plan_dir: 'plan/x/', max_attempts: 5 });
+		expect(saved.coding_run).toEqual({ plan_dir: 'plan/x/', max_turns: 300 });
 		expect(saved.chain_base_name).toBe('dark times');
 		expect(saved.chain_coding_model.model_remote_model_id).toBe('thinking-cap');
 		expect(saved.hand_off).toBe(true);

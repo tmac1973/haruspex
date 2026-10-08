@@ -124,23 +124,6 @@
 
 <div class="field attempts">
 	<span class="label">
-		Max attempts per step
-		<Tooltip
-			label="About max attempts"
-			text="How many failed attempts a single step gets before it is marked BLOCKED and the loop moves on to steps that don't depend on it. You wake up to maximum progress plus a list of what needs you."
-		/>
-	</span>
-	<input
-		type="number"
-		min="1"
-		max="10"
-		bind:value={cfg.max_attempts}
-		aria-label="Max attempts per step"
-	/>
-</div>
-
-<div class="field attempts">
-	<span class="label">
 		Max model steps per turn
 		<Tooltip
 			label="About max model steps"

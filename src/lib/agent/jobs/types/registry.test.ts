@@ -139,14 +139,13 @@ describe('registration barrel', () => {
 		expect(stages.every((s) => (s.description ?? '').length > 0)).toBe(true);
 
 		// Editor state round-trip: sparse JSON in, concrete defaults out, and back.
-		expect(coding.configFromJob(JSON.stringify({ plan_dir: 'plan/x/', max_attempts: 5 }))).toEqual({
+		expect(coding.configFromJob(JSON.stringify({ plan_dir: 'plan/x/', max_turns: 300 }))).toEqual({
 			plan_dir: 'plan/x/',
-			max_attempts: 5,
 			signing_fallback: 'unsigned',
 			create_branch: true,
 			web_research: true,
 			use_git: true,
-			max_turns: 200,
+			max_turns: 300,
 			mute_preflight: false,
 			open_findings: [],
 			asset_spec_path: null,
@@ -154,7 +153,6 @@ describe('registration barrel', () => {
 		});
 		expect(coding.configFromJob(null)).toEqual({
 			plan_dir: '',
-			max_attempts: 3,
 			signing_fallback: 'unsigned',
 			create_branch: true,
 			web_research: true,
@@ -167,7 +165,6 @@ describe('registration barrel', () => {
 		});
 		const json = coding.configToJson({
 			plan_dir: ' plan/x/ ',
-			max_attempts: 3,
 			signing_fallback: 'skip',
 			create_branch: false,
 			web_research: false,
@@ -177,7 +174,6 @@ describe('registration barrel', () => {
 		});
 		expect(JSON.parse(json!)).toEqual({
 			plan_dir: 'plan/x/',
-			max_attempts: 3,
 			signing_fallback: 'skip',
 			create_branch: false,
 			web_research: false,
@@ -186,7 +182,7 @@ describe('registration barrel', () => {
 			mute_preflight: true
 		});
 
-		// Validation: working dir and plan dir are required; attempts bounded.
+		// Validation: working dir and plan dir are required; model steps bounded.
 		const base = { name: 'x', steps: [], config: coding.configDefaults() };
 		expect(coding.validate!({ ...base, workingDir: '' })).toContain('working directory');
 		expect(coding.validate!({ ...base, workingDir: '/p' })).toContain('plan directory');
@@ -194,21 +190,14 @@ describe('registration barrel', () => {
 			coding.validate!({
 				...base,
 				workingDir: '/p',
-				config: { plan_dir: 'plan/', max_attempts: 99, max_turns: 200 }
-			})
-		).toContain('Max attempts');
-		expect(
-			coding.validate!({
-				...base,
-				workingDir: '/p',
-				config: { plan_dir: 'plan/', max_attempts: 3, max_turns: 200 }
+				config: { plan_dir: 'plan/', max_turns: 200 }
 			})
 		).toBeNull();
 		expect(
 			coding.validate!({
 				...base,
 				workingDir: '/p',
-				config: { plan_dir: 'plan/', max_attempts: 3, max_turns: 5 }
+				config: { plan_dir: 'plan/', max_turns: 5 }
 			})
 		).toContain('Max model steps');
 	});

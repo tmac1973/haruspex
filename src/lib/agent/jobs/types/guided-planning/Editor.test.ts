@@ -41,25 +41,21 @@ describe('guided-planning Editor', () => {
 					jobName: 'Test job'
 				}
 			});
-			expect(screen.queryByLabelText('Max attempts per step')).toBeNull();
+			expect(screen.queryByLabelText('Max model steps per turn')).toBeNull();
 			unmount();
 		}
 	});
 
 	it('shows it in the chain mode, where it is the only chance to set it', () => {
 		mount({ run_mode: 'unattended_chain' });
-		expect(screen.getByLabelText('Max attempts per step')).toBeTruthy();
+		expect(screen.getByLabelText('Max model steps per turn')).toBeTruthy();
+		expect(screen.queryByLabelText('Max attempts per step')).toBeNull();
 	});
 
 	it('offers no verification command fields — preflight settles those', () => {
 		mount({ run_mode: 'unattended_chain' });
 		expect(screen.queryByLabelText('Phase verification command')).toBeNull();
 		expect(screen.queryByLabelText('Step check command')).toBeNull();
-	});
-
-	it("defaults max attempts to the coding job's own default, not zero", () => {
-		const cfg = mount({ run_mode: 'unattended_chain' });
-		expect(cfg.coding_max_attempts).toBe(3);
 	});
 
 	it('offers no skip in the chain mode, and says why', () => {

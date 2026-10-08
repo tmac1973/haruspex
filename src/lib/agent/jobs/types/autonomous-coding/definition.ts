@@ -12,7 +12,6 @@ import Editor from './Editor.svelte';
 /** The editor's working state (concrete values; '' = unset). */
 export interface AutonomousCodingEditorState {
 	plan_dir: string;
-	max_attempts: number;
 	signing_fallback: 'unsigned' | 'skip';
 	create_branch: boolean;
 	use_git: boolean;
@@ -89,7 +88,6 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 	Editor,
 	configDefaults: (): AutonomousCodingEditorState & Record<string, unknown> => ({
 		plan_dir: '',
-		max_attempts: 3,
 		signing_fallback: 'unsigned',
 		create_branch: true,
 		web_research: true,
@@ -104,7 +102,6 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 		const c = parseAutonomousCodingConfig(typeConfig);
 		return {
 			plan_dir: c.plan_dir ?? '',
-			max_attempts: c.max_attempts ?? 3,
 			signing_fallback: c.signing_fallback ?? 'unsigned',
 			create_branch: c.create_branch ?? true,
 			web_research: c.web_research ?? true,
@@ -120,7 +117,6 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 		const s = config as unknown as AutonomousCodingEditorState;
 		return JSON.stringify({
 			plan_dir: s.plan_dir.trim() || undefined,
-			max_attempts: s.max_attempts,
 			signing_fallback: s.signing_fallback,
 			create_branch: s.create_branch,
 			web_research: s.web_research,
@@ -139,8 +135,6 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 		if (!workingDir.trim())
 			return 'Autonomous coding needs a working directory — the project to build in.';
 		if (!s.plan_dir.trim()) return 'A plan directory is required — the folder of plan files.';
-		if (!Number.isFinite(s.max_attempts) || s.max_attempts < 1 || s.max_attempts > 10)
-			return 'Max attempts per step must be between 1 and 10.';
 		if (!Number.isFinite(s.max_turns) || s.max_turns < MIN_MAX_TURNS || s.max_turns > MAX_MAX_TURNS)
 			return `Max model steps per turn must be between ${MIN_MAX_TURNS} and ${MAX_MAX_TURNS}.`;
 		return null;
