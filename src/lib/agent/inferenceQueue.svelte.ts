@@ -32,6 +32,8 @@ import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 export type InferenceConsumer =
 	| 'chat'
 	| 'shell'
+	/** A Code-tab session's turn. */
+	| 'code'
 	| { kind: 'job'; jobName: string }
 	/** A remote web-chat guest; `client` is their session id. See `remote/`. */
 	| { kind: 'remote'; client: string }
