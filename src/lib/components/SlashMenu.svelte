@@ -57,6 +57,11 @@
 		onPick(`/${item.name} `);
 	}
 
+	/** Keep the list shut for `text`: input history just put it in the box. */
+	export function dismiss(text: string) {
+		dismissed = text;
+	}
+
 	/** True when the key was the list's to handle. */
 	export function handleKey(e: KeyboardEvent): boolean {
 		if (!open) return false;

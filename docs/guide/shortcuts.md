@@ -25,6 +25,7 @@ Press **F1**, or click the **?** in the header, to see the shortcut list in the 
 |---|---|
 | Enter | Send the message |
 | Shift + Enter | New line |
+| ↑ / ↓ | Step back and forward through the messages you sent in this conversation |
 | Esc | Stop generating |
 
 ## Shell tab
@@ -37,7 +38,12 @@ Press **F1**, or click the **?** in the header, to see the shortcut list in the 
 | Ctrl + Shift + C | Copy the terminal selection |
 | Ctrl + Shift + V | Paste into the terminal |
 | Enter | Send to the assistant (Shift + Enter for a new line) |
+| ↑ / ↓ | Step back and forward through the questions you asked in this tab |
 | Esc | Stop the assistant |
+
+## Recall what you sent
+
+Up recalls your last message when the cursor is on the first line of the input box, and each press goes one further back; Down goes forward again, and past the newest brings back whatever you had typed. In a message with several lines, the arrows move the cursor until it reaches the first or last line. In the Shell tab, only your question comes back, not the shell output sent with it. Edit a recalled message and press Enter to send it as a new one.
 
 ## The / command list
 

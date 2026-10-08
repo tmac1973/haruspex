@@ -32,6 +32,7 @@ export const SHORTCUTS: ShortcutSection[] = [
 		items: [
 			{ keys: 'Enter', action: 'Send message' },
 			{ keys: 'Shift + Enter', action: 'New line' },
+			{ keys: '↑ / ↓', action: 'Recall messages sent in this conversation' },
 			{ keys: 'Esc', action: 'Stop generating' }
 		]
 	},
@@ -47,6 +48,7 @@ export const SHORTCUTS: ShortcutSection[] = [
 			{ keys: 'Ctrl + Shift + C', action: 'Copy terminal selection' },
 			{ keys: 'Ctrl + Shift + V', action: 'Paste into terminal' },
 			{ keys: 'Enter', action: 'Send to assistant (Shift + Enter for new line)' },
+			{ keys: '↑ / ↓', action: 'Recall questions asked in this tab' },
 			{ keys: 'Esc', action: 'Stop the assistant' }
 		]
 	},

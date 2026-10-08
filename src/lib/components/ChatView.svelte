@@ -40,6 +40,8 @@
 	} from '#lib/stores/chat.svelte.ts';
 	import SlashMenu from './SlashMenu.svelte';
 	import { runSlash, type SlashHost } from '#lib/slash/slash.ts';
+	import { InputHistory, placeCaret, sentHistory } from '#lib/inputHistory.ts';
+	import { typedText } from '#lib/skills/content.ts';
 	import { getServerState, startServer, stopServer } from '#lib/stores/llamaServer.svelte.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { openLogViewer } from '#lib/stores/logViewer.svelte.ts';
@@ -139,6 +141,7 @@
 			showToast(`Couldn't run that skill: ${errMessage(e)}`, { kind: 'error' });
 			return;
 		}
+		history.reset();
 		if (slash.kind === 'handled') {
 			inputText = '';
 			return;
@@ -252,8 +255,36 @@
 		await doSend(inputText);
 	}
 
+	let inputEl = $state<HTMLTextAreaElement>();
+
+	/** Up and Down through what was sent in this conversation (see inputHistory.ts). */
+	const history = new InputHistory(() =>
+		sentHistory(
+			(activeConversation?.messages ?? [])
+				.filter((m) => m.role === 'user')
+				.map((m) => typedText(messageText(m.content)))
+		)
+	);
+	$effect(() => {
+		void activeConversation?.id;
+		history.reset();
+	});
+
+	/** True when Up or Down recalled a message into the box. */
+	function recallHistory(e: KeyboardEvent): boolean {
+		const el = inputEl;
+		const recall = el && history.key(e, el);
+		if (!el || !recall) return false;
+		e.preventDefault();
+		inputText = recall.text;
+		slashMenu?.dismiss(recall.text);
+		void tick().then(() => placeCaret(el, recall.caret));
+		return true;
+	}
+
 	function handleKeydown(e: KeyboardEvent) {
 		if (slashMenu?.handleKey(e)) return;
+		if (recallHistory(e)) return;
 		if (e.key === 'Enter' && !e.shiftKey) {
 			e.preventDefault();
 			handleSend();
@@ -655,6 +686,7 @@
 					onPick={(t) => (inputText = t)}
 				/>
 				<textarea
+					bind:this={inputEl}
 					bind:value={inputText}
 					onkeydown={handleKeydown}
 					onpaste={onComposerPaste}
