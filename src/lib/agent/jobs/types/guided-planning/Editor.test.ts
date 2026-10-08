@@ -115,4 +115,45 @@ describe('guided-planning Editor', () => {
 			expect(screen.queryByText('Settings model (default)')).toBeNull();
 		});
 	});
+
+	describe('planning skill', () => {
+		const summary = (name: string, forGuidedPlanning: boolean) => ({
+			name,
+			description: `${name} does things`,
+			source: 'user',
+			dir: `/s/${name}`,
+			license: null,
+			compatibility: null,
+			allowedTools: null,
+			warnings: [],
+			error: null,
+			shadowed: false,
+			createdByModel: false,
+			codeModeOnly: false,
+			forGuidedPlanning
+		});
+
+		it('lists planning skills first, then the rest', async () => {
+			mocks.invoke.mockImplementation(async (cmd: string) =>
+				cmd === 'skills_list' ? [summary('deploy', false), summary('plan-web-app', true)] : null
+			);
+			mount();
+			const select = screen.getByLabelText('Planning skill') as HTMLSelectElement;
+			await vi.waitFor(() => expect(select.options.length).toBe(3));
+			expect([...select.querySelectorAll('optgroup')].map((g) => g.label)).toEqual([
+				'For planning',
+				'Other skills'
+			]);
+			expect([...select.options].map((o) => o.value)).toEqual(['', 'plan-web-app', 'deploy']);
+		});
+
+		it('says when the chosen skill is gone', async () => {
+			mocks.invoke.mockImplementation(async (cmd: string) =>
+				cmd === 'skills_list' ? [summary('plan-web-app', true)] : null
+			);
+			mount({ planning_skill: 'plan-old' });
+			expect(await screen.findByText(/Not in your skills any more/)).toBeTruthy();
+			expect(screen.getByText('plan-old (missing)')).toBeTruthy();
+		});
+	});
 });

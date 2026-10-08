@@ -28,4 +28,9 @@ createdByModel: boolean,
 /**
  * Only for Code mode (`metadata.haruspex-mode: code`), such as `init`.
  */
-codeModeOnly: boolean, };
+codeModeOnly: boolean, 
+/**
+ * Written for guided planning (`metadata.haruspex-job: guided-planning`),
+ * which lists these first in its skill picker.
+ */
+forGuidedPlanning: boolean, };

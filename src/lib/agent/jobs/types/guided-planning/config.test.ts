@@ -177,3 +177,14 @@ describe('chain_models', () => {
 		}
 	});
 });
+
+describe('planning_skill', () => {
+	it('is none unless a name is given', () => {
+		expect(parseGuidedPlanningConfig(null).planning_skill).toBeNull();
+		expect(parseGuidedPlanningConfig('{"planning_skill":"  "}').planning_skill).toBeNull();
+		expect(parseGuidedPlanningConfig('{"planning_skill":3}').planning_skill).toBeNull();
+		expect(parseGuidedPlanningConfig('{"planning_skill":"plan-web-app"}').planning_skill).toBe(
+			'plan-web-app'
+		);
+	});
+});

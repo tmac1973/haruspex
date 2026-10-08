@@ -4,6 +4,9 @@
 	import type { GuidedPlanningEditorState } from './definition';
 	import JobModelFields from '#lib/components/jobs/JobModelFields.svelte';
 	import { emptyModelForm } from '#lib/agent/jobs/jobModelForm.ts';
+	import type { SkillSummary } from '#lib/ipc/gen/SkillSummary.ts';
+	import { listSkills, usableSkills } from '#lib/skills/client.ts';
+	import { knownTrustedRoot } from '#lib/skills/project.ts';
 
 	type StageKey = 'chain_assets_model' | 'chain_coding_model';
 
@@ -15,11 +18,14 @@
 		// Part of every job-type editor's bindable props; this one has no steps.
 		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		steps = $bindable([]),
-		jobName = ''
+		jobName = '',
+		workingDir = ''
 	}: {
 		config: Record<string, unknown>;
 		steps?: import('#lib/stores/jobs.svelte.ts').JobStepInput[];
 		jobName?: string;
+		/** The project folder, whose repo's skills count once it is trusted. */
+		workingDir?: string;
 	} = $props();
 
 	const cfg = config as unknown as GuidedPlanningEditorState;
@@ -54,6 +60,24 @@
 			'Whatever Settings → Inference has active — the local model, or the server set there.'
 	};
 
+	// The skills the planning-skill picker offers: those written for guided
+	// planning first, then the rest. Reloaded (after a pause) as the working
+	// directory changes, since a trusted repo's skills count.
+	let skills = $state<SkillSummary[] | null>(null);
+	$effect(() => {
+		const dir = workingDir.trim();
+		const timer = setTimeout(async () => {
+			const root = await knownTrustedRoot(dir || null);
+			skills = usableSkills(await listSkills(root).catch(() => []));
+		}, 300);
+		return () => clearTimeout(timer);
+	});
+	const planningSkills = $derived(skills?.filter((s) => s.forGuidedPlanning) ?? []);
+	const otherSkills = $derived(skills?.filter((s) => !s.forGuidedPlanning) ?? []);
+	const skillMissing = $derived(
+		!!cfg.planning_skill && skills !== null && !skills.some((s) => s.name === cfg.planning_skill)
+	);
+
 	$effect(() => {
 		if (!outputDirEdited) {
 			const s = slugify(jobName);
@@ -75,6 +99,39 @@
 		rows="5"
 		placeholder="e.g. A guided-planning job type that interviews me one question at a time and writes a dependency-ordered, phased implementation plan."
 	></textarea>
+</div>
+
+<div class="field">
+	<span class="label">
+		Planning skill
+		<Tooltip
+			label="About the planning skill"
+			text="Questions the interview asks for this kind of project, and requirements the plan must meet. Edit or add skills in Settings → Skills."
+		/>
+	</span>
+	<select bind:value={cfg.planning_skill} aria-label="Planning skill">
+		<option value="">None</option>
+		{#if skillMissing}
+			<option value={cfg.planning_skill}>{cfg.planning_skill} (missing)</option>
+		{/if}
+		{#if planningSkills.length > 0}
+			<optgroup label="For planning">
+				{#each planningSkills as skill (skill.name)}
+					<option value={skill.name} title={skill.description}>{skill.name}</option>
+				{/each}
+			</optgroup>
+		{/if}
+		{#if otherSkills.length > 0}
+			<optgroup label="Other skills">
+				{#each otherSkills as skill (skill.name)}
+					<option value={skill.name} title={skill.description}>{skill.name}</option>
+				{/each}
+			</optgroup>
+		{/if}
+	</select>
+	{#if skillMissing}
+		<p class="hint">Not in your skills any more. Pick another, or None.</p>
+	{/if}
 </div>
 
 <div class="field">

@@ -14,6 +14,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { AgentsMd } from '#lib/ipc/gen/AgentsMd.ts';
 import type { ProjectInstructions } from '#lib/ipc/gen/ProjectInstructions.ts';
 import { askRepoTrust, type RepoTrustChange } from '#lib/stores/repoTrust.svelte.ts';
+import { repoTrust } from './client';
 import { getSettings, updateSkills, type RepoTrust } from '#lib/stores/settings.ts';
 import { loadAgentsMd } from './agentsMd';
 
@@ -28,6 +29,17 @@ export function setRepoTrust(root: string, answer: RepoTrust | null): void {
 /** Keep the answer for `root`, flipping only whether it's trusted. */
 export function setRepoTrusted(root: string, trusted: boolean): void {
 	setRepoTrust(root, { ...getSettings().skills.trustedRepos[root], trusted });
+}
+
+/**
+ * The trusted repo `cwd` is in, without asking: the slash autocomplete and a
+ * job's skill picker must never pop the trust prompt, so a repo not yet
+ * answered for has no project skills there until a Shell turn asks.
+ */
+export async function knownTrustedRoot(cwd: string | null): Promise<string | null> {
+	if (!cwd) return null;
+	const root = await invoke<string | null>('skills_project_root', { cwd }).catch(() => null);
+	return root && repoTrust(root) === true ? root : null;
 }
 
 /**

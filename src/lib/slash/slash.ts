@@ -12,14 +12,10 @@
  */
 
 import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
-import { invoke } from '@tauri-apps/api/core';
-import {
-	codeModeOnly,
-	listSkills,
-	readSkill,
-	repoTrust,
-	usableSkills
-} from '#lib/skills/client.ts';
+import { codeModeOnly, listSkills, readSkill, usableSkills } from '#lib/skills/client.ts';
+import { knownTrustedRoot } from '#lib/skills/project.ts';
+
+export { knownTrustedRoot };
 
 export type BuiltinName = 'new' | 'skills';
 
@@ -105,17 +101,6 @@ export function describeSkills(items: SlashItem[]): string {
 	}
 	const list = skills.map((s) => `- \`/${s.name}\`: ${s.description}`).join('\n');
 	return `Skills you can run with \`/name\`, followed by what you want:\n\n${list}`;
-}
-
-/**
- * A Shell's trusted repo for slash commands, without asking: typing in the
- * box must never pop the trust prompt, so a repo not yet answered for has no
- * project skills here until its first turn asks.
- */
-export async function knownTrustedRoot(cwd: string | null): Promise<string | null> {
-	if (!cwd) return null;
-	const root = await invoke<string | null>('skills_project_root', { cwd }).catch(() => null);
-	return root && repoTrust(root) === true ? root : null;
 }
 
 /** What an input box lends `runSlash`: its tab's own ways of doing things. */

@@ -117,6 +117,12 @@ export interface GuidedPlanningConfig {
 	coding_run: GuidedPlanningCodingRun;
 	/** Only read in `unattended_chain`; ignored otherwise. */
 	chain_models: GuidedPlanningChainModels;
+	/**
+	 * The planning skill for this kind of project, by name: its questions go
+	 * into the overview interview, and its plan requirements into the outline
+	 * and the verifier. Null for none, the default.
+	 */
+	planning_skill: string | null;
 }
 
 export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningConfig {
@@ -189,6 +195,10 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 		chain_models: {
 			assets: parseChainModel(cm.assets),
 			coding: parseChainModel(cm.coding)
-		}
+		},
+		planning_skill:
+			typeof raw.planning_skill === 'string' && raw.planning_skill.trim()
+				? raw.planning_skill.trim()
+				: null
 	};
 }
