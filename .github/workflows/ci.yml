@@ -73,6 +73,10 @@ jobs:
       # fail CI when src/lib/ports.ts and sidecar_utils.rs disagree.
       - name: Check hand-synced constants
         run: node scripts/check-constants.mjs
+      # The user guide's web pages, as the Pages workflow builds them: fails on
+      # a page that won't render or links to a page that doesn't exist.
+      - name: Build the user guide's web pages
+        run: node scripts/build-guide.mjs "$RUNNER_TEMP/guide"
       # An externalBin nothing fetches fails the release build outright, and CI
       # cannot see it: CI stubs every sidecar, and the build matrix only runs
       # when a tag is cut. Checked here so the gap surfaces before the tag.

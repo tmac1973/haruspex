@@ -6,6 +6,8 @@ Click this screenshot to watch the explainer video:
 
 Haruspex is a desktop AI researcher and coding tool that runs entirely local by default. It works on Linux, Windows and macOS. There is no account to create and no telemetry. Your conversations and the model's answers stay on your device. You do not need a separate inference server (ollama, LMStudio, Lemonade, vLLM, etc...) as Haruspex will default to automatically downloading an appropriate model for your system and will run it locally. If you prefer to manage your own llms you can turn this off and use a remote model instead.
 
+The **[user guide](https://tmac1973.github.io/haruspex/guide/)** explains every feature and setting. Haruspex reads the same guide to answer questions about itself.
+
 ## Goals
 
 - **Privacy** — Your conversations and the model run on your machine. Searches do hit the web, but HTTP proxies and SearXNG are supported so you can hide where they come from.

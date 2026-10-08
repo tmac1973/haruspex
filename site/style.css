@@ -90,3 +90,53 @@ footer {
 footer a {
 	margin-right: 1rem;
 }
+
+/* The user guide (site/guide/, built by scripts/build-guide.mjs). */
+.guide header .muted {
+	margin-left: auto;
+}
+.guide-nav {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem 0.9rem;
+	padding: 0.75rem 0;
+	margin-bottom: 1.5rem;
+	border-top: 1px solid var(--rule);
+	border-bottom: 1px solid var(--rule);
+	font-size: 0.9rem;
+}
+.guide h3 {
+	font-size: 1.05rem;
+	margin: 1.5rem 0 0.4rem;
+}
+.guide code {
+	font: 0.9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	padding: 0.1em 0.3em;
+	border-radius: 4px;
+	background: color-mix(in srgb, var(--rule) 45%, transparent);
+}
+.guide pre {
+	overflow-x: auto;
+	padding: 0.75rem 1rem;
+	border-radius: 6px;
+	background: color-mix(in srgb, var(--rule) 30%, transparent);
+}
+.guide pre code {
+	padding: 0;
+	background: none;
+}
+.guide table {
+	width: 100%;
+	border-collapse: collapse;
+	margin: 0.75rem 0;
+	font-size: 0.95rem;
+	display: block;
+	overflow-x: auto;
+}
+.guide th,
+.guide td {
+	text-align: left;
+	vertical-align: top;
+	padding: 0.4rem 0.6rem;
+	border-bottom: 1px solid var(--rule);
+}
