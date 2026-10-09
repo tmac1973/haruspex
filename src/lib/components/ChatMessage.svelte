@@ -10,6 +10,7 @@
 	import { formatDuration } from '#lib/utils/format.ts';
 	import { messageText, type ChatMessage, type MessageContentPart } from '#lib/api.ts';
 	import { typedText } from '#lib/skills/content.ts';
+	import type { CodePathLinker } from '#lib/code/paths.ts';
 
 	interface Props {
 		message: ChatMessage;
@@ -27,9 +28,18 @@
 		 * `images/figure`.`stripFor`.
 		 */
 		steps?: SearchStep[];
+		/** File references to link, in the Code transcript only (see `renderMarkdown`). */
+		codePaths?: CodePathLinker;
 	}
 
-	let { message, isStreaming = false, tokensPerSecond, elapsedMs, steps }: Props = $props();
+	let {
+		message,
+		isStreaming = false,
+		tokensPerSecond,
+		elapsedMs,
+		steps,
+		codePaths
+	}: Props = $props();
 
 	let elapsedLabel = $derived(
 		typeof elapsedMs === 'number' && elapsedMs > 0 ? formatDuration(elapsedMs) : ''
@@ -79,7 +89,9 @@
 	let answerText = $derived(thinkingOnly ? channels.reasoning : channels.answer);
 	// `resolvedImages` reads the live SvelteMap on every call, so this
 	// re-derives as each image resolves and they appear one by one.
-	let renderedContent = $derived(answerText ? renderMarkdown(answerText, resolvedImages) : '');
+	let renderedContent = $derived(
+		answerText ? renderMarkdown(answerText, resolvedImages, codePaths) : ''
+	);
 	// Empty while streaming: the answer is not finished, so "the model embedded
 	// nothing" is not yet a fact about it.
 	let stripImages = $derived(

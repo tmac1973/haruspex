@@ -44,6 +44,41 @@ function approvalKey(ctx: ToolContext): string {
 }
 
 /**
+ * The project boundary alone: `'ok'` when the command stays inside the
+ * project, else the attended approval prompt (never "for the session") or,
+ * unattended, a refusal. `ensureCommandApproved` runs it first; `open_in_shell`
+ * runs only this, since the user pressing Enter is its risk approval.
+ */
+export async function checkCommandBoundary(
+	command: string,
+	ctx: ToolContext
+): Promise<'ok' | { message: string }> {
+	const targets = await protectedTargets();
+	const boundary = targets ? checkBoundary(command, targets, codeRoot(ctx)) : null;
+	if (!boundary?.matched) return 'ok';
+	if (isAutoApproveActive() && !ctx.interactive) {
+		reportBoundaryRefusal({ command, reasons: boundary.reasons });
+		return {
+			message: toolError(
+				`Command blocked: it reaches outside this project (${boundary.reasons.join('; ')}). ` +
+					`The project directory is your boundary — if you are blocked by something ` +
+					`outside it, say so in your report instead of working around it. Do not retry ` +
+					`this command.`
+			)
+		};
+	}
+	// Attended: always ask, whatever was allowed for the session.
+	const extra = classifyShellRisk(command);
+	const boundaryReasons: RiskMatch[] = boundary.reasons.map((description) => ({
+		label: 'outside the project',
+		description
+	}));
+	return askAboutCommand(command, [...boundaryReasons, ...(extra.matched ? extra.reasons : [])], {
+		sessionKey: null
+	});
+}
+
+/**
  * Run the risk-classifier approval gate. Returns `'ok'` to proceed, or a
  * `{ message }` tool result to return instead (denied, or the approval prompt
  * errored). Auto-approve and per-session approval short-circuit the prompt.
@@ -55,30 +90,8 @@ async function ensureCommandApproved(
 	// The boundary comes first, ahead of every shortcut below: auto-approve
 	// and "allow for this session" are exactly how an unattended run used to
 	// reach Haruspex's own database and services unasked.
-	const targets = await protectedTargets();
-	const boundary = targets ? checkBoundary(command, targets, codeRoot(ctx)) : null;
-	if (boundary?.matched) {
-		if (isAutoApproveActive() && !ctx.interactive) {
-			reportBoundaryRefusal({ command, reasons: boundary.reasons });
-			return {
-				message: toolError(
-					`Command blocked: it reaches outside this project (${boundary.reasons.join('; ')}). ` +
-						`The project directory is your boundary — if you are blocked by something ` +
-						`outside it, say so in your report instead of working around it. Do not retry ` +
-						`this command.`
-				)
-			};
-		}
-		// Attended: always ask, whatever was allowed for the session.
-		const extra = classifyShellRisk(command);
-		const boundaryReasons: RiskMatch[] = boundary.reasons.map((description) => ({
-			label: 'outside the project',
-			description
-		}));
-		return askAboutCommand(command, [...boundaryReasons, ...(extra.matched ? extra.reasons : [])], {
-			sessionKey: null
-		});
-	}
+	const boundary = await checkCommandBoundary(command, ctx);
+	if (boundary !== 'ok') return boundary;
 	if (ctx.codeAutoApprove || isSessionApproved(approvalKey(ctx))) return 'ok';
 	const risk = classifyShellRisk(command);
 	if (!risk.matched) return 'ok';
@@ -253,7 +266,8 @@ registerTool({
 			}
 			const res = await runHostCommand(command, root, timeoutSecs, ctx.signal);
 			const out = await formatRunResult(res);
-			const hint = ttyHintFor(res);
+			// The Code tab can hand the command to a Shell tab; elsewhere the user runs it.
+			const hint = ttyHintFor(res, { openInShell: !ctx.shellMode && !!ctx.codeSessionId });
 			return toolResult(hint ? `${out}\n\n${hint}` : out);
 		} catch (e) {
 			if (isAbortError(e)) throw e;

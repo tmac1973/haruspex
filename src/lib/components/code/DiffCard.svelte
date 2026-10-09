@@ -5,7 +5,8 @@
 	 */
 	import type { DiffRow, FileDiff } from '#lib/code/diff.ts';
 
-	let { diff }: { diff: FileDiff } = $props();
+	/** `onOpen`: the file is inside the session folder; open it in the editor. */
+	let { diff, onOpen }: { diff: FileDiff; onOpen?: () => void } = $props();
 
 	/** Rows shown before "Show all". */
 	const PREVIEW_ROWS = 40;
@@ -22,7 +23,13 @@
 <div class="card" data-testid="diff-card">
 	<div class="head">
 		<span class="verb">{verb}</span>
-		<code class="path" title={diff.path}>{diff.path}</code>
+		{#if onOpen}
+			<button class="path open" title="Open {diff.path} in the editor" onclick={onOpen}
+				><code>{diff.path}</code></button
+			>
+		{:else}
+			<code class="path" title={diff.path}>{diff.path}</code>
+		{/if}
 		<span class="add">+{diff.added}</span>
 		<span class="del">−{diff.removed}</span>
 	</div>
@@ -84,6 +91,27 @@
 		white-space: nowrap;
 		background: none;
 		color: inherit;
+	}
+
+	.path.open {
+		appearance: none;
+		border: 0;
+		padding: 0;
+		text-align: left;
+		cursor: pointer;
+		font: inherit;
+	}
+
+	.path.open code {
+		background: none;
+		color: inherit;
+		font-size: inherit;
+		text-decoration: underline dotted;
+		text-underline-offset: 2px;
+	}
+
+	.path.open:hover code {
+		color: #4fb0a5;
 	}
 
 	.add {

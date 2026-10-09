@@ -283,7 +283,9 @@
 
 <section class="settings-section">
 	<h2>Repos</h2>
-	<p class="help">Whether the Shell assistant uses a repo's own skills and AGENTS.md.</p>
+	<p class="help">
+		Whether the Shell assistant and Code sessions use a repo's own skills and AGENTS.md.
+	</p>
 	{#if repos.length === 0}
 		<p class="hint">You'll be asked the first time a repo has any.</p>
 	{:else}

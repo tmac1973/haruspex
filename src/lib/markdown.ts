@@ -2,6 +2,7 @@ import { Marked } from 'marked';
 import hljs from 'highlight.js/lib/core';
 import { classifyShellRisk } from '#lib/shell/risky-commands.ts';
 import { sanitizeHtml } from '#lib/sanitize.ts';
+import type { CodePathLinker, PathRef } from '#lib/code/paths.ts';
 
 // Register only the languages we need to keep the bundle small
 import javascript from 'highlight.js/lib/languages/javascript';
@@ -83,8 +84,66 @@ function renderCodeBlock(text: string, lang: string | undefined, showLangLabel: 
 	</div>`;
 }
 
+/**
+ * The Code transcript's path links: set for the length of one synchronous
+ * `renderMarkdown` call that asked for them, null otherwise, so every other
+ * caller (Chat, the Shell sidebar) renders exactly as before.
+ */
+let activeLinker: CodePathLinker | null = null;
+
+/** Where a plain-text path may start: not inside a URL, a word or another path. */
+const PATH_START =
+	/(?<![\w/.:@~%#?=&-])(?:\.{1,2}\/|\/)?[\w@+-][\w@.+-]*(?:\/[\w@.+-]+)*(?::\d+(?::\d+)?)?/g;
+/** The same, anchored, with the sentence punctuation after it left out. */
+const PATH_AT = /^(?:\.{1,2}\/|\/)?[\w@+-][\w@.+-]*(?:\/[\w@.+-]+)*(?::\d+(?::\d+)?)?/;
+
+/** A path reference, minus a trailing full stop, that `linker` accepts. */
+function linkedRef(raw: string, linker: CodePathLinker): { raw: string; ref: PathRef } | null {
+	const trimmed = raw.replace(/\.+$/, '');
+	const ref = linker(trimmed);
+	return ref ? { raw: trimmed, ref } : null;
+}
+
+/** A button the Code transcript turns into "open in the editor". */
+function pathButton(ref: PathRef, inner: string): string {
+	const line = ref.line ? ` data-line="${ref.line}"` : '';
+	const title = `Open ${ref.path} in the editor`;
+	return `<button type="button" class="code-path" data-action="code-path" data-path="${escapeHtml(ref.path)}"${line} title="${escapeHtml(title)}">${inner}</button>`;
+}
+
 const marked = new Marked({
+	extensions: [
+		{
+			name: 'codePath',
+			level: 'inline',
+			start(src: string) {
+				const linker = activeLinker;
+				if (!linker) return undefined;
+				for (const m of src.matchAll(PATH_START)) {
+					if (linkedRef(m[0], linker)) return m.index;
+				}
+				return undefined;
+			},
+			tokenizer(src: string) {
+				const linker = activeLinker;
+				if (!linker) return undefined;
+				const m = PATH_AT.exec(src);
+				if (!m) return undefined;
+				const hit = linkedRef(m[0], linker);
+				// A word-ish character right after it means we stopped mid-word.
+				if (!hit || /^[\w/@~-]/.test(src.slice(hit.raw.length))) return undefined;
+				return { type: 'codePath', raw: hit.raw, ref: hit.ref };
+			},
+			renderer(token) {
+				return pathButton(token.ref as PathRef, escapeHtml(token.raw));
+			}
+		}
+	],
 	renderer: {
+		codespan({ text }: { text: string }) {
+			const ref = activeLinker?.(text) ?? null;
+			return ref ? pathButton(ref, `<code>${escapeHtml(text)}</code>`) : false;
+		},
 		code({ text, lang }: { text: string; lang?: string }) {
 			// A shell block that's just a list of independent one-line commands
 			// gets split into one code-block per command, so each command gets
@@ -699,7 +758,16 @@ export interface ResolvedImages {
 	figureFor: (url: string, alt: string) => string | null;
 }
 
-export function renderMarkdown(text: string, resolved?: ResolvedImages): string {
+/**
+ * `codePaths`: turn file references (`src/app.ts:42`, in backticks or not)
+ * that it accepts into "open in the editor" buttons. Only the Code
+ * transcript passes it.
+ */
+export function renderMarkdown(
+	text: string,
+	resolved?: ResolvedImages,
+	codePaths?: CodePathLinker
+): string {
 	const sanitized = sanitizeForRender(text, resolved);
 	const withThinking = convertThinkingBlocks(sanitized);
 	const withFixedTables = fixMalformedTables(withThinking);
@@ -708,5 +776,10 @@ export function renderMarkdown(text: string, resolved?: ResolvedImages): string 
 	// model-authored markup can't execute in the privileged webview.
 	// `breaks`: a single newline is a line break, so a poem or an address
 	// keeps its lines rather than running together as one paragraph.
-	return sanitizeHtml(marked.parse(withFixedTables, { breaks: true }) as string);
+	activeLinker = codePaths ?? null;
+	try {
+		return sanitizeHtml(marked.parse(withFixedTables, { breaks: true }) as string);
+	} finally {
+		activeLinker = null;
+	}
 }

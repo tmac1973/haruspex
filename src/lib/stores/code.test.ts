@@ -137,6 +137,7 @@ import {
 	openSession
 } from '#lib/stores/code.svelte.ts';
 import { decodeCodeSession } from '#lib/code/session.ts';
+import { reportShellWait } from '#lib/code/shellBridge.ts';
 import {
 	approveSession,
 	codeApprovalKey,
@@ -375,6 +376,50 @@ describe('a Code session', () => {
 		await sending;
 		expect(s.status).toBe('idle');
 		expect(s.ticket).toBeNull();
+	});
+
+	it('shows waiting-shell while open_in_shell waits, then runs on', async () => {
+		const s = await newSession('/proj');
+		const turn = held();
+		mocks.runAgentLoop.mockImplementationOnce(turn.impl);
+		const sending = s.send('install it');
+		await turn.running;
+		expect(s.status).toBe('running');
+		const focus = vi.fn();
+		const cancel = vi.fn();
+		reportShellWait(s.id, { shellName: 'Shell 2', command: 'sudo make install', focus, cancel });
+		expect(s.status).toBe('waiting-shell');
+		expect(s.busy).toBe(true);
+		expect(s.shellWait?.shellName).toBe('Shell 2');
+		s.goToShell();
+		s.cancelShellWait();
+		expect(focus).toHaveBeenCalledOnce();
+		expect(cancel).toHaveBeenCalledOnce();
+		reportShellWait(s.id, null);
+		expect(s.status).toBe('running');
+		expect(s.shellWait).toBeNull();
+		turn.release();
+		await sending;
+		expect(s.status).toBe('idle');
+	});
+
+	it('ignores another session’s shell wait', async () => {
+		const a = await newSession('/proj');
+		const b = await newSession('/proj');
+		const turn = held();
+		mocks.runAgentLoop.mockImplementationOnce(turn.impl);
+		const sending = a.send('go');
+		await turn.running;
+		reportShellWait(b.id, {
+			shellName: 'Shell 1',
+			command: 'x',
+			focus: () => {},
+			cancel: () => {}
+		});
+		expect(a.status).toBe('running');
+		expect(b.status).toBe('idle');
+		turn.release();
+		await sending;
 	});
 
 	it('passes its own backend and effort, and saves changes to them', async () => {

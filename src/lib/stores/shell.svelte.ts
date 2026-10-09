@@ -61,6 +61,9 @@ import {
 	clearWatchesForSession,
 	buildWatchNotification
 } from '#lib/shell/backgroundWatch.ts';
+import { registerShellCommandOpener } from '#lib/code/shellBridge.ts';
+import { openForCommand } from '#lib/shell/openForCommand.ts';
+import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
 
 interface CapturedRegion {
 	commandLine: string;
@@ -1096,6 +1099,19 @@ setWatchCompletionHandler((ptySessionId) => {
 	const session = sessions.find((s) => s.boundSessionId === ptySessionId);
 	void session?.tryFlushWatchNotifications();
 });
+
+// The Code tab's way into a terminal (`open_in_shell`, the command card's
+// Open in Shell): a new tab here, at the Code session's folder.
+registerShellCommandOpener((req) =>
+	openForCommand(req, {
+		create: createShellSession,
+		isOpen: (id) => sessions.some((s) => s.id === id),
+		show: (id) => {
+			setActiveShell(id);
+			setActiveTab('shell');
+		}
+	})
+);
 
 export function getShellSessions(): ShellSession[] {
 	return sessions;

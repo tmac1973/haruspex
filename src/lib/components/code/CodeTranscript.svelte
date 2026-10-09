@@ -22,6 +22,8 @@
 	import { messageText } from '#lib/api.ts';
 	import { TURNS_PER_PAGE, turnsBefore, windowStart } from '#lib/code/sessionList.ts';
 	import type { CodeSession } from '#lib/stores/code.svelte.ts';
+	import { makeCodePathLinker } from '#lib/code/paths.ts';
+	import { openInEditor } from '#lib/code/openEditor.ts';
 
 	let { session, notes = [] }: { session: CodeSession; notes?: TranscriptNote[] } = $props();
 
@@ -108,12 +110,37 @@
 		});
 	});
 
+	/** `path:line` in answers links to the editor, for files in the folder. */
+	const codePaths = $derived(makeCodePathLinker(session.root));
+
+	/**
+	 * Rendered markdown can't carry handlers, so its path links are buttons
+	 * with `data-action="code-path"`, opened here.
+	 */
+	function onThreadClick(event: MouseEvent) {
+		const btn = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+			'button[data-action="code-path"]'
+		);
+		const rel = btn?.dataset.path;
+		if (!rel) return;
+		event.preventDefault();
+		openInEditor(session.root, [rel], rel);
+	}
+
 	function removePending(index: number) {
 		session.steering = session.steering.filter((_, k) => k !== index);
 	}
 </script>
 
-<div class="thread" bind:this={threadEl} onscroll={onThreadScroll} data-testid="code-transcript">
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+	class="thread"
+	bind:this={threadEl}
+	onscroll={onThreadScroll}
+	onclick={onThreadClick}
+	data-testid="code-transcript"
+>
 	{#if messages.length === 0 && !session.busy}
 		<div class="placeholder">
 			Ask for a change in <code>{session.root}</code>. Hold <kbd>F2</kbd> to speak.
@@ -138,10 +165,11 @@
 				<ChatMessage message={msg} />
 			{:else}
 				{#if session.messageSteps[i]?.length}
-					<CodeSteps steps={session.messageSteps[i]} />
+					<CodeSteps steps={session.messageSteps[i]} root={session.root} />
 				{/if}
 				<ChatMessage
 					message={msg}
+					{codePaths}
 					tokensPerSecond={session.messageStats[i]?.tokensPerSecond}
 					elapsedMs={session.messageStats[i]?.elapsedMs}
 				/>
@@ -159,7 +187,7 @@
 		<div class="note">{note.text}</div>
 	{/each}
 	{#if session.searchSteps.length > 0}
-		<CodeSteps steps={session.searchSteps} />
+		<CodeSteps steps={session.searchSteps} root={session.root} />
 	{/if}
 	{#each session.steeringDelivered as text, k (k)}
 		<div class="steer delivered" title="The agent has read this.">
@@ -168,7 +196,7 @@
 		</div>
 	{/each}
 	{#if streamText}
-		<ChatMessage message={{ role: 'assistant', content: streamText }} isStreaming />
+		<ChatMessage message={{ role: 'assistant', content: streamText }} isStreaming {codePaths} />
 	{/if}
 	{#if roundText}
 		<!-- Only alongside the answer after steering: the answer clears it. -->
@@ -194,8 +222,21 @@
 	{#if session.status === 'queued'}
 		<div class="hint">Waiting for another turn to finish…</div>
 	{/if}
-	{#if session.status === 'waiting-shell'}
-		<div class="hint">Waiting for the command in the Shell tab…</div>
+	{#if session.status === 'waiting-shell' && session.shellWait}
+		<div class="shell-wait" data-testid="shell-wait">
+			<span>Waiting for you in {session.shellWait.shellName} — press Enter there.</span>
+			<button
+				class="link"
+				onclick={session.goToShell}
+				title="Show {session.shellWait.shellName} in the Shell tab">Go to shell</button
+			>
+			<button
+				class="link"
+				onclick={session.cancelShellWait}
+				title="Stop waiting. The agent carries on without the result; the shell tab stays open."
+				>Cancel</button
+			>
+		</div>
 	{/if}
 	{#if ticket && ticket.state === 'waiting' && session.status !== 'queued'}
 		<div class="hint">Waiting for the model…</div>
@@ -320,6 +361,49 @@
 		color: var(--text-secondary);
 		font-style: italic;
 		padding: 6px 4px;
+	}
+
+	.shell-wait {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 4px 12px;
+		margin: 6px 0;
+		padding: 6px 10px;
+		border: 1px dashed var(--accent);
+		border-radius: 8px;
+		font-size: 0.82rem;
+		color: var(--text-primary);
+	}
+
+	.link {
+		appearance: none;
+		background: none;
+		border: 0;
+		padding: 0;
+		font: inherit;
+		color: var(--accent);
+		cursor: pointer;
+	}
+
+	.link:hover {
+		text-decoration: underline;
+	}
+
+	.thread :global(.code-path) {
+		appearance: none;
+		background: none;
+		border: 0;
+		padding: 0;
+		font: inherit;
+		color: var(--accent);
+		cursor: pointer;
+		text-decoration: underline dotted;
+		text-underline-offset: 2px;
+	}
+
+	.thread :global(.code-path:hover) {
+		text-decoration-style: solid;
 	}
 
 	.error {

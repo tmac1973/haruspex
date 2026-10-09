@@ -1,6 +1,6 @@
 ---
 title: Shell and Code mode
-description: The Shell tab's terminal and assistant sidebar, sending output to it, Code mode, command approval, the memory limit and repo instructions.
+description: The Shell tab's terminal and assistant sidebar, sending output to it, tabs opened by the Code tab, Code mode, command approval, the memory limit and repo instructions.
 ---
 
 # Shell and Code mode
@@ -12,6 +12,10 @@ The Shell tab is a real terminal with an assistant beside it. By default the ass
 It works on Linux, macOS and Windows. On Windows a picker in the tab lets you choose a PowerShell version or a WSL2 distro. Click **+** for another tab; each tab has its own terminal and its own assistant. A tab can be detached into its own window. Right-click the terminal for Copy, Paste and **Restart shell**.
 
 Your `$SHELL` is used unless you set Settings → Shell → Shell binary. Command capture needs shell integration: bash and zsh get Haruspex's hooks, and fish 4 sends the needed markers itself. Other shells still work as terminals, but their commands are not captured, so copy the text you want into the assistant box instead. The badge in the sidebar header shows whether capture is working.
+
+## Tabs the Code tab opens
+
+When the Code tab needs a command run in a terminal (a `sudo`, a password prompt), or you click **Open in Shell** on a command card, a new tab opens here at the Code session's folder with the command typed in. Nothing runs until you press `Enter`, and you can change the command first. When the agent asked for it, the Code session waits for the command to finish and reads its result; after that the tab is an ordinary terminal. See the `code` page.
 
 ## Ask about what just happened
 

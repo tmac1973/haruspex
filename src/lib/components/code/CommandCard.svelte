@@ -1,12 +1,23 @@
 <script lang="ts">
 	/**
-	 * A `run_command` step: the command, its exit code and duration, and its
-	 * output. Long output shows its last lines until expanded.
+	 * A `run_command` (or `open_in_shell`) step: the command, its exit code
+	 * and duration, and its output. Long output shows its last lines until
+	 * expanded. With the session folder, **Open in Shell** types the command
+	 * into a new Shell tab there, without running it.
 	 */
 	import type { SearchStep } from '#lib/agent/loop.ts';
 	import { formatDuration, parseCommandResult, tailLines } from '#lib/code/commandResult.ts';
+	import { hasShellCommandOpener, openShellForCommand } from '#lib/code/shellBridge.ts';
 
-	let { step }: { step: SearchStep } = $props();
+	let { step, root }: { step: SearchStep; root?: string } = $props();
+
+	const canOpenInShell = $derived(!!root && hasShellCommandOpener());
+
+	/** The user's own action, so nothing waits for the command. */
+	function openInShell() {
+		if (!root) return;
+		void openShellForCommand({ command, cwd: root, wait: false });
+	}
 
 	/** Output lines shown before "Show all". */
 	const PREVIEW_LINES = 20;
@@ -34,7 +45,9 @@
 	}
 
 	const status = $derived.by(() => {
-		if (step.status === 'running') return 'running…';
+		if (step.status === 'running') {
+			return step.toolName === 'open_in_shell' ? 'in Shell…' : 'running…';
+		}
 		if (view.error !== null) return 'not run';
 		if (view.background) return 'in background';
 		if (view.killed) return 'killed';
@@ -58,6 +71,14 @@
 				onclick={() => (outputOpen = !outputOpen)}
 				aria-expanded={outputOpen}
 				title={outputOpen ? 'Hide output' : 'Show output'}>{outputOpen ? '▾' : '▸'}</button
+			>
+		{/if}
+		{#if canOpenInShell}
+			<button
+				class="mini"
+				onclick={openInShell}
+				title="Type this command in a new Shell tab at the session's folder. It doesn't run until you press Enter."
+				>Open in Shell</button
 			>
 		{/if}
 		<button class="mini" onclick={copy} title="Copy the command"

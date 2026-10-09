@@ -63,3 +63,32 @@ doesn't await. TTY hint (phase 2) now names the real tool.
 The agent hits a sudo command, the TTY hint suggests `open_in_shell`, the
 user lands in a Shell tab at the right folder with the command typed, enters
 their password, and the agent continues with the result.
+
+## As built
+
+- Bridge: `code/shellBridge.ts` holds the opener slot plus a per-session wait
+  channel (`reportShellWait` / `setShellWaitListener`), so neither the tool nor
+  the Code store touches the shell store. The shell side is
+  `shell/openForCommand.ts` (dependency-injected; the shell store registers it
+  on load).
+- Waiting: poll `boundSessionId` until the pane spawns the PTY (15 s), then
+  `marker_total > 0` (5 s; none means no integration → "ask the user"), paste
+  with `toPtyPaste(cmd)` (no Enter), then poll `completed_total` past the
+  pre-paste count and read the newest non-pending region. Closed = the PTY
+  stops answering `shell_get_context` or `shell://exit` fires for it. A
+  detached tab keeps being followed by PTY id.
+- The new tab keeps its default "Shell N" name (the plan's
+  "<title> · sudo" would not match the "Waiting for you in Shell N" text).
+- Cancel (transcript) aborts only the wait; the tool returns "the user stopped
+  waiting". Stop aborts the turn. Both leave the tab open.
+- Boundary: `checkCommandBoundary` was split out of `ensureCommandApproved`; a
+  boundary hit still asks (attended), but no risk prompt.
+- Platform gate: `shell/platformSupport.ts` caches `shell_platform_supported`;
+  `runCodeTurn` loads it and the registry drops `open_in_shell` when false.
+- TTY hint names `open_in_shell` in the Code tab only; Shell Code mode's
+  one-shot fallback keeps the Shell-tab wording.
+- Paths: `code/paths.ts` (lexical, no disk). Markdown links `path:line` in
+  backticks and prose (needs a slash or a line, and an extension) only when
+  `renderMarkdown` gets a linker — the Code transcript. The editor has no
+  line positioning, so `:line` opens the file at the top.
+- Not done: raising the main window from a detached Code window (phase 7).
