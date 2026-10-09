@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildCodeSystemPrompt, buildShellCodeSystemPrompt } from '#lib/code/system-prompt.ts';
+import { buildCodeSystemPrompt } from '#lib/code/system-prompt.ts';
 
 const tab = (over: Partial<Parameters<typeof buildCodeSystemPrompt>[0]> = {}) =>
 	String(buildCodeSystemPrompt({ root: '/proj', ...over }).content);
@@ -49,29 +49,6 @@ describe('Code tab prompt', () => {
 		]) {
 			expect(text).not.toContain(terminalOnly);
 		}
-	});
-
-	it('shares the working rules with the Shell variant', () => {
-		const shell = String(
-			buildShellCodeSystemPrompt({
-				sessionContext: {
-					os: 'linux',
-					kernel: '6.0',
-					distroId: null,
-					distroName: null,
-					distroVersion: null,
-					shellPath: '/bin/bash',
-					shellName: 'bash',
-					shellVersion: null,
-					home: null,
-					hostname: null
-				},
-				currentCwd: '/proj',
-				recentHistory: []
-			}).content
-		);
-		const rules = (s: string) => s.slice(s.indexOf('HOW TO WORK:'));
-		expect(rules(tab())).toBe(rules(shell));
 	});
 
 	it('puts AGENTS.md after the fixed rules and before the skill list', () => {

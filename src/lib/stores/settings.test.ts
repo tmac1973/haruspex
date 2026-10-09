@@ -1070,3 +1070,32 @@ describe('load-time skills defaults', () => {
 		expect(m.getSettings().skills).toEqual({ ...m.defaultSkills, disabled: ['x'] });
 	});
 });
+
+describe('load-time Shell Full access default migration', () => {
+	async function loadWith(stored: Record<string, unknown>) {
+		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
+		vi.resetModules();
+		const fresh = await import('#lib/stores/settings.ts');
+		return fresh.getSettings();
+	}
+
+	afterEach(() => {
+		localStorage.removeItem(SETTINGS_KEY);
+		vi.resetModules();
+	});
+
+	it('carries the old Code-mode default over, and drops the old key', async () => {
+		const s = await loadWith({ shellCodeModeDefault: true });
+		expect(s.shellFullAccessDefault).toBe(true);
+		expect('shellCodeModeDefault' in s).toBe(false);
+	});
+
+	it('defaults to Read-only when neither key is stored', async () => {
+		expect((await loadWith({})).shellFullAccessDefault).toBe(false);
+	});
+
+	it('prefers the new key once it has been written', async () => {
+		const s = await loadWith({ shellCodeModeDefault: true, shellFullAccessDefault: false });
+		expect(s.shellFullAccessDefault).toBe(false);
+	});
+});

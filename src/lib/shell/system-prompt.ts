@@ -8,8 +8,10 @@
  *  - Provides the recent shell history as breadcrumbs.
  *  - Specifies the conventions for fs_read tools (absolute paths) and web
  *    search (use it for error messages, package docs, CVEs).
- *  - Reminds the agent NOT to claim it executed anything — every shell
- *    command runs on the user's keystroke, not on the model's authority.
+ *  - Read-only: reminds the agent NOT to claim it executed anything — every
+ *    shell command runs on the user's keystroke, not on the model's authority.
+ *    Full access: the same prompt, with those two read-only lines left out and
+ *    an addendum on running commands in the terminal and editing files.
  *  - Tells the agent that fenced ```bash blocks become click-to-paste cards
  *    in the UI, so suggested commands should go in fenced blocks.
  */
@@ -20,6 +22,7 @@ import type { SessionContext } from '#lib/ipc/gen/SessionContext.ts';
 import { nestedSessionPromptBlock, type NestedSession } from './nestedSession';
 import { formatTodayLong } from '#lib/utils/format.ts';
 import { GUIDE_PROMPT } from '#lib/guide/prompt.ts';
+import { getSettings } from '#lib/stores/settings.ts';
 
 /** Re-export of the ts-rs-generated Rust `SessionContext` under the
  *  name this module historically used. */
@@ -37,23 +40,20 @@ export interface BuildShellPromptOpts {
 	skillsSection?: string;
 	/** The repo's AGENTS.md (`agentsMdPromptSection`), when trusted. */
 	projectInstructions?: string;
+	/** Full access: the agent runs commands in the terminal and edits files. */
+	fullAccess?: boolean;
 }
 
 /**
- * Environment + cwd + recent-commands block shared by both shell prompts (the
- * Code-mode one lives in `#lib/code/system-prompt.ts`). The labels differ on purpose (the Code-mode prompt says "activity", the
- * chat prompt says "history"), so they're parameters rather than constants.
+ * Environment + cwd + recent-commands block. `mode` picks the advice for a
+ * terminal that has walked onto another host: Full access drives that
+ * session, Read-only only suggests.
  */
-export function buildSessionBlock(
-	opts: BuildShellPromptOpts,
-	cwdLabel: string,
-	historyLabel: string,
-	mode: 'code' | 'chat'
-): string {
+function buildSessionBlock(opts: BuildShellPromptOpts, mode: 'code' | 'chat'): string {
 	const env = describeEnvironment(opts.sessionContext);
-	const cwd = opts.currentCwd ? `${cwdLabel}: ${opts.currentCwd}` : '';
+	const cwd = opts.currentCwd ? `Current working directory: ${opts.currentCwd}` : '';
 	const history = opts.recentHistory.length
-		? `${historyLabel} (most recent last):\n${opts.recentHistory.map((c) => `  ${c}`).join('\n')}`
+		? `Recent shell history (most recent last):\n${opts.recentHistory.map((c) => `  ${c}`).join('\n')}`
 		: '';
 	// Everything above describes the LOCAL machine, captured when the PTY
 	// spawned. If the terminal has since walked onto another host, that has to
@@ -66,12 +66,8 @@ export function buildSessionBlock(
 
 export function buildShellSystemPrompt(opts: BuildShellPromptOpts): ChatMessage {
 	const today = formatTodayLong();
-	const sessionBlock = buildSessionBlock(
-		opts,
-		'Current working directory',
-		'Recent shell history',
-		'chat'
-	);
+	const full = opts.fullAccess === true;
+	const sessionBlock = buildSessionBlock(opts, full ? 'code' : 'chat');
 
 	// PowerShell sessions need PowerShell-flavored suggestions in a fenced
 	// `powershell` block (so the UI renders a Run/Paste card) and Windows
@@ -112,14 +108,12 @@ YOUR ROLE:
 FILESYSTEM RULES:
 - To check whether a file exists, use fs_list_dir on its parent directory. Do NOT call fs_read_text just to test existence.
 - If fs_read_text or fs_list_dir reports "Path does not exist", the path is not there. Trust the error. Do NOT retry the same path — try a different path or ask the user where the file lives.
-- You are read-only: you can inspect any file but cannot modify one. If a fix requires editing a file, either suggest the exact edit as a shell command (e.g. a \`sed\`/\`tee\` one-liner the user can Run) or tell the user to switch this shell into Code mode, where you can edit files directly.
-
+${full ? '' : `${READ_ONLY_FILES}\n`}
 COMMAND SUGGESTIONS:
 - Suggest commands by writing them in fenced ${fence} code blocks (\`\`\`${fence} ... \`\`\`). The UI turns each such block into a clickable card the user can paste into their terminal with one click.
 - Suggest ONE command per fenced block. If the fix needs multiple commands, give multiple separate blocks, each a single line, so the user can review and run them in order.
 - Keep suggestions specific to the user's system: ${pkgHint} — match what SESSION CONTEXT shows.
-- NEVER pretend you executed a command yourself. You have no execute tool. Every suggested command runs only after the user reviews it and presses Enter.
-
+${full ? '' : `${READ_ONLY_COMMANDS}\n`}
 INLINE CITATIONS:
 - Every fetch_url / research_url result starts with a "[Source: <url>]" header.
 - Cite facts from the web inline as [source](URL). Anchor text must be the literal word "source".
@@ -128,8 +122,38 @@ INLINE CITATIONS:
 CONVERSATION RULES:
 - The chat thread keeps growing across submissions in this troubleshooting session, so you have context from earlier turns. Refer back when it helps.
 - Be concise. Admin work is interrupt-driven — short answers with a clear next step beat a wall of background.
-- If you don't know, say so. Suggest a probing command that would reveal the answer.${[opts.projectInstructions, opts.skillsSection].join('')}`
+- If you don't know, say so. Suggest a probing command that would reveal the answer.${full ? fullAccessAddendum(isPowerShell) : ''}${[opts.projectInstructions, opts.skillsSection].join('')}`
 	};
+}
+
+const READ_ONLY_FILES =
+	"- You are read-only: you can inspect any file but cannot modify one. If a fix requires editing a file, either suggest the exact edit as a shell command (e.g. a `sed`/`tee` one-liner the user can Run) or tell the user to switch this shell to Full access (the lock in the assistant's header), where you can edit files directly.";
+
+const READ_ONLY_COMMANDS =
+	'- NEVER pretend you executed a command yourself. You have no execute tool. Every suggested command runs only after the user reviews it and presses Enter.';
+
+/**
+ * What Full access adds: the terminal and file tools, and the two things that
+ * go wrong with them (a program left holding the terminal, and a terminal
+ * that is on another machine than the file tools).
+ */
+function fullAccessAddendum(isPowerShell: boolean): string {
+	const timeout = getSettings().codeRunCommandTimeoutSecs;
+	const captureNote = isPowerShell
+		? 'Prefer non-interactive output; avoid pagers and full-screen programs (`| more`, `Out-Host -Paging`).'
+		: 'Prefer non-interactive flags (--no-pager, CI=1); avoid pagers and full-screen programs (less, vim, top).';
+	return `
+
+FULL ACCESS:
+The user has given you full access to this shell: you can run commands in their terminal and edit files. Commands you run appear in their terminal and share its environment; a \`cd\` persists for you and for them. Paths for the file tools are relative to the current directory. You may still suggest commands for the user to run in fenced blocks when that suits better.
+- run_command — run ONE command in the terminal; it returns its output and exit code. ${captureNote} A foreground command times out after ${timeout}s by default. For a server, watcher or anything that doesn't exit, use background:true (it returns at once; the output goes to a temp log you can fs_read_text; stop it by killing the PID). For a long build or test whose result you need, use watch:true: you get a follow-up turn when it finishes, so don't poll.
+- shell_read — the terminal's current output. shell_input — type a line into the program running in the terminal (a REPL, a [y/N] prompt). shell_interrupt — Ctrl-C it. shell_snapshot — look at the screen of a full-screen program.
+- fs_write_text / fs_edit_text — write or edit a file (fs_edit_text's old_str must match exactly once). code_grep / code_glob — search contents / find files.
+- Never leave a program you started holding the terminal: interrupt it, quit it, or run it in the background.
+
+TWO ENVIRONMENTS:
+- run_command, shell_input and shell_read act wherever the TERMINAL is. The file tools always act on THIS machine.
+- After \`ssh\`, \`docker exec -it\`, \`distrobox enter\` or a chroot they are different places: do file work through the session instead (\`cat\`, a heredoc or \`sed -i\` sent with shell_input). File writes are refused while the terminal is elsewhere; never tell the user you changed a remote file through a file tool.`;
 }
 
 function describeEnvironment(ctx: ShellSessionContext): string {

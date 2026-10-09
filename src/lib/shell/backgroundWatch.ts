@@ -4,7 +4,7 @@
  *
  * A watch has one of two sources:
  *
- * - **PTY** (Shell Code mode): the command is backgrounded in the live PTY
+ * - **PTY** (Shell Full access): the command is backgrounded in the live PTY
  *   (see runInPtyBackground) with its exit code written to a `.done` sentinel
  *   file on completion. We poll those sentinels off the terminal (a plain
  *   absolute-path file read, so it never pollutes the shell).
@@ -200,7 +200,7 @@ export async function readCodeBgLog(processId: string, bytes = 4096): Promise<st
 /**
  * Build the user-facing body for a background-watch completion turn: one block
  * per finished command with its exit code, when it ran, and its output tail.
- * Shared by the Shell's Code mode and the Code tab.
+ * Shared by the Shell's Full access and the Code tab.
  */
 /**
  * Whether a user-role message is a watch notification `buildWatchNotification`

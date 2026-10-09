@@ -26,12 +26,12 @@
 	<p>
 		Haruspex is an AI assistant, and AI models hallucinate — it can be confidently wrong, misread
 		output, and run or suggest commands that are mistaken or destructive. By default it only
-		<em>suggests</em> commands, which land at your prompt for you to review and run. In the Shell
-		assistant's <strong>Code mode</strong>, the agent runs commands itself in your terminal: ones
-		the risk classifier flags (sudo, deletes, pipes to a shell) ask for approval first, but others
-		run automatically — and that prompt can be turned off in Settings.
+		<em>suggests</em> commands, which land at your prompt for you to review and run. In the Code
+		tab, and in the Shell assistant with <strong>Full access</strong>, the agent runs commands
+		itself: ones the risk classifier flags (sudo, deletes, pipes to a shell) ask for approval first,
+		but others run automatically — and that prompt can be turned off in Settings.
 		<strong
-			>You are the last line of defense — only enable Code mode on machines and projects you're
+			>You are the last line of defense — only give it that access on machines and projects you're
 			willing to let it act on, and read what it runs.</strong
 		>
 	</p>

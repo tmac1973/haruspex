@@ -135,7 +135,7 @@ export async function runSlash(text: string, host: SlashHost): Promise<SlashOutc
 	if (action.kind === 'none') return { kind: 'send' };
 	if (action.kind === 'needsCodeMode') {
 		host.addNote(
-			`\`/${action.name}\` needs Code mode: switch it on in a Shell tab's assistant, inside the repo.`
+			`\`/${action.name}\` works in the Code tab, or in a Shell tab's assistant with Full access, inside the repo.`
 		);
 	} else if (action.name === 'new') host.newConversation();
 	else host.addNote(describeSkills(await slashItems(projectRoot, codeMode)));

@@ -250,6 +250,8 @@ import {
 } from '#lib/stores/code.svelte.ts';
 import { decodeCodeSession } from '#lib/code/session.ts';
 import { reportShellWait } from '#lib/code/shellBridge.ts';
+import { openCodeAt } from '#lib/code/bridge.ts';
+import { getActiveTab, setActiveTab } from '#lib/stores/activeTab.svelte.ts';
 import {
 	approveSession,
 	codeApprovalKey,
@@ -1111,5 +1113,17 @@ describe('sharing a folder', () => {
 		});
 		const done = await deleteSession(fork.id, { removeWorktree: '/wt/s2' });
 		expect(done).toEqual({ worktree: { kind: 'kept', reason: 'git exploded' } });
+	});
+});
+
+describe("the Shell's Open in Code", () => {
+	it('opens a claimed session at the folder, as the active sub-tab, in the Code tab', async () => {
+		setActiveTab('shell');
+		await openCodeAt('/home/tim/app');
+		const s = getActiveSession();
+		expect(s?.root).toBe('/home/tim/app');
+		expect(s?.messages).toEqual([]);
+		expect(mocks.invoke).toHaveBeenCalledWith('code_session_claim', { id: s?.id });
+		expect(getActiveTab()).toBe('code');
 	});
 });
