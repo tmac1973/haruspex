@@ -765,6 +765,9 @@ impl Database {
             // branch it last knew (NULL: never told, '': not a repo).
             "ALTER TABLE code_sessions ADD COLUMN notices_seen_at INTEGER",
             "ALTER TABLE code_sessions ADD COLUMN agent_branch TEXT",
+            // The WSL distro a Windows session's Linux `root` is in; NULL for
+            // a host folder (every session before Windows had the Code tab).
+            "ALTER TABLE code_sessions ADD COLUMN wsl_distro TEXT",
         ] {
             if let Err(e) = conn.execute(stmt, []) {
                 let msg = e.to_string();

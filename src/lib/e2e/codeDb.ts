@@ -11,6 +11,7 @@ interface Row {
 	id: string;
 	title: string;
 	root: string;
+	wsl_distro: string | null;
 	backend: string | null;
 	reasoning_effort: string | null;
 	thread: string;
@@ -49,10 +50,11 @@ export const CODE_DB: Record<string, Handler> = {
 	code_session_list: () =>
 		[...rows.values()]
 			.sort((a, b) => b.updated_at - a.updated_at)
-			.map(({ id, title, root, updated_at, forked_from, read_only, worktree }) => ({
+			.map(({ id, title, root, wsl_distro, updated_at, forked_from, read_only, worktree }) => ({
 				id,
 				title,
 				root,
+				wsl_distro,
 				updated_at,
 				forked_from,
 				read_only,
@@ -64,6 +66,7 @@ export const CODE_DB: Record<string, Handler> = {
 			id: `code-${++seq}`,
 			title: '',
 			root: String(a?.root ?? ''),
+			wsl_distro: (a?.wslDistro as string | null) ?? null,
 			backend: (a?.backend as string | null) ?? null,
 			reasoning_effort: (a?.effort as string | null) ?? null,
 			thread: '',
@@ -92,10 +95,12 @@ export const CODE_DB: Record<string, Handler> = {
 	code_session_set_root: (a) => {
 		const r = row(a?.id);
 		r.root = String(a?.root ?? '');
+		r.wsl_distro = (a?.wslDistro as string | null) ?? null;
 		return { ...r };
 	},
 	// Every folder is there; a spec that wants one gone mocks this.
 	code_folder_exists: () => true,
+	code_wsl_distros: () => [],
 	code_session_update_meta: (a) => {
 		const r = row(a?.id);
 		const patch = (a?.patch ?? {}) as Record<string, unknown>;

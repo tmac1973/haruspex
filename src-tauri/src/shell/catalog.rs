@@ -35,6 +35,12 @@ pub fn enumerate_shells() -> Vec<ShellCatalogEntry> {
     imp::enumerate_shells()
 }
 
+/// The installed WSL2 distros, by name. Empty off Windows, without WSL, or
+/// with only WSL1 distros. Runs `wsl.exe`, so call it off the async runtime.
+pub fn wsl_distros() -> Vec<String> {
+    imp::wsl_distros()
+}
+
 #[cfg(target_os = "windows")]
 mod imp {
     use super::ShellCatalogEntry;
@@ -109,14 +115,18 @@ mod imp {
 
     /// One entry per WSL2 distro, or a single greyed-out "No WSL distros found"
     /// entry when WSL isn't installed or has no v2 distros.
-    fn enumerate_wsl() -> Vec<ShellCatalogEntry> {
+    pub fn wsl_distros() -> Vec<String> {
         let mut cmd = Command::new("wsl.exe");
         cmd.args(["-l", "-v"]);
         apply_no_window(&mut cmd);
-        let names = match cmd.output() {
+        match cmd.output() {
             Ok(o) if o.status.success() => parse_wsl_list(&decode_utf16le(&o.stdout)),
             _ => Vec::new(),
-        };
+        }
+    }
+
+    fn enumerate_wsl() -> Vec<ShellCatalogEntry> {
+        let names = wsl_distros();
         if names.is_empty() {
             return vec![ShellCatalogEntry {
                 id: "wsl".to_string(),
@@ -201,6 +211,10 @@ mod imp {
 mod imp {
     use super::ShellCatalogEntry;
     use std::path::Path;
+
+    pub fn wsl_distros() -> Vec<String> {
+        Vec::new()
+    }
 
     pub fn enumerate_shells() -> Vec<ShellCatalogEntry> {
         let shell = crate::shell::platform::default_shell();

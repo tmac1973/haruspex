@@ -17,6 +17,7 @@ const summary = (over: Partial<CodeSessionSummary>): CodeSessionSummary => ({
 	id: 's',
 	title: '',
 	root: '/p',
+	wsl_distro: null,
 	updated_at: 0,
 	forked_from: null,
 	read_only: false,

@@ -389,16 +389,20 @@ pub async fn code_session_list(
     on_pool(db, move |db| db.list_code_sessions()).await
 }
 
+/// `wsl_distro` is the picker's distro on Windows (a `\\wsl.localhost\…`
+/// root names its own); see `code_tools::wsl::resolve_location`.
 #[tauri::command]
 pub async fn code_session_create(
     state: tauri::State<'_, Database>,
     root: String,
+    wsl_distro: Option<String>,
     backend: Option<String>,
     effort: Option<String>,
 ) -> Result<CodeSessionRow, String> {
+    let location = crate::code_tools::wsl::resolve_location(wsl_distro.as_deref(), &root).await?;
     let db = state.inner().clone();
     on_pool(db, move |db| {
-        db.create_code_session(&root, backend.as_deref(), effort.as_deref())
+        db.create_code_session_at(&location, backend.as_deref(), effort.as_deref())
     })
     .await
 }
@@ -438,9 +442,11 @@ pub async fn code_session_set_root(
     state: tauri::State<'_, Database>,
     id: String,
     root: String,
+    wsl_distro: Option<String>,
 ) -> Result<CodeSessionRow, String> {
+    let location = crate::code_tools::wsl::resolve_location(wsl_distro.as_deref(), &root).await?;
     let db = state.inner().clone();
-    on_pool(db, move |db| db.set_code_session_root(&id, &root)).await
+    on_pool(db, move |db| db.set_code_session_location(&id, &location)).await
 }
 
 #[tauri::command]

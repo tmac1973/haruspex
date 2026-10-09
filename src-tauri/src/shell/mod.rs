@@ -3,7 +3,8 @@ mod context;
 mod integration;
 // `kind` is also used by code_tools (the one-shot run_command shell routing).
 pub(crate) mod kind;
-mod platform;
+// `platform` and `wsl_distros` are also used by code_tools (WSL sessions).
+pub(crate) mod platform;
 mod pty;
 mod session;
 mod winps;
@@ -17,6 +18,7 @@ use std::sync::Mutex;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
+pub(crate) use catalog::wsl_distros;
 use context::{read_recent_history, SessionContext};
 use integration::CapturedRegion;
 use session::Session;

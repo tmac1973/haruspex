@@ -15,6 +15,7 @@
 		forkedFromTitle,
 		isUnsetTitle,
 		lastActive,
+		locationLabel,
 		sessionLabel,
 		sidebarEntries
 	} from '#lib/code/sessionList.ts';
@@ -218,7 +219,7 @@
 				class:open={openIds.has(s.id)}
 				class:elsewhere={elsewhereIds.has(s.id)}
 				aria-label={sessionLabel(s)}
-				title="{sessionLabel(s)} — {s.root}.{s.forked_from
+				title="{sessionLabel(s)} — {locationLabel(s)}.{s.forked_from
 					? ` ${forkedFromTitle(s, list)}.`
 					: ''}{elsewhereIds.has(s.id)
 					? ' Open in its own window; click to bring it forward.'
@@ -265,22 +266,22 @@
 				<p class="empty">No sessions yet.</p>
 			{/if}
 			<ul>
-				{#each entries as entry (entry.kind === 'folder' ? `dir:${entry.root}` : entry.session.id)}
+				{#each entries as entry (entry.kind === 'folder' ? `dir:${entry.key}` : entry.session.id)}
 					{#if entry.kind === 'session'}
 						{@render row(entry.session, false)}
 					{:else}
 						<li class="group">
 							<button
 								class="folder"
-								title={entry.root}
-								aria-expanded={!collapsedRoots[entry.root]}
-								onclick={() => (collapsedRoots[entry.root] = !collapsedRoots[entry.root])}
+								title={locationLabel(entry.sessions[0])}
+								aria-expanded={!collapsedRoots[entry.key]}
+								onclick={() => (collapsedRoots[entry.key] = !collapsedRoots[entry.key])}
 							>
-								<span class="chev">{collapsedRoots[entry.root] ? '▸' : '▾'}</span>
+								<span class="chev">{collapsedRoots[entry.key] ? '▸' : '▾'}</span>
 								<span class="folder-name">{entry.name}</span>
 								<span class="count">{entry.sessions.length}</span>
 							</button>
-							{#if !collapsedRoots[entry.root]}
+							{#if !collapsedRoots[entry.key]}
 								<ul>
 									{#each entry.sessions as s (s.id)}
 										{@render row(s, true)}
