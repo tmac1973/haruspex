@@ -28,22 +28,11 @@
 	}
 
 	let shellCodeModeDefault = $state(getSettings().shellCodeModeDefault);
-	let codeAutoApprove = $state(getSettings().codeAutoApprove);
 	let codeCommandExec = $state(getSettings().codeCommandExec);
-	let codeRunCommandTimeoutSecs = $state(getSettings().codeRunCommandTimeoutSecs);
-	let codeMaxIterations = $state(getSettings().codeMaxIterations);
 	let commandMemoryLimitPercent = $state(getSettings().commandMemoryLimitPercent);
 
 	function persistCodeModeDefault() {
 		updateSettings({ shellCodeModeDefault });
-	}
-	function persistCodeAutoApprove() {
-		updateSettings({ codeAutoApprove });
-	}
-	function persistCodeMaxIterations() {
-		const clamped = clampInt(codeMaxIterations, 5, 200);
-		codeMaxIterations = clamped;
-		updateSettings({ codeMaxIterations: clamped });
 	}
 	function persistCodeCommandExec() {
 		updateSettings({ codeCommandExec });
@@ -52,11 +41,6 @@
 		const clamped = clampInt(commandMemoryLimitPercent, 0, 90);
 		commandMemoryLimitPercent = clamped;
 		updateSettings({ commandMemoryLimitPercent: clamped });
-	}
-	function persistCodeTimeout() {
-		const clamped = clampInt(codeRunCommandTimeoutSecs, 5, 1800);
-		codeRunCommandTimeoutSecs = clamped;
-		updateSettings({ codeRunCommandTimeoutSecs: clamped });
 	}
 </script>
 
@@ -148,6 +132,7 @@
 </section>
 
 <h2 class="group-heading">Code mode</h2>
+<p class="moved">Timeout, step limit and auto-approve are in Settings → Code.</p>
 
 <section class="settings-section">
 	<h2>Enable Code mode by default in new shells</h2>
@@ -180,29 +165,6 @@
 </section>
 
 <section class="settings-section">
-	<h2>run_command timeout</h2>
-	<label class="row">
-		<input
-			type="number"
-			min="5"
-			max="1800"
-			step="5"
-			bind:value={codeRunCommandTimeoutSecs}
-			onblur={persistCodeTimeout}
-			onkeydown={(e) => e.key === 'Enter' && persistCodeTimeout()}
-		/>
-		<span>seconds</span>
-	</label>
-	<p class="help">
-		Default wall-clock limit for a single <code>run_command</code> call (the model can override per
-		call, and raise it for known-slow builds/tests). A PTY command that hits the limit is left
-		running in your terminal. For servers or long jobs the model should use <code>background</code>
-		/
-		<code>watch</code> instead so nothing blocks. Default <code>30</code>. 5–1800 seconds.
-	</p>
-</section>
-
-<section class="settings-section">
 	<h2>Memory limit</h2>
 	<label
 		class="row"
@@ -222,40 +184,6 @@
 	<p class="help">Stops a runaway build or test before it takes the app down with it.</p>
 </section>
 
-<section class="settings-section">
-	<h2>Max steps per task</h2>
-	<label class="row">
-		<input
-			type="number"
-			min="5"
-			max="200"
-			step="5"
-			bind:value={codeMaxIterations}
-			onblur={persistCodeMaxIterations}
-			onkeydown={(e) => e.key === 'Enter' && persistCodeMaxIterations()}
-		/>
-		<span>tool/model steps before the agent is forced to wrap up</span>
-	</label>
-	<p class="help">
-		Coding tasks chain many steps (grep → read → edit → test → fix). If the agent gets cut off
-		mid-task and told to "wrap up", raise this. Context stays bounded across steps via compaction.
-		Default <code>40</code>. 5–200.
-	</p>
-</section>
-
-<section class="settings-section danger" class:enabled={codeAutoApprove}>
-	<h2>Auto-approve commands</h2>
-	<label class="toggle-row">
-		<input type="checkbox" bind:checked={codeAutoApprove} onchange={persistCodeAutoApprove} />
-		<span>Run risk-flagged commands without prompting</span>
-	</label>
-	<p class="help">
-		Off by default. When off, Code mode pops a confirmation before running anything the risk
-		classifier flags (sudo, destructive deletes, pipes to a shell, etc.). Only enable if you fully
-		trust the model on this machine — these commands run in your real shell.
-	</p>
-</section>
-
 <style>
 	/* Sub-group label between the terminal cards and the Code-mode cards. */
 	.group-heading {
@@ -267,9 +195,10 @@
 		color: var(--accent);
 	}
 
-	/* Card chrome comes from the global .settings-section. */
-	section.danger.enabled {
-		border-color: var(--error-text);
+	.moved {
+		margin: -4px 0 12px;
+		font-size: 0.85rem;
+		color: var(--text-secondary);
 	}
 
 	select {

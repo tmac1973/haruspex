@@ -73,6 +73,7 @@ const mocks = vi.hoisted(() => ({
 	invoke: vi.fn(),
 	runAgentLoop: vi.fn(),
 	withInferenceSlot: vi.fn(),
+	nameSession: vi.fn(),
 	watchHandlers: new Map<string, () => void>(),
 	completedWatches: [] as { id: string }[],
 	consumeWatches: vi.fn(),
@@ -83,6 +84,10 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('#lib/agent/loop.ts', () => ({ runAgentLoop: mocks.runAgentLoop }));
 vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => ({
 	withInferenceSlot: mocks.withInferenceSlot
+}));
+vi.mock('#lib/code/sessionTitle.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/code/sessionTitle.ts')>()),
+	nameSession: mocks.nameSession
 }));
 vi.mock('#lib/agent/tools/index.ts', () => ({ getDisplayLabel: () => 'tool' }));
 vi.mock('#lib/skills/project.ts', () => ({
@@ -129,8 +134,7 @@ import {
 	getActiveSession,
 	getOpenSessions,
 	newSession,
-	openSession,
-	titleFromMessage
+	openSession
 } from '#lib/stores/code.svelte.ts';
 import { decodeCodeSession } from '#lib/code/session.ts';
 import {
@@ -185,6 +189,7 @@ beforeEach(async () => {
 			o.onAdmitted?.();
 			return fn();
 		});
+	mocks.nameSession.mockReset().mockResolvedValue('Find where x lives');
 	mocks.completedWatches = [];
 	mocks.consumeWatches.mockReset();
 	mocks.clearCodeWatches.mockReset();
@@ -219,7 +224,7 @@ describe('a Code session', () => {
 		expect(again).not.toBe(s);
 		expect(again.messages).toEqual(s.messages);
 		expect(again.messageSteps).toEqual(s.messageSteps);
-		expect(again.title).toBe('where is x defined?');
+		expect(again.title).toBe('Find where x lives');
 	});
 
 	it('opens a session with an empty thread as an empty session', async () => {
@@ -238,15 +243,62 @@ describe('a Code session', () => {
 		expect(getOpenSessions()).toHaveLength(2);
 	});
 
-	it('names itself from the first message only', async () => {
-		const s = await newSession('/proj');
-		await s.send(`  fix   the\nbuild ${'x'.repeat(80)}`);
-		expect(s.title).toBe(titleFromMessage(`fix the build ${'x'.repeat(80)}`));
-		expect(s.title).toHaveLength(60);
-		expect(db.rows.get(s.id)!.title).toBe(s.title);
+	it('names itself once, after its first turn, on its own backend', async () => {
+		const backend = { baseUrl: 'http://box:8080', modelId: 'qwen' };
+		const s = await newSession('/proj', { backend });
+		await s.send('fix the build');
+		expect(mocks.nameSession).toHaveBeenCalledTimes(1);
+		expect(mocks.nameSession).toHaveBeenCalledWith('fix the build', backend);
+		expect(mocks.runAgentLoop).toHaveBeenCalledTimes(1);
+		expect(s.title).toBe('Find where x lives');
+		expect(db.rows.get(s.id)!.title).toBe('Find where x lives');
 		await s.send('something else');
-		expect(s.title).toHaveLength(60);
-		expect(s.title.startsWith('fix the build')).toBe(true);
+		expect(mocks.nameSession).toHaveBeenCalledTimes(1);
+		expect(s.title).toBe('Find where x lives');
+	});
+
+	it('stays unnamed while it has only had slash commands', async () => {
+		const s = await newSession('/proj');
+		await s.send('/init');
+		await s.send('  /review the diff');
+		expect(mocks.nameSession).not.toHaveBeenCalled();
+		expect(s.title).toBe('');
+		expect(db.rows.get(s.id)!.title).toBe('');
+		await s.send('now add a test');
+		expect(mocks.nameSession).toHaveBeenCalledExactlyOnceWith('now add a test', null);
+		expect(s.title).toBe('Find where x lives');
+	});
+
+	it('never overwrites a name the user gave it', async () => {
+		const s = await newSession('/proj');
+		await s.rename('Lint fixes');
+		await s.send('fix the lint');
+		expect(mocks.nameSession).not.toHaveBeenCalled();
+		expect(s.title).toBe('Lint fixes');
+	});
+
+	it('keeps a rename made while the naming call runs', async () => {
+		const s = await newSession('/proj');
+		let answer!: (t: string) => void;
+		mocks.nameSession.mockReturnValueOnce(new Promise<string>((r) => (answer = r)));
+		const sending = s.send('fix the lint');
+		await vi.waitFor(() => expect(mocks.nameSession).toHaveBeenCalled());
+		await s.rename('Mine');
+		answer('Model title');
+		await sending;
+		expect(s.title).toBe('Mine');
+		expect(db.rows.get(s.id)!.title).toBe('Mine');
+	});
+
+	it('treats a saved title from a slash command as no title', async () => {
+		const s = await newSession('/proj');
+		db.rows.get(s.id)!.title = '/init';
+		await closeSession(s.id);
+		const again = await openSession(s.id);
+		expect(again.title).toBe('');
+		await again.send('add a readme');
+		expect(mocks.nameSession).toHaveBeenCalledExactlyOnceWith('add a readme', null);
+		expect(db.rows.get(s.id)!.title).toBe('Find where x lives');
 	});
 
 	it('queues messages sent during a turn as steering for the loop', async () => {
@@ -410,5 +462,158 @@ describe('closing a session', () => {
 		await vi.waitFor(() => expect(mocks.runAgentLoop).toHaveBeenCalled());
 		await closeSession(s.id);
 		expect(storedThread(s.id)?.messages).toEqual([{ role: 'user', content: 'long job' }]);
+	});
+});
+
+describe('a streamed tool round', () => {
+	it('shows calls as they are written, until each starts or the turn ends', async () => {
+		const s = await newSession('/proj');
+		const seen: { pending: string[]; round: string }[] = [];
+		const look = () =>
+			seen.push({
+				pending: s.pendingToolCalls.map((c) => `${c.index}:${c.name}:${c.argsSoFar}`),
+				round: s.roundText
+			});
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
+			expect(o.streamToolRounds).toBe(true);
+			o.onToolRoundStart!();
+			o.onStreamChunk(
+				{ delta: { reasoning_content: 'Write it.' }, finish_reason: null },
+				{
+					provisional: true
+				}
+			);
+			o.onToolCallDelta!(0, { id: 'w', name: 'fs_write_text', argsSoFar: '{"path":"a' });
+			o.onToolCallDelta!(1, { id: 'r', name: 'run_command', argsSoFar: '' });
+			o.onToolCallDelta!(0, { id: 'w', name: 'fs_write_text', argsSoFar: '{"path":"a.ts"}' });
+			look();
+			o.onReasoning!('Write it.');
+			const write = { id: 'w', name: 'fs_write_text', arguments: { path: 'a.ts' } };
+			o.onToolStart(write);
+			look();
+			o.messages.push(
+				{
+					role: 'assistant',
+					content: '',
+					tool_calls: [
+						{ id: 'w', type: 'function', function: { name: 'fs_write_text', arguments: '{}' } }
+					]
+				},
+				{ role: 'tool', tool_call_id: 'w', content: 'ok' }
+			);
+			o.onToolEnd(write, 'ok');
+			// The next round starts; the call it never ran is stale.
+			o.onToolRoundStart!();
+			look();
+			o.onStreamChunk({ delta: { content: 'Done' }, finish_reason: null }, { provisional: true });
+			look();
+			o.onStreamChunk(chunk('Done'));
+			look();
+			o.onComplete();
+		});
+
+		await s.send('write a.ts');
+
+		expect(seen).toEqual([
+			{
+				pending: ['0:fs_write_text:{"path":"a.ts"}', '1:run_command:'],
+				round: '<think>Write it.'
+			},
+			{ pending: ['1:run_command:'], round: '' },
+			{ pending: [], round: '' },
+			{ pending: [], round: 'Done' },
+			{ pending: [], round: '' }
+		]);
+		expect(s.pendingToolCalls).toEqual([]);
+		expect(s.roundText).toBe('');
+		// The round's reasoning sits on the step it led to; the answer is said once.
+		const answer = s.messages.at(-1)!;
+		expect(answer).toEqual({ role: 'assistant', content: 'Done' });
+		expect(s.messageSteps[s.messages.length - 1][0].reasoning).toBe('Write it.');
+	});
+
+	it('saves what the model said with its calls, on the calls and on their step', async () => {
+		const s = await newSession('/proj');
+		const said = 'The import is wrong. Fixing it.';
+		const edit = { id: 'e', name: 'fs_edit_text', arguments: { path: 'a.ts' } };
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
+			o.onToolRoundStart!();
+			o.onStreamChunk({ delta: { content: said }, finish_reason: null }, { provisional: true });
+			o.messages.push({
+				role: 'assistant',
+				content: said,
+				tool_calls: [
+					{ id: 'e', type: 'function', function: { name: 'fs_edit_text', arguments: '{}' } }
+				]
+			});
+			o.onToolStart(edit);
+			o.messages.push({ role: 'tool', tool_call_id: 'e', content: 'ok' });
+			o.onToolEnd(edit, 'ok');
+			o.onToolRoundStart!();
+			o.onStreamChunk(chunk('Fixed.'));
+			o.onComplete();
+		});
+
+		await s.send('fix the import');
+
+		const saved = storedThread(s.id)!;
+		expect(saved.messages.map((m) => [m.role, m.content])).toEqual([
+			['user', 'fix the import'],
+			['assistant', said],
+			['tool', 'ok'],
+			['assistant', 'Fixed.']
+		]);
+		const steps = saved.messageSteps[saved.messages.length - 1];
+		expect(steps.map((st) => st.lead)).toEqual([said]);
+	});
+
+	it('shows a call written as text as a pending row, not as text', async () => {
+		const s = await newSession('/proj');
+		const seen: { pending: string[]; round: string }[] = [];
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
+			o.onToolRoundStart!();
+			for (const part of [
+				'Running it.\n<tool',
+				'_call>\n{"name": "run_command", ',
+				'"arguments": {"command": "python main.py"}}\n</tool_call>'
+			]) {
+				o.onStreamChunk({ delta: { content: part }, finish_reason: null }, { provisional: true });
+				seen.push({
+					pending: s.pendingToolCalls.map((c) => `${c.name}:${c.argsSoFar}`),
+					round: s.roundText
+				});
+			}
+			o.onComplete();
+		});
+
+		await s.send('run it');
+
+		expect(seen).toEqual([
+			{ pending: [], round: 'Running it.\n' },
+			// The name is whole: a row, before the arguments arrive.
+			{ pending: ['run_command:'], round: 'Running it.\n' },
+			{
+				pending: ['run_command:{"command": "python main.py"}}\n'],
+				round: 'Running it.\n'
+			}
+		]);
+	});
+
+	it('clears a call being written when the turn is stopped', async () => {
+		const s = await newSession('/proj');
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
+			o.onToolRoundStart!();
+			o.onToolCallDelta!(0, { id: 'w', name: 'fs_write_text', argsSoFar: '{' });
+			await new Promise<void>((resolve) =>
+				o.signal!.addEventListener('abort', () => resolve(), { once: true })
+			);
+			throw new DOMException('Aborted', 'AbortError');
+		});
+		const sending = s.send('go');
+		await vi.waitFor(() => expect(s.pendingToolCalls).toHaveLength(1));
+		s.stop();
+		await sending;
+		expect(s.pendingToolCalls).toEqual([]);
+		expect(s.roundText).toBe('');
 	});
 });

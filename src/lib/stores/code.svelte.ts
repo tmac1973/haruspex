@@ -19,7 +19,7 @@ import type { BgProcess } from '#lib/ipc/gen/BgProcess.ts';
 import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
 import type { InferenceTicket } from '#lib/agent/inferenceQueue.svelte.ts';
 import type { AgentStopReason, SearchStep } from '#lib/agent/loop.ts';
-import { markStepDone, markStepProgress, newRunningStep } from '#lib/agent/steps.ts';
+import { markStepDone, markStepProgress } from '#lib/agent/steps.ts';
 import { describeContextManaged } from '#lib/agent/context-budget.ts';
 import { computeMessageStats, type MessageStats } from '#lib/stores/chat.svelte.ts';
 import { codeApprovalKey, resetSessionApproval } from '#lib/stores/codeCommandApproval.svelte.ts';
@@ -40,6 +40,10 @@ import {
 } from '#lib/code/db.ts';
 import { decodeCodeSession, encodeCodeSession, type CodeSessionState } from '#lib/code/session.ts';
 import { runCodeTurn, type CodeTurnResult } from '#lib/code/runCodeTurn.ts';
+import type { PendingToolCall } from '#lib/code/pendingCall.ts';
+import { LiveTurn } from '#lib/code/liveTurn.svelte.ts';
+import { isUnsetTitle } from '#lib/code/sessionList.ts';
+import { isSlashCommand, nameSession } from '#lib/code/sessionTitle.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
@@ -50,22 +54,16 @@ import { errMessage } from '#lib/utils/error.ts';
  */
 export type CodeSessionStatus = 'idle' | 'queued' | 'running' | 'waiting-shell';
 
-/** Longest title taken from the first message. */
-const TITLE_MAX = 60;
 /** How often the background-process list is refreshed while any runs. */
 const BG_POLL_MS = 3000;
 /** Tools whose end can start or stop a background process. */
 const BG_TOOLS = new Set(['run_command', 'command_stop']);
 
-/** A session title from its first message: one line, at most 60 characters. */
-export function titleFromMessage(text: string): string {
-	return text.replace(/\s+/g, ' ').trim().slice(0, TITLE_MAX).trimEnd();
-}
-
 export class CodeSession {
 	readonly id: string;
 	/** The project folder, fixed for the session's life. */
 	readonly root: string;
+	/** Empty until the session is named (`sessionLabel` shows the folder meanwhile). */
 	title = $state('');
 	/** Null follows the global backend. */
 	backend = $state<BackendOverride | null>(null);
@@ -95,7 +93,8 @@ export class CodeSession {
 	/** This session's background processes, from `code_bg_status`. */
 	background = $state<BgProcess[]>([]);
 
-	streamingContent = $state('');
+	/** What the running turn shows while the model writes (`LiveTurn`). */
+	private readonly live = new LiveTurn();
 	searchSteps = $state<SearchStep[]>([]);
 	lastError = $state<string | null>(null);
 	/** Set when the last thread save failed, so the UI can say so. */
@@ -112,8 +111,8 @@ export class CodeSession {
 	private abortController: AbortController | null = null;
 	/** Settles once the running turn has been saved. */
 	private turnDone: Promise<void> | null = null;
-	/** The first message named the session and the name is not saved yet. */
-	private titlePending = false;
+	/** The naming call has been made (or is under way); it is made once. */
+	private named = false;
 	private closed = false;
 	/** A watch notification is being put together. */
 	private flushing = false;
@@ -123,7 +122,8 @@ export class CodeSession {
 	constructor(record: CodeSessionRecord) {
 		this.id = record.id;
 		this.root = record.root;
-		this.title = record.title;
+		// A title from a slash command (`/init`) is no name: the next real turn names it.
+		this.title = isUnsetTitle(record.title) ? '' : record.title;
 		this.backend = record.backend;
 		this.effort = record.reasoning_effort;
 		// A new session, or a fork at its first message, stores an empty thread,
@@ -139,6 +139,21 @@ export class CodeSession {
 		this.unwatch = setCodeWatchCompletionHandler(this.id, () => {
 			void this.flushWatchNotifications();
 		});
+	}
+
+	/** The answer so far. */
+	get streamingContent(): string {
+		return this.live.streamingContent;
+	}
+
+	/** The tool round in flight: reasoning, then text. See `LiveTurn.roundText`. */
+	get roundText(): string {
+		return this.live.roundText;
+	}
+
+	/** Tool calls the round in flight is writing. */
+	get pendingToolCalls(): PendingToolCall[] {
+		return this.live.pendingToolCalls;
 	}
 
 	get busy(): boolean {
@@ -162,11 +177,14 @@ export class CodeSession {
 			return;
 		}
 		const body = opts.skill ? renderSlashMessage(opts.skill, trimmed) : trimmed;
-		if (!this.title && trimmed) {
-			this.title = titleFromMessage(trimmed);
-			this.titlePending = this.title !== '';
-		}
+		// The first real message names the session, once its turn is over.
+		const namesFrom =
+			!this.named && !this.title && trimmed && !opts.skill && !isSlashCommand(trimmed)
+				? trimmed
+				: null;
+		if (namesFrom) this.named = true;
 		await this.runTurn(userMessage(body, images));
+		if (namesFrom) await this.name(namesFrom);
 	};
 
 	/** Resume after a turn limit or forced stop. */
@@ -213,7 +231,7 @@ export class CodeSession {
 		if (!next || next === this.title) return;
 		const prev = this.title;
 		this.title = next;
-		this.titlePending = false;
+		this.named = true;
 		try {
 			await updateCodeSessionMeta(this.id, { title: next });
 		} catch (e) {
@@ -221,6 +239,22 @@ export class CodeSession {
 			throw e;
 		}
 	};
+
+	/**
+	 * Name the session from its first real message: a short model call, or
+	 * the message itself when that fails. A title the user gave meanwhile wins.
+	 */
+	private async name(message: string): Promise<void> {
+		const backend = this.backend ? ($state.snapshot(this.backend) as BackendOverride) : null;
+		const title = await nameSession(message, backend);
+		if (this.title || !title) return;
+		try {
+			await updateCodeSessionMeta(this.id, { title });
+			if (!this.title) this.title = title;
+		} catch (e) {
+			logDebug('code', 'saving the title failed', { id: this.id, error: errMessage(e) });
+		}
+	}
 
 	/** Refresh `background`, and keep refreshing while any process runs. */
 	refreshBackground = async (): Promise<void> => {
@@ -297,9 +331,7 @@ export class CodeSession {
 	private async turn(opening: ChatMessage): Promise<void> {
 		this.lastError = null;
 		this.contextNotice = null;
-		this.streamingContent = '';
-		this.searchSteps = [];
-		this.steeringDelivered = [];
+		this.clearLive();
 		this.returnedSteering = [];
 		this.messages = [...this.messages, opening];
 
@@ -336,7 +368,7 @@ export class CodeSession {
 					this.ticket = null;
 					this.status = 'running';
 				},
-				onAssistantDelta: (full) => (this.streamingContent = full),
+				...this.live.callbacks(),
 				onCallStats: (stats) => (lastCallStats = stats),
 				onUsage: (usage: Usage, contextSize) => {
 					this.usage = {
@@ -348,14 +380,19 @@ export class CodeSession {
 				onContextManaged: (info) => {
 					if (info.kind === 'fit') this.contextNotice = describeContextManaged(info);
 				},
-				onToolStart: (call) => {
-					this.searchSteps = [...this.searchSteps, newRunningStep(call)];
+				onToolStart: (call, lead) => {
+					this.searchSteps = [...this.searchSteps, this.live.startStep(call, lead)];
 				},
 				onToolProgress: (call, status) => {
 					this.searchSteps = markStepProgress(this.searchSteps, call, status);
 				},
-				onToolEnd: (call, res, thumb, artifacts) => {
+				onToolEnd: (call, res, thumb, artifacts, fileDiff) => {
 					this.searchSteps = markStepDone(this.searchSteps, call, res, thumb, artifacts);
+					if (fileDiff) {
+						this.searchSteps = this.searchSteps.map((s) =>
+							s.id === call.id ? { ...s, fileDiff } : s
+						);
+					}
 					if (BG_TOOLS.has(call.name)) void this.refreshBackground();
 				}
 			});
@@ -366,13 +403,18 @@ export class CodeSession {
 			logDebug('code', 'turn threw', { id: this.id, error: this.lastError });
 		} finally {
 			this.abortController = null;
-			this.streamingContent = '';
-			this.searchSteps = [];
-			this.steeringDelivered = [];
+			this.clearLive();
 			this.ticket = null;
 			await this.persist();
 			void this.refreshBackground();
 		}
+	}
+
+	/** Forget everything shown only while a turn runs. */
+	private clearLive(): void {
+		this.live.clear();
+		this.searchSteps = [];
+		this.steeringDelivered = [];
 	}
 
 	/** Add a finished (or stopped) turn to the thread. */
@@ -416,10 +458,8 @@ export class CodeSession {
 	 * shutdown hook. A failed save is reported, never thrown into the turn.
 	 */
 	private async persist(): Promise<void> {
-		const title = this.titlePending ? this.title : undefined;
 		try {
-			await saveCodeSession(this.id, encodeCodeSession(this.snapshot()), title);
-			this.titlePending = false;
+			await saveCodeSession(this.id, encodeCodeSession(this.snapshot()));
 			this.saveError = null;
 		} catch (e) {
 			this.saveError = errMessage(e);

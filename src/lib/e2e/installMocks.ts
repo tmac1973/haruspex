@@ -12,6 +12,7 @@
  */
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks';
 import { JOBS_DB } from './jobsDb';
+import { CODE_DB } from './codeDb';
 
 type Args = Record<string, unknown> | undefined;
 type Handler = (args: Args) => unknown;
@@ -123,6 +124,9 @@ const TABLE: Record<string, Handler> = {
 
 	// Jobs: an in-memory database, so a job made in a test can be run.
 	...JOBS_DB,
+
+	// The Code tab: an in-memory session table and a scripted project.
+	...CODE_DB,
 
 	// Tools.
 	proxy_search: () => [

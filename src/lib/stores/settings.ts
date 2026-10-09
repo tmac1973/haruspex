@@ -1,6 +1,7 @@
 // App settings — persisted to localStorage
 
 import { getCurrentWebview } from '@tauri-apps/api/webview';
+import { createSubscriber } from 'svelte/reactivity';
 import type { OpenRouterModel, OpenRouterKeyStatus } from '#lib/openrouter.ts';
 // Type-only import — descriptor.ts imports this module's runtime values, so
 // keeping this side type-only avoids a circular runtime dependency.
@@ -690,6 +691,17 @@ export interface AppSettings {
 	 * compaction keeps context bounded across iterations.
 	 */
 	codeMaxIterations: number;
+	/**
+	 * Code tab: the most a background process's log keeps, in MiB; past it
+	 * the oldest output is dropped. Clamped 1–1024 here and in Rust.
+	 */
+	codeBgLogCapMb: number;
+	/** Code tab: the folder the last new session used, offered for the next. */
+	codeLastRoot: string;
+	/** Code tab: the session sidebar's width in px. */
+	codeSidebarWidth: number;
+	/** Code tab: whether the session sidebar is shown. */
+	codeSidebarOpen: boolean;
 }
 
 /** Exported for the chat store's one-time legacy working-dir migration. */
@@ -837,6 +849,10 @@ const defaults: AppSettings = {
 	codeCommandExec: 'auto',
 	commandMemoryLimitPercent: 50,
 	codeMaxIterations: 40,
+	codeBgLogCapMb: 5,
+	codeLastRoot: '',
+	codeSidebarWidth: 240,
+	codeSidebarOpen: true,
 	memoryEnabled: true,
 	memoryConfirmWrites: true,
 	skills: defaultSkills,
@@ -994,6 +1010,25 @@ export function getSettings(): AppSettings {
 	return settings;
 }
 
+// Tells `getLiveSettings` readers that `commit` replaced the settings.
+let notifySettingsChanged = () => {};
+const subscribeToSettings = createSubscriber((update) => {
+	notifySettingsChanged = update;
+	return () => {
+		notifySettingsChanged = () => {};
+	};
+});
+
+/**
+ * `getSettings`, but a `$derived` or template that reads it re-runs when the
+ * settings change. Opt-in: `getSettings` stays untracked, so an effect that
+ * reads settings and then writes them can't loop.
+ */
+export function getLiveSettings(): AppSettings {
+	subscribeToSettings();
+	return settings;
+}
+
 /**
  * A plain deep copy, safe to take of a Svelte 5 `$state` proxy.
  *
@@ -1017,6 +1052,7 @@ export function snapshot<T>(value: T): T {
 function commit(next: AppSettings): void {
 	settings = snapshot(next);
 	save(settings);
+	notifySettingsChanged();
 }
 
 export function updateSettings(partial: Partial<AppSettings>): void {

@@ -52,7 +52,7 @@ registerTool({
 			return toolResult(page.body);
 		}
 		const status = ctx.interactive
-			? await guideStatus()
+			? await guideStatus(ctx.backend ?? undefined)
 			: "## This Haruspex right now\nNot shown here: it is the host's own setup.";
 		return toolResult(
 			`${status}\n\n## Guide pages\nCall haruspex_docs with \`page\` set to one of these. The same guide is online at ${GUIDE_URL}, for the user to read.\n${guideIndex()}`

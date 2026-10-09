@@ -16,6 +16,7 @@ import { isAutoApproveActive } from '#lib/stores/approvalOverride.ts';
 import { localWriteBlocked } from './nested-session';
 import type { EditResult } from '#lib/ipc/gen/EditResult.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { buildWriteDiff } from '#lib/code/diff.ts';
 
 /**
  * True when a relative write path stays inside `root` (a relative dir prefix).
@@ -80,7 +81,8 @@ type WriteResolution =
 export async function resolveWritePathInteractive(
 	workdir: string,
 	relPath: string,
-	filesWrittenThisTurn: Set<string>
+	filesWrittenThisTurn: Set<string>,
+	opts: { askBeforeOverwrite?: boolean } = {}
 ): Promise<WriteResolution> {
 	// Second write to the same path in one turn. This used to short-circuit to
 	// overwrite:true and still report "Wrote: <path>", so a model emitting a
@@ -113,6 +115,11 @@ export async function resolveWritePathInteractive(
 	// conflicts as "overwrite". The job authoring UI surfaces this so the
 	// user knows what they're opting into.
 	if (isAutoApproveActive()) {
+		return { kind: 'ok', finalPath: relPath, overwrite: true };
+	}
+	// A Code session edits a project: rewriting a file is the job, and the
+	// write shows as a diff card against what was there, so it doesn't ask.
+	if (opts.askBeforeOverwrite === false) {
 		return { kind: 'ok', finalPath: relPath, overwrite: true };
 	}
 
@@ -157,11 +164,16 @@ async function fsWriteWithConflictCheck(
 	workdir: string,
 	relPath: string,
 	payload: Record<string, unknown>,
-	filesWrittenThisTurn: Set<string>
+	filesWrittenThisTurn: Set<string>,
+	askBeforeOverwrite: boolean,
+	diffAfter?: string
 ): Promise<ToolExecOutput> {
-	const resolved = await resolveWritePathInteractive(workdir, relPath, filesWrittenThisTurn);
+	const resolved = await resolveWritePathInteractive(workdir, relPath, filesWrittenThisTurn, {
+		askBeforeOverwrite
+	});
 	if (resolved.kind === 'canceled') return userCanceledWriteError(relPath, command);
 	if (resolved.kind === 'rejected') return toolResult(toolError(resolved.message));
+	const before = diffAfter === undefined ? undefined : await previousContent(workdir, resolved);
 	try {
 		await invoke(command, {
 			workdir,
@@ -171,9 +183,30 @@ async function fsWriteWithConflictCheck(
 		});
 		filesWrittenThisTurn.add(resolved.finalPath);
 		const diag = await lintPythonIfApplicable(workdir, resolved.finalPath);
-		return toolResult(`Wrote: ${resolved.finalPath}${diag}`);
+		const out = toolResult(`Wrote: ${resolved.finalPath}${diag}`);
+		if (diffAfter !== undefined && before !== undefined) {
+			out.fileDiff = buildWriteDiff(resolved.finalPath, before, diffAfter);
+		}
+		return out;
 	} catch (e) {
 		return toolResult(toolInvokeError(command, e));
+	}
+}
+
+/**
+ * The file a write is about to replace, for its diff card: null when the
+ * write creates it, undefined when it exists but can't be read as text (no
+ * diff then, rather than a wrong one).
+ */
+async function previousContent(
+	workdir: string,
+	resolved: { finalPath: string; overwrite: boolean }
+): Promise<string | null | undefined> {
+	if (!resolved.overwrite) return null;
+	try {
+		return await invoke<string>(IPC.fs_read_text_full, { workdir, relPath: resolved.finalPath });
+	} catch {
+		return undefined;
 	}
 }
 
@@ -353,7 +386,8 @@ function spreadsheetWriteExecutor(command: string) {
 			ctx.workingDir!,
 			args.path as string,
 			{ sheets },
-			ctx.filesWrittenThisTurn
+			ctx.filesWrittenThisTurn,
+			!ctx.codeSessionId
 		);
 	};
 }
@@ -390,7 +424,10 @@ function textWriteExecutor(
 			ctx.workingDir!,
 			args.path as string,
 			payload(args),
-			ctx.filesWrittenThisTurn
+			ctx.filesWrittenThisTurn,
+			!ctx.codeSessionId,
+			// The Code tab shows each write as a diff against what was there.
+			ctx.codeSessionId && command === IPC.fs_write_text ? (args.content as string) : undefined
 		);
 	};
 }
@@ -574,7 +611,8 @@ function slidesWriteExecutor(command: string) {
 			ctx.workingDir!,
 			args.path as string,
 			{ slides },
-			ctx.filesWrittenThisTurn
+			ctx.filesWrittenThisTurn,
+			!ctx.codeSessionId
 		);
 	};
 }
@@ -879,7 +917,8 @@ registerTool({
 		const resolved = await resolveWritePathInteractive(
 			ctx.workingDir!,
 			relPath,
-			ctx.filesWrittenThisTurn
+			ctx.filesWrittenThisTurn,
+			{ askBeforeOverwrite: !ctx.codeSessionId }
 		);
 		if (resolved.kind === 'canceled') return userCanceledWriteError(relPath, 'fs_download_url');
 		if (resolved.kind === 'rejected') return toolResult(toolError(resolved.message));

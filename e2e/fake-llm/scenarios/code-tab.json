@@ -1,0 +1,27 @@
+[
+	{
+		"match": { "lastUser": "^Title this coding session" },
+		"reply": { "content": "\"Fix README typo.\"" }
+	},
+	{
+		"match": { "lastUser": "^fix the readme typo" },
+		"reply": {
+			"tool_calls": [
+				{
+					"name": "fs_edit_text",
+					"arguments": { "path": "README.md", "old_str": "# Helo", "new_str": "# Hello" }
+				}
+			]
+		}
+	},
+	{
+		"match": { "toolResult": "Edited README\\.md" },
+		"reply": {
+			"tool_calls": [{ "name": "run_command", "arguments": { "command": "cat README.md" } }]
+		}
+	},
+	{
+		"match": { "toolResult": "Exit code: 0" },
+		"reply": { "content": "Fixed the typo in README.md." }
+	}
+]

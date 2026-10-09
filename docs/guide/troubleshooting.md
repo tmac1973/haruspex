@@ -62,7 +62,7 @@ The app is not code-signed. On Windows, click **More info → Run anyway** at th
 
 ## The model server will not start
 
-The status badge at the top of the window shows **Ready**, **Starting…**, **Error** or **Stopped**. Click it to open the logs. Settings → Inference → Server has **Restart Server**, **Start Server** and **Stop Server**, and **Run Setup Wizard** to pick a model again.
+The status badge at the top of the window names the model of the chat, Code session or job in view. For the Settings → Inference model it also shows the server's state: **Ready**, **Starting**, **Error** or **Stopped**. A session or job with its own remote model shows that model and its server instead. Click the badge to open the logs. Settings → Inference → Server has **Restart Server**, **Start Server** and **Stop Server**, and **Run Setup Wizard** to pick a model again.
 
 If you set Settings → Inference → **Extra llama-server arguments**, clear them and restart: a mistyped argument stops the server starting.
 

@@ -13,6 +13,7 @@
 	import CalendarSection from '#lib/components/settings/CalendarSection.svelte';
 	import DesktopSection from '#lib/components/settings/DesktopSection.svelte';
 	import ShellSection from '#lib/components/settings/ShellSection.svelte';
+	import CodeSection from '#lib/components/settings/CodeSection.svelte';
 	import ImageSection from '#lib/components/settings/ImageSection.svelte';
 	import RemoteSection from '#lib/components/settings/RemoteSection.svelte';
 	import FeedbackSection from '#lib/components/settings/FeedbackSection.svelte';
@@ -34,6 +35,7 @@
 		| 'integrations'
 		| 'screen'
 		| 'shell'
+		| 'code'
 		| 'image'
 		| 'remote'
 		| 'feedback';
@@ -125,6 +127,12 @@
 					label: 'Shell',
 					subtitle: 'Terminal and the shell assistant.',
 					icon: '<polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line>'
+				},
+				{
+					id: 'code',
+					label: 'Code',
+					subtitle: 'How the coding agent runs commands.',
+					icon: '<polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline>'
 				},
 				{
 					id: 'image',
@@ -245,6 +253,8 @@
 				<DesktopSection />
 			{:else if activeCategory === 'shell'}
 				<ShellSection />
+			{:else if activeCategory === 'code'}
+				<CodeSection />
 			{:else if activeCategory === 'image'}
 				<ImageSection />
 			{:else if activeCategory === 'remote'}

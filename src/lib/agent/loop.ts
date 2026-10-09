@@ -15,9 +15,11 @@
 
 import type { TurnSkills } from '#lib/skills/turn.ts';
 import type { BackendOverride, StreamChunk, Usage } from '#lib/api.ts';
+import type { PartialToolCall } from '#lib/streamAssembly.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import type { Artifact, LintIssue, ToolContext } from '#lib/agent/tools/index.ts';
 import type { ContextManagedInfo } from './context-budget';
+import type { FileDiff } from '#lib/code/diff.ts';
 import type { SamplingParams } from '#lib/stores/settings.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import { isAbortError } from '#lib/utils/error.ts';
@@ -30,6 +32,13 @@ import {
 } from './loop/iteration';
 
 export { isCodeContext } from './loop/iteration';
+export type { PartialToolCall } from '#lib/streamAssembly.ts';
+
+/** How `onStreamChunk` labels a chunk. */
+export interface StreamChunkMeta {
+	/** From a tool round still in flight: show it, but it is not the answer. */
+	provisional: true;
+}
 
 /**
  * Why a turn ended.
@@ -144,6 +153,19 @@ export interface SearchStep {
 	 * conversation is allowed to fetch. See `images/eligible`.
 	 */
 	heroImage?: string;
+	/** The line diff a Code-tab write attached (`ToolExecOutput.fileDiff`). */
+	fileDiff?: FileDiff;
+	/**
+	 * The model's reasoning before it made this call, on the first step of a
+	 * batch. Set by the Code tab, which shows it above the step.
+	 */
+	reasoning?: string;
+	/**
+	 * The text the model wrote alongside this call's batch, on its first step.
+	 * Set by the Code tab, which shows it between the reasoning and the step.
+	 * The thread keeps it too, on the message carrying the calls.
+	 */
+	lead?: string;
 }
 
 export interface AgentLoopOptions {
@@ -174,9 +196,36 @@ export interface AgentLoopOptions {
 		thumbDataUrl?: string,
 		artifacts?: Artifact[],
 		lintIssues?: LintIssue[],
-		heroImage?: string
+		heroImage?: string,
+		fileDiff?: FileDiff
 	) => void;
-	onStreamChunk: (chunk: StreamChunk) => void;
+	/**
+	 * Answer text as it is produced. With `streamToolRounds`, a tool round's
+	 * reasoning and text arrive here too, marked `meta.provisional`: they are
+	 * for display only, since the round may yet end in tool calls or a nudge.
+	 * Whatever of it becomes the answer is sent again, unmarked, exactly as
+	 * without the option — so a caller that builds its answer from this
+	 * callback must skip provisional chunks.
+	 */
+	onStreamChunk: (chunk: StreamChunk, meta?: StreamChunkMeta) => void;
+	/**
+	 * Stream every model call that offers tools instead of waiting for the
+	 * whole response, so a UI can show the round as it is written. The
+	 * assembled response is the one a non-streaming call returns, and
+	 * everything after the call runs unchanged. Off by default.
+	 */
+	streamToolRounds?: boolean;
+	/**
+	 * A streamed tool round is about to be sent (`streamToolRounds`). Anything
+	 * provisional from an earlier round is stale from here: that round has
+	 * ended, or is being retried.
+	 */
+	onToolRoundStart?: () => void;
+	/**
+	 * A tool call in a streamed tool round, each time the stream adds to it.
+	 * `index` is the call's position in the round.
+	 */
+	onToolCallDelta?: (index: number, call: PartialToolCall) => void;
 	/** Called once the turn settles. `meta.stopReason` distinguishes a natural
 	 *  finish from a system-forced stop (turn-limit / degraded output). */
 	onComplete: (meta?: CompletionMeta) => void;

@@ -8,6 +8,7 @@ import { baseUrl } from '#lib/ports.ts';
 import { OPENROUTER_ATTRIBUTION_HEADERS } from '#lib/openrouter.ts';
 import { isAbortError } from '#lib/utils/error.ts';
 import { readErrorText } from '#lib/utils/http.ts';
+import { combineReasoningAndContent } from '#lib/streamAssembly.ts';
 
 let nextRequestId = 1;
 
@@ -254,6 +255,11 @@ export interface StreamChunk {
 		/** OpenRouter-normalized reasoning text (alias for reasoning_content). */
 		reasoning?: string;
 		tool_calls?: ToolCallDelta[];
+		/**
+		 * OpenRouter reasoning items, in fragments: `StreamResponseAssembler`
+		 * merges them into a response's `reasoning_details`.
+		 */
+		reasoning_details?: unknown[];
 	};
 	finish_reason: string | null;
 	usage?: Usage;
@@ -522,20 +528,6 @@ function parseSSEData(data: string): StreamChunk | null {
 	} catch {
 		return null; // skip malformed JSON chunks
 	}
-}
-
-/**
- * Merge a model's separate `reasoning_content` and `content` into one string,
- * wrapping reasoning in a <think> block. Returns null only when both are
- * empty.
- */
-function combineReasoningAndContent(
-	reasoning: string | undefined,
-	content: string | null
-): string | null {
-	if (reasoning && content) return `<think>${reasoning}</think>\n\n${content}`;
-	if (reasoning) return `<think>${reasoning}</think>`;
-	return content;
 }
 
 /**

@@ -9,6 +9,7 @@
  */
 
 import { getVersion } from '@tauri-apps/api/app';
+import type { BackendOverride } from '#lib/api.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { skillsAutonomous } from '#lib/skills/client.ts';
 import { memoryActive } from '#lib/stores/memory.svelte.ts';
@@ -25,6 +26,13 @@ const BACKEND: Record<string, string> = {
 	openrouter: 'OpenRouter (cloud)'
 };
 
+/** A model picked for this conversation alone (a Code session, a job). */
+const OVERRIDE: Record<string, string> = {
+	remote: 'a model server picked for this conversation, not the one in Settings → Inference',
+	openrouter:
+		'OpenRouter (cloud), picked for this conversation, not the model in Settings → Inference'
+};
+
 const IMAGE: Record<string, string> = {
 	none: 'off',
 	comfyui: 'on, through a ComfyUI server',
@@ -33,10 +41,16 @@ const IMAGE: Record<string, string> = {
 
 const onOff = (on: boolean) => (on ? 'on' : 'off');
 
-/** The status block, as Markdown. */
-export async function guideStatus(): Promise<string> {
+/**
+ * The status block, as Markdown. `override` is the model the asking turn
+ * actually runs on when it isn't Settings' (a Code session's or a job's own
+ * pick); without it the block would name the Settings model, and the model
+ * would report being something it isn't.
+ */
+export async function guideStatus(override?: BackendOverride): Promise<string> {
 	const s = getSettings();
-	const backend = resolveBackendDescriptor();
+	const backend = resolveBackendDescriptor(override);
+	const via = (override && OVERRIDE[backend.kind]) || BACKEND[backend.kind] || backend.kind;
 	const model =
 		backend.kind === 'local' ? getActiveLocalModelFilename() || 'none chosen' : backend.modelId;
 	const version = await getVersion().catch(() => 'unknown');
@@ -46,7 +60,7 @@ export async function guideStatus(): Promise<string> {
 	return [
 		'## This Haruspex right now',
 		`- Version: ${version}`,
-		`- Model: ${model}, through ${BACKEND[backend.kind] ?? backend.kind}; context ${backend.contextSize.toLocaleString('en-US')} tokens; sees images: ${backend.vision ? 'yes' : 'no'}`,
+		`- Model: ${model}, through ${via}; context ${backend.contextSize.toLocaleString('en-US')} tokens; sees images: ${backend.vision ? 'yes' : 'no'}`,
 		`- Memory across chats: ${onOff(memoryActive())}`,
 		`- Python sandbox: ${onOff(s.sandboxEnabled)}`,
 		`- Image generation: ${IMAGE[s.imageBackendKind] ?? s.imageBackendKind}`,

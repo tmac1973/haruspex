@@ -30,6 +30,9 @@ pub const ORPHAN_KIND: &str = "code-bg";
 const LOG_CAP_BYTES: u64 = 5 * 1024 * 1024;
 /// How long a stopped group gets to exit on SIGTERM before SIGKILL.
 const STOP_GRACE: Duration = Duration::from_secs(3);
+/// Bounds on the log cap a caller may set (Settings → Code), in MiB.
+const LOG_CAP_MIN_MB: u32 = 1;
+const LOG_CAP_MAX_MB: u32 = 1024;
 /// Upper bound on a single `code_bg_tail` read.
 const TAIL_MAX_BYTES: u64 = 1024 * 1024;
 const TAIL_DEFAULT_BYTES: u64 = 8 * 1024;
@@ -100,6 +103,19 @@ impl CodeBgManager {
         command: String,
         memory_limit_percent: Option<u8>,
     ) -> Result<BgStarted, String> {
+        self.start_with_log_cap(owner, cwd, command, memory_limit_percent, self.log_cap)
+            .await
+    }
+
+    /// `start`, keeping at most `log_cap` bytes of the process's log.
+    pub async fn start_with_log_cap(
+        &self,
+        owner: String,
+        cwd: String,
+        command: String,
+        memory_limit_percent: Option<u8>,
+        log_cap: u64,
+    ) -> Result<BgStarted, String> {
         if cfg!(windows) {
             return Err("Background commands are not supported on Windows yet.".into());
         }
@@ -154,7 +170,7 @@ impl CodeBgManager {
             file,
             path: log_path.clone(),
             len: 0,
-            cap: self.log_cap,
+            cap: log_cap,
         }));
         if let Some(out) = child.stdout.take() {
             tokio::spawn(pump(out, sink.clone()));
@@ -440,8 +456,17 @@ pub async fn code_bg_start(
     cwd: String,
     command: String,
     memory_limit_percent: Option<u8>,
+    log_cap_mb: Option<u32>,
 ) -> Result<BgStarted, String> {
-    state.start(owner, cwd, command, memory_limit_percent).await
+    match log_cap_mb {
+        Some(mb) => {
+            let cap = u64::from(mb.clamp(LOG_CAP_MIN_MB, LOG_CAP_MAX_MB)) * 1024 * 1024;
+            state
+                .start_with_log_cap(owner, cwd, command, memory_limit_percent, cap)
+                .await
+        }
+        None => state.start(owner, cwd, command, memory_limit_percent).await,
+    }
 }
 
 #[tauri::command]
@@ -630,6 +655,31 @@ mod tests {
         assert!(size <= 4096, "log grew to {size}");
         let all = mgr.tail(&started.id, Some(TAIL_MAX_BYTES)).unwrap();
         assert!(!all.contains("line-1\n"), "oldest output should be dropped");
+        mgr.stop_all().await;
+    }
+
+    #[tokio::test]
+    async fn a_caller_can_set_the_log_cap_per_process() {
+        let (mgr, _dir) = manager("cap-per-call");
+        let started = mgr
+            .start_with_log_cap(
+                "s1".into(),
+                tmp(),
+                "for i in $(seq 1 2000); do echo line-$i; done".into(),
+                None,
+                4096,
+            )
+            .await
+            .unwrap();
+        wait_until(|| !mgr.status(None)[0].running).await;
+        wait_until(|| {
+            mgr.tail(&started.id, Some(64))
+                .unwrap()
+                .contains("line-2000")
+        })
+        .await;
+        let size = std::fs::metadata(&started.log_path).unwrap().len();
+        assert!(size <= 4096, "log grew to {size}");
         mgr.stop_all().await;
     }
 

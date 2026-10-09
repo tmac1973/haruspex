@@ -31,7 +31,8 @@
 		form = $bindable(),
 		name,
 		allowSettings = true,
-		settingsLabel
+		settingsLabel,
+		showAdvanced = true
 	}: {
 		form: JobModelForm;
 		/** The source radio group's name; unique per instance on a page. */
@@ -40,6 +41,8 @@
 		allowSettings?: boolean;
 		/** The Settings option's wording, when "(default)" would be wrong. */
 		settingsLabel?: { title: string; description: string };
+		/** Show the reasoning and sampling section; off where the caller can't honour it. */
+		showAdvanced?: boolean;
 	} = $props();
 
 	// Transient: what the last probe or catalog load found. Never saved.
@@ -68,7 +71,7 @@
 				{
 					value: 'remote',
 					title: 'Remote server',
-					description: "A specific OpenAI-compatible server for this job's runs."
+					description: 'A specific OpenAI-compatible server.'
 				},
 				{
 					value: 'openrouter',
@@ -366,110 +369,112 @@
 
 <!-- Outside the override-only fields on purpose: a job running on the
      Settings backend still wants its own reasoning choice. -->
-<details class="advanced">
-	<summary>Advanced model behavior</summary>
-	<div class="advanced-body">
-		<label class="model-field">
-			<span class="sublabel">Reasoning</span>
-			<select bind:value={form.reasoning}>
-				<option value="inherit">Inherit global setting (currently {globalThinkingLabel})</option>
-				<option value="on">Always on</option>
-				<option value="off">Always off</option>
-			</select>
-			<span class="adv-hint">
-				Reasoning models can spend most of a run thinking. Forcing it off here affects this job
-				only.
-			</span>
-		</label>
+{#if showAdvanced}
+	<details class="advanced">
+		<summary>Advanced model behavior</summary>
+		<div class="advanced-body">
+			<label class="model-field">
+				<span class="sublabel">Reasoning</span>
+				<select bind:value={form.reasoning}>
+					<option value="inherit">Inherit global setting (currently {globalThinkingLabel})</option>
+					<option value="on">Always on</option>
+					<option value="off">Always off</option>
+				</select>
+				<span class="adv-hint">
+					Reasoning models can spend most of a run thinking. Forcing it off here affects this job
+					only.
+				</span>
+			</label>
 
-		<label class="model-field">
-			<span class="sublabel">Reasoning effort</span>
-			<select
-				value={form.effort ?? ''}
-				onchange={(e) => (form.effort = e.currentTarget.value || null)}
-				disabled={form.reasoning === 'off'}
-			>
-				<option value=""
-					>Inherit global setting{effortCaps?.modelDefault
-						? ` (model default: ${effortCaps.modelDefault})`
-						: ''}</option
+			<label class="model-field">
+				<span class="sublabel">Reasoning effort</span>
+				<select
+					value={form.effort ?? ''}
+					onchange={(e) => (form.effort = e.currentTarget.value || null)}
+					disabled={form.reasoning === 'off'}
 				>
-				{#each effortOptions as level (level)}
-					<option value={level}>{level}</option>
-				{/each}
-			</select>
-			<span class="adv-hint">
-				How hard the model thinks when reasoning is on. Lower levels tell it up front to keep the
-				chain short, rather than cutting it off part-way.
-				{#if !effortCaps}
-					This job's model publishes no effort levels, so the choice is stored but not sent to it.
-				{:else if !effortApplies}
-					This job's model accepts only {effortCaps.levels.join(', ')}, so it will use its own
-					default until you pick one of those.
-				{/if}
-			</span>
-		</label>
+					<option value=""
+						>Inherit global setting{effortCaps?.modelDefault
+							? ` (model default: ${effortCaps.modelDefault})`
+							: ''}</option
+					>
+					{#each effortOptions as level (level)}
+						<option value={level}>{level}</option>
+					{/each}
+				</select>
+				<span class="adv-hint">
+					How hard the model thinks when reasoning is on. Lower levels tell it up front to keep the
+					chain short, rather than cutting it off part-way.
+					{#if !effortCaps}
+						This job's model publishes no effort levels, so the choice is stored but not sent to it.
+					{:else if !effortApplies}
+						This job's model accepts only {effortCaps.levels.join(', ')}, so it will use its own
+						default until you pick one of those.
+					{/if}
+				</span>
+			</label>
 
-		{#if reasoningCapsNote}
-			<p class="adv-note">{reasoningCapsNote}</p>
-		{/if}
-
-		<label class="model-field">
-			<span class="sublabel">Sampling parameters</span>
-			<select
-				value={form.samplingSource}
-				onchange={(e) => {
-					form.samplingSource = e.currentTarget.value as SamplingSource;
-					form.sourceTouched = true;
-				}}
-			>
-				<option value="server">Server defaults — send nothing</option>
-				<option value="profile">App-tuned profile</option>
-				<option value="custom">Custom</option>
-			</select>
-			<span class="adv-hint">
-				{#if form.samplingSource === 'server'}
-					No sampling fields are sent, so whatever the server is configured with stands.
-				{:else if form.samplingSource === 'profile'}
-					{profileExplanation}
-				{:else}
-					Exactly the values below. Leave a field blank to omit it.
-				{/if}
-			</span>
-		</label>
-
-		{#if form.samplingSource === 'custom'}
-			<div class="model-row wrap">
-				<label class="model-field">
-					<span class="sublabel">Temperature</span>
-					<input type="number" step="0.05" min="0" bind:value={form.temperature} />
-				</label>
-				<label class="model-field">
-					<span class="sublabel">top_p</span>
-					<input type="number" step="0.05" min="0" max="1" bind:value={form.topP} />
-				</label>
-				<label class="model-field">
-					<span class="sublabel">top_k</span>
-					<input type="number" step="1" min="0" bind:value={form.topK} />
-				</label>
-				<label class="model-field">
-					<span class="sublabel">min_p</span>
-					<input type="number" step="0.01" min="0" max="1" bind:value={form.minP} />
-				</label>
-				<label class="model-field">
-					<span class="sublabel">presence_penalty</span>
-					<input type="number" step="0.1" bind:value={form.presencePenalty} />
-				</label>
-			</div>
-			{#if form.source === 'openrouter'}
-				<p class="adv-note">
-					OpenRouter ignores top_k and min_p — they are dropped from the request rather than risking
-					a 400 from a stricter upstream provider.
-				</p>
+			{#if reasoningCapsNote}
+				<p class="adv-note">{reasoningCapsNote}</p>
 			{/if}
-		{/if}
-	</div>
-</details>
+
+			<label class="model-field">
+				<span class="sublabel">Sampling parameters</span>
+				<select
+					value={form.samplingSource}
+					onchange={(e) => {
+						form.samplingSource = e.currentTarget.value as SamplingSource;
+						form.sourceTouched = true;
+					}}
+				>
+					<option value="server">Server defaults — send nothing</option>
+					<option value="profile">App-tuned profile</option>
+					<option value="custom">Custom</option>
+				</select>
+				<span class="adv-hint">
+					{#if form.samplingSource === 'server'}
+						No sampling fields are sent, so whatever the server is configured with stands.
+					{:else if form.samplingSource === 'profile'}
+						{profileExplanation}
+					{:else}
+						Exactly the values below. Leave a field blank to omit it.
+					{/if}
+				</span>
+			</label>
+
+			{#if form.samplingSource === 'custom'}
+				<div class="model-row wrap">
+					<label class="model-field">
+						<span class="sublabel">Temperature</span>
+						<input type="number" step="0.05" min="0" bind:value={form.temperature} />
+					</label>
+					<label class="model-field">
+						<span class="sublabel">top_p</span>
+						<input type="number" step="0.05" min="0" max="1" bind:value={form.topP} />
+					</label>
+					<label class="model-field">
+						<span class="sublabel">top_k</span>
+						<input type="number" step="1" min="0" bind:value={form.topK} />
+					</label>
+					<label class="model-field">
+						<span class="sublabel">min_p</span>
+						<input type="number" step="0.01" min="0" max="1" bind:value={form.minP} />
+					</label>
+					<label class="model-field">
+						<span class="sublabel">presence_penalty</span>
+						<input type="number" step="0.1" bind:value={form.presencePenalty} />
+					</label>
+				</div>
+				{#if form.source === 'openrouter'}
+					<p class="adv-note">
+						OpenRouter ignores top_k and min_p — they are dropped from the request rather than
+						risking a 400 from a stricter upstream provider.
+					</p>
+				{/if}
+			{/if}
+		</div>
+	</details>
+{/if}
 
 <style>
 	.optional {

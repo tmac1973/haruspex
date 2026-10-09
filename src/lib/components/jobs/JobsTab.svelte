@@ -7,8 +7,10 @@
 	import JobRunDetail from '#lib/components/jobs/JobRunDetail.svelte';
 	import LiveRunBar from '#lib/components/jobs/LiveRunBar.svelte';
 	import UnsavedChangesDialog from '#lib/components/jobs/UnsavedChangesDialog.svelte';
-	import { isJobsLoaded, loadJobs } from '#lib/stores/jobs.svelte.ts';
+	import { getJob, getJobs, isJobsLoaded, loadJobs } from '#lib/stores/jobs.svelte.ts';
 	import { enqueue, getCurrentRun } from '#lib/agent/jobs/runner.svelte.ts';
+	import { jobBackendOverride } from '#lib/agent/jobs/jobBackend.ts';
+	import { setJobModelInView } from '#lib/stores/modelInView.svelte.ts';
 
 	let selectedId = $state<number | 'new' | null>(null);
 	let selectedRunId = $state<number | null>(null);
@@ -42,6 +44,33 @@
 		if (!isJobsLoaded()) {
 			loadJobs();
 		}
+		return () => setJobModelInView(null);
+	});
+
+	/**
+	 * The selected job's model, for the header badge. Re-read when the
+	 * selection changes and when the job is saved (a save reloads the list
+	 * with a new `updated_at`).
+	 */
+	const selectedUpdatedAt = $derived(
+		numericSelectedId === null
+			? null
+			: (getJobs().find((j) => j.id === numericSelectedId)?.updated_at ?? null)
+	);
+	$effect(() => {
+		const id = numericSelectedId;
+		void selectedUpdatedAt;
+		if (id === null) {
+			setJobModelInView(null);
+			return;
+		}
+		let stale = false;
+		void getJob(id).then((job) => {
+			if (!stale) setJobModelInView(job ? (jobBackendOverride(job) ?? null) : null);
+		});
+		return () => {
+			stale = true;
+		};
 	});
 
 	/**

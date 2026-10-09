@@ -19,6 +19,7 @@ const PAGES = [
 	'models',
 	'chat',
 	'shell',
+	'code',
 	'skills',
 	'jobs',
 	'memory',
