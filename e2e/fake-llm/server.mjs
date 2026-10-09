@@ -89,7 +89,11 @@ function toolCalls(reply) {
 function usage(messages, reply) {
 	const prompt = Math.ceil(JSON.stringify(messages).length / 4);
 	const completion = Math.ceil((reply.content ?? '').length / 4) + 1;
-	return { prompt_tokens: prompt, completion_tokens: completion, total_tokens: prompt + completion };
+	return {
+		prompt_tokens: prompt,
+		completion_tokens: completion,
+		total_tokens: prompt + completion
+	};
 }
 
 /** The reply for a missed request: says plainly what nothing matched. */
@@ -148,7 +152,12 @@ export function streamEvents(reply, messages) {
 		events.push(chunk({ tool_calls: [{ index, function: { arguments: c.function.arguments } }] }));
 	});
 	events.push(chunk({}, calls.length ? 'tool_calls' : 'stop'));
-	events.push({ id: 'chatcmpl-stream', object: 'chat.completion.chunk', choices: [], usage: usage(messages, reply) });
+	events.push({
+		id: 'chatcmpl-stream',
+		object: 'chat.completion.chunk',
+		choices: [],
+		usage: usage(messages, reply)
+	});
 	return events.map((e) => `data: ${JSON.stringify(e)}\n\n`).concat('data: [DONE]\n\n');
 }
 
@@ -167,11 +176,14 @@ function send(res, status, body) {
 }
 
 /** The upstream's answer as a scenario reply, for `--record`. */
-async function askUpstream(upstream, body) {
+async function askUpstream(upstream, body, { model, apiKey } = {}) {
+	const headers = { 'Content-Type': 'application/json' };
+	if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 	const r = await fetch(`${upstream.replace(/\/$/, '')}/chat/completions`, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ ...body, stream: false })
+		headers,
+		// The app asks for the fake's model; a server with several needs its own name.
+		body: JSON.stringify({ ...body, ...(model ? { model } : {}), stream: false })
 	});
 	if (!r.ok) throw new Error(`upstream ${r.status}: ${await r.text()}`);
 	const msg = (await r.json()).choices?.[0]?.message ?? {};
@@ -186,7 +198,8 @@ async function askUpstream(upstream, body) {
 
 /**
  * Create the server. `opts.scenario` names the starting scenario; `opts.record`
- * and `opts.upstream` proxy to a real server and save each exchange as a turn.
+ * and `opts.upstream` proxy to a real server and save each exchange as a turn,
+ * asking it for `opts.upstreamModel` with `opts.upstreamKey` when given.
  */
 export function createFakeLlm(opts = {}) {
 	const dir = opts.dir ?? SCENARIO_DIR;
@@ -228,12 +241,20 @@ export function createFakeLlm(opts = {}) {
 				requests.push(body);
 				let reply;
 				if (opts.record) {
-					reply = await askUpstream(opts.upstream, body);
+					reply = await askUpstream(opts.upstream, body, {
+						model: opts.upstreamModel,
+						apiKey: opts.upstreamKey
+					});
 					const last = messages[messages.length - 1];
 					const key = last?.role === 'tool' ? 'toolResult' : 'lastUser';
-					const escaped = text(last?.content).slice(0, 80).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+					const escaped = text(last?.content)
+						.slice(0, 80)
+						.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 					recorded.push({ match: { [key]: escaped }, reply });
-					writeFileSync(join(dir, `${opts.record}.json`), JSON.stringify(recorded, null, '\t') + '\n');
+					writeFileSync(
+						join(dir, `${opts.record}.json`),
+						JSON.stringify(recorded, null, '\t') + '\n'
+					);
 				} else {
 					reply = pickTurn(turns, messages)?.reply ?? missReply(messages);
 				}
@@ -259,9 +280,13 @@ export function createFakeLlm(opts = {}) {
 		requests,
 		listen(port = DEFAULT_PORT) {
 			if (RESERVED_PORTS.has(port)) throw new Error(`port ${port} belongs to a Haruspex sidecar`);
-			return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve(server.address().port)));
+			return new Promise((resolve) =>
+				server.listen(port, '127.0.0.1', () => resolve(server.address().port))
+			);
 		},
 		close() {
+			// The app's keep-alive connections would hold close() open.
+			server.closeAllConnections();
 			return new Promise((resolve) => server.close(() => resolve()));
 		}
 	};
@@ -281,5 +306,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
 	}
 	const fake = createFakeLlm({ scenario: arg('scenario'), record, upstream });
 	const port = await fake.listen(Number(arg('port') ?? DEFAULT_PORT));
-	console.log(`fake-llm listening on http://127.0.0.1:${port}/v1${record ? ` (recording ${record})` : ''}`);
+	console.log(
+		`fake-llm listening on http://127.0.0.1:${port}/v1${record ? ` (recording ${record})` : ''}`
+	);
 }

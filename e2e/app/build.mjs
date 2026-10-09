@@ -44,7 +44,9 @@ function e2eConfig() {
 
 if (!process.argv.includes('--stubs')) {
 	run('npm', ['run', 'tauri', 'build', '--', '--debug', '--no-bundle', '--config', e2eConfig()], {
-		CARGO_TARGET_DIR: TARGET
+		CARGO_TARGET_DIR: TARGET,
+		// The frontend carries the hooks scripts/drive.mjs reads (src/hooks.client.ts).
+		VITE_HARUSPEX_E2E: '1'
 	});
 }
 if (!existsSync(appBinary()))

@@ -47,7 +47,8 @@
 
 <svelte:window onfocus={() => void session.checkFolder()} />
 
-<div class="pane">
+<!-- data-status: what scripts/drive.mjs waits on (idle, queued, running, waiting-shell). -->
+<div class="pane" data-session-id={session.id} data-status={session.status}>
 	<CodeSessionHeader {session} />
 	{#if session.folderMissing}
 		<FolderMissingBanner {session} {ondeleted} />

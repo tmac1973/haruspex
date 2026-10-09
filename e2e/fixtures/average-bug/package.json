@@ -1,0 +1,8 @@
+{
+	"name": "average-bug",
+	"private": true,
+	"description": "The project scripts/drive.mjs works in by default: index.js fails until stats.js is fixed.",
+	"scripts": {
+		"start": "node index.js"
+	}
+}

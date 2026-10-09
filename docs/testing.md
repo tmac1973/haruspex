@@ -3,12 +3,12 @@
 Haruspex has four layers of tests. The first runs on every pull request; the
 others are added by `plan/misc_futures/phase-14-automated-end-to-end-testing.md`.
 
-| Layer | What it drives | Command |
-| --- | --- | --- |
-| Unit and component | modules and Svelte components, in jsdom; Rust in `cargo test` | `npm run test`, `cargo test --lib` |
-| UI flows | the frontend in Chromium, with Tauri's IPC mocked and the model scripted | `npm run e2e:ui` |
-| Real app | the built app through WebDriver, IPC and Rust real, model and sidecars stubbed | `npm run e2e:app:build`, `npm run e2e:app` |
-| Live | the real app against real services, on the test machines | *(phase 14, part 3)* |
+| Layer              | What it drives                                                                 | Command                                    |
+| ------------------ | ------------------------------------------------------------------------------ | ------------------------------------------ |
+| Unit and component | modules and Svelte components, in jsdom; Rust in `cargo test`                  | `npm run test`, `cargo test --lib`         |
+| UI flows           | the frontend in Chromium, with Tauri's IPC mocked and the model scripted       | `npm run e2e:ui`                           |
+| Real app           | the built app through WebDriver, IPC and Rust real, model and sidecars stubbed | `npm run e2e:app:build`, `npm run e2e:app` |
+| Live               | the real app against real services, on the test machines                       | _(phase 14, part 3)_                       |
 
 ## The fake LLM
 
@@ -19,10 +19,11 @@ talks to `e2e/fake-llm/server.mjs` instead. It is an OpenAI-compatible server
 
 ```json
 [
-	{ "match": { "lastUser": "write the notes file" },
-	  "reply": { "tool_calls": [{ "name": "fs_write_text", "arguments": { "path": "notes.txt" } }] } },
-	{ "match": { "toolResult": "notes\\.txt" },
-	  "reply": { "content": "I wrote notes.txt." } }
+	{
+		"match": { "lastUser": "write the notes file" },
+		"reply": { "tool_calls": [{ "name": "fs_write_text", "arguments": { "path": "notes.txt" } }] }
+	},
+	{ "match": { "toolResult": "notes\\.txt" }, "reply": { "content": "I wrote notes.txt." } }
 ]
 ```
 
@@ -123,12 +124,12 @@ npm run e2e:app         # start tauri-driver and run e2e/app/specs/*.e2e.mjs
     `webkit2gtk-driver` package). With no display, run under `xvfb-run -a`.
   - **Windows:** `tauri-driver` too, and an `msedgedriver` that matches the
     installed WebView2. `cargo install --git
-    https://github.com/chippers/msedgedriver-tool` fetches one; point
+https://github.com/chippers/msedgedriver-tool` fetches one; point
     `MSEDGEDRIVER` at it.
   - **macOS** has no WebDriver for WKWebView, so this layer doesn't run
     there.
 - **On the test machines:** `scripts/ci-runner/remote-test.sh windows
-  e2e-app` runs it on the Windows PC, in your desktop session.
+e2e-app` runs it on the Windows PC, in your desktop session.
 - **Where it runs:**
   - **Linux:** CI's `e2e-app` job, on every PR.
   - **Windows:** the self-hosted test PC. On GitHub's hosted Windows
@@ -138,3 +139,80 @@ npm run e2e:app         # start tauri-driver and run e2e/app/specs/*.e2e.mjs
 
 **A new spec must be seen failing once.** Break what it asserts — rename the
 scripted answer, say — and check the failure says plainly what is wrong.
+
+## Driving the app with a real model
+
+`scripts/drive.mjs` runs the same e2e build through tauri-driver, but against
+a real OpenAI-compatible server (or the fake LLM), to reproduce and explore
+what an agent does in the Code tab. It is a tool for a developer (or an agent)
+to run by hand, not a test.
+
+```bash
+npm run e2e:app:build    # once, and after any frontend or Rust change
+```
+
+**One pass:** start, open one session, send each prompt once the last turn
+ends, save the results, stop.
+
+```bash
+npm run drive -- run --base-url http://compute:3000 \
+	--prompt "Fix the bug in the project and run it to check." \
+	[--prompt "a follow-up"] [--model ID] [--api-key-env NAME] [--folder PATH] \
+	[--timeout 600] [--verbose-payloads] [--no-auto-approve] [--show]
+```
+
+**Step by step:** `start` leaves the app running in a background process, and
+each other command is one short call to it, which prints JSON.
+
+```bash
+npm run drive -- start --base-url http://compute:3000    # or --fake code-tab
+npm run drive -- new-session [--folder PATH]             # prints the session id
+npm run drive -- send <id> "Fix the bug" --wait          # returns when the turn ends or needs someone
+npm run drive -- approval                                # the command waiting for approval
+npm run drive -- approve allow|allow-session|deny        # presses the modal's button
+npm run drive -- wait <id>                               # carry on waiting
+npm run drive -- steer <id> "also add a test"            # while a turn runs
+npm run drive -- cancel <id>                             # presses Stop
+npm run drive -- state [<id>] [--transcript]
+npm run drive -- logs --since 0                          # agent debug log; "next" is the next --since
+npm run drive -- screenshot | minimise | restore | status
+npm run drive -- stop                                    # saves the results, stops everything
+```
+
+- **Isolated as the specs are:** it wipes the e2e identifier's data first,
+  never starts a local model server, and uses tauri-driver ports of its own.
+  So only one driver runs per machine, and not alongside `npm run e2e:app`.
+- **The backend** is what Settings → Inference → Test connection would save:
+  the app's own probe of `--base-url`, with `--model` or the first model
+  `/v1/models` lists.
+- **`--fake SCENARIO`** points the app at `e2e/fake-llm` instead, and
+  `scenario NAME` switches scenario; `requests` shows what the app sent.
+  **`--record NAME`** puts the fake in front of `--base-url` and saves each
+  exchange to `e2e/fake-llm/scenarios/NAME.json`.
+- **The folder** defaults to a fresh temp copy of `e2e/fixtures/average-bug`
+  (`index.js` fails until the loop in `stats.js` is fixed). The copy is kept,
+  so you can look at what the model changed.
+- **Headless by default,** on a private X server (Xvfb, or TigerVNC's Xvnc with
+  no network port). `--show` opens the window on your desktop.
+- **Settings → Code → auto-approve** is on for `run`, so risky commands don't
+  wait for a click nobody will make, and off for `start`, so approvals can be
+  driven. `--auto-approve` / `--no-auto-approve` choose.
+- **`send --wait` and `wait` return early** with `"state": "approval"` or
+  `"waiting-shell"` when the turn needs a person, and with `"timeout"` (exit
+  code 3) after `--timeout` seconds; the turn keeps running.
+- **Everything a user presses is pressed in the UI:** messages are typed into
+  the session's input box, approvals and Stop are clicked.
+- **The control channel** is a Unix socket, `$XDG_RUNTIME_DIR/haruspex-drive.sock`,
+  never a TCP port. A started driver stops itself after `--idle-timeout`
+  minutes (default 60) with no commands and no turn running.
+- **Results** go to `e2e/drive-output/<timestamp>/` (gitignored):
+  `transcript-<id>.md` (messages, reasoning, tool calls and results, diffs)
+  and `session-<id>.json` for each session, `debug.log` (the agent debug log,
+  `src/lib/debug-log.ts`), `screenshot.png`, `tauri-driver.log`, and for
+  `start`, `driver.log`.
+- `node scripts/drive/selftest.mjs` drives the driver against the fake model;
+  CI runs it after the real-app specs.
+
+The page side is `src/lib/e2e/driveHooks.ts`, on `window.__haruspexDrive`.
+Only a build with `VITE_HARUSPEX_E2E=1`, which `e2e/app/build.mjs` sets,
+carries it; CI checks the production build has none of it.
