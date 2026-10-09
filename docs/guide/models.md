@@ -69,9 +69,9 @@ If you already run an OpenAI-compatible server (llama.cpp, LM Studio, Ollama, vL
 
 Enter the **Server URL** and an optional **API Key**, then press **Probe connection**. Haruspex finds the models and, where the server reports them, the context size and image support. Otherwise fill these in yourself. Turn on **Allow parallel inference** only if your server handles several requests at once.
 
-Switching to a remote server stops the local model and frees your VRAM. Switching back to **Local** starts it again.
+Switching to a remote server stops the local model to free VRAM; **Local** starts it again. Remote server and OpenRouter each keep their own address, key and model.
 
-The built-in model server answers only Haruspex: other programs and web pages can't use it. To share one model with other apps, run your own server and point Haruspex at it.
+The built-in model server answers only Haruspex. To share a model with other apps, run your own server and point Haruspex at it.
 
 ## OpenRouter (cloud)
 

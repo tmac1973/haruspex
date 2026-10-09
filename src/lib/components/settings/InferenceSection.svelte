@@ -31,6 +31,7 @@
 	import ModeSelector from '#lib/components/ModeSelector.svelte';
 	import OpenRouterForm from '#lib/components/settings/OpenRouterForm.svelte';
 	import ApiKeysSection from '#lib/components/settings/ApiKeysSection.svelte';
+	import { withRemoteOption } from '#lib/stores/remoteProfiles.ts';
 	import { OPENROUTER_BASE_URL } from '#lib/openrouter.ts';
 	import ModelsSection from '#lib/components/settings/ModelsSection.svelte';
 
@@ -230,12 +231,13 @@
 
 		if (mode === 'openrouter') {
 			// OpenRouter is a remote backend with a fixed URL + cloud kind.
+			// OpenRouter's own URL, key and model come back; the Remote
+			// option's are filed away until it is picked again.
 			const next: InferenceBackendConfig = {
-				...inferenceBackend,
+				...withRemoteOption(inferenceBackend, 'openrouter'),
 				mode: 'remote',
 				remoteBaseUrl: OPENROUTER_BASE_URL,
-				remoteBackendKind: 'openrouter',
-				allowParallelInference: true
+				remoteBackendKind: 'openrouter'
 			};
 			inferenceBackend = next;
 			updateInferenceBackend(next);
@@ -251,15 +253,14 @@
 			return;
 		}
 
-		// local or generic-remote: clear the OpenRouter kind so the generic
-		// remote form's probe-detection path takes over again.
+		// Local keeps the remote fields as they are. Generic Remote gets its
+		// own server, key and model back from before OpenRouter was picked.
 		const cleared: InferenceBackendConfig = {
-			...inferenceBackend,
-			mode,
-			...(mode === 'remote' ? { remoteBackendKind: null } : {})
+			...(mode === 'remote' ? withRemoteOption(inferenceBackend, 'generic') : inferenceBackend),
+			mode
 		};
 		inferenceBackend = cleared;
-		updateInferenceBackend({ mode, ...(mode === 'remote' ? { remoteBackendKind: null } : {}) });
+		updateInferenceBackend(cleared);
 		// Refresh the header context indicator immediately so it reflects
 		// the new backend's ceiling instead of the previous one's stale value.
 		setIndicatorContextSize(resolveBackendDescriptor().contextSize);
