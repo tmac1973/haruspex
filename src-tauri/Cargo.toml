@@ -129,6 +129,9 @@ keyring = { version = "3", default-features = false, features = ["apple-native",
 [target.'cfg(target_os = "linux")'.dependencies]
 ashpd = { version = "0.13", default-features = false, features = ["tokio", "screenshot"] }
 xcb = "1.7"
+# Already in the tree through wry; named here for WebViewExt::set_cors_allowlist
+# (image_cache::protocol::webview_plugin).
+webkit2gtk = { version = "2.0", features = ["v2_34"] }
 
 # macOS (CoreGraphics/objc2) and Windows (Win32 GDI) capture goes through xcap
 # rather than hand-written unsafe blocks for each. Deliberately not used on
