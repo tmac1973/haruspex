@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { isWatchNotification, watchNotificationCommands } from '#lib/shell/backgroundWatch.ts';
 	import AgentsMdBadge from './AgentsMdBadge.svelte';
 	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
@@ -15,6 +16,7 @@
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import { imageFileToDataUrl, imageFilesFrom } from '#lib/utils/image.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
+	import { codeTabAvailable } from '#lib/stores/activeTab.svelte.ts';
 	import SlashMenu from '#lib/components/SlashMenu.svelte';
 	import { runSlash, type SlashHost } from '#lib/slash/slash.ts';
 	import { InputHistory, placeCaret, sentHistory } from '#lib/inputHistory.ts';
@@ -126,7 +128,6 @@
 	}
 	const lastError = $derived(session.lastError);
 	const contextNotice = $derived(session.contextNotice);
-	const restoredNotice = $derived(session.restoredNotice);
 	const searchSteps = $derived(session.searchSteps);
 	const messageSteps = $derived(session.messageSteps);
 	const messageStats = $derived(session.messageStats);
@@ -134,7 +135,7 @@
 	const messageHistorySent = $derived(session.messageHistorySent);
 	const markerCount = $derived(session.integrationMarkerCount);
 	const completedCommands = $derived(session.integrationCompletedCommands);
-	const codeMode = $derived(session.codeMode);
+	const fullAccess = $derived(session.fullAccess);
 	const agentsMd = $derived(session.agentsMd);
 	const thinkingEnabled = $derived(session.thinkingEnabled);
 	// Three-state badge:
@@ -163,13 +164,8 @@
 	// Refresh the status so the badge tracks captures as the user runs
 	// commands. 2 s is enough to feel live without thrashing the Tauri IPC.
 	//
-	// Runs even while the sidebar is COLLAPSED. This component stays mounted
-	// either way (only its <aside> is gated on `open`), and the same poll is
-	// what notices the shell entering a directory with a saved Code-mode
-	// thread. Skipping it while collapsed meant cd-ing into a project did
-	// nothing until the user happened to expand the sidebar, which then opened
-	// empty and only filled in seconds later — the restore is supposed to be
-	// what opens the sidebar, so it has to be able to run before that.
+	// Runs even while the sidebar is collapsed (this component stays mounted;
+	// only its <aside> is gated on `open`), so the badge is current on open.
 	$effect(() => {
 		const id = setInterval(() => void session.refreshIntegrationStatus(), 2000);
 		return () => clearInterval(id);
@@ -249,10 +245,19 @@
 
 	const slashHost: SlashHost = {
 		projectRoot: () => session.slashProjectRoot(),
-		codeMode: () => session.codeMode,
+		codeMode: () => session.fullAccess,
 		newConversation: () => session.newChat(),
 		addNote: (text) => session.addLocalNote(text)
 	};
+
+	/** "Open in Code": a Code session in this shell's folder, in the Code tab. */
+	async function openInCode() {
+		try {
+			await session.openInCode();
+		} catch (e) {
+			showToast(`Couldn't open a Code session: ${errMessage(e)}`, { kind: 'error' });
+		}
+	}
 
 	/** Single send path (button, Enter, voice) — folds in attached images. */
 	async function doSend(text: string) {
@@ -376,7 +381,7 @@
 	const history = new InputHistory(() =>
 		sentHistory(
 			session.messages
-				.filter((m) => m.role === 'user')
+				.filter((m) => m.role === 'user' && !isWatchNotification(messageText(m.content)))
 				.map((m) => typedText(userMessageView(m).question))
 		)
 	);
@@ -454,15 +459,34 @@
 					<AgentsMdBadge {agentsMd} root={session.projectRoot} onIgnore={session.ignoreProject} />
 				{/if}
 				<button
-					class="toggle"
-					class:active={codeMode}
-					onclick={session.toggleCodeMode}
+					class="toggle access"
+					class:active={fullAccess}
+					aria-pressed={fullAccess}
+					onclick={session.toggleFullAccess}
 					disabled={submitting}
-					title={codeMode
-						? 'Code mode ON — coding tools; the agent runs commands in this terminal'
-						: 'Code mode OFF — shell troubleshooting assistant'}
+					title={fullAccess
+						? 'Full access: the assistant runs commands in this terminal and edits files. Click to make it read-only.'
+						: 'Read-only: the assistant reads files and suggests commands. Click to let it run commands in this terminal and edit files.'}
 				>
-					Code
+					<svg
+						class="lock"
+						viewBox="0 0 16 16"
+						width="12"
+						height="12"
+						aria-hidden="true"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.6"
+						stroke-linecap="round"
+					>
+						<rect x="3" y="7" width="10" height="7.5" rx="1.5" />
+						{#if fullAccess}
+							<path d="M5.5 7V4.8a2.5 2.5 0 0 1 4.9-.7" />
+						{:else}
+							<path d="M5.5 7V4.8a2.5 2.5 0 0 1 5 0V7" />
+						{/if}
+					</svg>
+					{fullAccess ? 'Full access' : 'Read-only'}
 				</button>
 				<button
 					class="toggle"
@@ -476,30 +500,17 @@
 					Think
 				</button>
 				<button onclick={session.newChat} disabled={submitting} title="Clear chat">New chat</button>
+				{#if codeTabAvailable()}
+					<button
+						onclick={() => void openInCode()}
+						title="Start a Code session in this shell's current folder. This chat stays here."
+					>
+						Open in Code
+					</button>
+				{/if}
 				<button onclick={session.toggleSidebar} title="Collapse">›</button>
 			</div>
 		</header>
-		{#if restoredNotice}
-			<!-- OUTSIDE .thread on purpose. The thread pins itself to the bottom
-			     whenever messages.length changes, and a restore takes that 0 -> N,
-			     so anything at the top of the scroll area is immediately scrolled
-			     out of sight. This notice is about the session, not a turn, so it
-			     belongs in the panel chrome where it stays visible. -->
-			<div class="restored-notice">
-				<span class="restored-badge">Restored</span>
-				<span class="restored-text">
-					{restoredNotice.turns}
-					{restoredNotice.turns === 1 ? 'turn' : 'turns'} from your last coding session in
-					<code>{restoredNotice.cwd}</code>
-				</span>
-				<span class="restored-actions">
-					<button type="button" onclick={() => session.dismissRestoredNotice()}>Keep</button>
-					<button type="button" class="danger" onclick={() => session.startFreshCodeThread()}>
-						Start fresh
-					</button>
-				</span>
-			</div>
-		{/if}
 		<div class="thread" bind:this={threadEl}>
 			{#if messages.length === 0 && !streamingMessage}
 				<div class="placeholder">
@@ -522,6 +533,16 @@
 						     as system messages, so they're shown rather than hidden —
 						     but as a note, not as a "Haruspex" answer bubble. -->
 						<div class="thread-note">{messageText(msg.content)}</div>
+					{:else if msg.role === 'user' && isWatchNotification(messageText(msg.content))}
+						{@const commands = watchNotificationCommands(messageText(msg.content))}
+						<details class="thread-note bg-notice">
+							<summary
+								>Background command finished{commands.length === 1
+									? `: ${commands[0]}`
+									: ` (${commands.length})`}</summary
+							>
+							<pre>{messageText(msg.content)}</pre>
+						</details>
 					{:else if msg.role === 'user'}
 						{@const split = userMessageView(msg)}
 						{#if messageHistorySent[i]?.length}
@@ -629,7 +650,7 @@
 				bind:this={slashMenu}
 				text={composerText}
 				projectRoot={slashHost.projectRoot}
-				{codeMode}
+				codeMode={fullAccess}
 				onPick={(t) => {
 					composerText = t;
 					composerEl?.focus();
@@ -717,6 +738,16 @@
 {/if}
 
 <style>
+	.bg-notice summary {
+		cursor: pointer;
+	}
+
+	.bg-notice pre {
+		margin: 6px 0 0;
+		white-space: pre-wrap;
+		font-size: 0.78rem;
+	}
+
 	.sidebar {
 		position: relative;
 		display: flex;
@@ -750,6 +781,7 @@
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
+		gap: 8px;
 		padding: 6px 10px;
 		border-bottom: 1px solid var(--border);
 	}
@@ -762,6 +794,8 @@
 
 	.actions {
 		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
 		gap: 6px;
 		align-items: center;
 	}
@@ -773,6 +807,7 @@
 		border-radius: 999px;
 		border: 1px solid var(--border);
 		cursor: help;
+		white-space: nowrap;
 	}
 
 	.integration-badge.good {
@@ -802,6 +837,7 @@
 		font-size: 0.75rem;
 		border-radius: 4px;
 		cursor: pointer;
+		white-space: nowrap;
 	}
 
 	.actions button:hover:not(:disabled) {
@@ -811,6 +847,16 @@
 	.actions button:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	.actions button.access {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.lock {
+		flex-shrink: 0;
 	}
 
 	.actions button.toggle.active {
@@ -846,84 +892,6 @@
 		color: var(--text-secondary);
 		font-style: italic;
 		padding: 6px 4px;
-	}
-
-	.restored-notice {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 8px;
-		/* Panel chrome, not a thread item: sits between the header and the
-		   scroll area, and must not shrink away under a long thread. */
-		flex: 0 0 auto;
-		padding: 8px 10px;
-		border-bottom: 1px solid var(--border);
-		border-left: 3px solid var(--accent);
-		/* Accent-tinted rather than the plain panel background: this is the one
-		   moment the user has to notice something happened to their thread, and
-		   in --text-secondary grey on --bg-secondary it read as boilerplate. */
-		background: var(--accent-soft);
-		font-size: 0.78rem;
-		color: var(--text-primary);
-	}
-
-	/* Filled, so --accent-contrast per the accent rule for filled controls. */
-	.restored-badge {
-		flex-shrink: 0;
-		background: var(--accent);
-		color: var(--accent-contrast);
-		border-radius: 3px;
-		padding: 1px 6px;
-		font-size: 0.7rem;
-		font-weight: 600;
-		letter-spacing: 0.02em;
-		text-transform: uppercase;
-	}
-
-	.restored-text {
-		flex: 1 1 auto;
-		min-width: 0;
-	}
-
-	.restored-notice code {
-		font-size: 0.74rem;
-		color: var(--accent);
-		word-break: break-all;
-	}
-
-	.restored-actions {
-		display: flex;
-		gap: 6px;
-		flex-shrink: 0;
-	}
-
-	.restored-actions button {
-		background: none;
-		border: 1px solid var(--accent);
-		border-radius: 4px;
-		color: var(--accent);
-		cursor: pointer;
-		font-size: 0.74rem;
-		font-weight: 500;
-		padding: 2px 8px;
-		white-space: nowrap;
-	}
-
-	.restored-actions button:hover {
-		background: var(--accent);
-		color: var(--accent-contrast);
-	}
-
-	/* Discards the thread, so it doesn't borrow the accent's "do this" pull. */
-	.restored-actions button.danger {
-		border-color: var(--border);
-		color: var(--text-secondary);
-	}
-
-	.restored-actions button.danger:hover {
-		background: var(--error-bg);
-		border-color: var(--error-text);
-		color: var(--error-text);
 	}
 
 	.thread-note {

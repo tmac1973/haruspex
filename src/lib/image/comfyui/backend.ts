@@ -277,7 +277,8 @@ export const comfyUiBackend: ImageBackend = {
 			(p) => opts.onProgress?.(p),
 			() => {
 				socketAlive = false;
-			}
+			},
+			(id) => graph[id]?.class_type
 		);
 
 		let promptId: string | null = null;

@@ -2,13 +2,16 @@
 	/**
 	 * The input box. Idle, Enter starts a turn; while the agent works, Enter
 	 * queues the text as a steering message for its next step. Steering a
-	 * stopped turn never delivered comes back into the box.
+	 * stopped turn never delivered comes back into the box, and so does a
+	 * message stopped while it waited in the queue. When the session's folder
+	 * is gone the box is disabled and says why.
 	 */
-	import { tick, untrack } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import MicButton from '#lib/components/MicButton.svelte';
 	import SlashMenu from '#lib/components/SlashMenu.svelte';
 	import { messageText } from '#lib/api.ts';
 	import { InputHistory, placeCaret, sentHistory } from '#lib/inputHistory.ts';
+	import { isWatchNotification } from '#lib/shell/backgroundWatch.ts';
 	import { runSlash, type SlashHost } from '#lib/slash/slash.ts';
 	import { typedText } from '#lib/skills/content.ts';
 	import type { CodeSession } from '#lib/stores/code.svelte.ts';
@@ -27,15 +30,39 @@
 	let dragOver = $state(false);
 
 	const busy = $derived(session.busy);
+	/** Why nothing can be sent, or null. */
+	const blocked = $derived(session.folderMissing ? `Folder not found: ${session.root}` : null);
 
-	// A turn that ended with steering it never delivered hands it back.
+	// Unsent input moves with the session to another window.
+	onMount(() => session.setDraftReader(() => ({ text, images: images.map((i) => i.url) })));
+
+	// A turn that ended with steering it never delivered hands it back, as
+	// does one stopped before it started (with its images).
 	$effect(() => {
-		if (session.returnedSteering.length === 0) return;
+		if (session.returnedSteering.length === 0 && session.returnedImages.length === 0) return;
 		untrack(() => {
 			const back = session.takeReturnedSteering();
 			text = [...back, text].filter((t) => t.trim()).join('\n\n');
+			const imgs = session.takeReturnedImages();
+			if (imgs.length) images = [...imgs.map((url) => ({ id: imgSeq++, url })), ...images];
 		});
 		void tick().then(autosize);
+	});
+
+	// A fork opens with its input box focused, holding the forked message.
+	$effect(() => {
+		if (!session.prefill) return;
+		untrack(() => {
+			const p = session.takePrefill();
+			if (!p) return;
+			if (p.text) text = p.text;
+			if (p.images.length) images = p.images.map((url) => ({ id: imgSeq++, url }));
+		});
+		void tick().then(() => {
+			autosize();
+			el?.focus();
+			if (el) placeCaret(el, 'end');
+		});
 	});
 
 	function autosize() {
@@ -45,6 +72,7 @@
 	}
 
 	async function send(raw: string) {
+		if (blocked) return;
 		const urls = images.map((i) => i.url);
 		if (!raw.trim() && urls.length === 0) return;
 		if (busy) {
@@ -74,7 +102,7 @@
 	const history = new InputHistory(() =>
 		sentHistory(
 			session.messages
-				.filter((m) => m.role === 'user')
+				.filter((m) => m.role === 'user' && !isWatchNotification(messageText(m.content)))
 				.map((m) => typedText(messageText(m.content)))
 		)
 	);
@@ -145,7 +173,7 @@
 			{/each}
 		</div>
 	{/if}
-	{#if !busy}
+	{#if !busy && !blocked}
 		<SlashMenu
 			bind:this={slashMenu}
 			{text}
@@ -165,19 +193,25 @@
 		onpaste={onPaste}
 		rows="1"
 		aria-label="Message"
-		placeholder={busy
-			? 'Steer the agent… (Enter queues it for its next step)'
-			: 'Ask for a change… (Enter to send, / for commands)'}
+		disabled={!!blocked && !busy}
+		title={blocked ?? undefined}
+		placeholder={blocked && !busy
+			? blocked
+			: busy
+				? 'Steer the agent… (Enter queues it for its next step)'
+				: 'Ask for a change… (Enter to send, / for commands)'}
 	></textarea>
-	<MicButton onTranscription={(t) => send(t)} />
+	{#if !blocked}
+		<MicButton onTranscription={(t) => send(t)} />
+	{/if}
 	{#if busy}
 		<button class="stop" onclick={session.stop} title="Stop (Esc)">Stop</button>
 	{:else}
 		<button
 			class="send"
 			onclick={() => send(text)}
-			disabled={!text.trim() && images.length === 0}
-			title="Send (Enter)">Send</button
+			disabled={!!blocked || (!text.trim() && images.length === 0)}
+			title={blocked ?? 'Send (Enter)'}>Send</button
 		>
 	{/if}
 </footer>
@@ -253,6 +287,11 @@
 		background: var(--bg-input);
 		color: var(--text-primary);
 		outline: none;
+	}
+
+	textarea:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
 	}
 
 	textarea:focus {

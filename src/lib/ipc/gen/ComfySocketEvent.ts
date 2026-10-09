@@ -3,4 +3,4 @@
 /**
  * One message from the progress socket, or the socket's end.
  */
-export type ComfySocketEvent = { "kind": "message", type: string, value: number | null, max: number | null, } | { "kind": "closed" };
+export type ComfySocketEvent = { "kind": "message", type: string, value: number | null, max: number | null, node: string | null, } | { "kind": "closed" };

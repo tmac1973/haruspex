@@ -11,7 +11,10 @@ import {
 	saveCodeSession,
 	updateCodeSessionMeta,
 	deleteCodeSession,
-	forkCodeSession
+	forkCodeSession,
+	decodeAgentBranch,
+	folderExists,
+	setCodeSessionRoot
 } from '#lib/code/db.ts';
 
 const backend = { baseUrl: 'https://api.example.com', modelId: 'm' };
@@ -78,14 +81,47 @@ describe('code session wrappers', () => {
 		expect(mocks.invoke).toHaveBeenLastCalledWith('code_session_save', {
 			id: 's1',
 			thread: '{"v":1}',
-			title: null
+			title: null,
+			noticesSeenAt: null,
+			agentBranch: null
 		});
 		await saveCodeSession('s1', '{"v":1}', 'Named');
-		expect(mocks.invoke).toHaveBeenLastCalledWith('code_session_save', {
+		expect(mocks.invoke).toHaveBeenLastCalledWith(
+			'code_session_save',
+			expect.objectContaining({ title: 'Named' })
+		);
+	});
+
+	it('saves what the agent was told, keeping "never told" apart from "no branch"', async () => {
+		mocks.invoke.mockResolvedValue(undefined);
+		const sent = async (agentBranch: string | null | undefined) => {
+			await saveCodeSession('s1', '{}', undefined, { noticesSeenAt: 42, agentBranch });
+			return mocks.invoke.mock.calls.at(-1)![1];
+		};
+		expect(await sent('main')).toMatchObject({ noticesSeenAt: 42, agentBranch: 'main' });
+		expect(await sent(null)).toMatchObject({ agentBranch: '' });
+		expect(await sent(undefined)).toMatchObject({ agentBranch: null });
+		expect(decodeAgentBranch('main')).toBe('main');
+		expect(decodeAgentBranch('')).toBeNull();
+		expect(decodeAgentBranch(null)).toBeUndefined();
+	});
+
+	it('points a session at another folder, and checks a folder is there', async () => {
+		mocks.invoke.mockResolvedValueOnce(row({ root: '/new' }));
+		const moved = await setCodeSessionRoot('s1', '/new');
+		expect(mocks.invoke).toHaveBeenLastCalledWith('code_session_set_root', {
 			id: 's1',
-			thread: '{"v":1}',
-			title: 'Named'
+			root: '/new'
 		});
+		expect(moved.root).toBe('/new');
+		mocks.invoke.mockResolvedValueOnce(false);
+		expect(await folderExists('/gone')).toBe(false);
+		expect(mocks.invoke).toHaveBeenLastCalledWith('code_folder_exists', { path: '/gone' });
+		mocks.invoke.mockResolvedValueOnce(true);
+		expect(await folderExists('/here')).toBe(true);
+		// A failed check is no reason to lock the session.
+		mocks.invoke.mockRejectedValueOnce(new Error('ipc'));
+		expect(await folderExists('/x')).toBe(true);
 	});
 
 	it('sends only the meta fields given, keeping null distinct from absent', async () => {
@@ -113,8 +149,12 @@ describe('code session wrappers', () => {
 		expect(mocks.invoke).toHaveBeenLastCalledWith('code_session_delete', { id: 's1' });
 
 		mocks.invoke.mockResolvedValueOnce(row({ id: 's2', forked_from: 's1', forked_at: 3 }));
-		const fork = await forkCodeSession('s1', 3);
-		expect(mocks.invoke).toHaveBeenLastCalledWith('code_session_fork', { id: 's1', at: 3 });
+		const fork = await forkCodeSession('s1', 3, 'worktree');
+		expect(mocks.invoke).toHaveBeenLastCalledWith('code_session_fork', {
+			id: 's1',
+			at: 3,
+			mode: 'worktree'
+		});
 		expect(fork.forked_from).toBe('s1');
 	});
 

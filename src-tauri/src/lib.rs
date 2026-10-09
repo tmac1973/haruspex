@@ -69,6 +69,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(image_cache::protocol::webview_plugin())
         // Custom scheme backing the Python sandbox's synchronous HTTP
         // (requests / urllib via pyodide-http's XMLHttpRequest transport).
         // The worker rewrites cross-origin XHRs onto this scheme; the
@@ -201,15 +202,25 @@ pub fn run() {
                 if let Some(watches) = window.try_state::<fs_tools::editor::EditorWatches>() {
                     watches.unwatch_label(window.label());
                 }
+                // And the Code sessions it had open are free to open elsewhere.
+                if let Some(claims) = window.try_state::<code_tools::claims::CodeSessionClaims>() {
+                    claims.release_window(window.label());
+                    code_tools::claims::emit_changed(window.app_handle());
+                }
+                // And any folder it was writing in.
+                if let Some(folders) = window.try_state::<code_tools::folders::CodeFolders>() {
+                    folders.release_window(window.label());
+                }
                 // The rest is for the main window only: a detached shell or an
                 // editor window closing is not the app quitting.
                 if window.label() != "main" {
                     return;
                 }
-                // Editor windows go with the main window. `close` (not
-                // `destroy`) so a window with unsaved edits asks first.
+                // Editor and detached Code windows go with the main window.
+                // `close` (not `destroy`) so a window with unsaved edits, or a
+                // Code session with background processes running, asks first.
                 for (label, w) in window.app_handle().webview_windows() {
-                    if label.starts_with("editor-") {
+                    if label.starts_with("editor-") || label.starts_with("code-") {
                         let _ = w.close();
                     }
                 }
@@ -243,6 +254,8 @@ pub fn run() {
         .manage(WhisperServer::new())
         .manage(TtsEngine::new())
         .manage(ShellManager::new())
+        .manage(code_tools::claims::CodeSessionClaims::default())
+        .manage(code_tools::folders::CodeFolders::default())
         // Holds off OS idle-sleep while a job run is in flight. Idle until
         // the runner asks; see power.rs.
         .manage(PowerInhibitor::new())
@@ -358,9 +371,6 @@ pub fn run() {
             db::db_rename_conversation,
             db::db_delete_conversation,
             db::db_clear_all_conversations,
-            db::db_save_shell_session,
-            db::db_load_shell_session,
-            db::db_delete_shell_session,
             db::code_session_list,
             db::code_session_create,
             db::code_session_load,
@@ -368,6 +378,7 @@ pub fn run() {
             db::code_session_update_meta,
             db::code_session_delete,
             db::code_session_fork,
+            db::code_session_set_root,
             db::db_replace_messages,
             db::db_create_job,
             db::db_list_jobs,
@@ -440,6 +451,19 @@ pub fn run() {
             code_tools::background::code_bg_tail,
             code_tools::background::code_bg_stop,
             code_tools::background::code_bg_stop_owner,
+            code_tools::claims::code_session_claim,
+            code_tools::claims::code_session_release,
+            code_tools::claims::code_session_open_ids,
+            code_tools::folders::code_lease_take,
+            code_tools::folders::code_lease_release,
+            code_tools::folders::code_notice_record,
+            code_tools::folders::code_notices_take,
+            code_tools::folders::code_folder_exists,
+            code_tools::git::code_git_status,
+            code_tools::git::code_git_branches,
+            code_tools::git::code_git_switch,
+            code_tools::git::code_git_create_branch,
+            code_tools::git::code_git_worktree_remove,
             skills::skills_list,
             skills::skill_read,
             skills::skill_read_file,

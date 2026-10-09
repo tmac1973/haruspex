@@ -76,4 +76,4 @@ Typing `/` at the start of the Chat, Shell or Code input box opens a list of com
 |---|---|
 | Esc | Close the logs, the image viewer or the shortcuts list |
 
-Some dialogs ignore Esc on purpose. **Run this command?** (Code mode approval) and other approval windows wait for you to pick a button, so a stray key never answers for you.
+Some dialogs ignore Esc on purpose. **Run this command?** (command approval) and other approval windows wait for you to pick a button, so a stray key never answers for you.

@@ -191,6 +191,34 @@ export interface InferenceBackendConfig {
 	 * no request path consults it. Remove a release after the migration ships.
 	 */
 	openrouterReasoningEffort: string | null;
+	/**
+	 * The generic Remote and the OpenRouter options share the `remote*` fields
+	 * above, which hold whichever was used last. Switching between them stores
+	 * the outgoing one here and restores the incoming one, so each keeps its own
+	 * server, key and model. See `stores/remoteProfiles.ts`.
+	 */
+	remoteProfiles: RemoteProfiles;
+}
+
+/** The `remote*` fields that belong to one remote option rather than to both. */
+export type RemoteProfile = Pick<
+	InferenceBackendConfig,
+	| 'remoteBaseUrl'
+	| 'remoteApiKey'
+	| 'remoteApiKeyId'
+	| 'remoteModelId'
+	| 'remoteContextSize'
+	| 'remoteVisionSupported'
+	| 'remoteBackendKind'
+	| 'remoteSampling'
+	| 'remoteReasoning'
+	| 'remoteParallel'
+	| 'allowParallelInference'
+>;
+
+export interface RemoteProfiles {
+	generic?: RemoteProfile;
+	openrouter?: RemoteProfile;
 }
 
 /**
@@ -597,14 +625,13 @@ export interface AppSettings {
 	 */
 	shellSidebarWidth: number;
 	/**
-	 * Whether newly opened Shell sessions start in Code mode. Off by
-	 * default — new shells open as the read-only troubleshooting assistant,
-	 * and the user flips Code mode on per-session from the sidebar header.
-	 * When on, every new shell starts already in Code mode (editing +
-	 * command execution enabled). Only affects shells opened after the
-	 * change; existing sessions keep their current mode.
+	 * Whether newly opened Shell sessions start with Full access (the
+	 * assistant runs commands in the terminal and edits files). Off by
+	 * default — new shells open Read-only, and the user flips the lock
+	 * per session in the sidebar header. Only affects shells opened after
+	 * the change. Was `shellCodeModeDefault`; `load()` carries it over.
 	 */
-	shellCodeModeDefault: boolean;
+	shellFullAccessDefault: boolean;
 	/**
 	 * Cross-chat memory: extract stable facts from conversations and recall
 	 * them in later ones. On by default for new installs: the setup wizard
@@ -725,7 +752,8 @@ const defaultInferenceBackend: InferenceBackendConfig = {
 	openrouterCatalogAt: null,
 	openrouterKeyStatus: null,
 	openrouterKeyStatusAt: null,
-	openrouterReasoningEffort: null
+	openrouterReasoningEffort: null,
+	remoteProfiles: {}
 };
 
 const defaultIntegrations: IntegrationsConfig = {
@@ -843,7 +871,7 @@ const defaults: AppSettings = {
 	shellIncludeHistoryFile: true,
 	shellMaxBytesPerCapture: 8192,
 	shellSidebarWidth: 480,
-	shellCodeModeDefault: false,
+	shellFullAccessDefault: false,
 	codeAutoApprove: false,
 	codeRunCommandTimeoutSecs: 30,
 	codeCommandExec: 'auto',
@@ -971,9 +999,18 @@ function load(): AppSettings {
 				!fileWriteDefaulted && storedFileWrite === LEGACY_MAX_RESPONSE_TOKENS_FILE_WRITE
 					? defaults.maxResponseTokensFileWrite
 					: (storedFileWrite ?? defaults.maxResponseTokensFileWrite);
+			// The Shell's Code mode became Full access, and its default was
+			// renamed with it; an install that had turned it on keeps it on.
+			const { shellCodeModeDefault, ...rest } = parsed;
+			const shellFullAccessDefault: boolean =
+				rest.shellFullAccessDefault ??
+				(typeof shellCodeModeDefault === 'boolean'
+					? shellCodeModeDefault
+					: defaults.shellFullAccessDefault);
 			return {
 				...defaults,
-				...parsed,
+				...rest,
+				shellFullAccessDefault,
 				reasoningEffort,
 				reasoningEffortDefaulted: true,
 				maxResponseTokensFileWrite,
@@ -1052,6 +1089,16 @@ export function snapshot<T>(value: T): T {
 function commit(next: AppSettings): void {
 	settings = snapshot(next);
 	save(settings);
+	notifySettingsChanged();
+}
+
+/**
+ * Read the settings again from storage. For a second window (a detached Code
+ * window): each window loads them once, and without this one that later
+ * wrote a setting would put back everything the main window changed since.
+ */
+export function reloadSettingsFromStorage(): void {
+	settings = load();
 	notifySettingsChanged();
 }
 

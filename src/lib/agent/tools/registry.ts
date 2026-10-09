@@ -15,7 +15,13 @@ import { isMcpToolEnabled } from './mcp-names';
 // The predicate, not the tool module: memoryWrite.ts registers THROUGH this
 // file, so importing it here would be a cycle.
 import { memoryActive } from '#lib/stores/memory.svelte.ts';
-import { CODE_TAB_ONLY, CODE_TAB_DESCRIPTIONS, type DescriptionOverride } from './codeTabProfile';
+import {
+	CODE_TAB_ONLY,
+	CODE_TAB_DESCRIPTIONS,
+	READ_ONLY_REFUSAL,
+	isCodeWriteTool,
+	type DescriptionOverride
+} from './codeTabProfile';
 import { shellPlatformSupported } from '#lib/shell/platformSupport.ts';
 
 const tools = new Map<string, ToolRegistration>();
@@ -50,6 +56,8 @@ interface ToolFilterOpts {
 	visionSupported: boolean;
 	shellMode: boolean;
 	codeMode: boolean;
+	/** A read-only Code session: no tool that writes into the project. */
+	codeReadOnly: boolean;
 	hasEmail: boolean;
 	sandboxEnabled: boolean;
 	/** Memory is on AND its embedding model is present — see memoryActive(). */
@@ -134,6 +142,7 @@ function shouldIncludeCodeTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	// Vision-dependent tools (e.g. shell_snapshot) are useless without a model
 	// that can see images.
 	if (reg.requiresVision && !opts.visionSupported) return false;
+	if (opts.codeReadOnly && isCodeWriteTool(name)) return false;
 	if (CODE_TOOLS.has(name)) return true;
 	// ask_user_question. Code mode is where "ask me one question at a time"
 	// is most often said; without this the model asked in chat text instead.
@@ -227,6 +236,8 @@ export function getToolSchemas(opts: {
 	visionSupported?: boolean;
 	shellMode?: boolean;
 	codeMode?: boolean;
+	/** A read-only Code session: the write and edit tools are left out. */
+	codeReadOnly?: boolean;
 	/** A live user is present. Gates tools that only make sense for one. */
 	interactive?: boolean;
 	/**
@@ -271,6 +282,7 @@ export function getToolSchemas(opts: {
 		visionSupported: opts.visionSupported ?? true,
 		shellMode: opts.shellMode ?? false,
 		codeMode: opts.codeMode ?? false,
+		codeReadOnly: opts.codeReadOnly ?? false,
 		hasEmail: hasEnabledEmailAccount(),
 		hasCalendar: hasEnabledCalendarAccount(),
 		hasContacts: hasEnabledContactsAccount(),
@@ -302,7 +314,7 @@ function schemaFor(
 	// asking. Remote guests get it through their allowlist.
 	if (reg.category === 'guide') return filter.interactive ? reg.schema : null;
 	if (reg.category === 'skills-write') {
-		if (!skills.hasSkills || !filter.interactive) return null;
+		if (!skills.hasSkills || !filter.interactive || filter.codeReadOnly) return null;
 		// The repo's AGENTS.md is a Code mode file, like the repo itself.
 		if (reg.schema.function.name === 'write_agents_md') {
 			return filter.codeMode ? reg.schema : null;
@@ -490,10 +502,43 @@ export async function executeTool(
 		return toolResult(toolError('No working directory set'));
 	}
 
+	// A read-only Code session never writes, offered the tool or not.
+	if (ctx.codeReadOnly && (isCodeWriteTool(name) || reg.category === 'skills-write')) {
+		return toolResult(toolError(READ_ONLY_REFUSAL));
+	}
+
 	// Absorb sloppy-but-unambiguous arg shapes (stringified JSON, "5" for
 	// an integer, ...) before the executor's own validation runs — see
 	// coerce.ts. Saves a whole model round-trip per avoided error.
-	return reg.execute(coerceArgsToSchema(reg.schema.function.parameters, args), ctx);
+	const coerced = coerceArgsToSchema(reg.schema.function.parameters, args);
+
+	// One writer per folder: a Code session's write takes the folder first,
+	// and reports what it changed to the sessions sharing it.
+	const guard = ctx.codeWriteGuard && isCodeWriteTool(name) ? ctx.codeWriteGuard : null;
+	if (!guard) return reg.execute(coerced, ctx);
+	const refusal = await guard.acquire();
+	if (refusal) return toolResult(toolError(refusal));
+	const before = new Set(ctx.filesWrittenThisTurn);
+	const out = await reg.execute(coerced, ctx);
+	guard.changed(changedFiles(name, coerced, out, before, ctx.filesWrittenThisTurn));
+	return out;
+}
+
+/**
+ * The files a successful write or edit changed: what an fs_write_* added to
+ * the turn's written set, or an edit's path when it reports "Edited".
+ */
+function changedFiles(
+	name: string,
+	args: Record<string, unknown>,
+	out: ToolExecOutput,
+	before: Set<string>,
+	after: Set<string>
+): string[] {
+	if (name === 'fs_edit_text') {
+		return out.result.startsWith('Edited ') && typeof args.path === 'string' ? [args.path] : [];
+	}
+	return [...after].filter((p) => !before.has(p));
 }
 
 /**

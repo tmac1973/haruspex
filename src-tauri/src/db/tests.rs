@@ -2104,57 +2104,32 @@ fn a_lookup_miss_yields_nothing_to_rehydrate_from() {
         .is_none());
 }
 
-// --- Code-mode shell sessions --------------------------------------------
+// --- The old Shell Code-mode table ----------------------------------------
 
 #[test]
-fn shell_session_round_trips_and_upserts_by_cwd() {
+fn the_old_shell_code_sessions_table_is_dropped() {
     let db = test_db();
-    assert_eq!(db.load_shell_code_session("/work").unwrap(), None);
-
-    db.save_shell_code_session("/work", "{\"v\":1}").unwrap();
-    assert_eq!(
-        db.load_shell_code_session("/work").unwrap(),
-        Some("{\"v\":1}".to_string())
-    );
-
-    // A second save for the same directory replaces the thread rather than
-    // inserting a second row — one coding session per directory.
-    db.save_shell_code_session("/work", "{\"v\":2}").unwrap();
-    assert_eq!(
-        db.load_shell_code_session("/work").unwrap(),
-        Some("{\"v\":2}".to_string())
-    );
-    let conn = db.conn.lock().unwrap();
-    let rows: i64 = conn
-        .query_row("SELECT count(*) FROM shell_code_sessions", [], |r| r.get(0))
+    {
+        // A database from before: the table, with a saved thread in it.
+        let conn = db.conn.lock().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE shell_code_sessions (
+                cwd TEXT PRIMARY KEY, thread TEXT NOT NULL, updated_at INTEGER NOT NULL
+            );
+            INSERT INTO shell_code_sessions VALUES ('/work', '{}', 1);",
+        )
         .unwrap();
-    assert_eq!(rows, 1);
-}
-
-#[test]
-fn shell_sessions_are_isolated_per_directory() {
-    let db = test_db();
-    db.save_shell_code_session("/a", "thread-a").unwrap();
-    db.save_shell_code_session("/b", "thread-b").unwrap();
-    assert_eq!(
-        db.load_shell_code_session("/a").unwrap(),
-        Some("thread-a".to_string())
-    );
-    assert_eq!(
-        db.load_shell_code_session("/b").unwrap(),
-        Some("thread-b".to_string())
-    );
-}
-
-#[test]
-fn deleting_a_shell_session_leaves_no_restorable_row() {
-    let db = test_db();
-    db.save_shell_code_session("/work", "thread").unwrap();
-    db.delete_shell_code_session("/work").unwrap();
-    // Deleted, not blanked: an empty row would read back as restorable.
-    assert_eq!(db.load_shell_code_session("/work").unwrap(), None);
-    // Deleting again is not an error.
-    db.delete_shell_code_session("/work").unwrap();
+    }
+    db.migrate().unwrap();
+    let conn = db.conn.lock().unwrap();
+    let tables: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE name = 'shell_code_sessions'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(tables, 0);
 }
 
 #[test]
@@ -2528,6 +2503,34 @@ fn code_session_fork_cuts_messages_and_sidecars_at_the_fork_point() {
 }
 
 #[test]
+fn code_session_forks_are_read_only_in_place_or_writable_in_a_worktree() {
+    let db = test_db();
+    let dir = TempDir::new("fork-kinds");
+    let wt = TempDir::new("fork-kinds-wt");
+    let src = db.create_code_session(dir.path(), None, None).unwrap();
+    assert!(!src.read_only);
+    assert_eq!(src.worktree, None);
+
+    let ro = db.fork_code_session(&src.id, 0).unwrap();
+    assert!(ro.read_only);
+    assert_eq!(ro.root, src.root);
+    assert_eq!(ro.worktree, None);
+
+    let w = db
+        .fork_code_session_into(&src.id, 0, Some((wt.path(), wt.path())))
+        .unwrap();
+    assert!(!w.read_only);
+    assert_eq!(w.root, wt.path());
+    assert_eq!(w.worktree.as_deref(), Some(wt.path()));
+    assert_eq!(db.load_code_session(&w.id).unwrap(), w);
+
+    let list = db.list_code_sessions().unwrap();
+    let row = |id: &str| list.iter().find(|s| s.id == id).unwrap().clone();
+    assert!(row(&ro.id).read_only);
+    assert_eq!(row(&w.id).worktree.as_deref(), Some(wt.path()));
+}
+
+#[test]
 fn code_session_fork_rejects_a_point_past_the_end_and_a_missing_source() {
     let db = test_db();
     let dir = TempDir::new("fork-end");
@@ -2583,4 +2586,104 @@ fn fork_thread_rejects_another_version_and_malformed_threads() {
             "accepted {bad}"
         );
     }
+}
+
+// --- Code sessions: what the agent was told, and a new folder ---------------
+
+#[test]
+fn code_session_remembers_what_its_agent_was_told() {
+    let db = test_db();
+    let dir = TempDir::new("seen");
+    let s = db.create_code_session(dir.path(), None, None).unwrap();
+    assert_eq!(s.notices_seen_at, None);
+    assert_eq!(s.agent_branch, None);
+
+    db.set_code_session_seen(&s.id, Some(1234), Some("main"))
+        .unwrap();
+    let row = db.load_code_session(&s.id).unwrap();
+    assert_eq!(row.notices_seen_at, Some(1234));
+    assert_eq!(row.agent_branch.as_deref(), Some("main"));
+
+    // Absent leaves a column alone; '' is "told there is no branch".
+    db.set_code_session_seen(&s.id, None, Some("")).unwrap();
+    let row = db.load_code_session(&s.id).unwrap();
+    assert_eq!(row.notices_seen_at, Some(1234));
+    assert_eq!(row.agent_branch.as_deref(), Some(""));
+
+    // A fork starts afresh.
+    let fork = db.fork_code_session(&s.id, 0).unwrap();
+    assert_eq!(fork.notices_seen_at, None);
+    assert_eq!(fork.agent_branch, None);
+}
+
+#[test]
+fn code_session_seen_marks_fall_back_to_the_last_saved_turn() {
+    let db = test_db();
+    let dir = TempDir::new("marks");
+    let s = db.create_code_session(dir.path(), None, None).unwrap();
+    let mark = |db: &Database| db.code_session_seen_marks().unwrap()[0].seen;
+    assert_eq!(mark(&db), s.updated_at);
+    db.set_code_session_seen(&s.id, Some(7), None).unwrap();
+    assert_eq!(mark(&db), 7);
+}
+
+#[test]
+fn code_session_root_can_be_pointed_at_another_folder() {
+    let db = test_db();
+    let gone = TempDir::new("root-gone");
+    let next = TempDir::new("root-next");
+    let s = db.create_code_session(gone.path(), None, None).unwrap();
+    let w = db
+        .fork_code_session_into(&s.id, 0, Some((gone.path(), gone.path())))
+        .unwrap();
+
+    let moved = db.set_code_session_root(&s.id, next.path()).unwrap();
+    assert_eq!(moved.root, next.path());
+    assert_eq!(moved.updated_at, s.updated_at);
+    assert_eq!(db.load_code_session(&s.id).unwrap(), moved);
+
+    // A worktree session moved out of its worktree forgets it.
+    let moved = db.set_code_session_root(&w.id, next.path()).unwrap();
+    assert_eq!(moved.worktree, None);
+
+    // Only an existing folder, and only an existing session.
+    let missing = format!("{}/nope", next.path());
+    assert!(db.set_code_session_root(&s.id, &missing).is_err());
+    let file = format!("{}/f.txt", next.path());
+    std::fs::write(&file, "x").unwrap();
+    assert!(db.set_code_session_root(&s.id, &file).is_err());
+    assert!(db.set_code_session_root("missing", next.path()).is_err());
+}
+
+#[test]
+fn an_older_code_sessions_table_gains_the_seen_columns_and_the_notice_table() {
+    let conn = Connection::open_in_memory().unwrap();
+    // As phase 1 left it: no read_only, worktree, or seen columns.
+    conn.execute_batch(
+        "CREATE TABLE code_sessions (
+            id TEXT PRIMARY KEY, title TEXT NOT NULL, root TEXT NOT NULL,
+            backend TEXT, reasoning_effort TEXT, thread TEXT NOT NULL,
+            forked_from TEXT, forked_at INTEGER,
+            created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+        );
+        INSERT INTO code_sessions VALUES ('old', 't', '/r', NULL, NULL, '{}', NULL, NULL, 1, 5);",
+    )
+    .unwrap();
+    let db = Database {
+        conn: Arc::new(Mutex::new(conn)),
+    };
+    db.migrate().unwrap();
+    // Twice: the migration is idempotent.
+    db.migrate().unwrap();
+    let row = db.load_code_session("old").unwrap();
+    assert_eq!(row.notices_seen_at, None);
+    assert_eq!(row.agent_branch, None);
+    assert_eq!(db.code_session_seen_marks().unwrap()[0].seen, 5);
+    db.insert_code_notice("/r", "other", "T", &["/r/a".to_string()], 9)
+        .unwrap();
+    let stored = db.code_notices().unwrap();
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0].files, vec!["/r/a".to_string()]);
+    db.delete_code_notices(&[stored[0].id]).unwrap();
+    assert!(db.code_notices().unwrap().is_empty());
 }

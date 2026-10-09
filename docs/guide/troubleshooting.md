@@ -15,7 +15,7 @@ Small local models (Qwen 3.5 4B and 9B) often do only the first part of a two-pa
 
 ## Coding features make mistakes or get stuck
 
-Code mode, guided planning, autonomous coding, audit jobs and the Python sandbox need a bigger model. On the 4B and 9B models they often produce code that does not run. They become usable from 16 GB of VRAM, or with a bigger model on another server or OpenRouter. See the `models` page.
+The Code tab, the Shell's Full access, guided planning, autonomous coding, audit jobs and the Python sandbox need a bigger model. On the 4B and 9B models they often produce code that does not run. They become usable from 16 GB of VRAM, or with a bigger model on another server or OpenRouter. See the `models` page.
 
 If a long coding task stops and is told to "wrap up", raise Settings → Shell → Max steps per task (default 40).
 
@@ -30,9 +30,9 @@ You can also ask for a smaller piece of work, or lower Settings → Agent → Re
 
 ## It ran a command without asking me
 
-The Shell assistant is read-only by default and runs nothing. With **Code mode** on, it runs commands in your real terminal. Commands it flags as risky (sudo, destructive deletes, piping a download into a shell and similar) stop and ask you first. Commands it thinks are safe run without asking. The check helps, but it is not a guarantee.
+The Shell assistant is read-only by default and runs nothing. With **Full access**, it runs commands in your real terminal. Commands it flags as risky (sudo, destructive deletes, piping a download into a shell and similar) stop and ask you first. Commands it thinks are safe run without asking. The check helps, but it is not a guarantee.
 
-If even risky commands ran without a prompt, check Settings → Shell → Auto-approve commands. It is off by default; turn it off again to get the prompts back. Also check Settings → Shell → Enable Code mode by default in new shells if Code mode was on when you did not expect it. See the `shell` page.
+If even risky commands ran without a prompt, check Settings → Code → Auto-approve commands. It is off by default; turn it off again to get the prompts back. Also check Settings → Shell → Start new shells with Full access if a tab had Full access when you did not expect it. See the `shell` page.
 
 ## A command was stopped for using too much memory
 

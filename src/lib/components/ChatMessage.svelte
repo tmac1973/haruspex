@@ -11,6 +11,7 @@
 	import { messageText, type ChatMessage, type MessageContentPart } from '#lib/api.ts';
 	import { typedText } from '#lib/skills/content.ts';
 	import type { CodePathLinker } from '#lib/code/paths.ts';
+	import BranchGlyph from '#lib/components/code/BranchGlyph.svelte';
 
 	interface Props {
 		message: ChatMessage;
@@ -30,6 +31,10 @@
 		steps?: SearchStep[];
 		/** File references to link, in the Code transcript only (see `renderMarkdown`). */
 		codePaths?: CodePathLinker;
+		/** "Fork from here" (the Code transcript). Shown on user and assistant messages. */
+		onFork?: () => void;
+		/** Why forking is not possible right now; the button is inert and says so. */
+		forkBlocked?: string | null;
 	}
 
 	let {
@@ -38,7 +43,9 @@
 		tokensPerSecond,
 		elapsedMs,
 		steps,
-		codePaths
+		codePaths,
+		onFork,
+		forkBlocked = null
 	}: Props = $props();
 
 	let elapsedLabel = $derived(
@@ -102,7 +109,27 @@
 	);
 
 	const copy = createCopyAction();
+
+	function fork() {
+		if (!forkBlocked) onFork?.();
+	}
 </script>
+
+{#snippet forkButton()}
+	<button
+		class="icon-btn fork"
+		class:blocked={!!forkBlocked}
+		aria-disabled={!!forkBlocked}
+		title={forkBlocked ??
+			(message.role === 'user'
+				? 'Fork from here: a new session with everything before this message, and this message in its input box'
+				: 'Fork from here: a new session with everything up to this answer')}
+		aria-label="Fork from here"
+		onclick={fork}
+	>
+		<BranchGlyph />
+	</button>
+{/snippet}
 
 <div class="message" data-role={message.role}>
 	<div class="message-label">
@@ -149,6 +176,13 @@
 			<button class="icon-btn" title="Copy to clipboard" onclick={() => copy.copy(textContent)}>
 				{copy.state === 'copied' ? '\u2705' : '\u{1F4CB}'}
 			</button>
+			{#if onFork}
+				{@render forkButton()}
+			{/if}
+		</div>
+	{:else if message.role === 'user' && onFork}
+		<div class="message-footer user-footer">
+			{@render forkButton()}
 		</div>
 	{/if}
 </div>
@@ -366,6 +400,28 @@
 
 	.icon-btn:hover {
 		background: var(--bg-secondary);
+	}
+
+	.fork {
+		display: inline-flex;
+		align-items: center;
+	}
+
+	.fork.blocked {
+		opacity: 0.45;
+		cursor: default;
+	}
+
+	/* A user message has nothing else down there; keep it out of the way. */
+	.user-footer {
+		padding-top: 0;
+		opacity: 0;
+		transition: opacity 0.1s;
+	}
+
+	.message:hover .user-footer,
+	.user-footer:focus-within {
+		opacity: 1;
 	}
 
 	.tok-rate,

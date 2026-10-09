@@ -69,9 +69,9 @@ If you already run an OpenAI-compatible server (llama.cpp, LM Studio, Ollama, vL
 
 Enter the **Server URL** and an optional **API Key**, then press **Probe connection**. Haruspex finds the models and, where the server reports them, the context size and image support. Otherwise fill these in yourself. Turn on **Allow parallel inference** only if your server handles several requests at once.
 
-Switching to a remote server stops the local model and frees your VRAM. Switching back to **Local** starts it again.
+Switching to a remote server stops the local model to free VRAM; **Local** starts it again. Remote server and OpenRouter each keep their own address, key and model.
 
-The built-in model server answers only Haruspex: other programs and web pages can't use it. To share one model with other apps, run your own server and point Haruspex at it.
+The built-in model server answers only Haruspex. To share a model with other apps, run your own server and point Haruspex at it.
 
 ## OpenRouter (cloud)
 
@@ -85,4 +85,4 @@ Each job can use its own model or server, so a heavy job can go to a big remote 
 
 ## Features that need a bigger model
 
-Code mode, guided planning, autonomous coding, audit jobs and the Python sandbox ask the model to write code. The 4B and 9B models are good at research but weak at coding, so these features often fail on them. They become usable at 16 GB and work well at 24 GB, or on a bigger remote model. See the `troubleshooting` page for small-model limits.
+The Code tab, the Shell's Full access, guided planning, autonomous coding, audit jobs and the Python sandbox ask the model to write code. The 4B and 9B models are weak at coding, so these often fail on them. They become usable at 16 GB and work well at 24 GB, or on a bigger remote model. See the `troubleshooting` page for small-model limits.

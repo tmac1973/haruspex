@@ -28,6 +28,23 @@ const REATTACH_EVENT = 'shell://reattach';
 interface ReattachPayload {
 	ptyId: number;
 	name?: string;
+	/** The assistant's mode in the window handing it back. */
+	fullAccess?: boolean;
+}
+
+/**
+ * The detached-shell route for a PTY. The assistant's mode goes along in the
+ * query, so a Full-access shell stays Full access in its own window.
+ */
+export function detachedShellUrl(ptyId: number, fullAccess: boolean): string {
+	return `/shell/${ptyId}${fullAccess ? '?access=full' : ''}`;
+}
+
+/** The mode a detached-shell URL carries (see `detachedShellUrl`). */
+export function fullAccessFromUrl(url: {
+	searchParams: { get(name: string): string | null };
+}): boolean {
+	return url.searchParams.get('access') === 'full';
 }
 
 /**
@@ -46,7 +63,7 @@ export async function openDetachedShell(session: ShellSession): Promise<void> {
 	// window and the user has to resize on every detach.
 	const sidebarWidth = Math.round(getSettings().shellSidebarWidth);
 	const w = new WebviewWindow(`shell-${ptyId}`, {
-		url: `/shell/${ptyId}`,
+		url: detachedShellUrl(ptyId, session.fullAccess),
 		title: session.name,
 		width: DETACHED_TERMINAL_TARGET + sidebarWidth,
 		height: 700
@@ -65,10 +82,11 @@ export async function handBackToMain(
 	ptyId: number,
 	chatJson: string,
 	name: string,
-	scrollback: string
+	scrollback: string,
+	fullAccess: boolean
 ): Promise<void> {
 	await stashHandoff(ptyId, chatJson, scrollback);
-	await emit(REATTACH_EVENT, { ptyId, name } satisfies ReattachPayload);
+	await emit(REATTACH_EVENT, { ptyId, name, fullAccess } satisfies ReattachPayload);
 }
 
 /** Stash the chat thread + serialized terminal grid for the adopting window. */
@@ -87,6 +105,7 @@ async function stashHandoff(ptyId: number, chatJson: string, scrollback: string)
  */
 export function listenForReattach(): Promise<UnlistenFn> {
 	return listen<ReattachPayload>(REATTACH_EVENT, (event) => {
-		reattachShellSession(event.payload.ptyId, event.payload.name);
+		const { ptyId, name, fullAccess } = event.payload;
+		reattachShellSession(ptyId, name, fullAccess ?? null);
 	});
 }

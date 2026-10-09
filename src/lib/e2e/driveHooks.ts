@@ -16,7 +16,10 @@ import { editDiffFromStep, type FileDiff } from '#lib/code/diff.ts';
 import { getDebugLogs, setVerbosePayloads } from '#lib/debug-log.ts';
 import { pickProbedModel, probedModelCaps, type ProbeResult } from '#lib/inferenceProbe.ts';
 import { getOpenSessions, setActiveSession } from '#lib/stores/code.svelte.ts';
-import { getPendingCommandApproval } from '#lib/stores/codeCommandApproval.svelte.ts';
+import {
+	getPendingCommandApproval,
+	getQueuedCommandApprovals
+} from '#lib/stores/codeCommandApproval.svelte.ts';
 import {
 	updateSettings,
 	type AppSettings,
@@ -29,8 +32,16 @@ export interface DriveHooks {
 	codeSessions: () => unknown[];
 	/** Show this session's pane, so its input box and Stop button exist. */
 	activateSession: (id: string) => void;
-	/** The command waiting for Run this command?, if any. One at a time, app-wide. */
-	pendingApproval: () => { command: string; reasons: string[] } | null;
+	/**
+	 * The command Run this command? is showing, if any: one at a time,
+	 * app-wide, with `queued` more waiting behind it.
+	 */
+	pendingApproval: () => {
+		command: string;
+		reasons: string[];
+		requester: string | null;
+		queued: number;
+	} | null;
 	updateSettings: (patch: Partial<AppSettings>) => void;
 	probeRemote: (
 		baseUrl: string,
@@ -123,7 +134,13 @@ export function installDriveHooks(): void {
 		activateSession: setActiveSession,
 		pendingApproval: () => {
 			const p = getPendingCommandApproval();
-			return p ? { command: p.command, reasons: p.reasons.map((r) => r.label) } : null;
+			if (!p) return null;
+			return {
+				command: p.command,
+				reasons: p.reasons.map((r) => r.label),
+				requester: p.requester,
+				queued: getQueuedCommandApprovals()
+			};
 		},
 		updateSettings,
 		probeRemote

@@ -1,7 +1,7 @@
 <script lang="ts">
 	/**
 	 * Settings → Code: how the coding agent runs commands, in the Code tab and
-	 * in the Shell's Code mode. The keys predate the Code tab and kept their
+	 * in the Shell's Full access. The keys predate the Code tab and kept their
 	 * names when they moved here from Settings → Shell.
 	 */
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';

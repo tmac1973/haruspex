@@ -97,12 +97,14 @@ impl std::fmt::Display for ComfyError {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ComfySocketEvent {
     /// A text frame. `type` is ComfyUI's message type; `value` and `max` are
-    /// present on `progress`.
+    /// present on `progress`, `node` on `executing` (the graph node now
+    /// running, so the webview can tell a model loading from a model drawing).
     Message {
         #[serde(rename = "type")]
         kind: String,
         value: Option<f64>,
         max: Option<f64>,
+        node: Option<String>,
     },
     /// The socket failed or the server closed it.
     Closed,
@@ -332,6 +334,10 @@ fn socket_event(text: &str) -> Option<ComfySocketEvent> {
     Some(ComfySocketEvent::Message {
         value: num("value"),
         max: num("max"),
+        node: data
+            .and_then(|d| d.get("node"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
         kind,
     })
 }
@@ -591,11 +597,22 @@ mod tests {
     #[test]
     fn socket_frames_keep_type_and_progress() {
         match socket_event(r#"{"type":"progress","data":{"value":3,"max":12}}"#) {
-            Some(ComfySocketEvent::Message { kind, value, max }) => {
+            Some(ComfySocketEvent::Message {
+                kind,
+                value,
+                max,
+                node,
+            }) => {
                 assert_eq!(
-                    (kind.as_str(), value, max),
-                    ("progress", Some(3.0), Some(12.0))
+                    (kind.as_str(), value, max, node),
+                    ("progress", Some(3.0), Some(12.0), None)
                 );
+            }
+            other => panic!("{other:?}"),
+        }
+        match socket_event(r#"{"type":"executing","data":{"node":"4","prompt_id":"p"}}"#) {
+            Some(ComfySocketEvent::Message { kind, node, .. }) => {
+                assert_eq!((kind.as_str(), node.as_deref()), ("executing", Some("4")));
             }
             other => panic!("{other:?}"),
         }

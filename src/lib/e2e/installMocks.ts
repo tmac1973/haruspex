@@ -30,6 +30,20 @@ declare global {
 }
 
 const none: Handler = () => null;
+
+/** The machine the mock terminal says it runs on. */
+const SHELL_CONTEXT = {
+	os: 'linux',
+	kernel: '6.0',
+	distroId: null,
+	distroName: null,
+	distroVersion: null,
+	shellPath: '/bin/bash',
+	shellName: 'bash',
+	shellVersion: null,
+	home: '/home/e2e',
+	hostname: null
+};
 let messageId = 0;
 const empty: Handler = () => [];
 
@@ -129,27 +143,23 @@ const TABLE: Record<string, Handler> = {
 	...CODE_DB,
 
 	// A terminal that spawns, draws one marked prompt, and takes writes: enough
-	// for the Code tab's Open in Shell to paste into a new Shell tab.
+	// for the Code tab's Open in Shell to paste into a new Shell tab, and for
+	// the Shell's Open in Code to read its folder.
 	shell_list_shells: empty,
-	shell_spawn: () => ({
-		session_id: 1,
-		context: {
-			os: 'linux',
-			kernel: '6.0',
-			distroId: null,
-			distroName: null,
-			distroVersion: null,
-			shellPath: '/bin/bash',
-			shellName: 'bash',
-			shellVersion: null,
-			home: '/home/e2e',
-			hostname: null
-		}
-	}),
+	shell_spawn: () => ({ session_id: 1, context: SHELL_CONTEXT }),
+	// The assistant reads these each turn, and a detached shell window takes
+	// over a PTY with its stashed chat and scrollback.
+	shell_get_recent_history: empty,
+	shell_pending_command: () => null,
+	shell_take_chat: () => null,
+	shell_take_scrollback: () => null,
+	shell_get_scrollback: () => '',
+	shell_get_recent_commands: empty,
 	shell_mark_ready: none,
 	shell_resize: none,
 	shell_write: none,
 	shell_get_context: () => ({
+		context: SHELL_CONTEXT,
 		current_cwd: '/e2e/project',
 		marker_count: 2,
 		completed_commands: 0,

@@ -87,6 +87,13 @@ export interface ToolContext {
 	deepResearch: boolean;
 	filesWrittenThisTurn: Set<string>;
 	/**
+	 * Files written this turn that a command has run since (a Code session's
+	 * `run_command`). A second full write to one of them is a rewrite after a
+	 * test, not a chunked write losing its start, so a Code session allows it.
+	 * Absent outside the agent loop, where nothing is rewritable.
+	 */
+	filesRewritableThisTurn?: Set<string>;
+	/**
 	 * True when the agent is invoked from the Shell tab. fs_read_* tools
 	 * dispatch to absolute-path Rust commands and the workingDir
 	 * requirement is waived. Defaults to false everywhere else.
@@ -183,6 +190,23 @@ export interface ToolContext {
 	 */
 	codeSessionId?: string;
 	/**
+	 * Who is asking, named in an approval prompt so the user can tell two
+	 * sessions' prompts apart: a Code session's title, a Shell tab's name.
+	 * Read when the prompt opens, since a new session is named mid-turn.
+	 */
+	requester?: () => string;
+	/**
+	 * The Code session may read, not write: no file writes or edits, every
+	 * `run_command` asks, and nothing runs in the background.
+	 */
+	codeReadOnly?: boolean;
+	/**
+	 * One writer per folder, for a Code session (`#lib/code/folders.ts`).
+	 * Writes and edits, and commands that may change files, take the folder
+	 * first; successful writes and edits report the files they changed.
+	 */
+	codeWriteGuard?: CodeWriteGuard;
+	/**
 	 * Optional progress channel for long-running tools. The agent loop
 	 * wires this to the currently-running tool card so a tool can surface
 	 * transient status (e.g. run_python reporting "Installing plotly…"
@@ -190,6 +214,17 @@ export interface ToolContext {
 	 * finishes. No-op if the caller doesn't provide it.
 	 */
 	onProgress?: (status: string) => void;
+}
+
+/** A Code session's turn sharing its folder with other sessions. */
+export interface CodeWriteGuard {
+	/**
+	 * Take the folder for writing. Null when this session has it (it keeps
+	 * it until the turn ends); otherwise the refusal to give the model.
+	 */
+	acquire(): Promise<string | null>;
+	/** Files a write or edit changed, relative to the folder or absolute. */
+	changed(paths: string[]): void;
 }
 
 /**
@@ -241,4 +276,14 @@ export function fetchResult(s: string, heroImage?: string): ToolExecOutput {
 /** Format a tool error as the JSON string the model expects. */
 export function toolError(msg: string): string {
 	return JSON.stringify({ error: msg });
+}
+
+/**
+ * A command ran: in a Code session, every file written so far this turn may
+ * now be written whole again (`ToolContext.filesRewritableThisTurn`) — the
+ * agent tested it and is fixing it, not writing it in pieces.
+ */
+export function noteCommandRan(ctx: ToolContext): void {
+	if (!ctx.codeSessionId || !ctx.filesRewritableThisTurn) return;
+	for (const path of ctx.filesWrittenThisTurn) ctx.filesRewritableThisTurn.add(path);
 }

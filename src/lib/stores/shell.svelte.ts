@@ -5,8 +5,9 @@
  * which one is active.
  *
  * Everything here is intentionally session-scoped — closing the app drops the
- * chat threads. The PTYs die on app close anyway, so persisting a chat without
- * its shell context would mislead.
+ * chat threads, in both modes. The PTYs die on app close anyway, so persisting
+ * a chat without its shell context would mislead. A coding session worth
+ * keeping belongs in the Code tab ("Open in Code").
  *
  * The active terminal session (id + captured context + selection accessor) is
  * registered via `session.bindSession` when the Terminal component mounts.
@@ -23,7 +24,6 @@ import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
 import { agentsMdPromptSection } from '#lib/skills/agentsMd.ts';
 import type { AgentsMd } from '#lib/ipc/gen/AgentsMd.ts';
 import { invoke } from '@tauri-apps/api/core';
-import { SvelteSet } from 'svelte/reactivity';
 import { isPtyBusy } from '#lib/stores/shellPtyBusy.svelte.ts';
 
 import { mergeLeadingSystemMessages, type ChatMessage } from '#lib/api.ts';
@@ -39,7 +39,6 @@ import { remapIndexedRecords } from '#lib/agent/compaction.ts';
 import { computeMessageStats, type MessageStats } from '#lib/stores/chat.svelte.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { buildShellSystemPrompt, type ShellSessionContext } from '#lib/shell/system-prompt.ts';
-import { buildShellCodeSystemPrompt } from '#lib/code/system-prompt.ts';
 import { classifyNestedSession, type NestedSession } from '#lib/shell/nestedSession.ts';
 import {
 	resetSessionApproval,
@@ -48,13 +47,6 @@ import {
 import { runShellTurn } from '#lib/shell/runShellTurn.ts';
 import { truncateCapturedOutput } from '#lib/shell/truncate.ts';
 import {
-	encodeCodeSession,
-	decodeCodeSession,
-	countTurns,
-	type CodeSessionState
-} from '#lib/shell/codeSession.ts';
-import { dbSaveShellSession, dbLoadShellSession, dbDeleteShellSession } from '#lib/stores/db.ts';
-import {
 	setWatchCompletionHandler,
 	peekCompletedWatches,
 	consumeWatches,
@@ -62,6 +54,7 @@ import {
 	buildWatchNotification
 } from '#lib/shell/backgroundWatch.ts';
 import { registerShellCommandOpener } from '#lib/code/shellBridge.ts';
+import { openCodeAt } from '#lib/code/bridge.ts';
 import { openForCommand } from '#lib/shell/openForCommand.ts';
 import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
 
@@ -197,40 +190,16 @@ export class ShellSession {
 	projectRoot = $state<string | null>(null);
 	integrationMarkerCount = $state(0);
 	integrationCompletedCommands = $state(0);
-	// Code mode: swaps the assistant to the coding toolset + prompt and drives
-	// run_command in the live PTY. Per-session toggle in the sidebar header,
-	// seeded from the "default new shells to Code mode" setting.
-	codeMode = $state(getSettings().shellCodeModeDefault);
+	/**
+	 * Full access: the assistant can run commands in this terminal and edit
+	 * files (the code toolset, with the shell prompt plus a short addendum).
+	 * Off is Read-only: it reads and suggests. Per-session toggle in the
+	 * sidebar header, seeded from Settings → Shell's default.
+	 */
+	fullAccess = $state(getSettings().shellFullAccessDefault);
 	// Per-session reasoning override (the sidebar Think toggle), seeded from
 	// the global Reasoning setting at construction.
 	thinkingEnabled = $state(getSettings().thinkingEnabled);
-	/**
-	 * Set when this session's thread came back from a previous run, so the
-	 * sidebar can say so and offer "Start fresh". Cleared once dismissed —
-	 * the notice is about the restore, not a permanent property of the thread.
-	 */
-	restoredNotice = $state<{ turns: number; cwd: string } | null>(null);
-
-	/**
-	 * Directory this Code-mode thread persists under, pinned when the thread
-	 * starts (first turn, or a restore) rather than re-read per turn. Following
-	 * the live cwd would write the same thread under every directory the user
-	 * `cd`s through, and each of those would then look like its own restorable
-	 * session. Null = nothing persisted yet. Cleared by `newChat`.
-	 */
-	private persistCwd: string | null = null;
-
-	/**
-	 * Directories already considered for auto-restore this session — whether a
-	 * thread was found, or the user cleared one with `newChat`. Two jobs:
-	 * it keeps the cwd poll from re-querying the database every 2s, and it
-	 * stops a cleared thread from being restored right back on the next tick.
-	 * A directory is offered once per app run; after that the user's actions win.
-	 */
-	// SvelteSet only to satisfy svelte/prefer-svelte-reactivity — this is
-	// private bookkeeping that nothing renders, so the reactivity is unused.
-	private restoreCheckedCwds = new SvelteSet<string>();
-
 	private abortController: AbortController | null = null;
 	private activeSession: ActiveShellSession | null = null;
 	private composerFocusFn: (() => void) | null = null;
@@ -255,10 +224,18 @@ export class ShellSession {
 	// a new command's own start clamps it on the Rust side).
 	private lastPendingOutputEnd = 0;
 
-	constructor(id: string, name: string, attachPtyId: number | null = null) {
+	constructor(
+		id: string,
+		name: string,
+		attachPtyId: number | null = null,
+		fullAccess: boolean | null = null
+	) {
 		this.id = id;
 		this.name = name;
 		this.attachPtyId = attachPtyId;
+		// A shell moved between windows keeps its mode rather than taking the
+		// default again.
+		if (fullAccess !== null) this.fullAccess = fullAccess;
 	}
 
 	/** Snapshot the chat thread for cross-window handoff (detach/re-attach). */
@@ -303,8 +280,8 @@ export class ShellSession {
 	/**
 	 * Should the terminal swallow the user's keystrokes right now?
 	 *
-	 * True only in the narrow window where typing is purely destructive: Code
-	 * mode, a turn in flight, and the agent NOT currently running a command.
+	 * True only in the narrow window where typing is purely destructive: Full
+	 * access, a turn in flight, and the agent NOT currently running a command.
 	 * In that window the shell is sitting at a prompt, so anything typed either
 	 * moves the ground under the agent's next command (a `cd` retargets it) or
 	 * concatenates onto it — `pty-exec` injects `<command>\n` as a paste, so a
@@ -316,11 +293,11 @@ export class ShellSession {
 	 * to answer a sudo password, a [y/N] or a git credential prompt. Blocking
 	 * there would deadlock the very commands most likely to need a human.
 	 *
-	 * Also false outside Code mode, where the agent never drives the PTY and
-	 * there is nothing to conflict with.
+	 * Also false in Read-only, where the agent never drives the PTY and there
+	 * is nothing to conflict with.
 	 */
 	get terminalInputBlocked(): boolean {
-		return this.codeMode && this.isSubmitting && !isPtyBusy(this.boundSessionId);
+		return this.fullAccess && this.isSubmitting && !isPtyBusy(this.boundSessionId);
 	}
 
 	/** Snapshot the live terminal grid for cross-window scrollback handoff. */
@@ -336,15 +313,23 @@ export class ShellSession {
 		this.sidebarOpen = !this.sidebarOpen;
 	};
 
-	toggleCodeMode = (): void => {
-		this.codeMode = !this.codeMode;
-		// Leaving Code mode (or re-entering) clears any "allow all this session"
-		// command approval so the guard re-arms.
+	toggleFullAccess = (): void => {
+		this.fullAccess = !this.fullAccess;
+		// Either way, clear any "allow all this session" command approval so
+		// the guard re-arms.
 		resetSessionApproval(SHELL_APPROVAL_KEY);
-		// Switching Code mode ON is the other moment a stored thread becomes
-		// relevant: the shell may have been bound long before, in plain mode.
-		// Same single path as everywhere else; it no-ops on a non-empty thread.
-		if (this.codeMode) void this.refreshIntegrationStatus();
+	};
+
+	/**
+	 * "Open in Code": a Code session rooted at the folder the terminal is in
+	 * right now, shown in the Code tab. The thread here doesn't go with it.
+	 * Rejects when the shell hasn't reported a folder, or no session opens.
+	 */
+	openInCode = async (): Promise<void> => {
+		const live = await this.fetchLiveContext();
+		const cwd = live?.currentCwd;
+		if (!cwd) throw new Error("The shell hasn't reported its folder yet.");
+		await openCodeAt(cwd);
 	};
 
 	/**
@@ -381,10 +366,6 @@ export class ShellSession {
 			});
 			this.integrationMarkerCount = res.marker_count;
 			this.integrationCompletedCommands = res.completed_commands;
-			// Free ride: this response already carries the cwd, so following the
-			// user into a project directory costs no extra IPC. `maybeRestoreForCwd`
-			// hits the database at most once per directory.
-			void this.maybeRestoreForCwd(res.current_cwd);
 		} catch {
 			this.integrationMarkerCount = 0;
 			this.integrationCompletedCommands = 0;
@@ -397,9 +378,6 @@ export class ShellSession {
 		// the new PTY (zero markers after a restart, etc.).
 		this.integrationMarkerCount = 0;
 		this.integrationCompletedCommands = 0;
-		// Also performs the first cwd check for auto-restore — the status poll
-		// and the restore lookup read the same `shell_get_context` response, so
-		// there is deliberately only one path that fetches it.
 		void this.refreshIntegrationStatus();
 	};
 
@@ -444,114 +422,6 @@ export class ShellSession {
 		return this.composerFocused;
 	};
 
-	/**
-	 * Snapshot for `codeSession`'s encoder. The index-keyed sidecars travel
-	 * with the messages because they are keyed by position in THIS array —
-	 * restoring messages without them would leave every tok/s footer and tool
-	 * disclosure attached to the wrong turn.
-	 */
-	private codeSessionState = (): CodeSessionState => ({
-		messages: this.messages,
-		messageSteps: this.messageSteps,
-		messageStats: this.messageStats,
-		messageStops: this.messageStops,
-		messageHistorySent: this.messageHistorySent
-	});
-
-	/**
-	 * Write the Code-mode thread for this session. Called after each committed
-	 * turn — the failure this exists for is a power cut, so waiting for a clean
-	 * shutdown would defeat the point. Fire-and-forget: a failed write must
-	 * never fail the turn that triggered it.
-	 */
-	private persistCodeThread = (cwd: string | null): void => {
-		if (!this.codeMode) return;
-		// Pin on first use so the whole thread lives under one key even if the
-		// user cds mid-session.
-		this.persistCwd ??= cwd;
-		if (!this.persistCwd || this.messages.length === 0) return;
-		void dbSaveShellSession(this.persistCwd, encodeCodeSession(this.codeSessionState()));
-	};
-
-	/**
-	 * Bring back the Code-mode thread saved for `cwd`, if there is one.
-	 *
-	 * Only ever fills an EMPTY thread: restoring over live messages would
-	 * silently rewrite a conversation the user is in the middle of. That guard
-	 * is also what makes this safe to call from several places (terminal bind,
-	 * toggling Code mode on) without them having to coordinate.
-	 */
-	restoreCodeThread = async (cwd: string | null): Promise<void> => {
-		if (!this.codeMode || !cwd || this.messages.length > 0 || this.isSubmitting) return;
-		const restored = decodeCodeSession(await dbLoadShellSession(cwd));
-		// Re-check after the await: the user may have typed a message while the
-		// read was in flight, and their thread wins over the stored one.
-		if (!restored || this.messages.length > 0) return;
-		this.messages = restored.messages;
-		this.messageSteps = restored.messageSteps;
-		this.messageStats = restored.messageStats;
-		this.messageStops = restored.messageStops;
-		this.messageHistorySent = restored.messageHistorySent;
-		this.persistCwd = cwd;
-		this.restoredNotice = { turns: countTurns(restored.messages), cwd };
-		// Land the user on the conversation rather than an empty panel.
-		this.sidebarOpen = true;
-		logDebug('shell', 'restored code session', { cwd, messages: restored.messages.length });
-	};
-
-	/**
-	 * Consider `cwd` for auto-restore, at most once per directory per run.
-	 *
-	 * The restore has to follow the cwd rather than fire once at startup: a new
-	 * PTY opens in $HOME, while the thread was saved under whatever project
-	 * directory the user had `cd`'d into. Checking only at terminal-bind meant
-	 * the lookup always asked about $HOME and found nothing — the thread was on
-	 * disk the whole time and never came back.
-	 */
-	private maybeRestoreForCwd = async (cwd: string | null): Promise<void> => {
-		if (!cwd || !this.codeMode || this.messages.length > 0 || this.isSubmitting) return;
-		if (this.restoreCheckedCwds.has(cwd)) return;
-		this.restoreCheckedCwds.add(cwd);
-		await this.restoreCodeThread(cwd);
-	};
-
-	/**
-	 * Run just before a user message joins the thread.
-	 *
-	 * Last chance to bring a stored thread back: the cwd poll drives the usual
-	 * restore, but a turn can be launched from the terminal toolbar, and the
-	 * message must not become the head of a new thread when a saved one exists.
-	 *
-	 * Then retires the notice. Sending a message accepts the restored context,
-	 * so it has done its job — and it must not outlive the turn, because
-	 * "Start fresh" discards the WHOLE thread. A banner left sitting there
-	 * would take every turn done since with it.
-	 */
-	private settleRestoreBeforeTurn = async (cwd: string | null): Promise<void> => {
-		await this.maybeRestoreForCwd(cwd);
-		this.restoredNotice = null;
-	};
-
-	/** Dismiss the restore notice, keeping the thread. */
-	dismissRestoredNotice = (): void => {
-		this.restoredNotice = null;
-	};
-
-	/**
-	 * "Start fresh": drop the restored thread AND forget it, so the next open
-	 * of this directory doesn't offer it again. Distinct from `newChat`, which
-	 * clears the live thread but leaves the stored one to be restored later.
-	 */
-	startFreshCodeThread = (): void => {
-		// `newChat` refuses mid-turn; without the same guard here the stored row
-		// would be deleted while the thread stayed on screen.
-		if (this.isSubmitting) return;
-		const cwd = this.persistCwd ?? this.restoredNotice?.cwd ?? null;
-		if (cwd) void dbDeleteShellSession(cwd);
-		this.restoredNotice = null;
-		this.newChat();
-	};
-
 	newChat = (): void => {
 		if (this.isSubmitting) return;
 		this.messages = [];
@@ -569,14 +439,6 @@ export class ShellSession {
 		// A fresh chat is a fresh session: re-arm the per-command approval so an
 		// earlier "allow for this session" doesn't carry into the new chat.
 		resetSessionApproval(SHELL_APPROVAL_KEY);
-		// Release the persistence key so the next turn pins a fresh one. The
-		// stored row is deliberately left alone — only `startFreshCodeThread`
-		// deletes it.
-		// Suppress auto-restore for the directory just cleared, otherwise the cwd
-		// poll would put the thread straight back on its next tick.
-		if (this.persistCwd) this.restoreCheckedCwds.add(this.persistCwd);
-		this.persistCwd = null;
-		this.restoredNotice = null;
 	};
 
 	cancelTurn = (): void => {
@@ -725,16 +587,15 @@ export class ShellSession {
 	addLocalNote = (text: string): void => {
 		if (this.isSubmitting) return;
 		this.messages = [...this.messages, { role: 'assistant', content: text }];
-		this.persistCodeThread(null);
 	};
 
 	/**
-	 * The trusted repo whose project skills `/name` may run here: Code mode
+	 * The trusted repo whose project skills `/name` may run here: Full access
 	 * only, like the skills a turn lists, and never by asking — a repo not
 	 * yet answered for gets its prompt from the first turn.
 	 */
 	slashProjectRoot = async (): Promise<string | null> => {
-		if (!this.codeMode) return null;
+		if (!this.fullAccess) return null;
 		const live = await this.fetchLiveContext();
 		return knownTrustedRoot(live?.currentCwd ?? null);
 	};
@@ -870,7 +731,7 @@ export class ShellSession {
 	/**
 	 * Bound the RENDERED thread. The context-budget fitter bounds what's sent
 	 * to the model, but nothing bounded what stayed mounted in the sidebar —
-	 * a marathon Code-mode session accumulated every bubble, step row, and
+	 * a marathon Full-access session accumulated every bubble, step row, and
 	 * tool payload until each scroll reflow got slower and the UI froze.
 	 *
 	 * Mirrors the chat tab's compaction reshape (keep a recent window, remap
@@ -928,25 +789,23 @@ export class ShellSession {
 		// Both modes take AGENTS.md from the repo the shell is in — "how do I run
 		// the tests?" is a troubleshooting question too — and the first turn in a
 		// repo with AGENTS.md or project skills asks to trust it. Project skills
-		// mostly drive edits and commands, so only Code mode lists them.
+		// mostly drive edits and commands, so only Full access lists them.
 		const project = await shellProject(payload.currentCwd);
 		this.agentsMd = project.agentsMd;
 		this.projectRoot = project.root;
 		const skills = await prepareTurnSkills({
-			projectRoot: this.codeMode ? project.root : null,
-			codeMode: this.codeMode
+			projectRoot: this.fullAccess ? project.root : null,
+			codeMode: this.fullAccess
 		});
-		const promptOpts = {
+		const systemPrompt = buildShellSystemPrompt({
 			sessionContext: payload.sessionContext,
 			currentCwd: payload.currentCwd,
 			recentHistory: payload.recentHistory,
 			nestedSession: payload.nestedSession ?? null,
 			skillsSection: skillsPromptSection(skills),
-			projectInstructions: agentsMdPromptSection(project.agentsMd)
-		};
-		const systemPrompt = this.codeMode
-			? buildShellCodeSystemPrompt(promptOpts)
-			: buildShellSystemPrompt(promptOpts);
+			projectInstructions: agentsMdPromptSection(project.agentsMd),
+			fullAccess: this.fullAccess
+		});
 		return { messages: mergeLeadingSystemMessages([systemPrompt, ...this.messages]), skills };
 	}
 
@@ -974,8 +833,6 @@ export class ShellSession {
 		this.lastError = null;
 
 		this.sidebarOpen = true;
-		await this.settleRestoreBeforeTurn(payload.currentCwd);
-
 		this.isSubmitting = true;
 		this.streamingContent = '';
 		this.searchSteps = [];
@@ -1022,12 +879,15 @@ export class ShellSession {
 				visionSupported: true,
 				cwd: payload.currentCwd,
 				sessionId: this.boundSessionId,
-				codeMode: this.codeMode,
+				name: () => this.name,
+				// Full access is the registry's Shell code profile (codeMode with
+				// shellMode): the same tools Code mode had.
+				codeMode: this.fullAccess,
 				skills,
-				maxIterations: this.codeMode ? getSettings().codeMaxIterations : undefined,
+				maxIterations: this.fullAccess ? getSettings().codeMaxIterations : undefined,
 				codeAutoApprove: getSettings().codeAutoApprove,
 				thinkingEnabled: this.thinkingEnabled,
-				// Code mode is the "write me a whole file" path, so it gets the
+				// Full access is the "write me a whole file" path, so it gets the
 				// file-write ceiling from Settings → Agent → Response Length rather
 				// than a hardcoded literal. The old 16384 could not be raised by any
 				// setting, and was additionally gated on thinking being ON — so the
@@ -1036,10 +896,10 @@ export class ShellSession {
 				//
 				// Passed explicitly instead of via `expectsFileOutput` because that
 				// flag also arms the file-write nudge, and `fileWritten` is only set
-				// by fs_write_* tools. Code mode legitimately writes files with a
+				// by fs_write_* tools. Full access legitimately writes files with a
 				// shell heredoc, which would leave the nudge nagging about a file
 				// that is already on disk.
-				maxResponseTokens: this.codeMode ? getSettings().maxResponseTokensFileWrite : undefined,
+				maxResponseTokens: this.fullAccess ? getSettings().maxResponseTokensFileWrite : undefined,
 				signal: this.abortController.signal,
 				onTicket: (t) => (this.ticket = t),
 				onAdmitted: () => (this.ticket = null),
@@ -1061,10 +921,6 @@ export class ShellSession {
 				}
 			});
 			this.recordAssistantTurn(turnMessages, baseTurnLen, result, lastCallStats, turnStartedAt);
-			// Persist the Code-mode thread now that the turn is committed. Per
-			// turn, not on shutdown: the case this protects against is a power
-			// cut, where no shutdown hook ever runs.
-			this.persistCodeThread(payload.currentCwd);
 		} catch (e) {
 			const msg = errMessage(e);
 			if (msg.includes('Aborted')) {
@@ -1180,12 +1036,17 @@ export function detachShellSession(id: string): void {
 /**
  * Adopt a PTY handed back from a detached window: create a fresh session that
  * attaches to the existing PTY and re-hydrate its stashed chat thread.
+ * `fullAccess` is the mode it had there; null takes the default.
  * No-op if a session for that PTY is already present.
  */
-export function reattachShellSession(ptyId: number, name?: string): ShellSession | null {
+export function reattachShellSession(
+	ptyId: number,
+	name?: string,
+	fullAccess: boolean | null = null
+): ShellSession | null {
 	if (sessions.some((s) => s.attachPtyId === ptyId || s.boundSessionId === ptyId)) return null;
 	const num = nextSessionNum++;
-	const session = new ShellSession(`shell-${num}`, name || `Shell ${num}`, ptyId);
+	const session = new ShellSession(`shell-${num}`, name || `Shell ${num}`, ptyId, fullAccess);
 	void invoke<string | null>('shell_take_chat', { sessionId: ptyId })
 		.then((json) => session.hydrateChat(json))
 		.catch(() => {});

@@ -1,0 +1,17 @@
+{
+	"$schema": "../gen/schemas/desktop-schema.json",
+	"identifier": "code",
+	"description": "Detached Code session windows (code-*): run one session's turns through app commands, open editor windows, and raise the main window for open_in_shell. No sidecars and no shell plugin; the one dialog is the folder picker for a session whose folder is gone.",
+	"windows": ["code-*"],
+	"permissions": [
+		"core:default",
+		"core:webview:allow-create-webview-window",
+		"core:webview:allow-set-webview-zoom",
+		"core:window:allow-close",
+		"core:window:allow-destroy",
+		"core:window:allow-set-title",
+		"core:window:allow-set-focus",
+		"core:window:allow-unminimize",
+		"dialog:allow-open"
+	]
+}

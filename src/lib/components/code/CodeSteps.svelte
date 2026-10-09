@@ -5,10 +5,13 @@
 	 * list, in the order they ran. The reasoning behind a batch of calls sits
 	 * above it, then the text the model wrote with it, and calls the model is
 	 * still writing (`pending`) come last.
+	 *
+	 * That text is a remark on the way, not an answer: it is drawn as light
+	 * inline markdown, without the answer's header or copy button.
 	 */
 	import SearchStepComponent from '#lib/components/SearchStep.svelte';
 	import ThinkingPanel from '#lib/components/ThinkingPanel.svelte';
-	import ChatMessage from '#lib/components/ChatMessage.svelte';
+	import { renderMarkdown } from '#lib/markdown.ts';
 	import { stepIcon } from '#lib/components/searchStepLabels.ts';
 	import { describePendingCall, type PendingToolCall } from '#lib/code/pendingCall.ts';
 	import CommandCard from './CommandCard.svelte';
@@ -82,7 +85,9 @@
 		{#if block.kind === 'reasoning'}
 			<ThinkingPanel text={block.text} />
 		{:else if block.kind === 'lead'}
-			<ChatMessage message={{ role: 'assistant', content: block.text }} {codePaths} />
+			<div class="lead" data-testid="step-lead">
+				{@html renderMarkdown(block.text, undefined, codePaths)}
+			</div>
 		{:else if block.kind === 'command'}
 			<CommandCard step={block.step} {root} />
 		{:else if block.kind === 'diff'}
@@ -113,6 +118,37 @@
 <style>
 	.code-steps {
 		margin: 4px 0;
+	}
+
+	.lead {
+		margin: 6px 0 2px;
+		color: var(--text-secondary);
+		font-size: 0.86rem;
+		line-height: 1.5;
+		overflow-wrap: break-word;
+	}
+
+	.lead :global(p) {
+		margin: 0 0 0.35em;
+	}
+
+	.lead :global(p:last-child) {
+		margin-bottom: 0;
+	}
+
+	.lead :global(ul),
+	.lead :global(ol) {
+		margin: 0.3em 0;
+		padding-left: 1.4em;
+	}
+
+	.lead :global(pre) {
+		margin: 0.4em 0;
+		overflow-x: auto;
+	}
+
+	.lead :global(a) {
+		color: var(--accent);
 	}
 
 	/* The shared step list draws a rule under itself for Chat; here the

@@ -13,6 +13,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { BackendOverride } from '#lib/api.ts';
 import type { CodeSessionRow } from '#lib/ipc/gen/CodeSessionRow.ts';
 import type { CodeSessionSummary } from '#lib/ipc/gen/CodeSessionSummary.ts';
+import type { CodeForkMode } from '#lib/ipc/gen/CodeForkMode.ts';
 
 export type { CodeSessionSummary };
 
@@ -68,9 +69,62 @@ export async function loadCodeSession(id: string): Promise<CodeSessionRecord> {
 	return toRecord(await invoke<CodeSessionRow>('code_session_load', { id }));
 }
 
-/** Write the thread after a turn; pass `title` when the turn named the session. */
-export function saveCodeSession(id: string, thread: string, title?: string): Promise<void> {
-	return invoke<void>('code_session_save', { id, thread, title: title ?? null });
+/**
+ * What a turn told the session's agent, saved with its thread so a restart
+ * neither repeats it nor loses what came since: other sessions' file changes
+ * up to `noticesSeenAt` (ms), and the branch it last knew (`undefined`: never
+ * told, `null`: told there is none).
+ */
+export interface CodeSessionSeen {
+	noticesSeenAt: number;
+	agentBranch: string | null | undefined;
+}
+
+/** The stored `agent_branch` (`null` never told, `''` no branch) as `CodeSessionSeen` has it. */
+export function decodeAgentBranch(stored: string | null | undefined): string | null | undefined {
+	if (stored === null || stored === undefined) return undefined;
+	return stored === '' ? null : stored;
+}
+
+function encodeAgentBranch(branch: string | null | undefined): string | null {
+	if (branch === undefined) return null;
+	return branch ?? '';
+}
+
+/**
+ * Write the thread after a turn; pass `title` when the turn named the session,
+ * and `seen` for what the turn told the agent.
+ */
+export function saveCodeSession(
+	id: string,
+	thread: string,
+	title?: string,
+	seen?: CodeSessionSeen
+): Promise<void> {
+	return invoke<void>('code_session_save', {
+		id,
+		thread,
+		title: title ?? null,
+		noticesSeenAt: seen?.noticesSeenAt ?? null,
+		agentBranch: seen ? encodeAgentBranch(seen.agentBranch) : null
+	});
+}
+
+/**
+ * Point a session whose folder is gone at `root`, an existing folder. Returns
+ * the row as saved (the root canonical).
+ */
+export async function setCodeSessionRoot(id: string, root: string): Promise<CodeSessionRecord> {
+	return toRecord(await invoke<CodeSessionRow>('code_session_set_root', { id, root }));
+}
+
+/** Whether `path` is an existing folder. True when the check itself fails. */
+export async function folderExists(path: string): Promise<boolean> {
+	try {
+		return (await invoke<boolean | null>('code_folder_exists', { path })) !== false;
+	} catch {
+		return true;
+	}
 }
 
 /** Rename, or change the session's backend or effort, without touching the thread. */
@@ -88,7 +142,14 @@ export function deleteCodeSession(id: string): Promise<void> {
 	return invoke<void>('code_session_delete', { id });
 }
 
-/** A new session holding messages `[0, at)` of `id`. */
-export async function forkCodeSession(id: string, at: number): Promise<CodeSessionRecord> {
-	return toRecord(await invoke<CodeSessionRow>('code_session_fork', { id, at }));
+/**
+ * A new session holding messages `[0, at)` of `id`: read-only in the same
+ * folder, or writable in a new git worktree (made by Rust, beside the repo).
+ */
+export async function forkCodeSession(
+	id: string,
+	at: number,
+	mode: CodeForkMode
+): Promise<CodeSessionRecord> {
+	return toRecord(await invoke<CodeSessionRow>('code_session_fork', { id, at, mode }));
 }

@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { isAbortError } from '#lib/utils/error.ts';
 import { labelArg, toolInvokeError, wslDistroArg } from './_helpers';
 import { registerTool } from './registry';
-import { toolError, toolResult } from './types';
+import { noteCommandRan, toolError, toolResult } from './types';
 import type { ToolContext, ToolExecOutput } from './types';
 import { getSettings } from '#lib/stores/settings.ts';
 import { classifyShellRisk, type RiskMatch } from '#lib/shell/risky-commands.ts';
@@ -19,6 +19,7 @@ import { runInPty, runInPtyBackground, shouldUsePty, spillIfLarge } from './pty-
 import { registerWatch } from '#lib/shell/backgroundWatch.ts';
 import { startCodeBackground } from './code-bg';
 import { ttyHintFor } from '#lib/code/ttyHint.ts';
+import { isReadOnlyCommand } from '#lib/code/readOnlyCommand.ts';
 import { withLocalScopeNote } from './nested-session';
 import type { RunCommandResult } from '#lib/ipc/gen/RunCommandResult.ts';
 import { commandMemoryLimitPercent, outOfMemoryNote } from '#lib/shell/memoryLimit.ts';
@@ -74,7 +75,8 @@ export async function checkCommandBoundary(
 		description
 	}));
 	return askAboutCommand(command, [...boundaryReasons, ...(extra.matched ? extra.reasons : [])], {
-		sessionKey: null
+		sessionKey: null,
+		ctx
 	});
 }
 
@@ -92,6 +94,15 @@ async function ensureCommandApproved(
 	// reach Haruspex's own database and services unasked.
 	const boundary = await checkCommandBoundary(command, ctx);
 	if (boundary !== 'ok') return boundary;
+	// A read-only session asks about every command: a "harmless" one can
+	// still write. Neither auto-approve nor "for this session" skips it.
+	if (ctx.codeReadOnly) {
+		const risk = classifyShellRisk(command);
+		return askAboutCommand(command, [READ_ONLY_REASON, ...(risk.matched ? risk.reasons : [])], {
+			sessionKey: null,
+			ctx
+		});
+	}
 	if (ctx.codeAutoApprove || isSessionApproved(approvalKey(ctx))) return 'ok';
 	const risk = classifyShellRisk(command);
 	if (!risk.matched) return 'ok';
@@ -117,22 +128,30 @@ async function ensureCommandApproved(
 			)
 		};
 	}
-	return askAboutCommand(command, risk.reasons, { sessionKey: approvalKey(ctx) });
+	return askAboutCommand(command, risk.reasons, { sessionKey: approvalKey(ctx), ctx });
 }
+
+/** Why a read-only session's command is asked about. */
+const READ_ONLY_REASON: RiskMatch = {
+	label: 'read-only session',
+	description: 'This session only reads, so every command it runs is checked with you.'
+};
 
 /**
  * The approval modal. A boundary reason is never approvable for the session:
  * "allow everything risky for now" was given for an `rm`, not for reading
- * Haruspex's database.
+ * Haruspex's database. The prompt names who is asking, and waits behind any
+ * other session's; stopping the turn withdraws it.
  */
 async function askAboutCommand(
 	command: string,
 	reasons: RiskMatch[],
-	opts: { sessionKey: string | null }
+	opts: { sessionKey: string | null; ctx: ToolContext }
 ): Promise<'ok' | { message: string }> {
+	const requester = opts.ctx.requester?.() || null;
 	let choice;
 	try {
-		choice = await askCommandApproval({ command, reasons });
+		choice = await askCommandApproval({ command, reasons, requester, signal: opts.ctx.signal });
 	} catch (e) {
 		return { message: toolInvokeError('run_command approval', e) };
 	}
@@ -243,10 +262,25 @@ registerTool({
 		const root = codeRoot(ctx);
 		if (!root) return toolResult(toolError('No working directory set.'));
 
+		const wantsBackground = args.background === true || args.watch === true;
+		if (wantsBackground && ctx.codeReadOnly) {
+			return toolResult(
+				toolError(
+					'Background commands are not available in a read-only session. Run it in the foreground, or describe what to run.'
+				)
+			);
+		}
+
+		// One writer per folder: a command that may change files takes it.
+		// Before asking, so the user isn't asked about a command that then
+		// has to wait anyway.
+		if (ctx.codeWriteGuard && (wantsBackground || !isReadOnlyCommand(command))) {
+			const refusal = await ctx.codeWriteGuard.acquire();
+			if (refusal) return toolResult(toolError(refusal));
+		}
+
 		const approval = await ensureCommandApproved(command, ctx);
 		if (approval !== 'ok') return toolResult(approval.message);
-
-		const wantsBackground = args.background === true || args.watch === true;
 
 		const fallbackTimeout = getSettings().codeRunCommandTimeoutSecs;
 		const timeoutSecs =
@@ -265,6 +299,7 @@ registerTool({
 				return toolResult(await runInPty(ctx.shellSessionId, command, timeoutSecs, ctx.signal));
 			}
 			const res = await runHostCommand(command, root, timeoutSecs, ctx.signal);
+			noteCommandRan(ctx);
 			const out = await formatRunResult(res);
 			// The Code tab can hand the command to a Shell tab; elsewhere the user runs it.
 			const hint = ttyHintFor(res, { openInShell: !ctx.shellMode && !!ctx.codeSessionId });

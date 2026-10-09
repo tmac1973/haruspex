@@ -83,6 +83,36 @@ pub fn handle(app: &AppHandle, request: Request<Vec<u8>>) -> Response<Vec<u8>> {
         .unwrap_or_else(|_| empty(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
+/// Lets every webview display `haruspex-img:` URLs from a page served over
+/// `http:`, which is what the dev build is (Vite on `http://localhost:1420`).
+///
+/// WebKitGTK 2.54 refuses that with "Unsafe attempt to load URL … Domains,
+/// protocols and ports must match": a custom scheme no longer passes its
+/// cross-origin display check from an `http:` page, though it still does from
+/// a custom-scheme page such as the packaged build's `tauri://localhost`.
+/// Putting the scheme on the view's allowlist is the narrowest switch that
+/// clears it; disabling web security is the only other one that does.
+/// Harmless in packaged builds, where the check already passes.
+pub fn webview_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri::plugin::Builder::new("haruspex-img")
+        .on_webview_ready(|webview| {
+            #[cfg(target_os = "linux")]
+            if let Err(e) = webview.with_webview(|platform| {
+                use webkit2gtk::WebViewExt;
+                platform.inner().set_cors_allowlist(&["haruspex-img://*/*"]);
+            }) {
+                debug!(
+                    "could not allowlist haruspex-img for {}: {}",
+                    webview.label(),
+                    e
+                );
+            }
+            #[cfg(not(target_os = "linux"))]
+            let _ = webview;
+        })
+        .build()
+}
+
 /// Pull the hash out of a request path, rejecting anything that is not exactly
 /// 64 lowercase hex characters.
 ///

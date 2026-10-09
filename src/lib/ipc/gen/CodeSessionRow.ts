@@ -27,4 +27,24 @@ thread: string, forked_from: string | null,
 /**
  * Message index in the source the fork was cut at.
  */
-forked_at: number | null, created_at: number, updated_at: number, };
+forked_at: number | null, created_at: number, updated_at: number, 
+/**
+ * May read and search, not write: a fork that shares its source's folder.
+ */
+read_only: boolean, 
+/**
+ * The top folder of the git worktree Haruspex made for this session (a
+ * worktree fork). Deleting the session offers to remove it.
+ */
+worktree: string | null, 
+/**
+ * Other sessions' changed-file notices up to this time (ms) have been
+ * given to this one's agent. `null` for a session saved before this
+ * was kept: its `updated_at` stands in.
+ */
+notices_seen_at: number | null, 
+/**
+ * The checked-out branch the agent was last told or saw. `null`: never
+ * told; `''`: told there was none (not a repo).
+ */
+agent_branch: string | null, };

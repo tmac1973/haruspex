@@ -270,7 +270,7 @@ const LOCAL_SIDE = 'this machine (the one Haruspex runs on)';
 /**
  * The block dropped into the system prompt while a nested session is in
  * flight. States the split once, in the place the model reads every turn.
- * The two Shell prompts need different advice: Code mode drives the session
+ * The two Shell modes need different advice: Full access drives the session
  * itself, while the read-only assistant only *suggests* commands — which the
  * user pastes into that same session, so they land on the remote host too.
  */

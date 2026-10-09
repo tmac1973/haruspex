@@ -18,6 +18,7 @@ import type { BackendOverride, StreamChunk, Usage } from '#lib/api.ts';
 import type { PartialToolCall } from '#lib/streamAssembly.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import type { Artifact, LintIssue, ToolContext } from '#lib/agent/tools/index.ts';
+import type { CodeWriteGuard } from '#lib/agent/tools/types.ts';
 import type { ContextManagedInfo } from './context-budget';
 import type { FileDiff } from '#lib/code/diff.ts';
 import type { SamplingParams } from '#lib/stores/settings.ts';
@@ -184,6 +185,12 @@ export interface AgentLoopOptions {
 	shellSessionId?: number | null;
 	/** The Code session running this turn; see ToolContext.codeSessionId. */
 	codeSessionId?: string;
+	/** Who is asking in an approval prompt; see ToolContext.requester. */
+	requester?: () => string;
+	/** A read-only Code session; see ToolContext.codeReadOnly. */
+	codeReadOnly?: boolean;
+	/** One writer per folder; see ToolContext.codeWriteGuard. */
+	codeWriteGuard?: CodeWriteGuard;
 	/**
 	 * Optional progress channel for a running tool call. Wired to the
 	 * tool's ToolContext.onProgress so a long-running tool can update its

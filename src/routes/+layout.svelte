@@ -72,8 +72,10 @@
 	import { toggleTts } from '#lib/audio/ttsControl.svelte.ts';
 	import { getActiveTab, mainTabs, setActiveTab } from '#lib/stores/activeTab.svelte.ts';
 	import { getActiveSession as getActiveCodeSession } from '#lib/stores/code.svelte.ts';
+	import { listenInMainWindow as listenForCodeWindows } from '#lib/code/windows.ts';
 	import { getActiveConversation, sendMessage } from '#lib/stores/chat.svelte.ts';
 	import { getActiveShellSession } from '#lib/stores/shell.svelte.ts';
+	import { isDetachedRoute, rendersAgentModals } from '#lib/windowRoutes.ts';
 	import {
 		listenForMcpToolChanges,
 		startConfiguredMcpServers
@@ -102,11 +104,13 @@
 	let version = $state('');
 	let update = $state<UpdateInfo | null>(null);
 
-	// A detached shell window and an editor window load this same root
-	// layout. They must NOT re-run app bootstrap (sidecars, job scheduler,
-	// setup redirect) or render the main chrome — each shows only its own
-	// page (routes/shell/[id], routes/editor).
-	const detached = $derived(page.route.id === '/shell/[id]' || page.route.id === '/editor');
+	// A detached shell window, a detached Code window and an editor window
+	// load this same root layout. They must NOT re-run app bootstrap
+	// (sidecars, job scheduler, setup redirect) or render the main chrome —
+	// each shows only its own page (routes/shell/[id], routes/code/[id],
+	// routes/editor).
+	const codeWindow = $derived(page.route.id === '/code/[id]');
+	const detached = $derived(isDetachedRoute(page.route.id));
 
 	// Delegated handler for the copy/paste/run buttons inside rendered
 	// markdown (sanitization strips inline onclick). Installed in every
@@ -118,8 +122,9 @@
 	// the model never saw them; not awaited, so the window is not held closed
 	// while several child processes negotiate.
 	onMount(() => {
-		// An editor window has no agent, so no use for the servers.
-		if (page.route.id === '/editor') return;
+		// An editor window has no agent, so no use for the servers, and a Code
+		// session's tools don't include them.
+		if (page.route.id === '/editor' || page.route.id === '/code/[id]') return;
 		void startConfiguredMcpServers();
 		// A running server can change what it publishes — Godot reveals a whole
 		// toolset when the model enables one — and the registry has to hear
@@ -180,6 +185,15 @@
 	 * exactly like the main one, which is why `installMarkdownActions` above is
 	 * already installed unconditionally.
 	 */
+	// The main window opens what detached Code windows hand back (re-attach,
+	// a fork made there) and their open_in_shell requests: the Shell tabs live
+	// here.
+	onMount(() => {
+		if (detached) return;
+		const stop = listenForCodeWindows(() => setActiveTab('code'));
+		return () => void stop.then((f) => f()).catch(() => {});
+	});
+
 	onMount(() => {
 		document.addEventListener('click', openExternalLinks);
 		document.addEventListener('contextmenu', suppressLinkContextMenu);
@@ -337,15 +351,22 @@
 
 	function isMainPage(): boolean {
 		// Pages where the F2/F3 media hotkeys (push-to-talk, read-aloud) apply:
-		// the main window's root route and a detached shell window. Packaged
-		// builds load the webview from `tauri://localhost`, where
+		// the main window's root route and a detached shell or Code window.
+		// Packaged builds load the webview from `tauri://localhost`, where
 		// `page.url.pathname` is '' (empty) rather than '/'; matching on the
 		// SvelteKit route id is stable across dev and packaged builds.
-		return page.route.id === '/' || page.route.id === '/shell/[id]';
+		return (
+			page.route.id === '/' || page.route.id === '/shell/[id]' || page.route.id === '/code/[id]'
+		);
+	}
+
+	/** The tab the hotkeys act on. A detached Code window is all Code tab. */
+	function hotkeyTab() {
+		return codeWindow ? 'code' : getActiveTab();
 	}
 
 	function pickTranscriptionTarget(text: string) {
-		const tab = getActiveTab();
+		const tab = hotkeyTab();
 		if (tab === 'shell') {
 			void getActiveShellSession()?.submitChatMessage(text);
 		} else if (tab === 'code') {
@@ -357,7 +378,7 @@
 	}
 
 	function getLastAssistantText(): string {
-		const tab = getActiveTab();
+		const tab = hotkeyTab();
 		const messages =
 			tab === 'shell'
 				? (getActiveShellSession()?.messages ?? [])
@@ -385,7 +406,7 @@
 	function handleVoiceCaptureKey(event: KeyboardEvent) {
 		event.preventDefault();
 		if (event.repeat) return;
-		if (getActiveTab() === 'shell') getActiveShellSession()?.setSidebarOpen(true);
+		if (hotkeyTab() === 'shell') getActiveShellSession()?.setSidebarOpen(true);
 		if (!isVoiceCaptureActive()) startVoiceCapture();
 	}
 
@@ -402,7 +423,7 @@
 	function handleDumpCommandsKey(event: KeyboardEvent) {
 		event.preventDefault();
 		if (event.repeat) return;
-		if (getActiveTab() !== 'shell') return;
+		if (hotkeyTab() !== 'shell') return;
 		const session = getActiveShellSession();
 		if (!session) return;
 		session.setSidebarOpen(true);
@@ -514,8 +535,24 @@
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
+{#snippet agentModals()}
+	<FileConflictModal />
+	<SandboxApprovalModal />
+	<CommandApprovalModal />
+	<McpApprovalModal />
+	<MemoryApprovalModal />
+	<RepoTrustModal />
+	<SkillApprovalModal />
+	<UserQuestionModal />
+{/snippet}
+
 {#if detached}
 	{@render children()}
+	<!-- Detached Code and Shell windows run turns, so they ask their own
+	     approvals: each window has its own approval stores. -->
+	{#if rendersAgentModals(page.route.id)}
+		{@render agentModals()}
+	{/if}
 {:else}
 	<header>
 		<h1>
@@ -658,15 +695,8 @@
 		<StartupNoticeDialog onclose={() => (showStartupNotice = false)} />
 	{/if}
 
-	<FileConflictModal />
-	<SandboxApprovalModal />
-	<CommandApprovalModal />
-	<McpApprovalModal />
-	<MemoryApprovalModal />
-	<RepoTrustModal />
-	<SkillApprovalModal />
+	{@render agentModals()}
 	<EmailReviewModal />
-	<UserQuestionModal />
 	<FileEditorModal />
 {/if}
 

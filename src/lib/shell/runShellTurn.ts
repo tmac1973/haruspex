@@ -32,11 +32,13 @@ export interface ShellTurnOptions {
 	cwd?: string | null;
 	/** Active PTY session id, so Code-mode run_command can drive the terminal. */
 	sessionId?: number | null;
-	/** Code mode: expose the code toolset + drive the PTY for run_command. */
+	/** The tab's name as it is now, to name it in approval prompts. */
+	name?: () => string;
+	/** Full access: expose the code toolset + drive the PTY for run_command. */
 	codeMode?: boolean;
 	/** Skills the model may load this turn (`#lib/skills/turn.ts`). */
 	skills?: TurnSkills;
-	/** Code mode: skip the run_command risk-approval prompt. */
+	/** Full access: skip the run_command risk-approval prompt. */
 	codeAutoApprove?: boolean;
 	/** Per-session reasoning override (the assistant's Think toggle). */
 	thinkingEnabled?: boolean;
@@ -91,7 +93,7 @@ async function drive(options: ShellTurnOptions): Promise<ShellTurnResult> {
 			// burned) left no headroom for finishing the investigation. 12
 			// still bounds the turn for runaway loops but actually fits real
 			// admin-troubleshooting use.
-			// Code mode runs longer agentic loops (grep → read → edit → test → fix)
+			// Full access runs longer agentic loops (grep → read → edit → test → fix)
 			// than admin troubleshooting; give it more headroom (the store passes
 			// the user-configurable codeMaxIterations).
 			maxIterations: options.maxIterations ?? (options.codeMode ? 40 : 12),
@@ -99,16 +101,17 @@ async function drive(options: ShellTurnOptions): Promise<ShellTurnResult> {
 			shellMode: true,
 			shellCwd: options.cwd ?? null,
 			shellSessionId: options.sessionId ?? null,
+			requester: options.name,
 			codeMode: options.codeMode ?? false,
 			codeAutoApprove: options.codeAutoApprove ?? false,
 			skills: options.skills,
 			thinkingEnabled: options.thinkingEnabled,
 			maxResponseTokens: options.maxResponseTokens,
-			// Deliberately false even in Code mode. This flag arms the file-write
+			// Deliberately false even with Full access. This flag arms the file-write
 			// hallucination nudge, which clears only when an fs_write_* tool
-			// reports success — but Code mode often writes files through a shell
+			// reports success — but Full access often writes files through a shell
 			// heredoc, so arming it here would nag about files already written.
-			// The larger response ceiling Code mode needs is passed directly as
+			// The larger response ceiling Full access needs is passed directly as
 			// `maxResponseTokens` instead.
 			expectsFileOutput: false,
 			visionSupported: options.visionSupported ?? true,

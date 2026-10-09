@@ -1,4 +1,5 @@
 use super::*;
+use crate::code_tools::git::{self, CodeForkMode};
 
 /// Run a database operation on the blocking thread pool.
 ///
@@ -377,37 +378,6 @@ pub async fn db_list_due_jobs(
     on_pool(db, move |db| db.list_due_jobs(now_ms)).await
 }
 
-// --- Code-mode shell session persistence ---------------------------------
-// Keyed by cwd; see db/shell_sessions.rs for the rationale.
-
-#[tauri::command]
-pub async fn db_save_shell_session(
-    state: tauri::State<'_, Database>,
-    cwd: String,
-    thread: String,
-) -> Result<(), String> {
-    let db = state.inner().clone();
-    on_pool(db, move |db| db.save_shell_code_session(&cwd, &thread)).await
-}
-
-#[tauri::command]
-pub async fn db_load_shell_session(
-    state: tauri::State<'_, Database>,
-    cwd: String,
-) -> Result<Option<String>, String> {
-    let db = state.inner().clone();
-    on_pool(db, move |db| db.load_shell_code_session(&cwd)).await
-}
-
-#[tauri::command]
-pub async fn db_delete_shell_session(
-    state: tauri::State<'_, Database>,
-    cwd: String,
-) -> Result<(), String> {
-    let db = state.inner().clone();
-    on_pool(db, move |db| db.delete_shell_code_session(&cwd)).await
-}
-
 // --- Code-tab sessions ---------------------------------------------------
 // Keyed by id; see db/code_sessions.rs.
 
@@ -442,18 +412,35 @@ pub async fn code_session_load(
     on_pool(db, move |db| db.load_code_session(&id)).await
 }
 
+/// Write the thread after a turn. `notices_seen_at` and `agent_branch` are
+/// what the turn told the agent (see `CodeSessionRow`); absent leaves them.
 #[tauri::command]
 pub async fn code_session_save(
     state: tauri::State<'_, Database>,
     id: String,
     thread: String,
     title: Option<String>,
+    notices_seen_at: Option<i64>,
+    agent_branch: Option<String>,
 ) -> Result<(), String> {
     let db = state.inner().clone();
     on_pool(db, move |db| {
-        db.save_code_session(&id, &thread, title.as_deref())
+        db.save_code_session(&id, &thread, title.as_deref())?;
+        db.set_code_session_seen(&id, notices_seen_at, agent_branch.as_deref())
     })
     .await
+}
+
+/// Point a session whose folder is gone at another one. See
+/// [`Database::set_code_session_root`].
+#[tauri::command]
+pub async fn code_session_set_root(
+    state: tauri::State<'_, Database>,
+    id: String,
+    root: String,
+) -> Result<CodeSessionRow, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.set_code_session_root(&id, &root)).await
 }
 
 #[tauri::command]
@@ -475,12 +462,41 @@ pub async fn code_session_delete(
     on_pool(db, move |db| db.delete_code_session(&id)).await
 }
 
+/// Fork `id` at message `at`. `ReadOnly` shares the source's folder and may
+/// only read; `Worktree` first makes a git worktree on a new branch beside
+/// the repository (see `code_tools::git::add_fork_worktree`) and roots the
+/// fork there, writable. A worktree whose session row then fails to save is
+/// removed again, branch and all.
 #[tauri::command]
 pub async fn code_session_fork(
     state: tauri::State<'_, Database>,
     id: String,
     at: usize,
+    mode: CodeForkMode,
 ) -> Result<CodeSessionRow, String> {
     let db = state.inner().clone();
-    on_pool(db, move |db| db.fork_code_session(&id, at)).await
+    if mode == CodeForkMode::ReadOnly {
+        return on_pool(db, move |db| db.fork_code_session(&id, at)).await;
+    }
+    let source = {
+        let id = id.clone();
+        on_pool(db.clone(), move |db| db.load_code_session(&id)).await?
+    };
+    let wt = git::add_fork_worktree(
+        std::path::Path::new(&source.root),
+        &code_sessions::fork_title(&source.title),
+    )
+    .await?;
+    let (root, path) = (
+        wt.root.to_string_lossy().into_owned(),
+        wt.path.to_string_lossy().into_owned(),
+    );
+    let made = on_pool(db, move |db| {
+        db.fork_code_session_into(&id, at, Some((&root, &path)))
+    })
+    .await;
+    if made.is_err() {
+        git::discard_fork_worktree(&wt).await;
+    }
+    made
 }

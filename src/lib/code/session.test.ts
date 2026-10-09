@@ -2,11 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
 	encodeCodeSession,
 	decodeCodeSession,
-	countTurns,
 	CODE_SESSION_VERSION,
 	type CodeSessionState
 } from '#lib/code/session.ts';
-import type { ChatMessage } from '#lib/api.ts';
 
 function state(over: Partial<CodeSessionState> = {}): CodeSessionState {
 	return {
@@ -59,21 +57,5 @@ describe('code session persistence', () => {
 		const decoded = decodeCodeSession(JSON.stringify(encoded));
 		expect(decoded?.messages).toHaveLength(2);
 		expect(decoded?.messageSteps).toEqual({});
-	});
-
-	it('counts user turns, not raw array entries', () => {
-		// A single coding turn expands into assistant tool_calls + tool results
-		// + prose. Counting the array would report this two-question thread as
-		// six turns.
-		const messages: ChatMessage[] = [
-			{ role: 'user', content: 'q1' },
-			{ role: 'assistant', content: '', tool_calls: [] as never },
-			{ role: 'tool', content: 'out', tool_call_id: 'a' },
-			{ role: 'assistant', content: 'a1' },
-			{ role: 'user', content: 'q2' },
-			{ role: 'assistant', content: 'a2' }
-		];
-		expect(countTurns(messages)).toBe(2);
-		expect(messages).toHaveLength(6);
 	});
 });

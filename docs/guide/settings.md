@@ -118,17 +118,21 @@ See the `integrations` page.
 
 ## Shell
 
-The Shell tab's terminal and its assistant, including Code mode.
+The Shell tab's terminal and its assistant.
 
 - **Shell binary**: blank, which uses your `$SHELL`.
-- **Enable Code mode by default in new shells**: off.
+- **Recent shell commands attached to each chat message**: 3.
+- **Include your shell history file in prompts**: on.
+- **Max output bytes per captured command**: 8192.
+- **Start new shells with Full access**: off, so new tabs start Read-only.
+- **Command execution**: Auto (the terminal when capture works, else a separate process), for Full access.
 - **Memory limit**: 50 % of RAM.
 
 See the `shell` page.
 
 ## Code
 
-How the coding agent runs commands, in the Code tab and in the Shell's Code mode.
+How the coding agent runs commands, in the Code tab and in the Shell assistant with Full access.
 
 - **run_command timeout**: 30 seconds.
 - **Max steps per task**: 40.

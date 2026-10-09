@@ -59,6 +59,23 @@ function formatEditResult(path: string, r: EditResult): string {
 	return `Edited ${path} (line ${r.first_changed_line})${r.used_fuzzy ? ' [fuzzy match]' : ''}`;
 }
 
+/** How a write treats an existing file and a repeat write in one turn. */
+interface WriteOptions {
+	/** False in a Code session: an existing file is overwritten without asking. */
+	askBeforeOverwrite?: boolean;
+	/**
+	 * Files a second write may replace (`ToolContext.filesRewritableThisTurn`).
+	 * A Code session's only; a write takes its path back out of it.
+	 */
+	rewritable?: Set<string>;
+}
+
+/** A tool's write options: a Code session overwrites, and may rewrite after a command. */
+function writeOptions(ctx: ToolContext): WriteOptions {
+	if (!ctx.codeSessionId) return { askBeforeOverwrite: true };
+	return { askBeforeOverwrite: false, rewritable: ctx.filesRewritableThisTurn };
+}
+
 /**
  * Outcome of pre-write conflict resolution.
  *  - `ok`       proceed with the write.
@@ -82,7 +99,7 @@ export async function resolveWritePathInteractive(
 	workdir: string,
 	relPath: string,
 	filesWrittenThisTurn: Set<string>,
-	opts: { askBeforeOverwrite?: boolean } = {}
+	opts: WriteOptions = {}
 ): Promise<WriteResolution> {
 	// Second write to the same path in one turn. This used to short-circuit to
 	// overwrite:true and still report "Wrote: <path>", so a model emitting a
@@ -90,7 +107,11 @@ export async function resolveWritePathInteractive(
 	// the LAST chunk on disk — the prefix-loss half of the "middle slice"
 	// corruption, reachable with no truncation involved at all. There is no
 	// append mode, so refusing is the only honest answer.
-	if (filesWrittenThisTurn.has(relPath)) {
+	//
+	// A Code session may rewrite a file once a command has run since it wrote
+	// it: the agent tested its work and is now replacing it whole, which is a
+	// fix, not a chunk. Back-to-back writes are still refused.
+	if (filesWrittenThisTurn.has(relPath) && !opts.rewritable?.has(relPath)) {
 		return {
 			kind: 'rejected',
 			message:
@@ -165,12 +186,10 @@ async function fsWriteWithConflictCheck(
 	relPath: string,
 	payload: Record<string, unknown>,
 	filesWrittenThisTurn: Set<string>,
-	askBeforeOverwrite: boolean,
+	opts: WriteOptions,
 	diffAfter?: string
 ): Promise<ToolExecOutput> {
-	const resolved = await resolveWritePathInteractive(workdir, relPath, filesWrittenThisTurn, {
-		askBeforeOverwrite
-	});
+	const resolved = await resolveWritePathInteractive(workdir, relPath, filesWrittenThisTurn, opts);
 	if (resolved.kind === 'canceled') return userCanceledWriteError(relPath, command);
 	if (resolved.kind === 'rejected') return toolResult(toolError(resolved.message));
 	const before = diffAfter === undefined ? undefined : await previousContent(workdir, resolved);
@@ -182,6 +201,7 @@ async function fsWriteWithConflictCheck(
 			overwrite: resolved.overwrite
 		});
 		filesWrittenThisTurn.add(resolved.finalPath);
+		opts.rewritable?.delete(resolved.finalPath);
 		const diag = await lintPythonIfApplicable(workdir, resolved.finalPath);
 		const out = toolResult(`Wrote: ${resolved.finalPath}${diag}`);
 		if (diffAfter !== undefined && before !== undefined) {
@@ -387,7 +407,7 @@ function spreadsheetWriteExecutor(command: string) {
 			args.path as string,
 			{ sheets },
 			ctx.filesWrittenThisTurn,
-			!ctx.codeSessionId
+			writeOptions(ctx)
 		);
 	};
 }
@@ -425,7 +445,7 @@ function textWriteExecutor(
 			args.path as string,
 			payload(args),
 			ctx.filesWrittenThisTurn,
-			!ctx.codeSessionId,
+			writeOptions(ctx),
 			// The Code tab shows each write as a diff against what was there.
 			ctx.codeSessionId && command === IPC.fs_write_text ? (args.content as string) : undefined
 		);
@@ -612,7 +632,7 @@ function slidesWriteExecutor(command: string) {
 			args.path as string,
 			{ slides },
 			ctx.filesWrittenThisTurn,
-			!ctx.codeSessionId
+			writeOptions(ctx)
 		);
 	};
 }
@@ -918,7 +938,7 @@ registerTool({
 			ctx.workingDir!,
 			relPath,
 			ctx.filesWrittenThisTurn,
-			{ askBeforeOverwrite: !ctx.codeSessionId }
+			writeOptions(ctx)
 		);
 		if (resolved.kind === 'canceled') return userCanceledWriteError(relPath, 'fs_download_url');
 		if (resolved.kind === 'rejected') return toolResult(toolError(resolved.message));
@@ -930,6 +950,7 @@ registerTool({
 				overwrite: resolved.overwrite
 			});
 			ctx.filesWrittenThisTurn.add(resolved.finalPath);
+			if (ctx.codeSessionId) ctx.filesRewritableThisTurn?.delete(resolved.finalPath);
 			let thumbDataUrl: string | undefined;
 			if (IMAGE_EXT_RE.test(resolved.finalPath)) {
 				try {

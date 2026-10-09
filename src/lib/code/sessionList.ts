@@ -34,6 +34,19 @@ export function sessionLabel(s: { title: string; root: string }): string {
 	return isUnsetTitle(s.title) ? `${folderName(s.root)} · new session` : s.title.trim();
 }
 
+/**
+ * The tooltip line for a fork: `Forked from "Refactor"`, or from a deleted
+ * session. `list` is the sidebar's, to look the source up in.
+ */
+export function forkedFromTitle(
+	s: Pick<CodeSessionSummary, 'forked_from'>,
+	list: Pick<CodeSessionSummary, 'id' | 'title' | 'root'>[]
+): string {
+	if (!s.forked_from) return '';
+	const source = list.find((x) => x.id === s.forked_from);
+	return source ? `Forked from "${sessionLabel(source)}"` : 'Forked from a deleted session';
+}
+
 /** Sessions grouped by folder. Folders with the newest session go first. */
 export function groupByRoot(list: CodeSessionSummary[]): SessionGroup[] {
 	const sorted = [...list].sort((a, b) => b.updated_at - a.updated_at);

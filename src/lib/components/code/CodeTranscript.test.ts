@@ -8,6 +8,8 @@ vi.mock('#lib/editor/windows.ts', () => ({
 	openInEditorWindows: openWindows,
 	describeOpens: () => ''
 }));
+const forkFromMessage = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock('#lib/code/windows.ts', () => ({ forkFromMessage }));
 vi.mock('#lib/stores/chat.svelte.ts', () => ({
 	rerunSandboxStep: vi.fn(),
 	cancelActiveSandboxRun: vi.fn()
@@ -35,7 +37,11 @@ function fakeSession(over: Partial<Record<string, unknown>> = {}): CodeSession {
 		lastError: null,
 		saveError: null,
 		contextNotice: null,
+		git: null,
+		fileNotes: [],
+		folderMissing: false,
 		continueTurn: vi.fn(),
+		refreshGit: vi.fn(async () => {}),
 		...over
 	} as unknown as CodeSession;
 }
@@ -204,6 +210,36 @@ describe('CodeTranscript live tool round', () => {
 		const text = container.textContent ?? '';
 		expect(text.indexOf('Fixing it.')).toBeLessThan(text.indexOf('Fixed.'));
 	});
+	it('draws that text as a light remark: no header or copy button, links kept', () => {
+		const said = 'Looking at `src/a.ts:3` and [the docs](https://example.com/x).';
+		const messages: ChatMessage[] = [
+			{ role: 'user', content: 'fix it' },
+			{ role: 'assistant', content: 'Fixed.' }
+		];
+		const messageSteps = {
+			1: [
+				{
+					id: 'g',
+					toolName: 'code_grep',
+					query: 'x',
+					status: 'done' as const,
+					result: 'a.ts:1',
+					lead: said
+				}
+			]
+		};
+		render(CodeTranscript, { session: fakeSession({ messages, messageSteps }) });
+		const lead = screen.getByTestId('step-lead');
+		expect(lead.closest('.message')).toBeNull();
+		expect(lead.querySelector('.message-label')).toBeNull();
+		// One HARUSPEX header and one copy button: the answer's.
+		expect(screen.getAllByText('Haruspex')).toHaveLength(1);
+		expect(screen.getAllByTitle('Copy to clipboard')).toHaveLength(1);
+		expect(lead.querySelector('a')?.getAttribute('href')).toBe('https://example.com/x');
+		expect(lead.querySelector('button[data-action="code-path"]')?.getAttribute('data-path')).toBe(
+			'src/a.ts'
+		);
+	});
 });
 
 describe('slash command notes', () => {
@@ -327,5 +363,90 @@ describe('CodeTranscript paths', () => {
 		expect([...links].map((b) => b.textContent)).toEqual(['src/c.ts']);
 		await fireEvent.click(links[0]);
 		expect(openWindows).toHaveBeenLastCalledWith('/p/app', ['src/c.ts']);
+	});
+});
+
+const repo = {
+	repo_root: '/p/app',
+	branch: 'main',
+	head: 'abc1234',
+	changed: 0,
+	untracked: 0,
+	linked_worktree: false,
+	default_branch: 'main'
+};
+
+describe('CodeTranscript fork', () => {
+	it('offers Fork from here on user and assistant messages, with the thread index', async () => {
+		const messages: ChatMessage[] = [
+			{ role: 'user', content: 'find x' },
+			{
+				role: 'assistant',
+				content: '',
+				tool_calls: [
+					{ id: 'c1', type: 'function', function: { name: 'code_grep', arguments: '{}' } }
+				]
+			},
+			{ role: 'tool', tool_call_id: 'c1', content: 'a.ts:1' },
+			{ role: 'assistant', content: 'In a.ts.' }
+		];
+		const session = fakeSession({ messages, git: repo });
+		render(CodeTranscript, { session });
+		const buttons = screen.getAllByRole('button', { name: 'Fork from here' });
+		// The tool call and its result have none.
+		expect(buttons).toHaveLength(2);
+		await fireEvent.click(buttons[0]);
+		await fireEvent.click(await screen.findByRole('button', { name: /New worktree/ }));
+		expect(forkFromMessage).toHaveBeenLastCalledWith(session, 0, 'worktree');
+		await fireEvent.click(buttons[1]);
+		await fireEvent.click(await screen.findByRole('button', { name: /Same folder, read-only/ }));
+		expect(forkFromMessage).toHaveBeenLastCalledWith(session, 3, 'readOnly');
+	});
+
+	it('outside a git repository, forks read-only and says why', async () => {
+		forkFromMessage.mockClear();
+		const session = fakeSession({ messages: thread(1) });
+		render(CodeTranscript, { session });
+		await fireEvent.click(screen.getAllByRole('button', { name: 'Fork from here' })[0]);
+		expect(await screen.findByText(/isn't in a git repository/)).toBeTruthy();
+		expect(screen.queryByRole('button', { name: /New worktree/ })).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Fork read-only' }));
+		expect(forkFromMessage).toHaveBeenLastCalledWith(session, 0, 'readOnly');
+	});
+
+	it('cancelling the dialog forks nothing', async () => {
+		forkFromMessage.mockClear();
+		const session = fakeSession({ messages: thread(1), git: repo });
+		render(CodeTranscript, { session });
+		await fireEvent.click(screen.getAllByRole('button', { name: 'Fork from here' })[0]);
+		await fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+		expect(forkFromMessage).not.toHaveBeenCalled();
+	});
+
+	it('says to wait while a turn runs, and does nothing', async () => {
+		forkFromMessage.mockClear();
+		const session = fakeSession({ messages: thread(1), status: 'running', busy: true });
+		render(CodeTranscript, { session });
+		const [first] = screen.getAllByRole('button', { name: 'Fork from here' });
+		expect(first.getAttribute('title')).toMatch(/Wait for the turn to finish/);
+		expect(first.getAttribute('aria-disabled')).toBe('true');
+		await fireEvent.click(first);
+		expect(forkFromMessage).not.toHaveBeenCalled();
+	});
+});
+
+describe('background command notices', () => {
+	it('render as a notice, not as the user', () => {
+		const messages: ChatMessage[] = [
+			{
+				role: 'user',
+				content:
+					'A background command you started with watch has finished.\n\n$ sleep 20; echo done\nexit code: 0\n--- output ---\ndone\n---'
+			},
+			{ role: 'assistant', content: 'It finished.' }
+		];
+		render(CodeTranscript, { session: fakeSession({ messages }) });
+		expect(screen.getByText('Background command finished: sleep 20; echo done')).toBeTruthy();
+		expect(screen.queryByText('YOU')).toBeNull();
 	});
 });

@@ -1,11 +1,11 @@
 ---
-title: Shell and Code mode
-description: The Shell tab's terminal and assistant sidebar, sending output to it, tabs opened by the Code tab, Code mode, command approval, the memory limit and repo instructions.
+title: Shell tab
+description: The Shell tab's terminal and assistant sidebar, sending output to it, Read-only and Full access, Open in Code, tabs opened by the Code tab, command approval, the memory limit and repo instructions.
 ---
 
-# Shell and Code mode
+# Shell tab
 
-The Shell tab is a real terminal with an assistant beside it. By default the assistant only reads and suggests. Turn on Code mode and it can edit files and run commands in that terminal.
+The Shell tab is a real terminal with an assistant beside it. By default the assistant is **Read-only**: it reads and suggests. Switch it to **Full access** and it can also edit files and run commands in that terminal.
 
 ## Open a terminal
 
@@ -27,23 +27,25 @@ Long output is cut in the middle before it is sent (Settings → Shell → Max o
 
 **Ctrl+Shift+A** shows or hides the sidebar, and **Ctrl+`** moves focus between terminal and assistant.
 
-## Read-only mode (the default)
+## Read-only (the default)
 
-The assistant can read config files and logs and suggest fixes, but it never runs anything. Each suggested command is a card with two buttons: **Paste** types it at your prompt without pressing Enter, and **Run** types it, presses Enter and sends the output back. Commands that match risky patterns, such as `sudo`, `rm -rf`, `dd of=`, a pipe to a shell or `Remove-Item -Recurse -Force`, get a red chip and ask again before they are typed. The check is a short pattern list: a command without a chip is not proven safe.
+The lock in the sidebar header reads **Read-only**. The assistant can read config files and logs and suggest fixes, but it never runs anything. Each suggested command is a card with two buttons: **Paste** types it at your prompt without pressing Enter, and **Run** types it, presses Enter and sends the output back. Commands that match risky patterns, such as `sudo`, `rm -rf`, `dd of=`, a pipe to a shell or `Remove-Item -Recurse -Force`, get a red chip and ask again before they are typed. The check is a short pattern list: a command without a chip is not proven safe.
 
-## Let the assistant edit files and run commands
+## Full access: let the assistant edit files and run commands
 
-Click **Code** in the sidebar header to turn on Code mode for that tab. It is off by default; Settings → Shell → Enable Code mode by default in new shells changes that for new tabs.
+Click the lock (**Read-only**) in the sidebar header to switch that tab to **Full access**; click it again to go back. Each tab has its own. New tabs start Read-only unless you turn on Settings → Shell → Start new shells with Full access. A tab moved to its own window keeps its setting.
 
-In Code mode the assistant runs commands in your live terminal, so they share your folder, environment and venv and show in your scrollback. Commands that look safe run on their own. A risky one opens **Run this command?** with **Allow for this session**, **Allow once** or **Deny** (the model is told it was denied). A command that reaches outside the project always asks.
+With Full access the assistant runs commands in your live terminal, so they share your folder, environment and venv and show in your scrollback. It can edit and write files, search the project, drive a program waiting for input, and start servers or long builds in the background. Commands that look safe run on their own. A risky one opens **Run this command?** with **Allow for this session**, **Allow once** or **Deny** (the model is told it was denied). A command that reaches outside the project always asks. In a detached Shell window the question shows in that window.
 
-Settings → Code → Auto-approve commands ("Run risk-flagged commands without prompting") skips that prompt. It is off by default; only turn it on if you fully trust the model on this machine.
+Settings → Code → Auto-approve commands skips that prompt. It is off by default; only turn it on if you fully trust the model on this machine. Settings → Code also holds the command time limit (30 seconds by default) and the step limit per task (40); the Code tab uses them too.
 
-For servers and long builds the assistant can start a command in the background, and ask to be told when it finishes, so the terminal isn't blocked. Each command has a time limit (Settings → Code → run_command timeout, 30 seconds by default), and a task stops after a number of steps (Settings → Code → Max steps per task, 40 by default). Those settings, and auto-approve, are shared with the Code tab (see the `code` page).
+Full access needs a capable model. Small local models make mistakes and get stuck; see the `models` page. Read the AI safety disclaimer in the README before using it.
 
-When you return to a folder with an earlier coding session, the sidebar offers **Keep** or **Start fresh**.
+## Continue in the Code tab
 
-Code mode needs a capable model. Small local models make mistakes and get stuck; see the `models` page. Read the AI safety disclaimer in the README before using it.
+**Open in Code** in the sidebar header starts a Code session in the folder the terminal is in now and switches to the Code tab (from a detached Shell window, the main window comes forward). The conversation here doesn't go with it. Use it for longer coding work: Code sessions are saved and can be reopened, forked and moved. See the `code` page.
+
+The Shell assistant's conversation is not saved: it ends when you close the tab or quit, in both modes, and is not brought back when you return to a folder.
 
 ## Stop runaway commands (memory limit)
 
@@ -51,4 +53,4 @@ Settings → Shell → Memory limit caps each command the assistant runs on its 
 
 ## Repo instructions (AGENTS.md)
 
-In a git repo with an `AGENTS.md` (or `CLAUDE.md`), the assistant reads it into every turn, in both modes. The first time, Haruspex asks whether to use the repo's instructions. While the file is in use, an **AGENTS.md** badge shows in the sidebar; click it to stop using them. In Code mode, `/init` drafts an `AGENTS.md` for you. See the `skills` page for details.
+In a git repo with an `AGENTS.md` (or `CLAUDE.md`), the assistant reads it into every turn, in both modes. The first time, Haruspex asks whether to use the repo's instructions. While the file is in use, an **AGENTS.md** badge shows in the sidebar; click it to stop using them. With Full access, `/init` drafts an `AGENTS.md` for you. See the `skills` page for details.

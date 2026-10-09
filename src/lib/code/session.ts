@@ -1,20 +1,16 @@
 /**
- * Serialization for persisted coding threads: Code-tab sessions (stored in
- * `code_sessions`, see `src-tauri/src/db/code_sessions.rs`) and, until the
- * Shell's Code mode stops saving threads, Code-mode shell threads.
+ * Serialization for Code-tab session threads, stored in `code_sessions` (see
+ * `src-tauri/src/db/code_sessions.rs`).
  *
  * The Rust side reads this shape in one place, `fork_thread`, which slices
  * `messages` and the index-keyed sidecars; a change to either, or to
  * `CODE_SESSION_VERSION`, must be mirrored there.
  *
- * The shell tab is otherwise session-scoped on purpose — a PTY dies with the
- * app, so restoring a chat without its shell would mislead. Code mode earns an
- * exception: a coding session's value is the conversation (what was decided,
- * what was tried, what failed), and that outlives the PTY. Losing it to a
- * power cut is a real cost, which is also why the write happens per turn
- * rather than on shutdown — a shutdown hook never runs when the power goes.
+ * A coding session's value is the conversation (what was decided, what was
+ * tried, what failed), so the thread is written per turn rather than on
+ * shutdown — a shutdown hook never runs when the power goes.
  *
- * Kept apart from `stores/shell.svelte.ts` so the encode/decode contract is
+ * Kept apart from `stores/code.svelte.ts` so the encode/decode contract is
  * unit-testable without a Svelte runtime or a live database.
  */
 
@@ -55,9 +51,8 @@ export function encodeCodeSession(state: CodeSessionState): string {
 
 /**
  * Decode a stored thread, or null when it is unusable — absent, corrupt,
- * written by another payload version, or carrying no messages. Returning null
- * for an empty thread matters: an empty restore would still raise the
- * "restored your session" notice while putting nothing back.
+ * written by another payload version, or carrying no messages. An empty thread
+ * is treated as nothing saved.
  */
 export function decodeCodeSession(json: string | null): CodeSessionState | null {
 	if (!json) return null;
@@ -78,14 +73,4 @@ export function decodeCodeSession(json: string | null): CodeSessionState | null 
 		messageStops: snap.messageStops ?? {},
 		messageHistorySent: snap.messageHistorySent ?? {}
 	};
-}
-
-/**
- * Turns in a thread, for the restore notice. Counts user messages rather than
- * array length: the array also holds the assistant prose plus every
- * tool_calls/tool pair, so its length reads as a wildly inflated "12 turns"
- * for what the user experienced as three questions.
- */
-export function countTurns(messages: ChatMessage[]): number {
-	return messages.filter((m) => m.role === 'user').length;
 }

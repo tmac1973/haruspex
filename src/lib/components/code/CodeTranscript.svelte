@@ -15,15 +15,21 @@
 	 * `TURNS_PER_PAGE` turns, with "Show earlier" for the rest.
 	 */
 	import { onDestroy, untrack } from 'svelte';
+	import { isWatchNotification, watchNotificationCommands } from '#lib/shell/backgroundWatch.ts';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
 	import StopIndicator from '#lib/components/StopIndicator.svelte';
 	import ThinkingIndicator from '#lib/components/ThinkingIndicator.svelte';
 	import CodeSteps from './CodeSteps.svelte';
+	import ForkDialog from './ForkDialog.svelte';
+	import type { CodeForkMode } from '#lib/ipc/gen/CodeForkMode.ts';
 	import { messageText } from '#lib/api.ts';
 	import { TURNS_PER_PAGE, turnsBefore, windowStart } from '#lib/code/sessionList.ts';
 	import type { CodeSession } from '#lib/stores/code.svelte.ts';
 	import { makeCodePathLinker } from '#lib/code/paths.ts';
 	import { openFileFromClick } from '#lib/code/openEditor.ts';
+	import { forkFromMessage } from '#lib/code/windows.ts';
+	import { showToast } from '#lib/stores/toasts.svelte.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	let { session, notes = [] }: { session: CodeSession; notes?: TranscriptNote[] } = $props();
 
@@ -77,8 +83,10 @@
 
 	const ticket = $derived(session.ticket);
 
-	const notesAt = (i: number) => notes.filter((n) => n.at === i);
-	const trailingNotes = $derived(notes.filter((n) => n.at >= messages.length));
+	// The slash commands' notes, and what other sessions changed in the folder.
+	const allNotes = $derived([...notes, ...(session.fileNotes ?? [])]);
+	const notesAt = (i: number) => allNotes.filter((n) => n.at === i);
+	const trailingNotes = $derived(allNotes.filter((n) => n.at >= messages.length));
 
 	// Keep the newest output in view, but only while the reader is at the
 	// bottom: scrolling up to read stops the follow, and sending a message (or
@@ -103,7 +111,7 @@
 		void pending.length;
 		void session.searchSteps.length;
 		void session.steering.length;
-		void notes.length;
+		void allNotes.length;
 		if (!threadEl || !follow) return;
 		queueMicrotask(() => {
 			if (threadEl) threadEl.scrollTop = threadEl.scrollHeight;
@@ -125,6 +133,36 @@
 		if (!rel) return;
 		event.preventDefault();
 		openFileFromClick(session.root, rel);
+	}
+
+	/** Forks once the turn is over: the saved thread is then the one shown. */
+	const forkBlocked = $derived(
+		session.busy
+			? 'Wait for the turn to finish, then fork.'
+			: session.folderMissing
+				? `Folder not found: ${session.root}`
+				: null
+	);
+
+	/** The message "Fork from here" was pressed on; the dialog asks where. */
+	let forkAt = $state<number | null>(null);
+
+	function fork(index: number) {
+		forkAt = index;
+		// The dialog offers a worktree only in a repository: look again.
+		void session.refreshGit();
+	}
+
+	async function forkTo(mode: CodeForkMode) {
+		const index = forkAt;
+		if (index === null) return;
+		try {
+			await forkFromMessage(session, index, mode);
+		} catch (e) {
+			showToast(`Couldn't fork: ${errMessage(e)}`, { kind: 'error' });
+		} finally {
+			forkAt = null;
+		}
 	}
 
 	function removePending(index: number) {
@@ -161,8 +199,18 @@
 		{#if msg.role !== 'tool' && !msg.tool_calls}
 			{#if msg.role === 'system'}
 				<div class="note">{messageText(msg.content)}</div>
+			{:else if msg.role === 'user' && isWatchNotification(messageText(msg.content))}
+				{@const commands = watchNotificationCommands(messageText(msg.content))}
+				<details class="bg-notice">
+					<summary
+						>Background command finished{commands.length === 1
+							? `: ${commands[0]}`
+							: ` (${commands.length})`}</summary
+					>
+					<pre>{messageText(msg.content)}</pre>
+				</details>
 			{:else if msg.role === 'user'}
-				<ChatMessage message={msg} />
+				<ChatMessage message={msg} onFork={() => fork(i)} {forkBlocked} />
 			{:else}
 				{#if session.messageSteps[i]?.length}
 					<CodeSteps steps={session.messageSteps[i]} root={session.root} />
@@ -172,6 +220,8 @@
 					{codePaths}
 					tokensPerSecond={session.messageStats[i]?.tokensPerSecond}
 					elapsedMs={session.messageStats[i]?.elapsedMs}
+					onFork={() => fork(i)}
+					{forkBlocked}
 				/>
 				{#if session.messageStops[i]}
 					<StopIndicator
@@ -254,7 +304,36 @@
 	{/if}
 </div>
 
+<ForkDialog
+	open={forkAt !== null}
+	git={session.git}
+	onfork={forkTo}
+	oncancel={() => (forkAt = null)}
+/>
+
 <style>
+	.bg-notice {
+		margin: 8px 0;
+		padding: 6px 10px;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		font-size: 0.82rem;
+		color: var(--text-secondary);
+	}
+
+	.bg-notice summary {
+		cursor: pointer;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.bg-notice pre {
+		margin: 6px 0 0;
+		white-space: pre-wrap;
+		font-size: 0.78rem;
+	}
+
 	.thread {
 		flex: 1 1 auto;
 		min-height: 0;

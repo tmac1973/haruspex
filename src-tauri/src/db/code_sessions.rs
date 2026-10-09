@@ -5,9 +5,9 @@
 //! fixed at creation and is the session's boundary for its whole life.
 //!
 //! The thread is one JSON blob (a `CodeSessionSnapshot`, see
-//! `src/lib/code/session.ts`) rewritten after every turn, for the same reason
-//! as `shell_sessions.rs`: a snapshot cannot half-apply, and the write has to
-//! happen per turn because a shutdown hook never runs when the power goes.
+//! `src/lib/code/session.ts`) rewritten after every turn: a snapshot cannot
+//! half-apply, and the write has to happen per turn because a shutdown hook
+//! never runs when the power goes.
 //! The snapshot's index-keyed sidecars (steps, stats, stops) have no home in
 //! the `messages` table, and nothing queries inside a thread.
 //!
@@ -43,6 +43,9 @@ pub struct CodeSessionSummary {
     #[ts(type = "number")]
     pub updated_at: i64,
     pub forked_from: Option<String>,
+    pub read_only: bool,
+    /// The git worktree Haruspex made for this session (a fork), if any.
+    pub worktree: Option<String>,
 }
 
 /// A full session row.
@@ -68,6 +71,19 @@ pub struct CodeSessionRow {
     pub created_at: i64,
     #[ts(type = "number")]
     pub updated_at: i64,
+    /// May read and search, not write: a fork that shares its source's folder.
+    pub read_only: bool,
+    /// The top folder of the git worktree Haruspex made for this session (a
+    /// worktree fork). Deleting the session offers to remove it.
+    pub worktree: Option<String>,
+    /// Other sessions' changed-file notices up to this time (ms) have been
+    /// given to this one's agent. `null` for a session saved before this
+    /// was kept: its `updated_at` stands in.
+    #[ts(type = "number | null")]
+    pub notices_seen_at: Option<i64>,
+    /// The checked-out branch the agent was last told or saw. `null`: never
+    /// told; `''`: told there was none (not a repo).
+    pub agent_branch: Option<String>,
 }
 
 /// A header edit. Each field is three-state: absent leaves the column alone,
@@ -95,7 +111,8 @@ where
 }
 
 const ROW_COLUMNS: &str = "id, title, root, backend, reasoning_effort, thread, \
-     forked_from, forked_at, created_at, updated_at";
+     forked_from, forked_at, created_at, updated_at, read_only, worktree, \
+     notices_seen_at, agent_branch";
 
 fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CodeSessionRow> {
     Ok(CodeSessionRow {
@@ -109,6 +126,10 @@ fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CodeSessionRow> {
         forked_at: row.get(7)?,
         created_at: row.get(8)?,
         updated_at: row.get(9)?,
+        read_only: row.get(10)?,
+        worktree: row.get(11)?,
+        notices_seen_at: row.get(12)?,
+        agent_branch: row.get(13)?,
     })
 }
 
@@ -192,7 +213,7 @@ pub fn fork_thread(thread: &str, at: usize) -> Result<String, String> {
 }
 
 /// `"<title> (fork)"`, without a leading space for a session not yet named.
-fn fork_title(title: &str) -> String {
+pub fn fork_title(title: &str) -> String {
     if title.is_empty() {
         "(fork)".to_string()
     } else {
@@ -206,7 +227,7 @@ impl Database {
         let conn = self.conn();
         let mut stmt = conn
             .prepare(
-                "SELECT id, title, root, updated_at, forked_from
+                "SELECT id, title, root, updated_at, forked_from, read_only, worktree
                  FROM code_sessions ORDER BY updated_at DESC, id",
             )
             .map_err(|e| format!("Code session list failed: {e}"))?;
@@ -218,6 +239,8 @@ impl Database {
                     root: row.get(2)?,
                     updated_at: row.get(3)?,
                     forked_from: row.get(4)?,
+                    read_only: row.get(5)?,
+                    worktree: row.get(6)?,
                 })
             })
             .map_err(|e| format!("Code session list failed: {e}"))?;
@@ -254,6 +277,10 @@ impl Database {
             forked_at: None,
             created_at: now,
             updated_at: now,
+            read_only: false,
+            worktree: None,
+            notices_seen_at: None,
+            agent_branch: None,
         };
         self.insert_code_session(&row)?;
         Ok(row)
@@ -264,7 +291,7 @@ impl Database {
         conn.execute(
             &format!(
                 "INSERT INTO code_sessions ({ROW_COLUMNS})
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)"
             ),
             params![
                 row.id,
@@ -276,7 +303,11 @@ impl Database {
                 row.forked_from,
                 row.forked_at,
                 row.created_at,
-                row.updated_at
+                row.updated_at,
+                row.read_only,
+                row.worktree,
+                row.notices_seen_at,
+                row.agent_branch
             ],
         )
         .map_err(|e| format!("Code session create failed: {e}"))?;
@@ -350,6 +381,58 @@ impl Database {
         Ok(())
     }
 
+    /// What the session's agent has been told, saved with each turn (see
+    /// [`CodeSessionRow::notices_seen_at`] and `agent_branch`). `None`
+    /// leaves a column as it is.
+    pub fn set_code_session_seen(
+        &self,
+        id: &str,
+        notices_seen_at: Option<i64>,
+        agent_branch: Option<&str>,
+    ) -> Result<(), String> {
+        if notices_seen_at.is_none() && agent_branch.is_none() {
+            return Ok(());
+        }
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE code_sessions SET
+                notices_seen_at = COALESCE(?2, notices_seen_at),
+                agent_branch = COALESCE(?3, agent_branch)
+             WHERE id = ?1",
+            params![id, notices_seen_at, agent_branch],
+        )
+        .map_err(|e| format!("Code session save failed: {e}"))?;
+        Ok(())
+    }
+
+    /// Point a session at another folder, when its own is gone (deleted, a
+    /// worktree removed, a drive unmounted). `root` must be an existing
+    /// directory and is stored canonical, as at creation. The worktree it
+    /// was made with is forgotten unless the new folder is inside it.
+    /// Does not bump `updated_at`.
+    pub fn set_code_session_root(&self, id: &str, root: &str) -> Result<CodeSessionRow, String> {
+        let canonical = std::fs::canonicalize(root).map_err(|e| format!("Folder {root}: {e}"))?;
+        if !canonical.is_dir() {
+            return Err(format!("{root} is not a folder"));
+        }
+        let new_root = canonical
+            .to_str()
+            .ok_or_else(|| format!("Folder {root} is not valid UTF-8"))?
+            .to_string();
+        let current = self.load_code_session(id)?;
+        let worktree = current
+            .worktree
+            .filter(|wt| canonical.starts_with(std::path::Path::new(wt)));
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE code_sessions SET root = ?2, worktree = ?3 WHERE id = ?1",
+            params![id, new_root, worktree],
+        )
+        .map_err(|e| format!("Code session update failed: {e}"))?;
+        drop(conn);
+        self.load_code_session(id)
+    }
+
     /// Deleting a session that is already gone is not an error.
     pub fn delete_code_session(&self, id: &str) -> Result<(), String> {
         let conn = self.conn();
@@ -358,16 +441,32 @@ impl Database {
         Ok(())
     }
 
-    /// A new session holding messages `[0, at)` of `id`, with the same root,
-    /// backend and effort. `forked_from` is not a foreign key: the source may
-    /// be deleted later and the fork stands on its own.
+    /// A read-only session holding messages `[0, at)` of `id`, in the same
+    /// folder, with the same backend and effort. `forked_from` is not a
+    /// foreign key: the source may be deleted later and the fork stands on
+    /// its own.
     pub fn fork_code_session(&self, id: &str, at: usize) -> Result<CodeSessionRow, String> {
+        self.fork_code_session_into(id, at, None)
+    }
+
+    /// A fork, as [`Self::fork_code_session`]; with `into` = `(root,
+    /// worktree)`, a writable one rooted in the worktree made for it.
+    pub fn fork_code_session_into(
+        &self,
+        id: &str,
+        at: usize,
+        into: Option<(&str, &str)>,
+    ) -> Result<CodeSessionRow, String> {
         let source = self.load_code_session(id)?;
         let now = chrono_now();
+        let (root, read_only, worktree) = match into {
+            Some((root, worktree)) => (root.to_string(), false, Some(worktree.to_string())),
+            None => (source.root, true, None),
+        };
         let row = CodeSessionRow {
             id: new_session_id()?,
             title: fork_title(&source.title),
-            root: source.root,
+            root,
             backend: source.backend,
             reasoning_effort: source.reasoning_effort,
             thread: fork_thread(&source.thread, at)?,
@@ -375,6 +474,12 @@ impl Database {
             forked_at: Some(at as i64),
             created_at: now,
             updated_at: now,
+            read_only,
+            worktree,
+            // A fork is news to nobody yet: its `updated_at` stands in, and
+            // its agent is told the branch afresh.
+            notices_seen_at: None,
+            agent_branch: None,
         };
         self.insert_code_session(&row)?;
         Ok(row)

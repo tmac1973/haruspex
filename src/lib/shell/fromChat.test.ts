@@ -7,10 +7,11 @@ vi.mock('#lib/shell/runShellTurn.ts', () => ({ runShellTurn: vi.fn() }));
 vi.mock('#lib/shell/system-prompt.ts', () => ({
 	buildShellSystemPrompt: () => ({ role: 'system', content: 'sys' })
 }));
+const fullAccessDefault = vi.hoisted(() => ({ value: false }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: () => ({
-		shellCodeModeDefault: false,
+		shellFullAccessDefault: fullAccessDefault.value,
 		shellHistoryTurnsForPrompt: 3,
 		shellMaxBytesPerCapture: 1000,
 		contextSize: 8192,
@@ -88,5 +89,15 @@ describe('openShellFromChat', () => {
 		expect(session.sidebarOpen).toBe(true);
 		expect(session.name).toMatch(/^Shell \d+$/);
 		expect(getActiveTab()).toBe('shell');
+	});
+
+	it('opens in the mode Settings → Shell sets for new shells', () => {
+		expect(openShellFromChat({ title: 'x', messages: thread }).fullAccess).toBe(false);
+		fullAccessDefault.value = true;
+		try {
+			expect(openShellFromChat({ title: 'y', messages: thread }).fullAccess).toBe(true);
+		} finally {
+			fullAccessDefault.value = false;
+		}
 	});
 });
