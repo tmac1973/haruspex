@@ -3,10 +3,14 @@
 	 * Searchable combobox for picking an OpenRouter model from the ~300-entry
 	 * catalog. Hand-rolled (no new dependency) to keep the project dependency-
 	 * free for UI widgets. Renders a text input that filters the dropdown list
-	 * by name or id; selecting an entry calls back with the model id.
+	 * by name or id (every typed word must match); selecting an entry calls back with the model id.
 	 */
 	import type { OpenRouterModel } from '#lib/openrouter.ts';
-	import { isOpenRouterFreeModel, isOpenRouterToolCapable } from '#lib/openrouter.ts';
+	import {
+		isOpenRouterFreeModel,
+		isOpenRouterToolCapable,
+		matchesOpenRouterQuery
+	} from '#lib/openrouter.ts';
 
 	interface Props {
 		models: OpenRouterModel[];
@@ -23,11 +27,9 @@
 	let activeIndex = $state(0);
 
 	const filtered = $derived.by(() => {
-		const q = query.trim().toLowerCase();
 		return models.filter((m) => {
 			if (toolsOnly && !isOpenRouterToolCapable(m)) return false;
-			if (!q) return true;
-			return m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q);
+			return matchesOpenRouterQuery(m, query);
 		});
 	});
 
