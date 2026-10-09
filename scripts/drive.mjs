@@ -34,9 +34,12 @@ A long-lived app, driven step by step:
   wait <id>                 wait for the session's turn to end or need someone
   steer <id> <text>         queue a message for the running turn's next step
   cancel <id>               press Stop
-  approval                  the command waiting for approval, if any
+  approval                  every prompt waiting on a person, in every window
   approve allow|allow-session|deny
   state [<id>] [--transcript]
+  detach <id>               move the session to its own window (the tab's ⤢)
+  events [--since N]        engine events from every window; "next" is the next --since
+  consistent <id>           whether the session's events rebuild what session.get says
   logs [--since N]          agent debug log lines from N on
   screenshot [PATH]
   minimise | restore        the app window
@@ -59,6 +62,9 @@ Options for run and start:
                        Settings → Code → auto-approve (default: on for run, off for start)
   --idle-timeout MIN   start: stop after this long with no commands and no turn running
                        (default 60; 0 never)
+Options for send, steer, cancel and approve:
+  --via engine         use the engine operation (as the owner API will), not the UI;
+                       the only way to reach a session in a detached window
 Options for run, send and wait:
   --timeout SECS       the most one turn may take (default 600)`;
 
@@ -76,6 +82,7 @@ const OPTIONS = {
 	show: { type: 'boolean', default: false },
 	wait: { type: 'boolean', default: false },
 	transcript: { type: 'boolean', default: false },
+	via: { type: 'string', default: 'ui' },
 	since: { type: 'string', default: '0' },
 	'auto-approve': { type: 'boolean' },
 	'no-auto-approve': { type: 'boolean' },
@@ -265,24 +272,23 @@ async function daemon(opts) {
 		baseUrl: app.meta.baseUrl,
 		display: app.display,
 		autoApprove: opts.autoApprove,
-		sessions: (await app.sessions()).map((s) => ({
-			id: s.id,
-			root: s.root,
-			title: s.title,
-			status: s.status
-		}))
+		// Open in any window.
+		sessions: (await app.engine({ type: 'sessions.list' })).filter((s) => s.status)
 	});
 
 	const turnOpts = (args) => ({ timeoutMs: (args.timeout ?? 600) * 1000 });
 	const handlers = {
 		status,
 		'new-session': (a) => app.newSession(a.folder),
-		send: (a) => app.send(a.id, a.text, { wait: a.wait, ...turnOpts(a) }),
+		send: (a) => app.send(a.id, a.text, { wait: a.wait, via: a.via, ...turnOpts(a) }),
 		wait: (a) => app.wait(a.id, turnOpts(a)),
-		steer: (a) => app.steer(a.id, a.text),
-		cancel: (a) => app.cancel(a.id),
+		steer: (a) => app.steer(a.id, a.text, { via: a.via }),
+		cancel: (a) => app.cancel(a.id, { via: a.via }),
 		approval: () => app.pendingApproval(),
-		approve: (a) => app.approve(a.choice),
+		approve: (a) => app.approve(a.choice, { via: a.via }),
+		detach: (a) => app.detach(a.id),
+		events: (a) => app.events(a.since),
+		consistent: (a) => app.consistent(a.id),
 		state: (a) => app.state(a.id, { asTranscript: a.transcript }),
 		logs: (a) => app.logs(a.since),
 		screenshot: (a) => app.screenshot(a.path ?? join(opts.outDir, `screenshot-${Date.now()}.png`)),
@@ -290,8 +296,14 @@ async function daemon(opts) {
 		restore: () => app.restore(),
 		scenario: (a) => app.scenario(a.name),
 		requests: () => app.requests(),
+		// Stops even when saving fails: a driver nobody can stop is worse.
 		stop: async () => {
-			const saved = await app.saveOutputs();
+			let saved;
+			try {
+				saved = await app.saveOutputs();
+			} catch (e) {
+				saved = { dir: opts.outDir, files: [], error: String(e?.message ?? e) };
+			}
 			setTimeout(() => shutdown(0, false), 50);
 			return saved;
 		}
@@ -343,6 +355,7 @@ async function client(cmd, values, positionals) {
 				id: positionals[0],
 				text: positionals.slice(1).join(' '),
 				wait: values.wait,
+				via: values.via,
 				timeout: timeoutS
 			};
 			if (values.wait) timeoutMs = (timeoutS + 60) * 1000;
@@ -354,11 +367,19 @@ async function client(cmd, values, positionals) {
 			break;
 		case 'cancel':
 			need(1, 'a session id');
+			args = { id: positionals[0], via: values.via };
+			break;
+		case 'detach':
+		case 'consistent':
+			need(1, 'a session id');
 			args = { id: positionals[0] };
+			break;
+		case 'events':
+			args = { since: Number(values.since) };
 			break;
 		case 'approve':
 			need(1, 'allow, allow-session or deny');
-			args = { choice: positionals[0] };
+			args = { choice: positionals[0], via: values.via };
 			break;
 		case 'state':
 			args = { id: positionals[0], transcript: values.transcript };
@@ -410,6 +431,9 @@ const CLIENT_COMMANDS = new Set([
 	'restore',
 	'scenario',
 	'requests',
+	'detach',
+	'events',
+	'consistent',
 	'stop'
 ]);
 
