@@ -39,4 +39,19 @@ test('a Code session edits a file and runs a command, shown as cards', async ({ 
 	await expect(row).toBeVisible();
 	await expect(row).toContainText(/project · /);
 	await expect(app.getByRole('tab', { name: /Fix README typo/ })).toBeVisible();
+
+	// Open in Shell types the command into a new Shell tab, and shows it.
+	await command.getByRole('button', { name: 'Open in Shell' }).click();
+	await expect(app.getByRole('tab', { name: 'Shell', exact: true })).toHaveAttribute(
+		'aria-selected',
+		'true'
+	);
+	// Typed at the prompt as a bracketed paste, with no Enter after it.
+	await expect
+		.poll(() =>
+			app.evaluate(() =>
+				window.__e2e!.calls.filter((c) => c.cmd === 'shell_write').map((c) => c.args?.data)
+			)
+		)
+		.toContain('\x1b[200~cat README.md\x1b[201~');
 });

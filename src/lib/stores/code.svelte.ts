@@ -42,6 +42,7 @@ import { decodeCodeSession, encodeCodeSession, type CodeSessionState } from '#li
 import { runCodeTurn, type CodeTurnResult } from '#lib/code/runCodeTurn.ts';
 import type { PendingToolCall } from '#lib/code/pendingCall.ts';
 import { LiveTurn } from '#lib/code/liveTurn.svelte.ts';
+import { setShellWaitListener, type ShellWait } from '#lib/code/shellBridge.ts';
 import { isUnsetTitle } from '#lib/code/sessionList.ts';
 import { isSlashCommand, nameSession } from '#lib/code/sessionTitle.ts';
 import { logDebug } from '#lib/debug-log.ts';
@@ -92,6 +93,8 @@ export class CodeSession {
 	returnedSteering = $state<string[]>([]);
 	/** This session's background processes, from `code_bg_status`. */
 	background = $state<BgProcess[]>([]);
+	/** The Shell tab an `open_in_shell` call waits on, while `status` is 'waiting-shell'. */
+	shellWait = $state.raw<ShellWait | null>(null);
 
 	/** What the running turn shows while the model writes (`LiveTurn`). */
 	private readonly live = new LiveTurn();
@@ -118,6 +121,7 @@ export class CodeSession {
 	private flushing = false;
 	private bgTimer: ReturnType<typeof setTimeout> | null = null;
 	private readonly unwatch: () => void;
+	private readonly unwatchShell: () => void;
 
 	constructor(record: CodeSessionRecord) {
 		this.id = record.id;
@@ -139,7 +143,25 @@ export class CodeSession {
 		this.unwatch = setCodeWatchCompletionHandler(this.id, () => {
 			void this.flushWatchNotifications();
 		});
+		this.unwatchShell = setShellWaitListener(this.id, (wait) => this.onShellWait(wait));
 	}
+
+	/** `open_in_shell` started or stopped waiting on a Shell tab. */
+	private onShellWait(wait: ShellWait | null): void {
+		this.shellWait = wait;
+		if (wait && this.status === 'running') this.status = 'waiting-shell';
+		else if (!wait && this.status === 'waiting-shell') this.status = 'running';
+	}
+
+	/** Show the Shell tab the turn waits on. */
+	goToShell = (): void => {
+		this.shellWait?.focus();
+	};
+
+	/** Stop waiting on the shell; the turn carries on without the result. */
+	cancelShellWait = (): void => {
+		this.shellWait?.cancel();
+	};
 
 	/** The answer so far. */
 	get streamingContent(): string {
@@ -307,6 +329,7 @@ export class CodeSession {
 		this.closed = true;
 		this.stop();
 		this.unwatch();
+		this.unwatchShell();
 		clearCodeWatches(this.id);
 		resetSessionApproval(codeApprovalKey(this.id));
 		if (this.bgTimer !== null) clearTimeout(this.bgTimer);
@@ -319,6 +342,7 @@ export class CodeSession {
 		this.status = 'running';
 		const done = this.turn(opening).finally(() => {
 			this.status = 'idle';
+			this.shellWait = null;
 			this.turnDone = null;
 			// A watched command may have finished during the turn; deliver it
 			// now that the session is idle, once this turn has fully unwound.

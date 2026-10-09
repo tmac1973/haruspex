@@ -42,6 +42,7 @@ import { agentsMdPromptSection } from '#lib/skills/agentsMd.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { buildCodeSystemPrompt } from './system-prompt';
+import { loadShellPlatformSupported } from '#lib/shell/platformSupport.ts';
 
 export interface CodeTurnOptions {
 	sessionId: string;
@@ -148,6 +149,8 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 	};
 
 	try {
+		// The tool list reads it synchronously (open_in_shell's gate).
+		await loadShellPlatformSupported();
 		const prepared = await prepareMessages(o, backend);
 		const skills = prepared.skills;
 		messages = prepared.messages;

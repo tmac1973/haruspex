@@ -1,28 +1,13 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { getToolSchemas } from '#lib/agent/tools/index.ts';
-import { registerTool, unregisterTool } from './registry';
 import { CODE_TAB_ONLY, CODE_TAB_DESCRIPTIONS } from './codeTabProfile';
 import type { ToolDefinition } from '#lib/api.ts';
+import { resetShellPlatformSupported } from '#lib/shell/platformSupport.ts';
+import { invoke } from '@tauri-apps/api/core';
 
-// The Code-tab-only tools are registered by later phases. Stand-ins under the
-// same names prove the gate, which goes by name alone.
-beforeAll(() => {
-	for (const name of CODE_TAB_ONLY) {
-		registerTool({
-			category: 'exec',
-			schema: {
-				type: 'function',
-				function: { name, description: name, parameters: { type: 'object', properties: {} } }
-			},
-			displayLabel: () => name,
-			execute: async () => ({ result: '' })
-		});
-	}
-});
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 
-afterAll(() => {
-	for (const name of CODE_TAB_ONLY) unregisterTool(name);
-});
+afterEach(() => resetShellPlatformSupported());
 
 const CODE_TOOLS = [
 	'fs_read_text',
@@ -70,6 +55,25 @@ describe('tool profiles over (codeMode, shellMode)', () => {
 		const n = names(false, false);
 		expect(n).not.toContain('run_command');
 		for (const t of [...CODE_TAB_ONLY, ...SHELL_INTERACTIVE]) expect(n).not.toContain(t);
+	});
+});
+
+describe('open_in_shell and the platform', () => {
+	it('is offered while support is unknown or known', async () => {
+		expect(names(true, false)).toContain('open_in_shell');
+		const { loadShellPlatformSupported } = await import('#lib/shell/platformSupport.ts');
+		vi.mocked(invoke).mockResolvedValueOnce(true);
+		await loadShellPlatformSupported();
+		expect(names(true, false)).toContain('open_in_shell');
+	});
+
+	it('is not offered where the Shell tab does not work', async () => {
+		const { loadShellPlatformSupported } = await import('#lib/shell/platformSupport.ts');
+		vi.mocked(invoke).mockResolvedValueOnce(false);
+		await loadShellPlatformSupported();
+		const n = names(true, false);
+		expect(n).not.toContain('open_in_shell');
+		expect(n).toContain('open_in_editor');
 	});
 });
 

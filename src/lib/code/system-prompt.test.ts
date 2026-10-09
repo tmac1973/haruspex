@@ -13,6 +13,14 @@ describe('Code tab prompt', () => {
 		expect(text).toContain('call haruspex_docs');
 	});
 
+	it('hands terminal-only commands to open_in_shell', () => {
+		const text = tab();
+		expect(text).toContain('- open_in_shell');
+		expect(text).toContain('Use open_in_shell for it');
+		expect(text).toContain('- open_in_editor');
+		expect(text).not.toContain('run in a terminal and wait');
+	});
+
 	it('says nothing about a live terminal', () => {
 		const text = tab();
 		for (const terminalOnly of [

@@ -16,6 +16,7 @@ import { isMcpToolEnabled } from './mcp-names';
 // file, so importing it here would be a cycle.
 import { memoryActive } from '#lib/stores/memory.svelte.ts';
 import { CODE_TAB_ONLY, CODE_TAB_DESCRIPTIONS, type DescriptionOverride } from './codeTabProfile';
+import { shellPlatformSupported } from '#lib/shell/platformSupport.ts';
 
 const tools = new Map<string, ToolRegistration>();
 
@@ -206,7 +207,13 @@ function isCodeTab(opts: ToolFilterOpts): boolean {
 function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
 	// Background-process and hand-off tools belong to the Code tab alone. Shell
 	// Code mode has a real terminal for both, and Chat and Shell run nothing.
-	if (CODE_TAB_ONLY.has(reg.schema.function.name)) return isCodeTab(opts);
+	if (CODE_TAB_ONLY.has(reg.schema.function.name)) {
+		// open_in_shell hands a command to a Shell tab, so only where one works.
+		if (reg.schema.function.name === 'open_in_shell' && shellPlatformSupported() === false) {
+			return false;
+		}
+		return isCodeTab(opts);
+	}
 	// codeMode wins over shellMode: the Shell assistant in Code mode exposes the
 	// code toolset (resolved against the live shell CWD), not the plain shell set.
 	if (opts.codeMode) return shouldIncludeCodeTool(reg, opts);

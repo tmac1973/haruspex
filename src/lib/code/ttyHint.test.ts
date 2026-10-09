@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { needsTerminal, ttyHintFor, TTY_HINT } from './ttyHint.ts';
+import { needsTerminal, ttyHintFor, TTY_HINT, TTY_HINT_NO_SHELL_TOOL } from './ttyHint.ts';
 
 const failed = (stderr: string, stdout = '') => ({ stdout, stderr, exit_code: 1, killed: false });
 
@@ -33,9 +33,16 @@ describe('needsTerminal', () => {
 });
 
 describe('ttyHintFor', () => {
-	it('hints for a failed sudo, pointing at the Shell tab', () => {
+	it('hints for a failed sudo, naming open_in_shell', () => {
 		const hint = ttyHintFor(failed('sudo: a password is required\n'));
 		expect(hint).toBe(TTY_HINT);
+		expect(hint).toContain('open_in_shell');
+	});
+
+	it('points at the Shell tab where open_in_shell is not offered', () => {
+		const hint = ttyHintFor(failed('sudo: a password is required\n'), { openInShell: false });
+		expect(hint).toBe(TTY_HINT_NO_SHELL_TOOL);
+		expect(hint).not.toContain('open_in_shell');
 		expect(hint).toContain('Shell tab');
 	});
 

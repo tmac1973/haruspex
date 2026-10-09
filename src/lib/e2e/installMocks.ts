@@ -128,6 +128,36 @@ const TABLE: Record<string, Handler> = {
 	// The Code tab: an in-memory session table and a scripted project.
 	...CODE_DB,
 
+	// A terminal that spawns, draws one marked prompt, and takes writes: enough
+	// for the Code tab's Open in Shell to paste into a new Shell tab.
+	shell_list_shells: empty,
+	shell_spawn: () => ({
+		session_id: 1,
+		context: {
+			os: 'linux',
+			kernel: '6.0',
+			distroId: null,
+			distroName: null,
+			distroVersion: null,
+			shellPath: '/bin/bash',
+			shellName: 'bash',
+			shellVersion: null,
+			home: '/home/e2e',
+			hostname: null
+		}
+	}),
+	shell_mark_ready: none,
+	shell_resize: none,
+	shell_write: none,
+	shell_get_context: () => ({
+		current_cwd: '/e2e/project',
+		marker_count: 2,
+		completed_commands: 0,
+		completed_total: 0,
+		marker_total: 2,
+		output_total: 0
+	}),
+
 	// Tools.
 	proxy_search: () => [
 		{

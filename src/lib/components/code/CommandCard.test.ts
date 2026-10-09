@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import CommandCard from './CommandCard.svelte';
 import type { SearchStep } from '#lib/agent/loop.ts';
+import { registerShellCommandOpener } from '#lib/code/shellBridge.ts';
+
+let unregister = () => {};
+afterEach(() => unregister());
 
 function step(result: string, overrides: Partial<SearchStep> = {}): SearchStep {
 	return {
@@ -39,5 +43,22 @@ describe('CommandCard', () => {
 		render(CommandCard, { step: step('{"error":"Denied by the user."}') });
 		expect(screen.getByText('Denied by the user.')).toBeTruthy();
 		expect(screen.getByText('not run')).toBeTruthy();
+	});
+
+	it('opens the command in a new shell at the folder, without waiting', async () => {
+		const opener = vi.fn(async () => ({
+			kind: 'opened' as const,
+			shellName: 'Shell 2',
+			integration: true
+		}));
+		unregister = registerShellCommandOpener(opener);
+		render(CommandCard, { step: step('Exit code: 0 (3ms)\nok'), root: '/proj' });
+		await fireEvent.click(screen.getByRole('button', { name: 'Open in Shell' }));
+		expect(opener).toHaveBeenCalledWith({ command: 'npm test', cwd: '/proj', wait: false });
+	});
+
+	it('has no Open in Shell without a folder or a shell', () => {
+		render(CommandCard, { step: step('Exit code: 0 (3ms)\nok') });
+		expect(screen.queryByRole('button', { name: 'Open in Shell' })).toBeNull();
 	});
 });

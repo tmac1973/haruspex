@@ -23,8 +23,14 @@ const PATTERNS: RegExp[] = [
 	/\binappropriate ioctl for device\b/i
 ];
 
-/** The note appended to the tool result. */
+/** The note appended to the tool result in the Code tab, which has `open_in_shell`. */
 export const TTY_HINT =
+	'This command needs an interactive terminal (a password prompt or a TTY), which run_command does not have. ' +
+	'Do not retry it here or try to feed it a password. Hand it to the user with open_in_shell: ' +
+	'it opens a Shell tab with the command typed in, the user runs it, and you get the result.';
+
+/** The note where there is no `open_in_shell` (the Shell's Code mode without a live terminal). */
+export const TTY_HINT_NO_SHELL_TOOL =
 	'This command needs an interactive terminal (a password prompt or a TTY), which run_command does not have. ' +
 	'Do not retry it here or try to feed it a password. Ask the user to run it in the Shell tab, then continue from what they report.';
 
@@ -36,13 +42,18 @@ export function needsTerminal(output: string): boolean {
 /**
  * The hint for a finished command, or null. Only a failed command gets one:
  * a successful build whose shell profile grumbled about `stty` doesn't need it.
+ * `openInShell`: the turn has the `open_in_shell` tool (the Code tab).
  */
-export function ttyHintFor(res: {
-	stdout: string;
-	stderr: string;
-	exit_code: number | null;
-	killed: boolean;
-}): string | null {
+export function ttyHintFor(
+	res: {
+		stdout: string;
+		stderr: string;
+		exit_code: number | null;
+		killed: boolean;
+	},
+	opts: { openInShell: boolean } = { openInShell: true }
+): string | null {
 	if (res.killed || res.exit_code === 0) return null;
-	return needsTerminal(`${res.stdout}\n${res.stderr}`) ? TTY_HINT : null;
+	if (!needsTerminal(`${res.stdout}\n${res.stderr}`)) return null;
+	return opts.openInShell ? TTY_HINT : TTY_HINT_NO_SHELL_TOOL;
 }
