@@ -1,6 +1,6 @@
 ---
 title: Code tab
-description: Coding sessions in a project folder — starting one, diffs and command cards, editor windows, commands that need a terminal (sudo), steering, background processes, model and effort.
+description: Coding sessions in a project folder — starting one, diffs and command cards, editor windows, commands that need a terminal (sudo), steering, background processes, the git branch, model and effort.
 ---
 
 # Code tab
@@ -49,11 +49,12 @@ A dot on a session's tab shows it working (filled) or waiting for another turn (
 The header above the conversation holds:
 
 - the **folder** — click it to open it in your file manager;
+- the **git branch**, with **●** for uncommitted changes. Click it to switch branch or pick **New branch…**. Switching waits until the agent is idle and changes are committed or stashed; it warns when another open session uses the repository;
 - the **model** — click it to pick **Settings model** (follows Settings → Inference), **Remote server** (one saved in Settings → Inference: **Probe**, then pick a model) or **OpenRouter (cloud)** (**Load models**, then pick one), then **Save**. The local model is only reachable through **Settings model**, and picking one here never starts it;
 - **Effort** — how hard the model thinks, where the model offers levels;
 - the **AGENTS.md** badge when the repo's instructions are in use (see the `skills` page), and how full the context is.
 
-Changes apply from the next message; while the session is in view, the status badge at the top names its model.
+Model and effort apply from the next message; the status badge at the top names the model.
 
 ## Background processes
 

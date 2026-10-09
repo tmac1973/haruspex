@@ -1,6 +1,6 @@
 ---
 title: Code sessions
-description: Code tab sessions — the session list, forking a session from a message, and moving a session to its own window and back.
+description: Code tab sessions — the session list, forking from a message into a git worktree or read-only, sessions sharing a folder, and moving a session to its own window and back.
 ---
 
 # Code sessions
@@ -9,20 +9,39 @@ How to find, fork and move sessions in the Code tab. For what a session does, se
 
 ## Find and reopen sessions
 
-The list on the left holds every saved session, newest first, with its folder and when it was last active. Two or more sessions in one folder sit under a folder row; click it to fold them. Click a session to open it as a tab above the conversation. Right-click a session to **Rename** or **Delete** it; deleting removes the conversation, not any files. Closing a tab (**×**) keeps the session in the list. The **‹** button hides the list.
+The list on the left holds every saved session, newest first, with its folder and when it was last active. Two or more sessions in one folder sit under a folder row; click it to fold them. Click a session to open it as a tab above the conversation. Right-click a session to **Rename** or **Delete** it; deleting removes the conversation, not any files (but see worktrees below). Closing a tab (**×**) keeps the session in the list. The **‹** button hides the list.
 
 Long sessions show their last 20 turns; **Show earlier** loads more.
 
 ## Fork a session from a message
 
-Each of your messages and each answer has a **Fork from here** button (the branch icon, next to Copy; on your messages it shows when you point at the message). It makes a new session in the same folder and opens it as a tab:
+Each of your messages and each answer has a **Fork from here** button (the branch icon, next to Copy; on your messages it shows when you point at the message). It asks where the fork works, then opens it as a tab:
 
-- From an answer, the new session keeps the conversation up to and including that answer.
-- From one of your messages, it keeps what came before, and puts your message back in the input box to change and send again.
+- **New worktree** (in a git repository, the default): a new folder beside the project, `<project>-worktrees/<name>`, on a new branch named after the fork. The fork edits there freely. It starts from the last commit, so uncommitted changes and ignored files (`node_modules`, `.env`, build output) are not in it; the agent is told to set things up before building.
+- **Same folder, read-only**: the fork shares the folder. Outside a git repository this is the only choice.
 
-The original session stays as it was. Background processes are not copied; they stay with the original. You can't fork while the agent is working.
+What the fork keeps:
 
-In the list, a fork has a branch icon; point at it to see what it was forked from. Deleting the original leaves the fork.
+- From an answer, the conversation up to and including that answer.
+- From one of your messages, what came before; your message goes back in the input box to change and send again.
+
+The original stays as it was. Background processes are not copied. You can't fork while the agent is working. In the list, a fork has a branch icon; point at it to see what it was forked from. Deleting the original leaves the fork.
+
+Merging a fork's branch back is ordinary git; there is no merge button.
+
+## Read-only sessions
+
+A **Read-only** badge in the header marks a fork that shares its folder. Its agent can read, search and look things up, but can't write or edit files, every command asks you first (even with Settings → Code → Auto-approve commands on), and nothing runs in the background. To make changes, fork into a new worktree.
+
+## Sessions sharing a folder
+
+Several sessions can work in one folder, in any window. Only one edits at a time: while one session's turn is writing files or running commands that may change them, another session's edits are refused and its agent is told to wait or use a worktree. Commands that only read (`ls`, `git status`, `grep`) don't count.
+
+When a session's turn changes files, the other sessions in that folder are told at the start of their next turn which files changed and by which session, so they re-read them. The note also shows in their conversation. Changes made by commands are not tracked.
+
+## Delete a worktree session
+
+Deleting a session that has its own worktree offers **Also remove its worktree**. It is removed only when it has no uncommitted or untracked files; otherwise it is kept and you are told why. Its branch is always kept.
 
 ## Move a session to its own window
 
