@@ -1,7 +1,9 @@
 /**
  * What `scripts/drive.mjs` reads from the real app through WebDriver: the
- * agent debug log, the Code tab's sessions, and the remote-server probe the
- * Settings form runs.
+ * agent debug log, the Code tab's sessions, the pending command approval, and
+ * the remote-server probe the Settings form runs. It also switches the active
+ * session and settings; everything a user would press, the driver presses in
+ * the UI instead.
  *
  * Installed by `src/hooks.client.ts` only when the build was made with
  * `VITE_HARUSPEX_E2E=1`, which `e2e/app/build.mjs` sets. The check is a
@@ -13,13 +15,23 @@ import type { SearchStep } from '#lib/agent/loop.ts';
 import { editDiffFromStep, type FileDiff } from '#lib/code/diff.ts';
 import { getDebugLogs, setVerbosePayloads } from '#lib/debug-log.ts';
 import { pickProbedModel, probedModelCaps, type ProbeResult } from '#lib/inferenceProbe.ts';
-import { getOpenSessions } from '#lib/stores/code.svelte.ts';
-import type { InferenceBackendConfig } from '#lib/stores/settings.ts';
+import { getOpenSessions, setActiveSession } from '#lib/stores/code.svelte.ts';
+import { getPendingCommandApproval } from '#lib/stores/codeCommandApproval.svelte.ts';
+import {
+	updateSettings,
+	type AppSettings,
+	type InferenceBackendConfig
+} from '#lib/stores/settings.ts';
 
 export interface DriveHooks {
 	debugLogs: () => string[];
 	setVerbosePayloads: (on: boolean) => void;
 	codeSessions: () => unknown[];
+	/** Show this session's pane, so its input box and Stop button exist. */
+	activateSession: (id: string) => void;
+	/** The command waiting for Run this command?, if any. One at a time, app-wide. */
+	pendingApproval: () => { command: string; reasons: string[] } | null;
+	updateSettings: (patch: Partial<AppSettings>) => void;
 	probeRemote: (
 		baseUrl: string,
 		apiKey: string,
@@ -108,6 +120,12 @@ export function installDriveHooks(): void {
 					})
 				)
 			),
+		activateSession: setActiveSession,
+		pendingApproval: () => {
+			const p = getPendingCommandApproval();
+			return p ? { command: p.command, reasons: p.reasons.map((r) => r.label) } : null;
+		},
+		updateSettings,
 		probeRemote
 	};
 }

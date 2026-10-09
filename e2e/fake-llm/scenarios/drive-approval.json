@@ -1,0 +1,20 @@
+[
+	{
+		"match": { "lastUser": "^Title this coding session" },
+		"reply": { "content": "\"Clean the build folder.\"" }
+	},
+	{
+		"match": { "lastUser": "^clean the build folder" },
+		"reply": {
+			"tool_calls": [{ "name": "run_command", "arguments": { "command": "rm -rf build" } }]
+		}
+	},
+	{
+		"match": { "toolResult": "Command denied by the user" },
+		"reply": { "content": "Understood, I left the build folder alone." }
+	},
+	{
+		"match": { "toolResult": "Exit code: 0" },
+		"reply": { "content": "Removed the build folder." }
+	}
+]
