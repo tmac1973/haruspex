@@ -24,6 +24,15 @@ export const FIXTURE = join(ROOT, 'e2e', 'fixtures', 'average-bug');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** JSON with sorted keys, so two copies of the same data compare equal. */
+export function stableJson(v) {
+	return JSON.stringify(v, (_, x) =>
+		x && typeof x === 'object' && !Array.isArray(x)
+			? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b)))
+			: x
+	);
+}
+
 // --- processes ------------------------------------------------------------
 
 /** Everything started here, killed on any exit. */
@@ -328,14 +337,19 @@ export class App {
 		if (o.verbosePayloads) await this.call('setVerbosePayloads', true);
 	}
 
+	/** Sessions open in the main window, as its drive hook reads them. */
 	async sessions() {
 		return this.call('codeSessions');
 	}
 
+	/** Run an engine operation, through Rust, in whichever window has the session. */
+	async engine(op) {
+		return this.call('engine', op);
+	}
+
+	/** A session in any window, through the engine. */
 	async session(id) {
-		const s = (await this.sessions()).find((x) => x.id === id);
-		if (!s) throw new Error(`no open session ${id}`);
-		return s;
+		return this.engine({ type: 'session.get', id });
 	}
 
 	/** New session in `folder` (default: a fresh fixture copy), through the dialog. */
@@ -372,6 +386,9 @@ export class App {
 		await this.call('activateSession', id);
 		return this.exclusive(async (browser) => {
 			const input = await browser.$(`[data-session-id="${id}"] textarea[aria-label="Message"]`);
+			if (!(await input.isExisting())) {
+				throw new Error(`session ${id} is not in the main window: use --via engine`);
+			}
 			await input.waitForEnabled({ timeout: 30_000 });
 			return input;
 		});
@@ -385,29 +402,40 @@ export class App {
 		});
 	}
 
-	/** Start a turn. With `wait`, return when it ends or needs someone. */
-	async send(id, text, { wait = false, timeoutMs = 600_000 } = {}) {
+	/**
+	 * Start a turn: typed into the input box, or with `via: 'engine'` sent as
+	 * an operation. With `wait`, return when it ends or needs someone.
+	 */
+	async send(id, text, { wait = false, timeoutMs = 600_000, via = 'ui' } = {}) {
 		const s = await this.session(id);
 		if (s.status !== 'idle') {
 			throw new Error(`session ${id} is ${s.status}; use steer, or wait for it`);
 		}
-		await this.type(id, text);
+		if (via === 'engine') await this.engine({ type: 'session.send', id, text });
+		else await this.type(id, text);
 		if (!wait) return { state: 'sent' };
 		return this.wait(id, { timeoutMs, after: s.messages.length });
 	}
 
 	/** Queue a steering message for a running turn's next step. */
-	async steer(id, text) {
+	async steer(id, text, { via = 'ui' } = {}) {
 		const s = await this.session(id);
 		if (s.status === 'idle') throw new Error(`session ${id} is idle; use send`);
-		await this.type(id, text);
+		if (via === 'engine') await this.engine({ type: 'session.send', id, text });
+		else await this.type(id, text);
 		return { state: 'queued' };
+	}
+
+	/** Prompts the session's turn is waiting on, in any window. */
+	async promptsFor(id) {
+		const all = await this.engine({ type: 'prompts.list' });
+		return all.filter((p) => p.sessionId === id || p.sessionId === null);
 	}
 
 	/**
 	 * Wait for the session to go idle (with more than `after` messages, when
-	 * given). Returns early when the turn needs a person: a command approval,
-	 * or a command handed to a Shell tab.
+	 * given). Returns early when the turn needs a person: a command approval
+	 * or another prompt, or a command handed to a Shell tab.
 	 */
 	async wait(id, { timeoutMs = 600_000, after = 0 } = {}) {
 		const started = Date.now();
@@ -424,8 +452,11 @@ export class App {
 				summary: summarize(s)
 			});
 			if (s.status === 'idle' && s.messages.length > after) return result('done');
-			const approval = await this.call('pendingApproval');
-			if (approval) return result('approval', { approval });
+			const [prompt] = await this.promptsFor(id);
+			if (prompt?.kind === 'command') {
+				return result('approval', { approval: { ...prompt.detail, promptId: prompt.promptId } });
+			}
+			if (prompt) return result('prompt', { prompt });
 			if (s.status === 'waiting-shell') return result('waiting-shell');
 			if (elapsedMs > timeoutMs) return result('timeout');
 			if (elapsedMs - lastReport >= 15_000) {
@@ -441,8 +472,9 @@ export class App {
 		}
 	}
 
-	/** Press Stop on the session's running turn. */
-	async cancel(id) {
+	/** Press Stop on the session's running turn, or send `session.stop`. */
+	async cancel(id, { via = 'ui' } = {}) {
+		if (via === 'engine') return this.engine({ type: 'session.stop', id });
 		await this.call('activateSession', id);
 		await this.exclusive(async (browser) => {
 			const stop = await browser.$(`[data-session-id="${id}"] button.stop`);
@@ -452,29 +484,94 @@ export class App {
 		return { state: 'stopping' };
 	}
 
+	/** Every prompt showing, in every window. */
 	async pendingApproval() {
-		return this.call('pendingApproval');
+		return this.engine({ type: 'prompts.list' });
 	}
 
-	/** Answer Run this command? with `allow` (once), `allow-session` or `deny`. */
-	async approve(choice) {
+	/**
+	 * Answer Run this command? with `allow` (once), `allow-session` or `deny`:
+	 * the modal's button, or with `via: 'engine'` a `prompts.answer`, which
+	 * also reaches a detached window's prompt.
+	 */
+	async approve(choice, { via = 'ui' } = {}) {
 		const labels = { allow: 'Allow once', 'allow-session': 'Allow for this session', deny: 'Deny' };
+		const choices = { allow: 'allow_once', 'allow-session': 'allow_session', deny: 'deny' };
 		const label = labels[choice];
 		if (!label) throw new Error(`approve takes ${Object.keys(labels).join(', ')}`);
-		const pending = await this.pendingApproval();
+		const prompts = await this.engine({ type: 'prompts.list' });
+		const pending = prompts.find((p) => p.kind === 'command');
 		if (!pending) throw new Error('no command is waiting for approval');
+		if (via === 'engine') {
+			await this.engine({
+				type: 'prompts.answer',
+				promptId: pending.promptId,
+				answer: { kind: 'command', choice: choices[choice] }
+			});
+		} else {
+			await this.exclusive(async (browser) => {
+				const button = await browser.$(`button*=${label}`);
+				await button.waitForClickable({ timeout: 10_000 });
+				await button.click();
+			});
+		}
+		return { answered: choice, command: pending.detail.command, window: pending.window ?? null };
+	}
+
+	/** Every open session, in every window, or one. */
+	async state(id, { asTranscript = false } = {}) {
+		let list;
+		if (id) list = [await this.session(id)];
+		else {
+			const open = (await this.engine({ type: 'sessions.list' })).filter((s) => s.status);
+			list = await Promise.all(open.map((s) => this.session(s.id)));
+		}
+		if (asTranscript) return list.map((s) => transcript(s, this.meta)).join('\n\n');
+		return id ? list[0] : list;
+	}
+
+	/** Engine events from every window, from `since` on. */
+	async events(since = 0) {
+		return this.call('engineEvents', since);
+	}
+
+	/**
+	 * Whether the session's events, replayed, give the session `session.get`
+	 * returns: the engine's one promise to a client away from the desktop.
+	 * While a turn streams, the replay trails by a few tens of milliseconds,
+	 * so `differs` naming only `streamingContent` or `roundText` then is lag;
+	 * an idle session must match exactly.
+	 */
+	async consistent(id) {
+		const mirror = await this.call('engineMirror', id);
+		const actual = await this.session(id);
+		const replayed = mirror.state ?? {};
+		const differs = Object.keys({ ...replayed, ...actual }).filter(
+			(k) => stableJson(replayed[k]) !== stableJson(actual[k])
+		);
+		return {
+			consistent: !mirror.resync && differs.length === 0,
+			differs,
+			status: actual.status,
+			resync: mirror.resync,
+			events: mirror.seq
+		};
+	}
+
+	/** Move the session to its own window, with the tab strip's ⤢. */
+	async detach(id) {
+		await this.call('activateSession', id);
 		await this.exclusive(async (browser) => {
-			const button = await browser.$(`button*=${label}`);
+			const button = await browser.$('.tab.active button.detach');
 			await button.waitForClickable({ timeout: 10_000 });
 			await button.click();
 		});
-		return { answered: choice, command: pending.command };
-	}
-
-	async state(id, { asTranscript = false } = {}) {
-		const list = id ? [await this.session(id)] : await this.sessions();
-		if (asTranscript) return list.map((s) => transcript(s, this.meta)).join('\n\n');
-		return id ? list[0] : list;
+		for (let i = 0; i < 60; i++) {
+			const row = (await this.engine({ type: 'sessions.list' })).find((s) => s.id === id);
+			if (row?.window === `code-${id}`) return { id, window: row.window };
+			await sleep(250);
+		}
+		throw new Error(`session ${id} never opened in a window of its own`);
 	}
 
 	async logs(since = 0) {
@@ -526,7 +623,8 @@ export class App {
 	}
 
 	async anyBusy() {
-		return (await this.sessions()).some((s) => s.status !== 'idle');
+		const list = await this.engine({ type: 'sessions.list' });
+		return list.some((s) => s.status && s.status !== 'idle');
 	}
 
 	/** Write every session's transcript and state, the debug log and a screenshot. */
@@ -537,17 +635,32 @@ export class App {
 			writeFileSync(join(dir, name), body);
 			written.push(name);
 		};
-		if (this.browser) {
-			for (const s of await this.sessions()) {
-				save(`transcript-${s.id}.md`, transcript(s, this.meta));
-				save(`session-${s.id}.json`, JSON.stringify(s, null, '\t'));
+		// Each part on its own: one failing still leaves the rest to read.
+		const errors = [];
+		const part = async (what, fn) => {
+			try {
+				await fn();
+			} catch (e) {
+				errors.push(`${what}: ${e?.message ?? e}`);
 			}
-			save('debug.log', (await this.call('debugLogs')).join('\n') + '\n');
-			await this.screenshot(join(dir, 'screenshot.png'));
-			written.push('screenshot.png');
+		};
+		if (this.browser) {
+			await part('sessions', async () => {
+				for (const s of await this.state()) {
+					save(`transcript-${s.id}.md`, transcript(s, this.meta));
+					save(`session-${s.id}.json`, JSON.stringify(s, null, '\t'));
+				}
+			});
+			await part('debug log', async () =>
+				save('debug.log', (await this.call('debugLogs')).join('\n') + '\n')
+			);
+			await part('screenshot', async () => {
+				await this.screenshot(join(dir, 'screenshot.png'));
+				written.push('screenshot.png');
+			});
 		}
 		save('tauri-driver.log', Buffer.concat(this.driverOut));
-		return { dir, files: written };
+		return errors.length ? { dir, files: written, errors } : { dir, files: written };
 	}
 
 	async stop() {
