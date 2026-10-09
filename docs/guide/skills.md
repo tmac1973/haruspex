@@ -32,11 +32,11 @@ Two built-in commands are always there: `/new` starts over with an empty convers
 
 Settings → Skills → When the model uses skills puts your skills' names and descriptions in front of the model, which loads one when a request matches.
 
-| Option                         | What it does                                                               |
-| ------------------------------ | -------------------------------------------------------------------------- |
+| Option | What it does |
+|---|---|
 | Automatic (remote models only) | On for remote and OpenRouter models, off for the local model. The default. |
-| Always                         | On for every model.                                                        |
-| Never                          | Only `/name` runs a skill.                                                 |
+| Always | On for every model. |
+| Never | Only `/name` runs a skill. |
 
 Small local models often load a skill and then don't follow it, which is why Automatic leaves them out.
 

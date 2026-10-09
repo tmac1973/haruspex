@@ -31,10 +31,10 @@ The first picture after ComfyUI starts is slow: it loads the model from disk, wh
 
 ## Pick a model and check its licence
 
-| Model                           | Licence               | Commercial use  | Bundled engine needs        |
-| ------------------------------- | --------------------- | --------------- | --------------------------- |
-| Ming-Image 0.1 Design (default) | MIT                   | Allowed         | ~8 GB VRAM, ~10 GB free RAM |
-| Qwen-Image 2.1                  | Qwen Research License | **Not allowed** | ~12 GB VRAM                 |
+| Model | Licence | Commercial use | Bundled engine needs |
+|---|---|---|---|
+| Ming-Image 0.1 Design (default) | MIT | Allowed | ~8 GB VRAM, ~10 GB free RAM |
+| Qwen-Image 2.1 | Qwen Research License | **Not allowed** | ~12 GB VRAM |
 
 Settings → Image marks Qwen-Image "Not licensed for commercial use." and asks before downloading or installing it. When a non-commercial model is in use, the assistant is told, so it can tell you. Generated images are generally not copyrightable on their own, and some stores require AI-made content to be disclosed.
 

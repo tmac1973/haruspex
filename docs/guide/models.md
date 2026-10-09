@@ -11,14 +11,14 @@ Haruspex runs a language model on your GPU by default. This page covers which mo
 
 The first-run wizard reads your GPU's memory (VRAM) and recommends a model. It also sets a context size that fits.
 
-| Your GPU                 | Recommended model                | What to expect                                    |
-| ------------------------ | -------------------------------- | ------------------------------------------------- |
-| Under 8 GB or integrated | Qwen 3.5 4B                      | Chat and research work, slowly. Coding struggles. |
-| 8 GB                     | Qwen 3.5 9B                      | Good research and documents. Coding struggles.    |
-| 12 GB                    | Qwen 3.5 9B (Q6)                 | Same, with better answers.                        |
-| 16 GB                    | Gemma 4 12B (Q6)                 | Coding features become usable.                    |
-| 24 GB                    | Qwen 3.6 35B-A3B or Qwen 3.8 27B | Everything, including coding.                     |
-| 32 GB and up             | The same two, at higher quality  | The best local quality.                           |
+| Your GPU | Recommended model | What to expect |
+|---|---|---|
+| Under 8 GB or integrated | Qwen 3.5 4B | Chat and research work, slowly. Coding struggles. |
+| 8 GB | Qwen 3.5 9B | Good research and documents. Coding struggles. |
+| 12 GB | Qwen 3.5 9B (Q6) | Same, with better answers. |
+| 16 GB | Gemma 4 12B (Q6) | Coding features become usable. |
+| 24 GB | Qwen 3.6 35B-A3B or Qwen 3.8 27B | Everything, including coding. |
+| 32 GB and up | The same two, at higher quality | The best local quality. |
 
 From 24 GB up there are two choices. Qwen 3.6 35B-A3B is the default and answers faster; Qwen 3.8 27B is a dense model some people prefer. Integrated graphics work but are much slower. Apple Silicon Macs use shared memory, so even an 8 GB M1 should work.
 
