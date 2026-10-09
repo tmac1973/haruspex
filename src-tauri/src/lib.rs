@@ -201,15 +201,20 @@ pub fn run() {
                 if let Some(watches) = window.try_state::<fs_tools::editor::EditorWatches>() {
                     watches.unwatch_label(window.label());
                 }
+                // And the Code sessions it had open are free to open elsewhere.
+                if let Some(claims) = window.try_state::<code_tools::claims::CodeSessionClaims>() {
+                    claims.release_window(window.label());
+                }
                 // The rest is for the main window only: a detached shell or an
                 // editor window closing is not the app quitting.
                 if window.label() != "main" {
                     return;
                 }
-                // Editor windows go with the main window. `close` (not
-                // `destroy`) so a window with unsaved edits asks first.
+                // Editor and detached Code windows go with the main window.
+                // `close` (not `destroy`) so a window with unsaved edits, or a
+                // Code session with background processes running, asks first.
                 for (label, w) in window.app_handle().webview_windows() {
-                    if label.starts_with("editor-") {
+                    if label.starts_with("editor-") || label.starts_with("code-") {
                         let _ = w.close();
                     }
                 }
@@ -243,6 +248,7 @@ pub fn run() {
         .manage(WhisperServer::new())
         .manage(TtsEngine::new())
         .manage(ShellManager::new())
+        .manage(code_tools::claims::CodeSessionClaims::default())
         // Holds off OS idle-sleep while a job run is in flight. Idle until
         // the runner asks; see power.rs.
         .manage(PowerInhibitor::new())
@@ -440,6 +446,8 @@ pub fn run() {
             code_tools::background::code_bg_tail,
             code_tools::background::code_bg_stop,
             code_tools::background::code_bg_stop_owner,
+            code_tools::claims::code_session_claim,
+            code_tools::claims::code_session_release,
             skills::skills_list,
             skills::skill_read,
             skills::skill_read_file,
