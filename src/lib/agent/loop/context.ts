@@ -123,6 +123,7 @@ export interface LoopContext {
 	expectsFileOutput: boolean;
 	pendingImages: PendingImage[];
 	filesWrittenThisTurn: Set<string>;
+	filesRewritableThisTurn: Set<string>;
 	maxIterations: number;
 	/** Tool the turn must finish with; forced via tool_choice. null = none. */
 	forceFinalTool: string | null;
@@ -256,6 +257,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		expectsFileOutput,
 		pendingImages: [],
 		filesWrittenThisTurn: new Set(),
+		filesRewritableThisTurn: new Set(),
 		maxIterations: options.maxIterations ?? 8,
 		forceFinalTool: options.forceFinalTool ?? null,
 		backend: options.backend ?? null,

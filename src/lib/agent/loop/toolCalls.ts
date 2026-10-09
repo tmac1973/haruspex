@@ -109,6 +109,7 @@ export async function executeToolCalls(
 				codeReadOnly: ctx.codeReadOnly,
 				codeWriteGuard: ctx.codeWriteGuard,
 				filesWrittenThisTurn: ctx.filesWrittenThisTurn,
+				filesRewritableThisTurn: ctx.filesRewritableThisTurn,
 				onProgress: (status: string) => options.onToolProgress?.(call, status)
 			}),
 			signal
