@@ -23,6 +23,7 @@ Code tab once before), every settled decision, and the invariants.
 | 6 | `phase-06-shell-editor-tools.md` | `open_in_shell` (wait + report back), `open_in_editor`, clickable paths | 5 |
 | 6b | `phase-06b-editor-windows.md` | Editor windows: per-folder tabs, file watching and reload, save conflicts | 6 |
 | 7 | `phase-07-fork-detach.md` | Fork from message; detach / re-attach windows | 5 |
+| 7b | `phase-07b-git-safe-forks.md` | Git branch in the header, worktree forks, one writer per folder, stale-file notices | 7 |
 | 8 | `phase-08-shell-toggle.md` | Shell: Read-only / Full access, drop cwd persistence, "Open in Code" | 5 |
 | 9 | `phase-09-hardening.md` | macOS pass, failure cases, guide sweep, follow-up issues | all |
 | 10 | `phase-10-windows-wsl.md` | Windows, WSL only (PowerShell/cmd is a follow-up issue) | 9 |
