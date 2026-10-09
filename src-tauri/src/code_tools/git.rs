@@ -567,6 +567,8 @@ mod tests {
         let proj = base.join("proj");
         std::fs::create_dir_all(proj.join("sub")).unwrap();
         git(&proj, &["init", "-q", "-b", "main"]);
+        // A Windows git set to `autocrlf` would check files out as `one\r\n`.
+        git(&proj, &["config", "core.autocrlf", "false"]);
         std::fs::write(proj.join("a.txt"), "one\n").unwrap();
         std::fs::write(proj.join("sub/b.txt"), "b\n").unwrap();
         git(&proj, &["add", "."]);
@@ -589,7 +591,8 @@ mod tests {
     async fn status_reports_the_branch_and_changes() {
         let (_base, proj) = repo("status");
         let st = status(&proj.join("sub")).await.unwrap().unwrap();
-        assert_eq!(st.repo_root, proj.to_string_lossy());
+        // git prints `C:/…` on Windows; the test dir is `\\?\C:\…`.
+        assert_eq!(canonical(Path::new(&st.repo_root)), proj);
         assert_eq!(st.branch.as_deref(), Some("main"));
         assert_eq!(st.head.as_ref().map(String::len), Some(7));
         assert_eq!((st.changed, st.untracked), (0, 0));
