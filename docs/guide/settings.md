@@ -65,7 +65,7 @@ Instructions the assistant can load for specific tasks.
 - **When the model uses skills**: Automatic (remote models only).
 - **Skills**: turn single skills on or off; **Open skills folder**.
 - **Other skill folders**: extra folders to read skills from.
-- **Repos**: whether the Shell assistant uses a repo's own skills and AGENTS.md.
+- **Repos**: whether the Shell assistant and Code sessions use a repo's own skills and AGENTS.md.
 
 See the `skills` page.
 
