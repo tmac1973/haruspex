@@ -32,31 +32,31 @@ tab never kills a turn.
 
 ## What already exists
 
-| Need | Existing piece |
-|---|---|
-| Driving the real app against a real model | `scripts/drive.mjs` + `src/lib/e2e/driveHooks.ts` on branch `code-tab/dev-driver` (commit `8fc77c0`, unmerged): tauri-driver, private X display, writes transcript/session/debug log/screenshot |
-| Deterministic model output | `e2e/fake-llm/server.mjs`: scenarios, `--record` against a real upstream, `GET /__requests` |
-| Real-app e2e | `e2e/app/` (WebdriverIO + tauri-driver, isolated data dirs, stub sidecars) |
-| A session engine with no UI dependency | `src/lib/stores/code.svelte.ts`: `CodeSession` runs turns by id; "nothing here needs the tab to exist" |
-| Thread persistence | Code sessions are saved after every turn; the database is the source of truth |
-| HTTP server, token auth, SSE replay | `src-tauri/src/remote/` (axum, constant-time token compare, cookie + bearer + query token, reconnect replay, orphan grace) |
-| Asking the remote user a question mid-turn | `/api/answer` in `remote/server.rs` |
-| One window owns a session | Code tab phase 7 plans a Rust claim map (`code_session_claim`). The remote relay needs the same table to route a prompt to the right window |
+| Need                                       | Existing piece                                                                                                                                                                                  |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Driving the real app against a real model  | `scripts/drive.mjs` + `src/lib/e2e/driveHooks.ts` on branch `code-tab/dev-driver` (commit `8fc77c0`, unmerged): tauri-driver, private X display, writes transcript/session/debug log/screenshot |
+| Deterministic model output                 | `e2e/fake-llm/server.mjs`: scenarios, `--record` against a real upstream, `GET /__requests`                                                                                                     |
+| Real-app e2e                               | `e2e/app/` (WebdriverIO + tauri-driver, isolated data dirs, stub sidecars)                                                                                                                      |
+| A session engine with no UI dependency     | `src/lib/stores/code.svelte.ts`: `CodeSession` runs turns by id; "nothing here needs the tab to exist"                                                                                          |
+| Thread persistence                         | Code sessions are saved after every turn; the database is the source of truth                                                                                                                   |
+| HTTP server, token auth, SSE replay        | `src-tauri/src/remote/` (axum, constant-time token compare, cookie + bearer + query token, reconnect replay, orphan grace)                                                                      |
+| Asking the remote user a question mid-turn | `/api/answer` in `remote/server.rs`                                                                                                                                                             |
+| One window owns a session                  | Code tab phase 7 plans a Rust claim map (`code_session_claim`). The remote relay needs the same table to route a prompt to the right window                                                     |
 
 ## Decisions (settled 2026-10-09)
 
-| # | Question | Decision |
-|---|---|---|
-| 1 | Headless mode | **No.** The desktop app must be running. |
-| 2 | Where turns run | **The desktop webview**, always. Remote clients never run the loop. |
-| 3 | Files | **The desktop's files are the only real ones.** No access to the client's filesystem in v1. |
-| 4 | Remote chat vs this | **Separate.** Remote chat stays a guest feature (own sessions, one shared link). This is owner control: per-client tokens with scopes. |
-| 5 | Off by default | **Yes**, and loopback-only until the owner picks another bind address. |
-| 6 | First test surface | **The driver from `code-tab/dev-driver`**, extended, rather than a new HTTP bridge. |
-| 7 | First remote surface | **The Code tab.** Chat comes in phase 5 because its store holds one active conversation. |
-| 8 | Web client UI | **The real Svelte components**, not a second UI, so the two can't drift. |
-| 9 | Mobile | **PWA of the web client first.** A native app only if the PWA falls short. |
-| 10 | The 9B model | **Not a constraint.** Build for capable models; document what works poorly on 9B. Scripted backends are for exact checks, not because of 9B. |
+| #   | Question             | Decision                                                                                                                                     |
+| --- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Headless mode        | **No.** The desktop app must be running.                                                                                                     |
+| 2   | Where turns run      | **The desktop webview**, always. Remote clients never run the loop.                                                                          |
+| 3   | Files                | **The desktop's files are the only real ones.** No access to the client's filesystem in v1.                                                  |
+| 4   | Remote chat vs this  | **Separate.** Remote chat stays a guest feature (own sessions, one shared link). This is owner control: per-client tokens with scopes.       |
+| 5   | Off by default       | **Yes**, and loopback-only until the owner picks another bind address.                                                                       |
+| 6   | First test surface   | **The driver from `code-tab/dev-driver`**, extended, rather than a new HTTP bridge.                                                          |
+| 7   | First remote surface | **The Code tab.** Chat comes in phase 5 because its store holds one active conversation.                                                     |
+| 8   | Web client UI        | **The real Svelte components**, not a second UI, so the two can't drift.                                                                     |
+| 9   | Mobile               | **PWA of the web client first.** A native app only if the PWA falls short.                                                                   |
+| 10  | The 9B model         | **Not a constraint.** Build for capable models; document what works poorly on 9B. Scripted backends are for exact checks, not because of 9B. |
 
 ## Invariants
 
@@ -80,9 +80,9 @@ tab never kills a turn.
 
 - **Background throttling.** WebKitGTK (and WKWebView on macOS) may throttle
   timers in a minimised or hidden window. A turn started remotely while the
-  desktop window is minimised could crawl or stall. Phase 1 measures it:
-  drive a turn with the window minimised (`--show`, then minimise; or unmap it
-  under Xvfb).
+  desktop window is minimised could crawl or stall. Phase 1 measured none on
+  a private X display with the page `hidden` (see `phase-01-driver.md`);
+  still to check once on a real desktop compositor.
 - **Secure context.** Microphone, clipboard and service workers need HTTPS
   off-loopback. `tailscale serve` gives a certificate; plain `http://` over a
   tailnet will not. Phase 3 documents the setup; phase 6 depends on it.

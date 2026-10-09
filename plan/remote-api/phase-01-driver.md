@@ -109,3 +109,32 @@ Claude can, in one conversation and without the owner touching anything:
 start the app against the owner's inference server, run several turns in a
 Code session with an approval in the middle, read the state after each, and
 stop it cleanly, with no Xvfb, tauri-driver or app processes left behind.
+
+## As built (2026-10-09)
+
+Branch `remote-api/p01-driver`. Differences from the plan above:
+
+- **`approve` takes no session id.** The approval modal is app-wide, one at
+  a time (`codeCommandApproval.svelte.ts`), so `approve allow|allow-session|deny`
+  answers whatever is pending; `approval` shows it. `send --wait` and `wait`
+  return `"state": "approval"` instead of waiting it out.
+- **The socket lives in `$XDG_RUNTIME_DIR`**, not `e2e/drive-output/`: a
+  worktree path plus `e2e/drive-output/control.sock` came within a few bytes
+  of the 108-byte Unix socket path limit. One driver per machine either way,
+  since the e2e identifier's data dir is shared.
+- **The end-to-end check is `scripts/drive/selftest.mjs`**, not a WebdriverIO
+  spec: a spec's app and the driver's app would wipe each other's data. CI
+  runs it after `npm run e2e:app`. Unit tests are `scripts/drive/drive.test.ts`.
+- **`--idle-timeout`** (default 60 min) stops a forgotten driver.
+- **`e2e/fake-llm` record mode** now sends `--model` and the API key upstream
+  (`upstreamModel`, `upstreamKey`), so it works against servers with several
+  models or a key.
+
+**Throttling, measured:** the same 1,527-token reply from the owner's vLLM
+server (ThinkingCap-3.8-27B), alternating minimised and restored on a private
+Xvnc display where the page reports `document.visibilityState` `hidden` and
+`visible`: 5.4 s and 5.2 s hidden, 5.2 s and 6.2 s visible. No throttling of
+a streaming turn. Not yet measured on a real desktop compositor (`--show`);
+the turn is driven by fetch streams, not animation frames, so a difference
+there would be a surprise, but phase 2 should check once on the owner's
+desktop.
