@@ -120,7 +120,16 @@ struct Inner {
     /// `usize::MAX` means "unbounded" — the backend's concurrency is not
     /// something this app models.
     lane_capacity: HashMap<String, usize>,
+    /// Ids cancelled before their acquire arrived. The frontend sends
+    /// `inference_cancel` and `inference_acquire` as separate calls, and an
+    /// abort right after the acquire can overtake it; without this the late
+    /// ticket would wait (and show as queued) with nobody left to want it.
+    /// Bounded by [`EARLY_CANCEL_CAP`]: ids are never reused.
+    cancelled_early: Vec<String>,
 }
+
+/// How many early cancellations are remembered.
+const EARLY_CANCEL_CAP: usize = 64;
 
 impl Inner {
     /// Capacity for a single lane, as last supplied by the frontend. Defaults
@@ -201,6 +210,10 @@ impl InferenceQueue {
         if inner.tickets.iter().any(|t| t.id == req_id) {
             return Err("duplicate inference request id".into());
         }
+        if let Some(pos) = inner.cancelled_early.iter().position(|id| *id == req_id) {
+            inner.cancelled_early.remove(pos);
+            return Err("inference request cancelled".into());
+        }
         let now = now_ms();
         // None means unbounded; a supplied count is floored at 1 so a server
         // reporting 0 slots cannot deadlock the lane.
@@ -226,6 +239,15 @@ impl InferenceQueue {
     /// Cancel a still-waiting ticket (abort-before-grant). No-op once the
     /// ticket is running — that path goes through `release`.
     fn cancel(&self, req_id: &str) -> bool {
+        if let Ok(mut inner) = self.inner.lock() {
+            if !inner.tickets.iter().any(|t| t.id == req_id) {
+                // Not here yet: refuse it when it comes.
+                inner.cancelled_early.push(req_id.to_string());
+                let excess = inner.cancelled_early.len().saturating_sub(EARLY_CANCEL_CAP);
+                inner.cancelled_early.drain(..excess);
+                return false;
+            }
+        }
         self.remove_ticket_where(|t| t.id == req_id && t.state == TicketState::Waiting)
     }
 
@@ -478,6 +500,28 @@ mod tests {
         assert!(!admitted(&mut c));
         q.release("b");
         assert!(admitted(&mut c));
+    }
+
+    #[test]
+    fn a_cancel_that_overtakes_its_acquire_refuses_it() {
+        let q = InferenceQueue::new();
+        let mut a = enqueue_local(&q, "a", json!("chat"));
+        assert!(admitted(&mut a));
+        // Stop pressed while the acquire for "b" is still on its way.
+        assert!(!q.cancel("b"));
+        assert!(q
+            .enqueue(
+                "b".into(),
+                json!("code"),
+                "local".into(),
+                Some(1),
+                "main".into()
+            )
+            .is_err());
+        assert_eq!(q.snapshot().len(), 1);
+        // Remembered once: an id is never reused, but the slot isn't held.
+        assert!(q.release("a"));
+        assert!(q.snapshot().is_empty());
     }
 
     #[test]
