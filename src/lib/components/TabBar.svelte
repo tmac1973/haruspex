@@ -13,12 +13,13 @@
 		label: string;
 	}
 
-	const tabs: Tab[] = [
+	// Derived: on Windows the Code tab appears once the WSL probe answers.
+	const tabs: Tab[] = $derived([
 		{ id: 'chat', label: 'Chat' },
 		{ id: 'jobs', label: 'Jobs' },
 		{ id: 'shell', label: 'Shell' },
 		...(codeTabAvailable() ? [{ id: 'code' as const, label: 'Code' }] : [])
-	];
+	]);
 
 	// A dot on Code while any session's turn runs or waits.
 	const codeBusy = $derived(getOpenSessions().some((s) => s.status !== 'idle'));
