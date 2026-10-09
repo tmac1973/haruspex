@@ -196,3 +196,41 @@ through a small Rust hub, which phase 3's HTTP handlers will also call.
 Checked on the owner's real desktop (GNOME, `--show`), 2026-10-09: the same
 ~1,520-token reply took 5.2–5.3 s minimised and 5.2–5.5 s visible. There is no
 throttling, so this phase needs no fix for it.
+
+## As built (2026-10-09)
+
+Branch `remote-api/p02-engine`. Differences from the plan above:
+
+- **Ops on a session open nowhere fail** ("open it first", with
+  `session.open`), rather than opening it implicitly. Explicit is easier to
+  reason about from a remote client, and `session.open` is one call.
+- **`session.resync {id}`** added: a client that sees a `seq` gap asks for a
+  snapshot.
+- **`prompts.answer` routes by `promptId`**, whose prefix is the window
+  label. It carries no session id, so the plan's owner routing sent it to
+  the main window. Found by the driver's detached-window check.
+- **Each op names its target window in the payload.** A webview's `listen`
+  hears events sent to _any_ window, so the main window was answering ops
+  meant for a detached one ("not open") before the right window could. Also
+  found by the detached-window check.
+- **No ts-rs export for the op and event types.** Rust treats them as
+  opaque JSON and routes on `type`, `id` and `promptId` only, so
+  `src/lib/engine/types.ts` is their single definition.
+- **The watchers compare against values captured when the watch starts,**
+  not "skip each effect's first run". An effect created outside a component
+  first runs at the next flush, by which time a turn may already have moved
+  on. The first version lost the turn's opening status and message this way,
+  and the consistency test caught it.
+- **`drive stop` always stops,** and `saveOutputs` saves what it can. A failed
+  save used to leave the driver running.
+
+**Checked:**
+
+- 15 vitest cases (`src/lib/engine/engine.test.ts`): consistency mid-stream,
+  mid-tool, with steering, after save, after a stop and after an error;
+  sequence numbering; closed sessions; the mirror; prompts; operations.
+- 13 Rust tests (`engine::tests`).
+- The driver self-test (19 checks), with a turn and an approval in a detached
+  window.
+- Against the owner's vLLM server: send and steer `--via engine`, 8 tool
+  calls, and `consistent` true once idle.
