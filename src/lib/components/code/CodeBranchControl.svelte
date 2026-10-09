@@ -113,7 +113,10 @@
 	}
 
 	function onWindowClick(e: MouseEvent) {
-		if (open && root && !root.contains(e.target as Node)) close();
+		// The path as it was when the click started: "New branch…" swaps itself
+		// for the name form, so by the time the click reaches the window its
+		// target is no longer inside the menu and `contains` would close it.
+		if (open && root && !e.composedPath().includes(root)) close();
 	}
 
 	function onKey(e: KeyboardEvent) {

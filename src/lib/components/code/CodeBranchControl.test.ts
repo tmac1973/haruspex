@@ -1,3 +1,4 @@
+import { tick } from 'svelte';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 
@@ -113,6 +114,23 @@ describe('CodeBranchControl', () => {
 		await fireEvent.input(input, { target: { value: 'try-it' } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 		await vi.waitFor(() => expect(mocks.gitCreateBranch).toHaveBeenCalledWith('/p', 'try-it'));
+	});
+
+	it('keeps the menu open when the clicked item leaves the page mid-click', async () => {
+		// In the app, "New branch…" swaps itself for the name form before the
+		// click reaches the window, so its target is detached by then.
+		render(CodeBranchControl, { session: session() });
+		await fireEvent.click(screen.getByRole('button', { name: 'Branch main' }));
+		const menu = await screen.findByTestId('branch-menu');
+		const detached = document.createElement('button');
+		const click = new MouseEvent('click', { bubbles: true });
+		Object.defineProperty(click, 'target', { value: detached });
+		const ancestors: EventTarget[] = [];
+		for (let el: Element | null = menu; el; el = el.parentElement) ancestors.push(el);
+		Object.defineProperty(click, 'composedPath', { value: () => [detached, ...ancestors] });
+		window.dispatchEvent(click);
+		await tick();
+		expect(screen.queryByTestId('branch-menu')).not.toBeNull();
 	});
 
 	it('warns when another open session works in the repository', async () => {
