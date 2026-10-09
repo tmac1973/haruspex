@@ -11,6 +11,8 @@ import type { CodeBgWatch } from '#lib/shell/backgroundWatch.ts';
 /** What a window hands the next owner when a session moves. */
 export interface Handoff {
 	watches: CodeBgWatch[];
+	/** The user chose "Allow for this session" for its commands. */
+	approved?: boolean;
 }
 
 export interface Claimed {
@@ -40,7 +42,10 @@ function parseHandoff(raw: string | null): Handoff | null {
 	if (!raw) return null;
 	try {
 		const parsed = JSON.parse(raw) as Partial<Handoff>;
-		return { watches: Array.isArray(parsed.watches) ? parsed.watches : [] };
+		return {
+			watches: Array.isArray(parsed.watches) ? parsed.watches : [],
+			...(parsed.approved === true ? { approved: true } : {})
+		};
 	} catch {
 		return null;
 	}

@@ -22,7 +22,12 @@ import type { AgentStopReason, SearchStep } from '#lib/agent/loop.ts';
 import { markStepDone, markStepProgress } from '#lib/agent/steps.ts';
 import { describeContextManaged } from '#lib/agent/context-budget.ts';
 import { computeMessageStats, type MessageStats } from '#lib/stores/chat.svelte.ts';
-import { codeApprovalKey, resetSessionApproval } from '#lib/stores/codeCommandApproval.svelte.ts';
+import {
+	approveSession,
+	codeApprovalKey,
+	isSessionApproved,
+	resetSessionApproval
+} from '#lib/stores/codeCommandApproval.svelte.ts';
 import { renderSlashMessage } from '#lib/skills/content.ts';
 import {
 	adoptCodeWatches,
@@ -681,6 +686,8 @@ export async function openSession(id: string): Promise<CodeSession | null> {
 	// Watches the last window followed come here, and anything that finished
 	// meanwhile is delivered once the session is set up.
 	if (claim.handoff) adoptCodeWatches(claim.handoff.watches);
+	// "Allow for this session" moves with the session (9b).
+	if (claim.handoff?.approved) approveSession(codeApprovalKey(id));
 	const session = adopt(new CodeSession(record));
 	if (claim.handoff?.watches.length) void session.flushWatchNotifications();
 	return session;
@@ -761,8 +768,10 @@ export async function handOffSession(id: string): Promise<boolean> {
 	sessions.splice(idx, 1);
 	if (activeId === id) activeId = (sessions[idx] ?? sessions[idx - 1] ?? null)?.id ?? null;
 	const watches = takeCodeWatches(id);
+	// Read before dispose, which resets it.
+	const approved = isSessionApproved(codeApprovalKey(id));
 	await session.dispose();
-	await releaseSession(id, { watches });
+	await releaseSession(id, { watches, ...(approved ? { approved } : {}) });
 	return true;
 }
 
