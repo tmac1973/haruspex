@@ -9,7 +9,7 @@ becomes a **Read-only / Full access** toggle.
 See [`overview.md`](./overview.md) for the why, the history (we have shipped a
 Code tab once before), every settled decision, and the invariants.
 
-**Status:** Planned 2026-10-08 · not started.
+**Status:** Planned 2026-10-08 · phases 1–9 (with 6b, 7b, 9a, 9b) merged by 2026-10-09 · phase 10 (Windows via WSL) is next, to be done on a Windows machine.
 
 ## Phase map (dependency-ordered, one stacked branch + PR per phase)
 
@@ -27,7 +27,7 @@ Code tab once before), every settled decision, and the invariants.
 | 8 | `phase-08-shell-toggle.md` | Shell: Read-only / Full access, drop cwd persistence, "Open in Code" | 5 |
 | 9 | `phase-09-hardening.md` | macOS pass, failure cases, guide sweep, follow-up issues | all |
 | 9b | `phase-09b-agent-hardening.md` | Queued approval prompts, approval across windows, rewrite after a command, loop split, macOS bash + TTY | 1–8 |
-| 10 | `phase-10-windows-wsl.md` | Windows, WSL only (PowerShell/cmd is a follow-up issue) | 9 |
+| 10 | `phase-10-windows-wsl.md` | Windows, WSL only: self-contained brief with decisions and milestones (PowerShell is #396) | 9 |
 
 Phases 1–3 are independent and can be built in parallel. 6, 7 and 8 are
 independent leaves off the tab UI.
