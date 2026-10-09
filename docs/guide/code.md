@@ -9,19 +9,19 @@ The Code tab is a coding agent that works in one project folder: it reads and ed
 
 ## Start a session
 
-Click **New session** (or **+** next to the open sessions) and pick the project folder; the dialog starts from the last one you used. **Open in Code** in a Shell tab's assistant starts one in that terminal's folder. The folder is fixed for the session's life: the agent can't read or write outside it.
+Click **New session** (or **+** next to the open sessions) and pick the project folder. **Open in Code** in a Shell tab's assistant starts one in that terminal's folder. The folder is fixed for the session's life: the agent can't read or write outside it.
 
-Type what you want and press `Enter`. After the first reply the model names the session (until then it is `<folder> · new session`); a name you gave it is never replaced. Each session is saved after every reply, so quitting or a crash loses nothing finished.
+Type what you want and press `Enter`. After the first reply the model names the session (until then it is `<folder> · new session`); a name you gave it is never replaced. Sessions are saved after every reply.
 
 ## Find, fork and move sessions
 
-The list on the left holds every saved session. A session can be forked from any message, or moved to a window of its own and back; see the `code-sessions` page.
+The list on the left holds every saved session. To fork one or move it to its own window, see the `code-sessions` page.
 
 ## Read what the agent did
 
-- **Edits** show as a diff (removed lines red, added green, with line numbers); past 40 lines **Show all … lines** expands it. Unlike in Chat, rewriting a file doesn't ask first: the diff shows what changed.
+- **Edits** show as a diff, red and green, with line numbers; past 40 lines **Show all … lines** expands it. Unlike in Chat, rewriting a file doesn't ask first: the diff shows what changed. A second whole rewrite in one turn needs a command (a test, say) run in between.
 - **Commands** show as a card: command, exit code, time taken and output (the last 20 lines until **Show all**). **Copy** copies the command; **Open in Shell** types it into a new Shell tab at the folder without running it.
-- Searches and file reads show as a short step list, as in Chat.
+- Searches and file reads show as a short step list.
 - **Reasoning** sits above its step, collapsed (live as **Thinking…**); what the agent **says** before a step sits under it.
 - A call still being written shows as a row: **Writing**, **Editing** or **Preparing command…**.
 - **File names** inside the folder, in diffs, reads, search results and answers (`src/app.ts:42`), open the file in an editor window, at its top.
@@ -34,7 +34,7 @@ The conversation shows **Waiting for you in Shell N — press Enter there**, wit
 
 ## Edit files
 
-Files open in an editor window, one per folder with a tab per file; a file that has a tab already comes to the front. **⤢** on a tab moves the file to a window of its own. `Ctrl / ⌘ + S` saves; `Ctrl / ⌘ + W` closes the tab. The agent can open files there too, but doesn't see your edits unless you tell it.
+Files open in an editor window, one per folder, a tab per file. **⤢** on a tab moves the file to a window of its own. `Ctrl / ⌘ + S` saves; `Ctrl / ⌘ + W` closes the tab. The agent can open files there too, but doesn't see your edits unless you tell it.
 
 When something else changes a file, the editor reloads it and keeps your place. With unsaved edits it shows **Changed on disk** (**Reload** / **Keep mine**), and saving over a change you haven't seen asks **Overwrite** or **Reload first**. A deleted file shows **Deleted on disk**; saving recreates it. Closing a window with unsaved edits asks first; closing the main window closes the editors too.
 
@@ -62,7 +62,7 @@ Servers, watchers and long builds run in the background. **Running: N** in the h
 
 ## Command approval and limits
 
-Safe-looking commands run on their own. A risky one (`sudo`, `rm -rf`, a pipe to a shell) opens **Run this command?** first; one that reaches outside the folder always asks. Settings → Code holds the command time limit, the step limit per task, the background log size and **Auto-approve commands**. See the `settings` page.
+Safe-looking commands run on their own. A risky one (`sudo`, `rm -rf`, a pipe to a shell) opens **Run this command?** first; one that reaches outside the folder always asks. Prompts from several sessions wait in line, each naming its session. **Allow for this session** lasts until its tab closes, even across windows. Settings → Code holds the command time limit, the step limit per task, the background log size and **Auto-approve commands**. See the `settings` page.
 
 ## What it doesn't do yet
 
