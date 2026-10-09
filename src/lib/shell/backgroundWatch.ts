@@ -202,6 +202,23 @@ export async function readCodeBgLog(processId: string, bytes = 4096): Promise<st
  * per finished command with its exit code, when it ran, and its output tail.
  * Shared by the Shell's Code mode and the Code tab.
  */
+/**
+ * Whether a user-role message is a watch notification `buildWatchNotification`
+ * wrote, not something the user typed. It is sent as a user turn so the model
+ * reacts to it, but the UI shows it as a notice and keeps it out of the
+ * input history. Matched on the fixed opening line, so saved threads work too.
+ */
+export function isWatchNotification(text: string): boolean {
+	return /^(A background command you started with watch has finished\.|\d+ background commands you started with watch have finished\.)/.test(
+		text
+	);
+}
+
+/** The commands a watch notification reports, from its `$ command` lines. */
+export function watchNotificationCommands(text: string): string[] {
+	return [...text.matchAll(/^\$ (.+)$/gm)].map((m) => m[1]);
+}
+
 export async function buildWatchNotification(completed: AnyWatch[]): Promise<string> {
 	const lines: string[] = [
 		completed.length === 1

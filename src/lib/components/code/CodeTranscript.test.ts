@@ -368,3 +368,19 @@ describe('CodeTranscript fork', () => {
 		expect(forkFromMessage).not.toHaveBeenCalled();
 	});
 });
+
+describe('background command notices', () => {
+	it('render as a notice, not as the user', () => {
+		const messages: ChatMessage[] = [
+			{
+				role: 'user',
+				content:
+					'A background command you started with watch has finished.\n\n$ sleep 20; echo done\nexit code: 0\n--- output ---\ndone\n---'
+			},
+			{ role: 'assistant', content: 'It finished.' }
+		];
+		render(CodeTranscript, { session: fakeSession({ messages }) });
+		expect(screen.getByText('Background command finished: sleep 20; echo done')).toBeTruthy();
+		expect(screen.queryByText('YOU')).toBeNull();
+	});
+});

@@ -15,6 +15,7 @@
 	 * `TURNS_PER_PAGE` turns, with "Show earlier" for the rest.
 	 */
 	import { onDestroy, untrack } from 'svelte';
+	import { isWatchNotification, watchNotificationCommands } from '#lib/shell/backgroundWatch.ts';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
 	import StopIndicator from '#lib/components/StopIndicator.svelte';
 	import ThinkingIndicator from '#lib/components/ThinkingIndicator.svelte';
@@ -173,6 +174,16 @@
 		{#if msg.role !== 'tool' && !msg.tool_calls}
 			{#if msg.role === 'system'}
 				<div class="note">{messageText(msg.content)}</div>
+			{:else if msg.role === 'user' && isWatchNotification(messageText(msg.content))}
+				{@const commands = watchNotificationCommands(messageText(msg.content))}
+				<details class="bg-notice">
+					<summary
+						>Background command finished{commands.length === 1
+							? `: ${commands[0]}`
+							: ` (${commands.length})`}</summary
+					>
+					<pre>{messageText(msg.content)}</pre>
+				</details>
 			{:else if msg.role === 'user'}
 				<ChatMessage message={msg} onFork={() => fork(i)} {forkBlocked} />
 			{:else}
@@ -269,6 +280,28 @@
 </div>
 
 <style>
+	.bg-notice {
+		margin: 8px 0;
+		padding: 6px 10px;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		font-size: 0.82rem;
+		color: var(--text-secondary);
+	}
+
+	.bg-notice summary {
+		cursor: pointer;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.bg-notice pre {
+		margin: 6px 0 0;
+		white-space: pre-wrap;
+		font-size: 0.78rem;
+	}
+
 	.thread {
 		flex: 1 1 auto;
 		min-height: 0;
