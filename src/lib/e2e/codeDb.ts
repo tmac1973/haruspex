@@ -153,7 +153,8 @@ export const CODE_DB: Record<string, Handler> = {
 			head: 'abc1234',
 			changed: wt ? 0 : git.changed,
 			untracked: 0,
-			linked_worktree: !!wt
+			linked_worktree: !!wt,
+			default_branch: 'main'
 		};
 	},
 	code_git_branches: () => git.branches,

@@ -341,7 +341,8 @@ const repo = {
 	head: 'abc1234',
 	changed: 0,
 	untracked: 0,
-	linked_worktree: false
+	linked_worktree: false,
+	default_branch: 'main'
 };
 
 describe('CodeTranscript fork', () => {

@@ -28,4 +28,9 @@ untracked: number,
 /**
  * The folder is a linked worktree, not the repository's main one.
  */
-linked_worktree: boolean, };
+linked_worktree: boolean, 
+/**
+ * The repository's main line: the local branch `origin/HEAD` names,
+ * else `main`, else `master`; `None` when none of them exists here.
+ */
+default_branch: string | null, };

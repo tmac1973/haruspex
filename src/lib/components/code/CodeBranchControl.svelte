@@ -33,6 +33,12 @@
 	let branches = $state<string[]>([]);
 	let sharing = $state<string[]>([]);
 	let creating = $state(false);
+	/** The branch the new one starts from; null is the current commit. */
+	let createFrom = $state<string | null>(null);
+	/** "Branch from main", offered when the default branch isn't checked out. */
+	const fromDefault = $derived(
+		git?.default_branch && git.default_branch !== git.branch ? git.default_branch : null
+	);
 	let newName = $state('');
 	let working = $state(false);
 	let nameInput = $state<HTMLInputElement | null>(null);
@@ -100,7 +106,8 @@
 		void run(() => gitSwitch(session.root, branch), `Couldn't switch to ${branch}`);
 	}
 
-	async function startCreate() {
+	async function startCreate(from: string | null) {
+		createFrom = from;
 		creating = true;
 		await tick();
 		nameInput?.focus();
@@ -109,7 +116,8 @@
 	function create() {
 		const name = newName.trim();
 		if (!name || session.busy) return;
-		void run(() => gitCreateBranch(session.root, name), `Couldn't create ${name}`);
+		const from = createFrom ?? undefined;
+		void run(() => gitCreateBranch(session.root, name, from), `Couldn't create ${name}`);
 	}
 
 	function onWindowClick(e: MouseEvent) {
@@ -170,6 +178,7 @@
 							create();
 						}}
 					>
+						<span class="from">From {createFrom ?? (git.branch ? git.branch : 'this commit')}</span>
 						<input
 							bind:this={nameInput}
 							bind:value={newName}
@@ -187,8 +196,20 @@
 						title={session.busy
 							? 'Wait for the turn to finish.'
 							: 'Create a branch at the current commit and switch to it. Uncommitted changes come along.'}
-						onclick={startCreate}><span class="check" aria-hidden="true"></span>New branch…</button
+						onclick={() => startCreate(null)}
+						><span class="check" aria-hidden="true"></span>Branch from current…</button
 					>
+					{#if fromDefault}
+						<button
+							role="menuitem"
+							disabled={session.busy || working}
+							title={session.busy
+								? 'Wait for the turn to finish.'
+								: `Create a branch at the tip of ${fromDefault} and switch to it. Uncommitted changes come along if git allows it.`}
+							onclick={() => startCreate(fromDefault)}
+							><span class="check" aria-hidden="true"></span>Branch from {fromDefault}…</button
+						>
+					{/if}
 				{/if}
 			</div>
 		{/if}
@@ -196,6 +217,12 @@
 {/if}
 
 <style>
+	.from {
+		font-size: 0.75rem;
+		color: var(--text-secondary);
+		white-space: nowrap;
+	}
+
 	.branch-control {
 		position: relative;
 	}
@@ -303,6 +330,8 @@
 
 	.create {
 		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
 		gap: 6px;
 		padding: 4px;
 	}

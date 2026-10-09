@@ -26,9 +26,12 @@ export function gitSwitch(folder: string, branch: string): Promise<void> {
 	return invoke<void>('code_git_switch', { folder, branch });
 }
 
-/** Create `branch` at HEAD and check it out. */
-export function gitCreateBranch(folder: string, branch: string): Promise<void> {
-	return invoke<void>('code_git_create_branch', { folder, branch });
+/**
+ * Create `branch` and check it out, starting at the local branch `from`, or
+ * at HEAD when it is left out.
+ */
+export function gitCreateBranch(folder: string, branch: string, from?: string): Promise<void> {
+	return invoke<void>('code_git_create_branch', { folder, branch, from: from ?? null });
 }
 
 /** Remove a worktree Haruspex made, only if it is clean. */

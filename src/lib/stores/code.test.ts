@@ -979,7 +979,8 @@ describe('sharing a folder', () => {
 			head: 'abc1234',
 			changed: 0,
 			untracked: 0,
-			linked_worktree: true
+			linked_worktree: true,
+			default_branch: 'main'
 		});
 		const fork = (await forkAndOpen(s.id, 1, 'worktree'))!;
 		expect(fork.readOnly).toBe(false);

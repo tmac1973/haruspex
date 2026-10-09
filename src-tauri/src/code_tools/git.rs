@@ -43,6 +43,9 @@ pub struct GitStatus {
     pub untracked: u32,
     /// The folder is a linked worktree, not the repository's main one.
     pub linked_worktree: bool,
+    /// The repository's main line: the local branch `origin/HEAD` names,
+    /// else `main`, else `master`; `None` when none of them exists here.
+    pub default_branch: Option<String>,
 }
 
 /// What a worktree removal did.
@@ -185,7 +188,37 @@ pub async fn status(dir: &Path) -> Result<Option<GitStatus>, String> {
     let mut st = parse_status(&out);
     st.repo_root = top.to_string_lossy().into_owned();
     st.linked_worktree = canonical(&common) != canonical(&git_dir);
+    st.default_branch = default_branch(&top).await;
     Ok(Some(st))
+}
+
+/// See [`GitStatus::default_branch`]. Only a branch that exists locally
+/// counts, since a new branch is started from it.
+async fn default_branch(dir: &Path) -> Option<String> {
+    let remote_head = run(
+        dir,
+        &[
+            "symbolic-ref",
+            "--quiet",
+            "--short",
+            "refs/remotes/origin/HEAD",
+        ],
+        GIT_TIMEOUT,
+        false,
+    )
+    .await
+    .ok()
+    .filter(|r| r.ok)
+    .and_then(|r| r.stdout.trim().strip_prefix("origin/").map(str::to_string));
+    for name in remote_head
+        .into_iter()
+        .chain(["main".into(), "master".into()])
+    {
+        if branch_exists(dir, &name).await.unwrap_or(false) {
+            return Some(name);
+        }
+    }
+    None
 }
 
 fn canonical(p: &Path) -> PathBuf {
@@ -202,6 +235,7 @@ fn parse_status(out: &str) -> GitStatus {
         changed: 0,
         untracked: 0,
         linked_worktree: false,
+        default_branch: None,
     };
     let mut entries = out.split('\0');
     while let Some(entry) = entries.next() {
@@ -272,9 +306,18 @@ pub async fn switch(dir: &Path, branch: &str) -> Result<(), String> {
 }
 
 /// Create `branch` at HEAD and check it out.
-pub async fn create_branch(dir: &Path, branch: &str) -> Result<(), String> {
+/// Create `branch` and switch to it, starting at `from` (a local branch) or
+/// at the current commit. Uncommitted changes come along when git allows it.
+pub async fn create_branch(dir: &Path, branch: &str, from: Option<&str>) -> Result<(), String> {
     check_branch_name(dir, branch).await?;
-    run_ok(dir, &["switch", "-c", branch], GIT_TIMEOUT, true).await?;
+    let mut args = vec!["switch", "-c", branch];
+    if let Some(from) = from {
+        if !branch_exists(dir, from).await? {
+            return Err(format!("There is no branch named {from} here."));
+        }
+        args.push(from);
+    }
+    run_ok(dir, &args, GIT_TIMEOUT, true).await?;
     Ok(())
 }
 
@@ -457,8 +500,12 @@ pub async fn code_git_switch(folder: String, branch: String) -> Result<(), Strin
 
 /// Create a branch at HEAD and check it out.
 #[tauri::command]
-pub async fn code_git_create_branch(folder: String, branch: String) -> Result<(), String> {
-    create_branch(Path::new(&folder), &branch).await
+pub async fn code_git_create_branch(
+    folder: String,
+    branch: String,
+    from: Option<String>,
+) -> Result<(), String> {
+    create_branch(Path::new(&folder), &branch, from.as_deref()).await
 }
 
 /// Remove a fork's worktree if it is clean; see [`remove_worktree`].
@@ -566,7 +613,7 @@ mod tests {
     #[tokio::test]
     async fn branches_are_listed_created_and_switched() {
         let (_base, proj) = repo("branches");
-        create_branch(&proj, "feature").await.unwrap();
+        create_branch(&proj, "feature", None).await.unwrap();
         assert_eq!(
             status(&proj).await.unwrap().unwrap().branch.as_deref(),
             Some("feature")
@@ -578,14 +625,31 @@ mod tests {
             Some("main")
         );
         assert!(switch(&proj, "--orphan").await.is_err());
-        assert!(create_branch(&proj, "bad name").await.is_err());
+        assert!(create_branch(&proj, "bad name", None).await.is_err());
         assert!(switch(&proj, "nope").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_branch_can_start_from_the_default_branch() {
+        let (_base, proj) = repo("from-main");
+        create_branch(&proj, "feature", None).await.unwrap();
+        std::fs::write(proj.join("a.txt"), "feature\n").unwrap();
+        git(&proj, &["commit", "-qam", "feature work"]);
+        let st = status(&proj).await.unwrap().unwrap();
+        assert_eq!(st.default_branch.as_deref(), Some("main"));
+        // From main: the feature commit is not on the new branch.
+        create_branch(&proj, "fix", Some("main")).await.unwrap();
+        assert_eq!(
+            std::fs::read_to_string(proj.join("a.txt")).unwrap(),
+            "one\n"
+        );
+        assert!(create_branch(&proj, "x", Some("nope")).await.is_err());
     }
 
     #[tokio::test]
     async fn switching_over_uncommitted_changes_returns_gits_refusal() {
         let (_base, proj) = repo("dirty");
-        create_branch(&proj, "other").await.unwrap();
+        create_branch(&proj, "other", None).await.unwrap();
         std::fs::write(proj.join("a.txt"), "other\n").unwrap();
         git(&proj, &["commit", "-qam", "other"]);
         switch(&proj, "main").await.unwrap();

@@ -31,6 +31,7 @@ const repo = (over: Partial<GitStatus> = {}): GitStatus => ({
 	changed: 0,
 	untracked: 0,
 	linked_worktree: false,
+	default_branch: 'main',
 	...over
 });
 
@@ -109,11 +110,13 @@ describe('CodeBranchControl', () => {
 	it('creates a branch', async () => {
 		render(CodeBranchControl, { session: session() });
 		await fireEvent.click(screen.getByRole('button', { name: 'Branch main' }));
-		await fireEvent.click(await screen.findByRole('menuitem', { name: /New branch/ }));
+		await fireEvent.click(await screen.findByRole('menuitem', { name: /Branch from current/ }));
 		const input = screen.getByRole('textbox', { name: 'New branch name' });
 		await fireEvent.input(input, { target: { value: 'try-it' } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Create' }));
-		await vi.waitFor(() => expect(mocks.gitCreateBranch).toHaveBeenCalledWith('/p', 'try-it'));
+		await vi.waitFor(() =>
+			expect(mocks.gitCreateBranch).toHaveBeenCalledWith('/p', 'try-it', undefined)
+		);
 	});
 
 	it('keeps the menu open when the clicked item leaves the page mid-click', async () => {
@@ -131,6 +134,25 @@ describe('CodeBranchControl', () => {
 		window.dispatchEvent(click);
 		await tick();
 		expect(screen.queryByTestId('branch-menu')).not.toBeNull();
+	});
+
+	it('branches from the default branch when asked', async () => {
+		render(CodeBranchControl, { session: session({ git: repo({ branch: 'feature' }) }) });
+		await fireEvent.click(screen.getByRole('button', { name: 'Branch feature' }));
+		await fireEvent.click(await screen.findByRole('menuitem', { name: /Branch from main/ }));
+		const input = screen.getByRole('textbox', { name: 'New branch name' });
+		await fireEvent.input(input, { target: { value: 'hotfix' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+		await vi.waitFor(() =>
+			expect(mocks.gitCreateBranch).toHaveBeenCalledWith('/p', 'hotfix', 'main')
+		);
+	});
+
+	it('offers no "from main" while main is checked out', async () => {
+		render(CodeBranchControl, { session: session() });
+		await fireEvent.click(screen.getByRole('button', { name: 'Branch main' }));
+		await screen.findByRole('menuitem', { name: /Branch from current/ });
+		expect(screen.queryByRole('menuitem', { name: /Branch from main/ })).toBeNull();
 	});
 
 	it('warns when another open session works in the repository', async () => {

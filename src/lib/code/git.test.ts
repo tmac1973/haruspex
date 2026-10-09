@@ -11,6 +11,7 @@ const st = (over: Partial<GitStatus> = {}): GitStatus => ({
 	changed: 0,
 	untracked: 0,
 	linked_worktree: false,
+	default_branch: 'main',
 	...over
 });
 
