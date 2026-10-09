@@ -98,7 +98,8 @@ export interface ImageResult {
  * indeterminate one when it cannot.
  */
 export interface ImageProgress {
-	phase: 'queued' | 'running' | 'downloading';
+	/** `loading`: the backend is loading model weights before it can draw. */
+	phase: 'queued' | 'loading' | 'running' | 'downloading';
 	step?: number;
 	totalSteps?: number;
 	detail?: string;

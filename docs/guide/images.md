@@ -27,6 +27,8 @@ Under **Bundled engine**, press **Download** on a model, then **Use**. Downloads
 
 Under **Connection**, enter the **Server address** (for example `http://127.0.0.1:8188`) and an **API key** only if your server needs one, then press **Probe**. **Models on the server** then shows what each model is missing. **Install** downloads the files into ComfyUI when it runs on this computer, or queues them with ComfyUI-Manager on another server. Without either, **Copy file list** gives you the files to place by hand. Then choose the **Model**.
 
+The first picture after ComfyUI starts is slow: it loads the model from disk, which can take a minute or more. The progress line says **Loading the model** with a running clock while it does, then counts the drawing steps. Later pictures skip the load.
+
 ## Pick a model and check its licence
 
 | Model | Licence | Commercial use | Bundled engine needs |
