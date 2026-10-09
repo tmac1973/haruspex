@@ -8,8 +8,8 @@ another machine; then a phone.
 See [`overview.md`](./overview.md) for the why, the settled decisions and the
 invariants.
 
-**Status:** Drafted 2026-10-09. Phase 1 built (branch `remote-api/p01-driver`);
-phases 2–6 are sketches to be written up in full before each starts.
+**Status:** Phase 1 merged (#423). Phase 2 written up in full; phases 3–6
+are sketches to be written up before each starts.
 
 ## Phase map
 

@@ -134,7 +134,5 @@ Branch `remote-api/p01-driver`. Differences from the plan above:
 server (ThinkingCap-3.8-27B), alternating minimised and restored on a private
 Xvnc display where the page reports `document.visibilityState` `hidden` and
 `visible`: 5.4 s and 5.2 s hidden, 5.2 s and 6.2 s visible. No throttling of
-a streaming turn. Not yet measured on a real desktop compositor (`--show`);
-the turn is driven by fetch streams, not animation frames, so a difference
-there would be a surprise, but phase 2 should check once on the owner's
-desktop.
+a streaming turn. Repeated on the owner's GNOME desktop with `--show`: 5.2–5.3 s
+minimised, 5.2–5.5 s visible. No throttling there either.
