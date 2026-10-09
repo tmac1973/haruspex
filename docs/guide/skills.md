@@ -14,7 +14,7 @@ Haruspex reads skills from:
 - its own skills folder (Settings → Skills → Open skills folder), inside the app's data folder, for example `~/.local/share/com.haruspex.app/skills/` on Linux;
 - `~/.agents/skills/`, shared with other tools;
 - folders you add under Settings → Skills → Other skill folders, with a one-click **Add ~/.claude/skills** button (Claude Code skills may expect Claude Code's own tools);
-- in Code mode, a trusted repo's `.agents/skills/` and `.claude/skills/`.
+- in the Code tab and the Shell's Full access, a trusted repo's `.agents/skills/` and `.claude/skills/`.
 
 When two skills share a name, a trusted repo's wins, then your Haruspex folder, then `~/.agents/skills/`, then added folders. The losing one is marked **Overridden**.
 
@@ -32,11 +32,11 @@ Two built-in commands are always there: `/new` starts over with an empty convers
 
 Settings → Skills → When the model uses skills puts your skills' names and descriptions in front of the model, which loads one when a request matches.
 
-| Option | What it does |
-|---|---|
+| Option                         | What it does                                                               |
+| ------------------------------ | -------------------------------------------------------------------------- |
 | Automatic (remote models only) | On for remote and OpenRouter models, off for the local model. The default. |
-| Always | On for every model. |
-| Never | Only `/name` runs a skill. |
+| Always                         | On for every model.                                                        |
+| Never                          | Only `/name` runs a skill.                                                 |
 
 Small local models often load a skill and then don't follow it, which is why Automatic leaves them out.
 
@@ -50,7 +50,7 @@ Ask, for example, "save what we just did as a skill called deploy-check", or ask
 
 ## Repo instructions (AGENTS.md)
 
-In a git repo with an `AGENTS.md` at its root (or a `CLAUDE.md` when there is none), the Shell assistant reads it into every turn, in both read-only and Code mode. A file in a subfolder nearer your current folder is read too. Up to 8 KB is read per turn; the badge warns when the file was cut.
+In a git repo with an `AGENTS.md` at its root (or a `CLAUDE.md` when there is none), the Shell assistant reads it into every turn, in both Read-only and Full access. A file in a subfolder nearer your current folder is read too. Up to 8 KB is read per turn; the badge warns when the file was cut.
 
 A repo's instructions and skills were written by whoever made the repo, so the first time Haruspex finds them it asks **Use this repo's instructions?**, with **Use them** or **Ignore them**. It asks again if a different repo appears in that folder, or the repo gains new skills.
 
@@ -58,7 +58,7 @@ Answers are kept in Settings → Skills → Repos, where you can switch each rep
 
 ## Draft an AGENTS.md with /init
 
-In Code mode, `/init` reads the repo's manifests, CI workflows, README and other agent files, and drafts a short `AGENTS.md`: the real build, test and lint commands, conventions and gotchas. It opens for review before anything is saved, and changes an existing file rather than rewriting it. Outside Code mode, `/init` only adds a note saying it needs Code mode.
+In the Code tab or with Full access, `/init` reads the repo's manifests, CI workflows, README and other agent files, and drafts a short `AGENTS.md`: the real build, test and lint commands, conventions and gotchas. It opens for review before anything is saved, and changes an existing file rather than rewriting it. In a Read-only Shell, `/init` only adds a note saying where it works.
 
 ## Planning skills
 

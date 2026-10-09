@@ -9,7 +9,7 @@ The Code tab is a coding agent that works in one project folder: it reads and ed
 
 ## Start a session
 
-Click **New session** (or **+** next to the open sessions) and pick the project folder; the dialog starts from the last one you used. The folder is fixed for the session's life: the agent can't read or write outside it.
+Click **New session** (or **+** next to the open sessions) and pick the project folder; the dialog starts from the last one you used. **Open in Code** in a Shell tab's assistant starts one in that terminal's folder. The folder is fixed for the session's life: the agent can't read or write outside it.
 
 Type what you want and press `Enter`. After the first reply the model names the session (until then it is `<folder> · new session`); a name you gave it is never replaced. Each session is saved after every reply, so quitting or a crash loses nothing finished.
 
@@ -19,10 +19,10 @@ The list on the left holds every saved session. A session can be forked from any
 
 ## Read what the agent did
 
-- **Edits** show as a diff (removed lines red, added green, with line numbers); a new file is all added, and past 40 lines **Show all … lines** expands it. Unlike in Chat, rewriting a file doesn't ask first: the diff shows what changed.
+- **Edits** show as a diff (removed lines red, added green, with line numbers); past 40 lines **Show all … lines** expands it. Unlike in Chat, rewriting a file doesn't ask first: the diff shows what changed.
 - **Commands** show as a card: command, exit code, time taken and output (the last 20 lines until **Show all**). **Copy** copies the command; **Open in Shell** types it into a new Shell tab at the folder without running it.
 - Searches and file reads show as a short step list, as in Chat.
-- **Reasoning** sits above its step, collapsed (live as **Thinking…**), and what the agent **says** before a step sits under it.
+- **Reasoning** sits above its step, collapsed (live as **Thinking…**); what the agent **says** before a step sits under it.
 - A call still being written shows as a row: **Writing**, **Editing** or **Preparing command…**.
 - **File names** inside the folder, in diffs, reads, search results and answers (`src/app.ts:42`), open the file in an editor window, at its top.
 
@@ -30,7 +30,7 @@ The list on the left holds every saved session. A session can be forked from any
 
 Commands that ask for a password (`sudo`) or need a terminal can't run here, so the agent hands them to you: a new Shell tab opens at the folder with the command typed in, not run. Check or change it, then press `Enter`.
 
-The conversation shows **Waiting for you in Shell N — press Enter there**, with **Go to shell** and **Cancel**. When it finishes, the agent gets the exit code, the output and the command as you ran it. **Cancel** stops the wait (the agent carries on without the result); **Stop** ends the turn; either way the Shell tab stays. Closing the Shell tab first gives no result. If the shell doesn't report finished commands (an old fish, say), the agent asks you.
+The conversation shows **Waiting for you in Shell N — press Enter there**, with **Go to shell** and **Cancel**. When it finishes, the agent gets the exit code, the output and the command as you ran it. **Cancel** stops the wait (the agent carries on without the result); **Stop** ends the turn; either way the Shell tab stays. Closing the Shell tab first gives no result. If the shell doesn't report finished commands (an old fish), the agent asks you.
 
 ## Edit files
 

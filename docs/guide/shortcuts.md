@@ -9,51 +9,51 @@ Press **F1**, or click the **?** in the header, to see the shortcut list in the 
 
 ## Everywhere
 
-| Keys | What it does |
-|---|---|
-| F1 | Show the keyboard shortcuts |
-| F2 (hold) | Push-to-talk voice input; release to send |
-| F3 | Read the last reply aloud (press again to stop) |
-| Ctrl / ⌘ + N | New conversation (Chat tab) |
-| Ctrl / ⌘ + 1–4 | Switch to the Chat, Jobs, Shell or Code tab |
-| Ctrl / ⌘ + + / − | Zoom the interface in / out |
-| Ctrl / ⌘ + 0 | Reset the zoom |
-| Ctrl + Shift + I / ⌘ + ⌥ + I | Open the web inspector (developer tools) |
+| Keys                         | What it does                                    |
+| ---------------------------- | ----------------------------------------------- |
+| F1                           | Show the keyboard shortcuts                     |
+| F2 (hold)                    | Push-to-talk voice input; release to send       |
+| F3                           | Read the last reply aloud (press again to stop) |
+| Ctrl / ⌘ + N                 | New conversation (Chat tab)                     |
+| Ctrl / ⌘ + 1–4               | Switch to the Chat, Jobs, Shell or Code tab     |
+| Ctrl / ⌘ + + / −             | Zoom the interface in / out                     |
+| Ctrl / ⌘ + 0                 | Reset the zoom                                  |
+| Ctrl + Shift + I / ⌘ + ⌥ + I | Open the web inspector (developer tools)        |
 
 ## Chat
 
-| Keys | What it does |
-|---|---|
-| Enter | Send the message |
-| Shift + Enter | New line |
-| ↑ / ↓ | Step back and forward through the messages you sent in this conversation |
-| Esc | Stop generating |
+| Keys          | What it does                                                             |
+| ------------- | ------------------------------------------------------------------------ |
+| Enter         | Send the message                                                         |
+| Shift + Enter | New line                                                                 |
+| ↑ / ↓         | Step back and forward through the messages you sent in this conversation |
+| Esc           | Stop generating                                                          |
 
 ## Shell tab
 
-| Keys | What it does |
-|---|---|
-| F4 | Send your recent shell commands and their output to the assistant, with no question |
-| Ctrl + Shift + A | Show or hide the assistant sidebar |
-| Ctrl + ` | Move focus between the terminal and the assistant |
-| Ctrl + Shift + C | Copy the terminal selection |
-| Ctrl + Shift + V | Paste into the terminal |
-| Enter | Send to the assistant (Shift + Enter for a new line) |
-| ↑ / ↓ | Step back and forward through the questions you asked in this tab |
-| Esc | Stop the assistant |
+| Keys             | What it does                                                                        |
+| ---------------- | ----------------------------------------------------------------------------------- |
+| F4               | Send your recent shell commands and their output to the assistant, with no question |
+| Ctrl + Shift + A | Show or hide the assistant sidebar                                                  |
+| Ctrl + `         | Move focus between the terminal and the assistant                                   |
+| Ctrl + Shift + C | Copy the terminal selection                                                         |
+| Ctrl + Shift + V | Paste into the terminal                                                             |
+| Enter            | Send to the assistant (Shift + Enter for a new line)                                |
+| ↑ / ↓            | Step back and forward through the questions you asked in this tab                   |
+| Esc              | Stop the assistant                                                                  |
 
 ## Code tab
 
-| Keys | What it does |
-|---|---|
+| Keys  | What it does                                                |
+| ----- | ----------------------------------------------------------- |
 | Enter | Send; while the agent works, queue it as a steering message |
-| Esc | Stop the agent |
+| Esc   | Stop the agent                                              |
 
 ## Editor windows
 
-| Keys | What it does |
-|---|---|
-| Ctrl / ⌘ + S | Save the file |
+| Keys         | What it does                                         |
+| ------------ | ---------------------------------------------------- |
+| Ctrl / ⌘ + S | Save the file                                        |
 | Ctrl / ⌘ + W | Close the tab (asks first if it has unsaved changes) |
 
 ## Recall what you sent
@@ -64,16 +64,16 @@ Up recalls your last message when the cursor is on the first line of the input b
 
 Typing `/` at the start of the Chat, Shell or Code input box opens a list of commands and skills (see the `skills` page). While it is open:
 
-| Keys | What it does |
-|---|---|
-| Up / Down arrows | Move through the list |
-| Enter or Tab | Pick the highlighted item |
-| Esc | Close the list and keep your text |
+| Keys             | What it does                      |
+| ---------------- | --------------------------------- |
+| Up / Down arrows | Move through the list             |
+| Enter or Tab     | Pick the highlighted item         |
+| Esc              | Close the list and keep your text |
 
 ## Dialogs
 
-| Keys | What it does |
-|---|---|
-| Esc | Close the logs, the image viewer or the shortcuts list |
+| Keys | What it does                                           |
+| ---- | ------------------------------------------------------ |
+| Esc  | Close the logs, the image viewer or the shortcuts list |
 
-Some dialogs ignore Esc on purpose. **Run this command?** (Code mode approval) and other approval windows wait for you to pick a button, so a stray key never answers for you.
+Some dialogs ignore Esc on purpose. **Run this command?** (command approval) and other approval windows wait for you to pick a button, so a stray key never answers for you.

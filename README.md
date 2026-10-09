@@ -16,7 +16,7 @@ The **[user guide](https://tmac1973.github.io/haruspex/guide/)** explains every 
 
   On 8 GB or less you get Qwen 3.5 9B (or Qwen 3.5 4B if memory is tight). These small models are remarkably capable for their size and they do research well, though they aren't great at coding tasks.
 
-  The coding features — Code mode in the Shell tab, guided planning, autonomous coding, audit jobs, and the Python sandbox in the Chat tab — will work much better with a bigger model. We recommend **Qwen 3.6 35B-A3B** or **Qwen 3.8 27B**, which need at least 16 GB of VRAM but better quantizations are available for those with 24 and 32 GB of VRAM. You can also point those features at a bigger model on another machine, or at OpenRouter (though you lose the privacy of running locally).
+  The coding features — the Code tab, Full access in the Shell tab, guided planning, autonomous coding, audit jobs, and the Python sandbox in the Chat tab — will work much better with a bigger model. We recommend **Qwen 3.6 35B-A3B** or **Qwen 3.8 27B**, which need at least 16 GB of VRAM but better quantizations are available for those with 24 and 32 GB of VRAM. You can also point those features at a bigger model on another machine, or at OpenRouter (though you lose the privacy of running locally).
 
 - **Human Enablement, Not Human Replacement** — Many projects are building fully autonomous agents that replace people. This is not one of them. Haruspex is meant to help you learn, create, and fix things, with you still in the chair.
 
@@ -44,7 +44,7 @@ The **[user guide](https://tmac1973.github.io/haruspex/guide/)** explains every 
 - **A real terminal** _(Linux, macOS and Windows — PowerShell and WSL2 on Windows)_ with an assistant beside it. Open several shell tabs at once.
 - **Send output to the assistant** — One click (or `F4`) sends recent commands and their output to the assistant to explain.
 - **Read-only by default** — The assistant can read config files and logs anywhere on your system and suggest fixes, but it never runs anything. Suggested commands appear as cards you click to paste at your prompt. Risky patterns (`sudo`, `rm -rf`, `dd of=`, `curl | sh`, `Remove-Item -Recurse -Force`) get a red chip.
-- **Code mode (off by default)** — Turn it on per session to let the assistant edit files and **run commands in your live terminal**. Commands it considers risky stop and ask you first; commands it considers safe run on their own. ⚠️ Please read the [AI safety disclaimer](#ai-safety-disclaimer) first. This is a coding feature — expect much better results with a larger model.
+- **Full access (off by default)** — Click the lock in the assistant's header to let it edit files and **run commands in your live terminal**. **Open in Code** carries on in the Code tab, in the same folder. Commands it considers risky stop and ask you first; commands it considers safe run on their own. ⚠️ Please read the [AI safety disclaimer](#ai-safety-disclaimer) first. This is a coding feature — expect much better results with a larger model.
 - **Repo instructions** — In a git repo with an `AGENTS.md` (or `CLAUDE.md`), the assistant reads it into every turn, so it knows how the project builds, tests and lints. The first time, it asks whether you trust the repo; a badge in the sidebar shows when the file is in use, and lets you stop using it. ([details](https://tmac1973.github.io/haruspex/guide/skills/))
 - **Memory limit** _(Linux)_ — Each Shell tab's terminal, and every command the assistant runs on its own, can use at most half your RAM by default (Settings → Shell → Memory limit). A runaway build or test is stopped before it takes the app or your desktop down, the shell around it keeps going, and the assistant is told why so it looks for the bug instead of re-running it.
 
@@ -54,7 +54,7 @@ The **[user guide](https://tmac1973.github.io/haruspex/guide/)** explains every 
 - **Run one by name** — Type `/` in Chat or Shell for a list of your skills, then `/name what you want`. Works on any model. `/new` starts over and `/skills` lists what you have.
 - **Let the model pick** — With Settings → Skills → "When the model uses skills" on, the model sees your skills and loads one when a request matches. Automatic turns this on for remote models only, since small local models handle it poorly.
 - **Save a procedure as a skill** — Ask "save what we just did as a skill called deploy-check". The model drafts it, and nothing is written until you have read it, edited it if you like, and approved it.
-- **`/init`** — In Code mode, drafts a short `AGENTS.md` for a repo from its manifests, CI and README, for you to review before it is saved.
+- **`/init`** — In the Code tab or a Shell with Full access, drafts a short `AGENTS.md` for a repo from its manifests, CI and README, for you to review before it is saved.
 - **Planning skills** — Pick one when you create a guided planning job (2D game, 3D game, web app, CLI tool, API service), and the interview asks the questions that matter for that kind of project — the window and camera for a game, sign-in and storage for a web app — and the plan is checked against its requirements.
 
 ### Jobs and schedules
@@ -66,7 +66,7 @@ Audit, guided planning and autonomous coding are coding-focused. They need a lar
 ### Image generation (off by default)
 
 - **Pictures in Chat** — Ask Chat to draw something and the picture appears in the answer, and stays with the conversation. ([details](https://tmac1973.github.io/haruspex/guide/images/))
-- **Art for the project you are coding** — In the Shell's Code mode, ask for "a 32 px coin sprite in assets/" and the assistant writes a finished sprite, icon or tiling texture into your project, made the same way the asset job makes them. It can match the colours of an asset you already have.
+- **Art for the project you are coding** — In the Code tab or a Shell with Full access, ask for "a 32 px coin sprite in assets/" and the assistant writes a finished sprite, icon or tiling texture into your project, made the same way the asset job makes them. It can match the colours of an asset you already have.
 - **Game art from a description** — The asset generation job draws a project's sprites, icons and tiling textures in one consistent style, checks each one, and writes them into the project. Guided planning can hand off to it and then to autonomous coding, so you can go from an idea to a game with its own art in one unattended run. ([details](https://tmac1973.github.io/haruspex/guide/images/))
 - **Runs on your machine** — Either a [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server you run, or a bundled engine that needs nothing installed. Nothing starts until you pick one in Settings → Image.
 
@@ -89,7 +89,7 @@ Audit, guided planning and autonomous coding are coding-focused. They need a lar
 >
 > The model can be confidently wrong. It can invent facts, misread a file or some command output, and — this matters most in the **Shell tab** — suggest commands that are wrong, dangerous or destructive (deleting data, changing system settings, exposing secrets). The small local models this project targets make these mistakes more often than large cloud models do.
 >
-> Haruspex is built around **human enablement, not human replacement**. By default the Shell assistant is **read-only** and runs nothing: every command it suggests lands at your prompt for you to read and run yourself, with risky patterns (`sudo`, `rm -rf`, `dd of=`, `curl | sh`, …) flagged. But if you turn on **Code mode**, the assistant **runs commands itself in your live terminal**. Commands it flags as risky stop and ask you first, but anything it considers safe runs on its own — and you can even turn that prompt off in Settings. Code mode is off by default and you turn it on per session. Only turn it on for machines and projects you are willing to let the model touch. These flags and prompts help, but they are not a guarantee. **You are the last line of defence.**
+> Haruspex is built around **human enablement, not human replacement**. By default the Shell assistant is **read-only** and runs nothing: every command it suggests lands at your prompt for you to read and run yourself, with risky patterns (`sudo`, `rm -rf`, `dd of=`, `curl | sh`, …) flagged. But if you give it **Full access**, the assistant **runs commands itself in your live terminal**. Commands it flags as risky stop and ask you first, but anything it considers safe runs on its own — and you can even turn that prompt off in Settings. Full access is off by default and you turn it on per session. Only turn it on for machines and projects you are willing to let the model touch. These flags and prompts help, but they are not a guarantee. **You are the last line of defence.**
 >
 > Before running anything the model suggests:
 >
@@ -141,20 +141,20 @@ Open the `.dmg` and drag Haruspex to Applications. Because the app is **not code
 
 Haruspex runs the model on your GPU. How much VRAM you have decides which model you get and how well the coding features work.
 
-| Your GPU          | Model you get                                                          | What to expect                                                            |
-| ----------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Under 8 GB / iGPU | Qwen 3.5 4B                                                            | Chat, research and documents work. Slower. Coding features will struggle. |
-| 8 GB              | Qwen 3.5 9B                                                            | Good research and document work. Coding features will struggle.           |
-| 12 GB             | Qwen 3.5 9B (Q6)                                                       | Same abilities, better quality answers.                                   |
-| 16 GB             | Gemma 4 12B (Q6)                                                       | Coding features become usable, with room for very long conversations.     |
-| 24 GB             | Qwen 3.6 35B-A3B _or_ Qwen 3.8 27B                                     | Everything, including the coding features.                                |
-| 32 GB and up      | The same two models, at higher-quality quants                          | The best local quality Haruspex offers.                                   |
+| Your GPU          | Model you get                                 | What to expect                                                            |
+| ----------------- | --------------------------------------------- | ------------------------------------------------------------------------- |
+| Under 8 GB / iGPU | Qwen 3.5 4B                                   | Chat, research and documents work. Slower. Coding features will struggle. |
+| 8 GB              | Qwen 3.5 9B                                   | Good research and document work. Coding features will struggle.           |
+| 12 GB             | Qwen 3.5 9B (Q6)                              | Same abilities, better quality answers.                                   |
+| 16 GB             | Gemma 4 12B (Q6)                              | Coding features become usable, with room for very long conversations.     |
+| 24 GB             | Qwen 3.6 35B-A3B _or_ Qwen 3.8 27B            | Everything, including the coding features.                                |
+| 32 GB and up      | The same two models, at higher-quality quants | The best local quality Haruspex offers.                                   |
 
 The first-run wizard picks one of these for you. You can change it later in Settings → Inference → Models, and re-run the wizard from Settings → Inference.
 
 **From 24 GB up, each tier offers two models.** The default is the sparse mixture-of-experts model, which activates only a fraction of its parameters per token and so answers faster; the alternative is a dense model of similar size, which some people prefer. Both are listed in Settings → Inference → Models with their sizes.
 
-**Why a 12B at 16 GB and not something bigger?** A bigger model has to fit its weights *and* the conversation in the same VRAM, and the conversation is not free. Gemma 4 12B keeps only 8 of its 48 attention layers at full range, so its share of the memory grows about four times more slowly per word than a 27B's — which is what lets this tier hold a very long conversation instead of spending everything on parameters and running out of room mid-task.
+**Why a 12B at 16 GB and not something bigger?** A bigger model has to fit its weights _and_ the conversation in the same VRAM, and the conversation is not free. Gemma 4 12B keeps only 8 of its 48 attention layers at full range, so its share of the memory grows about four times more slowly per word than a 27B's — which is what lets this tier hold a very long conversation instead of spending everything on parameters and running out of room mid-task.
 
 **Short on VRAM?** Settings → Inference has an option to keep the vision projector in system RAM. The projector only does work on messages that actually contain an image, so moving it out of VRAM buys a longer conversation — up to twice as much on the 8 GB tier, where it is the largest. Messages with images take a few seconds longer to process; nothing else changes.
 
@@ -174,7 +174,7 @@ Everything about using Haruspex is in the **[user guide](https://tmac1973.github
 - [Getting started](https://tmac1973.github.io/haruspex/guide/) — first run, the tabs, where to go next
 - [Models](https://tmac1973.github.io/haruspex/guide/models/) — choosing a model for your hardware, your own server, OpenRouter
 - [Chat](https://tmac1973.github.io/haruspex/guide/chat/) — web research, files, the Python sandbox, pictures, voice
-- [Shell and Code mode](https://tmac1973.github.io/haruspex/guide/shell/) — the terminal, the assistant, Code mode, command approval, the memory limit
+- [Shell tab](https://tmac1973.github.io/haruspex/guide/shell/) — the terminal, the assistant, Read-only and Full access, command approval, the memory limit
 - [Skills](https://tmac1973.github.io/haruspex/guide/skills/) — skills, `/name`, `AGENTS.md`, repo trust, `/init`
 - [Jobs](https://tmac1973.github.io/haruspex/guide/jobs/) — research, audit, guided planning, autonomous coding, asset generation, schedules
 - [Memory](https://tmac1973.github.io/haruspex/guide/memory/) — what is remembered, approval, duplicates, privacy
@@ -307,28 +307,28 @@ Use `make reset-data` to wipe this directory and start fresh (Linux/macOS).
 
 ## Tech stack
 
-| Component                  | Technology                                                                                                                                                                      |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App framework              | [Tauri 2.x](https://v2.tauri.app/) (Rust backend, system webview)                                                                                                               |
-| Frontend                   | [SvelteKit 5](https://svelte.dev/) (TypeScript, static SPA, Svelte 5 runes)                                                                                                     |
-| LLM inference              | [llama.cpp](https://github.com/ggml-org/llama.cpp) (Vulkan/Metal, with image support via mmproj)                                                                                |
-| Speech-to-text             | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (Vulkan/Metal)                                                                                                           |
-| Text-to-speech             | [Kokoros](https://github.com/lucasjinreal/Kokoros) (CPU)                                                                                                                        |
-| Models (small)             | [Qwen 3.5 4B](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) and [Qwen 3.5 9B](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF)                                                 |
-| Models (16 GB and up)      | [Gemma 4 12B](https://huggingface.co/unsloth/gemma-4-12b-it-GGUF), [Qwen 3.6 35B-A3B](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF) and [Qwen 3.8 27B](https://huggingface.co/unsloth/Qwen3.8-27B-GGUF) |
-| Image generation           | [ComfyUI](https://github.com/comfyanonymous/ComfyUI) (yours) or [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) (bundled, Vulkan/Metal); Ming-Image 0.1 Design and Qwen-Image 2.1 |
-| Python sandbox             | [Pyodide](https://pyodide.org/) running in the app's webview                                                                                                                    |
-| PDF text extraction        | [PDFium](https://github.com/bblanchon/pdfium-binaries) with custom layout reconstruction                                                                                        |
-| PDF rendering (for vision) | [PDF.js](https://mozilla.github.io/pdf.js/) running in the Tauri webview                                                                                                        |
-| PDF creation               | [printpdf](https://crates.io/crates/printpdf) (pure Rust)                                                                                                                       |
-| docx / xlsx                | Custom zip+XML for docx reads/writes, [calamine](https://crates.io/crates/calamine) for xlsx reads, [rust_xlsxwriter](https://crates.io/crates/rust_xlsxwriter) for xlsx writes |
-| odt / ods / odp / pptx     | Hand-written zip+XML following the OASIS OpenDocument and OOXML specs                                                                                                           |
-| MCP client                 | [rmcp](https://crates.io/crates/rmcp) (stdio and streamable HTTP), with [node](https://nodejs.org/) and [uv](https://github.com/astral-sh/uv) bundled to run servers |
+| Component                  | Technology                                                                                                                                                                                                                                        |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App framework              | [Tauri 2.x](https://v2.tauri.app/) (Rust backend, system webview)                                                                                                                                                                                 |
+| Frontend                   | [SvelteKit 5](https://svelte.dev/) (TypeScript, static SPA, Svelte 5 runes)                                                                                                                                                                       |
+| LLM inference              | [llama.cpp](https://github.com/ggml-org/llama.cpp) (Vulkan/Metal, with image support via mmproj)                                                                                                                                                  |
+| Speech-to-text             | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (Vulkan/Metal)                                                                                                                                                                             |
+| Text-to-speech             | [Kokoros](https://github.com/lucasjinreal/Kokoros) (CPU)                                                                                                                                                                                          |
+| Models (small)             | [Qwen 3.5 4B](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) and [Qwen 3.5 9B](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF)                                                                                                                   |
+| Models (16 GB and up)      | [Gemma 4 12B](https://huggingface.co/unsloth/gemma-4-12b-it-GGUF), [Qwen 3.6 35B-A3B](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF) and [Qwen 3.8 27B](https://huggingface.co/unsloth/Qwen3.8-27B-GGUF)                                    |
+| Image generation           | [ComfyUI](https://github.com/comfyanonymous/ComfyUI) (yours) or [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) (bundled, Vulkan/Metal); Ming-Image 0.1 Design and Qwen-Image 2.1                                          |
+| Python sandbox             | [Pyodide](https://pyodide.org/) running in the app's webview                                                                                                                                                                                      |
+| PDF text extraction        | [PDFium](https://github.com/bblanchon/pdfium-binaries) with custom layout reconstruction                                                                                                                                                          |
+| PDF rendering (for vision) | [PDF.js](https://mozilla.github.io/pdf.js/) running in the Tauri webview                                                                                                                                                                          |
+| PDF creation               | [printpdf](https://crates.io/crates/printpdf) (pure Rust)                                                                                                                                                                                         |
+| docx / xlsx                | Custom zip+XML for docx reads/writes, [calamine](https://crates.io/crates/calamine) for xlsx reads, [rust_xlsxwriter](https://crates.io/crates/rust_xlsxwriter) for xlsx writes                                                                   |
+| odt / ods / odp / pptx     | Hand-written zip+XML following the OASIS OpenDocument and OOXML specs                                                                                                                                                                             |
+| MCP client                 | [rmcp](https://crates.io/crates/rmcp) (stdio and streamable HTTP), with [node](https://nodejs.org/) and [uv](https://github.com/astral-sh/uv) bundled to run servers                                                                              |
 | Email                      | [async-imap](https://crates.io/crates/async-imap) and [mail-parser](https://crates.io/crates/mail-parser) for reading, [lettre](https://crates.io/crates/lettre) for sending, [keyring](https://crates.io/crates/keyring) for the system keychain |
-| Calendar / contacts        | CalDAV and CardDAV over [quick-xml](https://crates.io/crates/quick-xml), with [rrule](https://crates.io/crates/rrule) for recurrence |
-| Screen capture             | XDG desktop portal on Linux ([ashpd](https://crates.io/crates/ashpd)), [xcap](https://crates.io/crates/xcap) on macOS and Windows |
-| Database                   | SQLite (via rusqlite)                                                                                                                                                           |
-| Web search                 | Rotation of free engines, Brave Search API, SearXNG, or a local Chrome/Chromium                                                                                                 |
+| Calendar / contacts        | CalDAV and CardDAV over [quick-xml](https://crates.io/crates/quick-xml), with [rrule](https://crates.io/crates/rrule) for recurrence                                                                                                              |
+| Screen capture             | XDG desktop portal on Linux ([ashpd](https://crates.io/crates/ashpd)), [xcap](https://crates.io/crates/xcap) on macOS and Windows                                                                                                                 |
+| Database                   | SQLite (via rusqlite)                                                                                                                                                                                                                             |
+| Web search                 | Rotation of free engines, Brave Search API, SearXNG, or a local Chrome/Chromium                                                                                                                                                                   |
 
 ## Building a release
 
