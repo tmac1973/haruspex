@@ -201,6 +201,13 @@ export interface ToolContext {
 	 */
 	codeReadOnly?: boolean;
 	/**
+	 * The WSL distro a Code-tab session works in (Windows): commands,
+	 * background processes and searches run inside it, and `workingDir` is a
+	 * Linux path. Null for a host folder, and in the Shell tab, whose own
+	 * picker decides (`wslDistroArg`).
+	 */
+	wslDistro?: string | null;
+	/**
 	 * One writer per folder, for a Code session (`#lib/code/folders.ts`).
 	 * Writes and edits, and commands that may change files, take the folder
 	 * first; successful writes and edits report the files they changed.

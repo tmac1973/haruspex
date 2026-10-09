@@ -7,7 +7,19 @@ export type BgProcess = { id: string,
 /**
  * The Code session that started it.
  */
-owner: string, command: string, cwd: string, pid: number, 
+owner: string, command: string, 
+/**
+ * A Linux path when `wsl_distro` is set.
+ */
+cwd: string, 
+/**
+ * The WSL distro it runs in (Windows); `null` on the host.
+ */
+wsl_distro: string | null, 
+/**
+ * The host process: the shell, or for WSL the `wsl.exe` relay.
+ */
+pid: number, 
 /**
  * Unix milliseconds.
  */

@@ -27,9 +27,31 @@ function slashes(path: string): string {
 	return path.replace(/\\/g, '/');
 }
 
-/** A Windows path (`C:/…`): compared without regard to case, as Windows does. */
+/**
+ * A Windows path (`C:/…`), or one through WSL's mount of a Windows drive
+ * (`/mnt/c/…`): compared without regard to case, as Windows does.
+ */
 function isWindowsPath(path: string): boolean {
-	return /^[a-z]:\//i.test(path);
+	return /^[a-z]:\//i.test(path) || /^\/mnt\/[a-z]\//i.test(path);
+}
+
+/** `C:\Users\tim\x\` as a WSL distro sees it: `/mnt/c/Users/tim/x/`. Null for any other path. */
+export function wslMountPath(path: string): string | null {
+	const m = /^([a-z]):[\\/](.*)$/i.exec(path);
+	return m ? `/mnt/${m[1].toLowerCase()}/${slashes(m[2])}` : null;
+}
+
+/**
+ * What to guard for a command that runs inside a WSL distro: each Windows
+ * directory also under its `/mnt/<drive>/…` spelling, and no home to expand,
+ * since `~` there is the distro's Linux home, not the Windows one.
+ */
+export function wslTargets(targets: ProtectedTargets): ProtectedTargets {
+	const paths = targets.paths.flatMap((p) => {
+		const mount = wslMountPath(p.path);
+		return mount ? [p, { ...p, path: mount }] : [p];
+	});
+	return { ...targets, home: '', paths };
 }
 
 /** The command with the home-directory spellings a shell would expand, expanded. */
@@ -108,7 +130,9 @@ let memo: { key: string; targets: Promise<ProtectedTargets | null> } | null = nu
  * picked up. Null when the command is unavailable (a test, a browser): the
  * check then guards nothing rather than failing every command.
  */
-export function protectedTargets(): Promise<ProtectedTargets | null> {
+export async function protectedTargets(
+	opts: { wsl?: boolean } = {}
+): Promise<ProtectedTargets | null> {
 	const extra = imageBackendPort();
 	const key = JSON.stringify(extra);
 	if (memo?.key !== key) {
@@ -119,7 +143,9 @@ export function protectedTargets(): Promise<ProtectedTargets | null> {
 			)
 		};
 	}
-	return memo.targets;
+	// A command inside a WSL distro names Windows folders as /mnt/<drive>/….
+	const targets = await memo.targets;
+	return targets && opts.wsl ? wslTargets(targets) : targets;
 }
 
 /** Test seam. */

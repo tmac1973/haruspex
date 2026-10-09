@@ -60,6 +60,8 @@ export interface CodeTurnOptions {
 	effort: string | null;
 	/** May read, not write (`ToolContext.codeReadOnly`). */
 	readOnly?: boolean;
+	/** The WSL distro `root` is in (`ToolContext.wslDistro`). */
+	wslDistro?: string | null;
 	/** One writer per folder (`ToolContext.codeWriteGuard`). */
 	writeGuard?: CodeWriteGuard;
 	/**
@@ -194,6 +196,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 					requester: () => `Code · ${sessionLabel({ title: o.title?.() ?? '', root: o.root })}`,
 					codeReadOnly: o.readOnly ?? false,
 					codeWriteGuard: o.writeGuard,
+					wslDistro: o.wslDistro ?? null,
 					contextSize,
 					maxIterations: settings.codeMaxIterations,
 					deepResearch: false,
@@ -329,7 +332,8 @@ async function prepareMessages(
 		skillsSection: skillsPromptSection(skills),
 		projectInstructions: agentsMdPromptSection(project.agentsMd),
 		readOnly: o.readOnly,
-		worktree: o.worktree
+		worktree: o.worktree,
+		wslDistro: o.wslDistro
 	});
 	const thread = o.notice ? withNotice(o.thread, o.notice) : o.thread;
 	return { messages: mergeLeadingSystemMessages([system, ...thread]), skills };

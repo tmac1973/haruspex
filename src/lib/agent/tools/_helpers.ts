@@ -7,6 +7,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import type { ShellSelection } from '#lib/ipc/gen/ShellSelection.ts';
 import { chatCompletion, type BackendOverride, type ChatMessage } from '#lib/api.ts';
 import {
 	getChatTemplateKwargs,
@@ -92,6 +93,40 @@ export function resolveShellPath(path: string, shellCwd: string | null | undefin
 export function wslDistroArg(): { wslDistro?: string } {
 	const sel = getSettings().shellSelection;
 	return sel?.kind === 'wsl' ? { wslDistro: sel.distro } : {};
+}
+
+/**
+ * `wslDistroArg` for a tool call: the Shell picker's distro for a Shell-tab
+ * turn, the session's own (`ctx.wslDistro`) for a Code-tab one, which must
+ * never follow what the Shell tab last chose.
+ */
+export function ctxWslDistroArg(ctx: { shellMode?: boolean; wslDistro?: string | null }): {
+	wslDistro?: string;
+} {
+	if (ctx.shellMode) return wslDistroArg();
+	return ctx.wslDistro ? { wslDistro: ctx.wslDistro } : {};
+}
+
+/**
+ * The shell a one-shot runs in. The Shell tab's Code mode follows its picker
+ * (PowerShell or a WSL distro on Windows); a Code-tab session runs in its own
+ * distro, or the host's default shell, never whatever the Shell tab last chose.
+ */
+export function ctxShell(ctx: {
+	shellMode?: boolean;
+	wslDistro?: string | null;
+}): ShellSelection | null {
+	if (ctx.shellMode) return getSettings().shellSelection;
+	return ctx.wslDistro ? { kind: 'wsl', distro: ctx.wslDistro } : null;
+}
+
+/** The folder a tool call's relative paths start from: the shell's cwd, or the Code session's. */
+export function ctxCwd(ctx: {
+	shellMode?: boolean;
+	shellCwd?: string | null;
+	workingDir?: string | null;
+}): string | null {
+	return ctx.shellMode ? (ctx.shellCwd ?? null) : (ctx.workingDir ?? null);
 }
 
 /**

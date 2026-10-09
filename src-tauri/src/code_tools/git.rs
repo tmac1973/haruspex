@@ -75,13 +75,13 @@ pub struct ForkWorktree {
 pub fn git_available() -> bool {
     static AVAILABLE: OnceLock<bool> = OnceLock::new();
     *AVAILABLE.get_or_init(|| {
-        std::process::Command::new("git")
-            .arg("--version")
+        let mut cmd = std::process::Command::new("git");
+        cmd.arg("--version")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .is_ok_and(|s| s.success())
+            .stderr(Stdio::null());
+        crate::shell::platform::apply_no_window(&mut cmd);
+        cmd.status().is_ok_and(|s| s.success())
     })
 }
 
@@ -109,6 +109,7 @@ async fn run(dir: &Path, args: &[&str], timeout: Duration, write: bool) -> Resul
     if !write {
         cmd.env("GIT_OPTIONAL_LOCKS", "0");
     }
+    super::hide_window(&mut cmd);
     let child = cmd.spawn().map_err(|e| format!("Couldn't run git: {e}"))?;
     let out = tokio::time::timeout(timeout, child.wait_with_output())
         .await

@@ -20,12 +20,14 @@ import type { BgProcess } from '#lib/ipc/gen/BgProcess.ts';
 export async function startCodeBackground(
 	command: string,
 	cwd: string,
+	wslDistro: string | null,
 	owner: string,
 	watch: boolean
 ): Promise<string> {
 	const started = await invoke<BgStarted>('code_bg_start', {
 		owner,
 		cwd,
+		wslDistro,
 		command,
 		memoryLimitPercent: commandMemoryLimitPercent(),
 		logCapMb: getSettings().codeBgLogCapMb

@@ -379,10 +379,50 @@ describe('Shell + Code combined mode', () => {
 				'code_glob',
 				expect.objectContaining({ root: '/proj', wslDistro: 'Ubuntu-24.04' })
 			);
-			// The Code tab's working directory is a host path — no distro.
+			// A host-folder Code session has no distro, whatever the Shell tab picked.
 			mocks.invoke.mockClear();
 			await executeTool('code_glob', { pattern: '**/*.rs' }, codeCtx);
 			expect(mocks.invoke.mock.calls[0][1]).not.toHaveProperty('wslDistro');
+			// A WSL Code session searches in its own distro.
+			mocks.invoke.mockClear();
+			await executeTool('code_glob', { pattern: '**/*.rs' }, { ...codeCtx, wslDistro: 'Debian' });
+			expect(mocks.invoke.mock.calls[0][1]).toMatchObject({ wslDistro: 'Debian' });
+		} finally {
+			updateSettings({ shellSelection: null });
+		}
+	});
+
+	it("runs a Code session's commands in its own distro, never the Shell tab's pick", async () => {
+		const { updateSettings } = await import('#lib/stores/settings.ts');
+		updateSettings({ shellSelection: { kind: 'wsl', distro: 'Ubuntu-24.04' } });
+		try {
+			const { executeTool } = await import('#lib/agent/tools/index.ts');
+			await executeTool('run_command', { command: 'ls' }, codeCtx);
+			expect(mocks.invoke).toHaveBeenCalledWith(
+				'run_command_capture',
+				expect.objectContaining({ shell: null })
+			);
+			mocks.invoke.mockClear();
+			await executeTool(
+				'run_command',
+				{ command: 'ls' },
+				{ ...codeCtx, workingDir: '/home/tim/p', wslDistro: 'Debian' }
+			);
+			expect(mocks.invoke).toHaveBeenCalledWith(
+				'run_command_capture',
+				expect.objectContaining({ cwd: '/home/tim/p', shell: { kind: 'wsl', distro: 'Debian' } })
+			);
+			// The Shell tab's Code mode still follows its picker.
+			mocks.invoke.mockClear();
+			await executeTool(
+				'run_command',
+				{ command: 'ls' },
+				{ ...shellCodeCtx, shellSessionId: null }
+			);
+			expect(mocks.invoke).toHaveBeenCalledWith(
+				'run_command_capture',
+				expect.objectContaining({ shell: { kind: 'wsl', distro: 'Ubuntu-24.04' } })
+			);
 		} finally {
 			updateSettings({ shellSelection: null });
 		}

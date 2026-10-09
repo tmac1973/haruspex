@@ -9,17 +9,23 @@
 //! leftovers are recorded in the `code-bg` orphan registry and killed on the
 //! next launch (see [`sweep_orphans`]).
 //!
-//! Unix only for now; on Windows `code_bg_start` refuses.
+//! On Windows a process runs inside the session's WSL distro (see
+//! `code_tools/wsl.rs`): the log still fills on the host through the
+//! `wsl.exe` relay, and stopping signals the Linux process group from inside
+//! the distro, since killing the relay would leave it running. Without a
+//! distro, Windows refuses.
 
+use super::wsl;
 use crate::command_scope;
 use crate::orphans::{self, RunningServer};
+use crate::shell::kind::ShellSelection;
 use crate::sync_util::LockExt;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::AsyncReadExt;
@@ -57,8 +63,17 @@ pub struct BgProcess {
     /// The Code session that started it.
     pub owner: String,
     pub command: String,
+    /// A Linux path when `wsl_distro` is set.
     pub cwd: String,
+    /// The WSL distro it runs in (Windows); `null` on the host.
+    pub wsl_distro: Option<String>,
+    /// The host process: the shell, or for WSL the `wsl.exe` relay.
     pub pid: u32,
+    /// For WSL, the Linux process group, once the wrapper has reported it
+    /// (0 before). What a stop signals.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub wsl_pgid: Arc<AtomicU32>,
     /// Unix milliseconds.
     #[ts(type = "number")]
     pub started_at: u64,
@@ -100,11 +115,19 @@ impl CodeBgManager {
         &self,
         owner: String,
         cwd: String,
+        wsl_distro: Option<String>,
         command: String,
         memory_limit_percent: Option<u8>,
     ) -> Result<BgStarted, String> {
-        self.start_with_log_cap(owner, cwd, command, memory_limit_percent, self.log_cap)
-            .await
+        self.start_with_log_cap(
+            owner,
+            cwd,
+            wsl_distro,
+            command,
+            memory_limit_percent,
+            self.log_cap,
+        )
+        .await
     }
 
     /// `start`, keeping at most `log_cap` bytes of the process's log.
@@ -112,17 +135,22 @@ impl CodeBgManager {
         &self,
         owner: String,
         cwd: String,
+        wsl_distro: Option<String>,
         command: String,
         memory_limit_percent: Option<u8>,
         log_cap: u64,
     ) -> Result<BgStarted, String> {
-        if cfg!(windows) {
-            return Err("Background commands are not supported on Windows yet.".into());
+        if cfg!(windows) && wsl_distro.is_none() {
+            return Err("On Windows, background commands run in a WSL session only.".into());
         }
         if owner.trim().is_empty() {
             return Err("A background command needs an owning session.".into());
         }
-        if !Path::new(&cwd).is_dir() {
+        let cwd_ok = match &wsl_distro {
+            Some(d) => wsl::is_dir_in(d, &cwd).await,
+            None => Path::new(&cwd).is_dir(),
+        };
+        if !cwd_ok {
             return Err(format!("Working directory does not exist: {cwd}"));
         }
         std::fs::create_dir_all(&self.log_dir)
@@ -135,15 +163,25 @@ impl CodeBgManager {
             .open(&log_path)
             .map_err(|e| format!("Could not create {}: {e}", log_path.display()))?;
 
-        let cmd = super::build_shell_command(&script(&command, &id), &cwd, None);
-        let (mut cmd, _scope) = match memory_limit_percent.and_then(command_scope::limit_bytes) {
+        let shell = wsl_distro
+            .as_ref()
+            .map(|d| ShellSelection::Wsl { distro: d.clone() });
+        let cmd = super::build_shell_command(&script(&command, &id), &cwd, shell.as_ref());
+        // The memory ceiling is a host-Linux scope; nothing applies inside WSL.
+        let limit = memory_limit_percent
+            .filter(|_| wsl_distro.is_none())
+            .and_then(command_scope::limit_bytes);
+        let (mut cmd, _scope) = match limit {
             Some(limit) => command_scope::wrap(cmd, &id, limit),
             None => (cmd, None),
         };
         cmd.stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .current_dir(&cwd);
+            .stderr(Stdio::piped());
+        if wsl_distro.is_none() {
+            cmd.current_dir(&cwd);
+        }
+        super::hide_window(&mut cmd);
         #[cfg(unix)]
         cmd.process_group(0);
 
@@ -156,15 +194,19 @@ impl CodeBgManager {
         };
         let pid = child.id().unwrap_or(0);
         let started_at = now_ms();
-        orphans::register(
-            self.registry.as_deref(),
-            RunningServer {
-                id: id.clone(),
-                pid,
-                started_at: started_at / 1000,
-                program: marker(&id),
-            },
-        );
+        let wsl_pgid = Arc::new(AtomicU32::new(0));
+        // A WSL process is recorded once its group is known (see `pump_wsl_stderr`).
+        if wsl_distro.is_none() {
+            orphans::register(
+                self.registry.as_deref(),
+                RunningServer {
+                    id: id.clone(),
+                    pid,
+                    started_at: started_at / 1000,
+                    program: marker(&id),
+                },
+            );
+        }
 
         let sink = Arc::new(Mutex::new(LogSink {
             file,
@@ -176,7 +218,26 @@ impl CodeBgManager {
             tokio::spawn(pump(out, sink.clone()));
         }
         if let Some(err) = child.stderr.take() {
-            tokio::spawn(pump(err, sink));
+            match &wsl_distro {
+                Some(distro) => {
+                    let orphan = RunningServer {
+                        id: id.clone(),
+                        pid: 0,
+                        started_at: started_at / 1000,
+                        program: wsl_orphan_program(distro, &id),
+                    };
+                    tokio::spawn(pump_wsl_stderr(
+                        err,
+                        sink,
+                        wsl_pgid.clone(),
+                        self.registry.clone(),
+                        orphan,
+                    ));
+                }
+                None => {
+                    tokio::spawn(pump(err, sink));
+                }
+            }
         }
 
         let log_path_s = log_path.to_string_lossy().into_owned();
@@ -187,7 +248,9 @@ impl CodeBgManager {
                 owner,
                 command,
                 cwd,
+                wsl_distro,
                 pid,
+                wsl_pgid,
                 started_at,
                 running: true,
                 exit_code: None,
@@ -277,19 +340,46 @@ impl CodeBgManager {
         if targets.is_empty() {
             return;
         }
+        // WSL groups: one `wsl.exe` per distro, all at once, alongside the host's.
+        let mut by_distro: HashMap<String, Vec<u32>> = HashMap::new();
         for p in &targets {
+            if let Some(d) = &p.wsl_distro {
+                by_distro
+                    .entry(d.clone())
+                    .or_default()
+                    .push(p.wsl_pgid.load(Ordering::SeqCst));
+            }
+        }
+        let wsl_stops: Vec<_> = by_distro
+            .into_iter()
+            .map(|(d, pgids)| {
+                tokio::spawn(async move { wsl::stop_groups(&d, &pgids, STOP_GRACE).await })
+            })
+            .collect();
+        let host: Vec<&BgProcess> = targets.iter().filter(|p| p.wsl_distro.is_none()).collect();
+        for p in &host {
             signal_group(p.pid, Signal::Term);
         }
         let deadline = tokio::time::Instant::now() + STOP_GRACE;
-        while targets.iter().any(|p| group_alive(p.pid)) {
+        while host.iter().any(|p| group_alive(p.pid)) {
             if tokio::time::Instant::now() >= deadline {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
-        for p in &targets {
+        for p in &host {
             if group_alive(p.pid) {
                 signal_group(p.pid, Signal::Kill);
+            }
+        }
+        for stop in wsl_stops {
+            let _ = stop.await;
+        }
+        // A relay whose group was never reported is all there is to end (not
+        // its tree: see `Running::kill`). One whose group went exits itself.
+        for p in targets.iter().filter(|p| p.wsl_distro.is_some()) {
+            if p.wsl_pgid.load(Ordering::SeqCst) <= 1 {
+                super::kill_relay(p.pid);
             }
         }
         let mut procs = self.procs.lock_or_recover();
@@ -306,7 +396,28 @@ impl CodeBgManager {
 pub fn sweep_orphans(log_dir: &Path, registry: Option<&Path>) {
     if let Some(registry) = registry {
         let entries = orphans::load(registry);
+        // Groups inside WSL distros: one `wsl.exe` per distro, off this thread
+        // (a stopped distro takes seconds to start).
+        let mut by_distro: HashMap<String, Vec<(u32, String)>> = HashMap::new();
         for e in &entries {
+            if let Some((distro, mark)) = parse_wsl_orphan_program(&e.program) {
+                by_distro
+                    .entry(distro.to_string())
+                    .or_default()
+                    .push((e.pid, mark.to_string()));
+            }
+        }
+        if !by_distro.is_empty() {
+            std::thread::spawn(move || {
+                for (distro, groups) in by_distro {
+                    wsl::sweep_groups(&distro, &groups);
+                }
+            });
+        }
+        for e in &entries {
+            if parse_wsl_orphan_program(&e.program).is_some() {
+                continue;
+            }
             if e.pid > 1
                 && orphans::command_matches(&e.program, orphans::pid_command(e.pid).as_deref())
             {
@@ -336,6 +447,18 @@ fn script(command: &str, id: &str) -> String {
 
 fn marker(id: &str) -> String {
     format!("{MARKER}:{id}")
+}
+
+/// How a WSL process is recorded in the orphan registry, whose `pid` is then
+/// its Linux process group: `wsl:<distro>:<marker>`.
+fn wsl_orphan_program(distro: &str, id: &str) -> String {
+    format!("wsl:{distro}:{}", marker(id))
+}
+
+/// The distro and marker of a [`wsl_orphan_program`], or None for a host entry.
+fn parse_wsl_orphan_program(program: &str) -> Option<(&str, &str)> {
+    let (distro, mark) = program.strip_prefix("wsl:")?.split_once(':')?;
+    (wsl::valid_distro(distro) && mark.starts_with(MARKER)).then_some((distro, mark))
 }
 
 fn new_id() -> String {
@@ -399,6 +522,40 @@ async fn pump<R: tokio::io::AsyncRead + Unpin>(mut reader: R, sink: Arc<Mutex<Lo
     }
 }
 
+/// [`pump`] for a WSL process's stderr: the wrapper's group id is taken off
+/// the front, kept in `pgid`, and recorded in the orphan registry as `orphan`
+/// with that group as its pid.
+async fn pump_wsl_stderr<R: tokio::io::AsyncRead + Unpin>(
+    mut reader: R,
+    sink: Arc<Mutex<LogSink>>,
+    pgid: Arc<AtomicU32>,
+    registry: Option<PathBuf>,
+    mut orphan: RunningServer,
+) {
+    let mut ids = wsl::PgidReader::default();
+    let mut buf = vec![0u8; 8192];
+    loop {
+        match reader.read(&mut buf).await {
+            Ok(0) | Err(_) => break,
+            Ok(n) => {
+                let (g, rest) = ids.feed(&buf[..n]);
+                if let Some(g) = g {
+                    pgid.store(g, Ordering::SeqCst);
+                    orphan.pid = g;
+                    orphans::register(registry.as_deref(), orphan.clone());
+                }
+                if !rest.is_empty() {
+                    sink.lock_or_recover().write(&rest);
+                }
+            }
+        }
+    }
+    let rest = ids.finish();
+    if !rest.is_empty() {
+        sink.lock_or_recover().write(&rest);
+    }
+}
+
 fn read_tail_bytes(path: &Path, bytes: u64) -> std::io::Result<Vec<u8>> {
     let mut f = std::fs::File::open(path)?;
     let len = f.metadata()?.len();
@@ -435,7 +592,9 @@ fn signal_group(pgid: u32, signal: Signal) {
 
 #[cfg(windows)]
 fn signal_group(pid: u32, _signal: Signal) {
-    super::kill_process_tree(pid);
+    if pid > 0 {
+        super::kill_process_tree(pid);
+    }
 }
 
 /// Does any process remain in the group?
@@ -454,6 +613,7 @@ pub async fn code_bg_start(
     state: tauri::State<'_, CodeBgManager>,
     owner: String,
     cwd: String,
+    wsl_distro: Option<String>,
     command: String,
     memory_limit_percent: Option<u8>,
     log_cap_mb: Option<u32>,
@@ -462,10 +622,14 @@ pub async fn code_bg_start(
         Some(mb) => {
             let cap = u64::from(mb.clamp(LOG_CAP_MIN_MB, LOG_CAP_MAX_MB)) * 1024 * 1024;
             state
-                .start_with_log_cap(owner, cwd, command, memory_limit_percent, cap)
+                .start_with_log_cap(owner, cwd, wsl_distro, command, memory_limit_percent, cap)
                 .await
         }
-        None => state.start(owner, cwd, command, memory_limit_percent).await,
+        None => {
+            state
+                .start(owner, cwd, wsl_distro, command, memory_limit_percent)
+                .await
+        }
     }
 }
 
@@ -501,6 +665,126 @@ pub async fn code_bg_stop_owner(
     owner: String,
 ) -> Result<u32, String> {
     Ok(state.stop_owner(&owner).await as u32)
+}
+
+/// WSL integration: needs a WSL2 distro, so `--ignored` on the Windows box.
+#[cfg(all(test, windows))]
+mod wsl_tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore]
+    async fn a_wsl_process_logs_without_the_group_line_and_stops_inside_the_distro() {
+        let distro = wsl::distros().into_iter().next().expect("a WSL2 distro");
+        let dir = std::env::temp_dir().join(format!("haruspex-bg-wsl-{}", std::process::id()));
+        let registry = dir.join("orphans.json");
+        let mgr = CodeBgManager::new(dir.join("logs"), Some(registry.clone()));
+
+        // A missing folder is refused before anything runs.
+        assert!(mgr
+            .start(
+                "s".into(),
+                "/no/such/dir".into(),
+                Some(distro.clone()),
+                "true".into(),
+                None
+            )
+            .await
+            .is_err());
+
+        let started = mgr
+            .start(
+                "s".into(),
+                "/tmp".into(),
+                Some(distro.clone()),
+                "sleep 300 & echo started in $(pwd); echo warn >&2; wait".into(),
+                Some(50),
+            )
+            .await
+            .unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        let pgid = loop {
+            let p = &mgr.status(None)[0];
+            let g = p.wsl_pgid.load(Ordering::SeqCst);
+            let log = mgr.tail(&started.id, None).unwrap();
+            if g > 1 && log.contains("started") && log.contains("warn") {
+                assert!(!log.contains("haruspex-pgid"), "{log:?}");
+                assert!(log.contains("started in /tmp"), "{log:?}");
+                break g;
+            }
+            assert!(std::time::Instant::now() < deadline, "no output: {log:?}");
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        };
+        assert!(mgr.status(None)[0].running);
+        // Recorded for the next launch's sweep, by its Linux group.
+        let entries = orphans::load(&registry);
+        assert_eq!(entries[0].pid, pgid);
+        assert_eq!(
+            parse_wsl_orphan_program(&entries[0].program),
+            Some((distro.as_str(), marker(&started.id).as_str()))
+        );
+
+        mgr.stop(&started.id).await.unwrap();
+        assert!(
+            !wsl::group_alive(&distro, pgid).await,
+            "group {pgid} left running"
+        );
+        assert!(mgr.status(None).is_empty());
+        assert!(orphans::load(&registry).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn the_sweep_kills_a_group_a_crash_left_in_the_distro() {
+        let distro = wsl::distros().into_iter().next().expect("a WSL2 distro");
+        let dir = std::env::temp_dir().join(format!("haruspex-bg-sweep-{}", std::process::id()));
+        let registry = dir.join("orphans.json");
+        let mgr = CodeBgManager::new(dir.join("logs"), Some(registry.clone()));
+        let started = mgr
+            .start(
+                "s".into(),
+                "/tmp".into(),
+                Some(distro.clone()),
+                "sleep 300".into(),
+                None,
+            )
+            .await
+            .unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        let pgid = loop {
+            let g = mgr.status(None)[0].wsl_pgid.load(Ordering::SeqCst);
+            if g > 1 && !orphans::load(&registry).is_empty() {
+                break g;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "never reported its group"
+            );
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        };
+        // The app "crashes": the manager is forgotten, the group runs on.
+        std::mem::forget(mgr);
+        assert!(wsl::group_alive(&distro, pgid).await);
+        wsl::sweep_groups(&distro, &[(pgid, marker(&started.id))]);
+        assert!(
+            !wsl::group_alive(&distro, pgid).await,
+            "group {pgid} left running"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn wsl_orphan_entries_round_trip() {
+        let program = wsl_orphan_program("Ubuntu-24.04", "bg-1");
+        assert_eq!(
+            parse_wsl_orphan_program(&program),
+            Some(("Ubuntu-24.04", "haruspex-code-bg:bg-1"))
+        );
+        assert_eq!(parse_wsl_orphan_program("haruspex-code-bg:bg-1"), None);
+        assert_eq!(parse_wsl_orphan_program("wsl:-d:haruspex-code-bg:x"), None);
+        assert_eq!(parse_wsl_orphan_program("wsl:Ubuntu:something-else"), None);
+    }
 }
 
 #[cfg(all(test, unix))]
@@ -555,6 +839,7 @@ mod tests {
             .start(
                 "s1".into(),
                 tmp(),
+                None,
                 "echo out; echo err >&2; exit 4".into(),
                 None,
             )
@@ -576,7 +861,7 @@ mod tests {
     async fn registers_and_deregisters_with_the_orphan_registry() {
         let (mgr, dir) = manager("registry");
         let started = mgr
-            .start("s1".into(), tmp(), "sleep 30".into(), None)
+            .start("s1".into(), tmp(), None, "sleep 30".into(), None)
             .await
             .unwrap();
         let reg = dir.join("running.json");
@@ -596,7 +881,10 @@ mod tests {
         let (mgr, dir) = manager("group");
         let pidfile = dir.join("grandchild.pid");
         let cmd = format!("sleep 100 & echo $! > {}; sleep 100", pidfile.display());
-        let started = mgr.start("s1".into(), tmp(), cmd, None).await.unwrap();
+        let started = mgr
+            .start("s1".into(), tmp(), None, cmd, None)
+            .await
+            .unwrap();
         wait_until(|| std::fs::read_to_string(&pidfile).is_ok_and(|s| s.ends_with('\n'))).await;
         let grandchild: i32 = std::fs::read_to_string(&pidfile)
             .unwrap()
@@ -613,14 +901,14 @@ mod tests {
     #[tokio::test]
     async fn stop_owner_only_stops_that_owner() {
         let (mgr, _dir) = manager("owner");
-        mgr.start("a".into(), tmp(), "sleep 30".into(), None)
+        mgr.start("a".into(), tmp(), None, "sleep 30".into(), None)
             .await
             .unwrap();
-        mgr.start("a".into(), tmp(), "sleep 30".into(), None)
+        mgr.start("a".into(), tmp(), None, "sleep 30".into(), None)
             .await
             .unwrap();
         let b = mgr
-            .start("b".into(), tmp(), "sleep 30".into(), None)
+            .start("b".into(), tmp(), None, "sleep 30".into(), None)
             .await
             .unwrap();
         assert_eq!(mgr.stop_owner("a").await, 2);
@@ -639,6 +927,7 @@ mod tests {
             .start(
                 "s1".into(),
                 tmp(),
+                None,
                 "for i in $(seq 1 2000); do echo line-$i; done".into(),
                 None,
             )
@@ -665,6 +954,7 @@ mod tests {
             .start_with_log_cap(
                 "s1".into(),
                 tmp(),
+                None,
                 "for i in $(seq 1 2000); do echo line-$i; done".into(),
                 None,
                 4096,
@@ -687,12 +977,12 @@ mod tests {
     async fn rejects_a_missing_owner_or_cwd() {
         let (mgr, _dir) = manager("reject");
         let err = mgr
-            .start(" ".into(), tmp(), "true".into(), None)
+            .start(" ".into(), tmp(), None, "true".into(), None)
             .await
             .unwrap_err();
         assert!(err.contains("owning session"), "got {err}");
         let err = mgr
-            .start("s".into(), "/no/such/dir".into(), "true".into(), None)
+            .start("s".into(), "/no/such/dir".into(), None, "true".into(), None)
             .await
             .unwrap_err();
         assert!(err.contains("does not exist"), "got {err}");
@@ -704,7 +994,7 @@ mod tests {
     async fn sweep_kills_a_recorded_group_and_clears_logs() {
         let (mgr, dir) = manager("sweep");
         let started = mgr
-            .start("s1".into(), tmp(), "sleep 30".into(), None)
+            .start("s1".into(), tmp(), None, "sleep 30".into(), None)
             .await
             .unwrap();
         // Simulate a crash: the manager is forgotten without stopping anything.

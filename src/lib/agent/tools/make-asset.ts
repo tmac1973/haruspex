@@ -11,7 +11,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
 import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
-import { resolveShellPath, toolInvokeError, wslDistroArg } from './_helpers';
+import { ctxCwd, ctxWslDistroArg, resolveShellPath, toolInvokeError } from './_helpers';
 import { localWriteBlocked } from './nested-session';
 import { MAX_PENDING_IMAGES } from './fs-read';
 import { extractPalette } from '#lib/assets/normalize.ts';
@@ -51,8 +51,8 @@ function parseInput(args: Record<string, unknown>): ParsedInput | string {
 }
 
 /** The colours of an existing image, to draw a new one of the set in. */
-async function paletteOf(path: string): Promise<number[]> {
-	const bytes = await invoke<number[]>('fs_read_bytes_absolute', { path, ...wslDistroArg() });
+async function paletteOf(path: string, distro: { wslDistro?: string }): Promise<number[]> {
+	const bytes = await invoke<number[]>('fs_read_bytes_absolute', { path, ...distro });
 	return extractPalette(new Uint8Array(bytes), 16);
 }
 
@@ -61,7 +61,8 @@ async function writeAsset(
 	path: string,
 	bytes: Uint8Array,
 	overwrite: boolean,
-	dryRun: boolean
+	dryRun: boolean,
+	distro: { wslDistro?: string }
 ): Promise<string | null> {
 	try {
 		await invoke('fs_write_bytes_absolute', {
@@ -69,7 +70,7 @@ async function writeAsset(
 			bytes: Array.from(bytes),
 			overwrite,
 			dryRun,
-			...wslDistroArg()
+			...distro
 		});
 		return null;
 	} catch (e) {
@@ -131,17 +132,20 @@ registerTool({
 		// file would land here while the model thinks it is over there.
 		const elsewhere = await localWriteBlocked('make_asset', ctx);
 		if (elsewhere) return toolResult(toolError(elsewhere));
-		const path = resolveShellPath(input.path, ctx.shellCwd);
+		// Relative to the shell's folder, or in the Code tab the session's.
+		const cwd = ctxCwd(ctx);
+		const distro = ctxWslDistroArg(ctx);
+		const path = resolveShellPath(input.path, cwd);
 		const overwrite = args.overwrite === true;
 
 		// Refuse a path it could not write before spending a minute drawing.
-		const unwritable = await writeAsset(path, new Uint8Array(), overwrite, true);
+		const unwritable = await writeAsset(path, new Uint8Array(), overwrite, true, distro);
 		if (unwritable) return toolResult(toolError(unwritable));
 
 		let palette: number[] | undefined;
 		if (input.paletteFrom) {
 			try {
-				palette = await paletteOf(resolveShellPath(input.paletteFrom, ctx.shellCwd));
+				palette = await paletteOf(resolveShellPath(input.paletteFrom, cwd), distro);
 			} catch (e) {
 				return toolResult(toolInvokeError('make_asset palette_from', e));
 			}
@@ -163,7 +167,7 @@ registerTool({
 			clearInterval(tick);
 		}
 
-		const failed = await writeAsset(path, asset.bytes, overwrite, false);
+		const failed = await writeAsset(path, asset.bytes, overwrite, false, distro);
 		if (failed) return toolResult(toolError(failed));
 
 		const url = dataUrl(asset.bytes);
