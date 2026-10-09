@@ -1,3 +1,14 @@
+<script lang="ts" module>
+	/**
+	 * File paths as links, in the Code transcript: `link` gives the path
+	 * relative to the session folder (null outside it), `open` opens it.
+	 */
+	export interface PathLinks {
+		link: (path: string) => string | null;
+		open: (relPath: string) => void;
+	}
+</script>
+
 <script lang="ts">
 	import type { SearchStep } from '#lib/agent/loop.ts';
 	import { stepLabel, stepIcon } from './searchStepLabels';
@@ -11,6 +22,7 @@
 	import ArtifactFrame from './ArtifactFrame.svelte';
 	import MemoryRecallStep from './MemoryRecallStep.svelte';
 	import { MEMORY_RECALL_STEP } from '#lib/agent/memory/recall.ts';
+	import { splitGrepLine } from '#lib/code/paths.ts';
 
 	hljs.registerLanguage('python', python);
 
@@ -30,9 +42,39 @@
 	interface Props {
 		steps: SearchStep[];
 		slowMode?: boolean;
+		pathLinks?: PathLinks;
 	}
 
-	let { steps, slowMode = false }: Props = $props();
+	let { steps, slowMode = false, pathLinks }: Props = $props();
+
+	/** Steps whose `path` argument names one file. */
+	const FILE_TOOLS = new Set(['fs_read_text', 'fs_write_text', 'fs_edit_text']);
+
+	/** The step's file, relative to the folder, when it can be a link. */
+	function stepFile(step: SearchStep): string | null {
+		if (!pathLinks || !FILE_TOOLS.has(step.toolName)) return null;
+		const path = step.args?.path;
+		return typeof path === 'string' ? pathLinks.link(path) : null;
+	}
+
+	function openFile(rel: string, event: MouseEvent) {
+		event.stopPropagation();
+		pathLinks?.open(rel);
+	}
+
+	/** A grep result's lines, each with its file as a link where it can be one. */
+	function grepLines(result: string): { rel: string | null; path: string; rest: string }[] {
+		const lines = result.split('\n');
+		return lines.map((text, i) => {
+			const part = splitGrepLine(text);
+			const rel = part && pathLinks ? pathLinks.link(part.path) : null;
+			// The <pre> keeps the line breaks; each line carries its own.
+			const nl = i < lines.length - 1 ? '\n' : '';
+			return part && rel
+				? { rel, path: part.path, rest: part.rest + nl }
+				: { rel: null, path: '', rest: text + nl };
+		});
+	}
 
 	function rerunStep(step: SearchStep, event: MouseEvent) {
 		event.stopPropagation();
@@ -158,7 +200,17 @@
 				>
 					<span class="step-icon">{stepIcon(step.toolName)}</span>
 					<span class="step-label">
-						{stepLabel(step.toolName, step.query)}
+						{#if stepFile(step)}
+							{@const rel = stepFile(step)!}
+							{stepLabel(step.toolName, '')}<button
+								type="button"
+								class="path-link"
+								title="Open {rel} in the editor"
+								onclick={(e) => openFile(rel, e)}>{step.query}</button
+							>
+						{:else}
+							{stepLabel(step.toolName, step.query)}
+						{/if}
 						{#if step.lintIssues && step.lintIssues.length > 0}
 							<span class="lint-summary">{lintSummary(step)}</span>
 						{/if}
@@ -311,7 +363,16 @@
 								{copyLabel(step.id)}
 							</button>
 						</div>
-						<pre>{step.result}</pre>
+						{#if pathLinks && step.toolName === 'code_grep'}
+							<pre>{#each grepLines(step.result) as line, i (i)}{#if line.rel}<button
+											type="button"
+											class="path-link"
+											title="Open {line.rel} in the editor"
+											onclick={(e) => openFile(line.rel!, e)}>{line.path}</button
+										>{/if}{line.rest}{/each}</pre>
+						{:else}
+							<pre>{step.result}</pre>
+						{/if}
 					</div>
 				{/if}
 			{/if}
@@ -322,6 +383,22 @@
 <ImageViewerModal src={viewerSrc} alt={viewerAlt} onClose={closeViewer} />
 
 <style>
+	.path-link {
+		appearance: none;
+		background: none;
+		border: 0;
+		padding: 0;
+		font: inherit;
+		color: var(--accent);
+		cursor: pointer;
+		text-decoration: underline dotted;
+		text-underline-offset: 2px;
+	}
+
+	.path-link:hover {
+		text-decoration-style: solid;
+	}
+
 	.search-steps {
 		padding: 8px 16px;
 		border-bottom: 1px solid var(--border);

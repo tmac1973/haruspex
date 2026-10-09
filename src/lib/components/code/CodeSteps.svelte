@@ -15,8 +15,35 @@
 	import DiffCard from './DiffCard.svelte';
 	import type { SearchStep } from '#lib/agent/loop.ts';
 	import { editDiffFromStep, type FileDiff } from '#lib/code/diff.ts';
+	import { makeCodePathLinker, relativeToRoot } from '#lib/code/paths.ts';
+	import { openInEditor } from '#lib/code/openEditor.ts';
+	import type { PathLinks } from '#lib/components/SearchStep.svelte';
 
-	let { steps, pending = [] }: { steps: SearchStep[]; pending?: PendingToolCall[] } = $props();
+	/** `root`: the session folder. Paths inside it become links to the editor. */
+	let {
+		steps,
+		pending = [],
+		root
+	}: { steps: SearchStep[]; pending?: PendingToolCall[]; root?: string } = $props();
+
+	/** Tools that hand a command over: shown as command cards. */
+	const COMMAND_TOOLS = new Set(['run_command', 'open_in_shell']);
+
+	const pathLinks = $derived.by<PathLinks | undefined>(() => {
+		const dir = root;
+		if (!dir) return undefined;
+		return {
+			link: (path) => relativeToRoot(dir, path),
+			open: (rel) => void openInEditor(dir, [rel], rel)
+		};
+	});
+	const codePaths = $derived(root ? makeCodePathLinker(root) : undefined);
+
+	/** Open a diff's file, when it is inside the folder. */
+	function opener(diff: FileDiff): (() => void) | undefined {
+		const rel = pathLinks?.link(diff.path);
+		return rel ? () => pathLinks?.open(rel) : undefined;
+	}
 
 	type Block =
 		| { kind: 'reasoning'; text: string }
@@ -38,7 +65,7 @@
 			if (step.reasoning?.trim()) out.push({ kind: 'reasoning', text: step.reasoning.trim() });
 			if (step.lead?.trim()) out.push({ kind: 'lead', text: step.lead.trim() });
 			const diff = diffOf(step);
-			if (step.toolName === 'run_command') out.push({ kind: 'command', step });
+			if (COMMAND_TOOLS.has(step.toolName)) out.push({ kind: 'command', step });
 			else if (diff) out.push({ kind: 'diff', step, diff });
 			else {
 				const last = out[out.length - 1];
@@ -55,13 +82,13 @@
 		{#if block.kind === 'reasoning'}
 			<ThinkingPanel text={block.text} />
 		{:else if block.kind === 'lead'}
-			<ChatMessage message={{ role: 'assistant', content: block.text }} />
+			<ChatMessage message={{ role: 'assistant', content: block.text }} {codePaths} />
 		{:else if block.kind === 'command'}
-			<CommandCard step={block.step} />
+			<CommandCard step={block.step} {root} />
 		{:else if block.kind === 'diff'}
-			<DiffCard diff={block.diff} />
+			<DiffCard diff={block.diff} onOpen={opener(block.diff)} />
 		{:else}
-			<SearchStepComponent steps={block.steps} />
+			<SearchStepComponent steps={block.steps} {pathLinks} />
 		{/if}
 	{/each}
 	{#each pending as call (call.index)}

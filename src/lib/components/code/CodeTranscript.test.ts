@@ -216,3 +216,115 @@ describe('slash command notes', () => {
 		expect(text.indexOf('SKILLS LIST')).toBeLessThan(text.indexOf('later ask'));
 	});
 });
+
+describe('CodeTranscript and the shell', () => {
+	it('shows the wait with Go to shell and Cancel', async () => {
+		const goToShell = vi.fn();
+		const cancelShellWait = vi.fn();
+		render(CodeTranscript, {
+			session: fakeSession({
+				status: 'waiting-shell',
+				busy: true,
+				shellWait: { shellName: 'Shell 2', command: 'sudo x', focus: vi.fn(), cancel: vi.fn() },
+				goToShell,
+				cancelShellWait
+			})
+		});
+		expect(screen.getByTestId('shell-wait').textContent).toContain(
+			'Waiting for you in Shell 2 — press Enter there.'
+		);
+		await fireEvent.click(screen.getByRole('button', { name: 'Go to shell' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+		expect(goToShell).toHaveBeenCalledOnce();
+		expect(cancelShellWait).toHaveBeenCalledOnce();
+	});
+});
+
+describe('CodeTranscript paths', () => {
+	it('opens a path in an answer in the editor; paths outside the folder are plain', async () => {
+		const { getPendingEdit } = await import('#lib/stores/fileEditor.svelte.ts');
+		const { container } = render(CodeTranscript, {
+			session: fakeSession({
+				messages: [
+					{ role: 'user', content: 'where?' },
+					{ role: 'assistant', content: 'In `src/app.ts:12`, not /etc/hosts.conf.' }
+				]
+			})
+		});
+		const links = container.querySelectorAll<HTMLButtonElement>('button.code-path');
+		expect([...links].map((b) => b.dataset.path)).toEqual(['src/app.ts']);
+		await fireEvent.click(links[0].querySelector('code')!);
+		expect(getPendingEdit()).toMatchObject({ workdir: '/p/app', files: ['src/app.ts'] });
+		getPendingEdit()!.finish({ saved: [] });
+	});
+
+	it('links the file of a diff card and a read step', async () => {
+		const { getPendingEdit } = await import('#lib/stores/fileEditor.svelte.ts');
+		render(CodeTranscript, {
+			session: fakeSession({
+				messages: [
+					{ role: 'user', content: 'go' },
+					{ role: 'assistant', content: 'done' }
+				],
+				messageSteps: {
+					1: [
+						{
+							id: 'r1',
+							toolName: 'fs_read_text',
+							query: 'src/a.ts',
+							status: 'done',
+							args: { path: 'src/a.ts' },
+							result: 'x'
+						},
+						{
+							id: 'e1',
+							toolName: 'fs_edit_text',
+							query: 'src/b.ts',
+							status: 'done',
+							args: { path: 'src/b.ts', old_str: 'a', new_str: 'b' },
+							result: 'Edited src/b.ts at line 3'
+						}
+					]
+				}
+			})
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'src/a.ts' }));
+		expect(getPendingEdit()?.files).toEqual(['src/a.ts']);
+		getPendingEdit()!.finish({ saved: [] });
+		await fireEvent.click(screen.getByTitle('Open src/b.ts in the editor'));
+		expect(getPendingEdit()?.files).toEqual(['src/b.ts']);
+		getPendingEdit()!.finish({ saved: [] });
+	});
+
+	it('links grep hits inside the folder', async () => {
+		const { getPendingEdit } = await import('#lib/stores/fileEditor.svelte.ts');
+		const { container } = render(CodeTranscript, {
+			session: fakeSession({
+				messages: [
+					{ role: 'user', content: 'go' },
+					{ role: 'assistant', content: 'done' }
+				],
+				messageSteps: {
+					1: [
+						{
+							id: 'g1',
+							toolName: 'code_grep',
+							query: 'parse',
+							status: 'done',
+							args: { pattern: 'parse' },
+							result: 'src/c.ts:4: parse()\n../x/d.ts:1: parse()'
+						}
+					]
+				}
+			})
+		});
+		await fireEvent.click(container.querySelector('.step')!);
+		const pre = container.querySelector('.detail-block pre')!;
+		expect(pre.textContent).toBe('src/c.ts:4: parse()\n../x/d.ts:1: parse()');
+		const links = pre.querySelectorAll('button.path-link');
+		expect([...links].map((b) => b.textContent)).toEqual(['src/c.ts']);
+		await fireEvent.click(links[0]);
+		expect(getPendingEdit()?.files).toEqual(['src/c.ts']);
+		getPendingEdit()!.finish({ saved: [] });
+	});
+});

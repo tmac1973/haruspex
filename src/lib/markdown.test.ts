@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { makeCodePathLinker } from '#lib/code/paths.ts';
 import {
 	finalizeStreamText,
 	processCitations,
@@ -688,5 +689,61 @@ describe('renderMarkdown image handling', () => {
 	it('still drops a relative path the model invented', () => {
 		const html = renderMarkdown('![plot](sine_wave.png)', resolved);
 		expect(html).not.toContain('sine_wave.png');
+	});
+});
+
+describe('renderMarkdown code-path links', () => {
+	const link = makeCodePathLinker('/proj');
+	const buttons = (html: string) =>
+		[...html.matchAll(/data-path="([^"]*)"(?: data-line="(\d+)")?/g)].map((m) =>
+			m[2] ? `${m[1]}:${m[2]}` : m[1]
+		);
+
+	it('links a path:line in backticks and in prose', () => {
+		const html = renderMarkdown(
+			'See `src/app.ts:42` and lib/util.ts:7, then README.md.',
+			undefined,
+			link
+		);
+		expect(buttons(html)).toEqual(['src/app.ts:42', 'lib/util.ts:7']);
+		expect(html).toContain('data-action="code-path"');
+		expect(html).toContain('<code>src/app.ts:42</code>');
+	});
+
+	it('drops the full stop that ends a sentence', () => {
+		const html = renderMarkdown('I changed src/app.ts.', undefined, link);
+		expect(buttons(html)).toEqual(['src/app.ts']);
+		expect(html).toContain('</button>.');
+	});
+
+	it('makes absolute paths inside the folder relative, and leaves others plain', () => {
+		const html = renderMarkdown(
+			'Edited /proj/src/a.ts:3 but not /etc/app.conf or ../x/b.ts',
+			undefined,
+			link
+		);
+		expect(buttons(html)).toEqual(['src/a.ts:3']);
+		expect(html).toContain('/etc/app.conf');
+	});
+
+	it('leaves URLs, versions and words alone', () => {
+		const html = renderMarkdown(
+			'Docs at https://example.com/src/a.ts and node 1.2.3, and/or Node.js at 12:30.',
+			undefined,
+			link
+		);
+		expect(buttons(html)).toEqual([]);
+		expect(html).toContain('href="https://example.com/src/a.ts"');
+	});
+
+	it('leaves code blocks alone', () => {
+		const html = renderMarkdown('```ts\nimport x from "src/a.ts";\n```', undefined, link);
+		expect(buttons(html)).toEqual([]);
+	});
+
+	it('is off without a linker, as in Chat', () => {
+		const html = renderMarkdown('See `src/app.ts:42` and lib/util.ts:7.');
+		expect(html).not.toContain('code-path');
+		expect(html).toContain('<code>src/app.ts:42</code>');
 	});
 });
