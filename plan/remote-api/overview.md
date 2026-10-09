@@ -45,18 +45,19 @@ tab never kills a turn.
 
 ## Decisions (settled 2026-10-09)
 
-| #   | Question             | Decision                                                                                                                                     |
-| --- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Headless mode        | **No.** The desktop app must be running.                                                                                                     |
-| 2   | Where turns run      | **The desktop webview**, always. Remote clients never run the loop.                                                                          |
-| 3   | Files                | **The desktop's files are the only real ones.** No access to the client's filesystem in v1.                                                  |
-| 4   | Remote chat vs this  | **Separate.** Remote chat stays a guest feature (own sessions, one shared link). This is owner control: per-client tokens with scopes.       |
-| 5   | Off by default       | **Yes**, and loopback-only until the owner picks another bind address.                                                                       |
-| 6   | First test surface   | **The driver from `code-tab/dev-driver`**, extended, rather than a new HTTP bridge.                                                          |
-| 7   | First remote surface | **The Code tab.** Chat comes in phase 5 because its store holds one active conversation.                                                     |
-| 8   | Web client UI        | **The real Svelte components**, not a second UI, so the two can't drift.                                                                     |
-| 9   | Mobile               | **PWA of the web client first.** A native app only if the PWA falls short.                                                                   |
-| 10  | The 9B model         | **Not a constraint.** Build for capable models; document what works poorly on 9B. Scripted backends are for exact checks, not because of 9B. |
+| #   | Question                              | Decision                                                                                                                                     |
+| --- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Headless mode                         | **No.** The desktop app must be running.                                                                                                     |
+| 2   | Where turns run                       | **The desktop webview**, always. Remote clients never run the loop.                                                                          |
+| 3   | Files                                 | **The desktop's files are the only real ones.** No access to the client's filesystem in v1.                                                  |
+| 4   | Remote chat vs this                   | **Separate.** Remote chat stays a guest feature (own sessions, one shared link). This is owner control: per-client tokens with scopes.       |
+| 5   | Off by default                        | **Yes**, and loopback-only until the owner picks another bind address.                                                                       |
+| 6   | First test surface                    | **The driver from `code-tab/dev-driver`**, extended, rather than a new HTTP bridge.                                                          |
+| 7   | First remote surface                  | **The Code tab.** Chat comes in phase 5 because its store holds one active conversation.                                                     |
+| 8   | Web client UI                         | **The real Svelte components**, not a second UI, so the two can't drift.                                                                     |
+| 9   | Mobile                                | **PWA of the web client first.** A native app only if the PWA falls short.                                                                   |
+| 10  | The 9B model                          | **Not a constraint.** Build for capable models; document what works poorly on 9B. Scripted backends are for exact checks, not because of 9B. |
+| 11  | Desktop Code tab and the event stream | **The desktop keeps reading the store.** The engine watches it and emits events; a test proves they rebuild the same session.                |
 
 ## Invariants
 
@@ -78,11 +79,9 @@ tab never kills a turn.
 
 ## Risks to check early
 
-- **Background throttling.** WebKitGTK (and WKWebView on macOS) may throttle
-  timers in a minimised or hidden window. A turn started remotely while the
-  desktop window is minimised could crawl or stall. Phase 1 measured none on
-  a private X display with the page `hidden` (see `phase-01-driver.md`);
-  still to check once on a real desktop compositor.
+- **Background throttling.** Checked and ruled out: a streaming turn ran
+  just as fast minimised as visible, on a private X display and on the
+  owner's GNOME desktop (`phase-01-driver.md`, `phase-02-engine-surface.md`).
 - **Secure context.** Microphone, clipboard and service workers need HTTPS
   off-loopback. `tailscale serve` gives a certificate; plain `http://` over a
   tailnet will not. Phase 3 documents the setup; phase 6 depends on it.
