@@ -21,6 +21,7 @@ Code tab once before), every settled decision, and the invariants.
 | 4 | `phase-04-session-store.md` | `CodeSession` store: turns, persistence, queue, approvals, backend/effort | 1, 2, 3 |
 | 5 | `phase-05-tab-ui.md` | The tab: sidebar, sub-tabs, transcript, command + diff cards, Settings → Code | 4 |
 | 6 | `phase-06-shell-editor-tools.md` | `open_in_shell` (wait + report back), `open_in_editor`, clickable paths | 5 |
+| 6b | `phase-06b-editor-windows.md` | Editor windows: per-folder tabs, file watching and reload, save conflicts | 6 |
 | 7 | `phase-07-fork-detach.md` | Fork from message; detach / re-attach windows | 5 |
 | 8 | `phase-08-shell-toggle.md` | Shell: Read-only / Full access, drop cwd persistence, "Open in Code" | 5 |
 | 9 | `phase-09-hardening.md` | macOS pass, failure cases, guide sweep, follow-up issues | all |
