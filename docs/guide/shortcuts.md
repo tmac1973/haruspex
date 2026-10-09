@@ -1,6 +1,6 @@
 ---
 title: Keyboard shortcuts
-description: Every keyboard shortcut in Haruspex — global keys, switching tabs, voice, chat, the Shell and Code tabs, dialogs and the / command list.
+description: Every keyboard shortcut in Haruspex — global keys, switching tabs, voice, chat, the Shell and Code tabs, editor windows, dialogs and the / command list.
 ---
 
 # Keyboard shortcuts
@@ -48,6 +48,13 @@ Press **F1**, or click the **?** in the header, to see the shortcut list in the 
 |---|---|
 | Enter | Send; while the agent works, queue it as a steering message |
 | Esc | Stop the agent |
+
+## Editor windows
+
+| Keys | What it does |
+|---|---|
+| Ctrl / ⌘ + S | Save the file |
+| Ctrl / ⌘ + W | Close the tab (asks first if it has unsaved changes) |
 
 ## Recall what you sent
 

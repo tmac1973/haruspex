@@ -2,10 +2,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
 	invoke: vi.fn(),
-	askCommandApproval: vi.fn()
+	askCommandApproval: vi.fn(),
+	openWindows: vi.fn()
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+// Real routing rules (windows.test.ts covers them); only the windows are fake.
+vi.mock('#lib/editor/windows.ts', async (importOriginal) => {
+	const real = await importOriginal<typeof import('#lib/editor/windows.ts')>();
+	return { ...real, openInEditorWindows: mocks.openWindows };
+});
 vi.mock('#lib/stores/codeCommandApproval.svelte.ts', () => ({
 	askCommandApproval: mocks.askCommandApproval,
 	isSessionApproved: () => false,
@@ -22,7 +28,7 @@ import {
 	type ShellCommandResult,
 	type ShellWait
 } from '#lib/code/shellBridge.ts';
-import { getPendingEdit } from '#lib/stores/fileEditor.svelte.ts';
+import type { WindowOpen } from '#lib/editor/windows.ts';
 import { _resetBoundary } from '#lib/shell/boundary.ts';
 import { resetShellPlatformSupported } from '#lib/shell/platformSupport.ts';
 
@@ -61,7 +67,6 @@ beforeEach(() => {
 
 afterEach(() => {
 	unregister();
-	getPendingEdit()?.finish({ saved: [] });
 });
 
 /** A fake shell side that answers with `result`, after calling onOpened. */
@@ -189,33 +194,50 @@ describe('open_in_shell', () => {
 });
 
 describe('open_in_editor', () => {
-	it('opens files inside the folder and returns without waiting', async () => {
+	beforeEach(() => {
+		mocks.openWindows.mockReset();
+	});
+
+	it('opens files inside the folder and says where, without waiting', async () => {
+		let resolved = false;
+		mocks.openWindows.mockImplementation(async (_root: string, files: string[]) => {
+			resolved = true;
+			return [
+				{ label: 'editor-1', created: true, focused: [], added: files }
+			] satisfies WindowOpen[];
+		});
 		const out = await executeTool(
 			'open_in_editor',
 			{ paths: ['src/a.ts', '/proj/README.md'], reason: 'The new parser' },
 			ctx
 		);
-		expect(out.result).toContain('Opened 2 files');
-		// The editor is still open: the tool did not wait for it.
-		expect(getPendingEdit()).toMatchObject({
-			workdir: '/proj',
-			files: ['src/a.ts', 'README.md'],
-			title: 'The new parser'
-		});
+		expect(mocks.openWindows).toHaveBeenCalledWith('/proj', ['src/a.ts', 'README.md']);
+		expect(resolved).toBe(true);
+		expect(out.result).toContain('Opened src/a.ts, README.md in a new editor window for proj.');
+		expect(out.result).toContain('not reported back');
+	});
+
+	it('names tabs that were already open', async () => {
+		mocks.openWindows.mockResolvedValue([
+			{ label: 'editor-1', created: false, focused: ['a.ts'], added: ['b.ts'] }
+		] satisfies WindowOpen[]);
+		const out = await executeTool('open_in_editor', { paths: ['a.ts', 'b.ts'] }, ctx);
+		expect(out.result).toContain('Opened b.ts in the editor window for proj, as new tabs.');
+		expect(out.result).toContain('a.ts already had a tab');
 	});
 
 	it('refuses paths outside the folder', async () => {
 		const out = await executeTool('open_in_editor', { paths: ['src/a.ts', '/etc/passwd'] }, ctx);
 		expect(out.result).toContain('/etc/passwd');
 		expect(out.result).toContain('error');
-		expect(getPendingEdit()).toBeNull();
+		expect(mocks.openWindows).not.toHaveBeenCalled();
 		const up = await executeTool('open_in_editor', { paths: ['../other/x.ts'] }, ctx);
 		expect(up.result).toContain('error');
 	});
 
-	it('says so when the editor is already open', async () => {
-		await executeTool('open_in_editor', { paths: ['a.ts'] }, ctx);
-		const out = await executeTool('open_in_editor', { paths: ['b.ts'] }, ctx);
-		expect(out.result).toContain('already open');
+	it('reports a window that could not open', async () => {
+		mocks.openWindows.mockRejectedValue('no permission');
+		const out = await executeTool('open_in_editor', { paths: ['a.ts'] }, ctx);
+		expect(out.result).toContain('could not open: no permission');
 	});
 });

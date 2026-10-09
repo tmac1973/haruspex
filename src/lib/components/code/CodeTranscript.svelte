@@ -23,7 +23,7 @@
 	import { TURNS_PER_PAGE, turnsBefore, windowStart } from '#lib/code/sessionList.ts';
 	import type { CodeSession } from '#lib/stores/code.svelte.ts';
 	import { makeCodePathLinker } from '#lib/code/paths.ts';
-	import { openInEditor } from '#lib/code/openEditor.ts';
+	import { openFileFromClick } from '#lib/code/openEditor.ts';
 
 	let { session, notes = [] }: { session: CodeSession; notes?: TranscriptNote[] } = $props();
 
@@ -124,7 +124,7 @@
 		const rel = btn?.dataset.path;
 		if (!rel) return;
 		event.preventDefault();
-		openInEditor(session.root, [rel], rel);
+		openFileFromClick(session.root, rel);
 	}
 
 	function removePending(index: number) {

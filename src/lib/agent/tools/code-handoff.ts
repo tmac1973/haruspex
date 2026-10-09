@@ -2,7 +2,7 @@
  * The Code tab's hand-offs to the user: `open_in_shell` puts a command in a
  * new Shell tab for the user to run (sudo, password prompts, anything that
  * wants a terminal) and waits for the result; `open_in_editor` shows files in
- * the in-app editor and returns at once. Offered only to the Code tab
+ * an editor window and returns at once. Offered only to the Code tab
  * (`codeTabProfile.ts`).
  */
 import { labelArg } from './_helpers';
@@ -148,7 +148,7 @@ registerTool({
 		function: {
 			name: 'open_in_editor',
 			description:
-				"Open files from the project in the user's editor so they can look at them, and return at once. It does not wait for edits: if you need the user to change something, ask them.",
+				"Open files from the project in the user's editor window (one per project folder, a tab per file) so they can look at them, and return at once. It does not wait for edits: if you need the user to change something, ask them.",
 			parameters: {
 				type: 'object',
 				properties: {
@@ -159,7 +159,7 @@ registerTool({
 					},
 					reason: {
 						type: 'string',
-						description: 'What to look at, in a few words. Shown as the editor title.'
+						description: 'What to look at, in a few words.'
 					}
 				},
 				required: ['paths']
@@ -184,12 +184,10 @@ registerTool({
 			);
 		}
 		const files = [...new Set(raw.map((p) => relativeToRoot(root, p) as string))];
-		const reason = typeof args.reason === 'string' ? args.reason.trim() : '';
-		const failed = openInEditor(root, files, reason || 'Opened by the agent');
-		if (failed) return toolResult(toolError(failed));
+		const opened = await openInEditor(root, files);
+		if (!opened.ok) return toolResult(toolError(opened.error));
 		return toolResult(
-			`Opened ${files.length} file${files.length === 1 ? '' : 's'} in the editor. ` +
-				"The user's edits are not reported back; ask if you need them."
+			`${opened.summary} The user's edits are not reported back; ask if you need them.`
 		);
 	}
 });

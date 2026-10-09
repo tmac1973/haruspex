@@ -13,7 +13,14 @@ import { tags } from '@lezer/highlight';
 
 export interface EditorHandle {
 	getValue(): string;
+	/**
+	 * Replace the text, changing only the part that differs, so the cursor
+	 * and scroll position survive a reload from disk.
+	 */
 	setValue(value: string): void;
+	/** The main selection, as document offsets. */
+	selection(): { anchor: number; head: number };
+	select(anchor: number, head?: number): void;
 	focus(): void;
 	destroy(): void;
 }
@@ -106,9 +113,39 @@ export function createEditor(parent: HTMLElement, options: EditorOptions): Edito
 	return {
 		getValue: () => view.state.doc.toString(),
 		setValue(value) {
-			view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
+			const change = minimalChange(view.state.doc.toString(), value);
+			if (change) view.dispatch({ changes: change });
+		},
+		selection() {
+			const { anchor, head } = view.state.selection.main;
+			return { anchor, head };
+		},
+		select(anchor, head = anchor) {
+			view.dispatch({ selection: { anchor, head } });
 		},
 		focus: () => view.focus(),
 		destroy: () => view.destroy()
 	};
+}
+
+/**
+ * The one replacement that turns `before` into `after`: the span between
+ * their common prefix and common suffix. Null when they are equal.
+ */
+export function minimalChange(
+	before: string,
+	after: string
+): { from: number; to: number; insert: string } | null {
+	if (before === after) return null;
+	const max = Math.min(before.length, after.length);
+	let start = 0;
+	while (start < max && before.charCodeAt(start) === after.charCodeAt(start)) start++;
+	let end = 0;
+	while (
+		end < max - start &&
+		before.charCodeAt(before.length - 1 - end) === after.charCodeAt(after.length - 1 - end)
+	) {
+		end++;
+	}
+	return { from: start, to: before.length - end, insert: after.slice(start, after.length - end) };
 }
