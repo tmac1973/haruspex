@@ -71,6 +71,9 @@ image = "0.25"
 base64 = "0.22"
 rust_xlsxwriter = "0.90"
 portable-pty = "0.8"
+# Editor windows reload a file when something else changes it: inotify on
+# Linux, FSEvents on macOS. See fs_tools/editor.rs.
+notify = "8.2"
 
 # Email integration (Phase 10). async-imap handles IMAP over TLS,
 # mail-parser handles RFC 5322 / MIME decoding. lettre is stubbed in

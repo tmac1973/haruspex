@@ -107,6 +107,8 @@ pub fn run() {
                 secrets::init(dir);
             }
             app.manage(ModelManager::new(app.handle())?);
+            // Files open in editor windows; nothing is watched until one opens.
+            app.manage(fs_tools::editor::editor_watches(app.handle()));
             let database = Database::new(app.handle())
                 .map_err(|e| format!("Failed to initialize database: {e}"))?;
             // The proxy records search stats through the StatSink trait
@@ -195,6 +197,22 @@ pub fn run() {
             if let WindowEvent::Destroyed = event {
                 let queue = window.state::<InferenceQueue>();
                 queue.on_window_destroyed(window.app_handle(), window.label());
+                // An editor window's files stop being watched with it.
+                if let Some(watches) = window.try_state::<fs_tools::editor::EditorWatches>() {
+                    watches.unwatch_label(window.label());
+                }
+                // The rest is for the main window only: a detached shell or an
+                // editor window closing is not the app quitting.
+                if window.label() != "main" {
+                    return;
+                }
+                // Editor windows go with the main window. `close` (not
+                // `destroy`) so a window with unsaved edits asks first.
+                for (label, w) in window.app_handle().webview_windows() {
+                    if label.starts_with("editor-") {
+                        let _ = w.close();
+                    }
+                }
                 // Closing the window is one quit path; RunEvent::Exit below is
                 // the other, and neither covers the rest on its own. stop is
                 // idempotent, so running both is harmless. Spawned rather than
@@ -407,6 +425,10 @@ pub fn run() {
             fs_tools::text::fs_read_text_full,
             fs_tools::text::fs_write_text,
             fs_tools::text::fs_edit_text,
+            fs_tools::editor::editor_read_file,
+            fs_tools::editor::editor_save_file,
+            fs_tools::editor::editor_unwatch_file,
+            fs_tools::editor::editor_find_open,
             code_tools::run_command_capture,
             code_tools::run_command_cancel,
             code_tools::code_write_overflow,
@@ -556,6 +578,7 @@ pub fn run() {
                 // inhibit when the window closed.
                 app.state::<PowerInhibitor>().shutdown();
                 shell_mgr.shutdown_all();
+                app.state::<fs_tools::editor::EditorWatches>().stop_all();
                 // MCP children are the ones most likely to outlive us: there
                 // can be several, and they are third-party programs that need
                 // not honour a closed stdin.

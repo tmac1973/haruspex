@@ -2,6 +2,7 @@ pub mod absolute;
 pub mod bytes;
 pub mod docx;
 pub mod download;
+pub mod editor;
 pub mod fuzzy;
 pub mod images;
 pub mod markdown_inline;
