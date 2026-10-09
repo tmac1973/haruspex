@@ -4,7 +4,7 @@
 		"reply": { "content": "\"Fix README typo.\"" }
 	},
 	{
-		"match": { "lastUser": "^fix the readme typo" },
+		"match": { "lastUser": "(?:^|\\n)fix the readme typo" },
 		"reply": {
 			"tool_calls": [
 				{
