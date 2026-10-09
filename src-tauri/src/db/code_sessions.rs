@@ -76,6 +76,14 @@ pub struct CodeSessionRow {
     /// The top folder of the git worktree Haruspex made for this session (a
     /// worktree fork). Deleting the session offers to remove it.
     pub worktree: Option<String>,
+    /// Other sessions' changed-file notices up to this time (ms) have been
+    /// given to this one's agent. `null` for a session saved before this
+    /// was kept: its `updated_at` stands in.
+    #[ts(type = "number | null")]
+    pub notices_seen_at: Option<i64>,
+    /// The checked-out branch the agent was last told or saw. `null`: never
+    /// told; `''`: told there was none (not a repo).
+    pub agent_branch: Option<String>,
 }
 
 /// A header edit. Each field is three-state: absent leaves the column alone,
@@ -103,7 +111,8 @@ where
 }
 
 const ROW_COLUMNS: &str = "id, title, root, backend, reasoning_effort, thread, \
-     forked_from, forked_at, created_at, updated_at, read_only, worktree";
+     forked_from, forked_at, created_at, updated_at, read_only, worktree, \
+     notices_seen_at, agent_branch";
 
 fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CodeSessionRow> {
     Ok(CodeSessionRow {
@@ -119,6 +128,8 @@ fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CodeSessionRow> {
         updated_at: row.get(9)?,
         read_only: row.get(10)?,
         worktree: row.get(11)?,
+        notices_seen_at: row.get(12)?,
+        agent_branch: row.get(13)?,
     })
 }
 
@@ -268,6 +279,8 @@ impl Database {
             updated_at: now,
             read_only: false,
             worktree: None,
+            notices_seen_at: None,
+            agent_branch: None,
         };
         self.insert_code_session(&row)?;
         Ok(row)
@@ -278,7 +291,7 @@ impl Database {
         conn.execute(
             &format!(
                 "INSERT INTO code_sessions ({ROW_COLUMNS})
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)"
             ),
             params![
                 row.id,
@@ -292,7 +305,9 @@ impl Database {
                 row.created_at,
                 row.updated_at,
                 row.read_only,
-                row.worktree
+                row.worktree,
+                row.notices_seen_at,
+                row.agent_branch
             ],
         )
         .map_err(|e| format!("Code session create failed: {e}"))?;
@@ -366,6 +381,58 @@ impl Database {
         Ok(())
     }
 
+    /// What the session's agent has been told, saved with each turn (see
+    /// [`CodeSessionRow::notices_seen_at`] and `agent_branch`). `None`
+    /// leaves a column as it is.
+    pub fn set_code_session_seen(
+        &self,
+        id: &str,
+        notices_seen_at: Option<i64>,
+        agent_branch: Option<&str>,
+    ) -> Result<(), String> {
+        if notices_seen_at.is_none() && agent_branch.is_none() {
+            return Ok(());
+        }
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE code_sessions SET
+                notices_seen_at = COALESCE(?2, notices_seen_at),
+                agent_branch = COALESCE(?3, agent_branch)
+             WHERE id = ?1",
+            params![id, notices_seen_at, agent_branch],
+        )
+        .map_err(|e| format!("Code session save failed: {e}"))?;
+        Ok(())
+    }
+
+    /// Point a session at another folder, when its own is gone (deleted, a
+    /// worktree removed, a drive unmounted). `root` must be an existing
+    /// directory and is stored canonical, as at creation. The worktree it
+    /// was made with is forgotten unless the new folder is inside it.
+    /// Does not bump `updated_at`.
+    pub fn set_code_session_root(&self, id: &str, root: &str) -> Result<CodeSessionRow, String> {
+        let canonical = std::fs::canonicalize(root).map_err(|e| format!("Folder {root}: {e}"))?;
+        if !canonical.is_dir() {
+            return Err(format!("{root} is not a folder"));
+        }
+        let new_root = canonical
+            .to_str()
+            .ok_or_else(|| format!("Folder {root} is not valid UTF-8"))?
+            .to_string();
+        let current = self.load_code_session(id)?;
+        let worktree = current
+            .worktree
+            .filter(|wt| canonical.starts_with(std::path::Path::new(wt)));
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE code_sessions SET root = ?2, worktree = ?3 WHERE id = ?1",
+            params![id, new_root, worktree],
+        )
+        .map_err(|e| format!("Code session update failed: {e}"))?;
+        drop(conn);
+        self.load_code_session(id)
+    }
+
     /// Deleting a session that is already gone is not an error.
     pub fn delete_code_session(&self, id: &str) -> Result<(), String> {
         let conn = self.conn();
@@ -409,6 +476,10 @@ impl Database {
             updated_at: now,
             read_only,
             worktree,
+            // A fork is news to nobody yet: its `updated_at` stands in, and
+            // its agent is told the branch afresh.
+            notices_seen_at: None,
+            agent_branch: None,
         };
         self.insert_code_session(&row)?;
         Ok(row)

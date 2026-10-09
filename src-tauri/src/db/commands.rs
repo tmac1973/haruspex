@@ -412,18 +412,35 @@ pub async fn code_session_load(
     on_pool(db, move |db| db.load_code_session(&id)).await
 }
 
+/// Write the thread after a turn. `notices_seen_at` and `agent_branch` are
+/// what the turn told the agent (see `CodeSessionRow`); absent leaves them.
 #[tauri::command]
 pub async fn code_session_save(
     state: tauri::State<'_, Database>,
     id: String,
     thread: String,
     title: Option<String>,
+    notices_seen_at: Option<i64>,
+    agent_branch: Option<String>,
 ) -> Result<(), String> {
     let db = state.inner().clone();
     on_pool(db, move |db| {
-        db.save_code_session(&id, &thread, title.as_deref())
+        db.save_code_session(&id, &thread, title.as_deref())?;
+        db.set_code_session_seen(&id, notices_seen_at, agent_branch.as_deref())
     })
     .await
+}
+
+/// Point a session whose folder is gone at another one. See
+/// [`Database::set_code_session_root`].
+#[tauri::command]
+pub async fn code_session_set_root(
+    state: tauri::State<'_, Database>,
+    id: String,
+    root: String,
+) -> Result<CodeSessionRow, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.set_code_session_root(&id, &root)).await
 }
 
 #[tauri::command]

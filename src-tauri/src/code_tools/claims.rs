@@ -12,12 +12,25 @@
 //! session next — the background-command watches, which live in a window's
 //! JS context and would otherwise be lost when the session moves between
 //! windows. The next successful claim takes it.
+//!
+//! Every change is announced to all windows as [`CLAIMS_EVENT`], so the main
+//! window's sidebar can mark sessions open in a window of their own without
+//! polling.
 
 use crate::sync_util::LockExt;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
+
+/// Sent to every window when a session is claimed or released, or a window
+/// holding claims closes. No payload: ask `code_session_open_ids`.
+pub const CLAIMS_EVENT: &str = "code://claims";
+
+/// Tell every window the claims changed.
+pub fn emit_changed(app: &tauri::AppHandle) {
+    let _ = app.emit(CLAIMS_EVENT, ());
+}
 
 #[derive(Default)]
 struct Inner {
@@ -123,9 +136,13 @@ pub fn code_session_claim(
     id: String,
 ) -> CodeClaim {
     let app = window.app_handle();
-    state.claim(&id, window.label(), |label| {
+    let claim = state.claim(&id, window.label(), |label| {
         app.get_webview_window(label).is_some()
-    })
+    });
+    if claim.owner.is_none() {
+        emit_changed(app);
+    }
+    claim
 }
 
 /// Release the calling window's claim on a session, optionally leaving a
@@ -138,6 +155,7 @@ pub fn code_session_release(
     handoff: Option<String>,
 ) {
     state.release(&id, window.label(), handoff);
+    emit_changed(window.app_handle());
 }
 
 /// The sessions open in any window, this one included: for "another session
