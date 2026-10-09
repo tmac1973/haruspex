@@ -38,6 +38,22 @@
 		void tick().then(autosize);
 	});
 
+	// A fork opens with its input box focused, holding the forked message.
+	$effect(() => {
+		if (!session.prefill) return;
+		untrack(() => {
+			const p = session.takePrefill();
+			if (!p) return;
+			if (p.text) text = p.text;
+			if (p.images.length) images = p.images.map((url) => ({ id: imgSeq++, url }));
+		});
+		void tick().then(() => {
+			autosize();
+			el?.focus();
+			if (el) placeCaret(el, 'end');
+		});
+	});
+
 	function autosize() {
 		if (!el) return;
 		el.style.height = 'auto';

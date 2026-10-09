@@ -24,6 +24,9 @@
 	import type { CodeSession } from '#lib/stores/code.svelte.ts';
 	import { makeCodePathLinker } from '#lib/code/paths.ts';
 	import { openFileFromClick } from '#lib/code/openEditor.ts';
+	import { forkFromMessage } from '#lib/code/windows.ts';
+	import { showToast } from '#lib/stores/toasts.svelte.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	let { session, notes = [] }: { session: CodeSession; notes?: TranscriptNote[] } = $props();
 
@@ -127,6 +130,15 @@
 		openFileFromClick(session.root, rel);
 	}
 
+	/** Forks once the turn is over: the saved thread is then the one shown. */
+	const forkBlocked = $derived(session.busy ? 'Wait for the turn to finish, then fork.' : null);
+
+	function fork(index: number) {
+		forkFromMessage(session, index).catch((e: unknown) =>
+			showToast(`Couldn't fork: ${errMessage(e)}`, { kind: 'error' })
+		);
+	}
+
 	function removePending(index: number) {
 		session.steering = session.steering.filter((_, k) => k !== index);
 	}
@@ -162,7 +174,7 @@
 			{#if msg.role === 'system'}
 				<div class="note">{messageText(msg.content)}</div>
 			{:else if msg.role === 'user'}
-				<ChatMessage message={msg} />
+				<ChatMessage message={msg} onFork={() => fork(i)} {forkBlocked} />
 			{:else}
 				{#if session.messageSteps[i]?.length}
 					<CodeSteps steps={session.messageSteps[i]} root={session.root} />
@@ -172,6 +184,8 @@
 					{codePaths}
 					tokensPerSecond={session.messageStats[i]?.tokensPerSecond}
 					elapsedMs={session.messageStats[i]?.elapsedMs}
+					onFork={() => fork(i)}
+					{forkBlocked}
 				/>
 				{#if session.messageStops[i]}
 					<StopIndicator

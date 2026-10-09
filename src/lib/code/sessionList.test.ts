@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ChatMessage } from '#lib/api.ts';
 import {
 	folderName,
+	forkedFromTitle,
 	groupByRoot,
 	isUnsetTitle,
 	lastActive,
@@ -103,5 +104,15 @@ describe('the render window', () => {
 	it('shows everything when the thread is shorter than the window', () => {
 		expect(windowStart(thread, 20)).toBe(0);
 		expect(turnsBefore(thread, 0)).toBe(0);
+	});
+});
+
+describe('forkedFromTitle', () => {
+	it('names the source, or says it was deleted', () => {
+		const list = [s('a', '/p/app', 1), { ...s('', '/p/app', 2), id: 'b' }];
+		expect(forkedFromTitle({ forked_from: 'a' }, list)).toBe('Forked from "a"');
+		expect(forkedFromTitle({ forked_from: 'b' }, list)).toBe('Forked from "app · new session"');
+		expect(forkedFromTitle({ forked_from: 'gone' }, list)).toBe('Forked from a deleted session');
+		expect(forkedFromTitle({ forked_from: null }, list)).toBe('');
 	});
 });

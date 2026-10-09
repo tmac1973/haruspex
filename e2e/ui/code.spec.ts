@@ -55,3 +55,33 @@ test('a Code session edits a file and runs a command, shown as cards', async ({ 
 		)
 		.toContain('\x1b[200~cat README.md\x1b[201~');
 });
+
+test('forking from a message opens a new session as a sub-tab', async ({ app }) => {
+	await useScenario('code-tab');
+	await app.getByRole('tab', { name: 'Code' }).click();
+	await app.getByRole('button', { name: 'New session' }).first().click();
+	await app.getByRole('button', { name: 'Start session' }).click();
+
+	const input = app.getByRole('textbox', { name: 'Message' });
+	await input.fill('fix the readme typo');
+	await input.press('Enter');
+	const transcript = app.getByTestId('code-transcript');
+	await expect(transcript.getByText('Fixed the typo in README.md.')).toBeVisible({
+		timeout: 15_000
+	});
+	await expect(app.getByRole('tab', { name: /Fix README typo/ })).toBeVisible();
+
+	// Forking the question: an empty fork with the question back in its box.
+	await transcript.getByRole('button', { name: 'Fork from here' }).first().click();
+	const forkTab = app.getByRole('tab', { name: /Fix README typo \(fork\)/ });
+	await expect(forkTab).toHaveAttribute('aria-selected', 'true');
+	const forkInput = app.getByRole('textbox', { name: 'Message' }).locator('visible=true');
+	await expect(forkInput).toHaveValue('fix the readme typo');
+	await expect(forkInput).toBeFocused();
+
+	// The sidebar marks it as a fork, and says of what.
+	const sidebar = app.getByRole('complementary', { name: 'Code sessions' });
+	const row = sidebar.getByRole('button', { name: 'Fix README typo (fork)' });
+	await expect(row.getByTestId('fork-glyph')).toBeVisible();
+	await expect(row).toHaveAttribute('title', /Forked from "Fix README typo"/);
+});

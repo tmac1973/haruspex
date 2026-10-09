@@ -6,6 +6,10 @@ import type { ChatMessage } from '#lib/api.ts';
 // be saved, closed and loaded back by id as the app would.
 const db = vi.hoisted(() => {
 	const rows = new Map<string, Record<string, unknown>>();
+	// The Rust claim map, as seen from the window these tests run in ('main').
+	const owners = new Map<string, string>();
+	const handoffs = new Map<string, string>();
+	const alive = new Set<string>(['main']);
 	let n = 0;
 	const emptyThread = JSON.stringify({
 		version: 1,
@@ -18,8 +22,15 @@ const db = vi.hoisted(() => {
 	});
 	return {
 		rows,
+		owners,
+		handoffs,
+		alive,
 		reset() {
 			rows.clear();
+			owners.clear();
+			handoffs.clear();
+			alive.clear();
+			alive.add('main');
 			n = 0;
 		},
 		handle(cmd: string, args: Record<string, unknown> = {}): unknown {
@@ -63,6 +74,58 @@ const db = vi.hoisted(() => {
 				case 'code_bg_status':
 					return [];
 				default:
+					return this.windows(cmd, args);
+			}
+		},
+		/** Fork, delete and the claim map: what phase 7 added. */
+		windows(cmd: string, args: Record<string, unknown>): unknown {
+			switch (cmd) {
+				case 'code_session_fork': {
+					const src = rows.get(args.id as string)!;
+					const at = args.at as number;
+					const thread = JSON.parse(src.thread as string);
+					if (at > thread.messages.length) throw new Error('past the end');
+					const cut = (m: Record<string, unknown>) =>
+						Object.fromEntries(Object.entries(m ?? {}).filter(([k]) => Number(k) < at));
+					n += 1;
+					const row = {
+						...src,
+						id: `s${n}`,
+						title: `${src.title} (fork)`.trim(),
+						thread: JSON.stringify({
+							...thread,
+							messages: thread.messages.slice(0, at),
+							messageSteps: cut(thread.messageSteps),
+							messageStats: cut(thread.messageStats),
+							messageStops: cut(thread.messageStops)
+						}),
+						forked_from: src.id,
+						forked_at: at
+					};
+					rows.set(row.id, row);
+					return { ...row };
+				}
+				case 'code_session_delete':
+					rows.delete(args.id as string);
+					return undefined;
+				case 'code_session_claim': {
+					const id = args.id as string;
+					const owner = owners.get(id);
+					if (owner && owner !== 'main' && alive.has(owner)) return { owner, handoff: null };
+					owners.set(id, 'main');
+					const handoff = handoffs.get(id) ?? null;
+					handoffs.delete(id);
+					return { owner: null, handoff };
+				}
+				case 'code_session_release': {
+					const id = args.id as string;
+					const owner = owners.get(id);
+					if (owner && owner !== 'main') return undefined;
+					owners.delete(id);
+					if (args.handoff) handoffs.set(id, args.handoff as string);
+					return undefined;
+				}
+				default:
 					return undefined;
 			}
 		}
@@ -76,11 +139,27 @@ const mocks = vi.hoisted(() => ({
 	nameSession: vi.fn(),
 	watchHandlers: new Map<string, () => void>(),
 	completedWatches: [] as { id: string }[],
+	takeCodeWatches: vi.fn((owner: string): unknown[] => {
+		void owner;
+		return [];
+	}),
+	adoptCodeWatches: vi.fn(),
+	raised: [] as string[],
 	consumeWatches: vi.fn(),
 	clearCodeWatches: vi.fn()
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/webviewWindow', () => ({
+	WebviewWindow: {
+		getByLabel: async (label: string) => ({
+			unminimize: async () => {},
+			setFocus: async () => {
+				mocks.raised.push(label);
+			}
+		})
+	}
+}));
 vi.mock('#lib/agent/loop.ts', () => ({ runAgentLoop: mocks.runAgentLoop }));
 vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => ({
 	withInferenceSlot: mocks.withInferenceSlot
@@ -122,7 +201,12 @@ vi.mock('#lib/shell/backgroundWatch.ts', () => ({
 		mocks.consumeWatches(ids);
 		mocks.completedWatches = mocks.completedWatches.filter((w) => !ids.includes(w.id));
 	},
-	clearCodeWatches: mocks.clearCodeWatches
+	clearCodeWatches: mocks.clearCodeWatches,
+	takeCodeWatches: mocks.takeCodeWatches,
+	adoptCodeWatches: (list: { id: string }[]) => {
+		mocks.adoptCodeWatches(list);
+		mocks.completedWatches.push(...list);
+	}
 }));
 vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
@@ -131,8 +215,12 @@ vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
 
 import {
 	closeSession,
+	deleteSession,
+	forkAndOpen,
+	forkSession,
 	getActiveSession,
 	getOpenSessions,
+	handOffSession,
 	newSession,
 	openSession
 } from '#lib/stores/code.svelte.ts';
@@ -194,6 +282,9 @@ beforeEach(async () => {
 	mocks.completedWatches = [];
 	mocks.consumeWatches.mockReset();
 	mocks.clearCodeWatches.mockReset();
+	mocks.takeCodeWatches.mockReset().mockReturnValue([]);
+	mocks.adoptCodeWatches.mockReset();
+	mocks.raised = [];
 });
 
 describe('a Code session', () => {
@@ -221,7 +312,7 @@ describe('a Code session', () => {
 		expect(storedThread(s.id)?.messages).toEqual(s.messages);
 
 		await closeSession(s.id);
-		const again = await openSession(s.id);
+		const again = (await openSession(s.id))!;
 		expect(again).not.toBe(s);
 		expect(again.messages).toEqual(s.messages);
 		expect(again.messageSteps).toEqual(s.messageSteps);
@@ -231,7 +322,7 @@ describe('a Code session', () => {
 	it('opens a session with an empty thread as an empty session', async () => {
 		const s = await newSession('/proj');
 		await closeSession(s.id);
-		const again = await openSession(s.id);
+		const again = (await openSession(s.id))!;
 		expect(again.messages).toEqual([]);
 		expect(again.root).toBe('/proj');
 	});
@@ -295,7 +386,7 @@ describe('a Code session', () => {
 		const s = await newSession('/proj');
 		db.rows.get(s.id)!.title = '/init';
 		await closeSession(s.id);
-		const again = await openSession(s.id);
+		const again = (await openSession(s.id))!;
 		expect(again.title).toBe('');
 		await again.send('add a readme');
 		expect(mocks.nameSession).toHaveBeenCalledExactlyOnceWith('add a readme', null);
@@ -660,5 +751,174 @@ describe('a streamed tool round', () => {
 		await sending;
 		expect(s.pendingToolCalls).toEqual([]);
 		expect(s.roundText).toBe('');
+	});
+});
+
+describe('one window per session', () => {
+	it('claims a session it opens and releases it on close', async () => {
+		const s = await newSession('/proj');
+		expect(db.owners.get(s.id)).toBe('main');
+		await closeSession(s.id);
+		expect(db.owners.has(s.id)).toBe(false);
+		await openSession(s.id);
+		expect(db.owners.get(s.id)).toBe('main');
+	});
+
+	it('brings forward the window that has a session instead of opening it', async () => {
+		const s = await newSession('/proj');
+		await closeSession(s.id);
+		db.owners.set(s.id, `code-${s.id}`);
+		db.alive.add(`code-${s.id}`);
+		expect(await openSession(s.id)).toBeNull();
+		expect(getOpenSessions()).toHaveLength(0);
+		expect(mocks.raised).toEqual([`code-${s.id}`]);
+	});
+
+	it('treats a claim whose window is gone as free', async () => {
+		const s = await newSession('/proj');
+		await closeSession(s.id);
+		db.owners.set(s.id, `code-${s.id}`); // never alive: the window closed
+		const again = await openSession(s.id);
+		expect(again?.id).toBe(s.id);
+		expect(db.owners.get(s.id)).toBe('main');
+		expect(mocks.raised).toEqual([]);
+	});
+
+	it('hands a session off without stopping its background processes', async () => {
+		const s = await newSession('/proj');
+		const watch = {
+			id: 'watch-1',
+			source: 'code_bg',
+			owner: s.id,
+			processId: 'bg-1',
+			command: 'npm run dev',
+			logPath: '/l',
+			startedAtMs: 0
+		};
+		mocks.takeCodeWatches.mockReturnValueOnce([watch]);
+		expect(await handOffSession(s.id)).toBe(true);
+		expect(getOpenSessions()).toHaveLength(0);
+		expect(mocks.invoke).not.toHaveBeenCalledWith('code_bg_stop_owner', expect.anything());
+		expect(db.owners.has(s.id)).toBe(false);
+		expect(JSON.parse(db.handoffs.get(s.id)!)).toEqual({ watches: [watch] });
+
+		// Whichever window opens it next takes the watches, and the
+		// completion handler is that window's.
+		mocks.watchHandlers.clear();
+		const again = await openSession(s.id);
+		expect(mocks.adoptCodeWatches).toHaveBeenCalledWith([watch]);
+		expect(db.handoffs.has(s.id)).toBe(false);
+		expect(mocks.watchHandlers.has(again!.id)).toBe(true);
+	});
+
+	it('delivers a watch that finished during the move once the session is open again', async () => {
+		const s = await newSession('/proj');
+		const done = {
+			id: 'watch-2',
+			source: 'code_bg',
+			owner: s.id,
+			processId: 'bg-2',
+			command: 'make',
+			logPath: '/l',
+			startedAtMs: 0,
+			exitCode: 0
+		};
+		mocks.takeCodeWatches.mockReturnValueOnce([done]);
+		await handOffSession(s.id);
+		const again = (await openSession(s.id))!;
+		await vi.waitFor(() => expect(mocks.runAgentLoop).toHaveBeenCalledTimes(1));
+		await vi.waitFor(() => expect(again.status).toBe('idle'));
+		expect(again.messages[0]).toEqual({
+			role: 'user',
+			content: 'A background command you started with watch has finished.'
+		});
+	});
+
+	it('will not hand off a session while a turn runs', async () => {
+		const s = await newSession('/proj');
+		const turn = held();
+		mocks.runAgentLoop.mockImplementationOnce(turn.impl);
+		const sending = s.send('go');
+		await turn.running;
+		expect(await handOffSession(s.id)).toBe(false);
+		expect(getOpenSessions()).toContain(s);
+		expect(db.owners.get(s.id)).toBe('main');
+		turn.release();
+		await sending;
+	});
+
+	it('refuses to delete a session another window has open', async () => {
+		const s = await newSession('/proj');
+		await closeSession(s.id);
+		db.owners.set(s.id, `code-${s.id}`);
+		db.alive.add(`code-${s.id}`);
+		expect(await deleteSession(s.id)).toBe(false);
+		expect(db.rows.has(s.id)).toBe(true);
+		db.alive.delete(`code-${s.id}`);
+		expect(await deleteSession(s.id)).toBe(true);
+		expect(db.rows.has(s.id)).toBe(false);
+		expect(db.owners.has(s.id)).toBe(false);
+	});
+});
+
+describe('fork from a message', () => {
+	async function twoTurns() {
+		const s = await newSession('/proj');
+		mocks.runAgentLoop.mockImplementationOnce(answers('first answer'));
+		await s.send('first question');
+		mocks.runAgentLoop.mockImplementationOnce(answers('second answer'));
+		await s.send('second question');
+		// user, assistant, user, assistant
+		return s;
+	}
+
+	it('keeps everything up to and including a forked answer', async () => {
+		const s = await twoTurns();
+		const fork = (await forkAndOpen(s.id, 1))!;
+		expect(fork.id).not.toBe(s.id);
+		expect(fork.messages.map((m) => m.content)).toEqual(['first question', 'first answer']);
+		expect(fork.prefill).toEqual({ text: '', images: [] });
+		expect(getActiveSession()).toBe(fork);
+		expect(db.rows.get(fork.id)!.forked_from).toBe(s.id);
+		// The source is untouched.
+		expect(s.messages).toHaveLength(4);
+	});
+
+	it('keeps what came before a forked user message, and hands its text to the input', async () => {
+		const s = await twoTurns();
+		const fork = (await forkAndOpen(s.id, 2))!;
+		expect(fork.messages.map((m) => m.content)).toEqual(['first question', 'first answer']);
+		expect(fork.takePrefill()).toEqual({ text: 'second question', images: [] });
+		expect(fork.prefill).toBeNull();
+	});
+
+	it('forks the first and the last message', async () => {
+		const s = await twoTurns();
+		const first = (await forkAndOpen(s.id, 0))!;
+		expect(first.messages).toEqual([]);
+		expect(first.prefill?.text).toBe('first question');
+		const last = (await forkAndOpen(s.id, 3))!;
+		expect(last.messages).toHaveLength(4);
+	});
+
+	it('does not copy background processes or watches', async () => {
+		const s = await twoTurns();
+		const fork = (await forkAndOpen(s.id, 1))!;
+		expect(mocks.takeCodeWatches).not.toHaveBeenCalled();
+		expect(mocks.invoke).toHaveBeenCalledWith('code_bg_status', { owner: fork.id });
+		expect(mocks.invoke).not.toHaveBeenCalledWith('code_bg_start', expect.anything());
+	});
+
+	it('will not fork while a turn runs, or from a tool message', async () => {
+		const s = await twoTurns();
+		const turn = held();
+		mocks.runAgentLoop.mockImplementationOnce(turn.impl);
+		const sending = s.send('third');
+		await turn.running;
+		await expect(forkSession(s.id, 1)).rejects.toThrow(/turn/);
+		turn.release();
+		await sending;
+		s.messages = [...s.messages, { role: 'tool', tool_call_id: 'x', content: 'r' }];
+		await expect(forkSession(s.id, s.messages.length - 1)).rejects.toThrow();
 	});
 });

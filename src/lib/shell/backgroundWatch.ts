@@ -151,6 +151,34 @@ export function clearCodeWatches(owner: string): void {
 	stopPollingIfIdle();
 }
 
+/**
+ * Remove a Code session's watches, finished or not, and return them, for a
+ * session that moves to another window (`adoptCodeWatches` there). Watches
+ * live in this JS context, and the process they follow lives on in Rust.
+ */
+export function takeCodeWatches(owner: string): CodeBgWatch[] {
+	const taken = watches.filter(
+		(w): w is CodeBgWatch => w.source === 'code_bg' && w.owner === owner
+	);
+	if (taken.length > 0) {
+		watches = watches.filter((w) => !taken.includes(w as CodeBgWatch));
+		stopPollingIfIdle();
+	}
+	return taken;
+}
+
+/**
+ * Take over watches another window handed off (`takeCodeWatches`). Their
+ * ids are re-issued here, since each window counts its own.
+ */
+export function adoptCodeWatches(list: CodeBgWatch[]): void {
+	for (const w of list) {
+		if (w?.source !== 'code_bg' || typeof w.owner !== 'string') continue;
+		watches.push({ ...w, id: nextId() });
+	}
+	if (watches.some((w) => w.exitCode == null)) ensurePolling();
+}
+
 /** Read a watched command's captured output (its temp log). Empty on failure. */
 export async function readWatchLog(logPath: string, wslDistro?: string): Promise<string> {
 	try {

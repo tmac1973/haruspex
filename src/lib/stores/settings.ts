@@ -1055,6 +1055,16 @@ function commit(next: AppSettings): void {
 	notifySettingsChanged();
 }
 
+/**
+ * Read the settings again from storage. For a second window (a detached Code
+ * window): each window loads them once, and without this one that later
+ * wrote a setting would put back everything the main window changed since.
+ */
+export function reloadSettingsFromStorage(): void {
+	settings = load();
+	notifySettingsChanged();
+}
+
 export function updateSettings(partial: Partial<AppSettings>): void {
 	commit({ ...settings, ...partial });
 }

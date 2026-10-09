@@ -2,20 +2,23 @@
 	/**
 	 * Saved Code sessions, newest first, each with its folder and when it was
 	 * last active. A folder with several sessions holds them under one row.
-	 * Click opens a session as a sub-tab; right-click renames or deletes it.
+	 * Click opens a session as a sub-tab (or brings forward the window that has
+	 * it); right-click renames or deletes it. A fork shows a branch glyph.
 	 */
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
-	import { deleteCodeSession, listCodeSessions, updateCodeSessionMeta } from '#lib/code/db.ts';
+	import { listCodeSessions, updateCodeSessionMeta } from '#lib/code/db.ts';
 	import type { CodeSessionSummary } from '#lib/code/db.ts';
 	import {
 		folderName,
+		forkedFromTitle,
 		isUnsetTitle,
 		lastActive,
 		sessionLabel,
 		sidebarEntries
 	} from '#lib/code/sessionList.ts';
+	import BranchGlyph from './BranchGlyph.svelte';
 	import {
-		closeSession,
+		deleteSession,
 		getActiveSessionId,
 		getOpenSessions,
 		openSession
@@ -134,8 +137,10 @@
 		deleting = null;
 		if (!session) return;
 		try {
-			await closeSession(session.id);
-			await deleteCodeSession(session.id);
+			if (!(await deleteSession(session.id))) {
+				showToast('That session is open in its own window. Close it there first.');
+				return;
+			}
 			await refresh();
 		} catch (e) {
 			showToast(`Couldn't delete: ${errMessage(e)}`, { kind: 'error' });
@@ -172,11 +177,17 @@
 				class:active={s.id === activeId}
 				class:open={openIds.has(s.id)}
 				aria-label={sessionLabel(s)}
-				title="{sessionLabel(s)} — {s.root}. Right-click to rename or delete."
+				title="{sessionLabel(s)} — {s.root}.{s.forked_from
+					? ` ${forkedFromTitle(s, list)}.`
+					: ''} Right-click to rename or delete."
 				onclick={() => openOne(s.id)}
 				oncontextmenu={(e) => openMenu(e, s)}
 			>
-				<span class="name">{sessionLabel(s)}</span>
+				<span class="name"
+					>{#if s.forked_from}<span class="fork" data-testid="fork-glyph"
+							><BranchGlyph size={11} /></span
+						>{/if}{sessionLabel(s)}</span
+				>
 				<span class="meta"
 					>{grouped ? '' : `${folderName(s.root)} · `}{lastActive(s.updated_at, now)}</span
 				>
@@ -405,6 +416,13 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.fork {
+		display: inline-flex;
+		vertical-align: -1px;
+		margin-right: 4px;
+		color: var(--accent);
 	}
 
 	.meta {

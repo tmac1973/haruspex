@@ -25,14 +25,18 @@ import { computeMessageStats, type MessageStats } from '#lib/stores/chat.svelte.
 import { codeApprovalKey, resetSessionApproval } from '#lib/stores/codeCommandApproval.svelte.ts';
 import { renderSlashMessage } from '#lib/skills/content.ts';
 import {
+	adoptCodeWatches,
 	buildWatchNotification,
 	clearCodeWatches,
 	consumeWatches,
 	peekCompletedCodeWatches,
-	setCodeWatchCompletionHandler
+	setCodeWatchCompletionHandler,
+	takeCodeWatches
 } from '#lib/shell/backgroundWatch.ts';
 import {
 	createCodeSession,
+	deleteCodeSession,
+	forkCodeSession,
 	loadCodeSession,
 	saveCodeSession,
 	updateCodeSessionMeta,
@@ -44,6 +48,8 @@ import type { PendingToolCall } from '#lib/code/pendingCall.ts';
 import { LiveTurn } from '#lib/code/liveTurn.svelte.ts';
 import { setShellWaitListener, type ShellWait } from '#lib/code/shellBridge.ts';
 import { isUnsetTitle } from '#lib/code/sessionList.ts';
+import { claimSession, raiseWindow, releaseSession } from '#lib/code/claims.ts';
+import { forkPoint, type Prefill } from '#lib/code/fork.ts';
 import { isSlashCommand, nameSession } from '#lib/code/sessionTitle.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import { errMessage } from '#lib/utils/error.ts';
@@ -95,6 +101,12 @@ export class CodeSession {
 	background = $state<BgProcess[]>([]);
 	/** The Shell tab an `open_in_shell` call waits on, while `status` is 'waiting-shell'. */
 	shellWait = $state.raw<ShellWait | null>(null);
+	/**
+	 * What the input box should start with (a fork from one of the user's
+	 * messages), for the input box to take (`takePrefill`). An empty prefill
+	 * still asks for the input to be focused.
+	 */
+	prefill = $state.raw<Prefill | null>(null);
 
 	/** What the running turn shows while the model writes (`LiveTurn`). */
 	private readonly live = new LiveTurn();
@@ -222,6 +234,13 @@ export class CodeSession {
 		const texts = this.returnedSteering;
 		this.returnedSteering = [];
 		return texts;
+	};
+
+	/** Take the prefill, clearing it. */
+	takePrefill = (): Prefill | null => {
+		const p = this.prefill;
+		this.prefill = null;
+		return p;
 	};
 
 	/** Null puts the session back on the global backend. Applies from the next turn. */
@@ -535,21 +554,48 @@ export function setActiveSession(id: string): void {
 	if (sessions.some((s) => s.id === id)) activeId = id;
 }
 
-/** Open a saved session (or focus it if already open) and make it active. */
-export async function openSession(id: string): Promise<CodeSession> {
+/**
+ * Open a saved session (or focus it if already open) and make it active.
+ *
+ * A session is open in one window at a time: when another window has it,
+ * that window is brought to the front instead and this returns null.
+ */
+export async function openSession(id: string): Promise<CodeSession | null> {
 	const open = sessions.find((s) => s.id === id);
 	if (open) {
 		activeId = id;
 		return open;
 	}
-	const record = await loadCodeSession(id);
+	const claim = await claimSession(id);
+	if (claim.owner) {
+		await raiseWindow(claim.owner);
+		return null;
+	}
 	// Opened twice at once: the first load wins.
 	const raced = sessions.find((s) => s.id === id);
 	if (raced) {
 		activeId = id;
 		return raced;
 	}
-	return adopt(new CodeSession(record));
+	let record: CodeSessionRecord;
+	try {
+		record = await loadCodeSession(id);
+	} catch (e) {
+		// Not ours after all; keep what the last window handed over.
+		await releaseSession(id, claim.handoff).catch(() => {});
+		throw e;
+	}
+	const again = sessions.find((s) => s.id === id);
+	if (again) {
+		activeId = id;
+		return again;
+	}
+	// Watches the last window followed come here, and anything that finished
+	// meanwhile is delivered once the session is set up.
+	if (claim.handoff) adoptCodeWatches(claim.handoff.watches);
+	const session = adopt(new CodeSession(record));
+	if (claim.handoff?.watches.length) void session.flushWatchNotifications();
+	return session;
 }
 
 /** Create a session in `root` and open it. */
@@ -557,7 +603,35 @@ export async function newSession(
 	root: string,
 	opts: { backend?: BackendOverride | null; effort?: string | null } = {}
 ): Promise<CodeSession> {
-	return adopt(new CodeSession(await createCodeSession(root, opts)));
+	const record = await createCodeSession(root, opts);
+	await claimSession(record.id);
+	return adopt(new CodeSession(record));
+}
+
+/**
+ * Fork session `id` at the message at `index` into a new saved session (see
+ * `forkPoint`), without opening it. Background processes are not forked.
+ * Only an idle session forks: the saved thread is then the one on screen.
+ */
+export async function forkSession(
+	id: string,
+	index: number
+): Promise<{ id: string; prefill: Prefill }> {
+	const source = sessions.find((s) => s.id === id);
+	if (!source) throw new Error('That session is not open here.');
+	if (source.busy) throw new Error('Wait for the turn to finish, then fork.');
+	const point = forkPoint(source.messages, index);
+	if (!point) throw new Error('Only your messages and answers can be forked from.');
+	const record = await forkCodeSession(id, point.at);
+	return { id: record.id, prefill: point.prefill ?? { text: '', images: [] } };
+}
+
+/** Fork and open the fork here as a sub-tab, its input box filled and focused. */
+export async function forkAndOpen(id: string, index: number): Promise<CodeSession | null> {
+	const fork = await forkSession(id, index);
+	const session = await openSession(fork.id);
+	if (session) session.prefill = fork.prefill;
+	return session;
 }
 
 /**
@@ -575,6 +649,49 @@ export async function closeSession(id: string): Promise<void> {
 	await invoke('code_bg_stop_owner', { owner: id }).catch((e: unknown) => {
 		logDebug('code', 'stopping background processes failed', { id, error: errMessage(e) });
 	});
+	await releaseSession(id).catch((e: unknown) => {
+		logDebug('code', 'releasing the session failed', { id, error: errMessage(e) });
+	});
+}
+
+/**
+ * Let another window have a session: close its sub-tab here without stopping
+ * its background processes, and hand their watches to whichever window opens
+ * it next. Only an idle session moves (a turn can't cross windows); returns
+ * false, and does nothing, otherwise.
+ */
+export async function handOffSession(id: string): Promise<boolean> {
+	const idx = sessions.findIndex((s) => s.id === id);
+	if (idx < 0) return false;
+	const session = sessions[idx];
+	if (session.busy) return false;
+	sessions.splice(idx, 1);
+	if (activeId === id) activeId = (sessions[idx] ?? sessions[idx - 1] ?? null)?.id ?? null;
+	const watches = takeCodeWatches(id);
+	await session.dispose();
+	await releaseSession(id, { watches });
+	return true;
+}
+
+/**
+ * Delete a saved session. Refused (false) while another window has it open:
+ * that window is brought to the front instead.
+ */
+export async function deleteSession(id: string): Promise<boolean> {
+	const claim = await claimSession(id);
+	if (claim.owner) {
+		await raiseWindow(claim.owner);
+		return false;
+	}
+	await closeSession(id);
+	// Processes a hand-off left running with no window to open them.
+	await invoke('code_bg_stop_owner', { owner: id }).catch(() => {});
+	try {
+		await deleteCodeSession(id);
+	} finally {
+		await releaseSession(id).catch(() => {});
+	}
+	return true;
 }
 
 function adopt(session: CodeSession): CodeSession {

@@ -6,7 +6,8 @@
 	import type { SlashHost } from '#lib/slash/slash.ts';
 	import type { TranscriptNote } from './CodeTranscript.svelte';
 	import { shellProject } from '#lib/skills/project.ts';
-	import { newSession, type CodeSession } from '#lib/stores/code.svelte.ts';
+	import type { CodeSession } from '#lib/stores/code.svelte.ts';
+	import { newSessionBeside } from '#lib/code/windows.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
@@ -24,7 +25,7 @@
 		codeMode: () => true,
 		// `/new` here is a new session in the same folder.
 		newConversation: () => {
-			newSession(session.root).catch((e: unknown) =>
+			newSessionBeside(session).catch((e: unknown) =>
 				showToast(`Couldn't start a session: ${errMessage(e)}`, { kind: 'error' })
 			);
 		},

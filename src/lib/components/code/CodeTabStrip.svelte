@@ -2,7 +2,8 @@
 	/**
 	 * The open Code sessions as sub-tabs, each with a dot for what it is doing.
 	 * Modelled on ShellTabStrip. Closing a session with background processes
-	 * running asks first, since closing stops them.
+	 * running asks first, since closing stops them. Detaching moves an idle
+	 * session to a window of its own, its background processes still running.
 	 */
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 	import {
@@ -14,6 +15,9 @@
 		type CodeSessionStatus
 	} from '#lib/stores/code.svelte.ts';
 	import { sessionLabel } from '#lib/code/sessionList.ts';
+	import { detachSession, moveBlockedReason } from '#lib/code/windows.ts';
+	import { showToast } from '#lib/stores/toasts.svelte.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	let { onNew }: { onNew: () => void } = $props();
 
@@ -30,6 +34,14 @@
 
 	let confirming = $state<CodeSession | null>(null);
 
+	function detach(event: MouseEvent, session: CodeSession) {
+		event.stopPropagation();
+		if (moveBlockedReason(session)) return;
+		detachSession(session).catch((e: unknown) =>
+			showToast(`Couldn't open a window for it: ${errMessage(e)}`, { kind: 'error' })
+		);
+	}
+
 	function close(event: MouseEvent, session: CodeSession) {
 		event.stopPropagation();
 		if (session.background.some((p) => p.running)) confirming = session;
@@ -39,6 +51,7 @@
 
 <div class="strip" role="tablist" aria-label="Code sessions">
 	{#each sessions as session (session.id)}
+		{@const blocked = moveBlockedReason(session)}
 		<div
 			class="tab"
 			class:active={session.id === activeId}
@@ -63,6 +76,14 @@
 				></span>
 			{/if}
 			<span class="label">{sessionLabel(session)}</span>
+			<button
+				class="detach"
+				class:blocked={!!blocked}
+				aria-disabled={!!blocked}
+				title={blocked ?? 'Detach to its own window'}
+				aria-label="Detach {sessionLabel(session)}"
+				onclick={(e) => detach(e, session)}>⤢</button
+			>
 			<button
 				class="close"
 				title="Close session (it stays in the list)"
@@ -155,7 +176,8 @@
 		background: var(--warning);
 	}
 
-	.close {
+	.close,
+	.detach {
 		appearance: none;
 		background: none;
 		border: 0;
@@ -168,9 +190,23 @@
 		border-radius: 3px;
 	}
 
-	.close:hover {
+	.detach {
+		font-size: 0.8rem;
+	}
+
+	.close:hover,
+	.detach:hover {
 		opacity: 1;
 		background: var(--bg-secondary);
+	}
+
+	.detach.blocked {
+		opacity: 0.3;
+		cursor: default;
+	}
+
+	.detach.blocked:hover {
+		background: none;
 	}
 
 	.add {

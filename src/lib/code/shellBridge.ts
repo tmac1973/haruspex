@@ -58,6 +58,12 @@ export type ShellCommandResult =
 export type ShellCommandOpener = (req: ShellCommandRequest) => Promise<ShellCommandResult>;
 
 let opener: ShellCommandOpener | null = null;
+/**
+ * A detached Code window has no Shell tab of its own (the shell store loads
+ * there too, but nothing renders it): it sends the request to the main
+ * window instead (`code/shellRelay.ts`). Takes precedence over `opener`.
+ */
+let relay: ShellCommandOpener | null = null;
 
 /** Called by the shell store when it loads. Returns the unregister. */
 export function registerShellCommandOpener(fn: ShellCommandOpener): () => void {
@@ -67,14 +73,23 @@ export function registerShellCommandOpener(fn: ShellCommandOpener): () => void {
 	};
 }
 
+/** Called by a detached Code window. Returns the unregister. */
+export function useShellRelay(fn: ShellCommandOpener): () => void {
+	relay = fn;
+	return () => {
+		if (relay === fn) relay = null;
+	};
+}
+
 export function hasShellCommandOpener(): boolean {
-	return opener !== null;
+	return (relay ?? opener) !== null;
 }
 
 /** Open a Shell tab with `command` typed in. See `ShellCommandRequest`. */
 export async function openShellForCommand(req: ShellCommandRequest): Promise<ShellCommandResult> {
-	if (!opener) return { kind: 'unavailable', message: 'The Shell tab is not available here.' };
-	return opener(req);
+	const open = relay ?? opener;
+	if (!open) return { kind: 'unavailable', message: 'The Shell tab is not available here.' };
+	return open(req);
 }
 
 // --- the wait, as the Code session shows it ---------------------------------
