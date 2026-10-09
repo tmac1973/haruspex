@@ -26,6 +26,7 @@ Code tab once before), every settled decision, and the invariants.
 | 7b | `phase-07b-git-safe-forks.md` | Git branch in the header, worktree forks, one writer per folder, stale-file notices | 7 |
 | 8 | `phase-08-shell-toggle.md` | Shell: Read-only / Full access, drop cwd persistence, "Open in Code" | 5 |
 | 9 | `phase-09-hardening.md` | macOS pass, failure cases, guide sweep, follow-up issues | all |
+| 9b | `phase-09b-agent-hardening.md` | Queued approval prompts, approval across windows, rewrite after a command, loop split, macOS bash + TTY | 1–8 |
 | 10 | `phase-10-windows-wsl.md` | Windows, WSL only (PowerShell/cmd is a follow-up issue) | 9 |
 
 Phases 1–3 are independent and can be built in parallel. 6, 7 and 8 are

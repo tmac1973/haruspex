@@ -32,6 +32,8 @@ export interface ShellTurnOptions {
 	cwd?: string | null;
 	/** Active PTY session id, so Code-mode run_command can drive the terminal. */
 	sessionId?: number | null;
+	/** The tab's name as it is now, to name it in approval prompts. */
+	name?: () => string;
 	/** Full access: expose the code toolset + drive the PTY for run_command. */
 	codeMode?: boolean;
 	/** Skills the model may load this turn (`#lib/skills/turn.ts`). */
@@ -99,6 +101,7 @@ async function drive(options: ShellTurnOptions): Promise<ShellTurnResult> {
 			shellMode: true,
 			shellCwd: options.cwd ?? null,
 			shellSessionId: options.sessionId ?? null,
+			requester: options.name,
 			codeMode: options.codeMode ?? false,
 			codeAutoApprove: options.codeAutoApprove ?? false,
 			skills: options.skills,

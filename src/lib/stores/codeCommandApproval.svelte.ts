@@ -1,9 +1,8 @@
 /**
- * Approval prompt for the Code tab's `run_command` tool. Same pattern as
- * sandboxApproval.svelte.ts: the tool calls `askCommandApproval` before
- * running a risk-flagged command, the call returns a Promise, a card mounted
- * in the Code view renders the pending request via `getPendingCommandApproval`,
- * and the user's button choice resolves the Promise.
+ * Approval prompt for the Code tab's `run_command` tool (and the Shell's Full
+ * access). The tool calls `askCommandApproval` before running a risk-flagged
+ * command, the call returns a Promise, the modal mounted in each window shows
+ * `getPendingCommandApproval`, and the user's button choice resolves it.
  *
  * Choices:
  *   - allow_once:    run this command, prompt again next time
@@ -11,49 +10,53 @@
  *                    (flips `approveSession` below)
  *   - deny:          don't run; the tool returns a denial the model can act on
  *
- * Only one prompt can be pending at a time (the agent loop serializes tool
- * calls). A second overlapping ask rejects.
+ * Prompts queue (`approvalQueue.svelte.ts`): two sessions asking at once each
+ * get their turn, and each prompt names who is asking. Stopping the turn
+ * takes its prompt out of the queue.
  */
 
 import { SvelteSet } from 'svelte/reactivity';
 import type { RiskMatch } from '#lib/shell/risky-commands.ts';
+import { createApprovalQueue } from './approvalQueue.svelte.ts';
 
 export type CommandApprovalChoice = 'allow_once' | 'allow_session' | 'deny';
 
-interface PendingCommandApproval {
+export interface CommandApprovalRequest {
 	command: string;
 	reasons: RiskMatch[];
-	resolve: (choice: CommandApprovalChoice) => void;
+	/** Who is asking: a Code session's title, a Shell tab's name. Null when unknown. */
+	requester: string | null;
 }
 
-let pending = $state<PendingCommandApproval | null>(null);
+const queue = createApprovalQueue<CommandApprovalRequest, CommandApprovalChoice>();
 
+/**
+ * Ask about a command. Waits behind any prompt already showing. A stopped
+ * turn (`signal`) withdraws the prompt and resolves to `deny`.
+ */
 export function askCommandApproval(args: {
 	command: string;
 	reasons: RiskMatch[];
+	requester?: string | null;
+	signal?: AbortSignal;
 }): Promise<CommandApprovalChoice> {
-	if (pending !== null) {
-		return Promise.reject(
-			new Error(
-				'Command approval prompt is already pending; ' +
-					'a second overlapping request is a bug in the caller.'
-			)
-		);
-	}
-	return new Promise<CommandApprovalChoice>((resolve) => {
-		pending = { command: args.command, reasons: args.reasons, resolve };
-	});
+	return queue.ask(
+		{ command: args.command, reasons: args.reasons, requester: args.requester ?? null },
+		{ signal: args.signal, abortResult: 'deny' }
+	);
 }
 
-export function getPendingCommandApproval(): PendingCommandApproval | null {
-	return pending;
+export function getPendingCommandApproval(): CommandApprovalRequest | null {
+	return queue.current();
+}
+
+/** Prompts waiting behind the one showing. */
+export function getQueuedCommandApprovals(): number {
+	return Math.max(0, queue.size() - 1);
 }
 
 export function resolveCommandApproval(choice: CommandApprovalChoice): void {
-	const current = pending;
-	if (current === null) return;
-	pending = null;
-	current.resolve(choice);
+	queue.resolve(choice);
 }
 
 // "Allow for this session" memory. In-memory only — re-prompts on app restart.

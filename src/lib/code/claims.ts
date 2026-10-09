@@ -16,6 +16,8 @@ export const CLAIMS_EVENT = 'code://claims';
 /** What a window hands the next owner when a session moves. */
 export interface Handoff {
 	watches: CodeBgWatch[];
+	/** The user chose "Allow for this session" for its commands. */
+	approved?: boolean;
 	/** What was typed in the input box and not sent, images included. */
 	draft?: Prefill | null;
 }
@@ -49,6 +51,7 @@ function parseHandoff(raw: string | null): Handoff | null {
 		const parsed = JSON.parse(raw) as Partial<Handoff>;
 		return {
 			watches: Array.isArray(parsed.watches) ? parsed.watches : [],
+			...(parsed.approved === true ? { approved: true } : {}),
 			draft: parseDraft(parsed.draft)
 		};
 	} catch {

@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { isAbortError } from '#lib/utils/error.ts';
 import { labelArg, toolInvokeError, wslDistroArg } from './_helpers';
 import { registerTool } from './registry';
-import { toolError, toolResult } from './types';
+import { noteCommandRan, toolError, toolResult } from './types';
 import type { ToolContext, ToolExecOutput } from './types';
 import { getSettings } from '#lib/stores/settings.ts';
 import { classifyShellRisk, type RiskMatch } from '#lib/shell/risky-commands.ts';
@@ -75,7 +75,8 @@ export async function checkCommandBoundary(
 		description
 	}));
 	return askAboutCommand(command, [...boundaryReasons, ...(extra.matched ? extra.reasons : [])], {
-		sessionKey: null
+		sessionKey: null,
+		ctx
 	});
 }
 
@@ -98,7 +99,8 @@ async function ensureCommandApproved(
 	if (ctx.codeReadOnly) {
 		const risk = classifyShellRisk(command);
 		return askAboutCommand(command, [READ_ONLY_REASON, ...(risk.matched ? risk.reasons : [])], {
-			sessionKey: null
+			sessionKey: null,
+			ctx
 		});
 	}
 	if (ctx.codeAutoApprove || isSessionApproved(approvalKey(ctx))) return 'ok';
@@ -126,7 +128,7 @@ async function ensureCommandApproved(
 			)
 		};
 	}
-	return askAboutCommand(command, risk.reasons, { sessionKey: approvalKey(ctx) });
+	return askAboutCommand(command, risk.reasons, { sessionKey: approvalKey(ctx), ctx });
 }
 
 /** Why a read-only session's command is asked about. */
@@ -138,16 +140,18 @@ const READ_ONLY_REASON: RiskMatch = {
 /**
  * The approval modal. A boundary reason is never approvable for the session:
  * "allow everything risky for now" was given for an `rm`, not for reading
- * Haruspex's database.
+ * Haruspex's database. The prompt names who is asking, and waits behind any
+ * other session's; stopping the turn withdraws it.
  */
 async function askAboutCommand(
 	command: string,
 	reasons: RiskMatch[],
-	opts: { sessionKey: string | null }
+	opts: { sessionKey: string | null; ctx: ToolContext }
 ): Promise<'ok' | { message: string }> {
+	const requester = opts.ctx.requester?.() || null;
 	let choice;
 	try {
-		choice = await askCommandApproval({ command, reasons });
+		choice = await askCommandApproval({ command, reasons, requester, signal: opts.ctx.signal });
 	} catch (e) {
 		return { message: toolInvokeError('run_command approval', e) };
 	}
@@ -295,6 +299,7 @@ registerTool({
 				return toolResult(await runInPty(ctx.shellSessionId, command, timeoutSecs, ctx.signal));
 			}
 			const res = await runHostCommand(command, root, timeoutSecs, ctx.signal);
+			noteCommandRan(ctx);
 			const out = await formatRunResult(res);
 			// The Code tab can hand the command to a Shell tab; elsewhere the user runs it.
 			const hint = ttyHintFor(res, { openInShell: !ctx.shellMode && !!ctx.codeSessionId });

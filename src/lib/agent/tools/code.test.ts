@@ -1003,6 +1003,22 @@ describe('run_command without a terminal (Code session)', () => {
 	});
 });
 
+describe('run_command approval prompt', () => {
+	it('names the asking session and passes the turn signal', async () => {
+		mocks.askCommandApproval.mockResolvedValue('allow_once');
+		const stop = new AbortController();
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		await executeTool(
+			'run_command',
+			{ command: 'rm -rf build' },
+			{ ...codeCtx, codeSessionId: 's1', requester: () => 'Code · Fix login', signal: stop.signal }
+		);
+		expect(mocks.askCommandApproval).toHaveBeenCalledWith(
+			expect.objectContaining({ requester: 'Code · Fix login', signal: stop.signal })
+		);
+	});
+});
+
 describe('run_command in a read-only session', () => {
 	const readOnly = { ...codeCtx, codeSessionId: 's1', codeReadOnly: true, interactive: true };
 

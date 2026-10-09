@@ -87,6 +87,13 @@ export interface ToolContext {
 	deepResearch: boolean;
 	filesWrittenThisTurn: Set<string>;
 	/**
+	 * Files written this turn that a command has run since (a Code session's
+	 * `run_command`). A second full write to one of them is a rewrite after a
+	 * test, not a chunked write losing its start, so a Code session allows it.
+	 * Absent outside the agent loop, where nothing is rewritable.
+	 */
+	filesRewritableThisTurn?: Set<string>;
+	/**
 	 * True when the agent is invoked from the Shell tab. fs_read_* tools
 	 * dispatch to absolute-path Rust commands and the workingDir
 	 * requirement is waived. Defaults to false everywhere else.
@@ -183,6 +190,12 @@ export interface ToolContext {
 	 */
 	codeSessionId?: string;
 	/**
+	 * Who is asking, named in an approval prompt so the user can tell two
+	 * sessions' prompts apart: a Code session's title, a Shell tab's name.
+	 * Read when the prompt opens, since a new session is named mid-turn.
+	 */
+	requester?: () => string;
+	/**
 	 * The Code session may read, not write: no file writes or edits, every
 	 * `run_command` asks, and nothing runs in the background.
 	 */
@@ -263,4 +276,14 @@ export function fetchResult(s: string, heroImage?: string): ToolExecOutput {
 /** Format a tool error as the JSON string the model expects. */
 export function toolError(msg: string): string {
 	return JSON.stringify({ error: msg });
+}
+
+/**
+ * A command ran: in a Code session, every file written so far this turn may
+ * now be written whole again (`ToolContext.filesRewritableThisTurn`) — the
+ * agent tested it and is fixing it, not writing it in pieces.
+ */
+export function noteCommandRan(ctx: ToolContext): void {
+	if (!ctx.codeSessionId || !ctx.filesRewritableThisTurn) return;
+	for (const path of ctx.filesWrittenThisTurn) ctx.filesRewritableThisTurn.add(path);
 }

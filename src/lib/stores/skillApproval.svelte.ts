@@ -9,7 +9,11 @@
  * it into saving one. The user can edit the text first; the modal saves
  * through `save` and stays open when that fails, so a mistake in an edit is
  * shown to the user rather than handed to the model.
+ *
+ * Prompts queue (`approvalQueue.svelte.ts`), one shown at a time.
  */
+
+import { createApprovalQueue } from './approvalQueue.svelte.ts';
 
 export interface SkillApprovalRequest {
 	/** A skill, or the repo's AGENTS.md (`write_agents_md`). */
@@ -31,43 +35,26 @@ export type SkillApprovalResult =
 	| { kind: 'saved'; edited: boolean }
 	| { kind: 'rejected'; reason: string };
 
-interface Pending extends SkillApprovalRequest {
-	resolve: (result: SkillApprovalResult) => void;
-}
+const queue = createApprovalQueue<SkillApprovalRequest, SkillApprovalResult>();
 
-// Raw, so the abort handler can tell its own entry by identity.
-let pending = $state.raw<Pending | null>(null);
-
+/**
+ * Ask about a skill write. Waits behind any prompt already showing (a Chat
+ * and a Shell turn can both ask); stopping the turn withdraws it.
+ */
 export function askSkillApproval(
 	request: SkillApprovalRequest,
 	signal?: AbortSignal
 ): Promise<SkillApprovalResult> {
-	if (pending !== null) {
-		return Promise.reject(new Error('A skill approval prompt is already pending.'));
-	}
-	return new Promise((resolve) => {
-		if (signal?.aborted) return resolve({ kind: 'rejected', reason: 'The turn was stopped.' });
-		const entry: Pending = { ...request, resolve };
-		pending = entry;
-		// Stopping the turn closes the prompt rather than leaving it for nobody.
-		signal?.addEventListener(
-			'abort',
-			() => {
-				if (pending === entry)
-					resolveSkillApproval({ kind: 'rejected', reason: 'The turn was stopped.' });
-			},
-			{ once: true }
-		);
+	return queue.ask(request, {
+		signal,
+		abortResult: { kind: 'rejected', reason: 'The turn was stopped.' }
 	});
 }
 
 export function getPendingSkillApproval(): SkillApprovalRequest | null {
-	return pending;
+	return queue.current();
 }
 
 export function resolveSkillApproval(result: SkillApprovalResult): void {
-	const current = pending;
-	if (current === null) return;
-	pending = null;
-	current.resolve(result);
+	queue.resolve(result);
 }

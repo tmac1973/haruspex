@@ -28,6 +28,20 @@ const HOW_TO_WORK = `HOW TO WORK:
 const UNIX_CAPTURE_NOTE =
 	'Prefer non-interactive flags (e.g. --no-pager, CI=1); avoid full-screen TUIs/pagers (less, vim, top) — they capture poorly.';
 
+/**
+ * macOS runs commands with its system bash, 3.2, which predates bash 4. Named
+ * in the prompt there only, since elsewhere the features work.
+ */
+const MAC_BASH_NOTE =
+	"Commands run in macOS's bash 3.2: avoid bash-4 features — associative arrays (declare -A), ${var,,} / ${var^^}, mapfile / readarray, |& and globstar (**). Use tr, while-read loops and 2>&1 | instead.";
+
+/** True on macOS. The platform comes from the user agent, as `codeTabAvailable` reads it. */
+export function isMacOS(
+	userAgent = (typeof navigator !== 'undefined' && navigator.userAgent) || ''
+): boolean {
+	return /Macintosh|Mac OS X/i.test(userAgent);
+}
+
 /** Offered only with an image backend (the registry's gate), so only named then. */
 function assetLine(): string {
 	return getSettings().imageBackendKind !== 'none'
@@ -53,6 +67,8 @@ export interface BuildCodePromptOpts {
 	readOnly?: boolean;
 	/** The folder is a fresh git worktree made for this session (a fork). */
 	worktree?: { branch: string | null };
+	/** Running on macOS (bash 3.2). Defaults to the user agent's platform. */
+	macOS?: boolean;
 }
 
 const WRITE_TOOL_LINE = /^- fs_(write|edit)_text /;
@@ -94,7 +110,7 @@ ${GUIDE_PROMPT}
 SESSION:
 Project folder: ${opts.root}${sessionNotes(opts)}
 
-Commands you run with run_command execute one at a time in the project folder, without a terminal: nothing can be typed into them, and a \`cd\` or an exported variable does not carry over to the next call, so chain with && when needed. Paths for file tools are relative to the project folder. The project folder is your boundary: a command that reaches outside it needs the user's approval.
+Commands you run with run_command execute one at a time in the project folder, without a terminal: nothing can be typed into them, and a \`cd\` or an exported variable does not carry over to the next call, so chain with && when needed. Paths for file tools are relative to the project folder. The project folder is your boundary: a command that reaches outside it needs the user's approval.${(opts.macOS ?? isMacOS()) ? ` ${MAC_BASH_NOTE}` : ''}
 
 TOOLS:
 ${fileTools(opts.readOnly)}

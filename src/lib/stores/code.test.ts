@@ -859,6 +859,34 @@ describe('one window per session', () => {
 		expect(mocks.watchHandlers.has(again!.id)).toBe(true);
 	});
 
+	it('carries "allow for this session" to the window that opens it next', async () => {
+		const s = await newSession('/proj');
+		approveSession(codeApprovalKey(s.id));
+		expect(await handOffSession(s.id)).toBe(true);
+		expect(JSON.parse(db.handoffs.get(s.id)!)).toEqual({
+			watches: [],
+			draft: null,
+			approved: true
+		});
+		// Gone from the window it left.
+		expect(isSessionApproved(codeApprovalKey(s.id))).toBe(false);
+		await openSession(s.id);
+		expect(isSessionApproved(codeApprovalKey(s.id))).toBe(true);
+
+		// Closing the tab, unlike moving it, ends the approval.
+		await closeSession(s.id);
+		await openSession(s.id);
+		expect(isSessionApproved(codeApprovalKey(s.id))).toBe(false);
+	});
+
+	it('hands off no approval the user never gave', async () => {
+		const s = await newSession('/proj');
+		await handOffSession(s.id);
+		expect(JSON.parse(db.handoffs.get(s.id)!)).toEqual({ watches: [], draft: null });
+		await openSession(s.id);
+		expect(isSessionApproved(codeApprovalKey(s.id))).toBe(false);
+	});
+
 	it('delivers a watch that finished during the move once the session is open again', async () => {
 		const s = await newSession('/proj');
 		const done = {

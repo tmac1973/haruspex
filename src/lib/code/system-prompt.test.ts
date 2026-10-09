@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildCodeSystemPrompt } from '#lib/code/system-prompt.ts';
+import { buildCodeSystemPrompt, isMacOS } from '#lib/code/system-prompt.ts';
 
 const tab = (over: Partial<Parameters<typeof buildCodeSystemPrompt>[0]> = {}) =>
 	String(buildCodeSystemPrompt({ root: '/proj', ...over }).content);
@@ -19,6 +19,29 @@ describe('Code tab prompt', () => {
 		expect(text).toContain('fresh git worktree on branch fix-login-fork');
 		expect(text).toContain('node_modules');
 		expect(text).toContain('set up dependencies');
+	});
+
+	it('steers away from bash-4 features on macOS only', () => {
+		const mac = tab({ macOS: true });
+		expect(mac).toContain('bash 3.2');
+		expect(mac).toContain('declare -A');
+		expect(mac).toContain('mapfile');
+		expect(mac).toContain('|&');
+		expect(tab({ macOS: false })).not.toContain('bash 3.2');
+		// jsdom's user agent is Linux.
+		expect(tab()).not.toContain('bash 3.2');
+	});
+
+	it('reads macOS from the user agent', () => {
+		expect(
+			isMacOS(
+				'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)'
+			)
+		).toBe(true);
+		expect(
+			isMacOS('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko)')
+		).toBe(false);
+		expect(isMacOS('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')).toBe(false);
 	});
 
 	it('names the project folder and the background tools', () => {

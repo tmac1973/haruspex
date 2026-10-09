@@ -22,7 +22,12 @@ import type { AgentStopReason, SearchStep } from '#lib/agent/loop.ts';
 import { markStepDone, markStepProgress } from '#lib/agent/steps.ts';
 import { describeContextManaged } from '#lib/agent/context-budget.ts';
 import { computeMessageStats, type MessageStats } from '#lib/stores/chat.svelte.ts';
-import { codeApprovalKey, resetSessionApproval } from '#lib/stores/codeCommandApproval.svelte.ts';
+import {
+	approveSession,
+	codeApprovalKey,
+	isSessionApproved,
+	resetSessionApproval
+} from '#lib/stores/codeCommandApproval.svelte.ts';
 import { renderSlashMessage, typedText } from '#lib/skills/content.ts';
 import {
 	adoptCodeWatches,
@@ -550,6 +555,7 @@ export class CodeSession {
 			const result = await runCodeTurn({
 				sessionId: this.id,
 				root: this.root,
+				title: () => this.title,
 				thread: $state.snapshot(this.messages) as ChatMessage[],
 				backend: this.backend ? ($state.snapshot(this.backend) as BackendOverride) : null,
 				effort: this.effort,
@@ -847,6 +853,8 @@ export async function openSession(id: string): Promise<CodeSession | null> {
 	// Watches the last window followed come here, and anything that finished
 	// meanwhile is delivered once the session is set up.
 	if (claim.handoff) adoptCodeWatches(claim.handoff.watches);
+	// "Allow for this session" moves with the session (9b).
+	if (claim.handoff?.approved) approveSession(codeApprovalKey(id));
 	const session = adopt(new CodeSession(record));
 	// What was typed in the last window and not sent comes along.
 	if (claim.handoff?.draft) session.prefill = claim.handoff.draft;
@@ -931,8 +939,10 @@ export async function handOffSession(id: string): Promise<boolean> {
 	sessions.splice(idx, 1);
 	if (activeId === id) activeId = (sessions[idx] ?? sessions[idx - 1] ?? null)?.id ?? null;
 	const watches = takeCodeWatches(id);
+	// Read before dispose, which resets it.
+	const approved = isSessionApproved(codeApprovalKey(id));
 	await session.dispose();
-	await releaseSession(id, { watches, draft });
+	await releaseSession(id, { watches, draft, ...(approved ? { approved } : {}) });
 	return true;
 }
 
