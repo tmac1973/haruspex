@@ -257,3 +257,17 @@ describe('backgroundWatch with a code_bg source', () => {
 		expect(peekCompletedCodeWatches('sess-a')).toHaveLength(1);
 	});
 });
+
+describe('isWatchNotification', () => {
+	it('knows a notice from typed text', async () => {
+		const { isWatchNotification, watchNotificationCommands } = await import('./backgroundWatch');
+		const one =
+			'A background command you started with watch has finished.\n\n$ make test\nexit code: 1';
+		expect(isWatchNotification(one)).toBe(true);
+		expect(isWatchNotification('2 background commands you started with watch have finished.')).toBe(
+			true
+		);
+		expect(isWatchNotification('A background command finished, what now?')).toBe(false);
+		expect(watchNotificationCommands(one)).toEqual(['make test']);
+	});
+});
