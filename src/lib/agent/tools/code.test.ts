@@ -1002,3 +1002,130 @@ describe('run_command without a terminal (Code session)', () => {
 		expect(mocks.invoke).not.toHaveBeenCalledWith('code_bg_stop', expect.anything());
 	});
 });
+
+describe('run_command in a read-only session', () => {
+	const readOnly = { ...codeCtx, codeSessionId: 's1', codeReadOnly: true, interactive: true };
+
+	it('asks about every command, even with auto-approve and a session approval', async () => {
+		mocks.isSessionApproved.mockReturnValue(true);
+		mocks.askCommandApproval.mockResolvedValue('allow_session');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		await executeTool('run_command', { command: 'ls' }, { ...readOnly, codeAutoApprove: true });
+		expect(mocks.askCommandApproval).toHaveBeenCalledWith(
+			expect.objectContaining({
+				command: 'ls',
+				reasons: [expect.objectContaining({ label: 'read-only session' })]
+			})
+		);
+		// "For this session" is not remembered for a read-only session.
+		expect(mocks.approveSession).not.toHaveBeenCalled();
+		expect(mocks.invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
+	});
+
+	it('runs nothing the user denies', async () => {
+		mocks.askCommandApproval.mockResolvedValue('deny');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const out = await executeTool('run_command', { command: 'ls' }, readOnly);
+		expect(out.result).toContain('denied');
+		expect(mocks.invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
+	});
+
+	it('refuses background commands without asking', async () => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const out = await executeTool(
+			'run_command',
+			{ command: 'npm run dev', background: true },
+			readOnly
+		);
+		expect(out.result).toContain('not available in a read-only session');
+		expect(mocks.askCommandApproval).not.toHaveBeenCalled();
+	});
+
+	it('refuses writes and edits, offered or not', async () => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		for (const [name, args] of [
+			['fs_write_text', { path: 'a.txt', content: 'x' }],
+			['fs_edit_text', { path: 'a.txt', old_str: 'a', new_str: 'b' }]
+		] as const) {
+			const out = await executeTool(name, args, readOnly);
+			expect(out.result).toContain('read-only');
+		}
+		expect(mocks.invoke).not.toHaveBeenCalledWith('fs_edit_text', expect.anything());
+	});
+});
+
+describe('one writer per folder', () => {
+	function guard(refusal: string | null = null) {
+		return { acquire: vi.fn(async () => refusal), changed: vi.fn() };
+	}
+
+	it('a command that may write takes the folder first; a reading one does not', async () => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const g = guard();
+		await executeTool(
+			'run_command',
+			{ command: 'git status && ls' },
+			{ ...codeCtx, codeWriteGuard: g }
+		);
+		expect(g.acquire).not.toHaveBeenCalled();
+		await executeTool('run_command', { command: 'npm install' }, { ...codeCtx, codeWriteGuard: g });
+		expect(g.acquire).toHaveBeenCalledTimes(1);
+	});
+
+	it('a command is refused while another session writes there', async () => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const g = guard('Another session (X) is editing this folder right now.');
+		const out = await executeTool(
+			'run_command',
+			{ command: 'npm test' },
+			{ ...codeCtx, codeWriteGuard: g }
+		);
+		expect(out.result).toContain('Another session (X)');
+		expect(mocks.invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
+	});
+
+	it('an edit takes the folder and reports the file it changed', async () => {
+		mocks.invoke.mockImplementation((cmd: string) =>
+			cmd === 'fs_edit_text'
+				? Promise.resolve({ first_changed_line: 3, used_fuzzy: false })
+				: Promise.resolve()
+		);
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const g = guard();
+		const out = await executeTool(
+			'fs_edit_text',
+			{ path: 'src/a.ts', old_str: 'a', new_str: 'b' },
+			{ ...codeCtx, codeSessionId: 's1', codeWriteGuard: g }
+		);
+		expect(out.result).toMatch(/^Edited src\/a\.ts/);
+		expect(g.acquire).toHaveBeenCalled();
+		expect(g.changed).toHaveBeenCalledWith(['src/a.ts']);
+	});
+
+	it('a refused write never reaches the disk', async () => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const g = guard('busy');
+		const out = await executeTool(
+			'fs_write_text',
+			{ path: 'a.txt', content: 'x' },
+			{ ...codeCtx, codeSessionId: 's1', codeWriteGuard: g }
+		);
+		expect(out.result).toContain('busy');
+		expect(g.changed).not.toHaveBeenCalled();
+		expect(mocks.invoke).not.toHaveBeenCalledWith('fs_write_text', expect.anything());
+	});
+
+	it('a failed edit reports nothing changed', async () => {
+		mocks.invoke.mockImplementation((cmd: string) =>
+			cmd === 'fs_edit_text' ? Promise.reject('no match') : Promise.resolve()
+		);
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const g = guard();
+		await executeTool(
+			'fs_edit_text',
+			{ path: 'a.ts', old_str: 'a', new_str: 'b' },
+			{ ...codeCtx, codeSessionId: 's1', codeWriteGuard: g }
+		);
+		expect(g.changed).toHaveBeenCalledWith([]);
+	});
+});

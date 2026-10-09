@@ -37,7 +37,10 @@ function fakeSession(over: Partial<Record<string, unknown>> = {}): CodeSession {
 		lastError: null,
 		saveError: null,
 		contextNotice: null,
+		git: null,
+		fileNotes: [],
 		continueTurn: vi.fn(),
+		refreshGit: vi.fn(async () => {}),
 		...over
 	} as unknown as CodeSession;
 }
@@ -332,6 +335,15 @@ describe('CodeTranscript paths', () => {
 	});
 });
 
+const repo = {
+	repo_root: '/p/app',
+	branch: 'main',
+	head: 'abc1234',
+	changed: 0,
+	untracked: 0,
+	linked_worktree: false
+};
+
 describe('CodeTranscript fork', () => {
 	it('offers Fork from here on user and assistant messages, with the thread index', async () => {
 		const messages: ChatMessage[] = [
@@ -346,15 +358,37 @@ describe('CodeTranscript fork', () => {
 			{ role: 'tool', tool_call_id: 'c1', content: 'a.ts:1' },
 			{ role: 'assistant', content: 'In a.ts.' }
 		];
-		const session = fakeSession({ messages });
+		const session = fakeSession({ messages, git: repo });
 		render(CodeTranscript, { session });
 		const buttons = screen.getAllByRole('button', { name: 'Fork from here' });
 		// The tool call and its result have none.
 		expect(buttons).toHaveLength(2);
 		await fireEvent.click(buttons[0]);
-		expect(forkFromMessage).toHaveBeenLastCalledWith(session, 0);
+		await fireEvent.click(await screen.findByRole('button', { name: /New worktree/ }));
+		expect(forkFromMessage).toHaveBeenLastCalledWith(session, 0, 'worktree');
 		await fireEvent.click(buttons[1]);
-		expect(forkFromMessage).toHaveBeenLastCalledWith(session, 3);
+		await fireEvent.click(await screen.findByRole('button', { name: /Same folder, read-only/ }));
+		expect(forkFromMessage).toHaveBeenLastCalledWith(session, 3, 'readOnly');
+	});
+
+	it('outside a git repository, forks read-only and says why', async () => {
+		forkFromMessage.mockClear();
+		const session = fakeSession({ messages: thread(1) });
+		render(CodeTranscript, { session });
+		await fireEvent.click(screen.getAllByRole('button', { name: 'Fork from here' })[0]);
+		expect(await screen.findByText(/isn't in a git repository/)).toBeTruthy();
+		expect(screen.queryByRole('button', { name: /New worktree/ })).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Fork read-only' }));
+		expect(forkFromMessage).toHaveBeenLastCalledWith(session, 0, 'readOnly');
+	});
+
+	it('cancelling the dialog forks nothing', async () => {
+		forkFromMessage.mockClear();
+		const session = fakeSession({ messages: thread(1), git: repo });
+		render(CodeTranscript, { session });
+		await fireEvent.click(screen.getAllByRole('button', { name: 'Fork from here' })[0]);
+		await fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+		expect(forkFromMessage).not.toHaveBeenCalled();
 	});
 
 	it('says to wait while a turn runs, and does nothing', async () => {

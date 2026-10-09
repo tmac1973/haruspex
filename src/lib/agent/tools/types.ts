@@ -183,6 +183,17 @@ export interface ToolContext {
 	 */
 	codeSessionId?: string;
 	/**
+	 * The Code session may read, not write: no file writes or edits, every
+	 * `run_command` asks, and nothing runs in the background.
+	 */
+	codeReadOnly?: boolean;
+	/**
+	 * One writer per folder, for a Code session (`#lib/code/folders.ts`).
+	 * Writes and edits, and commands that may change files, take the folder
+	 * first; successful writes and edits report the files they changed.
+	 */
+	codeWriteGuard?: CodeWriteGuard;
+	/**
 	 * Optional progress channel for long-running tools. The agent loop
 	 * wires this to the currently-running tool card so a tool can surface
 	 * transient status (e.g. run_python reporting "Installing plotly…"
@@ -190,6 +201,17 @@ export interface ToolContext {
 	 * finishes. No-op if the caller doesn't provide it.
 	 */
 	onProgress?: (status: string) => void;
+}
+
+/** A Code session's turn sharing its folder with other sessions. */
+export interface CodeWriteGuard {
+	/**
+	 * Take the folder for writing. Null when this session has it (it keeps
+	 * it until the turn ends); otherwise the refusal to give the model.
+	 */
+	acquire(): Promise<string | null>;
+	/** Files a write or edit changed, relative to the folder or absolute. */
+	changed(paths: string[]): void;
 }
 
 /**

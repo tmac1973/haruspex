@@ -168,6 +168,8 @@ export interface LoopContext {
 	shellCwd: string | null;
 	shellSessionId: number | null;
 	codeSessionId?: string;
+	codeReadOnly: boolean;
+	codeWriteGuard?: ToolContext['codeWriteGuard'];
 	expectsFileOutput: boolean;
 	pendingImages: PendingImage[];
 	filesWrittenThisTurn: Set<string>;
@@ -258,6 +260,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 			visionSupported: options.visionSupported ?? true,
 			shellMode,
 			codeMode,
+			codeReadOnly: options.codeReadOnly ?? false,
 			interactive: options.interactive ?? false,
 			// The forced final tool is always offered. A stage once listed its
 			// read tools but not its submit tool: the model, correctly, never
@@ -297,6 +300,8 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		shellCwd: options.shellCwd ?? null,
 		shellSessionId: options.shellSessionId ?? null,
 		codeSessionId: options.codeSessionId,
+		codeReadOnly: options.codeReadOnly ?? false,
+		codeWriteGuard: options.codeWriteGuard,
 		expectsFileOutput,
 		pendingImages: [],
 		filesWrittenThisTurn: new Set(),
@@ -1670,6 +1675,8 @@ async function executeToolCalls(
 				shellCwd: ctx.shellCwd,
 				shellSessionId: ctx.shellSessionId,
 				codeSessionId: ctx.codeSessionId,
+				codeReadOnly: ctx.codeReadOnly,
+				codeWriteGuard: ctx.codeWriteGuard,
 				filesWrittenThisTurn: ctx.filesWrittenThisTurn,
 				onProgress: (status: string) => options.onToolProgress?.(call, status)
 			}),

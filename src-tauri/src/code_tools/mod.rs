@@ -11,6 +11,8 @@
 
 pub mod background;
 pub mod claims;
+pub mod folders;
+pub mod git;
 pub mod search;
 
 use crate::command_scope;

@@ -113,8 +113,12 @@ describe('code session wrappers', () => {
 		expect(mocks.invoke).toHaveBeenLastCalledWith('code_session_delete', { id: 's1' });
 
 		mocks.invoke.mockResolvedValueOnce(row({ id: 's2', forked_from: 's1', forked_at: 3 }));
-		const fork = await forkCodeSession('s1', 3);
-		expect(mocks.invoke).toHaveBeenLastCalledWith('code_session_fork', { id: 's1', at: 3 });
+		const fork = await forkCodeSession('s1', 3, 'worktree');
+		expect(mocks.invoke).toHaveBeenLastCalledWith('code_session_fork', {
+			id: 's1',
+			at: 3,
+			mode: 'worktree'
+		});
 		expect(fork.forked_from).toBe('s1');
 	});
 

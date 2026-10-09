@@ -1,6 +1,7 @@
 <script lang="ts">
 	/**
-	 * One session's header: its folder, model (see CodeModelPicker) and reasoning effort, the
+	 * One session's header: its folder and git branch, whether it is
+	 * read-only, its model (see CodeModelPicker) and reasoning effort, the
 	 * repo's AGENTS.md, how full the context is, and its background processes.
 	 */
 	import { invoke } from '@tauri-apps/api/core';
@@ -8,6 +9,7 @@
 	import ContextGauge from '#lib/components/ContextGauge.svelte';
 	import BackgroundChip from './BackgroundChip.svelte';
 	import CodeModelPicker from './CodeModelPicker.svelte';
+	import CodeBranchControl from './CodeBranchControl.svelte';
 	import { folderName } from '#lib/code/sessionList.ts';
 	import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 	import type { CodeSession } from '#lib/stores/code.svelte.ts';
@@ -72,6 +74,17 @@
 		>
 		<span>{folderName(session.root)}</span>
 	</button>
+
+	<CodeBranchControl {session} />
+
+	{#if session.readOnly}
+		<span
+			class="read-only"
+			data-testid="read-only-badge"
+			title="This fork shares its folder with the session it came from, so it only reads: it can't write or edit files, every command asks first, and nothing runs in the background. Fork into a new worktree to make changes."
+			>Read-only</span
+		>
+	{/if}
 
 	<CodeModelPicker {session} />
 
@@ -145,6 +158,16 @@
 
 	.folder svg {
 		color: var(--accent);
+	}
+
+	.read-only {
+		padding: 2px 7px;
+		font-size: 0.7rem;
+		font-weight: 600;
+		border: 1px solid var(--border-strong);
+		border-radius: 999px;
+		color: var(--text-secondary);
+		cursor: default;
 	}
 
 	.pick {

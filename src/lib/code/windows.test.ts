@@ -123,8 +123,8 @@ describe('code windows', () => {
 
 	it('forks into a sub-tab here in the main window', async () => {
 		const a = api();
-		await forkFromMessage(session(), 3, a);
-		expect(store.forkAndOpen).toHaveBeenCalledWith('s1', 3);
+		await forkFromMessage(session(), 3, 'worktree', a);
+		expect(store.forkAndOpen).toHaveBeenCalledWith('s1', 3, 'worktree');
 		expect(a.emitToMain).not.toHaveBeenCalled();
 	});
 
@@ -138,9 +138,9 @@ describe('code windows', () => {
 	it('sends a fork made in a detached window to the main window', async () => {
 		const a = api();
 		markDetachedCodeWindow();
-		await forkFromMessage(session(), 2, a);
+		await forkFromMessage(session(), 2, 'readOnly', a);
 		expect(store.forkAndOpen).not.toHaveBeenCalled();
-		expect(store.forkSession).toHaveBeenCalledWith('s1', 2);
+		expect(store.forkSession).toHaveBeenCalledWith('s1', 2, 'readOnly');
 		expect(a.emitToMain).toHaveBeenCalledWith(REATTACH_EVENT, {
 			id: 'fork-1',
 			prefill: { text: 'edit me', images: [] }

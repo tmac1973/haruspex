@@ -43,6 +43,9 @@ pub struct CodeSessionSummary {
     #[ts(type = "number")]
     pub updated_at: i64,
     pub forked_from: Option<String>,
+    pub read_only: bool,
+    /// The git worktree Haruspex made for this session (a fork), if any.
+    pub worktree: Option<String>,
 }
 
 /// A full session row.
@@ -68,6 +71,11 @@ pub struct CodeSessionRow {
     pub created_at: i64,
     #[ts(type = "number")]
     pub updated_at: i64,
+    /// May read and search, not write: a fork that shares its source's folder.
+    pub read_only: bool,
+    /// The top folder of the git worktree Haruspex made for this session (a
+    /// worktree fork). Deleting the session offers to remove it.
+    pub worktree: Option<String>,
 }
 
 /// A header edit. Each field is three-state: absent leaves the column alone,
@@ -95,7 +103,7 @@ where
 }
 
 const ROW_COLUMNS: &str = "id, title, root, backend, reasoning_effort, thread, \
-     forked_from, forked_at, created_at, updated_at";
+     forked_from, forked_at, created_at, updated_at, read_only, worktree";
 
 fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CodeSessionRow> {
     Ok(CodeSessionRow {
@@ -109,6 +117,8 @@ fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CodeSessionRow> {
         forked_at: row.get(7)?,
         created_at: row.get(8)?,
         updated_at: row.get(9)?,
+        read_only: row.get(10)?,
+        worktree: row.get(11)?,
     })
 }
 
@@ -192,7 +202,7 @@ pub fn fork_thread(thread: &str, at: usize) -> Result<String, String> {
 }
 
 /// `"<title> (fork)"`, without a leading space for a session not yet named.
-fn fork_title(title: &str) -> String {
+pub fn fork_title(title: &str) -> String {
     if title.is_empty() {
         "(fork)".to_string()
     } else {
@@ -206,7 +216,7 @@ impl Database {
         let conn = self.conn();
         let mut stmt = conn
             .prepare(
-                "SELECT id, title, root, updated_at, forked_from
+                "SELECT id, title, root, updated_at, forked_from, read_only, worktree
                  FROM code_sessions ORDER BY updated_at DESC, id",
             )
             .map_err(|e| format!("Code session list failed: {e}"))?;
@@ -218,6 +228,8 @@ impl Database {
                     root: row.get(2)?,
                     updated_at: row.get(3)?,
                     forked_from: row.get(4)?,
+                    read_only: row.get(5)?,
+                    worktree: row.get(6)?,
                 })
             })
             .map_err(|e| format!("Code session list failed: {e}"))?;
@@ -254,6 +266,8 @@ impl Database {
             forked_at: None,
             created_at: now,
             updated_at: now,
+            read_only: false,
+            worktree: None,
         };
         self.insert_code_session(&row)?;
         Ok(row)
@@ -264,7 +278,7 @@ impl Database {
         conn.execute(
             &format!(
                 "INSERT INTO code_sessions ({ROW_COLUMNS})
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"
             ),
             params![
                 row.id,
@@ -276,7 +290,9 @@ impl Database {
                 row.forked_from,
                 row.forked_at,
                 row.created_at,
-                row.updated_at
+                row.updated_at,
+                row.read_only,
+                row.worktree
             ],
         )
         .map_err(|e| format!("Code session create failed: {e}"))?;
@@ -358,16 +374,32 @@ impl Database {
         Ok(())
     }
 
-    /// A new session holding messages `[0, at)` of `id`, with the same root,
-    /// backend and effort. `forked_from` is not a foreign key: the source may
-    /// be deleted later and the fork stands on its own.
+    /// A read-only session holding messages `[0, at)` of `id`, in the same
+    /// folder, with the same backend and effort. `forked_from` is not a
+    /// foreign key: the source may be deleted later and the fork stands on
+    /// its own.
     pub fn fork_code_session(&self, id: &str, at: usize) -> Result<CodeSessionRow, String> {
+        self.fork_code_session_into(id, at, None)
+    }
+
+    /// A fork, as [`Self::fork_code_session`]; with `into` = `(root,
+    /// worktree)`, a writable one rooted in the worktree made for it.
+    pub fn fork_code_session_into(
+        &self,
+        id: &str,
+        at: usize,
+        into: Option<(&str, &str)>,
+    ) -> Result<CodeSessionRow, String> {
         let source = self.load_code_session(id)?;
         let now = chrono_now();
+        let (root, read_only, worktree) = match into {
+            Some((root, worktree)) => (root.to_string(), false, Some(worktree.to_string())),
+            None => (source.root, true, None),
+        };
         let row = CodeSessionRow {
             id: new_session_id()?,
             title: fork_title(&source.title),
-            root: source.root,
+            root,
             backend: source.backend,
             reasoning_effort: source.reasoning_effort,
             thread: fork_thread(&source.thread, at)?,
@@ -375,6 +407,8 @@ impl Database {
             forked_at: Some(at as i64),
             created_at: now,
             updated_at: now,
+            read_only,
+            worktree,
         };
         self.insert_code_session(&row)?;
         Ok(row)

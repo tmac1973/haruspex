@@ -71,8 +71,12 @@ test('forking from a message opens a new session as a sub-tab', async ({ app }) 
 	});
 	await expect(app.getByRole('tab', { name: /Fix README typo/ })).toBeVisible();
 
+	// The project is a git repository, so the fork can have its own worktree.
+	await expect(app.getByRole('button', { name: /^Branch main/ })).toBeVisible();
+
 	// Forking the question: an empty fork with the question back in its box.
 	await transcript.getByRole('button', { name: 'Fork from here' }).first().click();
+	await app.getByRole('button', { name: /New worktree/ }).click();
 	const forkTab = app.getByRole('tab', { name: /Fix README typo \(fork\)/ });
 	await expect(forkTab).toHaveAttribute('aria-selected', 'true');
 	const forkInput = app.getByRole('textbox', { name: 'Message' }).locator('visible=true');
@@ -84,4 +88,65 @@ test('forking from a message opens a new session as a sub-tab', async ({ app }) 
 	const row = sidebar.getByRole('button', { name: 'Fix README typo (fork)' });
 	await expect(row.getByTestId('fork-glyph')).toBeVisible();
 	await expect(row).toHaveAttribute('title', /Forked from "Fix README typo"/);
+
+	// It works in a worktree beside the project, on a branch of its own.
+	await expect(
+		app.getByRole('button', { name: /^Branch fix-readme-typo-fork/ }).locator('visible=true')
+	).toBeVisible();
+	await expect(row).toHaveAttribute('title', /project-worktrees\/fix-readme-typo-fork/);
+	const fork = await app.evaluate(() =>
+		window.__e2e!.calls.find((c) => c.cmd === 'code_session_fork')
+	);
+	expect(fork?.args?.mode).toBe('worktree');
+});
+
+test('a read-only fork says so in its header', async ({ app }) => {
+	await useScenario('code-tab');
+	await app.getByRole('tab', { name: 'Code' }).click();
+	await app.getByRole('button', { name: 'New session' }).first().click();
+	await app.getByRole('button', { name: 'Start session' }).click();
+
+	const input = app.getByRole('textbox', { name: 'Message' });
+	await input.fill('fix the readme typo');
+	await input.press('Enter');
+	const transcript = app.getByTestId('code-transcript');
+	await expect(transcript.getByText('Fixed the typo in README.md.')).toBeVisible({
+		timeout: 15_000
+	});
+	await expect(app.getByTestId('read-only-badge')).toHaveCount(0);
+
+	await transcript.getByRole('button', { name: 'Fork from here' }).last().click();
+	await app.getByRole('button', { name: /Same folder, read-only/ }).click();
+	await expect(app.getByRole('tab', { name: /Fix README typo \(fork\)/ })).toHaveAttribute(
+		'aria-selected',
+		'true'
+	);
+	await expect(app.getByTestId('read-only-badge').locator('visible=true')).toBeVisible();
+});
+
+test('the branch control switches branch, and waits while there are changes', async ({ app }) => {
+	await app.getByRole('tab', { name: 'Code' }).click();
+	await app.getByRole('button', { name: 'New session' }).first().click();
+	await app.getByRole('button', { name: 'Start session' }).click();
+
+	await app.getByRole('button', { name: /^Branch main/ }).click();
+	const menu = app.getByTestId('branch-menu');
+	await menu.getByRole('menuitem', { name: 'feature' }).click();
+	await expect(app.getByRole('button', { name: /^Branch feature/ })).toBeVisible();
+
+	// Uncommitted changes: the ● shows, and switching says why it can't.
+	await app.evaluate(() =>
+		window.__e2e!.mock('code_git_status', {
+			repo_root: '/e2e/project',
+			branch: 'feature',
+			head: 'abc1234',
+			changed: 2,
+			untracked: 0,
+			linked_worktree: false
+		})
+	);
+	await app.getByRole('button', { name: /^Branch feature/ }).click();
+	await expect(app.getByTestId('dirty-marker')).toBeVisible();
+	await expect(menu).toContainText('commit or stash first');
+	await expect(menu.getByRole('menuitem', { name: 'main' })).toBeDisabled();
 });

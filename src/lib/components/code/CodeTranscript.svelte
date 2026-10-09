@@ -19,6 +19,8 @@
 	import StopIndicator from '#lib/components/StopIndicator.svelte';
 	import ThinkingIndicator from '#lib/components/ThinkingIndicator.svelte';
 	import CodeSteps from './CodeSteps.svelte';
+	import ForkDialog from './ForkDialog.svelte';
+	import type { CodeForkMode } from '#lib/ipc/gen/CodeForkMode.ts';
 	import { messageText } from '#lib/api.ts';
 	import { TURNS_PER_PAGE, turnsBefore, windowStart } from '#lib/code/sessionList.ts';
 	import type { CodeSession } from '#lib/stores/code.svelte.ts';
@@ -80,8 +82,10 @@
 
 	const ticket = $derived(session.ticket);
 
-	const notesAt = (i: number) => notes.filter((n) => n.at === i);
-	const trailingNotes = $derived(notes.filter((n) => n.at >= messages.length));
+	// The slash commands' notes, and what other sessions changed in the folder.
+	const allNotes = $derived([...notes, ...(session.fileNotes ?? [])]);
+	const notesAt = (i: number) => allNotes.filter((n) => n.at === i);
+	const trailingNotes = $derived(allNotes.filter((n) => n.at >= messages.length));
 
 	// Keep the newest output in view, but only while the reader is at the
 	// bottom: scrolling up to read stops the follow, and sending a message (or
@@ -106,7 +110,7 @@
 		void pending.length;
 		void session.searchSteps.length;
 		void session.steering.length;
-		void notes.length;
+		void allNotes.length;
 		if (!threadEl || !follow) return;
 		queueMicrotask(() => {
 			if (threadEl) threadEl.scrollTop = threadEl.scrollHeight;
@@ -133,10 +137,25 @@
 	/** Forks once the turn is over: the saved thread is then the one shown. */
 	const forkBlocked = $derived(session.busy ? 'Wait for the turn to finish, then fork.' : null);
 
+	/** The message "Fork from here" was pressed on; the dialog asks where. */
+	let forkAt = $state<number | null>(null);
+
 	function fork(index: number) {
-		forkFromMessage(session, index).catch((e: unknown) =>
-			showToast(`Couldn't fork: ${errMessage(e)}`, { kind: 'error' })
-		);
+		forkAt = index;
+		// The dialog offers a worktree only in a repository: look again.
+		void session.refreshGit();
+	}
+
+	async function forkTo(mode: CodeForkMode) {
+		const index = forkAt;
+		if (index === null) return;
+		try {
+			await forkFromMessage(session, index, mode);
+		} catch (e) {
+			showToast(`Couldn't fork: ${errMessage(e)}`, { kind: 'error' });
+		} finally {
+			forkAt = null;
+		}
 	}
 
 	function removePending(index: number) {
@@ -267,6 +286,13 @@
 		</div>
 	{/if}
 </div>
+
+<ForkDialog
+	open={forkAt !== null}
+	git={session.git}
+	onfork={forkTo}
+	oncancel={() => (forkAt = null)}
+/>
 
 <style>
 	.thread {

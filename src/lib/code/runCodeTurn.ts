@@ -24,6 +24,7 @@ import {
 import type { AgentsMd } from '#lib/ipc/gen/AgentsMd.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import type { Artifact } from '#lib/agent/tools/index.ts';
+import type { CodeWriteGuard } from '#lib/agent/tools/types.ts';
 import type { FileDiff } from './diff';
 import {
 	runAgentLoop,
@@ -54,6 +55,20 @@ export interface CodeTurnOptions {
 	backend: BackendOverride | null;
 	/** Null follows the global setting. */
 	effort: string | null;
+	/** May read, not write (`ToolContext.codeReadOnly`). */
+	readOnly?: boolean;
+	/** One writer per folder (`ToolContext.codeWriteGuard`). */
+	writeGuard?: CodeWriteGuard;
+	/**
+	 * The folder is a fresh worktree made for this session, on this branch
+	 * (null when unknown); the prompt says to set up dependencies.
+	 */
+	worktree?: { branch: string | null };
+	/**
+	 * A note for the model ahead of this turn's opening message (other
+	 * sessions' changes to the folder). Sent, not saved in the thread.
+	 */
+	notice?: string | null;
 	signal: AbortSignal;
 	/** Drains the session's steering queue (see `AgentLoopOptions.takeSteering`). */
 	takeSteering: () => string[];
@@ -173,6 +188,8 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 					// the absolute root.
 					workingDir: o.root,
 					codeSessionId: o.sessionId,
+					codeReadOnly: o.readOnly ?? false,
+					codeWriteGuard: o.writeGuard,
 					contextSize,
 					maxIterations: settings.codeMaxIterations,
 					deepResearch: false,
@@ -306,9 +323,27 @@ async function prepareMessages(
 	const system = buildCodeSystemPrompt({
 		root: o.root,
 		skillsSection: skillsPromptSection(skills),
-		projectInstructions: agentsMdPromptSection(project.agentsMd)
+		projectInstructions: agentsMdPromptSection(project.agentsMd),
+		readOnly: o.readOnly,
+		worktree: o.worktree
 	});
-	return { messages: mergeLeadingSystemMessages([system, ...o.thread]), skills };
+	const thread = o.notice ? withNotice(o.thread, o.notice) : o.thread;
+	return { messages: mergeLeadingSystemMessages([system, ...thread]), skills };
+}
+
+/**
+ * The thread with `notice` put ahead of the text of its last message (the
+ * one opening this turn). A copy: the saved thread keeps what was typed.
+ */
+export function withNotice(thread: ChatMessage[], notice: string): ChatMessage[] {
+	const last = thread[thread.length - 1];
+	if (!last || last.role !== 'user') return thread;
+	const note = `[Note from Haruspex] ${notice}`;
+	const content =
+		typeof last.content === 'string'
+			? `${note}\n\n${last.content}`
+			: [{ type: 'text' as const, text: note }, ...last.content];
+	return [...thread.slice(0, -1), { ...last, content }];
 }
 
 /**
