@@ -3,7 +3,9 @@
 	 * Saved Code sessions, newest first, each with its folder and when it was
 	 * last active. A folder with several sessions holds them under one row.
 	 * Click opens a session as a sub-tab (or brings forward the window that has
-	 * it); right-click renames or deletes it. A fork shows a branch glyph.
+	 * it); right-click renames or deletes it. A fork shows a branch glyph, and
+	 * a session open in a window of its own a small window mark, kept current
+	 * from Rust's claim announcements (`code://claims`) rather than polled.
 	 */
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 	import { listCodeSessions, updateCodeSessionMeta } from '#lib/code/db.ts';
@@ -17,6 +19,7 @@
 		sidebarEntries
 	} from '#lib/code/sessionList.ts';
 	import BranchGlyph from './BranchGlyph.svelte';
+	import { onClaimsChanged, openSessionIds } from '#lib/code/claims.ts';
 	import { worktreeOffer, worktreeOutcome } from '#lib/code/folders.ts';
 	import {
 		deleteSession,
@@ -36,6 +39,32 @@
 	const entries = $derived(sidebarEntries(list));
 	const activeId = $derived(getActiveSessionId());
 	const openIds = $derived(new Set(getOpenSessions().map((s) => s.id)));
+	/** Sessions some window has open, this one included (Rust's claims). */
+	let claimedIds = $state<string[]>([]);
+	/** Open in another window: claimed, but not a sub-tab here. */
+	const elsewhereIds = $derived(new Set(claimedIds.filter((id) => !openIds.has(id))));
+
+	async function refreshClaims(): Promise<void> {
+		claimedIds = await openSessionIds();
+	}
+
+	$effect(() => {
+		let stop: (() => void) | null = null;
+		let gone = false;
+		void refreshClaims();
+		// A session deleted in its own window leaves the list too.
+		void onClaimsChanged(() => {
+			void refreshClaims();
+			void refresh();
+		}).then((f) => {
+			if (gone) f();
+			else stop = f;
+		});
+		return () => {
+			gone = true;
+			stop?.();
+		};
+	});
 	let collapsedRoots = $state<Record<string, boolean>>({});
 
 	let open = $state(getSettings().codeSidebarOpen);
@@ -187,9 +216,12 @@
 				class:grouped
 				class:active={s.id === activeId}
 				class:open={openIds.has(s.id)}
+				class:elsewhere={elsewhereIds.has(s.id)}
 				aria-label={sessionLabel(s)}
 				title="{sessionLabel(s)} — {s.root}.{s.forked_from
 					? ` ${forkedFromTitle(s, list)}.`
+					: ''}{elsewhereIds.has(s.id)
+					? ' Open in its own window; click to bring it forward.'
 					: ''} Right-click to rename or delete."
 				onclick={() => openOne(s.id)}
 				oncontextmenu={(e) => openMenu(e, s)}
@@ -197,7 +229,11 @@
 				<span class="name"
 					>{#if s.forked_from}<span class="fork" data-testid="fork-glyph"
 							><BranchGlyph size={11} /></span
-						>{/if}{sessionLabel(s)}</span
+						>{/if}{sessionLabel(s)}{#if elsewhereIds.has(s.id)}<span
+							class="window-mark"
+							data-testid="window-mark"
+							title="Open in its own window">⧉</span
+						>{/if}</span
 				>
 				<span class="meta"
 					>{grouped ? '' : `${folderName(s.root)} · `}{lastActive(s.updated_at, now)}</span
@@ -457,6 +493,12 @@
 		vertical-align: -1px;
 		margin-right: 4px;
 		color: var(--accent);
+	}
+
+	.window-mark {
+		margin-left: 5px;
+		font-size: 0.75rem;
+		color: var(--text-secondary);
 	}
 
 	.meta {

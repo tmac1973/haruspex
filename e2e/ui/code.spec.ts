@@ -150,3 +150,39 @@ test('the branch control switches branch, and waits while there are changes', as
 	await expect(menu).toContainText('commit or stash first');
 	await expect(menu.getByRole('menuitem', { name: 'main' })).toBeDisabled();
 });
+
+test('a session whose folder is gone says so, and can be pointed at another', async ({ app }) => {
+	await useScenario('code-tab');
+	await app.getByRole('tab', { name: 'Code' }).click();
+	await app.getByRole('button', { name: 'New session' }).first().click();
+	await app.getByRole('button', { name: 'Start session' }).click();
+	const input = app.getByRole('textbox', { name: 'Message' });
+	await expect(input).toBeEnabled();
+
+	// The folder goes while the app is in the background; coming back looks again.
+	await app.evaluate(() => {
+		window.__e2e!.mock('code_folder_exists', false);
+		window.dispatchEvent(new Event('focus'));
+	});
+	const banner = app.getByRole('alert').filter({ hasText: 'Folder not found' });
+	await expect(banner).toContainText('Folder not found: /e2e/project');
+	await expect(input).toBeDisabled();
+	await expect(input).toHaveAttribute('placeholder', 'Folder not found: /e2e/project');
+	await expect(banner.getByRole('button', { name: /create/i })).toHaveCount(0);
+
+	// Choose folder… asks, then the session works in the new one.
+	await app.evaluate(() => {
+		window.__e2e!.mock('code_folder_exists', true);
+		window.__e2e!.mock('plugin:dialog|open', '/e2e/elsewhere');
+	});
+	await banner.getByRole('button', { name: 'Choose folder…' }).click();
+	await expect(app.getByText('Use this folder?')).toBeVisible();
+	await app.getByRole('button', { name: 'Use folder' }).click();
+	await expect(banner).toHaveCount(0);
+	await expect(input).toBeEnabled();
+	expect(
+		await app.evaluate(
+			() => window.__e2e!.calls.find((c) => c.cmd === 'code_session_set_root')?.args
+		)
+	).toMatchObject({ root: '/e2e/elsewhere' });
+});

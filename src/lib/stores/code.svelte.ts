@@ -13,7 +13,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 
-import type { BackendOverride, ChatMessage, Usage } from '#lib/api.ts';
+import { messageText, type BackendOverride, type ChatMessage, type Usage } from '#lib/api.ts';
 import type { AgentsMd } from '#lib/ipc/gen/AgentsMd.ts';
 import type { BgProcess } from '#lib/ipc/gen/BgProcess.ts';
 import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
@@ -23,7 +23,7 @@ import { markStepDone, markStepProgress } from '#lib/agent/steps.ts';
 import { describeContextManaged } from '#lib/agent/context-budget.ts';
 import { computeMessageStats, type MessageStats } from '#lib/stores/chat.svelte.ts';
 import { codeApprovalKey, resetSessionApproval } from '#lib/stores/codeCommandApproval.svelte.ts';
-import { renderSlashMessage } from '#lib/skills/content.ts';
+import { renderSlashMessage, typedText } from '#lib/skills/content.ts';
 import {
 	adoptCodeWatches,
 	buildWatchNotification,
@@ -35,10 +35,13 @@ import {
 } from '#lib/shell/backgroundWatch.ts';
 import {
 	createCodeSession,
+	decodeAgentBranch,
 	deleteCodeSession,
+	folderExists,
 	forkCodeSession,
 	loadCodeSession,
 	saveCodeSession,
+	setCodeSessionRoot,
 	updateCodeSessionMeta,
 	type CodeSessionRecord
 } from '#lib/code/db.ts';
@@ -86,15 +89,26 @@ const BG_TOOLS = new Set(['run_command', 'command_stop']);
 
 export class CodeSession {
 	readonly id: string;
-	/** The project folder, fixed for the session's life. */
-	readonly root: string;
+	/**
+	 * The project folder. Fixed for the session's life, except that a session
+	 * whose folder is gone can be pointed at another (`moveTo`).
+	 */
+	root = $state('');
 	/**
 	 * May read, not write: a fork that shares its source's folder. Writes
 	 * and edits are refused and every command asks first.
 	 */
 	readonly readOnly: boolean;
 	/** The git worktree Haruspex made for this session (a worktree fork). */
-	readonly worktree: string | null;
+	worktree = $state<string | null>(null);
+	/**
+	 * The folder is gone (deleted, a worktree removed, a drive unmounted).
+	 * The session can be read but runs no turns until it is pointed at
+	 * another folder or deleted. Set by `checkFolder`, which runs when the
+	 * session is opened or activated, on window focus, and as each turn starts
+	 * and ends; never while a turn runs.
+	 */
+	folderMissing = $state(false);
 	/** Empty until the session is named (`sessionLabel` shows the folder meanwhile). */
 	title = $state('');
 	/** Null follows the global backend. */
@@ -122,6 +136,8 @@ export class CodeSession {
 	 * iterations), for the input box to take back. See `takeReturnedSteering`.
 	 */
 	returnedSteering = $state<string[]>([]);
+	/** Images of a message handed back unsent (see `stop` while queued). */
+	returnedImages = $state<string[]>([]);
 	/** This session's background processes, from `code_bg_status`. */
 	background = $state<BgProcess[]>([]);
 	/** The Shell tab an `open_in_shell` call waits on, while `status` is 'waiting-shell'. */
@@ -159,6 +175,8 @@ export class CodeSession {
 	/** The branch the agent was last told or saw; undefined until it's been told. */
 	private branchSeenByAgent: string | null | undefined = undefined;
 	private abortController: AbortController | null = null;
+	/** Reads the input box's unsent text and images (`setDraftReader`). */
+	private draftReader: (() => Prefill) | null = null;
 	/** Settles once the running turn has been saved. */
 	private turnDone: Promise<void> | null = null;
 	/** The naming call has been made (or is under way); it is made once. */
@@ -175,8 +193,11 @@ export class CodeSession {
 		this.root = record.root;
 		this.readOnly = record.read_only ?? false;
 		this.worktree = record.worktree ?? null;
-		// Changes made since the session's last saved turn are news to it.
-		this.noticesSince = record.updated_at;
+		// What the agent was told by the last saved turn, so a restart
+		// neither repeats it nor misses what came since. Before that was
+		// kept, the last saved turn stands in.
+		this.noticesSince = record.notices_seen_at ?? record.updated_at;
+		this.branchSeenByAgent = decodeAgentBranch(record.agent_branch);
 		// A title from a slash command (`/init`) is no name: the next real turn names it.
 		this.title = isUnsetTitle(record.title) ? '' : record.title;
 		this.backend = record.backend;
@@ -249,6 +270,10 @@ export class CodeSession {
 			if (trimmed) this.steering = [...this.steering, trimmed];
 			return;
 		}
+		if (this.folderMissing) {
+			this.giveBack(trimmed, images);
+			return;
+		}
 		const body = opts.skill ? renderSlashMessage(opts.skill, trimmed) : trimmed;
 		// The first real message names the session, once its turn is over.
 		const namesFrom =
@@ -256,16 +281,76 @@ export class CodeSession {
 				? trimmed
 				: null;
 		if (namesFrom) this.named = true;
-		await this.runTurn(userMessage(body, images));
-		if (namesFrom) await this.name(namesFrom);
+		const sent = await this.runTurn(userMessage(body, images), { typed: true });
+		if (namesFrom && sent) await this.name(namesFrom);
+		else if (namesFrom) this.named = false;
 	};
 
 	/** Resume after a turn limit or forced stop. */
 	continueTurn = (): Promise<void> => this.send('Please continue from where you stopped.');
 
-	/** Cancel the running turn. What it finished is saved. */
+	/**
+	 * Cancel the running turn. What it finished is saved. A turn still
+	 * waiting for an inference slot leaves the queue without starting: its
+	 * message goes back to the input box (`returnedSteering`,
+	 * `returnedImages`) and nothing is saved.
+	 */
 	stop = (): void => {
 		this.abortController?.abort();
+	};
+
+	/** Take the images handed back with an unsent message, clearing them. */
+	takeReturnedImages = (): string[] => {
+		const images = this.returnedImages;
+		this.returnedImages = [];
+		return images;
+	};
+
+	/**
+	 * The input box registers how to read what is typed and not yet sent, so
+	 * it can go with the session to another window. Returns the unregister.
+	 */
+	setDraftReader = (read: () => Prefill): (() => void) => {
+		this.draftReader = read;
+		return () => {
+			if (this.draftReader === read) this.draftReader = null;
+		};
+	};
+
+	/** The unsent input, or null when the box is empty. */
+	readDraft = (): Prefill | null => {
+		const d = this.draftReader?.() ?? null;
+		if (!d || (!d.text.trim() && d.images.length === 0)) return null;
+		return { text: d.text, images: [...d.images] };
+	};
+
+	/**
+	 * Look at the folder: `folderMissing` when it is gone. Not while a turn
+	 * runs (its tools fail as they would anyway); the turn's end looks again.
+	 * Resolves to whether the folder is there.
+	 */
+	checkFolder = async (): Promise<boolean> => {
+		if (this.closed || this.busy) return !this.folderMissing;
+		const root = this.root;
+		const ok = await folderExists(root);
+		if (!this.closed && !this.busy && this.root === root) this.folderMissing = !ok;
+		return ok;
+	};
+
+	/**
+	 * Point the session at another folder, when its own is gone. Only while
+	 * idle. The thread is kept; paths in it still name the old folder.
+	 */
+	moveTo = async (root: string): Promise<void> => {
+		if (this.busy) throw new Error('Wait for the turn to finish.');
+		const record = await setCodeSessionRoot(this.id, root);
+		this.root = record.root;
+		this.worktree = record.worktree ?? null;
+		this.folderMissing = false;
+		this.projectRoot = null;
+		this.agentsMd = null;
+		this.git = null;
+		await this.refreshGit();
 	};
 
 	/** Take the steering a finished turn handed back, clearing it. */
@@ -360,7 +445,7 @@ export class CodeSession {
 	 * once it ends. Everything finished goes in one turn.
 	 */
 	flushWatchNotifications = async (): Promise<void> => {
-		if (this.busy || this.closed || this.flushing) return;
+		if (this.busy || this.closed || this.flushing || this.folderMissing) return;
 		const completed = peekCompletedCodeWatches(this.id);
 		if (completed.length === 0) return;
 		this.flushing = true;
@@ -405,26 +490,35 @@ export class CodeSession {
 		await releaseFolder(this.id);
 	};
 
-	private runTurn(opening: ChatMessage): Promise<void> {
-		if (this.busy || this.closed) return Promise.resolve();
+	/**
+	 * Run a turn opening with `opening`. `typed`: the user sent it, so a turn
+	 * that never starts (stopped while queued, or the folder gone) hands it
+	 * back. Resolves to whether the turn ran.
+	 */
+	private runTurn(opening: ChatMessage, opts: { typed?: boolean } = {}): Promise<boolean> {
+		if (this.busy || this.closed) return Promise.resolve(false);
 		this.status = 'running';
-		const done = this.turn(opening).finally(() => {
+		const done = this.turn(opening, opts.typed ?? false).finally(() => {
 			this.status = 'idle';
 			this.shellWait = null;
 			this.turnDone = null;
+			// The folder may have gone while the turn ran; say so now.
+			void this.checkFolder();
 			// A watched command may have finished during the turn; deliver it
 			// now that the session is idle, once this turn has fully unwound.
 			queueMicrotask(() => void this.flushWatchNotifications());
 		});
-		this.turnDone = done;
+		this.turnDone = done.then(() => {});
 		return done;
 	}
 
-	private async turn(opening: ChatMessage): Promise<void> {
+	private async turn(opening: ChatMessage, typed: boolean): Promise<boolean> {
 		this.lastError = null;
 		this.contextNotice = null;
 		this.clearLive();
 		this.returnedSteering = [];
+		this.returnedImages = [];
+		const openingAt = this.messages.length;
 		this.messages = [...this.messages, opening];
 
 		const abort = new AbortController();
@@ -436,8 +530,22 @@ export class CodeSession {
 			root: this.root,
 			title: () => this.title
 		});
+		// What the agent had been told, put back if the turn never starts.
+		const told = {
+			openingAt,
+			since: this.noticesSince,
+			branch: this.branchSeenByAgent,
+			notes: this.fileNotes
+		};
+		let admitted = false;
+		let started = true;
 
 		try {
+			if (!(await folderExists(this.root))) {
+				this.folderMissing = true;
+				started = false;
+				return false;
+			}
 			const notice = await this.takeNotice();
 			const result = await runCodeTurn({
 				sessionId: this.id,
@@ -467,6 +575,7 @@ export class CodeSession {
 					this.status = 'queued';
 				},
 				onAdmitted: () => {
+					admitted = true;
 					this.ticket = null;
 					this.status = 'running';
 				},
@@ -498,7 +607,11 @@ export class CodeSession {
 					if (BG_TOOLS.has(call.name)) void this.refreshBackground();
 				}
 			});
-			this.commit(result, lastCallStats, startedAt);
+			// Stopped before the model was ever asked: the turn never started,
+			// and what the user sent goes back to them. (A watch notice keeps
+			// its place in the thread, as before.)
+			if (typed && result.outcome === 'aborted' && !admitted) started = false;
+			else this.commit(result, lastCallStats, startedAt);
 		} catch (e) {
 			// runCodeTurn reports failures in its result; this is a bug guard.
 			this.lastError = errMessage(e);
@@ -508,13 +621,56 @@ export class CodeSession {
 			this.clearLive();
 			this.ticket = null;
 			await guard.finish();
-			await this.persist();
+			if (started) {
+				// What the turn itself did to the branch (a `git switch` it ran)
+				// is what it saw, so only later changes get a note.
+				await this.refreshGit();
+				this.branchSeenByAgent = branchSeen(this.git);
+				await this.persist();
+			} else {
+				this.unsend(opening, typed, told);
+			}
 			void this.refreshBackground();
-			// What the turn itself did to the branch (a `git switch` it ran) is
-			// what it saw, so only later changes get a note.
-			await this.refreshGit();
-			this.branchSeenByAgent = branchSeen(this.git);
 		}
+		return started;
+	}
+
+	/**
+	 * Take back a turn that never started: its opening message leaves the
+	 * thread (nothing is saved) and, when the user typed it, goes back to the
+	 * input box with anything queued behind it. What the agent was told for
+	 * it is untold.
+	 */
+	private unsend(
+		opening: ChatMessage,
+		typed: boolean,
+		told: {
+			openingAt: number;
+			since: number;
+			branch: string | null | undefined;
+			notes: CodeSession['fileNotes'];
+		}
+	): void {
+		// Nothing was added after it: the turn never reached the model.
+		this.messages = this.messages.slice(0, told.openingAt);
+		this.noticesSince = told.since;
+		this.branchSeenByAgent = told.branch;
+		this.fileNotes = told.notes;
+		this.lastError = null;
+		const queued = this.steering;
+		this.steering = [];
+		if (!typed) {
+			if (queued.length) this.returnedSteering = queued;
+			return;
+		}
+		const text = typedText(messageText(opening.content)).trim();
+		this.giveBack([text, ...queued].filter(Boolean).join('\n\n'), imagesOf(opening));
+	}
+
+	/** Hand text and images back to the input box. */
+	private giveBack(text: string, images: string[]): void {
+		if (text) this.returnedSteering = [...this.returnedSteering, text];
+		if (images.length) this.returnedImages = [...this.returnedImages, ...images];
 	}
 
 	/**
@@ -589,7 +745,10 @@ export class CodeSession {
 	 */
 	private async persist(): Promise<void> {
 		try {
-			await saveCodeSession(this.id, encodeCodeSession(this.snapshot()));
+			await saveCodeSession(this.id, encodeCodeSession(this.snapshot()), undefined, {
+				noticesSeenAt: this.noticesSince,
+				agentBranch: this.branchSeenByAgent
+			});
 			this.saveError = null;
 		} catch (e) {
 			this.saveError = errMessage(e);
@@ -606,6 +765,11 @@ export class CodeSession {
 			void this.refreshBackground();
 		}, BG_POLL_MS);
 	}
+}
+
+function imagesOf(m: ChatMessage): string[] {
+	if (typeof m.content === 'string') return [];
+	return m.content.flatMap((p) => (p.type === 'image_url' ? [p.image_url.url] : []));
 }
 
 function userMessage(body: string, images: string[]): ChatMessage {
@@ -638,7 +802,10 @@ export function getActiveSession(): CodeSession | null {
 }
 
 export function setActiveSession(id: string): void {
-	if (sessions.some((s) => s.id === id)) activeId = id;
+	const session = sessions.find((s) => s.id === id);
+	if (!session) return;
+	activeId = id;
+	void session.checkFolder();
 }
 
 /**
@@ -650,7 +817,7 @@ export function setActiveSession(id: string): void {
 export async function openSession(id: string): Promise<CodeSession | null> {
 	const open = sessions.find((s) => s.id === id);
 	if (open) {
-		activeId = id;
+		setActiveSession(id);
 		return open;
 	}
 	const claim = await claimSession(id);
@@ -681,6 +848,8 @@ export async function openSession(id: string): Promise<CodeSession | null> {
 	// meanwhile is delivered once the session is set up.
 	if (claim.handoff) adoptCodeWatches(claim.handoff.watches);
 	const session = adopt(new CodeSession(record));
+	// What was typed in the last window and not sent comes along.
+	if (claim.handoff?.draft) session.prefill = claim.handoff.draft;
 	if (claim.handoff?.watches.length) void session.flushWatchNotifications();
 	return session;
 }
@@ -757,11 +926,13 @@ export async function handOffSession(id: string): Promise<boolean> {
 	if (idx < 0) return false;
 	const session = sessions[idx];
 	if (session.busy) return false;
+	// Read before the sub-tab goes, while the input box is still there.
+	const draft = session.readDraft();
 	sessions.splice(idx, 1);
 	if (activeId === id) activeId = (sessions[idx] ?? sessions[idx - 1] ?? null)?.id ?? null;
 	const watches = takeCodeWatches(id);
 	await session.dispose();
-	await releaseSession(id, { watches });
+	await releaseSession(id, { watches, draft });
 	return true;
 }
 
@@ -801,6 +972,7 @@ function adopt(session: CodeSession): CodeSession {
 	activeId = session.id;
 	void session.refreshBackground();
 	void session.refreshGit();
+	void session.checkFolder();
 	return session;
 }
 

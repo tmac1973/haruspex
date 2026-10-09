@@ -135,7 +135,13 @@
 	</div>
 	<div class="pane">
 		{#if session}
-			<CodePane {session} />
+			<CodePane
+				{session}
+				ondeleted={() => {
+					closing = true;
+					void win.destroy();
+				}}
+			/>
 		{:else if loadError}
 			<p class="error">Couldn't open this session: {loadError}</p>
 		{/if}
