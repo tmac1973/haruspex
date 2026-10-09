@@ -16,6 +16,22 @@ export function clip(s, max = TOOL_RESULT_MAX) {
 	return s.length > max ? `${s.slice(0, max)}\n… (${s.length - max} more chars)` : s;
 }
 
+/**
+ * Split an assistant message into its reasoning and its answer. The app
+ * stores reasoning inline as `<think>…</think>` ahead of the answer
+ * (`streamAssembly.ts`) and renders it as a Reasoning panel.
+ */
+export function splitThinking(body) {
+	const reasoning = [];
+	const answer = body
+		.replace(/<think>([\s\S]*?)(<\/think>|$)/g, (_, inner) => {
+			if (inner.trim()) reasoning.push(inner.trim());
+			return '';
+		})
+		.trim();
+	return { reasoning: reasoning.join('\n\n'), answer };
+}
+
 function fence(body, lang = '') {
 	const ticks = body.includes('```') ? '````' : '```';
 	return `${ticks}${lang}\n${body}\n${ticks}`;
@@ -60,7 +76,10 @@ export function transcript(s, meta) {
 			out.push(`## User (#${i})`, '', body, '');
 		} else if (m.role === 'assistant') {
 			out.push(`## Assistant (#${i})`, '');
-			if (body.trim()) out.push(body, '');
+			const { reasoning, answer } = splitThinking(body);
+			if (reasoning)
+				out.push(`<details><summary>Reasoning</summary>\n\n${reasoning}\n\n</details>`, '');
+			if (answer) out.push(answer, '');
 			for (const tc of m.tool_calls ?? []) {
 				out.push(`### Tool call \`${tc.function?.name}\` (${tc.id})`, '');
 				out.push(fence(args(tc.function?.arguments ?? ''), 'json'), '');
@@ -93,6 +112,6 @@ export function summarize(s) {
 		toolCounts: counts,
 		status: s.status,
 		error: s.lastError,
-		lastAssistant: last ? text(last.content).slice(0, 300) : null
+		lastAssistant: last ? splitThinking(text(last.content)).answer.slice(0, 300) : null
 	};
 }

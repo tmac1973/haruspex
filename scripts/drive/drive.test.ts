@@ -73,7 +73,7 @@ describe('the transcript', () => {
 				tool_calls: [{ id: 'c1', function: { name: 'fs_edit_text', arguments: '{"path":"a.js"}' } }]
 			},
 			{ role: 'tool', tool_call_id: 'c1', content: 'Edited a.js' },
-			{ role: 'assistant', content: 'Done.' }
+			{ role: 'assistant', content: '<think>All good.</think>\n\nDone.' }
 		],
 		messageSteps: {
 			3: [
@@ -109,6 +109,12 @@ describe('the transcript', () => {
 		const at = order.map((s) => md.indexOf(s));
 		expect(at.every((i) => i >= 0)).toBe(true);
 		expect([...at].sort((a, b) => a - b)).toEqual(at);
+	});
+
+	it('shows reasoning apart from the answer', () => {
+		const md = transcript(session, { model: 'm', baseUrl: 'http://x' });
+		expect(md).not.toContain('<think>');
+		expect(md).toContain('<summary>Reasoning</summary>\n\nAll good.');
 	});
 
 	it('summarises the calls and the last reply', () => {
