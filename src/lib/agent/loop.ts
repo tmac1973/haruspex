@@ -185,6 +185,8 @@ export interface AgentLoopOptions {
 	shellSessionId?: number | null;
 	/** The Code session running this turn; see ToolContext.codeSessionId. */
 	codeSessionId?: string;
+	/** Who is asking in an approval prompt; see ToolContext.requester. */
+	requester?: () => string;
 	/** A read-only Code session; see ToolContext.codeReadOnly. */
 	codeReadOnly?: boolean;
 	/** One writer per folder; see ToolContext.codeWriteGuard. */

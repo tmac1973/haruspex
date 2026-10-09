@@ -43,12 +43,15 @@ import { agentsMdPromptSection } from '#lib/skills/agentsMd.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { buildCodeSystemPrompt } from './system-prompt';
+import { sessionLabel } from './sessionList';
 import { loadShellPlatformSupported } from '#lib/shell/platformSupport.ts';
 
 export interface CodeTurnOptions {
 	sessionId: string;
 	/** The session's project folder. */
 	root: string;
+	/** The session's title as it is now, to name it in approval prompts. */
+	title?: () => string;
 	/** The thread so far, ending with the message that starts this turn. */
 	thread: ChatMessage[];
 	/** Null follows the global setting. */
@@ -188,6 +191,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 					// the absolute root.
 					workingDir: o.root,
 					codeSessionId: o.sessionId,
+					requester: () => `Code · ${sessionLabel({ title: o.title?.() ?? '', root: o.root })}`,
 					codeReadOnly: o.readOnly ?? false,
 					codeWriteGuard: o.writeGuard,
 					contextSize,

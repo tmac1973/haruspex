@@ -879,6 +879,7 @@ export class ShellSession {
 				visionSupported: true,
 				cwd: payload.currentCwd,
 				sessionId: this.boundSessionId,
+				name: () => this.name,
 				// Full access is the registry's Shell code profile (codeMode with
 				// shellMode): the same tools Code mode had.
 				codeMode: this.fullAccess,

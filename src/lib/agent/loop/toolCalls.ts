@@ -105,6 +105,7 @@ export async function executeToolCalls(
 				shellCwd: ctx.shellCwd,
 				shellSessionId: ctx.shellSessionId,
 				codeSessionId: ctx.codeSessionId,
+				requester: ctx.requester,
 				codeReadOnly: ctx.codeReadOnly,
 				codeWriteGuard: ctx.codeWriteGuard,
 				filesWrittenThisTurn: ctx.filesWrittenThisTurn,

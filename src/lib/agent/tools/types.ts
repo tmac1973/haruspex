@@ -183,6 +183,12 @@ export interface ToolContext {
 	 */
 	codeSessionId?: string;
 	/**
+	 * Who is asking, named in an approval prompt so the user can tell two
+	 * sessions' prompts apart: a Code session's title, a Shell tab's name.
+	 * Read when the prompt opens, since a new session is named mid-turn.
+	 */
+	requester?: () => string;
+	/**
 	 * The Code session may read, not write: no file writes or edits, every
 	 * `run_command` asks, and nothing runs in the background.
 	 */

@@ -442,6 +442,7 @@ export class CodeSession {
 			const result = await runCodeTurn({
 				sessionId: this.id,
 				root: this.root,
+				title: () => this.title,
 				thread: $state.snapshot(this.messages) as ChatMessage[],
 				backend: this.backend ? ($state.snapshot(this.backend) as BackendOverride) : null,
 				effort: this.effort,

@@ -117,6 +117,7 @@ export interface LoopContext {
 	shellCwd: string | null;
 	shellSessionId: number | null;
 	codeSessionId?: string;
+	requester?: ToolContext['requester'];
 	codeReadOnly: boolean;
 	codeWriteGuard?: ToolContext['codeWriteGuard'];
 	expectsFileOutput: boolean;
@@ -249,6 +250,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		shellCwd: options.shellCwd ?? null,
 		shellSessionId: options.shellSessionId ?? null,
 		codeSessionId: options.codeSessionId,
+		requester: options.requester,
 		codeReadOnly: options.codeReadOnly ?? false,
 		codeWriteGuard: options.codeWriteGuard,
 		expectsFileOutput,

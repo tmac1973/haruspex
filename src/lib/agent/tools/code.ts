@@ -74,9 +74,12 @@ export async function checkCommandBoundary(
 		label: 'outside the project',
 		description
 	}));
-	return askAboutCommand(command, [...boundaryReasons, ...(extra.matched ? extra.reasons : [])], {
-		sessionKey: null
-	});
+	return askAboutCommand(
+		command,
+		[...boundaryReasons, ...(extra.matched ? extra.reasons : [])],
+		ctx,
+		{ sessionKey: null }
+	);
 }
 
 /**
@@ -97,9 +100,12 @@ async function ensureCommandApproved(
 	// still write. Neither auto-approve nor "for this session" skips it.
 	if (ctx.codeReadOnly) {
 		const risk = classifyShellRisk(command);
-		return askAboutCommand(command, [READ_ONLY_REASON, ...(risk.matched ? risk.reasons : [])], {
-			sessionKey: null
-		});
+		return askAboutCommand(
+			command,
+			[READ_ONLY_REASON, ...(risk.matched ? risk.reasons : [])],
+			ctx,
+			{ sessionKey: null }
+		);
 	}
 	if (ctx.codeAutoApprove || isSessionApproved(approvalKey(ctx))) return 'ok';
 	const risk = classifyShellRisk(command);
@@ -126,7 +132,7 @@ async function ensureCommandApproved(
 			)
 		};
 	}
-	return askAboutCommand(command, risk.reasons, { sessionKey: approvalKey(ctx) });
+	return askAboutCommand(command, risk.reasons, ctx, { sessionKey: approvalKey(ctx) });
 }
 
 /** Why a read-only session's command is asked about. */
@@ -138,16 +144,23 @@ const READ_ONLY_REASON: RiskMatch = {
 /**
  * The approval modal. A boundary reason is never approvable for the session:
  * "allow everything risky for now" was given for an `rm`, not for reading
- * Haruspex's database.
+ * Haruspex's database. The prompt names who is asking, and waits behind any
+ * other session's; stopping the turn withdraws it.
  */
 async function askAboutCommand(
 	command: string,
 	reasons: RiskMatch[],
+	ctx: ToolContext,
 	opts: { sessionKey: string | null }
 ): Promise<'ok' | { message: string }> {
 	let choice;
 	try {
-		choice = await askCommandApproval({ command, reasons });
+		choice = await askCommandApproval({
+			command,
+			reasons,
+			requester: ctx.requester?.() || null,
+			signal: ctx.signal
+		});
 	} catch (e) {
 		return { message: toolInvokeError('run_command approval', e) };
 	}
