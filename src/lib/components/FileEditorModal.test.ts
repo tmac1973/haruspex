@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { invoke } from '@tauri-apps/api/core';
 import FileEditorModal from './FileEditorModal.svelte';
-import { editWorkdirFiles } from '#lib/stores/fileEditor.svelte.ts';
+import { editWorkdirFiles, getPendingEdit } from '#lib/stores/fileEditor.svelte.ts';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 
@@ -116,5 +116,28 @@ describe('FileEditorModal', () => {
 			expect(screen.getByText(/Could not save plan\/x\/phase-01-setup.md: disk full/)).toBeTruthy()
 		);
 		expect(screen.getByText('Done')).toBeTruthy();
+	});
+
+	it('stays a plain modal for the Jobs checkpoint: no watching, no conflict check', async () => {
+		getPendingEdit()?.finish({ saved: [] }); // the previous test left it open
+		render(FileEditorModal);
+		let settled = false;
+		const done = editWorkdirFiles({
+			workdir: '/proj',
+			files: ['plan/x/phase-01-setup.md'],
+			title: 'Plan'
+		}).then((r) => {
+			settled = true;
+			return r;
+		});
+		await type('changed\n');
+		await fireEvent.click(screen.getByText('Save'));
+		// The checkpoint waits for the user: saving doesn't end it.
+		await Promise.resolve();
+		expect(settled).toBe(false);
+		const commands = vi.mocked(invoke).mock.calls.map(([cmd]) => cmd);
+		expect(commands.every((c) => c === 'fs_read_text_full' || c === 'fs_write_text')).toBe(true);
+		await fireEvent.click(screen.getByText('Done'));
+		await expect(done).resolves.toEqual({ saved: ['plan/x/phase-01-setup.md'] });
 	});
 });

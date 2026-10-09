@@ -6,25 +6,27 @@
 	 * Saving writes the file at once (Ctrl/Cmd-S or Save); closing with
 	 * unsaved changes asks first rather than dropping them.
 	 */
-	import { invoke } from '@tauri-apps/api/core';
 	import Modal from './Modal.svelte';
 	import CodeEditor from './CodeEditor.svelte';
 	import { getPendingEdit } from '#lib/stores/fileEditor.svelte.ts';
+	import { EditorDocument } from '#lib/editor/document.svelte.ts';
+	import { plainIO } from '#lib/editor/io.ts';
 
 	const pending = $derived(getPendingEdit());
 
-	/** What is on disk, per file, as last read or saved. */
-	let onDisk = $state<Record<string, string>>({});
-	/** What is in the editor, per file. */
-	let drafts = $state<Record<string, string>>({});
+	/** One document per file, in the order the list shows them. */
+	let docs = $state<EditorDocument[]>([]);
 	let current = $state('');
 	let saved = $state<string[]>([]);
-	let error = $state('');
 	let confirmingClose = $state(false);
 	let loadedFor = $state<unknown>(null);
 
-	const dirty = (file: string) => drafts[file] !== undefined && drafts[file] !== onDisk[file];
-	const anyDirty = $derived(pending ? pending.files.some(dirty) : false);
+	const doc = (file: string) => docs.find((d) => d.relPath === file);
+	const dirty = (file: string) => doc(file)?.dirty ?? false;
+	const anyDirty = $derived(docs.some((d) => d.dirty));
+	const currentDoc = $derived(doc(current));
+	/** The newest problem: the current file's first, then any other's. */
+	const error = $derived(currentDoc?.error || docs.find((d) => d.error)?.error || '');
 
 	$effect(() => {
 		if (pending && loadedFor !== pending) {
@@ -34,44 +36,20 @@
 	});
 
 	async function load(workdir: string, files: string[]): Promise<void> {
-		onDisk = {};
-		drafts = {};
 		saved = [];
-		error = '';
 		confirmingClose = false;
 		current = files[0] ?? '';
-		const entries = await Promise.all(
-			files.map(async (relPath) => {
-				try {
-					return [relPath, await invoke<string>('fs_read_text_full', { workdir, relPath })];
-				} catch (e) {
-					error = `Could not open ${relPath}: ${String(e)}`;
-					return [relPath, ''];
-				}
-			})
-		);
-		onDisk = Object.fromEntries(entries);
-		drafts = Object.fromEntries(entries);
+		const next = files.map((f) => new EditorDocument(workdir, f, plainIO));
+		docs = next;
+		await Promise.all(next.map((d) => d.load()));
 	}
 
 	async function save(file = current): Promise<boolean> {
-		if (!pending || !dirty(file)) return true;
-		const content = drafts[file];
-		try {
-			await invoke('fs_write_text', {
-				workdir: pending.workdir,
-				relPath: file,
-				content,
-				overwrite: true
-			});
-			onDisk = { ...onDisk, [file]: content };
-			if (!saved.includes(file)) saved = [...saved, file];
-			error = '';
-			return true;
-		} catch (e) {
-			error = `Could not save ${file}: ${String(e)}`;
-			return false;
-		}
+		const d = doc(file);
+		if (!pending || !d || !d.dirty) return true;
+		if (!(await d.save())) return false;
+		if (!saved.includes(file)) saved = [...saved, file];
+		return true;
 	}
 
 	async function saveAllAndClose(): Promise<void> {
@@ -125,12 +103,12 @@
 			{/if}
 			<div class="pane">
 				<p class="path" title={pending.workdir}>{current}</p>
-				{#if current in drafts}
+				{#if currentDoc?.loaded}
 					{#key current}
 						<CodeEditor
-							value={drafts[current]}
+							value={currentDoc.draft}
 							label={current}
-							onchange={(v) => (drafts = { ...drafts, [current]: v })}
+							onchange={(v) => currentDoc.edit(v)}
 							onsave={() => save()}
 						/>
 					{/key}
