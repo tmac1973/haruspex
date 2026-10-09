@@ -14,6 +14,8 @@ import {
 	setCodeWatchCompletionHandler,
 	clearCodeWatches,
 	readCodeBgLog,
+	takeCodeWatches,
+	adoptCodeWatches,
 	_resetForTests
 } from '#lib/shell/backgroundWatch.ts';
 
@@ -207,5 +209,65 @@ describe('backgroundWatch with a code_bg source', () => {
 		expect(invokeMock).toHaveBeenCalledWith('code_bg_tail', { id: 'bg-7', bytes: 100 });
 		invokeMock.mockRejectedValueOnce(new Error('gone'));
 		expect(await readCodeBgLog('bg-7')).toBe('');
+	});
+	it('hands a session’s watches to another window, which then gets the completion', async () => {
+		let status = [proc('bg-8', true), { ...proc('bg-9', true), owner: 'sess-b' }];
+		invokeMock.mockImplementation(async (cmd: string) =>
+			cmd === 'code_bg_status' ? status : undefined
+		);
+		let here = 0;
+		setCodeWatchCompletionHandler('sess-a', () => here++);
+		register('bg-8');
+		register('bg-9', 'sess-b');
+
+		// The session leaves this window: its watch goes with it, sess-b's stays.
+		const taken = takeCodeWatches('sess-a');
+		expect(taken.map((w) => w.processId)).toEqual(['bg-8']);
+		expect(takeCodeWatches('sess-a')).toEqual([]);
+
+		// "The other window": a fresh module state that adopts them.
+		const handedOff = JSON.parse(JSON.stringify(taken));
+		_resetForTests();
+		let there = 0;
+		setCodeWatchCompletionHandler('sess-a', () => there++);
+		adoptCodeWatches(handedOff);
+		status = [proc('bg-8', false, 0)];
+		await vi.advanceTimersByTimeAsync(4000);
+		expect(here).toBe(0);
+		expect(there).toBe(1);
+		expect(peekCompletedCodeWatches('sess-a').map((w) => w.processId)).toEqual(['bg-8']);
+	});
+
+	it('adopts a watch that finished before the move, ready to deliver', () => {
+		adoptCodeWatches([
+			{
+				id: 'watch-9',
+				source: 'code_bg',
+				owner: 'sess-a',
+				processId: 'bg-10',
+				command: 'make',
+				logPath: '/l',
+				startedAtMs: 0,
+				exitCode: 0,
+				completedAtMs: 1
+			},
+			// Not a code_bg watch: ignored.
+			{ source: 'pty' } as never
+		]);
+		expect(peekCompletedCodeWatches('sess-a')).toHaveLength(1);
+	});
+});
+
+describe('isWatchNotification', () => {
+	it('knows a notice from typed text', async () => {
+		const { isWatchNotification, watchNotificationCommands } = await import('./backgroundWatch');
+		const one =
+			'A background command you started with watch has finished.\n\n$ make test\nexit code: 1';
+		expect(isWatchNotification(one)).toBe(true);
+		expect(isWatchNotification('2 background commands you started with watch have finished.')).toBe(
+			true
+		);
+		expect(isWatchNotification('A background command finished, what now?')).toBe(false);
+		expect(watchNotificationCommands(one)).toEqual(['make test']);
 	});
 });

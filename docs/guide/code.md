@@ -1,6 +1,6 @@
 ---
 title: Code tab
-description: Coding sessions in a project folder — sessions, diffs and command cards, editor windows, commands that need a terminal (sudo), steering, background processes, model and effort.
+description: Coding sessions in a project folder — starting one, diffs and command cards, editor windows, commands that need a terminal (sudo), steering, background processes, model and effort.
 ---
 
 # Code tab
@@ -13,11 +13,9 @@ Click **New session** (or **+** next to the open sessions) and pick the project 
 
 Type what you want and press `Enter`. After the first reply the model names the session (until then it is `<folder> · new session`); a name you gave it is never replaced. Each session is saved after every reply, so quitting or a crash loses nothing finished.
 
-## Find and reopen sessions
+## Find, fork and move sessions
 
-The list on the left holds every saved session, newest first, with its folder and when it was last active. Two or more sessions in one folder sit under a folder row; click it to fold them. Click a session to open it as a tab above the conversation. Right-click a session to **Rename** or **Delete** it; deleting removes the conversation, not any files. Closing a tab (**×**) keeps the session in the list. The **‹** button hides the list.
-
-Long sessions show their last 20 turns; **Show earlier** loads more.
+The list on the left holds every saved session. A session can be forked from any message, or moved to a window of its own and back; see the `code-sessions` page.
 
 ## Read what the agent did
 
@@ -69,5 +67,4 @@ Safe-looking commands run on their own. A risky one (`sudo`, `rm -rf`, a pipe to
 
 - Each command runs on its own, so `cd` and environment changes don't carry over.
 - No undo or checkpoints: use git.
-- No forking a session or moving it to its own window.
 - Small local models make mistakes and get stuck; see the `models` page.

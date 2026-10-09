@@ -17,6 +17,7 @@ const ORDER = [
 	'chat',
 	'shell',
 	'code',
+	'code-sessions',
 	'skills',
 	'jobs',
 	'memory',

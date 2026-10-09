@@ -15,6 +15,7 @@
 	 * `TURNS_PER_PAGE` turns, with "Show earlier" for the rest.
 	 */
 	import { onDestroy, untrack } from 'svelte';
+	import { isWatchNotification, watchNotificationCommands } from '#lib/shell/backgroundWatch.ts';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
 	import StopIndicator from '#lib/components/StopIndicator.svelte';
 	import ThinkingIndicator from '#lib/components/ThinkingIndicator.svelte';
@@ -24,6 +25,9 @@
 	import type { CodeSession } from '#lib/stores/code.svelte.ts';
 	import { makeCodePathLinker } from '#lib/code/paths.ts';
 	import { openFileFromClick } from '#lib/code/openEditor.ts';
+	import { forkFromMessage } from '#lib/code/windows.ts';
+	import { showToast } from '#lib/stores/toasts.svelte.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	let { session, notes = [] }: { session: CodeSession; notes?: TranscriptNote[] } = $props();
 
@@ -127,6 +131,15 @@
 		openFileFromClick(session.root, rel);
 	}
 
+	/** Forks once the turn is over: the saved thread is then the one shown. */
+	const forkBlocked = $derived(session.busy ? 'Wait for the turn to finish, then fork.' : null);
+
+	function fork(index: number) {
+		forkFromMessage(session, index).catch((e: unknown) =>
+			showToast(`Couldn't fork: ${errMessage(e)}`, { kind: 'error' })
+		);
+	}
+
 	function removePending(index: number) {
 		session.steering = session.steering.filter((_, k) => k !== index);
 	}
@@ -161,8 +174,18 @@
 		{#if msg.role !== 'tool' && !msg.tool_calls}
 			{#if msg.role === 'system'}
 				<div class="note">{messageText(msg.content)}</div>
+			{:else if msg.role === 'user' && isWatchNotification(messageText(msg.content))}
+				{@const commands = watchNotificationCommands(messageText(msg.content))}
+				<details class="bg-notice">
+					<summary
+						>Background command finished{commands.length === 1
+							? `: ${commands[0]}`
+							: ` (${commands.length})`}</summary
+					>
+					<pre>{messageText(msg.content)}</pre>
+				</details>
 			{:else if msg.role === 'user'}
-				<ChatMessage message={msg} />
+				<ChatMessage message={msg} onFork={() => fork(i)} {forkBlocked} />
 			{:else}
 				{#if session.messageSteps[i]?.length}
 					<CodeSteps steps={session.messageSteps[i]} root={session.root} />
@@ -172,6 +195,8 @@
 					{codePaths}
 					tokensPerSecond={session.messageStats[i]?.tokensPerSecond}
 					elapsedMs={session.messageStats[i]?.elapsedMs}
+					onFork={() => fork(i)}
+					{forkBlocked}
 				/>
 				{#if session.messageStops[i]}
 					<StopIndicator
@@ -255,6 +280,28 @@
 </div>
 
 <style>
+	.bg-notice {
+		margin: 8px 0;
+		padding: 6px 10px;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		font-size: 0.82rem;
+		color: var(--text-secondary);
+	}
+
+	.bg-notice summary {
+		cursor: pointer;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.bg-notice pre {
+		margin: 6px 0 0;
+		white-space: pre-wrap;
+		font-size: 0.78rem;
+	}
+
 	.thread {
 		flex: 1 1 auto;
 		min-height: 0;

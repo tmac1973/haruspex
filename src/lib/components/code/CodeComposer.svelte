@@ -9,6 +9,7 @@
 	import SlashMenu from '#lib/components/SlashMenu.svelte';
 	import { messageText } from '#lib/api.ts';
 	import { InputHistory, placeCaret, sentHistory } from '#lib/inputHistory.ts';
+	import { isWatchNotification } from '#lib/shell/backgroundWatch.ts';
 	import { runSlash, type SlashHost } from '#lib/slash/slash.ts';
 	import { typedText } from '#lib/skills/content.ts';
 	import type { CodeSession } from '#lib/stores/code.svelte.ts';
@@ -36,6 +37,22 @@
 			text = [...back, text].filter((t) => t.trim()).join('\n\n');
 		});
 		void tick().then(autosize);
+	});
+
+	// A fork opens with its input box focused, holding the forked message.
+	$effect(() => {
+		if (!session.prefill) return;
+		untrack(() => {
+			const p = session.takePrefill();
+			if (!p) return;
+			if (p.text) text = p.text;
+			if (p.images.length) images = p.images.map((url) => ({ id: imgSeq++, url }));
+		});
+		void tick().then(() => {
+			autosize();
+			el?.focus();
+			if (el) placeCaret(el, 'end');
+		});
 	});
 
 	function autosize() {
@@ -74,7 +91,7 @@
 	const history = new InputHistory(() =>
 		sentHistory(
 			session.messages
-				.filter((m) => m.role === 'user')
+				.filter((m) => m.role === 'user' && !isWatchNotification(messageText(m.content)))
 				.map((m) => typedText(messageText(m.content)))
 		)
 	);

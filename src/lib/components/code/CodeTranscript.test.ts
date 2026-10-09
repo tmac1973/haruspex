@@ -8,6 +8,8 @@ vi.mock('#lib/editor/windows.ts', () => ({
 	openInEditorWindows: openWindows,
 	describeOpens: () => ''
 }));
+const forkFromMessage = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock('#lib/code/windows.ts', () => ({ forkFromMessage }));
 vi.mock('#lib/stores/chat.svelte.ts', () => ({
 	rerunSandboxStep: vi.fn(),
 	cancelActiveSandboxRun: vi.fn()
@@ -327,5 +329,58 @@ describe('CodeTranscript paths', () => {
 		expect([...links].map((b) => b.textContent)).toEqual(['src/c.ts']);
 		await fireEvent.click(links[0]);
 		expect(openWindows).toHaveBeenLastCalledWith('/p/app', ['src/c.ts']);
+	});
+});
+
+describe('CodeTranscript fork', () => {
+	it('offers Fork from here on user and assistant messages, with the thread index', async () => {
+		const messages: ChatMessage[] = [
+			{ role: 'user', content: 'find x' },
+			{
+				role: 'assistant',
+				content: '',
+				tool_calls: [
+					{ id: 'c1', type: 'function', function: { name: 'code_grep', arguments: '{}' } }
+				]
+			},
+			{ role: 'tool', tool_call_id: 'c1', content: 'a.ts:1' },
+			{ role: 'assistant', content: 'In a.ts.' }
+		];
+		const session = fakeSession({ messages });
+		render(CodeTranscript, { session });
+		const buttons = screen.getAllByRole('button', { name: 'Fork from here' });
+		// The tool call and its result have none.
+		expect(buttons).toHaveLength(2);
+		await fireEvent.click(buttons[0]);
+		expect(forkFromMessage).toHaveBeenLastCalledWith(session, 0);
+		await fireEvent.click(buttons[1]);
+		expect(forkFromMessage).toHaveBeenLastCalledWith(session, 3);
+	});
+
+	it('says to wait while a turn runs, and does nothing', async () => {
+		forkFromMessage.mockClear();
+		const session = fakeSession({ messages: thread(1), status: 'running', busy: true });
+		render(CodeTranscript, { session });
+		const [first] = screen.getAllByRole('button', { name: 'Fork from here' });
+		expect(first.getAttribute('title')).toMatch(/Wait for the turn to finish/);
+		expect(first.getAttribute('aria-disabled')).toBe('true');
+		await fireEvent.click(first);
+		expect(forkFromMessage).not.toHaveBeenCalled();
+	});
+});
+
+describe('background command notices', () => {
+	it('render as a notice, not as the user', () => {
+		const messages: ChatMessage[] = [
+			{
+				role: 'user',
+				content:
+					'A background command you started with watch has finished.\n\n$ sleep 20; echo done\nexit code: 0\n--- output ---\ndone\n---'
+			},
+			{ role: 'assistant', content: 'It finished.' }
+		];
+		render(CodeTranscript, { session: fakeSession({ messages }) });
+		expect(screen.getByText('Background command finished: sleep 20; echo done')).toBeTruthy();
+		expect(screen.queryByText('YOU')).toBeNull();
 	});
 });

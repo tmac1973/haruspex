@@ -10,6 +10,7 @@
 //! context small.
 
 pub mod background;
+pub mod claims;
 pub mod search;
 
 use crate::command_scope;

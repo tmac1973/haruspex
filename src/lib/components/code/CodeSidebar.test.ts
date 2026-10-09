@@ -59,4 +59,13 @@ describe('CodeSidebar', () => {
 		screen.getByRole('button', { name: 'New post' }).click();
 		expect(store.openSession).toHaveBeenCalledWith('b1');
 	});
+
+	it('marks a fork with a branch glyph and names its source in the tooltip', async () => {
+		render(CodeSidebar, { onNew: vi.fn() });
+		const fork = await waitFor(() => screen.getByRole('button', { name: 'Code tab' }));
+		expect(fork.querySelector('[data-testid="fork-glyph"]')).not.toBeNull();
+		expect(fork.getAttribute('title')).toContain('Forked from "Fix lint"');
+		const plain = screen.getByRole('button', { name: 'Fix lint' });
+		expect(plain.querySelector('[data-testid="fork-glyph"]')).toBeNull();
+	});
 });

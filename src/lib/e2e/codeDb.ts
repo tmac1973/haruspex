@@ -81,6 +81,37 @@ export const CODE_DB: Record<string, Handler> = {
 		rows.delete(String(a?.id));
 		return null;
 	},
+	code_session_fork: (a) => {
+		const src = row(a?.id);
+		const at = Number(a?.at ?? 0);
+		const thread = JSON.parse(src.thread || '{"version":1,"messages":[]}');
+		if (at > thread.messages.length) throw new Error('fork point past the end');
+		const cut = (m: Record<string, unknown> | undefined) =>
+			Object.fromEntries(Object.entries(m ?? {}).filter(([k]) => Number(k) < at));
+		const t = now();
+		const r: Row = {
+			...src,
+			id: `code-${++seq}`,
+			title: `${src.title} (fork)`.trim(),
+			thread: JSON.stringify({
+				...thread,
+				messages: thread.messages.slice(0, at),
+				messageSteps: cut(thread.messageSteps),
+				messageStats: cut(thread.messageStats),
+				messageStops: cut(thread.messageStops),
+				messageHistorySent: cut(thread.messageHistorySent)
+			}),
+			forked_from: src.id,
+			forked_at: at,
+			created_at: t,
+			updated_at: t
+		};
+		rows.set(r.id, r);
+		return { ...r };
+	},
+	// One window in the browser: every claim is the main window's.
+	code_session_claim: () => ({ owner: null, handoff: null }),
+	code_session_release: () => null,
 
 	code_bg_status: () => [],
 	code_bg_stop_owner: () => 0,

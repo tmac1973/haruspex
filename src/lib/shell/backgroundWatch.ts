@@ -151,6 +151,34 @@ export function clearCodeWatches(owner: string): void {
 	stopPollingIfIdle();
 }
 
+/**
+ * Remove a Code session's watches, finished or not, and return them, for a
+ * session that moves to another window (`adoptCodeWatches` there). Watches
+ * live in this JS context, and the process they follow lives on in Rust.
+ */
+export function takeCodeWatches(owner: string): CodeBgWatch[] {
+	const taken = watches.filter(
+		(w): w is CodeBgWatch => w.source === 'code_bg' && w.owner === owner
+	);
+	if (taken.length > 0) {
+		watches = watches.filter((w) => !taken.includes(w as CodeBgWatch));
+		stopPollingIfIdle();
+	}
+	return taken;
+}
+
+/**
+ * Take over watches another window handed off (`takeCodeWatches`). Their
+ * ids are re-issued here, since each window counts its own.
+ */
+export function adoptCodeWatches(list: CodeBgWatch[]): void {
+	for (const w of list) {
+		if (w?.source !== 'code_bg' || typeof w.owner !== 'string') continue;
+		watches.push({ ...w, id: nextId() });
+	}
+	if (watches.some((w) => w.exitCode == null)) ensurePolling();
+}
+
 /** Read a watched command's captured output (its temp log). Empty on failure. */
 export async function readWatchLog(logPath: string, wslDistro?: string): Promise<string> {
 	try {
@@ -174,6 +202,23 @@ export async function readCodeBgLog(processId: string, bytes = 4096): Promise<st
  * per finished command with its exit code, when it ran, and its output tail.
  * Shared by the Shell's Code mode and the Code tab.
  */
+/**
+ * Whether a user-role message is a watch notification `buildWatchNotification`
+ * wrote, not something the user typed. It is sent as a user turn so the model
+ * reacts to it, but the UI shows it as a notice and keeps it out of the
+ * input history. Matched on the fixed opening line, so saved threads work too.
+ */
+export function isWatchNotification(text: string): boolean {
+	return /^(A background command you started with watch has finished\.|\d+ background commands you started with watch have finished\.)/.test(
+		text
+	);
+}
+
+/** The commands a watch notification reports, from its `$ command` lines. */
+export function watchNotificationCommands(text: string): string[] {
+	return [...text.matchAll(/^\$ (.+)$/gm)].map((m) => m[1]);
+}
+
 export async function buildWatchNotification(completed: AnyWatch[]): Promise<string> {
 	const lines: string[] = [
 		completed.length === 1
