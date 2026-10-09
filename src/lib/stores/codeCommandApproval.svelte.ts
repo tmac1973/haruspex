@@ -26,6 +26,8 @@ export interface CommandApprovalRequest {
 	reasons: RiskMatch[];
 	/** Who is asking: a Code session's title, a Shell tab's name. Null when unknown. */
 	requester: string | null;
+	/** The Code session asking, so a client elsewhere knows whose prompt it is. */
+	sessionId: string | null;
 }
 
 const queue = createApprovalQueue<CommandApprovalRequest, CommandApprovalChoice>();
@@ -38,10 +40,16 @@ export function askCommandApproval(args: {
 	command: string;
 	reasons: RiskMatch[];
 	requester?: string | null;
+	sessionId?: string | null;
 	signal?: AbortSignal;
 }): Promise<CommandApprovalChoice> {
 	return queue.ask(
-		{ command: args.command, reasons: args.reasons, requester: args.requester ?? null },
+		{
+			command: args.command,
+			reasons: args.reasons,
+			requester: args.requester ?? null,
+			sessionId: args.sessionId ?? null
+		},
 		{ signal: args.signal, abortResult: 'deny' }
 	);
 }

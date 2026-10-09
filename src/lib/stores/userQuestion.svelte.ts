@@ -54,6 +54,8 @@ export interface UserQuestionRequest {
 	 * next to the question that judges it.
 	 */
 	imageUrl?: string;
+	/** The Code session asking, so a client elsewhere knows whose question it is. */
+	sessionId?: string;
 }
 
 /**
