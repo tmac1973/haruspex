@@ -205,6 +205,7 @@ pub fn run() {
                 // And the Code sessions it had open are free to open elsewhere.
                 if let Some(claims) = window.try_state::<code_tools::claims::CodeSessionClaims>() {
                     claims.release_window(window.label());
+                    code_tools::claims::emit_changed(window.app_handle());
                 }
                 // And any folder it was writing in.
                 if let Some(folders) = window.try_state::<code_tools::folders::CodeFolders>() {
@@ -377,6 +378,7 @@ pub fn run() {
             db::code_session_update_meta,
             db::code_session_delete,
             db::code_session_fork,
+            db::code_session_set_root,
             db::db_replace_messages,
             db::db_create_job,
             db::db_list_jobs,
@@ -456,6 +458,7 @@ pub fn run() {
             code_tools::folders::code_lease_release,
             code_tools::folders::code_notice_record,
             code_tools::folders::code_notices_take,
+            code_tools::folders::code_folder_exists,
             code_tools::git::code_git_status,
             code_tools::git::code_git_branches,
             code_tools::git::code_git_switch,

@@ -4,13 +4,20 @@
  * frontend's side of it.
  */
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import type { CodeClaim } from '#lib/ipc/gen/CodeClaim.ts';
 import type { CodeBgWatch } from '#lib/shell/backgroundWatch.ts';
+import type { Prefill } from '#lib/code/fork.ts';
+
+/** Rust's announcement that some window claimed or released a session. */
+export const CLAIMS_EVENT = 'code://claims';
 
 /** What a window hands the next owner when a session moves. */
 export interface Handoff {
 	watches: CodeBgWatch[];
+	/** What was typed in the input box and not sent, images included. */
+	draft?: Prefill | null;
 }
 
 export interface Claimed {
@@ -40,9 +47,43 @@ function parseHandoff(raw: string | null): Handoff | null {
 	if (!raw) return null;
 	try {
 		const parsed = JSON.parse(raw) as Partial<Handoff>;
-		return { watches: Array.isArray(parsed.watches) ? parsed.watches : [] };
+		return {
+			watches: Array.isArray(parsed.watches) ? parsed.watches : [],
+			draft: parseDraft(parsed.draft)
+		};
 	} catch {
 		return null;
+	}
+}
+
+function parseDraft(raw: unknown): Prefill | null {
+	if (!raw || typeof raw !== 'object') return null;
+	const d = raw as Partial<Prefill>;
+	const text = typeof d.text === 'string' ? d.text : '';
+	const images = Array.isArray(d.images)
+		? d.images.filter((u): u is string => typeof u === 'string')
+		: [];
+	return text || images.length ? { text, images } : null;
+}
+
+/** The sessions open in any window, this one included. Empty when the check fails. */
+export async function openSessionIds(): Promise<string[]> {
+	try {
+		return (await invoke<string[] | null>('code_session_open_ids')) ?? [];
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Call `cb` whenever a session is claimed or released in any window, or a
+ * window holding sessions closes. Resolves to the function that stops it.
+ */
+export async function onClaimsChanged(cb: () => void): Promise<() => void> {
+	try {
+		return await listen(CLAIMS_EVENT, () => cb());
+	} catch {
+		return () => {};
 	}
 }
 

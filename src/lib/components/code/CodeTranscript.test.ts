@@ -39,6 +39,7 @@ function fakeSession(over: Partial<Record<string, unknown>> = {}): CodeSession {
 		contextNotice: null,
 		git: null,
 		fileNotes: [],
+		folderMissing: false,
 		continueTurn: vi.fn(),
 		refreshGit: vi.fn(async () => {}),
 		...over
@@ -208,6 +209,36 @@ describe('CodeTranscript live tool round', () => {
 		// Above the step, and the answer after both.
 		const text = container.textContent ?? '';
 		expect(text.indexOf('Fixing it.')).toBeLessThan(text.indexOf('Fixed.'));
+	});
+	it('draws that text as a light remark: no header or copy button, links kept', () => {
+		const said = 'Looking at `src/a.ts:3` and [the docs](https://example.com/x).';
+		const messages: ChatMessage[] = [
+			{ role: 'user', content: 'fix it' },
+			{ role: 'assistant', content: 'Fixed.' }
+		];
+		const messageSteps = {
+			1: [
+				{
+					id: 'g',
+					toolName: 'code_grep',
+					query: 'x',
+					status: 'done' as const,
+					result: 'a.ts:1',
+					lead: said
+				}
+			]
+		};
+		render(CodeTranscript, { session: fakeSession({ messages, messageSteps }) });
+		const lead = screen.getByTestId('step-lead');
+		expect(lead.closest('.message')).toBeNull();
+		expect(lead.querySelector('.message-label')).toBeNull();
+		// One HARUSPEX header and one copy button: the answer's.
+		expect(screen.getAllByText('Haruspex')).toHaveLength(1);
+		expect(screen.getAllByTitle('Copy to clipboard')).toHaveLength(1);
+		expect(lead.querySelector('a')?.getAttribute('href')).toBe('https://example.com/x');
+		expect(lead.querySelector('button[data-action="code-path"]')?.getAttribute('data-path')).toBe(
+			'src/a.ts'
+		);
 	});
 });
 
