@@ -127,6 +127,18 @@ export function isOpenRouterToolCapable(m: OpenRouterModel): boolean {
 	return m.supported_parameters.includes('tools');
 }
 
+/**
+ * True when every space-separated word of `query` appears in the model's name
+ * or id, in any order: "qwen 3.8" matches "Qwen: Qwen3.8 27B". Empty matches all.
+ */
+export function matchesOpenRouterQuery(m: OpenRouterModel, query: string): boolean {
+	const haystack = `${m.name} ${m.id}`.toLowerCase();
+	return query
+		.toLowerCase()
+		.split(/\s+/)
+		.every((word) => haystack.includes(word));
+}
+
 /** True when a model accepts image inputs. */
 export function isOpenRouterVisionCapable(m: OpenRouterModel): boolean {
 	return m.architecture.input_modalities.includes('image');

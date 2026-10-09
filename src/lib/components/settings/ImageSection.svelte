@@ -21,7 +21,12 @@
 	import { resolveImageBackend } from '#lib/image/index.ts';
 	import { invalidateTypeAvailability } from '#lib/agent/jobs/types/availability.svelte.ts';
 	import { generateOneImage } from '#lib/image/generateOne.ts';
-	import type { ImageBackendCapabilities, ImageBackendKind } from '#lib/image/types.ts';
+	import { describeImageProgress } from '#lib/image/progress.ts';
+	import type {
+		ImageBackendCapabilities,
+		ImageBackendKind,
+		ImageProgress
+	} from '#lib/image/types.ts';
 	import type { ModelOption, ProbeResult } from '#lib/image/backend.ts';
 	import type { ImageModelInfo } from '#lib/ipc/gen/ImageModelInfo.ts';
 
@@ -279,15 +284,20 @@
 		generating = true;
 		testError = '';
 		testHash = '';
-		testProgress = 'Queued…';
 		controller = new AbortController();
+		const started = Date.now();
+		let latest: ImageProgress | null = { phase: 'queued' };
+		const show = () =>
+			(testProgress = describeImageProgress(latest, Math.round((Date.now() - started) / 1000)));
+		show();
+		const tick = setInterval(show, 1000);
 		try {
 			const result = await generateOneImage({
 				prompt: 'a red apple on a plain background',
 				signal: controller.signal,
 				onProgress: (p) => {
-					testProgress =
-						p.step && p.totalSteps ? `Step ${p.step} of ${p.totalSteps}…` : `${p.phase}…`;
+					latest = p;
+					show();
 				}
 			});
 			const img = result.images[0];
@@ -300,6 +310,7 @@
 		} catch (e) {
 			testError = errMessage(e);
 		} finally {
+			clearInterval(tick);
 			generating = false;
 			testProgress = '';
 			controller = null;

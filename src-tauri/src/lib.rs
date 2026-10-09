@@ -69,6 +69,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(image_cache::protocol::webview_plugin())
         // Custom scheme backing the Python sandbox's synchronous HTTP
         // (requests / urllib via pyodide-http's XMLHttpRequest transport).
         // The worker rewrites cross-origin XHRs onto this scheme; the

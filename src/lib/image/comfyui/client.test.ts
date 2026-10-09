@@ -177,6 +177,36 @@ describe('subscribe', () => {
 		close();
 	});
 
+	it('names the stage from the class of the node now executing', () => {
+		const seen: unknown[] = [];
+		const classes: Record<string, string> = {
+			'1': 'UNETLoader',
+			'2': 'CLIPTextEncode',
+			'3': 'KSampler'
+		};
+		const close = api.subscribe(
+			cfg,
+			'cid',
+			(p) => seen.push(p),
+			() => {},
+			(id) => classes[id]
+		);
+		const send = (node: string | null) =>
+			FakeSocket.last!.onmessage!({ data: JSON.stringify({ type: 'executing', data: { node } }) });
+		send('1');
+		send('2');
+		send('3');
+		send(null); // the end of the run is not a stage
+		send('9'); // a node the graph does not name
+		expect(seen).toEqual([
+			{ phase: 'loading', detail: 'Loading the model' },
+			{ phase: 'loading', detail: 'Loading the text encoder' },
+			{ phase: 'running', detail: 'Starting to draw' },
+			{ phase: 'running' }
+		]);
+		close();
+	});
+
 	it('reports failure when the socket errors, so the caller can poll instead', () => {
 		let failed = false;
 		const close = api.subscribe(

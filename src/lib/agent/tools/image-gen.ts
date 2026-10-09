@@ -13,7 +13,8 @@ import { errMessage } from '#lib/utils/error.ts';
 import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
 import { generateForTool } from '#lib/image/forTool.ts';
-import { ImageBackendError } from '#lib/image/types.ts';
+import { describeImageProgress } from '#lib/image/progress.ts';
+import { ImageBackendError, type ImageProgress } from '#lib/image/types.ts';
 import { registerLocalImage } from '#lib/images/resolve.svelte.ts';
 
 const SHAPES = {
@@ -79,16 +80,22 @@ registerTool({
 		const { width, height } = SHAPES[shapeOf(args.shape)];
 
 		const started = Date.now();
-		const tick = setInterval(
-			() => ctx.onProgress?.(`Drawing… ${Math.round((Date.now() - started) / 1000)} s`),
-			1000
-		);
+		let latest: ImageProgress | null = null;
+		const show = () =>
+			ctx.onProgress?.(describeImageProgress(latest, Math.round((Date.now() - started) / 1000)));
+		const tick = setInterval(show, 1000);
 		let image;
 		try {
-			ctx.onProgress?.('Drawing…');
+			show();
 			image = await generateForTool(
 				{ prompt, width, height, seed: null, transparent: args.transparent === true },
-				{ signal: ctx.signal }
+				{
+					signal: ctx.signal,
+					onProgress: (p) => {
+						latest = p;
+						show();
+					}
+				}
 			);
 		} catch (e) {
 			if (e instanceof ImageBackendError && e.kind === 'cancelled') throw e;

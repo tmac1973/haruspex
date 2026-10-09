@@ -5,6 +5,7 @@ import {
 	isOpenRouterFreeModel,
 	isOpenRouterToolCapable,
 	isOpenRouterVisionCapable,
+	matchesOpenRouterQuery,
 	OPENROUTER_CATALOG_TTL_MS,
 	FREE_MODEL_RPM,
 	type OpenRouterModel
@@ -155,5 +156,24 @@ describe('helpers', () => {
 	it('TTL and free-tier constants are exported', () => {
 		expect(OPENROUTER_CATALOG_TTL_MS).toBe(24 * 60 * 60 * 1000);
 		expect(FREE_MODEL_RPM).toBe(20);
+	});
+});
+
+describe('matchesOpenRouterQuery', () => {
+	const qwen = toolModel('qwen/qwen3.8-27b', 'Qwen: Qwen3.8 27B');
+
+	it('matches every word in any order across name and id', () => {
+		expect(matchesOpenRouterQuery(qwen, 'qwen 3.8')).toBe(true);
+		expect(matchesOpenRouterQuery(qwen, '27b QWEN')).toBe(true);
+		expect(matchesOpenRouterQuery(qwen, 'qwen/qwen3.8')).toBe(true);
+	});
+
+	it('fails when any word is missing', () => {
+		expect(matchesOpenRouterQuery(qwen, 'qwen 3.6')).toBe(false);
+	});
+
+	it('matches everything for an empty or blank query', () => {
+		expect(matchesOpenRouterQuery(qwen, '')).toBe(true);
+		expect(matchesOpenRouterQuery(qwen, '   ')).toBe(true);
 	});
 });

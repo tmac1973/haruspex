@@ -348,15 +348,40 @@ export async function view(
 	return requestBytes(cfg, { path: `/view?${q}` }, signal);
 }
 
+/** The class of a graph node by id, for naming what an `executing` node is doing. */
+export type NodeClassOf = (nodeId: string) => string | undefined;
+
+/**
+ * What a node of this class is doing, in the words the progress line uses.
+ *
+ * ComfyUI loads lazily, so a cold start spends its time in three places: the
+ * loader nodes (weights off the disk), the text encode (encoder onto the GPU)
+ * and the sampler before its first step (model onto the GPU). A warm run skips
+ * the loaders as cached and the other two are quick, so `loading` only shows
+ * when something really is loading.
+ */
+export function nodeProgress(classType: string | undefined): ImageProgress {
+	const c = classType ?? '';
+	if (/Loader/i.test(c)) return { phase: 'loading', detail: 'Loading the model' };
+	if (/TextEncode/i.test(c)) return { phase: 'loading', detail: 'Loading the text encoder' };
+	if (/Sampler/i.test(c)) return { phase: 'running', detail: 'Starting to draw' };
+	if (/VAEDecode/i.test(c)) return { phase: 'running', detail: 'Finishing the image' };
+	return { phase: 'running' };
+}
+
 /** What one socket message means for progress, if anything. */
 function progressOf(
 	type: string,
 	value?: number | null,
-	max?: number | null
+	max?: number | null,
+	node?: string | null,
+	nodeClass?: NodeClassOf
 ): ImageProgress | null {
 	if (type === 'progress') {
 		return { phase: 'running', step: Number(value ?? 0), totalSteps: Number(max ?? 0) };
 	}
+	// `executing` with no node is the end of the run, not a new stage.
+	if (type === 'executing' && node) return nodeProgress(nodeClass?.(node));
 	if (type === 'execution_start') return { phase: 'running' };
 	if (type === 'status') return { phase: 'queued' };
 	return null;
@@ -377,16 +402,18 @@ export function subscribe(
 	cfg: ClientConfig,
 	clientId: string,
 	onProgress: (p: ImageProgress) => void,
-	onFailure: () => void
+	onFailure: () => void,
+	nodeClass?: NodeClassOf
 ): () => void {
 	let idle = setTimeout(onFailure, SOCKET_IDLE_MS);
 	const bump = () => {
 		clearTimeout(idle);
 		idle = setTimeout(onFailure, SOCKET_IDLE_MS);
 	};
+	const stop = () => clearTimeout(idle);
 	return isTauri()
-		? subscribeViaRust(cfg, clientId, onProgress, onFailure, bump, () => clearTimeout(idle))
-		: subscribeViaSocket(cfg, clientId, onProgress, onFailure, bump, () => clearTimeout(idle));
+		? subscribeViaRust(cfg, clientId, onProgress, onFailure, bump, stop, nodeClass)
+		: subscribeViaSocket(cfg, clientId, onProgress, onFailure, bump, stop, nodeClass);
 }
 
 function subscribeViaRust(
@@ -395,7 +422,8 @@ function subscribeViaRust(
 	onProgress: (p: ImageProgress) => void,
 	onFailure: () => void,
 	bump: () => void,
-	stopIdle: () => void
+	stopIdle: () => void,
+	nodeClass?: NodeClassOf
 ): () => void {
 	const id = `comfy-ws-${++nextId}`;
 	const channel = new Channel<ComfySocketEvent>();
@@ -405,7 +433,7 @@ function subscribeViaRust(
 			return;
 		}
 		bump();
-		const p = progressOf(ev.type, ev.value, ev.max);
+		const p = progressOf(ev.type, ev.value, ev.max, ev.node, nodeClass);
 		if (p) onProgress(p);
 	};
 	invoke('comfy_subscribe', {
@@ -430,7 +458,8 @@ function subscribeViaSocket(
 	onProgress: (p: ImageProgress) => void,
 	onFailure: () => void,
 	bump: () => void,
-	stopIdle: () => void
+	stopIdle: () => void,
+	nodeClass?: NodeClassOf
 ): () => void {
 	const url = `${trimUrl(cfg.baseUrl).replace(/^http/, 'ws')}/ws?clientId=${encodeURIComponent(clientId)}`;
 	let socket: WebSocket;
@@ -447,9 +476,10 @@ function subscribeViaSocket(
 		try {
 			const msg = JSON.parse(ev.data) as {
 				type?: string;
-				data?: { value?: number; max?: number };
+				data?: { value?: number; max?: number; node?: string | null };
 			};
-			const p = msg.type ? progressOf(msg.type, msg.data?.value, msg.data?.max) : null;
+			const d = msg.data;
+			const p = msg.type ? progressOf(msg.type, d?.value, d?.max, d?.node, nodeClass) : null;
 			if (p) onProgress(p);
 		} catch {
 			// A message shape we do not know is not a failure worth surfacing.

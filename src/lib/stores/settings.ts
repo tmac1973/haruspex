@@ -191,6 +191,34 @@ export interface InferenceBackendConfig {
 	 * no request path consults it. Remove a release after the migration ships.
 	 */
 	openrouterReasoningEffort: string | null;
+	/**
+	 * The generic Remote and the OpenRouter options share the `remote*` fields
+	 * above, which hold whichever was used last. Switching between them stores
+	 * the outgoing one here and restores the incoming one, so each keeps its own
+	 * server, key and model. See `stores/remoteProfiles.ts`.
+	 */
+	remoteProfiles: RemoteProfiles;
+}
+
+/** The `remote*` fields that belong to one remote option rather than to both. */
+export type RemoteProfile = Pick<
+	InferenceBackendConfig,
+	| 'remoteBaseUrl'
+	| 'remoteApiKey'
+	| 'remoteApiKeyId'
+	| 'remoteModelId'
+	| 'remoteContextSize'
+	| 'remoteVisionSupported'
+	| 'remoteBackendKind'
+	| 'remoteSampling'
+	| 'remoteReasoning'
+	| 'remoteParallel'
+	| 'allowParallelInference'
+>;
+
+export interface RemoteProfiles {
+	generic?: RemoteProfile;
+	openrouter?: RemoteProfile;
 }
 
 /**
@@ -725,7 +753,8 @@ const defaultInferenceBackend: InferenceBackendConfig = {
 	openrouterCatalogAt: null,
 	openrouterKeyStatus: null,
 	openrouterKeyStatusAt: null,
-	openrouterReasoningEffort: null
+	openrouterReasoningEffort: null,
+	remoteProfiles: {}
 };
 
 const defaultIntegrations: IntegrationsConfig = {

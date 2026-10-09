@@ -94,7 +94,13 @@ describe('the progress socket through Rust', () => {
 		const [cmd, args] = tauri.invoke.mock.calls[0];
 		expect(cmd).toBe('comfy_subscribe');
 		expect(args).toMatchObject({ baseUrl: 'http://box:8188', apiKey: 'sekrit', clientId: 'cid' });
-		tauri.channels[0].onmessage({ kind: 'message', type: 'progress', value: 3, max: 12 });
+		tauri.channels[0].onmessage({
+			kind: 'message',
+			type: 'progress',
+			value: 3,
+			max: 12,
+			node: null
+		});
 		expect(seen).toEqual([{ phase: 'running', step: 3, totalSteps: 12 }]);
 		close();
 		expect(tauri.invoke).toHaveBeenLastCalledWith('comfy_cancel', { id: args.id });
