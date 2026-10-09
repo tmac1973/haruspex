@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { isWatchNotification, watchNotificationCommands } from '#lib/shell/backgroundWatch.ts';
 	import AgentsMdBadge from './AgentsMdBadge.svelte';
 	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
@@ -376,7 +377,7 @@
 	const history = new InputHistory(() =>
 		sentHistory(
 			session.messages
-				.filter((m) => m.role === 'user')
+				.filter((m) => m.role === 'user' && !isWatchNotification(messageText(m.content)))
 				.map((m) => typedText(userMessageView(m).question))
 		)
 	);
@@ -522,6 +523,16 @@
 						     as system messages, so they're shown rather than hidden —
 						     but as a note, not as a "Haruspex" answer bubble. -->
 						<div class="thread-note">{messageText(msg.content)}</div>
+					{:else if msg.role === 'user' && isWatchNotification(messageText(msg.content))}
+						{@const commands = watchNotificationCommands(messageText(msg.content))}
+						<details class="thread-note bg-notice">
+							<summary
+								>Background command finished{commands.length === 1
+									? `: ${commands[0]}`
+									: ` (${commands.length})`}</summary
+							>
+							<pre>{messageText(msg.content)}</pre>
+						</details>
 					{:else if msg.role === 'user'}
 						{@const split = userMessageView(msg)}
 						{#if messageHistorySent[i]?.length}
@@ -717,6 +728,16 @@
 {/if}
 
 <style>
+	.bg-notice summary {
+		cursor: pointer;
+	}
+
+	.bg-notice pre {
+		margin: 6px 0 0;
+		white-space: pre-wrap;
+		font-size: 0.78rem;
+	}
+
 	.sidebar {
 		position: relative;
 		display: flex;
