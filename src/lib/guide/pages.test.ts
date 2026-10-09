@@ -20,6 +20,7 @@ const PAGES = [
 	'chat',
 	'shell',
 	'code',
+	'code-sessions',
 	'skills',
 	'jobs',
 	'memory',
