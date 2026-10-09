@@ -17,6 +17,23 @@ describe('needsTerminal', () => {
 			'gpg',
 			"gpg: cannot open '/dev/tty': No such device or address\ngpg: signing failed: Not a tty\n"
 		],
+		[
+			'macOS sudo without a tty',
+			'Password:\nsudo: a terminal is required to read the password; either use the -S option to read from standard input or configure an askpass helper\n'
+		],
+		['macOS sudo before Ventura', 'sudo: no tty present and no askpass program specified\n'],
+		['sudo with requiretty', 'sudo: sorry, you must have a tty to run sudo\n'],
+		[
+			'ssh asking for a password',
+			'ssh_askpass: exec(/usr/X11R6/bin/ssh-askpass): No such file or directory\nuser@host: Permission denied (publickey,password).\n'
+		],
+		['ssh -t', 'Pseudo-terminal will not be allocated because stdin is not a terminal.\n'],
+		['vim', 'Vim: Warning: Input is not from a terminal\n'],
+		[
+			'git asking for a username',
+			"fatal: could not read Username for 'https://github.com': terminal prompts disabled\n"
+		],
+		['macOS /dev/tty', "gpg: cannot open '/dev/tty': Device not configured\n"],
 		['stty', "stty: 'standard input': Inappropriate ioctl for device\n"],
 		['read -s', 'bash: line 1: read: read error: 0: Inappropriate ioctl for device\n']
 	])('matches %s', (_name, output) => {
@@ -26,7 +43,9 @@ describe('needsTerminal', () => {
 	it.each([
 		['a missing command', 'bash: line 1: foo: command not found\n'],
 		['a failing test', 'FAILED tests/test_login.py::test_password_reset - AssertionError\n'],
-		['a compiler error', 'error[E0425]: cannot find value `tty` in this scope\n']
+		['a compiler error', 'error[E0425]: cannot find value `tty` in this scope\n'],
+		['a test about ttys', 'FAILED test_tty.py::test_dev_tty_missing - AssertionError\n'],
+		['a wrong password', 'sudo: 3 incorrect password attempts\n']
 	])('ignores %s', (_name, output) => {
 		expect(needsTerminal(output)).toBe(false);
 	});

@@ -9,12 +9,30 @@
 
 /** What these failures print. Matched case-insensitively against stdout + stderr. */
 const PATTERNS: RegExp[] = [
-	// sudo: a terminal is required to read the password; either use the -S option…
+	// sudo, Linux and macOS: "sudo: a terminal is required to read the password;
+	// either use the -S option to read from standard input or configure an
+	// askpass helper"
 	/\ba terminal is required\b/i,
 	// sudo -n, or sudo with no askpass: "sudo: a password is required"
 	/\ba password is required\b/i,
-	// older sudo: "sudo: no tty present and no askpass program specified"
+	// older sudo, and macOS before Ventura: "sudo: no tty present and no
+	// askpass program specified"
 	/\bno tty present\b/i,
+	// sudo with `requiretty` (RHEL): "sudo: sorry, you must have a tty to run sudo"
+	/\bmust have a tty\b/i,
+	// ssh asking for a password with no terminal: "ssh_askpass: exec(…): No such
+	// file or directory", then "Permission denied"
+	/\bssh_askpass\b/i,
+	// ssh -t: "Pseudo-terminal will not be allocated because stdin is not a terminal."
+	/\bstdin is not a (terminal|tty)\b/i,
+	// vim, less and friends: "Vim: Warning: Input is not from a terminal"
+	/\binput is not from a terminal\b/i,
+	// git over https: "fatal: could not read Username for 'https://…': terminal
+	// prompts disabled" (or "No such device or address")
+	/\bcould not read (username|password) for\b/i,
+	// opening the terminal itself: "cannot open '/dev/tty': Device not configured"
+	// (macOS) or "No such device or address" (Linux)
+	/\/dev\/tty\b.*\b(device not configured|no such device or address)\b/i,
 	// su: must be run from a terminal
 	/\bmust be run from a terminal\b/i,
 	// docker run -it: "the input device is not a TTY"; ssh, gpg, stty: "not a tty"
