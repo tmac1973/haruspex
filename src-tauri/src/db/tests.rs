@@ -2699,7 +2699,13 @@ fn code_session_root_can_be_pointed_at_another_folder() {
         .unwrap();
 
     let moved = db.set_code_session_root(&s.id, next.path()).unwrap();
-    assert_eq!(moved.root, next.path());
+    assert_eq!(
+        moved.root,
+        std::fs::canonicalize(next.path())
+            .unwrap()
+            .to_str()
+            .unwrap()
+    );
     assert_eq!(moved.updated_at, s.updated_at);
     assert_eq!(db.load_code_session(&s.id).unwrap(), moved);
 

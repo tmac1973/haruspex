@@ -134,6 +134,9 @@ Grouped by area; each needs a change. (Line numbers are as of main
 
 ## Decisions (recommendations — confirm with the user first)
 
+Confirmed with the user on 2026-10-09: every recommendation below stands
+as written.
+
 | # | Question | Recommendation |
 |---|---|---|
 | 1 | How a session stores where it is | **`wsl_distro` column + Linux root** (`/home/tim/proj`). Canonicalize *inside* the distro (`wsl.exe -d <d> -- realpath -e <path>`), never with `std::fs::canonicalize`. NULL distro = a host session (Linux/macOS today). One canonical form ends `\\?\` / `wsl$` aliasing and keeps prompts, links, git and keys natural. |

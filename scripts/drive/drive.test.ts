@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import {
 	clearInfo,
 	controlPaths,
@@ -17,6 +17,8 @@ import { summarize, transcript } from './render.mjs';
 describe('the control channel', () => {
 	const dir = mkdtempSync(join(tmpdir(), 'drive-test-'));
 	const paths = controlPaths({ XDG_RUNTIME_DIR: dir }, 'linux');
+	// Windows listens on named pipes only; one of our own, apart from a real driver's.
+	if (process.platform === 'win32') paths.socket = `\\\\.\\pipe\\${basename(dir)}`;
 	let server: { close: () => void } | null = null;
 
 	afterEach(() => {
