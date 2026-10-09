@@ -27,12 +27,12 @@
 		updateSettings({ shellMaxBytesPerCapture: clamped });
 	}
 
-	let shellCodeModeDefault = $state(getSettings().shellCodeModeDefault);
+	let shellFullAccessDefault = $state(getSettings().shellFullAccessDefault);
 	let codeCommandExec = $state(getSettings().codeCommandExec);
 	let commandMemoryLimitPercent = $state(getSettings().commandMemoryLimitPercent);
 
-	function persistCodeModeDefault() {
-		updateSettings({ shellCodeModeDefault });
+	function persistFullAccessDefault() {
+		updateSettings({ shellFullAccessDefault });
 	}
 	function persistCodeCommandExec() {
 		updateSettings({ codeCommandExec });
@@ -131,29 +131,33 @@
 	</p>
 </section>
 
-<h2 class="group-heading">Code mode</h2>
-<p class="moved">Timeout, step limit and auto-approve are in Settings → Code.</p>
+<h2 class="group-heading">Full access</h2>
+<p class="moved">
+	Full access also uses the timeout, step limit and auto-approve in Settings → Code.
+</p>
 
 <section class="settings-section">
-	<h2>Enable Code mode by default in new shells</h2>
-	<label class="toggle-row">
-		<input type="checkbox" bind:checked={shellCodeModeDefault} onchange={persistCodeModeDefault} />
-		<span>New Shell sessions start in Code mode</span>
+	<h2>Start new shells with Full access</h2>
+	<label
+		class="toggle-row"
+		title="Read-only: the assistant reads files and suggests commands. Full access: it also runs commands in your terminal and edits files. Each shell has its own lock in the assistant's header. Only affects shells opened after this change."
+	>
+		<input
+			type="checkbox"
+			bind:checked={shellFullAccessDefault}
+			onchange={persistFullAccessDefault}
+		/>
+		<span>New shells let the assistant run commands and edit files</span>
 	</label>
-	<p class="help">
-		Off by default. When off, a new shell opens as the read-only troubleshooting assistant (reads +
-		command suggestions only) and you flip Code mode on per-session from the sidebar header. When
-		on, every new shell starts already in Code mode, where the assistant can edit files and run
-		commands. Only affects shells opened after this change.
-	</p>
 </section>
 
 <section class="settings-section">
 	<h2>Command execution</h2>
 	<p class="help">
-		How the coding agent's <code>run_command</code> runs. <strong>Auto</strong> drives your live
-		interactive terminal (sharing the activated venv / env / cwd, visible in your scrollback) when
-		shell integration is available, falling back to a one-shot <code>bash -c</code> otherwise.
+		How the assistant's <code>run_command</code> runs with Full access. <strong>Auto</strong> drives
+		your live interactive terminal (sharing the activated venv / env / cwd, visible in your
+		scrollback) when shell integration is available, falling back to a one-shot <code>bash -c</code>
+		otherwise.
 		<strong>Terminal</strong> forces the PTY path; <strong>One-shot</strong> always runs a fresh isolated
 		process.
 	</p>
@@ -185,7 +189,7 @@
 </section>
 
 <style>
-	/* Sub-group label between the terminal cards and the Code-mode cards. */
+	/* Sub-group label between the terminal cards and the Full-access cards. */
 	.group-heading {
 		margin: 18px 0 12px;
 		font-size: 0.9rem;

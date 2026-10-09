@@ -464,14 +464,10 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_messages_conversation
                 ON messages(conversation_id, sort_order);
 
-            -- Code-mode shell threads, keyed by working directory so a
-            -- coding session survives a crash or power loss. See
-            -- db/shell_sessions.rs for why cwd and not the shell's id.
-            CREATE TABLE IF NOT EXISTS shell_code_sessions (
-                cwd TEXT PRIMARY KEY,
-                thread TEXT NOT NULL,
-                updated_at INTEGER NOT NULL
-            );
+            -- The Shell's old Code-mode threads, saved per working directory.
+            -- The Shell no longer saves threads and the Code tab keeps its own
+            -- sessions by id, so the table goes, with no import.
+            DROP TABLE IF EXISTS shell_code_sessions;
 
             -- Code-tab sessions, keyed by id (never by folder). The thread is
             -- one snapshot blob; see db/code_sessions.rs. forked_from is not
@@ -832,7 +828,6 @@ mod memories;
 mod memory_commands;
 mod prompts;
 mod runs;
-mod shell_sessions;
 mod stats;
 
 pub use code_sessions::{CodeSessionMetaPatch, CodeSessionRow, CodeSessionSummary};

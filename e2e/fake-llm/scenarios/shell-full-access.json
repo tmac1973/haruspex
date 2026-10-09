@@ -1,0 +1,8 @@
+[
+	{
+		"match": { "lastUser": "(?:^|\\n)clean the build" },
+		"reply": {
+			"tool_calls": [{ "name": "run_command", "arguments": { "command": "rm -rf build" } }]
+		}
+	}
+]

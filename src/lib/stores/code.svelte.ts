@@ -47,6 +47,9 @@ import { runCodeTurn, type CodeTurnResult } from '#lib/code/runCodeTurn.ts';
 import type { PendingToolCall } from '#lib/code/pendingCall.ts';
 import { LiveTurn } from '#lib/code/liveTurn.svelte.ts';
 import { setShellWaitListener, type ShellWait } from '#lib/code/shellBridge.ts';
+import { registerCodeOpener } from '#lib/code/bridge.ts';
+import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
+import { updateSettings } from '#lib/stores/settings.ts';
 import { isUnsetTitle } from '#lib/code/sessionList.ts';
 import { claimSession, raiseWindow, releaseSession } from '#lib/code/claims.ts';
 import { forkPoint, type Prefill } from '#lib/code/fork.ts';
@@ -800,3 +803,19 @@ function adopt(session: CodeSession): CodeSession {
 	void session.refreshGit();
 	return session;
 }
+
+/**
+ * The Shell's "Open in Code": a new session at the shell's folder, as a
+ * sub-tab, with the Code tab shown. The folder becomes the last one used, as
+ * if picked in the new-session dialog.
+ */
+export async function openCodeSessionAt(root: string): Promise<CodeSession> {
+	const session = await newSession(root);
+	updateSettings({ codeLastRoot: root });
+	setActiveTab('code');
+	return session;
+}
+
+registerCodeOpener(async (root) => {
+	await openCodeSessionAt(root);
+});

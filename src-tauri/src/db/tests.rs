@@ -2104,57 +2104,32 @@ fn a_lookup_miss_yields_nothing_to_rehydrate_from() {
         .is_none());
 }
 
-// --- Code-mode shell sessions --------------------------------------------
+// --- The old Shell Code-mode table ----------------------------------------
 
 #[test]
-fn shell_session_round_trips_and_upserts_by_cwd() {
+fn the_old_shell_code_sessions_table_is_dropped() {
     let db = test_db();
-    assert_eq!(db.load_shell_code_session("/work").unwrap(), None);
-
-    db.save_shell_code_session("/work", "{\"v\":1}").unwrap();
-    assert_eq!(
-        db.load_shell_code_session("/work").unwrap(),
-        Some("{\"v\":1}".to_string())
-    );
-
-    // A second save for the same directory replaces the thread rather than
-    // inserting a second row — one coding session per directory.
-    db.save_shell_code_session("/work", "{\"v\":2}").unwrap();
-    assert_eq!(
-        db.load_shell_code_session("/work").unwrap(),
-        Some("{\"v\":2}".to_string())
-    );
-    let conn = db.conn.lock().unwrap();
-    let rows: i64 = conn
-        .query_row("SELECT count(*) FROM shell_code_sessions", [], |r| r.get(0))
+    {
+        // A database from before: the table, with a saved thread in it.
+        let conn = db.conn.lock().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE shell_code_sessions (
+                cwd TEXT PRIMARY KEY, thread TEXT NOT NULL, updated_at INTEGER NOT NULL
+            );
+            INSERT INTO shell_code_sessions VALUES ('/work', '{}', 1);",
+        )
         .unwrap();
-    assert_eq!(rows, 1);
-}
-
-#[test]
-fn shell_sessions_are_isolated_per_directory() {
-    let db = test_db();
-    db.save_shell_code_session("/a", "thread-a").unwrap();
-    db.save_shell_code_session("/b", "thread-b").unwrap();
-    assert_eq!(
-        db.load_shell_code_session("/a").unwrap(),
-        Some("thread-a".to_string())
-    );
-    assert_eq!(
-        db.load_shell_code_session("/b").unwrap(),
-        Some("thread-b".to_string())
-    );
-}
-
-#[test]
-fn deleting_a_shell_session_leaves_no_restorable_row() {
-    let db = test_db();
-    db.save_shell_code_session("/work", "thread").unwrap();
-    db.delete_shell_code_session("/work").unwrap();
-    // Deleted, not blanked: an empty row would read back as restorable.
-    assert_eq!(db.load_shell_code_session("/work").unwrap(), None);
-    // Deleting again is not an error.
-    db.delete_shell_code_session("/work").unwrap();
+    }
+    db.migrate().unwrap();
+    let conn = db.conn.lock().unwrap();
+    let tables: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE name = 'shell_code_sessions'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(tables, 0);
 }
 
 #[test]

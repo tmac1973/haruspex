@@ -133,12 +133,12 @@ describe('/init, a Code mode skill', () => {
 		expect(await resolveSlash('/init', null, true)).toEqual({ kind: 'skill', doc });
 	});
 
-	it('says it needs Code mode anywhere else, and sends nothing', async () => {
+	it('says where it works anywhere else, and sends nothing', async () => {
 		expect(await resolveSlash('/init', null)).toEqual({ kind: 'needsCodeMode', name: 'init' });
 		const addNote = vi.fn();
 		const host = { projectRoot: async () => null, newConversation: vi.fn(), addNote };
 		expect(await runSlash('/init', host)).toEqual({ kind: 'handled' });
-		expect(addNote).toHaveBeenCalledWith(expect.stringContaining('needs Code mode'));
+		expect(addNote).toHaveBeenCalledWith(expect.stringContaining('with Full access'));
 		const code = { ...host, codeMode: () => true };
 		expect(await runSlash('/init', code)).toEqual({ kind: 'send', skill: doc });
 	});

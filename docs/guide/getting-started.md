@@ -12,7 +12,7 @@ Haruspex is a desktop AI app for research and coding that runs on your own compu
 - **Runs the model locally by default.** Haruspex downloads a model that fits your graphics card and runs it itself. You do not need a separate server such as Ollama or LM Studio.
 - **Keeps your data on your device.** Conversations and the model's answers are stored locally. Web searches do go out to the internet, and the optional cloud backend (OpenRouter) is off by default.
 - **Researches the web** for current information, and can read and write files in a folder you choose.
-- **Helps in a terminal**, and with Code mode turned on, can edit files and run commands for you.
+- **Helps in a terminal**, and with Full access turned on, can edit files and run commands for you.
 
 You can also point it at a model server you already run, or at OpenRouter. See the `models` page.
 
@@ -23,6 +23,7 @@ The first time you open Haruspex, a wizard asks how you want to run the model:
 1. **Download a model** (recommended). Haruspex checks your hardware (GPU, VRAM and RAM), shows the model it recommends, and lets you pick another from the list. You can also choose **Use existing GGUF file** to use a model you already have.
 
    With a graphics card of 8 to 24 GB and at least 32 GB of RAM, the wizard also offers **Larger model using system RAM**: Qwen 3.6 35B-A3B, which is smarter but slower. **Use this instead** picks it and turns on Settings → Inference → **Let models use system RAM**.
+
 2. **Connect to an existing server** (advanced). Enter the address of an OpenAI-compatible server. Nothing is downloaded.
 
 After a download, the wizard sends a short test question to the model. If the test fails, you can **Retry** or **Skip**; the model may still work. Then press **Start chatting**.
@@ -46,7 +47,7 @@ Along the top of the window you also find the server status (click it to open th
 
 AI models make mistakes. They can state wrong facts with confidence, misread files, and suggest commands that are wrong or harmful. The small models Haruspex uses on modest hardware make these mistakes more often than large cloud models.
 
-The Shell assistant runs nothing by default. If you turn on **Code mode**, it runs commands in your real terminal: commands it flags as risky ask you first, but commands it thinks are safe run on their own. The Code tab works the same way in its project folder. Only use them on machines and projects you are willing to let the model change. Read every command before you run it, and keep backups.
+The Shell assistant runs nothing by default. If you give it **Full access**, it runs commands in your real terminal: commands it flags as risky ask you first, but commands it thinks are safe run on their own. The Code tab works the same way in its project folder. Only use them on machines and projects you are willing to let the model change. Read every command before you run it, and keep backups.
 
 ## Ask Haruspex about itself
 
@@ -56,7 +57,7 @@ In Chat or the Shell assistant, ask things like "how do I add a calendar?" or "i
 
 - `models` — choosing and downloading models, context size, using your own server or OpenRouter.
 - `chat` — web research, files, Python, voice, images and pictures in answers.
-- `shell` — the terminal assistant and Code mode.
+- `shell` — the terminal assistant, Read-only and Full access.
 - `code` — the Code tab's coding sessions.
 - `skills` — reusable instructions you run with `/name`, and repo `AGENTS.md` files.
 - `jobs` — saved and scheduled tasks, and per-job models.

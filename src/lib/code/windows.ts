@@ -20,14 +20,18 @@ import { sessionLabel } from '#lib/code/sessionList.ts';
 import { openShellForCommand } from '#lib/code/shellBridge.ts';
 import { serveShellRelay, type RelayBus } from '#lib/code/shellRelay.ts';
 import { createCodeSession } from '#lib/code/db.ts';
+import { OPEN_CODE_EVENT, type OpenCodePayload } from '#lib/code/bridge.ts';
 import {
 	forkAndOpen,
 	forkSession,
 	handOffSession,
 	newSession,
+	openCodeSessionAt,
 	openSession,
 	type CodeSession
 } from '#lib/stores/code.svelte.ts';
+import { showToast } from '#lib/stores/toasts.svelte.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 /** Detached window → main: open this session here as a sub-tab. */
 export const REATTACH_EVENT = 'code://reattach';
@@ -178,6 +182,24 @@ export function reattachHandler(
 	};
 }
 
+/**
+ * Main window only: "Open in Code" from a detached Shell window. The session
+ * opens here, as a sub-tab, and this window comes forward. Returns the
+ * handler, for tests; `listenInMainWindow` wires it.
+ */
+export function openAtHandler(
+	raiseMain: () => Promise<void>
+): (p: OpenCodePayload) => Promise<void> {
+	return async (p) => {
+		try {
+			await openCodeSessionAt(p.root);
+		} catch (e) {
+			showToast(`Couldn't open a Code session: ${errMessage(e)}`, { kind: 'error' });
+		}
+		await raiseMain();
+	};
+}
+
 // ---- Tauri ----------------------------------------------------------------
 
 export const tauriBus: RelayBus = {
@@ -214,8 +236,9 @@ const tauriApi: CodeWindowApi = {
 };
 
 /**
- * Main window only: re-attach and fork requests from detached windows, and
- * their `open_in_shell` requests. Resolves to the function that stops both.
+ * Main window only: re-attach and fork requests from detached Code windows,
+ * their `open_in_shell` requests, and "Open in Code" from detached Shell
+ * windows. Resolves to the function that stops them all.
  */
 export async function listenInMainWindow(onOpen: () => void): Promise<() => void> {
 	const onReattach = reattachHandler(onOpen, raiseSelf);
@@ -224,9 +247,14 @@ export async function listenInMainWindow(onOpen: () => void): Promise<() => void
 			console.error('re-attaching a Code session failed', err)
 		);
 	});
+	const onOpenAt = openAtHandler(raiseSelf);
+	const stopOpenAt = await listen<OpenCodePayload>(OPEN_CODE_EVENT, (e) => {
+		void onOpenAt(e.payload);
+	});
 	const stopRelay = await serveShellRelay(tauriBus, openShellForCommand, () => void raiseSelf());
 	return () => {
 		stopReattach();
+		stopOpenAt();
 		stopRelay();
 	};
 }

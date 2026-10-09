@@ -249,7 +249,7 @@ describe('runShellTurn', () => {
 		expect(deltas).toEqual(['checking journal']);
 	});
 
-	it('threads Code-mode options into the agent loop', async () => {
+	it('threads Full-access options into the agent loop', async () => {
 		mocks.runAgentLoop.mockImplementationOnce(async () => {});
 		await runShellTurn({
 			messages,

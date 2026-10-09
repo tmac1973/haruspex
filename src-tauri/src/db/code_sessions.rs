@@ -5,9 +5,9 @@
 //! fixed at creation and is the session's boundary for its whole life.
 //!
 //! The thread is one JSON blob (a `CodeSessionSnapshot`, see
-//! `src/lib/code/session.ts`) rewritten after every turn, for the same reason
-//! as `shell_sessions.rs`: a snapshot cannot half-apply, and the write has to
-//! happen per turn because a shutdown hook never runs when the power goes.
+//! `src/lib/code/session.ts`) rewritten after every turn: a snapshot cannot
+//! half-apply, and the write has to happen per turn because a shutdown hook
+//! never runs when the power goes.
 //! The snapshot's index-keyed sidecars (steps, stats, stops) have no home in
 //! the `messages` table, and nothing queries inside a thread.
 //!

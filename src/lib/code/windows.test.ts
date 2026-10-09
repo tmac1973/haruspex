@@ -8,8 +8,11 @@ const store = vi.hoisted(() => ({
 	openSession: vi.fn(async (id: string): Promise<unknown> => ({ id, prefill: null })),
 	forkAndOpen: vi.fn(async () => ({})),
 	forkSession: vi.fn(async () => ({ id: 'fork-1', prefill: { text: 'edit me', images: [] } })),
-	newSession: vi.fn(async () => ({}))
+	newSession: vi.fn(async () => ({})),
+	openCodeSessionAt: vi.fn(async (root: string) => ({ root }))
 }));
+const toasts = vi.hoisted(() => ({ showToast: vi.fn() }));
+vi.mock('#lib/stores/toasts.svelte.ts', () => toasts);
 vi.mock('#lib/stores/code.svelte.ts', () => store);
 const createCodeSession = vi.hoisted(() => vi.fn(async () => ({ id: 'new-1' })));
 vi.mock('#lib/code/db.ts', () => ({ createCodeSession }));
@@ -27,6 +30,7 @@ import {
 	markDetachedCodeWindow,
 	moveBlockedReason,
 	newSessionBeside,
+	openAtHandler,
 	reattachHandler,
 	reattachToMain,
 	type CodeWindowApi
@@ -178,5 +182,23 @@ describe('the shell bridge in a detached window', () => {
 		});
 		offLocal();
 		expect(hasShellCommandOpener()).toBe(false);
+	});
+});
+
+describe('Open in Code from a detached Shell window', () => {
+	it('opens the session in the main window and brings it forward', async () => {
+		const raise = vi.fn(async () => {});
+		await openAtHandler(raise)({ root: '/home/tim/app' });
+		expect(store.openCodeSessionAt).toHaveBeenCalledWith('/home/tim/app');
+		expect(raise).toHaveBeenCalled();
+	});
+
+	it('says why when the session cannot be made', async () => {
+		store.openCodeSessionAt.mockRejectedValueOnce(new Error('no such folder'));
+		await openAtHandler(async () => {})({ root: '/gone' });
+		expect(toasts.showToast).toHaveBeenCalledWith(
+			expect.stringContaining('no such folder'),
+			expect.anything()
+		);
 	});
 });

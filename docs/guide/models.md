@@ -85,4 +85,4 @@ Each job can use its own model or server, so a heavy job can go to a big remote 
 
 ## Features that need a bigger model
 
-Code mode, guided planning, autonomous coding, audit jobs and the Python sandbox ask the model to write code. The 4B and 9B models are good at research but weak at coding, so these features often fail on them. They become usable at 16 GB and work well at 24 GB, or on a bigger remote model. See the `troubleshooting` page for small-model limits.
+The Code tab, the Shell's Full access, guided planning, autonomous coding, audit jobs and the Python sandbox ask the model to write code. The 4B and 9B models are weak at coding, so these often fail on them. They become usable at 16 GB and work well at 24 GB, or on a bigger remote model. See the `troubleshooting` page for small-model limits.

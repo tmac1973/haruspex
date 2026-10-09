@@ -1,11 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getCurrentWindow } from '@tauri-apps/api/window';
+	import { emitTo } from '@tauri-apps/api/event';
+	import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 	import { page } from '$app/state';
 	import ShellPane from '#lib/components/shell/ShellPane.svelte';
 	import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
 	import { reattachShellSession, getActiveShellSession } from '#lib/stores/shell.svelte.ts';
-	import { handBackToMain } from '#lib/shell/windows.ts';
+	import { fullAccessFromUrl, handBackToMain } from '#lib/shell/windows.ts';
+	import { relayToMain, useCodeRelay } from '#lib/code/bridge.ts';
 
 	// The route param is the live PTY session id this window adopts.
 	const ptyId = Number(page.params.id);
@@ -13,15 +16,35 @@
 	// has its own module state) so the layout's global hotkeys (F2/F3) resolve
 	// it via getActiveShellSession(). reattach also re-hydrates the chat stash.
 	setActiveTab('shell');
-	const session = reattachShellSession(ptyId, 'Shell') ?? getActiveShellSession()!;
+	const session =
+		reattachShellSession(ptyId, 'Shell', fullAccessFromUrl(page.url)) ?? getActiveShellSession()!;
 	session.setSidebarOpen(true);
+
+	// "Open in Code" opens the session in the main window: the Code tab is
+	// there, not here.
+	useCodeRelay(
+		relayToMain({
+			emitToMain: (event, payload) => emitTo('main', event, payload),
+			async raiseMain() {
+				const main = await WebviewWindow.getByLabel('main').catch(() => null);
+				await main?.unminimize().catch(() => {});
+				await main?.setFocus().catch(() => {});
+			}
+		})
+	);
 
 	let closing = false;
 
 	async function handBack() {
 		if (closing) return;
 		closing = true;
-		await handBackToMain(ptyId, session.serializeChat(), session.name, session.serializeTerminal());
+		await handBackToMain(
+			ptyId,
+			session.serializeChat(),
+			session.name,
+			session.serializeTerminal(),
+			session.fullAccess
+		);
 		await getCurrentWindow().destroy();
 	}
 
