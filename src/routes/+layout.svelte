@@ -75,6 +75,7 @@
 	import { listenInMainWindow as listenForCodeWindows } from '#lib/code/windows.ts';
 	import { getActiveConversation, sendMessage } from '#lib/stores/chat.svelte.ts';
 	import { getActiveShellSession } from '#lib/stores/shell.svelte.ts';
+	import { isDetachedRoute, rendersAgentModals } from '#lib/windowRoutes.ts';
 	import {
 		listenForMcpToolChanges,
 		startConfiguredMcpServers
@@ -109,9 +110,7 @@
 	// each shows only its own page (routes/shell/[id], routes/code/[id],
 	// routes/editor).
 	const codeWindow = $derived(page.route.id === '/code/[id]');
-	const detached = $derived(
-		page.route.id === '/shell/[id]' || page.route.id === '/editor' || codeWindow
-	);
+	const detached = $derived(isDetachedRoute(page.route.id));
 
 	// Delegated handler for the copy/paste/run buttons inside rendered
 	// markdown (sanitization strips inline onclick). Installed in every
@@ -549,9 +548,9 @@
 
 {#if detached}
 	{@render children()}
-	<!-- A detached Code window runs turns, so it asks its own approvals:
-	     each window has its own approval stores. -->
-	{#if codeWindow}
+	<!-- Detached Code and Shell windows run turns, so they ask their own
+	     approvals: each window has its own approval stores. -->
+	{#if rendersAgentModals(page.route.id)}
 		{@render agentModals()}
 	{/if}
 {:else}
