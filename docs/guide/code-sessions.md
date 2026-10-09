@@ -1,6 +1,6 @@
 ---
 title: Code sessions
-description: Code tab sessions — the session list, forking from a message into a git worktree or read-only, sessions sharing a folder, and moving a session to its own window and back.
+description: Code tab sessions — the session list, forking into a git worktree or read-only, sessions sharing a folder, a missing folder, and moving a session to its own window and back.
 ---
 
 # Code sessions
@@ -37,7 +37,16 @@ A **Read-only** badge in the header marks a fork that shares its folder. Its age
 
 Several sessions can work in one folder, in any window. Only one edits at a time: while one session's turn is writing files or running commands that may change them, another session's edits are refused and its agent is told to wait or use a worktree. Commands that only read (`ls`, `git status`, `grep`) don't count.
 
-When a session's turn changes files, the other sessions in that folder are told at the start of their next turn which files changed and by which session, so they re-read them. The note also shows in their conversation. Changes made by commands are not tracked. In a git repository, the agent is also told when the checked-out branch changed since its last turn, whether from the branch menu, the Shell or another terminal.
+When a session's turn changes files, the other sessions in that folder are told at the start of their next turn which files changed and by which session, so they re-read them. The note also shows in their conversation. Changes made by commands are not tracked. In a git repository, the agent is also told when the checked-out branch changed since its last turn, whether from the branch menu, the Shell or another terminal. Both notes survive a restart: changes not yet told, and a branch switched while Haruspex was closed, are told on the next turn.
+
+## When a session's folder is gone
+
+If a session's folder was deleted, moved, or is on a drive that isn't mounted, the session shows **Folder not found** with the path. You can still read it, but the input box is disabled and nothing runs. Haruspex looks when you open or switch to the session and when its window comes back to the front; if the folder goes during a turn, its tools fail and the banner shows when the turn ends.
+
+- **Choose folder…** points the session at another folder, after asking. The conversation stays, but paths in it still name the old folder.
+- **Delete session** deletes it.
+
+Haruspex never recreates the missing folder.
 
 ## Delete a worktree session
 
@@ -45,7 +54,7 @@ Deleting a session that has its own worktree offers **Also remove its worktree**
 
 ## Move a session to its own window
 
-**⤢** on a session's tab moves it to a window of its own; its background processes keep running. It only works while the session is idle: while the agent works, waits for another turn or waits on a Shell tab, the button says why.
+**⤢** on a session's tab moves it to a window of its own; its background processes keep running. It only works while the session is idle: while the agent works, waits for another turn or waits on a Shell tab, the button says why. Unsent text and images in the input box go with it, both ways.
 
 The window shows that one session, without the list. Its header names the model; the status badge stays in the main window. `F2` and `F3` work there as in the main window.
 
@@ -54,4 +63,4 @@ The window shows that one session, without the list. Its header names the model;
 - Forks and `/new` made there open as tabs in the main window.
 - Closing the window is like closing the tab: it stops the agent and the background processes, asking first if any run. Closing the main window closes these windows too.
 
-A session is open in one window at a time. Clicking it in the list while it has a window brings that window to the front, and it can't be deleted until that window is closed.
+A session is open in one window at a time. In the list, a session with its own window shows **⧉**; clicking it brings that window to the front, and it can't be deleted until that window is closed.
