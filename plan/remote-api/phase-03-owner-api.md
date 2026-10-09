@@ -25,9 +25,9 @@
 - **Settings → Remote access:** enable, bind address (loopback / a chosen
   interface), paired devices with revoke, and one sentence pointing at
   `tailscale serve` for HTTPS.
-- **The driver** gains `--via api`: drive a running dev app (`npm run tauri
-  dev`) through this API, no WebDriver. Tests the API, and lets Claude poke a
-  hot-reloading app.
+- **The driver** gains `--via api`: drive a running dev app
+  (`npm run tauri dev`) through this API, no WebDriver. Tests the API, and
+  lets Claude poke a hot-reloading app.
 - **Tests:** the axum test pattern in `remote/server.rs` (token required,
   scope enforced per route, rotation cuts off, stopped server stops
   answering), plus a phase-1 driver spec that runs over `--via api`.

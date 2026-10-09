@@ -1,0 +1,79 @@
+#!/usr/bin/env node
+/**
+ * Drive the driver: start it against the fake model, run a turn, refuse a
+ * risky command through the approval modal, and stop, checking the project
+ * folder and the leftovers after each step. CI runs it after the real-app
+ * specs (needs `npm run e2e:app:build`), so `drive` can't rot unnoticed.
+ */
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { controlPaths, readInfo } from './control.mjs';
+
+const DRIVE = fileURLToPath(new URL('../drive.mjs', import.meta.url));
+
+function drive(...args) {
+	const out = execFileSync(process.execPath, [DRIVE, ...args], { encoding: 'utf8' });
+	return JSON.parse(out);
+}
+
+function check(cond, msg) {
+	if (!cond) throw new Error(`selftest: ${msg}`);
+	console.log(`ok - ${msg}`);
+}
+
+const folder = join(mkdtempSync(join(tmpdir(), 'haruspex-drive-selftest-')), 'project');
+mkdirSync(join(folder, 'build'), { recursive: true });
+writeFileSync(join(folder, 'README.md'), '# Helo\n');
+writeFileSync(join(folder, 'build', 'out.txt'), 'built\n');
+
+let started = false;
+try {
+	const status = drive('start', '--fake', 'code-tab', '--folder', folder, '--idle-timeout', '5');
+	started = true;
+	check(
+		status.model === 'fake-model' && status.sessions.length === 0,
+		'start reports the fake model'
+	);
+
+	const { id } = drive('new-session');
+	check(typeof id === 'string', 'new-session opens a session');
+
+	const fixed = drive('send', id, 'fix the readme typo', '--wait', '--timeout', '60');
+	check(fixed.state === 'done', 'send --wait returns when the turn ends');
+	check(
+		readFileSync(join(folder, 'README.md'), 'utf8') === '# Hello\n',
+		'the turn edited the file'
+	);
+	check(fixed.summary.toolCounts.fs_edit_text === 1, 'the summary counts the edit');
+
+	drive('scenario', 'drive-approval');
+	const asked = drive('send', id, 'clean the build folder', '--wait', '--timeout', '60');
+	check(asked.state === 'approval', 'send --wait stops at an approval');
+	check(asked.approval.command === 'rm -rf build', 'the approval names the command');
+	drive('approve', 'deny');
+	const denied = drive('wait', id, '--timeout', '60');
+	check(denied.state === 'done', 'wait returns once the denied turn ends');
+	check(existsSync(join(folder, 'build', 'out.txt')), 'the denied command did not run');
+
+	const state = drive('state', id);
+	check(
+		state.messages.some((m) => m.role === 'tool'),
+		'state returns the thread'
+	);
+
+	const saved = drive('stop');
+	started = false;
+	check(saved.files.includes(`transcript-${id}.md`), 'stop writes the transcript');
+	check(readInfo(controlPaths()) === null, 'stop leaves no driver behind');
+} finally {
+	if (started) {
+		try {
+			execFileSync(process.execPath, [DRIVE, 'stop'], { stdio: 'inherit' });
+		} catch {
+			// already gone
+		}
+	}
+}

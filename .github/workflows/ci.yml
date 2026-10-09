@@ -101,7 +101,7 @@ jobs:
       - name: The test mocks stay out of a production build
         run: |
           npm run build
-          if grep -rl 'no mock for IPC command' build/; then
+          if grep -rlE 'no mock for IPC command|__haruspexDrive' build/; then
             echo "src/lib/e2e reached the production build"
             exit 1
           fi
@@ -212,11 +212,15 @@ jobs:
       - run: cargo install tauri-driver --locked
       - run: npm run e2e:app:build
       - run: xvfb-run -a npm run e2e:app
+      # scripts/drive.mjs against the fake model; it starts its own Xvfb.
+      - run: node scripts/drive/selftest.mjs
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: e2e-app-linux
-          path: e2e/app/output/
+          path: |
+            e2e/app/output/
+            e2e/drive-output/
 
   # Windows gates for the Shell-tab port (Phase 17). The whole point is to
   # compile + lint the `#[cfg(windows)]` branches (code_tools.rs, sidecar_utils.rs,
