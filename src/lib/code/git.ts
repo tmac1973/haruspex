@@ -61,3 +61,23 @@ export function switchBlockedReason(status: GitStatus, busy: boolean): string | 
 	}
 	return null;
 }
+
+/** The checked-out branch as the agent is told it: the name, or the commit when detached. */
+export function branchSeen(status: GitStatus | null): string | null {
+	if (!status) return null;
+	return status.branch ?? (status.head ? `detached HEAD at ${status.head}` : null);
+}
+
+/**
+ * The note a turn opens with about the branch: once when the agent hasn't been
+ * told it yet (`seen` undefined), then only when it changed outside its turns
+ * (the branch menu, the Shell, another terminal). Null when there's nothing to say.
+ */
+export function branchNotice(seen: string | null | undefined, now: string | null): string | null {
+	if (!now) return null;
+	if (seen === undefined) return `The checked-out git branch is '${now}'.`;
+	if (seen === now) return null;
+	return seen
+		? `The checked-out git branch is now '${now}' (it was '${seen}'); it was switched outside your last turn.`
+		: `The checked-out git branch is now '${now}'.`;
+}

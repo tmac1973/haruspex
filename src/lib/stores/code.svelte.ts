@@ -51,7 +51,14 @@ import { isUnsetTitle } from '#lib/code/sessionList.ts';
 import { claimSession, raiseWindow, releaseSession } from '#lib/code/claims.ts';
 import { forkPoint, type Prefill } from '#lib/code/fork.ts';
 import type { CodeForkMode } from '#lib/ipc/gen/CodeForkMode.ts';
-import { gitStatus, removeWorktree, type GitStatus, type WorktreeRemoval } from '#lib/code/git.ts';
+import {
+	branchNotice,
+	branchSeen,
+	gitStatus,
+	removeWorktree,
+	type GitStatus,
+	type WorktreeRemoval
+} from '#lib/code/git.ts';
 import {
 	createWriteGuard,
 	formatFileNotices,
@@ -146,6 +153,8 @@ export class CodeSession {
 	fileNotes = $state<{ text: string; at: number }[]>([]);
 	/** When this session last looked for other sessions' changes (ms). */
 	private noticesSince: number;
+	/** The branch the agent was last told or saw; undefined until it's been told. */
+	private branchSeenByAgent: string | null | undefined = undefined;
 	private abortController: AbortController | null = null;
 	/** Settles once the running turn has been saved. */
 	private turnDone: Promise<void> | null = null;
@@ -498,7 +507,10 @@ export class CodeSession {
 			await guard.finish();
 			await this.persist();
 			void this.refreshBackground();
-			void this.refreshGit();
+			// What the turn itself did to the branch (a `git switch` it ran) is
+			// what it saw, so only later changes get a note.
+			await this.refreshGit();
+			this.branchSeenByAgent = branchSeen(this.git);
 		}
 	}
 
@@ -509,9 +521,20 @@ export class CodeSession {
 	private async takeNotice(): Promise<string | null> {
 		const batch = await takeFileNotices(this.id, this.root, this.noticesSince);
 		this.noticesSince = batch.now;
-		const text = formatFileNotices(batch.notices, this.root);
-		if (text) this.fileNotes = [...this.fileNotes, { text, at: this.messages.length - 1 }];
-		return text;
+		const files = formatFileNotices(batch.notices, this.root);
+		// The branch can change under the agent between turns (the branch menu,
+		// the Shell, another terminal); without this it answers from memory.
+		await this.refreshGit();
+		const now = branchSeen(this.git);
+		const branch = branchNotice(this.branchSeenByAgent, now);
+		// Telling a fresh agent the branch is for it alone; a switch is news to
+		// the user reading the transcript too.
+		const shown = this.branchSeenByAgent === undefined ? null : branch;
+		this.branchSeenByAgent = now;
+		const display = [shown, files].filter(Boolean).join('\n');
+		if (display)
+			this.fileNotes = [...this.fileNotes, { text: display, at: this.messages.length - 1 }];
+		return [branch, files].filter(Boolean).join('\n') || null;
 	}
 
 	/** Forget everything shown only while a turn runs. */

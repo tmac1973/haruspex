@@ -37,7 +37,7 @@ A **Read-only** badge in the header marks a fork that shares its folder. Its age
 
 Several sessions can work in one folder, in any window. Only one edits at a time: while one session's turn is writing files or running commands that may change them, another session's edits are refused and its agent is told to wait or use a worktree. Commands that only read (`ls`, `git status`, `grep`) don't count.
 
-When a session's turn changes files, the other sessions in that folder are told at the start of their next turn which files changed and by which session, so they re-read them. The note also shows in their conversation. Changes made by commands are not tracked.
+When a session's turn changes files, the other sessions in that folder are told at the start of their next turn which files changed and by which session, so they re-read them. The note also shows in their conversation. Changes made by commands are not tracked. In a git repository, the agent is also told when the checked-out branch changed since its last turn, whether from the branch menu, the Shell or another terminal.
 
 ## Delete a worktree session
 

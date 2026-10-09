@@ -994,6 +994,37 @@ describe('sharing a folder', () => {
 		expect(systemText(o)).toContain('fresh git worktree on branch first-fork');
 	});
 
+	it('tells the model when the branch changed between its turns', async () => {
+		const s = await answered();
+		const at = (branch: string) =>
+			db.folders.git.set('/proj', {
+				repo_root: '/proj',
+				branch,
+				head: 'abc1234',
+				changed: 0,
+				untracked: 0,
+				linked_worktree: false,
+				default_branch: 'main'
+			});
+		const opening = () =>
+			String(
+				(mocks.runAgentLoop.mock.calls.at(-1)![0] as AgentLoopOptions).messages.at(-1)!.content
+			);
+		// The answered turn ran outside git; the repo appearing is news.
+		at('bob');
+		await s.send('first');
+		expect(opening()).toContain("The checked-out git branch is now 'bob'.");
+		await s.send('second');
+		expect(opening()).toBe('second');
+		// Switched from the branch menu between turns.
+		at('sally');
+		await s.send('which branch?');
+		expect(opening()).toContain("now 'sally' (it was 'bob')");
+		expect(s.fileNotes.at(-1)?.text).toContain("now 'sally'");
+		await s.send('again');
+		expect(opening()).toBe('again');
+	});
+
 	it('tells the model at the start of a turn what another session changed, once', async () => {
 		const s = await answered();
 		db.folders.notices = [

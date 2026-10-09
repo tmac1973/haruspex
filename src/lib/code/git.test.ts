@@ -2,7 +2,14 @@ import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 
-import { branchLabel, isDirty, switchBlockedReason, type GitStatus } from './git';
+import {
+	branchLabel,
+	branchNotice,
+	branchSeen,
+	isDirty,
+	switchBlockedReason,
+	type GitStatus
+} from './git';
 
 const st = (over: Partial<GitStatus> = {}): GitStatus => ({
 	repo_root: '/p',
@@ -35,5 +42,23 @@ describe('the branch control rules', () => {
 		expect(switchBlockedReason(st({ changed: 2 }), false)).toBe(
 			'2 files have uncommitted changes: commit or stash first.'
 		);
+	});
+});
+
+describe('branchNotice', () => {
+	it('tells a fresh agent the branch once', () => {
+		expect(branchNotice(undefined, 'main')).toBe("The checked-out git branch is 'main'.");
+	});
+	it('says nothing when the branch is what the agent last saw', () => {
+		expect(branchNotice('bob', 'bob')).toBeNull();
+	});
+	it('names a switch made outside the turn', () => {
+		expect(branchNotice('bob', 'sally')).toContain("now 'sally' (it was 'bob')");
+	});
+	it('says nothing outside git', () => {
+		expect(branchNotice('bob', null)).toBeNull();
+	});
+	it('describes a detached HEAD by commit', () => {
+		expect(branchSeen(st({ branch: null, head: 'abc1234' }))).toBe('detached HEAD at abc1234');
 	});
 });
