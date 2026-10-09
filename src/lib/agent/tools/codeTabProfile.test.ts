@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { getToolSchemas } from '#lib/agent/tools/index.ts';
-import { CODE_TAB_ONLY, CODE_TAB_DESCRIPTIONS } from './codeTabProfile';
+import { CODE_TAB_ONLY, CODE_TAB_DESCRIPTIONS, isCodeWriteTool } from './codeTabProfile';
 import type { ToolDefinition } from '#lib/api.ts';
 import { resetShellPlatformSupported } from '#lib/shell/platformSupport.ts';
 import { invoke } from '@tauri-apps/api/core';
@@ -107,5 +107,26 @@ describe('run_command description by profile', () => {
 	it('the override does not leak into the registered schema', () => {
 		runCommand(true, false);
 		expect(runCommand(true, true)!.function.description).not.toBe(oneShot.description);
+	});
+});
+
+describe('a read-only Code session', () => {
+	it('gets the read, search and web tools, without writes, edits or make_asset', () => {
+		const n = getToolSchemas({ hasWorkingDir: true, codeMode: true, codeReadOnly: true })
+			.map((s) => s.function.name)
+			.sort();
+		expect(n).toEqual([...CODE_TOOLS, ...CODE_TAB_ONLY].filter((t) => !isCodeWriteTool(t)).sort());
+		expect(n).toContain('run_command');
+		expect(n).not.toContain('fs_write_text');
+		expect(n).not.toContain('fs_edit_text');
+	});
+
+	it('names the write tools', () => {
+		for (const t of ['fs_write_text', 'fs_write_docx', 'fs_edit_text', 'make_asset']) {
+			expect(isCodeWriteTool(t)).toBe(true);
+		}
+		for (const t of ['fs_read_text', 'run_command', 'code_grep']) {
+			expect(isCodeWriteTool(t)).toBe(false);
+		}
 	});
 });

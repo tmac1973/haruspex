@@ -5,6 +5,22 @@ const tab = (over: Partial<Parameters<typeof buildCodeSystemPrompt>[0]> = {}) =>
 	String(buildCodeSystemPrompt({ root: '/proj', ...over }).content);
 
 describe('Code tab prompt', () => {
+	it('says when a session is read-only, and leaves out the write tools', () => {
+		const text = tab({ readOnly: true });
+		expect(text).toContain('READ-ONLY');
+		expect(text).not.toContain('- fs_write_text');
+		expect(text).not.toContain('- fs_edit_text');
+		expect(tab()).toContain('- fs_write_text');
+		expect(tab()).not.toContain('READ-ONLY');
+	});
+
+	it('tells a worktree session its branch and that ignored files are missing', () => {
+		const text = tab({ worktree: { branch: 'fix-login-fork' } });
+		expect(text).toContain('fresh git worktree on branch fix-login-fork');
+		expect(text).toContain('node_modules');
+		expect(text).toContain('set up dependencies');
+	});
+
 	it('names the project folder and the background tools', () => {
 		const text = tab();
 		expect(text).toContain('Project folder: /proj');

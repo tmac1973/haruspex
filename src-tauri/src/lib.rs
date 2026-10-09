@@ -205,6 +205,10 @@ pub fn run() {
                 if let Some(claims) = window.try_state::<code_tools::claims::CodeSessionClaims>() {
                     claims.release_window(window.label());
                 }
+                // And any folder it was writing in.
+                if let Some(folders) = window.try_state::<code_tools::folders::CodeFolders>() {
+                    folders.release_window(window.label());
+                }
                 // The rest is for the main window only: a detached shell or an
                 // editor window closing is not the app quitting.
                 if window.label() != "main" {
@@ -249,6 +253,7 @@ pub fn run() {
         .manage(TtsEngine::new())
         .manage(ShellManager::new())
         .manage(code_tools::claims::CodeSessionClaims::default())
+        .manage(code_tools::folders::CodeFolders::default())
         // Holds off OS idle-sleep while a job run is in flight. Idle until
         // the runner asks; see power.rs.
         .manage(PowerInhibitor::new())
@@ -448,6 +453,16 @@ pub fn run() {
             code_tools::background::code_bg_stop_owner,
             code_tools::claims::code_session_claim,
             code_tools::claims::code_session_release,
+            code_tools::claims::code_session_open_ids,
+            code_tools::folders::code_lease_take,
+            code_tools::folders::code_lease_release,
+            code_tools::folders::code_notice_record,
+            code_tools::folders::code_notices_take,
+            code_tools::git::code_git_status,
+            code_tools::git::code_git_branches,
+            code_tools::git::code_git_switch,
+            code_tools::git::code_git_create_branch,
+            code_tools::git::code_git_worktree_remove,
             skills::skills_list,
             skills::skill_read,
             skills::skill_read_file,

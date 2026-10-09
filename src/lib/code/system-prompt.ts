@@ -59,6 +59,37 @@ export interface BuildCodePromptOpts {
 	skillsSection?: string;
 	/** The repo's AGENTS.md (`agentsMdPromptSection`), when trusted. */
 	projectInstructions?: string;
+	/** The session may read, not write (a fork sharing its source's folder). */
+	readOnly?: boolean;
+	/** The folder is a fresh git worktree made for this session (a fork). */
+	worktree?: { branch: string | null };
+}
+
+const WRITE_TOOL_LINE = /^- fs_(write|edit)_text /;
+
+/** The file tools, without the write and edit ones for a read-only session. */
+function fileTools(readOnly = false): string {
+	if (!readOnly) return SEARCH_AND_FILE_TOOLS;
+	return SEARCH_AND_FILE_TOOLS.split('\n')
+		.filter((l) => !WRITE_TOOL_LINE.test(l))
+		.join('\n');
+}
+
+/** What is true of this session's folder beyond its path. */
+function sessionNotes(opts: BuildCodePromptOpts): string {
+	const notes: string[] = [];
+	if (opts.readOnly) {
+		notes.push(
+			"This session is READ-ONLY: it shares its folder with another session, so you cannot write or edit files. Read, search and research; when a change is wanted, describe it (or show the diff) instead of making it. Every run_command needs the user's approval, and background commands are refused."
+		);
+	}
+	if (opts.worktree) {
+		const on = opts.worktree.branch ? ` on branch ${opts.worktree.branch}` : '';
+		notes.push(
+			`This folder is a fresh git worktree${on}, made for this session. Ignored files are not in it — no node_modules, .env or build output — so set up dependencies (install packages, copy any needed config) before building or testing.`
+		);
+	}
+	return notes.map((n) => `\n${n}`).join('');
 }
 
 /** The Code tab's prompt: one-shot commands in a fixed project folder. */
@@ -71,12 +102,12 @@ export function buildCodeSystemPrompt(opts: BuildCodePromptOpts): ChatMessage {
 ${GUIDE_PROMPT}
 
 SESSION:
-Project folder: ${opts.root}
+Project folder: ${opts.root}${sessionNotes(opts)}
 
 Commands you run with run_command execute one at a time in the project folder, without a terminal: nothing can be typed into them, and a \`cd\` or an exported variable does not carry over to the next call, so chain with && when needed. Paths for file tools are relative to the project folder. The project folder is your boundary: a command that reaches outside it needs the user's approval.
 
 TOOLS:
-${SEARCH_AND_FILE_TOOLS}
+${fileTools(opts.readOnly)}
 - run_command — run ONE shell command; it runs to completion and returns combined output + exit code. ${UNIX_CAPTURE_NOTE} A foreground command times out (default ${timeout}s) if it doesn't exit — for anything long-running use background/watch instead. Options: background:true runs it detached and returns an id at once; watch:true does the same and notifies you with a follow-up turn when it finishes (exit code + output).
 - command_output — the latest output of a background command, by the id run_command returned, and whether it is still running.
 - command_stop — stop a background command, and everything it started.

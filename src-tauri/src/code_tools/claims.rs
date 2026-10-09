@@ -95,6 +95,20 @@ impl CodeSessionClaims {
             .retain(|_, owner| owner != label);
     }
 
+    /// Every session some live window has open.
+    pub fn open_ids(&self, alive: impl Fn(&str) -> bool) -> Vec<String> {
+        let mut ids: Vec<String> = self
+            .inner
+            .lock_or_recover()
+            .owners
+            .iter()
+            .filter(|(_, owner)| alive(owner))
+            .map(|(id, _)| id.clone())
+            .collect();
+        ids.sort();
+        ids
+    }
+
     #[cfg(test)]
     fn owner(&self, id: &str) -> Option<String> {
         self.inner.lock_or_recover().owners.get(id).cloned()
@@ -124,6 +138,17 @@ pub fn code_session_release(
     handoff: Option<String>,
 ) {
     state.release(&id, window.label(), handoff);
+}
+
+/// The sessions open in any window, this one included: for "another session
+/// is open in this folder", which has to see detached windows too.
+#[tauri::command]
+pub fn code_session_open_ids(
+    window: tauri::Window,
+    state: tauri::State<'_, CodeSessionClaims>,
+) -> Vec<String> {
+    let app = window.app_handle();
+    state.open_ids(|label| app.get_webview_window(label).is_some())
 }
 
 #[cfg(test)]
@@ -165,6 +190,15 @@ mod tests {
         c.release("s1", "main", None);
         assert_eq!(c.owner("s1"), None);
         assert_eq!(c.claim("s1", "code-s1", all_alive).owner, None);
+    }
+
+    #[test]
+    fn open_ids_lists_claims_of_live_windows() {
+        let c = CodeSessionClaims::default();
+        c.claim("s2", "main", all_alive);
+        c.claim("s1", "code-s1", all_alive);
+        c.claim("s3", "gone", all_alive);
+        assert_eq!(c.open_ids(|l| l != "gone"), vec!["s1", "s2"]);
     }
 
     #[test]

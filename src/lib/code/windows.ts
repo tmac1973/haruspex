@@ -15,6 +15,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 
 import type { Prefill } from '#lib/code/fork.ts';
+import type { CodeForkMode } from '#lib/ipc/gen/CodeForkMode.ts';
 import { sessionLabel } from '#lib/code/sessionList.ts';
 import { openShellForCommand } from '#lib/code/shellBridge.ts';
 import { serveShellRelay, type RelayBus } from '#lib/code/shellRelay.ts';
@@ -129,13 +130,14 @@ export async function reattachToMain(
 export async function forkFromMessage(
 	session: CodeSession,
 	index: number,
+	mode: CodeForkMode,
 	api: CodeWindowApi = tauriApi
 ): Promise<void> {
 	if (!inDetachedCodeWindow()) {
-		await forkAndOpen(session.id, index);
+		await forkAndOpen(session.id, index, mode);
 		return;
 	}
-	const fork = await forkSession(session.id, index);
+	const fork = await forkSession(session.id, index, mode);
 	await api.emitToMain(REATTACH_EVENT, {
 		id: fork.id,
 		prefill: fork.prefill

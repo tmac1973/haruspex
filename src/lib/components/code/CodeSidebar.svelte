@@ -17,6 +17,7 @@
 		sidebarEntries
 	} from '#lib/code/sessionList.ts';
 	import BranchGlyph from './BranchGlyph.svelte';
+	import { worktreeOffer, worktreeOutcome } from '#lib/code/folders.ts';
 	import {
 		deleteSession,
 		getActiveSessionId,
@@ -102,6 +103,9 @@
 	let renameText = $state('');
 	let renameInput = $state<HTMLInputElement | null>(null);
 	let deleting = $state<CodeSessionSummary | null>(null);
+	/** The worktree the delete dialog offers to remove with the session. */
+	const offeredWorktree = $derived(deleting ? worktreeOffer(deleting, list) : null);
+	let removeWorktree = $state(true);
 
 	function openMenu(e: MouseEvent, session: CodeSessionSummary) {
 		e.preventDefault();
@@ -134,12 +138,19 @@
 
 	async function confirmDelete() {
 		const session = deleting;
+		const worktree = offeredWorktree && removeWorktree ? offeredWorktree : null;
 		deleting = null;
 		if (!session) return;
 		try {
-			if (!(await deleteSession(session.id))) {
+			const done = await deleteSession(session.id, { removeWorktree: worktree });
+			if (!done) {
 				showToast('That session is open in its own window. Close it there first.');
 				return;
+			}
+			if (worktree && done.worktree) {
+				showToast(worktreeOutcome(done.worktree, worktree), {
+					kind: done.worktree.kind === 'removed' ? 'success' : 'info'
+				});
 			}
 			await refresh();
 		} catch (e) {
@@ -267,6 +278,7 @@
 			class="danger"
 			onclick={() => {
 				deleting = menu?.session ?? null;
+				removeWorktree = true;
 				menu = null;
 			}}>Delete</button
 		>
@@ -283,9 +295,31 @@
 	destructive
 	onconfirm={confirmDelete}
 	oncancel={() => (deleting = null)}
-/>
+>
+	{#if offeredWorktree}
+		<label
+			class="worktree-option"
+			title="Removed only if it has no uncommitted or untracked files; otherwise it is kept. Its branch is kept either way."
+		>
+			<input type="checkbox" bind:checked={removeWorktree} />
+			<span>Also remove its worktree <code>{offeredWorktree}</code></span>
+		</label>
+	{/if}
+</ConfirmDialog>
 
 <style>
+	.worktree-option {
+		display: flex;
+		align-items: flex-start;
+		gap: 8px;
+		font-size: 0.82rem;
+		color: var(--text-secondary);
+	}
+
+	.worktree-option code {
+		word-break: break-all;
+	}
+
 	.sidebar {
 		position: relative;
 		display: flex;

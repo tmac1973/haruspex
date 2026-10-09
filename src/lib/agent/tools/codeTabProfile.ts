@@ -19,6 +19,18 @@ export const CODE_TAB_ONLY: ReadonlySet<string> = new Set([
 	'open_in_editor'
 ]);
 
+/**
+ * Tools that write into the project: refused in a read-only Code session,
+ * and in any Code session they take the folder's writer lease first.
+ */
+export function isCodeWriteTool(name: string): boolean {
+	return name.startsWith('fs_write_') || name === 'fs_edit_text' || name === 'make_asset';
+}
+
+/** What a read-only Code session's write is told. */
+export const READ_ONLY_REFUSAL =
+	"This session is read-only: it shares its folder with another session, so it can't write or edit files. Describe the change instead; the user can fork the session into its own worktree to make it.";
+
 /** Text that replaces a tool's schema wording in the Code tab. */
 export interface DescriptionOverride {
 	description: string;

@@ -17,7 +17,9 @@ const s = (id: string, root: string, updated_at: number, forked_from: string | n
 	title: id,
 	root,
 	updated_at,
-	forked_from
+	forked_from,
+	read_only: false,
+	worktree: null
 });
 
 describe('groupByRoot', () => {

@@ -2528,6 +2528,34 @@ fn code_session_fork_cuts_messages_and_sidecars_at_the_fork_point() {
 }
 
 #[test]
+fn code_session_forks_are_read_only_in_place_or_writable_in_a_worktree() {
+    let db = test_db();
+    let dir = TempDir::new("fork-kinds");
+    let wt = TempDir::new("fork-kinds-wt");
+    let src = db.create_code_session(dir.path(), None, None).unwrap();
+    assert!(!src.read_only);
+    assert_eq!(src.worktree, None);
+
+    let ro = db.fork_code_session(&src.id, 0).unwrap();
+    assert!(ro.read_only);
+    assert_eq!(ro.root, src.root);
+    assert_eq!(ro.worktree, None);
+
+    let w = db
+        .fork_code_session_into(&src.id, 0, Some((wt.path(), wt.path())))
+        .unwrap();
+    assert!(!w.read_only);
+    assert_eq!(w.root, wt.path());
+    assert_eq!(w.worktree.as_deref(), Some(wt.path()));
+    assert_eq!(db.load_code_session(&w.id).unwrap(), w);
+
+    let list = db.list_code_sessions().unwrap();
+    let row = |id: &str| list.iter().find(|s| s.id == id).unwrap().clone();
+    assert!(row(&ro.id).read_only);
+    assert_eq!(row(&w.id).worktree.as_deref(), Some(wt.path()));
+}
+
+#[test]
 fn code_session_fork_rejects_a_point_past_the_end_and_a_missing_source() {
     let db = test_db();
     let dir = TempDir::new("fork-end");

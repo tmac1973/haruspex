@@ -744,6 +744,12 @@ impl Database {
             // 'forced'). NULL for steps recorded before it.
             "ALTER TABLE job_run_steps ADD COLUMN trim_events INTEGER",
             "ALTER TABLE job_run_steps ADD COLUMN pressure_max TEXT",
+            // Code sessions: a fork that shares its source's folder may only
+            // read (0 for every session before forks had a choice), and a
+            // worktree fork remembers the worktree it was given, so deleting
+            // it can offer to remove that too.
+            "ALTER TABLE code_sessions ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE code_sessions ADD COLUMN worktree TEXT",
         ] {
             if let Err(e) = conn.execute(stmt, []) {
                 let msg = e.to_string();

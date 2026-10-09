@@ -10,6 +10,12 @@ const db = vi.hoisted(() => {
 	const owners = new Map<string, string>();
 	const handoffs = new Map<string, string>();
 	const alive = new Set<string>(['main']);
+	// Phase 7b: who holds the folder, what others changed, and git per folder.
+	const folders = {
+		holder: null as string | null,
+		notices: [] as unknown[],
+		git: new Map<string, unknown>()
+	};
 	let n = 0;
 	const emptyThread = JSON.stringify({
 		version: 1,
@@ -25,7 +31,11 @@ const db = vi.hoisted(() => {
 		owners,
 		handoffs,
 		alive,
+		folders,
 		reset() {
+			folders.holder = null;
+			folders.notices = [];
+			folders.git.clear();
 			rows.clear();
 			owners.clear();
 			handoffs.clear();
@@ -100,7 +110,10 @@ const db = vi.hoisted(() => {
 							messageStops: cut(thread.messageStops)
 						}),
 						forked_from: src.id,
-						forked_at: at
+						forked_at: at,
+						root: args.mode === 'worktree' ? `/wt/s${n}` : src.root,
+						read_only: args.mode !== 'worktree',
+						worktree: args.mode === 'worktree' ? `/wt/s${n}` : null
 					};
 					rows.set(row.id, row);
 					return { ...row };
@@ -108,6 +121,17 @@ const db = vi.hoisted(() => {
 				case 'code_session_delete':
 					rows.delete(args.id as string);
 					return undefined;
+				case 'code_lease_take':
+					return folders.holder;
+				case 'code_notices_take': {
+					const notices = folders.notices;
+					folders.notices = [];
+					return { notices, now: 99 };
+				}
+				case 'code_git_status':
+					return folders.git.get(args.folder as string) ?? null;
+				case 'code_git_worktree_remove':
+					return { kind: 'removed' };
 				case 'code_session_claim': {
 					const id = args.id as string;
 					const owner = owners.get(id);
@@ -855,7 +879,7 @@ describe('one window per session', () => {
 		expect(await deleteSession(s.id)).toBe(false);
 		expect(db.rows.has(s.id)).toBe(true);
 		db.alive.delete(`code-${s.id}`);
-		expect(await deleteSession(s.id)).toBe(true);
+		expect(await deleteSession(s.id)).toEqual({ worktree: null });
 		expect(db.rows.has(s.id)).toBe(false);
 		expect(db.owners.has(s.id)).toBe(false);
 	});
@@ -920,5 +944,172 @@ describe('fork from a message', () => {
 		await sending;
 		s.messages = [...s.messages, { role: 'tool', tool_call_id: 'x', content: 'r' }];
 		await expect(forkSession(s.id, s.messages.length - 1)).rejects.toThrow();
+	});
+});
+
+describe('sharing a folder', () => {
+	async function answered() {
+		const s = await newSession('/proj');
+		mocks.runAgentLoop.mockImplementationOnce(answers('first answer'));
+		await s.send('first question');
+		return s;
+	}
+
+	const systemText = (o: AgentLoopOptions) => String(o.messages[0].content);
+
+	it('a read-only fork runs without the write tools and says so', async () => {
+		const s = await answered();
+		const fork = (await forkAndOpen(s.id, 1, 'readOnly'))!;
+		expect(fork.readOnly).toBe(true);
+		expect(fork.root).toBe('/proj');
+		await fork.send('look around');
+		const o = mocks.runAgentLoop.mock.calls.at(-1)![0] as AgentLoopOptions;
+		expect(o.codeReadOnly).toBe(true);
+		expect(systemText(o)).toContain('READ-ONLY');
+		// The source can still write.
+		await s.send('again');
+		expect((mocks.runAgentLoop.mock.calls.at(-1)![0] as AgentLoopOptions).codeReadOnly).toBe(false);
+	});
+
+	it('a worktree fork is rooted in its worktree and told to set it up', async () => {
+		const s = await answered();
+		db.folders.git.set('/wt/s2', {
+			repo_root: '/wt/s2',
+			branch: 'first-fork',
+			head: 'abc1234',
+			changed: 0,
+			untracked: 0,
+			linked_worktree: true,
+			default_branch: 'main'
+		});
+		const fork = (await forkAndOpen(s.id, 1, 'worktree'))!;
+		expect(fork.readOnly).toBe(false);
+		expect(fork.root).toBe('/wt/s2');
+		expect(fork.worktree).toBe('/wt/s2');
+		await fork.refreshGit();
+		expect(fork.git?.branch).toBe('first-fork');
+		await fork.send('build it');
+		const o = mocks.runAgentLoop.mock.calls.at(-1)![0] as AgentLoopOptions;
+		expect(o.workingDir).toBe('/wt/s2');
+		expect(systemText(o)).toContain('fresh git worktree on branch first-fork');
+	});
+
+	it('tells the model when the branch changed between its turns', async () => {
+		const s = await answered();
+		const at = (branch: string) =>
+			db.folders.git.set('/proj', {
+				repo_root: '/proj',
+				branch,
+				head: 'abc1234',
+				changed: 0,
+				untracked: 0,
+				linked_worktree: false,
+				default_branch: 'main'
+			});
+		const opening = () =>
+			String(
+				(mocks.runAgentLoop.mock.calls.at(-1)![0] as AgentLoopOptions).messages.at(-1)!.content
+			);
+		// The answered turn ran outside git; the repo appearing is news.
+		at('bob');
+		await s.send('first');
+		expect(opening()).toContain("The checked-out git branch is now 'bob'.");
+		await s.send('second');
+		expect(opening()).toBe('second');
+		// Switched from the branch menu between turns.
+		at('sally');
+		await s.send('which branch?');
+		expect(opening()).toContain("now 'sally' (it was 'bob')");
+		expect(s.fileNotes.at(-1)?.text).toContain("now 'sally'");
+		await s.send('again');
+		expect(opening()).toBe('again');
+	});
+
+	it('tells the model at the start of a turn what another session changed, once', async () => {
+		const s = await answered();
+		db.folders.notices = [
+			{ session_id: 'other', title: 'Other', files: ['/proj/src/a.ts', '/proj/b.ts'], at: 5 }
+		];
+		await s.send('carry on');
+		const o = mocks.runAgentLoop.mock.calls.at(-1)![0] as AgentLoopOptions;
+		const opening = o.messages.at(-1)!;
+		expect(String(opening.content)).toMatch(
+			/^\[Note from Haruspex\] Since your last turn, session 'Other' changed: src\/a\.ts, b\.ts/
+		);
+		expect(String(opening.content)).toContain('carry on');
+		// Shown above the message it came with, and not saved into it.
+		expect(s.fileNotes).toEqual([{ text: expect.stringContaining('src/a.ts'), at: 2 }]);
+		expect(storedThread(s.id)?.messages[2].content).toBe('carry on');
+		expect(mocks.invoke).toHaveBeenCalledWith('code_notices_take', {
+			folder: '/proj',
+			sessionId: s.id,
+			since: 1
+		});
+		// Delivered: the next turn opens without it, from the time Rust gave.
+		await s.send('more');
+		const next = mocks.runAgentLoop.mock.calls.at(-1)![0] as AgentLoopOptions;
+		expect(String(next.messages.at(-1)!.content)).toBe('more');
+		expect(mocks.invoke).toHaveBeenCalledWith(
+			'code_notices_take',
+			expect.objectContaining({ since: 99 })
+		);
+	});
+
+	it('takes the folder on its first write, records what it changed, and gives it back', async () => {
+		const s = await newSession('/proj');
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
+			expect(await o.codeWriteGuard!.acquire()).toBeNull();
+			expect(await o.codeWriteGuard!.acquire()).toBeNull();
+			o.codeWriteGuard!.changed(['src/a.ts', '/proj/b.ts']);
+			o.onStreamChunk(chunk('done'));
+			o.onComplete();
+		});
+		await s.send('edit');
+		const leaseCalls = mocks.invoke.mock.calls.filter((c) => c[0] === 'code_lease_take');
+		expect(leaseCalls).toHaveLength(1);
+		expect(leaseCalls[0][1]).toEqual({ folder: '/proj', sessionId: s.id, title: '' });
+		expect(mocks.invoke).toHaveBeenCalledWith('code_notice_record', {
+			folder: '/proj',
+			sessionId: s.id,
+			title: '',
+			files: ['/proj/src/a.ts', '/proj/b.ts']
+		});
+		expect(mocks.invoke).toHaveBeenCalledWith('code_lease_release', { sessionId: s.id });
+	});
+
+	it('refuses a write while another session holds the folder', async () => {
+		const s = await newSession('/proj');
+		db.folders.holder = 'Fix login';
+		let refusal: string | null = null;
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
+			refusal = await o.codeWriteGuard!.acquire();
+			o.onComplete();
+		});
+		await s.send('edit');
+		expect(refusal).toBe(
+			'Another session (Fix login) is editing this folder right now; wait for it to finish, or work in a worktree.'
+		);
+		// Never held, so nothing to give back at the end of the turn.
+		expect(mocks.invoke).not.toHaveBeenCalledWith('code_notice_record', expect.anything());
+	});
+
+	it('deletes a worktree session with its worktree when asked', async () => {
+		const s = await answered();
+		const fork = (await forkAndOpen(s.id, 1, 'worktree'))!;
+		const done = await deleteSession(fork.id, { removeWorktree: fork.worktree });
+		expect(done).toEqual({ worktree: { kind: 'removed' } });
+		expect(mocks.invoke).toHaveBeenCalledWith('code_git_worktree_remove', { path: '/wt/s2' });
+		expect(db.rows.has(fork.id)).toBe(false);
+	});
+
+	it('keeps the worktree when the removal fails', async () => {
+		const s = await answered();
+		const fork = (await forkAndOpen(s.id, 1, 'worktree'))!;
+		mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+			if (cmd === 'code_git_worktree_remove') throw 'git exploded';
+			return db.handle(cmd, args);
+		});
+		const done = await deleteSession(fork.id, { removeWorktree: '/wt/s2' });
+		expect(done).toEqual({ worktree: { kind: 'kept', reason: 'git exploded' } });
 	});
 });

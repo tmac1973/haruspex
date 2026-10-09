@@ -50,6 +50,21 @@ import { setShellWaitListener, type ShellWait } from '#lib/code/shellBridge.ts';
 import { isUnsetTitle } from '#lib/code/sessionList.ts';
 import { claimSession, raiseWindow, releaseSession } from '#lib/code/claims.ts';
 import { forkPoint, type Prefill } from '#lib/code/fork.ts';
+import type { CodeForkMode } from '#lib/ipc/gen/CodeForkMode.ts';
+import {
+	branchNotice,
+	branchSeen,
+	gitStatus,
+	removeWorktree,
+	type GitStatus,
+	type WorktreeRemoval
+} from '#lib/code/git.ts';
+import {
+	createWriteGuard,
+	formatFileNotices,
+	releaseFolder,
+	takeFileNotices
+} from '#lib/code/folders.ts';
 import { isSlashCommand, nameSession } from '#lib/code/sessionTitle.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import { errMessage } from '#lib/utils/error.ts';
@@ -70,6 +85,13 @@ export class CodeSession {
 	readonly id: string;
 	/** The project folder, fixed for the session's life. */
 	readonly root: string;
+	/**
+	 * May read, not write: a fork that shares its source's folder. Writes
+	 * and edits are refused and every command asks first.
+	 */
+	readonly readOnly: boolean;
+	/** The git worktree Haruspex made for this session (a worktree fork). */
+	readonly worktree: string | null;
 	/** Empty until the session is named (`sessionLabel` shows the folder meanwhile). */
 	title = $state('');
 	/** Null follows the global backend. */
@@ -122,7 +144,17 @@ export class CodeSession {
 	agentsMd = $state<AgentsMd | null>(null);
 	/** The trusted repo the last turn took instructions from. */
 	projectRoot = $state<string | null>(null);
-
+	/** The folder's git state (`refreshGit`); null without git or outside a repo. */
+	git = $state.raw<GitStatus | null>(null);
+	/**
+	 * What other sessions changed in the folder, as told to the model at the
+	 * start of a turn. Shown before the message it came with; not saved.
+	 */
+	fileNotes = $state<{ text: string; at: number }[]>([]);
+	/** When this session last looked for other sessions' changes (ms). */
+	private noticesSince: number;
+	/** The branch the agent was last told or saw; undefined until it's been told. */
+	private branchSeenByAgent: string | null | undefined = undefined;
 	private abortController: AbortController | null = null;
 	/** Settles once the running turn has been saved. */
 	private turnDone: Promise<void> | null = null;
@@ -138,6 +170,10 @@ export class CodeSession {
 	constructor(record: CodeSessionRecord) {
 		this.id = record.id;
 		this.root = record.root;
+		this.readOnly = record.read_only ?? false;
+		this.worktree = record.worktree ?? null;
+		// Changes made since the session's last saved turn are news to it.
+		this.noticesSince = record.updated_at;
 		// A title from a slash command (`/init`) is no name: the next real turn names it.
 		this.title = isUnsetTitle(record.title) ? '' : record.title;
 		this.backend = record.backend;
@@ -297,6 +333,13 @@ export class CodeSession {
 		}
 	}
 
+	/** Re-read the folder's branch and changes. */
+	refreshGit = async (): Promise<void> => {
+		if (this.closed) return;
+		const status = await gitStatus(this.root);
+		if (!this.closed) this.git = status;
+	};
+
 	/** Refresh `background`, and keep refreshing while any process runs. */
 	refreshBackground = async (): Promise<void> => {
 		if (this.closed) return;
@@ -354,6 +397,9 @@ export class CodeSession {
 		if (this.bgTimer !== null) clearTimeout(this.bgTimer);
 		this.bgTimer = null;
 		await this.turnDone;
+		// The turn gives the folder back as it ends; this covers a turn that
+		// never got that far.
+		await releaseFolder(this.id);
 	};
 
 	private runTurn(opening: ChatMessage): Promise<void> {
@@ -382,14 +428,24 @@ export class CodeSession {
 		this.abortController = abort;
 		let lastCallStats: { durationMs: number; completionTokens: number } | null = null;
 		const startedAt = Date.now();
+		const guard = createWriteGuard({
+			sessionId: this.id,
+			root: this.root,
+			title: () => this.title
+		});
 
 		try {
+			const notice = await this.takeNotice();
 			const result = await runCodeTurn({
 				sessionId: this.id,
 				root: this.root,
 				thread: $state.snapshot(this.messages) as ChatMessage[],
 				backend: this.backend ? ($state.snapshot(this.backend) as BackendOverride) : null,
 				effort: this.effort,
+				readOnly: this.readOnly,
+				writeGuard: guard,
+				worktree: this.worktree ? { branch: this.git?.branch ?? null } : undefined,
+				notice,
 				signal: abort.signal,
 				takeSteering: () => {
 					const texts = this.steering;
@@ -448,9 +504,37 @@ export class CodeSession {
 			this.abortController = null;
 			this.clearLive();
 			this.ticket = null;
+			await guard.finish();
 			await this.persist();
 			void this.refreshBackground();
+			// What the turn itself did to the branch (a `git switch` it ran) is
+			// what it saw, so only later changes get a note.
+			await this.refreshGit();
+			this.branchSeenByAgent = branchSeen(this.git);
 		}
+	}
+
+	/**
+	 * Other sessions' changes to the folder since this one last looked, as
+	 * the note this turn opens with; also shown above the opening message.
+	 */
+	private async takeNotice(): Promise<string | null> {
+		const batch = await takeFileNotices(this.id, this.root, this.noticesSince);
+		this.noticesSince = batch.now;
+		const files = formatFileNotices(batch.notices, this.root);
+		// The branch can change under the agent between turns (the branch menu,
+		// the Shell, another terminal); without this it answers from memory.
+		await this.refreshGit();
+		const now = branchSeen(this.git);
+		const branch = branchNotice(this.branchSeenByAgent, now);
+		// Telling a fresh agent the branch is for it alone; a switch is news to
+		// the user reading the transcript too.
+		const shown = this.branchSeenByAgent === undefined ? null : branch;
+		this.branchSeenByAgent = now;
+		const display = [shown, files].filter(Boolean).join('\n');
+		if (display)
+			this.fileNotes = [...this.fileNotes, { text: display, at: this.messages.length - 1 }];
+		return [branch, files].filter(Boolean).join('\n') || null;
 	}
 
 	/** Forget everything shown only while a turn runs. */
@@ -615,20 +699,25 @@ export async function newSession(
  */
 export async function forkSession(
 	id: string,
-	index: number
+	index: number,
+	mode: CodeForkMode = 'readOnly'
 ): Promise<{ id: string; prefill: Prefill }> {
 	const source = sessions.find((s) => s.id === id);
 	if (!source) throw new Error('That session is not open here.');
 	if (source.busy) throw new Error('Wait for the turn to finish, then fork.');
 	const point = forkPoint(source.messages, index);
 	if (!point) throw new Error('Only your messages and answers can be forked from.');
-	const record = await forkCodeSession(id, point.at);
+	const record = await forkCodeSession(id, point.at, mode);
 	return { id: record.id, prefill: point.prefill ?? { text: '', images: [] } };
 }
 
 /** Fork and open the fork here as a sub-tab, its input box filled and focused. */
-export async function forkAndOpen(id: string, index: number): Promise<CodeSession | null> {
-	const fork = await forkSession(id, index);
+export async function forkAndOpen(
+	id: string,
+	index: number,
+	mode: CodeForkMode = 'readOnly'
+): Promise<CodeSession | null> {
+	const fork = await forkSession(id, index, mode);
 	const session = await openSession(fork.id);
 	if (session) session.prefill = fork.prefill;
 	return session;
@@ -675,9 +764,14 @@ export async function handOffSession(id: string): Promise<boolean> {
 
 /**
  * Delete a saved session. Refused (false) while another window has it open:
- * that window is brought to the front instead.
+ * that window is brought to the front instead. With `removeWorktree`, the
+ * worktree at that path goes too when it is clean; `worktree` says what
+ * happened to it.
  */
-export async function deleteSession(id: string): Promise<boolean> {
+export async function deleteSession(
+	id: string,
+	opts: { removeWorktree?: string | null } = {}
+): Promise<false | { worktree: WorktreeRemoval | null }> {
 	const claim = await claimSession(id);
 	if (claim.owner) {
 		await raiseWindow(claim.owner);
@@ -691,12 +785,18 @@ export async function deleteSession(id: string): Promise<boolean> {
 	} finally {
 		await releaseSession(id).catch(() => {});
 	}
-	return true;
+	if (!opts.removeWorktree) return { worktree: null };
+	try {
+		return { worktree: await removeWorktree(opts.removeWorktree) };
+	} catch (e) {
+		return { worktree: { kind: 'kept', reason: errMessage(e) } };
+	}
 }
 
 function adopt(session: CodeSession): CodeSession {
 	sessions.push(session);
 	activeId = session.id;
 	void session.refreshBackground();
+	void session.refreshGit();
 	return session;
 }

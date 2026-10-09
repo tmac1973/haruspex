@@ -13,6 +13,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { BackendOverride } from '#lib/api.ts';
 import type { CodeSessionRow } from '#lib/ipc/gen/CodeSessionRow.ts';
 import type { CodeSessionSummary } from '#lib/ipc/gen/CodeSessionSummary.ts';
+import type { CodeForkMode } from '#lib/ipc/gen/CodeForkMode.ts';
 
 export type { CodeSessionSummary };
 
@@ -88,7 +89,14 @@ export function deleteCodeSession(id: string): Promise<void> {
 	return invoke<void>('code_session_delete', { id });
 }
 
-/** A new session holding messages `[0, at)` of `id`. */
-export async function forkCodeSession(id: string, at: number): Promise<CodeSessionRecord> {
-	return toRecord(await invoke<CodeSessionRow>('code_session_fork', { id, at }));
+/**
+ * A new session holding messages `[0, at)` of `id`: read-only in the same
+ * folder, or writable in a new git worktree (made by Rust, beside the repo).
+ */
+export async function forkCodeSession(
+	id: string,
+	at: number,
+	mode: CodeForkMode
+): Promise<CodeSessionRecord> {
+	return toRecord(await invoke<CodeSessionRow>('code_session_fork', { id, at, mode }));
 }

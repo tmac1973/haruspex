@@ -1,4 +1,5 @@
 use super::*;
+use crate::code_tools::git::{self, CodeForkMode};
 
 /// Run a database operation on the blocking thread pool.
 ///
@@ -475,12 +476,41 @@ pub async fn code_session_delete(
     on_pool(db, move |db| db.delete_code_session(&id)).await
 }
 
+/// Fork `id` at message `at`. `ReadOnly` shares the source's folder and may
+/// only read; `Worktree` first makes a git worktree on a new branch beside
+/// the repository (see `code_tools::git::add_fork_worktree`) and roots the
+/// fork there, writable. A worktree whose session row then fails to save is
+/// removed again, branch and all.
 #[tauri::command]
 pub async fn code_session_fork(
     state: tauri::State<'_, Database>,
     id: String,
     at: usize,
+    mode: CodeForkMode,
 ) -> Result<CodeSessionRow, String> {
     let db = state.inner().clone();
-    on_pool(db, move |db| db.fork_code_session(&id, at)).await
+    if mode == CodeForkMode::ReadOnly {
+        return on_pool(db, move |db| db.fork_code_session(&id, at)).await;
+    }
+    let source = {
+        let id = id.clone();
+        on_pool(db.clone(), move |db| db.load_code_session(&id)).await?
+    };
+    let wt = git::add_fork_worktree(
+        std::path::Path::new(&source.root),
+        &code_sessions::fork_title(&source.title),
+    )
+    .await?;
+    let (root, path) = (
+        wt.root.to_string_lossy().into_owned(),
+        wt.path.to_string_lossy().into_owned(),
+    );
+    let made = on_pool(db, move |db| {
+        db.fork_code_session_into(&id, at, Some((&root, &path)))
+    })
+    .await;
+    if made.is_err() {
+        git::discard_fork_worktree(&wt).await;
+    }
+    made
 }
