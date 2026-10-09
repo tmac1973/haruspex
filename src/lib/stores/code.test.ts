@@ -14,7 +14,11 @@ const db = vi.hoisted(() => {
 	const folders = {
 		holder: null as string | null,
 		notices: [] as unknown[],
-		git: new Map<string, unknown>()
+		git: new Map<string, unknown>(),
+		/** Folders that are gone. */
+		missing: new Set<string>(),
+		/** What `code_notices_take` gives as the next `since`. */
+		now: 99
 	};
 	let n = 0;
 	const emptyThread = JSON.stringify({
@@ -36,6 +40,8 @@ const db = vi.hoisted(() => {
 			folders.holder = null;
 			folders.notices = [];
 			folders.git.clear();
+			folders.missing.clear();
+			folders.now = 99;
 			rows.clear();
 			owners.clear();
 			handoffs.clear();
@@ -71,6 +77,8 @@ const db = vi.hoisted(() => {
 					const row = rows.get(args.id as string)!;
 					row.thread = args.thread;
 					if (args.title != null) row.title = args.title;
+					if (args.noticesSeenAt != null) row.notices_seen_at = args.noticesSeenAt;
+					if (args.agentBranch != null) row.agent_branch = args.agentBranch;
 					return undefined;
 				}
 				case 'code_session_update_meta': {
@@ -126,10 +134,18 @@ const db = vi.hoisted(() => {
 				case 'code_notices_take': {
 					const notices = folders.notices;
 					folders.notices = [];
-					return { notices, now: 99 };
+					return { notices, now: folders.now };
 				}
 				case 'code_git_status':
 					return folders.git.get(args.folder as string) ?? null;
+				case 'code_folder_exists':
+					return !folders.missing.has(args.path as string);
+				case 'code_session_set_root': {
+					if (folders.missing.has(args.root as string)) throw new Error('No such folder');
+					const row = rows.get(args.id as string)!;
+					row.root = args.root;
+					return { ...row };
+				}
 				case 'code_git_worktree_remove':
 					return { kind: 'removed' };
 				case 'code_session_claim': {
@@ -246,7 +262,8 @@ import {
 	getOpenSessions,
 	handOffSession,
 	newSession,
-	openSession
+	openSession,
+	setActiveSession
 } from '#lib/stores/code.svelte.ts';
 import { decodeCodeSession } from '#lib/code/session.ts';
 import { reportShellWait } from '#lib/code/shellBridge.ts';
@@ -283,6 +300,11 @@ function held() {
 		o.onComplete();
 	};
 	return { impl, release, running };
+}
+
+/** The arguments of the last `code_notices_take`. */
+function lastTake() {
+	return mocks.invoke.mock.calls.filter(([cmd]) => cmd === 'code_notices_take').at(-1)?.[1];
 }
 
 function storedThread(id: string) {
@@ -826,7 +848,7 @@ describe('one window per session', () => {
 		expect(getOpenSessions()).toHaveLength(0);
 		expect(mocks.invoke).not.toHaveBeenCalledWith('code_bg_stop_owner', expect.anything());
 		expect(db.owners.has(s.id)).toBe(false);
-		expect(JSON.parse(db.handoffs.get(s.id)!)).toEqual({ watches: [watch] });
+		expect(JSON.parse(db.handoffs.get(s.id)!)).toEqual({ draft: null, watches: [watch] });
 
 		// Whichever window opens it next takes the watches, and the
 		// completion handler is that window's.
@@ -841,7 +863,11 @@ describe('one window per session', () => {
 		const s = await newSession('/proj');
 		approveSession(codeApprovalKey(s.id));
 		expect(await handOffSession(s.id)).toBe(true);
-		expect(JSON.parse(db.handoffs.get(s.id)!)).toEqual({ watches: [], approved: true });
+		expect(JSON.parse(db.handoffs.get(s.id)!)).toEqual({
+			watches: [],
+			draft: null,
+			approved: true
+		});
 		// Gone from the window it left.
 		expect(isSessionApproved(codeApprovalKey(s.id))).toBe(false);
 		await openSession(s.id);
@@ -856,7 +882,7 @@ describe('one window per session', () => {
 	it('hands off no approval the user never gave', async () => {
 		const s = await newSession('/proj');
 		await handOffSession(s.id);
-		expect(JSON.parse(db.handoffs.get(s.id)!)).toEqual({ watches: [] });
+		expect(JSON.parse(db.handoffs.get(s.id)!)).toEqual({ watches: [], draft: null });
 		await openSession(s.id);
 		expect(isSessionApproved(codeApprovalKey(s.id))).toBe(false);
 	});
@@ -1149,5 +1175,220 @@ describe("the Shell's Open in Code", () => {
 		expect(s?.messages).toEqual([]);
 		expect(mocks.invoke).toHaveBeenCalledWith('code_session_claim', { id: s?.id });
 		expect(getActiveTab()).toBe('code');
+	});
+});
+
+describe('a session whose folder is gone', () => {
+	it('is marked when opened, runs no turn, and hands back what was sent', async () => {
+		const s = await newSession('/gone');
+		await closeSession(s.id);
+		db.folders.missing.add('/gone');
+		const again = (await openSession(s.id))!;
+		await vi.waitFor(() => expect(again.folderMissing).toBe(true));
+		await again.send('hello', { images: ['data:image/png;base64,x'] });
+		expect(mocks.runAgentLoop).not.toHaveBeenCalled();
+		expect(again.messages).toEqual([]);
+		expect(again.takeReturnedSteering()).toEqual(['hello']);
+		expect(again.takeReturnedImages()).toEqual(['data:image/png;base64,x']);
+	});
+
+	it('is found gone as a turn starts, without saving anything', async () => {
+		const s = await newSession('/proj');
+		db.folders.missing.add('/proj');
+		await s.send('hello');
+		expect(s.folderMissing).toBe(true);
+		expect(mocks.runAgentLoop).not.toHaveBeenCalled();
+		expect(s.messages).toEqual([]);
+		expect(s.takeReturnedSteering()).toEqual(['hello']);
+		expect(mocks.invoke).not.toHaveBeenCalledWith('code_session_save', expect.anything());
+	});
+
+	it('is marked once a turn that lost its folder ends, not during it', async () => {
+		const s = await newSession('/proj');
+		const turn = held();
+		mocks.runAgentLoop.mockImplementationOnce(turn.impl);
+		const sending = s.send('go');
+		await turn.running;
+		db.folders.missing.add('/proj');
+		await s.checkFolder();
+		expect(s.folderMissing).toBe(false);
+		turn.release();
+		await sending;
+		await vi.waitFor(() => expect(s.folderMissing).toBe(true));
+		// The turn itself was saved as usual.
+		expect(storedThread(s.id)!.messages.map((m) => m.role)).toEqual(['user', 'assistant']);
+	});
+
+	it('is checked again when the session is activated', async () => {
+		const a = await newSession('/a');
+		await newSession('/b');
+		db.folders.missing.add('/a');
+		setActiveSession(a.id);
+		await vi.waitFor(() => expect(a.folderMissing).toBe(true));
+		db.folders.missing.delete('/a');
+		setActiveSession(a.id);
+		await vi.waitFor(() => expect(a.folderMissing).toBe(false));
+	});
+
+	it('can be pointed at another folder, and then works there', async () => {
+		const s = await newSession('/gone');
+		db.folders.missing.add('/gone');
+		await s.checkFolder();
+		expect(s.folderMissing).toBe(true);
+		await s.moveTo('/found');
+		expect(mocks.invoke).toHaveBeenCalledWith('code_session_set_root', {
+			id: s.id,
+			root: '/found'
+		});
+		expect(s.root).toBe('/found');
+		expect(s.folderMissing).toBe(false);
+		await s.send('hi');
+		const o = mocks.runAgentLoop.mock.calls.at(-1)![0] as AgentLoopOptions;
+		expect(o.workingDir).toBe('/found');
+		// A folder that isn't there either is refused.
+		await expect(s.moveTo('/gone')).rejects.toThrow('No such folder');
+		expect(s.root).toBe('/found');
+	});
+});
+
+describe('stopping a queued session', () => {
+	/** A slot that waits until admitted, or until the turn is stopped. */
+	function queuedSlot() {
+		let admit!: () => void;
+		mocks.withInferenceSlot.mockImplementationOnce(
+			async (
+				o: {
+					signal?: AbortSignal;
+					onTicket?: (t: unknown) => void;
+					onAdmitted?: () => void;
+				},
+				fn: () => Promise<unknown>
+			) => {
+				o.onTicket?.({ id: 'main:1', consumer: 'code', state: 'waiting', enqueuedAt: 0 });
+				await new Promise<void>((resolve, reject) => {
+					admit = resolve;
+					o.signal?.addEventListener('abort', () =>
+						reject(new DOMException('Aborted', 'AbortError'))
+					);
+				});
+				o.onAdmitted?.();
+				return fn();
+			}
+		);
+		return { admit: () => admit() };
+	}
+
+	it('leaves the queue and goes idle without starting its turn', async () => {
+		const s = await newSession('/proj');
+		mocks.runAgentLoop.mockImplementationOnce(answers('ok'));
+		await s.send('hello');
+		const saves = () =>
+			mocks.invoke.mock.calls.filter(([cmd]) => cmd === 'code_session_save').length;
+		const savedBefore = saves();
+		db.folders.notices = [{ session_id: 'o', title: 'Other', files: ['/proj/a.ts'], at: 5 }];
+		db.folders.now = 150;
+		queuedSlot();
+		const sending = s.send('next thing', { images: ['data:image/png;base64,y'] });
+		await vi.waitFor(() => expect(s.status).toBe('queued'));
+		await s.send('and this');
+		s.stop();
+		await sending;
+		expect(s.status).toBe('idle');
+		expect(s.ticket).toBeNull();
+		expect(s.lastError).toBeNull();
+		expect(mocks.runAgentLoop).toHaveBeenCalledTimes(1);
+		// Nothing of it stays or is saved; what was typed goes back to the box.
+		expect(s.messages.map((m) => m.content)).toEqual(['hello', 'ok']);
+		expect(s.fileNotes).toEqual([]);
+		expect(saves()).toBe(savedBefore);
+		expect(s.takeReturnedSteering()).toEqual(['next thing\n\nand this']);
+		expect(s.takeReturnedImages()).toEqual(['data:image/png;base64,y']);
+		// The note it would have opened with is still news to the next turn.
+		await s.send('again');
+		expect(lastTake()).toMatchObject({ since: 99 });
+	});
+
+	it('runs normally when admitted', async () => {
+		const s = await newSession('/proj');
+		const slot = queuedSlot();
+		const sending = s.send('hi');
+		await vi.waitFor(() => expect(s.status).toBe('queued'));
+		slot.admit();
+		await sending;
+		expect(s.messages.map((m) => m.role)).toEqual(['user', 'assistant']);
+	});
+});
+
+describe('notices across a restart', () => {
+	it('saves what the agent was told with the turn, and starts from it when loaded', async () => {
+		const s = await newSession('/proj');
+		db.folders.git.set('/proj', {
+			repo_root: '/proj',
+			branch: 'bob',
+			head: 'abc1234',
+			changed: 0,
+			untracked: 0,
+			linked_worktree: false
+		});
+		await s.send('first');
+		const row = db.rows.get(s.id)!;
+		expect(row.notices_seen_at).toBe(99);
+		expect(row.agent_branch).toBe('bob');
+
+		// The app restarts; meanwhile the branch was switched.
+		await closeSession(s.id);
+		db.folders.git.set('/proj', { ...(db.folders.git.get('/proj') as object), branch: 'sally' });
+		const again = (await openSession(s.id))!;
+		await again.send('which branch?');
+		expect(lastTake()).toMatchObject({ since: 99 });
+		const o = mocks.runAgentLoop.mock.calls.at(-1)![0] as AgentLoopOptions;
+		expect(String(o.messages.at(-1)!.content)).toContain("now 'sally' (it was 'bob')");
+	});
+
+	it('tells a loaded session nothing new when its branch is as it was', async () => {
+		const s = await newSession('/proj');
+		db.rows.get(s.id)!.agent_branch = 'bob';
+		await closeSession(s.id);
+		db.folders.git.set('/proj', {
+			repo_root: '/proj',
+			branch: 'bob',
+			head: 'abc1234',
+			changed: 0,
+			untracked: 0,
+			linked_worktree: false
+		});
+		const again = (await openSession(s.id))!;
+		await again.send('go');
+		const o = mocks.runAgentLoop.mock.calls.at(-1)![0] as AgentLoopOptions;
+		expect(o.messages.at(-1)!.content).toBe('go');
+	});
+});
+
+describe('moving windows with unsent input', () => {
+	it('carries the input box’s text and images to the next window', async () => {
+		const s = await newSession('/proj');
+		const unregister = s.setDraftReader(() => ({
+			text: 'half a thought',
+			images: ['data:image/png;base64,z']
+		}));
+		expect(await handOffSession(s.id)).toBe(true);
+		unregister();
+		expect(JSON.parse(db.handoffs.get(s.id)!).draft).toEqual({
+			text: 'half a thought',
+			images: ['data:image/png;base64,z']
+		});
+		const again = (await openSession(s.id))!;
+		expect(again.takePrefill()).toEqual({
+			text: 'half a thought',
+			images: ['data:image/png;base64,z']
+		});
+	});
+
+	it('carries nothing for an empty box', async () => {
+		const s = await newSession('/proj');
+		s.setDraftReader(() => ({ text: '  ', images: [] }));
+		await handOffSession(s.id);
+		const again = (await openSession(s.id))!;
+		expect(again.prefill).toBeNull();
 	});
 });

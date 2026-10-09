@@ -1,7 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+const ipc = vi.hoisted(() => ({
+	openIds: [] as string[],
+	claimsChanged: null as (() => void) | null
+}));
+vi.mock('@tauri-apps/api/core', () => ({
+	invoke: vi.fn(async (cmd: string) => (cmd === 'code_session_open_ids' ? ipc.openIds : undefined))
+}));
+vi.mock('@tauri-apps/api/event', () => ({
+	listen: vi.fn(async (event: string, cb: () => void) => {
+		if (event === 'code://claims') ipc.claimsChanged = cb;
+		return () => {
+			if (ipc.claimsChanged === cb) ipc.claimsChanged = null;
+		};
+	})
+}));
 vi.mock('#lib/code/db.ts', () => ({
 	listCodeSessions: vi.fn(async () => [
 		{ id: 'a1', title: 'Fix lint', root: '/p/haruspex', updated_at: 2, forked_from: null },
@@ -138,5 +152,40 @@ describe('deleting a session', () => {
 		render(CodeSidebar, { onNew: vi.fn() });
 		await deleteFromMenu('New post');
 		expect(screen.queryByRole('checkbox')).toBeNull();
+	});
+
+	it('marks a session open in its own window, and keeps the mark current', async () => {
+		ipc.openIds = ['b1'];
+		store.getOpenSessions.mockReturnValue([]);
+		render(CodeSidebar, { onNew: vi.fn() });
+		const post = await waitFor(() => screen.getByRole('button', { name: 'New post' }));
+		await waitFor(() => expect(post.querySelector('[data-testid="window-mark"]')).not.toBeNull());
+		expect(post.getAttribute('title')).toContain('Open in its own window');
+		expect(
+			screen.getByRole('button', { name: 'Fix lint' }).querySelector('.window-mark')
+		).toBeNull();
+
+		// Re-attached: Rust announces the change, and the mark goes.
+		ipc.openIds = [];
+		ipc.claimsChanged?.();
+		await waitFor(() => expect(post.querySelector('[data-testid="window-mark"]')).toBeNull());
+
+		// Detached again.
+		ipc.openIds = ['b1'];
+		ipc.claimsChanged?.();
+		await waitFor(() => expect(post.querySelector('[data-testid="window-mark"]')).not.toBeNull());
+	});
+
+	it('does not mark a session that is a sub-tab here', async () => {
+		ipc.openIds = ['b1'];
+		store.getOpenSessions.mockReturnValue([
+			{ id: 'b1', title: 'New post', status: 'idle' }
+		] as never);
+		render(CodeSidebar, { onNew: vi.fn() });
+		const post = await waitFor(() => screen.getByRole('button', { name: 'New post' }));
+		await new Promise((r) => setTimeout(r, 0));
+		expect(post.querySelector('[data-testid="window-mark"]')).toBeNull();
+		store.getOpenSessions.mockReturnValue([]);
+		ipc.openIds = [];
 	});
 });

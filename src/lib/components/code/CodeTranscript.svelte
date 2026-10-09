@@ -136,7 +136,13 @@
 	}
 
 	/** Forks once the turn is over: the saved thread is then the one shown. */
-	const forkBlocked = $derived(session.busy ? 'Wait for the turn to finish, then fork.' : null);
+	const forkBlocked = $derived(
+		session.busy
+			? 'Wait for the turn to finish, then fork.'
+			: session.folderMissing
+				? `Folder not found: ${session.root}`
+				: null
+	);
 
 	/** The message "Fork from here" was pressed on; the dialog asks where. */
 	let forkAt = $state<number | null>(null);

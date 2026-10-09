@@ -20,9 +20,13 @@ interface Row {
 	updated_at: number;
 	read_only: boolean;
 	worktree: string | null;
+	notices_seen_at: number | null;
+	agent_branch: string | null;
 }
 
 const rows = new Map<string, Row>();
+/** Sessions the (one) window has open. */
+const claimed = new Set<string>();
 let seq = 0;
 
 function row(id: unknown): Row {
@@ -68,7 +72,9 @@ export const CODE_DB: Record<string, Handler> = {
 			created_at: t,
 			updated_at: t,
 			read_only: false,
-			worktree: null
+			worktree: null,
+			notices_seen_at: null,
+			agent_branch: null
 		};
 		rows.set(r.id, r);
 		return { ...r };
@@ -78,9 +84,18 @@ export const CODE_DB: Record<string, Handler> = {
 		const r = row(a?.id);
 		r.thread = String(a?.thread ?? '');
 		if (typeof a?.title === 'string') r.title = a.title;
+		if (typeof a?.noticesSeenAt === 'number') r.notices_seen_at = a.noticesSeenAt;
+		if (typeof a?.agentBranch === 'string') r.agent_branch = a.agentBranch;
 		r.updated_at = now();
 		return null;
 	},
+	code_session_set_root: (a) => {
+		const r = row(a?.id);
+		r.root = String(a?.root ?? '');
+		return { ...r };
+	},
+	// Every folder is there; a spec that wants one gone mocks this.
+	code_folder_exists: () => true,
 	code_session_update_meta: (a) => {
 		const r = row(a?.id);
 		const patch = (a?.patch ?? {}) as Record<string, unknown>;
@@ -126,6 +141,8 @@ export const CODE_DB: Record<string, Handler> = {
 			}),
 			forked_from: src.id,
 			forked_at: at,
+			notices_seen_at: null,
+			agent_branch: null,
 			created_at: t,
 			updated_at: t
 		};
@@ -133,9 +150,15 @@ export const CODE_DB: Record<string, Handler> = {
 		return { ...r };
 	},
 	// One window in the browser: every claim is the main window's.
-	code_session_claim: () => ({ owner: null, handoff: null }),
-	code_session_release: () => null,
-	code_session_open_ids: () => [...rows.keys()],
+	code_session_claim: (a) => {
+		claimed.add(String(a?.id));
+		return { owner: null, handoff: null };
+	},
+	code_session_release: (a) => {
+		claimed.delete(String(a?.id));
+		return null;
+	},
+	code_session_open_ids: () => [...claimed],
 
 	// One writer per folder, and nobody else writing in these tests.
 	code_lease_take: () => null,

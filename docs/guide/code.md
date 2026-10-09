@@ -22,7 +22,7 @@ The list on the left holds every saved session. To fork one or move it to its ow
 - **Edits** show as a diff, red and green, with line numbers; past 40 lines **Show all … lines** expands it. Unlike in Chat, rewriting a file doesn't ask first: the diff shows what changed. A second whole rewrite in one turn needs a command (a test, say) run in between.
 - **Commands** show as a card: command, exit code, time taken and output (the last 20 lines until **Show all**). **Copy** copies the command; **Open in Shell** types it into a new Shell tab at the folder without running it.
 - Searches and file reads show as a short step list.
-- **Reasoning** sits above its step, collapsed (live as **Thinking…**); what the agent **says** before a step sits under it.
+- **Reasoning** sits above its step, collapsed (live as **Thinking…**); what the agent **says** before a step sits above it in small grey text.
 - A call still being written shows as a row: **Writing**, **Editing** or **Preparing command…**.
 - **File names** inside the folder, in diffs, reads, search results and answers (`src/app.ts:42`), open the file in an editor window, at its top.
 
@@ -42,19 +42,19 @@ When something else changes a file, the editor reloads it and keeps your place. 
 
 While the agent works you can keep typing: `Enter` queues your message (**Queued**), and the agent reads it at its next step (**Delivered**). **×** drops a queued message. **Stop**, or `Esc`, ends the turn; anything unread comes back into the input box. `/` opens the commands and skills list, as in Chat.
 
-A dot on a session's tab shows it working (filled) or waiting for another turn (hollow): only one turn uses the model at a time.
+A dot on a session's tab shows it working (filled) or waiting for another turn (hollow): only one turn uses the model at a time. **Stop** on a waiting session gives your message back.
 
 ## Pick the model and effort
 
 The header above the conversation holds:
 
 - the **folder** — click it to open it in your file manager;
-- the **git branch**, with **●** for uncommitted changes. Click it to switch branch, or to start one with **Branch from current…** or **Branch from main…** (the repository's main branch, when another is checked out). Switching waits until the agent is idle and changes are committed or stashed; it warns when another open session uses the repository;
+- the **git branch**, with **●** for uncommitted changes. Click it to switch branch, or to start one with **Branch from current…** or **Branch from main…** (shown when another branch is checked out). Switching waits until the agent is idle and changes are committed or stashed; it warns when another open session uses the repository;
 - the **model** — click it to pick **Settings model** (follows Settings → Inference), **Remote server** (one saved in Settings → Inference: **Probe**, then pick a model) or **OpenRouter (cloud)** (**Load models**, then pick one), then **Save**. The local model is only reachable through **Settings model**, and picking one here never starts it;
 - **Effort** — how hard the model thinks, where the model offers levels;
 - the **AGENTS.md** badge when the repo's instructions are in use (see the `skills` page), and how full the context is.
 
-Model and effort apply from the next message; the status badge at the top names the model.
+Model and effort apply from the next message.
 
 ## Background processes
 

@@ -488,6 +488,19 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_code_sessions_root
                 ON code_sessions(root, updated_at);
 
+            -- Files one Code session's turn changed, for the other sessions in
+            -- the folder; see code_tools/folders.rs. `files` is a JSON array of
+            -- absolute paths. Dropped once every session they are news to has
+            -- seen them, after a day, or past the newest 200.
+            CREATE TABLE IF NOT EXISTS code_file_notices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                folder TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                files TEXT NOT NULL,
+                at INTEGER NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS search_stats_engines (
                 engine TEXT PRIMARY KEY,
                 attempts INTEGER NOT NULL DEFAULT 0,
@@ -746,6 +759,12 @@ impl Database {
             // it can offer to remove that too.
             "ALTER TABLE code_sessions ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE code_sessions ADD COLUMN worktree TEXT",
+            // What a session's agent has been told, so a restart neither
+            // repeats it nor loses what came since: other sessions' file
+            // changes up to this time (NULL: `updated_at` stands in), and the
+            // branch it last knew (NULL: never told, '': not a repo).
+            "ALTER TABLE code_sessions ADD COLUMN notices_seen_at INTEGER",
+            "ALTER TABLE code_sessions ADD COLUMN agent_branch TEXT",
         ] {
             if let Err(e) = conn.execute(stmt, []) {
                 let msg = e.to_string();
@@ -819,6 +838,7 @@ fn chrono_now() -> i64 {
     crate::time_util::now_ms()
 }
 
+mod code_notices;
 mod code_sessions;
 mod commands;
 mod conversations;
@@ -830,6 +850,7 @@ mod prompts;
 mod runs;
 mod stats;
 
+pub use code_notices::StoredNotice;
 pub use code_sessions::{CodeSessionMetaPatch, CodeSessionRow, CodeSessionSummary};
 pub use commands::*;
 pub use images::ImageRow;

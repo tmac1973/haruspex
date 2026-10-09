@@ -1,6 +1,11 @@
 <script lang="ts">
-	/** One open Code session: its header, transcript and input box. */
+	/**
+	 * One open Code session: its header, transcript and input box, and a
+	 * banner when its folder is gone. The folder is looked at again whenever
+	 * the window gains focus (the user may have been in a file manager).
+	 */
 	import CodeSessionHeader from './CodeSessionHeader.svelte';
+	import FolderMissingBanner from './FolderMissingBanner.svelte';
 	import CodeTranscript from './CodeTranscript.svelte';
 	import CodeComposer from './CodeComposer.svelte';
 	import type { SlashHost } from '#lib/slash/slash.ts';
@@ -11,7 +16,14 @@
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
-	let { session }: { session: CodeSession } = $props();
+	let {
+		session,
+		ondeleted
+	}: {
+		session: CodeSession;
+		/** After the banner deletes the session. */
+		ondeleted?: () => void;
+	} = $props();
 
 	/**
 	 * Notes `/skills` and friends put in the transcript; not saved. Each keeps
@@ -33,8 +45,13 @@
 	};
 </script>
 
+<svelte:window onfocus={() => void session.checkFolder()} />
+
 <div class="pane">
 	<CodeSessionHeader {session} />
+	{#if session.folderMissing}
+		<FolderMissingBanner {session} {ondeleted} />
+	{/if}
 	<CodeTranscript {session} {notes} />
 	<CodeComposer {session} {slashHost} />
 </div>
