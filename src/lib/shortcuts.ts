@@ -61,6 +61,13 @@ export const SHORTCUTS: ShortcutSection[] = [
 		]
 	},
 	{
+		title: 'Editor windows',
+		items: [
+			{ keys: 'Ctrl / ⌘ + S', action: 'Save the file' },
+			{ keys: 'Ctrl / ⌘ + W', action: 'Close the tab' }
+		]
+	},
+	{
 		title: 'Dialogs',
 		items: [{ keys: 'Esc', action: 'Close logs, the image viewer, or this help' }]
 	}

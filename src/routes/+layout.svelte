@@ -102,10 +102,11 @@
 	let version = $state('');
 	let update = $state<UpdateInfo | null>(null);
 
-	// A detached shell window loads this same root layout. It must NOT re-run
-	// app bootstrap (sidecars, job scheduler, setup redirect) or render the
-	// main chrome — it shows only its shell pane (routes/shell/[id]).
-	const detached = $derived(page.route.id === '/shell/[id]');
+	// A detached shell window and an editor window load this same root
+	// layout. They must NOT re-run app bootstrap (sidecars, job scheduler,
+	// setup redirect) or render the main chrome — each shows only its own
+	// page (routes/shell/[id], routes/editor).
+	const detached = $derived(page.route.id === '/shell/[id]' || page.route.id === '/editor');
 
 	// Delegated handler for the copy/paste/run buttons inside rendered
 	// markdown (sanitization strips inline onclick). Installed in every
@@ -117,6 +118,8 @@
 	// the model never saw them; not awaited, so the window is not held closed
 	// while several child processes negotiate.
 	onMount(() => {
+		// An editor window has no agent, so no use for the servers.
+		if (page.route.id === '/editor') return;
 		void startConfiguredMcpServers();
 		// A running server can change what it publishes — Godot reveals a whole
 		// toolset when the model enables one — and the registry has to hear
@@ -245,7 +248,7 @@
 		// so the Rust queue can hold a phantom "running" ticket). Runs for every
 		// window — including detached shells — before the bootstrap early-return.
 		void reclaimOwnWindowSlots();
-		if (page.route.id === '/shell/[id]') return;
+		if (detached) return;
 		initServerStore();
 		initChatStore();
 		// Inline email passwords move to the system keychain where there is

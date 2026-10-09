@@ -81,7 +81,7 @@ ${SEARCH_AND_FILE_TOOLS}
 - command_output — the latest output of a background command, by the id run_command returned, and whether it is still running.
 - command_stop — stop a background command, and everything it started.
 - open_in_shell — hand ONE command to the user: it opens a Shell tab at the project folder with the command typed in, the user presses Enter, and you get the exit code and output (and the command that ran, if they changed it).
-- open_in_editor — open files in the user's editor for them to look at. It returns at once and does not report their edits.
+- open_in_editor — open files in an editor window for the user to look at. It returns at once and does not report their edits.
 ${WEB_TOOLS}${assetLine()}
 
 RUNNING PROCESSES:

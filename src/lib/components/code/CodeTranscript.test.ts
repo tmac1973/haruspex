@@ -3,6 +3,11 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import type { ChatMessage } from '#lib/api.ts';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue(null) }));
+const openWindows = vi.hoisted(() => vi.fn().mockResolvedValue([]));
+vi.mock('#lib/editor/windows.ts', () => ({
+	openInEditorWindows: openWindows,
+	describeOpens: () => ''
+}));
 vi.mock('#lib/stores/chat.svelte.ts', () => ({
 	rerunSandboxStep: vi.fn(),
 	cancelActiveSandboxRun: vi.fn()
@@ -242,7 +247,7 @@ describe('CodeTranscript and the shell', () => {
 
 describe('CodeTranscript paths', () => {
 	it('opens a path in an answer in the editor; paths outside the folder are plain', async () => {
-		const { getPendingEdit } = await import('#lib/stores/fileEditor.svelte.ts');
+		openWindows.mockClear();
 		const { container } = render(CodeTranscript, {
 			session: fakeSession({
 				messages: [
@@ -254,12 +259,11 @@ describe('CodeTranscript paths', () => {
 		const links = container.querySelectorAll<HTMLButtonElement>('button.code-path');
 		expect([...links].map((b) => b.dataset.path)).toEqual(['src/app.ts']);
 		await fireEvent.click(links[0].querySelector('code')!);
-		expect(getPendingEdit()).toMatchObject({ workdir: '/p/app', files: ['src/app.ts'] });
-		getPendingEdit()!.finish({ saved: [] });
+		expect(openWindows).toHaveBeenCalledWith('/p/app', ['src/app.ts']);
 	});
 
 	it('links the file of a diff card and a read step', async () => {
-		const { getPendingEdit } = await import('#lib/stores/fileEditor.svelte.ts');
+		openWindows.mockClear();
 		render(CodeTranscript, {
 			session: fakeSession({
 				messages: [
@@ -289,15 +293,13 @@ describe('CodeTranscript paths', () => {
 			})
 		});
 		await fireEvent.click(screen.getByRole('button', { name: 'src/a.ts' }));
-		expect(getPendingEdit()?.files).toEqual(['src/a.ts']);
-		getPendingEdit()!.finish({ saved: [] });
+		expect(openWindows).toHaveBeenLastCalledWith('/p/app', ['src/a.ts']);
 		await fireEvent.click(screen.getByTitle('Open src/b.ts in the editor'));
-		expect(getPendingEdit()?.files).toEqual(['src/b.ts']);
-		getPendingEdit()!.finish({ saved: [] });
+		expect(openWindows).toHaveBeenLastCalledWith('/p/app', ['src/b.ts']);
 	});
 
 	it('links grep hits inside the folder', async () => {
-		const { getPendingEdit } = await import('#lib/stores/fileEditor.svelte.ts');
+		openWindows.mockClear();
 		const { container } = render(CodeTranscript, {
 			session: fakeSession({
 				messages: [
@@ -324,7 +326,6 @@ describe('CodeTranscript paths', () => {
 		const links = pre.querySelectorAll('button.path-link');
 		expect([...links].map((b) => b.textContent)).toEqual(['src/c.ts']);
 		await fireEvent.click(links[0]);
-		expect(getPendingEdit()?.files).toEqual(['src/c.ts']);
-		getPendingEdit()!.finish({ saved: [] });
+		expect(openWindows).toHaveBeenLastCalledWith('/p/app', ['src/c.ts']);
 	});
 });

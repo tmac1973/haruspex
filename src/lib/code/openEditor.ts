@@ -1,20 +1,33 @@
 /**
- * Open files from a Code session's folder in the in-app editor, and return
- * at once. `editWorkdirFiles` resolves when the user closes the editor; nobody
- * here waits for that: the editor is for looking, and an agent that needs the
- * user's edits asks for them.
+ * Open files from a Code session's folder in an editor window, and return at
+ * once. The windows are for looking and editing by hand; nothing waits for
+ * them, and an agent that needs the user's edits asks for them.
+ *
+ * Every Code-tab entry point comes through here: the `open_in_editor` tool,
+ * file links in the transcript, and the file names on diffs.
  */
 
-import { editWorkdirFiles, getPendingEdit } from '#lib/stores/fileEditor.svelte.ts';
+import { openInEditorWindows, describeOpens, type WindowOpen } from '#lib/editor/windows.ts';
+import { showToast } from '#lib/stores/toasts.svelte.ts';
 
-/**
- * Open `files` (relative to `root`, already checked to be inside it). Returns
- * null once the editor is up, or why it couldn't open.
- */
-export function openInEditor(root: string, files: string[], title: string): string | null {
-	if (files.length === 0) return 'No files to open.';
-	if (getPendingEdit() !== null) return 'The editor is already open.';
-	// Not awaited: it settles when the user closes the editor.
-	void editWorkdirFiles({ workdir: root, files, title }).catch(() => {});
-	return null;
+export type EditorOpened =
+	| { ok: true; opens: WindowOpen[]; summary: string }
+	| { ok: false; error: string };
+
+/** Open `files` (relative to `root`, already checked to be inside it). */
+export async function openInEditor(root: string, files: string[]): Promise<EditorOpened> {
+	if (files.length === 0) return { ok: false, error: 'No files to open.' };
+	try {
+		const opens = await openInEditorWindows(root, files);
+		return { ok: true, opens, summary: describeOpens(root, opens) };
+	} catch (e) {
+		return { ok: false, error: `The editor window could not open: ${String(e)}` };
+	}
+}
+
+/** A click on a file link: open it, and say so if that failed. */
+export function openFileFromClick(root: string, file: string): void {
+	void openInEditor(root, [file]).then((res) => {
+		if (!res.ok) showToast(res.error, { kind: 'error' });
+	});
 }

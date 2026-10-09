@@ -16,7 +16,7 @@
 	import type { SearchStep } from '#lib/agent/loop.ts';
 	import { editDiffFromStep, type FileDiff } from '#lib/code/diff.ts';
 	import { makeCodePathLinker, relativeToRoot } from '#lib/code/paths.ts';
-	import { openInEditor } from '#lib/code/openEditor.ts';
+	import { openFileFromClick } from '#lib/code/openEditor.ts';
 	import type { PathLinks } from '#lib/components/SearchStep.svelte';
 
 	/** `root`: the session folder. Paths inside it become links to the editor. */
@@ -34,7 +34,7 @@
 		if (!dir) return undefined;
 		return {
 			link: (path) => relativeToRoot(dir, path),
-			open: (rel) => void openInEditor(dir, [rel], rel)
+			open: (rel) => openFileFromClick(dir, rel)
 		};
 	});
 	const codePaths = $derived(root ? makeCodePathLinker(root) : undefined);
