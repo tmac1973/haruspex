@@ -175,6 +175,7 @@ const db = vi.hoisted(() => {
 });
 
 const mocks = vi.hoisted(() => ({
+	chatCompletion: vi.fn(),
 	invoke: vi.fn(),
 	runAgentLoop: vi.fn(),
 	withInferenceSlot: vi.fn(),
@@ -219,7 +220,13 @@ vi.mock('#lib/skills/turn.ts', () => ({
 	skillsPromptSection: () => ''
 }));
 vi.mock('#lib/inference/descriptor.ts', () => ({
-	resolveBackendDescriptor: () => ({ contextSize: 8192 })
+	resolveBackendDescriptor: () => ({ contextSize: 8192, reasoningMode: { kind: 'none' } })
+}));
+// The summary call compaction makes; the turn's own calls go through the
+// mocked agent loop.
+vi.mock('#lib/api.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/api.ts')>()),
+	chatCompletion: mocks.chatCompletion
 }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
@@ -1426,5 +1433,47 @@ describe('moving windows with unsent input', () => {
 		await handOffSession(s.id);
 		const again = (await openSession(s.id))!;
 		expect(again.prefill).toBeNull();
+	});
+});
+
+describe('a long Code session', () => {
+	it('summarises older turns, keeps the transcript, and saves the summary', async () => {
+		const s = await newSession('/proj');
+		let compactingSeen = false;
+		mocks.chatCompletion.mockReset().mockImplementation(async () => {
+			compactingSeen = s.compacting;
+			return { content: 'Earlier: read the parser.' };
+		});
+		// Each answer is about a third of the 8K window.
+		mocks.runAgentLoop.mockImplementation(answers('x'.repeat(6000)));
+		for (let i = 0; i < 4; i++) await s.send(`step ${i}`);
+
+		expect(mocks.chatCompletion).toHaveBeenCalled();
+		expect(compactingSeen).toBe(true);
+		expect(s.compacting).toBe(false);
+		expect(s.messages).toHaveLength(8);
+		const c = s.compaction!;
+		expect(c.summary).toBe('Earlier: read the parser.');
+		expect(s.messages[c.at].role).toBe('user');
+		// The last turn was sent the summary and the turns after the cut.
+		const sent = (mocks.runAgentLoop.mock.calls.at(-1)![0] as AgentLoopOptions).messages;
+		expect(String(sent[0].content)).toContain('Earlier: read the parser.');
+		expect(sent.slice(1)).toEqual(s.messages.slice(c.at, -1));
+
+		expect(storedThread(s.id)?.compaction).toEqual(c);
+		await closeSession(s.id);
+		const again = (await openSession(s.id))!;
+		expect(again.compaction).toEqual(c);
+		expect(again.messages).toEqual(s.messages);
+	});
+
+	it('runs the turn as before when the summary fails', async () => {
+		const s = await newSession('/proj');
+		mocks.chatCompletion.mockReset().mockRejectedValue(new Error('500'));
+		mocks.runAgentLoop.mockImplementation(answers('x'.repeat(6000)));
+		for (let i = 0; i < 4; i++) await s.send(`step ${i}`);
+		expect(s.compaction).toBeNull();
+		expect(s.lastError).toBeNull();
+		expect(s.messages).toHaveLength(8);
 	});
 });

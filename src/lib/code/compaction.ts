@@ -84,6 +84,20 @@ export function shouldCompactCode(view: ChatMessage[], contextSize: number, over
 }
 
 /**
+ * Compact before this turn? `prompt` is the whole outgoing prompt, system
+ * prompt included. `lastPromptTokens` is what the server counted for the
+ * session's last call, which also covers the tool schemas; 0 when unknown.
+ */
+export function compactionDue(
+	prompt: ChatMessage[],
+	contextSize: number,
+	lastPromptTokens = 0
+): boolean {
+	if (contextSize <= 0) return false;
+	return shouldCompactCode(prompt, contextSize) || lastPromptTokens >= contextSize * COMPACT_AT;
+}
+
+/**
  * Where a turn opens: each user message, whether typed, a watch notice or
  * steering. Cutting before one never separates a tool call from its results,
  * which always directly follow the call.

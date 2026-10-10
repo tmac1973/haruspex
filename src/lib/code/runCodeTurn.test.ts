@@ -6,7 +6,13 @@ const mocks = vi.hoisted(() => ({
 	runAgentLoop: vi.fn(),
 	withInferenceSlot: vi.fn(),
 	shellProject: vi.fn(),
-	prepareTurnSkills: vi.fn()
+	prepareTurnSkills: vi.fn(),
+	chatCompletion: vi.fn()
+}));
+
+vi.mock('#lib/api.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/api.ts')>()),
+	chatCompletion: mocks.chatCompletion
 }));
 
 vi.mock('#lib/agent/loop.ts', () => ({ runAgentLoop: mocks.runAgentLoop }));
@@ -29,7 +35,8 @@ vi.mock('#lib/stores/settings.ts', () => ({
 		codeRunCommandTimeoutSecs: 30,
 		imageBackendKind: 'none',
 		customSystemPrompt: ''
-	})
+	}),
+	getChatTemplateKwargs: () => ({})
 }));
 
 import { collectTurnMessages, runCodeTurn, type CodeTurnOptions } from '#lib/code/runCodeTurn.ts';
@@ -356,5 +363,95 @@ describe('collectTurnMessages', () => {
 		expect(collectTurnMessages([echo, nudge], new Set(), 'done')).toEqual([
 			{ role: 'assistant', content: 'done' }
 		]);
+	});
+});
+
+describe('runCodeTurn compaction', () => {
+	/** `n` turns of about 2.5K estimated tokens each, ending with a new request. */
+	function longThread(n: number): ChatMessage[] {
+		const out: ChatMessage[] = [];
+		for (let i = 0; i < n; i++) {
+			out.push({ role: 'user', content: `request ${i} ` + 'u'.repeat(3000) });
+			out.push(call(`c${i}`), { role: 'tool', tool_call_id: `c${i}`, content: 'r'.repeat(3000) });
+			out.push({ role: 'assistant', content: `answer ${i} ` + 'a'.repeat(3000) });
+		}
+		out.push({ role: 'user', content: 'and now?' });
+		return out;
+	}
+
+	beforeEach(() => {
+		mocks.chatCompletion.mockReset().mockResolvedValue({ content: 'The summary.' });
+		mocks.runAgentLoop.mockImplementation(async (o: AgentLoopOptions) => o.onComplete());
+	});
+
+	it("summarises older turns in the turn's slot, then sends the summary and the rest", async () => {
+		const thread = longThread(8);
+		const events: string[] = [];
+		mocks.chatCompletion.mockImplementation(async () => {
+			events.push('summary');
+			return { content: 'The summary.' };
+		});
+		mocks.runAgentLoop.mockImplementation(async (o: AgentLoopOptions) => {
+			events.push('loop');
+			o.onComplete();
+		});
+		const onCompacted = vi.fn();
+		const compacting: boolean[] = [];
+		await runCodeTurn(opts({ thread, onCompacted, onCompacting: (a) => compacting.push(a) }));
+		// Every summary call (a 16K window takes it in chunks), then the turn.
+		expect(events.at(-1)).toBe('loop');
+		expect(events.slice(0, -1).every((e) => e === 'summary')).toBe(true);
+		expect(events.length).toBeGreaterThan(1);
+		expect(mocks.withInferenceSlot).toHaveBeenCalledTimes(1);
+		expect(compacting).toEqual([true, false]);
+		const saved = onCompacted.mock.calls[0][0];
+		expect(saved.summary).toBe('The summary.');
+		expect(thread[saved.at].role).toBe('user');
+		const sent = loopOptions().messages;
+		expect(sent.filter((m) => m.role === 'system')).toHaveLength(1);
+		expect(String(sent[0].content)).toContain('The summary.');
+		expect(sent.slice(1)).toEqual(thread.slice(saved.at));
+	});
+
+	it('sends a saved summary without making another', async () => {
+		const thread = longThread(2);
+		await runCodeTurn(
+			opts({ thread, compaction: { at: 4, summary: 'Earlier.', summarizedAt: 1 } })
+		);
+		expect(mocks.chatCompletion).not.toHaveBeenCalled();
+		const sent = loopOptions().messages;
+		expect(String(sent[0].content)).toContain('Earlier.');
+		expect(sent.slice(1)).toEqual(thread.slice(4));
+	});
+
+	it('compacts on what the server last counted, for the same window only', async () => {
+		// Small by estimate, so only the reported prompt can call for it.
+		const thread = longThread(2);
+		await runCodeTurn(opts({ thread, lastUsage: { promptTokens: 15000, contextSize: 99999 } }));
+		expect(mocks.chatCompletion).not.toHaveBeenCalled();
+		mocks.runAgentLoop.mockClear();
+		await runCodeTurn(opts({ thread, lastUsage: { promptTokens: 15000, contextSize: 16384 } }));
+		expect(mocks.chatCompletion).toHaveBeenCalled();
+	});
+
+	it('runs the turn on the whole thread when summarising fails', async () => {
+		mocks.chatCompletion.mockRejectedValue(new Error('500'));
+		const thread = longThread(8);
+		const onCompacted = vi.fn();
+		const res = await runCodeTurn(opts({ thread, onCompacted }));
+		expect(res.outcome).toBe('complete');
+		expect(onCompacted).not.toHaveBeenCalled();
+		expect(loopOptions().messages.slice(1)).toEqual(thread);
+	});
+
+	it('stops the turn when stopped while summarising', async () => {
+		const abort = new AbortController();
+		mocks.chatCompletion.mockImplementation(async () => {
+			abort.abort();
+			throw new DOMException('Aborted', 'AbortError');
+		});
+		const res = await runCodeTurn(opts({ thread: longThread(8), signal: abort.signal }));
+		expect(res.outcome).toBe('aborted');
+		expect(mocks.runAgentLoop).not.toHaveBeenCalled();
 	});
 });

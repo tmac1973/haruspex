@@ -1,6 +1,6 @@
 ---
 title: Code sessions
-description: Code tab sessions — the session list, forking into a git worktree or read-only, sessions sharing a folder, a missing folder, and moving a session to its own window and back.
+description: Code tab sessions — the session list, long sessions, forking into a git worktree or read-only, sessions sharing a folder, a missing folder, and moving a session to its own window and back.
 ---
 
 # Code sessions
@@ -12,6 +12,10 @@ How to find, fork and move sessions in the Code tab. For what a session does, se
 The list on the left holds every saved session, newest first, with its folder and when it was last active. Two or more sessions in one folder sit under a folder row; click it to fold them. Click a session to open it as a tab above the conversation. Right-click a session to **Rename** or **Delete** it; deleting removes the conversation, not any files (but see worktrees below). Closing a tab (**×**) keeps the session in the list. The **‹** button hides the list.
 
 Long sessions show their last 20 turns; **Show earlier** loads more.
+
+## When a session gets long
+
+Once a session fills about three quarters of the model's context, Haruspex summarises its older turns before the next one, and the agent works from that summary and the recent turns. The conversation you see stays whole. File contents aren't kept in the summary, so the agent reads files again when it needs them.
 
 ## Fork a session from a message
 

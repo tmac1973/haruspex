@@ -1,44 +1,57 @@
 # Phase 3 — Compact before a turn
 
-**Depends on:** 2 · **Guide:** `code-sessions` (one line: long sessions summarise older turns); fix `models` line 44, which says only "a conversation"
+**Depends on:** 2 · **Guide:** `code-sessions`, `models`
 
 ## Goal
 
 `CodeSession` compacts automatically and sends the model the compacted view.
 
+## As built
+
+Two changes from the first draft:
+
+- Compaction runs **inside `runCodeTurn`**, in the inference slot the turn
+  already holds, and not in the store before the turn. The turn knows the
+  system prompt there, and a separate queue entry would let another consumer
+  in between the summary and the turn it makes room for.
+- The UI reads a **`compacting` flag** on the session, not a new
+  `CodeSessionStatus`. The status stays `'running'`, so the tab strip, the
+  remote web client and `windows.ts` keep their exhaustive switches.
+
 ## Changes
-
-### `src/lib/stores/code.svelte.ts`
-
-- Add `compaction = $state.raw<CodeCompaction | null>(null)`. The constructor
-  restores it from the decoded thread, and `snapshot()` writes it.
-- Add `'compacting'` to `CodeSessionStatus`. Check every `switch` and label
-  over it: the sidebar dot, the header, `busy`.
-- In `turn()`, after the folder check and before `runCodeTurn`:
-  1. Build `view = modelThread(this)` with the new opening message.
-  2. If `shouldCompactCode(view, contextSize)` is true, set status to
-     `'compacting'` and call `compactCodeThread` inside `withInferenceSlot`
-     with the turn's `abort.signal`.
-  3. On success, set `this.compaction`, `this.usage = null` and
-     `this.contextNotice = null`.
-  4. On failure or empty output, call `logDebug('code', 'compaction failed', …)`
-     and carry on.
-  5. An abort counts as a turn that never started: `unsend` gives back the
-     text, as it does today.
-- Pass `thread: modelThread(this)` to `runCodeTurn` in place of
-  `this.messages`. `commit` still appends `result.added` to the full
-  `this.messages`.
-- Steering typed while compacting queues as it does while queued for the slot.
 
 ### `src/lib/code/runCodeTurn.ts`
 
-No change: it already takes `thread` as given. The comment on
-`CodeTurnOptions.thread` becomes "what the model is sent (see `modelThread`)".
+- `CodeTurnOptions` gains:
+  - `compaction`;
+  - `lastUsage` (the session's last `{ promptTokens, contextSize }`);
+  - `onCompacting(active)`;
+  - `onCompacted(compaction)`.
+- `prepareMessages` is split into `prepareSystem` and `assemble(system,
+  thread, notice)`. The prompt is `assemble(system, modelThread(…), notice)`.
+- In the slot, before `runAgentLoop`:
+  `compactionDue(prompt, contextSize, lastPromptTokens)`. That is the
+  calibrated estimate, or what the server last counted when the window hasn't
+  changed, which also covers the tool schemas. If due, it calls
+  `compactCodeThread`; on success the prompt is rebuilt.
+- A failure is logged (`logDebug('code', 'compaction failed')`) and the turn
+  runs on the whole thread. A stop during summarising ends the turn as
+  `'aborted'`, like a stop just after admission. The typed text stays in the
+  thread with "Stopped."
 
-### Forks (`forkSession` / `forkAndOpen`)
+### `src/lib/stores/code.svelte.ts`
 
-No change in TypeScript. Rust's `fork_thread` carries or drops the cut (phase
-2). Check that a fork made after the cut reopens with its compaction.
+- `compaction` (`$state.raw`) is restored by the constructor and written by
+  `snapshot()`, so `persist()` saves it.
+- `compacting` is set through `onCompacting`.
+- `onCompacted` sets `compaction` and clears `usage` and `contextNotice`.
+- `this.messages` is never cut.
+
+### Guide
+
+- `code-sessions`: a "When a session gets long" section.
+- `models`: the summarising line names chats and Code sessions. The page is at
+  5,997 of 6,000 bytes.
 
 ## Tests (`stores/code.test.ts`)
 

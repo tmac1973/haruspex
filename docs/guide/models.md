@@ -41,7 +41,7 @@ Settings → Inference → Context Size sets how much of the conversation the mo
 - **Let models use system RAM** (off by default) unlocks larger sizes. See below.
 - **Keep the vision projector in system RAM** (off by default) frees about 1 GB of VRAM, usually buying a longer conversation. Only messages with an image get slower.
 
-When a conversation gets long, Haruspex summarises older parts so it still fits.
+Haruspex summarises the older parts of long chats and Code sessions so they fit.
 
 ## Run a model bigger than your VRAM
 
