@@ -9,6 +9,8 @@ Remote access serves a small chat page on your local network, so another device 
 
 It is useful when your main machine is busy with something else, like a game, and you want to ask a question from another device.
 
+To drive your own Code sessions from another device instead, see the `remote-control` page.
+
 ## Turn it on
 
 1. Open Settings → Remote access.

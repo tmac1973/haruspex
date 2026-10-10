@@ -192,6 +192,12 @@ npm run drive -- events [--since N]                      # engine events from ev
 npm run drive -- consistent <id>                         # do the events rebuild what session.get says?
 ```
 
+**Through the owner API:** `start --api` turns Settings → Remote control on
+(this computer only, a free port), adds a device, and sends every engine
+operation over HTTP (`POST /api/v1/op`) from then on: `--via engine`,
+`approve --via engine`, `state`, `status`. `api-events [--seconds N]` reads
+`GET /api/v1/events` for N seconds.
+
 `consistent` must hold for an idle session. While a turn streams, the replay
 trails by a few tens of milliseconds, so `differs` listing only
 `streamingContent` or `roundText` then is lag, not a bug.

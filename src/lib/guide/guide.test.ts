@@ -3,7 +3,7 @@ import { GUIDE_PAGES, guideIndex, guidePage, parsePage } from './guide';
 
 describe('the compiled-in guide', () => {
 	it('has every page from docs/guide/, getting-started first', () => {
-		expect(GUIDE_PAGES).toHaveLength(16);
+		expect(GUIDE_PAGES).toHaveLength(17);
 		expect(GUIDE_PAGES[0].name).toBe('getting-started');
 		expect(GUIDE_PAGES.at(-1)!.name).toBe('troubleshooting');
 		for (const p of GUIDE_PAGES) {

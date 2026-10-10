@@ -92,6 +92,30 @@ try {
 	started = false;
 	check(saved.files.includes(`transcript-${id}.md`), 'stop writes the transcript');
 	check(readInfo(controlPaths()) === null, 'stop leaves no driver behind');
+
+	// Phase 3: the same engine, through the owner API over HTTP.
+	writeFileSync(join(folder, 'README.md'), '# Helo\n');
+	const viaApi = drive('start', '--fake', 'code-tab', '--folder', folder, '--api');
+	started = true;
+	check(viaApi.api?.startsWith('http://127.0.0.1:'), 'start --api turns the owner API on');
+	const { id: apiId } = drive('new-session');
+	const apiTurn = drive(
+		'send',
+		apiId,
+		'fix the readme typo',
+		'--via',
+		'engine',
+		'--wait',
+		'--timeout',
+		'60'
+	);
+	check(apiTurn.state === 'done', 'a turn sent over HTTP runs');
+	check(readFileSync(join(folder, 'README.md'), 'utf8') === '# Hello\n', 'and edits the file');
+	const stream = drive('api-events', '--seconds', '2');
+	check(stream[0]?.type === 'ready', 'the event stream says it is ready');
+	check(drive('consistent', apiId).consistent, 'the session still rebuilds from its events');
+	drive('stop');
+	started = false;
 } finally {
 	if (started) {
 		try {

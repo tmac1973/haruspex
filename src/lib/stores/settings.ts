@@ -401,6 +401,15 @@ export interface AppSettings {
 	 *  token kept under `remote:token` and `remoteAccessTokenSaved` set. */
 	remoteAccessToken: string;
 	remoteAccessTokenSaved: boolean;
+	/**
+	 * Settings → Remote control: the owner API, for the owner's own devices
+	 * (plan/remote-api/). Off by default; on, it listens on this computer only
+	 * unless `ownerApiBindAll`. Its devices and their tokens live in Rust
+	 * (`owner-clients.json`), never here.
+	 */
+	ownerApiEnabled: boolean;
+	ownerApiPort: number;
+	ownerApiBindAll: boolean;
 	contextSize: number;
 	/**
 	 * "Let models use system RAM". On: `start_server` omits `--n-gpu-layers`,
@@ -828,6 +837,10 @@ const defaults: AppSettings = {
 	remoteAccessPort: 8787,
 	remoteAccessToken: '',
 	remoteAccessTokenSaved: false,
+	ownerApiEnabled: false,
+	// Next to remote chat's 8787.
+	ownerApiPort: 8788,
+	ownerApiBindAll: false,
 	braveApiKey: '',
 	braveApiKeySaved: false,
 	searxngUrl: DEFAULT_SEARXNG_URL,

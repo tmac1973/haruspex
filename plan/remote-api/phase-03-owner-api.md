@@ -26,15 +26,15 @@ Phase 4's web client and the driver's `--via api` are its first users.
 
 ## Decisions
 
-| # | Question | Decision |
-|---|---|---|
-| 1 | Events transport | **SSE**, as remote chat does: works with a bearer header from `fetch` and Node, no new axum feature, and `tailscale serve` passes it through. A WebSocket is a later option if two-way traffic is needed. |
-| 2 | Port | **8788** by default (`ownerApiPort`), next to remote chat's 8787. Its own listener. |
-| 3 | Bind | **Loopback** (default) or **all interfaces**. Loopback is what `tailscale serve` proxies to, and it gives HTTPS on the tailnet. "All" is for NetBird and plain LANs, and the guide says to firewall it. |
-| 4 | Tokens | **Minted in Rust** (32 bytes from `SystemRandom`, hex), **shown once**, stored only as SHA-256 hashes in `owner-clients.json` in the app data dir. A hash is not a secret, so no keychain is needed and a lost token is replaced, never recovered. |
-| 5 | Scopes | `read` (list, get, resync, prompts.list, events), `drive` (open, new, send, stop, cancelShellWait), `approve` (prompts.answer). Each client has a set; a new one gets all three. |
-| 6 | Pairing link / QR | **Phase 4**, with the web client that would open it. Phase 3 shows the token once, to copy. |
-| 7 | Settings home | **A new Settings → Remote control category**, separate from Remote access (guest chat), per overview decision 4. |
+| #   | Question          | Decision                                                                                                                                                                                                                                           |
+| --- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Events transport  | **SSE**, as remote chat does: works with a bearer header from `fetch` and Node, no new axum feature, and `tailscale serve` passes it through. A WebSocket is a later option if two-way traffic is needed.                                          |
+| 2   | Port              | **8788** by default (`ownerApiPort`), next to remote chat's 8787. Its own listener.                                                                                                                                                                |
+| 3   | Bind              | **Loopback** (default) or **all interfaces**. Loopback is what `tailscale serve` proxies to, and it gives HTTPS on the tailnet. "All" is for NetBird and plain LANs, and the guide says to firewall it.                                            |
+| 4   | Tokens            | **Minted in Rust** (32 bytes from `SystemRandom`, hex), **shown once**, stored only as SHA-256 hashes in `owner-clients.json` in the app data dir. A hash is not a secret, so no keychain is needed and a lost token is replaced, never recovered. |
+| 5   | Scopes            | `read` (list, get, resync, prompts.list, events), `drive` (open, new, send, stop, cancelShellWait), `approve` (prompts.answer). Each client has a set; a new one gets all three.                                                                   |
+| 6   | Pairing link / QR | **Phase 4**, with the web client that would open it. Phase 3 shows the token once, to copy.                                                                                                                                                        |
+| 7   | Settings home     | **A new Settings → Remote control category**, separate from Remote access (guest chat), per overview decision 4.                                                                                                                                   |
 
 ## 1. Rust: `src-tauri/src/owner/`
 
@@ -106,3 +106,27 @@ The owner can turn on Settings → Remote control, add a device, and with its
 token drive a Code session with `curl` (op) and watch it (events). The driver
 does the same in CI. With the API off, the port is closed and the engine
 stays off.
+
+## As built (2026-10-09)
+
+Branch `remote-api/p03-owner-api`. As planned, with these notes:
+
+- **The engine starts on switch-on.** Each window listens for
+  `engine://enabled` before it asks `engine_enabled`, so a switch-on between
+  the two isn't missed. Switching off leaves a window's watchers running:
+  Rust drops what they send while off.
+- **`settings.md` is at the 6 KB page limit** (5,999 bytes after the
+  Remote control entry and a few trims elsewhere). The next section added
+  there needs a trim or a split.
+- **The `authorise` helper returns `(status, message)`,** not a `Response`
+  (clippy `result_large_err`).
+
+**Checked:**
+- 20 Rust tests in `owner::`: devices, hashes, scopes, and the HTTP surface
+  (auth, scopes, Origin, throttle, body limit, SSE ready, lag → `resync-all`,
+  stop).
+- 3 component tests for the section.
+- The guide tests, with the new page.
+- 14 UI flows.
+- The driver self-test (24 checks), with an `--api` pass: a turn over HTTP,
+  the event stream, and `consistent`.

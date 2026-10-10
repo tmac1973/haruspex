@@ -16,6 +16,7 @@
 	import CodeSection from '#lib/components/settings/CodeSection.svelte';
 	import ImageSection from '#lib/components/settings/ImageSection.svelte';
 	import RemoteSection from '#lib/components/settings/RemoteSection.svelte';
+	import OwnerApiSection from '#lib/components/settings/OwnerApiSection.svelte';
 	import FeedbackSection from '#lib/components/settings/FeedbackSection.svelte';
 
 	// Rendered as an overlay over the main page (so the Shell tab's PTY stays
@@ -38,6 +39,7 @@
 		| 'code'
 		| 'image'
 		| 'remote'
+		| 'remoteControl'
 		| 'feedback';
 
 	interface CategoryDef {
@@ -145,6 +147,12 @@
 					label: 'Remote access',
 					subtitle: 'Let people on your network chat with this Haruspex.',
 					icon: '<circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>'
+				},
+				{
+					id: 'remoteControl',
+					label: 'Remote control',
+					subtitle: 'Drive your Code sessions from your own devices.',
+					icon: '<rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line>'
 				}
 			]
 		},
@@ -259,6 +267,8 @@
 				<ImageSection />
 			{:else if activeCategory === 'remote'}
 				<RemoteSection />
+			{:else if activeCategory === 'remoteControl'}
+				<OwnerApiSection />
 			{:else if activeCategory === 'feedback'}
 				<FeedbackSection />
 			{/if}

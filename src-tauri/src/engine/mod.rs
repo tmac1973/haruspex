@@ -14,11 +14,12 @@
 //! `type` and `id` for routing. Their shapes belong to the webview
 //! (`src/lib/engine/types.ts`), the only side that builds or reads them.
 //!
-//! Off unless enabled: until the owner API lands, only the e2e test build
-//! (its own identifier) turns it on, so a normal build answers nothing.
+//! Off unless enabled: the owner API turns it on while it runs
+//! (`owner::commands`), and the e2e test build (its own identifier) keeps it
+//! on, so a normal build with the API off answers nothing.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -36,6 +37,9 @@ pub const EVENT_OP: &str = "engine://op";
 /// Sent to the main window with every batch of events, while enabled, so the
 /// driver's hooks can read all windows' events from one place.
 pub const EVENT_MIRROR: &str = "engine://event";
+/// Sent to every window when the engine is switched on or off, so a window
+/// loaded while it was off can start its engine without a restart.
+pub const EVENT_ENABLED: &str = "engine://enabled";
 
 /// How long a window has to answer. Every operation answers at once: a
 /// `session.send` answers when the turn has started, not when it ends.
@@ -117,17 +121,22 @@ type Reply = Result<Value, String>;
 
 /// Managed state: requests waiting on a window, and the event fan-out.
 pub struct EngineHub {
-    enabled: bool,
+    enabled: AtomicBool,
+    /// The e2e build: on whatever the owner API does.
+    always: bool,
     seq: AtomicU64,
     pending: Mutex<HashMap<String, oneshot::Sender<Reply>>>,
     events: broadcast::Sender<Value>,
 }
 
 impl EngineHub {
-    pub fn new(enabled: bool) -> Self {
+    /// `always`: on for good (the e2e build); otherwise off until
+    /// [`set_enabled`](Self::set_enabled).
+    pub fn new(always: bool) -> Self {
         let (events, _) = broadcast::channel(EVENT_CAPACITY);
         EngineHub {
-            enabled,
+            enabled: AtomicBool::new(always),
+            always,
             seq: AtomicU64::new(0),
             pending: Mutex::new(HashMap::new()),
             events,
@@ -135,7 +144,13 @@ impl EngineHub {
     }
 
     pub fn enabled(&self) -> bool {
-        self.enabled
+        self.enabled.load(Ordering::Relaxed)
+    }
+
+    /// Switch on or off (an e2e build stays on). True when that changed it.
+    pub fn set_enabled(&self, on: bool) -> bool {
+        let on = on || self.always;
+        self.enabled.swap(on, Ordering::Relaxed) != on
     }
 
     /// A request id and the receiver its reply arrives on.
@@ -359,6 +374,19 @@ mod tests {
         let (req_id, rx) = hub.register();
         assert!(hub.reply(&req_id, Ok(json!(42))));
         assert_eq!(rx.await.unwrap(), Ok(json!(42)));
+    }
+
+    #[test]
+    fn the_owner_api_switches_it_but_an_e2e_build_stays_on() {
+        let hub = EngineHub::new(false);
+        assert!(!hub.enabled());
+        assert!(hub.set_enabled(true));
+        assert!(hub.enabled());
+        assert!(!hub.set_enabled(true));
+        assert!(hub.set_enabled(false));
+        let e2e = EngineHub::new(true);
+        assert!(!e2e.set_enabled(false));
+        assert!(e2e.enabled());
     }
 
     #[test]

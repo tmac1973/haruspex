@@ -25,6 +25,7 @@ const ORDER = [
 	'integrations',
 	'search-and-network',
 	'remote-access',
+	'remote-control',
 	'settings',
 	'shortcuts',
 	'troubleshooting'
