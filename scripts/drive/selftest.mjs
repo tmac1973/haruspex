@@ -154,6 +154,17 @@ try {
 	const listed = await asWeb({ 'X-Haruspex': '1' });
 	const sessions = (await listed.json()).value;
 	check(listed.ok && sessions.some((s) => s.id === apiId), 'with X-Haruspex it lists the sessions');
+	// Phase 5: a chat turn through the engine, over HTTP.
+	drive('scenario', 'chat-hello');
+	const chat = drive('chat-send', 'new', 'hello there', '--wait', '--timeout', '60');
+	check(chat.state === 'done', 'a chat message sent through the engine gets its reply');
+	check(
+		chat.lastAssistant?.startsWith('Hello from the fake model'),
+		"the reply is the chat scenario's"
+	);
+	const chats = drive('chats');
+	check(chats.find((c) => c.id === chat.id)?.open === true, 'the chat is open on the desktop');
+
 	drive('stop');
 	started = false;
 } finally {

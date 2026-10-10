@@ -1,27 +1,34 @@
 <script lang="ts">
 	/**
 	 * The input box. Idle, Enter starts a turn; while the agent works, Enter
-	 * queues the text to steer its next step, as on the computer. Shift+Enter
-	 * is a new line.
+	 * queues the text to steer its next step, as on the computer (`steer`: a
+	 * Code session; chat can't be steered, so it waits). Shift+Enter is a new
+	 * line. `why`: the tooltip saying why it's disabled.
 	 */
 	let {
 		busy,
 		disabled = false,
+		steer = true,
+		why = null,
 		onsend,
 		onstop
 	}: {
 		busy: boolean;
 		disabled?: boolean;
+		steer?: boolean;
+		why?: string | null;
 		onsend: (text: string) => Promise<boolean>;
 		onstop: () => void;
 	} = $props();
+
+	const blocked = $derived(disabled || (busy && !steer));
 
 	let text = $state('');
 	let sending = $state(false);
 
 	async function send(): Promise<void> {
 		const t = text.trim();
-		if (!t || sending) return;
+		if (!t || sending || blocked) return;
 		sending = true;
 		// Kept until the computer has it, so a dropped connection loses nothing.
 		if (await onsend(t)) text = '';
@@ -41,8 +48,13 @@
 		aria-label="Message"
 		rows="2"
 		placeholder={busy
-			? 'Steer the agent… (Enter queues it for its next step)'
-			: 'Ask for a change…'}
+			? steer
+				? 'Steer the agent… (Enter queues it for its next step)'
+				: 'The reply is being written…'
+			: steer
+				? 'Ask for a change…'
+				: 'Message…'}
+		title={why ?? undefined}
 		bind:value={text}
 		onkeydown={onKeydown}
 		{disabled}
@@ -54,7 +66,8 @@
 		<button
 			class="btn btn-small btn-primary"
 			onclick={send}
-			disabled={disabled || sending || !text.trim()}>{busy ? 'Queue' : 'Send'}</button
+			title={why ?? undefined}
+			disabled={blocked || sending || !text.trim()}>{busy && steer ? 'Queue' : 'Send'}</button
 		>
 	</div>
 </div>

@@ -9,6 +9,7 @@
 	import PairScreen from './components/PairScreen.svelte';
 	import SessionList from './components/SessionList.svelte';
 	import SessionView from './components/SessionView.svelte';
+	import ChatView from './components/ChatView.svelte';
 
 	const store = new WebStore();
 	let pairError = $state<string | null>(null);
@@ -40,7 +41,7 @@
 	onDestroy(() => store.stop());
 </script>
 
-<div class="web" class:has-session={!!store.selected}>
+<div class="web" class:has-session={store.tab === 'code' ? !!store.selected : !!store.selectedChat}>
 	{#if store.connection === 'unauthorised'}
 		<PairScreen error={pairError} onpair={pairWith} />
 	{:else}
@@ -48,7 +49,9 @@
 			<SessionList {store} />
 		</aside>
 		<main class="session">
-			{#if store.selected}
+			{#if store.tab === 'chat' && store.selectedChat}
+				<ChatView {store} />
+			{:else if store.tab === 'code' && store.selected}
 				<SessionView {store} />
 			{:else}
 				<p class="empty">Pick a session, or start one.</p>

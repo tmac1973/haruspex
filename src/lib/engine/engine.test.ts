@@ -124,6 +124,8 @@ import { flushSync } from 'svelte';
 import { closeSession, getOpenSessions, newSession } from '#lib/stores/code.svelte.ts';
 import { askCommandApproval } from '#lib/stores/codeCommandApproval.svelte.ts';
 import { askUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
+import { askApproval } from '#lib/stores/sandboxApproval.svelte.ts';
+import { askMemoryApproval } from '#lib/stores/memoryApproval.svelte.ts';
 import { dispatch, setResync } from './dispatch.ts';
 import { emptyMirror, reduce, type Mirror } from './reduce.ts';
 import { answerPrompt, currentPrompts, watchPrompts } from './prompts.svelte.ts';
@@ -386,6 +388,23 @@ describe('prompts', () => {
 			answer: { kind: 'selected', labels: ['b.ts'] }
 		});
 		expect(await asked).toEqual({ kind: 'selected', labels: ['b.ts'] });
+	});
+
+	it('lists and answers the sandbox and memory prompts a chat raises', async () => {
+		const run = askApproval({ code: 'print(1)', mode: 'once-per-chat' });
+		const [p] = currentPrompts('main');
+		expect(p).toMatchObject({ kind: 'sandbox', answerable: true, detail: { code: 'print(1)' } });
+		expect(() => answerPrompt('main', p.promptId, { kind: 'memory', choice: 'deny' })).toThrow(
+			'sandbox prompt'
+		);
+		answerPrompt('main', p.promptId, { kind: 'sandbox', choice: 'allow_chat' });
+		expect(await run).toBe('allow_chat');
+
+		const remember = askMemoryApproval({ content: 'Likes tabs', category: 'preference' as never });
+		const [m] = currentPrompts('main');
+		expect(m).toMatchObject({ kind: 'memory', detail: { content: 'Likes tabs' } });
+		answerPrompt('main', m.promptId, { kind: 'memory', choice: 'deny' });
+		expect(await remember).toBe('deny');
 	});
 
 	it('send an event as a prompt shows and as it goes', async () => {

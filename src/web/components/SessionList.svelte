@@ -1,6 +1,7 @@
 <script lang="ts">
 	/** The desktop's Code sessions: open ones first, then saved ones; and New session. */
 	import type { WebStore } from '../store.svelte.ts';
+	import ChatList from './ChatList.svelte';
 
 	let { store }: { store: WebStore } = $props();
 
@@ -47,7 +48,21 @@
 </script>
 
 <div class="head">
-	<span class="title">Code</span>
+	<div class="segmented tabs">
+		<button
+			class:active={store.tab === 'code'}
+			title="Your Code sessions."
+			onclick={() => (store.tab = 'code')}>Code</button
+		>
+		<button
+			class:active={store.tab === 'chat'}
+			title="Your chats."
+			onclick={() => {
+				store.tab = 'chat';
+				void store.refreshChats();
+			}}>Chat</button
+		>
+	</div>
 	<span class="conn {store.connection}" title="Connection to your computer">
 		{store.connection === 'open'
 			? 'Connected'
@@ -57,71 +72,77 @@
 	</span>
 </div>
 
-{#if creating}
-	<form
-		class="new"
-		onsubmit={(e) => {
-			e.preventDefault();
-			void start();
-		}}
-	>
-		{#if distros.length > 0}
-			<select aria-label="WSL distro" title="The WSL distro the folder is in" bind:value={distro}>
-				{#each distros as d (d)}
-					<option value={d}>{d}</option>
-				{/each}
-			</select>
-		{/if}
-		<input
-			aria-label="Project folder"
-			placeholder={distros.length > 0 ? '~/project in the distro' : 'Folder on your computer'}
-			list="recent-folders"
-			bind:value={folder}
-			oninput={onFolder}
-		/>
-		<datalist id="recent-folders">
-			{#each recent as path (path)}
-				<option value={path}></option>
-			{/each}
-		</datalist>
-		<div class="row">
-			<button class="btn btn-primary btn-small" type="submit" disabled={!folder.trim()}
-				>Start session</button
-			>
-			<button class="btn btn-small" type="button" onclick={() => (creating = false)}>Cancel</button>
-		</div>
-	</form>
+{#if store.tab === 'chat'}
+	<ChatList {store} />
 {:else}
-	<button class="btn btn-small new-btn" onclick={() => void openForm()}>New session</button>
-{/if}
-
-{#if store.error && !store.selected}
-	<p class="error-text" role="alert">{store.error}</p>
-{/if}
-
-<ul>
-	{#each store.sessions as s (s.id)}
-		<li>
-			<button
-				class="item"
-				class:active={s.id === store.selected}
-				onclick={() => store.select(s.id)}
-				title={s.wslDistro ? `${s.root} (${s.wslDistro})` : s.root}
-			>
-				<span class="name">{s.title || name(s.root)}</span>
-				<span class="meta">
-					<span>{name(s.root)}</span>
-					{#if s.status}
-						<span class="sep">·</span>
-						<span class="status {s.status}">{STATUS[s.status] ?? s.status}</span>
-					{/if}
-				</span>
-			</button>
-		</li>
+	{#if creating}
+		<form
+			class="new"
+			onsubmit={(e) => {
+				e.preventDefault();
+				void start();
+			}}
+		>
+			{#if distros.length > 0}
+				<select aria-label="WSL distro" title="The WSL distro the folder is in" bind:value={distro}>
+					{#each distros as d (d)}
+						<option value={d}>{d}</option>
+					{/each}
+				</select>
+			{/if}
+			<input
+				aria-label="Project folder"
+				placeholder={distros.length > 0 ? '~/project in the distro' : 'Folder on your computer'}
+				list="recent-folders"
+				bind:value={folder}
+				oninput={onFolder}
+			/>
+			<datalist id="recent-folders">
+				{#each recent as path (path)}
+					<option value={path}></option>
+				{/each}
+			</datalist>
+			<div class="row">
+				<button class="btn btn-primary btn-small" type="submit" disabled={!folder.trim()}
+					>Start session</button
+				>
+				<button class="btn btn-small" type="button" onclick={() => (creating = false)}
+					>Cancel</button
+				>
+			</div>
+		</form>
 	{:else}
-		<li class="none">No sessions yet.</li>
-	{/each}
-</ul>
+		<button class="btn btn-small new-btn" onclick={() => void openForm()}>New session</button>
+	{/if}
+
+	{#if store.error && !store.selected}
+		<p class="error-text" role="alert">{store.error}</p>
+	{/if}
+
+	<ul>
+		{#each store.sessions as s (s.id)}
+			<li>
+				<button
+					class="item"
+					class:active={s.id === store.selected}
+					onclick={() => store.select(s.id)}
+					title={s.wslDistro ? `${s.root} (${s.wslDistro})` : s.root}
+				>
+					<span class="name">{s.title || name(s.root)}</span>
+					<span class="meta">
+						<span>{name(s.root)}</span>
+						{#if s.status}
+							<span class="sep">·</span>
+							<span class="status {s.status}">{STATUS[s.status] ?? s.status}</span>
+						{/if}
+					</span>
+				</button>
+			</li>
+		{:else}
+			<li class="none">No sessions yet.</li>
+		{/each}
+	</ul>
+{/if}
 
 <style>
 	.head {
@@ -131,8 +152,8 @@
 		padding: 14px 14px 8px;
 	}
 
-	.title {
-		font-weight: 600;
+	.tabs {
+		flex: 0 0 auto;
 	}
 
 	.conn {
