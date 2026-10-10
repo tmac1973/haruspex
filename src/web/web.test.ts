@@ -296,3 +296,98 @@ describe('a message', () => {
 		expect(link?.dataset.line).toBe('5');
 	});
 });
+
+describe('chat in the web store', () => {
+	const chatState = (over = {}) => ({
+		id: 'c1',
+		title: 'Notes',
+		messages: [],
+		messageSteps: {},
+		messageStats: {},
+		messageStops: {},
+		open: true,
+		busy: false,
+		waitingForSlot: false,
+		compacting: false,
+		streamingContent: '',
+		searchSteps: [],
+		error: null,
+		lastTurnFailed: false,
+		contextUsage: null,
+		workingDir: null,
+		memoryEnabled: true,
+		...over
+	});
+
+	it('follows the open chat from its snapshot, and reads others once', async () => {
+		const d = fakeDesktop({ 'chat.get': chatState() });
+		const store = new WebStore(d.transport);
+		store.start();
+		await store.selectChat('c1');
+		expect(d.ops.map((o) => o.type)).toEqual(['chat.get', 'chat.resync']);
+		d.push({ seq: 4, chatId: 'c1', type: 'chat-update', patch: { busy: true } });
+		expect(store.currentChat?.busy).toBe(false);
+		d.push({ seq: 5, chatId: 'c1', type: 'chat-snapshot', state: chatState() as never });
+		d.push({ seq: 6, chatId: 'c1', type: 'chat-update', patch: { streamingContent: 'Hi' } });
+		expect(store.currentChat?.streamingContent).toBe('Hi');
+
+		const other = fakeDesktop({ 'chat.get': chatState({ id: 'c2', open: false }) });
+		const s2 = new WebStore(other.transport);
+		await s2.selectChat('c2');
+		expect(other.ops.map((o) => o.type)).toEqual(['chat.get']);
+		store.stop();
+	});
+
+	it('keeps chat prompts out of Code sessions, and the reverse', () => {
+		const store = new WebStore(fakeDesktop().transport);
+		const base = { answerable: true, requester: null, detail: {} };
+		store.prompts = {
+			'main:1': { ...base, promptId: 'main:1', kind: 'sandbox', sessionId: null, chatId: 'c1' },
+			'main:2': { ...base, promptId: 'main:2', kind: 'command', sessionId: 's1' },
+			'main:3': { ...base, promptId: 'main:3', kind: 'mcp', sessionId: null }
+		};
+		expect(store.promptsForChat('c1').map((p) => p.promptId)).toEqual(['main:1', 'main:3']);
+		expect(store.promptsFor('s1').map((p) => p.promptId)).toEqual(['main:2', 'main:3']);
+	});
+});
+
+describe('the composer in a chat', () => {
+	it("waits while a reply is written: chat can't be steered", () => {
+		render(Composer, { busy: true, steer: false, onsend: vi.fn(), onstop: vi.fn() });
+		expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
+		expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
+	});
+
+	it('says why it is disabled while another chat writes', () => {
+		render(Composer, {
+			busy: false,
+			steer: false,
+			disabled: true,
+			why: 'A reply is being written in "Notes".',
+			onsend: vi.fn(),
+			onstop: vi.fn()
+		});
+		expect(screen.getByLabelText('Message').getAttribute('title')).toContain('"Notes"');
+	});
+});
+
+describe('a sandbox prompt', () => {
+	it('answers with the chosen choice', async () => {
+		const onanswer = vi.fn();
+		render(PromptCard, {
+			prompt: {
+				promptId: 'main:9',
+				kind: 'sandbox',
+				sessionId: null,
+				chatId: 'c1',
+				answerable: true,
+				requester: null,
+				detail: { code: 'import os' }
+			},
+			onanswer
+		});
+		expect(screen.getByText('import os')).toBeTruthy();
+		await fireEvent.click(screen.getByRole('button', { name: 'Allow for this chat' }));
+		expect(onanswer).toHaveBeenCalledWith('main:9', { kind: 'sandbox', choice: 'allow_chat' });
+	});
+});

@@ -42,9 +42,14 @@
 		steps: SearchStep[];
 		slowMode?: boolean;
 		pathLinks?: PathLinks;
+		/**
+		 * The Python sandbox's Cancel and Run again. Off where the sandbox
+		 * isn't in this page's reach (the web client, src/web/).
+		 */
+		runControls?: boolean;
 	}
 
-	let { steps, slowMode = false, pathLinks }: Props = $props();
+	let { steps, slowMode = false, pathLinks, runControls = true }: Props = $props();
 
 	/** Steps whose `path` argument names one file. */
 	const FILE_TOOLS = new Set(['fs_read_text', 'fs_write_text', 'fs_edit_text']);
@@ -262,7 +267,9 @@
 							>
 								{copyLabel(`${step.id}:code`)}
 							</button>
-							{#if step.status === 'running'}
+							{#if !runControls}
+								<!-- The sandbox runs on the computer, not here. -->
+							{:else if step.status === 'running'}
 								<button
 									class="run-control cancel"
 									onclick={cancelStep}

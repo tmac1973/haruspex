@@ -15,6 +15,12 @@ import {
 	resolveCommandApproval
 } from '#lib/stores/codeCommandApproval.svelte.ts';
 import { getPendingMcpApproval } from '#lib/stores/mcpApproval.svelte.ts';
+import {
+	getPendingMemoryApproval,
+	resolveMemoryApproval
+} from '#lib/stores/memoryApproval.svelte.ts';
+import { getPendingApproval, resolveApproval } from '#lib/stores/sandboxApproval.svelte.ts';
+import { getActiveConversationId } from '#lib/stores/session.svelte.ts';
 import { getPendingRepoTrust } from '#lib/stores/repoTrust.svelte.ts';
 import { getPendingSkillApproval } from '#lib/stores/skillApproval.svelte.ts';
 import { getPendingQuestion, resolveUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
@@ -66,6 +72,31 @@ export function currentPrompts(label: string): Prompt[] {
 			}
 		});
 	}
+	// The sandbox and memory ask on behalf of the chat that is open.
+	const sandbox = getPendingApproval();
+	if (sandbox) {
+		out.push({
+			promptId: idFor(label, sandbox),
+			kind: 'sandbox',
+			sessionId: null,
+			chatId: getActiveConversationId(),
+			answerable: true,
+			requester: null,
+			detail: { code: sandbox.code, mode: sandbox.mode }
+		});
+	}
+	const memory = getPendingMemoryApproval();
+	if (memory) {
+		out.push({
+			promptId: idFor(label, memory),
+			kind: 'memory',
+			sessionId: null,
+			chatId: getActiveConversationId(),
+			answerable: true,
+			requester: null,
+			detail: { content: memory.content, category: memory.category }
+		});
+	}
 	const mcp = getPendingMcpApproval();
 	if (mcp) {
 		out.push({
@@ -110,8 +141,16 @@ export function answerPrompt(label: string, promptId: string, answer: PromptAnsw
 	if (prompt.kind !== answer.kind) {
 		throw new Error(`prompt ${promptId} is a ${prompt.kind} prompt, not ${answer.kind}`);
 	}
-	if (answer.kind === 'command') resolveCommandApproval(answer.choice);
-	else resolveUserQuestion(answer.answer);
+	switch (answer.kind) {
+		case 'command':
+			return resolveCommandApproval(answer.choice);
+		case 'question':
+			return resolveUserQuestion(answer.answer);
+		case 'sandbox':
+			return resolveApproval(answer.choice);
+		case 'memory':
+			return resolveMemoryApproval(answer.choice);
+	}
 }
 
 /** Send `prompt` and `prompt-cleared` events as this window's prompts change. */
