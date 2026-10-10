@@ -45,7 +45,7 @@ import { errMessage } from '#lib/utils/error.ts';
 import { buildCodeSystemPrompt } from './system-prompt';
 import { ioRoot } from './paths';
 import { sessionLabel } from './sessionList';
-import { loadShellPlatformSupported } from '#lib/shell/platformSupport.ts';
+import { loadShellPlatformSupported, shellPlatformSupported } from '#lib/shell/platformSupport.ts';
 import { agentPowershell } from './powershell.ts';
 
 export interface CodeTurnOptions {
@@ -62,6 +62,8 @@ export interface CodeTurnOptions {
 	effort: string | null;
 	/** May read, not write (`ToolContext.codeReadOnly`). */
 	readOnly?: boolean;
+	/** Started from another computer (Settings → Remote control): nothing that needs a person at this one, so no `open_in_shell`. */
+	remote?: boolean;
 	/** The WSL distro `root` is in (`ToolContext.wslDistro`). */
 	wslDistro?: string | null;
 	/** One writer per folder (`ToolContext.codeWriteGuard`). */
@@ -197,6 +199,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 					codeSessionId: o.sessionId,
 					requester: () => `Code · ${sessionLabel({ title: o.title?.() ?? '', root: o.root })}`,
 					codeReadOnly: o.readOnly ?? false,
+					codeRemote: o.remote ?? false,
 					codeWriteGuard: o.writeGuard,
 					wslDistro: o.wslDistro ?? null,
 					contextSize,
@@ -335,6 +338,7 @@ async function prepareMessages(
 		skillsSection: skillsPromptSection(skills),
 		projectInstructions: agentsMdPromptSection(project.agentsMd),
 		readOnly: o.readOnly,
+		shellHandoff: !o.remote && shellPlatformSupported() !== false,
 		worktree: o.worktree,
 		wslDistro: o.wslDistro,
 		powershell: o.wslDistro ? null : await agentPowershell()

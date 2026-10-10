@@ -119,6 +119,7 @@ export interface LoopContext {
 	codeSessionId?: string;
 	requester?: ToolContext['requester'];
 	codeReadOnly: boolean;
+	codeRemote: boolean;
 	codeWriteGuard?: ToolContext['codeWriteGuard'];
 	wslDistro: string | null;
 	expectsFileOutput: boolean;
@@ -213,6 +214,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 			shellMode,
 			codeMode,
 			codeReadOnly: options.codeReadOnly ?? false,
+			codeRemote: options.codeRemote ?? false,
 			interactive: options.interactive ?? false,
 			// The forced final tool is always offered. A stage once listed its
 			// read tools but not its submit tool: the model, correctly, never
@@ -254,6 +256,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		codeSessionId: options.codeSessionId,
 		requester: options.requester,
 		codeReadOnly: options.codeReadOnly ?? false,
+		codeRemote: options.codeRemote ?? false,
 		codeWriteGuard: options.codeWriteGuard,
 		wslDistro: options.wslDistro ?? null,
 		expectsFileOutput,

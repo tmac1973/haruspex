@@ -77,6 +77,12 @@ describe('Code tab prompt', () => {
 		expect(text).not.toContain('run in a terminal and wait');
 	});
 
+	it('without the hand-off, says the user runs such a command themselves', () => {
+		const text = tab({ shellHandoff: false });
+		expect(text).not.toContain('open_in_shell');
+		expect(text).toContain('the user runs it themselves');
+	});
+
 	it('says nothing about a live terminal', () => {
 		const text = tab();
 		for (const terminalOnly of [

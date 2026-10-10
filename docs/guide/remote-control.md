@@ -57,7 +57,7 @@ From a trusted computer, send `X-Haruspex: 1` instead of a token.
 
 - The Shell and Settings can't be used remotely. In chat, the page can't attach images, start deep research, or change the working folder or incognito; do those at this computer.
 - Files open read-only; edit them at this computer.
-- A command handed to a Shell tab (`open_in_shell`) waits for you to run it at this computer; the page can only let the turn carry on without it.
+- A turn you start from the page can't hand a command to this computer's Shell tab (`open_in_shell`, for sudo and the like): the agent says what to run, for when you're back. A turn started here that is waiting on one shows as waiting, and the page can let it carry on without it.
 
 ## Security notes
 

@@ -502,6 +502,21 @@ describe('operations', () => {
 		await vi.waitFor(() => expect(s.status).toBe('idle'));
 	});
 
+	it("a turn sent from the page can't hand a command to this computer's Shell", async () => {
+		const s = await newSession('/proj');
+		const seen: (boolean | undefined)[] = [];
+		const finish = async (o: AgentLoopOptions) => {
+			seen.push(o.codeRemote);
+			o.onStreamChunk(chunk('ok'));
+			o.onComplete();
+		};
+		mocks.runAgentLoop.mockImplementationOnce(finish).mockImplementationOnce(finish);
+		await dispatch({ type: 'session.send', id: s.id, text: 'from the page' }, 'main');
+		await vi.waitFor(() => expect(s.status).toBe('idle'));
+		await s.send('from the desktop');
+		expect(seen).toEqual([true, false]);
+	});
+
 	it('read a file in the session folder, and nothing outside it', async () => {
 		const s = await newSession('/proj');
 		expect(

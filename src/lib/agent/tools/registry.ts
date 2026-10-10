@@ -19,6 +19,7 @@ import {
 	CODE_TAB_ONLY,
 	CODE_TAB_DESCRIPTIONS,
 	READ_ONLY_REFUSAL,
+	REMOTE_HANDOFF_REFUSAL,
 	isCodeWriteTool,
 	type DescriptionOverride
 } from './codeTabProfile';
@@ -58,6 +59,8 @@ interface ToolFilterOpts {
 	codeMode: boolean;
 	/** A read-only Code session: no tool that writes into the project. */
 	codeReadOnly: boolean;
+	/** A Code turn started from another computer: no hand-off to a Shell tab. */
+	codeRemote: boolean;
 	hasEmail: boolean;
 	sandboxEnabled: boolean;
 	/** Memory is on AND its embedding model is present — see memoryActive(). */
@@ -217,8 +220,12 @@ function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean
 	// Background-process and hand-off tools belong to the Code tab alone. Shell
 	// Code mode has a real terminal for both, and Chat and Shell run nothing.
 	if (CODE_TAB_ONLY.has(reg.schema.function.name)) {
-		// open_in_shell hands a command to a Shell tab, so only where one works.
-		if (reg.schema.function.name === 'open_in_shell' && shellPlatformSupported() === false) {
+		// open_in_shell hands a command to a Shell tab, so only where one works,
+		// and only to a person at this computer.
+		if (
+			reg.schema.function.name === 'open_in_shell' &&
+			(shellPlatformSupported() === false || opts.codeRemote)
+		) {
 			return false;
 		}
 		return isCodeTab(opts);
@@ -238,6 +245,8 @@ export function getToolSchemas(opts: {
 	codeMode?: boolean;
 	/** A read-only Code session: the write and edit tools are left out. */
 	codeReadOnly?: boolean;
+	/** A Code turn started from another computer: `open_in_shell` is left out. */
+	codeRemote?: boolean;
 	/** A live user is present. Gates tools that only make sense for one. */
 	interactive?: boolean;
 	/**
@@ -283,6 +292,7 @@ export function getToolSchemas(opts: {
 		shellMode: opts.shellMode ?? false,
 		codeMode: opts.codeMode ?? false,
 		codeReadOnly: opts.codeReadOnly ?? false,
+		codeRemote: opts.codeRemote ?? false,
 		hasEmail: hasEnabledEmailAccount(),
 		hasCalendar: hasEnabledCalendarAccount(),
 		hasContacts: hasEnabledContactsAccount(),
@@ -500,6 +510,12 @@ export async function executeTool(
 	// workingDir is allowed to be null.
 	if ((reg.category === 'fs' || reg.category === 'exec') && !ctx.workingDir && !ctx.shellMode) {
 		return toolResult(toolError('No working directory set'));
+	}
+
+	// A turn started from another computer hands nothing to a Shell tab here,
+	// offered the tool or not.
+	if (ctx.codeRemote && name === 'open_in_shell') {
+		return toolResult(toolError(REMOTE_HANDOFF_REFUSAL));
 	}
 
 	// A read-only Code session never writes, offered the tool or not.
