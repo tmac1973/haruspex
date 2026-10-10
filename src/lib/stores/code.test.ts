@@ -57,6 +57,7 @@ const db = vi.hoisted(() => {
 						id: `s${n}`,
 						title: '',
 						root: args.root,
+						wsl_distro: args.wslDistro ?? null,
 						backend: args.backend ?? null,
 						reasoning_effort: args.effort ?? null,
 						thread: emptyThread,
@@ -144,6 +145,7 @@ const db = vi.hoisted(() => {
 					if (folders.missing.has(args.root as string)) throw new Error('No such folder');
 					const row = rows.get(args.id as string)!;
 					row.root = args.root;
+					row.wsl_distro = args.wslDistro ?? null;
 					return { ...row };
 				}
 				case 'code_git_worktree_remove':
@@ -1230,6 +1232,19 @@ describe('a session whose folder is gone', () => {
 		await vi.waitFor(() => expect(a.folderMissing).toBe(false));
 	});
 
+	it('checks and moves a WSL session inside its distro', async () => {
+		const s = await newSession('/home/tim/proj', { wslDistro: 'Ubuntu' });
+		expect(s.wslDistro).toBe('Ubuntu');
+		await s.checkFolder();
+		expect(mocks.invoke).toHaveBeenCalledWith('code_folder_exists', {
+			path: '/home/tim/proj',
+			wslDistro: 'Ubuntu'
+		});
+		await s.moveTo('/home/tim/other', 'Debian');
+		expect(s.root).toBe('/home/tim/other');
+		expect(s.wslDistro).toBe('Debian');
+	});
+
 	it('can be pointed at another folder, and then works there', async () => {
 		const s = await newSession('/gone');
 		db.folders.missing.add('/gone');
@@ -1238,7 +1253,8 @@ describe('a session whose folder is gone', () => {
 		await s.moveTo('/found');
 		expect(mocks.invoke).toHaveBeenCalledWith('code_session_set_root', {
 			id: s.id,
-			root: '/found'
+			root: '/found',
+			wslDistro: null
 		});
 		expect(s.root).toBe('/found');
 		expect(s.folderMissing).toBe(false);

@@ -14,8 +14,9 @@ import type { BackendOverride } from '#lib/api.ts';
 import type { CodeSessionRow } from '#lib/ipc/gen/CodeSessionRow.ts';
 import type { CodeSessionSummary } from '#lib/ipc/gen/CodeSessionSummary.ts';
 import type { CodeForkMode } from '#lib/ipc/gen/CodeForkMode.ts';
+import type { CodeLocation } from '#lib/ipc/gen/CodeLocation.ts';
 
-export type { CodeSessionSummary };
+export type { CodeSessionSummary, CodeLocation };
 
 /** A session row with its backend decoded. */
 export type CodeSessionRecord = Omit<CodeSessionRow, 'backend'> & {
@@ -52,13 +53,22 @@ export function listCodeSessions(): Promise<CodeSessionSummary[]> {
 	return invoke<CodeSessionSummary[]>('code_session_list');
 }
 
-/** A new, empty session at `root`, which must be an existing folder. */
+/**
+ * A new, empty session at `root`, which must be an existing folder. On
+ * Windows `wslDistro` is the distro a Linux `root` is in (a
+ * `\\wsl.localhost\…` root names its own; a native folder is refused).
+ */
 export async function createCodeSession(
 	root: string,
-	opts: { backend?: BackendOverride | null; effort?: string | null } = {}
+	opts: {
+		backend?: BackendOverride | null;
+		effort?: string | null;
+		wslDistro?: string | null;
+	} = {}
 ): Promise<CodeSessionRecord> {
 	const row = await invoke<CodeSessionRow>('code_session_create', {
 		root,
+		wslDistro: opts.wslDistro ?? null,
 		backend: opts.backend ? JSON.stringify(opts.backend) : null,
 		effort: opts.effort ?? null
 	});
@@ -111,20 +121,48 @@ export function saveCodeSession(
 }
 
 /**
- * Point a session whose folder is gone at `root`, an existing folder. Returns
- * the row as saved (the root canonical).
+ * Point a session whose folder is gone at `root`, an existing folder (in
+ * `wslDistro`, as `createCodeSession` takes it). Returns the row as saved
+ * (the root canonical).
  */
-export async function setCodeSessionRoot(id: string, root: string): Promise<CodeSessionRecord> {
-	return toRecord(await invoke<CodeSessionRow>('code_session_set_root', { id, root }));
+export async function setCodeSessionRoot(
+	id: string,
+	root: string,
+	wslDistro: string | null = null
+): Promise<CodeSessionRecord> {
+	return toRecord(await invoke<CodeSessionRow>('code_session_set_root', { id, root, wslDistro }));
 }
 
-/** Whether `path` is an existing folder. True when the check itself fails. */
-export async function folderExists(path: string): Promise<boolean> {
+/**
+ * Whether `path` is an existing folder, on the host or inside `wslDistro`.
+ * True when the check itself fails.
+ */
+export async function folderExists(
+	path: string,
+	wslDistro: string | null = null
+): Promise<boolean> {
 	try {
-		return (await invoke<boolean | null>('code_folder_exists', { path })) !== false;
+		return (await invoke<boolean | null>('code_folder_exists', { path, wslDistro })) !== false;
 	} catch {
 		return true;
 	}
+}
+
+/** The installed WSL2 distros (Windows); empty elsewhere or on failure. */
+export async function wslDistros(): Promise<string[]> {
+	try {
+		return (await invoke<string[] | null>('code_wsl_distros')) ?? [];
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * The canonical form of a picked folder, without making a session: on
+ * Windows the distro and its `realpath`. Throws why it can't be used.
+ */
+export function resolveCodeFolder(root: string, wslDistro: string | null): Promise<CodeLocation> {
+	return invoke<CodeLocation>('code_resolve_folder', { path: root, wslDistro });
 }
 
 /** Rename, or change the session's backend or effort, without touching the thread. */

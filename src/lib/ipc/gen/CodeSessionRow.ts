@@ -9,9 +9,15 @@ export type CodeSessionRow = { id: string,
  */
 title: string, 
 /**
- * Canonical project folder, fixed for the session's life.
+ * Canonical project folder, fixed for the session's life. A Linux path
+ * when `wsl_distro` is set.
  */
 root: string, 
+/**
+ * The WSL distro `root` is inside (Windows only); `null` for a folder on
+ * the host. See `code_tools/wsl.rs`.
+ */
+wsl_distro: string | null, 
 /**
  * JSON `BackendOverride`; `null` means the global backend.
  */

@@ -4,7 +4,11 @@
  * One row of the session sidebar. Never carries the thread: the list is
  * read on every sidebar render and threads can be large.
  */
-export type CodeSessionSummary = { id: string, title: string, root: string, updated_at: number, forked_from: string | null, read_only: boolean, 
+export type CodeSessionSummary = { id: string, title: string, root: string, 
+/**
+ * See [`CodeSessionRow::wsl_distro`].
+ */
+wsl_distro: string | null, updated_at: number, forked_from: string | null, read_only: boolean, 
 /**
  * The git worktree Haruspex made for this session (a fork), if any.
  */

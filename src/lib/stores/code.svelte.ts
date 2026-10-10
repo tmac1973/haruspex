@@ -100,6 +100,11 @@ export class CodeSession {
 	 */
 	root = $state('');
 	/**
+	 * The WSL distro `root` is in (Windows; a Linux path), or null for a
+	 * folder on the host. Changes only with `root`, through `moveTo`.
+	 */
+	wslDistro = $state<string | null>(null);
+	/**
 	 * May read, not write: a fork that shares its source's folder. Writes
 	 * and edits are refused and every command asks first.
 	 */
@@ -196,6 +201,7 @@ export class CodeSession {
 	constructor(record: CodeSessionRecord) {
 		this.id = record.id;
 		this.root = record.root;
+		this.wslDistro = record.wsl_distro ?? null;
 		this.readOnly = record.read_only ?? false;
 		this.worktree = record.worktree ?? null;
 		// What the agent was told by the last saved turn, so a restart
@@ -337,19 +343,24 @@ export class CodeSession {
 	checkFolder = async (): Promise<boolean> => {
 		if (this.closed || this.busy) return !this.folderMissing;
 		const root = this.root;
-		const ok = await folderExists(root);
-		if (!this.closed && !this.busy && this.root === root) this.folderMissing = !ok;
+		const distro = this.wslDistro;
+		const ok = await folderExists(root, distro);
+		if (!this.closed && !this.busy && this.root === root && this.wslDistro === distro) {
+			this.folderMissing = !ok;
+		}
 		return ok;
 	};
 
 	/**
 	 * Point the session at another folder, when its own is gone. Only while
 	 * idle. The thread is kept; paths in it still name the old folder.
+	 * `wslDistro` as `newSession` takes it.
 	 */
-	moveTo = async (root: string): Promise<void> => {
+	moveTo = async (root: string, wslDistro: string | null = null): Promise<void> => {
 		if (this.busy) throw new Error('Wait for the turn to finish.');
-		const record = await setCodeSessionRoot(this.id, root);
+		const record = await setCodeSessionRoot(this.id, root, wslDistro);
 		this.root = record.root;
+		this.wslDistro = record.wsl_distro ?? null;
 		this.worktree = record.worktree ?? null;
 		this.folderMissing = false;
 		this.projectRoot = null;
@@ -546,7 +557,7 @@ export class CodeSession {
 		let started = true;
 
 		try {
-			if (!(await folderExists(this.root))) {
+			if (!(await folderExists(this.root, this.wslDistro))) {
 				this.folderMissing = true;
 				started = false;
 				return false;
@@ -865,7 +876,12 @@ export async function openSession(id: string): Promise<CodeSession | null> {
 /** Create a session in `root` and open it. */
 export async function newSession(
 	root: string,
-	opts: { backend?: BackendOverride | null; effort?: string | null } = {}
+	opts: {
+		backend?: BackendOverride | null;
+		effort?: string | null;
+		/** On Windows, the distro a Linux `root` is in. */
+		wslDistro?: string | null;
+	} = {}
 ): Promise<CodeSession> {
 	const record = await createCodeSession(root, opts);
 	await claimSession(record.id);
@@ -993,7 +1009,7 @@ function adopt(session: CodeSession): CodeSession {
  */
 export async function openCodeSessionAt(root: string): Promise<CodeSession> {
 	const session = await newSession(root);
-	updateSettings({ codeLastRoot: root });
+	updateSettings({ codeLastRoot: root, codeLastWslDistro: session.wslDistro ?? '' });
 	setActiveTab('code');
 	return session;
 }

@@ -72,7 +72,12 @@
 		stopAndTranscribe
 	} from '#lib/audio/voiceCapture.svelte.ts';
 	import { toggleTts } from '#lib/audio/ttsControl.svelte.ts';
-	import { getActiveTab, mainTabs, setActiveTab } from '#lib/stores/activeTab.svelte.ts';
+	import {
+		getActiveTab,
+		mainTabs,
+		probeCodeTab,
+		setActiveTab
+	} from '#lib/stores/activeTab.svelte.ts';
 	import { getActiveSession as getActiveCodeSession } from '#lib/stores/code.svelte.ts';
 	import { listenInMainWindow as listenForCodeWindows } from '#lib/code/windows.ts';
 	import { getActiveConversation, sendMessage } from '#lib/stores/chat.svelte.ts';
@@ -118,6 +123,9 @@
 	// markdown (sanitization strips inline onclick). Installed in every
 	// window — the detached shell window renders markdown too.
 	onMount(() => installMarkdownActions());
+
+	// On Windows the Code tab shows only once a WSL2 distro is found.
+	onMount(() => void probeCodeTab());
 
 	// Other clients' way into this window's Code sessions (plan/remote-api/).
 	// Does nothing outside the main and Code windows, or while Rust has it off.

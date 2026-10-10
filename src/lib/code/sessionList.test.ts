@@ -6,20 +6,48 @@ import {
 	groupByRoot,
 	isUnsetTitle,
 	lastActive,
+	locationKey,
+	locationLabel,
 	sessionLabel,
 	sidebarEntries,
 	turnsBefore,
 	windowStart
 } from './sessionList';
 
-const s = (id: string, root: string, updated_at: number, forked_from: string | null = null) => ({
+const s = (
+	id: string,
+	root: string,
+	updated_at: number,
+	forked_from: string | null = null,
+	wsl_distro: string | null = null
+) => ({
 	id,
 	title: id,
 	root,
+	wsl_distro,
 	updated_at,
 	forked_from,
 	read_only: false,
 	worktree: null
+});
+
+describe('locations', () => {
+	it('keeps the same Linux path in two distros apart, and says which distro', () => {
+		const groups = groupByRoot([
+			s('u', '/home/tim/p', 2, null, 'Ubuntu'),
+			s('d', '/home/tim/p', 1, null, 'Debian'),
+			s('u2', '/home/tim/p', 0, null, 'Ubuntu')
+		]);
+		expect(groups.map((g) => [g.key, g.sessions.length])).toEqual([
+			['wsl:Ubuntu:/home/tim/p', 2],
+			['wsl:Debian:/home/tim/p', 1]
+		]);
+		expect(locationKey({ root: '/p', wsl_distro: null })).toBe('/p');
+		expect(locationLabel({ root: '/home/tim/p', wsl_distro: 'Ubuntu' })).toBe(
+			'/home/tim/p (Ubuntu)'
+		);
+		expect(locationLabel({ root: '/p' })).toBe('/p');
+	});
 });
 
 describe('groupByRoot', () => {

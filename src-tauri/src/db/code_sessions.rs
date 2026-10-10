@@ -16,6 +16,7 @@
 //! index-keyed maps. Everything else is passed through untouched.
 
 use super::*;
+use crate::code_tools::wsl::CodeLocation;
 use rusqlite::{params, OptionalExtension};
 use serde_json::{Map, Value};
 
@@ -40,6 +41,8 @@ pub struct CodeSessionSummary {
     pub id: String,
     pub title: String,
     pub root: String,
+    /// See [`CodeSessionRow::wsl_distro`].
+    pub wsl_distro: Option<String>,
     #[ts(type = "number")]
     pub updated_at: i64,
     pub forked_from: Option<String>,
@@ -55,8 +58,12 @@ pub struct CodeSessionRow {
     pub id: String,
     /// `''` until the first turn names the session.
     pub title: String,
-    /// Canonical project folder, fixed for the session's life.
+    /// Canonical project folder, fixed for the session's life. A Linux path
+    /// when `wsl_distro` is set.
     pub root: String,
+    /// The WSL distro `root` is inside (Windows only); `null` for a folder on
+    /// the host. See `code_tools/wsl.rs`.
+    pub wsl_distro: Option<String>,
     /// JSON `BackendOverride`; `null` means the global backend.
     pub backend: Option<String>,
     /// `null` means the global reasoning effort.
@@ -112,7 +119,7 @@ where
 
 const ROW_COLUMNS: &str = "id, title, root, backend, reasoning_effort, thread, \
      forked_from, forked_at, created_at, updated_at, read_only, worktree, \
-     notices_seen_at, agent_branch";
+     notices_seen_at, agent_branch, wsl_distro";
 
 fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CodeSessionRow> {
     Ok(CodeSessionRow {
@@ -130,6 +137,7 @@ fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CodeSessionRow> {
         worktree: row.get(11)?,
         notices_seen_at: row.get(12)?,
         agent_branch: row.get(13)?,
+        wsl_distro: row.get(14)?,
     })
 }
 
@@ -221,13 +229,40 @@ pub fn fork_title(title: &str) -> String {
     }
 }
 
+/// The root to store for `location`: a host folder canonical (it must be an
+/// existing directory), a WSL root as given. `what` starts the error.
+fn stored_root(location: &CodeLocation, what: &str) -> Result<String, String> {
+    let root = &location.root;
+    if location.wsl_distro.is_some() {
+        if !root.starts_with('/') {
+            return Err(format!("{what} {root} is not a Linux path"));
+        }
+        return Ok(root.clone());
+    }
+    let canonical = std::fs::canonicalize(root).map_err(|e| format!("{what} {root}: {e}"))?;
+    if !canonical.is_dir() {
+        return Err(format!("{what} {root} is not a folder"));
+    }
+    canonical
+        .to_str()
+        .map(str::to_string)
+        .ok_or_else(|| format!("{what} {root} is not valid UTF-8"))
+}
+
+/// Whether `root` is `dir` or inside it, comparing whole components. Both
+/// are stored roots: canonical host paths, or Linux paths in one distro.
+fn root_is_within(root: &str, dir: &str) -> bool {
+    std::path::Path::new(root).starts_with(std::path::Path::new(dir))
+}
+
 impl Database {
     /// Newest first, so the sidebar's most recent session leads its folder.
     pub fn list_code_sessions(&self) -> Result<Vec<CodeSessionSummary>, String> {
         let conn = self.conn();
         let mut stmt = conn
             .prepare(
-                "SELECT id, title, root, updated_at, forked_from, read_only, worktree
+                "SELECT id, title, root, updated_at, forked_from, read_only, worktree,
+                    wsl_distro
                  FROM code_sessions ORDER BY updated_at DESC, id",
             )
             .map_err(|e| format!("Code session list failed: {e}"))?;
@@ -241,6 +276,7 @@ impl Database {
                     forked_from: row.get(4)?,
                     read_only: row.get(5)?,
                     worktree: row.get(6)?,
+                    wsl_distro: row.get(7)?,
                 })
             })
             .map_err(|e| format!("Code session list failed: {e}"))?;
@@ -248,28 +284,38 @@ impl Database {
             .map_err(|e| format!("Code session list failed: {e}"))
     }
 
-    /// Create an empty session at `root`, which must be an existing directory.
-    /// The stored root is canonical, so two spellings of one folder group
-    /// together in the sidebar.
+    /// [`Self::create_code_session_at`] for a host folder.
+    #[cfg(test)]
     pub fn create_code_session(
         &self,
         root: &str,
         backend: Option<&str>,
         effort: Option<&str>,
     ) -> Result<CodeSessionRow, String> {
-        let canonical =
-            std::fs::canonicalize(root).map_err(|e| format!("Code session folder {root}: {e}"))?;
-        if !canonical.is_dir() {
-            return Err(format!("Code session folder {root} is not a directory"));
-        }
-        let root = canonical
-            .to_str()
-            .ok_or_else(|| format!("Code session folder {root} is not valid UTF-8"))?;
+        let location = CodeLocation {
+            wsl_distro: None,
+            root: root.to_string(),
+        };
+        self.create_code_session_at(&location, backend, effort)
+    }
+
+    /// Create an empty session at `location`. A host folder must be an
+    /// existing directory and is stored canonical, so two spellings of one
+    /// folder group together in the sidebar; a WSL one must already be
+    /// canonical (by `code_tools::wsl::resolve_location`, inside the distro).
+    pub fn create_code_session_at(
+        &self,
+        location: &CodeLocation,
+        backend: Option<&str>,
+        effort: Option<&str>,
+    ) -> Result<CodeSessionRow, String> {
+        let root = stored_root(location, "Code session folder")?;
         let now = chrono_now();
         let row = CodeSessionRow {
             id: new_session_id()?,
             title: String::new(),
-            root: root.to_string(),
+            root,
+            wsl_distro: location.wsl_distro.clone(),
             backend: backend.map(str::to_string),
             reasoning_effort: effort.map(str::to_string),
             thread: empty_thread(now),
@@ -291,7 +337,7 @@ impl Database {
         conn.execute(
             &format!(
                 "INSERT INTO code_sessions ({ROW_COLUMNS})
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)"
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)"
             ),
             params![
                 row.id,
@@ -307,7 +353,8 @@ impl Database {
                 row.read_only,
                 row.worktree,
                 row.notices_seen_at,
-                row.agent_branch
+                row.agent_branch,
+                row.wsl_distro
             ],
         )
         .map_err(|e| format!("Code session create failed: {e}"))?;
@@ -405,28 +452,36 @@ impl Database {
         Ok(())
     }
 
-    /// Point a session at another folder, when its own is gone (deleted, a
-    /// worktree removed, a drive unmounted). `root` must be an existing
-    /// directory and is stored canonical, as at creation. The worktree it
-    /// was made with is forgotten unless the new folder is inside it.
-    /// Does not bump `updated_at`.
+    /// [`Self::set_code_session_location`] for a host folder.
+    #[cfg(test)]
     pub fn set_code_session_root(&self, id: &str, root: &str) -> Result<CodeSessionRow, String> {
-        let canonical = std::fs::canonicalize(root).map_err(|e| format!("Folder {root}: {e}"))?;
-        if !canonical.is_dir() {
-            return Err(format!("{root} is not a folder"));
-        }
-        let new_root = canonical
-            .to_str()
-            .ok_or_else(|| format!("Folder {root} is not valid UTF-8"))?
-            .to_string();
+        let location = CodeLocation {
+            wsl_distro: None,
+            root: root.to_string(),
+        };
+        self.set_code_session_location(id, &location)
+    }
+
+    /// Point a session at another folder, when its own is gone (deleted, a
+    /// worktree removed, a drive unmounted). A host `root` must be an
+    /// existing directory and is stored canonical, as at creation; a WSL one
+    /// must already be canonical (see [`Self::create_code_session_at`]). The
+    /// worktree it was made with is forgotten unless the new folder is inside
+    /// it. Does not bump `updated_at`.
+    pub fn set_code_session_location(
+        &self,
+        id: &str,
+        location: &CodeLocation,
+    ) -> Result<CodeSessionRow, String> {
+        let new_root = stored_root(location, "Folder")?;
         let current = self.load_code_session(id)?;
-        let worktree = current
-            .worktree
-            .filter(|wt| canonical.starts_with(std::path::Path::new(wt)));
+        let worktree = current.worktree.filter(|wt| {
+            current.wsl_distro == location.wsl_distro && root_is_within(&new_root, wt)
+        });
         let conn = self.conn();
         conn.execute(
-            "UPDATE code_sessions SET root = ?2, worktree = ?3 WHERE id = ?1",
-            params![id, new_root, worktree],
+            "UPDATE code_sessions SET root = ?2, worktree = ?3, wsl_distro = ?4 WHERE id = ?1",
+            params![id, new_root, worktree, location.wsl_distro],
         )
         .map_err(|e| format!("Code session update failed: {e}"))?;
         drop(conn);
@@ -467,6 +522,7 @@ impl Database {
             id: new_session_id()?,
             title: fork_title(&source.title),
             root,
+            wsl_distro: source.wsl_distro,
             backend: source.backend,
             reasoning_effort: source.reasoning_effort,
             thread: fork_thread(&source.thread, at)?,

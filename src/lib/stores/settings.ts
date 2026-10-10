@@ -734,6 +734,8 @@ export interface AppSettings {
 	codeBgLogCapMb: number;
 	/** Code tab: the folder the last new session used, offered for the next. */
 	codeLastRoot: string;
+	/** Code tab on Windows: the WSL distro `codeLastRoot` is in; '' for none. */
+	codeLastWslDistro: string;
 	/** Code tab: the session sidebar's width in px. */
 	codeSidebarWidth: number;
 	/** Code tab: whether the session sidebar is shown. */
@@ -892,6 +894,7 @@ const defaults: AppSettings = {
 	codeMaxIterations: 40,
 	codeBgLogCapMb: 5,
 	codeLastRoot: '',
+	codeLastWslDistro: '',
 	codeSidebarWidth: 240,
 	codeSidebarOpen: true,
 	memoryEnabled: true,

@@ -319,12 +319,11 @@ pub async fn code_notices_take(
     .map_err(|e| format!("notice task panicked: {e}"))?
 }
 
-/// Whether a session's folder is still there (a folder, not a file).
+/// Whether a session's folder is still there (a folder, not a file), on the
+/// host or inside `wsl_distro`.
 #[tauri::command]
-pub async fn code_folder_exists(path: String) -> bool {
-    tauri::async_runtime::spawn_blocking(move || Path::new(&path).is_dir())
-        .await
-        .unwrap_or(false)
+pub async fn code_folder_exists(path: String, wsl_distro: Option<String>) -> bool {
+    super::wsl::folder_exists(wsl_distro.as_deref(), &path).await
 }
 
 #[cfg(test)]

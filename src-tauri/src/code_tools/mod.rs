@@ -14,6 +14,7 @@ pub mod claims;
 pub mod folders;
 pub mod git;
 pub mod search;
+pub mod wsl;
 
 use crate::command_scope;
 use crate::shell::kind::ShellSelection;

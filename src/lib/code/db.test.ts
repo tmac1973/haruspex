@@ -51,6 +51,7 @@ describe('code session wrappers', () => {
 		const rec = await createCodeSession('/work', { backend, effort: 'low' });
 		expect(mocks.invoke).toHaveBeenCalledWith('code_session_create', {
 			root: '/work',
+			wslDistro: null,
 			backend: JSON.stringify(backend),
 			effort: 'low'
 		});
@@ -62,6 +63,7 @@ describe('code session wrappers', () => {
 		const rec = await createCodeSession('/work');
 		expect(mocks.invoke).toHaveBeenCalledWith('code_session_create', {
 			root: '/work',
+			wslDistro: null,
 			backend: null,
 			effort: null
 		});
@@ -111,12 +113,16 @@ describe('code session wrappers', () => {
 		const moved = await setCodeSessionRoot('s1', '/new');
 		expect(mocks.invoke).toHaveBeenLastCalledWith('code_session_set_root', {
 			id: 's1',
-			root: '/new'
+			root: '/new',
+			wslDistro: null
 		});
 		expect(moved.root).toBe('/new');
 		mocks.invoke.mockResolvedValueOnce(false);
 		expect(await folderExists('/gone')).toBe(false);
-		expect(mocks.invoke).toHaveBeenLastCalledWith('code_folder_exists', { path: '/gone' });
+		expect(mocks.invoke).toHaveBeenLastCalledWith('code_folder_exists', {
+			path: '/gone',
+			wslDistro: null
+		});
 		mocks.invoke.mockResolvedValueOnce(true);
 		expect(await folderExists('/here')).toBe(true);
 		// A failed check is no reason to lock the session.

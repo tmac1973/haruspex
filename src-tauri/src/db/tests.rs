@@ -2627,6 +2627,67 @@ fn code_session_seen_marks_fall_back_to_the_last_saved_turn() {
     assert_eq!(mark(&db), 7);
 }
 
+fn wsl(distro: &str, root: &str) -> crate::code_tools::wsl::CodeLocation {
+    crate::code_tools::wsl::CodeLocation {
+        wsl_distro: Some(distro.to_string()),
+        root: root.to_string(),
+    }
+}
+
+#[test]
+fn a_wsl_session_keeps_its_distro_and_linux_root() {
+    let db = test_db();
+    // Already canonical (inside the distro): stored as given, never stat'd here.
+    let s = db
+        .create_code_session_at(&wsl("Ubuntu", "/home/tim/proj"), None, None)
+        .unwrap();
+    assert_eq!(s.wsl_distro.as_deref(), Some("Ubuntu"));
+    assert_eq!(s.root, "/home/tim/proj");
+    assert_eq!(db.load_code_session(&s.id).unwrap(), s);
+    let listed = db.list_code_sessions().unwrap();
+    assert_eq!(listed[0].wsl_distro.as_deref(), Some("Ubuntu"));
+
+    // A fork stays in the distro.
+    let f = db.fork_code_session(&s.id, 0).unwrap();
+    assert_eq!(f.wsl_distro.as_deref(), Some("Ubuntu"));
+    assert_eq!(f.root, s.root);
+
+    // Only a Linux path.
+    assert!(db
+        .create_code_session_at(&wsl("Ubuntu", "C:\\x"), None, None)
+        .is_err());
+}
+
+#[test]
+fn a_wsl_worktree_session_moved_keeps_its_worktree_only_inside_it() {
+    let db = test_db();
+    let s = db
+        .create_code_session_at(&wsl("Ubuntu", "/home/tim/proj"), None, None)
+        .unwrap();
+    let w = db
+        .fork_code_session_into(&s.id, 0, Some(("/home/tim/proj-fix", "/home/tim/proj-fix")))
+        .unwrap();
+    let moved = db
+        .set_code_session_location(&w.id, &wsl("Ubuntu", "/home/tim/proj-fix/sub"))
+        .unwrap();
+    assert_eq!(moved.worktree.as_deref(), Some("/home/tim/proj-fix"));
+    // A sibling that only shares a prefix is not inside it.
+    let moved = db
+        .set_code_session_location(&w.id, &wsl("Ubuntu", "/home/tim/proj-fixed"))
+        .unwrap();
+    assert_eq!(moved.worktree, None);
+
+    // The same path in another distro is another folder.
+    let w = db
+        .fork_code_session_into(&s.id, 0, Some(("/home/tim/proj-fix", "/home/tim/proj-fix")))
+        .unwrap();
+    let moved = db
+        .set_code_session_location(&w.id, &wsl("Debian", "/home/tim/proj-fix"))
+        .unwrap();
+    assert_eq!(moved.wsl_distro.as_deref(), Some("Debian"));
+    assert_eq!(moved.worktree, None);
+}
+
 #[test]
 fn code_session_root_can_be_pointed_at_another_folder() {
     let db = test_db();
@@ -2684,6 +2745,7 @@ fn an_older_code_sessions_table_gains_the_seen_columns_and_the_notice_table() {
     let row = db.load_code_session("old").unwrap();
     assert_eq!(row.notices_seen_at, None);
     assert_eq!(row.agent_branch, None);
+    assert_eq!(row.wsl_distro, None);
     assert_eq!(db.code_session_seen_marks().unwrap()[0].seen, 5);
     db.insert_code_notice("/r", "other", "T", &["/r/a".to_string()], 9)
         .unwrap();

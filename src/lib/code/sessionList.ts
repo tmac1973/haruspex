@@ -7,6 +7,8 @@ import type { ChatMessage } from '#lib/api.ts';
 import type { CodeSessionSummary } from '#lib/code/db.ts';
 
 export interface SessionGroup {
+	/** The folder's `locationKey`. */
+	key: string;
 	root: string;
 	/** The folder's own name; the full path goes in a tooltip. */
 	name: string;
@@ -17,6 +19,21 @@ export interface SessionGroup {
 /** The last component of a path: `/home/me/blog/` → `blog`. */
 export function folderName(root: string): string {
 	return root.split(/[/\\]/).filter(Boolean).pop() ?? root;
+}
+
+type Located = { root: string; wsl_distro?: string | null };
+
+/**
+ * One key per folder: its root, or `wsl:<distro>:<root>` inside a WSL distro,
+ * where the same Linux path in two distros is two folders.
+ */
+export function locationKey(s: Located): string {
+	return s.wsl_distro ? `wsl:${s.wsl_distro}:${s.root}` : s.root;
+}
+
+/** The full folder for a tooltip: `/home/me/blog (Ubuntu)` inside a WSL distro. */
+export function locationLabel(s: Located): string {
+	return s.wsl_distro ? `${s.root} (${s.wsl_distro})` : s.root;
 }
 
 /**
@@ -52,10 +69,11 @@ export function groupByRoot(list: CodeSessionSummary[]): SessionGroup[] {
 	const sorted = [...list].sort((a, b) => b.updated_at - a.updated_at);
 	const groups = new Map<string, SessionGroup>();
 	for (const s of sorted) {
-		let g = groups.get(s.root);
+		const key = locationKey(s);
+		let g = groups.get(key);
 		if (!g) {
-			g = { root: s.root, name: folderName(s.root), sessions: [] };
-			groups.set(s.root, g);
+			g = { key, root: s.root, name: folderName(s.root), sessions: [] };
+			groups.set(key, g);
 		}
 		g.sessions.push(s);
 	}

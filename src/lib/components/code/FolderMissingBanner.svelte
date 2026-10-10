@@ -7,6 +7,7 @@
 	 */
 	import { open as openDialog } from '@tauri-apps/plugin-dialog';
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
+	import { locationLabel } from '#lib/code/sessionList.ts';
 	import { deleteSession, type CodeSession } from '#lib/stores/code.svelte.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
@@ -25,7 +26,14 @@
 
 	async function choose(): Promise<void> {
 		try {
-			const dir = await openDialog({ directory: true, multiple: false, title: 'Choose folder' });
+			// A WSL session's Explorer pick (`\\wsl.localhost\<distro>\…`) names its distro.
+			const distro = session.wslDistro;
+			const dir = await openDialog({
+				directory: true,
+				multiple: false,
+				title: 'Choose folder',
+				defaultPath: distro ? `\\\\wsl.localhost\\${distro}` : undefined
+			});
 			if (typeof dir === 'string') picked = dir;
 		} catch (e) {
 			showToast(`Couldn't open the folder picker: ${errMessage(e)}`, { kind: 'error' });
@@ -56,7 +64,7 @@
 <div class="banner" role="alert">
 	<span class="text"
 		>Folder not found: <code title="It was deleted, moved, or is on a drive that isn't mounted."
-			>{session.root}</code
+			>{locationLabel({ root: session.root, wsl_distro: session.wslDistro })}</code
 		></span
 	>
 	<span class="actions">
