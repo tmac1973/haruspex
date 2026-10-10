@@ -62,6 +62,16 @@ ensure-node-modules: ## Install npm deps when package-lock.json is newer than th
 		echo ">> npm dependencies up to date"; \
 	fi
 
+.PHONY: ensure-web-client
+ensure-web-client: ensure-node-modules ## Build the web client (Settings → Remote control's page) when its sources changed
+	@out=src-tauri/web-client/index.html; \
+	if [ ! -f $$out ] || [ -n "$$(find src/web src/lib vite.web.config.ts package-lock.json -newer $$out -print -quit)" ]; then \
+		echo ">> Web client out of date — running npm run build:web..."; \
+		npm run build:web; \
+	else \
+		echo ">> Web client up to date"; \
+	fi
+
 .PHONY: app
 app: ensure-resource-dirs ensure-pyodide ## Build the Tauri app (requires sidecars)
 	npm ci
@@ -110,7 +120,7 @@ ensure-sidecars: ## Rebuild sidecars only when missing or their pinned version c
 	fi
 
 .PHONY: dev
-dev: ensure-sidecars ensure-sdcpp ensure-pdfium ensure-ruff ensure-node ensure-uv ensure-pyodide ensure-node-modules ensure-libs-linked ## Run the app in dev mode
+dev: ensure-sidecars ensure-sdcpp ensure-pdfium ensure-ruff ensure-node ensure-uv ensure-pyodide ensure-node-modules ensure-web-client ensure-libs-linked ## Run the app in dev mode
 	GDK_BACKEND=x11 npm run tauri dev; stty sane
 
 # The two check-*.mjs guards mirror the frontend CI job. They used to run ONLY

@@ -95,6 +95,7 @@ loopback.
 ```bash
 npm run dev          # SvelteKit dev server (port 1420)
 npm run build        # Build frontend
+npm run build:web    # Build the web client (Settings → Remote control's page); make dev runs it when src/web or src/lib changed
 npm run check        # TypeScript / Svelte type checking
 npm run lint         # ESLint
 npm run format       # Prettier format
