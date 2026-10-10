@@ -965,9 +965,7 @@ function resetTurnState(conversation: Conversation): AbortSignal {
 /**
  * Assemble the message array sent to the agent loop: system prompt
  * + history (filtered to user/assistant prose) + optional spliced
- * lastTurnTools + hint injection. Returns the messages plus the
- * pre-loop length so the caller can later slice off the loop-appended
- * tool pairs for `lastTurnTools`.
+ * lastTurnTools + hint injection.
  */
 function buildApiPrompt(
 	conversation: Conversation,
@@ -975,7 +973,7 @@ function buildApiPrompt(
 	keepRecentTools: boolean,
 	memorySection: string,
 	skillsSection = ''
-): { messages: ChatMessage[]; baseMessageCount: number } {
+): ChatMessage[] {
 	const historyMessages = conversation.messages.filter((m) => m.role !== 'tool' && !m.tool_calls);
 	let messagesForApi: ChatMessage[] = [
 		buildSystemPrompt(workingDir, {
@@ -1020,7 +1018,7 @@ function buildApiPrompt(
 		workingDir,
 		exhaustiveResearch
 	});
-	return { messages: messagesForApi, baseMessageCount: messagesForApi.length };
+	return messagesForApi;
 }
 
 /**
@@ -1064,19 +1062,17 @@ function commitMessage(
 /**
  * After a successful runAgentLoop, capture any tool-call / tool-result
  * messages the loop appended so the next turn can optionally splice
- * them back in. We slice from the pre-loop length and filter to just
+ * them back in. We filter what the loop reported adding down to just
  * the messages that need to stay paired (assistant tool_calls + their
  * tool results) — recovery nudges like "Continue." aren't useful on
  * the next turn.
  */
 function captureToolPairsForNextTurn(
 	conversation: Conversation,
-	messagesForApi: ChatMessage[],
-	baseMessageCount: number,
+	appended: ChatMessage[],
 	keepRecentTools: boolean
 ): void {
 	if (keepRecentTools) {
-		const appended = messagesForApi.slice(baseMessageCount);
 		const toolPairs = appended.filter(
 			(m) => m.role === 'tool' || (m.role === 'assistant' && m.tool_calls)
 		);
@@ -1432,7 +1428,10 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 		// Chat always uses the Settings backend, and has no project.
 		const skills = await prepareTurnSkills({});
 
-		const { messages: messagesForApi, baseMessageCount } = buildApiPrompt(
+		// What the loop appends, for `lastTurnTools`. Not a slice of
+		// `messagesForApi`: the context fit drops old turns from its front.
+		const appended: ChatMessage[] = [];
+		const messagesForApi = buildApiPrompt(
 			conversation,
 			currentWorkingDir,
 			keepRecentTools,
@@ -1463,11 +1462,12 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 					conversationId: conversation.id,
 					skills,
 					signal,
-					...buildAgentLoopCallbacks(conversation, activeCtxSize, turnStats)
+					...buildAgentLoopCallbacks(conversation, activeCtxSize, turnStats),
+					onMessageAdded: (m) => appended.push(m)
 				})
 		);
 
-		captureToolPairsForNextTurn(conversation, messagesForApi, baseMessageCount, keepRecentTools);
+		captureToolPairsForNextTurn(conversation, appended, keepRecentTools);
 	} catch (e) {
 		if (isAbortError(e)) {
 			commitPartialOnAbort(conversation, turnStats);

@@ -697,26 +697,25 @@ export class ShellSession {
 	};
 
 	/**
-	 * Commit a completed turn to the thread. `turnMessages` is the array the
-	 * agent loop mutated in place; everything it appended past `baseTurnLen` is
-	 * this turn's assistant tool_calls + tool results. We keep those pairs (so
-	 * the next turn — especially "continue" after the step cap — replays what
-	 * this turn actually did instead of re-investigating from scratch) and drop
+	 * Commit a completed turn to the thread. `added` is every message the agent
+	 * loop appended this turn: assistant tool_calls + tool results, plus its
+	 * own nudges. We keep those pairs (so the next turn — especially "continue"
+	 * after the step cap — replays what this turn actually did instead of
+	 * re-investigating from scratch) and drop
 	 * the loop's synthetic recovery / "answer now" nudges, since the assistant
 	 * prose supersedes them. The context-budget fitter stubs and drops these as
 	 * the window fills, so the PAYLOAD stays bounded and tool pairs never
 	 * orphan; `trimThreadIfNeeded` separately bounds the RENDERED thread.
 	 */
 	private recordAssistantTurn(
-		turnMessages: ChatMessage[],
-		baseTurnLen: number,
+		added: ChatMessage[],
 		result: { finalText: string; rawText: string; stopReason: AgentStopReason },
 		lastCallStats: { durationMs: number; completionTokens: number } | null,
 		turnStartedAt: number
 	): void {
-		const toolPairs = turnMessages
-			.slice(baseTurnLen)
-			.filter((m) => m.role === 'tool' || (m.role === 'assistant' && m.tool_calls));
+		const toolPairs = added.filter(
+			(m) => m.role === 'tool' || (m.role === 'assistant' && m.tool_calls)
+		);
 		const wroteAgentsMd = toolPairs.some((m) =>
 			m.tool_calls?.some((c) => c.function?.name === 'write_agents_md')
 		);
@@ -874,10 +873,9 @@ export class ShellSession {
 		}
 
 		const { messages: turnMessages, skills } = await this.buildTurnMessages(payload);
-		// The agent loop mutates `turnMessages` in place, appending this turn's
-		// assistant tool_calls + tool results after the user message. Remember the
-		// pre-loop length so we can recover those appended pairs afterwards.
-		const baseTurnLen = turnMessages.length;
+		// What the loop appends to `turnMessages`. Not a slice of it from its
+		// pre-turn length: the context fit drops old turns from its front.
+		const added: ChatMessage[] = [];
 
 		this.abortController = new AbortController();
 
@@ -928,6 +926,7 @@ export class ShellSession {
 				onContextManaged: (info) => {
 					if (info.kind === 'fit') this.contextNotice = describeContextManaged(info);
 				},
+				onMessageAdded: (m) => added.push(m),
 				onToolStart: (call) => {
 					this.searchSteps = [...this.searchSteps, newRunningStep(call)];
 				},
@@ -938,7 +937,7 @@ export class ShellSession {
 					this.searchSteps = markStepDone(this.searchSteps, call, result, thumbDataUrl, artifacts);
 				}
 			});
-			this.recordAssistantTurn(turnMessages, baseTurnLen, result, lastCallStats, turnStartedAt);
+			this.recordAssistantTurn(added, result, lastCallStats, turnStartedAt);
 		} catch (e) {
 			const msg = errMessage(e);
 			if (msg.includes('Aborted')) {

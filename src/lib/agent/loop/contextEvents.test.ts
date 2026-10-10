@@ -176,3 +176,56 @@ describe('onContextManaged', () => {
 		expect(forced[0]).toMatchObject({ kind: 'fit', forced: true });
 	});
 });
+
+describe('onMessageAdded', () => {
+	it('reports what the turn added after the fit dropped old turns', async () => {
+		// Thirty old exchanges over a small window: the pre-send fit drops
+		// turns from the front of `messages`, so its pre-turn length no longer
+		// marks where this turn's messages start.
+		const messages: ChatMessage[] = [{ role: 'system', content: 'You are a test.' }];
+		for (let i = 0; i < 30; i++) {
+			messages.push({ role: 'user', content: `question ${i} ${'q'.repeat(2_000)}` });
+			messages.push({ role: 'assistant', content: `answer ${i} ${'a'.repeat(2_000)}` });
+		}
+		messages.push({ role: 'user', content: 'read it' });
+		const before = messages.length;
+
+		toolsMock.getToolSchemas.mockReturnValue([
+			{ type: 'function', function: { name: 'fetch_url', parameters: {} } }
+		]);
+		toolsMock.executeTool.mockResolvedValue({ result: 'page text' });
+		api.chatCompletion
+			.mockResolvedValueOnce({
+				content: '',
+				finish_reason: 'tool_calls',
+				tool_calls: [
+					{ id: 'c1', type: 'function', function: { name: 'fetch_url', arguments: '{}' } }
+				]
+			})
+			.mockResolvedValueOnce({ content: 'done', finish_reason: 'stop' });
+
+		const added: ChatMessage[] = [];
+		const events: ContextManagedInfo[] = [];
+		await runAgentLoop({
+			messages,
+			contextSize: 16_000,
+			maxResponseTokens: 256,
+			onToolStart: vi.fn(),
+			onToolEnd: vi.fn(),
+			onStreamChunk: vi.fn(),
+			onComplete: vi.fn(),
+			onError: vi.fn(),
+			onContextManaged: (info) => events.push(info),
+			onMessageAdded: (m) => added.push(m)
+		});
+
+		expect(events[0].droppedTurns).toBeGreaterThan(0);
+		// The bug this guards: slicing from the pre-turn length skips them.
+		expect(messages.slice(before)).not.toContainEqual(
+			expect.objectContaining({ role: 'tool', tool_call_id: 'c1' })
+		);
+		expect(added.map((m) => m.role)).toEqual(['assistant', 'tool']);
+		expect(added[0].tool_calls?.[0].id).toBe('c1');
+		expect(added[1]).toMatchObject({ tool_call_id: 'c1', content: 'page text' });
+	});
+});

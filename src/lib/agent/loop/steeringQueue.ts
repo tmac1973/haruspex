@@ -7,7 +7,7 @@
 import type { ChatCompletionResponse } from '#lib/api.ts';
 import { stripThinkBlocks } from '#lib/markdown.ts';
 import { logDebug } from '#lib/debug-log.ts';
-import type { IterationOutcome, LoopContext, LoopState } from './context';
+import { appendMessage, type IterationOutcome, type LoopContext, type LoopState } from './context';
 import { hasNonThinkingContent } from './heuristics';
 
 /** Drain the caller's steering queue, dropping blank entries. */
@@ -17,7 +17,7 @@ function takeQueuedSteering(ctx: LoopContext): string[] {
 
 /** Append steering texts as `user` messages and tell the caller they went. */
 function appendSteering(ctx: LoopContext, texts: string[], iteration: number): void {
-	for (const content of texts) ctx.messages.push({ role: 'user', content });
+	for (const content of texts) appendMessage(ctx, { role: 'user', content });
 	logDebug('agent', `iteration ${iteration} steering delivered`, { count: texts.length });
 	ctx.options.onSteering?.(texts);
 }
@@ -51,7 +51,7 @@ export function continueForSteering(
 	if (hasNonThinkingContent(content)) {
 		ctx.options.onStreamChunk({ delta: { content }, finish_reason: null });
 		// Re-sent to the model, so without the reasoning (see pushNudge).
-		ctx.messages.push({ role: 'assistant', content: stripThinkBlocks(content).trimStart() });
+		appendMessage(ctx, { role: 'assistant', content: stripThinkBlocks(content).trimStart() });
 	}
 	appendSteering(ctx, pending, iteration);
 	state.steeringContinue = true;

@@ -89,6 +89,17 @@ import {
 import { setPtyBusy } from '#lib/stores/shellPtyBusy.svelte.ts';
 import type { ChatMessage } from '#lib/api.ts';
 
+/** Append as the agent loop does: to `messages`, and reported to the caller. */
+function add(
+	opts: { messages: unknown[]; onMessageAdded?: (m: ChatMessage) => void },
+	...ms: ChatMessage[]
+): void {
+	for (const m of ms) {
+		opts.messages.push(m);
+		opts.onMessageAdded?.(m);
+	}
+}
+
 beforeEach(() => {
 	// Drain the module-level registry between tests.
 	for (const s of [...getShellSessions()]) closeShellSession(s.id);
@@ -190,13 +201,14 @@ describe('ShellSession state independence', () => {
 	});
 
 	it('retains the loop-appended tool_call/result pairs and replays them next turn', async () => {
-		// Simulate runAgentLoop mutating the passed `messages` array in place:
+		// Simulate runAgentLoop appending to the passed `messages` array:
 		// after the user turn it appends an assistant tool_call + its tool result
 		// (plus a synthetic "answer now" nudge that must NOT be persisted).
 		runShellTurn.mockImplementation(
 			async (opts: { messages: { role: string }[]; onAdmitted?: () => void }) => {
 				opts.onAdmitted?.();
-				opts.messages.push(
+				add(
+					opts,
 					{ role: 'assistant', content: '', tool_calls: [{ id: 'c1' }] } as never,
 					{ role: 'tool', tool_call_id: 'c1', content: 'grep hit' } as never,
 					{ role: 'user', content: 'Now please provide your complete answer.' } as never
@@ -258,7 +270,8 @@ describe('rendered-thread trimming', () => {
 		runShellTurn.mockImplementation(
 			async (opts: { messages: { role: string }[]; onAdmitted?: () => void }) => {
 				opts.onAdmitted?.();
-				opts.messages.push(
+				add(
+					opts,
 					{ role: 'assistant', content: '', tool_calls: [{ id: 'c' }] } as never,
 					{ role: 'tool', tool_call_id: 'c', content: 'out' } as never
 				);
@@ -706,7 +719,8 @@ describe('AGENTS.md in the Shell assistant', () => {
 				type: 'function',
 				function: { name: 'write_agents_md', arguments: '{}' }
 			};
-			opts.messages.push(
+			add(
+				opts,
 				{ role: 'assistant', content: '', tool_calls: [call] } as ChatMessage,
 				{ role: 'tool', content: 'Saved.', tool_call_id: 'a' } as ChatMessage
 			);

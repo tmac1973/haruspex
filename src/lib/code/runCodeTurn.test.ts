@@ -34,6 +34,14 @@ vi.mock('#lib/stores/settings.ts', () => ({
 
 import { collectTurnMessages, runCodeTurn, type CodeTurnOptions } from '#lib/code/runCodeTurn.ts';
 
+/** Append as the agent loop does: to `messages`, and reported to the caller. */
+function add(o: AgentLoopOptions, ...ms: ChatMessage[]): void {
+	for (const m of ms) {
+		o.messages.push(m);
+		o.onMessageAdded?.(m);
+	}
+}
+
 function loopOptions(): AgentLoopOptions {
 	return mocks.runAgentLoop.mock.calls[0][0] as AgentLoopOptions;
 }
@@ -116,14 +124,34 @@ describe('runCodeTurn', () => {
 
 	it('returns the tool pairs and the answer', async () => {
 		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
-			o.messages.push(call('c1'), result('c1'));
-			o.messages.push({ role: 'user', content: 'nudge' });
+			add(o, call('c1'), result('c1'));
+			add(o, { role: 'user', content: 'nudge' });
 			o.onStreamChunk(chunk('Fixed.'));
 			o.onComplete({ stopReason: 'max_iterations' });
 		});
 		const res = await runCodeTurn(opts());
 		expect(res.outcome).toBe('complete');
 		expect(res.stopReason).toBe('max_iterations');
+		expect(res.added).toEqual([call('c1'), result('c1'), { role: 'assistant', content: 'Fixed.' }]);
+	});
+
+	it('returns what the loop added even after the fit dropped old turns', async () => {
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
+			// The context fit shrinks `messages` from the front, in place.
+			o.messages.splice(1, 1);
+			add(o, call('c1'), result('c1'));
+			o.onStreamChunk(chunk('Fixed.'));
+			o.onComplete();
+		});
+		const res = await runCodeTurn(
+			opts({
+				thread: [
+					{ role: 'user', content: 'old question' },
+					{ role: 'assistant', content: 'old answer' },
+					{ role: 'user', content: 'fix the test' }
+				]
+			})
+		);
 		expect(res.added).toEqual([call('c1'), result('c1'), { role: 'assistant', content: 'Fixed.' }]);
 	});
 
@@ -136,7 +164,7 @@ describe('runCodeTurn', () => {
 			o.onToolRoundStart!();
 			o.onStreamChunk({ delta: { reasoning_content: 'Check it.' }, finish_reason: null }, live);
 			o.onStreamChunk({ delta: { content: 'Running the tests.' }, finish_reason: null }, live);
-			o.messages.push(call('c1'), result('c1'));
+			add(o, call('c1'), result('c1'));
 			o.onToolRoundStart!();
 			o.onStreamChunk({ delta: { reasoning_content: 'Passed.' }, finish_reason: null }, live);
 			o.onStreamChunk({ delta: { content: 'All green.' }, finish_reason: null }, live);
@@ -186,10 +214,10 @@ describe('runCodeTurn', () => {
 			o.onToolRoundStart!();
 			o.onStreamChunk({ delta: { content: String(said.content) }, finish_reason: null }, live);
 			// The loop pushes the calls' message, then starts them.
-			o.messages.push(said);
+			add(o, said);
 			o.onToolStart({ id: 'w', name: 'fs_edit_text', arguments: {} });
 			o.onToolStart({ id: 'r', name: 'run_command', arguments: {} });
-			o.messages.push(result('w'), result('r'));
+			add(o, result('w'), result('r'));
 			o.onToolRoundStart!();
 			o.onStreamChunk({ delta: { content: 'Fixed.' }, finish_reason: null }, live);
 			o.onStreamChunk(chunk('Fixed.'));
@@ -217,12 +245,12 @@ describe('runCodeTurn', () => {
 			const live = { provisional: true as const };
 			o.onToolRoundStart!();
 			o.onStreamChunk({ delta: { content: 'Installing first.' }, finish_reason: null }, live);
-			o.messages.push(said);
+			add(o, said);
 			o.onToolStart({ id: 'c1', name: 'run_command', arguments: {} });
-			o.messages.push(result('c1'));
+			add(o, result('c1'));
 			// The iteration boundary: steering goes in after the results.
 			const texts = o.takeSteering!();
-			for (const t of texts) o.messages.push({ role: 'user', content: t });
+			for (const t of texts) add(o, { role: 'user', content: t });
 			o.onSteering!(texts);
 			o.onToolRoundStart!();
 			o.onStreamChunk({ delta: { content: 'Switched.' }, finish_reason: null }, live);
@@ -244,8 +272,8 @@ describe('runCodeTurn', () => {
 		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
 			o.onStreamChunk(chunk('Running npm. '));
 			const texts = o.takeSteering!();
-			o.messages.push({ role: 'assistant', content: 'Running npm.' });
-			for (const t of texts) o.messages.push({ role: 'user', content: t });
+			add(o, { role: 'assistant', content: 'Running npm.' });
+			for (const t of texts) add(o, { role: 'user', content: t });
 			o.onSteering!(texts);
 			o.onStreamChunk(chunk('Switched to pnpm.'));
 			o.onComplete();
@@ -271,7 +299,7 @@ describe('runCodeTurn', () => {
 	it('returns what a stopped turn finished, without throwing', async () => {
 		const abort = new AbortController();
 		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
-			o.messages.push(call('c1'), result('c1'), call('c2'));
+			add(o, call('c1'), result('c1'), call('c2'));
 			o.onStreamChunk(chunk('Half an ans'));
 			abort.abort();
 			o.onComplete({ stopReason: 'complete', aborted: true, undeliveredSteering: ['wait'] });

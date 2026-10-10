@@ -139,10 +139,11 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 	const contextSize = resolveBackendDescriptor(backend).contextSize;
 	const settings = getSettings();
 
-	// The loop appends this turn's messages to `messages` in place; `base`
-	// marks where they start.
+	// The loop appends this turn's messages to `messages` and reports each to
+	// `added`; `messages` can't be sliced for them, as the context fit drops
+	// old turns from its front.
 	let messages: ChatMessage[] = [];
-	let base = 0;
+	const added: ChatMessage[] = [];
 	const steered = new Set<ChatMessage>();
 	const think = createThinkStreamState();
 	let stream = '';
@@ -164,7 +165,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 		return {
 			outcome,
 			...(error !== undefined ? { error } : {}),
-			added: collectTurnMessages(messages.slice(base), steered, final),
+			added: collectTurnMessages(added, steered, final),
 			stopReason,
 			undeliveredSteering: undelivered
 		};
@@ -176,7 +177,6 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 		const prepared = await prepareMessages(o, backend);
 		const skills = prepared.skills;
 		messages = prepared.messages;
-		base = messages.length;
 
 		await withInferenceSlot(
 			{
@@ -217,9 +217,10 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 					interactive: true,
 					signal: o.signal,
 					takeSteering: o.takeSteering,
+					onMessageAdded: (m) => added.push(m),
 					onSteering: (texts) => {
-						// The loop has just pushed these as the newest messages.
-						for (const m of messages.slice(-texts.length)) steered.add(m);
+						// The loop has just added these as the newest messages.
+						for (const m of added.slice(-texts.length)) steered.add(m);
 						answerStart = stream.length;
 						o.onSteering?.(texts);
 					},

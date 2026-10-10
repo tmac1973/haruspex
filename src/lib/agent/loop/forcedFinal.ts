@@ -15,7 +15,7 @@ import { isAbortError } from '#lib/utils/error.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import { NudgeState, automaticCheck } from './nudges';
 import type { CompletionMeta } from '../loop';
-import type { LoopContext, LoopState } from './context';
+import { appendMessage, type LoopContext, type LoopState } from './context';
 import { outOfTokensMessage } from './heuristics';
 import {
 	applyContextGuard,
@@ -59,7 +59,7 @@ export async function forceFinalToolCall(
 	const tool = ctx.tools.find((t) => t.function.name === name);
 	logDebug('agent', 'branch=force-final-tool', { tool: name, found: !!tool });
 
-	ctx.messages.push({
+	appendMessage(ctx, {
 		role: 'user',
 		content:
 			`You have finished investigating. Call the ${name} tool now with everything ` +
@@ -158,7 +158,7 @@ export async function runMaxIterationsFinalSynthesis(
 		const finalPrompt = ctx.shellMode
 			? 'Wrap up now using what you have found so far. If your investigation is incomplete, briefly say so and suggest the next command or file the user could share with you to continue.'
 			: 'Now please provide your complete answer based on everything you have researched. Do not search for anything else.';
-		ctx.messages.push({ role: 'user', content: automaticCheck(finalPrompt) });
+		appendMessage(ctx, { role: 'user', content: automaticCheck(finalPrompt) });
 	}
 	// Reasoning off: the thinking happened over the whole turn, and this call
 	// writes it up. With it on, a model at the end of a long research turn

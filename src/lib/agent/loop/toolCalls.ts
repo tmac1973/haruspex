@@ -11,7 +11,7 @@ import { isVerbosePayloads, logDebug } from '#lib/debug-log.ts';
 import { NudgeState } from './nudges';
 import { planToolBatches, runToolBatch, toolCallConcurrency } from './parallelTools';
 import { createSlotLender, laneConcurrency } from '#lib/agent/inferenceQueue.svelte.ts';
-import type { LoopContext } from './context';
+import { appendMessage, type LoopContext } from './context';
 import { raceWithAbort } from './modelCall';
 
 /**
@@ -35,7 +35,7 @@ export async function executeToolCalls(
 	toolCalls: ResolvedToolCall[],
 	response?: ChatCompletionResponse
 ): Promise<{ allWebReadsBlocked: boolean }> {
-	const { messages, signal, options } = ctx;
+	const { signal, options } = ctx;
 	// Count calls that were web reads blocked by an external resource. When
 	// this equals toolCalls.length, the whole iteration was wasted on blocks.
 	let blockedWebReads = 0;
@@ -47,7 +47,7 @@ export async function executeToolCalls(
 	// For OpenRouter reasoning models, echo `reasoning_details` back
 	// unmodified so multi-turn reasoning quality is preserved across the
 	// tool loop (OpenRouter docs: reasoning_details must be threaded verbatim).
-	messages.push({
+	appendMessage(ctx, {
 		role: 'assistant',
 		content: options.streamToolRounds ? toolRoundText(response?.content) : '',
 		tool_calls: toolCalls.map((tc) => ({
@@ -184,7 +184,7 @@ export async function executeToolCalls(
 			nudges.noteNonRunCommandTool();
 		}
 
-		messages.push({
+		appendMessage(ctx, {
 			role: 'tool',
 			tool_call_id: call.id,
 			content: toolContent

@@ -277,6 +277,14 @@ import {
 	isSessionApproved
 } from '#lib/stores/codeCommandApproval.svelte.ts';
 
+/** Append as the agent loop does: to `messages`, and reported to the caller. */
+function add(o: AgentLoopOptions, ...ms: ChatMessage[]): void {
+	for (const m of ms) {
+		o.messages.push(m);
+		o.onMessageAdded?.(m);
+	}
+}
+
 function chunk(content: string) {
 	return { delta: { content } } as unknown as Parameters<AgentLoopOptions['onStreamChunk']>[0];
 }
@@ -349,7 +357,7 @@ describe('a Code session', () => {
 				]
 			};
 			o.onToolStart({ id: 'c1', name: 'code_grep', arguments: {} });
-			o.messages.push(c, { role: 'tool', tool_call_id: 'c1', content: 'src/a.ts:1: x' });
+			add(o, c, { role: 'tool', tool_call_id: 'c1', content: 'src/a.ts:1: x' });
 			o.onToolEnd({ id: 'c1', name: 'code_grep', arguments: {} }, 'src/a.ts:1: x');
 			o.onStreamChunk(chunk('Found it.'));
 			o.onComplete();
@@ -472,7 +480,8 @@ describe('a Code session', () => {
 	it('saves the finished part of a stopped turn', async () => {
 		const s = await newSession('/proj');
 		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
-			o.messages.push(
+			add(
+				o,
 				{
 					role: 'assistant',
 					content: '',
@@ -677,7 +686,8 @@ describe('a streamed tool round', () => {
 			const write = { id: 'w', name: 'fs_write_text', arguments: { path: 'a.ts' } };
 			o.onToolStart(write);
 			look();
-			o.messages.push(
+			add(
+				o,
 				{
 					role: 'assistant',
 					content: '',
@@ -725,7 +735,7 @@ describe('a streamed tool round', () => {
 		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
 			o.onToolRoundStart!();
 			o.onStreamChunk({ delta: { content: said }, finish_reason: null }, { provisional: true });
-			o.messages.push({
+			add(o, {
 				role: 'assistant',
 				content: said,
 				tool_calls: [
@@ -733,7 +743,7 @@ describe('a streamed tool round', () => {
 				]
 			});
 			o.onToolStart(edit);
-			o.messages.push({ role: 'tool', tool_call_id: 'e', content: 'ok' });
+			add(o, { role: 'tool', tool_call_id: 'e', content: 'ok' });
 			o.onToolEnd(edit, 'ok');
 			o.onToolRoundStart!();
 			o.onStreamChunk(chunk('Fixed.'));

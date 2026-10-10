@@ -50,6 +50,8 @@ export interface ShellTurnOptions {
 	onAssistantDelta?: (full: string) => void;
 	onCallStats?: (stats: { durationMs: number; completionTokens: number }) => void;
 	onContextManaged?: (info: ContextManagedInfo) => void;
+	/** Each message the turn adds; see AgentLoopOptions.onMessageAdded. */
+	onMessageAdded?: (message: ChatMessage) => void;
 	onToolStart?: (call: ResolvedToolCall) => void;
 	/** A long tool's status line ("Drawing… 12 s"), for its step in the sidebar. */
 	onToolProgress?: (call: ResolvedToolCall, status: string) => void;
@@ -122,6 +124,7 @@ async function drive(options: ShellTurnOptions): Promise<ShellTurnResult> {
 			onUsageUpdate: (usage) => updateContextUsage(usage, options.contextSize),
 			onCallStats: (stats) => options.onCallStats?.(stats),
 			onContextManaged: (info) => options.onContextManaged?.(info),
+			onMessageAdded: (m) => options.onMessageAdded?.(m),
 			onToolStart: (call) => options.onToolStart?.(call),
 			onToolProgress: (call, status) => options.onToolProgress?.(call, status),
 			onToolEnd: (call, result, thumbDataUrl, artifacts) =>

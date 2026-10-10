@@ -141,6 +141,17 @@ export interface LoopContext {
 }
 
 /**
+ * Add a message to the turn and report it to the caller. Every message the
+ * loop appends goes through here, because the caller cannot find them in
+ * `messages` afterwards: the pre-send fit drops old turns from the front of
+ * that same array, so its pre-turn length no longer marks where the turn began.
+ */
+export function appendMessage(ctx: LoopContext, message: ChatMessage): void {
+	ctx.messages.push(message);
+	ctx.options.onMessageAdded?.(message);
+}
+
+/**
  * Per-turn output ceiling, resolved for EVERY caller of the agent loop —
  * chat, shell and jobs alike — because this is the one place all three pass
  * through. Resolving it in `runEphemeralTurn` instead would have covered
