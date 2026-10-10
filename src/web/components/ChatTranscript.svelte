@@ -45,7 +45,7 @@
 		{#if msg.role === 'assistant' && steps(i).length}
 			<SearchStep steps={steps(i)} runControls={false} />
 		{/if}
-		<Message message={msg} />
+		<Message message={msg} steps={steps(i)} />
 		{#if stopAt(i)}
 			<StopIndicator reason={stopAt(i) as never} disabled={chat.busy} onContinue={oncontinue} />
 		{/if}

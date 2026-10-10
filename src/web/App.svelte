@@ -10,9 +10,19 @@
 	import SessionList from './components/SessionList.svelte';
 	import SessionView from './components/SessionView.svelte';
 	import ChatView from './components/ChatView.svelte';
+	import Modal from '#lib/components/Modal.svelte';
+	import { VIEW_IMAGE_EVENT } from '#lib/markdown-actions.ts';
 
 	const store = new WebStore();
 	let pairError = $state<string | null>(null);
+	/** The picture being looked at full size: any message's, inline or attached. */
+	let viewing = $state<{ src: string; alt: string } | null>(null);
+
+	$effect(() => {
+		const open = (e: Event) => (viewing = (e as CustomEvent<{ src: string; alt: string }>).detail);
+		document.addEventListener(VIEW_IMAGE_EVENT, open);
+		return () => document.removeEventListener(VIEW_IMAGE_EVENT, open);
+	});
 
 	/** The pairing link's code, from the fragment, which never reached a server. */
 	function codeFromHash(): string | null {
@@ -60,6 +70,12 @@
 	{/if}
 </div>
 
+{#if viewing}
+	<Modal open title="Image" maxWidth={1100} dismissable onclose={() => (viewing = null)}>
+		<img class="full" src={viewing.src} alt={viewing.alt} />
+	</Modal>
+{/if}
+
 <style>
 	:global(html),
 	:global(body) {
@@ -93,6 +109,13 @@
 		min-width: 0;
 		min-height: 0;
 		overflow: hidden;
+	}
+
+	.full {
+		display: block;
+		max-width: 100%;
+		max-height: 75vh;
+		margin: 0 auto;
 	}
 
 	.empty {

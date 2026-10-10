@@ -3,10 +3,17 @@
 	 * One message, as the desktop draws it: reasoning folded away in a
 	 * ThinkingPanel, the answer as markdown. Attached images are data URLs in
 	 * the thread, so they show here as they are; one stored any other way
-	 * (the desktop's image cache) is named instead.
+	 * (the desktop's image cache) is named instead. Pictures in an answer come
+	 * from the desktop's cache (`../images.ts`), inline or, after an image
+	 * search the answer didn't use, in a strip beneath it.
 	 */
+	import type { SearchStep } from '#lib/agent/loop.ts';
 	import { messageText, type ChatMessage } from '#lib/api.ts';
-	import Modal from '#lib/components/Modal.svelte';
+	import ChatImageStrip from '#lib/components/ChatImageStrip.svelte';
+	import { resolvedImages, stripFor } from '#lib/images/figure.ts';
+	import { stripCandidates } from '#lib/images/eligible.ts';
+	import { VIEW_IMAGE_EVENT } from '#lib/markdown-actions.ts';
+	import { imageRefs, wantImages } from '../images.ts';
 	import ThinkingPanel from '#lib/components/ThinkingPanel.svelte';
 	import { makeCodePathLinker } from '#lib/code/paths.ts';
 	import { renderMarkdown, splitThinkChannels } from '#lib/markdown.ts';
@@ -15,8 +22,15 @@
 	let {
 		message,
 		streaming = false,
-		root = null
-	}: { message: ChatMessage; streaming?: boolean; root?: string | null } = $props();
+		root = null,
+		steps = []
+	}: {
+		message: ChatMessage;
+		streaming?: boolean;
+		root?: string | null;
+		/** The answer's steps, for the image strip. */
+		steps?: SearchStep[];
+	} = $props();
 
 	const codePaths = $derived(root ? makeCodePathLinker(root) : undefined);
 
@@ -29,7 +43,19 @@
 	);
 	const shown = $derived(urls.filter((u) => u.startsWith('data:image/')));
 	const elsewhere = $derived(urls.length - shown.length);
-	let enlarged = $state<string | null>(null);
+	// Once the answer is written: the desktop caches its pictures as it ends.
+	$effect(() => {
+		if (streaming || message.role !== 'assistant') return;
+		wantImages([...imageRefs(parts.answer), ...stripCandidates(steps).map((c) => c.url)]);
+	});
+	const strip = $derived(
+		!streaming && message.role === 'assistant' ? stripFor(parts.answer, steps) : []
+	);
+
+	/** The app's one viewer (`App.svelte`), as inline pictures ask for it. */
+	function enlarge(src: string): void {
+		document.dispatchEvent(new CustomEvent(VIEW_IMAGE_EVENT, { detail: { src, alt: 'Attached' } }));
+	}
 </script>
 
 <div class="message" data-role={message.role}>
@@ -42,13 +68,14 @@
 		{#if parts.answer.trim()}
 			<!-- renderMarkdown sanitises its output. -->
 			<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-			<div class="markdown">{@html renderMarkdown(parts.answer, undefined, codePaths)}</div>
+			<div class="markdown">{@html renderMarkdown(parts.answer, resolvedImages, codePaths)}</div>
 		{/if}
+		<ChatImageStrip images={strip} />
 	{/if}
 	{#if shown.length > 0}
 		<div class="images">
 			{#each shown as url, i (i)}
-				<button class="thumb" title="Show full size" onclick={() => (enlarged = url)}>
+				<button class="thumb" title="Show full size" onclick={() => enlarge(url)}>
 					<img src={url} alt="Attached" />
 				</button>
 			{/each}
@@ -60,12 +87,6 @@
 		</p>
 	{/if}
 </div>
-
-{#if enlarged}
-	<Modal open title="Image" maxWidth={1100} dismissable onclose={() => (enlarged = null)}>
-		<img class="full" src={enlarged} alt="Attached" />
-	</Modal>
-{/if}
 
 <style>
 	.message {
@@ -118,13 +139,6 @@
 		max-width: 220px;
 		max-height: 160px;
 		object-fit: cover;
-	}
-
-	.full {
-		display: block;
-		max-width: 100%;
-		max-height: 75vh;
-		margin: 0 auto;
 	}
 
 	.note {
