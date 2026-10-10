@@ -295,7 +295,10 @@ registerTool({
 			noteCommandRan(ctx);
 			const out = await formatRunResult(res);
 			// The Code tab can hand the command to a Shell tab; elsewhere the user runs it.
-			const hint = ttyHintFor(res, { openInShell: !ctx.shellMode && !!ctx.codeSessionId });
+			const hint = ttyHintFor(res, {
+				openInShell: !ctx.shellMode && !!ctx.codeSessionId,
+				command
+			});
 			return toolResult(hint ? `${out}\n\n${hint}` : out);
 		} catch (e) {
 			if (isAbortError(e)) throw e;

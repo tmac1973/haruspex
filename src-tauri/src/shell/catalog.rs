@@ -35,6 +35,27 @@ pub fn enumerate_shells() -> Vec<ShellCatalogEntry> {
     imp::enumerate_shells()
 }
 
+/// The PowerShell a Code session in a Windows folder runs its commands in.
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct AgentPowershell {
+    pub exe: String,
+    /// PowerShell 7 (`pwsh`); false for Windows PowerShell 5.1, which has no
+    /// `&&` or `||`.
+    pub pwsh: bool,
+}
+
+/// PowerShell 7 when installed, else Windows PowerShell 5.1 (always in the
+/// box). Looked up once. None off Windows.
+///
+/// Not the Microsoft Store's PowerShell 7: a packaged app, Windows starts it
+/// outside the Job object a command runs in (`code_tools::job`), and Stop,
+/// the timeout and the memory limit would no longer reach it. 5.1 then.
+pub fn agent_powershell() -> Option<AgentPowershell> {
+    static FOUND: std::sync::OnceLock<Option<AgentPowershell>> = std::sync::OnceLock::new();
+    FOUND.get_or_init(imp::agent_powershell).clone()
+}
+
 /// The installed WSL2 distros, by name. Empty off Windows, without WSL, or
 /// with only WSL1 distros. Runs `wsl.exe`, so call it off the async runtime.
 pub fn wsl_distros() -> Vec<String> {
@@ -84,6 +105,40 @@ mod imp {
 
         out.extend(enumerate_wsl());
         out
+    }
+
+    pub fn agent_powershell() -> Option<super::AgentPowershell> {
+        Some(match find_unpackaged_pwsh() {
+            Some(exe) => super::AgentPowershell { exe, pwsh: true },
+            None => super::AgentPowershell {
+                exe: find_powershell().unwrap_or_else(|| "powershell.exe".to_string()),
+                pwsh: false,
+            },
+        })
+    }
+
+    /// `pwsh.exe` from an MSI, winget or zip install: on PATH outside
+    /// `WindowsApps` (the Store's), or where the MSI puts it.
+    fn find_unpackaged_pwsh() -> Option<String> {
+        let path = std::env::var_os("PATH")?;
+        std::env::split_paths(&path)
+            .filter(|d| !is_packaged(d))
+            .map(|d| d.join("pwsh.exe"))
+            .find(|p| p.is_file())
+            .or_else(|| {
+                let pf = std::env::var_os("ProgramFiles")?;
+                let candidate = PathBuf::from(pf)
+                    .join("PowerShell")
+                    .join("7")
+                    .join("pwsh.exe");
+                candidate.is_file().then_some(candidate)
+            })
+            .map(|p| p.to_string_lossy().into_owned())
+    }
+
+    fn is_packaged(dir: &std::path::Path) -> bool {
+        dir.components()
+            .any(|c| c.as_os_str().eq_ignore_ascii_case("WindowsApps"))
     }
 
     fn find_pwsh() -> Option<String> {
@@ -199,6 +254,21 @@ mod imp {
         use super::*;
 
         #[test]
+        fn the_stores_powershell_is_not_the_agents() {
+            assert!(is_packaged(std::path::Path::new(
+                r"C:\Users\tim\AppData\Local\Microsoft\WindowsApps"
+            )));
+            assert!(!is_packaged(std::path::Path::new(
+                r"C:\Program Files\PowerShell\7"
+            )));
+            let ps = agent_powershell().unwrap();
+            assert!(
+                !ps.exe.to_ascii_lowercase().contains("windowsapps"),
+                "{ps:?}"
+            );
+        }
+
+        #[test]
         fn reads_the_list_in_either_encoding() {
             let text = "  NAME      STATE    VERSION
 * Ubuntu    Running  2
@@ -236,6 +306,10 @@ mod imp {
 mod imp {
     use super::ShellCatalogEntry;
     use std::path::Path;
+
+    pub fn agent_powershell() -> Option<super::AgentPowershell> {
+        None
+    }
 
     pub fn wsl_distros() -> Vec<String> {
         Vec::new()

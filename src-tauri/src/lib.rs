@@ -479,6 +479,7 @@ pub fn run() {
             code_tools::folders::code_notices_take,
             code_tools::folders::code_folder_exists,
             code_tools::wsl::code_wsl_distros,
+            code_tools::code_powershell,
             code_tools::wsl::code_resolve_folder,
             code_tools::git::code_git_status,
             code_tools::git::code_git_branches,

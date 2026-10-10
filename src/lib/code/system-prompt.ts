@@ -45,6 +45,18 @@ function wslNote(distro: string): string {
 	return `The project is inside the WSL distro ${distro}: commands run there, in Linux with bash, and paths are Linux paths. Windows programs on its PATH (*.exe) run on Windows, not in the distro — use the Linux tools. localhost in the distro may not reach servers on the Windows side.`;
 }
 
+/**
+ * A session in a Windows folder: PowerShell, not bash. 5.1 has no `&&`
+ * or `||`, which models reach for first.
+ */
+function powershellNote(ps: { pwsh: boolean }): string {
+	const which = ps.pwsh ? 'PowerShell 7' : 'Windows PowerShell 5.1';
+	const chain = ps.pwsh
+		? ''
+		: ' It has no && or ||: separate commands with ; and test $? (npm ci; if ($?) { npm test }).';
+	return `The project is a Windows folder: commands run in ${which}, not bash, and paths are Windows paths. Use PowerShell (Get-ChildItem, Select-String, $env:NAME) or native programs (git, npm, python).${chain}`;
+}
+
 /** True on macOS. The platform comes from the user agent, as `codeTabAvailable` reads it. */
 export function isMacOS(
 	userAgent = (typeof navigator !== 'undefined' && navigator.userAgent) || ''
@@ -81,6 +93,8 @@ export interface BuildCodePromptOpts {
 	macOS?: boolean;
 	/** The WSL distro the folder is in (Windows); commands run there, not on the host. */
 	wslDistro?: string | null;
+	/** A Windows folder: the PowerShell its commands run in (`agentPowershell`). */
+	powershell?: { pwsh: boolean } | null;
 }
 
 const WRITE_TOOL_LINE = /^- fs_(write|edit)_text /;
@@ -110,9 +124,13 @@ function sessionNotes(opts: BuildCodePromptOpts): string {
 	return notes.map((n) => `\n${n}`).join('');
 }
 
-/** What the commands run on, when it needs saying: a WSL distro, or macOS's old bash. */
+/**
+ * What the commands run on, when it needs saying: a WSL distro, PowerShell
+ * in a Windows folder, or macOS's old bash.
+ */
 function platformNote(opts: BuildCodePromptOpts): string {
 	if (opts.wslDistro) return ` ${wslNote(opts.wslDistro)}`;
+	if (opts.powershell) return ` ${powershellNote(opts.powershell)}`;
 	return (opts.macOS ?? isMacOS()) ? ` ${MAC_BASH_NOTE}` : '';
 }
 

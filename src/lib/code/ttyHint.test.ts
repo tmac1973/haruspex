@@ -81,4 +81,21 @@ describe('ttyHintFor', () => {
 		const res = { ...failed('sudo: a password is required\n'), exit_code: null, killed: true };
 		expect(ttyHintFor(res)).toBeNull();
 	});
+
+	it('hands a failed Windows elevation to the user, whatever it printed', () => {
+		const res = failed('');
+		expect(ttyHintFor(res, { openInShell: true, command: 'gsudo choco install git' })).toBe(
+			TTY_HINT
+		);
+		expect(
+			ttyHintFor(res, {
+				openInShell: true,
+				command: "Start-Process pwsh -Verb RunAs -ArgumentList '-c','x'"
+			})
+		).toBe(TTY_HINT);
+		expect(ttyHintFor(failed('Sudo is disabled on this machine.\n'))).toBe(TTY_HINT);
+		expect(ttyHintFor(failed('The requested operation requires elevation.\n'))).toBe(TTY_HINT);
+		// A Linux sudo that failed for its own reasons isn't one.
+		expect(ttyHintFor(res, { openInShell: true, command: 'sudo make install' })).toBeNull();
+	});
 });

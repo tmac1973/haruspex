@@ -38,6 +38,7 @@ export const IPC = {
 	code_lease_take: 'code_lease_take',
 	code_notice_record: 'code_notice_record',
 	code_notices_take: 'code_notices_take',
+	code_powershell: 'code_powershell',
 	code_resolve_folder: 'code_resolve_folder',
 	code_session_claim: 'code_session_claim',
 	code_session_create: 'code_session_create',

@@ -101,6 +101,7 @@ export const CODE_DB: Record<string, Handler> = {
 	// Every folder is there; a spec that wants one gone mocks this.
 	code_folder_exists: () => true,
 	code_wsl_distros: () => [],
+	code_powershell: () => null,
 	code_session_update_meta: (a) => {
 		const r = row(a?.id);
 		const patch = (a?.patch ?? {}) as Record<string, unknown>;

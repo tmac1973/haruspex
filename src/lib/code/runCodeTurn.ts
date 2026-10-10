@@ -46,6 +46,7 @@ import { buildCodeSystemPrompt } from './system-prompt';
 import { ioRoot } from './paths';
 import { sessionLabel } from './sessionList';
 import { loadShellPlatformSupported } from '#lib/shell/platformSupport.ts';
+import { agentPowershell } from './powershell.ts';
 
 export interface CodeTurnOptions {
 	sessionId: string;
@@ -335,7 +336,8 @@ async function prepareMessages(
 		projectInstructions: agentsMdPromptSection(project.agentsMd),
 		readOnly: o.readOnly,
 		worktree: o.worktree,
-		wslDistro: o.wslDistro
+		wslDistro: o.wslDistro,
+		powershell: o.wslDistro ? null : await agentPowershell()
 	});
 	const thread = o.notice ? withNotice(o.thread, o.notice) : o.thread;
 	return { messages: mergeLeadingSystemMessages([system, ...thread]), skills };

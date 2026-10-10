@@ -81,6 +81,13 @@ Confirmed with the user on 2026-10-10: every recommendation below stands.
 4. **Hand-offs, then enable.** `open_in_shell` to a PowerShell tab at the
    folder; Open in Code from a PowerShell tab; remove the flag; guide.
 
+**Found in milestone 2:** the Microsoft Store's PowerShell 7 (reached through
+the `WindowsApps` alias, or its real path) is a packaged app, and Windows
+starts it outside our Job object: no tree kill, no memory limit. The agent
+therefore uses a pwsh from an MSI, winget or zip install, and Windows
+PowerShell 5.1 when the Store's is the only one (`catalog::agent_powershell`).
+The Shell tab is unaffected.
+
 Unlike phase 10, most of this runs on GitHub's Windows runner, so it can be
 tested in CI, not only with `#[ignore]` tests on the box.
 

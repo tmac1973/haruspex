@@ -29,6 +29,15 @@ describe('Code tab prompt', () => {
 		expect(tab()).not.toContain('WSL');
 	});
 
+	it('tells a session in a Windows folder which PowerShell runs its commands', () => {
+		const seven = tab({ root: 'C:\\p', powershell: { pwsh: true }, macOS: false });
+		expect(seven).toContain('PowerShell 7');
+		expect(seven).not.toContain('no && or ||');
+		const five = tab({ root: 'C:\\p', powershell: { pwsh: false }, macOS: false });
+		expect(five).toContain('Windows PowerShell 5.1');
+		expect(five).toContain('no && or ||');
+	});
+
 	it('steers away from bash-4 features on macOS only', () => {
 		const mac = tab({ macOS: true });
 		expect(mac).toContain('bash 3.2');
