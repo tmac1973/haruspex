@@ -170,6 +170,18 @@ pub fn resolve_in_workdir(workdir: &Path, rel_path: &str) -> Result<PathBuf, Str
     Ok(canonical)
 }
 
+/// `path` without Windows' verbatim prefix when it names a local drive
+/// (`\\?\C:\proj` → `C:\proj`), as people and tools spell it; what
+/// `std::fs::canonicalize` returns there. Anything else, and every path
+/// off Windows, is unchanged.
+pub fn strip_verbatim(path: &Path) -> PathBuf {
+    let s = path.to_string_lossy();
+    match s.strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
+        _ => path.to_path_buf(),
+    }
+}
+
 /// Resolve a path whose trailing components may not exist yet.
 ///
 /// Walks up the ancestor chain to the deepest ancestor that exists on disk,

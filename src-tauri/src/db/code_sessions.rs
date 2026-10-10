@@ -243,7 +243,8 @@ fn stored_root(location: &CodeLocation, what: &str) -> Result<String, String> {
     if !canonical.is_dir() {
         return Err(format!("{what} {root} is not a folder"));
     }
-    canonical
+    // `C:\proj`, not `\\?\C:\proj`: the root reaches the prompt, links and git.
+    crate::fs_tools::path::strip_verbatim(&canonical)
         .to_str()
         .map(str::to_string)
         .ok_or_else(|| format!("{what} {root} is not valid UTF-8"))

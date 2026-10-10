@@ -2286,6 +2286,13 @@ fn daily_stats_count_each_outcome_against_its_day() {
 // --- Code-tab sessions ---------------------------------------------------
 
 /// A fresh, empty directory under the system temp dir, removed on drop.
+/// A folder as a session stores it: canonical, without `\\?\` on Windows.
+fn stored(path: &str) -> String {
+    crate::fs_tools::path::strip_verbatim(&std::fs::canonicalize(path).unwrap())
+        .to_string_lossy()
+        .into_owned()
+}
+
 struct TempDir(std::path::PathBuf);
 
 impl TempDir {
@@ -2361,10 +2368,7 @@ fn code_session_create_list_load_save_delete_round_trip() {
     assert_eq!(created.id.len(), 36);
     assert_eq!(&created.id[14..15], "4", "v4 uuid");
     assert_eq!(created.title, "");
-    assert_eq!(
-        created.root,
-        std::fs::canonicalize(dir.path()).unwrap().to_str().unwrap()
-    );
+    assert_eq!(created.root, stored(dir.path()));
     assert_eq!(created.forked_from, None);
     // A fresh session's thread is a valid, empty snapshot.
     let empty: serde_json::Value = serde_json::from_str(&created.thread).unwrap();
@@ -2699,13 +2703,7 @@ fn code_session_root_can_be_pointed_at_another_folder() {
         .unwrap();
 
     let moved = db.set_code_session_root(&s.id, next.path()).unwrap();
-    assert_eq!(
-        moved.root,
-        std::fs::canonicalize(next.path())
-            .unwrap()
-            .to_str()
-            .unwrap()
-    );
+    assert_eq!(moved.root, stored(next.path()));
     assert_eq!(moved.updated_at, s.updated_at);
     assert_eq!(db.load_code_session(&s.id).unwrap(), moved);
 

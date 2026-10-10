@@ -1,4 +1,5 @@
 import { wslDistros } from '#lib/code/db.ts';
+import { nativeWindowsCode } from '#lib/code/native.ts';
 
 export type ActiveTab = 'chat' | 'jobs' | 'shell' | 'code';
 
@@ -19,12 +20,13 @@ function currentUserAgent(): string {
 let wslReady = $state<boolean | null>(null);
 
 /**
- * Whether the Code tab is shown. On Windows only once `probeCodeTab` has found
- * a WSL2 distro (false while it hasn't answered); elsewhere always.
+ * Whether the Code tab is shown. On Windows once `probeCodeTab` has found a
+ * WSL2 distro (false while it hasn't answered), or always where sessions in
+ * native folders are on (`nativeWindowsCode`); elsewhere always.
  */
 export function codeTabAvailable(userAgent = currentUserAgent()): boolean {
 	if (!isWindows(userAgent)) return true;
-	return wslReady === true;
+	return nativeWindowsCode() || wslReady === true;
 }
 
 /** The main tabs in TabBar order, as the Ctrl / ⌘ + digit shortcuts number them. */

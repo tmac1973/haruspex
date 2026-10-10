@@ -23,9 +23,9 @@ pub struct CodeLocation {
     pub root: String,
 }
 
-/// Why a native Windows folder is refused. Shown as-is in the picker.
+/// Why a folder is refused on Windows. Shown as-is in the picker.
 pub const NATIVE_WINDOWS_REFUSED: &str =
-    "Native Windows folders are coming later (#396). Pick a folder inside a WSL distro.";
+    "Pick a folder on this PC (C:\\…) or in a WSL distro; network folders aren't supported.";
 
 /// A distro name safe to pass to `wsl.exe -d` and to put in a share path.
 /// WSL itself allows letters, digits, `.`, `-` and `_`.
@@ -531,13 +531,35 @@ pub async fn resolve_location(distro: Option<&str>, path: &str) -> Result<CodeLo
             Some(d) => (d.to_string(), path.to_string()),
             None => return Err("Pick the WSL distro this folder is in".to_string()),
         },
-        None => return Err(NATIVE_WINDOWS_REFUSED.to_string()),
+        // A folder on this PC: kept as typed here, made canonical where it is
+        // stored (`db::code_sessions::stored_root`).
+        None if distro.is_none() => return native_location(path),
+        None => {
+            return Err(
+                "That's a Windows folder: pick This PC rather than a WSL distro".to_string(),
+            )
+        }
     };
     let distro = listed_distro(&distro)?;
     let root = realpath_in(&distro, &linux).await?;
     Ok(CodeLocation {
         wsl_distro: Some(distro),
         root,
+    })
+}
+
+/// A native Windows folder (phase 11, #396): a local drive path. A network
+/// share (`\\server\share`) is refused in v1.
+fn native_location(path: &str) -> Result<CodeLocation, String> {
+    let b = path.as_bytes();
+    let drive =
+        b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && matches!(b[2], b'\\' | b'/');
+    if !drive {
+        return Err(NATIVE_WINDOWS_REFUSED.to_string());
+    }
+    Ok(CodeLocation {
+        wsl_distro: None,
+        root: path.to_string(),
     })
 }
 
@@ -809,13 +831,19 @@ mod tests {
 
     #[cfg(windows)]
     #[tokio::test]
-    async fn a_native_windows_folder_is_refused() {
-        let err = resolve_location(None, r"C:\temp").await.unwrap_err();
-        assert!(err.contains("#396"), "{err}");
+    async fn a_folder_on_this_pc_is_taken_and_a_network_one_refused() {
+        let loc = resolve_location(None, r"C:\temp").await.unwrap();
+        assert_eq!(loc.wsl_distro, None);
+        assert_eq!(loc.root, r"C:\temp");
+        assert!(resolve_location(None, r"\\server\share\proj")
+            .await
+            .is_err());
+        assert!(resolve_location(None, "proj").await.is_err());
+        // A Windows folder isn't in a distro, and a Linux path needs one.
         let err = resolve_location(Some("Ubuntu"), r"C:\temp")
             .await
             .unwrap_err();
-        assert!(err.contains("#396"), "{err}");
+        assert!(err.contains("This PC"), "{err}");
         assert!(resolve_location(None, "/home/x").await.is_err());
     }
 

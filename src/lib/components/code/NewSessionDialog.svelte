@@ -5,12 +5,14 @@
 	 *
 	 * On Windows the folder is inside a WSL2 distro: a distro, a Linux path
 	 * typed or browsed (Explorer's `\\wsl.localhost\<distro>\…` is split into
-	 * the two by Rust). Native Windows folders are refused there (#396).
+	 * the two by Rust). Dev builds also offer This PC, a `C:\…` folder (#396,
+	 * behind `nativeWindowsCode` until phase 11 ends); its distro is `''`.
 	 */
 	import { open as openDialog } from '@tauri-apps/plugin-dialog';
 	import Modal from '#lib/components/Modal.svelte';
 	import WorkingDirButton from '#lib/components/WorkingDirButton.svelte';
 	import { resolveCodeFolder, wslDistros } from '#lib/code/db.ts';
+	import { nativeWindowsCode } from '#lib/code/native.ts';
 	import { newSession } from '#lib/stores/code.svelte.ts';
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import { errMessage } from '#lib/utils/error.ts';
@@ -18,9 +20,10 @@
 	let { open, onclose }: { open: boolean; onclose: () => void } = $props();
 
 	const onWindows = typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent);
+	const native = nativeWindowsCode();
 
 	let root = $state('');
-	/** Windows: the distro `root` is in. */
+	/** Windows: the distro `root` is in; `''` is This PC. */
 	let distro = $state('');
 	let distros = $state<string[] | null>(null);
 	let starting = $state(false);
@@ -40,8 +43,10 @@
 	async function loadDistros(): Promise<void> {
 		const list = await wslDistros();
 		distros = list;
+		if (native && distro === '') return;
 		if (!list.includes(distro)) {
-			distro = list[0] ?? '';
+			distro = native ? '' : (list[0] ?? '');
+			if (native) return;
 			if (!root.startsWith('/') && !root.startsWith('~')) root = '';
 		}
 	}
@@ -53,7 +58,7 @@
 			const dir = await openDialog({
 				directory: true,
 				multiple: false,
-				title: 'Choose a folder in WSL',
+				title: distro ? 'Choose a folder in WSL' : 'Choose a folder',
 				defaultPath: distro ? `\\\\wsl.localhost\\${distro}\\home` : undefined
 			});
 			if (typeof dir !== 'string') return;
@@ -84,18 +89,23 @@
 <Modal {open} maxWidth={460} title="New session" dismissable {onclose}>
 	{#if onWindows}
 		<p class="help">
-			Pick a project folder inside WSL. The session works in it and can't leave it.
+			{native
+				? "Pick a project folder on this PC or in WSL. The session works in it and can't leave it."
+				: "Pick a project folder inside WSL. The session works in it and can't leave it."}
 		</p>
-		{#if distros && distros.length === 0}
+		{#if !native && distros && distros.length === 0}
 			<p class="error">No WSL2 distro found. Install one with <code>wsl --install</code>.</p>
 		{:else}
 			<div class="folder-row">
 				<select
-					aria-label="WSL distro"
-					title="The WSL distro the folder is in"
+					aria-label={native ? 'Location' : 'WSL distro'}
+					title={native ? 'Where the folder is' : 'The WSL distro the folder is in'}
 					bind:value={distro}
-					disabled={!distros}
+					disabled={!native && !distros}
 				>
+					{#if native}
+						<option value="">This PC (Windows)</option>
+					{/if}
 					{#each distros ?? [] as d (d)}
 						<option value={d}>{d}</option>
 					{/each}
@@ -103,7 +113,7 @@
 				<input
 					class="path-input"
 					aria-label="Folder"
-					placeholder="~/project"
+					placeholder={distro ? '~/project' : 'C:\\Users\\you\\project'}
 					spellcheck="false"
 					bind:value={root}
 					onkeydown={(e) => {
@@ -112,7 +122,7 @@
 				/>
 				<button class="btn" onclick={() => void browse()}>Browse…</button>
 			</div>
-			{#if root.startsWith('/mnt/')}
+			{#if distro && root.startsWith('/mnt/')}
 				<p
 					class="note"
 					title="Files under /mnt are on Windows; WSL reaches them over a slow bridge."
