@@ -23,9 +23,8 @@ Turn on **Allow sending** for an account and fill in its SMTP server (filled in 
 
 Settings → Integrations → Calendar & Contacts. Access is read-only: the assistant can list and search events and look up contacts, but never creates, changes or deletes anything.
 
-- **Sign in with Google** opens Google in your browser. Haruspex asks only to read your calendars and contacts. You may see an "unverified app" screen first. **Remove** also revokes access at Google.
 - **Add a server account** is for CalDAV/CardDAV servers such as Nextcloud, Fastmail, iCloud, Radicale, Baikal and Synology. Enter your address or server URL, username and app password, then click **Check** to list your calendars and address books. If your server is not found, fill in **Calendar URL** or **Contacts URL** by hand.
-- **Add a calendar link** takes an iCal address (`https://…` or `webcal://…`). One link is one calendar, with no contacts. Anyone with the link can read the calendar, so Haruspex stores it like a password.
+- **Add a calendar link** takes an iCal address (`https://…` or `webcal://…`). One link is one calendar, with no contacts. Anyone with the link can read the calendar, so Haruspex stores it like a password. This is how to add a Google Calendar; Haruspex can't read Google Contacts yet.
 
 To find the link:
 

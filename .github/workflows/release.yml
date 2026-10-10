@@ -299,14 +299,20 @@ jobs:
 
       # Haruspex's Google OAuth desktop client, compiled in by build.rs so
       # releases offer "Sign in with Google". Kept out of git because secret
-      # scanning flags it; see docs/google-sign-in.md. Without the secret the
-      # build still succeeds and just offers no Google sign-in.
+      # scanning flags it; see docs/google-sign-in.md. Without it the build
+      # still succeeds and just offers no Google sign-in.
+      #
+      # Off until Google verifies the OAuth app (#388): set the GOOGLE_SIGN_IN
+      # repository variable to `true` to ship it.
       - name: Write Google OAuth client
         shell: bash
         env:
           GOOGLE_OAUTH_JSON: ${{ secrets.GOOGLE_OAUTH_JSON }}
+          GOOGLE_SIGN_IN: ${{ vars.GOOGLE_SIGN_IN }}
         run: |
-          if [ -n "$GOOGLE_OAUTH_JSON" ]; then
+          if [ "$GOOGLE_SIGN_IN" != "true" ]; then
+            echo "::notice::GOOGLE_SIGN_IN is not true; this release has no Google sign-in."
+          elif [ -n "$GOOGLE_OAUTH_JSON" ]; then
             printf '%s' "$GOOGLE_OAUTH_JSON" > src-tauri/google-oauth.json
           else
             echo "::warning::GOOGLE_OAUTH_JSON is not set; this release has no Google sign-in."
