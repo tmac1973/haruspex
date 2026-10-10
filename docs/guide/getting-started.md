@@ -10,11 +10,10 @@ Haruspex is a desktop AI app for research and coding that runs on your own compu
 ## What Haruspex does
 
 - **Runs the model locally by default.** Haruspex downloads a model that fits your graphics card and runs it itself. You do not need a separate server such as Ollama or LM Studio.
+- **Can use a bigger model elsewhere.** If your computer can't run the model you want, connect Haruspex to a server you already run (LM Studio, Ollama, vLLM, llama.cpp or any OpenAI-compatible server), or use hosted models through OpenRouter. See the `models` page.
 - **Keeps your data on your device.** Conversations and the model's answers are stored locally. Web searches do go out to the internet, and the optional cloud backend (OpenRouter) is off by default.
 - **Researches the web** for current information, and can read and write files in a folder you choose.
 - **Helps in a terminal**, and with Full access turned on, can edit files and run commands for you.
-
-You can also point it at a model server you already run, or at OpenRouter. See the `models` page.
 
 ## First run: the setup wizard
 
