@@ -39,7 +39,11 @@ client. `build.rs` compiles it in from `src-tauri/google-oauth.json`:
 Google does not treat a desktop client's secret as confidential, because it ships
 inside the app. It is still gitignored, because GitHub's secret scanning flags
 the `GOCSPX-` pattern. Release CI writes the file from the `GOOGLE_OAUTH_JSON`
-repository secret, which holds the same JSON.
+repository secret, which holds the same JSON, but only when the `GOOGLE_SIGN_IN`
+repository variable is `true`. It is unset until Google verifies the app, so
+releases ship without Google sign-in while local builds keep it. To turn it on:
+`gh variable set GOOGLE_SIGN_IN --body true`, then restore the **Sign in with
+Google** bullet in `docs/guide/integrations.md` and the README.
 
 A build without the file works, but doesn't offer Google sign-in. After adding
 the file to a checkout for the first time, `touch src-tauri/build.rs` so Cargo
