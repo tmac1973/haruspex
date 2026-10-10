@@ -30,6 +30,14 @@ export type EngineOp =
 	| { type: 'session.resync'; id: string }
 	/** A file in the session's folder, read-only: what the web client's viewer shows. */
 	| { type: 'session.readFile'; id: string; path: string }
+	| { type: 'chats.list' }
+	| { type: 'chat.get'; id: string }
+	| { type: 'chat.new' }
+	| { type: 'chat.send'; id: string; text: string }
+	| { type: 'chat.stop'; id: string }
+	| { type: 'chat.continue'; id: string }
+	| { type: 'chat.retry'; id: string }
+	| { type: 'chat.resync'; id: string }
 	| { type: 'prompts.list' }
 	| { type: 'prompts.answer'; promptId: string; answer: PromptAnswer };
 
@@ -83,7 +91,14 @@ export interface SessionListItem {
 	window: string | null;
 }
 
-export type PromptKind = 'command' | 'question' | 'mcp' | 'skill' | 'repo-trust';
+export type PromptKind =
+	| 'command'
+	| 'question'
+	| 'sandbox'
+	| 'memory'
+	| 'mcp'
+	| 'skill'
+	| 'repo-trust';
 
 /** Something a turn is waiting on a person for. */
 export interface Prompt {
@@ -92,6 +107,8 @@ export interface Prompt {
 	kind: PromptKind;
 	/** The Code session that asked, when known. */
 	sessionId: string | null;
+	/** The chat that asked (the sandbox and memory ask for the open chat). */
+	chatId?: string | null;
 	/** Only `command` and `question` can be answered away from the desktop (v1). */
 	answerable: boolean;
 	/** Who is asking, as the modal says it. */
@@ -102,7 +119,9 @@ export interface Prompt {
 
 export type PromptAnswer =
 	| { kind: 'command'; choice: 'allow_once' | 'allow_session' | 'deny' }
-	| { kind: 'question'; answer: UserAnswer };
+	| { kind: 'question'; answer: UserAnswer }
+	| { kind: 'sandbox'; choice: 'allow_once' | 'allow_chat' | 'deny' }
+	| { kind: 'memory'; choice: 'allow_once' | 'allow_session' | 'deny' };
 
 /**
  * What a session did. `seq` counts per session, so a client that sees a gap
@@ -123,13 +142,59 @@ export type PromptEvent = { seq: number; sessionId: string | null } & (
 	| { type: 'prompt-cleared'; promptId: string }
 );
 
-export type EngineEvent = (SessionEvent | PromptEvent) & {
+/** One row of `chats.list`. */
+export interface ChatListItem {
+	id: string;
+	title: string;
+	updatedAt: number;
+	/** The chat open on the desktop: the only one a turn can run in. */
+	open: boolean;
+	busy: boolean;
+}
+
+/** A chat as a client holds it. Turn fields are live only for the open chat. */
+export interface ChatState {
+	id: string;
+	title: string;
+	messages: ChatMessage[];
+	messageSteps: Record<number, SearchStep[]>;
+	messageStats: Record<number, unknown>;
+	messageStops: Record<number, unknown>;
+	open: boolean;
+	busy: boolean;
+	waitingForSlot: boolean;
+	compacting: boolean;
+	streamingContent: string;
+	searchSteps: SearchStep[];
+	error: string | null;
+	lastTurnFailed: boolean;
+	contextUsage: { promptTokens: number; completionTokens: number } | null;
+	workingDir: string | null;
+	memoryEnabled: boolean;
+}
+
+/**
+ * What a chat did: a whole snapshot, or a patch of the fields that changed.
+ * `seq` counts per chat, as for sessions.
+ */
+export type ChatEvent = { seq: number; chatId: string } & (
+	| { type: 'chat-snapshot'; state: ChatState }
+	| { type: 'chat-update'; patch: Partial<ChatState> }
+);
+
+export type EngineEvent = (SessionEvent | PromptEvent | ChatEvent) & {
 	/** Stamped by Rust: the window the event came from. */
 	window?: string;
 };
 
+const SESSION_EVENTS = new Set(['snapshot', 'status', 'live', 'steps', 'meta', 'closed']);
+
 export function isSessionEvent(e: EngineEvent): e is SessionEvent & { window?: string } {
-	return e.type !== 'prompt' && e.type !== 'prompt-cleared';
+	return SESSION_EVENTS.has(e.type);
+}
+
+export function isChatEvent(e: EngineEvent): e is ChatEvent & { window?: string } {
+	return e.type === 'chat-snapshot' || e.type === 'chat-update';
 }
 
 /** `session.readFile`'s answer. */

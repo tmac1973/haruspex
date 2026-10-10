@@ -43,6 +43,10 @@ A long-lived app, driven step by step:
   api-events [--seconds N]  the owner API's event stream for N seconds (--api only)
   web-url                   a one-time link that opens the web client (--api only)
   click <selector>          click something in the main window (CSS, or button=Text)
+  chats                     the desktop's chats (through the engine)
+  chat-send <id|new> <text> [--wait]
+                            send in a chat through the engine (new starts one)
+  chat-state <id>           a chat, as the engine reads it
   access tokens|trusted|lan [HOST…]
                             who may connect without a token (--api only)
   logs [--since N]          agent debug log lines from N on
@@ -303,6 +307,9 @@ async function daemon(opts) {
 		'web-url': () => app.webUrl(),
 		access: (a) => app.access(a.mode, a.hosts),
 		click: (a) => app.click(a.selector),
+		chats: () => app.engine({ type: 'chats.list' }),
+		'chat-send': (a) => app.chatSend(a.id, a.text, { wait: a.wait, ...turnOpts(a) }),
+		'chat-state': (a) => app.engine({ type: 'chat.get', id: a.id }),
 		consistent: (a) => app.consistent(a.id),
 		state: (a) => app.state(a.id, { asTranscript: a.transcript }),
 		logs: (a) => app.logs(a.since),
@@ -396,6 +403,20 @@ async function client(cmd, values, positionals) {
 			args = { seconds: Number(values.seconds) };
 			timeoutMs = (Number(values.seconds) + 30) * 1000;
 			break;
+		case 'chat-send':
+			need(2, 'a chat id (or new) and a message');
+			args = {
+				id: positionals[0],
+				text: positionals.slice(1).join(' '),
+				wait: values.wait,
+				timeout: timeoutS
+			};
+			if (values.wait) timeoutMs = (timeoutS + 60) * 1000;
+			break;
+		case 'chat-state':
+			need(1, 'a chat id');
+			args = { id: positionals[0] };
+			break;
 		case 'click':
 			need(1, 'a selector');
 			args = { selector: positionals.join(' ') };
@@ -465,6 +486,9 @@ const CLIENT_COMMANDS = new Set([
 	'web-url',
 	'access',
 	'click',
+	'chats',
+	'chat-send',
+	'chat-state',
 	'stop'
 ]);
 
