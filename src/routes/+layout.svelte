@@ -63,6 +63,7 @@
 	import { onMount } from 'svelte';
 	import { syncRemoteServer } from '#lib/remote/service.ts';
 	import { startEngine } from '#lib/engine/index.ts';
+	import { syncOwnerApi } from '#lib/owner/service.ts';
 	import { messageText, type ChatMessage } from '#lib/api.ts';
 	import { installMarkdownActions } from '#lib/markdown-actions.ts';
 	import {
@@ -296,6 +297,9 @@
 		// this: the driver answers a process-wide event, so a second listener
 		// in a detached shell would race it for every guest prompt.
 		void syncRemoteServer();
+		// Settings → Remote control, if it is on. Main window only, like
+		// remote chat: one server for the app.
+		void syncOwnerApi();
 
 		try {
 			version = await getVersion();

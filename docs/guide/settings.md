@@ -9,7 +9,7 @@ Settings has fifteen sections, listed down the left side. Each one below gives t
 
 ## Open Settings
 
-Click the gear button at the right of the header. Click it again, or press **← Back**, to close it. There is no keyboard shortcut for it. Settings remembers the last section you opened.
+Click the gear button at the right of the header; click it again, or **← Back**, to close it. There is no shortcut for it. Settings remembers the last section you opened.
 
 ## General
 
@@ -29,8 +29,8 @@ Where the model runs, which model is used and how big the context is.
 - **Models**: download and switch local models.
 - **Context Size**: 32K by default (8K to 256K).
 - **Let models use system RAM**: off.
-- **Parallel streams**: 1 (also 2 or 4). More lets a background job run beside chat. Each stream gets the full context size, so it needs more memory and larger sizes may grey out, and replies are slower while two run.
-- **Extra llama-server arguments**: empty. For advanced users: added after Haruspex's own arguments, so they override them. Takes effect when the server restarts.
+- **Parallel streams**: 1 (also 2 or 4). More lets a background job run beside chat. Each stream gets the full context size, so it needs more memory (larger sizes may grey out), and replies slow while two run.
+- **Extra llama-server arguments**: empty. Added after Haruspex's own arguments, so they override them. Takes effect when the server restarts.
 - **Server**: status, port and Restart Server; **Run Setup Wizard**.
 
 See the `models` page.
@@ -145,7 +145,7 @@ See the `code` page.
 
 Where pictures are generated, if anywhere.
 
-- **Backend**: None (default), ComfyUI or Bundled engine. Nothing is downloaded or started until you pick one. Bundled engine is missing on systems that can't run it.
+- **Backend**: None (default), ComfyUI or Bundled engine. Nothing is downloaded or started until you pick one. Bundled engine is hidden where it can't run.
 
 See the `images` page.
 
@@ -158,6 +158,12 @@ Let people on your network chat with this Haruspex.
 - Once it is on: a link and QR code to share, and a list of guests you can disconnect.
 
 See the `remote-access` page.
+
+## Remote control
+
+Drive your Code sessions from your own devices. Off; port 8788.
+
+See the `remote-control` page.
 
 ## Feedback
 

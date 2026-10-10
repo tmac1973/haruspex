@@ -335,6 +335,10 @@ export class App {
 		await sleep(500);
 		await this.waitForHooks();
 		if (o.verbosePayloads) await this.call('setVerbosePayloads', true);
+		if (o.api) {
+			this.api = await this.call('ownerApi', await freePort());
+			this.log(`owner API at ${this.api.base}`);
+		}
 	}
 
 	/** Sessions open in the main window, as its drive hook reads them. */
@@ -342,9 +346,54 @@ export class App {
 		return this.call('codeSessions');
 	}
 
-	/** Run an engine operation, through Rust, in whichever window has the session. */
+	/**
+	 * Run an engine operation in whichever window has the session: through
+	 * the owner API over HTTP when started with `--api`, else through Rust
+	 * from the page.
+	 */
 	async engine(op) {
-		return this.call('engine', op);
+		if (!this.api) return this.call('engine', op);
+		const r = await fetch(`${this.api.base}/api/v1/op`, {
+			method: 'POST',
+			headers: { Authorization: `Bearer ${this.api.token}`, 'Content-Type': 'application/json' },
+			body: JSON.stringify(op)
+		});
+		const body = await r.json().catch(() => ({}));
+		if (!r.ok) throw new Error(`${op.type}: HTTP ${r.status}: ${body.error ?? 'no reason given'}`);
+		return body.value;
+	}
+
+	/** Read the owner API's event stream for `seconds`. */
+	async apiEvents(seconds = 3) {
+		if (!this.api) throw new Error('api-events needs a driver started with --api');
+		const ac = new AbortController();
+		const timer = setTimeout(() => ac.abort(), seconds * 1000);
+		const events = [];
+		try {
+			const r = await fetch(`${this.api.base}/api/v1/events`, {
+				headers: { Authorization: `Bearer ${this.api.token}` },
+				signal: ac.signal
+			});
+			if (!r.ok) throw new Error(`events: HTTP ${r.status}`);
+			const decoder = new TextDecoder();
+			let buf = '';
+			for await (const chunk of r.body) {
+				buf += decoder.decode(chunk, { stream: true });
+				let i;
+				while ((i = buf.indexOf('\n\n')) >= 0) {
+					const frame = buf.slice(0, i);
+					buf = buf.slice(i + 2);
+					for (const line of frame.split('\n')) {
+						if (line.startsWith('data:')) events.push(JSON.parse(line.slice(5)));
+					}
+				}
+			}
+		} catch (e) {
+			if (e.name !== 'AbortError') throw e;
+		} finally {
+			clearTimeout(timer);
+		}
+		return events;
 	}
 
 	/** A session in any window, through the engine. */

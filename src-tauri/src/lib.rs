@@ -25,6 +25,7 @@ mod lint;
 mod memory;
 mod models;
 mod orphans;
+mod owner;
 mod power;
 mod proxy;
 mod remote;
@@ -109,10 +110,11 @@ pub fn run() {
                 secrets::init(dir);
             }
             app.manage(ModelManager::new(app.handle())?);
-            // Other clients' way into Code sessions (plan/remote-api/). Only
-            // the e2e test build turns it on until the owner API lands.
+            // Other clients' way into Code sessions (plan/remote-api/): the
+            // owner API switches it on while it runs; the e2e build keeps it on.
             let e2e = app.config().identifier.ends_with(".e2e");
             app.manage(engine::EngineHub::new(e2e));
+            app.manage(owner::OwnerApi::load(app.path().app_data_dir().ok()));
             // Files open in editor windows; nothing is watched until one opens.
             app.manage(fs_tools::editor::editor_watches(app.handle()));
             let database = Database::new(app.handle())
@@ -463,6 +465,11 @@ pub fn run() {
             engine::engine_request,
             engine::engine_reply,
             engine::engine_events,
+            owner::commands::owner_api_apply,
+            owner::commands::owner_api_status,
+            owner::commands::owner_clients_list,
+            owner::commands::owner_client_create,
+            owner::commands::owner_client_revoke,
             code_tools::folders::code_lease_take,
             code_tools::folders::code_lease_release,
             code_tools::folders::code_notice_record,

@@ -41,11 +41,27 @@ export function batcher(send: (events: EngineEvent[]) => void): (e: EngineEvent)
 
 let started = false;
 
+/**
+ * Start this window's engine, now if Rust has it on, else when it is switched
+ * on (the owner API starting: `engine://enabled`), so turning Settings →
+ * Remote control on needs no restart. Switching off leaves it running: Rust
+ * drops what it sends while off, and it costs a few watchers.
+ */
 export async function startEngine(): Promise<void> {
-	if (started) return;
 	const label = getCurrentWindow().label;
 	if (!isEngineWindow(label)) return;
-	if (!(await invoke<boolean>('engine_enabled').catch(() => false))) return;
+	// Listening before asking, so a switch-on between the two isn't missed.
+	const stop = await listen<boolean>('engine://enabled', ({ payload }) => {
+		if (payload) void run(label).then(stop);
+	});
+	if (await invoke<boolean>('engine_enabled').catch(() => false)) {
+		stop();
+		await run(label);
+	}
+}
+
+async function run(label: string): Promise<void> {
+	if (started) return;
 	started = true;
 
 	const sink = batcher((events) => {

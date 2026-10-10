@@ -24,6 +24,7 @@ import {
 	type EngineOp,
 	type SessionState
 } from '#lib/engine/types.ts';
+import { applyOwnerApi, createOwnerClient, ALL_SCOPES } from '#lib/owner/service.ts';
 import { pickProbedModel, probedModelCaps, type ProbeResult } from '#lib/inferenceProbe.ts';
 import { getOpenSessions, setActiveSession } from '#lib/stores/code.svelte.ts';
 import {
@@ -57,6 +58,11 @@ export interface DriveHooks {
 	engineEvents: (since: number) => { events: EngineEvent[]; next: number };
 	/** The session as its logged events rebuild it, as a client elsewhere would. */
 	engineMirror: (id: string) => Mirror;
+	/**
+	 * Turn Settings → Remote control on, on this computer only at `port`, and
+	 * add a device with every permission: what `drive start --api` drives.
+	 */
+	ownerApi: (port: number) => Promise<{ base: string; token: string }>;
 	updateSettings: (patch: Partial<AppSettings>) => void;
 	probeRemote: (
 		baseUrl: string,
@@ -144,6 +150,12 @@ export function installDriveHooks(): void {
 				.filter(isSessionEvent)
 				.filter((e) => e.sessionId === id)
 				.reduce(reduce, emptyMirror()),
+		ownerApi: async (port) => {
+			updateSettings({ ownerApiEnabled: true, ownerApiPort: port, ownerApiBindAll: false });
+			const status = await applyOwnerApi();
+			const { token } = await createOwnerClient('drive', ALL_SCOPES);
+			return { base: `http://127.0.0.1:${status.port}`, token };
+		},
 		updateSettings,
 		probeRemote
 	};

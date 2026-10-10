@@ -1,0 +1,135 @@
+//! Settings → Remote control's commands: start and stop the owner API, and
+//! add and revoke devices.
+
+use std::sync::Arc;
+
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, Manager};
+
+use super::clients::{OwnerClient, Scope};
+use super::server;
+use super::{AppDispatch, OwnerApi};
+use crate::engine::{EngineHub, EVENT_ENABLED};
+use crate::sync_util::LockExt;
+
+/// What Settings → Remote control asks for.
+#[derive(Clone, Debug, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct OwnerApiConfig {
+    pub enabled: bool,
+    pub port: u16,
+    /// Listen on every network, not just this computer.
+    pub bind_all: bool,
+}
+
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct OwnerApiStatus {
+    pub running: bool,
+    pub port: Option<u16>,
+    pub bind_all: bool,
+    /// Where another device reaches it: this computer's network address when
+    /// listening on all networks, else loopback.
+    pub address: Option<String>,
+}
+
+/// A new device and its token, which is never shown again.
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct CreatedOwnerClient {
+    pub client: OwnerClient,
+    pub token: String,
+}
+
+fn status(api: &OwnerApi) -> OwnerApiStatus {
+    let running = api.running.lock_or_recover();
+    match running.as_ref() {
+        Some(r) => OwnerApiStatus {
+            running: true,
+            port: Some(r.port),
+            bind_all: r.bind_all,
+            address: Some(if r.bind_all {
+                crate::remote::link::lan_address()
+                    .map(|ip| ip.to_string())
+                    .unwrap_or_else(|| "127.0.0.1".into())
+            } else {
+                "127.0.0.1".into()
+            }),
+        },
+        None => OwnerApiStatus {
+            running: false,
+            port: None,
+            bind_all: false,
+            address: None,
+        },
+    }
+}
+
+/// Switch the engine to match the server, and tell every window if it changed.
+fn set_engine(app: &AppHandle, on: bool) {
+    if app.state::<EngineHub>().set_enabled(on) {
+        let _ = app.emit(EVENT_ENABLED, app.state::<EngineHub>().enabled());
+    }
+}
+
+/// Start, restart or stop the API to match `config`.
+#[tauri::command]
+pub async fn owner_api_apply(
+    app: AppHandle,
+    config: OwnerApiConfig,
+) -> Result<OwnerApiStatus, String> {
+    let api = app.state::<OwnerApi>();
+    {
+        let running = api.running.lock_or_recover();
+        if let Some(r) = running.as_ref() {
+            if config.enabled && r.port == config.port && r.bind_all == config.bind_all {
+                drop(running);
+                return Ok(status(&api));
+            }
+        }
+    }
+    if let Some(r) = api.running.lock_or_recover().take() {
+        r.stop();
+    }
+    if !config.enabled {
+        if let Ok(clients) = api.clients() {
+            clients.flush();
+        }
+        set_engine(&app, false);
+        return Ok(status(&api));
+    }
+    let clients = api.clients()?;
+    let dispatch = Arc::new(AppDispatch(app.clone()));
+    let running = server::start(dispatch, clients, config.port, config.bind_all).await?;
+    *api.running.lock_or_recover() = Some(running);
+    set_engine(&app, true);
+    Ok(status(&api))
+}
+
+#[tauri::command]
+pub fn owner_api_status(api: tauri::State<'_, OwnerApi>) -> OwnerApiStatus {
+    status(&api)
+}
+
+#[tauri::command]
+pub fn owner_clients_list(api: tauri::State<'_, OwnerApi>) -> Result<Vec<OwnerClient>, String> {
+    Ok(api.clients()?.list())
+}
+
+#[tauri::command]
+pub fn owner_client_create(
+    api: tauri::State<'_, OwnerApi>,
+    name: String,
+    scopes: Vec<Scope>,
+) -> Result<CreatedOwnerClient, String> {
+    let (client, token) = api.clients()?.create(&name, &scopes)?;
+    Ok(CreatedOwnerClient { client, token })
+}
+
+#[tauri::command]
+pub fn owner_client_revoke(api: tauri::State<'_, OwnerApi>, id: String) -> Result<bool, String> {
+    api.clients()?.revoke(&id)
+}

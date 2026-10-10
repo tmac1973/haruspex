@@ -40,6 +40,7 @@ A long-lived app, driven step by step:
   detach <id>               move the session to its own window (the tab's ⤢)
   events [--since N]        engine events from every window; "next" is the next --since
   consistent <id>           whether the session's events rebuild what session.get says
+  api-events [--seconds N]  the owner API's event stream for N seconds (--api only)
   logs [--since N]          agent debug log lines from N on
   screenshot [PATH]
   minimise | restore        the app window
@@ -60,6 +61,8 @@ Options for run and start:
   --verbose-payloads   log whole request bodies in debug.log, not digests
   --auto-approve / --no-auto-approve
                        Settings → Code → auto-approve (default: on for run, off for start)
+  --api                start: turn Settings → Remote control on and send every engine
+                       operation over its HTTP API (--via engine, approve, state…)
   --idle-timeout MIN   start: stop after this long with no commands and no turn running
                        (default 60; 0 never)
 Options for send, steer, cancel and approve:
@@ -83,6 +86,8 @@ const OPTIONS = {
 	wait: { type: 'boolean', default: false },
 	transcript: { type: 'boolean', default: false },
 	via: { type: 'string', default: 'ui' },
+	api: { type: 'boolean', default: false },
+	seconds: { type: 'string', default: '3' },
 	since: { type: 'string', default: '0' },
 	'auto-approve': { type: 'boolean' },
 	'no-auto-approve': { type: 'boolean' },
@@ -115,7 +120,8 @@ function appOptions(values, defaultAutoApprove) {
 		outDir: values.out ? resolve(values.out) : join(ROOT, 'e2e', 'drive-output', stamp),
 		show: values.show,
 		autoApprove: values['no-auto-approve'] ? false : (values['auto-approve'] ?? defaultAutoApprove),
-		verbosePayloads: values['verbose-payloads']
+		verbosePayloads: values['verbose-payloads'],
+		api: values.api
 	};
 }
 
@@ -272,6 +278,7 @@ async function daemon(opts) {
 		baseUrl: app.meta.baseUrl,
 		display: app.display,
 		autoApprove: opts.autoApprove,
+		api: app.api?.base ?? null,
 		// Open in any window.
 		sessions: (await app.engine({ type: 'sessions.list' })).filter((s) => s.status)
 	});
@@ -288,6 +295,7 @@ async function daemon(opts) {
 		approve: (a) => app.approve(a.choice, { via: a.via }),
 		detach: (a) => app.detach(a.id),
 		events: (a) => app.events(a.since),
+		'api-events': (a) => app.apiEvents(a.seconds),
 		consistent: (a) => app.consistent(a.id),
 		state: (a) => app.state(a.id, { asTranscript: a.transcript }),
 		logs: (a) => app.logs(a.since),
@@ -377,6 +385,10 @@ async function client(cmd, values, positionals) {
 		case 'events':
 			args = { since: Number(values.since) };
 			break;
+		case 'api-events':
+			args = { seconds: Number(values.seconds) };
+			timeoutMs = (Number(values.seconds) + 30) * 1000;
+			break;
 		case 'approve':
 			need(1, 'allow, allow-session or deny');
 			args = { choice: positionals[0], via: values.via };
@@ -434,6 +446,7 @@ const CLIENT_COMMANDS = new Set([
 	'detach',
 	'events',
 	'consistent',
+	'api-events',
 	'stop'
 ]);
 
