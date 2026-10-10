@@ -1,5 +1,19 @@
-import { describe, it, expect } from 'vitest';
-import { remapIndexedRecords } from './compaction';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { ChatMessage } from '#lib/api.ts';
+
+const mocks = vi.hoisted(() => ({ chatCompletion: vi.fn(), contextSize: 16384 }));
+
+vi.mock('#lib/api.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/api.ts')>()),
+	chatCompletion: mocks.chatCompletion
+}));
+vi.mock('#lib/inference/descriptor.ts', () => ({
+	resolveBackendDescriptor: () => ({ contextSize: mocks.contextSize })
+}));
+vi.mock('#lib/stores/settings.ts', () => ({ getChatTemplateKwargs: () => ({}) }));
+
+import { SUMMARY_PREFIX, compactConversation, remapIndexedRecords } from './compaction';
+import { estimateMessagesTokens, resetTokenCalibration } from './context-budget';
 
 describe('remapIndexedRecords', () => {
 	const msgs = ['m0', 'm1', 'm2', 'm3', 'm4'].map((c) => ({ content: c }));
@@ -29,5 +43,61 @@ describe('remapIndexedRecords', () => {
 	it('is identity when the array is unchanged', () => {
 		const records = { 1: 'a', 3: 'b' };
 		expect(remapIndexedRecords(msgs, msgs, records)).toEqual(records);
+	});
+});
+
+describe('compactConversation', () => {
+	const chat = (n: number, size: number): ChatMessage[] =>
+		Array.from({ length: n }, (_, i) => ({
+			role: i % 2 === 0 ? ('user' as const) : ('assistant' as const),
+			content: `message ${i} ` + 'x'.repeat(size)
+		}));
+
+	beforeEach(() => {
+		resetTokenCalibration();
+		mocks.contextSize = 16384;
+		mocks.chatCompletion.mockReset();
+	});
+
+	it('leaves a short chat alone, without a model call', async () => {
+		expect(await compactConversation(chat(8, 100))).toEqual({ summary: '', removedCount: 0 });
+		expect(mocks.chatCompletion).not.toHaveBeenCalled();
+	});
+
+	it('summarises a chat far longer than the window, every request fitting it', async () => {
+		let n = 0;
+		mocks.chatCompletion.mockImplementation(async () => ({ content: `Summary ${++n}.` }));
+		// ~60 messages of ~1.1K tokens each: several windows' worth.
+		const messages = chat(68, 4000);
+		const { summary, removedCount } = await compactConversation(messages);
+		expect(removedCount).toBe(60);
+		expect(mocks.chatCompletion.mock.calls.length).toBeGreaterThan(1);
+		expect(summary).toBe(`Summary ${n}.`);
+		for (const [req] of mocks.chatCompletion.mock.calls) {
+			expect(estimateMessagesTokens(req.messages) * 1.5 + req.max_tokens).toBeLessThanOrEqual(
+				16384
+			);
+		}
+		// The last 8 messages are kept, not summarised.
+		const sent = mocks.chatCompletion.mock.calls.map(([r]) => String(r.messages[1].content));
+		expect(sent.some((t) => t.includes('message 59 '))).toBe(true);
+		expect(sent.some((t) => t.includes('message 60 '))).toBe(false);
+	});
+
+	it('carries an earlier summary into the new one', async () => {
+		mocks.chatCompletion.mockResolvedValue({ content: 'Both parts.' });
+		const messages: ChatMessage[] = [
+			{ role: 'system', content: `${SUMMARY_PREFIX}\nThe first part.` },
+			...chat(12, 100)
+		];
+		await compactConversation(messages);
+		expect(String(mocks.chatCompletion.mock.calls[0][0].messages[1].content)).toContain(
+			'The first part.'
+		);
+	});
+
+	it('throws when the model call fails, for the caller to carry on without', async () => {
+		mocks.chatCompletion.mockRejectedValue(new Error('exceed_context_size_error'));
+		await expect(compactConversation(chat(12, 100))).rejects.toThrow('exceed_context_size');
 	});
 });

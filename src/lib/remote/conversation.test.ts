@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#lib/agent/compaction.ts', () => ({
+	SUMMARY_PREFIX: '[Earlier conversation summary]',
 	compactConversation: mocks.compactConversation,
 	shouldCompact: mocks.shouldCompact
 }));

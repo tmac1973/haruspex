@@ -16,7 +16,12 @@ import {
 } from '#lib/agent/loop.ts';
 import { withInferenceSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 import { markStepDone, markStepProgress, newRunningStep } from '#lib/agent/steps.ts';
-import { shouldCompact, compactConversation, remapIndexedRecords } from '#lib/agent/compaction.ts';
+import {
+	shouldCompact,
+	compactConversation,
+	remapIndexedRecords,
+	SUMMARY_PREFIX
+} from '#lib/agent/compaction.ts';
 import {
 	estimateMessagesTokens,
 	describeContextManaged,
@@ -584,9 +589,19 @@ async function compactIfNeeded(): Promise<void> {
 		// Summarising is a model call like any other, so it queues for the
 		// same inference slot: otherwise it runs straight past a job or
 		// memory pass that holds the local server's only stream.
-		const { summary, removedCount } = await withInferenceSlot({ consumer: 'chat' }, () =>
-			compactConversation(conversation.messages)
-		);
+		let summary: string;
+		let removedCount: number;
+		try {
+			({ summary, removedCount } = await withInferenceSlot({ consumer: 'chat' }, () =>
+				compactConversation(conversation.messages)
+			));
+		} catch (e) {
+			// The send goes on without a summary: the pre-send context fit
+			// still keeps the prompt inside the window. Throwing here failed the
+			// message the user had just typed.
+			logDebug('chat', 'compaction failed', { error: errMessage(e) });
+			return;
+		}
 		if (!summary || removedCount === 0) return;
 
 		const remaining = conversation.messages.filter(
@@ -595,7 +610,7 @@ async function compactIfNeeded(): Promise<void> {
 		const kept = remaining.slice(remaining.length - 8);
 		const summaryMsg: ChatMessage = {
 			role: 'system',
-			content: `[Earlier conversation summary]\n${summary}`
+			content: `${SUMMARY_PREFIX}\n${summary}`
 		};
 		const newMessages: ChatMessage[] = [summaryMsg, ...kept];
 
