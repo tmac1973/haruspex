@@ -13,6 +13,16 @@
 #[cfg(windows)]
 pub use imp::Job;
 
+/// For a command under a job's memory limit. .NET, PowerShell 7 among it,
+/// reads the limit and caps its own heap at three quarters of it, failing
+/// there with an OutOfMemoryException that a PowerShell loop catches and
+/// carries on past, so Windows never sees the limit reached. Let it use the
+/// whole limit: the job's own then trips first and the command is ended.
+pub fn let_dotnet_reach_the_limit(cmd: &mut tokio::process::Command) {
+    // Hex, as .NET reads it: 0x64 is 100%.
+    cmd.env("DOTNET_GCHeapHardLimitPercent", "64");
+}
+
 #[cfg(not(windows))]
 #[derive(Debug)]
 pub struct Job;

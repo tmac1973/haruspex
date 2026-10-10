@@ -262,6 +262,9 @@ pub async fn run_command_capture(
     } else {
         job::Job::new(limit).map(Arc::new)
     };
+    if job.is_some() && limit.is_some() {
+        job::let_dotnet_reach_the_limit(&mut cmd);
+    }
     hide_window(&mut cmd);
     // Never for a WSL relay: see `wsl::GroupState`.
     cmd.stdin(Stdio::null())
@@ -820,8 +823,17 @@ Linux
                 Some(1),
             )
             .await;
-            assert!(res.out_of_memory, "{res:?}");
-            assert!(!res.killed);
+            let summary = format!(
+                "exit {:?}, killed {}, oom {}, limit {:?} MB, {} ms, stderr {:?}",
+                res.exit_code,
+                res.killed,
+                res.out_of_memory,
+                res.memory_limit_mb,
+                res.duration_ms,
+                res.stderr.chars().take(300).collect::<String>()
+            );
+            assert!(res.out_of_memory, "{summary}");
+            assert!(!res.killed, "{summary}");
             assert!(res.memory_limit_mb.is_some());
         }
 
