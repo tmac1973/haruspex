@@ -14,14 +14,13 @@
 	import { stepLabel, stepIcon } from './searchStepLabels';
 	import hljs from 'highlight.js/lib/core';
 	import python from 'highlight.js/lib/languages/python';
-	import { rerunSandboxStep, cancelActiveSandboxRun } from '#lib/stores/chat.svelte.ts';
 	import { createKeyedCopyAction } from '#lib/utils/clipboard.svelte.ts';
-	import { isToolErrorResult } from '#lib/agent/tools/_helpers.ts';
+	import { isToolErrorResult } from '#lib/agent/tools/toolResult.ts';
 	import { sanitizeHtml } from '#lib/sanitize.ts';
 	import ImageViewerModal from './ImageViewerModal.svelte';
 	import ArtifactFrame from './ArtifactFrame.svelte';
 	import MemoryRecallStep from './MemoryRecallStep.svelte';
-	import { MEMORY_RECALL_STEP } from '#lib/agent/memory/recall.ts';
+	import { MEMORY_RECALL_STEP } from '#lib/agent/memory/stepName.ts';
 	import { splitGrepLine } from '#lib/code/paths.ts';
 
 	hljs.registerLanguage('python', python);
@@ -76,14 +75,17 @@
 		});
 	}
 
+	// The chat store only on click: the sandbox's steps are a chat feature, and
+	// importing it up front puts the whole agent in every bundle that shows a
+	// step, the web client's included.
 	function rerunStep(step: SearchStep, event: MouseEvent) {
 		event.stopPropagation();
-		void rerunSandboxStep(step.id);
+		void import('#lib/stores/chat.svelte.ts').then((chat) => chat.rerunSandboxStep(step.id));
 	}
 
 	function cancelStep(event: MouseEvent) {
 		event.stopPropagation();
-		cancelActiveSandboxRun();
+		void import('#lib/stores/chat.svelte.ts').then((chat) => chat.cancelActiveSandboxRun());
 	}
 
 	const copyAction = createKeyedCopyAction();
