@@ -54,7 +54,7 @@ tab never kills a turn.
 | 5   | Off by default                        | **Yes**, and loopback-only until the owner picks another bind address.                                                                       |
 | 6   | First test surface                    | **The driver from `code-tab/dev-driver`**, extended, rather than a new HTTP bridge.                                                          |
 | 7   | First remote surface                  | **The Code tab.** Chat comes in phase 5 because its store holds one active conversation.                                                     |
-| 8   | Web client UI                         | **The real Svelte components**, not a second UI, so the two can't drift.                                                                     |
+| 8   | Web client UI | **Shared render pieces, its own shell** (narrowed 2026-10-09): markdown, steps, command and diff cards are shared; the session list, composer and prompt cards are the web client's own. Full reuse would have meant forwarding raw Tauri commands or refactoring the desktop Code tab. See `phase-04-web-client.md`. |
 | 9   | Mobile                                | **PWA of the web client first.** A native app only if the PWA falls short.                                                                   |
 | 10  | The 9B model                          | **Not a constraint.** Build for capable models; document what works poorly on 9B. Scripted backends are for exact checks, not because of 9B. |
 | 11  | Desktop Code tab and the event stream | **The desktop keeps reading the store.** The engine watches it and emits events; a test proves they rebuild the same session.                |
