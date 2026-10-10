@@ -9,7 +9,8 @@ Three uses, in order:
 2. **Remote web client.** Haruspex runs on the owner's desktop. From another
    machine they open a browser and carry on with the same Code sessions:
    send prompts, approve commands, watch turns, read diffs.
-3. **Mobile.** The same, from a phone.
+3. **Mobile.** The same, from a phone. Deferred to `plan/futures.md`
+   (2026-10-09): desktop browsers first.
 
 Networking is the owner's business: we assume Tailscale, NetBird or similar.
 Routing, NAT traversal and relays are out of scope.
@@ -55,7 +56,7 @@ tab never kills a turn.
 | 6   | First test surface                    | **The driver from `code-tab/dev-driver`**, extended, rather than a new HTTP bridge.                                                                                                                                                                                                                                   |
 | 7   | First remote surface                  | **The Code tab.** Chat comes in phase 5 because its store holds one active conversation.                                                                                                                                                                                                                              |
 | 8   | Web client UI                         | **Shared render pieces, its own shell** (narrowed 2026-10-09): markdown, steps, command and diff cards are shared; the session list, composer and prompt cards are the web client's own. Full reuse would have meant forwarding raw Tauri commands or refactoring the desktop Code tab. See `phase-04-web-client.md`. |
-| 9   | Mobile                                | **PWA of the web client first.** A native app only if the PWA falls short.                                                                                                                                                                                                                                            |
+| 9   | Mobile                                | **Deferred** (2026-10-09) to `plan/futures.md`: the owner wants desktop browsers first. When it comes back: a PWA of the web client first, a native app only if that falls short.                                                                                                                                     |
 | 10  | The 9B model                          | **Not a constraint.** Build for capable models; document what works poorly on 9B. Scripted backends are for exact checks, not because of 9B.                                                                                                                                                                          |
 | 11  | Desktop Code tab and the event stream | **The desktop keeps reading the store.** The engine watches it and emits events; a test proves they rebuild the same session.                                                                                                                                                                                         |
 
@@ -84,7 +85,8 @@ tab never kills a turn.
   owner's GNOME desktop (`phase-01-driver.md`, `phase-02-engine-surface.md`).
 - **Secure context.** Microphone, clipboard and service workers need HTTPS
   off-loopback. `tailscale serve` gives a certificate; plain `http://` over a
-  tailnet will not. Phase 3 documents the setup; phase 6 depends on it.
+  tailnet will not. Phase 3 documents the setup; the deferred phone app depends
+  on it.
 - **Desktop-only tools.** `open_in_shell` waits for the owner to press Enter
   in a desktop Shell tab, and `open_in_editor` opens a desktop window. Neither
   makes sense from a phone. Phase 4 decides what a remote-started turn does

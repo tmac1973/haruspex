@@ -1,6 +1,8 @@
-# Phase 6 — Mobile (sketch)
+# Remote API — a phone app (deferred)
 
-**Depends on:** 4 · **Guide:** `remote-access` page
+Moved out of `plan/remote-api/` (it was phase 6) on 2026-10-09: the owner
+wants the web client from a desktop browser first. Builds on phase 4's web
+client, which already has a one-column phone layout. **Guide:** `remote-control`.
 
 - The web client, made installable: manifest, icons, a service worker that
   caches only the app shell (never session data). Needs HTTPS, so
