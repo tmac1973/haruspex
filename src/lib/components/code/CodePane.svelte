@@ -43,7 +43,13 @@
 				showToast(`Couldn't start a session: ${errMessage(e)}`, { kind: 'error' })
 			);
 		},
-		addNote: (text) => (notes = [...notes, { text, at: session.messages.length }])
+		addNote: (text) => (notes = [...notes, { text, at: session.messages.length }]),
+		compact: async (instructions) => {
+			// Success shows as the divider at the cut; a failure as the error.
+			if ((await session.compactNow(instructions)) === 'nothing') {
+				slashHost.addNote('Nothing to summarise yet: the conversation is still short.');
+			}
+		}
 	};
 </script>
 

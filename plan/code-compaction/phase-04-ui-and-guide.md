@@ -1,5 +1,23 @@
 # Phase 4 — UI, `/compact`, guide
 
+## As built
+
+- **Status text.** "Summarising earlier turns…" is a hint in the transcript,
+  driven by `session.compacting`. The header and tab strip show the status as
+  'running', as for any turn.
+- **Divider.** The divider is a `<details>` in the background-notice style.
+  It sits before `messages[compaction.at]`, so it is hidden while that message
+  is on an earlier page.
+- **`/compact`.** It is offered where the `SlashHost` has a `compact` hook,
+  which only `CodePane` gives. The command runs `CodeSession.compactNow`:
+  - it queues for the slot like a turn, and Stop cancels it;
+  - text typed meanwhile goes back to the input box;
+  - "nothing to summarise" is a note in the transcript;
+  - a failure goes to `lastError`.
+- **Guide.** `code-sessions` (5,905 bytes) covers the divider and `/compact`.
+  `skills` lists `/compact` with the other built-ins.
+
+
 **Depends on:** 3 · **Guide:** `code-sessions`, `shortcuts` if a slash list lives there, `chat` if `/compact` is shared
 
 ## Transcript (`CodeTranscript.svelte`)

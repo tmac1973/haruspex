@@ -15,7 +15,7 @@ Long sessions show their last 20 turns; **Show earlier** loads more.
 
 ## When a session gets long
 
-Once a session fills about three quarters of the model's context, Haruspex summarises its older turns before the next one, and the agent works from that summary and the recent turns. The conversation you see stays whole. File contents aren't kept in the summary, so the agent reads files again when it needs them.
+Once a session fills about three quarters of the model's context, Haruspex summarises its older turns before the next one, and the agent works from that summary and the recent turns. `/compact` does it now. The conversation you see stays whole; **Earlier turns summarised** marks the cut and opens the summary. File contents aren't kept, so the agent reads files again.
 
 ## Fork a session from a message
 

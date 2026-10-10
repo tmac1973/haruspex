@@ -7,7 +7,7 @@ session. The transcript the user scrolls through stays whole.
 See [`overview.md`](./overview.md) for the problem, the design, the decisions
 and the invariants.
 
-**Status:** Planned 2026-10-10. Phase 1 merged (#469); phases 2 and 3 in review.
+**Status:** Planned 2026-10-10. Phase 1 merged (#469); phases 2–4 in review (#471, #472, and the phase 4 PR).
 this (a turn losing its own tool calls after the fit dropped old turns) is
 fixed separately in `55eabf61`.
 

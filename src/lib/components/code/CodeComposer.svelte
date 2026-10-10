@@ -179,6 +179,7 @@
 			{text}
 			projectRoot={slashHost.projectRoot}
 			codeMode
+			compact={slashHost.compact !== undefined}
 			onPick={(t) => {
 				text = t;
 				el?.focus();
