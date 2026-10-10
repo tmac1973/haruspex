@@ -233,6 +233,11 @@ PR. What differs from the decisions above, and what the box taught us:
 - **`WSL_UTF8`:** `wsl.exe -l -v` prints UTF-8 when `WSL_UTF8=1` is set in
   the user's environment; the distro list now decodes either, or the tab
   would never appear for them.
+- **Decision 11, later (#439):** the memory limit in WSL runs a command in
+  a `systemd-run --user --scope` only when the Linux user lingers. Each
+  `wsl.exe` is a login session; without lingering the user's systemd stops
+  seconds after the last one ends and kills every scope under it, so scoped
+  commands were SIGKILLed at random (seen on the box, in the journal).
 - The Code tab shows on Windows when `code_wsl_distros` finds a distro
   (`probeCodeTab`, from the root layout); the dev-build flag is gone.
 - Guide: new `code-windows` page; `docs/testing.md` says how to run the

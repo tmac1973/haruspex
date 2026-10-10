@@ -124,10 +124,13 @@ fn default_shell_command(command: &str) -> tokio::process::Command {
 /// (`cmd /C`), which can't run PowerShell/Linux syntax. WSL runs in a
 /// process group of its own and changes into the Linux `cwd` itself (see
 /// [`wsl::group_command`]); the host can't `current_dir` into it.
+/// `wsl_memory_percent`: a WSL command's memory limit, applied inside the
+/// distro (see `wsl::group_command`); a host command's is `command_scope`'s.
 fn build_shell_command(
     command: &str,
     cwd: &str,
     shell: Option<&ShellSelection>,
+    wsl_memory_percent: Option<u8>,
 ) -> tokio::process::Command {
     match shell {
         Some(ShellSelection::Powershell { exe }) => {
@@ -135,7 +138,9 @@ fn build_shell_command(
             c.args(["-NoLogo", "-NoProfile", "-Command", command]);
             c
         }
-        Some(ShellSelection::Wsl { distro }) => wsl::group_command(distro, cwd, command),
+        Some(ShellSelection::Wsl { distro }) => {
+            wsl::group_command(distro, cwd, command, wsl_memory_percent)
+        }
         None => default_shell_command(command),
     }
 }
@@ -197,8 +202,9 @@ pub async fn run_command_capture(
     );
     let start = Instant::now();
 
-    let cmd = build_shell_command(&command, &cwd, shell.as_ref());
-    // The memory ceiling is a host-Linux scope; nothing applies inside WSL.
+    let cmd = build_shell_command(&command, &cwd, shell.as_ref(), memory_limit_percent);
+    // The host's memory ceiling is a host-Linux scope; a WSL command's is set
+    // inside the distro, by its wrapper.
     let limit = memory_limit_percent
         .filter(|_| !is_wsl)
         .and_then(command_scope::limit_bytes);
@@ -297,6 +303,15 @@ pub async fn run_command_capture(
     // failure. Only the scope knows why.
     let out_of_memory = match &scope {
         Some(scope) if !killed && exit_code != Some(0) => scope.out_of_memory().await,
+        // Inside WSL the scope is gone by now; a SIGKILL we didn't send, under
+        // a limit, is the kernel's.
+        None => {
+            is_wsl
+                && memory_limit_percent.is_some_and(|p| p > 0)
+                && !killed
+                && !cancelled.load(Ordering::SeqCst)
+                && exit_code == Some(137)
+        }
         _ => false,
     };
     // A tree-kill leaves no exit code (signaled) on unix — treat as killed even
@@ -511,16 +526,72 @@ mod tests {
         }
 
         async fn run(command: &str, cwd: &str, timeout: u64, id: &str) -> RunCommandResult {
+            run_limited(command, cwd, timeout, id, 50).await
+        }
+
+        async fn run_limited(
+            command: &str,
+            cwd: &str,
+            timeout: u64,
+            id: &str,
+            percent: u8,
+        ) -> RunCommandResult {
             run_command_capture(
                 command.to_string(),
                 cwd.to_string(),
                 Some(timeout),
                 id.to_string(),
                 Some(ShellSelection::Wsl { distro: distro() }),
-                Some(50),
+                Some(percent),
             )
             .await
             .unwrap()
+        }
+
+        #[tokio::test]
+        #[ignore]
+        async fn a_command_over_its_memory_limit_is_stopped_and_said_so() {
+            // A scope only when the distro's user lingers (see GROUP_WRAPPER).
+            let linger = run_limited(
+                r#"loginctl show-user "$(id -un)" -p Linger --value"#,
+                "/tmp",
+                60,
+                "w-mem-linger",
+                0,
+            )
+            .await;
+            let lingers = linger.stdout.trim() == "yes";
+            let res = run_limited(
+                "cat /proc/self/cgroup; echo '$HOME'",
+                "/tmp",
+                60,
+                "w-mem-ok",
+                5,
+            )
+            .await;
+            assert_eq!(res.exit_code, Some(0), "{res:?}");
+            // systemd leaves `$HOME` alone either way.
+            assert!(res.stdout.contains("$HOME"), "{}", res.stdout);
+            assert_eq!(res.stdout.contains("/run-"), lingers, "{}", res.stdout);
+            assert!(!res.out_of_memory);
+            if !lingers {
+                eprintln!("the distro's user doesn't linger: no limit, as designed");
+                return;
+            }
+            // 1% of the distro's memory, then far more than that.
+            let res = run_limited(
+                "python3 -c 'b = bytearray(4 << 30); print(len(b))'",
+                "/tmp",
+                120,
+                "w-mem-oom",
+                1,
+            )
+            .await;
+            assert!(res.out_of_memory, "{res:?}");
+            assert!(!res.killed, "{res:?}");
+            // Without a limit, no scope.
+            let res = run_limited("cat /proc/self/cgroup", "/tmp", 60, "w-mem-none", 0).await;
+            assert!(!res.stdout.contains("run-"), "{}", res.stdout);
         }
 
         #[tokio::test]

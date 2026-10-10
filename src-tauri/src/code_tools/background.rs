@@ -170,8 +170,14 @@ impl CodeBgManager {
         let shell = wsl_distro
             .as_ref()
             .map(|d| ShellSelection::Wsl { distro: d.clone() });
-        let cmd = super::build_shell_command(&script(&command, &id), &cwd, shell.as_ref());
-        // The memory ceiling is a host-Linux scope; nothing applies inside WSL.
+        let cmd = super::build_shell_command(
+            &script(&command, &id),
+            &cwd,
+            shell.as_ref(),
+            memory_limit_percent,
+        );
+        // The host's memory ceiling is a host-Linux scope; a WSL process's is
+        // set inside the distro, by its wrapper.
         let limit = memory_limit_percent
             .filter(|_| wsl_distro.is_none())
             .and_then(command_scope::limit_bytes);

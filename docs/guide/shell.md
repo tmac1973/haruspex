@@ -49,7 +49,7 @@ The Shell assistant's conversation is not saved: it ends when you close the tab 
 
 ## Stop runaway commands (memory limit)
 
-Settings → Shell → Memory limit caps each command the assistant runs on its own, and each tab's terminal as a whole (your own commands too), at a share of your RAM: 50% by default, `0` turns it off. Over the limit, the system kills only the process using the memory; the shell and its scrollback stay. The assistant is told why, so it looks for the bug instead of re-running it. This needs Linux with a systemd user session, so not WSL. Tabs opened after a change use the new limit.
+Settings → Shell → Memory limit caps each command the assistant runs on its own, and each tab's terminal as a whole (your own commands too), at a share of your RAM: 50% by default, `0` turns it off. Over the limit, the system kills only the process using the memory; the shell and its scrollback stay. The assistant is told why, so it looks for the bug instead of re-running it. This needs Linux with a systemd user session; in WSL, lingering too. Tabs opened after a change use the new limit.
 
 ## Repo instructions (AGENTS.md)
 
