@@ -234,7 +234,7 @@ pub async fn stop_groups(distro: &str, pgids: &[u32], grace: std::time::Duration
 }
 
 /// Whether any process is left in the group `pgid` inside `distro`.
-#[cfg(test)]
+#[cfg(all(test, windows))]
 pub async fn group_alive(distro: &str, pgid: u32) -> bool {
     pgid > 1
         && wsl_exec(
