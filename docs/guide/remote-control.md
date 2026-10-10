@@ -5,7 +5,7 @@ description: Use your Code sessions and chats from your other computers' browser
 
 # Remote control
 
-Remote control lets your other computers use the Code sessions and chats on this one, from a web browser or a script. Turns still run here, with this computer's files and models; the other computer only starts, steers and watches them. It is off by default, and Haruspex has to be open for it to work.
+Remote control lets your other computers use the Code sessions and chats on this one, from a browser or a script. Turns still run here, with this computer's files and models. It is off by default, and Haruspex has to be open for it to work.
 
 It is not the same as Guest chat (see the `guest-chat` page), which lets other people chat with your Haruspex. Remote control is for you.
 
@@ -16,6 +16,10 @@ It is not the same as Guest chat (see the `guest-chat` page), which lets other p
 3. Choose **Who can connect** (below).
 
 Allow port 8788 through this computer's firewall for the computers you mean.
+
+## The certificate warning
+
+The page uses HTTPS with a certificate Haruspex makes itself, so a browser warns on the first visit. Check that the SHA-256 fingerprint in its certificate details matches Settings → Remote control → Advanced → Certificate, then continue; the browser remembers. Expect it again when the certificate is replaced: yearly, or after changing the link address.
 
 ## Who can connect
 
@@ -39,11 +43,12 @@ File names in a session are links: click one to read the file (it can't be edite
 
 - **Port**: 8788.
 - **Listen on all networks**: on, so other computers can reach it; choosing **These computers** or **My whole network** turns it on. Off, only this computer (or a proxy running on it) can connect.
-- **Link address**: the address other computers use to reach this one, if it isn't the one shown, for example a name your router gives it or a proxy's address. Links use it, and the page accepts it as this computer's name.
+- **Link address**: the address other computers use to reach this one, if it isn't the one shown, for example a name your router gives it. Links use it, and the page accepts it as this computer's name.
+- **Certificate**: its fingerprint, and **Copy certificate** for a script.
 
 ## Use it from a script
 
-Send the token as `Authorization: Bearer <token>`.
+Send the token as `Authorization: Bearer <token>`, and trust the certificate: save it with **Copy certificate** and pass it, for example `curl --cacert haruspex.pem`.
 
 - `POST /api/v1/op` with an operation as JSON, for example `{"type":"sessions.list"}` or `{"type":"session.send","id":"…","text":"Fix the failing test"}`.
 - On Windows, `session.new` takes a `wslDistro` with a Linux `root` (`{"type":"session.new","root":"~/proj","wslDistro":"Ubuntu"}`); `{"type":"wsl.distros"}` lists them.
@@ -61,7 +66,7 @@ From a trusted computer, send `X-Haruspex: 1` instead of a token.
 
 ## Security notes
 
-- Traffic between computers is not encrypted. Use it on networks you trust.
+- Traffic is encrypted. Checking the fingerprint on the first visit is what tells you it's this computer you reached.
 - Tokens are stored only as hashes, so Haruspex can't show one again.
 - Ten wrong tokens in a minute from one address blocks that address for the rest of the minute.
 - Web pages on other sites can't use it, even from a trusted computer: requests must come from the page itself and name this computer.

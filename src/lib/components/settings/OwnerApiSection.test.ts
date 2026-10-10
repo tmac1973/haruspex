@@ -23,7 +23,8 @@ const backend = vi.hoisted(() => {
 						port: 8788,
 						bindAll: true,
 						address: '192.168.1.174',
-						hostname: 'asmodean'
+						hostname: 'asmodean',
+						fingerprint: 'AB:CD:EF'
 					};
 				case 'owner_api_status':
 					return {
@@ -31,7 +32,8 @@ const backend = vi.hoisted(() => {
 						port: 8788,
 						bindAll: true,
 						address: '192.168.1.174',
-						hostname: 'asmodean'
+						hostname: 'asmodean',
+						fingerprint: 'AB:CD:EF'
 					};
 				case 'owner_trusted_hosts': {
 					const access = (lastConfig?.access ?? { trustedHosts: [] }) as {
@@ -88,7 +90,7 @@ describe('Settings → Remote control', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Create link' }));
 
 		expect(await screen.findByText('Open this link on Laptop')).toBeTruthy();
-		expect(screen.getByText('http://192.168.1.174:8788/app/#pair=abc123')).toBeTruthy();
+		expect(screen.getByText('https://192.168.1.174:8788/app/#pair=abc123')).toBeTruthy();
 		expect(await screen.findByRole('img', { name: /QR code/ })).toBeTruthy();
 		// The token is there for scripts, behind the link.
 		expect(screen.getByText('Token for a script')).toBeTruthy();
@@ -116,10 +118,20 @@ describe('Settings → Remote control', () => {
 		backend.handle('owner_client_create', { name: 'Phone', scopes: ['read'] });
 		render(OwnerApiSection);
 		await fireEvent.click(await screen.findByRole('button', { name: 'New link' }));
-		expect(await screen.findByText('http://192.168.1.174:8788/app/#pair=def456')).toBeTruthy();
+		expect(await screen.findByText('https://192.168.1.174:8788/app/#pair=def456')).toBeTruthy();
 		await fireEvent.click(screen.getByRole('button', { name: 'Done' }));
 		await fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
 		await waitFor(() => expect(screen.queryByText('Phone')).toBeNull());
+	});
+
+	it('links over HTTPS, whatever scheme the link address was given with', async () => {
+		render(OwnerApiSection);
+		await fireEvent.click(await screen.findByRole('button', { name: 'My whole network' }));
+		const link = screen.getByLabelText('Link address');
+		for (const given of ['http://box.lan:8788', 'box.lan:8788']) {
+			await fireEvent.input(link, { target: { value: given } });
+			await waitFor(() => expect(screen.getByText('https://box.lan:8788/app/')).toBeTruthy());
+		}
 	});
 
 	it('trusts listed computers without a token, and says where each was found', async () => {
@@ -138,7 +150,10 @@ describe('Settings → Remote control', () => {
 			access: { mode: 'trusted', trustedHosts: ['laptop', 'ghost'] }
 		});
 		// No token needed: the page's address is what to open.
-		expect(screen.getByText('http://192.168.1.174:8788/app/')).toBeTruthy();
+		expect(screen.getByText('https://192.168.1.174:8788/app/')).toBeTruthy();
+
+		// The certificate's fingerprint, to check against the browser's warning.
+		expect(screen.getByText('AB:CD:EF')).toBeTruthy();
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Remove ghost' }));
 		await waitFor(() =>

@@ -62,7 +62,7 @@ export interface DriveHooks {
 	 * Turn Settings → Remote control on, on this computer only at `port`, and
 	 * add a device with every permission: what `drive start --api` drives.
 	 */
-	ownerApi: (port: number) => Promise<{ base: string; token: string }>;
+	ownerApi: (port: number) => Promise<{ base: string; token: string; certificate: string }>;
 	/** Who may connect without a token (Settings → Remote control → Who can connect). */
 	ownerAccess: (mode: 'tokens' | 'trusted' | 'lan', hosts: string[]) => Promise<unknown>;
 	/** A new device's one-time pairing code, for the web client's link. */
@@ -158,7 +158,11 @@ export function installDriveHooks(): void {
 			updateSettings({ ownerApiEnabled: true, ownerApiPort: port, ownerApiBindAll: false });
 			const status = await applyOwnerApi();
 			const { token } = await createOwnerClient('drive', ALL_SCOPES);
-			return { base: `http://127.0.0.1:${status.port}`, token };
+			return {
+				base: `https://127.0.0.1:${status.port}`,
+				token,
+				certificate: status.certificate ?? ''
+			};
 		},
 		ownerAccess: async (mode, hosts) => {
 			updateSettings({ ownerApiAccess: mode, ownerApiTrustedHosts: hosts });

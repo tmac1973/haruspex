@@ -18,6 +18,7 @@ import { remote } from 'webdriverio';
 import { appBinary, BIN_DIR, ROOT, STUB_PIDS } from '../../e2e/app/paths.mjs';
 import { e2eDataDirs } from '../../e2e/app/wdio.conf.mjs';
 import { createFakeLlm, MODEL_ID } from '../../e2e/fake-llm/server.mjs';
+import { pinnedFetch } from './https.mjs';
 import { summarize, transcript } from './render.mjs';
 
 export const FIXTURE = join(ROOT, 'e2e', 'fixtures', 'average-bug');
@@ -337,6 +338,10 @@ export class App {
 		if (o.verbosePayloads) await this.call('setVerbosePayloads', true);
 		if (o.api) {
 			this.api = await this.call('ownerApi', await freePort());
+			// Its own certificate: trusted here, and saved for other scripts.
+			this.apiFetch = pinnedFetch(this.api.certificate);
+			this.api.ca = join(o.outDir, 'owner-api.pem');
+			writeFileSync(this.api.ca, this.api.certificate);
 			this.log(`owner API at ${this.api.base}`);
 		}
 	}
@@ -353,7 +358,7 @@ export class App {
 	 */
 	async engine(op) {
 		if (!this.api) return this.call('engine', op);
-		const r = await fetch(`${this.api.base}/api/v1/op`, {
+		const r = await this.apiFetch(`${this.api.base}/api/v1/op`, {
 			method: 'POST',
 			headers: { Authorization: `Bearer ${this.api.token}`, 'Content-Type': 'application/json' },
 			body: JSON.stringify(op)
@@ -429,7 +434,7 @@ export class App {
 		const timer = setTimeout(() => ac.abort(), seconds * 1000);
 		const events = [];
 		try {
-			const r = await fetch(`${this.api.base}/api/v1/events`, {
+			const r = await this.apiFetch(`${this.api.base}/api/v1/events`, {
 				headers: { Authorization: `Bearer ${this.api.token}` },
 				signal: ac.signal
 			});

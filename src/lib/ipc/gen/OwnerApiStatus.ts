@@ -9,4 +9,12 @@ address: string | null,
 /**
  * This computer's name on the LAN, which also opens the web page.
  */
-hostname: string | null, };
+hostname: string | null, 
+/**
+ * The HTTPS certificate's SHA-256, as a browser shows it, while running.
+ */
+fingerprint: string | null, 
+/**
+ * The certificate itself (PEM), for a script to trust it.
+ */
+certificate: string | null, };
