@@ -28,6 +28,7 @@ Code tab once before), every settled decision, and the invariants.
 | 9 | `phase-09-hardening.md` | macOS pass, failure cases, guide sweep, follow-up issues | all |
 | 9b | `phase-09b-agent-hardening.md` | Queued approval prompts, approval across windows, rewrite after a command, loop split, macOS bash + TTY | 1–8 |
 | 10 | `phase-10-windows-wsl.md` | Windows, WSL only: self-contained brief with decisions and milestones (PowerShell is #396) | 9 |
+| 11 | `phase-11-windows-native.md` | Windows, native folders with PowerShell (#396) | 10 |
 
 Phases 1–3 are independent and can be built in parallel. 6, 7 and 8 are
 independent leaves off the tab UI.

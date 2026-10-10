@@ -282,8 +282,13 @@ fn prune(db: &Database, now: i64) -> Result<(), String> {
 fn key(folder: &str, wsl_distro: Option<&str>) -> String {
     match wsl_distro {
         Some(d) => wsl_key(d, folder),
+        // As session roots are stored: without `\\?\` on Windows.
         None => std::fs::canonicalize(folder)
-            .map(|p| p.to_string_lossy().into_owned())
+            .map(|p| {
+                crate::fs_tools::path::strip_verbatim(&p)
+                    .to_string_lossy()
+                    .into_owned()
+            })
             .unwrap_or_else(|_| folder.to_string()),
     }
 }

@@ -15,7 +15,14 @@ describe('the Code tab gate', () => {
 		expect(mocks.invoke).not.toHaveBeenCalled();
 	});
 
+	it('opens on Windows where native folders are on, before the probe answers', () => {
+		vi.stubEnv('DEV', true);
+		expect(codeTabAvailable(WINDOWS)).toBe(true);
+		vi.unstubAllEnvs();
+	});
+
 	it('opens on Windows once a WSL2 distro is found, and asks only once', async () => {
+		vi.stubEnv('DEV', false);
 		expect(codeTabAvailable(WINDOWS)).toBe(false);
 		mocks.invoke.mockResolvedValueOnce(['Ubuntu-24.04']);
 		await probeCodeTab(WINDOWS);
@@ -23,5 +30,6 @@ describe('the Code tab gate', () => {
 		expect(codeTabAvailable(WINDOWS)).toBe(true);
 		await probeCodeTab(WINDOWS);
 		expect(mocks.invoke).toHaveBeenCalledTimes(1);
+		vi.unstubAllEnvs();
 	});
 });
