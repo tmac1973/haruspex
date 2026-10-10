@@ -40,9 +40,7 @@ impl Scope {
 pub fn required_scope(op_type: &str) -> Option<Scope> {
     Some(match op_type {
         "sessions.list" | "session.get" | "session.resync" | "session.readFile"
-        | "prompts.list" | "wsl.distros" => {
-            Scope::Read
-        }
+        | "prompts.list" | "wsl.distros" => Scope::Read,
         "session.open"
         | "session.new"
         | "session.send"
