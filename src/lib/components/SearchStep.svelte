@@ -10,6 +10,7 @@
 </script>
 
 <script lang="ts">
+	import { cancelSandboxRun, rerunSandboxStep } from '#lib/sandbox/runControls.ts';
 	import type { SearchStep } from '#lib/agent/loop.ts';
 	import { stepLabel, stepIcon } from './searchStepLabels';
 	import hljs from 'highlight.js/lib/core';
@@ -80,17 +81,15 @@
 		});
 	}
 
-	// The chat store only on click: the sandbox's steps are a chat feature, and
-	// importing it up front puts the whole agent in every bundle that shows a
-	// step, the web client's included.
+	// Through `runControls.ts`, not the chat store: see there.
 	function rerunStep(step: SearchStep, event: MouseEvent) {
 		event.stopPropagation();
-		void import('#lib/stores/chat.svelte.ts').then((chat) => chat.rerunSandboxStep(step.id));
+		rerunSandboxStep(step.id);
 	}
 
 	function cancelStep(event: MouseEvent) {
 		event.stopPropagation();
-		void import('#lib/stores/chat.svelte.ts').then((chat) => chat.cancelActiveSandboxRun());
+		cancelSandboxRun();
 	}
 
 	const copyAction = createKeyedCopyAction();

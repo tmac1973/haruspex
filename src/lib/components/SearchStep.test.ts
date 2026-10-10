@@ -4,17 +4,10 @@ import SearchStep from './SearchStep.svelte';
 import type { SearchStep as Step } from '#lib/agent/loop.ts';
 import type { Artifact } from '#lib/sandbox/protocol.ts';
 
-// SearchStep pulls rerun/cancel actions from the chat store, whose module
-// graph reaches Tauri IPC. Mock just the two functions the component uses.
 const tauri = vi.hoisted(() => ({
 	invoke: vi.fn(async (cmd: string) => (cmd === 'artifact_register' ? 'artifact-1' : null))
 }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
-
-vi.mock('#lib/stores/chat.svelte.ts', () => ({
-	rerunSandboxStep: vi.fn().mockResolvedValue(undefined),
-	cancelActiveSandboxRun: vi.fn()
-}));
 
 function makeStep(artifacts: Artifact[], overrides: Partial<Step> = {}): Step {
 	return {

@@ -10,10 +10,6 @@ vi.mock('#lib/editor/windows.ts', () => ({
 }));
 const forkFromMessage = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock('#lib/code/windows.ts', () => ({ forkFromMessage }));
-vi.mock('#lib/stores/chat.svelte.ts', () => ({
-	rerunSandboxStep: vi.fn(),
-	cancelActiveSandboxRun: vi.fn()
-}));
 
 import CodeTranscript from './CodeTranscript.svelte';
 import type { CodeSession } from '#lib/stores/code.svelte.ts';

@@ -86,6 +86,7 @@ import {
 	dbSetConversationMemoryEnabled,
 	type DbConversationSummary
 } from '#lib/stores/db.ts';
+import { setSandboxRunControls } from '#lib/sandbox/runControls.ts';
 
 export interface Conversation {
 	id: string;
@@ -554,6 +555,12 @@ export async function rerunSandboxStep(stepId: string): Promise<void> {
 export function cancelActiveSandboxRun(): void {
 	cancelActiveRun();
 }
+
+// The sandbox step's buttons reach these through runControls.ts.
+setSandboxRunControls({
+	rerun: (stepId) => void rerunSandboxStep(stepId),
+	cancel: cancelActiveSandboxRun
+});
 
 export function setExhaustiveResearch(value: boolean): void {
 	exhaustiveResearch = value;
