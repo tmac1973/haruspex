@@ -8,6 +8,7 @@ import { WebStore, type Transport } from './store.svelte.ts';
 import PromptCard from './components/PromptCard.svelte';
 import Composer from './components/Composer.svelte';
 import FileViewer from './components/FileViewer.svelte';
+import Message from './components/Message.svelte';
 
 const state = (over: Partial<SessionState> = {}): SessionState => ({
 	id: 's1',
@@ -253,5 +254,45 @@ describe('the file viewer', () => {
 		expect(screen.getByText('Only the start of this file is shown.')).toBeTruthy();
 		// Too big to highlight: plain text.
 		expect(document.querySelector('.code-block')).toBeNull();
+	});
+});
+
+describe('a message', () => {
+	const pixel = 'data:image/png;base64,iVBORw0KGgo=';
+
+	it('shows attached images, and opens one full size', async () => {
+		render(Message, {
+			message: {
+				role: 'user',
+				content: [
+					{ type: 'text', text: 'look at this' },
+					{ type: 'image_url', image_url: { url: pixel } }
+				]
+			}
+		});
+		expect(screen.getByText('look at this')).toBeTruthy();
+		await fireEvent.click(screen.getByTitle('Show full size'));
+		expect(screen.getAllByAltText('Attached')).toHaveLength(2);
+	});
+
+	it('names an image it cannot show', () => {
+		render(Message, {
+			message: {
+				role: 'user',
+				content: [{ type: 'image_url', image_url: { url: 'haruspex-img://localhost/abc' } }]
+			}
+		});
+		expect(screen.getByText(/An image on your computer/)).toBeTruthy();
+		expect(screen.queryByAltText('Attached')).toBeNull();
+	});
+
+	it('turns a path in an answer into a file link', () => {
+		render(Message, {
+			message: { role: 'assistant', content: 'Fixed `src/stats.js:5`.' },
+			root: '/proj'
+		});
+		const link = document.querySelector('button[data-action="code-path"]') as HTMLElement;
+		expect(link?.dataset.path).toBe('src/stats.js');
+		expect(link?.dataset.line).toBe('5');
 	});
 });
