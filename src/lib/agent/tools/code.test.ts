@@ -392,6 +392,23 @@ describe('Shell + Code combined mode', () => {
 		}
 	});
 
+	it("reads a WSL Code session's files through its distro's share", async () => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		mocks.invoke.mockResolvedValueOnce('text');
+		await executeTool(
+			'fs_read_text',
+			{ path: 'src/a.ts' },
+			{ ...codeCtx, workingDir: '/home/tim/p', wslDistro: 'Debian' }
+		);
+		expect(mocks.invoke).toHaveBeenCalledWith(
+			'fs_read_text',
+			expect.objectContaining({
+				workdir: String.raw`\\wsl.localhost\Debian\home\tim\p`,
+				relPath: 'src/a.ts'
+			})
+		);
+	});
+
 	it("runs a Code session's commands in its own distro, never the Shell tab's pick", async () => {
 		const { updateSettings } = await import('#lib/stores/settings.ts');
 		updateSettings({ shellSelection: { kind: 'wsl', distro: 'Ubuntu-24.04' } });

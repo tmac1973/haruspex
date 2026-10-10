@@ -544,6 +544,7 @@ export class CodeSession {
 		const guard = createWriteGuard({
 			sessionId: this.id,
 			root: this.root,
+			wslDistro: this.wslDistro,
 			title: () => this.title
 		});
 		// What the agent had been told, put back if the turn never starts.
@@ -696,7 +697,7 @@ export class CodeSession {
 	 * the note this turn opens with; also shown above the opening message.
 	 */
 	private async takeNotice(): Promise<string | null> {
-		const batch = await takeFileNotices(this.id, this.root, this.noticesSince);
+		const batch = await takeFileNotices(this.id, this.root, this.noticesSince, this.wslDistro);
 		this.noticesSince = batch.now;
 		const files = formatFileNotices(batch.notices, this.root);
 		// The branch can change under the agent between turns (the branch menu,

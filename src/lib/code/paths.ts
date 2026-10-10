@@ -8,6 +8,26 @@
  * `fs_read_text_full`, which applies the working directory's own checks.
  */
 
+/**
+ * A Linux path inside a WSL distro as Windows reaches it, through the
+ * distro's share: `/home/tim/proj` in `Ubuntu` is
+ * `\\wsl.localhost\Ubuntu\home\tim\proj`.
+ */
+export function wslShare(distro: string, linux: string): string {
+	const tail = linux.replace(/\/+$/, '').replace(/\//g, '\\');
+	return `\\\\wsl.localhost\\${distro}${tail}`;
+}
+
+/**
+ * The folder to hand to the host's file I/O (the fs commands, editor
+ * windows, the file manager): a WSL session's root as its distro's share,
+ * a host folder as it is. Everything else — links, the prompt, notices —
+ * keeps the Linux path.
+ */
+export function ioRoot(root: string, wslDistro?: string | null): string {
+	return wslDistro ? wslShare(wslDistro, root) : root;
+}
+
 /** Forward slashes, no trailing slash. */
 function clean(path: string): string {
 	return path.replace(/\\/g, '/').replace(/\/+$/, '');

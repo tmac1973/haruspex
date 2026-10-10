@@ -47,8 +47,11 @@ export interface TurnWriteGuard extends CodeWriteGuard {
 export function createWriteGuard(opts: {
 	sessionId: string;
 	root: string;
+	/** The WSL distro `root` is in: the same path in another distro is another folder. */
+	wslDistro?: string | null;
 	title: () => string;
 }): TurnWriteGuard {
+	const wslDistro = opts.wslDistro ?? null;
 	let held = false;
 	const files = new Set<string>();
 	return {
@@ -57,6 +60,7 @@ export function createWriteGuard(opts: {
 			try {
 				const holder = await invoke<string | null>('code_lease_take', {
 					folder: opts.root,
+					wslDistro,
 					sessionId: opts.sessionId,
 					title: opts.title()
 				});
@@ -77,6 +81,7 @@ export function createWriteGuard(opts: {
 				if (files.size > 0) {
 					await invoke('code_notice_record', {
 						folder: opts.root,
+						wslDistro,
 						sessionId: opts.sessionId,
 						title: opts.title(),
 						files: [...files]
@@ -107,11 +112,13 @@ export async function releaseFolder(sessionId: string): Promise<void> {
 export async function takeFileNotices(
 	sessionId: string,
 	root: string,
-	since: number
+	since: number,
+	wslDistro: string | null = null
 ): Promise<FileNotices> {
 	try {
 		const res = await invoke<FileNotices | null>('code_notices_take', {
 			folder: root,
+			wslDistro,
 			sessionId,
 			since
 		});
@@ -155,8 +162,17 @@ function relativeTo(root: string, path: string): string {
 	return path.startsWith(base) ? path.slice(base.length) : path;
 }
 
-/** The same folder, or one inside the other (as Rust's lease compares them). */
-export function rootsOverlap(a: string, b: string): boolean {
+/**
+ * The same folder, or one inside the other (as Rust's lease compares them).
+ * Folders in different WSL distros, or one in a distro and one on the host,
+ * never overlap.
+ */
+export function rootsOverlap(
+	a: string,
+	b: string,
+	distros: [string | null | undefined, string | null | undefined] = [null, null]
+): boolean {
+	if ((distros[0] ?? null) !== (distros[1] ?? null)) return false;
 	const norm = (p: string) => p.replace(/\/+$/, '') + '/';
 	const [x, y] = [norm(a), norm(b)];
 	return x.startsWith(y) || y.startsWith(x);
@@ -170,24 +186,29 @@ export function sharingFolder(
 	selfId: string,
 	folder: string,
 	openIds: Iterable<string>,
-	list: CodeSessionSummary[]
+	list: CodeSessionSummary[],
+	wslDistro: string | null = null
 ): CodeSessionSummary[] {
 	const open = new Set(openIds);
-	return list.filter((s) => s.id !== selfId && open.has(s.id) && rootsOverlap(s.root, folder));
+	return list.filter(
+		(s) =>
+			s.id !== selfId && open.has(s.id) && rootsOverlap(s.root, folder, [s.wsl_distro, wslDistro])
+	);
 }
 
 /** The same, asked of Rust and the database. Empty when either fails. */
 export async function openSessionsSharing(
 	selfId: string,
 	folder: string,
-	localIds: string[] = []
+	localIds: string[] = [],
+	wslDistro: string | null = null
 ): Promise<CodeSessionSummary[]> {
 	try {
 		const [ids, list] = await Promise.all([
 			invoke<string[] | null>('code_session_open_ids'),
 			listCodeSessions()
 		]);
-		return sharingFolder(selfId, folder, [...(ids ?? []), ...localIds], list ?? []);
+		return sharingFolder(selfId, folder, [...(ids ?? []), ...localIds], list ?? [], wslDistro);
 	} catch {
 		return [];
 	}
@@ -203,7 +224,9 @@ export function worktreeOffer(
 ): string | null {
 	const wt = session.worktree;
 	if (!wt) return null;
-	const inUse = list.some((s) => s.id !== session.id && rootsOverlap(s.root, wt));
+	const inUse = list.some(
+		(s) => s.id !== session.id && rootsOverlap(s.root, wt, [s.wsl_distro, session.wsl_distro])
+	);
 	return inUse ? null : wt;
 }
 

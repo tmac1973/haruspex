@@ -120,9 +120,12 @@ fn resolve_code_root(root: String, wsl_distro: Option<&str>) -> Result<String, S
 /// may differ from `walk_root` — `code_grep` walks a subdir but reports paths
 /// relative to the project root). Unreadable entries are skipped. Shared by
 /// `code_grep` and `code_glob` so they agree on traversal + path derivation.
+/// Under a WSL distro's share the relative path uses `/`, and a file outside
+/// `strip_root` is named by its Linux path, never the share's.
 fn walk_files(walk_root: &Path, strip_root: &Path) -> impl Iterator<Item = (String, PathBuf)> {
     use ignore::WalkBuilder;
     let strip_root = strip_root.to_path_buf();
+    let wsl = super::wsl::parse_wsl_unc(&strip_root.to_string_lossy()).is_some();
     WalkBuilder::new(walk_root)
         .require_git(false)
         .build()
@@ -132,11 +135,14 @@ fn walk_files(walk_root: &Path, strip_root: &Path) -> impl Iterator<Item = (Stri
                 return None;
             }
             let fpath = dent.path();
-            let rel = fpath
-                .strip_prefix(&strip_root)
-                .unwrap_or(fpath)
-                .to_string_lossy()
-                .into_owned();
+            let rel = match fpath.strip_prefix(&strip_root) {
+                Ok(rel) if wsl => rel.to_string_lossy().replace('\\', "/"),
+                Ok(rel) => rel.to_string_lossy().into_owned(),
+                Err(_) if wsl => super::wsl::parse_wsl_unc(&fpath.to_string_lossy())
+                    .map(|(_, linux)| linux)
+                    .unwrap_or_else(|| fpath.to_string_lossy().into_owned()),
+                Err(_) => fpath.to_string_lossy().into_owned(),
+            };
             Some((rel, fpath.to_path_buf()))
         })
 }
@@ -184,10 +190,12 @@ pub async fn code_grep(
         None => PathBuf::from(&root),
     };
     if !search_root.exists() {
-        return Err(format!(
-            "Search path does not exist: {}",
-            search_root.display()
-        ));
+        // The path as asked for: in WSL, not the share it was mapped to.
+        let shown = match (&path, &wsl_distro) {
+            (Some(p), Some(_)) => p.clone(),
+            _ => search_root.display().to_string(),
+        };
+        return Err(format!("Search path does not exist: {shown}"));
     }
 
     tokio::task::spawn_blocking(move || -> Result<GrepResult, String> {

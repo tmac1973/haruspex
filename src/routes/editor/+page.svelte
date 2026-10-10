@@ -235,6 +235,13 @@
 		</div>
 		<div class="status">
 			<span class="path" title={root}>{active.relPath}</span>
+			{#if !active.live}
+				<span
+					class="unwatched"
+					title="Changes made outside this window won't show until the file is reopened. Saving still checks for them."
+					>Live reload unavailable</span
+				>
+			{/if}
 			<button
 				disabled={!active.canSave}
 				onclick={() => void active.save()}
@@ -334,6 +341,11 @@
 	.pane :global(.code-editor) {
 		flex: 1;
 	}
+	.unwatched {
+		font-size: 0.75rem;
+		color: var(--text-secondary);
+	}
+
 	.status {
 		display: flex;
 		align-items: center;

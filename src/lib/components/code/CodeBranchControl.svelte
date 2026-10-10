@@ -75,7 +75,8 @@
 			openSessionsSharing(
 				session.id,
 				folder,
-				getOpenSessions().map((s) => s.id)
+				getOpenSessions().map((s) => s.id),
+				session.wslDistro
 			)
 		]);
 		branches = names;

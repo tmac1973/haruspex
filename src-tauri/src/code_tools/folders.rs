@@ -25,12 +25,16 @@
 //! its last saved turn stored. A notice is dropped once every other saved
 //! session in an overlapping folder has saved a turn past it, after a day,
 //! or past the newest [`NOTICE_CAP`].
+//!
+//! Folders are compared as [`key`]s: a host folder by its canonical path, a
+//! WSL session's (Windows) as `wsl:<distro>:<linux path>`, so the same Linux
+//! path in two distros is two folders and never meets a host one.
 
 use crate::db::{Database, StoredNotice};
 use crate::sync_util::LockExt;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Mutex;
 use tauri::Manager;
 
@@ -41,7 +45,8 @@ const NOTICE_MAX_AGE_MS: i64 = 24 * 60 * 60 * 1000;
 const NOTICE_CAP: usize = 200;
 
 struct Lease {
-    folder: PathBuf,
+    /// A [`key`].
+    folder: String,
     title: String,
     window: String,
 }
@@ -83,9 +88,36 @@ pub struct FileNotices {
     pub now: i64,
 }
 
-/// The same folder, or one inside the other.
-fn overlaps(a: &Path, b: &Path) -> bool {
-    a.starts_with(b) || b.starts_with(a)
+/// The same folder, or one inside the other. Both are [`key`]s: host paths
+/// compare by component, WSL ones only within one distro, and a host folder
+/// never overlaps a WSL one.
+fn overlaps(a: &str, b: &str) -> bool {
+    match (split_wsl_key(a), split_wsl_key(b)) {
+        (Some((da, pa)), Some((db, pb))) => {
+            da == db && (linux_within(pa, pb) || linux_within(pb, pa))
+        }
+        (None, None) => {
+            let (a, b) = (Path::new(a), Path::new(b));
+            a.starts_with(b) || b.starts_with(a)
+        }
+        _ => false,
+    }
+}
+
+/// `path` is `dir` or inside it (Linux paths, compared as text by component).
+fn linux_within(path: &str, dir: &str) -> bool {
+    dir == "/" || path == dir || path.strip_prefix(dir).is_some_and(|r| r.starts_with('/'))
+}
+
+/// A WSL folder's key: `wsl:<distro>:<linux path>`, without a trailing `/`.
+fn wsl_key(distro: &str, path: &str) -> String {
+    let path = path.trim_end_matches('/');
+    format!("wsl:{distro}:{}", if path.is_empty() { "/" } else { path })
+}
+
+/// The distro and Linux path of a [`wsl_key`]; None for a host folder.
+fn split_wsl_key(key: &str) -> Option<(&str, &str)> {
+    key.strip_prefix("wsl:")?.split_once(':')
 }
 
 impl Inner {
@@ -100,7 +132,7 @@ impl CodeFolders {
     /// session that holds it (`""` when that one has no title yet).
     pub fn take(
         &self,
-        folder: &Path,
+        folder: &str,
         session: &str,
         title: &str,
         window: &str,
@@ -118,7 +150,7 @@ impl CodeFolders {
         inner.leases.insert(
             session.to_string(),
             Lease {
-                folder: folder.to_path_buf(),
+                folder: folder.to_string(),
                 title: title.to_string(),
                 window: window.to_string(),
             },
@@ -143,7 +175,7 @@ impl CodeFolders {
     pub fn record(
         &self,
         db: &Database,
-        folder: &Path,
+        folder: &str,
         session: &str,
         title: &str,
         files: Vec<String>,
@@ -160,7 +192,7 @@ impl CodeFolders {
         // with the app.
         let floor = stored.iter().map(|n| n.at.saturating_add(1)).max();
         let at = inner.tick(floor.map_or(now, |f| now.max(f)));
-        db.insert_code_notice(&folder.to_string_lossy(), session, title, &files, at)?;
+        db.insert_code_notice(folder, session, title, &files, at)?;
         prune(db, now)
     }
 
@@ -168,7 +200,7 @@ impl CodeFolders {
     pub fn take_notices(
         &self,
         db: &Database,
-        folder: &Path,
+        folder: &str,
         session: &str,
         since: i64,
         now: i64,
@@ -177,9 +209,7 @@ impl CodeFolders {
         let stored = db.code_notices()?;
         let notices = stored
             .iter()
-            .filter(|n| {
-                n.at > since && n.session_id != session && overlaps(Path::new(&n.folder), folder)
-            })
+            .filter(|n| n.at > since && n.session_id != session && overlaps(&n.folder, folder))
             .map(file_notice)
             .collect();
         // Past every notice recorded so far, so none is delivered twice; and
@@ -201,7 +231,7 @@ impl CodeFolders {
             .lock_or_recover()
             .leases
             .get(session)
-            .map(|l| l.folder.to_string_lossy().into_owned())
+            .map(|l| l.folder.clone())
     }
 }
 
@@ -229,10 +259,15 @@ fn prune(db: &Database, now: i64) -> Result<(), String> {
         .iter()
         .enumerate()
         .filter(|(i, n)| {
-            let folder = Path::new(&n.folder);
             let heard = marks
                 .iter()
-                .filter(|m| m.id != n.session_id && overlaps(Path::new(&m.root), folder))
+                .filter(|m| {
+                    let root = match &m.wsl_distro {
+                        Some(d) => wsl_key(d, &m.root),
+                        None => m.root.clone(),
+                    };
+                    m.id != n.session_id && overlaps(&root, &n.folder)
+                })
                 .all(|m| m.seen >= n.at);
             *i < keep_from || now - n.at >= NOTICE_MAX_AGE_MS || heard
         })
@@ -241,9 +276,16 @@ fn prune(db: &Database, now: i64) -> Result<(), String> {
     db.delete_code_notices(&done)
 }
 
-/// The folder as the lease map keys it: canonical when it exists.
-fn key(folder: &str) -> PathBuf {
-    std::fs::canonicalize(folder).unwrap_or_else(|_| PathBuf::from(folder))
+/// The folder as leases and notices compare it: a host folder canonical when
+/// it exists, a WSL one (`wsl_distro`) as [`wsl_key`]. Its stored root is
+/// canonical already (resolved in the distro); the host can't canonicalize it.
+fn key(folder: &str, wsl_distro: Option<&str>) -> String {
+    match wsl_distro {
+        Some(d) => wsl_key(d, folder),
+        None => std::fs::canonicalize(folder)
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| folder.to_string()),
+    }
 }
 
 /// Take the writer lease on `folder` for `session_id`. Returns `None` when
@@ -253,13 +295,14 @@ pub fn code_lease_take(
     window: tauri::Window,
     state: tauri::State<'_, CodeFolders>,
     folder: String,
+    wsl_distro: Option<String>,
     session_id: String,
     title: String,
 ) -> Option<String> {
     let app = window.app_handle();
     state
         .take(
-            &key(&folder),
+            &key(&folder, wsl_distro.as_deref()),
             &session_id,
             &title,
             window.label(),
@@ -278,6 +321,7 @@ pub fn code_lease_release(state: tauri::State<'_, CodeFolders>, session_id: Stri
 pub async fn code_notice_record(
     app: tauri::AppHandle,
     folder: String,
+    wsl_distro: Option<String>,
     session_id: String,
     title: String,
     files: Vec<String>,
@@ -286,7 +330,7 @@ pub async fn code_notice_record(
         let db = app.state::<Database>();
         app.state::<CodeFolders>().record(
             &db,
-            &key(&folder),
+            &key(&folder, wsl_distro.as_deref()),
             &session_id,
             &title,
             files,
@@ -302,6 +346,7 @@ pub async fn code_notice_record(
 pub async fn code_notices_take(
     app: tauri::AppHandle,
     folder: String,
+    wsl_distro: Option<String>,
     session_id: String,
     since: i64,
 ) -> Result<FileNotices, String> {
@@ -309,7 +354,7 @@ pub async fn code_notices_take(
         let db = app.state::<Database>();
         app.state::<CodeFolders>().take_notices(
             &db,
-            &key(&folder),
+            &key(&folder, wsl_distro.as_deref()),
             &session_id,
             since,
             crate::time_util::now_ms(),
@@ -334,8 +379,8 @@ mod tests {
         true
     }
 
-    fn p(s: &str) -> PathBuf {
-        PathBuf::from(s)
+    fn p(s: &str) -> String {
+        s.to_string()
     }
 
     #[test]
@@ -358,6 +403,73 @@ mod tests {
         );
         // A prefix that isn't a parent folder doesn't overlap either.
         assert_eq!(f.take(&p("/repository"), "c", "", "main", alive), Ok(()));
+    }
+
+    #[test]
+    fn wsl_folders_meet_only_in_their_own_distro() {
+        let f = CodeFolders::default();
+        let ubuntu = key("/home/tim/repo/", Some("Ubuntu"));
+        assert_eq!(ubuntu, "wsl:Ubuntu:/home/tim/repo");
+        f.take(&ubuntu, "a", "Alpha", "main", alive).unwrap();
+        // Inside it, in the same distro: one writer.
+        let sub = key("/home/tim/repo/sub", Some("Ubuntu"));
+        assert!(f.take(&sub, "b", "Beta", "main", alive).is_err());
+        // The same path in another distro, or on the host, is another folder.
+        let debian = key("/home/tim/repo", Some("Debian"));
+        assert_eq!(f.take(&debian, "c", "", "main", alive), Ok(()));
+        assert_eq!(f.take("/home/tim/repo", "d", "", "main", alive), Ok(()));
+        // A prefix that isn't a parent folder doesn't overlap.
+        let sibling = key("/home/tim/repository", Some("Ubuntu"));
+        assert_eq!(f.take(&sibling, "e", "", "main", alive), Ok(()));
+        assert!(overlaps(&key("/", Some("Ubuntu")), &ubuntu));
+    }
+
+    #[test]
+    fn a_wsl_sessions_notices_reach_its_distro_only() {
+        let f = CodeFolders::default();
+        let db = Database::open_in_memory();
+        for (id, distro) in [("a", "Ubuntu"), ("b", "Ubuntu"), ("c", "Debian")] {
+            db.create_code_session_at(
+                &crate::code_tools::wsl::CodeLocation {
+                    wsl_distro: Some(distro.to_string()),
+                    root: "/home/tim/repo".to_string(),
+                },
+                None,
+                None,
+            )
+            .map(|row| {
+                // Ids are random; rename for the test.
+                db.rename_test_code_session(&row.id, id);
+                // Heard nothing yet (a new row's own time stands in otherwise).
+                db.set_code_session_seen(id, Some(0), None).unwrap();
+            })
+            .unwrap();
+        }
+        let ubuntu = key("/home/tim/repo", Some("Ubuntu"));
+        f.record(
+            &db,
+            &ubuntu,
+            "a",
+            "Alpha",
+            vec!["/home/tim/repo/x".into()],
+            1000,
+        )
+        .unwrap();
+        // b, in the same distro, has not heard it: kept, and delivered.
+        assert_eq!(db.code_notices().unwrap().len(), 1);
+        assert_eq!(
+            f.take_notices(&db, &ubuntu, "b", 0, 1001)
+                .unwrap()
+                .notices
+                .len(),
+            1
+        );
+        let debian = key("/home/tim/repo", Some("Debian"));
+        assert!(f
+            .take_notices(&db, &debian, "c", 0, 1001)
+            .unwrap()
+            .notices
+            .is_empty());
     }
 
     #[test]

@@ -1,5 +1,21 @@
 import { describe, it, expect } from 'vitest';
-import { makeCodePathLinker, parsePathRef, relativeToRoot, splitGrepLine } from './paths';
+import {
+	ioRoot,
+	makeCodePathLinker,
+	parsePathRef,
+	relativeToRoot,
+	splitGrepLine,
+	wslShare
+} from './paths';
+
+describe('a WSL root as the host reaches it', () => {
+	it('is the distro share for a WSL session, the folder itself otherwise', () => {
+		const share = String.raw`\\wsl.localhost\Ubuntu\home\tim\proj`;
+		expect(wslShare('Ubuntu', '/home/tim/proj/')).toBe(share);
+		expect(ioRoot('/home/tim/proj', 'Ubuntu')).toBe(share);
+		expect(ioRoot('/home/tim/proj', null)).toBe('/home/tim/proj');
+	});
+});
 
 describe('relativeToRoot', () => {
 	it.each([

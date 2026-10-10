@@ -14,6 +14,12 @@
 //!
 //! Paths are resolved through `resolve_in_workdir`, so a window can't read,
 //! write or watch anything outside its folder.
+//!
+//! A file in a WSL distro (a Windows Code session's, reached through the
+//! distro's `\\wsl.localhost\…` share) is polled instead: the OS watcher
+//! doesn't hear changes made inside Linux. Saving still checks the hash, so a
+//! change the poll hasn't seen yet can't be overwritten unasked. A folder
+//! that can't be watched at all is reported (`EditorFile::live`).
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
@@ -23,7 +29,7 @@ use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{EventKind, PollWatcher, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use tauri::{Emitter, Manager};
 
@@ -41,6 +47,8 @@ pub const FILE_CHANGED_EVENT: &str = "editor://file-changed";
 const DEBOUNCE: Duration = Duration::from_millis(150);
 /// A file written to non-stop is still checked this often.
 const MAX_WAIT: Duration = Duration::from_secs(1);
+/// How often a folder in a WSL distro is looked at for changes.
+const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
 /// The content hash a window last saw: `None` when the file didn't exist.
 type Known = Option<String>;
@@ -55,6 +63,9 @@ pub struct EditorFile {
     pub content: Option<String>,
     /// Content hash, `None` when the file doesn't exist.
     pub hash: Option<String>,
+    /// Changes made by something else will reach the window. False when its
+    /// folder couldn't be watched: the window says so.
+    pub live: bool,
 }
 
 /// What `editor_save_file` returns.
@@ -100,6 +111,10 @@ struct State {
     /// directory → how many watched files are in it.
     dirs: HashMap<PathBuf, usize>,
     watcher: Option<RecommendedWatcher>,
+    /// Polls the folders in WSL distros (see the module docs).
+    poller: Option<PollWatcher>,
+    /// Watched folders whose watch failed.
+    failed: HashSet<PathBuf>,
     /// Feeds the debounce thread; dropping it ends the thread.
     events: Option<Sender<PathBuf>>,
 }
@@ -129,40 +144,57 @@ impl EditorWatches {
         }
     }
 
-    /// Watch `path` for `label`, which has just seen `known`.
-    pub fn watch(&self, label: &str, path: &Path, known: Known) {
+    /// Watch `path` for `label`, which has just seen `known`. Returns whether
+    /// changes to it will be heard (false when its folder can't be watched).
+    pub fn watch(&self, label: &str, path: &Path, known: Known) -> bool {
         let mut st = self.state.lock().unwrap();
         let new_file = !st.files.contains_key(path);
         st.files
             .entry(path.to_path_buf())
             .or_default()
             .insert(label.to_string(), known);
-        if !new_file {
-            return;
-        }
         let Some(dir) = path.parent().map(Path::to_path_buf) else {
-            return;
+            return false;
         };
+        if !new_file {
+            return !st.failed.contains(&dir);
+        }
         let count = st.dirs.entry(dir.clone()).or_insert(0);
         *count += 1;
         if *count > 1 {
-            return;
+            return !st.failed.contains(&dir);
+        }
+        if let Err(e) = self.watch_dir(&mut st, &dir) {
+            // A file in a folder that doesn't exist yet: no reloads for it.
+            log::warn!("editor: can't watch {}: {e}", dir.display());
+            st.failed.insert(dir);
+            return false;
+        }
+        true
+    }
+
+    /// Start watching `dir`: polled when it is in a WSL distro, else the OS
+    /// watcher. Both feed the one debounce thread.
+    fn watch_dir(&self, st: &mut State, dir: &Path) -> notify::Result<()> {
+        let tx = self.events(st)?;
+        if crate::code_tools::wsl::parse_wsl_unc(&dir.to_string_lossy()).is_some() {
+            if st.poller.is_none() {
+                let config = notify::Config::default().with_poll_interval(POLL_INTERVAL);
+                st.poller = Some(PollWatcher::new(forwarder(tx), config)?);
+            }
+            return st
+                .poller
+                .as_mut()
+                .expect("just made")
+                .watch(dir, RecursiveMode::NonRecursive);
         }
         if st.watcher.is_none() {
-            match self.start(&mut st) {
-                Ok(w) => st.watcher = Some(w),
-                Err(e) => {
-                    log::warn!("editor file watcher unavailable: {e}");
-                    return;
-                }
-            }
+            st.watcher = Some(notify::recommended_watcher(forwarder(tx))?);
         }
-        if let Some(w) = st.watcher.as_mut() {
-            if let Err(e) = w.watch(&dir, RecursiveMode::NonRecursive) {
-                // A file in a folder that doesn't exist yet: no reloads for it.
-                log::warn!("editor: can't watch {}: {e}", dir.display());
-            }
-        }
+        st.watcher
+            .as_mut()
+            .expect("just made")
+            .watch(dir, RecursiveMode::NonRecursive)
     }
 
     /// Record what `label` just wrote, so the change doesn't come back to it.
@@ -201,12 +233,14 @@ impl EditorWatches {
         }
     }
 
-    /// Drop every watch and the watcher: the app is exiting.
+    /// Drop every watch and the watchers: the app is exiting.
     pub fn stop_all(&self) {
         let mut st = self.state.lock().unwrap();
         st.files.clear();
         st.dirs.clear();
+        st.failed.clear();
         st.watcher = None;
+        st.poller = None;
         st.events = None;
     }
 
@@ -249,43 +283,34 @@ impl EditorWatches {
             return;
         }
         st.dirs.remove(&dir);
+        st.failed.remove(&dir);
         if let Some(w) = st.watcher.as_mut() {
             let _ = w.unwatch(&dir);
         }
+        if let Some(w) = st.poller.as_mut() {
+            let _ = w.unwatch(&dir);
+        }
         if st.files.is_empty() {
-            // Nothing left open anywhere: let the OS watch and thread go.
+            // Nothing left open anywhere: let the watchers and thread go.
             st.watcher = None;
+            st.poller = None;
             st.events = None;
         }
     }
 
-    /// The OS watcher, feeding a debounce thread. Its callback only forwards
-    /// paths and never takes the state lock: `watch()` is called with the
-    /// lock held and waits on the watcher's own thread.
-    fn start(&self, st: &mut State) -> notify::Result<RecommendedWatcher> {
+    /// The sender into the debounce thread, starting the thread the first time.
+    fn events(&self, st: &mut State) -> notify::Result<Sender<PathBuf>> {
+        if let Some(tx) = &st.events {
+            return Ok(tx.clone());
+        }
         let (tx, rx) = mpsc::channel::<PathBuf>();
-        let forward = tx.clone();
-        let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-            let Ok(event) = res else { return };
-            // Opening or reading a file is not a change, and our own read in
-            // `flush` would otherwise trigger the next one. A close after
-            // writing is.
-            if let EventKind::Access(kind) = event.kind {
-                if kind != notify::event::AccessKind::Close(notify::event::AccessMode::Write) {
-                    return;
-                }
-            }
-            for p in event.paths {
-                let _ = forward.send(p);
-            }
-        })?;
-        st.events = Some(tx);
         let this = self.clone();
         std::thread::Builder::new()
             .name("editor-watch".into())
             .spawn(move || this.debounce_loop(rx))
             .map_err(|e| notify::Error::generic(&e.to_string()))?;
-        Ok(watcher)
+        st.events = Some(tx.clone());
+        Ok(tx)
     }
 
     fn debounce_loop(&self, rx: mpsc::Receiver<PathBuf>) {
@@ -343,6 +368,26 @@ impl EditorWatches {
     }
 }
 
+/// A watcher callback that forwards changed paths to the debounce thread. It
+/// never takes the state lock: `watch()` is called with the lock held and
+/// waits on the watcher's own thread.
+fn forwarder(tx: Sender<PathBuf>) -> impl FnMut(notify::Result<notify::Event>) + Send + 'static {
+    move |res: notify::Result<notify::Event>| {
+        let Ok(event) = res else { return };
+        // Opening or reading a file is not a change, and our own read in
+        // `flush` would otherwise trigger the next one. A close after
+        // writing is.
+        if let EventKind::Access(kind) = event.kind {
+            if kind != notify::event::AccessKind::Close(notify::event::AccessMode::Write) {
+                return;
+            }
+        }
+        for p in event.paths {
+            let _ = tx.send(p);
+        }
+    }
+}
+
 /// Build the managed state, emitting to the window that watches the file.
 pub fn editor_watches(app: &tauri::AppHandle) -> EditorWatches {
     let app = app.clone();
@@ -386,13 +431,14 @@ pub async fn editor_read_file(
     let root = workdir_path(&workdir)?;
     let path = resolve_in_workdir(&root, &rel_path)?;
     let (content, hash) = read_file(&path).await?;
-    window
+    let live = window
         .state::<EditorWatches>()
         .watch(window.label(), &path, hash.clone());
     Ok(EditorFile {
         path: path.to_string_lossy().into_owned(),
         content,
         hash,
+        live,
     })
 }
 
@@ -447,7 +493,7 @@ async fn save_file(
     let hash = content_hash(content.as_bytes());
     // Recorded first, so the watcher sees our own write as nothing new.
     let before = watches.known(label, path);
-    watches.watch(label, path, Some(hash.clone()));
+    let _ = watches.watch(label, path, Some(hash.clone()));
     if let Err(e) = write_bytes_to_workdir(path, content.as_bytes()).await {
         watches.set_known(label, path, before.unwrap_or(on_disk));
         return Err(e);
@@ -528,6 +574,58 @@ mod tests {
     }
 
     const SETTLE: Duration = Duration::from_millis(1200);
+
+    /// Needs a WSL2 distro: run on the Windows box with `--ignored`.
+    #[cfg(windows)]
+    #[test]
+    #[ignore]
+    fn a_change_made_inside_wsl_reaches_the_window_by_polling() {
+        use crate::code_tools::wsl;
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let distro = wsl::distros().into_iter().next().expect("a WSL2 distro");
+        let home = rt.block_on(wsl::realpath_in(&distro, "~")).unwrap();
+        let dir = format!("{home}/.haruspex-editor-test-{}", std::process::id());
+        let script = format!("mkdir -p '{dir}' && echo one > '{dir}/f.txt'");
+        assert!(rt
+            .block_on(wsl::wsl_exec(&distro, &["bash", "-c", &script]).status())
+            .unwrap()
+            .success());
+        let file = wsl::share_path(&distro, &format!("{dir}/f.txt"));
+        let (w, rx) = recorder(Duration::from_millis(100));
+        assert!(
+            w.watch("editor-1", &file, disk_hash(&file)),
+            "polled watch failed"
+        );
+
+        // The poller's first scan is the baseline; change the file after it.
+        std::thread::sleep(POLL_INTERVAL + Duration::from_millis(500));
+        // Changed from Linux, which the OS watcher would never hear. The
+        // same size, so only the time (or content) can tell.
+        let script = format!("echo two > '{dir}/f.txt'");
+        rt.block_on(wsl::wsl_exec(&distro, &["bash", "-c", &script]).status())
+            .unwrap();
+        let got = drain(&rx, POLL_INTERVAL * 3);
+        assert_eq!(got.len(), 1, "{got:?}");
+        assert_eq!(got[0].1.hash, Some(content_hash(b"two\n")));
+
+        w.stop_all();
+        let _ = rt.block_on(wsl::wsl_exec(&distro, &["rm", "-rf", &dir]).status());
+    }
+
+    #[test]
+    fn a_folder_that_cant_be_watched_is_reported() {
+        let dir = temp_dir("unwatchable");
+        let file = dir.join("missing").join("f.txt");
+        let (w, _rx) = recorder(Duration::from_millis(100));
+        assert!(!w.watch("editor-1", &file, None));
+        // Asked again (another window): still not live.
+        assert!(!w.watch("editor-2", &file, None));
+        let ok = dir.join("g.txt");
+        assert!(w.watch("editor-1", &ok, None));
+    }
 
     #[test]
     fn emits_when_something_else_changes_the_file() {
