@@ -21,26 +21,45 @@ on:
   pull_request:
     # `labeled` so adding windows-ci / macos-ci starts that job straight away,
     # rather than on the PR's next push.
+    # No path filter here, unlike push: a workflow that never starts leaves
+    # its required checks pending, and auto-merge waits for ever. The
+    # `changes` job skips the builds instead, and a skipped job counts as a
+    # pass.
     types: [opened, synchronize, reopened, labeled]
-    # The same list as push, spelled out: YAML anchors in workflows are recent
-    # enough not to rely on.
-    paths:
-      - '**'
-      - '!plan/**'
-      - '!docs/**'
-      - '!site/**'
-      - '!audits/**'
-      - '!**/*.md'
-      - 'docs/image-generation.md'
-      # The user guide is compiled into the app and tested (src/lib/guide/).
-      - 'docs/guide/**'
   workflow_dispatch:
 
 jobs:
+  # Does the PR touch anything but prose? The same rule as push's path
+  # filter: plan/, docs/, site/, audits/ and markdown are prose, except
+  # docs/image-generation.md (check-constants.mjs reads it) and the user guide
+  # (compiled into the app). Keep the two in step.
+  changes:
+    runs-on: ubuntu-latest
+    if: github.event.action != 'labeled'
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -z "$BASE" ]; then echo code=true >> "$GITHUB_OUTPUT"; exit 0; fi
+          code=$(git diff --name-only "$BASE"...HEAD | awk '
+            /^docs\/image-generation\.md$/ || /^docs\/guide\// { print; next }
+            /^(plan|docs|site|audits)\// || /\.md$/ { next }
+            { print }')
+          echo "Changed outside prose: ${code:-nothing}"
+          if [ -n "$code" ]; then echo code=true; else echo code=false; fi >> "$GITHUB_OUTPUT"
+
   frontend:
     runs-on: ubuntu-latest
-    # A label changes nothing these jobs check; they ran on the push.
-    if: github.event.action != 'labeled'
+    # A label changes nothing these jobs check; they ran on the push, and
+    # `changes` skips on a label.
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -89,7 +108,8 @@ jobs:
   # in step with @playwright/test and scripts/e2e-ui-visual.sh.
   e2e-ui:
     runs-on: ubuntu-latest
-    if: github.event.action != 'labeled'
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     container:
       image: mcr.microsoft.com/playwright:v1.63.0-noble
     env:
@@ -119,8 +139,10 @@ jobs:
 
   backend:
     runs-on: ubuntu-latest
-    # A label changes nothing these jobs check; they ran on the push.
-    if: github.event.action != 'labeled'
+    # A label changes nothing these jobs check; they ran on the push, and
+    # `changes` skips on a label.
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -181,7 +203,8 @@ jobs:
   # app. See e2e/app/ and docs/testing.md.
   e2e-app:
     runs-on: ubuntu-latest
-    if: github.event.action != 'labeled'
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
