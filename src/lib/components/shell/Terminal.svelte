@@ -13,6 +13,7 @@
 	import type { SessionContext } from '#lib/ipc/gen/SessionContext.ts';
 	import type { ShellContextResponse } from '#lib/ipc/gen/ShellContextResponse.ts';
 	import type { ShellSpawnResult } from '#lib/ipc/gen/ShellSpawnResult.ts';
+	import type { ShellSelection } from '#lib/ipc/gen/ShellSelection.ts';
 
 	interface Props {
 		onReady?: (handle: TerminalHandle) => void;
@@ -25,6 +26,12 @@
 		// points. Omit for $HOME (the Rust side falls back there, and also for
 		// a path that no longer exists).
 		cwd?: string | null;
+		/**
+		 * The shell to run, for this tab only: a Code session's `open_in_shell`
+		 * opens one in its WSL distro. Omit for Settings' picker, as every
+		 * tab the user opens gets.
+		 */
+		selection?: ShellSelection | null;
 		/**
 		 * Swallow user keystrokes while true. A function, not a value, so the
 		 * long-lived `onData` handler reads the live state each keypress rather
@@ -63,6 +70,7 @@
 		onSelectionChange,
 		attachSessionId,
 		cwd = null,
+		selection: tabSelection = null,
 		isInputBlocked
 	}: Props = $props();
 
@@ -398,7 +406,7 @@
 		term.reset();
 
 		const shellOverride = getSettings().shellBinary.trim() || null;
-		const selection = getSettings().shellSelection ?? null;
+		const selection = tabSelection ?? getSettings().shellSelection ?? null;
 		const fit = new FitAddon();
 		// Reuse the existing terminal; xterm holds onto its own resize
 		// addon from createTerminal. We only need a fresh observer.
@@ -440,7 +448,7 @@
 			}
 
 			const shellOverride = getSettings().shellBinary.trim() || null;
-			const selection = getSettings().shellSelection ?? null;
+			const selection = tabSelection ?? getSettings().shellSelection ?? null;
 			const spawn = await invoke<ShellSpawnResult>('shell_spawn', {
 				cols: t.cols,
 				rows: t.rows,

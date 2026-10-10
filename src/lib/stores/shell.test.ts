@@ -813,7 +813,7 @@ describe('Open in Code', () => {
 				: (undefined as never)
 		);
 		await s.openInCode();
-		expect(bridge.openCodeAt).toHaveBeenCalledWith('/home/tim/app');
+		expect(bridge.openCodeAt).toHaveBeenCalledWith('/home/tim/app', null);
 		// The shell thread stays here.
 		expect(s.messages).toEqual([]);
 		vi.mocked(invoke).mockReset().mockResolvedValue(undefined);

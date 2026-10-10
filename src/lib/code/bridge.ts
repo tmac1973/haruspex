@@ -17,9 +17,11 @@ export const OPEN_CODE_EVENT = 'code://open-at';
 
 export interface OpenCodePayload {
 	root: string;
+	/** The WSL distro a Linux `root` is in (a WSL Shell tab's). */
+	wslDistro?: string | null;
 }
 
-export type CodeOpener = (root: string) => Promise<void>;
+export type CodeOpener = (root: string, wslDistro?: string | null) => Promise<void>;
 
 let opener: CodeOpener | null = null;
 /** Takes precedence over `opener`. */
@@ -41,11 +43,11 @@ export function useCodeRelay(fn: CodeOpener): () => void {
 	};
 }
 
-/** Start a Code session at `root` and switch to the Code tab. */
-export async function openCodeAt(root: string): Promise<void> {
+/** Start a Code session at `root` (in `wslDistro`, if given) and switch to the Code tab. */
+export async function openCodeAt(root: string, wslDistro: string | null = null): Promise<void> {
 	const open = relay ?? opener;
 	if (!open) throw new Error('The Code tab is not available here.');
-	await open(root);
+	await open(root, wslDistro);
 }
 
 /** The relay a detached Shell window installs, with the window side injected. */
@@ -53,8 +55,8 @@ export function relayToMain(api: {
 	emitToMain(event: string, payload: unknown): Promise<void>;
 	raiseMain(): Promise<void>;
 }): CodeOpener {
-	return async (root) => {
-		await api.emitToMain(OPEN_CODE_EVENT, { root } satisfies OpenCodePayload);
+	return async (root, wslDistro) => {
+		await api.emitToMain(OPEN_CODE_EVENT, { root, wslDistro } satisfies OpenCodePayload);
 		await api.raiseMain();
 	};
 }

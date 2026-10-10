@@ -5,13 +5,13 @@ description: Coding sessions in a project folder — starting one, diffs and com
 
 # Code tab
 
-The Code tab is a coding agent that works in one project folder: it reads and edits files and runs commands there. It is on Linux and macOS; on Windows the tab is hidden for now.
+The Code tab is a coding agent that works in one project folder: it reads and edits files and runs commands there. On Windows it works on projects inside WSL; see the `code-windows` page.
 
 ## Start a session
 
 Click **New session** (or **+** next to the open sessions) and pick the project folder. **Open in Code** in a Shell tab's assistant starts one in that terminal's folder. The folder is fixed for the session's life: the agent can't read or write outside it.
 
-Type what you want and press `Enter`. After the first reply the model names the session (until then it is `<folder> · new session`); a name you gave it is never replaced. Sessions are saved after every reply.
+Type what you want and press `Enter`. After the first reply the model names the session; a name you gave it is never replaced. Sessions are saved after every reply.
 
 ## Find, fork and move sessions
 
@@ -34,9 +34,9 @@ The conversation shows **Waiting for you in Shell N — press Enter there**, wit
 
 ## Edit files
 
-Files open in an editor window, one per folder, a tab per file. **⤢** on a tab moves the file to a window of its own. `Ctrl / ⌘ + S` saves; `Ctrl / ⌘ + W` closes the tab. The agent can open files there too, but doesn't see your edits unless you tell it.
+Files open in an editor window, one per folder, a tab per file. **⤢** on a tab moves the file to a window of its own. `Ctrl / ⌘ + S` saves; `Ctrl / ⌘ + W` closes the tab. The agent can open files there too but doesn't see your edits.
 
-When something else changes a file, the editor reloads it and keeps your place. With unsaved edits it shows **Changed on disk** (**Reload** / **Keep mine**), and saving over a change you haven't seen asks **Overwrite** or **Reload first**. A deleted file shows **Deleted on disk**; saving recreates it. Closing a window with unsaved edits asks first; closing the main window closes the editors too.
+When something else changes a file, the editor reloads it and keeps your place. With unsaved edits it shows **Changed on disk** (**Reload** / **Keep mine**), and saving over a change you haven't seen asks **Overwrite** or **Reload first**. A deleted file shows **Deleted on disk**; saving recreates it. **Live reload unavailable** means outside changes won't show. Closing a window with unsaved edits asks first; closing the main window closes the editors too.
 
 ## Steer or stop the agent
 

@@ -1013,13 +1013,16 @@ function adopt(session: CodeSession): CodeSession {
  * sub-tab, with the Code tab shown. The folder becomes the last one used, as
  * if picked in the new-session dialog.
  */
-export async function openCodeSessionAt(root: string): Promise<CodeSession> {
-	const session = await newSession(root);
+export async function openCodeSessionAt(
+	root: string,
+	wslDistro: string | null = null
+): Promise<CodeSession> {
+	const session = await newSession(root, { wslDistro });
 	updateSettings({ codeLastRoot: root, codeLastWslDistro: session.wslDistro ?? '' });
 	setActiveTab('code');
 	return session;
 }
 
-registerCodeOpener(async (root) => {
-	await openCodeSessionAt(root);
+registerCodeOpener(async (root, wslDistro) => {
+	await openCodeSessionAt(root, wslDistro ?? null);
 });

@@ -135,7 +135,7 @@ describe('code windows', () => {
 	it('starts /new beside the session, as a sub-tab here', async () => {
 		const a = api();
 		await newSessionBeside(session(), a);
-		expect(store.newSession).toHaveBeenCalledWith('/p/app');
+		expect(store.newSession).toHaveBeenCalledWith('/p/app', { wslDistro: null });
 		expect(a.emitToMain).not.toHaveBeenCalled();
 	});
 
@@ -156,7 +156,7 @@ describe('code windows', () => {
 		const a = api();
 		await newSessionBeside(session(), a);
 		expect(store.newSession).not.toHaveBeenCalled();
-		expect(createCodeSession).toHaveBeenCalledWith('/p/app');
+		expect(createCodeSession).toHaveBeenCalledWith('/p/app', { wslDistro: null });
 		expect(a.emitToMain).toHaveBeenCalledWith(REATTACH_EVENT, { id: 'new-1' });
 	});
 });
@@ -189,7 +189,7 @@ describe('Open in Code from a detached Shell window', () => {
 	it('opens the session in the main window and brings it forward', async () => {
 		const raise = vi.fn(async () => {});
 		await openAtHandler(raise)({ root: '/home/tim/app' });
-		expect(store.openCodeSessionAt).toHaveBeenCalledWith('/home/tim/app');
+		expect(store.openCodeSessionAt).toHaveBeenCalledWith('/home/tim/app', null);
 		expect(raise).toHaveBeenCalled();
 	});
 

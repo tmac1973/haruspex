@@ -17,7 +17,7 @@ describe('Open in Code bridge', () => {
 		const opener = vi.fn(async () => {});
 		undo.push(registerCodeOpener(opener));
 		await openCodeAt('/home/tim/app');
-		expect(opener).toHaveBeenCalledWith('/home/tim/app');
+		expect(opener).toHaveBeenCalledWith('/home/tim/app', null);
 	});
 
 	it('fails plainly when nothing can open a Code session', async () => {
@@ -33,7 +33,10 @@ describe('Open in Code bridge', () => {
 		await openCodeAt('/home/tim/app');
 
 		expect(opener).not.toHaveBeenCalled();
-		expect(api.emitToMain).toHaveBeenCalledWith(OPEN_CODE_EVENT, { root: '/home/tim/app' });
+		expect(api.emitToMain).toHaveBeenCalledWith(OPEN_CODE_EVENT, {
+			root: '/home/tim/app',
+			wslDistro: null
+		});
 		expect(api.raiseMain).toHaveBeenCalled();
 	});
 });

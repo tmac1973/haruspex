@@ -154,14 +154,16 @@ export async function forkFromMessage(
  * detached window that is the main window's tab strip too.
  */
 export async function newSessionBeside(
-	session: Pick<CodeSession, 'root'>,
+	session: Pick<CodeSession, 'root' | 'wslDistro'>,
 	api: CodeWindowApi = tauriApi
 ): Promise<void> {
+	// In the same folder, so in the same WSL distro too.
+	const wslDistro = session.wslDistro ?? null;
 	if (!inDetachedCodeWindow()) {
-		await newSession(session.root);
+		await newSession(session.root, { wslDistro });
 		return;
 	}
-	const record = await createCodeSession(session.root);
+	const record = await createCodeSession(session.root, { wslDistro });
 	await api.emitToMain(REATTACH_EVENT, { id: record.id } satisfies ReattachPayload);
 	await api.raiseMain();
 }
@@ -192,7 +194,7 @@ export function openAtHandler(
 ): (p: OpenCodePayload) => Promise<void> {
 	return async (p) => {
 		try {
-			await openCodeSessionAt(p.root);
+			await openCodeSessionAt(p.root, p.wslDistro ?? null);
 		} catch (e) {
 			showToast(`Couldn't open a Code session: ${errMessage(e)}`, { kind: 'error' });
 		}

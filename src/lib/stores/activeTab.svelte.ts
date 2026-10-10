@@ -4,13 +4,6 @@ export type ActiveTab = 'chat' | 'jobs' | 'shell' | 'code';
 
 const STORAGE_KEY = 'haruspex.activeTab';
 
-/**
- * On Windows the Code tab works in WSL2 distros only, and is behind this flag
- * until it runs there end to end (plan/code-tab/phase-10-windows-wsl.md,
- * milestone 5): dev builds show it, releases don't.
- */
-const WSL_CODE_TAB = import.meta.env.DEV;
-
 function isWindows(userAgent: string): boolean {
 	return /Windows/i.test(userAgent);
 }
@@ -19,7 +12,10 @@ function currentUserAgent(): string {
 	return (typeof navigator !== 'undefined' && navigator.userAgent) || '';
 }
 
-/** Windows: whether a WSL2 distro is installed. Null until `probeCodeTab` answers. */
+/**
+ * Windows: whether a WSL2 distro is installed, since the Code tab works
+ * inside one there (native folders are #396). Null until `probeCodeTab` answers.
+ */
 let wslReady = $state<boolean | null>(null);
 
 /**
@@ -28,7 +24,7 @@ let wslReady = $state<boolean | null>(null);
  */
 export function codeTabAvailable(userAgent = currentUserAgent()): boolean {
 	if (!isWindows(userAgent)) return true;
-	return WSL_CODE_TAB && wslReady === true;
+	return wslReady === true;
 }
 
 /** The main tabs in TabBar order, as the Ctrl / ⌘ + digit shortcuts number them. */
@@ -45,7 +41,7 @@ function load(): ActiveTab {
 		if (raw === 'chat' || raw === 'jobs' || raw === 'shell') return raw;
 		if (raw === 'code') {
 			if (codeTabAvailable()) return raw;
-			codeWaiting = isWindows(currentUserAgent()) && WSL_CODE_TAB;
+			codeWaiting = isWindows(currentUserAgent());
 		}
 	} catch {
 		// ignore
@@ -60,7 +56,7 @@ let activeTab = $state<ActiveTab>(load());
  * reopen it if it was the last tab open. Nothing to do elsewhere.
  */
 export async function probeCodeTab(userAgent = currentUserAgent()): Promise<void> {
-	if (!isWindows(userAgent) || !WSL_CODE_TAB || wslReady !== null) return;
+	if (!isWindows(userAgent) || wslReady !== null) return;
 	wslReady = (await wslDistros()).length > 0;
 	if (codeWaiting && wslReady && activeTab === 'chat') activeTab = 'code';
 	codeWaiting = false;
