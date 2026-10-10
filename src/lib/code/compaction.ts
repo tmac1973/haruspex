@@ -13,18 +13,14 @@
  * See plan/code-compaction/.
  */
 
-import { chatCompletion, messageText, type BackendOverride, type ChatMessage } from '#lib/api.ts';
-import {
-	TOKEN_BYTES_RATIO,
-	estimateMessagesTokens,
-	estimateTokens,
-	getTokenCalibration
-} from '#lib/agent/context-budget.ts';
-import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
+import { messageText, type BackendOverride, type ChatMessage } from '#lib/api.ts';
+import { estimateMessagesTokens, getTokenCalibration } from '#lib/agent/context-budget.ts';
+import { summarizeInChunks } from '#lib/agent/summarize.ts';
 import { stripThinkBlocks } from '#lib/markdown.ts';
 import { truncateCapturedOutput } from '#lib/shell/truncate.ts';
-import { getChatTemplateKwargs } from '#lib/stores/settings.ts';
 import type { CodeCompaction } from './session';
+
+export { summaryMaxTokens } from '#lib/agent/summarize.ts';
 
 /**
  * Compact once the prompt reaches this share of the window. Below Chat's 0.8:
@@ -38,9 +34,6 @@ const KEEP_RECENT = 0.25;
 const RESULT_CLIP_BYTES = 1200;
 /** A tool call's main argument in the summary's input. */
 const ARG_CLIP_CHARS = 120;
-/** The summary's own length: a sixteenth of the window, up to this. */
-const SUMMARY_MAX_TOKENS = 4096;
-const SUMMARY_MIN_TOKENS = 512;
 
 const SUMMARY_HEADER =
 	"[Summary of this session's earlier turns. Files may have changed since: " +
@@ -188,29 +181,11 @@ export function renderForSummary(messages: ChatMessage[]): string[] {
 	return turns.map((t) => t.join('\n')).filter(Boolean);
 }
 
-/** The summary's reply budget for a window. */
-export function summaryMaxTokens(contextSize: number): number {
-	return Math.max(SUMMARY_MIN_TOKENS, Math.min(SUMMARY_MAX_TOKENS, Math.floor(contextSize / 16)));
-}
-
-function summaryRequest(previous: string | null, instructions: string, chunk: string): string {
-	const parts: string[] = [];
-	if (previous) {
-		parts.push(
-			`The summary so far:\n\n${previous}\n\nUpdate it with the turns below, keeping what still matters from it.`
-		);
-	}
-	if (instructions) parts.push(`The user asks you to keep: ${instructions}`);
-	parts.push(`Turns:\n\n${chunk}`);
-	return parts.join('\n\n');
-}
-
 /**
- * Roll a summary forward over `turns`, in as few chunks as fit one request
- * each: every call carries the summary so far and the next chunk. A single
- * turn too big for a request on its own is clipped to head and tail.
+ * Roll a summary forward over `turns` (`summarizeInChunks`), with the prompt
+ * written for coding.
  */
-export async function summarizeTurns(opts: {
+export function summarizeTurns(opts: {
 	previous: string | null;
 	turns: string[];
 	backend: BackendOverride | null;
@@ -219,55 +194,8 @@ export async function summarizeTurns(opts: {
 	/** What the user asked to keep (`/compact <text>`). */
 	instructions?: string;
 }): Promise<string> {
-	const descriptor = resolveBackendDescriptor(opts.backend ?? undefined);
-	const maxTokens = summaryMaxTokens(opts.contextSize);
-	const instructions = opts.instructions?.trim() ?? '';
-	// The request's room, in the raw estimate the calibration scales.
-	const room = Math.floor((opts.contextSize - maxTokens) / getTokenCalibration());
-	let summary = opts.previous;
-	let next = 0;
-	while (next < opts.turns.length) {
-		const fixed =
-			estimateMessagesTokens([
-				{ role: 'system', content: SUMMARY_PROMPT },
-				{ role: 'user', content: summaryRequest(summary, instructions, '') }
-			]) + 16;
-		// Headroom for the joins and a clipped turn's truncation marker.
-		const budget = Math.max(256, room - fixed - 64);
-		const chunk: string[] = [];
-		let used = 0;
-		while (next < opts.turns.length) {
-			const turn = opts.turns[next];
-			const cost = estimateTokens(turn) + 2;
-			if (chunk.length > 0 && used + cost > budget) break;
-			chunk.push(
-				cost > budget
-					? truncateCapturedOutput(turn, Math.floor(budget * TOKEN_BYTES_RATIO)).text
-					: turn
-			);
-			used += cost;
-			next++;
-		}
-		const response = await chatCompletion(
-			{
-				messages: [
-					{ role: 'system', content: SUMMARY_PROMPT },
-					{ role: 'user', content: summaryRequest(summary, instructions, chunk.join('\n\n')) }
-				],
-				max_tokens: maxTokens,
-				temperature: 0.3,
-				// Reasoning would spend the reply budget before the summary.
-				chat_template_kwargs: getChatTemplateKwargs(descriptor, false),
-				backend: opts.backend ?? undefined
-			},
-			opts.signal
-		);
-		const text = stripThinkBlocks(response.content ?? '').trim();
-		if (!text) throw new Error('The model returned an empty summary.');
-		summary = text;
-	}
-	if (!summary) throw new Error('There was nothing to summarise.');
-	return summary;
+	const { turns, ...rest } = opts;
+	return summarizeInChunks({ ...rest, prompt: SUMMARY_PROMPT, parts: turns });
 }
 
 /**

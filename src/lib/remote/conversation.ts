@@ -11,7 +11,7 @@
  */
 
 import type { ChatMessage } from '#lib/api.ts';
-import { compactConversation, shouldCompact } from '#lib/agent/compaction.ts';
+import { SUMMARY_PREFIX, compactConversation, shouldCompact } from '#lib/agent/compaction.ts';
 import { estimateMessagesTokens, getTokenCalibration } from '#lib/agent/context-budget.ts';
 import { logDebug } from '#lib/debug-log.ts';
 
@@ -110,7 +110,7 @@ function conversationTurns(history: ChatMessage[]): ChatMessage[] {
 function withSummary(history: ChatMessage[], summary: string): ChatMessage[] {
 	const turns = conversationTurns(history);
 	return [
-		{ role: 'system', content: `[Earlier conversation summary]\n${summary}` },
+		{ role: 'system', content: `${SUMMARY_PREFIX}\n${summary}` },
 		...turns.slice(-PROTECTED_MESSAGES)
 	];
 }
