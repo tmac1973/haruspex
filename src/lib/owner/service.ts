@@ -42,3 +42,15 @@ export const listOwnerClients = () => invoke<OwnerClient[]>('owner_clients_list'
 export const createOwnerClient = (name: string, scopes: Scope[]) =>
 	invoke<CreatedOwnerClient>('owner_client_create', { name, scopes });
 export const revokeOwnerClient = (id: string) => invoke<boolean>('owner_client_revoke', { id });
+/** A new pairing link for a device; it gets a new token, and the old one stops working. */
+export const pairOwnerClient = (id: string) =>
+	invoke<CreatedOwnerClient>('owner_client_pair', { id });
+
+/**
+ * The link that pairs a browser: the web client, with the one-time code in
+ * the fragment (never sent to a server). `base` is Settings' link address, or
+ * the address the API listens on.
+ */
+export function pairingLink(base: string, code: string): string {
+	return `${base.replace(/\/+$/, '')}/app/#pair=${code}`;
+}

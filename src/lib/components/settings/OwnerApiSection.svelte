@@ -2,9 +2,12 @@
 	/**
 	 * Settings → Remote control: the owner API (plan/remote-api/). The server,
 	 * and the devices allowed to use it. A device's token is shown once, when
-	 * it is added; Rust keeps only its hash.
+	 * it is added, with a one-time link and QR code that pair a browser with
+	 * it (the web client); Rust keeps only the token's hash.
 	 */
 	import { onMount } from 'svelte';
+
+	import { getLinkQr, qrPath, type QrMatrix } from '#lib/remote/api.ts';
 
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import {
@@ -13,7 +16,10 @@
 		createOwnerClient,
 		listOwnerClients,
 		ownerApiStatus,
+		pairOwnerClient,
+		pairingLink,
 		revokeOwnerClient,
+		type CreatedOwnerClient,
 		type OwnerApiStatus,
 		type OwnerClient,
 		type Scope
@@ -32,6 +38,7 @@
 	let enabled = $state(getSettings().ownerApiEnabled);
 	let port = $state(getSettings().ownerApiPort);
 	let bindAll = $state(getSettings().ownerApiBindAll);
+	let linkBase = $state(getSettings().ownerApiLinkBase);
 
 	let status = $state<OwnerApiStatus | null>(null);
 	let devices = $state<OwnerClient[]>([]);
@@ -40,8 +47,9 @@
 
 	let newName = $state('');
 	let newScopes = $state<Scope[]>([...ALL_SCOPES]);
-	/** The token just made, until the user says they have it. */
-	let shown = $state<{ name: string; token: string } | null>(null);
+	/** The token and pairing link just made, until the user says they have them. */
+	let shown = $state<{ name: string; token: string; link: string | null } | null>(null);
+	let qr = $state<QrMatrix | null>(null);
 	let copied = $state<string | null>(null);
 
 	const address = $derived(
@@ -72,17 +80,38 @@
 		}
 	}
 
+	/** Where links point: Settings' link address, else where the API listens. */
+	const base = $derived(linkBase.trim() || address);
+
+	async function show(made: CreatedOwnerClient): Promise<void> {
+		const link = base ? pairingLink(base, made.pairCode) : null;
+		shown = { name: made.client.name, token: made.token, link };
+		qr = link ? await getLinkQr(link).catch(() => null) : null;
+	}
+
 	async function add(): Promise<void> {
 		error = null;
 		try {
-			const made = await createOwnerClient(newName, newScopes);
-			shown = { name: made.client.name, token: made.token };
+			await show(await createOwnerClient(newName, newScopes));
 			newName = '';
 			newScopes = [...ALL_SCOPES];
 			devices = await listOwnerClients();
 		} catch (e) {
 			error = errMessage(e);
 		}
+	}
+
+	async function newLink(device: OwnerClient): Promise<void> {
+		error = null;
+		try {
+			await show(await pairOwnerClient(device.id));
+		} catch (e) {
+			error = errMessage(e);
+		}
+	}
+
+	function saveLinkBase(): void {
+		updateSettings({ ownerApiLinkBase: linkBase.trim() });
 	}
 
 	async function revoke(device: OwnerClient): Promise<void> {
@@ -161,6 +190,21 @@
 		</div>
 	{/if}
 
+	<div
+		class="field"
+		title="Used in pairing links and QR codes. Behind `tailscale serve`, put your machine's https://….ts.net address here; empty uses the address above."
+	>
+		<label for="owner-link-base">Link address</label>
+		<input
+			id="owner-link-base"
+			type="url"
+			class="wide"
+			placeholder={address ?? 'https://…'}
+			bind:value={linkBase}
+			onchange={saveLinkBase}
+		/>
+	</div>
+
 	<div class="block">
 		<span class="label">Devices</span>
 		{#if devices.length === 0}
@@ -177,7 +221,14 @@
 							)}</span
 						>
 					</div>
-					<button class="btn btn-small btn-danger" onclick={() => revoke(device)}>Revoke</button>
+					<div class="actions">
+						<button
+							class="btn btn-small"
+							title="A new link to open the web page on this device. It gets a new token: anything using the old one must use the new one."
+							onclick={() => newLink(device)}>New link</button
+						>
+						<button class="btn btn-small btn-danger" onclick={() => revoke(device)}>Revoke</button>
+					</div>
 				</li>
 			{/each}
 		</ul>
@@ -192,8 +243,30 @@
 					<button onclick={() => copy(shown!.token, 'token')}
 						>{copied === 'token' ? 'Copied' : 'Copy'}</button
 					>
-					<button onclick={() => (shown = null)}>Done</button>
 				</div>
+				{#if shown.link}
+					<p class="help">Or open this on the device. It works once, within 10 minutes.</p>
+					<div class="row">
+						<code class="value">{shown.link}</code>
+						<button onclick={() => copy(shown!.link!, 'link')}
+							>{copied === 'link' ? 'Copied' : 'Copy'}</button
+						>
+					</div>
+					{#if qr}
+						<svg
+							class="qr"
+							viewBox="-2 -2 {qr.size + 4} {qr.size + 4}"
+							role="img"
+							aria-label="QR code for the pairing link"
+						>
+							<rect x="-2" y="-2" width={qr.size + 4} height={qr.size + 4} fill="#fff" />
+							<path d={qrPath(qr)} fill="#000" />
+						</svg>
+					{/if}
+				{:else}
+					<p class="help">Turn it on to get a link for opening it in a browser.</p>
+				{/if}
+				<button class="done" onclick={() => ((shown = null), (qr = null))}>Done</button>
 			</div>
 		{:else}
 			<form
@@ -245,6 +318,30 @@
 
 	.field input {
 		width: 8rem;
+	}
+
+	.field input.wide {
+		flex: 1;
+		width: auto;
+		min-width: 12rem;
+	}
+
+	.actions {
+		display: flex;
+		gap: 6px;
+	}
+
+	.qr {
+		display: block;
+		width: 180px;
+		height: 180px;
+		margin-top: 10px;
+		border-radius: 6px;
+		shape-rendering: crispEdges;
+	}
+
+	.done {
+		margin-top: 10px;
 	}
 
 	.label {

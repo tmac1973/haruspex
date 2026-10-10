@@ -2,6 +2,7 @@
 import type { OwnerClient } from "./OwnerClient";
 
 /**
- * A new device and its token, which is never shown again.
+ * A new device and its token, which is never shown again, with a one-time
+ * code that pairs a browser with it (`/app/#pair=<code>`, for 10 minutes).
  */
-export type CreatedOwnerClient = { client: OwnerClient, token: string, };
+export type CreatedOwnerClient = { client: OwnerClient, token: string, pairCode: string, };

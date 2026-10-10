@@ -76,3 +76,7 @@ npm-debug.log*
 # The user guide's web pages, built from docs/guide/ by scripts/build-guide.mjs
 # when the site is published.
 site/guide/
+# The web client build (npm run build:web), bundled as a resource. The folder
+# stays in git so tauri-build finds the resource before anything is built.
+src-tauri/web-client/*
+!src-tauri/web-client/.gitkeep

@@ -35,13 +35,15 @@ pub struct OwnerApiStatus {
     pub address: Option<String>,
 }
 
-/// A new device and its token, which is never shown again.
+/// A new device and its token, which is never shown again, with a one-time
+/// code that pairs a browser with it (`/app/#pair=<code>`, for 10 minutes).
 #[derive(Clone, Debug, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct CreatedOwnerClient {
     pub client: OwnerClient,
     pub token: String,
+    pub pair_code: String,
 }
 
 fn status(api: &OwnerApi) -> OwnerApiStatus {
@@ -101,9 +103,13 @@ pub async fn owner_api_apply(
         set_engine(&app, false);
         return Ok(status(&api));
     }
-    let clients = api.clients()?;
-    let dispatch = Arc::new(AppDispatch(app.clone()));
-    let running = server::start(dispatch, clients, config.port, config.bind_all).await?;
+    let services = server::Services {
+        dispatch: Arc::new(AppDispatch(app.clone())),
+        clients: api.clients()?,
+        pairing: api.pairing.clone(),
+        web_root: super::web_root(&app),
+    };
+    let running = server::start(services, config.port, config.bind_all).await?;
     *api.running.lock_or_recover() = Some(running);
     set_engine(&app, true);
     Ok(status(&api))
@@ -126,7 +132,28 @@ pub fn owner_client_create(
     scopes: Vec<Scope>,
 ) -> Result<CreatedOwnerClient, String> {
     let (client, token) = api.clients()?.create(&name, &scopes)?;
-    Ok(CreatedOwnerClient { client, token })
+    let pair_code = api.pairing.issue(&token)?;
+    Ok(CreatedOwnerClient {
+        client,
+        token,
+        pair_code,
+    })
+}
+
+/// A new pairing link for a device. Its token can't be shown again, so this
+/// gives it a new one: whatever used the old token must use the new one.
+#[tauri::command]
+pub fn owner_client_pair(
+    api: tauri::State<'_, OwnerApi>,
+    id: String,
+) -> Result<CreatedOwnerClient, String> {
+    let (client, token) = api.clients()?.rotate(&id)?;
+    let pair_code = api.pairing.issue(&token)?;
+    Ok(CreatedOwnerClient {
+        client,
+        token,
+        pair_code,
+    })
 }
 
 #[tauri::command]

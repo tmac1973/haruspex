@@ -228,6 +228,22 @@ impl Clients {
         Ok((client, token))
     }
 
+    /// Give a device a new token (to pair a browser with it again); the old
+    /// one stops working at once.
+    pub fn rotate(&self, id: &str) -> Result<(OwnerClient, String), String> {
+        let token = format!("{TOKEN_PREFIX}{}", random_hex(32)?);
+        let mut inner = self.inner.lock_or_recover();
+        let c = inner
+            .clients
+            .iter_mut()
+            .find(|c| c.id == id)
+            .ok_or("no such device")?;
+        c.token_hash = hash(&token);
+        let client = c.public();
+        self.save(&mut inner)?;
+        Ok((client, token))
+    }
+
     /// Remove a device; its token stops working at once.
     pub fn revoke(&self, id: &str) -> Result<bool, String> {
         let mut inner = self.inner.lock_or_recover();
@@ -307,6 +323,16 @@ mod tests {
         assert!(clients.revoke(&client.id).unwrap());
         assert!(clients.authenticate(&token).is_none());
         assert!(!clients.revoke(&client.id).unwrap());
+    }
+
+    #[test]
+    fn a_new_token_replaces_the_old_one() {
+        let clients = Clients::in_memory();
+        let (client, old) = clients.create("Phone", &Scope::ALL).unwrap();
+        let (_, new) = clients.rotate(&client.id).unwrap();
+        assert!(clients.authenticate(&old).is_none());
+        assert_eq!(clients.authenticate(&new).unwrap().id, client.id);
+        assert!(clients.rotate("nope").is_err());
     }
 
     #[test]

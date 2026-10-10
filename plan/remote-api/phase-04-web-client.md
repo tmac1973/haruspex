@@ -30,18 +30,18 @@ So the web client **shares the render pieces and has its own small shell**:
 
 ## Decisions
 
-| # | Question | Decision |
-|---|---|---|
-| 1 | Build | **A plain Svelte + Vite app** (`src/web/`, `vite.web.config.ts`), not a second SvelteKit build: no layout bootstrap, no `build/` clash. It imports `#lib/...` like the app. The output goes to `src-tauri/web-client/` (gitignored). |
-| 2 | Serving | **The owner API serves it at `/app/`**, from the bundled resource `web-client/` (`tauri.conf.json` `bundle.resources`). `GET /` redirects there. |
-| 3 | Pairing | **Add device also gives a one-time link and QR code**, valid for 10 minutes. The code rides in the URL *fragment*, so it never reaches a server log or the history's request line. The page swaps it for an `HttpOnly; SameSite=Strict` cookie holding the device token, plus `Secure` when the request came over HTTPS (`tailscale serve`). |
-| 4 | CSRF with cookies | **A cookie-authenticated request must send `X-Haruspex: 1`** (a custom header, which forces a CORS preflight that this server never answers), and the Origin rule from phase 3 still applies. Bearer requests are unchanged. |
-| 5 | Events in the browser | **`EventSource` on `/api/v1/events`**, with the cookie. On `ready` the page re-reads every session it follows; on a `seq` gap it asks for `session.resync`. |
-| 6 | `open_in_shell` from afar | **Unchanged behaviour.** The turn waits for the command to be run in a desktop Shell tab; the page shows what it waits on and offers Cancel (`session.cancelShellWait`). |
-| 7 | File links | **Not links.** `CodeSteps` gets an optional `onOpenFile` prop; the web client passes one that does nothing (and paths render as text). The desktop keeps opening the editor. |
-| 8 | Images | **Not in v1.** A message image shows as "image on the desktop". Serving the image cache over the API is a follow-up. |
-| 9 | New session | **A folder path typed or picked from recent ones** (roots of saved sessions). The desktop checks it exists. No file browser. |
-| 10 | CSP for `/app/` | `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; form-action 'none'`. |
+| #   | Question                  | Decision                                                                                                                                                                                                                                                                                                                                     |
+| --- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Build                     | **A plain Svelte + Vite app** (`src/web/`, `vite.web.config.ts`), not a second SvelteKit build: no layout bootstrap, no `build/` clash. It imports `#lib/...` like the app. The output goes to `src-tauri/web-client/` (gitignored).                                                                                                         |
+| 2   | Serving                   | **The owner API serves it at `/app/`**, from the bundled resource `web-client/` (`tauri.conf.json` `bundle.resources`). `GET /` redirects there.                                                                                                                                                                                             |
+| 3   | Pairing                   | **Add device also gives a one-time link and QR code**, valid for 10 minutes. The code rides in the URL _fragment_, so it never reaches a server log or the history's request line. The page swaps it for an `HttpOnly; SameSite=Strict` cookie holding the device token, plus `Secure` when the request came over HTTPS (`tailscale serve`). |
+| 4   | CSRF with cookies         | **A cookie-authenticated request must send `X-Haruspex: 1`** (a custom header, which forces a CORS preflight that this server never answers), and the Origin rule from phase 3 still applies. Bearer requests are unchanged.                                                                                                                 |
+| 5   | Events in the browser     | **`EventSource` on `/api/v1/events`**, with the cookie. On `ready` the page re-reads every session it follows; on a `seq` gap it asks for `session.resync`.                                                                                                                                                                                  |
+| 6   | `open_in_shell` from afar | **Unchanged behaviour.** The turn waits for the command to be run in a desktop Shell tab; the page shows what it waits on and offers Cancel (`session.cancelShellWait`).                                                                                                                                                                     |
+| 7   | File links                | **Not links.** `CodeSteps` gets an optional `onOpenFile` prop; the web client passes one that does nothing (and paths render as text). The desktop keeps opening the editor.                                                                                                                                                                 |
+| 8   | Images                    | **Not in v1.** A message image shows as "image on the desktop". Serving the image cache over the API is a follow-up.                                                                                                                                                                                                                         |
+| 9   | New session               | **A folder path typed or picked from recent ones** (roots of saved sessions). The desktop checks it exists. No file browser.                                                                                                                                                                                                                 |
+| 10  | CSP for `/app/`           | `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; form-action 'none'`.                                                                                                                                                                                                |
 
 ## 1. Rust (`src-tauri/src/owner/`)
 
@@ -53,7 +53,7 @@ So the web client **shares the render pieces and has its own small shell**:
 - **Server:**
   - `POST /api/v1/pair {code}` (open, throttled like a wrong token) answers `Set-Cookie: haruspex_owner=<token>; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000[; Secure]`, plus `{ ok }`.
   - `POST /api/v1/logout` clears it.
-  - **Auth:** a bearer token, else the `haruspex_owner` cookie *with* `X-Haruspex: 1` (else 403 "missing X-Haruspex header").
+  - **Auth:** a bearer token, else the `haruspex_owner` cookie _with_ `X-Haruspex: 1` (else 403 "missing X-Haruspex header").
   - **`GET /app/*`:** static files from the resource dir, or the dev fallback `<manifest>/web-client` in debug builds. Content types by extension, `index.html` for unknown paths (SPA), the CSP above, and `Cache-Control: no-cache` for `index.html` (hashed assets cache forever).
   - Path traversal is refused: paths are normalised, `..` is rejected, and the result must stay under the root.
 - `GET /` redirects to `/app/`.
@@ -103,3 +103,34 @@ So the web client **shares the render pieces and has its own small shell**:
 ## Done when
 
 From a phone browser on the tailnet, the owner can pair once, then open a Code session running on the desktop, send a message, approve its command, and watch it finish. The desktop's own UI is unchanged.
+
+## As built (2026-10-09)
+
+Branch `remote-api/p04-web-client`. Differences from the plan above:
+
+- **Events are read with `fetch`, not `EventSource`.** `EventSource` can't
+  send `X-Haruspex`, and the server keeps that rule for every
+  cookie-authenticated request, `GET /api/v1/events` included. `api.ts`
+  parses the stream and reconnects with backoff (0.5 s, doubling to 10 s).
+- **Settings → Remote control → Link address** (`ownerApiLinkBase`). It's the
+  address put in pairing links and QR codes, needed behind `tailscale serve`,
+  where other devices use the tailnet name rather than `127.0.0.1`.
+- **The app's global styles moved** from `+layout.svelte`'s `:global` rules
+  into `src/lib/styles/app.css` (unchanged apart from dropping the wrapper),
+  so the web client shares the theme tokens and the `.btn` / `.field` /
+  `.toggle-row` classes. The highlight.js dark colours stayed in the layout.
+- **Continue** after a forced stop sends the desktop's own "Please continue"
+  message.
+- **A session closed on the desktop** stays on screen with "Closed on your
+  computer" and **Open it again**. A session moved to another window picks
+  up from that window's first snapshot.
+- **No Playwright suite for the web client.** It's covered by:
+  - 10 vitest cases (`src/web/web.test.ts`);
+  - 6 checks in the driver's self-test (served page and CSP, pairing once,
+    cookie needs `X-Haruspex`, listing);
+  - one hand check in a browser, against the owner's vLLM server: pair, run a
+    turn, deny an `rm -rf`, then the phone layout.
+- **Bundle size:** 571 kB (190 kB gzipped). `CodeSteps` → `SearchStep` pulls
+  in the chat store and much of the agent. Splitting `SearchStep`'s render
+  from its actions would shrink it; it's a follow-up, not a blocker on a
+  tailnet.

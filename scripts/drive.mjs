@@ -41,6 +41,7 @@ A long-lived app, driven step by step:
   events [--since N]        engine events from every window; "next" is the next --since
   consistent <id>           whether the session's events rebuild what session.get says
   api-events [--seconds N]  the owner API's event stream for N seconds (--api only)
+  web-url                   a one-time link that opens the web client (--api only)
   logs [--since N]          agent debug log lines from N on
   screenshot [PATH]
   minimise | restore        the app window
@@ -296,6 +297,7 @@ async function daemon(opts) {
 		detach: (a) => app.detach(a.id),
 		events: (a) => app.events(a.since),
 		'api-events': (a) => app.apiEvents(a.seconds),
+		'web-url': () => app.webUrl(),
 		consistent: (a) => app.consistent(a.id),
 		state: (a) => app.state(a.id, { asTranscript: a.transcript }),
 		logs: (a) => app.logs(a.since),
@@ -447,6 +449,7 @@ const CLIENT_COMMANDS = new Set([
 	'events',
 	'consistent',
 	'api-events',
+	'web-url',
 	'stop'
 ]);
 

@@ -410,6 +410,12 @@ export interface AppSettings {
 	ownerApiEnabled: boolean;
 	ownerApiPort: number;
 	ownerApiBindAll: boolean;
+	/**
+	 * Where other devices reach it, for pairing links and QR codes: e.g.
+	 * `https://box.tailnet.ts.net` behind `tailscale serve`. Empty: the
+	 * address it listens on.
+	 */
+	ownerApiLinkBase: string;
 	contextSize: number;
 	/**
 	 * "Let models use system RAM". On: `start_server` omits `--n-gpu-layers`,
@@ -841,6 +847,7 @@ const defaults: AppSettings = {
 	// Next to remote chat's 8787.
 	ownerApiPort: 8788,
 	ownerApiBindAll: false,
+	ownerApiLinkBase: '',
 	braveApiKey: '',
 	braveApiKeySaved: false,
 	searxngUrl: DEFAULT_SEARXNG_URL,

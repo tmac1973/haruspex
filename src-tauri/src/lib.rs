@@ -470,6 +470,7 @@ pub fn run() {
             owner::commands::owner_clients_list,
             owner::commands::owner_client_create,
             owner::commands::owner_client_revoke,
+            owner::commands::owner_client_pair,
             code_tools::folders::code_lease_take,
             code_tools::folders::code_lease_release,
             code_tools::folders::code_notice_record,

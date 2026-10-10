@@ -22,25 +22,34 @@
 	import { openFileFromClick } from '#lib/code/openEditor.ts';
 	import type { PathLinks } from '#lib/components/SearchStep.svelte';
 
-	/** `root`: the session folder. Paths inside it become links to the editor. */
+	/**
+	 * `root`: the session folder. Paths inside it become links to the editor,
+	 * unless `linkFiles` is off: the web client (src/web/) has no editor.
+	 */
 	let {
 		steps,
 		pending = [],
-		root
-	}: { steps: SearchStep[]; pending?: PendingToolCall[]; root?: string } = $props();
+		root,
+		linkFiles = true
+	}: {
+		steps: SearchStep[];
+		pending?: PendingToolCall[];
+		root?: string;
+		linkFiles?: boolean;
+	} = $props();
 
 	/** Tools that hand a command over: shown as command cards. */
 	const COMMAND_TOOLS = new Set(['run_command', 'open_in_shell']);
 
 	const pathLinks = $derived.by<PathLinks | undefined>(() => {
 		const dir = root;
-		if (!dir) return undefined;
+		if (!dir || !linkFiles) return undefined;
 		return {
 			link: (path) => relativeToRoot(dir, path),
 			open: (rel) => openFileFromClick(dir, rel)
 		};
 	});
-	const codePaths = $derived(root ? makeCodePathLinker(root) : undefined);
+	const codePaths = $derived(root && linkFiles ? makeCodePathLinker(root) : undefined);
 
 	/** Open a diff's file, when it is inside the folder. */
 	function opener(diff: FileDiff): (() => void) | undefined {

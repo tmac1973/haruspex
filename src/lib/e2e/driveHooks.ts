@@ -63,6 +63,8 @@ export interface DriveHooks {
 	 * add a device with every permission: what `drive start --api` drives.
 	 */
 	ownerApi: (port: number) => Promise<{ base: string; token: string }>;
+	/** A new device's one-time pairing code, for the web client's link. */
+	pairCode: (name: string) => Promise<string>;
 	updateSettings: (patch: Partial<AppSettings>) => void;
 	probeRemote: (
 		baseUrl: string,
@@ -156,6 +158,7 @@ export function installDriveHooks(): void {
 			const { token } = await createOwnerClient('drive', ALL_SCOPES);
 			return { base: `http://127.0.0.1:${status.port}`, token };
 		},
+		pairCode: async (name) => (await createOwnerClient(name, ALL_SCOPES)).pairCode,
 		updateSettings,
 		probeRemote
 	};

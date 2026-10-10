@@ -114,6 +114,46 @@ try {
 	const stream = drive('api-events', '--seconds', '2');
 	check(stream[0]?.type === 'ready', 'the event stream says it is ready');
 	check(drive('consistent', apiId).consistent, 'the session still rebuilds from its events');
+
+	// Phase 4: the web client, paired by its one-time link.
+	const { url } = drive('web-url');
+	const base = url.slice(0, url.indexOf('/app/'));
+	const code = url.slice(url.indexOf('#pair=') + 6);
+	const page = await fetch(`${base}/app/`);
+	check(
+		page.ok && (await page.text()).includes('<div id="app">'),
+		'the owner API serves the web client'
+	);
+	check(
+		(page.headers.get('content-security-policy') ?? '').includes("frame-ancestors 'none'"),
+		'with its content security policy'
+	);
+	const paired = await fetch(`${base}/api/v1/pair`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ code })
+	});
+	const cookie = (paired.headers.get('set-cookie') ?? '').split(';')[0];
+	check(
+		paired.ok && cookie.startsWith('haruspex_owner=hsx_'),
+		'a pairing code buys the device cookie'
+	);
+	const again = await fetch(`${base}/api/v1/pair`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ code })
+	});
+	check(again.status === 401, 'and only once');
+	const asWeb = (headers) =>
+		fetch(`${base}/api/v1/op`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', Cookie: cookie, ...headers },
+			body: JSON.stringify({ type: 'sessions.list' })
+		});
+	check((await asWeb({})).status === 403, 'the cookie alone is refused');
+	const listed = await asWeb({ 'X-Haruspex': '1' });
+	const sessions = (await listed.json()).value;
+	check(listed.ok && sessions.some((s) => s.id === apiId), 'with X-Haruspex it lists the sessions');
 	drive('stop');
 	started = false;
 } finally {

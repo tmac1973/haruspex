@@ -13,7 +13,13 @@ const backend = vi.hoisted(() => {
 			switch (cmd) {
 				case 'owner_api_status':
 				case 'owner_api_apply':
-					return { running: false, port: null, bindAll: false, address: null };
+					return { running: true, port: 8788, bindAll: false, address: '127.0.0.1' };
+				case 'remote_link_qr':
+					return { size: 1, modules: [true] };
+				case 'owner_client_pair': {
+					const client = devices.find((d) => d.id === args.id)!;
+					return { client, token: 'hsx_new', pairCode: 'def456' };
+				}
 				case 'owner_clients_list':
 					return devices;
 				case 'owner_client_create': {
@@ -25,7 +31,7 @@ const backend = vi.hoisted(() => {
 						lastSeen: null
 					};
 					devices = [...devices, client];
-					return { client, token: 'hsx_secret' };
+					return { client, token: 'hsx_secret', pairCode: 'abc123' };
 				}
 				case 'owner_client_revoke':
 					devices = devices.filter((d) => d.id !== args.id);
@@ -56,11 +62,21 @@ describe('Settings → Remote control', () => {
 
 		expect(await screen.findByText('hsx_secret')).toBeTruthy();
 		expect(screen.getByText(/won't see it again/)).toBeTruthy();
+		expect(screen.getByText('http://127.0.0.1:8788/app/#pair=abc123')).toBeTruthy();
+		expect(await screen.findByRole('img', { name: /QR code/ })).toBeTruthy();
 		expect(screen.getByText(/Read, Drive/)).toBeTruthy();
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Done' }));
 		expect(screen.queryByText('hsx_secret')).toBeNull();
 		expect(screen.getByText('Laptop')).toBeTruthy();
+	});
+
+	it('gives a device a new pairing link', async () => {
+		backend.handle('owner_client_create', { name: 'Phone', scopes: ['read'] });
+		render(OwnerApiSection);
+		await fireEvent.click(await screen.findByRole('button', { name: 'New link' }));
+		expect(await screen.findByText('http://127.0.0.1:8788/app/#pair=def456')).toBeTruthy();
+		expect(screen.getByText('hsx_new')).toBeTruthy();
 	});
 
 	it('revokes a device', async () => {

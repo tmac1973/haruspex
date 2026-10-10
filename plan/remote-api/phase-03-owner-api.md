@@ -122,6 +122,7 @@ Branch `remote-api/p03-owner-api`. As planned, with these notes:
   (clippy `result_large_err`).
 
 **Checked:**
+
 - 20 Rust tests in `owner::`: devices, hashes, scopes, and the HTTP surface
   (auth, scopes, Origin, throttle, body limit, SSE ready, lag → `resync-all`,
   stop).
