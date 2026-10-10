@@ -5,12 +5,12 @@
  * outcome to short-circuit the iteration, or null to defer to the next.
  */
 
-import { ApiError, type ChatMessage, type ChatCompletionResponse } from '#lib/api.ts';
+import { ApiError, type ChatCompletionResponse } from '#lib/api.ts';
 import { TOKEN_BYTES_RATIO } from '#lib/agent/context-budget.ts';
 import { stripThinkBlocks, stripToolCallArtifacts } from '#lib/markdown.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import { MAX_TRUNCATION_RETRIES, NudgeState, automaticCheck } from './nudges';
-import type { IterationOutcome, LoopContext, LoopState } from './context';
+import { appendMessage, type IterationOutcome, type LoopContext, type LoopState } from './context';
 import { hasNonThinkingContent, looksLikeClarifyingQuestion } from './heuristics';
 
 /**
@@ -22,7 +22,7 @@ import { hasNonThinkingContent, looksLikeClarifyingQuestion } from './heuristics
  * to be re-read by the model rather than shown to the user.
  */
 export function pushNudge(
-	messages: ChatMessage[],
+	ctx: LoopContext,
 	response: ChatCompletionResponse,
 	nudge: string,
 	stripArtifacts = false,
@@ -34,10 +34,10 @@ export function pushNudge(
 	// travels to the chat template in its own field, so leaving `<think>` tags in
 	// the content would render a second, nested block inside the template's own.
 	if (stripThinking) content = stripThinkBlocks(content).trimStart();
-	messages.push({ role: 'assistant', content });
+	appendMessage(ctx, { role: 'assistant', content });
 	// "Continue." is joined onto the text it continues; the note would only
 	// invite a preamble there.
-	messages.push({ role: 'user', content: nudge === CONTINUE ? nudge : automaticCheck(nudge) });
+	appendMessage(ctx, { role: 'user', content: nudge === CONTINUE ? nudge : automaticCheck(nudge) });
 	return 'continue';
 }
 
@@ -86,7 +86,7 @@ export function tryContinueOnLength(
 		logDebug('agent', `iteration ${iteration} branch=continue-on-length nudge`, {
 			usedTools: state.usedTools
 		});
-		return pushNudge(ctx.messages, response, CONTINUE, false, true);
+		return pushNudge(ctx, response, CONTINUE, false, true);
 	}
 
 	// Cut off while still reasoning, with no answer to resume.
@@ -102,7 +102,7 @@ export function tryContinueOnLength(
 	});
 	// No assistant echo: the response was entirely reasoning, and the stripped
 	// content would be an empty message.
-	ctx.messages.push({
+	appendMessage(ctx, {
 		role: 'user',
 		content: automaticCheck(
 			`Your previous response was cut off at the ${ctx.maxResponseTokens}-token ` +
@@ -135,7 +135,7 @@ export function tryMalformedToolCall(
 			rawContent: response.content
 		});
 		return pushNudge(
-			ctx.messages,
+			ctx,
 			response,
 			'Your previous message contained a malformed or incomplete tool call — ' +
 				"I couldn't parse it. If you meant to call a tool, retry with valid JSON " +
@@ -195,7 +195,7 @@ export function tryNarrateRecovery(
 			assistantContent: response.content
 		});
 		return pushNudge(
-			ctx.messages,
+			ctx,
 			response,
 			'STOP. Your previous response described what you would do next but did not ' +
 				'actually emit a tool_calls block. Do not reply with more text explaining ' +
@@ -230,7 +230,7 @@ export function handleRejectedToolCall(
 			finish_reason: response.finish_reason
 		});
 		return pushNudge(
-			ctx.messages,
+			ctx,
 			response,
 			`Your last tool call was not run: ${reason}. Nothing was written and no ` +
 				`action was taken. Emit the call again as a single complete tool_calls ` +
@@ -294,7 +294,7 @@ export function tryFileWriteRecovery(
 		);
 		nudges.armNarrateRecovery();
 		return pushNudge(
-			ctx.messages,
+			ctx,
 			response,
 			'You have not emitted an fs_write_* tool call this turn, so nothing has been ' +
 				'written or changed. If the file needs writing or changing, emit that call ' +

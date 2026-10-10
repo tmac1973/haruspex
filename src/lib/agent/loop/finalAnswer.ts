@@ -46,7 +46,7 @@ export async function finalizeNoToolCalls(
 		nudges.consumePhantomImageNudge();
 		logDebug('agent', `iteration ${iteration} branch=phantom-image-nudge`);
 		nudges.armNarrateRecovery();
-		return pushNudge(messages, response, phantomImageNudgePrompt());
+		return pushNudge(ctx, response, phantomImageNudgePrompt());
 	}
 
 	// Research gate. Checked before the diversity gate because a turn that
@@ -59,7 +59,7 @@ export async function finalizeNoToolCalls(
 		nudges.consumeResearchNudge();
 		logDebug('agent', `iteration ${iteration} branch=research-nudge`);
 		nudges.armNarrateRecovery();
-		return pushNudge(messages, response, researchNudgePrompt());
+		return pushNudge(ctx, response, researchNudgePrompt());
 	}
 
 	// Diversity gate.
@@ -69,7 +69,7 @@ export async function finalizeNoToolCalls(
 			fetchedCount
 		});
 		nudges.armNarrateRecovery();
-		return pushNudge(messages, response, diversityNudgePrompt(fetchedCount));
+		return pushNudge(ctx, response, diversityNudgePrompt(fetchedCount));
 	}
 
 	const steered = continueForSteering(ctx, state, response, iteration);

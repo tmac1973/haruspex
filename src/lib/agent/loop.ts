@@ -248,6 +248,12 @@ export interface AgentLoopOptions {
 	 */
 	onContextManaged?: (info: ContextManagedInfo) => void;
 	/**
+	 * Each message the loop appends to `messages`, as it is appended and before
+	 * any trim stubs it. The way to know what a turn added: slicing `messages`
+	 * from its pre-turn length skips as many messages as the context fit dropped.
+	 */
+	onMessageAdded?: (message: import('#lib/api.ts').ChatMessage) => void;
+	/**
 	 * Wall-clock duration + completion-token count of each model call this
 	 * turn made. Used to compute a tok/s indicator for the assistant
 	 * message. The last invocation before onComplete corresponds to the
