@@ -3,7 +3,7 @@ name: pages
 # The public site in site/: home page, privacy policy, terms of service, and
 # the user guide, rendered from docs/guide/ into site/guide/ at publish time.
 # Google's OAuth consent screen links to these, so they must stay reachable
-# at https://tmac1973.github.io/haruspex/. See docs/google-sign-in.md.
+# at https://haruspex.spronglehump.com/. See docs/google-sign-in.md.
 
 on:
   push:

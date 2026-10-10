@@ -59,13 +59,14 @@ In the Cloud console, for the Haruspex project:
 ### Branding and the public site
 
 Google Auth Platform → Branding links to three pages, served by GitHub Pages
-from `site/` (deployed by `.github/workflows/pages.yml`):
+from `site/` (deployed by `.github/workflows/pages.yml`) on the custom domain
+`haruspex.spronglehump.com`:
 
-- Home page: `https://tmac1973.github.io/haruspex/`
-- Privacy policy: `https://tmac1973.github.io/haruspex/privacy/`
-- Terms of service: `https://tmac1973.github.io/haruspex/terms/`
+- Home page: `https://haruspex.spronglehump.com/`
+- Privacy policy: `https://haruspex.spronglehump.com/privacy/`
+- Terms of service: `https://haruspex.spronglehump.com/terms/`
 
-The authorized domain is `tmac1973.github.io`. Leave the logo empty: uploading
+The authorized domain is `spronglehump.com`. Leave the logo empty: uploading
 one sends the app to brand review before anything else can change.
 
 The privacy policy is what a verification reviewer reads. Keep it accurate if
