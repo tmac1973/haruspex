@@ -468,12 +468,25 @@ async function formatPtyResult(
  * model can read with fs_read_text. `body` must be non-empty. Shared by the
  * PTY runner and the interactive shell tools.
  */
+/** The spill files written here, compared without regard to slash or case. */
+const spills = new Set<string>();
+const spillKey = (path: string) => path.trim().replace(/\\/g, '/').toLowerCase();
+
+/**
+ * A full command output `spillIfLarge` saved. `fs_read_text` reads one even
+ * outside a Code session's folder, since the result pointed the model at it.
+ */
+export function isSpillFile(path: string): boolean {
+	return spills.has(spillKey(path));
+}
+
 export async function spillIfLarge(header: string, body: string): Promise<string> {
 	const truncated = truncateCapturedOutput(body, RUN_OUTPUT_MAX_BYTES);
 	if (!truncated.truncated) return `${header}\n${truncated.text}`;
 	let overflowNote = '';
 	try {
 		const path = await invoke<string>('code_write_overflow', { content: body });
+		spills.add(spillKey(path));
 		overflowNote = `\nFull output (${truncated.originalBytes} bytes) saved to ${path} — read it with fs_read_text (offset/limit).`;
 	} catch {
 		// Temp-file write failed; the in-band truncation marker still stands.
