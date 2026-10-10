@@ -416,8 +416,45 @@ export class App {
 	/** Who may connect to the owner API without a token. */
 	async access(mode, hosts = []) {
 		if (!this.api) throw new Error('access needs a driver started with --api');
-		await this.call('ownerAccess', mode, hosts);
-		return { mode, hosts, page: `${this.api.base}/app/` };
+		const { address, hostname } = await this.call('ownerAccess', mode, hosts);
+		const port = new URL(this.api.base).port;
+		// What another computer on the network would open (this one's LAN address).
+		const lan = address && address !== '127.0.0.1' ? `https://${address}:${port}` : null;
+		return { mode, hosts, page: `${this.api.base}/app/`, lan, hostname };
+	}
+
+	/**
+	 * Add the Rust tests' MCP fixture (src-tauri/tests/fixtures/mcp-era-server.js)
+	 * as server `fake`, with its tool that says nothing about what it changes,
+	 * so calling it asks first.
+	 */
+	async fakeMcp() {
+		const script = join(ROOT, 'src-tauri', 'tests', 'fixtures', 'mcp-era-server.js');
+		const tool = 'unannotated_thing';
+		const state = await this.call(
+			'addMcpServer',
+			'fake',
+			process.execPath,
+			[script, 'modern'],
+			[tool]
+		);
+		return { server: 'fake', tool: `mcp__fake__${tool}`, state };
+	}
+
+	/**
+	 * Answer the first prompt of `kind` through the engine (prompts.answer),
+	 * as the web page does: `answer` is the rest of the PromptAnswer.
+	 */
+	async answer(kind, answer) {
+		const prompts = await this.engine({ type: 'prompts.list' });
+		const pending = prompts.find((p) => p.kind === kind);
+		if (!pending) throw new Error(`no ${kind} prompt is waiting`);
+		await this.engine({
+			type: 'prompts.answer',
+			promptId: pending.promptId,
+			answer: { kind, ...answer }
+		});
+		return { answered: kind, detail: pending.detail };
 	}
 
 	/** A pairing link that opens the web client as a new device. */
@@ -474,9 +511,10 @@ export class App {
 		await this.call('updateSettings', { codeLastRoot: folder });
 		await this.exclusive(async (browser) => {
 			// The empty pane's button when nothing is open, else the tab strip's +.
-			const empty = await browser.$('.workspace > .main > .empty').$('button=New session');
-			const button = (await empty.isExisting())
-				? empty
+			// Looked up in two steps: chaining onto a pane that isn't there throws.
+			const pane = await browser.$('.workspace > .main > .empty');
+			const button = (await pane.isExisting())
+				? await pane.$('button=New session')
 				: await browser.$('button[aria-label="New session"]');
 			await button.waitForClickable({ timeout: 30_000 });
 			await button.click();

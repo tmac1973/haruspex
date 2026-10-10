@@ -1,0 +1,99 @@
+[
+	{
+		"match": {
+			"lastUser": "^Title this coding session"
+		},
+		"reply": {
+			"content": "\"Notes and a skill.\""
+		}
+	},
+	{
+		"match": {
+			"lastUser": "note hello$"
+		},
+		"reply": {
+			"tool_calls": [
+				{
+					"name": "mcp__fake__unannotated_thing",
+					"arguments": {}
+				}
+			]
+		}
+	},
+	{
+		"match": {
+			"toolResult": "called unannotated_thing"
+		},
+		"reply": {
+			"content": "I noted it."
+		}
+	},
+	{
+		"match": {
+			"toolResult": "declined to run"
+		},
+		"reply": {
+			"content": "Understood, no note."
+		}
+	},
+	{
+		"match": {
+			"lastUser": "save a greeting skill$"
+		},
+		"reply": {
+			"tool_calls": [
+				{
+					"name": "create_skill",
+					"arguments": {
+						"name": "greet",
+						"description": "Greet the user.",
+						"body": "Say hello warmly.",
+						"where": "project"
+					}
+				}
+			]
+		}
+	},
+	{
+		"match": {
+			"lastUser": "save a farewell skill$"
+		},
+		"reply": {
+			"tool_calls": [
+				{
+					"name": "create_skill",
+					"arguments": {
+						"name": "farewell",
+						"description": "Say goodbye.",
+						"body": "Say goodbye warmly.",
+						"where": "project"
+					}
+				}
+			]
+		}
+	},
+	{
+		"match": {
+			"toolResult": "Saved the \"greet\" skill"
+		},
+		"reply": {
+			"content": "Saved the skill."
+		}
+	},
+	{
+		"match": {
+			"toolResult": "declined, and nothing was saved"
+		},
+		"reply": {
+			"content": "Left it unsaved."
+		}
+	},
+	{
+		"match": {
+			"lastUser": "hello there$"
+		},
+		"reply": {
+			"content": "Hello."
+		}
+	}
+]
