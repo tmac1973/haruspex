@@ -368,7 +368,10 @@ pub async fn run_command_capture(
         _ => false,
     };
     // Windows: the job ended it for its memory limit.
-    let out_of_memory = out_of_memory || job.as_ref().is_some_and(|j| j.out_of_memory());
+    let out_of_memory = out_of_memory
+        || job
+            .as_ref()
+            .is_some_and(|j| j.out_of_memory(!killed && exit_code != Some(0)));
     // A tree-kill leaves no exit code (signaled) on unix — treat as killed even
     // if the cancel raced ahead of our own timeout branch. Inside WSL a killed
     // command still has one (`setsid -w` reports 128 + the signal).
