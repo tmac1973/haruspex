@@ -85,17 +85,40 @@ struct AppState {
     pairing: Arc<PairingCodes>,
     web_root: Option<Arc<PathBuf>>,
     throttle: Arc<Throttle>,
+    /// Turns true on shutdown, which ends every event stream.
+    stopping: watch::Receiver<bool>,
 }
+
+/// How long a stopping server may wait for its connections to finish before
+/// they are cut. Event streams end by themselves on shutdown, so this is only
+/// for a request still in flight.
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
 pub struct Running {
     pub port: u16,
     pub bind_all: bool,
     shutdown: watch::Sender<bool>,
+    task: tokio::task::JoinHandle<()>,
 }
 
 impl Running {
+    /// Ask the server to stop, without waiting for it.
     pub fn stop(&self) {
         let _ = self.shutdown.send(true);
+    }
+
+    /// Stop, and return once the port is free: Settings restarts the server
+    /// on the same port when another setting changes, and binding before the
+    /// old one let go failed with "address already in use".
+    pub async fn shutdown(mut self) {
+        self.stop();
+        if tokio::time::timeout(SHUTDOWN_GRACE, &mut self.task)
+            .await
+            .is_err()
+        {
+            self.task.abort();
+            let _ = (&mut self.task).await;
+        }
     }
 }
 
@@ -112,7 +135,9 @@ pub async fn start(services: Services, port: u16, bind_all: bool) -> Result<Runn
     })?;
     let port = listener.local_addr().map(|a| a.port()).unwrap_or(port);
 
+    let (shutdown, mut rx) = watch::channel(false);
     let state = AppState {
+        stopping: shutdown.subscribe(),
         dispatch: services.dispatch,
         clients: services.clients,
         pairing: services.pairing,
@@ -132,8 +157,7 @@ pub async fn start(services: Services, port: u16, bind_all: bool) -> Result<Runn
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .with_state(state);
 
-    let (shutdown, mut rx) = watch::channel(false);
-    tokio::spawn(async move {
+    let task = tokio::spawn(async move {
         let served = axum::serve(
             listener,
             router.into_make_service_with_connect_info::<SocketAddr>(),
@@ -153,6 +177,7 @@ pub async fn start(services: Services, port: u16, bind_all: bool) -> Result<Runn
         port,
         bind_all,
         shutdown,
+        task,
     })
 }
 
@@ -461,9 +486,12 @@ async fn events(
     if let Some(r) = missing(&client, Scope::Read) {
         return r;
     }
-    let mut response = Sse::new(event_stream(state.dispatch.subscribe()))
-        .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
-        .into_response();
+    let mut response = Sse::new(event_stream(
+        state.dispatch.subscribe(),
+        state.stopping.clone(),
+    ))
+    .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+    .into_response();
     response
         .headers_mut()
         .insert(CACHE_CONTROL, "no-store".parse().expect("static header"));
@@ -472,21 +500,37 @@ async fn events(
 
 /// `ready` first, so a client knows it is connected, then every engine event.
 /// A reader that falls behind is told `resync-all` and asks for snapshots of
-/// the sessions it follows (`session.resync`).
-fn event_stream(rx: broadcast::Receiver<Value>) -> impl Stream<Item = Result<Event, Infallible>> {
+/// the sessions it follows (`session.resync`). The stream ends when the
+/// server stops, so an open page never holds a stopping server up; the page
+/// reconnects to whatever starts next.
+fn event_stream(
+    rx: broadcast::Receiver<Value>,
+    stopping: watch::Receiver<bool>,
+) -> impl Stream<Item = Result<Event, Infallible>> {
     let ready = Some(json!({ "type": "ready" }));
-    futures_util::stream::unfold((rx, ready), |(mut rx, mut pending)| async move {
-        if let Some(first) = pending.take() {
-            return Some((Ok(sse(&first)), (rx, pending)));
-        }
-        match rx.recv().await {
-            Ok(event) => Some((Ok(sse(&event)), (rx, pending))),
-            Err(broadcast::error::RecvError::Lagged(_)) => {
-                Some((Ok(sse(&json!({ "type": "resync-all" }))), (rx, pending)))
+    futures_util::stream::unfold(
+        (rx, stopping, ready),
+        |(mut rx, mut stopping, mut pending)| async move {
+            if let Some(first) = pending.take() {
+                return Some((Ok(sse(&first)), (rx, stopping, pending)));
             }
-            Err(broadcast::error::RecvError::Closed) => None,
-        }
-    })
+            if *stopping.borrow() {
+                return None;
+            }
+            let next = tokio::select! {
+                next = rx.recv() => next,
+                _ = stopping.wait_for(|stop| *stop) => return None,
+            };
+            match next {
+                Ok(event) => Some((Ok(sse(&event)), (rx, stopping, pending))),
+                Err(broadcast::error::RecvError::Lagged(_)) => Some((
+                    Ok(sse(&json!({ "type": "resync-all" }))),
+                    (rx, stopping, pending),
+                )),
+                Err(broadcast::error::RecvError::Closed) => None,
+            }
+        },
+    )
 }
 
 fn sse(event: &Value) -> Event {
@@ -954,6 +998,36 @@ mod tests {
         assert_eq!(safe_relative("a/../../x"), None);
         assert_eq!(safe_relative("/etc/passwd"), None);
         assert_eq!(safe_relative("a\\..\\x"), None);
+    }
+
+    /// Settings restarts the server on a new port or network. With a web page
+    /// following events, the old one must still let go of the port at once.
+    #[tokio::test]
+    async fn a_restart_on_the_same_port_works_with_a_page_following_events() {
+        let h = serve().await;
+        let token = h.token(&[Scope::Read]);
+        let stream = h
+            .http
+            .get(format!("{}/api/v1/events", h.base))
+            .bearer_auth(&token)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(stream.status(), 200);
+        let port = h.running.port;
+        h.running.shutdown().await;
+        let services = Services {
+            dispatch: h.stub.clone(),
+            clients: h.clients.clone(),
+            pairing: h.pairing.clone(),
+            web_root: None,
+        };
+        let again = start(services, port, false).await;
+        assert!(again.is_ok(), "{:?}", again.err());
+        // And the page's stream ended rather than hanging on a dead server.
+        let ended = tokio::time::timeout(Duration::from_secs(3), stream.bytes()).await;
+        assert!(ended.is_ok(), "the old event stream never ended");
+        again.unwrap().shutdown().await;
     }
 
     #[tokio::test]
