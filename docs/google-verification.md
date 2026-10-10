@@ -10,32 +10,32 @@ and may come back with questions by email.
 
 ## 1. Prove you own the domain
 
-The authorized domain is `tmac1973.github.io`. Google checks ownership in
-Search Console, at the root of the domain, which a project site (`/haruspex/`)
-can't serve. So a user site holds the proof:
+Google rejects a home page on a domain you can't show you control, which is
+why `tmac1973.github.io` failed ("home page URL is not registered to you")
+even with a verified Search Console property. The site is served on a domain
+of our own instead:
 
-1. Open [Search Console](https://search.google.com/search-console) with the
-   same Google account that owns the Cloud project. Add a **URL prefix**
-   property for `https://tmac1973.github.io/`.
-2. Choose **HTML file** verification and download the file
-   (`google<random>.html`).
-3. Put that file at the root of a repository named `tmac1973.github.io`, with
-   Pages on (Settings → Pages → Deploy from a branch → `main` / root). It is
-   then served at `https://tmac1973.github.io/google<random>.html`.
-4. Click **Verify** in Search Console.
+- **DNS** (Hover, which also registered `spronglehump.com`): a `CNAME` from
+  `haruspex` to `tmac1973.github.io`, and a `TXT` on `@` holding the
+  `google-site-verification=…` value.
+- **GitHub**: repo Settings → Pages → Custom domain is
+  `haruspex.spronglehump.com`, with **Enforce HTTPS** on. The old
+  `tmac1973.github.io/haruspex/` URLs redirect there.
+- **Search Console**: a **Domain** property for `spronglehump.com`, verified
+  by that TXT record, owned by the account that owns the Cloud project.
 
-Keep the file there for good: Google re-checks ownership.
+Keep the TXT record for good: Google re-checks ownership.
 
-## 2. Branding (already done)
+## 2. Branding (verified 2026-10-10)
 
 | Field | Value |
 | --- | --- |
 | App name | Haruspex |
 | App logo | *empty* (a logo triggers a separate brand review) |
-| Home page | https://tmac1973.github.io/haruspex/ |
-| Privacy policy | https://tmac1973.github.io/haruspex/privacy/ |
-| Terms of service | https://tmac1973.github.io/haruspex/terms/ |
-| Authorized domain | tmac1973.github.io |
+| Home page | https://haruspex.spronglehump.com/ |
+| Privacy policy | https://haruspex.spronglehump.com/privacy/ |
+| Terms of service | https://haruspex.spronglehump.com/terms/ |
+| Authorized domain | spronglehump.com |
 
 The home page must describe what the app does and link the privacy policy;
 it does both.

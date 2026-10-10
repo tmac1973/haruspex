@@ -6,7 +6,7 @@ Click this screenshot to watch the explainer video:
 
 Haruspex is a desktop AI researcher and coding tool that runs entirely local by default. It works on Linux, Windows and macOS. There is no account to create and no telemetry. Your conversations and the model's answers stay on your device. You do not need a separate inference server (ollama, LMStudio, Lemonade, vLLM, etc...) as Haruspex will default to automatically downloading an appropriate model for your system and will run it locally. If you prefer to manage your own llms you can turn this off and use a remote model instead.
 
-The **[user guide](https://tmac1973.github.io/haruspex/guide/)** explains every feature and setting. Haruspex reads the same guide to answer questions about itself.
+The **[user guide](https://haruspex.spronglehump.com/guide/)** explains every feature and setting. Haruspex reads the same guide to answer questions about itself.
 
 ## Goals
 
@@ -25,18 +25,18 @@ The **[user guide](https://tmac1973.github.io/haruspex/guide/)** explains every 
 ### Chat
 
 - **Web research** — Ask a question, and it searches the web, reads the results and answers. Turn on **deep research** for a slower, more thorough answer that uses more sources.
-- **Files (you opt in)** — Pick a working directory in the chat tab and the model can read and write files there, and only there. It handles text, PDF, Word, Excel, PowerPoint, OpenDocument and images. Great for creating reports from your research. ([details](https://tmac1973.github.io/haruspex/guide/chat/))
+- **Files (you opt in)** — Pick a working directory in the chat tab and the model can read and write files there, and only there. It handles text, PDF, Word, Excel, PowerPoint, OpenDocument and images. Great for creating reports from your research. ([details](https://haruspex.spronglehump.com/guide/chat/))
 - **Python sandbox** — The model can write and run Python inside the app, in a sandboxed Pyodide environment. It can install packages on demand and make HTTP requests. Use it to make charts, do maths, or build documents. It is on by default and asks once per chat before running code; Settings → Agent → Python Sandbox can make it ask every time, or turn it off. Works best with a larger model.
 - **Pictures in answers** — With **Include images in answers** on (Settings → Agent → Pictures in answers), answers about visual things — a place, an animal, an object, a person — come with one to three relevant pictures. They come from Openverse, Wikimedia Commons and Wikipedia, and each one shows who made it and under what licence. Haruspex downloads them itself, so the site never sees your computer, and it keeps them on this device. Small models often look for a picture and then forget to put it in the answer, so when that happens the pictures it found appear under the answer instead of beside the paragraph — you still get them.
 - **Vision** — Show it an image or a scanned PDF and it can describe or read it.
 - **Voice** — Speak your question with push-to-talk, and have answers read aloud.
-- **Memory** — Haruspex quietly reads your finished conversations, keeps the stable facts (your preferences, your corrections, ongoing project details) and brings the relevant ones into later chats. You can also just say "remember that…". What it remembers is stored only on this device. The pass that picks out facts runs on the same model as Chat, so with a remote server or OpenRouter your conversation goes there for that, as it does when you chat. You can mark a single chat as incognito, and you can read, edit or delete anything it remembered. ([details](https://tmac1973.github.io/haruspex/guide/memory/))
+- **Memory** — Haruspex quietly reads your finished conversations, keeps the stable facts (your preferences, your corrections, ongoing project details) and brings the relevant ones into later chats. You can also just say "remember that…". What it remembers is stored only on this device. The pass that picks out facts runs on the same model as Chat, so with a remote server or OpenRouter your conversation goes there for that, as it does when you chat. You can mark a single chat as incognito, and you can read, edit or delete anything it remembered. ([details](https://haruspex.spronglehump.com/guide/memory/))
 - **Open in shell** — If an answer ends with "run this command", press the `>_` button to open the whole conversation in a new Shell tab, where the commands become buttons you can run.
-- **Remote access (off by default)** — Let other devices on your home network chat with your Haruspex through a web page, using your computer's GPU. Useful when your main machine is busy with a game and you want to ask a question from a phone or laptop. Share a link or scan a QR code. ([details](https://tmac1973.github.io/haruspex/guide/remote-access/))
-- **Email (off by default)** — Connect an IMAP account (Gmail, Fastmail, iCloud, Yahoo or custom) so the model can summarise and search your recent messages. Turn on **Allow sending** and it can also draft replies and new mail — but every draft opens for you to edit, and only your click on Send sends it. ([details](https://tmac1973.github.io/haruspex/guide/integrations/))
-- **Calendar and contacts (off by default, read-only)** — Connect a CalDAV/CardDAV account (Nextcloud, Fastmail, iCloud, Radicale, Baikal, Synology), sign in with Google, or paste a calendar link (Outlook, iCloud) and ask what is on this week or how to reach someone. ([details](https://tmac1973.github.io/haruspex/guide/integrations/))
-- **MCP integrations (off by default)** — Connect other services through MCP servers. Haruspex installs and runs them itself, so you never need a terminal. ([details](https://tmac1973.github.io/haruspex/guide/integrations/))
-- **Screen capture (off by default)** — Ask about what is on your screen. There is also a camera button in the chat box for attaching a screenshot yourself. ([details](https://tmac1973.github.io/haruspex/guide/integrations/))
+- **Remote access (off by default)** — Let other devices on your home network chat with your Haruspex through a web page, using your computer's GPU. Useful when your main machine is busy with a game and you want to ask a question from a phone or laptop. Share a link or scan a QR code. ([details](https://haruspex.spronglehump.com/guide/remote-access/))
+- **Email (off by default)** — Connect an IMAP account (Gmail, Fastmail, iCloud, Yahoo or custom) so the model can summarise and search your recent messages. Turn on **Allow sending** and it can also draft replies and new mail — but every draft opens for you to edit, and only your click on Send sends it. ([details](https://haruspex.spronglehump.com/guide/integrations/))
+- **Calendar and contacts (off by default, read-only)** — Connect a CalDAV/CardDAV account (Nextcloud, Fastmail, iCloud, Radicale, Baikal, Synology), sign in with Google, or paste a calendar link (Outlook, iCloud) and ask what is on this week or how to reach someone. ([details](https://haruspex.spronglehump.com/guide/integrations/))
+- **MCP integrations (off by default)** — Connect other services through MCP servers. Haruspex installs and runs them itself, so you never need a terminal. ([details](https://haruspex.spronglehump.com/guide/integrations/))
+- **Screen capture (off by default)** — Ask about what is on your screen. There is also a camera button in the chat box for attaching a screenshot yourself. ([details](https://haruspex.spronglehump.com/guide/integrations/))
 - **Conversations are saved** — Chat history lives in a local SQLite database and survives restarts.
 
 ### Shell
@@ -45,12 +45,12 @@ The **[user guide](https://tmac1973.github.io/haruspex/guide/)** explains every 
 - **Send output to the assistant** — One click (or `F4`) sends recent commands and their output to the assistant to explain.
 - **Read-only by default** — The assistant can read config files and logs anywhere on your system and suggest fixes, but it never runs anything. Suggested commands appear as cards you click to paste at your prompt. Risky patterns (`sudo`, `rm -rf`, `dd of=`, `curl | sh`, `Remove-Item -Recurse -Force`) get a red chip.
 - **Full access (off by default)** — Click the lock in the assistant's header to let it edit files and **run commands in your live terminal**. **Open in Code** carries on in the Code tab, in the same folder. Commands it considers risky stop and ask you first; commands it considers safe run on their own. ⚠️ Please read the [AI safety disclaimer](#ai-safety-disclaimer) first. This is a coding feature — expect much better results with a larger model.
-- **Repo instructions** — In a git repo with an `AGENTS.md` (or `CLAUDE.md`), the assistant reads it into every turn, so it knows how the project builds, tests and lints. The first time, it asks whether you trust the repo; a badge in the sidebar shows when the file is in use, and lets you stop using it. ([details](https://tmac1973.github.io/haruspex/guide/skills/))
+- **Repo instructions** — In a git repo with an `AGENTS.md` (or `CLAUDE.md`), the assistant reads it into every turn, so it knows how the project builds, tests and lints. The first time, it asks whether you trust the repo; a badge in the sidebar shows when the file is in use, and lets you stop using it. ([details](https://haruspex.spronglehump.com/guide/skills/))
 - **Memory limit** _(Linux)_ — Each Shell tab's terminal, and every command the assistant runs on its own, can use at most half your RAM by default (Settings → Shell → Memory limit). A runaway build or test is stopped before it takes the app or your desktop down, the shell around it keeps going, and the assistant is told why so it looks for the bug instead of re-running it.
 
 ### Skills and repo instructions
 
-- **Skills** — Folders of instructions for a task, in the open [Agent Skills](https://agentskills.io) format other AI tools use. A skill written for another tool usually works unchanged. ([details](https://tmac1973.github.io/haruspex/guide/skills/))
+- **Skills** — Folders of instructions for a task, in the open [Agent Skills](https://agentskills.io) format other AI tools use. A skill written for another tool usually works unchanged. ([details](https://haruspex.spronglehump.com/guide/skills/))
 - **Run one by name** — Type `/` in Chat or Shell for a list of your skills, then `/name what you want`. Works on any model. `/new` starts over and `/skills` lists what you have.
 - **Let the model pick** — With Settings → Skills → "When the model uses skills" on, the model sees your skills and loads one when a request matches. Automatic turns this on for remote models only, since small local models handle it poorly.
 - **Save a procedure as a skill** — Ask "save what we just did as a skill called deploy-check". The model drafts it, and nothing is written until you have read it, edited it if you like, and approved it.
@@ -59,21 +59,21 @@ The **[user guide](https://tmac1973.github.io/haruspex/guide/)** explains every 
 
 ### Jobs and schedules
 
-Save a prompt once and run it again later, by hand or on a schedule, without sitting there. There are five kinds of job: **research**, **audit**, **guided planning**, **autonomous coding** and **asset generation**. Each job can use its own model, so you can send a heavy job to a big remote model while your local model keeps serving the Chat and Shell tabs. ([details](https://tmac1973.github.io/haruspex/guide/jobs/))
+Save a prompt once and run it again later, by hand or on a schedule, without sitting there. There are five kinds of job: **research**, **audit**, **guided planning**, **autonomous coding** and **asset generation**. Each job can use its own model, so you can send a heavy job to a big remote model while your local model keeps serving the Chat and Shell tabs. ([details](https://haruspex.spronglehump.com/guide/jobs/))
 
 Audit, guided planning and autonomous coding are coding-focused. They need a larger model to be useful.
 
 ### Image generation (off by default)
 
-- **Pictures in Chat** — Ask Chat to draw something and the picture appears in the answer, and stays with the conversation. ([details](https://tmac1973.github.io/haruspex/guide/images/))
+- **Pictures in Chat** — Ask Chat to draw something and the picture appears in the answer, and stays with the conversation. ([details](https://haruspex.spronglehump.com/guide/images/))
 - **Art for the project you are coding** — In the Code tab or a Shell with Full access, ask for "a 32 px coin sprite in assets/" and the assistant writes a finished sprite, icon or tiling texture into your project, made the same way the asset job makes them. It can match the colours of an asset you already have.
-- **Game art from a description** — The asset generation job draws a project's sprites, icons and tiling textures in one consistent style, checks each one, and writes them into the project. Guided planning can hand off to it and then to autonomous coding, so you can go from an idea to a game with its own art in one unattended run. ([details](https://tmac1973.github.io/haruspex/guide/images/))
+- **Game art from a description** — The asset generation job draws a project's sprites, icons and tiling textures in one consistent style, checks each one, and writes them into the project. Guided planning can hand off to it and then to autonomous coding, so you can go from an idea to a game with its own art in one unattended run. ([details](https://haruspex.spronglehump.com/guide/images/))
 - **Runs on your machine** — Either a [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server you run, or a bundled engine that needs nothing installed. Nothing starts until you pick one in Settings → Image.
 
 ### Where the model runs
 
 - **Local (default)** — A bundled `llama-server` runs the model on your GPU. Vulkan on Linux and Windows, Metal on macOS.
-- **Your own server** — Point Haruspex at any OpenAI-compatible server you already run (llama.cpp, LM Studio, Ollama, vLLM and others). ([details](https://tmac1973.github.io/haruspex/guide/models/))
+- **Your own server** — Point Haruspex at any OpenAI-compatible server you already run (llama.cpp, LM Studio, Ollama, vLLM and others). ([details](https://haruspex.spronglehump.com/guide/models/))
 - **OpenRouter (cloud, off by default)** — ⚠️ **This one is not local and may not be private.** Your prompts leave your device and go to OpenRouter's servers, under whatever privacy policy OpenRouter and the model provider have. We include it anyway because some people want access to large frontier models — especially for the coding features —. Add your API key in Settings → Inference and pick from around 300 models. It stays off until you turn it on, and the app labels it clearly while it is on. Local inference is still the recommended setup for privacy.
 
 ### Other
@@ -162,29 +162,29 @@ The first-run wizard picks one of these for you. You can change it later in Sett
 
 **Apple Silicon** Macs use unified memory and Metal, so even a base M1 with 8 GB should work, though more recent "Pro" Apple CPUs will be much faster.
 
-**If you want the coding features but have a less capable local GPU:** point Haruspex at a bigger model on another machine ([remote inference](https://tmac1973.github.io/haruspex/guide/models/)), or use [OpenRouter](#where-the-model-runs) and accept that those prompts leave your device.
+**If you want the coding features but have a less capable local GPU:** point Haruspex at a bigger model on another machine ([remote inference](https://haruspex.spronglehump.com/guide/models/)), or use [OpenRouter](#where-the-model-runs) and accept that those prompts leave your device.
 
 > [!WARNING]
 > **Haruspex uses your GPU.** While it is running, games and other GPU-heavy programs will be impacted, especially if you don't have enough VRAM to hold both the llm and your other programs resources. Close Haruspex before you play.
 
 ## User guide
 
-Everything about using Haruspex is in the **[user guide](https://tmac1973.github.io/haruspex/guide/)**, which is also built into the app: ask the assistant how something works, or press **F1** for the shortcuts and a link to the guide.
+Everything about using Haruspex is in the **[user guide](https://haruspex.spronglehump.com/guide/)**, which is also built into the app: ask the assistant how something works, or press **F1** for the shortcuts and a link to the guide.
 
-- [Getting started](https://tmac1973.github.io/haruspex/guide/) — first run, the tabs, where to go next
-- [Models](https://tmac1973.github.io/haruspex/guide/models/) — choosing a model for your hardware, your own server, OpenRouter
-- [Chat](https://tmac1973.github.io/haruspex/guide/chat/) — web research, files, the Python sandbox, pictures, voice
-- [Shell tab](https://tmac1973.github.io/haruspex/guide/shell/) — the terminal, the assistant, Read-only and Full access, command approval, the memory limit
-- [Skills](https://tmac1973.github.io/haruspex/guide/skills/) — skills, `/name`, `AGENTS.md`, repo trust, `/init`
-- [Jobs](https://tmac1973.github.io/haruspex/guide/jobs/) — research, audit, guided planning, autonomous coding, asset generation, schedules
-- [Memory](https://tmac1973.github.io/haruspex/guide/memory/) — what is remembered, approval, duplicates, privacy
-- [Image generation](https://tmac1973.github.io/haruspex/guide/images/) — ComfyUI or the bundled engine, models and licences
-- [Integrations](https://tmac1973.github.io/haruspex/guide/integrations/) — email, calendar and contacts, MCP servers, screen capture
-- [Search and network](https://tmac1973.github.io/haruspex/guide/search-and-network/) — search providers, proxies, sandbox network access
-- [Remote access](https://tmac1973.github.io/haruspex/guide/remote-access/) — chatting with this Haruspex from other devices
-- [Settings](https://tmac1973.github.io/haruspex/guide/settings/) — every Settings section
-- [Keyboard shortcuts](https://tmac1973.github.io/haruspex/guide/shortcuts/)
-- [Troubleshooting](https://tmac1973.github.io/haruspex/guide/troubleshooting/) — known issues, small-model limits, logs, reporting a bug
+- [Getting started](https://haruspex.spronglehump.com/guide/) — first run, the tabs, where to go next
+- [Models](https://haruspex.spronglehump.com/guide/models/) — choosing a model for your hardware, your own server, OpenRouter
+- [Chat](https://haruspex.spronglehump.com/guide/chat/) — web research, files, the Python sandbox, pictures, voice
+- [Shell tab](https://haruspex.spronglehump.com/guide/shell/) — the terminal, the assistant, Read-only and Full access, command approval, the memory limit
+- [Skills](https://haruspex.spronglehump.com/guide/skills/) — skills, `/name`, `AGENTS.md`, repo trust, `/init`
+- [Jobs](https://haruspex.spronglehump.com/guide/jobs/) — research, audit, guided planning, autonomous coding, asset generation, schedules
+- [Memory](https://haruspex.spronglehump.com/guide/memory/) — what is remembered, approval, duplicates, privacy
+- [Image generation](https://haruspex.spronglehump.com/guide/images/) — ComfyUI or the bundled engine, models and licences
+- [Integrations](https://haruspex.spronglehump.com/guide/integrations/) — email, calendar and contacts, MCP servers, screen capture
+- [Search and network](https://haruspex.spronglehump.com/guide/search-and-network/) — search providers, proxies, sandbox network access
+- [Remote access](https://haruspex.spronglehump.com/guide/remote-access/) — chatting with this Haruspex from other devices
+- [Settings](https://haruspex.spronglehump.com/guide/settings/) — every Settings section
+- [Keyboard shortcuts](https://haruspex.spronglehump.com/guide/shortcuts/)
+- [Troubleshooting](https://haruspex.spronglehump.com/guide/troubleshooting/) — known issues, small-model limits, logs, reporting a bug
 
 The guide's source is [`docs/guide/`](./docs/guide/). Setup notes for developers are in [`docs/`](./docs/): image generation (including the asset spec format and ComfyUI setup), Google sign-in, and testing.
 
