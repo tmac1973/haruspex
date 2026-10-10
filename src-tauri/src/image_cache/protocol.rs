@@ -31,45 +31,13 @@ pub fn handle(app: &AppHandle, request: Request<Vec<u8>>) -> Response<Vec<u8>> {
     let Some(hash) = hash_from_path(request.uri().path()) else {
         return empty(StatusCode::BAD_REQUEST);
     };
-
-    let db = app.state::<Database>();
-    let row = match db.image_by_hash(&hash) {
-        Ok(Some(row)) => row,
-        Ok(None) => return empty(StatusCode::NOT_FOUND),
-        Err(e) => {
-            debug!("image lookup failed for {}: {}", hash, e);
-            return empty(StatusCode::INTERNAL_SERVER_ERROR);
-        }
+    let (mime, bytes) = match load(app, &hash) {
+        Ok(found) => found,
+        Err(status) => return empty(status),
     };
-
-    let dir = match cache_dir(app) {
-        Ok(dir) => dir,
-        Err(e) => {
-            debug!("image cache dir unavailable: {}", e);
-            return empty(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
-
-    let bytes = match std::fs::read(image_path(&dir, &hash)) {
-        Ok(bytes) => bytes,
-        // A row without its file: the sweep will collect it on next launch.
-        // Until then this is simply an image that does not render.
-        Err(e) => {
-            debug!("cached image file missing for {}: {}", hash, e);
-            return empty(StatusCode::NOT_FOUND);
-        }
-    };
-
-    // Display counts as use. Without this, eviction would rank an image
-    // fetched once and viewed daily below one fetched yesterday and never
-    // looked at. Failure here is not worth failing the response over.
-    if let Err(e) = db.touch_images(std::slice::from_ref(&hash)) {
-        debug!("failed to touch image {}: {}", hash, e);
-    }
-
     Response::builder()
         .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, row.mime)
+        .header(header::CONTENT_TYPE, mime)
         .header(header::CONTENT_LENGTH, bytes.len())
         // Content-addressed bytes never change, so a viewer should never
         // re-request one it already holds.
@@ -81,6 +49,49 @@ pub fn handle(app: &AppHandle, request: Request<Vec<u8>>) -> Response<Vec<u8>> {
         .header("Cross-Origin-Resource-Policy", "cross-origin")
         .body(bytes)
         .unwrap_or_else(|_| empty(StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+/// One cached image's type and bytes, by an already validated hash. Also
+/// what Settings → Remote control's page is served from (`owner/`).
+pub fn load(app: &AppHandle, hash: &str) -> Result<(String, Vec<u8>), StatusCode> {
+    let db = app.state::<Database>();
+    let row = match db.image_by_hash(hash) {
+        Ok(Some(row)) => row,
+        Ok(None) => return Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            debug!("image lookup failed for {}: {}", hash, e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    let dir = cache_dir(app).map_err(|e| {
+        debug!("image cache dir unavailable: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // A row without its file: the sweep will collect it on next launch.
+    // Until then this is simply an image that does not render.
+    let bytes = std::fs::read(image_path(&dir, hash)).map_err(|e| {
+        debug!("cached image file missing for {}: {}", hash, e);
+        StatusCode::NOT_FOUND
+    })?;
+
+    // Display counts as use. Without this, eviction would rank an image
+    // fetched once and viewed daily below one fetched yesterday and never
+    // looked at. Failure here is not worth failing the response over.
+    if let Err(e) = db.touch_images(&[hash.to_string()]) {
+        debug!("failed to touch image {}: {}", hash, e);
+    }
+    Ok((row.mime, bytes))
+}
+
+/// The hash in one of our own image URLs, in either platform's form, or
+/// `None` for any other URL.
+pub fn hash_from_url(url: &str) -> Option<String> {
+    let rest = url
+        .strip_prefix("haruspex-img://localhost/")
+        .or_else(|| url.strip_prefix("http://haruspex-img.localhost/"))?;
+    is_valid_hash(rest).then(|| rest.to_string())
 }
 
 /// Lets every webview display `haruspex-img:` URLs from a page served over
@@ -146,6 +157,21 @@ mod tests {
             hash_from_path(&format!("/{hash}")).as_deref(),
             Some(hash.as_str())
         );
+    }
+
+    #[test]
+    fn reads_the_hash_from_our_own_urls_only() {
+        let hash = "ab".repeat(32);
+        assert_eq!(
+            hash_from_url(&format!("haruspex-img://localhost/{hash}")),
+            Some(hash.clone())
+        );
+        assert_eq!(
+            hash_from_url(&format!("http://haruspex-img.localhost/{hash}")),
+            Some(hash.clone())
+        );
+        assert_eq!(hash_from_url(&format!("https://example.com/{hash}")), None);
+        assert_eq!(hash_from_url("haruspex-img://localhost/../secret"), None);
     }
 
     #[test]

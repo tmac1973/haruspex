@@ -14,15 +14,15 @@ import {
 	getQueuedCommandApprovals,
 	resolveCommandApproval
 } from '#lib/stores/codeCommandApproval.svelte.ts';
-import { getPendingMcpApproval } from '#lib/stores/mcpApproval.svelte.ts';
+import { getPendingMcpApproval, resolveMcpApproval } from '#lib/stores/mcpApproval.svelte.ts';
 import {
 	getPendingMemoryApproval,
 	resolveMemoryApproval
 } from '#lib/stores/memoryApproval.svelte.ts';
 import { getPendingApproval, resolveApproval } from '#lib/stores/sandboxApproval.svelte.ts';
 import { getActiveConversationId } from '#lib/stores/session.svelte.ts';
-import { getPendingRepoTrust } from '#lib/stores/repoTrust.svelte.ts';
-import { getPendingSkillApproval } from '#lib/stores/skillApproval.svelte.ts';
+import { getPendingRepoTrust, resolveRepoTrust } from '#lib/stores/repoTrust.svelte.ts';
+import { getPendingSkillApproval, resolveSkillApproval } from '#lib/stores/skillApproval.svelte.ts';
 import { getPendingQuestion, resolveUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
 import type { Prompt, PromptAnswer, PromptEvent } from './types.ts';
 
@@ -103,9 +103,15 @@ export function currentPrompts(label: string): Prompt[] {
 			promptId: idFor(label, mcp),
 			kind: 'mcp',
 			sessionId: null,
-			answerable: false,
+			answerable: true,
 			requester: null,
-			detail: { server: mcp.serverLabel, tool: mcp.toolName }
+			detail: {
+				server: mcp.serverLabel,
+				tool: mcp.toolName,
+				description: mcp.description,
+				annotations: mcp.annotations,
+				args: mcp.args
+			}
 		});
 	}
 	const skill = getPendingSkillApproval();
@@ -114,9 +120,17 @@ export function currentPrompts(label: string): Prompt[] {
 			promptId: idFor(label, skill),
 			kind: 'skill',
 			sessionId: null,
-			answerable: false,
+			answerable: true,
 			requester: null,
-			detail: { kind: skill.kind, name: skill.name, update: skill.update }
+			detail: {
+				kind: skill.kind,
+				name: skill.name,
+				update: skill.update,
+				dir: skill.dir,
+				project: skill.project,
+				text: skill.text,
+				current: skill.current
+			}
 		});
 	}
 	const trust = getPendingRepoTrust();
@@ -125,16 +139,29 @@ export function currentPrompts(label: string): Prompt[] {
 			promptId: idFor(label, trust),
 			kind: 'repo-trust',
 			sessionId: null,
-			answerable: false,
+			answerable: true,
 			requester: null,
-			detail: { root: trust.root }
+			detail: {
+				root: trust.root,
+				skills: trust.skills,
+				agentsMd: trust.agentsMd,
+				change: trust.change ?? null
+			}
 		});
 	}
 	return JSON.parse(JSON.stringify(out)) as Prompt[];
 }
 
-/** Answer the prompt `promptId`, which must be the one showing. */
-export function answerPrompt(label: string, promptId: string, answer: PromptAnswer): void {
+/**
+ * Answer the prompt `promptId`, which must be the one showing. Saving a skill
+ * writes the file first, as the desktop's modal does: if that fails, the
+ * error comes back and the prompt stays.
+ */
+export async function answerPrompt(
+	label: string,
+	promptId: string,
+	answer: PromptAnswer
+): Promise<void> {
 	const prompt = currentPrompts(label).find((p) => p.promptId === promptId);
 	if (!prompt) throw new Error(`prompt ${promptId} is not showing (answered, or withdrawn)`);
 	if (!prompt.answerable) throw new Error(`a ${prompt.kind} prompt is answered at the desktop`);
@@ -150,6 +177,24 @@ export function answerPrompt(label: string, promptId: string, answer: PromptAnsw
 			return resolveApproval(answer.choice);
 		case 'memory':
 			return resolveMemoryApproval(answer.choice);
+		case 'mcp':
+			return resolveMcpApproval(answer.choice);
+		case 'repo-trust':
+			return resolveRepoTrust(answer.trust);
+		case 'skill': {
+			const skill = getPendingSkillApproval();
+			if (!skill) return;
+			if (answer.action === 'reject') {
+				return resolveSkillApproval({ kind: 'rejected', reason: answer.reason });
+			}
+			const text = answer.text ?? skill.text;
+			await skill.save(text);
+			// Still the one showing: another screen may have answered meanwhile.
+			if (getPendingSkillApproval() === skill) {
+				resolveSkillApproval({ kind: 'saved', edited: text !== skill.text });
+			}
+			return;
+		}
 	}
 }
 

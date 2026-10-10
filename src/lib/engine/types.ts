@@ -109,7 +109,7 @@ export interface Prompt {
 	sessionId: string | null;
 	/** The chat that asked (the sandbox and memory ask for the open chat). */
 	chatId?: string | null;
-	/** Only `command` and `question` can be answered away from the desktop (v1). */
+	/** Whether a client can answer it; every kind can now, so a new kind starts false. */
 	answerable: boolean;
 	/** Who is asking, as the modal says it. */
 	requester: string | null;
@@ -121,7 +121,12 @@ export type PromptAnswer =
 	| { kind: 'command'; choice: 'allow_once' | 'allow_session' | 'deny' }
 	| { kind: 'question'; answer: UserAnswer }
 	| { kind: 'sandbox'; choice: 'allow_once' | 'allow_chat' | 'deny' }
-	| { kind: 'memory'; choice: 'allow_once' | 'allow_session' | 'deny' };
+	| { kind: 'memory'; choice: 'allow_once' | 'allow_session' | 'deny' }
+	| { kind: 'mcp'; choice: 'allow_once' | 'allow_always' | 'deny' }
+	/** Save the file as shown, or as `text` when it was edited first; or reject it, saying why. */
+	| { kind: 'skill'; action: 'save'; text?: string }
+	| { kind: 'skill'; action: 'reject'; reason: string }
+	| { kind: 'repo-trust'; trust: boolean };
 
 /**
  * What a session did. `seq` counts per session, so a client that sees a gap
