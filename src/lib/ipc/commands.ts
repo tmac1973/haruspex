@@ -252,6 +252,7 @@ export const IPC = {
 	owner_api_apply: 'owner_api_apply',
 	owner_api_status: 'owner_api_status',
 	owner_client_create: 'owner_client_create',
+	owner_client_pair: 'owner_client_pair',
 	owner_client_revoke: 'owner_client_revoke',
 	owner_clients_list: 'owner_clients_list',
 	power_inhibit_acquire: 'power_inhibit_acquire',

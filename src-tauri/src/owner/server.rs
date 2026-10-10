@@ -7,22 +7,28 @@
 //! `Authorization: Bearer`, and every operation is checked against that
 //! device's scopes (`clients.rs`).
 //!
-//! No cookies and no query-string tokens, so a browser can't be tricked into
-//! calling it; a request whose `Origin` isn't its own `Host` is refused as
-//! well. The web client (plan/remote-api phase 4) will add a cookie, and the
-//! CSRF rules that come with it, when it needs them.
+//! The web client (plan/remote-api phase 4) is served from `/app/` and uses
+//! a cookie instead, set by redeeming a one-time pairing code
+//! (`pairing.rs`). A cookie alone is never enough: the request must also
+//! carry `X-Haruspex: 1`, a header a page on another site can't add without
+//! a CORS preflight this server never answers, and a request whose `Origin`
+//! isn't its own `Host` is refused either way.
 
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::path::{Component, Path as FsPath, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use axum::body::Bytes;
-use axum::extract::{ConnectInfo, DefaultBodyLimit, State};
-use axum::http::header::{AUTHORIZATION, CACHE_CONTROL, HOST, ORIGIN};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Path, State};
+use axum::http::header::{
+    AUTHORIZATION, CACHE_CONTROL, CONTENT_SECURITY_POLICY, CONTENT_TYPE, COOKIE, HOST, LOCATION,
+    ORIGIN, SET_COOKIE,
+};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
@@ -33,6 +39,7 @@ use serde_json::{json, Value};
 use tokio::sync::{broadcast, watch};
 
 use super::clients::{required_scope, Clients, OwnerClient, Scope};
+use super::pairing::PairingCodes;
 use crate::sync_util::LockExt;
 
 /// Largest operation body. A prompt is the only big thing in one.
@@ -43,6 +50,16 @@ const MAX_BODY_BYTES: usize = 64 * 1024;
 const THROTTLE_FAILURES: u32 = 10;
 const THROTTLE_WINDOW: Duration = Duration::from_secs(60);
 
+/// The web client's cookie: a device token, set by `/api/v1/pair`.
+pub const OWNER_COOKIE: &str = "haruspex_owner";
+
+/// The header a cookie-authenticated request must carry (see the module doc).
+const CSRF_HEADER: &str = "x-haruspex";
+
+/// The web client's pages: nothing but its own files, and no framing.
+const WEB_CSP: &str = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; \
+                       connect-src 'self'; frame-ancestors 'none'; form-action 'none'; base-uri 'none'";
+
 pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
 /// What the server needs from the engine. The app's is `engine::request` and
@@ -52,10 +69,21 @@ pub trait Dispatch: Send + Sync + 'static {
     fn subscribe(&self) -> broadcast::Receiver<Value>;
 }
 
+/// What the server serves from.
+pub struct Services {
+    pub dispatch: Arc<dyn Dispatch>,
+    pub clients: Arc<Clients>,
+    pub pairing: Arc<PairingCodes>,
+    /// The built web client (`index.html` and its assets), if there is one.
+    pub web_root: Option<PathBuf>,
+}
+
 #[derive(Clone)]
 struct AppState {
     dispatch: Arc<dyn Dispatch>,
     clients: Arc<Clients>,
+    pairing: Arc<PairingCodes>,
+    web_root: Option<Arc<PathBuf>>,
     throttle: Arc<Throttle>,
 }
 
@@ -72,12 +100,7 @@ impl Running {
 }
 
 /// Bind and serve. Returns once the socket is listening.
-pub async fn start(
-    dispatch: Arc<dyn Dispatch>,
-    clients: Arc<Clients>,
-    port: u16,
-    bind_all: bool,
-) -> Result<Running, String> {
+pub async fn start(services: Services, port: u16, bind_all: bool) -> Result<Running, String> {
     let ip = if bind_all {
         IpAddr::V4(Ipv4Addr::UNSPECIFIED)
     } else {
@@ -90,12 +113,20 @@ pub async fn start(
     let port = listener.local_addr().map(|a| a.port()).unwrap_or(port);
 
     let state = AppState {
-        dispatch,
-        clients,
+        dispatch: services.dispatch,
+        clients: services.clients,
+        pairing: services.pairing,
+        web_root: services.web_root.map(Arc::new),
         throttle: Arc::new(Throttle::default()),
     };
     let router = Router::new()
+        .route("/", get(to_app))
+        .route("/app", get(to_app))
+        .route("/app/", get(web_index))
+        .route("/app/{*path}", get(web_file))
         .route("/api/v1/health", get(health))
+        .route("/api/v1/pair", post(pair))
+        .route("/api/v1/logout", post(logout))
         .route("/api/v1/op", post(op))
         .route("/api/v1/events", get(events))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
@@ -184,18 +215,37 @@ fn authorise(state: &AppState, ip: IpAddr, headers: &HeaderMap) -> Result<OwnerC
             "too many wrong tokens; wait a minute",
         ));
     }
-    let token = headers
+    let bearer = headers
         .get(AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .unwrap_or("");
-    match state.clients.authenticate(token) {
+        .and_then(|v| v.strip_prefix("Bearer "));
+    let token = match bearer {
+        Some(t) => t.to_string(),
+        None => match cookie(headers, OWNER_COOKIE) {
+            Some(t) if headers.get(CSRF_HEADER).is_some_and(|v| v == "1") => t,
+            Some(_) => return Err((StatusCode::FORBIDDEN, "missing X-Haruspex header")),
+            None => String::new(),
+        },
+    };
+    match state.clients.authenticate(&token) {
         Some(client) => Ok(client),
         None => {
             state.throttle.fail(ip);
             Err((StatusCode::UNAUTHORIZED, "a device token is needed"))
         }
     }
+}
+
+/// A cookie's value from the `Cookie` header.
+fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get_all(COOKIE)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|v| v.split(';'))
+        .filter_map(|pair| pair.trim().split_once('='))
+        .find(|(k, _)| *k == name)
+        .map(|(_, v)| v.to_string())
 }
 
 /// The refusal for a device without `scope`, if it hasn't got it.
@@ -214,6 +264,148 @@ fn missing(client: &OwnerClient, scope: Scope) -> Option<Response> {
 }
 
 // --- handlers -------------------------------------------------------------------
+
+/// Redeem a pairing code for the device cookie. Open, like health, but a
+/// wrong code counts as a wrong token for the throttle.
+async fn pair(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if cross_site(&headers) {
+        return refuse(StatusCode::FORBIDDEN, "cross-site requests are refused");
+    }
+    if state.throttle.blocked(peer.ip()) {
+        return refuse(
+            StatusCode::TOO_MANY_REQUESTS,
+            "too many wrong codes; wait a minute",
+        );
+    }
+    let code = serde_json::from_slice::<Value>(&body)
+        .ok()
+        .and_then(|v| v.get("code").and_then(Value::as_str).map(str::to_string))
+        .unwrap_or_default();
+    let Some(token) = state.pairing.redeem(&code) else {
+        state.throttle.fail(peer.ip());
+        return refuse(
+            StatusCode::UNAUTHORIZED,
+            "that link has expired or was used already: make a new one in Settings → Remote control",
+        );
+    };
+    // Behind `tailscale serve` the browser speaks HTTPS and this server
+    // plain HTTP; the proxy says which.
+    let secure = headers
+        .get("x-forwarded-proto")
+        .is_some_and(|v| v.as_bytes().eq_ignore_ascii_case(b"https"));
+    let cookie = format!(
+        "{OWNER_COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000{}",
+        if secure { "; Secure" } else { "" }
+    );
+    let mut response = Json(json!({ "ok": true })).into_response();
+    response
+        .headers_mut()
+        .insert(SET_COOKIE, cookie.parse().expect("token is hex"));
+    response
+}
+
+async fn logout() -> Response {
+    let mut response = Json(json!({ "ok": true })).into_response();
+    response.headers_mut().insert(
+        SET_COOKIE,
+        format!("{OWNER_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0")
+            .parse()
+            .expect("static cookie"),
+    );
+    response
+}
+
+async fn to_app() -> Response {
+    (StatusCode::FOUND, [(LOCATION, "/app/")]).into_response()
+}
+
+async fn web_index(State(state): State<AppState>) -> Response {
+    web(&state, "")
+}
+
+async fn web_file(State(state): State<AppState>, Path(path): Path<String>) -> Response {
+    web(&state, &path)
+}
+
+const NOT_BUILT: &str = "the web client isn't built into this copy of Haruspex";
+
+/// The web client's files. A path naming no file is the app's own route, so
+/// it gets `index.html`; a path that tries to leave the folder gets nothing.
+fn web(state: &AppState, path: &str) -> Response {
+    let Some(root) = state.web_root.as_deref() else {
+        return refuse(StatusCode::SERVICE_UNAVAILABLE, NOT_BUILT);
+    };
+    let Some(rel) = safe_relative(path) else {
+        return refuse(StatusCode::NOT_FOUND, "no such file");
+    };
+    let candidate = root.join(&rel);
+    let (file, is_index) = if !rel.as_os_str().is_empty() && candidate.is_file() {
+        (candidate, false)
+    } else if rel.extension().is_some() {
+        // An asset that isn't there, not a page.
+        return refuse(StatusCode::NOT_FOUND, "no such file");
+    } else {
+        (root.join("index.html"), true)
+    };
+    let Ok(bytes) = std::fs::read(&file) else {
+        return refuse(StatusCode::SERVICE_UNAVAILABLE, NOT_BUILT);
+    };
+    let mut response = bytes.into_response();
+    let h = response.headers_mut();
+    h.insert(
+        CONTENT_TYPE,
+        content_type(&file).parse().expect("static type"),
+    );
+    h.insert(
+        CONTENT_SECURITY_POLICY,
+        WEB_CSP.parse().expect("static csp"),
+    );
+    // Vite names assets by their hash, so only the page itself goes stale.
+    let cache = if is_index {
+        "no-cache"
+    } else {
+        "public, max-age=31536000, immutable"
+    };
+    h.insert(CACHE_CONTROL, cache.parse().expect("static header"));
+    response
+}
+
+/// `path` as a relative path inside the web root, or `None` if any part of
+/// it would leave it (`..`, an absolute path, a drive, a backslash).
+fn safe_relative(path: &str) -> Option<PathBuf> {
+    if path.contains('\\') || path.contains('\0') {
+        return None;
+    }
+    let mut out = PathBuf::new();
+    for c in FsPath::new(path).components() {
+        match c {
+            Component::Normal(part) => out.push(part),
+            Component::CurDir => {}
+            _ => return None,
+        }
+    }
+    Some(out)
+}
+
+fn content_type(file: &FsPath) -> &'static str {
+    match file.extension().and_then(|e| e.to_str()).unwrap_or("") {
+        "html" => "text/html; charset=utf-8",
+        "js" | "mjs" => "text/javascript; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "json" | "webmanifest" => "application/json",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "ico" => "image/x-icon",
+        "woff2" => "font/woff2",
+        "wasm" => "application/wasm",
+        _ => "application/octet-stream",
+    }
+}
 
 async fn health() -> impl IntoResponse {
     Json(json!({ "ok": true, "version": env!("CARGO_PKG_VERSION") }))
@@ -329,6 +521,7 @@ mod tests {
         base: String,
         stub: Arc<Stub>,
         clients: Arc<Clients>,
+        pairing: Arc<PairingCodes>,
         running: Running,
         http: reqwest::Client,
     }
@@ -341,15 +534,28 @@ mod tests {
             seen: Mutex::new(Vec::new()),
         });
         let clients = Arc::new(Clients::in_memory());
-        let running = start(stub.clone(), clients.clone(), 0, false)
-            .await
-            .unwrap();
+        let pairing = Arc::new(PairingCodes::default());
+        let web = std::env::temp_dir().join(format!("owner-web-{}", std::process::id()));
+        std::fs::create_dir_all(web.join("assets")).unwrap();
+        std::fs::write(web.join("index.html"), "<!doctype html><title>web</title>").unwrap();
+        std::fs::write(web.join("assets/app-1.js"), "console.log(1)").unwrap();
+        let services = Services {
+            dispatch: stub.clone(),
+            clients: clients.clone(),
+            pairing: pairing.clone(),
+            web_root: Some(web),
+        };
+        let running = start(services, 0, false).await.unwrap();
         Harness {
             base: format!("http://127.0.0.1:{}", running.port),
             stub,
             clients,
+            pairing,
             running,
-            http: reqwest::Client::new(),
+            http: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .unwrap(),
         }
     }
 
@@ -618,6 +824,136 @@ mod tests {
         let got = read_events(r, 3).await;
         assert!(got.iter().any(|e| e["type"] == "resync-all"), "{got:?}");
         h.running.stop();
+    }
+
+    /// Pair with a fresh device; the cookie to send back.
+    async fn paired(h: &Harness, scopes: &[Scope]) -> String {
+        let token = h.token(scopes);
+        let code = h.pairing.issue(&token).unwrap();
+        let r = h
+            .http
+            .post(format!("{}/api/v1/pair", h.base))
+            .json(&json!({ "code": code }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200);
+        let set = r.headers()[SET_COOKIE].to_str().unwrap().to_string();
+        assert!(set.contains("HttpOnly") && set.contains("SameSite=Strict"));
+        assert!(!set.contains("Secure"));
+        set.split(';').next().unwrap().to_string()
+    }
+
+    #[tokio::test]
+    async fn a_pairing_code_buys_a_cookie_once() {
+        let h = serve().await;
+        let token = h.token(&Scope::ALL);
+        let code = h.pairing.issue(&token).unwrap();
+        let pair = || {
+            h.http
+                .post(format!("{}/api/v1/pair", h.base))
+                .header("X-Forwarded-Proto", "https")
+                .json(&json!({ "code": code }))
+                .send()
+        };
+        let r = pair().await.unwrap();
+        assert_eq!(r.status(), 200);
+        assert!(r.headers()[SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .contains("; Secure"));
+        assert_eq!(pair().await.unwrap().status(), 401);
+        h.running.stop();
+    }
+
+    #[tokio::test]
+    async fn a_cookie_needs_the_header_and_its_own_origin() {
+        let h = serve().await;
+        let cookie = paired(&h, &Scope::ALL).await;
+        let send = |header: bool, origin: Option<&str>| {
+            let mut req = h
+                .http
+                .post(format!("{}/api/v1/op", h.base))
+                .header("Cookie", cookie.clone())
+                .json(&json!({ "type": "sessions.list" }));
+            if header {
+                req = req.header("X-Haruspex", "1");
+            }
+            if let Some(o) = origin {
+                req = req.header("Origin", o.to_string());
+            }
+            req.send()
+        };
+        // The cookie alone, as a forged form or fetch from elsewhere would send it.
+        assert_eq!(send(false, None).await.unwrap().status(), 403);
+        assert_eq!(send(true, None).await.unwrap().status(), 200);
+        let own = h.base.clone();
+        assert_eq!(send(true, Some(&own)).await.unwrap().status(), 200);
+        let other = send(true, Some("http://evil.example")).await.unwrap();
+        assert_eq!(other.status(), 403);
+        h.running.stop();
+    }
+
+    #[tokio::test]
+    async fn logging_out_clears_the_cookie() {
+        let h = serve().await;
+        let r = h
+            .http
+            .post(format!("{}/api/v1/logout", h.base))
+            .send()
+            .await
+            .unwrap();
+        assert!(r.headers()[SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .contains("Max-Age=0"));
+        h.running.stop();
+    }
+
+    #[tokio::test]
+    async fn the_web_client_is_served_with_its_policy() {
+        let h = serve().await;
+        let r = h.http.get(format!("{}/", h.base)).send().await.unwrap();
+        assert_eq!(r.status(), 302);
+        assert_eq!(r.headers()[LOCATION], "/app/");
+        for page in ["/app/", "/app/session/s1"] {
+            let r = h
+                .http
+                .get(format!("{}{page}", h.base))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(r.status(), 200, "{page}");
+            assert!(r.headers()[CONTENT_SECURITY_POLICY]
+                .to_str()
+                .unwrap()
+                .contains("frame-ancestors 'none'"));
+            assert_eq!(r.headers()[CACHE_CONTROL], "no-cache");
+            assert!(r.text().await.unwrap().contains("<title>web</title>"));
+        }
+        let get = |path: &str| h.http.get(format!("{}{path}", h.base)).send();
+        let js = get("/app/assets/app-1.js").await.unwrap();
+        assert_eq!(js.status(), 200);
+        assert!(js.headers()[CONTENT_TYPE]
+            .to_str()
+            .unwrap()
+            .starts_with("text/javascript"));
+        assert_eq!(get("/app/assets/gone.js").await.unwrap().status(), 404);
+        assert_eq!(get("/app/%2e%2e/secret.txt").await.unwrap().status(), 404);
+        h.running.stop();
+    }
+
+    #[test]
+    fn a_path_cannot_leave_the_web_folder() {
+        assert_eq!(
+            safe_relative("assets/a.js"),
+            Some(PathBuf::from("assets/a.js"))
+        );
+        assert_eq!(safe_relative(""), Some(PathBuf::new()));
+        assert_eq!(safe_relative("../x"), None);
+        assert_eq!(safe_relative("a/../../x"), None);
+        assert_eq!(safe_relative("/etc/passwd"), None);
+        assert_eq!(safe_relative("a\\..\\x"), None);
     }
 
     #[tokio::test]

@@ -363,6 +363,13 @@ export class App {
 		return body.value;
 	}
 
+	/** A pairing link that opens the web client as a new device. */
+	async webUrl() {
+		if (!this.api) throw new Error('web-url needs a driver started with --api');
+		const code = await this.call('pairCode', `web ${new Date().toISOString().slice(11, 19)}`);
+		return { url: `${this.api.base}/app/#pair=${code}` };
+	}
+
 	/** Read the owner API's event stream for `seconds`. */
 	async apiEvents(seconds = 3) {
 		if (!this.api) throw new Error('api-events needs a driver started with --api');

@@ -1,0 +1,517 @@
+/*
+ * The app's global styles: theme tokens (light, dark, accents) and the shared
+ * classes (.btn, .field, .toggle-row, .settings-section, .segmented, code
+ * blocks, highlight.js colours…). Imported by the root layout and by the web
+ * client (src/web/), so the two look alike. Moved here unchanged from
+ * +layout.svelte's :global rules.
+ */
+
+/* Warm-neutral palette + teal accent (UI refresh 2026-07). Light inverts
+   the surface relationship: main content is white, side panels/cards are
+   the tint. Status colors and the derived tints below are theme-
+   independent — the dark/light blocks override only the base tokens. */
+:root {
+	color-scheme: light;
+	--bg-primary: #ffffff;
+	--bg-secondary: #f4f1ea;
+	--bg-chat: #ffffff;
+	--bg-raised: #ffffff;
+	--bg-input: #ffffff;
+	--text-primary: #1f1c17;
+	--text-secondary: #5f594f;
+	--text-muted: #867f74;
+	--text-faint: #a29c91;
+	/* Accent options (Settings → General highlight color). Light-theme
+	   variants are darkened for contrast on white, like the teal. The
+	   data-accent override blocks below pick one; teal is the default.
+	   Blue is the pre-refresh accent, kept as an option. */
+	--accent-teal: #2f8f84;
+	--accent-amber: #a1722e;
+	--accent-violet: #4f5bd5;
+	--accent-blue: #3b82f6;
+	--accent-amber-contrast: #ffffff;
+	--accent-violet-contrast: #ffffff;
+	--accent-blue-contrast: #ffffff;
+	--accent: var(--accent-teal);
+	--accent-contrast: #ffffff;
+	--border: #e5e0d7;
+	--border-mid: #ece7dd;
+	--border-strong: #d6cfc3;
+	--toggle-off: #e2ddd3;
+	/* Always-dark: code blocks/previews and terminals keep this bg in
+	   both themes. */
+	--code-bg: #0c0b0a;
+	/* Derived tints — resolve against the theme's --accent at use time,
+	   so they live only here. */
+	--user-bubble: color-mix(in srgb, var(--accent) 8%, var(--bg-chat));
+	--accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+	--error-bg: color-mix(in srgb, var(--error-text) 12%, transparent);
+	--error-text: #dd6b60;
+	--error-border: #47201d;
+	--success: #6fae6a;
+	--warning: #d7a13f;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		color-scheme: dark;
+		--bg-primary: #100f0d;
+		--bg-secondary: #16140f;
+		--bg-chat: #100f0d;
+		--bg-raised: #1e1c18;
+		--bg-input: #1b1914;
+		--text-primary: #ece7dd;
+		--text-secondary: #a39d92;
+		--text-muted: #8f887c;
+		--text-faint: #6f6a61;
+		/* Bronze/indigo pairs from the design exploration board; blue is
+		   the pre-refresh accent. */
+		--accent-teal: #4fb0a5;
+		--accent-amber: #cc9a52;
+		--accent-violet: #7c8cf8;
+		--accent-blue: #60a5fa;
+		--accent-amber-contrast: #0d0c0b;
+		--accent-violet-contrast: #ffffff;
+		--accent-blue-contrast: #0a2342;
+		--accent: var(--accent-teal);
+		--accent-contrast: #06201c;
+		--border: #2a2621;
+		--border-mid: #322e28;
+		--border-strong: #3a352d;
+		--toggle-off: #2e2a24;
+	}
+}
+
+:root[data-theme='dark'] {
+	color-scheme: dark;
+	--bg-primary: #100f0d;
+	--bg-secondary: #16140f;
+	--bg-chat: #100f0d;
+	--bg-raised: #1e1c18;
+	--bg-input: #1b1914;
+	--text-primary: #ece7dd;
+	--text-secondary: #a39d92;
+	--text-muted: #8f887c;
+	--text-faint: #6f6a61;
+	--accent-teal: #4fb0a5;
+	--accent-amber: #cc9a52;
+	--accent-violet: #7c8cf8;
+	--accent-blue: #60a5fa;
+	--accent-amber-contrast: #0d0c0b;
+	--accent-violet-contrast: #ffffff;
+	--accent-blue-contrast: #0a2342;
+	--accent: var(--accent-teal);
+	--accent-contrast: #06201c;
+	--border: #2a2621;
+	--border-mid: #322e28;
+	--border-strong: #3a352d;
+	--toggle-off: #2e2a24;
+}
+
+/* Highlight-color override (Settings → General): `data-accent` on the
+   root swaps which option feeds --accent. These share specificity with
+   the theme blocks above, so they must come after them in source order;
+   the option vars themselves are already theme-scoped, and every
+   derived tint (--accent-soft, --user-bubble) follows automatically. */
+:root[data-accent='amber'] {
+	--accent: var(--accent-amber);
+	--accent-contrast: var(--accent-amber-contrast);
+}
+:root[data-accent='violet'] {
+	--accent: var(--accent-violet);
+	--accent-contrast: var(--accent-violet-contrast);
+}
+:root[data-accent='blue'] {
+	--accent: var(--accent-blue);
+	--accent-contrast: var(--accent-blue-contrast);
+}
+
+/* Accessibility: honor the OS "reduce motion" preference with one global
+   override (decision locked — no per-component keyframe guards). Every
+   animated element also conveys its state via text or color, so freezing
+   animations on their first frame loses no information. */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+}
+
+html,
+body {
+	height: 100%;
+	overflow: hidden;
+	margin: 0;
+	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+	background: var(--bg-primary);
+	color: var(--text-primary);
+}
+
+/* User-added links (markdown content, hints) — without this they render
+   browser-blue, which clashes with the teal accent. Components that
+   style their own anchors still win on specificity. */
+a {
+	color: var(--accent);
+}
+
+/* Settings-section scaffolding — add `class="settings-section"` to a
+   <section> in any settings panel for the shared card + dotted-heading
+   chrome. */
+.settings-section {
+	background: var(--bg-secondary);
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	padding: 15px 16px;
+	margin-bottom: 14px;
+}
+.settings-section:last-child {
+	margin-bottom: 0;
+}
+.settings-section h2 {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 0.9rem;
+	font-weight: 600;
+	margin: 0 0 12px 0;
+	color: var(--text-primary);
+}
+.settings-section h2::before {
+	content: '';
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--accent);
+	flex: none;
+}
+
+/* Segmented control — a flex track of equal-width buttons; the active
+   one fills with the accent. ModeSelector renders one, and standalone
+   button groups (e.g. the theme picker) reuse the classes directly. */
+.segmented {
+	display: flex;
+	background: var(--bg-primary);
+	border: 1px solid var(--border-mid);
+	border-radius: 8px;
+	padding: 3px;
+	gap: 3px;
+}
+.segmented > button,
+.segmented > label {
+	flex: 1;
+	border: none;
+	cursor: pointer;
+	padding: 7px 4px;
+	border-radius: 6px;
+	font-size: 0.8rem;
+	text-align: center;
+	color: var(--text-secondary);
+	background: none;
+}
+.segmented > button:hover:not(.active),
+.segmented > label:hover:not(.active) {
+	color: var(--text-primary);
+}
+.segmented > button.active,
+.segmented > label.active {
+	background: var(--accent);
+	color: var(--accent-contrast);
+	font-weight: 600;
+}
+
+/* Thin custom scrollbar — add `class="thin-scroll"` to any scroll
+   container. Shared by the conversation list, job-run history, etc. */
+.thin-scroll::-webkit-scrollbar {
+	width: 10px;
+}
+.thin-scroll::-webkit-scrollbar-track {
+	background: transparent;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+	background: var(--border);
+	border-radius: 5px;
+}
+.thin-scroll::-webkit-scrollbar-thumb:hover {
+	background: var(--border-strong);
+}
+
+/* Status pill — a colored capsule for run / step state. Add
+   `class="status-pill status-{state}"` (state ∈ running, succeeded,
+   failed, cancelled, interrupted; anything else gets the neutral base).
+   Shared by the job-run views. */
+.status-pill {
+	font-size: 0.7rem;
+	padding: 2px 8px;
+	border-radius: 999px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	background: var(--bg-raised);
+	border: 1px solid var(--border-mid);
+	color: var(--text-muted);
+}
+.status-pill.status-running {
+	background: color-mix(in srgb, var(--accent) 15%, transparent);
+	border-color: var(--accent);
+	color: var(--accent);
+}
+.status-pill.status-succeeded {
+	background: color-mix(in srgb, var(--success) 15%, transparent);
+	border-color: var(--success);
+	color: var(--success);
+}
+.status-pill.status-failed,
+.status-pill.status-cancelled,
+.status-pill.status-interrupted {
+	background: var(--error-bg);
+	border-color: var(--error-text);
+	color: var(--error-text);
+}
+
+/* Button primitives — `class="btn"` plus optional `btn-primary` /
+   `btn-danger` / `btn-small` modifiers. Canonical styling for the
+   settings panels and forms; components keep only genuinely local
+   overrides (widths, margins). */
+.btn {
+	flex: none;
+	padding: 6px 14px;
+	border: 1px solid var(--border-strong);
+	border-radius: 7px;
+	background: var(--bg-raised);
+	color: var(--text-primary);
+	font-size: 0.85rem;
+	cursor: pointer;
+}
+.btn:hover:not(:disabled) {
+	opacity: 0.9;
+}
+.btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+.btn-primary {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: var(--accent-contrast);
+	font-weight: 600;
+}
+.btn-danger {
+	color: var(--error-text);
+	border-color: var(--error-border);
+}
+.btn-danger:hover:not(:disabled) {
+	background: var(--error-bg);
+}
+.btn-small {
+	padding: 4px 10px;
+	font-size: 0.78rem;
+}
+
+/* Form field scaffolding — wrap a label + control in
+   `<div class="field">`. Checkboxes/radios keep native sizing. */
+.field {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+.field label {
+	font-size: 0.85rem;
+	font-weight: 500;
+}
+.field input:not([type='checkbox']):not([type='radio']),
+.field select,
+.field textarea {
+	padding: 8px 12px;
+	border: 1px solid var(--border-strong);
+	border-radius: 7px;
+	background: var(--bg-input);
+	color: var(--text-primary);
+	font-size: 0.9rem;
+	color-scheme: light dark;
+}
+.field input:not([type='checkbox']):not([type='radio']):focus-visible,
+.field select:focus-visible,
+.field textarea:focus-visible {
+	outline: none;
+	border-color: var(--accent);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.field ::placeholder {
+	color: var(--text-faint);
+}
+.field select option {
+	background-color: var(--bg-primary);
+	color: var(--text-primary);
+}
+.field textarea {
+	font-family: inherit;
+	line-height: 1.4;
+	resize: vertical;
+	min-height: 60px;
+}
+
+/* Secondary helper text under a control or heading. Components add
+   their own margin/font-style overrides where the layout needs it. */
+.hint {
+	font-size: 0.78rem;
+	color: var(--text-secondary);
+	margin: 0;
+}
+.hint a {
+	color: var(--accent);
+}
+.hint code {
+	background: var(--bg-secondary);
+	padding: 1px 4px;
+	border-radius: 3px;
+	font-size: 0.72rem;
+}
+
+/* Inline loading spinner — a 2px ring rotating via the global `spin`
+   keyframes. Size-override locally if 14px doesn't fit. */
+.spinner {
+	display: inline-block;
+	width: 14px;
+	height: 14px;
+	border: 2px solid var(--border);
+	border-top-color: var(--accent);
+	border-radius: 50%;
+	animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+/* Error display — a bordered box for form/action failures, and a
+   plain colored-text variant for inline status lines. */
+.error-box {
+	padding: 8px 12px;
+	border: 1px solid var(--error-border);
+	border-radius: 6px;
+	background: var(--error-bg);
+	color: var(--error-text);
+	font-size: 0.85rem;
+	margin: 0;
+}
+.error-text {
+	color: var(--error-text);
+}
+
+/* Approval-modal helpers — the scrollable <pre> code preview and the
+   stacked ModalButton column used by the approval/conflict modals.
+   Code previews are an always-dark surface (both themes). */
+.code-preview {
+	background: var(--code-bg);
+	color: #d4d4d4;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 10px 12px;
+	max-height: 280px;
+	overflow: auto;
+	font-size: 0.82rem;
+	line-height: 1.45;
+	margin: 8px 0 16px 0;
+}
+.code-preview code {
+	font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+	white-space: pre;
+}
+.button-row {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+/* The '×' close button used by modal-style overlays. */
+.modal-close {
+	background: none;
+	border: none;
+	color: var(--text-secondary);
+	font-size: 1.4rem;
+	line-height: 1;
+	cursor: pointer;
+	padding: 0 4px;
+	border-radius: 4px;
+}
+.modal-close:hover {
+	color: var(--text-primary);
+}
+
+/* Streaming caret shown at the end of in-progress assistant text. */
+.streaming-caret {
+	display: inline-block;
+	width: 2px;
+	height: 1em;
+	background: var(--accent);
+	animation: blink 0.8s step-end infinite;
+	vertical-align: text-bottom;
+	margin-left: 1px;
+}
+@keyframes blink {
+	50% {
+		opacity: 0;
+	}
+}
+
+/* Switch row with bold title + secondary description (ToggleField and
+   the settings sections' inline toggles). The checkbox input stays in
+   the DOM for semantics/keyboard; appearance:none restyles it as a
+   34×20 pill switch. Checkboxes outside .toggle-row keep native look. */
+.toggle-row {
+	display: flex;
+	align-items: flex-start;
+	gap: 11px;
+	cursor: pointer;
+}
+.toggle-row input[type='checkbox'] {
+	appearance: none;
+	width: 34px;
+	height: 20px;
+	flex: none;
+	margin: 1px 0 0 0;
+	border-radius: 999px;
+	background: var(--toggle-off);
+	border: 1px solid var(--border-strong);
+	position: relative;
+	cursor: pointer;
+}
+.toggle-row input[type='checkbox']::before {
+	content: '';
+	position: absolute;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: var(--text-muted);
+	top: 1px;
+	left: 2px;
+	transition:
+		transform 0.15s,
+		background 0.15s;
+}
+.toggle-row input[type='checkbox']:checked {
+	background: var(--accent);
+	border-color: var(--accent);
+}
+.toggle-row input[type='checkbox']:checked::before {
+	background: var(--accent-contrast);
+	transform: translateX(12px);
+}
+.toggle-row input[type='checkbox']:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+.toggle-row strong {
+	display: block;
+	font-size: 0.88rem;
+}
+.toggle-row span {
+	display: block;
+	font-size: 0.78rem;
+	color: var(--text-secondary);
+	margin-top: 2px;
+}

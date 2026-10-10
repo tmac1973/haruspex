@@ -7,7 +7,7 @@
     "frontendDist": "../build",
     "devUrl": "http://localhost:1420",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "npm run build && npm run build:web"
   },
   "app": {
     "windows": [
@@ -51,7 +51,8 @@
       "binaries/espeak-ng-data/lang/*/*",
       "resources/shell-integration/*",
       "resources/mcp-catalog.json",
-      "binaries/node-modules/"
+      "binaries/node-modules/",
+      "web-client/"
     ],
     "icon": [
       "icons/32x32.png",

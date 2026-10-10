@@ -8,7 +8,7 @@ another machine; then a phone.
 See [`overview.md`](./overview.md) for the why, the settled decisions and the
 invariants.
 
-**Status:** Phase 1 merged (#423). Phase 2 written up in full; phases 3–6
+**Status:** Phases 1–3 merged (#423, #431, #432); phase 4 built. Phases 5–6
 are sketches to be written up before each starts.
 
 ## Phase map

@@ -196,7 +196,8 @@ npm run drive -- consistent <id>                         # do the events rebuild
 (this computer only, a free port), adds a device, and sends every engine
 operation over HTTP (`POST /api/v1/op`) from then on: `--via engine`,
 `approve --via engine`, `state`, `status`. `api-events [--seconds N]` reads
-`GET /api/v1/events` for N seconds.
+`GET /api/v1/events` for N seconds. `web-url` prints a one-time link that opens the web
+client (`src/web/`) as a new device, for checking it by hand or with a browser.
 
 `consistent` must hold for an idle session. While a turn streams, the replay
 trails by a few tens of milliseconds, so `differs` listing only
