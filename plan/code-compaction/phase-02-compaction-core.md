@@ -29,8 +29,9 @@ compaction?: CodeCompaction | null;
 
 ## Rust (`src-tauri/src/db/code_sessions.rs`)
 
-`fork_thread(thread, at)`: keep `compaction` when `compaction.at < at`, and
-otherwise remove the key. Update the doc comment saying the shape is "mirrored
+`fork_thread(thread, at)`: keep `compaction` when `compaction.at <= at`, and
+otherwise remove the key. A fork exactly at the cut still has every message
+the summary covers. Update the doc comment saying the shape is "mirrored
 in one place". Add tests for a fork before, at and after the cut, and for a
 thread with no compaction.
 
@@ -40,14 +41,18 @@ thread with no compaction.
 /** What the model is sent: a leading summary note, then messages[at…]. */
 export function modelThread(s: { messages: ChatMessage[]; compaction?: CodeCompaction | null }): ChatMessage[];
 
-/** Compact now? The view's calibrated estimate is at least 75% of the window. */
-export function shouldCompactCode(view: ChatMessage[], contextSize: number): boolean;
+/**
+ * Compact now? The view's calibrated estimate, plus `overhead` (system prompt
+ * and tool schemas, which the thread doesn't hold), is at least 75% of the
+ * window.
+ */
+export function shouldCompactCode(view: ChatMessage[], contextSize: number, overhead?: number): boolean;
 
 /**
  * Where to cut: the opening message of the oldest turn to keep verbatim.
  * Keeps the newest turns, up to 25% of the window and at least the last one.
  * Never before the current cut or between a call and its results. Null when
- * there is nothing new to summarise.
+ * everything past the current cut would be kept anyway.
  */
 export function chooseCut(messages: ChatMessage[], from: number, contextSize: number): number | null;
 

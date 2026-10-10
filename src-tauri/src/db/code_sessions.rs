@@ -12,8 +12,9 @@
 //! the `messages` table, and nothing queries inside a thread.
 //!
 //! Rust parses the snapshot in exactly one place, `fork_thread`, and only as
-//! far as it needs to cut a prefix: the version, `messages`, and the four
-//! index-keyed maps. Everything else is passed through untouched.
+//! far as it needs to cut a prefix: the version, `messages`, the four
+//! index-keyed maps, and `compaction`'s cut. Everything else is passed through
+//! untouched.
 
 use super::*;
 use crate::code_tools::wsl::CodeLocation;
@@ -178,7 +179,8 @@ fn empty_thread(now: i64) -> String {
 }
 
 /// Cut a snapshot to messages `[0, at)`, keeping only the sidecar entries for
-/// those indices. Errors on a snapshot of another version, a malformed one,
+/// those indices, and the compaction only when its summary still covers a
+/// prefix of them. Errors on a snapshot of another version, a malformed one,
 /// or `at` past the end — a fork the caller asked for at a message that does
 /// not exist is a bug upstream, not something to round down silently.
 pub fn fork_thread(thread: &str, at: usize) -> Result<String, String> {
@@ -216,6 +218,18 @@ pub fn fork_thread(thread: &str, at: usize) -> Result<String, String> {
             _ => Map::new(),
         };
         snap.insert(key.to_string(), Value::Object(kept));
+    }
+
+    // `compaction` summarises messages `[0, compaction.at)`. A fork that keeps
+    // all of those keeps the summary; one that cuts inside them would hand
+    // the model a summary of messages it no longer has, so it goes.
+    let summary_kept = snap
+        .get("compaction")
+        .and_then(|c| c.get("at"))
+        .and_then(Value::as_u64)
+        .is_some_and(|cut| cut <= at as u64);
+    if !summary_kept {
+        snap.remove("compaction");
     }
     Ok(Value::Object(snap).to_string())
 }

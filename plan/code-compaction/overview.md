@@ -121,8 +121,9 @@ during summarising stops the turn, as a Stop does now.
 
 - The cut index always points at a turn's opening message, never between a
   tool call and its results.
-- `compaction.at <= messages.length`. A fork at `at' <= at` drops the
-  compaction. A fork at `at' > at` keeps it. Rust's `fork_thread` mirrors the
+- `compaction.at <= messages.length`. A fork at `at' >= at` keeps the
+  compaction, since it keeps every summarised message. A fork inside the
+  summarised span drops it. Rust's `fork_thread` mirrors the
   TypeScript side, with a test on each side.
 - The model's view is built in one place (`modelThread(state)`). Nothing else
   slices `messages` for the model.

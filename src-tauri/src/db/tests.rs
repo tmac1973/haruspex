@@ -2576,6 +2576,36 @@ fn fork_thread_drops_sidecars_past_the_cut_even_when_sparse() {
 }
 
 #[test]
+fn fork_thread_keeps_the_compaction_only_while_it_covers_a_prefix() {
+    let thread = |compaction: serde_json::Value| {
+        serde_json::json!({
+            "version": 1,
+            "savedAt": 1,
+            "messages": [{"role":"user"},{"role":"assistant"},{"role":"user"},{"role":"assistant"}],
+            "compaction": compaction
+        })
+        .to_string()
+    };
+    let fork = |thread: &str, at: usize| -> serde_json::Value {
+        serde_json::from_str(&code_sessions::fork_thread(thread, at).unwrap()).unwrap()
+    };
+    let cut = serde_json::json!({ "at": 2, "summary": "s", "summarizedAt": 1 });
+    let compacted = thread(cut.clone());
+    // After the cut, and exactly at it: the summary still covers a prefix.
+    assert_eq!(fork(&compacted, 4)["compaction"], cut);
+    assert_eq!(fork(&compacted, 2)["compaction"], cut);
+    // Inside the summarised span: it would describe messages the fork lacks.
+    assert!(fork(&compacted, 1).get("compaction").is_none());
+    // None, null or malformed: nothing to keep.
+    assert!(fork(&thread(serde_json::Value::Null), 4)
+        .get("compaction")
+        .is_none());
+    assert!(fork(&thread(serde_json::json!({ "at": "2" })), 4)
+        .get("compaction")
+        .is_none());
+}
+
+#[test]
 fn fork_thread_rejects_another_version_and_malformed_threads() {
     for bad in [
         r#"{"version":2,"messages":[]}"#,

@@ -16,6 +16,7 @@ function state(over: Partial<CodeSessionState> = {}): CodeSessionState {
 		messageStats: {},
 		messageStops: {},
 		messageHistorySent: {},
+		compaction: null,
 		...over
 	};
 }
@@ -57,5 +58,34 @@ describe('code session persistence', () => {
 		const decoded = decodeCodeSession(JSON.stringify(encoded));
 		expect(decoded?.messages).toHaveLength(2);
 		expect(decoded?.messageSteps).toEqual({});
+	});
+
+	it('round-trips a compaction', () => {
+		const original = state({ compaction: { at: 1, summary: 'Added a test.', summarizedAt: 5 } });
+		expect(decodeCodeSession(encodeCodeSession(original))).toEqual(original);
+	});
+
+	it('reads a payload from before compaction as uncompacted', () => {
+		const encoded = JSON.parse(encodeCodeSession(state()));
+		delete encoded.compaction;
+		expect(decodeCodeSession(JSON.stringify(encoded))?.compaction).toBeNull();
+	});
+
+	it('drops a compaction it cannot use, keeping the thread', () => {
+		for (const bad of [
+			{ at: 0, summary: 's' },
+			{ at: 3, summary: 's' },
+			{ at: 1.5, summary: 's' },
+			{ at: '1', summary: 's' },
+			{ at: 1, summary: '  ' },
+			{ at: 1 },
+			'garbage'
+		]) {
+			const encoded = JSON.parse(encodeCodeSession(state()));
+			encoded.compaction = bad;
+			const decoded = decodeCodeSession(JSON.stringify(encoded));
+			expect(decoded?.messages, JSON.stringify(bad)).toHaveLength(2);
+			expect(decoded?.compaction, JSON.stringify(bad)).toBeNull();
+		}
 	});
 });
