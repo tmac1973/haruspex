@@ -71,6 +71,7 @@ export async function openForCommand(
 	// Read once, when the pane's terminal spawns the PTY.
 	session.initialCwd = req.cwd;
 	if (req.wslDistro) session.initialSelection = { kind: 'wsl', distro: req.wslDistro };
+	else if (req.powershell) session.initialSelection = { kind: 'powershell', exe: req.powershell };
 	deps.show(session.id);
 	const shellName = session.name;
 	const closed: Outcome<never> = { stop: { kind: 'closed', shellName } };

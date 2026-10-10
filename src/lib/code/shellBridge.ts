@@ -22,6 +22,11 @@ export interface ShellCommandRequest {
 	 * the Shell picker says, and starts at the Linux `cwd`.
 	 */
 	wslDistro?: string | null;
+	/**
+	 * Windows, a folder on this PC: the PowerShell (its exe) the tab runs,
+	 * whatever the Shell picker says. Ignored with `wslDistro`.
+	 */
+	powershell?: string | null;
 	/** Wait for the command to finish. False opens the tab and returns. */
 	wait: boolean;
 	/** Ends the wait. The shell tab stays open. */

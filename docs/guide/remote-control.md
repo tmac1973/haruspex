@@ -29,7 +29,7 @@ Each device with a token has its own permissions: **Read** (list and follow sess
 
 ## Use it from a browser
 
-The page lists your Code sessions, the open ones first. Pick one to follow it as it runs, send messages, steer or stop a turn, and answer **Run this command?** and the agent's questions. **New session** starts one in a folder on this computer; on Windows, pick the WSL distro first.
+The page lists your Code sessions, the open ones first. Pick one to follow it as it runs, send messages, steer or stop a turn, and answer **Run this command?** and the agent's questions. **New session** starts one in a folder on this computer; on Windows, pick This PC or a WSL distro first.
 
 File names in a session are links: click one to read the file (it can't be edited from the page). Images attached to messages show as thumbnails; click one for full size.
 

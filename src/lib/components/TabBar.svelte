@@ -1,10 +1,5 @@
 <script lang="ts">
-	import {
-		codeTabAvailable,
-		getActiveTab,
-		setActiveTab,
-		type ActiveTab
-	} from '#lib/stores/activeTab.svelte.ts';
+	import { getActiveTab, setActiveTab, type ActiveTab } from '#lib/stores/activeTab.svelte.ts';
 	import { getOpenSessions } from '#lib/stores/code.svelte.ts';
 	import { getCurrentRun, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
 
@@ -13,13 +8,12 @@
 		label: string;
 	}
 
-	// Derived: on Windows the Code tab appears once the WSL probe answers.
-	const tabs: Tab[] = $derived([
+	const tabs: Tab[] = [
 		{ id: 'chat', label: 'Chat' },
 		{ id: 'jobs', label: 'Jobs' },
 		{ id: 'shell', label: 'Shell' },
-		...(codeTabAvailable() ? [{ id: 'code' as const, label: 'Code' }] : [])
-	]);
+		{ id: 'code', label: 'Code' }
+	];
 
 	// A dot on Code while any session's turn runs or waits.
 	const codeBusy = $derived(getOpenSessions().some((s) => s.status !== 'idle'));

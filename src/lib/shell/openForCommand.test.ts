@@ -128,6 +128,16 @@ describe('openForCommand', () => {
 		expect(host.session.initialSelection).toBeNull();
 	});
 
+	it("opens a Windows folder's command in PowerShell", async () => {
+		const { session, deps } = setup();
+		await openForCommand(
+			{ command: 'dir', cwd: 'C:\\p', powershell: 'pwsh.exe', wait: false },
+			deps
+		);
+		expect(session.initialCwd).toBe('C:\\p');
+		expect(session.initialSelection).toEqual({ kind: 'powershell', exe: 'pwsh.exe' });
+	});
+
 	it('returns the finished command as the result', async () => {
 		const { deps } = setup({
 			onTick: (s, t) => {

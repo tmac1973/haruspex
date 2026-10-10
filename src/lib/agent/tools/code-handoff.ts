@@ -19,6 +19,7 @@ import {
 import { loadShellPlatformSupported } from '#lib/shell/platformSupport.ts';
 import { relativeToRoot } from '#lib/code/paths.ts';
 import { openInEditor } from '#lib/code/openEditor.ts';
+import { handoffPowershell } from '#lib/code/powershell.ts';
 
 /** The model-facing text for what came back from the shell. */
 export async function describeShellResult(
@@ -121,6 +122,7 @@ async function waitInShell(
 			command,
 			cwd: root,
 			wslDistro: ctx.wslDistro ?? null,
+			powershell: ctx.wslDistro ? null : await handoffPowershell(),
 			wait: true,
 			signal: wait.signal,
 			onOpened: (shell) => {

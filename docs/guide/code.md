@@ -5,7 +5,7 @@ description: Coding sessions in a project folder — starting one, diffs and com
 
 # Code tab
 
-The Code tab is a coding agent that works in one project folder: it reads and edits files and runs commands there. On Windows it works on projects inside WSL; see the `code-windows` page.
+The Code tab is a coding agent that works in one project folder: it reads and edits files and runs commands there. For Windows (a Windows folder or WSL), see the `code-windows` page.
 
 ## Start a session
 
