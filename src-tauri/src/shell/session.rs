@@ -70,11 +70,22 @@ impl ScrollbackRing {
     }
 }
 
+type SharedMaster = Arc<Mutex<Box<dyn MasterPty + Send>>>;
+type SharedChild = Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>;
+
+/// How long a WSL tab closed while its distro boots waits for the shell's
+/// first prompt before it is ended anyway.
+const WSL_BOOT_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+
 pub struct Session {
     pub context: SessionContext,
-    master: Mutex<Box<dyn MasterPty + Send>>,
+    /// Shared with a deferred close (see `kill`), which must keep the pseudo
+    /// console open: closing it ends the `wsl.exe` it hosts.
+    master: SharedMaster,
     writer: Mutex<Box<dyn Write + Send>>,
-    child: Mutex<Box<dyn portable_pty::Child + Send + Sync>>,
+    child: SharedChild,
+    /// Runs in a WSL distro: see `kill`.
+    wsl: bool,
     integration: Arc<Mutex<Integration>>,
     replay: Arc<Mutex<ReplayState>>,
     scrollback: Arc<Mutex<ScrollbackRing>>,
@@ -214,9 +225,10 @@ impl Session {
 
         Ok(Session {
             context,
-            master: Mutex::new(pair.master),
+            master: Arc::new(Mutex::new(pair.master)),
             writer: Mutex::new(writer),
-            child: Mutex::new(child),
+            child: Arc::new(Mutex::new(child)),
+            wsl: wsl_distro.is_some(),
             integration,
             replay,
             scrollback,
@@ -272,10 +284,39 @@ impl Session {
             .map_err(|e| format!("resize failed: {e}"))
     }
 
+    /// End the shell. A WSL tab whose shell hasn't drawn its first prompt is
+    /// still booting its distro, and killing a `wsl.exe` then, with another
+    /// starting beside it, has left the WSL service failing every call until
+    /// `wsl --shutdown` (see `code_tools::wsl::GroupState`). So that one is
+    /// ended once the prompt appears, or after [`WSL_BOOT_WAIT`], by a thread
+    /// that keeps its pseudo console open meanwhile.
     pub fn kill(&self) {
+        if self.wsl && !self.shell_started() {
+            let (master, child, integration) = (
+                self.master.clone(),
+                self.child.clone(),
+                self.integration.clone(),
+            );
+            when_started(
+                move || prompt_seen(&integration),
+                WSL_BOOT_WAIT,
+                move || {
+                    if let Ok(mut child) = child.lock() {
+                        let _ = child.kill();
+                    }
+                    drop(master);
+                },
+            );
+            return;
+        }
         if let Ok(mut child) = self.child.lock() {
             let _ = child.kill();
         }
+    }
+
+    /// The shell has drawn a prompt: for a WSL tab, its distro is up.
+    fn shell_started(&self) -> bool {
+        prompt_seen(&self.integration)
     }
 
     /// Recent completed commands plus the in-flight command (if one is
@@ -377,6 +418,26 @@ impl Drop for Session {
     }
 }
 
+/// Run `then` on a thread of its own once `started()` is true, or after
+/// `wait` at the latest.
+fn when_started(
+    started: impl Fn() -> bool + Send + 'static,
+    wait: std::time::Duration,
+    then: impl FnOnce() + Send + 'static,
+) {
+    std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + wait;
+        while std::time::Instant::now() < deadline && !started() {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        then();
+    });
+}
+
+fn prompt_seen(integration: &Mutex<Integration>) -> bool {
+    integration.lock().is_ok_and(|i| i.marker_total() > 0)
+}
+
 fn spawn_reader_thread(
     app: AppHandle,
     id: SessionId,
@@ -434,6 +495,36 @@ fn spawn_reader_thread(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_wsl_tab_closed_while_booting_ends_once_its_shell_is_up() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::time::Duration;
+        let up = Arc::new(AtomicBool::new(false));
+        let ended = Arc::new(AtomicBool::new(false));
+        let (u, e) = (up.clone(), ended.clone());
+        when_started(
+            move || u.load(Ordering::SeqCst),
+            Duration::from_secs(30),
+            move || e.store(true, Ordering::SeqCst),
+        );
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(!ended.load(Ordering::SeqCst), "ended while still booting");
+        up.store(true, Ordering::SeqCst);
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(ended.load(Ordering::SeqCst), "not ended once up");
+
+        // A shell that never draws a prompt is ended after the wait anyway.
+        let ended = Arc::new(AtomicBool::new(false));
+        let e = ended.clone();
+        when_started(
+            || false,
+            Duration::from_millis(200),
+            move || e.store(true, Ordering::SeqCst),
+        );
+        std::thread::sleep(Duration::from_millis(500));
+        assert!(ended.load(Ordering::SeqCst));
+    }
 
     #[test]
     fn ring_retains_recent_bytes_under_cap() {
