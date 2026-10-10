@@ -613,10 +613,6 @@ pub fn run() {
                 // guaranteed to drop at process exit, so it is stopped here
                 // alongside the sidecars.
                 let browser = app.state::<proxy::BrowserSessionHandle>();
-                // Closing the listener matters on exit: a port still bound
-                // after the window is gone is the kind of thing that makes the
-                // next launch fail to bind.
-                app.state::<RemoteServer>().shutdown();
                 // Let the machine sleep again if a run was still holding the
                 // inhibit when the window closed.
                 app.state::<PowerInhibitor>().shutdown();
@@ -627,6 +623,10 @@ pub fn run() {
                 // not honour a closed stdin.
                 let mcp = app.state::<McpSupervisor>();
                 tauri::async_runtime::block_on(async {
+                    // Closing the listener matters on exit: a port still bound
+                    // after the window is gone is the kind of thing that makes
+                    // the next launch fail to bind.
+                    app.state::<RemoteServer>().shutdown().await;
                     mcp.stop_all().await;
                     let _ = llama.stop().await;
                     let _ = whisper.stop().await;

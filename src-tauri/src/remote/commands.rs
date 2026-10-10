@@ -91,7 +91,7 @@ pub async fn remote_start(
     }
     // Stop first: rebinding the same port while the old listener holds it is
     // the obvious way for a port change to fail on the way back.
-    state.shutdown();
+    state.shutdown().await;
     let bridge = Arc::new(AppBridge(app));
     let running = server::start(bridge, state.relay(), config).await?;
     state.install(running);
@@ -100,7 +100,7 @@ pub async fn remote_start(
 
 #[tauri::command]
 pub async fn remote_stop(state: State<'_, RemoteServer>) -> Result<RemoteStatus, String> {
-    state.shutdown();
+    state.shutdown().await;
     Ok(state.status())
 }
 
