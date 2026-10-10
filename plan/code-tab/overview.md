@@ -56,7 +56,7 @@ processes, detach, diffs — is now cheap because the Shell work built it.
 | 10 | v1 pi features | **All four:** inline diffs, steering messages, per-session model, fork from message. |
 | 11 | Browsing sessions | **Sidebar + sub-tabs:** sidebar lists saved sessions grouped by folder; open ones are sub-tabs. |
 | 12 | What Full access keeps | **The tools, not the coding prompt.** Terminal-run commands, edits, grep/glob, approvals; shell assistant prompt; no saved threads; plus an "Open in Code" button. |
-| 13 | Platforms | **Linux + macOS first; Windows last (phase 10), WSL only.** The tab is hidden on Windows until then. PowerShell/cmd support is #396. |
+| 13 | Platforms | **Linux + macOS first; Windows last (phase 10, done), WSL only.** PowerShell/cmd support is #396. |
 | 14 | Per-session model | **Backend + reasoning effort.** The local model stays global — swapping it restarts llama-server under every session. |
 | 15 | Detach mid-turn | **Blocked while running.** Idle sessions detach by save → close → reopen; the database is the source of truth. |
 | 16 | Settings home | **New Settings → Code**; the "Code mode" block leaves Settings → Shell. |
