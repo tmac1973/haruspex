@@ -166,6 +166,11 @@
 				console.error('open_url failed:', href, err);
 				showToast("Couldn't open link in your browser", { kind: 'error' });
 			});
+		} else if (href && /^[a-z][a-z0-9+.-]*:/i.test(href)) {
+			// Any other scheme (`haruspex-img:`, `file:`, `asset:`…) is one the
+			// browser cannot open and the webview would navigate to, leaving the
+			// user on a bare page with no way back short of quitting.
+			e.preventDefault();
 		}
 	}
 

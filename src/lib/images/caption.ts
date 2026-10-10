@@ -16,6 +16,9 @@
  *   - `unknown` — every scraped `og:image`. The site's hostname, linked. That
  *     is honest about where the picture came from without claiming a licence
  *     nobody verified.
+ *   - `generated` — no caption. We drew it, so there is nobody to credit; its
+ *     only URL is our own `haruspex-img://localhost/…`, which captioned as a
+ *     scrape read "localhost" and linked to the bare image.
  */
 
 import type { ImageRow } from '#lib/ipc/gen/ImageRow.ts';
@@ -46,6 +49,7 @@ export interface Caption {
  * should see a real credit or nothing at all.
  */
 export function captionFor(row: ImageRow): Caption | null {
+	if (row.source === 'generated') return null;
 	const code = row.license ?? 'unknown';
 	if (code === 'pd') return null;
 
@@ -83,9 +87,12 @@ function licenseLabelFor(code: string): string {
 	return match[2] ? `${label} ${match[2]}` : label;
 }
 
+/** The site a web URL names, or '' for anything that is not http(s). */
 function hostOf(url: string): string {
 	try {
-		return new URL(url).hostname.replace(/^www\./, '');
+		const parsed = new URL(url);
+		if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+		return parsed.hostname.replace(/^www\./, '');
 	} catch {
 		return '';
 	}
