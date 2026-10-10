@@ -50,7 +50,12 @@ import {
 	updateCodeSessionMeta,
 	type CodeSessionRecord
 } from '#lib/code/db.ts';
-import { decodeCodeSession, encodeCodeSession, type CodeSessionState } from '#lib/code/session.ts';
+import {
+	decodeCodeSession,
+	encodeCodeSession,
+	type CodeCompaction,
+	type CodeSessionState
+} from '#lib/code/session.ts';
 import { runCodeTurn, type CodeTurnResult } from '#lib/code/runCodeTurn.ts';
 import type { PendingToolCall } from '#lib/code/pendingCall.ts';
 import { LiveTurn } from '#lib/code/liveTurn.svelte.ts';
@@ -133,6 +138,13 @@ export class CodeSession {
 	messageStops = $state<Record<number, AgentStopReason>>({});
 	/** Always empty here (there is no shell history); kept for the snapshot shape. */
 	messageHistorySent = $state<Record<number, string[]>>({});
+	/**
+	 * The summary standing in for the older turns (`code/compaction.ts`). The
+	 * model is sent it and the messages from its cut; `messages` keeps all.
+	 */
+	compaction = $state.raw<CodeCompaction | null>(null);
+	/** The running turn is summarising older turns before it starts. */
+	compacting = $state(false);
 
 	status = $state<CodeSessionStatus>('idle');
 	/** The waiting inference ticket while `status` is 'queued'. */
@@ -222,6 +234,7 @@ export class CodeSession {
 			this.messageStats = thread.messageStats;
 			this.messageStops = thread.messageStops;
 			this.messageHistorySent = thread.messageHistorySent;
+			this.compaction = thread.compaction ?? null;
 		}
 		this.unwatch = setCodeWatchCompletionHandler(this.id, () => {
 			void this.flushWatchNotifications();
@@ -483,7 +496,8 @@ export class CodeSession {
 		messageSteps: $state.snapshot(this.messageSteps) as Record<number, SearchStep[]>,
 		messageStats: $state.snapshot(this.messageStats),
 		messageStops: $state.snapshot(this.messageStops),
-		messageHistorySent: $state.snapshot(this.messageHistorySent)
+		messageHistorySent: $state.snapshot(this.messageHistorySent),
+		compaction: this.compaction
 	});
 
 	/**
@@ -569,6 +583,15 @@ export class CodeSession {
 				root: this.root,
 				title: () => this.title,
 				thread: $state.snapshot(this.messages) as ChatMessage[],
+				compaction: this.compaction,
+				lastUsage: this.usage,
+				onCompacting: (active) => (this.compacting = active),
+				onCompacted: (c) => {
+					this.compaction = c;
+					// The gauge and any fit notice described the prompt before it.
+					this.usage = null;
+					this.contextNotice = null;
+				},
 				backend: this.backend ? ($state.snapshot(this.backend) as BackendOverride) : null,
 				effort: this.effort,
 				readOnly: this.readOnly,

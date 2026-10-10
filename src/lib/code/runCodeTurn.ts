@@ -47,6 +47,9 @@ import { ioRoot } from './paths';
 import { sessionLabel } from './sessionList';
 import { loadShellPlatformSupported } from '#lib/shell/platformSupport.ts';
 import { agentPowershell } from './powershell.ts';
+import { logDebug } from '#lib/debug-log.ts';
+import { compactCodeThread, compactionDue, modelThread } from './compaction';
+import type { CodeCompaction } from './session';
 
 export interface CodeTurnOptions {
 	sessionId: string;
@@ -54,8 +57,19 @@ export interface CodeTurnOptions {
 	root: string;
 	/** The session's title as it is now, to name it in approval prompts. */
 	title?: () => string;
-	/** The thread so far, ending with the message that starts this turn. */
+	/**
+	 * The whole thread so far, ending with the message that starts this turn.
+	 * The model is sent what `compaction` leaves of it (see `modelThread`).
+	 */
 	thread: ChatMessage[];
+	/** The session's summary of its older turns, if it has one. */
+	compaction?: CodeCompaction | null;
+	/** What the session's last model call reported, for deciding to compact. */
+	lastUsage?: { promptTokens: number; contextSize: number } | null;
+	/** Summarising older turns has started (true) or ended (false). */
+	onCompacting?: (active: boolean) => void;
+	/** A new summary of the thread's older turns, for the session to keep. */
+	onCompacted?: (compaction: CodeCompaction) => void;
 	/** Null follows the global setting. */
 	backend: BackendOverride | null;
 	/** Null follows the global setting. */
@@ -174,9 +188,11 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 	try {
 		// The tool list reads it synchronously (open_in_shell's gate).
 		await loadShellPlatformSupported();
-		const prepared = await prepareMessages(o, backend);
-		const skills = prepared.skills;
-		messages = prepared.messages;
+		const { system, skills } = await prepareSystem(o, backend);
+		let compaction = o.compaction ?? null;
+		const prompt = () =>
+			assemble(system, modelThread({ messages: o.thread, compaction }), o.notice ?? null);
+		messages = prompt();
 
 		await withInferenceSlot(
 			{
@@ -186,8 +202,20 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 				onTicket: o.onTicket,
 				onAdmitted: o.onAdmitted
 			},
-			() =>
-				runAgentLoop({
+			async () => {
+				// In the slot the turn already holds: summarising is a model
+				// call, and queueing it apart would let another consumer in
+				// between it and the turn it makes room for.
+				const last = o.lastUsage?.contextSize === contextSize ? o.lastUsage.promptTokens : 0;
+				if (compactionDue(messages, contextSize, last)) {
+					const next = await compact(o, compaction, contextSize);
+					if (next) {
+						compaction = next;
+						o.onCompacted?.(next);
+						messages = prompt();
+					}
+				}
+				return runAgentLoop({
 					messages,
 					// The folder is the write boundary as the working directory: the
 					// fs commands resolve every path inside it. Not `writeRoot`, which
@@ -243,7 +271,8 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 					onToolProgress: (call, status) => o.onToolProgress?.(call, status),
 					onToolEnd: (call, res, thumb, artifacts, _lint, _hero, fileDiff) =>
 						o.onToolEnd?.(call, res, thumb, artifacts, fileDiff)
-				})
+				});
+			}
 		);
 	} catch (e) {
 		if (o.signal.aborted) return result('aborted', 'if-any');
@@ -317,16 +346,11 @@ function batchLeads(messages: () => ChatMessage[]): {
 	};
 }
 
-/**
- * The outgoing prompt: the coding prompt for the folder, with the trusted
- * repo's AGENTS.md and skills, ahead of the thread. Merged, because the
- * thread may open with a system note of its own and strict chat templates
- * reject two in a row.
- */
-async function prepareMessages(
+/** The coding prompt for the folder, with the trusted repo's AGENTS.md and skills. */
+async function prepareSystem(
 	o: CodeTurnOptions,
 	backend: BackendOverride | undefined
-): Promise<{ messages: ChatMessage[]; skills: TurnSkills }> {
+): Promise<{ system: ChatMessage; skills: TurnSkills }> {
 	// A WSL session's repo is read through its distro's share.
 	const project = await shellProject(ioRoot(o.root, o.wslDistro));
 	o.onProject?.(project);
@@ -340,8 +364,48 @@ async function prepareMessages(
 		wslDistro: o.wslDistro,
 		powershell: o.wslDistro ? null : await agentPowershell()
 	});
-	const thread = o.notice ? withNotice(o.thread, o.notice) : o.thread;
-	return { messages: mergeLeadingSystemMessages([system, ...thread]), skills };
+	return { system, skills };
+}
+
+/**
+ * The outgoing prompt: the system prompt ahead of the thread. Merged, because
+ * the thread may open with a system message of its own (a summary, or a note)
+ * and strict chat templates reject two in a row.
+ */
+function assemble(
+	system: ChatMessage,
+	thread: ChatMessage[],
+	notice: string | null
+): ChatMessage[] {
+	return mergeLeadingSystemMessages([system, ...(notice ? withNotice(thread, notice) : thread)]);
+}
+
+/**
+ * Summarise the thread's older turns. A failure is logged and the turn goes
+ * on without: the context fit still keeps the prompt inside the window. A
+ * stop is not a failure, and stops the turn.
+ */
+async function compact(
+	o: CodeTurnOptions,
+	compaction: CodeCompaction | null,
+	contextSize: number
+): Promise<CodeCompaction | null> {
+	o.onCompacting?.(true);
+	try {
+		return await compactCodeThread({
+			messages: o.thread,
+			compaction,
+			backend: o.backend,
+			contextSize,
+			signal: o.signal
+		});
+	} catch (e) {
+		if (o.signal.aborted) throw e;
+		logDebug('code', 'compaction failed', { id: o.sessionId, error: errMessage(e) });
+		return null;
+	} finally {
+		o.onCompacting?.(false);
+	}
 }
 
 /**
