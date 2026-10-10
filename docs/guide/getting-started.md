@@ -65,7 +65,8 @@ In Chat or the Shell assistant, ask things like "how do I add a calendar?" or "i
 - `images` — generating pictures and game art (off by default).
 - `integrations` — email, calendar and contacts, MCP servers, screen capture.
 - `search-and-network` — search providers and proxies.
-- `remote-access` — chat with Haruspex from a phone or laptop on your home network.
+- `guest-chat` — let other people on your home network chat with Haruspex from a browser.
+- `remote-control` — use your Code sessions from your other computers.
 - `settings` — a tour of every settings section.
 - `shortcuts` — keyboard shortcuts.
 - `troubleshooting` — known issues and what to do when something goes wrong.

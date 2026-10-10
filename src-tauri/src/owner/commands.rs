@@ -8,6 +8,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use super::clients::{OwnerClient, Scope};
 use super::server;
+use super::trust::{OwnerAccess, TrustedHost};
 use super::{AppDispatch, OwnerApi};
 use crate::engine::{EngineHub, EVENT_ENABLED};
 use crate::sync_util::LockExt;
@@ -21,6 +22,9 @@ pub struct OwnerApiConfig {
     pub port: u16,
     /// Listen on every network, not just this computer.
     pub bind_all: bool,
+    /// Who may connect without a token.
+    #[serde(default)]
+    pub access: OwnerAccess,
 }
 
 #[derive(Clone, Debug, Serialize, ts_rs::TS)]
@@ -33,6 +37,8 @@ pub struct OwnerApiStatus {
     /// Where another device reaches it: this computer's network address when
     /// listening on all networks, else loopback.
     pub address: Option<String>,
+    /// This computer's name on the LAN, which also opens the web page.
+    pub hostname: Option<String>,
 }
 
 /// A new device and its token, which is never shown again, with a one-time
@@ -53,6 +59,7 @@ fn status(api: &OwnerApi) -> OwnerApiStatus {
             running: true,
             port: Some(r.port),
             bind_all: r.bind_all,
+            hostname: super::trust::system_hostname(),
             address: Some(if r.bind_all {
                 crate::remote::link::lan_address()
                     .map(|ip| ip.to_string())
@@ -66,6 +73,7 @@ fn status(api: &OwnerApi) -> OwnerApiStatus {
             port: None,
             bind_all: false,
             address: None,
+            hostname: super::trust::system_hostname(),
         },
     }
 }
@@ -84,6 +92,8 @@ pub async fn owner_api_apply(
     config: OwnerApiConfig,
 ) -> Result<OwnerApiStatus, String> {
     let api = app.state::<OwnerApi>();
+    // Who may connect changes in place: no restart, nobody dropped.
+    api.trust.set(config.access.clone());
     {
         let running = api.running.lock_or_recover();
         if let Some(r) = running.as_ref() {
@@ -111,6 +121,7 @@ pub async fn owner_api_apply(
         clients: api.clients()?,
         pairing: api.pairing.clone(),
         web_root: super::web_root(&app),
+        trust: api.trust.clone(),
     };
     let running = server::start(services, config.port, config.bind_all).await?;
     *api.running.lock_or_recover() = Some(running);
@@ -162,4 +173,11 @@ pub fn owner_client_pair(
 #[tauri::command]
 pub fn owner_client_revoke(api: tauri::State<'_, OwnerApi>, id: String) -> Result<bool, String> {
     api.clients()?.revoke(&id)
+}
+
+/// The computers Settings lists as trusted, and where each was found.
+#[tauri::command]
+pub async fn owner_trusted_hosts(app: AppHandle) -> Vec<TrustedHost> {
+    let trust = app.state::<OwnerApi>().trust.clone();
+    trust.resolve_all().await
 }

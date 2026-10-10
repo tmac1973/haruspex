@@ -62,7 +62,7 @@ When memory is on, the eye button in the chat box makes the current chat incogni
 
 ## Where your conversations are kept
 
-Conversations are saved in a database on your computer and are there after a restart. Find them in the sidebar. Chats from other devices through remote access also appear there (see `remote-access`).
+Conversations are saved in a database on your computer and are there after a restart. Find them in the sidebar. Chats from other people's devices through Guest chat also appear there (see `guest-chat`).
 
 ## Use a skill
 

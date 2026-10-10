@@ -40,6 +40,7 @@ use tokio::sync::{broadcast, watch};
 
 use super::clients::{required_scope, Clients, OwnerClient, Scope};
 use super::pairing::PairingCodes;
+use super::trust::{host_is_ours, Trust};
 use crate::sync_util::LockExt;
 
 /// Largest operation body. A prompt is the only big thing in one.
@@ -76,6 +77,8 @@ pub struct Services {
     pub pairing: Arc<PairingCodes>,
     /// The built web client (`index.html` and its assets), if there is one.
     pub web_root: Option<PathBuf>,
+    /// Who may connect without a token (`trust.rs`).
+    pub trust: Arc<Trust>,
 }
 
 #[derive(Clone)]
@@ -85,6 +88,9 @@ struct AppState {
     pairing: Arc<PairingCodes>,
     web_root: Option<Arc<PathBuf>>,
     throttle: Arc<Throttle>,
+    trust: Arc<Trust>,
+    /// This computer's hostname, for the `Host` check on token-less requests.
+    own_name: Option<Arc<str>>,
     /// Turns true on shutdown, which ends every event stream.
     stopping: watch::Receiver<bool>,
 }
@@ -143,6 +149,8 @@ pub async fn start(services: Services, port: u16, bind_all: bool) -> Result<Runn
         pairing: services.pairing,
         web_root: services.web_root.map(Arc::new),
         throttle: Arc::new(Throttle::default()),
+        trust: services.trust,
+        own_name: super::trust::system_hostname().map(Arc::from),
     };
     let router = Router::new()
         .route("/", get(to_app))
@@ -230,7 +238,11 @@ fn cross_site(headers: &HeaderMap) -> bool {
 type Refusal = (StatusCode, &'static str);
 
 /// The device making the request, or why it is refused.
-fn authorise(state: &AppState, ip: IpAddr, headers: &HeaderMap) -> Result<OwnerClient, Refusal> {
+async fn authorise(
+    state: &AppState,
+    ip: IpAddr,
+    headers: &HeaderMap,
+) -> Result<OwnerClient, Refusal> {
     if cross_site(headers) {
         return Err((StatusCode::FORBIDDEN, "cross-site requests are refused"));
     }
@@ -240,24 +252,52 @@ fn authorise(state: &AppState, ip: IpAddr, headers: &HeaderMap) -> Result<OwnerC
             "too many wrong tokens; wait a minute",
         ));
     }
+    let has_header = headers.get(CSRF_HEADER).is_some_and(|v| v == "1");
     let bearer = headers
         .get(AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "));
     let token = match bearer {
-        Some(t) => t.to_string(),
+        Some(t) => Some(t.to_string()),
         None => match cookie(headers, OWNER_COOKIE) {
-            Some(t) if headers.get(CSRF_HEADER).is_some_and(|v| v == "1") => t,
+            Some(t) if has_header => Some(t),
             Some(_) => return Err((StatusCode::FORBIDDEN, "missing X-Haruspex header")),
-            None => String::new(),
+            None => None,
         },
     };
-    match state.clients.authenticate(&token) {
-        Some(client) => Ok(client),
-        None => {
-            state.throttle.fail(ip);
-            Err((StatusCode::UNAUTHORIZED, "a device token is needed"))
+    if let Some(client) = token.as_deref().and_then(|t| state.clients.authenticate(t)) {
+        return Ok(client);
+    }
+    // No token, or one that no longer works: a trusted computer needs none.
+    if state.trust.trusts(ip).await {
+        if !has_header {
+            return Err((StatusCode::FORBIDDEN, "missing X-Haruspex header"));
         }
+        let host = headers
+            .get(HOST)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        let extra = state.trust.access().extra_host;
+        if !host_is_ours(host, state.own_name.as_deref(), extra.as_deref()) {
+            return Err((
+                StatusCode::FORBIDDEN,
+                "this computer isn't known by that name: add it as the link address in Settings → Remote control",
+            ));
+        }
+        return Ok(trusted_client(ip));
+    }
+    state.throttle.fail(ip);
+    Err((StatusCode::UNAUTHORIZED, "a device token is needed"))
+}
+
+/// A computer let in without a token: everything a device may do.
+fn trusted_client(ip: IpAddr) -> OwnerClient {
+    OwnerClient {
+        id: format!("trusted:{ip}"),
+        name: ip.to_string(),
+        scopes: Scope::ALL.to_vec(),
+        created_at: 0,
+        last_seen: None,
     }
 }
 
@@ -454,7 +494,7 @@ async fn op(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let client = match authorise(&state, peer.ip(), &headers) {
+    let client = match authorise(&state, peer.ip(), &headers).await {
         Ok(c) => c,
         Err((status, why)) => return refuse(status, why),
     };
@@ -479,7 +519,7 @@ async fn events(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
 ) -> Response {
-    let client = match authorise(&state, peer.ip(), &headers) {
+    let client = match authorise(&state, peer.ip(), &headers).await {
         Ok(c) => c,
         Err((status, why)) => return refuse(status, why),
     };
@@ -566,6 +606,7 @@ mod tests {
         stub: Arc<Stub>,
         clients: Arc<Clients>,
         pairing: Arc<PairingCodes>,
+        trust: Arc<Trust>,
         running: Running,
         http: reqwest::Client,
     }
@@ -579,6 +620,7 @@ mod tests {
         });
         let clients = Arc::new(Clients::in_memory());
         let pairing = Arc::new(PairingCodes::default());
+        let trust = Arc::new(Trust::default());
         let web = std::env::temp_dir().join(format!("owner-web-{}", std::process::id()));
         std::fs::create_dir_all(web.join("assets")).unwrap();
         std::fs::write(web.join("index.html"), "<!doctype html><title>web</title>").unwrap();
@@ -588,6 +630,7 @@ mod tests {
             clients: clients.clone(),
             pairing: pairing.clone(),
             web_root: Some(web),
+            trust: trust.clone(),
         };
         let running = start(services, 0, false).await.unwrap();
         Harness {
@@ -595,6 +638,7 @@ mod tests {
             stub,
             clients,
             pairing,
+            trust,
             running,
             http: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
@@ -1000,6 +1044,57 @@ mod tests {
         assert_eq!(safe_relative("a\\..\\x"), None);
     }
 
+    #[tokio::test]
+    async fn a_trusted_computer_needs_no_token_but_does_need_the_header_and_our_name() {
+        use crate::owner::trust::{AccessMode, OwnerAccess};
+        let h = serve().await;
+        h.trust.set(OwnerAccess {
+            mode: AccessMode::Trusted,
+            trusted_hosts: vec!["127.0.0.1".into()],
+            extra_host: None,
+        });
+        let send = |header: bool, host: Option<&str>| {
+            let mut req = h
+                .http
+                .post(format!("{}/api/v1/op", h.base))
+                .json(&json!({ "type": "session.send", "id": "s", "text": "hi" }));
+            if header {
+                req = req.header("X-Haruspex", "1");
+            }
+            if let Some(host) = host {
+                req = req.header("Host", host.to_string());
+            }
+            req.send()
+        };
+        assert_eq!(send(true, None).await.unwrap().status(), 200, "all scopes");
+        assert_eq!(send(false, None).await.unwrap().status(), 403);
+        let rebound = send(true, Some("evil.example:8788")).await.unwrap();
+        assert_eq!(rebound.status(), 403);
+        // Back to tokens only: the same request is refused.
+        h.trust.set(OwnerAccess::default());
+        assert_eq!(send(true, None).await.unwrap().status(), 401);
+        h.running.stop();
+    }
+
+    #[tokio::test]
+    async fn anyone_on_the_network_includes_this_computer() {
+        use crate::owner::trust::{AccessMode, OwnerAccess};
+        let h = serve().await;
+        h.trust.set(OwnerAccess {
+            mode: AccessMode::Lan,
+            ..Default::default()
+        });
+        let r = h
+            .http
+            .get(format!("{}/api/v1/events", h.base))
+            .header("X-Haruspex", "1")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200);
+        h.running.stop();
+    }
+
     /// Settings restarts the server on a new port or network. With a web page
     /// following events, the old one must still let go of the port at once.
     #[tokio::test]
@@ -1021,6 +1116,7 @@ mod tests {
             clients: h.clients.clone(),
             pairing: h.pairing.clone(),
             web_root: None,
+            trust: h.trust.clone(),
         };
         let again = start(services, port, false).await;
         assert!(again.is_ok(), "{:?}", again.err());

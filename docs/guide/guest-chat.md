@@ -1,19 +1,19 @@
 ---
-title: Remote access
-description: Let phones and other devices on your local network chat with your Haruspex through a browser link or QR code, what guests can do, and the security limits.
+title: Guest chat
+description: Let other people's phones and devices on your local network chat with your Haruspex through a browser link or QR code, what guests can do, and the security limits.
 ---
 
-# Remote access
+# Guest chat
 
-Remote access serves a small chat page on your local network, so another device can chat with your Haruspex using your computer's GPU. It is off by default. Guests need only a browser, so phones and tablets work.
+Guest chat serves a small chat page on your local network, so another device can chat with your Haruspex using your computer's GPU. It is off by default. Guests need only a browser, so phones and tablets work.
 
 It is useful when your main machine is busy with something else, like a game, and you want to ask a question from another device.
 
-To drive your own Code sessions from another device instead, see the `remote-control` page.
+To use your own Code sessions from another computer instead, see the `remote-control` page.
 
 ## Turn it on
 
-1. Open Settings → Remote access.
+1. Open Settings → Guest chat.
 2. Turn on **Let people on your network chat with this Haruspex**.
 3. Share **The link to share**: click **Copy**, or let the other person scan the QR code.
 
@@ -42,7 +42,7 @@ A guest's questions share your computer's model with you, so a busy guest can sl
 
 ## See and manage who is connected
 
-Settings → Remote access lists who is connected and what each guest is asking right now. Each guest's full conversation is saved on your machine and appears in your sidebar under their name.
+Settings → Guest chat lists who is connected and what each guest is asking right now. Each guest's full conversation is saved on your machine and appears in your sidebar under their name.
 
 - **Disconnect** removes one guest.
 - **Rotate link (cuts off everyone using the old one)** makes a new link. Anyone using the old link is cut off and needs the new one.

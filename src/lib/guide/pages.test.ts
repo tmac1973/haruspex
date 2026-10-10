@@ -28,7 +28,7 @@ const PAGES = [
 	'images',
 	'integrations',
 	'search-and-network',
-	'remote-access',
+	'guest-chat',
 	'remote-control',
 	'settings',
 	'shortcuts',

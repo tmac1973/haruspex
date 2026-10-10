@@ -5,4 +5,8 @@ export type OwnerApiStatus = { running: boolean, port: number | null, bindAll: b
  * Where another device reaches it: this computer's network address when
  * listening on all networks, else loopback.
  */
-address: string | null, };
+address: string | null, 
+/**
+ * This computer's name on the LAN, which also opens the web page.
+ */
+hostname: string | null, };

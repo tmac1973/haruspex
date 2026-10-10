@@ -6,8 +6,10 @@
 
 <div class="pair">
 	<h1>Haruspex</h1>
-	<p>
-		Open this device's link from Settings → Remote control on your computer, or paste its code here.
+	<p
+		title="Or, on the computer running Haruspex, add this computer under Settings → Remote control → These computers, or allow your whole network."
+	>
+		Open this device's link from Settings → Remote control, or paste its code.
 	</p>
 	<form
 		onsubmit={(e) => {

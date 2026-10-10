@@ -149,7 +149,7 @@ Where pictures are generated, if anywhere.
 
 See the `images` page.
 
-## Remote access
+## Guest chat
 
 Let people on your network chat with this Haruspex.
 
@@ -157,11 +157,11 @@ Let people on your network chat with this Haruspex.
 - **Port**: 8787.
 - Once it is on: a link and QR code to share, and a list of guests you can disconnect.
 
-See the `remote-access` page.
+See the `guest-chat` page.
 
 ## Remote control
 
-Drive your Code sessions from your own devices. Off; port 8788.
+Use your Code sessions from your other computers. Off; port 8788.
 
 See the `remote-control` page.
 

@@ -416,6 +416,14 @@ export interface AppSettings {
 	 * address it listens on.
 	 */
 	ownerApiLinkBase: string;
+	/**
+	 * Who may connect without a token: nobody (`tokens`), the computers in
+	 * `ownerApiTrustedHosts` (`trusted`), or anyone on a private network
+	 * (`lan`). Tokens work in every mode.
+	 */
+	ownerApiAccess: 'tokens' | 'trusted' | 'lan';
+	/** Hostnames or IP addresses, for `ownerApiAccess: 'trusted'`. */
+	ownerApiTrustedHosts: string[];
 	contextSize: number;
 	/**
 	 * "Let models use system RAM". On: `start_server` omits `--n-gpu-layers`,
@@ -850,6 +858,8 @@ const defaults: AppSettings = {
 	ownerApiPort: 8788,
 	ownerApiBindAll: false,
 	ownerApiLinkBase: '',
+	ownerApiAccess: 'tokens',
+	ownerApiTrustedHosts: [],
 	braveApiKey: '',
 	braveApiKeySaved: false,
 	searxngUrl: DEFAULT_SEARXNG_URL,

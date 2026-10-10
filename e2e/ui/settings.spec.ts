@@ -13,7 +13,8 @@ const SECTIONS = [
 	'Screen',
 	'Shell',
 	'Image',
-	'Remote access',
+	'Guest chat',
+	'Remote control',
 	'Feedback'
 ];
 
