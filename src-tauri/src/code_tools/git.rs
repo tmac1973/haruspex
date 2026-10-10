@@ -165,6 +165,16 @@ impl Place {
         }
     }
 
+    /// A path git printed, as the platform spells it: git for Windows says
+    /// `C:/Users/tim/proj`, which the branch control shows and which should
+    /// match the session's `C:\Users\tim\proj`.
+    fn native(&self, path: String) -> String {
+        match self {
+            Place::Host if cfg!(windows) => path.replace('/', "\\"),
+            _ => path,
+        }
+    }
+
     fn join(&self, dir: &str, name: &str) -> String {
         match self {
             Place::Host => Path::new(dir).join(name).to_string_lossy().into_owned(),
@@ -369,7 +379,7 @@ pub async fn status_in(place: &Place, dir: &str) -> Result<Option<GitStatus>, St
     let mut st = parse_status(&out);
     st.linked_worktree = !place.same(&common, &git_dir);
     st.default_branch = default_branch(place, &top).await;
-    st.repo_root = top;
+    st.repo_root = place.native(top);
     Ok(Some(st))
 }
 
@@ -403,8 +413,12 @@ async fn default_branch(place: &Place, dir: &str) -> Option<String> {
     None
 }
 
+/// Without Windows' `\\?\` prefix: it can become a fork's root and its
+/// worktree path, which people read.
 fn canonical(p: &Path) -> PathBuf {
-    std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
+    std::fs::canonicalize(p)
+        .map(|c| crate::fs_tools::path::strip_verbatim(&c))
+        .unwrap_or_else(|_| p.to_path_buf())
 }
 
 /// Parse `git status --porcelain=v2 --branch -z`. `repo_root` and
@@ -809,7 +823,7 @@ mod tests {
             std::env::temp_dir().join(format!("haruspex_git_test_{name}_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        dir.canonicalize().unwrap()
+        crate::fs_tools::path::strip_verbatim(&dir.canonicalize().unwrap())
     }
 
     fn git(dir: &Path, args: &[&str]) {
