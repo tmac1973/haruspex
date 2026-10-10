@@ -12,7 +12,33 @@
 	import type { SessionState } from '#lib/engine/types.ts';
 	import Message from './Message.svelte';
 
-	let { session, oncontinue }: { session: SessionState; oncontinue: () => void } = $props();
+	let {
+		session,
+		oncontinue,
+		onopenfile
+	}: {
+		session: SessionState;
+		oncontinue: () => void;
+		/** Open a file (relative to the folder) in the viewer, at a line if given. */
+		onopenfile: (path: string, line: number | null) => void;
+	} = $props();
+
+	const openFile = (rel: string) => onopenfile(rel, null);
+
+	/**
+	 * File links in rendered markdown are buttons carrying `data-path` (and
+	 * `data-line`); markdown can't hold handlers, so they are caught here.
+	 */
+	function onThreadClick(event: MouseEvent): void {
+		const btn = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+			'button[data-action="code-path"]'
+		);
+		const path = btn?.dataset.path;
+		if (!path) return;
+		event.preventDefault();
+		const line = Number(btn.dataset.line);
+		onopenfile(path, Number.isFinite(line) && line > 0 ? line : null);
+	}
 
 	/** Only what a person reads: tool-call rounds show as their steps instead. */
 	const shown = $derived(
@@ -36,21 +62,26 @@
 	});
 </script>
 
-<div class="thread" bind:this={thread} onscroll={onScroll}>
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+<div class="thread" bind:this={thread} onscroll={onScroll} onclick={onThreadClick}>
 	{#each shown as { msg, i } (i)}
 		{#if msg.role === 'assistant' && steps(i).length}
-			<CodeSteps steps={steps(i)} root={session.root} linkFiles={false} />
+			<CodeSteps steps={steps(i)} root={session.root} {openFile} />
 		{/if}
-		<Message message={msg} />
+		<Message message={msg} root={session.root} />
 		{#if stopAt(i)}
 			<StopIndicator reason={stopAt(i) as never} disabled={session.busy} onContinue={oncontinue} />
 		{/if}
 	{/each}
 	{#if session.searchSteps.length}
-		<CodeSteps steps={session.searchSteps as SearchStep[]} root={session.root} linkFiles={false} />
+		<CodeSteps steps={session.searchSteps as SearchStep[]} root={session.root} {openFile} />
 	{/if}
 	{#if session.streamingContent}
-		<Message message={{ role: 'assistant', content: session.streamingContent }} streaming />
+		<Message
+			message={{ role: 'assistant', content: session.streamingContent }}
+			streaming
+			root={session.root}
+		/>
 	{/if}
 	{#if session.roundText}
 		<Message message={{ role: 'assistant', content: session.roundText }} streaming />
@@ -76,6 +107,22 @@
 		overflow-y: auto;
 		padding: 12px 16px;
 		min-height: 0;
+	}
+
+	.thread :global(.code-path) {
+		appearance: none;
+		background: none;
+		border: 0;
+		padding: 0;
+		font: inherit;
+		color: var(--accent);
+		cursor: pointer;
+		text-decoration: underline dotted;
+		text-underline-offset: 2px;
+	}
+
+	.thread :global(.code-path:hover) {
+		text-decoration-style: solid;
 	}
 
 	.steer {

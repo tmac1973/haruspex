@@ -7,6 +7,7 @@ import { sseParser, type StreamEvent } from './api.ts';
 import { WebStore, type Transport } from './store.svelte.ts';
 import PromptCard from './components/PromptCard.svelte';
 import Composer from './components/Composer.svelte';
+import FileViewer from './components/FileViewer.svelte';
 
 const state = (over: Partial<SessionState> = {}): SessionState => ({
 	id: 's1',
@@ -210,5 +211,47 @@ describe('the composer', () => {
 		expect(screen.getByRole('button', { name: 'Queue' })).toBeTruthy();
 		screen.getByRole('button', { name: 'Stop' }).click();
 		expect(onstop).toHaveBeenCalled();
+	});
+});
+
+describe('the file viewer', () => {
+	it('opens a file through the store, or says why it could not', async () => {
+		const d = fakeDesktop({
+			'session.readFile': { path: 'src/a.ts', content: 'const a = 1;', truncated: false }
+		});
+		const store = new WebStore(d.transport);
+		await store.openFile('s1', 'src/a.ts', 3);
+		expect(store.viewer).toMatchObject({ file: { path: 'src/a.ts' }, line: 3, error: null });
+		expect(d.ops.at(-1)).toEqual({ type: 'session.readFile', id: 's1', path: 'src/a.ts' });
+
+		const failing: Transport = {
+			...d.transport,
+			op: (async () => {
+				throw new Error('src/gone.ts is outside the session folder');
+			}) as Transport['op']
+		};
+		const other = new WebStore(failing);
+		await other.openFile('s1', 'src/gone.ts');
+		expect(other.viewer?.error).toContain('outside');
+	});
+
+	it('shows a file containing backtick fences whole, highlighted', () => {
+		const content = 'Title\n```js\nlet x = 1;\n```\nafter the fence';
+		render(FileViewer, {
+			file: { path: 'notes.md', content, truncated: false },
+			onclose: vi.fn()
+		});
+		expect(document.body.textContent).toContain('after the fence');
+		expect(document.querySelector('.code-block')).toBeTruthy();
+	});
+
+	it('says when only the start is shown', () => {
+		render(FileViewer, {
+			file: { path: 'big.log', content: 'x'.repeat(300_000), truncated: true },
+			onclose: vi.fn()
+		});
+		expect(screen.getByText('Only the start of this file is shown.')).toBeTruthy();
+		// Too big to highlight: plain text.
+		expect(document.querySelector('.code-block')).toBeNull();
 	});
 });

@@ -71,6 +71,12 @@
 		height: 100%;
 	}
 
+	/* The Shell's Paste and Run buttons on code blocks: there's no Shell here. */
+	:global(.code-block .paste-btn),
+	:global(.code-block .run-btn) {
+		display: none;
+	}
+
 	.web {
 		display: grid;
 		grid-template-columns: minmax(260px, 320px) 1fr;

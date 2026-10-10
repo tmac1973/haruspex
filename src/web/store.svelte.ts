@@ -7,6 +7,7 @@
 import { emptyMirror, reduce, type Mirror } from '#lib/engine/reduce.ts';
 import {
 	isSessionEvent,
+	type FileContent,
 	type Prompt,
 	type PromptAnswer,
 	type SessionListItem,
@@ -31,6 +32,10 @@ export class WebStore {
 	prompts = $state<Record<string, Prompt>>({});
 	selected = $state<string | null>(null);
 	error = $state<string | null>(null);
+	/** The file the viewer shows, if one is open. */
+	viewer = $state<{ file: FileContent | null; error: string | null; line: number | null } | null>(
+		null
+	);
 
 	private stopStream: (() => void) | null = null;
 	private listTimer: ReturnType<typeof setTimeout> | null = null;
@@ -160,6 +165,18 @@ export class WebStore {
 
 	async cancelShellWait(id: string): Promise<void> {
 		await this.run(() => this.transport.op({ type: 'session.cancelShellWait', id }));
+	}
+
+	/** Show a file from the session's folder in the viewer. */
+	async openFile(id: string, path: string, line: number | null = null): Promise<void> {
+		this.viewer = { file: null, error: null, line };
+		try {
+			const file = await this.transport.op<FileContent>({ type: 'session.readFile', id, path });
+			if (this.viewer) this.viewer = { ...this.viewer, file };
+		} catch (e) {
+			if (this.viewer)
+				this.viewer = { ...this.viewer, error: e instanceof Error ? e.message : String(e) };
+		}
 	}
 
 	async answer(promptId: string, answer: PromptAnswer): Promise<void> {

@@ -8,6 +8,8 @@
  * via one document-level listener.
  */
 
+import { copyText } from '#lib/utils/copyText.ts';
+
 const codeFor = (btn: HTMLElement): string =>
 	btn.closest('.code-block')?.querySelector('code')?.textContent ?? '';
 
@@ -36,7 +38,7 @@ export function handleMarkdownAction(event: MouseEvent): void {
 	if (!btn) return;
 	switch (btn.dataset.action) {
 		case 'copy':
-			void navigator.clipboard.writeText(codeFor(btn));
+			void copyText(codeFor(btn)).catch(() => {});
 			break;
 		case 'shell-paste':
 			document.dispatchEvent(new CustomEvent('hsp-shell-paste', { detail: codeFor(btn) }));

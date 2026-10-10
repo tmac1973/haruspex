@@ -28,6 +28,8 @@ export type EngineOp =
 	| { type: 'session.cancelShellWait'; id: string }
 	/** Send a fresh snapshot event: the client saw a gap in `seq`. */
 	| { type: 'session.resync'; id: string }
+	/** A file in the session's folder, read-only: what the web client's viewer shows. */
+	| { type: 'session.readFile'; id: string; path: string }
 	| { type: 'prompts.list' }
 	| { type: 'prompts.answer'; promptId: string; answer: PromptAnswer };
 
@@ -128,4 +130,13 @@ export type EngineEvent = (SessionEvent | PromptEvent) & {
 
 export function isSessionEvent(e: EngineEvent): e is SessionEvent & { window?: string } {
 	return e.type !== 'prompt' && e.type !== 'prompt-cleared';
+}
+
+/** `session.readFile`'s answer. */
+export interface FileContent {
+	/** Relative to the session's folder. */
+	path: string;
+	content: string;
+	/** Cut at `MAX_FILE_CHARS`; the rest is on the computer. */
+	truncated: boolean;
 }
