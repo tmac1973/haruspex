@@ -368,7 +368,10 @@ pub async fn run_command_capture(
         _ => false,
     };
     // Windows: the job ended it for its memory limit.
-    let out_of_memory = out_of_memory || job.as_ref().is_some_and(|j| j.out_of_memory());
+    let out_of_memory = out_of_memory
+        || job.as_ref().is_some_and(|j| {
+            j.out_of_memory(!cancelled.load(Ordering::SeqCst) && exit_code != Some(0))
+        });
     // A tree-kill leaves no exit code (signaled) on unix — treat as killed even
     // if the cancel raced ahead of our own timeout branch. Inside WSL a killed
     // command still has one (`setsid -w` reports 128 + the signal).
@@ -812,13 +815,23 @@ Linux
             // 1% of RAM: well under what this allocates.
             let res = run(
                 "$l = [System.Collections.Generic.List[byte[]]]::new(); while ($true) { $l.Add([byte[]]::new(64MB)) }",
-                120,
+                30,
                 "p-oom",
                 Some(1),
             )
             .await;
-            assert!(res.out_of_memory, "{res:?}");
-            assert!(!res.killed);
+            let summary = format!(
+                "exit {:?}, killed {}, oom {}, limit {:?} MB, {} ms, stderr {:?}",
+                res.exit_code,
+                res.killed,
+                res.out_of_memory,
+                res.memory_limit_mb,
+                res.duration_ms,
+                res.stderr.chars().take(300).collect::<String>()
+            );
+            // PowerShell 7 fails inside its own heap cap and its loop runs
+            // on to the timeout; 5.1 reaches the job's limit and is ended.
+            assert!(res.out_of_memory, "{summary}");
             assert!(res.memory_limit_mb.is_some());
         }
 
