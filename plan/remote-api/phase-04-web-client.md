@@ -134,3 +134,22 @@ Branch `remote-api/p04-web-client`. Differences from the plan above:
   in the chat store and much of the agent. Splitting `SearchStep`'s render
   from its actions would shrink it; it's a follow-up, not a blocker on a
   tailnet.
+
+## Follow-ups done (2026-10-10)
+
+Branch `remote-api/web-polish`:
+
+- **File viewer:** `session.readFile` (read scope) reads through
+  `fs_read_text_full`, confined to the session folder (WSL included), capped
+  at 1 M characters. File links, diff names and `path:line` in answers open
+  it; `CodeSteps` takes `openFile`.
+- **Copy over plain HTTP:** `copyText()` falls back to `execCommand('copy')`.
+- **Images:** attached images (data URLs) show as thumbnails. Images the
+  model put in an answer (the desktop's image cache) still don't.
+- **Code blocks:** the layout's remaining global rules (code-block controls,
+  highlight.js light and dark) moved to `app.css`; the page has ChatMessage's
+  markdown rules in `src/web/markdown.css` (a copy: keep the two in step).
+- **Bundle:** 571 → 300 kB (190 → 102 kB gzipped). `SearchStep` imports the
+  chat store on click; `isToolErrorResult` and `MEMORY_RECALL_STEP` live in
+  import-free modules. The PDF and Python workers are still emitted as lazy
+  chunks the page never loads.

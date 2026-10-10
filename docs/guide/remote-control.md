@@ -31,6 +31,8 @@ Each device with a token has its own permissions: **Read** (list and follow sess
 
 The page lists your Code sessions, the open ones first. Pick one to follow it as it runs, send messages, steer or stop a turn, and answer **Run this command?** and the agent's questions. **New session** starts one in a folder on this computer; on Windows, pick the WSL distro first.
 
+File names in a session are links: click one to read the file (it can't be edited from the page). Images attached to messages show as thumbnails; click one for full size.
+
 ## Advanced
 
 - **Port**: 8788.
@@ -51,7 +53,7 @@ From a trusted computer, send `X-Haruspex: 1` instead of a token.
 ## What it doesn't do yet
 
 - Only Code sessions. Chat, the Shell and Settings can't be used remotely.
-- The page doesn't show images or open files in an editor.
+- Files open read-only; edit them at this computer. Images the model put in an answer aren't shown.
 - MCP tool approvals, skill writes and the new-repository trust question are answered at this computer; the page says when a turn is waiting on one.
 - A command handed to a Shell tab (`open_in_shell`) waits for you to run it at this computer; the page can only let the turn carry on without it.
 
