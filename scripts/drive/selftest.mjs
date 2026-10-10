@@ -64,6 +64,30 @@ try {
 		'state returns the thread'
 	);
 
+	const mirror = drive('consistent', id);
+	check(mirror.consistent, "the session's events rebuild what session.get returns");
+
+	// Phase 2: a session in a window of its own, reached only through the engine.
+	const moved = drive('detach', id);
+	check(moved.window === `code-${id}`, 'detach moves the session to its own window');
+	const remote = drive(
+		'send',
+		id,
+		'clean the build folder',
+		'--via',
+		'engine',
+		'--wait',
+		'--timeout',
+		'60'
+	);
+	check(remote.state === 'approval', 'a turn sent through the engine runs in the detached window');
+	const answered = drive('approve', 'deny', '--via', 'engine');
+	check(answered.command === 'rm -rf build', "prompts.answer answers the detached window's prompt");
+	const after = drive('wait', id, '--timeout', '60');
+	check(after.state === 'done', 'the detached turn ends');
+	check(existsSync(join(folder, 'build', 'out.txt')), 'the command denied from afar did not run');
+	check(drive('consistent', id).consistent, 'events from the detached window rebuild it too');
+
 	const saved = drive('stop');
 	started = false;
 	check(saved.files.includes(`transcript-${id}.md`), 'stop writes the transcript');

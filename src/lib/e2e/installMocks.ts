@@ -61,6 +61,8 @@ const TABLE: Record<string, Handler> = {
 	power_inhibit_release: none,
 	power_inhibit_acquire: none,
 	shell_platform_supported: () => true,
+	// The engine (plan/remote-api/) stays off: the UI flows drive the UI.
+	engine_enabled: () => false,
 	remote_stop: () => ({ running: false, port: null, bind_all: false, sessions: 0 }),
 	db_list_conversations: empty,
 	db_recover_orphan_runs: () => 0,

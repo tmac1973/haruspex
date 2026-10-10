@@ -108,6 +108,16 @@ impl CodeSessionClaims {
             .retain(|_, owner| owner != label);
     }
 
+    /// The live window that has `id` open, if any.
+    pub fn owner_of(&self, id: &str, alive: impl Fn(&str) -> bool) -> Option<String> {
+        self.inner
+            .lock_or_recover()
+            .owners
+            .get(id)
+            .filter(|owner| alive(owner))
+            .cloned()
+    }
+
     /// Every session some live window has open.
     pub fn open_ids(&self, alive: impl Fn(&str) -> bool) -> Vec<String> {
         let mut ids: Vec<String> = self

@@ -151,7 +151,13 @@ async function askAboutCommand(
 	const requester = opts.ctx.requester?.() || null;
 	let choice;
 	try {
-		choice = await askCommandApproval({ command, reasons, requester, signal: opts.ctx.signal });
+		choice = await askCommandApproval({
+			command,
+			reasons,
+			requester,
+			sessionId: opts.ctx.codeSessionId ?? null,
+			signal: opts.ctx.signal
+		});
 	} catch (e) {
 		return { message: toolInvokeError('run_command approval', e) };
 	}
