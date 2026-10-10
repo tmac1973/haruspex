@@ -207,7 +207,7 @@
 							{stepLabel(step.toolName, '')}<button
 								type="button"
 								class="path-link"
-								title="Open {rel} in the editor"
+								title="Open {rel}"
 								onclick={(e) => openFile(rel, e)}>{step.query}</button
 							>
 						{:else}
@@ -369,7 +369,7 @@
 							<pre>{#each grepLines(step.result) as line, i (i)}{#if line.rel}<button
 											type="button"
 											class="path-link"
-											title="Open {line.rel} in the editor"
+											title="Open {line.rel}"
 											onclick={(e) => openFile(line.rel!, e)}>{line.path}</button
 										>{/if}{line.rest}{/each}</pre>
 						{:else}

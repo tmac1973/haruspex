@@ -73,7 +73,8 @@
 
 	.web {
 		display: grid;
-		grid-template-columns: minmax(260px, 320px) 1fr;
+		/* minmax(0, …): a long code line scrolls in its block, not the page. */
+		grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
 		height: 100dvh;
 	}
 
@@ -88,6 +89,7 @@
 		flex-direction: column;
 		min-width: 0;
 		min-height: 0;
+		overflow: hidden;
 	}
 
 	.empty {
@@ -98,7 +100,7 @@
 	/* A phone: the list, or the session, not both. */
 	@media (max-width: 899px) {
 		.web {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
 		}
 		.web.has-session .list,
 		.web:not(.has-session) .session {

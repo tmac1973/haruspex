@@ -24,7 +24,7 @@
 	<div class="head">
 		<span class="verb">{verb}</span>
 		{#if onOpen}
-			<button class="path open" title="Open {diff.path} in the editor" onclick={onOpen}
+			<button class="path open" title="Open {diff.path}" onclick={onOpen}
 				><code>{diff.path}</code></button
 			>
 		{:else}
