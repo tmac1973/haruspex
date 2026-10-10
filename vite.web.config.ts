@@ -27,6 +27,8 @@ export default defineConfig({
 	base: '/app/',
 	plugins: [svelte({ compilerOptions: { runes: true } }), keepPlaceholder()],
 	clearScreen: false,
+	// Shared code that differs here: `images/url.ts` addresses images through the server.
+	define: { 'import.meta.env.VITE_HARUSPEX_WEB': JSON.stringify('1') },
 	build: {
 		outDir: OUT,
 		emptyOutDir: true

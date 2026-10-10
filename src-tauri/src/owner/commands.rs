@@ -9,7 +9,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use super::clients::{OwnerClient, Scope};
 use super::server;
 use super::trust::{OwnerAccess, TrustedHost};
-use super::{AppDispatch, OwnerApi};
+use super::{AppDispatch, AppImages, OwnerApi};
 use crate::engine::{EngineHub, EVENT_ENABLED};
 use crate::sync_util::LockExt;
 
@@ -118,6 +118,7 @@ pub async fn owner_api_apply(
     }
     let services = server::Services {
         dispatch: Arc::new(AppDispatch(app.clone())),
+        images: Arc::new(AppImages(app.clone())),
         clients: api.clients()?,
         pairing: api.pairing.clone(),
         web_root: super::web_root(&app),

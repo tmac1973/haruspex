@@ -9,6 +9,9 @@ import PromptCard from './components/PromptCard.svelte';
 import Composer from './components/Composer.svelte';
 import FileViewer from './components/FileViewer.svelte';
 import Message from './components/Message.svelte';
+import { imageRefs, resetImages, wantImages } from './images.ts';
+import { clearResolvedImages } from '#lib/images/resolve.svelte.ts';
+import { VIEW_IMAGE_EVENT } from '#lib/markdown-actions.ts';
 
 const state = (over: Partial<SessionState> = {}): SessionState => ({
 	id: 's1',
@@ -173,20 +176,79 @@ describe('the prompt card', () => {
 		});
 	});
 
-	it('says an MCP approval is answered at the computer', () => {
+	it('answers an MCP approval', async () => {
+		const onanswer = vi.fn();
 		render(PromptCard, {
 			prompt: {
 				promptId: 'main:3',
 				kind: 'mcp',
 				sessionId: null,
-				answerable: false,
+				answerable: true,
 				requester: null,
-				detail: {}
+				detail: {
+					server: 'GitHub',
+					tool: 'create_issue',
+					annotations: null,
+					args: { title: 'Bug' }
+				}
 			},
-			onanswer: vi.fn()
+			onanswer
 		});
-		expect(screen.getByText(/Answer it on your computer/)).toBeTruthy();
-		expect(screen.queryByRole('button')).toBeNull();
+		expect(screen.getByText('Allow GitHub to run create_issue?')).toBeTruthy();
+		expect(screen.getByText(/"title": "Bug"/)).toBeTruthy();
+		await fireEvent.click(screen.getByText('Always allow'));
+		expect(onanswer).toHaveBeenCalledWith('main:3', { kind: 'mcp', choice: 'allow_always' });
+	});
+
+	it('saves a skill as edited, or rejects it with a reason', async () => {
+		const onanswer = vi.fn();
+		render(PromptCard, {
+			prompt: {
+				promptId: 'main:4',
+				kind: 'skill',
+				sessionId: null,
+				answerable: true,
+				requester: null,
+				detail: { kind: 'skill', name: 'release', update: false, dir: '/s', text: 'v1' }
+			},
+			onanswer
+		});
+		const editor = screen.getByLabelText('SKILL.md') as HTMLTextAreaElement;
+		expect(editor.value).toBe('v1');
+		await fireEvent.input(editor, { target: { value: 'v2' } });
+		await fireEvent.click(screen.getByText('Save'));
+		expect(onanswer).toHaveBeenLastCalledWith('main:4', {
+			kind: 'skill',
+			action: 'save',
+			text: 'v2'
+		});
+		await fireEvent.input(screen.getByLabelText('Reason, if you reject it'), {
+			target: { value: 'not now' }
+		});
+		await fireEvent.click(screen.getByText('Reject'));
+		expect(onanswer).toHaveBeenLastCalledWith('main:4', {
+			kind: 'skill',
+			action: 'reject',
+			reason: 'not now'
+		});
+	});
+
+	it('answers the repo-trust question', async () => {
+		const onanswer = vi.fn();
+		render(PromptCard, {
+			prompt: {
+				promptId: 'main:5',
+				kind: 'repo-trust',
+				sessionId: null,
+				answerable: true,
+				requester: null,
+				detail: { root: '/src/app', skills: 2, agentsMd: true, change: null }
+			},
+			onanswer
+		});
+		expect(screen.getByText(/2 skills and an AGENTS.md/)).toBeTruthy();
+		await fireEvent.click(screen.getByText('Ignore them'));
+		expect(onanswer).toHaveBeenCalledWith('main:5', { kind: 'repo-trust', trust: false });
 	});
 });
 
@@ -260,7 +322,9 @@ describe('the file viewer', () => {
 describe('a message', () => {
 	const pixel = 'data:image/png;base64,iVBORw0KGgo=';
 
-	it('shows attached images, and opens one full size', async () => {
+	it('shows attached images, and asks for one full size', async () => {
+		const asked = vi.fn();
+		document.addEventListener(VIEW_IMAGE_EVENT, asked);
 		render(Message, {
 			message: {
 				role: 'user',
@@ -272,7 +336,8 @@ describe('a message', () => {
 		});
 		expect(screen.getByText('look at this')).toBeTruthy();
 		await fireEvent.click(screen.getByTitle('Show full size'));
-		expect(screen.getAllByAltText('Attached')).toHaveLength(2);
+		expect((asked.mock.calls[0][0] as CustomEvent).detail.src).toBe(pixel);
+		document.removeEventListener(VIEW_IMAGE_EVENT, asked);
 	});
 
 	it('names an image it cannot show', () => {
@@ -294,6 +359,77 @@ describe('a message', () => {
 		const link = document.querySelector('button[data-action="code-path"]') as HTMLElement;
 		expect(link?.dataset.path).toBe('src/stats.js');
 		expect(link?.dataset.line).toBe('5');
+	});
+});
+
+describe("an answer's pictures", () => {
+	const hash = 'a'.repeat(64);
+	const row = {
+		hash,
+		source_url: 'https://example.com/cat.png',
+		source: 'web',
+		mime: 'image/png',
+		width: 4,
+		height: 3,
+		bytes: 9,
+		license: null,
+		attribution: null,
+		description_url: null,
+		embeddable: true,
+		created_at: 0,
+		last_used_at: 0
+	};
+
+	function desktopWith(images: Record<string, unknown>) {
+		const asks: string[][] = [];
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (_path: string, init: RequestInit) => {
+				const urls = (JSON.parse(String(init.body)) as { urls: string[] }).urls;
+				asks.push(urls);
+				const found = Object.fromEntries(urls.flatMap((u) => (images[u] ? [[u, images[u]]] : [])));
+				return new Response(JSON.stringify({ images: found }));
+			})
+		);
+		return asks;
+	}
+
+	it('reads the image URLs written in a message', () => {
+		expect(
+			imageRefs('a ![cat](https://example.com/cat.png) b ![](haruspex-img://localhost/x)')
+		).toEqual(['https://example.com/cat.png', 'haruspex-img://localhost/x']);
+	});
+
+	it("shows one from the desktop's cache, and asks once", async () => {
+		resetImages();
+		clearResolvedImages();
+		const asks = desktopWith({ 'https://example.com/cat.png': row });
+		const message = {
+			role: 'assistant' as const,
+			content: 'A cat: ![cat](https://example.com/cat.png)'
+		};
+		render(Message, { message });
+		render(Message, { message });
+		await vi.waitFor(() => expect(document.querySelectorAll('img[alt="cat"]')).toHaveLength(2));
+		expect((document.querySelector('img[alt="cat"]') as HTMLImageElement).src).toContain(hash);
+		expect(asks).toEqual([['https://example.com/cat.png']]);
+		vi.unstubAllGlobals();
+	});
+
+	it('asks again about a miss, twice', async () => {
+		vi.useFakeTimers();
+		resetImages();
+		clearResolvedImages();
+		const asks = desktopWith({});
+		wantImages(['https://example.com/late.png']);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(asks).toHaveLength(1);
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(asks).toHaveLength(2);
+		await vi.advanceTimersByTimeAsync(60000);
+		expect(asks).toHaveLength(3);
+		vi.useRealTimers();
+		vi.unstubAllGlobals();
 	});
 });
 

@@ -4,6 +4,7 @@
  * every cookie-authenticated request (`src-tauri/src/owner/server.rs`).
  */
 import type { EngineEvent, EngineOp } from '#lib/engine/types.ts';
+import type { ImageRow } from '#lib/ipc/gen/ImageRow.ts';
 
 const HEADERS = { 'Content-Type': 'application/json', 'X-Haruspex': '1' };
 
@@ -31,6 +32,18 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 /** Run an engine operation on the desktop. */
 export function op<T = unknown>(operation: EngineOp): Promise<T> {
 	return post<T>('/api/v1/op', operation);
+}
+
+/** The desktop's cached images for these URLs; the ones it hasn't got are left out. */
+export async function lookupImages(urls: string[]): Promise<Record<string, ImageRow>> {
+	const r = await fetch('/api/v1/images', {
+		method: 'POST',
+		headers: HEADERS,
+		credentials: 'same-origin',
+		body: JSON.stringify({ urls })
+	});
+	if (!r.ok) throw new ApiError(r.status, `HTTP ${r.status}`);
+	return ((await r.json()) as { images: Record<string, ImageRow> }).images;
 }
 
 /** Swap a pairing code for the device cookie. */

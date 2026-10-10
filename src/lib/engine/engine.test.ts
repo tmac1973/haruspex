@@ -126,6 +126,9 @@ import { askCommandApproval } from '#lib/stores/codeCommandApproval.svelte.ts';
 import { askUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
 import { askApproval } from '#lib/stores/sandboxApproval.svelte.ts';
 import { askMemoryApproval } from '#lib/stores/memoryApproval.svelte.ts';
+import { askMcpApproval } from '#lib/stores/mcpApproval.svelte.ts';
+import { askRepoTrust } from '#lib/stores/repoTrust.svelte.ts';
+import { askSkillApproval } from '#lib/stores/skillApproval.svelte.ts';
 import { dispatch, setResync } from './dispatch.ts';
 import { emptyMirror, reduce, type Mirror } from './reduce.ts';
 import { answerPrompt, currentPrompts, watchPrompts } from './prompts.svelte.ts';
@@ -359,16 +362,16 @@ describe('prompts', () => {
 		const [p1] = currentPrompts('main');
 		expect(p1).toMatchObject({ kind: 'command', sessionId: 's1', detail: { queued: 1 } });
 
-		answerPrompt('main', p1.promptId, { kind: 'command', choice: 'deny' });
+		await answerPrompt('main', p1.promptId, { kind: 'command', choice: 'deny' });
 		expect(await first).toBe('deny');
 		// A second screen answering the prompt it saw: that one is gone.
-		expect(() => answerPrompt('main', p1.promptId, { kind: 'command', choice: 'deny' })).toThrow(
-			'not showing'
-		);
+		await expect(
+			answerPrompt('main', p1.promptId, { kind: 'command', choice: 'deny' })
+		).rejects.toThrow('not showing');
 		const [p2] = currentPrompts('main');
 		expect(p2).toMatchObject({ sessionId: 's2' });
 		expect(p2.promptId).not.toBe(p1.promptId);
-		answerPrompt('main', p2.promptId, { kind: 'command', choice: 'allow_once' });
+		await answerPrompt('main', p2.promptId, { kind: 'command', choice: 'allow_once' });
 		expect(await second).toBe('allow_once');
 	});
 
@@ -380,10 +383,10 @@ describe('prompts', () => {
 		});
 		const [p] = currentPrompts('main');
 		expect(p).toMatchObject({ kind: 'question', sessionId: 's1', answerable: true });
-		expect(() => answerPrompt('main', p.promptId, { kind: 'command', choice: 'deny' })).toThrow(
-			'question prompt'
-		);
-		answerPrompt('main', p.promptId, {
+		await expect(
+			answerPrompt('main', p.promptId, { kind: 'command', choice: 'deny' })
+		).rejects.toThrow('question prompt');
+		await answerPrompt('main', p.promptId, {
 			kind: 'question',
 			answer: { kind: 'selected', labels: ['b.ts'] }
 		});
@@ -394,17 +397,73 @@ describe('prompts', () => {
 		const run = askApproval({ code: 'print(1)', mode: 'once-per-chat' });
 		const [p] = currentPrompts('main');
 		expect(p).toMatchObject({ kind: 'sandbox', answerable: true, detail: { code: 'print(1)' } });
-		expect(() => answerPrompt('main', p.promptId, { kind: 'memory', choice: 'deny' })).toThrow(
-			'sandbox prompt'
-		);
-		answerPrompt('main', p.promptId, { kind: 'sandbox', choice: 'allow_chat' });
+		await expect(
+			answerPrompt('main', p.promptId, { kind: 'memory', choice: 'deny' })
+		).rejects.toThrow('sandbox prompt');
+		await answerPrompt('main', p.promptId, { kind: 'sandbox', choice: 'allow_chat' });
 		expect(await run).toBe('allow_chat');
 
 		const remember = askMemoryApproval({ content: 'Likes tabs', category: 'preference' as never });
 		const [m] = currentPrompts('main');
 		expect(m).toMatchObject({ kind: 'memory', detail: { content: 'Likes tabs' } });
-		answerPrompt('main', m.promptId, { kind: 'memory', choice: 'deny' });
+		await answerPrompt('main', m.promptId, { kind: 'memory', choice: 'deny' });
 		expect(await remember).toBe('deny');
+	});
+
+	it('answers an MCP approval and the repo-trust question', async () => {
+		const run = askMcpApproval({
+			serverId: 'gh',
+			serverLabel: 'GitHub',
+			toolName: 'create_issue',
+			description: 'Opens an issue',
+			annotations: null,
+			args: { title: 'Bug' }
+		});
+		const [p] = currentPrompts('main');
+		expect(p).toMatchObject({
+			kind: 'mcp',
+			answerable: true,
+			detail: { server: 'GitHub', tool: 'create_issue', args: { title: 'Bug' } }
+		});
+		await answerPrompt('main', p.promptId, { kind: 'mcp', choice: 'allow_always' });
+		expect(await run).toBe('allow_always');
+
+		const trusted = askRepoTrust({ root: '/src/app', skills: 2, agentsMd: true });
+		const [t] = currentPrompts('main');
+		expect(t).toMatchObject({ kind: 'repo-trust', detail: { skills: 2, agentsMd: true } });
+		await answerPrompt('main', t.promptId, { kind: 'repo-trust', trust: false });
+		expect(await trusted).toBe(false);
+	});
+
+	it('saves a skill as edited, or rejects it, and keeps it when saving fails', async () => {
+		const save = vi.fn(async (text: string) => {
+			if (text === 'bad') throw new Error('disk full');
+		});
+		const request = {
+			kind: 'skill' as const,
+			update: false,
+			name: 'release',
+			dir: '/skills/release',
+			project: false,
+			text: 'v1',
+			current: null,
+			save
+		};
+		const saved = askSkillApproval(request);
+		const [p] = currentPrompts('main');
+		expect(p).toMatchObject({ kind: 'skill', detail: { name: 'release', text: 'v1' } });
+		await expect(
+			answerPrompt('main', p.promptId, { kind: 'skill', action: 'save', text: 'bad' })
+		).rejects.toThrow('disk full');
+		expect(currentPrompts('main')[0]?.promptId).toBe(p.promptId);
+		await answerPrompt('main', p.promptId, { kind: 'skill', action: 'save', text: 'v2' });
+		expect(save).toHaveBeenLastCalledWith('v2');
+		expect(await saved).toEqual({ kind: 'saved', edited: true });
+
+		const rejected = askSkillApproval({ ...request, save: vi.fn() });
+		const [r] = currentPrompts('main');
+		await answerPrompt('main', r.promptId, { kind: 'skill', action: 'reject', reason: 'not now' });
+		expect(await rejected).toEqual({ kind: 'rejected', reason: 'not now' });
 	});
 
 	it('send an event as a prompt shows and as it goes', async () => {
@@ -413,7 +472,7 @@ describe('prompts', () => {
 		const asked = askCommandApproval({ command: 'rm x', reasons: [], sessionId: 's1' });
 		flushSync();
 		const [p] = currentPrompts('main');
-		answerPrompt('main', p.promptId, { kind: 'command', choice: 'deny' });
+		await answerPrompt('main', p.promptId, { kind: 'command', choice: 'deny' });
 		await asked;
 		flushSync();
 		stop();

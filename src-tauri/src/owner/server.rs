@@ -41,6 +41,8 @@ use tokio::sync::{broadcast, watch};
 use super::clients::{required_scope, Clients, OwnerClient, Scope};
 use super::pairing::PairingCodes;
 use super::trust::{host_is_ours, Trust};
+use crate::db::ImageRow;
+use crate::image_cache::is_valid_hash;
 use crate::sync_util::LockExt;
 
 /// Largest operation body. A prompt is the only big thing in one.
@@ -70,9 +72,25 @@ pub trait Dispatch: Send + Sync + 'static {
     fn subscribe(&self) -> broadcast::Receiver<Value>;
 }
 
+/// The desktop's image cache, read only: the pictures in an answer are
+/// cached on the desktop, and its own `haruspex-img:` URLs mean nothing to
+/// another computer's browser.
+pub trait Images: Send + Sync + 'static {
+    /// The cached image for each URL a message shows: a source URL the
+    /// desktop fetched, or one of its own image URLs. Unknown URLs are left
+    /// out; nothing is fetched.
+    fn lookup(&self, urls: &[String]) -> Vec<(String, ImageRow)>;
+    /// One image's type and bytes, by hash.
+    fn bytes(&self, hash: &str) -> Option<(String, Vec<u8>)>;
+}
+
+/// Most image URLs one lookup may ask about: a long chat's worth.
+const MAX_IMAGE_LOOKUP: usize = 500;
+
 /// What the server serves from.
 pub struct Services {
     pub dispatch: Arc<dyn Dispatch>,
+    pub images: Arc<dyn Images>,
     pub clients: Arc<Clients>,
     pub pairing: Arc<PairingCodes>,
     /// The built web client (`index.html` and its assets), if there is one.
@@ -84,6 +102,7 @@ pub struct Services {
 #[derive(Clone)]
 struct AppState {
     dispatch: Arc<dyn Dispatch>,
+    images: Arc<dyn Images>,
     clients: Arc<Clients>,
     pairing: Arc<PairingCodes>,
     web_root: Option<Arc<PathBuf>>,
@@ -145,6 +164,7 @@ pub async fn start(services: Services, port: u16, bind_all: bool) -> Result<Runn
     let state = AppState {
         stopping: shutdown.subscribe(),
         dispatch: services.dispatch,
+        images: services.images,
         clients: services.clients,
         pairing: services.pairing,
         web_root: services.web_root.map(Arc::new),
@@ -162,6 +182,8 @@ pub async fn start(services: Services, port: u16, bind_all: bool) -> Result<Runn
         .route("/api/v1/logout", post(logout))
         .route("/api/v1/op", post(op))
         .route("/api/v1/events", get(events))
+        .route("/api/v1/images", post(images))
+        .route("/api/v1/image/{hash}", get(image))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .with_state(state);
 
@@ -238,10 +260,24 @@ fn cross_site(headers: &HeaderMap) -> bool {
 type Refusal = (StatusCode, &'static str);
 
 /// The device making the request, or why it is refused.
+///
+/// `X-Haruspex` is required with a cookie or no token at all, except on
+/// `GET /api/v1/image/…`: an `<img>` can't add a header. That route only
+/// reads, by a hash nobody can guess, and `SameSite=Strict` keeps the cookie
+/// off another site's requests.
 async fn authorise(
     state: &AppState,
     ip: IpAddr,
     headers: &HeaderMap,
+) -> Result<OwnerClient, Refusal> {
+    authorise_with(state, ip, headers, true).await
+}
+
+async fn authorise_with(
+    state: &AppState,
+    ip: IpAddr,
+    headers: &HeaderMap,
+    need_header: bool,
 ) -> Result<OwnerClient, Refusal> {
     if cross_site(headers) {
         return Err((StatusCode::FORBIDDEN, "cross-site requests are refused"));
@@ -252,7 +288,7 @@ async fn authorise(
             "too many wrong tokens; wait a minute",
         ));
     }
-    let has_header = headers.get(CSRF_HEADER).is_some_and(|v| v == "1");
+    let has_header = !need_header || headers.get(CSRF_HEADER).is_some_and(|v| v == "1");
     let bearer = headers
         .get(AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
@@ -538,6 +574,90 @@ async fn events(
     response
 }
 
+/// Which of the URLs in a page's messages the desktop has cached, so the
+/// page can show them (`GET /api/v1/image/…`).
+async fn images(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let client = match authorise(&state, peer.ip(), &headers).await {
+        Ok(c) => c,
+        Err((status, why)) => return refuse(status, why),
+    };
+    if let Some(r) = missing(&client, Scope::Read) {
+        return r;
+    }
+    let urls: Vec<String> = match serde_json::from_slice::<Value>(&body) {
+        Ok(v) => v
+            .get("urls")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_str)
+                    .take(MAX_IMAGE_LOOKUP)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default(),
+        Err(_) => return refuse(StatusCode::BAD_REQUEST, "the body is not JSON"),
+    };
+    let source = state.images.clone();
+    let found = tokio::task::spawn_blocking(move || source.lookup(&urls))
+        .await
+        .unwrap_or_default();
+    let map: serde_json::Map<String, Value> = found
+        .into_iter()
+        .filter_map(|(url, row)| serde_json::to_value(row).ok().map(|v| (url, v)))
+        .collect();
+    Json(json!({ "images": map })).into_response()
+}
+
+/// One cached image.
+async fn image(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Path(hash): Path<String>,
+) -> Response {
+    let client = match authorise_with(&state, peer.ip(), &headers, false).await {
+        Ok(c) => c,
+        Err((status, why)) => return refuse(status, why),
+    };
+    if let Some(r) = missing(&client, Scope::Read) {
+        return r;
+    }
+    if !is_valid_hash(&hash) {
+        return refuse(StatusCode::NOT_FOUND, "no such image");
+    }
+    let source = state.images.clone();
+    let found = tokio::task::spawn_blocking(move || source.bytes(&hash))
+        .await
+        .ok()
+        .flatten();
+    let Some((mime, bytes)) = found else {
+        return refuse(StatusCode::NOT_FOUND, "no such image");
+    };
+    let mut response = bytes.into_response();
+    let h = response.headers_mut();
+    if let Ok(v) = mime.parse() {
+        h.insert(CONTENT_TYPE, v);
+    }
+    // Content-addressed, so it never changes; private, as it's the owner's.
+    h.insert(
+        CACHE_CONTROL,
+        "private, max-age=31536000, immutable"
+            .parse()
+            .expect("static header"),
+    );
+    h.insert(
+        "x-content-type-options",
+        "nosniff".parse().expect("static header"),
+    );
+    response
+}
+
 /// `ready` first, so a client knows it is connected, then every engine event.
 /// A reader that falls behind is told `resync-all` and asks for snapshots of
 /// the sessions it follows (`session.resync`). The stream ends when the
@@ -601,6 +721,43 @@ mod tests {
         }
     }
 
+    /// One cached image: `https://example.com/cat.png`, hash `aa…`.
+    struct StubImages;
+
+    fn cat_hash() -> String {
+        "a".repeat(64)
+    }
+
+    fn cat_row() -> ImageRow {
+        ImageRow {
+            hash: cat_hash(),
+            source_url: "https://example.com/cat.png".into(),
+            source: "web".into(),
+            mime: "image/png".into(),
+            width: 2,
+            height: 2,
+            bytes: 4,
+            license: None,
+            attribution: None,
+            description_url: None,
+            embeddable: true,
+            created_at: 0,
+            last_used_at: 0,
+        }
+    }
+
+    impl Images for StubImages {
+        fn lookup(&self, urls: &[String]) -> Vec<(String, ImageRow)> {
+            urls.iter()
+                .filter(|u| *u == "https://example.com/cat.png")
+                .map(|u| (u.clone(), cat_row()))
+                .collect()
+        }
+        fn bytes(&self, hash: &str) -> Option<(String, Vec<u8>)> {
+            (hash == cat_hash()).then(|| ("image/png".into(), vec![1, 2, 3, 4]))
+        }
+    }
+
     struct Harness {
         base: String,
         stub: Arc<Stub>,
@@ -627,6 +784,7 @@ mod tests {
         std::fs::write(web.join("assets/app-1.js"), "console.log(1)").unwrap();
         let services = Services {
             dispatch: stub.clone(),
+            images: Arc::new(StubImages),
             clients: clients.clone(),
             pairing: pairing.clone(),
             web_root: Some(web),
@@ -661,6 +819,79 @@ mod tests {
                 .await
                 .unwrap()
         }
+    }
+
+    #[tokio::test]
+    async fn a_page_finds_and_shows_the_desktops_cached_images() {
+        let h = serve().await;
+        let token = h.token(&[Scope::Read]);
+        let r = h
+            .http
+            .post(format!("{}/api/v1/images", h.base))
+            .bearer_auth(&token)
+            .json(
+                &json!({ "urls": ["https://example.com/cat.png", "https://example.com/dog.png"] }),
+            )
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200);
+        let body: Value = r.json().await.unwrap();
+        let images = body["images"].as_object().unwrap();
+        assert_eq!(images.len(), 1);
+        assert_eq!(images["https://example.com/cat.png"]["hash"], cat_hash());
+
+        let r = h
+            .http
+            .get(format!("{}/api/v1/image/{}", h.base, cat_hash()))
+            .bearer_auth(&token)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200);
+        assert_eq!(r.headers()[CONTENT_TYPE], "image/png");
+        assert_eq!(r.bytes().await.unwrap().as_ref(), &[1, 2, 3, 4]);
+
+        for bad in ["b".repeat(64), "..%2Fsecret".into(), "short".into()] {
+            let r = h
+                .http
+                .get(format!("{}/api/v1/image/{bad}", h.base))
+                .bearer_auth(&token)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(r.status(), 404, "{bad}");
+        }
+        h.running.stop();
+    }
+
+    #[tokio::test]
+    async fn an_image_needs_a_device_but_not_the_header() {
+        let h = serve().await;
+        let url = format!("{}/api/v1/image/{}", h.base, cat_hash());
+        let r = h.http.get(&url).send().await.unwrap();
+        assert_eq!(r.status(), 401);
+        // The web page's cookie, as an <img> sends it: no X-Haruspex.
+        let token = h.token(&[Scope::Read]);
+        let r = h
+            .http
+            .get(&url)
+            .header(COOKIE, format!("{OWNER_COOKIE}={token}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200);
+        // The lookup is an ordinary call: a cookie alone isn't enough there.
+        let r = h
+            .http
+            .post(format!("{}/api/v1/images", h.base))
+            .header(COOKIE, format!("{OWNER_COOKIE}={token}"))
+            .json(&json!({ "urls": [] }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 403);
+        h.running.stop();
     }
 
     #[tokio::test]
@@ -1113,6 +1344,7 @@ mod tests {
         h.running.shutdown().await;
         let services = Services {
             dispatch: h.stub.clone(),
+            images: Arc::new(StubImages),
             clients: h.clients.clone(),
             pairing: h.pairing.clone(),
             web_root: None,

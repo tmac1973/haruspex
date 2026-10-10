@@ -61,6 +61,14 @@ export function clearResolvedImages(): void {
 }
 
 /**
+ * Rows looked up elsewhere, keyed by the URL a message shows: the web
+ * client's, from the desktop's cache through Settings → Remote control.
+ */
+export function rememberImages(rows: Readonly<Record<string, ImageRow>>): void {
+	for (const [url, row] of Object.entries(rows)) resolved.set(url, row);
+}
+
+/**
  * Make an image the app itself produced renderable.
  *
  * The map is normally filled by `resolveReplyImages`, which fetches what a

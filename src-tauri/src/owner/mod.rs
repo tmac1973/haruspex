@@ -15,10 +15,12 @@ use serde_json::Value;
 use tauri::{AppHandle, Manager};
 use tokio::sync::broadcast;
 
+use crate::db::{Database, ImageRow};
 use crate::engine::EngineHub;
+use crate::image_cache::protocol;
 use clients::Clients;
 use pairing::PairingCodes;
-use server::{BoxFuture, Dispatch, Running};
+use server::{BoxFuture, Dispatch, Images, Running};
 use trust::Trust;
 
 /// Managed state: the running server, if any, and the devices.
@@ -79,5 +81,27 @@ impl Dispatch for AppDispatch {
 
     fn subscribe(&self) -> broadcast::Receiver<Value> {
         self.0.state::<EngineHub>().subscribe()
+    }
+}
+
+/// The image cache, for the server's image routes.
+struct AppImages(AppHandle);
+
+impl Images for AppImages {
+    fn lookup(&self, urls: &[String]) -> Vec<(String, ImageRow)> {
+        let db = self.0.state::<Database>();
+        urls.iter()
+            .filter_map(|url| {
+                let row = match protocol::hash_from_url(url) {
+                    Some(hash) => db.image_by_hash(&hash),
+                    None => db.image_by_source_url(url),
+                };
+                row.ok().flatten().map(|row| (url.clone(), row))
+            })
+            .collect()
+    }
+
+    fn bytes(&self, hash: &str) -> Option<(String, Vec<u8>)> {
+        protocol::load(&self.0, hash).ok()
     }
 }
