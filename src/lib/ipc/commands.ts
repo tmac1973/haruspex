@@ -8,6 +8,7 @@ export const IPC = {
 	agents_md_draft: 'agents_md_draft',
 	agents_md_save: 'agents_md_save',
 	app_protected_targets: 'app_protected_targets',
+	app_window_open: 'app_window_open',
 	artifact_register: 'artifact_register',
 	cancel_download: 'cancel_download',
 	capture_screen: 'capture_screen',

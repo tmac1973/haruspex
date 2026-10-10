@@ -13,6 +13,7 @@
 import { emitTo, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { openAppWindow } from '#lib/appWindow.ts';
 
 import type { Prefill } from '#lib/code/fork.ts';
 import type { CodeForkMode } from '#lib/ipc/gen/CodeForkMode.ts';
@@ -217,16 +218,12 @@ async function raiseSelf(): Promise<void> {
 
 const tauriApi: CodeWindowApi = {
 	create: (id, title) =>
-		new Promise<void>((resolve, reject) => {
-			const w = new WebviewWindow(codeWindowLabel(id), {
-				url: codeWindowUrl(id),
-				title,
-				width: 900,
-				height: 760,
-				center: true
-			});
-			void w.once('tauri://created', () => resolve());
-			void w.once('tauri://error', (e) => reject(new Error(String(e.payload))));
+		openAppWindow({
+			label: codeWindowLabel(id),
+			url: codeWindowUrl(id),
+			title,
+			width: 900,
+			height: 760
 		}),
 	emitToMain: (event, payload) => emitTo('main', event, payload),
 	async raiseMain() {
