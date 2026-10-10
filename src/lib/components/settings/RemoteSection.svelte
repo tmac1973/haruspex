@@ -161,7 +161,7 @@
 </script>
 
 <section class="settings-section">
-	<h3>Remote access</h3>
+	<h3>Guest chat</h3>
 
 	<label class="toggle-row">
 		<input type="checkbox" bind:checked={enabled} onchange={toggle} disabled={busy} />

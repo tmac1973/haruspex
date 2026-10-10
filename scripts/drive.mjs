@@ -42,6 +42,9 @@ A long-lived app, driven step by step:
   consistent <id>           whether the session's events rebuild what session.get says
   api-events [--seconds N]  the owner API's event stream for N seconds (--api only)
   web-url                   a one-time link that opens the web client (--api only)
+  click <selector>          click something in the main window (CSS, or button=Text)
+  access tokens|trusted|lan [HOST…]
+                            who may connect without a token (--api only)
   logs [--since N]          agent debug log lines from N on
   screenshot [PATH]
   minimise | restore        the app window
@@ -298,6 +301,8 @@ async function daemon(opts) {
 		events: (a) => app.events(a.since),
 		'api-events': (a) => app.apiEvents(a.seconds),
 		'web-url': () => app.webUrl(),
+		access: (a) => app.access(a.mode, a.hosts),
+		click: (a) => app.click(a.selector),
 		consistent: (a) => app.consistent(a.id),
 		state: (a) => app.state(a.id, { asTranscript: a.transcript }),
 		logs: (a) => app.logs(a.since),
@@ -391,6 +396,14 @@ async function client(cmd, values, positionals) {
 			args = { seconds: Number(values.seconds) };
 			timeoutMs = (Number(values.seconds) + 30) * 1000;
 			break;
+		case 'click':
+			need(1, 'a selector');
+			args = { selector: positionals.join(' ') };
+			break;
+		case 'access':
+			need(1, 'tokens, trusted or lan');
+			args = { mode: positionals[0], hosts: positionals.slice(1) };
+			break;
 		case 'approve':
 			need(1, 'allow, allow-session or deny');
 			args = { choice: positionals[0], via: values.via };
@@ -450,6 +463,8 @@ const CLIENT_COMMANDS = new Set([
 	'consistent',
 	'api-events',
 	'web-url',
+	'access',
+	'click',
 	'stop'
 ]);
 

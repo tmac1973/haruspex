@@ -363,6 +363,27 @@ export class App {
 		return body.value;
 	}
 
+	/**
+	 * Click what `selector` finds in the main window: CSS, or WebdriverIO's
+	 * `button=Text` / `*=partial text`. For reaching UI the other commands
+	 * don't cover, such as a Settings section to screenshot.
+	 */
+	async click(selector) {
+		await this.exclusive(async (browser) => {
+			const el = await browser.$(selector);
+			await el.waitForClickable({ timeout: 10_000 });
+			await el.click();
+		});
+		return { clicked: selector };
+	}
+
+	/** Who may connect to the owner API without a token. */
+	async access(mode, hosts = []) {
+		if (!this.api) throw new Error('access needs a driver started with --api');
+		await this.call('ownerAccess', mode, hosts);
+		return { mode, hosts, page: `${this.api.base}/app/` };
+	}
+
 	/** A pairing link that opens the web client as a new device. */
 	async webUrl() {
 		if (!this.api) throw new Error('web-url needs a driver started with --api');

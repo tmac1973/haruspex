@@ -6,6 +6,7 @@ pub mod clients;
 pub mod commands;
 pub mod pairing;
 pub mod server;
+pub mod trust;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -18,6 +19,7 @@ use crate::engine::EngineHub;
 use clients::Clients;
 use pairing::PairingCodes;
 use server::{BoxFuture, Dispatch, Running};
+use trust::Trust;
 
 /// Managed state: the running server, if any, and the devices.
 pub struct OwnerApi {
@@ -26,6 +28,8 @@ pub struct OwnerApi {
     /// an empty list, which the next save would write over every device.
     clients: Result<Arc<Clients>, String>,
     pairing: Arc<PairingCodes>,
+    /// Who may connect without a token; changed in place, no restart.
+    trust: Arc<Trust>,
 }
 
 impl OwnerApi {
@@ -41,6 +45,7 @@ impl OwnerApi {
             running: Mutex::new(None),
             clients,
             pairing: Arc::new(PairingCodes::default()),
+            trust: Arc::new(Trust::default()),
         }
     }
 

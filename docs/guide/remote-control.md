@@ -1,47 +1,41 @@
 ---
 title: Remote control
-description: Drive your Code sessions from your own devices, in a browser or from scripts, with one token per device, and how to reach it safely over Tailscale.
+description: Use your Code sessions from your other computers' browsers or from scripts, letting trusted computers in without a token, or each device with its own token.
 ---
 
 # Remote control
 
-Remote control lets your own devices and scripts drive the Code sessions running on this computer, over HTTP. Turns still run here, with this computer's files and models; another device only starts, steers and watches them. It is off by default, and Haruspex has to be open for it to work.
+Remote control lets your other computers use the Code sessions running on this one, from a web browser or a script. Turns still run here, with this computer's files and models; the other computer only starts, steers and watches them. It is off by default, and Haruspex has to be open for it to work.
 
-It is not the same as Remote access (see the `remote-access` page), which lets other people chat with your Haruspex. Remote control is for you.
+It is not the same as Guest chat (see the `guest-chat` page), which lets other people chat with your Haruspex. Remote control is for you.
 
 ## Turn it on
 
 1. Open Settings → Remote control.
-2. Turn on **Let your own devices drive your Code sessions**.
-3. Under **Devices**, type a name, choose what it may do, and click **Add device**.
-4. To use a browser on that device, open the link or scan the QR code it shows. The link works once, within 10 minutes. For a script, copy the token instead. You won't see either again.
+2. Turn on **Let your other computers use this Haruspex**.
+3. Choose **Who can connect** (below).
 
-**Port** is 8788 by default. The **Address** line shows where it answers. **Link address** is the address put in links and QR codes; set it when other devices reach this computer by another name, such as your Tailscale address.
+Allow port 8788 through this computer's firewall for the computers you mean.
 
-**New link** gives a device a fresh link. It also gets a new token, so a script using the old one must use the new one.
+## Who can connect
+
+- **Devices with a token**: only devices you add. Click **Add a device…**, give it a name (just a label for the list), choose what it may do, and click **Create link**. Open the link it shows on that computer, or scan the QR code: it works once, within 10 minutes, and the browser stays signed in. For a script, open **Token for a script** instead. Neither is shown again.
+- **These computers**: the computers you list, by name or IP address, connect without a token. Names are looked up on your network, so a computer whose address changes keeps working; the list shows where each name points, or "not found".
+- **My whole network**: any computer on your local network connects without a token. Only for a network you trust.
+
+With either of the last two, open the address shown under **Open on your other computer** on that computer. Devices with a token work in every mode.
+
+Each device with a token has its own permissions: **Read** (list and follow sessions), **Drive** (start, send, steer and stop) and **Approve** (answer **Run this command?** and the agent's questions). **New link** gives a device a fresh link and a new token; **Revoke** cuts it off at once.
 
 ## Use it from a browser
 
-The link opens a page with your Code sessions: the open ones first, then the saved ones. Pick one to follow it as it runs, send messages, steer or stop a turn, and answer **Run this command?** and the agent's questions. **New session** starts one in a folder on this computer; on Windows, pick the WSL distro first.
+The page lists your Code sessions, the open ones first. Pick one to follow it as it runs, send messages, steer or stop a turn, and answer **Run this command?** and the agent's questions. **New session** starts one in a folder on this computer; on Windows, pick the WSL distro first.
 
-On a phone it shows one thing at a time: the list, or a session with a back button.
+## Advanced
 
-## What a device may do
-
-Each device has its own token and its own permissions:
-
-- **Read**: list and read Code sessions, and follow them as they run.
-- **Drive**: open and start sessions, send messages, steer and stop turns.
-- **Approve**: answer **Run this command?** and the questions the agent asks you.
-
-**Revoke** cuts a device off at once. Other devices keep working.
-
-## Reach it from another device
-
-By default only this computer can connect. To reach it from elsewhere, use a private network such as Tailscale or NetBird; Haruspex does not set one up for you.
-
-- **Tailscale**: leave **Listen on all networks** off and run `tailscale serve --bg 8788`. Devices on your tailnet then reach it over HTTPS at your machine's tailnet name; put that address in **Link address**.
-- **NetBird, or a home network**: turn on **Listen on all networks**, then allow the port only from the devices you mean in your firewall. Traffic is not encrypted this way.
+- **Port**: 8788.
+- **Listen on all networks**: on, so other computers can reach it; choosing **These computers** or **My whole network** turns it on. Off, only this computer (or a proxy running on it) can connect.
+- **Link address**: the address other computers use to reach this one, if it isn't the one shown, for example a name your router gives it or a proxy's address. Links use it, and the page accepts it as this computer's name.
 
 ## Use it from a script
 
@@ -52,15 +46,18 @@ Send the token as `Authorization: Bearer <token>`.
 - `GET /api/v1/events` streams what sessions do (server-sent events).
 - `GET /api/v1/health` needs no token.
 
+From a trusted computer, send `X-Haruspex: 1` instead of a token.
+
 ## What it doesn't do yet
 
-- Only Code sessions. Chat, the Shell and Settings can't be driven remotely.
+- Only Code sessions. Chat, the Shell and Settings can't be used remotely.
 - The page doesn't show images or open files in an editor.
-- MCP tool approvals, skill writes and the new-repository trust question still have to be answered at this computer; the page says when a turn is waiting on one.
+- MCP tool approvals, skill writes and the new-repository trust question are answered at this computer; the page says when a turn is waiting on one.
 - A command handed to a Shell tab (`open_in_shell`) waits for you to run it at this computer; the page can only let the turn carry on without it.
 
 ## Security notes
 
+- Traffic between computers is not encrypted. Use it on networks you trust.
 - Tokens are stored only as hashes, so Haruspex can't show one again.
 - Ten wrong tokens in a minute from one address blocks that address for the rest of the minute.
-- Requests from web pages on other sites are refused. The browser page signs in with a cookie that only it can use.
+- Web pages on other sites can't use it, even from a trusted computer: requests must come from the page itself and name this computer.

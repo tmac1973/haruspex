@@ -256,6 +256,7 @@ export const IPC = {
 	owner_client_pair: 'owner_client_pair',
 	owner_client_revoke: 'owner_client_revoke',
 	owner_clients_list: 'owner_clients_list',
+	owner_trusted_hosts: 'owner_trusted_hosts',
 	power_inhibit_acquire: 'power_inhibit_acquire',
 	power_inhibit_release: 'power_inhibit_release',
 	probe_inference_server: 'probe_inference_server',
