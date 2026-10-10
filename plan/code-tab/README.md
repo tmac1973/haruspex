@@ -9,7 +9,7 @@ becomes a **Read-only / Full access** toggle.
 See [`overview.md`](./overview.md) for the why, the history (we have shipped a
 Code tab once before), every settled decision, and the invariants.
 
-**Status:** Planned 2026-10-08 · phases 1–9 (with 6b, 7b, 9a, 9b) merged by 2026-10-09 · phase 10 (Windows via WSL) is next, to be done on a Windows machine.
+**Status:** Planned 2026-10-08 · phases 1–9 (with 6b, 7b, 9a, 9b) merged by 2026-10-09 · phase 10 (Windows via WSL) merged 2026-10-10 (#426–#438); its hand tests and follow-ups are #439.
 
 ## Phase map (dependency-ordered, one stacked branch + PR per phase)
 
@@ -32,8 +32,9 @@ Code tab once before), every settled decision, and the invariants.
 Phases 1–3 are independent and can be built in parallel. 6, 7 and 8 are
 independent leaves off the tab UI.
 
-**Windows is deferred to phase 10.** Phases 1–9 target Linux and macOS; on
-Windows the Code tab is hidden until phase 10 lands.
+**Windows came last, in phase 10.** Phases 1–9 target Linux and macOS; on
+Windows the Code tab works on projects inside a WSL2 distro and shows when one
+is installed. Native Windows folders and PowerShell are #396.
 
 Every phase that changes something a user can see updates `docs/guide/` in the
 same PR (the `Guide` check enforces it). The guide page each phase touches is
