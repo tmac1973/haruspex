@@ -538,6 +538,9 @@ function changedFiles(
 	if (name === 'fs_edit_text') {
 		return out.result.startsWith('Edited ') && typeof args.path === 'string' ? [args.path] : [];
 	}
+	if (name === 'make_asset') {
+		return out.result.startsWith('Wrote ') && typeof args.path === 'string' ? [args.path] : [];
+	}
 	return [...after].filter((p) => !before.has(p));
 }
 

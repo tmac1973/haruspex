@@ -226,6 +226,21 @@ describe('run_command output handling', () => {
 		expect(mocks.invoke).toHaveBeenCalledWith('code_write_overflow', expect.anything());
 		expect(out.result).toContain('/tmp/overflow.txt');
 		expect(out.result).toContain('fs_read_text');
+
+		// The Code tab can read that file back, though it is outside the folder.
+		mocks.invoke.mockClear();
+		await executeTool('fs_read_text', { path: '/tmp/overflow.txt' }, codeCtx);
+		expect(mocks.invoke).toHaveBeenCalledWith(
+			'fs_read_text_absolute',
+			expect.objectContaining({ path: '/tmp/overflow.txt' })
+		);
+		// Any other file outside it still goes through the folder's own check.
+		mocks.invoke.mockClear();
+		await executeTool('fs_read_text', { path: '/tmp/other.txt' }, codeCtx);
+		expect(mocks.invoke).toHaveBeenCalledWith(
+			'fs_read_text',
+			expect.objectContaining({ relPath: '/tmp/other.txt' })
+		);
 	});
 
 	it('cancels the host process when the signal aborts mid-run', async () => {
