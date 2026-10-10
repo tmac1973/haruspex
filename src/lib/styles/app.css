@@ -714,3 +714,159 @@ body:not(.shell-tab-active) .code-block .run-btn {
 :root[data-theme='dark'] .hljs-class .hljs-title {
 	color: #ffa657;
 }
+
+/* Rendered markdown: chat answers on the desktop (ChatMessage) and the web
+   page's messages and file viewer (src/web/). One set of rules for both. */
+.markdown p {
+	margin: 0 0 0.5em 0;
+}
+
+.markdown p:last-child {
+	margin-bottom: 0;
+}
+
+.markdown ul,
+.markdown ol {
+	margin: 0.5em 0;
+	padding-left: 1.5em;
+}
+
+.markdown table {
+	width: 100%;
+	border-collapse: collapse;
+	margin: 0.75em 0;
+	font-size: 0.9em;
+}
+
+.markdown th,
+.markdown td {
+	border: 1px solid var(--border);
+	padding: 6px 12px;
+	text-align: left;
+}
+
+.markdown th {
+	background: var(--bg-secondary);
+	font-weight: 600;
+}
+
+.markdown tr:nth-child(even) {
+	background: color-mix(in srgb, var(--bg-secondary) 50%, transparent);
+}
+
+.markdown .code-block {
+	margin: 0.75em 16px 0.75em 0;
+	border-radius: 6px;
+	overflow: hidden;
+	border: 1px solid var(--border);
+}
+
+.markdown .code-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 4px 12px;
+	background: var(--bg-secondary);
+	font-size: 0.75rem;
+}
+
+.markdown .code-lang {
+	color: var(--text-secondary);
+}
+
+.markdown .copy-btn {
+	background: none;
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	padding: 2px 8px;
+	font-size: 0.7rem;
+	cursor: pointer;
+	color: var(--text-secondary);
+}
+
+.markdown .copy-btn:hover {
+	background: var(--bg-primary);
+}
+
+.markdown pre {
+	margin: 0;
+	padding: 12px;
+	overflow-x: auto;
+	background: var(--code-bg);
+	color: #d4d4d4;
+	font-size: 0.85rem;
+	line-height: 1.5;
+}
+
+.markdown code {
+	font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+}
+
+.markdown :not(pre) > code {
+	background: var(--bg-secondary);
+	padding: 0.15em 0.4em;
+	border-radius: 3px;
+	font-size: 0.9em;
+}
+
+/* Images the model put in its answer. Served from haruspex-img:// (on the web
+   page, the owner API), never fetched by the webview — see images/figure.ts. */
+.markdown figure.chat-image {
+	margin: 0.75rem 0;
+}
+
+.markdown figure.chat-image img {
+	cursor: zoom-in;
+	display: block;
+	max-width: 100%;
+	/* Height-capped so one tall image cannot push the rest of an answer
+	   off screen; `auto` width keeps the aspect ratio. */
+	max-height: 22rem;
+	width: auto;
+	height: auto;
+	border-radius: 8px;
+	border: 1px solid var(--border);
+}
+
+/* Credit line. CC BY and CC BY-SA require this wherever the image is
+   shown, so it is generated from stored provenance rather than left to
+   the model. */
+.markdown figcaption.chat-image-credit {
+	margin-top: 0.3rem;
+	font-size: 0.75rem;
+	color: var(--text-muted);
+	line-height: 1.3;
+}
+
+.markdown figcaption.chat-image-credit a {
+	color: var(--text-muted);
+	text-decoration: underline;
+}
+
+.markdown figcaption.chat-image-credit a:hover {
+	color: var(--text-secondary);
+}
+
+.markdown .thinking-block {
+	margin: 0.5em 0;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 0;
+	font-size: 0.85em;
+	color: var(--text-secondary);
+}
+
+.markdown .thinking-block summary {
+	padding: 6px 12px;
+	cursor: pointer;
+	font-style: italic;
+	user-select: none;
+}
+
+.markdown .thinking-block summary:hover {
+	color: var(--text-primary);
+}
+
+.markdown .thinking-block > :not(summary) {
+	padding: 0 12px;
+}
