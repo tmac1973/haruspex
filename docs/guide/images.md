@@ -40,7 +40,7 @@ Settings → Image marks Qwen-Image "Not licensed for commercial use." and asks 
 
 ## Draw a picture in Chat
 
-With a backend set up, ask Chat to draw, paint or illustrate something. A picture takes from about 30 seconds to a few minutes. It appears in the answer and is kept with the conversation. If the model forgets to place it, it is shown under the answer. You can ask for a shape other than square, or a transparent background for an object on its own.
+With a backend set up, ask Chat to draw, paint or illustrate something. A picture takes from about 30 seconds to a few minutes. It appears in the answer and is kept with the conversation. Click it to see it full size; Escape or a click outside closes it. If the model forgets to place it, it is shown under the answer. You can ask for a shape other than square, or a transparent background for an object on its own.
 
 ## Make art for a project
 

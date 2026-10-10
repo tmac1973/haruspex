@@ -78,6 +78,20 @@ describe('captionFor', () => {
 		expect(JSON.stringify(caption)).not.toMatch(/unknown/i);
 	});
 
+	it('gives an image we generated no caption, not a "localhost" link', () => {
+		const local = `haruspex-img://localhost/${HASH}`;
+		const generated = {
+			source: 'generated',
+			source_url: local,
+			license: null,
+			attribution: null,
+			description_url: null
+		};
+		expect(captionFor(row(generated))).toBeNull();
+		// Nor does any row whose only URL is our own scheme, whatever its source.
+		expect(captionFor(row({ ...generated, source: 'page_og' }))).toBeNull();
+	});
+
 	it('still credits the creator when there is no page to link to', () => {
 		const caption = captionFor(row({ description_url: null }))!;
 		expect(caption.text).toContain('A Photographer');
