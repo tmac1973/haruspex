@@ -12,9 +12,11 @@
 //! On Windows a process runs inside the session's WSL distro (see
 //! `code_tools/wsl.rs`): the log still fills on the host through the
 //! `wsl.exe` relay, and stopping signals the Linux process group from inside
-//! the distro, since killing the relay would leave it running. Without a
-//! distro, Windows refuses.
+//! the distro, since killing the relay would leave it running. In a Windows
+//! folder it runs in PowerShell inside a Job object (`job.rs`), which a stop
+//! terminates and which dies with the app, so a crash leaves nothing to sweep.
 
+use super::job::Job;
 use super::wsl;
 use crate::command_scope;
 use crate::orphans::{self, RunningServer};
@@ -75,6 +77,11 @@ pub struct BgProcess {
     #[serde(skip)]
     #[ts(skip)]
     pub wsl_group: Arc<wsl::GroupState>,
+    /// Windows, on the host: the job holding the process tree. Dropping the
+    /// record kills what is left in it.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub job: Option<Arc<Job>>,
     /// The Linux process group, once known, as `code_bg_status` reports it
     /// (`pid` is the host's `wsl.exe` relay, which means nothing in Linux).
     pub wsl_pgid: Option<u32>,
@@ -144,9 +151,6 @@ impl CodeBgManager {
         memory_limit_percent: Option<u8>,
         log_cap: u64,
     ) -> Result<BgStarted, String> {
-        if cfg!(windows) && wsl_distro.is_none() {
-            return Err("On Windows, background commands run in a WSL session only.".into());
-        }
         if owner.trim().is_empty() {
             return Err("A background command needs an owning session.".into());
         }
@@ -170,12 +174,14 @@ impl CodeBgManager {
         let shell = wsl_distro
             .as_ref()
             .map(|d| ShellSelection::Wsl { distro: d.clone() });
-        let cmd = super::build_shell_command(
-            &script(&command, &id),
-            &cwd,
-            shell.as_ref(),
-            memory_limit_percent,
-        );
+        // PowerShell (a Windows folder) needs no marker: its job is the record.
+        let host_powershell = cfg!(windows) && wsl_distro.is_none();
+        let line = if host_powershell {
+            command.clone()
+        } else {
+            script(&command, &id)
+        };
+        let cmd = super::build_shell_command(&line, &cwd, shell.as_ref(), memory_limit_percent);
         // The host's memory ceiling is a host-Linux scope; a WSL process's is
         // set inside the distro, by its wrapper.
         let limit = memory_limit_percent
@@ -184,6 +190,12 @@ impl CodeBgManager {
         let (mut cmd, _scope) = match limit {
             Some(limit) => command_scope::wrap(cmd, &id, limit),
             None => (cmd, None),
+        };
+        // Windows: the tree and the memory limit (None elsewhere).
+        let job = if wsl_distro.is_none() {
+            Job::new(limit).map(Arc::new)
+        } else {
+            None
         };
         cmd.stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -203,10 +215,12 @@ impl CodeBgManager {
             }
         };
         let pid = child.id().unwrap_or(0);
+        let job = job.filter(|j| j.assign(pid));
         let started_at = now_ms();
         let wsl_group = Arc::new(wsl::GroupState::default());
-        // A WSL process is recorded once its group is known (see `pump_wsl_stderr`).
-        if wsl_distro.is_none() {
+        // A WSL process is recorded once its group is known (see
+        // `pump_wsl_stderr`); one in a job is killed with the app.
+        if wsl_distro.is_none() && job.is_none() {
             orphans::register(
                 self.registry.as_deref(),
                 RunningServer {
@@ -262,6 +276,7 @@ impl CodeBgManager {
                 wsl_distro,
                 pid,
                 wsl_group,
+                job,
                 wsl_pgid: None,
                 started_at,
                 running: true,
@@ -371,7 +386,14 @@ impl CodeBgManager {
                 tokio::spawn(async move { wsl::stop_groups(&d, &pgids, STOP_GRACE).await })
             })
             .collect();
-        let host: Vec<&BgProcess> = targets.iter().filter(|p| p.wsl_distro.is_none()).collect();
+        // Jobs (Windows) have no gentler signal to send: ended at once.
+        for job in targets.iter().filter_map(|p| p.job.as_ref()) {
+            job.terminate();
+        }
+        let host: Vec<&BgProcess> = targets
+            .iter()
+            .filter(|p| p.wsl_distro.is_none() && p.job.is_none())
+            .collect();
         for p in &host {
             signal_group(p.pid, Signal::Term);
         }
@@ -797,6 +819,69 @@ mod wsl_tests {
         assert_eq!(parse_wsl_orphan_program("haruspex-code-bg:bg-1"), None);
         assert_eq!(parse_wsl_orphan_program("wsl:-d:haruspex-code-bg:x"), None);
         assert_eq!(parse_wsl_orphan_program("wsl:Ubuntu:something-else"), None);
+    }
+}
+
+/// A Windows folder: PowerShell in a Job object.
+#[cfg(all(test, windows))]
+mod host_windows_tests {
+    use super::*;
+
+    fn manager(name: &str) -> (CodeBgManager, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("haruspex_code_bg_win_{name}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mgr = CodeBgManager::new(dir.join("logs"), Some(dir.join("running.json")));
+        (mgr, dir)
+    }
+
+    async fn wait_until(mut f: impl FnMut() -> bool) {
+        for _ in 0..400 {
+            if f() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        panic!("condition never became true");
+    }
+
+    #[tokio::test]
+    async fn runs_logs_and_reports_its_exit_code() {
+        let (mgr, _dir) = manager("basic");
+        let cwd = std::env::temp_dir().to_string_lossy().into_owned();
+        let started = mgr
+            .start(
+                "s1".into(),
+                cwd,
+                None,
+                "Write-Output out; cmd /c exit 4".into(),
+                None,
+            )
+            .await
+            .unwrap();
+        wait_until(|| !mgr.status(None)[0].running).await;
+        let st = &mgr.status(Some("s1"))[0];
+        assert_eq!(st.exit_code, Some(4));
+        assert!(mgr.tail(&started.id, None).unwrap().contains("out"));
+    }
+
+    #[tokio::test]
+    async fn stop_ends_what_it_started() {
+        let (mgr, dir) = manager("stop");
+        let marker = dir.join("survived.txt");
+        // A grandchild outside the tree, which writes the marker if a stop
+        // misses it.
+        let cmd = format!(
+            "Start-Process -WindowStyle Hidden powershell.exe -ArgumentList '-NoProfile','-Command','Start-Sleep 5; Set-Content {} x'; Start-Sleep 60",
+            marker.display()
+        );
+        let cwd = std::env::temp_dir().to_string_lossy().into_owned();
+        let started = mgr.start("s1".into(), cwd, None, cmd, None).await.unwrap();
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        mgr.stop(&started.id).await.unwrap();
+        assert!(mgr.status(None).is_empty());
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        assert!(!marker.exists(), "the grandchild outlived the stop");
     }
 }
 

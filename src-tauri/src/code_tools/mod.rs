@@ -13,6 +13,7 @@ pub mod background;
 pub mod claims;
 pub mod folders;
 pub mod git;
+pub mod job;
 pub mod search;
 pub mod wsl;
 
@@ -44,8 +45,12 @@ const DRAIN_GRACE: Duration = Duration::from_secs(2);
 #[derive(Clone)]
 enum Running {
     /// A host process. On unix the PID doubles as the process-group id (we
-    /// spawn with `process_group(0)`), so killing it reaps the whole tree.
-    Host(u32),
+    /// spawn with `process_group(0)`), so killing it reaps the whole tree. On
+    /// Windows its job holds the tree; `taskkill /T` when there is none.
+    Host {
+        pid: u32,
+        job: Option<Arc<job::Job>>,
+    },
     /// A command inside a WSL distro: its Linux process group, signalled from
     /// inside the distro. The `wsl.exe` relay is never killed; it ends once
     /// the group has (see `wsl::GroupState`).
@@ -60,7 +65,8 @@ impl Running {
     /// whose group isn't reported yet is killed when it is.
     async fn kill(&self) {
         match self {
-            Running::Host(pid) => kill_process_tree(*pid),
+            Running::Host { job: Some(job), .. } => job.terminate(),
+            Running::Host { pid, job: None } => kill_process_tree(*pid),
             Running::Wsl { distro, group } => {
                 if let Some(g) = group.stop() {
                     wsl::stop_groups(distro, &[g], Duration::ZERO).await;
@@ -96,8 +102,8 @@ pub struct RunCommandResult {
     pub memory_limit_mb: Option<u32>,
 }
 
-/// Host default shell: bash where it's installed, else `sh`, on unix; `cmd /C`
-/// on windows. Models write bash — `[[ ]]`, arrays, `source`, `pipefail` —
+/// Host default shell: bash where it's installed, else `sh`, on unix;
+/// PowerShell on Windows (see [`powershell_command`]). Models write bash — `[[ ]]`, arrays, `source`, `pipefail` —
 /// and `/bin/sh` is dash on Debian and Ubuntu, where all of that fails.
 #[cfg(unix)]
 fn default_shell_command(command: &str) -> tokio::process::Command {
@@ -113,8 +119,50 @@ fn default_shell_command(command: &str) -> tokio::process::Command {
 
 #[cfg(windows)]
 fn default_shell_command(command: &str) -> tokio::process::Command {
-    let mut c = tokio::process::Command::new("cmd");
-    c.arg("/C").arg(command);
+    let exe = crate::shell::catalog::agent_powershell()
+        .map(|p| p.exe)
+        .unwrap_or_else(|| "powershell.exe".to_string());
+    powershell_command(&exe, command)
+}
+
+/// Run before a command in PowerShell: UTF-8 out (5.1 writes the console's
+/// code page), no progress bars or colour codes in the captured output, and
+/// no exit code left over from the user's profile.
+const POWERSHELL_PRELUDE: &str = "$ProgressPreference = 'SilentlyContinue'
+try { [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false) } catch {}
+$OutputEncoding = [Text.UTF8Encoding]::new($false)
+if ($PSStyle) { $PSStyle.OutputRendering = 'PlainText' }
+$global:LASTEXITCODE = 0";
+
+/// Run after it: the exit code a bash user expects. PowerShell's own is 1
+/// for any failure, a native program's code lost; this keeps it.
+const POWERSHELL_EXIT: &str =
+    "if (-not $?) { if ($LASTEXITCODE) { exit $LASTEXITCODE }; exit 1 }; exit 0";
+
+/// One command in PowerShell (`exe`: pwsh or Windows PowerShell): no
+/// profile and no prompts, scripts allowed (5.1 refuses `.uild.ps1` by
+/// default), and the script passed encoded so no quote in it is mangled on
+/// its way through the Windows command line.
+fn powershell_command(exe: &str, command: &str) -> tokio::process::Command {
+    use base64::Engine as _;
+    let script = format!(
+        "{POWERSHELL_PRELUDE}
+{command}
+{POWERSHELL_EXIT}"
+    );
+    let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    let mut c = tokio::process::Command::new(exe);
+    c.args([
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-OutputFormat",
+        "Text",
+        "-EncodedCommand",
+    ])
+    .arg(base64::engine::general_purpose::STANDARD.encode(utf16));
     c
 }
 
@@ -133,11 +181,7 @@ fn build_shell_command(
     wsl_memory_percent: Option<u8>,
 ) -> tokio::process::Command {
     match shell {
-        Some(ShellSelection::Powershell { exe }) => {
-            let mut c = tokio::process::Command::new(exe);
-            c.args(["-NoLogo", "-NoProfile", "-Command", command]);
-            c
-        }
+        Some(ShellSelection::Powershell { exe }) => powershell_command(exe, command),
         Some(ShellSelection::Wsl { distro }) => {
             wsl::group_command(distro, cwd, command, wsl_memory_percent)
         }
@@ -212,6 +256,12 @@ pub async fn run_command_capture(
         Some(limit) => command_scope::wrap(cmd, &command_id, limit),
         None => (cmd, None),
     };
+    // Windows: the job holds the tree and the memory limit (None elsewhere).
+    let job = if is_wsl {
+        None
+    } else {
+        job::Job::new(limit).map(Arc::new)
+    };
     hide_window(&mut cmd);
     // Never for a WSL relay: see `wsl::GroupState`.
     cmd.stdin(Stdio::null())
@@ -234,7 +284,10 @@ pub async fn run_command_capture(
             distro: distro.clone(),
             group: group.clone(),
         }),
-        None => child.id().map(Running::Host),
+        None => child.id().map(|pid| Running::Host {
+            pid,
+            job: job.clone().filter(|j| j.assign(pid)),
+        }),
     };
     let cancelled = Arc::new(AtomicBool::new(false));
     if let Some(r) = &running {
@@ -314,11 +367,19 @@ pub async fn run_command_capture(
         }
         _ => false,
     };
+    // Windows: the job ended it for its memory limit.
+    let out_of_memory = out_of_memory || job.as_ref().is_some_and(|j| j.out_of_memory());
     // A tree-kill leaves no exit code (signaled) on unix — treat as killed even
     // if the cancel raced ahead of our own timeout branch. Inside WSL a killed
     // command still has one (`setsid -w` reports 128 + the signal).
     if (exit_code.is_none() && !out_of_memory) || cancelled.load(Ordering::SeqCst) {
         killed = true;
+    }
+
+    // A finished command's detached children outlive it, as on unix; a
+    // stopped one's were ended with it.
+    if let Some(job) = &job {
+        job.release();
     }
 
     Ok(RunCommandResult {
@@ -328,8 +389,21 @@ pub async fn run_command_capture(
         killed,
         duration_ms: start.elapsed().as_millis() as u32,
         out_of_memory,
-        memory_limit_mb: scope.map(|s| (s.limit_bytes >> 20) as u32),
+        memory_limit_mb: scope
+            .map(|s| s.limit_bytes)
+            .or(limit.filter(|_| job.is_some()))
+            .map(|b| (b >> 20) as u32),
     })
+}
+
+/// The PowerShell a Code session in a Windows folder runs its commands in,
+/// for the system prompt to name. None off Windows.
+#[tauri::command]
+pub async fn code_powershell() -> Option<crate::shell::catalog::AgentPowershell> {
+    tokio::task::spawn_blocking(crate::shell::catalog::agent_powershell)
+        .await
+        .ok()
+        .flatten()
 }
 
 /// Kill a running `run_command_capture` invocation by its `command_id`. Called
@@ -673,6 +747,91 @@ Linux
                 !wsl::group_alive(&d, pgid).await,
                 "group {pgid} left running"
             );
+        }
+    }
+
+    /// Commands in a Windows folder: PowerShell in a Job object.
+    #[cfg(windows)]
+    mod powershell_runs {
+        use super::*;
+
+        async fn run(
+            command: &str,
+            timeout: u64,
+            id: &str,
+            percent: Option<u8>,
+        ) -> RunCommandResult {
+            run_command_capture(
+                command.to_string(),
+                std::env::temp_dir().to_string_lossy().into_owned(),
+                Some(timeout),
+                id.to_string(),
+                None,
+                percent,
+            )
+            .await
+            .unwrap()
+        }
+
+        #[tokio::test]
+        async fn a_native_programs_exit_code_comes_through() {
+            let res = run("cmd /c exit 7", 30, "p-native-exit", None).await;
+            assert_eq!(res.exit_code, Some(7));
+            // A failing cmdlet is 1; a success after a failure is 0, as in bash.
+            let res = run(r"Get-Item C:\no\such\thing", 30, "p-cmdlet", None).await;
+            assert_eq!(res.exit_code, Some(1), "{res:?}");
+            let res = run("cmd /c exit 4; Write-Output fine", 30, "p-later", None).await;
+            assert_eq!(res.exit_code, Some(0), "{res:?}");
+        }
+
+        #[tokio::test]
+        async fn quotes_and_unicode_arrive_intact() {
+            let res = run(r#"Write-Output "a ""b"" 'c' é ✓""#, 30, "p-quotes", None).await;
+            assert_eq!(res.stdout.trim(), r#"a "b" 'c' é ✓"#, "{res:?}");
+            assert_eq!(res.exit_code, Some(0));
+        }
+
+        #[tokio::test]
+        async fn a_timeout_ends_what_the_command_started() {
+            let marker = std::env::temp_dir().join("haruspex-job-timeout.txt");
+            let _ = std::fs::remove_file(&marker);
+            // A grandchild, detached from the tree, that would write the
+            // marker after the timeout if it survived.
+            let cmd = format!(
+                "Start-Process -WindowStyle Hidden powershell.exe -ArgumentList '-NoProfile','-Command','Start-Sleep 4; Set-Content {} x'; Start-Sleep 60",
+                marker.display()
+            );
+            let res = run(&cmd, 2, "p-timeout", None).await;
+            assert!(res.killed, "{res:?}");
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            assert!(!marker.exists(), "the grandchild outlived the timeout");
+        }
+
+        #[tokio::test]
+        async fn a_command_over_its_memory_limit_is_stopped_and_said_so() {
+            // 1% of RAM: well under what this allocates.
+            let res = run(
+                "$l = [System.Collections.Generic.List[byte[]]]::new(); while ($true) { $l.Add([byte[]]::new(64MB)) }",
+                120,
+                "p-oom",
+                Some(1),
+            )
+            .await;
+            assert!(res.out_of_memory, "{res:?}");
+            assert!(!res.killed);
+            assert!(res.memory_limit_mb.is_some());
+        }
+
+        #[tokio::test]
+        async fn cancel_ends_the_command() {
+            let task = tokio::spawn(run("Start-Sleep 60", 120, "p-cancel", None));
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            run_command_cancel("p-cancel".to_string()).await.unwrap();
+            let res = tokio::time::timeout(Duration::from_secs(10), task)
+                .await
+                .expect("the cancelled command returns")
+                .unwrap();
+            assert!(res.killed);
         }
     }
 

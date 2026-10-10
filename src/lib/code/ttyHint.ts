@@ -38,8 +38,24 @@ const PATTERNS: RegExp[] = [
 	// docker run -it: "the input device is not a TTY"; ssh, gpg, stty: "not a tty"
 	/\bnot a tty\b/i,
 	// stty, read -s, and anything else that ioctls stdin
-	/\binappropriate ioctl for device\b/i
+	/\binappropriate ioctl for device\b/i,
+	// Windows, a program that needs an administrator: "The requested operation
+	// requires elevation." (ERROR_ELEVATION_REQUIRED)
+	/\brequires elevation\b/i,
+	// Windows 11's sudo, turned off: "Sudo is disabled on this machine."
+	/\bsudo is disabled\b/i,
+	// Start-Process -Verb RunAs with the UAC prompt declined: "The operation
+	// was canceled by the user."
+	/\boperation was canceled by the user\b/i
 ];
+
+/**
+ * A command that asks Windows for an administrator: `Start-Process -Verb
+ * RunAs` or gsudo. Its UAC prompt can't be answered from run_command, and
+ * what it runs elevated is out of sight, so a failed one belongs in a Shell
+ * tab whatever it printed. (sudo, Windows' or Linux's, is known by its output.)
+ */
+const ELEVATES = /(^|[\s;|&(])gsudo(\.exe)?\s|\bStart-Process\b[^;|]*-Verb\s+['"]?RunAs\b/i;
 
 /** The note appended to the tool result in the Code tab, which has `open_in_shell`. */
 export const TTY_HINT =
@@ -57,10 +73,16 @@ export function needsTerminal(output: string): boolean {
 	return PATTERNS.some((p) => p.test(output));
 }
 
+/** True when the command asks Windows for an administrator (see `ELEVATES`). */
+export function elevates(command: string): boolean {
+	return ELEVATES.test(command);
+}
+
 /**
  * The hint for a finished command, or null. Only a failed command gets one:
  * a successful build whose shell profile grumbled about `stty` doesn't need it.
  * `openInShell`: the turn has the `open_in_shell` tool (the Code tab).
+ * `command`: what ran, so a failed elevation gets the hint too.
  */
 export function ttyHintFor(
 	res: {
@@ -69,9 +91,10 @@ export function ttyHintFor(
 		exit_code: number | null;
 		killed: boolean;
 	},
-	opts: { openInShell: boolean } = { openInShell: true }
+	opts: { openInShell: boolean; command?: string } = { openInShell: true }
 ): string | null {
 	if (res.killed || res.exit_code === 0) return null;
-	if (!needsTerminal(`${res.stdout}\n${res.stderr}`)) return null;
+	const elevating = opts.command !== undefined && elevates(opts.command);
+	if (!elevating && !needsTerminal(`${res.stdout}\n${res.stderr}`)) return null;
 	return opts.openInShell ? TTY_HINT : TTY_HINT_NO_SHELL_TOOL;
 }
