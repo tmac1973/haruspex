@@ -1,4 +1,5 @@
 mod app_log;
+mod app_windows;
 mod artifact_frame;
 mod audio;
 mod clipboard;
@@ -545,6 +546,7 @@ pub fn run() {
             app_log::debug_log_append,
             links::open_url,
             links::open_folder,
+            app_windows::app_window_open,
             feedback::get_diagnostics,
             feedback::save_export_file,
             shell::shell_spawn,

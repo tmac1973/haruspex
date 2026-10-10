@@ -10,7 +10,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { openAppWindow } from '#lib/appWindow.ts';
 
 import {
 	detachShellSession,
@@ -62,13 +62,19 @@ export async function openDetachedShell(session: ShellSession): Promise<void> {
 	// (saved) sidebar width — otherwise a wide sidebar swamps a fixed-width
 	// window and the user has to resize on every detach.
 	const sidebarWidth = Math.round(getSettings().shellSidebarWidth);
-	const w = new WebviewWindow(`shell-${ptyId}`, {
-		url: detachedShellUrl(ptyId, session.fullAccess),
-		title: session.name,
-		width: DETACHED_TERMINAL_TARGET + sidebarWidth,
-		height: 700
-	});
-	w.once('tauri://error', (e) => console.error('detached shell window error', e));
+	try {
+		await openAppWindow({
+			label: `shell-${ptyId}`,
+			url: detachedShellUrl(ptyId, session.fullAccess),
+			title: session.name,
+			width: DETACHED_TERMINAL_TARGET + sidebarWidth,
+			height: 700
+		});
+	} catch (e) {
+		// The tab stays here: dropping it with no window to take it would lose it.
+		console.error('detached shell window error', e);
+		return;
+	}
 
 	detachShellSession(session.id);
 }

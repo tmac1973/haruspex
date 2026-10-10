@@ -16,6 +16,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { emitTo, listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { openAppWindow } from '#lib/appWindow.ts';
 
 /** Main → editor window: show these files. */
 export const OPEN_EVENT = 'editor://open';
@@ -226,14 +227,14 @@ const tauriApi: WindowApi = {
 	exists: async (label) => (await WebviewWindow.getByLabel(label)) !== null,
 	async create(label, root) {
 		const g = label === folderLabel(root) ? loadGeometry(root) : null;
-		const w = new WebviewWindow(label, {
+		await openAppWindow({
+			label,
 			url: editorUrl(root),
 			title: editorTitle(null, root),
 			width: g?.width ?? 960,
 			height: g?.height ?? 720,
-			...(g ? { x: g.x, y: g.y } : { center: true })
+			...(g ? { x: g.x, y: g.y } : {})
 		});
-		w.once('tauri://error', (e) => console.error('editor window error', e));
 	},
 	send: (label, root, files) => emitTo(label, OPEN_EVENT, { root, files } satisfies OpenPayload),
 	async raise(label) {
