@@ -5,6 +5,7 @@
 //! commands, and the python-lint helper all consume the same primitive.
 
 use super::fuzzy::{apply_edit, EditResult};
+use crate::code_tools::wsl;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -111,6 +112,11 @@ pub struct DirListing {
 ///   - The resolved path escapes the working directory
 ///   - The path is otherwise malformed
 pub fn resolve_in_workdir(workdir: &Path, rel_path: &str) -> Result<PathBuf, String> {
+    // A WSL Code session's root, as its distro's share: checked as Linux paths.
+    #[cfg(windows)]
+    if let Some((distro, root)) = wsl::parse_wsl_unc(&workdir.to_string_lossy()) {
+        return wsl::resolve_in_share(&distro, &root, rel_path);
+    }
     if rel_path.is_empty() || rel_path == "." {
         return workdir
             .canonicalize()
@@ -205,6 +211,7 @@ fn resolve_nonexistent(candidate: &Path) -> Result<PathBuf, String> {
 /// Used as the first step in every fs_* read command — reads against a
 /// missing workdir should fail loudly rather than conjure an empty dir.
 pub(crate) fn workdir_path(workdir: &str) -> Result<PathBuf, String> {
+    refuse_bare_linux_workdir(workdir)?;
     let path = PathBuf::from(workdir);
     if !path.is_dir() {
         return Err(format!("Working directory does not exist: {}", workdir));
@@ -217,12 +224,29 @@ pub(crate) fn workdir_path(workdir: &str) -> Result<PathBuf, String> {
 /// yet. A fresh chat's workdir is only materialized on first write, so
 /// every fs_write_* / download command starts here.
 pub(super) fn workdir_path_for_write(workdir: &str) -> Result<PathBuf, String> {
+    refuse_bare_linux_workdir(workdir)?;
     let path = PathBuf::from(workdir);
+    // A WSL session's folder is the user's project: never conjured.
+    if wsl::parse_wsl_unc(workdir).is_some() {
+        return workdir_path(workdir);
+    }
     if !path.is_dir() {
         std::fs::create_dir_all(&path)
             .map_err(|e| format!("Failed to create working directory {}: {}", workdir, e))?;
     }
     Ok(path)
+}
+
+/// On Windows a Linux path (`/home/…`) means a WSL session that didn't pass
+/// its distro's share: taken as is it would be `C:\home\…`, and a write
+/// would create that folder and land there.
+fn refuse_bare_linux_workdir(workdir: &str) -> Result<(), String> {
+    if cfg!(windows) && workdir.starts_with('/') {
+        return Err(format!(
+            "{workdir} is a Linux path: a WSL session's files are reached through its distro"
+        ));
+    }
+    Ok(())
 }
 
 /// Defense-in-depth overwrite guard shared by every fs_write_* command.
@@ -522,11 +546,13 @@ pub async fn fs_list_dir(workdir: String, rel_path: String) -> Result<DirListing
 
     let (entries, truncated) = collect_dir_entries(&resolved, false).await?;
 
-    let display_path = resolved
-        .strip_prefix(workdir.canonicalize().unwrap_or(workdir.clone()))
-        .unwrap_or(&resolved)
-        .to_string_lossy()
-        .to_string();
+    let display_path = wsl::share_display(&workdir, &resolved).unwrap_or_else(|| {
+        resolved
+            .strip_prefix(workdir.canonicalize().unwrap_or(workdir.clone()))
+            .unwrap_or(&resolved)
+            .to_string_lossy()
+            .to_string()
+    });
 
     Ok(DirListing {
         path: if display_path.is_empty() {

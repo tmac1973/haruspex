@@ -17,6 +17,8 @@ export interface LoadedFile {
 	content: string | null;
 	/** Content hash; null when missing, or when the IO doesn't hash. */
 	hash: string | null;
+	/** False when changes made elsewhere won't be heard (an unwatchable folder). */
+	live?: boolean;
 }
 
 export interface EditorIO {
@@ -65,6 +67,8 @@ export class EditorDocument {
 	disk = $state<DiskState>('same');
 	/** A save found the file changed on disk: Overwrite or Reload first. */
 	conflict = $state(false);
+	/** Changes made elsewhere reach this file (see `LoadedFile.live`). */
+	live = $state(true);
 	/** The hash the disk reported last, for Keep mine. */
 	private diskHash: string | null = null;
 
@@ -95,6 +99,7 @@ export class EditorDocument {
 		try {
 			const file = await this.io.read(this.workdir, this.relPath);
 			this.path = file.path;
+			this.live = file.live !== false;
 			this.take(file);
 			if (file.content === null) this.disk = 'new';
 		} catch (e) {

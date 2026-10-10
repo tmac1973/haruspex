@@ -1096,6 +1096,7 @@ describe('sharing a folder', () => {
 		expect(storedThread(s.id)?.messages[2].content).toBe('carry on');
 		expect(mocks.invoke).toHaveBeenCalledWith('code_notices_take', {
 			folder: '/proj',
+			wslDistro: null,
 			sessionId: s.id,
 			since: 1
 		});
@@ -1121,9 +1122,15 @@ describe('sharing a folder', () => {
 		await s.send('edit');
 		const leaseCalls = mocks.invoke.mock.calls.filter((c) => c[0] === 'code_lease_take');
 		expect(leaseCalls).toHaveLength(1);
-		expect(leaseCalls[0][1]).toEqual({ folder: '/proj', sessionId: s.id, title: '' });
+		expect(leaseCalls[0][1]).toEqual({
+			folder: '/proj',
+			wslDistro: null,
+			sessionId: s.id,
+			title: ''
+		});
 		expect(mocks.invoke).toHaveBeenCalledWith('code_notice_record', {
 			folder: '/proj',
+			wslDistro: null,
 			sessionId: s.id,
 			title: '',
 			files: ['/proj/src/a.ts', '/proj/b.ts']

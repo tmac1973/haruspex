@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { labelArg, resolveShellPath, toolInvokeError, wslDistroArg } from './_helpers';
+import { fsWorkdir, labelArg, resolveShellPath, toolInvokeError, wslDistroArg } from './_helpers';
 import { registerTool } from './registry';
 import { withLocalScopeNote } from './nested-session';
 import { toolError, toolResult } from './types';
@@ -122,7 +122,7 @@ registerTool({
 						...wslDistroArg()
 					})
 				: await invoke<DirListing>('fs_list_dir', {
-						workdir: ctx.workingDir,
+						workdir: fsWorkdir(ctx),
 						relPath: path
 					});
 			// In Shell mode this listing is of the LOCAL filesystem even when the
@@ -181,7 +181,7 @@ registerTool({
 		const window = readWindowArgs(args);
 		const text = ctx.shellMode
 			? await fsReadAbsolute('fs_read_text_absolute', resolveShellPath(path, ctx.shellCwd), window)
-			: await fsRead('fs_read_text', ctx.workingDir!, path, window);
+			: await fsRead('fs_read_text', fsWorkdir(ctx)!, path, window);
 		return toolResult(await withLocalScopeNote(text, ctx));
 	}
 });
@@ -212,7 +212,7 @@ registerTool({
 		const path = args.path as string;
 		const text = ctx.shellMode
 			? await fsReadAbsolute('fs_read_pdf_absolute', resolveShellPath(path, ctx.shellCwd))
-			: await fsRead('fs_read_pdf', ctx.workingDir!, path);
+			: await fsRead('fs_read_pdf', fsWorkdir(ctx)!, path);
 		return toolResult(text);
 	}
 });
@@ -249,7 +249,7 @@ registerTool({
 		}
 		try {
 			const { renderPdfPages } = await import('#lib/agent/pdf-render.ts');
-			const pages = await renderPdfPages(ctx.workingDir!, args.path as string);
+			const pages = await renderPdfPages(fsWorkdir(ctx)!, args.path as string);
 			for (let i = 0; i < pages.length; i++) {
 				ctx.pendingImages.push({
 					path: `${args.path}#page${i + 1}`,
@@ -287,7 +287,7 @@ registerTool({
 	},
 	displayLabel: labelArg('path'),
 	async execute(args, ctx) {
-		return toolResult(await fsRead('fs_read_docx', ctx.workingDir!, args.path as string));
+		return toolResult(await fsRead('fs_read_docx', fsWorkdir(ctx)!, args.path as string));
 	}
 });
 
@@ -322,7 +322,7 @@ registerTool({
 	},
 	async execute(args, ctx) {
 		return toolResult(
-			await fsRead('fs_read_xlsx', ctx.workingDir!, args.path as string, {
+			await fsRead('fs_read_xlsx', fsWorkdir(ctx)!, args.path as string, {
 				sheet: args.sheet
 			})
 		);
@@ -361,7 +361,7 @@ registerTool({
 		}
 		try {
 			const dataUrl = await invoke<string>('fs_read_image', {
-				workdir: ctx.workingDir,
+				workdir: fsWorkdir(ctx),
 				relPath: args.path as string
 			});
 			ctx.pendingImages.push({ path: args.path as string, dataUrl });

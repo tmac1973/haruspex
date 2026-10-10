@@ -24,6 +24,8 @@ pub struct StoredNotice {
 pub struct SeenMark {
     pub id: String,
     pub root: String,
+    /// The WSL distro `root` is in (a Linux path then); None on the host.
+    pub wsl_distro: Option<String>,
     pub seen: i64,
 }
 
@@ -96,19 +98,34 @@ impl Database {
     pub fn code_session_seen_marks(&self) -> Result<Vec<SeenMark>, String> {
         let conn = self.conn();
         let mut stmt = conn
-            .prepare("SELECT id, root, COALESCE(notices_seen_at, updated_at) FROM code_sessions")
+            .prepare(
+                "SELECT id, root, wsl_distro, COALESCE(notices_seen_at, updated_at)
+                 FROM code_sessions",
+            )
             .map_err(|e| format!("Reading sessions failed: {e}"))?;
         let rows = stmt
             .query_map([], |row| {
                 Ok(SeenMark {
                     id: row.get(0)?,
                     root: row.get(1)?,
-                    seen: row.get(2)?,
+                    wsl_distro: row.get(2)?,
+                    seen: row.get(3)?,
                 })
             })
             .map_err(|e| format!("Reading sessions failed: {e}"))?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("Reading sessions failed: {e}"))
+    }
+
+    /// Give a session row another id, for tests that need known ids.
+    #[cfg(test)]
+    pub fn rename_test_code_session(&self, id: &str, to: &str) {
+        self.conn()
+            .execute(
+                "UPDATE code_sessions SET id = ?2 WHERE id = ?1",
+                params![id, to],
+            )
+            .unwrap();
     }
 
     /// A bare session row at `root` that has heard notices up to `seen`,

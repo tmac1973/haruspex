@@ -1,10 +1,11 @@
 import { invoke } from '@tauri-apps/api/core';
 import { IPC } from '#lib/ipc/commands.ts';
 import {
+	ensureUrlScheme,
+	fsWorkdir,
 	labelArg,
 	resolveShellPath,
 	toolInvokeError,
-	ensureUrlScheme,
 	wslDistroArg
 } from './_helpers';
 import { registerTool } from './registry';
@@ -403,7 +404,7 @@ function spreadsheetWriteExecutor(command: string) {
 		}
 		return fsWriteWithConflictCheck(
 			command,
-			ctx.workingDir!,
+			fsWorkdir(ctx)!,
 			args.path as string,
 			{ sheets },
 			ctx.filesWrittenThisTurn,
@@ -441,7 +442,7 @@ function textWriteExecutor(
 		if (err) return toolResult(toolError(err));
 		return fsWriteWithConflictCheck(
 			command,
-			ctx.workingDir!,
+			fsWorkdir(ctx)!,
 			args.path as string,
 			payload(args),
 			ctx.filesWrittenThisTurn,
@@ -518,12 +519,12 @@ function shellAwareEditText() {
 		const path = args.path as string;
 		try {
 			const r = await invoke<EditResult>('fs_edit_text', {
-				workdir: ctx.workingDir,
+				workdir: fsWorkdir(ctx),
 				relPath: path,
 				oldStr: args.old_str as string,
 				newStr: args.new_str as string
 			});
-			const diag = await lintPythonIfApplicable(ctx.workingDir, path);
+			const diag = await lintPythonIfApplicable(fsWorkdir(ctx), path);
 			return toolResult(`${formatEditResult(path, r)}${diag}`);
 		} catch (e) {
 			return toolResult(toolInvokeError('fs_edit_text', e));
@@ -628,7 +629,7 @@ function slidesWriteExecutor(command: string) {
 		if (error) return toolResult(toolError(error));
 		return fsWriteWithConflictCheck(
 			command,
-			ctx.workingDir!,
+			fsWorkdir(ctx)!,
 			args.path as string,
 			{ slides },
 			ctx.filesWrittenThisTurn,
@@ -935,7 +936,7 @@ registerTool({
 		const url = ensureUrlScheme(args.url as string);
 		const relPath = args.path as string;
 		const resolved = await resolveWritePathInteractive(
-			ctx.workingDir!,
+			fsWorkdir(ctx)!,
 			relPath,
 			ctx.filesWrittenThisTurn,
 			writeOptions(ctx)
@@ -944,7 +945,7 @@ registerTool({
 		if (resolved.kind === 'rejected') return toolResult(toolError(resolved.message));
 		try {
 			const message = await invoke<string>('fs_download_url', {
-				workdir: ctx.workingDir,
+				workdir: fsWorkdir(ctx),
 				url,
 				relPath: resolved.finalPath,
 				overwrite: resolved.overwrite
@@ -955,7 +956,7 @@ registerTool({
 			if (IMAGE_EXT_RE.test(resolved.finalPath)) {
 				try {
 					thumbDataUrl = await invoke<string>('fs_read_image', {
-						workdir: ctx.workingDir,
+						workdir: fsWorkdir(ctx),
 						relPath: resolved.finalPath
 					});
 				} catch {

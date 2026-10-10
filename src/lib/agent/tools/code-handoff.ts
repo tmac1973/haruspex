@@ -184,7 +184,7 @@ registerTool({
 			);
 		}
 		const files = [...new Set(raw.map((p) => relativeToRoot(root, p) as string))];
-		const opened = await openInEditor(root, files);
+		const opened = await openInEditor(root, files, ctx.shellMode ? null : (ctx.wslDistro ?? null));
 		if (!opened.ok) return toolResult(toolError(opened.error));
 		return toolResult(
 			`${opened.summary} The user's edits are not reported back; ask if you need them.`

@@ -44,6 +44,12 @@ describe('lease and paths', () => {
 		expect(rootsOverlap('/p/app/sub', '/p/app')).toBe(true);
 		expect(rootsOverlap('/p/app', '/p/app-worktrees/x')).toBe(false);
 	});
+
+	it('keeps WSL distros, and the host, apart', () => {
+		expect(rootsOverlap('/p/app', '/p/app', ['Ubuntu', 'Ubuntu'])).toBe(true);
+		expect(rootsOverlap('/p/app', '/p/app', ['Ubuntu', 'Debian'])).toBe(false);
+		expect(rootsOverlap('/p/app', '/p/app', ['Ubuntu', null])).toBe(false);
+	});
 });
 
 describe('formatFileNotices', () => {
@@ -85,6 +91,15 @@ describe('sessions sharing a folder', () => {
 			(s) => s.id
 		);
 		expect(ids).toEqual(['open-same', 'open-sub']);
+	});
+
+	it('only counts sessions in the same WSL distro', () => {
+		const list = [
+			summary({ id: 'ubuntu', root: '/home/tim/p', wsl_distro: 'Ubuntu' }),
+			summary({ id: 'debian', root: '/home/tim/p', wsl_distro: 'Debian' })
+		];
+		const ids = sharingFolder('me', '/home/tim/p', ['ubuntu', 'debian'], list, 'Ubuntu');
+		expect(ids.map((s) => s.id)).toEqual(['ubuntu']);
 	});
 });
 

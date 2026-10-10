@@ -132,7 +132,7 @@
 		const rel = btn?.dataset.path;
 		if (!rel) return;
 		event.preventDefault();
-		openFileFromClick(session.root, rel);
+		openFileFromClick(session.root, rel, session.wslDistro);
 	}
 
 	/** Forks once the turn is over: the saved thread is then the one shown. */
@@ -213,7 +213,11 @@
 				<ChatMessage message={msg} onFork={() => fork(i)} {forkBlocked} />
 			{:else}
 				{#if session.messageSteps[i]?.length}
-					<CodeSteps steps={session.messageSteps[i]} root={session.root} />
+					<CodeSteps
+						steps={session.messageSteps[i]}
+						root={session.root}
+						wslDistro={session.wslDistro}
+					/>
 				{/if}
 				<ChatMessage
 					message={msg}
@@ -237,7 +241,7 @@
 		<div class="note">{note.text}</div>
 	{/each}
 	{#if session.searchSteps.length > 0}
-		<CodeSteps steps={session.searchSteps} root={session.root} />
+		<CodeSteps steps={session.searchSteps} root={session.root} wslDistro={session.wslDistro} />
 	{/if}
 	{#each session.steeringDelivered as text, k (k)}
 		<div class="steer delivered" title="The agent has read this.">

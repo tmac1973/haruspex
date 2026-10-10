@@ -15,4 +15,9 @@ content: string | null,
 /**
  * Content hash, `None` when the file doesn't exist.
  */
-hash: string | null, };
+hash: string | null, 
+/**
+ * Changes made by something else will reach the window. False when its
+ * folder couldn't be watched: the window says so.
+ */
+live: boolean, };

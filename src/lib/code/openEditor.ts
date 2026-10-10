@@ -8,26 +8,39 @@
  */
 
 import { openInEditorWindows, describeOpens, type WindowOpen } from '#lib/editor/windows.ts';
+import { ioRoot } from '#lib/code/paths.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 
 export type EditorOpened =
 	| { ok: true; opens: WindowOpen[]; summary: string }
 	| { ok: false; error: string };
 
-/** Open `files` (relative to `root`, already checked to be inside it). */
-export async function openInEditor(root: string, files: string[]): Promise<EditorOpened> {
+/**
+ * Open `files` (relative to `root`, already checked to be inside it). A WSL
+ * session's window works in the distro's share (`ioRoot`).
+ */
+export async function openInEditor(
+	root: string,
+	files: string[],
+	wslDistro: string | null = null
+): Promise<EditorOpened> {
 	if (files.length === 0) return { ok: false, error: 'No files to open.' };
+	const io = ioRoot(root, wslDistro);
 	try {
-		const opens = await openInEditorWindows(root, files);
-		return { ok: true, opens, summary: describeOpens(root, opens) };
+		const opens = await openInEditorWindows(io, files);
+		return { ok: true, opens, summary: describeOpens(io, opens) };
 	} catch (e) {
 		return { ok: false, error: `The editor window could not open: ${String(e)}` };
 	}
 }
 
 /** A click on a file link: open it, and say so if that failed. */
-export function openFileFromClick(root: string, file: string): void {
-	void openInEditor(root, [file]).then((res) => {
+export function openFileFromClick(
+	root: string,
+	file: string,
+	wslDistro: string | null = null
+): void {
+	void openInEditor(root, [file], wslDistro).then((res) => {
 		if (!res.ok) showToast(res.error, { kind: 'error' });
 	});
 }

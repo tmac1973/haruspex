@@ -30,12 +30,15 @@
 		steps,
 		pending = [],
 		root,
-		linkFiles = true
+		linkFiles = true,
+		wslDistro = null
 	}: {
 		steps: SearchStep[];
 		pending?: PendingToolCall[];
 		root?: string;
 		linkFiles?: boolean;
+		/** The WSL distro `root` is in; editor windows open through its share. */
+		wslDistro?: string | null;
 	} = $props();
 
 	/** Tools that hand a command over: shown as command cards. */
@@ -46,7 +49,7 @@
 		if (!dir || !linkFiles) return undefined;
 		return {
 			link: (path) => relativeToRoot(dir, path),
-			open: (rel) => openFileFromClick(dir, rel)
+			open: (rel) => openFileFromClick(dir, rel, wslDistro)
 		};
 	});
 	const codePaths = $derived(root && linkFiles ? makeCodePathLinker(root) : undefined);

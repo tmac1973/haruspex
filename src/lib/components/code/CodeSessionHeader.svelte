@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ioRoot } from '#lib/code/paths.ts';
 	/**
 	 * One session's header: its folder and git branch, whether it is
 	 * read-only, its model (see CodeModelPicker) and reasoning effort, the
@@ -44,7 +45,7 @@
 	}
 
 	function openFolder() {
-		invoke('open_folder', { path: session.root }).catch((e: unknown) =>
+		invoke('open_folder', { path: ioRoot(session.root, session.wslDistro) }).catch((e: unknown) =>
 			showToast(`Couldn't open the folder: ${errMessage(e)}`, { kind: 'error' })
 		);
 	}

@@ -7,6 +7,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { ioRoot } from '#lib/code/paths.ts';
 import type { ShellSelection } from '#lib/ipc/gen/ShellSelection.ts';
 import { chatCompletion, type BackendOverride, type ChatMessage } from '#lib/api.ts';
 import {
@@ -118,6 +119,20 @@ export function ctxShell(ctx: {
 }): ShellSelection | null {
 	if (ctx.shellMode) return getSettings().shellSelection;
 	return ctx.wslDistro ? { kind: 'wsl', distro: ctx.wslDistro } : null;
+}
+
+/**
+ * The `workdir` for the workdir-relative fs commands: a WSL Code session's
+ * root as its distro's share (Rust checks paths there as Linux paths, inside
+ * the root), else the working directory.
+ */
+export function fsWorkdir(ctx: {
+	shellMode?: boolean;
+	workingDir?: string | null;
+	wslDistro?: string | null;
+}): string | null {
+	const root = ctx.workingDir ?? null;
+	return root && !ctx.shellMode ? ioRoot(root, ctx.wslDistro) : root;
 }
 
 /** The folder a tool call's relative paths start from: the shell's cwd, or the Code session's. */
