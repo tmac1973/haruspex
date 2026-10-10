@@ -40,6 +40,15 @@ const PROTECTED_TURNS = 4;
 // A single message bigger than this fraction of the budget is a
 // head/tail-truncation candidate (catches a giant pasted log / dmesg).
 const OVERSIZED_MESSAGE_FRACTION = 0.25;
+// Dropping turns aims this far under the budget, not at it. Aimed at the
+// budget, every later call in the turn was over again and dropped one more
+// message, so the prompt changed near its start on every call and the
+// server's prompt cache was lost each time. The headroom makes it one drop
+// that the next several calls fit under.
+const DROP_TARGET_FRACTION = 0.8;
+// Fixed text, without a count: it sits in the system message, so a count
+// that changed with each drop changed the very start of the prompt.
+export const DROPPED_TURNS_NOTE = '[Older messages were dropped to fit the context window.]';
 
 const encoder = new TextEncoder();
 
@@ -340,7 +349,11 @@ export function fitMessagesToBudget(
 	// Step 3: drop oldest user/assistant turns, keep system + recent pairs.
 	let droppedTurns = 0;
 	if (!fits()) {
-		droppedTurns = dropOldestTurns(messages, effectiveBudget, opts.tools);
+		droppedTurns = dropOldestTurns(
+			messages,
+			Math.floor(effectiveBudget * DROP_TARGET_FRACTION),
+			opts.tools
+		);
 	}
 
 	// Step 4: pathological fallback — guarantee the fit.
@@ -362,20 +375,24 @@ export function fitMessagesToBudget(
 
 /**
  * Drop the oldest non-system messages (preserving all leading system
- * messages and the last PROTECTED_TURNS pairs) until the estimate fits,
- * noting the drop in the leading system message (never adding a new one).
- * Orphaned tool results left behind are sanitized away. Returns the count
- * dropped.
+ * messages and the last PROTECTED_TURNS pairs) until the estimate is under
+ * `target`, noting the drop once in the leading system message (never adding
+ * a new one). Orphaned tool results left behind are sanitized away. Returns
+ * the count dropped.
  */
 function dropOldestTurns(
 	messages: ChatMessage[],
-	budget: number,
+	target: number,
 	tools?: ToolDefinition[]
 ): number {
 	const protectedCount = PROTECTED_TURNS * 2;
 	const nonSystemIdx: number[] = [];
 	for (let i = 0; i < messages.length; i++) {
-		if (messages[i].role !== 'system') nonSystemIdx.push(i);
+		// The note standing in for an earlier drop (no system message to hold
+		// it) is kept, or the next drop would only add it back.
+		if (messages[i].role !== 'system' && messages[i].content !== DROPPED_TURNS_NOTE) {
+			nonSystemIdx.push(i);
+		}
 	}
 	if (nonSystemIdx.length <= protectedCount) return 0;
 
@@ -388,7 +405,7 @@ function dropOldestTurns(
 	// (which was O(n²) in conversation length).
 	let running = estimateMessagesTokens(messages, tools);
 	for (const idx of droppable) {
-		if (running <= budget) break;
+		if (running <= target) break;
 		toRemove.add(idx);
 		running -= messageTokens(messages[idx]);
 		dropped++;
@@ -402,12 +419,15 @@ function dropOldestTurns(
 	// system message — some chat templates (e.g. Qwen) reject any system
 	// message that isn't the very first. So fold the note into the existing
 	// leading system message; only if there is none do we fall back to a
-	// standalone user message.
-	const note = `[Older messages dropped to fit context: ${dropped} message(s) removed.]`;
+	// standalone user message. Either way it goes in once: a later drop
+	// finds it already there.
 	if (kept.length > 0 && kept[0].role === 'system') {
-		kept[0] = { ...kept[0], content: `${messageText(kept[0].content)}\n\n${note}` };
-	} else {
-		kept.unshift({ role: 'user', content: note });
+		const text = messageText(kept[0].content);
+		if (!text.includes(DROPPED_TURNS_NOTE)) {
+			kept[0] = { ...kept[0], content: `${text}\n\n${DROPPED_TURNS_NOTE}` };
+		}
+	} else if (kept[0]?.content !== DROPPED_TURNS_NOTE) {
+		kept.unshift({ role: 'user', content: DROPPED_TURNS_NOTE });
 	}
 
 	messages.length = 0;
