@@ -20,6 +20,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -108,11 +109,22 @@ impl Store for Keychain {
 /// Whether a store works here: write a probe, read it back, delete it. A
 /// Secret Service with no unlocked collection, or a headless session with
 /// none at all, fails one of the three.
+///
+/// Each probe writes an entry of its own. macOS only lets the app that made
+/// a Keychain entry touch it without asking, and to the Keychain every
+/// rebuilt dev binary is a new app: a fixed key left behind by one run that
+/// never reached the delete had every later build prompting for the login
+/// password, several times, before anything was saved.
 pub fn probe(store: &dyn Store) -> bool {
-    const KEY: &str = "haruspex:probe";
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let key = format!(
+        "haruspex:probe:{}-{}",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    );
     let ok =
-        store.set(KEY, "probe").is_ok() && matches!(store.get(KEY), Ok(Some(v)) if v == "probe");
-    let _ = store.delete(KEY);
+        store.set(&key, "probe").is_ok() && matches!(store.get(&key), Ok(Some(v)) if v == "probe");
+    let _ = store.delete(&key);
     ok
 }
 
@@ -522,7 +534,46 @@ mod tests {
     fn the_probe_leaves_nothing_behind() {
         let m = Memory::default();
         probe(&m);
-        assert_eq!(m.get("haruspex:probe").unwrap(), None);
+        probe(&m);
+        assert!(m.map.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn each_probe_writes_an_entry_of_its_own() {
+        /// Remembers every key written, and never deletes.
+        #[derive(Default)]
+        struct Keeps(Mutex<Vec<String>>, Memory);
+        impl Store for Keeps {
+            fn set(&self, key: &str, value: &str) -> Result<(), String> {
+                self.0.lock().unwrap().push(key.to_string());
+                self.1.set(key, value)
+            }
+            fn get(&self, key: &str) -> Result<Option<String>, String> {
+                self.1.get(key)
+            }
+            fn delete(&self, _: &str) -> Result<(), String> {
+                Err("refused".into())
+            }
+        }
+        let k = Keeps::default();
+        probe(&k);
+        probe(&k);
+        let keys = k.0.lock().unwrap();
+        assert_eq!(keys.len(), 2);
+        assert_ne!(keys[0], keys[1]);
+    }
+
+    /// The real system keychain, which CI has none of. On macOS:
+    /// `cargo test secrets::tests::the_system_keychain -- --ignored`.
+    #[test]
+    #[ignore]
+    fn the_system_keychain_works_and_the_probe_leaves_nothing_behind() {
+        assert!(probe(&Keychain));
+        let key = "haruspex:probe:roundtrip";
+        Keychain.set(key, "v").unwrap();
+        assert_eq!(Keychain.get(key).unwrap(), Some("v".into()));
+        Keychain.delete(key).unwrap();
+        assert_eq!(Keychain.get(key).unwrap(), None);
     }
 
     fn temp_dir(name: &str) -> PathBuf {
