@@ -79,7 +79,11 @@ describe('checkBoundary', () => {
 			'type C:\\Users\\tim\\AppData\\Roaming\\com.haruspex.app\\settings.json',
 			'type c:/users/tim/appdata/roaming/com.haruspex.app/settings.json',
 			'type %USERPROFILE%\\AppData\\Roaming\\com.haruspex.app\\x',
-			'Get-Content $env:USERPROFILE\\AppData\\Roaming\\com.haruspex.app\\x'
+			'Get-Content $env:USERPROFILE\\AppData\\Roaming\\com.haruspex.app\\x',
+			'Get-Content $env:APPDATA\\com.haruspex.app\\x',
+			'Get-Content ${env:appdata}/com.haruspex.app/x',
+			'type %APPDATA%\\com.haruspex.app\\x',
+			'Get-Content \\\\?\\C:\\Users\\tim\\AppData\\Roaming\\com.haruspex.app\\x'
 		]) {
 			expect(checkBoundary(cmd, win, 'C:\\code\\game').matched, cmd).toBe(true);
 		}

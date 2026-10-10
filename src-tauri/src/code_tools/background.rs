@@ -116,7 +116,7 @@ impl CodeBgManager {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     fn with_log_cap(mut self, cap: u64) -> Self {
         self.log_cap = cap;
         self

@@ -54,14 +54,20 @@ export function wslTargets(targets: ProtectedTargets): ProtectedTargets {
 	return { ...targets, home: '', paths };
 }
 
-/** The command with the home-directory spellings a shell would expand, expanded. */
+/**
+ * The command with the home-directory spellings a shell would expand,
+ * expanded; Windows' `APPDATA` and `LOCALAPPDATA` too, at their usual places
+ * under the home, where Haruspex keeps its data.
+ */
 function expandHome(command: string, home: string): string {
 	if (!home) return command;
 	const h = home.replace(/[\\/]+$/, '');
 	return command
 		.replace(/(^|[\s'"=:(])~(?=[\\/])/g, (_m, pre: string) => pre + h)
 		.replace(/\$\{HOME\}|\$HOME\b/g, h)
-		.replace(/%USERPROFILE%|\$env:USERPROFILE\b/gi, h);
+		.replace(/%USERPROFILE%|\$\{?env:USERPROFILE\b\}?/gi, h)
+		.replace(/%APPDATA%|\$\{?env:APPDATA\b\}?/gi, `${h}\\AppData\\Roaming`)
+		.replace(/%LOCALAPPDATA%|\$\{?env:LOCALAPPDATA\b\}?/gi, `${h}\\AppData\\Local`);
 }
 
 const LOOPBACK_PORT =
