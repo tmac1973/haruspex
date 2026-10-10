@@ -39,13 +39,18 @@ impl Scope {
 /// doesn't exist.
 pub fn required_scope(op_type: &str) -> Option<Scope> {
     Some(match op_type {
-        "sessions.list" | "session.get" | "session.resync" | "session.readFile"
-        | "prompts.list" | "wsl.distros" => Scope::Read,
+        "sessions.list" | "session.get" | "session.resync" | "session.readFile" | "chats.list"
+        | "chat.get" | "chat.resync" | "prompts.list" | "wsl.distros" => Scope::Read,
         "session.open"
         | "session.new"
         | "session.send"
         | "session.stop"
-        | "session.cancelShellWait" => Scope::Drive,
+        | "session.cancelShellWait"
+        | "chat.new"
+        | "chat.send"
+        | "chat.stop"
+        | "chat.continue"
+        | "chat.retry" => Scope::Drive,
         "prompts.answer" => Scope::Approve,
         _ => return None,
     })
@@ -377,6 +382,8 @@ mod tests {
     fn each_operation_needs_its_scope() {
         assert_eq!(required_scope("session.get"), Some(Scope::Read));
         assert_eq!(required_scope("session.readFile"), Some(Scope::Read));
+        assert_eq!(required_scope("chat.get"), Some(Scope::Read));
+        assert_eq!(required_scope("chat.send"), Some(Scope::Drive));
         assert_eq!(required_scope("wsl.distros"), Some(Scope::Read));
         assert_eq!(required_scope("session.send"), Some(Scope::Drive));
         assert_eq!(required_scope("prompts.answer"), Some(Scope::Approve));

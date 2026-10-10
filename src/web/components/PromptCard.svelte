@@ -27,6 +27,14 @@
 		onanswer(prompt.promptId, { kind: 'command', choice });
 	}
 
+	function sandbox(choice: 'allow_once' | 'allow_chat' | 'deny'): void {
+		onanswer(prompt.promptId, { kind: 'sandbox', choice });
+	}
+
+	function memory(choice: 'allow_once' | 'allow_session' | 'deny'): void {
+		onanswer(prompt.promptId, { kind: 'memory', choice });
+	}
+
 	function toggle(label: string): void {
 		if (!d.allowMultiple) picked = [label];
 		else picked = picked.includes(label) ? picked.filter((l) => l !== label) : [...picked, label];
@@ -57,6 +65,30 @@
 		{#if (d.queued as number) > 0}
 			<p class="why">{d.queued} more waiting after this one.</p>
 		{/if}
+	{:else if prompt.kind === 'sandbox'}
+		<p class="title" title="The Python runs in a sandbox on your computer.">Run this Python?</p>
+		<pre class="code-preview"><code>{d.code as string}</code></pre>
+		<div class="buttons">
+			<button class="btn btn-small" onclick={() => sandbox('allow_once')}>Allow once</button>
+			<button
+				class="btn btn-small"
+				title="Don't ask again in this chat."
+				onclick={() => sandbox('allow_chat')}>Allow for this chat</button
+			>
+			<button class="btn btn-small btn-danger" onclick={() => sandbox('deny')}>Deny</button>
+		</div>
+	{:else if prompt.kind === 'memory'}
+		<p class="title" title="Saved to memory on your computer, for later chats.">Remember this?</p>
+		<p class="why">{d.content as string}</p>
+		<div class="buttons">
+			<button class="btn btn-small" onclick={() => memory('allow_once')}>Allow once</button>
+			<button
+				class="btn btn-small"
+				title="Don't ask again until Haruspex restarts."
+				onclick={() => memory('allow_session')}>Allow for this session</button
+			>
+			<button class="btn btn-small btn-danger" onclick={() => memory('deny')}>Deny</button>
+		</div>
 	{:else if prompt.kind === 'question'}
 		<p class="title">{d.question as string}</p>
 		{#if d.body}<p class="why">{d.body as string}</p>{/if}

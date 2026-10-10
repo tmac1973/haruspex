@@ -6,7 +6,7 @@
  * A `seq` gap, or an event before any snapshot, is never guessed across: the
  * mirror says `resync` and keeps what it had until a snapshot arrives.
  */
-import type { SessionEvent, SessionState } from './types.ts';
+import type { ChatEvent, ChatState, SessionEvent, SessionState } from './types.ts';
 
 export interface Mirror {
 	/** Null before the first snapshot, and after `closed`. */
@@ -39,4 +39,19 @@ export function reduce(m: Mirror, e: SessionEvent): Mirror {
 		case 'meta':
 			return { ...next, state: { ...s, ...e.meta } };
 	}
+}
+
+/** Rebuild a chat from its events, as `reduce` does for Code sessions. */
+export interface ChatMirror {
+	state: ChatState | null;
+	seq: number;
+	resync: boolean;
+}
+
+export const emptyChatMirror = (): ChatMirror => ({ state: null, seq: 0, resync: false });
+
+export function reduceChat(m: ChatMirror, e: ChatEvent): ChatMirror {
+	if (e.type === 'chat-snapshot') return { state: e.state, seq: e.seq, resync: false };
+	if (!m.state || e.seq !== m.seq + 1) return { ...m, resync: true };
+	return { state: { ...m.state, ...e.patch }, seq: e.seq, resync: false };
 }

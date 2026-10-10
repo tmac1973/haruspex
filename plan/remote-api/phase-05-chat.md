@@ -126,3 +126,33 @@ chat events ride the same event stream.
 From another computer's browser, the owner opens a past chat, sends a
 message, approves the Python it wants to run, and watches the answer finish,
 while the desktop's chat tab shows the same conversation.
+
+## As built (2026-10-10)
+
+Branch `remote-api/p05-chat`. As planned, with these notes:
+
+- **The chat watcher reads the open chat inside every effect.** The first
+  version kept it in a plain variable. In a fresh profile, with no chat
+  open, the effects' first runs returned before reading anything reactive,
+  so they tracked nothing and never ran again: the page got the first
+  snapshot and no updates. Found in the browser check; there's now a test
+  that starts with no chat open.
+- **`chat.send` reports a refusal.** `sendMessage` resolves only when the
+  turn ends; a refusal (the model not ready) resolves `false` at once, so the
+  engine races it against 150 ms.
+- **`SearchStep` takes `runControls`.** The page hides the sandbox's Cancel
+  and Run again, which would run Python in the browser.
+- **The prompt filters changed.** Chat prompts (sandbox, memory) carry
+  `chatId`; a Code session's view shows only prompts without one, and a
+  chat's view only its own.
+
+**Checked:**
+- 11 chat engine tests (with a fake chat store over Svelte state); sandbox
+  and memory prompts in `engine.test.ts`; the web store's chat mirror and
+  prompt filters; the composer and sandbox card.
+- The driver self-test: a chat turn over HTTP against the fake model.
+- In a browser against the owner's vLLM server: New chat, a message asking
+  for Python, **Run this Python?** answered from the page (Allow once, then
+  Deny), the reply streamed, and the desktop's chat tab showed the same
+  conversation. (The test build had no Pyodide, so the Python itself failed;
+  that's the build, not the feature.)

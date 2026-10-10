@@ -1,11 +1,11 @@
 ---
 title: Remote control
-description: Use your Code sessions from your other computers' browsers or from scripts, letting trusted computers in without a token, or each device with its own token.
+description: Use your Code sessions and chats from your other computers' browsers or from scripts, letting trusted computers in without a token, or each device with its own token.
 ---
 
 # Remote control
 
-Remote control lets your other computers use the Code sessions running on this one, from a web browser or a script. Turns still run here, with this computer's files and models; the other computer only starts, steers and watches them. It is off by default, and Haruspex has to be open for it to work.
+Remote control lets your other computers use the Code sessions and chats on this one, from a web browser or a script. Turns still run here, with this computer's files and models; the other computer only starts, steers and watches them. It is off by default, and Haruspex has to be open for it to work.
 
 It is not the same as Guest chat (see the `guest-chat` page), which lets other people chat with your Haruspex. Remote control is for you.
 
@@ -33,6 +33,8 @@ The page lists your Code sessions, the open ones first. Pick one to follow it as
 
 File names in a session are links: click one to read the file (it can't be edited from the page). Images attached to messages show as thumbnails; click one for full size.
 
+**Chat** (the switch at the top of the list) shows your chats, newest first. Open one to read it or carry it on: sending opens that chat on this computer too, so its working folder, the Python sandbox and memory work as usual. You can stop a reply, continue a cut-off one, retry one that failed, and answer **Run this Python?** and **Remember this?** from the page. Only one reply is written at a time, as in the app: while one is being written, other chats wait.
+
 ## Advanced
 
 - **Port**: 8788.
@@ -52,7 +54,7 @@ From a trusted computer, send `X-Haruspex: 1` instead of a token.
 
 ## What it doesn't do yet
 
-- Only Code sessions. Chat, the Shell and Settings can't be used remotely.
+- The Shell and Settings can't be used remotely. In chat, the page can't attach images, start deep research, or change the working folder or incognito; do those at this computer.
 - Files open read-only; edit them at this computer. Images the model put in an answer aren't shown.
 - MCP tool approvals, skill writes and the new-repository trust question are answered at this computer; the page says when a turn is waiting on one.
 - A command handed to a Shell tab (`open_in_shell`) waits for you to run it at this computer; the page can only let the turn carry on without it.

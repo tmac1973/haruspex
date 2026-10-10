@@ -43,10 +43,16 @@ async function readFile(s: CodeSession, path: string): Promise<FileContent> {
 }
 
 let resync: ((id: string) => boolean) | null = null;
+let resyncChat: ((id: string) => boolean) | null = null;
 
 /** How `session.resync` reaches the session watchers (`watch.svelte.ts`). */
 export function setResync(fn: (id: string) => boolean): void {
 	resync = fn;
+}
+
+/** How `chat.resync` reaches the chat watcher (`chat.svelte.ts`), main window only. */
+export function setChatResync(fn: (id: string) => boolean): void {
+	resyncChat = fn;
 }
 
 function openHere(id: string): CodeSession {
@@ -132,6 +138,18 @@ export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 		case 'session.resync':
 			openHere(op.id);
 			if (!resync?.(op.id)) throw new Error(`session ${op.id} is not being watched`);
+			return { resynced: op.id };
+		case 'chats.list':
+		case 'chat.get':
+		case 'chat.new':
+		case 'chat.send':
+		case 'chat.stop':
+		case 'chat.continue':
+		case 'chat.retry':
+			if (label !== MAIN_WINDOW) throw new Error('chat runs in the main window');
+			return (await import('./chat.svelte.ts')).dispatchChat(op);
+		case 'chat.resync':
+			if (!resyncChat?.(op.id)) throw new Error(`chat ${op.id} isn't the open chat`);
 			return { resynced: op.id };
 		case 'prompts.list':
 			return currentPrompts(label);

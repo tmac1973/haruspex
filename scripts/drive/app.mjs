@@ -377,6 +377,37 @@ export class App {
 		return { clicked: selector };
 	}
 
+	/**
+	 * Send a chat message through the engine (`new` starts a chat). With
+	 * `wait`, return when the reply is written or a prompt needs someone.
+	 */
+	async chatSend(id, text, { wait = false, timeoutMs = 600_000 } = {}) {
+		if (id === 'new') id = (await this.engine({ type: 'chat.new' })).id;
+		const before = (await this.engine({ type: 'chat.get', id })).messages.length;
+		await this.engine({ type: 'chat.send', id, text });
+		if (!wait) return { id, state: 'sent' };
+		const started = Date.now();
+		await sleep(300);
+		for (;;) {
+			const chat = await this.engine({ type: 'chat.get', id });
+			const last = [...chat.messages].reverse().find((m) => m.role === 'assistant');
+			const result = (state, extra = {}) => ({
+				id,
+				state,
+				elapsedMs: Date.now() - started,
+				...extra,
+				error: chat.error,
+				lastAssistant: last ? String(last.content).slice(0, 300) : null
+			});
+			if (!chat.busy && chat.messages.length > before + 1) return result('done');
+			if (!chat.busy && chat.error) return result('failed');
+			const prompts = (await this.engine({ type: 'prompts.list' })).filter((p) => p.chatId === id);
+			if (prompts.length) return result('prompt', { prompt: prompts[0] });
+			if (Date.now() - started > timeoutMs) return result('timeout');
+			await sleep(500);
+		}
+	}
+
 	/** Who may connect to the owner API without a token. */
 	async access(mode, hosts = []) {
 		if (!this.api) throw new Error('access needs a driver started with --api');
