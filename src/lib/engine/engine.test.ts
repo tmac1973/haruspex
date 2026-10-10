@@ -30,6 +30,7 @@ const db = vi.hoisted(() => {
 						id: `s${n}`,
 						title: '',
 						root: args.root,
+						wsl_distro: args.wslDistro ?? null,
 						backend: null,
 						reasoning_effort: null,
 						thread: emptyThread,
@@ -51,6 +52,7 @@ const db = vi.hoisted(() => {
 						id: r.id,
 						title: r.title,
 						root: r.root,
+						wsl_distro: r.wsl_distro,
 						updated_at: r.updated_at,
 						forked_from: null,
 						read_only: false,
@@ -64,6 +66,8 @@ const db = vi.hoisted(() => {
 					return true;
 				case 'code_notices_take':
 					return { notices: [], now: 1 };
+				case 'code_wsl_distros':
+					return ['Ubuntu-24.04'];
 				default:
 					return undefined;
 			}
@@ -427,9 +431,27 @@ describe('operations', () => {
 		await closeSession(b.id);
 		const list = await dispatch({ type: 'sessions.list' }, 'main');
 		expect(list).toEqual([
-			{ id: a.id, title: '', root: '/a', status: 'idle', window: 'main' },
-			{ id: b.id, title: '', root: '/b', status: null, window: null }
+			{ id: a.id, title: '', root: '/a', wslDistro: null, status: 'idle', window: 'main' },
+			{ id: b.id, title: '', root: '/b', wslDistro: null, status: null, window: null }
 		]);
+	});
+
+	it('make a session in a WSL distro, and say which distros there are', async () => {
+		expect(await dispatch({ type: 'wsl.distros' }, 'main')).toEqual(['Ubuntu-24.04']);
+		const made = (await dispatch(
+			{ type: 'session.new', root: '/home/tim/p', wslDistro: 'Ubuntu-24.04' },
+			'main'
+		)) as { id: string; wslDistro: string | null };
+		expect(made.wslDistro).toBe('Ubuntu-24.04');
+		const state = (await dispatch({ type: 'session.get', id: made.id }, 'main')) as {
+			wslDistro: string | null;
+		};
+		expect(state.wslDistro).toBe('Ubuntu-24.04');
+		const list = (await dispatch({ type: 'sessions.list' }, 'main')) as {
+			id: string;
+			wslDistro: string | null;
+		}[];
+		expect(list.find((s) => s.id === made.id)?.wslDistro).toBe('Ubuntu-24.04');
 	});
 
 	it('resync sends a fresh snapshot', async () => {

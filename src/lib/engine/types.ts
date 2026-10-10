@@ -16,7 +16,13 @@ export type EngineOp =
 	| { type: 'sessions.list' }
 	| { type: 'session.get'; id: string }
 	| { type: 'session.open'; id: string }
-	| { type: 'session.new'; root: string; effort?: string | null }
+	/**
+	 * `wslDistro`: on Windows, the WSL distro a Linux `root` is in (a
+	 * `\\wsl.localhost\…` root names its own). See `wsl.distros`.
+	 */
+	| { type: 'session.new'; root: string; effort?: string | null; wslDistro?: string | null }
+	/** The WSL2 distros a session can be made in (Windows); empty elsewhere. */
+	| { type: 'wsl.distros' }
 	| { type: 'session.send'; id: string; text: string }
 	| { type: 'session.stop'; id: string }
 	| { type: 'session.cancelShellWait'; id: string }
@@ -46,6 +52,8 @@ export interface SessionMeta {
 export interface SessionState extends SessionMeta {
 	id: string;
 	root: string;
+	/** The WSL distro `root` is in (Windows), or null for a folder on the host. */
+	wslDistro: string | null;
 	status: CodeSessionStatus;
 	busy: boolean;
 	/** The answer being written. */
@@ -66,6 +74,8 @@ export interface SessionListItem {
 	id: string;
 	title: string;
 	root: string;
+	/** See `SessionState.wslDistro`. */
+	wslDistro: string | null;
 	status: CodeSessionStatus | null;
 	/** The window that has it open, or null. */
 	window: string | null;

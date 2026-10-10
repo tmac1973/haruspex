@@ -22,7 +22,7 @@ It is not the same as Remote access (see the `remote-access` page), which lets o
 
 ## Use it from a browser
 
-The link opens a page with your Code sessions: the open ones first, then the saved ones. Pick one to follow it as it runs, send messages, steer or stop a turn, and answer **Run this command?** and the agent's questions. **New session** starts one in a folder on this computer.
+The link opens a page with your Code sessions: the open ones first, then the saved ones. Pick one to follow it as it runs, send messages, steer or stop a turn, and answer **Run this command?** and the agent's questions. **New session** starts one in a folder on this computer; on Windows, pick the WSL distro first.
 
 On a phone it shows one thing at a time: the list, or a session with a back button.
 
@@ -48,6 +48,7 @@ By default only this computer can connect. To reach it from elsewhere, use a pri
 Send the token as `Authorization: Bearer <token>`.
 
 - `POST /api/v1/op` with an operation as JSON, for example `{"type":"sessions.list"}` or `{"type":"session.send","id":"…","text":"Fix the failing test"}`.
+- On Windows, `session.new` takes a `wslDistro` with a Linux `root` (`{"type":"session.new","root":"~/proj","wslDistro":"Ubuntu"}`); `{"type":"wsl.distros"}` lists them.
 - `GET /api/v1/events` streams what sessions do (server-sent events).
 - `GET /api/v1/health` needs no token.
 

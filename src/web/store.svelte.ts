@@ -127,9 +127,22 @@ export class WebStore {
 		this.resync(id);
 	}
 
-	async newSession(root: string): Promise<void> {
+	/**
+	 * The computer's WSL2 distros (Windows), for New session's picker; empty
+	 * elsewhere, or when asking failed.
+	 */
+	async distros(): Promise<string[]> {
+		try {
+			return (await this.transport.op<string[]>({ type: 'wsl.distros' })) ?? [];
+		} catch {
+			return [];
+		}
+	}
+
+	/** `wslDistro`: the WSL distro a Linux `root` is in, on a Windows computer. */
+	async newSession(root: string, wslDistro: string | null = null): Promise<void> {
 		const made = await this.run(() =>
-			this.transport.op<{ id: string }>({ type: 'session.new', root: root.trim() })
+			this.transport.op<{ id: string }>({ type: 'session.new', root: root.trim(), wslDistro })
 		);
 		if (!made) return;
 		await this.refreshList();

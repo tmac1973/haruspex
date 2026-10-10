@@ -11,6 +11,7 @@ import Composer from './components/Composer.svelte';
 const state = (over: Partial<SessionState> = {}): SessionState => ({
 	id: 's1',
 	root: '/p',
+	wslDistro: null,
 	status: 'idle',
 	busy: false,
 	streamingContent: '',
