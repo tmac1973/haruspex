@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { agentPowershell } from '#lib/code/powershell.ts';
 	import favicon from '#lib/assets/favicon.svg';
 	import ServerStatusBadge from '#lib/components/ServerStatusBadge.svelte';
 	import ContextIndicator from '#lib/components/ContextIndicator.svelte';
@@ -119,6 +120,10 @@
 	// markdown (sanitization strips inline onclick). Installed in every
 	// window — the detached shell window renders markdown too.
 	onMount(() => installMarkdownActions());
+
+	// Windows: hand Rust Settings → Code's PowerShell choice before any command
+	// runs (a Code turn hands it again as it starts).
+	onMount(() => void agentPowershell());
 
 	// Other clients' way into this window's Code sessions (plan/remote-api/).
 	// Does nothing outside the main and Code windows, or while Rust has it off.

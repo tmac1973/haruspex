@@ -65,8 +65,14 @@ impl Running {
     /// whose group isn't reported yet is killed when it is.
     async fn kill(&self) {
         match self {
-            Running::Host { job: Some(job), .. } => job.terminate(),
-            Running::Host { pid, job: None } => kill_process_tree(*pid),
+            // The job holds the tree; `taskkill /T` too, for what Windows
+            // started outside it (the Store's PowerShell 7).
+            Running::Host { pid, job } => {
+                if let Some(job) = job {
+                    job.terminate();
+                }
+                kill_process_tree(*pid);
+            }
             Running::Wsl { distro, group } => {
                 if let Some(g) = group.stop() {
                     wsl::stop_groups(distro, &[g], Duration::ZERO).await;
@@ -400,9 +406,12 @@ pub async fn run_command_capture(
 }
 
 /// The PowerShell a Code session in a Windows folder runs its commands in,
-/// for the system prompt to name. None off Windows.
+/// for the system prompt to name and Settings → Code to offer. `use_store`:
+/// that setting, applied first, so a turn runs with what it was told. None
+/// off Windows.
 #[tauri::command]
-pub async fn code_powershell() -> Option<crate::shell::catalog::AgentPowershell> {
+pub async fn code_powershell(use_store: bool) -> Option<crate::shell::catalog::AgentPowershell> {
+    crate::shell::catalog::set_use_store_pwsh(use_store);
     tokio::task::spawn_blocking(crate::shell::catalog::agent_powershell)
         .await
         .ok()

@@ -23,7 +23,8 @@ A folder under `/mnt/c/…` is your Windows drive seen from Linux. It works, but
 
 ## A Windows folder (This PC)
 
-- **Commands** run in PowerShell 7 if it's installed, otherwise Windows PowerShell 5.1, which has no `&&` or `||`. The PowerShell 7 from the Microsoft Store isn't used for the agent's commands: Windows starts it outside Haruspex's control, so they couldn't be stopped reliably. Install it with `winget install Microsoft.PowerShell` instead.
+- **Commands** run in PowerShell 7 if it's installed, otherwise Windows PowerShell 5.1, which has no `&&` or `||`.
+- **The Microsoft Store's PowerShell 7** isn't used by default: Windows starts it outside Haruspex's control, so Stop and the time limit may leave what a command started running, and the memory limit doesn't apply. To use it anyway, turn on Settings → Code → PowerShell 7 from the Microsoft Store. `winget install Microsoft.PowerShell` installs a PowerShell 7 without those limits.
 - **Stop**, a time limit or closing the session ends a command and everything it started. **Background processes** stop when Haruspex quits, crashes included.
 - **Settings → Shell → Memory limit** caps each command; one that goes over is stopped and the agent is told.
 - **Files** keep their line endings: rewriting a file with Windows (CRLF) line endings keeps them, and so does saving from an editor window.
