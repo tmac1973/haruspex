@@ -85,11 +85,13 @@ pub fn save(cwd: &Path, text: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-/// The instructions file in `dir`: `AGENTS.md`, else `CLAUDE.md`.
+/// The instructions file in `dir`: `AGENTS.md`, else `CLAUDE.md`. A symlink
+/// in a WSL repo is followed inside the distro (see
+/// `code_tools::wsl::follow_share_link`); Linux and macOS follow it anyway.
 fn instructions_in(dir: &Path) -> Option<PathBuf> {
     ["AGENTS.md", "CLAUDE.md"]
         .iter()
-        .map(|f| dir.join(f))
+        .map(|f| crate::code_tools::wsl::follow_share_link(&dir.join(f)))
         .find(|p| p.is_file())
 }
 

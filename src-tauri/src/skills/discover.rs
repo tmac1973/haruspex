@@ -114,10 +114,13 @@ pub fn find<'a>(all: &'a [Found], name: &str) -> Option<&'a Found> {
 /// "skill" at any directory on the machine. The user's own folders keep their
 /// symlinks, because installing a skill by linking it in is common practice.
 fn skill_dirs(root: &Root) -> Vec<PathBuf> {
-    let Ok(entries) = fs::read_dir(&root.dir) else {
+    // A skills folder that is itself a link (`.claude/skills` →
+    // `.agents/skills`), in a WSL repo, followed inside the distro.
+    let dir = crate::code_tools::wsl::follow_share_link(&root.dir);
+    let Ok(entries) = fs::read_dir(&dir) else {
         return Vec::new();
     };
-    let canon_root = root.dir.canonicalize().ok();
+    let canon_root = dir.canonicalize().ok();
     let mut dirs: Vec<PathBuf> = entries
         .flatten()
         .take(MAX_SKILLS_PER_ROOT)
