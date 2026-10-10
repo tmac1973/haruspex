@@ -60,6 +60,11 @@ case "$TARGET" in
     *-windows-msvc) BUILD_DIR="$PROJECT_ROOT/.sidecar-build" ;;
     *)              BUILD_DIR="/tmp/haruspex-sidecar-build" ;;
 esac
+# Build under the physical path. On macOS /tmp is a symlink to /private/tmp,
+# and llama.cpp's UI-asset step mixes REALPATH with paths relative to the
+# symlinked build dir, so it looks for its own assets one `..` short.
+mkdir -p "$BUILD_DIR"
+BUILD_DIR=$(cd "$BUILD_DIR" && pwd -P)
 NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-4}")
 
 # Bundle any Homebrew/local dylibs a macOS binary depends on, recursively,

@@ -33,6 +33,14 @@ ensure-pyodide: ## Vendor the Pyodide runtime + wheels into static/pyodide/
 ensure-ruff: ## Download the ruff Python-linter sidecar when missing
 	@./scripts/fetch-ruff.sh --target $(TARGET)
 
+.PHONY: ensure-node
+ensure-node: ## Download the node + npm sidecar (runs npm-packaged MCP servers) when missing
+	@./scripts/fetch-node.sh --target $(TARGET)
+
+.PHONY: ensure-uv
+ensure-uv: ## Download the uv sidecar (runs PyPI-packaged MCP servers) when missing
+	@./scripts/fetch-uv.sh --target $(TARGET)
+
 .PHONY: ensure-sdcpp
 ensure-sdcpp: ## Download the sd-server image sidecar when missing or its pin changed
 	@./scripts/fetch-sdcpp.sh --target $(TARGET)
@@ -102,7 +110,7 @@ ensure-sidecars: ## Rebuild sidecars only when missing or their pinned version c
 	fi
 
 .PHONY: dev
-dev: ensure-sidecars ensure-sdcpp ensure-pdfium ensure-ruff ensure-pyodide ensure-node-modules ensure-libs-linked ## Run the app in dev mode
+dev: ensure-sidecars ensure-sdcpp ensure-pdfium ensure-ruff ensure-node ensure-uv ensure-pyodide ensure-node-modules ensure-libs-linked ## Run the app in dev mode
 	GDK_BACKEND=x11 npm run tauri dev; stty sane
 
 # The two check-*.mjs guards mirror the frontend CI job. They used to run ONLY
