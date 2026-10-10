@@ -140,6 +140,29 @@ e2e-app` runs it on the Windows PC, in your desktop session.
 **A new spec must be seen failing once.** Break what it asserts — rename the
 scripted answer, say — and check the failure says plainly what is wrong.
 
+## The Code tab inside WSL (Windows)
+
+On Windows the Code tab works inside a WSL2 distro (`code_tools/wsl.rs`, and
+`plan/code-tab/phase-10-windows-wsl.md`). GitHub's hosted Windows runners have
+no distro, so the tests that need one are `#[ignore]`d and run by hand on a
+Windows machine with one (git installed inside it):
+
+```bash
+cargo test --lib -- --ignored wsl distro
+```
+
+They cover resolving a folder in the distro, commands and their Stop and
+timeout (the whole Linux process group), background processes and the
+launch sweep, files through the `\\wsl.localhost` share with symlinks in and
+out of the project, search, git and worktrees in the distro, and the
+editor's polling. They leave nothing behind in the distro.
+
+Run them from a cold distro too (`wsl --shutdown` first): that is where the
+worst bug hid. **Never kill a `wsl.exe`** the app started: terminating one
+while its distro boots, with another starting beside it, left the WSL service
+failing every call (`Wsl/Service/E_UNEXPECTED`) until `wsl --shutdown`. Stop
+the Linux process group instead (`wsl::GroupState`).
+
 ## Driving the app with a real model
 
 `scripts/drive.mjs` runs the same e2e build through tauri-driver, but against

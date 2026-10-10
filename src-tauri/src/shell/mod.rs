@@ -65,8 +65,17 @@ impl ShellManager {
         memory_limit_percent: Option<u8>,
     ) -> Result<ShellSpawnResult, String> {
         let id = self.alloc_id();
-        let (program, base_args, wsl_distro) = resolve_spawn_target(selection, shell_override);
-        let cwd = pty::resolve_cwd_with_override(cwd_override.as_deref());
+        let (program, mut base_args, wsl_distro) = resolve_spawn_target(selection, shell_override);
+        // A WSL tab opened at a Linux folder (a Code session's): the distro
+        // starts there; the host can't stat it, so its own cwd is the default.
+        let linux_cwd = wsl_cwd(wsl_distro.as_deref(), cwd_override.as_deref());
+        if let Some(dir) = linux_cwd {
+            base_args.extend(["--cd".to_string(), dir.to_string()]);
+        }
+        let cwd = match linux_cwd {
+            Some(_) => pty::resolve_cwd(),
+            None => pty::resolve_cwd_with_override(cwd_override.as_deref()),
+        };
         let integration_dir = integration_dir(&app);
         let session = Session::spawn(
             app,
@@ -179,6 +188,13 @@ fn resolve_spawn_target(
             None,
         ),
     }
+}
+
+/// The Linux folder a WSL tab should start in: `cwd` when the tab runs in a
+/// distro and `cwd` is a Linux path. None otherwise (a host folder, or none).
+fn wsl_cwd<'a>(wsl_distro: Option<&str>, cwd: Option<&'a str>) -> Option<&'a str> {
+    wsl_distro?;
+    cwd.map(str::trim).filter(|c| c.starts_with('/'))
 }
 
 // Over clippy's limit for the same reason as `shell_restart` below.
@@ -528,4 +544,20 @@ pub fn shell_list_shells() -> Vec<catalog::ShellCatalogEntry> {
 #[tauri::command]
 pub fn shell_platform_supported() -> bool {
     platform::platform_supported()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wsl_cwd;
+
+    #[test]
+    fn only_a_wsl_tab_starts_in_a_linux_folder() {
+        assert_eq!(
+            wsl_cwd(Some("Ubuntu"), Some("/home/tim/p")),
+            Some("/home/tim/p")
+        );
+        assert_eq!(wsl_cwd(Some("Ubuntu"), Some(r"C:\Users\tim")), None);
+        assert_eq!(wsl_cwd(Some("Ubuntu"), None), None);
+        assert_eq!(wsl_cwd(None, Some("/home/tim/p")), None);
+    }
 }
