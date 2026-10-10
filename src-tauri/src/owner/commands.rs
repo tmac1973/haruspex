@@ -93,8 +93,11 @@ pub async fn owner_api_apply(
             }
         }
     }
-    if let Some(r) = api.running.lock_or_recover().take() {
-        r.stop();
+    // Taken out of the lock first: waiting for the port to come free can't
+    // hold it.
+    let previous = api.running.lock_or_recover().take();
+    if let Some(r) = previous {
+        r.shutdown().await;
     }
     if !config.enabled {
         if let Ok(clients) = api.clients() {
