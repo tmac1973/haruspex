@@ -23,15 +23,17 @@
 	import type { PathLinks } from '#lib/components/SearchStep.svelte';
 
 	/**
-	 * `root`: the session folder. Paths inside it become links to the editor,
-	 * unless `linkFiles` is off: the web client (src/web/) has no editor.
+	 * `root`: the session folder. Paths inside it become links that open the
+	 * file: in an editor window, or with `openFile` (the web client's viewer,
+	 * src/web/). `linkFiles` off: no links at all.
 	 */
 	let {
 		steps,
 		pending = [],
 		root,
 		linkFiles = true,
-		wslDistro = null
+		wslDistro = null,
+		openFile
 	}: {
 		steps: SearchStep[];
 		pending?: PendingToolCall[];
@@ -39,6 +41,8 @@
 		linkFiles?: boolean;
 		/** The WSL distro `root` is in; editor windows open through its share. */
 		wslDistro?: string | null;
+		/** Open a file (relative to `root`) instead of in an editor window. */
+		openFile?: (rel: string) => void;
 	} = $props();
 
 	/** Tools that hand a command over: shown as command cards. */
@@ -49,7 +53,7 @@
 		if (!dir || !linkFiles) return undefined;
 		return {
 			link: (path) => relativeToRoot(dir, path),
-			open: (rel) => openFileFromClick(dir, rel, wslDistro)
+			open: (rel) => (openFile ? openFile(rel) : openFileFromClick(dir, rel, wslDistro))
 		};
 	});
 	const codePaths = $derived(root && linkFiles ? makeCodePathLinker(root) : undefined);

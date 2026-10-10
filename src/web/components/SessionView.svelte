@@ -5,6 +5,7 @@
 	import Composer from './Composer.svelte';
 	import PromptCard from './PromptCard.svelte';
 	import Transcript from './Transcript.svelte';
+	import FileViewer from './FileViewer.svelte';
 
 	let { store }: { store: WebStore } = $props();
 
@@ -51,6 +52,7 @@
 	<Transcript
 		{session}
 		oncontinue={() => store.send(id, 'Please continue from where you stopped.')}
+		onopenfile={(path, line) => store.openFile(id, path, line)}
 	/>
 	{#if session.shellWait}
 		<div class="banner">
@@ -69,6 +71,15 @@
 		disabled={!!mirror?.closed || session.folderMissing}
 		onsend={(text) => store.send(id, text)}
 		onstop={() => store.stopTurn(id)}
+	/>
+{/if}
+
+{#if store.viewer}
+	<FileViewer
+		file={store.viewer.file}
+		error={store.viewer.error}
+		line={store.viewer.line}
+		onclose={() => (store.viewer = null)}
 	/>
 {/if}
 

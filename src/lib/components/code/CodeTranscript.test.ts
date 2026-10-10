@@ -330,7 +330,7 @@ describe('CodeTranscript paths', () => {
 		});
 		await fireEvent.click(screen.getByRole('button', { name: 'src/a.ts' }));
 		expect(openWindows).toHaveBeenLastCalledWith('/p/app', ['src/a.ts']);
-		await fireEvent.click(screen.getByTitle('Open src/b.ts in the editor'));
+		await fireEvent.click(screen.getByTitle('Open src/b.ts'));
 		expect(openWindows).toHaveBeenLastCalledWith('/p/app', ['src/b.ts']);
 	});
 

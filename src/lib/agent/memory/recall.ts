@@ -45,12 +45,10 @@ const BUDGET_CONTEXT_FRACTION = 0.02;
 /** Rough chars-per-token. Only ever used to keep a small section small. */
 const CHARS_PER_TOKEN = 4;
 
-/**
- * `toolName` of the step that records a recall on a turn. Not a real tool —
- * it reuses the step machinery so the injected set persists with the message
- * and the UI can show it (and, in Phase 05, offer per-memory delete).
- */
-export const MEMORY_RECALL_STEP = 'memory_recall';
+// The step's name lives in a module of its own, so the step UI can know it
+// without loading memory (see `stepName.ts`).
+import { MEMORY_RECALL_STEP } from './stepName';
+export { MEMORY_RECALL_STEP };
 
 export interface RecalledMemory {
 	id: string;

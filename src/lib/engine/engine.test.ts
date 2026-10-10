@@ -66,6 +66,9 @@ const db = vi.hoisted(() => {
 					return true;
 				case 'code_notices_take':
 					return { notices: [], now: 1 };
+				case 'fs_read_text_full':
+					if (args.relPath === 'big.txt') return 'x'.repeat(1_000_005);
+					return `contents of ${args.relPath} in ${args.workdir}`;
 				case 'code_wsl_distros':
 					return ['Ubuntu-24.04'];
 				default:
@@ -419,6 +422,28 @@ describe('operations', () => {
 		});
 		g.go();
 		await vi.waitFor(() => expect(s.status).toBe('idle'));
+	});
+
+	it('read a file in the session folder, and nothing outside it', async () => {
+		const s = await newSession('/proj');
+		expect(
+			await dispatch({ type: 'session.readFile', id: s.id, path: 'src/a.ts' }, 'main')
+		).toEqual({ path: 'src/a.ts', content: 'contents of src/a.ts in /proj', truncated: false });
+		// An absolute path inside the folder is taken relative to it.
+		const abs = (await dispatch(
+			{ type: 'session.readFile', id: s.id, path: '/proj/b.ts' },
+			'main'
+		)) as { path: string };
+		expect(abs.path).toBe('b.ts');
+		await expect(
+			dispatch({ type: 'session.readFile', id: s.id, path: '../etc/passwd' }, 'main')
+		).rejects.toThrow('outside');
+		const big = (await dispatch(
+			{ type: 'session.readFile', id: s.id, path: 'big.txt' },
+			'main'
+		)) as { content: string; truncated: boolean };
+		expect(big.truncated).toBe(true);
+		expect(big.content).toHaveLength(1_000_000);
 	});
 
 	it('refuse a session that is not open here', async () => {

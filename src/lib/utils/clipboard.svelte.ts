@@ -1,3 +1,4 @@
+import { copyText } from '#lib/utils/copyText.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
 /**
@@ -22,7 +23,7 @@ export function createCopyAction(resetMs = 1500) {
 		},
 		async copy(text: string | (() => string)): Promise<void> {
 			try {
-				await navigator.clipboard.writeText(typeof text === 'function' ? text() : text);
+				await copyText(typeof text === 'function' ? text() : text);
 				state = 'copied';
 			} catch (e) {
 				console.error('Failed to copy to clipboard:', errMessage(e));
@@ -46,7 +47,7 @@ export function createKeyedCopyAction(resetMs = 1500) {
 		},
 		async copy(key: string, text: string | (() => string)): Promise<void> {
 			try {
-				await navigator.clipboard.writeText(typeof text === 'function' ? text() : text);
+				await copyText(typeof text === 'function' ? text() : text);
 				states[key] = 'copied';
 			} catch (e) {
 				console.error('Failed to copy to clipboard:', errMessage(e));

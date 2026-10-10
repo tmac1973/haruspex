@@ -107,7 +107,7 @@ function linkedRef(raw: string, linker: CodePathLinker): { raw: string; ref: Pat
 /** A button the Code transcript turns into "open in the editor". */
 function pathButton(ref: PathRef, inner: string): string {
 	const line = ref.line ? ` data-line="${ref.line}"` : '';
-	const title = `Open ${ref.path} in the editor`;
+	const title = `Open ${ref.path}`;
 	return `<button type="button" class="code-path" data-action="code-path" data-path="${escapeHtml(ref.path)}"${line} title="${escapeHtml(title)}">${inner}</button>`;
 }
 

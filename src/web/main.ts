@@ -5,6 +5,10 @@
  */
 import { mount } from 'svelte';
 import '#lib/styles/app.css';
+import './markdown.css';
+import { installMarkdownActions } from '#lib/markdown-actions.ts';
 import App from './App.svelte';
 
+// Code blocks' Copy buttons (rendered markdown can't carry handlers).
+installMarkdownActions();
 mount(App, { target: document.getElementById('app')! });

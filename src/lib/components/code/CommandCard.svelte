@@ -5,6 +5,8 @@
 	 * expanded. With the session folder, **Open in Shell** types the command
 	 * into a new Shell tab there, without running it.
 	 */
+	import { copyText } from '#lib/utils/copyText.ts';
+
 	import type { SearchStep } from '#lib/agent/loop.ts';
 	import { formatDuration, parseCommandResult, tailLines } from '#lib/code/commandResult.ts';
 	import { hasShellCommandOpener, openShellForCommand } from '#lib/code/shellBridge.ts';
@@ -36,7 +38,7 @@
 
 	async function copy() {
 		try {
-			await navigator.clipboard.writeText(command);
+			await copyText(command);
 			copied = true;
 			setTimeout(() => (copied = false), 1500);
 		} catch {

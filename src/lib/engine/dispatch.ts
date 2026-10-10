@@ -5,6 +5,8 @@
  * listings. Each answers at once; `session.send` answers when the turn has
  * started, and its progress arrives as events.
  */
+import { invoke } from '@tauri-apps/api/core';
+import { ioRoot, relativeToRoot } from '#lib/code/paths.ts';
 import { listCodeSessions, wslDistros } from '#lib/code/db.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import {
@@ -16,9 +18,29 @@ import {
 import { errMessage } from '#lib/utils/error.ts';
 import { answerPrompt, currentPrompts } from './prompts.svelte.ts';
 import { sessionState } from './state.ts';
-import type { EngineOp, SessionListItem } from './types.ts';
+import type { EngineOp, FileContent, SessionListItem } from './types.ts';
 
 export const MAIN_WINDOW = 'main';
+
+/** The most of one file `session.readFile` sends: plenty to read, not a memory event. */
+export const MAX_FILE_CHARS = 1_000_000;
+
+/**
+ * A file in the session's folder, read through the same confined command the
+ * agent's tools use (a WSL session's through its distro's share). A path
+ * outside the folder is refused here and again in Rust.
+ */
+async function readFile(s: CodeSession, path: string): Promise<FileContent> {
+	const rel = relativeToRoot(s.root, path);
+	if (!rel) throw new Error(`${path} is outside the session's folder`);
+	const content = await invoke<string>('fs_read_text_full', {
+		workdir: ioRoot(s.root, s.wslDistro),
+		relPath: rel
+	});
+	return content.length > MAX_FILE_CHARS
+		? { path: rel, content: content.slice(0, MAX_FILE_CHARS), truncated: true }
+		: { path: rel, content, truncated: false };
+}
 
 let resync: ((id: string) => boolean) | null = null;
 
@@ -105,6 +127,8 @@ export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 			s.cancelShellWait();
 			return { cancelled: waiting };
 		}
+		case 'session.readFile':
+			return readFile(openHere(op.id), op.path);
 		case 'session.resync':
 			openHere(op.id);
 			if (!resync?.(op.id)) throw new Error(`session ${op.id} is not being watched`);
