@@ -200,6 +200,8 @@ export interface ToolContext {
 	 * `run_command` asks, and nothing runs in the background.
 	 */
 	codeReadOnly?: boolean;
+	/** Started from another computer (Settings → Remote control): nothing that needs a person at this one, so no `open_in_shell`. */
+	codeRemote?: boolean;
 	/**
 	 * The WSL distro a Code-tab session works in (Windows): commands,
 	 * background processes and searches run inside it, and `workingDir` is a

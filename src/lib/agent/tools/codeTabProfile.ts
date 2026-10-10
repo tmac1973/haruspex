@@ -28,6 +28,11 @@ export function isCodeWriteTool(name: string): boolean {
 }
 
 /** What a read-only Code session's write is told. */
+/** `open_in_shell` in a turn started from another computer (Settings → Remote control). */
+export const REMOTE_HANDOFF_REFUSAL =
+	'open_in_shell is not available: the user is working from another computer, not at this one. ' +
+	'Say in your reply what to run and why; they will run it when they are back at this computer.';
+
 export const READ_ONLY_REFUSAL =
 	"This session is read-only: it shares its folder with another session, so it can't write or edit files. Describe the change instead; the user can fork the session into its own worktree to make it.";
 

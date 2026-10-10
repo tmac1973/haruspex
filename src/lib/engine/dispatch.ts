@@ -116,7 +116,7 @@ export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 			if (s.folderMissing) throw new Error(`the session's folder is missing: ${s.root}`);
 			const steered = s.busy;
 			// Resolves when the turn ends; its progress goes out as events.
-			s.send(op.text).catch((e: unknown) => {
+			s.send(op.text, { remote: true }).catch((e: unknown) => {
 				logDebug('engine', 'send failed', { id: s.id, error: errMessage(e) });
 			});
 			return steered ? { steered: true } : { started: true };

@@ -67,6 +67,14 @@ describe('open_in_shell and the platform', () => {
 		expect(names(true, false)).toContain('open_in_shell');
 	});
 
+	it('is not offered to a turn started from another computer', () => {
+		const n = getToolSchemas({ hasWorkingDir: true, codeMode: true, codeRemote: true }).map(
+			(s) => s.function.name
+		);
+		expect(n).not.toContain('open_in_shell');
+		expect(n).toContain('run_command');
+	});
+
 	it('is not offered where the Shell tab does not work', async () => {
 		const { loadShellPlatformSupported } = await import('#lib/shell/platformSupport.ts');
 		vi.mocked(invoke).mockResolvedValueOnce(false);

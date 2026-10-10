@@ -805,6 +805,7 @@ describe('runAgentLoop: tool-call round trip', () => {
 			shellMode: false,
 			codeMode: false,
 			codeReadOnly: false,
+			codeRemote: false,
 			interactive: false,
 			hasSkills: false
 		});
