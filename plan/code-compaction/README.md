@@ -7,7 +7,7 @@ session. The transcript the user scrolls through stays whole.
 See [`overview.md`](./overview.md) for the problem, the design, the decisions
 and the invariants.
 
-**Status:** Planned 2026-10-10. Not started. The bug found while reviewing
+**Status:** Planned 2026-10-10. Phase 1 in review. The bug found while reviewing
 this (a turn losing its own tool calls after the fit dropped old turns) is
 fixed separately in `55eabf61`.
 

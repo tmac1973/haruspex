@@ -8,7 +8,8 @@ import {
 	recordTokenCalibration,
 	getTokenCalibration,
 	resetTokenCalibration,
-	parseContextOverflow
+	parseContextOverflow,
+	DROPPED_TURNS_NOTE
 } from './context-budget';
 import type { ChatMessage } from '#lib/api.ts';
 
@@ -282,7 +283,7 @@ describe('fitMessagesToBudget', () => {
 		// Most recent user turn preserved.
 		expect(msgs.some((m) => m.content === lastUser)).toBe(true);
 		// The drop note was recorded (folded into the system message).
-		expect(msgs.some((m) => String(m.content).includes('Older messages dropped'))).toBe(true);
+		expect(msgs.some((m) => String(m.content).includes(DROPPED_TURNS_NOTE))).toBe(true);
 		// Critically: no SECOND system message — Qwen-style templates reject
 		// any system message that isn't the very first.
 		expect(msgs.filter((m) => m.role === 'system').length).toBe(1);
@@ -298,7 +299,65 @@ describe('fitMessagesToBudget', () => {
 		expect(info!.droppedTurns).toBeGreaterThan(0);
 		// No system message existed, so no system message should be introduced.
 		expect(msgs.filter((m) => m.role === 'system').length).toBe(0);
-		expect(String(msgs[0].content)).toContain('Older messages dropped');
+		expect(msgs[0].content).toBe(DROPPED_TURNS_NOTE);
+	});
+
+	it('drops turns with headroom, so the next calls in the turn fit without dropping', () => {
+		const msgs: ChatMessage[] = [sys('system prompt')];
+		for (let i = 0; i < 30; i++) {
+			msgs.push(user(`u${i} ` + 'a'.repeat(3000)));
+			msgs.push(asst(`a${i} ` + 'b'.repeat(3000)));
+		}
+		const first = fitMessagesToBudget(msgs, 32768, { reserveOutput: 8192 });
+		expect(first!.droppedTurns).toBeGreaterThan(0);
+		// Calibration is 1.5 by default: the budget the fit aims at.
+		const budget = Math.floor((32768 - 8192) / getTokenCalibration());
+		expect(estimateMessagesTokens(msgs)).toBeLessThanOrEqual(Math.floor(budget * 0.8));
+
+		// The turn goes on: a tool round adds a call and its result.
+		const system = msgs[0];
+		const firstKept = msgs[1];
+		msgs.push({
+			role: 'assistant',
+			content: '',
+			tool_calls: [{ id: 'c1', type: 'function', function: { name: 'read', arguments: '{}' } }]
+		});
+		msgs.push(tool('r'.repeat(2000), 'c1'));
+		expect(fitMessagesToBudget(msgs, 32768, { reserveOutput: 8192 })).toBeNull();
+		// The prompt's start is untouched, so the server can reuse its cache.
+		expect(msgs[0]).toBe(system);
+		expect(msgs[1]).toBe(firstKept);
+	});
+
+	it('adds the drop note once, however many drops there are', () => {
+		const msgs: ChatMessage[] = [sys('system prompt')];
+		const turn = (i: number) => {
+			msgs.push(user(`u${i} ` + 'a'.repeat(3000)));
+			msgs.push(asst(`a${i} ` + 'b'.repeat(3000)));
+		};
+		for (let i = 0; i < 30; i++) turn(i);
+		fitMessagesToBudget(msgs, 32768, { reserveOutput: 8192 });
+		const afterFirst = msgs[0].content;
+		// Enough new turns to need a second drop.
+		for (let i = 30; i < 50; i++) turn(i);
+		const second = fitMessagesToBudget(msgs, 32768, { reserveOutput: 8192 });
+		expect(second!.droppedTurns).toBeGreaterThan(0);
+		expect(msgs[0].content).toBe(afterFirst);
+		expect(String(msgs[0].content).split(DROPPED_TURNS_NOTE).length).toBe(2);
+	});
+
+	it('keeps a single drop note when there is no system message to hold it', () => {
+		const msgs: ChatMessage[] = [];
+		const turn = (i: number) => {
+			msgs.push(user(`u${i} ` + 'a'.repeat(3000)));
+			msgs.push(asst(`a${i} ` + 'b'.repeat(3000)));
+		};
+		for (let i = 0; i < 30; i++) turn(i);
+		fitMessagesToBudget(msgs, 32768, { reserveOutput: 8192 });
+		for (let i = 30; i < 50; i++) turn(i);
+		fitMessagesToBudget(msgs, 32768, { reserveOutput: 8192 });
+		expect(msgs[0].content).toBe(DROPPED_TURNS_NOTE);
+		expect(msgs.filter((m) => m.content === DROPPED_TURNS_NOTE).length).toBe(1);
 	});
 
 	it('always satisfies the budget post-condition, even pathologically', () => {
