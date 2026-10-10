@@ -179,6 +179,23 @@ npm run drive -- screenshot | minimise | restore | status
 npm run drive -- stop                                    # saves the results, stops everything
 ```
 
+**Through the engine** (`src/lib/engine/`, the surface the owner API will
+expose): `send`, `steer`, `cancel` and `approve` take `--via engine` to send
+the operation through Rust instead of pressing the UI. It's the only way to
+reach a session in a detached window.
+
+```bash
+npm run drive -- detach <id>                             # the tab's ⤢: the session moves to its own window
+npm run drive -- send <id> "..." --via engine --wait
+npm run drive -- approve deny --via engine               # prompts.answer, in whichever window shows it
+npm run drive -- events [--since N]                      # engine events from every window
+npm run drive -- consistent <id>                         # do the events rebuild what session.get says?
+```
+
+`consistent` must hold for an idle session. While a turn streams, the replay
+trails by a few tens of milliseconds, so `differs` listing only
+`streamingContent` or `roundText` then is lag, not a bug.
+
 - **Isolated as the specs are:** it wipes the e2e identifier's data first,
   never starts a local model server, and uses tauri-driver ports of its own.
   So only one driver runs per machine, and not alongside `npm run e2e:app`.

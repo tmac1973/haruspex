@@ -62,6 +62,7 @@
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { syncRemoteServer } from '#lib/remote/service.ts';
+	import { startEngine } from '#lib/engine/index.ts';
 	import { messageText, type ChatMessage } from '#lib/api.ts';
 	import { installMarkdownActions } from '#lib/markdown-actions.ts';
 	import {
@@ -124,6 +125,10 @@
 
 	// On Windows the Code tab shows only once a WSL2 distro is found.
 	onMount(() => void probeCodeTab());
+
+	// Other clients' way into this window's Code sessions (plan/remote-api/).
+	// Does nothing outside the main and Code windows, or while Rust has it off.
+	onMount(() => void startEngine());
 
 	// Bring up the user's MCP servers in the background. Their tools only exist
 	// in the registry while a server is running, so nothing starting them meant

@@ -132,7 +132,8 @@ registerTool({
 				question,
 				...(typeof args.body === 'string' && args.body.trim() ? { body: args.body.trim() } : {}),
 				options,
-				allowMultiple: args.allow_multiple === true
+				allowMultiple: args.allow_multiple === true,
+				...(ctx.codeSessionId ? { sessionId: ctx.codeSessionId } : {})
 			},
 			ctx.signal
 		);

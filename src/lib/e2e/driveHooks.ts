@@ -3,7 +3,8 @@
  * agent debug log, the Code tab's sessions, the pending command approval, and
  * the remote-server probe the Settings form runs. It also switches the active
  * session and settings; everything a user would press, the driver presses in
- * the UI instead.
+ * the UI instead — or, with `--via engine`, sends as an engine operation
+ * (`#lib/engine/`), through Rust as phase 3's API will.
  *
  * Installed by `src/hooks.client.ts` only when the build was made with
  * `VITE_HARUSPEX_E2E=1`, which `e2e/app/build.mjs` sets. The check is a
@@ -11,15 +12,20 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 
-import type { SearchStep } from '#lib/agent/loop.ts';
-import { editDiffFromStep, type FileDiff } from '#lib/code/diff.ts';
+import { listen } from '@tauri-apps/api/event';
+
 import { getDebugLogs, setVerbosePayloads } from '#lib/debug-log.ts';
+import { currentPrompts } from '#lib/engine/prompts.svelte.ts';
+import { sessionState } from '#lib/engine/state.ts';
+import { emptyMirror, reduce, type Mirror } from '#lib/engine/reduce.ts';
+import {
+	isSessionEvent,
+	type EngineEvent,
+	type EngineOp,
+	type SessionState
+} from '#lib/engine/types.ts';
 import { pickProbedModel, probedModelCaps, type ProbeResult } from '#lib/inferenceProbe.ts';
 import { getOpenSessions, setActiveSession } from '#lib/stores/code.svelte.ts';
-import {
-	getPendingCommandApproval,
-	getQueuedCommandApprovals
-} from '#lib/stores/codeCommandApproval.svelte.ts';
 import {
 	updateSettings,
 	type AppSettings,
@@ -29,19 +35,28 @@ import {
 export interface DriveHooks {
 	debugLogs: () => string[];
 	setVerbosePayloads: (on: boolean) => void;
-	codeSessions: () => unknown[];
+	/** The sessions open in this (the main) window. */
+	codeSessions: () => SessionState[];
 	/** Show this session's pane, so its input box and Stop button exist. */
 	activateSession: (id: string) => void;
 	/**
-	 * The command Run this command? is showing, if any: one at a time,
-	 * app-wide, with `queued` more waiting behind it.
+	 * The command Run this command? is showing in this window, if any: one at
+	 * a time, with `queued` more waiting behind it.
 	 */
 	pendingApproval: () => {
+		promptId: string;
+		sessionId: string | null;
 		command: string;
 		reasons: string[];
 		requester: string | null;
 		queued: number;
 	} | null;
+	/** Run an engine operation through Rust, in whichever window has the session. */
+	engine: (op: EngineOp) => Promise<unknown>;
+	/** Events from every window, as Rust mirrors them here; `next` is the next `since`. */
+	engineEvents: (since: number) => { events: EngineEvent[]; next: number };
+	/** The session as its logged events rebuild it, as a client elsewhere would. */
+	engineMirror: (id: string) => Mirror;
 	updateSettings: (patch: Partial<AppSettings>) => void;
 	probeRemote: (
 		baseUrl: string,
@@ -93,56 +108,44 @@ async function probeRemote(
 	};
 }
 
-/** The diff card a step shows, worked out as `CodeSteps.svelte` does. */
-function stepDiff(step: SearchStep): FileDiff | null {
-	if (step.status !== 'done') return null;
-	if (step.toolName === 'fs_edit_text') return editDiffFromStep(step);
-	if (step.toolName === 'fs_write_text') return step.fileDiff ?? null;
-	return null;
-}
+/** The last events the engine sent, from every window. */
+const EVENT_LOG_MAX = 2000;
+const eventLog: EngineEvent[] = [];
+let eventsDropped = 0;
 
-const withDiffs = (steps: SearchStep[]) => steps.map((s) => ({ ...s, diff: stepDiff(s) }));
+function logEvents(events: EngineEvent[]): void {
+	eventLog.push(...events);
+	const over = eventLog.length - EVENT_LOG_MAX;
+	if (over > 0) {
+		eventLog.splice(0, over);
+		eventsDropped += over;
+	}
+}
 
 export function installDriveHooks(): void {
 	window.__haruspexDrive = {
 		debugLogs: getDebugLogs,
 		setVerbosePayloads,
-		// Through JSON: plain data, whatever WebDriver makes of a proxy.
-		codeSessions: () =>
-			JSON.parse(
-				JSON.stringify(
-					getOpenSessions().map((s) => {
-						const thread = s.snapshot();
-						return {
-							id: s.id,
-							root: s.root,
-							title: s.title,
-							status: s.status,
-							lastError: s.lastError,
-							saveError: s.saveError,
-							streamingContent: s.streamingContent,
-							usage: s.usage,
-							...thread,
-							searchSteps: withDiffs(s.searchSteps),
-							messageSteps: Object.fromEntries(
-								Object.entries(thread.messageSteps).map(([i, steps]) => [i, withDiffs(steps)])
-							)
-						};
-					})
-				)
-			),
+		codeSessions: () => getOpenSessions().map(sessionState),
 		activateSession: setActiveSession,
 		pendingApproval: () => {
-			const p = getPendingCommandApproval();
+			const p = currentPrompts('main').find((x) => x.kind === 'command');
 			if (!p) return null;
-			return {
-				command: p.command,
-				reasons: p.reasons.map((r) => r.label),
-				requester: p.requester,
-				queued: getQueuedCommandApprovals()
-			};
+			const d = p.detail as { command: string; reasons: string[]; queued: number };
+			return { promptId: p.promptId, sessionId: p.sessionId, requester: p.requester, ...d };
 		},
+		engine: (op) => invoke('engine_request', { op }),
+		engineEvents: (since) => ({
+			events: eventLog.slice(Math.max(0, since - eventsDropped)),
+			next: eventsDropped + eventLog.length
+		}),
+		engineMirror: (id) =>
+			eventLog
+				.filter(isSessionEvent)
+				.filter((e) => e.sessionId === id)
+				.reduce(reduce, emptyMirror()),
 		updateSettings,
 		probeRemote
 	};
+	void listen<EngineEvent[]>('engine://event', ({ payload }) => logEvents(payload));
 }

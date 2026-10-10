@@ -8,6 +8,7 @@ mod comfy_models;
 mod command_scope;
 mod db;
 mod desktop;
+mod engine;
 mod env_util;
 mod feedback;
 mod fs_tools;
@@ -108,6 +109,10 @@ pub fn run() {
                 secrets::init(dir);
             }
             app.manage(ModelManager::new(app.handle())?);
+            // Other clients' way into Code sessions (plan/remote-api/). Only
+            // the e2e test build turns it on until the owner API lands.
+            let e2e = app.config().identifier.ends_with(".e2e");
+            app.manage(engine::EngineHub::new(e2e));
             // Files open in editor windows; nothing is watched until one opens.
             app.manage(fs_tools::editor::editor_watches(app.handle()));
             let database = Database::new(app.handle())
@@ -454,6 +459,10 @@ pub fn run() {
             code_tools::claims::code_session_claim,
             code_tools::claims::code_session_release,
             code_tools::claims::code_session_open_ids,
+            engine::engine_enabled,
+            engine::engine_request,
+            engine::engine_reply,
+            engine::engine_events,
             code_tools::folders::code_lease_take,
             code_tools::folders::code_lease_release,
             code_tools::folders::code_notice_record,
