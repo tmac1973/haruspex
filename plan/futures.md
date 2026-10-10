@@ -4,6 +4,8 @@ Running list of things to address. Status annotations added 2026-07-19.
 
 ## Open
 
+- **Remote API: the web client as a phone app** (`plan/misc_futures/remote-api-mobile.md`, deferred 2026-10-09). An installable PWA of the phase-4 web client (manifest, service worker, HTTPS via `tailscale serve`), a phone layout pass, reconnect after sleep, and maybe notifications. Desktop browsers come first.
+
 - **Phase 15 — image generation on other servers** (`plan/misc_futures/phase-15-remote-image-servers.md`, deferred 2026-10-06). The bundled sd-server run on another machine, and a generic OpenAI-images-API backend (vLLM-Omni, Lemonade, LocalAI). Remote ComfyUI already works and is documented (`docs/comfyui-server-setup.md`), which covers the main need.
 
 - **Phase 16 parts B–F — faster coding runs** (`plan/misc_futures/phase-16-faster-coding-runs.md`, deferred 2026-10-06). Part A's benchmark is in `measurements-phase-16.md`. In priority order, from those numbers:
