@@ -154,7 +154,7 @@ export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 		case 'prompts.list':
 			return currentPrompts(label);
 		case 'prompts.answer':
-			answerPrompt(label, op.promptId, op.answer);
+			await answerPrompt(label, op.promptId, op.answer);
 			return { answered: op.promptId };
 		default:
 			throw new Error(`unknown operation ${(op as { type?: string }).type}`);

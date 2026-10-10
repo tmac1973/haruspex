@@ -29,9 +29,9 @@ Each device with a token has its own permissions: **Read** (list and follow sess
 
 ## Use it from a browser
 
-The page lists your Code sessions, the open ones first. Pick one to follow it as it runs, send messages, steer or stop a turn, and answer **Run this command?** and the agent's questions. **New session** starts one in a folder on this computer; on Windows, pick the WSL distro first.
+The page lists your Code sessions, the open ones first. Pick one to follow it as it runs, send messages, steer or stop a turn, and answer what a turn asks: commands, the agent's questions, MCP tools, skill writes (edit the file first if you like) and whether to use a repo's instructions. **New session** starts one in a folder on this computer; on Windows, pick the WSL distro first.
 
-File names in a session are links: click one to read the file (it can't be edited from the page). Images attached to messages show as thumbnails; click one for full size.
+File names in a session are links: click one to read the file (it can't be edited from the page). Images attached to messages show as thumbnails, and pictures the model put in an answer show as they do here; click one for full size.
 
 **Chat** (the switch at the top of the list) shows your chats, newest first. Open one to read it or carry it on: sending opens that chat on this computer too, so its working folder, the Python sandbox and memory work as usual. You can stop a reply, continue a cut-off one, retry one that failed, and answer **Run this Python?** and **Remember this?** from the page. Only one reply is written at a time, as in the app: while one is being written, other chats wait.
 
@@ -48,6 +48,7 @@ Send the token as `Authorization: Bearer <token>`.
 - `POST /api/v1/op` with an operation as JSON, for example `{"type":"sessions.list"}` or `{"type":"session.send","id":"…","text":"Fix the failing test"}`.
 - On Windows, `session.new` takes a `wslDistro` with a Linux `root` (`{"type":"session.new","root":"~/proj","wslDistro":"Ubuntu"}`); `{"type":"wsl.distros"}` lists them.
 - `GET /api/v1/events` streams what sessions do (server-sent events).
+- `POST /api/v1/images` with `{"urls":[…]}` says which image URLs in the messages this computer has cached; `GET /api/v1/image/<hash>` returns one.
 - `GET /api/v1/health` needs no token.
 
 From a trusted computer, send `X-Haruspex: 1` instead of a token.
@@ -55,8 +56,7 @@ From a trusted computer, send `X-Haruspex: 1` instead of a token.
 ## What it doesn't do yet
 
 - The Shell and Settings can't be used remotely. In chat, the page can't attach images, start deep research, or change the working folder or incognito; do those at this computer.
-- Files open read-only; edit them at this computer. Images the model put in an answer aren't shown.
-- MCP tool approvals, skill writes and the new-repository trust question are answered at this computer; the page says when a turn is waiting on one.
+- Files open read-only; edit them at this computer.
 - A command handed to a Shell tab (`open_in_shell`) waits for you to run it at this computer; the page can only let the turn carry on without it.
 
 ## Security notes
