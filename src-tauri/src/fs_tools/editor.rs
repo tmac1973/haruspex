@@ -490,6 +490,9 @@ async fn save_file(
     if !force && on_disk != expected_hash {
         return Ok(EditorSave::Conflict { hash: on_disk });
     }
+    // CodeMirror joins lines with \n; a CRLF file stays CRLF. Hashed as
+    // written, so the watcher knows the bytes.
+    let content = super::fuzzy::like_existing(path, content.to_string());
     let hash = content_hash(content.as_bytes());
     // Recorded first, so the watcher sees our own write as nothing new.
     let before = watches.known(label, path);
@@ -767,6 +770,28 @@ mod tests {
             .unwrap();
         assert!(matches!(res, EditorSave::Saved { .. }));
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "again");
+        w.stop_all();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_save_keeps_a_crlf_file_crlf_and_hashes_what_it_wrote() {
+        let dir = temp_dir("crlf");
+        let file = dir.join("f.txt");
+        std::fs::write(&file, "a\r\nb\r\n").unwrap();
+        let (w, _rx) = recorder(Duration::from_millis(100));
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let res = rt
+            .block_on(save_file(&w, "e", &file, "a\nc\n", None, true))
+            .unwrap();
+        assert_eq!(std::fs::read(&file).unwrap(), b"a\r\nc\r\n");
+        match res {
+            EditorSave::Saved { hash } => assert_eq!(Some(hash), disk_hash(&file)),
+            other => panic!("expected a save, got {other:?}"),
+        }
         w.stop_all();
         let _ = std::fs::remove_dir_all(&dir);
     }

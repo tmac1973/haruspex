@@ -218,6 +218,7 @@ pub async fn fs_write_text_absolute(
         }
     }
 
+    let content = super::fuzzy::like_existing(&resolved, content);
     // Atomic: a failed write must leave the previous file intact rather than
     // truncating it. See `write_atomic`.
     write_atomic(&resolved, content.as_bytes()).await?;

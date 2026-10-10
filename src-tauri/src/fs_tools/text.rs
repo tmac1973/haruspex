@@ -73,6 +73,7 @@ pub async fn fs_write_text(
     // through the shared refuse_if_exists helper, matching every other
     // fs_write_* command.
     refuse_if_exists(&resolved, overwrite, &rel_path)?;
+    let content = super::fuzzy::like_existing(&resolved, content);
 
     // Create parent directories if needed (still within workdir — the
     // sandbox check already verified the full path is inside)

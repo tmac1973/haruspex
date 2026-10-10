@@ -220,9 +220,57 @@ fn fuzzy_apply(
     Ok((out_lines.join("\n"), result))
 }
 
+/// `content` as a whole-file rewrite of `path` should be written: in the
+/// file's line endings and with its BOM, as an edit keeps them, so that
+/// rewriting a CRLF file doesn't change every line in git. A new file, or
+/// content that already carries CRLF, is left as given. Only the start of
+/// the file is read to tell.
+pub fn like_existing(path: &std::path::Path, content: String) -> String {
+    use std::io::Read;
+    let mut head = Vec::new();
+    let Ok(file) = std::fs::File::open(path) else {
+        return content;
+    };
+    if file.take(64 * 1024).read_to_end(&mut head).is_err() {
+        return content;
+    }
+    let had_bom = head.starts_with("\u{FEFF}".as_bytes());
+    let crlf = head
+        .iter()
+        .position(|&b| b == b'\n')
+        .is_some_and(|i| i > 0 && head[i - 1] == b'\r');
+    let mut out = if crlf && !content.contains('\r') {
+        content.replace('\n', "\r\n")
+    } else {
+        content
+    };
+    if had_bom && !out.starts_with('\u{FEFF}') {
+        out.insert(0, '\u{FEFF}');
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_rewrite_keeps_the_files_crlf_and_bom() {
+        let dir =
+            std::env::temp_dir().join(format!("haruspex_like_existing_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let crlf = dir.join("crlf.txt");
+        std::fs::write(&crlf, "\u{FEFF}a\r\nb\r\n").unwrap();
+        assert_eq!(like_existing(&crlf, "x\ny\n".into()), "\u{FEFF}x\r\ny\r\n");
+        // Already CRLF: not doubled.
+        assert_eq!(like_existing(&crlf, "x\r\n".into()), "\u{FEFF}x\r\n");
+        let lf = dir.join("lf.txt");
+        std::fs::write(&lf, "a\nb\n").unwrap();
+        assert_eq!(like_existing(&lf, "x\ny\n".into()), "x\ny\n");
+        // A new file is written as given.
+        assert_eq!(like_existing(&dir.join("new.txt"), "x\n".into()), "x\n");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn exact_match_preferred() {
