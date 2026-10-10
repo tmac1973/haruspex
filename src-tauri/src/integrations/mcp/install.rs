@@ -407,6 +407,12 @@ pub fn servers_root(app: &AppHandle) -> Result<PathBuf, String> {
         .join("servers"))
 }
 
+/// `dir`, made if it isn't there yet.
+fn ensure_dir(dir: &Path) -> Result<PathBuf, String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("could not create {}: {e}", dir.display()))?;
+    Ok(dir.to_path_buf())
+}
+
 pub fn server_dir(app: &AppHandle, server_id: &str) -> Result<PathBuf, String> {
     Ok(servers_root(app)?.join(server_id))
 }
@@ -548,7 +554,14 @@ pub fn spawn_config_for(
             format!("{} is turned off", config.label)
         });
     }
-    build_spawn_config(&server_dir(app, &config.id)?, config, proxy)
+    let dir = server_dir(app, &config.id)?;
+    // A catalog server's folder is made by installing it. A custom server's
+    // isn't made by anything, and spawning in a folder that isn't there fails
+    // as "No such file or directory", which reads as a missing program.
+    if matches!(config.source, McpServerSource::Custom { .. }) {
+        ensure_dir(&dir)?;
+    }
+    build_spawn_config(&dir, config, proxy)
 }
 
 /// The same resolution, with the entry's own arguments replaced and the
@@ -1029,6 +1042,17 @@ mod tests {
             bypass: String::new(),
             password_ref: None,
         }
+    }
+
+    #[test]
+    fn a_missing_server_folder_is_made() {
+        let dir = std::env::temp_dir().join(format!("mcp-custom-{}/c1", std::process::id()));
+        let _ = std::fs::remove_dir_all(dir.parent().unwrap());
+        assert_eq!(ensure_dir(&dir).unwrap(), dir);
+        assert!(dir.is_dir());
+        // Already there is fine too.
+        assert!(ensure_dir(&dir).is_ok());
+        let _ = std::fs::remove_dir_all(dir.parent().unwrap());
     }
 
     #[test]
