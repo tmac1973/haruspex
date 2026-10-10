@@ -26,10 +26,6 @@ impl Job {
         false
     }
     pub fn terminate(&self) {}
-    #[cfg(test)]
-    pub fn alive(&self) -> bool {
-        false
-    }
     pub fn out_of_memory(&self) -> bool {
         false
     }
