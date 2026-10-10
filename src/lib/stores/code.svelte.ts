@@ -571,6 +571,7 @@ export class CodeSession {
 				backend: this.backend ? ($state.snapshot(this.backend) as BackendOverride) : null,
 				effort: this.effort,
 				readOnly: this.readOnly,
+				wslDistro: this.wslDistro,
 				writeGuard: guard,
 				worktree: this.worktree ? { branch: this.git?.branch ?? null } : undefined,
 				notice,

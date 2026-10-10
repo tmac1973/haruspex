@@ -35,6 +35,16 @@ const UNIX_CAPTURE_NOTE =
 const MAC_BASH_NOTE =
 	"Commands run in macOS's bash 3.2: avoid bash-4 features — associative arrays (declare -A), ${var,,} / ${var^^}, mapfile / readarray, |& and globstar (**). Use tr, while-read loops and 2>&1 | instead.";
 
+/**
+ * A session inside a WSL distro (Windows): Linux, whatever the host is. WSL
+ * puts the Windows PATH on the distro's, so `node.exe` or `git.exe` can run
+ * by mistake; and under WSL2's default NAT networking the distro's
+ * `localhost` is not the Windows host's.
+ */
+function wslNote(distro: string): string {
+	return `The project is inside the WSL distro ${distro}: commands run there, in Linux with bash, and paths are Linux paths. Windows programs on its PATH (*.exe) run on Windows, not in the distro — use the Linux tools. localhost in the distro may not reach servers on the Windows side.`;
+}
+
 /** True on macOS. The platform comes from the user agent, as `codeTabAvailable` reads it. */
 export function isMacOS(
 	userAgent = (typeof navigator !== 'undefined' && navigator.userAgent) || ''
@@ -69,6 +79,8 @@ export interface BuildCodePromptOpts {
 	worktree?: { branch: string | null };
 	/** Running on macOS (bash 3.2). Defaults to the user agent's platform. */
 	macOS?: boolean;
+	/** The WSL distro the folder is in (Windows); commands run there, not on the host. */
+	wslDistro?: string | null;
 }
 
 const WRITE_TOOL_LINE = /^- fs_(write|edit)_text /;
@@ -98,6 +110,12 @@ function sessionNotes(opts: BuildCodePromptOpts): string {
 	return notes.map((n) => `\n${n}`).join('');
 }
 
+/** What the commands run on, when it needs saying: a WSL distro, or macOS's old bash. */
+function platformNote(opts: BuildCodePromptOpts): string {
+	if (opts.wslDistro) return ` ${wslNote(opts.wslDistro)}`;
+	return (opts.macOS ?? isMacOS()) ? ` ${MAC_BASH_NOTE}` : '';
+}
+
 /** The Code tab's prompt: one-shot commands in a fixed project folder. */
 export function buildCodeSystemPrompt(opts: BuildCodePromptOpts): ChatMessage {
 	const timeout = getSettings().codeRunCommandTimeoutSecs;
@@ -110,7 +128,7 @@ ${GUIDE_PROMPT}
 SESSION:
 Project folder: ${opts.root}${sessionNotes(opts)}
 
-Commands you run with run_command execute one at a time in the project folder, without a terminal: nothing can be typed into them, and a \`cd\` or an exported variable does not carry over to the next call, so chain with && when needed. Paths for file tools are relative to the project folder. The project folder is your boundary: a command that reaches outside it needs the user's approval.${(opts.macOS ?? isMacOS()) ? ` ${MAC_BASH_NOTE}` : ''}
+Commands you run with run_command execute one at a time in the project folder, without a terminal: nothing can be typed into them, and a \`cd\` or an exported variable does not carry over to the next call, so chain with && when needed. Paths for file tools are relative to the project folder. The project folder is your boundary: a command that reaches outside it needs the user's approval.${platformNote(opts)}
 
 TOOLS:
 ${fileTools(opts.readOnly)}

@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { isAbortError } from '#lib/utils/error.ts';
-import { labelArg, toolInvokeError, wslDistroArg } from './_helpers';
+import { ctxCwd, ctxShell, ctxWslDistroArg, labelArg, toolInvokeError } from './_helpers';
 import { registerTool } from './registry';
 import { noteCommandRan, toolError, toolResult } from './types';
 import type { ToolContext, ToolExecOutput } from './types';
@@ -22,22 +22,10 @@ import { ttyHintFor } from '#lib/code/ttyHint.ts';
 import { isReadOnlyCommand } from '#lib/code/readOnlyCommand.ts';
 import { withLocalScopeNote } from './nested-session';
 import type { RunCommandResult } from '#lib/ipc/gen/RunCommandResult.ts';
+import type { ShellSelection } from '#lib/ipc/gen/ShellSelection.ts';
 import { commandMemoryLimitPercent, outOfMemoryNote } from '#lib/shell/memoryLimit.ts';
 import type { GrepResult } from '#lib/ipc/gen/GrepResult.ts';
 import type { GlobResult } from '#lib/ipc/gen/GlobResult.ts';
-
-/**
- * The directory the code tools operate in: the live shell CWD when driven from
- * a Shell session (Code mode), otherwise the Code tab's working directory.
- */
-function codeRoot(ctx: ToolContext): string | null {
-	return ctx.shellMode ? (ctx.shellCwd ?? null) : ctx.workingDir;
-}
-
-/** The WSL distro arg, only when the root is a shell cwd (the Code tab's is a host path). */
-function shellWslDistro(ctx: ToolContext): { wslDistro?: string } {
-	return ctx.shellMode ? wslDistroArg() : {};
-}
 
 /** Whose "allow for this session" applies: the Code-tab session's, else the Shell's. */
 function approvalKey(ctx: ToolContext): string {
@@ -54,8 +42,8 @@ export async function checkCommandBoundary(
 	command: string,
 	ctx: ToolContext
 ): Promise<'ok' | { message: string }> {
-	const targets = await protectedTargets();
-	const boundary = targets ? checkBoundary(command, targets, codeRoot(ctx)) : null;
+	const targets = await protectedTargets({ wsl: !!ctxWslDistroArg(ctx).wslDistro });
+	const boundary = targets ? checkBoundary(command, targets, ctxCwd(ctx)) : null;
 	if (!boundary?.matched) return 'ok';
 	if (isAutoApproveActive() && !ctx.interactive) {
 		reportBoundaryRefusal({ command, reasons: boundary.reasons });
@@ -180,6 +168,7 @@ async function askAboutCommand(
 async function runHostCommand(
 	command: string,
 	cwd: string,
+	shell: ShellSelection | null,
 	timeoutSecs: number,
 	signal: AbortSignal | undefined
 ): Promise<RunCommandResult> {
@@ -195,10 +184,8 @@ async function runHostCommand(
 			cwd,
 			timeoutSecs,
 			commandId,
-			// Route the one-shot through the session's shell (Windows): PowerShell
-			// or, for WSL, bash inside the distro — not `cmd /C`. Null on
-			// Linux/macOS → the host default shell.
-			shell: getSettings().shellSelection,
+			// See `ctxShell`. Null → the host default shell.
+			shell,
 			memoryLimitPercent: commandMemoryLimitPercent()
 		});
 	} finally {
@@ -265,7 +252,7 @@ registerTool({
 	async execute(args, ctx): Promise<ToolExecOutput> {
 		const command = (args.command as string)?.trim();
 		if (!command) return toolResult(toolError('run_command requires a non-empty command.'));
-		const root = codeRoot(ctx);
+		const root = ctxCwd(ctx);
 		if (!root) return toolResult(toolError('No working directory set.'));
 
 		const wantsBackground = args.background === true || args.watch === true;
@@ -304,7 +291,7 @@ registerTool({
 			if (ctx.shellSessionId != null && (await shouldUsePty(ctx))) {
 				return toolResult(await runInPty(ctx.shellSessionId, command, timeoutSecs, ctx.signal));
 			}
-			const res = await runHostCommand(command, root, timeoutSecs, ctx.signal);
+			const res = await runHostCommand(command, root, ctxShell(ctx), timeoutSecs, ctx.signal);
 			noteCommandRan(ctx);
 			const out = await formatRunResult(res);
 			// The Code tab can hand the command to a Shell tab; elsewhere the user runs it.
@@ -331,7 +318,9 @@ async function startBackground(
 	watch: boolean
 ): Promise<string> {
 	if (ctx.shellSessionId == null || !(await shouldUsePty(ctx))) {
-		if (ctx.codeSessionId) return startCodeBackground(command, root, ctx.codeSessionId, watch);
+		if (ctx.codeSessionId) {
+			return startCodeBackground(command, root, ctx.wslDistro ?? null, ctx.codeSessionId, watch);
+		}
 		return toolError(
 			'background/watch need the live terminal session (Code mode in the Shell tab with shell integration). Either run it normally, or start it yourself with `&`.'
 		);
@@ -344,7 +333,7 @@ async function startBackground(
 			command,
 			logPath: handle.logPath,
 			donePath: handle.donePath,
-			...wslDistroArg(),
+			...ctxWslDistroArg(ctx),
 			startedAtMs: Date.now()
 		});
 		return (
@@ -422,7 +411,7 @@ registerTool({
 	},
 	displayLabel: labelArg('pattern'),
 	async execute(args, ctx): Promise<ToolExecOutput> {
-		const root = codeRoot(ctx);
+		const root = ctxCwd(ctx);
 		if (!root) return toolResult(toolError('No working directory set.'));
 		try {
 			const res = await invoke<GrepResult>('code_grep', {
@@ -436,7 +425,7 @@ registerTool({
 				count: (args.count as boolean) ?? null,
 				filesOnly: (args.files_only as boolean) ?? null,
 				context: (args.context as number) ?? null,
-				...shellWslDistro(ctx)
+				...ctxWslDistroArg(ctx)
 			});
 			// Searched the LOCAL tree rooted at the tracked shell cwd — which is
 			// the wrong tree once the terminal has ssh'd elsewhere.
@@ -482,14 +471,14 @@ registerTool({
 	},
 	displayLabel: labelArg('pattern'),
 	async execute(args, ctx): Promise<ToolExecOutput> {
-		const root = codeRoot(ctx);
+		const root = ctxCwd(ctx);
 		if (!root) return toolResult(toolError('No working directory set.'));
 		try {
 			const res = await invoke<GlobResult>('code_glob', {
 				root,
 				pattern: args.pattern as string,
 				maxResults: null,
-				...shellWslDistro(ctx)
+				...ctxWslDistroArg(ctx)
 			});
 			return toolResult(await withLocalScopeNote(formatGlob(res), ctx));
 		} catch (e) {

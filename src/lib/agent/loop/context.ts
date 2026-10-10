@@ -120,6 +120,7 @@ export interface LoopContext {
 	requester?: ToolContext['requester'];
 	codeReadOnly: boolean;
 	codeWriteGuard?: ToolContext['codeWriteGuard'];
+	wslDistro: string | null;
 	expectsFileOutput: boolean;
 	pendingImages: PendingImage[];
 	filesWrittenThisTurn: Set<string>;
@@ -254,6 +255,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		requester: options.requester,
 		codeReadOnly: options.codeReadOnly ?? false,
 		codeWriteGuard: options.codeWriteGuard,
+		wslDistro: options.wslDistro ?? null,
 		expectsFileOutput,
 		pendingImages: [],
 		filesWrittenThisTurn: new Set(),

@@ -108,6 +108,7 @@ export async function executeToolCalls(
 				requester: ctx.requester,
 				codeReadOnly: ctx.codeReadOnly,
 				codeWriteGuard: ctx.codeWriteGuard,
+				wslDistro: ctx.wslDistro,
 				filesWrittenThisTurn: ctx.filesWrittenThisTurn,
 				filesRewritableThisTurn: ctx.filesRewritableThisTurn,
 				onProgress: (status: string) => options.onToolProgress?.(call, status)

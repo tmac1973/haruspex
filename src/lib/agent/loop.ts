@@ -189,6 +189,8 @@ export interface AgentLoopOptions {
 	requester?: () => string;
 	/** A read-only Code session; see ToolContext.codeReadOnly. */
 	codeReadOnly?: boolean;
+	/** The Code session's WSL distro; see ToolContext.wslDistro. */
+	wslDistro?: string | null;
 	/** One writer per folder; see ToolContext.codeWriteGuard. */
 	codeWriteGuard?: CodeWriteGuard;
 	/**

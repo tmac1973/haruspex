@@ -82,6 +82,167 @@ pub fn wsl_exec(distro: &str, argv: &[&str]) -> tokio::process::Command {
     c
 }
 
+// --- Commands in a distro ---------------------------------------------------
+//
+// Killing `wsl.exe` only ends the Windows relay; the Linux processes it
+// started keep running. So every command runs as the leader of a new session
+// (`setsid -w`, which waits for it and passes on its exit code), reports its
+// process group on stderr before anything else, and is stopped by signalling
+// that group from inside the distro.
+
+/// What the wrapper writes on stderr first: this, the group id, a newline.
+const PGID_MARK: &[u8] = b"\x1eharuspex-pgid ";
+
+/// Runs `$1` with bash in the folder `$2`. `cd` here rather than
+/// `wsl.exe --cd`, which runs the command in `/` when the folder is gone.
+const GROUP_WRAPPER: &str = r#"printf '\036haruspex-pgid %s\n' "$$" >&2
+cd -- "$2" 2>/dev/null || { echo "Working directory does not exist: $2" >&2; exit 126; }
+exec bash -c "$1""#;
+
+/// `command`, run by bash in `cwd` inside `distro`, in a process group of its
+/// own whose id comes first on stderr (see [`PgidReader`]).
+pub fn group_command(distro: &str, cwd: &str, command: &str) -> tokio::process::Command {
+    wsl_exec(
+        distro,
+        &[
+            "setsid",
+            "-w",
+            "bash",
+            "-c",
+            GROUP_WRAPPER,
+            "haruspex",
+            command,
+            cwd,
+        ],
+    )
+}
+
+/// Takes the wrapper's group id off the front of a command's stderr, passing
+/// everything else through. Output that doesn't start with the mark (an
+/// error from `wsl.exe` itself) passes through whole.
+#[derive(Default)]
+pub struct PgidReader {
+    head: Vec<u8>,
+    done: bool,
+}
+
+impl PgidReader {
+    /// Feed the next chunk of stderr. Returns the group id when this chunk
+    /// completes the wrapper's line, and the bytes that are the command's own.
+    pub fn feed(&mut self, chunk: &[u8]) -> (Option<u32>, Vec<u8>) {
+        if self.done {
+            return (None, chunk.to_vec());
+        }
+        self.head.extend_from_slice(chunk);
+        let n = self.head.len().min(PGID_MARK.len());
+        if self.head[..n] != PGID_MARK[..n] {
+            self.done = true;
+            return (None, std::mem::take(&mut self.head));
+        }
+        let Some(nl) = self.head.iter().position(|&b| b == b'\n') else {
+            return (None, Vec::new());
+        };
+        self.done = true;
+        let pgid = std::str::from_utf8(&self.head[PGID_MARK.len()..nl])
+            .ok()
+            .and_then(|s| s.trim().parse::<u32>().ok())
+            .filter(|&g| g > 1);
+        let rest = self.head.split_off(nl + 1);
+        self.head.clear();
+        (pgid, rest)
+    }
+
+    /// What is held back at the end of the stream (a mark never finished).
+    pub fn finish(&mut self) -> Vec<u8> {
+        self.done = true;
+        std::mem::take(&mut self.head)
+    }
+}
+
+/// Signals every group in `$@` (after the tick count `$1`): TERM, then up to
+/// `$1` tenths of a second for them to go, then KILL for what is left.
+/// A tick count of 0 is KILL straight away. Run by bash: dash's `kill` can't
+/// signal a group (`kill -- -<pgid>` is "Illegal number").
+const STOP_SCRIPT: &str = r#"n=$1; shift
+if [ "$n" -gt 0 ]; then
+  for g; do kill -TERM -- "-$g" 2>/dev/null; done
+  i=0
+  while [ "$i" -lt "$n" ]; do
+    alive=
+    for g; do kill -0 -- "-$g" 2>/dev/null && alive=1; done
+    [ -z "$alive" ] && exit 0
+    sleep 0.1; i=$((i + 1))
+  done
+fi
+for g; do kill -KILL -- "-$g" 2>/dev/null; done
+exit 0"#;
+
+/// Stop process groups inside `distro`: TERM with `grace` to exit, then
+/// KILL; `Duration::ZERO` kills at once. One `wsl.exe` for all of them.
+pub async fn stop_groups(distro: &str, pgids: &[u32], grace: std::time::Duration) {
+    let pgids: Vec<String> = pgids
+        .iter()
+        .filter(|&&g| g > 1)
+        .map(u32::to_string)
+        .collect();
+    if pgids.is_empty() || !valid_distro(distro) {
+        return;
+    }
+    let ticks = (grace.as_millis() / 100).to_string();
+    let mut argv = vec!["bash", "-c", STOP_SCRIPT, "bash", ticks.as_str()];
+    argv.extend(pgids.iter().map(String::as_str));
+    if let Err(e) = wsl_exec(distro, &argv).output().await {
+        log::warn!("Couldn't stop processes in WSL {distro}: {e}");
+    }
+}
+
+/// Whether any process is left in the group `pgid` inside `distro`.
+#[cfg(test)]
+pub async fn group_alive(distro: &str, pgid: u32) -> bool {
+    pgid > 1
+        && wsl_exec(
+            distro,
+            &[
+                "bash",
+                "-c",
+                r#"kill -0 -- "-$1""#,
+                "bash",
+                &pgid.to_string(),
+            ],
+        )
+        .status()
+        .await
+        .is_ok_and(|s| s.success())
+}
+
+/// Kills, in `distro`, each group in `$@` (pairs of group id and marker)
+/// whose processes' command lines still carry the marker: a group left by a
+/// crash, not an unrelated one that took the id since. Run by bash, as
+/// [`STOP_SCRIPT`] is.
+const SWEEP_SCRIPT: &str = r#"while [ "$#" -ge 2 ]; do
+  g=$1; m=$2; shift 2
+  ps -eo pgid=,args= | awk -v g="$g" '$1 == g' | grep -qF -- "$m" && kill -KILL -- "-$g" 2>/dev/null
+done
+exit 0"#;
+
+/// The launch-time sweep for one distro: `groups` are (group id, marker).
+/// Blocking: call off the async runtime.
+pub fn sweep_groups(distro: &str, groups: &[(u32, String)]) {
+    if groups.is_empty() || !valid_distro(distro) {
+        return;
+    }
+    let mut cmd = std::process::Command::new("wsl.exe");
+    cmd.args(["-d", distro, "--exec", "bash", "-c", SWEEP_SCRIPT, "bash"]);
+    for (g, m) in groups {
+        cmd.arg(g.to_string()).arg(m);
+    }
+    cmd.env("WSL_UTF8", "1").stdin(std::process::Stdio::null());
+    crate::shell::platform::apply_no_window(&mut cmd);
+    if let Err(e) = cmd.output() {
+        log::warn!("Couldn't sweep processes in WSL {distro}: {e}");
+    }
+}
+
 /// The installed WSL2 distros; empty off Windows or without WSL.
 pub fn distros() -> Vec<String> {
     crate::shell::wsl_distros()
@@ -231,6 +392,46 @@ mod tests {
         assert_eq!(unc(r"\\wsl$"), None);
         assert_eq!(unc(r"\\wsl$\..\x"), None);
         assert_eq!(unc(r"\\wsl$\-d\x"), None);
+    }
+
+    fn read_all(chunks: &[&[u8]]) -> (Option<u32>, Vec<u8>) {
+        let mut r = PgidReader::default();
+        let mut pgid = None;
+        let mut out = Vec::new();
+        for c in chunks {
+            let (g, rest) = r.feed(c);
+            pgid = pgid.or(g);
+            out.extend(rest);
+        }
+        out.extend(r.finish());
+        (pgid, out)
+    }
+
+    #[test]
+    fn the_group_id_comes_off_the_front_of_stderr() {
+        let all: &[u8] = b"\x1eharuspex-pgid 432\nerr\n";
+        assert_eq!(read_all(&[all]), (Some(432), b"err\n".to_vec()));
+        // Split anywhere, even inside the mark.
+        for i in 1..all.len() {
+            assert_eq!(
+                read_all(&[&all[..i], &all[i..]]),
+                (Some(432), b"err\n".to_vec()),
+                "split at {i}"
+            );
+        }
+        // wsl.exe's own error: passed through whole.
+        assert_eq!(
+            read_all(&[b"There is no distribution", b" with that name.\n"]),
+            (None, b"There is no distribution with that name.\n".to_vec())
+        );
+        // A mark cut off by the end of the stream is given back.
+        assert_eq!(
+            read_all(&[b"\x1eharuspex-pg"]),
+            (None, b"\x1eharuspex-pg".to_vec())
+        );
+        // Group 0 or 1 would signal everything: never reported.
+        assert_eq!(read_all(&[b"\x1eharuspex-pgid 1\n"]).0, None);
+        assert_eq!(read_all(&[b"", b"x"]), (None, b"x".to_vec()));
     }
 
     #[test]

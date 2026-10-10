@@ -21,6 +21,14 @@ describe('Code tab prompt', () => {
 		expect(text).toContain('set up dependencies');
 	});
 
+	it('tells a WSL session it is Linux in its distro, never the macOS note', () => {
+		const text = tab({ root: '/home/tim/p', wslDistro: 'Ubuntu', macOS: true });
+		expect(text).toContain('inside the WSL distro Ubuntu');
+		expect(text).toContain('*.exe');
+		expect(text).not.toContain('bash 3.2');
+		expect(tab()).not.toContain('WSL');
+	});
+
 	it('steers away from bash-4 features on macOS only', () => {
 		const mac = tab({ macOS: true });
 		expect(mac).toContain('bash 3.2');

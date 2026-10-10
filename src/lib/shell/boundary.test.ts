@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { checkBoundary } from './boundary';
+import { checkBoundary, wslMountPath, wslTargets } from './boundary';
 import type { ProtectedTargets } from '#lib/ipc/gen/ProtectedTargets.ts';
 
 const linux: ProtectedTargets = {
@@ -83,5 +83,35 @@ describe('checkBoundary', () => {
 		]) {
 			expect(checkBoundary(cmd, win, 'C:\\code\\game').matched, cmd).toBe(true);
 		}
+	});
+
+	it('reads a WSL command naming a Windows folder through /mnt, and ~ as the Linux home', () => {
+		const win: ProtectedTargets = {
+			home: 'C:\\Users\\tim',
+			paths: [
+				{ path: 'C:\\Users\\tim\\AppData\\Roaming\\com.haruspex.app\\', label: 'data directory' },
+				{ path: 'C:\\Users\\tim\\haruspex\\', label: 'source tree' }
+			],
+			ports: [{ port: 8765, label: 'chat model server' }]
+		};
+		const wsl = wslTargets(win);
+		const root = '/home/tim/proj';
+		expect(
+			checkBoundary('cat /mnt/c/Users/tim/AppData/Roaming/com.haruspex.app/x.db', wsl, root).reasons
+		).toEqual(["touches Haruspex's data directory"]);
+		expect(checkBoundary('ls /mnt/c/users/tim/haruspex', wsl, root).matched).toBe(true);
+		// Interop can still name the Windows spelling.
+		expect(checkBoundary('cmd.exe /c type C:\\Users\\tim\\haruspex\\x', wsl, root).matched).toBe(
+			true
+		);
+		// ~ is the distro's home: nothing of Haruspex's is there.
+		expect(checkBoundary('ls ~/AppData/Roaming/com.haruspex.app', wsl, root).matched).toBe(false);
+		expect(checkBoundary('curl localhost:8765/v1/models', wsl, root).matched).toBe(true);
+		// A session on Haruspex's own repo through /mnt is the project itself.
+		expect(
+			checkBoundary('ls /mnt/c/Users/tim/haruspex/src', wsl, '/mnt/c/Users/tim/haruspex').matched
+		).toBe(false);
+		expect(wslMountPath('D:\\x\\y\\')).toBe('/mnt/d/x/y/');
+		expect(wslMountPath('/home/tim')).toBeNull();
 	});
 });
