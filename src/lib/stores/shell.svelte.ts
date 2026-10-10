@@ -54,6 +54,7 @@ import {
 	buildWatchNotification
 } from '#lib/shell/backgroundWatch.ts';
 import { registerShellCommandOpener } from '#lib/code/shellBridge.ts';
+import { hostCwd } from '#lib/agent/tools/_helpers.ts';
 import { openCodeAt } from '#lib/code/bridge.ts';
 import { openForCommand } from '#lib/shell/openForCommand.ts';
 import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
@@ -597,7 +598,7 @@ export class ShellSession {
 	slashProjectRoot = async (): Promise<string | null> => {
 		if (!this.fullAccess) return null;
 		const live = await this.fetchLiveContext();
-		return knownTrustedRoot(live?.currentCwd ?? null);
+		return knownTrustedRoot(hostCwd(live?.currentCwd ?? null));
 	};
 
 	/** Resume after a turn-limit / forced stop — the button on the stop
@@ -790,7 +791,7 @@ export class ShellSession {
 		// the tests?" is a troubleshooting question too — and the first turn in a
 		// repo with AGENTS.md or project skills asks to trust it. Project skills
 		// mostly drive edits and commands, so only Full access lists them.
-		const project = await shellProject(payload.currentCwd);
+		const project = await shellProject(hostCwd(payload.currentCwd));
 		this.agentsMd = project.agentsMd;
 		this.projectRoot = project.root;
 		const skills = await prepareTurnSkills({
@@ -818,7 +819,7 @@ export class ShellSession {
 	 */
 	private async showWrittenAgentsMd(): Promise<void> {
 		const live = await this.fetchLiveContext().catch(() => null);
-		const project = await knownShellProject(live?.currentCwd ?? null);
+		const project = await knownShellProject(hostCwd(live?.currentCwd ?? null));
 		this.projectRoot = project.root;
 		this.agentsMd = project.agentsMd;
 	}

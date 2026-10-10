@@ -1,6 +1,7 @@
 /**
  * Git for the Code tab: typed wrappers over `code_tools/git.rs`, and the
- * small rules the header's branch control follows.
+ * small rules the header's branch control follows. `wslDistro`: the session
+ * is inside that WSL distro, and git runs there on its Linux paths.
  */
 import { invoke } from '@tauri-apps/api/core';
 import type { GitStatus } from '#lib/ipc/gen/GitStatus.ts';
@@ -9,34 +10,54 @@ import type { WorktreeRemoval } from '#lib/ipc/gen/WorktreeRemoval.ts';
 export type { GitStatus, WorktreeRemoval };
 
 /** The folder's git state; null without git, outside a repo, or on failure. */
-export async function gitStatus(folder: string): Promise<GitStatus | null> {
+export async function gitStatus(
+	folder: string,
+	wslDistro: string | null = null
+): Promise<GitStatus | null> {
 	try {
-		return (await invoke<GitStatus | null>('code_git_status', { folder })) ?? null;
+		return (await invoke<GitStatus | null>('code_git_status', { folder, wslDistro })) ?? null;
 	} catch {
 		return null;
 	}
 }
 
-export function gitBranches(folder: string): Promise<string[]> {
-	return invoke<string[]>('code_git_branches', { folder });
+export function gitBranches(folder: string, wslDistro: string | null = null): Promise<string[]> {
+	return invoke<string[]>('code_git_branches', { folder, wslDistro });
 }
 
 /** Check out `branch`. Rejects with git's own message when it refuses. */
-export function gitSwitch(folder: string, branch: string): Promise<void> {
-	return invoke<void>('code_git_switch', { folder, branch });
+export function gitSwitch(
+	folder: string,
+	branch: string,
+	wslDistro: string | null = null
+): Promise<void> {
+	return invoke<void>('code_git_switch', { folder, branch, wslDistro });
 }
 
 /**
  * Create `branch` and check it out, starting at the local branch `from`, or
  * at HEAD when it is left out.
  */
-export function gitCreateBranch(folder: string, branch: string, from?: string): Promise<void> {
-	return invoke<void>('code_git_create_branch', { folder, branch, from: from ?? null });
+export function gitCreateBranch(
+	folder: string,
+	branch: string,
+	from?: string,
+	wslDistro: string | null = null
+): Promise<void> {
+	return invoke<void>('code_git_create_branch', {
+		folder,
+		branch,
+		from: from ?? null,
+		wslDistro
+	});
 }
 
 /** Remove a worktree Haruspex made, only if it is clean. */
-export function removeWorktree(path: string): Promise<WorktreeRemoval> {
-	return invoke<WorktreeRemoval>('code_git_worktree_remove', { path });
+export function removeWorktree(
+	path: string,
+	wslDistro: string | null = null
+): Promise<WorktreeRemoval> {
+	return invoke<WorktreeRemoval>('code_git_worktree_remove', { path, wslDistro });
 }
 
 /** The branch, or the short hash on a detached HEAD. */

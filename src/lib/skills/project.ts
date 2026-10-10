@@ -14,21 +14,21 @@ import { invoke } from '@tauri-apps/api/core';
 import type { AgentsMd } from '#lib/ipc/gen/AgentsMd.ts';
 import type { ProjectInstructions } from '#lib/ipc/gen/ProjectInstructions.ts';
 import { askRepoTrust, type RepoTrustChange } from '#lib/stores/repoTrust.svelte.ts';
-import { repoTrust } from './client';
+import { repoKey, repoTrust } from './client';
 import { getSettings, updateSkills, type RepoTrust } from '#lib/stores/settings.ts';
 import { loadAgentsMd } from './agentsMd';
 
 /** Record (or, with null, forget) the answer for `root`. */
 export function setRepoTrust(root: string, answer: RepoTrust | null): void {
 	const trustedRepos = { ...getSettings().skills.trustedRepos };
-	if (answer) trustedRepos[root] = answer;
-	else delete trustedRepos[root];
+	if (answer) trustedRepos[repoKey(root)] = answer;
+	else delete trustedRepos[repoKey(root)];
 	updateSkills({ trustedRepos });
 }
 
 /** Keep the answer for `root`, flipping only whether it's trusted. */
 export function setRepoTrusted(root: string, trusted: boolean): void {
-	setRepoTrust(root, { ...getSettings().skills.trustedRepos[root], trusted });
+	setRepoTrust(root, { ...getSettings().skills.trustedRepos[repoKey(root)], trusted });
 }
 
 /**
@@ -47,7 +47,7 @@ export async function knownTrustedRoot(cwd: string | null): Promise<string | nul
  * so saving it doesn't make the next turn ask about a new skill.
  */
 export function noteProjectSkill(root: string, name: string): void {
-	const known = getSettings().skills.trustedRepos[root];
+	const known = getSettings().skills.trustedRepos[repoKey(root)];
 	if (!known?.trusted || !known.skills || known.skills.includes(name)) return;
 	setRepoTrust(root, { ...known, skills: [...known.skills, name].sort() });
 }
@@ -61,7 +61,7 @@ export function noteProjectSkill(root: string, name: string): void {
 export async function trustApprovedAgentsMd(cwd: string): Promise<boolean> {
 	const root = await invoke<string | null>('skills_project_root', { cwd }).catch(() => null);
 	if (!root) return false;
-	const known = getSettings().skills.trustedRepos[root];
+	const known = getSettings().skills.trustedRepos[repoKey(root)];
 	if (known) return known.trusted;
 	const info = await invoke<ProjectInstructions>('skills_project_info', { root }).catch(() => null);
 	// Skills the user hasn't seen still need the prompt.
@@ -109,7 +109,7 @@ export async function trustedProjectRoot(cwd: string | null): Promise<string | n
 	if (!cwd) return null;
 	const root = await invoke<string | null>('skills_project_root', { cwd }).catch(() => null);
 	if (!root) return null;
-	const known = getSettings().skills.trustedRepos[root];
+	const known = getSettings().skills.trustedRepos[repoKey(root)];
 	const info = await invoke<ProjectInstructions>('skills_project_info', { root }).catch(() => null);
 	// Can't tell what's there: stand by the last answer rather than ask blind.
 	if (!info) return known?.trusted ? root : null;

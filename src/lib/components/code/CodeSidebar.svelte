@@ -172,7 +172,10 @@
 		deleting = null;
 		if (!session) return;
 		try {
-			const done = await deleteSession(session.id, { removeWorktree: worktree });
+			const done = await deleteSession(session.id, {
+				removeWorktree: worktree,
+				wslDistro: session.wsl_distro
+			});
 			if (!done) {
 				showToast('That session is open in its own window. Close it there first.');
 				return;

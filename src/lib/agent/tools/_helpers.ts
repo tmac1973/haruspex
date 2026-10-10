@@ -135,6 +135,29 @@ export function fsWorkdir(ctx: {
 	return root && !ctx.shellMode ? ioRoot(root, ctx.wslDistro) : root;
 }
 
+/**
+ * The folder a tool call works in, as the host reaches it: a Linux path in a
+ * WSL distro (a Code session's, or a Shell tab's on its picker's distro)
+ * becomes the distro's share. For host-side reads of a repo (`.git`,
+ * `AGENTS.md`, project skills).
+ */
+export function ctxHostCwd(ctx: {
+	shellMode?: boolean;
+	shellCwd?: string | null;
+	workingDir?: string | null;
+	wslDistro?: string | null;
+}): string | null {
+	// A shell's cwd, when there is one, is where the work is.
+	if (ctx.shellCwd) return hostCwd(ctx.shellCwd);
+	return fsWorkdir(ctx);
+}
+
+/** A Shell tab's cwd as the host reaches it (see `ctxHostCwd`). */
+export function hostCwd(cwd: string | null): string | null {
+	if (!cwd?.startsWith('/')) return cwd;
+	return ioRoot(cwd, wslDistroArg().wslDistro);
+}
+
 /** The folder a tool call's relative paths start from: the shell's cwd, or the Code session's. */
 export function ctxCwd(ctx: {
 	shellMode?: boolean;

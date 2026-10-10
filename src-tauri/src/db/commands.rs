@@ -488,21 +488,21 @@ pub async fn code_session_fork(
         let id = id.clone();
         on_pool(db.clone(), move |db| db.load_code_session(&id)).await?
     };
-    let wt = git::add_fork_worktree(
-        std::path::Path::new(&source.root),
+    // A WSL session's worktree is made by the distro's git, beside the repo there.
+    let place = git::Place::new(source.wsl_distro.clone());
+    let wt = git::add_fork_worktree_in(
+        &place,
+        &source.root,
         &code_sessions::fork_title(&source.title),
     )
     .await?;
-    let (root, path) = (
-        wt.root.to_string_lossy().into_owned(),
-        wt.path.to_string_lossy().into_owned(),
-    );
+    let (root, path) = (wt.root.clone(), wt.path.clone());
     let made = on_pool(db, move |db| {
         db.fork_code_session_into(&id, at, Some((&root, &path)))
     })
     .await;
     if made.is_err() {
-        git::discard_fork_worktree(&wt).await;
+        git::discard_worktree(&wt).await;
     }
     made
 }

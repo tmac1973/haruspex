@@ -43,6 +43,7 @@ import { agentsMdPromptSection } from '#lib/skills/agentsMd.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { buildCodeSystemPrompt } from './system-prompt';
+import { ioRoot } from './paths';
 import { sessionLabel } from './sessionList';
 import { loadShellPlatformSupported } from '#lib/shell/platformSupport.ts';
 
@@ -324,7 +325,8 @@ async function prepareMessages(
 	o: CodeTurnOptions,
 	backend: BackendOverride | undefined
 ): Promise<{ messages: ChatMessage[]; skills: TurnSkills }> {
-	const project = await shellProject(o.root);
+	// A WSL session's repo is read through its distro's share.
+	const project = await shellProject(ioRoot(o.root, o.wslDistro));
 	o.onProject?.(project);
 	const skills = await prepareTurnSkills({ backend, projectRoot: project.root, codeMode: true });
 	const system = buildCodeSystemPrompt({
