@@ -8,6 +8,7 @@ import {
 	listSkills,
 	readSkill,
 	readSkillFile,
+	repoKey,
 	repoTrust,
 	skillsAutonomous,
 	usableSkills
@@ -105,5 +106,20 @@ describe('skillsAutonomous', () => {
 		updateInferenceBackend({ mode: 'remote', remoteBaseUrl: 'http://compute:3000' });
 		updateSkills({ autonomous: 'off' });
 		expect(skillsAutonomous()).toBe(false);
+	});
+});
+
+describe('repoKey', () => {
+	it('records a WSL repo by distro and Linux path, however its share is spelled', () => {
+		const key = 'wsl:Ubuntu:/home/tim/proj';
+		for (const root of [
+			String.raw`\\wsl.localhost\Ubuntu\home\tim\proj`,
+			String.raw`\\wsl$\Ubuntu\home\tim\proj` + '\\',
+			String.raw`\\?\UNC\wsl.localhost\Ubuntu\home\tim\proj`
+		]) {
+			expect(repoKey(root)).toBe(key);
+		}
+		expect(repoKey('/home/tim/proj')).toBe('/home/tim/proj');
+		expect(repoKey(String.raw`C:\code\proj`)).toBe(String.raw`C:\code\proj`);
 	});
 });

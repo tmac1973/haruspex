@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ioRoot } from '#lib/code/paths.ts';
 	/**
 	 * One open Code session: its header, transcript and input box, and a
 	 * banner when its folder is gone. The folder is looked at again whenever
@@ -33,7 +34,8 @@
 	let notes = $state<TranscriptNote[]>([]);
 
 	const slashHost: SlashHost = {
-		projectRoot: async () => session.projectRoot ?? (await shellProject(session.root)).root,
+		projectRoot: async () =>
+			session.projectRoot ?? (await shellProject(ioRoot(session.root, session.wslDistro))).root,
 		codeMode: () => true,
 		// `/new` here is a new session in the same folder.
 		newConversation: () => {

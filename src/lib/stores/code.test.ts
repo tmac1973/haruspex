@@ -1159,7 +1159,10 @@ describe('sharing a folder', () => {
 		const fork = (await forkAndOpen(s.id, 1, 'worktree'))!;
 		const done = await deleteSession(fork.id, { removeWorktree: fork.worktree });
 		expect(done).toEqual({ worktree: { kind: 'removed' } });
-		expect(mocks.invoke).toHaveBeenCalledWith('code_git_worktree_remove', { path: '/wt/s2' });
+		expect(mocks.invoke).toHaveBeenCalledWith('code_git_worktree_remove', {
+			path: '/wt/s2',
+			wslDistro: null
+		});
 		expect(db.rows.has(fork.id)).toBe(false);
 	});
 

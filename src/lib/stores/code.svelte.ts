@@ -440,7 +440,7 @@ export class CodeSession {
 	/** Re-read the folder's branch and changes. */
 	refreshGit = async (): Promise<void> => {
 		if (this.closed) return;
-		const status = await gitStatus(this.root);
+		const status = await gitStatus(this.root, this.wslDistro);
 		if (!this.closed) this.git = status;
 	};
 
@@ -972,7 +972,11 @@ export async function handOffSession(id: string): Promise<boolean> {
  */
 export async function deleteSession(
 	id: string,
-	opts: { removeWorktree?: string | null } = {}
+	opts: {
+		removeWorktree?: string | null;
+		/** The WSL distro the worktree is in; its git removes it. */
+		wslDistro?: string | null;
+	} = {}
 ): Promise<false | { worktree: WorktreeRemoval | null }> {
 	const claim = await claimSession(id);
 	if (claim.owner) {
@@ -989,7 +993,7 @@ export async function deleteSession(
 	}
 	if (!opts.removeWorktree) return { worktree: null };
 	try {
-		return { worktree: await removeWorktree(opts.removeWorktree) };
+		return { worktree: await removeWorktree(opts.removeWorktree, opts.wslDistro ?? null) };
 	} catch (e) {
 		return { worktree: { kind: 'kept', reason: errMessage(e) } };
 	}

@@ -39,6 +39,7 @@ function session(over: Record<string, unknown> = {}): CodeSession {
 	return {
 		id: 's1',
 		root: '/p',
+		wslDistro: null,
 		busy: false,
 		git: repo(),
 		refreshGit: vi.fn(async () => {}),
@@ -77,7 +78,7 @@ describe('CodeBranchControl', () => {
 			true
 		);
 		await fireEvent.click(item);
-		await vi.waitFor(() => expect(mocks.gitSwitch).toHaveBeenCalledWith('/p', 'feature'));
+		await vi.waitFor(() => expect(mocks.gitSwitch).toHaveBeenCalledWith('/p', 'feature', null));
 	});
 
 	it('will not switch with uncommitted changes, and says why', async () => {
@@ -115,7 +116,7 @@ describe('CodeBranchControl', () => {
 		await fireEvent.input(input, { target: { value: 'try-it' } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 		await vi.waitFor(() =>
-			expect(mocks.gitCreateBranch).toHaveBeenCalledWith('/p', 'try-it', undefined)
+			expect(mocks.gitCreateBranch).toHaveBeenCalledWith('/p', 'try-it', undefined, null)
 		);
 	});
 
@@ -144,7 +145,7 @@ describe('CodeBranchControl', () => {
 		await fireEvent.input(input, { target: { value: 'hotfix' } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 		await vi.waitFor(() =>
-			expect(mocks.gitCreateBranch).toHaveBeenCalledWith('/p', 'hotfix', 'main')
+			expect(mocks.gitCreateBranch).toHaveBeenCalledWith('/p', 'hotfix', 'main', null)
 		);
 	});
 

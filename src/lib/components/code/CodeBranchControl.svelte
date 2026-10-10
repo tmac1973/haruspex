@@ -71,7 +71,7 @@
 		await session.refreshGit();
 		const folder = session.git?.repo_root ?? session.root;
 		const [names, others] = await Promise.all([
-			gitBranches(session.root).catch(() => [] as string[]),
+			gitBranches(session.root, session.wslDistro).catch(() => [] as string[]),
 			openSessionsSharing(
 				session.id,
 				folder,
@@ -104,7 +104,10 @@
 
 	function switchTo(branch: string) {
 		if (blocked || branch === git?.branch) return;
-		void run(() => gitSwitch(session.root, branch), `Couldn't switch to ${branch}`);
+		void run(
+			() => gitSwitch(session.root, branch, session.wslDistro),
+			`Couldn't switch to ${branch}`
+		);
 	}
 
 	async function startCreate(from: string | null) {
@@ -118,7 +121,10 @@
 		const name = newName.trim();
 		if (!name || session.busy) return;
 		const from = createFrom ?? undefined;
-		void run(() => gitCreateBranch(session.root, name, from), `Couldn't create ${name}`);
+		void run(
+			() => gitCreateBranch(session.root, name, from, session.wslDistro),
+			`Couldn't create ${name}`
+		);
 	}
 
 	function onWindowClick(e: MouseEvent) {

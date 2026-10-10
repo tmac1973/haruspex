@@ -18,6 +18,7 @@
  */
 
 import type { SkillWriteRequest } from '#lib/ipc/gen/SkillWriteRequest.ts';
+import { ctxHostCwd } from './_helpers';
 import { draftAgentsMd, draftSkill, saveAgentsMd, saveSkill } from '#lib/skills/client.ts';
 import { noteProjectSkill, trustApprovedAgentsMd } from '#lib/skills/project.ts';
 import { askSkillApproval } from '#lib/stores/skillApproval.svelte.ts';
@@ -177,7 +178,7 @@ registerTool({
 	// Asks every time, whatever Settings → Code says about auto-approving:
 	// every later turn in the repo reads this file.
 	async execute(args, ctx) {
-		const cwd = ctx.shellCwd ?? ctx.workingDir;
+		const cwd = ctxHostCwd(ctx);
 		if (!ctx.codeMode || !cwd) {
 			return toolResult(toolError('AGENTS.md can only be written in Code mode, inside a repo.'));
 		}

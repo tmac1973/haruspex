@@ -19,12 +19,28 @@ import type { SkillSummary } from '#lib/ipc/gen/SkillSummary.ts';
 import type { SkillWriteRequest } from '#lib/ipc/gen/SkillWriteRequest.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 
+/** A WSL distro's share: `\\wsl.localhost\<distro>\…`, `\\wsl$\…` or `\\?\UNC\…`. */
+const WSL_SHARE = /^(?:\\\\\?\\UNC\\|\\\\)(?:wsl\.localhost|wsl\$)\\([^\\]+)(.*)$/i;
+
+/**
+ * What a repo's trust is recorded under (Settings → Skills): its root, or
+ * for a repo inside a WSL distro, reached through the distro's share,
+ * `wsl:<distro>:<linux path>` — one key however the share was spelled, and
+ * the same from a Code session and a Shell tab in that distro.
+ */
+export function repoKey(root: string): string {
+	const m = WSL_SHARE.exec(root);
+	if (!m) return root;
+	const linux = m[2].replace(/\\/g, '/').replace(/\/+$/, '');
+	return `wsl:${m[1]}:${linux || '/'}`;
+}
+
 /**
  * Whether the user said yes to `root`'s instructions: true or false once
  * asked, undefined before.
  */
 export function repoTrust(root: string): boolean | undefined {
-	return getSettings().skills.trustedRepos[root]?.trusted;
+	return getSettings().skills.trustedRepos[repoKey(root)]?.trusted;
 }
 
 /** The folders Rust may search: extra folders always, the project only if trusted. */
