@@ -3,8 +3,8 @@
  * `src-tauri/src/db/code_sessions.rs`).
  *
  * The Rust side reads this shape in one place, `fork_thread`, which slices
- * `messages` and the index-keyed sidecars; a change to either, or to
- * `CODE_SESSION_VERSION`, must be mirrored there.
+ * `messages` and the index-keyed sidecars and keeps or drops `compaction`; a
+ * change to any of them, or to `CODE_SESSION_VERSION`, must be mirrored there.
  *
  * A coding session's value is the conversation (what was decided, what was
  * tried, what failed), so the thread is written per turn rather than on
@@ -26,6 +26,19 @@ import type { MessageStats } from '#lib/stores/chat.svelte.ts';
  */
 export const CODE_SESSION_VERSION = 1;
 
+/**
+ * A summary standing in for the thread's older turns (`code/compaction.ts`).
+ * The model is sent the summary and `messages[at…]`; the transcript still
+ * shows every message.
+ */
+export interface CodeCompaction {
+	/** Messages `[0, at)` are covered by `summary`. Always a turn's opening. */
+	at: number;
+	summary: string;
+	/** When it was written (ms). */
+	summarizedAt: number;
+}
+
 export interface CodeSessionSnapshot {
 	version: number;
 	savedAt: number;
@@ -35,6 +48,11 @@ export interface CodeSessionSnapshot {
 	messageStats: Record<number, MessageStats>;
 	messageStops: Record<number, AgentStopReason>;
 	messageHistorySent: Record<number, string[]>;
+	/**
+	 * Optional, so no version bump: a build that predates it ignores it and
+	 * sends the whole thread, as it always did.
+	 */
+	compaction?: CodeCompaction | null;
 }
 
 export type CodeSessionState = Omit<CodeSessionSnapshot, 'version' | 'savedAt'>;
@@ -71,6 +89,24 @@ export function decodeCodeSession(json: string | null): CodeSessionState | null 
 		messageSteps: snap.messageSteps ?? {},
 		messageStats: snap.messageStats ?? {},
 		messageStops: snap.messageStops ?? {},
-		messageHistorySent: snap.messageHistorySent ?? {}
+		messageHistorySent: snap.messageHistorySent ?? {},
+		compaction: decodeCompaction(snap.compaction, snap.messages.length)
+	};
+}
+
+/**
+ * A usable compaction, or null. A bad one is dropped rather than failing the
+ * session: the cost is a turn sent uncompacted, which the context fit still
+ * bounds.
+ */
+function decodeCompaction(value: unknown, messageCount: number): CodeCompaction | null {
+	if (!value || typeof value !== 'object') return null;
+	const c = value as Partial<CodeCompaction>;
+	if (!Number.isInteger(c.at) || c.at! <= 0 || c.at! > messageCount) return null;
+	if (typeof c.summary !== 'string' || !c.summary.trim()) return null;
+	return {
+		at: c.at!,
+		summary: c.summary,
+		summarizedAt: typeof c.summarizedAt === 'number' ? c.summarizedAt : 0
 	};
 }
