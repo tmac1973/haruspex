@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { fsWorkdir, labelArg, resolveShellPath, toolInvokeError, wslDistroArg } from './_helpers';
 import { registerTool } from './registry';
+import { isSpillFile } from './pty-exec';
 import { withLocalScopeNote } from './nested-session';
 import { toolError, toolResult } from './types';
 
@@ -179,9 +180,13 @@ registerTool({
 	async execute(args, ctx) {
 		const path = args.path as string;
 		const window = readWindowArgs(args);
+		// A command's spilled output is outside a Code session's folder, but
+		// the command's result pointed the model at it.
 		const text = ctx.shellMode
 			? await fsReadAbsolute('fs_read_text_absolute', resolveShellPath(path, ctx.shellCwd), window)
-			: await fsRead('fs_read_text', fsWorkdir(ctx)!, path, window);
+			: isSpillFile(path)
+				? await fsReadAbsolute('fs_read_text_absolute', path, window)
+				: await fsRead('fs_read_text', fsWorkdir(ctx)!, path, window);
 		return toolResult(await withLocalScopeNote(text, ctx));
 	}
 });

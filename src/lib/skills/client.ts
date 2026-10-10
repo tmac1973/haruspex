@@ -36,6 +36,15 @@ export function repoKey(root: string): string {
 }
 
 /**
+ * A repo as a person reads it: `/home/tim/proj (Ubuntu)` for one inside a WSL
+ * distro (given as a share path or its `repoKey`), the root itself otherwise.
+ */
+export function repoLabel(rootOrKey: string): string {
+	const m = /^wsl:([^:]+):(.*)$/.exec(repoKey(rootOrKey));
+	return m ? `${m[2]} (${m[1]})` : rootOrKey;
+}
+
+/**
  * Whether the user said yes to `root`'s instructions: true or false once
  * asked, undefined before.
  */

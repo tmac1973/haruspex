@@ -52,7 +52,7 @@ beforeEach(() => {
 	state.pending = null;
 	state.invoke.mockReset().mockImplementation(async (cmd: string) => {
 		if (cmd === 'shell_pending_command') return state.pending;
-		if (cmd === 'fs_read_bytes_absolute') return Array.from(PNG);
+		if (cmd === 'fs_read_bytes_absolute' || cmd === 'fs_read_bytes') return Array.from(PNG);
 		if (cmd === 'image_extract_palette') return PALETTE;
 		return null;
 	});
@@ -108,6 +108,39 @@ describe('make_asset', () => {
 		expect(out.result).toContain('Wrote /home/u/game/assets/coin.png (32×32');
 		expect(out.thumbDataUrl).toMatch(/^data:image\/png;base64,/);
 		expect(ctx.pendingImages).toHaveLength(1);
+	});
+
+	it("keeps a Code session's asset inside its folder", async () => {
+		const ctx = context({
+			shellMode: false,
+			shellCwd: null,
+			shellSessionId: null,
+			workingDir: '/home/u/game',
+			codeSessionId: 'sess-1'
+		});
+		await executeTool(
+			'make_asset',
+			{ kind: 'icon', prompt: 'a gold coin', path: 'assets/coin.png', palette_from: 'a.png' },
+			ctx
+		);
+		// The workdir-relative commands, which refuse a path outside the folder.
+		expect(calls('fs_write_bytes_absolute')).toHaveLength(0);
+		expect(calls('fs_read_bytes')[0][1]).toMatchObject({ workdir: '/home/u/game' });
+		const wrote = calls('fs_write_bytes').filter((c) => !c[1].dryRun);
+		expect(wrote[0][1]).toMatchObject({
+			workdir: '/home/u/game',
+			relPath: '/home/u/game/assets/coin.png'
+		});
+		// A WSL session's folder is reached through its distro's share.
+		state.invoke.mockClear();
+		await executeTool(
+			'make_asset',
+			{ kind: 'icon', prompt: 'a gold coin', path: 'coin.png' },
+			{ ...ctx, wslDistro: 'Ubuntu' }
+		);
+		expect(calls('fs_write_bytes')[0][1].workdir).toBe(
+			String.raw`\\wsl.localhost\Ubuntu\home\u\game`
+		);
 	});
 
 	it('does not hand the picture to a model that cannot see', async () => {

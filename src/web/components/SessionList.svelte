@@ -6,9 +6,24 @@
 
 	let creating = $state(false);
 	let folder = $state('');
+	/** A Windows computer's WSL2 distros; empty elsewhere, and then no picker. */
+	let distros = $state<string[]>([]);
+	let distro = $state('');
 
 	/** Folders of saved sessions, to pick from instead of typing. */
 	const recent = $derived([...new Set(store.sessions.map((s) => s.root))].slice(0, 8));
+
+	async function openForm(): Promise<void> {
+		creating = true;
+		distros = await store.distros();
+		if (!distros.includes(distro)) distro = distros[0] ?? '';
+	}
+
+	/** Picking a recent folder picks the distro it was in, too. */
+	function onFolder(): void {
+		const known = store.sessions.find((s) => s.root === folder.trim() && s.wslDistro);
+		if (known?.wslDistro && distros.includes(known.wslDistro)) distro = known.wslDistro;
+	}
 
 	const STATUS: Record<string, string> = {
 		idle: 'Open',
@@ -23,7 +38,7 @@
 
 	async function start(): Promise<void> {
 		if (!folder.trim()) return;
-		await store.newSession(folder);
+		await store.newSession(folder, distros.length > 0 ? distro || null : null);
 		if (!store.error) {
 			creating = false;
 			folder = '';
@@ -50,11 +65,19 @@
 			void start();
 		}}
 	>
+		{#if distros.length > 0}
+			<select aria-label="WSL distro" title="The WSL distro the folder is in" bind:value={distro}>
+				{#each distros as d (d)}
+					<option value={d}>{d}</option>
+				{/each}
+			</select>
+		{/if}
 		<input
 			aria-label="Project folder"
-			placeholder="Folder on your computer"
+			placeholder={distros.length > 0 ? '~/project in the distro' : 'Folder on your computer'}
 			list="recent-folders"
 			bind:value={folder}
+			oninput={onFolder}
 		/>
 		<datalist id="recent-folders">
 			{#each recent as path (path)}
@@ -69,7 +92,7 @@
 		</div>
 	</form>
 {:else}
-	<button class="btn btn-small new-btn" onclick={() => (creating = true)}>New session</button>
+	<button class="btn btn-small new-btn" onclick={() => void openForm()}>New session</button>
 {/if}
 
 {#if store.error && !store.selected}
@@ -83,7 +106,7 @@
 				class="item"
 				class:active={s.id === store.selected}
 				onclick={() => store.select(s.id)}
-				title={s.root}
+				title={s.wslDistro ? `${s.root} (${s.wslDistro})` : s.root}
 			>
 				<span class="name">{s.title || name(s.root)}</span>
 				<span class="meta">
@@ -132,7 +155,8 @@
 		padding: 0 14px 10px;
 	}
 
-	.new input {
+	.new input,
+	.new select {
 		padding: 8px;
 		border: 1px solid var(--border);
 		border-radius: 6px;

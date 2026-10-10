@@ -226,6 +226,21 @@ describe('run_command output handling', () => {
 		expect(mocks.invoke).toHaveBeenCalledWith('code_write_overflow', expect.anything());
 		expect(out.result).toContain('/tmp/overflow.txt');
 		expect(out.result).toContain('fs_read_text');
+
+		// The Code tab can read that file back, though it is outside the folder.
+		mocks.invoke.mockClear();
+		await executeTool('fs_read_text', { path: '/tmp/overflow.txt' }, codeCtx);
+		expect(mocks.invoke).toHaveBeenCalledWith(
+			'fs_read_text_absolute',
+			expect.objectContaining({ path: '/tmp/overflow.txt' })
+		);
+		// Any other file outside it still goes through the folder's own check.
+		mocks.invoke.mockClear();
+		await executeTool('fs_read_text', { path: '/tmp/other.txt' }, codeCtx);
+		expect(mocks.invoke).toHaveBeenCalledWith(
+			'fs_read_text',
+			expect.objectContaining({ relPath: '/tmp/other.txt' })
+		);
 	});
 
 	it('cancels the host process when the signal aborts mid-run', async () => {
@@ -930,7 +945,9 @@ describe('run_command without a terminal (Code session)', () => {
 		started_at: Date.now(),
 		running: true,
 		exit_code: null,
-		log_path: '/cache/code-bg/bg-1.log'
+		log_path: '/cache/code-bg/bg-1.log',
+		wsl_distro: null as string | null,
+		wsl_pgid: null as number | null
 	};
 
 	beforeEach(() => {
@@ -959,6 +976,24 @@ describe('run_command without a terminal (Code session)', () => {
 		expect(out.result).toContain('command_output');
 		expect(mocks.registerCodeBgWatch).not.toHaveBeenCalled();
 		expect(mocks.registerWatch).not.toHaveBeenCalled();
+	});
+
+	it("names a WSL process by its Linux group, never the Windows relay's PID", async () => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const wslCtx = { ...sessionCtx, workingDir: '/home/tim/p', wslDistro: 'Ubuntu' };
+		const started = await executeTool(
+			'run_command',
+			{ command: 'npm run dev', background: true },
+			wslCtx
+		);
+		expect(started.result).toContain('id bg-1');
+		expect(started.result).not.toContain('4242');
+		const { describeBgProcess } = await import('./code-bg');
+		const wsl = { ...bgProc, wsl_distro: 'Ubuntu', wsl_pgid: 812 };
+		expect(describeBgProcess(wsl)).toContain('process group 812 in Ubuntu');
+		expect(describeBgProcess(wsl)).not.toContain('4242');
+		expect(describeBgProcess({ ...wsl, wsl_pgid: null })).not.toContain('4242');
+		expect(describeBgProcess(bgProc)).toContain('PID 4242');
 	});
 
 	it('watch:true also registers a code_bg watch for the session', async () => {

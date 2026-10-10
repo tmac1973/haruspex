@@ -41,13 +41,13 @@ export async function startCodeBackground(
 			startedAtMs: Date.now()
 		});
 		return (
-			`Started in the background with watch on (id ${started.id}, PID ${started.pid}). ` +
+			`Started in the background with watch on (id ${started.id}${pidNote(started.pid, wslDistro)}). ` +
 			`You'll get a notification turn here when it finishes — do NOT poll for it; continue with other work or wrap up. ` +
 			`Read its output so far with command_output; stop it with command_stop.`
 		);
 	}
 	return (
-		`Started in the background (id ${started.id}, PID ${started.pid}). ` +
+		`Started in the background (id ${started.id}${pidNote(started.pid, wslDistro)}). ` +
 		`Read its output with command_output and stop it with command_stop, passing the id.`
 	);
 }
@@ -72,11 +72,26 @@ async function findOwnProcess(
 	);
 }
 
+/**
+ * `, PID 4242` for a host process. Nothing for one in a WSL distro: its `pid`
+ * is the Windows `wsl.exe` relay, which `kill` inside Linux can't reach.
+ */
+function pidNote(pid: number, wslDistro: string | null): string {
+	return wslDistro ? '' : `, PID ${pid}`;
+}
+
+/** How a process is named in `describeBgProcess`: its PID, or its Linux process group. */
+function processLabel(p: BgProcess): string | null {
+	if (!p.wsl_distro) return `PID ${p.pid}`;
+	return p.wsl_pgid ? `process group ${p.wsl_pgid} in ${p.wsl_distro}` : null;
+}
+
 /** "Running for 12s (PID 4242)" / "Exited with code 1" / "Killed by a signal". */
 export function describeBgProcess(p: BgProcess, nowMs = Date.now()): string {
 	if (p.running) {
 		const secs = Math.max(0, Math.round((nowMs - p.started_at) / 1000));
-		return `Running for ${secs}s (PID ${p.pid}): ${p.command}`;
+		const label = processLabel(p);
+		return `Running for ${secs}s${label ? ` (${label})` : ''}: ${p.command}`;
 	}
 	return p.exit_code == null
 		? `Finished, killed by a signal: ${p.command}`

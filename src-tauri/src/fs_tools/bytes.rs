@@ -24,13 +24,16 @@ pub async fn fs_read_bytes(workdir: String, rel_path: String) -> Result<Vec<u8>,
         .map_err(|e| format!("Failed to read {}: {}", rel_path, e))
 }
 
-/// Write bytes, creating parent directories.
+/// Write bytes, creating parent directories. With `dry_run`, only the
+/// refusals: `make_asset` asks before it spends a minute drawing a file it
+/// could not have written.
 #[tauri::command]
 pub async fn fs_write_bytes(
     workdir: String,
     rel_path: String,
     bytes: Vec<u8>,
     overwrite: Option<bool>,
+    dry_run: Option<bool>,
 ) -> Result<(), String> {
     let workdir = workdir_path_for_write(&workdir)?;
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
@@ -43,6 +46,9 @@ pub async fn fs_write_bytes(
         ));
     }
     refuse_if_exists(&resolved, overwrite, &rel_path)?;
+    if dry_run == Some(true) {
+        return Ok(());
+    }
     write_bytes_to_workdir(&resolved, &bytes).await
 }
 
@@ -129,6 +135,32 @@ mod tests {
             .await
             .is_err());
         assert!(d.join("a.png").exists());
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[tokio::test]
+    async fn a_dry_run_checks_the_write_without_making_the_file() {
+        let d = temp("dry");
+        let w = || d.to_string_lossy().into_owned();
+        fs_write_bytes(w(), "a.png".into(), vec![1], None, Some(true))
+            .await
+            .unwrap();
+        assert!(!d.join("a.png").exists());
+        // Outside the folder: refused as a dry run too.
+        assert!(
+            fs_write_bytes(w(), "../a.png".into(), vec![1], None, Some(true))
+                .await
+                .is_err()
+        );
+        fs_write_bytes(w(), "a.png".into(), vec![1], None, None)
+            .await
+            .unwrap();
+        // It exists now: refused without overwrite, dry run or not.
+        assert!(
+            fs_write_bytes(w(), "a.png".into(), vec![2], None, Some(true))
+                .await
+                .is_err()
+        );
         std::fs::remove_dir_all(&d).ok();
     }
 }

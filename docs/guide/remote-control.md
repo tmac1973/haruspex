@@ -29,7 +29,7 @@ Each device with a token has its own permissions: **Read** (list and follow sess
 
 ## Use it from a browser
 
-The page lists your Code sessions, the open ones first. Pick one to follow it as it runs, send messages, steer or stop a turn, and answer **Run this command?** and the agent's questions. **New session** starts one in a folder on this computer.
+The page lists your Code sessions, the open ones first. Pick one to follow it as it runs, send messages, steer or stop a turn, and answer **Run this command?** and the agent's questions. **New session** starts one in a folder on this computer; on Windows, pick the WSL distro first.
 
 ## Advanced
 
@@ -42,6 +42,7 @@ The page lists your Code sessions, the open ones first. Pick one to follow it as
 Send the token as `Authorization: Bearer <token>`.
 
 - `POST /api/v1/op` with an operation as JSON, for example `{"type":"sessions.list"}` or `{"type":"session.send","id":"…","text":"Fix the failing test"}`.
+- On Windows, `session.new` takes a `wslDistro` with a Linux `root` (`{"type":"session.new","root":"~/proj","wslDistro":"Ubuntu"}`); `{"type":"wsl.distros"}` lists them.
 - `GET /api/v1/events` streams what sessions do (server-sent events).
 - `GET /api/v1/health` needs no token.
 

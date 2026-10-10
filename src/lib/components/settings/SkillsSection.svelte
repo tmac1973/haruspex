@@ -18,7 +18,7 @@
 	import type { ShippedSkill } from '#lib/ipc/gen/ShippedSkill.ts';
 	import type { SkillSummary } from '#lib/ipc/gen/SkillSummary.ts';
 	import type { SkillSource } from '#lib/ipc/gen/SkillSource.ts';
-	import { listSkills, readSkill } from '#lib/skills/client.ts';
+	import { listSkills, readSkill, repoLabel } from '#lib/skills/client.ts';
 	import { setRepoTrust, setRepoTrusted } from '#lib/skills/project.ts';
 	import { getSettings, updateSkills, type SkillsConfig } from '#lib/stores/settings.ts';
 	import { errMessage } from '#lib/utils/error.ts';
@@ -292,7 +292,7 @@
 		<ul class="plain-list">
 			{#each repos as [root, answer] (root)}
 				<li>
-					<code title={answer.origin ?? undefined}>{root}</code>
+					<code title={answer.origin ?? undefined}>{repoLabel(root)}</code>
 					<select
 						value={answer.trusted ? 'use' : 'ignore'}
 						onchange={(e) => setTrust(root, e.currentTarget.value === 'use')}

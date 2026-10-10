@@ -43,6 +43,7 @@ export function sessionState(s: CodeSession): SessionState {
 	return {
 		id: s.id,
 		root: s.root,
+		wslDistro: s.wslDistro,
 		status: s.status,
 		busy: s.busy,
 		streamingContent: s.streamingContent,

@@ -39,7 +39,9 @@ impl Scope {
 /// doesn't exist.
 pub fn required_scope(op_type: &str) -> Option<Scope> {
     Some(match op_type {
-        "sessions.list" | "session.get" | "session.resync" | "prompts.list" => Scope::Read,
+        "sessions.list" | "session.get" | "session.resync" | "prompts.list" | "wsl.distros" => {
+            Scope::Read
+        }
         "session.open"
         | "session.new"
         | "session.send"
@@ -375,6 +377,7 @@ mod tests {
     #[test]
     fn each_operation_needs_its_scope() {
         assert_eq!(required_scope("session.get"), Some(Scope::Read));
+        assert_eq!(required_scope("wsl.distros"), Some(Scope::Read));
         assert_eq!(required_scope("session.send"), Some(Scope::Drive));
         assert_eq!(required_scope("prompts.answer"), Some(Scope::Approve));
         assert_eq!(required_scope("session.delete"), None);
