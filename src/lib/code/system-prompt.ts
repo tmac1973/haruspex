@@ -95,6 +95,11 @@ export interface BuildCodePromptOpts {
 	wslDistro?: string | null;
 	/** A Windows folder: the PowerShell its commands run in (`agentPowershell`). */
 	powershell?: { pwsh: boolean } | null;
+	/**
+	 * The turn has `open_in_shell` (default): a Shell tab works here and the
+	 * user is at this computer, not driving it from another.
+	 */
+	shellHandoff?: boolean;
 }
 
 const WRITE_TOOL_LINE = /^- fs_(write|edit)_text /;
@@ -134,6 +139,23 @@ function platformNote(opts: BuildCodePromptOpts): string {
 	return (opts.macOS ?? isMacOS()) ? ` ${MAC_BASH_NOTE}` : '';
 }
 
+const HANDOFF_TOOL =
+	'- open_in_shell — hand ONE command to the user: it opens a Shell tab at the project folder with the command typed in, the user presses Enter, and you get the exit code and output (and the command that ran, if they changed it).\n';
+
+/** The `open_in_shell` line in TOOLS, when the turn has it. */
+function handoffToolLine(opts: BuildCodePromptOpts): string {
+	return (opts.shellHandoff ?? true) ? HANDOFF_TOOL : '';
+}
+
+/** What to do with a command that needs a password or a terminal. */
+function handoffRule(opts: BuildCodePromptOpts): string {
+	const cannot =
+		'A command that needs a password or a terminal (sudo, an interactive installer, a login prompt) cannot run with run_command.';
+	return (opts.shellHandoff ?? true)
+		? `${cannot} Use open_in_shell for it, and say in your reply what it is for. Do not use open_in_shell for commands run_command can run.`
+		: `${cannot} Say in your reply what to run and why; the user runs it themselves, at this computer.`;
+}
+
 /** The Code tab's prompt: one-shot commands in a fixed project folder. */
 export function buildCodeSystemPrompt(opts: BuildCodePromptOpts): ChatMessage {
 	const timeout = getSettings().codeRunCommandTimeoutSecs;
@@ -153,15 +175,14 @@ ${fileTools(opts.readOnly)}
 - run_command — run ONE shell command; it runs to completion and returns combined output + exit code. ${UNIX_CAPTURE_NOTE} A foreground command times out (default ${timeout}s) if it doesn't exit — for anything long-running use background/watch instead. Options: background:true runs it detached and returns an id at once; watch:true does the same and notifies you with a follow-up turn when it finishes (exit code + output).
 - command_output — the latest output of a background command, by the id run_command returned, and whether it is still running.
 - command_stop — stop a background command, and everything it started.
-- open_in_shell — hand ONE command to the user: it opens a Shell tab at the project folder with the command typed in, the user presses Enter, and you get the exit code and output (and the command that ran, if they changed it).
-- open_in_editor — open files in an editor window for the user to look at. It returns at once and does not report their edits.
+${handoffToolLine(opts)}- open_in_editor — open files in an editor window for the user to look at. It returns at once and does not report their edits.
 ${WEB_TOOLS}${assetLine()}
 
 RUNNING PROCESSES:
 - Servers / watchers / GUIs (anything that does not exit on its own): start them with run_command background:true. Check on one with command_output and stop it with command_stop when you are done with it. Do NOT run these in the foreground — they will just time out.
 - A long build / test / job whose result you need but don't want to block on: run it with watch:true. You'll get a follow-up turn with its exit code and output when it finishes — so continue with other work or wrap up; do NOT sit and poll for it.
 - Background commands are stopped when this session closes.
-- A command that needs a password or a terminal (sudo, an interactive installer, a login prompt) cannot run with run_command. Use open_in_shell for it, and say in your reply what it is for. Do not use open_in_shell for commands run_command can run.
+- ${handoffRule(opts)}
 
 ${HOW_TO_WORK}${tail(opts)}`
 	};

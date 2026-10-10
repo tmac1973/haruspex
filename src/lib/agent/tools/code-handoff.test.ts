@@ -100,6 +100,17 @@ describe('open_in_shell', () => {
 		expect(mocks.askCommandApproval).not.toHaveBeenCalled();
 	});
 
+	it('refuses in a turn started from another computer, opening nothing', async () => {
+		const calls = fakeShell(async () => ({ kind: 'closed', shellName: 'Shell 2' }));
+		const out = await executeTool(
+			'open_in_shell',
+			{ command: 'sudo ls' },
+			{ ...ctx, codeRemote: true }
+		);
+		expect(out.result).toContain('working from another computer');
+		expect(calls).toHaveLength(0);
+	});
+
 	it('reports the command that ran when the user changed it', async () => {
 		fakeShell(async () => ({
 			kind: 'completed',

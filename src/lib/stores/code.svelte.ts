@@ -116,6 +116,11 @@ export class CodeSession {
 	 * and edits are refused and every command asks first.
 	 */
 	readonly readOnly: boolean;
+	/**
+	 * The last message came from another computer (Settings → Remote
+	 * control), so turns leave out what needs a person at this one.
+	 */
+	private remote = false;
 	/** The git worktree Haruspex made for this session (a worktree fork). */
 	worktree = $state<string | null>(null);
 	/**
@@ -287,11 +292,14 @@ export class CodeSession {
 	 */
 	send = async (
 		text: string,
-		opts: { images?: string[]; skill?: SkillDoc } = {}
+		opts: { images?: string[]; skill?: SkillDoc; remote?: boolean } = {}
 	): Promise<void> => {
 		const trimmed = text.trim();
 		const images = opts.images ?? [];
 		if (this.closed || (!trimmed && images.length === 0)) return;
+		// Whoever wrote last drives the turns that follow, a watched command's
+		// follow-up included.
+		this.remote = opts.remote ?? false;
 		if (this.busy) {
 			if (trimmed) this.steering = [...this.steering, trimmed];
 			return;
@@ -667,6 +675,7 @@ export class CodeSession {
 				backend: this.backend ? ($state.snapshot(this.backend) as BackendOverride) : null,
 				effort: this.effort,
 				readOnly: this.readOnly,
+				remote: this.remote,
 				wslDistro: this.wslDistro,
 				writeGuard: guard,
 				worktree: this.worktree ? { branch: this.git?.branch ?? null } : undefined,

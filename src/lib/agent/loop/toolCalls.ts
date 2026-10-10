@@ -107,6 +107,7 @@ export async function executeToolCalls(
 				codeSessionId: ctx.codeSessionId,
 				requester: ctx.requester,
 				codeReadOnly: ctx.codeReadOnly,
+				codeRemote: ctx.codeRemote,
 				codeWriteGuard: ctx.codeWriteGuard,
 				wslDistro: ctx.wslDistro,
 				filesWrittenThisTurn: ctx.filesWrittenThisTurn,
