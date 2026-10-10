@@ -262,9 +262,6 @@ pub async fn run_command_capture(
     } else {
         job::Job::new(limit).map(Arc::new)
     };
-    if job.is_some() && limit.is_some() {
-        job::let_dotnet_reach_the_limit(&mut cmd);
-    }
     hide_window(&mut cmd);
     // Never for a WSL relay: see `wsl::GroupState`.
     cmd.stdin(Stdio::null())
@@ -372,9 +369,9 @@ pub async fn run_command_capture(
     };
     // Windows: the job ended it for its memory limit.
     let out_of_memory = out_of_memory
-        || job
-            .as_ref()
-            .is_some_and(|j| j.out_of_memory(!killed && exit_code != Some(0)));
+        || job.as_ref().is_some_and(|j| {
+            j.out_of_memory(!cancelled.load(Ordering::SeqCst) && exit_code != Some(0))
+        });
     // A tree-kill leaves no exit code (signaled) on unix — treat as killed even
     // if the cancel raced ahead of our own timeout branch. Inside WSL a killed
     // command still has one (`setsid -w` reports 128 + the signal).
@@ -818,7 +815,7 @@ Linux
             // 1% of RAM: well under what this allocates.
             let res = run(
                 "$l = [System.Collections.Generic.List[byte[]]]::new(); while ($true) { $l.Add([byte[]]::new(64MB)) }",
-                120,
+                30,
                 "p-oom",
                 Some(1),
             )
@@ -832,8 +829,9 @@ Linux
                 res.duration_ms,
                 res.stderr.chars().take(300).collect::<String>()
             );
+            // PowerShell 7 fails inside its own heap cap and its loop runs
+            // on to the timeout; 5.1 reaches the job's limit and is ended.
             assert!(res.out_of_memory, "{summary}");
-            assert!(!res.killed, "{summary}");
             assert!(res.memory_limit_mb.is_some());
         }
 

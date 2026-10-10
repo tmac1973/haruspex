@@ -197,9 +197,6 @@ impl CodeBgManager {
         } else {
             None
         };
-        if job.is_some() && limit.is_some() {
-            super::job::let_dotnet_reach_the_limit(&mut cmd);
-        }
         cmd.stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
