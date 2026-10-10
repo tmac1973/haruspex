@@ -1467,6 +1467,42 @@ describe('a long Code session', () => {
 		expect(again.messages).toEqual(s.messages);
 	});
 
+	it('/compact summarises now, with what to keep, and says when there is nothing', async () => {
+		const s = await newSession('/proj');
+		mocks.chatCompletion.mockReset().mockResolvedValue({ content: 'Short so far.' });
+		mocks.runAgentLoop.mockImplementation(answers('ok'));
+		expect(await s.compactNow()).toBe('nothing');
+		expect(mocks.chatCompletion).not.toHaveBeenCalled();
+
+		// Two big turns: the window has room, but /compact needs none of it.
+		mocks.runAgentLoop.mockImplementation(answers('x'.repeat(3000)));
+		await s.send('one');
+		await s.send('two');
+		mocks.chatCompletion.mockClear();
+		expect(await s.compactNow('the API notes')).toBe('compacted');
+		const req = mocks.chatCompletion.mock.calls[0][0] as { messages: ChatMessage[] };
+		expect(String(req.messages[1].content)).toContain('The user asks you to keep: the API notes');
+		expect(s.compaction?.summary).toBe('Short so far.');
+		expect(s.status).toBe('idle');
+		expect(storedThread(s.id)?.compaction).toEqual(s.compaction);
+	});
+
+	it('/compact reports a failure and hands back what was typed meanwhile', async () => {
+		const s = await newSession('/proj');
+		mocks.runAgentLoop.mockImplementation(answers('x'.repeat(3000)));
+		await s.send('one');
+		await s.send('two');
+		mocks.chatCompletion.mockReset().mockImplementation(async () => {
+			await s.send('typed while summarising');
+			throw new Error('500');
+		});
+		expect(await s.compactNow()).toBe('failed');
+		expect(s.lastError).toContain("Couldn't summarise");
+		expect(s.compaction).toBeNull();
+		expect(s.status).toBe('idle');
+		expect(s.takeReturnedSteering()).toEqual(['typed while summarising']);
+	});
+
 	it('runs the turn as before when the summary fails', async () => {
 		const s = await newSession('/proj');
 		mocks.chatCompletion.mockReset().mockRejectedValue(new Error('500'));

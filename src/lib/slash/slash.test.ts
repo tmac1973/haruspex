@@ -173,6 +173,27 @@ describe('runSlash', () => {
 		// Only something that parses as a command looks for the repo.
 		expect(h.projectRoot).toHaveBeenCalledTimes(1);
 	});
+
+	it('runs /compact with what follows it, only where the host can', async () => {
+		const compact = vi.fn(async () => {});
+		expect(await runSlash('/compact keep the API notes', { ...host(), compact })).toEqual({
+			kind: 'handled'
+		});
+		expect(compact).toHaveBeenCalledWith('keep the API notes');
+		// Without the hook (Chat, Shell) it is no command: sent as written.
+		expect(await runSlash('/compact', host())).toEqual({ kind: 'send' });
+	});
+});
+
+describe('/compact', () => {
+	it('is listed only where the input box can run it', async () => {
+		expect((await slashItems(null, true)).map((i) => i.name)).not.toContain('compact');
+		expect((await slashItems(null, true, true)).map((i) => i.name)).toContain('compact');
+		expect(await resolveSlash('/compact', null, true, true)).toEqual({
+			kind: 'builtin',
+			name: 'compact'
+		});
+	});
 });
 
 describe('describeSkills', () => {

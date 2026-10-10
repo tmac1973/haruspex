@@ -17,7 +17,9 @@ import { messageText, type BackendOverride, type ChatMessage, type Usage } from 
 import type { AgentsMd } from '#lib/ipc/gen/AgentsMd.ts';
 import type { BgProcess } from '#lib/ipc/gen/BgProcess.ts';
 import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
-import type { InferenceTicket } from '#lib/agent/inferenceQueue.svelte.ts';
+import { withInferenceSlot, type InferenceTicket } from '#lib/agent/inferenceQueue.svelte.ts';
+import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
+import { compactCodeThread } from '#lib/code/compaction.ts';
 import type { AgentStopReason, SearchStep } from '#lib/agent/loop.ts';
 import { markStepDone, markStepProgress } from '#lib/agent/steps.ts';
 import { describeContextManaged } from '#lib/agent/context-budget.ts';
@@ -320,6 +322,76 @@ export class CodeSession {
 
 	/** Resume after a turn limit or forced stop. */
 	continueTurn = (): Promise<void> => this.send('Please continue from where you stopped.');
+
+	/**
+	 * `/compact`: summarise the older turns now, without a turn after it.
+	 * `instructions` is what the user asked the summary to keep. Runs like a
+	 * turn: it queues for the model and Stop cancels it. There is no turn to
+	 * take what is typed meanwhile, so that goes back to the input box.
+	 */
+	compactNow = async (
+		instructions = ''
+	): Promise<'compacted' | 'nothing' | 'busy' | 'failed' | 'stopped'> => {
+		if (this.busy || this.closed) return 'busy';
+		this.status = 'running';
+		this.lastError = null;
+		const abort = new AbortController();
+		this.abortController = abort;
+		const backend = this.backend ? ($state.snapshot(this.backend) as BackendOverride) : null;
+		const contextSize = resolveBackendDescriptor(backend ?? undefined).contextSize;
+		try {
+			const next = await withInferenceSlot(
+				{
+					consumer: 'code',
+					backend: backend ?? undefined,
+					signal: abort.signal,
+					onTicket: (t) => {
+						this.ticket = t;
+						this.status = 'queued';
+					},
+					onAdmitted: () => {
+						this.ticket = null;
+						this.status = 'running';
+					}
+				},
+				async () => {
+					this.compacting = true;
+					try {
+						return await compactCodeThread({
+							messages: $state.snapshot(this.messages) as ChatMessage[],
+							compaction: this.compaction,
+							backend,
+							contextSize,
+							signal: abort.signal,
+							instructions
+						});
+					} finally {
+						this.compacting = false;
+					}
+				}
+			);
+			if (!next) return 'nothing';
+			this.compaction = next;
+			this.usage = null;
+			this.contextNotice = null;
+			await this.persist();
+			return 'compacted';
+		} catch (e) {
+			if (abort.signal.aborted) return 'stopped';
+			this.lastError = `Couldn't summarise the older turns: ${errMessage(e)}`;
+			logDebug('code', 'compaction failed', { id: this.id, error: errMessage(e) });
+			return 'failed';
+		} finally {
+			this.abortController = null;
+			this.ticket = null;
+			this.status = 'idle';
+			if (this.steering.length > 0) {
+				this.returnedSteering = [...this.returnedSteering, ...this.steering];
+				this.steering = [];
+			}
+			queueMicrotask(() => void this.flushWatchNotifications());
+		}
+	};
 
 	/**
 	 * Cancel the running turn. What it finished is saved. A turn still

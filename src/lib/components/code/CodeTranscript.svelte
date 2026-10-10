@@ -193,6 +193,14 @@
 		>
 	{/if}
 	{#each shown as { msg, i } (i)}
+		{#if session.compaction && i === session.compaction.at}
+			<details class="bg-notice summary" data-testid="compaction">
+				<summary title="The agent works from this summary and the turns below it."
+					>Earlier turns summarised</summary
+				>
+				<pre>{session.compaction.summary}</pre>
+			</details>
+		{/if}
 		{#each notesAt(i) as note, k (k)}
 			<div class="note">{note.text}</div>
 		{/each}
@@ -255,6 +263,8 @@
 	{#if roundText}
 		<!-- Only alongside the answer after steering: the answer clears it. -->
 		<ChatMessage message={{ role: 'assistant', content: roundText }} isStreaming />
+	{:else if session.compacting}
+		<div class="hint">Summarising earlier turns…</div>
 	{:else if !streamText && session.status === 'running' && pending.length === 0}
 		<ThinkingIndicator />
 	{/if}

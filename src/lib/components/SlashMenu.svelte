@@ -13,6 +13,7 @@
 		text,
 		projectRoot = async () => null,
 		codeMode = false,
+		compact = false,
 		onPick
 	}: {
 		/** The input box's current text. */
@@ -21,6 +22,8 @@
 		projectRoot?: () => Promise<string | null>;
 		/** Code mode is on, which lists the built-ins that need it. */
 		codeMode?: boolean;
+		/** The input box can run `/compact` (`SlashHost.compact`). */
+		compact?: boolean;
 		/** Replace the input's text with the chosen `/name `. */
 		onPick: (text: string) => void;
 	} = $props();
@@ -44,7 +47,7 @@
 		if (loadedFor) return;
 		loadedFor = true;
 		void projectRoot()
-			.then((root) => slashItems(root, codeMode))
+			.then((root) => slashItems(root, codeMode, compact))
 			.then((list) => (items = list));
 	});
 

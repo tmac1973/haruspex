@@ -1,5 +1,5 @@
 /**
- * Slash commands for the Chat and Shell input boxes: `/name what I want`.
+ * Slash commands for the Chat, Shell and Code input boxes: `/name what I want`.
  *
  * A name is a built-in command or a skill. Running a skill this way works on
  * any model and whatever the autonomous-use setting says: the user chose it,
@@ -17,7 +17,7 @@ import { knownTrustedRoot } from '#lib/skills/project.ts';
 
 export { knownTrustedRoot };
 
-export type BuiltinName = 'new' | 'skills';
+export type BuiltinName = 'new' | 'skills' | 'compact';
 
 export interface SlashItem {
 	name: string;
@@ -28,8 +28,15 @@ export interface SlashItem {
 /** Kept small: each one is a name a skill can no longer use. */
 export const BUILTINS: readonly SlashItem[] = [
 	{ name: 'new', description: 'Start over with an empty conversation', builtin: true },
-	{ name: 'skills', description: 'List the skills you can run', builtin: true }
+	{ name: 'skills', description: 'List the skills you can run', builtin: true },
+	// The Code tab only: where the host can compact (`SlashHost.compact`).
+	{ name: 'compact', description: 'Summarise older turns to free up context', builtin: true }
 ];
+
+/** The built-ins this input box offers: `/compact` only where it can run. */
+function builtins(compact: boolean): readonly SlashItem[] {
+	return compact ? BUILTINS : BUILTINS.filter((b) => b.name !== 'compact');
+}
 
 const COMMAND = /^\s*\/([a-z0-9][a-z0-9_-]*)(?:\s+([\s\S]*))?$/i;
 
@@ -51,12 +58,14 @@ export function typingName(text: string): string | null {
 /** Built-ins, then usable skills, each name once. */
 export async function slashItems(
 	projectRoot: string | null,
-	codeMode = false
+	codeMode = false,
+	compact = false
 ): Promise<SlashItem[]> {
+	const offered = builtins(compact);
 	const skills = usableSkills(await listSkills(projectRoot).catch(() => []), codeMode)
-		.filter((s) => !BUILTINS.some((b) => b.name === s.name))
+		.filter((s) => !offered.some((b) => b.name === s.name))
 		.map((s) => ({ name: s.name, description: s.description, builtin: false }));
-	return [...BUILTINS, ...skills];
+	return [...offered, ...skills];
 }
 
 /** Items whose name starts with `prefix`, in their listed order. */
@@ -79,11 +88,12 @@ export type SlashAction =
 export async function resolveSlash(
 	text: string,
 	projectRoot: string | null,
-	codeMode = false
+	codeMode = false,
+	compact = false
 ): Promise<SlashAction> {
 	const parsed = parseSlash(text);
 	if (!parsed) return { kind: 'none' };
-	const builtin = BUILTINS.find((b) => b.name === parsed.name);
+	const builtin = builtins(compact).find((b) => b.name === parsed.name);
 	if (builtin) return { kind: 'builtin', name: builtin.name as BuiltinName };
 	const all = await listSkills(projectRoot).catch(() => []);
 	if (!usableSkills(all, codeMode).some((s) => s.name === parsed.name)) {
@@ -113,6 +123,12 @@ export interface SlashHost {
 	newConversation: () => void;
 	/** `/skills`: put a note in the conversation without a model call. */
 	addNote: (text: string) => void;
+	/**
+	 * `/compact`: summarise the older turns now, keeping what `instructions`
+	 * names. Only the Code tab has it, and only where it is given is
+	 * `/compact` offered.
+	 */
+	compact?: (instructions: string) => Promise<void>;
 }
 
 export type SlashOutcome =
@@ -130,7 +146,7 @@ export async function runSlash(text: string, host: SlashHost): Promise<SlashOutc
 	if (!parseSlash(text)) return { kind: 'send' };
 	const projectRoot = await host.projectRoot();
 	const codeMode = host.codeMode?.() ?? false;
-	const action = await resolveSlash(text, projectRoot, codeMode);
+	const action = await resolveSlash(text, projectRoot, codeMode, host.compact !== undefined);
 	if (action.kind === 'skill') return { kind: 'send', skill: action.doc };
 	if (action.kind === 'none') return { kind: 'send' };
 	if (action.kind === 'needsCodeMode') {
@@ -138,6 +154,7 @@ export async function runSlash(text: string, host: SlashHost): Promise<SlashOutc
 			`\`/${action.name}\` works in the Code tab, or in a Shell tab's assistant with Full access, inside the repo.`
 		);
 	} else if (action.name === 'new') host.newConversation();
+	else if (action.name === 'compact') await host.compact?.(parseSlash(text)?.rest ?? '');
 	else host.addNote(describeSkills(await slashItems(projectRoot, codeMode)));
 	return { kind: 'handled' };
 }

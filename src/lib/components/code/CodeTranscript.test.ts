@@ -450,3 +450,28 @@ describe('background command notices', () => {
 		expect(screen.queryByText('YOU')).toBeNull();
 	});
 });
+
+describe('CodeTranscript compaction', () => {
+	it('marks where the summary ends and opens it', async () => {
+		const session = fakeSession({
+			messages: thread(3),
+			compaction: { at: 4, summary: 'Asked two questions.', summarizedAt: 1 }
+		});
+		render(CodeTranscript, { session });
+		const divider = screen.getByTestId('compaction');
+		// Before the first message the agent still sees whole.
+		expect(divider.nextElementSibling!.textContent).toContain('question 3');
+		expect(divider.textContent).toContain('Earlier turns summarised');
+		await fireEvent.click(screen.getByText('Earlier turns summarised'));
+		expect(divider.textContent).toContain('Asked two questions.');
+		// Everything before the cut is still shown.
+		expect(screen.getByText('question 1')).toBeTruthy();
+	});
+
+	it('says when it is summarising', () => {
+		render(CodeTranscript, {
+			session: fakeSession({ status: 'running', busy: true, compacting: true })
+		});
+		expect(screen.getByText('Summarising earlier turns…')).toBeTruthy();
+	});
+});
