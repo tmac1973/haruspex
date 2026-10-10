@@ -8,4 +8,16 @@ export type AgentPowershell = { exe: string,
  * PowerShell 7 (`pwsh`); false for Windows PowerShell 5.1, which has no
  * `&&` or `||`.
  */
-pwsh: boolean, };
+pwsh: boolean, 
+/**
+ * The Microsoft Store's PowerShell 7, when it is the only one: what
+ * Settings → Code offers in place of 5.1.
+ */
+store_pwsh: string | null, 
+/**
+ * Commands run inside their Job object. False for the Store's
+ * PowerShell 7, which Windows starts outside it: Stop and the timeout
+ * may leave what a command started running, and there is no memory
+ * limit.
+ */
+contained: boolean, };

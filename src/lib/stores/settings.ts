@@ -746,6 +746,14 @@ export interface AppSettings {
 	 * the oldest output is dropped. Clamped 1–1024 here and in Rust.
 	 */
 	codeBgLogCapMb: number;
+	/**
+	 * Windows: run the agent's commands in a Windows folder with the
+	 * Microsoft Store's PowerShell 7 when it is the only PowerShell 7,
+	 * rather than Windows PowerShell 5.1. Windows starts it outside the
+	 * command's Job object, so Stop may miss what a command started and
+	 * there is no memory limit (`shell::catalog::agent_powershell`).
+	 */
+	codeStorePowershell: boolean;
 	/** Code tab: the folder the last new session used, offered for the next. */
 	codeLastRoot: string;
 	/** Code tab on Windows: the WSL distro `codeLastRoot` is in; '' for none. */
@@ -910,6 +918,7 @@ const defaults: AppSettings = {
 	commandMemoryLimitPercent: 50,
 	codeMaxIterations: 40,
 	codeBgLogCapMb: 5,
+	codeStorePowershell: false,
 	codeLastRoot: '',
 	codeLastWslDistro: '',
 	codeSidebarWidth: 240,

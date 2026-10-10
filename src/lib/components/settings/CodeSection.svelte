@@ -6,11 +6,21 @@
 	 */
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import { clampInt } from '#lib/utils/clampInt.ts';
+	import { agentPowershell } from '#lib/code/powershell.ts';
+	import type { AgentPowershell } from '#lib/ipc/gen/AgentPowershell.ts';
+	import { onMount } from 'svelte';
 
 	let codeRunCommandTimeoutSecs = $state(getSettings().codeRunCommandTimeoutSecs);
 	let codeMaxIterations = $state(getSettings().codeMaxIterations);
 	let codeAutoApprove = $state(getSettings().codeAutoApprove);
 	let codeBgLogCapMb = $state(getSettings().codeBgLogCapMb);
+	let codeStorePowershell = $state(getSettings().codeStorePowershell);
+	/** Windows: what the agent's PowerShell is; the Store option shows only where it applies. */
+	let powershell = $state<AgentPowershell | null>(null);
+
+	onMount(async () => {
+		powershell = await agentPowershell();
+	});
 
 	function persistTimeout() {
 		codeRunCommandTimeoutSecs = clampInt(codeRunCommandTimeoutSecs, 5, 1800);
@@ -22,6 +32,10 @@
 	}
 	function persistAutoApprove() {
 		updateSettings({ codeAutoApprove });
+	}
+	async function persistStorePowershell() {
+		updateSettings({ codeStorePowershell });
+		powershell = await agentPowershell();
 	}
 	function persistLogCap() {
 		codeBgLogCapMb = clampInt(codeBgLogCapMb, 1, 1024);
@@ -88,6 +102,29 @@
 	</label>
 	<p class="help">The most output a background process keeps.</p>
 </section>
+
+{#if powershell?.store_pwsh}
+	<section class="settings-section">
+		<h2>PowerShell 7 from the Microsoft Store</h2>
+		<label
+			class="toggle-row"
+			title="Windows runs the Store's PowerShell 7 outside Haruspex's control: Stop and the time limit may leave what a command started running, and Settings → Shell → Memory limit doesn't apply. Off, commands in a Windows folder run in Windows PowerShell 5.1. To have both, install PowerShell 7 with: winget install Microsoft.PowerShell"
+		>
+			<input
+				type="checkbox"
+				bind:checked={codeStorePowershell}
+				onchange={() => void persistStorePowershell()}
+			/>
+			<span>Run commands in a Windows folder with it instead of Windows PowerShell 5.1</span>
+		</label>
+		<p class="help">
+			Stop and the memory limit don't fully reach it. <code
+				>winget install Microsoft.PowerShell</code
+			>
+			gives you PowerShell 7 without that.
+		</p>
+	</section>
+{/if}
 
 <section class="settings-section danger" class:enabled={codeAutoApprove}>
 	<h2>Auto-approve commands</h2>

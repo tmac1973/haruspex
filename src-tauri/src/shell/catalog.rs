@@ -43,17 +43,44 @@ pub struct AgentPowershell {
     /// PowerShell 7 (`pwsh`); false for Windows PowerShell 5.1, which has no
     /// `&&` or `||`.
     pub pwsh: bool,
+    /// The Microsoft Store's PowerShell 7, when it is the only one: what
+    /// Settings → Code offers in place of 5.1.
+    pub store_pwsh: Option<String>,
+    /// Commands run inside their Job object. False for the Store's
+    /// PowerShell 7, which Windows starts outside it: Stop and the timeout
+    /// may leave what a command started running, and there is no memory
+    /// limit.
+    pub contained: bool,
+}
+
+static USE_STORE_PWSH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Settings → Code → "Use PowerShell 7 from the Microsoft Store".
+pub fn set_use_store_pwsh(on: bool) {
+    USE_STORE_PWSH.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// PowerShell 7 when installed, else Windows PowerShell 5.1 (always in the
 /// box). Looked up once. None off Windows.
 ///
-/// Not the Microsoft Store's PowerShell 7: a packaged app, Windows starts it
-/// outside the Job object a command runs in (`code_tools::job`), and Stop,
-/// the timeout and the memory limit would no longer reach it. 5.1 then.
+/// Not the Microsoft Store's PowerShell 7 unless the user chose it
+/// ([`set_use_store_pwsh`]): a packaged app, Windows starts it outside the
+/// Job object a command runs in (`code_tools::job`), and Stop, the timeout
+/// and the memory limit no longer reach all of it.
 pub fn agent_powershell() -> Option<AgentPowershell> {
     static FOUND: std::sync::OnceLock<Option<AgentPowershell>> = std::sync::OnceLock::new();
-    FOUND.get_or_init(imp::agent_powershell).clone()
+    let found = FOUND.get_or_init(imp::agent_powershell).clone()?;
+    match &found.store_pwsh {
+        Some(store) if USE_STORE_PWSH.load(std::sync::atomic::Ordering::Relaxed) => {
+            Some(AgentPowershell {
+                exe: store.clone(),
+                pwsh: true,
+                contained: false,
+                ..found
+            })
+        }
+        _ => Some(found),
+    }
 }
 
 /// The installed WSL2 distros, by name. Empty off Windows, without WSL, or
@@ -109,10 +136,17 @@ mod imp {
 
     pub fn agent_powershell() -> Option<super::AgentPowershell> {
         Some(match find_unpackaged_pwsh() {
-            Some(exe) => super::AgentPowershell { exe, pwsh: true },
+            Some(exe) => super::AgentPowershell {
+                exe,
+                pwsh: true,
+                store_pwsh: None,
+                contained: true,
+            },
             None => super::AgentPowershell {
                 exe: find_powershell().unwrap_or_else(|| "powershell.exe".to_string()),
                 pwsh: false,
+                store_pwsh: find_pwsh().filter(|p| is_packaged(std::path::Path::new(p))),
+                contained: true,
             },
         })
     }

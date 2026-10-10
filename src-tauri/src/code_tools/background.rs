@@ -386,14 +386,13 @@ impl CodeBgManager {
                 tokio::spawn(async move { wsl::stop_groups(&d, &pgids, STOP_GRACE).await })
             })
             .collect();
-        // Jobs (Windows) have no gentler signal to send: ended at once.
+        // Jobs (Windows) have no gentler signal to send: ended at once, and
+        // the tree killed after them for what Windows started outside the job
+        // (the Store's PowerShell 7).
         for job in targets.iter().filter_map(|p| p.job.as_ref()) {
             job.terminate();
         }
-        let host: Vec<&BgProcess> = targets
-            .iter()
-            .filter(|p| p.wsl_distro.is_none() && p.job.is_none())
-            .collect();
+        let host: Vec<&BgProcess> = targets.iter().filter(|p| p.wsl_distro.is_none()).collect();
         for p in &host {
             signal_group(p.pid, Signal::Term);
         }

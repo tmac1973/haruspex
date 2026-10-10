@@ -57,7 +57,7 @@ function powershellNote(ps: { pwsh: boolean }): string {
 	return `The project is a Windows folder: commands run in ${which}, not bash, and paths are Windows paths. Use PowerShell (Get-ChildItem, Select-String, $env:NAME) or native programs (git, npm, python).${chain}`;
 }
 
-/** True on macOS. The platform comes from the user agent, as `codeTabAvailable` reads it. */
+/** True on macOS. The platform comes from the user agent. */
 export function isMacOS(
 	userAgent = (typeof navigator !== 'undefined' && navigator.userAgent) || ''
 ): boolean {

@@ -16,7 +16,6 @@
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import { imageFileToDataUrl, imageFilesFrom } from '#lib/utils/image.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
-	import { codeTabAvailable } from '#lib/stores/activeTab.svelte.ts';
 	import SlashMenu from '#lib/components/SlashMenu.svelte';
 	import { runSlash, type SlashHost } from '#lib/slash/slash.ts';
 	import { InputHistory, placeCaret, sentHistory } from '#lib/inputHistory.ts';
@@ -500,14 +499,12 @@
 					Think
 				</button>
 				<button onclick={session.newChat} disabled={submitting} title="Clear chat">New chat</button>
-				{#if codeTabAvailable()}
-					<button
-						onclick={() => void openInCode()}
-						title="Start a Code session in this shell's current folder. This chat stays here."
-					>
-						Open in Code
-					</button>
-				{/if}
+				<button
+					onclick={() => void openInCode()}
+					title="Start a Code session in this shell's current folder. This chat stays here."
+				>
+					Open in Code
+				</button>
 				<button onclick={session.toggleSidebar} title="Collapse">›</button>
 			</div>
 		</header>
