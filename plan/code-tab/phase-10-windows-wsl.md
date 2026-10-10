@@ -183,6 +183,61 @@ as written.
    `getting-started` and `code.md`'s "Not on Windows yet" line, `settings`
    (memory limit); `docs/maintenance.md`'s Windows/WSL section.
 
+## As built
+
+Milestones 0–5 shipped as #426, #427, #430, #433, #435 and the milestone 5
+PR. What differs from the decisions above, and what the box taught us:
+
+- **Never kill a `wsl.exe` relay.** `taskkill /T` on one, and later a plain
+  `taskkill /F` on one whose distro was still booting while another
+  `wsl.exe` started beside it, left the WSL service failing every call
+  (`Wsl/Service/E_UNEXPECTED`) until `wsl --shutdown`. Reproduced only under
+  parallel load on a cold distro; bisected on the box. Now
+  `wsl::GroupState`: a stop signals the Linux group when it is known, and
+  otherwise marks the command so whoever reads the group kills it on
+  arrival. The relay ends on its own; the runner waits at most 30 s for it
+  and WSL children are never `kill_on_drop`.
+- **Decision 6 details:** every distro command is `wsl.exe -d <d> --exec
+  setsid -w bash -c <wrapper> haruspex <cmd> <cwd>`. `--exec`, not `--`
+  (which re-parses the joined arguments in the distro's shell). The wrapper
+  `cd`s itself: `wsl.exe --cd` silently runs in `/` when the folder is gone.
+  The group id is the first stderr line (`wsl::PgidReader`). The stop and
+  sweep scripts run under bash: dash's `kill -- -<pgid>` is "Illegal
+  number". A cancelled WSL command reports exit 128+n, so `killed` comes
+  from a cancel flag too.
+- **Decision 5 as built:** no `CodeRoot` struct. A WSL session hands the
+  workdir-relative fs commands its root as `\\wsl.localhost\<d>\…`
+  (`ioRoot`/`fsWorkdir`), and `resolve_in_workdir` sends such a workdir to
+  `wsl::resolve_in_share`, which checks the Linux path lexically. Windows
+  does **not** follow Linux symlinks on the share at all (not even inside
+  the project), so a path goes to the distro's `realpath -m` only when a
+  symlink is in the way ("file not found", OS error 2, means its folder is
+  real). A bare Linux workdir is refused on Windows: it used to become
+  `C:\home\…`, and writes created it.
+- **Leases and notices** key a WSL folder as `wsl:<distro>:<path>` (Rust
+  `folders::key`, TS `rootsOverlap` with distros).
+- **Decision 8:** `notify::PollWatcher` every 2 s for share folders;
+  `EditorFile.live` shows "Live reload unavailable" for a folder that can't
+  be watched, on every platform.
+- **Decision 9:** `code_tools::git::Place` (`Host` / `Wsl(distro)`); the
+  `Path` functions stay as test wrappers. Worktree `.git` files name Linux
+  paths.
+- **Decision 13:** trust key `repoKey(root)` = `wsl:<distro>:<linux root>`.
+  The skills code reads the repo through the share, so it needed no distro.
+  A Shell tab on a WSL distro finds its repo the same way now (it found
+  none before).
+- **Decision 10:** `ShellSession.initialSelection` and Terminal's
+  `selection` prop; `--cd <linux cwd>` is added in `shell::spawn_session`
+  (not in `kind.rs`). Open in Code sends the distro when the shell's cwd is
+  a Linux path.
+- **`WSL_UTF8`:** `wsl.exe -l -v` prints UTF-8 when `WSL_UTF8=1` is set in
+  the user's environment; the distro list now decodes either, or the tab
+  would never appear for them.
+- The Code tab shows on Windows when `code_wsl_distros` finds a distro
+  (`probeCodeTab`, from the root layout); the dev-build flag is gone.
+- Guide: new `code-windows` page; `docs/testing.md` says how to run the
+  `#[ignore]` WSL tests.
+
 ## Hand tests (on the Windows box, after milestone 5)
 
 1. Fresh install with WSL but no distro: no Code tab. Install Ubuntu, restart:

@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::AsyncReadExt;
@@ -69,11 +69,12 @@ pub struct BgProcess {
     pub wsl_distro: Option<String>,
     /// The host process: the shell, or for WSL the `wsl.exe` relay.
     pub pid: u32,
-    /// For WSL, the Linux process group, once the wrapper has reported it
-    /// (0 before). What a stop signals.
+    /// For WSL, the Linux process group, once the wrapper has reported it,
+    /// and whether it was stopped. What a stop signals; the relay never is
+    /// (see `wsl::GroupState`).
     #[serde(skip)]
     #[ts(skip)]
-    pub wsl_pgid: Arc<AtomicU32>,
+    pub wsl_group: Arc<wsl::GroupState>,
     /// Unix milliseconds.
     #[ts(type = "number")]
     pub started_at: u64,
@@ -194,7 +195,7 @@ impl CodeBgManager {
         };
         let pid = child.id().unwrap_or(0);
         let started_at = now_ms();
-        let wsl_pgid = Arc::new(AtomicU32::new(0));
+        let wsl_group = Arc::new(wsl::GroupState::default());
         // A WSL process is recorded once its group is known (see `pump_wsl_stderr`).
         if wsl_distro.is_none() {
             orphans::register(
@@ -229,7 +230,8 @@ impl CodeBgManager {
                     tokio::spawn(pump_wsl_stderr(
                         err,
                         sink,
-                        wsl_pgid.clone(),
+                        distro.clone(),
+                        wsl_group.clone(),
                         self.registry.clone(),
                         orphan,
                     ));
@@ -250,7 +252,7 @@ impl CodeBgManager {
                 cwd,
                 wsl_distro,
                 pid,
-                wsl_pgid,
+                wsl_group,
                 started_at,
                 running: true,
                 exit_code: None,
@@ -341,13 +343,11 @@ impl CodeBgManager {
             return;
         }
         // WSL groups: one `wsl.exe` per distro, all at once, alongside the host's.
+        // One not reported yet is stopped as its group arrives.
         let mut by_distro: HashMap<String, Vec<u32>> = HashMap::new();
         for p in &targets {
-            if let Some(d) = &p.wsl_distro {
-                by_distro
-                    .entry(d.clone())
-                    .or_default()
-                    .push(p.wsl_pgid.load(Ordering::SeqCst));
+            if let (Some(d), Some(g)) = (&p.wsl_distro, p.wsl_group.stop()) {
+                by_distro.entry(d.clone()).or_default().push(g);
             }
         }
         let wsl_stops: Vec<_> = by_distro
@@ -374,13 +374,6 @@ impl CodeBgManager {
         }
         for stop in wsl_stops {
             let _ = stop.await;
-        }
-        // A relay whose group was never reported is all there is to end (not
-        // its tree: see `Running::kill`). One whose group went exits itself.
-        for p in targets.iter().filter(|p| p.wsl_distro.is_some()) {
-            if p.wsl_pgid.load(Ordering::SeqCst) <= 1 {
-                super::kill_relay(p.pid);
-            }
         }
         let mut procs = self.procs.lock_or_recover();
         for p in &targets {
@@ -523,12 +516,14 @@ async fn pump<R: tokio::io::AsyncRead + Unpin>(mut reader: R, sink: Arc<Mutex<Lo
 }
 
 /// [`pump`] for a WSL process's stderr: the wrapper's group id is taken off
-/// the front, kept in `pgid`, and recorded in the orphan registry as `orphan`
-/// with that group as its pid.
+/// the front, kept in `group`, and recorded in the orphan registry as
+/// `orphan` with that group as its pid. A process stopped before then is
+/// stopped as the group arrives, and not recorded.
 async fn pump_wsl_stderr<R: tokio::io::AsyncRead + Unpin>(
     mut reader: R,
     sink: Arc<Mutex<LogSink>>,
-    pgid: Arc<AtomicU32>,
+    distro: String,
+    group: Arc<wsl::GroupState>,
     registry: Option<PathBuf>,
     mut orphan: RunningServer,
 ) {
@@ -540,9 +535,12 @@ async fn pump_wsl_stderr<R: tokio::io::AsyncRead + Unpin>(
             Ok(n) => {
                 let (g, rest) = ids.feed(&buf[..n]);
                 if let Some(g) = g {
-                    pgid.store(g, Ordering::SeqCst);
-                    orphan.pid = g;
-                    orphans::register(registry.as_deref(), orphan.clone());
+                    if group.reported(g) {
+                        wsl::stop_groups(&distro, &[g], STOP_GRACE).await;
+                    } else {
+                        orphan.pid = g;
+                        orphans::register(registry.as_deref(), orphan.clone());
+                    }
                 }
                 if !rest.is_empty() {
                     sink.lock_or_recover().write(&rest);
@@ -705,7 +703,7 @@ mod wsl_tests {
         let deadline = std::time::Instant::now() + Duration::from_secs(30);
         let pgid = loop {
             let p = &mgr.status(None)[0];
-            let g = p.wsl_pgid.load(Ordering::SeqCst);
+            let g = p.wsl_group.pgid();
             let log = mgr.tail(&started.id, None).unwrap();
             if g > 1 && log.contains("started") && log.contains("warn") {
                 assert!(!log.contains("haruspex-pgid"), "{log:?}");
@@ -753,7 +751,7 @@ mod wsl_tests {
             .unwrap();
         let deadline = std::time::Instant::now() + Duration::from_secs(30);
         let pgid = loop {
-            let g = mgr.status(None)[0].wsl_pgid.load(Ordering::SeqCst);
+            let g = mgr.status(None)[0].wsl_group.pgid();
             if g > 1 && !orphans::load(&registry).is_empty() {
                 break g;
             }

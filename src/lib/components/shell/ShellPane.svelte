@@ -342,6 +342,7 @@
 			<Terminal
 				{attachSessionId}
 				cwd={session.initialCwd}
+				selection={session.initialSelection}
 				onReady={onTerminalReady}
 				onSelectionChange={(has) => (hasSelection = has)}
 				isInputBlocked={() => session.terminalInputBlocked}

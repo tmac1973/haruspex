@@ -120,6 +120,7 @@ async function waitInShell(
 		const res = await openShellForCommand({
 			command,
 			cwd: root,
+			wslDistro: ctx.wslDistro ?? null,
 			wait: true,
 			signal: wait.signal,
 			onOpened: (shell) => {

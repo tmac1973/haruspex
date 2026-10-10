@@ -120,7 +120,7 @@ mod imp {
         cmd.args(["-l", "-v"]);
         apply_no_window(&mut cmd);
         match cmd.output() {
-            Ok(o) if o.status.success() => parse_wsl_list(&decode_utf16le(&o.stdout)),
+            Ok(o) if o.status.success() => parse_wsl_list(&decode_wsl_output(&o.stdout)),
             _ => Vec::new(),
         }
     }
@@ -151,7 +151,18 @@ mod imp {
             .collect()
     }
 
-    /// `wsl.exe` emits UTF-16LE. Decode to a String, lossily.
+    /// `wsl.exe` prints UTF-16LE, or UTF-8 when `WSL_UTF8=1` is set (as a user
+    /// may have it, and as our own `wsl.exe` calls do). The first character of
+    /// the list is ASCII, so a NUL second byte means UTF-16.
+    fn decode_wsl_output(bytes: &[u8]) -> String {
+        if bytes.get(1) == Some(&0) {
+            decode_utf16le(bytes)
+        } else {
+            String::from_utf8_lossy(bytes).into_owned()
+        }
+    }
+
+    /// Decode UTF-16LE to a String, lossily.
     fn decode_utf16le(bytes: &[u8]) -> String {
         let u16s: Vec<u16> = bytes
             .as_chunks::<2>()
@@ -186,6 +197,20 @@ mod imp {
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        #[test]
+        fn reads_the_list_in_either_encoding() {
+            let text = "  NAME      STATE    VERSION
+* Ubuntu    Running  2
+";
+            let utf16: Vec<u8> = text.encode_utf16().flat_map(u16::to_le_bytes).collect();
+            assert_eq!(decode_wsl_output(&utf16), text);
+            assert_eq!(decode_wsl_output(text.as_bytes()), text);
+            assert_eq!(
+                parse_wsl_list(&decode_wsl_output(text.as_bytes())),
+                vec!["Ubuntu"]
+            );
+        }
 
         #[test]
         fn parses_wsl_list_v2_only() {

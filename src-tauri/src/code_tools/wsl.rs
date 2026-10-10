@@ -159,6 +159,43 @@ impl PgidReader {
     }
 }
 
+/// A command running in a distro, as the host stops it: its process group
+/// once the wrapper reports it, and whether it has been stopped.
+///
+/// The `wsl.exe` relay is never killed. Terminating one while the distro
+/// boots, with another `wsl.exe` starting beside it, has left the WSL service
+/// failing every call (`Wsl/Service/E_UNEXPECTED`) until `wsl --shutdown`;
+/// the relay ends on its own once its Linux side has gone. So a command
+/// stopped before its group is known is marked, and whoever reads the group
+/// signals it on arrival (see [`GroupState::reported`]).
+#[derive(Debug, Default)]
+pub struct GroupState {
+    pgid: std::sync::atomic::AtomicU32,
+    stopped: std::sync::atomic::AtomicBool,
+}
+
+impl GroupState {
+    /// The group, or 0 before the wrapper has reported it.
+    pub fn pgid(&self) -> u32 {
+        self.pgid.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// The wrapper reported `pgid`. True when the command was stopped first:
+    /// the caller signals the group now.
+    pub fn reported(&self, pgid: u32) -> bool {
+        self.pgid.store(pgid, std::sync::atomic::Ordering::SeqCst);
+        self.stopped.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Stop the command: the group to signal now, or None when it hasn't
+    /// been reported yet (then [`Self::reported`] says so on arrival).
+    pub fn stop(&self) -> Option<u32> {
+        self.stopped
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        Some(self.pgid()).filter(|&g| g > 1)
+    }
+}
+
 /// Signals every group in `$@` (after the tick count `$1`): TERM, then up to
 /// `$1` tenths of a second for them to go, then KILL for what is left.
 /// A tick count of 0 is KILL straight away. Run by bash: dash's `kill` can't
@@ -677,6 +714,19 @@ mod tests {
         assert_eq!(hits.matches[0].path, "sub/a.txt");
 
         let _ = wsl_exec(&distro, &["rm", "-rf", &base]).status().await;
+    }
+
+    #[test]
+    fn a_stop_before_the_group_is_known_is_carried_out_when_it_arrives() {
+        // Stopped first: nothing to signal yet; the report says to.
+        let early = GroupState::default();
+        assert_eq!(early.stop(), None);
+        assert!(early.reported(42));
+        // Reported first: the stop signals it; the report didn't have to.
+        let late = GroupState::default();
+        assert!(!late.reported(42));
+        assert_eq!(late.pgid(), 42);
+        assert_eq!(late.stop(), Some(42));
     }
 
     #[test]

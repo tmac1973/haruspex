@@ -18,12 +18,14 @@ import { listen } from '@tauri-apps/api/event';
 import { sleep } from '#lib/utils/async.ts';
 import { toPtyPaste } from './commandBlock';
 import type { ShellCommandRequest, ShellCommandResult } from '#lib/code/shellBridge.ts';
+import type { ShellSelection } from '#lib/ipc/gen/ShellSelection.ts';
 
 /** The parts of a `ShellSession` this needs. */
 export interface OpenedSession {
 	readonly id: string;
 	readonly name: string;
 	initialCwd: string | null;
+	initialSelection: ShellSelection | null;
 	/** The PTY, once the pane's terminal has spawned it. */
 	readonly boundSessionId: number | null;
 }
@@ -68,6 +70,7 @@ export async function openForCommand(
 	const session = deps.create();
 	// Read once, when the pane's terminal spawns the PTY.
 	session.initialCwd = req.cwd;
+	if (req.wslDistro) session.initialSelection = { kind: 'wsl', distro: req.wslDistro };
 	deps.show(session.id);
 	const shellName = session.name;
 	const closed: Outcome<never> = { stop: { kind: 'closed', shellName } };

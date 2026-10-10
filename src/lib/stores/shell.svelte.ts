@@ -34,6 +34,7 @@ import { markStepDone, markStepProgress, newRunningStep } from '#lib/agent/steps
 import { describeContextManaged } from '#lib/agent/context-budget.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import { getSettings } from '#lib/stores/settings.ts';
+import type { ShellSelection } from '#lib/ipc/gen/ShellSelection.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { remapIndexedRecords } from '#lib/agent/compaction.ts';
 import { computeMessageStats, type MessageStats } from '#lib/stores/chat.svelte.ts';
@@ -158,6 +159,12 @@ export class ShellSession {
 	 * assigned before the pane mounts and never changes after.
 	 */
 	initialCwd: string | null = null;
+	/**
+	 * The shell this tab runs, when not Settings' picker: a Code session's
+	 * `open_in_shell` opens one in the session's WSL distro. Read with
+	 * `initialCwd`, when the pane mounts; null follows the picker.
+	 */
+	initialSelection: ShellSelection | null = null;
 
 	messages = $state<ChatMessage[]>([]);
 	streamingContent = $state('');
@@ -322,6 +329,16 @@ export class ShellSession {
 	};
 
 	/**
+	 * The WSL distro a Linux `cwd` of this tab is in: its own selection's, or
+	 * the picker's. Null for a host folder (PowerShell, or Linux/macOS).
+	 */
+	private wslDistro(cwd: string): string | null {
+		if (!cwd.startsWith('/')) return null;
+		const sel = this.initialSelection ?? getSettings().shellSelection;
+		return sel?.kind === 'wsl' ? sel.distro : null;
+	}
+
+	/**
 	 * "Open in Code": a Code session rooted at the folder the terminal is in
 	 * right now, shown in the Code tab. The thread here doesn't go with it.
 	 * Rejects when the shell hasn't reported a folder, or no session opens.
@@ -330,7 +347,7 @@ export class ShellSession {
 		const live = await this.fetchLiveContext();
 		const cwd = live?.currentCwd;
 		if (!cwd) throw new Error("The shell hasn't reported its folder yet.");
-		await openCodeAt(cwd);
+		await openCodeAt(cwd, this.wslDistro(cwd));
 	};
 
 	/**

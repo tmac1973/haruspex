@@ -17,6 +17,11 @@ export interface ShellCommandRequest {
 	command: string;
 	/** Where the new shell starts: the Code session's folder. */
 	cwd: string;
+	/**
+	 * The WSL distro the folder is in: the tab runs a shell there, whatever
+	 * the Shell picker says, and starts at the Linux `cwd`.
+	 */
+	wslDistro?: string | null;
 	/** Wait for the command to finish. False opens the tab and returns. */
 	wait: boolean;
 	/** Ends the wait. The shell tab stays open. */

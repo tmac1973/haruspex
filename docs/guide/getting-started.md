@@ -39,7 +39,7 @@ To run the wizard again later, use Settings → Inference → **Run Setup Wizard
 | **Chat** | Ask questions. The assistant can search the web, read and write files in a working folder, run Python, look at images, and use your email, calendar or other connected services if you turn them on. |
 | **Jobs** | Save a task and run it later, by hand or on a schedule: research, audit, guided planning, autonomous coding and asset generation. A badge shows when jobs are running or queued. |
 | **Shell** | A real terminal with an assistant beside it. Read-only by default: it suggests commands for you to run. You can open several shell tabs. |
-| **Code** | A coding agent that works in one project folder: it edits files and runs commands, showing diffs and command output. Sessions are saved. Not on Windows yet. |
+| **Code** | A coding agent that works in one project folder: it edits files and runs commands, showing diffs and command output. Sessions are saved. On Windows, inside WSL. |
 
 Along the top of the window you also find the server status (click it to open the logs), a light/dark toggle, the log viewer, the help list of keyboard shortcuts (**?** or F1), and Settings.
 

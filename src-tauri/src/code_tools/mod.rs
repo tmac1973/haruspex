@@ -23,7 +23,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::io::AsyncReadExt;
@@ -32,6 +32,10 @@ use tokio::io::AsyncReadExt;
 const DEFAULT_TIMEOUT_SECS: u64 = 120;
 /// Hard upper bound on a single command's timeout.
 const MAX_TIMEOUT_SECS: u64 = 1800;
+/// How long a stopped WSL command's relay gets to end on its own. It is
+/// never killed (see `wsl::GroupState`); past this the result is returned
+/// without it.
+const RELAY_EXIT_WAIT: Duration = Duration::from_secs(30);
 /// Grace period to finish draining stdout/stderr after the process exits,
 /// before we give up and kill any lingering pipe-holding children.
 const DRAIN_GRACE: Duration = Duration::from_secs(2);
@@ -42,52 +46,28 @@ enum Running {
     /// A host process. On unix the PID doubles as the process-group id (we
     /// spawn with `process_group(0)`), so killing it reaps the whole tree.
     Host(u32),
-    /// A command inside a WSL distro: the `wsl.exe` relay, and the Linux
-    /// process group it reported (0 until it has; see `wsl::PgidReader`).
+    /// A command inside a WSL distro: its Linux process group, signalled from
+    /// inside the distro. The `wsl.exe` relay is never killed; it ends once
+    /// the group has (see `wsl::GroupState`).
     Wsl {
         distro: String,
-        relay: u32,
-        pgid: Arc<AtomicU32>,
+        group: Arc<wsl::GroupState>,
     },
 }
 
 impl Running {
-    /// Kill the command and everything it started, right away.
+    /// Kill the command and everything it started, right away. A WSL command
+    /// whose group isn't reported yet is killed when it is.
     async fn kill(&self) {
         match self {
             Running::Host(pid) => kill_process_tree(*pid),
-            Running::Wsl {
-                distro,
-                relay,
-                pgid,
-            } => {
-                let g = pgid.load(Ordering::SeqCst);
-                if g > 1 {
-                    // The relay exits on its own once the group has gone.
+            Running::Wsl { distro, group } => {
+                if let Some(g) = group.stop() {
                     wsl::stop_groups(distro, &[g], Duration::ZERO).await;
-                } else {
-                    // Never reported: ending the relay is all there is. Not
-                    // `taskkill /T`, whose walk of a relay's tree has left
-                    // the WSL service failing every call until a restart.
-                    kill_relay(*relay);
                 }
             }
         }
     }
-}
-
-/// End a `wsl.exe` relay alone (Windows).
-#[cfg(windows)]
-pub(crate) fn kill_relay(pid: u32) {
-    let mut cmd = std::process::Command::new("taskkill");
-    cmd.args(["/F", "/PID", &pid.to_string()]);
-    crate::shell::platform::apply_no_window(&mut cmd);
-    let _ = cmd.output();
-}
-
-#[cfg(not(windows))]
-pub(crate) fn kill_relay(pid: u32) {
-    kill_process_tree(pid);
 }
 
 /// command_id → the running command and whether it was cancelled, so
@@ -227,10 +207,11 @@ pub async fn run_command_capture(
         None => (cmd, None),
     };
     hide_window(&mut cmd);
+    // Never for a WSL relay: see `wsl::GroupState`.
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .kill_on_drop(true);
+        .kill_on_drop(!is_wsl);
     if !is_wsl {
         cmd.current_dir(&cwd);
     }
@@ -241,16 +222,14 @@ pub async fn run_command_capture(
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn command: {e}"))?;
-    let pid = child.id();
-    let pgid = Arc::new(AtomicU32::new(0));
-    let running = pid.map(|pid| match &wsl_distro {
-        Some(distro) => Running::Wsl {
+    let group = Arc::new(wsl::GroupState::default());
+    let running = match &wsl_distro {
+        Some(distro) => Some(Running::Wsl {
             distro: distro.clone(),
-            relay: pid,
-            pgid: pgid.clone(),
-        },
-        None => Running::Host(pid),
-    });
+            group: group.clone(),
+        }),
+        None => child.id().map(Running::Host),
+    };
     let cancelled = Arc::new(AtomicBool::new(false));
     if let Some(r) = &running {
         registry()
@@ -267,20 +246,34 @@ pub async fn run_command_capture(
         let _ = stdout.read_to_end(&mut buf).await;
         buf
     });
-    let err_task = tokio::spawn(read_stderr(stderr, is_wsl.then_some(pgid)));
+    let err_task = tokio::spawn(read_stderr(
+        stderr,
+        wsl_distro.clone().map(|d| (d, group.clone())),
+    ));
 
     let mut killed = false;
     let status = match tokio::time::timeout(timeout, child.wait()).await {
-        Ok(s) => s.map_err(|e| format!("Failed to wait on command: {e}"))?,
+        Ok(s) => Some(s.map_err(|e| format!("Failed to wait on command: {e}"))?),
         Err(_) => {
             killed = true;
             if let Some(r) = &running {
                 r.kill().await;
             }
-            child
-                .wait()
-                .await
-                .map_err(|e| format!("Failed to reap killed command: {e}"))?
+            if is_wsl {
+                // The relay ends once its group has; never killed, so not
+                // waited on forever either.
+                match tokio::time::timeout(RELAY_EXIT_WAIT, child.wait()).await {
+                    Ok(s) => s.ok(),
+                    Err(_) => None,
+                }
+            } else {
+                Some(
+                    child
+                        .wait()
+                        .await
+                        .map_err(|e| format!("Failed to reap killed command: {e}"))?,
+                )
+            }
         }
     };
     registry().lock_or_recover().remove(&command_id);
@@ -298,7 +291,7 @@ pub async fn run_command_capture(
         }
     };
 
-    let exit_code = status.code();
+    let exit_code = status.and_then(|s| s.code());
     // A command that outgrew its ceiling usually still exits: the kernel kills
     // the biggest process (the test binary), and whatever ran it reports a
     // failure. Only the scope knows why.
@@ -336,14 +329,15 @@ pub async fn run_command_cancel(command_id: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Read a command's stderr to the end. For a WSL command (`pgid` given),
-/// the wrapper's group id is taken off the front and published to `pgid`.
+/// Read a command's stderr to the end. For a WSL command (its distro and
+/// group given), the wrapper's group id is taken off the front and recorded;
+/// a command stopped before then is killed as it arrives.
 async fn read_stderr(
     mut stderr: tokio::process::ChildStderr,
-    pgid: Option<Arc<AtomicU32>>,
+    wsl: Option<(String, Arc<wsl::GroupState>)>,
 ) -> Vec<u8> {
     let mut buf = Vec::new();
-    let Some(pgid) = pgid else {
+    let Some((distro, group)) = wsl else {
         let _ = stderr.read_to_end(&mut buf).await;
         return buf;
     };
@@ -355,7 +349,12 @@ async fn read_stderr(
             Ok(n) => {
                 let (g, rest) = reader.feed(&chunk[..n]);
                 if let Some(g) = g {
-                    pgid.store(g, Ordering::SeqCst);
+                    if group.reported(g) {
+                        let distro = distro.clone();
+                        tokio::spawn(async move {
+                            wsl::stop_groups(&distro, &[g], Duration::ZERO).await
+                        });
+                    }
                 }
                 buf.extend(rest);
             }

@@ -18,6 +18,7 @@ const ORDER = [
 	'shell',
 	'code',
 	'code-sessions',
+	'code-windows',
 	'skills',
 	'jobs',
 	'memory',

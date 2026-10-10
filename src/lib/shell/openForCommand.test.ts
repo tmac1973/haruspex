@@ -40,6 +40,7 @@ function setup(
 		id: 'shell-3',
 		name: 'Shell 3',
 		initialCwd: null,
+		initialSelection: null,
 		get boundSessionId() {
 			return state.bound ? PTY : null;
 		}
@@ -112,6 +113,19 @@ describe('openForCommand', () => {
 		expect(onOpened).toHaveBeenCalledWith(expect.objectContaining({ name: 'Shell 3' }));
 		onOpened.mock.calls[0][0].focus();
 		expect(state.shown).toEqual(['shell-3', 'shell-3']);
+	});
+
+	it("opens a WSL session's command in its distro, leaving the picker alone", async () => {
+		const { session, deps } = setup();
+		await openForCommand(
+			{ command: 'ls', cwd: '/home/tim/p', wslDistro: 'Ubuntu', wait: false },
+			deps
+		);
+		expect(session.initialCwd).toBe('/home/tim/p');
+		expect(session.initialSelection).toEqual({ kind: 'wsl', distro: 'Ubuntu' });
+		const host = setup();
+		await openForCommand({ command: 'ls', cwd: '/proj', wait: false }, host.deps);
+		expect(host.session.initialSelection).toBeNull();
 	});
 
 	it('returns the finished command as the result', async () => {

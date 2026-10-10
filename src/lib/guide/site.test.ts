@@ -6,7 +6,7 @@ import { parsePage, readPages, renderGuide } from '../../../scripts/build-guide.
 describe('the guide on the website', () => {
 	it('renders every page, getting-started at /guide/', () => {
 		const files = renderGuide(readPages(join(process.cwd(), 'docs/guide')));
-		expect(files.size).toBe(17);
+		expect(files.size).toBe(18);
 		expect(files.get('index.html')).toContain('<title>Getting started · Haruspex guide</title>');
 		expect(files.get('skills/index.html')).toContain(
 			'<a href="../jobs/"><code>jobs</code></a> page'
