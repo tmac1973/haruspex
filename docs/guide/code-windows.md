@@ -30,12 +30,11 @@ A folder under `/mnt/c/…` is your Windows drive seen from Linux. It works, but
 - **Git** is the distro's own git, with your Linux config and credentials. A worktree fork is made beside the repository inside the distro, so `git worktree list` there shows it.
 - **Editor windows** open the files through the distro and check for changes every few seconds, so an edit made in a Linux editor shows up shortly after. If a folder can't be watched, the editor says **Live reload unavailable**; saving still checks for changes.
 - **Open in Shell** and the agent's terminal hand-offs open a Shell tab in the same distro and folder, whatever the Shell tab's own picker says.
-- **AGENTS.md and project skills** are read from the repository inside the distro. Settings → Skills lists such a repository as `<path> (<distro>)`.
+- **AGENTS.md and project skills** are read from the repository inside the distro, symlinks included. Settings → Skills lists such a repository as `<path> (<distro>)`.
 
 ## What isn't supported
 
 - Projects in Windows folders, and PowerShell as the agent's shell.
 - Settings → Shell → Memory limit doesn't apply to commands inside WSL.
-- An `AGENTS.md` that is a symlink can't be read; the repository counts as having none.
 - `localhost` inside the distro may not reach servers running on Windows (such as the one Haruspex starts), unless WSL's mirrored networking is on.
 - Running Haruspex itself inside WSL.

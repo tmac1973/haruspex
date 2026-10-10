@@ -386,7 +386,7 @@ fn project_instructions(root: &Path) -> ProjectInstructions {
     skill_names.dedup();
     let agents_md = ["AGENTS.md", "CLAUDE.md"]
         .iter()
-        .any(|f| root.join(f).is_file());
+        .any(|f| crate::code_tools::wsl::follow_share_link(&root.join(f)).is_file());
     ProjectInstructions {
         skill_names,
         agents_md,
@@ -460,6 +460,38 @@ fn delete_user_skill(user_dir: &Path, name: &str) -> Result<(), String> {
         return fs::remove_file(dir).map_err(|e| e.to_string());
     }
     fs::remove_dir_all(dir).map_err(|e| e.to_string())
+}
+
+/// WSL integration: needs a WSL2 distro, so `--ignored` on the Windows box.
+#[cfg(all(test, windows))]
+mod wsl_tests {
+    use super::*;
+    use crate::code_tools::wsl;
+
+    #[tokio::test]
+    #[ignore]
+    async fn a_wsl_repos_symlinked_instructions_and_skills_are_found() {
+        let distro = wsl::distros().into_iter().next().expect("a WSL2 distro");
+        let home = wsl::realpath_in(&distro, "~").await.unwrap();
+        let repo = format!("{home}/.haruspex-links-test-{}", std::process::id());
+        let setup = format!(
+            "set -e; rm -rf '{repo}'; mkdir -p '{repo}/.git' '{repo}/docs' '{repo}/.agents/skills/deploy' '{repo}/.claude';              cd '{repo}'; echo 'Say pelican.' > docs/rules.md; ln -s docs/rules.md AGENTS.md;              printf -- '---\nname: deploy\ndescription: Ship it.\n---\nSteps.\n' > .agents/skills/deploy/SKILL.md;              ln -s ../.agents/skills .claude/skills"
+        );
+        let ok = wsl::wsl_exec(&distro, &["bash", "-c", &setup])
+            .status()
+            .await
+            .unwrap();
+        assert!(ok.success());
+        let root = wsl::share_path(&distro, &repo);
+
+        let info = project_instructions(&root);
+        assert!(info.agents_md, "the AGENTS.md link was not followed");
+        assert_eq!(info.skill_names, vec!["deploy".to_string()]);
+        let md = agents_md::read(&root, &root).expect("instructions");
+        assert!(md.text.contains("Say pelican."), "{}", md.text);
+
+        let _ = wsl::wsl_exec(&distro, &["rm", "-rf", &repo]).status().await;
+    }
 }
 
 #[cfg(test)]

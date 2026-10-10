@@ -388,6 +388,29 @@ fn realpath_lenient(distro: &str, linux: &str) -> Result<String, String> {
     Ok(real)
 }
 
+/// `path` with a final symlink followed, when it is on a WSL distro's share:
+/// Windows can't read through a Linux symlink there, so a repo whose
+/// `CLAUDE.md` links to its `AGENTS.md`, or whose `.claude/skills` links to
+/// `.agents/skills`, would look empty. Asks the distro's `realpath` only
+/// for a symlink; anything else, or a path it can't resolve, comes back as
+/// it is. Blocking.
+pub fn follow_share_link(path: &std::path::Path) -> std::path::PathBuf {
+    let is_link = std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink());
+    if !is_link {
+        return path.to_path_buf();
+    }
+    let Some((distro, linux)) = parse_wsl_unc(&path.to_string_lossy()) else {
+        return path.to_path_buf();
+    };
+    match realpath_lenient(&distro, &linux) {
+        Ok(real) => share_path(&distro, &real),
+        Err(e) => {
+            log::warn!("Couldn't follow {linux} in {distro}: {e}");
+            path.to_path_buf()
+        }
+    }
+}
+
 /// A resolved share path as the model should see it: relative to the root,
 /// with `/`. None when `resolved` isn't on the share of `workdir`.
 pub fn share_display(workdir: &std::path::Path, resolved: &std::path::Path) -> Option<String> {
