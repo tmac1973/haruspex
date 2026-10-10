@@ -253,6 +253,7 @@ pub fn sweep_groups(distro: &str, groups: &[(u32, String)]) {
 // path is passed to the distro's `realpath` only when a symlink is in the way.
 
 /// The share path of `linux` in `distro`: `\\wsl.localhost\Ubuntu\home\tim`.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn share_path(distro: &str, linux: &str) -> std::path::PathBuf {
     let tail = linux.trim_start_matches('/').replace('/', "\\");
     std::path::PathBuf::from(format!(r"\\wsl.localhost\{distro}\{tail}"))
@@ -265,6 +266,7 @@ pub fn linux_within(path: &str, dir: &str) -> bool {
 }
 
 /// `path` without `.` components or doubled slashes. `..` is refused before this.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn tidy_linux(path: &str) -> String {
     let parts: Vec<&str> = path
         .split('/')
@@ -273,6 +275,7 @@ fn tidy_linux(path: &str) -> String {
     format!("/{}", parts.join("/"))
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 const ESCAPES: &str = "path escapes working directory";
 
 /// Resolve a file tool's path inside a WSL session's `root` (a canonical
@@ -281,6 +284,7 @@ const ESCAPES: &str = "path escapes working directory";
 /// of the same distro; `..`, a Windows path and anything outside the root
 /// are refused. A path through a symlink is resolved inside the distro and
 /// must still land inside the root.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn resolve_in_share(distro: &str, root: &str, rel: &str) -> Result<std::path::PathBuf, String> {
     if rel.split(['/', '\\']).any(|seg| seg == "..") {
         return Err(ESCAPES.to_string());
@@ -325,6 +329,7 @@ pub fn resolve_in_share(distro: &str, root: &str, rel: &str) -> Result<std::path
 
 /// `realpath -m` inside `distro`: symlinks resolved, missing components
 /// allowed. Blocking.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn realpath_lenient(distro: &str, linux: &str) -> Result<String, String> {
     let mut cmd = std::process::Command::new("wsl.exe");
     cmd.args(["-d", distro, "--exec", "realpath", "-m", "--", linux])
