@@ -40,6 +40,7 @@ use tokio::sync::{broadcast, watch};
 
 use super::clients::{required_scope, Clients, OwnerClient, Scope};
 use super::pairing::PairingCodes;
+use super::tls_listen::PeerAddr;
 use super::trust::{host_is_ours, Trust};
 use crate::db::ImageRow;
 use crate::image_cache::is_valid_hash;
@@ -147,8 +148,13 @@ impl Running {
     }
 }
 
-/// Bind and serve. Returns once the socket is listening.
-pub async fn start(services: Services, port: u16, bind_all: bool) -> Result<Running, String> {
+/// Bind and serve HTTPS with `tls`. Returns once the socket is listening.
+pub async fn start(
+    services: Services,
+    port: u16,
+    bind_all: bool,
+    tls: Arc<rustls::ServerConfig>,
+) -> Result<Running, String> {
     let ip = if bind_all {
         IpAddr::V4(Ipv4Addr::UNSPECIFIED)
     } else {
@@ -158,7 +164,8 @@ pub async fn start(services: Services, port: u16, bind_all: bool) -> Result<Runn
     let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
         format!("could not listen on {addr}: {e} — another program may already have that port")
     })?;
-    let port = listener.local_addr().map(|a| a.port()).unwrap_or(port);
+    let local = listener.local_addr().map_err(|e| e.to_string())?;
+    let port = local.port();
 
     let (shutdown, mut rx) = watch::channel(false);
     let state = AppState {
@@ -187,10 +194,17 @@ pub async fn start(services: Services, port: u16, bind_all: bool) -> Result<Runn
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .with_state(state);
 
+    let (accepted, incoming) = tokio::sync::mpsc::channel(64);
+    let acceptor = tokio::spawn(super::tls_listen::accept_loop(
+        listener,
+        tokio_rustls::TlsAcceptor::from(tls),
+        accepted,
+        shutdown.subscribe(),
+    ));
     let task = tokio::spawn(async move {
         let served = axum::serve(
-            listener,
-            router.into_make_service_with_connect_info::<SocketAddr>(),
+            super::tls_listen::TlsListener::new(incoming, local),
+            router.into_make_service_with_connect_info::<PeerAddr>(),
         )
         .with_graceful_shutdown(async move {
             let _ = rx.wait_for(|stop| *stop).await;
@@ -198,9 +212,12 @@ pub async fn start(services: Services, port: u16, bind_all: bool) -> Result<Runn
         if let Err(e) = served.await {
             log::error!("[owner] server stopped: {e}");
         }
+        // The port is the acceptor's: it is free once that has ended.
+        acceptor.abort();
+        let _ = acceptor.await;
     });
     log::info!(
-        "[owner] serving on {}:{port}",
+        "[owner] serving HTTPS on {}:{port}",
         if bind_all { "0.0.0.0" } else { "127.0.0.1" }
     );
     Ok(Running {
@@ -370,7 +387,7 @@ fn missing(client: &OwnerClient, scope: Scope) -> Option<Response> {
 /// wrong code counts as a wrong token for the throttle.
 async fn pair(
     State(state): State<AppState>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    ConnectInfo(peer): ConnectInfo<PeerAddr>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
@@ -394,14 +411,8 @@ async fn pair(
             "that link has expired or was used already: make a new one in Settings → Remote control",
         );
     };
-    // Behind `tailscale serve` the browser speaks HTTPS and this server
-    // plain HTTP; the proxy says which.
-    let secure = headers
-        .get("x-forwarded-proto")
-        .is_some_and(|v| v.as_bytes().eq_ignore_ascii_case(b"https"));
     let cookie = format!(
-        "{OWNER_COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000{}",
-        if secure { "; Secure" } else { "" }
+        "{OWNER_COOKIE}={token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=31536000"
     );
     let mut response = Json(json!({ "ok": true })).into_response();
     response
@@ -414,7 +425,7 @@ async fn logout() -> Response {
     let mut response = Json(json!({ "ok": true })).into_response();
     response.headers_mut().insert(
         SET_COOKIE,
-        format!("{OWNER_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0")
+        format!("{OWNER_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0")
             .parse()
             .expect("static cookie"),
     );
@@ -526,7 +537,7 @@ fn engine_status(error: &str) -> StatusCode {
 
 async fn op(
     State(state): State<AppState>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    ConnectInfo(peer): ConnectInfo<PeerAddr>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
@@ -552,7 +563,7 @@ async fn op(
 
 async fn events(
     State(state): State<AppState>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    ConnectInfo(peer): ConnectInfo<PeerAddr>,
     headers: HeaderMap,
 ) -> Response {
     let client = match authorise(&state, peer.ip(), &headers).await {
@@ -578,7 +589,7 @@ async fn events(
 /// page can show them (`GET /api/v1/image/…`).
 async fn images(
     State(state): State<AppState>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    ConnectInfo(peer): ConnectInfo<PeerAddr>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
@@ -617,7 +628,7 @@ async fn images(
 /// One cached image.
 async fn image(
     State(state): State<AppState>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    ConnectInfo(peer): ConnectInfo<PeerAddr>,
     headers: HeaderMap,
     Path(hash): Path<String>,
 ) -> Response {
@@ -758,6 +769,64 @@ mod tests {
         }
     }
 
+    fn test_tls() -> Arc<rustls::ServerConfig> {
+        let names = crate::owner::tls::names_for(Some("box"), None);
+        let ips = ["127.0.0.1".parse().unwrap()];
+        let id =
+            crate::owner::tls::generate(&names, &ips, time::OffsetDateTime::now_utc()).unwrap();
+        crate::owner::tls::server_config(&id).unwrap()
+    }
+
+    #[tokio::test]
+    async fn plain_http_is_sent_to_https_and_the_cookie_is_secure() {
+        let h = serve().await;
+        let port = h.running.port;
+        let plain = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap();
+        let r = plain
+            .get(format!("http://127.0.0.1:{port}/app/?a=1"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 308);
+        assert_eq!(
+            r.headers()[LOCATION],
+            format!("https://127.0.0.1:{port}/app/?a=1").as_str()
+        );
+        let code = h.pairing.issue(&h.token(&[Scope::Read])).unwrap();
+        let r = h
+            .http
+            .post(format!("{}/api/v1/pair", h.base))
+            .json(&json!({ "code": code }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200);
+        let cookie = r.headers()[SET_COOKIE].to_str().unwrap();
+        assert!(cookie.contains("; Secure"), "{cookie}");
+        h.running.stop();
+    }
+
+    /// A client that connects and says nothing doesn't stop the next one.
+    #[tokio::test]
+    async fn a_silent_connection_holds_nobody_up() {
+        let h = serve().await;
+        let _silent = tokio::net::TcpStream::connect(("127.0.0.1", h.running.port))
+            .await
+            .unwrap();
+        let r = tokio::time::timeout(
+            Duration::from_secs(3),
+            h.http.get(format!("{}/api/v1/health", h.base)).send(),
+        )
+        .await
+        .expect("held up")
+        .unwrap();
+        assert_eq!(r.status(), 200);
+        h.running.stop();
+    }
+
     struct Harness {
         base: String,
         stub: Arc<Stub>,
@@ -790,16 +859,18 @@ mod tests {
             web_root: Some(web),
             trust: trust.clone(),
         };
-        let running = start(services, 0, false).await.unwrap();
+        let running = start(services, 0, false, test_tls()).await.unwrap();
         Harness {
-            base: format!("http://127.0.0.1:{}", running.port),
+            base: format!("https://127.0.0.1:{}", running.port),
             stub,
             clients,
             pairing,
             trust,
             running,
+            // Our own certificate: the owner's browser accepts it once.
             http: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
+                .danger_accept_invalid_certs(true)
                 .build()
                 .unwrap(),
         }
@@ -1159,7 +1230,6 @@ mod tests {
         assert_eq!(r.status(), 200);
         let set = r.headers()[SET_COOKIE].to_str().unwrap().to_string();
         assert!(set.contains("HttpOnly") && set.contains("SameSite=Strict"));
-        assert!(!set.contains("Secure"));
         set.split(';').next().unwrap().to_string()
     }
 
@@ -1171,7 +1241,6 @@ mod tests {
         let pair = || {
             h.http
                 .post(format!("{}/api/v1/pair", h.base))
-                .header("X-Forwarded-Proto", "https")
                 .json(&json!({ "code": code }))
                 .send()
         };
@@ -1350,7 +1419,7 @@ mod tests {
             web_root: None,
             trust: h.trust.clone(),
         };
-        let again = start(services, port, false).await;
+        let again = start(services, port, false, test_tls()).await;
         assert!(again.is_ok(), "{:?}", again.err());
         // And the page's stream ended rather than hanging on a dead server.
         let ended = tokio::time::timeout(Duration::from_secs(3), stream.bytes()).await;

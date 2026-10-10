@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { controlPaths, readInfo } from './control.mjs';
+import { pinnedFetch } from './https.mjs';
 
 const DRIVE = fileURLToPath(new URL('../drive.mjs', import.meta.url));
 
@@ -93,11 +94,14 @@ try {
 	check(saved.files.includes(`transcript-${id}.md`), 'stop writes the transcript');
 	check(readInfo(controlPaths()) === null, 'stop leaves no driver behind');
 
-	// Phase 3: the same engine, through the owner API over HTTP.
+	// Phase 3: the same engine, through the owner API over HTTPS.
 	writeFileSync(join(folder, 'README.md'), '# Helo\n');
 	const viaApi = drive('start', '--fake', 'code-tab', '--folder', folder, '--api');
 	started = true;
-	check(viaApi.api?.startsWith('http://127.0.0.1:'), 'start --api turns the owner API on');
+	check(
+		viaApi.api?.startsWith('https://127.0.0.1:'),
+		'start --api turns the owner API on, over HTTPS'
+	);
 	const { id: apiId } = drive('new-session');
 	const apiTurn = drive(
 		'send',
@@ -109,7 +113,7 @@ try {
 		'--timeout',
 		'60'
 	);
-	check(apiTurn.state === 'done', 'a turn sent over HTTP runs');
+	check(apiTurn.state === 'done', 'a turn sent over HTTPS runs');
 	check(readFileSync(join(folder, 'README.md'), 'utf8') === '# Hello\n', 'and edits the file');
 	const stream = drive('api-events', '--seconds', '2');
 	check(stream[0]?.type === 'ready', 'the event stream says it is ready');
@@ -119,6 +123,15 @@ try {
 	const { url } = drive('web-url');
 	const base = url.slice(0, url.indexOf('/app/'));
 	const code = url.slice(url.indexOf('#pair=') + 6);
+	// Verified against its own certificate, which the driver saved.
+	const fetch = pinnedFetch(readFileSync(drive('status').apiCa, 'utf8'));
+	const plain = await globalThis.fetch(`${base.replace('https:', 'http:')}/app/`, {
+		redirect: 'manual'
+	});
+	check(
+		plain.status === 308 && plain.headers.get('location') === `${base}/app/`,
+		'plain HTTP is sent to HTTPS'
+	);
 	const page = await fetch(`${base}/app/`);
 	check(
 		page.ok && (await page.text()).includes('<div id="app">'),

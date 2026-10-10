@@ -6,6 +6,8 @@ pub mod clients;
 pub mod commands;
 pub mod pairing;
 pub mod server;
+pub mod tls;
+mod tls_listen;
 pub mod trust;
 
 use std::path::PathBuf;
@@ -32,10 +34,15 @@ pub struct OwnerApi {
     pairing: Arc<PairingCodes>,
     /// Who may connect without a token; changed in place, no restart.
     trust: Arc<Trust>,
+    /// Where the HTTPS certificate is kept (`tls.rs`).
+    tls_path: Option<PathBuf>,
+    /// The running server's certificate: its fingerprint and PEM.
+    served: Mutex<Option<(String, String)>>,
 }
 
 impl OwnerApi {
     pub fn load(dir: Option<PathBuf>) -> Self {
+        let tls_path = dir.as_ref().map(|d| d.join("owner-tls.json"));
         let clients = match dir {
             Some(dir) => Clients::load(dir.join("owner-clients.json")).map(Arc::new),
             None => Err("no app data folder for the device list".into()),
@@ -48,6 +55,8 @@ impl OwnerApi {
             clients,
             pairing: Arc::new(PairingCodes::default()),
             trust: Arc::new(Trust::default()),
+            tls_path,
+            served: Mutex::new(None),
         }
     }
 

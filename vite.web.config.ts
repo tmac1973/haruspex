@@ -5,7 +5,8 @@
  * as the `web-client/` resource (tauri.conf.json).
  *
  *   npm run build:web    build into src-tauri/web-client/
- *   npm run dev:web      dev server on 1430, /api proxied to the owner API on 8788
+ *   npm run dev:web      dev server on 1430, /api proxied to the owner API on 8788 (HTTPS,
+ *                        its own certificate)
  */
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -36,6 +37,6 @@ export default defineConfig({
 	server: {
 		port: 1430,
 		strictPort: true,
-		proxy: { '/api': 'http://127.0.0.1:8788' }
+		proxy: { '/api': { target: 'https://127.0.0.1:8788', secure: false } }
 	}
 });

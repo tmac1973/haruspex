@@ -85,11 +85,20 @@
 	/** Where it answers, from this computer's point of view. */
 	const address = $derived(
 		status?.running && status.address && status.port
-			? `http://${status.address}:${status.port}`
+			? `https://${status.address}:${status.port}`
 			: null
 	);
 	/** Where another computer opens the page: the link address, else the address. */
-	const base = $derived(linkBase.trim() || address);
+	const base = $derived(linkBase.trim() ? asHttps(linkBase.trim()) : address);
+
+	/** A link address as HTTPS, which is all the server speaks: `box.lan` or `http://…` too. */
+	function asHttps(link: string): string {
+		if (/^http:\/\//i.test(link)) return `https://${link.slice(7)}`;
+		return /^[a-z]+:\/\//i.test(link) ? link : `https://${link}`;
+	}
+
+	const CERT_HINT =
+		'Haruspex made its own certificate, so a browser warns the first time. Continue if the fingerprint it shows matches Settings → Remote control → Advanced → Certificate.';
 	const pageUrl = $derived(base ? `${base.replace(/\/+$/, '')}/app/` : null);
 
 	async function refresh(): Promise<void> {
@@ -283,7 +292,7 @@
 					class="label inline"
 					title="Open this in a browser on a computer allowed above. No token or link needed.{status?.hostname
 						? ` ${status.hostname}'s name may work in place of the address.`
-						: ''}">Open on your other computer</span
+						: ''} {CERT_HINT}">Open on your other computer</span
 				>
 				<code class="value">{pageUrl}</code>
 				<button class="btn btn-small" onclick={() => copy(pageUrl!, 'page')}
@@ -452,15 +461,39 @@
 			<input
 				id="owner-link-base"
 				type="url"
-				placeholder={address ?? 'http://…'}
+				placeholder={address ?? 'https://…'}
 				bind:value={linkBase}
 				onchange={apply}
 			/>
 		</div>
+		{#if status?.fingerprint}
+			<div class="field">
+				<span class="label" title={CERT_HINT}>Certificate</span>
+				<div class="row">
+					<code class="value fingerprint" title="SHA-256 fingerprint">{status.fingerprint}</code>
+					<button class="btn btn-small" onclick={() => copy(status!.fingerprint!, 'cert')}
+						>{copied === 'cert' ? 'Copied' : 'Copy'}</button
+					>
+					{#if status.certificate}
+						<button
+							class="btn btn-small"
+							title="The certificate itself (PEM), for a script to trust: save it to a file and pass it to curl --cacert."
+							onclick={() => copy(status!.certificate!, 'pem')}
+							>{copied === 'pem' ? 'Copied' : 'Copy certificate'}</button
+						>
+					{/if}
+				</div>
+			</div>
+		{/if}
 	</details>
 </section>
 
 <style>
+	.fingerprint {
+		overflow-wrap: anywhere;
+		font-size: 0.75rem;
+	}
+
 	.block {
 		margin-top: 16px;
 		padding-top: 14px;

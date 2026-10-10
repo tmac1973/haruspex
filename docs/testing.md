@@ -217,10 +217,15 @@ npm run drive -- consistent <id>                         # do the events rebuild
 
 **Through the owner API:** `start --api` turns Settings → Remote control on
 (this computer only, a free port), adds a device, and sends every engine
-operation over HTTP (`POST /api/v1/op`) from then on: `--via engine`,
+operation over HTTPS (`POST /api/v1/op`) from then on: `--via engine`,
 `approve --via engine`, `state`, `status`. `api-events [--seconds N]` reads
 `GET /api/v1/events` for N seconds. `web-url` prints a one-time link that opens the web
 client (`src/web/`) as a new device, for checking it by hand or with a browser.
+The API's certificate is Haruspex's own: the driver trusts exactly it
+(`scripts/drive/https.mjs`) and saves it as `owner-api.pem` in the output
+folder (`status` gives the path as `apiCa`) for other scripts, such as
+`curl --cacert`. A browser opened on `web-url` shows the certificate warning
+once.
 
 `consistent` must hold for an idle session. While a turn streams, the replay
 trails by a few tens of milliseconds, so `differs` listing only

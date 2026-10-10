@@ -287,6 +287,8 @@ async function daemon(opts) {
 		display: app.display,
 		autoApprove: opts.autoApprove,
 		api: app.api?.base ?? null,
+		/** The owner API's certificate (PEM), for a script talking to it. */
+		apiCa: app.api?.ca ?? null,
 		// Open in any window.
 		sessions: (await app.engine({ type: 'sessions.list' })).filter((s) => s.status)
 	});

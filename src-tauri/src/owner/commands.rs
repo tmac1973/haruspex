@@ -39,6 +39,10 @@ pub struct OwnerApiStatus {
     pub address: Option<String>,
     /// This computer's name on the LAN, which also opens the web page.
     pub hostname: Option<String>,
+    /// The HTTPS certificate's SHA-256, as a browser shows it, while running.
+    pub fingerprint: Option<String>,
+    /// The certificate itself (PEM), for a script to trust it.
+    pub certificate: Option<String>,
 }
 
 /// A new device and its token, which is never shown again, with a one-time
@@ -53,10 +57,14 @@ pub struct CreatedOwnerClient {
 }
 
 fn status(api: &OwnerApi) -> OwnerApiStatus {
+    // Copied out first: one lock, released before the other is taken.
+    let served = api.served.lock_or_recover().clone();
     let running = api.running.lock_or_recover();
     match running.as_ref() {
         Some(r) => OwnerApiStatus {
             running: true,
+            fingerprint: served.as_ref().map(|s| s.0.clone()),
+            certificate: served.map(|s| s.1),
             port: Some(r.port),
             bind_all: r.bind_all,
             hostname: super::trust::system_hostname(),
@@ -74,6 +82,8 @@ fn status(api: &OwnerApi) -> OwnerApiStatus {
             bind_all: false,
             address: None,
             hostname: super::trust::system_hostname(),
+            fingerprint: None,
+            certificate: None,
         },
     }
 }
@@ -94,10 +104,18 @@ pub async fn owner_api_apply(
     let api = app.state::<OwnerApi>();
     // Who may connect changes in place: no restart, nobody dropped.
     api.trust.set(config.access.clone());
+    let identity = if config.enabled {
+        Some(certificate(&api, &config)?)
+    } else {
+        None
+    };
     {
         let running = api.running.lock_or_recover();
         if let Some(r) = running.as_ref() {
-            if config.enabled && r.port == config.port && r.bind_all == config.bind_all {
+            let same_cert = identity.as_ref().map(|i| &i.fingerprint)
+                == api.served.lock_or_recover().as_ref().map(|s| &s.0);
+            if config.enabled && r.port == config.port && r.bind_all == config.bind_all && same_cert
+            {
                 drop(running);
                 return Ok(status(&api));
             }
@@ -109,13 +127,15 @@ pub async fn owner_api_apply(
     if let Some(r) = previous {
         r.shutdown().await;
     }
-    if !config.enabled {
+    let Some(identity) = identity else {
+        *api.served.lock_or_recover() = None;
         if let Ok(clients) = api.clients() {
             clients.flush();
         }
         set_engine(&app, false);
         return Ok(status(&api));
-    }
+    };
+    let tls = super::tls::server_config(&identity)?;
     let services = server::Services {
         dispatch: Arc::new(AppDispatch(app.clone())),
         images: Arc::new(AppImages(app.clone())),
@@ -124,10 +144,28 @@ pub async fn owner_api_apply(
         web_root: super::web_root(&app),
         trust: api.trust.clone(),
     };
-    let running = server::start(services, config.port, config.bind_all).await?;
+    let running = server::start(services, config.port, config.bind_all, tls).await?;
     *api.running.lock_or_recover() = Some(running);
+    *api.served.lock_or_recover() = Some((identity.fingerprint, identity.cert_pem));
     set_engine(&app, true);
     Ok(status(&api))
+}
+
+/// The certificate to serve: the kept one, or a new one when it no longer
+/// covers this computer's names.
+fn certificate(api: &OwnerApi, config: &OwnerApiConfig) -> Result<super::tls::Identity, String> {
+    let path = api
+        .tls_path
+        .as_deref()
+        .ok_or("no app data folder for the HTTPS certificate")?;
+    let hostname = super::trust::system_hostname();
+    let names = super::tls::names_for(hostname.as_deref(), config.access.extra_host.as_deref());
+    let mut ips: Vec<std::net::IpAddr> = vec![
+        std::net::Ipv4Addr::LOCALHOST.into(),
+        std::net::Ipv6Addr::LOCALHOST.into(),
+    ];
+    ips.extend(crate::remote::link::lan_address());
+    super::tls::load_or_create(path, &names, &ips)
 }
 
 #[tauri::command]
