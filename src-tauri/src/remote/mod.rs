@@ -90,17 +90,23 @@ impl RemoteServer {
         }
     }
 
-    /// Stop and forget every session. Sessions are not persisted by design:
-    /// their clients are gone the moment the port closes.
-    pub fn shutdown(&self) {
-        let previous = {
-            let mut running = self.running.lock_or_recover();
-            running.take()
+    /// Stop and forget every session, returning once the port is free.
+    /// Sessions are not persisted by design: their clients are gone the moment
+    /// the port closes.
+    pub async fn shutdown(&self) {
+        // Taken out of the lock first: waiting for the port to come free can't
+        // hold it.
+        let previous = self.running.lock_or_recover().take();
+        let Some(previous) = previous else {
+            self.relay.clear();
+            return;
         };
-        if let Some(previous) = previous {
-            previous.stop();
-            log::info!("[remote] stopped");
-        }
+        previous.stop();
+        // Clearing drops every session's sender, which ends each guest's
+        // stream; otherwise an open page would hold the graceful shutdown open
+        // until the grace period cut it.
         self.relay.clear();
+        previous.shutdown().await;
+        log::info!("[remote] stopped");
     }
 }

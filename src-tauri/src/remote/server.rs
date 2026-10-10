@@ -126,16 +126,41 @@ struct AppState {
     tts_port: u16,
 }
 
+/// How long a stopping server may wait for its connections to finish before
+/// they are cut. Guest streams end when the relay is cleared, so this is only
+/// for a request still in flight.
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
+
 pub struct Running {
     pub port: u16,
     pub bind_all: bool,
     pub token: String,
     shutdown: watch::Sender<bool>,
+    serve: tokio::task::JoinHandle<()>,
+    reaper: tokio::task::JoinHandle<()>,
 }
 
 impl Running {
+    /// Ask the server to stop, without waiting for it.
     pub fn stop(&self) {
         let _ = self.shutdown.send(true);
+    }
+
+    /// Stop, and return once the port is free: rotating the link restarts the
+    /// server on the same port, and binding before the old one let go failed
+    /// with "address already in use".
+    pub async fn shutdown(mut self) {
+        self.stop();
+        if tokio::time::timeout(SHUTDOWN_GRACE, &mut self.serve)
+            .await
+            .is_err()
+        {
+            self.serve.abort();
+            let _ = (&mut self.serve).await;
+        }
+        // The reaper exits on the same signal; it holds no socket, so it is
+        // only awaited so nothing of this server outlives the call.
+        let _ = self.reaper.await;
     }
 }
 
@@ -201,7 +226,7 @@ async fn start_with_tts_port(
     let (shutdown, mut shutdown_rx) = watch::channel(false);
 
     let mut serve_rx = shutdown.subscribe();
-    tokio::spawn(async move {
+    let serve = tokio::spawn(async move {
         let served = axum::serve(listener, router).with_graceful_shutdown(async move {
             let _ = serve_rx.wait_for(|stop| *stop).await;
         });
@@ -214,7 +239,7 @@ async fn start_with_tts_port(
     // inference slot until the app restarts.
     let reap_host = host.clone();
     let reap_relay = relay.clone();
-    tokio::spawn(async move {
+    let reaper = tokio::spawn(async move {
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(REAP_INTERVAL) => {}
@@ -241,6 +266,8 @@ async fn start_with_tts_port(
         bind_all: config.bind_all,
         token: config.token,
         shutdown,
+        serve,
+        reaper,
     })
 }
 
@@ -1295,6 +1322,43 @@ mod http_tests {
             .unwrap();
         assert_eq!(empty.status(), 400);
         running.stop();
+    }
+
+    /// Settings restarts the server on the same port when the token rotates.
+    /// With a guest's page following its stream, the old server must still let
+    /// go of the port before the new one binds.
+    #[tokio::test]
+    async fn a_restart_on_the_same_port_works_with_a_guest_streaming() {
+        let remote = super::super::RemoteServer::new();
+        let config = |token: &str, port: u16| RemoteConfig {
+            port,
+            token: token.into(),
+            bind_all: false,
+        };
+        let sink = Arc::new(RecordingSink::default());
+        let running = start_with_tts_port(
+            sink.clone(),
+            remote.relay(),
+            config(TOKEN, 0),
+            closed_port(),
+        )
+        .await
+        .expect("server should bind");
+        let port = running.port;
+        let stream = reqwest::get(format!("http://127.0.0.1:{port}/api/stream/s1?t={TOKEN}"))
+            .await
+            .unwrap();
+        assert_eq!(stream.status(), 200);
+        remote.install(running);
+
+        remote.shutdown().await;
+        let again =
+            start_with_tts_port(sink, remote.relay(), config("rotated", port), closed_port()).await;
+        assert!(again.is_ok(), "{:?}", again.err());
+        // And the guest's stream ended rather than hanging on a dead server.
+        let ended = tokio::time::timeout(Duration::from_secs(3), stream.bytes()).await;
+        assert!(ended.is_ok(), "the old stream never ended");
+        again.unwrap().shutdown().await;
     }
 
     #[tokio::test]
