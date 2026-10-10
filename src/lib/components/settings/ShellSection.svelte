@@ -172,7 +172,7 @@
 	<h2>Memory limit</h2>
 	<label
 		class="row"
-		title="Applies to each command the agent runs on its own, and to each Shell tab's terminal as a whole, your own commands included. Over it, the system stops the process using the memory, and the agent is told why. Tabs opened after a change use the new limit. Needs Linux with a systemd user session; commands in a WSL distro run without it. 0 turns it off."
+		title="Applies to each command the agent runs on its own, and to each Shell tab's terminal as a whole, your own commands included. Over it, the system stops the process using the memory, and the agent is told why. Tabs opened after a change use the new limit. Needs Linux with a systemd user session; in a WSL distro, only the agent's commands, and only with lingering on (loginctl enable-linger). 0 turns it off."
 	>
 		<input
 			type="number"

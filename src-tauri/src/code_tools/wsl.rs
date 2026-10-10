@@ -95,13 +95,42 @@ const PGID_MARK: &[u8] = b"\x1eharuspex-pgid ";
 
 /// Runs `$1` with bash in the folder `$2`. `cd` here rather than
 /// `wsl.exe --cd`, which runs the command in `/` when the folder is gone.
+///
+/// With a memory limit `$3` (a percent of the distro's memory), the command
+/// runs in a transient user scope with that `MemoryMax`, as on a Linux host
+/// (`command_scope.rs`), but only when lingering is on for the user. Each
+/// `wsl.exe` is a login session, and without lingering the user's systemd
+/// stops a few seconds after the last one ends, killing every scope under
+/// it: commands started as it stopped were SIGKILLed at once. With
+/// lingering it stays up. `--expand-environment=no` keeps systemd off `$VAR`
+/// (systemd 254+); older systemd doesn't expand, so it goes without.
+/// Otherwise, no limit. `systemd-run --scope` execs the command, so the
+/// process group stays.
 const GROUP_WRAPPER: &str = r#"printf '\036haruspex-pgid %s\n' "$$" >&2
 cd -- "$2" 2>/dev/null || { echo "Working directory does not exist: $2" >&2; exit 126; }
+if [ -n "$3" ] && command -v systemd-run >/dev/null 2>&1 &&
+  [ "$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null)" = yes ]; then
+  for exp in --expand-environment=no ""; do
+    if systemd-run --user --scope --quiet $exp true >/dev/null 2>&1; then
+      exec systemd-run --user --scope --quiet $exp -p "MemoryMax=$3%" -p MemorySwapMax=0 bash -c "$1"
+    fi
+  done
+fi
 exec bash -c "$1""#;
 
 /// `command`, run by bash in `cwd` inside `distro`, in a process group of its
-/// own whose id comes first on stderr (see [`PgidReader`]).
-pub fn group_command(distro: &str, cwd: &str, command: &str) -> tokio::process::Command {
+/// own whose id comes first on stderr (see [`PgidReader`]), and under
+/// `memory_percent` of the distro's memory when that is given.
+pub fn group_command(
+    distro: &str,
+    cwd: &str,
+    command: &str,
+    memory_percent: Option<u8>,
+) -> tokio::process::Command {
+    let limit = memory_percent
+        .filter(|&p| p > 0)
+        .map(|p| p.min(100).to_string())
+        .unwrap_or_default();
     wsl_exec(
         distro,
         &[
@@ -113,6 +142,7 @@ pub fn group_command(distro: &str, cwd: &str, command: &str) -> tokio::process::
             "haruspex",
             command,
             cwd,
+            &limit,
         ],
     )
 }
