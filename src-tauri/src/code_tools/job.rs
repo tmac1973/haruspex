@@ -30,7 +30,7 @@ impl Job {
     pub fn alive(&self) -> bool {
         false
     }
-    pub fn out_of_memory(&self) -> bool {
+    pub fn out_of_memory(&self, _failed: bool) -> bool {
         false
     }
     pub fn release(&self) {}
@@ -182,9 +182,30 @@ mod imp {
             }
         }
 
-        /// The job was ended for going over its memory limit.
-        pub fn out_of_memory(&self) -> bool {
-            self.oom.load(Ordering::SeqCst)
+        /// The job was ended for going over its memory limit; or, for a
+        /// command that `failed`, came close to it. .NET (PowerShell 7
+        /// among it) reads the job's limit and stops its own heap at about
+        /// three quarters of it, so it fails with OutOfMemoryException
+        /// before Windows sees the limit reached.
+        pub fn out_of_memory(&self, failed: bool) -> bool {
+            if self.oom.load(Ordering::SeqCst) {
+                return true;
+            }
+            let Some(limit) = self.limit.filter(|_| failed) else {
+                return false;
+            };
+            unsafe {
+                use windows_sys::Win32::System::JobObjects::QueryInformationJobObject;
+                let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+                let ok = QueryInformationJobObject(
+                    self.raw(),
+                    JobObjectExtendedLimitInformation,
+                    &mut info as *mut _ as *mut core::ffi::c_void,
+                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                    std::ptr::null_mut(),
+                );
+                ok != 0 && info.PeakJobMemoryUsed as u64 >= limit / 10 * 7
+            }
         }
 
         /// Let what is still running outlive the job's handle: a finished
@@ -328,7 +349,7 @@ mod imp {
             let status = child.wait().unwrap();
             assert!(!status.success());
             assert!(
-                wait_until(|| job.out_of_memory()),
+                wait_until(|| job.out_of_memory(false)),
                 "no memory-limit message"
             );
         }
