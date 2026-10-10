@@ -5,7 +5,7 @@
  * listings. Each answers at once; `session.send` answers when the turn has
  * started, and its progress arrives as events.
  */
-import { listCodeSessions } from '#lib/code/db.ts';
+import { listCodeSessions, wslDistros } from '#lib/code/db.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import {
 	getOpenSessions,
@@ -38,6 +38,7 @@ async function listSessions(label: string): Promise<SessionListItem[]> {
 		id: s.id,
 		title: s.title,
 		root: s.root,
+		wslDistro: s.wslDistro,
 		status: s.status,
 		window: label
 	}));
@@ -50,7 +51,14 @@ async function listSessions(label: string): Promise<SessionListItem[]> {
 		...open,
 		...saved
 			.filter((s) => !openIds.has(s.id))
-			.map((s) => ({ id: s.id, title: s.title, root: s.root, status: null, window: null }))
+			.map((s) => ({
+				id: s.id,
+				title: s.title,
+				root: s.root,
+				wslDistro: s.wsl_distro ?? null,
+				status: null,
+				window: null
+			}))
 	];
 }
 
@@ -66,9 +74,14 @@ export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 			return s ? { id: s.id, window: label } : { id: op.id, window: null };
 		}
 		case 'session.new': {
-			const s = await newSession(op.root, { effort: op.effort ?? null });
-			return { id: s.id, root: s.root, window: label };
+			const s = await newSession(op.root, {
+				effort: op.effort ?? null,
+				wslDistro: op.wslDistro ?? null
+			});
+			return { id: s.id, root: s.root, wslDistro: s.wslDistro, window: label };
 		}
+		case 'wsl.distros':
+			return wslDistros();
 		case 'session.send': {
 			const s = openHere(op.id);
 			if (!op.text.trim()) throw new Error('nothing to send');
