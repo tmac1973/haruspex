@@ -277,7 +277,7 @@ from Linux over SSH. Setup is two scripts per machine; see
 
 ### CI
 
-Every pull request runs the Linux lint, type-check and test jobs. The Windows and macOS jobs are slow, so they run after every merge to `main`, from **Actions → CI → Run workflow**, or on a pull request labelled `windows-ci` or `macos-ci` — adding the label starts that job straight away.
+Every pull request runs the Linux lint, type-check and test jobs. The Windows and macOS jobs are slow, so they run after every merge to `main`, from **Actions → Platforms → Run workflow**, or on a pull request labelled `windows-ci` or `macos-ci` — adding the label starts that job straight away.
 
 ### Make targets
 

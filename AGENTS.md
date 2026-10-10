@@ -97,7 +97,7 @@ koko `3001`.
   hand** — edit the release PR. Releases are `draft: true`.
 - The Linux build job runs inside `ubuntu:25.10` (not the runner default)
   to bundle a webkit2gtk-4.1 new enough for modern Mesa on AMD/Intel.
-- Windows CI (`windows` job in `.github/workflows/ci.yml`) only runs on PRs
+- Windows CI (`windows` job in `.github/workflows/platforms.yml`) only runs on PRs
   carrying the `windows-ci` label or on manual `workflow_dispatch`. Add
   the label to Shell-tab / Phase-17 / `fs_tools` PRs so the
   `#[cfg(windows)]` branches get compiled + tested.
