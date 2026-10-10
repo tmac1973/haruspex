@@ -9,6 +9,7 @@ import {
 	readSkill,
 	readSkillFile,
 	repoKey,
+	repoLabel,
 	repoTrust,
 	skillsAutonomous,
 	usableSkills
@@ -120,6 +121,12 @@ describe('repoKey', () => {
 			expect(repoKey(root)).toBe(key);
 		}
 		expect(repoKey('/home/tim/proj')).toBe('/home/tim/proj');
+		// And as a person reads it, from either form.
+		expect(repoLabel(String.raw`\\wsl.localhost\Ubuntu\home\tim\proj`)).toBe(
+			'/home/tim/proj (Ubuntu)'
+		);
+		expect(repoLabel(key)).toBe('/home/tim/proj (Ubuntu)');
+		expect(repoLabel('/home/tim/proj')).toBe('/home/tim/proj');
 		expect(repoKey(String.raw`C:\code\proj`)).toBe(String.raw`C:\code\proj`);
 	});
 });

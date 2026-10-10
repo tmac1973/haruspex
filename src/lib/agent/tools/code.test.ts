@@ -930,7 +930,9 @@ describe('run_command without a terminal (Code session)', () => {
 		started_at: Date.now(),
 		running: true,
 		exit_code: null,
-		log_path: '/cache/code-bg/bg-1.log'
+		log_path: '/cache/code-bg/bg-1.log',
+		wsl_distro: null as string | null,
+		wsl_pgid: null as number | null
 	};
 
 	beforeEach(() => {
@@ -959,6 +961,24 @@ describe('run_command without a terminal (Code session)', () => {
 		expect(out.result).toContain('command_output');
 		expect(mocks.registerCodeBgWatch).not.toHaveBeenCalled();
 		expect(mocks.registerWatch).not.toHaveBeenCalled();
+	});
+
+	it("names a WSL process by its Linux group, never the Windows relay's PID", async () => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const wslCtx = { ...sessionCtx, workingDir: '/home/tim/p', wslDistro: 'Ubuntu' };
+		const started = await executeTool(
+			'run_command',
+			{ command: 'npm run dev', background: true },
+			wslCtx
+		);
+		expect(started.result).toContain('id bg-1');
+		expect(started.result).not.toContain('4242');
+		const { describeBgProcess } = await import('./code-bg');
+		const wsl = { ...bgProc, wsl_distro: 'Ubuntu', wsl_pgid: 812 };
+		expect(describeBgProcess(wsl)).toContain('process group 812 in Ubuntu');
+		expect(describeBgProcess(wsl)).not.toContain('4242');
+		expect(describeBgProcess({ ...wsl, wsl_pgid: null })).not.toContain('4242');
+		expect(describeBgProcess(bgProc)).toContain('PID 4242');
 	});
 
 	it('watch:true also registers a code_bg watch for the session', async () => {

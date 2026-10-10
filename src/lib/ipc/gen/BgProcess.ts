@@ -21,6 +21,11 @@ wsl_distro: string | null,
  */
 pid: number, 
 /**
+ * The Linux process group, once known, as `code_bg_status` reports it
+ * (`pid` is the host's `wsl.exe` relay, which means nothing in Linux).
+ */
+wsl_pgid: number | null, 
+/**
  * Unix milliseconds.
  */
 started_at: number, 

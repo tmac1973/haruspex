@@ -9,6 +9,7 @@
 	import Modal from './Modal.svelte';
 	import ModalButton from './ModalButton.svelte';
 	import { getPendingRepoTrust, resolveRepoTrust } from '#lib/stores/repoTrust.svelte.ts';
+	import { repoLabel } from '#lib/skills/client.ts';
 
 	const pending = $derived(getPendingRepoTrust());
 
@@ -41,7 +42,7 @@
 			<h2 id="repo-trust-title">Use this repo's instructions?</h2>
 			<p>This repo has {what} for the assistant to follow:</p>
 		{/if}
-		<p class="root">{pending.root}</p>
+		<p class="root">{repoLabel(pending.root)}</p>
 		<div class="button-row">
 			<ModalButton onclick={() => resolveRepoTrust(true)}>
 				{#snippet title()}Use them{/snippet}

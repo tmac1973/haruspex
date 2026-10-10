@@ -75,6 +75,9 @@ pub struct BgProcess {
     #[serde(skip)]
     #[ts(skip)]
     pub wsl_group: Arc<wsl::GroupState>,
+    /// The Linux process group, once known, as `code_bg_status` reports it
+    /// (`pid` is the host's `wsl.exe` relay, which means nothing in Linux).
+    pub wsl_pgid: Option<u32>,
     /// Unix milliseconds.
     #[ts(type = "number")]
     pub started_at: u64,
@@ -253,6 +256,7 @@ impl CodeBgManager {
                 wsl_distro,
                 pid,
                 wsl_group,
+                wsl_pgid: None,
                 started_at,
                 running: true,
                 exit_code: None,
@@ -286,6 +290,11 @@ impl CodeBgManager {
             .values()
             .filter(|p| owner.is_none_or(|o| p.owner == o))
             .cloned()
+            .map(|mut p| {
+                let g = p.wsl_group.pgid();
+                p.wsl_pgid = (p.wsl_distro.is_some() && g > 1).then_some(g);
+                p
+            })
             .collect();
         list.sort_by(|a, b| a.started_at.cmp(&b.started_at).then(a.id.cmp(&b.id)));
         list
