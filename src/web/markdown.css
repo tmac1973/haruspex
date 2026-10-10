@@ -1,0 +1,92 @@
+/*
+ * Rendered markdown on the web page: answers and the file viewer. The same
+ * rules as the desktop's ChatMessage (`.message-content`), which are scoped
+ * to that component; here they hang off `.markdown`.
+ */
+.markdown p {
+	margin: 0 0 0.5em 0;
+}
+
+.markdown p:last-child {
+	margin-bottom: 0;
+}
+
+.markdown ul,
+.markdown ol {
+	margin: 0.5em 0;
+	padding-left: 1.5em;
+}
+
+.markdown table {
+	width: 100%;
+	border-collapse: collapse;
+	margin: 0.75em 0;
+	font-size: 0.9em;
+}
+
+.markdown th,
+.markdown td {
+	border: 1px solid var(--border);
+	padding: 6px 12px;
+	text-align: left;
+}
+
+.markdown th {
+	background: var(--bg-secondary);
+	font-weight: 600;
+}
+
+.markdown .code-block {
+	margin: 0.75em 0;
+	border-radius: 6px;
+	overflow: hidden;
+	border: 1px solid var(--border);
+}
+
+.markdown .code-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 4px 12px;
+	background: var(--bg-secondary);
+	font-size: 0.75rem;
+}
+
+.markdown .code-lang {
+	color: var(--text-secondary);
+}
+
+.markdown .copy-btn {
+	background: none;
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	padding: 2px 8px;
+	font-size: 0.7rem;
+	cursor: pointer;
+	color: var(--text-secondary);
+}
+
+.markdown .copy-btn:hover {
+	background: var(--bg-primary);
+}
+
+.markdown pre {
+	margin: 0;
+	padding: 12px;
+	overflow-x: auto;
+	background: var(--code-bg);
+	color: #d4d4d4;
+	font-size: 0.85rem;
+	line-height: 1.5;
+}
+
+.markdown code {
+	font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+}
+
+.markdown :not(pre) > code {
+	background: var(--bg-secondary);
+	padding: 0.15em 0.4em;
+	border-radius: 3px;
+	font-size: 0.9em;
+}

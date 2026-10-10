@@ -515,3 +515,202 @@ a {
 	color: var(--text-secondary);
 	margin-top: 2px;
 }
+
+/* Code blocks in rendered markdown: their header controls, the Shell's
+   Paste and Run, and the highlight.js colours (light and dark). Moved from
+   +layout.svelte with the rest, so the web client's code blocks match. */
+
+/* Right-side controls (chips + Paste + Copy) inside the rendered
+   markdown code-block header. The header itself is flex with
+   space-between (set in ChatMessage.svelte), so this container
+   collects everything on the right. */
+.code-actions {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+/* A multi-command shell suggestion renders as a stack of individual
+   code-blocks (one per command, each with its own Run button) wrapped
+   in .cmd-list. Tighten the spacing so the group still reads as one
+   suggestion rather than several unrelated blocks. */
+.cmd-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.cmd-list .code-block {
+	margin: 0;
+}
+
+.risky-chip {
+	display: inline-flex;
+	align-items: center;
+	padding: 1px 6px;
+	border-radius: 999px;
+	font-size: 0.66rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--error-text);
+	border: 1px solid var(--error-text);
+	background: var(--error-bg);
+}
+
+.code-block .paste-btn,
+.code-block .run-btn {
+	background: none;
+	border: 1px solid var(--accent);
+	color: var(--accent);
+	border-radius: 4px;
+	padding: 2px 8px;
+	font-size: 0.7rem;
+	cursor: pointer;
+}
+
+.code-block .paste-btn:hover,
+.code-block .run-btn:hover {
+	background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.code-block .run-btn {
+	background: var(--accent);
+	color: var(--accent-contrast);
+}
+
+.code-block .run-btn:hover {
+	background: color-mix(in srgb, var(--accent) 80%, black);
+}
+
+/* Paste-into-shell and Run-in-shell are meaningless outside the
+   Shell tab. Hide them so a stray bash code block in chat or jobs
+   doesn't promise something it can't deliver. ShellTab toggles
+   the body class. Scoped to .code-block so this only ever targets
+   the markdown shell buttons — not any other component that happens
+   to reuse a .run-btn class (e.g. the Jobs list run arrow). */
+body:not(.shell-tab-active) .code-block .paste-btn,
+body:not(.shell-tab-active) .code-block .run-btn {
+	display: none;
+}
+
+/* Minimal highlight.js theme — applies to both the chat-message
+   markdown code blocks and the new sandbox tool-step code preview.
+   Inherits the surrounding text color for unmatched tokens, so it
+   degrades cleanly on either light or dark theme. */
+.hljs-comment,
+.hljs-quote {
+	color: #6a737d;
+	font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-built_in {
+	color: #d73a49;
+}
+.hljs-string,
+.hljs-meta-string,
+.hljs-doctag {
+	color: #032f62;
+}
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet {
+	color: #005cc5;
+}
+.hljs-function,
+.hljs-title,
+.hljs-section {
+	color: #6f42c1;
+}
+.hljs-name,
+.hljs-attribute,
+.hljs-attr {
+	color: #22863a;
+}
+.hljs-variable,
+.hljs-template-variable,
+.hljs-type,
+.hljs-class .hljs-title {
+	color: #e36209;
+}
+.hljs-meta {
+	color: #6a737d;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) .hljs-comment,
+	:root:not([data-theme='light']) .hljs-quote {
+		color: #8b949e;
+	}
+	:root:not([data-theme='light']) .hljs-keyword,
+	:root:not([data-theme='light']) .hljs-selector-tag,
+	:root:not([data-theme='light']) .hljs-literal,
+	:root:not([data-theme='light']) .hljs-built_in {
+		color: #ff7b72;
+	}
+	:root:not([data-theme='light']) .hljs-string,
+	:root:not([data-theme='light']) .hljs-meta-string,
+	:root:not([data-theme='light']) .hljs-doctag {
+		color: #a5d6ff;
+	}
+	:root:not([data-theme='light']) .hljs-number,
+	:root:not([data-theme='light']) .hljs-symbol,
+	:root:not([data-theme='light']) .hljs-bullet {
+		color: #79c0ff;
+	}
+	:root:not([data-theme='light']) .hljs-function,
+	:root:not([data-theme='light']) .hljs-title,
+	:root:not([data-theme='light']) .hljs-section {
+		color: #d2a8ff;
+	}
+	:root:not([data-theme='light']) .hljs-name,
+	:root:not([data-theme='light']) .hljs-attribute,
+	:root:not([data-theme='light']) .hljs-attr {
+		color: #7ee787;
+	}
+	:root:not([data-theme='light']) .hljs-variable,
+	:root:not([data-theme='light']) .hljs-template-variable,
+	:root:not([data-theme='light']) .hljs-type,
+	:root:not([data-theme='light']) .hljs-class .hljs-title {
+		color: #ffa657;
+	}
+}
+
+:root[data-theme='dark'] .hljs-comment,
+:root[data-theme='dark'] .hljs-quote {
+	color: #8b949e;
+}
+:root[data-theme='dark'] .hljs-keyword,
+:root[data-theme='dark'] .hljs-selector-tag,
+:root[data-theme='dark'] .hljs-literal,
+:root[data-theme='dark'] .hljs-built_in {
+	color: #ff7b72;
+}
+:root[data-theme='dark'] .hljs-string,
+:root[data-theme='dark'] .hljs-meta-string,
+:root[data-theme='dark'] .hljs-doctag {
+	color: #a5d6ff;
+}
+:root[data-theme='dark'] .hljs-number,
+:root[data-theme='dark'] .hljs-symbol,
+:root[data-theme='dark'] .hljs-bullet {
+	color: #79c0ff;
+}
+:root[data-theme='dark'] .hljs-function,
+:root[data-theme='dark'] .hljs-title,
+:root[data-theme='dark'] .hljs-section {
+	color: #d2a8ff;
+}
+:root[data-theme='dark'] .hljs-name,
+:root[data-theme='dark'] .hljs-attribute,
+:root[data-theme='dark'] .hljs-attr {
+	color: #7ee787;
+}
+:root[data-theme='dark'] .hljs-variable,
+:root[data-theme='dark'] .hljs-template-variable,
+:root[data-theme='dark'] .hljs-type,
+:root[data-theme='dark'] .hljs-class .hljs-title {
+	color: #ffa657;
+}

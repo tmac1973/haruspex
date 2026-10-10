@@ -5,6 +5,7 @@
  */
 import { mount } from 'svelte';
 import '#lib/styles/app.css';
+import './markdown.css';
 import { installMarkdownActions } from '#lib/markdown-actions.ts';
 import App from './App.svelte';
 

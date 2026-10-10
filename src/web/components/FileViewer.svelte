@@ -100,7 +100,7 @@
 	{:else if !file}
 		<p class="hint">Opening…</p>
 	{:else}
-		<div class="body" bind:this={body}>
+		<div class="body markdown" bind:this={body}>
 			{#if html}
 				<!-- renderMarkdown sanitises its output. -->
 				<!-- eslint-disable-next-line svelte/no-at-html-tags -->
