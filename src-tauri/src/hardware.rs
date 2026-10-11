@@ -339,26 +339,55 @@ fn with_vulkan_devices(mut gpu: GpuInfo, devices: &[VulkanDevice]) -> GpuInfo {
     gpu
 }
 
-/// Ask the bundled llama-server which Vulkan devices it sees. None when it
+/// Ask the bundled llama-server which Vulkan devices it sees, once per run
+/// of the app (Settings → Inference asks every time it opens). None when it
 /// can't be run or says nothing useful; the name check then decides.
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 async fn probe_vulkan(app: &tauri::AppHandle) -> Option<Vec<VulkanDevice>> {
+    static PROBED: tokio::sync::OnceCell<Option<Vec<VulkanDevice>>> =
+        tokio::sync::OnceCell::const_new();
+    PROBED.get_or_init(|| run_vulkan_probe(app)).await.clone()
+}
+
+/// How long `--list-devices` gets; it answers in well under a second.
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+async fn run_vulkan_probe(app: &tauri::AppHandle) -> Option<Vec<VulkanDevice>> {
+    use tauri_plugin_shell::process::CommandEvent;
     use tauri_plugin_shell::ShellExt;
     let cmd = app
         .shell()
         .sidecar("haruspex-llama-server")
         .ok()?
         .args(["--verbose", "--list-devices"]);
-    let cmd = crate::sidecar_utils::with_library_paths(cmd, app);
-    let out = tokio::time::timeout(std::time::Duration::from_secs(20), cmd.output())
-        .await
-        .ok()?
+    let (mut rx, child) = crate::sidecar_utils::with_library_paths(cmd, app)
+        .spawn()
         .ok()?;
-    let text = format!(
-        "{}\n{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
+    let read = async {
+        let mut text = String::new();
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stdout(line) | CommandEvent::Stderr(line) => {
+                    text.push_str(&String::from_utf8_lossy(&line));
+                    text.push('\n');
+                }
+                CommandEvent::Terminated(_) => break,
+                _ => {}
+            }
+        }
+        text
+    };
+    let text = match tokio::time::timeout(PROBE_TIMEOUT, read).await {
+        Ok(text) => text,
+        Err(_) => {
+            // A binary that doesn't know `--list-devices` may just run.
+            log::warn!("hardware: llama-server --list-devices didn't finish; stopped it");
+            let _ = child.kill();
+            return None;
+        }
+    };
     let devices = parse_vulkan_devices(&text);
     if devices.is_empty() {
         log::info!("hardware: llama-server listed no Vulkan devices");
