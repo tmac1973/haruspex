@@ -517,6 +517,45 @@ describe('operations', () => {
 		expect(seen).toEqual([true, false]);
 	});
 
+	it('compact a session, saying when there is nothing to summarise or it is busy', async () => {
+		const s = await newSession('/proj');
+		const compactNow = vi.fn(async () => 'compacted' as const);
+		s.compactNow = compactNow;
+		// Two short turns: everything fits in what is kept whole.
+		s.messages = [
+			{ role: 'user', content: 'a' },
+			{ role: 'assistant', content: 'b' }
+		];
+		expect(await dispatch({ type: 'session.compact', id: s.id }, 'main')).toEqual({
+			started: false,
+			reason: 'nothing to summarise yet'
+		});
+		// Turns well past a quarter of the 8K window.
+		s.messages = Array.from({ length: 8 }, (_, i) => ({
+			role: i % 2 === 0 ? ('user' as const) : ('assistant' as const),
+			content: 'x'.repeat(4000)
+		}));
+		expect(
+			await dispatch({ type: 'session.compact', id: s.id, instructions: 'keep X' }, 'main')
+		).toEqual({ started: true });
+		expect(compactNow).toHaveBeenCalledWith('keep X');
+
+		s.status = 'running';
+		await expect(dispatch({ type: 'session.compact', id: s.id }, 'main')).rejects.toThrow('busy');
+		s.status = 'idle';
+	});
+
+	it('report the compaction and summarising in the session state', async () => {
+		const s = await newSession('/proj');
+		expect(sessionState(s)).toMatchObject({ compaction: null, compacting: false });
+		s.compaction = { at: 2, summary: 'Earlier.', summarizedAt: 1 };
+		s.compacting = true;
+		expect(sessionState(s)).toMatchObject({
+			compaction: { at: 2, summary: 'Earlier.' },
+			compacting: true
+		});
+	});
+
 	it('read a file in the session folder, and nothing outside it', async () => {
 		const s = await newSession('/proj');
 		expect(

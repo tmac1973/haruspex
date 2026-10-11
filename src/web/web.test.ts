@@ -9,6 +9,7 @@ import PromptCard from './components/PromptCard.svelte';
 import Composer from './components/Composer.svelte';
 import FileViewer from './components/FileViewer.svelte';
 import Message from './components/Message.svelte';
+import Transcript from './components/Transcript.svelte';
 import { imageRefs, resetImages, wantImages } from './images.ts';
 import { clearResolvedImages } from '#lib/images/resolve.svelte.ts';
 import { VIEW_IMAGE_EVENT } from '#lib/markdown-actions.ts';
@@ -34,6 +35,8 @@ const state = (over: Partial<SessionState> = {}): SessionState => ({
 	steering: [],
 	background: [],
 	shellWait: null,
+	compaction: null,
+	compacting: false,
 	...over
 });
 
@@ -85,6 +88,27 @@ describe('the web store', () => {
 		d.push({ seq: 9, sessionId: 's1', type: 'status', status: 'running', busy: true });
 		expect(store.current?.status).toBe('running');
 		store.stop();
+	});
+
+	it('runs /compact as a command, not a message', async () => {
+		const d = fakeDesktop({ 'session.compact': { started: true } });
+		const store = new WebStore(d.transport);
+		expect(await store.send('s1', '/compact keep the API notes')).toBe(true);
+		expect(d.ops).toContainEqual({
+			type: 'session.compact',
+			id: 's1',
+			instructions: 'keep the API notes'
+		});
+		expect(d.ops.some((o) => o.type === 'session.send')).toBe(false);
+		expect(store.error).toBeNull();
+
+		const short = fakeDesktop({ 'session.compact': { started: false } });
+		const store2 = new WebStore(short.transport);
+		await store2.send('s1', '/compact');
+		expect(store2.error).toContain('Nothing to summarise yet');
+		// Anything else is a message, even one that mentions the command.
+		await store2.send('s1', 'what does /compact do?');
+		expect(short.ops.at(-1)).toMatchObject({ type: 'session.send' });
 	});
 
 	it('asks for a resync when it misses an event', async () => {
@@ -525,5 +549,37 @@ describe('a sandbox prompt', () => {
 		expect(screen.getByText('import os')).toBeTruthy();
 		await fireEvent.click(screen.getByRole('button', { name: 'Allow for this chat' }));
 		expect(onanswer).toHaveBeenCalledWith('main:9', { kind: 'sandbox', choice: 'allow_chat' });
+	});
+});
+
+describe('the transcript and compaction', () => {
+	const messages = [
+		{ role: 'user' as const, content: 'question 1' },
+		{ role: 'assistant' as const, content: 'answer 1' },
+		{ role: 'user' as const, content: 'question 2' },
+		{ role: 'assistant' as const, content: 'answer 2' }
+	];
+
+	it('marks where the summary ends, above the first message the agent sees whole', async () => {
+		render(Transcript, {
+			session: state({ messages, compaction: { at: 2, summary: 'Asked one question.' } }),
+			oncontinue: () => {},
+			onopenfile: () => {}
+		});
+		const divider = screen.getByTestId('compaction');
+		expect(divider.nextElementSibling!.textContent).toContain('question 2');
+		await fireEvent.click(screen.getByText('Earlier turns summarised'));
+		expect(divider.textContent).toContain('Asked one question.');
+		// Everything above the cut still shows.
+		expect(screen.getByText('question 1')).toBeTruthy();
+	});
+
+	it('says when it is summarising', () => {
+		render(Transcript, {
+			session: state({ status: 'running', busy: true, compacting: true }),
+			oncontinue: () => {},
+			onopenfile: () => {}
+		});
+		expect(screen.getByText('Summarising earlier turns…')).toBeTruthy();
 	});
 });

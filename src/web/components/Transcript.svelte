@@ -47,6 +47,10 @@
 			.filter(({ msg }) => msg.role !== 'tool' && msg.role !== 'system' && !msg.tool_calls)
 	);
 	const steps = (i: number) => (session.messageSteps[i] ?? []) as SearchStep[];
+	/** The first message shown whole to the agent: the summary's divider goes above it. */
+	const cutAt = $derived(
+		session.compaction ? shown.find(({ i }) => i >= session.compaction!.at)?.i : undefined
+	);
 	const stopAt = (i: number) => session.messageStops[i] as string | undefined;
 
 	let thread = $state<HTMLDivElement | null>(null);
@@ -65,6 +69,14 @@
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="thread" bind:this={thread} onscroll={onScroll} onclick={onThreadClick}>
 	{#each shown as { msg, i } (i)}
+		{#if i === cutAt && session.compaction}
+			<details class="summary" data-testid="compaction">
+				<summary title="The agent works from this summary and the turns below it."
+					>Earlier turns summarised</summary
+				>
+				<pre>{session.compaction.summary}</pre>
+			</details>
+		{/if}
 		{#if msg.role === 'assistant' && steps(i).length}
 			<CodeSteps steps={steps(i)} root={session.root} {openFile} />
 		{/if}
@@ -85,6 +97,8 @@
 	{/if}
 	{#if session.roundText}
 		<Message message={{ role: 'assistant', content: session.roundText }} streaming />
+	{:else if session.compacting}
+		<p class="hint">Summarising earlier turns…</p>
 	{:else if !session.streamingContent && session.status === 'running'}
 		<ThinkingIndicator />
 	{/if}
@@ -123,6 +137,25 @@
 
 	.thread :global(.code-path:hover) {
 		text-decoration-style: solid;
+	}
+
+	.summary {
+		margin: 8px 0;
+		padding: 6px 10px;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		font-size: 0.85rem;
+		color: var(--text-secondary);
+	}
+
+	.summary summary {
+		cursor: pointer;
+	}
+
+	.summary pre {
+		margin: 6px 0 0;
+		white-space: pre-wrap;
+		font-size: 0.8rem;
 	}
 
 	.steer {

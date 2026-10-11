@@ -121,6 +121,17 @@ export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 			});
 			return steered ? { steered: true } : { started: true };
 		}
+		case 'session.compact': {
+			const s = openHere(op.id);
+			if (s.busy) throw new Error('the session is busy; try again when its turn ends');
+			if (!s.canCompact()) return { started: false, reason: 'nothing to summarise yet' };
+			// Answers at once, as every operation does; the summary arrives as
+			// a meta event (`compaction`), a failure as `lastError`.
+			s.compactNow(op.instructions ?? '').catch((e: unknown) => {
+				logDebug('engine', 'compact failed', { id: s.id, error: errMessage(e) });
+			});
+			return { started: true };
+		}
 		case 'session.stop': {
 			const s = openHere(op.id);
 			const running = s.busy;
