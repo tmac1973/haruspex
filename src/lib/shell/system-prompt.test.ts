@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { buildShellSystemPrompt, type ShellSessionContext } from '#lib/shell/system-prompt.ts';
+import {
+	buildShellSystemPrompt,
+	shellTerminalNote,
+	type ShellSessionContext
+} from '#lib/shell/system-prompt.ts';
 
 function ctx(shellPath: string, shellName: string): ShellSessionContext {
 	return {
@@ -133,5 +137,32 @@ describe('shell system prompt — Full access', () => {
 		expect(readOnly).toContain('switch this shell to Full access');
 		expect(full).not.toContain('You have no execute tool');
 		expect(full).not.toContain('You are read-only');
+	});
+});
+
+describe("the terminal's live state", () => {
+	it('stays out of the system prompt, so it is the same whatever the terminal does', () => {
+		const prompt = String(
+			buildShellSystemPrompt({ sessionContext: ctx('/bin/bash', 'bash') }).content
+		);
+		expect(prompt).not.toContain('Current working directory');
+		expect(prompt).not.toContain('Recent shell history');
+	});
+
+	it('goes in a note: cwd, recent commands, and a nested session', () => {
+		const note = shellTerminalNote({
+			currentCwd: '/srv/app',
+			recentHistory: ['git pull', 'make'],
+			nestedSession: { kind: 'remote', program: 'ssh', target: 'box', command: 'ssh box' },
+			fullAccess: true
+		})!;
+		expect(note).toContain('Current working directory: /srv/app');
+		expect(note).toContain('  git pull\n  make');
+		expect(note).toContain('ATTENTION');
+		expect(note).toContain('run_command');
+	});
+
+	it('is nothing when there is nothing to say', () => {
+		expect(shellTerminalNote({ currentCwd: null, recentHistory: [] })).toBeNull();
 	});
 });

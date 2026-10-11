@@ -26,7 +26,7 @@ import type { AgentsMd } from '#lib/ipc/gen/AgentsMd.ts';
 import { invoke } from '@tauri-apps/api/core';
 import { isPtyBusy } from '#lib/stores/shellPtyBusy.svelte.ts';
 
-import { mergeLeadingSystemMessages, type ChatMessage } from '#lib/api.ts';
+import { mergeLeadingSystemMessages, withNotice, type ChatMessage } from '#lib/api.ts';
 import type { ShellContextResponse } from '#lib/ipc/gen/ShellContextResponse.ts';
 import type { InferenceTicket } from '#lib/agent/inferenceQueue.svelte.ts';
 import type { SearchStep, AgentStopReason } from '#lib/agent/loop.ts';
@@ -39,7 +39,11 @@ import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { remapIndexedRecords } from '#lib/agent/compaction.ts';
 import { computeMessageStats, type MessageStats } from '#lib/stores/chat.svelte.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import { buildShellSystemPrompt, type ShellSessionContext } from '#lib/shell/system-prompt.ts';
+import {
+	buildShellSystemPrompt,
+	shellTerminalNote,
+	type ShellSessionContext
+} from '#lib/shell/system-prompt.ts';
 import { classifyNestedSession, type NestedSession } from '#lib/shell/nestedSession.ts';
 import {
 	resetSessionApproval,
@@ -816,14 +820,20 @@ export class ShellSession {
 		});
 		const systemPrompt = buildShellSystemPrompt({
 			sessionContext: payload.sessionContext,
-			currentCwd: payload.currentCwd,
-			recentHistory: payload.recentHistory,
-			nestedSession: payload.nestedSession ?? null,
 			skillsSection: skillsPromptSection(skills),
 			projectInstructions: agentsMdPromptSection(project.agentsMd),
 			fullAccess: this.fullAccess
 		});
-		return { messages: mergeLeadingSystemMessages([systemPrompt, ...this.messages]), skills };
+		// The terminal's live state rides on the newest message, sent but not
+		// saved, so the prompt before it stays what the server has cached.
+		const note = shellTerminalNote({
+			currentCwd: payload.currentCwd,
+			recentHistory: payload.recentHistory,
+			nestedSession: payload.nestedSession ?? null,
+			fullAccess: this.fullAccess
+		});
+		const thread = note ? withNotice(this.messages, note) : this.messages;
+		return { messages: mergeLeadingSystemMessages([systemPrompt, ...thread]), skills };
 	}
 
 	/**

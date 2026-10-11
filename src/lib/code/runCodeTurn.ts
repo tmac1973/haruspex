@@ -15,6 +15,7 @@
 
 import {
 	mergeLeadingSystemMessages,
+	withNotice,
 	messageText,
 	type BackendOverride,
 	type ChatMessage,
@@ -47,6 +48,9 @@ import { ioRoot } from './paths';
 import { sessionLabel } from './sessionList';
 import { loadShellPlatformSupported, shellPlatformSupported } from '#lib/shell/platformSupport.ts';
 import { agentPowershell } from './powershell.ts';
+
+// Moved to api.ts for the Shell; kept here for existing importers.
+export { withNotice };
 import { logDebug } from '#lib/debug-log.ts';
 import { compactCodeThread, compactionDue, modelThread } from './compaction';
 import type { CodeCompaction } from './session';
@@ -410,21 +414,6 @@ async function compact(
 	} finally {
 		o.onCompacting?.(false);
 	}
-}
-
-/**
- * The thread with `notice` put ahead of the text of its last message (the
- * one opening this turn). A copy: the saved thread keeps what was typed.
- */
-export function withNotice(thread: ChatMessage[], notice: string): ChatMessage[] {
-	const last = thread[thread.length - 1];
-	if (!last || last.role !== 'user') return thread;
-	const note = `[Note from Haruspex] ${notice}`;
-	const content =
-		typeof last.content === 'string'
-			? `${note}\n\n${last.content}`
-			: [{ type: 'text' as const, text: note }, ...last.content];
-	return [...thread.slice(0, -1), { ...last, content }];
 }
 
 /**

@@ -12,11 +12,15 @@ vi.mock('#lib/shell/runShellTurn.ts', () => ({ runShellTurn }));
 
 // The builder echoes the mode and the repo's instructions so a test can see
 // them arrive.
+// The terminal note is off unless a test turns it on (`terminalNote.on`).
+const terminalNote = vi.hoisted(() => ({ on: false }));
 vi.mock('#lib/shell/system-prompt.ts', () => ({
 	buildShellSystemPrompt: (opts: { projectInstructions?: string; fullAccess?: boolean }) => ({
 		role: 'system',
 		content: `${opts.fullAccess ? 'full-sys' : 'sys'}${opts.projectInstructions ?? ''}`
-	})
+	}),
+	shellTerminalNote: (now: { currentCwd: string | null }) =>
+		terminalNote.on ? `The terminal now:\nCurrent working directory: ${now.currentCwd}` : null
 }));
 
 const bridge = vi.hoisted(() => ({ openCodeAt: vi.fn(async (root: string) => void root) }));
@@ -198,6 +202,32 @@ describe('ShellSession state independence', () => {
 		expect(a.messages.map((m) => m.role)).toEqual(['user', 'assistant']);
 		expect(a.isSubmitting).toBe(false);
 		expect(b.messages).toHaveLength(0);
+	});
+
+	it("puts the terminal's state on the newest message, sent but not saved", async () => {
+		terminalNote.on = true;
+		const sent: ChatMessage[][] = [];
+		runShellTurn.mockImplementation(async (opts: { messages: ChatMessage[] }) => {
+			sent.push(JSON.parse(JSON.stringify(opts.messages)));
+			return { finalText: 'ok', rawText: 'ok', stopReason: 'complete' };
+		});
+		const a = createShellSession();
+		const ask = (body: string, cwd: string) =>
+			a.submitShell({ body, sessionContext: {} as never, currentCwd: cwd, recentHistory: [] });
+		await ask('first', '/home');
+		await ask('second', '/srv');
+		terminalNote.on = false;
+
+		// The system prompt is the same whatever the cwd, so it stays cached.
+		expect(sent[1][0]).toEqual(sent[0][0]);
+		// Only the newest message carries the note, with that turn's cwd.
+		expect(String(sent[1].at(-1)!.content)).toContain('Current working directory: /srv');
+		expect(String(sent[1][1].content)).not.toContain('Current working directory');
+		expect(String(sent[1][1].content)).toContain('first');
+		// The saved thread keeps what was typed.
+		expect(a.messages.map((m) => String(m.content))).not.toContain(
+			expect.stringContaining('working directory')
+		);
 	});
 
 	it('retains the loop-appended tool_call/result pairs and replays them next turn', async () => {
