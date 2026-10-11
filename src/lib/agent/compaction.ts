@@ -1,6 +1,6 @@
 import { messageText, type ChatMessage } from '#lib/api.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
-import { summarizeInChunks } from '#lib/agent/summarize.ts';
+import { answerForSummary, summarizeInChunks } from '#lib/agent/summarize.ts';
 
 const COMPACTION_THRESHOLD = 0.8;
 const PROTECTED_TURNS = 4;
@@ -47,10 +47,8 @@ export async function compactConversation(
 
 	const parts = compactable.map((m) => {
 		const role = m.role === 'user' ? 'User' : 'Assistant';
-		// Strip think blocks from assistant messages for cleaner summary
-		const content = messageText(m.content)
-			.replace(/<think>[\s\S]*?<\/think>\s*/g, '')
-			.trim();
+		// Without reasoning, for a cleaner summary (see answerForSummary)
+		const content = answerForSummary(messageText(m.content));
 		return `${role}: ${content}`;
 	});
 

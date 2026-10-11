@@ -153,6 +153,22 @@ describe('renderForSummary', () => {
 	});
 });
 
+describe('renderForSummary and reasoning', () => {
+	it('drops the reasoning of a reply that has an answer', () => {
+		const [turn] = renderForSummary([user('how many?'), answer('<think>count them</think>W9.')]);
+		expect(turn).toContain('Assistant: W9.');
+		expect(turn).not.toContain('count them');
+	});
+
+	it('keeps an answer written wholly inside an unclosed think block', () => {
+		const [turn] = renderForSummary([
+			user('how many?'),
+			answer('<think>Adding them up: W9 has 173, the most.')
+		]);
+		expect(turn).toContain('W9 has 173');
+	});
+});
+
 describe('summarizeTurns', () => {
 	it('makes one call when everything fits, against the session backend', async () => {
 		mocks.chatCompletion.mockResolvedValue({ content: 'Summary.' });
