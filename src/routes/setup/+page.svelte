@@ -258,8 +258,13 @@
 						</span>
 					</div>
 					{#if hardware.gpu_vram_mb}
-						<div class="hw-row">
-							<span class="hw-label">VRAM</span>
+						<div
+							class="hw-row"
+							title={hardware.gpu_integrated
+								? 'System memory the integrated GPU may use. It is RAM, not memory of its own, and says nothing about speed.'
+								: undefined}
+						>
+							<span class="hw-label">{hardware.gpu_integrated ? 'Shared memory' : 'VRAM'}</span>
 							<span class="hw-value">
 								{formatBytes(hardware.gpu_vram_mb * 1048576)}
 							</span>
@@ -273,10 +278,12 @@
 							)}
 						</span>
 					</div>
-					{#if hardware.gpu_integrated}
-						<p class="hw-warn">
-							Integrated graphics detected. A smaller model has been recommended for better
-							performance. Discrete GPUs with 8+ GB VRAM are recommended for the full-size model.
+					{#if hardware.gpu_integrated_slow}
+						<p
+							class="hw-warn"
+							title="Integrated graphics read the model from system memory, which is much slower than a graphics card's. A graphics card with 8 GB or more runs the larger models well."
+						>
+							Integrated graphics: a small model is recommended, as larger ones run slowly here.
 						</p>
 					{/if}
 				</div>
@@ -295,7 +302,7 @@
 							</option>
 						{/each}
 					</select>
-					{#if offloadModel}
+					{#if offloadModel && hardware.offload_alternative?.spill}
 						<p
 							class="offload-alt"
 							title={`${offloadModel.description}. Turns on Settings → Inference → Let models use system RAM.`}
@@ -304,6 +311,19 @@
 								Using system RAM for the larger model: smarter, slower.
 							{:else}
 								Larger model using system RAM: smarter, slower.
+								<button class="link-btn" onclick={chooseOffloadAlternative}>Use this instead</button
+								>
+							{/if}
+						</p>
+					{:else if offloadModel}
+						<p
+							class="offload-alt"
+							title={`${offloadModel.description}. It reads only a small part of itself for each word, so it runs about as fast as the small model, but needs far more memory.`}
+						>
+							{#if offloadChosen}
+								Using the larger model: smarter, about as fast here.
+							{:else}
+								Larger model: smarter, about as fast here, and a bigger download.
 								<button class="link-btn" onclick={chooseOffloadAlternative}>Use this instead</button
 								>
 							{/if}

@@ -106,6 +106,7 @@ const TABLE: Record<string, Handler> = {
 		gpu_api: 'Vulkan',
 		gpu_vram_mb: 16384,
 		gpu_integrated: false,
+		gpu_integrated_slow: false,
 		total_ram_mb: 32768,
 		available_ram_mb: 24576,
 		recommended_quant: 'Q4_K_M',

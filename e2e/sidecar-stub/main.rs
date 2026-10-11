@@ -13,6 +13,12 @@ use std::net::TcpListener;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    // llama-server's device listing (the setup wizard's hardware probe):
+    // answer like a machine with no GPU and exit, as the real one does.
+    if args.iter().any(|a| a == "--list-devices") {
+        println!("Available devices:");
+        return;
+    }
     let port = args
         .windows(2)
         .find(|w| w[0] == "--port" || w[0] == "--listen-port")
