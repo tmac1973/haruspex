@@ -101,9 +101,9 @@ export async function finalizeNoToolCalls(
 		return 'complete';
 	}
 
-	// Re-stream the final answer. After tools, drop the tool list (the model
+	// Re-stream the final answer. After tools, forbid calling one (the model
 	// is answering, not calling) and tailor the out-of-tokens hint; the
-	// no-tools path keeps tools available in case it still wants one.
+	// no-tools path keeps tools callable in case it still wants one.
 	const postTools = state.usedTools;
 	if (postTools) {
 		logDebug('agent', `iteration ${iteration} branch=final-synthesis (post-tools re-stream)`, {
@@ -115,11 +115,15 @@ export async function finalizeNoToolCalls(
 	} else {
 		logDebug('agent', `iteration ${iteration} branch=final-synthesis (no-tools)`);
 	}
+	// The tools stay in the request either way, so the prompt stays a cached
+	// prefix (see streamFinalSynthesis).
 	const { lastFinish, totalChunks, totalContent } = await streamFinalSynthesis(
 		ctx,
-		postTools ? undefined : tools,
+		tools,
 		sampling,
-		templateKwargs
+		templateKwargs,
+		undefined,
+		postTools
 	);
 	logDebug('agent', `final synthesis (${postTools ? 'post-tools' : 'no-tools'}) ended`, {
 		chunks: totalChunks,

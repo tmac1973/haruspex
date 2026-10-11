@@ -169,12 +169,15 @@ export async function runMaxIterationsFinalSynthesis(
 		thinkingEnabled: false
 	});
 	const templateKwargs = getChatTemplateKwargs(ctx.descriptor, false, ctx.reasoningEffort);
+	// Tools offered but not callable, so the prompt stays a cached prefix
+	// (see streamFinalSynthesis).
 	const { lastFinish, totalChunks, totalContent } = await streamFinalSynthesis(
 		ctx,
-		undefined,
+		ctx.tools,
 		sampling,
 		templateKwargs,
-		false
+		false,
+		true
 	);
 	logDebug('agent', `final synthesis (max-iterations) ended`, {
 		chunks: totalChunks,
