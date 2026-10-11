@@ -16,9 +16,20 @@ import {
 	getTokenCalibration
 } from '#lib/agent/context-budget.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
-import { stripThinkBlocks } from '#lib/markdown.ts';
+import { splitThinkChannels, stripThinkBlocks } from '#lib/markdown.ts';
 import { truncateCapturedOutput } from '#lib/shell/truncate.ts';
 import { getChatTemplateKwargs } from '#lib/stores/settings.ts';
+
+/**
+ * A reply as a summary should see it: the answer without its reasoning. When
+ * the reasoning is all there is (a model that wrote its whole answer inside
+ * an unclosed `<think>`), the reasoning, or the summary would never learn
+ * what the turn concluded. A reply with an answer is unaffected.
+ */
+export function answerForSummary(text: string): string {
+	const { reasoning, answer } = splitThinkChannels(text);
+	return answer.trim() || reasoning.trim();
+}
 
 /** The summary's own length: a sixteenth of the window, up to this. */
 const SUMMARY_MAX_TOKENS = 4096;

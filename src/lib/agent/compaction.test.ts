@@ -96,6 +96,18 @@ describe('compactConversation', () => {
 		);
 	});
 
+	it('keeps an answer written wholly inside an unclosed think block', async () => {
+		mocks.chatCompletion.mockResolvedValue({ content: 'Summary.' });
+		const messages = chat(12, 10);
+		messages[1] = { role: 'assistant', content: '<think>The answer is W9, with 173.' };
+		messages[3] = { role: 'assistant', content: '<think>private musing</think>Plain answer.' };
+		await compactConversation(messages);
+		const sent = String(mocks.chatCompletion.mock.calls[0][0].messages[1].content);
+		expect(sent).toContain('The answer is W9, with 173.');
+		expect(sent).toContain('Plain answer.');
+		expect(sent).not.toContain('private musing');
+	});
+
 	it('throws when the model call fails, for the caller to carry on without', async () => {
 		mocks.chatCompletion.mockRejectedValue(new Error('exceed_context_size_error'));
 		await expect(compactConversation(chat(12, 100))).rejects.toThrow('exceed_context_size');

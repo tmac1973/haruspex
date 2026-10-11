@@ -15,8 +15,7 @@
 
 import { messageText, type BackendOverride, type ChatMessage } from '#lib/api.ts';
 import { estimateMessagesTokens, getTokenCalibration } from '#lib/agent/context-budget.ts';
-import { summarizeInChunks } from '#lib/agent/summarize.ts';
-import { stripThinkBlocks } from '#lib/markdown.ts';
+import { answerForSummary, summarizeInChunks } from '#lib/agent/summarize.ts';
 import { truncateCapturedOutput } from '#lib/shell/truncate.ts';
 import type { CodeCompaction } from './session';
 
@@ -153,7 +152,7 @@ function renderMessage(m: ChatMessage): string {
 			return `User: ${text}${images ? ` [${images} image(s)]` : ''}`;
 		}
 		case 'assistant': {
-			const prose = stripThinkBlocks(text).trim();
+			const prose = answerForSummary(text);
 			const calls = (m.tool_calls ?? []).map(
 				(c) => `→ ${callLabel(c.function.name, c.function.arguments)}`
 			);
