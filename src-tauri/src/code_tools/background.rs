@@ -93,6 +93,8 @@ pub struct BgProcess {
     pub running: bool,
     /// The shell's exit code; None while running or when killed by a signal.
     pub exit_code: Option<i32>,
+    /// It ended for going over its memory limit (Windows: its job said so).
+    pub out_of_memory: bool,
     pub log_path: String,
 }
 
@@ -281,6 +283,7 @@ impl CodeBgManager {
                 started_at,
                 running: true,
                 exit_code: None,
+                out_of_memory: false,
                 log_path: log_path_s.clone(),
             },
         );
@@ -294,6 +297,10 @@ impl CodeBgManager {
             if let Some(p) = procs.lock_or_recover().get_mut(&reap_id) {
                 p.running = false;
                 p.exit_code = status.and_then(|s| s.code());
+                p.out_of_memory = p
+                    .job
+                    .as_ref()
+                    .is_some_and(|j| j.out_of_memory(p.exit_code != Some(0)));
             }
         });
 
@@ -862,6 +869,29 @@ mod host_windows_tests {
         let st = &mgr.status(Some("s1"))[0];
         assert_eq!(st.exit_code, Some(4));
         assert!(mgr.tail(&started.id, None).unwrap().contains("out"));
+    }
+
+    #[tokio::test]
+    async fn going_over_the_memory_limit_is_reported() {
+        let (mgr, _dir) = manager("oom");
+        let cwd = std::env::temp_dir().to_string_lossy().into_owned();
+        let cmd = "$l = [System.Collections.Generic.List[byte[]]]::new(); while ($true) { $l.Add([byte[]]::new(64MB)) }";
+        // 1% of RAM, well under what it allocates. PowerShell 7 fails inside
+        // its own heap cap and loops on, so give up after a while.
+        mgr.start("s1".into(), cwd, None, cmd.into(), Some(1))
+            .await
+            .unwrap();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+        while mgr.status(None)[0].running && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        let st = mgr.status(None).remove(0);
+        if st.running {
+            // PowerShell 7: still looping after its OutOfMemoryException.
+            mgr.stop_all().await;
+            return;
+        }
+        assert!(st.out_of_memory, "{st:?}");
     }
 
     #[tokio::test]

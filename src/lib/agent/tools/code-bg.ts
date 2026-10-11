@@ -11,7 +11,7 @@ import { registerTool } from './registry';
 import { toolError, toolResult } from './types';
 import type { ToolContext, ToolExecOutput } from './types';
 import { registerCodeBgWatch } from '#lib/shell/backgroundWatch.ts';
-import { commandMemoryLimitPercent } from '#lib/shell/memoryLimit.ts';
+import { commandMemoryLimitPercent, outOfMemoryNote } from '#lib/shell/memoryLimit.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import type { BgStarted } from '#lib/ipc/gen/BgStarted.ts';
 import type { BgProcess } from '#lib/ipc/gen/BgProcess.ts';
@@ -92,6 +92,10 @@ export function describeBgProcess(p: BgProcess, nowMs = Date.now()): string {
 		const secs = Math.max(0, Math.round((nowMs - p.started_at) / 1000));
 		const label = processLabel(p);
 		return `Running for ${secs}s${label ? ` (${label})` : ''}: ${p.command}`;
+	}
+	if (p.out_of_memory) {
+		const note = outOfMemoryNote({ out_of_memory: true, memory_limit_mb: null });
+		return `Stopped for going over its memory limit: ${p.command}\n${note}`;
 	}
 	return p.exit_code == null
 		? `Finished, killed by a signal: ${p.command}`
