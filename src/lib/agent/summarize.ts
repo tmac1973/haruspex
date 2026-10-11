@@ -75,7 +75,9 @@ export async function summarizeInChunks(opts: {
 	const maxTokens = summaryMaxTokens(opts.contextSize);
 	const instructions = opts.instructions?.trim() ?? '';
 	// The request's room, in the raw estimate the calibration scales.
-	const room = Math.floor((opts.contextSize - maxTokens) / getTokenCalibration());
+	const room = Math.floor(
+		(opts.contextSize - maxTokens) / getTokenCalibration(descriptor.calibrationKey)
+	);
 	let summary = opts.previous;
 	let next = 0;
 	while (next < opts.parts.length) {

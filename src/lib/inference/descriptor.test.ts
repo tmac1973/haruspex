@@ -401,6 +401,27 @@ describe('resolveBackendDescriptor — OpenRouter', () => {
 	});
 });
 
+describe('resolveBackendDescriptor — calibration key', () => {
+	it('names the tokenizer: the local model, or the remote server and model', () => {
+		const nine = resolveBackendDescriptor().calibrationKey;
+		setActiveLocalModel('Qwen3.8-27B-IQ4_NL.gguf');
+		const big = resolveBackendDescriptor().calibrationKey;
+		expect(nine).not.toBe(big);
+		updateInferenceBackend({
+			mode: 'remote',
+			remoteBaseUrl: 'http://compute:3000/',
+			remoteModelId: 'qwen3.8-27b'
+		});
+		const remote = resolveBackendDescriptor().calibrationKey;
+		expect(remote).toBe('http://compute:3000|qwen3.8-27b');
+		// A session override on the same server and model shares what it learned.
+		expect(
+			resolveBackendDescriptor({ baseUrl: 'http://compute:3000', modelId: 'qwen3.8-27b' })
+				.calibrationKey
+		).toBe(remote);
+	});
+});
+
 describe('resolveBackendDescriptor — per-job override', () => {
 	it('builds the descriptor from the override fields', () => {
 		updateSettings({ apiKeys: [{ id: 'key_or', name: 'OR', value: 'sk-from-store' }] });

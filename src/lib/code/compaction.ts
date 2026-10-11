@@ -16,6 +16,7 @@
 import { messageText, type BackendOverride, type ChatMessage } from '#lib/api.ts';
 import { estimateMessagesTokens, getTokenCalibration } from '#lib/agent/context-budget.ts';
 import { answerForSummary, summarizeInChunks } from '#lib/agent/summarize.ts';
+import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { truncateCapturedOutput } from '#lib/shell/truncate.ts';
 import type { CodeCompaction } from './session';
 
@@ -69,9 +70,15 @@ export function modelThread(s: {
  * `overhead` is what goes with it that the thread doesn't hold, such as the
  * system prompt and tool schemas, in the same raw estimate.
  */
-export function shouldCompactCode(view: ChatMessage[], contextSize: number, overhead = 0): boolean {
+export function shouldCompactCode(
+	view: ChatMessage[],
+	contextSize: number,
+	overhead = 0,
+	/** The backend's `calibrationKey`. */
+	calibrationKey?: string
+): boolean {
 	if (contextSize <= 0) return false;
-	const estimated = (estimateMessagesTokens(view) + overhead) * getTokenCalibration();
+	const estimated = (estimateMessagesTokens(view) + overhead) * getTokenCalibration(calibrationKey);
 	return estimated >= contextSize * COMPACT_AT;
 }
 
@@ -83,10 +90,15 @@ export function shouldCompactCode(view: ChatMessage[], contextSize: number, over
 export function compactionDue(
 	prompt: ChatMessage[],
 	contextSize: number,
-	lastPromptTokens = 0
+	lastPromptTokens = 0,
+	/** The backend's `calibrationKey`. */
+	calibrationKey?: string
 ): boolean {
 	if (contextSize <= 0) return false;
-	return shouldCompactCode(prompt, contextSize) || lastPromptTokens >= contextSize * COMPACT_AT;
+	return (
+		shouldCompactCode(prompt, contextSize, 0, calibrationKey) ||
+		lastPromptTokens >= contextSize * COMPACT_AT
+	);
 }
 
 /**
@@ -111,11 +123,13 @@ function turnOpenings(messages: ChatMessage[], after: number): number[] {
 export function chooseCut(
 	messages: ChatMessage[],
 	from: number,
-	contextSize: number
+	contextSize: number,
+	/** The backend's `calibrationKey`. */
+	calibrationKey?: string
 ): number | null {
 	const openings = turnOpenings(messages, from);
 	if (openings.length === 0) return null;
-	const keep = (contextSize * KEEP_RECENT) / getTokenCalibration();
+	const keep = (contextSize * KEEP_RECENT) / getTokenCalibration(calibrationKey);
 	if (estimateMessagesTokens(messages.slice(from)) <= keep) return null;
 	let cut = openings[openings.length - 1];
 	let tail = estimateMessagesTokens(messages.slice(cut));
@@ -210,7 +224,12 @@ export async function compactCodeThread(opts: {
 	instructions?: string;
 }): Promise<CodeCompaction | null> {
 	const from = opts.compaction?.at ?? 0;
-	const at = chooseCut(opts.messages, from, opts.contextSize);
+	const at = chooseCut(
+		opts.messages,
+		from,
+		opts.contextSize,
+		resolveBackendDescriptor(opts.backend ?? undefined).calibrationKey
+	);
 	if (at === null) return null;
 	const summary = await summarizeTurns({
 		previous: opts.compaction?.summary ?? null,

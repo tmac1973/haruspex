@@ -152,7 +152,8 @@ export interface CodeTurnResult {
 
 export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 	const backend = o.backend ?? undefined;
-	const contextSize = resolveBackendDescriptor(backend).contextSize;
+	const descriptor = resolveBackendDescriptor(backend);
+	const contextSize = descriptor.contextSize;
 	const settings = getSettings();
 
 	// The loop appends this turn's messages to `messages` and reports each to
@@ -209,7 +210,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 				// call, and queueing it apart would let another consumer in
 				// between it and the turn it makes room for.
 				const last = o.lastUsage?.contextSize === contextSize ? o.lastUsage.promptTokens : 0;
-				if (compactionDue(messages, contextSize, last)) {
+				if (compactionDue(messages, contextSize, last, descriptor.calibrationKey)) {
 					const next = await compact(o, compaction, contextSize);
 					if (next) {
 						compaction = next;

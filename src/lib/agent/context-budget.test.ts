@@ -384,6 +384,30 @@ describe('fitMessagesToBudget', () => {
 });
 
 describe('token calibration', () => {
+	it('keeps one correction per backend', () => {
+		// A dense remote tokenizer must not move a local model's estimate.
+		recordTokenCalibration(1000, 3000, 'http://box|big-model');
+		expect(getTokenCalibration('http://box|big-model')).toBeCloseTo(3.0, 5);
+		expect(getTokenCalibration('local:Qwen3.5-9B.gguf')).toBe(1.5);
+		expect(getTokenCalibration()).toBe(1.5);
+	});
+
+	it('fits with the backend it is given', () => {
+		recordTokenCalibration(1000, 3000, 'dense');
+		const turns = (): ChatMessage[] => {
+			const out: ChatMessage[] = [sys('system prompt')];
+			for (let i = 0; i < 30; i++) out.push(user(`u${i} ` + 'a'.repeat(2000)), asst('b'));
+			return out;
+		};
+		const plain = turns();
+		const dense = turns();
+		fitMessagesToBudget(plain, 32768, { reserveOutput: 8192 });
+		fitMessagesToBudget(dense, 32768, { reserveOutput: 8192, calibrationKey: 'dense' });
+		// The denser backend's budget is tighter, so it keeps less.
+		expect(estimateMessagesTokens(dense)).toBeLessThan(estimateMessagesTokens(plain));
+		expect(estimateMessagesTokens(dense)).toBeLessThanOrEqual(Math.floor((32768 - 8192) / 3));
+	});
+
 	it('adopts a higher observed ratio immediately', () => {
 		// Estimate said 1000, server actually counted 2000 -> ratio 2.0.
 		recordTokenCalibration(1000, 2000);
