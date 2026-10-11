@@ -245,6 +245,14 @@ export function injectPendingImages(messages: ChatMessage[], pending: PendingIma
  * Shared by both post-tools and no-tools final-synthesis branches and
  * by the max-iterations handler.
  *
+ * `answerOnly` keeps the turn's tools in the request but forbids calling
+ * them (`tool_choice: 'none'`). Dropping the tools instead, to make the model
+ * answer, changed the start of the prompt (chat templates put tools in the
+ * system prompt), so the server reprocessed the whole conversation for this
+ * call and again for the next turn's first: minutes each on a long local
+ * session. llama.cpp and vLLM both render the tools under 'none', so the
+ * prompt stays a cached prefix.
+ *
  * Uses `ctx.maxResponseTokens` — the SAME ceiling as the tool-check call.
  * This call produces the answer the user actually reads, so a second hardcoded
  * literal here silently overrode every value that resolves into the context:
@@ -258,7 +266,9 @@ export async function streamFinalSynthesis(
 	sampling: ReturnType<typeof getSamplingParams>,
 	templateKwargs: ReturnType<typeof getChatTemplateKwargs>,
 	/** Reasoning for this call only; the turn's setting when absent. */
-	thinking: boolean | null = ctx.thinkingEnabled
+	thinking: boolean | null = ctx.thinkingEnabled,
+	/** Offer `tools` but forbid calling them: the model must answer. */
+	answerOnly = false
 ): Promise<{ lastFinish: string | null; totalChunks: number; totalContent: number }> {
 	applyContextGuard(ctx, ctx.maxResponseTokens, tools);
 	const sentEstimate = estimateMessagesTokens(ctx.messages, tools);
@@ -268,6 +278,7 @@ export async function streamFinalSynthesis(
 		{
 			messages: ctx.messages,
 			tools,
+			...(answerOnly && tools?.length ? { tool_choice: 'none' as const } : {}),
 			backend: ctx.backend ?? undefined,
 			...sampling,
 			max_tokens: ctx.maxResponseTokens,

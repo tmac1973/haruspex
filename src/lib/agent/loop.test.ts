@@ -202,6 +202,7 @@ let nonStreamSnapshots: ChatMessage[][];
 let streamQueue: StreamChunk[][];
 let streamSnapshots: ChatMessage[][];
 let streamTools: Array<ToolDefinition[] | undefined>;
+let streamToolChoice: unknown[];
 let streamMaxTokens: Array<number | undefined>;
 let nonStreamMaxTokens: Array<number | undefined>;
 
@@ -212,6 +213,7 @@ beforeEach(() => {
 	streamQueue = [];
 	streamSnapshots = [];
 	streamTools = [];
+	streamToolChoice = [];
 	streamMaxTokens = [];
 	nonStreamMaxTokens = [];
 
@@ -229,9 +231,15 @@ beforeEach(() => {
 	);
 
 	api.chatCompletionStream.mockImplementation(
-		(opts: { messages: ChatMessage[]; tools?: ToolDefinition[]; max_tokens?: number }) => {
+		(opts: {
+			messages: ChatMessage[];
+			tools?: ToolDefinition[];
+			tool_choice?: unknown;
+			max_tokens?: number;
+		}) => {
 			streamSnapshots.push(structuredClone(opts.messages));
 			streamTools.push(opts.tools);
+			streamToolChoice.push(opts.tool_choice);
 			streamMaxTokens.push(opts.max_tokens);
 			const chunks = streamQueue.shift() ?? [];
 			return (async function* () {
@@ -293,6 +301,8 @@ describe('runAgentLoop: plain answer paths', () => {
 		expect(api.chatCompletionStream).toHaveBeenCalledTimes(1);
 		// No-tools synthesis keeps the tool list available.
 		expect(streamTools[0]).toEqual(TOOL_SCHEMAS);
+		// No tool ran yet, so the model may still call one.
+		expect(streamToolChoice[0]).toBeUndefined();
 		expect(cb.onStreamChunk).toHaveBeenCalledTimes(4);
 		expect(streamedText(cb)).toBe('Hello');
 		expect(cb.onComplete).toHaveBeenCalledTimes(1);
@@ -1107,8 +1117,10 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 
 		expect(api.chatCompletion).toHaveBeenCalledTimes(2);
 		expect(api.chatCompletionStream).toHaveBeenCalledTimes(1);
-		// Final synthesis offers no tools.
-		expect(streamTools[0]).toBeUndefined();
+		// Final synthesis keeps the tools, so the prompt stays a cached prefix,
+		// but may not call them.
+		expect(streamTools[0]).toEqual(TOOL_SCHEMAS);
+		expect(streamToolChoice[0]).toBe('none');
 		const last = streamSnapshots[0][streamSnapshots[0].length - 1];
 		expect(last).toEqual({
 			role: 'user',
@@ -1158,8 +1170,10 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 		await runAgentLoop(options);
 
 		expect(api.chatCompletionStream).toHaveBeenCalledTimes(1);
-		// Post-tools re-stream drops the tool list so the model answers.
-		expect(streamTools[0]).toBeUndefined();
+		// Post-tools re-stream keeps the tool list (a cached prefix) but
+		// forbids calling one, so the model answers.
+		expect(streamTools[0]).toEqual(TOOL_SCHEMAS);
+		expect(streamToolChoice[0]).toBe('none');
 		expect(streamedText(cb)).toBe('Here is the real answer.');
 		expect(cb.onComplete).toHaveBeenCalledTimes(1);
 	});
