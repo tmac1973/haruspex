@@ -393,7 +393,7 @@ pub async fn run_command_capture(
 
     Ok(RunCommandResult {
         stdout: String::from_utf8_lossy(&stdout_bytes).into_owned(),
-        stderr: String::from_utf8_lossy(&stderr_bytes).into_owned(),
+        stderr: plain_stderr(String::from_utf8_lossy(&stderr_bytes).into_owned()),
         exit_code,
         killed,
         duration_ms: start.elapsed().as_millis() as u32,
@@ -416,6 +416,75 @@ pub async fn code_powershell(use_store: bool) -> Option<crate::shell::catalog::A
         .await
         .ok()
         .flatten()
+}
+
+/// A command's stderr as text. Windows PowerShell 5.1, started with
+/// `-EncodedCommand` and a redirected stderr, writes its errors there as
+/// CLIXML (`#< CLIXML` then `<Objs>…<S S="Error">line_x000D__x000A_</S>…`)
+/// whatever `-OutputFormat` says; that block becomes its text. Anything a
+/// native program wrote around it is kept.
+fn plain_stderr(stderr: String) -> String {
+    let Some(start) = stderr.find("#< CLIXML") else {
+        return stderr;
+    };
+    let after = &stderr[start + "#< CLIXML".len()..];
+    let (Some(open), Some(close)) = (after.find("<Objs"), after.find("</Objs>")) else {
+        return stderr;
+    };
+    if close < open {
+        return stderr;
+    }
+    let block = &after[open..close];
+    let mut text = String::new();
+    // Each string record: `<S S="Error">…</S>` (also Warning, Verbose, …).
+    let mut rest = block;
+    while let Some(i) = rest.find("<S S=") {
+        let Some(gt) = rest[i..].find('>') else { break };
+        let body_start = i + gt + 1;
+        let Some(end) = rest[body_start..].find("</S>") else {
+            break;
+        };
+        text.push_str(&unescape_clixml(&rest[body_start..body_start + end]));
+        rest = &rest[body_start + end + 4..];
+    }
+    let tail = &after[close + "</Objs>".len()..];
+    format!(
+        "{}{}{}",
+        &stderr[..start],
+        text,
+        tail.trim_start_matches(['\r', '\n'])
+    )
+}
+
+/// CLIXML text: XML entities, and `_xHHHH_` for characters such as CR and LF.
+fn unescape_clixml(s: &str) -> String {
+    let s = s
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'");
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s.as_str();
+    while let Some(i) = rest.find("_x") {
+        out.push_str(&rest[..i]);
+        let code = rest.get(i + 2..i + 6);
+        let closed = rest.get(i + 6..i + 7) == Some("_");
+        match code
+            .and_then(|c| u32::from_str_radix(c, 16).ok())
+            .and_then(char::from_u32)
+        {
+            Some(c) if closed => {
+                out.push(c);
+                rest = &rest[i + 7..];
+            }
+            _ => {
+                out.push_str("_x");
+                rest = &rest[i + 2..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out.replace("&amp;", "&")
 }
 
 /// Kill a running `run_command_capture` invocation by its `command_id`. Called
@@ -797,6 +866,13 @@ Linux
         }
 
         #[tokio::test]
+        async fn an_error_reads_as_text() {
+            let res = run("Write-Error 'it broke'", 30, "p-error-text", None).await;
+            assert!(res.stderr.contains("it broke"), "{res:?}");
+            assert!(!res.stderr.contains("CLIXML"), "{res:?}");
+        }
+
+        #[tokio::test]
         async fn quotes_and_unicode_arrive_intact() {
             let res = run(r#"Write-Output "a ""b"" 'c' é ✓""#, 30, "p-quotes", None).await;
             assert_eq!(res.stdout.trim(), r#"a "b" 'c' é ✓"#, "{res:?}");
@@ -855,6 +931,16 @@ Linux
                 .unwrap();
             assert!(res.killed);
         }
+    }
+
+    #[test]
+    fn powershell_clixml_errors_become_text() {
+        let raw = "native line\r\n#< CLIXML\r\n<Objs Version=\"1.1.0.1\" xmlns=\"http://schemas.microsoft.com/powershell/2004/04\"><S S=\"Error\">Start-Process : No application is associated_x000D__x000A_</S><S S=\"Error\">+ ~~~ &lt;here&gt; &amp; 50_x0025_ _xnotreal_x000D__x000A_</S></Objs>";
+        assert_eq!(
+            plain_stderr(raw.to_string()),
+            "native line\r\nStart-Process : No application is associated\r\n+ ~~~ <here> & 50% _xnotreal\r\n"
+        );
+        assert_eq!(plain_stderr("plain\n".into()), "plain\n");
     }
 
     #[tokio::test]
