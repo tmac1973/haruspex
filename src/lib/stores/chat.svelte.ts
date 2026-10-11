@@ -20,6 +20,7 @@ import {
 	shouldCompact,
 	compactConversation,
 	remapIndexedRecords,
+	chatModelView,
 	SUMMARY_PREFIX
 } from '#lib/agent/compaction.ts';
 import {
@@ -573,7 +574,11 @@ export function setExhaustiveResearch(value: boolean): void {
 
 async function compactIfNeeded(): Promise<void> {
 	const conversation = getActiveConversation();
-	if (!conversation || conversation.messages.length < 10) return;
+	if (!conversation) return;
+	// What the model is sent: from the latest summary on. Everything before
+	// it stays in the chat for the reader, already summarised.
+	const view = chatModelView(conversation.messages);
+	if (view.length < 10) return;
 
 	// Proactive: estimate the prompt we're *about* to send rather than
 	// reacting to the last response's token count. The reactive approach
@@ -582,8 +587,7 @@ async function compactIfNeeded(): Promise<void> {
 	// by the learned calibration so dense content (code/logs) triggers the
 	// summary as early as it should.
 	const descriptor = resolveBackendDescriptor();
-	const estimated =
-		estimateMessagesTokens(conversation.messages) * getTokenCalibration(descriptor.calibrationKey);
+	const estimated = estimateMessagesTokens(view) * getTokenCalibration(descriptor.calibrationKey);
 	if (!shouldCompact(estimated, descriptor.contextSize)) return;
 
 	isCompacting = true;
@@ -595,7 +599,7 @@ async function compactIfNeeded(): Promise<void> {
 		let removedCount: number;
 		try {
 			({ summary, removedCount } = await withInferenceSlot({ consumer: 'chat' }, () =>
-				compactConversation(conversation.messages)
+				compactConversation(view)
 			));
 		} catch (e) {
 			// The send goes on without a summary: the pre-send context fit
@@ -606,15 +610,20 @@ async function compactIfNeeded(): Promise<void> {
 		}
 		if (!summary || removedCount === 0) return;
 
-		const remaining = conversation.messages.filter(
-			(m) => m.role === 'user' || m.role === 'assistant'
-		);
+		const remaining = view.filter((m) => m.role === 'user' || m.role === 'assistant');
 		const kept = remaining.slice(remaining.length - 8);
 		const summaryMsg: ChatMessage = {
 			role: 'system',
 			content: `${SUMMARY_PREFIX}\n${summary}`
 		};
-		const newMessages: ChatMessage[] = [summaryMsg, ...kept];
+		// The summary goes where the kept messages start; nothing is deleted,
+		// so the scrollback stays whole and the model's view starts here.
+		const cut = conversation.messages.indexOf(kept[0]);
+		const newMessages: ChatMessage[] = [
+			...conversation.messages.slice(0, cut),
+			summaryMsg,
+			...conversation.messages.slice(cut)
+		];
 
 		// messageSteps / messageStats are keyed by message INDEX — rewriting
 		// the array without remapping them left artifacts and tok/s footers
@@ -998,7 +1007,11 @@ function buildApiPrompt(
 	memorySection: string,
 	skillsSection = ''
 ): ChatMessage[] {
-	const historyMessages = conversation.messages.filter((m) => m.role !== 'tool' && !m.tool_calls);
+	// From the latest summary on (`chatModelView`): what came before it is
+	// in the summary, and stays in the chat only for the reader.
+	const historyMessages = chatModelView(conversation.messages).filter(
+		(m) => m.role !== 'tool' && !m.tool_calls
+	);
 	let messagesForApi: ChatMessage[] = [
 		buildSystemPrompt(workingDir, {
 			memorySection,

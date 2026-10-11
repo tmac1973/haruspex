@@ -64,6 +64,10 @@ When memory is on, the eye button in the chat box makes the current chat incogni
 
 Conversations are saved in a database on your computer and are there after a restart. Find them in the sidebar. Chats from other people's devices through Guest chat also appear there (see `guest-chat`).
 
+## When a chat gets long
+
+Once a chat fills most of the model's context, Haruspex summarises its older messages before your next one. Every message stays in the chat; **Earlier messages summarised** marks where the model's view starts and opens the summary. The model doesn't see the exact words above it any more.
+
 ## Use a skill
 
 Type `/` to pick one of your skills, or `/name what you want`. See the `skills` page.

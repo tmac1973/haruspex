@@ -11,6 +11,7 @@
 	import ThinkingIndicator from '#lib/components/ThinkingIndicator.svelte';
 	import type { ChatState } from '#lib/engine/types.ts';
 	import Message from './Message.svelte';
+	import { isSummaryMessage, summaryText } from '#lib/agent/summaryMessage.ts';
 
 	let {
 		chat,
@@ -22,7 +23,10 @@
 	const shown = $derived(
 		chat.messages
 			.map((msg, i) => ({ msg, i }))
-			.filter(({ msg }) => msg.role !== 'tool' && msg.role !== 'system' && !msg.tool_calls)
+			.filter(
+				({ msg }) =>
+					isSummaryMessage(msg) || (msg.role !== 'tool' && msg.role !== 'system' && !msg.tool_calls)
+			)
 	);
 	const steps = (i: number) => (chat.messageSteps[i] ?? []) as Step[];
 	const stopAt = (i: number) => chat.messageStops[i] as string | undefined;
@@ -42,10 +46,19 @@
 
 <div class="thread" bind:this={thread} onscroll={onScroll}>
 	{#each shown as { msg, i } (i)}
-		{#if msg.role === 'assistant' && steps(i).length}
-			<SearchStep steps={steps(i)} runControls={false} />
+		{#if isSummaryMessage(msg)}
+			<details class="summary" data-testid="chat-summary">
+				<summary title="The model works from this summary and the messages below it."
+					>Earlier messages summarised</summary
+				>
+				<pre>{summaryText(msg)}</pre>
+			</details>
+		{:else}
+			{#if msg.role === 'assistant' && steps(i).length}
+				<SearchStep steps={steps(i)} runControls={false} />
+			{/if}
+			<Message message={msg} steps={steps(i)} />
 		{/if}
-		<Message message={msg} steps={steps(i)} />
 		{#if stopAt(i)}
 			<StopIndicator reason={stopAt(i) as never} disabled={chat.busy} onContinue={oncontinue} />
 		{/if}
@@ -80,6 +93,25 @@
 </div>
 
 <style>
+	.summary {
+		margin: 8px 0;
+		padding: 6px 10px;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		font-size: 0.85rem;
+		color: var(--text-secondary);
+	}
+
+	.summary summary {
+		cursor: pointer;
+	}
+
+	.summary pre {
+		margin: 6px 0 0;
+		white-space: pre-wrap;
+		font-size: 0.8rem;
+	}
+
 	.thread {
 		flex: 1;
 		overflow-y: auto;

@@ -12,7 +12,12 @@ vi.mock('#lib/inference/descriptor.ts', () => ({
 }));
 vi.mock('#lib/stores/settings.ts', () => ({ getChatTemplateKwargs: () => ({}) }));
 
-import { SUMMARY_PREFIX, compactConversation, remapIndexedRecords } from './compaction';
+import {
+	SUMMARY_PREFIX,
+	chatModelView,
+	compactConversation,
+	remapIndexedRecords
+} from './compaction';
 import { estimateMessagesTokens, resetTokenCalibration } from './context-budget';
 
 describe('remapIndexedRecords', () => {
@@ -111,5 +116,28 @@ describe('compactConversation', () => {
 	it('throws when the model call fails, for the caller to carry on without', async () => {
 		mocks.chatCompletion.mockRejectedValue(new Error('exceed_context_size_error'));
 		await expect(compactConversation(chat(12, 100))).rejects.toThrow('exceed_context_size');
+	});
+});
+
+describe('chatModelView', () => {
+	const u = (content: string): ChatMessage => ({ role: 'user', content });
+	const summary = (text: string): ChatMessage => ({
+		role: 'system',
+		content: `${SUMMARY_PREFIX}\n${text}`
+	});
+
+	it('is the whole chat before any compaction', () => {
+		const messages = [u('a'), u('b')];
+		expect(chatModelView(messages)).toBe(messages);
+	});
+
+	it('starts at the latest summary, wherever it sits', () => {
+		const messages = [u('a'), summary('one'), u('b'), summary('two'), u('c')];
+		expect(chatModelView(messages)).toEqual([summary('two'), u('c')]);
+	});
+
+	it('ignores other system messages', () => {
+		const messages = [u('a'), { role: 'system' as const, content: 'a note' }, u('b')];
+		expect(chatModelView(messages)).toBe(messages);
 	});
 });

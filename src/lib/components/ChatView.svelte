@@ -12,6 +12,7 @@
 	import { imageDropTarget } from '#lib/utils/imageDrop.ts';
 	import { hasStreamingAnswer } from '#lib/agent/think-stream.ts';
 	import { messageText } from '#lib/api.ts';
+	import { isSummaryMessage, summaryText } from '#lib/agent/summaryMessage.ts';
 	import {
 		getActiveConversation,
 		getIsGenerating,
@@ -509,7 +510,15 @@
 		<div class="messages" bind:this={messagesContainer} onscroll={handleScroll}>
 			{#if activeConversation && activeConversation.messages.length > 0}
 				{#each activeConversation.messages as msg, i (i)}
-					{#if msg.role !== 'system'}
+					{#if isSummaryMessage(msg)}
+						<!-- A compaction's summary: the model works from it and what follows. -->
+						<details class="summary-divider" data-testid="chat-summary">
+							<summary title="The model works from this summary and the messages below it."
+								>Earlier messages summarised</summary
+							>
+							<pre>{summaryText(msg)}</pre>
+						</details>
+					{:else if msg.role !== 'system'}
 						{#if msg.role === 'assistant' && activeConversation.messageSteps[i]?.length}
 							<SearchStepComponent steps={activeConversation.messageSteps[i]} />
 						{/if}
@@ -830,6 +839,26 @@
 <ImageViewerModal src={viewerSrc} alt={viewerAlt} onClose={() => (viewerSrc = null)} />
 
 <style>
+	.summary-divider {
+		margin: 12px 0;
+		padding: 6px 10px;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		font-size: 0.85rem;
+		color: var(--text-secondary);
+	}
+
+	.summary-divider summary {
+		cursor: pointer;
+	}
+
+	.summary-divider pre {
+		margin: 6px 0 0;
+		white-space: pre-wrap;
+		font-family: inherit;
+		font-size: 0.82rem;
+	}
+
 	.chat-layout {
 		display: flex;
 		flex: 1;
