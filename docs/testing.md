@@ -227,6 +227,19 @@ folder (`status` gives the path as `apiCa`) for other scripts, such as
 `curl --cacert`. A browser opened on `web-url` shows the certificate warning
 once.
 
+**Prompts and access, as the web page meets them:** `fake-mcp` adds the
+Rust tests' MCP fixture (`src-tauri/tests/fixtures/mcp-era-server.js`) as
+server `fake`, whose `unannotated_thing` asks before it runs; the
+`remote-prompts` scenario calls it (`note hello`) and writes a skill
+(`save a greeting skill`), and a session in a git repo with an `AGENTS.md`
+asks about the repo first. `answer <kind> <json>` answers the first prompt of
+that kind through the engine, e.g. `answer mcp '{"choice":"allow_once"}'` or
+`answer skill '{"action":"save","text":"…"}'`. `access lan` (and `trusted`,
+`tokens`) also returns `lan`, this computer's network address, for
+connecting as another computer on the network would. The self-test covers
+all of these; the web page's own cards can be clicked in Playwright's
+Chromium with `ignoreHTTPSErrors`.
+
 `consistent` must hold for an idle session. While a turn streams, the replay
 trails by a few tens of milliseconds, so `differs` listing only
 `streamingContent` or `roundText` then is lag, not a bug.

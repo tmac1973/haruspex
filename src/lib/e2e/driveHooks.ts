@@ -27,7 +27,11 @@ import {
 import { applyOwnerApi, createOwnerClient, ALL_SCOPES } from '#lib/owner/service.ts';
 import { pickProbedModel, probedModelCaps, type ProbeResult } from '#lib/inferenceProbe.ts';
 import { getOpenSessions, setActiveSession } from '#lib/stores/code.svelte.ts';
+import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
+import { mcpState, startMcpServer, statusLabel } from '#lib/stores/mcpServers.svelte.ts';
 import {
+	getSettings,
+	setMcpServers,
 	updateSettings,
 	type AppSettings,
 	type InferenceBackendConfig
@@ -63,8 +67,17 @@ export interface DriveHooks {
 	 * add a device with every permission: what `drive start --api` drives.
 	 */
 	ownerApi: (port: number) => Promise<{ base: string; token: string; certificate: string }>;
-	/** Who may connect without a token (Settings → Remote control → Who can connect). */
-	ownerAccess: (mode: 'tokens' | 'trusted' | 'lan', hosts: string[]) => Promise<unknown>;
+	/**
+	 * Who may connect without a token (Settings → Remote control → Who can
+	 * connect). Choosing either of the last two listens on every network, as
+	 * Settings does.
+	 */
+	ownerAccess: (
+		mode: 'tokens' | 'trusted' | 'lan',
+		hosts: string[]
+	) => Promise<{ address: string | null; hostname: string | null }>;
+	/** Add an MCP server that runs `program args` (stdio), with `tools` switched on, and start it. */
+	addMcpServer: (id: string, program: string, args: string[], tools: string[]) => Promise<string>;
 	/** A new device's one-time pairing code, for the web client's link. */
 	pairCode: (name: string) => Promise<string>;
 	updateSettings: (patch: Partial<AppSettings>) => void;
@@ -165,8 +178,31 @@ export function installDriveHooks(): void {
 			};
 		},
 		ownerAccess: async (mode, hosts) => {
-			updateSettings({ ownerApiAccess: mode, ownerApiTrustedHosts: hosts });
-			return applyOwnerApi();
+			updateSettings({
+				ownerApiAccess: mode,
+				ownerApiTrustedHosts: hosts,
+				// As Settings does: the last two turn it on, nothing turns it off.
+				ownerApiBindAll: mode !== 'tokens' || getSettings().ownerApiBindAll
+			});
+			const status = await applyOwnerApi();
+			return { address: status.address, hostname: status.hostname };
+		},
+		addMcpServer: async (id, program, args, tools) => {
+			const config: McpServerConfig = {
+				id,
+				label: id,
+				enabled: true,
+				source: { kind: 'custom', program, args },
+				secrets: {},
+				toolEnabled: Object.fromEntries(tools.map((t) => [t, true])),
+				proxyUse: 'never',
+				setupComplete: true,
+				addonProjects: []
+			};
+			setMcpServers([config]);
+			await startMcpServer(config, null);
+			const state = mcpState(id);
+			return state.error ? `${statusLabel(state)}: ${state.error}` : statusLabel(state);
 		},
 		pairCode: async (name) => (await createOwnerClient(name, ALL_SCOPES)).pairCode,
 		updateSettings,

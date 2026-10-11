@@ -8,7 +8,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { controlPaths, readInfo } from './control.mjs';
 import { pinnedFetch } from './https.mjs';
@@ -177,6 +177,98 @@ try {
 	);
 	const chats = drive('chats');
 	check(chats.find((c) => c.id === chat.id)?.open === true, 'the chat is open on the desktop');
+
+	// Every kind of prompt, answered through the API as the web page does: a
+	// repo's instructions, an MCP tool that asks first, and a skill write.
+	const repo = join(dirname(folder), 'repo');
+	mkdirSync(repo);
+	execFileSync('git', ['init', '-q', repo]);
+	writeFileSync(join(repo, 'AGENTS.md'), '# Notes\n\nBe brief.\n');
+	drive('scenario', 'remote-prompts');
+	check(drive('fake-mcp').state.startsWith('Running'), 'a custom MCP server starts');
+	const { id: repoId } = drive('new-session', '--folder', repo);
+	check(
+		drive('send', repoId, 'note hello', '--via', 'engine', '--wait', '--timeout', '60').prompt
+			?.kind === 'repo-trust',
+		"a repo's AGENTS.md asks first"
+	);
+	drive('answer', 'repo-trust', '{"trust":true}');
+	const mcp = drive('wait', repoId, '--timeout', '60');
+	check(mcp.prompt?.kind === 'mcp', 'then the MCP tool asks');
+	drive('answer', 'mcp', '{"choice":"allow_once"}');
+	check(
+		drive('wait', repoId, '--timeout', '60').summary.lastAssistant === 'I noted it.',
+		'and runs once allowed'
+	);
+	const skill = drive(
+		'send',
+		repoId,
+		'save a greeting skill',
+		'--via',
+		'engine',
+		'--wait',
+		'--timeout',
+		'60'
+	);
+	check(skill.prompt?.kind === 'skill', 'a skill write asks');
+	const edited = '---\nname: greet\ndescription: Greet the user.\n---\n\nEdited from afar.\n';
+	drive('answer', 'skill', JSON.stringify({ action: 'save', text: edited }));
+	check(
+		drive('wait', repoId, '--timeout', '60').summary.lastAssistant === 'Saved the skill.',
+		'and is saved'
+	);
+	check(
+		readFileSync(join(repo, '.agents', 'skills', 'greet', 'SKILL.md'), 'utf8') === edited,
+		'as edited'
+	);
+
+	// Who can connect, from this computer's network address, as another
+	// computer on the network would. Skipped where there is no network.
+	const list = (base, headers = {}) =>
+		fetch(`${base}/api/v1/op`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', ...headers },
+			body: JSON.stringify({ type: 'sessions.list' })
+		});
+	const { lan } = drive('access', 'lan');
+	if (!lan) {
+		console.log('skip - no network address: the access modes are not checked');
+	} else {
+		const ip = new URL(lan).hostname;
+		const port = new URL(lan).port;
+		check(
+			(await list(lan, { 'X-Haruspex': '1' })).status === 200,
+			'My whole network lets a network address in'
+		);
+		check(
+			(await list(lan, { 'X-Haruspex': '1', Host: `evil.example:${port}` })).status === 403,
+			'but not under a name that is not this computer'
+		);
+		drive('access', 'trusted', ip);
+		check(
+			(await list(lan, { 'X-Haruspex': '1' })).status === 200,
+			'These computers lets a listed address in'
+		);
+		drive('access', 'trusted', 'localhost');
+		check((await list(base, { 'X-Haruspex': '1' })).status === 200, 'and a listed name, looked up');
+		check((await list(lan, { 'X-Haruspex': '1' })).status === 401, 'and nobody else');
+		drive('access', 'tokens');
+		check(
+			(await list(lan, { 'X-Haruspex': '1' })).status === 401,
+			'Devices with a token wants one'
+		);
+		const lanUrl = drive('web-url').url;
+		const lanPair = await fetch(`${lan}/api/v1/pair`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ code: lanUrl.slice(lanUrl.indexOf('#pair=') + 6) })
+		});
+		const lanCookie = (lanPair.headers.get('set-cookie') ?? '').split(';')[0];
+		check(
+			(await list(lan, { 'X-Haruspex': '1', Cookie: lanCookie })).status === 200,
+			'which a pairing link gives a browser on the network'
+		);
+	}
 
 	drive('stop');
 	started = false;

@@ -48,7 +48,11 @@ A long-lived app, driven step by step:
                             send in a chat through the engine (new starts one)
   chat-state <id>           a chat, as the engine reads it
   access tokens|trusted|lan [HOST…]
-                            who may connect without a token (--api only)
+                            who may connect without a token (--api only); lan is
+                            this computer's network address, to connect as another would
+  fake-mcp                  add the MCP test fixture as server "fake" (its tool asks first)
+  answer <kind> <json>      answer the first prompt of that kind through the engine,
+                            e.g. answer mcp '{"choice":"allow_once"}'
   logs [--since N]          agent debug log lines from N on
   screenshot [PATH]
   minimise | restore        the app window
@@ -308,6 +312,8 @@ async function daemon(opts) {
 		'api-events': (a) => app.apiEvents(a.seconds),
 		'web-url': () => app.webUrl(),
 		access: (a) => app.access(a.mode, a.hosts),
+		'fake-mcp': () => app.fakeMcp(),
+		answer: (a) => app.answer(a.kind, a.answer),
 		click: (a) => app.click(a.selector),
 		chats: () => app.engine({ type: 'chats.list' }),
 		'chat-send': (a) => app.chatSend(a.id, a.text, { wait: a.wait, ...turnOpts(a) }),
@@ -427,6 +433,14 @@ async function client(cmd, values, positionals) {
 			need(1, 'tokens, trusted or lan');
 			args = { mode: positionals[0], hosts: positionals.slice(1) };
 			break;
+		case 'answer':
+			need(2, 'a prompt kind and its answer as JSON');
+			try {
+				args = { kind: positionals[0], answer: JSON.parse(positionals.slice(1).join(' ')) };
+			} catch {
+				fail('the answer must be JSON, e.g. \'{"choice":"allow_once"}\'');
+			}
+			break;
 		case 'approve':
 			need(1, 'allow, allow-session or deny');
 			args = { choice: positionals[0], via: values.via };
@@ -487,6 +501,8 @@ const CLIENT_COMMANDS = new Set([
 	'api-events',
 	'web-url',
 	'access',
+	'fake-mcp',
+	'answer',
 	'click',
 	'chats',
 	'chat-send',
