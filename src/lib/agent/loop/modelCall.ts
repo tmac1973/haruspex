@@ -135,7 +135,11 @@ export function applyContextGuard(
 	tools?: ToolDefinition[]
 ): void {
 	if (ctx.contextSize <= 0) return;
-	const info = fitMessagesToBudget(ctx.messages, ctx.contextSize, { reserveOutput, tools });
+	const info = fitMessagesToBudget(ctx.messages, ctx.contextSize, {
+		reserveOutput,
+		tools,
+		calibrationKey: ctx.descriptor.calibrationKey
+	});
 	if (info) {
 		logDebug('agent', 'pre-send context guard reduced prompt', info);
 		ctx.options.onContextManaged?.(info);
@@ -189,23 +193,29 @@ async function sendGuardedCompletion(
 		// A streamed send fails here too when the server refuses the prompt:
 		// the overflow 400 comes back before any stream data.
 		const res = await send({ messages: ctx.messages, tools, backend, ...params }, ctx.signal);
-		if (res.usage) recordTokenCalibration(sentEstimate, res.usage.prompt_tokens);
+		if (res.usage)
+			recordTokenCalibration(sentEstimate, res.usage.prompt_tokens, ctx.descriptor.calibrationKey);
 		return res;
 	} catch (e) {
 		const overflow = e instanceof ApiError ? parseContextOverflow(e.message) : null;
 		if (!overflow) throw e;
 		// The estimate was too optimistic and we hit the wall. Learn the true
 		// ratio from the server's exact count, then refit and retry once.
-		recordTokenCalibration(sentEstimate, overflow.promptTokens);
+		recordTokenCalibration(sentEstimate, overflow.promptTokens, ctx.descriptor.calibrationKey);
 		logDebug('agent', 'context overflow 400 — recalibrating and retrying', {
 			overflow,
-			calibration: getTokenCalibration()
+			calibration: getTokenCalibration(ctx.descriptor.calibrationKey)
 		});
-		const info = fitMessagesToBudget(ctx.messages, ctx.contextSize, { reserveOutput, tools });
+		const info = fitMessagesToBudget(ctx.messages, ctx.contextSize, {
+			reserveOutput,
+			tools,
+			calibrationKey: ctx.descriptor.calibrationKey
+		});
 		if (info) ctx.options.onContextManaged?.(info);
 		sentEstimate = estimateMessagesTokens(ctx.messages, tools);
 		const res = await send({ messages: ctx.messages, tools, backend, ...params }, ctx.signal);
-		if (res.usage) recordTokenCalibration(sentEstimate, res.usage.prompt_tokens);
+		if (res.usage)
+			recordTokenCalibration(sentEstimate, res.usage.prompt_tokens, ctx.descriptor.calibrationKey);
 		return res;
 	}
 }
@@ -308,7 +318,8 @@ export async function streamFinalSynthesis(
 		if (chunk.finish_reason) lastFinish = chunk.finish_reason;
 		ctx.options.onStreamChunk(chunk);
 	}
-	if (streamUsage) recordTokenCalibration(sentEstimate, streamUsage.prompt_tokens);
+	if (streamUsage)
+		recordTokenCalibration(sentEstimate, streamUsage.prompt_tokens, ctx.descriptor.calibrationKey);
 	reportCall(ctx, {
 		durationMs: Math.max(1, Date.now() - streamStartMs),
 		usage: streamUsage ?? undefined,

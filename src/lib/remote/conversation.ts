@@ -84,11 +84,13 @@ export interface PreparedHistory {
 export async function prepareHistory(
 	history: ChatMessage[],
 	contextSize: number,
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	/** The backend's `calibrationKey`. */
+	calibrationKey?: string
 ): Promise<PreparedHistory> {
 	if (history.length < 4) return { messages: history, rewritten: false };
 
-	const estimated = estimateMessagesTokens(history) * getTokenCalibration();
+	const estimated = estimateMessagesTokens(history) * getTokenCalibration(calibrationKey);
 	if (!shouldCompact(estimated, contextSize)) return { messages: history, rewritten: false };
 
 	try {

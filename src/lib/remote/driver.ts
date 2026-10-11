@@ -216,7 +216,12 @@ export async function runRemoteTurn(event: RemotePromptEvent): Promise<void> {
 				// Inside the slot deliberately: summarising is itself a model
 				// call, and running it outside the queue would let a guest
 				// collide with the person at the keyboard.
-				const prepared = await prepareHistory(history, descriptor.contextSize, abort.signal);
+				const prepared = await prepareHistory(
+					history,
+					descriptor.contextSize,
+					abort.signal,
+					descriptor.calibrationKey
+				);
 				if (prepared.rewritten) {
 					await dbReplaceMessages(conversationId, [
 						...prepared.messages,

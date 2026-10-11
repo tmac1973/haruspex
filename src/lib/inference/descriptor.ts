@@ -111,6 +111,12 @@ export interface BackendDescriptor {
 	apiKey?: string;
 	/** Model id sent in requests; 'default' placeholder when unset/local. */
 	modelId: string;
+	/**
+	 * Which tokenizer this backend counts with, for `context-budget`'s learned
+	 * estimate correction: the local model's file, or a remote server and
+	 * model. Absent on hand-built descriptors, which then share one.
+	 */
+	calibrationKey?: string;
 	/** Context window (tokens) compaction/trimming should budget against. */
 	contextSize: number;
 	/** Whether the backend's model accepts image input. */
@@ -301,6 +307,7 @@ function resolveLocalDescriptor(settings: AppSettings): BackendDescriptor {
 		apiKey: localServerKey(),
 		// llama-server serves a single model and ignores the name.
 		modelId: 'default',
+		calibrationKey: `local:${getActiveLocalModelFilename() || ''}`,
 		contextSize: globalContextSize(settings),
 		vision: globalVision(settings),
 		qwenTuning: true,
@@ -412,6 +419,7 @@ function resolveRemoteDescriptor(
 		baseUrl: remoteBase,
 		apiKey: resolveApiKey(inf.remoteApiKeyId, inf.remoteApiKey),
 		modelId: inf.remoteModelId || 'default',
+		calibrationKey: `${remoteBase}|${inf.remoteModelId || 'default'}`,
 		contextSize: globalContextSize(settings),
 		vision: globalVision(settings),
 		qwenTuning: family !== null,
@@ -490,6 +498,7 @@ function resolveOverrideDescriptor(
 		baseUrl: base,
 		apiKey: resolveApiKey(override.apiKeyId, override.apiKey),
 		modelId: override.modelId?.trim() || 'default',
+		calibrationKey: `${base}|${override.modelId?.trim() || 'default'}`,
 		contextSize:
 			typeof override.contextSize === 'number' && override.contextSize > 0
 				? override.contextSize

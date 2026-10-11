@@ -581,8 +581,10 @@ async function compactIfNeeded(): Promise<void> {
 	// step — by then the request had already been built and rejected. Scale
 	// by the learned calibration so dense content (code/logs) triggers the
 	// summary as early as it should.
-	const estimated = estimateMessagesTokens(conversation.messages) * getTokenCalibration();
-	if (!shouldCompact(estimated, resolveBackendDescriptor().contextSize)) return;
+	const descriptor = resolveBackendDescriptor();
+	const estimated =
+		estimateMessagesTokens(conversation.messages) * getTokenCalibration(descriptor.calibrationKey);
+	if (!shouldCompact(estimated, descriptor.contextSize)) return;
 
 	isCompacting = true;
 	try {

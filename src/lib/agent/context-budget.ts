@@ -230,32 +230,42 @@ export function describeContextManaged(info: ContextManagedInfo): string {
 const DEFAULT_CALIBRATION = 1.5;
 const MIN_CALIBRATION = 1.0;
 const MAX_CALIBRATION = 4.0;
-let tokenCalibration = DEFAULT_CALIBRATION;
+// One correction per tokenizer (`BackendDescriptor.calibrationKey`): a ratio
+// learned from one backend's counts says nothing about another's, and with
+// one shared value a Code session on a remote model moved the estimate a
+// local chat budgets against. A backend not seen yet starts at the default.
+const calibrations = new Map<string, number>();
 
-export function getTokenCalibration(): number {
-	return tokenCalibration;
+/** The correction for a backend (`BackendDescriptor.calibrationKey`). */
+export function getTokenCalibration(key = ''): number {
+	return calibrations.get(key) ?? DEFAULT_CALIBRATION;
 }
 
-/** Reset to the default calibration (used by tests). */
+/** Back to the default for every backend (used by tests). */
 export function resetTokenCalibration(): void {
-	tokenCalibration = DEFAULT_CALIBRATION;
+	calibrations.clear();
 }
 
 /**
- * Update the estimate→actual calibration from an observed request, where
- * `rawEstimate` is `estimateMessagesTokens` of what we sent and
+ * Update a backend's estimate→actual calibration from an observed request,
+ * where `rawEstimate` is `estimateMessagesTokens` of what we sent and
  * `actualPromptTokens` is the server-reported prompt size. Increases are
  * adopted immediately (stay under the wall); decreases ease in gradually
  * so one light request doesn't make us over-optimistic. Never drops below
  * 1.0, so the effective budget is always <= the real budget.
  */
-export function recordTokenCalibration(rawEstimate: number, actualPromptTokens: number): void {
+export function recordTokenCalibration(
+	rawEstimate: number,
+	actualPromptTokens: number,
+	key = ''
+): void {
 	if (rawEstimate <= 0 || actualPromptTokens <= 0) return;
 	const ratio = Math.min(
 		MAX_CALIBRATION,
 		Math.max(MIN_CALIBRATION, actualPromptTokens / rawEstimate)
 	);
-	tokenCalibration = ratio > tokenCalibration ? ratio : tokenCalibration * 0.6 + ratio * 0.4;
+	const current = getTokenCalibration(key);
+	calibrations.set(key, ratio > current ? ratio : current * 0.6 + ratio * 0.4);
 }
 
 /**
@@ -281,13 +291,15 @@ export function parseContextOverflow(
 export interface FitOptions {
 	/** Tokens to reserve for the model's output so the prompt leaves room to generate. */
 	reserveOutput: number;
+	/** The backend's `calibrationKey`: whose learned correction to budget with. */
+	calibrationKey?: string;
 	/** Tool schemas that will be sent alongside (counted toward the estimate). */
 	tools?: ToolDefinition[];
 }
 
 /**
  * Reduce `messages` in place until a conservative estimate fits the
- * *calibrated* budget `(contextSize - reserveOutput) / tokenCalibration`.
+ * *calibrated* budget `(contextSize - reserveOutput) / getTokenCalibration(calibrationKey)`.
  * Returns a summary of what was done, or `null` if it already fit (no
  * mutation). The post-condition `estimateMessagesTokens(messages) <=
  * effectiveBudget` always holds on return.
@@ -307,7 +319,10 @@ export function fitMessagesToBudget(
 	const budget = Math.max(1, contextSize - opts.reserveOutput);
 	// Our raw byte estimate under-counts dense content, so target a budget
 	// scaled down by the learned calibration factor.
-	const effectiveBudget = Math.max(1, Math.floor(budget / tokenCalibration));
+	const effectiveBudget = Math.max(
+		1,
+		Math.floor(budget / getTokenCalibration(opts.calibrationKey))
+	);
 	const fits = () => estimateMessagesTokens(messages, opts.tools) <= effectiveBudget;
 
 	const beforeEst = estimateMessagesTokens(messages, opts.tools);

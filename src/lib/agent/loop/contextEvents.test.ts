@@ -156,7 +156,8 @@ describe('onContextManaged', () => {
 	it('reports the in-loop trim after a call comes back over 70% of the window', async () => {
 		// Let the pre-send fit pass the conversation untouched: learn a 1:1
 		// estimate, so only the server's figure decides.
-		for (let i = 0; i < 20; i++) recordTokenCalibration(1000, 1000);
+		// Under the key the loop budgets with: the local model's (mocked as '').
+		for (let i = 0; i < 20; i++) recordTokenCalibration(1000, 1000, 'local:');
 		const estimate = estimateMessagesTokens(conversation());
 		const contextSize = Math.ceil(estimate / 0.8);
 		const events = await run(contextSize, Math.ceil(contextSize * 0.9));
