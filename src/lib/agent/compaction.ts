@@ -1,12 +1,12 @@
 import { messageText, type ChatMessage } from '#lib/api.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { answerForSummary, summarizeInChunks } from '#lib/agent/summarize.ts';
+import { SUMMARY_PREFIX, isSummaryMessage } from './summaryMessage';
+
+export { SUMMARY_PREFIX, isSummaryMessage };
 
 const COMPACTION_THRESHOLD = 0.8;
 const PROTECTED_TURNS = 4;
-
-/** How a summary leads the history it stands in for. */
-export const SUMMARY_PREFIX = '[Earlier conversation summary]';
 
 // Scope note: this summary serves THIS conversation only. Facts worth
 // carrying into future ones are agentic memory's job (see agent/memory/), so
@@ -15,14 +15,28 @@ export const SUMMARY_PREFIX = '[Earlier conversation summary]';
 const SUMMARY_PROMPT =
 	'Summarize the following conversation concisely, preserving key facts, decisions, user preferences, and context needed to continue THIS conversation naturally. Be thorough but brief. Output only the summary, no preamble.';
 
+/**
+ * What of a chat the model is sent: from its latest summary on, or all of it
+ * before any. A compaction inserts its summary where the kept messages
+ * start rather than deleting what it summarised, so the scrollback stays
+ * whole and the model's view is everything from the last summary.
+ */
+export function chatModelView(messages: ChatMessage[]): ChatMessage[] {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		if (isSummaryMessage(messages[i])) return messages.slice(i);
+	}
+	return messages;
+}
+
 export function shouldCompact(promptTokens: number, contextSize: number): boolean {
 	if (contextSize === 0 || promptTokens === 0) return false;
 	return promptTokens / contextSize >= COMPACTION_THRESHOLD;
 }
 
 /**
- * Summarise all but the last PROTECTED_TURNS exchanges. `removedCount` is how
- * many of `messages` the summary covers. An earlier summary (a leading
+ * Summarise all but the last PROTECTED_TURNS exchanges of `messages` (the
+ * model's view, `chatModelView`). `removedCount` is how many of `messages`
+ * the summary covers. An earlier summary (a leading
  * SUMMARY_PREFIX system message) is carried into the new one rather than
  * lost with the other non-turn messages.
  *

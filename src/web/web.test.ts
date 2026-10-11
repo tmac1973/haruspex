@@ -10,6 +10,7 @@ import Composer from './components/Composer.svelte';
 import FileViewer from './components/FileViewer.svelte';
 import Message from './components/Message.svelte';
 import Transcript from './components/Transcript.svelte';
+import ChatTranscript from './components/ChatTranscript.svelte';
 import { imageRefs, resetImages, wantImages } from './images.ts';
 import { clearResolvedImages } from '#lib/images/resolve.svelte.ts';
 import { VIEW_IMAGE_EVENT } from '#lib/markdown-actions.ts';
@@ -477,6 +478,27 @@ describe('chat in the web store', () => {
 		workingDir: null,
 		memoryEnabled: true,
 		...over
+	});
+
+	it('shows a summary as a divider, with the messages it summarised still above', async () => {
+		render(ChatTranscript, {
+			chat: chatState({
+				messages: [
+					{ role: 'user', content: 'old question' },
+					{ role: 'assistant', content: 'old answer' },
+					{ role: 'system', content: '[Earlier conversation summary]\nThey asked once.' },
+					{ role: 'user', content: 'new question' }
+				]
+			}) as never,
+			oncontinue: () => {},
+			onretry: () => {}
+		});
+		const divider = screen.getByTestId('chat-summary');
+		expect(screen.getByText('old question')).toBeTruthy();
+		expect(divider.nextElementSibling!.textContent).toContain('new question');
+		await fireEvent.click(screen.getByText('Earlier messages summarised'));
+		expect(divider.textContent).toContain('They asked once.');
+		expect(divider.textContent).not.toContain('[Earlier conversation summary]');
 	});
 
 	it('follows the open chat from its snapshot, and reads others once', async () => {
