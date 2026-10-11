@@ -156,6 +156,11 @@ impl Place {
         std::fs::create_dir_all(self.host_path(path))
     }
 
+    /// Remove `path` if it is an empty folder; anything else stays.
+    fn remove_empty_dir(&self, path: &str) {
+        let _ = std::fs::remove_dir(self.host_path(path));
+    }
+
     /// `path` with symlinks resolved, for comparing. Git's own answers inside
     /// a distro are absolute and resolved already, so those are kept as is.
     fn canonical(&self, path: &str) -> String {
@@ -678,6 +683,7 @@ pub async fn remove_worktree_in(place: &Place, path: &str) -> Result<WorktreeRem
         });
     }
     if !place.exists(path) {
+        remove_empty_worktrees_dir(place, path);
         return Ok(WorktreeRemoval::Removed);
     }
     let Some(st) = status_in(place, path).await? else {
@@ -711,8 +717,25 @@ pub async fn remove_worktree_in(place: &Place, path: &str) -> Result<WorktreeRem
     )
     .await
     {
-        Ok(_) => Ok(WorktreeRemoval::Removed),
+        Ok(_) => {
+            remove_empty_worktrees_dir(place, path);
+            Ok(WorktreeRemoval::Removed)
+        }
         Err(e) => Ok(WorktreeRemoval::Kept { reason: e }),
+    }
+}
+
+/// The `<repo>-worktrees` folder [`add_fork_worktree_in`] made a worktree
+/// in, once its last worktree is gone. Only a folder of that name, and only
+/// when empty: a folder holding anything else, or one the user named, stays.
+fn remove_empty_worktrees_dir(place: &Place, worktree: &str) {
+    if let Some(parent) = place.parent(worktree) {
+        if place
+            .file_name(&parent)
+            .is_some_and(|n| n.ends_with("-worktrees"))
+        {
+            place.remove_empty_dir(&parent);
+        }
     }
 }
 
@@ -751,6 +774,7 @@ pub async fn discard_worktree(wt: &WorktreeMade) {
         )
         .await;
     }
+    remove_empty_worktrees_dir(place, &wt.path);
 }
 
 // --- commands ---------------------------------------------------------------
@@ -1087,6 +1111,8 @@ mod tests {
             WorktreeRemoval::Removed
         );
         assert!(!wt.path.exists());
+        // Another worktree is still in the folder, so it stays.
+        assert!(base.join("proj-worktrees").is_dir());
         // The branch stays.
         assert!(branches(&proj)
             .await
@@ -1101,6 +1127,8 @@ mod tests {
 
         discard_fork_worktree(&again).await;
         assert!(!again.path.exists());
+        // The last one gone, its empty folder goes too.
+        assert!(!base.join("proj-worktrees").exists());
         assert!(!branches(&proj)
             .await
             .unwrap()

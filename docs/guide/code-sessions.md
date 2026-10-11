@@ -54,7 +54,7 @@ Haruspex never recreates the missing folder.
 
 ## Delete a worktree session
 
-Deleting a session that has its own worktree offers **Also remove its worktree**. It is removed only when it has no uncommitted or untracked files; otherwise it is kept and you are told why. Its branch is always kept.
+Deleting a session that has its own worktree offers **Also remove its worktree**. It is removed only when it has no uncommitted or untracked files; otherwise it is kept and you are told why. Its branch is always kept. When the last worktree goes, the empty `<project>-worktrees` folder goes with it.
 
 ## Move a session to its own window
 
