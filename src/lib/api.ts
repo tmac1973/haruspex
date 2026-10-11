@@ -98,6 +98,23 @@ export function messageText(content: MessageContent): string {
 }
 
 /**
+ * The thread with `notice` put ahead of the text of its last message (the
+ * one opening this turn). A copy: the saved thread keeps what was typed,
+ * so only the newest message carries it and the earlier ones stay a cached
+ * prefix.
+ */
+export function withNotice(thread: ChatMessage[], notice: string): ChatMessage[] {
+	const last = thread[thread.length - 1];
+	if (!last || last.role !== 'user') return thread;
+	const note = `[Note from Haruspex] ${notice}`;
+	const content =
+		typeof last.content === 'string'
+			? `${note}\n\n${last.content}`
+			: [{ type: 'text' as const, text: note }, ...last.content];
+	return [...thread.slice(0, -1), { ...last, content }];
+}
+
+/**
  * Collapse adjacent `system` messages into one.
  *
  * Every prompt builder here prepends a freshly-built system prompt to a

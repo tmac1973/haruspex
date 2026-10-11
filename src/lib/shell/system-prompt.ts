@@ -4,8 +4,11 @@
  *
  *  - Identifies the agent's job (analyze terminal output, suggest commands).
  *  - Includes the captured session context (OS / distro / kernel / shell /
- *    versions / cwd) so the agent gives distro-appropriate suggestions.
- *  - Provides the recent shell history as breadcrumbs.
+ *    versions) so the agent gives distro-appropriate suggestions. What
+ *    changes as the user works (the cwd, recent history, an ssh session) is
+ *    not here but in `shellTerminalNote`, on the newest message: in the
+ *    system prompt it changed the start of the prompt whenever a command
+ *    ran, and the server reprocessed the whole conversation every turn.
  *  - Specifies the conventions for fs_read tools (absolute paths) and web
  *    search (use it for error messages, package docs, CVEs).
  *  - Read-only: reminds the agent NOT to claim it executed anything — every
@@ -30,12 +33,6 @@ export type ShellSessionContext = SessionContext;
 
 export interface BuildShellPromptOpts {
 	sessionContext: ShellSessionContext;
-	currentCwd: string | null;
-	recentHistory: string[];
-	/** Set when the terminal is sitting inside `ssh` / a container at the
-	 *  moment of the turn — the environment the PTY tools act on is then not
-	 *  the one the file tools act on, and the agent has to be told. */
-	nestedSession?: NestedSession | null;
 	/** The turn's skill list (`skillsPromptSection`), when it has one. */
 	skillsSection?: string;
 	/** The repo's AGENTS.md (`agentsMdPromptSection`), when trusted. */
@@ -44,30 +41,44 @@ export interface BuildShellPromptOpts {
 	fullAccess?: boolean;
 }
 
+/** What the terminal is doing at the moment of a turn. */
+export interface TerminalNow {
+	currentCwd: string | null;
+	recentHistory: string[];
+	/** Set when the terminal is sitting inside `ssh` / a container at the
+	 *  moment of the turn — the environment the PTY tools act on is then not
+	 *  the one the file tools act on, and the agent has to be told. */
+	nestedSession?: NestedSession | null;
+	/** Full access: the advice for a nested session is the driving kind. */
+	fullAccess?: boolean;
+}
+
 /**
- * Environment + cwd + recent-commands block. `mode` picks the advice for a
- * terminal that has walked onto another host: Full access drives that
- * session, Read-only only suggests.
+ * The terminal's state at this turn: cwd, recent commands, and an ssh or
+ * container session it has walked into. Put on the newest message
+ * (`withNotice`), not in the system prompt, so the prompt's start stays the
+ * same as the user works and the server can reuse its cache. Null when
+ * there is nothing to say.
  */
-function buildSessionBlock(opts: BuildShellPromptOpts, mode: 'code' | 'chat'): string {
-	const env = describeEnvironment(opts.sessionContext);
-	const cwd = opts.currentCwd ? `Current working directory: ${opts.currentCwd}` : '';
-	const history = opts.recentHistory.length
-		? `Recent shell history (most recent last):\n${opts.recentHistory.map((c) => `  ${c}`).join('\n')}`
+export function shellTerminalNote(now: TerminalNow): string | null {
+	const cwd = now.currentCwd ? `Current working directory: ${now.currentCwd}` : '';
+	const history = now.recentHistory.length
+		? `Recent shell history (most recent last):\n${now.recentHistory.map((c) => `  ${c}`).join('\n')}`
 		: '';
-	// Everything above describes the LOCAL machine, captured when the PTY
+	// SESSION CONTEXT describes the LOCAL machine, captured when the PTY
 	// spawned. If the terminal has since walked onto another host, that has to
-	// land right next to it or the model reads the stale cwd as current.
-	const nested = opts.nestedSession
-		? `\n${nestedSessionPromptBlock(opts.nestedSession, mode)}`
+	// be said right here or the model reads the local cwd as the shell's.
+	const nested = now.nestedSession
+		? nestedSessionPromptBlock(now.nestedSession, now.fullAccess ? 'code' : 'chat')
 		: '';
-	return [env, cwd, history].filter(Boolean).join('\n') + nested;
+	const body = [cwd, history, nested].filter(Boolean).join('\n');
+	return body ? `The terminal now:\n${body}` : null;
 }
 
 export function buildShellSystemPrompt(opts: BuildShellPromptOpts): ChatMessage {
 	const today = formatTodayLong();
 	const full = opts.fullAccess === true;
-	const sessionBlock = buildSessionBlock(opts, full ? 'code' : 'chat');
+	const sessionBlock = describeEnvironment(opts.sessionContext);
 
 	// PowerShell sessions need PowerShell-flavored suggestions in a fenced
 	// `powershell` block (so the UI renders a Run/Paste card) and Windows
@@ -91,6 +102,7 @@ SESSION CONTEXT:
 ${sessionBlock}
 
 USER MESSAGES:
+- The newest user message begins with a "[Note from Haruspex] The terminal now:" block: the current working directory, recent shell history and, when the terminal is inside ssh or a container, what that means for your tools. It describes the terminal at that moment; earlier messages had their own, not shown again.
 - Each user message MAY begin with a "Recent shell activity (oldest first):" block listing the last few commands the user ran and their output, attached automatically by the UI. The user's actual question follows a "---" separator.
 - When the block is present, use it as ambient context — the user is almost always asking about something visible there.
 - An entry marked "still running, no exit code yet" is an in-flight command the user is sitting inside — typically an interactive session like \`ssh\`, a REPL (\`python\`, \`psql\`), or \`docker exec -it\`. Its output is the live, partial screen of that session, not a finished command. Treat it as the current terminal state, and note that the user may be operating on a REMOTE host or inside another environment (different OS/package manager/filesystem than SESSION CONTEXT describes) — tailor suggestions accordingly and ask if unsure.
