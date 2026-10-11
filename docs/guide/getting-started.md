@@ -23,6 +23,8 @@ The first time you open Haruspex, a wizard asks how you want to run the model:
 
    With a graphics card of 8 to 24 GB and at least 32 GB of RAM, the wizard also offers **Larger model using system RAM**: Qwen 3.6 35B-A3B, which is smarter but slower. **Use this instead** picks it and turns on Settings → Inference → **Let models use system RAM**.
 
+   On integrated graphics (a GPU that shares system memory), the wizard recommends Qwen 3.5 4B whatever memory it reports, as larger models run slowly there. With 32 GB of RAM it also offers **Larger model**: Qwen 3.6 35B-A3B, about as fast. AMD's Strix Halo (Radeon 8060S) counts as a graphics card.
+
 2. **Connect to an existing server** (advanced). Enter the address of an OpenAI-compatible server. Nothing is downloaded.
 
 After a download, the wizard sends a short test question to the model. If the test fails, you can **Retry** or **Skip**; the model may still work. Then press **Start chatting**.

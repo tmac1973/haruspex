@@ -24,15 +24,21 @@ export interface HardwareInfo {
 	gpu_available: boolean;
 	gpu_name: string | null;
 	gpu_api: string | null;
+	/** For integrated graphics, the system memory Vulkan lets the GPU use. */
 	gpu_vram_mb: number | null;
+	/** Shares system memory (integrated graphics or an APU). */
 	gpu_integrated: boolean;
+	/** Integrated and too slow for a large model, so a small one is recommended. */
+	gpu_integrated_slow: boolean;
 	total_ram_mb: number;
 	available_ram_mb: number;
 	recommended_quant: string;
 	recommended_context_size: number;
-	/** A bigger MoE model to offer beside the recommendation, running with
-	 *  its experts in system RAM. See `hardware::offload_alternative`. */
-	offload_alternative: { model_id: string; context_size: number } | null;
+	/** A bigger MoE model to offer beside the recommendation. `spill`: with
+	 *  its experts in system RAM (`hardware::offload_alternative`); otherwise
+	 *  whole, on integrated graphics, where it runs about as fast as the
+	 *  small model (`hardware::integrated_alternative`). */
+	offload_alternative: { model_id: string; context_size: number; spill: boolean } | null;
 }
 
 // ts-rs-generated mirrors of the Rust structs, re-exported so existing
@@ -90,22 +96,26 @@ export function isOffloadChosen(): boolean {
 	return offloadChosen;
 }
 
-/** Pick the hardware step's offload alternative: the MoE, with "Let models
- *  use system RAM" on and the context that keeps everything but its experts
- *  in VRAM. */
+/** Pick the hardware step's alternative: the MoE at its context, with "Let
+ *  models use system RAM" on when its experts go there (`spill`). The
+ *  integrated-graphics one leaves that switch as it was. */
 export function chooseOffloadAlternative(): void {
 	const alt = hardware?.offload_alternative;
 	if (!alt) return;
 	selectedModel = alt.model_id;
 	offloadChosen = true;
-	updateSettings({ allowSpillToSystemRam: true, contextSize: alt.context_size });
+	updateSettings(
+		alt.spill
+			? { allowSpillToSystemRam: true, contextSize: alt.context_size }
+			: { contextSize: alt.context_size }
+	);
 }
 
 export async function setSelectedModel(id: string): Promise<void> {
 	selectedModel = id;
 	if (offloadChosen) {
 		offloadChosen = false;
-		updateSettings({ allowSpillToSystemRam: false });
+		if (hardware?.offload_alternative?.spill) updateSettings({ allowSpillToSystemRam: false });
 	}
 	// Re-derive the recommended context for the newly chosen model — picking a
 	// larger model than the hardware recommendation needs a smaller context to

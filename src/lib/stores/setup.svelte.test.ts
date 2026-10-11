@@ -73,6 +73,7 @@ describe('detectHardware', () => {
 				gpu_api: 'vulkan',
 				gpu_vram_mb: 8192,
 				gpu_integrated: false,
+				gpu_integrated_slow: false,
 				total_ram_mb: 32000,
 				available_ram_mb: 16000,
 				recommended_quant: 'Qwen3.5-4B-Q4_K_M',
@@ -89,19 +90,24 @@ describe('detectHardware', () => {
 });
 
 describe('offload alternative', () => {
-	async function detectWithAlternative() {
+	async function detectWithAlternative(spill = true) {
 		ipc({
 			cmd_detect_hardware: () => ({
 				gpu_available: true,
 				gpu_name: 'GPU',
 				gpu_api: 'vulkan',
 				gpu_vram_mb: 12000,
-				gpu_integrated: false,
+				gpu_integrated: !spill,
+				gpu_integrated_slow: !spill,
 				total_ram_mb: 32000,
 				available_ram_mb: 20000,
 				recommended_quant: 'Qwen3.5-9B-UD-Q6_K_XL',
 				recommended_context_size: 32768,
-				offload_alternative: { model_id: 'Qwen3.6-35B-A3B-UD-IQ4_NL', context_size: 131072 }
+				offload_alternative: {
+					model_id: 'Qwen3.6-35B-A3B-UD-IQ4_NL',
+					context_size: 131072,
+					spill
+				}
 			}),
 			list_models: () => [],
 			recommended_context_size: () => 65536
@@ -124,6 +130,17 @@ describe('offload alternative', () => {
 		chooseOffloadAlternative();
 		await setSelectedModel('Qwen3.5-9B-UD-Q6_K_XL');
 		expect(getSettings().allowSpillToSystemRam).toBe(false);
+	});
+
+	it('leaves system RAM alone for the integrated-graphics MoE', async () => {
+		updateSettings({ allowSpillToSystemRam: true });
+		await detectWithAlternative(false);
+		chooseOffloadAlternative();
+		expect(getSelectedModel()).toBe('Qwen3.6-35B-A3B-UD-IQ4_NL');
+		expect(getSettings().contextSize).toBe(131072);
+		expect(getSettings().allowSpillToSystemRam).toBe(true);
+		await setSelectedModel('Qwen3.5-4B-IQ4_NL');
+		expect(getSettings().allowSpillToSystemRam).toBe(true);
 	});
 
 	it('leaves a switch the user set in Settings alone', async () => {

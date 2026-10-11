@@ -12,8 +12,15 @@ pub struct HardwareInfo {
     pub gpu_available: bool,
     pub gpu_name: Option<String>,
     pub gpu_api: Option<String>,
+    /// What the GPU can hold. For one that shares system memory, what Vulkan
+    /// says it may use of it (often more than the BIOS carve-out).
     pub gpu_vram_mb: Option<u64>,
+    /// The GPU shares system memory (integrated graphics, an APU): its
+    /// "VRAM" is RAM, so the wizard doesn't call it VRAM.
     pub gpu_integrated: bool,
+    /// Integrated graphics too slow for a large model, so a small one is
+    /// recommended. False for the fast APUs (Strix Halo) that run big models.
+    pub gpu_integrated_slow: bool,
     pub total_ram_mb: u64,
     pub available_ram_mb: u64,
     pub recommended_quant: String,
@@ -27,6 +34,10 @@ pub struct HardwareInfo {
 pub struct OffloadAlternative {
     pub model_id: String,
     pub context_size: u32,
+    /// Its experts go to system RAM ("Let models use system RAM" on). False
+    /// on integrated graphics, where the whole model already sits in shared
+    /// memory and is offered for being about as fast as the small one.
+    pub spill: bool,
 }
 
 /// The MoE the wizard offers with its experts in system RAM.
@@ -68,14 +79,41 @@ fn offload_alternative(
     Some(OffloadAlternative {
         model_id: OFFLOAD_CANDIDATE.to_string(),
         context_size,
+        spill: true,
     })
 }
 
+/// The second choice on slow integrated graphics: the same MoE, whole, in
+/// the memory the GPU shares. Generating on an iGPU is bound by memory
+/// bandwidth, so speed follows the parameters each token reads: the MoE
+/// reads about 3B, as fast as the 4B recommended, while knowing far more. A
+/// dense model past ~9B reads all of itself and crawls, so none is offered.
+/// Only with 32 GB of RAM or more, and where the model fits what Vulkan
+/// lets the GPU use.
+fn integrated_alternative(heap_mb: Option<u64>, total_ram_mb: u64) -> Option<OffloadAlternative> {
+    let heap_mb = heap_mb?;
+    if total_ram_mb < OFFLOAD_MIN_RAM_MB {
+        return None;
+    }
+    let context_size = crate::models::context_if_fits(
+        OFFLOAD_CANDIDATE,
+        heap_mb * 1024 * 1024,
+        crate::models::FitOptions::with_mtp(true),
+    )?;
+    Some(OffloadAlternative {
+        model_id: OFFLOAD_CANDIDATE.to_string(),
+        context_size,
+        spill: false,
+    })
+}
+
+#[derive(Clone, Debug, PartialEq)]
 struct GpuInfo {
     available: bool,
     name: Option<String>,
     api: Option<String>,
     vram_mb: Option<u64>,
+    /// Shares system memory.
     integrated: bool,
 }
 
@@ -117,7 +155,71 @@ pub fn total_ram_bytes() -> u64 {
     sys.total_memory()
 }
 
+/// What the hardware step recommends for one GPU.
+#[derive(Debug, PartialEq)]
+struct Recommendation {
+    quant: &'static str,
+    context_size: u32,
+    integrated_slow: bool,
+    alternative: Option<OffloadAlternative>,
+}
+
+/// The model, context and second choice for `gpu`. Pure, so every case can
+/// be tested without the hardware.
+///
+/// - Slow integrated graphics → the 4B, whatever memory it reports: an iGPU
+///   with a 16 GB carve-out looks like a 16 GB card and runs like none. The
+///   MoE is offered beside it (see [`integrated_alternative`]).
+/// - A fast APU (Strix Halo) → by the memory it may use, like a card.
+/// - Unknown GPU and no VRAM → the 4B, the safe guess.
+/// - A discrete GPU → by VRAM; unknown VRAM → by available RAM.
+fn recommend(gpu: &GpuInfo, total_ram_mb: u64, available_ram_mb: u64) -> Recommendation {
+    let fast_apu = gpu.integrated && gpu.name.as_deref().is_some_and(is_fast_apu);
+    let integrated_slow = gpu.integrated && !fast_apu;
+    let quant = if integrated_slow || (gpu.name.is_none() && gpu.vram_mb.is_none()) {
+        "Qwen3.5-4B-IQ4_NL"
+    } else {
+        tier_lookup(QUANT_BY_VRAM_MB, gpu.vram_mb.unwrap_or(available_ram_mb))
+    };
+    // Context: computed per-model from the quant's weights, projector and
+    // per-token KV growth against the memory found (see
+    // `models::recommended_context_for`). Slow integrated graphics and
+    // unknown memory can't be modelled reliably, so they get the floor.
+    let context_size = match gpu.vram_mb {
+        Some(vram_mb) if !integrated_slow => {
+            // First run has no saved preference, so assume the default (on).
+            // Models without an MTP head are unaffected either way.
+            crate::models::recommended_context_for(
+                quant,
+                vram_mb * 1024 * 1024,
+                crate::models::FitOptions::with_mtp(true),
+            )
+        }
+        _ => crate::models::MIN_CONTEXT,
+    };
+    let alternative = if integrated_slow {
+        integrated_alternative(gpu.vram_mb, total_ram_mb)
+    } else {
+        // Spilling experts to "system RAM" gains nothing when the GPU's
+        // memory is system RAM already.
+        offload_alternative(gpu.vram_mb, gpu.integrated, total_ram_mb, quant)
+    };
+    Recommendation {
+        quant,
+        context_size,
+        integrated_slow,
+        alternative,
+    }
+}
+
+/// Probe without llama.cpp's view (tests, and where it can't run).
 pub fn detect_hardware() -> HardwareInfo {
+    detect_hardware_with(None)
+}
+
+/// `devices`: what llama.cpp's Vulkan backend reports ([`probe_vulkan`]),
+/// which settles whether the GPU is integrated better than its name does.
+fn detect_hardware_with(devices: Option<&[VulkanDevice]>) -> HardwareInfo {
     use sysinfo::System;
 
     let mut sys = System::new_all();
@@ -126,42 +228,11 @@ pub fn detect_hardware() -> HardwareInfo {
     let total_ram_mb = sys.total_memory() / 1_048_576;
     let available_ram_mb = sys.available_memory() / 1_048_576;
 
-    // GPU detection
-    let gpu = detect_gpu();
-
-    // Recommendation logic:
-    // - Integrated GPU → always 4B (slow inference, shared memory)
-    // - Unknown GPU name AND no VRAM detected → conservative 4B (safer default)
-    // - Known discrete GPU with VRAM → scale by VRAM
-    // - Known discrete GPU with unknown VRAM → scale by system RAM as proxy
-    let recommended_quant = if gpu.integrated {
-        // Integrated graphics share system memory and run inference slowly —
-        // always the lightweight 4B regardless of reported VRAM.
-        "Qwen3.5-4B-IQ4_NL"
-    } else if gpu.name.is_none() && gpu.vram_mb.is_none() {
-        // Detection failed entirely — default to the smaller model to avoid
-        // recommending a large model on a system that can't actually run it.
-        "Qwen3.5-4B-IQ4_NL"
-    } else {
-        tier_lookup(QUANT_BY_VRAM_MB, gpu.vram_mb.unwrap_or(available_ram_mb))
+    let gpu = match devices {
+        Some(d) => with_vulkan_devices(detect_gpu(), d),
+        None => detect_gpu(),
     };
-
-    // Context size: computed per-model from the recommended quant's weights,
-    // vision projector, and per-token KV growth against detected VRAM (see
-    // `models::recommended_context_for`). Integrated GPUs and hardware where
-    // VRAM is unknown can't be modelled reliably, so they get the floor.
-    let recommended_context_size = match gpu.vram_mb {
-        Some(vram_mb) if !gpu.integrated => {
-            // First run has no saved preference, so assume the default (on).
-            // Models without an MTP head are unaffected either way.
-            crate::models::recommended_context_for(
-                recommended_quant,
-                vram_mb * 1024 * 1024,
-                crate::models::FitOptions::with_mtp(true),
-            )
-        }
-        _ => crate::models::MIN_CONTEXT,
-    };
+    let rec = recommend(&gpu, total_ram_mb, available_ram_mb);
 
     HardwareInfo {
         gpu_available: gpu.available,
@@ -169,37 +240,211 @@ pub fn detect_hardware() -> HardwareInfo {
         gpu_api: gpu.api,
         gpu_vram_mb: gpu.vram_mb,
         gpu_integrated: gpu.integrated,
+        gpu_integrated_slow: rec.integrated_slow,
         total_ram_mb,
         available_ram_mb,
-        recommended_quant: recommended_quant.to_string(),
-        recommended_context_size,
-        offload_alternative: offload_alternative(
-            gpu.vram_mb,
-            gpu.integrated,
-            total_ram_mb,
-            recommended_quant,
-        ),
+        recommended_quant: rec.quant.to_string(),
+        recommended_context_size: rec.context_size,
+        offload_alternative: rec.alternative,
     }
 }
 
-/// Check if a GPU name looks like an integrated graphics adapter.
-/// Only the Linux and Windows `detect_gpu` paths inspect the GPU name;
-/// macOS reports Apple Silicon directly, so gate this out there to avoid a
-/// dead-code warning.
-#[cfg(any(target_os = "linux", target_os = "windows"))]
-fn is_integrated_gpu(name: &str) -> bool {
-    let lower = name.to_lowercase();
-    // Intel integrated (HD, UHD, Iris, Arc iGPU)
-    if lower.contains("intel") {
-        return !lower.contains("arc a") && !lower.contains("arc b");
+/// One GPU as llama.cpp's Vulkan backend sees it (`llama-server --verbose
+/// --list-devices`).
+#[derive(Clone, Debug, PartialEq)]
+struct VulkanDevice {
+    name: String,
+    /// Unified memory: the device shares system memory. The driver's own
+    /// device type, so it holds for any name.
+    uma: bool,
+    /// What Vulkan says the device may use, in MiB.
+    total_mb: Option<u64>,
+}
+
+/// Parse `llama-server --verbose --list-devices`. Two kinds of line matter,
+/// matched by device index:
+///
+/// ```text
+/// 0.00.059.931 D ggml_vulkan: 0 = AMD Radeon(TM) Graphics (AMD proprietary driver) | uma: 1 | fp16: 1 | …
+///   Vulkan0: AMD Radeon(TM) Graphics (24445 MiB, 23223 MiB free)
+/// ```
+fn parse_vulkan_devices(output: &str) -> Vec<VulkanDevice> {
+    let mut devices: Vec<(usize, VulkanDevice)> = Vec::new();
+    for line in output.lines() {
+        if let Some((_, rest)) = line.split_once("ggml_vulkan: ") {
+            let Some((index, rest)) = rest.split_once(" = ") else {
+                continue;
+            };
+            let Ok(index) = index.trim().parse::<usize>() else {
+                continue;
+            };
+            let mut fields = rest.split(" | ");
+            let head = fields.next().unwrap_or_default().trim();
+            // The driver comes last, in parentheses: "Name (driver)".
+            let name = match head.rfind(" (") {
+                Some(i) if head.ends_with(')') => &head[..i],
+                _ => head,
+            };
+            let uma = fields.any(|f| f.trim() == "uma: 1");
+            devices.push((
+                index,
+                VulkanDevice {
+                    name: name.to_string(),
+                    uma,
+                    total_mb: None,
+                },
+            ));
+        } else if let Some(rest) = line.trim_start().strip_prefix("Vulkan") {
+            let Some((index, rest)) = rest.split_once(": ") else {
+                continue;
+            };
+            let Ok(index) = index.parse::<usize>() else {
+                continue;
+            };
+            // "Name (24445 MiB, 23223 MiB free)"
+            let total = rest
+                .rfind(" (")
+                .and_then(|i| rest[i + 2..].split(' ').next())
+                .and_then(|n| n.parse::<u64>().ok());
+            if let Some((_, d)) = devices.iter_mut().find(|(i, _)| *i == index) {
+                d.total_mb = total;
+            }
+        }
     }
-    // AMD APU integrated (Vega, Radeon Graphics without a discrete model number)
-    if (lower.contains("amd") || lower.contains("radeon"))
-        && (lower.contains("vega") || lower.contains("radeon graphics"))
-    {
-        return true;
+    devices.into_iter().map(|(_, d)| d).collect()
+}
+
+/// `gpu` corrected by what llama.cpp's Vulkan backend found. llama.cpp uses
+/// the discrete GPUs when there are any and an integrated one only when
+/// there is nothing else, so that is the GPU that matters: a discrete one
+/// means not integrated, whatever the name check thought; only integrated
+/// ones mean integrated, with the memory Vulkan lets it use.
+fn with_vulkan_devices(mut gpu: GpuInfo, devices: &[VulkanDevice]) -> GpuInfo {
+    if devices.is_empty() {
+        return gpu;
+    }
+    if let Some(discrete) = devices.iter().find(|d| !d.uma) {
+        gpu.integrated = false;
+        if gpu.name.is_none() {
+            gpu.name = Some(discrete.name.clone());
+        }
+    } else {
+        let igpu = &devices[0];
+        gpu.integrated = true;
+        if gpu.name.is_none() {
+            gpu.name = Some(igpu.name.clone());
+        }
+        gpu.vram_mb = igpu.total_mb.or(gpu.vram_mb);
+    }
+    gpu
+}
+
+/// Ask the bundled llama-server which Vulkan devices it sees. None when it
+/// can't be run or says nothing useful; the name check then decides.
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+async fn probe_vulkan(app: &tauri::AppHandle) -> Option<Vec<VulkanDevice>> {
+    use tauri_plugin_shell::ShellExt;
+    let cmd = app
+        .shell()
+        .sidecar("haruspex-llama-server")
+        .ok()?
+        .args(["--verbose", "--list-devices"]);
+    let cmd = crate::sidecar_utils::with_library_paths(cmd, app);
+    let out = tokio::time::timeout(std::time::Duration::from_secs(20), cmd.output())
+        .await
+        .ok()?
+        .ok()?;
+    let text = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let devices = parse_vulkan_devices(&text);
+    if devices.is_empty() {
+        log::info!("hardware: llama-server listed no Vulkan devices");
+        return None;
+    }
+    log::info!("hardware: llama-server's Vulkan devices: {devices:?}");
+    Some(devices)
+}
+
+/// macOS runs Metal; there is nothing integrated to tell apart.
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+async fn probe_vulkan(_app: &tauri::AppHandle) -> Option<Vec<VulkanDevice>> {
+    None
+}
+
+/// A name in lower case without trademark marks or brackets, single-spaced:
+/// `AMD Radeon(TM) Graphics` → `amd radeon graphics`.
+fn normalized_gpu_name(name: &str) -> String {
+    name.to_lowercase()
+        .replace("(tm)", " ")
+        .replace("(r)", " ")
+        .replace(['[', ']', ',', '(', ')'], " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The APUs with memory bandwidth enough for a big model: AMD's Strix Halo
+/// (Radeon 8060S / 8050S / 8040S, up to 128 GB unified). Integrated, but
+/// recommended for like a card of the memory they may use.
+fn is_fast_apu(name: &str) -> bool {
+    let n = normalized_gpu_name(name);
+    n.split(' ')
+        .any(|w| matches!(w, "8060s" | "8050s" | "8040s"))
+}
+
+/// Whether a GPU's name reads as integrated graphics. The fallback for when
+/// llama.cpp's device list can't be had (see [`with_vulkan_devices`]); names
+/// are marketing, so this only knows the common ones:
+///
+/// - Intel: integrated unless an Arc card with a model number (A380, A770,
+///   B580, Pro A60). `Intel(R) Arc(TM) Graphics` and Arc 140V are integrated.
+/// - AMD: `Radeon Graphics`, `Radeon 680M` and the like (three digits and
+///   M), `Radeon 8060S` (Strix Halo: four digits and S), and Vega without
+///   "RX". Windows writes `AMD Radeon(TM) Graphics`; the marks are ignored.
+// Only the Linux and Windows probes read names; macOS reports Apple Silicon.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn is_integrated_gpu(name: &str) -> bool {
+    let n = normalized_gpu_name(name);
+    let words: Vec<&str> = n.split(' ').collect();
+    if n.contains("intel") {
+        let discrete_arc = n.contains("arc")
+            && words
+                .windows(2)
+                .any(|w| matches!(w[0], "arc" | "pro") && is_arc_card_model(w[1]));
+        return !discrete_arc;
+    }
+    if n.contains("amd") || n.contains("radeon") || n.contains("ati") {
+        if n.contains("radeon graphics") {
+            return true;
+        }
+        let apu_model = words.iter().any(|w| {
+            let digits = w.chars().take_while(|c| c.is_ascii_digit()).count();
+            let suffix = &w[digits..];
+            (digits == 3 && suffix == "m") || (digits == 4 && suffix == "s")
+        });
+        if apu_model {
+            return true;
+        }
+        if n.contains("vega") && !words.contains(&"rx") {
+            return true;
+        }
     }
     false
+}
+
+/// An Arc discrete card's model: A or B and two or three digits (A380,
+/// A770, B580). Not "graphics", and not the integrated 140V.
+// Only the Linux and Windows probes read names; macOS reports Apple Silicon.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn is_arc_card_model(w: &str) -> bool {
+    let mut chars = w.chars();
+    matches!(chars.next(), Some('a' | 'b')) && {
+        let digits: Vec<char> = chars.collect();
+        (2..=3).contains(&digits.len()) && digits.iter().all(|c| c.is_ascii_digit())
+    }
 }
 
 /// Success tail shared by the Linux and Windows Vulkan probes: wrap a
@@ -483,8 +728,11 @@ fn detect_gpu() -> GpuInfo {
 }
 
 #[tauri::command]
-pub fn cmd_detect_hardware() -> HardwareInfo {
-    detect_hardware()
+pub async fn cmd_detect_hardware(app: tauri::AppHandle) -> HardwareInfo {
+    let devices = probe_vulkan(&app).await;
+    tokio::task::spawn_blocking(move || detect_hardware_with(devices.as_deref()))
+        .await
+        .unwrap_or_else(|_| detect_hardware())
 }
 
 #[cfg(test)]
@@ -552,6 +800,146 @@ mod tests {
         assert_eq!(alt.model_id, OFFLOAD_CANDIDATE);
         assert!(alt.context_size >= crate::models::MIN_CONTEXT);
         assert!(offload_alternative(Some(8_100), false, 64_000, "Qwen3.5-9B-IQ4_NL").is_some());
+    }
+
+    const LIST_DEVICES_IGPU: &str = "0.00.058.364 D ggml_vulkan: Found 1 Vulkan devices:\n\
+0.00.059.931 D ggml_vulkan: 0 = AMD Radeon(TM) Graphics (AMD proprietary driver) | uma: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none\n\
+Available devices:\n  Vulkan0: AMD Radeon(TM) Graphics (24445 MiB, 23223 MiB free)\n";
+
+    #[test]
+    fn reads_llama_servers_vulkan_devices() {
+        assert_eq!(
+            parse_vulkan_devices(LIST_DEVICES_IGPU),
+            vec![VulkanDevice {
+                name: "AMD Radeon(TM) Graphics".into(),
+                uma: true,
+                total_mb: Some(24445),
+            }]
+        );
+        let two = "ggml_vulkan: 0 = NVIDIA GeForce RTX 4070 (NVIDIA) | uma: 0 | fp16: 1\n\
+ggml_vulkan: 1 = Intel(R) UHD Graphics 770 (Intel Corporation) | uma: 1 | fp16: 1\n\
+  Vulkan0: NVIDIA GeForce RTX 4070 (12282 MiB, 11000 MiB free)\n\
+  Vulkan1: Intel(R) UHD Graphics 770 (16000 MiB, 15000 MiB free)\n";
+        let d = parse_vulkan_devices(two);
+        assert_eq!(d.len(), 2);
+        assert_eq!((d[0].uma, d[0].total_mb), (false, Some(12282)));
+        assert_eq!(
+            (d[1].uma, d[1].name.as_str()),
+            (true, "Intel(R) UHD Graphics 770")
+        );
+        assert!(parse_vulkan_devices("Available devices:\n").is_empty());
+    }
+
+    fn gpu(name: &str, vram_mb: u64, integrated: bool) -> GpuInfo {
+        GpuInfo {
+            available: true,
+            name: Some(name.into()),
+            api: Some("Vulkan".into()),
+            vram_mb: Some(vram_mb),
+            integrated,
+        }
+    }
+
+    #[test]
+    fn llama_cpps_devices_overrule_the_name() {
+        // The machine this was found on: an iGPU the name check missed, with
+        // a 16 GB BIOS carve-out in the registry.
+        let missed = gpu("AMD Radeon(TM) Graphics", 16384, false);
+        let fixed = with_vulkan_devices(missed, &parse_vulkan_devices(LIST_DEVICES_IGPU));
+        assert!(fixed.integrated);
+        assert_eq!(fixed.vram_mb, Some(24445));
+        // A discrete card beside an iGPU is what llama.cpp runs on.
+        let named_igpu = gpu("Intel(R) UHD Graphics 770", 12282, true);
+        let devices = [
+            VulkanDevice {
+                name: "NVIDIA GeForce RTX 4070".into(),
+                uma: false,
+                total_mb: Some(12282),
+            },
+            VulkanDevice {
+                name: "Intel(R) UHD Graphics 770".into(),
+                uma: true,
+                total_mb: Some(16000),
+            },
+        ];
+        let fixed = with_vulkan_devices(named_igpu, &devices);
+        assert!(!fixed.integrated);
+        assert_eq!(fixed.vram_mb, Some(12282));
+        // No devices: unchanged.
+        let g = gpu("Some GPU", 8000, false);
+        assert_eq!(with_vulkan_devices(g.clone(), &[]), g);
+    }
+
+    #[test]
+    fn integrated_gpu_names() {
+        for name in [
+            "AMD Radeon(TM) Graphics",
+            "AMD Radeon Graphics",
+            "Rembrandt [Radeon 680M]",
+            "AMD Radeon 780M Graphics",
+            "AMD Radeon(TM) 890M",
+            "AMD Radeon 8060S Graphics",
+            "AMD Radeon(TM) Vega 8 Graphics",
+            "Intel(R) UHD Graphics 770",
+            "Intel(R) Iris(R) Xe Graphics",
+            "Intel(R) Arc(TM) Graphics",
+            "Intel(R) Arc(TM) 140V GPU (16GB)",
+        ] {
+            assert!(is_integrated_gpu(name), "{name} is integrated");
+        }
+        for name in [
+            "Intel(R) Arc(TM) A770 Graphics",
+            "Intel(R) Arc(TM) B580 Graphics",
+            "Intel(R) Arc(TM) Pro A60",
+            "AMD Radeon RX 7900 XTX",
+            "AMD Radeon RX 6700 XT",
+            "Radeon RX Vega 56",
+            "NVIDIA GeForce RTX 4070",
+        ] {
+            assert!(!is_integrated_gpu(name), "{name} is discrete");
+        }
+    }
+
+    #[test]
+    fn slow_integrated_graphics_get_the_small_model_and_the_moe_beside_it() {
+        // 24 GB that Vulkan lets the iGPU use, 32 GB of RAM.
+        let rec = recommend(&gpu("AMD Radeon(TM) Graphics", 24445, true), 32_000, 20_000);
+        assert_eq!(rec.quant, "Qwen3.5-4B-IQ4_NL");
+        assert!(rec.integrated_slow);
+        assert_eq!(rec.context_size, crate::models::MIN_CONTEXT);
+        let alt = rec.alternative.expect("the MoE fits in 24 GB");
+        assert_eq!(alt.model_id, OFFLOAD_CANDIDATE);
+        assert!(!alt.spill);
+        // Too little RAM, or too little the GPU may use: no MoE.
+        let small_ram = recommend(&gpu("AMD Radeon(TM) Graphics", 24445, true), 16_000, 8_000);
+        assert!(small_ram.alternative.is_none());
+        let small_heap = recommend(&gpu("AMD Radeon(TM) Graphics", 4096, true), 32_000, 20_000);
+        assert!(small_heap.alternative.is_none());
+    }
+
+    #[test]
+    fn a_fast_apu_is_recommended_for_like_a_card() {
+        let rec = recommend(
+            &gpu("AMD Radeon 8060S Graphics", 98_304, true),
+            131_072,
+            100_000,
+        );
+        assert!(!rec.integrated_slow);
+        assert_eq!(rec.quant, "Qwen3.6-35B-A3B-UD-Q5_K_XL");
+        // Its memory is RAM already: nothing to spill to.
+        assert!(rec.alternative.is_none());
+    }
+
+    #[test]
+    fn a_discrete_card_is_recommended_by_its_vram() {
+        let rec = recommend(
+            &gpu("NVIDIA GeForce RTX 4070", 12_038, false),
+            32_000,
+            20_000,
+        );
+        assert!(!rec.integrated_slow);
+        assert_eq!(rec.quant, "Qwen3.5-9B-UD-Q6_K_XL");
+        assert!(rec.alternative.as_ref().is_some_and(|a| a.spill));
     }
 
     #[test]

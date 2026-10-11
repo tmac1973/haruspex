@@ -836,6 +836,23 @@ pub fn context_ceiling_for(model_id: &str, vram_bytes: u64, opts: FitOptions) ->
     )
 }
 
+/// [`context_ceiling_for`], but `None` when `model_id` doesn't fit in
+/// `vram_bytes` with even [`MIN_CONTEXT`] (or can't be sized), rather than
+/// flooring to it: for offering a model only where it will load.
+pub fn context_if_fits(model_id: &str, vram_bytes: u64, opts: FitOptions) -> Option<u32> {
+    let registry = full_registry();
+    let model = registry.iter().find(|m| m.id == model_id)?;
+    if model.kv_bytes_per_token == KV_PER_TOKEN_UNKNOWN {
+        return None;
+    }
+    let need =
+        fixed_vram_bytes(model, opts) + MIN_CONTEXT as u64 * opts.kv_bytes_per_context_token(model);
+    if vram_bytes < need {
+        return None;
+    }
+    context_ceiling_for(model_id, vram_bytes, opts)
+}
+
 /// Largest ladder rung at which MoE `model_id` runs with *only its experts*
 /// in system RAM: everything else — attention, shared weights, projector, KV
 /// cache — stays in `vram_bytes`, and the experts fit in `ram_budget_bytes`.
