@@ -944,7 +944,8 @@ describe('run_command without a terminal (Code session)', () => {
 		pid: 4242,
 		started_at: Date.now(),
 		running: true,
-		exit_code: null,
+		exit_code: null as number | null,
+		out_of_memory: false,
 		log_path: '/cache/code-bg/bg-1.log',
 		wsl_distro: null as string | null,
 		wsl_pgid: null as number | null
@@ -994,6 +995,13 @@ describe('run_command without a terminal (Code session)', () => {
 		expect(describeBgProcess(wsl)).not.toContain('4242');
 		expect(describeBgProcess({ ...wsl, wsl_pgid: null })).not.toContain('4242');
 		expect(describeBgProcess(bgProc)).toContain('PID 4242');
+	});
+
+	it('says a background process was stopped for its memory limit', async () => {
+		const { describeBgProcess } = await import('./code-bg');
+		const done = { ...bgProc, running: false, exit_code: -536870911, out_of_memory: true };
+		expect(describeBgProcess(done)).toContain('went over its memory limit');
+		expect(describeBgProcess({ ...done, out_of_memory: false })).toContain('exit code -536870911');
 	});
 
 	it('watch:true also registers a code_bg watch for the session', async () => {

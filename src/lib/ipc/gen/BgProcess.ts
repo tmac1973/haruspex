@@ -37,4 +37,8 @@ running: boolean,
 /**
  * The shell's exit code; None while running or when killed by a signal.
  */
-exit_code: number | null, log_path: string, };
+exit_code: number | null, 
+/**
+ * It ended for going over its memory limit (Windows: its job said so).
+ */
+out_of_memory: boolean, log_path: string, };

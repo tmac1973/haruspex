@@ -24,6 +24,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { BgProcess } from '#lib/ipc/gen/BgProcess.ts';
 import { truncateCapturedOutput } from '#lib/shell/truncate.ts';
 import { formatDuration } from '#lib/utils/format.ts';
+import { outOfMemoryNote } from '#lib/shell/memoryLimit.ts';
 
 interface WatchBase {
 	id: string;
@@ -35,6 +36,8 @@ interface WatchBase {
 	 * was killed by a signal.
 	 */
 	exitCode?: number;
+	/** A code_bg watch whose process was stopped for going over its memory limit. */
+	outOfMemory?: boolean;
 	completedAtMs?: number;
 }
 
@@ -232,7 +235,10 @@ export async function buildWatchNotification(completed: AnyWatch[]): Promise<str
 			`\n$ ${w.command}\n` +
 				`exit code: ${w.exitCode} · started ${new Date(w.startedAtMs).toLocaleTimeString()}, ` +
 				`ran ${formatDuration(finishedMs - w.startedAtMs)}, finished ${describeAgo(finishedMs)}\n` +
-				`--- output ---\n${tail.text || '(no output)'}\n---`
+				`--- output ---\n${tail.text || '(no output)'}\n---` +
+				(w.outOfMemory
+					? `\n${outOfMemoryNote({ out_of_memory: true, memory_limit_mb: null })}`
+					: '')
 		);
 	}
 	lines.push(
@@ -320,6 +326,7 @@ async function tickCodeBg(running: CodeBgWatch[]): Promise<void> {
 		}
 		if (p.running) continue;
 		w.exitCode = p.exit_code ?? -1;
+		w.outOfMemory = p.out_of_memory;
 		w.completedAtMs = Date.now();
 		finishedOwners.add(w.owner);
 	}
