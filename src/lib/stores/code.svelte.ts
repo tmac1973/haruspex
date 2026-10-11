@@ -19,7 +19,7 @@ import type { BgProcess } from '#lib/ipc/gen/BgProcess.ts';
 import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
 import { withInferenceSlot, type InferenceTicket } from '#lib/agent/inferenceQueue.svelte.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
-import { compactCodeThread } from '#lib/code/compaction.ts';
+import { chooseCut, compactCodeThread } from '#lib/code/compaction.ts';
 import type { AgentStopReason, SearchStep } from '#lib/agent/loop.ts';
 import { markStepDone, markStepProgress } from '#lib/agent/steps.ts';
 import { describeContextManaged } from '#lib/agent/context-budget.ts';
@@ -322,6 +322,16 @@ export class CodeSession {
 
 	/** Resume after a turn limit or forced stop. */
 	continueTurn = (): Promise<void> => this.send('Please continue from where you stopped.');
+
+	/**
+	 * Whether `/compact` has anything to summarise now: some turns past the
+	 * current cut that the newest ones, kept whole, leave over.
+	 */
+	canCompact = (): boolean => {
+		const backend = this.backend ? ($state.snapshot(this.backend) as BackendOverride) : null;
+		const contextSize = resolveBackendDescriptor(backend ?? undefined).contextSize;
+		return chooseCut(this.messages, this.compaction?.at ?? 0, contextSize) !== null;
+	};
 
 	/**
 	 * `/compact`: summarise the older turns now, without a turn after it.

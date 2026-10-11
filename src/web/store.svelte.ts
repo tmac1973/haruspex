@@ -228,8 +228,22 @@ export class WebStore {
 	}
 
 	async send(id: string, text: string): Promise<boolean> {
+		// `/compact` runs here, as the desktop's input box runs it; sent as a
+		// message, it would only reach the model as text.
+		const compact = /^\s*\/compact(?:\s+([\s\S]*))?$/i.exec(text);
+		if (compact) return this.compact(id, compact[1]?.trim() ?? '');
 		const sent = await this.run(() => this.transport.op({ type: 'session.send', id, text }));
 		return sent !== undefined;
+	}
+
+	/** `/compact`: summarise the session's older turns now. */
+	async compact(id: string, instructions = ''): Promise<boolean> {
+		const out = await this.run(() =>
+			this.transport.op<{ started: boolean }>({ type: 'session.compact', id, instructions })
+		);
+		if (out && !out.started)
+			this.error = 'Nothing to summarise yet: the conversation is still short.';
+		return out !== undefined;
 	}
 
 	async stopTurn(id: string): Promise<void> {

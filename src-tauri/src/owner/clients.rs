@@ -45,6 +45,7 @@ pub fn required_scope(op_type: &str) -> Option<Scope> {
         | "session.new"
         | "session.send"
         | "session.stop"
+        | "session.compact"
         | "session.cancelShellWait"
         | "chat.new"
         | "chat.send"
@@ -386,6 +387,7 @@ mod tests {
         assert_eq!(required_scope("chat.send"), Some(Scope::Drive));
         assert_eq!(required_scope("wsl.distros"), Some(Scope::Read));
         assert_eq!(required_scope("session.send"), Some(Scope::Drive));
+        assert_eq!(required_scope("session.compact"), Some(Scope::Drive));
         assert_eq!(required_scope("prompts.answer"), Some(Scope::Approve));
         assert_eq!(required_scope("session.delete"), None);
     }

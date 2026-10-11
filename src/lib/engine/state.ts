@@ -34,7 +34,9 @@ export function metaState(s: CodeSession): SessionMeta {
 		background: s.background,
 		shellWait: s.shellWait
 			? { shellName: s.shellWait.shellName, command: s.shellWait.command }
-			: null
+			: null,
+		compaction: s.compaction ? { at: s.compaction.at, summary: s.compaction.summary } : null,
+		compacting: s.compacting
 	});
 }
 

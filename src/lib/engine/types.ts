@@ -25,6 +25,8 @@ export type EngineOp =
 	| { type: 'wsl.distros' }
 	| { type: 'session.send'; id: string; text: string }
 	| { type: 'session.stop'; id: string }
+	/** `/compact`: summarise the older turns now, keeping what `instructions` names. */
+	| { type: 'session.compact'; id: string; instructions?: string }
 	| { type: 'session.cancelShellWait'; id: string }
 	/** Send a fresh snapshot event: the client saw a gap in `seq`. */
 	| { type: 'session.resync'; id: string }
@@ -56,6 +58,13 @@ export interface SessionMeta {
 	background: BgProcess[];
 	/** The Shell tab an `open_in_shell` turn waits on. */
 	shellWait: { shellName: string; command: string } | null;
+	/**
+	 * The summary standing in for the older turns (`code/compaction.ts`): the
+	 * agent works from it and `messages[at…]`, and every message still shows.
+	 */
+	compaction: { at: number; summary: string } | null;
+	/** Older turns are being summarised, before a turn or for `/compact`. */
+	compacting: boolean;
 }
 
 /** A session as a client holds it. `session.get` returns it; events keep it current. */
