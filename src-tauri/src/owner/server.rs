@@ -192,6 +192,7 @@ pub async fn start(
         .route("/api/v1/images", post(images))
         .route("/api/v1/image/{hash}", get(image))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
+        .layer(axum::middleware::map_response(no_referrer))
         .with_state(state);
 
     let (accepted, incoming) = tokio::sync::mpsc::channel(64);
@@ -709,6 +710,17 @@ fn sse(event: &Value) -> Event {
     Event::default().data(event.to_string())
 }
 
+/// `Referrer-Policy: no-referrer` on every page and answer this server or the
+/// guest-chat server sends. A link that carried a token or pairing code in
+/// its URL must not hand it to whatever site a page links out to.
+pub(crate) async fn no_referrer(mut res: axum::response::Response) -> axum::response::Response {
+    res.headers_mut().insert(
+        axum::http::header::REFERRER_POLICY,
+        axum::http::HeaderValue::from_static("no-referrer"),
+    );
+    res
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -976,8 +988,11 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(r.status(), 200);
+        assert_eq!(r.headers()["referrer-policy"], "no-referrer");
         let r = h.op("", json!({ "type": "sessions.list" })).await;
         assert_eq!(r.status(), 401);
+        // A refusal carries it too: every response does.
+        assert_eq!(r.headers()["referrer-policy"], "no-referrer");
         let r = h.op("hsx_nope", json!({ "type": "sessions.list" })).await;
         assert_eq!(r.status(), 401);
         let r = h

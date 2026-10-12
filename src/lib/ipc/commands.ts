@@ -134,6 +134,7 @@ export const IPC = {
 	engine_events: 'engine_events',
 	engine_reply: 'engine_reply',
 	engine_request: 'engine_request',
+	feedback_redact: 'feedback_redact',
 	fs_download_url: 'fs_download_url',
 	fs_edit_text: 'fs_edit_text',
 	fs_edit_text_absolute: 'fs_edit_text_absolute',

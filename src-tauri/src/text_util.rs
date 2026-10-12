@@ -113,6 +113,8 @@ const TOKEN_PREFIXES: &[&str] = &[
     "AKIA",
     "hf_",
     "ya29.",
+    // Haruspex's own remote-control device tokens (`owner::clients`).
+    "hsx_",
 ];
 
 /// `text` with anything that looks like a credential replaced by [`REDACTED`]:

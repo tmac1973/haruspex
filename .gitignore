@@ -45,11 +45,22 @@ static/plotly/
 credentials.json
 client_secret*.json
 secrets.json
+service-account*.json
+*.crt
+*.gpg
+id_rsa*
+id_ed25519*
+id_ecdsa*
 
 # OS files
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Claude Code: per-session worktrees and per-user settings. A shared
+# .claude/settings.json can still be committed.
+.claude/worktrees/
+.claude/settings.local.json
 
 # Editor
 *.swp

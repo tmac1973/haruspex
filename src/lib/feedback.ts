@@ -109,9 +109,17 @@ export interface Diagnostics extends RustDiagnostics {
 	debug_log: string[];
 }
 
+/**
+ * Everything a report carries. Every log comes back redacted: credentials,
+ * the secrets read this session, URL query strings and email addresses go
+ * (`feedback.rs`), since the bundle is meant for a public issue.
+ */
 export async function gatherDiagnostics(): Promise<Diagnostics> {
-	const rust = await invoke<RustDiagnostics>('get_diagnostics');
-	return { ...rust, debug_log: getDebugLogs() };
+	const [rust, debug_log] = await Promise.all([
+		invoke<RustDiagnostics>('get_diagnostics'),
+		invoke<string[]>('feedback_redact', { lines: getDebugLogs() })
+	]);
+	return { ...rust, debug_log };
 }
 
 function buildSystemBlock(d: Diagnostics): string {
