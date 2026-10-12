@@ -45,6 +45,8 @@ A long-lived app, driven step by step:
   click <selector>          click something in the main window (CSS, or button=Text)
   fill <selector> <text>    fill a field in the main window (quote the selector)
   select <selector> <label> choose a <select>'s option by the text it shows
+                            (these three act on the one match on screen;
+                            --nth N picks among several, --nth last the last)
   chats                     the desktop's chats (through the engine)
   chat-send <id|new> <text> [--wait]
                             send in a chat through the engine (new starts one)
@@ -83,7 +85,9 @@ Options for send, steer, cancel and approve:
   --via engine         use the engine operation (as the owner API will), not the UI;
                        the only way to reach a session in a detached window
 Options for run, send and wait:
-  --timeout SECS       the most one turn may take (default 600)`;
+  --timeout SECS       the most one turn may take (default 600)
+  send --wait returns "no-turn" (with the note the pane shows) when the message
+  starts no turn, as a slash command like /skills does`;
 
 const OPTIONS = {
 	'base-url': { type: 'string' },
@@ -103,11 +107,24 @@ const OPTIONS = {
 	api: { type: 'boolean', default: false },
 	seconds: { type: 'string', default: '3' },
 	since: { type: 'string', default: '0' },
+	nth: { type: 'string' },
 	'auto-approve': { type: 'boolean' },
 	'no-auto-approve': { type: 'boolean' },
 	'verbose-payloads': { type: 'boolean', default: false },
 	help: { type: 'boolean', short: 'h', default: false }
 };
+
+/**
+ * `--nth N` for click, fill and select: 1 is the first match on screen, `last`
+ * (or `--nth=-1`; a bare `-1` reads as an option) the last.
+ */
+function nth(values) {
+	if (values.nth == null) return undefined;
+	if (values.nth === 'last') return -1;
+	const n = Number(values.nth);
+	if (!Number.isInteger(n) || n === 0) fail('--nth takes a whole number other than 0');
+	return n;
+}
 
 function fail(msg) {
 	console.error(`drive: ${msg}`);
@@ -316,9 +333,9 @@ async function daemon(opts) {
 		access: (a) => app.access(a.mode, a.hosts),
 		'fake-mcp': () => app.fakeMcp(),
 		answer: (a) => app.answer(a.kind, a.answer),
-		click: (a) => app.click(a.selector),
-		fill: (a) => app.fill(a.selector, a.text),
-		select: (a) => app.select(a.selector, a.label),
+		click: (a) => app.click(a.selector, a.nth),
+		fill: (a) => app.fill(a.selector, a.text, a.nth),
+		select: (a) => app.select(a.selector, a.label, a.nth),
 		chats: () => app.engine({ type: 'chats.list' }),
 		'chat-send': (a) => app.chatSend(a.id, a.text, { wait: a.wait, ...turnOpts(a) }),
 		'chat-state': (a) => app.engine({ type: 'chat.get', id: a.id }),
@@ -431,15 +448,15 @@ async function client(cmd, values, positionals) {
 			break;
 		case 'click':
 			need(1, 'a selector');
-			args = { selector: positionals.join(' ') };
+			args = { selector: positionals.join(' '), nth: nth(values) };
 			break;
 		case 'fill':
 			need(2, 'a selector and the text');
-			args = { selector: positionals[0], text: positionals.slice(1).join(' ') };
+			args = { selector: positionals[0], text: positionals.slice(1).join(' '), nth: nth(values) };
 			break;
 		case 'select':
 			need(2, 'a selector and an option');
-			args = { selector: positionals[0], label: positionals.slice(1).join(' ') };
+			args = { selector: positionals[0], label: positionals.slice(1).join(' '), nth: nth(values) };
 			break;
 		case 'access':
 			need(1, 'tokens, trusted or lan');
