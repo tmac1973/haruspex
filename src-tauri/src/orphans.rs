@@ -21,6 +21,7 @@
 //! Windows the sidecars also die with the app (`sidecar_process`); this sweep
 //! is what covers macOS and anything spawned before that existed.
 
+use crate::process_util::Signal;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -183,17 +184,11 @@ pub fn pid_command(pid: u32) -> Option<String> {
     (!text.is_empty()).then_some(text)
 }
 
-/// Kill a pid we have already confirmed is ours.
+/// Kill a pid we have already confirmed is ours. Only that pid on unix: a
+/// recorded server is not its own group leader. Its tree on Windows, where
+/// an `npx` or `uvx` launcher would otherwise leave the server running.
 pub fn kill_pid(pid: u32) -> bool {
-    #[cfg(windows)]
-    let result = std::process::Command::new("taskkill")
-        .args(["/F", "/T", "/PID", &pid.to_string()])
-        .output();
-    #[cfg(not(windows))]
-    let result = std::process::Command::new("kill")
-        .args(["-9", &pid.to_string()])
-        .output();
-    result.is_ok_and(|o| o.status.success())
+    crate::process_util::kill_pid(pid, Signal::Kill, cfg!(windows))
 }
 
 /// Kill every recorded process that is still alive and still ours, then clear

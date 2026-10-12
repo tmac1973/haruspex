@@ -1,18 +1,16 @@
-use crate::sidecar_process::{sidecar_registry, spawn_sidecar, SidecarChild};
+use crate::sidecar_process::SidecarChild;
 use log::{error, info, warn};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
-use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 
 use crate::sidecar_util::{
-    base_url, clear_logs, http_client, kill_child, kill_process_on_port, new_log_buffer, ports,
-    require_ready, snapshot_logs, spawn_log_reader, timing, watch_health, with_library_paths,
-    LogBuffer, SidecarStatus, LOOPBACK,
+    base_url, clear_logs, http_client, kill_child, new_log_buffer, ports, require_ready,
+    snapshot_logs, start_sidecar, LogBuffer, SidecarStart, SidecarStatus, LOOPBACK,
 };
 
 const TTS_PORT: u16 = ports::TTS;
@@ -93,12 +91,6 @@ impl TtsEngine {
         }
 
         self.stop().await?;
-        kill_process_on_port(TTS_PORT, "koko", sidecar_registry(app)).await?;
-
-        {
-            let mut status = self.status.lock().await;
-            *status = TtsStatus::Starting;
-        }
 
         info!("Starting Kokoro TTS server on port {}", TTS_PORT);
 
@@ -136,58 +128,37 @@ impl TtsEngine {
             TTS_PORT.to_string(),
         ]);
 
-        let sidecar = app
-            .shell()
-            .sidecar("haruspex-koko")
-            .map_err(|e| format!("Failed to create koko sidecar: {}", e))?
-            .args(&args);
-
-        let mut sidecar = with_library_paths(sidecar, app);
-
         // espeak-rs-sys bakes the build-time path into the binary for espeak-ng-data.
         // Set ESPEAK_DATA_PATH to our bundled copy so phonemization works.
-        if let Ok(resource_dir) = app.path().resource_dir() {
+        let mut env = Vec::new();
+        if let Some(resource_dir) = &resource_dir {
             let espeak_data = resource_dir.join("binaries").join("espeak-ng-data");
             if espeak_data.exists() {
-                sidecar = sidecar.env(
+                env.push((
                     "ESPEAK_DATA_PATH",
                     espeak_data.to_string_lossy().to_string(),
-                );
+                ));
             }
         }
 
-        let (rx, child) = spawn_sidecar(sidecar, "koko", sidecar_registry(app))?;
-
-        {
-            let mut c = self.child.lock().await;
-            *c = Some(child);
-        }
-
-        // Drain the log/event stream; a stdout line containing "listening"
-        // flips status Starting → Ready (koko's readiness signal).
-        spawn_log_reader(
-            "koko",
-            rx,
-            Arc::clone(&self.status),
-            Arc::clone(&self.log_buffer),
-            &["listening", "Listening"],
-        );
-
+        // A stdout line containing "listening" flips status Starting → Ready
+        // (koko's readiness signal).
+        //
         // Health-poll fallback. koko's root `/` endpoint may return 4xx
         // depending on version, so we accept *any* response (not just
         // 2xx) as "process is up". The primary readiness signal is the
-        // "listening" stdout sniff in the reader above — this just
-        // covers the case where koko buffers stdout past the moment it
-        // starts accepting connections.
-        watch_health(
-            &self.status,
-            format!("{}/", base_url(TTS_PORT)),
-            "koko",
-            timing::HEALTH_POLL_TIMEOUT,
-            true,
-        );
-
-        Ok(())
+        // "listening" stdout sniff — this just covers the case where koko
+        // buffers stdout past the moment it starts accepting connections.
+        let spec = SidecarStart {
+            name: "koko",
+            port: TTS_PORT,
+            args,
+            env,
+            ready_markers: &["listening", "Listening"],
+            health_url: format!("{}/", base_url(TTS_PORT)),
+            accept_any: true,
+        };
+        start_sidecar(app, spec, &self.child, &self.status, &self.log_buffer).await
     }
 
     pub async fn stop(&self) -> Result<(), String> {

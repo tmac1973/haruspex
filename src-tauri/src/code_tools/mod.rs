@@ -18,6 +18,7 @@ pub mod search;
 pub mod wsl;
 
 use crate::command_scope;
+use crate::process_util::{kill_pid, Signal};
 use crate::shell::kind::ShellSelection;
 use crate::sync_util::LockExt;
 use serde::Serialize;
@@ -206,20 +207,9 @@ fn hide_window(cmd: &mut tokio::process::Command) {
 /// Kill a process and its descendants. Unix: the child is a process-group
 /// leader (spawned with `process_group(0)`), so signalling the group reaps
 /// orphaned `npm`/`cargo` children too. Windows: `taskkill /T` walks the tree.
-#[cfg(unix)]
+/// Best-effort; the group may already be gone.
 fn kill_process_tree(pid: u32) {
-    // SIGKILL the whole group. Best-effort; ignore ESRCH if already gone.
-    unsafe {
-        libc::killpg(pid as i32, libc::SIGKILL);
-    }
-}
-
-#[cfg(windows)]
-fn kill_process_tree(pid: u32) {
-    let mut cmd = std::process::Command::new("taskkill");
-    cmd.args(["/F", "/T", "/PID", &pid.to_string()]);
-    crate::shell::platform::apply_no_window(&mut cmd);
-    let _ = cmd.output();
+    kill_pid(pid, Signal::Kill, true);
 }
 
 /// Run `command` once in a fresh shell rooted at `cwd`, capture stdout+stderr,
@@ -655,11 +645,7 @@ pub fn app_protected_targets(
 
 #[tauri::command]
 pub async fn code_write_overflow(content: String) -> Result<String, String> {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
+    let nanos = crate::time_util::now_nanos();
     let path = std::env::temp_dir().join(format!("haruspex-run-output-{nanos}.txt"));
     tokio::fs::write(&path, content)
         .await
