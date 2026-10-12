@@ -26,6 +26,8 @@ interface FakePy {
 	stderr(s: string): void;
 	interruptBuffers: Uint8Array[];
 	files: Map<string, Uint8Array>;
+	/** Set to make the fake filesystem refuse writes. */
+	writeError: Error | null;
 	internalScripts: string[];
 	micropipInstall: (name: string) => Promise<void>;
 	globalsProxy: { toJs?: () => unknown; destroy?: () => void } | (() => never);
@@ -40,6 +42,7 @@ function fakePyodide(): FakePy {
 		stderr: () => {},
 		interruptBuffers: [],
 		files: new Map(),
+		writeError: null,
 		internalScripts: [],
 		micropipInstall: async () => {},
 		globalsProxy: { toJs: () => [] },
@@ -72,7 +75,10 @@ function fakePyodide(): FakePy {
 		},
 		FS: {
 			mkdirTree: (p: string) => dirs.add(p),
-			writeFile: (p: string, d: Uint8Array) => fp.files.set(p, d),
+			writeFile: (p: string, d: Uint8Array) => {
+				if (fp.writeError) throw fp.writeError;
+				fp.files.set(p, d);
+			},
 			unlink: (p: string) => fp.files.delete(p),
 			analyzePath: (p: string) => ({ exists: fp.files.has(p) })
 		}
@@ -549,22 +555,47 @@ describe('python.worker workdir sync', () => {
 		]);
 	});
 
-	it('drops the "skipped" notes before the run they precede (current behaviour)', async () => {
-		// The sync writes "[haruspex.sync] skipped ..." into the stderr buffer,
-		// but handleRun clears that buffer when the run starts, so the note
-		// never reaches the result the model sees.
-		await boot();
+	const sync = (sync_id: string, over: Record<string, unknown> = {}) =>
 		send({
 			kind: 'sync_workdir_files',
-			sync_id: 's2',
+			sync_id,
 			workdir_abs: '/w',
 			to_sync: [],
 			deleted: [],
-			skipped: [{ path: 'huge.bin', reason: 'over 50 MB' }]
+			skipped: [],
+			...over
 		});
+
+	it('hands what it skipped to the next run as notes, not stderr', async () => {
+		await boot();
+		sync('s2', { skipped: [{ path: 'huge.bin', reason: 'over 50 MB' }] });
 		await settle();
 		const result = await run('USER pass');
+		expect(result.notes).toEqual(['huge.bin was not copied into the sandbox: over 50 MB']);
 		expect(result.stderr).not.toContain('huge.bin');
+	});
+
+	it('notes a file it could not write', async () => {
+		await boot();
+		py.writeError = new Error('disk full');
+		sync('s3', {
+			to_sync: [{ path: 'a.csv', abs_path: '/w/a.csv', bytes: new Uint8Array([1]), mtime: 1 }]
+		});
+		await settle();
+		const [note] = (await run('USER pass')).notes;
+		expect(note).toMatch(/^could not copy a\.csv into the sandbox: .*disk full/);
+	});
+
+	it("keeps only the latest sync's notes, and gives them to one run only", async () => {
+		await boot();
+		sync('s4', { skipped: [{ path: 'old.bin', reason: 'too big' }] });
+		await settle();
+		sync('s5', { skipped: [{ path: 'new.bin', reason: 'too big' }] });
+		await settle();
+		expect((await run('USER pass', 'r1')).notes).toEqual([
+			'new.bin was not copied into the sandbox: too big'
+		]);
+		expect((await run('USER pass', 'r2')).notes).toEqual([]);
 	});
 });
 

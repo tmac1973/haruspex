@@ -30,6 +30,13 @@ let pendingInterruptBuffer: SharedArrayBuffer | null = null;
 let currentRunId = '';
 let currentStdout = '';
 let currentStderr = '';
+// What the pre-run workdir sync has to tell the model (files it skipped or
+// could not write). The manager syncs, waits for the ack, then sends `run`,
+// so these are held until that run starts and returned in its `notes` —
+// not in stderr, which handleRun clears and which reads as the code's own
+// error output.
+let pendingSyncNotes: string[] = [];
+let currentNotes: string[] = [];
 
 // Tracks Promises returned from _haruspex_save so the matching
 // save_response message can resolve/reject the right call. Keyed by
@@ -1185,11 +1192,12 @@ function emptyResult(durationMs: number, error: string | null = null): ToolResul
 		error,
 		artifacts: 0,
 		artifactsList: [], // populated on the main side from streamed artifact messages
-		notes: [],
+		notes: currentNotes,
 		duration_ms: durationMs
 	};
 	currentStdout = '';
 	currentStderr = '';
+	currentNotes = [];
 	return result;
 }
 
@@ -1204,6 +1212,8 @@ async function handleSyncWorkdir(msg: {
 		post({ kind: 'sync_workdir_ack', sync_id: msg.sync_id, error: 'pyodide not loaded' });
 		return;
 	}
+	// Only the latest sync's notes describe the run that follows it.
+	pendingSyncNotes = [];
 	try {
 		// pyodide.FS exposes Emscripten's filesystem API. We use it directly
 		// instead of going through Python — much faster and avoids spinning
@@ -1231,7 +1241,7 @@ async function handleSyncWorkdir(msg: {
 			try {
 				fs.writeFile(file.abs_path, bytes);
 			} catch (err) {
-				currentStderr += '[haruspex.sync] failed to write ' + file.path + ': ' + String(err) + '\n';
+				pendingSyncNotes.push(`could not copy ${file.path} into the sandbox: ${String(err)}`);
 			}
 		}
 		for (const path of msg.deleted) {
@@ -1243,7 +1253,7 @@ async function handleSyncWorkdir(msg: {
 			}
 		}
 		for (const sk of msg.skipped) {
-			currentStderr += '[haruspex.sync] skipped ' + sk.path + ': ' + sk.reason + '\n';
+			pendingSyncNotes.push(`${sk.path} was not copied into the sandbox: ${sk.reason}`);
 		}
 		// Chdir Python into the workdir so the model's relative paths
 		// resolve to the synced files.
@@ -1428,6 +1438,8 @@ async function handleRun(id: string, code: string): Promise<void> {
 	currentRunId = id;
 	currentStdout = '';
 	currentStderr = '';
+	currentNotes = pendingSyncNotes;
+	pendingSyncNotes = [];
 	const t0 = performance.now();
 	try {
 		// Enter the package-resolution phase: the manager pauses the
