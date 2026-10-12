@@ -24,6 +24,8 @@ import { summarize, transcript } from './render.mjs';
 export const FIXTURE = join(ROOT, 'e2e', 'fixtures', 'average-bug');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** How long a sent message may leave a session idle before `wait` says it started no turn. */
+const NO_TURN_MS = 5_000;
 
 /** JSON with sorted keys, so two copies of the same data compare equal. */
 export function stableJson(v) {
@@ -369,35 +371,56 @@ export class App {
 	}
 
 	/**
-	 * Click what `selector` finds in the main window: CSS, or WebdriverIO's
-	 * `button=Text` / `*=partial text`. For reaching UI the other commands
-	 * don't cover, such as a Settings section to screenshot.
+	 * The element `selector` finds in the main window: CSS, or WebdriverIO's
+	 * `button=Text` / `*=partial text`. Of several matches, the only one on
+	 * screen (a hidden Code tab has its own Send button), or the `nth` (1 is the
+	 * first, -1 the last) of those on screen.
 	 */
-	async click(selector) {
+	async #find(browser, selector, nth) {
+		let shown = [];
+		for (let i = 0; i < 20; i++) {
+			const all = await browser.$$(selector);
+			shown = [];
+			for (const el of all) if (await el.isDisplayed()) shown.push(el);
+			if (shown.length) break;
+			await sleep(500);
+		}
+		if (!shown.length) throw new Error(`nothing on screen matches ${selector}`);
+		if (nth == null) {
+			if (shown.length > 1) {
+				throw new Error(`${shown.length} on screen match ${selector}: pick one with --nth`);
+			}
+			return shown[0];
+		}
+		const el = shown.at(nth > 0 ? nth - 1 : nth);
+		if (!el || nth === 0)
+			throw new Error(`--nth ${nth}: ${shown.length} on screen match ${selector}`);
+		return el;
+	}
+
+	/** Click what `selector` finds (see `#find`), for UI the other commands don't cover. */
+	async click(selector, nth) {
 		await this.exclusive(async (browser) => {
-			const el = await browser.$(selector);
+			const el = await this.#find(browser, selector, nth);
+			await el.scrollIntoView({ block: 'center' });
 			await el.waitForClickable({ timeout: 10_000 });
 			await el.click();
 		});
 		return { clicked: selector };
 	}
 
-	/** Fill the field `selector` finds in the main window with `text`, replacing what was there. */
-	async fill(selector, text) {
+	/** Fill the field `selector` finds with `text`, replacing what was there. */
+	async fill(selector, text, nth) {
 		await this.exclusive(async (browser) => {
-			const el = await browser.$(selector);
-			await el.waitForDisplayed({ timeout: 10_000 });
-			await el.setValue(text);
+			await (await this.#find(browser, selector, nth)).setValue(text);
 		});
 		return { filled: selector };
 	}
 
 	/** Choose the option shown as `label` in the `<select>` that `selector` finds. */
-	async select(selector, label) {
+	async select(selector, label, nth) {
 		await this.exclusive(async (browser) => {
-			const el = await browser.$(selector);
-			await el.waitForDisplayed({ timeout: 10_000 });
-			await el.selectByVisibleText(label);
+			await (await this.#find(browser, selector, nth)).selectByVisibleText(label);
 		});
 		return { selected: label };
 	}
@@ -426,7 +449,11 @@ export class App {
 			});
 			if (!chat.busy && chat.messages.length > before + 1) return result('done');
 			if (!chat.busy && chat.error) return result('failed');
-			const prompts = (await this.engine({ type: 'prompts.list' })).filter((p) => p.chatId === id);
+			// MCP, skill and repo-trust prompts name no chat: while this one is
+			// busy, an unowned prompt is its turn's.
+			const prompts = (await this.engine({ type: 'prompts.list' })).filter(
+				(p) => p.chatId === id || (chat.busy && !p.chatId && !p.sessionId)
+			);
 			if (prompts.length) return result('prompt', { prompt: prompts[0] });
 			if (Date.now() - started > timeoutMs) return result('timeout');
 			await sleep(500);
@@ -530,6 +557,8 @@ export class App {
 		// The dialog offers the last folder used.
 		await this.call('updateSettings', { codeLastRoot: folder });
 		await this.exclusive(async (browser) => {
+			const code = await this.#find(browser, 'button=Code');
+			await code.click();
 			// The empty pane's button when nothing is open, else the tab strip's +.
 			// Looked up in two steps: chaining onto a pane that isn't there throws.
 			const pane = await browser.$('.workspace > .main > .empty');
@@ -585,7 +614,15 @@ export class App {
 		if (via === 'engine') await this.engine({ type: 'session.send', id, text });
 		else await this.type(id, text);
 		if (!wait) return { state: 'sent' };
-		return this.wait(id, { timeoutMs, after: s.messages.length });
+		return this.wait(id, { timeoutMs, after: s.messages.length, sent: true });
+	}
+
+	/** The last note in the session's transcript (`/skills` and friends), if it shows one. */
+	async lastNote(id) {
+		return this.exclusive(async (browser) => {
+			const notes = await browser.$$(`[data-session-id="${id}"] .note`);
+			return notes.length ? await notes[notes.length - 1].getText() : null;
+		});
 	}
 
 	/** Queue a steering message for a running turn's next step. */
@@ -604,13 +641,17 @@ export class App {
 	}
 
 	/**
-	 * Wait for the session to go idle (with more than `after` messages, when
-	 * given). Returns early when the turn needs a person: a command approval
-	 * or another prompt, or a command handed to a Shell tab.
+	 * Wait for the session to go idle (with more than `after` messages, or
+	 * after a turn or a compaction ran). Returns early when the turn needs a
+	 * person: a command approval or another prompt, or a command handed to a
+	 * Shell tab. With `sent`, a session that never leaves idle (a slash command
+	 * such as `/skills`, or `/compact` with nothing to summarise) returns
+	 * `no-turn` with the note the pane shows.
 	 */
-	async wait(id, { timeoutMs = 600_000, after = 0 } = {}) {
+	async wait(id, { timeoutMs = 600_000, after = 0, sent = false } = {}) {
 		const started = Date.now();
 		let lastReport = 0;
+		let active = false;
 		// A turn that has only just been sent may not have left idle yet.
 		await sleep(300);
 		for (;;) {
@@ -622,7 +663,12 @@ export class App {
 				...extra,
 				summary: summarize(s)
 			});
-			if (s.status === 'idle' && s.messages.length > after) return result('done');
+			const idle = s.status === 'idle' && !s.compacting;
+			if (!idle) active = true;
+			if (idle && (s.messages.length > after || active)) return result('done');
+			if (idle && sent && elapsedMs > NO_TURN_MS) {
+				return result('no-turn', { note: await this.lastNote(id) });
+			}
 			const [prompt] = await this.promptsFor(id);
 			if (prompt?.kind === 'command') {
 				return result('approval', { approval: { ...prompt.detail, promptId: prompt.promptId } });

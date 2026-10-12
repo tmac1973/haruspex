@@ -279,7 +279,12 @@ trails by a few tens of milliseconds, so `differs` listing only
   driven. `--auto-approve` / `--no-auto-approve` choose.
 - **`send --wait` and `wait` return early** with `"state": "approval"` or
   `"waiting-shell"` when the turn needs a person, and with `"timeout"` (exit
-  code 3) after `--timeout` seconds; the turn keeps running.
+  code 3) after `--timeout` seconds; the turn keeps running. A message that
+  starts no turn (a slash command such as `/skills`) returns `"no-turn"` with
+  the note it showed. `chat-send --wait` returns `"prompt"` for an MCP, skill
+  or repo-trust prompt as well as the chat's own.
+- **`click`, `fill` and `select`** act on the one match on screen, and say so
+  when several show: `--nth N` picks one (`--nth last` the last).
 - **Everything a user presses is pressed in the UI:** messages are typed into
   the session's input box, approvals and Stop are clicked.
 - **The control channel** is a Unix socket, `$XDG_RUNTIME_DIR/haruspex-drive.sock`,

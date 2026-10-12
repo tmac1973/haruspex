@@ -111,11 +111,13 @@ Read every transcript and `debug.log`, not just the summary line. Judge the
 memory instead of calling a tool, is not a bug. A prompt that never appears,
 a turn that never ends, a wrong path, a stale UI, or an error in the log is.
 
-Driver gaps to expect: `send --wait` and `chat-send --wait` time out (rather
-than return) when the input runs a slash command that starts no turn, and
-`chat-send --wait` doesn't return on an MCP prompt (check `approval`);
-`click` fails when two elements match; `new-session` needs the Code tab
-showing.
+What the driver returns: `send --wait` gives `no-turn` (with the pane's
+note) for a slash command that starts no turn, and `prompt` or `approval`
+when a turn waits on someone, as `chat-send --wait` does for its prompts.
+`click`, `fill` and `select` act on the one match on screen; when several
+show (each message's **Fork from here**), pick with `--nth N` or `--nth last`.
+A modal (an approval, the fork dialog) covers everything else: answer or
+cancel it before clicking on.
 
 ## 3. Packaging
 
