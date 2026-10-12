@@ -46,7 +46,7 @@ Each server has **Tools**, a switch per tool. Catalog servers start with a recom
 
 ## Test a web app in a browser
 
-**Browser (Playwright)** from the catalog lets the assistant open pages in a headless Chromium, click and type in them, and read the page's console and network requests. It reaches `localhost`, so the Code tab can check the app it is building. Setup downloads Playwright's own Chromium (about 200 MB). It doesn't use your browser or its logins, and each start begins with a fresh profile.
+**Browser (Playwright)** from the catalog lets the assistant open pages in a headless Chromium, click and type in them, and read the page's console and network requests. It reaches `localhost`, so the Code tab can check the app it is building. Setup downloads Playwright's own Chromium: about 200 MB, 400 MB once unpacked. It doesn't use your browser or its logins, and each start begins with a fresh profile.
 
 On by default: open a page, read the page as text, click, type, console messages, network requests and one request's details. Opening, clicking and typing ask first; **Always allow** stops asking for that tool. Turn on `browser_take_screenshot` in **Tools** if your model can read images.
 

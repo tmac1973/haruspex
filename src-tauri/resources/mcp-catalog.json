@@ -177,7 +177,7 @@
             "--no-progress",
             "chrome-for-testing"
           ],
-          "help": "Downloads Playwright's own Chromium (about 200 MB) into this server's folder. Your own browser and its profile are not used."
+          "help": "Downloads Playwright's own Chromium (about 200 MB, 400 MB on disk) into this server's folder. Your own browser and its profile are not used."
         }
       ],
       "provenance": {
