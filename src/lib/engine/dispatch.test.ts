@@ -177,7 +177,19 @@ describe('dispatch: sessions', () => {
 			wslDistro: null,
 			window: 'w'
 		});
-		expect(mocks.newSession.mock.calls[0]).toEqual(['/r', { effort: null, wslDistro: null }]);
+		expect(mocks.newSession.mock.calls[0]).toEqual([
+			'/r',
+			{ effort: null, wslDistro: null, worktree: false }
+		]);
+	});
+
+	it('makes a new session in a worktree when asked', async () => {
+		mocks.newSession.mockImplementation(async (root: string) => session('n', { root }));
+		await dispatch(op({ type: 'session.new', root: '/r', worktree: true }), 'w');
+		expect(mocks.newSession.mock.calls[0]).toEqual([
+			'/r',
+			{ effort: null, wslDistro: null, worktree: true }
+		]);
 	});
 
 	it('lists WSL distros', async () => {

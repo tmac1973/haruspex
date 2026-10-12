@@ -53,7 +53,8 @@ describe('code session wrappers', () => {
 			root: '/work',
 			wslDistro: null,
 			backend: JSON.stringify(backend),
-			effort: 'low'
+			effort: 'low',
+			worktree: false
 		});
 		expect(rec.backend).toEqual(backend);
 	});
@@ -65,7 +66,8 @@ describe('code session wrappers', () => {
 			root: '/work',
 			wslDistro: null,
 			backend: null,
-			effort: null
+			effort: null,
+			worktree: false
 		});
 		expect(rec.backend).toBeNull();
 	});

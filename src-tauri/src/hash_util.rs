@@ -1,4 +1,4 @@
-//! Streaming file hashes.
+//! Streaming file hashes, and the lower-case hex every digest here is shown as.
 
 use sha2::{Digest, Sha256};
 use std::path::Path;
@@ -21,7 +21,19 @@ pub async fn sha256_file(path: &Path, mut on_progress: impl FnMut(u64)) -> std::
         hashed += n as u64;
         on_progress(hashed);
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(hex(&hasher.finalize()))
+}
+
+/// Lower-case hex, two digits a byte. sha2 0.11's digest output no longer
+/// implements `LowerHex`, so `{:x}` on it doesn't compile.
+pub fn hex(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut s, b| {
+            let _ = write!(s, "{b:02x}");
+            s
+        })
 }
 
 #[cfg(test)]
@@ -42,6 +54,12 @@ mod tests {
         );
         assert_eq!(seen, vec![3]);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn hex_is_lower_case_and_zero_padded() {
+        assert_eq!(hex(&[0x00, 0x0f, 0xab, 0xff]), "000fabff");
+        assert_eq!(hex(&[]), "");
     }
 
     #[tokio::test]

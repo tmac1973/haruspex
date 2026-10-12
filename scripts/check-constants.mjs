@@ -8,6 +8,11 @@
  * (Rust). This script parses both and fails on any mismatch, so a port
  * change that touches only one side breaks CI instead of a user.
  *
+ * Also covered: the Pyodide npm package (the JS loader) against the runtime
+ * `scripts/fetch-pyodide.sh` vendors into static/pyodide/. loadPyodide
+ * refuses a mismatch ("Pyodide version does not match"), so a drift breaks
+ * every run_python, in dev and in release builds alike.
+ *
  * Deliberately NOT covered: context-size defaults — server/mod.rs
  * documents that the user-facing default lives in TS and the Rust side
  * requires the parameter, so there is nothing to drift.
@@ -30,6 +35,15 @@ function extract(source, regex, label, file) {
 }
 
 const sdcpp = readFileSync(join(root, 'scripts/fetch-sdcpp.sh'), 'utf8');
+const fetchPyodide = readFileSync(join(root, 'scripts/fetch-pyodide.sh'), 'utf8');
+const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+const lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'));
+const pyodideRuntime = extract(
+	fetchPyodide,
+	/PYODIDE_VERSION="([^"]+)"/,
+	'PYODIDE_VERSION',
+	'fetch-pyodide.sh'
+);
 const sdcppDoc = readFileSync(join(root, 'docs/image-generation.md'), 'utf8');
 
 const ts = readFileSync(join(root, 'src/lib/ports.ts'), 'utf8');
@@ -60,6 +74,22 @@ const pairs = [
 		rsFile: 'docs/image-generation.md',
 		ts: extract(sdcpp, /SDCPP_VERSION="([^"]+)"/, 'SDCPP_VERSION', 'fetch-sdcpp.sh'),
 		rs: extract(sdcppDoc, /\| Pinned version \| `([^`]+)` \|/, 'the pinned version row', 'image-generation.md')
+	},
+	{
+		// Pinned exactly in package.json, not a range: `npm update` would
+		// otherwise move the loader past the runtime the script fetches.
+		name: 'Pyodide npm pin',
+		tsFile: 'scripts/fetch-pyodide.sh',
+		rsFile: 'package.json',
+		ts: pyodideRuntime,
+		rs: pkg.dependencies?.pyodide ?? '(missing)'
+	},
+	{
+		name: 'Pyodide installed version',
+		tsFile: 'scripts/fetch-pyodide.sh',
+		rsFile: 'package-lock.json',
+		ts: pyodideRuntime,
+		rs: lock.packages?.['node_modules/pyodide']?.version ?? '(missing)'
 	},
 	{
 		name: 'loopback host',

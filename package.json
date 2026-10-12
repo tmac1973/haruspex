@@ -77,6 +77,6 @@
 		"highlight.js": "^11.11.1",
 		"marked": "^18.1.0",
 		"pdfjs-dist": "^6.4.299",
-		"pyodide": "^0.29.4"
+		"pyodide": "0.29.4"
 	}
 }

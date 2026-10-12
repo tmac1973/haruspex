@@ -12,4 +12,4 @@ args: Array<string>,
  * Environment for the child. Values of the form `$secret.<key>` are
  * replaced with the secret collected by the setup step with that key.
  */
-env: { [key in string]?: string }, };
+env: { [key in string]: string }, };

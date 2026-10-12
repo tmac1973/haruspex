@@ -112,6 +112,18 @@ describe('the web store', () => {
 		expect(short.ops.at(-1)).toMatchObject({ type: 'session.send' });
 	});
 
+	it('asks for a new session in a worktree', async () => {
+		const d = fakeDesktop({ 'session.new': { id: 'n' } });
+		const store = new WebStore(d.transport);
+		await store.newSession(' /p ', null, true);
+		expect(d.ops).toContainEqual({
+			type: 'session.new',
+			root: '/p',
+			wslDistro: null,
+			worktree: true
+		});
+	});
+
 	it('asks for a resync when it misses an event', async () => {
 		const d = fakeDesktop({ 'session.get': state() });
 		const store = new WebStore(d.transport);

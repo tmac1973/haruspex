@@ -997,6 +997,8 @@ export async function newSession(
 		effort?: string | null;
 		/** On Windows, the distro a Linux `root` is in. */
 		wslDistro?: string | null;
+		/** Work in a new git worktree of `root`'s repository. */
+		worktree?: boolean;
 	} = {}
 ): Promise<CodeSession> {
 	const record = await createCodeSession(root, opts);

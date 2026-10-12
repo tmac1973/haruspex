@@ -753,6 +753,8 @@ export interface AppSettings {
 	codeLastRoot: string;
 	/** Code tab on Windows: the WSL distro `codeLastRoot` is in; '' for none. */
 	codeLastWslDistro: string;
+	/** Code tab: whether the last new session asked for its own worktree. */
+	codeNewWorktree: boolean;
 	/** Code tab: the session sidebar's width in px. */
 	codeSidebarWidth: number;
 	/** Code tab: whether the session sidebar is shown. */
@@ -916,6 +918,7 @@ const defaults: AppSettings = {
 	codeStorePowershell: false,
 	codeLastRoot: '',
 	codeLastWslDistro: '',
+	codeNewWorktree: false,
 	codeSidebarWidth: 240,
 	codeSidebarOpen: true,
 	memoryEnabled: true,

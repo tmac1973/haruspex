@@ -1,6 +1,6 @@
 ---
 title: Code sessions
-description: Code tab sessions — the session list, long sessions, forking into a git worktree or read-only, sessions sharing a folder, a missing folder, and moving a session to its own window and back.
+description: Code tab sessions — the list, long sessions, worktree sessions, forks, sessions sharing a folder, a missing folder, and moving a session to its own window and back.
 ---
 
 # Code sessions
@@ -15,13 +15,17 @@ Long sessions show their last 20 turns; **Show earlier** loads more.
 
 ## When a session gets long
 
-Once a session fills about three quarters of the model's context, Haruspex summarises its older turns before the next one, and the agent works from that summary and the recent turns. `/compact` does it now. The conversation you see stays whole; **Earlier turns summarised** marks the cut and opens the summary. File contents aren't kept, so the agent reads files again.
+Once a session fills about three quarters of the model's context, Haruspex summarises its older turns before the next one. `/compact` does it now. The conversation you see stays whole; **Earlier turns summarised** marks the cut and opens the summary. File contents aren't kept, so the agent reads files again.
+
+## Start a session in its own worktree
+
+In a git repository, **New session** offers **Work in a new worktree** (remembered). The session works in a new folder, `<project>-worktrees/session`, on a new branch `session` (numbered when taken). It starts from the last commit, without uncommitted changes or ignored files (`node_modules`, `.env`); the agent is told to set things up before building.
 
 ## Fork a session from a message
 
 Each of your messages and each answer has a **Fork from here** button (the branch icon, next to Copy; on your messages it shows when you point at the message). It asks where the fork works, then opens it as a tab:
 
-- **New worktree** (in a git repository, the default): a new folder beside the project, `<project>-worktrees/<name>`, on a new branch named after the fork. The fork edits there freely. It starts from the last commit, so uncommitted changes and ignored files (`node_modules`, `.env`, build output) are not in it; the agent is told to set things up before building.
+- **New worktree** (in a git repository, the default): its own worktree, as above, in `<project>-worktrees/<name>` on a new branch named after the fork.
 - **Same folder, read-only**: the fork shares the folder. Outside a git repository this is the only choice.
 
 What the fork keeps:
@@ -29,9 +33,9 @@ What the fork keeps:
 - From an answer, the conversation up to and including that answer.
 - From one of your messages, what came before; your message goes back in the input box to change and send again.
 
-The original stays as it was. Background processes are not copied. You can't fork while the agent is working. In the list, a fork has a branch icon; point at it to see what it was forked from. Deleting the original leaves the fork.
+Background processes are not copied. You can't fork while the agent is working. In the list, a fork has a branch icon; point at it to see what it was forked from. Deleting the original leaves the fork.
 
-Merging a fork's branch back is ordinary git; there is no merge button.
+Merging a branch back is ordinary git; there is no merge button.
 
 ## Read-only sessions
 
@@ -45,7 +49,7 @@ When a session's turn changes files, the other sessions in that folder are told 
 
 ## When a session's folder is gone
 
-If a session's folder was deleted, moved, or is on a drive that isn't mounted, the session shows **Folder not found** with the path. You can still read it, but the input box is disabled and nothing runs. Haruspex looks when you open or switch to the session and when its window comes back to the front; if the folder goes during a turn, its tools fail and the banner shows when the turn ends.
+If a session's folder was deleted, moved, or is on a drive that isn't mounted, the session shows **Folder not found** with the path. You can still read it, but the input box is disabled and nothing runs. Haruspex checks when you open or switch to the session or its window comes to the front; if the folder goes mid-turn, the banner shows when the turn ends.
 
 - **Choose folder…** points the session at another folder, after asking. The conversation stays, but paths in it still name the old folder.
 - **Delete session** deletes it.
@@ -58,7 +62,7 @@ Deleting a session that has its own worktree offers **Also remove its worktree**
 
 ## Move a session to its own window
 
-**⤢** on a session's tab moves it to a window of its own; its background processes keep running. It only works while the session is idle: while the agent works, waits for another turn or waits on a Shell tab, the button says why. Unsent text and images in the input box go with it, both ways.
+**⤢** on a session's tab moves it to a window of its own; its background processes keep running. It only works while the session is idle; otherwise the button says why. Unsent text and images in the input box go with it, both ways.
 
 The window shows that one session, without the list. Its header names the model; the status badge stays in the main window. `F2` and `F3` work there as in the main window.
 

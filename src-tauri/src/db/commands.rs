@@ -390,7 +390,9 @@ pub async fn code_session_list(
 }
 
 /// `wsl_distro` is the picker's distro on Windows (a `\\wsl.localhost\…`
-/// root names its own); see `code_tools::wsl::resolve_location`.
+/// root names its own); see `code_tools::wsl::resolve_location`. With
+/// `worktree`, the session works in a new git worktree of `root`'s
+/// repository instead, as a worktree fork does.
 #[tauri::command]
 pub async fn code_session_create(
     state: tauri::State<'_, Database>,
@@ -398,14 +400,37 @@ pub async fn code_session_create(
     wsl_distro: Option<String>,
     backend: Option<String>,
     effort: Option<String>,
+    worktree: Option<bool>,
 ) -> Result<CodeSessionRow, String> {
     let location = crate::code_tools::wsl::resolve_location(wsl_distro.as_deref(), &root).await?;
     let db = state.inner().clone();
-    on_pool(db, move |db| {
-        db.create_code_session_at(&location, backend.as_deref(), effort.as_deref())
+    if worktree != Some(true) {
+        return on_pool(db, move |db| {
+            db.create_code_session_at(&location, backend.as_deref(), effort.as_deref())
+        })
+        .await;
+    }
+    // Same as a worktree fork: a new branch at HEAD, beside the repository.
+    let place = git::Place::new(location.wsl_distro.clone());
+    let wt = git::add_fork_worktree_in(&place, &location.root, NEW_SESSION_BRANCH).await?;
+    let inside = crate::code_tools::wsl::CodeLocation {
+        wsl_distro: location.wsl_distro,
+        root: wt.root.clone(),
+    };
+    let path = wt.path.clone();
+    let made = on_pool(db, move |db| {
+        db.create_code_session_in(&inside, Some(&path), backend.as_deref(), effort.as_deref())
     })
-    .await
+    .await;
+    if made.is_err() {
+        git::discard_worktree(&wt).await;
+    }
+    made
 }
+
+/// The branch a new session's worktree starts as, numbered when taken. A
+/// new session has no title yet to name it from.
+const NEW_SESSION_BRANCH: &str = "session";
 
 #[tauri::command]
 pub async fn code_session_load(

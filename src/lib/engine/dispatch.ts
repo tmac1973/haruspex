@@ -104,7 +104,8 @@ export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 		case 'session.new': {
 			const s = await newSession(op.root, {
 				effort: op.effort ?? null,
-				wslDistro: op.wslDistro ?? null
+				wslDistro: op.wslDistro ?? null,
+				worktree: op.worktree === true
 			});
 			return { id: s.id, root: s.root, wslDistro: s.wslDistro, window: label };
 		}

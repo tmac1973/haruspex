@@ -76,7 +76,7 @@ fn hash(files: impl IntoIterator<Item = (String, Vec<u8>)>) -> String {
         h.update((bytes.len() as u64).to_le_bytes());
         h.update(&bytes);
     }
-    format!("{:x}", h.finalize())
+    crate::hash_util::hex(&h.finalize())
 }
 
 fn shipped_hash(files: &[(&str, &[u8])]) -> String {
