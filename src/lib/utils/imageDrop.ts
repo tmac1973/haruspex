@@ -48,7 +48,8 @@ export function imageDropTarget(node: HTMLElement, options: ImageDropOptions) {
 			try {
 				urls.push(await invoke<string>('read_dropped_image', { path }));
 			} catch (e) {
-				console.error('read_dropped_image failed', path, e);
+				// The file name, not the path: a home directory names the user.
+				console.error('read_dropped_image failed', path.split(/[\\/]/).pop(), e);
 			}
 		}
 		if (urls.length) opts.onImages(urls);

@@ -178,8 +178,12 @@ export function forwardConsoleToDebugLog(): void {
 	if (consoleForwarded) return;
 	consoleForwarded = true;
 	for (const level of ['warn', 'error'] as const) {
+		// Computed member access defeats no-console's allow-list; these are
+		// only ever warn and error.
+		/* eslint-disable no-console */
 		const original = console[level].bind(console);
 		console[level] = (...args: unknown[]) => {
+			/* eslint-enable no-console */
 			original(...args);
 			logDebug(`console.${level}`, args.map(consoleArg).join(' '));
 		};

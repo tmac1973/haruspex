@@ -84,6 +84,7 @@
 		listenForMcpToolChanges,
 		startConfiguredMcpServers
 	} from '#lib/stores/mcpServers.svelte.ts';
+	import { urlForReport } from '#lib/utils/http.ts';
 
 	let { children } = $props();
 	// Log Viewer visibility lives in the logViewer store (not local state)
@@ -163,7 +164,7 @@
 		if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
 			e.preventDefault();
 			invoke('open_url', { url: href }).catch((err) => {
-				console.error('open_url failed:', href, err);
+				console.error('open_url failed:', urlForReport(href), err);
 				showToast("Couldn't open link in your browser", { kind: 'error' });
 			});
 		} else if (href && /^[a-z][a-z0-9+.-]*:/i.test(href)) {

@@ -31,7 +31,7 @@ pub async fn open_url(url: String) -> Result<(), String> {
 
     if !url.starts_with("http://") && !url.starts_with("https://") {
         error!("refusing non-http(s) URL: {}", logged);
-        return Err(format!("refusing non-http(s) URL: {}", url));
+        return Err(format!("refusing non-http(s) URL: {}", logged));
     }
 
     spawn_url_handler(&url).map_err(|e| {
@@ -155,6 +155,14 @@ mod tests {
             let err = open_url(url.to_string()).await.unwrap_err();
             assert!(err.contains("refusing non-http(s) URL"), "{url}: {err}");
         }
+    }
+
+    #[tokio::test]
+    async fn a_refusal_names_the_scheme_not_the_whole_url() {
+        let err = open_url("ftp://user:secret@example.com/f?token=abc".to_string())
+            .await
+            .unwrap_err();
+        assert_eq!(err, "refusing non-http(s) URL: ftp://example.com");
     }
 
     #[tokio::test]

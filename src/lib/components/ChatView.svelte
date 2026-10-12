@@ -448,6 +448,9 @@
 			});
 			if (!modelPath) {
 				console.warn('No active model — cannot restart on GPU');
+				showToast('No local model to restart. Choose one in Settings → Inference.', {
+					kind: 'error'
+				});
 				return;
 			}
 			setActiveLocalModel(modelPath);

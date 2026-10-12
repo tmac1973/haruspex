@@ -206,7 +206,7 @@
 	}
 
 	/** Server stop/start failure → error toast with a View-logs action.
-	 *  The console.warn stays as the Log Viewer / devtools trail. */
+	 *  The console.error beside each call is the Log Viewer / devtools trail. */
 	function toastServerFailure(verb: 'start' | 'stop', e: unknown) {
 		showToast(`Couldn't ${verb} the inference server: ${errMessage(e)}`, {
 			kind: 'error',
@@ -246,7 +246,7 @@
 			try {
 				await stopServer();
 			} catch (e) {
-				console.warn('stopServer on openrouter toggle failed:', e);
+				console.error('stopServer on openrouter toggle failed:', e);
 				toastServerFailure('stop', e);
 			}
 			enterRemoteMode(next.remoteBaseUrl, next.remoteModelId);
@@ -276,7 +276,7 @@
 			try {
 				await stopServer();
 			} catch (e) {
-				console.warn('stopServer on remote toggle failed:', e);
+				console.error('stopServer on remote toggle failed:', e);
 				toastServerFailure('stop', e);
 			}
 			enterRemoteMode(inferenceBackend.remoteBaseUrl, inferenceBackend.remoteModelId);
@@ -295,7 +295,7 @@
 					await startServer(modelPath, getSettings().contextSize);
 				}
 			} catch (e) {
-				console.warn('startServer on local toggle failed:', e);
+				console.error('startServer on local toggle failed:', e);
 				toastServerFailure('start', e);
 			}
 		}
