@@ -14,6 +14,7 @@
 	import type { ShellContextResponse } from '#lib/ipc/gen/ShellContextResponse.ts';
 	import type { ShellSpawnResult } from '#lib/ipc/gen/ShellSpawnResult.ts';
 	import type { ShellSelection } from '#lib/ipc/gen/ShellSelection.ts';
+	import { urlForReport } from '#lib/utils/http.ts';
 
 	interface Props {
 		onReady?: (handle: TerminalHandle) => void;
@@ -154,7 +155,9 @@
 			new WebLinksAddon((event, uri) => {
 				if (!event.ctrlKey && !event.metaKey) return;
 				event.preventDefault();
-				invoke('open_url', { url: uri }).catch((e) => console.error('open_url failed:', uri, e));
+				invoke('open_url', { url: uri }).catch((e) =>
+					console.error('open_url failed:', urlForReport(uri), e)
+				);
 			})
 		);
 		serializeAddon = new SerializeAddon();

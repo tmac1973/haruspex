@@ -17,10 +17,7 @@ export default ts.config(
 		rules: {
 			complexity: ['warn', 15],
 			'max-depth': ['warn', 4],
-			'max-lines-per-function': [
-				'warn',
-				{ max: 80, skipBlankLines: true, skipComments: true }
-			],
+			'max-lines-per-function': ['warn', { max: 80, skipBlankLines: true, skipComments: true }],
 			'max-lines': ['warn', { max: 400, skipBlankLines: true, skipComments: true }]
 		}
 	},
@@ -57,13 +54,16 @@ export default ts.config(
 		}
 	},
 	{
-		ignores: [
-			'build/',
-			'.svelte-kit/',
-			'dist/',
-			'node_modules/',
-			'src-tauri/',
-			'src/lib/ipc/gen/'
-		]
+		// App code logs through console.warn / console.error only: those reach
+		// devtools and, via forwardConsoleToDebugLog, the debug log a user can
+		// attach. console.log / info / debug would reach devtools alone.
+		files: ['src/**/*.ts', 'src/**/*.svelte'],
+		ignores: ['**/*.test.ts'],
+		rules: {
+			'no-console': ['error', { allow: ['warn', 'error'] }]
+		}
+	},
+	{
+		ignores: ['build/', '.svelte-kit/', 'dist/', 'node_modules/', 'src-tauri/', 'src/lib/ipc/gen/']
 	}
 );

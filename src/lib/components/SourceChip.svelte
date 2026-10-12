@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
+	import { urlForReport } from '#lib/utils/http.ts';
 
 	interface Props {
 		urls: string[];
@@ -19,7 +20,7 @@
 		try {
 			await invoke('open_url', { url });
 		} catch (err) {
-			console.error('open_url failed:', url, err);
+			console.error('open_url failed:', urlForReport(url), err);
 		}
 	}
 </script>
