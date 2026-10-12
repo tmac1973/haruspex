@@ -13,7 +13,9 @@ Click **New session** (or **+** by the tabs) and pick the project folder; **Work
 
 Type what you want and press `Enter`. After the first reply the model names the session; a name you gave it is never replaced. Sessions are saved after every reply.
 
-The list on the left holds every session. For forks and windows, see the `code-sessions` page.
+To show the agent a window (a bug in an app's UI, say), click the camera button and pick it; the picture goes with your next message.
+
+The list on the left holds every session; see the `code-sessions` page.
 
 ## Look things up on the web
 
@@ -21,8 +23,8 @@ The agent can search the web and read pages, with Chat's search and proxy setup;
 
 ## Read what the agent did
 
-- **Edits** show as a diff with line numbers; past 40 lines **Show all … lines** expands it. Unlike Chat, rewriting a file doesn't ask first; the diff shows the change. A second whole rewrite in one turn needs a command (a test, say) run first.
-- **Commands** show as a card: command, exit code, time taken and output (the last 20 lines until **Show all**). **Copy** copies the command; **Open in Shell** types it into a new Shell tab at the folder without running it.
+- **Edits** show as a diff with line numbers; past 40 lines **Show all … lines** expands it. Unlike Chat, rewrites don't ask first. A second whole rewrite in one turn needs a command (a test, say) run first.
+- **Commands** show as a card: command, exit code, time taken and output (the last 20 lines until **Show all**). **Open in Shell** types it into a new Shell tab at the folder, not run.
 - Searches and file reads show as a short step list.
 - **Reasoning** sits above its step, collapsed (live: **Thinking…**); what the agent **says** before a step sits above it in small grey text.
 - A call still being written shows as a row: **Writing**, **Editing** or **Preparing command…**.
@@ -60,11 +62,11 @@ Model and effort apply from the next message.
 
 ## Background processes
 
-Servers, watchers and long builds run in the background. **Running: N** in the header lists them: **Output** shows what each printed, **Stop** ends it. Closing the session's tab (it asks first) or quitting stops them.
+Servers, watchers and long builds run in the background. **Running: N** in the header lists them: **Output** shows what each printed, **Stop** ends it. Closing the tab (it asks first) or quitting stops them.
 
 ## Command approval and limits
 
-Safe-looking commands run on their own. A risky one (`sudo`, `rm -rf`, a pipe to a shell) opens **Run this command?** first; one that reaches outside the folder always asks. Prompts from several sessions queue, each naming its session. **Allow for this session** lasts until its tab closes, even across windows. Settings → Code holds the command time limit, the step limit per task, the background log size and **Auto-approve commands**. See the `settings` page.
+Safe-looking commands run on their own. A risky one (`sudo`, `rm -rf`, a pipe to a shell) opens **Run this command?** first; one that reaches outside the folder always asks. Prompts from several sessions queue. **Allow for this session** lasts until its tab closes, even across windows. Settings → Code holds the command time limit, the step limit per task, the background log size and **Auto-approve commands**. See the `settings` page.
 
 ## What it doesn't do yet
 
