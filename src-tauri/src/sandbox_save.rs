@@ -127,13 +127,7 @@ pub async fn sandbox_delete_in_workdir(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("haruspex_sandbox_save_test_{name}"));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir.canonicalize().unwrap()
-    }
+    use crate::test_util::temp_dir;
 
     fn s(p: &std::path::Path) -> Option<String> {
         Some(p.to_string_lossy().into_owned())
@@ -171,12 +165,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_save_cannot_leave_the_workdir() {
-        let dir = temp_dir("escape");
-        let outside = dir
-            .parent()
-            .unwrap()
-            .join("haruspex_sandbox_save_escaped.txt");
-        let _ = std::fs::remove_file(&outside);
+        let root = temp_dir("escape");
+        let dir = root.join("work");
+        std::fs::create_dir(&dir).unwrap();
+        let outside = root.join("haruspex_sandbox_save_escaped.txt");
         for rel in [
             "../haruspex_sandbox_save_escaped.txt",
             outside.to_str().unwrap(),
@@ -219,7 +211,9 @@ mod tests {
 
     #[tokio::test]
     async fn deleting_refuses_directories_and_escapes() {
-        let dir = temp_dir("delete_refuse");
+        let root = temp_dir("delete_refuse");
+        let dir = root.join("work");
+        std::fs::create_dir(&dir).unwrap();
         std::fs::create_dir_all(dir.join("sub")).unwrap();
         let err = sandbox_delete_in_workdir(s(&dir), "sub".into())
             .await
@@ -228,10 +222,7 @@ mod tests {
         assert!(err.contains("Refusing to delete directory"), "{err}");
         assert!(dir.join("sub").exists());
 
-        let outside = dir
-            .parent()
-            .unwrap()
-            .join("haruspex_sandbox_delete_victim.txt");
+        let outside = root.join("haruspex_sandbox_delete_victim.txt");
         std::fs::write(&outside, b"keep").unwrap();
         assert!(
             sandbox_delete_in_workdir(s(&dir), "../haruspex_sandbox_delete_victim.txt".into())
@@ -239,6 +230,5 @@ mod tests {
                 .is_err()
         );
         assert!(outside.exists());
-        let _ = std::fs::remove_file(outside);
     }
 }

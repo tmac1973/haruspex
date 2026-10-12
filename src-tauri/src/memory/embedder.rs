@@ -177,6 +177,7 @@ fn lock() -> std::sync::MutexGuard<'static, Option<TextEmbedding>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::temp_dir;
     use std::fs;
 
     #[test]
@@ -190,19 +191,17 @@ mod tests {
         assert!(!model_present(Path::new(
             "/nonexistent/haruspex/embeddings"
         )));
-        let tmp = std::env::temp_dir().join("haruspex-embed-empty");
-        let _ = fs::create_dir_all(&tmp);
+        let tmp = temp_dir("embed_empty");
         assert!(!model_present(&tmp));
     }
 
     #[test]
     fn model_present_finds_the_weights_under_an_hf_hub_snapshot() {
-        let tmp = std::env::temp_dir().join("haruspex-embed-present");
+        let tmp = temp_dir("embed_present");
         let snapshot = tmp.join(MODEL_REPO_DIR).join("snapshots").join("abc123");
         fs::create_dir_all(&snapshot).unwrap();
         fs::write(snapshot.join(MODEL_FILE), b"not really onnx").unwrap();
         assert!(model_present(&tmp));
-        let _ = fs::remove_dir_all(&tmp);
     }
 
     #[test]
@@ -210,12 +209,11 @@ mod tests {
         // A half-finished download leaves the tokenizer and config behind
         // without the weights; reporting that as present would send the user
         // to a load error instead of the download button.
-        let tmp = std::env::temp_dir().join("haruspex-embed-partial");
+        let tmp = temp_dir("embed_partial");
         let snapshot = tmp.join(MODEL_REPO_DIR).join("snapshots").join("abc123");
         fs::create_dir_all(&snapshot).unwrap();
         fs::write(snapshot.join("tokenizer.json"), b"{}").unwrap();
         assert!(!model_present(&tmp));
-        let _ = fs::remove_dir_all(&tmp);
     }
 
     #[test]

@@ -409,11 +409,11 @@ pub async fn code_glob(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::{temp_dir, TestDir};
     use std::fs;
 
-    fn temp_repo(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("haruspex_code_test_{name}"));
-        let _ = fs::remove_dir_all(&dir);
+    fn temp_repo(name: &str) -> TestDir {
+        let dir = temp_dir(name);
         fs::create_dir_all(dir.join("src")).unwrap();
         fs::write(dir.join("src/main.rs"), "fn main() {\n    needle();\n}\n").unwrap();
         fs::write(dir.join("src/lib.rs"), "pub fn needle() {}\n").unwrap();

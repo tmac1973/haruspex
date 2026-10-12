@@ -593,7 +593,7 @@ mod tests {
         // ggml scans the directory containing /proc/self/exe for backends, so
         // a binary that is not beside its libraries finds none and the engine
         // reports "No devices found!" rather than starting.
-        let tmp = std::env::temp_dir().join(format!("haruspex-colo-{}", std::process::id()));
+        let tmp = crate::test_util::temp_dir("colocate");
         let libs = tmp.join("sd-libs");
         std::fs::create_dir_all(&libs).unwrap();
         let src = tmp.join("sd-server");
@@ -613,8 +613,6 @@ mod tests {
         std::fs::write(&src, b"a different binary").unwrap();
         let updated = colocate(&src, &libs).unwrap();
         assert_eq!(std::fs::read(&updated).unwrap(), b"a different binary");
-
-        std::fs::remove_dir_all(&tmp).ok();
     }
 
     #[tokio::test]

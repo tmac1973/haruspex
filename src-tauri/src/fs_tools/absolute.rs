@@ -460,8 +460,7 @@ mod tests {
 
     #[tokio::test]
     async fn reads_bytes_and_refuses_a_directory() {
-        let dir = std::env::temp_dir().join(format!("haruspex-read-bytes-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::test_util::temp_dir("read_bytes");
         let file = dir.join("coin.png");
         std::fs::write(&file, [0x89, b'P', b'N', b'G']).unwrap();
         let bytes = fs_read_bytes_absolute(file.to_string_lossy().into_owned(), None)
@@ -471,7 +470,6 @@ mod tests {
         let err = fs_read_bytes_absolute(dir.to_string_lossy().into_owned(), None)
             .await
             .unwrap_err();
-        let _ = std::fs::remove_dir_all(&dir);
         assert!(err.starts_with("Not a file"), "{err}");
     }
 }

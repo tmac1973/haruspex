@@ -340,14 +340,8 @@ fn runtimes_available(app: &AppHandle) -> RuntimeAvailability {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::temp_dir;
     use std::fs;
-
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("haruspex_runtimes_test_{name}"));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
-    }
 
     fn touch(path: &Path) {
         if let Some(parent) = path.parent() {
@@ -367,7 +361,6 @@ mod tests {
             "the staged layout drops the target triple"
         );
         assert_eq!(binary_in(&dir, &bundled_stem("uv")), None);
-        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -379,7 +372,6 @@ mod tests {
             None,
             "a directory named haruspex-node is not an interpreter"
         );
-        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -395,7 +387,6 @@ mod tests {
             binary_in_source_tree(&dir, &bundled_stem("uv")),
             Some(dir.join("haruspex-uv-x86_64-unknown-linux-gnu"))
         );
-        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -411,7 +402,6 @@ mod tests {
             binary_in_source_tree(&dir, &bundled_stem("node")),
             Some(dir.join("haruspex-node-aarch64-apple-darwin"))
         );
-        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -422,7 +412,6 @@ mod tests {
         let first = binary_in_source_tree(&dir, &bundled_stem("node"));
         assert_eq!(first, binary_in_source_tree(&dir, &bundled_stem("node")));
         assert_eq!(first, Some(dir.join("haruspex-node-aarch64-apple-darwin")));
-        fs::remove_dir_all(&dir).unwrap();
     }
 
     /// The regression guard for the packaging bug this prefix exists to fix.
@@ -460,7 +449,6 @@ mod tests {
         // Idempotent: repeated npm commands must not churn the link.
         place_shim(&real, &link).unwrap();
         assert!(link.exists());
-        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -476,8 +464,7 @@ mod tests {
             .expect("PATH should be set")
             .to_owned();
         let first = std::env::split_paths(&path).next().unwrap();
-        assert_eq!(first, dir, "the shim must come before the ambient PATH");
-        fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(first, *dir, "the shim must come before the ambient PATH");
     }
 
     #[test]
@@ -492,7 +479,6 @@ mod tests {
             npm_cli_under(&dir),
             Some(dir.join("npm").join("bin").join("npm-cli.js"))
         );
-        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

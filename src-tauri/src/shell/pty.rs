@@ -350,12 +350,12 @@ mod tests {
             resolve_cwd_with_override(Some("/nonexistent/haruspex/handoff")),
             default
         );
-        let file = std::env::temp_dir().join("haruspex-cwd-override-test");
+        let dir = crate::test_util::temp_dir("cwd_override");
+        let file = dir.join("not-a-dir");
         std::fs::write(&file, b"x").unwrap();
         assert_eq!(
             resolve_cwd_with_override(Some(&file.to_string_lossy())),
             default
         );
-        std::fs::remove_file(&file).ok();
     }
 }

@@ -367,6 +367,7 @@ pub async fn delete_image_model(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::temp_dir;
 
     #[test]
     fn every_file_can_be_downloaded_and_verified() {
@@ -430,15 +431,9 @@ mod tests {
         }
     }
 
-    fn temp(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("haruspex-img-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        d
-    }
-
     #[test]
     fn an_entry_is_downloaded_only_when_every_file_is_there() {
-        let dir = temp("partial");
+        let dir = temp_dir("partial");
         let m = image_registry()
             .into_iter()
             .find(|m| m.id == "ming")
@@ -458,12 +453,11 @@ mod tests {
         assert!(engine_args(&dir, "ming").is_none());
         std::fs::write(sub.join(&m.files.last().unwrap().filename), b"x").unwrap();
         assert!(ming(&dir).downloaded);
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn the_engine_gets_one_flag_per_file_in_the_entrys_own_folder() {
-        let dir = temp("args");
+        let dir = temp_dir("args");
         let m = image_registry()
             .into_iter()
             .find(|m| m.id == "ming")
@@ -491,14 +485,13 @@ mod tests {
             "Ming's text encoder runs on the CPU"
         );
         assert!(engine_args(&dir, "not-a-model").is_none());
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn both_families_encode_in_tiles() {
         // Neither VAE reliably encodes a 1024 image untiled beside its weights
         // on a 16 GB card; img2img (seams, transparent sheets) failed.
-        let dir = temp("tiling");
+        let dir = temp_dir("tiling");
         for id in ["ming", "qwen21"] {
             let m = image_registry().into_iter().find(|m| m.id == id).unwrap();
             let sub = model_dir(&dir, id);
@@ -514,6 +507,5 @@ mod tests {
         };
         assert!(tiles("qwen21"));
         assert!(tiles("ming"));
-        std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -1780,6 +1780,7 @@ pub async fn download_whisper_model(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::temp_dir;
 
     #[test]
     fn resume_total_size_fresh_download_uses_content_length() {
@@ -2436,8 +2437,7 @@ mod tests {
 
     #[tokio::test]
     async fn validate_gguf_rejects_invalid_file() {
-        let dir = std::env::temp_dir().join("haruspex_test_gguf");
-        fs::create_dir_all(&dir).await.unwrap();
+        let dir = temp_dir("gguf");
 
         let bad_file = dir.join("bad.gguf");
         fs::write(&bad_file, b"not a gguf file").await.unwrap();
@@ -2445,14 +2445,11 @@ mod tests {
         let result = validate_gguf(&bad_file).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("wrong magic bytes"));
-
-        fs::remove_dir_all(&dir).await.ok();
     }
 
     #[tokio::test]
     async fn validate_gguf_accepts_valid_magic() {
-        let dir = std::env::temp_dir().join("haruspex_test_gguf_valid");
-        fs::create_dir_all(&dir).await.unwrap();
+        let dir = temp_dir("gguf_valid");
 
         let good_file = dir.join("good.gguf");
         let mut data = GGUF_MAGIC.to_vec();
@@ -2461,14 +2458,11 @@ mod tests {
 
         let result = validate_gguf(&good_file).await;
         assert!(result.is_ok());
-
-        fs::remove_dir_all(&dir).await.ok();
     }
 
     #[tokio::test]
     async fn validate_gguf_rejects_too_small() {
-        let dir = std::env::temp_dir().join("haruspex_test_gguf_small");
-        fs::create_dir_all(&dir).await.unwrap();
+        let dir = temp_dir("gguf_small");
 
         let small_file = dir.join("tiny.gguf");
         fs::write(&small_file, b"GG").await.unwrap();
@@ -2476,14 +2470,11 @@ mod tests {
         let result = validate_gguf(&small_file).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("too small"));
-
-        fs::remove_dir_all(&dir).await.ok();
     }
 
     #[tokio::test]
     async fn compute_sha256_works() {
-        let dir = std::env::temp_dir().join("haruspex_test_sha256");
-        fs::create_dir_all(&dir).await.unwrap();
+        let dir = temp_dir("sha256");
 
         let file = dir.join("test.bin");
         fs::write(&file, b"hello world").await.unwrap();
@@ -2493,8 +2484,6 @@ mod tests {
             hash,
             "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
         );
-
-        fs::remove_dir_all(&dir).await.ok();
     }
 
     #[test]

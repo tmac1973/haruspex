@@ -842,14 +842,7 @@ pub enum CodeForkMode {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("haruspex_git_test_{name}_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        crate::fs_tools::path::strip_verbatim(&dir.canonicalize().unwrap())
-    }
+    use crate::test_util::temp_dir;
 
     fn git(dir: &Path, args: &[&str]) {
         let st = std::process::Command::new("git")
@@ -876,7 +869,7 @@ mod tests {
     }
 
     /// A repo `proj` with one commit on `main`, inside a fresh temp folder.
-    fn repo(name: &str) -> (PathBuf, PathBuf) {
+    fn repo(name: &str) -> (crate::test_util::TestDir, PathBuf) {
         let base = temp_dir(name);
         let proj = base.join("proj");
         std::fs::create_dir_all(proj.join("sub")).unwrap();

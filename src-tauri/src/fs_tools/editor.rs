@@ -537,17 +537,8 @@ pub fn editor_find_open(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::temp_dir;
     use std::sync::mpsc::Receiver;
-
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "haruspex_editor_watch_{name}_{}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir.canonicalize().unwrap()
-    }
 
     fn recorder(debounce: Duration) -> (EditorWatches, Receiver<(String, EditorFileChanged)>) {
         let (tx, rx) = mpsc::channel();
@@ -656,7 +647,6 @@ mod tests {
         let got = drain(&rx, SETTLE);
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].1.hash, None, "a deletion reports no hash");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -687,7 +677,6 @@ mod tests {
         let got = drain(&rx, SETTLE);
         let labels: Vec<&str> = got.iter().map(|(l, _)| l.as_str()).collect();
         assert_eq!(labels, vec!["editor-b"], "only the other window hears it");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -704,7 +693,6 @@ mod tests {
         let got = drain(&rx, SETTLE);
         assert_eq!(got.len(), 1, "{got:?}");
         assert_eq!(got[0].1.hash, Some(content_hash(b"5")));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -729,7 +717,6 @@ mod tests {
         assert!(w.labels_for(&other).is_empty());
         std::fs::write(&other, "changed").unwrap();
         assert!(drain(&rx, SETTLE).is_empty());
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -772,7 +759,6 @@ mod tests {
         assert!(matches!(res, EditorSave::Saved { .. }));
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "again");
         w.stop_all();
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -794,7 +780,6 @@ mod tests {
             other => panic!("expected a save, got {other:?}"),
         }
         w.stop_all();
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -808,6 +793,5 @@ mod tests {
         assert_eq!((content, hash), (None, None));
         std::fs::write(dir.join("bin"), [0xff, 0xfe, 0x00]).unwrap();
         assert!(rt.block_on(read_file(&dir.join("bin"))).is_err());
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

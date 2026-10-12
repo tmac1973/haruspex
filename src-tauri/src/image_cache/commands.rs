@@ -333,6 +333,7 @@ mod store_tests {
 #[cfg(test)]
 mod generated_tests {
     use super::*;
+    use crate::test_util::{temp_dir, TestDir};
 
     fn png() -> Vec<u8> {
         let mut out = Vec::new();
@@ -342,13 +343,10 @@ mod generated_tests {
         out
     }
 
-    fn setup(name: &str) -> (Database, std::path::PathBuf) {
+    fn setup(name: &str) -> (Database, TestDir) {
         let db = Database::open_in_memory();
         db.create_conversation("chat-1", "Chat").unwrap();
-        let dir = std::env::temp_dir().join(format!("haruspex_generated_{name}"));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        (db, dir)
+        (db, temp_dir(name))
     }
 
     #[test]
@@ -358,7 +356,6 @@ mod generated_tests {
             store_generated(&db, &dir, &png(), "image/png".into(), 4, 4, Some("chat-1")).unwrap();
         super::super::sweep_orphans(&db, &dir).unwrap();
         assert!(db.image_by_hash(&hash).unwrap().is_some(), "kept");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -367,7 +364,6 @@ mod generated_tests {
         let hash = store_generated(&db, &dir, &png(), "image/png".into(), 4, 4, None).unwrap();
         super::super::sweep_orphans(&db, &dir).unwrap();
         assert!(db.image_by_hash(&hash).unwrap().is_none(), "swept");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -380,7 +376,6 @@ mod generated_tests {
         db.delete_conversation("chat-1").unwrap();
         super::super::sweep_orphans(&db, &dir).unwrap();
         assert!(db.image_by_hash(&hash).unwrap().is_some(), "still chat-2's");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -397,7 +392,6 @@ mod generated_tests {
         )
         .unwrap();
         assert!(db.image_by_hash(&hash).unwrap().is_some());
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -417,6 +411,5 @@ mod generated_tests {
             db.image_by_hash(&hash).unwrap().is_some(),
             "linked by the rehydrate"
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

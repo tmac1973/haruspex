@@ -2293,26 +2293,15 @@ fn stored(path: &str) -> String {
         .into_owned()
 }
 
-struct TempDir(std::path::PathBuf);
+/// A scratch folder whose path the code-session APIs take as a `&str`.
+struct TempDir(crate::test_util::TestDir);
 
 impl TempDir {
     fn new(tag: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "haruspex-code-session-{tag}-{}-{}",
-            std::process::id(),
-            crate::time_util::now_ms()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        TempDir(dir)
+        TempDir(crate::test_util::temp_dir(&format!("code_session_{tag}")))
     }
     fn path(&self) -> &str {
         self.0.to_str().unwrap()
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 

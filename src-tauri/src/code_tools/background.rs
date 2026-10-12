@@ -707,12 +707,13 @@ pub async fn code_bg_stop_owner(
 #[cfg(all(test, windows))]
 mod wsl_tests {
     use super::*;
+    use crate::test_util::temp_dir;
 
     #[tokio::test]
     #[ignore]
     async fn a_wsl_process_logs_without_the_group_line_and_stops_inside_the_distro() {
         let distro = wsl::distros().into_iter().next().expect("a WSL2 distro");
-        let dir = std::env::temp_dir().join(format!("haruspex-bg-wsl-{}", std::process::id()));
+        let dir = temp_dir("bg_wsl");
         let registry = dir.join("orphans.json");
         let mgr = CodeBgManager::new(dir.join("logs"), Some(registry.clone()));
 
@@ -767,14 +768,13 @@ mod wsl_tests {
         );
         assert!(mgr.status(None).is_empty());
         assert!(orphans::load(&registry).is_empty());
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]
     #[ignore]
     async fn the_sweep_kills_a_group_a_crash_left_in_the_distro() {
         let distro = wsl::distros().into_iter().next().expect("a WSL2 distro");
-        let dir = std::env::temp_dir().join(format!("haruspex-bg-sweep-{}", std::process::id()));
+        let dir = temp_dir("bg_sweep");
         let registry = dir.join("orphans.json");
         let mgr = CodeBgManager::new(dir.join("logs"), Some(registry.clone()));
         let started = mgr
@@ -807,7 +807,6 @@ mod wsl_tests {
             !wsl::group_alive(&distro, pgid).await,
             "group {pgid} left running"
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -827,11 +826,10 @@ mod wsl_tests {
 #[cfg(all(test, windows))]
 mod host_windows_tests {
     use super::*;
+    use crate::test_util::{temp_dir, TestDir};
 
-    fn manager(name: &str) -> (CodeBgManager, PathBuf) {
-        let dir = std::env::temp_dir().join(format!("haruspex_code_bg_win_{name}"));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+    fn manager(name: &str) -> (CodeBgManager, TestDir) {
+        let dir = temp_dir(&format!("bg_win_{name}"));
         let mgr = CodeBgManager::new(dir.join("logs"), Some(dir.join("running.json")));
         (mgr, dir)
     }
@@ -912,11 +910,10 @@ mod host_windows_tests {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+    use crate::test_util::{temp_dir, TestDir};
 
-    fn manager(name: &str) -> (CodeBgManager, PathBuf) {
-        let dir = std::env::temp_dir().join(format!("haruspex_code_bg_{name}"));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+    fn manager(name: &str) -> (CodeBgManager, TestDir) {
+        let dir = temp_dir(&format!("bg_{name}"));
         let mgr = CodeBgManager::new(dir.join("logs"), Some(dir.join("running.json")));
         (mgr, dir)
     }

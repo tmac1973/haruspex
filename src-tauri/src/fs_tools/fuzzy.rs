@@ -256,9 +256,7 @@ mod tests {
 
     #[test]
     fn a_rewrite_keeps_the_files_crlf_and_bom() {
-        let dir =
-            std::env::temp_dir().join(format!("haruspex_like_existing_{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::test_util::temp_dir("like_existing");
         let crlf = dir.join("crlf.txt");
         std::fs::write(&crlf, "\u{FEFF}a\r\nb\r\n").unwrap();
         assert_eq!(like_existing(&crlf, "x\ny\n".into()), "\u{FEFF}x\r\ny\r\n");
@@ -269,7 +267,6 @@ mod tests {
         assert_eq!(like_existing(&lf, "x\ny\n".into()), "x\ny\n");
         // A new file is written as given.
         assert_eq!(like_existing(&dir.join("new.txt"), "x\n".into()), "x\n");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

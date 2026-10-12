@@ -39,11 +39,11 @@ pub fn hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::temp_dir;
 
     #[tokio::test]
     async fn hashes_and_reports_progress() {
-        let dir = std::env::temp_dir().join("haruspex_test_hash_util");
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = temp_dir("hash_util");
         let path = dir.join("abc.bin");
         std::fs::write(&path, b"abc").unwrap();
         let mut seen = Vec::new();
@@ -53,7 +53,6 @@ mod tests {
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
         assert_eq!(seen, vec![3]);
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -64,7 +63,8 @@ mod tests {
 
     #[tokio::test]
     async fn missing_file_is_an_error() {
-        let path = std::env::temp_dir().join("haruspex_test_hash_util_missing.bin");
+        let dir = temp_dir("hash_util_missing");
+        let path = dir.join("missing.bin");
         assert!(sha256_file(&path, |_| {}).await.is_err());
     }
 }

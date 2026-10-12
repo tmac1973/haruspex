@@ -289,6 +289,7 @@ pub async fn fs_read_xlsx(
 mod tests {
     use super::*;
     use crate::fs_tools::test_support::{assert_odf_mimetype, read_zip_entry};
+    use crate::test_util::temp_dir;
 
     #[test]
     fn build_ods_produces_valid_odf_zip() {
@@ -336,16 +337,9 @@ mod tests {
         assert!(content.contains(r#"table:number-columns-repeated="1""#));
     }
 
-    fn temp_workdir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("haruspex_xlsx_test_{}", name));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
     #[tokio::test]
     async fn fs_write_then_read_xlsx_round_trip() {
-        let dir = temp_workdir("roundtrip");
+        let dir = temp_dir("roundtrip");
         let wd = dir.to_string_lossy().to_string();
         let sheets = vec![XlsxSheet {
             name: "Data".to_string(),
@@ -363,15 +357,14 @@ mod tests {
         assert!(csv.contains("Name,Count"));
         // Comma-bearing cell is CSV-quoted; "42" round-trips as a number.
         assert!(csv.contains("\"alpha, beta\",42"));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]
     async fn fs_write_xlsx_creates_missing_workdir_and_parent_dirs() {
         // Fresh-chat scenario: the workdir itself doesn't exist on disk
         // yet AND the target path nests in a not-yet-existing directory.
-        let dir = std::env::temp_dir().join("haruspex_xlsx_test_missing_wd");
-        let _ = std::fs::remove_dir_all(&dir);
+        let root = temp_dir("missing_wd");
+        let dir = root.join("wd");
         let wd = dir.to_string_lossy().to_string();
         let sheets = vec![XlsxSheet {
             name: "S".to_string(),
@@ -384,12 +377,11 @@ mod tests {
             .await
             .expect("read back");
         assert!(csv.contains('v'));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]
     async fn fs_read_xlsx_sheet_lookup_is_case_insensitive() {
-        let dir = temp_workdir("sheet_ci");
+        let dir = temp_dir("sheet_ci");
         let wd = dir.to_string_lossy().to_string();
         let sheets = vec![
             XlsxSheet {
@@ -426,7 +418,6 @@ mod tests {
             .await
             .expect_err("missing sheet must error");
         assert!(err.contains("Available sheets: Summary, Data"));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]
@@ -454,7 +445,7 @@ mod tests {
             "fixture must straddle the cap with a multibyte char"
         );
 
-        let dir = temp_workdir("truncate_multibyte");
+        let dir = temp_dir("truncate_multibyte");
         let wd = dir.to_string_lossy().to_string();
         let sheets = vec![XlsxSheet {
             name: "Big".to_string(),
@@ -472,6 +463,5 @@ mod tests {
         let body = out.split("\n\n[... truncated:").next().unwrap();
         assert!(body.len() <= MAX);
         assert!(body.len() >= MAX - 4);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }
