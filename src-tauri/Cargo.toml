@@ -59,8 +59,8 @@ libc = "0.2.183"
 # (`sidecar_process`). The shell plugin uses the same crate for the same reason.
 shared_child = "1.1"
 rusqlite = { version = "0.39.0", features = ["bundled"] }
-cpal = "0.17.1"
-rodio = "0.21.1"
+cpal = "0.18.2"
+rodio = "0.23.0"
 hound = "3.5.1"
 pdf-extract = "0.12"
 pdfium-render = "0.9"

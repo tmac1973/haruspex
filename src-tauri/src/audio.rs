@@ -1,6 +1,6 @@
 use crate::sync_util::LockExt;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::SampleFormat as CpalSampleFormat;
+use cpal::{Sample, SampleFormat as CpalSampleFormat};
 use hound::{SampleFormat, WavSpec, WavWriter};
 use log::{error, info, warn};
 use std::io::Cursor;
@@ -18,7 +18,9 @@ const HOT_SWAP_HINT: &str =
     " (this can happen after switching a USB audio device between machines; \
      unplug and replug the device, then try again — if it persists, restart Haruspex)";
 
-fn device_name(device: &cpal::Device) -> String {
+/// The name the settings store for an input or output device. TTS playback
+/// matches output devices by it too (rodio re-exports this same cpal).
+pub(crate) fn device_name(device: &cpal::Device) -> String {
     device
         .description()
         .map(|d| d.name().to_string())
@@ -155,24 +157,24 @@ impl AudioRecorder {
         }
         *self.native_rate.lock_or_recover() = native_rate;
 
-        let err_fn = |err: cpal::StreamError| error!("Audio input error: {}", err);
+        let err_fn = |err: cpal::Error| error!("Audio input error: {}", err);
 
         macro_rules! build_stream {
-            ($t:ty, $to_f32:expr) => {{
+            ($t:ty) => {{
                 let samples = self.samples.clone();
                 let is_recording = self.is_recording.clone();
                 device.build_input_stream(
-                    &config,
+                    config,
                     move |data: &[$t], _: &cpal::InputCallbackInfo| {
                         if !is_recording.load(Ordering::SeqCst) {
                             return;
                         }
                         let mut buf = samples.lock_or_recover();
                         if channels <= 1 {
-                            buf.extend(data.iter().map(|s| $to_f32(*s)));
+                            buf.extend(data.iter().map(|s| s.to_sample::<f32>()));
                         } else {
                             for frame in data.chunks_exact(channels) {
-                                let sum: f32 = frame.iter().map(|s| $to_f32(*s)).sum();
+                                let sum: f32 = frame.iter().map(|s| s.to_sample::<f32>()).sum();
                                 buf.push(sum / channels as f32);
                             }
                         }
@@ -185,11 +187,17 @@ impl AudioRecorder {
 
         let stream = safe_cpal("build_input_stream", || {
             let r = match sample_format {
-                CpalSampleFormat::F32 => build_stream!(f32, |s: f32| s),
-                CpalSampleFormat::I16 => build_stream!(i16, |s: i16| s as f32 / 32768.0),
-                CpalSampleFormat::U16 => {
-                    build_stream!(u16, |s: u16| (s as f32 - 32768.0) / 32768.0)
-                }
+                // cpal 0.18 ranks I32 and I24 above I16 when picking the
+                // default config, so every integer width has to be handled.
+                CpalSampleFormat::F32 => build_stream!(f32),
+                CpalSampleFormat::F64 => build_stream!(f64),
+                CpalSampleFormat::I8 => build_stream!(i8),
+                CpalSampleFormat::I16 => build_stream!(i16),
+                CpalSampleFormat::I24 => build_stream!(cpal::I24),
+                CpalSampleFormat::I32 => build_stream!(i32),
+                CpalSampleFormat::U8 => build_stream!(u8),
+                CpalSampleFormat::U16 => build_stream!(u16),
+                CpalSampleFormat::U32 => build_stream!(u32),
                 other => return Err(format!("Unsupported sample format: {:?}", other)),
             };
             r.map_err(|e| format!("Failed to build audio stream: {}{}", e, HOT_SWAP_HINT))
@@ -321,17 +329,12 @@ pub fn list_audio_input_devices() -> Result<Vec<String>, String> {
 #[tauri::command]
 pub fn list_audio_output_devices() -> Result<Vec<String>, String> {
     // Use rodio's re-exported cpal so device names match what TTS playback uses
-    use rodio::cpal::traits::{DeviceTrait, HostTrait};
     let host = rodio::cpal::default_host();
     let devices = host
         .output_devices()
         .map_err(|e| format!("Failed to list output devices: {}", e))?;
     let mut names = vec!["System Default".to_string()];
-    for device in devices {
-        if let Ok(name) = device.name() {
-            names.push(name);
-        }
-    }
+    names.extend(devices.map(|device| device_name(&device)));
     Ok(names)
 }
 

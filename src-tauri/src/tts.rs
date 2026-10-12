@@ -292,26 +292,26 @@ impl TtsEngine {
         let device_name = output_device.unwrap_or("").to_string();
 
         std::thread::spawn(move || {
-            use rodio::{OutputStreamBuilder, Sink};
+            use rodio::{DeviceSinkBuilder, Player};
 
             let stream = if device_name.is_empty() || device_name == "System Default" {
-                OutputStreamBuilder::open_default_stream()
+                DeviceSinkBuilder::open_default_sink()
             } else {
                 // Use rodio's re-exported cpal to get a compatible Device type
-                use rodio::cpal::traits::{DeviceTrait, HostTrait};
+                use rodio::cpal::traits::HostTrait;
                 let host = rodio::cpal::default_host();
                 let found = host.output_devices().ok().and_then(|devices| {
                     devices
                         .into_iter()
-                        .find(|d| d.name().unwrap_or_default() == device_name)
+                        .find(|d| crate::audio::device_name(d) == device_name)
                 });
                 match found {
                     Some(device) => {
-                        OutputStreamBuilder::from_device(device).and_then(|b| b.open_stream())
+                        DeviceSinkBuilder::from_device(device).and_then(|b| b.open_stream())
                     }
                     None => {
                         warn!("Output device '{}' not found, using default", device_name);
-                        OutputStreamBuilder::open_default_stream()
+                        DeviceSinkBuilder::open_default_sink()
                     }
                 }
             };
@@ -325,8 +325,9 @@ impl TtsEngine {
                 }
             };
 
-            let sink = Sink::connect_new(stream.mixer());
-            let source = rodio::buffer::SamplesBuffer::new(1, 24000, samples);
+            let sink = Player::connect_new(stream.mixer());
+            let source =
+                rodio::buffer::SamplesBuffer::new(rodio::nz!(1), rodio::nz!(24000), samples);
             sink.append(source);
 
             // Wait for playback to complete or stop signal
