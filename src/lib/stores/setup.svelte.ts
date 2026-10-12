@@ -26,6 +26,9 @@ export interface HardwareInfo {
 	gpu_api: string | null;
 	/** For integrated graphics, the system memory Vulkan lets the GPU use. */
 	gpu_vram_mb: number | null;
+	/** The memory the recommendation was sized for: the VRAM, or on a Mac the
+	 *  smaller of Metal's share and the RAM free now. */
+	model_memory_mb: number | null;
 	/** Shares system memory (integrated graphics or an APU). */
 	gpu_integrated: boolean;
 	/** Integrated and too slow for a large model, so a small one is recommended. */
@@ -59,6 +62,10 @@ let testResult = $state<TestResult>('pending');
 let testResponse = $state('');
 let testStatusMessage = $state('');
 let models = $state<ModelInfo[]>([]);
+// The model and context this wizard run last started the server with. A
+// server already up when the wizard was opened from Settings holds the old
+// model and context, so the first test restarts it; later retries don't.
+let serverStartedWith: string | null = null;
 
 export function getStep(): SetupStep {
 	return step;
@@ -129,7 +136,7 @@ async function applyRecommendedContext(modelId: string): Promise<void> {
 	try {
 		const ctx = await invoke<number>('recommended_context_size', {
 			modelId,
-			vramMb: hardware?.gpu_vram_mb ?? null
+			vramMb: hardware?.model_memory_mb ?? null
 		});
 		updateSettings({ contextSize: ctx });
 	} catch (e) {
@@ -153,7 +160,9 @@ export async function startDownload(): Promise<void> {
 	downloadError = null;
 
 	try {
-		await downloadModelWithProgress(selectedModel, (p) => (downloadProgress = p));
+		const path = await downloadModelWithProgress(selectedModel, (p) => (downloadProgress = p));
+		// Test the model just fetched, not whichever was active before.
+		setActiveLocalModel(path);
 		step = 'test';
 		void runTestQuery();
 	} catch (e) {
@@ -164,6 +173,19 @@ export async function startDownload(): Promise<void> {
 			downloadError = msg;
 		}
 	}
+}
+
+/** Skip the download for a model already on disk: make it the active one
+ *  and go straight to the test. */
+export async function useDownloadedModel(): Promise<void> {
+	const model = models.find((m) => m.id === selectedModel);
+	if (!model) return;
+	const path = await invoke<string | null>('get_active_model_path', {
+		preferredFilename: model.filename
+	});
+	if (path) setActiveLocalModel(path);
+	step = 'test';
+	void runTestQuery();
 }
 
 export async function cancelDownload(): Promise<void> {
@@ -210,16 +232,19 @@ export async function runTestQuery(): Promise<void> {
 		}
 		setActiveLocalModel(modelPath);
 
-		// Only start the server if it isn't already running. start_server
-		// always stops-and-restarts, which on slow integrated graphics means
-		// 1-2 minutes of model loading per retry — that turned every retry
-		// into another wait + timeout cycle.
+		// Only start the server if it isn't already running what this run
+		// chose. start_server always stops-and-restarts, which on slow
+		// integrated graphics means 1-2 minutes of model loading per retry —
+		// that turned every retry into another wait + timeout cycle.
+		const settings = getSettings();
+		const wanted = `${modelPath}|${settings.contextSize}`;
 		const initialStatus = await invoke<SidecarStatus>('get_server_status');
-		if (initialStatus.type !== 'Ready') {
+		const alreadyReady = initialStatus.type === 'Ready' && serverStartedWith === wanted;
+		if (!alreadyReady) {
 			testStatusMessage = 'Starting the AI model (this may take a minute)...';
+			serverStartedWith = wanted;
 			// Same preferences every later start passes, so the first run
 			// loads the model the way the app will from then on.
-			const settings = getSettings();
 			await invoke('start_server', {
 				modelPath,
 				ctxSize: settings.contextSize,
@@ -231,7 +256,7 @@ export async function runTestQuery(): Promise<void> {
 			});
 		}
 
-		const ready = await waitForServerReady(initialStatus.type === 'Ready');
+		const ready = await waitForServerReady(alreadyReady);
 		if (!ready.ok) {
 			testStatusMessage = ready.message;
 			testResult = 'error';
@@ -409,4 +434,5 @@ export function resetSetup(): void {
 	testResult = 'pending';
 	testResponse = '';
 	testStatusMessage = '';
+	serverStartedWith = null;
 }
