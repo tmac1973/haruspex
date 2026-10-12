@@ -21,6 +21,7 @@
 	import McpServerRow from './McpServerRow.svelte';
 	import McpCatalogBrowser from './McpCatalogBrowser.svelte';
 	import { probeCompanion } from '#lib/stores/mcpServers.svelte.ts';
+	import { newId } from '#lib/utils/id.ts';
 
 	const INSTALL_PROGRESS_EVENT = 'mcp-install-progress';
 
@@ -74,15 +75,9 @@
 		setMcpServers(next);
 	}
 
-	function newId(): string {
-		return typeof crypto !== 'undefined' && 'randomUUID' in crypto
-			? crypto.randomUUID()
-			: `mcp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-	}
-
 	async function install(entry: CatalogEntry): Promise<void> {
 		error = null;
-		const id = newId();
+		const id = newId('mcp');
 		installingId = entry.id;
 		progress = null;
 		try {
@@ -128,7 +123,7 @@
 		persist([
 			...servers,
 			{
-				id: newId(),
+				id: newId('mcp'),
 				addonProjects: [],
 				label: program.split(/[\\/]/).pop() || 'Custom server',
 				enabled: true,
@@ -161,7 +156,7 @@
 			// identifiable until then.
 		}
 		let server: McpServerConfig = {
-			id: newId(),
+			id: newId('mcp'),
 			label,
 			enabled: true,
 			addonProjects: [],

@@ -82,7 +82,7 @@ export function tailLines(text: string, maxLines: number): { shown: string; hidd
 }
 
 /** "850 ms", "12.4 s", "3 min 5 s". */
-export function formatDuration(ms: number): string {
+export function formatCommandDuration(ms: number): string {
 	if (ms < 1000) return `${ms} ms`;
 	if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
 	const s = Math.round(ms / 1000);

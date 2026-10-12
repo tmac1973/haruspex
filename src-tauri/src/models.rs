@@ -1,7 +1,6 @@
 use futures_util::StreamExt;
 use log::info;
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
@@ -1515,19 +1514,10 @@ async fn compute_sha256(
     app: Option<&AppHandle>,
     stage_label: &str,
 ) -> Result<String, String> {
-    use tokio::io::AsyncReadExt;
     let total = fs::metadata(path).await.map(|m| m.len()).unwrap_or(0);
-    let mut file = tokio::fs::File::open(path)
-        .await
-        .map_err(|e| format!("Failed to read file for hashing: {}", e))?;
-    let mut hasher = Sha256::new();
-    let mut buf = vec![0u8; 1024 * 1024];
-    let mut hashed: u64 = 0;
     let start = std::time::Instant::now();
     let mut last_emit = start;
 
-    // Immediate 0% so the bar resets and the stage flips to "Verifying…"
-    // the instant download finishes, rather than after the first MB is read.
     let emit = |downloaded: u64, speed_bps: u64| {
         if let Some(app) = app {
             let _ = app.emit(
@@ -1541,19 +1531,11 @@ async fn compute_sha256(
             );
         }
     };
+    // Immediate 0% so the bar resets and the stage flips to "Verifying…"
+    // the instant download finishes, rather than after the first MB is read.
     emit(0, 0);
 
-    loop {
-        let n = file
-            .read(&mut buf)
-            .await
-            .map_err(|e| format!("Failed to read file for hashing: {}", e))?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-        hashed += n as u64;
-
+    crate::hash_util::sha256_file(path, |hashed| {
         let now = std::time::Instant::now();
         if now.duration_since(last_emit).as_millis() >= 100 {
             let elapsed = now.duration_since(start).as_secs_f64();
@@ -1565,8 +1547,9 @@ async fn compute_sha256(
             emit(hashed, speed);
             last_emit = now;
         }
-    }
-    Ok(format!("{:x}", hasher.finalize()))
+    })
+    .await
+    .map_err(|e| format!("Failed to read file for hashing: {}", e))
 }
 
 /// Compare a downloaded file against its expected sha256, emitting verify

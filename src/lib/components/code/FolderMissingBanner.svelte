@@ -11,6 +11,7 @@
 	import { deleteSession, type CodeSession } from '#lib/stores/code.svelte.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
+	import { wslShare } from '#lib/code/paths.ts';
 
 	let {
 		session,
@@ -32,7 +33,7 @@
 				directory: true,
 				multiple: false,
 				title: 'Choose folder',
-				defaultPath: distro ? `\\\\wsl.localhost\\${distro}` : undefined
+				defaultPath: distro ? wslShare(distro, '') : undefined
 			});
 			if (typeof dir === 'string') picked = dir;
 		} catch (e) {

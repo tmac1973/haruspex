@@ -19,6 +19,7 @@
 		type NormalizedModel,
 		type ProbeResult
 	} from '#lib/inferenceProbe.ts';
+	import { isOpenRouterUrl } from '#lib/inference/descriptor.ts';
 	import ApiKeyPicker from '#lib/components/settings/ApiKeyPicker.svelte';
 	import ToggleField from '#lib/components/ToggleField.svelte';
 
@@ -64,16 +65,6 @@
 	let visionDetected = $derived(
 		probeResult?.models.some((m) => m.id === modelId && m.vision_supported !== null) ?? false
 	);
-
-	// True when a URL points at openrouter.ai — filtered out of the generic
-	// remote server dropdown so OpenRouter isn't reachable from two places.
-	function isOpenRouterUrl(url: string): boolean {
-		try {
-			return new URL(url).hostname === 'openrouter.ai';
-		} catch {
-			return false;
-		}
-	}
 
 	// Options shown in the Server URL dropdown. OpenRouter URLs are hidden
 	// (they have a dedicated backend option in InferenceSection). If the user

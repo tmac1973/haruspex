@@ -411,7 +411,9 @@ describe('testSuiteOrderingProblem', () => {
 
 	it('recognizes the test runners of other stacks', () => {
 		for (const cmd of ['npm test', 'yarn test', 'go test ./...', 'cargo test', 'npx vitest run']) {
-			expect(testSuiteOrderingProblem(cmd, testsLast)).not.toBeNull();
+			const problem = testSuiteOrderingProblem(cmd, testsLast);
+			expect(problem, cmd).toContain('phase 04');
+			expect(problem, cmd).toContain('nothing to collect');
 		}
 	});
 

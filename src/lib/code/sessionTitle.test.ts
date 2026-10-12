@@ -12,7 +12,8 @@ vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => ({
 vi.mock('#lib/inference/descriptor.ts', () => ({
 	resolveBackendDescriptor: () => ({ kind: 'local' })
 }));
-vi.mock('#lib/stores/settings.ts', () => ({
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getChatTemplateKwargs: (_d: unknown, thinking: boolean) => ({ enable_thinking: thinking }),
 	getOpenRouterReasoningParam: () => null,
 	getSamplingParams: () => ({ temperature: 0.7 })

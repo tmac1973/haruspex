@@ -9,6 +9,7 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
 
 import { getSettings, setEmailAccounts, type EmailAccount } from './settings';
 import { forgetStoredPassword, migrateEmailSecrets, withStoredPassword } from './emailSecrets';
+import { invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
 
 function account(over: Partial<EmailAccount> = {}): EmailAccount {
 	return {
@@ -29,14 +30,13 @@ function account(over: Partial<EmailAccount> = {}): EmailAccount {
 	};
 }
 
-const calls = (cmd: string) => state.invoke.mock.calls.filter((c) => c[0] === cmd);
+const calls = (cmd: string) => invokeCalls(state.invoke, cmd);
 
 beforeEach(() => {
 	state.available = true;
-	state.invoke.mockReset().mockImplementation(async (cmd: string) => {
-		if (cmd === 'secret_available') return state.available;
-		return null;
-	});
+	state.invoke
+		.mockReset()
+		.mockImplementation(invokeRouter({ secret_available: () => state.available }));
 	setEmailAccounts([]);
 });
 
@@ -44,7 +44,7 @@ describe('migrateEmailSecrets', () => {
 	it('moves an inline password into the keychain and keeps a reference', async () => {
 		setEmailAccounts([account()]);
 		await migrateEmailSecrets();
-		expect(calls('secret_set')[0][1]).toEqual({ key: 'email:a1', value: 'inline-pw' });
+		expect(calls('secret_set')[0]).toEqual({ key: 'email:a1', value: 'inline-pw' });
 		expect(getSettings().integrations.email.accounts[0]).toMatchObject({
 			password: '',
 			passwordRef: 'email:a1'
@@ -68,11 +68,14 @@ describe('migrateEmailSecrets', () => {
 	});
 
 	it('leaves an account that failed to move as it was', async () => {
-		state.invoke.mockImplementation(async (cmd: string) => {
-			if (cmd === 'secret_available') return true;
-			if (cmd === 'secret_set') throw 'locked';
-			return null;
-		});
+		state.invoke.mockImplementation(
+			invokeRouter({
+				secret_available: true,
+				secret_set: () => {
+					throw 'locked';
+				}
+			})
+		);
 		setEmailAccounts([account()]);
 		await migrateEmailSecrets();
 		expect(getSettings().integrations.email.accounts[0]).toMatchObject({ password: 'inline-pw' });
@@ -83,7 +86,7 @@ describe('migrateEmailSecrets', () => {
 describe('saving and deleting', () => {
 	it('stores a reference and an empty password where there is a keychain', async () => {
 		const saved = await withStoredPassword(account({ password: '' }), 'new-pw');
-		expect(calls('secret_set')[0][1]).toEqual({ key: 'email:a1', value: 'new-pw' });
+		expect(calls('secret_set')[0]).toEqual({ key: 'email:a1', value: 'new-pw' });
 		expect(saved).toMatchObject({ password: '', passwordRef: 'email:a1' });
 	});
 
@@ -96,6 +99,6 @@ describe('saving and deleting', () => {
 	it('deletes the kept password, and never throws doing it', async () => {
 		state.invoke.mockRejectedValue('gone');
 		await forgetStoredPassword(account({ password: '', passwordRef: 'email:a1' }));
-		expect(calls('secret_delete')[0][1]).toEqual({ key: 'email:a1' });
+		expect(calls('secret_delete')[0]).toEqual({ key: 'email:a1' });
 	});
 });

@@ -1,13 +1,13 @@
 // llama-server OpenAI-compatible API client wrapper
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import type { RemoteReasoningCaps, RemoteSamplingCaps } from '#lib/stores/settings.ts';
-import { logDebug, isVerbosePayloads } from '#lib/debug-log.ts';
+import { logDebug, isVerbosePayloads, previewPayload } from '#lib/debug-log.ts';
 import { apiKeysReady } from '#lib/stores/apiKeySecrets.ts';
 import { localServerKeyReady } from '#lib/inference/localServerKey.ts';
 import { baseUrl } from '#lib/ports.ts';
 import { OPENROUTER_ATTRIBUTION_HEADERS } from '#lib/openrouter.ts';
 import { isAbortError } from '#lib/utils/error.ts';
-import { readErrorText } from '#lib/utils/http.ts';
+import { readErrorText, urlForReport } from '#lib/utils/http.ts';
 import { combineReasoningAndContent } from '#lib/streamAssembly.ts';
 
 let nextRequestId = 1;
@@ -413,13 +413,6 @@ function summarizeRequestBody(body: Record<string, unknown>): unknown {
 	};
 }
 
-/** Clip a long string for logging, preserving the length signal. */
-function previewText(s: string | null, max = 800): string | null {
-	if (s == null) return null;
-	if (isVerbosePayloads() || s.length <= max) return s;
-	return `${s.slice(0, max)}… (+${s.length - max} more chars)`;
-}
-
 function buildRequestBody(
 	options: ChatCompletionOptions,
 	modelName: string = 'default',
@@ -591,7 +584,7 @@ async function sendChatRequest(
 		if (!response.ok) {
 			const text = await readErrorText(response);
 			logDebug('api', `${label} request #${reqId} HTTP ${response.status}`, {
-				body: previewText(text),
+				body: previewPayload(text),
 				attempt
 			});
 			const err = new ApiError(`Server error: ${text}`, response.status);
@@ -628,7 +621,11 @@ export async function* chatCompletionStream(
 		endpoint.isOpenRouter
 	);
 	const reqId = nextRequestId++;
-	logDebug('api', `stream request #${reqId} → ${endpoint.url}`, summarizeRequestBody(body));
+	logDebug(
+		'api',
+		`stream request #${reqId} → ${urlForReport(endpoint.url)}`,
+		summarizeRequestBody(body)
+	);
 
 	const response = await sendChatRequest(
 		endpoint.url,
@@ -683,7 +680,11 @@ export async function chatCompletion(
 		endpoint.isOpenRouter
 	);
 	const reqId = nextRequestId++;
-	logDebug('api', `non-stream request #${reqId} → ${endpoint.url}`, summarizeRequestBody(body));
+	logDebug(
+		'api',
+		`non-stream request #${reqId} → ${urlForReport(endpoint.url)}`,
+		summarizeRequestBody(body)
+	);
 
 	const response = await sendChatRequest(
 		endpoint.url,
@@ -698,7 +699,11 @@ export async function chatCompletion(
 	const choice = data.choices?.[0];
 
 	if (!choice) {
-		logDebug('api', `non-stream request #${reqId} no choices in response`, data);
+		logDebug('api', `non-stream request #${reqId} no choices in response`, {
+			keys: data && typeof data === 'object' ? Object.keys(data) : typeof data,
+			error: data?.error,
+			usage: data?.usage
+		});
 		throw new ApiError('No response from model');
 	}
 
@@ -718,8 +723,15 @@ export async function chatCompletion(
 		content_len: content ? content.length : 0,
 		has_reasoning: !!reasoning,
 		tool_call_count: choice.message?.tool_calls?.length ?? 0,
-		tool_calls: choice.message?.tool_calls,
-		content: previewText(content),
+		tool_calls: isVerbosePayloads()
+			? choice.message?.tool_calls
+			: choice.message?.tool_calls?.map(
+					(c: { function?: { name?: string; arguments?: string } }) => ({
+						name: c.function?.name,
+						argsLen: c.function?.arguments?.length ?? 0
+					})
+				),
+		content: previewPayload(content),
 		usage: data.usage
 	});
 

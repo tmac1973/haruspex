@@ -22,6 +22,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { ComfyModelFile } from '#lib/ipc/gen/ComfyModelFile.ts';
 import type { ComfyModelSet } from '#lib/ipc/gen/ComfyModelSet.ts';
 import type { ProxyConfig } from '#lib/ipc/gen/ProxyConfig.ts';
+import { formatGigabytes } from '#lib/utils/format.ts';
 import { ImageBackendError } from '../types';
 import * as api from './client';
 import { familyOf, hasCompanions, listDiffusionModels, type ModelFamily } from './families';
@@ -190,8 +191,6 @@ export function managerRefusalHint(cfg: api.ClientConfig): string {
 /** The by-hand list: one line per file, folder first. */
 export function manualList(files: ComfyModelFile[]): string {
 	return files
-		.map(
-			(f) => `models/${f.folder}/${f.filename}  (${(f.size_bytes / 1e9).toFixed(1)} GB)  ${f.url}`
-		)
+		.map((f) => `models/${f.folder}/${f.filename}  (${formatGigabytes(f.size_bytes)})  ${f.url}`)
 		.join('\n');
 }

@@ -507,12 +507,7 @@ fn new_id() -> String {
     format!("bg-{:x}-{n}", nanos & 0xffff_ffff_ffff)
 }
 
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
-}
+use crate::time_util::now_ms_u64 as now_ms;
 
 /// A log file that keeps only its newest `cap` bytes.
 struct LogSink {

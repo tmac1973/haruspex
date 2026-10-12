@@ -8,7 +8,7 @@
 import { ApiError, type ChatCompletionResponse } from '#lib/api.ts';
 import { TOKEN_BYTES_RATIO } from '#lib/agent/context-budget.ts';
 import { stripThinkBlocks, stripToolCallArtifacts } from '#lib/markdown.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug, previewPayload } from '#lib/debug-log.ts';
 import { MAX_TRUNCATION_RETRIES, NudgeState, automaticCheck } from './nudges';
 import { appendMessage, type IterationOutcome, type LoopContext, type LoopState } from './context';
 import { hasNonThinkingContent, looksLikeClarifyingQuestion } from './heuristics';
@@ -132,7 +132,7 @@ export function tryMalformedToolCall(
 		(/<tool_call>/.test(response.content) || /<function=/.test(response.content))
 	) {
 		logDebug('agent', `iteration ${iteration} branch=malformed-tool-call recovery`, {
-			rawContent: response.content
+			rawContent: previewPayload(response.content, 400)
 		});
 		return pushNudge(
 			ctx,
@@ -192,7 +192,7 @@ export function tryNarrateRecovery(
 	if (nudges.needsNarrateRecovery() && !looksLikeClarifyingQuestion(response.content || '')) {
 		nudges.consumeNarrateRecovery();
 		logDebug('agent', `iteration ${iteration} branch=narrate-recovery`, {
-			assistantContent: response.content
+			assistantContent: previewPayload(response.content, 400)
 		});
 		return pushNudge(
 			ctx,
@@ -289,7 +289,7 @@ export function tryFileWriteRecovery(
 			'agent',
 			`iteration ${iteration} branch=file-write-hallucination retry ${nudges.fileWriteRetryCount}`,
 			{
-				assistantContent: response.content
+				assistantContent: previewPayload(response.content, 400)
 			}
 		);
 		nudges.armNarrateRecovery();

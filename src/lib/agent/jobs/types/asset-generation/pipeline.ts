@@ -59,8 +59,9 @@ import type { AssetEntry } from '#lib/assets/spec/types.ts';
 import { generateEntries } from './generate';
 import { fitStyle } from './promptBudget';
 import { applyJobSize, nativeEdgeFor, upscaleForEdge } from './nativeEdge';
-import { renderAssetReport, type Licensing } from './report';
+import { countByStatus, renderAssetReport, type Licensing } from './report';
 import type { AnchorOutcome, EntryOutcome, SheetOutcome } from './types';
+import { pngDataUrl as dataUrl } from '#lib/utils/base64.ts';
 
 /** Read-only: the derivation grounds itself in the project, it does not edit it. */
 const DERIVE_TOOLS = ['fs_read_text', 'fs_list_dir', 'code_grep', 'code_glob'];
@@ -139,12 +140,6 @@ function configuredModelName(): string {
 	if (s.imageBackendKind === 'comfyui') return s.imageComfyCheckpoint.trim();
 	if (s.imageBackendKind === 'local') return (s.imageLocalModelId || s.imageLocalModelPath).trim();
 	return '';
-}
-
-/** Counts by status, so the stage line and the report cannot disagree. */
-function countByStatus(entries: EntryOutcome[]) {
-	const n = (s: EntryOutcome['status']) => entries.filter((e) => e.status === s).length;
-	return { done: n('done'), skipped: n('skipped'), failed: n('failed') };
 }
 
 /**
@@ -234,13 +229,6 @@ async function writeWorkdirFile(
 		content,
 		overwrite: true
 	});
-}
-
-/** Bytes a vision model can be handed, without a file on disk in between. */
-function dataUrl(bytes: Uint8Array): string {
-	let binary = '';
-	for (const b of bytes) binary += String.fromCharCode(b);
-	return `data:image/png;base64,${btoa(binary)}`;
 }
 
 /**

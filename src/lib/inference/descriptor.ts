@@ -217,7 +217,7 @@ function modelTraitsFromId(id: string | null | undefined): ModelTraits | null {
 const LOCAL_DEFAULT_FAMILY: QwenSamplingFamily = 'qwen3.5';
 
 /** True when a base URL points at openrouter.ai (heuristic — host match). */
-function isOpenRouterUrl(url: string): boolean {
+export function isOpenRouterUrl(url: string): boolean {
 	try {
 		return new URL(url).hostname === 'openrouter.ai';
 	} catch {

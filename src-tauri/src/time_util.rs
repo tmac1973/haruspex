@@ -15,6 +15,11 @@ pub fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+/// `now_ms` for counters and deadlines that are unsigned.
+pub fn now_ms_u64() -> u64 {
+    now_ms().max(0) as u64
+}
+
 /// Nanoseconds since the Unix epoch — used for unique temp-file suffixes.
 pub fn now_nanos() -> u128 {
     SystemTime::now()

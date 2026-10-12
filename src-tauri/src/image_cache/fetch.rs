@@ -19,8 +19,8 @@
 //!      from rather than trusting a header.
 
 use super::MAX_IMAGE_BYTES;
+use crate::http_util::{read_capped, CappedReadError};
 use crate::proxy::{build_fetch_client, validate_url, ProxyConfig, USER_AGENT};
-use futures_util::StreamExt;
 use log::debug;
 use std::time::Duration;
 
@@ -96,23 +96,15 @@ pub async fn fetch_image(url: &str, proxy: Option<&ProxyConfig>) -> Result<Fetch
         return Err(format!("Not an accepted image type: {:?}", declared_mime));
     }
 
-    // Gate 2: believe an honest Content-Length and skip the download entirely.
-    if let Some(len) = response.content_length() {
-        if len > MAX_IMAGE_BYTES {
-            return Err(format!("Image too large: {} bytes declared", len));
-        }
-    }
-
-    // Gate 3: enforce the cap while streaming, since the header is advisory.
-    let mut bytes: Vec<u8> = Vec::new();
-    let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("Image download failed: {}", e))?;
-        if bytes.len() as u64 + chunk.len() as u64 > MAX_IMAGE_BYTES {
-            return Err("Image too large: exceeded cap while downloading".to_string());
-        }
-        bytes.extend_from_slice(&chunk);
-    }
+    // Gates 2 and 3: believe an honest Content-Length and skip the download
+    // entirely, then enforce the cap while streaming, since the header is
+    // advisory.
+    let bytes = read_capped(response, MAX_IMAGE_BYTES)
+        .await
+        .map_err(|e| match e {
+            CappedReadError::TooLarge => "Image too large".to_string(),
+            CappedReadError::Read(e) => format!("Image download failed: {}", e),
+        })?;
 
     let verified = verify_bytes(bytes, &declared_mime)?;
 

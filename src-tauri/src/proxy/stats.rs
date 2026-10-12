@@ -490,9 +490,7 @@ impl Default for SearchStats {
     }
 }
 
-pub(super) fn now_ms() -> i64 {
-    crate::time_util::now_ms()
-}
+pub(super) use crate::time_util::now_ms;
 
 #[cfg(test)]
 mod tests {

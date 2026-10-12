@@ -34,6 +34,7 @@
 		secretStoreKind,
 		type SecretStoreKind
 	} from '#lib/stores/secrets.ts';
+	import { newId } from '#lib/utils/id.ts';
 
 	let accounts = $state<DavAccount[]>(snapshot(getSettings().integrations.dav.accounts));
 	let checking = $state<string | null>(null);
@@ -56,15 +57,9 @@
 			.catch(() => (googleAvailable = false));
 	});
 
-	function newId(): string {
-		return typeof crypto !== 'undefined' && 'randomUUID' in crypto
-			? crypto.randomUUID()
-			: `dav-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-	}
-
 	/** Sign in to Google, for a new account or again for an existing one. */
 	async function signInWithGoogle(existing?: DavAccount): Promise<void> {
-		const id = existing?.id ?? newId();
+		const id = existing?.id ?? newId('dav');
 		signingIn = id;
 		googleError = '';
 		errors = { ...errors, [id]: '' };
@@ -130,7 +125,7 @@
 	}
 
 	function add(kind: DavKind): void {
-		const id = newId();
+		const id = newId('dav');
 		persist([
 			...accounts,
 			{

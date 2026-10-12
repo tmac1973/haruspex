@@ -18,17 +18,10 @@
 
 use quick_xml::events::Event;
 use quick_xml::Reader;
-use std::time::Duration;
 
 use super::account::DavAccount;
+use super::REQUEST_TIMEOUT;
 use crate::proxy::{apply_proxy, ProxyConfig};
-
-/// Per-request timeout.
-///
-/// A calendar query against a year of events on a small self-hosted box is
-/// genuinely slow; an unreachable host must still fail rather than hang the
-/// tool call that is waiting on it.
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// One `<response>` from a multistatus document: the href it describes and the
 /// properties that came back for it.
@@ -697,7 +690,7 @@ mod tests {
         let client = DavClient::new(&account, None).expect("a client");
 
         let error = tokio::time::timeout(
-            Duration::from_secs(10),
+            std::time::Duration::from_secs(10),
             client.propfind("http://127.0.0.1:1/", "0", PRINCIPAL_BODY),
         )
         .await

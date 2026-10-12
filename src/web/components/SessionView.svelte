@@ -6,6 +6,7 @@
 	import PromptCard from './PromptCard.svelte';
 	import Transcript from './Transcript.svelte';
 	import FileViewer from './FileViewer.svelte';
+	import { folderName } from '#lib/code/sessionList.ts';
 
 	let { store }: { store: WebStore } = $props();
 
@@ -13,10 +14,6 @@
 	const session = $derived(store.current);
 	const mirror = $derived(store.mirrors[id]);
 	const prompts = $derived(store.promptsFor(id));
-
-	function folderName(path: string): string {
-		return path.split(/[/\\]/).filter(Boolean).at(-1) ?? path;
-	}
 </script>
 
 <header>

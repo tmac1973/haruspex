@@ -11,13 +11,11 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use chrono_tz::Tz;
 use serde::Deserialize;
-use std::time::Duration;
 
 use super::ical::{all_day_start, CalendarEvent, EventSource};
-use crate::proxy::{apply_proxy, ProxyConfig};
+use crate::proxy::ProxyConfig;
 
 const API: &str = "https://www.googleapis.com/calendar/v3";
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Pages of events per calendar per query. 2,500 events a page; past this the
 /// window is not a question anyone is asking.
@@ -207,33 +205,7 @@ async fn get_json<T: serde::de::DeserializeOwned>(
     access_token: &str,
     proxy: Option<&ProxyConfig>,
 ) -> Result<T, String> {
-    let http = apply_proxy(reqwest::Client::builder().timeout(REQUEST_TIMEOUT), proxy)?
-        .build()
-        .map_err(|e| format!("could not create an HTTP client: {e}"))?;
-    let response = http
-        .get(url)
-        .bearer_auth(access_token)
-        .send()
-        .await
-        .map_err(|e| format!("Could not reach Google Calendar: {}", e.without_url()))?;
-    let status = response.status();
-    let text = response.text().await.unwrap_or_default();
-    if !status.is_success() {
-        return Err(describe_error(status.as_u16(), &text));
-    }
-    serde_json::from_str(&text).map_err(|_| "Google Calendar's answer could not be read.".into())
-}
-
-/// Google's own message, which names the actual cause ("API has not been
-/// used in project …", "insufficient permissions") better than a status code.
-fn describe_error(status: u16, body: &str) -> String {
-    let message = serde_json::from_str::<serde_json::Value>(body)
-        .ok()
-        .and_then(|v| v["error"]["message"].as_str().map(str::to_string));
-    match message {
-        Some(m) => format!("Google Calendar refused the request (HTTP {status}): {m}"),
-        None => format!("Google Calendar answered HTTP {status}."),
-    }
+    super::google::get_json(url, access_token, proxy, "Google Calendar").await
 }
 
 #[cfg(test)]
@@ -295,14 +267,5 @@ mod tests {
         let events =
             parse(r#"{"items":[{"id":"x","status":"cancelled","start":{"date":"2026-12-25"}}]}"#);
         assert!(events.is_empty());
-    }
-
-    #[test]
-    fn googles_own_error_message_is_kept() {
-        let err = describe_error(
-            403,
-            r#"{"error":{"code":403,"message":"Google Calendar API has not been used in project 1 before or it is disabled."}}"#,
-        );
-        assert!(err.contains("has not been used"), "{err}");
     }
 }

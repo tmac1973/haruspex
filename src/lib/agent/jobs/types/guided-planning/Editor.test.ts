@@ -29,8 +29,9 @@ function mount(over: Record<string, unknown> = {}) {
 
 describe('guided-planning Editor', () => {
 	it('mounts with the defaults', () => {
-		mount();
-		expect(screen.getByLabelText('Run mode')).toBeTruthy();
+		const config = mount();
+		const select = screen.getByLabelText('Run mode') as HTMLSelectElement;
+		expect(select.value).toBe(config.run_mode);
 	});
 
 	it('hides the coding-run section outside the chain mode', () => {

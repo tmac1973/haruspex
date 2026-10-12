@@ -17,7 +17,9 @@
 	} from '#lib/stores/settings.ts';
 	import type { EmailProviderPreset } from '#lib/ipc/gen/EmailProviderPreset.ts';
 	import EmailAccountForm from '#lib/components/EmailAccountForm.svelte';
-	import { forgetStoredPassword, keychainAvailable } from '#lib/stores/emailSecrets.ts';
+	import { forgetStoredPassword } from '#lib/stores/emailSecrets.ts';
+	import { secretStoreAvailable } from '#lib/stores/secrets.ts';
+	import { newId } from '#lib/utils/id.ts';
 
 	let emailAccounts = $state<EmailAccount[]>(snapshot(getSettings().integrations.email.accounts));
 	let emailPresets = $state<EmailProviderPreset[]>([]);
@@ -33,13 +35,7 @@
 	}
 
 	function newBlankAccount(): EmailAccount {
-		// Generate a stable id using the browser's crypto.randomUUID()
-		// when available, falling back to a timestamp-plus-random pair
-		// for older environments that tauri-webview might present.
-		const id =
-			typeof crypto !== 'undefined' && 'randomUUID' in crypto
-				? crypto.randomUUID()
-				: `acc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const id = newId('acc');
 		const preset = emailPresets.find((p) => p.id === 'gmail');
 		return {
 			id,
@@ -84,7 +80,7 @@
 
 	onMount(() => {
 		void loadEmailPresets();
-		void keychainAvailable().then((ok) => (keychain = ok));
+		void secretStoreAvailable().then((ok) => (keychain = ok));
 	});
 </script>
 

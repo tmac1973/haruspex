@@ -40,6 +40,11 @@ static/plotly/
 *.key
 *.p12
 *.pfx
+*.jks
+*.keystore
+credentials.json
+client_secret*.json
+secrets.json
 
 # OS files
 .DS_Store

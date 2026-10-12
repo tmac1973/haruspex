@@ -9,18 +9,16 @@
 //! The URL is a credential: whoever holds it reads the calendar. So it never
 //! appears in an error, a log line or a tool result — only its host does.
 
-use std::time::Duration;
-
+use super::REQUEST_TIMEOUT;
+use crate::http_util::{read_capped, CappedReadError};
 use crate::proxy::{apply_proxy, ProxyConfig};
-
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The largest feed we will read.
 ///
 /// Years of a busy calendar run to a few megabytes. Anything far past that is
 /// not a calendar, and reading it whole would hold it all in memory to answer
 /// "what's on this week".
-const MAX_FEED_BYTES: usize = 20 * 1024 * 1024;
+const MAX_FEED_BYTES: u64 = 20 * 1024 * 1024;
 
 /// The URL to fetch, from what the user pasted.
 ///
@@ -55,7 +53,7 @@ pub async fn fetch_feed(raw_url: &str, proxy: Option<&ProxyConfig>) -> Result<St
     .build()
     .map_err(|e| format!("could not create an HTTP client: {e}"))?;
 
-    let mut response = http
+    let response = http
         .get(&url)
         .header("Accept", "text/calendar, */*;q=0.5")
         .send()
@@ -74,21 +72,18 @@ pub async fn fetch_feed(raw_url: &str, proxy: Option<&ProxyConfig>) -> Result<St
         });
     }
 
-    let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|e| {
-        format!(
-            "Reading the calendar from {host} failed: {}",
-            e.without_url()
-        )
-    })? {
-        if body.len() + chunk.len() > MAX_FEED_BYTES {
-            return Err(format!(
+    let body = read_capped(response, MAX_FEED_BYTES)
+        .await
+        .map_err(|e| match e {
+            CappedReadError::TooLarge => format!(
                 "The calendar at {host} is larger than {} MB.",
                 MAX_FEED_BYTES / (1024 * 1024)
-            ));
-        }
-        body.extend_from_slice(&chunk);
-    }
+            ),
+            CappedReadError::Read(e) => format!(
+                "Reading the calendar from {host} failed: {}",
+                e.without_url()
+            ),
+        })?;
     let text = String::from_utf8_lossy(&body).into_owned();
     if !text.contains("BEGIN:VCALENDAR") {
         return Err(format!(

@@ -37,9 +37,7 @@ where
         .map_err(|e| format!("memory task panicked: {e}"))?
 }
 
-fn now_ms() -> i64 {
-    chrono_now()
-}
+use crate::time_util::now_ms;
 
 /// Whether the embedding model is on disk. Pure file check — the Settings UI
 /// calls it on render, so it must not initialize ONNX or touch the network.
@@ -216,7 +214,7 @@ pub async fn memory_merge(
 #[tauri::command]
 pub async fn memory_touch(state: tauri::State<'_, Database>, id: String) -> Result<(), String> {
     let db = state.inner().clone();
-    on_pool(db, move |db| db.touch_memory(&id, chrono_now())).await
+    on_pool(db, move |db| db.touch_memory(&id, now_ms())).await
 }
 
 #[tauri::command]

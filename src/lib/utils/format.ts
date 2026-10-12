@@ -12,6 +12,12 @@ export function formatBytes(bytes: number): string {
 	return `${(bytes / 1073741824).toFixed(2)} GB`;
 }
 
+/** Decimal gigabytes, one place — how model downloads are sized on the
+ *  hosts they come from: 5_700_000_000 → `5.7 GB`. */
+export function formatGigabytes(bytes: number): string {
+	return `${(bytes / 1e9).toFixed(1)} GB`;
+}
+
 /** Bytes-per-second → `KB/s` / `MB/s`. */
 export function formatBytesPerSecond(bytesPerSec: number): string {
 	if (bytesPerSec < 1048576) return `${(bytesPerSec / 1024).toFixed(0)} KB/s`;

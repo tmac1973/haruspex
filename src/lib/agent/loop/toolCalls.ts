@@ -7,7 +7,7 @@ import { toolRoundText } from '#lib/agent/textToolCalls.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import { coerceCallArguments, executeTool } from '#lib/agent/tools/index.ts';
 import { isFetchFailureResult, isToolErrorResult } from '#lib/agent/tools/_helpers.ts';
-import { isVerbosePayloads, logDebug } from '#lib/debug-log.ts';
+import { isVerbosePayloads, logDebug, previewPayload } from '#lib/debug-log.ts';
 import { NudgeState } from './nudges';
 import { planToolBatches, runToolBatch, toolCallConcurrency } from './parallelTools';
 import { createSlotLender, laneConcurrency } from '#lib/agent/inferenceQueue.svelte.ts';
@@ -118,7 +118,7 @@ export async function executeToolCalls(
 		);
 		logDebug('agent', `tool end: ${call.name}`, {
 			resultLen: output.result.length,
-			resultPreview: output.result.slice(0, 1000),
+			resultPreview: previewPayload(output.result, 200),
 			hasThumbnail: !!output.thumbDataUrl,
 			artifactCount: output.artifacts?.length ?? 0
 		});

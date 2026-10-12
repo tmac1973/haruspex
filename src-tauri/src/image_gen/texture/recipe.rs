@@ -285,3 +285,320 @@ pub fn validate(r: &TextureRecipe) -> Result<(), String> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn recipe(layers: Vec<Layer>) -> TextureRecipe {
+        TextureRecipe {
+            base: BaseLayer {
+                ramp: vec!["#202020".into(), "#808080".into()],
+                cells: Some(4),
+                octaves: Some(3),
+                dither: Some(true),
+            },
+            layers,
+            wall_face: None,
+        }
+    }
+
+    fn err_of(r: &TextureRecipe) -> String {
+        validate(r).expect_err("expected the recipe to be refused")
+    }
+
+    #[test]
+    fn parse_color_accepts_six_hex_digits_with_or_without_hash() {
+        assert_eq!(parse_color("#ff8000"), Some([255, 128, 0]));
+        assert_eq!(parse_color("FF8000"), Some([255, 128, 0]));
+        assert_eq!(parse_color("  #0a0B0c "), Some([10, 11, 12]));
+        assert_eq!(parse_color("#000000"), Some([0, 0, 0]));
+        assert_eq!(parse_color("#ffffff"), Some([255, 255, 255]));
+    }
+
+    #[test]
+    fn parse_color_rejects_malformed_strings() {
+        for bad in [
+            "", "#", "#12", "#123", "#12345", "#1234567", "#gggggg", "#12345g", "red", "12 345",
+            "#+12345", "#-12345", "#ff80 0",
+        ] {
+            assert_eq!(parse_color(bad), None, "{bad:?} should be refused");
+        }
+        // Multi-byte characters must not slip past a byte-length check.
+        assert_eq!(parse_color("#ééé"), None);
+    }
+
+    #[test]
+    fn validate_accepts_a_recipe_using_every_layer() {
+        let r = recipe(vec![
+            Layer::Speckle {
+                color: "#111111".into(),
+                amount: 0.5,
+            },
+            Layer::Cracks {
+                color: "#111111".into(),
+                cells: 12,
+                coverage: 0.0,
+                width: None,
+            },
+            Layer::Blotches {
+                color: "#111111".into(),
+                cells: 1,
+                threshold: 1.0,
+            },
+            Layer::Bricks {
+                w: 8.0,
+                h: DESIGN_SIZE,
+                gap: 0.0,
+                offset: true,
+                colors: vec!["#aa0000".into(); 6],
+                mortar: "#cccccc".into(),
+            },
+            Layer::Stripes {
+                axis: Axis::X,
+                pos: DESIGN_SIZE - 1.0,
+                width: DESIGN_SIZE / 2.0,
+                dash: Some([1.0, DESIGN_SIZE]),
+                color: "#ffff00".into(),
+                wear: Some(0.9),
+            },
+            Layer::Waves {
+                color: "#0000ff".into(),
+                freq: 16,
+                threshold: -1.0,
+            },
+            Layer::Grid {
+                step: 2.0,
+                width: None,
+                color: "#333333".into(),
+            },
+            Layer::Bevel {
+                step: 4.0,
+                light: "#eeeeee".into(),
+                dark: "#111111".into(),
+            },
+        ]);
+        let mut r = r;
+        r.wall_face = Some(WallFace {
+            height: 1.0,
+            shade: 0.0,
+        });
+        validate(&r).unwrap();
+    }
+
+    #[test]
+    fn validate_checks_the_base() {
+        let mut r = recipe(vec![]);
+        r.base.ramp = vec!["#000000".into()];
+        assert!(err_of(&r).starts_with("base.ramp: give 2 to 8"));
+        r.base.ramp = vec!["#000000".into(); 9];
+        assert!(err_of(&r).starts_with("base.ramp: give 2 to 8"));
+        r.base.ramp = vec!["#000000".into(), "#12".into()];
+        assert!(err_of(&r).starts_with("base.ramp[1]:"));
+
+        let mut r = recipe(vec![]);
+        r.base.cells = Some(0);
+        assert!(err_of(&r).starts_with("base.cells:"));
+        r.base.cells = Some(17);
+        assert!(err_of(&r).starts_with("base.cells:"));
+
+        let mut r = recipe(vec![]);
+        r.base.octaves = Some(5);
+        assert!(err_of(&r).starts_with("base.octaves:"));
+        r.base.octaves = None; // defaults to 3
+        validate(&r).unwrap();
+    }
+
+    #[test]
+    fn validate_caps_the_layer_count() {
+        let speckle = Layer::Speckle {
+            color: "#111111".into(),
+            amount: 0.1,
+        };
+        validate(&recipe(vec![speckle.clone(); 8])).unwrap();
+        assert_eq!(err_of(&recipe(vec![speckle; 9])), "layers: at most 8.");
+    }
+
+    #[test]
+    fn validate_names_the_out_of_range_layer_field() {
+        let cases: Vec<(Layer, &str)> = vec![
+            (
+                Layer::Speckle {
+                    color: "#111111".into(),
+                    amount: 0.51,
+                },
+                "layers[0].amount:",
+            ),
+            (
+                Layer::Speckle {
+                    color: "#111111".into(),
+                    amount: f32::NAN,
+                },
+                "layers[0].amount:",
+            ),
+            (
+                Layer::Speckle {
+                    color: "111".into(),
+                    amount: 0.1,
+                },
+                "layers[0].color:",
+            ),
+            (
+                Layer::Cracks {
+                    color: "#111111".into(),
+                    cells: 13,
+                    coverage: 0.5,
+                    width: None,
+                },
+                "layers[0].cells:",
+            ),
+            (
+                Layer::Cracks {
+                    color: "#111111".into(),
+                    cells: 4,
+                    coverage: 0.5,
+                    width: Some(0.1),
+                },
+                "layers[0].width:",
+            ),
+            (
+                Layer::Blotches {
+                    color: "#111111".into(),
+                    cells: 4,
+                    threshold: 1.1,
+                },
+                "layers[0].threshold:",
+            ),
+            (
+                Layer::Bricks {
+                    w: 1.0,
+                    h: 4.0,
+                    gap: 1.0,
+                    offset: false,
+                    colors: vec!["#111111".into()],
+                    mortar: "#222222".into(),
+                },
+                "layers[0].w:",
+            ),
+            (
+                Layer::Bricks {
+                    w: 4.0,
+                    h: 4.0,
+                    gap: 1.0,
+                    offset: false,
+                    colors: vec![],
+                    mortar: "#222222".into(),
+                },
+                "layers[0].colors: give 1 to 6",
+            ),
+            (
+                Layer::Bricks {
+                    w: 4.0,
+                    h: 4.0,
+                    gap: 1.0,
+                    offset: false,
+                    colors: vec!["#111111".into(), "#gggggg".into()],
+                    mortar: "#222222".into(),
+                },
+                "layers[0].colors[1]:",
+            ),
+            (
+                Layer::Bricks {
+                    w: 4.0,
+                    h: 4.0,
+                    gap: 1.0,
+                    offset: false,
+                    colors: vec!["#111111".into()],
+                    mortar: "nope".into(),
+                },
+                "layers[0].mortar:",
+            ),
+            (
+                Layer::Stripes {
+                    axis: Axis::Y,
+                    pos: DESIGN_SIZE,
+                    width: 2.0,
+                    dash: None,
+                    color: "#111111".into(),
+                    wear: None,
+                },
+                "layers[0].pos:",
+            ),
+            (
+                Layer::Stripes {
+                    axis: Axis::Y,
+                    pos: 0.0,
+                    width: 2.0,
+                    dash: Some([0.5, 2.0]),
+                    color: "#111111".into(),
+                    wear: None,
+                },
+                "layers[0].dash[0]:",
+            ),
+            (
+                Layer::Stripes {
+                    axis: Axis::Y,
+                    pos: 0.0,
+                    width: 2.0,
+                    dash: None,
+                    color: "#111111".into(),
+                    wear: Some(0.95),
+                },
+                "layers[0].wear:",
+            ),
+            (
+                Layer::Waves {
+                    color: "#111111".into(),
+                    freq: 0,
+                    threshold: 0.0,
+                },
+                "layers[0].freq:",
+            ),
+            (
+                Layer::Grid {
+                    step: 2.0,
+                    width: Some(5.0),
+                    color: "#111111".into(),
+                },
+                "layers[0].width:",
+            ),
+            (
+                Layer::Bevel {
+                    step: 3.0,
+                    light: "#ffffff".into(),
+                    dark: "#000000".into(),
+                },
+                "layers[0].step:",
+            ),
+        ];
+        for (layer, want) in cases {
+            let msg = err_of(&recipe(vec![layer]));
+            assert!(msg.starts_with(want), "{msg:?} should start with {want:?}");
+        }
+    }
+
+    #[test]
+    fn validate_checks_the_wall_face() {
+        let mut r = recipe(vec![]);
+        r.wall_face = Some(WallFace {
+            height: DESIGN_SIZE / 2.0 + 1.0,
+            shade: 0.5,
+        });
+        assert!(err_of(&r).starts_with("wall_face.height:"));
+        r.wall_face = Some(WallFace {
+            height: 4.0,
+            shade: -0.1,
+        });
+        assert!(err_of(&r).starts_with("wall_face.shade:"));
+    }
+
+    #[test]
+    fn deserialize_rejects_unknown_fields() {
+        let ok = r##"{"base":{"ramp":["#000000","#ffffff"]},"layers":[{"type":"speckle","color":"#111111","amount":0.2}]}"##;
+        let r: TextureRecipe = serde_json::from_str(ok).unwrap();
+        assert_eq!(r.base.cells, Some(4));
+        validate(&r).unwrap();
+        let bad = r##"{"base":{"ramp":["#000000","#ffffff"],"colour":1}}"##;
+        assert!(serde_json::from_str::<TextureRecipe>(bad).is_err());
+    }
+}

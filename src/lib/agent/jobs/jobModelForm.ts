@@ -16,6 +16,9 @@ import {
 	type SamplingSource
 } from './modelAdvanced';
 import type { ModelColumns } from './chainModel';
+import { isOpenRouterUrl } from '#lib/inference/descriptor.ts';
+
+export { isOpenRouterUrl };
 
 /** Where a job's model calls go. 'settings' follows Settings → Inference. */
 export type ModelSource = 'settings' | 'remote' | 'openrouter';
@@ -48,14 +51,6 @@ export interface JobModelForm {
 	 * finds server-published recommendations may switch it to 'server'.
 	 */
 	sourceTouched: boolean;
-}
-
-export function isOpenRouterUrl(url: string): boolean {
-	try {
-		return new URL(url).hostname === 'openrouter.ai';
-	} catch {
-		return false;
-	}
 }
 
 function withAdvanced(form: JobModelForm, adv: JobModelAdvanced): JobModelForm {

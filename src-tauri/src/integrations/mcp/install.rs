@@ -25,17 +25,16 @@
 //! only on success, so a cancelled or failed install leaves nothing that looks
 //! like a working server.
 
-use futures_util::StreamExt;
 use log::info;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
 use super::catalog::{resolve_env, Acquisition, CatalogEntry};
 use super::process::SpawnConfig;
 use super::server_config::{McpServerConfig, McpServerSource};
+use crate::http_util::{stream_to_file, DownloadError};
 use crate::models::DownloadProgress;
 use crate::proxy::{apply_proxy, proxy_env, ProxyConfig, ProxyUse};
 use crate::runtimes;
@@ -366,32 +365,22 @@ impl McpInstaller {
         }
         let total = response.content_length().unwrap_or(0);
 
-        let mut file = tokio::fs::File::create(dest)
-            .await
-            .map_err(|e| format!("could not write {}: {e}", dest.display()))?;
-        let mut downloaded = 0u64;
-        let mut stream = response.bytes_stream();
         let mut last_emit = std::time::Instant::now();
-
-        while let Some(chunk) = stream.next().await {
-            if self.cancelled().await {
-                drop(file);
-                let _ = tokio::fs::remove_file(dest).await;
-                return Err("Install cancelled".into());
-            }
-            let chunk = chunk.map_err(|e| format!("download error: {e}"))?;
-            file.write_all(&chunk)
-                .await
-                .map_err(|e| format!("write error: {e}"))?;
-            downloaded += chunk.len() as u64;
+        let downloaded = stream_to_file(response, dest, None, |downloaded| {
             if last_emit.elapsed().as_millis() >= 100 {
                 emit(app, stage, downloaded, total);
                 last_emit = std::time::Instant::now();
             }
-        }
-        file.flush()
-            .await
-            .map_err(|e| format!("flush error: {e}"))?;
+            async move { !self.cancelled().await }
+        })
+        .await
+        .map_err(|e| match e {
+            DownloadError::Stopped => "Install cancelled".to_string(),
+            DownloadError::Create(e) => format!("could not write {}: {e}", dest.display()),
+            DownloadError::Read(e) => format!("download error: {e}"),
+            DownloadError::Write(e) => format!("write error: {e}"),
+            DownloadError::TooLarge(_) => unreachable!("no cap was set"),
+        })?;
         emit(app, stage, downloaded, total);
         Ok(())
     }
@@ -843,24 +832,9 @@ async fn run_to_completion(mut cmd: tokio::process::Command, what: &str) -> Resu
 }
 
 async fn sha256_of(path: &Path) -> Result<String, String> {
-    use sha2::{Digest, Sha256};
-    use tokio::io::AsyncReadExt;
-    let mut file = tokio::fs::File::open(path)
+    crate::hash_util::sha256_file(path, |_| {})
         .await
-        .map_err(|e| format!("could not read {}: {e}", path.display()))?;
-    let mut hasher = Sha256::new();
-    let mut buf = vec![0u8; 1024 * 1024];
-    loop {
-        let read = file
-            .read(&mut buf)
-            .await
-            .map_err(|e| format!("read error: {e}"))?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buf[..read]);
-    }
-    Ok(format!("{:x}", hasher.finalize()))
+        .map_err(|e| format!("could not read {}: {e}", path.display()))
 }
 
 /// Unpack a release asset. `.tar.gz` everywhere but Windows, `.zip` there.

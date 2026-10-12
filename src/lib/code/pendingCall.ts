@@ -5,6 +5,7 @@
  */
 
 import type { PartialToolCall } from '#lib/agent/loop.ts';
+import { formatBytes } from '#lib/utils/format.ts';
 
 /** A call in the round in flight; `index` is its position in that round. */
 export interface PendingToolCall extends PartialToolCall {
@@ -87,12 +88,7 @@ function escapeRegExp(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** "812 B", "4.2 KB", "1.3 MB". */
-export function formatBytes(n: number): string {
-	if (n < 1024) return `${n} B`;
-	if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-	return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
+export { formatBytes };
 
 export interface PendingCallLabel {
 	/** "Writing", "Editing", "Preparing command…", "Calling fs_grep…". */

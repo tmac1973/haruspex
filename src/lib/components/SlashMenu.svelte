@@ -8,6 +8,7 @@
 	 * Opens above the input, which sits at the bottom of the window.
 	 */
 	import { matchItems, slashItems, typingName, type SlashItem } from '#lib/slash/slash.ts';
+	import { logDebug } from '#lib/debug-log.ts';
 
 	let {
 		text,
@@ -48,7 +49,9 @@
 		loadedFor = true;
 		void projectRoot()
 			.then((root) => slashItems(root, codeMode, compact))
-			.then((list) => (items = list));
+			.then((list) => (items = list))
+			// Keep whatever list was shown; the next `/` tries again.
+			.catch((e) => logDebug('slash', 'could not load slash commands', { error: String(e) }));
 	});
 
 	$effect(() => {

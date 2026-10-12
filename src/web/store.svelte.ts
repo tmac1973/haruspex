@@ -23,6 +23,7 @@ import {
 	type SessionState
 } from '#lib/engine/types.ts';
 import { ApiError, events, op, type Connection, type StreamEvent } from './api.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 /** How long to gather list-changing events before reading the list again. */
 const LIST_REFRESH_MS = 800;
@@ -149,7 +150,7 @@ export class WebStore {
 			return await fn();
 		} catch (e) {
 			if (e instanceof ApiError && e.status === 401) this.connection = 'unauthorised';
-			this.error = e instanceof Error ? e.message : String(e);
+			this.error = errMessage(e);
 			return undefined;
 		}
 	}
@@ -261,8 +262,7 @@ export class WebStore {
 			const file = await this.transport.op<FileContent>({ type: 'session.readFile', id, path });
 			if (this.viewer) this.viewer = { ...this.viewer, file };
 		} catch (e) {
-			if (this.viewer)
-				this.viewer = { ...this.viewer, error: e instanceof Error ? e.message : String(e) };
+			if (this.viewer) this.viewer = { ...this.viewer, error: errMessage(e) };
 		}
 	}
 

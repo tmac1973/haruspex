@@ -5,7 +5,8 @@ const settings = vi.hoisted(() => ({
 	repos: {} as Record<string, RepoTrust>,
 	updateSkills: vi.fn()
 }));
-vi.mock('#lib/stores/settings.ts', () => ({
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: () => ({ skills: { trustedRepos: settings.repos } }),
 	updateSkills: settings.updateSkills
 }));

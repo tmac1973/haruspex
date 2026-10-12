@@ -235,12 +235,7 @@ impl TtsEngine {
             return Err("No text to speak".to_string());
         }
 
-        info!(
-            "TTS request: {} chars, voice='{}', text: {:?}",
-            text.len(),
-            voice,
-            crate::text_util::truncate_at_char_boundary(text, 100)
-        );
+        info!("TTS request: {} chars, voice='{}'", text.len(), voice);
 
         let client = http_client(Duration::from_secs(120));
 
@@ -407,4 +402,74 @@ pub async fn get_tts_logs(state: tauri::State<'_, TtsEngine>) -> Result<Vec<Stri
 pub async fn clear_tts_logs(state: tauri::State<'_, TtsEngine>) -> Result<(), ()> {
     state.clear_logs().await;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("haruspex_test_tts_{}_{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn resolve_koko_path_prefers_the_bundled_file() {
+        let root = temp_dir("bundled");
+        let res = root.join("res");
+        std::fs::create_dir_all(res.join("checkpoints")).unwrap();
+        std::fs::write(res.join("checkpoints").join("model.onnx"), b"x").unwrap();
+        let data = root.join("data");
+        let got = resolve_koko_path(
+            &Some(res.clone()),
+            &Some(data.clone()),
+            "checkpoints",
+            "model.onnx",
+        );
+        assert_eq!(got, Some(res.join("checkpoints").join("model.onnx")));
+        assert!(
+            !data.exists(),
+            "the writable fallback is not created when unused"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn resolve_koko_path_falls_back_to_a_created_writable_dir() {
+        let root = temp_dir("fallback");
+        let res = root.join("res");
+        let data = root.join("data");
+        let got = resolve_koko_path(&Some(res), &Some(data.clone()), "data", "voices.bin");
+        let want = data.join("tts").join("data").join("voices.bin");
+        assert_eq!(got, Some(want.clone()));
+        assert!(want.parent().unwrap().is_dir());
+        assert!(
+            !want.exists(),
+            "the file itself is left for koko to download"
+        );
+
+        let got = resolve_koko_path(&None, &Some(data.clone()), "data", "voices.bin");
+        assert_eq!(got, Some(want));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn resolve_koko_path_is_none_without_a_usable_dir() {
+        let root = temp_dir("none");
+        let res = root.join("res");
+        assert_eq!(resolve_koko_path(&Some(res), &None, "data", "v.bin"), None);
+        assert_eq!(resolve_koko_path(&None, &None, "data", "v.bin"), None);
+
+        // An app data "dir" that is really a file cannot hold the model dir.
+        let blocker = root.join("file");
+        std::fs::write(&blocker, b"x").unwrap();
+        assert_eq!(
+            resolve_koko_path(&None, &Some(blocker), "data", "v.bin"),
+            None
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }
