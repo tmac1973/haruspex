@@ -58,4 +58,4 @@ Sandbox traffic uses the Network Proxy.
 
 API keys for remote model servers and OpenRouter are managed in Settings → Inference → **API Keys**. Give each key a name; the remote server and OpenRouter forms, and per-job model choices, refer to it by name, so changing a key here changes it everywhere.
 
-Keys, email and calendar passwords, and proxy passwords go in your system keychain (GNOME Keyring or KWallet on Linux, Keychain on macOS, Credential Manager on Windows). Where no keychain works, Haruspex keeps them in an encrypted file in its data folder.
+Keys, email and calendar passwords, and proxy passwords go in your system keychain (GNOME Keyring or KWallet on Linux, Keychain on macOS, Credential Manager on Windows). Where no keychain works, Haruspex keeps them in an encrypted file in its data folder. On Windows that file is tied to your login; on Linux and macOS anything that can read your files can read it, so set up a keychain if you can. If even the data folder can't be written, they are kept only until Haruspex closes. A password field's tooltip says which applies.

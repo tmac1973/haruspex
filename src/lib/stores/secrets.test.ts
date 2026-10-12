@@ -6,6 +6,7 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 import {
 	deleteSecret,
 	savedSecretPlaceholder,
+	secretStoreHint,
 	secretStoreAvailable,
 	secretStoreKind
 } from './secrets';
@@ -23,9 +24,12 @@ describe('secret store helpers', () => {
 		expect(await secretStoreKind()).toBe('none');
 	});
 
-	it('name the keychain only when that is where the secret went', () => {
+	it('say where the secret went, including when it lasts only for the session', () => {
 		expect(savedSecretPlaceholder('keychain')).toBe('Saved in the system keychain');
-		expect(savedSecretPlaceholder('file')).toBe('Saved in Haruspex');
+		expect(savedSecretPlaceholder('file')).toBe("Saved in Haruspex's encrypted file");
+		expect(savedSecretPlaceholder('none')).toBe('Kept until Haruspex closes');
+		expect(secretStoreHint('file')).toMatch(/anything that can read your files/);
+		expect(secretStoreHint('none')).toMatch(/after Haruspex restarts/);
 	});
 
 	it('do not throw when a delete fails', async () => {

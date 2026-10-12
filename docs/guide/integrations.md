@@ -11,7 +11,7 @@ Haruspex can read your email, calendars and contacts, connect to other software 
 
 Go to Settings → Integrations → Email and click **Add email account**. Pick a provider (Gmail, Fastmail, iCloud, Yahoo, or Custom), enter your address and an **app password**, then click **Save password**. It tests the connection before saving. Switch the account on with **Enabled**.
 
-An app password is a code your provider creates for Haruspex; it needs 2-factor authentication on your account. Microsoft 365 and Outlook.com are not supported, because Microsoft turned off app-password access. Passwords go in the system keychain, or Haruspex's encrypted secrets file where there is no keychain.
+An app password is a code your provider creates for Haruspex; it needs 2-factor authentication on your account. Microsoft 365 and Outlook.com are not supported, because Microsoft turned off app-password access. Passwords go in the system keychain, or Haruspex's encrypted secrets file where there is no keychain (see the `search-and-network` page for what that file protects).
 
 With an account on, the assistant can list recent mail, summarise one message, or read one in full. Reading a message never marks it as read.
 

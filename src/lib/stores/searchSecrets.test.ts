@@ -28,10 +28,12 @@ describe('the Brave key', () => {
 		expect(hasBraveApiKey()).toBe(true);
 	});
 
-	it('stays inline only where no store works', async () => {
+	it('never stays in the settings, even where nothing lasts', async () => {
+		// Rust keeps it in memory for the session then.
 		state.available = false;
 		await saveBraveApiKey('BSA-123');
-		expect(getSettings()).toMatchObject({ braveApiKey: 'BSA-123', braveApiKeySaved: false });
+		expect(getSettings()).toMatchObject({ braveApiKey: '', braveApiKeySaved: true });
+		expect(state.stored.get('brave:key')).toBe('BSA-123');
 		expect(hasBraveApiKey()).toBe(true);
 	});
 

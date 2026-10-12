@@ -49,9 +49,8 @@ export async function saveProxyUrl(which: WhichProxy, raw: string): Promise<void
 	const { url, password } = splitPassword(typed);
 	const before = current(which);
 	if (password) {
-		const { inline, ref } = await keepSecret(proxySecretKey(which), password);
-		write(which, ref ? { url, passwordRef: ref } : { url: typed, passwordRef: undefined });
-		void inline;
+		const { ref } = await keepSecret(proxySecretKey(which), password);
+		write(which, { url, passwordRef: ref });
 		return;
 	}
 	if (before.passwordRef && url === before.url) return;

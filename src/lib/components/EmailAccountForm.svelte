@@ -23,6 +23,7 @@
 	import { withStoredPassword } from '#lib/stores/emailSecrets.ts';
 	import {
 		savedSecretPlaceholder,
+		secretStoreHint,
 		secretStoreKind,
 		type SecretStoreKind
 	} from '#lib/stores/secrets.ts';
@@ -240,6 +241,7 @@
 				type="password"
 				bind:value={password}
 				placeholder={passwordPlaceholder}
+				title={account.passwordRef ? secretStoreHint(storeKind) : undefined}
 				autocomplete="off"
 			/>
 			<button

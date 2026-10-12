@@ -16,6 +16,7 @@
 	import { removeBraveApiKey, saveBraveApiKey } from '#lib/stores/searchSecrets.ts';
 	import {
 		savedSecretPlaceholder,
+		secretStoreHint,
 		secretStoreKind,
 		type SecretStoreKind
 	} from '#lib/stores/secrets.ts';
@@ -142,6 +143,7 @@
 				bind:value={braveDraft}
 				onblur={saveBraveKey}
 				placeholder={braveSaved ? savedSecretPlaceholder(storeKind) : 'BSA...'}
+				title={braveSaved ? secretStoreHint(storeKind) : undefined}
 			/>
 			{#if braveSaved}
 				<button type="button" onclick={removeBraveKey}>Remove key</button>
