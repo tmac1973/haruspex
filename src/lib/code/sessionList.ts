@@ -82,8 +82,7 @@ export function groupByRoot(list: CodeSessionSummary[]): SessionGroup[] {
 
 /** A row of the sidebar: one session, or a folder that has several. */
 export type SidebarEntry =
-	| { kind: 'session'; session: CodeSessionSummary }
-	| ({ kind: 'folder' } & SessionGroup);
+	{ kind: 'session'; session: CodeSessionSummary } | ({ kind: 'folder' } & SessionGroup);
 
 /** Sessions a folder needs before they are grouped under it. */
 export const GROUP_AT = 2;

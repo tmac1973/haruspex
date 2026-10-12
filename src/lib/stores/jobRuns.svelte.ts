@@ -14,12 +14,7 @@ export type JobRunStatus =
 	| 'needs_input';
 
 export type JobRunStepStatus =
-	| 'pending'
-	| 'running'
-	| 'succeeded'
-	| 'failed'
-	| 'skipped'
-	| 'cancelled';
+	'pending' | 'running' | 'succeeded' | 'failed' | 'skipped' | 'cancelled';
 
 export interface JobRunSummary {
 	id: number;

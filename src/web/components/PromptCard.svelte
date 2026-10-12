@@ -181,8 +181,7 @@
 			aria-label={agentsMd ? 'AGENTS.md' : 'SKILL.md'}
 			title="Edit it first if you like; this is what gets saved."
 			rows="12"
-			bind:value={skillText}
-		></textarea>
+			bind:value={skillText}></textarea>
 		<input
 			aria-label="Reason, if you reject it"
 			placeholder="Reason, if you reject it"

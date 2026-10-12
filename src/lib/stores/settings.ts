@@ -57,12 +57,7 @@ export type InferenceMode = 'local' | 'remote';
  * activation). `null` means the probe hasn't run yet or it failed.
  */
 export type InferenceBackendKind =
-	| 'llama-toolchest'
-	| 'llama-server'
-	| 'openai-compat'
-	| 'ollama'
-	| 'openrouter'
-	| null;
+	'llama-toolchest' | 'llama-server' | 'openai-compat' | 'ollama' | 'openrouter' | null;
 
 /**
  * Recommended sampling parameters discovered from a remote backend. Every

@@ -55,8 +55,7 @@
 		rows="3"
 		bind:value={cfg.description}
 		placeholder="a top-down pixel-art roguelike set in a ruined city"
-		aria-label="What to make"
-	></textarea>
+		aria-label="What to make"></textarea>
 	<p class="hint">Only used when the spec file does not exist yet.</p>
 </div>
 

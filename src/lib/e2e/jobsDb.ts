@@ -70,9 +70,11 @@ export const JOBS_DB: Record<string, (a: Args) => unknown> = {
 	db_replace_job_steps: (a) => {
 		const j = jobs.get(a?.jobId as number);
 		if (j) {
-			j.steps = (a?.steps as JobStepInput[]).map(
-				(s, ordering): JobStep => ({ id: nextId++, ordering, ...s })
-			);
+			j.steps = (a?.steps as JobStepInput[]).map((s, ordering): JobStep => ({
+				id: nextId++,
+				ordering,
+				...s
+			}));
 		}
 		return null;
 	},
