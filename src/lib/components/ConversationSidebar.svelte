@@ -115,7 +115,7 @@
 							onclick={(e) => e.stopPropagation()}
 						/>
 					{:else}
-						<span class="conv-title">{conv.title}</span>
+						<span class="conv-title" title={conv.title}>{conv.title}</span>
 						<button
 							class="rename-btn"
 							onclick={(e) => {
