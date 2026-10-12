@@ -46,7 +46,7 @@ Ask, for example, "save what we just did as a skill called deploy-check", or ask
 
 ## Skills that ship with Haruspex
 
-`init` and the planning skills are copied into your skills folder on first run, labelled **Shipped with Haruspex**. They are ordinary files: edit them, delete them, or replace them with your own of the same name. An update replaces only the ones you haven't edited. An edited one gets a **Restore** button to put it back as shipped. A deleted one stays deleted until you click **Restore deleted shipped skills**.
+`init`, `code-audit`, `guided-planning` and the planning skills are copied into your skills folder on first run, labelled **Shipped with Haruspex**. They are ordinary files: edit them, delete them, or replace them with your own of the same name. An update replaces only the ones you haven't edited. An edited one gets a **Restore** button to put it back as shipped. A deleted one stays deleted until you click **Restore deleted shipped skills**.
 
 ## Repo instructions (AGENTS.md)
 
@@ -59,6 +59,12 @@ Answers are kept in Settings → Skills → Repos, where you can switch each rep
 ## Draft an AGENTS.md with /init
 
 In the Code tab or with Full access, `/init` reads the repo's manifests, CI workflows, README and other agent files, and drafts a short `AGENTS.md`: the real build, test and lint commands, conventions and gotchas. It opens for review before anything is saved, and changes an existing file rather than rewriting it. In a Read-only Shell, `/init` only adds a note saying where it works.
+
+## Audit or plan a project
+
+In the Code tab or with Full access, `/code-audit` (optionally followed by a folder) reviews consistency, duplication, logging, secrets, tests and dependencies, rechecks each finding against the code, and reports by severity with a fix order. It changes nothing. For an audit run several times with each finding checked, use an Audit job; see the `jobs` page.
+
+`/guided-planning` followed by your idea asks one multiple-choice question at a time, then writes `overview.md` and numbered phase files to `plan/<name>/` (in Chat it asks where), with your review after each stage. It writes no code. The folder works as an Autonomous coding job's Plan directory.
 
 ## Planning skills
 
