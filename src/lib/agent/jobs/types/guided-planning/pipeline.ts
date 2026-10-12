@@ -8,6 +8,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { PROJECT_READ_TOOLS } from '#lib/agent/jobs/readTools.ts';
 import { createJob } from '#lib/stores/jobs.svelte.ts';
 import { resolveImageBackend } from '#lib/image/index.ts';
 import { defaultProfile } from '#lib/assets/normalize.ts';
@@ -33,6 +34,7 @@ import {
 } from '#lib/stores/jobRuns.svelte.ts';
 import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
 import {
+	defaultPlanDir,
 	parseGuidedPlanningConfig,
 	RUN_MODE_LABELS,
 	type GuidedPlanningConfig
@@ -123,7 +125,7 @@ const OUTLINE_TOOLS = [
 ];
 
 /** Read-only toolset for the independent verifier (no write, no questions). */
-const VERIFIER_TOOLS = ['fs_read_text', 'fs_list_dir', 'fs_read_pdf', 'code_grep', 'code_glob'];
+const VERIFIER_TOOLS = [...PROJECT_READ_TOOLS, 'fs_read_pdf'];
 
 /**
  * The toolsets a run uses, with web research folded in where the job allows
@@ -177,15 +179,7 @@ const VERIFIER_MAX_RESPONSE_TOKENS = 32768;
 
 /** A job's plan output folder, relative to working_dir (default plan/<slug>/). */
 function guidedPlanOutputDir(job: JobWithSteps, cfg: GuidedPlanningConfig): string {
-	const dir = cfg.plan_output_dir?.trim();
-	if (dir) return dir;
-	const slug =
-		job.name
-			.toLowerCase()
-			.trim()
-			.replace(/[^a-z0-9]+/g, '-')
-			.replace(/^-+|-+$/g, '') || 'plan';
-	return `plan/${slug}/`;
+	return cfg.plan_output_dir?.trim() || defaultPlanDir(job.name) || 'plan/plan/';
 }
 
 /**

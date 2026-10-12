@@ -469,13 +469,19 @@ function buildRequestBody(
 }
 
 /**
- * Low-level SSE reader: decode network chunks, split into lines, and yield
- * each `data: ` payload string until the stream ends or the `[DONE]`
- * terminator arrives. Non-data lines (like OpenRouter's
+ * Low-level SSE reader for model servers: decode network chunks, split into
+ * lines, and yield each `data:` payload string until the stream ends or the
+ * `[DONE]` terminator arrives. Non-data lines (like OpenRouter's
  * `: OPENROUTER PROCESSING` comment keepalives) are skipped. `onChunk`
  * fires once per network chunk — the setup wizard uses it to reset its
- * idle watchdog. This is the single SSE framing implementation; layer
- * payload parsing (parseSSE here, the setup store's delta reader) on top.
+ * idle watchdog. Layer payload parsing (parseSSE here, the setup store's
+ * delta reader) on top.
+ *
+ * One payload per line, not per blank-line-separated frame as the SSE spec
+ * has it: every OpenAI-compatible server sends one JSON object per event,
+ * and some separate events with a single newline, which spec framing would
+ * join into one unparseable payload. The web client's `sseParser`
+ * (`src/web/api.ts`) reads Haruspex's own event stream and frames by spec.
  */
 export async function* readSseData(
 	reader: ReadableStreamDefaultReader<Uint8Array>,
@@ -493,8 +499,9 @@ export async function* readSseData(
 			buffer = lines.pop()!;
 			for (const line of lines) {
 				const trimmed = line.trim();
-				if (!trimmed.startsWith('data: ')) continue;
-				const data = trimmed.slice(6);
+				// The space after the colon is optional (SSE spec); some servers omit it.
+				if (!trimmed.startsWith('data:')) continue;
+				const data = trimmed.slice(5).trimStart();
 				if (data === '[DONE]') return;
 				yield data;
 			}
