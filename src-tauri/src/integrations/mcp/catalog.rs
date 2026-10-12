@@ -675,6 +675,43 @@ mod tests {
         assert_eq!(optional.len(), 2, "both asset keys should be skippable");
     }
 
+    // ---- browser entry --------------------------------------------------
+
+    #[test]
+    fn playwright_downloads_its_browser_where_the_server_looks() {
+        // A server's environment is cleared, so without this the setup step
+        // (which gets HOME) and the server (which doesn't) would resolve
+        // Playwright's browser cache to different places, and the browser the
+        // user just downloaded would be "not installed".
+        let env = &companion_entry("playwright").command.env;
+        assert_eq!(
+            env.get("PLAYWRIGHT_BROWSERS_PATH").map(String::as_str),
+            Some("$serverDir")
+        );
+    }
+
+    #[test]
+    fn playwright_runs_headless_with_a_throwaway_profile() {
+        // No DISPLAY reaches a server, so a headed browser cannot open; and an
+        // on-disk profile would keep one page's cookies for the next project.
+        let args = &companion_entry("playwright").command.args;
+        assert!(args.iter().any(|a| a == "--headless"), "{args:?}");
+        assert!(args.iter().any(|a| a == "--isolated"), "{args:?}");
+    }
+
+    #[test]
+    fn playwrights_code_running_tools_are_not_enabled_by_default() {
+        // browser_run_code_unsafe runs JavaScript in the server's own node.
+        let tools = &companion_entry("playwright").default_tools;
+        for tool in [
+            "browser_evaluate",
+            "browser_run_code_unsafe",
+            "browser_file_upload",
+        ] {
+            assert!(!tools.contains(&tool.to_string()), "{tool}");
+        }
+    }
+
     #[test]
     fn an_instruction_is_never_optional() {
         // There is nothing to satisfy, so the flag would be a distinction
