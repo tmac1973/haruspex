@@ -13,6 +13,8 @@
 	 */
 	let distros = $state<string[]>([]);
 	let distro = $state('');
+	/** Start in a new git worktree; the desktop refuses it outside a repository. */
+	let worktree = $state(false);
 
 	/** Folders of saved sessions, to pick from instead of typing. */
 	const recent = $derived([...new Set(store.sessions.map((s) => s.root))].slice(0, 8));
@@ -44,7 +46,7 @@
 
 	async function start(): Promise<void> {
 		if (!folder.trim()) return;
-		await store.newSession(folder, distros.length > 0 ? distro || null : null);
+		await store.newSession(folder, distros.length > 0 ? distro || null : null, worktree);
 		if (!store.error) {
 			creating = false;
 			folder = '';
@@ -108,6 +110,13 @@
 					<option value={path}></option>
 				{/each}
 			</datalist>
+			<label
+				class="check"
+				title="A new folder beside the project, <project>-worktrees/<branch>, on a new branch from the last commit. Only in a git repository."
+			>
+				<input type="checkbox" bind:checked={worktree} />
+				<span>Work in a new worktree</span>
+			</label>
 			<div class="row">
 				<button class="btn btn-primary btn-small" type="submit" disabled={!folder.trim()}
 					>Start session</button
@@ -182,7 +191,7 @@
 		padding: 0 14px 10px;
 	}
 
-	.new input,
+	.new input:not([type='checkbox']),
 	.new select {
 		padding: 8px;
 		border: 1px solid var(--border);
@@ -194,6 +203,13 @@
 	.row {
 		display: flex;
 		gap: 8px;
+	}
+
+	.check {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 0.85rem;
 	}
 
 	ul {

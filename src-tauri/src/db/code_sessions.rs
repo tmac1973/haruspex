@@ -324,6 +324,18 @@ impl Database {
         backend: Option<&str>,
         effort: Option<&str>,
     ) -> Result<CodeSessionRow, String> {
+        self.create_code_session_in(location, None, backend, effort)
+    }
+
+    /// [`Self::create_code_session_at`], recording `worktree` as the linked
+    /// worktree made for the session (`location` is inside it).
+    pub fn create_code_session_in(
+        &self,
+        location: &CodeLocation,
+        worktree: Option<&str>,
+        backend: Option<&str>,
+        effort: Option<&str>,
+    ) -> Result<CodeSessionRow, String> {
         let root = stored_root(location, "Code session folder")?;
         let now = chrono_now();
         let row = CodeSessionRow {
@@ -339,7 +351,7 @@ impl Database {
             created_at: now,
             updated_at: now,
             read_only: false,
-            worktree: None,
+            worktree: worktree.map(str::to_string),
             notices_seen_at: None,
             agent_branch: None,
         };

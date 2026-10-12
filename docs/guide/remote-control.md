@@ -33,7 +33,7 @@ Each device with a token has its own permissions: **Read** (list and follow sess
 
 ## Use it from a browser
 
-The page lists your Code sessions, the open ones first. Pick one to follow it as it runs, send messages, steer or stop a turn, and answer what a turn asks: commands, the agent's questions, MCP tools, skill writes (edit the file first if you like) and whether to use a repo's instructions. **New session** starts one in a folder on this computer; on Windows, pick This PC or a WSL distro first.
+The page lists your Code sessions, the open ones first. Pick one to follow it as it runs, send messages, steer or stop a turn, and answer what a turn asks: commands, the agent's questions, MCP tools, skill writes (edit the file first if you like) and whether to use a repo's instructions. **New session** starts one in a folder on this computer, in a new worktree if you tick it; on Windows, pick This PC or a WSL distro first.
 
 `/compact` and the summary divider work as in the Code tab (see `code-sessions`). File names in a session are links: click one to read the file (it can't be edited from the page). Images attached to messages show as thumbnails, and pictures the model put in an answer show as they do here; click one for full size.
 

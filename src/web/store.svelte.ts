@@ -218,10 +218,18 @@ export class WebStore {
 		}
 	}
 
-	/** `wslDistro`: the WSL distro a Linux `root` is in, on a Windows computer. */
-	async newSession(root: string, wslDistro: string | null = null): Promise<void> {
+	/**
+	 * `wslDistro`: the WSL distro a Linux `root` is in, on a Windows computer.
+	 * `worktree`: work in a new git worktree of `root`'s repository.
+	 */
+	async newSession(root: string, wslDistro: string | null = null, worktree = false): Promise<void> {
 		const made = await this.run(() =>
-			this.transport.op<{ id: string }>({ type: 'session.new', root: root.trim(), wslDistro })
+			this.transport.op<{ id: string }>({
+				type: 'session.new',
+				root: root.trim(),
+				wslDistro,
+				worktree
+			})
 		);
 		if (!made) return;
 		await this.refreshList();

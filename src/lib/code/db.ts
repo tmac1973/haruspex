@@ -57,6 +57,8 @@ export function listCodeSessions(): Promise<CodeSessionSummary[]> {
  * A new, empty session at `root`, which must be an existing folder. On
  * Windows `wslDistro` is the distro a Linux `root` is in (a
  * `\\wsl.localhost\…` root names its own; a native folder is refused).
+ * With `worktree` the session works in a new git worktree of `root`'s
+ * repository, on a new branch, as a worktree fork does.
  */
 export async function createCodeSession(
 	root: string,
@@ -64,13 +66,15 @@ export async function createCodeSession(
 		backend?: BackendOverride | null;
 		effort?: string | null;
 		wslDistro?: string | null;
+		worktree?: boolean;
 	} = {}
 ): Promise<CodeSessionRecord> {
 	const row = await invoke<CodeSessionRow>('code_session_create', {
 		root,
 		wslDistro: opts.wslDistro ?? null,
 		backend: opts.backend ? JSON.stringify(opts.backend) : null,
-		effort: opts.effort ?? null
+		effort: opts.effort ?? null,
+		worktree: opts.worktree ?? false
 	});
 	return toRecord(row);
 }
