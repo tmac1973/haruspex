@@ -2,6 +2,7 @@
 
 The Mac and the Windows PC are your own machines, and tests run as **you**, in
 your session. Your Haruspex data is never touched:
+
 - the `unit` suite never launches the app;
 - the UI suites (phase 14) will run a test build with its own app identifier,
   `com.haruspex.app.e2e`, so it keeps its data in its own folder.
@@ -19,9 +20,16 @@ There are two ways to run tests on them. They share one lock
   and `gh workflow run` on pushed code (`plan/misc_futures/` phase 14).
 
 Suites:
-- `unit`, what CI runs: works now.
-- `e2e-app`, `e2e-mac` and `live`: arrive with phase 14; until then they say
-  so.
+
+- `unit`, what CI runs: both machines.
+- `e2e-app`, the real-app tests (`e2e/app/`): Windows only, since there is no
+  WebDriver for macOS's web view.
+- `drive` (Windows): builds the e2e app, then runs `.remote-drive.ps1` from the
+  tree, a script of `scripts/drive.mjs` passes against a real model. The
+  `release-test` skill keeps one (`.claude/skills/release-test/`).
+- `smoke` (Mac): launches the e2e build on your desktop, checks it starts its
+  model server, kills it outright, and checks a relaunch clears the orphan.
+- `e2e-mac` and `live`: not written yet; they say so.
 
 These machines are separate from CI's hosted `windows` and `macos` jobs.
 Those compile and unit-test on GitHub's machines, and run only on a PR
@@ -49,7 +57,7 @@ Appium's Mac2 driver, then opens System Settings so you can allow
 Accessibility and Screen Recording for Terminal. macOS doesn't let a script do
 that.
 
-**Windows.** In PowerShell opened with *Run as administrator*, from your own
+**Windows.** In PowerShell opened with _Run as administrator_, from your own
 account:
 
     powershell -ExecutionPolicy Bypass -File scripts\ci-runner\setup-windows.ps1 -SshKey "<your Linux public key>"
@@ -59,6 +67,7 @@ different administrator, the script stops, because everything it sets up is
 per-user.
 
 Each script:
+
 - installs the toolchain;
 - turns on SSH with key login;
 - installs the agent that runs suites on your desktop;
@@ -81,6 +90,7 @@ Linux box (`haruspex-mac`, `haruspex-win`). Then, from Linux:
 
 **The runner runs workflow code as you,** with your files and signed-in
 tools. Only code in this repo reaches it:
+
 - Only `nightly.yml` will use the `haruspex-live` label, and it has no
   `pull_request` trigger.
 - No outside contributor's PR runs any workflow until you approve it. The
@@ -94,7 +104,7 @@ An earlier version (in #253) set the machines up with a separate
 `haruspex-ci` user. If you ran it, clean up before running the new script.
 No runner was ever registered on GitHub, so there's nothing to remove there.
 
-**Windows,** in PowerShell opened with *Run as administrator*:
+**Windows,** in PowerShell opened with _Run as administrator_:
 
 ```powershell
 # 1. The user, and its profile folder if it ever signed in

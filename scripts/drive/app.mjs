@@ -382,6 +382,26 @@ export class App {
 		return { clicked: selector };
 	}
 
+	/** Fill the field `selector` finds in the main window with `text`, replacing what was there. */
+	async fill(selector, text) {
+		await this.exclusive(async (browser) => {
+			const el = await browser.$(selector);
+			await el.waitForDisplayed({ timeout: 10_000 });
+			await el.setValue(text);
+		});
+		return { filled: selector };
+	}
+
+	/** Choose the option shown as `label` in the `<select>` that `selector` finds. */
+	async select(selector, label) {
+		await this.exclusive(async (browser) => {
+			const el = await browser.$(selector);
+			await el.waitForDisplayed({ timeout: 10_000 });
+			await el.selectByVisibleText(label);
+		});
+		return { selected: label };
+	}
+
 	/**
 	 * Send a chat message through the engine (`new` starts a chat). With
 	 * `wait`, return when the reply is written or a prompt needs someone.

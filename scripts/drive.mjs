@@ -43,6 +43,8 @@ A long-lived app, driven step by step:
   api-events [--seconds N]  the owner API's event stream for N seconds (--api only)
   web-url                   a one-time link that opens the web client (--api only)
   click <selector>          click something in the main window (CSS, or button=Text)
+  fill <selector> <text>    fill a field in the main window (quote the selector)
+  select <selector> <label> choose a <select>'s option by the text it shows
   chats                     the desktop's chats (through the engine)
   chat-send <id|new> <text> [--wait]
                             send in a chat through the engine (new starts one)
@@ -315,6 +317,8 @@ async function daemon(opts) {
 		'fake-mcp': () => app.fakeMcp(),
 		answer: (a) => app.answer(a.kind, a.answer),
 		click: (a) => app.click(a.selector),
+		fill: (a) => app.fill(a.selector, a.text),
+		select: (a) => app.select(a.selector, a.label),
 		chats: () => app.engine({ type: 'chats.list' }),
 		'chat-send': (a) => app.chatSend(a.id, a.text, { wait: a.wait, ...turnOpts(a) }),
 		'chat-state': (a) => app.engine({ type: 'chat.get', id: a.id }),
@@ -429,6 +433,14 @@ async function client(cmd, values, positionals) {
 			need(1, 'a selector');
 			args = { selector: positionals.join(' ') };
 			break;
+		case 'fill':
+			need(2, 'a selector and the text');
+			args = { selector: positionals[0], text: positionals.slice(1).join(' ') };
+			break;
+		case 'select':
+			need(2, 'a selector and an option');
+			args = { selector: positionals[0], label: positionals.slice(1).join(' ') };
+			break;
 		case 'access':
 			need(1, 'tokens, trusted or lan');
 			args = { mode: positionals[0], hosts: positionals.slice(1) };
@@ -504,6 +516,8 @@ const CLIENT_COMMANDS = new Set([
 	'fake-mcp',
 	'answer',
 	'click',
+	'fill',
+	'select',
 	'chats',
 	'chat-send',
 	'chat-state',

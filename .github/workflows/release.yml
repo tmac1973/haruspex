@@ -326,8 +326,11 @@ jobs:
             # APPIMAGE_EXTRACT_AND_RUN: GitHub Actions containers don't expose
             # /dev/fuse, so AppImage tools (linuxdeploy + plugins) can't mount
             # via FUSE. This makes them extract to a tempdir and exec instead.
+            # sd-libs last: linuxdeploy needs it for sd-server's
+            # libstable-diffusion.so, and must still take llama.cpp's ggml
+            # (same sonames, other versions) from libs/ (docs/image-generation.md).
             APPIMAGE_EXTRACT_AND_RUN=1 \
-            NO_STRIP=1 LD_LIBRARY_PATH="$PWD/src-tauri/binaries/libs:$PWD/src-tauri/binaries" \
+            NO_STRIP=1 LD_LIBRARY_PATH="$PWD/src-tauri/binaries/libs:$PWD/src-tauri/binaries:$PWD/src-tauri/binaries/sd-libs" \
               npm run tauri build -- --bundles appimage,deb,rpm ${{ matrix.tauri_args }}
           elif [ "$RUNNER_OS" = "Windows" ]; then
             npm run tauri build -- --bundles nsis,msi ${{ matrix.tauri_args }}

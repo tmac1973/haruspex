@@ -4,6 +4,8 @@
 #
 #   unit      npm run check + test, cargo clippy + test (what CI runs)
 #   e2e-app   not on macOS: tauri-driver has no WKWebView support
+#   smoke     the e2e build, launched in your desktop session: it starts its
+#             (stub) model server, and after a kill -9 a relaunch clears it
 #   e2e-mac   npm run e2e:mac     } added by plan/misc_futures phase 14;
 #             (needs Xcode)       } until then they say so and fail
 #   live      npm run e2e:live    }
@@ -34,7 +36,7 @@ fi
 # as CI uses, unless real sidecars were fetched.
 target=$(rustc --print host-tuple)
 mkdir -p src-tauri/binaries/{node-modules,libs,sd-libs,espeak-ng-data/lang/placeholder}
-for name in llama-server whisper-server koko ruff node uv sd-server; do
+for name in haruspex-{llama-server,whisper-server,koko,ruff,node,uv,sd-server}; do
     bin="src-tauri/binaries/${name}-${target}"
     [[ -e "$bin" ]] || { echo '#!/bin/sh' >"$bin" && chmod +x "$bin"; }
 done
@@ -68,10 +70,53 @@ case "$suite" in
         echo "e2e-app does not run on macOS: tauri-driver has no WKWebView support (use e2e-mac)"
         exit 2
         ;;
+    smoke)
+        # No WebDriver for WKWebView, so no settings to seed: a fresh install
+        # with a model file in its folder starts the model server by itself.
+        # macOS can't make a child die with its parent (sidecar_process.rs);
+        # the guarantee here is the launch sweep (orphans.rs): kill the app
+        # outright, launch it again, and the old server goes.
+        export E2E_TARGET_DIR="$HOME/.haruspex-test/cache/target-e2e"
+        npm run e2e:app:build
+        id=com.haruspex.app.e2e
+        rm -rf "$HOME/Library/Application Support/$id" "$HOME/Library/Caches/$id" "$HOME/Library/WebKit/$id"
+        mkdir -p "$HOME/Library/Application Support/$id/models"
+        echo 'not a real model' >"$HOME/Library/Application Support/$id/models/e2e-stub.gguf"
+        E2E_STUB_PIDS=$(mktemp -d)
+        export E2E_STUB_PIDS
+        pidfile="$E2E_STUB_PIDS/haruspex-llama-server.pid"
+        launch() {
+            rm -f "$pidfile"
+            "$E2E_TARGET_DIR/debug/haruspex" >>"$HOME/.haruspex-test/smoke-app.log" 2>&1 &
+            app=$!
+            for _ in $(seq 60); do [[ -s $pidfile ]] && break; sleep 1; done
+            [[ -s $pidfile ]] || { echo "!! the app never started its model server"; kill -9 "$app"; exit 1; }
+            server=$(cat "$pidfile")
+            echo "== app $app started the model server $server"
+        }
+        : >"$HOME/.haruspex-test/smoke-app.log"
+        launch
+        screencapture -x "$HOME/.haruspex-test/smoke.png" 2>/dev/null || echo "(no screenshot: Screen Recording not allowed)"
+        old=$server
+        kill -9 "$app"
+        sleep 2
+        kill -0 "$old" 2>/dev/null && echo "== the model server $old outlived the app, as expected on macOS"
+        launch
+        for _ in $(seq 50); do kill -0 "$old" 2>/dev/null || break; sleep 0.2; done
+        if kill -0 "$old" 2>/dev/null; then
+            kill -9 "$old" "$server" "$app"
+            echo "!! relaunching did not stop the orphaned model server $old"
+            exit 1
+        fi
+        echo "== relaunching stopped the orphaned model server"
+        kill -9 "$app"
+        sleep 1
+        kill -9 "$server" 2>/dev/null || true
+        ;;
     e2e-mac) npm_script e2e:mac ;;
     live) npm_script e2e:live ;;
     *)
-        echo "unknown suite: $suite (unit, e2e-app, e2e-mac, live)"
+        echo "unknown suite: $suite (unit, e2e-app, smoke, e2e-mac, live)"
         exit 2
         ;;
 esac

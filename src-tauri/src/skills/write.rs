@@ -404,7 +404,11 @@ mod tests {
         let d = draft(&f.all(), &f.dest(), &req).unwrap();
         assert_eq!(
             d.dir,
-            f.repo.join(".agents/skills/repo-skill").to_string_lossy()
+            f.repo
+                .join(".agents")
+                .join("skills")
+                .join("repo-skill")
+                .to_string_lossy()
         );
         let no_repo = Destinations {
             user: &f.user,

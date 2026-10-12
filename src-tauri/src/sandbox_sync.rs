@@ -63,9 +63,12 @@ pub async fn sandbox_sync_workdir(
     per_run_cap_bytes: u64,
 ) -> Result<SyncResult, String> {
     let workdir_path = PathBuf::from(&workdir);
-    let workdir_canonical = workdir_path
-        .canonicalize()
-        .map_err(|e| format!("Cannot resolve working directory: {}", e))?;
+    // No `\\?\` on Windows: the worker shows this path to Python as its cwd.
+    let workdir_canonical = crate::fs_tools::path::strip_verbatim(
+        &workdir_path
+            .canonicalize()
+            .map_err(|e| format!("Cannot resolve working directory: {}", e))?,
+    );
     let workdir_abs = workdir_canonical.to_string_lossy().to_string();
 
     // First pass: walk the directory tree collecting (rel_path, abs_path,
