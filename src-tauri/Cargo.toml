@@ -6,7 +6,7 @@ authors = ["Tim MacDonald <tbaxmacdonald@gmail.com>"]
 license = "GPL-3.0-or-later"
 repository = "https://github.com/tmac1973/haruspex"
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.95"
 
 [lib]
 name = "app_lib"
@@ -45,7 +45,7 @@ axum = { version = "0.8.4", default-features = false, features = ["http1", "json
 # image or SVG renderers it can also produce.
 qrcode = { version = "0.14.1", default-features = false }
 sha2 = "0.10.9"
-sysinfo = "0.36.1"
+sysinfo = "0.39.6"
 tauri-plugin-dialog = "2.6.0"
 futures-util = "0.3.32"
 # Browser-assisted search speaks CDP, which is JSON-RPC over one WebSocket.
@@ -58,9 +58,9 @@ libc = "0.2.183"
 # Waiting on a sidecar from one thread while another may kill it
 # (`sidecar_process`). The shell plugin uses the same crate for the same reason.
 shared_child = "1.1"
-rusqlite = { version = "0.39.0", features = ["bundled"] }
-cpal = "0.17.1"
-rodio = "0.21.1"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+cpal = "0.18.2"
+rodio = "0.23.0"
 hound = "3.5.1"
 pdf-extract = "0.12"
 # The pdfium_<build> feature must match PDFIUM_VERSION in scripts/fetch-pdfium.sh:
@@ -73,7 +73,7 @@ zip = "9.0"
 image = "0.25"
 base64 = "0.22"
 rust_xlsxwriter = "0.90"
-portable-pty = "0.8"
+portable-pty = "0.9"
 # Editor windows reload a file when something else changes it: inotify on
 # Linux, FSEvents on macOS. See fs_tools/editor.rs.
 notify = "8.2"
@@ -111,7 +111,7 @@ tauri-plugin-notification = "2.3.3"
 # default features, so as a library it costs only cfg-if/derive_builder/
 # thiserror plus the one platform backend. See src/power.rs.
 keepawake = { version = "0.6.1", default-features = false }
-fastembed = { version = "6.0.0", default-features = false, features = ["hf-hub", "hf-hub-rustls-tls", "ort-download-binaries-rustls-tls"] }
+fastembed = { version = "7.1.1", default-features = false, features = ["hf-hub", "hf-hub-rustls-tls", "ort-download-binaries-rustls-tls"] }
 rmcp = { version = "3.5.1", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest"] }
 tar = "0.4.46"
 flate2 = "1.1.10"
@@ -147,7 +147,7 @@ webkit2gtk = { version = "2.0", features = ["v2_34"] }
 # Windows: the kill-on-close Job Object that ties sidecars to the app's lifetime
 # (`sidecar_process`).
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_Security", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_SystemServices", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_SystemServices", "Win32_System_Threading"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 xcap = "0.9"
