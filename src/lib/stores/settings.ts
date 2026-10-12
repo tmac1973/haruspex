@@ -397,6 +397,16 @@ export interface AppSettings {
 	remoteAccessToken: string;
 	remoteAccessTokenSaved: boolean;
 	/**
+	 * Who may chat without the link: nobody (`tokens`), the computers in
+	 * `remoteAccessTrustedHosts` (`trusted`), or anyone on a private network
+	 * (`lan`). The link works in every mode. Kept apart from Remote control's
+	 * `ownerApiAccess`: guests and the owner's own computers are different
+	 * people.
+	 */
+	remoteAccessMode: 'tokens' | 'trusted' | 'lan';
+	/** Hostnames or IP addresses, for `remoteAccessMode: 'trusted'`. */
+	remoteAccessTrustedHosts: string[];
+	/**
 	 * Settings → Remote control: the owner API, for the owner's own devices
 	 * (plan/remote-api/). Off by default; on, it listens on this computer only
 	 * unless `ownerApiBindAll`. Its devices and their tokens live in Rust
@@ -858,6 +868,8 @@ const defaults: AppSettings = {
 	remoteAccessPort: 8787,
 	remoteAccessToken: '',
 	remoteAccessTokenSaved: false,
+	remoteAccessMode: 'tokens',
+	remoteAccessTrustedHosts: [],
 	ownerApiEnabled: false,
 	// Next to remote chat's 8787.
 	ownerApiPort: 8788,

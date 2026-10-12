@@ -47,7 +47,12 @@ export async function syncRemoteServer(): Promise<RemoteStatus | null> {
 			port: settings.remoteAccessPort,
 			token,
 			// The entire point is reaching this machine from another one.
-			bindAll: true
+			bindAll: true,
+			access: {
+				mode: settings.remoteAccessMode,
+				trustedHosts: settings.remoteAccessTrustedHosts,
+				extraHost: null
+			}
 		});
 		logDebug('remote', `serving on port ${status.port}`);
 		return status;

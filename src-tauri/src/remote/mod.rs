@@ -24,6 +24,7 @@ use std::sync::{Arc, Mutex};
 pub use commands::*;
 pub use server::{RemoteConfig, RemoteStatus};
 
+use crate::owner::trust::Trust;
 use crate::sync_util::LockExt;
 use relay::Relay;
 use server::Running;
@@ -33,6 +34,8 @@ use server::Running;
 pub struct RemoteServer {
     running: Mutex<Option<Running>>,
     relay: Arc<Relay>,
+    /// Who may chat without the link; outlives restarts, and changes in place.
+    trust: Arc<Trust>,
 }
 
 impl Default for RemoteServer {
@@ -46,11 +49,16 @@ impl RemoteServer {
         RemoteServer {
             running: Mutex::new(None),
             relay: Arc::new(Relay::new()),
+            trust: Arc::new(Trust::default()),
         }
     }
 
     pub fn relay(&self) -> Arc<Relay> {
         self.relay.clone()
+    }
+
+    pub fn trust(&self) -> Arc<Trust> {
+        self.trust.clone()
     }
 
     pub fn status(&self) -> RemoteStatus {
@@ -74,7 +82,8 @@ impl RemoteServer {
     }
 
     /// True when a server is already up on this exact configuration, so a
-    /// settings write that changed nothing does not drop live sessions.
+    /// settings write that changed nothing does not drop live sessions. Who
+    /// can connect is left out: it changes in place.
     pub fn matches(&self, config: &RemoteConfig) -> bool {
         let running = self.running.lock_or_recover();
         running.as_ref().is_some_and(|r| {

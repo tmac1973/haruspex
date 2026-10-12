@@ -276,6 +276,7 @@ export const IPC = {
 	remote_start: 'remote_start',
 	remote_status: 'remote_status',
 	remote_stop: 'remote_stop',
+	remote_trusted_hosts: 'remote_trusted_hosts',
 	remote_turn_delta: 'remote_turn_delta',
 	remote_turn_done: 'remote_turn_done',
 	remote_turn_error: 'remote_turn_error',
