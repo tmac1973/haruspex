@@ -249,7 +249,9 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 					// arms a nudge that only fs_write_* tools clear).
 					maxResponseTokens: settings.maxResponseTokensFileWrite,
 					expectsFileOutput: false,
-					visionSupported: true,
+					// As Chat decides it: a screenshot tool's image goes to the model
+					// only when the backend can read one.
+					visionSupported: descriptor.vision,
 					interactive: true,
 					signal: o.signal,
 					takeSteering: o.takeSteering,
