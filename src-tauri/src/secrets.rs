@@ -2,8 +2,10 @@
 //! (GNOME Keyring, KWallet), Keychain on macOS, Credential Manager on
 //! Windows. Where none works — a headless session, a Secret Service with no
 //! unlocked collection — they go to an encrypted file in the app's data
-//! directory instead ([`EncryptedFile`]). Either way they are out of the
-//! settings blob, which lives in webview storage.
+//! directory instead ([`EncryptedFile`]). Where that can't be written either,
+//! they are kept in memory for the session ([`session`]) and asked for again
+//! after a restart. They are never put in the settings blob, which lives in
+//! webview storage.
 //!
 //! Values only leave the store inside Rust, with one narrow exception. The
 //! frontend can ask whether a store exists, put a value in and delete one;
@@ -179,14 +181,17 @@ pub fn keychain_available() -> bool {
 }
 
 /// Secrets in a file of their own, encrypted with AES-256-GCM under a random
-/// key kept in a second file beside it (owner-only on Unix).
+/// key kept in a second file beside it: owner-only on Unix, and on Windows
+/// wrapped with DPAPI, which ties it to the user's Windows login.
 ///
 /// What this protects against, honestly: anything that can read the
 /// webview's storage — a cross-site-scripting bug, an extension of the
 /// webview, a copy of the browser profile — and a casual look at the data
-/// directory. It does not protect against someone who can read the user's
-/// files, since the key sits next to the data. That is the job of the system
-/// keychain, which is always preferred when it works.
+/// directory; on Windows also a copy of the disk read without the user's
+/// login. On Linux and macOS it does not protect against someone who can read
+/// the user's files, since the key sits next to the data: nothing tied to the
+/// OS is available to protect it with when there is no keychain. That is the
+/// keychain's job, and it is always preferred when it works.
 pub struct EncryptedFile {
     dir: PathBuf,
     /// One writer at a time: every write rewrites the whole file.
@@ -207,14 +212,13 @@ impl EncryptedFile {
     fn key(&self) -> Result<LessSafeKey, String> {
         let path = self.dir.join(KEY_FILE);
         let bytes = match std::fs::read(&path) {
-            Ok(b) if b.len() == 32 => b,
-            Ok(_) => return Err(format!("{} is not a key", path.display())),
+            Ok(stored) => unwrap_key(&path, stored)?,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                let mut b = vec![0u8; 32];
+                let mut b = vec![0u8; KEY_LEN];
                 SystemRandom::new()
                     .fill(&mut b)
                     .map_err(|_| "no random source for a secrets key".to_string())?;
-                write_private(&path, &b)?;
+                write_private(&path, &wrap_key(&b)?)?;
                 b
             }
             Err(e) => return Err(format!("Could not read {}: {e}", path.display())),
@@ -261,6 +265,111 @@ impl EncryptedFile {
         let mut map = self.load(&key)?;
         f(&mut map);
         self.save(&key, &map)
+    }
+}
+
+const KEY_LEN: usize = 32;
+
+/// The key as it is written to disk: wrapped with DPAPI on Windows, as is
+/// elsewhere (where the file's owner-only mode is what there is).
+fn wrap_key(key: &[u8]) -> Result<Vec<u8>, String> {
+    #[cfg(windows)]
+    {
+        dpapi::protect(key)
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(key.to_vec())
+    }
+}
+
+/// The key from what is on disk. A bare 32-byte key on Windows was written
+/// before DPAPI wrapping: it is used, and rewritten wrapped.
+fn unwrap_key(path: &Path, stored: Vec<u8>) -> Result<Vec<u8>, String> {
+    #[cfg(windows)]
+    {
+        if stored.len() == KEY_LEN {
+            if let Err(e) = write_private(path, &dpapi::protect(&stored)?) {
+                log::warn!("could not rewrap the secrets key with DPAPI: {e}");
+            }
+            return Ok(stored);
+        }
+        let key = dpapi::unprotect(&stored)
+            .map_err(|e| format!("{} could not be unlocked: {e}", path.display()))?;
+        if key.len() != KEY_LEN {
+            return Err(format!("{} is not a key", path.display()));
+        }
+        Ok(key)
+    }
+    #[cfg(not(windows))]
+    {
+        if stored.len() != KEY_LEN {
+            return Err(format!("{} is not a key", path.display()));
+        }
+        Ok(stored)
+    }
+}
+
+/// DPAPI (`CryptProtectData`), scoped to the current user: only this user's
+/// login can unwrap what it wraps, and a copy of the disk can't.
+#[cfg(windows)]
+mod dpapi {
+    use windows_sys::Win32::Foundation::LocalFree;
+    use windows_sys::Win32::Security::Cryptography::{
+        CryptProtectData, CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
+    };
+
+    pub fn protect(data: &[u8]) -> Result<Vec<u8>, String> {
+        call(data, true)
+    }
+
+    pub fn unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
+        call(data, false)
+    }
+
+    fn call(data: &[u8], protect: bool) -> Result<Vec<u8>, String> {
+        let input = CRYPT_INTEGER_BLOB {
+            cbData: u32::try_from(data.len()).map_err(|_| "too much data for DPAPI")?,
+            // DPAPI only reads its input.
+            pbData: data.as_ptr() as *mut u8,
+        };
+        let mut output = CRYPT_INTEGER_BLOB::default();
+        // SAFETY: `input` points at `data`, alive for the call; the optional
+        // arguments are null; `output` is written by the call and freed below
+        // with LocalFree, as the API requires.
+        let ok = unsafe {
+            if protect {
+                CryptProtectData(
+                    &input,
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    CRYPTPROTECT_UI_FORBIDDEN,
+                    &mut output,
+                )
+            } else {
+                CryptUnprotectData(
+                    &input,
+                    std::ptr::null_mut(),
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    CRYPTPROTECT_UI_FORBIDDEN,
+                    &mut output,
+                )
+            }
+        };
+        if ok == 0 {
+            return Err(format!("DPAPI failed: {}", std::io::Error::last_os_error()));
+        }
+        // SAFETY: on success `output` holds `cbData` bytes DPAPI allocated.
+        let bytes =
+            unsafe { std::slice::from_raw_parts(output.pbData, output.cbData as usize) }.to_vec();
+        unsafe {
+            LocalFree(output.pbData.cast());
+        }
+        Ok(bytes)
     }
 }
 
@@ -316,12 +425,14 @@ impl Store for EncryptedFile {
     }
 }
 
-/// The keychain where it works, the encrypted file otherwise. Reads look in
-/// both, so a secret written while the keychain was locked is still found
-/// once it opens; deletes clear both.
+/// The keychain where it works, the encrypted file otherwise, and memory for
+/// the session where neither can be written. Reads look in all three, so a
+/// secret written while the keychain was locked is still found once it
+/// opens; deletes clear all three.
 pub struct Layered<K: Store, F: Store> {
     keychain: Option<K>,
     file: F,
+    session: Option<&'static Memory>,
 }
 
 impl<K: Store, F: Store> Store for Layered<K, F> {
@@ -334,7 +445,17 @@ impl<K: Store, F: Store> Store for Layered<K, F> {
                 let _ = self.file.delete(key);
                 Ok(())
             }
-            None => self.file.set(key, value),
+            None => match (self.file.set(key, value), self.session) {
+                (Ok(()), _) => Ok(()),
+                // Nowhere that lasts: keep it for this session rather than
+                // anywhere a setting would put it. `secret_store_kind` says
+                // "none", and Settings says it will be asked for again.
+                (Err(e), Some(session)) => {
+                    log::warn!("secret {key} kept in memory only: {e}");
+                    session.set(key, value)
+                }
+                (Err(e), None) => Err(e),
+            },
         }
     }
 
@@ -344,10 +465,20 @@ impl<K: Store, F: Store> Store for Layered<K, F> {
                 return Ok(Some(v));
             }
         }
-        self.file.get(key)
+        let from_file = self.file.get(key);
+        if let Ok(Some(v)) = &from_file {
+            return Ok(Some(v.clone()));
+        }
+        if let Some(Some(v)) = self.session.map(|m| m.get(key).ok().flatten()) {
+            return Ok(Some(v));
+        }
+        from_file
     }
 
     fn delete(&self, key: &str) -> Result<(), String> {
+        if let Some(session) = self.session {
+            let _ = session.delete(key);
+        }
         if let Some(k) = &self.keychain {
             k.delete(key)?;
         }
@@ -363,9 +494,26 @@ pub fn init(app_data_dir: PathBuf) {
     let _ = DATA_DIR.set(app_data_dir);
 }
 
+/// Secrets kept for this run only, where nothing that lasts can be written.
+fn session() -> &'static Memory {
+    static SESSION: OnceLock<Memory> = OnceLock::new();
+    SESSION.get_or_init(Memory::default)
+}
+
 /// The store every secret goes through.
 pub fn store() -> Layered<Keychain, EncryptedFile> {
     Layered {
+        session: Some(session()),
+        ..lasting_store()
+    }
+}
+
+/// [`store`] without the session tier: only what survives a restart. What
+/// `secret_available` and `secret_store_kind` probe, so moving a secret out
+/// of the settings never moves it somewhere a restart would lose it.
+fn lasting_store() -> Layered<Keychain, EncryptedFile> {
+    Layered {
+        session: None,
         keychain: keychain_available().then_some(Keychain),
         file: EncryptedFile::new(
             DATA_DIR
@@ -465,23 +613,25 @@ fn check_key(key: &str) -> Result<(), String> {
     }
 }
 
-/// Whether secrets can be kept out of the settings blob on this machine: the
-/// keychain works, or the encrypted file can be written.
+/// Whether secrets can be kept somewhere that lasts on this machine: the
+/// keychain works, or the encrypted file can be written. (Where neither does,
+/// `secret_set` still takes a secret, for the session only.)
 #[tauri::command]
 pub async fn secret_available() -> bool {
-    tokio::task::spawn_blocking(|| probe(&store()))
+    tokio::task::spawn_blocking(|| probe(&lasting_store()))
         .await
         .unwrap_or(false)
 }
 
 /// Where secrets go on this machine, for the settings copy: `"keychain"`,
-/// `"file"` (the encrypted fallback) or `"none"` when neither works.
+/// `"file"` (the encrypted fallback) or `"none"` when neither works, and they
+/// are kept in memory until the app closes.
 #[tauri::command]
 pub async fn secret_store_kind() -> &'static str {
     tokio::task::spawn_blocking(|| {
         if keychain_available() {
             "keychain"
-        } else if probe(&store()) {
+        } else if probe(&lasting_store()) {
             "file"
         } else {
             "none"
@@ -511,16 +661,15 @@ pub async fn secret_delete(key: String) -> Result<(), String> {
         .map_err(|e| e.to_string())?
 }
 
-/// Secrets in memory, for tests; `refuse` makes every write fail, as a
-/// keychain with no unlocked collection does.
-#[cfg(test)]
+/// Secrets in memory: the session tier of [`store`], and a stand-in store in
+/// tests, where `refuse` makes every write fail, as a keychain with no
+/// unlocked collection does.
 #[derive(Default)]
 pub struct Memory {
     pub refuse: bool,
     map: std::sync::Mutex<std::collections::HashMap<String, String>>,
 }
 
-#[cfg(test)]
 impl Store for Memory {
     fn set(&self, key: &str, value: &str) -> Result<(), String> {
         if self.refuse {
@@ -671,6 +820,7 @@ mod tests {
         let s = Layered {
             keychain: Some(Memory::default()),
             file,
+            session: None,
         };
         assert_eq!(s.get("email:old").unwrap(), Some("from-file".into()));
         s.set("email:old", "now-in-keychain").unwrap();
@@ -688,6 +838,7 @@ mod tests {
         let s: Layered<Memory, EncryptedFile> = Layered {
             keychain: None,
             file: EncryptedFile::new(&dir),
+            session: None,
         };
         assert!(probe(&s));
         s.set("brave:key", "k").unwrap();
@@ -725,5 +876,83 @@ mod tests {
         assert!(check_key("email:é").is_err());
         assert!(check_key(&format!("email:{}", "a".repeat(194))).is_ok());
         assert!(check_key(&format!("email:{}", "a".repeat(195))).is_err());
+    }
+
+    #[test]
+    fn with_nowhere_to_write_a_secret_is_kept_for_the_session_only() {
+        // A data folder that can't be written: a file where the folder
+        // should be.
+        let blocker = temp_dir("session-blocker");
+        std::fs::create_dir_all(&blocker).unwrap();
+        let dir = blocker.join("not-a-dir");
+        std::fs::write(&dir, b"x").unwrap();
+        static SESSION: OnceLock<Memory> = OnceLock::new();
+        let session = SESSION.get_or_init(Memory::default);
+        let s: Layered<Memory, EncryptedFile> = Layered {
+            keychain: None,
+            file: EncryptedFile::new(dir.join("secrets")),
+            session: Some(session),
+        };
+        s.set("email:a", "pw").unwrap();
+        assert_eq!(s.get("email:a").unwrap(), Some("pw".into()));
+        assert_eq!(session.get("email:a").unwrap(), Some("pw".into()));
+        s.delete("email:a").ok();
+        assert_eq!(session.get("email:a").unwrap(), None);
+        // Without the session tier the same write fails, which is what
+        // `secret_available` probes.
+        let lasting: Layered<Memory, EncryptedFile> = Layered {
+            keychain: None,
+            file: EncryptedFile::new(dir.join("secrets")),
+            session: None,
+        };
+        assert!(!probe(&lasting));
+        std::fs::remove_dir_all(&blocker).ok();
+    }
+
+    #[test]
+    fn a_file_that_works_is_used_before_the_session() {
+        let dir = temp_dir("session-not-needed");
+        static SESSION: OnceLock<Memory> = OnceLock::new();
+        let session = SESSION.get_or_init(Memory::default);
+        let s: Layered<Memory, EncryptedFile> = Layered {
+            keychain: None,
+            file: EncryptedFile::new(&dir),
+            session: Some(session),
+        };
+        s.set("dav:a", "x").unwrap();
+        assert_eq!(session.get("dav:a").unwrap(), None);
+        assert_eq!(
+            EncryptedFile::new(&dir).get("dav:a").unwrap(),
+            Some("x".into())
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn the_key_is_stored_bare_outside_windows_and_checked() {
+        let p = Path::new("secrets.key");
+        assert_eq!(wrap_key(&[7u8; KEY_LEN]).unwrap(), vec![7u8; KEY_LEN]);
+        assert_eq!(
+            unwrap_key(p, vec![7u8; KEY_LEN]).unwrap(),
+            vec![7u8; KEY_LEN]
+        );
+        assert!(unwrap_key(p, vec![7u8; 31]).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn dpapi_round_trips_and_a_bare_key_still_reads() {
+        let key = [9u8; KEY_LEN];
+        let wrapped = wrap_key(&key).unwrap();
+        assert_ne!(wrapped.len(), KEY_LEN);
+        let dir = temp_dir("dpapi");
+        let p = dir.join(KEY_FILE);
+        assert_eq!(unwrap_key(&p, wrapped).unwrap(), key.to_vec());
+        // A key written before DPAPI wrapping is used, and rewritten wrapped.
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(unwrap_key(&p, key.to_vec()).unwrap(), key.to_vec());
+        assert_ne!(std::fs::read(&p).unwrap().len(), KEY_LEN);
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -90,10 +90,12 @@ describe('saving and deleting', () => {
 		expect(saved).toMatchObject({ password: '', passwordRef: 'email:a1' });
 	});
 
-	it('keeps the password inline where there is none', async () => {
+	it('never keeps the password in the settings, even where nothing lasts', async () => {
+		// Rust keeps it in memory for the session then.
 		state.available = false;
 		const saved = await withStoredPassword(account({ passwordRef: 'email:a1' }), 'new-pw');
-		expect(saved).toMatchObject({ password: 'new-pw', passwordRef: undefined });
+		expect(saved).toMatchObject({ password: '', passwordRef: 'email:a1' });
+		expect(calls('secret_set')[0]).toEqual({ key: 'email:a1', value: 'new-pw' });
 	});
 
 	it('deletes the kept password, and never throws doing it', async () => {

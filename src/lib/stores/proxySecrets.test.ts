@@ -60,11 +60,12 @@ describe('saveProxyUrl', () => {
 		expect(getSettings().proxy.passwordRef).toBeUndefined();
 	});
 
-	it('keeps the whole URL only where no store works', async () => {
+	it('never keeps the password in the URL, even where nothing lasts', async () => {
+		// Rust keeps it in memory for the session then.
 		state.available = false;
 		await saveProxyUrl('network', 'http://bob:hunter2@proxy:3128');
-		expect(getSettings().proxy.url).toBe('http://bob:hunter2@proxy:3128');
-		expect(state.stored.size).toBe(0);
+		expect(getSettings().proxy.url).toBe('http://bob@proxy:3128');
+		expect(state.stored.get('proxy:network')).toBe('hunter2');
 	});
 });
 

@@ -155,7 +155,7 @@ webkit2gtk = { version = "2.0", features = ["v2_34"] }
 # Windows: the kill-on-close Job Object that ties sidecars to the app's lifetime
 # (`sidecar_process`).
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_SystemServices", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Cryptography", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_SystemServices", "Win32_System_Threading"] }
 # Credential Manager for src/secrets.rs. `search` (on by default) only adds
 # regex for listing credentials, which we never do.
 windows-native-keyring-store = { version = "1", default-features = false }

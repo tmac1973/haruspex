@@ -30,6 +30,7 @@
 	import { forgetDavPassword, withStoredDavPassword } from '#lib/stores/davSecrets.ts';
 	import {
 		savedSecretPlaceholder,
+		secretStoreHint,
 		secretStoreKind,
 		type SecretStoreKind
 	} from '#lib/stores/secrets.ts';
@@ -258,6 +259,7 @@
 					placeholder={account.passwordRef || account.password
 						? savedSecretPlaceholder(storeKind)
 						: 'https://… or webcal://…'}
+					title={account.passwordRef ? secretStoreHint(storeKind) : undefined}
 				/>
 			</div>
 		{:else}
@@ -290,6 +292,7 @@
 					placeholder={account.passwordRef || account.password
 						? savedSecretPlaceholder(storeKind)
 						: ''}
+					title={account.passwordRef ? secretStoreHint(storeKind) : undefined}
 				/>
 			</div>
 			<div class="field">

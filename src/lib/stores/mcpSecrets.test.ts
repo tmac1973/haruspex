@@ -58,11 +58,13 @@ describe('MCP secrets', () => {
 		expect(isStepSatisfied(step as never, setupStateOf(c, [], []), 0)).toBe(true);
 	});
 
-	it('stay inline only where no store works', async () => {
+	it('never stay in the settings, even where nothing lasts', async () => {
+		// Rust keeps it in memory for the session then.
 		state.available = false;
 		const c = await storeMcpSecret(server(), 'token', 'ghp_abc');
-		expect(c.secrets.token).toBe('ghp_abc');
-		expect(c.storedSecrets).toEqual([]);
+		expect(c.secrets.token).not.toBe('ghp_abc');
+		expect(c.storedSecrets).toEqual(['token']);
+		expect([...state.stored.values()]).toContain('ghp_abc');
 	});
 
 	it('are deleted with the server', async () => {

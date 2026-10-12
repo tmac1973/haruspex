@@ -56,11 +56,12 @@ describe('DAV passwords', () => {
 		expect(state.stored.get('dav:d1')).toBe('app-pw');
 	});
 
-	it('stay inline only where no store works', async () => {
+	it('never stay in the settings, even where nothing lasts', async () => {
+		// Rust keeps it in memory for the session then.
 		state.available = false;
 		const stored = await withStoredDavPassword(account(), 'app-pw');
-		expect(stored).toMatchObject({ password: 'app-pw', passwordRef: undefined });
-		expect(state.stored.size).toBe(0);
+		expect(stored).toMatchObject({ password: '', passwordRef: 'dav:d1' });
+		expect(state.stored.get('dav:d1')).toBe('app-pw');
 	});
 
 	it('are forgotten with the account', async () => {

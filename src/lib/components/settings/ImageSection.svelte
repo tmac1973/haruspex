@@ -7,6 +7,7 @@
 	import { comfyApiKey } from '#lib/stores/imageSecrets.ts';
 	import {
 		savedSecretPlaceholder,
+		secretStoreHint,
 		secretStoreKind,
 		type SecretStoreKind
 	} from '#lib/stores/secrets.ts';
@@ -411,6 +412,7 @@
 				placeholder={apiKeySaved
 					? savedSecretPlaceholder(storeKind)
 					: 'only if the server needs one'}
+				title={apiKeySaved ? secretStoreHint(storeKind) : undefined}
 				bind:value={apiKeyDraft}
 				onblur={saveApiKey}
 			/>
