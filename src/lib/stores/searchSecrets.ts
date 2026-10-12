@@ -2,7 +2,7 @@
  * The Brave Search key, kept out of the settings (see `./settingSecrets`).
  * Rust reads it from the store when a search runs.
  */
-import { settingSecret } from './settingSecrets';
+import { settingSecret } from '#lib/stores/settingSecrets.ts';
 
 export const braveApiKey = settingSecret('brave:key', 'braveApiKey', 'braveApiKeySaved');
 

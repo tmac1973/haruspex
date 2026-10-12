@@ -4,8 +4,8 @@
  * kept in the store under `secretKey`. Rust reads the stored value when it
  * needs it; the webview sends only the inline one.
  */
-import { getSettings, updateSettings, type AppSettings } from './settings';
-import { deleteSecret, keepSecret, secretStoreAvailable, setSecret } from './secrets';
+import { getSettings, updateSettings, type AppSettings } from '#lib/stores/settings.ts';
+import { deleteSecret, keepSecret, secretStoreAvailable, setSecret } from '#lib/stores/secrets.ts';
 
 type StringKey = {
 	[K in keyof AppSettings]: AppSettings[K] extends string ? K : never;

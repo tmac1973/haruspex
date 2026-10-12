@@ -8,7 +8,7 @@
  * collisions. A convention written down twice is a convention that drifts.
  */
 
-import type { AssetKind } from './types';
+import type { AssetKind } from '#lib/assets/spec/types.ts';
 
 export const DEFAULT_SPEC_PATH = 'assets/haruspex-assets.json';
 export const DEFAULT_ANCHOR_IMAGE = 'assets/haruspex-anchor.png';

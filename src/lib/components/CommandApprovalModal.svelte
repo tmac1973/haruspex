@@ -9,8 +9,8 @@
 	 * Backdrop and Esc don't dismiss — silently dropping "is it OK to run this
 	 * on my machine?" is a footgun (same restriction as the sandbox modal).
 	 */
-	import Modal from './Modal.svelte';
-	import ModalButton from './ModalButton.svelte';
+	import Modal from '#lib/components/Modal.svelte';
+	import ModalButton from '#lib/components/ModalButton.svelte';
 	import {
 		getPendingCommandApproval,
 		getQueuedCommandApprovals,

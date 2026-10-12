@@ -6,9 +6,15 @@ import { getSettings, DEFAULT_SEARXNG_URL, getSearchProxy } from '#lib/stores/se
 import type { ImageSearchResult } from '#lib/ipc/gen/ImageSearchResult.ts';
 import type { PageImage } from '#lib/ipc/gen/PageImage.ts';
 import type { SearchResult } from '#lib/ipc/gen/SearchResult.ts';
-import { labelArg, proxyFetch, runSubAgent, toolInvokeError, ensureUrlScheme } from './_helpers';
-import { registerTool } from './registry';
-import { fetchResult, toolError, toolResult, type ToolExecOutput } from './types';
+import {
+	labelArg,
+	proxyFetch,
+	runSubAgent,
+	toolInvokeError,
+	ensureUrlScheme
+} from '#lib/agent/tools/_helpers.ts';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { fetchResult, toolError, toolResult, type ToolExecOutput } from '#lib/agent/tools/types.ts';
 
 const RESEARCH_AGENT_MAX_TOKENS = 3072;
 

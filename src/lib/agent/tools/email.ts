@@ -2,10 +2,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { isAbortError } from '#lib/utils/error.ts';
 import { type ChatMessage } from '#lib/api.ts';
 import { getSettings } from '#lib/stores/settings.ts';
-import { runSubAgent, toolInvokeError } from './_helpers';
+import { runSubAgent, toolInvokeError } from '#lib/agent/tools/_helpers.ts';
 import type { EmailAccount } from '#lib/stores/settings.ts';
-import { registerTool } from './registry';
-import { toolResult, toolError } from './types';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { toolResult, toolError } from '#lib/agent/tools/types.ts';
 
 const EMAIL_SUMMARY_MAX_TOKENS = 400;
 

@@ -16,7 +16,7 @@ import {
 	nestedWriteBlockedMessage,
 	type NestedSession
 } from '#lib/shell/nestedSession.ts';
-import type { ToolContext } from './types';
+import type { ToolContext } from '#lib/agent/tools/types.ts';
 
 /**
  * The nested session the bound terminal is currently sitting in, or null when

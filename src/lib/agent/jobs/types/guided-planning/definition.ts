@@ -1,14 +1,18 @@
-import type { JobTypeDefinition, PlannedStep } from '../types';
-import { runGuidedPlanningPipeline } from './pipeline';
+import type { JobTypeDefinition, PlannedStep } from '#lib/agent/jobs/types/types.ts';
+import { runGuidedPlanningPipeline } from '#lib/agent/jobs/types/guided-planning/pipeline.ts';
 import {
 	type GuidedPlanningRunMode,
 	type GuidedPlanningVerification,
 	parseGuidedPlanningConfig
-} from './config';
-import { DEFAULT_MAX_TURNS } from '../autonomous-coding/config';
-import { modelColumnsFromForm, modelFormFromColumns, type JobModelForm } from '../../jobModelForm';
-import type { ChainModel } from '../../chainModel';
-import Editor from './Editor.svelte';
+} from '#lib/agent/jobs/types/guided-planning/config.ts';
+import { DEFAULT_MAX_TURNS } from '#lib/agent/jobs/types/autonomous-coding/config.ts';
+import {
+	modelColumnsFromForm,
+	modelFormFromColumns,
+	type JobModelForm
+} from '#lib/agent/jobs/jobModelForm.ts';
+import type { ChainModel } from '#lib/agent/jobs/chainModel.ts';
+import Editor from '#lib/agent/jobs/types/guided-planning/Editor.svelte';
 
 /** The guided-planning editor's working state (concrete strings, '' = unset). */
 export interface GuidedPlanningEditorState {

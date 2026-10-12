@@ -16,10 +16,10 @@ import {
 	getSettings,
 	updateApiKey,
 	updateSettings
-} from './settings';
-import { forgetApiKey, rememberApiKey, rememberedApiKey } from './apiKeyMemory';
-import { deleteSecret, keepSecret, secretStoreAvailable, setSecret } from './secrets';
-import { getJob, getJobs, loadJobs } from './jobs.svelte';
+} from '#lib/stores/settings.ts';
+import { forgetApiKey, rememberApiKey, rememberedApiKey } from '#lib/stores/apiKeyMemory.ts';
+import { deleteSecret, keepSecret, secretStoreAvailable, setSecret } from '#lib/stores/secrets.ts';
+import { getJob, getJobs, loadJobs } from '#lib/stores/jobs.svelte.ts';
 
 export function apiKeySecretKey(id: string): string {
 	return `apikey:${id}`;

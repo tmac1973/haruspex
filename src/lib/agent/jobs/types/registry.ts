@@ -6,7 +6,7 @@
  * anything that needs the built-in types registered.
  */
 
-import type { JobTypeDefinition } from './types';
+import type { JobTypeDefinition } from '#lib/agent/jobs/types/types.ts';
 
 const jobTypes = new Map<string, JobTypeDefinition>();
 

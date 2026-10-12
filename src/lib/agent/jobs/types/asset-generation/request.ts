@@ -10,8 +10,8 @@
 import { joinNegativePrompts } from '#lib/assets/spec/types.ts';
 import type { AssetEntry, AssetSpec, NormalizeProfile } from '#lib/assets/spec/types.ts';
 import type { ImageBackendCapabilities, ImageRequest, LoraRef } from '#lib/image/types.ts';
-import { colourWord } from './anchor';
-import { fitStyle } from './promptBudget';
+import { colourWord } from '#lib/agent/jobs/types/asset-generation/anchor.ts';
+import { fitStyle } from '#lib/agent/jobs/types/asset-generation/promptBudget.ts';
 
 /**
  * The isolation scaffold, and it is a precondition of background removal

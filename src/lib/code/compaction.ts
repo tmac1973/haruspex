@@ -18,7 +18,7 @@ import { estimateMessagesTokens, getTokenCalibration } from '#lib/agent/context-
 import { answerForSummary, summarizeInChunks } from '#lib/agent/summarize.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { truncateCapturedOutput } from '#lib/shell/truncate.ts';
-import type { CodeCompaction } from './session';
+import type { CodeCompaction } from '#lib/code/session.ts';
 
 export { summaryMaxTokens } from '#lib/agent/summarize.ts';
 

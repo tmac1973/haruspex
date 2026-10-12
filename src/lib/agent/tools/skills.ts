@@ -15,8 +15,8 @@
 import { readSkill, readSkillFile } from '#lib/skills/client.ts';
 import { renderSkillContent } from '#lib/skills/content.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import { registerTool } from './registry';
-import { toolError, toolResult, type ToolContext } from './types';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
 
 export const LOAD_SKILL_TOOL = 'load_skill';
 export const READ_SKILL_FILE_TOOL = 'read_skill_file';

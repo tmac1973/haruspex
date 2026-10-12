@@ -8,9 +8,9 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import AgentsMdBadge from '#lib/components/shell/AgentsMdBadge.svelte';
 	import ContextGauge from '#lib/components/ContextGauge.svelte';
-	import BackgroundChip from './BackgroundChip.svelte';
-	import CodeModelPicker from './CodeModelPicker.svelte';
-	import CodeBranchControl from './CodeBranchControl.svelte';
+	import BackgroundChip from '#lib/components/code/BackgroundChip.svelte';
+	import CodeModelPicker from '#lib/components/code/CodeModelPicker.svelte';
+	import CodeBranchControl from '#lib/components/code/CodeBranchControl.svelte';
 	import { folderName } from '#lib/code/sessionList.ts';
 	import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 	import type { CodeSession } from '#lib/stores/code.svelte.ts';

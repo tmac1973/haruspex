@@ -13,7 +13,7 @@
  * until the app was restarted: see `invalidateTypeAvailability`.
  */
 
-import { listJobTypes } from './registry';
+import { listJobTypes } from '#lib/agent/jobs/types/registry.ts';
 
 let availability = $state<Record<string, boolean>>({});
 let loadStarted = false;

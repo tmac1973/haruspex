@@ -9,7 +9,7 @@
 	 * Refreshed after each turn (the store) and when the window gains focus.
 	 */
 	import { onMount, tick } from 'svelte';
-	import BranchGlyph from './BranchGlyph.svelte';
+	import BranchGlyph from '#lib/components/code/BranchGlyph.svelte';
 	import {
 		branchLabel,
 		gitBranches,

@@ -21,7 +21,7 @@ import type { ImageRow } from '#lib/ipc/gen/ImageRow.ts';
 import { getSearchProxy } from '#lib/stores/settings.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import { SvelteMap } from 'svelte/reactivity';
-import { imageSrc } from './url';
+import { imageSrc } from '#lib/images/url.ts';
 import {
 	eligibleImages,
 	imageUrlsInText,
@@ -29,7 +29,7 @@ import {
 	rehydrationUrls,
 	resolvableFromReply,
 	stripCandidates
-} from './eligible';
+} from '#lib/images/eligible.ts';
 
 /** Ceiling per message. The prompt asks for 1–3; this makes it true. */
 export const MAX_IMAGES_PER_MESSAGE = 3;

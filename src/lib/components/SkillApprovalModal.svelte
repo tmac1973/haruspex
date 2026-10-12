@@ -10,9 +10,9 @@
 	 *
 	 * Backdrop and Esc don't dismiss: the turn is waiting on the answer.
 	 */
-	import Modal from './Modal.svelte';
-	import ModalButton from './ModalButton.svelte';
-	import CodeEditor from './CodeEditor.svelte';
+	import Modal from '#lib/components/Modal.svelte';
+	import ModalButton from '#lib/components/ModalButton.svelte';
+	import CodeEditor from '#lib/components/CodeEditor.svelte';
 	import {
 		getPendingSkillApproval,
 		resolveSkillApproval

@@ -11,8 +11,8 @@
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import { cancelAllExtraction } from '#lib/agent/memory/scheduler.ts';
 	import { resetMemoryApproval } from '#lib/stores/memoryApproval.svelte.ts';
-	import MemoryList from './MemoryList.svelte';
-	import MemoryTidy from './MemoryTidy.svelte';
+	import MemoryList from '#lib/components/settings/MemoryList.svelte';
+	import MemoryTidy from '#lib/components/settings/MemoryTidy.svelte';
 	import {
 		disableMemory,
 		downloadModel,

@@ -1,6 +1,6 @@
-import type { JobTypeDefinition } from '../types';
-import { planResearchSteps, runResearchPipeline } from './pipeline';
-import Editor from './Editor.svelte';
+import type { JobTypeDefinition } from '#lib/agent/jobs/types/types.ts';
+import { planResearchSteps, runResearchPipeline } from '#lib/agent/jobs/types/research/pipeline.ts';
+import Editor from '#lib/agent/jobs/types/research/Editor.svelte';
 
 export const researchJobType: JobTypeDefinition = {
 	id: 'research',

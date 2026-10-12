@@ -15,7 +15,7 @@
 import type { Component } from 'svelte';
 import type { EphemeralTurnOptions, EphemeralTurnResult } from '#lib/agent/runEphemeralTurn.ts';
 import type { JobStepInput, JobSummary, JobType, JobWithSteps } from '#lib/stores/jobs.svelte.ts';
-import type { RunStatus, RunStepState, RunTrigger } from '../runner.svelte';
+import type { RunStatus, RunStepState, RunTrigger } from '#lib/agent/jobs/runner.svelte.ts';
 
 /** One planned display/execution step of a run (see the runner's planSteps). */
 export interface PlannedStep {

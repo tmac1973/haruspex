@@ -6,8 +6,8 @@
  * `proxy:search`; Rust puts it back when it builds a proxied client. Only
  * where no secret store works does the URL keep its password.
  */
-import { getSettings, updateProxy, updateSearchProxy } from './settings';
-import { deleteSecret, keepSecret, secretStoreAvailable, setSecret } from './secrets';
+import { getSettings, updateProxy, updateSearchProxy } from '#lib/stores/settings.ts';
+import { deleteSecret, keepSecret, secretStoreAvailable, setSecret } from '#lib/stores/secrets.ts';
 
 export type WhichProxy = 'network' | 'search';
 

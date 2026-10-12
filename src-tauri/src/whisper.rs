@@ -6,7 +6,7 @@ use tauri::AppHandle;
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
 
-use crate::sidecar_utils::{
+use crate::sidecar_util::{
     base_url, clear_logs, health_url, http_client, kill_child, kill_process_on_port,
     new_log_buffer, ports, require_ready, snapshot_logs, spawn_log_reader, timing, watch_health,
     with_library_paths, LogBuffer, SidecarStatus, LOOPBACK,

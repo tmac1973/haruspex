@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { isWatchNotification, watchNotificationCommands } from '#lib/shell/backgroundWatch.ts';
-	import AgentsMdBadge from './AgentsMdBadge.svelte';
+	import AgentsMdBadge from '#lib/components/shell/AgentsMdBadge.svelte';
 	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
 	import StopIndicator from '#lib/components/StopIndicator.svelte';

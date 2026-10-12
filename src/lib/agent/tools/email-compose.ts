@@ -9,10 +9,10 @@
 import { getSettings, type EmailAccount } from '#lib/stores/settings.ts';
 import { askEmailReview, type EmailDraft } from '#lib/stores/emailReview.svelte.ts';
 import type { ReplyContext } from '#lib/ipc/gen/ReplyContext.ts';
-import { toolInvokeError } from './_helpers';
-import { emailCall, resolveEmailAccounts } from './email';
-import { registerTool } from './registry';
-import { toolError, toolResult } from './types';
+import { toolInvokeError } from '#lib/agent/tools/_helpers.ts';
+import { emailCall, resolveEmailAccounts } from '#lib/agent/tools/email.ts';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { toolError, toolResult } from '#lib/agent/tools/types.ts';
 
 /** The accounts a draft may go from: enabled, with Allow sending on. */
 function sendableAccounts(): EmailAccount[] {

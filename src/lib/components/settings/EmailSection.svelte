@@ -61,7 +61,7 @@
 
 	/** The backend keeps a logged-in session per account; an edit must not reuse it. */
 	function forgetSession(id: string) {
-		invoke('email_forget_session', { accountId: id }).catch(() => {});
+		void invoke('email_forget_session', { accountId: id }).catch(() => {});
 	}
 
 	function updateEmailAccount(id: string, next: EmailAccount) {

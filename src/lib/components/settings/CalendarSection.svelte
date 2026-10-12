@@ -22,7 +22,6 @@
 	 */
 	import { onMount } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
-	import { IPC } from '#lib/ipc/commands.ts';
 	import { getSettings, setDavAccounts, snapshot } from '#lib/stores/settings.ts';
 	import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
 	import type { DavKind } from '#lib/ipc/gen/DavKind.ts';
@@ -52,7 +51,7 @@
 	let googleError = $state('');
 
 	onMount(() => {
-		invoke<boolean>(IPC.google_sign_in_available)
+		invoke<boolean>('google_sign_in_available')
 			.then((ok) => (googleAvailable = ok))
 			.catch(() => (googleAvailable = false));
 	});
@@ -64,7 +63,7 @@
 		googleError = '';
 		errors = { ...errors, [id]: '' };
 		try {
-			const result = await invoke<GoogleSignIn>(IPC.google_sign_in, {
+			const result = await invoke<GoogleSignIn>('google_sign_in', {
 				accountId: id,
 				proxy: getSettings().proxy
 			});
@@ -110,7 +109,7 @@
 		persist(accounts.filter((a) => a.id !== account.id));
 		// Tell Google first, while the token can still be read.
 		if (account.kind === 'google') {
-			await invoke(IPC.google_sign_out, { account, proxy: getSettings().proxy }).catch(() => {});
+			await invoke('google_sign_out', { account, proxy: getSettings().proxy }).catch(() => {});
 		}
 		void forgetDavPassword(account);
 	}
@@ -151,7 +150,7 @@
 		account = accounts.find((a) => a.id === account.id) ?? account;
 		errors = { ...errors, [account.id]: '' };
 		try {
-			const collections = await invoke<DavCollections>(IPC.dav_discover_collections, {
+			const collections = await invoke<DavCollections>('dav_discover_collections', {
 				account,
 				proxy: getSettings().proxy
 			});

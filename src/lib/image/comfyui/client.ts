@@ -21,8 +21,8 @@ import { Channel, invoke, isTauri } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
 import type { ComfyError } from '#lib/ipc/gen/ComfyError.ts';
 import type { ComfySocketEvent } from '#lib/ipc/gen/ComfySocketEvent.ts';
-import { ImageBackendError, type ImageProgress } from '../types';
-import type { ComfyGraph } from './fieldMap';
+import { ImageBackendError, type ImageProgress } from '#lib/image/types.ts';
+import type { ComfyGraph } from '#lib/image/comfyui/fieldMap.ts';
 
 /** One HTTP call. Generous: a busy server queues. */
 export const HTTP_TIMEOUT_MS = 120_000;

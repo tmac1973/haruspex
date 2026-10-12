@@ -8,7 +8,7 @@
  */
 
 import type { AssetSpecEntryArg } from '#lib/agent/tools/coding.ts';
-import type { PlanAssetEntryArg } from './tools';
+import type { PlanAssetEntryArg } from '#lib/agent/jobs/types/asset-generation/tools.ts';
 import {
 	ASSET_KINDS,
 	ID_PATTERN,

@@ -3,9 +3,9 @@
  * (see `./secrets`). Stored under `dav:<account id>`; Rust reads them back
  * just before connecting.
  */
-import { getSettings, setDavAccounts } from './settings';
+import { getSettings, setDavAccounts } from '#lib/stores/settings.ts';
 import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
-import { deleteSecret, keepSecret, migrateInlineSecrets } from './secrets';
+import { deleteSecret, keepSecret, migrateInlineSecrets } from '#lib/stores/secrets.ts';
 
 export function davSecretKey(accountId: string): string {
 	return `dav:${accountId}`;

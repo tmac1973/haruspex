@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
 	import { onMount, onDestroy } from 'svelte';
-	import Terminal, { type TerminalHandle } from './Terminal.svelte';
+	import Terminal, { type TerminalHandle } from '#lib/components/shell/Terminal.svelte';
 	import {
 		registerTerminalSnapshot,
 		clearTerminalSnapshot
 	} from '#lib/stores/shellTerminalSnapshot.ts';
-	import ChatSidebar from './ChatSidebar.svelte';
+	import ChatSidebar from '#lib/components/shell/ChatSidebar.svelte';
 	import Modal from '#lib/components/Modal.svelte';
 	import ModalButton from '#lib/components/ModalButton.svelte';
 	import { classifyShellRisk, type RiskMatch } from '#lib/shell/risky-commands.ts';

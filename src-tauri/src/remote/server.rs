@@ -41,7 +41,7 @@ const MAX_SPEECH_CHARS: usize = 4000;
 /// The TTS sidecar's port, and the app's default voice. Kept out of the config
 /// so that changing the host's voice in Settings cannot restart the server and
 /// drop a guest mid-answer.
-const TTS_PORT: u16 = crate::sidecar_utils::ports::TTS;
+const TTS_PORT: u16 = crate::sidecar_util::ports::TTS;
 const DEFAULT_VOICE: &str = "af_heart";
 
 #[derive(Clone, Deserialize)]

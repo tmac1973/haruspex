@@ -11,7 +11,11 @@ import { checkImage, effectiveProfile, normalizeImage } from '#lib/assets/normal
 import type { AssetEntry, AssetSpec, NormalizeProfile } from '#lib/assets/spec/types.ts';
 import type { CheckReport } from '#lib/ipc/gen/CheckReport.ts';
 import type { ImageBackendCapabilities, ImageRequest, ImageResult } from '#lib/image/types.ts';
-import { NOT_SEAMLESS, buildEntryRequest, checkProfile } from './request';
+import {
+	NOT_SEAMLESS,
+	buildEntryRequest,
+	checkProfile
+} from '#lib/agent/jobs/types/asset-generation/request.ts';
 import {
 	amendForRetry,
 	betterReport,
@@ -20,16 +24,21 @@ import {
 	rejectionReason,
 	retrySeed,
 	type JudgeDeps
-} from './gate';
-import { escapesWorkdir, isCancellation, isTransient, keepBest } from './guards';
+} from '#lib/agent/jobs/types/asset-generation/gate.ts';
+import {
+	escapesWorkdir,
+	isCancellation,
+	isTransient,
+	keepBest
+} from '#lib/agent/jobs/types/asset-generation/guards.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import { planSheets, type SheetPlan } from './sheets';
-import { runSheet as runSheetLoop } from './sheetLoop';
-import type { EntryOutcome, SheetOutcome } from './types';
+import { planSheets, type SheetPlan } from '#lib/agent/jobs/types/asset-generation/sheets.ts';
+import { runSheet as runSheetLoop } from '#lib/agent/jobs/types/asset-generation/sheetLoop.ts';
+import type { EntryOutcome, SheetOutcome } from '#lib/agent/jobs/types/asset-generation/types.ts';
 import type { TextureRecipe } from '#lib/ipc/gen/TextureRecipe.ts';
-import { runCodeTexture } from './codeTexture';
+import { runCodeTexture } from '#lib/agent/jobs/types/asset-generation/codeTexture.ts';
 
-export { escapesWorkdir } from './guards';
+export { escapesWorkdir } from '#lib/agent/jobs/types/asset-generation/guards.ts';
 
 export interface GenerateDeps {
 	caps: ImageBackendCapabilities;

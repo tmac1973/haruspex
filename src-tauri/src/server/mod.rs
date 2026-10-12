@@ -9,7 +9,7 @@ use tauri::{AppHandle, Emitter};
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
 
-use crate::sidecar_utils::{
+use crate::sidecar_util::{
     self, kill_process_on_port, ports, push_log, strip_ansi, wait_for_port_release, SidecarStatus,
     LOG_RING_BUFFER_SIZE,
 };
@@ -140,7 +140,7 @@ impl ServerConfig {
             self.parallel.max(1).to_string(),
             "--jinja".to_string(),
             "--host".to_string(),
-            sidecar_utils::LOOPBACK.to_string(),
+            sidecar_util::LOOPBACK.to_string(),
         ];
 
         if self.parallel > 1 {
@@ -567,7 +567,7 @@ impl LlamaServer {
             .args(args)
             .env(API_KEY_ENV, api_key());
         spawn_sidecar(
-            sidecar_utils::with_library_paths(cmd, app),
+            sidecar_util::with_library_paths(cmd, app),
             "llama-server",
             sidecar_registry(app),
         )
@@ -1013,16 +1013,16 @@ impl LlamaServer {
                 let state = inner.lock().await;
                 state.config.port
             };
-            let url = sidecar_utils::health_url(port);
+            let url = sidecar_util::health_url(port);
 
             // keep_going: bail if this poller's generation is stale (a
             // newer start() has taken over) or if the status has moved
             // off Starting (e.g. an explicit stop or an early error).
             let inner_for_keep = Arc::clone(&inner);
-            let ok = sidecar_utils::poll_health(
+            let ok = sidecar_util::poll_health(
                 &url,
                 "llama-server",
-                sidecar_utils::timing::HEALTH_POLL_TIMEOUT_SLOW,
+                sidecar_util::timing::HEALTH_POLL_TIMEOUT_SLOW,
                 false,
                 move || {
                     let s = Arc::clone(&inner_for_keep);

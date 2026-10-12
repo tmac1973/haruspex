@@ -2,8 +2,11 @@
 	import PromptCatalog from '#lib/components/jobs/PromptCatalog.svelte';
 	import Tooltip from '#lib/components/Tooltip.svelte';
 	import type { JobStepInput } from '#lib/stores/jobs.svelte.ts';
-	import { DEFAULT_SAMPLE_INSTRUCTIONS, DEFAULT_VERIFY_INSTRUCTIONS } from './auditPipeline';
-	import type { AuditEditorState } from './definition';
+	import {
+		DEFAULT_SAMPLE_INSTRUCTIONS,
+		DEFAULT_VERIFY_INSTRUCTIONS
+	} from '#lib/agent/jobs/types/audit/auditPipeline.ts';
+	import type { AuditEditorState } from '#lib/agent/jobs/types/audit/definition.ts';
 
 	// The audit-specific section of the job editor (see JobTypeEditorProps).
 	// The audit prompt reuses steps[0].prompt so the persistence path stays

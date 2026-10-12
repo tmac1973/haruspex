@@ -5,8 +5,8 @@
  * two kinds of secret `secret_get` will read (inference keys are the other).
  */
 import { invoke } from '@tauri-apps/api/core';
-import { getSettings } from './settings';
-import { settingSecret } from './settingSecrets';
+import { getSettings } from '#lib/stores/settings.ts';
+import { settingSecret } from '#lib/stores/settingSecrets.ts';
 
 const KEY = 'remote:token';
 

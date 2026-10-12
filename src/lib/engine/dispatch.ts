@@ -16,9 +16,9 @@ import {
 	type CodeSession
 } from '#lib/stores/code.svelte.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import { answerPrompt, currentPrompts } from './prompts.svelte.ts';
-import { sessionState } from './state.ts';
-import type { EngineOp, FileContent, SessionListItem } from './types.ts';
+import { answerPrompt, currentPrompts } from '#lib/engine/prompts.svelte.ts';
+import { sessionState } from '#lib/engine/state.ts';
+import type { EngineOp, FileContent, SessionListItem } from '#lib/engine/types.ts';
 
 export const MAIN_WINDOW = 'main';
 
@@ -158,7 +158,7 @@ export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 		case 'chat.continue':
 		case 'chat.retry':
 			if (label !== MAIN_WINDOW) throw new Error('chat runs in the main window');
-			return (await import('./chat.svelte.ts')).dispatchChat(op);
+			return (await import('#lib/engine/chat.svelte.ts')).dispatchChat(op);
 		case 'chat.resync':
 			if (!resyncChat?.(op.id)) throw new Error(`chat ${op.id} isn't the open chat`);
 			return { resynced: op.id };

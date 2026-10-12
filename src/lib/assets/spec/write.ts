@@ -6,7 +6,7 @@
  * diff rather than a reordered file the user has to read in full to trust.
  */
 
-import type { AssetEntry, AssetSpec } from './types';
+import type { AssetEntry, AssetSpec } from '#lib/assets/spec/types.ts';
 
 /** Drop `undefined` members so they do not become `null` in JSON. */
 function defined<T extends object>(o: T): Partial<T> {

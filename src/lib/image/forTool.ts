@@ -11,11 +11,11 @@
  * It takes a whole `ImageRequest`, so the Shell assistant's asset tool can
  * pass the asset job's requests through unchanged (phase 08).
  */
-import { resolveImageBackend } from './backend';
+import { resolveImageBackend } from '#lib/image/backend.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import { ImageBackendError, type ImageProgress, type ImageRequest } from './types';
+import { ImageBackendError, type ImageProgress, type ImageRequest } from '#lib/image/types.ts';
 import { getSettings } from '#lib/stores/settings.ts';
-import { familyOf } from './comfyui/families';
+import { familyOf } from '#lib/image/comfyui/families.ts';
 
 export interface ToolImage {
 	bytes: Uint8Array;

@@ -1,5 +1,5 @@
-import { registerTool } from './registry';
-import { toolResult, toolError, type UserAnswer } from './types';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { toolResult, toolError, type UserAnswer } from '#lib/agent/tools/types.ts';
 
 /**
  * `ask_user_question` — the agent-facing half of the reusable human-in-the-loop

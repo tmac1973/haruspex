@@ -5,12 +5,12 @@
  * an editor window and returns at once. Offered only to the Code tab
  * (`codeTabProfile.ts`).
  */
-import { labelArg } from './_helpers';
-import { registerTool } from './registry';
-import { toolError, toolResult } from './types';
-import type { ToolContext, ToolExecOutput } from './types';
-import { checkCommandBoundary } from './code';
-import { spillIfLarge } from './pty-exec';
+import { labelArg } from '#lib/agent/tools/_helpers.ts';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { toolError, toolResult } from '#lib/agent/tools/types.ts';
+import type { ToolContext, ToolExecOutput } from '#lib/agent/tools/types.ts';
+import { checkCommandBoundary } from '#lib/agent/tools/code.ts';
+import { spillIfLarge } from '#lib/agent/tools/pty-exec.ts';
 import {
 	openShellForCommand,
 	reportShellWait,

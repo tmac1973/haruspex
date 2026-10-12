@@ -12,15 +12,15 @@
 <script lang="ts">
 	import { cancelSandboxRun, rerunSandboxStep } from '#lib/sandbox/runControls.ts';
 	import type { SearchStep } from '#lib/agent/loop.ts';
-	import { stepLabel, stepIcon } from './searchStepLabels';
+	import { stepLabel, stepIcon } from '#lib/components/searchStepLabels.ts';
 	import hljs from 'highlight.js/lib/core';
 	import python from 'highlight.js/lib/languages/python';
 	import { createKeyedCopyAction } from '#lib/utils/clipboard.svelte.ts';
 	import { isToolErrorResult } from '#lib/agent/tools/toolResult.ts';
 	import { sanitizeHtml } from '#lib/sanitize.ts';
-	import ImageViewerModal from './ImageViewerModal.svelte';
-	import ArtifactFrame from './ArtifactFrame.svelte';
-	import MemoryRecallStep from './MemoryRecallStep.svelte';
+	import ImageViewerModal from '#lib/components/ImageViewerModal.svelte';
+	import ArtifactFrame from '#lib/components/ArtifactFrame.svelte';
+	import MemoryRecallStep from '#lib/components/MemoryRecallStep.svelte';
 	import { MEMORY_RECALL_STEP } from '#lib/agent/memory/stepName.ts';
 	import { splitGrepLine } from '#lib/code/paths.ts';
 

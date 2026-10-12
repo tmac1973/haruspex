@@ -9,7 +9,7 @@
 		type ShellSession
 	} from '#lib/stores/shell.svelte.ts';
 	import { openDetachedShell } from '#lib/shell/windows.ts';
-	import ShellPicker from './ShellPicker.svelte';
+	import ShellPicker from '#lib/components/shell/ShellPicker.svelte';
 
 	const sessions = $derived(getShellSessions());
 	const activeId = $derived(getActiveShellId());

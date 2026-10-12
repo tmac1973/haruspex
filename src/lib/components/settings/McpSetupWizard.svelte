@@ -11,7 +11,6 @@
 	import { untrack } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
-	import { IPC } from '#lib/ipc/commands.ts';
 	import { getSettings } from '#lib/stores/settings.ts';
 	import type { SetupStep } from '#lib/ipc/gen/SetupStep.ts';
 	import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
@@ -97,7 +96,7 @@
 		try {
 			const picked = await openFileDialog({ multiple: false, directory: false });
 			if (typeof picked !== 'string') return;
-			await invoke(IPC.mcp_place_setup_file, {
+			await invoke('mcp_place_setup_file', {
 				serverId: config.id,
 				sourcePath: picked,
 				filename
@@ -129,7 +128,7 @@
 		running = true;
 		commandOutput = '';
 		try {
-			commandOutput = await invoke<string>(IPC.mcp_run_setup_command, {
+			commandOutput = await invoke<string>('mcp_run_setup_command', {
 				config,
 				args,
 				// A setup command is usually a sign-in that talks to the service.
@@ -161,7 +160,7 @@
 					<button
 						type="button"
 						class="link-button"
-						onclick={() => invoke(IPC.open_url, { url: step.link })}
+						onclick={() => invoke('open_url', { url: step.link })}
 					>
 						Open in your browser
 					</button>

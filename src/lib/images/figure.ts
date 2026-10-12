@@ -10,10 +10,10 @@
 import type { ImageRow } from '#lib/ipc/gen/ImageRow.ts';
 import type { ResolvedImages } from '#lib/markdown.ts';
 import type { SearchStep } from '#lib/agent/loop.ts';
-import { captionFor } from './caption';
-import { imageUrlsInText, stripCandidates } from './eligible';
-import { getResolvedImages } from './resolve.svelte';
-import { imageSrc } from './url';
+import { captionFor } from '#lib/images/caption.ts';
+import { imageUrlsInText, stripCandidates } from '#lib/images/eligible.ts';
+import { getResolvedImages } from '#lib/images/resolve.svelte.ts';
+import { imageSrc } from '#lib/images/url.ts';
 
 /** Minimal HTML escape for text going into an attribute or text node. */
 function esc(s: string): string {

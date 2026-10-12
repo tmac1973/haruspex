@@ -2,7 +2,7 @@
  * The two ways an editor reaches the disk (see `document.svelte.ts`).
  */
 import { invoke } from '@tauri-apps/api/core';
-import type { EditorIO } from './document.svelte.ts';
+import type { EditorIO } from '#lib/editor/document.svelte.ts';
 import type { EditorFile } from '#lib/ipc/gen/EditorFile.ts';
 import type { EditorSave } from '#lib/ipc/gen/EditorSave.ts';
 

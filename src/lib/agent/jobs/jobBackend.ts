@@ -1,6 +1,6 @@
 import type { BackendOverride } from '#lib/api.ts';
 import type { ModelOverrideConfig } from '#lib/stores/jobs.svelte.ts';
-import { parseModelAdvanced } from './modelAdvanced';
+import { parseModelAdvanced } from '#lib/agent/jobs/modelAdvanced.ts';
 
 /**
  * The remote backend a job should run against, or undefined to use the global

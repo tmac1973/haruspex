@@ -40,7 +40,7 @@ mod secrets;
 mod server;
 mod shell;
 mod sidecar_process;
-mod sidecar_utils;
+mod sidecar_util;
 mod skills;
 mod sync_util;
 mod text_util;

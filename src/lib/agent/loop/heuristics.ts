@@ -6,7 +6,7 @@
 
 import { messageText, type ChatMessage } from '#lib/api.ts';
 import { TOKEN_BYTES_RATIO } from '#lib/agent/context-budget.ts';
-import type { LoopContext } from './context';
+import type { LoopContext } from '#lib/agent/loop/context.ts';
 
 /**
  * Decide whether the next completion should use the active model's

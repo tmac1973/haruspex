@@ -8,6 +8,7 @@ import { setContextSize as setIndicatorContextSize } from '#lib/stores/context.s
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import { getRunningCount } from '#lib/agent/inferenceQueue.svelte.ts';
 import { splitServerArgs } from '#lib/inference/serverArgs.ts';
+import { formatContextSize } from '#lib/utils/format.ts';
 
 /**
  * Server status visible to the UI. The first four mirror the Rust-side
@@ -144,15 +145,10 @@ export async function initServerStore(): Promise<void> {
 		}
 		setIndicatorContextSize(to);
 		showToast(
-			`Context size ${formatCtx(from)} didn't fit in memory — retrying with ${formatCtx(to)}. Your context size setting was updated.`,
+			`Context size ${formatContextSize(from)} didn't fit in memory — retrying with ${formatContextSize(to)}. Your context size setting was updated.`,
 			{ kind: 'info' }
 		);
 	});
-}
-
-/** 262144 → "256K"; sizes that aren't clean multiples fall back to digits. */
-function formatCtx(size: number): string {
-	return size % 1024 === 0 ? `${size / 1024}K` : String(size);
 }
 
 export async function startServer(

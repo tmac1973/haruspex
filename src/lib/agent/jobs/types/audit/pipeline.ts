@@ -14,15 +14,15 @@ import {
 	type AuditFinding,
 	type AuditVerdict
 } from '#lib/agent/tools/audit.ts';
-import type { FindingCluster } from './auditCluster';
+import type { FindingCluster } from '#lib/agent/jobs/types/audit/auditCluster.ts';
 import {
 	orchestrateAudit,
 	buildSamplePrompt,
 	buildVerifyPrompt,
 	DEFAULT_AUDIT_SYNTHESIS_PROMPT
-} from './auditPipeline';
+} from '#lib/agent/jobs/types/audit/auditPipeline.ts';
 import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
-import { parseAuditConfig, type AuditConfig } from './config';
+import { parseAuditConfig, type AuditConfig } from '#lib/agent/jobs/types/audit/config.ts';
 import { errMessage, normalizeAbort } from '#lib/utils/error.ts';
 import {
 	markRunStarted,
@@ -30,8 +30,8 @@ import {
 	markRunStepStarted,
 	type JobRunStepStatus
 } from '#lib/stores/jobRuns.svelte.ts';
-import type { JobRunContext, PlannedStep } from '../types';
-import type { RunStatus } from '../../runner.svelte';
+import type { JobRunContext, PlannedStep } from '#lib/agent/jobs/types/types.ts';
+import type { RunStatus } from '#lib/agent/jobs/runner.svelte.ts';
 
 /** Read-only investigation toolset shared by audit sample + verification turns. */
 const AUDIT_READ_TOOLS = ['code_grep', 'code_glob', 'fs_read_text', 'fs_list_dir'];

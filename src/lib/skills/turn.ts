@@ -9,7 +9,7 @@
  */
 
 import type { BackendOverride } from '#lib/api.ts';
-import { listSkills, skillsAutonomous, usableSkills } from './client';
+import { listSkills, skillsAutonomous, usableSkills } from '#lib/skills/client.ts';
 
 export interface TurnSkills {
 	/**

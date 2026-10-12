@@ -10,8 +10,12 @@
 
 import type { CheckReport } from '#lib/ipc/gen/CheckReport.ts';
 import type { AssetSpec } from '#lib/assets/spec/types.ts';
-import { describeFailures } from './gate';
-import type { AnchorOutcome, EntryOutcome, SheetOutcome } from './types';
+import { describeFailures } from '#lib/agent/jobs/types/asset-generation/gate.ts';
+import type {
+	AnchorOutcome,
+	EntryOutcome,
+	SheetOutcome
+} from '#lib/agent/jobs/types/asset-generation/types.ts';
 
 export interface ReportInput {
 	spec: AssetSpec;

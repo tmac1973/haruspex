@@ -5,8 +5,8 @@
  * "an output path escapes the working directory" is search for it.
  */
 
-import type { AssetSpec } from './types';
-import { ID_PATTERN } from './types';
+import type { AssetSpec } from '#lib/assets/spec/types.ts';
+import { ID_PATTERN } from '#lib/assets/spec/types.ts';
 
 /** Absolute, drive-lettered, or climbing out of the working directory. */
 export function escapesWorkdir(p: string): boolean {

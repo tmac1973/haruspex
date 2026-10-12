@@ -19,11 +19,11 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { sleep } from '#lib/utils/async.ts';
-import { labelArg, toolInvokeError } from './_helpers';
-import { registerTool } from './registry';
-import { toolError, toolResult } from './types';
-import type { ToolContext, ToolExecOutput } from './types';
-import { spillIfLarge } from './pty-exec';
+import { labelArg, toolInvokeError } from '#lib/agent/tools/_helpers.ts';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { toolError, toolResult } from '#lib/agent/tools/types.ts';
+import type { ToolContext, ToolExecOutput } from '#lib/agent/tools/types.ts';
+import { spillIfLarge } from '#lib/agent/tools/pty-exec.ts';
 import { snapshotTerminal } from '#lib/stores/shellTerminalSnapshot.ts';
 
 /** Cap on images buffered into one turn — too many exhausts model context. */

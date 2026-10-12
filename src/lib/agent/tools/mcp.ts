@@ -26,13 +26,21 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { IPC } from '#lib/ipc/commands.ts';
 import type { McpToolDescriptor } from '#lib/ipc/gen/McpToolDescriptor.ts';
 import type { McpCallOutcome } from '#lib/ipc/gen/McpCallOutcome.ts';
 import type { McpInputRequest } from '#lib/ipc/gen/McpInputRequest.ts';
-import { registerTool, unregisterTool } from './registry';
-import { clearMcpDefaultTools, mcpToolName, setMcpDefaultTools } from './mcp-names';
-import { toolResult, toolError, type ToolContext, type ToolExecOutput } from './types';
+import { registerTool, unregisterTool } from '#lib/agent/tools/registry.ts';
+import {
+	clearMcpDefaultTools,
+	mcpToolName,
+	setMcpDefaultTools
+} from '#lib/agent/tools/mcp-names.ts';
+import {
+	toolResult,
+	toolError,
+	type ToolContext,
+	type ToolExecOutput
+} from '#lib/agent/tools/types.ts';
 import {
 	askMcpApproval,
 	isAlwaysAllowed,
@@ -189,7 +197,7 @@ async function executeMcpTool(
 	for (let round = 0; round < MAX_MRTR_ROUNDS; round++) {
 		let outcome: McpCallOutcome;
 		try {
-			outcome = await invoke<McpCallOutcome>(IPC.mcp_call_tool, {
+			outcome = await invoke<McpCallOutcome>('mcp_call_tool', {
 				id: serverId,
 				name: descriptor.name,
 				arguments: args,

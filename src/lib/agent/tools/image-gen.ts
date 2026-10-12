@@ -10,8 +10,8 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
-import { registerTool } from './registry';
-import { toolError, toolResult } from './types';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { toolError, toolResult } from '#lib/agent/tools/types.ts';
 import { generateForTool } from '#lib/image/forTool.ts';
 import { describeImageProgress } from '#lib/image/progress.ts';
 import { ImageBackendError, type ImageProgress } from '#lib/image/types.ts';

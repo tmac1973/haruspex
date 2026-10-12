@@ -6,7 +6,7 @@ import type {
 	MainToWorker,
 	ToolResult,
 	WorkerToMain
-} from './protocol';
+} from '#lib/sandbox/protocol.ts';
 import { getWorkingDir } from '#lib/stores/session.svelte.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { logDebug } from '#lib/debug-log.ts';

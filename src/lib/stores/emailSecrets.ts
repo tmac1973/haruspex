@@ -7,8 +7,8 @@
  * never holds it again. Only where no secret store works at all does it stay
  * inline in the settings.
  */
-import { getSettings, setEmailAccounts, type EmailAccount } from './settings';
-import { deleteSecret, keepSecret, migrateInlineSecrets } from './secrets';
+import { getSettings, setEmailAccounts, type EmailAccount } from '#lib/stores/settings.ts';
+import { deleteSecret, keepSecret, migrateInlineSecrets } from '#lib/stores/secrets.ts';
 
 /** The keychain entry for an account's password. */
 export function emailSecretKey(accountId: string): string {

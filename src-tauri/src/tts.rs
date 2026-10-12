@@ -9,7 +9,7 @@ use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 
-use crate::sidecar_utils::{
+use crate::sidecar_util::{
     base_url, clear_logs, http_client, kill_child, kill_process_on_port, new_log_buffer, ports,
     require_ready, snapshot_logs, spawn_log_reader, timing, watch_health, with_library_paths,
     LogBuffer, SidecarStatus, LOOPBACK,

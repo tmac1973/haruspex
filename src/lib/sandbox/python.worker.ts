@@ -3,12 +3,17 @@
 import { loadPyodide, type PyodideInterface } from 'pyodide';
 import { errMessage } from '#lib/utils/error.ts';
 import { customSchemeBase } from '#lib/utils/customScheme.ts';
-import type { InstallPhase, MainToWorker, ToolResult, WorkerToMain } from './protocol';
+import type {
+	InstallPhase,
+	MainToWorker,
+	ToolResult,
+	WorkerToMain
+} from '#lib/sandbox/protocol.ts';
 import {
 	dispatchWorkerMessage,
 	settlePending,
 	type WorkerMessageHandlers
-} from './worker-dispatch';
+} from '#lib/sandbox/worker-dispatch.ts';
 
 declare const self: DedicatedWorkerGlobalScope;
 

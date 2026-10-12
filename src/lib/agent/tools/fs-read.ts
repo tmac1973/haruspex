@@ -1,9 +1,15 @@
 import { invoke } from '@tauri-apps/api/core';
-import { fsWorkdir, labelArg, resolveShellPath, toolInvokeError, wslDistroArg } from './_helpers';
-import { registerTool } from './registry';
-import { isSpillFile } from './pty-exec';
-import { withLocalScopeNote } from './nested-session';
-import { toolError, toolResult } from './types';
+import {
+	fsWorkdir,
+	labelArg,
+	resolveShellPath,
+	toolInvokeError,
+	wslDistroArg
+} from '#lib/agent/tools/_helpers.ts';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { isSpillFile } from '#lib/agent/tools/pty-exec.ts';
+import { withLocalScopeNote } from '#lib/agent/tools/nested-session.ts';
+import { toolError, toolResult } from '#lib/agent/tools/types.ts';
 
 // Max images per turn. Each ~1024px image is ~500-800 image tokens for
 // Qwen3.5-9B vision; batching more than this at once risks blowing out

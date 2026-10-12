@@ -29,7 +29,7 @@ import {
 	type IterationResultArg,
 	type PreflightResultArg
 } from '#lib/agent/tools/coding.ts';
-import { withWebResearch } from '../webResearch';
+import { withWebResearch } from '#lib/agent/jobs/types/webResearch.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { commandMemoryLimitPercent, outOfMemoryNote } from '#lib/shell/memoryLimit.ts';
 import { normalizeAbort, errMessage } from '#lib/utils/error.ts';
@@ -40,9 +40,13 @@ import {
 	type JobRunStepStatus
 } from '#lib/stores/jobRuns.svelte.ts';
 import { notify } from '#lib/notify.ts';
-import type { JobRunContext } from '../types';
-import type { StepChecklistEntry } from '../../runner.svelte';
-import { DEFAULT_MAX_TURNS, normalizePlanDir, parseAutonomousCodingConfig } from './config';
+import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
+import type { StepChecklistEntry } from '#lib/agent/jobs/runner.svelte.ts';
+import {
+	DEFAULT_MAX_TURNS,
+	normalizePlanDir,
+	parseAutonomousCodingConfig
+} from '#lib/agent/jobs/types/autonomous-coding/config.ts';
 import {
 	beginRepairCycle,
 	clipNote,
@@ -64,14 +68,14 @@ import {
 	MAX_PHASE_REPAIR_CYCLES,
 	type LoopPlan,
 	type TaskItem
-} from './loopState';
+} from '#lib/agent/jobs/types/autonomous-coding/loopState.ts';
 import {
 	extractDecisionCommand,
 	parseGuidedPlan,
 	PHASE_FILE_RE,
 	VERIFICATION_COMMAND_HEADING,
 	type PlanFile
-} from './planParse';
+} from '#lib/agent/jobs/types/autonomous-coding/planParse.ts';
 import {
 	readmePrompt,
 	decomposePrompt,
@@ -79,7 +83,7 @@ import {
 	iterationPrompt,
 	phaseTurnPrompt,
 	preflightPrompt
-} from './prompts';
+} from '#lib/agent/jobs/types/autonomous-coding/prompts.ts';
 
 export const PREFLIGHT = 0;
 export const DECOMPOSE = 1;

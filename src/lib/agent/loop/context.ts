@@ -10,7 +10,7 @@ import { getSettings, type SamplingParams } from '#lib/stores/settings.ts';
 import { resolveBackendDescriptor, type BackendDescriptor } from '#lib/inference/descriptor.ts';
 import { loadedSkillNames, skillsWithFiles } from '#lib/skills/content.ts';
 import type { TurnSkills } from '#lib/skills/turn.ts';
-import type { AgentLoopOptions } from '../loop';
+import type { AgentLoopOptions } from '#lib/agent/loop.ts';
 
 // Trim older tool results when context usage crosses this fraction.
 // Lower than the conversation-level compaction threshold (0.8) so we

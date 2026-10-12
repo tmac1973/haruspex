@@ -118,9 +118,16 @@ cargo fmt -- --check # Rust format check
 - Imports from `src/lib` use `#lib/...` (package.json `imports`) with the file's
   extension: `#lib/stores/settings.ts`, `#lib/components/Foo.svelte`. Vite resolves
   an extensionless `#lib/agent/loop` to the `loop/` folder, not `loop.ts`.
+  Lint enforces it in `src/lib` (tests may import a sibling as `./foo`).
+- File names: camelCase (`runTurn.ts`). Tool modules in `agent/tools/` are
+  kebab-case after the tools they register (`fs-write.ts` → `fs_write_*`).
+  A second test file for one source is `foo.<aspect>.test.ts`.
 - Tabs for indentation, single quotes, no trailing commas (Prettier)
 - Rust: 4-space indent, 100 char line width
 - Tests co-located with source: `foo.ts` → `foo.test.ts`
+- Logging: `console.warn` / `console.error` (both reach the debug log through
+  `forwardConsoleToDebugLog`) or `logDebug`; lint refuses `console.log`. Pass a
+  URL through `urlForReport` first. Fire-and-forget promises take `void`.
 - Sidecar pattern: long-running processes as HTTP servers on localhost
 - UI copy: one short sentence per section, no exposition and no sales language.
   Extra detail belongs in a `title` tooltip. Always name the settings path
@@ -130,6 +137,10 @@ cargo fmt -- --check # Rust format check
   settings blob throws and wedges the panel.
 - Changing a Tauri command or a `#[ts(export)]` struct means running
   `./scripts/export-ipc-types.sh`, or CI fails on drift.
+- `invoke('command_name')` with a literal when the command is fixed (CI checks
+  it against Rust); `IPC.command_name` only when it's chosen at runtime. New
+  commands are named domain-first (`image_engine_stop`, not `stop_image_engine`);
+  some older ones (`get_*`, `clear_*`) predate that and stay.
 
 ## Outstanding work
 

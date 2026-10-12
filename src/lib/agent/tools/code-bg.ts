@@ -6,10 +6,10 @@
  * backgrounds commands in its live terminal instead (`./code`).
  */
 import { invoke } from '@tauri-apps/api/core';
-import { labelArg, toolInvokeError } from './_helpers';
-import { registerTool } from './registry';
-import { toolError, toolResult } from './types';
-import type { ToolContext, ToolExecOutput } from './types';
+import { labelArg, toolInvokeError } from '#lib/agent/tools/_helpers.ts';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { toolError, toolResult } from '#lib/agent/tools/types.ts';
+import type { ToolContext, ToolExecOutput } from '#lib/agent/tools/types.ts';
 import { registerCodeBgWatch } from '#lib/shell/backgroundWatch.ts';
 import { commandMemoryLimitPercent, outOfMemoryNote } from '#lib/shell/memoryLimit.ts';
 import { getSettings } from '#lib/stores/settings.ts';

@@ -622,19 +622,19 @@ pub fn app_protected_targets(
 
     let mut ports = vec![
         ProtectedPort {
-            port: crate::sidecar_utils::ports::LLAMA,
+            port: crate::sidecar_util::ports::LLAMA,
             label: "chat model server".into(),
         },
         ProtectedPort {
-            port: crate::sidecar_utils::ports::WHISPER,
+            port: crate::sidecar_util::ports::WHISPER,
             label: "speech-to-text server".into(),
         },
         ProtectedPort {
-            port: crate::sidecar_utils::ports::TTS,
+            port: crate::sidecar_util::ports::TTS,
             label: "text-to-speech server".into(),
         },
         ProtectedPort {
-            port: crate::sidecar_utils::ports::IMAGE,
+            port: crate::sidecar_util::ports::IMAGE,
             label: "image engine".into(),
         },
     ];

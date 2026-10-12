@@ -14,8 +14,8 @@
 	import { renderMarkdown } from '#lib/markdown.ts';
 	import { stepIcon } from '#lib/components/searchStepLabels.ts';
 	import { describePendingCall, type PendingToolCall } from '#lib/code/pendingCall.ts';
-	import CommandCard from './CommandCard.svelte';
-	import DiffCard from './DiffCard.svelte';
+	import CommandCard from '#lib/components/code/CommandCard.svelte';
+	import DiffCard from '#lib/components/code/DiffCard.svelte';
 	import type { SearchStep } from '#lib/agent/loop.ts';
 	import { editDiffFromStep, type FileDiff } from '#lib/code/diff.ts';
 	import { makeCodePathLinker, relativeToRoot } from '#lib/code/paths.ts';

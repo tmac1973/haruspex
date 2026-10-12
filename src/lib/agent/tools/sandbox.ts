@@ -1,7 +1,7 @@
 import { runPython, installPackage, resetSandbox } from '#lib/sandbox/sandbox.ts';
 import { lintSandboxCode, formatLintFailure } from '#lib/sandbox/lint.ts';
-import { registerTool } from './registry';
-import { toolResult, toolError } from './types';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { toolResult, toolError } from '#lib/agent/tools/types.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { getActiveConversationId } from '#lib/stores/session.svelte.ts';
 import {

@@ -6,7 +6,7 @@
 	 * "?" button; closes on Esc, F1 again, the × button, or backdrop click
 	 * (the last three via the shared Modal).
 	 */
-	import Modal from './Modal.svelte';
+	import Modal from '#lib/components/Modal.svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { SHORTCUTS } from '#lib/shortcuts.ts';
 	import { GUIDE_URL } from '#lib/guide/prompt.ts';

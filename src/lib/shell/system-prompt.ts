@@ -22,7 +22,7 @@
 import { isFish } from '#lib/shell/fish.ts';
 import type { ChatMessage } from '#lib/api.ts';
 import type { SessionContext } from '#lib/ipc/gen/SessionContext.ts';
-import { nestedSessionPromptBlock, type NestedSession } from './nestedSession';
+import { nestedSessionPromptBlock, type NestedSession } from '#lib/shell/nestedSession.ts';
 import { formatTodayLong } from '#lib/utils/format.ts';
 import { GUIDE_PROMPT } from '#lib/guide/prompt.ts';
 import { getSettings } from '#lib/stores/settings.ts';

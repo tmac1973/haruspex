@@ -19,20 +19,20 @@ import type { PartialToolCall } from '#lib/streamAssembly.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import type { Artifact, LintIssue, ToolContext } from '#lib/agent/tools/index.ts';
 import type { CodeWriteGuard } from '#lib/agent/tools/types.ts';
-import type { ContextManagedInfo } from './context-budget';
+import type { ContextManagedInfo } from '#lib/agent/context-budget.ts';
 import type { FileDiff } from '#lib/code/diff.ts';
 import type { SamplingParams } from '#lib/stores/settings.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import { isAbortError } from '#lib/utils/error.ts';
-import { NudgeState } from './loop/nudges';
+import { NudgeState } from '#lib/agent/loop/nudges.ts';
 import {
 	buildLoopContext,
 	LoopState,
 	runIteration,
 	runMaxIterationsFinalSynthesis
-} from './loop/iteration';
+} from '#lib/agent/loop/iteration.ts';
 
-export { isCodeContext } from './loop/iteration';
+export { isCodeContext } from '#lib/agent/loop/iteration.ts';
 export type { PartialToolCall } from '#lib/streamAssembly.ts';
 
 /** How `onStreamChunk` labels a chunk. */

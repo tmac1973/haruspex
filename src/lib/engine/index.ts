@@ -13,10 +13,10 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { logDebug } from '#lib/debug-log.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import { dispatch, MAIN_WINDOW, setChatResync, setResync } from './dispatch.ts';
-import { watchPrompts } from './prompts.svelte.ts';
-import type { EngineEvent, EngineOp } from './types.ts';
-import { watchOpenSessions } from './watch.svelte.ts';
+import { dispatch, MAIN_WINDOW, setChatResync, setResync } from '#lib/engine/dispatch.ts';
+import { watchPrompts } from '#lib/engine/prompts.svelte.ts';
+import type { EngineEvent, EngineOp } from '#lib/engine/types.ts';
+import { watchOpenSessions } from '#lib/engine/watch.svelte.ts';
 
 const BATCH_MS = 20;
 
@@ -73,7 +73,7 @@ async function run(label: string): Promise<void> {
 	watchPrompts(label, sink);
 	if (label === MAIN_WINDOW) {
 		// Chat lives in the main window; loaded here only, not in Code windows.
-		const { watchChats } = await import('./chat.svelte.ts');
+		const { watchChats } = await import('#lib/engine/chat.svelte.ts');
 		setChatResync(watchChats(sink).resync);
 	}
 

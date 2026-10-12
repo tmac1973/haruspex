@@ -21,12 +21,27 @@ import {
 	type ImageResult,
 	type LoraRef,
 	type SamplerSettings
-} from '../types';
-import type { GenerateOptions, ImageBackend } from '../backend';
-import { applyFieldMap, validateFieldMap, type ComfyGraph, type FieldMap } from './fieldMap';
-import { selectTemplate, templatesFor, type WorkflowTemplate } from './templates';
-import { familyOf, hasModel, listModels, resolveCompanions, type ModelFamily } from './families';
-import * as api from './client';
+} from '#lib/image/types.ts';
+import type { GenerateOptions, ImageBackend } from '#lib/image/backend.ts';
+import {
+	applyFieldMap,
+	validateFieldMap,
+	type ComfyGraph,
+	type FieldMap
+} from '#lib/image/comfyui/fieldMap.ts';
+import {
+	selectTemplate,
+	templatesFor,
+	type WorkflowTemplate
+} from '#lib/image/comfyui/templates/index.ts';
+import {
+	familyOf,
+	hasModel,
+	listModels,
+	resolveCompanions,
+	type ModelFamily
+} from '#lib/image/comfyui/families.ts';
+import * as api from '#lib/image/comfyui/client.ts';
 
 /** What a custom workflow samples with when a request says nothing. */
 export const DEFAULT_SAMPLER: SamplerSettings = { name: 'euler_ancestral', steps: 28, cfg: 7 };

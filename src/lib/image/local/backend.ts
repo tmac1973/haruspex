@@ -15,15 +15,15 @@ import { errMessage } from '#lib/utils/error.ts';
 import { sleep } from '#lib/utils/async.ts';
 import type { ImageEngineStatus } from '#lib/ipc/gen/ImageEngineStatus.ts';
 import { getSettings } from '#lib/stores/settings.ts';
-import { registerImageBackend } from '../registry';
-import type { ImageBackend, GenerateOptions } from '../backend';
+import { registerImageBackend } from '#lib/image/registry.ts';
+import type { ImageBackend, GenerateOptions } from '#lib/image/backend.ts';
 import {
 	ImageBackendError,
 	type ImageBackendCapabilities,
 	type ImageRequest,
 	type ImageResult
-} from '../types';
-import { mingTransparent, qwen21Transparent } from '../comfyui/templates';
+} from '#lib/image/types.ts';
+import { mingTransparent, qwen21Transparent } from '#lib/image/comfyui/templates/index.ts';
 import {
 	FAMILY_SAMPLER,
 	FIXTURE,
@@ -35,7 +35,7 @@ import {
 	seedFrom,
 	toBase64,
 	type LocalFamily
-} from './adapter';
+} from '#lib/image/local/adapter.ts';
 
 /** One generation, weights already loaded. Startup has its own budget. */
 const GENERATE_TIMEOUT_MS = 600_000;

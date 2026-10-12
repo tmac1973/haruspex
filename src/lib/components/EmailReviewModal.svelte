@@ -8,7 +8,7 @@
 	 */
 	import { invoke } from '@tauri-apps/api/core';
 	import { tick, untrack } from 'svelte';
-	import Modal from './Modal.svelte';
+	import Modal from '#lib/components/Modal.svelte';
 	import {
 		composedBody,
 		getPendingEmailReview,

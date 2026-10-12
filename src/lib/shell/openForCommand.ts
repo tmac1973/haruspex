@@ -16,7 +16,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { sleep } from '#lib/utils/async.ts';
-import { toPtyPaste } from './commandBlock';
+import { toPtyPaste } from '#lib/shell/commandBlock.ts';
 import type { ShellCommandRequest, ShellCommandResult } from '#lib/code/shellBridge.ts';
 import type { ShellSelection } from '#lib/ipc/gen/ShellSelection.ts';
 

@@ -3,9 +3,9 @@
 	import { open } from '@tauri-apps/plugin-dialog';
 	import Tooltip from '#lib/components/Tooltip.svelte';
 	import { getJob, getJobs } from '#lib/stores/jobs.svelte.ts';
-	import { parseGuidedPlanningConfig } from '../guided-planning/config';
-	import { planDirFromPicked } from './config';
-	import type { AutonomousCodingEditorState } from './definition';
+	import { parseGuidedPlanningConfig } from '#lib/agent/jobs/types/guided-planning/config.ts';
+	import { planDirFromPicked } from '#lib/agent/jobs/types/autonomous-coding/config.ts';
+	import type { AutonomousCodingEditorState } from '#lib/agent/jobs/types/autonomous-coding/definition.ts';
 
 	// The autonomous-coding section of the job editor (see JobTypeEditorProps).
 	// The job's working dir is the project being built; `plan_dir` points at a

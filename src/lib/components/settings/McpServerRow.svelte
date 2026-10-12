@@ -19,8 +19,8 @@
 		statusLabel
 	} from '#lib/stores/mcpServers.svelte.ts';
 	import { addonStepIndex, pickAndInstallAddon } from '#lib/stores/mcpAddon.ts';
-	import McpToolList from './McpToolList.svelte';
-	import McpSetupWizard from './McpSetupWizard.svelte';
+	import McpToolList from '#lib/components/settings/McpToolList.svelte';
+	import McpSetupWizard from '#lib/components/settings/McpSetupWizard.svelte';
 
 	interface Props {
 		config: McpServerConfig;

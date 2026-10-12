@@ -8,12 +8,15 @@
 import type { AssetSpec } from '#lib/assets/spec/types.ts';
 import type { CheckReport } from '#lib/ipc/gen/CheckReport.ts';
 import type { TextureRecipe } from '#lib/ipc/gen/TextureRecipe.ts';
-import { judgeUnavailable, maybeJudge } from './gate';
-import type { CodeTextureDeps, GenerateDeps } from './generate';
-import { escapesWorkdir, isCancellation } from './guards';
+import { judgeUnavailable, maybeJudge } from '#lib/agent/jobs/types/asset-generation/gate.ts';
+import type {
+	CodeTextureDeps,
+	GenerateDeps
+} from '#lib/agent/jobs/types/asset-generation/generate.ts';
+import { escapesWorkdir, isCancellation } from '#lib/agent/jobs/types/asset-generation/guards.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import { textureSeed, variantPaths } from './recipes';
-import type { EntryOutcome } from './types';
+import { textureSeed, variantPaths } from '#lib/agent/jobs/types/asset-generation/recipes.ts';
+import type { EntryOutcome } from '#lib/agent/jobs/types/asset-generation/types.ts';
 
 type Outcome = Omit<EntryOutcome, 'id' | 'durationMs'>;
 

@@ -22,9 +22,13 @@ import {
 	getOpenRouterReasoningParam
 } from '#lib/stores/settings.ts';
 import { logDebug } from '#lib/debug-log.ts';
-import { NudgeState } from './nudges';
-import type { IterationOutcome, LoopContext, LoopState } from './context';
-import { injectPendingImages, runModelCall, samplingOptionsFor } from './modelCall';
+import { NudgeState } from '#lib/agent/loop/nudges.ts';
+import type { IterationOutcome, LoopContext, LoopState } from '#lib/agent/loop/context.ts';
+import {
+	injectPendingImages,
+	runModelCall,
+	samplingOptionsFor
+} from '#lib/agent/loop/modelCall.ts';
 import {
 	handleRejectedToolCall,
 	tryContinueOnLength,
@@ -32,10 +36,10 @@ import {
 	tryFileWriteRecovery,
 	tryMalformedToolCall,
 	tryNarrateRecovery
-} from './recovery';
-import { finalizeNoToolCalls } from './finalAnswer';
-import { executeToolCalls } from './toolCalls';
-import { deliverSteering } from './steeringQueue';
+} from '#lib/agent/loop/recovery.ts';
+import { finalizeNoToolCalls } from '#lib/agent/loop/finalAnswer.ts';
+import { executeToolCalls } from '#lib/agent/loop/toolCalls.ts';
+import { deliverSteering } from '#lib/agent/loop/steeringQueue.ts';
 
 export {
 	buildLoopContext,
@@ -44,9 +48,13 @@ export {
 	LoopState,
 	type IterationOutcome,
 	type LoopContext
-} from './context';
-export { isCodeContext, looksLikeImageOnlyRequest, wroteRemoteImageMarkdown } from './heuristics';
-export { runMaxIterationsFinalSynthesis } from './forcedFinal';
+} from '#lib/agent/loop/context.ts';
+export {
+	isCodeContext,
+	looksLikeImageOnlyRequest,
+	wroteRemoteImageMarkdown
+} from '#lib/agent/loop/heuristics.ts';
+export { runMaxIterationsFinalSynthesis } from '#lib/agent/loop/forcedFinal.ts';
 
 /**
  * One iteration of the agent loop. Returns:

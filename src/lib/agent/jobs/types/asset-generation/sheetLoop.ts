@@ -14,12 +14,28 @@ import { checkImage, normalizeImage, splitSheet } from '#lib/assets/normalize.ts
 import type { AssetEntry, AssetSpec, NormalizeProfile } from '#lib/assets/spec/types.ts';
 import type { CheckReport } from '#lib/ipc/gen/CheckReport.ts';
 import type { ImageResult } from '#lib/image/types.ts';
-import { betterReport, judgeUnavailable, maybeJudge, rejectionReason } from './gate';
-import type { GenerateDeps } from './generate';
-import { escapesWorkdir, isCancellation, isTransient, keepBest } from './guards';
+import {
+	betterReport,
+	judgeUnavailable,
+	maybeJudge,
+	rejectionReason
+} from '#lib/agent/jobs/types/asset-generation/gate.ts';
+import type { GenerateDeps } from '#lib/agent/jobs/types/asset-generation/generate.ts';
+import {
+	escapesWorkdir,
+	isCancellation,
+	isTransient,
+	keepBest
+} from '#lib/agent/jobs/types/asset-generation/guards.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import { assignCells, padding, sheetRequest, type CellResult, type SheetPlan } from './sheets';
-import type { EntryOutcome, SheetOutcome } from './types';
+import {
+	assignCells,
+	padding,
+	sheetRequest,
+	type CellResult,
+	type SheetPlan
+} from '#lib/agent/jobs/types/asset-generation/sheets.ts';
+import type { EntryOutcome, SheetOutcome } from '#lib/agent/jobs/types/asset-generation/types.ts';
 
 type Outcome = Omit<EntryOutcome, 'id' | 'durationMs'>;
 

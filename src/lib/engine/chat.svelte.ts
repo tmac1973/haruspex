@@ -37,8 +37,8 @@ import { dbLoadMessages, dbLoadMessageSteps } from '#lib/stores/db.ts';
 import { getActiveConversationId, getWorkingDir } from '#lib/stores/session.svelte.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import { LIVE_MS } from './watch.svelte.ts';
-import type { ChatEvent, ChatListItem, ChatState } from './types.ts';
+import { LIVE_MS } from '#lib/engine/watch.svelte.ts';
+import type { ChatEvent, ChatListItem, ChatState } from '#lib/engine/types.ts';
 
 /** Plain data, whatever Svelte's proxies make of it. */
 const plain = <T>(v: T): T => JSON.parse(JSON.stringify(v ?? null)) as T;

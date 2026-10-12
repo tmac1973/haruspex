@@ -462,7 +462,9 @@
 			});
 
 			if (cancelled) {
-				await invoke('shell_kill', { sessionId: spawn.session_id }).catch(() => {});
+				await invoke('shell_kill', { sessionId: spawn.session_id }).catch((e) =>
+					console.error('shell_kill failed', e)
+				);
 				t.dispose();
 				term = null;
 				return;

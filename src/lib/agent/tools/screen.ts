@@ -9,12 +9,11 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { IPC } from '#lib/ipc/commands.ts';
 import type { ScreenCapture } from '#lib/ipc/gen/ScreenCapture.ts';
 import type { CaptureTarget } from '#lib/ipc/gen/CaptureTarget.ts';
-import { registerTool } from './registry';
-import { toolResult, toolError } from './types';
-import { MAX_PENDING_IMAGES } from './fs-read';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { toolResult, toolError } from '#lib/agent/tools/types.ts';
+import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
 
 /**
  * Normalize whatever the model wrote into a target the backend knows.
@@ -66,7 +65,7 @@ registerTool({
 		}
 		const target = normalizeTarget(args.target);
 		try {
-			const capture = await invoke<ScreenCapture>(IPC.capture_screen, { target });
+			const capture = await invoke<ScreenCapture>('capture_screen', { target });
 			ctx.pendingImages.push({ path: `screen capture (${target})`, dataUrl: capture.dataUrl });
 			return {
 				result: `Captured the ${target} at ${capture.width}x${capture.height}. You can now see it — describe or analyze it in your next response.`,

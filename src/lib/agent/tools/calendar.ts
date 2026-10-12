@@ -12,13 +12,12 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { IPC } from '#lib/ipc/commands.ts';
 import type { CalendarQueryResult } from '#lib/ipc/gen/CalendarQueryResult.ts';
 import type { CalendarEvent } from '#lib/ipc/gen/CalendarEvent.ts';
 import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
 import { enabledDavAccounts, getSettings } from '#lib/stores/settings.ts';
-import { registerTool } from './registry';
-import { toolResult, toolError } from './types';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { toolResult, toolError } from '#lib/agent/tools/types.ts';
 
 /**
  * Which accounts a call should reach.
@@ -140,7 +139,7 @@ registerTool({
 			);
 		}
 		try {
-			const result = await invoke<CalendarQueryResult>(IPC.dav_list_events, {
+			const result = await invoke<CalendarQueryResult>('dav_list_events', {
 				accounts,
 				start: args.start ?? null,
 				end: args.end ?? null,
@@ -190,7 +189,7 @@ registerTool({
 			);
 		}
 		try {
-			const result = await invoke<CalendarQueryResult>(IPC.dav_search_events, {
+			const result = await invoke<CalendarQueryResult>('dav_search_events', {
 				accounts,
 				query,
 				start: args.start ?? null,

@@ -14,9 +14,9 @@ import { invoke } from '@tauri-apps/api/core';
 import type { AgentsMd } from '#lib/ipc/gen/AgentsMd.ts';
 import type { ProjectInstructions } from '#lib/ipc/gen/ProjectInstructions.ts';
 import { askRepoTrust, type RepoTrustChange } from '#lib/stores/repoTrust.svelte.ts';
-import { repoKey, repoTrust } from './client';
+import { repoKey, repoTrust } from '#lib/skills/client.ts';
 import { getSettings, updateSkills, type RepoTrust } from '#lib/stores/settings.ts';
-import { loadAgentsMd } from './agentsMd';
+import { loadAgentsMd } from '#lib/skills/agentsMd.ts';
 
 /** Record (or, with null, forget) the answer for `root`. */
 export function setRepoTrust(root: string, answer: RepoTrust | null): void {

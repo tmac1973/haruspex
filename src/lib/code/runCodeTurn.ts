@@ -26,7 +26,7 @@ import type { AgentsMd } from '#lib/ipc/gen/AgentsMd.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import type { Artifact } from '#lib/agent/tools/index.ts';
 import type { CodeWriteGuard } from '#lib/agent/tools/types.ts';
-import type { FileDiff } from './diff';
+import type { FileDiff } from '#lib/code/diff.ts';
 import {
 	runAgentLoop,
 	type AgentLoopOptions,
@@ -43,17 +43,17 @@ import { shellProject } from '#lib/skills/project.ts';
 import { agentsMdPromptSection } from '#lib/skills/agentsMd.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import { buildCodeSystemPrompt } from './system-prompt';
-import { ioRoot } from './paths';
-import { sessionLabel } from './sessionList';
+import { buildCodeSystemPrompt } from '#lib/code/system-prompt.ts';
+import { ioRoot } from '#lib/code/paths.ts';
+import { sessionLabel } from '#lib/code/sessionList.ts';
 import { loadShellPlatformSupported, shellPlatformSupported } from '#lib/shell/platformSupport.ts';
-import { agentPowershell } from './powershell.ts';
+import { agentPowershell } from '#lib/code/powershell.ts';
 
 // Moved to api.ts for the Shell; kept here for existing importers.
 export { withNotice };
 import { logDebug } from '#lib/debug-log.ts';
-import { compactCodeThread, compactionDue, modelThread } from './compaction';
-import type { CodeCompaction } from './session';
+import { compactCodeThread, compactionDue, modelThread } from '#lib/code/compaction.ts';
+import type { CodeCompaction } from '#lib/code/session.ts';
 
 export interface CodeTurnOptions {
 	sessionId: string;

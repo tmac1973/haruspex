@@ -7,14 +7,14 @@ import {
 	resolveShellPath,
 	toolInvokeError,
 	wslDistroArg
-} from './_helpers';
-import { registerTool } from './registry';
-import { toolError, toolResult } from './types';
-import type { ToolContext, ToolExecOutput } from './types';
-import { IMAGE_EXT_RE } from './fs-read';
-import { lintPythonIfApplicable } from './python-lint';
+} from '#lib/agent/tools/_helpers.ts';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { toolError, toolResult } from '#lib/agent/tools/types.ts';
+import type { ToolContext, ToolExecOutput } from '#lib/agent/tools/types.ts';
+import { IMAGE_EXT_RE } from '#lib/agent/tools/fs-read.ts';
+import { lintPythonIfApplicable } from '#lib/agent/tools/python-lint.ts';
 import { isAutoApproveActive } from '#lib/stores/approvalOverride.ts';
-import { localWriteBlocked } from './nested-session';
+import { localWriteBlocked } from '#lib/agent/tools/nested-session.ts';
 import type { EditResult } from '#lib/ipc/gen/EditResult.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { buildWriteDiff } from '#lib/code/diff.ts';
@@ -225,7 +225,7 @@ async function previousContent(
 ): Promise<string | null | undefined> {
 	if (!resolved.overwrite) return null;
 	try {
-		return await invoke<string>(IPC.fs_read_text_full, { workdir, relPath: resolved.finalPath });
+		return await invoke<string>('fs_read_text_full', { workdir, relPath: resolved.finalPath });
 	} catch {
 		return undefined;
 	}

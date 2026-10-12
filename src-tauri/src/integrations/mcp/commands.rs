@@ -17,7 +17,7 @@ use super::process::{McpSupervisor, SpawnConfig};
 use super::server_config::McpServerConfig;
 use super::types::{McpCallOutcome, McpConnectionInfo, McpToolDescriptor};
 use crate::proxy::ProxyConfig;
-use crate::sidecar_utils::SidecarStatus;
+use crate::sidecar_util::SidecarStatus;
 use tauri::{AppHandle, Emitter};
 
 /// Carries the id of a server whose toolset changed under it.
