@@ -92,7 +92,7 @@ pub fn is_valid_hash(hash: &str) -> bool {
 pub fn hash_bytes(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
-    format!("{:x}", hasher.finalize())
+    crate::hash_util::hex(&hasher.finalize())
 }
 
 /// Write bytes to `<dir>/<hash>` via a `.part` file and an atomic rename.

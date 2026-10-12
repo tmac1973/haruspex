@@ -19,7 +19,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use async_imap::imap_proto::types::SectionPath;
+use async_imap::imap_proto::SectionPath;
 use async_imap::types::Fetch;
 use futures_util::stream::StreamExt;
 use rustls::pki_types::ServerName;
