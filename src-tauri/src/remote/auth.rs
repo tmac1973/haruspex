@@ -1,10 +1,12 @@
 //! The shared secret that stands between a LAN and someone else's GPU.
 //!
 //! This is deliberately not an identity system, and the code should not read
-//! like one. There are no users, no sessions-as-credentials and no expiry: one
-//! token, carried in the link the host hands out, which exists so that a
-//! housemate's laptop, a smart TV or a guest phone cannot spend the host's
-//! hardware by finding an open port. Rotating it is the whole of revocation.
+//! like one. There are no users and no sessions-as-credentials: one token,
+//! carried in the link the host hands out, which exists so that a housemate's
+//! laptop, a smart TV or a guest phone cannot spend the host's hardware by
+//! finding an open port. Rotating it is the whole of revocation. The link is
+//! traded for a cookie on the first visit, so the token leaves the address bar
+//! and every URL after it.
 
 use axum::http::HeaderMap;
 
@@ -33,8 +35,13 @@ pub fn token_matches(expected: &str, provided: &str) -> bool {
     diff == 0
 }
 
-/// Cookie set when a guest first opens a valid link, so the page still works
-/// from a bookmark or a home-screen shortcut that dropped the query string.
+/// The cookie a guest's browser keeps after opening a valid link, so the page
+/// still works from a bookmark or a home-screen shortcut, which never carry
+/// the token: the first visit is redirected to a URL without it.
+///
+/// It holds [`cookie_value`], not the token itself, so what sits in a
+/// browser's cookie jar is not the secret that gets shared; and it is still
+/// revoked by rotating the link, since a new token derives a new value.
 ///
 /// `SameSite=Strict` is what keeps this from becoming a CSRF hole: another site
 /// on the same network cannot make a browser attach it. The JSON content type
@@ -42,24 +49,58 @@ pub fn token_matches(expected: &str, provided: &str) -> bool {
 /// one without a preflight.
 pub const TOKEN_COOKIE: &str = "haruspex_remote";
 
-/// Pull a token from an `Authorization: Bearer` header, then the query string,
-/// then the cookie. Explicit beats remembered: a fresh link always wins over a
-/// stale cookie, which is what makes rotation take effect immediately.
-pub fn extract_token(headers: &HeaderMap, query: Option<&str>) -> Option<String> {
-    if let Some(value) = headers.get(axum::http::header::AUTHORIZATION) {
-        if let Ok(text) = value.to_str() {
-            if let Some(rest) = text.strip_prefix("Bearer ") {
-                let rest = rest.trim();
-                if !rest.is_empty() {
-                    return Some(rest.to_string());
-                }
-            }
-        }
+/// How long the cookie lasts after the last visit. Every page load renews it,
+/// so a shortcut used at least once a month keeps working; one left alone
+/// longer needs the link again.
+pub const COOKIE_MAX_AGE_SECS: u64 = 30 * 86_400;
+
+/// How a request proved it may use the server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Proof {
+    /// `Authorization: Bearer <token>`: a script.
+    Bearer,
+    /// `?t=<token>`: the shared link, accepted on the page load only.
+    Link,
+    /// The derived cookie.
+    Cookie,
+    /// A cookie holding the raw token, as builds before the derived cookie
+    /// set it. Accepted on the page load only, which replaces it.
+    LegacyCookie,
+}
+
+/// How the request proves it knows `token`, if it does. `allow_link` is for
+/// the page itself: the API never takes the token from the query string, so
+/// it stays out of every URL a page makes.
+pub fn check(
+    headers: &HeaderMap,
+    query: Option<&str>,
+    token: &str,
+    allow_link: bool,
+) -> Option<Proof> {
+    if bearer(headers).is_some_and(|b| token_matches(token, &b)) {
+        return Some(Proof::Bearer);
     }
-    if let Some(token) = query.and_then(query_token) {
-        return Some(token);
+    if allow_link
+        && query
+            .and_then(query_token)
+            .is_some_and(|q| token_matches(token, &q))
+    {
+        return Some(Proof::Link);
     }
-    cookie_token(headers)
+    let cookie = cookie_token(headers)?;
+    if token_matches(&cookie_value(token), &cookie) {
+        return Some(Proof::Cookie);
+    }
+    (allow_link && token_matches(token, &cookie)).then_some(Proof::LegacyCookie)
+}
+
+fn bearer(headers: &HeaderMap) -> Option<String> {
+    let text = headers
+        .get(axum::http::header::AUTHORIZATION)?
+        .to_str()
+        .ok()?;
+    let rest = text.strip_prefix("Bearer ")?.trim();
+    (!rest.is_empty()).then(|| rest.to_string())
 }
 
 fn query_token(query: &str) -> Option<String> {
@@ -89,17 +130,38 @@ fn cookie_token(headers: &HeaderMap) -> Option<String> {
     None
 }
 
-/// The `Set-Cookie` value handed to a guest whose link checked out.
-pub fn token_cookie(token: &str) -> String {
-    // A year: long enough that a phone shortcut keeps working, and revocation
-    // is rotation rather than expiry anyway. `Secure`: the page is HTTPS only.
-    format!("{TOKEN_COOKIE}={token}; Path=/; Max-Age=31536000; SameSite=Strict; HttpOnly; Secure")
+/// What the cookie holds for `token`: a one-way hash, so the cookie can't be
+/// turned back into a shareable link.
+pub fn cookie_value(token: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(format!("haruspex-guest-cookie:{token}").as_bytes());
+    crate::hash_util::hex(&digest)
+}
+
+/// The `Set-Cookie` value for a guest who proved they have the link.
+/// `Secure`: the page is HTTPS only.
+pub fn guest_cookie(token: &str) -> String {
+    format!(
+        "{TOKEN_COOKIE}={}; Path=/; Max-Age={COOKIE_MAX_AGE_SECS}; SameSite=Strict; HttpOnly; Secure",
+        cookie_value(token)
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::http::{header::AUTHORIZATION, HeaderValue};
+    use axum::http::{
+        header::{AUTHORIZATION, COOKIE},
+        HeaderValue,
+    };
+
+    const TOKEN: &str = "link-token";
+
+    fn with(name: axum::http::HeaderName, value: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(name, HeaderValue::from_str(value).unwrap());
+        headers
+    }
 
     #[test]
     fn matching_is_exact() {
@@ -118,67 +180,85 @@ mod tests {
     }
 
     #[test]
-    fn header_wins_over_query() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            AUTHORIZATION,
-            HeaderValue::from_static("Bearer from-header"),
+    fn the_link_works_on_the_page_only() {
+        let none = HeaderMap::new();
+        assert_eq!(
+            check(&none, Some("t=link-token"), TOKEN, true),
+            Some(Proof::Link)
+        );
+        // The API never takes it from the query string.
+        assert_eq!(check(&none, Some("t=link-token"), TOKEN, false), None);
+        assert_eq!(check(&none, Some("t=wrong"), TOKEN, true), None);
+    }
+
+    #[test]
+    fn the_query_token_is_url_decoded_and_found_after_other_parameters() {
+        let none = HeaderMap::new();
+        assert_eq!(
+            check(&none, Some("x=1&t=a%2Bb%3Dc"), "a+b=c", true),
+            Some(Proof::Link)
         );
         assert_eq!(
-            extract_token(&headers, Some("t=from-query")).as_deref(),
-            Some("from-header")
+            check(&none, Some("debug&t=xyz"), "xyz", true),
+            Some(Proof::Link)
         );
     }
 
     #[test]
-    fn query_token_is_url_decoded() {
-        let headers = HeaderMap::new();
+    fn a_bearer_header_works_everywhere() {
+        let h = with(AUTHORIZATION, "Bearer link-token");
+        assert_eq!(check(&h, None, TOKEN, false), Some(Proof::Bearer));
         assert_eq!(
-            extract_token(&headers, Some("x=1&t=a%2Bb%3Dc")).as_deref(),
-            Some("a+b=c")
+            check(&with(AUTHORIZATION, "Basic nope"), None, TOKEN, false),
+            None
+        );
+        assert_eq!(
+            check(&with(AUTHORIZATION, "Bearer "), None, TOKEN, false),
+            None
         );
     }
 
     #[test]
-    fn a_cookie_stands_in_when_the_link_lost_its_query() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            axum::http::header::COOKIE,
-            HeaderValue::from_static("other=1; haruspex_remote=from-cookie"),
-        );
-        assert_eq!(
-            extract_token(&headers, None).as_deref(),
-            Some("from-cookie")
-        );
-        // But an explicit token still wins, so a rotated link takes effect
-        // without the guest having to clear anything.
-        assert_eq!(
-            extract_token(&headers, Some("t=from-query")).as_deref(),
-            Some("from-query")
+    fn the_cookie_holds_a_derived_value_not_the_token() {
+        let value = cookie_value(TOKEN);
+        assert_ne!(value, TOKEN);
+        assert_eq!(value.len(), 64);
+        let h = with(COOKIE, &format!("other=1; {TOKEN_COOKIE}={value}"));
+        assert_eq!(check(&h, None, TOKEN, false), Some(Proof::Cookie));
+        assert_eq!(check(&h, None, TOKEN, true), Some(Proof::Cookie));
+    }
+
+    #[test]
+    fn rotating_the_link_revokes_the_cookie() {
+        let h = with(COOKIE, &format!("{TOKEN_COOKIE}={}", cookie_value(TOKEN)));
+        assert_eq!(check(&h, None, "rotated", true), None);
+    }
+
+    #[test]
+    fn an_old_raw_token_cookie_is_accepted_on_the_page_only() {
+        let h = with(COOKIE, &format!("{TOKEN_COOKIE}={TOKEN}"));
+        assert_eq!(check(&h, None, TOKEN, true), Some(Proof::LegacyCookie));
+        assert_eq!(check(&h, None, TOKEN, false), None);
+    }
+
+    #[test]
+    fn the_cookie_cannot_be_sent_cross_site_or_in_the_clear_and_lapses() {
+        let set = guest_cookie(TOKEN);
+        assert!(set.contains("SameSite=Strict"));
+        assert!(set.contains("HttpOnly"));
+        assert!(set.contains("Secure"));
+        assert!(set.contains("Max-Age=2592000"));
+        assert!(
+            !set.contains(TOKEN),
+            "the raw token never goes in the cookie: {set}"
         );
     }
 
     #[test]
-    fn the_cookie_cannot_be_sent_cross_site() {
-        // SameSite=Strict is the whole CSRF story for the cookie path.
-        assert!(token_cookie("abc").contains("SameSite=Strict"));
-        assert!(token_cookie("abc").contains("HttpOnly"));
-    }
-
-    #[test]
-    fn missing_or_malformed_yields_none() {
-        let headers = HeaderMap::new();
-        assert_eq!(extract_token(&headers, None), None);
-        assert_eq!(extract_token(&headers, Some("")), None);
-        assert_eq!(extract_token(&headers, Some("other=1")), None);
-        // A valueless parameter before the token must not end the search.
-        assert_eq!(
-            extract_token(&headers, Some("debug&t=xyz")).as_deref(),
-            Some("xyz")
-        );
-
-        let mut headers = HeaderMap::new();
-        headers.insert(AUTHORIZATION, HeaderValue::from_static("Basic nope"));
-        assert_eq!(extract_token(&headers, None), None);
+    fn nothing_proves_nothing() {
+        let none = HeaderMap::new();
+        assert_eq!(check(&none, None, TOKEN, true), None);
+        assert_eq!(check(&none, Some(""), TOKEN, true), None);
+        assert_eq!(check(&none, Some("other=1"), TOKEN, true), None);
     }
 }

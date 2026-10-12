@@ -53,6 +53,7 @@ Settings → Guest chat lists who is connected and what each guest is asking rig
 ## Security notes
 
 - Anyone on your network who has the link can chat with your Haruspex. The link contains a long secret, so treat it like a password.
+- Opening the link swaps the secret for a cookie and drops it from the address bar, so it isn't kept in the browser's history or in a bookmark or home-screen shortcut. The cookie lasts 30 days from the last visit: a guest who stays away longer needs the link again. **Rotate link** cuts off every cookie too.
 - Traffic is encrypted (HTTPS). A link from before HTTPS (`http://`) still works: it is sent on to `https://`, but that first request, with the link's secret, crosses the network unencrypted. Rotate the link if an old one went to someone who should no longer have it.
 - Use guest chat on networks you trust, such as your home network, not public Wi-Fi: anyone who gets the link can use it.
 - It works on your local network only. Haruspex does not make it reachable from the internet.

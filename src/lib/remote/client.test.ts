@@ -49,8 +49,7 @@ interface Client {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- what vitest 3's vi.fn() was
 type FetchMock = Mock<(...args: any[]) => any>;
 
-function start(options: { token?: string | null; fetch?: FetchMock } = {}) {
-	const token = options.token === undefined ? 'link-token' : options.token;
+function start(options: { fetch?: FetchMock } = {}) {
 	const fetchMock =
 		options.fetch ??
 		vi.fn(async () => new Response(JSON.stringify({ turnId: 't1' }), { status: 202 }));
@@ -58,8 +57,7 @@ function start(options: { token?: string | null; fetch?: FetchMock } = {}) {
 		document,
 		storage: localStorage,
 		fetch: fetchMock as unknown as typeof fetch,
-		EventSource: FakeStream,
-		search: token ? `?t=${token}` : ''
+		EventSource: FakeStream
 	}) as Client;
 	return { client, fetchMock, stream: () => FakeStream.last! };
 }
@@ -150,11 +148,12 @@ describe('what the page renders', () => {
 });
 
 describe('a turn from the guest side', () => {
-	it('posts the prompt with the session and the token', async () => {
+	it('posts the prompt with the session, and never the link token', async () => {
 		const { client, fetchMock } = start();
 		await client.send('what is a haruspex?');
 		const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-		expect(url).toContain('/api/chat?t=link-token');
+		// The browser sends the cookie the server set when the link was opened.
+		expect(url).toBe('/api/chat');
 		expect(JSON.parse(init.body as string)).toEqual({
 			sessionId: expect.any(String),
 			message: 'what is a haruspex?',
@@ -489,14 +488,20 @@ describe('starting over', () => {
 	});
 });
 
-describe('without a link', () => {
-	it('offers no way to spend the host’s GPU', () => {
-		const { client } = start({ token: null });
+describe('without a valid link', () => {
+	it('stops offering the host’s GPU once the server refuses the cookie', async () => {
+		const refused = vi.fn(async () => new Response('not for you', { status: 401 }));
+		const { client, stream } = start({ fetch: refused });
+		await client.send('hello');
 		expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true);
 		expect((document.getElementById('input') as HTMLTextAreaElement).disabled).toBe(true);
 		expect(status()).toContain('link');
-		// And no stream was opened.
-		expect(FakeStream.last).toBeNull();
-		expect(client.send).toBeUndefined();
+		expect(stream().closed).toBe(true);
+	});
+
+	it('clears a token an older build kept in storage', () => {
+		localStorage.setItem('haruspex-remote-token', 'old-token');
+		start();
+		expect(localStorage.getItem('haruspex-remote-token')).toBeNull();
 	});
 });
