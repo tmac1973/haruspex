@@ -27,13 +27,19 @@ const compaction = vi.hoisted(() => ({
 	fail: false,
 	/** What the summary says; empty means nothing removed. */
 	summary: '',
-	seen: [] as unknown[][]
+	seen: [] as unknown[][],
+	/** What `shouldCompact` answers, and the token counts it was asked about. */
+	compact: true,
+	asked: [] as number[]
 }));
 
 // The real view and remap helpers; the summary call itself is scripted.
 vi.mock('#lib/agent/compaction.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/agent/compaction.ts')>()),
-	shouldCompact: () => true,
+	shouldCompact: (promptTokens: number) => {
+		compaction.asked.push(promptTokens);
+		return compaction.compact;
+	},
 	compactConversation: async (messages: unknown[]) => {
 		compaction.ranInSlot = slot.held > 0;
 		compaction.seen.push(messages);
@@ -70,6 +76,48 @@ describe('chat compaction', () => {
 		expect(compaction.ranInSlot).toBe(true);
 		expect(slot.consumers[0]).toBe('chat');
 		// Importing the chat store is slow under a full parallel run (#409).
+	}, 20_000);
+
+	it("decides on the server's last count when it is above the estimate (#536)", async () => {
+		const chat = await import('#lib/stores/chat.svelte.ts');
+		(await import('#lib/stores/llamaServer.svelte.ts')).getServerState().status = 'ready';
+		chat.createConversation();
+		const conversation = chat.getActiveConversation()!;
+		for (let i = 0; i < 12; i++) {
+			conversation.messages.push({
+				role: i % 2 === 0 ? 'user' : 'assistant',
+				content: `message ${i}`
+			});
+		}
+		conversation.contextUsage = { promptTokens: 236_000, completionTokens: 30 };
+		compaction.compact = false;
+		compaction.asked = [];
+
+		await chat.sendMessage('one more');
+
+		expect(compaction.asked[0]).toBeGreaterThanOrEqual(236_030);
+		compaction.compact = true;
+	}, 20_000);
+
+	it('counts the message being sent', async () => {
+		const chat = await import('#lib/stores/chat.svelte.ts');
+		(await import('#lib/stores/llamaServer.svelte.ts')).getServerState().status = 'ready';
+		chat.createConversation();
+		const conversation = chat.getActiveConversation()!;
+		for (let i = 0; i < 12; i++) {
+			conversation.messages.push({
+				role: i % 2 === 0 ? 'user' : 'assistant',
+				content: `message ${i}`
+			});
+		}
+		compaction.compact = false;
+		compaction.asked = [];
+
+		await chat.sendMessage('short');
+		await chat.sendMessage('x'.repeat(40_000));
+
+		expect(compaction.asked[1] - compaction.asked[0]).toBeGreaterThan(10_000);
+		compaction.compact = true;
 	}, 20_000);
 
 	it('sends the message when summarising fails', async () => {

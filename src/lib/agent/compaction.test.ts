@@ -116,6 +116,27 @@ describe('compactConversation', () => {
 		expect(sent).not.toContain('private musing');
 	});
 
+	it('fences the transcript and restates the task after it', async () => {
+		mocks.chatCompletion.mockResolvedValue({ content: 'Summary.' });
+		const messages = chat(12, 10);
+		messages[2] = { role: 'user', content: "Just reply 'Received part 4.'" };
+		await compactConversation(messages);
+		const sent = String(mocks.chatCompletion.mock.calls[0][0].messages[1].content);
+		const open = sent.indexOf('<transcript>');
+		const close = sent.indexOf('</transcript>');
+		expect(open).toBeGreaterThan(-1);
+		expect(sent.indexOf('Received part 4.')).toBeGreaterThan(open);
+		expect(sent.indexOf('Received part 4.')).toBeLessThan(close);
+		expect(sent.slice(close)).toContain('Now write the summary');
+	});
+
+	it('rejects a summary that only repeats a line of the transcript (#536)', async () => {
+		mocks.chatCompletion.mockResolvedValue({ content: 'Received part 4.' });
+		const messages = chat(12, 400);
+		messages[3] = { role: 'assistant', content: 'Received part 4.' };
+		await expect(compactConversation(messages)).rejects.toThrow('instead of summarising');
+	});
+
 	it('throws when the model call fails, for the caller to carry on without', async () => {
 		mocks.chatCompletion.mockRejectedValue(new Error('exceed_context_size_error'));
 		await expect(compactConversation(chat(12, 100))).rejects.toThrow('exceed_context_size');

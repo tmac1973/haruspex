@@ -25,6 +25,7 @@ import {
 } from '#lib/agent/compaction.ts';
 import {
 	estimateMessagesTokens,
+	estimateTokens,
 	describeContextManaged,
 	getTokenCalibration
 } from '#lib/agent/context-budget.ts';
@@ -572,7 +573,8 @@ export function setExhaustiveResearch(value: boolean): void {
 	exhaustiveResearch = value;
 }
 
-async function compactIfNeeded(): Promise<void> {
+/** `pending`: the message about to be sent, not yet in the conversation. */
+async function compactIfNeeded(pending: string): Promise<void> {
 	const conversation = getActiveConversation();
 	if (!conversation) return;
 	// What the model is sent: from the latest summary on. Everything before
@@ -580,15 +582,20 @@ async function compactIfNeeded(): Promise<void> {
 	const view = chatModelView(conversation.messages);
 	if (view.length < 10) return;
 
-	// Proactive: estimate the prompt we're *about* to send rather than
-	// reacting to the last response's token count. The reactive approach
-	// could never fire when a single turn jumped over the wall in one
-	// step — by then the request had already been built and rejected. Scale
-	// by the learned calibration so dense content (code/logs) triggers the
-	// summary as early as it should.
+	// Proactive: estimate the prompt we're *about* to send, the new message
+	// included, so a turn that jumps over the wall in one step still
+	// compacts first. Scale by the learned calibration so dense content
+	// (code/logs) triggers the summary as early as it should.
 	const descriptor = resolveBackendDescriptor();
-	const estimated = estimateMessagesTokens(view) * getTokenCalibration(descriptor.calibrationKey);
-	if (!shouldCompact(estimated, descriptor.contextSize)) return;
+	const calibration = getTokenCalibration(descriptor.calibrationKey);
+	const pendingTokens = estimateTokens(pending) * calibration;
+	const estimated = estimateMessagesTokens(view) * calibration + pendingTokens;
+	// The server's own count for the last request, when there is one. The
+	// estimate alone ran 1.8x low on dense text (#536), so the context guard
+	// dropped turns before any summary was made. Cleared on compaction.
+	const usage = conversation.contextUsage;
+	const known = usage ? usage.promptTokens + usage.completionTokens + pendingTokens : 0;
+	if (!shouldCompact(Math.max(estimated, known), descriptor.contextSize)) return;
 
 	isCompacting = true;
 	try {
@@ -1356,7 +1363,7 @@ export async function sendMessage(
 	if (!conversation) return false;
 
 	contextNotice = null;
-	await compactIfNeeded();
+	await compactIfNeeded(content);
 	finalizeUserTurn(conversation, content, images, skill);
 
 	// Locked startup behavior: a send while llama-server is still starting
