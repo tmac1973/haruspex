@@ -164,7 +164,7 @@ const DEBUG_LOG_FILE: &str = "agent-debug.log";
 const DEBUG_LOG_CAP: u64 = 20 * 1024 * 1024;
 
 fn debug_log_file_enabled() -> bool {
-    cfg!(debug_assertions) || std::env::var_os("HARUSPEX_DEBUG_LOG_FILE").is_some()
+    cfg!(debug_assertions) || crate::env_util::debug_log_file_requested()
 }
 
 fn debug_log_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {

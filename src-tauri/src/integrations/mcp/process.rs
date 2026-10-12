@@ -367,6 +367,9 @@ impl McpSupervisor {
                 Ok(())
             }
             Ok(Err(e)) => {
+                // The server's own words and its URL can carry a key
+                // (`?api_key=…`, an echoed header).
+                let e = crate::text_util::redact_secrets(&e, &[]);
                 *status.lock().await = SidecarStatus::Error(e.clone());
                 warn!("mcp: remote server {id} failed to connect: {e}");
                 Err(e)
@@ -374,7 +377,7 @@ impl McpSupervisor {
             Err(_) => {
                 let reason = format!(
                     "{} did not answer within {}s",
-                    config.url,
+                    crate::text_util::redact_secrets(&config.url, &[]),
                     timing::NEGOTIATION_DEADLINE.as_secs()
                 );
                 *status.lock().await = SidecarStatus::Error(reason.clone());
@@ -404,6 +407,7 @@ impl McpSupervisor {
         let status = Arc::new(Mutex::new(SidecarStatus::Starting));
         let log = new_log_buffer();
         let exited = Arc::new(AtomicBool::new(false));
+        let secrets = Arc::new(secret_values(&config.env));
 
         let mut cmd = tokio::process::Command::new(&config.program);
         cmd.args(&config.args);
@@ -448,6 +452,7 @@ impl McpSupervisor {
                 status.clone(),
                 log.clone(),
                 exited.clone(),
+                secrets.clone(),
             );
         }
 
@@ -480,13 +485,16 @@ impl McpSupervisor {
                 Ok(Err(_)) if exited.load(Ordering::SeqCst) => {
                     // The child died rather than disagreeing with us; its own
                     // last words are the more useful diagnostic.
-                    Err(format!("server exited on startup{}", log_tail(&log).await))
+                    Err(format!(
+                        "server exited on startup{}",
+                        log_tail(&log, &secrets).await
+                    ))
                 }
-                Ok(Err(e)) => Err(format!("{e}{}", log_tail(&log).await)),
+                Ok(Err(e)) => Err(format!("{e}{}", log_tail(&log, &secrets).await)),
                 Err(_) => Err(format!(
                     "server did not answer MCP within {}s{}",
                     negotiation_deadline.as_secs(),
-                    log_tail(&log).await
+                    log_tail(&log, &secrets).await
                 )),
             };
 
@@ -668,6 +676,7 @@ fn spawn_stderr_reader(
     status: Arc<Mutex<SidecarStatus>>,
     log: LogBuffer,
     exited: Arc<AtomicBool>,
+    secrets: Arc<Vec<String>>,
 ) {
     tauri::async_runtime::spawn(async move {
         let mut lines = BufReader::new(stderr).lines();
@@ -691,7 +700,10 @@ fn spawn_stderr_reader(
         // A deliberate stop already set Stopped, and an existing Error has a
         // more specific reason than "it exited". Neither should be overwritten.
         if matches!(*current, SidecarStatus::Starting | SidecarStatus::Ready) {
-            let reason = format!("server exited unexpectedly{}", log_tail(&log).await);
+            let reason = format!(
+                "server exited unexpectedly{}",
+                log_tail(&log, &secrets).await
+            );
             warn!("mcp: server {id} exited unexpectedly");
             *current = SidecarStatus::Error(reason);
         }
@@ -699,7 +711,35 @@ fn spawn_stderr_reader(
 }
 
 /// The last few log lines, formatted for appending to an error message.
-async fn log_tail(log: &LogBuffer) -> String {
+/// The values in a server's environment that are credentials: what a
+/// variable named like one holds (`GITHUB_TOKEN`, `API_KEY`, a resolved
+/// `$secret.*`). [`log_tail`] removes them from the server's last words before
+/// those become an error in Settings and a line in the app log.
+fn secret_values(env: &[(String, String)]) -> Vec<String> {
+    const MARKERS: &[&str] = &[
+        "TOKEN",
+        "KEY",
+        "SECRET",
+        "PASS",
+        "AUTH",
+        "CREDENTIAL",
+        "COOKIE",
+    ];
+    env.iter()
+        .filter(|(k, _)| {
+            let k = k.to_ascii_uppercase();
+            MARKERS.iter().any(|m| k.contains(m))
+        })
+        .map(|(_, v)| v.clone())
+        .collect()
+}
+
+/// The server's last few stderr lines, for an error message, with anything
+/// that looks like a credential redacted (`text_util::redact_secrets`): third-
+/// party output, headed for Settings and the app log, which goes into the
+/// diagnostics bundle. The server's own log in the Log Viewer keeps the raw
+/// lines.
+async fn log_tail(log: &LogBuffer, secrets: &[String]) -> String {
     let buf = log.lock().await;
     let lines: Vec<String> = buf
         .iter()
@@ -711,7 +751,10 @@ async fn log_tail(log: &LogBuffer) -> String {
     if lines.is_empty() {
         String::new()
     } else {
-        format!(": {}", lines.join(" | "))
+        format!(
+            ": {}",
+            crate::text_util::redact_secrets(&lines.join(" | "), secrets)
+        )
     }
 }
 
@@ -1260,6 +1303,7 @@ mod tests {
             status,
             log.clone(),
             exited,
+            Arc::default(),
         );
         tokio::time::sleep(Duration::from_millis(300)).await;
         let lines: Vec<String> = log.lock().await.iter().cloned().collect();
@@ -1295,6 +1339,7 @@ mod tests {
             status.clone(),
             new_log_buffer(),
             exited,
+            Arc::default(),
         );
 
         assert!(std::process::Command::new("kill")
@@ -1333,6 +1378,7 @@ mod tests {
             status.clone(),
             new_log_buffer(),
             Arc::new(AtomicBool::new(false)),
+            Arc::default(),
         );
 
         // What `stop` does: mark Stopped before shutting anything down, so the
@@ -1410,16 +1456,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_log_tail_redacts_credentials_before_it_becomes_an_error() {
+        let env = vec![
+            (
+                "GITHUB_TOKEN".to_string(),
+                "ghp_not_a_real_one_000000".to_string(),
+            ),
+            ("API_KEY".to_string(), "plain-key-123".to_string()),
+            ("LOG_LEVEL".to_string(), "debug".to_string()),
+        ];
+        let secrets = secret_values(&env);
+        assert_eq!(secrets.len(), 2, "only credential-named variables");
+        let log = new_log_buffer();
+        {
+            let mut buf = log.lock().await;
+            push_log(&mut buf, "auth failed with key plain-key-123");
+            push_log(
+                &mut buf,
+                "using token ghp_not_a_real_one_000000 at debug level",
+            );
+            push_log(&mut buf, "Authorization: Bearer abc.def.ghi");
+        }
+        let tail = log_tail(&log, &secrets).await;
+        assert!(!tail.contains("plain-key-123"), "{tail}");
+        assert!(!tail.contains("ghp_not_a_real_one"), "{tail}");
+        assert!(!tail.contains("abc.def.ghi"), "{tail}");
+        // Ordinary words survive, including a variable's non-secret value.
+        assert!(tail.contains("debug level"), "{tail}");
+        // The raw lines stay in the server's own log.
+        assert!(log.lock().await.iter().any(|l| l.contains("plain-key-123")));
+    }
+
+    #[tokio::test]
     async fn the_log_tail_is_bounded_and_omitted_when_empty() {
         let log = new_log_buffer();
-        assert_eq!(log_tail(&log).await, "");
+        assert_eq!(log_tail(&log, &[]).await, "");
         {
             let mut buf = log.lock().await;
             for i in 0..20 {
                 push_log(&mut buf, &format!("line {i}"));
             }
         }
-        let tail = log_tail(&log).await;
+        let tail = log_tail(&log, &[]).await;
         assert!(
             tail.contains("line 19"),
             "the tail should be the newest lines"

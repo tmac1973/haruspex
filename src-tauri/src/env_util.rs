@@ -1,4 +1,42 @@
-//! Process-environment helpers shared across child-process spawn sites.
+//! Process-environment helpers: the environment variables Haruspex reads of
+//! its own, and the corrections child processes need.
+//!
+//! ## Haruspex's own variables
+//!
+//! Every variable that changes how Haruspex behaves is read through an
+//! accessor here, so this table is the whole list:
+//!
+//! | Variable | Read | Effect |
+//! |---|---|---|
+//! | `HARUSPEX_DEBUG_LOG_FILE` | at startup, any build | Mirror the agent debug log — prompts, tool output, model replies, clipped unless verbose payloads are on — to `agent-debug.log` in the app's log folder ([`debug_log_file_requested`]). Debug builds do this regardless. |
+//! | `HARUSPEX_BROWSER_PATH` | per search | The browser the "browser" search provider drives, when Settings names none ([`browser_path_override`]). |
+//! | `HARUSPEX_GOOGLE_CLIENT_ID`, `HARUSPEX_GOOGLE_CLIENT_SECRET` | at build time (`option_env!`, `integrations/dav/google.rs`) | The Google sign-in client; unset means a build without Google sign-in. |
+//!
+//! The rest of the `HARUSPEX_*` names in the source are test fixtures, read
+//! only inside `#[cfg(test)]` (`HARUSPEX_PDEATH_CHILD`, `HARUSPEX_GOOGLE_TOKEN_FILE`,
+//! `HARUSPEX_TILE_DIR` and the like). Conventions of the OS or of a library —
+//! `HOME`, `PATH`, `SHELL`, `XDG_*`, `USERPROFILE`, `APPDIR`, `HF_HOME` — are
+//! read where they are used.
+
+/// See the table above.
+pub const DEBUG_LOG_FILE_VAR: &str = "HARUSPEX_DEBUG_LOG_FILE";
+
+/// Whether `HARUSPEX_DEBUG_LOG_FILE` asks for the debug log on disk. Any
+/// value counts, as a release build has no other way to turn it on.
+pub fn debug_log_file_requested() -> bool {
+    std::env::var_os(DEBUG_LOG_FILE_VAR).is_some()
+}
+
+/// See the table above.
+pub const BROWSER_PATH_VAR: &str = "HARUSPEX_BROWSER_PATH";
+
+/// The browser `HARUSPEX_BROWSER_PATH` names, if it names one. For headless
+/// and CI runs, and for the layout nobody's detection anticipated.
+pub fn browser_path_override() -> Option<String> {
+    std::env::var(BROWSER_PATH_VAR)
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+}
 
 /// One correction to apply to a child process's environment.
 ///

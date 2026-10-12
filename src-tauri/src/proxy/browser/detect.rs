@@ -12,11 +12,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-/// Env override, checked before everything else. Exists for headless/CI runs
-/// and for the case every heuristic below eventually meets: a layout nobody
-/// anticipated.
-pub const BROWSER_PATH_ENV: &str = "HARUSPEX_BROWSER_PATH";
-
 /// A browser we found and confirmed runs.
 #[derive(Clone, Debug, serde::Serialize, ts_rs::TS)]
 #[ts(export)]
@@ -230,8 +225,8 @@ pub fn detect(override_path: Option<&str>) -> DetectionResult {
     let explicit = override_path
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
-        .or_else(|| std::env::var(BROWSER_PATH_ENV).ok())
-        .filter(|s| !s.trim().is_empty());
+        // `HARUSPEX_BROWSER_PATH`, checked before any detection.
+        .or_else(crate::env_util::browser_path_override);
 
     if let Some(path) = explicit {
         searched.push(path.clone());
