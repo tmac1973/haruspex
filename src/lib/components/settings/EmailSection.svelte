@@ -17,7 +17,7 @@
 	} from '#lib/stores/settings.ts';
 	import type { EmailProviderPreset } from '#lib/ipc/gen/EmailProviderPreset.ts';
 	import EmailAccountForm from '#lib/components/EmailAccountForm.svelte';
-	import { forgetStoredPassword } from '#lib/stores/emailSecrets.ts';
+	import { forgetEmailPassword } from '#lib/stores/emailSecrets.ts';
 	import { secretStoreAvailable } from '#lib/stores/secrets.ts';
 	import { newId } from '#lib/utils/id.ts';
 
@@ -72,7 +72,7 @@
 
 	function deleteEmailAccount(id: string) {
 		const gone = emailAccounts.find((a) => a.id === id);
-		if (gone) void forgetStoredPassword(gone);
+		if (gone) void forgetEmailPassword(gone);
 		emailAccounts = emailAccounts.filter((a) => a.id !== id);
 		setEmailAccounts(emailAccounts);
 		forgetSession(id);

@@ -90,6 +90,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::{temp_dir, TestDir};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     /// Serve one raw HTTP/1.1 response per connection, verbatim, then close.
@@ -147,13 +148,11 @@ mod tests {
         reqwest::Client::new().get(url).send().await.unwrap()
     }
 
-    fn temp_path(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "haruspex_test_http_util_{}_{name}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir.join("out.bin")
+    /// `out.bin` inside a fresh temp folder, which goes when the guard drops.
+    fn temp_path(name: &str) -> (TestDir, std::path::PathBuf) {
+        let dir = temp_dir(&format!("http_util_{name}"));
+        let file = dir.join("out.bin");
+        (dir, file)
     }
 
     #[tokio::test]
@@ -204,7 +203,7 @@ mod tests {
     async fn stream_to_file_writes_the_body_and_returns_its_length() {
         let body: Vec<u8> = (0..3000u32).map(|i| i as u8).collect();
         let url = serve_raw(with_length(&body)).await;
-        let dest = temp_path("ok");
+        let (_dir, dest) = temp_path("ok");
         let mut last_seen = 0;
         let n = stream_to_file(get(&url).await, &dest, Some(3000), |w| {
             assert!(w >= last_seen);
@@ -216,13 +215,12 @@ mod tests {
         assert_eq!(n, 3000);
         assert_eq!(last_seen, 3000);
         assert_eq!(std::fs::read(&dest).unwrap(), body);
-        let _ = std::fs::remove_dir_all(dest.parent().unwrap());
     }
 
     #[tokio::test]
     async fn stream_to_file_removes_the_partial_file_when_too_large() {
         let url = serve_raw(chunked(&[&[1u8; 60], &[2u8; 60]])).await;
-        let dest = temp_path("too_large");
+        let (_dir, dest) = temp_path("too_large");
         let err = stream_to_file(get(&url).await, &dest, Some(100), |_| async { true })
             .await
             .unwrap_err();
@@ -231,31 +229,28 @@ mod tests {
             other => panic!("expected TooLarge, got {other:?}"),
         }
         assert!(!dest.exists());
-        let _ = std::fs::remove_dir_all(dest.parent().unwrap());
     }
 
     #[tokio::test]
     async fn stream_to_file_removes_the_partial_file_when_stopped() {
         let url = serve_raw(with_length(&[3u8; 2000])).await;
-        let dest = temp_path("stopped");
+        let (_dir, dest) = temp_path("stopped");
         let err = stream_to_file(get(&url).await, &dest, None, |_| async { false })
             .await
             .unwrap_err();
         assert!(matches!(err, DownloadError::Stopped), "got {err:?}");
         assert!(!dest.exists());
-        let _ = std::fs::remove_dir_all(dest.parent().unwrap());
     }
 
     #[tokio::test]
     async fn stream_to_file_reports_a_create_error() {
         let url = serve_raw(with_length(b"hi")).await;
-        let file = temp_path("create");
+        let (_dir, file) = temp_path("create");
         let dest = file.with_file_name("missing_dir").join("out.bin");
         let err = stream_to_file(get(&url).await, &dest, None, |_| async { true })
             .await
             .unwrap_err();
         assert!(matches!(err, DownloadError::Create(_)), "got {err:?}");
-        let _ = std::fs::remove_dir_all(file.parent().unwrap());
     }
 
     /// Declares more body than it sends, then closes: the read fails mid-body.
@@ -279,19 +274,18 @@ mod tests {
     #[tokio::test]
     async fn stream_to_file_removes_the_partial_file_on_a_read_error() {
         let url = serve_raw(truncated(1000, &[5u8; 10])).await;
-        let dest = temp_path("read_error");
+        let (_dir, dest) = temp_path("read_error");
         let err = stream_to_file(get(&url).await, &dest, None, |_| async { true })
             .await
             .unwrap_err();
         assert!(matches!(err, DownloadError::Read(_)), "got {err:?}");
         assert!(!dest.exists());
-        let _ = std::fs::remove_dir_all(dest.parent().unwrap());
     }
 
     #[tokio::test]
     async fn stream_to_file_reports_a_create_error_when_dest_is_a_directory() {
         let url = serve_raw(with_length(b"hi")).await;
-        let file = temp_path("create_dir");
+        let (_dir, file) = temp_path("create_dir");
         let dest = file.parent().unwrap().to_path_buf();
         let err = stream_to_file(get(&url).await, &dest, None, |_| async { true })
             .await
@@ -299,6 +293,5 @@ mod tests {
         assert!(matches!(err, DownloadError::Create(_)), "got {err:?}");
         // The directory is left alone: nothing was created, so nothing is removed.
         assert!(dest.is_dir());
-        let _ = std::fs::remove_dir_all(&dest);
     }
 }

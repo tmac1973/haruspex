@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ToolResult } from '#lib/sandbox/sandbox.ts';
 import { updateSettings } from '#lib/stores/settings.ts';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
 const mocks = vi.hoisted(() => ({
 	runPython: vi.fn(),
@@ -22,15 +23,7 @@ vi.mock('#lib/stores/sandboxApproval.svelte.ts', () => ({
 	approveChatSandbox: vi.fn()
 }));
 
-const ctx = {
-	workingDir: null,
-	pendingImages: [],
-	deepResearch: false,
-	shellMode: false,
-	codeMode: false,
-	codeAutoApprove: false,
-	filesWrittenThisTurn: new Set<string>()
-};
+const ctx = makeToolContext();
 
 function ok(overrides: Partial<ToolResult> = {}): ToolResult {
 	return {

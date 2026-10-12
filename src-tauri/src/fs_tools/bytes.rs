@@ -85,17 +85,11 @@ pub async fn fs_move_in_workdir(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn temp(name: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("haruspex-move-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
-    }
+    use crate::test_util::temp_dir;
 
     #[tokio::test]
     async fn moves_a_file_into_a_new_folder() {
-        let d = temp("ok");
+        let d = temp_dir("ok");
         std::fs::create_dir_all(d.join("assets")).unwrap();
         std::fs::write(d.join("assets/player.png"), b"png").unwrap();
         let w = d.to_string_lossy().to_string();
@@ -111,12 +105,11 @@ mod tests {
             std::fs::read(d.join("assets/.history/player-1.png")).unwrap(),
             b"png"
         );
-        std::fs::remove_dir_all(&d).ok();
     }
 
     #[tokio::test]
     async fn never_overwrites_and_never_leaves_the_workdir() {
-        let d = temp("refuse");
+        let d = temp_dir("refuse");
         std::fs::write(d.join("a.png"), b"a").unwrap();
         std::fs::write(d.join("b.png"), b"b").unwrap();
         let w = d.to_string_lossy().to_string();
@@ -135,12 +128,11 @@ mod tests {
             .await
             .is_err());
         assert!(d.join("a.png").exists());
-        std::fs::remove_dir_all(&d).ok();
     }
 
     #[tokio::test]
     async fn a_dry_run_checks_the_write_without_making_the_file() {
-        let d = temp("dry");
+        let d = temp_dir("dry");
         let w = || d.to_string_lossy().into_owned();
         fs_write_bytes(w(), "a.png".into(), vec![1], None, Some(true))
             .await
@@ -161,6 +153,5 @@ mod tests {
                 .await
                 .is_err()
         );
-        std::fs::remove_dir_all(&d).ok();
     }
 }

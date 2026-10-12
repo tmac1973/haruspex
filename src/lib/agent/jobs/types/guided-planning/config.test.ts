@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseGuidedPlanningConfig } from './config';
+import { parseGuidedPlanningConfig, defaultPlanDir } from './config';
 
 describe('parseGuidedPlanningConfig', () => {
 	it('reads the fields a job editor writes', () => {
@@ -182,5 +182,16 @@ describe('planning_skill', () => {
 		expect(parseGuidedPlanningConfig('{"planning_skill":"plan-web-app"}').planning_skill).toBe(
 			'plan-web-app'
 		);
+	});
+});
+
+describe('defaultPlanDir', () => {
+	it('slugs the job name under plan/', () => {
+		expect(defaultPlanDir('  My Game: Space!  ')).toBe('plan/my-game-space/');
+	});
+
+	it('is empty for a name with nothing to slug', () => {
+		expect(defaultPlanDir('')).toBe('');
+		expect(defaultPlanDir('!!!')).toBe('');
 	});
 });

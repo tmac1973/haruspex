@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getJobs, type JobSummary } from '#lib/stores/jobs.svelte.ts';
+	import { getJobs, storedScheduleLabel } from '#lib/stores/jobs.svelte.ts';
 	import { getCurrentRun, getPendingQueue, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
 	import {
 		ensureTypeAvailabilityLoaded,
@@ -39,39 +39,6 @@
 	}
 
 	const jobs = $derived(getJobs());
-
-	function scheduleSummary(job: JobSummary): string {
-		switch (job.schedule_kind) {
-			case 'manual':
-				return 'Manual';
-			case 'hourly':
-				return 'Hourly';
-			case 'daily': {
-				const cfg = parseConfig(job.schedule_config) as { time?: string } | null;
-				return cfg?.time ? `Daily · ${cfg.time}` : 'Daily';
-			}
-			case 'weekly': {
-				const cfg = parseConfig(job.schedule_config) as { day?: string; time?: string } | null;
-				if (cfg?.day && cfg?.time) return `Weekly · ${cfg.day} ${cfg.time}`;
-				return 'Weekly';
-			}
-			case 'interval': {
-				const cfg = parseConfig(job.schedule_config) as { minutes?: number } | null;
-				return cfg?.minutes ? `Every ${cfg.minutes}m` : 'Interval';
-			}
-			default:
-				return job.schedule_kind;
-		}
-	}
-
-	function parseConfig(raw: string | null): unknown {
-		if (!raw) return null;
-		try {
-			return JSON.parse(raw);
-		} catch {
-			return null;
-		}
-	}
 </script>
 
 <div class="job-list">
@@ -120,7 +87,8 @@
 							<span class="badge {def?.badgeTone ?? ''}">{def?.badgeLabel ?? job.job_type}</span>
 						</span>
 						<span class="meta">
-							{scheduleSummary(job)}{def?.listMeta?.(job) ?? ''}
+							{storedScheduleLabel(job.schedule_kind, job.schedule_config)}{def?.listMeta?.(job) ??
+								''}
 						</span>
 					</div>
 					<button

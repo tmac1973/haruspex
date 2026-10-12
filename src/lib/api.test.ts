@@ -67,6 +67,17 @@ describe('parseSSE', () => {
 		expect(chunks[0].finish_reason).toBeNull();
 	});
 
+	it('reads `data:` with no space after the colon, and single-newline events', async () => {
+		const response = createMockResponse([
+			'data:{"choices":[{"delta":{"content":"a"},"finish_reason":null}]}\n',
+			'data: {"choices":[{"delta":{"content":"b"},"finish_reason":null}]}\r\n',
+			'data:[DONE]\n'
+		]);
+		const chunks = [];
+		for await (const chunk of parseSSE(response)) chunks.push(chunk);
+		expect(chunks.map((c) => c.delta.content)).toEqual(['a', 'b']);
+	});
+
 	it('handles data split across multiple reads', async () => {
 		const response = createMockResponse([
 			'data: {"choices":[{"delta":{"content":"Hel"}',

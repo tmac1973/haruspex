@@ -14,6 +14,7 @@
 	 * The whole thread is saved, so a long session is rendered from its last
 	 * `TURNS_PER_PAGE` turns, with "Show earlier" for the rest.
 	 */
+	import { codePathFromClick } from '#lib/markdown.ts';
 	import { onDestroy, untrack } from 'svelte';
 	import { isWatchNotification, watchNotificationCommands } from '#lib/shell/backgroundWatch.ts';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
@@ -126,13 +127,8 @@
 	 * with `data-action="code-path"`, opened here.
 	 */
 	function onThreadClick(event: MouseEvent) {
-		const btn = (event.target as HTMLElement | null)?.closest<HTMLElement>(
-			'button[data-action="code-path"]'
-		);
-		const rel = btn?.dataset.path;
-		if (!rel) return;
-		event.preventDefault();
-		openFileFromClick(session.root, rel, session.wslDistro);
+		const target = codePathFromClick(event);
+		if (target) openFileFromClick(session.root, target.path, session.wslDistro);
 	}
 
 	/** Forks once the turn is over: the saved thread is then the one shown. */

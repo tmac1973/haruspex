@@ -707,6 +707,7 @@ impl Store for Memory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::temp_dir;
 
     #[test]
     fn a_secret_round_trips() {
@@ -772,12 +773,6 @@ mod tests {
         assert_eq!(Keychain.get(key).unwrap(), None);
     }
 
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("haruspex_secrets_test_{name}"));
-        let _ = std::fs::remove_dir_all(&dir);
-        dir
-    }
-
     #[test]
     fn the_encrypted_file_round_trips_and_holds_no_plaintext() {
         let dir = temp_dir("roundtrip");
@@ -796,7 +791,6 @@ mod tests {
         assert_eq!(again.get("mcp:b").unwrap(), Some("ghp_token".into()));
         again.delete("dav:a").unwrap();
         assert_eq!(f.get("dav:a").unwrap(), None);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[cfg(unix)]
@@ -812,7 +806,6 @@ mod tests {
                 .mode();
             assert_eq!(mode & 0o777, 0o600, "{name}");
         }
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -821,7 +814,6 @@ mod tests {
         EncryptedFile::new(&dir).set("dav:a", "x").unwrap();
         std::fs::write(dir.join(KEY_FILE), [7u8; 32]).unwrap();
         assert!(EncryptedFile::new(&dir).get("dav:a").is_err());
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -841,7 +833,6 @@ mod tests {
         assert_eq!(s.file.get("email:old").unwrap(), None);
         s.delete("email:old").unwrap();
         assert_eq!(s.get("email:old").unwrap(), None);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -855,7 +846,6 @@ mod tests {
         assert!(probe(&s));
         s.set("brave:key", "k").unwrap();
         assert_eq!(s.file.get("brave:key").unwrap(), Some("k".into()));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -918,7 +908,6 @@ mod tests {
             session: None,
         };
         assert!(!probe(&lasting));
-        std::fs::remove_dir_all(&blocker).ok();
     }
 
     #[test]
@@ -937,7 +926,6 @@ mod tests {
             EncryptedFile::new(&dir).get("dav:a").unwrap(),
             Some("x".into())
         );
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[cfg(not(windows))]
@@ -962,9 +950,7 @@ mod tests {
         let p = dir.join(KEY_FILE);
         assert_eq!(unwrap_key(&p, wrapped).unwrap(), key.to_vec());
         // A key written before DPAPI wrapping is used, and rewritten wrapped.
-        std::fs::create_dir_all(&dir).unwrap();
         assert_eq!(unwrap_key(&p, key.to_vec()).unwrap(), key.to_vec());
         assert_ne!(std::fs::read(&p).unwrap().len(), KEY_LEN);
-        std::fs::remove_dir_all(&dir).ok();
     }
 }

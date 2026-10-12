@@ -6,8 +6,6 @@ import {
 	isOpenRouterToolCapable,
 	isOpenRouterVisionCapable,
 	matchesOpenRouterQuery,
-	OPENROUTER_CATALOG_TTL_MS,
-	FREE_MODEL_RPM,
 	type OpenRouterModel
 } from '#lib/openrouter.ts';
 
@@ -151,11 +149,6 @@ describe('helpers', () => {
 	it('isOpenRouterVisionCapable checks input_modalities', () => {
 		expect(isOpenRouterVisionCapable(visionToolModel)).toBe(true);
 		expect(isOpenRouterVisionCapable(toolModel('x', 'X'))).toBe(false);
-	});
-
-	it('TTL and free-tier constants are exported', () => {
-		expect(OPENROUTER_CATALOG_TTL_MS).toBe(24 * 60 * 60 * 1000);
-		expect(FREE_MODEL_RPM).toBe(20);
 	});
 });
 

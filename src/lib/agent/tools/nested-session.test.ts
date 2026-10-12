@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
 const mocks = vi.hoisted(() => ({
 	invoke: vi.fn()
@@ -10,17 +11,12 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 /** Shell tab, Code mode, bound to a live PTY — the configuration where the
  *  file tools and the terminal can drift onto different machines. */
-const shellCodeCtx = {
-	workingDir: null,
-	pendingImages: [],
-	deepResearch: false,
+const shellCodeCtx = makeToolContext({
 	shellMode: true,
 	codeMode: true,
-	codeAutoApprove: false,
 	shellCwd: '/home/tim/proj',
-	shellSessionId: 1,
-	filesWrittenThisTurn: new Set<string>()
-};
+	shellSessionId: 1
+});
 
 /** Route invokes by command name; `pending` is what the PTY is running. */
 function mockShell(pending: string | null, results: Record<string, unknown> = {}) {

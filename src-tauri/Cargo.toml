@@ -170,3 +170,7 @@ xcap = "0.9"
 objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["std", "CGWindow"] }
 # The login Keychain for src/secrets.rs.
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
+
+[dev-dependencies]
+# Unique, self-removing scratch directories for tests; see src/test_util.rs.
+tempfile = "3"

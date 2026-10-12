@@ -6,6 +6,7 @@
  * on its last, so moving around a multi-line message still works. Whatever
  * was typed before the first Up comes back after the newest message.
  */
+import { tick } from 'svelte';
 
 /** The messages to step through, oldest first: blanks dropped, repeats once. */
 export function sentHistory(texts: readonly string[]): string[] {
@@ -92,4 +93,28 @@ export class InputHistory {
 export function placeCaret(el: HTMLTextAreaElement, caret: Recall['caret']): void {
 	const at = caret === 'start' ? 0 : el.value.length;
 	el.setSelectionRange(at, at);
+}
+
+/**
+ * A composer's Up/Down: when `e` recalls an entry from `history`, take the
+ * key, hand the text to `show`, and place the caret once the box has
+ * rendered it (after `afterRender`, such as an autosize). True when the key
+ * was used.
+ */
+export function recallInto(
+	history: InputHistory,
+	e: KeyboardEvent,
+	el: HTMLTextAreaElement | null | undefined,
+	show: (text: string) => void,
+	afterRender?: () => void
+): boolean {
+	const recall = el && history.key(e, el);
+	if (!el || !recall) return false;
+	e.preventDefault();
+	show(recall.text);
+	void tick().then(() => {
+		afterRender?.();
+		placeCaret(el, recall.caret);
+	});
+	return true;
 }

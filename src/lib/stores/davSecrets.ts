@@ -1,36 +1,19 @@
 /**
- * CalDAV/CardDAV passwords, kept out of the settings the way email's are
- * (see `./secrets`). Stored under `dav:<account id>`; Rust reads them back
- * just before connecting.
+ * CalDAV/CardDAV passwords, links and refresh tokens, kept out of the
+ * settings under `dav:<account id>` (see `./accountSecrets`). Rust's
+ * `dav::account::secret_key` names the same key.
  */
 import { getSettings, setDavAccounts } from '#lib/stores/settings.ts';
 import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
-import { deleteSecret, keepSecret, migrateInlineSecrets } from '#lib/stores/secrets.ts';
+import { accountSecrets } from '#lib/stores/accountSecrets.ts';
 
-export function davSecretKey(accountId: string): string {
-	return `dav:${accountId}`;
-}
+const secrets = accountSecrets<DavAccount>(
+	'dav',
+	() => getSettings().integrations.dav.accounts,
+	setDavAccounts
+);
 
-/** The account as it should be stored with `password`. */
-export async function withStoredDavPassword(
-	account: DavAccount,
-	password: string
-): Promise<DavAccount> {
-	const { inline, ref } = await keepSecret(davSecretKey(account.id), password);
-	return { ...account, password: inline, passwordRef: ref };
-}
-
-export async function forgetDavPassword(account: DavAccount): Promise<void> {
-	if (account.passwordRef) await deleteSecret(account.passwordRef);
-}
-
-export function migrateDavSecrets(): Promise<void> {
-	return migrateInlineSecrets<DavAccount>({
-		read: () => getSettings().integrations.dav.accounts,
-		write: setDavAccounts,
-		inline: (a) => a.password,
-		hasRef: (a) => !!a.passwordRef,
-		keyFor: (a) => davSecretKey(a.id),
-		moved: (a, key) => ({ ...a, password: '', passwordRef: key })
-	});
-}
+export const davSecretKey = secrets.key;
+export const withStoredDavPassword = secrets.withStoredPassword;
+export const forgetDavPassword = secrets.forget;
+export const migrateDavSecrets = secrets.migrate;

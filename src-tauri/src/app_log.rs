@@ -100,11 +100,7 @@ pub fn timestamp() -> String {
 /// Minimal timestamp without pulling in the chrono crate.
 /// Format: YYYY-MM-DD HH:MM:SS in local time.
 fn chrono_now() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let secs = crate::time_util::now_secs_u64();
 
     // Naive epoch → Y/M/D/H/M/S conversion (UTC). Close enough for a log
     // timestamp; we don't want to pull chrono just for this.
@@ -255,9 +251,7 @@ mod tests {
 
     #[test]
     fn debug_lines_append_and_rotate_past_the_cap() {
-        let dir = std::env::temp_dir().join(format!("haruspex-debuglog-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::test_util::temp_dir("debuglog");
         let path = dir.join(DEBUG_LOG_FILE);
         append_debug_lines(&path, &["one".into(), "two".into()], 1024).unwrap();
         append_debug_lines(&path, &["three".into()], 1024).unwrap();
@@ -269,6 +263,5 @@ mod tests {
             std::fs::read_to_string(dir.join("agent-debug.log.1")).unwrap(),
             "one\ntwo\nthree\n"
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

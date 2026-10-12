@@ -13,7 +13,7 @@ describe('detectPaywall', () => {
 		const content = RUST_PAYWALL_SENTINEL;
 		const result = detectPaywall('https://anysite.example/article', content);
 		expect(result.paywalled).toBe(true);
-		expect(result.reason).toBeDefined();
+		expect(result.reason).toMatch(/paywalled/);
 	});
 
 	it('flags short pages that contain a paywall phrase', () => {

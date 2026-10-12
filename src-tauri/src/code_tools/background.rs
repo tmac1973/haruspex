@@ -20,6 +20,7 @@ use super::job::Job;
 use super::wsl;
 use crate::command_scope;
 use crate::orphans::{self, RunningServer};
+use crate::process_util::{kill_pid, Signal};
 use crate::shell::kind::ShellSelection;
 use crate::sync_util::LockExt;
 use serde::Serialize;
@@ -29,7 +30,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tokio::io::AsyncReadExt;
 
 /// Orphan-registry kind for background processes.
@@ -500,10 +501,7 @@ fn parse_wsl_orphan_program(program: &str) -> Option<(&str, &str)> {
 fn new_id() -> String {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
+    let nanos = crate::time_util::now_nanos();
     format!("bg-{:x}-{n}", nanos & 0xffff_ffff_ffff)
 }
 
@@ -605,31 +603,12 @@ fn read_tail(path: &Path, bytes: u64) -> std::io::Result<String> {
     Ok(String::from_utf8_lossy(&read_tail_bytes(path, bytes)?).into_owned())
 }
 
-#[derive(Clone, Copy)]
-enum Signal {
-    Term,
-    Kill,
-}
-
-#[cfg(unix)]
+/// Signal a process group (Windows: kill its tree). Best-effort; the group
+/// may already be gone. Never 0 or 1, which `killpg` would read as our own
+/// group or init.
 fn signal_group(pgid: u32, signal: Signal) {
-    if pgid <= 1 {
-        return;
-    }
-    let sig = match signal {
-        Signal::Term => libc::SIGTERM,
-        Signal::Kill => libc::SIGKILL,
-    };
-    // Best-effort; ESRCH when the group is already gone.
-    unsafe {
-        libc::killpg(pgid as i32, sig);
-    }
-}
-
-#[cfg(windows)]
-fn signal_group(pid: u32, _signal: Signal) {
-    if pid > 0 {
-        super::kill_process_tree(pid);
+    if pgid > 1 {
+        kill_pid(pgid, signal, true);
     }
 }
 
@@ -707,12 +686,13 @@ pub async fn code_bg_stop_owner(
 #[cfg(all(test, windows))]
 mod wsl_tests {
     use super::*;
+    use crate::test_util::temp_dir;
 
     #[tokio::test]
     #[ignore]
     async fn a_wsl_process_logs_without_the_group_line_and_stops_inside_the_distro() {
         let distro = wsl::distros().into_iter().next().expect("a WSL2 distro");
-        let dir = std::env::temp_dir().join(format!("haruspex-bg-wsl-{}", std::process::id()));
+        let dir = temp_dir("bg_wsl");
         let registry = dir.join("orphans.json");
         let mgr = CodeBgManager::new(dir.join("logs"), Some(registry.clone()));
 
@@ -767,14 +747,13 @@ mod wsl_tests {
         );
         assert!(mgr.status(None).is_empty());
         assert!(orphans::load(&registry).is_empty());
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]
     #[ignore]
     async fn the_sweep_kills_a_group_a_crash_left_in_the_distro() {
         let distro = wsl::distros().into_iter().next().expect("a WSL2 distro");
-        let dir = std::env::temp_dir().join(format!("haruspex-bg-sweep-{}", std::process::id()));
+        let dir = temp_dir("bg_sweep");
         let registry = dir.join("orphans.json");
         let mgr = CodeBgManager::new(dir.join("logs"), Some(registry.clone()));
         let started = mgr
@@ -807,7 +786,6 @@ mod wsl_tests {
             !wsl::group_alive(&distro, pgid).await,
             "group {pgid} left running"
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -827,11 +805,10 @@ mod wsl_tests {
 #[cfg(all(test, windows))]
 mod host_windows_tests {
     use super::*;
+    use crate::test_util::{temp_dir, TestDir};
 
-    fn manager(name: &str) -> (CodeBgManager, PathBuf) {
-        let dir = std::env::temp_dir().join(format!("haruspex_code_bg_win_{name}"));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+    fn manager(name: &str) -> (CodeBgManager, TestDir) {
+        let dir = temp_dir(&format!("bg_win_{name}"));
         let mgr = CodeBgManager::new(dir.join("logs"), Some(dir.join("running.json")));
         (mgr, dir)
     }
@@ -912,11 +889,10 @@ mod host_windows_tests {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+    use crate::test_util::{temp_dir, TestDir};
 
-    fn manager(name: &str) -> (CodeBgManager, PathBuf) {
-        let dir = std::env::temp_dir().join(format!("haruspex_code_bg_{name}"));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+    fn manager(name: &str) -> (CodeBgManager, TestDir) {
+        let dir = temp_dir(&format!("bg_{name}"));
         let mgr = CodeBgManager::new(dir.join("logs"), Some(dir.join("running.json")));
         (mgr, dir)
     }

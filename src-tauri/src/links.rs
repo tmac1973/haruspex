@@ -167,13 +167,11 @@ mod tests {
 
     #[tokio::test]
     async fn only_existing_folders_are_opened() {
-        let dir = std::env::temp_dir().join(format!("haruspex-open-folder-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::test_util::temp_dir("open_folder");
         let file = dir.join("run.sh");
         std::fs::write(&file, "#!/bin/sh\n").unwrap();
         let err = open_folder(file.display().to_string()).await.unwrap_err();
         let missing = open_folder(dir.join("nope").display().to_string()).await;
-        std::fs::remove_dir_all(&dir).unwrap();
         assert!(err.contains("not a folder"), "{err}");
         assert!(missing.is_err());
     }

@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ToolContext } from './types';
 import { RUST_PAYWALL_SENTINEL } from '#lib/agent/paywall.ts';
 
 const mocks = vi.hoisted(() => ({
@@ -27,16 +26,11 @@ vi.mock('./_helpers', async (importOriginal) => ({
 import './web';
 import { executeTool } from './registry';
 import { DEFAULT_SEARXNG_URL } from '#lib/stores/settings.ts';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
-const ctx = {
-	workingDir: null,
-	pendingImages: [],
-	deepResearch: true,
-	shellMode: false,
-	codeMode: false,
-	codeAutoApprove: false,
-	filesWrittenThisTurn: new Set<string>()
-} as unknown as ToolContext;
+const ctx = makeToolContext({
+	deepResearch: true
+});
 
 beforeEach(() => {
 	mocks.invoke.mockReset();

@@ -877,6 +877,7 @@ fn make_executable(path: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::temp_dir;
 
     #[test]
     fn the_host_triple_matches_the_keys_the_catalog_uses() {
@@ -933,8 +934,7 @@ mod tests {
 
     #[test]
     fn copying_an_addon_tree_keeps_its_shape() {
-        let root = std::env::temp_dir().join("haruspex_addon_copy_test");
-        let _ = std::fs::remove_dir_all(&root);
+        let root = temp_dir("addon_copy");
         let from = root.join("from");
         std::fs::create_dir_all(from.join("handlers")).unwrap();
         std::fs::write(from.join("plugin.cfg"), b"[plugin]").unwrap();
@@ -944,7 +944,6 @@ mod tests {
         copy_dir(&from, &to).unwrap();
         assert_eq!(std::fs::read(to.join("plugin.cfg")).unwrap(), b"[plugin]");
         assert!(to.join("handlers").join("editor.gd").is_file());
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[cfg(unix)]
@@ -952,33 +951,28 @@ mod tests {
     fn a_symlink_in_an_archive_is_refused_rather_than_followed() {
         // Following one writes outside the destination; skipping it leaves a
         // silently incomplete addon. Neither is something to do quietly.
-        let root = std::env::temp_dir().join("haruspex_addon_symlink_test");
-        let _ = std::fs::remove_dir_all(&root);
+        let root = temp_dir("addon_symlink");
         let from = root.join("from");
         std::fs::create_dir_all(&from).unwrap();
         std::os::unix::fs::symlink("/etc/passwd", from.join("sneaky.gd")).unwrap();
 
         let err = copy_dir(&from, &root.join("to")).expect_err("a link is not addon content");
         assert!(err.contains("symbolic link"), "got {err}");
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn an_unknown_archive_format_is_refused_rather_than_guessed_at() {
-        let dir = std::env::temp_dir().join("haruspex_mcp_extract_test");
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = temp_dir("mcp_extract");
         let bogus = dir.join("server.bin");
         std::fs::write(&bogus, b"not an archive").unwrap();
         let err = extract(&bogus, &dir).expect_err("we do not know how to unpack this");
         assert!(err.contains("unsupported archive format"), "got {err}");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn a_zip_entry_cannot_write_outside_the_destination() {
         use std::io::Write;
-        let root = std::env::temp_dir().join("haruspex_mcp_zip_slip_test");
-        let _ = std::fs::remove_dir_all(&root);
+        let root = temp_dir("mcp_zip_slip");
         let dest = root.join("unpacked");
         std::fs::create_dir_all(&dest).unwrap();
         let archive = root.join("server.zip");
@@ -999,13 +993,11 @@ mod tests {
         assert!(!root.join("escaped.txt").exists());
         assert!(!Path::new("/absolute.txt").exists());
         assert!(std::fs::symlink_metadata(dest.join("link")).is_err());
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn sha256_matches_a_known_value() {
-        let dir = std::env::temp_dir().join("haruspex_mcp_sha_test");
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = temp_dir("mcp_sha");
         let path = dir.join("payload");
         std::fs::write(&path, b"abc").unwrap();
         let digest = tokio::runtime::Runtime::new()
@@ -1016,7 +1008,6 @@ mod tests {
             digest,
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn custom_server(proxy_use: ProxyUse) -> McpServerConfig {
@@ -1048,13 +1039,12 @@ mod tests {
 
     #[test]
     fn a_missing_server_folder_is_made() {
-        let dir = std::env::temp_dir().join(format!("mcp-custom-{}/c1", std::process::id()));
-        let _ = std::fs::remove_dir_all(dir.parent().unwrap());
+        let root = temp_dir("mcp_custom");
+        let dir = root.join("c1");
         assert_eq!(ensure_dir(&dir).unwrap(), dir);
         assert!(dir.is_dir());
         // Already there is fine too.
         assert!(ensure_dir(&dir).is_ok());
-        let _ = std::fs::remove_dir_all(dir.parent().unwrap());
     }
 
     #[test]
@@ -1187,9 +1177,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_setup_file_is_copied_into_the_server_dir_and_nowhere_else() {
-        let root = std::env::temp_dir().join("haruspex_mcp_place_test");
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
+        let root = temp_dir("mcp_place");
         let source = root.join("picked.json");
         std::fs::write(&source, b"{}").unwrap();
         let dir = root.join("servers").join("s1");
@@ -1204,7 +1192,6 @@ mod tests {
             .unwrap_err();
         assert!(err.contains("not a plain file name"), "{err}");
         assert!(!root.join("servers").join("escaped.json").exists());
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -1250,6 +1237,7 @@ mod tests {
 #[cfg(test)]
 mod addon_tests {
     use super::*;
+    use crate::test_util::temp_dir;
 
     /// The real archive, unpacked the way `install_addon` unpacks it.
     ///
@@ -1276,9 +1264,7 @@ mod addon_tests {
             })
             .expect("godot installs an addon");
 
-        let dir = std::env::temp_dir().join("haruspex_addon_live_test");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = temp_dir("addon_live");
         let archive = dir.join("addon.zip");
 
         let status = std::process::Command::new("curl")
@@ -1305,6 +1291,5 @@ mod addon_tests {
             unpacked.join(&install_path).join("plugin.cfg").is_file(),
             "{install_path}/plugin.cfg is what Godot loads"
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

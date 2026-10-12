@@ -15,7 +15,8 @@ const job = {
 	step_count: 0
 };
 
-vi.mock('#lib/stores/jobs.svelte.ts', () => ({
+vi.mock('#lib/stores/jobs.svelte.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/jobs.svelte.ts')>()),
 	getJobs: () => [job]
 }));
 
