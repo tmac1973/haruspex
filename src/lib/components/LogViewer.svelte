@@ -14,16 +14,7 @@
 	import type { SearchFailureKind } from '#lib/ipc/gen/SearchFailureKind.ts';
 
 	type LogTab =
-		| 'app'
-		| 'llm'
-		| 'tts'
-		| 'whisper'
-		| 'image'
-		| 'mcp'
-		| 'crashes'
-		| 'debug'
-		| 'tools'
-		| 'stats';
+		'app' | 'llm' | 'tts' | 'whisper' | 'image' | 'mcp' | 'crashes' | 'debug' | 'tools' | 'stats';
 	/**
 	 * The Image tab's two sources: the bundled engine's own output, and the
 	 * calls Haruspex makes to a ComfyUI server (comfy.rs).

@@ -126,11 +126,7 @@ export interface ImageBackendCapabilities {
  * are not.
  */
 export type ImageBackendErrorKind =
-	| 'unconfigured'
-	| 'unreachable'
-	| 'rejected'
-	| 'timeout'
-	| 'cancelled';
+	'unconfigured' | 'unreachable' | 'rejected' | 'timeout' | 'cancelled';
 
 export class ImageBackendError extends Error {
 	readonly kind: ImageBackendErrorKind;
