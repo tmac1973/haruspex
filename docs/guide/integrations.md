@@ -36,13 +36,19 @@ To find the link:
 
 MCP lets the assistant use tools from other software. Haruspex installs and runs MCP servers itself with its own bundled Node and Python runtimes, so there is no terminal step. In Settings → Integrations → MCP integrations:
 
-- **Add from the catalog** installs GitHub, Google Drive & Sheets, Blender or Godot, then walks you through a setup wizard (tokens, files, a project folder).
+- **Add from the catalog** installs GitHub, Google Drive & Sheets, Browser (Playwright), Blender or Godot, then walks you through a setup wizard (tokens, files, a project folder).
 - **Add a server on this computer** runs an MCP program you already have.
 - **Add a server on your network** connects over HTTP, with an optional token. Servers that sign in through a browser are not supported yet.
 
 Each server has **Tools**, a switch per tool. Catalog servers start with a recommended set on; others start with all off. Tools marked "asks first" ask before they run. Turn off tools you don't need: every tool takes up room in the model's context.
 
 **Blender and Godot** need the app itself running with its MCP addon. The server card says when the app is "not connected"; **Check again** retries.
+
+## Test a web app in a browser
+
+**Browser (Playwright)** from the catalog lets the assistant open pages in a headless Chromium, click and type in them, and read the page's console and network requests. It reaches `localhost`, so the Code tab can check the app it is building. Setup downloads Playwright's own Chromium (about 200 MB). It doesn't use your browser or its logins, and each start begins with a fresh profile.
+
+On by default: open a page, read the page as text, click, type, console messages, network requests and one request's details. Opening, clicking and typing ask first; **Always allow** stops asking for that tool. Turn on `browser_take_screenshot` in **Tools** if your model can read images.
 
 ## Let the assistant see your screen
 

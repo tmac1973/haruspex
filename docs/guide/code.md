@@ -11,19 +11,19 @@ The Code tab is a coding agent that works in one project folder: it reads and ed
 
 Click **New session** (or **+** by the tabs) and pick the project folder; **Work in a new worktree** gives it its own branch (see the `code-sessions` page). **Open in Code** in a Shell tab's assistant starts one in its folder. The folder is fixed for the session: the agent can't read or write outside it.
 
-Type what you want and press `Enter`. After the first reply the model names the session; a name you gave it is never replaced. Sessions are saved after every reply.
+Type what you want and press `Enter`. After the first reply the model names the session; a name you gave it is never replaced. Sessions save after every reply.
 
-The list on the left holds every session. For forks and windows, see the `code-sessions` page.
+For forks and windows, see the `code-sessions` page.
 
 ## Look things up on the web
 
-The agent can search the web and read pages, with Chat's search and proxy setup; see the `search-and-network` page.
+The agent can search the web and read pages, with Chat's search and proxy setup; see the `search-and-network` page. To test your web app in a browser, see the `integrations` page.
 
 ## Read what the agent did
 
-- **Edits** show as a diff with line numbers; past 40 lines **Show all … lines** expands it. Unlike Chat, rewriting a file doesn't ask first; the diff shows the change. A second whole rewrite in one turn needs a command (a test, say) run first.
+- **Edits** show as a diff with line numbers; past 40 lines **Show all … lines** expands it. Unlike Chat, rewrites don't ask first; the diff shows the change. A second whole rewrite in one turn needs a command (a test, say) run first.
 - **Commands** show as a card: command, exit code, time taken and output (the last 20 lines until **Show all**). **Copy** copies the command; **Open in Shell** types it into a new Shell tab at the folder without running it.
-- Searches and file reads show as a short step list.
+- Searches and file reads show as a step list.
 - **Reasoning** sits above its step, collapsed (live: **Thinking…**); what the agent **says** before a step sits above it in small grey text.
 - A call still being written shows as a row: **Writing**, **Editing** or **Preparing command…**.
 - **File names** inside the folder (`src/app.ts:42`), in diffs, reads, results and answers, open the file in an editor window, at its top.

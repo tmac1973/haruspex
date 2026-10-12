@@ -137,6 +137,56 @@
       }
     },
     {
+      "id": "playwright",
+      "name": "Browser (Playwright)",
+      "description": "Open web pages in a headless browser, use them, and read their console and network requests.",
+      "homepage": "https://github.com/microsoft/playwright-mcp",
+      "acquisition": {
+        "kind": "npm",
+        "package": "@playwright/mcp",
+        "version": "0.0.83",
+        "bin": "@playwright/mcp/cli.js"
+      },
+      "command": {
+        "args": [
+          "--headless",
+          "--isolated",
+          "--browser",
+          "chromium"
+        ],
+        "env": {
+          "PLAYWRIGHT_BROWSERS_PATH": "$serverDir"
+        }
+      },
+      "defaultTools": [
+        "browser_navigate",
+        "browser_snapshot",
+        "browser_click",
+        "browser_type",
+        "browser_console_messages",
+        "browser_network_requests",
+        "browser_network_request"
+      ],
+      "setup": [
+        {
+          "kind": "command",
+          "label": "Download the browser",
+          "args": [
+            "install-browser",
+            "--no-shell",
+            "--no-progress",
+            "chrome-for-testing"
+          ],
+          "help": "Downloads Playwright's own Chromium (about 200 MB) into this server's folder. Your own browser and its profile are not used."
+        }
+      ],
+      "provenance": {
+        "maintainer": "microsoft/playwright-mcp",
+        "license": "Apache-2.0",
+        "firstParty": true
+      }
+    },
+    {
       "id": "blender",
       "name": "Blender",
       "description": "Inspect and edit the scene in a running copy of Blender.",
