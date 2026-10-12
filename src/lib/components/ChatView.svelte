@@ -8,6 +8,7 @@
 	import SourceChip from '#lib/components/SourceChip.svelte';
 	import MicButton from '#lib/components/MicButton.svelte';
 	import WorkingDirButton from '#lib/components/WorkingDirButton.svelte';
+	import ScreenCaptureButton from '#lib/components/ScreenCaptureButton.svelte';
 	import StopIndicator from '#lib/components/StopIndicator.svelte';
 	import { imageDropTarget } from '#lib/utils/imageDrop.ts';
 	import { hasStreamingAnswer } from '#lib/agent/think-stream.ts';
@@ -58,7 +59,6 @@
 	import { imageFileToDataUrl, imageFilesFrom } from '#lib/utils/image.ts';
 	import { openShellFromChat } from '#lib/shell/fromChat.ts';
 	import { invoke } from '@tauri-apps/api/core';
-	import type { ScreenCapture } from '#lib/ipc/gen/ScreenCapture.ts';
 	import { onMount, onDestroy, tick, untrack } from 'svelte';
 
 	let inputText = $state('');
@@ -97,27 +97,6 @@
 	/** Attach already-encoded image data URLs (from a native file drop). */
 	function addImageUrls(urls: string[]) {
 		pendingImages = [...pendingImages, ...urls.map((url) => ({ id: imgSeq++, url }))];
-	}
-
-	// The capture button is here whether or not the Settings toggle is on: a
-	// person pressing a button is not a permission question. The toggle decides
-	// whether the *assistant* may ask for the screen unprompted.
-	let capturing = $state(false);
-
-	/** Take a screenshot and attach it to the next message. */
-	async function captureScreen() {
-		if (capturing) return;
-		capturing = true;
-		try {
-			const capture = await invoke<ScreenCapture>('capture_screen', { target: 'screen' });
-			addImageUrls([capture.dataUrl]);
-		} catch (e) {
-			// Cancelling the desktop's own picker lands here, and is a decision
-			// rather than a fault, so it is a plain notice and not an error.
-			showToast(errMessage(e), { kind: 'error' });
-		} finally {
-			capturing = false;
-		}
 	}
 
 	let slashMenu = $state<SlashMenu>();
@@ -709,29 +688,7 @@
 					disabled={!serverReady && serverState.status !== 'starting' && !activeConversation}
 					rows="1"></textarea>
 				<WorkingDirButton />
-				<button
-					class="open-shell-btn"
-					onclick={captureScreen}
-					disabled={capturing}
-					title="Attach a screenshot to this message"
-					aria-label="Attach a screenshot"
-				>
-					<svg
-						width="18"
-						height="18"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<path
-							d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"
-						></path>
-						<circle cx="12" cy="13" r="4"></circle>
-					</svg>
-				</button>
+				<ScreenCaptureButton onCapture={(url) => addImageUrls([url])} />
 				<button
 					class="open-shell-btn"
 					onclick={handleOpenInShell}
