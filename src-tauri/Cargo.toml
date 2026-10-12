@@ -44,7 +44,7 @@ axum = { version = "0.8.4", default-features = false, features = ["http1", "json
 # code. Default features off: only the raw module matrix is wanted, not the
 # image or SVG renderers it can also produce.
 qrcode = { version = "0.14.1", default-features = false }
-sha2 = "0.10.9"
+sha2 = "0.11.0"
 sysinfo = "0.36.1"
 tauri-plugin-dialog = "2.6.0"
 futures-util = "0.3.32"
