@@ -663,8 +663,7 @@
 				onblur={() => session.setComposerFocused(false)}
 				placeholder="Ask the assistant… (Enter to send; drop or paste an image to attach)"
 				rows="1"
-				disabled={submitting}
-			></textarea>
+				disabled={submitting}></textarea>
 			<button
 				class="ctx-btn"
 				onclick={() => session.submitRecentCommands()}

@@ -8,44 +8,46 @@
 //! guarantee.
 
 use super::path::{resolve_in_workdir, stat_within_limit, workdir_path, MAX_DOC_READ_BYTES};
+use pdfium_render::prelude::{PdfPageText, Pdfium};
 use std::path::Path;
 use std::sync::OnceLock;
 use tokio::fs;
 
-/// Tracks whether pdfium has been successfully bound to its shared library.
-/// Set once at app startup via init_pdfium(). If pdfium is available we use
-/// it for PDF text extraction (high quality, handles forms and custom fonts
-/// correctly). If not, we fall back to the pure-Rust pdf-extract crate.
-static PDFIUM_AVAILABLE: OnceLock<bool> = OnceLock::new();
+/// The process-wide PDFium handle, set once at app startup via init_pdfium():
+/// `Some` when the shared library bound, `None` when it didn't, in which case
+/// we fall back to the pure-Rust pdf-extract crate. pdfium-render binds the
+/// library and runs `FPDF_InitLibrary` once per process (a second
+/// `bind_to_library` fails), so one instance is shared rather than built per
+/// call. Its default `thread_safe` feature makes `Pdfium` Send + Sync and
+/// serialises every call into the library.
+static PDFIUM: OnceLock<Option<Pdfium>> = OnceLock::new();
 
 /// Initialize pdfium by loading libpdfium from the resource dir. Should be
 /// called once at app startup. Safe to call multiple times.
 pub fn init_pdfium(resource_dir: &Path) {
-    if PDFIUM_AVAILABLE.get().is_some() {
-        return;
-    }
-
-    let libs_dir = resource_dir.join("binaries").join("libs");
-    let lib_name = pdfium_render::prelude::Pdfium::pdfium_platform_library_name_at_path(&libs_dir);
-
-    match pdfium_render::prelude::Pdfium::bind_to_library(&lib_name) {
-        Ok(bindings) => {
-            let _ = pdfium_render::prelude::Pdfium::new(bindings);
-            log::info!("PDFium initialized from {}", lib_name.display());
-            let _ = PDFIUM_AVAILABLE.set(true);
+    PDFIUM.get_or_init(|| {
+        let libs_dir = resource_dir.join("binaries").join("libs");
+        let lib_name = Pdfium::pdfium_platform_library_name_at_path(&libs_dir);
+        match Pdfium::bind_to_library(&lib_name) {
+            Ok(bindings) => {
+                log::info!("PDFium initialized from {}", lib_name.display());
+                Some(Pdfium::new(bindings))
+            }
+            Err(e) => {
+                log::warn!(
+                    "PDFium not available ({}); PDF extraction will use fallback",
+                    e
+                );
+                None
+            }
         }
-        Err(e) => {
-            log::warn!(
-                "PDFium not available ({}); PDF extraction will use fallback",
-                e
-            );
-            let _ = PDFIUM_AVAILABLE.set(false);
-        }
-    }
+    });
 }
 
-pub(super) fn pdfium_available() -> bool {
-    *PDFIUM_AVAILABLE.get().unwrap_or(&false)
+/// The shared PDFium instance, or `None` before init or when the library
+/// failed to load.
+fn pdfium() -> Option<&'static Pdfium> {
+    PDFIUM.get().and_then(Option::as_ref)
 }
 
 /// Extract text from a PDF using PDFium with position-aware layout
@@ -57,13 +59,7 @@ pub(super) fn pdfium_available() -> bool {
 /// row. This reconstructs the visual reading order and matches what
 /// `pdftotext -layout` produces.
 fn extract_pdf_with_pdfium(path: &Path) -> Result<String, String> {
-    use pdfium_render::prelude::*;
-
-    if !pdfium_available() {
-        return Err("pdfium unavailable".to_string());
-    }
-
-    let pdfium = Pdfium {};
+    let pdfium = pdfium().ok_or_else(|| "pdfium unavailable".to_string())?;
     let document = pdfium
         .load_pdf_from_file(path, None)
         .map_err(|e| format!("Failed to open PDF: {}", e))?;
@@ -102,7 +98,7 @@ struct PositionedChar {
 /// Reconstruct visual reading order from a PdfPageText by grouping
 /// characters into rows by Y coordinate and sorting left-to-right
 /// within each row.
-fn reconstruct_page_layout(page_text: &pdfium_render::prelude::PdfPageText) -> String {
+fn reconstruct_page_layout(page_text: &PdfPageText) -> String {
     let mut chars: Vec<PositionedChar> = Vec::new();
     for pdf_char in page_text.chars().iter() {
         let ch = match pdf_char.unicode_char() {
@@ -217,7 +213,7 @@ pub(super) async fn read_pdf_at_path(resolved: &std::path::Path) -> Result<Strin
 /// Chrome uses, handles forms and custom fonts correctly. Fall back to
 /// pdf-extract if pdfium isn't available (missing native lib).
 fn extract_pdf_text(path: &Path) -> Result<String, String> {
-    if pdfium_available() {
+    if pdfium().is_some() {
         match extract_pdf_with_pdfium(path) {
             Ok(t) => return Ok(t),
             Err(e) => log::warn!("pdfium extraction failed: {}; falling back", e),
@@ -272,4 +268,47 @@ pub async fn fs_read_pdf_bytes(workdir: String, rel_path: String) -> Result<Stri
     }
 
     Ok(B64.encode(&bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Runs without the PDFium shared library (CI has none, so a test that
+    // reads a real PDF through PDFium can't run here): a missing library
+    // leaves the handle empty, a second init is a no-op rather than a panic
+    // or a re-bind, and extraction reports the fallback without touching
+    // PDFium.
+    #[test]
+    fn missing_library_leaves_pdfium_unset_and_reports_fallback() {
+        let dir = std::env::temp_dir().join(format!("haruspex-no-pdfium-{}", std::process::id()));
+        init_pdfium(&dir);
+        init_pdfium(&dir);
+        assert!(pdfium().is_none());
+        let err = extract_pdf_with_pdfium(&dir.join("a.pdf")).unwrap_err();
+        assert_eq!(err, "pdfium unavailable");
+    }
+
+    // The pdfium_<build> feature in Cargo.toml has to match the library
+    // scripts/fetch-pdfium.sh downloads, or binding fails on a missing symbol
+    // and every PDF quietly takes the fallback. Only checkable where the
+    // library has been fetched (dev machines, not CI), so it skips otherwise.
+    // Binding without `Pdfium::new` leaves the process-wide state untouched.
+    #[test]
+    fn fetched_library_matches_the_bindings_feature() {
+        let lib = Pdfium::pdfium_platform_library_name_at_path(
+            &Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("binaries")
+                .join("libs"),
+        );
+        if !lib.exists() {
+            return;
+        }
+        if let Err(e) = Pdfium::bind_to_library(&lib) {
+            panic!(
+                "{} doesn't match the pdfium-render feature: {e}",
+                lib.display()
+            );
+        }
+    }
 }

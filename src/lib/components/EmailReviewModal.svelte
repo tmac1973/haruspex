@@ -136,8 +136,7 @@
 				bind:value={body}
 				rows="12"
 				aria-label="Message"
-				disabled={sending}
-			></textarea>
+				disabled={sending}></textarea>
 			{#if pending.draft.quoted}
 				<details>
 					<summary>Show quoted message</summary>
