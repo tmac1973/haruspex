@@ -75,7 +75,7 @@ export const CODE_DB: Record<string, Handler> = {
 			created_at: t,
 			updated_at: t,
 			read_only: false,
-			worktree: null,
+			worktree: a?.worktree ? `${String(a?.root ?? '')}-worktrees/session` : null,
 			notices_seen_at: null,
 			agent_branch: null
 		};

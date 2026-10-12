@@ -2535,6 +2535,23 @@ fn code_session_forks_are_read_only_in_place_or_writable_in_a_worktree() {
 }
 
 #[test]
+fn a_new_code_session_can_start_in_a_worktree() {
+    let db = test_db();
+    let wt = TempDir::new("new-in-wt");
+    let location = crate::code_tools::wsl::CodeLocation {
+        wsl_distro: None,
+        root: wt.path().to_string(),
+    };
+    let row = db
+        .create_code_session_in(&location, Some(wt.path()), None, None)
+        .unwrap();
+    assert!(!row.read_only);
+    assert_eq!(row.forked_from, None);
+    assert_eq!(row.worktree.as_deref(), Some(wt.path()));
+    assert_eq!(db.load_code_session(&row.id).unwrap(), row);
+}
+
+#[test]
 fn code_session_fork_rejects_a_point_past_the_end_and_a_missing_source() {
     let db = test_db();
     let dir = TempDir::new("fork-end");

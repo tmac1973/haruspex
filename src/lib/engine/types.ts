@@ -18,9 +18,16 @@ export type EngineOp =
 	| { type: 'session.open'; id: string }
 	/**
 	 * `wslDistro`: on Windows, the WSL distro a Linux `root` is in (a
-	 * `\\wsl.localhost\…` root names its own). See `wsl.distros`.
+	 * `\\wsl.localhost\…` root names its own). See `wsl.distros`. `worktree`:
+	 * work in a new git worktree of `root`'s repository.
 	 */
-	| { type: 'session.new'; root: string; effort?: string | null; wslDistro?: string | null }
+	| {
+			type: 'session.new';
+			root: string;
+			effort?: string | null;
+			wslDistro?: string | null;
+			worktree?: boolean;
+	  }
 	/** The WSL2 distros a session can be made in (Windows); empty elsewhere. */
 	| { type: 'wsl.distros' }
 	| { type: 'session.send'; id: string; text: string }

@@ -6,6 +6,9 @@
 	 * On Windows the folder is on This PC (`C:\…`, distro `''`) or inside a
 	 * WSL2 distro: a distro and a Linux path, typed or browsed (Explorer's
 	 * `\\wsl.localhost\<distro>\…` is split into the two by Rust).
+	 *
+	 * In a git repository the session can work in a new worktree instead, as
+	 * a worktree fork does; the choice is remembered (`codeNewWorktree`).
 	 */
 	import { open as openDialog } from '@tauri-apps/plugin-dialog';
 	import Modal from '#lib/components/Modal.svelte';
@@ -15,6 +18,7 @@
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { wslShare } from '#lib/code/paths.ts';
+	import { gitStatus } from '#lib/code/git.ts';
 
 	let { open, onclose }: { open: boolean; onclose: () => void } = $props();
 
@@ -26,6 +30,9 @@
 	let distros = $state<string[]>([]);
 	let starting = $state(false);
 	let error = $state<string | null>(null);
+	let worktree = $state(false);
+	/** `root` is in a git repository, so it can have a worktree. */
+	let inRepo = $state(false);
 
 	// Each time it opens, start from the last folder used.
 	$effect(() => {
@@ -33,9 +40,28 @@
 			const s = getSettings();
 			root = s.codeLastRoot;
 			distro = s.codeLastWslDistro;
+			worktree = s.codeNewWorktree;
 			error = null;
 			if (onWindows) void loadDistros();
 		}
+	});
+
+	// Whether the folder is in a repository; a typed path settles first.
+	$effect(() => {
+		const folder = root;
+		const wsl = onWindows ? distro || null : null;
+		inRepo = false;
+		if (!open || !folder) return;
+		let current = true;
+		const timer = setTimeout(() => {
+			void gitStatus(folder, wsl).then((st) => {
+				if (current) inRepo = st !== null;
+			});
+		}, 250);
+		return () => {
+			current = false;
+			clearTimeout(timer);
+		};
 	});
 
 	async function loadDistros(): Promise<void> {
@@ -72,8 +98,17 @@
 		starting = true;
 		error = null;
 		try {
-			const session = await newSession(root, { wslDistro: onWindows ? distro || null : null });
-			updateSettings({ codeLastRoot: session.root, codeLastWslDistro: session.wslDistro ?? '' });
+			const inWorktree = inRepo && worktree;
+			const session = await newSession(root, {
+				wslDistro: onWindows ? distro || null : null,
+				worktree: inWorktree
+			});
+			// The repository's folder, not the new worktree, is offered next time.
+			updateSettings({
+				codeLastRoot: inWorktree ? root : session.root,
+				codeLastWslDistro: session.wslDistro ?? '',
+				...(inRepo ? { codeNewWorktree: worktree } : {})
+			});
 			onclose();
 		} catch (e) {
 			error = errMessage(e);
@@ -125,13 +160,26 @@
 			{/if}
 		</div>
 	{/if}
+	{#if inRepo}
+		<label
+			class="worktree"
+			title="A new folder beside the project, <project>-worktrees/<branch>, on a new branch from the last commit. Uncommitted changes and ignored files are not in it."
+		>
+			<input type="checkbox" bind:checked={worktree} />
+			<span>Work in a new worktree</span>
+		</label>
+	{/if}
 	{#if error}
 		<p class="error">{error}</p>
 	{/if}
 	<div class="actions">
 		<button class="btn" onclick={onclose}>Cancel</button>
 		<button class="btn btn-primary" disabled={!root || starting} onclick={start}
-			>{starting ? 'Starting…' : 'Start session'}</button
+			>{starting
+				? inRepo && worktree
+					? 'Creating the worktree…'
+					: 'Starting…'
+				: 'Start session'}</button
 		>
 	</div>
 </Modal>
@@ -165,6 +213,14 @@
 		min-width: 0;
 		font-family: var(--font-mono, monospace);
 		font-size: 0.8rem;
+	}
+
+	.worktree {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin: 12px 0 0;
+		font-size: 0.85rem;
 	}
 
 	.note {
