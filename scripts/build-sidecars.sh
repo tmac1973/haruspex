@@ -417,8 +417,10 @@ else
     sed 's/^reqwest[[:space:]]*=.*/reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }/' kokoros/Cargo.toml.bak > kokoros/Cargo.toml
     echo "   Patched reqwest:"
     grep reqwest kokoros/Cargo.toml
-    # Remove lock file to force fresh dependency resolution with rustls
-    rm -f Cargo.lock
+    # Keep upstream's Cargo.lock: cargo adds the rustls crates the patch needs
+    # and leaves every other pin alone. Deleting it re-resolved everything, and
+    # v0.2.4's release build broke when ort 2.0.0-rc.14 changed
+    # SessionBuilder::new under Kokoros's `ort = "2.0.0-rc.11"`.
 
     cargo build --release --bin koko 2>&1
 
