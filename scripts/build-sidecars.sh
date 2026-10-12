@@ -413,11 +413,21 @@ else
     # Use rustls instead of native-tls to avoid OpenSSL dependency.
     # Patch reqwest line in kokoros/Cargo.toml — replace the whole line to avoid
     # regex matching issues with varying formats across upstream versions.
+    #
+    # Also pin ort to exactly the version upstream asks for. A caret
+    # requirement on a pre-release (`ort = "2.0.0-rc.11"`) accepts any later
+    # rc, and the fresh resolve below took rc.14, whose SessionBuilder::new
+    # changed signature and broke v0.2.4's release build.
     cp kokoros/Cargo.toml kokoros/Cargo.toml.bak
-    sed 's/^reqwest[[:space:]]*=.*/reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }/' kokoros/Cargo.toml.bak > kokoros/Cargo.toml
-    echo "   Patched reqwest:"
-    grep reqwest kokoros/Cargo.toml
-    # Remove lock file to force fresh dependency resolution with rustls
+    sed -e 's/^reqwest[[:space:]]*=.*/reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }/' \
+        -e 's/^\(ort[[:space:]]*=.*version[[:space:]]*=[[:space:]]*"\)\([0-9]\)/\1=\2/' \
+        -e 's/^\(ort[[:space:]]*=[[:space:]]*"\)\([0-9]\)/\1=\2/' \
+        kokoros/Cargo.toml.bak > kokoros/Cargo.toml
+    echo "   Patched reqwest and ort:"
+    grep -E '^(reqwest|ort)[[:space:]]*=' kokoros/Cargo.toml
+    # Remove lock file to force fresh dependency resolution with rustls. The
+    # fresh resolve is wanted beyond that: upstream's lock pins cmake 0.1.54,
+    # which cannot find the Visual Studio on current windows-latest images.
     rm -f Cargo.lock
 
     cargo build --release --bin koko 2>&1
