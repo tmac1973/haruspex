@@ -575,9 +575,10 @@ export function stripMarkdownForTTS(text: string, readTablesByColumn = true): st
  * `citedUrls`; the chip row below the reply renders the same list in
  * the same order, so clicking `[3]` opens the third chip.
  *
- * Links whose anchor is arbitrary prose (e.g. `[Wikipedia](...)`) and
- * whose URL wasn't fetched pass through unchanged — ordinary outbound
- * hyperlinks, not citations.
+ * Only citation-marker anchors are rewritten to `[N]`. A prose anchor
+ * (e.g. `[Wikipedia](...)`) keeps its text; when its URL was fetched it
+ * still gets a slot in `citedUrls`, otherwise it is an ordinary outbound
+ * hyperlink.
  *
  * Idempotent: running the same text through twice yields the same
  * output, because `[\[N\]](url)` still reads as a citation anchor and
@@ -672,6 +673,17 @@ function stripReferenceStubs(text: string): string {
 	return out.join('\n');
 }
 
+// A line holding only one numbered citation link (optionally a list item).
+const BARE_CITATION_LINE_RE = /^[ \t]*(?:[-*][ \t]+)?\[\\\[\d+\\\]\]\(([^)\s]+)\)[ \t]*$/gm;
+
+function hostnameOf(url: string): string | null {
+	try {
+		return new URL(url).hostname.replace(/^www\./, '') || null;
+	} catch {
+		return null;
+	}
+}
+
 function isCitationLink(anchor: string, url: string, fetchedUrls: readonly string[]): boolean {
 	return fetchedUrls.includes(url) || CITATION_ANCHOR_RE.test(anchor);
 }
@@ -694,18 +706,28 @@ export function processCitations(text: string, fetchedUrls: readonly string[]): 
 		citedUrls.push(url);
 	}
 
-	// Second pass: rewrite citation links to numbered anchors. The
+	// Second pass: rewrite citation-marker links to numbered anchors. The
 	// `\[N\]` escaping keeps marked from treating the bracket as a
-	// footnote start. Non-citation links (prose anchors, non-fetched
-	// URLs) pass through unchanged.
+	// footnote start. A link with prose anchor text keeps it even when its
+	// URL was fetched — `[Granite docs](url)` turned into a bare `[2]` loses
+	// the only words saying what the link is. Non-citation links pass
+	// through unchanged.
 	let content =
 		citedUrls.length === 0
 			? text
-			: text.replace(MARKDOWN_LINK_RE, (match, _anchor: string, url: string) => {
+			: text.replace(MARKDOWN_LINK_RE, (match, anchor: string, url: string) => {
 					const n = urlToIndex.get(url);
-					if (n === undefined) return match;
+					if (n === undefined || !CITATION_ANCHOR_RE.test(anchor)) return match;
 					return `[\\[${n}\\]](${url})`;
 				});
+
+	// A line that is nothing but a numbered citation — a model-written
+	// source list of `[source](url)` entries — gets the site's hostname so
+	// it doesn't read as a bare `[2]`.
+	content = content.replace(BARE_CITATION_LINE_RE, (line, url: string) => {
+		const host = hostnameOf(url);
+		return host ? `${line.trimEnd()} ${host}` : line;
+	});
 
 	// Third pass: strip citation-anchored links whose URL is clearly a
 	// breadcrumb display path, not a real URL. Marked's parser would
