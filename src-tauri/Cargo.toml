@@ -78,7 +78,7 @@ notify = "8.2"
 # Email integration (Phase 10). async-imap handles IMAP over TLS,
 # mail-parser handles RFC 5322 / MIME decoding. lettre is stubbed in
 # 10.1 for SMTP sending in Phase 10.2.
-async-imap = { version = "0.11", default-features = false, features = ["runtime-tokio"] }
+async-imap = { version = "0.12", default-features = false, features = ["runtime-tokio"] }
 mail-parser = "0.11"
 tokio-rustls = "0.26"
 rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "ring"] }
