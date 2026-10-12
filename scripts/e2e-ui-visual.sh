@@ -9,7 +9,7 @@
 # Needs podman or docker. Keep IMAGE in step with @playwright/test in
 # package.json and with the e2e-ui job in .github/workflows/ci.yml.
 set -euo pipefail
-IMAGE=mcr.microsoft.com/playwright:v1.63.0-noble
+IMAGE=mcr.microsoft.com/playwright:v1.64.0-noble
 root=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
 run=$(command -v podman || command -v docker) || {
     echo "needs podman or docker" >&2
