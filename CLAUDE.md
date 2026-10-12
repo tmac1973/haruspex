@@ -127,7 +127,8 @@ cargo fmt -- --check # Rust format check
 - Tests co-located with source: `foo.ts` → `foo.test.ts`
 - Logging: `console.warn` / `console.error` (both reach the debug log through
   `forwardConsoleToDebugLog`) or `logDebug`; lint refuses `console.log`. Pass a
-  URL through `urlForReport` first. Fire-and-forget promises take `void`.
+  URL through `urlForReport` first. Fire-and-forget promises take `void`
+  (or `.catch` when the callee can reject); lint enforces it.
 - Sidecar pattern: long-running processes as HTTP servers on localhost
 - UI copy: one short sentence per section, no exposition and no sales language.
   Extra detail belongs in a `title` tooltip. Always name the settings path

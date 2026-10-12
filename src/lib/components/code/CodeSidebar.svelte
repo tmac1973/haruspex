@@ -210,7 +210,7 @@
 				aria-label="Session name"
 				onblur={commitRename}
 				onkeydown={(e) => {
-					if (e.key === 'Enter') commitRename();
+					if (e.key === 'Enter') void commitRename();
 					if (e.key === 'Escape') renamingId = null;
 				}}
 			/>

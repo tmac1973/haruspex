@@ -13,6 +13,7 @@
 //! - **A list never downloads a message whole:** headers, the structure, and
 //!   the first 4 KB of the text part.
 
+use crate::sync_util::LockExt;
 use std::collections::HashMap;
 use std::future::Future;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -261,10 +262,7 @@ fn login_of(account: &EmailAccount) -> u64 {
 /// A logged-in session for the account: the kept one if it is fresh and
 /// still answers, else a new login.
 async fn checkout(account: &EmailAccount, t: &Timeouts) -> Result<ImapSession, String> {
-    let kept = kept()
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .remove(&account.id);
+    let kept = kept().lock_or_recover().remove(&account.id);
     if let Some(mut k) = kept {
         if k.login == login_of(account) && k.used.elapsed() < SESSION_IDLE {
             if let Ok(Ok(())) = tokio::time::timeout(t.noop, k.session.noop()).await {
@@ -277,7 +275,7 @@ async fn checkout(account: &EmailAccount, t: &Timeouts) -> Result<ImapSession, S
 
 /// Keep a session that finished its call cleanly.
 fn checkin(account: &EmailAccount, session: ImapSession) {
-    kept().lock().unwrap_or_else(|p| p.into_inner()).insert(
+    kept().lock_or_recover().insert(
         account.id.clone(),
         Kept {
             session,
@@ -290,10 +288,7 @@ fn checkin(account: &EmailAccount, session: ImapSession) {
 /// Drop the kept session, so the next call logs in again: the account was
 /// edited.
 pub fn forget(account_id: &str) {
-    kept()
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .remove(account_id);
+    kept().lock_or_recover().remove(account_id);
 }
 
 /// SELECT INBOX; its UIDVALIDITY.

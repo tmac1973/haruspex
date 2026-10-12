@@ -19,6 +19,7 @@
 //! write Windows paths into `.git/worktrees/*/gitdir`, breaking the user's
 //! own git inside the distro.
 
+use crate::sync_util::LockExt;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -91,7 +92,7 @@ impl Place {
         static IN_DISTRO: OnceLock<std::sync::Mutex<std::collections::HashMap<String, bool>>> =
             OnceLock::new();
         let cache = IN_DISTRO.get_or_init(Default::default);
-        if let Some(&known) = cache.lock().unwrap().get(distro) {
+        if let Some(&known) = cache.lock_or_recover().get(distro) {
             return known;
         }
         let ok = super::wsl::wsl_exec(distro, &["git", "--version"])
@@ -100,7 +101,7 @@ impl Place {
             .status()
             .await
             .is_ok_and(|s| s.success());
-        cache.lock().unwrap().insert(distro.clone(), ok);
+        cache.lock_or_recover().insert(distro.clone(), ok);
         ok
     }
 

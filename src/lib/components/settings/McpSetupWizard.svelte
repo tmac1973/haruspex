@@ -8,6 +8,7 @@
 	 * Google's OAuth detour takes long enough that people close the app in the
 	 * middle of it, and restarting from step one is where they give up.
 	 */
+	import { openInBrowser } from '#lib/utils/openInBrowser.ts';
 	import { untrack } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
@@ -160,7 +161,7 @@
 					<button
 						type="button"
 						class="link-button"
-						onclick={() => invoke('open_url', { url: step.link })}
+						onclick={() => step.link && void openInBrowser(step.link)}
 					>
 						Open in your browser
 					</button>

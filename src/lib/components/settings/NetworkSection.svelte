@@ -97,7 +97,6 @@
 	<div class="proxy-modes">
 		<ModeSelector
 			name="proxy-mode"
-			direction="row"
 			value={proxyMode}
 			onchange={setProxyMode}
 			options={[
@@ -128,7 +127,6 @@
 	<div class="proxy-modes">
 		<ModeSelector
 			name="search-proxy-mode"
-			direction="row"
 			value={searchMode}
 			onchange={setSearchMode}
 			options={[

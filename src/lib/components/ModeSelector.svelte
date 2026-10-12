@@ -25,8 +25,6 @@
 		value: T;
 		options: ModeOption[];
 		onchange: (value: T) => void;
-		/** Kept for API compatibility — the segmented control is always a row. */
-		direction?: 'row' | 'column';
 	}
 
 	let { name, value, options, onchange }: Props = $props();

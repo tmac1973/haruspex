@@ -21,6 +21,7 @@
 //! change the poll hasn't seen yet can't be overwritten unasked. A folder
 //! that can't be watched at all is reported (`EditorFile::live`).
 
+use crate::sync_util::LockExt;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
@@ -147,7 +148,7 @@ impl EditorWatches {
     /// Watch `path` for `label`, which has just seen `known`. Returns whether
     /// changes to it will be heard (false when its folder can't be watched).
     pub fn watch(&self, label: &str, path: &Path, known: Known) -> bool {
-        let mut st = self.state.lock().unwrap();
+        let mut st = self.state.lock_or_recover();
         let new_file = !st.files.contains_key(path);
         st.files
             .entry(path.to_path_buf())
@@ -199,7 +200,7 @@ impl EditorWatches {
 
     /// Record what `label` just wrote, so the change doesn't come back to it.
     pub fn set_known(&self, label: &str, path: &Path, known: Known) {
-        let mut st = self.state.lock().unwrap();
+        let mut st = self.state.lock_or_recover();
         if let Some(labels) = st.files.get_mut(path) {
             if let Some(k) = labels.get_mut(label) {
                 *k = known;
@@ -209,19 +210,19 @@ impl EditorWatches {
 
     /// What `label` last saw of `path`, if it watches it.
     pub fn known(&self, label: &str, path: &Path) -> Option<Known> {
-        let st = self.state.lock().unwrap();
+        let st = self.state.lock_or_recover();
         st.files.get(path).and_then(|l| l.get(label)).cloned()
     }
 
     /// Stop watching `path` for `label`.
     pub fn unwatch(&self, label: &str, path: &Path) {
-        let mut st = self.state.lock().unwrap();
+        let mut st = self.state.lock_or_recover();
         Self::unwatch_locked(&mut st, label, path);
     }
 
     /// Stop every watch `label` holds: its window closed.
     pub fn unwatch_label(&self, label: &str) {
-        let mut st = self.state.lock().unwrap();
+        let mut st = self.state.lock_or_recover();
         let paths: Vec<PathBuf> = st
             .files
             .iter()
@@ -235,7 +236,7 @@ impl EditorWatches {
 
     /// Drop every watch and the watchers: the app is exiting.
     pub fn stop_all(&self) {
-        let mut st = self.state.lock().unwrap();
+        let mut st = self.state.lock_or_recover();
         st.files.clear();
         st.dirs.clear();
         st.failed.clear();
@@ -246,7 +247,7 @@ impl EditorWatches {
 
     /// The windows that have `path` open.
     pub fn labels_for(&self, path: &Path) -> Vec<String> {
-        let st = self.state.lock().unwrap();
+        let st = self.state.lock_or_recover();
         let mut labels: Vec<String> = st
             .files
             .get(path)
@@ -339,13 +340,13 @@ impl EditorWatches {
 
     /// Hash `path` and tell each window whose last-seen hash differs.
     fn flush(&self, path: &Path) {
-        if !self.state.lock().unwrap().files.contains_key(path) {
+        if !self.state.lock_or_recover().files.contains_key(path) {
             return;
         }
         let now = disk_hash(path);
         let mut tell = Vec::new();
         {
-            let mut st = self.state.lock().unwrap();
+            let mut st = self.state.lock_or_recover();
             let Some(labels) = st.files.get_mut(path) else {
                 return;
             };

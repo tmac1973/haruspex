@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { invoke } from '@tauri-apps/api/core';
-	import { urlForReport } from '#lib/utils/http.ts';
+	import { openInBrowser } from '#lib/utils/openInBrowser.ts';
 
 	interface Props {
 		urls: string[];
@@ -15,20 +14,12 @@
 			return url;
 		}
 	}
-
-	async function openUrl(url: string) {
-		try {
-			await invoke('open_url', { url });
-		} catch (err) {
-			console.error('open_url failed:', urlForReport(url), err);
-		}
-	}
 </script>
 
 {#if urls.length > 0}
 	<div class="sources">
 		{#each urls as url, i (url)}
-			<button class="chip" onclick={() => openUrl(url)} title={url}>
+			<button class="chip" onclick={() => void openInBrowser(url)} title={url}>
 				<span class="chip-number">{i + 1}</span>
 				{getDomain(url)}
 			</button>
