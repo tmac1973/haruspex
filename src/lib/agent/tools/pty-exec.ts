@@ -172,7 +172,7 @@ async function hookNestedShell(sessionId: number, shell: NestedShell): Promise<b
 }
 
 async function sourceHook(sessionId: number, shell: NestedShell): Promise<boolean> {
-	let hook: string | null = null;
+	let hook: string | null;
 	try {
 		hook = await invoke<string | null>('shell_integration_hook', { shell: shell.program });
 	} catch {

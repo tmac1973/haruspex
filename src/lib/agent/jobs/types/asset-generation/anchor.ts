@@ -355,12 +355,12 @@ export async function establishAnchor(
 	const plan = deps.caps?.transparency ? anchorSheetPlan(spec) : null;
 	const edge = plan ? SHEET_EDGE : anchorEdge(deps.profile, maxEdge);
 	let attempts = 0;
-	let shot: AnchorShot | null = null;
+	let shot: AnchorShot;
 	let seed: number | null = null;
-	let result: ImageResult | null = null;
+	let result: ImageResult;
 	let approval: AnchorOutcome['approval'] = 'auto';
-	let palette: number[] = [];
-	let spread: PaletteSpread | null = null;
+	let palette: number[];
+	let spread: PaletteSpread;
 	/** Anchors thrown away for an unusable palette, for the run's report. */
 	let rejected = 0;
 
@@ -416,7 +416,7 @@ export async function establishAnchor(
 		// they were not told is unusable is how this bug reached a hundred
 		// assets.
 		const warning =
-			!plan && spread && !spread.ok
+			!plan && !spread.ok
 				? `\n\n**Warning:** ${Math.round(spread.dominant_fraction * 100)}% of this anchor's ` +
 					`palette is a single colour, so every asset will be pushed toward it whatever its ` +
 					`prompt says. This usually means the sheet is a scene rather than separate ` +
@@ -470,8 +470,8 @@ export async function establishAnchor(
 
 	const recipe: AnchorRecipe = {
 		version: 1,
-		prompt: shot!.request.prompt,
-		negativePrompt: shot!.request.negativePrompt ?? '',
+		prompt: shot.request.prompt,
+		negativePrompt: shot.request.negativePrompt ?? '',
 		// The RESOLVED seed, not the null we may have sent: a recipe recording
 		// "whatever you like" reproduces nothing.
 		seed: result.meta.seed,

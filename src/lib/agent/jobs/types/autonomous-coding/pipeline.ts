@@ -1293,7 +1293,7 @@ async function runCheckCommand(
  */
 async function tryParsePlanDir(ctx: JobRunContext, planDir: string): Promise<LoopPlan | null> {
 	if (!ctx.job.working_dir) return null;
-	let names: string[] = [];
+	let names: string[];
 	try {
 		const listing = await invoke<{ entries: { name: string; is_dir: boolean }[] }>('fs_list_dir', {
 			workdir: ctx.job.working_dir,
@@ -1343,7 +1343,7 @@ async function ensureGitignore(ctx: JobRunContext): Promise<void> {
 
 	const wanted = new Set<string>();
 	for (const { marker, entries } of IGNORE_BY_MARKER) {
-		let present = false;
+		let present: boolean;
 		try {
 			present = await invoke<boolean>('fs_path_exists', {
 				workdir: ctx.job.working_dir,

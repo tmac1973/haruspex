@@ -197,7 +197,6 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 		let best: CheckReport | null = null;
 		/** The image behind `best`, written if every attempt is rejected. */
 		let bestBytes: Uint8Array | undefined;
-		let lastReason = '';
 		let lastSeed: number | null = null;
 
 		for (let attempt = 1; ; attempt++) {
@@ -242,7 +241,7 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 				if (isCancellation(e)) throw e;
 				// Normalization refuses an image with nothing left in it, which
 				// is a rejection like any other — retried, not fatal.
-				lastReason = errMessage(e);
+				const failure = errMessage(e);
 				if (attempt >= deps.maxAttempts) {
 					const kept = await keepBest(deps.writeBytes, entry.out, bestBytes);
 					finish(
@@ -251,7 +250,7 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 							attempts: attempt,
 							seed: lastSeed,
 							degraded,
-							reason: lastReason,
+							reason: failure,
 							...(kept ? { kept } : {})
 						},
 						best
@@ -291,7 +290,7 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 			const nextBest = betterReport(best, report);
 			if (nextBest === report) bestBytes = bytes;
 			best = nextBest;
-			lastReason = rejectionReason(report, verdict);
+			const rejection = rejectionReason(report, verdict);
 			if (attempt >= deps.maxAttempts) {
 				// The best attempt is written, so the code has a file to load,
 				// and the spec marks it rejected: a re-run skips a file on disk,
@@ -303,7 +302,7 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 						attempts: attempt,
 						seed: lastSeed,
 						degraded,
-						reason: lastReason,
+						reason: rejection,
 						...(kept ? { kept } : {})
 					},
 					best

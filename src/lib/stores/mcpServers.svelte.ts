@@ -373,7 +373,7 @@ export function listenForMcpToolChanges(): Promise<UnlistenFn> {
 export async function startConfiguredMcpServers(): Promise<void> {
 	const configs = startableMcpServers();
 	if (configs.length === 0) return;
-	let catalog: CatalogEntry[] = [];
+	let catalog: CatalogEntry[];
 	try {
 		catalog = await invoke<CatalogEntry[]>('mcp_catalog');
 	} catch {
