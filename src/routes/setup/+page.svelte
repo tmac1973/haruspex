@@ -19,6 +19,7 @@
 		isOffloadChosen,
 		detectHardware,
 		startDownload,
+		useDownloadedModel,
 		cancelDownload,
 		importModel,
 		runTestQuery
@@ -54,6 +55,9 @@
 	// install has none of them and must never be offered one — the retired
 	// list includes an entry whose upstream file is gone.
 	const selectableModels = $derived(models.filter((m) => !m.legacy));
+	const selectedDownloaded = $derived(
+		models.find((m) => m.id === selectedModel)?.downloaded ?? false
+	);
 
 	// The wizard is normally reached because there's no model yet, but it can
 	// also be opened deliberately from Settings. In that case the user has a
@@ -262,9 +266,15 @@
 							class="hw-row"
 							title={hardware.gpu_integrated
 								? 'System memory the integrated GPU may use. It is RAM, not memory of its own, and says nothing about speed.'
-								: undefined}
+								: hardware.gpu_api === 'Metal'
+									? 'The share of unified memory macOS lets the GPU use. The recommendation also allows for what other apps are using now.'
+									: undefined}
 						>
-							<span class="hw-label">{hardware.gpu_integrated ? 'Shared memory' : 'VRAM'}</span>
+							<span class="hw-label"
+								>{hardware.gpu_integrated || hardware.gpu_api === 'Metal'
+									? 'Shared memory'
+									: 'VRAM'}</span
+							>
 							<span class="hw-value">
 								{formatBytes(hardware.gpu_vram_mb * 1048576)}
 							</span>
@@ -298,7 +308,7 @@
 						{#each selectableModels as model (model.id)}
 							<option value={model.id}>
 								{model.id === hardware.recommended_quant ? '(recommended) ' : ''}
-								{model.description}
+								{model.description}{model.downloaded ? ' (downloaded)' : ''}
 							</option>
 						{/each}
 					</select>
@@ -332,7 +342,11 @@
 				</div>
 
 				<div class="actions">
-					<button class="primary-btn" onclick={goToDownload}>Download Model</button>
+					{#if selectedDownloaded}
+						<button class="primary-btn" onclick={useDownloadedModel}>Use This Model</button>
+					{:else}
+						<button class="primary-btn" onclick={goToDownload}>Download Model</button>
+					{/if}
 					<button class="secondary-btn" onclick={handleImport}>Use existing GGUF file</button>
 					{#if canExit}
 						<button class="secondary-btn" onclick={() => goto('/')}>Cancel</button>

@@ -9,7 +9,7 @@ Haruspex runs a language model on your GPU by default. This page covers which mo
 
 ## Which model fits your hardware
 
-The first-run wizard reads your GPU's memory (VRAM) and recommends a model. It also sets a context size that fits.
+The first-run wizard reads your GPU's memory (VRAM) and recommends a model and a context size that fits. On a Mac it counts the GPU's share of memory, less what other apps hold. A model already on disk is marked "(downloaded)"; **Use This Model** skips the download.
 
 | Your GPU | Recommended model | What to expect |
 |---|---|---|
@@ -20,15 +20,15 @@ The first-run wizard reads your GPU's memory (VRAM) and recommends a model. It a
 | 24 GB | Qwen 3.6 35B-A3B or Qwen 3.8 27B | Everything, including coding. |
 | 32 GB and up | The same two, at higher quality | The best local quality. |
 
-From 24 GB up there are two choices. Qwen 3.6 35B-A3B is the default and answers faster; Qwen 3.8 27B is a dense model some people prefer. Integrated graphics work but are much slower. Apple Silicon Macs use shared memory, so even an 8 GB M1 should work.
+From 24 GB up there are two choices. Qwen 3.6 35B-A3B is the default and answers faster; Qwen 3.8 27B is a dense model some people prefer. Integrated graphics work but are much slower. On a Mac, even an 8 GB M1 should work.
 
-Haruspex uses your GPU heavily. Games and other GPU programs will run worse while it is open.
+Haruspex uses your GPU heavily, so games run worse while it is open.
 
 ## Download, switch or delete a model
 
 Go to Settings → Inference → Models. Each model shows its size and a **Download**, **Use** or **Delete** button. The active model is marked **active**. Only one download runs at a time.
 
-**Legacy models** are older choices kept so you can go on using one you already have. They are not suggested for new setups.
+**Legacy models** are older choices kept for those who have one, not suggested for new setups.
 
 To use a GGUF file you already have, run Settings → Inference → **Run Setup Wizard** and choose **Use existing GGUF file**.
 
@@ -41,11 +41,11 @@ Settings → Inference → Context Size sets how much of the conversation the mo
 - **Let models use system RAM** (off by default) unlocks larger sizes. See below.
 - **Keep the vision projector in system RAM** (off by default) frees about 1 GB of VRAM, usually buying a longer conversation. Only messages with an image get slower.
 
-Haruspex summarises the older parts of long chats and Code sessions so they fit.
+Haruspex summarises the older parts of long chats and Code sessions so they fit. If a new chat says the context is too small for the model's instructions and tools, raise it.
 
 ## Run a model bigger than your VRAM
 
-Turn on Settings → Inference → **Let models use system RAM**, or pick the larger model the setup wizard offers. Haruspex keeps what it can in VRAM and moves the rest into system RAM, and the context sizes unlock up to what both can hold. Replies get slower. Qwen 3.6 35B-A3B slows the least, because only a few of its experts run for each word; dense models slow down a lot. It does not help on integrated graphics, which already use system RAM.
+Turn on Settings → Inference → **Let models use system RAM**, or pick the larger model the setup wizard offers. Haruspex keeps what it can in VRAM and moves the rest into system RAM, unlocking context sizes up to what both hold. Replies get slower. Qwen 3.6 35B-A3B slows the least, because only a few of its experts run for each word; dense models slow down a lot. It does not help on integrated graphics, which already use system RAM.
 
 ## Response length
 
@@ -54,24 +54,24 @@ Settings → Agent → Response Length limits how much the model writes in one r
 - **Max response tokens** — normal chat, shell and agent turns (default 8192).
 - **Max response tokens (file writes)** — turns that write a whole file (default 65536).
 
-If a reply hits the limit, Haruspex tells you and does not write a half-finished file. Raise the limit or ask for a smaller piece of work.
+If a reply hits the limit, Haruspex says so and never writes a half-finished file.
 
 ## Reasoning (thinking)
 
 In Settings → Agent → Behavior:
 
 - **Reasoning mode** (on by default) lets the model think before it answers. It helps with code and multi-step tasks but uses more of the context. Turn it off for light chat.
-- **Reasoning effort** (default medium) sets how long it thinks. Not every model accepts an effort level; where it is not understood it is ignored. A high level can make a long coding task run out of room.
+- **Reasoning effort** (default medium) sets how long it thinks. Models that don't accept an effort level ignore it. A high level can make a long coding task run out of room.
 
 ## Use your own server
 
 If you already run an OpenAI-compatible server (llama.cpp, LM Studio, Ollama, vLLM, Lemonade and others), pick **Remote server (advanced)** in Settings → Inference → Inference backend, or **Connect to an existing server** in the wizard.
 
-Enter the **Server URL** and an optional **API Key**, then press **Probe connection**. Haruspex finds the models and, where the server reports them, the context size and image support. Otherwise fill these in yourself. Turn on **Allow parallel inference** only if your server handles several requests at once.
+Enter the **Server URL** and an optional **API Key**, then press **Probe connection**. Haruspex finds the models and, where the server reports them, the context size and image support; otherwise fill these in. Turn on **Allow parallel inference** only if your server handles several requests at once.
 
 Switching to a remote server stops the local model to free VRAM; **Local** starts it again. Remote server and OpenRouter each keep their own address, key and model.
 
-The built-in model server answers only Haruspex. To share a model with other apps, run your own server and point Haruspex at it.
+The built-in model server answers only Haruspex. To share a model with other apps, run your own server.
 
 ## OpenRouter (cloud)
 
@@ -85,4 +85,4 @@ Each job can use its own model or server, so a heavy job can go to a big remote 
 
 ## Features that need a bigger model
 
-The Code tab, the Shell's Full access, guided planning, autonomous coding, audit jobs and the Python sandbox ask the model to write code. The 4B and 9B models are weak at coding, so these often fail on them. They become usable at 16 GB and work well at 24 GB, or on a bigger remote model. See the `troubleshooting` page for small-model limits.
+The Code tab, the Shell's Full access, guided planning, autonomous coding, audit jobs and the Python sandbox ask the model to write code. The 4B and 9B models often fail at these; they become usable at 16 GB and work well at 24 GB or on a bigger remote model. See the `troubleshooting` page for small-model limits.

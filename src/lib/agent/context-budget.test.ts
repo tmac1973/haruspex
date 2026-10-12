@@ -466,7 +466,39 @@ describe('parseContextOverflow', () => {
 	});
 });
 
+describe('fitMessagesToBudget and the system prompt', () => {
+	it('shortens a long user message before touching the system prompt', () => {
+		const prompt = 'Instructions. '.repeat(400);
+		const msgs = [sys(prompt), user('x'.repeat(40_000))];
+		const info = fitMessagesToBudget(msgs, 8192, { reserveOutput: 2048 });
+		expect(info!.truncatedSystem).toBe(false);
+		expect(msgs[0].content).toBe(prompt);
+	});
+
+	it('cuts the system prompt only when it alone does not fit, and says so', () => {
+		// A new chat whose instructions outgrow the context.
+		const msgs = [sys('Instructions. '.repeat(4000)), user('hello')];
+		const info = fitMessagesToBudget(msgs, 8192, { reserveOutput: 2048 });
+		expect(info!.truncatedSystem).toBe(true);
+		expect(msgs[1].content).toBe('hello');
+		expect(describeContextManaged(info!)).toContain('Settings → Inference → Context Size');
+	});
+});
+
 describe('describeContextManaged', () => {
+	it('does not claim history was compacted when only one message was shortened', () => {
+		const text = describeContextManaged({
+			kind: 'fit',
+			forced: false,
+			trimmedTools: false,
+			truncatedMessages: 1,
+			droppedTurns: 0,
+			beforeEst: 10000,
+			afterEst: 5000
+		});
+		expect(text).toBe("Shortened a long message to fit the model's context.");
+	});
+
 	it('mentions each action taken', () => {
 		const text = describeContextManaged({
 			kind: 'fit',

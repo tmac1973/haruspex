@@ -13,8 +13,13 @@ pub struct HardwareInfo {
     pub gpu_name: Option<String>,
     pub gpu_api: Option<String>,
     /// What the GPU can hold. For one that shares system memory, what Vulkan
-    /// says it may use of it (often more than the BIOS carve-out).
+    /// says it may use of it (often more than the BIOS carve-out); on a Mac,
+    /// what Metal lets it keep resident ([`metal_working_set_mb`]).
     pub gpu_vram_mb: Option<u64>,
+    /// The memory the recommendation was sized for: the VRAM, or on a Mac
+    /// the smaller of Metal's share and the RAM free now, since the OS and
+    /// every other app draw on the same memory. `None` when unknown.
+    pub model_memory_mb: Option<u64>,
     /// The GPU shares system memory (integrated graphics, an APU): its
     /// "VRAM" is RAM, so the wizard doesn't call it VRAM.
     pub gpu_integrated: bool,
@@ -160,6 +165,7 @@ pub fn total_ram_bytes() -> u64 {
 struct Recommendation {
     quant: &'static str,
     context_size: u32,
+    memory_mb: Option<u64>,
     integrated_slow: bool,
     alternative: Option<OffloadAlternative>,
 }
@@ -173,19 +179,27 @@ struct Recommendation {
 /// - A fast APU (Strix Halo) → by the memory it may use, like a card.
 /// - Unknown GPU and no VRAM → the 4B, the safe guess.
 /// - A discrete GPU → by VRAM; unknown VRAM → by available RAM.
+/// - A Mac → by Metal's share of unified memory, capped at the RAM free now.
 fn recommend(gpu: &GpuInfo, total_ram_mb: u64, available_ram_mb: u64) -> Recommendation {
     let fast_apu = gpu.integrated && gpu.name.as_deref().is_some_and(is_fast_apu);
     let integrated_slow = gpu.integrated && !fast_apu;
+    let unified = is_metal(gpu);
+    // Unified memory is the OS's and every other app's as well, so a Mac is
+    // sized to what is free now too, not only to what Metal would allow.
+    let memory_mb = match gpu.vram_mb {
+        Some(mb) if unified => Some(mb.min(available_ram_mb)),
+        other => other,
+    };
     let quant = if integrated_slow || (gpu.name.is_none() && gpu.vram_mb.is_none()) {
         "Qwen3.5-4B-IQ4_NL"
     } else {
-        tier_lookup(QUANT_BY_VRAM_MB, gpu.vram_mb.unwrap_or(available_ram_mb))
+        tier_lookup(QUANT_BY_VRAM_MB, memory_mb.unwrap_or(available_ram_mb))
     };
     // Context: computed per-model from the quant's weights, projector and
     // per-token KV growth against the memory found (see
     // `models::recommended_context_for`). Slow integrated graphics and
     // unknown memory can't be modelled reliably, so they get the floor.
-    let context_size = match gpu.vram_mb {
+    let context_size = match memory_mb {
         Some(vram_mb) if !integrated_slow => {
             // First run has no saved preference, so assume the default (on).
             // Models without an MTP head are unaffected either way.
@@ -202,11 +216,12 @@ fn recommend(gpu: &GpuInfo, total_ram_mb: u64, available_ram_mb: u64) -> Recomme
     } else {
         // Spilling experts to "system RAM" gains nothing when the GPU's
         // memory is system RAM already.
-        offload_alternative(gpu.vram_mb, gpu.integrated, total_ram_mb, quant)
+        offload_alternative(memory_mb, gpu.integrated || unified, total_ram_mb, quant)
     };
     Recommendation {
         quant,
         context_size,
+        memory_mb,
         integrated_slow,
         alternative,
     }
@@ -239,6 +254,7 @@ fn detect_hardware_with(devices: Option<&[VulkanDevice]>) -> HardwareInfo {
         gpu_name: gpu.name,
         gpu_api: gpu.api,
         gpu_vram_mb: gpu.vram_mb,
+        model_memory_mb: rec.memory_mb,
         gpu_integrated: gpu.integrated,
         gpu_integrated_slow: rec.integrated_slow,
         total_ram_mb,
@@ -623,9 +639,28 @@ fn detect_gpu() -> GpuInfo {
         available: true,
         name: Some("Apple GPU".to_string()),
         api: Some("Metal".to_string()),
-        vram_mb: None,
+        vram_mb: Some(metal_working_set_mb(total_ram_bytes() / 1_048_576)),
         integrated: false, // Apple Silicon is fast enough, don't penalize
     }
+}
+
+/// The share of unified memory macOS lets Metal keep resident: two thirds
+/// of RAM up to 36 GB, three quarters above. The default behind
+/// `MTLDevice.recommendedMaxWorkingSetSize`, which llama.cpp budgets
+/// against. Without it a Mac had no VRAM figure, and every one was given
+/// the 8K context floor whatever its memory.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn metal_working_set_mb(total_ram_mb: u64) -> u64 {
+    if total_ram_mb <= 36 * 1024 {
+        total_ram_mb * 2 / 3
+    } else {
+        total_ram_mb * 3 / 4
+    }
+}
+
+/// Apple Silicon: the GPU's memory is the system's.
+fn is_metal(gpu: &GpuInfo) -> bool {
+    gpu.api.as_deref() == Some("Metal")
 }
 
 #[cfg(target_os = "windows")]
@@ -969,6 +1004,35 @@ ggml_vulkan: 1 = Intel(R) UHD Graphics 770 (Intel Corporation) | uma: 1 | fp16: 
         assert!(!rec.integrated_slow);
         assert_eq!(rec.quant, "Qwen3.5-9B-UD-Q6_K_XL");
         assert!(rec.alternative.as_ref().is_some_and(|a| a.spill));
+    }
+
+    fn mac(total_ram_mb: u64) -> GpuInfo {
+        GpuInfo {
+            available: true,
+            name: Some("Apple GPU".into()),
+            api: Some("Metal".into()),
+            vram_mb: Some(metal_working_set_mb(total_ram_mb)),
+            integrated: false,
+        }
+    }
+
+    #[test]
+    fn metal_gets_two_thirds_of_ram_then_three_quarters() {
+        assert_eq!(metal_working_set_mb(24_576), 16_384);
+        assert_eq!(metal_working_set_mb(65_536), 49_152);
+    }
+
+    #[test]
+    fn a_mac_gets_a_context_sized_to_its_memory_not_the_floor() {
+        // 24 GB Mac with 11 GB free: the free RAM caps Metal's 16 GB.
+        let rec = recommend(&mac(24_576), 24_576, 11_000);
+        assert_eq!(rec.memory_mb, Some(11_000));
+        assert_eq!(rec.quant, "Qwen3.5-9B-IQ4_NL");
+        assert!(rec.context_size > crate::models::MIN_CONTEXT);
+        // Unified memory has no "system RAM" to spill experts to.
+        assert!(recommend(&mac(32_768), 32_768, 30_000)
+            .alternative
+            .is_none());
     }
 
     #[test]

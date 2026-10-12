@@ -1247,15 +1247,18 @@ impl ModelManager {
         filename: &str,
         expected_size: u64,
         stage_label: &str,
-    ) -> Result<PathBuf, String> {
+    ) -> Result<(PathBuf, bool), String> {
         self.ensure_models_dir().await?;
         let final_path = self.models_dir.join(filename);
         let partial_path = self.models_dir.join(format!("{}.partial", filename));
 
-        // Skip if already downloaded
+        // Skip if already downloaded. `false` tells the caller not to hash
+        // it again: it was checked when it arrived (a mismatch deletes it),
+        // and re-reading 6 GB made the wizard sit on "Verifying" for a model
+        // it never fetched.
         if final_path.exists() {
             info!("{} already downloaded: {}", stage_label, filename);
-            return Ok(final_path);
+            return Ok((final_path, false));
         }
 
         self.download_to_partial(
@@ -1270,7 +1273,7 @@ impl ModelManager {
         .await?;
 
         info!("{} download complete: {}", stage_label, filename);
-        Ok(final_path)
+        Ok((final_path, true))
     }
 
     /// Record the proxy config to use for the next download.
@@ -1298,7 +1301,7 @@ impl ModelManager {
         }
 
         // Download main weights
-        let final_path = self
+        let (final_path, fetched) = self
             .download_file(
                 app,
                 &model.url,
@@ -1309,7 +1312,7 @@ impl ModelManager {
             .await?;
 
         // Verify SHA256 if we have a hash
-        if !model.sha256.is_empty() {
+        if fetched && !model.sha256.is_empty() {
             info!("Verifying SHA256...");
             verify_sha256(&final_path, &model.sha256, app, "Verifying model").await?;
         }
@@ -1320,7 +1323,7 @@ impl ModelManager {
             model.mmproj_filename.as_ref(),
             model.mmproj_size_bytes,
         ) {
-            let mmproj_path = self
+            let (mmproj_path, fetched) = self
                 .download_file(
                     app,
                     mmproj_url,
@@ -1329,7 +1332,7 @@ impl ModelManager {
                     "Downloading vision projector",
                 )
                 .await?;
-            if let Some(expected) = mmproj_sha256_for_url(mmproj_url) {
+            if let Some(expected) = mmproj_sha256_for_url(mmproj_url).filter(|_| fetched) {
                 info!("Verifying mmproj SHA256...");
                 verify_sha256(&mmproj_path, expected, app, "Verifying vision projector").await?;
             }
@@ -1346,10 +1349,10 @@ impl ModelManager {
             sha256,
         } = &model.mtp
         {
-            let draft_path = self
+            let (draft_path, fetched) = self
                 .download_file(app, url, filename, *size_bytes, "Downloading MTP drafter")
                 .await?;
-            if !sha256.is_empty() {
+            if fetched && !sha256.is_empty() {
                 info!("Verifying MTP drafter SHA256...");
                 verify_sha256(&draft_path, sha256, app, "Verifying MTP drafter").await?;
             }
