@@ -13,7 +13,7 @@ Click **New session** (or **+** by the tabs) and pick the project folder; **Work
 
 Type what you want and press `Enter`. After the first reply the model names the session; a name you gave it is never replaced. Sessions save after every reply.
 
-To show the agent a window (a UI bug, say), click the camera button and pick it; the picture goes with your next message.
+To show the agent a UI bug, the camera button takes the screen, a window or a region for your next message.
 
 The list on the left holds every session; see the `code-sessions` page.
 

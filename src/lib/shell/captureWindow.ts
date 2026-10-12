@@ -1,7 +1,7 @@
 /**
- * The Shell tab's "capture a window" button: pick a window, screenshot it, and
- * send it to the assistant. Built for game testing — run the game, press the
- * button, click its window, and the assistant sees the frame.
+ * Window capture for the composer's camera button (Window…), and the text the
+ * Shell tab sends with a capture. Built for game testing — run the game, press
+ * the button, click its window, and the assistant sees the frame.
  *
  * Picking is the platform's job where it has a picker. On Linux the desktop
  * portal shows its own, and the user clicks the window there, so the list is
@@ -16,8 +16,7 @@ import type { ScreenCapture } from '#lib/ipc/gen/ScreenCapture.ts';
 
 /** What is sent with the picture when the composer is empty. */
 export const CAPTURE_PROMPT =
-	'Here is a screenshot of the window. Look at it and tell me what you see, ' +
-	'and anything that looks wrong.';
+	'Here is a screenshot. Look at it and tell me what you see, and anything that looks wrong.';
 
 /** Windows to choose from, or none when the platform picks for us (Linux). */
 export function windowsToPick(): Promise<CaptureWindow[]> {

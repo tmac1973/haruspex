@@ -1,11 +1,13 @@
 <script lang="ts">
 	/**
-	 * The Chat composer's camera button: the whole screen, one window, or a
-	 * region dragged out of the screen, attached to the next message.
+	 * The composer's camera button, shared by Chat, Shell and Code: the whole
+	 * screen, one window, or a region dragged out of the screen. Chat and Code
+	 * attach it to the message being written; Shell sends it at once.
 	 *
 	 * A person pressing this is not the Settings → Screen question, which is
-	 * about the assistant asking. Window picking is the Shell button's: the
-	 * desktop portal's picker on Linux, a list of open windows elsewhere.
+	 * about the assistant asking. Window picking is the desktop portal's picker
+	 * on Linux and a list of open windows elsewhere, opening above the nearest
+	 * positioned ancestor (the composer).
 	 */
 	import { invoke } from '@tauri-apps/api/core';
 	import RegionSelector from '#lib/components/RegionSelector.svelte';
@@ -19,7 +21,17 @@
 	import { errMessage } from '#lib/utils/error.ts';
 	import { onDestroy } from 'svelte';
 
-	let { onCapture }: { onCapture: (dataUrl: string) => void } = $props();
+	let {
+		onCapture,
+		disabled = false,
+		title = 'Attach a screenshot to this message',
+		label = 'Attach a screenshot'
+	}: {
+		onCapture: (dataUrl: string) => void | Promise<void>;
+		disabled?: boolean;
+		title?: string;
+		label?: string;
+	} = $props();
 
 	let busy = $state(false);
 	let menuOpen = $state(false);
@@ -30,7 +42,7 @@
 	/** Run one capture, reporting a failure (or a cancelled portal) as a toast. */
 	async function run(work: () => Promise<void>) {
 		menuOpen = false;
-		if (busy) return;
+		if (busy || disabled) return;
 		busy = true;
 		try {
 			await work();
@@ -44,13 +56,13 @@
 	const screen = () =>
 		run(async () => {
 			const capture = await invoke<ScreenCapture>('capture_screen', { target: 'screen' });
-			onCapture(capture.dataUrl);
+			await onCapture(capture.dataUrl);
 		});
 
 	const oneWindow = () =>
 		run(async () => {
 			const windows = await windowsToPick();
-			if (windows.length === 0) onCapture(await captureWindowImage(null));
+			if (windows.length === 0) await onCapture(await captureWindowImage(null));
 			else windowChoices = windows;
 		});
 
@@ -68,7 +80,7 @@
 		regionPreview = null;
 		void run(async () => {
 			const url = await finishRegionCapture(rect);
-			if (url) onCapture(url);
+			if (url) await onCapture(url);
 		});
 	}
 
@@ -110,9 +122,9 @@
 	<button
 		class="capture-btn"
 		onclick={() => (menuOpen = !menuOpen)}
-		disabled={busy}
-		title="Attach a screenshot to this message"
-		aria-label="Attach a screenshot"
+		disabled={disabled || busy}
+		{title}
+		aria-label={label}
 		aria-haspopup="menu"
 		aria-expanded={menuOpen}
 	>
