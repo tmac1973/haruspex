@@ -345,8 +345,7 @@ mod tests {
 
     #[test]
     fn the_file_holds_hashes_not_tokens() {
-        let dir = std::env::temp_dir().join(format!("owner-clients-{}", random_hex(4).unwrap()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::test_util::temp_dir("owner_clients");
         let path = dir.join("owner-clients.json");
         let clients = Clients::load(path.clone()).unwrap();
         let (client, token) = clients.create("Phone", &Scope::ALL).unwrap();
@@ -356,7 +355,6 @@ mod tests {
         // And a reload knows the device.
         let again = Clients::load(path).unwrap();
         assert_eq!(again.authenticate(&token).unwrap().id, client.id);
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

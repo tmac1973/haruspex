@@ -251,9 +251,7 @@ mod tests {
 
     #[test]
     fn debug_lines_append_and_rotate_past_the_cap() {
-        let dir = std::env::temp_dir().join(format!("haruspex-debuglog-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::test_util::temp_dir("debuglog");
         let path = dir.join(DEBUG_LOG_FILE);
         append_debug_lines(&path, &["one".into(), "two".into()], 1024).unwrap();
         append_debug_lines(&path, &["three".into()], 1024).unwrap();
@@ -265,6 +263,5 @@ mod tests {
             std::fs::read_to_string(dir.join("agent-debug.log.1")).unwrap(),
             "one\ntwo\nthree\n"
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

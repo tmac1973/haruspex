@@ -202,6 +202,7 @@ pub fn row_for(hash: String, req: &ImageRequest, fetched: &fetch::FetchedImage) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::temp_dir;
 
     #[test]
     fn hash_validation_rejects_traversal_and_wrong_shapes() {
@@ -231,16 +232,9 @@ mod tests {
     /// Matches the `temp_repo` idiom in `code_tools.rs` — a named directory
     /// under the system temp dir, wiped on entry, rather than a new dependency
     /// just for tests.
-    fn temp_cache(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("haruspex_image_test_{name}"));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
     #[test]
     fn write_is_atomic_and_idempotent() {
-        let dir = temp_cache("write");
+        let dir = temp_dir("write");
         let hash = hash_bytes(b"payload");
 
         write_bytes(&dir, &hash, b"payload").unwrap();
@@ -256,8 +250,6 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().ends_with(".part"))
             .collect();
         assert!(leftovers.is_empty(), "a .part file was left behind");
-
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

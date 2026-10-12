@@ -45,6 +45,8 @@ mod sidecar_process;
 mod sidecar_util;
 mod skills;
 mod sync_util;
+#[cfg(test)]
+mod test_util;
 mod text_util;
 mod time_util;
 mod tts;

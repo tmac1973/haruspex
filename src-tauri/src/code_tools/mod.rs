@@ -821,6 +821,7 @@ Linux
     #[cfg(windows)]
     mod powershell_runs {
         use super::*;
+        use crate::test_util::temp_dir;
 
         async fn run(
             command: &str,
@@ -867,8 +868,8 @@ Linux
 
         #[tokio::test]
         async fn a_timeout_ends_what_the_command_started() {
-            let marker = std::env::temp_dir().join("haruspex-job-timeout.txt");
-            let _ = std::fs::remove_file(&marker);
+            let dir = temp_dir("job_timeout");
+            let marker = dir.join("survived.txt");
             // A grandchild, detached from the tree, that would write the
             // marker after the timeout if it survived.
             let cmd = format!(

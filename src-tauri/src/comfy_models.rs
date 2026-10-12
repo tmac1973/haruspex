@@ -308,6 +308,7 @@ pub async fn comfy_install_direct(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::{temp_dir, TestDir};
 
     #[test]
     fn both_engines_agree_on_each_familys_licence_and_vae() {
@@ -377,15 +378,21 @@ mod tests {
         assert!(!is_loopback("not a url"));
     }
 
-    fn temp(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("haruspex-comfy-{name}-{}", std::process::id()));
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    /// One made folder per name, inside a fresh temp folder that goes when
+    /// the guard drops.
+    fn folders<const N: usize>(names: [&str; N]) -> (TestDir, [PathBuf; N]) {
+        let root = temp_dir("comfy");
+        let dirs = names.map(|n| {
+            let d = root.join(n);
+            std::fs::create_dir(&d).unwrap();
+            d
+        });
+        (root, dirs)
     }
 
     #[test]
     fn folders_count_only_when_every_kind_is_here_and_writable() {
-        let (dm, te, vae) = (temp("dm"), temp("te"), temp("vae"));
+        let (_root, [dm, te, vae]) = folders(["dm", "te", "vae"]);
         let answer = serde_json::json!({
             "diffusion_models": [dm, "/nowhere"],
             "text_encoders": [te],
@@ -406,7 +413,7 @@ mod tests {
 
     #[test]
     fn a_file_in_any_folder_of_its_kind_is_not_missing() {
-        let (dm, dm2, te, vae) = (temp("m-dm"), temp("m-dm2"), temp("m-te"), temp("m-vae"));
+        let (_root, [dm, dm2, te, vae]) = folders(["dm", "dm2", "te", "vae"]);
         let set = comfy_model_sets()
             .into_iter()
             .find(|s| s.family == "ming")

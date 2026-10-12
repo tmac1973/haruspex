@@ -228,13 +228,7 @@ pub fn read_file(dir: &Path, rel: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("haruspex_skills_test_{name}"));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir.canonicalize().unwrap()
-    }
+    use crate::test_util::temp_dir;
 
     fn write_skill(root: &Path, folder: &str, description: &str) -> PathBuf {
         let dir = root.join(folder);

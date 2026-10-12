@@ -237,6 +237,7 @@ fn sweep_entries(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::{temp_dir, TestDir};
     use std::collections::HashSet;
 
     fn entry(id: &str, pid: u32, program: &str) -> RunningServer {
@@ -248,11 +249,12 @@ mod tests {
         }
     }
 
-    fn temp_path(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("haruspex_mcp_orphans_{name}"));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir.join("running.json")
+    /// The record file inside a fresh temp folder, which goes when the
+    /// returned guard drops.
+    fn temp_path(name: &str) -> (TestDir, PathBuf) {
+        let dir = temp_dir(name);
+        let path = dir.join("running.json");
+        (dir, path)
     }
 
     #[test]
@@ -353,7 +355,7 @@ mod tests {
 
     #[test]
     fn registry_round_trips_and_survives_a_corrupt_file() {
-        let path = temp_path("round_trip");
+        let (_dir, path) = temp_path("round_trip");
         assert!(
             load(&path).is_empty(),
             "a missing file is an empty registry"
@@ -368,27 +370,25 @@ mod tests {
             load(&path).is_empty(),
             "a corrupt registry must not block startup"
         );
-        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]
     fn a_late_exit_does_not_forget_the_restarted_process() {
         // The old child's wait thread runs after the restart registered the
         // new pid under the same id.
-        let path = temp_path("late_exit");
+        let (_dir, path) = temp_path("late_exit");
         save(&path, &[entry("sd-server", 2, "/x/sd-server")]).unwrap();
         deregister_pid(Some(&path), "sd-server", 1);
         assert_eq!(load(&path).len(), 1, "pid 1 is not the one recorded");
         deregister_pid(Some(&path), "sd-server", 2);
         assert!(load(&path).is_empty());
-        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]
     fn registering_the_same_id_twice_replaces_the_stale_pid() {
         // A restart reuses the server id. Keeping both would leave the sweep
         // chasing a pid that is no longer ours.
-        let path = temp_path("replace");
+        let (_dir, path) = temp_path("replace");
         let mut entries = load(&path);
         entries.push(entry("github", 1, "/x/node"));
         save(&path, &entries).unwrap();
@@ -402,6 +402,5 @@ mod tests {
         let loaded = load(&path);
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].pid, 2);
-        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }

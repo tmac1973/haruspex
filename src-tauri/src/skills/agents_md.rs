@@ -148,13 +148,7 @@ pub fn read(root: &Path, cwd: &Path) -> Option<AgentsMd> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("haruspex_agents_md_test_{name}"));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir.canonicalize().unwrap()
-    }
+    use crate::test_util::temp_dir;
 
     #[test]
     fn drafts_and_saves_the_root_file_from_a_subfolder() {

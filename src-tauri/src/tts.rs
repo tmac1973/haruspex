@@ -379,14 +379,7 @@ pub async fn clear_tts_logs(state: tauri::State<'_, TtsEngine>) -> Result<(), ()
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("haruspex_test_tts_{}_{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
+    use crate::test_util::temp_dir;
 
     #[test]
     fn resolve_koko_path_prefers_the_bundled_file() {
@@ -406,7 +399,6 @@ mod tests {
             !data.exists(),
             "the writable fallback is not created when unused"
         );
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -425,7 +417,6 @@ mod tests {
 
         let got = resolve_koko_path(&None, &Some(data.clone()), "data", "voices.bin");
         assert_eq!(got, Some(want));
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -442,6 +433,5 @@ mod tests {
             resolve_koko_path(&None, &Some(blocker), "data", "v.bin"),
             None
         );
-        let _ = std::fs::remove_dir_all(&root);
     }
 }

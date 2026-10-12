@@ -239,14 +239,16 @@ pub fn restore(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::{temp_dir, TestDir};
     use std::path::PathBuf;
 
-    fn temp_dir(name: &str) -> (PathBuf, PathBuf) {
-        let base = std::env::temp_dir().join(format!("haruspex_shipped_test_{name}"));
-        let _ = fs::remove_dir_all(&base);
+    /// The skills folder and the shipped record, inside a fresh temp folder.
+    fn fixture(name: &str) -> (TestDir, PathBuf, PathBuf) {
+        let base = temp_dir(name);
         let user = base.join("skills");
         fs::create_dir_all(&user).unwrap();
-        (user, base.join("shipped-skills.json"))
+        let record = base.join("shipped-skills.json");
+        (base, user, record)
     }
 
     const V1: &[(&str, &[u8])] = &[
@@ -273,7 +275,7 @@ mod tests {
 
     #[test]
     fn copies_every_skill_once() {
-        let (user, record) = temp_dir("first");
+        let (_base, user, record) = fixture("first");
         assert!(seed(&user, &record, V1).is_empty());
         assert!(read(&user, "a/SKILL.md").contains("v1"));
         assert_eq!(read(&user, "a/refs/x.md"), "extra");
@@ -285,7 +287,7 @@ mod tests {
 
     #[test]
     fn leaves_the_users_own_folder_alone() {
-        let (user, record) = temp_dir("theirs");
+        let (_base, user, record) = fixture("theirs");
         fs::create_dir_all(user.join("a")).unwrap();
         fs::write(user.join("a/SKILL.md"), "mine").unwrap();
         seed(&user, &record, V1);
@@ -297,7 +299,7 @@ mod tests {
 
     #[test]
     fn a_deleted_skill_stays_deleted_until_restored() {
-        let (user, record) = temp_dir("deleted");
+        let (_base, user, record) = fixture("deleted");
         seed(&user, &record, V1);
         fs::remove_dir_all(user.join("a")).unwrap();
         seed(&user, &record, V2);
@@ -310,7 +312,7 @@ mod tests {
 
     #[test]
     fn a_release_updates_only_unedited_skills() {
-        let (user, record) = temp_dir("update");
+        let (_base, user, record) = fixture("update");
         seed(&user, &record, V1);
         fs::write(user.join("b/SKILL.md"), "tuned").unwrap();
         assert_eq!(states(&user, &record, V1)[1], ShippedState::Edited);
@@ -324,7 +326,7 @@ mod tests {
 
     #[test]
     fn restore_puts_one_back_as_shipped() {
-        let (user, record) = temp_dir("restore");
+        let (_base, user, record) = fixture("restore");
         seed(&user, &record, V1);
         fs::write(user.join("a/SKILL.md"), "tuned").unwrap();
         fs::remove_file(user.join("a/refs/x.md")).unwrap();

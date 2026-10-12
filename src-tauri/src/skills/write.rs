@@ -259,13 +259,7 @@ fn skill_text(yaml: &str, body: &str) -> String {
 mod tests {
     use super::*;
     use crate::skills::discover::Root;
-
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("haruspex_skills_write_test_{name}"));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir.canonicalize().unwrap()
-    }
+    use crate::test_util::temp_dir;
 
     fn put(dir: &Path, front: &str, body: &str) {
         fs::create_dir_all(dir).unwrap();
@@ -296,6 +290,7 @@ mod tests {
         user: PathBuf,
         shared: PathBuf,
         repo: PathBuf,
+        _base: crate::test_util::TestDir,
     }
 
     impl Fixture {
@@ -305,6 +300,7 @@ mod tests {
                 user: base.join("user"),
                 shared: base.join("shared"),
                 repo: base.join("repo"),
+                _base: base,
             };
             for d in [&f.user, &f.shared, &f.repo] {
                 fs::create_dir_all(d).unwrap();

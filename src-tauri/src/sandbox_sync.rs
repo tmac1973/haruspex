@@ -179,13 +179,7 @@ fn walk_dir(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("haruspex_sandbox_sync_test_{name}"));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir.canonicalize().unwrap()
-    }
+    use crate::test_util::temp_dir;
 
     async fn sync(dir: &Path, known: Vec<KnownFile>, file_cap: u64, run_cap: u64) -> SyncResult {
         sandbox_sync_workdir(dir.to_string_lossy().into_owned(), known, file_cap, run_cap)
@@ -288,8 +282,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_missing_workdir_is_an_error() {
-        let dir = std::env::temp_dir().join("haruspex_sandbox_sync_test_missing_xyz");
-        let _ = std::fs::remove_dir_all(&dir);
+        let root = temp_dir("missing");
+        let dir = root.join("missing_xyz");
         let err = sandbox_sync_workdir(dir.to_string_lossy().into_owned(), vec![], 1, 1)
             .await
             .err()
