@@ -6,6 +6,7 @@ vi.mock('#lib/slash/slash.ts', async (importOriginal) => ({
 	slashItems: vi.fn(async () => [
 		{ name: 'new', description: 'Start over', builtin: true },
 		{ name: 'skills', description: 'List skills', builtin: true },
+		{ name: 'deploy-docs', description: 'Ship the docs', builtin: false },
 		{ name: 'deploy', description: 'Ship it', builtin: false }
 	])
 }));
@@ -30,7 +31,7 @@ async function open(text: string) {
 describe('SlashMenu', () => {
 	it('lists what matches the name being typed', async () => {
 		await open('/');
-		expect(screen.getAllByRole('option')).toHaveLength(3);
+		expect(screen.getAllByRole('option')).toHaveLength(4);
 	});
 
 	it('moves with the arrows and picks with Enter or Tab', async () => {
@@ -40,12 +41,35 @@ describe('SlashMenu', () => {
 		const enter = key('Enter');
 		expect(menu.handleKey(enter)).toBe(true);
 		expect(enter.defaultPrevented).toBe(true);
-		expect(onPick).toHaveBeenLastCalledWith('/deploy ');
+		expect(onPick).toHaveBeenLastCalledWith('/deploy-docs ');
 
 		// Up from the top wraps to the bottom.
 		menu.handleKey(key('ArrowUp'));
 		menu.handleKey(key('Tab'));
 		expect(onPick).toHaveBeenLastCalledWith('/skills ');
+	});
+
+	it('leaves Enter to the input when the name is typed in full, so it runs', async () => {
+		const { menu, onPick } = await open('/skills');
+		expect(screen.getAllByRole('option')).toHaveLength(1);
+		const enter = key('Enter');
+		expect(menu.handleKey(enter)).toBe(false);
+		expect(enter.defaultPrevented).toBe(false);
+		// Tab still completes it.
+		expect(menu.handleKey(key('Tab'))).toBe(true);
+		expect(onPick).toHaveBeenLastCalledWith('/skills ');
+	});
+
+	it('selects the full name among longer ones; the arrows still choose another', async () => {
+		const { menu, onPick } = await open('/deploy');
+		expect(screen.getAllByRole('option')).toHaveLength(2);
+		expect(screen.getByText('/deploy').closest('button')?.classList.contains('selected')).toBe(
+			true
+		);
+		expect(menu.handleKey(key('Enter'))).toBe(false);
+		menu.handleKey(key('ArrowUp'));
+		expect(menu.handleKey(key('Enter'))).toBe(true);
+		expect(onPick).toHaveBeenLastCalledWith('/deploy-docs ');
 	});
 
 	it('closes on Escape and leaves other keys to the input', async () => {

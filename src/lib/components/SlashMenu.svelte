@@ -54,9 +54,10 @@
 			.catch((e) => logDebug('slash', 'could not load slash commands', { error: String(e) }));
 	});
 
+	// A name typed in full starts selected, so Enter runs it (below).
 	$effect(() => {
-		void typed;
-		selected = 0;
+		const exact = matches.findIndex((m) => m.name.toLowerCase() === typed?.toLowerCase());
+		selected = Math.max(exact, 0);
 	});
 
 	function pick(item: SlashItem) {
@@ -68,12 +69,17 @@
 		dismissed = text;
 	}
 
+	const isTyped = (item: SlashItem) => item.name.toLowerCase() === typed?.toLowerCase();
+
 	/** True when the key was the list's to handle. */
 	export function handleKey(e: KeyboardEvent): boolean {
 		if (!open) return false;
 		if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
 			const step = e.key === 'ArrowDown' ? 1 : -1;
 			selected = (selected + step + matches.length) % matches.length;
+		} else if (e.key === 'Enter' && !e.shiftKey && isTyped(matches[selected])) {
+			// `/init` typed in full: Enter sends it rather than completing it.
+			return false;
 		} else if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
 			pick(matches[selected]);
 		} else if (e.key === 'Escape') {
