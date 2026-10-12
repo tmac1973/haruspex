@@ -47,6 +47,7 @@ import {
 	rememberAlwaysAllow,
 	requiresApproval
 } from '#lib/stores/mcpApproval.svelte.ts';
+import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
 
 /**
  * Maximum MRTR round trips for one tool call.
@@ -209,9 +210,7 @@ async function executeMcpTool(
 			return toolResult(toolError(`${descriptor.name} failed: ${String(e)}`));
 		}
 
-		if (outcome.type === 'complete') {
-			return toolResult(formatContent(outcome, descriptor.name));
-		}
+		if (outcome.type === 'complete') return withImages(outcome, descriptor.name, ctx);
 
 		// The server asked something. Answering needs a person.
 		const answers = await answerInputRequests(outcome.requests, entry, ctx);
@@ -299,23 +298,63 @@ export function elicitationMessage(request: McpInputRequest): string | null {
 	return typeof message === 'string' && message.trim() ? message : null;
 }
 
+type CompleteOutcome = Extract<McpCallOutcome, { type: 'complete' }>;
+
+/** An `image` block's picture as a data URL, or null for anything else. */
+export function imageDataUrl(block: unknown): string | null {
+	const b = block as { type?: unknown; data?: unknown; mimeType?: unknown };
+	if (b.type !== 'image' || typeof b.data !== 'string' || !b.data) return null;
+	const mime = typeof b.mimeType === 'string' ? b.mimeType : '';
+	if (!/^image\/[\w.+-]+$/.test(mime)) return null;
+	return `data:${mime};base64,${b.data}`;
+}
+
+/**
+ * A completed call, with the images it returned handed to the model.
+ *
+ * Shaped like `capture_screen`: each picture joins `ctx.pendingImages`, so the
+ * model sees it on its next request, and the first is the result's thumbnail,
+ * so the user sees what was sent. Images count against the same per-turn
+ * budget as a screenshot or an image read off disk. A model that can't read
+ * images is told one was left out rather than sent it.
+ */
+function withImages(outcome: CompleteOutcome, toolName: string, ctx: ToolContext): ToolExecOutput {
+	let thumb: string | undefined;
+	const describe = (dataUrl: string): string => {
+		if (ctx.visionSupported === false) return "[image omitted: this model can't read images]";
+		if (ctx.pendingImages.length >= MAX_PENDING_IMAGES) {
+			return '[image omitted: too many images this turn; answer about the ones you have first]';
+		}
+		ctx.pendingImages.push({ path: `${toolName} image`, dataUrl });
+		thumb ??= dataUrl;
+		return '[image attached: you can see it in your next response]';
+	};
+	const result = formatContent(outcome, toolName, describe);
+	return toolResult(result, thumb);
+}
+
 /**
  * Render a completed call for the model.
  *
  * MCP content is an array of typed blocks. Text is passed through; anything
  * else is named rather than dumped, so a screenshot-returning tool does not
- * flood the context with base64.
+ * flood the context with base64. An image is described by `describeImage`,
+ * which is where `withImages` attaches it.
  */
 export function formatContent(
-	outcome: Extract<McpCallOutcome, { type: 'complete' }>,
-	toolName: string
+	outcome: CompleteOutcome,
+	toolName: string,
+	describeImage?: (dataUrl: string) => string
 ): string {
 	const parts: string[] = [];
 	const content = Array.isArray(outcome.content) ? outcome.content : [];
 	for (const block of content) {
 		const typed = block as { type?: unknown; text?: unknown };
+		const image = describeImage ? imageDataUrl(block) : null;
 		if (typed.type === 'text' && typeof typed.text === 'string') {
 			parts.push(typed.text);
+		} else if (image && describeImage) {
+			parts.push(describeImage(image));
 		} else if (typeof typed.type === 'string') {
 			parts.push(`[${typed.type} content omitted]`);
 		}

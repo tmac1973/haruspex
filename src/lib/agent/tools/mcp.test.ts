@@ -11,8 +11,10 @@ import {
 	MAX_MRTR_ROUNDS,
 	elicitationMessage,
 	formatContent,
+	imageDataUrl,
 	setToolFailureHook
 } from './mcp';
+import { MAX_PENDING_IMAGES } from './fs-read';
 import { getToolSchemas, executeTool } from './registry';
 import {
 	forgetAllApprovals,
@@ -482,6 +484,15 @@ describe('result formatting', () => {
 		expect(out).not.toContain('AAAA');
 	});
 
+	it('reads an image block as a data URL, and nothing else as one', () => {
+		expect(imageDataUrl({ type: 'image', data: 'AAAA', mimeType: 'image/png' })).toBe(
+			'data:image/png;base64,AAAA'
+		);
+		expect(imageDataUrl({ type: 'image', data: 'AAAA', mimeType: 'text/html' })).toBeNull();
+		expect(imageDataUrl({ type: 'image', data: '', mimeType: 'image/png' })).toBeNull();
+		expect(imageDataUrl({ type: 'text', text: 'x' })).toBeNull();
+	});
+
 	it("marks the server's own failure as an error", () => {
 		const out = formatContent(
 			{
@@ -502,6 +513,54 @@ describe('result formatting', () => {
 			'quiet'
 		);
 		expect(out).toContain('returned nothing');
+	});
+});
+
+describe('images a tool returns', () => {
+	function shot(): McpCallOutcome {
+		return {
+			type: 'complete',
+			content: [
+				{ type: 'text', text: 'Took a screenshot' },
+				{ type: 'image', data: 'AAAA', mimeType: 'image/png' }
+			],
+			structuredContent: null,
+			isError: false
+		};
+	}
+
+	beforeEach(() => {
+		registerMcpTools(SERVER, 'One', [tool('screenshot')], ['screenshot']);
+		invoke.mockResolvedValue(shot());
+	});
+
+	it('hands the picture to the model and shows the user the same one', async () => {
+		const c = ctx();
+		const out = await executeTool('mcp__srv-1__screenshot', {}, c);
+		expect(c.pendingImages.map((i) => i.dataUrl)).toEqual(['data:image/png;base64,AAAA']);
+		expect(out.thumbDataUrl).toBe('data:image/png;base64,AAAA');
+		expect(out.result).toContain('Took a screenshot');
+		expect(out.result).toContain('image attached');
+		expect(out.result).not.toContain('AAAA');
+	});
+
+	it("says it left the picture out for a model that can't read images", async () => {
+		const c = ctx({ visionSupported: false });
+		const out = await executeTool('mcp__srv-1__screenshot', {}, c);
+		expect(c.pendingImages).toEqual([]);
+		expect(out.thumbDataUrl).toBeUndefined();
+		expect(out.result).toContain("can't read images");
+	});
+
+	it('counts against the same per-turn budget as a screen capture', async () => {
+		const full = Array.from({ length: MAX_PENDING_IMAGES }, (_, i) => ({
+			path: `p${i}`,
+			dataUrl: 'data:image/png;base64,B'
+		}));
+		const c = ctx({ pendingImages: full });
+		const out = await executeTool('mcp__srv-1__screenshot', {}, c);
+		expect(c.pendingImages).toHaveLength(MAX_PENDING_IMAGES);
+		expect(out.result).toContain('too many images');
 	});
 });
 

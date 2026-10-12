@@ -700,14 +700,13 @@ mod tests {
     }
 
     #[test]
-    fn playwrights_code_running_tools_are_not_enabled_by_default() {
-        // browser_run_code_unsafe runs JavaScript in the server's own node.
+    fn playwrights_server_side_tools_are_not_enabled_by_default() {
+        // browser_run_code_unsafe runs JavaScript in the server's own node, and
+        // browser_file_upload hands the page a file from this machine.
+        // browser_evaluate is on: its script runs inside the page, and it is
+        // how the agent measures a layout.
         let tools = &companion_entry("playwright").default_tools;
-        for tool in [
-            "browser_evaluate",
-            "browser_run_code_unsafe",
-            "browser_file_upload",
-        ] {
+        for tool in ["browser_run_code_unsafe", "browser_file_upload"] {
             assert!(!tools.contains(&tool.to_string()), "{tool}");
         }
     }

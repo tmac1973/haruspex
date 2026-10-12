@@ -40,7 +40,7 @@ MCP lets the assistant use tools from other software. Haruspex installs and runs
 - **Add a server on this computer** runs an MCP program you already have.
 - **Add a server on your network** connects over HTTP, with an optional token. Servers that sign in through a browser are not supported yet.
 
-Each server has **Tools**, a switch per tool. Catalog servers start with a recommended set on; others start with all off. Tools marked "asks first" ask before they run. Turn off tools you don't need: every tool takes up room in the model's context.
+Each server has **Tools**, a switch per tool. Catalog servers start with a recommended set on; others start with all off. Tools marked "asks first" ask before they run. Turn off tools you don't need: every tool takes up room in the model's context. A picture a tool returns, such as a screenshot, goes to the model when it can read images.
 
 **Blender and Godot** need the app itself running with its MCP addon. The server card says when the app is "not connected"; **Check again** retries.
 
@@ -48,7 +48,7 @@ Each server has **Tools**, a switch per tool. Catalog servers start with a recom
 
 **Browser (Playwright)** from the catalog lets the assistant open pages in a headless Chromium, click and type in them, and read the page's console and network requests. It reaches `localhost`, so the Code tab can check the app it is building. Setup downloads Playwright's own Chromium: about 200 MB, 400 MB once unpacked. It doesn't use your browser or its logins, and each start begins with a fresh profile.
 
-On by default: open a page, read the page as text, click, type, console messages, network requests and one request's details. Opening, clicking and typing ask first; **Always allow** stops asking for that tool. Turn on `browser_take_screenshot` in **Tools** if your model can read images.
+On by default: open a page, read the page as text, click, type, console messages, network requests and one request's details, screenshots, resizing the window, and running a script in the page (to measure a layout, say). Reading the page, its console and requests and taking screenshots run without asking; the rest ask first, and **Always allow** stops asking for that tool. A screenshot reaches the model only if it can read images.
 
 ## Let the assistant see your screen
 
