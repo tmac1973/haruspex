@@ -40,8 +40,13 @@ address: string,
  */
 username: string, 
 /**
- * App password, inline. Empty when it is kept in the secret store under
- * `password_ref` — the usual case. Inline only where no store works.
+ * App password, inline: a legacy value from before secrets left the
+ * settings, or one typed and tested before the account is saved. Empty
+ * when it is kept under `password_ref`, the usual case.
+ *
+ * Read from the webview, never written back: no command returns an
+ * account, and `skip_serializing` makes sure none ever sends a password
+ * to the webview by accident.
  */
 password: string, 
 /**
