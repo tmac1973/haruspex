@@ -63,6 +63,37 @@ describe('checkBoundary', () => {
 		]);
 	});
 
+	it('keeps guarding when the root is an ancestor of a protected directory', () => {
+		for (const root of ['/home/tim', '/home/tim/', '/']) {
+			expect(
+				check('sqlite3 ~/.local/share/com.haruspex.app/haruspex.db .tables', root).reasons,
+				root
+			).toEqual(["touches Haruspex's data directory"]);
+			expect(check('cat /home/tim/Projects/haruspex/src/x.ts', root).matched, root).toBe(true);
+		}
+	});
+
+	it("allows Haruspex's build output inside its own repo", () => {
+		const dev: ProtectedTargets = {
+			...linux,
+			paths: [
+				...linux.paths,
+				{
+					path: '/home/tim/Projects/haruspex/src-tauri/target/debug/',
+					label: 'install directory'
+				}
+			]
+		};
+		const root = '/home/tim/Projects/haruspex';
+		expect(
+			checkBoundary('ls /home/tim/Projects/haruspex/src-tauri/target/debug', dev, root).matched
+		).toBe(false);
+		// The data directory stays guarded on a run over Haruspex's repo.
+		expect(checkBoundary('cat ~/.local/share/com.haruspex.app/x.db', dev, root).reasons).toEqual([
+			"touches Haruspex's data directory"
+		]);
+	});
+
 	it('does not mistake a longer name for the directory', () => {
 		expect(check('ls /home/tim/.local/share/com.haruspex.app2').matched).toBe(false);
 	});

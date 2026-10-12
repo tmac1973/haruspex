@@ -49,7 +49,7 @@ Each MCP server can also choose its own proxy use (Use the app setting, Always, 
 When the Python sandbox is on, Settings → Agent → Python Sandbox → **Network access** decides what code the model writes may connect to:
 
 - **Internet only**: public addresses.
-- **Internet and local network** (the default): also devices on your network.
+- **Internet and local network** (the default): also devices on your network, and Tailscale peers (100.64.0.0/10).
 - **Everything, including this computer**: also services on your own machine, including Haruspex's own model, speech and remote access servers.
 
 Sandbox traffic uses the Network Proxy.

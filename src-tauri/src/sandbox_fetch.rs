@@ -11,6 +11,7 @@
 //! keep working.
 
 use crate::http_util::CappedReadError;
+use crate::net_util::{reach, Reach};
 use crate::proxy::{apply_proxy, routes_through_proxy, ProxyConfig};
 use crate::sync_util::LockExt;
 use serde::{Deserialize, Serialize};
@@ -112,48 +113,6 @@ pub async fn sandbox_fetch(
         &net,
     )
     .await
-}
-
-/// Where an address leads, for [`SandboxNetAccess`].
-#[derive(Debug, PartialEq, Eq)]
-enum Reach {
-    /// This machine: loopback, or the unspecified address that connects here.
-    Local,
-    /// A private, link-local or shared (CGNAT) network.
-    Lan,
-    Public,
-}
-
-fn reach(ip: IpAddr) -> Reach {
-    match ip {
-        IpAddr::V4(v4) => {
-            let [a, b, ..] = v4.octets();
-            if v4.is_loopback() || v4.is_unspecified() {
-                Reach::Local
-            } else if v4.is_private()
-                || v4.is_link_local()
-                || v4.is_broadcast()
-                || (a == 100 && (64..128).contains(&b))
-            {
-                Reach::Lan
-            } else {
-                Reach::Public
-            }
-        }
-        IpAddr::V6(v6) => {
-            if let Some(v4) = v6.to_ipv4_mapped() {
-                return reach(IpAddr::V4(v4));
-            }
-            let seg0 = v6.segments()[0];
-            if v6.is_loopback() || v6.is_unspecified() {
-                Reach::Local
-            } else if (seg0 & 0xfe00) == 0xfc00 || (seg0 & 0xffc0) == 0xfe80 {
-                Reach::Lan
-            } else {
-                Reach::Public
-            }
-        }
-    }
 }
 
 fn allowed(access: SandboxNetAccess, ip: IpAddr) -> bool {
@@ -606,35 +565,6 @@ mod tests {
         let (url, _server) = serve_once(http_ok("0123")).await;
         let resp = reqwest::get(&url).await.unwrap();
         assert_eq!(read_capped(resp, 4).await.unwrap(), b"0123");
-    }
-
-    #[test]
-    fn addresses_sort_into_this_machine_lan_and_public() {
-        for ip in [
-            "127.0.0.1",
-            "127.8.9.1",
-            "0.0.0.0",
-            "::1",
-            "::",
-            "::ffff:127.0.0.1",
-        ] {
-            assert_eq!(reach(ip.parse().unwrap()), Reach::Local, "{ip}");
-        }
-        for ip in [
-            "10.0.0.1",
-            "172.16.5.4",
-            "192.168.1.1",
-            "169.254.1.1",
-            "100.64.0.1",
-            "fd00::1",
-            "fe80::1",
-            "::ffff:192.168.1.1",
-        ] {
-            assert_eq!(reach(ip.parse().unwrap()), Reach::Lan, "{ip}");
-        }
-        for ip in ["8.8.8.8", "100.128.0.1", "2606:4700::1111"] {
-            assert_eq!(reach(ip.parse().unwrap()), Reach::Public, "{ip}");
-        }
     }
 
     #[test]

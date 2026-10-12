@@ -38,7 +38,6 @@ describe('Sign in with Google', () => {
 		answer(() =>
 			Promise.resolve({
 				email: 'me@gmail.com',
-				password: '',
 				passwordRef: 'dav:new',
 				hasCalendars: true,
 				hasContacts: true
