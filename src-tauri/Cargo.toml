@@ -69,7 +69,7 @@ calamine = "0.36"
 zip = "4.6"
 image = "0.25"
 base64 = "0.23"
-rust_xlsxwriter = "0.90"
+rust_xlsxwriter = "0.99"
 portable-pty = "0.8"
 # Editor windows reload a file when something else changes it: inotify on
 # Linux, FSEvents on macOS. See fs_tools/editor.rs.
