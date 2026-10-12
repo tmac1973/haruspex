@@ -12,6 +12,7 @@
 //! No proxy: the webview's `fetch` used none, and a ComfyUI on the LAN should
 //! not be reached through an outbound one.
 
+use crate::sync_util::LockExt;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
@@ -271,16 +272,12 @@ async fn cancellable_unlogged(call: ComfyCall) -> Result<Vec<u8>, ComfyError> {
     let task = tokio::spawn(async move { send(&call).await });
     if let Some(id) = &id {
         running()
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
+            .lock_or_recover()
             .insert(id.clone(), task.abort_handle());
     }
     let out = task.await;
     if let Some(id) = &id {
-        running()
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .remove(id);
+        running().lock_or_recover().remove(id);
     }
     match out {
         Ok(r) => r,
@@ -316,11 +313,7 @@ pub async fn comfy_bytes(call: ComfyCall) -> Result<Response, ComfyError> {
 /// Stop a call or close a socket. Unknown ids are ignored: it already ended.
 #[tauri::command]
 pub fn comfy_cancel(id: String) {
-    if let Some(h) = running()
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .remove(&id)
-    {
+    if let Some(h) = running().lock_or_recover().remove(&id) {
         h.abort();
     }
 }
@@ -414,10 +407,7 @@ pub async fn comfy_subscribe(
         let _ = channel.send(ComfySocketEvent::Closed);
         log_line(format!("progress socket to {where_} closed")).await;
     });
-    running()
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .insert(id, task.abort_handle());
+    running().lock_or_recover().insert(id, task.abort_handle());
     Ok(())
 }
 

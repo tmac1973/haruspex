@@ -397,7 +397,7 @@
 
 	function startPolling() {
 		stopPolling();
-		fetchLogs();
+		void fetchLogs();
 		pollInterval = setInterval(fetchLogs, 2000);
 	}
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { openInBrowser } from '#lib/utils/openInBrowser.ts';
 	import { onMount } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -14,7 +15,6 @@
 	import type { ShellContextResponse } from '#lib/ipc/gen/ShellContextResponse.ts';
 	import type { ShellSpawnResult } from '#lib/ipc/gen/ShellSpawnResult.ts';
 	import type { ShellSelection } from '#lib/ipc/gen/ShellSelection.ts';
-	import { urlForReport } from '#lib/utils/http.ts';
 
 	interface Props {
 		onReady?: (handle: TerminalHandle) => void;
@@ -155,9 +155,7 @@
 			new WebLinksAddon((event, uri) => {
 				if (!event.ctrlKey && !event.metaKey) return;
 				event.preventDefault();
-				invoke('open_url', { url: uri }).catch((e) =>
-					console.error('open_url failed:', urlForReport(uri), e)
-				);
+				void openInBrowser(uri);
 			})
 		);
 		serializeAddon = new SerializeAddon();

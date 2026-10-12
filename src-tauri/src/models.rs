@@ -1,3 +1,4 @@
+use crate::sync_util::LockExt;
 use futures_util::StreamExt;
 use log::info;
 use serde::Serialize;
@@ -902,7 +903,7 @@ pub struct ActiveDownload {
 
 impl Drop for ActiveDownload {
     fn drop(&mut self) {
-        *self.slot.lock().unwrap_or_else(|p| p.into_inner()) = None;
+        *self.slot.lock_or_recover() = None;
     }
 }
 
@@ -917,7 +918,7 @@ fn take_slot(
     slot: &Arc<std::sync::Mutex<Option<String>>>,
     key: &str,
 ) -> Result<ActiveDownload, String> {
-    let mut held = slot.lock().unwrap_or_else(|p| p.into_inner());
+    let mut held = slot.lock_or_recover();
     if let Some(other) = held.as_deref() {
         return Err(if other == key {
             "This model is already downloading.".to_string()
@@ -986,10 +987,7 @@ impl ModelManager {
 
     /// What is downloading now, for a screen opened after the download began.
     pub fn active_download(&self) -> Option<String> {
-        self.active
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone()
+        self.active.lock_or_recover().clone()
     }
 
     pub fn models_dir(&self) -> &Path {

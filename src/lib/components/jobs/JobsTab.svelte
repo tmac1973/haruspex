@@ -42,7 +42,7 @@
 
 	onMount(() => {
 		if (!isJobsLoaded()) {
-			loadJobs();
+			void loadJobs();
 		}
 		return () => setJobModelInView(null);
 	});

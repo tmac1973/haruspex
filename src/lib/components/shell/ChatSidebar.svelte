@@ -370,7 +370,7 @@
 		if (recallHistory(event)) return;
 		if (event.key === 'Enter' && !event.shiftKey) {
 			event.preventDefault();
-			handleSend();
+			void handleSend();
 		}
 		if (event.key === 'Escape' && submitting) {
 			event.preventDefault();

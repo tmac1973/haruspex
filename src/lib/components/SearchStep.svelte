@@ -159,7 +159,7 @@
 
 	function copyResult(stepId: string, text: string, event: MouseEvent) {
 		event.stopPropagation();
-		copyAction.copy(stepId, text);
+		void copyAction.copy(stepId, text);
 	}
 
 	// Upper bound on artifact HTML we'll inject into the DOM (srcdoc iframe or

@@ -65,8 +65,8 @@
 	}
 
 	onMount(() => {
-		refreshOutputDevices();
-		refreshInputDevices();
+		void refreshOutputDevices();
+		void refreshInputDevices();
 	});
 </script>
 

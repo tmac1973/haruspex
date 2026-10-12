@@ -153,7 +153,7 @@
 	// re-run itself forever.
 	$effect(() => {
 		const id = jobId;
-		untrack(() => loadIntoForm(id));
+		void untrack(() => loadIntoForm(id));
 	});
 
 	async function loadIntoForm(id: number | 'new') {

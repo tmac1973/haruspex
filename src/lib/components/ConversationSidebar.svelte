@@ -48,8 +48,8 @@
 
 	function confirmPendingDelete() {
 		if (!pendingDelete) return;
-		if (pendingDelete.kind === 'one') deleteConversation(pendingDelete.id);
-		else clearAllConversations();
+		if (pendingDelete.kind === 'one') void deleteConversation(pendingDelete.id);
+		else void clearAllConversations();
 		pendingDelete = null;
 	}
 
@@ -63,7 +63,7 @@
 
 	function finishRename() {
 		if (renamingId && renameText.trim()) {
-			renameConversation(renamingId, renameText.trim());
+			void renameConversation(renamingId, renameText.trim());
 		}
 		renamingId = null;
 	}

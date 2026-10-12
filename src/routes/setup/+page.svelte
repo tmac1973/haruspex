@@ -87,7 +87,7 @@
 
 	async function goToDownload() {
 		setStep('download');
-		startDownload();
+		void startDownload();
 	}
 
 	async function handleImport() {
@@ -99,14 +99,14 @@
 			const success = await importModel(selected as string);
 			if (success) {
 				setStep('test');
-				runTestQuery();
+				void runTestQuery();
 			}
 		}
 	}
 
 	function goToTest() {
 		setStep('test');
-		runTestQuery();
+		void runTestQuery();
 	}
 
 	// Escape hatch from the download step: abort the in-flight download the
@@ -119,7 +119,7 @@
 	}
 
 	function goToChat() {
-		goto('/');
+		void goto('/');
 	}
 
 	// Remote-inference setup state. A local mirror of the settings
@@ -157,7 +157,7 @@
 		updateInferenceBackend({ ...remoteConfig, mode: 'remote' });
 		enterRemoteMode(remoteConfig.remoteBaseUrl, remoteConfig.remoteModelId);
 		void fetchModelForDefault();
-		goto('/');
+		void goto('/');
 	}
 </script>
 

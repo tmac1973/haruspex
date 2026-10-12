@@ -155,7 +155,7 @@ export async function startDownload(): Promise<void> {
 	try {
 		await downloadModelWithProgress(selectedModel, (p) => (downloadProgress = p));
 		step = 'test';
-		runTestQuery();
+		void runTestQuery();
 	} catch (e) {
 		const msg = String(e);
 		if (msg.includes('cancelled')) {

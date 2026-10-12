@@ -168,7 +168,7 @@
 
 	function copyDebugLogForError() {
 		if (errorTurnId == null) return;
-		copyDebugLog.copy(() => {
+		void copyDebugLog.copy(() => {
 			const lines = getDebugLogsForTurn(errorTurnId!);
 			if (lines.length === 0) throw new Error('no debug logs for this turn');
 			return lines.join('\n');
@@ -287,7 +287,7 @@
 		if (recallHistory(e)) return;
 		if (e.key === 'Enter' && !e.shiftKey) {
 			e.preventDefault();
-			handleSend();
+			void handleSend();
 		}
 		if (e.key === 'Escape' && (isGenerating || queuedForStartup)) {
 			cancelGeneration();

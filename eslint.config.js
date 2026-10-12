@@ -84,6 +84,24 @@ export default ts.config(
 		}
 	},
 	{
+		// A promise nobody awaits, voids or catches turns a failure into an
+		// unhandled rejection: say `void` when the callee handles its own
+		// errors, `.catch` when it doesn't. Needs type information, so only
+		// this rule runs typed.
+		files: ['src/**/*.ts', 'src/**/*.svelte'],
+		ignores: ['**/*.test.ts'],
+		languageOptions: {
+			parserOptions: {
+				projectService: true,
+				extraFileExtensions: ['.svelte'],
+				tsconfigRootDir: import.meta.dirname
+			}
+		},
+		rules: {
+			'@typescript-eslint/no-floating-promises': 'error'
+		}
+	},
+	{
 		ignores: ['build/', '.svelte-kit/', 'dist/', 'node_modules/', 'src-tauri/', 'src/lib/ipc/gen/']
 	}
 );

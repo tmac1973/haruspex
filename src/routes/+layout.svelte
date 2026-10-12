@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { openInBrowser } from '#lib/utils/openInBrowser.ts';
 	import { agentPowershell } from '#lib/code/powershell.ts';
 	import favicon from '#lib/assets/favicon.svg';
 	import ServerStatusBadge from '#lib/components/ServerStatusBadge.svelte';
@@ -18,7 +19,6 @@
 	import SettingsPanel from '#lib/components/settings/SettingsPanel.svelte';
 	import StartupNoticeDialog from '#lib/components/StartupNoticeDialog.svelte';
 	import Toasts from '#lib/components/Toasts.svelte';
-	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import {
 		isLogViewerOpen,
 		openLogViewer,
@@ -84,7 +84,6 @@
 		listenForMcpToolChanges,
 		startConfiguredMcpServers
 	} from '#lib/stores/mcpServers.svelte.ts';
-	import { urlForReport } from '#lib/utils/http.ts';
 
 	let { children } = $props();
 	// Log Viewer visibility lives in the logViewer store (not local state)
@@ -163,10 +162,7 @@
 		const href = anchor.getAttribute('href');
 		if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
 			e.preventDefault();
-			invoke('open_url', { url: href }).catch((err) => {
-				console.error('open_url failed:', urlForReport(href), err);
-				showToast("Couldn't open link in your browser", { kind: 'error' });
-			});
+			void openInBrowser(href);
 		} else if (href && /^[a-z][a-z0-9+.-]*:/i.test(href)) {
 			// Any other scheme (`haruspex-img:`, `file:`, `asset:`…) is one the
 			// browser cannot open and the webview would navigate to, leaving the
@@ -281,8 +277,8 @@
 		// window — including detached shells — before the bootstrap early-return.
 		void reclaimOwnWindowSlots();
 		if (detached) return;
-		initServerStore();
-		initChatStore();
+		void initServerStore();
+		void initChatStore();
 		// Inline email passwords move to the system keychain where there is
 		// one. Idempotent, so it runs at every start.
 		void migrateEmailSecrets();
@@ -321,7 +317,7 @@
 		}
 
 		if (version) {
-			checkForUpdate(version).then((info) => {
+			void checkForUpdate(version).then((info) => {
 				update = info;
 			});
 		}
@@ -341,7 +337,7 @@
 			} else {
 				const hasModel = await invoke<boolean>('has_any_model');
 				if (!hasModel && !page.url.pathname.startsWith('/setup')) {
-					goto('/setup');
+					void goto('/setup');
 				} else if (hasModel && !page.url.pathname.startsWith('/setup')) {
 					// Auto-start server with available model. Prefer the
 					// model the user last activated (persisted in settings);
@@ -352,7 +348,7 @@
 					});
 					if (modelPath) {
 						setActiveLocalModel(modelPath);
-						startServer(modelPath, getSettings().contextSize);
+						void startServer(modelPath, getSettings().contextSize);
 					}
 				}
 			}
@@ -393,7 +389,7 @@
 		} else if (tab === 'code') {
 			void getActiveCodeSession()?.send(text);
 		} else if (tab === 'chat') {
-			sendMessage(text);
+			void sendMessage(text);
 		}
 		// 'jobs' has no chat input — silently drop.
 	}
@@ -428,7 +424,7 @@
 		event.preventDefault();
 		if (event.repeat) return;
 		if (hotkeyTab() === 'shell') getActiveShellSession()?.setSidebarOpen(true);
-		if (!isVoiceCaptureActive()) startVoiceCapture();
+		if (!isVoiceCaptureActive()) void startVoiceCapture();
 	}
 
 	// F3: read the last assistant message aloud.
@@ -436,7 +432,7 @@
 		event.preventDefault();
 		if (event.repeat) return;
 		const text = getLastAssistantText();
-		if (text) toggleTts(text);
+		if (text) void toggleTts(text).catch((e) => console.warn('Text-to-speech failed:', e));
 	}
 
 	// F4 (Shell tab only): dump the last N captured commands + output to the

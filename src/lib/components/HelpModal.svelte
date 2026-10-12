@@ -6,8 +6,8 @@
 	 * "?" button; closes on Esc, F1 again, the × button, or backdrop click
 	 * (the last three via the shared Modal).
 	 */
+	import { openInBrowser } from '#lib/utils/openInBrowser.ts';
 	import Modal from '#lib/components/Modal.svelte';
-	import { invoke } from '@tauri-apps/api/core';
 	import { SHORTCUTS } from '#lib/shortcuts.ts';
 	import { GUIDE_URL } from '#lib/guide/prompt.ts';
 
@@ -32,7 +32,7 @@
 			type="button"
 			class="link"
 			title={GUIDE_URL}
-			onclick={() => void invoke('open_url', { url: GUIDE_URL }).catch(() => {})}>user guide</button
+			onclick={() => void openInBrowser(GUIDE_URL)}>user guide</button
 		> explains every feature and setting. You can also ask the assistant about Haruspex.
 	</p>
 	{#each SHORTCUTS as section (section.title)}

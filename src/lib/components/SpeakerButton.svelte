@@ -11,7 +11,7 @@
 	const initializing = $derived(isTtsInitializing());
 
 	function onClick() {
-		toggleTts(text);
+		void toggleTts(text).catch((e) => console.warn('Text-to-speech failed:', e));
 	}
 </script>
 

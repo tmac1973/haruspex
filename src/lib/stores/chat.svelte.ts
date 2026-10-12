@@ -685,7 +685,7 @@ export function createConversation(): string {
 	errorTurnId = null;
 	lastTurnFailed = false;
 	resetContextUsage();
-	dbCreateConversation(id, 'New chat');
+	void dbCreateConversation(id, 'New chat');
 	return id;
 }
 
@@ -959,7 +959,7 @@ function finalizeUserTurn(
 	if (!conversation.messages.some((m) => m.role === 'user')) {
 		const title = generateTitle(content || 'Image');
 		conversation.title = title;
-		dbRenameConversation(conversation.id, title);
+		void dbRenameConversation(conversation.id, title);
 	}
 	const text = skill ? renderSlashMessage(skill, content.trim()) : content.trim();
 	// Plain string when there are no images (the common case); otherwise a
@@ -975,7 +975,7 @@ function finalizeUserTurn(
 	};
 	conversation.messages.push(userMessage);
 	conversation.updatedAt = Date.now();
-	dbSaveMessage(conversation.id, userMessage);
+	void dbSaveMessage(conversation.id, userMessage);
 }
 
 /**
@@ -1093,7 +1093,7 @@ function commitMessage(
 	// step.artifacts[].dataUrl (base64) so the row can get sizeable.
 	// Acceptable: image artifacts are the whole point of saving them.
 	const stepsJson = stepsForThisTurn.length > 0 ? JSON.stringify(stepsForThisTurn) : null;
-	dbSaveMessage(conversation.id, assistantMsg, stepsJson);
+	void dbSaveMessage(conversation.id, assistantMsg, stepsJson);
 	conversation.searchSteps = [];
 }
 
@@ -1384,7 +1384,7 @@ export function addLocalNote(text: string): void {
 	const note: ChatMessage = { role: 'assistant', content: text };
 	conversation.messages.push(note);
 	conversation.updatedAt = Date.now();
-	dbSaveMessage(conversation.id, note);
+	void dbSaveMessage(conversation.id, note);
 }
 
 /**
