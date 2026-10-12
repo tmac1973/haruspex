@@ -96,7 +96,8 @@ npm run e2e:app         # start tauri-driver and run e2e/app/specs/*.e2e.mjs
 ```
 
 - **Isolated from your Haruspex.** The build uses the identifier
-  `com.haruspex.app.e2e` (`e2e/app/tauri.e2e.conf.json`), so its data,
+  `com.haruspex.app.e2e` (`src-tauri/target-e2e/tauri.e2e.conf.json`, which
+  `e2e/app/build.mjs` writes from `tauri.conf.json`), so its data,
   settings and WebView storage live in their own folders. Those folders are
   wiped before every spec file. It is built into `src-tauri/target-e2e`, so
   swapping in stub sidecars never touches the `target/` your dev app runs
@@ -117,7 +118,10 @@ npm run e2e:app         # start tauri-driver and run e2e/app/specs/*.e2e.mjs
   - Settings → Image → Generate a test image, against the fake ComfyUI in
     `e2e/fakes/comfyui.mjs`;
   - phase 13's guarantee: kill the app outright, and the model server goes
-    within 2 s.
+    within 2 s;
+  - an audit job with two runs, against a model that finds nothing: each
+    sample step records its model calls, read back through the app's own
+    database commands.
 - **What you need:**
   - **Linux:** `tauri-driver` (`cargo install tauri-driver --locked`) and
     `WebKitWebDriver`, which comes with webkit2gtk (on Ubuntu, the
