@@ -29,6 +29,7 @@
 		type TrustedHost
 	} from '#lib/owner/service.ts';
 	import { errMessage } from '#lib/utils/error.ts';
+	import WhoCanConnect from '#lib/components/settings/WhoCanConnect.svelte';
 
 	const SCOPE_LABELS: Record<Scope, { label: string; title: string }> = {
 		read: { label: 'Read', title: 'List and read Code sessions, and follow them as they run.' },
@@ -73,7 +74,6 @@
 	let error = $state<string | null>(null);
 	let busy = $state(false);
 
-	let newHost = $state('');
 	let adding = $state(false);
 	let newName = $state('');
 	let newScopes = $state<Scope[]>([...ALL_SCOPES]);
@@ -142,25 +142,9 @@
 		void apply();
 	}
 
-	function addHost(): void {
-		const host = newHost.trim();
-		if (!host || trustedHosts.includes(host)) return;
-		trustedHosts = [...trustedHosts, host];
-		newHost = '';
+	function setHosts(next: string[]): void {
+		trustedHosts = next;
 		void apply();
-	}
-
-	function removeHost(host: string): void {
-		trustedHosts = trustedHosts.filter((h) => h !== host);
-		void apply();
-	}
-
-	function where(host: string): { text: string; ok: boolean } {
-		const hit = found.find((f) => f.name === host);
-		if (!hit) return { text: '…', ok: true };
-		return hit.addresses.length
-			? { text: hit.addresses.join(', '), ok: true }
-			: { text: 'not found', ok: false };
 	}
 
 	async function show(made: CreatedOwnerClient): Promise<void> {
@@ -236,70 +220,29 @@
 	{/if}
 
 	<div class="block">
-		<span class="label">Who can connect</span>
-		<div class="segmented">
-			{#each MODES as m (m.value)}
-				<button class:active={mode === m.value} title={m.title} onclick={() => setMode(m.value)}
-					>{m.label}</button
-				>
-			{/each}
-		</div>
-
-		{#if mode === 'trusted'}
-			<ul class="list">
-				{#each trustedHosts as host (host)}
-					{@const at = where(host)}
-					<li>
-						<span class="name">{host}</span>
-						<span
-							class="meta"
-							class:bad={!at.ok}
-							title={at.ok
-								? 'Where this name points on your network right now.'
-								: 'Nothing on your network answers to this name. Check the spelling, or use its IP address.'}
-							>{at.text}</span
-						>
-						<button
-							class="icon"
-							title="Stop trusting this computer"
-							aria-label="Remove {host}"
-							onclick={() => removeHost(host)}>×</button
-						>
-					</li>
-				{/each}
-			</ul>
-			<form
-				class="row"
-				onsubmit={(e) => {
-					e.preventDefault();
-					addHost();
-				}}
-			>
-				<input
-					class="grow"
-					aria-label="Computer name or IP address"
-					placeholder="Computer name or IP address"
-					title="The other computer's name on your network (like laptop or laptop.local) or its IP address."
-					bind:value={newHost}
-				/>
-				<button class="btn btn-small" type="submit" disabled={!newHost.trim()}>Add</button>
-			</form>
-		{/if}
-
-		{#if mode !== 'tokens' && pageUrl}
-			<div class="row open">
-				<span
-					class="label inline"
-					title="Open this in a browser on a computer allowed above. No token or link needed.{status?.hostname
-						? ` ${status.hostname}'s name may work in place of the address.`
-						: ''} {CERT_HINT}">Open on your other computer</span
-				>
-				<code class="value">{pageUrl}</code>
-				<button class="btn btn-small" onclick={() => copy(pageUrl!, 'page')}
-					>{copied === 'page' ? 'Copied' : 'Copy'}</button
-				>
-			</div>
-		{/if}
+		<WhoCanConnect
+			modes={MODES}
+			{mode}
+			hosts={trustedHosts}
+			{found}
+			onmode={setMode}
+			onhosts={setHosts}
+		>
+			{#if mode !== 'tokens' && pageUrl}
+				<div class="row open">
+					<span
+						class="label inline"
+						title="Open this in a browser on a computer allowed above. No token or link needed.{status?.hostname
+							? ` ${status.hostname}'s name may work in place of the address.`
+							: ''} {CERT_HINT}">Open on your other computer</span
+					>
+					<code class="value">{pageUrl}</code>
+					<button class="btn btn-small" onclick={() => copy(pageUrl!, 'page')}
+						>{copied === 'page' ? 'Copied' : 'Copy'}</button
+					>
+				</div>
+			{/if}
+		</WhoCanConnect>
 	</div>
 
 	<div class="block">
@@ -524,17 +467,6 @@
 		margin-top: 12px;
 	}
 
-	.grow {
-		flex: 1;
-		min-width: 12rem;
-		padding: 8px 12px;
-		border: 1px solid var(--border-strong);
-		border-radius: 7px;
-		background: var(--bg-input);
-		color: var(--text-primary);
-		font-size: 0.9rem;
-	}
-
 	.value {
 		flex: 1;
 		min-width: 12rem;
@@ -566,18 +498,6 @@
 		flex: 1;
 		color: var(--text-secondary);
 		font-size: 0.8rem;
-	}
-
-	.meta.bad {
-		color: var(--error-text);
-	}
-
-	.icon {
-		border: none;
-		background: none;
-		color: var(--text-secondary);
-		font-size: 1.1rem;
-		cursor: pointer;
 	}
 
 	.made {

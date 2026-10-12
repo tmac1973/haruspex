@@ -27,6 +27,8 @@ function settings(overrides: Record<string, unknown> = {}) {
 		remoteAccessEnabled: true,
 		remoteAccessPort: 8787,
 		remoteAccessToken: 'a-token',
+		remoteAccessMode: 'tokens',
+		remoteAccessTrustedHosts: [],
 		...overrides
 	};
 }
@@ -58,7 +60,14 @@ describe('turning remote access on and off', () => {
 		// The other order would drop the first prompt through the door.
 		expect(mocks.startRemoteDriver).toHaveBeenCalled();
 		expect(invocations('remote_start')).toEqual([
-			{ config: { port: 8787, token: 'a-token', bindAll: true } }
+			{
+				config: {
+					port: 8787,
+					token: 'a-token',
+					bindAll: true,
+					access: { mode: 'tokens', trustedHosts: [], extraHost: null }
+				}
+			}
 		]);
 	});
 
@@ -75,6 +84,18 @@ describe('turning remote access on and off', () => {
 		expect(mocks.updateSettings).toHaveBeenCalledWith({
 			remoteAccessToken: '',
 			remoteAccessTokenSaved: true
+		});
+	});
+
+	it('tells the server who may chat without the link', async () => {
+		mocks.getSettings.mockReturnValue(
+			settings({ remoteAccessMode: 'trusted', remoteAccessTrustedHosts: ['laptop'] })
+		);
+		await syncRemoteServer();
+		expect(invocations('remote_start')[0].config.access).toEqual({
+			mode: 'trusted',
+			trustedHosts: ['laptop'],
+			extraHost: null
 		});
 	});
 

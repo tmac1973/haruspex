@@ -13,6 +13,7 @@ use std::sync::Arc;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::owner::trust::TrustedHost;
 use crate::tts::TtsEngine;
 
 use super::link::{self, QrMatrix};
@@ -86,6 +87,8 @@ pub async fn remote_start(
     state: State<'_, RemoteServer>,
     config: RemoteConfig,
 ) -> Result<RemoteStatus, String> {
+    // Who can connect changes in place: no restart, nobody dropped.
+    state.trust().set(config.access.clone());
     if state.matches(&config) {
         return Ok(state.status());
     }
@@ -99,7 +102,7 @@ pub async fn remote_start(
         fingerprint: identity.fingerprint,
     };
     let bridge = Arc::new(AppBridge(app));
-    let running = server::start(bridge, state.relay(), config, tls).await?;
+    let running = server::start(bridge, state.relay(), state.trust(), config, tls).await?;
     state.install(running);
     Ok(state.status())
 }
@@ -128,6 +131,15 @@ pub async fn remote_lan_address() -> Result<Option<String>, String> {
 #[tauri::command]
 pub async fn remote_link_qr(text: String) -> Result<QrMatrix, String> {
     link::qr_matrix(&text)
+}
+
+/// The computers Settings → Guest chat lets in without the link, and where
+/// each was found.
+#[tauri::command]
+pub async fn remote_trusted_hosts(
+    state: State<'_, RemoteServer>,
+) -> Result<Vec<TrustedHost>, String> {
+    Ok(state.trust().resolve_all().await)
 }
 
 #[tauri::command]

@@ -301,6 +301,7 @@ pub fn run() {
             remote::remote_start,
             remote::remote_stop,
             remote::remote_status,
+            remote::remote_trusted_hosts,
             remote::remote_lan_address,
             remote::remote_link_qr,
             remote::remote_sessions,

@@ -9,11 +9,16 @@
 
 import { invoke } from '@tauri-apps/api/core';
 
+import type { OwnerAccess } from '#lib/ipc/gen/OwnerAccess.ts';
+import type { TrustedHost } from '#lib/ipc/gen/TrustedHost.ts';
+
 export interface RemoteConfig {
 	port: number;
 	token: string;
 	/** Bind `0.0.0.0` so the LAN can reach it. False keeps it on loopback. */
 	bindAll: boolean;
+	/** Who may chat without the link. Changes in place, without a restart. */
+	access: OwnerAccess;
 }
 
 export interface RemoteStatus {
@@ -35,6 +40,11 @@ export async function stopRemoteServer(): Promise<RemoteStatus> {
 
 export async function getRemoteStatus(): Promise<RemoteStatus> {
 	return invoke<RemoteStatus>('remote_status');
+}
+
+/** The computers let in without the link, and where each was found (none: not found). */
+export async function remoteTrustedHosts(): Promise<TrustedHost[]> {
+	return invoke<TrustedHost[]>('remote_trusted_hosts');
 }
 
 export interface RemoteSession {
