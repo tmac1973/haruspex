@@ -21,7 +21,7 @@ When the Code tab needs a command run in a terminal (a `sudo`, a password prompt
 
 - **F4**, or the `>_` button by the input box, sends your recent commands and their output to the assistant with no question.
 - Anything you type is sent with your last 3 completed commands (command, output, exit code, folder). Change the number in Settings → Shell → Recent shell commands attached to each chat message; `0` sends only your question.
-- The camera button captures a window and sends it.
+- The camera button sends the screen, a window or a region.
 
 Long output is cut in the middle before it is sent (Settings → Shell → Max output bytes per captured command, 8 KiB by default). By default the last 10 lines of your shell history file are also sent; turn that off in Settings → Shell → Include your shell history file in prompts.
 

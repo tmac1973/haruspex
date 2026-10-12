@@ -21,7 +21,7 @@
 	import { InputHistory, placeCaret, sentHistory } from '#lib/inputHistory.ts';
 	import { typedText } from '#lib/skills/content.ts';
 	import { errMessage } from '#lib/utils/error.ts';
-	import WindowCaptureButton from '#lib/components/WindowCaptureButton.svelte';
+	import ScreenCaptureButton from '#lib/components/ScreenCaptureButton.svelte';
 	import { captureMessage } from '#lib/shell/captureWindow.ts';
 
 	const SHELL_PREAMBLE_MARKER = 'Recent shell activity (oldest first):';
@@ -632,11 +632,11 @@
 					<line x1="12" y1="19" x2="20" y2="19"></line>
 				</svg>
 			</button>
-			<WindowCaptureButton
+			<ScreenCaptureButton
 				onCapture={sendCapture}
 				disabled={submitting}
-				title="Capture a window and send it to the assistant. With text in the box, that is sent with it."
-				label="Capture a window and send it"
+				title="Send a screenshot to the assistant. With text in the box, that is sent with it."
+				label="Send a screenshot"
 			/>
 			<MicButton onTranscription={(text) => doSend(text)} disabled={submitting} />
 			{#if submitting}

@@ -118,7 +118,8 @@ describe('CodeComposer camera button', () => {
 		);
 		const session = fakeSession({ busy: false });
 		render(CodeComposer, { session, slashHost: host });
-		await fireEvent.click(screen.getByRole('button', { name: 'Capture a window and attach it' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Attach a screenshot' }));
+		await fireEvent.click(screen.getByRole('menuitem', { name: 'Window…' }));
 		await waitFor(() =>
 			expect(screen.getByAltText('attachment').getAttribute('src')).toBe(
 				'data:image/jpeg;base64,AA'
@@ -141,7 +142,8 @@ describe('CodeComposer camera button', () => {
 				: { dataUrl: 'data:x' }
 		);
 		render(CodeComposer, { session: fakeSession({ busy: false }), slashHost: host });
-		await fireEvent.click(screen.getByRole('button', { name: 'Capture a window and attach it' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Attach a screenshot' }));
+		await fireEvent.click(screen.getByRole('menuitem', { name: 'Window…' }));
 		await fireEvent.click(await screen.findByRole('option', { name: 'Dark Times — darktimes' }));
 		expect(tauri.invoke).toHaveBeenCalledWith('capture_window', { id: 7 });
 		await waitFor(() => expect(screen.getByAltText('attachment')).toBeTruthy());

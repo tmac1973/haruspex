@@ -9,7 +9,7 @@
 	import { onMount, tick, untrack } from 'svelte';
 	import MicButton from '#lib/components/MicButton.svelte';
 	import SlashMenu from '#lib/components/SlashMenu.svelte';
-	import WindowCaptureButton from '#lib/components/WindowCaptureButton.svelte';
+	import ScreenCaptureButton from '#lib/components/ScreenCaptureButton.svelte';
 	import { messageText } from '#lib/api.ts';
 	import { InputHistory, placeCaret, sentHistory } from '#lib/inputHistory.ts';
 	import { isWatchNotification } from '#lib/shell/backgroundWatch.ts';
@@ -207,11 +207,7 @@
 				? 'Steer the agent… (Enter queues it for its next step)'
 				: 'Ask for a change… (Enter to send, / for commands)'}></textarea>
 	{#if !blocked}
-		<WindowCaptureButton
-			onCapture={(url) => addUrls([url])}
-			title="Capture a window and attach it to your next message"
-			label="Capture a window and attach it"
-		/>
+		<ScreenCaptureButton onCapture={(url) => addUrls([url])} />
 		<MicButton onTranscription={(t) => send(t)} />
 	{/if}
 	{#if busy}
