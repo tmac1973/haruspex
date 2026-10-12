@@ -11,7 +11,7 @@
  * the exact discipline that catches a confidently-wrong hallucinated finding).
  */
 
-import type { FindingCluster } from './auditCluster';
+import type { FindingCluster } from '#lib/agent/jobs/types/audit/auditCluster.ts';
 import type { AuditVerdict } from '#lib/agent/tools/audit.ts';
 
 export interface VerifiedCluster extends FindingCluster {

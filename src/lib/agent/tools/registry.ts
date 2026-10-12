@@ -1,7 +1,7 @@
 import type { ToolDefinition } from '#lib/api.ts';
-import type { ToolRegistration, ToolExecOutput, ToolContext } from './types';
-import { toolResult, toolError } from './types';
-import { coerceArgsToSchema } from './coerce';
+import type { ToolRegistration, ToolExecOutput, ToolContext } from '#lib/agent/tools/types.ts';
+import { toolResult, toolError } from '#lib/agent/tools/types.ts';
+import { coerceArgsToSchema } from '#lib/agent/tools/coerce.ts';
 import {
 	hasEnabledEmailAccount,
 	hasSendableEmailAccount,
@@ -11,7 +11,7 @@ import {
 } from '#lib/stores/settings.ts';
 // The predicate, not the tool module — mcp.ts registers THROUGH this file, so
 // importing it here would be a cycle. Same reason as memoryActive() below.
-import { isMcpToolEnabled } from './mcp-names';
+import { isMcpToolEnabled } from '#lib/agent/tools/mcp-names.ts';
 // The predicate, not the tool module: memoryWrite.ts registers THROUGH this
 // file, so importing it here would be a cycle.
 import { memoryActive } from '#lib/stores/memory.svelte.ts';
@@ -22,7 +22,7 @@ import {
 	REMOTE_HANDOFF_REFUSAL,
 	isCodeWriteTool,
 	type DescriptionOverride
-} from './codeTabProfile';
+} from '#lib/agent/tools/codeTabProfile.ts';
 import { shellPlatformSupported } from '#lib/shell/platformSupport.ts';
 
 const tools = new Map<string, ToolRegistration>();

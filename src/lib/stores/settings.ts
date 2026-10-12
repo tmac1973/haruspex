@@ -14,7 +14,7 @@ import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
 import type { EmailProvider } from '#lib/ipc/gen/EmailProvider.ts';
 import type { ProxyConfig } from '#lib/ipc/gen/ProxyConfig.ts';
 import type { SandboxNetAccess } from '#lib/ipc/gen/SandboxNetAccess.ts';
-import { rememberedApiKey } from './apiKeyMemory';
+import { rememberedApiKey } from '#lib/stores/apiKeyMemory.ts';
 import type { TlsMode } from '#lib/ipc/gen/TlsMode.ts';
 import type { ShellSelection } from '#lib/ipc/gen/ShellSelection.ts';
 

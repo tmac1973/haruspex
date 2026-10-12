@@ -29,8 +29,16 @@ import {
 import { memoryActive, refreshMemoryCount } from '#lib/stores/memory.svelte.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import { typedText } from '#lib/skills/content.ts';
-import { extractionSystemPrompt, extractionUserMessage } from './extractionPrompt';
-import { closeMemories, reviewCandidates, type Decision, type ReviewItem } from './dedupe';
+import {
+	extractionSystemPrompt,
+	extractionUserMessage
+} from '#lib/agent/memory/extractionPrompt.ts';
+import {
+	closeMemories,
+	reviewCandidates,
+	type Decision,
+	type ReviewItem
+} from '#lib/agent/memory/dedupe.ts';
 
 /**
  * Two exchanges. Below this there is rarely a durable fact, and an extraction

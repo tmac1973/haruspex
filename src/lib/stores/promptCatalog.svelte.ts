@@ -5,7 +5,7 @@
  */
 
 import type { PromptScope } from '#lib/agent/jobs/promptCatalog.ts';
-import { dbMutate, dbQuery } from './dbCall';
+import { dbMutate, dbQuery } from '#lib/stores/dbCall.ts';
 
 export interface SavedPrompt {
 	id: number;

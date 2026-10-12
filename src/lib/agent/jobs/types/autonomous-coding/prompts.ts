@@ -1,8 +1,8 @@
 /** Autonomous-coding prompts: preflight, decompose, the loop, finalize. */
 
 import type { BoundaryRefusal } from '#lib/shell/boundary.ts';
-import { VERIFICATION_COMMAND_HEADING } from './planParse';
-import { interviewResearchRules, writeResearchRules } from '../webResearch';
+import { VERIFICATION_COMMAND_HEADING } from '#lib/agent/jobs/types/autonomous-coding/planParse.ts';
+import { interviewResearchRules, writeResearchRules } from '#lib/agent/jobs/types/webResearch.ts';
 
 /**
  * Shell rules every stage that can call `run_command` carries.

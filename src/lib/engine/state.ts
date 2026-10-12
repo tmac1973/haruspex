@@ -6,7 +6,7 @@
 import type { SearchStep } from '#lib/agent/loop.ts';
 import { editDiffFromStep } from '#lib/code/diff.ts';
 import type { CodeSession } from '#lib/stores/code.svelte.ts';
-import type { SessionMeta, SessionState, StepState } from './types.ts';
+import type { SessionMeta, SessionState, StepState } from '#lib/engine/types.ts';
 
 /** Plain data, whatever Svelte's proxies make of it. */
 const plain = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;

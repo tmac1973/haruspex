@@ -14,8 +14,8 @@
  * Per the CI grep guard, nothing under `tools/` may import `stores/chat`.
  */
 
-import { registerTool } from './registry';
-import { toolResult } from './types';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { toolResult } from '#lib/agent/tools/types.ts';
 
 export const SUBMIT_MEMORIES_TOOL = 'submit_memories';
 

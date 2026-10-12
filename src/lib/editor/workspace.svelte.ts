@@ -5,7 +5,7 @@
  * so they can be tested without a window.
  */
 
-import { EditorDocument, type EditorIO } from './document.svelte.ts';
+import { EditorDocument, type EditorIO } from '#lib/editor/document.svelte.ts';
 
 export type CloseQuestion = { kind: 'tab'; relPath: string } | { kind: 'window' } | null;
 

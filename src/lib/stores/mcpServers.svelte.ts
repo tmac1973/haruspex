@@ -14,7 +14,6 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { IPC } from '#lib/ipc/commands.ts';
 import type { SidecarStatus } from '#lib/ipc/gen/SidecarStatus.ts';
 import type { McpConnectionInfo } from '#lib/ipc/gen/McpConnectionInfo.ts';
 import type { McpToolDescriptor } from '#lib/ipc/gen/McpToolDescriptor.ts';
@@ -23,9 +22,9 @@ import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import type { CatalogEntry } from '#lib/ipc/gen/CatalogEntry.ts';
 import { registerMcpTools, setToolFailureHook, unregisterMcpServer } from '#lib/agent/tools/mcp.ts';
 import { mcpDefaultTools } from '#lib/agent/tools/mcp-names.ts';
-import { forgetServerApprovals } from './mcpApproval.svelte';
-import { getSettings, startableMcpServers } from './settings';
-import { forgetMcpSecrets } from './mcpSecrets';
+import { forgetServerApprovals } from '#lib/stores/mcpApproval.svelte.ts';
+import { getSettings, startableMcpServers } from '#lib/stores/settings.ts';
+import { forgetMcpSecrets } from '#lib/stores/mcpSecrets.ts';
 
 /** Everything the UI knows about one server right now. */
 export interface McpRuntimeState {
@@ -102,7 +101,7 @@ export async function startMcpServer(
 			// threading an empty one through the stdio machinery. The proxy goes
 			// with it: a user who configured one must not find that MCP quietly
 			// connects direct.
-			await invoke(IPC.mcp_connect_remote_server, {
+			await invoke('mcp_connect_remote_server', {
 				config,
 				proxy: getSettings().proxy
 			});
@@ -112,15 +111,15 @@ export async function startMcpServer(
 			// makes on its own account. Best effort — see child_env.rs.
 			// Rust builds the spawn configuration itself, stored secrets
 			// included, so they never come back to the webview.
-			await invoke(IPC.mcp_start_server, {
+			await invoke('mcp_start_server', {
 				config,
 				proxy: getSettings().proxy
 			});
 		}
 
 		const [connection, tools] = await Promise.all([
-			invoke<McpConnectionInfo | null>(IPC.mcp_connection_info, { id: config.id }),
-			invoke<McpToolDescriptor[]>(IPC.mcp_list_tools, { id: config.id })
+			invoke<McpConnectionInfo | null>('mcp_connection_info', { id: config.id }),
+			invoke<McpToolDescriptor[]>('mcp_list_tools', { id: config.id })
 		]);
 
 		registerMcpTools(config.id, config.label, tools, catalogEntry?.defaultTools ?? []);
@@ -159,7 +158,7 @@ export async function startMcpServer(
  */
 async function isAlreadyRunning(serverId: string): Promise<boolean> {
 	try {
-		const status = await invoke<SidecarStatus>(IPC.mcp_server_status, { id: serverId });
+		const status = await invoke<SidecarStatus>('mcp_server_status', { id: serverId });
 		return status.type === 'Ready';
 	} catch {
 		return false;
@@ -176,8 +175,8 @@ async function isAlreadyRunning(serverId: string): Promise<boolean> {
  */
 async function adopt(config: McpServerConfig, catalogEntry: CatalogEntry | null): Promise<void> {
 	const [connection, tools] = await Promise.all([
-		invoke<McpConnectionInfo | null>(IPC.mcp_connection_info, { id: config.id }),
-		invoke<McpToolDescriptor[]>(IPC.mcp_list_tools, { id: config.id })
+		invoke<McpConnectionInfo | null>('mcp_connection_info', { id: config.id }),
+		invoke<McpToolDescriptor[]>('mcp_list_tools', { id: config.id })
 	]);
 	registerMcpTools(config.id, config.label, tools, catalogEntry?.defaultTools ?? []);
 	patch(config.id, {
@@ -201,7 +200,7 @@ async function adopt(config: McpServerConfig, catalogEntry: CatalogEntry | null)
 export async function probeCompanion(config: McpServerConfig): Promise<CompanionStatus> {
 	const entryId = config.source.kind === 'catalog' ? config.source.entryId : null;
 	try {
-		const companion = await invoke<CompanionStatus>(IPC.mcp_probe_companion, {
+		const companion = await invoke<CompanionStatus>('mcp_probe_companion', {
 			id: config.id,
 			entryId
 		});
@@ -219,7 +218,7 @@ export async function stopMcpServer(serverId: string): Promise<void> {
 	patch(serverId, { busy: true });
 	unregisterMcpServer(serverId);
 	try {
-		await invoke(IPC.mcp_stop_server, { id: serverId });
+		await invoke('mcp_stop_server', { id: serverId });
 		patch(serverId, {
 			status: STOPPED,
 			connection: null,
@@ -247,7 +246,7 @@ export async function removeMcpServer(serverId: string): Promise<void> {
 	forgetServerApprovals(serverId);
 	const config = configs[serverId];
 	try {
-		await invoke(IPC.mcp_uninstall_server, { serverId });
+		await invoke('mcp_uninstall_server', { serverId });
 	} catch (e) {
 		patch(serverId, { error: String(e) });
 		return;
@@ -260,7 +259,7 @@ export async function removeMcpServer(serverId: string): Promise<void> {
 /** The tail of a server's stderr, for the inline diagnostic in an error row. */
 export async function mcpServerLogs(serverId: string): Promise<string[]> {
 	try {
-		return await invoke<string[]>(IPC.mcp_server_logs, { id: serverId });
+		return await invoke<string[]>('mcp_server_logs', { id: serverId });
 	} catch {
 		return [];
 	}
@@ -338,7 +337,7 @@ export async function refreshMcpTools(serverId: string): Promise<void> {
 	// resurrect tools for a server that is gone.
 	if (!config) return;
 	try {
-		const tools = await invoke<McpToolDescriptor[]>(IPC.mcp_list_tools, { id: serverId });
+		const tools = await invoke<McpToolDescriptor[]>('mcp_list_tools', { id: serverId });
 		registerMcpTools(serverId, config.label, tools, mcpDefaultTools(serverId));
 		patch(serverId, { tools });
 	} catch {
@@ -376,7 +375,7 @@ export async function startConfiguredMcpServers(): Promise<void> {
 	if (configs.length === 0) return;
 	let catalog: CatalogEntry[] = [];
 	try {
-		catalog = await invoke<CatalogEntry[]>(IPC.mcp_catalog);
+		catalog = await invoke<CatalogEntry[]>('mcp_catalog');
 	} catch {
 		// Without the catalog a catalog server has no defaultTools, so every one
 		// of its tools would resolve as disabled. Better to start nothing than

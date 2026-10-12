@@ -16,8 +16,8 @@
  * outline turn pins it in via `toolAllowlist`.
  */
 
-import { registerTool } from './registry';
-import { toolResult } from './types';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { toolResult } from '#lib/agent/tools/types.ts';
 
 export const SUBMIT_PLAN_OUTLINE_TOOL = 'submit_plan_outline';
 

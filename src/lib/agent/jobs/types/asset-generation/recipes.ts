@@ -10,8 +10,8 @@
 
 import type { AssetEntry, AssetSpec } from '#lib/assets/spec/types.ts';
 import type { TextureRecipe } from '#lib/ipc/gen/TextureRecipe.ts';
-import { recipePrompt } from './prompts';
-import type { SubmittedRecipe } from './tools';
+import { recipePrompt } from '#lib/agent/jobs/types/asset-generation/prompts.ts';
+import type { SubmittedRecipe } from '#lib/agent/jobs/types/asset-generation/tools.ts';
 
 export interface RecipeDeps {
 	/** One model turn with `prompt`; the recipes it submitted, by id. */

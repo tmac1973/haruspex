@@ -14,8 +14,8 @@ import {
 	type JobRunStepStatus
 } from '#lib/stores/jobRuns.svelte.ts';
 import { logDebug } from '#lib/debug-log.ts';
-import type { JobRunContext, PlannedStep } from '../types';
-import type { RunStatus } from '../../runner.svelte';
+import type { JobRunContext, PlannedStep } from '#lib/agent/jobs/types/types.ts';
+import type { RunStatus } from '#lib/agent/jobs/runner.svelte.ts';
 
 /** Research jobs map 1:1 to their authored steps. */
 export function planResearchSteps(job: JobWithSteps): PlannedStep[] {

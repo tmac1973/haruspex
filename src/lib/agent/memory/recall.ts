@@ -47,7 +47,7 @@ const CHARS_PER_TOKEN = 4;
 
 // The step's name lives in a module of its own, so the step UI can know it
 // without loading memory (see `stepName.ts`).
-import { MEMORY_RECALL_STEP } from './stepName';
+import { MEMORY_RECALL_STEP } from '#lib/agent/memory/stepName.ts';
 export { MEMORY_RECALL_STEP };
 
 export interface RecalledMemory {

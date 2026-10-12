@@ -24,9 +24,14 @@ import type { AssetSpec, AnchorRecipe } from '#lib/assets/spec/types.ts';
 import { resolveImageBackend } from '#lib/image/index.ts';
 import type { ImageBackendCapabilities, ImageRequest, ImageResult } from '#lib/image/types.ts';
 import type { NormalizeProfile } from '#lib/ipc/gen/NormalizeProfile.ts';
-import { fitStyle } from './promptBudget';
-import { planSheets, sheetRequest, SHEET_EDGE, type SheetPlan } from './sheets';
-import type { AnchorOutcome } from './types';
+import { fitStyle } from '#lib/agent/jobs/types/asset-generation/promptBudget.ts';
+import {
+	planSheets,
+	sheetRequest,
+	SHEET_EDGE,
+	type SheetPlan
+} from '#lib/agent/jobs/types/asset-generation/sheets.ts';
+import type { AnchorOutcome } from '#lib/agent/jobs/types/asset-generation/types.ts';
 
 /** `0xRRGGBBAA` as `#RRGGBB`. For the recipe and the UI, never for a prompt. */
 export function hexColor(packed: number): string {

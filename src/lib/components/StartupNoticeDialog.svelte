@@ -1,5 +1,5 @@
 <script lang="ts">
-	import Modal from './Modal.svelte';
+	import Modal from '#lib/components/Modal.svelte';
 	import { updateSettings } from '#lib/stores/settings.ts';
 
 	interface Props {

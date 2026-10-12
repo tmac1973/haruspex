@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
 	import { onMount } from 'svelte';
-	import ShellPane from './ShellPane.svelte';
-	import ShellTabStrip from './ShellTabStrip.svelte';
+	import ShellPane from '#lib/components/shell/ShellPane.svelte';
+	import ShellTabStrip from '#lib/components/shell/ShellTabStrip.svelte';
 	import { getActiveTab } from '#lib/stores/activeTab.svelte.ts';
 	import {
 		getShellSessions,

@@ -25,7 +25,7 @@ on:
 
 jobs:
   # Windows gates for the Shell-tab port (Phase 17). The whole point is to
-  # compile + lint the `#[cfg(windows)]` branches (code_tools.rs, sidecar_utils.rs,
+  # compile + lint the `#[cfg(windows)]` branches (code_tools.rs, sidecar_util.rs,
   # and the upcoming catalog/winps/wsl modules) that the Linux `backend` job never
   # touches, plus the type-check + unit tests against Windows path/line-ending
   # behavior. Single combined job — Windows runner minutes bill at a higher rate

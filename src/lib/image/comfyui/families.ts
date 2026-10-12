@@ -12,8 +12,8 @@
  * keeps working unchanged.
  */
 
-import { ImageBackendError } from '../types';
-import * as api from './client';
+import { ImageBackendError } from '#lib/image/types.ts';
+import * as api from '#lib/image/comfyui/client.ts';
 
 export type ModelFamily = 'sd' | 'ming' | 'qwen21';
 

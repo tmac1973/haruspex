@@ -64,6 +64,26 @@ export default ts.config(
 		}
 	},
 	{
+		// src/lib imports go through `#lib/<path>` with the file's extension
+		// (CLAUDE.md): an extensionless relative path is how `./loop` ends up
+		// meaning loop.ts in one place and loop/ in another.
+		files: ['src/lib/**/*.ts', 'src/lib/**/*.svelte'],
+		ignores: ['**/*.test.ts'],
+		rules: {
+			'no-restricted-imports': [
+				'error',
+				{
+					patterns: [
+						{
+							regex: '^\\.{1,2}/',
+							message: "Import from src/lib as '#lib/<path>' with the file's extension."
+						}
+					]
+				}
+			]
+		}
+	},
+	{
 		ignores: ['build/', '.svelte-kit/', 'dist/', 'node_modules/', 'src-tauri/', 'src/lib/ipc/gen/']
 	}
 );

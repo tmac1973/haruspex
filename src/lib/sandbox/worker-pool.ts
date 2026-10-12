@@ -1,6 +1,6 @@
 import { logDebug } from '#lib/debug-log.ts';
-import { WorkerManager, type RunOptions, type WorkerFactory } from './worker-manager';
-import type { ToolResult } from './protocol';
+import { WorkerManager, type RunOptions, type WorkerFactory } from '#lib/sandbox/worker-manager.ts';
+import type { ToolResult } from '#lib/sandbox/protocol.ts';
 
 const DEFAULT_CAP = 3;
 

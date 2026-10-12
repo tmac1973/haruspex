@@ -21,7 +21,7 @@
  * safe.
  */
 
-import { extractMemories } from './extraction';
+import { extractMemories } from '#lib/agent/memory/extraction.ts';
 import { memoryActive } from '#lib/stores/memory.svelte.ts';
 import { logDebug } from '#lib/debug-log.ts';
 

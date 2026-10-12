@@ -10,7 +10,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { createJob } from '#lib/stores/jobs.svelte.ts';
-import { modelColumnsOf } from '../../chainModel';
+import { modelColumnsOf } from '#lib/agent/jobs/chainModel.ts';
 import { normalizeAbort, errMessage } from '#lib/utils/error.ts';
 import {
 	markRunStarted,
@@ -18,9 +18,9 @@ import {
 	markRunStepStarted,
 	type JobRunStepStatus
 } from '#lib/stores/jobRuns.svelte.ts';
-import type { JobRunContext } from '../types';
-import type { RunStatus } from '../../runner.svelte';
-import type { AssetGenerationConfig } from './config';
+import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
+import type { RunStatus } from '#lib/agent/jobs/runner.svelte.ts';
+import type { AssetGenerationConfig } from '#lib/agent/jobs/types/asset-generation/config.ts';
 import {
 	parseAssetGenerationConfig,
 	resolveSpecPath,
@@ -30,10 +30,10 @@ import {
 	DEFAULT_TARGET_SIZE,
 	DEFAULT_VISION_JUDGE,
 	MAX_GENERATION_EDGE
-} from './config';
+} from '#lib/agent/jobs/types/asset-generation/config.ts';
 import { parseAssetSpec } from '#lib/assets/spec/parse.ts';
 import { renderAssetSpec } from '#lib/assets/spec/write.ts';
-import { markRejections } from './review';
+import { markRejections } from '#lib/agent/jobs/types/asset-generation/review.ts';
 import { validateAssetSpec } from '#lib/assets/spec/validate.ts';
 import type { AssetSpec } from '#lib/assets/spec/types.ts';
 import { contactSheet, defaultProfile } from '#lib/assets/normalize.ts';
@@ -41,9 +41,13 @@ import { resolveImageBackend } from '#lib/image/index.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { SUBMIT_ASSET_SPEC_TOOL } from '#lib/agent/tools/coding.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
-import { deriveSpec, type DerivePayload } from './derive';
-import { judgePrompt, specDerivationPrompt, specRetryPrompt } from './prompts';
-import { establishAnchor } from './anchor';
+import { deriveSpec, type DerivePayload } from '#lib/agent/jobs/types/asset-generation/derive.ts';
+import {
+	judgePrompt,
+	specDerivationPrompt,
+	specRetryPrompt
+} from '#lib/agent/jobs/types/asset-generation/prompts.ts';
+import { establishAnchor } from '#lib/agent/jobs/types/asset-generation/anchor.ts';
 import {
 	parseJudgement,
 	parseRecipes,
@@ -51,16 +55,33 @@ import {
 	SUBMIT_TEXTURE_RECIPES_TOOL,
 	type AssetJudgement,
 	type SubmittedRecipe
-} from './tools';
-import { applyCodeTextures, reviseRecipe, writeRecipes, type RecipeDeps } from './recipes';
-import { DEFAULT_TEXTURE_VARIANTS } from './config';
+} from '#lib/agent/jobs/types/asset-generation/tools.ts';
+import {
+	applyCodeTextures,
+	reviseRecipe,
+	writeRecipes,
+	type RecipeDeps
+} from '#lib/agent/jobs/types/asset-generation/recipes.ts';
+import { DEFAULT_TEXTURE_VARIANTS } from '#lib/agent/jobs/types/asset-generation/config.ts';
 import type { TextureRecipe } from '#lib/ipc/gen/TextureRecipe.ts';
 import type { AssetEntry } from '#lib/assets/spec/types.ts';
-import { generateEntries } from './generate';
-import { fitStyle } from './promptBudget';
-import { applyJobSize, nativeEdgeFor, upscaleForEdge } from './nativeEdge';
-import { countByStatus, renderAssetReport, type Licensing } from './report';
-import type { AnchorOutcome, EntryOutcome, SheetOutcome } from './types';
+import { generateEntries } from '#lib/agent/jobs/types/asset-generation/generate.ts';
+import { fitStyle } from '#lib/agent/jobs/types/asset-generation/promptBudget.ts';
+import {
+	applyJobSize,
+	nativeEdgeFor,
+	upscaleForEdge
+} from '#lib/agent/jobs/types/asset-generation/nativeEdge.ts';
+import {
+	countByStatus,
+	renderAssetReport,
+	type Licensing
+} from '#lib/agent/jobs/types/asset-generation/report.ts';
+import type {
+	AnchorOutcome,
+	EntryOutcome,
+	SheetOutcome
+} from '#lib/agent/jobs/types/asset-generation/types.ts';
 import { pngDataUrl as dataUrl } from '#lib/utils/base64.ts';
 
 /** Read-only: the derivation grounds itself in the project, it does not edit it. */

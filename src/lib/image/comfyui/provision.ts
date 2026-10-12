@@ -23,9 +23,14 @@ import type { ComfyModelFile } from '#lib/ipc/gen/ComfyModelFile.ts';
 import type { ComfyModelSet } from '#lib/ipc/gen/ComfyModelSet.ts';
 import type { ProxyConfig } from '#lib/ipc/gen/ProxyConfig.ts';
 import { formatGigabytes } from '#lib/utils/format.ts';
-import { ImageBackendError } from '../types';
-import * as api from './client';
-import { familyOf, hasCompanions, listDiffusionModels, type ModelFamily } from './families';
+import { ImageBackendError } from '#lib/image/types.ts';
+import * as api from '#lib/image/comfyui/client.ts';
+import {
+	familyOf,
+	hasCompanions,
+	listDiffusionModels,
+	type ModelFamily
+} from '#lib/image/comfyui/families.ts';
 
 export type DitFamily = Exclude<ModelFamily, 'sd'>;
 export type InstallRoute = 'direct' | 'manager' | 'manual';

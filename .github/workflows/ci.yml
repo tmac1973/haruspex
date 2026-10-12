@@ -89,7 +89,7 @@ jobs:
       - name: Check IPC command names
         run: node scripts/check-ipc.mjs
       # Ports/loopback are hand-synced across the IPC boundary (no codegen);
-      # fail CI when src/lib/ports.ts and sidecar_utils.rs disagree.
+      # fail CI when src/lib/ports.ts and sidecar_util.rs disagree.
       - name: Check hand-synced constants
         run: node scripts/check-constants.mjs
       # The user guide's web pages, as the Pages workflow builds them: fails on

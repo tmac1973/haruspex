@@ -5,12 +5,12 @@
 	 * banner when its folder is gone. The folder is looked at again whenever
 	 * the window gains focus (the user may have been in a file manager).
 	 */
-	import CodeSessionHeader from './CodeSessionHeader.svelte';
-	import FolderMissingBanner from './FolderMissingBanner.svelte';
-	import CodeTranscript from './CodeTranscript.svelte';
-	import CodeComposer from './CodeComposer.svelte';
+	import CodeSessionHeader from '#lib/components/code/CodeSessionHeader.svelte';
+	import FolderMissingBanner from '#lib/components/code/FolderMissingBanner.svelte';
+	import CodeTranscript from '#lib/components/code/CodeTranscript.svelte';
+	import CodeComposer from '#lib/components/code/CodeComposer.svelte';
 	import type { SlashHost } from '#lib/slash/slash.ts';
-	import type { TranscriptNote } from './CodeTranscript.svelte';
+	import type { TranscriptNote } from '#lib/components/code/CodeTranscript.svelte';
 	import { shellProject } from '#lib/skills/project.ts';
 	import type { CodeSession } from '#lib/stores/code.svelte.ts';
 	import { newSessionBeside } from '#lib/code/windows.ts';

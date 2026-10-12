@@ -16,7 +16,7 @@ import type { CheckName } from '#lib/ipc/gen/CheckName.ts';
 import { errMessage, isAbortError } from '#lib/utils/error.ts';
 import type { CheckReport } from '#lib/ipc/gen/CheckReport.ts';
 import type { AssetEntry } from '#lib/assets/spec/types.ts';
-import type { AssetJudgement } from './tools';
+import type { AssetJudgement } from '#lib/agent/jobs/types/asset-generation/tools.ts';
 
 /**
  * How to amend the next attempt for each failure.

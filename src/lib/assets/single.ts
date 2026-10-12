@@ -8,8 +8,13 @@
  * the same normalisation and checks. It leaves out what only makes sense for
  * a set: the style anchor and sheets of several subjects.
  */
-import type { AssetEntry, AssetKind, AssetSpec, NormalizeProfile } from './spec/types';
-import { checkImage, defaultProfile, effectiveProfile, normalizeImage } from './normalize';
+import type { AssetEntry, AssetKind, AssetSpec, NormalizeProfile } from '#lib/assets/spec/types.ts';
+import {
+	checkImage,
+	defaultProfile,
+	effectiveProfile,
+	normalizeImage
+} from '#lib/assets/normalize.ts';
 import { buildEntryRequest, checkProfile } from '#lib/agent/jobs/types/asset-generation/request.ts';
 import { sheetRequest } from '#lib/agent/jobs/types/asset-generation/sheets.ts';
 import { FALLBACK_STYLE } from '#lib/agent/jobs/types/asset-generation/derive.ts';

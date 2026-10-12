@@ -6,7 +6,7 @@
  * A `seq` gap, or an event before any snapshot, is never guessed across: the
  * mirror says `resync` and keeps what it had until a snapshot arrives.
  */
-import type { ChatEvent, ChatState, SessionEvent, SessionState } from './types.ts';
+import type { ChatEvent, ChatState, SessionEvent, SessionState } from '#lib/engine/types.ts';
 
 export interface Mirror {
 	/** Null before the first snapshot, and after `closed`. */

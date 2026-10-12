@@ -10,7 +10,7 @@
  * Pure: the component owns the save dialog, this owns the shape.
  */
 
-import type { RunEnvironment, StepThinkingStats } from './runner.svelte';
+import type { RunEnvironment, StepThinkingStats } from '#lib/agent/jobs/runner.svelte.ts';
 
 export interface StatsExportRow {
 	label: string;

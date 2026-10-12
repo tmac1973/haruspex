@@ -9,15 +9,15 @@
  */
 
 import { getSettings } from '#lib/stores/settings.ts';
-import { getImageBackend } from './registry';
-import { noneBackend } from './none';
+import { getImageBackend } from '#lib/image/registry.ts';
+import { noneBackend } from '#lib/image/none.ts';
 import type {
 	ImageBackendCapabilities,
 	ImageBackendKind,
 	ImageProgress,
 	ImageRequest,
 	ImageResult
-} from './types';
+} from '#lib/image/types.ts';
 
 export interface GenerateOptions {
 	signal?: AbortSignal;

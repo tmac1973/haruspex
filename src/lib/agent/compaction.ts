@@ -1,7 +1,7 @@
 import { messageText, type ChatMessage } from '#lib/api.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { answerForSummary, summarizeInChunks } from '#lib/agent/summarize.ts';
-import { SUMMARY_PREFIX, isSummaryMessage } from './summaryMessage';
+import { SUMMARY_PREFIX, isSummaryMessage } from '#lib/agent/summaryMessage.ts';
 
 export { SUMMARY_PREFIX, isSummaryMessage };
 

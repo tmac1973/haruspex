@@ -19,7 +19,7 @@
 		sessionLabel,
 		sidebarEntries
 	} from '#lib/code/sessionList.ts';
-	import BranchGlyph from './BranchGlyph.svelte';
+	import BranchGlyph from '#lib/components/code/BranchGlyph.svelte';
 	import { onClaimsChanged, openSessionIds } from '#lib/code/claims.ts';
 	import { worktreeOffer, worktreeOutcome } from '#lib/code/folders.ts';
 	import {

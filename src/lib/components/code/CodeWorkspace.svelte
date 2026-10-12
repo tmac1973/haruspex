@@ -4,10 +4,10 @@
 	 * active one's pane. Mounted once and kept (see `+page.svelte`), so turns
 	 * and background processes carry on while another tab is showing.
 	 */
-	import CodeSidebar from './CodeSidebar.svelte';
-	import CodeTabStrip from './CodeTabStrip.svelte';
-	import CodePane from './CodePane.svelte';
-	import NewSessionDialog from './NewSessionDialog.svelte';
+	import CodeSidebar from '#lib/components/code/CodeSidebar.svelte';
+	import CodeTabStrip from '#lib/components/code/CodeTabStrip.svelte';
+	import CodePane from '#lib/components/code/CodePane.svelte';
+	import NewSessionDialog from '#lib/components/code/NewSessionDialog.svelte';
 	import { getActiveSessionId, getOpenSessions } from '#lib/stores/code.svelte.ts';
 
 	const sessions = $derived(getOpenSessions());

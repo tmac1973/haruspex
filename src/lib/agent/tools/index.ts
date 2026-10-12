@@ -1,33 +1,44 @@
 // Import tool modules to trigger registration (side-effect imports)
-import './web';
-import './fs-read';
-import './fs-write';
-import './email';
-import './email-compose';
-import './sandbox';
-import './code';
-import './code-bg';
-import './code-handoff';
-import './shell-interactive';
-import './audit';
-import './planning';
-import './coding';
-import './memory';
-import './memoryWrite';
-import './user-question';
-import './mcp';
-import './calendar';
-import './contacts';
-import './screen';
-import './image-gen';
-import './make-asset';
-import './skills';
-import './skillsWrite';
-import './guide';
+import '#lib/agent/tools/web.ts';
+import '#lib/agent/tools/fs-read.ts';
+import '#lib/agent/tools/fs-write.ts';
+import '#lib/agent/tools/email.ts';
+import '#lib/agent/tools/email-compose.ts';
+import '#lib/agent/tools/sandbox.ts';
+import '#lib/agent/tools/code.ts';
+import '#lib/agent/tools/code-bg.ts';
+import '#lib/agent/tools/code-handoff.ts';
+import '#lib/agent/tools/shell-interactive.ts';
+import '#lib/agent/tools/audit.ts';
+import '#lib/agent/tools/planning.ts';
+import '#lib/agent/tools/coding.ts';
+import '#lib/agent/tools/memory.ts';
+import '#lib/agent/tools/memoryWrite.ts';
+import '#lib/agent/tools/user-question.ts';
+import '#lib/agent/tools/mcp.ts';
+import '#lib/agent/tools/calendar.ts';
+import '#lib/agent/tools/contacts.ts';
+import '#lib/agent/tools/screen.ts';
+import '#lib/agent/tools/image-gen.ts';
+import '#lib/agent/tools/make-asset.ts';
+import '#lib/agent/tools/skills.ts';
+import '#lib/agent/tools/skillsWrite.ts';
+import '#lib/agent/tools/guide.ts';
 
 // Re-export registry API
-export { getToolSchemas, executeTool, getDisplayLabel, coerceCallArguments } from './registry';
-export { registerMcpTools, unregisterMcpServer } from './mcp';
+export {
+	getToolSchemas,
+	executeTool,
+	getDisplayLabel,
+	coerceCallArguments
+} from '#lib/agent/tools/registry.ts';
+export { registerMcpTools, unregisterMcpServer } from '#lib/agent/tools/mcp.ts';
 
 // Re-export types used by consumers
-export type { ToolExecOutput, PendingImage, ToolContext, Artifact, LintIssue } from './types';
+export type {
+	ToolExecOutput,
+	PendingImage,
+	ToolContext,
+	Artifact,
+	LintIssue
+} from '#lib/agent/tools/types.ts';

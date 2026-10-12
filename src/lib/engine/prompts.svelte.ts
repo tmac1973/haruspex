@@ -24,7 +24,7 @@ import { getActiveConversationId } from '#lib/stores/session.svelte.ts';
 import { getPendingRepoTrust, resolveRepoTrust } from '#lib/stores/repoTrust.svelte.ts';
 import { getPendingSkillApproval, resolveSkillApproval } from '#lib/stores/skillApproval.svelte.ts';
 import { getPendingQuestion, resolveUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
-import type { Prompt, PromptAnswer, PromptEvent } from './types.ts';
+import type { Prompt, PromptAnswer, PromptEvent } from '#lib/engine/types.ts';
 
 const ids = new WeakMap<object, string>();
 let next = 0;

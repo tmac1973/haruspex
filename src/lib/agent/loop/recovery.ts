@@ -9,9 +9,14 @@ import { ApiError, type ChatCompletionResponse } from '#lib/api.ts';
 import { TOKEN_BYTES_RATIO } from '#lib/agent/context-budget.ts';
 import { stripThinkBlocks, stripToolCallArtifacts } from '#lib/markdown.ts';
 import { logDebug, previewPayload } from '#lib/debug-log.ts';
-import { MAX_TRUNCATION_RETRIES, NudgeState, automaticCheck } from './nudges';
-import { appendMessage, type IterationOutcome, type LoopContext, type LoopState } from './context';
-import { hasNonThinkingContent, looksLikeClarifyingQuestion } from './heuristics';
+import { MAX_TRUNCATION_RETRIES, NudgeState, automaticCheck } from '#lib/agent/loop/nudges.ts';
+import {
+	appendMessage,
+	type IterationOutcome,
+	type LoopContext,
+	type LoopState
+} from '#lib/agent/loop/context.ts';
+import { hasNonThinkingContent, looksLikeClarifyingQuestion } from '#lib/agent/loop/heuristics.ts';
 
 /**
  * Echo the model's last assistant content back into `messages` and append a

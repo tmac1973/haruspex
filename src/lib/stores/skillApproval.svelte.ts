@@ -13,7 +13,7 @@
  * Prompts queue (`approvalQueue.svelte.ts`), one shown at a time.
  */
 
-import { createApprovalQueue } from './approvalQueue.svelte.ts';
+import { createApprovalQueue } from '#lib/stores/approvalQueue.svelte.ts';
 
 export interface SkillApprovalRequest {
 	/** A skill, or the repo's AGENTS.md (`write_agents_md`). */

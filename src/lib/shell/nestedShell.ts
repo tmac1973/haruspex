@@ -24,7 +24,7 @@
  * honest answer is to tell the model to drive the session with shell_input.
  */
 
-import { basename, tokenize, unwrap } from './nestedSession';
+import { basename, tokenize, unwrap } from '#lib/shell/nestedSession.ts';
 
 export interface NestedShell {
 	/** Basename of the shell sitting at a prompt inside the terminal. */

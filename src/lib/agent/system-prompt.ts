@@ -10,7 +10,7 @@ import {
 } from '#lib/stores/settings.ts';
 import { formatTodayLong } from '#lib/utils/format.ts';
 import { GUIDE_PROMPT } from '#lib/guide/prompt.ts';
-import { registeredMcpServerLabels } from './tools/mcp';
+import { registeredMcpServerLabels } from '#lib/agent/tools/mcp.ts';
 
 const REVIEW_PATTERNS =
 	/\b(best|top\s+\d|recommend|review|comparison|compare|vs\.?|versus|worth|which\s+(?:one|should)|budget|premium|upgrade)\b/i;

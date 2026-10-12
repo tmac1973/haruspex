@@ -39,7 +39,7 @@
 		setConversationMemoryEnabled,
 		addLocalNote
 	} from '#lib/stores/chat.svelte.ts';
-	import SlashMenu from './SlashMenu.svelte';
+	import SlashMenu from '#lib/components/SlashMenu.svelte';
 	import { runSlash, type SlashHost } from '#lib/slash/slash.ts';
 	import { InputHistory, placeCaret, sentHistory } from '#lib/inputHistory.ts';
 	import { typedText } from '#lib/skills/content.ts';
@@ -58,7 +58,6 @@
 	import { imageFileToDataUrl, imageFilesFrom } from '#lib/utils/image.ts';
 	import { openShellFromChat } from '#lib/shell/fromChat.ts';
 	import { invoke } from '@tauri-apps/api/core';
-	import { IPC } from '#lib/ipc/commands.ts';
 	import type { ScreenCapture } from '#lib/ipc/gen/ScreenCapture.ts';
 	import { onMount, onDestroy, tick, untrack } from 'svelte';
 
@@ -110,7 +109,7 @@
 		if (capturing) return;
 		capturing = true;
 		try {
-			const capture = await invoke<ScreenCapture>(IPC.capture_screen, { target: 'screen' });
+			const capture = await invoke<ScreenCapture>('capture_screen', { target: 'screen' });
 			addImageUrls([capture.dataUrl]);
 		} catch (e) {
 			// Cancelling the desktop's own picker lands here, and is a decision
@@ -228,7 +227,7 @@
 		// Auto-scroll when new messages appear
 		if (activeConversation?.messages.length) {
 			if (autoScroll) {
-				tick().then(scrollToBottom);
+				void tick().then(scrollToBottom);
 			}
 		}
 	});

@@ -9,7 +9,6 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
-import { IPC } from '#lib/ipc/commands.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import type { SetupStep } from '#lib/ipc/gen/SetupStep.ts';
@@ -60,7 +59,7 @@ export async function pickAndInstallAddon(
 	const picked = await openFileDialog({ multiple: false, directory: true });
 	if (typeof picked !== 'string') return null;
 
-	const installedAt = await invoke<string>(IPC.mcp_install_addon, {
+	const installedAt = await invoke<string>('mcp_install_addon', {
 		entryId: config.source.entryId,
 		stepIndex,
 		targetDir: picked,

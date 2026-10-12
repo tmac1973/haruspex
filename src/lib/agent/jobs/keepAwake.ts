@@ -66,7 +66,7 @@ export function setKeepAwake(next: boolean): void {
  */
 export async function releaseStaleInhibit(): Promise<void> {
 	try {
-		await invoke(IPC.power_inhibit_release);
+		await invoke('power_inhibit_release');
 		applied = false;
 	} catch {
 		// Browser dev mode, or the command is simply unavailable — nothing

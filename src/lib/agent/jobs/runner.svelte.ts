@@ -27,11 +27,11 @@ import {
 	getSettings,
 	type SamplingParams
 } from '#lib/stores/settings.ts';
-import { parseModelAdvanced } from './modelAdvanced';
-import { jobBackendOverride } from './jobBackend';
+import { parseModelAdvanced } from '#lib/agent/jobs/modelAdvanced.ts';
+import { jobBackendOverride } from '#lib/agent/jobs/jobBackend.ts';
 // The registration barrel, deliberately — importing it registers the built-in
 // job types before the first dispatch can happen.
-import { getJobType, type JobRunContext, type PlannedStep } from './types';
+import { getJobType, type JobRunContext, type PlannedStep } from '#lib/agent/jobs/types/index.ts';
 import { markStepDone, newRunningStep } from '#lib/agent/steps.ts';
 import {
 	createJobRun,
@@ -43,7 +43,7 @@ import {
 	type TurnKindStats
 } from '#lib/stores/jobRuns.svelte.ts';
 import { logDebug } from '#lib/debug-log.ts';
-import { setKeepAwake } from './keepAwake';
+import { setKeepAwake } from '#lib/agent/jobs/keepAwake.ts';
 
 export type RunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled' | 'needs_input';
 export type StepStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled';

@@ -34,6 +34,7 @@
 	import { withRemoteOption } from '#lib/stores/remoteProfiles.ts';
 	import { OPENROUTER_BASE_URL } from '#lib/openrouter.ts';
 	import ModelsSection from '#lib/components/settings/ModelsSection.svelte';
+	import { formatContextSize } from '#lib/utils/format.ts';
 
 	const serverState = $derived(getServerState());
 	let contextSize = $state(getSettings().contextSize);
@@ -50,10 +51,6 @@
 	// can't reason about.
 	let gpuVramMb = $state<number | null>(null);
 	let ctxCeiling = $state<number | null>(null);
-
-	function formatCtx(n: number): string {
-		return n >= 1024 ? `${Math.round(n / 1024)}K` : `${n}`;
-	}
 
 	/** Recompute the VRAM context ceiling for the currently-active local model.
 	 *  Best-effort: any failure leaves the ceiling null (picker unrestricted). */
@@ -94,8 +91,8 @@
 			if (ctxCeiling !== null && contextSize > ctxCeiling) {
 				showToast(
 					allowSpill
-						? `${formatCtx(contextSize)} context needs more memory than this machine has — using ${formatCtx(ctxCeiling)}.`
-						: `${formatCtx(contextSize)} context needs more VRAM than your GPU has — using ${formatCtx(ctxCeiling)}. Turn on "Let models use system RAM" below to keep the larger size.`,
+						? `${formatContextSize(contextSize)} context needs more memory than this machine has — using ${formatContextSize(ctxCeiling)}.`
+						: `${formatContextSize(contextSize)} context needs more VRAM than your GPU has — using ${formatContextSize(ctxCeiling)}. Turn on "Let models use system RAM" below to keep the larger size.`,
 					{ kind: 'info' }
 				);
 				await setContextSize(ctxCeiling);
@@ -124,7 +121,7 @@
 			// down like the spill toggle does; that restarts the server too,
 			// so there's nothing left to do here.
 			showToast(
-				`${formatCtx(contextSize)} no longer fits with the projector in VRAM — using ${formatCtx(ctxCeiling)}.`,
+				`${formatContextSize(contextSize)} no longer fits with the projector in VRAM — using ${formatContextSize(ctxCeiling)}.`,
 				{ kind: 'info' }
 			);
 			await setContextSize(ctxCeiling);
@@ -143,7 +140,7 @@
 			// Turning it off with a selection only RAM could hold: snap down.
 			// That restarts the server too, so there's nothing left to do.
 			showToast(
-				`${formatCtx(contextSize)} doesn't fit in VRAM alone — using ${formatCtx(ctxCeiling)}.`,
+				`${formatContextSize(contextSize)} doesn't fit in VRAM alone — using ${formatContextSize(ctxCeiling)}.`,
 				{ kind: 'info' }
 			);
 			await setContextSize(ctxCeiling);
@@ -161,7 +158,7 @@
 		await refreshCtxCeiling();
 		if (ctxCeiling !== null && contextSize > ctxCeiling) {
 			showToast(
-				`${n} streams of ${formatCtx(contextSize)} don't fit — using ${formatCtx(ctxCeiling)} each.`,
+				`${n} streams of ${formatContextSize(contextSize)} don't fit — using ${formatContextSize(ctxCeiling)} each.`,
 				{ kind: 'info' }
 			);
 			await setContextSize(ctxCeiling);
@@ -349,7 +346,7 @@
 			setActiveLocalModel(modelPath);
 			await stopServer();
 			await startServer(modelPath, getSettings().contextSize);
-			invoke('tts_initialize').catch(() => {});
+			void invoke('tts_initialize').catch(() => {});
 		}
 	}
 

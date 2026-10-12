@@ -12,7 +12,7 @@
  * tests live.
  */
 
-import { VERIFICATION_COMMAND_HEADING } from './planParse';
+import { VERIFICATION_COMMAND_HEADING } from '#lib/agent/jobs/types/autonomous-coding/planParse.ts';
 
 export type TaskStatus = 'todo' | 'done' | 'blocked';
 

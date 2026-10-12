@@ -12,8 +12,8 @@
 	 * Backdrop and Esc don't dismiss, matching the command and sandbox modals:
 	 * silently dropping the question would leave the tool waiting forever.
 	 */
-	import Modal from './Modal.svelte';
-	import ModalButton from './ModalButton.svelte';
+	import Modal from '#lib/components/Modal.svelte';
+	import ModalButton from '#lib/components/ModalButton.svelte';
 	import {
 		getPendingMemoryApproval,
 		resolveMemoryApproval

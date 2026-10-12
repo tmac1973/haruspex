@@ -9,7 +9,10 @@
 	import type { AssetEntry, AssetSpec } from '#lib/assets/spec/types.ts';
 	import { enqueue } from '#lib/agent/jobs/runner.svelte.ts';
 	import { resolveImageBackend } from '#lib/image/index.ts';
-	import { regenerateMarked, type ReviewMark } from './review';
+	import {
+		regenerateMarked,
+		type ReviewMark
+	} from '#lib/agent/jobs/types/asset-generation/review.ts';
 
 	// Look through a finished set and send the ones you do not like back.
 	let {

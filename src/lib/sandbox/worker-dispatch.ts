@@ -4,7 +4,7 @@
 // supplies a WorkerMessageHandlers implementation that closes over its
 // module state; here we only route and settle pending requests.
 
-import type { MainToWorker } from './protocol';
+import type { MainToWorker } from '#lib/sandbox/protocol.ts';
 
 type SyncWorkdirMsg = Extract<MainToWorker, { kind: 'sync_workdir_files' }>;
 type SaveResponseMsg = Extract<MainToWorker, { kind: 'save_response' }>;

@@ -20,7 +20,7 @@ import type { FetchedPage } from '#lib/ipc/gen/FetchedPage.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { stripThinkBlocks } from '#lib/markdown.ts';
-import { toolError } from './types';
+import { toolError } from '#lib/agent/tools/types.ts';
 
 /**
  * Build a `displayLabel` function that pulls one named arg as a string.
@@ -35,7 +35,11 @@ export const labelArg =
 // UI (SearchStep) needs them, and importing this file pulls in the
 // inference API, settings and more, which the web client's bundle can do
 // without.
-export { FETCH_FAILURE_PREFIXES, isFetchFailureResult, isToolErrorResult } from './toolResult';
+export {
+	FETCH_FAILURE_PREFIXES,
+	isFetchFailureResult,
+	isToolErrorResult
+} from '#lib/agent/tools/toolResult.ts';
 
 /**
  * Resolve a tool `path` argument for Shell-mode dispatch. The Shell

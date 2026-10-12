@@ -18,13 +18,18 @@
  */
 
 import type { SkillWriteRequest } from '#lib/ipc/gen/SkillWriteRequest.ts';
-import { ctxHostCwd } from './_helpers';
+import { ctxHostCwd } from '#lib/agent/tools/_helpers.ts';
 import { draftAgentsMd, draftSkill, saveAgentsMd, saveSkill } from '#lib/skills/client.ts';
 import { noteProjectSkill, trustApprovedAgentsMd } from '#lib/skills/project.ts';
 import { askSkillApproval } from '#lib/stores/skillApproval.svelte.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import { registerTool } from './registry';
-import { toolError, toolResult, type ToolContext, type ToolExecOutput } from './types';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import {
+	toolError,
+	toolResult,
+	type ToolContext,
+	type ToolExecOutput
+} from '#lib/agent/tools/types.ts';
 
 export const CREATE_SKILL_TOOL = 'create_skill';
 export const UPDATE_SKILL_TOOL = 'update_skill';

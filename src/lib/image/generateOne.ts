@@ -12,8 +12,8 @@
  * somebody's tileset.
  */
 
-import { resolveImageBackend } from './backend';
-import type { ImageProgress, ImageResult, SamplerSettings } from './types';
+import { resolveImageBackend } from '#lib/image/backend.ts';
+import type { ImageProgress, ImageResult, SamplerSettings } from '#lib/image/types.ts';
 
 export interface GenerateOneOptions {
 	prompt: string;

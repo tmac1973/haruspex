@@ -1,9 +1,15 @@
 import { invoke } from '@tauri-apps/api/core';
 import { isAbortError } from '#lib/utils/error.ts';
-import { ctxCwd, ctxShell, ctxWslDistroArg, labelArg, toolInvokeError } from './_helpers';
-import { registerTool } from './registry';
-import { noteCommandRan, toolError, toolResult } from './types';
-import type { ToolContext, ToolExecOutput } from './types';
+import {
+	ctxCwd,
+	ctxShell,
+	ctxWslDistroArg,
+	labelArg,
+	toolInvokeError
+} from '#lib/agent/tools/_helpers.ts';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { noteCommandRan, toolError, toolResult } from '#lib/agent/tools/types.ts';
+import type { ToolContext, ToolExecOutput } from '#lib/agent/tools/types.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { classifyShellRisk, type RiskMatch } from '#lib/shell/risky-commands.ts';
 import { checkBoundary, protectedTargets, reportBoundaryRefusal } from '#lib/shell/boundary.ts';
@@ -15,12 +21,17 @@ import {
 	codeApprovalKey,
 	SHELL_APPROVAL_KEY
 } from '#lib/stores/codeCommandApproval.svelte.ts';
-import { runInPty, runInPtyBackground, shouldUsePty, spillIfLarge } from './pty-exec';
+import {
+	runInPty,
+	runInPtyBackground,
+	shouldUsePty,
+	spillIfLarge
+} from '#lib/agent/tools/pty-exec.ts';
 import { registerWatch } from '#lib/shell/backgroundWatch.ts';
-import { startCodeBackground } from './code-bg';
+import { startCodeBackground } from '#lib/agent/tools/code-bg.ts';
 import { ttyHintFor } from '#lib/code/ttyHint.ts';
 import { isReadOnlyCommand } from '#lib/code/readOnlyCommand.ts';
-import { withLocalScopeNote } from './nested-session';
+import { withLocalScopeNote } from '#lib/agent/tools/nested-session.ts';
 import type { RunCommandResult } from '#lib/ipc/gen/RunCommandResult.ts';
 import type { ShellSelection } from '#lib/ipc/gen/ShellSelection.ts';
 import { commandMemoryLimitPercent, outOfMemoryNote } from '#lib/shell/memoryLimit.ts';

@@ -46,7 +46,7 @@ use super::client::McpSession;
 use super::companion::CompanionStatus;
 use super::orphans::{self, RunningServer};
 use super::types::{McpCallOutcome, McpConnectionInfo, McpProtocolEra, McpToolDescriptor};
-use crate::sidecar_utils::{new_log_buffer, push_log, LogBuffer, SidecarStatus};
+use crate::sidecar_util::{new_log_buffer, push_log, LogBuffer, SidecarStatus};
 use std::path::Path;
 
 pub mod timing {
@@ -1269,7 +1269,7 @@ mod tests {
             lines.len()
         );
         assert!(
-            lines.len() <= crate::sidecar_utils::LOG_RING_BUFFER_SIZE,
+            lines.len() <= crate::sidecar_util::LOG_RING_BUFFER_SIZE,
             "the ring buffer must bound the log"
         );
         drop(process);

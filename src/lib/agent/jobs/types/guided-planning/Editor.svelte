@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Tooltip from '#lib/components/Tooltip.svelte';
 	import { resolveImageBackend } from '#lib/image/index.ts';
-	import type { GuidedPlanningEditorState } from './definition';
+	import type { GuidedPlanningEditorState } from '#lib/agent/jobs/types/guided-planning/definition.ts';
 	import JobModelFields from '#lib/components/jobs/JobModelFields.svelte';
 	import { emptyModelForm } from '#lib/agent/jobs/jobModelForm.ts';
 	import type { SkillSummary } from '#lib/ipc/gen/SkillSummary.ts';

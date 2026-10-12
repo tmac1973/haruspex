@@ -15,8 +15,8 @@
 	 * could leak into data loss if "cancel" is treated loosely by the
 	 * agent loop's error handling.
 	 */
-	import Modal from './Modal.svelte';
-	import ModalButton from './ModalButton.svelte';
+	import Modal from '#lib/components/Modal.svelte';
+	import ModalButton from '#lib/components/ModalButton.svelte';
 	import { getPendingConflict, resolveConflict } from '#lib/stores/fileConflict.svelte.ts';
 
 	const pending = $derived(getPendingConflict());

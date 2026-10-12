@@ -8,8 +8,8 @@
 	 * Pass `message` for a plain-text body, or `children` for a rich one.
 	 */
 	import type { Snippet } from 'svelte';
-	import Modal from './Modal.svelte';
-	import ModalButton from './ModalButton.svelte';
+	import Modal from '#lib/components/Modal.svelte';
+	import ModalButton from '#lib/components/ModalButton.svelte';
 
 	interface Props {
 		open: boolean;

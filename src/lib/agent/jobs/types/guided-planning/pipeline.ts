@@ -13,9 +13,12 @@ import { resolveImageBackend } from '#lib/image/index.ts';
 import { defaultProfile } from '#lib/assets/normalize.ts';
 import { renderAssetSpec } from '#lib/assets/spec/write.ts';
 import { validateAssetSpec } from '#lib/assets/spec/validate.ts';
-import { derivePlanSpec, type PlanDerivePayload } from '../asset-generation/derive';
-import { KIND_RULE } from '../asset-generation/prompts';
-import { SUBMIT_PLAN_ASSET_SPEC_TOOL } from '../asset-generation/tools';
+import {
+	derivePlanSpec,
+	type PlanDerivePayload
+} from '#lib/agent/jobs/types/asset-generation/derive.ts';
+import { KIND_RULE } from '#lib/agent/jobs/types/asset-generation/prompts.ts';
+import { SUBMIT_PLAN_ASSET_SPEC_TOOL } from '#lib/agent/jobs/types/asset-generation/tools.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import { SUBMIT_PLAN_OUTLINE_TOOL, type PlanOutlinePhaseArg } from '#lib/agent/tools/planning.ts';
 import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
@@ -28,21 +31,29 @@ import {
 	markRunStepStarted,
 	type JobRunStepStatus
 } from '#lib/stores/jobRuns.svelte.ts';
-import type { JobRunContext } from '../types';
-import { parseGuidedPlanningConfig, RUN_MODE_LABELS, type GuidedPlanningConfig } from './config';
+import type { JobRunContext } from '#lib/agent/jobs/types/types.ts';
+import {
+	parseGuidedPlanningConfig,
+	RUN_MODE_LABELS,
+	type GuidedPlanningConfig
+} from '#lib/agent/jobs/types/guided-planning/config.ts';
 import {
 	interviewSkillSection,
 	loadPlanningSkill,
 	outlineRequirementsSection,
 	verifierRequirements,
 	type PlanningSkill
-} from './planningSkill';
-import { describeStageModel, stageModelColumns } from '../../chainModel';
-import { interviewResearchRules, withWebResearch, writeResearchRules } from '../webResearch';
+} from '#lib/agent/jobs/types/guided-planning/planningSkill.ts';
+import { describeStageModel, stageModelColumns } from '#lib/agent/jobs/chainModel.ts';
+import {
+	interviewResearchRules,
+	withWebResearch,
+	writeResearchRules
+} from '#lib/agent/jobs/types/webResearch.ts';
 import {
 	extractDecisionCommand,
 	VERIFICATION_COMMAND_HEADING
-} from '../autonomous-coding/planParse';
+} from '#lib/agent/jobs/types/autonomous-coding/planParse.ts';
 
 /**
  * Guided-planning resume record, persisted to job_runs.planning_state (JSON) at

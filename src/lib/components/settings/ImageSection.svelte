@@ -11,8 +11,8 @@
 		type SecretStoreKind
 	} from '#lib/stores/secrets.ts';
 	import Tooltip from '#lib/components/Tooltip.svelte';
-	import ComfyModels from './ComfyModels.svelte';
-	import DownloadProgressBar from './DownloadProgressBar.svelte';
+	import ComfyModels from '#lib/components/settings/ComfyModels.svelte';
+	import DownloadProgressBar from '#lib/components/settings/DownloadProgressBar.svelte';
 	import {
 		cancelDownload,
 		getActiveDownload,

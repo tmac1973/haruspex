@@ -19,7 +19,7 @@
 		runDownload,
 		syncDownloads
 	} from '#lib/stores/downloads.svelte.ts';
-	import DownloadProgressBar from './DownloadProgressBar.svelte';
+	import DownloadProgressBar from '#lib/components/settings/DownloadProgressBar.svelte';
 	import { onMount } from 'svelte';
 	import { restartServerWhenIdle, stopServer } from '#lib/stores/llamaServer.svelte.ts';
 	import {

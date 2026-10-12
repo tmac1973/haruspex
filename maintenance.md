@@ -28,7 +28,7 @@ haruspex/
 │       ├── server/          # llama-server sidecar lifecycle
 │       ├── integrations/    # External services: email (IMAP), mcp/, dav/
 │       ├── desktop/         # Screen capture (portal on Linux, xcap elsewhere)
-│       ├── sidecar_utils.rs # Shared sidecar primitives
+│       ├── sidecar_util.rs # Shared sidecar primitives
 │       ├── whisper.rs       # whisper-server sidecar
 │       ├── tts.rs           # koko sidecar
 │       ├── inference.rs     # Hardware detection + model recommendations
@@ -59,10 +59,10 @@ localhost:
 | `whisper-server` | 8766 | whisper.cpp  | Speech-to-text                 |
 | `koko`           | 3001 | Kokoros      | Text-to-speech (OpenAI-compat) |
 
-### `sidecar_utils.rs` — what's shared
+### `sidecar_util.rs` — what's shared
 
 Every sidecar file (`server/mod.rs`, `whisper.rs`, `tts.rs`) consumes the
-same primitives from `sidecar_utils`:
+same primitives from `sidecar_util`:
 
 - `kill_process_on_port(port)` — orphan reaper on startup
 - `strip_ansi(line)` — strip color codes before log capture
@@ -77,9 +77,9 @@ same primitives from `sidecar_utils`:
 ### Adding a sidecar
 
 1. Add a new `<name>.rs` (or `<name>/mod.rs` if it has helpers).
-2. Reach for `sidecar_utils` first; don't reimplement port-kill, ANSI strip,
+2. Reach for `sidecar_util` first; don't reimplement port-kill, ANSI strip,
    health poll, or the status enum.
-3. Add a port constant to `sidecar_utils::ports`.
+3. Add a port constant to `sidecar_util::ports`.
 4. Register Tauri commands in `lib.rs` (see Section 6).
 5. Add a frontend store in `src/lib/stores/<name>.svelte.ts` that listens to
    the status event.

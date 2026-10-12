@@ -1,13 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { JobTypeDefinition, PlannedStep } from '../types';
-import { runAutonomousCodingPipeline } from './pipeline';
+import type { JobTypeDefinition, PlannedStep } from '#lib/agent/jobs/types/types.ts';
+import { runAutonomousCodingPipeline } from '#lib/agent/jobs/types/autonomous-coding/pipeline.ts';
 import {
 	DEFAULT_MAX_TURNS,
 	MAX_MAX_TURNS,
 	MIN_MAX_TURNS,
 	parseAutonomousCodingConfig
-} from './config';
-import Editor from './Editor.svelte';
+} from '#lib/agent/jobs/types/autonomous-coding/config.ts';
+import Editor from '#lib/agent/jobs/types/autonomous-coding/Editor.svelte';
 
 /** The editor's working state (concrete values; '' = unset). */
 export interface AutonomousCodingEditorState {

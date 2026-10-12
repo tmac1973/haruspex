@@ -13,18 +13,18 @@ import {
 } from '#lib/stores/settings.ts';
 import { isAbortError } from '#lib/utils/error.ts';
 import { logDebug } from '#lib/debug-log.ts';
-import { NudgeState, automaticCheck } from './nudges';
-import type { CompletionMeta } from '../loop';
-import { appendMessage, type LoopContext, type LoopState } from './context';
-import { outOfTokensMessage } from './heuristics';
+import { NudgeState, automaticCheck } from '#lib/agent/loop/nudges.ts';
+import type { CompletionMeta } from '#lib/agent/loop.ts';
+import { appendMessage, type LoopContext, type LoopState } from '#lib/agent/loop/context.ts';
+import { outOfTokensMessage } from '#lib/agent/loop/heuristics.ts';
 import {
 	applyContextGuard,
 	completionSender,
 	reportCall,
 	samplingOptionsFor,
 	streamFinalSynthesis
-} from './modelCall';
-import { executeToolCalls } from './toolCalls';
+} from '#lib/agent/loop/modelCall.ts';
+import { executeToolCalls } from '#lib/agent/loop/toolCalls.ts';
 
 /**
  * True if the forced-final tool has already been called this turn (the

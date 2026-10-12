@@ -13,15 +13,15 @@
  * as separate files, and the two DiT families do not share a sampler.
  */
 
-import txt2imgGraph from './txt2img.json';
-import seamlessGraph from './seamless.json';
-import mingGraph from './ming_t2i.json';
-import mingRgbaGraph from './ming_t2i_rgba.json';
-import mingSeamlessGraph from './ming_t2i_seamless.json';
-import qwen21Graph from './qwen21_t2i.json';
-import type { ComfyGraph, FieldMap, ScalarBinding } from '../fieldMap';
-import type { ModelFamily } from '../families';
-import type { SamplerSettings } from '../../types';
+import txt2imgGraph from '#lib/image/comfyui/templates/txt2img.json';
+import seamlessGraph from '#lib/image/comfyui/templates/seamless.json';
+import mingGraph from '#lib/image/comfyui/templates/ming_t2i.json';
+import mingRgbaGraph from '#lib/image/comfyui/templates/ming_t2i_rgba.json';
+import mingSeamlessGraph from '#lib/image/comfyui/templates/ming_t2i_seamless.json';
+import qwen21Graph from '#lib/image/comfyui/templates/qwen21_t2i.json';
+import type { ComfyGraph, FieldMap, ScalarBinding } from '#lib/image/comfyui/fieldMap.ts';
+import type { ModelFamily } from '#lib/image/comfyui/families.ts';
+import type { SamplerSettings } from '#lib/image/types.ts';
 
 export interface WorkflowTemplate {
 	id: string;

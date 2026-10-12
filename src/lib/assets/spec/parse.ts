@@ -7,9 +7,9 @@
  * survive a job rewriting the file.
  */
 
-import type { AssetEntry, AssetKind, AssetSpec, AssetStyle } from './types';
-import { ASSET_KINDS } from './types';
-import { DEFAULT_ANCHOR_IMAGE, DEFAULT_ANCHOR_RECIPE } from './paths';
+import type { AssetEntry, AssetKind, AssetSpec, AssetStyle } from '#lib/assets/spec/types.ts';
+import { ASSET_KINDS } from '#lib/assets/spec/types.ts';
+import { DEFAULT_ANCHOR_IMAGE, DEFAULT_ANCHOR_RECIPE } from '#lib/assets/spec/paths.ts';
 import type { LoraRef } from '#lib/image/types.ts';
 import type { NormalizeProfile } from '#lib/ipc/gen/NormalizeProfile.ts';
 

@@ -11,8 +11,8 @@
  */
 import { untrack } from 'svelte';
 import { getOpenSessions, type CodeSession } from '#lib/stores/code.svelte.ts';
-import { metaState, sessionState, stepsState } from './state.ts';
-import type { SessionEvent } from './types.ts';
+import { metaState, sessionState, stepsState } from '#lib/engine/state.ts';
+import type { SessionEvent } from '#lib/engine/types.ts';
 
 export const LIVE_MS = 50;
 

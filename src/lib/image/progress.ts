@@ -1,4 +1,4 @@
-import type { ImageProgress } from './types';
+import type { ImageProgress } from '#lib/image/types.ts';
 
 /**
  * One line for a generation in flight, shared by Settings → Image and the

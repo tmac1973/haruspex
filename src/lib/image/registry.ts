@@ -7,8 +7,8 @@
  * anything that needs the built-in backends registered.
  */
 
-import type { ImageBackend } from './backend';
-import type { ImageBackendKind } from './types';
+import type { ImageBackend } from '#lib/image/backend.ts';
+import type { ImageBackendKind } from '#lib/image/types.ts';
 
 const backends = new Map<ImageBackendKind, ImageBackend>();
 

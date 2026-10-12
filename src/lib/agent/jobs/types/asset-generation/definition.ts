@@ -1,6 +1,6 @@
-import type { JobTypeDefinition, PlannedStep } from '../types';
-import type { ModelColumns } from '../../chainModel';
-import { runAssetGenerationPipeline } from './pipeline';
+import type { JobTypeDefinition, PlannedStep } from '#lib/agent/jobs/types/types.ts';
+import type { ModelColumns } from '#lib/agent/jobs/chainModel.ts';
+import { runAssetGenerationPipeline } from '#lib/agent/jobs/types/asset-generation/pipeline.ts';
 import { isPowerOfTwo } from '#lib/assets/spec/validate.ts';
 import {
 	parseAssetGenerationConfig,
@@ -13,10 +13,10 @@ import {
 	MAX_TARGET_SIZE,
 	MIN_TARGET_SIZE,
 	type AssetRunMode
-} from './config';
+} from '#lib/agent/jobs/types/asset-generation/config.ts';
 import { DEFAULT_SPEC_PATH } from '#lib/assets/spec/paths.ts';
 import { resolveImageBackend } from '#lib/image/index.ts';
-import Editor from './Editor.svelte';
+import Editor from '#lib/agent/jobs/types/asset-generation/Editor.svelte';
 
 /** The editor's working state (concrete values; '' = unset). */
 export interface AssetGenerationEditorState {

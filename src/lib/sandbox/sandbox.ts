@@ -3,9 +3,9 @@
 // the active conversation.
 
 import { getActiveConversationId } from '#lib/stores/session.svelte.ts';
-import { getWorkerPool } from './worker-pool';
-import type { RunOptions } from './worker-manager';
-import type { ToolResult } from './protocol';
+import { getWorkerPool } from '#lib/sandbox/worker-pool.ts';
+import type { RunOptions } from '#lib/sandbox/worker-manager.ts';
+import type { ToolResult } from '#lib/sandbox/protocol.ts';
 
 function requireChatId(): string {
 	const id = getActiveConversationId();
@@ -64,5 +64,5 @@ export function __setManagerForTesting(): void {
 	// no-op
 }
 
-export type { Artifact, ToolResult } from './protocol';
-export type { RunOptions } from './worker-manager';
+export type { Artifact, ToolResult } from '#lib/sandbox/protocol.ts';
+export type { RunOptions } from '#lib/sandbox/worker-manager.ts';

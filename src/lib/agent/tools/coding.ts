@@ -8,8 +8,8 @@
  * a coding turn pins one in via `toolAllowlist`.
  */
 
-import { registerTool } from './registry';
-import { toolResult } from './types';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { toolResult } from '#lib/agent/tools/types.ts';
 
 export const SUBMIT_PREFLIGHT_TOOL = 'submit_preflight';
 

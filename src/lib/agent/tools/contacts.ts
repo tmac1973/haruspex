@@ -8,13 +8,12 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { IPC } from '#lib/ipc/commands.ts';
 import type { Contact } from '#lib/ipc/gen/Contact.ts';
 import type { ContactQueryResult } from '#lib/ipc/gen/ContactQueryResult.ts';
 import { getSettings } from '#lib/stores/settings.ts';
-import { resolveDavAccounts } from './calendar';
-import { registerTool } from './registry';
-import { toolResult, toolError } from './types';
+import { resolveDavAccounts } from '#lib/agent/tools/calendar.ts';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { toolResult, toolError } from '#lib/agent/tools/types.ts';
 
 /** `home: +44 …`, or just the value when the card said nothing about kind. */
 function typed(values: { kind: string | null; value: string }[]): string[] {
@@ -123,7 +122,7 @@ registerTool({
 			);
 		}
 		try {
-			const result = await invoke<ContactQueryResult>(IPC.dav_search_contacts, {
+			const result = await invoke<ContactQueryResult>('dav_search_contacts', {
 				accounts,
 				query,
 				proxy: getSettings().proxy
@@ -172,7 +171,7 @@ registerTool({
 			);
 		}
 		try {
-			const result = await invoke<ContactQueryResult>(IPC.dav_get_contact, {
+			const result = await invoke<ContactQueryResult>('dav_get_contact', {
 				accounts,
 				identifier,
 				proxy: getSettings().proxy

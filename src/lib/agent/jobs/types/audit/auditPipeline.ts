@@ -8,8 +8,12 @@
  */
 
 import type { AuditFinding, AuditVerdict } from '#lib/agent/tools/audit.ts';
-import { clusterFindings, type ClusterOptions, type FindingCluster } from './auditCluster';
-import { buildAuditReport, type VerifiedCluster } from './auditReport';
+import {
+	clusterFindings,
+	type ClusterOptions,
+	type FindingCluster
+} from '#lib/agent/jobs/types/audit/auditCluster.ts';
+import { buildAuditReport, type VerifiedCluster } from '#lib/agent/jobs/types/audit/auditReport.ts';
 
 /** Hard cap on verification turns per run, so a noisy audit can't run away. */
 const DEFAULT_MAX_VERIFICATIONS = 50;

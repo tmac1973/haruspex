@@ -15,8 +15,8 @@
  * across the wider ecosystem rather than specific to one project's release.
  */
 
-import capabilities from './capabilities.json';
-import type { ImageBackendCapabilities } from '../types';
+import capabilities from '#lib/image/local/capabilities.json';
+import type { ImageBackendCapabilities } from '#lib/image/types.ts';
 
 /** The committed fixture, as emitted for the pinned build. */
 export interface SdCapabilityFixture {

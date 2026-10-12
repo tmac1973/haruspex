@@ -23,7 +23,7 @@ use tokio::task::AbortHandle;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::sidecar_utils::{clear_logs, new_log_buffer, push_log, snapshot_logs, LogBuffer};
+use crate::sidecar_util::{clear_logs, new_log_buffer, push_log, snapshot_logs, LogBuffer};
 
 /// One HTTP call. `id` lets the caller cancel it with [`comfy_cancel`].
 #[derive(Clone, Deserialize, ts_rs::TS)]

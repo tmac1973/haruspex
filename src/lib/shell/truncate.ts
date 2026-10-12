@@ -55,7 +55,7 @@ export function truncateCapturedOutput(text: string, maxBytes: number): Truncati
 	}
 
 	const droppedBytes = totalBytes - byteLength(head) - byteLength(tail);
-	const marker = `\n\n[... middle truncated — ${formatBytes(totalBytes)} total, ${formatBytes(droppedBytes)} dropped from the middle. Ask the user to narrow the command (e.g. \`| tail -200\`, \`--since '1 hour ago'\`, \`| grep <pattern>\`) if you need the dropped region ...]\n\n`;
+	const marker = `\n\n[... middle truncated — ${markerBytes(totalBytes)} total, ${markerBytes(droppedBytes)} dropped from the middle. Ask the user to narrow the command (e.g. \`| tail -200\`, \`--since '1 hour ago'\`, \`| grep <pattern>\`) if you need the dropped region ...]\n\n`;
 
 	return {
 		text: `${head}${marker}${tail}`,
@@ -68,7 +68,12 @@ function byteLength(s: string): number {
 	return new TextEncoder().encode(s).length;
 }
 
-function formatBytes(n: number): string {
+/**
+ * Binary units for the model-facing truncation marker — not the shared
+ * `formatBytes` (#lib/utils/format.ts), which is UI copy. The marker's wording
+ * is part of what the model reads, so it stays put when the UI's changes.
+ */
+function markerBytes(n: number): string {
 	if (n < 1024) return `${n} B`;
 	if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`;
 	return `${(n / (1024 * 1024)).toFixed(2)} MiB`;

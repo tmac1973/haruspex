@@ -1,6 +1,6 @@
 /** Asset-generation `type_config` JSON shape. */
 
-import { parseModelColumns, type ModelColumns } from '../../chainModel';
+import { parseModelColumns, type ModelColumns } from '#lib/agent/jobs/chainModel.ts';
 import { DEFAULT_SPEC_PATH } from '#lib/assets/spec/paths.ts';
 import { clampInt } from '#lib/utils/clampInt.ts';
 

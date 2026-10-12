@@ -7,9 +7,9 @@
  * back when it starts the server, runs a setup command or connects — never
  * handing them to the webview.
  */
-import { getSettings, setMcpServers } from './settings';
+import { getSettings, setMcpServers } from '#lib/stores/settings.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
-import { deleteSecret, keepSecret, secretStoreAvailable, setSecret } from './secrets';
+import { deleteSecret, keepSecret, secretStoreAvailable, setSecret } from '#lib/stores/secrets.ts';
 
 export function mcpSecretKey(serverId: string, key: string): string {
 	return `mcp:${serverId}:${key}`;

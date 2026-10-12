@@ -13,8 +13,8 @@
  * when an audit turn pins them in via `toolAllowlist` (see `getToolSchemas`).
  */
 
-import { registerTool } from './registry';
-import { toolResult } from './types';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { toolResult } from '#lib/agent/tools/types.ts';
 
 export const SUBMIT_FINDINGS_TOOL = 'submit_findings';
 export const SUBMIT_VERDICT_TOOL = 'submit_verdict';

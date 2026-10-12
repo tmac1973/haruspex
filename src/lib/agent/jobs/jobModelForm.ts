@@ -14,8 +14,8 @@ import {
 	type JobModelAdvanced,
 	type ReasoningMode,
 	type SamplingSource
-} from './modelAdvanced';
-import type { ModelColumns } from './chainModel';
+} from '#lib/agent/jobs/modelAdvanced.ts';
+import type { ModelColumns } from '#lib/agent/jobs/chainModel.ts';
 import { isOpenRouterUrl } from '#lib/inference/descriptor.ts';
 
 export { isOpenRouterUrl };

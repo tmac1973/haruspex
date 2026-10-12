@@ -46,6 +46,12 @@ export function formatDuration(ms: number): string {
 	return `${h}h ${m % 60}m`;
 }
 
+/** A context size in K, for messages: 262144 → "256K", a computed ceiling of
+ *  37888 → "37K". Under 1024 it stays in tokens. */
+export function formatContextSize(n: number): string {
+	return n >= 1024 ? `${Math.round(n / 1024)}K` : String(n);
+}
+
 /** Compact token count: 1234 → "1.2K". Shared by every context gauge. */
 export function formatTokens(n: number): string {
 	if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';

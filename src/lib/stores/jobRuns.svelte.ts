@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { logDebug } from '#lib/debug-log.ts';
-import { dbMutate, dbQuery } from './dbCall';
+import { dbMutate, dbQuery } from '#lib/stores/dbCall.ts';
 
 export type JobRunStatus =
 	| 'queued'

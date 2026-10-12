@@ -6,8 +6,8 @@
 	 * Saving writes the file at once (Ctrl/Cmd-S or Save); closing with
 	 * unsaved changes asks first rather than dropping them.
 	 */
-	import Modal from './Modal.svelte';
-	import CodeEditor from './CodeEditor.svelte';
+	import Modal from '#lib/components/Modal.svelte';
+	import CodeEditor from '#lib/components/CodeEditor.svelte';
 	import { getPendingEdit } from '#lib/stores/fileEditor.svelte.ts';
 	import { EditorDocument } from '#lib/editor/document.svelte.ts';
 	import { plainIO } from '#lib/editor/io.ts';

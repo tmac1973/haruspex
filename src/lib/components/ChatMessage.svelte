@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { renderMarkdown, splitThinkChannels, stripMarkdownForTTS } from '#lib/markdown.ts';
 	import { resolvedImages, stripFor } from '#lib/images/figure.ts';
-	import ChatImageStrip from './ChatImageStrip.svelte';
+	import ChatImageStrip from '#lib/components/ChatImageStrip.svelte';
 	import type { SearchStep } from '#lib/agent/loop.ts';
 	import ThinkingPanel from '#lib/components/ThinkingPanel.svelte';
 	import SpeakerButton from '#lib/components/SpeakerButton.svelte';

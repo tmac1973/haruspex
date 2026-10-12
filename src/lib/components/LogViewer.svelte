@@ -275,7 +275,7 @@
 				// normal state rather than a failure — say so instead of showing
 				// an empty pane.
 				logLines = selectedMcpServer
-					? await invoke<string[]>(IPC.mcp_server_logs, { id: selectedMcpServer.id })
+					? await invoke<string[]>('mcp_server_logs', { id: selectedMcpServer.id })
 					: [];
 			} else if (activeTab === 'image') {
 				logLines = await invoke<string[]>(
@@ -477,7 +477,7 @@
 				logLines = [];
 			} else if (activeTab === 'mcp') {
 				if (selectedMcpServer) {
-					await invoke(IPC.mcp_clear_server_logs, { id: selectedMcpServer.id });
+					await invoke('mcp_clear_server_logs', { id: selectedMcpServer.id });
 				}
 				logLines = [];
 			} else {

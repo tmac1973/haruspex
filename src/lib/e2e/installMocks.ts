@@ -11,8 +11,8 @@
  * to replace one command's answer for the rest of the page's life.
  */
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks';
-import { JOBS_DB } from './jobsDb';
-import { CODE_DB } from './codeDb';
+import { JOBS_DB } from '#lib/e2e/jobsDb.ts';
+import { CODE_DB } from '#lib/e2e/codeDb.ts';
 
 type Args = Record<string, unknown> | undefined;
 type Handler = (args: Args) => unknown;

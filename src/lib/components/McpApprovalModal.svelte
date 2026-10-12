@@ -13,8 +13,8 @@
 	 * tool says it does, and the arguments the model actually chose. Approving a
 	 * bare tool name is approving nothing in particular.
 	 */
-	import Modal from './Modal.svelte';
-	import ModalButton from './ModalButton.svelte';
+	import Modal from '#lib/components/Modal.svelte';
+	import ModalButton from '#lib/components/ModalButton.svelte';
 	import { getPendingMcpApproval, resolveMcpApproval } from '#lib/stores/mcpApproval.svelte.ts';
 
 	const pending = $derived(getPendingMcpApproval());

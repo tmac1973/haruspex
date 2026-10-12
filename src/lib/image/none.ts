@@ -6,8 +6,8 @@
  * job: one sentence naming the settings path, per the project's UI-copy rule.
  */
 
-import type { ImageBackend } from './backend';
-import { ImageBackendError, type ImageBackendCapabilities } from './types';
+import type { ImageBackend } from '#lib/image/backend.ts';
+import { ImageBackendError, type ImageBackendCapabilities } from '#lib/image/types.ts';
 
 const NOT_CONFIGURED = 'No image backend configured — Settings → Image.';
 

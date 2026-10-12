@@ -11,7 +11,6 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { IPC } from '#lib/ipc/commands.ts';
 import type { CaptureWindow } from '#lib/ipc/gen/CaptureWindow.ts';
 import type { ScreenCapture } from '#lib/ipc/gen/ScreenCapture.ts';
 
@@ -22,7 +21,7 @@ export const CAPTURE_PROMPT =
 
 /** Windows to choose from, or none when the platform picks for us (Linux). */
 export function windowsToPick(): Promise<CaptureWindow[]> {
-	return invoke<CaptureWindow[]>(IPC.list_capture_windows);
+	return invoke<CaptureWindow[]>('list_capture_windows');
 }
 
 /**
@@ -32,8 +31,8 @@ export function windowsToPick(): Promise<CaptureWindow[]> {
 export async function captureWindowImage(id: number | null): Promise<string> {
 	const capture =
 		id === null
-			? await invoke<ScreenCapture>(IPC.capture_screen, { target: 'window' })
-			: await invoke<ScreenCapture>(IPC.capture_window, { id });
+			? await invoke<ScreenCapture>('capture_screen', { target: 'window' })
+			: await invoke<ScreenCapture>('capture_window', { id });
 	return capture.dataUrl;
 }
 

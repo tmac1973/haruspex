@@ -7,8 +7,13 @@
 import type { ChatCompletionResponse } from '#lib/api.ts';
 import { stripThinkBlocks } from '#lib/markdown.ts';
 import { logDebug } from '#lib/debug-log.ts';
-import { appendMessage, type IterationOutcome, type LoopContext, type LoopState } from './context';
-import { hasNonThinkingContent } from './heuristics';
+import {
+	appendMessage,
+	type IterationOutcome,
+	type LoopContext,
+	type LoopState
+} from '#lib/agent/loop/context.ts';
+import { hasNonThinkingContent } from '#lib/agent/loop/heuristics.ts';
 
 /** Drain the caller's steering queue, dropping blank entries. */
 function takeQueuedSteering(ctx: LoopContext): string[] {

@@ -19,7 +19,7 @@ import {
 	type NestedShell
 } from '#lib/shell/nestedShell.ts';
 import { setPtyBusy } from '#lib/stores/shellPtyBusy.svelte.ts';
-import type { ToolContext } from './types';
+import type { ToolContext } from '#lib/agent/tools/types.ts';
 import { isFish } from '#lib/shell/fish.ts';
 import { outOfMemoryNote } from '#lib/shell/memoryLimit.ts';
 import type { ShellMemoryStatus } from '#lib/ipc/gen/ShellMemoryStatus.ts';

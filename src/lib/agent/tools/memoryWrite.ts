@@ -25,9 +25,9 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import type { MemoryHit } from '#lib/ipc/gen/MemoryHit.ts';
-import { registerTool } from './registry';
-import { toolResult, toolError } from './types';
-import { MEMORY_CATEGORIES, type MemoryCategory } from './memory';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { toolResult, toolError } from '#lib/agent/tools/types.ts';
+import { MEMORY_CATEGORIES, type MemoryCategory } from '#lib/agent/tools/memory.ts';
 import { refreshMemoryCount } from '#lib/stores/memory.svelte.ts';
 import {
 	askMemoryApproval,

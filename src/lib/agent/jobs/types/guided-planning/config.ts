@@ -11,7 +11,7 @@
  *
  * Phase 05 widens this with `unattended_chain`.
  */
-import { parseChainModel, type ChainModel } from '../../chainModel';
+import { parseChainModel, type ChainModel } from '#lib/agent/jobs/chainModel.ts';
 
 /**
  * The model each chained stage runs on. Null means "same as this job", the

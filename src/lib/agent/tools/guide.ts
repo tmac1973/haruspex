@@ -14,8 +14,8 @@
 import { GUIDE_PAGES, guideIndex, guidePage } from '#lib/guide/guide.ts';
 import { guideStatus } from '#lib/guide/status.ts';
 import { GUIDE_URL } from '#lib/guide/prompt.ts';
-import { registerTool } from './registry';
-import { toolError, toolResult } from './types';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { toolError, toolResult } from '#lib/agent/tools/types.ts';
 
 export const HARUSPEX_DOCS_TOOL = 'haruspex_docs';
 

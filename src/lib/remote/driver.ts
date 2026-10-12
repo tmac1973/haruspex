@@ -27,8 +27,8 @@ import {
 	dbSaveMessage
 } from '#lib/stores/db.ts';
 import { noteExternalConversation } from '#lib/stores/chat.svelte.ts';
-import { conversationIdFor, prepareHistory, titleFor } from './conversation';
-import { noteAdmitted, noteAnswer, noteFinished, notePrompt } from './activity.svelte';
+import { conversationIdFor, prepareHistory, titleFor } from '#lib/remote/conversation.ts';
+import { noteAdmitted, noteAnswer, noteFinished, notePrompt } from '#lib/remote/activity.svelte.ts';
 import { logDebug } from '#lib/debug-log.ts';
 
 export interface RemotePromptEvent {

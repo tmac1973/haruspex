@@ -7,7 +7,7 @@
  * key, go back to Remote, and your own server was sent the OpenRouter key.
  */
 import { OPENROUTER_BASE_URL } from '#lib/openrouter.ts';
-import type { InferenceBackendConfig, RemoteProfile } from './settings';
+import type { InferenceBackendConfig, RemoteProfile } from '#lib/stores/settings.ts';
 
 export type RemoteOption = 'generic' | 'openrouter';
 

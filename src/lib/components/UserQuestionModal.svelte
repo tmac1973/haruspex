@@ -20,7 +20,7 @@
 	 * re-asking). Backdrop-click is deliberately NOT wired: cancelling discards
 	 * the run, so it must be an intentional click/keypress, not a stray one.
 	 */
-	import Modal from './Modal.svelte';
+	import Modal from '#lib/components/Modal.svelte';
 	import {
 		getPendingQuestion,
 		resolveUserQuestion,

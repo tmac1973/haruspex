@@ -1,8 +1,11 @@
-import type { JobTypeDefinition } from '../types';
-import { planAuditSteps, runAuditPipeline } from './pipeline';
-import { parseAuditConfig } from './config';
-import { DEFAULT_SAMPLE_INSTRUCTIONS, DEFAULT_VERIFY_INSTRUCTIONS } from './auditPipeline';
-import Editor from './Editor.svelte';
+import type { JobTypeDefinition } from '#lib/agent/jobs/types/types.ts';
+import { planAuditSteps, runAuditPipeline } from '#lib/agent/jobs/types/audit/pipeline.ts';
+import { parseAuditConfig } from '#lib/agent/jobs/types/audit/config.ts';
+import {
+	DEFAULT_SAMPLE_INSTRUCTIONS,
+	DEFAULT_VERIFY_INSTRUCTIONS
+} from '#lib/agent/jobs/types/audit/auditPipeline.ts';
+import Editor from '#lib/agent/jobs/types/audit/Editor.svelte';
 
 /**
  * The audit editor's working state: every field concrete (presentation

@@ -254,7 +254,7 @@ Two consequences for whoever wires the process up:
   spawns it there.
 
 - `LD_LIBRARY_PATH` must list `sd-libs/` **before** the executable's own
-  directory, which is the opposite of what `sidecar_utils::library_paths`
+  directory, which is the opposite of what `sidecar_util::library_paths`
   does for every other sidecar. In a dev tree `target/debug` carries
   llama.cpp's `libggml-base.so.0`, and with the usual ordering `ldd` resolves
   sd-server against it — an older ABI under an identical soname.

@@ -4,7 +4,7 @@
  *
  * The sidecar ports and loopback host exist on both sides of the IPC
  * boundary with no codegen: `src/lib/ports.ts` (TS) must match the
- * `ports` module + `LOOPBACK` const in `src-tauri/src/sidecar_utils.rs`
+ * `ports` module + `LOOPBACK` const in `src-tauri/src/sidecar_util.rs`
  * (Rust). This script parses both and fails on any mismatch, so a port
  * change that touches only one side breaks CI instead of a user.
  *
@@ -33,23 +33,23 @@ const sdcpp = readFileSync(join(root, 'scripts/fetch-sdcpp.sh'), 'utf8');
 const sdcppDoc = readFileSync(join(root, 'docs/image-generation.md'), 'utf8');
 
 const ts = readFileSync(join(root, 'src/lib/ports.ts'), 'utf8');
-const rs = readFileSync(join(root, 'src-tauri/src/sidecar_utils.rs'), 'utf8');
+const rs = readFileSync(join(root, 'src-tauri/src/sidecar_util.rs'), 'utf8');
 
 const pairs = [
 	{
 		name: 'llama port',
 		ts: extract(ts, /llama:\s*(\d+)/, 'PORTS.llama', 'ports.ts'),
-		rs: extract(rs, /const LLAMA: u16 = (\d+);/, 'ports::LLAMA', 'sidecar_utils.rs')
+		rs: extract(rs, /const LLAMA: u16 = (\d+);/, 'ports::LLAMA', 'sidecar_util.rs')
 	},
 	{
 		name: 'whisper port',
 		ts: extract(ts, /whisper:\s*(\d+)/, 'PORTS.whisper', 'ports.ts'),
-		rs: extract(rs, /const WHISPER: u16 = (\d+);/, 'ports::WHISPER', 'sidecar_utils.rs')
+		rs: extract(rs, /const WHISPER: u16 = (\d+);/, 'ports::WHISPER', 'sidecar_util.rs')
 	},
 	{
 		name: 'tts port',
 		ts: extract(ts, /tts:\s*(\d+)/, 'PORTS.tts', 'ports.ts'),
-		rs: extract(rs, /const TTS: u16 = (\d+);/, 'ports::TTS', 'sidecar_utils.rs')
+		rs: extract(rs, /const TTS: u16 = (\d+);/, 'ports::TTS', 'sidecar_util.rs')
 	},
 	{
 		// An unpinned sidecar is a reproducibility hole, and a pin recorded in
@@ -64,7 +64,7 @@ const pairs = [
 	{
 		name: 'loopback host',
 		ts: extract(ts, /LOOPBACK = '([^']+)'/, 'LOOPBACK', 'ports.ts'),
-		rs: extract(rs, /const LOOPBACK: &str = "([^"]+)";/, 'LOOPBACK', 'sidecar_utils.rs')
+		rs: extract(rs, /const LOOPBACK: &str = "([^"]+)";/, 'LOOPBACK', 'sidecar_util.rs')
 	}
 ];
 
@@ -76,7 +76,7 @@ if (drifted.length > 0) {
 		// than the drift it reports.
 		console.error(
 			`check-constants: ${p.name} drifted — ${p.tsFile ?? 'src/lib/ports.ts'} has ${p.ts}, ` +
-				`${p.rsFile ?? 'src-tauri/src/sidecar_utils.rs'} has ${p.rs}`
+				`${p.rsFile ?? 'src-tauri/src/sidecar_util.rs'} has ${p.rs}`
 		);
 	}
 	process.exit(1);

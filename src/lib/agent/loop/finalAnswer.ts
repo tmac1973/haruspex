@@ -6,8 +6,8 @@
 import { ResponseCutOffError, messageText, type ChatCompletionResponse } from '#lib/api.ts';
 import type { getChatTemplateKwargs, getSamplingParams } from '#lib/stores/settings.ts';
 import { logDebug } from '#lib/debug-log.ts';
-import { NudgeState } from './nudges';
-import type { IterationOutcome, LoopContext, LoopState } from './context';
+import { NudgeState } from '#lib/agent/loop/nudges.ts';
+import type { IterationOutcome, LoopContext, LoopState } from '#lib/agent/loop/context.ts';
 import {
 	diversityNudgePrompt,
 	hasNonThinkingContent,
@@ -16,11 +16,11 @@ import {
 	phantomImageNudgePrompt,
 	researchNudgePrompt,
 	wroteRemoteImageMarkdown
-} from './heuristics';
-import { streamFinalSynthesis } from './modelCall';
-import { forceFinalToolAlreadyCalled, forceFinalToolCall } from './forcedFinal';
-import { pushNudge } from './recovery';
-import { continueForSteering } from './steeringQueue';
+} from '#lib/agent/loop/heuristics.ts';
+import { streamFinalSynthesis } from '#lib/agent/loop/modelCall.ts';
+import { forceFinalToolAlreadyCalled, forceFinalToolCall } from '#lib/agent/loop/forcedFinal.ts';
+import { pushNudge } from '#lib/agent/loop/recovery.ts';
+import { continueForSteering } from '#lib/agent/loop/steeringQueue.ts';
 
 /**
  * Terminal no-tool-call handler: after the recovery guards have all

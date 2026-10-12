@@ -8,11 +8,15 @@ import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import { coerceCallArguments, executeTool } from '#lib/agent/tools/index.ts';
 import { isFetchFailureResult, isToolErrorResult } from '#lib/agent/tools/_helpers.ts';
 import { isVerbosePayloads, logDebug, previewPayload } from '#lib/debug-log.ts';
-import { NudgeState } from './nudges';
-import { planToolBatches, runToolBatch, toolCallConcurrency } from './parallelTools';
+import { NudgeState } from '#lib/agent/loop/nudges.ts';
+import {
+	planToolBatches,
+	runToolBatch,
+	toolCallConcurrency
+} from '#lib/agent/loop/parallelTools.ts';
 import { createSlotLender, laneConcurrency } from '#lib/agent/inferenceQueue.svelte.ts';
-import { appendMessage, type LoopContext } from './context';
-import { raceWithAbort } from './modelCall';
+import { appendMessage, type LoopContext } from '#lib/agent/loop/context.ts';
+import { raceWithAbort } from '#lib/agent/loop/modelCall.ts';
 
 /**
  * Execute the model's tool calls: append the assistant tool_calls message,

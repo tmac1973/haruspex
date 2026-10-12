@@ -11,15 +11,14 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { onMount, onDestroy } from 'svelte';
-	import { IPC } from '#lib/ipc/commands.ts';
 	import { getSettings, setMcpServers, snapshot } from '#lib/stores/settings.ts';
 	import { storeMcpSecret } from '#lib/stores/mcpSecrets.ts';
 	import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 	import type { CatalogEntry } from '#lib/ipc/gen/CatalogEntry.ts';
 	import type { RuntimeAvailability } from '#lib/ipc/gen/RuntimeAvailability.ts';
 	import type { DownloadProgress } from '#lib/ipc/gen/DownloadProgress.ts';
-	import McpServerRow from './McpServerRow.svelte';
-	import McpCatalogBrowser from './McpCatalogBrowser.svelte';
+	import McpServerRow from '#lib/components/settings/McpServerRow.svelte';
+	import McpCatalogBrowser from '#lib/components/settings/McpCatalogBrowser.svelte';
 	import { probeCompanion } from '#lib/stores/mcpServers.svelte.ts';
 	import { newId } from '#lib/utils/id.ts';
 
@@ -83,7 +82,7 @@
 		try {
 			// Downloads are our own egress, so they follow the app proxy with no
 			// per-server override to consult.
-			await invoke(IPC.mcp_install_server, {
+			await invoke('mcp_install_server', {
 				entryId: entry.id,
 				serverId: id,
 				proxy: getSettings().proxy
@@ -114,7 +113,7 @@
 	}
 
 	async function cancelInstall(): Promise<void> {
-		await invoke(IPC.mcp_cancel_install);
+		await invoke('mcp_cancel_install');
 	}
 
 	function addCustom(): void {
@@ -186,12 +185,12 @@
 
 	onMount(async () => {
 		try {
-			catalog = await invoke<CatalogEntry[]>(IPC.mcp_catalog);
+			catalog = await invoke<CatalogEntry[]>('mcp_catalog');
 		} catch (e) {
 			error = String(e);
 		}
 		try {
-			runtimes = await invoke<RuntimeAvailability>(IPC.mcp_runtimes_available);
+			runtimes = await invoke<RuntimeAvailability>('mcp_runtimes_available');
 		} catch {
 			// A failed probe is not worth an error banner: the install itself
 			// will still say what went wrong, and every kind stays enabled.

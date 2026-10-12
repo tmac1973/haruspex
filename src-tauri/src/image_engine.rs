@@ -15,7 +15,7 @@
 //!     directory containing `/proc/self/exe`. Launched from anywhere else it
 //!     reports "No devices found!" and refuses to start.
 //!   * that directory comes FIRST on the library search path, the opposite of
-//!     [`crate::sidecar_utils::library_paths`], because the executable's own
+//!     [`crate::sidecar_util::library_paths`], because the executable's own
 //!     directory carries llama.cpp's ggml under identical sonames at a
 //!     different ABI.
 
@@ -28,7 +28,7 @@ use tauri::async_runtime::Mutex;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::ShellExt;
 
-use crate::sidecar_utils::{
+use crate::sidecar_util::{
     base_url, http_client, kill_child, kill_process_on_port, library_path_env, new_log_buffer,
     poll_health, ports::IMAGE as IMAGE_PORT, snapshot_logs, spawn_log_reader, LogBuffer,
     SidecarStatus, LOOPBACK,
@@ -295,7 +295,7 @@ impl ImageEngine {
                     }
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                 }
-                crate::sidecar_utils::clear_logs(&self.log).await;
+                crate::sidecar_util::clear_logs(&self.log).await;
                 *self.status.lock().await = SidecarStatus::Starting;
                 self.spawn(app, &exe, &libs, &args, Some(ids)).await?;
             }
@@ -542,7 +542,7 @@ pub async fn image_engine_logs(state: tauri::State<'_, ImageEngine>) -> Result<V
 /// Empty the engine's log, for the log viewer's Clear.
 #[tauri::command]
 pub async fn image_engine_clear_logs(state: tauri::State<'_, ImageEngine>) -> Result<(), ()> {
-    crate::sidecar_utils::clear_logs(&state.log).await;
+    crate::sidecar_util::clear_logs(&state.log).await;
     Ok(())
 }
 

@@ -362,7 +362,7 @@ async fn run_vulkan_probe(app: &tauri::AppHandle) -> Option<Vec<VulkanDevice>> {
         .sidecar("haruspex-llama-server")
         .ok()?
         .args(["--verbose", "--list-devices"]);
-    let (mut rx, child) = crate::sidecar_utils::with_library_paths(cmd, app)
+    let (mut rx, child) = crate::sidecar_util::with_library_paths(cmd, app)
         .spawn()
         .ok()?;
     let read = async {

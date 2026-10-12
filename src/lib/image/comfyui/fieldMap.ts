@@ -15,7 +15,7 @@
  * like success.
  */
 
-import type { ImageRequest, LoraRef } from '../types';
+import type { ImageRequest, LoraRef } from '#lib/image/types.ts';
 
 /** One node in an API-format graph. */
 export interface GraphNode {

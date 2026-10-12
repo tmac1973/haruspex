@@ -17,7 +17,7 @@
 
 import { SvelteSet } from 'svelte/reactivity';
 import type { RiskMatch } from '#lib/shell/risky-commands.ts';
-import { createApprovalQueue } from './approvalQueue.svelte.ts';
+import { createApprovalQueue } from '#lib/stores/approvalQueue.svelte.ts';
 
 export type CommandApprovalChoice = 'allow_once' | 'allow_session' | 'deny';
 

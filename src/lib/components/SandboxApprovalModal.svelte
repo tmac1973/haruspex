@@ -13,8 +13,8 @@
 	 * FileConflictModal: silent dismiss of "is it OK to run code?" is a
 	 * footgun.
 	 */
-	import Modal from './Modal.svelte';
-	import ModalButton from './ModalButton.svelte';
+	import Modal from '#lib/components/Modal.svelte';
+	import ModalButton from '#lib/components/ModalButton.svelte';
 	import { getPendingApproval, resolveApproval } from '#lib/stores/sandboxApproval.svelte.ts';
 
 	const pending = $derived(getPendingApproval());

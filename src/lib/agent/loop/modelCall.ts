@@ -36,8 +36,8 @@ import {
 import { splitThinkChannels } from '#lib/markdown.ts';
 import { appendStreamDelta, createThinkStreamState } from '#lib/agent/think-stream.ts';
 import { logDebug } from '#lib/debug-log.ts';
-import { inLoopTrimBudget, type LoopContext } from './context';
-import { isCodeContext } from './heuristics';
+import { inLoopTrimBudget, type LoopContext } from '#lib/agent/loop/context.ts';
+import { isCodeContext } from '#lib/agent/loop/heuristics.ts';
 
 /**
  * The sampling inputs for one model call. Every `getSamplingParams` call in

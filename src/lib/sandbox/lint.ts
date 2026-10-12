@@ -26,7 +26,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { listSandboxGlobals } from './sandbox';
+import { listSandboxGlobals } from '#lib/sandbox/sandbox.ts';
 
 export interface LintIssue {
 	code: string;

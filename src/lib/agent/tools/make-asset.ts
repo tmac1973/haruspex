@@ -9,11 +9,17 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
-import { registerTool } from './registry';
-import { toolError, toolResult, type ToolContext } from './types';
-import { ctxCwd, ctxWslDistroArg, fsWorkdir, resolveShellPath, toolInvokeError } from './_helpers';
-import { localWriteBlocked } from './nested-session';
-import { MAX_PENDING_IMAGES } from './fs-read';
+import { registerTool } from '#lib/agent/tools/registry.ts';
+import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
+import {
+	ctxCwd,
+	ctxWslDistroArg,
+	fsWorkdir,
+	resolveShellPath,
+	toolInvokeError
+} from '#lib/agent/tools/_helpers.ts';
+import { localWriteBlocked } from '#lib/agent/tools/nested-session.ts';
+import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
 import { extractPalette } from '#lib/assets/normalize.ts';
 import {
 	DEFAULT_SIZE,

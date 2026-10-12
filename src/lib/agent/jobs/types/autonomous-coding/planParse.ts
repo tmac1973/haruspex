@@ -15,7 +15,11 @@
  * the model to read the plan.
  */
 
-import type { LoopPlan, PhaseInfo, TaskItem } from './loopState';
+import type {
+	LoopPlan,
+	PhaseInfo,
+	TaskItem
+} from '#lib/agent/jobs/types/autonomous-coding/loopState.ts';
 
 /** A plan-dir file, as read by the pipeline. */
 export interface PlanFile {

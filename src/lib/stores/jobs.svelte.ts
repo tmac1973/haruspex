@@ -1,4 +1,4 @@
-import { dbMutate, dbQuery } from './dbCall';
+import { dbMutate, dbQuery } from '#lib/stores/dbCall.ts';
 
 export type ScheduleKind = 'manual' | 'hourly' | 'daily' | 'weekly' | 'interval';
 

@@ -19,8 +19,8 @@
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
 	import StopIndicator from '#lib/components/StopIndicator.svelte';
 	import ThinkingIndicator from '#lib/components/ThinkingIndicator.svelte';
-	import CodeSteps from './CodeSteps.svelte';
-	import ForkDialog from './ForkDialog.svelte';
+	import CodeSteps from '#lib/components/code/CodeSteps.svelte';
+	import ForkDialog from '#lib/components/code/ForkDialog.svelte';
 	import type { CodeForkMode } from '#lib/ipc/gen/CodeForkMode.ts';
 	import { messageText } from '#lib/api.ts';
 	import { TURNS_PER_PAGE, turnsBefore, windowStart } from '#lib/code/sessionList.ts';

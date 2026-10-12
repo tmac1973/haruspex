@@ -16,7 +16,7 @@
 	import { errMessage } from '#lib/utils/error.ts';
 	import type { MemoryMeta } from '#lib/ipc/gen/MemoryMeta.ts';
 	import { refreshMemoryCount } from '#lib/stores/memory.svelte.ts';
-	import MemoryRow from './MemoryRow.svelte';
+	import MemoryRow from '#lib/components/settings/MemoryRow.svelte';
 
 	const PAGE_SIZE = 25;
 
