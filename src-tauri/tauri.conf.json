@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Haruspex",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "identifier": "com.haruspex.app",
   "build": {
     "frontendDist": "../build",
@@ -23,8 +23,8 @@
     "security": {
       "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: haruspex-img: http://haruspex-img.localhost; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http: https: ws: wss:; worker-src 'self' blob:; frame-src haruspex-artifact: http://haruspex-artifact.localhost; object-src 'none'; base-uri 'self'; form-action 'none'",
       "dangerousDisableAssetCspModification": [
-				"style-src"
-			],
+        "style-src"
+      ],
       "headers": {
         "Cross-Origin-Opener-Policy": "same-origin",
         "Cross-Origin-Embedder-Policy": "credentialless"
