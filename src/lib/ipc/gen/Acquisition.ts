@@ -31,12 +31,12 @@ repo: string, version: string,
 /**
  * Asset filename per target triple.
  */
-assets: { [key in string]?: string }, 
+assets: { [key in string]: string }, 
 /**
  * Expected sha256 per target triple. An entry missing for the running
  * platform is a hard failure, not a skipped check.
  */
-sha256: { [key in string]?: string }, 
+sha256: { [key in string]: string }, 
 /**
  * Name of the executable inside the asset (and on disk after install).
  */

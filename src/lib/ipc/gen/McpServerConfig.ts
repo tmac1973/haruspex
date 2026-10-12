@@ -26,7 +26,7 @@ enabled: boolean, source: McpServerSource,
  * Secrets collected during guided setup, keyed by the step's `key`. A
  * catalog entry's `env` refers to these as `$secret.<key>`.
  */
-secrets: { [key in string]?: string }, 
+secrets: { [key in string]: string }, 
 /**
  * The `secrets` keys whose values are kept in the secret store, under
  * `mcp:<id>:<key>`, with an empty value in `secrets`. Rust reads them only
@@ -38,7 +38,7 @@ storedSecrets?: Array<string>,
  * this map has never been decided on and falls back to the catalog
  * entry's tested `defaultTools`; Phase 05 owns that resolution.
  */
-toolEnabled: { [key in string]?: boolean }, 
+toolEnabled: { [key in string]: boolean }, 
 /**
  * Whether this server's traffic goes through the app's proxy.
  *

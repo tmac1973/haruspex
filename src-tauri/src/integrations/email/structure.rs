@@ -1,7 +1,7 @@
 //! A message's MIME structure, from IMAP's BODYSTRUCTURE, so a list can fetch
 //! a few KB of the right text part instead of every message whole.
 
-use async_imap::imap_proto::types::{BodyContentCommon, BodyStructure, ContentEncoding};
+use async_imap::imap_proto::{BodyContentCommon, BodyStructure, ContentEncoding};
 use mail_parser::MessageParser;
 
 use super::text::html_to_text;
@@ -172,12 +172,12 @@ pub fn decode(bytes: &[u8], part: &Part, truncated: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_imap::imap_proto::types::{AttributeValue, Response};
+    use async_imap::imap_proto::{AttributeValue, Response};
 
     /// The leaves of a BODYSTRUCTURE as a server sends it.
     fn parse(bs: &str) -> Vec<Part> {
         let line = format!("* 1 FETCH (BODYSTRUCTURE {bs})\r\n");
-        let (_, resp) = async_imap::imap_proto::parser::parse_response(line.as_bytes()).unwrap();
+        let (_, resp) = Response::parse(line.as_bytes()).unwrap();
         let Response::Fetch(_, attrs) = resp else {
             panic!("not a fetch")
         };

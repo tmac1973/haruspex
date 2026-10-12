@@ -44,13 +44,13 @@ axum = { version = "0.8.4", default-features = false, features = ["http1", "json
 # code. Default features off: only the raw module matrix is wanted, not the
 # image or SVG renderers it can also produce.
 qrcode = { version = "0.14.1", default-features = false }
-sha2 = "0.10.9"
+sha2 = "0.11.0"
 sysinfo = "0.39.6"
 tauri-plugin-dialog = "2.6.0"
 futures-util = "0.3.32"
 # Browser-assisted search speaks CDP, which is JSON-RPC over one WebSocket.
-tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect", "handshake"] }
-scraper = "0.26.0"
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake"] }
+scraper = "0.27.0"
 urlencoding = "2.1.3"
 url = "2.5.8"
 ipnet = "2.11"
@@ -71,8 +71,8 @@ printpdf = { version = "0.12", features = ["png", "jpeg", "gif"] }
 calamine = "0.36"
 zip = "9.0"
 image = "0.25"
-base64 = "0.22"
-rust_xlsxwriter = "0.90"
+base64 = "0.23"
+rust_xlsxwriter = "0.99"
 portable-pty = "0.9"
 # Editor windows reload a file when something else changes it: inotify on
 # Linux, FSEvents on macOS. See fs_tools/editor.rs.
@@ -81,26 +81,26 @@ notify = "8.2"
 # Email integration (Phase 10). async-imap handles IMAP over TLS,
 # mail-parser handles RFC 5322 / MIME decoding. lettre is stubbed in
 # 10.1 for SMTP sending in Phase 10.2.
-async-imap = { version = "0.11", default-features = false, features = ["runtime-tokio"] }
+async-imap = { version = "0.12", default-features = false, features = ["runtime-tokio"] }
 mail-parser = "0.11"
 tokio-rustls = "0.26"
 rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "ring"] }
 # Settings → Remote control serves HTTPS with a certificate it makes itself
 # (owner/tls.rs).
-rcgen = { version = "0.13", default-features = false, features = ["crypto", "ring", "pem"] }
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring", "pem"] }
 time = "0.3"
-webpki-roots = "0.26"
+webpki-roots = "1.0"
 lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder"] }
 # no-serde-warnings silences ts-rs's "failed to parse serde attribute" notices
 # for #[serde(skip_serializing_if = ...)] — ts-rs can't translate the runtime
 # predicate to TypeScript, but the affected fields are already #[ts(optional)],
 # so the generated bindings are correct and the warning is pure noise.
-ts-rs = { version = "10.1.0", features = ["serde-compat", "no-serde-warnings"] }
+ts-rs = { version = "12.0.1", features = ["serde-compat", "no-serde-warnings"] }
 # Unicode normalization (NFKC) for the fuzzy-match fallback in fs_edit_text.
 unicode-normalization = "0.1"
 # ripgrep's own engine + gitignore walker + glob matcher, for the Code tab's
 # code_grep / code_glob tools (gitignore semantics match `rg`).
-grep = "0.3"
+grep = "0.4"
 ignore = "0.4"
 globset = "0.4"
 # YAML frontmatter in SKILL.md files. The maintained fork of serde_yaml.
