@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AssetEntry, AssetSpec, NormalizeProfile } from '#lib/assets/spec/types.ts';
 import type { ImageBackendCapabilities, ImageRequest } from '#lib/image/types.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock('@tauri-apps/api/core', () => ({ invoke }));
@@ -94,14 +95,17 @@ beforeEach(() => {
 	backend.requests.length = 0;
 	asked.answers.length = 0;
 	asked.questions = 0;
-	invoke.mockReset().mockImplementation(async (cmd: string) => {
-		if (cmd === 'image_split_sheet') return { pieces: [], keyed: false, palette: PALETTE };
-		if (cmd === 'image_palette_spread')
-			return { ok: true, dominant_fraction: 0.2, buckets_used: 5 };
-		if (cmd === 'image_store_bytes') return 'hash';
-		if (cmd === 'image_extract_palette') return [0xff0000ff];
-		return undefined;
-	});
+	invoke.mockReset().mockImplementation(
+		invokeRouter(
+			{
+				image_split_sheet: { pieces: [], keyed: false, palette: PALETTE },
+				image_palette_spread: { ok: true, dominant_fraction: 0.2, buckets_used: 5 },
+				image_store_bytes: 'hash',
+				image_extract_palette: [0xff0000ff]
+			},
+			undefined
+		)
+	);
 });
 
 describe('anchorSheetPlan', () => {
@@ -182,12 +186,15 @@ describe('a sheet anchor', () => {
 
 	it('is not re-rolled for a palette that leans on one colour', async () => {
 		// Its palette is imposed on nothing: each sheet takes its own.
-		invoke.mockImplementation(async (cmd: string) => {
-			if (cmd === 'image_split_sheet') return { pieces: [], keyed: false, palette: PALETTE };
-			if (cmd === 'image_palette_spread')
-				return { ok: false, dominant_fraction: 0.9, buckets_used: 1 };
-			return undefined;
-		});
+		invoke.mockImplementation(
+			invokeRouter(
+				{
+					image_split_sheet: { pieces: [], keyed: false, palette: PALETTE },
+					image_palette_spread: { ok: false, dominant_fraction: 0.9, buckets_used: 1 }
+				},
+				undefined
+			)
+		);
 		const r = await establishAnchor(spec(), deps().deps, 1024);
 		expect(backend.requests).toHaveLength(1);
 		expect(r.outcome.rejected).toBe(0);

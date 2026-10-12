@@ -5,6 +5,7 @@ const invoke = vi.hoisted(() => vi.fn());
 vi.mock('@tauri-apps/api/core', () => ({ invoke }));
 
 import LogViewer from './LogViewer.svelte';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const stats = {
 	session: { engines: [], globals: {} },
@@ -35,13 +36,16 @@ const stats = {
 };
 
 beforeEach(() => {
-	invoke.mockReset().mockImplementation(async (cmd: string) => {
-		if (cmd === 'get_search_stats') return stats;
-		if (cmd === 'image_engine_logs') return ['sd-server listening'];
-		if (cmd === 'comfy_logs')
-			return ['GET http://gpu.lan:8188/system_stats → ok in 9 ms, 512 bytes'];
-		return [];
-	});
+	invoke.mockReset().mockImplementation(
+		invokeRouter(
+			{
+				get_search_stats: stats,
+				image_engine_logs: ['sd-server listening'],
+				comfy_logs: ['GET http://gpu.lan:8188/system_stats → ok in 9 ms, 512 bytes']
+			},
+			[]
+		)
+	);
 });
 
 describe('LogViewer', () => {

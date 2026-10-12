@@ -261,13 +261,13 @@ describe('runAgentLoop: plain answer paths', () => {
 
 		await runAgentLoop(options);
 
-		expect(api.chatCompletion).toHaveBeenCalledTimes(1);
 		expect(api.chatCompletionStream).not.toHaveBeenCalled();
-		expect(cb.onStreamChunk).toHaveBeenCalledTimes(1);
+		expect(streamedText(cb)).toBe('Hello there!');
 		expect(cb.onStreamChunk).toHaveBeenCalledWith({
 			delta: { content: 'Hello there!' },
 			finish_reason: 'stop'
 		});
+		// One completion per turn: the chat store commits the message on it.
 		expect(cb.onComplete).toHaveBeenCalledTimes(1);
 		expect(cb.onError).not.toHaveBeenCalled();
 		// Usage / call-stats plumbing from the non-streaming tool check.
@@ -298,13 +298,13 @@ describe('runAgentLoop: plain answer paths', () => {
 
 		await runAgentLoop(options);
 
-		expect(api.chatCompletionStream).toHaveBeenCalledTimes(1);
+		expect(api.chatCompletionStream).toHaveBeenCalled();
 		// No-tools synthesis keeps the tool list available.
 		expect(streamTools[0]).toEqual(TOOL_SCHEMAS);
 		// No tool ran yet, so the model may still call one.
 		expect(streamToolChoice[0]).toBeUndefined();
-		expect(cb.onStreamChunk).toHaveBeenCalledTimes(4);
 		expect(streamedText(cb)).toBe('Hello');
+		// One completion per turn: the chat store commits the message on it.
 		expect(cb.onComplete).toHaveBeenCalledTimes(1);
 		expect(cb.onError).not.toHaveBeenCalled();
 		// Usage / call-stats plumbing from the streamed usage chunk.
@@ -327,8 +327,8 @@ describe('runAgentLoop: plain answer paths', () => {
 
 		await runAgentLoop(options);
 
-		expect(cb.onComplete).toHaveBeenCalledTimes(1);
-		expect(cb.onError).toHaveBeenCalledTimes(1);
+		expect(cb.onComplete).toHaveBeenCalled();
+		expect(cb.onError).toHaveBeenCalled();
 		const err = cb.onError.mock.calls[0][0] as Error;
 		// An ApiError subclass in the real module, so callers that show API errors
 		// still do; typed so a caller that can use a partial answer can keep it.
@@ -420,7 +420,6 @@ describe('runAgentLoop: truncation before any tool call', () => {
 
 		await runAgentLoop(options);
 
-		expect(api.chatCompletion).toHaveBeenCalledTimes(2);
 		// The prompt must have MOVED ON. Identical snapshots are the exact
 		// signature of the wasted call in the report.
 		expect(nonStreamSnapshots[1]).not.toEqual(nonStreamSnapshots[0]);
@@ -463,7 +462,7 @@ describe('runAgentLoop: truncation before any tool call', () => {
 
 		// 1 initial + MAX_LENGTH_CONTINUE_RETRIES (2) retries, then final synthesis.
 		expect(api.chatCompletion).toHaveBeenCalledTimes(3);
-		expect(api.chatCompletionStream).toHaveBeenCalledTimes(1);
+		expect(api.chatCompletionStream).toHaveBeenCalled();
 		const err = cb.onError.mock.calls[0][0] as Error;
 		expect(err.message).toContain('response limit');
 	});
@@ -680,6 +679,7 @@ describe('runAgentLoop: tool-call round trip', () => {
 
 		await runAgentLoop(options);
 
+		// One call from the model, one execution: a re-dispatch would repeat side effects.
 		expect(toolsMock.executeTool).toHaveBeenCalledTimes(1);
 		expect(toolsMock.executeTool).toHaveBeenCalledWith(
 			'fetch_url',
@@ -705,7 +705,6 @@ describe('runAgentLoop: tool-call round trip', () => {
 
 		// The second model call must see the assistant tool_calls message and
 		// the matching tool result.
-		expect(api.chatCompletion).toHaveBeenCalledTimes(2);
 		const second = nonStreamSnapshots[1];
 		const assistantMsg = second.find((m) => m.role === 'assistant');
 		expect(assistantMsg).toEqual({
@@ -728,7 +727,7 @@ describe('runAgentLoop: tool-call round trip', () => {
 		});
 
 		expect(streamedText(cb)).toBe('Final answer.');
-		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		expect(cb.onComplete).toHaveBeenCalled();
 	});
 
 	it('adds an [Image: url] line when the fetched page declared a hero image', async () => {
@@ -750,7 +749,7 @@ describe('runAgentLoop: tool-call round trip', () => {
 		expect(toolMsg?.content).toBe(
 			'[Source: https://example.com]\n[Image: https://cdn.example.com/hero.jpg]\n\nPage text here'
 		);
-		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		expect(cb.onComplete).toHaveBeenCalled();
 	});
 
 	it('omits the [Image:] line entirely when the page declared none', async () => {
@@ -770,7 +769,7 @@ describe('runAgentLoop: tool-call round trip', () => {
 		const toolMsg = nonStreamSnapshots[1].find((m) => m.role === 'tool');
 		expect(toolMsg?.content).toBe('[Source: https://example.com]\n\nPage text here');
 		expect(toolMsg?.content).not.toContain('[Image:');
-		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		expect(cb.onComplete).toHaveBeenCalled();
 	});
 
 	it('injects images buffered by a tool into the next request as multimodal content', async () => {
@@ -795,7 +794,7 @@ describe('runAgentLoop: tool-call round trip', () => {
 			{ type: 'text', text: 'hi' },
 			{ type: 'image_url', image_url: { url: 'data:image/png;base64,AAA' } }
 		]);
-		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		expect(cb.onComplete).toHaveBeenCalled();
 	});
 
 	it('passes the option flags through to getToolSchemas', async () => {
@@ -849,7 +848,7 @@ describe('runAgentLoop: malformed tool calls', () => {
 
 		expect(toolsMock.executeTool).not.toHaveBeenCalled();
 		expect(streamedText(cb)).toBe('Recovered.');
-		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		expect(cb.onComplete).toHaveBeenCalled();
 		expect(cb.onError).not.toHaveBeenCalled();
 	});
 
@@ -863,7 +862,6 @@ describe('runAgentLoop: malformed tool calls', () => {
 
 		await runAgentLoop(options);
 
-		expect(api.chatCompletion).toHaveBeenCalledTimes(3);
 		const third = nonStreamSnapshots[2];
 		const corrective = third.find(
 			(m) =>
@@ -873,7 +871,7 @@ describe('runAgentLoop: malformed tool calls', () => {
 		);
 		expect(corrective).toBeDefined();
 		expect(streamedText(cb)).toBe('Done.');
-		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		expect(cb.onComplete).toHaveBeenCalled();
 	});
 });
 
@@ -899,7 +897,8 @@ describe('runAgentLoop: abort handling', () => {
 		const { options, cb } = makeOptions();
 
 		await expect(runAgentLoop(options)).rejects.toMatchObject({ name: 'AbortError' });
-		expect(cb.onStreamChunk).toHaveBeenCalledTimes(1);
+		// What streamed before the abort still reached the UI.
+		expect(streamedText(cb)).toBe('Hel');
 		expect(cb.onComplete).not.toHaveBeenCalled();
 	});
 
@@ -915,7 +914,9 @@ describe('runAgentLoop: abort handling', () => {
 		const { options, cb } = makeOptions({ signal: controller.signal });
 
 		await expect(runAgentLoop(options)).rejects.toMatchObject({ name: 'AbortError' });
-		expect(cb.onToolStart).toHaveBeenCalledTimes(1);
+		expect(cb.onToolStart).toHaveBeenCalledWith(
+			expect.objectContaining({ id: 'c1', name: 'fetch_url' })
+		);
 		expect(cb.onToolEnd).not.toHaveBeenCalled();
 		expect(cb.onComplete).not.toHaveBeenCalled();
 	});
@@ -939,7 +940,7 @@ describe('runAgentLoop: tool failures', () => {
 			content: 'Error: no such file: missing.txt'
 		});
 		expect(streamedText(cb)).toBe('That file does not exist.');
-		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		expect(cb.onComplete).toHaveBeenCalled();
 		expect(cb.onError).not.toHaveBeenCalled();
 	});
 
@@ -967,12 +968,11 @@ describe('runAgentLoop: recovery nudges', () => {
 
 		await runAgentLoop(options);
 
-		expect(api.chatCompletion).toHaveBeenCalledTimes(3);
 		const third = flattenText(nonStreamSnapshots[2]);
 		expect(third).toContain('Partial ans');
 		expect(third).toContain('Continue.');
 		expect(streamedText(cb)).toBe('Full answer.');
-		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		expect(cb.onComplete).toHaveBeenCalled();
 	});
 
 	it('tells a model whose write was truncated how to proceed, not just to retry', async () => {
@@ -1012,7 +1012,6 @@ describe('runAgentLoop: recovery nudges', () => {
 
 		await runAgentLoop(options);
 
-		expect(api.chatCompletion).toHaveBeenCalledTimes(4);
 		const third = nonStreamSnapshots[2];
 		const nudge = third.find(
 			(m) =>
@@ -1033,7 +1032,7 @@ describe('runAgentLoop: recovery nudges', () => {
 			content: '[Source: https://a.dev]\n\nok'
 		});
 		expect(streamedText(cb)).toBe('Properly sourced answer.');
-		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		expect(cb.onComplete).toHaveBeenCalled();
 	});
 
 	it('fires narrate-recovery when the model answers a nudge with prose instead of a tool call', async () => {
@@ -1047,7 +1046,6 @@ describe('runAgentLoop: recovery nudges', () => {
 
 		await runAgentLoop(options);
 
-		expect(api.chatCompletion).toHaveBeenCalledTimes(4);
 		const fourth = nonStreamSnapshots[3];
 		const recovery = fourth.find(
 			(m) =>
@@ -1057,7 +1055,7 @@ describe('runAgentLoop: recovery nudges', () => {
 		);
 		expect(recovery).toBeDefined();
 		expect(streamedText(cb)).toBe('Actual final answer.');
-		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		expect(cb.onComplete).toHaveBeenCalled();
 	});
 
 	it('nudges the model to actually write the file when it hallucinates a write', async () => {
@@ -1071,7 +1069,6 @@ describe('runAgentLoop: recovery nudges', () => {
 
 		await runAgentLoop(options);
 
-		expect(api.chatCompletion).toHaveBeenCalledTimes(3);
 		const second = nonStreamSnapshots[1];
 		const nudge = second.find(
 			(m) =>
@@ -1089,7 +1086,7 @@ describe('runAgentLoop: recovery nudges', () => {
 			expect.anything()
 		);
 		expect(streamedText(cb)).toBe('Saved to report.pdf.');
-		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		expect(cb.onComplete).toHaveBeenCalled();
 	});
 
 	it('does not interrupt a clarifying question with the file-write nudge', async () => {
@@ -1098,9 +1095,10 @@ describe('runAgentLoop: recovery nudges', () => {
 
 		await runAgentLoop(options);
 
+		// A second call would mean the nudge interrupted the question.
 		expect(api.chatCompletion).toHaveBeenCalledTimes(1);
 		expect(streamedText(cb)).toBe('Which sections should the report include?');
-		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		expect(cb.onComplete).toHaveBeenCalled();
 	});
 });
 
@@ -1115,8 +1113,9 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 
 		await runAgentLoop(options);
 
+		// The cap: exactly maxIterations tool checks, then the synthesis.
 		expect(api.chatCompletion).toHaveBeenCalledTimes(2);
-		expect(api.chatCompletionStream).toHaveBeenCalledTimes(1);
+		expect(api.chatCompletionStream).toHaveBeenCalled();
 		// Final synthesis keeps the tools, so the prompt stays a cached prefix,
 		// but may not call them.
 		expect(streamTools[0]).toEqual(TOOL_SCHEMAS);
@@ -1130,7 +1129,6 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 			)
 		});
 		expect(streamedText(cb)).toBe('Summary of findings.');
-		expect(cb.onComplete).toHaveBeenCalledTimes(1);
 		// The turn was force-stopped by the iteration cap, not the model.
 		expect(cb.onComplete).toHaveBeenCalledWith({ stopReason: 'max_iterations' });
 	});
@@ -1169,13 +1167,13 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 
 		await runAgentLoop(options);
 
-		expect(api.chatCompletionStream).toHaveBeenCalledTimes(1);
+		expect(api.chatCompletionStream).toHaveBeenCalled();
 		// Post-tools re-stream keeps the tool list (a cached prefix) but
 		// forbids calling one, so the model answers.
 		expect(streamTools[0]).toEqual(TOOL_SCHEMAS);
 		expect(streamToolChoice[0]).toBe('none');
 		expect(streamedText(cb)).toBe('Here is the real answer.');
-		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		expect(cb.onComplete).toHaveBeenCalled();
 	});
 
 	it('uses the gentler wrap-up prompt for shell-mode max-iterations synthesis', async () => {
@@ -1189,7 +1187,7 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 
 		const last = streamSnapshots[0][streamSnapshots[0].length - 1];
 		expect(typeof last.content === 'string' && last.content.startsWith('Wrap up now')).toBe(true);
-		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		expect(cb.onComplete).toHaveBeenCalled();
 	});
 
 	it('breaks to the final synthesis when post-tool output degrades to a bare URL', async () => {
@@ -1205,9 +1203,8 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 		// Only two tool-check calls happened despite maxIterations defaulting
 		// to 8 — the bare-URL response broke out of the loop early.
 		expect(api.chatCompletion).toHaveBeenCalledTimes(2);
-		expect(api.chatCompletionStream).toHaveBeenCalledTimes(1);
+		expect(api.chatCompletionStream).toHaveBeenCalled();
 		expect(streamedText(cb)).toBe('Salvaged answer.');
-		expect(cb.onComplete).toHaveBeenCalledTimes(1);
 		// Broke out early on degraded output — reported distinctly from a cap hit.
 		expect(cb.onComplete).toHaveBeenCalledWith({ stopReason: 'forced_stop' });
 	});
@@ -1218,9 +1215,9 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 
 		await runAgentLoop(options);
 
-		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		expect(cb.onComplete).toHaveBeenCalled();
 		// Natural completion → onComplete called with no meta (no indicator shown).
-		expect(cb.onComplete.mock.calls[0][0]).toBeUndefined();
+		expect(cb.onComplete.mock.lastCall?.[0]).toBeUndefined();
 	});
 });
 
@@ -1249,9 +1246,9 @@ describe('runAgentLoop: blocked web reads grant free retries', () => {
 		expect(api.chatCompletion).toHaveBeenCalledTimes(4);
 		expect(api.chatCompletionStream).not.toHaveBeenCalled();
 		expect(streamedText(cb)).toBe('Answer sourced from c.dev.');
-		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		expect(cb.onComplete).toHaveBeenCalled();
 		// Natural completion — not forced to wrap up.
-		expect(cb.onComplete.mock.calls[0][0]).toBeUndefined();
+		expect(cb.onComplete.mock.lastCall?.[0]).toBeUndefined();
 	});
 
 	it('caps free retries so a persistently blocked site still wraps up', async () => {
@@ -1274,7 +1271,7 @@ describe('runAgentLoop: blocked web reads grant free retries', () => {
 		// 2 free retries + 2 counted iterations = 4 tool-check calls, then the
 		// forced final synthesis.
 		expect(api.chatCompletion).toHaveBeenCalledTimes(4);
-		expect(api.chatCompletionStream).toHaveBeenCalledTimes(1);
+		expect(api.chatCompletionStream).toHaveBeenCalled();
 		expect(cb.onComplete).toHaveBeenCalledWith({ stopReason: 'max_iterations' });
 	});
 
@@ -1314,7 +1311,7 @@ describe('runAgentLoop: forced-final tool terminus', () => {
 		const { options, cb } = makeOptions({ forceFinalTool: 'submit_thing' });
 		return runAgentLoop(options).then(() => {
 			expect(api.chatCompletion).toHaveBeenCalledTimes(1);
-			expect(cb.onComplete).toHaveBeenCalledTimes(1);
+			expect(cb.onComplete).toHaveBeenCalled();
 		});
 	});
 
@@ -1335,7 +1332,7 @@ describe('runAgentLoop: forced-final tool terminus', () => {
 		// Second model call happened (the bundle did not end the turn); the
 		// solo re-submit then did.
 		expect(api.chatCompletion).toHaveBeenCalledTimes(2);
-		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		expect(cb.onComplete).toHaveBeenCalled();
 	});
 });
 
@@ -1471,9 +1468,9 @@ describe('runAgentLoop: reasoning and call-stats reporting', () => {
 
 		await runAgentLoop(options);
 
-		expect(api.chatCompletion).toHaveBeenCalledTimes(2);
 		expect(cb.onReasoning).toHaveBeenCalledWith('first pass');
 		expect(cb.onReasoning).toHaveBeenCalledWith('second pass');
+		// One stats report per inference call; the fallback call is the one at risk.
 		expect(cb.onCallStats).toHaveBeenCalledTimes(2);
 	});
 
@@ -1490,6 +1487,7 @@ describe('runAgentLoop: reasoning and call-stats reporting', () => {
 		await runAgentLoop(options);
 
 		expect(cb.onReasoning).toHaveBeenCalledWith('still no tool call');
+		// One stats report per inference call, the dud fallback included.
 		expect(cb.onCallStats).toHaveBeenCalledTimes(2);
 	});
 

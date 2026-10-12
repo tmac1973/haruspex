@@ -23,6 +23,7 @@ vi.mock('#lib/assets/single.ts', () => ({
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import type { ToolContext } from './types';
 import { ImageBackendError } from '#lib/image/types.ts';
+import { invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
 const PALETTE = [0xff0000ff, 0x00ff00ff];
@@ -44,18 +45,20 @@ function context(over: Partial<ToolContext> = {}): ToolContext {
 }
 const names = (o: Parameters<typeof getToolSchemas>[0]) =>
 	getToolSchemas(o).map((s) => s.function.name);
-const calls = (cmd: string) => state.invoke.mock.calls.filter((c) => c[0] === cmd);
-const writes = () => calls('fs_write_bytes_absolute').filter((c) => !c[1].dryRun);
+const calls = (cmd: string) => invokeCalls(state.invoke, cmd);
+const writes = () => calls('fs_write_bytes_absolute').filter((a) => !a?.dryRun);
 
 beforeEach(() => {
 	state.backend = 'local';
 	state.pending = null;
-	state.invoke.mockReset().mockImplementation(async (cmd: string) => {
-		if (cmd === 'shell_pending_command') return state.pending;
-		if (cmd === 'fs_read_bytes_absolute' || cmd === 'fs_read_bytes') return Array.from(PNG);
-		if (cmd === 'image_extract_palette') return PALETTE;
-		return null;
-	});
+	state.invoke.mockReset().mockImplementation(
+		invokeRouter({
+			shell_pending_command: () => state.pending,
+			fs_read_bytes_absolute: () => Array.from(PNG),
+			fs_read_bytes: () => Array.from(PNG),
+			image_extract_palette: PALETTE
+		})
+	);
 	state.make.mockReset().mockResolvedValue({
 		bytes: PNG,
 		width: 32,
@@ -100,7 +103,7 @@ describe('make_asset', () => {
 			prompt: 'a gold coin',
 			size: 32
 		});
-		expect(writes()[0][1]).toMatchObject({
+		expect(writes()[0]).toMatchObject({
 			path: '/home/u/game/assets/coin.png',
 			bytes: Array.from(PNG),
 			overwrite: false
@@ -125,9 +128,9 @@ describe('make_asset', () => {
 		);
 		// The workdir-relative commands, which refuse a path outside the folder.
 		expect(calls('fs_write_bytes_absolute')).toHaveLength(0);
-		expect(calls('fs_read_bytes')[0][1]).toMatchObject({ workdir: '/home/u/game' });
-		const wrote = calls('fs_write_bytes').filter((c) => !c[1].dryRun);
-		expect(wrote[0][1]).toMatchObject({
+		expect(calls('fs_read_bytes')[0]).toMatchObject({ workdir: '/home/u/game' });
+		const wrote = calls('fs_write_bytes').filter((a) => !a?.dryRun);
+		expect(wrote[0]).toMatchObject({
 			workdir: '/home/u/game',
 			relPath: '/home/u/game/assets/coin.png'
 		});
@@ -138,7 +141,7 @@ describe('make_asset', () => {
 			{ kind: 'icon', prompt: 'a gold coin', path: 'coin.png' },
 			{ ...ctx, wslDistro: 'Ubuntu' }
 		);
-		expect(calls('fs_write_bytes')[0][1].workdir).toBe(
+		expect(calls('fs_write_bytes')[0]?.workdir).toBe(
 			String.raw`\\wsl.localhost\Ubuntu\home\u\game`
 		);
 	});
@@ -155,7 +158,7 @@ describe('make_asset', () => {
 			{ kind: 'sprite', prompt: 'a slime', path: 's.png', palette_from: 'assets/hero.png' },
 			context()
 		);
-		expect(calls('fs_read_bytes_absolute')[0][1]).toMatchObject({
+		expect(calls('fs_read_bytes_absolute')[0]).toMatchObject({
 			path: '/home/u/game/assets/hero.png'
 		});
 		expect(state.make.mock.calls[0][0].palette).toEqual(PALETTE);
@@ -174,17 +177,20 @@ describe('make_asset', () => {
 	});
 
 	it('refuses a file that exists before drawing, and says how to replace it', async () => {
-		state.invoke.mockImplementation(async (cmd: string) => {
-			if (cmd === 'fs_write_bytes_absolute') throw 'File already exists: coin.png';
-			return null;
-		});
+		state.invoke.mockImplementation(
+			invokeRouter({
+				fs_write_bytes_absolute: () => {
+					throw 'File already exists: coin.png';
+				}
+			})
+		);
 		const out = await executeTool(
 			'make_asset',
 			{ kind: 'icon', prompt: 'a coin', path: 'coin.png' },
 			context()
 		);
 		expect(out.result).toMatch(/already exists.*overwrite: true/);
-		expect(calls('fs_write_bytes_absolute')[0][1].dryRun).toBe(true);
+		expect(calls('fs_write_bytes_absolute')[0]?.dryRun).toBe(true);
 		expect(state.make).not.toHaveBeenCalled();
 	});
 

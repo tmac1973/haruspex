@@ -28,21 +28,24 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('#lib/agent/jobs/runner.svelte.ts', () => ({ enqueue: mocks.enqueue }));
 
 import ReviewAssets from './ReviewAssets.svelte';
+import { invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
 
 beforeEach(() => {
 	mocks.enqueue.mockClear();
 	mocks.probe.mockReset().mockResolvedValue({ ok: true, detail: 'Connected.' });
-	mocks.invoke
-		.mockReset()
-		.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
-			if (cmd === 'fs_read_text_full') return JSON.stringify(spec);
-			if (cmd === 'fs_read_bytes') {
-				if (String(args?.relPath).includes('grass')) throw new Error('Not a file');
-				return [137, 80, 78, 71];
-			}
-			if (cmd === 'fs_path_exists') return true;
-			return undefined;
-		});
+	mocks.invoke.mockReset().mockImplementation(
+		invokeRouter(
+			{
+				fs_read_text_full: () => JSON.stringify(spec),
+				fs_read_bytes: (args) => {
+					if (String(args?.relPath).includes('grass')) throw new Error('Not a file');
+					return [137, 80, 78, 71];
+				},
+				fs_path_exists: true
+			},
+			undefined
+		)
+	);
 	URL.createObjectURL = vi.fn(() => 'blob:x');
 	URL.revokeObjectURL = vi.fn();
 });
@@ -69,7 +72,7 @@ describe('ReviewAssets', () => {
 		expect(screen.getByText('not made')).toBeTruthy();
 		// Loaded once, not in a loop.
 		await new Promise((r) => setTimeout(r, 50));
-		expect(mocks.invoke.mock.calls.filter(([c]) => c === 'fs_read_text_full')).toHaveLength(1);
+		expect(invokeCalls(mocks.invoke, 'fs_read_text_full')).toHaveLength(1);
 	});
 
 	it('moves the marked file aside, keeps the note, and runs the job', async () => {

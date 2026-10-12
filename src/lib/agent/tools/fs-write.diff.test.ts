@@ -10,20 +10,22 @@ vi.mock('#lib/stores/approvalOverride.ts', () => ({ isAutoApproveActive: () => t
 
 import { executeTool } from '#lib/agent/tools/index.ts';
 import type { ToolContext } from './types';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 beforeEach(() => {
 	mocks.disk.clear();
 	mocks.invoke.mockReset();
-	mocks.invoke.mockImplementation(async (cmd: string, a: Record<string, unknown>) => {
-		const path = String(a.relPath);
-		if (cmd === 'fs_path_exists') return mocks.disk.has(path);
-		if (cmd === 'fs_read_text_full') return mocks.disk.get(path);
-		if (cmd === 'fs_write_text') {
-			mocks.disk.set(path, String(a.content));
-			return null;
-		}
-		return null;
-	});
+	const path = (a?: Record<string, unknown>) => String(a?.relPath);
+	mocks.invoke.mockImplementation(
+		invokeRouter({
+			fs_path_exists: (a) => mocks.disk.has(path(a)),
+			fs_read_text_full: (a) => mocks.disk.get(path(a)),
+			fs_write_text: (a) => {
+				mocks.disk.set(path(a), String(a?.content));
+				return null;
+			}
+		})
+	);
 });
 
 const ctx = (codeSessionId?: string): ToolContext =>

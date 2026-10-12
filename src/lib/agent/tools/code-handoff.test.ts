@@ -31,6 +31,7 @@ import {
 import type { WindowOpen } from '#lib/editor/windows.ts';
 import { _resetBoundary } from '#lib/shell/boundary.ts';
 import { resetShellPlatformSupported } from '#lib/shell/platformSupport.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const ctx = {
 	workingDir: '/proj',
@@ -49,18 +50,17 @@ let unregister: () => void = () => {};
 beforeEach(() => {
 	mocks.invoke.mockReset();
 	mocks.askCommandApproval.mockReset();
-	mocks.invoke.mockImplementation(async (cmd: string) => {
-		if (cmd === 'shell_platform_supported') return true;
-		if (cmd === 'app_protected_targets') {
-			return {
+	mocks.invoke.mockImplementation(
+		invokeRouter({
+			shell_platform_supported: true,
+			app_protected_targets: () => ({
 				home: '/home/u',
 				paths: [{ path: '/home/u/.local/share/haruspex', label: 'data directory' }],
 				ports: []
-			};
-		}
-		if (cmd === 'code_write_overflow') return '/tmp/overflow.txt';
-		return null;
-	});
+			}),
+			code_write_overflow: '/tmp/overflow.txt'
+		})
+	);
 	_resetBoundary();
 	resetShellPlatformSupported();
 });
@@ -195,9 +195,7 @@ describe('open_in_shell', () => {
 
 	it('refuses where the Shell tab does not work', async () => {
 		const calls = fakeShell(async () => ({ kind: 'closed', shellName: 'Shell 2' }));
-		mocks.invoke.mockImplementation(async (cmd: string) =>
-			cmd === 'shell_platform_supported' ? false : null
-		);
+		mocks.invoke.mockImplementation(invokeRouter({ shell_platform_supported: false }));
 		const out = await executeTool('open_in_shell', { command: 'ls' }, ctx);
 		expect(out.result).toContain('not available');
 		expect(calls).toHaveLength(0);

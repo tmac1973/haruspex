@@ -26,6 +26,7 @@ vi.mock('#lib/stores/memory.svelte.ts', () => ({
 
 import { collectNewTurns, extractMemories, renderTranscript } from './extraction';
 import { renderSlashMessage } from '#lib/skills/content.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 function message(sortOrder: number, role: string, content: string) {
 	return {
@@ -171,12 +172,15 @@ describe('extractMemories — gates', () => {
  * conversation land here.
  */
 function store(opts: { neighbors?: Record<string, unknown[]>; failAdd?: string } = {}) {
-	mocks.invoke.mockImplementation(async (cmd: string, args?: { content?: string }) => {
-		if (cmd === 'memory_neighbors') return opts.neighbors?.[args?.content ?? ''] ?? [];
-		if (cmd === 'memory_add' && args?.content === opts.failAdd) throw new Error('db locked');
-		if (cmd === 'memory_add') return 'mem-new';
-		return null;
-	});
+	mocks.invoke.mockImplementation(
+		invokeRouter({
+			memory_neighbors: (args) => opts.neighbors?.[String(args?.content ?? '')] ?? [],
+			memory_add: (args) => {
+				if (args?.content === opts.failAdd) throw new Error('db locked');
+				return 'mem-new';
+			}
+		})
+	);
 }
 
 describe('extractMemories — storing', () => {

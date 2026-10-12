@@ -622,3 +622,261 @@ pub async fn fs_write_pptx(
 
     write_bytes_to_workdir(&resolved, &bytes).await
 }
+
+#[cfg(test)]
+mod tests {
+    // Package parts, nested levels 0–2, section title + subtitle, one image,
+    // shared images and basic escaping are covered in `fs_tools/mod.rs`.
+    // These cover what those leave out.
+    use super::*;
+    use std::io::Read;
+
+    fn slide(title: &str, bullets: &[(&str, u32)]) -> PptxSlide {
+        PptxSlide {
+            title: title.to_string(),
+            bullets: bullets
+                .iter()
+                .map(|(t, l)| PptxBullet {
+                    text: t.to_string(),
+                    level: *l,
+                })
+                .collect(),
+            subtitle: None,
+            image: None,
+            layout: PptxLayout::Content,
+        }
+    }
+
+    fn section(title: &str, subtitle: Option<&str>) -> PptxSlide {
+        PptxSlide {
+            subtitle: subtitle.map(str::to_string),
+            layout: PptxLayout::Section,
+            ..slide(title, &[])
+        }
+    }
+
+    fn entry(bytes: &[u8], name: &str) -> String {
+        let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+        let mut s = String::new();
+        zip.by_name(name)
+            .unwrap_or_else(|_| panic!("missing {name}"))
+            .read_to_string(&mut s)
+            .unwrap();
+        s
+    }
+
+    fn names(bytes: &[u8]) -> Vec<String> {
+        let zip = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+        zip.file_names().map(str::to_string).collect()
+    }
+
+    /// The `<a:t>` run texts of a slide, in order.
+    fn runs(xml: &str) -> Vec<&str> {
+        xml.split("<a:t>")
+            .skip(1)
+            .map(|s| s.split("</a:t>").next().unwrap())
+            .collect()
+    }
+
+    /// The `lvl` of each bullet paragraph, in order.
+    fn levels(xml: &str) -> Vec<&str> {
+        xml.split(r#"lvl=""#)
+            .skip(1)
+            .map(|s| s.split('"').next().unwrap())
+            .collect()
+    }
+
+    fn png(bytes: &[u8]) -> LoadedImage {
+        LoadedImage {
+            bytes: bytes.to_vec(),
+            extension: "png".into(),
+        }
+    }
+
+    #[test]
+    fn slides_keep_their_order_and_number_their_ids_and_rels() {
+        let slides = vec![
+            slide("One", &[("a", 0)]),
+            section("Two", None),
+            slide("Three", &[("c", 0)]),
+        ];
+        let bytes = build_pptx(&slides, &HashMap::new()).unwrap();
+        for (i, title) in ["One", "Two", "Three"].iter().enumerate() {
+            let xml = entry(&bytes, &format!("ppt/slides/slide{}.xml", i + 1));
+            assert_eq!(runs(&xml)[0], *title);
+        }
+        assert!(!names(&bytes).iter().any(|n| n.contains("slide4")));
+
+        let pres = entry(&bytes, "ppt/presentation.xml");
+        for (id, rid) in [(256, 2), (257, 3), (258, 4)] {
+            assert!(pres.contains(&format!(r#"<p:sldId id="{id}" r:id="rId{rid}"/>"#)));
+        }
+        let rels = entry(&bytes, "ppt/_rels/presentation.xml.rels");
+        for (rid, n) in [(2, 1), (3, 2), (4, 3)] {
+            assert!(rels.contains(&format!(r#"Id="rId{rid}""#)));
+            assert!(rels.contains(&format!(r#"Target="slides/slide{n}.xml""#)));
+        }
+        let ct = entry(&bytes, "[Content_Types].xml");
+        assert_eq!(ct.matches("presentationml.slide+xml").count(), 3);
+        // No images: no media parts.
+        assert!(!names(&bytes).iter().any(|n| n.starts_with("ppt/media/")));
+    }
+
+    #[test]
+    fn bullets_keep_order_are_trimmed_and_levels_past_two_clamp() {
+        let s = slide(
+            "  Padded title  ",
+            &[("first", 0), ("  child  ", 1), ("deep", 7), ("back", 0)],
+        );
+        let bytes = build_pptx(&[s], &HashMap::new()).unwrap();
+        let xml = entry(&bytes, "ppt/slides/slide1.xml");
+        assert_eq!(
+            runs(&xml),
+            vec!["Padded title", "first", "child", "deep", "back"]
+        );
+        assert_eq!(levels(&xml), vec!["0", "1", "2", "0"]);
+        // A clamped bullet also takes level 2's size and margin.
+        let deep = xml.split("<a:p>").find(|p| p.contains(">deep<")).unwrap();
+        assert!(deep.contains(r#"marL="1371600""#) && deep.contains(r#"sz="1400""#));
+    }
+
+    #[test]
+    fn a_content_slide_without_bullets_still_has_a_paragraph() {
+        let bytes = build_pptx(&[slide("Empty", &[])], &HashMap::new()).unwrap();
+        let xml = entry(&bytes, "ppt/slides/slide1.xml");
+        assert!(xml.contains(r#"name="Content""#));
+        assert!(xml.contains("<a:p/></p:txBody>"));
+        assert_eq!(runs(&xml), vec!["Empty"]);
+    }
+
+    #[test]
+    fn a_content_slide_ignores_a_subtitle_and_a_section_slide_ignores_bullets() {
+        let mut content = slide("Body", &[("point", 0)]);
+        content.subtitle = Some("unused tagline".into());
+        let mut sec = section("Divider", None);
+        sec.bullets = vec![PptxBullet {
+            text: "dropped".into(),
+            level: 0,
+        }];
+        let bytes = build_pptx(&[content, sec], &HashMap::new()).unwrap();
+        let c = entry(&bytes, "ppt/slides/slide1.xml");
+        assert_eq!(runs(&c), vec!["Body", "point"]);
+        let s = entry(&bytes, "ppt/slides/slide2.xml");
+        assert_eq!(runs(&s), vec!["Divider"]);
+        assert!(!s.contains("lvl="));
+    }
+
+    #[test]
+    fn a_blank_subtitle_adds_no_subtitle_shape() {
+        for sub in [None, Some(""), Some("   ")] {
+            let bytes = build_pptx(&[section("Part", sub)], &HashMap::new()).unwrap();
+            let xml = entry(&bytes, "ppt/slides/slide1.xml");
+            assert!(!xml.contains(r#"name="Subtitle""#), "{sub:?}");
+            assert_eq!(runs(&xml), vec!["Part"]);
+        }
+        let bytes = build_pptx(&[section("Part", Some("  Tag  "))], &HashMap::new()).unwrap();
+        let xml = entry(&bytes, "ppt/slides/slide1.xml");
+        assert_eq!(runs(&xml), vec!["Part", "Tag"]);
+    }
+
+    #[test]
+    fn section_title_and_subtitle_are_escaped() {
+        let bytes = build_pptx(
+            &[section("R&D <2026>", Some("Q&A > \"all\""))],
+            &HashMap::new(),
+        )
+        .unwrap();
+        let xml = entry(&bytes, "ppt/slides/slide1.xml");
+        assert_eq!(
+            runs(&xml),
+            vec!["R&amp;D &lt;2026&gt;", "Q&amp;A &gt; &quot;all&quot;"]
+        );
+        assert!(!xml.contains("R&D"));
+    }
+
+    #[test]
+    fn an_image_halves_the_bullet_column_and_each_slide_points_at_its_own() {
+        let mut images = HashMap::new();
+        images.insert("a.png".to_string(), png(b"AAA"));
+        images.insert(
+            "b.jpg".to_string(),
+            LoadedImage {
+                bytes: b"BBB".to_vec(),
+                extension: "jpg".into(),
+            },
+        );
+        let mut s1 = slide("With b", &[("x", 0)]);
+        s1.image = Some("b.jpg".into());
+        let s2 = slide("No image", &[("y", 0)]);
+        let mut s3 = slide("With a", &[("z", 0)]);
+        s3.image = Some("a.png".into());
+        let bytes = build_pptx(&[s1, s2, s3], &images).unwrap();
+
+        // Media is numbered by first appearance, not by name.
+        let mut zip = zip::ZipArchive::new(Cursor::new(&bytes[..])).unwrap();
+        let mut read = |n: &str| {
+            let mut v = Vec::new();
+            zip.by_name(n).unwrap().read_to_end(&mut v).unwrap();
+            v
+        };
+        assert_eq!(read("ppt/media/image1.jpg"), b"BBB");
+        assert_eq!(read("ppt/media/image2.png"), b"AAA");
+
+        let rels1 = entry(&bytes, "ppt/slides/_rels/slide1.xml.rels");
+        assert!(rels1.contains("../media/image1.jpg"));
+        let rels2 = entry(&bytes, "ppt/slides/_rels/slide2.xml.rels");
+        assert!(!rels2.contains("rId2"));
+        let rels3 = entry(&bytes, "ppt/slides/_rels/slide3.xml.rels");
+        assert!(rels3.contains("../media/image2.png"));
+
+        let half = format!(r#"cx="{HALF_BULLET_CX}""#);
+        let full = format!(r#"cx="{FULL_BULLET_CX}" cy="{BULLET_CY}""#);
+        let x1 = entry(&bytes, "ppt/slides/slide1.xml");
+        assert!(x1.contains(&half) && x1.contains("<p:pic>"));
+        let x2 = entry(&bytes, "ppt/slides/slide2.xml");
+        assert!(x2.contains(&full) && !x2.contains("<p:pic>"));
+
+        let ct = entry(&bytes, "[Content_Types].xml");
+        assert!(ct.contains(r#"Extension="png""#));
+        assert!(ct.contains(r#"Extension="jpg""#));
+    }
+
+    #[test]
+    fn an_image_that_was_not_loaded_is_an_error() {
+        let mut s = slide("Missing", &[]);
+        s.image = Some("gone.png".into());
+        let err = build_pptx(&[s], &HashMap::new()).unwrap_err();
+        assert!(err.contains("gone.png"), "{err}");
+    }
+
+    #[test]
+    fn every_xml_part_is_well_formed_enough_to_close_its_root() {
+        let bytes = build_pptx(
+            &[slide("A", &[("b", 0)]), section("C", Some("d"))],
+            &HashMap::new(),
+        )
+        .unwrap();
+        for name in names(&bytes) {
+            if !(name.ends_with(".xml") || name.ends_with(".rels")) {
+                continue;
+            }
+            let xml = entry(&bytes, &name);
+            assert!(xml.starts_with("<?xml"), "{name}");
+            // The root element's name, then its closing tag at the very end.
+            let root = xml
+                .split("?>")
+                .nth(1)
+                .unwrap()
+                .trim_start()
+                .trim_start_matches('<')
+                .split([' ', '>'])
+                .next()
+                .unwrap()
+                .to_string();
+            assert!(
+                xml.trim_end().ends_with(&format!("</{root}>")),
+                "{name}: root {root} not closed"
+            );
+        }
+    }
+}

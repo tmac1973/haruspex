@@ -9,6 +9,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 }));
 
 import { engineSetupMessage, localBackend } from './backend';
+import { invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
 
 describe('engineSetupMessage', () => {
 	it('says what is missing and what to do, not just a fragment', () => {
@@ -31,18 +32,15 @@ describe('engineSetupMessage', () => {
 });
 
 describe('generate', () => {
+	const baseRoutes = {
+		image_clear_canvas: [1, 2, 3],
+		image_seam_inputs: { rolled: [4, 5, 6], mask: [7, 8, 9] },
+		image_seam_finish: [9, 9, 9],
+		image_engine_request: (args?: Record<string, unknown>) =>
+			JSON.stringify({ images: ['AQID'], info: JSON.stringify({ seed: 5 }), args })
+	};
 	beforeEach(() => {
-		tauri.invoke
-			.mockReset()
-			.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
-				if (cmd === 'image_clear_canvas') return [1, 2, 3];
-				if (cmd === 'image_seam_inputs') return { rolled: [4, 5, 6], mask: [7, 8, 9] };
-				if (cmd === 'image_seam_finish') return [9, 9, 9];
-				if (cmd === 'image_engine_request') {
-					return JSON.stringify({ images: ['AQID'], info: JSON.stringify({ seed: 5 }), args });
-				}
-				return undefined;
-			});
+		tauri.invoke.mockReset().mockImplementation(invokeRouter(baseRoutes, undefined));
 	});
 	const sent = () => {
 		const call = tauri.invoke.mock.calls.find(([c]) => c === 'image_engine_request')!;
@@ -99,9 +97,9 @@ describe('generate', () => {
 			seed: 1,
 			seamless: true
 		});
-		const calls = tauri.invoke.mock.calls.filter(([c]) => c === 'image_engine_request');
-		expect(calls.map(([, a]) => a.path)).toEqual(['/sdapi/v1/txt2img', '/sdapi/v1/img2img']);
-		const repaint = JSON.parse(calls[1][1].body as string);
+		const calls = invokeCalls(tauri.invoke, 'image_engine_request');
+		expect(calls.map((a) => a!.path)).toEqual(['/sdapi/v1/txt2img', '/sdapi/v1/img2img']);
+		const repaint = JSON.parse(calls[1]!.body as string);
 		expect(repaint).toMatchObject({
 			init_images: ['BAUG'],
 			mask: 'BwgJ',
@@ -121,13 +119,20 @@ describe('generate', () => {
 
 	it('returns the texture it drew, untiled and saying why, when the seam pass fails', async () => {
 		settings.imageLocalModelId = 'qwen21';
-		const base = tauri.invoke.getMockImplementation()!;
-		tauri.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
-			if (cmd === 'image_engine_request' && String(args?.path).endsWith('img2img')) {
-				throw new Error('500 {"error":"generate_image returned no results"}');
-			}
-			return base(cmd, args);
-		});
+		tauri.invoke.mockImplementation(
+			invokeRouter(
+				{
+					...baseRoutes,
+					image_engine_request: (args) => {
+						if (String(args?.path).endsWith('img2img')) {
+							throw new Error('500 {"error":"generate_image returned no results"}');
+						}
+						return baseRoutes.image_engine_request(args);
+					}
+				},
+				undefined
+			)
+		);
 		const r = await localBackend.generate({
 			prompt: 'grass',
 			width: 1024,
@@ -161,12 +166,19 @@ describe('generate', () => {
 				'The image engine refused /sdapi/v1/img2img (500 Internal Server Error): ' +
 					'{"error":"generate_image returned no results"}'
 			);
-			const base = tauri.invoke.getMockImplementation()!;
 			let fails = 2;
-			tauri.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
-				if (cmd === 'image_engine_request' && fails-- > 0) throw empty;
-				return base(cmd, args);
-			});
+			tauri.invoke.mockImplementation(
+				invokeRouter(
+					{
+						...baseRoutes,
+						image_engine_request: (args) => {
+							if (fails-- > 0) throw empty;
+							return baseRoutes.image_engine_request(args);
+						}
+					},
+					undefined
+				)
+			);
 			const ok = localBackend.generate({ prompt: 'a coin', width: 64, height: 64, seed: 1 });
 			await vi.runAllTimersAsync();
 			await expect(ok).resolves.toBeTruthy();
@@ -176,7 +188,7 @@ describe('generate', () => {
 			const settled = expect(failed).rejects.toThrow(/generate_image returned no results/);
 			await vi.runAllTimersAsync();
 			await settled;
-			expect(tauri.invoke.mock.calls.filter(([c]) => c === 'image_engine_request').length).toBe(6);
+			expect(invokeCalls(tauri.invoke, 'image_engine_request').length).toBe(6);
 		} finally {
 			vi.useRealTimers();
 		}
@@ -184,15 +196,21 @@ describe('generate', () => {
 
 	it('does not retry other engine failures', async () => {
 		settings.imageLocalModelId = 'ming';
-		const base = tauri.invoke.getMockImplementation()!;
-		tauri.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
-			if (cmd === 'image_engine_request') throw new Error('connection refused');
-			return base(cmd, args);
-		});
+		tauri.invoke.mockImplementation(
+			invokeRouter(
+				{
+					...baseRoutes,
+					image_engine_request: () => {
+						throw new Error('connection refused');
+					}
+				},
+				undefined
+			)
+		);
 		await expect(
 			localBackend.generate({ prompt: 'a coin', width: 64, height: 64, seed: 1 })
 		).rejects.toThrow(/connection refused/);
-		expect(tauri.invoke.mock.calls.filter(([c]) => c === 'image_engine_request').length).toBe(1);
+		expect(invokeCalls(tauri.invoke, 'image_engine_request').length).toBe(1);
 	});
 
 	it('refuses an id it cannot run, before starting anything', async () => {

@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { SkillSummary } from '#lib/ipc/gen/SkillSummary.ts';
 import SkillsSection from './SkillsSection.svelte';
 import { defaultSkills, getSettings, updateSkills } from '#lib/stores/settings.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(async () => '/picked/skills') }));
@@ -29,6 +30,15 @@ function skill(name: string, extra: Partial<SkillSummary> = {}): SkillSummary {
 
 let listed: SkillSummary[];
 
+const baseRoutes = {
+	skills_list: () => listed,
+	skill_read: { name: 'deploy', body: 'Run it.', files: [] },
+	skill_delete_user: () => {
+		listed = listed.filter((s) => s.name !== 'deploy');
+		return undefined;
+	}
+};
+
 beforeEach(() => {
 	vi.clearAllMocks();
 	updateSkills({ ...defaultSkills, trustedRepos: {} });
@@ -37,15 +47,7 @@ beforeEach(() => {
 		skill('broken', { source: 'extra', error: 'no description', description: '' }),
 		skill('shared', { source: 'shared', warnings: ['name does not match its folder "x"'] })
 	];
-	vi.mocked(invoke).mockImplementation(async (cmd: string) => {
-		if (cmd === 'skills_list') return listed;
-		if (cmd === 'skill_read') return { name: 'deploy', body: 'Run it.', files: [] };
-		if (cmd === 'skill_delete_user') {
-			listed = listed.filter((s) => s.name !== 'deploy');
-			return undefined;
-		}
-		return undefined;
-	});
+	vi.mocked(invoke).mockImplementation(invokeRouter(baseRoutes, undefined));
 });
 
 describe('Settings → Skills', () => {
@@ -67,9 +69,8 @@ describe('Settings → Skills', () => {
 			{ name: 'plan-2d-game', state: 'edited' },
 			{ name: 'plan-web-app', state: 'deleted' }
 		];
-		const base = vi.mocked(invoke).getMockImplementation()!;
-		vi.mocked(invoke).mockImplementation(async (cmd, args) =>
-			cmd === 'skills_shipped' ? shipped : base(cmd, args)
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter({ ...baseRoutes, skills_shipped: shipped }, undefined)
 		);
 		render(SkillsSection);
 		expect(await screen.findByText('Shipped with Haruspex')).toBeTruthy();

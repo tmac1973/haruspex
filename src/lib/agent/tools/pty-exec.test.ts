@@ -12,6 +12,8 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	getSettings: () => ({ codeCommandExec: 'pty' })
 }));
 
+import { invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
+
 const HOOK_PATH = '/opt/haruspex/resources/shell-integration/haruspex.bash';
 
 /**
@@ -21,51 +23,51 @@ const HOOK_PATH = '/opt/haruspex/resources/shell-integration/haruspex.bash';
  * command ran to completion). `hookTakes: false` models a shell that swallowed
  * the source — the counter never moves.
  */
-function mockPty(opts: {
+type PtyOpts = {
 	pending: string | null;
 	hookPath?: string | null;
 	hookTakes?: boolean;
 	output?: string;
-}) {
+};
+
+function ptyRoutes(opts: PtyOpts) {
 	const writes: string[] = [];
 	const state = { markerTotal: 10, completedTotal: 0 };
 	const hookTakes = opts.hookTakes ?? true;
-	mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
-		switch (cmd) {
-			case 'shell_pending_command':
-				return opts.pending;
-			case 'shell_integration_hook':
-				return opts.hookPath === undefined ? HOOK_PATH : opts.hookPath;
-			case 'shell_get_context':
-				return {
-					completed_total: state.completedTotal,
-					marker_total: state.markerTotal,
-					current_cwd: '/home/tim'
-				};
-			case 'shell_write': {
-				const data = String(args?.data ?? '');
-				writes.push(data);
-				if (data.includes('haruspex.bash')) {
-					if (hookTakes) state.markerTotal += 2;
-				} else {
-					state.completedTotal += 1;
-				}
-				return null;
+	const routes = {
+		shell_pending_command: () => opts.pending,
+		shell_integration_hook: () => (opts.hookPath === undefined ? HOOK_PATH : opts.hookPath),
+		shell_get_context: () => ({
+			completed_total: state.completedTotal,
+			marker_total: state.markerTotal,
+			current_cwd: '/home/tim'
+		}),
+		shell_write: (args?: Record<string, unknown>) => {
+			const data = String(args?.data ?? '');
+			writes.push(data);
+			if (data.includes('haruspex.bash')) {
+				if (hookTakes) state.markerTotal += 2;
+			} else {
+				state.completedTotal += 1;
 			}
-			case 'shell_get_recent_commands':
-				return [
-					{
-						commandLine: 'echo hi',
-						output: opts.output ?? 'hi',
-						exitCode: 0,
-						cwd: '/home/tim',
-						truncated: false
-					}
-				];
-			default:
-				return null;
-		}
-	});
+			return null;
+		},
+		shell_get_recent_commands: () => [
+			{
+				commandLine: 'echo hi',
+				output: opts.output ?? 'hi',
+				exitCode: 0,
+				cwd: '/home/tim',
+				truncated: false
+			}
+		]
+	};
+	return { writes, routes };
+}
+
+function mockPty(opts: PtyOpts) {
+	const { writes, routes } = ptyRoutes(opts);
+	mocks.invoke.mockImplementation(invokeRouter(routes));
 	return writes;
 }
 
@@ -129,13 +131,9 @@ describe('run_command with a shell the user opened by hand', () => {
 		mockPty({ pending: 'bash', hookTakes: false });
 		const { runInPty } = await import('./pty-exec');
 		await runInPty(1, 'echo hi', 30, undefined);
-		const firstAttempts = mocks.invoke.mock.calls.filter(
-			(c) => c[0] === 'shell_integration_hook'
-		).length;
+		const firstAttempts = invokeCalls(mocks.invoke, 'shell_integration_hook').length;
 		await runInPty(1, 'echo there', 30, undefined);
-		const totalAttempts = mocks.invoke.mock.calls.filter(
-			(c) => c[0] === 'shell_integration_hook'
-		).length;
+		const totalAttempts = invokeCalls(mocks.invoke, 'shell_integration_hook').length;
 		expect(firstAttempts).toBe(1);
 		expect(totalAttempts).toBe(1);
 	});
@@ -169,17 +167,20 @@ describe('run_command with a shell the user opened by hand', () => {
 describe('run_command in a terminal with a memory limit', () => {
 	/** The fake PTY, plus a terminal ceiling whose kill count the command can bump. */
 	function withMemory(killedByCommand: boolean | null) {
-		const writes = mockPty({ pending: null });
-		const base = mocks.invoke.getMockImplementation()!;
+		const { writes, routes } = ptyRoutes({ pending: null });
 		let kills = 0;
-		mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
-			if (cmd === 'shell_memory_status') {
-				return killedByCommand === null ? null : { limitMb: 8192, oomKills: kills };
-			}
-			const out = await base(cmd, args);
-			if (cmd === 'shell_write' && killedByCommand) kills += 1;
-			return out;
-		});
+		mocks.invoke.mockImplementation(
+			invokeRouter({
+				...routes,
+				shell_memory_status: () =>
+					killedByCommand === null ? null : { limitMb: 8192, oomKills: kills },
+				shell_write: (args) => {
+					const out = routes.shell_write(args);
+					if (killedByCommand) kills += 1;
+					return out;
+				}
+			})
+		);
 		return writes;
 	}
 

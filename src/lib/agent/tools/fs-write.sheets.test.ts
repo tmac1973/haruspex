@@ -38,6 +38,7 @@ vi.mock('./registry', async (importOriginal) => {
 });
 
 import './fs-write';
+import { invokeRouter, unexpectedInvoke } from '#lib/testing/invoke.ts';
 
 function makeCtx(over: Partial<ToolContext> = {}): ToolContext {
 	return {
@@ -67,22 +68,28 @@ beforeEach(() => {
 	disk = { exists: false, written: [] };
 	mocks.isAutoApproveActive.mockReset().mockReturnValue(false);
 	mocks.askFileConflict.mockReset();
-	mocks.invoke.mockReset().mockImplementation(async (cmd: string, payload) => {
-		if (cmd === 'fs_path_exists') {
-			if (disk.exists instanceof Error) throw disk.exists;
-			return disk.exists;
-		}
-		if (cmd === 'fs_find_available_path') {
-			if (disk.available instanceof Error) throw disk.available;
-			return disk.available;
-		}
-		if (cmd === 'fs_write_xlsx' || cmd === 'fs_write_ods') {
-			if (disk.writeError !== undefined) throw disk.writeError;
-			disk.written.push({ command: cmd, payload });
-			return undefined;
-		}
-		throw new Error(`unexpected invoke: ${cmd}`);
-	});
+	const write = (command: string) => (payload?: Record<string, unknown>) => {
+		if (disk.writeError !== undefined) throw disk.writeError;
+		disk.written.push({ command, payload: payload! });
+		return undefined;
+	};
+	mocks.invoke.mockReset().mockImplementation(
+		invokeRouter(
+			{
+				fs_path_exists: () => {
+					if (disk.exists instanceof Error) throw disk.exists;
+					return disk.exists;
+				},
+				fs_find_available_path: () => {
+					if (disk.available instanceof Error) throw disk.available;
+					return disk.available;
+				},
+				fs_write_xlsx: write('fs_write_xlsx'),
+				fs_write_ods: write('fs_write_ods')
+			},
+			unexpectedInvoke
+		)
+	);
 });
 
 function executor(name: string) {
