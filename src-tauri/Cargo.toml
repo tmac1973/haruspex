@@ -123,7 +123,15 @@ chrono-tz = "0.10.4"
 # AEAD for the encrypted-file secret store used where no system keychain
 # works. Already in the tree through rustls; listed so it is ours to call.
 ring = "0.17"
-keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "async-secret-service", "tokio", "crypto-rust"] }
+# The system keychain (src/secrets.rs). keyring 4 split the API (keyring-core)
+# from the stores, one crate per platform; each is listed under its target
+# below.
+keyring-core = "1"
+
+# Secret Service (GNOME Keyring, KWallet) over zbus, which on Linux is already
+# in the tree on tokio through ashpd; crypto-rust keeps OpenSSL out.
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+zbus-secret-service-keyring-store = { version = "1", features = ["rt-tokio-crypto-rust"] }
 
 # Screen capture (Phase 09), split by platform so no platform pays for
 # another's dependencies.
@@ -148,6 +156,9 @@ webkit2gtk = { version = "2.0", features = ["v2_34"] }
 # (`sidecar_process`).
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_SystemServices", "Win32_System_Threading"] }
+# Credential Manager for src/secrets.rs. `search` (on by default) only adds
+# regex for listing credentials, which we never do.
+windows-native-keyring-store = { version = "1", default-features = false }
 
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 xcap = "0.9"
@@ -157,3 +168,5 @@ xcap = "0.9"
 # every window missing — see desktop::external.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["std", "CGWindow"] }
+# The login Keychain for src/secrets.rs.
+apple-native-keyring-store = { version = "1", features = ["keychain"] }
