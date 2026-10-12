@@ -303,14 +303,13 @@ async fn start_with_tts_port(
 
 // --- handlers --------------------------------------------------------------
 
-/// `None` when the caller is authorised; otherwise the response to send back
-/// instead of handling the request.
+/// `None` when an API caller is authorised (the cookie, or a Bearer header);
+/// otherwise the response to send back instead of handling the request. The
+/// link's `?t=` is not accepted here: only the page load trades it in.
 fn unauthorised(state: &AppState, headers: &HeaderMap, uri: &Uri) -> Option<Response> {
-    let provided = auth::extract_token(headers, uri.query()).unwrap_or_default();
-    if auth::token_matches(&state.token, &provided) {
-        None
-    } else {
-        Some((StatusCode::UNAUTHORIZED, "not for you").into_response())
+    match auth::check(headers, uri.query(), &state.token, false) {
+        Some(_) => None,
+        None => Some((StatusCode::UNAUTHORIZED, "not for you").into_response()),
     }
 }
 
@@ -321,15 +320,22 @@ async fn health() -> impl IntoResponse {
 }
 
 async fn index(State(state): State<AppState>, headers: HeaderMap, uri: Uri) -> Response {
-    if unauthorised(&state, &headers, &uri).is_some() {
+    let Some(proof) = auth::check(&headers, uri.query(), &state.token, true) else {
         // Deliberately says nothing about what is running here.
         return no_cache(Html(NO_TOKEN_PAGE).into_response());
-    }
-    let page = CLIENT_HTML.replace("{{host}}", &html_escape(&host_name()));
-    let mut response = no_cache(Html(page).into_response());
-    // So a guest who bookmarks the page, or adds it to their home screen
-    // without the query string, is not locked out of their own link.
-    if let Ok(cookie) = auth::token_cookie(&state.token).parse() {
+    };
+    let mut response = if proof == auth::Proof::Link {
+        // Trade the link for the cookie and send the browser to a URL without
+        // the token, so it never sits in the address bar, the history, or a
+        // bookmark or home-screen shortcut made from the page.
+        no_cache((StatusCode::SEE_OTHER, [(axum::http::header::LOCATION, "/")]).into_response())
+    } else {
+        let page = CLIENT_HTML.replace("{{host}}", &html_escape(&host_name()));
+        no_cache(Html(page).into_response())
+    };
+    // Set on every visit: it renews the cookie's 30 days, and replaces one
+    // left by an older build, which held the raw token.
+    if let Ok(cookie) = auth::guest_cookie(&state.token).parse() {
         response.headers_mut().insert(SET_COOKIE, cookie);
     }
     response
@@ -839,6 +845,12 @@ mod http_tests {
         }
     }
 
+    /// The `Cookie` header a guest's browser sends after opening `token`'s
+    /// link: the API takes it, and never the link's `?t=`.
+    fn guest_cookie(token: &str) -> String {
+        format!("{}={}", auth::TOKEN_COOKIE, auth::cookie_value(token))
+    }
+
     /// A client that takes the self-signed certificate, as a guest does once
     /// they have accepted the browser's warning.
     fn client() -> reqwest::Client {
@@ -984,45 +996,102 @@ mod http_tests {
     }
 
     #[tokio::test]
-    async fn a_valid_link_serves_the_client_and_remembers_it() {
+    async fn a_valid_link_is_traded_for_a_cookie_and_dropped_from_the_url() {
         let (base, _relay, running) = serve(Arc::new(RecordingSink::default())).await;
-        let response = client()
+        let no_follow = reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap();
+        let response = no_follow
             .get(format!("{base}/?t={TOKEN}"))
             .send()
             .await
             .unwrap();
-        let cookie = response
+        // Sent on to a URL without the token, so it stays out of the address
+        // bar, the history and any bookmark made from the page.
+        assert_eq!(response.status(), 303);
+        assert_eq!(response.headers()["location"], "/");
+        let set = response
             .headers()
             .get("set-cookie")
             .expect("a guest with a valid link gets a cookie")
             .to_str()
             .unwrap()
             .to_string();
-        assert!(cookie.contains("SameSite=Strict"));
+        assert!(set.contains("SameSite=Strict"));
+        assert!(set.contains("Secure"), "the page is HTTPS only: {set}");
         assert!(
-            cookie.contains("Secure"),
-            "the page is HTTPS only: {cookie}"
+            !set.contains(TOKEN),
+            "the cookie never holds the token: {set}"
         );
+        let cookie = set.split(';').next().unwrap().to_string();
+        assert_eq!(cookie, guest_cookie(TOKEN));
 
-        let body = response.text().await.unwrap();
+        // The cookie alone opens the page, which is what makes a bookmark or
+        // a home-screen shortcut work, and each visit renews it.
+        let page = no_follow
+            .get(&base)
+            .header("Cookie", &cookie)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(page.status(), 200);
+        assert!(
+            page.headers().get("set-cookie").is_some(),
+            "each visit renews the cookie"
+        );
+        let body = page.text().await.unwrap();
         assert!(body.contains("id=\"composer\""));
         // The notice naming whose machine this is must survive templating.
         assert!(body.contains(&host_name()), "hostname not interpolated");
         assert!(!body.contains("{{host}}"));
+        running.stop();
+    }
 
-        // And the cookie alone is enough next time, which is what makes a
-        // bookmark or a home-screen shortcut work.
-        let client = client();
-        let bookmarked = client
-            .get(&base)
-            .header("Cookie", cookie)
+    #[tokio::test]
+    async fn the_api_never_takes_the_token_from_the_url() {
+        let (base, _relay, running) = serve(Arc::new(RecordingSink::default())).await;
+        let refused = client()
+            .post(format!("{base}/api/chat?t={TOKEN}"))
+            .json(&serde_json::json!({ "sessionId": "s1", "message": "hi" }))
             .send()
             .await
-            .unwrap()
-            .text()
+            .unwrap();
+        assert_eq!(refused.status(), 401);
+        // A script can still use a Bearer header.
+        let scripted = client()
+            .get(format!("{base}/api/stream/s1"))
+            .bearer_auth(TOKEN)
+            .send()
             .await
             .unwrap();
-        assert!(bookmarked.contains("id=\"composer\""));
+        assert_eq!(scripted.status(), 200);
+        running.stop();
+    }
+
+    #[tokio::test]
+    async fn an_old_raw_token_cookie_is_upgraded_on_the_page() {
+        // A phone shortcut made before the cookie held a derived value.
+        let (base, _relay, running) = serve(Arc::new(RecordingSink::default())).await;
+        let legacy = format!("{}={TOKEN}", auth::TOKEN_COOKIE);
+        let page = client()
+            .get(&base)
+            .header("Cookie", &legacy)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(page.status(), 200);
+        let set = page.headers()["set-cookie"].to_str().unwrap().to_string();
+        assert!(set.starts_with(&guest_cookie(TOKEN)), "{set}");
+        // But the API doesn't take the old form.
+        let api = client()
+            .get(format!("{base}/api/stream/s1"))
+            .header("Cookie", &legacy)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(api.status(), 401);
         running.stop();
     }
 
@@ -1065,7 +1134,8 @@ mod http_tests {
         let client = client();
 
         let mut stream = client
-            .get(format!("{base}/api/stream/s1?t={TOKEN}"))
+            .get(format!("{base}/api/stream/s1"))
+            .header("cookie", guest_cookie(TOKEN))
             .send()
             .await
             .unwrap();
@@ -1076,7 +1146,8 @@ mod http_tests {
         assert!(first.contains("\"type\":\"snapshot\""), "got {first}");
 
         let accepted = client
-            .post(format!("{base}/api/chat?t={TOKEN}"))
+            .post(format!("{base}/api/chat"))
+            .header("cookie", guest_cookie(TOKEN))
             .json(&serde_json::json!({ "sessionId": "s1", "message": "what is a haruspex?" }))
             .send()
             .await
@@ -1136,7 +1207,8 @@ mod http_tests {
         });
         let (base, relay, running) = serve(sink).await;
         let response = client()
-            .post(format!("{base}/api/chat?t={TOKEN}"))
+            .post(format!("{base}/api/chat"))
+            .header("cookie", guest_cookie(TOKEN))
             .json(&serde_json::json!({ "sessionId": "s1", "message": "hi" }))
             .send()
             .await
@@ -1154,7 +1226,8 @@ mod http_tests {
         let client = client();
 
         let idle = client
-            .post(format!("{base}/api/cancel?t={TOKEN}"))
+            .post(format!("{base}/api/cancel"))
+            .header("cookie", guest_cookie(TOKEN))
             .json(&serde_json::json!({ "sessionId": "s1" }))
             .send()
             .await
@@ -1163,13 +1236,15 @@ mod http_tests {
         assert!(sink.cancelled.lock().unwrap().is_empty());
 
         client
-            .post(format!("{base}/api/chat?t={TOKEN}"))
+            .post(format!("{base}/api/chat"))
+            .header("cookie", guest_cookie(TOKEN))
             .json(&serde_json::json!({ "sessionId": "s1", "message": "hi" }))
             .send()
             .await
             .unwrap();
         let busy = client
-            .post(format!("{base}/api/cancel?t={TOKEN}"))
+            .post(format!("{base}/api/cancel"))
+            .header("cookie", guest_cookie(TOKEN))
             .json(&serde_json::json!({ "sessionId": "s1" }))
             .send()
             .await
@@ -1185,7 +1260,8 @@ mod http_tests {
         let client = client();
 
         let empty = client
-            .post(format!("{base}/api/chat?t={TOKEN}"))
+            .post(format!("{base}/api/chat"))
+            .header("cookie", guest_cookie(TOKEN))
             .json(&serde_json::json!({ "sessionId": "s1", "message": "   " }))
             .send()
             .await
@@ -1193,7 +1269,8 @@ mod http_tests {
         assert_eq!(empty.status(), 400);
 
         let huge = client
-            .post(format!("{base}/api/chat?t={TOKEN}"))
+            .post(format!("{base}/api/chat"))
+            .header("cookie", guest_cookie(TOKEN))
             .json(&serde_json::json!({
                 "sessionId": "s1",
                 "message": "x".repeat(MAX_MESSAGE_BYTES + 1)
@@ -1262,7 +1339,8 @@ mod http_tests {
         let base = format!("https://127.0.0.1:{}", second.port);
 
         let old = client()
-            .post(format!("{base}/api/chat?t=old-token"))
+            .post(format!("{base}/api/chat"))
+            .header("cookie", guest_cookie("old-token"))
             .json(&serde_json::json!({ "sessionId": "s1", "message": "hi" }))
             .send()
             .await
@@ -1270,7 +1348,8 @@ mod http_tests {
         assert_eq!(old.status(), 401, "the old link still worked");
 
         let new = client()
-            .post(format!("{base}/api/chat?t=new-token"))
+            .post(format!("{base}/api/chat"))
+            .header("cookie", guest_cookie("new-token"))
             .json(&serde_json::json!({ "sessionId": "s1", "message": "hi" }))
             .send()
             .await
@@ -1288,7 +1367,8 @@ mod http_tests {
         let client = client();
 
         client
-            .post(format!("{base}/api/chat?t={TOKEN}"))
+            .post(format!("{base}/api/chat"))
+            .header("cookie", guest_cookie(TOKEN))
             .json(&serde_json::json!({ "sessionId": "s1", "message": "five up top" }))
             .send()
             .await
@@ -1311,7 +1391,8 @@ mod http_tests {
             .unwrap();
 
         let accepted = client
-            .post(format!("{base}/api/answer?t={TOKEN}"))
+            .post(format!("{base}/api/answer"))
+            .header("cookie", guest_cookie(TOKEN))
             .json(&serde_json::json!({
                 "sessionId": "s1",
                 "questionId": "q1",
@@ -1330,7 +1411,8 @@ mod http_tests {
         // A second tap lands on a question nobody is waiting for: accepted
         // quietly, delivered to nobody.
         let again = client
-            .post(format!("{base}/api/answer?t={TOKEN}"))
+            .post(format!("{base}/api/answer"))
+            .header("cookie", guest_cookie(TOKEN))
             .json(&serde_json::json!({
                 "sessionId": "s1",
                 "questionId": "q1",
@@ -1367,7 +1449,8 @@ mod http_tests {
         let sink = Arc::new(RecordingSink::default());
         let (base, _relay, running) = serve(sink).await;
         let response = client()
-            .post(format!("{base}/api/speak?t={TOKEN}"))
+            .post(format!("{base}/api/speak"))
+            .header("cookie", guest_cookie(TOKEN))
             .json(&serde_json::json!({ "text": "hello" }))
             .send()
             .await
@@ -1390,7 +1473,8 @@ mod http_tests {
         });
         let (base, _relay, running) = serve(sink).await;
         let response = client()
-            .post(format!("{base}/api/speak?t={TOKEN}"))
+            .post(format!("{base}/api/speak"))
+            .header("cookie", guest_cookie(TOKEN))
             .json(&serde_json::json!({ "text": "hello" }))
             .send()
             .await
@@ -1414,7 +1498,8 @@ mod http_tests {
         assert_eq!(unauthenticated.status(), 401);
 
         let empty = client
-            .post(format!("{base}/api/speak?t={TOKEN}"))
+            .post(format!("{base}/api/speak"))
+            .header("cookie", guest_cookie(TOKEN))
             .json(&serde_json::json!({ "text": "   " }))
             .send()
             .await
@@ -1446,7 +1531,8 @@ mod http_tests {
         .expect("server should bind");
         let port = running.port;
         let stream = client()
-            .get(format!("https://127.0.0.1:{port}/api/stream/s1?t={TOKEN}"))
+            .get(format!("https://127.0.0.1:{port}/api/stream/s1"))
+            .header("cookie", guest_cookie(TOKEN))
             .send()
             .await
             .unwrap();

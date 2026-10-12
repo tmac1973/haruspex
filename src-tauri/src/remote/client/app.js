@@ -12,7 +12,8 @@
  */
 
 const SESSION_KEY = 'haruspex-remote-session';
-const TOKEN_KEY = 'haruspex-remote-token';
+/** Where builds before the cookie kept the link's token. Cleared on load. */
+const LEGACY_TOKEN_KEY = 'haruspex-remote-token';
 const TRANSCRIPT_KEY = 'haruspex-remote-transcript';
 const LABEL_KEY = 'haruspex-remote-label';
 
@@ -306,6 +307,15 @@ function writeStore(store, key, value) {
 	}
 }
 
+/** @param {Storage | null} store @param {string} key */
+function removeStore(store, key) {
+	try {
+		store?.removeItem(key);
+	} catch {
+		// As above.
+	}
+}
+
 // --- the page --------------------------------------------------------------
 
 /**
@@ -313,8 +323,7 @@ function writeStore(store, key, value) {
  *   document?: Document,
  *   storage?: Storage | null,
  *   fetch?: typeof fetch,
- *   EventSource?: any,
- *   search?: string
+ *   EventSource?: any
  * }} [deps]
  */
 export function boot(deps = {}) {
@@ -322,7 +331,6 @@ export function boot(deps = {}) {
 	const store = deps.storage ?? (typeof localStorage === 'undefined' ? null : localStorage);
 	const net = deps.fetch ?? ((...args) => fetch(...args));
 	const Stream = deps.EventSource ?? (typeof EventSource === 'undefined' ? null : EventSource);
-	const search = deps.search ?? (typeof location === 'undefined' ? '' : location.search);
 
 	const messagesEl = doc.getElementById('messages');
 	const statusEl = doc.getElementById('status');
@@ -365,17 +373,12 @@ export function boot(deps = {}) {
 		newChat: newChatEl
 	};
 
-	// The link the host shared carries the token; it is kept in the address bar
-	// so a reload still works, and stashed so a bookmark without the query
-	// string does too.
-	const fromUrl = new URLSearchParams(search).get('t');
-	if (fromUrl) writeStore(store, TOKEN_KEY, fromUrl);
-	const token = fromUrl ?? readStore(store, TOKEN_KEY);
+	// The page never sees the link's token: the server trades it for an
+	// HttpOnly cookie on the first visit and redirects to a URL without it, and
+	// every request below is same-origin, so the browser sends the cookie. An
+	// older build kept the token in storage; it doesn't belong there.
+	removeStore(store, LEGACY_TOKEN_KEY);
 
-	// Encoded once. Every route below is unreachable without a token — the page
-	// stops at the guard at the end of `boot` — so an empty string here is a
-	// state the server never sees.
-	const auth = encodeURIComponent(token ?? '');
 	// Not an account: it distinguishes this browser from another one, so two
 	// guests do not land in one conversation and a reload continues rather than
 	// restarts.
@@ -545,7 +548,7 @@ export function boot(deps = {}) {
 		setStatus('Thinking…');
 		render();
 		try {
-			await net(`/api/answer?t=${auth}`, {
+			await net('/api/answer', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ sessionId, questionId, ...answer })
@@ -571,7 +574,7 @@ export function boot(deps = {}) {
 			button.disabled = true;
 			button.textContent = 'Loading…';
 			try {
-				const response = await net(`/api/speak?t=${auth}`, {
+				const response = await net('/api/speak', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ text })
@@ -758,8 +761,8 @@ export function boot(deps = {}) {
 	}
 
 	function connect() {
-		if (!Stream || !token) return;
-		const url = `/api/stream/${encodeURIComponent(sessionId)}?t=${auth}`;
+		if (!Stream) return;
+		const url = `/api/stream/${encodeURIComponent(sessionId)}`;
 		stream = new Stream(url);
 		stream.onopen = () => setStatus(busy ? 'Answering…' : 'Ready');
 		stream.onmessage = (/** @type {{data: string}} */ event) => {
@@ -804,11 +807,15 @@ export function boot(deps = {}) {
 		render();
 
 		try {
-			const response = await net(`/api/chat?t=${auth}`, {
+			const response = await net('/api/chat', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ sessionId, message: text, clientLabel: label || null })
 			});
+			if (response.status === 401) {
+				lockOut();
+				return;
+			}
 			if (!response.ok) {
 				// The server's own words: "too many messages — slow down a
 				// moment" is more use to a guest than a status code.
@@ -840,7 +847,7 @@ export function boot(deps = {}) {
 		if (busy) {
 			// Do not leave a turn running against a conversation nobody is
 			// reading any more.
-			void net(`/api/cancel?t=${auth}`, {
+			void net('/api/cancel', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ sessionId })
@@ -911,7 +918,7 @@ export function boot(deps = {}) {
 	});
 
 	ui.stop.addEventListener('click', () => {
-		void net(`/api/cancel?t=${auth}`, {
+		void net('/api/cancel', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ sessionId })
@@ -919,12 +926,16 @@ export function boot(deps = {}) {
 		setStatus('Stopping…');
 	});
 
-	if (!token) {
-		setStatus('You need the link its host shared with you', true);
+	/**
+	 * The cookie lapsed (a month unused) or the host rotated the link: nothing
+	 * here will work again until the guest opens the link they were sent.
+	 */
+	function lockOut() {
+		fail('You need the link its host shared with you');
+		stream?.close?.();
+		stream = null;
 		ui.send.disabled = true;
 		ui.input.disabled = true;
-		render();
-		return { handle, render };
 	}
 
 	render();
