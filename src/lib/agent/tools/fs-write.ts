@@ -123,7 +123,7 @@ export async function resolveWritePathInteractive(
 		};
 	}
 
-	let exists = false;
+	let exists: boolean;
 	try {
 		exists = await invoke<boolean>('fs_path_exists', { workdir, relPath });
 	} catch {

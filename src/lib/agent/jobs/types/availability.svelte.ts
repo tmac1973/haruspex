@@ -24,7 +24,7 @@ export async function ensureTypeAvailabilityLoaded(): Promise<void> {
 	loadStarted = true;
 	for (const def of listJobTypes()) {
 		if (!def.available) continue;
-		let ok = false;
+		let ok: boolean;
 		try {
 			ok = await def.available();
 		} catch {

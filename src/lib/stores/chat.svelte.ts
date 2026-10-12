@@ -736,7 +736,7 @@ function collectSandboxCalls(messages: ChatMessage[]): SandboxCallToReplay[] {
 		for (const call of msg.tool_calls) {
 			const name = call.function?.name;
 			if (name !== 'run_python' && name !== 'install_package' && name !== 'reset_python') continue;
-			let args: { code?: string; package?: string } = {};
+			let args: { code?: string; package?: string };
 			try {
 				args = JSON.parse(call.function.arguments ?? '{}');
 			} catch {

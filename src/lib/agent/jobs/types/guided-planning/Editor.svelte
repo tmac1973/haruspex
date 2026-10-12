@@ -15,8 +15,9 @@
 	// from the job name (plan/<slug>/) until the user edits it by hand.
 	let {
 		config = $bindable(),
-		// Part of every job-type editor's bindable props; this one has no steps.
-		// eslint-disable-next-line @typescript-eslint/no-unused-vars
+		// Part of every job-type editor's bindable props: JobEditor binds it, and
+		// Svelte throws on a bind to an undeclared prop. This one has no steps.
+		// eslint-disable-next-line @typescript-eslint/no-unused-vars, no-useless-assignment
 		steps = $bindable([]),
 		jobName = '',
 		workingDir = ''

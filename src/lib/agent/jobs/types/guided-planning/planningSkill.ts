@@ -30,7 +30,8 @@ export async function loadPlanningSkill(
 	} catch (e) {
 		throw new Error(
 			`Couldn't read the planning skill "${name}": ${errMessage(e)}. ` +
-				'Pick another in the job editor, or none.'
+				'Pick another in the job editor, or none.',
+			{ cause: e }
 		);
 	}
 }
