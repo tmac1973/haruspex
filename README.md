@@ -137,6 +137,24 @@ Because the installer is **not code-signed**, Windows SmartScreen shows a "Windo
 
 Open the `.dmg` and drag Haruspex to Applications. Because the app is **not code-signed**, right-click it the first time and choose **Open** to get past Gatekeeper.
 
+### Building the packages yourself
+
+Instead of downloading a release, you can build the installers from source. Install the [build prerequisites](#build-prerequisites) for your platform first, then:
+
+```bash
+git clone https://github.com/tmac1973/haruspex.git
+cd haruspex
+
+# Builds the sidecars and downloads the binaries and resources the app bundles.
+# --skip-models leaves out the model downloads; the app offers them on first run.
+./scripts/dev-setup.sh --skip-models
+
+# Builds the installers into src-tauri/target/release/bundle/
+make app
+```
+
+On Linux that gives you the AppImage, `.deb` and `.rpm`; on Windows the NSIS `.exe` and `.msi`; on macOS the `.app` and `.dmg`. Install them as described above.
+
 ## Hardware requirements
 
 Haruspex runs the model on your GPU. How much VRAM you have decides which model you get and how well the coding features work.
