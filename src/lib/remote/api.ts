@@ -21,6 +21,8 @@ export interface RemoteStatus {
 	port: number | null;
 	bindAll: boolean;
 	sessions: number;
+	/** SHA-256 of the HTTPS certificate being served, as a browser shows it. */
+	fingerprint: string | null;
 }
 
 export async function startRemoteServer(config: RemoteConfig): Promise<RemoteStatus> {
@@ -86,7 +88,7 @@ export function qrPath(qr: QrMatrix): string {
 
 /** The link a guest is given: address, port, and the token that opens it. */
 export function remoteLink(address: string, port: number, token: string): string {
-	return `http://${address}:${port}/?t=${encodeURIComponent(token)}`;
+	return `https://${address}:${port}/?t=${encodeURIComponent(token)}`;
 }
 
 /**

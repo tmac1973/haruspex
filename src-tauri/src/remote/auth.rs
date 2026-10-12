@@ -92,8 +92,8 @@ fn cookie_token(headers: &HeaderMap) -> Option<String> {
 /// The `Set-Cookie` value handed to a guest whose link checked out.
 pub fn token_cookie(token: &str) -> String {
     // A year: long enough that a phone shortcut keeps working, and revocation
-    // is rotation rather than expiry anyway.
-    format!("{TOKEN_COOKIE}={token}; Path=/; Max-Age=31536000; SameSite=Strict; HttpOnly")
+    // is rotation rather than expiry anyway. `Secure`: the page is HTTPS only.
+    format!("{TOKEN_COOKIE}={token}; Path=/; Max-Age=31536000; SameSite=Strict; HttpOnly; Secure")
 }
 
 #[cfg(test)]

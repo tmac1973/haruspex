@@ -80,7 +80,13 @@ const TABLE: Record<string, Handler> = {
 	}),
 	owner_clients_list: empty,
 	owner_trusted_hosts: empty,
-	remote_stop: () => ({ running: false, port: null, bind_all: false, sessions: 0 }),
+	remote_stop: () => ({
+		running: false,
+		port: null,
+		bind_all: false,
+		sessions: 0,
+		fingerprint: null
+	}),
 	db_list_conversations: empty,
 	db_recover_orphan_runs: () => 0,
 
@@ -135,7 +141,13 @@ const TABLE: Record<string, Handler> = {
 	mcp_catalog: empty,
 	mcp_runtimes_available: () => ({ node: true, npm: true, uv: true }),
 	download_status: none,
-	remote_status: () => ({ running: false, port: null, bind_all: false, sessions: 0 }),
+	remote_status: () => ({
+		running: false,
+		port: null,
+		bind_all: false,
+		sessions: 0,
+		fingerprint: null
+	}),
 	remote_lan_address: none,
 
 	comfy_model_catalogue: empty,

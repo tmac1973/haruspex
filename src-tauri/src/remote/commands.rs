@@ -92,8 +92,14 @@ pub async fn remote_start(
     // Stop first: rebinding the same port while the old listener holds it is
     // the obvious way for a port change to fail on the way back.
     state.shutdown().await;
+    // The owner API's certificate, made on first use if that has never run.
+    let identity = app.state::<crate::owner::OwnerApi>().certificate(None)?;
+    let tls = server::Tls {
+        config: crate::owner::tls::server_config(&identity)?,
+        fingerprint: identity.fingerprint,
+    };
     let bridge = Arc::new(AppBridge(app));
-    let running = server::start(bridge, state.relay(), config).await?;
+    let running = server::start(bridge, state.relay(), config, tls).await?;
     state.install(running);
     Ok(state.status())
 }

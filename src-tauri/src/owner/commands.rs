@@ -105,7 +105,7 @@ pub async fn owner_api_apply(
     // Who may connect changes in place: no restart, nobody dropped.
     api.trust.set(config.access.clone());
     let identity = if config.enabled {
-        Some(certificate(&api, &config)?)
+        Some(api.certificate(config.access.extra_host.as_deref())?)
     } else {
         None
     };
@@ -149,23 +149,6 @@ pub async fn owner_api_apply(
     *api.served.lock_or_recover() = Some((identity.fingerprint, identity.cert_pem));
     set_engine(&app, true);
     Ok(status(&api))
-}
-
-/// The certificate to serve: the kept one, or a new one when it no longer
-/// covers this computer's names.
-fn certificate(api: &OwnerApi, config: &OwnerApiConfig) -> Result<super::tls::Identity, String> {
-    let path = api
-        .tls_path
-        .as_deref()
-        .ok_or("no app data folder for the HTTPS certificate")?;
-    let hostname = super::trust::system_hostname();
-    let names = super::tls::names_for(hostname.as_deref(), config.access.extra_host.as_deref());
-    let mut ips: Vec<std::net::IpAddr> = vec![
-        std::net::Ipv4Addr::LOCALHOST.into(),
-        std::net::Ipv6Addr::LOCALHOST.into(),
-    ];
-    ips.extend(crate::remote::link::lan_address());
-    super::tls::load_or_create(path, &names, &ips)
 }
 
 #[tauri::command]

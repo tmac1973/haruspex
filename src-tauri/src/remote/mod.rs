@@ -61,12 +61,14 @@ impl RemoteServer {
                 port: Some(r.port),
                 bind_all: r.bind_all,
                 sessions: self.relay.session_count(),
+                fingerprint: Some(r.fingerprint.clone()),
             },
             None => RemoteStatus {
                 running: false,
                 port: None,
                 bind_all: false,
                 sessions: 0,
+                fingerprint: None,
             },
         }
     }
