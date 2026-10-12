@@ -414,7 +414,7 @@ describe('shell_interrupt', () => {
 		expect(typed()).toEqual([]);
 	});
 
-	it('says the program is still running when the session vanishes while waiting', async () => {
+	it('reports a session that closes while waiting as an error, not a stuck program', async () => {
 		let contextCalls = 0;
 		tauri.invoke.mockImplementation(
 			invokeRouter({
@@ -425,12 +425,8 @@ describe('shell_interrupt', () => {
 				}
 			})
 		);
-		const start = Date.now();
 		const out = await run('shell_interrupt', {});
-		// Current behaviour: a session that disappears mid-wait reads as "still
-		// running after 4s", returned after one poll rather than four seconds;
-		// see report.
-		expect(Date.now() - start).toBeLessThan(4000);
-		expect(out.result).toMatch(/still running after 4s/);
+		expect(JSON.parse(out.result).error).toBe('shell_interrupt failed: session closed');
+		expect(out.result).not.toMatch(/still running/);
 	});
 });
