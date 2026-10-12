@@ -58,6 +58,11 @@
 	let status = $state<RemoteStatus | null>(null);
 	let address = $state<string | null>(null);
 	let qr = $state<QrMatrix | null>(null);
+	/** The page without the link, for a device let in without it. */
+	let pageQr = $state<QrMatrix | null>(null);
+	/** Link for other devices is open: its QR replaces the page's, so a phone
+	 *  pointed at the screen never sees two codes. */
+	let showLink = $state(false);
 	let sessions = $state<RemoteSession[]>([]);
 	let error = $state<string | null>(null);
 	let copied = $state<string | null>(null);
@@ -98,14 +103,12 @@
 	async function refreshLink() {
 		address = await getLanAddress().catch(() => null);
 		qr = null;
+		pageQr = null;
 		if (!address || !status?.running || !token) return;
-		try {
-			qr = await getLinkQr(remoteLink(address, port, token));
-		} catch {
-			// A missing QR is a missing convenience, not a broken feature: the
-			// link is still on screen and still copyable.
-			qr = null;
-		}
+		// A missing QR is a missing convenience, not a broken feature: the
+		// link is still on screen and still copyable.
+		qr = await getLinkQr(remoteLink(address, port, token)).catch(() => null);
+		pageQr = await getLinkQr(`https://${address}:${port}/`).catch(() => null);
 	}
 
 	async function apply() {
@@ -255,51 +258,60 @@
 			{found}
 			onmode={setMode}
 			onhosts={setHosts}
-		>
-			{#if mode !== 'tokens' && enabled && pageUrl}
-				<div class="link-row open">
-					<span
-						class="label inline"
-						title="Open this in a browser on a device allowed above. No link needed. The browser warns about the certificate the first time; continue if the fingerprint matches Certificate below."
-						>Open on the other device</span
-					>
-					<code class="link">{pageUrl}</code>
-					<button onclick={() => copy(pageUrl, 'page')}
-						>{copied === 'page' ? 'Copied' : 'Copy'}</button
-					>
-				</div>
-			{/if}
-		</WhoCanConnect>
+		/>
 	</div>
+
+	{#snippet share(url: string, what: string, code: QrMatrix | null)}
+		<div class="link-row">
+			<code class="link">{url}</code>
+			<button onclick={() => copy(url, what)}>{copied === what ? 'Copied' : 'Copy'}</button>
+		</div>
+		{#if code}
+			<!-- The guest is holding a phone, and the link's token is 32
+			     characters of noise. Typing it by hand is the step where
+			     this would lose them. -->
+			<svg
+				class="qr"
+				viewBox="-2 -2 {code.size + 4} {code.size + 4}"
+				role="img"
+				aria-label="QR code for {url}"
+			>
+				<rect x="-2" y="-2" width={code.size + 4} height={code.size + 4} fill="#fff" />
+				<path d={qrPath(code)} fill="#000" />
+			</svg>
+		{/if}
+	{/snippet}
+
+	{#snippet rotateButton()}
+		<button class="rotate" onclick={rotate} disabled={busy}>
+			Rotate link (cuts off everyone using the old one)
+		</button>
+	{/snippet}
 
 	{#if enabled && status?.running}
 		<div class="link-block">
-			<span class="label">The link to share</span>
-			{#if link}
-				<div class="link-row">
-					<code class="link">{link}</code>
-					<button onclick={() => copy(link, 'link')}>{copied === 'link' ? 'Copied' : 'Copy'}</button
-					>
-				</div>
-				{#if qr}
-					<!-- The guest is holding a phone and the token is 32
-					     characters of noise. Typing it by hand is the step
-					     where this would lose them. -->
-					<svg
-						class="qr"
-						viewBox="-2 -2 {qr.size + 4} {qr.size + 4}"
-						role="img"
-						aria-label="QR code for the sharing link"
-					>
-						<rect x="-2" y="-2" width={qr.size + 4} height={qr.size + 4} fill="#fff" />
-						<path d={qrPath(qr)} fill="#000" />
-					</svg>
-				{/if}
-			{:else}
+			{#if !link || !pageUrl}
 				<p class="help">
 					This computer has no network address right now, so there is no link to share. It is
 					probably offline or on a network that does not route between devices.
 				</p>
+			{:else if mode === 'tokens'}
+				<span class="label">The link to share</span>
+				{@render share(link, 'link', qr)}
+			{:else}
+				<span
+					class="label"
+					title="Open this in a browser on a device allowed above. No link needed. The browser warns about the certificate the first time; continue if the fingerprint matches Certificate below."
+					>Open on the other device</span
+				>
+				{@render share(pageUrl, 'page', showLink ? null : pageQr)}
+				<details class="other" bind:open={showLink}>
+					<summary title="For a device not allowed above. It works in every mode."
+						>Link for other devices</summary
+					>
+					{@render share(link, 'link', qr)}
+					{@render rotateButton()}
+				</details>
 			{/if}
 			{#if status.fingerprint}
 				<div class="cert">
@@ -311,9 +323,9 @@
 					<code class="fingerprint" title="SHA-256 fingerprint">{status.fingerprint}</code>
 				</div>
 			{/if}
-			<button class="rotate" onclick={rotate} disabled={busy}>
-				Rotate link (cuts off everyone using the old one)
-			</button>
+			{#if mode === 'tokens'}
+				{@render rotateButton()}
+			{/if}
 		</div>
 
 		<div class="guests">
@@ -385,17 +397,27 @@
 		font-size: 0.75rem;
 	}
 
-	.label.inline {
-		display: inline;
-		margin: 0;
-	}
-
 	.who {
 		margin-top: 12px;
 	}
 
-	.open {
-		margin-top: 12px;
+	.other {
+		margin: 12px 0;
+	}
+
+	.other summary {
+		cursor: pointer;
+		font-size: 0.85rem;
+		font-weight: 600;
+	}
+
+	.other .link-row {
+		margin-top: 8px;
+	}
+
+	.other .qr,
+	.other .rotate {
+		display: block;
 	}
 
 	.link-block,
