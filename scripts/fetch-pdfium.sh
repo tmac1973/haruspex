@@ -25,6 +25,7 @@ if [ -z "$TARGET_TRIPLE" ]; then
     TARGET_TRIPLE="$(rustc --print host-tuple)"
 fi
 
+# Keep in step with the pdfium_<build> feature on pdfium-render in src-tauri/Cargo.toml.
 PDFIUM_VERSION="${PDFIUM_VERSION:-chromium/7763}"
 case "$TARGET_TRIPLE" in
     x86_64-unknown-linux-gnu)  PDFIUM_ASSET="pdfium-linux-x64.tgz"   ; PDFIUM_LIB="libpdfium.so"     ;;
