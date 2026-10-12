@@ -14,6 +14,7 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 
 import { invoke } from '@tauri-apps/api/core';
 import { knownShellProject, noteProjectSkill, trustApprovedAgentsMd } from './project';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 beforeEach(() => {
 	settings.updateSkills.mockReset();
@@ -41,11 +42,12 @@ describe('noteProjectSkill', () => {
 
 describe('trustApprovedAgentsMd', () => {
 	function repo(info: { skillNames: string[]; origin: string | null } | null) {
-		vi.mocked(invoke).mockImplementation(async (cmd: string) => {
-			if (cmd === 'skills_project_root') return '/r';
-			if (cmd === 'skills_project_info') return info && { ...info, agentsMd: true };
-			return null;
-		});
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter({
+				skills_project_root: '/r',
+				skills_project_info: info && { ...info, agentsMd: true }
+			})
+		);
 	}
 
 	it('trusts a repo never asked about, as the user just approved its file', async () => {
@@ -77,11 +79,9 @@ describe('trustApprovedAgentsMd', () => {
 describe('knownShellProject', () => {
 	const md = { files: ['AGENTS.md'], text: 'x', truncated: false, totalBytes: 1 };
 	beforeEach(() => {
-		vi.mocked(invoke).mockImplementation(async (cmd: string) => {
-			if (cmd === 'skills_project_root') return '/r';
-			if (cmd === 'skills_agents_md') return md;
-			return null;
-		});
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter({ skills_project_root: '/r', skills_agents_md: md })
+		);
 	});
 
 	it("reads a trusted repo's AGENTS.md without asking", async () => {

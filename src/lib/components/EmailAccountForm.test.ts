@@ -6,6 +6,7 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
 
 import EmailAccountForm from './EmailAccountForm.svelte';
 import type { EmailAccount } from '#lib/stores/settings.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 function account(over: Partial<EmailAccount> = {}): EmailAccount {
 	return {
@@ -37,10 +38,7 @@ function renderForm(acc = account()) {
 }
 
 beforeEach(() => {
-	state.invoke.mockReset().mockImplementation(async (cmd: string) => {
-		if (cmd === 'secret_available') return true;
-		return null;
-	});
+	state.invoke.mockReset().mockImplementation(invokeRouter({ secret_available: true }));
 });
 
 describe('EmailAccountForm password', () => {
@@ -83,10 +81,16 @@ describe('EmailAccountForm password', () => {
 	});
 
 	it('keeps nothing when the test fails', async () => {
-		state.invoke.mockImplementation(async (cmd: string) => {
-			if (cmd === 'email_test_connection') throw 'LOGIN rejected';
-			return true;
-		});
+		state.invoke.mockImplementation(
+			invokeRouter(
+				{
+					email_test_connection: () => {
+						throw 'LOGIN rejected';
+					}
+				},
+				true
+			)
+		);
 		const { field } = renderForm();
 		await fireEvent.input(field, { target: { value: 'wrong' } });
 		await fireEvent.click(screen.getByText('Save password'));

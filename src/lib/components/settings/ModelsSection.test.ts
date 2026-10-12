@@ -4,6 +4,7 @@ import ModelsSection from './ModelsSection.svelte';
 import { invoke } from '@tauri-apps/api/core';
 import { stopServer } from '#lib/stores/llamaServer.svelte.ts';
 import type { ModelInfo } from '#lib/ipc/gen/ModelInfo.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 vi.mock('@tauri-apps/api/core', () => ({
 	invoke: vi.fn()
@@ -58,12 +59,16 @@ const models: ModelInfo[] = [
 
 beforeEach(() => {
 	vi.clearAllMocks();
-	vi.mocked(invoke).mockImplementation(async (cmd: string) => {
-		if (cmd === 'list_models') return models;
-		if (cmd === 'get_active_model_path') return '/models/a.gguf';
-		if (cmd === 'get_models_dir') return '/models';
-		return undefined;
-	});
+	vi.mocked(invoke).mockImplementation(
+		invokeRouter(
+			{
+				list_models: models,
+				get_active_model_path: '/models/a.gguf',
+				get_models_dir: '/models'
+			},
+			undefined
+		)
+	);
 });
 
 /** Renders the section and waits for the mount-time model refresh. */

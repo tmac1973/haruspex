@@ -270,3 +270,342 @@ pub fn draw(r: &TextureRecipe, n: u32, seed: u64) -> RgbaImage {
     }
     img
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::recipe::{BaseLayer, WallFace};
+    use super::*;
+
+    const BLACK: [u8; 3] = [0, 0, 0];
+    const WHITE: [u8; 3] = [255, 255, 255];
+    const RED: [u8; 3] = [255, 0, 0];
+
+    /// A recipe whose base is one flat colour, so whatever a layer paints
+    /// stands out exactly.
+    fn flat(layers: Vec<Layer>) -> TextureRecipe {
+        TextureRecipe {
+            base: BaseLayer {
+                ramp: vec!["#000000".into(), "#000000".into()],
+                cells: None,
+                octaves: None,
+                dither: Some(false),
+            },
+            layers,
+            wall_face: None,
+        }
+    }
+
+    fn rgb_at(img: &RgbaImage, x: u32, y: u32) -> [u8; 3] {
+        let p = img.get_pixel(x, y).0;
+        [p[0], p[1], p[2]]
+    }
+
+    fn all_pixels(img: &RgbaImage, c: [u8; 3]) -> bool {
+        img.pixels().all(|p| [p[0], p[1], p[2]] == c)
+    }
+
+    #[test]
+    fn draw_is_n_by_n_opaque_and_repeats_for_a_seed() {
+        let r = TextureRecipe {
+            base: BaseLayer {
+                ramp: vec!["#202020".into(), "#808080".into(), "#e0e0e0".into()],
+                cells: Some(4),
+                octaves: Some(3),
+                dither: Some(true),
+            },
+            layers: vec![Layer::Speckle {
+                color: "#ff0000".into(),
+                amount: 0.1,
+            }],
+            wall_face: None,
+        };
+        for n in [8, 16, 32, 64] {
+            let img = draw(&r, n, 5);
+            assert_eq!(img.dimensions(), (n, n));
+            assert!(img.pixels().all(|p| p[3] == 255));
+            assert_eq!(img.as_raw(), draw(&r, n, 5).as_raw());
+        }
+        assert_ne!(draw(&r, 32, 5).as_raw(), draw(&r, 32, 6).as_raw());
+    }
+
+    #[test]
+    fn base_uses_only_ramp_colours_and_spans_the_ramp() {
+        let ramp = [[16, 16, 16], [128, 64, 32], [240, 240, 240]];
+        for dither in [false, true] {
+            let r = TextureRecipe {
+                base: BaseLayer {
+                    ramp: vec!["#101010".into(), "#804020".into(), "#f0f0f0".into()],
+                    cells: Some(4),
+                    octaves: Some(2),
+                    dither: Some(dither),
+                },
+                layers: vec![],
+                wall_face: None,
+            };
+            let img = draw(&r, 32, 3);
+            assert!(img.pixels().all(|p| ramp.contains(&[p[0], p[1], p[2]])));
+            // The field is normalized to 0..1, so both ends of the ramp show.
+            for c in [ramp[0], ramp[2]] {
+                assert!(img.pixels().any(|p| [p[0], p[1], p[2]] == c), "{c:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_single_shade_ramp_and_an_unparseable_colour_draw_flat() {
+        let mut r = flat(vec![]);
+        r.base.ramp = vec!["#336699".into()];
+        r.base.dither = Some(true);
+        assert!(all_pixels(&draw(&r, 16, 1), [0x33, 0x66, 0x99]));
+
+        // Unvalidated colours fall back to mid grey rather than panicking.
+        r.base.ramp = vec!["orange".into(), "nope".into()];
+        assert!(all_pixels(&draw(&r, 16, 1), [128, 128, 128]));
+    }
+
+    #[test]
+    fn speckle_amount_bounds_paint_nothing_or_everything() {
+        let none = flat(vec![Layer::Speckle {
+            color: "#ffffff".into(),
+            amount: 0.0,
+        }]);
+        assert!(all_pixels(&draw(&none, 32, 1), BLACK));
+        let all = flat(vec![Layer::Speckle {
+            color: "#ffffff".into(),
+            amount: 1.0,
+        }]);
+        assert!(all_pixels(&draw(&all, 32, 1), WHITE));
+
+        let some = flat(vec![Layer::Speckle {
+            color: "#ffffff".into(),
+            amount: 0.25,
+        }]);
+        let img = draw(&some, 64, 1);
+        let lit = img.pixels().filter(|p| p[0] == 255).count() as f32 / (64.0 * 64.0);
+        assert!((0.18..0.32).contains(&lit), "{lit}");
+    }
+
+    #[test]
+    fn grid_puts_seams_on_exact_cell_starts_and_scales_with_the_tile() {
+        let r = flat(vec![Layer::Grid {
+            step: 8.0,
+            width: Some(1.0),
+            color: "#ffffff".into(),
+        }]);
+        let img = draw(&r, 32, 1);
+        for y in 0..32 {
+            for x in 0..32 {
+                let want = if x % 8 == 0 || y % 8 == 0 {
+                    WHITE
+                } else {
+                    BLACK
+                };
+                assert_eq!(rgb_at(&img, x, y), want, "({x},{y})");
+            }
+        }
+        // At 64 px the same recipe has four 16-px cells with 2-px seams.
+        let img = draw(&r, 64, 1);
+        for y in 0..64 {
+            for x in 0..64 {
+                let want = if x % 16 < 2 || y % 16 < 2 {
+                    WHITE
+                } else {
+                    BLACK
+                };
+                assert_eq!(rgb_at(&img, x, y), want, "({x},{y})");
+            }
+        }
+    }
+
+    #[test]
+    fn bevel_lights_the_second_row_and_darkens_each_cells_last() {
+        let r = flat(vec![Layer::Bevel {
+            step: 8.0,
+            light: "#ffffff".into(),
+            dark: "#ff0000".into(),
+        }]);
+        let img = draw(&r, 32, 1);
+        for y in 0..32 {
+            for x in 0..32 {
+                let want = if x % 8 == 7 || y % 8 == 7 {
+                    RED
+                } else if x % 8 == 1 || y % 8 == 1 {
+                    WHITE
+                } else {
+                    BLACK
+                };
+                assert_eq!(rgb_at(&img, x, y), want, "({x},{y})");
+            }
+        }
+    }
+
+    #[test]
+    fn stripes_paint_their_band_solid_dashed_or_worn_away() {
+        let stripe = |axis, dash, wear| {
+            flat(vec![Layer::Stripes {
+                axis,
+                pos: 4.0,
+                width: 2.0,
+                dash,
+                color: "#ffffff".into(),
+                wear,
+            }])
+        };
+        let img = draw(&stripe(Axis::X, None, None), 32, 1);
+        for y in 0..32 {
+            for x in 0..32 {
+                let want = if (4..6).contains(&y) { WHITE } else { BLACK };
+                assert_eq!(rgb_at(&img, x, y), want, "({x},{y})");
+            }
+        }
+
+        // Axis Y runs top to bottom, so the band is columns; dashes of 4 on
+        // and 4 off give a period of 8 that divides the tile.
+        let img = draw(&stripe(Axis::Y, Some([4.0, 4.0]), None), 32, 1);
+        for y in 0..32 {
+            for x in 0..32 {
+                let want = if (4..6).contains(&x) && y % 8 < 4 {
+                    WHITE
+                } else {
+                    BLACK
+                };
+                assert_eq!(rgb_at(&img, x, y), want, "({x},{y})");
+            }
+        }
+
+        assert!(all_pixels(
+            &draw(&stripe(Axis::X, None, Some(1.0)), 32, 1),
+            BLACK
+        ));
+    }
+
+    #[test]
+    fn bricks_lay_mortar_at_cell_starts_and_blend_the_face_with_the_base() {
+        let bricks = |h, offset| {
+            flat(vec![Layer::Bricks {
+                w: 8.0,
+                h,
+                gap: 1.0,
+                offset,
+                colors: vec!["#c8c8c8".into()],
+                mortar: "#ff0000".into(),
+            }])
+        };
+        // Stack bond: mortar on every 8th row and column, faces half brick
+        // and half the black base under them.
+        let img = draw(&bricks(8.0, false), 32, 1);
+        for y in 0..32 {
+            for x in 0..32 {
+                let want = if x % 8 == 0 || y % 8 == 0 {
+                    RED
+                } else {
+                    [100, 100, 100]
+                };
+                assert_eq!(rgb_at(&img, x, y), want, "({x},{y})");
+            }
+        }
+
+        // Running bond: odd rows shift by half a brick.
+        let img = draw(&bricks(8.0, true), 32, 1);
+        for y in 1..32 {
+            if y % 8 == 0 {
+                continue;
+            }
+            let joint = if (y / 8) % 2 == 1 { 4 } else { 0 };
+            for x in 0..32 {
+                let want = if x % 8 == joint { RED } else { [100, 100, 100] };
+                assert_eq!(rgb_at(&img, x, y), want, "({x},{y})");
+            }
+        }
+
+        // Three rows would put two unshifted rows together across the seam,
+        // so running bond drops to two: bed joints at rows 0 and 16 only.
+        let img = draw(&bricks(32.0 / 3.0, true), 32, 1);
+        let bed: Vec<u32> = (0..32)
+            .filter(|&y| (0..32).all(|x| rgb_at(&img, x, y) == RED))
+            .collect();
+        assert_eq!(bed, vec![0, 16]);
+    }
+
+    #[test]
+    fn thresholded_layers_paint_nothing_at_the_top_of_their_range() {
+        // fbm is normalized to 0..1 and sin to -1..1, so a threshold at the
+        // top paints nothing and one below the bottom paints everything.
+        let blotch = |threshold| {
+            flat(vec![Layer::Blotches {
+                color: "#ffffff".into(),
+                cells: 4,
+                threshold,
+            }])
+        };
+        assert!(all_pixels(&draw(&blotch(1.0), 32, 2), BLACK));
+        assert!(all_pixels(&draw(&blotch(-0.1), 32, 2), WHITE));
+        let img = draw(&blotch(0.5), 32, 2);
+        assert!(img.pixels().any(|p| p[0] == 255) && img.pixels().any(|p| p[0] == 0));
+
+        let waves = |threshold| {
+            flat(vec![Layer::Waves {
+                color: "#ffffff".into(),
+                freq: 4,
+                threshold,
+            }])
+        };
+        assert!(all_pixels(&draw(&waves(1.0), 32, 2), BLACK));
+        assert!(all_pixels(&draw(&waves(-1.1), 32, 2), WHITE));
+
+        let cracks = |coverage| {
+            flat(vec![Layer::Cracks {
+                color: "#ffffff".into(),
+                cells: 3,
+                coverage,
+                width: None,
+            }])
+        };
+        assert!(all_pixels(&draw(&cracks(1.0), 32, 2), BLACK));
+        let img = draw(&cracks(-0.1), 32, 2);
+        assert!(img.pixels().any(|p| p[0] == 255) && img.pixels().any(|p| p[0] == 0));
+    }
+
+    #[test]
+    fn layers_wrap_at_the_tile_edge() {
+        // A step that does not divide the tile is rounded to a whole number
+        // of cells, so the seam is on the first column and never doubled by
+        // one on the last column across the wrap.
+        for step in [5.0, 7.0, 9.0, 11.0] {
+            let r = flat(vec![Layer::Grid {
+                step,
+                width: Some(1.0),
+                color: "#ffffff".into(),
+            }]);
+            let img = draw(&r, 32, 1);
+            let seam_col = |x: u32| (0..32).all(|y| rgb_at(&img, x, y) == WHITE);
+            assert!(seam_col(0), "step {step}");
+            assert!(!seam_col(31), "step {step}: double seam across the wrap");
+        }
+    }
+
+    #[test]
+    fn a_wall_face_darkens_only_its_bottom_rows() {
+        let mut r = flat(vec![]);
+        r.base.ramp = vec!["#c8c8c8".into()];
+        r.wall_face = Some(WallFace {
+            height: 8.0,
+            shade: 0.5,
+        });
+        for (n, rows) in [(32u32, 8u32), (64, 16)] {
+            let img = draw(&r, n, 1);
+            for y in 0..n {
+                let want = if y >= n - rows { [100; 3] } else { [200; 3] };
+                for x in 0..n {
+                    assert_eq!(rgb_at(&img, x, y), want, "n {n} ({x},{y})");
+                }
+            }
+        }
+        // A face taller than the tile shades all of it rather than panicking.
+        r.wall_face = Some(WallFace {
+            height: 100.0,
+            shade: 0.0,
+        });
+        assert!(all_pixels(&draw(&r, 16, 1), BLACK));
+    }
+}

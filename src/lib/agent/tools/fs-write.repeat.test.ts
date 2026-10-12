@@ -16,6 +16,7 @@ vi.mock('#lib/stores/fileConflict.svelte.ts', () => ({
 }));
 
 import { resolveWritePathInteractive } from './fs-write';
+import { invokeRouter, unexpectedInvoke } from '#lib/testing/invoke.ts';
 
 beforeEach(() => {
 	mocks.invoke.mockReset();
@@ -24,10 +25,7 @@ beforeEach(() => {
 
 /** Pretend every path already exists on disk unless told otherwise. */
 function existsReturns(exists: boolean) {
-	mocks.invoke.mockImplementation(async (cmd: string) => {
-		if (cmd === 'fs_path_exists') return exists;
-		throw new Error(`unexpected invoke: ${cmd}`);
-	});
+	mocks.invoke.mockImplementation(invokeRouter({ fs_path_exists: exists }, unexpectedInvoke));
 }
 
 describe('repeat-write guard', () => {
@@ -97,14 +95,18 @@ describe('an existing file, with someone at the keyboard', () => {
 	});
 
 	function disk(opts: { available?: string | Error }) {
-		mocks.invoke.mockImplementation(async (cmd: string) => {
-			if (cmd === 'fs_path_exists') return true;
-			if (cmd === 'fs_find_available_path') {
-				if (opts.available instanceof Error) throw opts.available;
-				return opts.available;
-			}
-			throw new Error(`unexpected invoke: ${cmd}`);
-		});
+		mocks.invoke.mockImplementation(
+			invokeRouter(
+				{
+					fs_path_exists: true,
+					fs_find_available_path: () => {
+						if (opts.available instanceof Error) throw opts.available;
+						return opts.available;
+					}
+				},
+				unexpectedInvoke
+			)
+		);
 	}
 
 	it('overwrites only when the user says so', async () => {

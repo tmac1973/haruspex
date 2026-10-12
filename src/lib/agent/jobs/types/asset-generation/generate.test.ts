@@ -4,6 +4,7 @@ import type { SheetOutcome } from './types';
 import type { AssetEntry, AssetSpec, NormalizeProfile } from '#lib/assets/spec/types.ts';
 import { ImageBackendError } from '#lib/image/types.ts';
 import type { ImageBackendCapabilities, ImageRequest } from '#lib/image/types.ts';
+import { invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock('@tauri-apps/api/core', () => ({ invoke }));
@@ -114,25 +115,24 @@ function harness(over: Partial<GenerateDeps> = {}, present: string[] = []): Harn
 	return { deps, requests, written, peak: () => peak, controller };
 }
 
+const baseRoutes = {
+	// A texture's resolved profile really differs from the base — otherwise
+	// "did it use the resolver?" is unobservable and the test is vacuous.
+	image_effective_profile: (args?: Record<string, unknown>) => {
+		const base = args?.profile as NormalizeProfile;
+		return args?.kind === 'texture' ? { ...base, upscale: 8 } : base;
+	},
+	image_normalize: { bytes: [1, 2, 3, 4], stats: STATS },
+	image_check: () => {
+		const v =
+			checkQueue.length > 1 ? checkQueue.shift()! : (checkQueue[0] ?? { passed: true, failed: [] });
+		return { passed: v.passed, stats: STATS, failed: v.failed };
+	}
+};
+
 beforeEach(() => {
 	checkQueue.length = 0;
-	invoke.mockReset().mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
-		// A texture's resolved profile really differs from the base — otherwise
-		// "did it use the resolver?" is unobservable and the test is vacuous.
-		if (cmd === 'image_effective_profile') {
-			const base = args?.profile as NormalizeProfile;
-			return args?.kind === 'texture' ? { ...base, upscale: 8 } : base;
-		}
-		if (cmd === 'image_normalize') return { bytes: [1, 2, 3, 4], stats: STATS };
-		if (cmd === 'image_check') {
-			const v =
-				checkQueue.length > 1
-					? checkQueue.shift()!
-					: (checkQueue[0] ?? { passed: true, failed: [] });
-			return { passed: v.passed, stats: STATS, failed: v.failed };
-		}
-		return undefined;
-	});
+	invoke.mockReset().mockImplementation(invokeRouter(baseRoutes, undefined));
 });
 
 describe('escapesWorkdir', () => {
@@ -221,9 +221,7 @@ describe('per-kind profiles', () => {
 			{ kind: 'icon' }
 		]);
 		await generateEntries(spec, harness().deps);
-		const kinds = invoke.mock.calls
-			.filter(([cmd]) => cmd === 'image_effective_profile')
-			.map(([, args]) => args.kind);
+		const kinds = invokeCalls(invoke, 'image_effective_profile').map((args) => args!.kind);
 		expect(kinds.sort()).toEqual(['icon', 'sprite', 'texture']);
 	});
 
@@ -519,9 +517,11 @@ describe('the quality gate', () => {
 			{ passed: false, failed: ['alpha_low', 'entropy', 'palette_distance'] }
 		]);
 		let n = 0;
-		const base = invoke.getMockImplementation()!;
-		invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) =>
-			cmd === 'image_normalize' ? { bytes: [++n], stats: STATS } : base(cmd, args)
+		invoke.mockImplementation(
+			invokeRouter(
+				{ ...baseRoutes, image_normalize: () => ({ bytes: [++n], stats: STATS }) },
+				undefined
+			)
 		);
 		const bytes: number[][] = [];
 		const h = harness({
@@ -559,15 +559,19 @@ describe('the quality gate', () => {
 		// "Nothing left after removing the background" is a rejection like any
 		// other — a blank generation, caught one step earlier.
 		let n = 0;
-		invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
-			if (cmd === 'image_effective_profile') return args?.profile;
-			if (cmd === 'image_normalize') {
-				if (n++ === 0) throw new Error('Nothing left after removing the background');
-				return { bytes: [1, 2, 3, 4], stats: STATS };
-			}
-			if (cmd === 'image_check') return { passed: true, stats: STATS, failed: [] };
-			return undefined;
-		});
+		invoke.mockImplementation(
+			invokeRouter(
+				{
+					image_effective_profile: (args) => args?.profile,
+					image_normalize: () => {
+						if (n++ === 0) throw new Error('Nothing left after removing the background');
+						return { bytes: [1, 2, 3, 4], stats: STATS };
+					},
+					image_check: { passed: true, stats: STATS, failed: [] }
+				},
+				undefined
+			)
+		);
 		const h = harness({ maxAttempts: 3 });
 		const [r] = await generateEntries(specOf([{}]), h.deps);
 		expect(r.outcome.status).toBe('done');
@@ -575,11 +579,17 @@ describe('the quality gate', () => {
 	});
 
 	it('records unresolved with the refusal when normalization never succeeds', async () => {
-		invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
-			if (cmd === 'image_effective_profile') return args?.profile;
-			if (cmd === 'image_normalize') throw new Error('the image is empty');
-			return undefined;
-		});
+		invoke.mockImplementation(
+			invokeRouter(
+				{
+					image_effective_profile: (args) => args?.profile,
+					image_normalize: () => {
+						throw new Error('the image is empty');
+					}
+				},
+				undefined
+			)
+		);
 		const h = harness({ maxAttempts: 2 });
 		const [r] = await generateEntries(specOf([{}]), h.deps);
 		expect(r.outcome.status).toBe('unresolved');
@@ -665,28 +675,32 @@ describe('sheets', () => {
 
 	beforeEach(() => {
 		splits.length = 0;
-		const base = invoke.getMockImplementation()!;
-		invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
-			if (cmd === 'image_split_sheet') {
-				const s = splits.length > 1 ? splits.shift()! : splits[0];
-				return {
-					keyed: s.keyed ?? false,
-					palette: [0x123456ff],
-					pieces: s.pieces.map(([cx, cy, lobes = 1]) => ({
-						bytes: [7],
-						x: cx - 100,
-						y: cy - 100,
-						width: 200,
-						height: 200,
-						cx,
-						cy,
-						area: 40_000,
-						lobes
-					}))
-				};
-			}
-			return base(cmd, args);
-		});
+		invoke.mockImplementation(
+			invokeRouter(
+				{
+					...baseRoutes,
+					image_split_sheet: () => {
+						const s = splits.length > 1 ? splits.shift()! : splits[0];
+						return {
+							keyed: s.keyed ?? false,
+							palette: [0x123456ff],
+							pieces: s.pieces.map(([cx, cy, lobes = 1]) => ({
+								bytes: [7],
+								x: cx - 100,
+								y: cy - 100,
+								width: 200,
+								height: 200,
+								cx,
+								cy,
+								area: 40_000,
+								lobes
+							}))
+						};
+					}
+				},
+				undefined
+			)
+		);
 	});
 
 	/** Centres of a 2×2 layout of three subjects on a 1024 sheet. */
@@ -960,10 +974,10 @@ describe('sheets', () => {
 		await generateEntries(spec, harness({ caps: SHEETS }).deps);
 		const split = invoke.mock.calls.find(([cmd]) => cmd === 'image_split_sheet');
 		expect(split![1].paletteSize).toBe(16);
-		const normalized = invoke.mock.calls.filter(([cmd]) => cmd === 'image_normalize');
+		const normalized = invokeCalls(invoke, 'image_normalize');
 		expect(normalized).toHaveLength(3);
-		for (const [, args] of normalized) {
-			expect((args.profile as NormalizeProfile).palette).toEqual([0x123456ff]);
+		for (const args of normalized) {
+			expect((args!.profile as NormalizeProfile).palette).toEqual([0x123456ff]);
 		}
 	});
 

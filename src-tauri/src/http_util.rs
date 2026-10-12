@@ -257,4 +257,48 @@ mod tests {
         assert!(matches!(err, DownloadError::Create(_)), "got {err:?}");
         let _ = std::fs::remove_dir_all(file.parent().unwrap());
     }
+
+    /// Declares more body than it sends, then closes: the read fails mid-body.
+    fn truncated(declared: usize, sent: &[u8]) -> Vec<u8> {
+        let mut r =
+            format!("HTTP/1.1 200 OK\r\nContent-Length: {declared}\r\nConnection: close\r\n\r\n")
+                .into_bytes();
+        r.extend_from_slice(sent);
+        r
+    }
+
+    #[tokio::test]
+    async fn read_capped_reports_a_body_cut_short_as_a_read_error() {
+        let url = serve_raw(truncated(1000, &[5u8; 10])).await;
+        let resp = get(&url).await;
+        assert_eq!(resp.content_length(), Some(1000));
+        let err = read_capped(resp, 1000).await.unwrap_err();
+        assert!(matches!(err, CappedReadError::Read(_)), "got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn stream_to_file_removes_the_partial_file_on_a_read_error() {
+        let url = serve_raw(truncated(1000, &[5u8; 10])).await;
+        let dest = temp_path("read_error");
+        let err = stream_to_file(get(&url).await, &dest, None, |_| async { true })
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DownloadError::Read(_)), "got {err:?}");
+        assert!(!dest.exists());
+        let _ = std::fs::remove_dir_all(dest.parent().unwrap());
+    }
+
+    #[tokio::test]
+    async fn stream_to_file_reports_a_create_error_when_dest_is_a_directory() {
+        let url = serve_raw(with_length(b"hi")).await;
+        let file = temp_path("create_dir");
+        let dest = file.parent().unwrap().to_path_buf();
+        let err = stream_to_file(get(&url).await, &dest, None, |_| async { true })
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DownloadError::Create(_)), "got {err:?}");
+        // The directory is left alone: nothing was created, so nothing is removed.
+        assert!(dest.is_dir());
+        let _ = std::fs::remove_dir_all(&dest);
+    }
 }

@@ -25,6 +25,7 @@ vi.mock('./registry', async (importOriginal) => {
 });
 
 import './fs-write';
+import { invokeRouter, unexpectedInvoke } from '#lib/testing/invoke.ts';
 
 let ctx: ToolContext;
 let sent: { command: string; payload: Record<string, unknown> }[];
@@ -40,14 +41,20 @@ beforeEach(() => {
 		filesWrittenThisTurn: new Set<string>()
 	} as ToolContext;
 	sent = [];
-	mocks.invoke.mockReset().mockImplementation(async (cmd: string, payload) => {
-		if (cmd === 'fs_path_exists') return false;
-		if (cmd === 'fs_write_pptx' || cmd === 'fs_write_odp') {
-			sent.push({ command: cmd, payload });
-			return undefined;
-		}
-		throw new Error(`unexpected invoke: ${cmd}`);
-	});
+	const write = (command: string) => (payload?: Record<string, unknown>) => {
+		sent.push({ command, payload: payload! });
+		return undefined;
+	};
+	mocks.invoke.mockReset().mockImplementation(
+		invokeRouter(
+			{
+				fs_path_exists: false,
+				fs_write_pptx: write('fs_write_pptx'),
+				fs_write_odp: write('fs_write_odp')
+			},
+			unexpectedInvoke
+		)
+	);
 });
 
 function executor(name: string) {
@@ -278,10 +285,11 @@ describe('fs_write_odp', () => {
 
 describe('backend failure', () => {
 	it('returns the error and does not count the file as written', async () => {
-		mocks.invoke.mockImplementation(async (cmd: string) => {
-			if (cmd === 'fs_path_exists') return false;
-			throw new Error('image not found: chart.png');
-		});
+		mocks.invoke.mockImplementation(
+			invokeRouter({ fs_path_exists: false }, () => {
+				throw new Error('image not found: chart.png');
+			})
+		);
 		const out = await pptx([{ title: 'T', image: 'chart.png' }]);
 		expect(errorOf(out)).toBe('fs_write_pptx failed: image not found: chart.png');
 		expect(ctx.filesWrittenThisTurn.size).toBe(0);

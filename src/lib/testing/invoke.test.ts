@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { invokeCalls, invokeRouter } from './invoke';
+import { invokeCalls, invokeRouter, unexpectedInvoke } from './invoke';
 
 describe('invokeRouter', () => {
 	it('returns a routed value', async () => {
@@ -24,6 +24,17 @@ describe('invokeRouter', () => {
 	it('answers unrouted commands with the fallback', async () => {
 		await expect(invokeRouter({})('anything')).resolves.toBeNull();
 		await expect(invokeRouter({}, 'x')('anything')).resolves.toBe('x');
+	});
+
+	it('answers undefined when undefined is the fallback', async () => {
+		await expect(invokeRouter({}, undefined)('anything')).resolves.toBeUndefined();
+	});
+
+	it('calls a function fallback with the command, which may throw', async () => {
+		await expect(invokeRouter({}, (cmd: string) => `no ${cmd}`)('x')).resolves.toBe('no x');
+		await expect(invokeRouter({}, unexpectedInvoke)('shell_kill')).rejects.toThrow(
+			'unexpected invoke: shell_kill'
+		);
 	});
 
 	it('does not route inherited keys', async () => {

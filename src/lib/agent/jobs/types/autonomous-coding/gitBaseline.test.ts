@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 
 import { ensureGitBaseline } from './pipeline';
+import { invokeRouter, unexpectedInvoke } from '#lib/testing/invoke.ts';
 
 /**
  * The run's working branch is decided here, once, before anything is
@@ -80,19 +81,24 @@ function fakeGit(overrides: Partial<FakeRepo> = {}): FakeRepo {
 		throw new Error(`unexpected git command: ${command}`);
 	};
 
-	mocks.invoke.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
-		// fs_path_exists is the only marker probe ensureGitignore makes — no
-		// stack markers, so it leaves .gitignore alone and stays out of the way
-		// of these assertions.
-		if (cmd === 'fs_path_exists') return false;
-		if (cmd === 'fs_read_text_full') return '';
-		if (cmd === 'fs_write_text') return null;
-		if (cmd !== 'run_command_capture') throw new Error(`unexpected invoke: ${cmd}`);
-
-		const command = args.command as string;
-		commands.push(command);
-		return runGit(command);
-	});
+	mocks.invoke.mockImplementation(
+		invokeRouter(
+			{
+				// fs_path_exists is the only marker probe ensureGitignore makes — no
+				// stack markers, so it leaves .gitignore alone and stays out of the way
+				// of these assertions.
+				fs_path_exists: false,
+				fs_read_text_full: '',
+				fs_write_text: null,
+				run_command_capture: (args) => {
+					const command = args?.command as string;
+					commands.push(command);
+					return runGit(command);
+				}
+			},
+			unexpectedInvoke
+		)
+	);
 
 	return repo;
 }

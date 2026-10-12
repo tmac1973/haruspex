@@ -14,6 +14,7 @@ import {
 	type JobWithSteps,
 	type JobInput
 } from '#lib/stores/jobs.svelte.ts';
+import { invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
 
 const baseInput: JobInput = {
 	name: 'Test job',
@@ -375,15 +376,15 @@ describe('jobs store CRUD', () => {
 			model_advanced: '{"reasoning":"inherit"}',
 			steps: [{ id: 9, ordering: 0, prompt: 'go', deep_research: true }]
 		};
-		vi.mocked(invoke).mockImplementation(async (cmd: string) => {
-			if (cmd === 'db_get_job') return original;
-			if (cmd === 'db_create_job') return 31;
-			if (cmd === 'db_list_jobs') return [];
-			return undefined;
-		});
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter(
+				{ db_get_job: () => original, db_create_job: 31, db_list_jobs: () => [] },
+				undefined
+			)
+		);
 		const { duplicateJob } = await import('#lib/stores/jobs.svelte.ts');
 		expect(await duplicateJob(24)).toBe(31);
-		const createArgs = vi.mocked(invoke).mock.calls.find((c) => c[0] === 'db_create_job')?.[1] as {
+		const createArgs = invokeCalls(vi.mocked(invoke), 'db_create_job')[0] as {
 			input: JobInput;
 		};
 		expect(createArgs.input).toMatchObject({
