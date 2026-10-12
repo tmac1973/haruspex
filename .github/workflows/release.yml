@@ -42,9 +42,23 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
+      # The release PR is written with the haruspex-release GitHub App's token,
+      # not GITHUB_TOKEN. GitHub holds a GITHUB_TOKEN commit's pull_request runs
+      # for approval and never starts its pull_request_target ones (PR title),
+      # so every update of the PR needed approving and its required
+      # `conventional` check never reported. Falls back to GITHUB_TOKEN when
+      # the RELEASE_APP_ID variable is unset (a fork, or the App removed).
+      - id: app-token
+        if: vars.RELEASE_APP_ID != ''
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
       - id: release
         uses: googleapis/release-please-action@v4
         with:
+          token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
