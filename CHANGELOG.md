@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.5](https://github.com/tmac1973/haruspex/compare/v0.2.4...v0.2.5) (2026-10-12)
+
+
+### Bug Fixes
+
+* **build:** pin kokoros's ort exactly so a new rc cannot break the koko build ([#561](https://github.com/tmac1973/haruspex/issues/561)) ([26be597](https://github.com/tmac1973/haruspex/commit/26be597d3af22a7a730b00884fb13b02d6833070))
+
 ## [0.2.4](https://github.com/tmac1973/haruspex/compare/v0.2.3...v0.2.4) (2026-10-12)
 
 
