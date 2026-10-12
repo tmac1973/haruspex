@@ -15,36 +15,82 @@
 			</header>
 
 			<h1>Privacy policy</h1>
-			<p class="muted">Effective 7 October 2026</p>
+			<p class="muted">Effective 12 October 2026</p>
 
 			<p>
 				Haruspex is a desktop application that runs on your own computer. The Haruspex project runs
-				no servers, has no user accounts and collects no telemetry. <strong>We never receive your
-				data.</strong> This policy explains what the app does with your information on your device,
-				and what it sends to other services when you use features that need them.
+				no servers, has no user accounts and collects no telemetry.
+				<strong>We never receive your data.</strong> This policy explains what the app does with
+				your information on your device, and what it sends to other services when you use features
+				that need them.
 			</p>
 
 			<h2>What stays on your device</h2>
 			<p>
-				Your conversations, the model's answers, your settings, files you work with, and anything you
-				ask Haruspex to remember are stored only on your computer. Passwords, API keys and sign-in
-				tokens are kept in your operating system's keychain or, where none is available, in an
-				encrypted file in the app's data folder.
+				Your conversations, the model's answers, your settings, files you work with, and anything
+				you ask Haruspex to remember are stored only on your computer. Passwords, API keys and
+				sign-in tokens are kept in your operating system's keychain or, where none is available, in
+				an encrypted file in the app's data folder.
 			</p>
+
+			<h2>How your data is protected</h2>
+			<p>Haruspex protects sensitive data, including Google user data, as follows:</p>
+			<ul>
+				<li>
+					<strong>Encryption in transit.</strong> Haruspex connects to Google over HTTPS with TLS
+					1.2 or later and verifies Google's certificate. Google data is never sent over an
+					unencrypted connection.
+				</li>
+				<li>
+					<strong>Credentials in the system keychain.</strong> Passwords, API keys and Google
+					sign-in tokens are stored in your operating system's credential store: the macOS Keychain,
+					Windows Credential Manager, or the Secret Service (GNOME Keyring, KWallet) on Linux. These
+					are locked to your user account. Where no keychain is available, they are encrypted with
+					AES-256-GCM in a file readable only by your user account (on Windows its key is also
+					protected with DPAPI, tied to your Windows login). They are never stored in the app's
+					settings.
+				</li>
+				<li>
+					<strong>Secure sign-in.</strong> Sign in with Google uses Google's recommended flow for
+					desktop apps: consent happens in your own browser, never in Haruspex, so the app never
+					sees your Google password. The sign-in uses PKCE and a random <code>state</code> check,
+					and the reply is received only on your own computer (<code>127.0.0.1</code>). Haruspex
+					requests read-only access and nothing more.
+				</li>
+				<li>
+					<strong>Short-lived access.</strong> Access tokens are held in memory only and expire
+					within an hour. Removing the account deletes its token from your device and revokes it at
+					Google.
+				</li>
+				<li>
+					<strong>Minimal retention.</strong> Haruspex does not keep its own copy of your calendar
+					or contacts. It fetches only what a question needs, when it is asked.
+				</li>
+				<li>
+					<strong>No central store.</strong> The Haruspex project runs no servers, so there is no
+					database of user data that could be breached. No one at the project can access your data.
+				</li>
+				<li>
+					<strong>Data on your device.</strong> Conversations are stored in the app's data folder,
+					which your operating system restricts to your user account. Haruspex does not encrypt this
+					folder itself; turn on full-disk encryption (FileVault, BitLocker or LUKS) to protect it
+					if your computer is lost or stolen.
+				</li>
+			</ul>
 
 			<h2>What leaves your device</h2>
 			<p>Haruspex contacts other services only to do things you use it for:</p>
 			<ul>
 				<li>
-					<strong>Models.</strong> Model files are downloaded from Hugging Face. By default the model
-					runs on your computer. If you choose a remote model server or a cloud provider such as
-					OpenRouter, your prompts and the content the assistant reads, including any email,
+					<strong>Models.</strong> Model files are downloaded from Hugging Face. By default the
+					model runs on your computer. If you choose a remote model server or a cloud provider such
+					as OpenRouter, your prompts and the content the assistant reads, including any email,
 					calendar or contact details, are sent to that server or provider and handled under its
 					privacy policy.
 				</li>
 				<li>
-					<strong>Web research.</strong> Search queries go to the search provider you choose, and the
-					pages it finds are fetched from their websites. You can route this through a proxy.
+					<strong>Web research.</strong> Search queries go to the search provider you choose, and
+					the pages it finds are fetched from their websites. You can route this through a proxy.
 				</li>
 				<li>
 					<strong>Accounts you connect.</strong> Email, calendar and contact accounts are reached
@@ -58,9 +104,7 @@
 			</ul>
 
 			<h2>Google user data</h2>
-			<p>
-				If you choose <em>Sign in with Google</em>, Haruspex asks Google for permission to:
-			</p>
+			<p>If you choose <em>Sign in with Google</em>, Haruspex asks Google for permission to:</p>
 			<ul>
 				<li>see your calendars and their events (<code>calendar.readonly</code>);</li>
 				<li>see your contacts (<code>contacts.readonly</code>);</li>
