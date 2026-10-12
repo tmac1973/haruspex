@@ -23,6 +23,13 @@ on:
     types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 
+# A new commit on a pull request cancels the run for the one before it. A
+# `labeled` run is grouped by its label, so adding `no-docs` cannot cancel a
+# Windows build that `windows-ci` started. Pushes to main each get their own.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}-${{ github.event.action == 'labeled' && github.event.label.name || 'commit' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # Windows gates for the Shell-tab port (Phase 17). The whole point is to
   # compile + lint the `#[cfg(windows)]` branches (code_tools.rs, sidecar_util.rs,

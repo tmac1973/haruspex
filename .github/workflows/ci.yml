@@ -31,6 +31,12 @@ on:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
 
+# A new commit on a pull request cancels the run for the one before it. Pushes
+# to main each get a group of their own (run_id), so every merge is tested.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # Does the PR touch anything but prose? The same rule as push's path
   # filter: plan/, docs/, site/, audits/ and markdown are prose, except
@@ -173,13 +179,11 @@ jobs:
         run: scripts/ci-placeholder-sidecars.sh
 
       # --locked turns a stale Cargo.lock into a hard failure instead of a
-      # silent in-CI regeneration. This is the guard that keeps release-please
-      # PRs from merging with an unsynced lockfile: the release PR bumps
-      # Cargo.toml, so this check stays red until release.yml's
-      # sync-cargo-lock job pushes the matching lockfile commit (merging
-      # inside that job's ~20s window is what let v0.1.53 land with a stale
-      # lock). It equally catches human PRs that bump a dep without
-      # committing the lockfile.
+      # silent in-CI regeneration. It guards the release-please PR, which
+      # bumps Cargo.toml and Cargo.lock together (an extra-file in
+      # release-please-config.json; v0.1.53 once landed with a stale lock),
+      # and it equally catches human PRs that bump a dep without committing
+      # the lockfile.
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml -- -D warnings
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml

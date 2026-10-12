@@ -3,10 +3,10 @@ name: Release
 # One workflow for the full release pipeline:
 #   1. release-please-action manages an open "release" PR on main with a
 #      generated CHANGELOG.md. Merging that PR creates a tag and a draft
-#      GitHub Release.
-#   2. sync-cargo-lock keeps src-tauri/Cargo.lock in sync with the version
-#      bump on the open release PR branch.
-#   3. If release-please created a release on this run, the build matrix
+#      GitHub Release. It bumps src-tauri/Cargo.lock in the same commit (an
+#      extra-file in release-please-config.json), so each update of the PR
+#      is one push and one set of approval-gated runs, not two.
+#   2. If release-please created a release on this run, the build matrix
 #      compiles the Tauri app on each platform and attaches the bundles
 #      to the draft release.
 #
@@ -61,45 +61,6 @@ jobs:
           gh api repos/${{ github.repository }}/git/refs \
             -f ref="refs/tags/${{ steps.release.outputs.tag_name }}" \
             -f sha="${{ steps.release.outputs.sha }}"
-
-  sync-cargo-lock:
-    # When release-please opens or updates a release PR, the Cargo.toml bump
-    # leaves src-tauri/Cargo.lock stale. Sync it on the PR branch so merging
-    # to main doesn't leave a dirty lockfile behind.
-    needs: release-please
-    if: ${{ github.event_name == 'push' && needs.release-please.outputs.pr }}
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ fromJSON(needs.release-please.outputs.pr).headBranchName }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: dtolnay/rust-toolchain@stable
-      # Some runner images ship a `cargo` shim in /usr/local/bin that's
-      # actually rustup-init; without this, that shim wins over the real
-      # cargo dtolnay installs at ~/.cargo/bin and `cargo build` fails
-      # with `unexpected argument 'build' found` from rustup-init.
-      - name: Ensure cargo on PATH
-        shell: bash
-        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-      - name: Update Cargo.lock for new haruspex version
-        working-directory: src-tauri
-        # Touch just the haruspex package entry; --workspace would drag in
-        # every transitive dep bump and inflate the lockfile diff.
-        run: cargo update --package haruspex
-      - name: Commit lockfile bump if needed
-        run: |
-          if git diff --quiet src-tauri/Cargo.lock; then
-            echo "Cargo.lock already in sync"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add src-tauri/Cargo.lock
-          git commit -m "chore: sync Cargo.lock"
-          git push
 
   build:
     needs: [release-please]
