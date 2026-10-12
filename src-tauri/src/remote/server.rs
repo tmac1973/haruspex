@@ -1222,7 +1222,7 @@ mod http_tests {
             .to_str()
             .unwrap()
             .to_string();
-        assert!(set.contains("SameSite=Strict"));
+        assert!(set.contains("SameSite=Lax"));
         assert!(set.contains("Secure"), "the page is HTTPS only: {set}");
         assert!(
             !set.contains(TOKEN),

@@ -30,7 +30,7 @@ If there is no link, your computer has no network address: it is probably offlin
 - **These computers**: the computers and phones you list, by name or IP address, chat without the link. Names are looked up on your network, so a device whose address changes keeps working; the list shows where each name points, or "not found".
 - **My whole network**: any device on your local network chats without the link. Only for a network you trust.
 
-With either of the last two, open the address shown under **Open on the other device** on that device. The link works in every mode. Changing this doesn't disconnect anyone already chatting, but a device let in without the link loses access as soon as it is no longer allowed.
+With either of the last two, open the address shown under **Open on the other device** on that device, or scan its QR code. The link still works in every mode, for anyone else: it is under **Link for other devices**, with **Rotate link**. Changing this doesn't disconnect anyone already chatting, but a device let in without the link loses access as soon as it is no longer allowed.
 
 These settings are separate from Settings → Remote control → **Who can connect**: listing a computer in one doesn't let it into the other.
 

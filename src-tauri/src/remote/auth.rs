@@ -43,10 +43,13 @@ pub fn token_matches(expected: &str, provided: &str) -> bool {
 /// browser's cookie jar is not the secret that gets shared; and it is still
 /// revoked by rotating the link, since a new token derives a new value.
 ///
-/// `SameSite=Strict` is what keeps this from becoming a CSRF hole: another site
-/// on the same network cannot make a browser attach it. The JSON content type
-/// the API requires is a second layer, since a cross-site form post cannot set
-/// one without a preflight.
+/// `SameSite=Lax`, not `Strict`: a phone that opens the link from its camera
+/// app arrives cross-site, and a browser holds a `Strict` cookie back from the
+/// redirect that follows (and from every page load after such an arrival), so
+/// the guest would land on "You need a link". `Lax` still keeps it off another
+/// site's POSTs and subrequests, which is what stops it being a CSRF hole; the
+/// JSON content type the API requires is a second layer, since a cross-site
+/// form post cannot set one without a preflight.
 pub const TOKEN_COOKIE: &str = "haruspex_remote";
 
 /// How long the cookie lasts after the last visit. Every page load renews it,
@@ -142,7 +145,7 @@ pub fn cookie_value(token: &str) -> String {
 /// `Secure`: the page is HTTPS only.
 pub fn guest_cookie(token: &str) -> String {
     format!(
-        "{TOKEN_COOKIE}={}; Path=/; Max-Age={COOKIE_MAX_AGE_SECS}; SameSite=Strict; HttpOnly; Secure",
+        "{TOKEN_COOKIE}={}; Path=/; Max-Age={COOKIE_MAX_AGE_SECS}; SameSite=Lax; HttpOnly; Secure",
         cookie_value(token)
     )
 }
@@ -242,9 +245,9 @@ mod tests {
     }
 
     #[test]
-    fn the_cookie_cannot_be_sent_cross_site_or_in_the_clear_and_lapses() {
+    fn the_cookie_survives_a_camera_app_but_not_cross_site_posts_or_plain_http() {
         let set = guest_cookie(TOKEN);
-        assert!(set.contains("SameSite=Strict"));
+        assert!(set.contains("SameSite=Lax"));
         assert!(set.contains("HttpOnly"));
         assert!(set.contains("Secure"));
         assert!(set.contains("Max-Age=2592000"));
