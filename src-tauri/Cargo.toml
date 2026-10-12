@@ -63,10 +63,13 @@ cpal = "0.17.1"
 rodio = "0.21.1"
 hound = "3.5.1"
 pdf-extract = "0.12"
-pdfium-render = "0.9"
+# The pdfium_<build> feature must match PDFIUM_VERSION in scripts/fetch-pdfium.sh:
+# the default (pdfium_latest) binds functions an older libpdfium lacks, the bind
+# fails, and every PDF silently falls back to pdf-extract.
+pdfium-render = { version = "0.9.4", default-features = false, features = ["pdfium_7763", "image_latest", "thread_safe"] }
 printpdf = { version = "0.12", features = ["png", "jpeg", "gif"] }
 calamine = "0.36"
-zip = "4.6"
+zip = "9.0"
 image = "0.25"
 base64 = "0.23"
 rust_xlsxwriter = "0.99"

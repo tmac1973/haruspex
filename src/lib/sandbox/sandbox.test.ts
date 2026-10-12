@@ -63,8 +63,7 @@ async function flush(predicate: () => boolean = () => false, rounds = 20): Promi
 
 function findRunMessage(w: MockWorker): { id: string; code: string } {
 	const run = w.postedMessages.find((m) => m.kind === 'run') as
-		| { id: string; code: string }
-		| undefined;
+		{ id: string; code: string } | undefined;
 	if (!run) throw new Error('no run message posted');
 	return run;
 }
@@ -194,8 +193,7 @@ describe('WorkerManager', () => {
 		);
 		const w = lastWorker as unknown as MockWorker;
 		const setBuf = w.postedMessages.find((m) => m.kind === 'set_interrupt_buffer') as
-			| { buffer: SharedArrayBuffer }
-			| undefined;
+			{ buffer: SharedArrayBuffer } | undefined;
 		expect(setBuf).toBeTruthy();
 		expect(setBuf!.buffer).toBeInstanceOf(SharedArrayBuffer);
 		expect(setBuf!.buffer.byteLength).toBe(4);

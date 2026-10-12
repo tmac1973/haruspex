@@ -12,8 +12,7 @@ import { ioRoot } from '#lib/code/paths.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 
 export type EditorOpened =
-	| { ok: true; opens: WindowOpen[]; summary: string }
-	| { ok: false; error: string };
+	{ ok: true; opens: WindowOpen[]; summary: string } | { ok: false; error: string };
 
 /**
  * Open `files` (relative to `root`, already checked to be inside it). A WSL

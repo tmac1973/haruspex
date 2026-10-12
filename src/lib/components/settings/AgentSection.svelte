@@ -186,8 +186,7 @@
 			rows="6"
 			bind:value={customSystemPrompt}
 			onblur={saveCustomSystemPrompt}
-			placeholder={customSystemPromptPlaceholder}
-		></textarea>
+			placeholder={customSystemPromptPlaceholder}></textarea>
 		<p class="hint">
 			Free-form instructions appended to the built-in system prompt. Use this to steer tone,
 			persona, preferred languages, or domain-specific rules. Applies to every new turn — clear the

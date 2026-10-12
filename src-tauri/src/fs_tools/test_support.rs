@@ -12,7 +12,11 @@ pub(crate) fn assert_odf_mimetype(bytes: &[u8], expected_mime: &str) {
     let cursor = std::io::Cursor::new(bytes);
     let mut zip = zip::ZipArchive::new(cursor).expect("valid zip");
     let mut first = zip.by_index(0).expect("at least one entry");
-    assert_eq!(first.name(), "mimetype", "first entry must be mimetype");
+    assert_eq!(
+        first.name().expect("utf-8 entry name"),
+        "mimetype",
+        "first entry must be mimetype"
+    );
     assert_eq!(
         first.compression(),
         zip::CompressionMethod::Stored,

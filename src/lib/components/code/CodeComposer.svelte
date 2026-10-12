@@ -200,8 +200,7 @@
 			? blocked
 			: busy
 				? 'Steer the agent… (Enter queues it for its next step)'
-				: 'Ask for a change… (Enter to send, / for commands)'}
-	></textarea>
+				: 'Ask for a change… (Enter to send, / for commands)'}></textarea>
 	{#if !blocked}
 		<MicButton onTranscription={(t) => send(t)} />
 	{/if}

@@ -57,8 +57,7 @@
 		title={why ?? undefined}
 		bind:value={text}
 		onkeydown={onKeydown}
-		{disabled}
-	></textarea>
+		{disabled}></textarea>
 	<div class="buttons">
 		{#if busy}
 			<button class="btn btn-small btn-danger" onclick={onstop}>Stop</button>

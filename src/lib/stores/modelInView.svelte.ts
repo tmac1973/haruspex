@@ -10,8 +10,7 @@ import { getActiveTab, type ActiveTab } from '#lib/stores/activeTab.svelte.ts';
 import { getActiveSession } from '#lib/stores/code.svelte.ts';
 
 export type ModelInView =
-	| { kind: 'settings' }
-	| { kind: 'override'; backend: BackendOverride; source: 'code' | 'job' };
+	{ kind: 'settings' } | { kind: 'override'; backend: BackendOverride; source: 'code' | 'job' };
 
 /**
  * The selected job's own model, published by the Jobs tab. Null when no job

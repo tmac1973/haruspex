@@ -707,8 +707,7 @@
 							? "Model is starting — messages will send when it's ready"
 							: 'Waiting for model to load...'}
 					disabled={!serverReady && serverState.status !== 'starting' && !activeConversation}
-					rows="1"
-				></textarea>
+					rows="1"></textarea>
 				<WorkingDirButton />
 				<button
 					class="open-shell-btn"
