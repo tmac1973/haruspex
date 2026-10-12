@@ -18,7 +18,11 @@ describe('ScreenCaptureButton', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Attach a screenshot' }));
 		await fireEvent.click(screen.getByRole('menuitem', { name: 'Screen' }));
 		await waitFor(() => expect(onCapture).toHaveBeenCalledWith('data:image/jpeg;base64,AA'));
-		expect(tauri.invoke).toHaveBeenCalledWith('capture_screen', { target: 'screen' });
+		// From the button, so the Linux portal skips its dialog.
+		expect(tauri.invoke).toHaveBeenCalledWith('capture_screen', {
+			target: 'screen',
+			fromButton: true
+		});
 	});
 
 	it('takes its title and label from the tab using it', () => {

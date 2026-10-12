@@ -16,10 +16,13 @@
 //!
 //! # Per platform
 //!
-//! - **Linux** — the XDG desktop portal, via [`linux`]. The portal's own picker
-//!   is not an obstacle to work around: it *is* the user-initiated guarantee,
-//!   enforced by the compositor rather than promised by us. A bare X11 session
-//!   with no portal running falls back to reading the root window directly.
+//! - **Linux** — the XDG desktop portal, via [`linux`]. A capture the
+//!   assistant asked for opens the portal's own dialog: that *is* the
+//!   user-initiated guarantee, enforced by the compositor rather than promised
+//!   by us. The composer's button skips the dialog, since pressing it is the
+//!   request; the portal asks once whether Haruspex may take screenshots. On
+//!   KDE Plasma, Window… is a click on the window, via [`kwin`]. A bare X11
+//!   session with no portal running falls back to reading the root window.
 //! - **macOS / Windows** — [`xcap`], via [`external`]. Deviation from the plan,
 //!   which named ScreenCaptureKit and Win32 directly: xcap's backends are
 //!   exactly those APIs, and taking them as a dependency trades a page of
@@ -29,6 +32,8 @@
 
 pub mod screenshot;
 
+#[cfg(target_os = "linux")]
+mod kwin;
 #[cfg(target_os = "linux")]
 mod linux;
 
@@ -42,10 +47,11 @@ mod tests {
     /// Read unconditionally, including the platform files this build does not
     /// compile: the guarantee is about the module, and a timer added to the
     /// macOS path should fail on the Linux machine where it was written.
-    const SOURCES: [(&str, &str); 4] = [
+    const SOURCES: [(&str, &str); 5] = [
         ("mod.rs", include_str!("mod.rs")),
         ("screenshot.rs", include_str!("screenshot.rs")),
         ("linux.rs", include_str!("linux.rs")),
+        ("kwin.rs", include_str!("kwin.rs")),
         ("external.rs", include_str!("external.rs")),
     ];
 

@@ -59,19 +59,32 @@ export function sourceRect(
 }
 
 /**
- * Take the screen with Haruspex out of the way, and return the preview to
- * select on. The window comes back whether or not the capture worked.
+ * Run `work` with Haruspex hidden, so the screen or the window the user wants
+ * is not behind it. The window comes back whether or not the work succeeded.
  */
-export async function startRegionCapture(): Promise<ScreenCapture> {
+export async function withHaruspexHidden<T>(work: () => Promise<T>): Promise<T> {
 	const win = getCurrentWindow();
 	await win.hide();
 	try {
-		await new Promise((resolve) => setTimeout(resolve, HIDE_SETTLE_MS));
-		return await invoke<ScreenCapture>('capture_region_start');
+		return await work();
 	} finally {
 		await win.show();
 		await win.setFocus();
 	}
+}
+
+/**
+ * Take the screen for a region, Haruspex already hidden: wait for the
+ * compositor to repaint what was behind it, then hold the frame in Rust.
+ */
+export async function regionFrameWhileHidden(): Promise<ScreenCapture> {
+	await new Promise((resolve) => setTimeout(resolve, HIDE_SETTLE_MS));
+	return invoke<ScreenCapture>('capture_region_start');
+}
+
+/** Take the screen with Haruspex out of the way, and return the preview to select on. */
+export function startRegionCapture(): Promise<ScreenCapture> {
+	return withHaruspexHidden(regionFrameWhileHidden);
 }
 
 /** Crop to `rect` and return the JPEG data URL, or discard the frame (null). */

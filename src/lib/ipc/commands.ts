@@ -17,6 +17,7 @@ export const IPC = {
 	capture_region_start: 'capture_region_start',
 	capture_screen: 'capture_screen',
 	capture_window: 'capture_window',
+	capture_window_click: 'capture_window_click',
 	clear_app_logs: 'clear_app_logs',
 	clear_llama_crash_log: 'clear_llama_crash_log',
 	clear_server_logs: 'clear_server_logs',

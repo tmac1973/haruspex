@@ -5,9 +5,9 @@
 	 * attach it to the message being written; Shell sends it at once.
 	 *
 	 * A person pressing this is not the Settings → Screen question, which is
-	 * about the assistant asking. Window picking is the desktop portal's picker
-	 * on Linux and a list of open windows elsewhere, opening above the nearest
-	 * positioned ancestor (the composer).
+	 * about the assistant asking. Window… is a list of open windows on macOS and
+	 * Windows, opening above the nearest positioned ancestor (the composer); on
+	 * Linux it is a click on the window (KDE Plasma) or else a region.
 	 */
 	import { invoke } from '@tauri-apps/api/core';
 	import RegionSelector from '#lib/components/RegionSelector.svelte';
@@ -16,7 +16,7 @@
 	import type { CaptureWindow } from '#lib/ipc/gen/CaptureWindow.ts';
 	import type { ScreenCapture } from '#lib/ipc/gen/ScreenCapture.ts';
 	import { finishRegionCapture, startRegionCapture } from '#lib/shell/captureRegion.ts';
-	import { captureWindowImage, windowsToPick } from '#lib/shell/captureWindow.ts';
+	import { captureWindowImage, clickWindow, windowsToPick } from '#lib/shell/captureWindow.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { onDestroy } from 'svelte';
@@ -55,15 +55,23 @@
 
 	const screen = () =>
 		run(async () => {
-			const capture = await invoke<ScreenCapture>('capture_screen', { target: 'screen' });
+			const capture = await invoke<ScreenCapture>('capture_screen', {
+				target: 'screen',
+				fromButton: true
+			});
 			await onCapture(capture.dataUrl);
 		});
 
 	const oneWindow = () =>
 		run(async () => {
 			const windows = await windowsToPick();
-			if (windows.length === 0) await onCapture(await captureWindowImage(null));
-			else windowChoices = windows;
+			if (windows.length > 0) {
+				windowChoices = windows;
+				return;
+			}
+			const picked = await clickWindow();
+			if (picked.kind === 'captured') await onCapture(picked.dataUrl);
+			else if (picked.kind === 'region') regionPreview = picked.preview;
 		});
 
 	function pickWindow(id: number) {

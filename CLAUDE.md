@@ -73,6 +73,12 @@ path at compile time.
 
 Binaries and `.so` files are gitignored. Run `./scripts/link-sidecar-libs.sh` to symlink them to `target/debug/` for dev mode.
 
+On KDE Plasma, run `./scripts/kwin-dev-desktop-entry.sh` once per checkout so the
+camera button's Window… can click a window in a dev build: KWin only lets an
+executable that a `.desktop` file vouches for use its screenshot interface (the
+deb and rpm ship `src-tauri/linux/main.desktop`). Without it Window… falls back
+to Region….
+
 ### Localhost ports
 
 | Port | What |
