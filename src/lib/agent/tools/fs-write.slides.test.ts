@@ -158,7 +158,7 @@ describe('bullets', () => {
 
 describe('placeholder bullets', () => {
 	it.each([
-		['a string', ['Real point', '/content']],
+		['a string', ['/content']],
 		['a padded string', ['  /data  ']],
 		['an object', [{ text: '/BULLETS', level: 1 }]]
 	])('rejects %s', async (_label, bullets) => {
@@ -167,9 +167,15 @@ describe('placeholder bullets', () => {
 		expect(sent).toHaveLength(0);
 	});
 
-	it('rejects one that arrives in a newline-separated string', async () => {
-		const out = await pptx([{ title: 'T', bullets: 'Point one\n/fill_in' }]);
+	it('rejects placeholders that arrive in a newline-separated string', async () => {
+		const out = await pptx([{ title: 'T', bullets: '/fill_in\n/more' }]);
 		expect(errorOf(out)).toMatch(/placeholder-style bullet/);
+	});
+
+	it('accepts a slash command among real bullets', async () => {
+		const out = await pptx([{ title: 'T', bullets: ['Type a slash to see commands', '/help'] }]);
+		expect(out.result).toBe('Wrote: d.pptx');
+		expect(sentSlides()[0].bullets).toEqual(['Type a slash to see commands', '/help']);
 	});
 
 	it('rejects one on a section slide too', async () => {
@@ -177,9 +183,10 @@ describe('placeholder bullets', () => {
 		expect(errorOf(out)).toMatch(/placeholder-style bullet/);
 	});
 
-	// The pattern is any single /word, so a deck that lists slash commands
-	// or a top-level directory as a bullet is refused as well.
-	it('also rejects a real slash command such as /help', async () => {
+	// Still ambiguous: a slide of nothing but /words looks exactly like a
+	// scaffold. The error asks for literal text, so "/help — list commands"
+	// goes through.
+	it('still rejects a slide whose only bullets are slash commands', async () => {
 		const out = await pptx([{ title: 'Commands', bullets: ['/help', '/clear'] }]);
 		expect(errorOf(out)).toMatch(/placeholder-style bullet/);
 	});
@@ -223,14 +230,14 @@ describe('layout', () => {
 
 	// A non-string layout is not normalised, so a slide with bullets sends it
 	// to Rust unchanged, where the lowercase enum will not accept it.
-	it('forwards a non-string layout unchanged when the slide has bullets', async () => {
+	it('drops a non-string layout when the slide has bullets', async () => {
 		await pptx([{ title: 'T', layout: 1, bullets: ['x'] }]);
-		expect(sentSlides()[0].layout).toBe(1);
+		expect(sentSlides()[0]).not.toHaveProperty('layout');
 	});
 
-	it('forwards an unknown layout string, only lowercased, when the slide has bullets', async () => {
+	it('drops an unknown layout string when the slide has bullets', async () => {
 		await pptx([{ title: 'T', layout: 'Two-Column', bullets: ['x'] }]);
-		expect(sentSlides()[0].layout).toBe('two-column');
+		expect(sentSlides()[0]).not.toHaveProperty('layout');
 	});
 
 	it('replaces an unknown layout with section on a slide with no content', async () => {

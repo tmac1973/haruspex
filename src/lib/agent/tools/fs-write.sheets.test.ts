@@ -134,15 +134,11 @@ describe('sheets that are not an array', () => {
 });
 
 describe('sheets sent as a JSON string', () => {
-	it('parses a JSON array string and writes the parsed sheets', async () => {
-		const out = await xlsx(JSON.stringify(GOOD));
-		expect(out.result).toBe('Wrote: out.xlsx');
-		expect(sentSheets()).toEqual(GOOD);
-	});
-
-	it('parses one with surrounding whitespace', async () => {
-		const out = await xlsx(`\n  ${JSON.stringify(GOOD)}  \n`);
-		expect(out.result).toBe('Wrote: out.xlsx');
+	it.each([
+		['bare', JSON.stringify(GOOD)],
+		['with surrounding whitespace', `\n  ${JSON.stringify(GOOD)}  \n`]
+	])('parses a JSON array string, %s, and writes it', async (_label, sheets) => {
+		expect((await xlsx(sheets)).result).toBe('Wrote: out.xlsx');
 		expect(sentSheets()).toEqual(GOOD);
 	});
 
@@ -156,9 +152,10 @@ describe('sheets sent as a JSON string', () => {
 		]);
 	});
 
-	it('does not parse rows sent as a JSON string inside a real sheet', async () => {
-		const out = await xlsx([{ name: 'S', rows: '[["a","b"],["1","2"]]' }]);
-		expect(errorOf(out)).toMatch(/Sheet 1 has no rows/);
+	it('parses rows sent as a JSON string inside a real sheet', async () => {
+		const rows = '[["a","b"],["1","2"]]';
+		expect((await xlsx([{ name: 'S', rows }])).result).toBe('Wrote: out.xlsx');
+		expect(sentSheets()[0].rows).toEqual(JSON.parse(rows));
 	});
 });
 
@@ -190,18 +187,14 @@ describe('malformed sheet entries', () => {
 		expect(errorOf(await xlsx([{ name: 'S' }]))).toMatch(/Sheet 1 has no rows/);
 	});
 
-	it('reports a sheet given as a string', async () => {
-		expect(errorOf(await xlsx(['Sheet1']))).toMatch(/Sheet 1 has no rows/);
-	});
-
-	it('reports a sheet given as a number', async () => {
-		expect(errorOf(await xlsx([7]))).toMatch(/Sheet 1 has no rows/);
-	});
-
-	// validateSheet reads `.rows` off the entry without a null check, so a
-	// null sheet throws instead of coming back as a tool error.
-	it('throws on a null sheet entry (no tool error)', async () => {
-		await expect(xlsx([null])).rejects.toThrow(TypeError);
+	it.each([
+		['a string', 'Sheet1'],
+		['a number', 7],
+		['null', null],
+		['an array', [['A'], ['x']]]
+	])('reports a sheet given as %s', async (_label, sheet) => {
+		const out = await xlsx([sheet]);
+		expect(errorOf(out)).toMatch(/^Sheet 1 is not an object/);
 		expect(disk.written).toHaveLength(0);
 	});
 
@@ -210,15 +203,13 @@ describe('malformed sheet entries', () => {
 		expect(errorOf(out)).toMatch(/^Sheet 2 has no rows/);
 	});
 
-	it('rejects a sheet whose data rows are not arrays', async () => {
-		const out = await xlsx([{ name: 'S', rows: [['A'], 'Alice', 42] }]);
-		expect(errorOf(out)).toMatch(/only a header row/);
-	});
-
-	it('forwards a stray non-array row alongside real ones', async () => {
-		const out = await xlsx([{ name: 'S', rows: [['A'], ['x'], 'stray'] }]);
-		expect(out.result).toBe('Wrote: out.xlsx');
-		expect(sentSheets()[0].rows).toEqual([['A'], ['x'], 'stray']);
+	it.each([
+		['data rows', [['A'], 'Alice', 42], 2],
+		['a stray row among real ones', [['A'], ['x'], 'stray'], 3],
+		['the header row', ['Name', ['Alice', '']], 1]
+	])('rejects %s that are not arrays', async (_label, rows, n) => {
+		expect(errorOf(await xlsx([{ name: 'S', rows }]))).toMatch(`Sheet 1 row ${n} is not an array`);
+		expect(disk.written).toHaveLength(0);
 	});
 
 	it('treats whitespace-only cells as blank', async () => {
@@ -247,18 +238,21 @@ describe('cell normalisation', () => {
 		]);
 	});
 
-	it('stringifies object and array cells', async () => {
+	it.each([
+		['an object', { v: 1 }],
+		['a list', [1, 2]]
+	])('rejects %s as a cell', async (_label, cell) => {
 		const out = await xlsx([
 			{
 				name: 'S',
 				rows: [
 					['A', 'B'],
-					[{ v: 1 }, [1, 2]]
+					['x', cell]
 				]
 			}
 		]);
-		expect(out.result).toBe('Wrote: out.xlsx');
-		expect(sentSheets()[0].rows[1]).toEqual(['[object Object]', '1,2']);
+		expect(errorOf(out)).toMatch(/^Sheet 1 row 2 cell 2 is an object or list/);
+		expect(disk.written).toHaveLength(0);
 	});
 
 	it('keeps other sheet fields and does not mutate the input', async () => {
@@ -315,11 +309,6 @@ describe('ragged rows', () => {
 		expect(errorOf(out)).toMatch(/column "2024" is entirely blank/);
 	});
 
-	it('skips the column checks when the header row is not an array', async () => {
-		const out = await xlsx([{ name: 'S', rows: ['Name', ['Alice', '', '', '', '', '', '', '']] }]);
-		expect(out.result).toBe('Wrote: out.xlsx');
-	});
-
 	it('allows a data row up to twice the header width', async () => {
 		// 2-col header, 6-cell row: 6 > 2*2 but not > 2+4.
 		const out = await xlsx([
@@ -364,14 +353,19 @@ describe('ragged rows', () => {
 });
 
 describe('placeholder rows', () => {
-	it.each(['/data', ' /formula ', '/FILL_ME'])('rejects a lone %j cell', async (cell) => {
-		const out = await xlsx([{ name: 'S', rows: [['A'], ['x'], [cell]] }]);
-		expect(errorOf(out)).toMatch(/placeholder-style row/);
-	});
+	it.each(['/data', ' /formula ', '/FILL_ME'])(
+		'rejects a lone %j cell in a multi-column sheet',
+		async (cell) => {
+			const out = await xlsx([{ name: 'S', rows: [['A', 'B'], ['x', 'y'], [cell]] }]);
+			expect(errorOf(out)).toMatch(/placeholder-style row/);
+		}
+	);
 
-	it('rejects a placeholder in the header position too', async () => {
-		const out = await xlsx([{ name: 'S', rows: [['/header'], ['x']] }]);
-		expect(errorOf(out)).toMatch(/placeholder-style row/);
+	it('accepts slash words as the data of a single-column sheet', async () => {
+		const rows = [['Command'], ['/help'], ['/etc']];
+		const out = await xlsx([{ name: 'S', rows }]);
+		expect(out.result).toBe('Wrote: out.xlsx');
+		expect(sentSheets()[0].rows).toEqual(rows);
 	});
 
 	it.each([
@@ -385,14 +379,10 @@ describe('placeholder rows', () => {
 });
 
 describe('fs_write_ods', () => {
-	it('runs the same validation', async () => {
-		const out = await executor('fs_write_ods')({ path: 'o.ods', sheets: [] }, ctx);
-		expect(errorOf(out)).toMatch(/non-empty array/);
-	});
-
-	it('writes through its own command', async () => {
-		const out = await executor('fs_write_ods')({ path: 'o.ods', sheets: GOOD }, ctx);
-		expect(out.result).toBe('Wrote: o.ods');
+	it('runs the same validation, then writes through its own command', async () => {
+		const ods = (sheets: unknown) => executor('fs_write_ods')({ path: 'o.ods', sheets }, ctx);
+		expect(errorOf(await ods([]))).toMatch(/non-empty array/);
+		expect((await ods(GOOD)).result).toBe('Wrote: o.ods');
 		expect(disk.written[0].command).toBe('fs_write_ods');
 	});
 });

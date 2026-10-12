@@ -28,6 +28,8 @@ Each reply has a length limit, separate from the context size. When a reply hits
 
 You can also ask for a smaller piece of work, or lower Settings → Agent → Reasoning effort so less of the budget goes on thinking.
 
+If instead it says the model's tool call "could not be run", the reply was not cut off and raising the limit will not help. Try again, or ask for the work in smaller steps.
+
 ## It ran a command without asking me
 
 The Shell assistant is read-only by default and runs nothing. With **Full access**, it runs commands in your real terminal. Commands it flags as risky (sudo, destructive deletes, piping a download into a shell and similar) stop and ask you first. Commands it thinks are safe run without asking. The check helps, but it is not a guarantee.
