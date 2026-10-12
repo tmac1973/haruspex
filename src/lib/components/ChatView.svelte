@@ -688,67 +688,14 @@
 					disabled={!serverReady && serverState.status !== 'starting' && !activeConversation}
 					rows="1"></textarea>
 				<WorkingDirButton />
-				<ScreenCaptureButton onCapture={(url) => addImageUrls([url])} />
-				<button
-					class="open-shell-btn"
-					onclick={handleOpenInShell}
-					disabled={isGenerating || isCompacting || !activeConversation}
-					title="Open a new shell tab carrying this conversation, so the commands in it can actually be run. The shell thread isn't saved to your chat history."
-					aria-label="Open in shell"
-				>
-					<svg
-						width="18"
-						height="18"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<polyline points="4 17 10 11 4 5"></polyline>
-						<line x1="12" y1="19" x2="20" y2="19"></line>
-					</svg>
-				</button>
-				<button
-					class="research-toggle"
-					class:active={exhaustiveResearch}
-					onclick={() => setExhaustiveResearch(!exhaustiveResearch)}
-					title={exhaustiveResearch
-						? 'Deep research ON — will search more sources'
-						: 'Deep research OFF — normal search'}
-				>
-					<svg
-						width="18"
-						height="18"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<circle cx="11" cy="11" r="8"></circle>
-						<line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-						{#if exhaustiveResearch}
-							<line x1="11" y1="8" x2="11" y2="14"></line>
-							<line x1="8" y1="11" x2="14" y2="11"></line>
-						{/if}
-					</svg>
-				</button>
-				{#if memoryEnabledGlobally}
+				<div class="tool-grid">
+					<ScreenCaptureButton onCapture={(url) => addImageUrls([url])} />
 					<button
-						class="research-toggle incognito-toggle"
-						class:active={!chatRemembered}
-						disabled={chatIsRemote}
-						onclick={toggleIncognito}
-						title={chatIsRemote
-							? 'Remote thread — guest chats are never remembered'
-							: chatRemembered
-								? 'This chat can be remembered. Click to go incognito.'
-								: "Incognito — this chat won't be remembered"}
-						aria-pressed={!chatRemembered}
-						aria-label="Incognito"
+						class="open-shell-btn"
+						onclick={handleOpenInShell}
+						disabled={isGenerating || isCompacting || !activeConversation}
+						title="Open a new shell tab carrying this conversation, so the commands in it can actually be run. The shell thread isn't saved to your chat history."
+						aria-label="Open in shell"
 					>
 						<svg
 							width="18"
@@ -760,26 +707,81 @@
 							stroke-linecap="round"
 							stroke-linejoin="round"
 						>
-							{#if chatRemembered}
-								<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-								<circle cx="12" cy="12" r="3"></circle>
-							{:else}
-								<path
-									d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"
-								></path>
-								<path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"
-								></path>
-								<line x1="1" y1="1" x2="23" y2="23"></line>
+							<polyline points="4 17 10 11 4 5"></polyline>
+							<line x1="12" y1="19" x2="20" y2="19"></line>
+						</svg>
+					</button>
+					<button
+						class="research-toggle"
+						class:active={exhaustiveResearch}
+						onclick={() => setExhaustiveResearch(!exhaustiveResearch)}
+						title={exhaustiveResearch
+							? 'Deep research ON — will search more sources'
+							: 'Deep research OFF — normal search'}
+					>
+						<svg
+							width="18"
+							height="18"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
+							<circle cx="11" cy="11" r="8"></circle>
+							<line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+							{#if exhaustiveResearch}
+								<line x1="11" y1="8" x2="11" y2="14"></line>
+								<line x1="8" y1="11" x2="14" y2="11"></line>
 							{/if}
 						</svg>
 					</button>
-				{/if}
-				<MicButton
-					onTranscription={async (text) => {
-						await doSend(text);
-					}}
-					disabled={isGenerating || isCompacting}
-				/>
+					{#if memoryEnabledGlobally}
+						<button
+							class="research-toggle incognito-toggle"
+							class:active={!chatRemembered}
+							disabled={chatIsRemote}
+							onclick={toggleIncognito}
+							title={chatIsRemote
+								? 'Remote thread — guest chats are never remembered'
+								: chatRemembered
+									? 'This chat can be remembered. Click to go incognito.'
+									: "Incognito — this chat won't be remembered"}
+							aria-pressed={!chatRemembered}
+							aria-label="Incognito"
+						>
+							<svg
+								width="18"
+								height="18"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								{#if chatRemembered}
+									<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+									<circle cx="12" cy="12" r="3"></circle>
+								{:else}
+									<path
+										d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"
+									></path>
+									<path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"
+									></path>
+									<line x1="1" y1="1" x2="23" y2="23"></line>
+								{/if}
+							</svg>
+						</button>
+					{/if}
+					<MicButton
+						onTranscription={async (text) => {
+							await doSend(text);
+						}}
+						disabled={isGenerating || isCompacting}
+					/>
+				</div>
 				<button
 					class="send-btn"
 					onclick={handleSend}
@@ -1179,6 +1181,34 @@
 	.send-btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	/* The composer's toggles stack in two short rows so the textarea keeps
+	   its width. Capture and the mic are shared components, sized here. */
+	.tool-grid {
+		display: grid;
+		grid-template-rows: repeat(2, 28px);
+		grid-auto-flow: column;
+		grid-auto-columns: 28px;
+		gap: 4px;
+		flex-shrink: 0;
+	}
+
+	.tool-grid > button,
+	.tool-grid :global(.capture-btn),
+	.tool-grid :global(.mic-btn) {
+		width: 28px;
+		height: 28px;
+	}
+
+	.tool-grid :global(svg) {
+		width: 16px;
+		height: 16px;
+	}
+
+	.tool-grid :global(.spinner) {
+		width: 12px;
+		height: 12px;
 	}
 
 	.open-shell-btn {
