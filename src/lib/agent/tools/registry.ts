@@ -102,8 +102,7 @@ const CODE_TOOLS = new Set([
 	'code_glob',
 	'run_command',
 	'web_search',
-	'research_url',
-	'fetch_url'
+	'research_url'
 ]);
 
 // `fs`-category tools that should only ever appear in Code mode — keeps the
