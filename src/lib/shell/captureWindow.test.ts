@@ -1,25 +1,63 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
+const tauri = vi.hoisted(() => ({ invoke: vi.fn(), calls: [] as string[] }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/window', () => ({
+	getCurrentWindow: () => ({
+		hide: async () => void tauri.calls.push('hide'),
+		show: async () => void tauri.calls.push('show'),
+		setFocus: async () => void tauri.calls.push('focus')
+	})
+}));
 
 import {
 	CAPTURE_PROMPT,
 	captureMessage,
 	captureWindowImage,
+	clickWindow,
 	windowLabel,
 	windowsToPick
 } from './captureWindow';
 
-beforeEach(() => tauri.invoke.mockReset());
+beforeEach(() => {
+	tauri.invoke.mockReset();
+	tauri.calls.length = 0;
+});
 
-describe('capturing a window for the Shell assistant', () => {
-	it('asks the platform picker when there is no list to choose from', async () => {
-		tauri.invoke.mockResolvedValue({ dataUrl: 'data:image/jpeg;base64,AA', width: 1, height: 1 });
-		expect(await captureWindowImage(null)).toBe('data:image/jpeg;base64,AA');
-		expect(tauri.invoke).toHaveBeenCalledWith('capture_screen', { target: 'window' });
+describe('clicking a window where there is no list (Linux)', () => {
+	it('hands back the window clicked, with Haruspex hidden meanwhile', async () => {
+		tauri.invoke.mockImplementation(async (cmd: string) => {
+			tauri.calls.push(cmd);
+			return { kind: 'captured', capture: { dataUrl: 'data:w', width: 1, height: 1 } };
+		});
+		expect(await clickWindow()).toEqual({ kind: 'captured', dataUrl: 'data:w' });
+		expect(tauri.calls).toEqual(['hide', 'capture_window_click', 'show', 'focus']);
 	});
 
+	it('reports Escape as cancelled, with nothing captured', async () => {
+		tauri.invoke.mockResolvedValue({ kind: 'cancelled' });
+		expect(await clickWindow()).toEqual({ kind: 'cancelled' });
+		expect(tauri.calls).toEqual(['hide', 'show', 'focus']);
+	});
+
+	it('takes the screen for a region instead, without showing Haruspex in between', async () => {
+		const preview = { dataUrl: 'data:s', width: 2, height: 2 };
+		tauri.invoke.mockImplementation(async (cmd: string) => {
+			tauri.calls.push(cmd);
+			return cmd === 'capture_window_click' ? { kind: 'unavailable' } : preview;
+		});
+		expect(await clickWindow()).toEqual({ kind: 'region', preview });
+		expect(tauri.calls).toEqual([
+			'hide',
+			'capture_window_click',
+			'capture_region_start',
+			'show',
+			'focus'
+		]);
+	});
+});
+
+describe('capturing a window for the Shell assistant', () => {
 	it('captures the window picked from the list by its id', async () => {
 		tauri.invoke.mockResolvedValue({ dataUrl: 'data:x', width: 1, height: 1 });
 		await captureWindowImage(42);

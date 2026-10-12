@@ -515,6 +515,7 @@ pub fn run() {
             desktop::screenshot::capture_screen,
             desktop::screenshot::list_capture_windows,
             desktop::screenshot::capture_window,
+            desktop::screenshot::capture_window_click,
             desktop::screenshot::capture_region_start,
             desktop::screenshot::capture_region_finish,
             fs_tools::pdf_read::fs_read_pdf_bytes,

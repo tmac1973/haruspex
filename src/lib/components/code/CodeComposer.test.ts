@@ -3,6 +3,9 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 const tauri = vi.hoisted(() => ({ invoke: vi.fn().mockResolvedValue(null) }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/window', () => ({
+	getCurrentWindow: () => ({ hide: async () => {}, show: async () => {}, setFocus: async () => {} })
+}));
 
 import CodeComposer from './CodeComposer.svelte';
 import type { CodeSession } from '#lib/stores/code.svelte.ts';
@@ -114,7 +117,9 @@ describe('CodeComposer with the folder gone', () => {
 describe('CodeComposer camera button', () => {
 	it('attaches the captured window to the next message without sending it', async () => {
 		tauri.invoke.mockImplementation(async (cmd: string) =>
-			cmd === 'list_capture_windows' ? [] : { dataUrl: 'data:image/jpeg;base64,AA' }
+			cmd === 'list_capture_windows'
+				? []
+				: { kind: 'captured', capture: { dataUrl: 'data:image/jpeg;base64,AA' } }
 		);
 		const session = fakeSession({ busy: false });
 		render(CodeComposer, { session, slashHost: host });
@@ -125,7 +130,7 @@ describe('CodeComposer camera button', () => {
 				'data:image/jpeg;base64,AA'
 			)
 		);
-		expect(tauri.invoke).toHaveBeenCalledWith('capture_screen', { target: 'window' });
+		expect(tauri.invoke).toHaveBeenCalledWith('capture_window_click');
 		expect(session.send).not.toHaveBeenCalled();
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Send' }));
