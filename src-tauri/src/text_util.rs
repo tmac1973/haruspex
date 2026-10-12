@@ -74,6 +74,154 @@ pub fn url_for_log(url: &str) -> String {
     }
 }
 
+/// What replaces a secret in text that leaves a process: an error shown in
+/// Settings, a line in the app log (which goes into the diagnostics bundle).
+pub const REDACTED: &str = "[redacted]";
+
+/// Words that mark the value after them as a credential: `password=…`,
+/// `"api_key": "…"`, `Authorization: …`.
+const SECRET_KEY_WORDS: &[&str] = &[
+    "token",
+    "secret",
+    "password",
+    "passwd",
+    "apikey",
+    "api_key",
+    "api-key",
+    "authorization",
+    "auth",
+    "credential",
+    "cookie",
+];
+
+/// Prefixes of credentials that look like nothing else: GitHub, OpenAI and
+/// Anthropic, Slack, GitLab, AWS, Hugging Face, Google.
+const TOKEN_PREFIXES: &[&str] = &[
+    "ghp_",
+    "gho_",
+    "ghu_",
+    "ghs_",
+    "ghr_",
+    "github_pat_",
+    "sk-",
+    "sk_live_",
+    "xoxb-",
+    "xoxp-",
+    "xoxa-",
+    "xoxs-",
+    "glpat-",
+    "AKIA",
+    "hf_",
+    "ya29.",
+];
+
+/// `text` with anything that looks like a credential replaced by [`REDACTED`]:
+/// each of `known` (values we handed the program, at least 6 characters),
+/// URL userinfo (`https://user:pass@host`), the value after `Bearer` or after
+/// a key named like a secret (`token=…`, `"password": "…"`), and words with a
+/// well-known token prefix. For third-party output — an MCP server's stderr —
+/// that ends up in an error or the log. Best effort: it catches the shapes
+/// credentials usually take, not every possible one.
+pub fn redact_secrets(text: &str, known: &[String]) -> String {
+    let mut out = text.to_string();
+    for k in known.iter().filter(|k| k.chars().count() >= 6) {
+        out = out.replace(k.as_str(), REDACTED);
+    }
+    out = redact_userinfo(&out);
+    let mut result = String::with_capacity(out.len());
+    let mut redact_next = false;
+    for piece in out.split_inclusive(char::is_whitespace) {
+        let word = piece.trim_end_matches(char::is_whitespace);
+        let space = &piece[word.len()..];
+        if word.is_empty() {
+            result.push_str(piece);
+            continue;
+        }
+        let (redacted, then_next) = redact_word(word, redact_next);
+        redact_next = then_next;
+        result.push_str(&redacted);
+        result.push_str(space);
+    }
+    result
+}
+
+/// One whitespace-separated word, and whether the word after it is a value
+/// to redact (`Bearer`, `password:`, `"token":`).
+fn redact_word(word: &str, is_value: bool) -> (String, bool) {
+    let bare = word.trim_matches(|c: char| "\"'`,;()[]{}<>".contains(c));
+    // The scheme word stays and hands the redaction on: `Authorization:
+    // Bearer <token>` and plain `Bearer <token>` both end on the token.
+    if bare.eq_ignore_ascii_case("bearer") || bare.eq_ignore_ascii_case("basic") {
+        return (word.to_string(), true);
+    }
+    if is_value && !bare.is_empty() {
+        return (word.replacen(bare, REDACTED, 1), false);
+    }
+    if TOKEN_PREFIXES.iter().any(|p| bare.starts_with(p)) && bare.len() >= 16 {
+        return (word.replacen(bare, REDACTED, 1), false);
+    }
+    // `key=value` / `key:value` in one word; `key=` / `key:` with the value
+    // in the next.
+    if let Some(i) = bare.rfind(['=', ':']) {
+        let (key, value) = (&bare[..i], &bare[i + 1..]);
+        if names_a_secret(key) {
+            if value.is_empty() {
+                return (word.to_string(), true);
+            }
+            if !value.starts_with("//") {
+                return (word.replacen(value, REDACTED, 1), false);
+            }
+        }
+    }
+    (word.to_string(), false)
+}
+
+fn names_a_secret(key: &str) -> bool {
+    let key = key
+        .trim_matches(|c: char| "\"'`".contains(c))
+        .to_ascii_lowercase();
+    // The last segment: `https://x/mcp?api_key`, `env.GITHUB_TOKEN`.
+    let tail = key
+        .rsplit(['?', '&', '.', '/', '"', '\''])
+        .next()
+        .unwrap_or(&key);
+    SECRET_KEY_WORDS.iter().any(|w| tail.contains(w))
+}
+
+/// A message from someone else's server (Google's `error_description`, an
+/// API's `error.message`) made fit to show in an error: control characters
+/// and runs of whitespace become single spaces, anything that looks like a
+/// credential is redacted, and it is cut to `max_chars`.
+pub fn upstream_message(text: &str, max_chars: usize) -> String {
+    let flat = text
+        .split(|c: char| c.is_whitespace() || c.is_control())
+        .filter(|w| !w.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    truncate_chars(redact_secrets(&flat, &[]), max_chars, "…")
+}
+
+/// `scheme://user:pass@host` → `scheme://[redacted]@host`.
+fn redact_userinfo(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(i) = rest.find("://") {
+        out.push_str(&rest[..i + 3]);
+        rest = &rest[i + 3..];
+        let end = rest
+            .find(|c: char| c.is_whitespace() || c == '/' || c == '"' || c == '\'')
+            .unwrap_or(rest.len());
+        if let Some(at) = rest[..end].rfind('@') {
+            if rest[..at].contains(':') {
+                out.push_str(REDACTED);
+                rest = &rest[at..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -143,5 +291,61 @@ mod tests {
         // "aé" = 3 bytes; cutting at 2 lands mid-'é' → back off to "a".
         let out = truncate_with_note("aéxx", 2).unwrap();
         assert!(out.starts_with("a\n\n[... truncated:"));
+    }
+
+    #[test]
+    fn known_values_and_token_shapes_are_redacted() {
+        use super::{redact_secrets, REDACTED};
+        let known = vec!["s3cr3t-value".to_string(), "abc".to_string()];
+        let cases = [
+            (
+                "auth failed for s3cr3t-value",
+                format!("auth failed for {REDACTED}"),
+            ),
+            // Too short to be worth matching on its own.
+            ("abc ok", "abc ok".to_string()),
+            (
+                "GET https://bob:hunter2@proxy:3128/x",
+                format!("GET https://{REDACTED}@proxy:3128/x"),
+            ),
+            (
+                "Authorization: Bearer eyJhbGciOi.x.y",
+                format!("Authorization: Bearer {REDACTED}"),
+            ),
+            ("password=hunter2 next", format!("password={REDACTED} next")),
+            (
+                r#"{"api_key": "k-123456", "n": 1}"#,
+                format!(r#"{{"api_key": "{REDACTED}", "n": 1}}"#),
+            ),
+            ("token: abcdef", format!("token: {REDACTED}")),
+            (
+                "GITHUB_TOKEN=ghp_aaaaaaaaaaaaaaaaaaaa",
+                format!("GITHUB_TOKEN={REDACTED}"),
+            ),
+            (
+                "bad key ghp_aaaaaaaaaaaaaaaaaaaa here",
+                format!("bad key {REDACTED} here"),
+            ),
+            (
+                "https://x/mcp?api_key=zzz9",
+                format!("https://x/mcp?api_key={REDACTED}"),
+            ),
+        ];
+        for (input, want) in cases {
+            assert_eq!(redact_secrets(input, &known), want, "{input}");
+        }
+    }
+
+    #[test]
+    fn ordinary_output_is_left_alone() {
+        use super::redact_secrets;
+        for line in [
+            "Error: ENOENT: no such file or directory, open '/tmp/x.json'",
+            "listening on http://127.0.0.1:3000/mcp",
+            "  at Object.<anonymous> (/srv/index.js:12:5)",
+            "skipping sk-short",
+        ] {
+            assert_eq!(redact_secrets(line, &[]), line);
+        }
     }
 }

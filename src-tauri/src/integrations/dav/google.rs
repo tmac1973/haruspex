@@ -71,6 +71,11 @@ struct TokenResponse {
     scope: Option<String>,
 }
 
+/// Longest a message of Google's may be in an error of ours: long enough for
+/// "API has not been used in project … before or it is disabled", short
+/// enough that a page of HTML can't fill Settings.
+const UPSTREAM_MESSAGE_CHARS: usize = 300;
+
 #[derive(Deserialize)]
 struct TokenError {
     error: String,
@@ -273,9 +278,17 @@ async fn read_tokens(response: reqwest::Response) -> Result<TokenResponse, Strin
         Some(e) if e.error == "invalid_grant" => "Google access has expired or was removed. \
              Sign in again in Settings → Integrations → Calendar & Contacts."
             .into(),
+        Some(e) if e.error == "access_denied" => {
+            "Google sign-in was cancelled, or access wasn't granted.".into()
+        }
+        // Google's own words, but cleaned: it is text from another server,
+        // headed for Settings and the app log.
         Some(e) => format!(
             "Google refused the sign-in: {}",
-            e.error_description.unwrap_or(e.error)
+            crate::text_util::upstream_message(
+                e.error_description.as_deref().unwrap_or(&e.error),
+                UPSTREAM_MESSAGE_CHARS
+            )
         ),
         None => format!("Google answered HTTP {}.", status.as_u16()),
     })
@@ -354,7 +367,10 @@ fn describe_api_error(service: &str, status: u16, body: &str) -> String {
         .ok()
         .and_then(|v| v["error"]["message"].as_str().map(str::to_string));
     match message {
-        Some(m) => format!("{service} refused the request (HTTP {status}): {m}"),
+        Some(m) => format!(
+            "{service} refused the request (HTTP {status}): {}",
+            crate::text_util::upstream_message(&m, UPSTREAM_MESSAGE_CHARS)
+        ),
         None => format!("{service} answered HTTP {status}."),
     }
 }
@@ -439,6 +455,19 @@ pub async fn google_sign_out(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn googles_message_is_cleaned_before_it_is_shown() {
+        let body = format!(
+            r#"{{"error":{{"message":"bad\nrequest\twith token=abc123 and {}"}}}}"#,
+            "x".repeat(400)
+        );
+        let err = describe_api_error("Google Calendar", 400, &body);
+        assert!(!err.contains('\n') && !err.contains('\t'), "{err}");
+        assert!(!err.contains("abc123"), "{err}");
+        assert!(err.chars().count() < 420, "cut to a readable length: {err}");
+        assert!(err.ends_with('…'), "{err}");
+    }
 
     #[test]
     fn googles_own_error_message_is_kept() {
