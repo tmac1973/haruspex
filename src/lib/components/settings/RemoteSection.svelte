@@ -11,6 +11,7 @@
 		listRemoteSessions,
 		qrPath,
 		remoteLink,
+		remoteTrustedHosts,
 		type QrMatrix,
 		type RemoteSession,
 		type RemoteStatus
@@ -22,9 +23,35 @@
 		getRemoteActivity,
 		type RemoteActivity
 	} from '#lib/remote/activity.svelte.ts';
+	import type { AccessMode } from '#lib/ipc/gen/AccessMode.ts';
+	import type { TrustedHost } from '#lib/ipc/gen/TrustedHost.ts';
+	import WhoCanConnect from '#lib/components/settings/WhoCanConnect.svelte';
+
+	const MODES: { value: AccessMode; label: string; title: string }[] = [
+		{
+			value: 'tokens',
+			label: 'People with the link',
+			title: 'Only someone you give the link (or its QR code) to can chat.'
+		},
+		{
+			value: 'trusted',
+			label: 'These computers',
+			title:
+				'The computers and phones you list chat without the link, by name or IP address. Names are looked up on your network, so a changed address still works. The link still works too.'
+		},
+		{
+			value: 'lan',
+			label: 'My whole network',
+			title:
+				'Any device on your local network (192.168.x.x, 10.x.x.x, …) chats without the link. Only for a network you trust. The link still works too.'
+		}
+	];
 
 	let enabled = $state(getSettings().remoteAccessEnabled);
 	let port = $state(getSettings().remoteAccessPort);
+	let mode = $state<AccessMode>(getSettings().remoteAccessMode);
+	let trustedHosts = $state<string[]>([...getSettings().remoteAccessTrustedHosts]);
+	let found = $state<TrustedHost[]>([]);
 	/** Read back from the secret store on mount; needed for the link and QR. */
 	let token = $state('');
 
@@ -33,11 +60,21 @@
 	let qr = $state<QrMatrix | null>(null);
 	let sessions = $state<RemoteSession[]>([]);
 	let error = $state<string | null>(null);
-	let copied = $state(false);
+	let copied = $state<string | null>(null);
 	let busy = $state(false);
 
 	const activity = $derived(getRemoteActivity());
 	const link = $derived(address && status?.running ? remoteLink(address, port, token) : null);
+	/** The page without the link's secret, for a device let in without it. */
+	const pageUrl = $derived(address && status?.running ? `https://${address}:${port}/` : null);
+	/** Said next to the switch, so it matches who can actually get in. */
+	const consent = $derived(
+		mode === 'lan'
+			? "Anyone on your network can chat with your Haruspex, using your computer's GPU."
+			: mode === 'trusted'
+				? "The computers you list, and anyone on your network who has the link, can chat with your Haruspex, using your computer's GPU."
+				: "Anyone on your network who has the link can chat with your Haruspex, using your computer's GPU."
+	);
 
 	/**
 	 * Connected-guest state lives in Rust and changes without telling us — a tab
@@ -52,6 +89,7 @@
 		try {
 			status = await getRemoteStatus();
 			sessions = status.running ? await listRemoteSessions() : [];
+			found = mode === 'trusted' ? await remoteTrustedHosts() : [];
 		} catch (e) {
 			error = String(e);
 		}
@@ -78,7 +116,9 @@
 			if (token && token !== (await getRemoteToken())) await remoteToken.save(token);
 			updateSettings({
 				remoteAccessEnabled: enabled,
-				remoteAccessPort: port
+				remoteAccessPort: port,
+				remoteAccessMode: mode,
+				remoteAccessTrustedHosts: [...trustedHosts]
 			});
 			const result = await syncRemoteServer();
 			if (enabled && !result?.running) {
@@ -98,6 +138,16 @@
 		await apply();
 	}
 
+	function setMode(next: AccessMode) {
+		mode = next;
+		void apply();
+	}
+
+	function setHosts(next: string[]) {
+		trustedHosts = next;
+		void apply();
+	}
+
 	async function rotate() {
 		// Everyone holding the old link is cut off, which is the point: this is
 		// revocation, and there is nothing else to revoke.
@@ -106,12 +156,12 @@
 		await apply();
 	}
 
-	async function copyLink() {
-		if (!link) return;
+	async function copy(text: string | null, what: string) {
+		if (!text) return;
 		try {
-			await navigator.clipboard.writeText(link);
-			copied = true;
-			setTimeout(() => (copied = false), 1500);
+			await navigator.clipboard.writeText(text);
+			copied = what;
+			setTimeout(() => (copied = copied === what ? null : copied), 1500);
 		} catch {
 			error = 'Could not copy — select the link and copy it by hand.';
 		}
@@ -172,8 +222,8 @@
 	     proceeds has consented to what is actually happening. A checkbox
 	     labelled "enable remote access" would not have told them any of it. -->
 	<p class="help">
-		Anyone on your network who has the link can chat with your Haruspex, using your computer's GPU.
-		Their conversations are saved here and appear in your sidebar. Use this on networks you trust.
+		{consent} Their conversations are saved here and appear in your sidebar. Use this on networks you
+		trust.
 	</p>
 	<p class="help">
 		Windows will ask whether to allow Haruspex on your network the first time you turn this on — say
@@ -197,13 +247,39 @@
 		/>
 	</div>
 
+	<div class="who">
+		<WhoCanConnect
+			modes={MODES}
+			{mode}
+			hosts={trustedHosts}
+			{found}
+			onmode={setMode}
+			onhosts={setHosts}
+		>
+			{#if mode !== 'tokens' && enabled && pageUrl}
+				<div class="link-row open">
+					<span
+						class="label inline"
+						title="Open this in a browser on a device allowed above. No link needed. The browser warns about the certificate the first time; continue if the fingerprint matches Certificate below."
+						>Open on the other device</span
+					>
+					<code class="link">{pageUrl}</code>
+					<button onclick={() => copy(pageUrl, 'page')}
+						>{copied === 'page' ? 'Copied' : 'Copy'}</button
+					>
+				</div>
+			{/if}
+		</WhoCanConnect>
+	</div>
+
 	{#if enabled && status?.running}
 		<div class="link-block">
 			<span class="label">The link to share</span>
 			{#if link}
 				<div class="link-row">
 					<code class="link">{link}</code>
-					<button onclick={copyLink}>{copied ? 'Copied' : 'Copy'}</button>
+					<button onclick={() => copy(link, 'link')}>{copied === 'link' ? 'Copied' : 'Copy'}</button
+					>
 				</div>
 				{#if qr}
 					<!-- The guest is holding a phone and the token is 32
@@ -307,6 +383,19 @@
 	.fingerprint {
 		overflow-wrap: anywhere;
 		font-size: 0.75rem;
+	}
+
+	.label.inline {
+		display: inline;
+		margin: 0;
+	}
+
+	.who {
+		margin-top: 12px;
+	}
+
+	.open {
+		margin-top: 12px;
 	}
 
 	.link-block,

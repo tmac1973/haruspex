@@ -13,8 +13,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::extract::{Path, State};
-use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, SET_COOKIE};
+use axum::extract::{ConnectInfo, Path, State};
+use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, HOST, SET_COOKIE};
 use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{Html, IntoResponse, Response};
@@ -26,6 +26,8 @@ use tokio::sync::{broadcast, watch};
 
 use super::auth;
 use super::relay::{Answer, PromptRequest, Relay, RelayError, RemoteEvent};
+use crate::owner::tls_listen::PeerAddr;
+use crate::owner::trust::{host_is_ours, OwnerAccess, Trust};
 
 /// How often orphaned sessions are swept. Cheap: a map walk over at most
 /// [`super::relay::MAX_SESSIONS`] entries.
@@ -54,6 +56,11 @@ pub struct RemoteConfig {
     /// Bind `0.0.0.0` rather than loopback. False is useful for testing the
     /// server without exposing anything to the network.
     pub bind_all: bool,
+    /// Who may chat without the link (Settings → Guest chat → Who can
+    /// connect). The link works in every mode. Applied in place: changing it
+    /// restarts nothing.
+    #[serde(default)]
+    pub access: OwnerAccess,
 }
 
 /// By hand, so a `{:?}` in a log or an error never prints the access token.
@@ -63,11 +70,13 @@ impl std::fmt::Debug for RemoteConfig {
             port,
             token,
             bind_all,
+            access,
         } = self;
         f.debug_struct("RemoteConfig")
             .field("port", port)
             .field("token", &crate::text_util::redacted(token))
             .field("bind_all", bind_all)
+            .field("access", access)
             .finish()
     }
 }
@@ -125,6 +134,11 @@ struct AppState {
     host: Arc<dyn Host>,
     relay: Arc<Relay>,
     token: Arc<String>,
+    /// Who may connect without the link (`owner::trust`): guest chat's own
+    /// list, apart from Remote control's.
+    trust: Arc<Trust>,
+    /// This computer's name, which a trusted computer's `Host` may use.
+    own_name: Option<Arc<str>>,
     /// Where to reach koko. Always [`TTS_PORT`] in the app; a port with
     /// nothing behind it in tests.
     ///
@@ -181,10 +195,11 @@ impl Running {
 pub async fn start(
     host: Arc<dyn Host>,
     relay: Arc<Relay>,
+    trust: Arc<Trust>,
     config: RemoteConfig,
     tls: Tls,
 ) -> Result<Running, String> {
-    start_with_tts_port(host, relay, config, tls, TTS_PORT).await
+    start_with_tts_port(host, relay, trust, config, tls, TTS_PORT).await
 }
 
 /// [`start`], with the speech sidecar's port injectable.
@@ -195,6 +210,7 @@ pub async fn start(
 async fn start_with_tts_port(
     host: Arc<dyn Host>,
     relay: Arc<Relay>,
+    trust: Arc<Trust>,
     config: RemoteConfig,
     tls: Tls,
     tts_port: u16,
@@ -220,6 +236,8 @@ async fn start_with_tts_port(
         host: host.clone(),
         relay: relay.clone(),
         token: Arc::new(config.token.clone()),
+        trust,
+        own_name: crate::owner::trust::system_hostname().map(Arc::from),
         tts_port,
     };
 
@@ -252,7 +270,7 @@ async fn start_with_tts_port(
     let serve = tokio::spawn(async move {
         let served = axum::serve(
             crate::owner::tls_listen::TlsListener::new(incoming, local),
-            router.into_make_service(),
+            router.into_make_service_with_connect_info::<PeerAddr>(),
         )
         .with_graceful_shutdown(async move {
             let _ = serve_rx.wait_for(|stop| *stop).await;
@@ -303,14 +321,65 @@ async fn start_with_tts_port(
 
 // --- handlers --------------------------------------------------------------
 
-/// `None` when an API caller is authorised (the cookie, or a Bearer header);
-/// otherwise the response to send back instead of handling the request. The
-/// link's `?t=` is not accepted here: only the page load trades it in.
-fn unauthorised(state: &AppState, headers: &HeaderMap, uri: &Uri) -> Option<Response> {
-    match auth::check(headers, uri.query(), &state.token, false) {
-        Some(_) => None,
-        None => Some((StatusCode::UNAUTHORIZED, "not for you").into_response()),
+/// How a request got in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Admission {
+    /// It proved it has the link.
+    Link(auth::Proof),
+    /// It comes from a computer Settings lets in without the link.
+    Trusted,
+}
+
+/// Why a trusted computer's request was turned away anyway.
+const NOT_OUR_NAME: &str =
+    "open this page by this computer's address or name, as Settings → Guest chat shows it";
+
+/// Whether the request may use the server, and how; `Err` is the response to
+/// send instead. `allow_link` is for the page load, the only place the link's
+/// `?t=` is traded in.
+///
+/// Trusting an address trusts every web page its browser opens, so a request
+/// let in without the link must also name this computer in its `Host` (else
+/// a page could point a domain of its own here, "DNS rebinding") and must not
+/// come from another site's page. The API's JSON bodies are the third layer:
+/// another site can't send one without a preflight this server never answers.
+async fn admit(
+    state: &AppState,
+    peer: IpAddr,
+    headers: &HeaderMap,
+    uri: &Uri,
+    allow_link: bool,
+) -> Result<Admission, (StatusCode, &'static str)> {
+    if let Some(proof) = auth::check(headers, uri.query(), &state.token, allow_link) {
+        return Ok(Admission::Link(proof));
     }
+    if !state.trust.trusts(peer).await {
+        return Err((StatusCode::UNAUTHORIZED, "not for you"));
+    }
+    let host = headers
+        .get(HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if crate::owner::server::cross_site(headers)
+        || !host_is_ours(host, state.own_name.as_deref(), None)
+    {
+        return Err((StatusCode::FORBIDDEN, NOT_OUR_NAME));
+    }
+    Ok(Admission::Trusted)
+}
+
+/// `None` when an API caller may go on (the cookie, a Bearer header, or a
+/// trusted computer); otherwise the response to send back instead.
+async fn unauthorised(
+    state: &AppState,
+    peer: IpAddr,
+    headers: &HeaderMap,
+    uri: &Uri,
+) -> Option<Response> {
+    admit(state, peer, headers, uri, false)
+        .await
+        .err()
+        .map(IntoResponse::into_response)
 }
 
 /// Unauthenticated on purpose: the host's own settings page uses this to say
@@ -319,10 +388,21 @@ async fn health() -> impl IntoResponse {
     Json(serde_json::json!({ "ok": true, "service": "haruspex" }))
 }
 
-async fn index(State(state): State<AppState>, headers: HeaderMap, uri: Uri) -> Response {
-    let Some(proof) = auth::check(&headers, uri.query(), &state.token, true) else {
-        // Deliberately says nothing about what is running here.
-        return no_cache(Html(NO_TOKEN_PAGE).into_response());
+async fn index(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<PeerAddr>,
+    headers: HeaderMap,
+    uri: Uri,
+) -> Response {
+    let proof = match admit(&state, peer.ip(), &headers, &uri, true).await {
+        Ok(Admission::Link(proof)) => proof,
+        // No cookie: it would outlast the setting that let this computer in.
+        Ok(Admission::Trusted) => return client_page(),
+        Err((StatusCode::UNAUTHORIZED, _)) => {
+            // Deliberately says nothing about what is running here.
+            return no_cache(Html(NO_TOKEN_PAGE).into_response());
+        }
+        Err(refusal) => return refusal.into_response(),
     };
     let mut response = if proof == auth::Proof::Link {
         // Trade the link for the cookie and send the browser to a URL without
@@ -330,8 +410,7 @@ async fn index(State(state): State<AppState>, headers: HeaderMap, uri: Uri) -> R
         // bookmark or home-screen shortcut made from the page.
         no_cache((StatusCode::SEE_OTHER, [(axum::http::header::LOCATION, "/")]).into_response())
     } else {
-        let page = CLIENT_HTML.replace("{{host}}", &html_escape(&host_name()));
-        no_cache(Html(page).into_response())
+        client_page()
     };
     // Set on every visit: it renews the cookie's 30 days, and replaces one
     // left by an older build, which held the raw token.
@@ -339,6 +418,11 @@ async fn index(State(state): State<AppState>, headers: HeaderMap, uri: Uri) -> R
         response.headers_mut().insert(SET_COOKIE, cookie);
     }
     response
+}
+
+fn client_page() -> Response {
+    let page = CLIENT_HTML.replace("{{host}}", &html_escape(&host_name()));
+    no_cache(Html(page).into_response())
 }
 
 /// The client's assets are unauthenticated on purpose: they are a static page
@@ -410,11 +494,12 @@ struct ChatRequest {
 
 async fn chat(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<PeerAddr>,
     headers: HeaderMap,
     uri: Uri,
     Json(body): Json<ChatRequest>,
 ) -> Response {
-    if let Some(response) = unauthorised(&state, &headers, &uri) {
+    if let Some(response) = unauthorised(&state, peer.ip(), &headers, &uri).await {
         return response;
     }
     let message = body.message.trim().to_string();
@@ -474,11 +559,12 @@ struct CancelRequest {
 
 async fn cancel(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<PeerAddr>,
     headers: HeaderMap,
     uri: Uri,
     Json(body): Json<CancelRequest>,
 ) -> Response {
-    if let Some(response) = unauthorised(&state, &headers, &uri) {
+    if let Some(response) = unauthorised(&state, peer.ip(), &headers, &uri).await {
         return response;
     }
     match state.relay.in_flight_turn(&body.session_id) {
@@ -506,11 +592,12 @@ struct AnswerRequest {
 /// path in the file: validate, hand it to the driver, return.
 async fn answer(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<PeerAddr>,
     headers: HeaderMap,
     uri: Uri,
     Json(body): Json<AnswerRequest>,
 ) -> Response {
-    if let Some(response) = unauthorised(&state, &headers, &uri) {
+    if let Some(response) = unauthorised(&state, peer.ip(), &headers, &uri).await {
         return response;
     }
     match state.relay.answer(&body.session_id, &body.answer) {
@@ -538,11 +625,12 @@ struct SpeakRequest {
 /// running and the guest gets a plain "not available" rather than a hang.
 async fn speak(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<PeerAddr>,
     headers: HeaderMap,
     uri: Uri,
     Json(body): Json<SpeakRequest>,
 ) -> Response {
-    if let Some(response) = unauthorised(&state, &headers, &uri) {
+    if let Some(response) = unauthorised(&state, peer.ip(), &headers, &uri).await {
         return response;
     }
     let text = body.text.trim();
@@ -648,11 +736,12 @@ fn wav_from_pcm(pcm: &[u8]) -> Vec<u8> {
 
 async fn stream(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<PeerAddr>,
     Path(session_id): Path<String>,
     headers: HeaderMap,
     uri: Uri,
 ) -> Response {
-    if let Some(response) = unauthorised(&state, &headers, &uri) {
+    if let Some(response) = unauthorised(&state, peer.ip(), &headers, &uri).await {
         return response;
     }
     let (rx, snapshot) = match state.relay.subscribe(&session_id) {
@@ -760,6 +849,7 @@ mod tests {
             port: 0,
             token: "   ".into(),
             bind_all: false,
+            access: OwnerAccess::default(),
         };
         assert!(config.token.trim().is_empty());
     }
@@ -788,6 +878,7 @@ mod http_tests {
     //! without the check, not a broken comparison.
 
     use super::*;
+    use crate::owner::trust::AccessMode;
     use std::sync::Mutex as StdMutex;
 
     #[derive(Default)]
@@ -861,16 +952,25 @@ mod http_tests {
     }
 
     async fn serve(sink: Arc<RecordingSink>) -> (String, Arc<Relay>, Running) {
+        serve_with(sink, Arc::new(Trust::default())).await
+    }
+
+    async fn serve_with(
+        sink: Arc<RecordingSink>,
+        trust: Arc<Trust>,
+    ) -> (String, Arc<Relay>, Running) {
         let relay = Arc::new(Relay::new());
         let running = start_with_tts_port(
             sink,
             relay.clone(),
+            trust,
             RemoteConfig {
                 // Port 0: the OS picks a free one, so tests never collide with
                 // each other or with a real Haruspex on the dev box.
                 port: 0,
                 token: TOKEN.into(),
                 bind_all: false,
+                access: OwnerAccess::default(),
             },
             // Same reasoning applied to the speech sidecar: the real koko
             // listens on 3001, and a developer running the app while running
@@ -915,6 +1015,109 @@ mod http_tests {
                 .status(),
             200
         );
+    }
+
+    /// A server whose Settings let `access` in without the link.
+    async fn serve_trusting(access: OwnerAccess) -> (String, Arc<Trust>, Running) {
+        let trust = Arc::new(Trust::default());
+        trust.set(access);
+        let (base, _relay, running) =
+            serve_with(Arc::new(RecordingSink::default()), trust.clone()).await;
+        (base, trust, running)
+    }
+
+    fn mode(mode: AccessMode, hosts: &[&str]) -> OwnerAccess {
+        OwnerAccess {
+            mode,
+            trusted_hosts: hosts.iter().map(|h| h.to_string()).collect(),
+            extra_host: None,
+        }
+    }
+
+    async fn chat_without_link(base: &str) -> reqwest::Response {
+        client()
+            .post(format!("{base}/api/chat"))
+            .json(&serde_json::json!({ "sessionId": "s1", "message": "hi" }))
+            .send()
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_trusted_computer_needs_no_link() {
+        for access in [
+            mode(AccessMode::Lan, &[]),
+            mode(AccessMode::Trusted, &["127.0.0.1"]),
+            mode(AccessMode::Trusted, &["localhost"]),
+        ] {
+            let (base, _trust, running) = serve_trusting(access.clone()).await;
+            assert_eq!(chat_without_link(&base).await.status(), 202, "{access:?}");
+            let page = client().get(format!("{base}/")).send().await.unwrap();
+            assert_eq!(page.status(), 200);
+            // No cookie: it would outlast the setting that let this computer in.
+            assert!(page.headers().get("set-cookie").is_none());
+            assert!(page.text().await.unwrap().contains(&host_name()));
+            running.stop();
+        }
+    }
+
+    #[tokio::test]
+    async fn a_computer_not_listed_still_needs_the_link() {
+        let (base, _trust, running) =
+            serve_trusting(mode(AccessMode::Trusted, &["192.0.2.7"])).await;
+        assert_eq!(chat_without_link(&base).await.status(), 401);
+        let page = client().get(format!("{base}/")).send().await.unwrap();
+        assert!(page.text().await.unwrap().contains("You need a link"));
+        // The link still works.
+        let with_link = client()
+            .post(format!("{base}/api/chat"))
+            .header("cookie", guest_cookie(TOKEN))
+            .json(&serde_json::json!({ "sessionId": "s1", "message": "hi" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(with_link.status(), 202);
+        running.stop();
+    }
+
+    #[tokio::test]
+    async fn who_can_connect_changes_without_a_restart() {
+        let (base, trust, running) = serve_trusting(mode(AccessMode::Lan, &[])).await;
+        assert_eq!(chat_without_link(&base).await.status(), 202);
+        trust.set(OwnerAccess::default());
+        assert_eq!(chat_without_link(&base).await.status(), 401);
+        running.stop();
+    }
+
+    #[tokio::test]
+    async fn trust_needs_our_name_and_our_own_page() {
+        let (base, _trust, running) = serve_trusting(mode(AccessMode::Lan, &[])).await;
+        // A page that pointed a domain of its own at this computer.
+        let rebound = client()
+            .post(format!("{base}/api/chat"))
+            .header("host", "evil.example")
+            .json(&serde_json::json!({ "sessionId": "s1", "message": "hi" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(rebound.status(), 403);
+        let page = client()
+            .get(format!("{base}/"))
+            .header("host", "evil.example")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(page.status(), 403);
+        // Another site's page, calling from a trusted computer's browser.
+        let cross = client()
+            .post(format!("{base}/api/chat"))
+            .header("origin", "https://evil.example")
+            .json(&serde_json::json!({ "sessionId": "s1", "message": "hi" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(cross.status(), 403);
+        running.stop();
     }
 
     /// A port with nothing behind it.
@@ -1291,10 +1494,12 @@ mod http_tests {
         let first = start(
             Arc::new(RecordingSink::default()),
             relay.clone(),
+            Arc::new(Trust::default()),
             RemoteConfig {
                 port: 0,
                 token: "old-token".into(),
                 bind_all: false,
+                access: OwnerAccess::default(),
             },
             test_tls(),
         )
@@ -1327,10 +1532,12 @@ mod http_tests {
         let second = start(
             Arc::new(RecordingSink::default()),
             relay,
+            Arc::new(Trust::default()),
             RemoteConfig {
                 port: 0,
                 token: "new-token".into(),
                 bind_all: false,
+                access: OwnerAccess::default(),
             },
             test_tls(),
         )
@@ -1518,11 +1725,13 @@ mod http_tests {
             port,
             token: token.into(),
             bind_all: false,
+            access: OwnerAccess::default(),
         };
         let sink = Arc::new(RecordingSink::default());
         let running = start_with_tts_port(
             sink.clone(),
             remote.relay(),
+            Arc::new(Trust::default()),
             config(TOKEN, 0),
             test_tls(),
             closed_port(),
@@ -1543,6 +1752,7 @@ mod http_tests {
         let again = start_with_tts_port(
             sink,
             remote.relay(),
+            Arc::new(Trust::default()),
             config("rotated", port),
             test_tls(),
             closed_port(),

@@ -15,13 +15,24 @@ To use your own Code sessions from another computer instead, see the `remote-con
 
 1. Open Settings → Guest chat.
 2. Turn on **Let people on your network chat with this Haruspex**.
-3. Share **The link to share**: click **Copy**, or let the other person scan the QR code.
+3. Choose **Who can connect** (below).
+4. Share **The link to share**: click **Copy**, or let the other person scan the QR code.
 
 The page uses HTTPS with a certificate Haruspex makes itself, so the guest's browser warns the first time that the connection is not private. They can continue if the fingerprint the browser shows matches Settings → Guest chat → **Certificate**. The browser remembers the answer. It is the same certificate as Settings → Remote control uses.
 
 **Port** sets the port the page is served on (the default is 8787). On Windows, the firewall asks the first time whether to allow Haruspex on your network; say yes, or nobody can connect. On Linux and macOS you may need to open that port in your firewall yourself.
 
 If there is no link, your computer has no network address: it is probably offline, or on a network that does not let devices reach each other.
+
+## Who can connect
+
+- **People with the link**: only someone you give the link (or its QR code) to. This is the default.
+- **These computers**: the computers and phones you list, by name or IP address, chat without the link. Names are looked up on your network, so a device whose address changes keeps working; the list shows where each name points, or "not found".
+- **My whole network**: any device on your local network chats without the link. Only for a network you trust.
+
+With either of the last two, open the address shown under **Open on the other device** on that device. The link works in every mode. Changing this doesn't disconnect anyone already chatting, but a device let in without the link loses access as soon as it is no longer allowed.
+
+These settings are separate from Settings → Remote control → **Who can connect**: listing a computer in one doesn't let it into the other.
 
 ## What guests can do
 
@@ -52,7 +63,7 @@ Settings → Guest chat lists who is connected and what each guest is asking rig
 
 ## Security notes
 
-- Anyone on your network who has the link can chat with your Haruspex. The link contains a long secret, so treat it like a password.
+- Anyone on your network who has the link can chat with your Haruspex. The link contains a long secret, so treat it like a password. With **These computers** or **My whole network**, those devices need no link at all, and nor does any program or web page running on them; **Rotate link** doesn't cut them off. Web pages on other sites still can't use guest chat: requests must come from the page itself and name this computer.
 - Opening the link swaps the secret for a cookie and drops it from the address bar, so it isn't kept in the browser's history or in a bookmark or home-screen shortcut. The cookie lasts 30 days from the last visit: a guest who stays away longer needs the link again. **Rotate link** cuts off every cookie too.
 - Traffic is encrypted (HTTPS). A link from before HTTPS (`http://`) still works: it is sent on to `https://`, but that first request, with the link's secret, crosses the network unencrypted. Rotate the link if an old one went to someone who should no longer have it.
 - Use guest chat on networks you trust, such as your home network, not public Wi-Fi: anyone who gets the link can use it.

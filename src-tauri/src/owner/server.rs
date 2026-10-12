@@ -262,7 +262,7 @@ fn refuse(status: StatusCode, message: &str) -> Response {
 
 /// A browser page on another site calling in: its `Origin` names somewhere
 /// other than the `Host` it is calling.
-fn cross_site(headers: &HeaderMap) -> bool {
+pub(crate) fn cross_site(headers: &HeaderMap) -> bool {
     let Some(origin) = headers.get(ORIGIN).and_then(|v| v.to_str().ok()) else {
         return false;
     };
