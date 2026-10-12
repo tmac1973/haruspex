@@ -667,7 +667,9 @@ mod tests {
 
     fn names(bytes: &[u8]) -> Vec<String> {
         let zip = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
-        zip.file_names().map(str::to_string).collect()
+        zip.file_names()
+            .map(|n| n.expect("utf-8 entry name").into_owned())
+            .collect()
     }
 
     /// The `<a:t>` run texts of a slide, in order.
