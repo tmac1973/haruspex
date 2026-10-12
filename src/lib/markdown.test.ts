@@ -428,6 +428,25 @@ describe('processCitations', () => {
 		expect(content).toContain('[\\[1\\]](https://alpha.example)');
 	});
 
+	it('keeps the anchor text of a prose link to a fetched page', () => {
+		// A model-written source list of `[Title](url)` lines used to render
+		// as bare `[2]` `[3]` with nothing saying what each link was.
+		const text = 'Claim [source](https://alpha.example).\n\n[Granite docs](https://beta.example)';
+		const { content, citedUrls } = processCitations(text, fetched);
+		expect(citedUrls).toEqual(['https://alpha.example', 'https://beta.example']);
+		expect(content).toContain('[\\[1\\]](https://alpha.example)');
+		expect(content).toContain('[Granite docs](https://beta.example)');
+	});
+
+	it('adds the hostname to a line that is only a numbered citation', () => {
+		const text = 'Body.\n\n- [source](https://www.alpha.example/page)\n[2](https://beta.example)';
+		const { content } = processCitations(text, fetched);
+		expect(content).toBe(
+			'Body.\n\n- [\\[1\\]](https://www.alpha.example/page) alpha.example\n[\\[2\\]](https://beta.example) beta.example'
+		);
+		expect(processCitations(content, fetched).content).toBe(content);
+	});
+
 	it('strips citation links whose URL is a breadcrumb display path', () => {
 		// Models sometimes copy the snippet breadcrumb form as the URL,
 		// e.g. "https://site.com › page › sub". Marked parses only up to

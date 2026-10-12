@@ -16,7 +16,8 @@ const SEARCH_AND_FILE_TOOLS = `- code_grep — search file CONTENTS (gitignore-a
 - fs_edit_text — targeted edit; old_str must UNIQUELY match (include surrounding context). Prefer small precise edits over rewriting whole files.`;
 
 const WEB_TOOLS =
-	'- web_search / research_url — look up current docs or unfamiliar APIs when needed.';
+	'- web_search / research_url — look up current docs or unfamiliar APIs when needed.\n' +
+	"- For a page's exact text (code samples, raw files, release notes), curl it with run_command.";
 
 const HOW_TO_WORK = `HOW TO WORK:
 - Explore before editing: grep/glob to locate code, read the relevant slices, then change it.
