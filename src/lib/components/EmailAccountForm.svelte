@@ -20,7 +20,7 @@
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 	import type { EmailAccount, EmailProviderId, EmailTlsMode } from '#lib/stores/settings.ts';
 	import type { EmailProviderPreset } from '#lib/ipc/gen/EmailProviderPreset.ts';
-	import { withStoredPassword } from '#lib/stores/emailSecrets.ts';
+	import { withStoredEmailPassword } from '#lib/stores/emailSecrets.ts';
 	import {
 		savedSecretPlaceholder,
 		secretStoreHint,
@@ -149,7 +149,7 @@
 		testOk = false;
 		try {
 			await checkLogins();
-			onChange(await withStoredPassword(fields(), password));
+			onChange(await withStoredEmailPassword(fields(), password));
 			password = '';
 			testOk = true;
 		} catch (e) {

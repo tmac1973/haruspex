@@ -2,17 +2,11 @@ import { describe, it, expect } from 'vitest';
 import './user-question';
 import { executeTool } from './registry';
 import type { ToolContext } from './types';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
-const baseCtx: ToolContext = {
-	workingDir: null,
-	pendingImages: [],
-	deepResearch: false,
-	filesWrittenThisTurn: new Set(),
-	shellMode: false,
-	codeMode: false,
-	codeAutoApprove: false,
+const baseCtx: ToolContext = makeToolContext({
 	interactive: false
-};
+});
 
 describe('ask_user_question tool', () => {
 	it('fails safe when no interactive user is present', async () => {

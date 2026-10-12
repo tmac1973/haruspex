@@ -35,6 +35,7 @@ use super::parser::{
 };
 use super::provider::TlsMode;
 use super::structure::{self, Part};
+use crate::time_util::{now_secs, now_secs_u64};
 
 /// Filters accepted by [`list_recent`]. All fields are optional;
 /// `None` means "don't constrain on this axis".
@@ -404,14 +405,10 @@ fn normalize_since_date(v: &str) -> String {
 /// "N hours ago" using std::time + a small month-name table is
 /// enough.
 fn imap_since_for_hours(hours: u32) -> String {
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or(Duration::from_secs(0));
     // A day earlier than the hours ask: SINCE compares dates in the server's
     // time zone, not UTC. The exact cut is made after the fetch.
-    let back = now.saturating_sub(Duration::from_secs((hours as u64 + 24) * 3600));
-    unix_to_imap_date(back.as_secs() as i64)
+    let back = now_secs_u64().saturating_sub((hours as u64 + 24) * 3600);
+    unix_to_imap_date(back as i64)
 }
 
 /// Convert a Unix timestamp to IMAP's `DD-Mon-YYYY` date format.
@@ -596,13 +593,6 @@ fn uid_set(uids: &[u32]) -> String {
         .map(u32::to_string)
         .collect::<Vec<_>>()
         .join(",")
-}
-
-fn now_secs() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
 }
 
 /// Is a message dated at or after `floor`? An undated one is kept: there is

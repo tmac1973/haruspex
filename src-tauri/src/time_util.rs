@@ -20,6 +20,16 @@ pub fn now_ms_u64() -> u64 {
     now_ms().max(0) as u64
 }
 
+/// Seconds since the Unix epoch (0 if the clock is before the epoch).
+pub fn now_secs() -> i64 {
+    now_ms() / 1000
+}
+
+/// `now_secs` for timestamps that are unsigned.
+pub fn now_secs_u64() -> u64 {
+    now_ms_u64() / 1000
+}
+
 /// Nanoseconds since the Unix epoch — used for unique temp-file suffixes.
 pub fn now_nanos() -> u128 {
     SystemTime::now()

@@ -436,10 +436,7 @@ impl McpSupervisor {
                 RunningServer {
                     id: config.id.clone(),
                     pid,
-                    started_at: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs())
-                        .unwrap_or_default(),
+                    started_at: crate::time_util::now_secs_u64(),
                     program: config.program.to_string_lossy().to_string(),
                 },
             );

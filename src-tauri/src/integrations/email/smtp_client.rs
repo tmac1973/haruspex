@@ -5,7 +5,7 @@
 //! draft. The model can open a draft (`email_compose`); it cannot send one.
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use lettre::message::header::{ContentTransferEncoding, ContentType};
 use lettre::message::{Body, Mailbox, Message, SinglePart};
@@ -52,10 +52,7 @@ pub struct OutgoingMessage {
 /// two drafts in the same instant still differ.
 pub fn new_message_id(from: &str) -> String {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
+    let nanos = crate::time_util::now_nanos();
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
     let domain = from.rsplit_once('@').map(|(_, d)| d).unwrap_or("localhost");
     format!("{nanos:x}.{:x}.{n}.haruspex@{domain}", std::process::id())

@@ -39,19 +39,10 @@ vi.mock('./registry', async (importOriginal) => {
 
 import './fs-write';
 import { invokeRouter, unexpectedInvoke } from '#lib/testing/invoke.ts';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
-function makeCtx(over: Partial<ToolContext> = {}): ToolContext {
-	return {
-		workingDir: '/tmp/work',
-		pendingImages: [],
-		deepResearch: false,
-		shellMode: false,
-		codeMode: false,
-		codeAutoApprove: false,
-		filesWrittenThisTurn: new Set<string>(),
-		...over
-	} as ToolContext;
-}
+const makeCtx = (over: Partial<ToolContext> = {}) =>
+	makeToolContext({ workingDir: '/tmp/work', ...over });
 
 let ctx: ToolContext;
 

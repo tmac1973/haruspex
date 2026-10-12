@@ -19,19 +19,13 @@ vi.mock('#lib/image/forTool.ts', () => ({ generateForTool: state.generate }));
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import type { ToolContext } from './types';
 import { ImageBackendError } from '#lib/image/types.ts';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
 const HASH = 'b'.repeat(64);
-const ctx: ToolContext = {
-	workingDir: null,
-	pendingImages: [],
-	deepResearch: false,
-	filesWrittenThisTurn: new Set(),
-	shellMode: false,
-	codeMode: false,
-	codeAutoApprove: false,
+const ctx: ToolContext = makeToolContext({
 	interactive: true,
 	conversationId: 'chat-1'
-};
+});
 const names = (o: Parameters<typeof getToolSchemas>[0]) =>
 	getToolSchemas(o).map((s) => s.function.name);
 

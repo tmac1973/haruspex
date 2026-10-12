@@ -25,7 +25,8 @@ import {
 	resetSetup,
 	runTestQuery,
 	setSelectedModel,
-	startDownload
+	startDownload,
+	useDownloadedModel
 } from './setup.svelte';
 import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 
@@ -193,14 +194,18 @@ describe('runTestQuery', () => {
 		expect(getTestStatusMessage()).toBe('No model found.');
 	});
 
-	it('does not restart a server that is already ready', async () => {
+	it('restarts a server it did not start, then leaves it for retries', async () => {
+		// Opened from Settings: the server is up with the old model and context.
 		ipc({
 			get_active_model_path: () => '/models/a.gguf',
-			get_server_status: () => ({ type: 'Ready' })
+			get_server_status: () => ({ type: 'Ready' }),
+			start_server: () => null
 		});
-		fetchMock.mockResolvedValue(sse([{ content: 'Hi, ' }, { content: 'I am Qwen.' }]));
+		fetchMock.mockImplementation(async () => sse([{ content: 'Hi, ' }, { content: 'I am Qwen.' }]));
 		await runTestQuery();
-		expect(mocks.invoke).not.toHaveBeenCalledWith('start_server', expect.anything());
+		await runTestQuery();
+		const starts = mocks.invoke.mock.calls.filter(([cmd]) => cmd === 'start_server');
+		expect(starts).toHaveLength(1);
 		expect(getTestResult()).toBe('success');
 		expect(getTestResponse()).toBe('Hi, I am Qwen.');
 	});
@@ -244,7 +249,8 @@ describe('runTestQuery', () => {
 	it('counts reasoning-only output as a working model', async () => {
 		ipc({
 			get_active_model_path: () => '/models/a.gguf',
-			get_server_status: () => ({ type: 'Ready' })
+			get_server_status: () => ({ type: 'Ready' }),
+			start_server: () => null
 		});
 		fetchMock.mockResolvedValue(sse([{ reasoning_content: 'Thinking…' }]));
 		await runTestQuery();
@@ -254,7 +260,8 @@ describe('runTestQuery', () => {
 	it('fails on an empty answer or an HTTP error', async () => {
 		ipc({
 			get_active_model_path: () => '/models/a.gguf',
-			get_server_status: () => ({ type: 'Ready' })
+			get_server_status: () => ({ type: 'Ready' }),
+			start_server: () => null
 		});
 		fetchMock.mockResolvedValue(sse([{ content: '' }]));
 		await runTestQuery();
@@ -267,15 +274,41 @@ describe('runTestQuery', () => {
 		expect(getTestStatusMessage()).toBe('Server returned error 500');
 	});
 
-	it('runs on its own after a finished download', async () => {
-		mocks.download.mockResolvedValue(undefined);
+	it('runs on its own after a finished download, on the model just fetched', async () => {
+		mocks.download.mockResolvedValue('/models/new.gguf');
 		ipc({
-			get_active_model_path: () => '/models/a.gguf',
-			get_server_status: () => ({ type: 'Ready' })
+			get_active_model_path: (args) =>
+				args?.preferredFilename ? `/models/${String(args.preferredFilename)}` : null,
+			get_server_status: () => ({ type: 'Ready' }),
+			start_server: () => null
 		});
 		fetchMock.mockResolvedValue(sse([{ content: 'hello' }]));
 		await startDownload();
 		await settle(() => getTestResult() === 'success');
 		expect(getTestResponse()).toBe('hello');
+		expect(mocks.invoke).toHaveBeenCalledWith(
+			'start_server',
+			expect.objectContaining({ modelPath: '/models/new.gguf' })
+		);
+	});
+
+	it('uses a model already on disk without downloading it', async () => {
+		ipc({
+			cmd_detect_hardware: () => ({ recommended_quant: 'm', recommended_context_size: 32768 }),
+			list_models: () => [{ id: 'm', filename: 'm.gguf', downloaded: true }],
+			get_active_model_path: (args) =>
+				args?.preferredFilename ? `/models/${String(args.preferredFilename)}` : null,
+			get_server_status: () => ({ type: 'Ready' }),
+			start_server: () => null
+		});
+		fetchMock.mockResolvedValue(sse([{ content: 'hello' }]));
+		await detectHardware();
+		await useDownloadedModel();
+		await settle(() => getTestResult() === 'success');
+		expect(mocks.download).not.toHaveBeenCalled();
+		expect(mocks.invoke).toHaveBeenCalledWith(
+			'start_server',
+			expect.objectContaining({ modelPath: '/models/m.gguf' })
+		);
 	});
 });

@@ -128,10 +128,7 @@ fn spawn_prepared(
         RunningServer {
             id: id.to_string(),
             pid,
-            started_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0),
+            started_at: crate::time_util::now_secs_u64(),
             program,
         },
     );
@@ -290,6 +287,7 @@ fn join_kill_on_close_job(_pid: u32) {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::temp_dir;
 
     /// A shell command line in the platform's own shell. `sh` and `sleep`
     /// are on GitHub's Windows runners only through Git Bash; an ordinary
@@ -340,9 +338,7 @@ mod tests {
 
     #[test]
     fn kill_stops_the_process_and_forgets_it() {
-        let dir = std::env::temp_dir().join("haruspex_sidecar_kill");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = temp_dir("sidecar_kill");
         let reg = dir.join("running.json");
         // About 30 s either way; the test kills it long before.
         let cmd = if cfg!(windows) {
@@ -355,7 +351,6 @@ mod tests {
         assert_eq!(orphans::load(&reg)[0].pid, pid);
         child.kill().unwrap();
         assert!(orphans::load(&reg).is_empty());
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The opt-in proof that matters: a sidecar whose app is SIGKILLed dies

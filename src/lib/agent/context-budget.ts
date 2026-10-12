@@ -205,12 +205,27 @@ export interface ContextManagedInfo {
 	truncatedMessages: number;
 	/** Number of old user/assistant messages dropped. */
 	droppedTurns: number;
+	/** The system prompt itself was cut: the context can't hold it and the
+	 *  tools, so the fix is a bigger context, not a shorter chat. */
+	truncatedSystem?: boolean;
 	beforeEst: number;
 	afterEst: number;
 }
 
 /** One-line, human-readable summary of a context-guard action, for the UI. */
 export function describeContextManaged(info: ContextManagedInfo): string {
+	if (info.truncatedSystem) {
+		return (
+			"The context size is too small for the model's instructions and tools, so they were " +
+			'cut short. Raise it in Settings → Inference → Context Size.'
+		);
+	}
+	// Without a drop or a trim there was no earlier history to compact, as
+	// in a new chat: a long message was shortened, and that is all to say.
+	if (info.droppedTurns === 0 && !info.trimmedTools) {
+		const n = info.truncatedMessages;
+		return `Shortened ${n > 1 ? `${n} long messages` : 'a long message'} to fit the model's context.`;
+	}
 	const parts: string[] = [];
 	if (info.droppedTurns > 0) parts.push(`dropped ${info.droppedTurns} older message(s)`);
 	if (info.truncatedMessages > 0) {
@@ -338,6 +353,8 @@ export function fitMessagesToBudget(
 	});
 
 	// Step 2: head/tail-truncate oversized single messages, largest first.
+	// Never the system prompt: cutting it costs the model its instructions
+	// mid-sentence, and only the last resort below may.
 	let truncatedMessages = 0;
 	if (!fits()) {
 		const oversizedTokenCap = Math.max(1, Math.floor(effectiveBudget * OVERSIZED_MESSAGE_FRACTION));
@@ -346,6 +363,7 @@ export function fitMessagesToBudget(
 			.filter(
 				(c) =>
 					typeof c.m.content === 'string' &&
+					c.m.role !== 'system' &&
 					c.tokens > oversizedTokenCap &&
 					!holdsSkillContent(c.m.content)
 			)
@@ -373,9 +391,7 @@ export function fitMessagesToBudget(
 
 	// Step 4: pathological fallback — guarantee the fit.
 	const forced = !fits();
-	if (forced) {
-		forceFit(messages, effectiveBudget, opts.tools);
-	}
+	const truncatedSystem = forced && forceFit(messages, effectiveBudget, opts.tools);
 
 	return {
 		kind: 'fit',
@@ -383,6 +399,7 @@ export function fitMessagesToBudget(
 		trimmedTools,
 		truncatedMessages,
 		droppedTurns,
+		truncatedSystem,
 		beforeEst,
 		afterEst: estimateMessagesTokens(messages, opts.tools)
 	};
@@ -470,36 +487,51 @@ function sanitizeOrphanToolResults(messages: ChatMessage[]): void {
 	}
 }
 
+const REMOVED = '[Removed to fit context.]';
+
 /**
  * Last-resort guaranteed fit: repeatedly halve the largest string
  * message (replacing with a placeholder once it gets tiny) until the
  * estimate is under budget. Converges geometrically.
+ *
+ * The system prompt goes after every other message bigger than a quarter of
+ * the budget, and before the small ones: a chat's latest question is worth
+ * more than the end of the instructions, a giant paste is not. Returns
+ * whether the system prompt was cut.
  */
-function forceFit(messages: ChatMessage[], budget: number, tools?: ToolDefinition[]): void {
+function forceFit(messages: ChatMessage[], budget: number, tools?: ToolDefinition[]): boolean {
+	const bigEnough = Math.floor(budget * OVERSIZED_MESSAGE_FRACTION);
+	let cutSystem = false;
 	for (let guard = 0; guard < 100; guard++) {
-		if (estimateMessagesTokens(messages, tools) <= budget) return;
+		if (estimateMessagesTokens(messages, tools) <= budget) break;
 		let best = -1;
-		let bestTokens = 0;
+		let bestRank = -1;
 		for (let i = 0; i < messages.length; i++) {
-			if (typeof messages[i].content !== 'string') continue;
+			if (typeof messages[i].content !== 'string' || messages[i].content === REMOVED) continue;
 			const t = messageTokens(messages[i]);
-			if (t > bestTokens) {
-				bestTokens = t;
+			const system = messages[i].role === 'system';
+			// Rank: big non-system messages, then the system prompt, then the rest.
+			const tier = !system && t > bigEnough ? 2 : system ? 1 : 0;
+			const rank = tier * 1e9 + t;
+			if (rank > bestRank) {
+				bestRank = rank;
 				best = i;
 			}
 		}
-		if (best < 0) return; // nothing left to truncate
+		if (best < 0) break; // nothing left to truncate
+		if (messages[best].role === 'system') cutSystem = true;
 		const m = messages[best];
 		const text = m.content as string;
 		const half = Math.floor(byteLength(text) / 2);
 		if (half < 32) {
-			messages[best] = { ...m, content: '[Removed to fit context.]' };
+			messages[best] = { ...m, content: REMOVED };
 			continue;
 		}
 		const result = truncateCapturedOutput(text, half);
 		messages[best] = {
 			...m,
-			content: result.truncated ? result.text : '[Removed to fit context.]'
+			content: result.truncated ? result.text : REMOVED
 		};
 	}
+	return cutSystem;
 }

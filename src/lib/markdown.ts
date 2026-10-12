@@ -111,6 +111,22 @@ function pathButton(ref: PathRef, inner: string): string {
 	return `<button type="button" class="code-path" data-action="code-path" data-path="${escapeHtml(ref.path)}"${line} title="${escapeHtml(title)}">${inner}</button>`;
 }
 
+/**
+ * The path a click on a `pathButton` names, and its line when it has one;
+ * null for a click anywhere else. Takes the click (`preventDefault`) when it
+ * was on one. For a transcript's delegated `onclick`.
+ */
+export function codePathFromClick(event: MouseEvent): { path: string; line: number | null } | null {
+	const btn = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+		'button[data-action="code-path"]'
+	);
+	const path = btn?.dataset.path;
+	if (!path) return null;
+	event.preventDefault();
+	const line = Number(btn.dataset.line);
+	return { path, line: Number.isFinite(line) && line > 0 ? line : null };
+}
+
 const marked = new Marked({
 	extensions: [
 		{

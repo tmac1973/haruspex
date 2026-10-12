@@ -8,6 +8,8 @@ import { invoke } from '@tauri-apps/api/core';
 
 import {
 	scheduleToConfigJson,
+	scheduleLabel,
+	storedScheduleLabel,
 	configJsonToSchedule,
 	computeNextDueAt,
 	type JobSummary,
@@ -100,6 +102,22 @@ describe('jobs store schedule helpers', () => {
 		expect(configJsonToSchedule('daily', 'not-json')).toBeNull();
 		expect(configJsonToSchedule('weekly', '{"day":"mon"}')).toBeNull();
 		expect(configJsonToSchedule('interval', '{}')).toBeNull();
+	});
+});
+
+describe('schedule labels', () => {
+	it('names each kind the same way in the list and the editor', () => {
+		expect(scheduleLabel({ kind: 'manual' })).toBe('Manual');
+		expect(scheduleLabel({ kind: 'daily', time: '09:00' })).toBe('Daily 09:00');
+		expect(scheduleLabel({ kind: 'weekly', day: 'mon', time: '09:00' })).toBe('Weekly mon 09:00');
+		expect(scheduleLabel({ kind: 'interval', minutes: 5 })).toBe('Every 5 min');
+		expect(storedScheduleLabel('daily', '{"time":"09:00"}')).toBe('Daily 09:00');
+	});
+
+	it('falls back to the kind when a stored config is missing or unreadable', () => {
+		expect(storedScheduleLabel('daily', null)).toBe('Daily');
+		expect(storedScheduleLabel('interval', 'not json')).toBe('Interval');
+		expect(storedScheduleLabel('hourly', null)).toBe('Hourly');
 	});
 });
 

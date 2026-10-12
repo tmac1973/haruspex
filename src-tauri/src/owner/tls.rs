@@ -198,9 +198,13 @@ fn host_of(address: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::{temp_dir, TestDir};
 
-    fn tmp(name: &str) -> std::path::PathBuf {
-        std::env::temp_dir().join(format!("owner-tls-{name}-{}.json", std::process::id()))
+    /// A file in a fresh temp folder, which goes when the guard drops.
+    fn tmp(name: &str) -> (TestDir, std::path::PathBuf) {
+        let dir = temp_dir(&format!("owner_tls_{name}"));
+        let path = dir.join("tls.json");
+        (dir, path)
     }
 
     #[test]
@@ -232,8 +236,7 @@ mod tests {
 
     #[test]
     fn it_is_kept_until_it_nears_its_end_or_a_name_is_new() {
-        let path = tmp("keep");
-        let _ = std::fs::remove_file(&path);
+        let (_dir, path) = tmp("keep");
         let names = names_for(Some("box"), None);
         let first = load_or_create(&path, &names, &[]).unwrap();
         // Restarting keeps it, so browsers keep the owner's answer.
@@ -257,14 +260,12 @@ mod tests {
             let mode = std::fs::metadata(&path).unwrap().permissions().mode();
             assert_eq!(mode & 0o077, 0, "the key file is private");
         }
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn an_unreadable_file_is_replaced() {
-        let path = tmp("junk");
+        let (_dir, path) = tmp("junk");
         std::fs::write(&path, b"not json").unwrap();
         assert!(load_or_create(&path, &names_for(Some("box"), None), &[]).is_ok());
-        let _ = std::fs::remove_file(&path);
     }
 }

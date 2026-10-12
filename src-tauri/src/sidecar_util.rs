@@ -7,7 +7,8 @@
 //! the UI. This module owns those primitives so the three sidecar files
 //! consume one canonical implementation each.
 
-use crate::sidecar_process::SidecarChild;
+use crate::process_util::{kill_pid, Signal};
+use crate::sidecar_process::{sidecar_registry, spawn_sidecar, SidecarChild};
 use log::{error, info, warn};
 use serde::Serialize;
 use std::collections::VecDeque;
@@ -15,6 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::process::{Command, CommandEvent};
+use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 
@@ -318,6 +320,65 @@ pub fn watch_health(
     });
 }
 
+/// What differs between the sidecars that `start_sidecar` launches.
+pub struct SidecarStart {
+    /// The log and registry name; the binary is `haruspex-<name>`.
+    pub name: &'static str,
+    pub port: u16,
+    pub args: Vec<String>,
+    /// Extra environment on top of the library search path.
+    pub env: Vec<(&'static str, String)>,
+    /// Stdout substrings that mean ready; see `spawn_log_reader`.
+    pub ready_markers: &'static [&'static str],
+    pub health_url: String,
+    /// Count any HTTP answer as up; see `watch_health`.
+    pub accept_any: bool,
+}
+
+/// Free the port, spawn the sidecar and start its log reader and health
+/// watch, leaving the status at `Starting`. Shared by whisper-server and koko;
+/// the caller stops its old child first.
+pub async fn start_sidecar(
+    app: &AppHandle,
+    spec: SidecarStart,
+    child: &Mutex<Option<SidecarChild>>,
+    status: &Arc<Mutex<SidecarStatus>>,
+    log: &LogBuffer,
+) -> Result<(), String> {
+    let name = spec.name;
+    kill_process_on_port(spec.port, name, sidecar_registry(app)).await?;
+    *status.lock().await = SidecarStatus::Starting;
+
+    let mut cmd = app
+        .shell()
+        .sidecar(format!("haruspex-{name}"))
+        .map_err(|e| format!("Failed to create {name} sidecar: {e}"))?
+        .args(&spec.args);
+    cmd = with_library_paths(cmd, app);
+    for (key, value) in spec.env {
+        cmd = cmd.env(key, value);
+    }
+
+    let (rx, c) = spawn_sidecar(cmd, name, sidecar_registry(app))?;
+    *child.lock().await = Some(c);
+
+    spawn_log_reader(
+        name,
+        rx,
+        Arc::clone(status),
+        Arc::clone(log),
+        spec.ready_markers,
+    );
+    watch_health(
+        status,
+        spec.health_url,
+        name,
+        timing::HEALTH_POLL_TIMEOUT,
+        spec.accept_any,
+    );
+    Ok(())
+}
+
 /// `Ok` when the sidecar is `Ready`; otherwise `Err(not_ready)`. The guard in
 /// front of every request a sidecar serves.
 pub async fn require_ready(status: &Mutex<SidecarStatus>, not_ready: &str) -> Result<(), String> {
@@ -378,7 +439,7 @@ pub async fn kill_process_on_port(
             ));
         }
         info!("Killing our stale {name} (pid {pid}) on port {port}");
-        terminate(pid);
+        kill_pid(pid, Signal::Term, false);
     }
 
     wait_for_port_release(port).await;
@@ -427,17 +488,6 @@ fn pids_on_port(port: u16) -> Vec<u32> {
         })
         .unwrap_or_default();
     pids
-}
-
-fn terminate(pid: u32) {
-    #[cfg(unix)]
-    unsafe {
-        libc::kill(pid as i32, libc::SIGTERM);
-    }
-    #[cfg(windows)]
-    let _ = std::process::Command::new("taskkill")
-        .args(["/F", "/PID", &pid.to_string()])
-        .output();
 }
 
 /// Poll `url` (typically a `/health` endpoint) until it returns 2xx,

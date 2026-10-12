@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
+import { invokeRouter, unexpectedInvoke } from '#lib/testing/invoke.ts';
+import type { ToolContext } from '#lib/agent/tools/types.ts';
 
 const mocks = vi.hoisted(() => ({
 	invoke: vi.fn(),
@@ -15,19 +18,16 @@ vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
 }));
 
 // fs-write registers tools as side effect of import; the registry
-// route uses executeTool.
-const ctx = {
-	workingDir: '/tmp/work',
-	pendingImages: [],
-	deepResearch: false,
-	shellMode: false,
-	codeMode: false,
-	codeAutoApprove: false,
-	filesWrittenThisTurn: new Set<string>()
-};
+// route uses executeTool. A fresh context per test is a fresh turn: fs-write
+// refuses a second write to one path within a turn.
+let ctx: ToolContext;
 
 beforeEach(() => {
+	ctx = makeToolContext({ workingDir: '/tmp/work' });
 	mocks.invoke.mockReset();
+	mocks.invoke.mockImplementation(
+		invokeRouter({ fs_path_exists: false, fs_write_xlsx: undefined }, unexpectedInvoke)
+	);
 });
 
 async function callXlsx(args: unknown) {
@@ -76,11 +76,6 @@ describe('fs_write_xlsx input validation', () => {
 	});
 
 	it('accepts real data and forwards to the backend', async () => {
-		// Two invocations expected: fs_path_exists check (false), then fs_write_xlsx.
-		mocks.invoke
-			.mockResolvedValueOnce(false) // fs_path_exists
-			.mockResolvedValueOnce(undefined); // fs_write_xlsx
-
 		const out = await callXlsx({
 			path: 'fib.xlsx',
 			sheets: [
@@ -126,7 +121,6 @@ describe('fs_write_xlsx input validation', () => {
 	});
 
 	it('allows blank cells in some rows of a column as long as some have data', async () => {
-		mocks.invoke.mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
 		const out = await callXlsx({
 			path: 'sparse.xlsx',
 			sheets: [
@@ -145,7 +139,6 @@ describe('fs_write_xlsx input validation', () => {
 	});
 
 	it('accepts numeric and boolean cells and coerces them to strings for Rust', async () => {
-		mocks.invoke.mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
 		const out = await callXlsx({
 			path: 'nums.xlsx',
 			sheets: [
@@ -171,7 +164,6 @@ describe('fs_write_xlsx input validation', () => {
 	});
 
 	it('does not flag a column of numeric zeros as entirely blank', async () => {
-		mocks.invoke.mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
 		const out = await callXlsx({
 			path: 'zeros.xlsx',
 			sheets: [
@@ -200,8 +192,6 @@ describe('fs_write_xlsx input validation', () => {
 	});
 
 	it('accepts formulas (cells starting with "=")', async () => {
-		mocks.invoke.mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
-
 		const out = await callXlsx({
 			path: 'formulas.xlsx',
 			sheets: [

@@ -61,13 +61,7 @@ fn origin_in(config: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("haruspex_skills_origin_test_{name}"));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
-    }
+    use crate::test_util::temp_dir;
 
     #[test]
     fn reads_the_origin_url_and_nothing_else() {

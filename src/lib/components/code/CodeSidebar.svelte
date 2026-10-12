@@ -7,6 +7,7 @@
 	 * a session open in a window of its own a small window mark, kept current
 	 * from Rust's claim announcements (`code://claims`) rather than polled.
 	 */
+	import { startDragResize } from '#lib/utils/dragResize.ts';
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 	import { listCodeSessions, updateCodeSessionMeta } from '#lib/code/db.ts';
 	import type { CodeSessionSummary } from '#lib/code/db.ts';
@@ -100,23 +101,13 @@
 	}
 
 	function startResize(event: MouseEvent) {
-		event.preventDefault();
-		const startX = event.clientX;
-		const startWidth = width;
-		document.body.style.cursor = 'col-resize';
-		document.body.style.userSelect = 'none';
-		function onMove(e: MouseEvent) {
-			width = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startWidth + e.clientX - startX));
-		}
-		function onUp() {
-			window.removeEventListener('mousemove', onMove);
-			window.removeEventListener('mouseup', onUp);
-			document.body.style.cursor = '';
-			document.body.style.userSelect = '';
-			updateSettings({ codeSidebarWidth: width });
-		}
-		window.addEventListener('mousemove', onMove);
-		window.addEventListener('mouseup', onUp);
+		startDragResize(event, {
+			width,
+			widens: 'right',
+			clamp: (w) => Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, w)),
+			onResize: (w) => (width = w),
+			onDone: (w) => updateSettings({ codeSidebarWidth: w })
+		});
 	}
 
 	async function openOne(id: string) {

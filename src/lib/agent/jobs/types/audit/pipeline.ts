@@ -7,6 +7,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { PROJECT_READ_TOOLS } from '#lib/agent/jobs/readTools.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import {
 	SUBMIT_FINDINGS_TOOL,
@@ -33,10 +34,8 @@ import {
 import type { JobRunContext, PlannedStep } from '#lib/agent/jobs/types/types.ts';
 import type { RunStatus } from '#lib/agent/jobs/runner.svelte.ts';
 
-/** Read-only investigation toolset shared by audit sample + verification turns. */
-const AUDIT_READ_TOOLS = ['code_grep', 'code_glob', 'fs_read_text', 'fs_list_dir'];
-const SAMPLE_ALLOW = [...AUDIT_READ_TOOLS, SUBMIT_FINDINGS_TOOL];
-const VERIFY_ALLOW = [...AUDIT_READ_TOOLS, SUBMIT_VERDICT_TOOL];
+const SAMPLE_ALLOW = [...PROJECT_READ_TOOLS, SUBMIT_FINDINGS_TOOL];
+const VERIFY_ALLOW = [...PROJECT_READ_TOOLS, SUBMIT_VERDICT_TOOL];
 /** Upper bound on sample runs per audit, regardless of configured value. */
 const MAX_AUDIT_RUNS = 20;
 /**

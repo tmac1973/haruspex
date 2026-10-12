@@ -1247,15 +1247,18 @@ impl ModelManager {
         filename: &str,
         expected_size: u64,
         stage_label: &str,
-    ) -> Result<PathBuf, String> {
+    ) -> Result<(PathBuf, bool), String> {
         self.ensure_models_dir().await?;
         let final_path = self.models_dir.join(filename);
         let partial_path = self.models_dir.join(format!("{}.partial", filename));
 
-        // Skip if already downloaded
+        // Skip if already downloaded. `false` tells the caller not to hash
+        // it again: it was checked when it arrived (a mismatch deletes it),
+        // and re-reading 6 GB made the wizard sit on "Verifying" for a model
+        // it never fetched.
         if final_path.exists() {
             info!("{} already downloaded: {}", stage_label, filename);
-            return Ok(final_path);
+            return Ok((final_path, false));
         }
 
         self.download_to_partial(
@@ -1270,7 +1273,7 @@ impl ModelManager {
         .await?;
 
         info!("{} download complete: {}", stage_label, filename);
-        Ok(final_path)
+        Ok((final_path, true))
     }
 
     /// Record the proxy config to use for the next download.
@@ -1298,7 +1301,7 @@ impl ModelManager {
         }
 
         // Download main weights
-        let final_path = self
+        let (final_path, fetched) = self
             .download_file(
                 app,
                 &model.url,
@@ -1309,7 +1312,7 @@ impl ModelManager {
             .await?;
 
         // Verify SHA256 if we have a hash
-        if !model.sha256.is_empty() {
+        if fetched && !model.sha256.is_empty() {
             info!("Verifying SHA256...");
             verify_sha256(&final_path, &model.sha256, app, "Verifying model").await?;
         }
@@ -1320,7 +1323,7 @@ impl ModelManager {
             model.mmproj_filename.as_ref(),
             model.mmproj_size_bytes,
         ) {
-            let mmproj_path = self
+            let (mmproj_path, fetched) = self
                 .download_file(
                     app,
                     mmproj_url,
@@ -1329,7 +1332,7 @@ impl ModelManager {
                     "Downloading vision projector",
                 )
                 .await?;
-            if let Some(expected) = mmproj_sha256_for_url(mmproj_url) {
+            if let Some(expected) = mmproj_sha256_for_url(mmproj_url).filter(|_| fetched) {
                 info!("Verifying mmproj SHA256...");
                 verify_sha256(&mmproj_path, expected, app, "Verifying vision projector").await?;
             }
@@ -1346,10 +1349,10 @@ impl ModelManager {
             sha256,
         } = &model.mtp
         {
-            let draft_path = self
+            let (draft_path, fetched) = self
                 .download_file(app, url, filename, *size_bytes, "Downloading MTP drafter")
                 .await?;
-            if !sha256.is_empty() {
+            if fetched && !sha256.is_empty() {
                 info!("Verifying MTP drafter SHA256...");
                 verify_sha256(&draft_path, sha256, app, "Verifying MTP drafter").await?;
             }
@@ -1780,6 +1783,7 @@ pub async fn download_whisper_model(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::temp_dir;
 
     #[test]
     fn resume_total_size_fresh_download_uses_content_length() {
@@ -2436,8 +2440,7 @@ mod tests {
 
     #[tokio::test]
     async fn validate_gguf_rejects_invalid_file() {
-        let dir = std::env::temp_dir().join("haruspex_test_gguf");
-        fs::create_dir_all(&dir).await.unwrap();
+        let dir = temp_dir("gguf");
 
         let bad_file = dir.join("bad.gguf");
         fs::write(&bad_file, b"not a gguf file").await.unwrap();
@@ -2445,14 +2448,11 @@ mod tests {
         let result = validate_gguf(&bad_file).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("wrong magic bytes"));
-
-        fs::remove_dir_all(&dir).await.ok();
     }
 
     #[tokio::test]
     async fn validate_gguf_accepts_valid_magic() {
-        let dir = std::env::temp_dir().join("haruspex_test_gguf_valid");
-        fs::create_dir_all(&dir).await.unwrap();
+        let dir = temp_dir("gguf_valid");
 
         let good_file = dir.join("good.gguf");
         let mut data = GGUF_MAGIC.to_vec();
@@ -2461,14 +2461,11 @@ mod tests {
 
         let result = validate_gguf(&good_file).await;
         assert!(result.is_ok());
-
-        fs::remove_dir_all(&dir).await.ok();
     }
 
     #[tokio::test]
     async fn validate_gguf_rejects_too_small() {
-        let dir = std::env::temp_dir().join("haruspex_test_gguf_small");
-        fs::create_dir_all(&dir).await.unwrap();
+        let dir = temp_dir("gguf_small");
 
         let small_file = dir.join("tiny.gguf");
         fs::write(&small_file, b"GG").await.unwrap();
@@ -2476,14 +2473,11 @@ mod tests {
         let result = validate_gguf(&small_file).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("too small"));
-
-        fs::remove_dir_all(&dir).await.ok();
     }
 
     #[tokio::test]
     async fn compute_sha256_works() {
-        let dir = std::env::temp_dir().join("haruspex_test_sha256");
-        fs::create_dir_all(&dir).await.unwrap();
+        let dir = temp_dir("sha256");
 
         let file = dir.join("test.bin");
         fs::write(&file, b"hello world").await.unwrap();
@@ -2493,8 +2487,6 @@ mod tests {
             hash,
             "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
         );
-
-        fs::remove_dir_all(&dir).await.ok();
     }
 
     #[test]

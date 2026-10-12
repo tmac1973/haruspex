@@ -110,11 +110,9 @@ async function waitForCompletion(sessionId: number, before: number): Promise<boo
 	const deadline = Date.now() + INTERRUPT_MAX_MS;
 	for (;;) {
 		await sleep(INTERRUPT_POLL_MS);
-		try {
-			if ((await completedTotal(sessionId)) > before) return true;
-		} catch {
-			return false;
-		}
+		// A session that closes while we wait throws: the caller reports that,
+		// rather than a program ignoring the signal.
+		if ((await completedTotal(sessionId)) > before) return true;
 		if (Date.now() >= deadline) return false;
 	}
 }

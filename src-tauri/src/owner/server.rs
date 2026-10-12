@@ -836,6 +836,7 @@ mod tests {
         trust: Arc<Trust>,
         running: Running,
         http: reqwest::Client,
+        _web: crate::test_util::TestDir,
     }
 
     async fn serve() -> Harness {
@@ -848,7 +849,7 @@ mod tests {
         let clients = Arc::new(Clients::in_memory());
         let pairing = Arc::new(PairingCodes::default());
         let trust = Arc::new(Trust::default());
-        let web = std::env::temp_dir().join(format!("owner-web-{}", std::process::id()));
+        let web = crate::test_util::temp_dir("owner_web");
         std::fs::create_dir_all(web.join("assets")).unwrap();
         std::fs::write(web.join("index.html"), "<!doctype html><title>web</title>").unwrap();
         std::fs::write(web.join("assets/app-1.js"), "console.log(1)").unwrap();
@@ -857,7 +858,7 @@ mod tests {
             images: Arc::new(StubImages),
             clients: clients.clone(),
             pairing: pairing.clone(),
-            web_root: Some(web),
+            web_root: Some(web.to_path_buf()),
             trust: trust.clone(),
         };
         let running = start(services, 0, false, test_tls()).await.unwrap();
@@ -874,6 +875,7 @@ mod tests {
                 .danger_accept_invalid_certs(true)
                 .build()
                 .unwrap(),
+            _web: web,
         }
     }
 

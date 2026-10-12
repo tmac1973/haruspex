@@ -11,13 +11,13 @@
 	import SlashMenu from '#lib/components/SlashMenu.svelte';
 	import ScreenCaptureButton from '#lib/components/ScreenCaptureButton.svelte';
 	import { messageText } from '#lib/api.ts';
-	import { InputHistory, placeCaret, sentHistory } from '#lib/inputHistory.ts';
+	import { InputHistory, placeCaret, recallInto, sentHistory } from '#lib/inputHistory.ts';
 	import { isWatchNotification } from '#lib/shell/backgroundWatch.ts';
 	import { runSlash, type SlashHost } from '#lib/slash/slash.ts';
 	import { typedText } from '#lib/skills/content.ts';
 	import type { CodeSession } from '#lib/stores/code.svelte.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
-	import { imageFileToDataUrl, imageFilesFrom } from '#lib/utils/image.ts';
+	import { createPendingImages } from '#lib/utils/pendingImages.svelte.ts';
 	import { imageDropTarget } from '#lib/utils/imageDrop.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
@@ -26,8 +26,7 @@
 	let text = $state('');
 	let el = $state<HTMLTextAreaElement | null>(null);
 	let slashMenu = $state<SlashMenu>();
-	let images = $state<{ id: number; url: string }[]>([]);
-	let imgSeq = 0;
+	const images = createPendingImages();
 	let dragOver = $state(false);
 
 	const busy = $derived(session.busy);
@@ -35,7 +34,7 @@
 	const blocked = $derived(session.folderMissing ? `Folder not found: ${session.root}` : null);
 
 	// Unsent input moves with the session to another window.
-	onMount(() => session.setDraftReader(() => ({ text, images: images.map((i) => i.url) })));
+	onMount(() => session.setDraftReader(() => ({ text, images: images.urls })));
 
 	// A turn that ended with steering it never delivered hands it back, as
 	// does one stopped before it started (with its images).
@@ -45,7 +44,7 @@
 			const back = session.takeReturnedSteering();
 			text = [...back, text].filter((t) => t.trim()).join('\n\n');
 			const imgs = session.takeReturnedImages();
-			if (imgs.length) images = [...imgs.map((url) => ({ id: imgSeq++, url })), ...images];
+			if (imgs.length) images.prepend(imgs);
 		});
 		void tick().then(autosize);
 	});
@@ -57,7 +56,7 @@
 			const p = session.takePrefill();
 			if (!p) return;
 			if (p.text) text = p.text;
-			if (p.images.length) images = p.images.map((url) => ({ id: imgSeq++, url }));
+			if (p.images.length) images.set(p.images);
 		});
 		void tick().then(() => {
 			autosize();
@@ -74,7 +73,7 @@
 
 	async function send(raw: string) {
 		if (blocked) return;
-		const urls = images.map((i) => i.url);
+		const urls = images.urls;
 		if (!raw.trim() && urls.length === 0) return;
 		if (busy) {
 			// Steering: text only, and no slash commands mid-turn.
@@ -96,7 +95,7 @@
 		autosize();
 		history.reset();
 		if (slash.kind === 'handled') return;
-		images = [];
+		images.clear();
 		await session.send(raw, { images: urls, skill: slash.skill });
 	}
 
@@ -110,20 +109,11 @@
 
 	function onKeydown(event: KeyboardEvent) {
 		if (!busy && slashMenu?.handleKey(event)) return;
-		if (el) {
-			const recall = history.key(event, el);
-			if (recall) {
-				event.preventDefault();
-				text = recall.text;
-				slashMenu?.dismiss(recall.text);
-				const target = el;
-				void tick().then(() => {
-					autosize();
-					placeCaret(target, recall.caret);
-				});
-				return;
-			}
-		}
+		const show = (recalled: string) => {
+			text = recalled;
+			slashMenu?.dismiss(recalled);
+		};
+		if (recallInto(history, event, el, show, autosize)) return;
 		if (event.key === 'Enter' && !event.shiftKey) {
 			event.preventDefault();
 			void send(text);
@@ -132,47 +122,23 @@
 			session.stop();
 		}
 	}
-
-	async function addFiles(files: File[]) {
-		for (const f of files) {
-			try {
-				images = [...images, { id: imgSeq++, url: await imageFileToDataUrl(f) }];
-			} catch (e) {
-				showToast(`Couldn't attach that image: ${errMessage(e)}`, { kind: 'error' });
-			}
-		}
-	}
-
-	function addUrls(urls: string[]) {
-		images = [...images, ...urls.map((url) => ({ id: imgSeq++, url }))];
-	}
-
-	function onPaste(e: ClipboardEvent) {
-		const files = imageFilesFrom(e.clipboardData);
-		if (files.length) {
-			e.preventDefault();
-			void addFiles(files);
-		}
-	}
 </script>
 
 <footer
 	class="composer"
 	class:drag-over={dragOver}
 	use:imageDropTarget={{
-		onImages: addUrls,
+		onImages: images.addUrls,
 		onDragChange: (over) => (dragOver = over)
 	}}
 >
 	{#if images.length}
 		<div class="attachments">
-			{#each images as img (img.id)}
+			{#each images.items as img (img.id)}
 				<div class="attachment">
 					<img src={img.url} alt="attachment" />
-					<button
-						class="remove"
-						title="Remove image"
-						onclick={() => (images = images.filter((i) => i.id !== img.id))}>×</button
+					<button class="remove" title="Remove image" onclick={() => images.remove(img.id)}
+						>×</button
 					>
 				</div>
 			{/each}
@@ -196,7 +162,7 @@
 		bind:value={text}
 		oninput={autosize}
 		onkeydown={onKeydown}
-		onpaste={onPaste}
+		onpaste={images.onPaste}
 		rows="1"
 		aria-label="Message"
 		disabled={!!blocked && !busy}
@@ -207,7 +173,7 @@
 				? 'Steer the agent… (Enter queues it for its next step)'
 				: 'Ask for a change… (Enter to send, / for commands)'}></textarea>
 	{#if !blocked}
-		<ScreenCaptureButton onCapture={(url) => addUrls([url])} />
+		<ScreenCaptureButton onCapture={(url) => images.addUrls([url])} />
 		<MicButton onTranscription={(t) => send(t)} />
 	{/if}
 	{#if busy}

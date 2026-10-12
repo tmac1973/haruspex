@@ -9,6 +9,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { PROJECT_READ_TOOLS } from '#lib/agent/jobs/readTools.ts';
 import { createJob } from '#lib/stores/jobs.svelte.ts';
 import { modelColumnsOf } from '#lib/agent/jobs/chainModel.ts';
 import { normalizeAbort, errMessage } from '#lib/utils/error.ts';
@@ -83,9 +84,6 @@ import type {
 	SheetOutcome
 } from '#lib/agent/jobs/types/asset-generation/types.ts';
 import { pngDataUrl as dataUrl } from '#lib/utils/base64.ts';
-
-/** Read-only: the derivation grounds itself in the project, it does not edit it. */
-const DERIVE_TOOLS = ['fs_read_text', 'fs_list_dir', 'code_grep', 'code_glob'];
 
 /** One retry with the problems quoted, then the stage fails honestly. */
 const MAX_DERIVE_ATTEMPTS = 2;
@@ -559,7 +557,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 					visionSupported: ctx.visionSupported(),
 					maxIterations: 40,
 					systemPrompt: specDerivationPrompt(cfg.description, specPath),
-					toolAllowlist: [...DERIVE_TOOLS, SUBMIT_ASSET_SPEC_TOOL],
+					toolAllowlist: [...PROJECT_READ_TOOLS, SUBMIT_ASSET_SPEC_TOOL],
 					forceFinalTool: SUBMIT_ASSET_SPEC_TOOL,
 					...base,
 					onToolStart: (call: ResolvedToolCall) => {

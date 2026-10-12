@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
 const mocks = vi.hoisted(() => ({
 	invoke: vi.fn(),
@@ -14,15 +15,9 @@ vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
 	logDebug: mocks.logDebug
 }));
 
-const ctx = {
-	workingDir: '/tmp/work',
-	pendingImages: [],
-	deepResearch: false,
-	shellMode: false,
-	codeMode: false,
-	codeAutoApprove: false,
-	filesWrittenThisTurn: new Set<string>()
-};
+const ctx = makeToolContext({
+	workingDir: '/tmp/work'
+});
 
 beforeEach(() => {
 	mocks.invoke.mockReset();

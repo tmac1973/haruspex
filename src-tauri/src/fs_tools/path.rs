@@ -646,6 +646,7 @@ pub async fn fs_find_available_path(workdir: String, rel_path: String) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::temp_dir;
     use std::fs;
     use std::path::PathBuf;
 
@@ -687,7 +688,7 @@ mod tests {
         // A file longer than DEFAULT_READ_LINES and MAX_READ_OUTPUT_BYTES must
         // come back byte-identical — this is the runner's read-modify-write
         // path, where a truncated read rewritten to disk destroys the tail.
-        let dir = make_temp_dir("read_full");
+        let dir = temp_dir("read_full");
         let body = (1..=3000)
             .map(|n| format!("entry {n}: {}", "x".repeat(100)))
             .collect::<Vec<_>>()
@@ -700,7 +701,6 @@ mod tests {
             .block_on(read_text_full_at(&file))
             .unwrap();
         assert_eq!(out, body);
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -715,13 +715,6 @@ mod tests {
         assert!(err.contains("past the end"), "got: {err}");
     }
 
-    fn make_temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("haruspex_fs_test_{}", name));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
     /// Shared workdir setup for the fs_find_available_path tests — we
     /// build a temp dir, synchronously seed it with existing files, and
     /// return the path. Each test does its own fs_find_available_path
@@ -730,43 +723,39 @@ mod tests {
     where
         F: FnOnce(PathBuf),
     {
-        let dir = make_temp_dir(name);
+        let dir = temp_dir(name);
         for seed_name in seed {
             fs::write(dir.join(seed_name), b"").unwrap();
         }
         f(dir.clone());
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn resolves_simple_relative_path() {
-        let dir = make_temp_dir("simple");
+        let dir = temp_dir("simple");
         fs::write(dir.join("hello.txt"), "hi").unwrap();
         let result = resolve_in_workdir(&dir, "hello.txt").unwrap();
         assert!(result.ends_with("hello.txt"));
         assert!(result.starts_with(dir.canonicalize().unwrap()));
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn refuse_if_exists_blocks_existing_file_when_overwrite_false() {
-        let dir = make_temp_dir("refuse_block");
+        let dir = temp_dir("refuse_block");
         fs::write(dir.join("report.pdf"), b"old").unwrap();
         let resolved = resolve_in_workdir(&dir, "report.pdf").unwrap();
         assert!(refuse_if_exists(&resolved, None, "report.pdf").is_err());
         assert!(refuse_if_exists(&resolved, Some(false), "report.pdf").is_err());
         assert!(refuse_if_exists(&resolved, Some(true), "report.pdf").is_ok());
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn refuse_if_exists_allows_nonexistent_file() {
-        let dir = make_temp_dir("refuse_allow");
+        let dir = temp_dir("refuse_allow");
         let resolved = resolve_in_workdir(&dir, "new.pdf").unwrap();
         assert!(refuse_if_exists(&resolved, None, "new.pdf").is_ok());
         assert!(refuse_if_exists(&resolved, Some(false), "new.pdf").is_ok());
         assert!(refuse_if_exists(&resolved, Some(true), "new.pdf").is_ok());
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -852,90 +841,81 @@ mod tests {
 
     #[test]
     fn resolves_nested_path() {
-        let dir = make_temp_dir("nested");
+        let dir = temp_dir("nested");
         fs::create_dir_all(dir.join("sub")).unwrap();
         fs::write(dir.join("sub/file.txt"), "x").unwrap();
         let result = resolve_in_workdir(&dir, "sub/file.txt").unwrap();
         assert!(result.ends_with("file.txt"));
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn resolves_nonexistent_file_for_write() {
-        let dir = make_temp_dir("write");
+        let dir = temp_dir("write");
         let result = resolve_in_workdir(&dir, "new_file.txt").unwrap();
         assert!(result.ends_with("new_file.txt"));
         assert!(result.starts_with(dir.canonicalize().unwrap()));
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn rejects_parent_dir_escape() {
-        let dir = make_temp_dir("escape");
+        let dir = temp_dir("escape");
         let result = resolve_in_workdir(&dir, "../escaped.txt");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("escapes"));
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn rejects_deep_parent_dir_escape() {
-        let dir = make_temp_dir("deep_escape");
+        let dir = temp_dir("deep_escape");
         let result = resolve_in_workdir(&dir, "sub/../../escaped.txt");
         assert!(result.is_err());
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn rejects_absolute_path_outside() {
-        let dir = make_temp_dir("abs");
+        let dir = temp_dir("abs");
         let result = resolve_in_workdir(&dir, "/etc/passwd");
         assert!(result.is_err());
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn resolves_nonexistent_parent_for_write() {
         // "output/report.pdf" with no output/ dir yet must resolve — the
         // write itself creates the directory via write_bytes_to_workdir.
-        let dir = make_temp_dir("nonparent");
+        let dir = temp_dir("nonparent");
         let result = resolve_in_workdir(&dir, "output/report.pdf").unwrap();
         assert!(result.starts_with(dir.canonicalize().unwrap()));
         assert!(result.ends_with("output/report.pdf"));
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn resolves_deep_nonexistent_tail_for_write() {
-        let dir = make_temp_dir("deep_tail");
+        let dir = temp_dir("deep_tail");
         let result = resolve_in_workdir(&dir, "a/b/c/f.txt").unwrap();
         assert!(result.starts_with(dir.canonicalize().unwrap()));
         assert!(result.ends_with("a/b/c/f.txt"));
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn rejects_dotdot_in_nonexistent_tail() {
         // Lexical `..` traversal inside a not-yet-existing tail must not
         // be smuggled past the canonicalize-based escape check.
-        let dir = make_temp_dir("tail_dotdot");
+        let dir = temp_dir("tail_dotdot");
         let result = resolve_in_workdir(&dir, "nope/../../escape.txt");
         assert!(result.is_err());
         let result = resolve_in_workdir(&dir, "nope/../inside.txt");
         assert!(result.is_err());
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[tokio::test]
     async fn write_replaces_an_existing_file_exactly() {
-        let dir = make_temp_dir("write_replaces");
+        let dir = temp_dir("write_replaces");
         let resolved = resolve_in_workdir(&dir, "a.txt").unwrap();
         write_bytes_to_workdir(&resolved, b"old contents")
             .await
             .unwrap();
         write_bytes_to_workdir(&resolved, b"new").await.unwrap();
         assert_eq!(fs::read(dir.join("a.txt")).unwrap(), b"new");
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[tokio::test]
@@ -950,7 +930,7 @@ mod tests {
         // What it does pin down: the failure path cleans up its staged temp and
         // leaves unrelated files alone. The atomicity itself rests on rename(2)
         // being atomic within a filesystem, which is why the temp is a sibling.
-        let dir = make_temp_dir("write_atomic_fail");
+        let dir = temp_dir("write_atomic_fail");
         let good = dir.join("keep.txt");
         fs::write(&good, b"precious").unwrap();
 
@@ -968,21 +948,19 @@ mod tests {
             !has_staged_tmp(&dir),
             "temp file must be cleaned up on failure"
         );
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[tokio::test]
     async fn successful_write_leaves_no_temp_file_behind() {
-        let dir = make_temp_dir("write_atomic_clean");
+        let dir = temp_dir("write_atomic_clean");
         let resolved = resolve_in_workdir(&dir, "out.txt").unwrap();
         write_bytes_to_workdir(&resolved, b"content").await.unwrap();
         assert!(!has_staged_tmp(&dir));
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[tokio::test]
     async fn concurrent_writes_to_different_paths_do_not_collide() {
-        let dir = make_temp_dir("write_atomic_concurrent");
+        let dir = temp_dir("write_atomic_concurrent");
         let a = resolve_in_workdir(&dir, "a.txt").unwrap();
         let b = resolve_in_workdir(&dir, "b.txt").unwrap();
         let (ra, rb) = tokio::join!(
@@ -994,14 +972,13 @@ mod tests {
         assert_eq!(fs::read(dir.join("a.txt")).unwrap(), b"aaa");
         assert_eq!(fs::read(dir.join("b.txt")).unwrap(), b"bbb");
         assert!(!has_staged_tmp(&dir));
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[tokio::test]
     async fn staged_temp_files_are_hidden_from_directory_listings() {
         // A write in flight must never be reported as user content — not even
         // by the absolute listing, which deliberately shows dotfiles.
-        let dir = make_temp_dir("write_atomic_listing");
+        let dir = temp_dir("write_atomic_listing");
         fs::write(dir.join(".haruspex-out.txt-7.tmp"), b"staged").unwrap();
         fs::write(dir.join(".sshconfig"), b"real dotfile").unwrap();
         let (entries, _) = collect_dir_entries(&dir, true).await.unwrap();
@@ -1011,7 +988,6 @@ mod tests {
             names.contains(&".sshconfig"),
             "real dotfiles must still show"
         );
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[tokio::test]
@@ -1019,7 +995,7 @@ mod tests {
         // rename(2) only needs write permission on the directory, so without an
         // explicit guard the atomic path would replace a read-only file that a
         // direct fs::write refuses. Preserve the refusal.
-        let dir = make_temp_dir("write_atomic_readonly");
+        let dir = temp_dir("write_atomic_readonly");
         let target = dir.join("locked.txt");
         fs::write(&target, b"precious").unwrap();
         let mut perms = fs::metadata(&target).unwrap().permissions();
@@ -1038,7 +1014,6 @@ mod tests {
         // Removing a read-only file needs write permission on the DIRECTORY,
         // which we have — no need to clear the bit first (and clearing it via
         // set_readonly(false) would chmod 0o777 on Unix).
-        fs::remove_dir_all(&dir).ok();
     }
 
     /// A full disk mid-write: nothing under the real name, no staged temp, and
@@ -1077,17 +1052,16 @@ mod tests {
 
     #[tokio::test]
     async fn write_bytes_creates_missing_parent_dirs() {
-        let dir = make_temp_dir("write_creates_dirs");
+        let dir = temp_dir("write_creates_dirs");
         let resolved = resolve_in_workdir(&dir, "output/report.txt").unwrap();
         write_bytes_to_workdir(&resolved, b"hello").await.unwrap();
         assert_eq!(fs::read(dir.join("output/report.txt")).unwrap(), b"hello");
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn workdir_path_for_write_creates_missing_workdir() {
-        let dir = std::env::temp_dir().join("haruspex_fs_test_missing_wd");
-        let _ = fs::remove_dir_all(&dir);
+        let root = temp_dir("missing_wd");
+        let dir = root.join("wd");
         assert!(!dir.exists());
         let result = workdir_path_for_write(&dir.to_string_lossy()).unwrap();
         assert!(result.is_dir());
@@ -1098,33 +1072,28 @@ mod tests {
 
     #[test]
     fn empty_path_returns_workdir() {
-        let dir = make_temp_dir("empty");
+        let dir = temp_dir("empty");
         let result = resolve_in_workdir(&dir, "").unwrap();
         assert_eq!(result, dir.canonicalize().unwrap());
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn dot_path_returns_workdir() {
-        let dir = make_temp_dir("dot");
+        let dir = temp_dir("dot");
         let result = resolve_in_workdir(&dir, ".").unwrap();
         assert_eq!(result, dir.canonicalize().unwrap());
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[cfg(unix)]
     #[test]
     fn rejects_symlink_escape() {
         use std::os::unix::fs::symlink;
-        let dir = make_temp_dir("symlink");
-        let outside = std::env::temp_dir().join("haruspex_fs_test_outside");
-        fs::create_dir_all(&outside).unwrap();
+        let dir = temp_dir("symlink");
+        let outside = temp_dir("outside");
         fs::write(outside.join("secret.txt"), "secret").unwrap();
         symlink(&outside, dir.join("link")).unwrap();
         let result = resolve_in_workdir(&dir, "link/secret.txt");
         assert!(result.is_err(), "symlink escape was not caught");
-        fs::remove_dir_all(&dir).ok();
-        fs::remove_dir_all(&outside).ok();
     }
 
     #[cfg(unix)]
@@ -1133,9 +1102,8 @@ mod tests {
         // A symlinked EXISTING ancestor pointing outside the workdir must
         // still be rejected when the tail doesn't exist yet (write path).
         use std::os::unix::fs::symlink;
-        let dir = make_temp_dir("symlink_tail");
-        let outside = std::env::temp_dir().join("haruspex_fs_test_outside_tail");
-        fs::create_dir_all(&outside).unwrap();
+        let dir = temp_dir("symlink_tail");
+        let outside = temp_dir("outside_tail");
         symlink(&outside, dir.join("link")).unwrap();
         let result = resolve_in_workdir(&dir, "link/new_file.txt");
         assert!(result.is_err(), "symlinked-ancestor escape was not caught");
@@ -1144,7 +1112,5 @@ mod tests {
             result.is_err(),
             "deep symlinked-ancestor escape was not caught"
         );
-        fs::remove_dir_all(&dir).ok();
-        fs::remove_dir_all(&outside).ok();
     }
 }
