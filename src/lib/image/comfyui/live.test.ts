@@ -34,7 +34,7 @@ const liveQwen = LIVE && BACKEND_URL && QWEN21_MODEL ? it : it.skip;
 function chunks(png: Uint8Array): Array<{ type: string; data: Uint8Array }> {
 	const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
 	const out: Array<{ type: string; data: Uint8Array }> = [];
-	for (let pos = 8; pos < png.length; ) {
+	for (let pos = 8; pos < png.length;) {
 		const len = view.getUint32(pos);
 		out.push({
 			type: String.fromCharCode(...png.slice(pos + 4, pos + 8)),

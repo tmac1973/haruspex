@@ -101,13 +101,7 @@ export interface SessionListItem {
 }
 
 export type PromptKind =
-	| 'command'
-	| 'question'
-	| 'sandbox'
-	| 'memory'
-	| 'mcp'
-	| 'skill'
-	| 'repo-trust';
+	'command' | 'question' | 'sandbox' | 'memory' | 'mcp' | 'skill' | 'repo-trust';
 
 /** Something a turn is waiting on a person for. */
 export interface Prompt {
@@ -152,8 +146,7 @@ export type SessionEvent = { seq: number; sessionId: string } & (
 
 /** A window's prompts changed. `seq` counts per window. */
 export type PromptEvent = { seq: number; sessionId: string | null } & (
-	| { type: 'prompt'; prompt: Prompt }
-	| { type: 'prompt-cleared'; promptId: string }
+	{ type: 'prompt'; prompt: Prompt } | { type: 'prompt-cleared'; promptId: string }
 );
 
 /** One row of `chats.list`. */
@@ -192,8 +185,7 @@ export interface ChatState {
  * `seq` counts per chat, as for sessions.
  */
 export type ChatEvent = { seq: number; chatId: string } & (
-	| { type: 'chat-snapshot'; state: ChatState }
-	| { type: 'chat-update'; patch: Partial<ChatState> }
+	{ type: 'chat-snapshot'; state: ChatState } | { type: 'chat-update'; patch: Partial<ChatState> }
 );
 
 export type EngineEvent = (SessionEvent | PromptEvent | ChatEvent) & {

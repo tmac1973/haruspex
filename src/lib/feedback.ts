@@ -31,14 +31,7 @@ const ISSUE_URL_BASE = `https://github.com/${REPO}/issues/new`;
 const TEMPLATE = 'feedback.yml';
 
 type FailureKey =
-	| 'http'
-	| 'rate_limited'
-	| 'parse'
-	| 'empty'
-	| 'irrelevant'
-	| 'network'
-	| 'timeout'
-	| 'other';
+	'http' | 'rate_limited' | 'parse' | 'empty' | 'irrelevant' | 'network' | 'timeout' | 'other';
 const FAILURE_KEYS: FailureKey[] = [
 	'http',
 	'rate_limited',

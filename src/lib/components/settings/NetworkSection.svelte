@@ -78,8 +78,7 @@
 			value={bypass}
 			oninput={(e) => setBypass(e.currentTarget.value)}
 			onblur={saveBypass}
-			placeholder={proxyBypassPlaceholder}
-		></textarea>
+			placeholder={proxyBypassPlaceholder}></textarea>
 		<p class="hint" title="Hostnames match the host and any subdomain.">
 			Reached directly, never through the proxy. One per line: hostname, IP, or CIDR subnet.
 			<code>localhost</code> is always on this list.

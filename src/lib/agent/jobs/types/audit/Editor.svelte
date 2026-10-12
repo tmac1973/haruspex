@@ -46,8 +46,7 @@
 		value={steps[0]?.prompt ?? ''}
 		oninput={(e) => updatePrompt((e.currentTarget as HTMLTextAreaElement).value)}
 		placeholder="e.g. Find every instance of duplicated logic in this codebase. Anchor each finding to a file and line range, with a short explanation."
-		rows="4"
-	></textarea>
+		rows="4"></textarea>
 </div>
 
 <div class="audit-grid">
