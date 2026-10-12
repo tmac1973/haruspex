@@ -5,6 +5,7 @@
 	 * own `SearchStep`, without the sandbox's run controls (the sandbox runs on
 	 * the computer).
 	 */
+	import { followBottom } from '#lib/utils/followBottom.ts';
 	import type { SearchStep as Step } from '#lib/agent/loop.ts';
 	import SearchStep from '#lib/components/SearchStep.svelte';
 	import StopIndicator from '#lib/components/StopIndicator.svelte';
@@ -30,21 +31,12 @@
 	);
 	const steps = (i: number) => (chat.messageSteps[i] ?? []) as Step[];
 	const stopAt = (i: number) => chat.messageStops[i] as string | undefined;
-
-	let thread = $state<HTMLDivElement | null>(null);
-	let follow = true;
-	function onScroll(): void {
-		if (thread) follow = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 48;
-	}
-	$effect(() => {
-		void chat.messages.length;
-		void chat.streamingContent;
-		void chat.searchSteps.length;
-		if (thread && follow) queueMicrotask(() => thread && (thread.scrollTop = thread.scrollHeight));
-	});
 </script>
 
-<div class="thread" bind:this={thread} onscroll={onScroll}>
+<div
+	class="thread"
+	use:followBottom={[chat.messages.length, chat.streamingContent, chat.searchSteps.length]}
+>
 	{#each shown as { msg, i } (i)}
 		{#if isSummaryMessage(msg)}
 			<details class="summary" data-testid="chat-summary">

@@ -5,6 +5,8 @@
 	 * flight (its steps, its text so far, and anything queued to steer it).
 	 * Steps are the desktop's own `CodeSteps`, without file links.
 	 */
+	import { followBottom } from '#lib/utils/followBottom.ts';
+	import { codePathFromClick } from '#lib/markdown.ts';
 	import type { SearchStep } from '#lib/agent/loop.ts';
 	import CodeSteps from '#lib/components/code/CodeSteps.svelte';
 	import StopIndicator from '#lib/components/StopIndicator.svelte';
@@ -30,14 +32,8 @@
 	 * `data-line`); markdown can't hold handlers, so they are caught here.
 	 */
 	function onThreadClick(event: MouseEvent): void {
-		const btn = (event.target as HTMLElement | null)?.closest<HTMLElement>(
-			'button[data-action="code-path"]'
-		);
-		const path = btn?.dataset.path;
-		if (!path) return;
-		event.preventDefault();
-		const line = Number(btn.dataset.line);
-		onopenfile(path, Number.isFinite(line) && line > 0 ? line : null);
+		const target = codePathFromClick(event);
+		if (target) onopenfile(target.path, target.line);
 	}
 
 	/** Only what a person reads: tool-call rounds show as their steps instead. */
@@ -52,22 +48,14 @@
 		session.compaction ? shown.find(({ i }) => i >= session.compaction!.at)?.i : undefined
 	);
 	const stopAt = (i: number) => session.messageStops[i] as string | undefined;
-
-	let thread = $state<HTMLDivElement | null>(null);
-	let follow = true;
-	function onScroll(): void {
-		if (thread) follow = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 48;
-	}
-	$effect(() => {
-		void session.messages.length;
-		void session.streamingContent;
-		void session.searchSteps.length;
-		if (thread && follow) queueMicrotask(() => thread && (thread.scrollTop = thread.scrollHeight));
-	});
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div class="thread" bind:this={thread} onscroll={onScroll} onclick={onThreadClick}>
+<div
+	class="thread"
+	use:followBottom={[session.messages.length, session.streamingContent, session.searchSteps.length]}
+	onclick={onThreadClick}
+>
 	{#each shown as { msg, i } (i)}
 		{#if i === cutAt && session.compaction}
 			<details class="summary" data-testid="compaction">

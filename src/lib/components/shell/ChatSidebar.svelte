@@ -1,7 +1,8 @@
 <script lang="ts">
+	import { startDragResize } from '#lib/utils/dragResize.ts';
 	import { isWatchNotification, watchNotificationCommands } from '#lib/shell/backgroundWatch.ts';
 	import AgentsMdBadge from '#lib/components/shell/AgentsMdBadge.svelte';
-	import { onDestroy, onMount, tick, untrack } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
 	import StopIndicator from '#lib/components/StopIndicator.svelte';
 	import { imageDropTarget } from '#lib/utils/imageDrop.ts';
@@ -14,11 +15,11 @@
 		type MessageContentPart
 	} from '#lib/api.ts';
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
-	import { imageFileToDataUrl, imageFilesFrom } from '#lib/utils/image.ts';
+	import { createPendingImages } from '#lib/utils/pendingImages.svelte.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import SlashMenu from '#lib/components/SlashMenu.svelte';
 	import { runSlash, type SlashHost } from '#lib/slash/slash.ts';
-	import { InputHistory, placeCaret, sentHistory } from '#lib/inputHistory.ts';
+	import { InputHistory, recallInto, sentHistory } from '#lib/inputHistory.ts';
 	import { typedText } from '#lib/skills/content.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import WindowCaptureButton from '#lib/components/WindowCaptureButton.svelte';
@@ -167,41 +168,12 @@
 
 	let composerText = $state('');
 	let composerEl = $state<HTMLTextAreaElement | null>(null);
-	let pendingImages = $state<{ id: number; url: string }[]>([]);
-	let imgSeq = 0;
+	const pendingImages = createPendingImages();
 	let dragOver = $state(false);
-
-	async function addImageFiles(files: File[]) {
-		for (const f of files) {
-			try {
-				const url = await imageFileToDataUrl(f);
-				pendingImages = [...pendingImages, { id: imgSeq++, url }];
-			} catch (e) {
-				console.error('image attach failed', e);
-			}
-		}
-	}
-
-	function removeImage(id: number) {
-		pendingImages = pendingImages.filter((p) => p.id !== id);
-	}
-
-	function onComposerPaste(e: ClipboardEvent) {
-		const files = imageFilesFrom(e.clipboardData);
-		if (files.length) {
-			e.preventDefault();
-			void addImageFiles(files);
-		}
-	}
-
-	/** Attach already-encoded image data URLs (from a native file drop). */
-	function addImageUrls(urls: string[]) {
-		pendingImages = [...pendingImages, ...urls.map((url) => ({ id: imgSeq++, url }))];
-	}
 
 	/** The camera button's picture goes out at once, with whatever was typed. */
 	async function sendCapture(url: string) {
-		addImageUrls([url]);
+		pendingImages.addUrls([url]);
 		await doSend(captureMessage(composerText));
 	}
 
@@ -225,7 +197,7 @@
 
 	/** Single send path (button, Enter, voice) — folds in attached images. */
 	async function doSend(text: string) {
-		const images = pendingImages.map((p) => p.url);
+		const images = pendingImages.urls;
 		if ((!text.trim() && images.length === 0) || submitting) return;
 		let slash;
 		try {
@@ -238,7 +210,7 @@
 		autosize();
 		history.reset();
 		if (slash.kind === 'handled') return;
-		pendingImages = [];
+		pendingImages.clear();
 		await session.submitChatMessage(text, images, slash.skill);
 	}
 	let threadEl = $state<HTMLDivElement | null>(null);
@@ -254,26 +226,14 @@
 	let sidebarWidth = $state(Math.min(getSettings().shellSidebarWidth, maxWidth()));
 
 	function startResize(event: MouseEvent) {
-		event.preventDefault();
-		const startX = event.clientX;
-		const startWidth = sidebarWidth;
-		document.body.style.cursor = 'col-resize';
-		document.body.style.userSelect = 'none';
-
-		function onMove(e: MouseEvent) {
-			// Sidebar is on the right; dragging the handle left widens it.
-			const delta = startX - e.clientX;
-			sidebarWidth = Math.max(MIN_WIDTH, Math.min(maxWidth(), startWidth + delta));
-		}
-		function onUp() {
-			window.removeEventListener('mousemove', onMove);
-			window.removeEventListener('mouseup', onUp);
-			document.body.style.cursor = '';
-			document.body.style.userSelect = '';
-			updateSettings({ shellSidebarWidth: sidebarWidth });
-		}
-		window.addEventListener('mousemove', onMove);
-		window.addEventListener('mouseup', onUp);
+		// The sidebar is on the right: dragging its handle left widens it.
+		startDragResize(event, {
+			width: sidebarWidth,
+			widens: 'left',
+			clamp: (w) => Math.max(MIN_WIDTH, Math.min(maxWidth(), w)),
+			onResize: (w) => (sidebarWidth = w),
+			onDone: (w) => updateSettings({ shellSidebarWidth: w })
+		});
 	}
 
 	// Throttle streaming renders (the ChatView pattern, ported): re-parsing
@@ -350,24 +310,13 @@
 		)
 	);
 
-	/** True when Up or Down recalled a question into the box. */
-	function recallHistory(event: KeyboardEvent): boolean {
-		const el = composerEl;
-		const recall = el && history.key(event, el);
-		if (!el || !recall) return false;
-		event.preventDefault();
-		composerText = recall.text;
-		slashMenu?.dismiss(recall.text);
-		void tick().then(() => {
-			autosize();
-			placeCaret(el, recall.caret);
-		});
-		return true;
-	}
-
 	function onComposerKeydown(event: KeyboardEvent) {
 		if (slashMenu?.handleKey(event)) return;
-		if (recallHistory(event)) return;
+		const show = (text: string) => {
+			composerText = text;
+			slashMenu?.dismiss(text);
+		};
+		if (recallInto(history, event, composerEl, show, autosize)) return;
 		if (event.key === 'Enter' && !event.shiftKey) {
 			event.preventDefault();
 			void handleSend();
@@ -576,15 +525,20 @@
 		<footer
 			class="composer"
 			class:drag-over={dragOver}
-			use:imageDropTarget={{ onImages: addImageUrls, onDragChange: (over) => (dragOver = over) }}
+			use:imageDropTarget={{
+				onImages: pendingImages.addUrls,
+				onDragChange: (over) => (dragOver = over)
+			}}
 		>
 			{#if pendingImages.length}
 				<div class="attachments">
-					{#each pendingImages as img (img.id)}
+					{#each pendingImages.items as img (img.id)}
 						<div class="attachment">
 							<img src={img.url} alt="attachment" />
-							<button class="remove" title="Remove image" onclick={() => removeImage(img.id)}
-								>×</button
+							<button
+								class="remove"
+								title="Remove image"
+								onclick={() => pendingImages.remove(img.id)}>×</button
 							>
 						</div>
 					{/each}
@@ -605,7 +559,7 @@
 				bind:value={composerText}
 				oninput={onComposerInput}
 				onkeydown={onComposerKeydown}
-				onpaste={onComposerPaste}
+				onpaste={pendingImages.onPaste}
 				onfocus={() => session.setComposerFocused(true)}
 				onblur={() => session.setComposerFocused(false)}
 				placeholder="Ask the assistant… (Enter to send; drop or paste an image to attach)"

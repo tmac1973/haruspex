@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { makeCodePathLinker } from '#lib/code/paths.ts';
 import {
+	codePathFromClick,
 	finalizeStreamText,
 	processCitations,
 	renderMarkdown,
@@ -764,5 +765,32 @@ describe('renderMarkdown code-path links', () => {
 		const html = renderMarkdown('See `src/app.ts:42` and lib/util.ts:7.');
 		expect(html).not.toContain('code-path');
 		expect(html).toContain('<code>src/app.ts:42</code>');
+	});
+});
+
+describe('codePathFromClick', () => {
+	function clickOn(html: string, selector: string) {
+		const host = document.createElement('div');
+		host.innerHTML = html;
+		const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+		Object.defineProperty(event, 'target', { value: host.querySelector(selector) });
+		return { result: codePathFromClick(event), event };
+	}
+
+	it('reads the path and line of a code-path button, from a click on its text', () => {
+		const { result, event } = clickOn(
+			'<button data-action="code-path" data-path="src/a.ts" data-line="12"><code>src/a.ts:12</code></button>',
+			'code'
+		);
+		expect(result).toEqual({ path: 'src/a.ts', line: 12 });
+		expect(event.defaultPrevented).toBe(true);
+	});
+
+	it('gives no line when the button has none, and null off a button', () => {
+		const plain = clickOn('<button data-action="code-path" data-path="b.ts">b</button>', 'button');
+		expect(plain.result).toEqual({ path: 'b.ts', line: null });
+		const off = clickOn('<p>text</p>', 'p');
+		expect(off.result).toBeNull();
+		expect(off.event.defaultPrevented).toBe(false);
 	});
 });

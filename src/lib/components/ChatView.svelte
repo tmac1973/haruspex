@@ -41,7 +41,7 @@
 	} from '#lib/stores/chat.svelte.ts';
 	import SlashMenu from '#lib/components/SlashMenu.svelte';
 	import { runSlash, type SlashHost } from '#lib/slash/slash.ts';
-	import { InputHistory, placeCaret, sentHistory } from '#lib/inputHistory.ts';
+	import { InputHistory, recallInto, sentHistory } from '#lib/inputHistory.ts';
 	import { typedText } from '#lib/skills/content.ts';
 	import { getServerState, startServer, stopServer } from '#lib/stores/llamaServer.svelte.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
@@ -55,7 +55,7 @@
 	} from '#lib/stores/settings.ts';
 	import { getDebugLogsForTurn } from '#lib/debug-log.ts';
 	import { createCopyAction } from '#lib/utils/clipboard.svelte.ts';
-	import { imageFileToDataUrl, imageFilesFrom } from '#lib/utils/image.ts';
+	import { createPendingImages } from '#lib/utils/pendingImages.svelte.ts';
 	import { openShellFromChat } from '#lib/shell/fromChat.ts';
 	import { invoke } from '@tauri-apps/api/core';
 	import type { ScreenCapture } from '#lib/ipc/gen/ScreenCapture.ts';
@@ -66,38 +66,8 @@
 	let autoScroll = $state(true);
 	let showScrollButton = $state(false);
 	// Images the user has attached (drag-drop / paste) for the next message.
-	let pendingImages = $state<{ id: number; url: string }[]>([]);
-	let imgSeq = 0;
+	const pendingImages = createPendingImages();
 	let dragOver = $state(false);
-
-	async function addImageFiles(files: File[]) {
-		for (const f of files) {
-			try {
-				const url = await imageFileToDataUrl(f);
-				pendingImages = [...pendingImages, { id: imgSeq++, url }];
-			} catch (e) {
-				console.error('image attach failed', e);
-				showToast(`Couldn't attach image: ${errMessage(e)}`, { kind: 'error' });
-			}
-		}
-	}
-
-	function removeImage(id: number) {
-		pendingImages = pendingImages.filter((p) => p.id !== id);
-	}
-
-	function onComposerPaste(e: ClipboardEvent) {
-		const files = imageFilesFrom(e.clipboardData);
-		if (files.length) {
-			e.preventDefault();
-			void addImageFiles(files);
-		}
-	}
-
-	/** Attach already-encoded image data URLs (from a native file drop). */
-	function addImageUrls(urls: string[]) {
-		pendingImages = [...pendingImages, ...urls.map((url) => ({ id: imgSeq++, url }))];
-	}
 
 	// The capture button is here whether or not the Settings toggle is on: a
 	// person pressing a button is not a permission question. The toggle decides
@@ -110,7 +80,7 @@
 		capturing = true;
 		try {
 			const capture = await invoke<ScreenCapture>('capture_screen', { target: 'screen' });
-			addImageUrls([capture.dataUrl]);
+			pendingImages.addUrls([capture.dataUrl]);
 		} catch (e) {
 			// Cancelling the desktop's own picker lands here, and is a decision
 			// rather than a fault, so it is a plain notice and not an error.
@@ -132,7 +102,7 @@
 	/** Single send path for the button, Enter, and voice — folds in any
 	 *  attached images and clears the composer. */
 	async function doSend(text: string) {
-		const images = pendingImages;
+		const images = pendingImages.urls;
 		if ((!text.trim() && images.length === 0) || isGenerating || isCompacting) return;
 		let slash;
 		try {
@@ -151,16 +121,12 @@
 		// backend is down — it resolves `false` synchronously, before running
 		// the turn), the restore below puts the text back untouched.
 		inputText = '';
-		pendingImages = [];
+		pendingImages.clear();
 		autoScroll = true;
-		const accepted = await sendMessage(
-			text,
-			images.map((p) => p.url),
-			slash.skill
-		);
+		const accepted = await sendMessage(text, images, slash.skill);
 		if (!accepted) {
 			inputText = text;
-			pendingImages = images;
+			pendingImages.set(images);
 		}
 	}
 
@@ -270,21 +236,15 @@
 		history.reset();
 	});
 
-	/** True when Up or Down recalled a message into the box. */
-	function recallHistory(e: KeyboardEvent): boolean {
-		const el = inputEl;
-		const recall = el && history.key(e, el);
-		if (!el || !recall) return false;
-		e.preventDefault();
-		inputText = recall.text;
-		slashMenu?.dismiss(recall.text);
-		void tick().then(() => placeCaret(el, recall.caret));
-		return true;
-	}
-
 	function handleKeydown(e: KeyboardEvent) {
 		if (slashMenu?.handleKey(e)) return;
-		if (recallHistory(e)) return;
+		if (
+			recallInto(history, e, inputEl, (text) => {
+				inputText = text;
+				slashMenu?.dismiss(text);
+			})
+		)
+			return;
 		if (e.key === 'Enter' && !e.shiftKey) {
 			e.preventDefault();
 			void handleSend();
@@ -646,7 +606,10 @@
 		<div
 			class="input-area"
 			class:drag-over={dragOver}
-			use:imageDropTarget={{ onImages: addImageUrls, onDragChange: (over) => (dragOver = over) }}
+			use:imageDropTarget={{
+				onImages: pendingImages.addUrls,
+				onDragChange: (over) => (dragOver = over)
+			}}
 		>
 			{#if memoryEnabledGlobally && !chatRemembered}
 				<!-- Stated in the conversation, not just on the button: a privacy
@@ -679,11 +642,13 @@
 			{/if}
 			{#if pendingImages.length}
 				<div class="attachments">
-					{#each pendingImages as img (img.id)}
+					{#each pendingImages.items as img (img.id)}
 						<div class="attachment">
 							<img src={img.url} alt="attachment" />
-							<button class="remove" title="Remove image" onclick={() => removeImage(img.id)}
-								>×</button
+							<button
+								class="remove"
+								title="Remove image"
+								onclick={() => pendingImages.remove(img.id)}>×</button
 							>
 						</div>
 					{/each}
@@ -700,7 +665,7 @@
 					bind:this={inputEl}
 					bind:value={inputText}
 					onkeydown={handleKeydown}
-					onpaste={onComposerPaste}
+					onpaste={pendingImages.onPaste}
 					placeholder={serverReady
 						? 'Type a message… (drop or paste an image to attach)'
 						: serverState.status === 'starting'
