@@ -82,17 +82,25 @@ export function checkBoundary(
 	const cmd = slashes(expandHome(command, targets.home));
 	const cmdLower = cmd.toLowerCase();
 
-	for (const { path, label } of targets.paths) {
+	const rootN = root ? slashes(root).replace(/\/+$/, '') + '/' : null;
+	const guarded = targets.paths.map(({ path, label }) => {
 		let p = slashes(path).replace(/\/+$/, '') + '/';
 		const windows = isWindowsPath(p);
 		if (windows) p = p.toLowerCase();
-		const haystack = windows ? cmdLower : cmd;
-		const rootN = root ? slashes(root).replace(/\/+$/, '') + '/' : null;
 		const r = rootN && windows ? rootN.toLowerCase() : rootN;
-		// The user may run a coding job on Haruspex's own repo: a protected
-		// directory that contains the run's root, or sits inside it, is the
-		// project itself.
-		if (r && (r.startsWith(p) || p.startsWith(r))) continue;
+		return { p, r, windows, label };
+	});
+	// The user may run a coding job on Haruspex's own repo: then the run's
+	// root lies inside a protected directory (the source tree).
+	const ownTree = guarded.some(({ p, r }) => r?.startsWith(p));
+
+	for (const { p, r, windows, label } of guarded) {
+		const haystack = windows ? cmdLower : cmd;
+		// A protected directory that contains the root is the project itself,
+		// and so is one inside the root when the root is Haruspex's own tree
+		// (its build output). A root that is merely an ancestor, such as the
+		// home directory, exempts nothing.
+		if (r && (r.startsWith(p) || (ownTree && p.startsWith(r)))) continue;
 		const bare = p.slice(0, -1);
 		if (haystack.includes(p) || new RegExp(`${escape(bare)}(?=[\\s'"]|$)`).test(haystack)) {
 			reasons.push(`touches Haruspex's ${label}`);

@@ -2,8 +2,7 @@
 
 /**
  * What the settings card needs after a sign-in. The refresh token itself
- * stays in Rust: it goes to the secret store, and only its key comes back —
- * unless no store works on this machine, the one case it is returned inline,
- * as a password would be.
+ * stays in Rust: it goes to the secret store (session memory where nothing
+ * lasting works), and only its key comes back.
  */
-export type GoogleSignIn = { email: string, password: string, passwordRef: string | null, hasCalendars: boolean, hasContacts: boolean, };
+export type GoogleSignIn = { email: string, passwordRef: string, hasCalendars: boolean, hasContacts: boolean, };

@@ -397,16 +397,14 @@ fn cached_token(refresh_token: &str) -> Option<String> {
 }
 
 /// What the settings card needs after a sign-in. The refresh token itself
-/// stays in Rust: it goes to the secret store, and only its key comes back —
-/// unless no store works on this machine, the one case it is returned inline,
-/// as a password would be.
+/// stays in Rust: it goes to the secret store (session memory where nothing
+/// lasting works), and only its key comes back.
 #[derive(Serialize, ts_rs::TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct GoogleSignIn {
     pub email: String,
-    pub password: String,
-    pub password_ref: Option<String>,
+    pub password_ref: String,
     pub has_calendars: bool,
     pub has_contacts: bool,
 }
@@ -425,16 +423,10 @@ pub async fn google_sign_in(
 ) -> Result<GoogleSignIn, String> {
     let grant = sign_in(proxy.as_ref()).await?;
     let key = super::account::secret_key(&account_id);
-    let (password, password_ref) = if crate::secrets::secret_available().await {
-        crate::secrets::secret_set(key.clone(), grant.refresh_token.clone()).await?;
-        (String::new(), Some(key))
-    } else {
-        (grant.refresh_token.clone(), None)
-    };
+    crate::secrets::secret_set(key.clone(), grant.refresh_token).await?;
     Ok(GoogleSignIn {
         email: grant.email,
-        password,
-        password_ref,
+        password_ref: key,
         has_calendars: grant.calendars,
         has_contacts: grant.contacts,
     })

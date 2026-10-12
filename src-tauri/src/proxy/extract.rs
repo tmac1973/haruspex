@@ -202,12 +202,12 @@ pub(crate) fn validate_parsed_url(parsed: &url::Url) -> Result<(), String> {
             }
         }
         Some(url::Host::Ipv4(ip)) => {
-            if is_private_ip(&IpAddr::V4(ip)) {
+            if crate::net_util::is_non_public(IpAddr::V4(ip)) {
                 return Err("Private IP addresses are not allowed".to_string());
             }
         }
         Some(url::Host::Ipv6(ip)) => {
-            if is_private_ip(&IpAddr::V6(ip)) {
+            if crate::net_util::is_non_public(IpAddr::V6(ip)) {
                 return Err("Private IP addresses are not allowed".to_string());
             }
         }
@@ -270,30 +270,6 @@ pub(super) async fn fetch_ok(
     }
 
     Ok(response)
-}
-
-pub(super) fn is_private_ip(ip: &IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(v4) => {
-            v4.is_loopback()
-                || v4.is_private()
-                || v4.is_link_local()
-                || v4.is_broadcast()
-                || v4.is_unspecified()
-        }
-        IpAddr::V6(v6) => {
-            // An IPv4-mapped address (::ffff:a.b.c.d) reaches the V4 network —
-            // judge it by the embedded V4 address.
-            if let Some(v4) = v6.to_ipv4_mapped() {
-                return is_private_ip(&IpAddr::V4(v4));
-            }
-            let seg0 = v6.segments()[0];
-            v6.is_loopback()
-                || v6.is_unspecified()
-                || (seg0 & 0xfe00) == 0xfc00 // unique-local fc00::/7
-                || (seg0 & 0xffc0) == 0xfe80 // link-local fe80::/10
-        }
-    }
 }
 
 pub(super) fn extract_text(html: &str) -> String {
@@ -474,6 +450,18 @@ mod tests {
     }
 
     #[test]
+    fn validate_url_rejects_cgnat_and_tunnelled_v4() {
+        // CGNAT is where tailnet peers live.
+        assert!(validate_url("http://100.100.100.100/").is_err());
+        // NAT64, 6to4 and IPv4-compatible spellings of loopback and the LAN.
+        assert!(validate_url("http://[64:ff9b::7f00:1]/").is_err());
+        assert!(validate_url("http://[2002:c0a8:101::1]/").is_err());
+        assert!(validate_url("http://[::7f00:1]/").is_err());
+        assert!(validate_url("http://[fec0::1]/").is_err());
+        assert!(validate_url("http://0.1.2.3/").is_err());
+    }
+
+    #[test]
     fn validate_url_rejects_localhost_subdomains() {
         assert!(validate_url("http://foo.localhost:8765/").is_err());
         assert!(validate_url("http://LOCALHOST/").is_err());
@@ -483,16 +471,6 @@ mod tests {
     fn validate_url_rejects_link_local_v4() {
         // 169.254.169.254 — cloud metadata endpoint
         assert!(validate_url("http://169.254.169.254/latest/meta-data/").is_err());
-    }
-
-    #[test]
-    fn is_private_ip_detects_rfc1918() {
-        assert!(is_private_ip(&"10.0.0.1".parse().unwrap()));
-        assert!(is_private_ip(&"192.168.1.1".parse().unwrap()));
-        assert!(is_private_ip(&"172.16.0.1".parse().unwrap()));
-        assert!(is_private_ip(&"127.0.0.1".parse().unwrap()));
-        assert!(!is_private_ip(&"8.8.8.8".parse().unwrap()));
-        assert!(!is_private_ip(&"1.1.1.1".parse().unwrap()));
     }
 
     // -- extract_text basics + truncation ------------------------------------
