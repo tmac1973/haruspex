@@ -47,13 +47,25 @@ pub struct OwnerApiStatus {
 
 /// A new device and its token, which is never shown again, with a one-time
 /// code that pairs a browser with it (`/app/#pair=<code>`, for 10 minutes).
-#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[derive(Clone, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct CreatedOwnerClient {
     pub client: OwnerClient,
     pub token: String,
     pub pair_code: String,
+}
+
+/// Says whether the token and code are set, never what they are: either one
+/// lets a browser in.
+impl std::fmt::Debug for CreatedOwnerClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CreatedOwnerClient")
+            .field("client", &self.client)
+            .field("token", &crate::text_util::redacted(&self.token))
+            .field("pair_code", &crate::text_util::redacted(&self.pair_code))
+            .finish()
+    }
 }
 
 fn status(api: &OwnerApi) -> OwnerApiStatus {

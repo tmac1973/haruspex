@@ -75,7 +75,12 @@ pub async fn fetch_image(url: &str, proxy: Option<&ProxyConfig>) -> Result<Fetch
         .timeout(FETCH_TIMEOUT)
         .send()
         .await
-        .map_err(|e| format!("Image fetch failed: {}", e.without_url()))?;
+        .map_err(|e| {
+            format!(
+                "Image fetch failed: {}",
+                crate::proxy::with_cause(&e.without_url())
+            )
+        })?;
 
     if !response.status().is_success() {
         return Err(format!(

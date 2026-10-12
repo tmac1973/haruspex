@@ -532,6 +532,12 @@ fn cache() -> &'static Mutex<HashMap<String, String>> {
     CACHE.get_or_init(Default::default)
 }
 
+/// Every secret value read this session, so a report can blank out the exact
+/// strings rather than only the shapes credentials usually take.
+pub fn known_values() -> Vec<String> {
+    cache().lock_or_recover().values().cloned().collect()
+}
+
 /// A secret's value, from the cache or the store, read off the async runtime.
 /// `Ok(None)` when nothing is stored under `key`.
 pub async fn get(key: &str) -> Result<Option<String>, String> {

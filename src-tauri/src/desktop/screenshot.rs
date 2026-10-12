@@ -93,8 +93,8 @@ pub struct CaptureWindow {
     pub app: String,
 }
 
-/// The windows to offer in a pick list. Empty on Linux, where the desktop
-/// portal shows its own picker and the user clicks the window there.
+/// The windows to offer in a pick list. Empty on Linux, where the user clicks
+/// the window instead ([`capture_window_click`]).
 #[tauri::command]
 pub async fn list_capture_windows() -> Result<Vec<CaptureWindow>, String> {
     list_windows().await
@@ -103,11 +103,53 @@ pub async fn list_capture_windows() -> Result<Vec<CaptureWindow>, String> {
 /// Capture one window the user picked from [`list_capture_windows`].
 ///
 /// Like [`capture_screen`], only ever called from a button the user pressed:
-/// the Shell tab's "capture a window" button, with the window they chose.
+/// the composer's camera button, with the window they chose.
 #[tauri::command]
 pub async fn capture_window(id: u32) -> Result<ScreenCapture, String> {
     let capture = grab_window(id).await?;
     encode(capture).await
+}
+
+/// How a click-a-window capture ended.
+#[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum WindowClick {
+    Captured {
+        capture: ScreenCapture,
+    },
+    /// The user pressed Escape instead of clicking.
+    Cancelled,
+    /// No click picking on this desktop; the composer offers Region instead.
+    Unavailable,
+}
+
+/// Let the user click the window to capture: KDE Plasma's crosshair, from
+/// the composer's Window… choice on Linux.
+#[tauri::command]
+pub async fn capture_window_click() -> Result<WindowClick, String> {
+    click_window().await
+}
+
+#[cfg(target_os = "linux")]
+async fn click_window() -> Result<WindowClick, String> {
+    use super::kwin::{click_window, KwinError};
+    match click_window().await {
+        Ok(capture) => Ok(WindowClick::Captured {
+            capture: encode(capture).await?,
+        }),
+        Err(KwinError::Cancelled) => Ok(WindowClick::Cancelled),
+        Err(KwinError::Unavailable(why)) => {
+            log::debug!("click-a-window capture unavailable: {why}");
+            Ok(WindowClick::Unavailable)
+        }
+        Err(KwinError::Failed(why)) => Err(format!("The screenshot failed: {why}")),
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+async fn click_window() -> Result<WindowClick, String> {
+    Ok(WindowClick::Unavailable)
 }
 
 /// A rectangle of a held capture, in the capture's own pixels.
@@ -138,7 +180,7 @@ static HELD_REGION: std::sync::Mutex<Option<image::DynamicImage>> = std::sync::M
 #[tauri::command]
 pub async fn capture_region_start() -> Result<ScreenCapture, String> {
     use crate::sync_util::LockExt;
-    let capture = grab(CaptureTarget::Screen).await?;
+    let capture = grab(CaptureTarget::Screen, false).await?;
     *HELD_REGION.lock_or_recover() = Some(capture.image.clone());
     encode(capture).await
 }
@@ -208,8 +250,8 @@ async fn list_windows() -> Result<Vec<CaptureWindow>, String> {
 
 #[cfg(target_os = "linux")]
 async fn grab_window(_id: u32) -> Result<Capture, String> {
-    // The portal picks the window itself; there is no id to capture by.
-    super::linux::capture(CaptureTarget::Window).await
+    // Linux lists no windows, so there is never an id to capture by.
+    Err("Pick the window with Window… instead.".into())
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -225,28 +267,34 @@ async fn grab_window(_id: u32) -> Result<Capture, String> {
 /// Capture the screen or the focused window.
 ///
 /// Called from exactly two places, both of them something the user just did:
-/// the composer's capture button, and the `capture_screen` tool in reply to a
-/// question they asked. Nothing calls it on a schedule.
+/// the composer's capture button (`from_button`), and the `capture_screen`
+/// tool in reply to a question they asked. Nothing calls it on a schedule.
 #[tauri::command]
-pub async fn capture_screen(target: Option<CaptureTarget>) -> Result<ScreenCapture, String> {
+pub async fn capture_screen(
+    target: Option<CaptureTarget>,
+    from_button: Option<bool>,
+) -> Result<ScreenCapture, String> {
     let target = target.unwrap_or_default();
+    let interactive = !from_button.unwrap_or(false);
     // Downscaling a 4K frame is tens of milliseconds of CPU; `encode` does it
     // off the async runtime so it cannot stall the UI thread's other work.
-    encode(grab(target).await?).await
+    encode(grab(target, interactive).await?).await
 }
 
+/// `interactive` asks for the desktop's own confirmation where it has one
+/// (the Linux portal); see [`super::linux::capture`].
 #[cfg(target_os = "linux")]
-async fn grab(target: CaptureTarget) -> Result<Capture, String> {
-    super::linux::capture(target).await
+async fn grab(target: CaptureTarget, interactive: bool) -> Result<Capture, String> {
+    super::linux::capture(target, interactive).await
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
-async fn grab(target: CaptureTarget) -> Result<Capture, String> {
+async fn grab(target: CaptureTarget, _interactive: bool) -> Result<Capture, String> {
     super::external::capture(target).await
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-async fn grab(_target: CaptureTarget) -> Result<Capture, String> {
+async fn grab(_target: CaptureTarget, _interactive: bool) -> Result<Capture, String> {
     Err("Screen capture is not supported on this platform.".into())
 }
 

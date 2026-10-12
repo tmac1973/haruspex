@@ -31,6 +31,10 @@ Free public engines are unreliable: they rate-limit and change their pages. If s
 
 The deep research button in the chat box makes the assistant search more sources. If deep research is on, the provider is Auto and you have no Brave key, searches use slow mode: they wait longer between engines so the engines don't block you. A search step in the chat says when this is happening. A Brave key or SearXNG skips slow mode.
 
+## What pages the assistant may open
+
+Pages, images and downloads the assistant fetches must be on the internet. An address on this computer or your local network is refused, and so is a name that leads there, such as `nas.local` or a Tailscale peer. Through a proxy, the proxy decides where a name leads.
+
 ## Use a proxy
 
 Settings → Network has two proxies.

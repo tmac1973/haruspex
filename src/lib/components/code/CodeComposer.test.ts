@@ -3,6 +3,9 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 const tauri = vi.hoisted(() => ({ invoke: vi.fn().mockResolvedValue(null) }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/api/window', () => ({
+	getCurrentWindow: () => ({ hide: async () => {}, show: async () => {}, setFocus: async () => {} })
+}));
 
 import CodeComposer from './CodeComposer.svelte';
 import type { CodeSession } from '#lib/stores/code.svelte.ts';
@@ -114,17 +117,20 @@ describe('CodeComposer with the folder gone', () => {
 describe('CodeComposer camera button', () => {
 	it('attaches the captured window to the next message without sending it', async () => {
 		tauri.invoke.mockImplementation(async (cmd: string) =>
-			cmd === 'list_capture_windows' ? [] : { dataUrl: 'data:image/jpeg;base64,AA' }
+			cmd === 'list_capture_windows'
+				? []
+				: { kind: 'captured', capture: { dataUrl: 'data:image/jpeg;base64,AA' } }
 		);
 		const session = fakeSession({ busy: false });
 		render(CodeComposer, { session, slashHost: host });
-		await fireEvent.click(screen.getByRole('button', { name: 'Capture a window and attach it' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Attach a screenshot' }));
+		await fireEvent.click(screen.getByRole('menuitem', { name: 'Window…' }));
 		await waitFor(() =>
 			expect(screen.getByAltText('attachment').getAttribute('src')).toBe(
 				'data:image/jpeg;base64,AA'
 			)
 		);
-		expect(tauri.invoke).toHaveBeenCalledWith('capture_screen', { target: 'window' });
+		expect(tauri.invoke).toHaveBeenCalledWith('capture_window_click');
 		expect(session.send).not.toHaveBeenCalled();
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Send' }));
@@ -141,7 +147,8 @@ describe('CodeComposer camera button', () => {
 				: { dataUrl: 'data:x' }
 		);
 		render(CodeComposer, { session: fakeSession({ busy: false }), slashHost: host });
-		await fireEvent.click(screen.getByRole('button', { name: 'Capture a window and attach it' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Attach a screenshot' }));
+		await fireEvent.click(screen.getByRole('menuitem', { name: 'Window…' }));
 		await fireEvent.click(await screen.findByRole('option', { name: 'Dark Times — darktimes' }));
 		expect(tauri.invoke).toHaveBeenCalledWith('capture_window', { id: 7 });
 		await waitFor(() => expect(screen.getByAltText('attachment')).toBeTruthy());

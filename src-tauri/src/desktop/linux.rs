@@ -4,9 +4,9 @@
 //! That ordering is deliberate. Under Wayland there is no other way — a client
 //! cannot read the screen, and that is the point of the design. Under X11 any
 //! client can read the root window at any time, so going through the portal
-//! anyway means the same visible, compositor-drawn confirmation appears on both,
-//! and the user does not have to know which session they are in to know what
-//! just happened.
+//! anyway means the same compositor-drawn dialog, or the same remembered
+//! permission, applies on both, and the user does not have to know which
+//! session they are in to know what just happened.
 //!
 //! The X11 path exists for a session with no portal running at all — a bare
 //! window manager, no desktop environment. It reads the root window directly,
@@ -16,12 +16,25 @@ use std::path::{Path, PathBuf};
 
 use super::screenshot::{Capture, CaptureTarget};
 
-pub async fn capture(target: CaptureTarget) -> Result<Capture, String> {
-    match capture_via_portal(target).await {
+/// Capture through the portal, falling back to X11 where there is none.
+///
+/// `interactive` opens the portal's own dialog. The composer's button passes
+/// false: pressing it is the request, and the portal asks once whether
+/// Haruspex may take screenshots and remembers the answer. The assistant's
+/// `capture_screen` tool passes true, so a capture the model asked for always
+/// shows the desktop's confirmation.
+pub async fn capture(target: CaptureTarget, interactive: bool) -> Result<Capture, String> {
+    match capture_via_portal(target, interactive).await {
         Ok(capture) => Ok(capture),
-        Err(PortalError::Refused) => Err(
+        Err(PortalError::Refused) if interactive => Err(
             "The screenshot was cancelled. Nothing was captured — try again and \
              confirm the request your desktop shows."
+                .into(),
+        ),
+        Err(PortalError::Refused) => Err(
+            "Your desktop refused the screenshot. If you said no when it asked \
+             whether Haruspex may take screenshots, that answer is remembered; \
+             change it in your desktop's app permissions."
                 .into(),
         ),
         Err(PortalError::Unavailable(why)) => capture_via_x11(target).map_err(|x11| {
@@ -50,21 +63,21 @@ enum PortalError {
     Failed(String),
 }
 
-async fn capture_via_portal(target: CaptureTarget) -> Result<Capture, PortalError> {
+async fn capture_via_portal(
+    target: CaptureTarget,
+    interactive: bool,
+) -> Result<Capture, PortalError> {
     use ashpd::desktop::screenshot::{AvailableTargets, Screenshot};
 
     let mut request = Screenshot::request()
-        // The portal's own picker is what makes the capture unmistakably
-        // user-initiated, and on a multi-monitor desktop it is also the only
-        // chance to say *which* screen. Both reasons to leave it on.
-        .interactive(true)
-        .modal(true);
+        .interactive(interactive)
+        .modal(interactive);
     // A hint only, and only where the portal says it takes one. KDE's portal
     // (version 2, AvailableTargets 0 on Plasma, 2026-10-06) rejects any
     // target with "Unavailable screenshot target 2" rather than ignoring it,
     // which failed every window capture. Without it the picker still lets the
     // user choose the window.
-    if target == CaptureTarget::Window && window_target_available().await {
+    if interactive && target == CaptureTarget::Window && window_target_available().await {
         request = request.target(AvailableTargets::Window);
     }
 
@@ -82,8 +95,10 @@ async fn capture_via_portal(target: CaptureTarget) -> Result<Capture, PortalErro
     // The portal spec makes the caller the owner of this file. Leaving a
     // picture of somebody's whole desktop in a shared temp directory is a
     // worse outcome than any error deleting it, so this is best-effort and
-    // happens whether the read above succeeded or not.
-    discard(&path);
+    // happens whether the read above succeeded or not. Without the dialog
+    // nobody chose where it went — Plasma writes it to ~/Pictures — so it is
+    // ours wherever it is.
+    discard(&path, !interactive);
     capture
 }
 
@@ -131,11 +146,12 @@ fn read_capture(path: &Path) -> Result<Capture, String> {
 /// Delete a portal screenshot once it has been read, if it is ours to delete.
 ///
 /// Portals write to a temporary location and hand ownership to the caller. But
-/// a portal that instead returned a path the *user* chose — their Pictures
-/// directory, say — must not have that file removed, so anything outside a
-/// temporary directory is left exactly where it is.
-fn discard(path: &Path) {
-    if is_disposable(path, &temp_roots()) {
+/// after an interactive capture the path may be one the *user* chose in the
+/// portal's dialog — their Pictures directory, say — and that file must not be
+/// removed, so there anything outside a temporary directory is left exactly
+/// where it is. `unattended` captures had no dialog, so the file is always ours.
+fn discard(path: &Path, unattended: bool) {
+    if unattended || is_disposable(path, &temp_roots()) {
         let _ = std::fs::remove_file(path);
     }
 }
@@ -476,7 +492,7 @@ mod tests {
     fn a_real_portal_capture_produces_a_plausible_image() {
         let capture = tokio::runtime::Runtime::new()
             .expect("a runtime")
-            .block_on(capture_via_portal(CaptureTarget::Screen))
+            .block_on(capture_via_portal(CaptureTarget::Screen, true))
             .map_err(|e| match e {
                 PortalError::Refused => "cancelled".to_string(),
                 PortalError::Unavailable(w) => format!("no portal: {w}"),

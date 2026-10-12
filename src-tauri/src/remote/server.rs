@@ -251,6 +251,9 @@ async fn start_with_tts_port(
         .route("/api/answer", post(answer))
         .route("/api/speak", post(speak))
         .route("/api/stream/{session}", get(stream))
+        .layer(axum::middleware::map_response(
+            crate::owner::server::no_referrer,
+        ))
         .with_state(state);
 
     let (shutdown, mut shutdown_rx) = watch::channel(false);
@@ -1139,15 +1142,13 @@ mod http_tests {
         let (base, _relay, running) = serve(sink.clone()).await;
         let client = client();
 
-        assert_eq!(
-            client
-                .get(format!("{base}/api/health"))
-                .send()
-                .await
-                .unwrap()
-                .status(),
-            200
-        );
+        let r = client
+            .get(format!("{base}/api/health"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200);
+        assert_eq!(r.headers()["referrer-policy"], "no-referrer");
 
         // Every authenticated route, with no token and with a wrong one.
         for token in ["", "wrong-token"] {

@@ -88,6 +88,8 @@ pub async fn fs_download_url(
         // answering 302 into localhost/private ranges would stream an
         // internal response into the workdir where the model can read it.
         .redirect(crate::proxy::validating_redirect_policy())
+        // And refuses a name that resolves to this computer or the LAN.
+        .dns_resolver(crate::proxy::public_only_resolver(None))
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
@@ -96,7 +98,7 @@ pub async fn fs_download_url(
         .header("User-Agent", crate::proxy::USER_AGENT)
         .send()
         .await
-        .map_err(|e| format!("Download failed: {}", e))?;
+        .map_err(|e| format!("Download failed: {}", crate::proxy::with_cause(&e)))?;
 
     if !response.status().is_success() {
         return Err(format!(

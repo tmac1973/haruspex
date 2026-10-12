@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// How a configured server came to exist.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum McpServerSource {
@@ -42,6 +42,29 @@ pub enum McpServerSource {
     /// [`REMOTE_TOKEN_KEY`] like every other MCP secret.
     #[serde(rename_all = "camelCase")]
     Remote { url: String },
+}
+
+/// A custom command's arguments and a remote URL's path and query can carry
+/// a credential (`--api-key=…`, `?token=…`): printed as a count and as scheme
+/// and host, like the secrets `McpServerConfig`'s `Debug` already hides.
+impl std::fmt::Debug for McpServerSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Catalog { entry_id } => f
+                .debug_struct("Catalog")
+                .field("entry_id", entry_id)
+                .finish(),
+            Self::Custom { program, args } => f
+                .debug_struct("Custom")
+                .field("program", program)
+                .field("args", &format_args!("<{} args>", args.len()))
+                .finish(),
+            Self::Remote { url } => f
+                .debug_struct("Remote")
+                .field("url", &crate::text_util::url_for_log(url))
+                .finish(),
+        }
+    }
 }
 
 /// Where a remote server's bearer token lives in `secrets`.
@@ -199,6 +222,24 @@ impl McpServerConfig {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn debug_hides_custom_args_and_a_remote_url_s_path() {
+        let custom = McpServerSource::Custom {
+            program: "npx".into(),
+            args: vec!["server".into(), "--api-key=sk-SECRET".into()],
+        };
+        let remote = McpServerSource::Remote {
+            url: "https://mcp.example.com/v1?token=sk-SECRET".into(),
+        };
+        let shown = format!("{custom:?} {remote:?}");
+        assert!(!shown.contains("sk-SECRET"), "{shown}");
+        assert!(
+            shown.contains("npx") && shown.contains("<2 args>"),
+            "{shown}"
+        );
+        assert!(shown.contains("https://mcp.example.com"), "{shown}");
+    }
     use super::*;
 
     fn catalog_server() -> McpServerConfig {
