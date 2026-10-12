@@ -7,7 +7,7 @@ pub mod commands;
 pub mod pairing;
 pub mod server;
 pub mod tls;
-mod tls_listen;
+pub mod tls_listen;
 pub mod trust;
 
 use std::path::PathBuf;
@@ -62,6 +62,25 @@ impl OwnerApi {
 
     pub fn clients(&self) -> Result<Arc<Clients>, String> {
         self.clients.clone()
+    }
+
+    /// The HTTPS certificate to serve: the kept one, or a new one when it no
+    /// longer covers this computer's names (plus `extra_host`). Guest chat
+    /// serves the same one, so a browser that has accepted it for one server
+    /// sees the same fingerprint on the other.
+    pub fn certificate(&self, extra_host: Option<&str>) -> Result<tls::Identity, String> {
+        let path = self
+            .tls_path
+            .as_deref()
+            .ok_or("no app data folder for the HTTPS certificate")?;
+        let hostname = trust::system_hostname();
+        let names = tls::names_for(hostname.as_deref(), extra_host);
+        let mut ips: Vec<std::net::IpAddr> = vec![
+            std::net::Ipv4Addr::LOCALHOST.into(),
+            std::net::Ipv6Addr::LOCALHOST.into(),
+        ];
+        ips.extend(crate::remote::link::lan_address());
+        tls::load_or_create(path, &names, &ips)
     }
 }
 

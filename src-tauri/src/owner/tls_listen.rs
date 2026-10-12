@@ -1,4 +1,4 @@
-//! Accepting HTTPS for the owner API: TCP connections, each handshaken on
+//! Accepting HTTPS for the owner API and guest chat: TCP connections, each handshaken on
 //! its own task so a slow or silent client can't hold up the next, and
 //! handed to axum as a [`Listener`]. A connection that speaks plain HTTP (an
 //! old `http://` link or bookmark) is sent to the same address over HTTPS.
@@ -26,8 +26,10 @@ const TLS_HANDSHAKE: u8 = 0x16;
 
 type Accepted = (TlsStream<TcpStream>, SocketAddr);
 
-/// Accept until `stopping`, sending each finished handshake on `out`.
+/// Accept until `stopping`, sending each finished handshake on `out`. `tag`
+/// names the server in the log (`"owner"`, `"remote"`).
 pub async fn accept_loop(
+    tag: &'static str,
     listener: TcpListener,
     acceptor: TlsAcceptor,
     out: mpsc::Sender<Accepted>,
@@ -39,7 +41,7 @@ pub async fn accept_loop(
                 Ok(c) => c,
                 Err(e) => {
                     // Out of file descriptors and the like: don't spin.
-                    log::warn!("[owner] accept failed: {e}");
+                    log::warn!("[{tag}] accept failed: {e}");
                     tokio::time::sleep(Duration::from_millis(100)).await;
                     continue;
                 }
@@ -50,12 +52,12 @@ pub async fn accept_loop(
         let acceptor = acceptor.clone();
         let out = out.clone();
         tokio::spawn(async move {
-            match tokio::time::timeout(HANDSHAKE_TIMEOUT, admit(stream, &acceptor)).await {
+            match tokio::time::timeout(HANDSHAKE_TIMEOUT, admit(tag, stream, &acceptor)).await {
                 Ok(Some(tls)) => {
                     let _ = out.send((tls, peer)).await;
                 }
                 Ok(None) => {}
-                Err(_) => log::debug!("[owner] {peer} took too long to connect"),
+                Err(_) => log::debug!("[{tag}] {peer} took too long to connect"),
             }
         });
     }
@@ -63,7 +65,11 @@ pub async fn accept_loop(
 
 /// The connection as TLS, or `None` once a plain HTTP one has been
 /// redirected (or a broken one dropped).
-async fn admit(stream: TcpStream, acceptor: &TlsAcceptor) -> Option<TlsStream<TcpStream>> {
+async fn admit(
+    tag: &str,
+    stream: TcpStream,
+    acceptor: &TlsAcceptor,
+) -> Option<TlsStream<TcpStream>> {
     let mut first = [0u8; 1];
     let n = stream.peek(&mut first).await.ok()?;
     if n == 0 {
@@ -77,7 +83,7 @@ async fn admit(stream: TcpStream, acceptor: &TlsAcceptor) -> Option<TlsStream<Tc
         Ok(tls) => Some(tls),
         Err(e) => {
             // Mostly a browser that hasn't accepted the certificate yet.
-            log::debug!("[owner] TLS handshake failed: {e}");
+            log::debug!("[{tag}] TLS handshake failed: {e}");
             None
         }
     }

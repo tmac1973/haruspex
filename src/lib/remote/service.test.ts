@@ -87,11 +87,11 @@ describe('turning remote access on and off', () => {
 
 describe('the link the host hands out', () => {
 	it('uses the LAN address, never localhost', () => {
-		expect(remoteLink('192.168.1.50', 8787, 'abc')).toBe('http://192.168.1.50:8787/?t=abc');
+		expect(remoteLink('192.168.1.50', 8787, 'abc')).toBe('https://192.168.1.50:8787/?t=abc');
 	});
 
 	it('escapes a token that would break the query string', () => {
-		expect(remoteLink('10.0.0.2', 80, 'a+b/c')).toBe('http://10.0.0.2:80/?t=a%2Bb%2Fc');
+		expect(remoteLink('10.0.0.2', 80, 'a+b/c')).toBe('https://10.0.0.2:80/?t=a%2Bb%2Fc');
 	});
 
 	it('mints tokens that are unguessable and URL-safe', () => {

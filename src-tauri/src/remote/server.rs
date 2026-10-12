@@ -79,6 +79,16 @@ pub struct RemoteStatus {
     pub port: Option<u16>,
     pub bind_all: bool,
     pub sessions: usize,
+    /// SHA-256 of the HTTPS certificate being served, as a browser shows it,
+    /// so the owner can check the one a guest's browser warns about.
+    pub fingerprint: Option<String>,
+}
+
+/// What the server serves HTTPS with: the owner API's certificate
+/// (`owner::tls`), so both servers show one fingerprint.
+pub struct Tls {
+    pub config: Arc<rustls::ServerConfig>,
+    pub fingerprint: String,
 }
 
 /// Everything the HTTP layer needs from the app it is embedded in.
@@ -135,6 +145,7 @@ pub struct Running {
     pub port: u16,
     pub bind_all: bool,
     pub token: String,
+    pub fingerprint: String,
     shutdown: watch::Sender<bool>,
     serve: tokio::task::JoinHandle<()>,
     reaper: tokio::task::JoinHandle<()>,
@@ -164,14 +175,16 @@ impl Running {
     }
 }
 
-/// Bind and serve. Returns once the socket is listening, so a caller that gets
-/// `Ok` can hand out the link immediately.
+/// Bind and serve HTTPS. Returns once the socket is listening, so a caller
+/// that gets `Ok` can hand out the link immediately. A plain `http://`
+/// request (an old link or bookmark) is redirected to `https://`.
 pub async fn start(
     host: Arc<dyn Host>,
     relay: Arc<Relay>,
     config: RemoteConfig,
+    tls: Tls,
 ) -> Result<Running, String> {
-    start_with_tts_port(host, relay, config, TTS_PORT).await
+    start_with_tts_port(host, relay, config, tls, TTS_PORT).await
 }
 
 /// [`start`], with the speech sidecar's port injectable.
@@ -183,6 +196,7 @@ async fn start_with_tts_port(
     host: Arc<dyn Host>,
     relay: Arc<Relay>,
     config: RemoteConfig,
+    tls: Tls,
     tts_port: u16,
 ) -> Result<Running, String> {
     if config.token.trim().is_empty() {
@@ -199,10 +213,8 @@ async fn start_with_tts_port(
     let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
         format!("could not listen on {addr}: {e} — another program may already have that port")
     })?;
-    let port = listener
-        .local_addr()
-        .map(|a| a.port())
-        .unwrap_or(config.port);
+    let local = listener.local_addr().map_err(|e| e.to_string())?;
+    let port = local.port();
 
     let state = AppState {
         host: host.clone(),
@@ -225,14 +237,31 @@ async fn start_with_tts_port(
 
     let (shutdown, mut shutdown_rx) = watch::channel(false);
 
+    // The acceptor owns the socket and returns on the same stop signal, so
+    // the port is free as soon as the server is asked to stop — rotating the
+    // link rebinds it straight away.
+    let (accepted, incoming) = tokio::sync::mpsc::channel(64);
+    let acceptor = tokio::spawn(crate::owner::tls_listen::accept_loop(
+        "remote",
+        listener,
+        tokio_rustls::TlsAcceptor::from(tls.config),
+        accepted,
+        shutdown.subscribe(),
+    ));
     let mut serve_rx = shutdown.subscribe();
     let serve = tokio::spawn(async move {
-        let served = axum::serve(listener, router).with_graceful_shutdown(async move {
+        let served = axum::serve(
+            crate::owner::tls_listen::TlsListener::new(incoming, local),
+            router.into_make_service(),
+        )
+        .with_graceful_shutdown(async move {
             let _ = serve_rx.wait_for(|stop| *stop).await;
         });
         if let Err(e) = served.await {
             log::error!("[remote] server stopped: {e}");
         }
+        acceptor.abort();
+        let _ = acceptor.await;
     });
 
     // Orphan sweep: a client that closed its tab mid-answer must not hold an
@@ -253,7 +282,7 @@ async fn start_with_tts_port(
     });
 
     log::info!(
-        "[remote] serving on {}:{port}",
+        "[remote] serving HTTPS on {}:{port}",
         if config.bind_all {
             "0.0.0.0"
         } else {
@@ -265,6 +294,7 @@ async fn start_with_tts_port(
         port,
         bind_all: config.bind_all,
         token: config.token,
+        fingerprint: tls.fingerprint,
         shutdown,
         serve,
         reaper,
@@ -797,6 +827,27 @@ mod http_tests {
 
     const TOKEN: &str = "test-token";
 
+    /// A certificate made for the test, as the app makes the owner API's.
+    fn test_tls() -> Tls {
+        let names = crate::owner::tls::names_for(Some("box"), None);
+        let ips = ["127.0.0.1".parse().unwrap()];
+        let id =
+            crate::owner::tls::generate(&names, &ips, time::OffsetDateTime::now_utc()).unwrap();
+        Tls {
+            config: crate::owner::tls::server_config(&id).unwrap(),
+            fingerprint: id.fingerprint,
+        }
+    }
+
+    /// A client that takes the self-signed certificate, as a guest does once
+    /// they have accepted the browser's warning.
+    fn client() -> reqwest::Client {
+        reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .build()
+            .unwrap()
+    }
+
     async fn serve(sink: Arc<RecordingSink>) -> (String, Arc<Relay>, Running) {
         let relay = Arc::new(Relay::new());
         let running = start_with_tts_port(
@@ -812,12 +863,46 @@ mod http_tests {
             // Same reasoning applied to the speech sidecar: the real koko
             // listens on 3001, and a developer running the app while running
             // the tests would otherwise have it answer them.
+            test_tls(),
             closed_port(),
         )
         .await
         .expect("server should bind");
-        let base = format!("http://127.0.0.1:{}", running.port);
+        let base = format!("https://127.0.0.1:{}", running.port);
         (base, relay, running)
+    }
+
+    #[tokio::test]
+    async fn an_old_http_link_is_sent_to_https() {
+        // Links and QR codes handed out before HTTPS, and phone shortcuts made
+        // from them, must still reach the page.
+        let (base, _relay, running) = serve(Arc::new(RecordingSink::default())).await;
+        let plain = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap();
+        let port = running.port;
+        let r = plain
+            .get(format!("http://127.0.0.1:{port}/?t={TOKEN}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 308);
+        assert_eq!(
+            r.headers()[reqwest::header::LOCATION],
+            format!("https://127.0.0.1:{port}/?t={TOKEN}").as_str()
+        );
+        assert!(base.starts_with("https://"));
+        // And over HTTPS the page is served.
+        assert_eq!(
+            client()
+                .get(format!("{base}/?t={TOKEN}"))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            200
+        );
     }
 
     /// A port with nothing behind it.
@@ -837,7 +922,7 @@ mod http_tests {
     async fn health_needs_no_token_but_the_rest_does() {
         let sink = Arc::new(RecordingSink::default());
         let (base, _relay, running) = serve(sink.clone()).await;
-        let client = reqwest::Client::new();
+        let client = client();
 
         assert_eq!(
             client
@@ -887,7 +972,7 @@ mod http_tests {
     #[tokio::test]
     async fn an_unauthenticated_visitor_gets_no_chat_box_and_no_information() {
         let (base, _relay, running) = serve(Arc::new(RecordingSink::default())).await;
-        let response = reqwest::get(&base).await.unwrap();
+        let response = client().get(&base).send().await.unwrap();
         // No cookie is handed out to someone who did not prove they had a link.
         assert!(response.headers().get("set-cookie").is_none());
         let body = response.text().await.unwrap();
@@ -901,7 +986,11 @@ mod http_tests {
     #[tokio::test]
     async fn a_valid_link_serves_the_client_and_remembers_it() {
         let (base, _relay, running) = serve(Arc::new(RecordingSink::default())).await;
-        let response = reqwest::get(format!("{base}/?t={TOKEN}")).await.unwrap();
+        let response = client()
+            .get(format!("{base}/?t={TOKEN}"))
+            .send()
+            .await
+            .unwrap();
         let cookie = response
             .headers()
             .get("set-cookie")
@@ -910,6 +999,10 @@ mod http_tests {
             .unwrap()
             .to_string();
         assert!(cookie.contains("SameSite=Strict"));
+        assert!(
+            cookie.contains("Secure"),
+            "the page is HTTPS only: {cookie}"
+        );
 
         let body = response.text().await.unwrap();
         assert!(body.contains("id=\"composer\""));
@@ -919,7 +1012,7 @@ mod http_tests {
 
         // And the cookie alone is enough next time, which is what makes a
         // bookmark or a home-screen shortcut work.
-        let client = reqwest::Client::new();
+        let client = client();
         let bookmarked = client
             .get(&base)
             .header("Cookie", cookie)
@@ -937,7 +1030,7 @@ mod http_tests {
     async fn the_client_assets_are_served_with_their_own_types() {
         let (base, _relay, running) = serve(Arc::new(RecordingSink::default())).await;
         for (path, expected) in [("/app.css", "text/css"), ("/app.js", "text/javascript")] {
-            let response = reqwest::get(format!("{base}{path}")).await.unwrap();
+            let response = client().get(format!("{base}{path}")).send().await.unwrap();
             assert_eq!(response.status(), 200, "{path}");
             let content_type = response
                 .headers()
@@ -969,7 +1062,7 @@ mod http_tests {
     async fn a_prompt_reaches_the_sink_and_streams_back() {
         let sink = Arc::new(RecordingSink::default());
         let (base, relay, running) = serve(sink.clone()).await;
-        let client = reqwest::Client::new();
+        let client = client();
 
         let mut stream = client
             .get(format!("{base}/api/stream/s1?t={TOKEN}"))
@@ -1042,7 +1135,7 @@ mod http_tests {
             ..Default::default()
         });
         let (base, relay, running) = serve(sink).await;
-        let response = reqwest::Client::new()
+        let response = client()
             .post(format!("{base}/api/chat?t={TOKEN}"))
             .json(&serde_json::json!({ "sessionId": "s1", "message": "hi" }))
             .send()
@@ -1058,7 +1151,7 @@ mod http_tests {
     async fn cancel_reaches_the_sink_only_when_there_is_something_to_stop() {
         let sink = Arc::new(RecordingSink::default());
         let (base, _relay, running) = serve(sink.clone()).await;
-        let client = reqwest::Client::new();
+        let client = client();
 
         let idle = client
             .post(format!("{base}/api/cancel?t={TOKEN}"))
@@ -1089,7 +1182,7 @@ mod http_tests {
     #[tokio::test]
     async fn oversized_and_empty_prompts_are_refused() {
         let (base, _relay, running) = serve(Arc::new(RecordingSink::default())).await;
-        let client = reqwest::Client::new();
+        let client = client();
 
         let empty = client
             .post(format!("{base}/api/chat?t={TOKEN}"))
@@ -1126,12 +1219,15 @@ mod http_tests {
                 token: "old-token".into(),
                 bind_all: false,
             },
+            test_tls(),
         )
         .await
         .unwrap();
-        let old_base = format!("http://127.0.0.1:{}", first.port);
+        let old_base = format!("https://127.0.0.1:{}", first.port);
         assert_eq!(
-            reqwest::get(format!("{old_base}/?t=old-token"))
+            client()
+                .get(format!("{old_base}/?t=old-token"))
+                .send()
                 .await
                 .unwrap()
                 .status(),
@@ -1140,7 +1236,9 @@ mod http_tests {
 
         first.stop();
         for _ in 0..50 {
-            if reqwest::get(format!("{old_base}/api/health"))
+            if client()
+                .get(format!("{old_base}/api/health"))
+                .send()
                 .await
                 .is_err()
             {
@@ -1157,12 +1255,13 @@ mod http_tests {
                 token: "new-token".into(),
                 bind_all: false,
             },
+            test_tls(),
         )
         .await
         .unwrap();
-        let base = format!("http://127.0.0.1:{}", second.port);
+        let base = format!("https://127.0.0.1:{}", second.port);
 
-        let old = reqwest::Client::new()
+        let old = client()
             .post(format!("{base}/api/chat?t=old-token"))
             .json(&serde_json::json!({ "sessionId": "s1", "message": "hi" }))
             .send()
@@ -1170,7 +1269,7 @@ mod http_tests {
             .unwrap();
         assert_eq!(old.status(), 401, "the old link still worked");
 
-        let new = reqwest::Client::new()
+        let new = client()
             .post(format!("{base}/api/chat?t=new-token"))
             .json(&serde_json::json!({ "sessionId": "s1", "message": "hi" }))
             .send()
@@ -1186,7 +1285,7 @@ mod http_tests {
 
         let sink = Arc::new(RecordingSink::default());
         let (base, relay, running) = serve(sink.clone()).await;
-        let client = reqwest::Client::new();
+        let client = client();
 
         client
             .post(format!("{base}/api/chat?t={TOKEN}"))
@@ -1249,7 +1348,7 @@ mod http_tests {
     async fn an_answer_needs_a_token() {
         let sink = Arc::new(RecordingSink::default());
         let (base, _relay, running) = serve(sink.clone()).await;
-        let response = reqwest::Client::new()
+        let response = client()
             .post(format!("{base}/api/answer"))
             .json(&serde_json::json!({ "sessionId": "s1", "questionId": "q1", "labels": [] }))
             .send()
@@ -1267,7 +1366,7 @@ mod http_tests {
         // startup the host's own button would.
         let sink = Arc::new(RecordingSink::default());
         let (base, _relay, running) = serve(sink).await;
-        let response = reqwest::Client::new()
+        let response = client()
             .post(format!("{base}/api/speak?t={TOKEN}"))
             .json(&serde_json::json!({ "text": "hello" }))
             .send()
@@ -1290,7 +1389,7 @@ mod http_tests {
             ..Default::default()
         });
         let (base, _relay, running) = serve(sink).await;
-        let response = reqwest::Client::new()
+        let response = client()
             .post(format!("{base}/api/speak?t={TOKEN}"))
             .json(&serde_json::json!({ "text": "hello" }))
             .send()
@@ -1304,7 +1403,7 @@ mod http_tests {
     #[tokio::test]
     async fn speech_needs_a_token_and_something_to_say() {
         let (base, _relay, running) = serve(Arc::new(RecordingSink::default())).await;
-        let client = reqwest::Client::new();
+        let client = client();
 
         let unauthenticated = client
             .post(format!("{base}/api/speak"))
@@ -1340,20 +1439,29 @@ mod http_tests {
             sink.clone(),
             remote.relay(),
             config(TOKEN, 0),
+            test_tls(),
             closed_port(),
         )
         .await
         .expect("server should bind");
         let port = running.port;
-        let stream = reqwest::get(format!("http://127.0.0.1:{port}/api/stream/s1?t={TOKEN}"))
+        let stream = client()
+            .get(format!("https://127.0.0.1:{port}/api/stream/s1?t={TOKEN}"))
+            .send()
             .await
             .unwrap();
         assert_eq!(stream.status(), 200);
         remote.install(running);
 
         remote.shutdown().await;
-        let again =
-            start_with_tts_port(sink, remote.relay(), config("rotated", port), closed_port()).await;
+        let again = start_with_tts_port(
+            sink,
+            remote.relay(),
+            config("rotated", port),
+            test_tls(),
+            closed_port(),
+        )
+        .await;
         assert!(again.is_ok(), "{:?}", again.err());
         // And the guest's stream ended rather than hanging on a dead server.
         let ended = tokio::time::timeout(Duration::from_secs(3), stream.bytes()).await;
@@ -1364,12 +1472,21 @@ mod http_tests {
     #[tokio::test]
     async fn a_stopped_server_stops_answering() {
         let (base, _relay, running) = serve(Arc::new(RecordingSink::default())).await;
-        assert!(reqwest::get(format!("{base}/api/health")).await.is_ok());
+        assert!(client()
+            .get(format!("{base}/api/health"))
+            .send()
+            .await
+            .is_ok());
         running.stop();
 
         // Graceful shutdown is not instant; poll rather than sleep-and-hope.
         for _ in 0..50 {
-            if reqwest::get(format!("{base}/api/health")).await.is_err() {
+            if client()
+                .get(format!("{base}/api/health"))
+                .send()
+                .await
+                .is_err()
+            {
                 return;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;

@@ -17,6 +17,8 @@ To use your own Code sessions from another computer instead, see the `remote-con
 2. Turn on **Let people on your network chat with this Haruspex**.
 3. Share **The link to share**: click **Copy**, or let the other person scan the QR code.
 
+The page uses HTTPS with a certificate Haruspex makes itself, so the guest's browser warns the first time that the connection is not private. They can continue if the fingerprint the browser shows matches Settings → Guest chat → **Certificate**. The browser remembers the answer. It is the same certificate as Settings → Remote control uses.
+
 **Port** sets the port the page is served on (the default is 8787). On Windows, the firewall asks the first time whether to allow Haruspex on your network; say yes, or nobody can connect. On Linux and macOS you may need to open that port in your firewall yourself.
 
 If there is no link, your computer has no network address: it is probably offline, or on a network that does not let devices reach each other.
@@ -51,5 +53,6 @@ Settings → Guest chat lists who is connected and what each guest is asking rig
 ## Security notes
 
 - Anyone on your network who has the link can chat with your Haruspex. The link contains a long secret, so treat it like a password.
-- Traffic is not encrypted. Use remote access only on networks you trust, such as your home network, not public Wi-Fi.
+- Traffic is encrypted (HTTPS). A link from before HTTPS (`http://`) still works: it is sent on to `https://`, but that first request, with the link's secret, crosses the network unencrypted. Rotate the link if an old one went to someone who should no longer have it.
+- Use guest chat on networks you trust, such as your home network, not public Wi-Fi: anyone who gets the link can use it.
 - It works on your local network only. Haruspex does not make it reachable from the internet.

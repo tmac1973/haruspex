@@ -153,7 +153,7 @@ See the `images` page.
 
 Let people on your network chat with this Haruspex.
 
-- **Let people on your network chat with this Haruspex**: off. Traffic is not encrypted.
+- **Let people on your network chat with this Haruspex**: off. Uses HTTPS.
 - **Port**: 8787.
 - Once it is on: a link and QR code to share, and a list of guests you can disconnect.
 

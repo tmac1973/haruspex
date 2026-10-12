@@ -173,8 +173,7 @@
 	     labelled "enable remote access" would not have told them any of it. -->
 	<p class="help">
 		Anyone on your network who has the link can chat with your Haruspex, using your computer's GPU.
-		Their conversations are saved here and appear in your sidebar. Traffic is not encrypted, so use
-		this on networks you trust.
+		Their conversations are saved here and appear in your sidebar. Use this on networks you trust.
 	</p>
 	<p class="help">
 		Windows will ask whether to allow Haruspex on your network the first time you turn this on — say
@@ -225,6 +224,16 @@
 					This computer has no network address right now, so there is no link to share. It is
 					probably offline or on a network that does not route between devices.
 				</p>
+			{/if}
+			{#if status.fingerprint}
+				<div class="cert">
+					<span
+						class="label"
+						title="Haruspex made its own certificate, so a guest's browser warns the first time. They can continue if the fingerprint it shows matches this one."
+						>Certificate</span
+					>
+					<code class="fingerprint" title="SHA-256 fingerprint">{status.fingerprint}</code>
+				</div>
 			{/if}
 			<button class="rotate" onclick={rotate} disabled={busy}>
 				Rotate link (cuts off everyone using the old one)
@@ -287,6 +296,17 @@
 		font-size: 0.85rem;
 		font-weight: 600;
 		margin-bottom: 6px;
+	}
+
+	.cert {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.fingerprint {
+		overflow-wrap: anywhere;
+		font-size: 0.75rem;
 	}
 
 	.link-block,
