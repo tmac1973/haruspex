@@ -21,10 +21,15 @@ vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => ({
 	createSlotLender: () => (fn: () => Promise<unknown>) => fn()
 }));
 
+const dbg = vi.hoisted(() => ({
+	lines: [] as Array<[string, Record<string, unknown> | undefined]>,
+	verbose: false
+}));
 vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
-	logDebug: () => {},
-	isVerbosePayloads: () => false
+	logDebug: (_cat: string, msg: string, data?: Record<string, unknown>) =>
+		dbg.lines.push([msg, data]),
+	isVerbosePayloads: () => dbg.verbose
 }));
 
 import { executeToolCalls } from './toolCalls';
@@ -91,6 +96,8 @@ beforeEach(() => {
 	started = [];
 	n = 0;
 	lane.limit = 1;
+	dbg.lines = [];
+	dbg.verbose = false;
 	tools.executeTool.mockReset();
 	tools.coerceCallArguments.mockImplementation((_name, args) => args);
 	toolsAnswer((c) => ({ result: `ok ${c.name}` }));
@@ -163,6 +170,29 @@ describe('executeToolCalls: messages', () => {
 		const ctx = makeCtx();
 		await executeToolCalls(ctx, new NudgeState(), [call('run_python', { code: '1' })]);
 		expect(progress).toEqual([['c1', 'working on run_python']]);
+	});
+});
+
+describe('executeToolCalls: debug log', () => {
+	const logged = (msg: string) => dbg.lines.find(([m]) => m === msg)?.[1];
+
+	it('logs argument names and the result length, never the content, by default', async () => {
+		toolsAnswer(() => ({ result: 'Dear Sam, the password is hunter2' }));
+		await executeToolCalls(makeCtx(), new NudgeState(), [
+			call('email_send', { body: 'secret body' })
+		]);
+		expect(logged('tool start: email_send')).toEqual({ args: ['body'] });
+		const end = logged('tool end: email_send');
+		expect(end?.resultLen).toBe(33);
+		expect(JSON.stringify(end)).not.toContain('hunter2');
+	});
+
+	it('logs arguments and result whole with verbose payloads on', async () => {
+		dbg.verbose = true;
+		toolsAnswer(() => ({ result: 'full result' }));
+		await executeToolCalls(makeCtx(), new NudgeState(), [call('fs_read_text', { path: 'a' })]);
+		expect(logged('tool start: fs_read_text')).toEqual({ args: { path: 'a' } });
+		expect(logged('tool end: fs_read_text')?.resultPreview).toBe('full result');
 	});
 });
 

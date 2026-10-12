@@ -7,7 +7,7 @@ import { toolRoundText } from '#lib/agent/textToolCalls.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import { coerceCallArguments, executeTool } from '#lib/agent/tools/index.ts';
 import { isFetchFailureResult, isToolErrorResult } from '#lib/agent/tools/_helpers.ts';
-import { isVerbosePayloads, logDebug, previewPayload } from '#lib/debug-log.ts';
+import { isVerbosePayloads, logDebug } from '#lib/debug-log.ts';
 import { NudgeState } from '#lib/agent/loop/nudges.ts';
 import {
 	planToolBatches,
@@ -122,7 +122,8 @@ export async function executeToolCalls(
 		);
 		logDebug('agent', `tool end: ${call.name}`, {
 			resultLen: output.result.length,
-			resultPreview: previewPayload(output.result, 200),
+			// Results carry the same email bodies and files as arguments do.
+			resultPreview: isVerbosePayloads() ? output.result : undefined,
 			hasThumbnail: !!output.thumbDataUrl,
 			artifactCount: output.artifacts?.length ?? 0
 		});

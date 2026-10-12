@@ -16,8 +16,10 @@
  * trips it's logging. The buffer lives in memory, except when
  * `startDebugLogFile` mirrors it to disk (dev builds, or
  * `HARUSPEX_DEBUG_LOG_FILE` set) — and it is copied into the diagnostics
- * bundle — so user content (prompts, tool results, model output) goes
- * through `previewPayload` and stays clipped unless verbose payloads are on.
+ * bundle — so user content (prompts, model output) goes through
+ * `previewPayload` and stays clipped unless verbose payloads are on, and tool
+ * arguments and results, which carry email bodies and files, are left out
+ * unless verbose payloads are on.
  */
 
 const RING_CAPACITY = 5000;

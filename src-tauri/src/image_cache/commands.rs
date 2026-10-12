@@ -92,14 +92,22 @@ pub async fn image_resolve(
                     // Expected often enough to be routine: dead hosts, hotlink
                     // protection, a URL that was never an image. Debug, not
                     // warn — this is not a fault the user can act on.
-                    debug!("image unresolved {}: {}", req.url, e);
+                    debug!(
+                        "image unresolved {}: {}",
+                        crate::text_util::url_for_log(&req.url),
+                        e
+                    );
                     continue;
                 }
             };
 
             let hash = hash_bytes(&fetched.bytes);
             if let Err(e) = write_bytes(&dir, &hash, &fetched.bytes) {
-                debug!("image not cached {}: {}", req.url, e);
+                debug!(
+                    "image not cached {}: {}",
+                    crate::text_util::url_for_log(&req.url),
+                    e
+                );
                 continue;
             }
 

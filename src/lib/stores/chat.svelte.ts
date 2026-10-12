@@ -35,6 +35,7 @@ import {
 } from '#lib/agent/system-prompt.ts';
 import { diagnoseEmptyResponse } from '#lib/agent/diagnostics.ts';
 import { beginTurn, logDebug } from '#lib/debug-log.ts';
+import { urlForReport } from '#lib/utils/http.ts';
 import { noteConversationLeft, noteTurnFinished } from '#lib/agent/memory/scheduler.ts';
 import {
 	MEMORY_RECALL_STEP,
@@ -1238,7 +1239,7 @@ function finalizeStreamedTurn(
 		logDebug('chat', 'onComplete commit', {
 			rawStreamingLen: streamingContent.length,
 			finalContentLen: finalContent.length,
-			citedUrls: processed.citedUrls,
+			citedUrls: processed.citedUrls.map(urlForReport),
 			stopReason
 		});
 		commitMessage(conversation, finalContent, turnStats, stopReason);
@@ -1247,7 +1248,6 @@ function finalizeStreamedTurn(
 		const diagnosis = diagnoseEmptyResponse(conversation.searchSteps, streamingContent);
 		logDebug('chat', `onComplete empty → diagnosis ${diagnosis.type}`, {
 			rawStreamingLen: streamingContent.length,
-			rawStreamingPreview: streamingContent.slice(0, 2000),
 			diagnosis
 		});
 		if (diagnosis.type === 'commit') {

@@ -20,6 +20,7 @@ import type { ImageRequest } from '#lib/ipc/gen/ImageRequest.ts';
 import type { ImageRow } from '#lib/ipc/gen/ImageRow.ts';
 import { getSearchProxy } from '#lib/stores/settings.ts';
 import { logDebug } from '#lib/debug-log.ts';
+import { urlForReport } from '#lib/utils/http.ts';
 import { SvelteMap } from 'svelte/reactivity';
 import { imageSrc } from '#lib/images/url.ts';
 import {
@@ -137,7 +138,10 @@ export async function resolveReplyImages(
 			// The model invented URLs, or copied ones from page text rather than
 			// from a tool result. Worth naming: it is a prompt problem, not a
 			// transport one.
-			logDebug('images', `reply: none of the requested URLs were eligible: ${asked.join(', ')}`);
+			logDebug(
+				'images',
+				`reply: none of the requested URLs were eligible: ${asked.map(urlForReport).join(', ')}`
+			);
 		}
 		// Nothing embedded, but the model may still have searched for pictures.
 		// Running image_search is the intent; forgetting the final markdown is
