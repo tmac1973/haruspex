@@ -9,7 +9,8 @@
 	 * Screen question, which is about the assistant asking.
 	 */
 	import type { CaptureWindow } from '#lib/ipc/gen/CaptureWindow.ts';
-	import { captureWindowImage, windowLabel, windowsToPick } from '#lib/shell/captureWindow.ts';
+	import WindowPicker from '#lib/components/WindowPicker.svelte';
+	import { captureWindowImage, windowsToPick } from '#lib/shell/captureWindow.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
@@ -59,19 +60,11 @@
 </script>
 
 {#if windowChoices}
-	<div class="window-picker" role="listbox" aria-label="Pick a window to capture">
-		<div class="picker-head">
-			<span>Capture which window?</span>
-			<button class="picker-close" onclick={() => (windowChoices = null)} aria-label="Cancel"
-				>×</button
-			>
-		</div>
-		{#each windowChoices as w (w.id)}
-			<button class="picker-item" role="option" aria-selected="false" onclick={() => capture(w.id)}
-				>{windowLabel(w)}</button
-			>
-		{/each}
-	</div>
+	<WindowPicker
+		windows={windowChoices}
+		onPick={(id) => capture(id)}
+		onCancel={() => (windowChoices = null)}
+	/>
 {/if}
 <button
 	class="capture-btn"
@@ -120,55 +113,5 @@
 	.capture-btn:disabled {
 		opacity: 0.4;
 		cursor: not-allowed;
-	}
-
-	.window-picker {
-		position: absolute;
-		left: 10px;
-		right: 10px;
-		bottom: calc(100% + 4px);
-		z-index: 10;
-		display: flex;
-		flex-direction: column;
-		max-height: 220px;
-		overflow-y: auto;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-secondary);
-	}
-
-	.picker-head {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 4px 8px;
-		font-size: 0.8rem;
-		color: var(--text-secondary);
-	}
-
-	.picker-close {
-		border: none;
-		background: none;
-		color: var(--text-secondary);
-		cursor: pointer;
-		font-size: 1rem;
-	}
-
-	.picker-item {
-		text-align: left;
-		padding: 6px 8px;
-		border: none;
-		border-top: 1px solid var(--border);
-		background: none;
-		color: var(--text-primary);
-		cursor: pointer;
-		font-size: 0.85rem;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.picker-item:hover {
-		background: var(--bg-primary);
 	}
 </style>

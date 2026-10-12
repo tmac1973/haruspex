@@ -110,6 +110,72 @@ pub async fn capture_window(id: u32) -> Result<ScreenCapture, String> {
     encode(capture).await
 }
 
+/// A rectangle of a held capture, in the capture's own pixels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureRect {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// The full-resolution frame between [`capture_region_start`] and
+/// [`capture_region_finish`].
+///
+/// Held here rather than sent to the page because the preview the user drags
+/// over is downscaled: cropping that would hand the model a blurred enlargement
+/// of a small region, where cropping the original keeps every pixel of it.
+/// Only ever one, and finishing takes it, so a picture of the screen does not
+/// outlive the selection it was taken for.
+static HELD_REGION: std::sync::Mutex<Option<image::DynamicImage>> = std::sync::Mutex::new(None);
+
+/// Capture the screen for the user to select a region of.
+///
+/// Called only from the composer's "Region" choice. Returns a preview to
+/// draw over; the frame itself waits for [`capture_region_finish`].
+#[tauri::command]
+pub async fn capture_region_start() -> Result<ScreenCapture, String> {
+    use crate::sync_util::LockExt;
+    let capture = grab(CaptureTarget::Screen).await?;
+    *HELD_REGION.lock_or_recover() = Some(capture.image.clone());
+    encode(capture).await
+}
+
+/// Crop the held frame to `rect` and encode it, or with `None` discard it.
+///
+/// Returns `None` when there was nothing to crop or the user cancelled.
+#[tauri::command]
+pub async fn capture_region_finish(
+    rect: Option<CaptureRect>,
+) -> Result<Option<ScreenCapture>, String> {
+    use crate::sync_util::LockExt;
+    let held = HELD_REGION.lock_or_recover().take();
+    let (Some(image), Some(rect)) = (held, rect) else {
+        return Ok(None);
+    };
+    let image = crop(&image, rect).ok_or("The selected region is empty.")?;
+    let capture = Capture {
+        source_width: image.width(),
+        source_height: image.height(),
+        image,
+    };
+    encode(capture).await.map(Some)
+}
+
+/// `rect` cut out of `image`, clamped to its edges; `None` when nothing is left.
+fn crop(image: &image::DynamicImage, rect: CaptureRect) -> Option<image::DynamicImage> {
+    let x = rect.x.min(image.width());
+    let y = rect.y.min(image.height());
+    let width = rect.width.min(image.width() - x);
+    let height = rect.height.min(image.height() - y);
+    if width == 0 || height == 0 {
+        return None;
+    }
+    Some(image.crop_imm(x, y, width, height))
+}
+
 async fn encode(capture: Capture) -> Result<ScreenCapture, String> {
     let (width, height) = (capture.source_width, capture.source_height);
     let long_edge = target_long_edge(width, height);
@@ -274,6 +340,51 @@ mod tests {
             serde_json::to_string(&CaptureTarget::Window).unwrap(),
             "\"window\""
         );
+    }
+
+    #[test]
+    fn a_region_is_cut_at_full_resolution() {
+        let img = image::DynamicImage::new_rgb8(3840, 2160);
+        let rect = CaptureRect {
+            x: 100,
+            y: 200,
+            width: 640,
+            height: 360,
+        };
+        let cut = crop(&img, rect).expect("a region");
+        assert_eq!((cut.width(), cut.height()), (640, 360));
+    }
+
+    #[test]
+    fn a_region_past_the_edge_is_clamped_to_it() {
+        let img = image::DynamicImage::new_rgb8(100, 100);
+        let rect = CaptureRect {
+            x: 80,
+            y: 90,
+            width: 50,
+            height: 50,
+        };
+        let cut = crop(&img, rect).expect("a region");
+        assert_eq!((cut.width(), cut.height()), (20, 10));
+    }
+
+    #[test]
+    fn an_empty_or_outside_region_is_refused() {
+        let img = image::DynamicImage::new_rgb8(100, 100);
+        let empty = CaptureRect {
+            x: 10,
+            y: 10,
+            width: 0,
+            height: 5,
+        };
+        let outside = CaptureRect {
+            x: 200,
+            y: 0,
+            width: 10,
+            height: 10,
+        };
+        assert!(crop(&img, empty).is_none());
+        assert!(crop(&img, outside).is_none());
     }
 
     /// Run a display of this size through the whole downscale-and-encode path.

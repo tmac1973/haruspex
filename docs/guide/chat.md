@@ -43,7 +43,7 @@ To have the assistant draw a picture instead, see the `images` page.
 
 ## Show it an image or a scanned PDF
 
-Drop or paste an image into the chat box to ask about it. The camera button attaches a screenshot. For a scanned PDF, put it in the working directory and ask the assistant to read it. This needs a model that can see images.
+Drop or paste an image into the chat box to ask about it. The camera button attaches a screenshot: choose **Screen**, **Window…** to pick one window, or **Region…** to drag out part of the screen (Haruspex hides while the screen is taken). For a scanned PDF, put it in the working directory and ask the assistant to read it. This needs a model that can see images.
 
 ## Talk to it and hear answers
 

@@ -13,6 +13,8 @@ export const IPC = {
 	app_window_open: 'app_window_open',
 	artifact_register: 'artifact_register',
 	cancel_download: 'cancel_download',
+	capture_region_finish: 'capture_region_finish',
+	capture_region_start: 'capture_region_start',
 	capture_screen: 'capture_screen',
 	capture_window: 'capture_window',
 	clear_app_logs: 'clear_app_logs',

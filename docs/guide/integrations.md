@@ -52,6 +52,6 @@ On by default: open a page, read the page as text, click, type, console messages
 
 ## Let the assistant see your screen
 
-The camera button in the chat box attaches a screenshot whenever you click it. To let the assistant take one when you ask, turn on Settings → Screen → **Let the assistant take a screenshot when you ask it to** (off by default). It captures once per request and never watches your screen. The model must be able to read images.
+The camera button in the chat box attaches a screenshot of the screen, one window, or a region you drag out, whenever you use it. To let the assistant take one when you ask, turn on Settings → Screen → **Let the assistant take a screenshot when you ask it to** (off by default). It captures once per request and never watches your screen. The model must be able to read images.
 
 On Linux your desktop asks which screen to share. On macOS, grant Screen Recording in System Settings first.
