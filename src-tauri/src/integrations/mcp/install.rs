@@ -975,6 +975,34 @@ mod tests {
     }
 
     #[test]
+    fn a_zip_entry_cannot_write_outside_the_destination() {
+        use std::io::Write;
+        let root = std::env::temp_dir().join("haruspex_mcp_zip_slip_test");
+        let _ = std::fs::remove_dir_all(&root);
+        let dest = root.join("unpacked");
+        std::fs::create_dir_all(&dest).unwrap();
+        let archive = root.join("server.zip");
+
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+        let options = zip::write::SimpleFileOptions::default();
+        zip.start_file("../escaped.txt", options).unwrap();
+        zip.write_all(b"out").unwrap();
+        zip.start_file("/absolute.txt", options).unwrap();
+        zip.write_all(b"abs").unwrap();
+        #[cfg(unix)]
+        zip.add_symlink("link", "/etc", options).unwrap();
+        zip.finish().unwrap();
+
+        // Refusing the archive and sanitising the names are both safe; what
+        // matters is that nothing lands beside or above the destination.
+        let _ = extract(&archive, &dest);
+        assert!(!root.join("escaped.txt").exists());
+        assert!(!Path::new("/absolute.txt").exists());
+        assert!(std::fs::symlink_metadata(dest.join("link")).is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn sha256_matches_a_known_value() {
         let dir = std::env::temp_dir().join("haruspex_mcp_sha_test");
         std::fs::create_dir_all(&dir).unwrap();

@@ -72,9 +72,8 @@ export function applyNotes(spec: AssetSpec, marks: ReviewMark[]): AssetSpec {
 	const notes = new Map(marks.map((m) => [m.id, m.note]));
 	return {
 		...spec,
-		entries: spec.entries.map(
-			(e): AssetEntry =>
-				notes.has(e.id) ? { ...e, prompt: amendPrompt(e.prompt, notes.get(e.id)) } : e
+		entries: spec.entries.map((e): AssetEntry =>
+			notes.has(e.id) ? { ...e, prompt: amendPrompt(e.prompt, notes.get(e.id)) } : e
 		)
 	};
 }

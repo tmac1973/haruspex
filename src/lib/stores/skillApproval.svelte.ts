@@ -32,8 +32,7 @@ export interface SkillApprovalRequest {
 }
 
 export type SkillApprovalResult =
-	| { kind: 'saved'; edited: boolean }
-	| { kind: 'rejected'; reason: string };
+	{ kind: 'saved'; edited: boolean } | { kind: 'rejected'; reason: string };
 
 const queue = createApprovalQueue<SkillApprovalRequest, SkillApprovalResult>();
 

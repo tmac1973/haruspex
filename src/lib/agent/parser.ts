@@ -157,8 +157,7 @@ export function extractFunctionStyleToolCalls(content: string): ParsedToolCall[]
 
 /** Either the parsed calls, or the reason the content was refused outright. */
 type FunctionStyleResult =
-	| { kind: 'calls'; calls: ParsedToolCall[] }
-	| { kind: 'rejected'; reason: string };
+	{ kind: 'calls'; calls: ParsedToolCall[] } | { kind: 'rejected'; reason: string };
 
 /**
  * The checked form of `extractFunctionStyleToolCalls`. Same grammar, but it
@@ -256,8 +255,7 @@ function missingRequiredArg(
 	tools: ToolDefinition[] | undefined
 ): string | null {
 	const params = tools?.find((t) => t.function?.name === call.name)?.function?.parameters as
-		| { required?: unknown }
-		| undefined;
+		{ required?: unknown } | undefined;
 	const required = params?.required;
 	if (!Array.isArray(required)) return null;
 	for (const key of required) {

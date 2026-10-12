@@ -137,8 +137,7 @@
 				title={i === 0
 					? 'Plain instruction for this step. The model sees this verbatim as the user message in a fresh chat with full tool access (search, file ops, Python sandbox).'
 					: "Plain instruction. At run time the previous step's reply is automatically prepended, so you can write this assuming the prior output is already in front of the model (e.g. 'Turn the above headlines into a PDF')."}
-				rows="3"
-			></textarea>
+				rows="3"></textarea>
 		</div>
 	{/each}
 	<button

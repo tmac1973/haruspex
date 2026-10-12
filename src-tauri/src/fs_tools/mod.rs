@@ -840,6 +840,7 @@ mod tests {
         let zip = zip::ZipArchive::new(cursor).unwrap();
         let media_entries: Vec<_> = zip
             .file_names()
+            .map(|n| n.expect("utf-8 entry name").into_owned())
             .filter(|n| n.starts_with("ppt/media/"))
             .collect();
         assert_eq!(media_entries.len(), 1);

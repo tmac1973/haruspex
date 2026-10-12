@@ -189,8 +189,7 @@
 						class="free-input"
 						rows="3"
 						placeholder="Type your answer…"
-						bind:value={freeText}
-					></textarea>
+						bind:value={freeText}></textarea>
 				{/if}
 			</div>
 
