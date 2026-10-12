@@ -100,11 +100,7 @@ pub fn timestamp() -> String {
 /// Minimal timestamp without pulling in the chrono crate.
 /// Format: YYYY-MM-DD HH:MM:SS in local time.
 fn chrono_now() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let secs = crate::time_util::now_secs_u64();
 
     // Naive epoch → Y/M/D/H/M/S conversion (UTC). Close enough for a log
     // timestamp; we don't want to pull chrono just for this.

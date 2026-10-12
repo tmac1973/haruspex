@@ -20,6 +20,7 @@ use super::job::Job;
 use super::wsl;
 use crate::command_scope;
 use crate::orphans::{self, RunningServer};
+use crate::process_util::{kill_pid, Signal};
 use crate::shell::kind::ShellSelection;
 use crate::sync_util::LockExt;
 use serde::Serialize;
@@ -29,7 +30,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tokio::io::AsyncReadExt;
 
 /// Orphan-registry kind for background processes.
@@ -500,10 +501,7 @@ fn parse_wsl_orphan_program(program: &str) -> Option<(&str, &str)> {
 fn new_id() -> String {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
+    let nanos = crate::time_util::now_nanos();
     format!("bg-{:x}-{n}", nanos & 0xffff_ffff_ffff)
 }
 
@@ -605,31 +603,12 @@ fn read_tail(path: &Path, bytes: u64) -> std::io::Result<String> {
     Ok(String::from_utf8_lossy(&read_tail_bytes(path, bytes)?).into_owned())
 }
 
-#[derive(Clone, Copy)]
-enum Signal {
-    Term,
-    Kill,
-}
-
-#[cfg(unix)]
+/// Signal a process group (Windows: kill its tree). Best-effort; the group
+/// may already be gone. Never 0 or 1, which `killpg` would read as our own
+/// group or init.
 fn signal_group(pgid: u32, signal: Signal) {
-    if pgid <= 1 {
-        return;
-    }
-    let sig = match signal {
-        Signal::Term => libc::SIGTERM,
-        Signal::Kill => libc::SIGKILL,
-    };
-    // Best-effort; ESRCH when the group is already gone.
-    unsafe {
-        libc::killpg(pgid as i32, sig);
-    }
-}
-
-#[cfg(windows)]
-fn signal_group(pid: u32, _signal: Signal) {
-    if pid > 0 {
-        super::kill_process_tree(pid);
+    if pgid > 1 {
+        kill_pid(pgid, signal, true);
     }
 }
 

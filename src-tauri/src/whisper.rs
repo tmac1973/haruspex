@@ -1,15 +1,13 @@
-use crate::sidecar_process::{sidecar_registry, spawn_sidecar, SidecarChild};
+use crate::sidecar_process::SidecarChild;
 use log::info;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::AppHandle;
-use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
 
 use crate::sidecar_util::{
-    base_url, clear_logs, health_url, http_client, kill_child, kill_process_on_port,
-    new_log_buffer, ports, require_ready, snapshot_logs, spawn_log_reader, timing, watch_health,
-    with_library_paths, LogBuffer, SidecarStatus, LOOPBACK,
+    base_url, clear_logs, health_url, http_client, kill_child, new_log_buffer, ports,
+    require_ready, snapshot_logs, start_sidecar, LogBuffer, SidecarStart, SidecarStatus, LOOPBACK,
 };
 
 const WHISPER_PORT: u16 = ports::WHISPER;
@@ -37,13 +35,6 @@ impl WhisperServer {
 
     pub async fn start(&self, app: &AppHandle, model_path: &str) -> Result<(), String> {
         self.stop().await?;
-        kill_process_on_port(WHISPER_PORT, "whisper-server", sidecar_registry(app)).await?;
-
-        {
-            let mut status = self.status.lock().await;
-            *status = WhisperStatus::Starting;
-        }
-
         info!("Starting whisper-server with model: {}", model_path);
 
         let args = vec![
@@ -54,41 +45,16 @@ impl WhisperServer {
             "--port".to_string(),
             WHISPER_PORT.to_string(),
         ];
-
-        let sidecar = app
-            .shell()
-            .sidecar("haruspex-whisper-server")
-            .map_err(|e| format!("Failed to create whisper sidecar: {}", e))?
-            .args(&args);
-
-        // Set library path so whisper-server can find its bundled shared libraries
-        let sidecar = with_library_paths(sidecar, app);
-
-        let (rx, child) = spawn_sidecar(sidecar, "whisper-server", sidecar_registry(app))?;
-
-        {
-            let mut c = self.child.lock().await;
-            *c = Some(child);
-        }
-
-        // Drain the log/event stream into the buffer + status.
-        spawn_log_reader(
-            "whisper-server",
-            rx,
-            Arc::clone(&self.status),
-            Arc::clone(&self.log_buffer),
-            &[],
-        );
-
-        watch_health(
-            &self.status,
-            health_url(WHISPER_PORT),
-            "whisper-server",
-            timing::HEALTH_POLL_TIMEOUT,
-            false,
-        );
-
-        Ok(())
+        let spec = SidecarStart {
+            name: "whisper-server",
+            port: WHISPER_PORT,
+            args,
+            env: Vec::new(),
+            ready_markers: &[],
+            health_url: health_url(WHISPER_PORT),
+            accept_any: false,
+        };
+        start_sidecar(app, spec, &self.child, &self.status, &self.log_buffer).await
     }
 
     pub async fn stop(&self) -> Result<(), String> {

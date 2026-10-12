@@ -18,31 +18,35 @@ pub async fn fs_lint_python(
     let workdir = workdir_path(&workdir)?;
     let abs = resolve_in_workdir(&workdir, &rel_path)?;
 
+    let path = abs.to_string_lossy();
+    let stdout = run_ruff(&app, &["--select=E9,F", path.as_ref()]).await;
+    Ok(stdout.map_or_else(
+        || "[]".to_string(),
+        |out| String::from_utf8_lossy(&out).into_owned(),
+    ))
+}
+
+/// Run `ruff check` with JSON output plus `args`, and return its stdout.
+/// `None` when the sidecar is missing or would not run; both callers then
+/// report no diagnostics, since lint is advisory.
+async fn run_ruff(app: &tauri::AppHandle, args: &[&str]) -> Option<Vec<u8>> {
     let sidecar = match app.shell().sidecar("haruspex-ruff") {
         Ok(cmd) => cmd,
         Err(e) => {
             log::debug!("ruff sidecar unavailable: {}", e);
-            return Ok("[]".to_string());
+            return None;
         }
     };
-
     let output = sidecar
-        .args([
-            "check",
-            "--output-format=json",
-            "--exit-zero",
-            "--isolated",
-            "--select=E9,F",
-            abs.to_string_lossy().as_ref(),
-        ])
+        .args(["check", "--output-format=json", "--exit-zero", "--isolated"])
+        .args(args)
         .output()
         .await;
-
     match output {
-        Ok(out) => Ok(String::from_utf8_lossy(&out.stdout).into_owned()),
+        Ok(out) => Some(out.stdout),
         Err(e) => {
             log::debug!("ruff invocation failed: {}", e);
-            Ok("[]".to_string())
+            None
         }
     }
 }
@@ -174,43 +178,18 @@ pub async fn lint_python_source(
         return Ok(Vec::new());
     }
 
-    let sidecar = match app.shell().sidecar("haruspex-ruff") {
-        Ok(cmd) => cmd,
-        Err(e) => {
-            let _ = tokio::fs::remove_file(&tmp).await;
-            log::debug!("ruff sidecar unavailable: {}", e);
-            return Ok(Vec::new());
-        }
-    };
-
     let builtins_json = serde_json::to_string(&builtins).unwrap_or_else(|_| "[]".to_string());
     let config_arg = format!("builtins={}", builtins_json);
+    let select = format!("--select={}", SANDBOX_LINT_SELECT);
+    let path = tmp.to_string_lossy();
 
-    let output = sidecar
-        .args([
-            "check",
-            "--output-format=json",
-            "--exit-zero",
-            "--isolated",
-            &format!("--select={}", SANDBOX_LINT_SELECT),
-            "--config",
-            &config_arg,
-            tmp.to_string_lossy().as_ref(),
-        ])
-        .output()
-        .await;
+    let output = run_ruff(&app, &[&select, "--config", &config_arg, path.as_ref()]).await;
 
     let _ = tokio::fs::remove_file(&tmp).await;
 
-    let raw = match output {
-        Ok(out) => out.stdout,
-        Err(e) => {
-            log::debug!("ruff invocation failed: {}", e);
-            return Ok(Vec::new());
-        }
-    };
-
-    Ok(parse_ruff_diagnostics(&raw))
+    Ok(output
+        .map(|raw| parse_ruff_diagnostics(&raw))
+        .unwrap_or_default())
 }
 
 #[cfg(test)]

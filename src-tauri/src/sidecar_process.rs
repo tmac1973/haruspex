@@ -128,10 +128,7 @@ fn spawn_prepared(
         RunningServer {
             id: id.to_string(),
             pid,
-            started_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0),
+            started_at: crate::time_util::now_secs_u64(),
             program,
         },
     );

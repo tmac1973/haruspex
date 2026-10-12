@@ -18,6 +18,7 @@ use sha2::{Digest, Sha256};
 use crate::hash_util::hex;
 use crate::remote::auth::token_matches;
 use crate::sync_util::LockExt;
+use crate::time_util::now_secs;
 
 /// What a device may do. Checked on every operation, not only at connect.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ts_rs::TS)]
@@ -121,13 +122,6 @@ struct Inner {
     dirty: bool,
 }
 
-fn now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
-}
-
 fn hash(token: &str) -> String {
     hex(&Sha256::digest(token.as_bytes()))
 }
@@ -221,7 +215,7 @@ impl Clients {
             id: random_hex(8)?,
             name: name.to_string(),
             scopes,
-            created_at: now(),
+            created_at: now_secs(),
             last_seen: None,
             token_hash: hash(&token),
         };
@@ -277,7 +271,7 @@ impl Clients {
             }
         }
         let i = found?;
-        inner.clients[i].last_seen = Some(now());
+        inner.clients[i].last_seen = Some(now_secs());
         inner.dirty = true;
         if inner.last_save.elapsed() >= SEEN_SAVE_INTERVAL {
             let _ = self.save(&mut inner);

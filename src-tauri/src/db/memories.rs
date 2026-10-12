@@ -406,10 +406,6 @@ impl Database {
 /// and greppable, and the suffix separates the several facts one extraction
 /// pass inserts inside the same millisecond.
 fn fastrand_suffix() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.subsec_nanos())
-        .unwrap_or(0);
+    let nanos = crate::time_util::now_nanos() % 1_000_000_000;
     format!("{:06x}", nanos % 0x100_0000)
 }
