@@ -63,8 +63,14 @@ pub struct EmailAccount {
     /// the `From` address when sending.
     pub email_address: String,
 
-    /// App password, inline. Empty when it is kept in the system keychain
-    /// under `password_ref` — the usual case where a keychain exists.
+    /// App password, inline: a legacy value from before secrets left the
+    /// settings, or one typed and tested before the account is saved. Empty
+    /// when it is kept under `password_ref`, the usual case.
+    ///
+    /// Read from the webview, never written back: no command returns an
+    /// account, and `skip_serializing` makes sure none ever sends a password
+    /// to the webview by accident.
+    #[serde(skip_serializing)]
     pub password: String,
 
     /// The keychain entry holding the password (`"email:<id>"`). Rust reads
@@ -288,5 +294,19 @@ mod tests {
             a.resolved_from(&Memory::default()).unwrap().password,
             "hunter2"
         );
+    }
+
+    #[test]
+    fn a_password_is_read_from_the_webview_but_never_sent_back() {
+        let mut a = sample_account();
+        a.password = "hunter2".into();
+        let json = serde_json::to_string(&a).unwrap();
+        assert!(!json.contains("hunter2"), "{json}");
+        assert!(!json.contains("\"password\""), "{json}");
+        // Still read when the webview sends one (a draft being tested).
+        let mut value = serde_json::to_value(&a).unwrap();
+        value["password"] = serde_json::json!("typed-pw");
+        let back: EmailAccount = serde_json::from_value(value).unwrap();
+        assert_eq!(back.password, "typed-pw");
     }
 }

@@ -584,7 +584,19 @@ const NAMESPACES: &[&str] = &[
     "email:", "dav:", "mcp:", "apikey:", "proxy:", "brave:", "comfy:", "remote:",
 ];
 
-/// The namespaces the webview may read back, because it is what uses them.
+/// The namespaces the webview may read back, because it is what uses them:
+/// inference requests (streaming chat, the model list, the server probe) are
+/// made from the webview with the key as `Authorization: Bearer`, and the
+/// remote-access token is shown as the guest link and its QR code.
+///
+/// Keeping these in Rust would mean routing inference through a localhost
+/// proxy that adds the key (Tauri's custom schemes can't stream). Weighed in
+/// #495 and not done: script running in the main window could still *use* a
+/// key through such a proxy, and getting script there is already hard. The
+/// window's CSP allows `script-src 'self'` only, rendered markdown is
+/// sanitized, and model-written HTML runs in a sandboxed, opaque-origin
+/// iframe with no IPC (`artifact_frame.rs`). Every other secret never reaches
+/// the webview.
 const READABLE: &[&str] = &["apikey:", "remote:"];
 
 /// Read a secret the webview itself needs. Refused for every other kind.
