@@ -1,6 +1,7 @@
 //! `fs_download_url` — sandboxed HTTP download into the working directory.
 
 use super::path::{refuse_if_exists, resolve_in_workdir, workdir_path_for_write};
+use crate::http_util::{stream_to_file, DownloadError};
 use tokio::fs;
 
 /// Max bytes we'll accept from a single HTTP download into the working
@@ -69,8 +70,6 @@ pub async fn fs_download_url(
     rel_path: String,
     overwrite: Option<bool>,
 ) -> Result<String, String> {
-    use tokio::io::AsyncWriteExt;
-
     let workdir = workdir_path_for_write(&workdir)?;
     let resolved = resolve_in_workdir(&workdir, &rel_path)?;
 
@@ -123,31 +122,20 @@ pub async fn fs_download_url(
         }
     }
 
-    let mut file = fs::File::create(&resolved)
-        .await
-        .map_err(|e| format!("Failed to open output file: {}", e))?;
-
-    let mut total: u64 = 0;
-    let mut stream = response.bytes_stream();
-    use futures_util::StreamExt;
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("Download stream error: {}", e))?;
-        total += chunk.len() as u64;
-        if total > MAX_DOWNLOAD_BYTES {
-            drop(file);
-            let _ = fs::remove_file(&resolved).await;
-            return Err(format!(
-                "Download exceeded size limit ({} bytes streamed, max {}).",
-                total, MAX_DOWNLOAD_BYTES
-            ));
-        }
-        file.write_all(&chunk)
-            .await
-            .map_err(|e| format!("Failed to write chunk: {}", e))?;
-    }
-    file.flush()
-        .await
-        .map_err(|e| format!("Failed to flush file: {}", e))?;
+    let total = stream_to_file(response, &resolved, Some(MAX_DOWNLOAD_BYTES), |_| async {
+        true
+    })
+    .await
+    .map_err(|e| match e {
+        DownloadError::TooLarge(streamed) => format!(
+            "Download exceeded size limit ({} bytes streamed, max {}).",
+            streamed, MAX_DOWNLOAD_BYTES
+        ),
+        DownloadError::Create(e) => format!("Failed to open output file: {}", e),
+        DownloadError::Read(e) => format!("Download stream error: {}", e),
+        DownloadError::Write(e) => format!("Failed to write chunk: {}", e),
+        DownloadError::Stopped => unreachable!("never stopped"),
+    })?;
 
     Ok(format!("Downloaded {} bytes to {}", total, rel_path))
 }

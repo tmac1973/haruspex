@@ -9,6 +9,13 @@
 //! this targets actually works: a Nextcloud login reaches calendars and
 //! contacts alike.
 
+/// Per-request timeout for every DAV and Google call.
+///
+/// A calendar query against a year of events on a small self-hosted box is
+/// genuinely slow; an unreachable host must still fail rather than hang the
+/// tool call that is waiting on it.
+const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 pub mod account;
 pub mod caldav;
 pub mod carddav;

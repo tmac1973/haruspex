@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
 	import { errMessage } from '#lib/utils/error.ts';
+	import { formatGigabytes } from '#lib/utils/format.ts';
 	import { listen } from '@tauri-apps/api/event';
 	import Tooltip from '#lib/components/Tooltip.svelte';
 	import { getSettings } from '#lib/stores/settings.ts';
@@ -66,10 +67,6 @@
 		void refresh();
 	});
 
-	function gb(bytes: number): string {
-		return `${(bytes / 1e9).toFixed(1)} GB`;
-	}
-
 	function total(files: ComfyModelFile[]): number {
 		return files.reduce((n, f) => n + f.size_bytes, 0);
 	}
@@ -103,7 +100,7 @@
 		status = 'Starting…';
 		const unlisten = await listen<DownloadProgress>('download-progress', (e) => {
 			const p = e.payload;
-			status = `${p.stage} — ${gb(p.downloaded)} of ${gb(p.total)}`;
+			status = `${p.stage} — ${formatGigabytes(p.downloaded)} of ${formatGigabytes(p.total)}`;
 		});
 		try {
 			if (route === 'direct') {
@@ -164,7 +161,7 @@
 						class="help"
 						title={row.missing.map((f) => `models/${f.folder}/${f.filename}`).join('\n')}
 					>
-						Needs its {row.missing.map((f) => ROLE[f.folder]).join(', ')} ({gb(
+						Needs its {row.missing.map((f) => ROLE[f.folder]).join(', ')} ({formatGigabytes(
 							total(row.missing)
 						)}).
 					</p>

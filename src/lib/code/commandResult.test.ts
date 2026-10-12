@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDuration, parseCommandResult, stripAnsi, tailLines } from './commandResult';
+import { formatCommandDuration, parseCommandResult, stripAnsi, tailLines } from './commandResult';
 
 describe('parseCommandResult', () => {
 	it('reads the exit code, duration and output', () => {
@@ -44,10 +44,10 @@ describe('tailLines', () => {
 	});
 });
 
-describe('formatDuration', () => {
+describe('formatCommandDuration', () => {
 	it('scales the unit', () => {
-		expect(formatDuration(850)).toBe('850 ms');
-		expect(formatDuration(12_400)).toBe('12.4 s');
-		expect(formatDuration(185_000)).toBe('3 min 5 s');
+		expect(formatCommandDuration(850)).toBe('850 ms');
+		expect(formatCommandDuration(12_400)).toBe('12.4 s');
+		expect(formatCommandDuration(185_000)).toBe('3 min 5 s');
 	});
 });

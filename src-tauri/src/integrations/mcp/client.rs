@@ -51,7 +51,7 @@
 //! which is the actual requirement.
 
 use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, ClientCapabilities, ClientInfo, Implementation,
+    CallToolRequestParams, CallToolResponse, ClientCapabilities, ClientConfig, Implementation,
     InputRequest, ProtocolVersion,
 };
 use rmcp::service::{NotificationContext, RunningService};
@@ -123,11 +123,11 @@ impl HaruspexClient {
 }
 
 impl ClientHandler for HaruspexClient {
-    fn get_info(&self) -> ClientInfo {
+    fn get_info(&self) -> ClientConfig {
         // No `sampling` or `roots` capability is declared, so a well-behaved
         // server will not ask for them at all. The refusals below are for
         // servers that ask anyway.
-        ClientInfo::new(
+        ClientConfig::new(
             ClientCapabilities::default(),
             Implementation::new("haruspex", env!("CARGO_PKG_VERSION")),
         )

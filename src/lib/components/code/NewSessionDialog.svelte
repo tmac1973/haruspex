@@ -14,6 +14,7 @@
 	import { newSession } from '#lib/stores/code.svelte.ts';
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import { errMessage } from '#lib/utils/error.ts';
+	import { wslShare } from '#lib/code/paths.ts';
 
 	let { open, onclose }: { open: boolean; onclose: () => void } = $props();
 
@@ -55,7 +56,7 @@
 				directory: true,
 				multiple: false,
 				title: distro ? 'Choose a folder in WSL' : 'Choose a folder',
-				defaultPath: distro ? `\\\\wsl.localhost\\${distro}\\home` : undefined
+				defaultPath: distro ? wslShare(distro, '/home') : undefined
 			});
 			if (typeof dir !== 'string') return;
 			const loc = await resolveCodeFolder(dir, null);

@@ -10,6 +10,7 @@
 //! existing pyfetch usage patterns (.text(), .json(), .bytes(), etc.)
 //! keep working.
 
+use crate::http_util::CappedReadError;
 use crate::proxy::{apply_proxy, routes_through_proxy, ProxyConfig};
 use crate::sync_util::LockExt;
 use serde::{Deserialize, Serialize};
@@ -304,26 +305,14 @@ async fn perform_fetch(
     Err(format!("Too many redirects (more than {MAX_REDIRECTS})"))
 }
 
-/// Read a response body, failing as soon as it passes `max` bytes. Chunk by
-/// chunk, so a runaway download is cut off at the cap instead of being held
-/// in memory whole and only then rejected.
-async fn read_capped(mut resp: reqwest::Response, max: usize) -> Result<Vec<u8>, String> {
-    let too_large = || format!("Response too large; maximum is {max} bytes");
-    if resp.content_length().is_some_and(|n| n > max as u64) {
-        return Err(too_large());
-    }
-    let mut body = Vec::new();
-    while let Some(chunk) = resp
-        .chunk()
+/// Read a response body, capped at `max` bytes.
+async fn read_capped(resp: reqwest::Response, max: usize) -> Result<Vec<u8>, String> {
+    crate::http_util::read_capped(resp, max as u64)
         .await
-        .map_err(|e| format!("Failed to read response body: {}", e))?
-    {
-        if body.len() + chunk.len() > max {
-            return Err(too_large());
-        }
-        body.extend_from_slice(&chunk);
-    }
-    Ok(body)
+        .map_err(|e| match e {
+            CappedReadError::TooLarge => format!("Response too large; maximum is {max} bytes"),
+            CappedReadError::Read(e) => format!("Failed to read response body: {}", e),
+        })
 }
 
 // ----------------------------------------------------------------------

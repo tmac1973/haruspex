@@ -22,6 +22,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { getSettings, hasBraveApiKey } from '#lib/stores/settings.ts';
 import { getDebugLogs } from '#lib/debug-log.ts';
+import { urlForReport } from '#lib/utils/http.ts';
+
+export { urlForReport };
 
 const REPO = 'tmac1973/haruspex';
 const ISSUE_URL_BASE = `https://github.com/${REPO}/issues/new`;
@@ -122,21 +125,6 @@ function buildSystemBlock(d: Diagnostics): string {
 	const lines = [`Haruspex ${d.app_version}`, `OS:   ${d.os}`, `Arch: ${d.arch}`];
 	if (d.appimage) lines.push('Packaging: AppImage');
 	return lines.join('\n');
-}
-
-/**
- * A configured URL as it may appear in a public issue: scheme, host, port and
- * path. Userinfo (`user:pass@`), the query string (`?key=…`) and the fragment
- * go, since any of them can hold a credential.
- */
-export function urlForReport(url: string): string {
-	if (!url) return '';
-	try {
-		const u = new URL(url);
-		return `${u.protocol}//${u.host}${u.pathname === '/' ? '' : u.pathname}`;
-	} catch {
-		return '(not a valid URL)';
-	}
 }
 
 /**

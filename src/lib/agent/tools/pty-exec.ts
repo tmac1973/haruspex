@@ -23,6 +23,7 @@ import type { ToolContext } from './types';
 import { isFish } from '#lib/shell/fish.ts';
 import { outOfMemoryNote } from '#lib/shell/memoryLimit.ts';
 import type { ShellMemoryStatus } from '#lib/ipc/gen/ShellMemoryStatus.ts';
+import { bytesToBase64 } from '#lib/utils/base64.ts';
 
 /** Inline output budget before middle-truncation + temp-file spill. */
 export const RUN_OUTPUT_MAX_BYTES = 16 * 1024;
@@ -496,5 +497,5 @@ export async function spillIfLarge(header: string, body: string): Promise<string
 
 /** UTF-8 safe base64, for handing a script to `base64 -d`. */
 function toBase64(text: string): string {
-	return btoa(String.fromCharCode(...new TextEncoder().encode(text)));
+	return bytesToBase64(new TextEncoder().encode(text));
 }

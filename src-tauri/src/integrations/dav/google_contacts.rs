@@ -8,15 +8,13 @@
 //! produces, so the tools cannot tell the difference.
 
 use serde::Deserialize;
-use std::time::Duration;
 
 use super::vcard::{Contact, ContactSource, TypedValue};
-use crate::proxy::{apply_proxy, ProxyConfig};
+use crate::proxy::ProxyConfig;
 
 const CONNECTIONS: &str = "https://people.googleapis.com/v1/people/me/connections";
 const PERSON_FIELDS: &str =
     "names,emailAddresses,phoneNumbers,addresses,organizations,birthdays,biographies,photos";
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Pages of 1,000 contacts. A personal address book is a few hundred; this
 /// bounds a pathological one rather than limiting a real one.
@@ -147,27 +145,7 @@ async fn fetch_page(
     if let Some(token) = page_token {
         url.query_pairs_mut().append_pair("pageToken", token);
     }
-    let http = apply_proxy(reqwest::Client::builder().timeout(REQUEST_TIMEOUT), proxy)?
-        .build()
-        .map_err(|e| format!("could not create an HTTP client: {e}"))?;
-    let response = http
-        .get(url)
-        .bearer_auth(access_token)
-        .send()
-        .await
-        .map_err(|e| format!("Could not reach Google Contacts: {}", e.without_url()))?;
-    let status = response.status();
-    let text = response.text().await.unwrap_or_default();
-    if !status.is_success() {
-        let message = serde_json::from_str::<serde_json::Value>(&text)
-            .ok()
-            .and_then(|v| v["error"]["message"].as_str().map(str::to_string));
-        return Err(match message {
-            Some(m) => format!("Google Contacts refused the request (HTTP {status}): {m}"),
-            None => format!("Google Contacts answered HTTP {status}."),
-        });
-    }
-    serde_json::from_str(&text).map_err(|_| "Google Contacts' answer could not be read.".into())
+    super::google::get_json(url, access_token, proxy, "Google Contacts").await
 }
 
 /// A person as a `Contact`, or `None` for one with neither a name nor any

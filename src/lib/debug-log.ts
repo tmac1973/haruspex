@@ -13,8 +13,11 @@
  * by the time the user hits the bug, the data they need was never
  * captured. Memory cost is bounded (5000-entry ring buffer, large
  * payloads truncated below); CPU cost is dwarfed by the inference round
- * trips it's logging; and the buffer lives entirely in memory and dies
- * on app restart, so persistence/privacy exposure is minimal.
+ * trips it's logging. The buffer lives in memory, except when
+ * `startDebugLogFile` mirrors it to disk (dev builds, or
+ * `HARUSPEX_DEBUG_LOG_FILE` set) — and it is copied into the diagnostics
+ * bundle — so user content (prompts, tool results, model output) goes
+ * through `previewPayload` and stays clipped unless verbose payloads are on.
  */
 
 const RING_CAPACITY = 5000;
@@ -36,6 +39,16 @@ export function setVerbosePayloads(on: boolean): void {
 
 export function isVerbosePayloads(): boolean {
 	return verbosePayloads;
+}
+
+/**
+ * Clip user content (prompts, tool results, model output) for logging,
+ * keeping the length signal. Verbose payloads log it whole.
+ */
+export function previewPayload(s: string | null | undefined, max = 800): string | null {
+	if (s == null) return null;
+	if (verbosePayloads || s.length <= max) return s;
+	return `${s.slice(0, max)}… (+${s.length - max} more chars)`;
 }
 
 let nextTurnId = 1;

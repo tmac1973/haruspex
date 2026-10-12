@@ -1,12 +1,9 @@
 /**
  * The one place that knows how to address a cached image.
  *
- * Tauri exposes a custom scheme as `http://<scheme>.localhost` on Windows and
- * Android, but as the native `<scheme>://localhost` on Linux (WebKitGTK) and
- * macOS. Getting it wrong does not fail loudly — the request goes to the real
- * network and dies as a connection refusal — so the branch lives here and
- * every caller stays platform-agnostic. The same split is applied to the
- * sandbox's `haruspexfetch:` scheme in `sandbox/python.worker.ts`.
+ * The scheme's base URL differs by platform (see `customSchemeBase`), and
+ * getting it wrong does not fail loudly, so every caller goes through here
+ * and stays platform-agnostic.
  *
  * The hash goes in the path rather than the host because a DNS label caps at
  * 63 characters and a sha256 hex digest is 64. Tauri's own `asset://localhost/`
@@ -17,16 +14,10 @@
  * control's server for the same image by hash.
  */
 
-const isWindowsLike = /Windows|Android/i.test(
-	(typeof navigator !== 'undefined' && navigator.userAgent) || ''
-);
+import { customSchemeBase } from '#lib/utils/customScheme.ts';
 
 const BASE =
-	import.meta.env.VITE_HARUSPEX_WEB === '1'
-		? '/api/v1/image/'
-		: isWindowsLike
-			? 'http://haruspex-img.localhost/'
-			: 'haruspex-img://localhost/';
+	import.meta.env.VITE_HARUSPEX_WEB === '1' ? '/api/v1/image/' : customSchemeBase('haruspex-img');
 
 /** Exactly 64 lowercase hex characters — mirrors `image_cache::is_valid_hash`. */
 const HASH_RE = /^[0-9a-f]{64}$/;

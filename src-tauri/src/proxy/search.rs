@@ -15,7 +15,7 @@ use super::stats::{
     SearchFailureKind, SearchStats, StatSink,
 };
 use super::{ProxyConfig, ProxyState, SearchResult};
-use log::{info, warn};
+use log::{debug, info, warn};
 use scraper::{ElementRef, Html, Selector};
 
 /// Every engine returns at most this many results per query.
@@ -161,10 +161,15 @@ pub(super) fn reject_if_irrelevant(
 /// this is what makes the empty-result log line actionable when an engine
 /// restructures its markup.
 fn warn_empty_scrape(label: &str, html: &str, needles: &[&str]) {
-    let snippet = diagnostic_snippet(html, needles, 3000);
     warn!(
-        "{} parser found 0 results — anchored snippet of response: {}",
-        label, snippet
+        "{} parser found 0 results ({} bytes of HTML)",
+        label,
+        html.len()
+    );
+    debug!(
+        "{} anchored snippet of response: {}",
+        label,
+        diagnostic_snippet(html, needles, 3000)
     );
 }
 

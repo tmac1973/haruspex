@@ -90,7 +90,8 @@ function licensingSection(l: Licensing): string[] {
 	return lines;
 }
 
-function countByStatus(entries: EntryOutcome[]) {
+/** Counts by status, so the stage line and the report cannot disagree. */
+export function countByStatus(entries: EntryOutcome[]) {
 	const n = (s: EntryOutcome['status']) => entries.filter((e) => e.status === s).length;
 	return {
 		done: n('done'),

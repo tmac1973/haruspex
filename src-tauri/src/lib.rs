@@ -14,6 +14,8 @@ mod env_util;
 mod feedback;
 mod fs_tools;
 mod hardware;
+mod hash_util;
+mod http_util;
 mod image_cache;
 mod image_engine;
 mod image_gen;

@@ -2,6 +2,7 @@
 
 import { parseModelColumns, type ModelColumns } from '../../chainModel';
 import { DEFAULT_SPEC_PATH } from '#lib/assets/spec/paths.ts';
+import { clampInt } from '#lib/utils/clampInt.ts';
 
 /** Which checkpoints the run stops at. */
 export type AssetRunMode = 'attended' | 'unattended';
@@ -92,10 +93,9 @@ export interface AssetGenerationConfig {
 	chain_coding_model: ModelColumns | null;
 }
 
-function clampInt(v: unknown, lo: number, hi: number): number | null {
-	return typeof v === 'number' && Number.isFinite(v)
-		? Math.min(hi, Math.max(lo, Math.round(v)))
-		: null;
+/** A number rounded into `[lo, hi]`, or null for anything that isn't one. */
+function optionalInt(v: unknown, lo: number, hi: number): number | null {
+	return typeof v === 'number' && Number.isFinite(v) ? clampInt(v, lo, hi, Math.round) : null;
 }
 
 function optionalBool(v: unknown): boolean | null {
@@ -104,7 +104,7 @@ function optionalBool(v: unknown): boolean | null {
 
 /** Nearest power of two, clamped. A hand-edited 30 becomes 32 rather than failing. */
 function clampPowerOfTwo(v: unknown): number | null {
-	const n = clampInt(v, MIN_TARGET_SIZE, MAX_TARGET_SIZE);
+	const n = optionalInt(v, MIN_TARGET_SIZE, MAX_TARGET_SIZE);
 	if (n === null) return null;
 	const exp = Math.round(Math.log2(n));
 	return Math.min(MAX_TARGET_SIZE, Math.max(MIN_TARGET_SIZE, 2 ** exp));
@@ -133,13 +133,13 @@ export function parseAssetGenerationConfig(json: string | null): AssetGeneration
 			? (raw.run_mode as AssetRunMode)
 			: 'attended',
 		target_size: clampPowerOfTwo(raw.target_size),
-		max_attempts: clampInt(raw.max_attempts, 1, 10),
-		anchor_attempts: clampInt(raw.anchor_attempts, 1, 10),
-		concurrency: clampInt(raw.concurrency, 1, 8),
+		max_attempts: optionalInt(raw.max_attempts, 1, 10),
+		anchor_attempts: optionalInt(raw.anchor_attempts, 1, 10),
+		concurrency: optionalInt(raw.concurrency, 1, 8),
 		vision_judge: optionalBool(raw.vision_judge),
 		use_git: optionalBool(raw.use_git),
 		code_textures: optionalBool(raw.code_textures),
-		texture_variants: clampInt(raw.texture_variants, 1, MAX_TEXTURE_VARIANTS),
+		texture_variants: optionalInt(raw.texture_variants, 1, MAX_TEXTURE_VARIANTS),
 		coding_run:
 			raw.coding_run && typeof raw.coding_run === 'object' && !Array.isArray(raw.coding_run)
 				? (raw.coding_run as Record<string, unknown>)

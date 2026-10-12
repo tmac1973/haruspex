@@ -9,14 +9,14 @@ import type { AssetSpec } from './types';
 import { ID_PATTERN } from './types';
 
 /** Absolute, drive-lettered, or climbing out of the working directory. */
-function escapesWorkdir(p: string): boolean {
+export function escapesWorkdir(p: string): boolean {
 	const n = p.replace(/\\/g, '/');
 	if (n.startsWith('/')) return true;
 	if (/^[a-zA-Z]:/.test(n)) return true;
 	return n.split('/').includes('..');
 }
 
-function isPowerOfTwo(n: number): boolean {
+export function isPowerOfTwo(n: number): boolean {
 	return Number.isInteger(n) && n > 0 && (n & (n - 1)) === 0;
 }
 

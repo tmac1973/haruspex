@@ -22,14 +22,9 @@ import {
 	type SingleKind
 } from '#lib/assets/single.ts';
 import { ImageBackendError } from '#lib/image/types.ts';
+import { pngDataUrl as dataUrl } from '#lib/utils/base64.ts';
 
 const KINDS: SingleKind[] = ['sprite', 'icon', 'texture', 'image'];
-
-function dataUrl(bytes: Uint8Array): string {
-	let s = '';
-	for (const b of bytes) s += String.fromCharCode(b);
-	return `data:image/png;base64,${btoa(s)}`;
-}
 
 interface ParsedInput {
 	asset: Omit<SingleAssetInput, 'palette'>;

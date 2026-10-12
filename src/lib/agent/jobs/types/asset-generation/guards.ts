@@ -9,13 +9,7 @@
 import { ImageBackendError } from '#lib/image/types.ts';
 import { isAbortError } from '#lib/utils/error.ts';
 
-/** Absolute, drive-lettered, or climbing out of the working directory. */
-export function escapesWorkdir(p: string): boolean {
-	const n = p.replace(/\\/g, '/');
-	if (n.startsWith('/')) return true;
-	if (/^[a-zA-Z]:/.test(n)) return true;
-	return n.split('/').includes('..');
-}
+export { escapesWorkdir } from '#lib/assets/spec/validate.ts';
 
 /** Transient means the backend may come back; permanent means retrying is theatre. */
 export function isTransient(e: unknown): boolean {

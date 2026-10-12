@@ -10,7 +10,10 @@ vi.mock('#lib/api.ts', async (importOriginal) => ({
 vi.mock('#lib/inference/descriptor.ts', () => ({
 	resolveBackendDescriptor: () => ({ contextSize: mocks.contextSize })
 }));
-vi.mock('#lib/stores/settings.ts', () => ({ getChatTemplateKwargs: () => ({}) }));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
+	getChatTemplateKwargs: () => ({})
+}));
 
 import {
 	SUMMARY_PREFIX,

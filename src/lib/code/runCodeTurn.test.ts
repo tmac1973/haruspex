@@ -27,7 +27,8 @@ vi.mock('#lib/skills/turn.ts', () => ({
 vi.mock('#lib/inference/descriptor.ts', () => ({
 	resolveBackendDescriptor: () => ({ contextSize: 16384 })
 }));
-vi.mock('#lib/stores/settings.ts', () => ({
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: () => ({
 		codeMaxIterations: 33,
 		codeAutoApprove: true,

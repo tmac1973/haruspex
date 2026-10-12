@@ -1,6 +1,7 @@
 import type { JobTypeDefinition, PlannedStep } from '../types';
 import type { ModelColumns } from '../../chainModel';
 import { runAssetGenerationPipeline } from './pipeline';
+import { isPowerOfTwo } from '#lib/assets/spec/validate.ts';
 import {
 	parseAssetGenerationConfig,
 	DEFAULT_ANCHOR_ATTEMPTS,
@@ -75,10 +76,6 @@ function planAssetSteps(): PlannedStep[] {
 		deepResearch: false,
 		description: stage.description
 	}));
-}
-
-function isPowerOfTwo(n: number): boolean {
-	return Number.isInteger(n) && n > 0 && (n & (n - 1)) === 0;
 }
 
 /** The first attempt or concurrency count out of range, or null. */

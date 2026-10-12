@@ -103,11 +103,7 @@ export interface A1111Request {
 }
 
 /** Base64 of a PNG, without a data: prefix — what `init_images` expects. */
-export function toBase64(bytes: Uint8Array): string {
-	let binary = '';
-	for (const b of bytes) binary += String.fromCharCode(b);
-	return btoa(binary);
-}
+export { bytesToBase64 as toBase64 } from '#lib/utils/base64.ts';
 
 export function fromBase64(b64: string): Uint8Array {
 	// Tolerate a data: URL: some builds return one and the difference is not

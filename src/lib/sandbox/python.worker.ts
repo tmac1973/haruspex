@@ -2,6 +2,7 @@
 
 import { loadPyodide, type PyodideInterface } from 'pyodide';
 import { errMessage } from '#lib/utils/error.ts';
+import { customSchemeBase } from '#lib/utils/customScheme.ts';
 import type { InstallPhase, MainToWorker, ToolResult, WorkerToMain } from './protocol';
 import {
 	dispatchWorkerMessage,
@@ -1095,14 +1096,7 @@ async function applyRuntimeConfig(py: PyodideInterface): Promise<void> {
  * headers. Same-origin XHRs and the scheme itself pass through untouched.
  */
 function installSandboxFetchProxy(): void {
-	const ua = (self.navigator && self.navigator.userAgent) || '';
-	// Tauri exposes custom schemes as `http://<scheme>.localhost` on Windows
-	// and Android, but as the native `<scheme>://localhost` on Linux
-	// (WebKitGTK) and macOS. Using the wrong form sends the request to the
-	// real network ("Connection refused") instead of the scheme handler.
-	const proxyBase = /Windows|Android/i.test(ua)
-		? 'http://haruspexfetch.localhost/'
-		: 'haruspexfetch://localhost/';
+	const proxyBase = customSchemeBase('haruspexfetch');
 
 	const shouldProxy = (raw: string): boolean => {
 		try {

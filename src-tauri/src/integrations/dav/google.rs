@@ -19,6 +19,7 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+use super::REQUEST_TIMEOUT;
 use crate::proxy::{apply_proxy, ProxyConfig};
 use crate::sync_util::LockExt;
 
@@ -40,7 +41,6 @@ pub const CALDAV_BASE: &str = "https://apidata.googleusercontent.com/caldav/v2";
 
 /// How long the browser consent may take before the sign-in gives up.
 const CONSENT_TIMEOUT: Duration = Duration::from_secs(300);
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 struct Client {
     id: &'static str,
@@ -325,6 +325,40 @@ fn http(proxy: Option<&ProxyConfig>) -> Result<reqwest::Client, String> {
         .map_err(|e| format!("could not create an HTTP client: {e}"))
 }
 
+/// GET a Google API with the access token and decode its JSON. `service`
+/// ("Google Calendar", "Google Contacts") names the API in every error.
+pub(super) async fn get_json<T: serde::de::DeserializeOwned>(
+    url: impl reqwest::IntoUrl,
+    access_token: &str,
+    proxy: Option<&ProxyConfig>,
+    service: &str,
+) -> Result<T, String> {
+    let response = http(proxy)?
+        .get(url)
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .map_err(|e| format!("Could not reach {service}: {}", e.without_url()))?;
+    let status = response.status();
+    let text = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(describe_api_error(service, status.as_u16(), &text));
+    }
+    serde_json::from_str(&text).map_err(|_| format!("{service}'s answer could not be read."))
+}
+
+/// Google's own message, which names the actual cause ("API has not been
+/// used in project …", "insufficient permissions") better than a status code.
+fn describe_api_error(service: &str, status: u16, body: &str) -> String {
+    let message = serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| v["error"]["message"].as_str().map(str::to_string));
+    match message {
+        Some(m) => format!("{service} refused the request (HTTP {status}): {m}"),
+        None => format!("{service} answered HTTP {status}."),
+    }
+}
+
 /// Access tokens by refresh token, in memory only. An hour each; refreshed a
 /// minute early so a request never goes out with one about to lapse.
 fn cache() -> &'static Mutex<HashMap<String, (String, Instant)>> {
@@ -405,6 +439,25 @@ pub async fn google_sign_out(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn googles_own_error_message_is_kept() {
+        let err = describe_api_error(
+            "Google Calendar",
+            403,
+            r#"{"error":{"code":403,"message":"Google Calendar API has not been used in project 1 before or it is disabled."}}"#,
+        );
+        assert!(err.contains("has not been used"), "{err}");
+        assert!(err.starts_with("Google Calendar refused"), "{err}");
+    }
+
+    #[test]
+    fn api_error_without_a_message_names_the_status() {
+        assert_eq!(
+            describe_api_error("Google Contacts", 500, "not json"),
+            "Google Contacts answered HTTP 500."
+        );
+    }
 
     #[test]
     fn the_consent_url_asks_for_offline_read_access_with_pkce() {

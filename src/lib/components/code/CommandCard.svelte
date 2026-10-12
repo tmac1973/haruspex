@@ -8,7 +8,7 @@
 	import { copyText } from '#lib/utils/copyText.ts';
 
 	import type { SearchStep } from '#lib/agent/loop.ts';
-	import { formatDuration, parseCommandResult, tailLines } from '#lib/code/commandResult.ts';
+	import { formatCommandDuration, parseCommandResult, tailLines } from '#lib/code/commandResult.ts';
 	import { hasShellCommandOpener, openShellForCommand } from '#lib/code/shellBridge.ts';
 
 	let { step, root }: { step: SearchStep; root?: string } = $props();
@@ -65,7 +65,7 @@
 		<span class="status" class:bad={failed} class:running={step.status === 'running'}>{status}</span
 		>
 		{#if view.durationMs !== null}
-			<span class="dur">{formatDuration(view.durationMs)}</span>
+			<span class="dur">{formatCommandDuration(view.durationMs)}</span>
 		{/if}
 		{#if view.output}
 			<button

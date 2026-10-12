@@ -40,7 +40,7 @@
 
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use serde::Serialize;
 use serde_json::Value;
@@ -56,12 +56,7 @@ const SWEEP_INTERVAL: Duration = Duration::from_secs(30);
 /// Event name carrying the full queue snapshot to all windows.
 const QUEUE_EVENT: &str = "inference://queue";
 
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
-}
+use crate::time_util::now_ms_u64 as now_ms;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum TicketState {

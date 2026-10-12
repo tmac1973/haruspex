@@ -14,7 +14,8 @@ vi.mock('#lib/api.ts', async (importOriginal) => ({
 vi.mock('#lib/inference/descriptor.ts', () => ({
 	resolveBackendDescriptor: mocks.resolveBackendDescriptor
 }));
-vi.mock('#lib/stores/settings.ts', () => ({
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getChatTemplateKwargs: mocks.getChatTemplateKwargs
 }));
 

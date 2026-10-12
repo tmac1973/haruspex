@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { imageSrc } from '#lib/images/url.ts';
 	import { errMessage } from '#lib/utils/error.ts';
+	import { formatGigabytes } from '#lib/utils/format.ts';
 	import { invoke } from '@tauri-apps/api/core';
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import { comfyApiKey } from '#lib/stores/imageSecrets.ts';
@@ -79,10 +80,6 @@
 
 	async function refreshModels() {
 		models = await invoke<ImageModel[]>('image_models').catch(() => []);
-	}
-
-	function gb(bytes: number): string {
-		return `${(bytes / 1e9).toFixed(1)} GB`;
 	}
 
 	async function downloadModel(m: ImageModel) {
@@ -345,7 +342,7 @@
 				<p class="help" title={m.files.map((f) => `${f.role}: ${f.filename}`).join('\n')}>
 					{m.license}
 					<a href={m.license_url} target="_blank" rel="noreferrer">Full text</a>
-					· {gb(m.size_bytes)} in {m.files.length} files
+					· {formatGigabytes(m.size_bytes)} in {m.files.length} files
 				</p>
 				{#if !m.commercial_use}
 					<p class="warn">Not licensed for commercial use.</p>

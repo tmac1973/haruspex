@@ -17,6 +17,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { emitTo, listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { openAppWindow } from '#lib/appWindow.ts';
+import { folderName } from '#lib/code/sessionList.ts';
 
 /** Main → editor window: show these files. */
 export const OPEN_EVENT = 'editor://open';
@@ -51,14 +52,7 @@ export function isEditorLabel(label: string): boolean {
 	return label.startsWith('editor-');
 }
 
-export function folderName(root: string): string {
-	return (
-		root
-			.replace(/[\\/]+$/, '')
-			.split(/[\\/]/)
-			.pop() || root
-	);
-}
+export { folderName };
 
 /** `<file> — <folder> — Haruspex Editor`. */
 export function editorTitle(file: string | null, root: string): string {

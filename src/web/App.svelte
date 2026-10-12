@@ -12,6 +12,7 @@
 	import ChatView from './components/ChatView.svelte';
 	import Modal from '#lib/components/Modal.svelte';
 	import { VIEW_IMAGE_EVENT } from '#lib/markdown-actions.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	const store = new WebStore();
 	let pairError = $state<string | null>(null);
@@ -37,7 +38,7 @@
 			store.stop();
 			store.start();
 		} catch (e) {
-			pairError = e instanceof Error ? e.message : String(e);
+			pairError = errMessage(e);
 		}
 	}
 

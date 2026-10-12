@@ -13,7 +13,8 @@ vi.mock('#lib/inference/descriptor.ts', () => ({
 }));
 vi.mock('#lib/skills/client.ts', () => ({ skillsAutonomous: () => true }));
 vi.mock('#lib/stores/memory.svelte.ts', () => ({ memoryActive: () => true }));
-vi.mock('#lib/stores/settings.ts', () => ({
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: () => ({
 		sandboxEnabled: false,
 		imageBackendKind: 'comfyui',

@@ -208,8 +208,10 @@ pub async fn proxy_search(
         }
         "auto" => {
             info!(
-                "Auto-searching for: {} (recency: {}, deep_research: {})",
-                query, recency, deep_research
+                "Auto-searching ({} chars, recency: {}, deep_research: {})",
+                query.chars().count(),
+                recency,
+                deep_research
             );
             search_auto(
                 &state,
