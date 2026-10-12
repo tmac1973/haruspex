@@ -10,7 +10,7 @@
 
 import { getVersion } from '@tauri-apps/api/app';
 import type { BackendOverride } from '#lib/api.ts';
-import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
+import { resolveBackendDescriptor, type BackendDescriptor } from '#lib/inference/descriptor.ts';
 import { skillsAutonomous } from '#lib/skills/client.ts';
 import { memoryActive } from '#lib/stores/memory.svelte.ts';
 import {
@@ -42,6 +42,23 @@ const IMAGE: Record<string, string> = {
 const onOff = (on: boolean) => (on ? 'on' : 'off');
 
 /**
+ * How many turns run at once on the model this turn uses: Parallel streams
+ * for the local server, Allow parallel inference for any other.
+ */
+function concurrency(backend: BackendDescriptor, ramSpill: boolean): string[] {
+	if (backend.kind === 'local') {
+		return [
+			`- Parallel streams on the local model server: ${backend.parallelSlots ?? 1}`,
+			`- Local models may use system RAM: ${onOff(ramSpill)}`
+		];
+	}
+	return [
+		`- Allow parallel inference (chat and job turns at once on this server): ${onOff(backend.allowParallel)}`,
+		'- Parallel streams and system RAM: only for the local model, so they do nothing here'
+	];
+}
+
+/**
  * The status block, as Markdown. `override` is the model the asking turn
  * actually runs on when it isn't Settings' (a Code session's or a job's own
  * pick); without it the block would name the Settings model, and the model
@@ -61,6 +78,7 @@ export async function guideStatus(override?: BackendOverride): Promise<string> {
 		'## This Haruspex right now',
 		`- Version: ${version}`,
 		`- Model: ${model}, through ${via}; context ${backend.contextSize.toLocaleString('en-US')} tokens; sees images: ${backend.vision ? 'yes' : 'no'}`,
+		...concurrency(backend, s.allowSpillToSystemRam),
 		`- Memory across chats: ${onOff(memoryActive())}`,
 		`- Python sandbox: ${onOff(s.sandboxEnabled)}`,
 		`- Image generation: ${IMAGE[s.imageBackendKind] ?? s.imageBackendKind}`,

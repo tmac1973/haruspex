@@ -24,7 +24,7 @@ Settings → Skills lists every skill with where it came from. You can switch ea
 
 ## Run a skill
 
-Type `/` in the Chat or Shell input box. A list of commands and skills opens and narrows as you type; use the arrow keys, then Enter or Tab to pick, or Esc to close it. Then type `/name what you want`. The skill's instructions go with your message, so this works on every model, whatever the setting below says.
+Type `/` in the Chat or Shell input box. A list of commands and skills opens and narrows as you type; use the arrow keys, then Enter or Tab to pick, or Esc to close it. A name typed in full, such as `/init`, runs on Enter. Then type `/name what you want`. The skill's instructions go with your message, so this works on every model, whatever the setting below says.
 
 Two built-in commands are always there: `/new` starts over with an empty conversation, and `/skills` lists the skills you can run. The Code tab adds `/compact`, which summarises a session's older turns now; text after it says what to keep (`/compact keep the API notes`). See the `code-sessions` page.
 

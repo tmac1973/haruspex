@@ -1,14 +1,22 @@
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: async () => '0.2.3' }));
+/** What Settings → Inference resolves to, for the tests that change it. */
+const settingsBackend = vi.hoisted(() => ({
+	kind: 'remote',
+	allowParallel: true,
+	parallelSlots: null as number | null
+}));
 vi.mock('#lib/inference/descriptor.ts', () => ({
 	resolveBackendDescriptor: (o?: { modelId?: string; baseUrl: string }) => ({
-		kind: o ? (o.baseUrl.includes('openrouter') ? 'openrouter' : 'remote') : 'remote',
+		kind: o ? (o.baseUrl.includes('openrouter') ? 'openrouter' : 'remote') : settingsBackend.kind,
 		modelId: o?.modelId ?? 'qwen-big',
 		contextSize: 65536,
 		vision: true,
 		baseUrl: 'https://gpu.secret.example:8443',
-		apiKey: 'sk-SECRET-KEY'
+		apiKey: 'sk-SECRET-KEY',
+		allowParallel: o ? false : settingsBackend.allowParallel,
+		parallelSlots: o ? null : settingsBackend.parallelSlots
 	})
 }));
 vi.mock('#lib/skills/client.ts', () => ({ skillsAutonomous: () => true }));
@@ -20,6 +28,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 		imageBackendKind: 'comfyui',
 		screenCaptureEnabled: true,
 		commandMemoryLimitPercent: 0,
+		allowSpillToSystemRam: true,
 		skills: { autonomous: 'on' },
 		integrations: {
 			email: {
@@ -54,6 +63,26 @@ describe('guideStatus', () => {
 		expect(s).toContain('Email accounts switched on: 1');
 		expect(s).toContain('Calendar and contacts accounts switched on: 1');
 		expect(s).toContain('MCP servers switched on: 1');
+	});
+
+	it('says whether turns overlap on a model server, and that the local settings do nothing there', async () => {
+		const s = await guideStatus();
+		expect(s).toContain('Allow parallel inference (chat and job turns at once on this server): on');
+		expect(s).toContain('Parallel streams and system RAM: only for the local model');
+		expect(s).not.toContain('Parallel streams on the local model server');
+	});
+
+	it('gives the local server its Parallel streams and system RAM settings', async () => {
+		Object.assign(settingsBackend, { kind: 'local', parallelSlots: 2 });
+		try {
+			const s = await guideStatus();
+			expect(s).toContain('Model: local.gguf, through the local model, on this computer');
+			expect(s).toContain('Parallel streams on the local model server: 2');
+			expect(s).toContain('Local models may use system RAM: on');
+			expect(s).not.toContain('Allow parallel inference');
+		} finally {
+			Object.assign(settingsBackend, { kind: 'remote', parallelSlots: null });
+		}
 	});
 
 	it('never carries a key, password, address or URL', async () => {

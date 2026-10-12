@@ -68,6 +68,7 @@ Typing `/` at the start of the Chat, Shell or Code input box opens a list of com
 |---|---|
 | Up / Down arrows | Move through the list |
 | Enter or Tab | Pick the highlighted item |
+| Enter, with a name typed in full | Run it, as if the list were closed (Tab still just picks it) |
 | Esc | Close the list and keep your text |
 
 ## Dialogs
