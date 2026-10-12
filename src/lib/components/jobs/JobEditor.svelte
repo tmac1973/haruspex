@@ -21,6 +21,7 @@
 		replaceJobSteps,
 		scheduleToConfigJson,
 		configJsonToSchedule,
+		scheduleLabel,
 		computeNextDueAt,
 		type Schedule,
 		type JobInput,
@@ -335,28 +336,13 @@
 	};
 	const typeSectionTitle = $derived(typeSectionTitles[jobType] ?? typeDef.label);
 
-	function scheduleSummary(s: Schedule): string {
-		switch (s.kind) {
-			case 'manual':
-				return 'Manual';
-			case 'hourly':
-				return 'Hourly';
-			case 'daily':
-				return `Daily ${s.time}`;
-			case 'weekly':
-				return `Weekly ${s.day} ${s.time}`;
-			case 'interval':
-				return `Every ${s.minutes} min`;
-		}
-	}
-
 	const basicsSummary = $derived(`${name.trim() || 'Untitled'} · ${typeDef.label}`);
 	const whereSummary = $derived(
 		[
 			workingDir.trim()
 				? (workingDir.trim().split('/').filter(Boolean).pop() ?? workingDir.trim())
 				: 'No folder',
-			...(schedulable ? [scheduleSummary(schedule)] : [])
+			...(schedulable ? [scheduleLabel(schedule)] : [])
 		].join(' · ')
 	);
 	const modelSummary = $derived(modelFormSummary(modelForm));

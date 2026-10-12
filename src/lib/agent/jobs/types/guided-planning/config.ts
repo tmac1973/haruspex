@@ -194,3 +194,18 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 				: null
 	};
 }
+
+/**
+ * The plan folder a job gets when the user hasn't chosen one:
+ * `plan/<job-name-slug>/`, or '' when the name has nothing to slug. The
+ * editor fills the field with it and the pipeline falls back to it, so the
+ * two always agree.
+ */
+export function defaultPlanDir(jobName: string): string {
+	const slug = jobName
+		.toLowerCase()
+		.trim()
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-+|-+$/g, '');
+	return slug ? `plan/${slug}/` : '';
+}

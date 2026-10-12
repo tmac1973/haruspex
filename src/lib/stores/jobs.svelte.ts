@@ -247,6 +247,29 @@ export function configJsonToSchedule(
 	return null;
 }
 
+/** A schedule as the job list and editor show it: "Daily 09:00", "Every 30 min". */
+export function scheduleLabel(s: Schedule): string {
+	switch (s.kind) {
+		case 'manual':
+			return 'Manual';
+		case 'hourly':
+			return 'Hourly';
+		case 'daily':
+			return `Daily ${s.time}`;
+		case 'weekly':
+			return `Weekly ${s.day} ${s.time}`;
+		case 'interval':
+			return `Every ${s.minutes} min`;
+	}
+}
+
+/** A stored job's schedule label; just the kind when its config can't be read. */
+export function storedScheduleLabel(kind: ScheduleKind, configJson: string | null): string {
+	const s = configJsonToSchedule(kind, configJson);
+	if (s) return scheduleLabel(s);
+	return kind.charAt(0).toUpperCase() + kind.slice(1);
+}
+
 let jobs = $state<JobSummary[]>([]);
 let loaded = $state(false);
 

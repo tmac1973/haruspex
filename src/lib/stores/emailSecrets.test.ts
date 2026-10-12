@@ -8,7 +8,7 @@ const state = vi.hoisted(() => ({
 vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
 
 import { getSettings, setEmailAccounts, type EmailAccount } from './settings';
-import { forgetStoredPassword, migrateEmailSecrets, withStoredPassword } from './emailSecrets';
+import { forgetEmailPassword, migrateEmailSecrets, withStoredEmailPassword } from './emailSecrets';
 import { invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
 
 function account(over: Partial<EmailAccount> = {}): EmailAccount {
@@ -85,7 +85,7 @@ describe('migrateEmailSecrets', () => {
 
 describe('saving and deleting', () => {
 	it('stores a reference and an empty password where there is a keychain', async () => {
-		const saved = await withStoredPassword(account({ password: '' }), 'new-pw');
+		const saved = await withStoredEmailPassword(account({ password: '' }), 'new-pw');
 		expect(calls('secret_set')[0]).toEqual({ key: 'email:a1', value: 'new-pw' });
 		expect(saved).toMatchObject({ password: '', passwordRef: 'email:a1' });
 	});
@@ -93,14 +93,14 @@ describe('saving and deleting', () => {
 	it('never keeps the password in the settings, even where nothing lasts', async () => {
 		// Rust keeps it in memory for the session then.
 		state.available = false;
-		const saved = await withStoredPassword(account({ passwordRef: 'email:a1' }), 'new-pw');
+		const saved = await withStoredEmailPassword(account({ passwordRef: 'email:a1' }), 'new-pw');
 		expect(saved).toMatchObject({ password: '', passwordRef: 'email:a1' });
 		expect(calls('secret_set')[0]).toEqual({ key: 'email:a1', value: 'new-pw' });
 	});
 
 	it('deletes the kept password, and never throws doing it', async () => {
 		state.invoke.mockRejectedValue('gone');
-		await forgetStoredPassword(account({ password: '', passwordRef: 'email:a1' }));
+		await forgetEmailPassword(account({ password: '', passwordRef: 'email:a1' }));
 		expect(calls('secret_delete')[0]).toEqual({ key: 'email:a1' });
 	});
 });

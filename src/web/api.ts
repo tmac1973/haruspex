@@ -60,7 +60,12 @@ export type StreamEvent = EngineEvent | { type: 'ready' } | { type: 'resync-all'
 
 export type Connection = 'connecting' | 'open' | 'offline' | 'unauthorised';
 
-/** Split an SSE byte stream into `data:` payloads. Exported for tests. */
+/**
+ * Split an SSE stream into `data:` payloads, framed by spec: a blank line
+ * ends an event, and its `data:` lines join with newlines. Haruspex's own
+ * event stream relies on that; model servers are read line by line instead
+ * (`readSseData` in `#lib/api.ts`). Exported for tests.
+ */
 export function sseParser(onData: (data: string) => void): (chunk: string) => void {
 	let buf = '';
 	return (chunk) => {

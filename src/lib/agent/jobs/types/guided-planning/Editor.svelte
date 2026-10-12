@@ -7,6 +7,7 @@
 	import type { SkillSummary } from '#lib/ipc/gen/SkillSummary.ts';
 	import { listSkills, usableSkills } from '#lib/skills/client.ts';
 	import { knownTrustedRoot } from '#lib/skills/project.ts';
+	import { defaultPlanDir } from '#lib/agent/jobs/types/guided-planning/config.ts';
 
 	type StageKey = 'chain_assets_model' | 'chain_coding_model';
 
@@ -39,14 +40,6 @@
 	// Disabled rather than hidden: "why is there no asset option" is a worse
 	// question than "why is this greyed out", and the hint answers the second.
 	const imageBackendReady = resolveImageBackend().kind !== 'none';
-
-	function slugify(s: string): string {
-		return s
-			.toLowerCase()
-			.trim()
-			.replace(/[^a-z0-9]+/g, '-')
-			.replace(/^-+|-+$/g, '');
-	}
 
 	function setStageModel(key: StageKey, choice: string) {
 		cfg[key] = choice === 'choose' ? (cfg[key] ?? emptyModelForm('remote')) : null;
@@ -81,8 +74,7 @@
 
 	$effect(() => {
 		if (!outputDirEdited) {
-			const s = slugify(jobName);
-			cfg.plan_output_dir = s ? `plan/${s}/` : '';
+			cfg.plan_output_dir = defaultPlanDir(jobName);
 		}
 	});
 </script>
