@@ -12,16 +12,21 @@
 //! requests, and the remote-access token, shown as a link and QR code. Every
 //! other stored password never reaches the webview again.
 //!
-//! **Every call runs on a thread of its own, with a time limit.** keyring's
-//! Secret Service backend drives zbus on tokio, and called from a tokio
-//! thread it can deadlock (keyring-rs issue #132). A locked KWallet may also
-//! put up an unlock prompt and wait on the user; past the limit the call
-//! fails rather than holding up a mail fetch forever.
+//! **Every call runs on a thread of its own, with a time limit.** The Secret
+//! Service store drives zbus on tokio, and called from a tokio thread it can
+//! deadlock (keyring-rs issue #132). A locked KWallet may also put up an
+//! unlock prompt and wait on the user; past the limit the call fails rather
+//! than holding up a mail fetch forever.
+//!
+//! Entries are named as keyring 3 named them: a Secret Service item with
+//! `service` = [`SERVICE`] and `username` = the key, a Keychain generic
+//! password with that service and account, a Credential Manager generic
+//! credential with the target `{key}.{SERVICE}`.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{mpsc, Mutex, OnceLock};
+use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM, NONCE_LEN};
@@ -74,8 +79,38 @@ fn on_own_thread<T: Send + 'static>(
     })
 }
 
-fn entry(key: &str) -> Result<keyring::Entry, String> {
-    keyring::Entry::new(SERVICE, key).map_err(|e| format!("{} refused the key: {e}", store_name()))
+/// A fresh handle on this platform's store. For Secret Service that is a new
+/// D-Bus connection per call, as keyring 3 made one per call: a shared one
+/// would stay locked behind an unlock prompt the caller gave up on, and
+/// would not survive the keyring daemon restarting.
+#[cfg(all(unix, not(target_os = "macos")))]
+fn platform_store() -> keyring_core::Result<Arc<keyring_core::CredentialStore>> {
+    Ok(zbus_secret_service_keyring_store::Store::new()?)
+}
+
+#[cfg(target_os = "macos")]
+fn platform_store() -> keyring_core::Result<Arc<keyring_core::CredentialStore>> {
+    Ok(apple_native_keyring_store::keychain::Store::new()?)
+}
+
+#[cfg(windows)]
+fn platform_store() -> keyring_core::Result<Arc<keyring_core::CredentialStore>> {
+    Ok(windows_native_keyring_store::Store::new()?)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn platform_store() -> keyring_core::Result<Arc<keyring_core::CredentialStore>> {
+    Err(keyring_core::Error::NotSupportedByStore(
+        "no system keychain on this platform".to_string(),
+    ))
+}
+
+/// The entry for `key`. keyring 3 named entries the same way on every
+/// platform, so what an older build saved is still found.
+fn entry(key: &str) -> Result<keyring_core::Entry, String> {
+    platform_store()
+        .and_then(|store| store.build(SERVICE, key, None))
+        .map_err(|e| format!("{} refused the key: {e}", store_name()))
 }
 
 impl Store for Keychain {
@@ -92,7 +127,7 @@ impl Store for Keychain {
         let key = key.to_string();
         on_own_thread("read", move || match entry(&key)?.get_password() {
             Ok(v) => Ok(Some(v)),
-            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(keyring_core::Error::NoEntry) => Ok(None),
             Err(e) => Err(format!("{} refused the read: {e}", store_name())),
         })
     }
@@ -100,7 +135,7 @@ impl Store for Keychain {
     fn delete(&self, key: &str) -> Result<(), String> {
         let key = key.to_string();
         on_own_thread("delete", move || match entry(&key)?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Ok(()) | Err(keyring_core::Error::NoEntry) => Ok(()),
             Err(e) => Err(format!("{} refused the delete: {e}", store_name())),
         })
     }
