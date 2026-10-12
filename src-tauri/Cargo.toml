@@ -6,7 +6,7 @@ authors = ["Tim MacDonald <tbaxmacdonald@gmail.com>"]
 license = "GPL-3.0-or-later"
 repository = "https://github.com/tmac1973/haruspex"
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.95"
 
 [lib]
 name = "app_lib"
@@ -45,7 +45,7 @@ axum = { version = "0.8.4", default-features = false, features = ["http1", "json
 # image or SVG renderers it can also produce.
 qrcode = { version = "0.14.1", default-features = false }
 sha2 = "0.10.9"
-sysinfo = "0.36.1"
+sysinfo = "0.39.6"
 tauri-plugin-dialog = "2.6.0"
 futures-util = "0.3.32"
 # Browser-assisted search speaks CDP, which is JSON-RPC over one WebSocket.
