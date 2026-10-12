@@ -34,6 +34,11 @@ describe('interactive shell tool gating', () => {
 		expect(n).toContain('run_command');
 	});
 
+	it('offers the web tools in the Code tab', () => {
+		const n = names({ hasWorkingDir: true, codeMode: true, shellMode: false });
+		for (const t of ['web_search', 'research_url', 'fetch_url']) expect(n).toContain(t);
+	});
+
 	it('hides interactive tools in plain Shell mode (no code mode)', () => {
 		const n = names({ hasWorkingDir: true, shellMode: true });
 		for (const t of INTERACTIVE) expect(n).not.toContain(t);
