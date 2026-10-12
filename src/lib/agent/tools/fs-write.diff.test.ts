@@ -11,6 +11,7 @@ vi.mock('#lib/stores/approvalOverride.ts', () => ({ isAutoApproveActive: () => t
 import { executeTool } from '#lib/agent/tools/index.ts';
 import type { ToolContext } from './types';
 import { invokeRouter } from '#lib/testing/invoke.ts';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
 beforeEach(() => {
 	mocks.disk.clear();
@@ -29,12 +30,10 @@ beforeEach(() => {
 });
 
 const ctx = (codeSessionId?: string): ToolContext =>
-	({
+	makeToolContext({
 		workingDir: '/proj',
 		codeMode: true,
-		shellMode: false,
-		codeSessionId,
-		filesWrittenThisTurn: new Set<string>()
+		codeSessionId
 	}) as ToolContext;
 
 describe('fs_write_text in a Code session', () => {

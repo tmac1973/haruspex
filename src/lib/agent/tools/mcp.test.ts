@@ -25,7 +25,7 @@ import {
 	resolveMcpApproval,
 	type McpApprovalChoice
 } from '#lib/stores/mcpApproval.svelte.ts';
-import type { ToolContext } from './types';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock('@tauri-apps/api/core', () => ({ invoke }));
@@ -65,18 +65,7 @@ function server(id: string, over: Partial<McpServerConfig> = {}): McpServerConfi
 	};
 }
 
-function ctx(over: Partial<ToolContext> = {}): ToolContext {
-	return {
-		workingDir: null,
-		pendingImages: [],
-		deepResearch: false,
-		filesWrittenThisTurn: new Set(),
-		shellMode: false,
-		codeMode: false,
-		codeAutoApprove: false,
-		...over
-	} as ToolContext;
-}
+const ctx = makeToolContext;
 
 function complete(text: string): McpCallOutcome {
 	return {

@@ -5,16 +5,9 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 import { invoke } from '@tauri-apps/api/core';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
-const defaultCtx = {
-	workingDir: null,
-	pendingImages: [],
-	deepResearch: false,
-	shellMode: false,
-	codeMode: false,
-	codeAutoApprove: false,
-	filesWrittenThisTurn: new Set<string>()
-};
+const defaultCtx = makeToolContext();
 
 describe('executeTool', () => {
 	beforeEach(() => {

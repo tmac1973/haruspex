@@ -11,19 +11,12 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('#lib/agent/pdf-render.ts', () => ({ renderPdfPages: mocks.renderPdfPages }));
 
 import { IMAGE_EXT_RE, MAX_PENDING_IMAGES } from './fs-read';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
 let ctx: ToolContext;
 
 beforeEach(() => {
-	ctx = {
-		workingDir: '/tmp/work',
-		pendingImages: [],
-		deepResearch: false,
-		shellMode: false,
-		codeMode: false,
-		codeAutoApprove: false,
-		filesWrittenThisTurn: new Set<string>()
-	} as ToolContext;
+	ctx = makeToolContext({ workingDir: '/tmp/work' });
 	mocks.invoke.mockReset();
 	mocks.renderPdfPages.mockReset();
 });

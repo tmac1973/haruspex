@@ -1,14 +1,19 @@
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { GUIDE_PAGES, guideIndex, guidePage, parsePage } from './guide';
 
 describe('the compiled-in guide', () => {
 	it('has every page from docs/guide/, getting-started first', () => {
-		expect(GUIDE_PAGES).toHaveLength(18);
+		const onDisk = readdirSync(join(process.cwd(), 'docs/guide'))
+			.filter((f) => f.endsWith('.md'))
+			.map((f) => f.replace(/\.md$/, ''));
+		expect(GUIDE_PAGES.map((p) => p.name).sort()).toEqual(onDisk.sort());
 		expect(GUIDE_PAGES[0].name).toBe('getting-started');
 		expect(GUIDE_PAGES.at(-1)!.name).toBe('troubleshooting');
 		for (const p of GUIDE_PAGES) {
 			expect(p.title, p.name).not.toBe(p.name);
-			expect(p.description, p.name).toBeTruthy();
+			expect(p.description.trim(), p.name).not.toBe('');
 			expect(p.body.startsWith('---'), p.name).toBe(false);
 		}
 	});

@@ -32,18 +32,14 @@ import type { WindowOpen } from '#lib/editor/windows.ts';
 import { _resetBoundary } from '#lib/shell/boundary.ts';
 import { resetShellPlatformSupported } from '#lib/shell/platformSupport.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
-const ctx = {
+const ctx = makeToolContext({
 	workingDir: '/proj',
-	codeSessionId: 's1',
-	pendingImages: [],
-	deepResearch: false,
-	shellMode: false,
 	codeMode: true,
-	codeAutoApprove: false,
-	interactive: true,
-	filesWrittenThisTurn: new Set<string>()
-};
+	codeSessionId: 's1',
+	interactive: true
+});
 
 let unregister: () => void = () => {};
 

@@ -24,24 +24,20 @@ import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import type { ToolContext } from './types';
 import { ImageBackendError } from '#lib/image/types.ts';
 import { invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
 const PALETTE = [0xff0000ff, 0x00ff00ff];
 
 function context(over: Partial<ToolContext> = {}): ToolContext {
-	return {
-		workingDir: null,
-		pendingImages: [],
-		deepResearch: false,
-		filesWrittenThisTurn: new Set(),
+	return makeToolContext({
 		shellMode: true,
 		codeMode: true,
-		codeAutoApprove: false,
 		interactive: true,
 		shellCwd: '/home/u/game',
 		shellSessionId: 1,
 		...over
-	};
+	});
 }
 const names = (o: Parameters<typeof getToolSchemas>[0]) =>
 	getToolSchemas(o).map((s) => s.function.name);
