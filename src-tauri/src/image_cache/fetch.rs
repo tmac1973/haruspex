@@ -75,7 +75,7 @@ pub async fn fetch_image(url: &str, proxy: Option<&ProxyConfig>) -> Result<Fetch
         .timeout(FETCH_TIMEOUT)
         .send()
         .await
-        .map_err(|e| format!("Image fetch failed: {}", e))?;
+        .map_err(|e| format!("Image fetch failed: {}", e.without_url()))?;
 
     if !response.status().is_success() {
         return Err(format!(
@@ -103,14 +103,14 @@ pub async fn fetch_image(url: &str, proxy: Option<&ProxyConfig>) -> Result<Fetch
         .await
         .map_err(|e| match e {
             CappedReadError::TooLarge => "Image too large".to_string(),
-            CappedReadError::Read(e) => format!("Image download failed: {}", e),
+            CappedReadError::Read(e) => format!("Image download failed: {}", e.without_url()),
         })?;
 
     let verified = verify_bytes(bytes, &declared_mime)?;
 
     debug!(
         "image fetched: {} ({}x{}, {} bytes, {})",
-        url,
+        crate::text_util::url_for_log(url),
         verified.width,
         verified.height,
         verified.bytes.len(),

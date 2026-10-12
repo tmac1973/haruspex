@@ -700,7 +700,8 @@ export async function chatCompletion(
 	if (!choice) {
 		logDebug('api', `non-stream request #${reqId} no choices in response`, {
 			keys: data && typeof data === 'object' ? Object.keys(data) : typeof data,
-			error: data?.error,
+			// The provider's text: clipped like any other error body.
+			error: data?.error === undefined ? undefined : previewPayload(JSON.stringify(data.error)),
 			usage: data?.usage
 		});
 		throw new ApiError('No response from model');

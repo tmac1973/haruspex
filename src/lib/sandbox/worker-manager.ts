@@ -11,6 +11,7 @@ import { getWorkingDir } from '#lib/stores/session.svelte.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { urlForReport } from '#lib/utils/http.ts';
 
 export interface RunOptions {
 	timeoutMs?: number;
@@ -687,7 +688,7 @@ export class WorkerManager {
 		try {
 			const bodyBytes = msg.init.body ? Array.from(msg.init.body) : undefined;
 			logDebug('sandbox', 'sandbox_fetch invoke', {
-				url: urlForLog(msg.url),
+				url: urlForReport(msg.url),
 				method: msg.init.method ?? 'GET'
 			});
 			const result = await invoke<{
@@ -704,9 +705,9 @@ export class WorkerManager {
 				}
 			});
 			logDebug('sandbox', 'sandbox_fetch response', {
-				url: urlForLog(msg.url),
+				url: urlForReport(msg.url),
 				status: result.status,
-				finalUrl: result.url,
+				finalUrl: urlForReport(result.url),
 				bodyLen: result.body.length
 			});
 			respond({
@@ -738,15 +739,5 @@ export class WorkerManager {
 
 	get hasWorker(): boolean {
 		return this.worker !== null;
-	}
-}
-
-/** Scheme, host and path only: a query string can carry an API key. */
-function urlForLog(url: string): string {
-	try {
-		const u = new URL(url);
-		return `${u.protocol}//${u.host}${u.pathname}`;
-	} catch {
-		return '(not a valid URL)';
 	}
 }

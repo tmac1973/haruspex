@@ -16,7 +16,7 @@
 //!      own. Stripping `$APPDIR` entries for the child fixes the link
 //!      handoff without touching the parent process.
 
-use log::{error, info};
+use log::{error, info, warn};
 
 /// Open a web address in the user's browser, for flows that start inside the
 /// app (a sign-in) rather than from a link the model wrote.
@@ -30,7 +30,7 @@ pub async fn open_url(url: String) -> Result<(), String> {
     info!("open_url: {}", logged);
 
     if !url.starts_with("http://") && !url.starts_with("https://") {
-        error!("refusing non-http(s) URL: {}", logged);
+        warn!("refusing non-http(s) URL: {}", logged);
         return Err(format!("refusing non-http(s) URL: {}", logged));
     }
 
