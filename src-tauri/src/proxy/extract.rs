@@ -6,6 +6,7 @@
 use super::bypass::apply_proxy;
 use super::config::FETCH_TIMEOUT;
 use super::paywall::{detect_paywall_signal, PAYWALL_SENTINEL};
+use super::public_dns::PublicOnly;
 use super::ProxyConfig;
 use scraper::{Html, Selector};
 use serde::Serialize;
@@ -243,11 +244,37 @@ pub(crate) fn build_fetch_client(proxy: Option<&ProxyConfig>) -> Result<reqwest:
     apply_proxy(
         reqwest::Client::builder()
             .timeout(FETCH_TIMEOUT)
-            .redirect(validating_redirect_policy()),
+            .redirect(validating_redirect_policy())
+            .dns_resolver(public_only_resolver(proxy)),
         proxy,
     )?
     .build()
     .map_err(|e| format!("Failed to create HTTP client: {}", e))
+}
+
+/// The resolver that keeps a fetch of a model-chosen URL off this computer
+/// and the LAN, letting through only the configured proxy's own name.
+pub(crate) fn public_only_resolver(proxy: Option<&ProxyConfig>) -> PublicOnly {
+    let host = proxy
+        .filter(|p| p.mode == "manual")
+        .and_then(|p| super::public_dns::proxy_host(p.url.trim()));
+    PublicOnly::new(host)
+}
+
+/// A reqwest error with its root cause: reqwest's own message stops at
+/// "error sending request", and the cause (a refused address, a TLS failure)
+/// is what says why.
+pub(crate) fn with_cause(e: &reqwest::Error) -> String {
+    let mut root = None;
+    let mut next = std::error::Error::source(e);
+    while let Some(cause) = next {
+        root = Some(cause);
+        next = cause.source();
+    }
+    match root {
+        Some(cause) => format!("{e}: {cause}"),
+        None => e.to_string(),
+    }
 }
 
 /// GET `url` with the shared browser [`USER_AGENT`] and reject any
@@ -263,7 +290,7 @@ pub(super) async fn fetch_ok(
         .header("User-Agent", USER_AGENT)
         .send()
         .await
-        .map_err(|e| format!("Fetch failed: {}", e))?;
+        .map_err(|e| format!("Fetch failed: {}", with_cause(&e)))?;
 
     if !response.status().is_success() {
         return Err(format!("Fetch failed with status: {}", response.status()));
@@ -459,6 +486,16 @@ mod tests {
         assert!(validate_url("http://[::7f00:1]/").is_err());
         assert!(validate_url("http://[fec0::1]/").is_err());
         assert!(validate_url("http://0.1.2.3/").is_err());
+    }
+
+    #[tokio::test]
+    async fn a_name_that_resolves_to_this_computer_is_refused_at_connect() {
+        // `localhost.` passes validate_url's name check; the resolver is what
+        // stops it, as it stops any public-looking name that points here.
+        assert!(validate_url("http://localhost.:9/").is_ok());
+        let client = build_fetch_client(None).unwrap();
+        let err = fetch_ok(&client, "http://localhost.:9/").await.unwrap_err();
+        assert!(err.contains("resolves to this computer"), "{err}");
     }
 
     #[test]

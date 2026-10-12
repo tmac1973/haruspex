@@ -15,6 +15,7 @@ mod config;
 mod extract;
 pub mod images;
 mod paywall;
+mod public_dns;
 mod relevance;
 mod search;
 mod state;
@@ -33,7 +34,8 @@ pub use config::ProxyConfig;
 use config::RATE_LIMIT_INTERVAL;
 use extract::fetch_and_extract;
 pub(crate) use extract::{
-    build_fetch_client, validate_url, validating_redirect_policy, USER_AGENT,
+    build_fetch_client, public_only_resolver, validate_url, validating_redirect_policy, with_cause,
+    USER_AGENT,
 };
 use search::{search_auto, search_brave, search_duckduckgo, search_searxng};
 pub use state::ProxyState;

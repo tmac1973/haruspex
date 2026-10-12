@@ -3,7 +3,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ save: vi.fn() }));
 
-import { buildFeedbackUrl, buildFullBundle, urlForReport, type Diagnostics } from './feedback';
+import {
+	buildFeedbackUrl,
+	buildFullBundle,
+	gatherDiagnostics,
+	urlForReport,
+	type Diagnostics
+} from './feedback';
+import { invoke } from '@tauri-apps/api/core';
+import { invokeRouter } from '#lib/testing/invoke.ts';
+import { beginTurn, logDebug } from '#lib/debug-log.ts';
 import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 
 const SECRETS = [
@@ -130,5 +139,27 @@ describe('feedback reports', () => {
 		const bundle = buildFullBundle(d);
 		expect(bundle).toContain('app line');
 		expect(bundle).toContain('debug line');
+	});
+});
+
+describe('gatherDiagnostics', () => {
+	it('hands the webview debug log to Rust for redaction and reports what comes back', async () => {
+		beginTurn();
+		logDebug('agent', 'token=hunter2 sent');
+		const sent: string[][] = [];
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter({
+				get_diagnostics: { app_log: [], llama_log: [], whisper_log: [], tts_log: [] },
+				feedback_redact: (args) => {
+					const lines = (args as { lines: string[] }).lines;
+					sent.push(lines);
+					return lines.map((l) => l.replace('hunter2', '[redacted]'));
+				}
+			})
+		);
+		const d = await gatherDiagnostics();
+		expect(sent[0].some((l) => l.includes('hunter2'))).toBe(true);
+		expect(d.debug_log.join('\n')).not.toContain('hunter2');
+		expect(d.debug_log.join('\n')).toContain('token=[redacted] sent');
 	});
 });
