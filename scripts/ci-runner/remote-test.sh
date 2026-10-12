@@ -4,7 +4,7 @@
 #
 #   scripts/ci-runner/remote-test.sh mac|windows|both [suite]
 #
-# suite: unit (default), e2e-app, e2e-mac, live — see agent/run-suite.sh.
+# suite: unit (default), e2e-app, drive, smoke, e2e-mac, live — see the README.
 #
 # Hosts are SSH aliases, haruspex-mac and haruspex-win, from ~/.ssh/config
 # (the setup scripts print the entry to add). Override with

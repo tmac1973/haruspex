@@ -18,7 +18,7 @@ set -euo pipefail
 
 CI="$HOME/.haruspex-test"
 SRC="$CI/src"
-LABEL=com.haruspex.ci-run
+LABEL=com.haruspex.test-run
 LOCK="$CI/busy"
 LOG="$CI/run.log"
 DONE="$CI/done"

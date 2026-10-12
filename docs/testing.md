@@ -144,6 +144,14 @@ e2e-app` runs it on the Windows PC, in your desktop session.
 **A new spec must be seen failing once.** Break what it asserts — rename the
 scripted answer, say — and check the failure says plainly what is wrong.
 
+## Before a release
+
+A release gets a pass by Claude over all of the above, on Linux, the Windows
+PC and the Mac mini, plus live passes that drive the real app against a real
+model. The steps are the `release-test` skill
+(`.claude/skills/release-test/SKILL.md`); each pass leaves its results in a
+`Release test: <version>` issue.
+
 ## The Code tab inside WSL (Windows)
 
 On Windows the Code tab works inside a WSL2 distro (`code_tools/wsl.rs`, and
@@ -203,6 +211,9 @@ npm run drive -- cancel <id>                             # presses Stop
 npm run drive -- state [<id>] [--transcript]
 npm run drive -- logs --since 0                          # agent debug log; "next" is the next --since
 npm run drive -- screenshot | minimise | restore | status
+npm run drive -- click "button=Jobs"                     # anything else in the main window:
+npm run drive -- fill 'input[placeholder="Name"]' "text" # click, fill a field, pick an option
+npm run drive -- select 'select.type-select' Research
 npm run drive -- stop                                    # saves the results, stops everything
 ```
 

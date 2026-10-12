@@ -284,6 +284,7 @@ struct VulkanDevice {
 /// 0.00.059.931 D ggml_vulkan: 0 = AMD Radeon(TM) Graphics (AMD proprietary driver) | uma: 1 | fp16: 1 | …
 ///   Vulkan0: AMD Radeon(TM) Graphics (24445 MiB, 23223 MiB free)
 /// ```
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 fn parse_vulkan_devices(output: &str) -> Vec<VulkanDevice> {
     let mut devices: Vec<(usize, VulkanDevice)> = Vec::new();
     for line in output.lines() {
