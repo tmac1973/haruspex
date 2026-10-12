@@ -104,10 +104,15 @@ describe('web_search', () => {
 		});
 	});
 
-	// No argument validation: a missing query goes to the backend as-is.
-	it('forwards a missing query to the backend unchecked', async () => {
-		backend({ proxy_search: (a) => [{ query: a.query ?? 'MISSING' }] });
-		expect(JSON.parse((await call('web_search', {})).result)).toEqual([{ query: 'MISSING' }]);
+	it.each([
+		['missing', {}],
+		['blank', { query: '   ' }]
+	])('refuses a %s query without calling the backend', async (_label, args) => {
+		const out = await call('web_search', args);
+		expect(JSON.parse(out.result)).toEqual({
+			error: 'web_search needs a non-empty "query" string.'
+		});
+		expect(mocks.invoke).not.toHaveBeenCalled();
 	});
 
 	it('coerces a numeric query to a string', async () => {
@@ -163,13 +168,19 @@ describe('fetch_url', () => {
 		expect(out.result).not.toContain('SECRET-BODY');
 	});
 
-	// Unlike the other web tools, a fetch failure here is plain text, not the
-	// {"error": ...} JSON, and an Error is shown with its "Error: " prefix.
-	it('reports a fetch failure as plain text', async () => {
+	// Plain text on purpose: the "Failed to fetch" prefix is how the loop and
+	// the chat store recognise an unreadable page (FETCH_FAILURE_PREFIXES).
+	it('reports a fetch failure as plain text, with the message only', async () => {
 		mocks.invoke.mockRejectedValue(new Error('HTTP 404'));
 		expect((await call('fetch_url', { url: 'https://a.test/x' })).result).toBe(
-			'Failed to fetch URL: Error: HTTP 404'
+			'Failed to fetch URL: HTTP 404'
 		);
+	});
+
+	it('refuses a missing url without fetching', async () => {
+		const out = await call('fetch_url', {});
+		expect(JSON.parse(out.result).error).toMatch(/needs a non-empty "url"/);
+		expect(mocks.invoke).not.toHaveBeenCalled();
 	});
 
 	it('reports a string rejection as plain text', async () => {
@@ -206,7 +217,13 @@ describe('research_url', () => {
 	it('reports a fetch failure without running the sub-agent', async () => {
 		mocks.invoke.mockRejectedValue(new Error('timeout'));
 		mocks.runSubAgent.mockResolvedValue('should not appear');
-		expect((await call('research_url', args)).result).toBe('Failed to fetch URL: Error: timeout');
+		expect((await call('research_url', args)).result).toBe('Failed to fetch URL: timeout');
+	});
+
+	it('refuses a call without a focus', async () => {
+		const out = await call('research_url', { url: 'https://a.test/post' });
+		expect(JSON.parse(out.result).error).toMatch(/needs a non-empty "focus"/);
+		expect(mocks.runSubAgent).not.toHaveBeenCalled();
 	});
 
 	it('reports an empty page', async () => {

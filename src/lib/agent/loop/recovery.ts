@@ -254,23 +254,42 @@ export function handleRejectedToolCall(
 		finish_reason: response.finish_reason
 	});
 	ctx.options.onComplete();
+	ctx.options.onError(new ApiError(rejectedCallMessage(ctx, response, reason)));
+	return 'complete';
+}
+
+/**
+ * Why the turn ended. Only a `length` finish means the output ceiling did it;
+ * the parser also refuses whole calls it can't read unambiguously (a repeated
+ * parameter), where raising the ceiling would not help.
+ */
+function rejectedCallMessage(
+	ctx: LoopContext,
+	response: ChatCompletionResponse,
+	reason: string
+): string {
+	if (response.finish_reason !== 'length') {
+		return (
+			`The model's tool call could not be run (${reason}), and it could not re-send ` +
+			`it correctly within ${MAX_TRUNCATION_RETRIES} attempts. Nothing was written — ` +
+			`no file was created or partially overwritten. Try again, or ask for the work ` +
+			`in smaller steps.`
+		);
+	}
 	const settingLabel = ctx.expectsFileOutput
 		? 'Max response tokens (file writes)'
 		: 'Max response tokens';
-	ctx.options.onError(
-		new ApiError(
-			`The model's tool call was cut off before it finished (${reason}), and it ` +
-				`could not re-send it within ${MAX_TRUNCATION_RETRIES} attempts. Nothing ` +
-				`was written — no file was created or partially overwritten. The response ` +
-				`hit its ${ctx.maxResponseTokens}-token ceiling, which is roughly ` +
-				`${Math.round((ctx.maxResponseTokens * TOKEN_BYTES_RATIO) / 1024)} KB of ` +
-				`content before the model's reasoning is subtracted. Raise Settings → ` +
-				`Agent → Response Length → ${settingLabel}, or ask for a smaller piece of ` +
-				`work. Note that editing an existing file (fs_edit_text) has no such limit ` +
-				`— only rewriting one whole does.`
-		)
+	return (
+		`The model's tool call was cut off before it finished (${reason}), and it ` +
+		`could not re-send it within ${MAX_TRUNCATION_RETRIES} attempts. Nothing ` +
+		`was written — no file was created or partially overwritten. The response ` +
+		`hit its ${ctx.maxResponseTokens}-token ceiling, which is roughly ` +
+		`${Math.round((ctx.maxResponseTokens * TOKEN_BYTES_RATIO) / 1024)} KB of ` +
+		`content before the model's reasoning is subtracted. Raise Settings → ` +
+		`Agent → Response Length → ${settingLabel}, or ask for a smaller piece of ` +
+		`work. Note that editing an existing file (fs_edit_text) has no such limit ` +
+		`— only rewriting one whole does.`
 	);
-	return 'complete';
 }
 
 /** File-write hallucination recovery. */

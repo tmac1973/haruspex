@@ -216,6 +216,9 @@ describe('tryNarrateRecovery', () => {
 		expect(added[1].content).toContain('did not actually emit a tool_calls block');
 	});
 
+	// Staying armed is safe: NudgeState lives for one turn (runLoop makes a
+	// new one), and a clarifying question ends that turn, so the flag never
+	// reaches the user's reply.
 	it('lets a clarifying question through and stays armed', () => {
 		const { ctx, added } = fixture();
 		const nudges = new NudgeState();
@@ -274,8 +277,23 @@ describe('handleRejectedToolCall', () => {
 		const { ctx, errors } = fixture();
 		const nudges = new NudgeState();
 		for (let i = 0; i < MAX_TRUNCATION_RETRIES; i++) nudges.consumeTruncationRetry();
-		handleRejectedToolCall(ctx, nudges, res(''), 'why', 3);
+		handleRejectedToolCall(ctx, nudges, res('', 'length'), 'why', 3);
 		expect((errors[0] as Error).message).toContain('Response Length → Max response tokens,');
+	});
+
+	it('does not blame the token ceiling when the response was not cut off', () => {
+		const { ctx, errors, completed } = fixture();
+		const nudges = new NudgeState();
+		for (let i = 0; i < MAX_TRUNCATION_RETRIES; i++) nudges.consumeTruncationRetry();
+		const reason = "duplicate parameter 'path' in call to 'fs_write_text' — ambiguous";
+
+		expect(handleRejectedToolCall(ctx, nudges, res('', 'tool_calls'), reason, 3)).toBe('complete');
+
+		expect(completed.count).toBe(1);
+		const message = (errors[0] as Error).message;
+		expect(message).toContain(`could not be run (${reason})`);
+		expect(message).not.toContain('token ceiling');
+		expect(message).not.toContain('Response Length');
 	});
 });
 

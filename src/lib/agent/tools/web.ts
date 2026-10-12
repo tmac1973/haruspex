@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { isAbortError } from '#lib/utils/error.ts';
+import { errMessage, isAbortError } from '#lib/utils/error.ts';
 import { type ChatMessage } from '#lib/api.ts';
 import { detectPaywall } from '#lib/agent/paywall.ts';
 import { getSettings, DEFAULT_SEARXNG_URL, getSearchProxy } from '#lib/stores/settings.ts';
@@ -8,7 +8,7 @@ import type { PageImage } from '#lib/ipc/gen/PageImage.ts';
 import type { SearchResult } from '#lib/ipc/gen/SearchResult.ts';
 import { labelArg, proxyFetch, runSubAgent, toolInvokeError, ensureUrlScheme } from './_helpers';
 import { registerTool } from './registry';
-import { fetchResult, toolResult } from './types';
+import { fetchResult, toolError, toolResult, type ToolExecOutput } from './types';
 
 const RESEARCH_AGENT_MAX_TOKENS = 3072;
 
@@ -53,6 +53,19 @@ function paywallErrorMessage(url: string, reason: string): string {
 	);
 }
 
+/**
+ * The first of `names` the model left out or sent blank, as a tool error —
+ * else null. Without it a missing `query` reaches the backend as `undefined`.
+ */
+function missingArg(
+	tool: string,
+	args: Record<string, unknown>,
+	...names: string[]
+): ToolExecOutput | null {
+	const name = names.find((n) => typeof args[n] !== 'string' || !(args[n] as string).trim());
+	return name ? toolResult(toolError(`${tool} needs a non-empty "${name}" string.`)) : null;
+}
+
 // --- Registration ---
 
 registerTool({
@@ -74,6 +87,8 @@ registerTool({
 	},
 	displayLabel: labelArg('query'),
 	async execute(args, ctx) {
+		const missing = missingArg('web_search', args, 'query');
+		if (missing) return missing;
 		const query = args.query as string;
 		try {
 			const settings = getSettings();
@@ -114,6 +129,8 @@ registerTool({
 	},
 	displayLabel: labelArg('url'),
 	async execute(args) {
+		const missing = missingArg('fetch_url', args, 'url');
+		if (missing) return missing;
 		const url = args.url as string;
 		try {
 			const page = await proxyFetch(url, 'fetch_url');
@@ -123,7 +140,9 @@ registerTool({
 			}
 			return fetchResult(page.text, page.hero_image ?? undefined);
 		} catch (e) {
-			return toolResult(`Failed to fetch URL: ${e}`);
+			// Plain text, not toolError(): the "Failed to fetch" prefix is how the
+			// loop and the chat store spot an unreadable page (FETCH_FAILURE_PREFIXES).
+			return toolResult(`Failed to fetch URL: ${errMessage(e)}`);
 		}
 	}
 });
@@ -156,6 +175,8 @@ registerTool({
 		return focus ? `${url} — ${focus}` : url;
 	},
 	async execute(args, ctx) {
+		const missing = missingArg('research_url', args, 'url', 'focus');
+		if (missing) return missing;
 		const url = args.url as string;
 		const focus = args.focus as string;
 
@@ -166,7 +187,7 @@ registerTool({
 			pageContent = page.text;
 			heroImage = page.hero_image ?? undefined;
 		} catch (e) {
-			return toolResult(`Failed to fetch URL: ${e}`);
+			return toolResult(`Failed to fetch URL: ${errMessage(e)}`);
 		}
 		if (!pageContent || pageContent.startsWith('Failed to fetch')) {
 			return toolResult(pageContent || `Failed to fetch URL: ${url}`);
@@ -246,6 +267,8 @@ registerTool({
 	},
 	displayLabel: labelArg('query'),
 	async execute(args) {
+		const missing = missingArg('image_search', args, 'query');
+		if (missing) return missing;
 		const query = args.query as string;
 		const maxResults = args.max_results as number | undefined;
 		try {
@@ -291,6 +314,8 @@ registerTool({
 	},
 	displayLabel: labelArg('url'),
 	async execute(args) {
+		const missing = missingArg('fetch_url_images', args, 'url');
+		if (missing) return missing;
 		const url = ensureUrlScheme(args.url as string);
 		try {
 			const images = await invoke<PageImage[]>('proxy_fetch_url_images', {

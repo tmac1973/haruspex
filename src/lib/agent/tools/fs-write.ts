@@ -296,7 +296,10 @@ function parseIfJsonArray(value: unknown): unknown {
 /**
  * Coerce sheet cells to the strings Rust expects (Vec<Vec<String>>).
  * Models routinely emit numbers/booleans as bare JSON values — those are
- * real data, not blanks. null/undefined become empty cells.
+ * real data, not blanks. null/undefined become empty cells. `rows` sent as
+ * a JSON string is parsed, like `sheets` itself. Objects and arrays are left
+ * alone for `validateSheet` to refuse: `String()` would write them as
+ * "[object Object]" or "1,2".
  */
 function normalizeSheets(raw: unknown): unknown {
 	const sheets = parseIfJsonArray(raw);
@@ -304,14 +307,24 @@ function normalizeSheets(raw: unknown): unknown {
 	return sheets.map((sheet) => {
 		if (!sheet || typeof sheet !== 'object') return sheet;
 		const s = sheet as { rows?: unknown };
-		if (!Array.isArray(s.rows)) return sheet;
+		const rows = parseIfJsonArray(s.rows);
+		if (!Array.isArray(rows)) return sheet;
 		return {
 			...s,
-			rows: s.rows.map((row) =>
-				Array.isArray(row) ? row.map((cell) => (cell == null ? '' : String(cell))) : row
-			)
+			rows: rows.map((row) => (Array.isArray(row) ? row.map(normalizeCell) : row))
 		};
 	});
+}
+
+function normalizeCell(cell: unknown): unknown {
+	if (cell == null) return '';
+	return typeof cell === 'object' ? cell : String(cell);
+}
+
+/** A lone `/word` cell or bullet — what a model writes when it expects the
+ *  tool to fill in a template. */
+function isPlaceholderText(text: string): boolean {
+	return /^\/[a-z_]+$/i.test(text.trim());
 }
 
 function isBlankCell(cell: unknown): boolean {
@@ -321,12 +334,50 @@ function isBlankCell(cell: unknown): boolean {
 	return typeof cell !== 'string' || cell.trim().length === 0;
 }
 
-function validateSheet(raw: unknown, sheetNum: number): string | null {
-	const sheet = raw as { name?: unknown; rows?: unknown };
-	const rows = sheet.rows;
+/**
+ * The sheet is an object with a non-empty `rows` list, every row is a list,
+ * and every cell a scalar — Rust takes Vec<Vec<String>>.
+ */
+function sheetShapeError(raw: unknown, sheetNum: number): string | null {
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+		return `Sheet ${sheetNum} is not an object. Each sheet is {"name": ..., "rows": [[...], ...]}.`;
+	}
+	const rows = (raw as { rows?: unknown }).rows;
 	if (!Array.isArray(rows) || rows.length === 0) {
 		return `Sheet ${sheetNum} has no rows. Pass the actual data — header row plus one row per record.`;
 	}
+	for (let r = 0; r < rows.length; r++) {
+		const row = rows[r];
+		if (!Array.isArray(row)) {
+			return `Sheet ${sheetNum} row ${r + 1} is not an array. Each row is a list of cell values.`;
+		}
+		const c = row.findIndex((cell) => cell !== null && typeof cell === 'object');
+		if (c !== -1) {
+			return (
+				`Sheet ${sheetNum} row ${r + 1} cell ${c + 1} is an object or list. ` +
+				`Cells are text, numbers or booleans — put one value in each cell.`
+			);
+		}
+	}
+	return null;
+}
+
+/**
+ * A lone `/word` row where a lone cell can't be a real row. In a
+ * single-column sheet "/help" or "/etc" is data. Runs after sheetShapeError,
+ * so every row is an array.
+ */
+function hasPlaceholderRow(rows: unknown[][]): boolean {
+	return (
+		rows[0].length > 1 &&
+		rows.some((r) => r.length === 1 && typeof r[0] === 'string' && isPlaceholderText(r[0]))
+	);
+}
+
+function validateSheet(raw: unknown, sheetNum: number): string | null {
+	const shapeError = sheetShapeError(raw, sheetNum);
+	if (shapeError) return shapeError;
+	const rows = (raw as { rows: unknown[][] }).rows;
 
 	const header = rows[0];
 	const dataRows = rows.slice(1);
@@ -341,14 +392,7 @@ function validateSheet(raw: unknown, sheetNum: number): string | null {
 		);
 	}
 
-	const looksLikePlaceholder = rows.some(
-		(r) =>
-			Array.isArray(r) &&
-			r.length === 1 &&
-			typeof r[0] === 'string' &&
-			/^\/[a-z_]+$/i.test(r[0].trim())
-	);
-	if (looksLikePlaceholder) {
+	if (hasPlaceholderRow(rows)) {
 		return (
 			`Sheet ${sheetNum} contains a placeholder-style row like ["/formula"] or ["/data"]. ` +
 			`This tool does not expand directives — pass the literal cell values you want written.`
@@ -552,14 +596,27 @@ function hasRealBullets(bullets: unknown): boolean {
 	);
 }
 
-function hasPlaceholderBullet(bullets: unknown): boolean {
-	return (
-		Array.isArray(bullets) &&
-		bullets.some((b) => {
-			const text = bulletText(b);
-			return typeof text === 'string' && /^\/[a-z_]+$/i.test(text.trim());
-		})
-	);
+/** Every bullet with text is a placeholder. A "/help" among real bullets is
+ *  just a bullet about a command. */
+function onlyPlaceholderBullets(bullets: unknown): boolean {
+	if (!Array.isArray(bullets)) return false;
+	const texts = bullets
+		.map(bulletText)
+		.filter((t): t is string => typeof t === 'string' && t.trim().length > 0);
+	return texts.length > 0 && texts.every(isPlaceholderText);
+}
+
+const SLIDE_LAYOUTS = new Set(['content', 'section']);
+
+/**
+ * The Rust layout enum is rename_all = "lowercase": accept "Section" or
+ * "CONTENT" by lowercasing. Anything the enum wouldn't take ("two-column",
+ * 1) is dropped, so the slide gets the default instead of failing the deck.
+ */
+function normalizeLayout(slide: Record<string, unknown>): void {
+	const layout = typeof slide.layout === 'string' ? slide.layout.trim().toLowerCase() : '';
+	if (SLIDE_LAYOUTS.has(layout)) slide.layout = layout;
+	else delete slide.layout;
 }
 
 /**
@@ -588,12 +645,7 @@ function prepareSlides(raw: unknown): { slides?: unknown[]; error?: string } {
 				error: `Slide ${num} has no title. Every slide must have a non-empty title string.`
 			};
 		}
-		// The Rust layout enum is rename_all = "lowercase" — accept
-		// "Section"/"CONTENT" etc. by lowercasing before validation and
-		// before the payload is sent.
-		if (typeof slide.layout === 'string') {
-			slide.layout = slide.layout.trim().toLowerCase();
-		}
+		normalizeLayout(slide);
 		// A non-empty string bullets value is almost always one-bullet-per-line.
 		if (typeof slide.bullets === 'string') {
 			slide.bullets = slide.bullets
@@ -602,7 +654,7 @@ function prepareSlides(raw: unknown): { slides?: unknown[]; error?: string } {
 				.filter((line) => line.length > 0);
 		}
 
-		if (hasPlaceholderBullet(slide.bullets)) {
+		if (onlyPlaceholderBullets(slide.bullets)) {
 			return {
 				error:
 					`Slide ${num} contains a placeholder-style bullet like "/content" or "/data". ` +
