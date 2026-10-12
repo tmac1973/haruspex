@@ -220,7 +220,7 @@ dependencies = [
  "objc2-foundation",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
  "wl-clipboard-rs",
  "x11rb",
 ]
@@ -3175,7 +3175,7 @@ dependencies = [
  "urlencoding",
  "webkit2gtk",
  "webpki-roots 0.26.11",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
  "xcap",
  "xcb",
  "zip 4.6.1",
