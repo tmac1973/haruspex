@@ -26,20 +26,13 @@ vi.mock('./registry', async (importOriginal) => {
 
 import './fs-write';
 import { invokeRouter, unexpectedInvoke } from '#lib/testing/invoke.ts';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
 let ctx: ToolContext;
 let sent: { command: string; payload: Record<string, unknown> }[];
 
 beforeEach(() => {
-	ctx = {
-		workingDir: '/tmp/work',
-		pendingImages: [],
-		deepResearch: false,
-		shellMode: false,
-		codeMode: false,
-		codeAutoApprove: false,
-		filesWrittenThisTurn: new Set<string>()
-	} as ToolContext;
+	ctx = makeToolContext({ workingDir: '/tmp/work' });
 	sent = [];
 	const write = (command: string) => (payload?: Record<string, unknown>) => {
 		sent.push({ command, payload: payload! });

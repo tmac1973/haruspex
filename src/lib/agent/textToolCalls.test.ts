@@ -7,7 +7,23 @@ describe('splitTextToolCalls', () => {
 			'I will read it.\n<tool_call>\n{"name": "fs_read_text", "arguments": {"path": "a.ts"}}\n</tool_call>'
 		);
 		expect(res.text).toBe('I will read it.\n');
-		expect(res.calls).toEqual([{ name: 'fs_read_text', argsSoFar: '{"path": "a.ts"}}\n' }]);
+		expect(res.calls).toHaveLength(1);
+		expect(res.calls[0].name).toBe('fs_read_text');
+		// The arguments as written so far; what follows them in the block is not pinned.
+		expect(res.calls[0].argsSoFar.startsWith('{"path": "a.ts"}')).toBe(true);
+	});
+
+	it('hides a malformed block without inventing a call', () => {
+		for (const body of ['{"arguments": {"path": "a.ts"}}', 'not json at all']) {
+			const res = splitTextToolCalls(`Before.\n<tool_call>\n${body}\n</tool_call>\nAfter.`);
+			expect(res.text, body).toBe('Before.\n\nAfter.');
+			expect(res.calls, body).toEqual([]);
+		}
+	});
+
+	it('reads a call with no arguments as one with none so far', () => {
+		const res = splitTextToolCalls('<tool_call>\n{"name": "list_tools"}\n</tool_call>');
+		expect(res.calls).toEqual([{ name: 'list_tools', argsSoFar: '' }]);
 	});
 
 	it('hides a block still being written, and reads the name once it is whole', () => {

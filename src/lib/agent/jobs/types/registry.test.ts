@@ -125,8 +125,6 @@ describe('registration barrel', () => {
 		const { getJobType } = await import('./index');
 		const coding = getJobType('autonomous_coding')!;
 		expect(coding.hasPlannedSteps).toBe(false);
-		// Full-shell type: must carry a platform gate (shell_platform_supported).
-		expect(typeof coding.available).toBe('function');
 
 		const stages = coding.planSteps({ steps: [] } as unknown as JobWithSteps);
 		expect(stages.map((s) => s.authored)).toEqual([
@@ -206,9 +204,6 @@ describe('registration barrel', () => {
 		const { getJobType } = await import('./index');
 		const assets = getJobType('asset_generation')!;
 		expect(assets.hasPlannedSteps).toBe(false);
-		// Availability, not platform: the job is meaningless with nowhere to
-		// generate, and offering it would be offering a run that cannot start.
-		expect(typeof assets.available).toBe('function');
 		// The anchor checkpoint would park a scheduled run on a modal.
 		expect(assets.supportsSchedule).toBe(false);
 
@@ -242,5 +237,38 @@ describe('registration barrel', () => {
 		expect(
 			assets.validate!({ ...base, workingDir: '/p', config: { ...defaults, concurrency: 99 } })
 		).toContain('Simultaneous');
+	});
+});
+
+describe('job type gates', () => {
+	it('offers autonomous coding only where the shell runs, and not when the probe fails', async () => {
+		const shell = { supported: true as boolean | Error };
+		vi.doMock('@tauri-apps/api/core', () => ({
+			invoke: async (cmd: string) => {
+				if (cmd !== 'shell_platform_supported') return null;
+				if (shell.supported instanceof Error) throw shell.supported;
+				return shell.supported;
+			}
+		}));
+		const { getJobType } = await import('./index');
+		const coding = getJobType('autonomous_coding')!;
+		expect(await coding.available!()).toBe(true);
+		shell.supported = false;
+		expect(await coding.available!()).toBe(false);
+		shell.supported = new Error('no shell');
+		expect(await coding.available!()).toBe(false);
+	});
+
+	it('offers asset generation only with an image backend to generate on', async () => {
+		const backend = { kind: 'none' };
+		vi.doMock('#lib/image/index.ts', async (importOriginal) => ({
+			...(await importOriginal<typeof import('#lib/image/index.ts')>()),
+			resolveImageBackend: () => backend
+		}));
+		const { getJobType } = await import('./index');
+		const assets = getJobType('asset_generation')!;
+		expect(await assets.available!()).toBe(false);
+		backend.kind = 'comfy';
+		expect(await assets.available!()).toBe(true);
 	});
 });

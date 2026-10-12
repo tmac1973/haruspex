@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
 const mocks = vi.hoisted(() => ({
 	invoke: vi.fn()
@@ -8,37 +9,20 @@ vi.mock('@tauri-apps/api/core', () => ({
 	invoke: mocks.invoke
 }));
 
-const chatCtx = {
-	workingDir: '/tmp/work',
-	pendingImages: [],
-	deepResearch: false,
-	shellMode: false,
-	codeMode: false,
-	codeAutoApprove: false,
-	filesWrittenThisTurn: new Set<string>()
-};
+const chatCtx = makeToolContext({
+	workingDir: '/tmp/work'
+});
 
-const shellCtx = {
-	workingDir: null,
-	pendingImages: [],
-	deepResearch: false,
-	shellMode: true,
-	codeMode: false,
-	codeAutoApprove: false,
-	filesWrittenThisTurn: new Set<string>()
-};
+const shellCtx = makeToolContext({
+	shellMode: true
+});
 
 // Shell tab in Code mode — the only path that grants file writes now that the
 // standalone "allow writes" toggle is gone.
-const shellCtxWritable = {
-	workingDir: null,
-	pendingImages: [],
-	deepResearch: false,
+const shellCtxWritable = makeToolContext({
 	shellMode: true,
-	codeMode: true,
-	codeAutoApprove: false,
-	filesWrittenThisTurn: new Set<string>()
-};
+	codeMode: true
+});
 
 beforeEach(() => {
 	mocks.invoke.mockReset();

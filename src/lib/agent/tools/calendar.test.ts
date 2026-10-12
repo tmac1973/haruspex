@@ -16,16 +16,9 @@ import { setDavAccounts } from '#lib/stores/settings.ts';
 import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
 import type { CalendarEvent } from '#lib/ipc/gen/CalendarEvent.ts';
 import type { ToolContext } from '#lib/agent/tools/types.ts';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
-const ctx: ToolContext = {
-	workingDir: null,
-	pendingImages: [],
-	deepResearch: false,
-	shellMode: false,
-	codeMode: false,
-	codeAutoApprove: false,
-	filesWrittenThisTurn: new Set<string>()
-};
+const ctx: ToolContext = makeToolContext();
 
 function account(overrides: Partial<DavAccount> = {}): DavAccount {
 	return {

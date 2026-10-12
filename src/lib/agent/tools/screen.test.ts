@@ -13,19 +13,9 @@ import '#lib/agent/tools/screen.ts';
 import { normalizeTarget } from '#lib/agent/tools/screen.ts';
 import { executeTool, getToolSchemas } from '#lib/agent/tools/registry.ts';
 import { updateSettings } from '#lib/stores/settings.ts';
-import type { ToolContext } from '#lib/agent/tools/types.ts';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
-function context(): ToolContext {
-	return {
-		workingDir: null,
-		pendingImages: [],
-		deepResearch: false,
-		shellMode: false,
-		codeMode: false,
-		codeAutoApprove: false,
-		filesWrittenThisTurn: new Set<string>()
-	};
-}
+const context = () => makeToolContext();
 
 const capture = {
 	dataUrl: 'data:image/jpeg;base64,AAAA',

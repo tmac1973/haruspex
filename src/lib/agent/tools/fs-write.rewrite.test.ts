@@ -11,6 +11,7 @@ vi.mock('#lib/stores/approvalOverride.ts', () => ({ isAutoApproveActive: () => t
 import { executeTool } from '#lib/agent/tools/index.ts';
 import type { ToolContext } from './types';
 import { invokeRouter } from '#lib/testing/invoke.ts';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
 beforeEach(() => {
 	mocks.disk.clear();
@@ -39,16 +40,11 @@ beforeEach(() => {
 
 /** One turn's context, as the agent loop builds it. */
 const turn = (codeSessionId?: string): ToolContext =>
-	({
+	makeToolContext({
 		workingDir: '/proj',
 		codeMode: true,
-		shellMode: false,
 		codeSessionId,
 		interactive: true,
-		pendingImages: [],
-		deepResearch: false,
-		codeAutoApprove: false,
-		filesWrittenThisTurn: new Set<string>(),
 		filesRewritableThisTurn: new Set<string>()
 	}) as ToolContext;
 

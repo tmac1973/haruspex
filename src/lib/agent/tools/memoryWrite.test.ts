@@ -37,17 +37,9 @@ vi.mock('#lib/stores/memoryApproval.svelte.ts', () => ({
 import { executeTool, getToolSchemas } from './registry';
 import './memoryWrite';
 import { REMEMBER_TOOL } from './memoryWrite';
-import type { ToolContext } from './types';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
-const ctx = {
-	workingDir: null,
-	pendingImages: [],
-	deepResearch: false,
-	filesWrittenThisTurn: new Set<string>(),
-	shellMode: false,
-	codeMode: false,
-	codeAutoApprove: false
-} as unknown as ToolContext;
+const ctx = makeToolContext();
 
 const FACT = 'Deploys on Fridays.';
 

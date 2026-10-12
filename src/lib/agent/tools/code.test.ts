@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RunCommandResult } from '#lib/ipc/gen/RunCommandResult.ts';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
 
 const mocks = vi.hoisted(() => ({
 	invoke: vi.fn(),
@@ -23,15 +24,10 @@ vi.mock('#lib/shell/backgroundWatch.ts', () => ({
 	registerCodeBgWatch: mocks.registerCodeBgWatch
 }));
 
-const codeCtx = {
+const codeCtx = makeToolContext({
 	workingDir: '/work',
-	pendingImages: [],
-	deepResearch: false,
-	shellMode: false,
-	codeMode: true,
-	codeAutoApprove: false,
-	filesWrittenThisTurn: new Set<string>()
-};
+	codeMode: true
+});
 
 const okResult: RunCommandResult = {
 	stdout: 'hello\n',
