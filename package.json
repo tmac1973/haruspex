@@ -74,7 +74,7 @@
 		"codemirror": "^6.0.2",
 		"dompurify": "^3.4.9",
 		"highlight.js": "^11.11.1",
-		"marked": "^17.0.5",
+		"marked": "^18.1.0",
 		"pdfjs-dist": "^6.4.299",
 		"pyodide": "^0.29.4"
 	}
