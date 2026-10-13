@@ -64,7 +64,16 @@ export const SHORTCUTS: ShortcutSection[] = [
 		title: 'Editor windows',
 		items: [
 			{ keys: 'Ctrl / ⌘ + S', action: 'Save the file' },
-			{ keys: 'Ctrl / ⌘ + W', action: 'Close the tab' }
+			{ keys: 'Ctrl / ⌘ + W', action: 'Close the tab' },
+			{ keys: 'Ctrl / ⌘ + F', action: 'Find and replace' },
+			{ keys: 'Ctrl / ⌘ + G', action: 'Next match (Shift for previous)' },
+			{ keys: 'Ctrl / ⌘ + ⌥ + G', action: 'Go to line' },
+			{ keys: 'Ctrl / ⌘ + D', action: 'Add the next match to the selection' },
+			{ keys: 'Ctrl / ⌘ + ⌥ + ↑ / ↓', action: 'Add a cursor above / below' },
+			{ keys: '⌥ + ↑ / ↓', action: 'Move the line up / down (Shift copies it)' },
+			{ keys: 'Ctrl / ⌘ + Shift + K', action: 'Delete the line' },
+			{ keys: 'Ctrl / ⌘ + /', action: 'Comment or uncomment' },
+			{ keys: 'Tab / Shift + Tab', action: 'Indent / outdent (Esc, then Tab, leaves the editor)' }
 		]
 	},
 	{

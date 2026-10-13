@@ -108,6 +108,7 @@
 						<CodeEditor
 							value={currentDoc.draft}
 							label={current}
+							path={current}
 							onchange={(v) => currentDoc.edit(v)}
 							onsave={() => save()}
 						/>
