@@ -121,6 +121,8 @@ fn default_shell_command(command: &str) -> tokio::process::Command {
     });
     let mut c = tokio::process::Command::new(if bash { "bash" } else { "sh" });
     c.arg("-c").arg(command);
+    // An AppImage's PYTHONHOME would stop every `python3` the model runs.
+    crate::env_util::sanitize_appimage_env(c.as_std_mut());
     c
 }
 

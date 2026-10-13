@@ -119,6 +119,8 @@ impl Place {
                     c.env(k, v);
                 }
                 c.arg("-C").arg(dir).args(args);
+                // Hooks run the user's own tools.
+                crate::env_util::sanitize_appimage_env(c.as_std_mut());
                 super::hide_window(&mut c);
                 c
             }

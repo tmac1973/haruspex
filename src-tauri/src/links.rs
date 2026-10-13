@@ -60,7 +60,7 @@ pub async fn open_folder(path: String) -> Result<(), String> {
 fn spawn_folder_handler(dir: &std::path::Path) -> Result<(), String> {
     let mut cmd = std::process::Command::new("xdg-open");
     cmd.arg(dir);
-    sanitize_appimage_env(&mut cmd);
+    crate::env_util::sanitize_appimage_env(&mut cmd);
     cmd.spawn()
         .map(|_| ())
         .map_err(|e| format!("xdg-open spawn failed: {}", e))
@@ -90,7 +90,7 @@ fn spawn_folder_handler(dir: &std::path::Path) -> Result<(), String> {
 fn spawn_url_handler(url: &str) -> Result<(), String> {
     let mut cmd = std::process::Command::new("xdg-open");
     cmd.arg(url);
-    sanitize_appimage_env(&mut cmd);
+    crate::env_util::sanitize_appimage_env(&mut cmd);
     cmd.spawn()
         .map(|_| ())
         .map_err(|e| format!("xdg-open spawn failed: {}", e))
@@ -115,27 +115,6 @@ fn spawn_url_handler(url: &str) -> Result<(), String> {
         .spawn()
         .map(|_| ())
         .map_err(|e| format!("rundll32 spawn failed: {}", e))
-}
-
-/// Strip AppImage-mangled variables (LD_LIBRARY_PATH, PYTHONHOME /
-/// PYTHONPATH) out of the child process's env. No-op when not running
-/// inside an AppImage (APPDIR unset), so dev mode and .deb / .rpm
-/// installs are unaffected. The decisions live in `env_util` (shared
-/// with the PTY spawn in `shell/session.rs`); this just applies them to
-/// a std Command.
-#[cfg(target_os = "linux")]
-fn sanitize_appimage_env(cmd: &mut std::process::Command) {
-    use crate::env_util::EnvFix;
-    for fix in crate::env_util::appimage_env_fixes() {
-        match fix {
-            EnvFix::Remove(var) => {
-                cmd.env_remove(var);
-            }
-            EnvFix::Set(var, value) => {
-                cmd.env(var, value);
-            }
-        }
-    }
 }
 
 #[cfg(test)]

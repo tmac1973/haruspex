@@ -62,6 +62,14 @@ pub fn wrap(cmd: Command, command_id: &str, limit_bytes: u64) -> (Command, Optio
     wrapped.args(scope_args(&unit, limit_bytes));
     let std = cmd.as_std();
     wrapped.arg(std.get_program()).args(std.get_args());
+    // systemd-run hands the scope its own environment, so the command's
+    // changes to it have to come along.
+    for (key, value) in std.get_envs() {
+        match value {
+            Some(value) => wrapped.env(key, value),
+            None => wrapped.env_remove(key),
+        };
+    }
     (wrapped, Some(Scope { unit, limit_bytes }))
 }
 
@@ -274,6 +282,21 @@ mod tests {
         assert!(args.contains(&"--property=MemoryMax=1024".to_string()));
         assert!(args.contains(&"--property=MemorySwapMax=0".to_string()));
         assert_eq!(args.last().unwrap(), "--");
+    }
+
+    /// The Code tab strips an AppImage's PYTHONHOME before wrapping; the
+    /// scope must not bring it back.
+    #[test]
+    fn the_wrapped_command_keeps_its_environment_changes() {
+        let mut cmd = Command::new("sh");
+        cmd.env("KEPT", "1").env_remove("PYTHONHOME");
+        let (wrapped, scope) = wrap(cmd, "env", 1024);
+        if scope.is_none() {
+            return;
+        }
+        let envs: Vec<_> = wrapped.as_std().get_envs().collect();
+        assert!(envs.contains(&("KEPT".as_ref(), Some("1".as_ref()))));
+        assert!(envs.contains(&("PYTHONHOME".as_ref(), None)));
     }
 
     /// The real thing, where a systemd user session exists: a command that
