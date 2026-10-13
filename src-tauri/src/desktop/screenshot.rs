@@ -93,6 +93,48 @@ pub struct CaptureWindow {
     pub app: String,
 }
 
+/// Smaller than this on either side is a menubar strip, a status item or a
+/// zero-size helper, not a window anyone means to capture.
+const MIN_PICKABLE_SIDE: u32 = 50;
+
+/// Apps whose windows are the desktop itself: the macOS menubar, Dock and
+/// widgets, and the Windows shell's input and Start surfaces. xcap already
+/// leaves out the Windows desktop (Program Manager) and nameless tool windows.
+const SYSTEM_APPS: &[&str] = &[
+    "Window Server",
+    "Dock",
+    "Control Center",
+    "Notification Center",
+    "SystemUIServer",
+    "WindowManager",
+    "Spotlight",
+    "loginwindow",
+    "TextInputMenuAgent",
+    "TextInputHost",
+    "ShellExperienceHost",
+    "StartMenuExperienceHost",
+    "SearchHost",
+];
+
+/// Whether a window belongs in the pick list. Lives here rather than in
+/// `external` so the rule is tested on every platform.
+#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
+pub(super) fn worth_listing(title: &str, app: &str, width: u32, height: u32) -> bool {
+    let (title, app) = (title.trim(), app.trim());
+    // An untitled window with no app name is a tooltip, a shadow or an
+    // overlay: nothing a person would pick.
+    if title.is_empty() && app.is_empty() {
+        return false;
+    }
+    if width < MIN_PICKABLE_SIDE || height < MIN_PICKABLE_SIDE {
+        return false;
+    }
+    // On Windows the name is the file description, which for some system
+    // processes is just the exe's file name.
+    let app = app.strip_suffix(".exe").unwrap_or(app);
+    !SYSTEM_APPS.iter().any(|s| s.eq_ignore_ascii_case(app))
+}
+
 /// The windows to offer in a pick list. Empty on Linux, where the user clicks
 /// the window instead ([`capture_window_click`]).
 #[tauri::command]
@@ -301,6 +343,42 @@ async fn grab(_target: CaptureTarget, _interactive: bool) -> Result<Capture, Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_ordinary_window_is_listed() {
+        assert!(worth_listing("My Game (DEBUG)", "Godot", 1280, 720));
+        assert!(worth_listing("", "Safari", 800, 600));
+    }
+
+    #[test]
+    fn tiny_and_zero_size_windows_are_not_listed() {
+        assert!(!worth_listing("Item-0", "1Password", 30, 24));
+        assert!(!worth_listing("Menubar", "Some App", 1920, 24));
+        assert!(!worth_listing("Helper", "Some App", 0, 0));
+    }
+
+    #[test]
+    fn nameless_windows_are_not_listed() {
+        assert!(!worth_listing("  ", "", 800, 600));
+    }
+
+    #[test]
+    fn the_desktop_s_own_windows_are_not_listed() {
+        for app in [
+            "Window Server",
+            "Dock",
+            "Notification Center",
+            "control center",
+        ] {
+            assert!(!worth_listing("", app, 1920, 1080), "{app}");
+        }
+        assert!(!worth_listing("", "TextInputHost.exe", 400, 300));
+    }
+
+    #[test]
+    fn file_explorer_windows_are_listed() {
+        assert!(worth_listing("Downloads", "Windows Explorer", 900, 600));
+    }
 
     #[test]
     fn a_4k_capture_is_scaled_down_and_keeps_its_shape() {

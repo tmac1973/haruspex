@@ -12,9 +12,10 @@
 //! screen would then confidently describe an empty desktop, so the grant is
 //! checked before capturing and its absence reported as what it is.
 
-use super::screenshot::{Capture, CaptureTarget, CaptureWindow};
+use super::screenshot::{worth_listing, Capture, CaptureTarget, CaptureWindow};
 
-/// Visible windows other than Haruspex's own, for the user to pick from.
+/// Visible windows other than Haruspex's own, for the user to pick from, in
+/// xcap's order: front to back, so the window just used is near the top.
 pub async fn list_windows() -> Result<Vec<CaptureWindow>, String> {
     require_screen_recording_permission()?;
     tokio::task::spawn_blocking(|| {
@@ -28,9 +29,8 @@ pub async fn list_windows() -> Result<Vec<CaptureWindow>, String> {
             .filter_map(|w| {
                 let title = w.title().unwrap_or_default();
                 let app = w.app_name().unwrap_or_default();
-                // An untitled window with no app name is a tooltip, a shadow or
-                // an overlay: nothing a person would pick.
-                if title.trim().is_empty() && app.trim().is_empty() {
+                let (width, height) = (w.width().unwrap_or(0), w.height().unwrap_or(0));
+                if !worth_listing(&title, &app, width, height) {
                     return None;
                 }
                 Some(CaptureWindow {
