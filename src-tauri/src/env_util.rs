@@ -94,6 +94,27 @@ pub fn appimage_env_fixes() -> Vec<EnvFix> {
     fixes
 }
 
+/// Apply [`appimage_env_fixes`] to a std `Command` (a tokio one through
+/// `as_std_mut`). Every host child that may run the user's own tools needs
+/// it: the URL opener, the Code tab's commands, git. The PTY spawn in
+/// `shell/session.rs` applies the same fixes to its own builder.
+#[cfg(target_os = "linux")]
+pub fn sanitize_appimage_env(cmd: &mut std::process::Command) {
+    for fix in appimage_env_fixes() {
+        match fix {
+            EnvFix::Remove(var) => {
+                cmd.env_remove(var);
+            }
+            EnvFix::Set(var, value) => {
+                cmd.env(var, value);
+            }
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn sanitize_appimage_env(_cmd: &mut std::process::Command) {}
+
 /// Strip `$APPDIR`-prefixed entries from a colon-separated path list,
 /// removing the variable outright when nothing survives.
 #[cfg(target_os = "linux")]
