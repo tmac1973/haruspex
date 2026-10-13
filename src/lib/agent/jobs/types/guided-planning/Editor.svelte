@@ -146,6 +146,19 @@
 
 <div class="toggle-row">
 	<label>
+		<input type="checkbox" bind:checked={cfg.overview_only} />
+		<span class="label">
+			Overview only
+			<Tooltip
+				label="About overview only"
+				text="Stops once you approve overview.md — no phase outline, phase files or review. For a project small enough to build straight from the overview: open its folder in the Code tab and point the agent at the file."
+			/>
+		</span>
+	</label>
+</div>
+
+<div class="toggle-row">
+	<label>
 		<input type="checkbox" bind:checked={cfg.web_research} />
 		<span class="label">
 			Web research
@@ -157,101 +170,103 @@
 	</label>
 </div>
 
-<div class="field run-mode">
-	<span class="label">
-		Run mode
-		<Tooltip
-			label="About run mode"
-			text="Attended stops at three checkpoints: the overview, the phase outline, and the finished plan. Unattended plan skips only the last one — the first two land while you are still answering interview questions, and are the cheapest place to catch a bad overview before it becomes an hour of planning. Nothing skips the interview itself."
-		/>
-	</span>
-	<select bind:value={cfg.run_mode} aria-label="Run mode">
-		<option value="attended">Attended — stop at every checkpoint</option>
-		<option value="unattended_plan">Unattended plan — skip the final approval</option>
-		<option value="unattended_chain">Unattended plan + code — start a coding run too</option>
-	</select>
-</div>
-
-<div class="toggle-row">
-	<label>
-		<input type="checkbox" bind:checked={cfg.use_git} />
+{#if !cfg.overview_only}
+	<div class="field run-mode">
 		<span class="label">
-			Use git
+			Run mode
 			<Tooltip
-				label="About using git"
-				text="Off drops the Commit section from every phase file, so a plan for a project you are not versioning never tells a coding run to commit. The Rollback section stays either way — rolling back without git means deleting the files a phase created. Turn this off for a project with no git repository, or one you do not want versioned."
+				label="About run mode"
+				text="Attended stops at three checkpoints: the overview, the phase outline, and the finished plan. Unattended plan skips only the last one — the first two land while you are still answering interview questions, and are the cheapest place to catch a bad overview before it becomes an hour of planning. Nothing skips the interview itself."
 			/>
 		</span>
-	</label>
-</div>
+		<select bind:value={cfg.run_mode} aria-label="Run mode">
+			<option value="attended">Attended — stop at every checkpoint</option>
+			<option value="unattended_plan">Unattended plan — skip the final approval</option>
+			<option value="unattended_chain">Unattended plan + code — start a coding run too</option>
+		</select>
+	</div>
 
-<div class="field">
-	<span class="label">
-		Verification
-		<Tooltip
-			label="About verification"
-			text="An independent fresh-context review of every phase file — dependency ordering, unresolved decisions, embedded code, unreachable steps. Full revises and re-checks until clean, up to five rounds; it is usually the longest stage of a run. Lite reads once and revises once, and passes whatever it found to the coding run as open findings. Skip when the plan is small or you will review it yourself."
-		/>
-	</span>
-	<select bind:value={cfg.verification} aria-label="Verification">
-		<option value="full">Full — revise until clean</option>
-		<option value="lite">Lite — one check, one revise</option>
-		<option value="skip" disabled={cfg.run_mode === 'unattended_chain'}>Skip</option>
-	</select>
-	{#if cfg.run_mode === 'unattended_chain'}
-		<p class="hint">At least lite in this mode — it decides whether the coding run may start.</p>
-	{/if}
-</div>
-
-{#if cfg.run_mode === 'unattended_chain'}
 	<div class="toggle-row">
 		<label>
-			<input type="checkbox" bind:checked={cfg.generate_assets} disabled={!imageBackendReady} />
+			<input type="checkbox" bind:checked={cfg.use_git} />
 			<span class="label">
-				Also generate assets
+				Use git
 				<Tooltip
-					label="About generating assets"
-					text="Writes an asset spec from the finished plan, then runs an asset-generation job before the coding job, so the code is built against art that already exists. Needs an image backend in Settings → Image."
+					label="About using git"
+					text="Off drops the Commit section from every phase file, so a plan for a project you are not versioning never tells a coding run to commit. The Rollback section stays either way — rolling back without git means deleting the files a phase created. Turn this off for a project with no git repository, or one you do not want versioned."
 				/>
 			</span>
 		</label>
-		{#if !imageBackendReady}
-			<p class="hint">Needs an image backend — set one in Settings → Image.</p>
+	</div>
+
+	<div class="field">
+		<span class="label">
+			Verification
+			<Tooltip
+				label="About verification"
+				text="An independent fresh-context review of every phase file — dependency ordering, unresolved decisions, embedded code, unreachable steps. Full revises and re-checks until clean, up to five rounds; it is usually the longest stage of a run. Lite reads once and revises once, and passes whatever it found to the coding run as open findings. Skip when the plan is small or you will review it yourself."
+			/>
+		</span>
+		<select bind:value={cfg.verification} aria-label="Verification">
+			<option value="full">Full — revise until clean</option>
+			<option value="lite">Lite — one check, one revise</option>
+			<option value="skip" disabled={cfg.run_mode === 'unattended_chain'}>Skip</option>
+		</select>
+		{#if cfg.run_mode === 'unattended_chain'}
+			<p class="hint">At least lite in this mode — it decides whether the coding run may start.</p>
 		{/if}
 	</div>
 
-	{#if cfg.generate_assets && imageBackendReady}
+	{#if cfg.run_mode === 'unattended_chain'}
+		<div class="toggle-row">
+			<label>
+				<input type="checkbox" bind:checked={cfg.generate_assets} disabled={!imageBackendReady} />
+				<span class="label">
+					Also generate assets
+					<Tooltip
+						label="About generating assets"
+						text="Writes an asset spec from the finished plan, then runs an asset-generation job before the coding job, so the code is built against art that already exists. Needs an image backend in Settings → Image."
+					/>
+				</span>
+			</label>
+			{#if !imageBackendReady}
+				<p class="hint">Needs an image backend — set one in Settings → Image.</p>
+			{/if}
+		</div>
+
+		{#if cfg.generate_assets && imageBackendReady}
+			{@render stageModel(
+				'chain_assets_model',
+				'Asset run model',
+				'The model the asset run uses to write prompts and judge the art. The image backend itself is set in Settings → Image.'
+			)}
+		{/if}
 		{@render stageModel(
-			'chain_assets_model',
-			'Asset run model',
-			'The model the asset run uses to write prompts and judge the art. The image backend itself is set in Settings → Image.'
+			'chain_coding_model',
+			'Coding run model',
+			'The model that writes the code. A fast model here and a strong one for planning is the usual reason to change it.'
 		)}
+
+		<details class="coding-run">
+			<summary>Coding run settings</summary>
+			<p class="hint">
+				The coding job is created and started without stopping, so this is the only chance to set
+				it. Leave anything blank to let the coding run's own preflight settle it.
+			</p>
+
+			<label class="sub">
+				Max model steps per turn
+				<input
+					type="number"
+					min="50"
+					max="600"
+					step="50"
+					bind:value={cfg.coding_max_turns}
+					aria-label="Max model steps per turn"
+				/>
+			</label>
+		</details>
 	{/if}
-	{@render stageModel(
-		'chain_coding_model',
-		'Coding run model',
-		'The model that writes the code. A fast model here and a strong one for planning is the usual reason to change it.'
-	)}
-
-	<details class="coding-run">
-		<summary>Coding run settings</summary>
-		<p class="hint">
-			The coding job is created and started without stopping, so this is the only chance to set it.
-			Leave anything blank to let the coding run's own preflight settle it.
-		</p>
-
-		<label class="sub">
-			Max model steps per turn
-			<input
-				type="number"
-				min="50"
-				max="600"
-				step="50"
-				bind:value={cfg.coding_max_turns}
-				aria-label="Max model steps per turn"
-			/>
-		</label>
-	</details>
 {/if}
 
 {#snippet stageModel(key: StageKey, label: string, tip: string)}

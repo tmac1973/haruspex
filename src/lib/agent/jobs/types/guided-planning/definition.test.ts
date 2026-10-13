@@ -73,3 +73,38 @@ describe('guided planning stage models in the editor', () => {
 		).toMatch(/asset run/);
 	});
 });
+
+describe('guided planning overview only', () => {
+	const job = (typeConfig: string) =>
+		({ type_config: typeConfig }) as unknown as Parameters<
+			typeof guidedPlanningJobType.planSteps
+		>[0];
+
+	it('plans the overview stage alone', () => {
+		const steps = guidedPlanningJobType.planSteps(job(toJson(state({ overview_only: true }))));
+		expect(steps.map((s) => s.authored)).toEqual(['Overview']);
+		expect(guidedPlanningJobType.planSteps(job(toJson(state()))).length).toBe(7);
+	});
+
+	it('stores the flag only when it is on, and loads it back', () => {
+		expect(JSON.parse(toJson(state())).overview_only).toBeUndefined();
+		const loaded = guidedPlanningJobType.configFromJob(
+			toJson(state({ overview_only: true }))
+		) as unknown as GuidedPlanningEditorState;
+		expect(loaded.overview_only).toBe(true);
+	});
+
+	it('does not check chained-stage models nothing will run', () => {
+		expect(
+			guidedPlanningJobType.validate?.({
+				name: 'x',
+				workingDir: '/repo',
+				steps: [],
+				config: state({
+					overview_only: true,
+					chain_coding_model: emptyModelForm('remote')
+				}) as unknown as Record<string, unknown>
+			})
+		).toBeNull();
+	});
+});

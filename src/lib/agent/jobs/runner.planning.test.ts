@@ -223,6 +223,63 @@ describe('guided_planning — run mode', () => {
 	});
 });
 
+/**
+ * Overview only: the interview and overview.md, then nothing. The user hands
+ * the overview to a Code-tab session instead of a phased plan.
+ */
+describe('guided_planning — overview only', () => {
+	function overviewOnlyJob(cfg: Record<string, unknown> = {}) {
+		return makeJob({
+			job_type: 'guided_planning',
+			steps: [],
+			working_dir: '/repo',
+			type_config: JSON.stringify({
+				initial_description: 'Build X',
+				plan_output_dir: 'plan/x/',
+				overview_only: true,
+				...cfg
+			})
+		});
+	}
+
+	async function run(job: ReturnType<typeof overviewOnlyJob>) {
+		mocks.getJob.mockResolvedValueOnce(job);
+		mocks.runEphemeralTurn.mockImplementation(
+			guidedTurns([{ id: '01', title: 'One', summary: 'first' }])
+		);
+		const { enqueue } = await freshRunner();
+		await enqueue(1);
+		await tick();
+	}
+
+	it('plans one stage, the overview', async () => {
+		await run(overviewOnlyJob());
+		expect(mocks.createJobRun.mock.calls[0][2]).toEqual(['Overview']);
+	});
+
+	it('stops after the overview checkpoint and succeeds', async () => {
+		await run(overviewOnlyJob());
+		// The overview checkpoint only — no outline, no final approval.
+		expect(mocks.askUserQuestion.mock.calls.length).toBe(1);
+		const calls = mocks.runEphemeralTurn.mock.calls as [EphemeralTurnOptions][];
+		expect(calls.some(([o]) => o.forceFinalTool === 'submit_plan_outline')).toBe(false);
+		expect(mocks.markRunStepStarted.mock.calls.every((c: unknown[]) => c[1] === 0)).toBe(true);
+		expect(mocks.markRunFinished.mock.calls[0][2]).toBe('succeeded');
+	});
+
+	it('chains nothing, even in the chain mode', async () => {
+		await run(overviewOnlyJob({ run_mode: 'unattended_chain' }));
+		expect(mocks.markRunStepStarted.mock.calls.every((c: unknown[]) => c[1] === 0)).toBe(true);
+		expect(mocks.markRunFinished.mock.calls[0][2]).toBe('succeeded');
+	});
+
+	it('tells the interview there is no stage 2', async () => {
+		await run(overviewOnlyJob());
+		const [first] = mocks.runEphemeralTurn.mock.calls[0] as [EphemeralTurnOptions];
+		expect(first.systemPrompt).toContain('no stage 2');
+	});
+});
+
 describe('guided_planning — planning skill', () => {
 	const BODY = [
 		'# Planning a 2D game',

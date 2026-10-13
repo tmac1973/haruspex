@@ -1,4 +1,5 @@
 import type { JobTypeDefinition, PlannedStep } from '#lib/agent/jobs/types/types.ts';
+import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 import { runGuidedPlanningPipeline } from '#lib/agent/jobs/types/guided-planning/pipeline.ts';
 import {
 	type GuidedPlanningRunMode,
@@ -31,6 +32,8 @@ export interface GuidedPlanningEditorState {
 	chain_coding_model: JobModelForm | null;
 	/** The planning skill's name; '' for none. */
 	planning_skill: string;
+	/** Stop after the overview. */
+	overview_only: boolean;
 }
 
 /** A stage's form as stored, or undefined for "same as this job". */
@@ -104,8 +107,13 @@ function codingRunJson(s: GuidedPlanningEditorState): Record<string, unknown> | 
 	return Object.keys(out).length > 0 ? out : undefined;
 }
 
-function planGuidedSteps(): PlannedStep[] {
-	return GUIDED_STAGES.map((stage) => ({
+function planGuidedSteps(job: JobWithSteps): PlannedStep[] {
+	// Overview only is the first stage alone. It is index 0 either way, so the
+	// pipeline's stage indices still line up.
+	const stages = parseGuidedPlanningConfig(job.type_config).overview_only
+		? GUIDED_STAGES.slice(0, 1)
+		: GUIDED_STAGES;
+	return stages.map((stage) => ({
 		authored: stage.title,
 		deepResearch: false,
 		description: stage.description
@@ -137,7 +145,8 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 		coding_max_turns: DEFAULT_MAX_TURNS,
 		chain_assets_model: null,
 		chain_coding_model: null,
-		planning_skill: ''
+		planning_skill: '',
+		overview_only: false
 	}),
 	configFromJob: (typeConfig) => {
 		const c = parseGuidedPlanningConfig(typeConfig);
@@ -156,7 +165,8 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 			chain_coding_model: c.chain_models.coding
 				? modelFormFromColumns(c.chain_models.coding)
 				: null,
-			planning_skill: c.planning_skill ?? ''
+			planning_skill: c.planning_skill ?? '',
+			overview_only: c.overview_only
 		};
 	},
 	configToJson: (config) => {
@@ -181,7 +191,8 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 							coding: stageModelJson(s.chain_coding_model)
 						}
 					: undefined,
-			planning_skill: s.planning_skill || undefined
+			planning_skill: s.planning_skill || undefined,
+			overview_only: s.overview_only || undefined
 		});
 	},
 	validate: ({ workingDir, config }) => {
@@ -189,7 +200,7 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 		if (!workingDir.trim())
 			return 'Guided planning needs a working directory — the project to plan in.';
 		if (!s.initial_description.trim()) return 'Describe what you want to build to start planning.';
-		if (s.run_mode === 'unattended_chain') {
+		if (s.run_mode === 'unattended_chain' && !s.overview_only) {
 			return (
 				(s.generate_assets ? stageModelProblem('asset run', s.chain_assets_model) : null) ??
 				stageModelProblem('coding run', s.chain_coding_model)

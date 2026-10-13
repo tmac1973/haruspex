@@ -2,6 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { parseGuidedPlanningConfig, defaultPlanDir } from './config';
 
 describe('parseGuidedPlanningConfig', () => {
+	it('runs every stage unless overview_only is exactly true', () => {
+		expect(parseGuidedPlanningConfig(null).overview_only).toBe(false);
+		expect(parseGuidedPlanningConfig('{"overview_only":"yes"}').overview_only).toBe(false);
+		expect(parseGuidedPlanningConfig('{"overview_only":true}').overview_only).toBe(true);
+	});
+
 	it('reads the fields a job editor writes', () => {
 		const cfg = parseGuidedPlanningConfig(
 			JSON.stringify({

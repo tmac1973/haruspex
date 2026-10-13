@@ -152,4 +152,12 @@ describe('guided-planning Editor', () => {
 			expect(screen.getByText('plan-old (missing)')).toBeTruthy();
 		});
 	});
+
+	it('hides the later-stage settings when overview only is on', () => {
+		mount({ overview_only: true, run_mode: 'unattended_chain' });
+		expect(screen.getByLabelText(/Overview only/)).toBeTruthy();
+		expect(screen.queryByLabelText('Run mode')).toBeNull();
+		expect(screen.queryByLabelText('Verification')).toBeNull();
+		expect(screen.queryByLabelText('Max model steps per turn')).toBeNull();
+	});
 });

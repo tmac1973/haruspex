@@ -121,6 +121,13 @@ export interface GuidedPlanningConfig {
 	 * and the verifier. Null for none, the default.
 	 */
 	planning_skill: string | null;
+	/**
+	 * Stop once the overview is approved: no outline, phase files,
+	 * verification, approval or handoff. For a project small enough to hand
+	 * straight to a Code-tab session pointed at overview.md. Every setting
+	 * after the overview stage is ignored. Defaults to off.
+	 */
+	overview_only: boolean;
 }
 
 export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningConfig {
@@ -191,7 +198,8 @@ export function parseGuidedPlanningConfig(json: string | null): GuidedPlanningCo
 		planning_skill:
 			typeof raw.planning_skill === 'string' && raw.planning_skill.trim()
 				? raw.planning_skill.trim()
-				: null
+				: null,
+		overview_only: raw.overview_only === true
 	};
 }
 

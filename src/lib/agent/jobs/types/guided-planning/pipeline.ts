@@ -182,6 +182,21 @@ function guidedPlanOutputDir(job: JobWithSteps, cfg: GuidedPlanningConfig): stri
 	return cfg.plan_output_dir?.trim() || defaultPlanDir(job.name) || 'plan/plan/';
 }
 
+/** Step 5 of the overview prompt: stop, and say what comes next. */
+function overviewStopRule(overviewOnly: boolean): string[] {
+	return overviewOnly
+		? [
+				'5. Send a one-line summary naming the file you wrote, then stop. There is',
+				'   no stage 2 in this session: a coding session will work from this',
+				'   overview directly, so make it complete enough to build from. Do NOT',
+				'   write a phased plan.'
+			]
+		: [
+				'5. Send a one-line summary naming the file you wrote, then stop. Do NOT start',
+				'   the implementation plan — that is stage 2, after the user reviews this.'
+			];
+}
+
 /**
  * Stage 1 (overview) system prompt: exhaustive, one-at-a-time, codebase-grounded
  * questioning via the question tool, then write overview.md from a fixed
@@ -191,7 +206,8 @@ export function overviewStagePrompt(
 	outDir: string,
 	overviewPath: string,
 	webResearch: boolean,
-	skill: PlanningSkill | null = null
+	skill: PlanningSkill | null = null,
+	overviewOnly = false
 ): string {
 	return [
 		'You are running an interactive guided-planning session. This is STAGE 1 of',
@@ -253,8 +269,7 @@ export function overviewStagePrompt(
 		'   coding runner parses this section mechanically) — and finally',
 		'   ## Decisions — a list of each question you asked and the answer the user',
 		`   chose. Write ONLY inside \`${outDir}\` — never elsewhere, never code.`,
-		'5. Send a one-line summary naming the file you wrote, then stop. Do NOT start',
-		'   the implementation plan — that is stage 2, after the user reviews this.',
+		...overviewStopRule(overviewOnly),
 		...(webResearch
 			? interviewResearchRules('the project description or any answer the user gives')
 			: []),
@@ -1860,7 +1875,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 		await turn(
 			OVERVIEW,
 			cfg.initial_description?.trim() || 'Plan this project.',
-			overviewStagePrompt(outDir, overviewPath, webResearch, planningSkill),
+			overviewStagePrompt(outDir, overviewPath, webResearch, planningSkill, cfg.overview_only),
 			interviewIterations,
 			{ expectsFileOutput: true, kind: 'overview.interview' }
 		);
@@ -1871,7 +1886,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				`I don't see ${overviewPath} on disk yet — you may have described writing the ` +
 				`overview without actually calling the fs_write_text tool. Do NOT ask any more ` +
 				`questions; call fs_write_text now to write the overview to ${overviewPath}, then stop.`,
-			overviewStagePrompt(outDir, overviewPath, webResearch, planningSkill),
+			overviewStagePrompt(outDir, overviewPath, webResearch, planningSkill, cfg.overview_only),
 			() =>
 				`The overview was never written to ${overviewPath} after ${MAX_WRITE_ATTEMPTS} attempts. ` +
 				`The selected model may be too small to follow the write step reliably — try a larger model.`,
@@ -1921,6 +1936,12 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			`Overview approved → ${overviewPath}` +
 				(planningSkill ? ` · planning skill: ${planningSkill.name}` : '')
 		);
+		// Overview only: the run's one planned stage is done. The rest of the
+		// pipeline, handoff included, never starts.
+		if (cfg.overview_only) {
+			deps.finalizeRun('succeeded', null);
+			return;
+		}
 
 		// Stage 2a — Outline: interview + structured phase list, then the dep-map
 		// approval checkpoint. The outline is what makes the per-phase write loop
