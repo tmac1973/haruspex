@@ -68,6 +68,22 @@ const theme = EditorView.theme({
 		backgroundColor: 'color-mix(in srgb, var(--accent) 28%, transparent)'
 	},
 	'.cm-panels': { backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' },
+	// The find panel's fields and buttons: CodeMirror's own are light grey,
+	// which leaves their labels unreadable in dark mode.
+	'.cm-textfield': {
+		backgroundColor: 'var(--bg-input)',
+		color: 'var(--text-primary)',
+		border: '1px solid var(--border)',
+		borderRadius: '4px'
+	},
+	'.cm-button': {
+		backgroundImage: 'none',
+		backgroundColor: 'var(--bg-raised)',
+		color: 'var(--text-primary)',
+		border: '1px solid var(--border)',
+		borderRadius: '4px'
+	},
+	'.cm-button:hover': { borderColor: 'var(--accent)' },
 	'&.cm-focused': { outline: 'none' }
 });
 
