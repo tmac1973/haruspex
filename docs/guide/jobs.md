@@ -37,6 +37,7 @@ Each run's **Tokens** card shows what every step used and how close it came to f
 
 - It interviews you one question at a time and reads your codebase. Answer "proceed" to any question to move on.
 - Stages: overview, outline, phase files, verification, approval.
+- **Overview only** stops once you approve `overview.md`. Use it when a project doesn't need phases: open the folder in the Code tab and point the agent at the overview. The run mode, verification and git settings don't apply.
 - **Run mode**: _Attended_ stops at three checkpoints (overview, outline, finished plan). _Unattended plan_ skips only the final approval. _Unattended plan + code_ starts an autonomous coding run when the plan is done. Nothing skips the interview.
 - **Verification**: a separate reviewer reads the plan fresh for ordering, "TBD" decisions and unreachable steps. _Full_ revises until clean (up to five rounds). _Lite_ checks once, revises once and passes the rest to the coding run. _Skip_ leaves it to you; it isn't offered with _Unattended plan + code_.
 - **Web research** lets the planner search (via Settings → Search). **Use git** off drops the commit steps from the plan.
