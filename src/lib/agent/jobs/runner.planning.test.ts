@@ -265,6 +265,8 @@ describe('guided_planning — overview only', () => {
 		expect(calls.some(([o]) => o.forceFinalTool === 'submit_plan_outline')).toBe(false);
 		expect(mocks.markRunStepStarted.mock.calls.every((c: unknown[]) => c[1] === 0)).toBe(true);
 		expect(mocks.markRunFinished.mock.calls[0][2]).toBe('succeeded');
+		// Approving is the end of the run, and the checkpoint says so.
+		expect(mocks.askUserQuestion.mock.calls[0][0].question).toContain('approve to finish');
 	});
 
 	it('chains nothing, even in the chain mode', async () => {

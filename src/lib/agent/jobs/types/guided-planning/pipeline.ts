@@ -1903,7 +1903,8 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				{
 					question:
 						`I wrote the project overview to ${overviewPath}. Review it, then approve ` +
-						`to continue — or type what you'd like changed and I'll revise it.`,
+						`to ${cfg.overview_only ? 'finish' : 'continue'} — or type what you'd like ` +
+						`changed and I'll revise it.`,
 					body: overviewText || undefined,
 					options: [
 						{ label: 'Approve', description: 'The overview looks good.', recommended: true },
