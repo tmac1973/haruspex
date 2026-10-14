@@ -50,6 +50,7 @@ mod test_util;
 mod text_util;
 mod time_util;
 mod tts;
+mod webview_store;
 mod whisper;
 
 use audio::AudioRecorder;
@@ -116,6 +117,10 @@ pub fn run() {
             if let Ok(dir) = app.path().app_data_dir() {
                 secrets::init(dir);
             }
+            // Settings every build shares; see webview_store.
+            app.manage(std::sync::Arc::new(webview_store::WebviewStore::new(
+                app.handle(),
+            )));
             app.manage(ModelManager::new(app.handle())?);
             // Other clients' way into Code sessions (plan/remote-api/): the
             // owner API switches it on while it runs; the e2e build keeps it on.
@@ -274,6 +279,9 @@ pub fn run() {
         // the runner asks; see power.rs.
         .manage(PowerInhibitor::new())
         .invoke_handler(tauri::generate_handler![
+            webview_store::webview_store_load,
+            webview_store::webview_store_seed,
+            webview_store::webview_store_set,
             server::start_server,
             server::stop_server,
             server::get_server_status,

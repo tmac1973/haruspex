@@ -5,7 +5,7 @@
 //! directory instead ([`EncryptedFile`]). Where that can't be written either,
 //! they are kept in memory for the session ([`session`]) and asked for again
 //! after a restart. They are never put in the settings blob, which lives in
-//! webview storage.
+//! webview storage and `webview-store.json` (see `webview_store`).
 //!
 //! Values only leave the store inside Rust, with one narrow exception. The
 //! frontend can ask whether a store exists, put a value in and delete one;

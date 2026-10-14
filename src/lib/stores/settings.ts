@@ -1,4 +1,5 @@
-// App settings — persisted to localStorage
+// App settings — persisted to localStorage, and through persist.ts to a file
+// every build shares
 
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { createSubscriber } from 'svelte/reactivity';
@@ -15,6 +16,7 @@ import type { EmailProvider } from '#lib/ipc/gen/EmailProvider.ts';
 import type { ProxyConfig } from '#lib/ipc/gen/ProxyConfig.ts';
 import type { SandboxNetAccess } from '#lib/ipc/gen/SandboxNetAccess.ts';
 import { rememberedApiKey } from '#lib/stores/apiKeyMemory.ts';
+import { persistItem } from '#lib/persist.ts';
 import type { TlsMode } from '#lib/ipc/gen/TlsMode.ts';
 import type { ShellSelection } from '#lib/ipc/gen/ShellSelection.ts';
 
@@ -1087,7 +1089,7 @@ function load(): AppSettings {
 
 function save(settings: AppSettings): void {
 	try {
-		localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+		persistItem(SETTINGS_KEY, JSON.stringify(settings));
 	} catch {
 		// ignore
 	}

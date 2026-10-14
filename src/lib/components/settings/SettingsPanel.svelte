@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { persistItem } from '#lib/persist.ts';
 	import GeneralSection from '#lib/components/settings/GeneralSection.svelte';
 	import InferenceSection from '#lib/components/settings/InferenceSection.svelte';
 	import AgentSection from '#lib/components/settings/AgentSection.svelte';
@@ -189,7 +190,7 @@
 	function selectCategory(id: Category) {
 		activeCategory = id;
 		try {
-			localStorage.setItem(STORAGE_KEY, id);
+			persistItem(STORAGE_KEY, id);
 		} catch {
 			// ignore
 		}

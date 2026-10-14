@@ -201,6 +201,12 @@ const TABLE: Record<string, Handler> = {
 		output_total: 0
 	}),
 
+	// Saved settings (persist.ts): no file yet, so the page's own
+	// localStorage seeds it.
+	webview_store_load: () => null,
+	webview_store_seed: (args) => args?.items ?? {},
+	webview_store_set: () => null,
+
 	// Tools.
 	proxy_search: () => [
 		{

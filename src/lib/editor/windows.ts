@@ -18,6 +18,7 @@ import { emitTo, listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { openAppWindow } from '#lib/appWindow.ts';
 import { folderName } from '#lib/code/sessionList.ts';
+import { persistItem } from '#lib/persist.ts';
 
 /** Main → editor window: show these files. */
 export const OPEN_EVENT = 'editor://open';
@@ -207,7 +208,7 @@ export function loadGeometry(root: string): Geometry | null {
 
 export function saveGeometry(root: string, g: Geometry): void {
 	try {
-		localStorage.setItem(GEOMETRY_KEY + folderKey(root), JSON.stringify(g));
+		persistItem(GEOMETRY_KEY + folderKey(root), JSON.stringify(g));
 	} catch {
 		// Not worth failing a close over.
 	}

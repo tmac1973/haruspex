@@ -47,6 +47,7 @@ import {
 import { rehydrateImages, resolveReplyImages, sweepImages } from '#lib/images/resolve.svelte.ts';
 import { placeGeneratedImages } from '#lib/images/eligible.ts';
 import { getSettings, SETTINGS_KEY } from '#lib/stores/settings.ts';
+import { persistItem } from '#lib/persist.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import {
 	getActiveConversationId,
@@ -220,7 +221,7 @@ function loadWorkingDir(): string | null {
 		if (legacy) {
 			const parsed = JSON.parse(legacy);
 			if (typeof parsed.defaultWorkingDir === 'string' && parsed.defaultWorkingDir) {
-				localStorage.setItem(WORKING_DIR_KEY, parsed.defaultWorkingDir);
+				persistItem(WORKING_DIR_KEY, parsed.defaultWorkingDir);
 				return parsed.defaultWorkingDir;
 			}
 		}
@@ -232,7 +233,7 @@ function loadWorkingDir(): string | null {
 
 function saveWorkingDir(path: string | null): void {
 	try {
-		localStorage.setItem(WORKING_DIR_KEY, path ?? '');
+		persistItem(WORKING_DIR_KEY, path ?? '');
 	} catch {
 		// ignore
 	}
