@@ -11,9 +11,11 @@
 	import { getApiKeyValue, getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import { apiKeysReady } from '#lib/stores/apiKeySecrets.ts';
 	import {
-		fetchOpenRouterCatalog,
+		getOpenRouterCatalog,
+		refreshOpenRouterCatalog
+	} from '#lib/stores/openrouterCatalog.svelte.ts';
+	import {
 		fetchOpenRouterKeyStatus,
-		OPENROUTER_CATALOG_TTL_MS,
 		FREE_MODEL_RPM,
 		FREE_MODEL_NO_CREDITS_RPD,
 		FREE_MODEL_HAS_CREDITS_RPD,
@@ -36,18 +38,12 @@
 
 	let apiKeyId = $state<string | null>(untrack(() => config.remoteApiKeyId ?? null));
 	let modelId = $state(untrack(() => config.remoteModelId));
-	let catalog = $state<OpenRouterModel[] | null>(untrack(() => config.openrouterCatalog));
+	const catalog = $derived(getOpenRouterCatalog());
 	let keyStatus = $state<OpenRouterKeyStatus | null>(untrack(() => config.openrouterKeyStatus));
 	let loading = $state(false);
 	let keyLoading = $state(false);
 	let error = $state<string | null>(null);
 	let toolsOnly = $state(false);
-
-	const catalogStale = $derived(
-		!catalog ||
-			!config.openrouterCatalogAt ||
-			Date.now() - config.openrouterCatalogAt > OPENROUTER_CATALOG_TTL_MS
-	);
 
 	const selectedModel = $derived(catalog?.find((m) => m.id === modelId) ?? null);
 
@@ -55,18 +51,14 @@
 		onConfigChange({ ...config, ...partial });
 	}
 
-	async function loadCatalog(force = false) {
-		if (!force && !catalogStale) return;
+	async function loadCatalog() {
 		loading = true;
 		error = null;
 		try {
-			const models = await fetchOpenRouterCatalog();
-			catalog = models;
+			const models = await refreshOpenRouterCatalog();
 			// Default to openrouter/auto on first load, or keep the last-used model.
 			modelId = pickOpenRouterModel(models, modelId);
 			commit({
-				openrouterCatalog: models,
-				openrouterCatalogAt: Date.now(),
 				remoteModelId: modelId,
 				...autoModelFields(models.find((m) => m.id === modelId))
 			});
@@ -206,7 +198,7 @@
 			{:else}
 				<p class="hint">Load the catalog to pick a model.</p>
 			{/if}
-			<button class="btn btn-small" onclick={() => loadCatalog(true)} disabled={loading}>
+			<button class="btn btn-small" onclick={() => loadCatalog()} disabled={loading}>
 				{loading ? 'Loading…' : catalog ? 'Refresh' : 'Load models'}
 			</button>
 		</div>

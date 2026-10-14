@@ -7,6 +7,10 @@ import {
 	updateSettings
 } from '#lib/stores/settings.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
+import {
+	__resetOpenRouterCatalogForTests,
+	setOpenRouterCatalog
+} from '#lib/stores/openrouterCatalog.svelte.ts';
 
 /** Reset the persisted settings store to a known local-mode baseline. */
 function resetToLocalDefaults(): void {
@@ -23,9 +27,9 @@ function resetToLocalDefaults(): void {
 		remoteSampling: null,
 		remoteReasoning: null,
 		allowParallelInference: false,
-		openrouterCatalog: null,
 		openrouterReasoningEffort: null
 	});
+	__resetOpenRouterCatalogForTests();
 	setActiveLocalModel('Qwen3.5-9B-Q4_K_M.gguf');
 }
 
@@ -339,25 +343,25 @@ describe('resolveBackendDescriptor — OpenRouter', () => {
 			remoteContextSize: 200000,
 			remoteVisionSupported: false,
 			remoteBackendKind: 'openrouter',
-			openrouterCatalog: [
-				{
-					id: 'openai/o3',
-					name: 'o3',
-					context_length: 200000,
-					architecture: { input_modalities: ['text'], output_modalities: ['text'] },
-					supported_parameters: ['tools', 'reasoning'],
-					pricing: { prompt: '0.001', completion: '0.003', request: '0' },
-					reasoning: {
-						supported_efforts: ['high', 'medium', 'low'],
-						default_effort: 'medium',
-						default_enabled: true,
-						mandatory: false
-					},
-					expiration_date: null
-				}
-			],
 			openrouterReasoningEffort: null
 		});
+		setOpenRouterCatalog([
+			{
+				id: 'openai/o3',
+				name: 'o3',
+				context_length: 200000,
+				architecture: { input_modalities: ['text'], output_modalities: ['text'] },
+				supported_parameters: ['tools', 'reasoning'],
+				pricing: { prompt: '0.001', completion: '0.003', request: '0' },
+				reasoning: {
+					supported_efforts: ['high', 'medium', 'low'],
+					default_effort: 'medium',
+					default_enabled: true,
+					mandatory: false
+				},
+				expiration_date: null
+			}
+		]);
 		// Effort is one shared setting now; the per-backend field survives only
 		// as the load-time migration source.
 		updateSettings({ reasoningEffort: 'high' });

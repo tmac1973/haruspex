@@ -17,8 +17,6 @@ const base: InferenceBackendConfig = {
 	remoteReasoning: null,
 	remoteParallel: 4,
 	allowParallelInference: true,
-	openrouterCatalog: null,
-	openrouterCatalogAt: null,
 	openrouterKeyStatus: null,
 	openrouterKeyStatusAt: null,
 	openrouterReasoningEffort: null,

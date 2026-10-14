@@ -3,7 +3,6 @@
 	import type { NormalizedModel } from '#lib/inferenceProbe.ts';
 	import {
 		OPENROUTER_BASE_URL,
-		fetchOpenRouterCatalog,
 		openRouterModelCaps,
 		pickOpenRouterModel,
 		type OpenRouterModel
@@ -22,6 +21,10 @@
 	import ApiKeyPicker from '#lib/components/settings/ApiKeyPicker.svelte';
 	import ModeSelector from '#lib/components/ModeSelector.svelte';
 	import { getSettings } from '#lib/stores/settings.ts';
+	import {
+		getOpenRouterCatalog,
+		refreshOpenRouterCatalog
+	} from '#lib/stores/openrouterCatalog.svelte.ts';
 	import { KNOWN_EFFORT_LEVELS, resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 
 	// Where a job's model calls go, and how it behaves: the server, model,
@@ -53,7 +56,7 @@
 	// Seeded from the Settings cache so the picker has data immediately when
 	// the user already loaded models there.
 	let orCatalog = $state<OpenRouterModel[] | null>(
-		form.source === 'openrouter' ? (getSettings().inferenceBackend.openrouterCatalog ?? null) : null
+		form.source === 'openrouter' ? getOpenRouterCatalog() : null
 	);
 	let orLoading = $state(false);
 	let orError = $state<string | null>(null);
@@ -212,7 +215,7 @@
 		if (next === form.source) return;
 		if (next === 'openrouter') {
 			form.baseUrl = OPENROUTER_BASE_URL;
-			orCatalog = getSettings().inferenceBackend.openrouterCatalog ?? null;
+			orCatalog = getOpenRouterCatalog();
 			orError = null;
 			probedModels = [];
 			probeError = null;
@@ -229,7 +232,7 @@
 		orLoading = true;
 		orError = null;
 		try {
-			const models = await fetchOpenRouterCatalog();
+			const models = await refreshOpenRouterCatalog();
 			orCatalog = models;
 			const pick = pickOpenRouterModel(models, form.modelId);
 			// A still-valid selection keeps the user's manual context/vision edits.

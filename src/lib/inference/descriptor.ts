@@ -17,6 +17,7 @@
 import type { BackendOverride } from '#lib/api.ts';
 import type { OpenRouterModel } from '#lib/openrouter.ts';
 import { PORTS, baseUrl } from '#lib/ports.ts';
+import { getOpenRouterCatalog } from '#lib/stores/openrouterCatalog.svelte.ts';
 import { localServerKey } from '#lib/inference/localServerKey.ts';
 import {
 	getActiveLocalModelFilename,
@@ -387,7 +388,7 @@ function resolveRemoteDescriptor(
 	if (openrouter) {
 		// OpenRouter reasoning is driven by the `reasoning.effort` request
 		// param, never llama.cpp chat_template_kwargs.
-		const model = inf.openrouterCatalog?.find((m) => m.id === inf.remoteModelId) ?? null;
+		const model = getOpenRouterCatalog()?.find((m) => m.id === inf.remoteModelId) ?? null;
 		reasoningEffort = effortFromOpenRouter(model);
 		if (model?.reasoning) {
 			reasoningSupported = true;

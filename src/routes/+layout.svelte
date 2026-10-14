@@ -34,6 +34,7 @@
 	import { migrateMcpSecrets } from '#lib/stores/mcpSecrets.ts';
 	import { apiKeysReady, migrateApiKeys, migrateJobApiKeys } from '#lib/stores/apiKeySecrets.ts';
 	import { remoteToken } from '#lib/stores/remoteSecrets.ts';
+	import { ensureOpenRouterCatalog } from '#lib/stores/openrouterCatalog.svelte.ts';
 	import { reclaimOwnWindowSlots } from '#lib/agent/inferenceQueue.svelte.ts';
 	import { recoverOrphanRuns } from '#lib/stores/jobRuns.svelte.ts';
 	import { startScheduler } from '#lib/agent/jobs/scheduler.svelte.ts';
@@ -289,6 +290,12 @@
 		void migrateMcpSecrets();
 		void migrateApiKeys().then(apiKeysReady).then(migrateJobApiKeys);
 		void remoteToken.migrate();
+		// Requests read OpenRouter reasoning caps off the cached catalog, which
+		// this build may not have yet (or only an old one).
+		const inference = getSettings().inferenceBackend;
+		if (inference.mode === 'remote' && inference.remoteBackendKind === 'openrouter') {
+			ensureOpenRouterCatalog();
+		}
 		// Sweep any job runs left at 'queued' / 'running' by a previous
 		// session (hard close, crash). Fire-and-forget — the JobsTab loads
 		// run history on demand and will pick up the recovered statuses.

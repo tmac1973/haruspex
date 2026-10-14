@@ -21,6 +21,11 @@ import {
 } from '#lib/stores/settings.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
+import {
+	__resetOpenRouterCatalogForTests,
+	getOpenRouterCatalog,
+	setOpenRouterCatalog
+} from '#lib/stores/openrouterCatalog.svelte.ts';
 
 // The sampling/template/reasoning readers now take a resolved backend
 // descriptor instead of re-reading the settings mode themselves. These
@@ -513,39 +518,40 @@ describe('OpenRouter backend', () => {
 			remoteContextSize: 200000,
 			remoteVisionSupported: false,
 			remoteBackendKind: 'openrouter',
-			openrouterCatalog: [
-				{
-					id: 'openai/o3',
-					name: 'o3',
-					context_length: 200000,
-					architecture: { input_modalities: ['text'], output_modalities: ['text'] },
-					supported_parameters: ['tools', 'reasoning'],
-					pricing: { prompt: '0.001', completion: '0.003', request: '0' },
-					reasoning: {
-						supported_efforts: ['high', 'medium', 'low'],
-						default_effort: 'medium',
-						default_enabled: true,
-						mandatory: false
-					},
-					expiration_date: null
-				},
-				{
-					id: 'openai/gpt-4o',
-					name: 'GPT-4o',
-					context_length: 128000,
-					architecture: { input_modalities: ['text', 'image'], output_modalities: ['text'] },
-					supported_parameters: ['tools', 'temperature'],
-					pricing: { prompt: '0.00001', completion: '0.00003', request: '0' },
-					expiration_date: null
-				}
-			],
-			openrouterCatalogAt: Date.now(),
 			openrouterKeyStatus: null,
 			openrouterKeyStatusAt: null,
 			openrouterReasoningEffort: null
 		});
+		setOpenRouterCatalog([
+			{
+				id: 'openai/o3',
+				name: 'o3',
+				context_length: 200000,
+				architecture: { input_modalities: ['text'], output_modalities: ['text'] },
+				supported_parameters: ['tools', 'reasoning'],
+				pricing: { prompt: '0.001', completion: '0.003', request: '0' },
+				reasoning: {
+					supported_efforts: ['high', 'medium', 'low'],
+					default_effort: 'medium',
+					default_enabled: true,
+					mandatory: false
+				},
+				expiration_date: null
+			},
+			{
+				id: 'openai/gpt-4o',
+				name: 'GPT-4o',
+				context_length: 128000,
+				architecture: { input_modalities: ['text', 'image'], output_modalities: ['text'] },
+				supported_parameters: ['tools', 'temperature'],
+				pricing: { prompt: '0.00001', completion: '0.00003', request: '0' },
+				expiration_date: null
+			}
+		]);
 		updateSettings({ thinkingEnabled: true, reasoningEffort: 'high' });
 	});
+
+	afterEach(__resetOpenRouterCatalogForTests);
 
 	it('omits ALL sampling params for a non-Qwen OpenRouter model', () => {
 		// The fixture's model is openai/o3 — not a recognized family, so no
@@ -579,10 +585,9 @@ describe('OpenRouter backend', () => {
 
 	it('returns the default effort when thinking is disabled for a mandatory model', () => {
 		// Make the model mandatory.
-		const inf = getSettings().inferenceBackend;
-		const catalog = inf.openrouterCatalog ?? [];
+		const catalog = getOpenRouterCatalog() ?? [];
 		catalog[0].reasoning!.mandatory = true;
-		updateInferenceBackend({ openrouterCatalog: catalog });
+		setOpenRouterCatalog(catalog);
 		updateSettings({ thinkingEnabled: false });
 		expect(reasoningParam()).toEqual({ effort: 'high' });
 	});
@@ -794,6 +799,60 @@ describe('load-time remoteServerUrls seeding', () => {
 	it('leaves an empty config alone', async () => {
 		const inf = await loadWith({ mode: 'local', remoteBaseUrl: '' });
 		expect(inf.remoteServerUrls).toEqual([]);
+	});
+});
+
+describe('legacy OpenRouter catalog', () => {
+	const model = {
+		id: 'openai/o3',
+		name: 'o3',
+		context_length: 200000,
+		architecture: { input_modalities: ['text'], output_modalities: ['text'] },
+		supported_parameters: ['tools'],
+		pricing: { prompt: '0', completion: '0', request: '0' },
+		expiration_date: null
+	};
+	let priorRaw: string | null;
+
+	beforeEach(() => {
+		priorRaw = localStorage.getItem(SETTINGS_KEY);
+		__resetOpenRouterCatalogForTests();
+	});
+
+	afterEach(() => {
+		if (priorRaw === null) {
+			localStorage.removeItem(SETTINGS_KEY);
+		} else {
+			localStorage.setItem(SETTINGS_KEY, priorRaw);
+		}
+		__resetOpenRouterCatalogForTests();
+		vi.resetModules();
+	});
+
+	async function loadWith(inferenceBackend: Record<string, unknown>) {
+		localStorage.setItem(SETTINGS_KEY, JSON.stringify({ inferenceBackend }));
+		vi.resetModules();
+		const settings = await import('#lib/stores/settings.ts');
+		const catalog = await import('#lib/stores/openrouterCatalog.svelte.ts');
+		return { settings, catalog };
+	}
+
+	it('moves a catalog saved in settings to its own store', async () => {
+		const at = Date.now();
+		const { settings, catalog } = await loadWith({
+			openrouterCatalog: [model],
+			openrouterCatalogAt: at
+		});
+		expect(catalog.getOpenRouterCatalog()).toEqual([model]);
+		expect(catalog.isOpenRouterCatalogStale(at)).toBe(false);
+		expect(settings.getSettings().inferenceBackend).not.toHaveProperty('openrouterCatalog');
+		expect(settings.getSettings().inferenceBackend).not.toHaveProperty('openrouterCatalogAt');
+	});
+
+	it('keeps a newer catalog the store already has', async () => {
+		setOpenRouterCatalog([{ ...model, id: 'newer' }]);
+		const { catalog } = await loadWith({ openrouterCatalog: [model], openrouterCatalogAt: 1 });
+		expect(catalog.getOpenRouterCatalog()?.[0].id).toBe('newer');
 	});
 });
 

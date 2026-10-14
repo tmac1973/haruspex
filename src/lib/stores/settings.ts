@@ -17,6 +17,10 @@ import type { ProxyConfig } from '#lib/ipc/gen/ProxyConfig.ts';
 import type { SandboxNetAccess } from '#lib/ipc/gen/SandboxNetAccess.ts';
 import { rememberedApiKey } from '#lib/stores/apiKeyMemory.ts';
 import { persistItem } from '#lib/persist.ts';
+import {
+	getOpenRouterCatalog,
+	setOpenRouterCatalog
+} from '#lib/stores/openrouterCatalog.svelte.ts';
 import type { TlsMode } from '#lib/ipc/gen/TlsMode.ts';
 import type { ShellSelection } from '#lib/ipc/gen/ShellSelection.ts';
 
@@ -168,15 +172,6 @@ export interface InferenceBackendConfig {
 	 * "queued" indicator. Local mode always serializes regardless.
 	 */
 	allowParallelInference: boolean;
-	/**
-	 * Cached OpenRouter model catalog (`GET /api/v1/models`). `null` means
-	 * the catalog hasn't been fetched yet (or the user isn't on OpenRouter).
-	 * The dedicated OpenRouter form populates and refreshes this; the generic
-	 * remote form never touches it.
-	 */
-	openrouterCatalog: OpenRouterModel[] | null;
-	/** Epoch ms of the last successful catalog fetch. `null` when never fetched. */
-	openrouterCatalogAt: number | null;
 	/** Cached OpenRouter key status (`GET /api/v1/key`). `null` when unchecked. */
 	openrouterKeyStatus: OpenRouterKeyStatus | null;
 	/** Epoch ms of the last key-status fetch. `null` when never checked. */
@@ -790,8 +785,6 @@ const defaultInferenceBackend: InferenceBackendConfig = {
 	remoteReasoning: null,
 	remoteParallel: null,
 	allowParallelInference: false,
-	openrouterCatalog: null,
-	openrouterCatalogAt: null,
 	openrouterKeyStatus: null,
 	openrouterKeyStatusAt: null,
 	openrouterReasoningEffort: null,
@@ -959,10 +952,24 @@ function load(): AppSettings {
 			// Deep-merge the inference backend sub-object so upgrading
 			// users don't lose their other settings when we add new
 			// fields to InferenceBackendConfig.
+			const {
+				openrouterCatalog: legacyCatalog,
+				openrouterCatalogAt: legacyCatalogAt,
+				...storedInference
+			} = (parsed.inferenceBackend ?? {}) as Partial<InferenceBackendConfig> & {
+				openrouterCatalog?: OpenRouterModel[] | null;
+				openrouterCatalogAt?: number | null;
+			};
 			const mergedInference: InferenceBackendConfig = {
 				...defaultInferenceBackend,
-				...(parsed.inferenceBackend ?? {})
+				...storedInference
 			};
+			// The OpenRouter catalog used to be cached in here, so every save
+			// wrote a few hundred KB. It has its own store now; hand an old
+			// copy over rather than refetching, and the next save drops it.
+			if (Array.isArray(legacyCatalog) && getOpenRouterCatalog() === null) {
+				setOpenRouterCatalog(legacyCatalog, legacyCatalogAt ?? 0);
+			}
 			// Seed the multi-URL server list from the active remoteBaseUrl.
 			// Configs written before the list existed — or via typing a URL
 			// and probing without clicking "Add" — have a working server in
