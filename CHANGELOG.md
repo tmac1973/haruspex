@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.2.5](https://github.com/tmac1973/haruspex/compare/v0.2.4...v0.2.5) (2026-10-14)
+
+
+### Features
+
+* **editor:** highlight code by file type, indent on Tab, list the editor's keys ([#569](https://github.com/tmac1973/haruspex/issues/569)) ([59a1b52](https://github.com/tmac1973/haruspex/commit/59a1b52cbe5e23a10b03e7463e47d175b4c76dc7))
+* **jobs:** overview-only toggle for guided planning ([#568](https://github.com/tmac1973/haruspex/issues/568)) ([8591ca1](https://github.com/tmac1973/haruspex/commit/8591ca1cb3f63b75e7e49d3e4eefb9fffd841799))
+
+
+### Bug Fixes
+
+* **build:** retry Pyodide downloads and never cache a partial wheel ([#571](https://github.com/tmac1973/haruspex/issues/571)) ([fb60b35](https://github.com/tmac1973/haruspex/commit/fb60b3545fa4f67e673c62fc6e35567eb3a60fb1))
+* **capture:** pick a window from a scrollable, filterable modal ([#567](https://github.com/tmac1973/haruspex/issues/567)) ([2f1d894](https://github.com/tmac1973/haruspex/commit/2f1d89413590e611c0a0c649fc995cff7a8e18cf))
+* **code:** strip the AppImage's PYTHONHOME from Code-mode commands ([#564](https://github.com/tmac1973/haruspex/issues/564)) ([829a0e8](https://github.com/tmac1973/haruspex/commit/829a0e8b15d1e4969ba1073452ffb08d3ffc9e9a))
+* **dev:** use npm ci in make dev so it never rewrites package-lock.json ([#570](https://github.com/tmac1973/haruspex/issues/570)) ([4fab7d7](https://github.com/tmac1973/haruspex/commit/4fab7d7c42a2202d5b01e790624cc500ce64c7e9))
+
+
+### Documentation
+
+* Google verified the OAuth app; restore Sign in with Google in releases ([#572](https://github.com/tmac1973/haruspex/issues/572)) ([4a1fc78](https://github.com/tmac1973/haruspex/commit/4a1fc782ee80d91f4976e92cb8155d18e3b4f033)), closes [#388](https://github.com/tmac1973/haruspex/issues/388)
+
 ## [0.2.4](https://github.com/tmac1973/haruspex/compare/v0.2.3...v0.2.4) (2026-10-12)
 
 
