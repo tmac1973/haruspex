@@ -9,9 +9,10 @@ import { EditorView, basicSetup } from 'codemirror';
 import { Compartment, EditorState } from '@codemirror/state';
 import { keymap } from '@codemirror/view';
 import { indentWithTab } from '@codemirror/commands';
-import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
+import { HighlightStyle, indentUnit, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 import { languageFor, markdownWithCode } from '#lib/editor/languages.ts';
+import { detectIndent } from '#lib/editor/indent.ts';
 
 export interface EditorHandle {
 	getValue(): string;
@@ -106,6 +107,7 @@ const highlight = HighlightStyle.define([
 
 export function createEditor(parent: HTMLElement, options: EditorOptions): EditorHandle {
 	const lang = languageFor(options.path);
+	const indent = detectIndent(options.doc);
 	const language = new Compartment();
 	let destroyed = false;
 	const view = new EditorView({
@@ -117,6 +119,9 @@ export function createEditor(parent: HTMLElement, options: EditorOptions): Edito
 				// Tab indents rather than leaving the editor; Esc then Tab
 				// still moves focus on, so the keyboard is never trapped.
 				keymap.of([indentWithTab]),
+				// Indent the way the file already does; a new or flat file
+				// keeps CodeMirror's two spaces.
+				...(indent ? [indentUnit.of(indent)] : []),
 				language.of(lang === 'markdown' ? markdownWithCode() : []),
 				theme,
 				syntaxHighlighting(highlight),
