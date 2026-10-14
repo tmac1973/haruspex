@@ -1,10 +1,14 @@
 /**
- * Runs in the app window, through `browser.execute`: make the saved keys
- * exactly `items`, then start the app over at `/`.
+ * Seeding the app's saved keys (the settings blob, the active tab, …).
  *
  * Saved keys live in a file every build shares (`src/lib/persist.ts`), which
  * the app copies over `localStorage` as it loads — so writing `localStorage`
  * alone would be undone by the reload. Shared by the specs and the driver.
+ */
+
+/**
+ * Runs in the app window, through `browser.execute`: make the saved keys
+ * exactly `items`, then start the app over at `/`.
  */
 export async function replaceSavedItems(items) {
 	const { invoke } = window.__TAURI_INTERNALS__;
@@ -18,4 +22,30 @@ export async function replaceSavedItems(items) {
 	localStorage.clear();
 	for (const [key, value] of Object.entries(items)) localStorage.setItem(key, value);
 	location.replace('/');
+}
+
+/**
+ * Seed `items` and wait for the restarted app to have loaded them.
+ *
+ * The page being replaced keeps saving while the seed's writes are in flight
+ * (a fresh install's first page is still starting up), and one of its writes
+ * can land after them; then the restarted app loads that instead. So check
+ * what it started from, and seed again when that isn't `items`.
+ */
+export async function seedSavedItems(browser, items, { attempts = 5 } = {}) {
+	for (let attempt = 1; ; attempt++) {
+		await browser.execute(replaceSavedItems, items);
+		await browser.pause(500);
+		await browser.waitUntil(
+			() =>
+				browser.execute(() => document.readyState === 'complete' && !!window.__haruspexSavedLoaded),
+			{ timeout: 30_000, timeoutMsg: 'the app did not come back after seeding' }
+		);
+		// What the app started from, before it changed anything itself.
+		const loaded = await browser.execute(() => window.__haruspexSavedLoaded);
+		if (Object.entries(items).every(([k, v]) => loaded[k] === v)) return;
+		if (attempt === attempts) {
+			throw new Error(`the app kept loading other settings than the seeded ones`);
+		}
+	}
 }

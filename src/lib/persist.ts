@@ -72,6 +72,9 @@ async function hydrate(): Promise<void> {
 }
 
 await hydrate();
+// What this page started from, before any store changed it: the real-app
+// tests' seeding (e2e/app/storage.mjs) checks it got what was seeded.
+(globalThis as { __haruspexSavedLoaded?: Items }).__haruspexSavedLoaded = localItems();
 
 // Writes waiting for the file, newest value per key.
 const pending = new Map<string, string>();

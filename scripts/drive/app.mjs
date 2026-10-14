@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { remote } from 'webdriverio';
 import { appBinary, BIN_DIR, ROOT, STUB_PIDS } from '../../e2e/app/paths.mjs';
-import { replaceSavedItems } from '../../e2e/app/storage.mjs';
+import { seedSavedItems } from '../../e2e/app/storage.mjs';
 import { e2eDataDirs } from '../../e2e/app/wdio.conf.mjs';
 import { createFakeLlm, MODEL_ID } from '../../e2e/fake-llm/server.mjs';
 import { pinnedFetch } from './https.mjs';
@@ -330,7 +330,7 @@ export class App {
 			inferenceBackend: inference,
 			codeAutoApprove: o.autoApprove
 		};
-		await this.browser.execute(replaceSavedItems, {
+		await seedSavedItems(this.browser, {
 			'haruspex-settings': JSON.stringify(settings),
 			'haruspex.activeTab': 'code'
 		});
