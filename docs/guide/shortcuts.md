@@ -63,7 +63,7 @@ Press **F1**, or click the **?** in the header, to see the shortcut list in the 
 | ⌥ + ↑ / ↓ | Move the line up / down; with Shift, copy it |
 | Ctrl / ⌘ + Shift + K | Delete the line |
 | Ctrl / ⌘ + / | Comment or uncomment the line |
-| Tab / Shift + Tab | Indent / outdent; press Esc, then Tab, to move out of the editor |
+| Tab / Shift + Tab | Indent / outdent, with the tabs or spaces the file already uses; press Esc, then Tab, to move out of the editor |
 
 ⌥ is Alt on Windows and Linux. Ctrl / ⌘ + click adds a cursor; ⌥ + drag selects a rectangle. Ctrl / ⌘ + Z undoes, Ctrl / ⌘ + Shift + Z redoes. The same keys work wherever this editor appears, such as a skill under review.
 
