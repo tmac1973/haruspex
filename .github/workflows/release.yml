@@ -277,8 +277,8 @@ jobs:
       # scanning flags it; see docs/google-sign-in.md. Without it the build
       # still succeeds and just offers no Google sign-in.
       #
-      # Off until Google verifies the OAuth app (#388): set the GOOGLE_SIGN_IN
-      # repository variable to `true` to ship it.
+      # On since Google verified the OAuth app (#388): unset the GOOGLE_SIGN_IN
+      # repository variable to ship a release without it.
       - name: Write Google OAuth client
         shell: bash
         env:
