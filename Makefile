@@ -55,9 +55,11 @@ ensure-libs-linked: ## Symlink sidecar shared libs next to the dev binary
 
 .PHONY: ensure-node-modules
 ensure-node-modules: ## Install npm deps when package-lock.json is newer than the last install
+	@# npm ci, not npm install: install rewrites package-lock.json, leaving the
+	@# checkout dirty and blocking the next branch switch.
 	@if [ ! -d node_modules ] || [ package-lock.json -nt node_modules/.package-lock.json ]; then \
-		echo ">> npm dependencies out of date — running npm install..."; \
-		npm install; \
+		echo ">> npm dependencies out of date — running npm ci..."; \
+		npm ci; \
 	else \
 		echo ">> npm dependencies up to date"; \
 	fi
