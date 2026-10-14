@@ -38,9 +38,9 @@ The conversation shows **Waiting for you in Shell N — press Enter there**, wit
 
 ## Edit files
 
-Files open in an editor window, one per folder, a tab per file. **⤢** on a tab moves the file to its own window. `Ctrl / ⌘ + S` saves; `Ctrl / ⌘ + W` closes the tab. The agent can open files there too but doesn't see your edits.
+Files open in an editor window, one per folder, a tab per file. **⤢** on a tab moves the file to its own window. Code is highlighted in over 100 languages, chosen by file name. For keys, see the `shortcuts` page. The agent can open files there but doesn't see your edits.
 
-When something else edits a file, the editor reloads it and keeps your place. With unsaved edits it shows **Changed on disk** (**Reload** / **Keep mine**), and saving over a change you haven't seen asks **Overwrite** or **Reload first**. A deleted file shows **Deleted on disk**; saving recreates it. **Live reload unavailable** means outside changes won't show. Closing a window with unsaved edits asks first; closing the main window closes the editors.
+An outside edit reloads the file and keeps your place. With unsaved edits it shows **Changed on disk** (**Reload** / **Keep mine**), and saving over a change you haven't seen asks **Overwrite** or **Reload first**. A deleted file shows **Deleted on disk**; saving recreates it. **Live reload unavailable** means outside changes won't show. Closing a window with unsaved edits asks first; closing the main window closes the editors.
 
 ## Steer or stop the agent
 

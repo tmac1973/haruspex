@@ -227,6 +227,7 @@
 					<CodeEditor
 						value={active.draft}
 						label={active.relPath}
+						path={active.relPath}
 						onchange={(v) => active.edit(v)}
 						onsave={() => void active.save()}
 					/>

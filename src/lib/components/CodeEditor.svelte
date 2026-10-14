@@ -15,8 +15,10 @@
 		onsave?: () => void;
 		readonly?: boolean;
 		label?: string;
+		/** The file's path, for its highlighter; none means markdown. */
+		path?: string;
 	}
-	let { value, onchange, onsave, readonly = false, label = 'Editor' }: Props = $props();
+	let { value, onchange, onsave, readonly = false, label = 'Editor', path }: Props = $props();
 
 	let host: HTMLDivElement;
 	let editor = $state<EditorHandle | null>(null);
@@ -30,6 +32,7 @@
 				editor = createEditor(host, {
 					doc: value,
 					readonly,
+					path,
 					onChange: (v) => onchange?.(v),
 					onSave: () => onsave?.()
 				});

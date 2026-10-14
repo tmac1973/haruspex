@@ -35,6 +35,37 @@ describe('createEditor', () => {
 		editor.destroy();
 	});
 
+	it('indents on Tab instead of moving focus out', () => {
+		const host = document.createElement('div');
+		document.body.append(host);
+		const editor = createEditor(host, { doc: 'x' });
+		editor.select(0);
+		const event = new KeyboardEvent('keydown', {
+			key: 'Tab',
+			keyCode: 9,
+			bubbles: true,
+			cancelable: true
+		});
+		host.querySelector('.cm-content')!.dispatchEvent(event);
+		expect(editor.getValue()).toBe('  x');
+		expect(event.defaultPrevented).toBe(true);
+		editor.destroy();
+	});
+
+	it('indents with what the file already uses', () => {
+		const host = document.createElement('div');
+		document.body.append(host);
+		const editor = createEditor(host, { doc: 'x\nif (a) {\n\tb();\n}\n' });
+		editor.select(0);
+		host
+			.querySelector('.cm-content')!
+			.dispatchEvent(
+				new KeyboardEvent('keydown', { key: 'Tab', keyCode: 9, bubbles: true, cancelable: true })
+			);
+		expect(editor.getValue().startsWith('\tx')).toBe(true);
+		editor.destroy();
+	});
+
 	it('keeps the cursor where it was when the text is reloaded', () => {
 		const host = document.createElement('div');
 		document.body.append(host);

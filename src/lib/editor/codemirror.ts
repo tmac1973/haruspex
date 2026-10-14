@@ -1,15 +1,18 @@
 /**
- * CodeMirror 6, set up the way Haruspex uses it: markdown, the app's own
- * colours, nothing that reaches the network.
+ * CodeMirror 6, set up the way Haruspex uses it: a highlighter picked by the
+ * file's extension, the app's own colours, nothing that reaches the network.
  *
  * Imported only through a dynamic `import()` from `CodeEditor.svelte`, so its
  * ~200 KB loads the first time an editor opens rather than at app start.
  */
 import { EditorView, basicSetup } from 'codemirror';
-import { EditorState } from '@codemirror/state';
-import { markdown } from '@codemirror/lang-markdown';
-import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
+import { Compartment, EditorState } from '@codemirror/state';
+import { keymap } from '@codemirror/view';
+import { indentWithTab } from '@codemirror/commands';
+import { HighlightStyle, indentUnit, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
+import { languageFor, markdownWithCode } from '#lib/editor/languages.ts';
+import { detectIndent } from '#lib/editor/indent.ts';
 
 export interface EditorHandle {
 	getValue(): string;
@@ -28,6 +31,8 @@ export interface EditorHandle {
 export interface EditorOptions {
 	doc: string;
 	readonly?: boolean;
+	/** Picks the highlighter by file name; none means markdown. */
+	path?: string;
 	onChange?: (value: string) => void;
 	/** Ctrl/Cmd-S. */
 	onSave?: () => void;
@@ -64,6 +69,22 @@ const theme = EditorView.theme({
 		backgroundColor: 'color-mix(in srgb, var(--accent) 28%, transparent)'
 	},
 	'.cm-panels': { backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' },
+	// The find panel's fields and buttons: CodeMirror's own are light grey,
+	// which leaves their labels unreadable in dark mode.
+	'.cm-textfield': {
+		backgroundColor: 'var(--bg-input)',
+		color: 'var(--text-primary)',
+		border: '1px solid var(--border)',
+		borderRadius: '4px'
+	},
+	'.cm-button': {
+		backgroundImage: 'none',
+		backgroundColor: 'var(--bg-raised)',
+		color: 'var(--text-primary)',
+		border: '1px solid var(--border)',
+		borderRadius: '4px'
+	},
+	'.cm-button:hover': { borderColor: 'var(--accent)' },
 	'&.cm-focused': { outline: 'none' }
 });
 
@@ -79,17 +100,29 @@ const highlight = HighlightStyle.define([
 	{ tag: tags.quote, color: 'var(--text-secondary)', fontStyle: 'italic' },
 	{ tag: [tags.keyword, tags.operator], color: 'var(--accent)' },
 	{ tag: [tags.string, tags.number], color: 'var(--text-secondary)' },
-	{ tag: tags.comment, color: 'var(--text-secondary)', fontStyle: 'italic' }
+	{ tag: tags.comment, color: 'var(--text-secondary)', fontStyle: 'italic' },
+	{ tag: [tags.typeName, tags.className, tags.tagName], color: 'var(--accent)' },
+	{ tag: [tags.bool, tags.null, tags.atom, tags.attributeName], color: 'var(--text-secondary)' }
 ]);
 
 export function createEditor(parent: HTMLElement, options: EditorOptions): EditorHandle {
+	const lang = languageFor(options.path);
+	const indent = detectIndent(options.doc);
+	const language = new Compartment();
+	let destroyed = false;
 	const view = new EditorView({
 		parent,
 		state: EditorState.create({
 			doc: options.doc,
 			extensions: [
 				basicSetup,
-				markdown(),
+				// Tab indents rather than leaving the editor; Esc then Tab
+				// still moves focus on, so the keyboard is never trapped.
+				keymap.of([indentWithTab]),
+				// Indent the way the file already does; a new or flat file
+				// keeps CodeMirror's two spaces.
+				...(indent ? [indentUnit.of(indent)] : []),
+				language.of(lang === 'markdown' ? markdownWithCode() : []),
 				theme,
 				syntaxHighlighting(highlight),
 				EditorView.lineWrapping,
@@ -110,6 +143,16 @@ export function createEditor(parent: HTMLElement, options: EditorOptions): Edito
 			]
 		})
 	});
+	// Other languages are chunks of their own; the text shows plain until
+	// one arrives, which is a moment the first time and instant after.
+	if (lang && lang !== 'markdown') {
+		lang
+			.load()
+			.then((support) => {
+				if (!destroyed) view.dispatch({ effects: language.reconfigure(support) });
+			})
+			.catch((e) => console.warn(`No highlighting for ${lang.name}:`, e));
+	}
 	return {
 		getValue: () => view.state.doc.toString(),
 		setValue(value) {
@@ -124,7 +167,10 @@ export function createEditor(parent: HTMLElement, options: EditorOptions): Edito
 			view.dispatch({ selection: { anchor, head } });
 		},
 		focus: () => view.focus(),
-		destroy: () => view.destroy()
+		destroy() {
+			destroyed = true;
+			view.destroy();
+		}
 	};
 }
 
