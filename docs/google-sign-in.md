@@ -40,10 +40,8 @@ Google does not treat a desktop client's secret as confidential, because it ship
 inside the app. It is still gitignored, because GitHub's secret scanning flags
 the `GOCSPX-` pattern. Release CI writes the file from the `GOOGLE_OAUTH_JSON`
 repository secret, which holds the same JSON, but only when the `GOOGLE_SIGN_IN`
-repository variable is `true`. It is unset until Google verifies the app, so
-releases ship without Google sign-in while local builds keep it. To turn it on:
-`gh variable set GOOGLE_SIGN_IN --body true`, then restore the **Sign in with
-Google** bullet in `docs/guide/integrations.md` and the README.
+repository variable is `true`. It has been `true` since Google verified the
+app (2026-10-14); unset it to ship a release without Google sign-in.
 
 A build without the file works, but doesn't offer Google sign-in. After adding
 the file to a checkout for the first time, `touch src-tauri/build.rs` so Cargo
@@ -55,9 +53,7 @@ In the Cloud console, for the Haruspex project:
 
 - **APIs enabled**: Google Calendar API and People API. The CalDAV and
   CardDAV APIs aren't used and can be disabled.
-- **Google Auth Platform → Audience**: External. While the app is in **Testing**,
-  only listed test users can sign in (up to 100), and Google shows an "unverified
-  app" screen first.
+- **Google Auth Platform → Audience**: External, In production, verified.
 - **Data access**: `…/auth/calendar.readonly` and `…/auth/contacts.readonly`.
 
 ### Branding and the public site
@@ -80,19 +76,8 @@ the scopes change or Google data starts going anywhere new.
 
 What to submit is in [google-verification.md](google-verification.md).
 
-### Before a public release
-
-Both scopes are *sensitive*, not *restricted*, so verification needs no
-third-party security assessment. It does need:
-
-- a homepage and a privacy policy on a domain you control, linked under Branding;
-- the domain verified in Search Console;
-- a short video showing the consent screen and how the data is used;
-- submitting the app for verification under Google Auth Platform → Verification
-  Center.
-
-Until then the app is published but unverified: any Google account can sign in
-after an "unverified app" screen, up to 100 users in total.
+Google verified both scopes on 2026-10-14, so there is no "unverified app"
+screen and no 100-user cap. Adding a scope means verifying again.
 
 ## Testing against a real account
 

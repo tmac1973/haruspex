@@ -1,8 +1,9 @@
 # Google OAuth verification
 
-What to submit so Google removes the "unverified app" screen and the 100-user
-cap from Sign in with Google. Background is in
-[google-sign-in.md](google-sign-in.md).
+What was submitted to verify Sign in with Google, which removes the
+"unverified app" screen and the 100-user cap. Google approved
+`calendar.readonly` and `contacts.readonly` on 2026-10-14 (#388). Background is
+in [google-sign-in.md](google-sign-in.md).
 
 Both scopes are **sensitive**, not restricted, so there is no third-party
 security assessment. Google's review typically takes a few days to a few weeks
