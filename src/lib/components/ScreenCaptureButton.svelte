@@ -6,12 +6,12 @@
 	 *
 	 * A person pressing this is not the Settings → Screen question, which is
 	 * about the assistant asking. Window… is a list of open windows on macOS and
-	 * Windows, opening above the nearest positioned ancestor (the composer); on
-	 * Linux it is a click on the window (KDE Plasma) or else a region.
+	 * Windows, in a modal; on Linux it is a click on the window (KDE Plasma) or
+	 * else a region.
 	 */
 	import { invoke } from '@tauri-apps/api/core';
 	import RegionSelector from '#lib/components/RegionSelector.svelte';
-	import WindowPicker from '#lib/components/WindowPicker.svelte';
+	import WindowPickerModal from '#lib/components/WindowPickerModal.svelte';
 	import type { CaptureRect } from '#lib/ipc/gen/CaptureRect.ts';
 	import type { CaptureWindow } from '#lib/ipc/gen/CaptureWindow.ts';
 	import type { ScreenCapture } from '#lib/ipc/gen/ScreenCapture.ts';
@@ -104,13 +104,11 @@
 	}}
 />
 
-{#if windowChoices}
-	<WindowPicker
-		windows={windowChoices}
-		onPick={pickWindow}
-		onCancel={() => (windowChoices = null)}
-	/>
-{/if}
+<WindowPickerModal
+	windows={windowChoices}
+	onPick={pickWindow}
+	onCancel={() => (windowChoices = null)}
+/>
 {#if regionPreview}
 	<RegionSelector preview={regionPreview} onDone={regionDone} />
 {/if}
