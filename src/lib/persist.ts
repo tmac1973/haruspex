@@ -6,12 +6,14 @@
  * are different origins — so each used to keep its own settings. The real
  * store is now a file in the app data directory (`webview_store.rs`).
  *
- * This module copies that file into `localStorage` with a top-level await,
- * so every module that imports it — directly or not — evaluates after the
- * copy and can keep reading `localStorage` synchronously. Writes go through
- * {@link persistItem}, which updates both. On the first launch after this
- * shipped there is no file yet, and the window starts it from its own
- * `localStorage`.
+ * {@link loadSavedItems} copies that file into `localStorage`. The client
+ * `init` hook (`src/hooks.client.ts`) awaits it before SvelteKit loads any
+ * route, so the stores the routes import can keep reading `localStorage`
+ * synchronously. (Not a top-level await here: a module that awaits, inside
+ * the stores' import cycles, lets the bundle run modules out of order.)
+ * Writes go through {@link persistItem}, which updates both. On the first
+ * launch after this shipped there is no file yet, and the window starts it
+ * from its own `localStorage`.
  *
  * Outside Tauri (unit tests, the e2e browser before its mocks) it does
  * nothing beyond `localStorage`.
@@ -71,10 +73,13 @@ async function hydrate(): Promise<void> {
 	}
 }
 
-await hydrate();
-// What this page started from, before any store changed it: the real-app
-// tests' seeding (e2e/app/storage.mjs) checks it got what was seeded.
-(globalThis as { __haruspexSavedLoaded?: Items }).__haruspexSavedLoaded = localItems();
+/** Copy the shared file into `localStorage`. Called once, by the `init` hook. */
+export async function loadSavedItems(): Promise<void> {
+	await hydrate();
+	// What this page started from, before any store changed it: the real-app
+	// tests' seeding (e2e/app/storage.mjs) checks it got what was seeded.
+	(globalThis as { __haruspexSavedLoaded?: Items }).__haruspexSavedLoaded = localItems();
+}
 
 // Writes waiting for the file, newest value per key.
 const pending = new Map<string, string>();

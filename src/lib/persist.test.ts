@@ -3,10 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const invoke = vi.fn();
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
 
-/** A fresh copy of the module, so its top-level load runs again. */
+/** A fresh copy of the module, its saved items loaded. */
 async function loadPersist() {
 	vi.resetModules();
-	return import('./persist.ts');
+	const persist = await import('./persist.ts');
+	await persist.loadSavedItems();
+	return persist;
 }
 
 describe('persist', () => {

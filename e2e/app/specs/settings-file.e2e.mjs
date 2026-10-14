@@ -30,7 +30,8 @@ describe('settings saved to the shared file', () => {
 		});
 		await browser.pause(500);
 		await browser.waitUntil(
-			async () => (await browser.execute(() => document.readyState)) === 'complete',
+			() =>
+				browser.execute(() => document.readyState === 'complete' && !!window.__haruspexSavedLoaded),
 			{ timeout: 30_000, timeoutMsg: 'the app did not come back after the reload' }
 		);
 		const restored = await browser.execute(() => ({

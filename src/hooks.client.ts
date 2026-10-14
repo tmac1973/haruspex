@@ -1,7 +1,8 @@
 /**
  * Client hooks.
  *
- * `init` runs before the app starts. In the `e2e` Vite mode only, it replaces
+ * `init` runs before the app starts. It loads the saved settings every build
+ * shares (`#lib/persist.ts`). In the `e2e` Vite mode only, it replaces
  * Tauri's IPC with the fixture table in `#lib/e2e/installMocks`, so the UI
  * flows run in a plain browser. `import.meta.env.MODE` is a build-time
  * constant: in every other build the branch, and the import with it, is
@@ -11,6 +12,7 @@
  */
 import type { HandleClientError } from '@sveltejs/kit/hooks';
 import { forwardConsoleToDebugLog, startDebugLogFile } from '#lib/debug-log.ts';
+import { loadSavedItems } from '#lib/persist.ts';
 
 /**
  * What SvelteKit does when no hook is given: log it. Exported because the
@@ -30,6 +32,9 @@ export async function init(): Promise<void> {
 		const { invoke } = await import('@tauri-apps/api/core');
 		void startDebugLogFile(invoke);
 	}
+	// Settings shared by every build, into localStorage before any route (and
+	// the stores it imports) loads. See persist.ts.
+	await loadSavedItems();
 	if (import.meta.env.VITE_HARUSPEX_E2E === '1') {
 		const { installDriveHooks } = await import('#lib/e2e/driveHooks.ts');
 		installDriveHooks();
