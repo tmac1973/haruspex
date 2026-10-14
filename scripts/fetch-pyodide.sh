@@ -102,6 +102,22 @@ WORKSPACE_WHEELS_MARKER="$DEST_DIR/.haruspex-workspace-wheels-version"
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+# jsDelivr and PyPI now and then answer 503 or drop a connection; one of those
+# shouldn't fail `make dev`. curl's --retry covers 5xx and timeouts.
+CURL_RETRY=(--retry 4 --retry-delay 2 --retry-all-errors)
+
+# Download $2 to $1 through a .part file, so a download cut off halfway never
+# sits at the real name, where the next run would take it as cached.
+download() {
+    local dest="$1" url="$2"
+    if ! curl -fsSL "${CURL_RETRY[@]}" -o "$dest.part" "$url"; then
+        rm -f "$dest.part"
+        echo "   ERROR: failed to download $url"
+        return 1
+    fi
+    mv -f "$dest.part" "$dest"
+}
+
 # --- Pyodide core ---
 if [ -f "$VERSION_MARKER" ] && [ "$(cat "$VERSION_MARKER")" = "$PYODIDE_VERSION" ]; then
     echo ">> Pyodide $PYODIDE_VERSION already present at static/pyodide/"
@@ -109,7 +125,7 @@ else
     echo ">> Downloading Pyodide $PYODIDE_VERSION (core, ~12 MB)..."
 
     URL="https://github.com/pyodide/pyodide/releases/download/$PYODIDE_VERSION/pyodide-core-$PYODIDE_VERSION.tar.bz2"
-    if ! curl -fL --progress-bar -o "$TMP_DIR/pyodide.tar.bz2" "$URL"; then
+    if ! curl -fL --progress-bar "${CURL_RETRY[@]}" -o "$TMP_DIR/pyodide.tar.bz2" "$URL"; then
         echo "   ERROR: failed to download $URL"
         exit 1
     fi
@@ -160,7 +176,7 @@ else
         pkg="${wheel%%-*}"
         # python_pptx → python-pptx for the API; underscores stay valid too.
         pkg_url_name="${pkg//_/-}"
-        json=$(curl -fsSL "https://pypi.org/pypi/${pkg_url_name}/json")
+        json=$(curl -fsSL "${CURL_RETRY[@]}" "https://pypi.org/pypi/${pkg_url_name}/json")
         file_url=$(echo "$json" | "$PYTHON_BIN" -c "
 import json, sys
 data = json.load(sys.stdin)
@@ -177,7 +193,7 @@ sys.exit(1)
             exit 1
         fi
         echo "   $wheel"
-        curl -fsSL -o "$WHEELS_DIR/$wheel" "$file_url"
+        download "$WHEELS_DIR/$wheel" "$file_url"
     done
 
     echo "$WHEELS_VERSION" > "$WHEELS_MARKER"
@@ -230,7 +246,7 @@ else
             echo "   $wheel (cached)"
         else
             echo "   $wheel"
-            curl -fsSL -o "$DEST_DIR/$wheel" "$cdn_base/$wheel"
+            download "$DEST_DIR/$wheel" "$cdn_base/$wheel"
         fi
         size=$(stat -c %s "$DEST_DIR/$wheel" 2>/dev/null || stat -f %z "$DEST_DIR/$wheel")
         total_bytes=$((total_bytes + size))
@@ -304,7 +320,7 @@ print('\n'.join(sorted(set(out))))
             echo "   $wheel (cached)"
         else
             echo "   $wheel"
-            curl -fsSL -o "$DEST_DIR/$wheel" "$cdn_base/$wheel"
+            download "$DEST_DIR/$wheel" "$cdn_base/$wheel"
             new_count=$((new_count + 1))
         fi
         size=$(stat -c %s "$DEST_DIR/$wheel" 2>/dev/null || stat -f %z "$DEST_DIR/$wheel")
