@@ -1,6 +1,7 @@
 /** Steps shared by the real-app specs. Uses WebdriverIO's global `browser`. */
 import { existsSync, readFileSync } from 'node:fs';
 import { DEFAULT_PORT } from '../fake-llm/server.mjs';
+import { replaceSavedItems } from './storage.mjs';
 
 export const FAKE_LLM = `http://127.0.0.1:${DEFAULT_PORT}`;
 
@@ -39,11 +40,7 @@ export async function seed(settings) {
 		async () => (await browser.execute(() => document.readyState)) === 'complete',
 		{ timeout: 30_000, timeoutMsg: 'the app window never finished loading' }
 	);
-	await browser.execute((s) => {
-		localStorage.clear();
-		localStorage.setItem('haruspex-settings', JSON.stringify(s));
-		location.replace('/');
-	}, settings);
+	await browser.execute(replaceSavedItems, { 'haruspex-settings': JSON.stringify(settings) });
 	await browser.pause(500);
 	await browser.waitUntil(
 		async () => (await browser.execute(() => document.readyState)) === 'complete',

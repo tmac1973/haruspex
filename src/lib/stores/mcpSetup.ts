@@ -17,6 +17,7 @@
 
 import type { SetupStep } from '#lib/ipc/gen/SetupStep.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
+import { persistItem } from '#lib/persist.ts';
 
 /**
  * Everything the wizard needs to decide whether a step is done.
@@ -63,7 +64,7 @@ function load(): ProgressMap {
 
 function save(map: ProgressMap): void {
 	try {
-		localStorage.setItem(PROGRESS_KEY, JSON.stringify(map));
+		persistItem(PROGRESS_KEY, JSON.stringify(map));
 	} catch {
 		// Best-effort: the wizard still works, it just restarts at step one.
 	}

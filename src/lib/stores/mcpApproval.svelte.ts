@@ -24,6 +24,7 @@
  */
 
 import type { McpToolAnnotations } from '#lib/ipc/gen/McpToolAnnotations.ts';
+import { persistItem } from '#lib/persist.ts';
 
 export type McpApprovalChoice = 'allow_once' | 'allow_always' | 'deny';
 
@@ -109,7 +110,7 @@ function loadAlways(): string[] {
 
 function saveAlways(keys: string[]): void {
 	try {
-		localStorage.setItem(ALWAYS_KEY, JSON.stringify(keys));
+		persistItem(ALWAYS_KEY, JSON.stringify(keys));
 	} catch {
 		// Persistence is a convenience; failing to store it costs a re-prompt.
 	}

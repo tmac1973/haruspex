@@ -107,7 +107,8 @@ npm run e2e:app         # start tauri-driver and run e2e/app/specs/*.e2e.mjs
   given, and records its pid in `$E2E_STUB_PIDS`. The build copies it over
   llama-server, whisper-server, koko and sd-server.
 - **Seeding:** `seed(settings)` in `e2e/app/helpers.mjs` writes the settings
-  blob and restarts the app at `/`. `REMOTE` points it at the fake LLM.
+  blob (through `webview_store_set`, since the app reloads saved keys from
+  that file) and restarts the app at `/`. `REMOTE` points it at the fake LLM.
   `LOCAL` is a fresh install, which with a stub `.gguf` in its models folder
   starts the stub llama-server.
 - **The specs:**
@@ -122,6 +123,8 @@ npm run e2e:app         # start tauri-driver and run e2e/app/specs/*.e2e.mjs
   - an audit job with two runs, against a model that finds nothing: each
     sample step records its model calls, read back through the app's own
     database commands.
+  - saved settings come back from `webview-store.json` into a webview whose
+    `localStorage` is empty, as they must in a build with another origin.
 - **What you need:**
   - **Linux:** `tauri-driver` (`cargo install tauri-driver --locked`) and
     `WebKitWebDriver`, which comes with webkit2gtk (on Ubuntu, the

@@ -1,3 +1,5 @@
+import { persistItem } from '#lib/persist.ts';
+
 export type ActiveTab = 'chat' | 'jobs' | 'shell' | 'code';
 
 const STORAGE_KEY = 'haruspex.activeTab';
@@ -26,7 +28,7 @@ export function getActiveTab(): ActiveTab {
 export function setActiveTab(tab: ActiveTab): void {
 	activeTab = tab;
 	try {
-		localStorage.setItem(STORAGE_KEY, tab);
+		persistItem(STORAGE_KEY, tab);
 	} catch {
 		// ignore
 	}

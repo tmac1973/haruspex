@@ -346,7 +346,10 @@ export const IPC = {
 	tts_is_initialized: 'tts_is_initialized',
 	tts_is_playing: 'tts_is_playing',
 	tts_stop_playback: 'tts_stop_playback',
-	tts_synthesize_and_play: 'tts_synthesize_and_play'
+	tts_synthesize_and_play: 'tts_synthesize_and_play',
+	webview_store_load: 'webview_store_load',
+	webview_store_seed: 'webview_store_seed',
+	webview_store_set: 'webview_store_set'
 } as const;
 
 export type IpcCommand = (typeof IPC)[keyof typeof IPC];
