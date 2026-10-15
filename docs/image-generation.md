@@ -253,6 +253,20 @@ Two consequences for whoever wires the process up:
   chip. The supervisor therefore places the binary beside the libraries and
   spawns it there.
 
+- That placing happens in `<app local data>/sd-engine/`
+  (`~/.local/share/com.haruspex.app/sd-engine/` on Linux), never in the
+  shipped `sd-libs/`, which is root-owned in a deb or rpm, read-only in an
+  AppImage, inside the signed bundle on macOS and under Program Files from
+  the MSI. `image_engine::stage` copies the ~2 MB binary there and links each
+  library (a symlink; a hard link or copy on Windows). The binary must be a
+  copy: a symlinked one resolves `/proc/self/exe` and its `$ORIGIN` RUNPATH
+  back to where it came from. ggml's scan follows the library links; measured
+  with the 0.2.5 rpm's files, Vulkan and the CPU backend both load.
+- `sd_libs_dir` looks in the source tree before `resource_dir`, because an
+  unbundled build (`--no-bundle`, the e2e build) on a machine with the package
+  installed resolves `resource_dir` to `/usr/lib/Haruspex`, and would pair
+  the tree's sd-server with the installed version's ggml.
+
 - `LD_LIBRARY_PATH` must list `sd-libs/` **before** the executable's own
   directory, which is the opposite of what `sidecar_util::library_paths`
   does for every other sidecar. In a dev tree `target/debug` carries

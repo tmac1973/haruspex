@@ -225,13 +225,13 @@ pub fn npm_cli_path(app: &AppHandle) -> Result<PathBuf, String> {
 
 /// Point `link` at `target`, cheaply and idempotently.
 ///
-/// A symlink where there is one to be had. [`crate::image_engine::colocate`]
-/// copies for the same job, but it moves a 2 MB binary; Node is ~110 MB, and
-/// duplicating that into the user's data directory to work around a naming
-/// rule is not a trade worth making. Windows needs privileges for symlinks, so
-/// it gets a hard link and falls back to a copy across volumes.
+/// A symlink where there is one to be had: Node is ~110 MB, and duplicating
+/// that into the user's data directory to work around a naming rule is not a
+/// trade worth making. Windows needs privileges for symlinks, so it gets a
+/// hard link and falls back to a copy across volumes. The image engine links
+/// its libraries the same way (see `image_engine::stage`).
 #[cfg(unix)]
-fn place_shim(target: &Path, link: &Path) -> std::io::Result<()> {
+pub(crate) fn place_shim(target: &Path, link: &Path) -> std::io::Result<()> {
     if std::fs::read_link(link).is_ok_and(|current| current == target) {
         return Ok(());
     }
@@ -240,8 +240,8 @@ fn place_shim(target: &Path, link: &Path) -> std::io::Result<()> {
 }
 
 #[cfg(windows)]
-fn place_shim(target: &Path, link: &Path) -> std::io::Result<()> {
-    // Size, as `colocate` does: enough to notice that an app upgrade replaced
+pub(crate) fn place_shim(target: &Path, link: &Path) -> std::io::Result<()> {
+    // Size, as `image_engine::stage` does: enough to notice that an app upgrade replaced
     // the interpreter this link was made from.
     let same = match (std::fs::metadata(target), std::fs::metadata(link)) {
         (Ok(a), Ok(b)) => a.len() == b.len(),
