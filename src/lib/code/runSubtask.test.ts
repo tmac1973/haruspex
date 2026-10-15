@@ -33,7 +33,13 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	getChatTemplateKwargs: () => ({})
 }));
 
-import { capReport, runSubtask, SUBTASK_MAX_ROUNDS } from '#lib/code/runSubtask.ts';
+import {
+	capReport,
+	runSubtask,
+	stoppedShort,
+	SUBTASK_MAX_ROUNDS,
+	SUBTASK_NUDGE_ROUNDS
+} from '#lib/code/runSubtask.ts';
 import type { SlotLender } from '#lib/agent/tools/types.ts';
 import { SUBTASK_REPORT_CHARS } from '#lib/code/system-prompt.ts';
 
@@ -90,7 +96,7 @@ describe('runSubtask', () => {
 	});
 
 	it('never asks the queue for a slot: it runs in the lender, or straight in the parent’s', async () => {
-		answers('done');
+		answers('foo is called from bar.ts:3');
 		let lent = 0;
 		const runInSlot: SlotLender = (fn) => {
 			lent += 1;
@@ -116,7 +122,7 @@ describe('runSubtask', () => {
 			const call = { id: 'c1', name: 'code_grep', arguments: { pattern: 'foo' } };
 			o.onToolStart(call);
 			o.onToolEnd(call, 'bar.ts:3');
-			o.onStreamChunk(chunk('report'));
+			o.onStreamChunk(chunk('foo is called from bar.ts:3'));
 			o.onComplete();
 		});
 		const res = await runSubtask(base);
@@ -152,7 +158,7 @@ describe('runSubtask', () => {
 
 describe('runSubtask in write mode', () => {
 	it('writes in its worktree, under a guard of its own, with the parent’s approvals', async () => {
-		answers('added it');
+		answers('Added src/sound.ts with tests; npm test passes.');
 		const onApprovalWait = vi.fn();
 		await runSubtask({
 			...base,
@@ -171,5 +177,84 @@ describe('runSubtask in write mode', () => {
 		expect(system).toContain('your own copy of the project');
 		expect(system).toContain('node_modules is shared');
 		expect(system).toContain('- fs_write_text');
+	});
+});
+
+describe('runSubtask when a child stops short', () => {
+	const writer = {
+		...base,
+		mode: 'write' as const,
+		root: '/w',
+		worktree: { root: '/w', linked: [] }
+	};
+	const report = 'Added src/sound.ts and its tests; npm test passes (12 new tests).';
+
+	/** A loop that answers `text`, after writing a file when `write` is set. */
+	function pass(text: string, write = false) {
+		return async (o: AgentLoopOptions) => {
+			if (write) {
+				const call = {
+					id: `w${Math.random()}`,
+					name: 'fs_write_text',
+					arguments: { path: 'a.ts' }
+				};
+				o.onToolStart(call);
+				o.onToolEnd(call, 'Wrote a.ts');
+			}
+			o.onStreamChunk(chunk(text));
+			o.onComplete();
+		};
+	}
+
+	it('tells a writer that changed nothing to do it, once, and keeps what it then did', async () => {
+		mocks.runAgentLoop
+			.mockImplementationOnce(pass('I have the full picture. Let me write the module.'))
+			.mockImplementationOnce(pass(report, true));
+		const res = await runSubtask(writer);
+		expect(mocks.runAgentLoop).toHaveBeenCalledTimes(2);
+		const second = mocks.runAgentLoop.mock.calls[1][0] as AgentLoopOptions;
+		expect(second.maxIterations).toBe(SUBTASK_NUDGE_ROUNDS);
+		const [said, told] = second.messages.slice(-2);
+		expect(said).toEqual({
+			role: 'assistant',
+			content: 'I have the full picture. Let me write the module.'
+		});
+		expect(String(told.content)).toContain("you haven't changed any files yet");
+		expect(res).toMatchObject({ outcome: 'done', report });
+		expect(res.steps).toHaveLength(1);
+	});
+
+	it('asks any child for the report it left out', async () => {
+		mocks.runAgentLoop
+			.mockImplementationOnce(pass('ok'))
+			.mockImplementationOnce(pass('foo is called from bar.ts:3 and baz.ts:9, both with a retry.'));
+		const res = await runSubtask(base);
+		const told = (mocks.runAgentLoop.mock.calls[1][0] as AgentLoopOptions).messages.at(-1);
+		expect(String(told?.content)).toContain('no report');
+		expect(res.report).toContain('bar.ts:3');
+	});
+
+	it('leaves alone a child that finished, and nudges at most once', async () => {
+		mocks.runAgentLoop.mockImplementationOnce(pass(report, true));
+		await runSubtask(writer);
+		expect(mocks.runAgentLoop).toHaveBeenCalledTimes(1);
+		mocks.runAgentLoop.mockReset().mockImplementation(pass('Let me write it.'));
+		const res = await runSubtask(writer);
+		expect(mocks.runAgentLoop).toHaveBeenCalledTimes(2);
+		expect(res.report).toBe('Let me write it.');
+	});
+
+	it('doesn’t count a write that failed', () => {
+		const failed = [
+			{
+				id: 'w',
+				toolName: 'fs_edit_text',
+				query: 'a.ts',
+				status: 'done' as const,
+				result: '{"error":"old_str not found"}'
+			}
+		];
+		expect(stoppedShort('write', failed, report)).toContain("haven't changed any files");
+		expect(stoppedShort('read', [], report)).toBeNull();
 	});
 });
