@@ -456,3 +456,23 @@ describe('runCodeTurn compaction', () => {
 		expect(mocks.runAgentLoop).not.toHaveBeenCalled();
 	});
 });
+
+describe('runCodeTurn delegation hint', () => {
+	it('tells the model to delegate a message with several numbered asks, alongside any notice', async () => {
+		mocks.runAgentLoop.mockImplementation(async (o: AgentLoopOptions) => o.onComplete());
+		const text = 'Do these:\n1. review the loop\n2. list magic numbers\n3. find untested modules';
+		await runCodeTurn(
+			opts({ thread: [{ role: 'user', content: text }], notice: 'Another session edited a.ts.' })
+		);
+		const opening = String(loopOptions().messages.at(-1)?.content);
+		expect(opening).toContain('Another session edited a.ts.');
+		expect(opening).toContain('This message lists 3 separate asks');
+		expect(opening).toContain(text);
+	});
+
+	it('says nothing for an ordinary message', async () => {
+		mocks.runAgentLoop.mockImplementation(async (o: AgentLoopOptions) => o.onComplete());
+		await runCodeTurn(opts());
+		expect(String(loopOptions().messages.at(-1)?.content)).toBe('fix the test');
+	});
+});
