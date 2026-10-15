@@ -27,6 +27,7 @@ import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import type { Artifact } from '#lib/agent/tools/index.ts';
 import type { CodeWriteGuard } from '#lib/agent/tools/types.ts';
 import type { FileDiff } from '#lib/code/diff.ts';
+import type { SubtaskState, SubtaskStops } from '#lib/code/subtask.ts';
 import {
 	runAgentLoop,
 	type AgentLoopOptions,
@@ -136,6 +137,10 @@ export interface CodeTurnOptions {
 		artifacts?: Artifact[],
 		fileDiff?: FileDiff
 	) => void;
+	/** A subtask's card changed, for `call`'s step (`AgentLoopOptions.onSubtaskUpdate`). */
+	onSubtaskUpdate?: (call: ResolvedToolCall, state: SubtaskState) => void;
+	/** The session's stop handles for its subtasks. */
+	subtaskStops?: SubtaskStops;
 }
 
 export interface CodeTurnResult {
@@ -235,6 +240,8 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 					codeRemote: o.remote ?? false,
 					codeWriteGuard: o.writeGuard,
 					codeEffort: o.effort,
+					onSubtaskUpdate: o.onSubtaskUpdate,
+					subtaskStops: o.subtaskStops,
 					wslDistro: o.wslDistro ?? null,
 					contextSize,
 					maxIterations: settings.codeMaxIterations,

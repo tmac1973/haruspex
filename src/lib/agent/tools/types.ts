@@ -1,4 +1,5 @@
 import type { BackendOverride, ToolDefinition } from '#lib/api.ts';
+import type { SubtaskState, SubtaskStops } from '#lib/code/subtask.ts';
 import type { Artifact } from '#lib/sandbox/sandbox.ts';
 import type { LintIssue } from '#lib/sandbox/lint.ts';
 import type { FileDiff } from '#lib/code/diff.ts';
@@ -132,7 +133,7 @@ export interface ToolContext {
 	 * running its tools side by side. Absent when tools run one at a time,
 	 * and the call simply uses the turn's slot.
 	 */
-	runInSlot?: <T>(fn: () => Promise<T>) => Promise<T>;
+	runInSlot?: SlotLender;
 	/**
 	 * The skills this turn may load: Chat and Shell turns with autonomous use
 	 * on (see `#lib/skills/turn.ts`). Absent everywhere else, and the skills
@@ -225,6 +226,12 @@ export interface ToolContext {
 	subtask?: { depth: 1 };
 	/** How many subtasks this turn has started, shared by its calls (`delegate`'s cap). */
 	subtasksStartedThisTurn?: { count: number };
+	/** The id of the call being run: names a subtask after its `delegate` call. */
+	toolCallId?: string;
+	/** A subtask's card changed (`delegate`); the loop routes it to the call's step. */
+	onSubtask?: (state: SubtaskState) => void;
+	/** Where a Code session keeps its running subtasks' stop handles. */
+	subtaskStops?: SubtaskStops;
 	/**
 	 * Optional progress channel for long-running tools. The agent loop
 	 * wires this to the currently-running tool card so a tool can surface
@@ -234,6 +241,16 @@ export interface ToolContext {
 	 */
 	onProgress?: (status: string) => void;
 }
+
+/**
+ * Runs `fn` in an inference slot the turn lends (`createSlotLender`).
+ * `onAdmitted` is called once `fn` holds one: at once when it borrows the
+ * turn's own, else when the queue lets it in. `signal` stops its wait.
+ */
+export type SlotLender = <T>(
+	fn: () => Promise<T>,
+	opts?: { onAdmitted?: () => void; signal?: AbortSignal }
+) => Promise<T>;
 
 /** A Code session's turn sharing its folder with other sessions. */
 export interface CodeWriteGuard {

@@ -15,6 +15,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
 
 import { getToolSchemas } from '#lib/agent/tools/index.ts';
 import { executeDelegate, subtaskLabel, SUBTASKS_PER_TURN } from '#lib/agent/tools/delegate.ts';
+import { SubtaskStops } from '#lib/code/subtask.ts';
 
 const ctx = (over = {}) =>
 	makeToolContext({
@@ -151,5 +152,57 @@ describe('delegate', () => {
 		expect(subtaskLabel({ label: ' Callers ', task: 'x' })).toBe('Callers');
 		expect(subtaskLabel({ task: 'a\n b' })).toBe('a b');
 		expect(subtaskLabel({ task: 'y'.repeat(80) })).toBe(`${'y'.repeat(59)}…`);
+	});
+});
+
+describe('delegate cards and stops', () => {
+	it('publishes its card queued, running, with steps, then done', async () => {
+		mocks.runSubtask.mockImplementation(async (o: SubtaskOptions) => {
+			o.onAdmitted?.();
+			o.onStep?.([{ id: 'c1', toolName: 'code_grep', query: 'foo', status: 'running' }]);
+			return { outcome: 'done', report: 'r', steps: [{ id: 'c1' }], stopReason: 'complete' };
+		});
+		const states: { status: string; steps: unknown[] }[] = [];
+		await executeDelegate(
+			{ task: 't', mode: 'read', label: 'l' },
+			ctx({
+				toolCallId: 'd1',
+				onSubtask: (s: { status: string; steps: unknown[] }) => states.push(s)
+			})
+		);
+		expect(states.map((s) => s.status)).toEqual(['queued', 'running', 'running', 'done']);
+		expect(states[2].steps).toHaveLength(1);
+		expect(states.every((s) => (s as unknown as { id: string }).id === 'd1')).toBe(true);
+	});
+
+	it('gives each subtask its own stop, which the turn’s also pulls', async () => {
+		const stops = new SubtaskStops();
+		const turn = new AbortController();
+		const signals: AbortSignal[] = [];
+		mocks.runSubtask.mockImplementation(
+			(o: SubtaskOptions) =>
+				new Promise((resolve) => {
+					signals.push(o.signal!);
+					o.signal!.addEventListener('abort', () =>
+						resolve({ outcome: 'stopped', report: '', steps: [], stopReason: null })
+					);
+				})
+		);
+		const shared = { subtaskStops: stops, signal: turn.signal };
+		const one = executeDelegate(
+			{ task: 'a', mode: 'read', label: 'a' },
+			ctx({ ...shared, toolCallId: 'a' })
+		);
+		const two = executeDelegate(
+			{ task: 'b', mode: 'read', label: 'b' },
+			ctx({ ...shared, toolCallId: 'b' })
+		);
+		await vi.waitFor(() => expect(signals).toHaveLength(2));
+		stops.stop('a');
+		expect((await one).result).toContain('the user stopped it');
+		expect(signals[1].aborted).toBe(false);
+		turn.abort();
+		expect((await two).result).toContain('stopped before it finished');
+		expect(stops.size).toBe(0);
 	});
 });

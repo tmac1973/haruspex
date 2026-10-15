@@ -13,6 +13,7 @@
  * `loop/nudges.ts`.
  */
 
+import type { SubtaskState, SubtaskStops } from '#lib/code/subtask.ts';
 import type { TurnSkills } from '#lib/skills/turn.ts';
 import type { BackendOverride, StreamChunk, Usage } from '#lib/api.ts';
 import type { PartialToolCall } from '#lib/streamAssembly.ts';
@@ -167,6 +168,8 @@ export interface SearchStep {
 	 * The thread keeps it too, on the message carrying the calls.
 	 */
 	lead?: string;
+	/** A `delegate` call's subtask: its status, its own steps and its report. */
+	subtask?: SubtaskState;
 }
 
 export interface AgentLoopOptions {
@@ -199,6 +202,10 @@ export interface AgentLoopOptions {
 	codeEffort?: string | null;
 	/** The turn is a subtask's; see ToolContext.subtask. */
 	subtask?: { depth: 1 };
+	/** A `delegate` call's subtask changed: its card's state, for `call`'s step. */
+	onSubtaskUpdate?: (call: ResolvedToolCall, state: SubtaskState) => void;
+	/** Stop handles for the turn's subtasks; see ToolContext.subtaskStops. */
+	subtaskStops?: SubtaskStops;
 	/**
 	 * Optional progress channel for a running tool call. Wired to the
 	 * tool's ToolContext.onProgress so a long-running tool can update its

@@ -471,3 +471,43 @@ describe('CodeTranscript compaction', () => {
 		expect(screen.getByText('Summarising earlier turns…')).toBeTruthy();
 	});
 });
+
+describe('CodeTranscript subtasks', () => {
+	it('shows a saved subtask as its card, report and all', async () => {
+		const { finishedSubtask, newSubtaskState } = await import('#lib/code/subtask.ts');
+		const subtask = finishedSubtask(newSubtaskState('d1', 'foo callers', 'Find callers.'), {
+			status: 'done',
+			report: 'foo is called from bar.ts:3',
+			steps: []
+		});
+		const messages: ChatMessage[] = [
+			{ role: 'user', content: 'who calls foo?' },
+			{ role: 'assistant', content: 'bar does.' }
+		];
+		const messageSteps = {
+			1: [{ id: 'd1', toolName: 'delegate', query: 'foo callers', status: 'done', subtask }]
+		};
+		render(CodeTranscript, { session: fakeSession({ messages, messageSteps }) });
+		expect(screen.getByTestId('subtask-card')).toBeTruthy();
+		expect(screen.getByText('foo is called from bar.ts:3')).toBeTruthy();
+	});
+
+	it('stops a running subtask through the session', async () => {
+		const { newSubtaskState, startedSubtask } = await import('#lib/code/subtask.ts');
+		const stopSubtask = vi.fn();
+		const subtask = startedSubtask(newSubtaskState('d1', 'foo callers', 'Find callers.'));
+		render(CodeTranscript, {
+			session: fakeSession({
+				status: 'running',
+				busy: true,
+				messages: [{ role: 'user', content: 'who calls foo?' }],
+				searchSteps: [
+					{ id: 'd1', toolName: 'delegate', query: 'foo callers', status: 'running', subtask }
+				],
+				stopSubtask
+			})
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+		expect(stopSubtask).toHaveBeenCalledWith('d1');
+	});
+});

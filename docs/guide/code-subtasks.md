@@ -13,7 +13,9 @@ The agent decides when to use subtasks; you ask as usual. Each subtask starts wi
 
 In this release subtasks only read. They search, read files and run commands that only read (`ls`, `cat`, `grep`, `git log` and the like); any other command is refused without asking you. They use the session's model and effort.
 
-A subtask shows in the conversation as one of the agent's steps, named after its task, with the report as its result.
+## Follow a subtask
+
+Each subtask shows as a card among the agent's steps: its name (hover for the full task), whether it is waiting for a slot, running or done, and how long it took. While it runs, the card lists its own steps; once it ends they fold away behind **Show N steps**, and **Report** holds what it handed back. Cards are saved with the session. Settings → Remote control's page shows each card with its status and report, without the steps.
 
 ## Run several at once
 
@@ -23,7 +25,7 @@ Up to 4 run at once, and the agent starts at most 8 per turn.
 
 ## Stop subtasks
 
-**Stop** on the session stops the turn and every subtask it is waiting for.
+**Stop** on a card stops that subtask; the agent carries on with what the others found, and is told you stopped it. **Stop** on the session stops the turn and every subtask it is waiting for.
 
 ## Turn subtasks off
 

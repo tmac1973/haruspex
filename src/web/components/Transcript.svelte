@@ -66,7 +66,7 @@
 			</details>
 		{/if}
 		{#if msg.role === 'assistant' && steps(i).length}
-			<CodeSteps steps={steps(i)} root={session.root} {openFile} />
+			<CodeSteps steps={steps(i)} root={session.root} {openFile} compact />
 		{/if}
 		<Message message={msg} root={session.root} />
 		{#if stopAt(i)}
@@ -74,7 +74,7 @@
 		{/if}
 	{/each}
 	{#if session.searchSteps.length}
-		<CodeSteps steps={session.searchSteps as SearchStep[]} root={session.root} {openFile} />
+		<CodeSteps steps={session.searchSteps as SearchStep[]} root={session.root} {openFile} compact />
 	{/if}
 	{#if session.streamingContent}
 		<Message

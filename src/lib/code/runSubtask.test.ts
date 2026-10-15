@@ -33,12 +33,8 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	getChatTemplateKwargs: () => ({})
 }));
 
-import {
-	capReport,
-	runSubtask,
-	SUBTASK_MAX_ROUNDS,
-	type SlotRunner
-} from '#lib/code/runSubtask.ts';
+import { capReport, runSubtask, SUBTASK_MAX_ROUNDS } from '#lib/code/runSubtask.ts';
+import type { SlotLender } from '#lib/agent/tools/types.ts';
 import { SUBTASK_REPORT_CHARS } from '#lib/code/system-prompt.ts';
 
 function loopOptions(): AgentLoopOptions {
@@ -96,7 +92,7 @@ describe('runSubtask', () => {
 	it('never asks the queue for a slot: it runs in the lender, or straight in the parent’s', async () => {
 		answers('done');
 		let lent = 0;
-		const runInSlot: SlotRunner = (fn) => {
+		const runInSlot: SlotLender = (fn) => {
 			lent += 1;
 			return fn();
 		};
