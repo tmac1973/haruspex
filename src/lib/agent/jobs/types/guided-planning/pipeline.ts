@@ -1786,6 +1786,8 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				schedule_config: null,
 				next_due_at: null,
 				job_type: 'asset_generation',
+				parent_job_id: job.id,
+				parent_run_id: runId,
 				...assetsModel,
 				type_config: JSON.stringify({
 					spec_path: specPath,
@@ -1829,6 +1831,8 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			schedule_config: null,
 			next_due_at: null,
 			job_type: 'autonomous_coding',
+			parent_job_id: job.id,
+			parent_run_id: runId,
 			// The coding stage's model: this job's, or its override.
 			...codingModel,
 			// Null overrides are left OUT rather than written as null, so the

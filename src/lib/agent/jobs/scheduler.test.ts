@@ -41,6 +41,8 @@ function dueJob(overrides: Partial<JobSummary>): JobSummary {
 		created_at: 0,
 		updated_at: 0,
 		step_count: 1,
+		parent_job_id: null,
+		parent_run_id: null,
 		...overrides
 	};
 }

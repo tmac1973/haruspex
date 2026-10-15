@@ -98,6 +98,11 @@ pub struct JobSummary {
     pub created_at: i64,
     pub updated_at: i64,
     pub step_count: i64,
+    /// The job whose run created this one (guided planning → assets →
+    /// coding), and that run. NULL for a job made by hand, and for one whose
+    /// parent was deleted. The Jobs list nests a job under its parent.
+    pub parent_job_id: Option<i64>,
+    pub parent_run_id: Option<i64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -188,6 +193,12 @@ pub struct JobInput {
     /// Advanced model behavior JSON (see [`JobWithSteps::model_advanced`]).
     #[serde(default)]
     pub model_advanced: Option<String>,
+    /// See [`JobSummary::parent_job_id`]. Written on create only: an edit
+    /// never moves a job to another parent.
+    #[serde(default)]
+    pub parent_job_id: Option<i64>,
+    #[serde(default)]
+    pub parent_run_id: Option<i64>,
 }
 
 /// A user-saved catalog prompt. `scope` is "audit" | "research" | "any".
@@ -768,6 +779,11 @@ impl Database {
             // The WSL distro a Windows session's Linux `root` is in; NULL for
             // a host folder (every session before Windows had the Code tab).
             "ALTER TABLE code_sessions ADD COLUMN wsl_distro TEXT",
+            // Which job's run created this job, for nesting in the Jobs list.
+            // No foreign key: deleting a parent un-nests its children
+            // (`delete_job`) rather than deleting them.
+            "ALTER TABLE jobs ADD COLUMN parent_job_id INTEGER",
+            "ALTER TABLE jobs ADD COLUMN parent_run_id INTEGER",
         ] {
             if let Err(e) = conn.execute(stmt, []) {
                 let msg = e.to_string();

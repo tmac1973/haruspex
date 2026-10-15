@@ -771,6 +771,8 @@ export interface AppSettings {
 	codeSidebarWidth: number;
 	/** Code tab: whether the session sidebar is shown. */
 	codeSidebarOpen: boolean;
+	/** Jobs tab: the job list's width in px. */
+	jobsSidebarWidth: number;
 }
 
 /** Exported for the chat store's one-time legacy working-dir migration. */
@@ -934,6 +936,7 @@ const defaults: AppSettings = {
 	codeNewWorktree: false,
 	codeSidebarWidth: 240,
 	codeSidebarOpen: true,
+	jobsSidebarWidth: 260,
 	memoryEnabled: true,
 	memoryConfirmWrites: true,
 	skills: defaultSkills,

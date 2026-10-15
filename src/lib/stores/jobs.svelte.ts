@@ -52,7 +52,17 @@ export interface JobCore {
 	next_due_at: number | null;
 }
 
-export interface JobSummary extends JobCore {
+/**
+ * The job whose run created this one (guided planning → assets → coding),
+ * and that run. Null for a job made by hand, and for one whose parent was
+ * deleted. Written on create only; the Jobs list nests a job under its parent.
+ */
+export interface JobLineage {
+	parent_job_id: number | null;
+	parent_run_id: number | null;
+}
+
+export interface JobSummary extends JobCore, JobLineage {
 	id: number;
 	created_at: number;
 	updated_at: number;
@@ -116,7 +126,7 @@ export interface JobWithSteps extends JobCore, TypeConfigColumn, ModelOverrideCo
 	steps: JobStep[];
 }
 
-export type JobInput = JobCore & TypeConfigColumn & ModelOverrideConfig;
+export type JobInput = JobCore & TypeConfigColumn & ModelOverrideConfig & Partial<JobLineage>;
 
 const WEEKDAY_INDEX: Record<Weekday, number> = {
 	sun: 0,

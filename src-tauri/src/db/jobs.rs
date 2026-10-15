@@ -8,7 +8,8 @@ use rusqlite::params;
 const JOB_SUMMARY_COLS: &str = "j.id, j.name, j.description, j.working_dir, j.auto_approve_tools,
                         j.job_type, j.schedule_kind, j.schedule_config, j.next_due_at,
                         j.created_at, j.updated_at,
-                        (SELECT COUNT(*) FROM job_steps s WHERE s.job_id = j.id) AS step_count";
+                        (SELECT COUNT(*) FROM job_steps s WHERE s.job_id = j.id) AS step_count,
+                        j.parent_job_id, j.parent_run_id";
 
 /// Every job column written from a [`JobInput`], in binding order. The
 /// INSERT (`create_job`), UPDATE (`update_job`), and full SELECT (`get_job`)
@@ -73,6 +74,8 @@ fn row_to_job_summary(row: &rusqlite::Row) -> rusqlite::Result<JobSummary> {
         created_at: row.get(9)?,
         updated_at: row.get(10)?,
         step_count: row.get(11)?,
+        parent_job_id: row.get(12)?,
+        parent_run_id: row.get(13)?,
     })
 }
 
@@ -82,16 +85,22 @@ impl Database {
         let now = chrono_now();
         let n = JOB_WRITE_COLS.len();
         let placeholders: Vec<String> = (1..=n).map(|i| format!("?{i}")).collect();
-        // created_at and updated_at both bind the trailing `now` param.
+        // created_at and updated_at both bind the `now` param; the parent
+        // columns follow it, and only an insert writes them.
         let sql = format!(
-            "INSERT INTO jobs ({}, created_at, updated_at) VALUES ({}, ?{}, ?{})",
+            "INSERT INTO jobs ({}, created_at, updated_at, parent_job_id, parent_run_id) \
+             VALUES ({}, ?{}, ?{}, ?{}, ?{})",
             JOB_WRITE_COLS.join(", "),
             placeholders.join(", "),
             n + 1,
-            n + 1
+            n + 1,
+            n + 2,
+            n + 3
         );
         let mut params = job_write_params(input);
         params.push(&now);
+        params.push(&input.parent_job_id);
+        params.push(&input.parent_run_id);
         conn.execute(&sql, &params[..])
             .map_err(|e| format!("Job insert failed: {}", e))?;
         Ok(conn.last_insert_rowid())
@@ -293,10 +302,21 @@ impl Database {
             .map_err(|e| format!("Due jobs row read failed: {}", e))
     }
 
+    /// Deletes the job, its steps and its runs. The jobs it started stay,
+    /// moved to the top level: they hold their own work and history.
     pub fn delete_job(&self, id: i64) -> Result<(), String> {
-        let conn = self.conn();
-        conn.execute("DELETE FROM jobs WHERE id = ?1", params![id])
+        let mut conn = self.conn();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("Transaction failed: {}", e))?;
+        tx.execute(
+            "UPDATE jobs SET parent_job_id = NULL, parent_run_id = NULL WHERE parent_job_id = ?1",
+            params![id],
+        )
+        .map_err(|e| format!("Job un-nest failed: {}", e))?;
+        tx.execute("DELETE FROM jobs WHERE id = ?1", params![id])
             .map_err(|e| format!("Job delete failed: {}", e))?;
+        tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
         Ok(())
     }
 

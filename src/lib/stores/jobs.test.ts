@@ -50,6 +50,8 @@ const summary = (id: number, name: string, overrides: Partial<JobSummary> = {}):
 	created_at: 0,
 	updated_at: 0,
 	step_count: 0,
+	parent_job_id: null,
+	parent_run_id: null,
 	...overrides
 });
 
