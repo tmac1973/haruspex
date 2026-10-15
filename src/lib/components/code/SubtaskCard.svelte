@@ -86,7 +86,15 @@
 
 <div class="card {subtask.status}" data-testid="subtask-card">
 	<div class="head">
-		<span class="kind">{subtask.mode === 'write' ? 'Writing subtask' : 'Subtask'}</span>
+		<span class="kind"
+			>{subtask.background ? 'Background ' : ''}{subtask.mode === 'write'
+				? subtask.background
+					? 'writing subtask'
+					: 'Writing subtask'
+				: subtask.background
+					? 'subtask'
+					: 'Subtask'}</span
+		>
 		<span class="label" title={subtask.task}>{subtask.label}</span>
 		<span class="status" data-testid="subtask-status">{STATUS[subtask.status]}</span>
 		{#if elapsed}<span class="time">{elapsed}</span>{/if}

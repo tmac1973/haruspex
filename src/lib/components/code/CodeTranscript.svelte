@@ -17,6 +17,7 @@
 	import { codePathFromClick } from '#lib/markdown.ts';
 	import { onDestroy, untrack } from 'svelte';
 	import { isWatchNotification, watchNotificationCommands } from '#lib/shell/backgroundWatch.ts';
+	import { isSubtaskNotification } from '#lib/code/backgroundSubtasks.ts';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
 	import StopIndicator from '#lib/components/StopIndicator.svelte';
 	import ThinkingIndicator from '#lib/components/ThinkingIndicator.svelte';
@@ -211,6 +212,11 @@
 							? `: ${commands[0]}`
 							: ` (${commands.length})`}</summary
 					>
+					<pre>{messageText(msg.content)}</pre>
+				</details>
+			{:else if msg.role === 'user' && isSubtaskNotification(messageText(msg.content))}
+				<details class="bg-notice">
+					<summary>Subtask finished</summary>
 					<pre>{messageText(msg.content)}</pre>
 				</details>
 			{:else if msg.role === 'user'}

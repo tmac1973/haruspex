@@ -30,15 +30,22 @@ export interface SubtaskState {
 	endedAt: number | null;
 	/** A writing subtask's changes, once it has ended. */
 	apply?: SubtaskApplyState;
+	/**
+	 * It runs on after the turn that started it, and reports in a turn of its
+	 * own. Absent (as in states saved before there were any) means false.
+	 */
+	background?: boolean;
 }
 
 export function newSubtaskState(
 	id: string,
 	label: string,
 	task: string,
-	mode: SubtaskMode = 'read'
+	mode: SubtaskMode = 'read',
+	background = false
 ): SubtaskState {
 	return {
+		...(background ? { background: true } : {}),
 		id,
 		label,
 		task,
@@ -101,24 +108,31 @@ export function subtaskActive(s: SubtaskState): boolean {
 
 /** The stop handles of a session's running subtasks, by subtask id. */
 export class SubtaskStops {
-	private readonly running = new Map<string, AbortController>();
+	private readonly running = new Map<
+		string,
+		{ controller: AbortController; background: boolean }
+	>();
 
-	register(id: string, controller: AbortController): void {
-		this.running.set(id, controller);
+	register(id: string, controller: AbortController, opts: { background?: boolean } = {}): void {
+		this.running.set(id, { controller, background: opts.background ?? false });
 	}
 
 	/** Stop one subtask. False when it isn't running. */
 	stop(id: string): boolean {
-		const c = this.running.get(id);
-		if (!c) return false;
-		c.abort();
+		const r = this.running.get(id);
+		if (!r) return false;
+		r.controller.abort();
 		this.running.delete(id);
 		return true;
 	}
 
-	stopAll(): void {
-		for (const c of this.running.values()) c.abort();
-		this.running.clear();
+	/** Stop every subtask, or with `background: false` only those a turn waits for. */
+	stopAll(opts: { background?: false } = {}): void {
+		for (const [id, r] of this.running) {
+			if (opts.background === false && r.background) continue;
+			r.controller.abort();
+			this.running.delete(id);
+		}
 	}
 
 	/** Forget a subtask that has ended. */

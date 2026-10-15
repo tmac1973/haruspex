@@ -206,3 +206,42 @@ describe('delegate cards and stops', () => {
 		expect(stops.size).toBe(0);
 	});
 });
+
+describe('delegate in the background', () => {
+	it('hands the subtask to the session and returns at once', async () => {
+		const start = vi.fn();
+		const states: { background?: boolean; status: string }[] = [];
+		const out = await executeDelegate(
+			{ task: 'Review the loop.', mode: 'read', label: 'review', background: true },
+			ctx({
+				toolCallId: 'd9',
+				startBackgroundSubtask: start,
+				onSubtask: (s: never) => states.push(s)
+			})
+		);
+		expect(out.result).toContain('Started subtask "review" in the background (id d9)');
+		expect(out.result).toContain('do NOT wait or poll');
+		expect(mocks.runSubtask).not.toHaveBeenCalled();
+		expect(start).toHaveBeenCalledWith(
+			expect.objectContaining({
+				id: 'd9',
+				label: 'review',
+				task: 'Review the loop.',
+				mode: 'read'
+			}),
+			expect.objectContaining({ background: true, status: 'queued' })
+		);
+		expect(states).toEqual([expect.objectContaining({ background: true, status: 'queued' })]);
+	});
+
+	it('is refused where no session can take it, and counts toward the turn’s cap', async () => {
+		const none = await executeDelegate({ task: 't', mode: 'read', background: true }, ctx());
+		expect(JSON.parse(none.result).error).toContain('not available here');
+		const turn = ctx({ startBackgroundSubtask: vi.fn() });
+		for (let i = 0; i < SUBTASKS_PER_TURN; i++) {
+			await executeDelegate({ task: `t${i}`, mode: 'read', background: true }, turn);
+		}
+		const over = await executeDelegate({ task: 'x', mode: 'read' }, turn);
+		expect(over.result).toContain(`already started ${SUBTASKS_PER_TURN}`);
+	});
+});

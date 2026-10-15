@@ -31,9 +31,13 @@ Subtasks the agent starts together run at the same time when the model server ta
 
 Up to 4 run at once, and the agent starts at most 8 per turn.
 
+## Let subtasks run in the background
+
+The agent can also start a subtask in the background, for work it doesn't need before answering. Its answer doesn't wait: the subtask runs on, its card marked **Background**, and when it finishes its report arrives as a new turn, shown as **Subtask finished**, which the agent answers. With one stream it starts once the agent's turn ends. Up to 4 run at once per session. A session with background subtasks running can't move to another window until they end.
+
 ## Stop subtasks
 
-**Stop** on a card stops that subtask; the agent carries on with what the others found, and is told you stopped it. **Stop** on the session stops the turn and every subtask it is waiting for.
+**Stop** on a card stops that subtask; the agent carries on with what the others found, and is told you stopped it. **Stop** on the session stops the turn and the subtasks it is waiting for; background subtasks keep running. Closing or deleting the session stops them all.
 
 ## Turn subtasks off
 

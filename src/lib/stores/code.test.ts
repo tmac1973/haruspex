@@ -189,7 +189,8 @@ const mocks = vi.hoisted(() => ({
 	adoptCodeWatches: vi.fn(),
 	raised: [] as string[],
 	consumeWatches: vi.fn(),
-	clearCodeWatches: vi.fn()
+	clearCodeWatches: vi.fn(),
+	runSubtaskSpec: vi.fn()
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
@@ -257,6 +258,7 @@ vi.mock('#lib/shell/backgroundWatch.ts', () => ({
 		mocks.completedWatches.push(...list);
 	}
 }));
+vi.mock('#lib/code/subtaskRun.ts', () => ({ runSubtaskSpec: mocks.runSubtaskSpec }));
 vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
 	logDebug: () => {}
@@ -276,6 +278,8 @@ import {
 } from '#lib/stores/code.svelte.ts';
 import { decodeCodeSession } from '#lib/code/session.ts';
 import { reportShellWait } from '#lib/code/shellBridge.ts';
+import { finishedSubtask, newSubtaskState, type SubtaskState } from '#lib/code/subtask.ts';
+import type { SubtaskEnv, SubtaskSpec } from '#lib/code/subtaskRun.ts';
 import { openCodeAt } from '#lib/code/bridge.ts';
 import { getActiveTab, setActiveTab } from '#lib/stores/activeTab.svelte.ts';
 import {
@@ -1521,5 +1525,100 @@ describe('a long Code session', () => {
 		expect(s.compaction).toBeNull();
 		expect(s.lastError).toBeNull();
 		expect(s.messages).toHaveLength(8);
+	});
+});
+
+describe('background subtasks', () => {
+	/** Background runs that end when `finish(id)` is called, or when stopped. */
+	function backgroundRuns() {
+		const finishers = new Map<string, () => void>();
+		mocks.runSubtaskSpec.mockImplementation(
+			(spec: SubtaskSpec, env: SubtaskEnv, initial: SubtaskState) =>
+				new Promise((resolve) => {
+					const end = (status: 'done' | 'stopped', text: string) => {
+						env.onState(finishedSubtask(initial, { status, report: text, steps: [] }));
+						resolve({ text, failed: false, state: initial });
+					};
+					finishers.set(spec.id, () => end('done', `Subtask "${spec.label}" (done): report`));
+					env.signal.addEventListener('abort', () => end('stopped', 'stopped'));
+				})
+		);
+		return { finish: (id: string) => finishers.get(id)?.() };
+	}
+
+	/** A turn that starts background subtasks `ids` and answers. */
+	function startsInBackground(...ids: string[]) {
+		return async (o: AgentLoopOptions) => {
+			for (const id of ids) {
+				const call = { id, name: 'delegate', arguments: {} };
+				const initial = newSubtaskState(id, id, `do ${id}`, 'read', true);
+				o.onToolStart(call);
+				o.onSubtaskUpdate?.(call, initial);
+				o.startBackgroundSubtask?.(
+					{ id, label: id, task: `do ${id}`, mode: 'read', wt: null },
+					initial
+				);
+				o.onToolEnd(call, 'started');
+			}
+			o.onStreamChunk(chunk('started them'));
+			o.onComplete();
+		};
+	}
+
+	const tick = () => new Promise((r) => setTimeout(r, 0));
+
+	it('reports one that finishes once the session is idle in a turn of its own, and saves its card', async () => {
+		const runs = backgroundRuns();
+		const s = await newSession('/proj');
+		mocks.runAgentLoop.mockImplementationOnce(startsInBackground('d1'));
+		await s.send('look into it in the background');
+		expect(s.backgroundSubtaskCount).toBe(1);
+		mocks.runAgentLoop.mockImplementationOnce(answers('noted'));
+		runs.finish('d1');
+		await vi.waitFor(() => expect(mocks.runAgentLoop).toHaveBeenCalledTimes(2));
+		await vi.waitFor(() => expect(s.busy).toBe(false));
+		const notice = s.messages.find(
+			(m) => m.role === 'user' && String(m.content).startsWith('A subtask you started')
+		);
+		expect(String(notice?.content)).toContain('Subtask "d1" (done): report');
+		const saved = Object.values(s.messageSteps)
+			.flat()
+			.find((st) => st.subtask?.id === 'd1');
+		expect(saved?.subtask?.status).toBe('done');
+		expect(s.backgroundSubtaskCount).toBe(0);
+	});
+
+	it('holds reports back while a turn runs, then delivers them together', async () => {
+		const runs = backgroundRuns();
+		const s = await newSession('/proj');
+		mocks.runAgentLoop.mockImplementationOnce(startsInBackground('a', 'b'));
+		await s.send('two in the background');
+		const turn = held();
+		mocks.runAgentLoop.mockImplementationOnce(turn.impl);
+		const sending = s.send('meanwhile');
+		await turn.running;
+		runs.finish('a');
+		runs.finish('b');
+		await tick();
+		expect(mocks.runAgentLoop).toHaveBeenCalledTimes(2);
+		mocks.runAgentLoop.mockImplementationOnce(answers('both noted'));
+		turn.release();
+		await sending;
+		await vi.waitFor(() => expect(mocks.runAgentLoop).toHaveBeenCalledTimes(3));
+		const opening = (mocks.runAgentLoop.mock.calls[2][0] as AgentLoopOptions).messages.at(-1);
+		expect(String(opening?.content)).toMatch(/^2 subtasks you started in the background/);
+	});
+
+	it('keeps running through the turn’s Stop, blocks moving windows, and ends with the session', async () => {
+		backgroundRuns();
+		const s = await newSession('/proj');
+		mocks.runAgentLoop.mockImplementationOnce(startsInBackground('d1'));
+		await s.send('in the background');
+		s.stop();
+		await tick();
+		expect(s.backgroundSubtaskCount).toBe(1);
+		expect(await handOffSession(s.id)).toBe(false);
+		await closeSession(s.id);
+		expect(s.backgroundSubtaskCount).toBe(0);
 	});
 });

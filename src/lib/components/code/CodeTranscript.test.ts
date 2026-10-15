@@ -511,3 +511,20 @@ describe('CodeTranscript subtasks', () => {
 		expect(stopSubtask).toHaveBeenCalledWith('d1');
 	});
 });
+
+describe('CodeTranscript subtask notifications', () => {
+	it('shows a finished background subtask’s report as a folded notice', () => {
+		const messages: ChatMessage[] = [
+			{ role: 'user', content: 'review it in the background' },
+			{ role: 'assistant', content: 'started' },
+			{
+				role: 'user',
+				content:
+					'A subtask you started in the background has finished.\n\nSubtask "review" (done): fine'
+			},
+			{ role: 'assistant', content: 'it is fine' }
+		];
+		render(CodeTranscript, { session: fakeSession({ messages }) });
+		expect(screen.getByText('Subtask finished')).toBeTruthy();
+	});
+});
