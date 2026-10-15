@@ -24,7 +24,7 @@ other than loopback.
 - **Reachable from the Haruspex machine** on its port, 8188 by default.
 - **Resources for Ming-Image** (the default model): about 8 GB of VRAM and
   24 GB of RAM, because the text encoder runs on the CPU. Disk: about 19 GB
-  for Ming, and 17 GB more if you also want Qwen-Image-2.1.
+  for Ming, and 17 GB more if you also want Qwen-Image-2.1 Turbo.
 
 ## 1. Install ComfyUI
 
@@ -199,7 +199,7 @@ In Settings → Image:
    encoder and VAE are found by name.
 6. **Generate a test image.**
 
-Qwen-Image-2.1 installs the same way. It is licensed for research and
+Qwen-Image-2.1 Turbo installs the same way. It is licensed for research and
 evaluation only, and Haruspex asks you to confirm that before it installs.
 
 The app's proxy setting does not apply to ComfyUI: a server on the LAN is

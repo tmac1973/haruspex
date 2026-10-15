@@ -7,6 +7,8 @@ describe('familyOf', () => {
 		expect(familyOf('Ming-Image-0.1-Design-Q4.gguf')).toBe('ming');
 		expect(familyOf('qwen_image_2.1_int8_convrot.safetensors')).toBe('qwen21');
 		expect(familyOf('Qwen-Image-2.1-Q4_K_M.gguf')).toBe('qwen21');
+		expect(familyOf('qwen_image_2.1_turbo_int8_convrot.safetensors')).toBe('qwen21_turbo');
+		expect(familyOf('qwen-image-2.1-turbo-Q4_K_M.gguf')).toBe('qwen21_turbo');
 	});
 
 	it('treats anything else as an SD checkpoint, so old settings keep working', () => {

@@ -137,20 +137,23 @@ pub fn comfy_model_sets() -> Vec<ComfyModelSet> {
             ],
         },
         ComfyModelSet {
-            family: "qwen21".into(),
-            label: "Qwen-Image 2.1".into(),
+            family: "qwen21_turbo".into(),
+            label: "Qwen-Image 2.1 Turbo".into(),
             license: QWEN21_LICENCE.text.into(),
             license_url: QWEN21_LICENCE.url.into(),
             commercial_use: QWEN21_LICENCE.commercial_use,
             vram_mb: 10_240,
             ram_mb: 24_576,
             files: vec![
+                // Turbo: 8 steps against the base model's 25, at no cost in
+                // quality (`measurements-qwen-turbo.md`). A base model already
+                // installed keeps running as `qwen21`.
                 file(
                     DiffusionModels,
                     QWEN,
-                    "diffusion_models/qwen_image_2.1_int8_convrot.safetensors",
-                    "cb74113cb03faecd79611b01fd7fd642f0aa60d6f0b95086abee214d75eaa57d",
-                    7_256_783_064,
+                    "diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors",
+                    "8144a0182964aa8403ad6dbc011db837304167d235161b9aabaa8532e967314c",
+                    7_256_787_829,
                 ),
                 file(
                     TextEncoders,
@@ -362,7 +365,7 @@ mod tests {
         assert!(
             !sets
                 .iter()
-                .find(|s| s.family == "qwen21")
+                .find(|s| s.family == "qwen21_turbo")
                 .unwrap()
                 .commercial_use
         );

@@ -112,9 +112,10 @@ pub const MING_LICENCE: Licence = Licence {
     commercial_use: true,
 };
 
+/// Turbo's, which is the base model's word for word.
 pub const QWEN21_LICENCE: Licence = Licence {
     text: "Qwen Research License — research and evaluation only.",
-    url: "https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE",
+    url: "https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo/blob/main/LICENSE",
     commercial_use: false,
 };
 
@@ -138,6 +139,10 @@ pub const QWEN21_VAE: WeightFile = WeightFile {
     sha256: "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
     size_bytes: 675_509_688,
 };
+
+/// The noise levels Qwen-Image-2.1 Turbo was distilled to sample at.
+pub const QWEN21_TURBO_SIGMAS: &str =
+    "1.0,0.978453,0.95418,0.926626,0.89508,0.845148,0.704534,0.414568,0.0";
 
 /// The file name a download is saved under: the URL's last segment.
 pub fn filename_of(url: &str) -> String {
@@ -218,16 +223,19 @@ pub fn image_registry() -> Vec<ImageModelInfo> {
         ),
         entry(
             "qwen21",
-            "qwen21",
-            "Qwen-Image 2.1 — transparent by prompt, non-commercial (~10 GB)",
+            "qwen21_turbo",
+            "Qwen-Image 2.1 Turbo — transparent by prompt, non-commercial (~10 GB)",
             &QWEN21_LICENCE,
             10_240,
             vec![
+                // Turbo, not the base model: 8 steps against 25, 19 s a 1024
+                // image against 49, and no worse (`measurements-qwen-turbo.md`).
+                // The id stays `qwen21` so a choice made in Settings survives.
                 file(
                     Diffusion,
-                    "https://huggingface.co/leejet/Qwen-Image-2.1-GGUF/resolve/main/qwen_image_2.1-Q4_K.gguf",
-                    "29f9c83c249ff0292fb2943fceddfa2319b446601866c82a4f8be062abea72c2",
-                    4_197_494_816,
+                    "https://huggingface.co/unsloth/Qwen-Image-2.1-Turbo-GGUF/resolve/main/qwen-image-2.1-turbo-Q4_K_M.gguf",
+                    "8940e8b522af886e0c0f5afddf720e82dd223cb9a43580b5f61c4d740452ac20",
+                    4_199_565_120,
                 ),
                 file(
                     TextEncoder,
@@ -287,6 +295,15 @@ pub fn engine_args(models_dir: &Path, id: &str) -> Option<Vec<String>> {
         args.push("--backend".to_string());
         args.push("te=cpu".to_string());
     }
+    // Turbo's own schedule (`sample_sigmas` in its `model_index.json`), which
+    // overrides the step count. sd.cpp's default schedule at 8 steps drew
+    // grainier pictures and seamed textures worse
+    // (`plan/local-image-generation/measurements-qwen-turbo.md`). A partial
+    // repaint starts part way down it, as with any schedule.
+    if entry.family == "qwen21_turbo" {
+        args.push("--sigmas".to_string());
+        args.push(QWEN21_TURBO_SIGMAS.to_string());
+    }
     // Encoding a 1024 image untiled needs several GB on top of the weights.
     // Qwen's VAE (Wan's) needs ~5.4 GB with only ~4 GB left on a 16 GB card:
     // every img2img — the seam pass on a texture — failed at once with "vae
@@ -343,7 +360,28 @@ pub async fn download_image_model(
         .collect();
     state
         .download_set(&app, &format!("image:{id}"), proxy, &files)
-        .await
+        .await?;
+    remove_stale(&dir, &entry);
+    Ok(())
+}
+
+/// Delete what an entry's folder holds that the entry no longer lists: the
+/// weights a catalogue change replaced (Qwen's base model, when its entry
+/// moved to Turbo), which would otherwise sit there unused at several GB.
+/// Only after a complete download, so nothing is half-written.
+fn remove_stale(dir: &Path, entry: &ImageModelInfo) {
+    let Ok(read) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in read.flatten() {
+        let name = e.file_name();
+        let listed = entry.files.iter().any(|f| name == f.filename.as_str());
+        if !listed && e.path().is_file() {
+            if let Err(err) = std::fs::remove_file(e.path()) {
+                log::warn!("Could not remove {}: {err}", e.path().display());
+            }
+        }
+    }
 }
 
 /// Delete an entry's files. Stopping the engine first is the caller's job —
@@ -456,6 +494,25 @@ mod tests {
     }
 
     #[test]
+    fn a_finished_download_removes_what_the_entry_no_longer_lists() {
+        let dir = temp_dir("stale");
+        let m = image_registry()
+            .into_iter()
+            .find(|m| m.id == "qwen21")
+            .unwrap();
+        let sub = model_dir(&dir, "qwen21");
+        std::fs::create_dir_all(&sub).unwrap();
+        for f in &m.files {
+            std::fs::write(sub.join(&f.filename), b"x").unwrap();
+        }
+        // The base model the entry listed before it moved to Turbo.
+        std::fs::write(sub.join("qwen_image_2.1-Q4_K.gguf"), b"x").unwrap();
+        remove_stale(&sub, &m);
+        assert!(!sub.join("qwen_image_2.1-Q4_K.gguf").exists());
+        assert!(m.files.iter().all(|f| sub.join(&f.filename).is_file()));
+    }
+
+    #[test]
     fn the_engine_gets_one_flag_per_file_in_the_entrys_own_folder() {
         let dir = temp_dir("args");
         let m = image_registry()
@@ -507,5 +564,51 @@ mod tests {
         };
         assert!(tiles("qwen21"));
         assert!(tiles("ming"));
+    }
+
+    #[test]
+    fn qwen_samples_on_turbos_own_schedule_and_ming_does_not() {
+        let dir = temp_dir("sigmas");
+        for id in ["ming", "qwen21"] {
+            let m = image_registry().into_iter().find(|m| m.id == id).unwrap();
+            let sub = model_dir(&dir, id);
+            std::fs::create_dir_all(&sub).unwrap();
+            for f in &m.files {
+                std::fs::write(sub.join(&f.filename), b"x").unwrap();
+            }
+        }
+        let qwen = engine_args(&dir, "qwen21").unwrap();
+        let at = qwen.iter().position(|a| a == "--sigmas").unwrap();
+        assert_eq!(qwen[at + 1], QWEN21_TURBO_SIGMAS);
+        // Eight steps: nine noise levels, ending at zero.
+        let levels: Vec<f32> = QWEN21_TURBO_SIGMAS
+            .split(',')
+            .map(|v| v.parse().unwrap())
+            .collect();
+        assert_eq!(levels.len(), 9);
+        assert_eq!(levels.last(), Some(&0.0));
+        assert!(levels.windows(2).all(|w| w[0] > w[1]));
+        assert!(!engine_args(&dir, "ming")
+            .unwrap()
+            .contains(&"--sigmas".into()));
+    }
+
+    #[test]
+    fn both_engines_sample_turbo_on_the_same_schedule() {
+        let graph: serde_json::Value = serde_json::from_str(include_str!(
+            "../../src/lib/image/comfyui/templates/qwen21_turbo_t2i.json"
+        ))
+        .unwrap();
+        let comfy: Vec<f32> = graph["11"]["inputs"]["sigmas"]
+            .as_str()
+            .unwrap()
+            .split(',')
+            .map(|v| v.trim().parse().unwrap())
+            .collect();
+        let ours: Vec<f32> = QWEN21_TURBO_SIGMAS
+            .split(',')
+            .map(|v| v.parse().unwrap())
+            .collect();
+        assert_eq!(comfy, ours);
     }
 }

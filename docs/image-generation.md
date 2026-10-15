@@ -11,8 +11,9 @@ Settings → Image offers two, and they are genuinely different trades.
 **ComfyUI** talks to a server you run, started as it comes (`python
 main.py`); Haruspex calls it from Rust, so it needs no CORS flag. Pick it if
 you already have ComfyUI or want custom workflows. It runs Ming-Image (the
-default: transparent sprites, seamless textures) and Qwen-Image-2.1
-(non-commercial).
+default: transparent sprites, seamless textures) and Qwen-Image-2.1 Turbo
+(non-commercial). A Qwen-Image-2.1 base model already on the server keeps
+working, at its own 25 steps.
 
 The models go on the server. After Probe, Settings → Image lists each model
 family with what the server is missing, and Install puts the files there:
@@ -30,7 +31,7 @@ family with what the server is missing, and Install puts the files there:
 **Bundled engine** is stable-diffusion.cpp, shipped with Haruspex. Pick it if
 you want image generation with nothing to install. It starts on demand and
 stops when you say. It runs Ming-Image (the default) and, as an opt-in,
-Qwen-Image-2.1, from GGUF weights downloaded in Settings → Image. Sheets,
+Qwen-Image-2.1 Turbo, from GGUF weights downloaded in Settings → Image. Sheets,
 transparency and tiling textures work as on ComfyUI.
 
 **None** is the default. No process, no download, no startup cost.
@@ -155,7 +156,7 @@ Each run writes `REPORT-assets.md` and `contact-sheet.png` beside the spec.
 
 ## Licensing
 
-Ming-Image is MIT: commercial use allowed. Qwen-Image-2.1 is under the Qwen
+Ming-Image is MIT: commercial use allowed. Qwen-Image-2.1 and its Turbo are under the Qwen
 Research License — research and evaluation only — and Haruspex asks before
 installing it; the images are yours, but running the model for commercial
 work is what the licence restricts. The bundled engine's SD1.5 and SDXL both
@@ -300,7 +301,7 @@ a backend):
 | Model | Licence | Commercial | Files | Size |
 | --- | --- | --- | --- | --- |
 | Ming-Image 0.1 Design (default) | MIT | yes | DiT int8, Ling-mini w4a8 encoder, VAE | ~19 GB |
-| Qwen-Image-2.1 | Qwen Research License | no | DiT int8, Qwen3-VL 8B int8 encoder, VAE | ~17 GB |
+| Qwen-Image-2.1 Turbo | Qwen Research License | no | DiT int8, Qwen3-VL 8B int8 encoder, VAE | ~17 GB |
 
 Ming runs in about 8 GB of VRAM and 24 GB of RAM, with its text encoder on
 the CPU. Ming has no RGBA mode of its own that works: transparency comes from
@@ -314,7 +315,15 @@ SHA-256:
 | Model | Licence | Commercial | Files | Size |
 | --- | --- | --- | --- | --- |
 | Ming-Image 0.1 Design (default) | MIT | yes | DiT Q8_0, Ling-mini-2.0 Q4_K, VAE, tokenizer | ~17 GB |
-| Qwen-Image-2.1 | Qwen Research License | no | DiT Q4_K, Qwen3-VL-8B Q4_K_M, VAE | ~10 GB |
+| Qwen-Image-2.1 Turbo | Qwen Research License | no | DiT Q4_K_M (unsloth), Qwen3-VL-8B Q4_K_M, VAE | ~10 GB |
+
+Qwen is Turbo in both engines: the same model distilled to 8 steps, sampled
+on the noise schedule it ships with (`--sigmas` for sd-server, `ManualSigmas`
+in ComfyUI). About 2.6× faster than the base model on sd-server and 3.3× on
+ComfyUI, with no loss measured
+([`measurements-qwen-turbo.md`](../plan/local-image-generation/measurements-qwen-turbo.md)).
+The bundled entry kept its id, `qwen21`, so a user who had the base model
+downloads only the new DiT, and the finished download deletes the old one.
 
 GGUF, not the int8/bf16 safetensors ComfyUI loads: on Vulkan without bf16
 support those ran at 40–120 s a step, GGUF draws a 1024 sheet in about 35–50 s
