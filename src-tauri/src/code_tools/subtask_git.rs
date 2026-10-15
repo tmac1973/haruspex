@@ -10,8 +10,8 @@
 //! `<repo>-worktrees/.subtasks/<session_id>-<n>`.
 //!
 //! Ignored dependency folders (`node_modules`, `.venv`, …) are linked into the
-//! worktree rather than reinstalled, and every `add -A` here excludes the
-//! links, so they are never recorded as a change.
+//! worktree rather than reinstalled, and every tree built here drops the
+//! links after `add -A`, so they are never recorded as a change.
 //!
 //! Applying tries the patch as is first; when the folder has changed since,
 //! a three-way merge runs in a scratch worktree, and only its result is
@@ -220,12 +220,12 @@ async fn link_dependencies(place: &Place, source_top: &str, worktree_top: &str) 
     linked
 }
 
-/// The `add -A` exclusions for the links at `top`.
-async fn link_excludes(place: &Place, top: &str) -> Vec<String> {
+/// The dependency links at `top`, by name.
+async fn links_at(place: &Place, top: &str) -> Vec<&'static str> {
     let mut out = Vec::new();
     for name in DEPENDENCY_DIRS {
         if is_link(place, &place.join(top, name)).await {
-            out.push(format!(":(top,exclude){name}"));
+            out.push(name);
         }
     }
     out
@@ -298,10 +298,25 @@ async fn worktree_tree(
         Some(c) => run_env(place, top, &["read-tree", c], &env, GIT_TIMEOUT).await?,
         None => run_env(place, top, &["read-tree", "--empty"], &env, GIT_TIMEOUT).await?,
     };
-    let excludes = link_excludes(place, top).await;
-    let mut add = vec!["add", "-A", "--", ":/"];
-    add.extend(excludes.iter().map(String::as_str));
-    run_env(place, top, &add, &env, WORKTREE_TIMEOUT).await?;
+    run_env(
+        place,
+        top,
+        &["add", "-A", "--", ":/"],
+        &env,
+        WORKTREE_TIMEOUT,
+    )
+    .await?;
+    // Then take the links back out. Not an `:(exclude)` pathspec on the add:
+    // git refuses one that names an ignored path, which is every link whose
+    // folder `.gitignore` matches without a trailing slash (`node_modules`).
+    // A pattern with one (`node_modules/`) doesn't match a link, so add -A
+    // staged it; either way it is gone from the tree.
+    let links = links_at(place, top).await;
+    if !links.is_empty() {
+        let mut rm = vec!["rm", "--cached", "-r", "-q", "--ignore-unmatch", "--"];
+        rm.extend(links.iter().copied());
+        run_env(place, top, &rm, &env, GIT_TIMEOUT).await?;
+    }
     run_env(place, top, &["write-tree"], &env, GIT_TIMEOUT).await
 }
 
@@ -986,6 +1001,24 @@ mod tests {
         std::fs::write(path.join("node_modules/pkg/index.js"), "y\n").unwrap();
         std::fs::write(path.join("node_modules/pkg/more.js"), "z\n").unwrap();
         assert_eq!(diff(&wt).await.patch, "");
+    }
+
+    #[tokio::test]
+    async fn links_ignored_without_a_trailing_slash_are_left_out_too() {
+        let (_base, proj) = repo("links-noslash");
+        std::fs::write(proj.join(".gitignore"), "node_modules\n").unwrap();
+        git(&proj, &["commit", "-q", "-am", "ignore without a slash"]);
+        std::fs::create_dir_all(proj.join("node_modules/pkg")).unwrap();
+        std::fs::write(proj.join("node_modules/pkg/index.js"), "x\n").unwrap();
+
+        let wt = create(&proj, "s1").await;
+        assert_eq!(wt.linked, vec!["node_modules"]);
+        let path = PathBuf::from(&wt.path);
+        std::fs::write(path.join("a.txt"), "changed\n").unwrap();
+        std::fs::write(path.join("node_modules/pkg/index.js"), "y\n").unwrap();
+        let patch = diff(&wt).await;
+        assert_eq!(patch.files, vec!["a.txt"]);
+        assert!(!patch.patch.contains("node_modules"));
     }
 
     #[tokio::test]
