@@ -19,6 +19,7 @@ import mingGraph from '#lib/image/comfyui/templates/ming_t2i.json';
 import mingRgbaGraph from '#lib/image/comfyui/templates/ming_t2i_rgba.json';
 import mingSeamlessGraph from '#lib/image/comfyui/templates/ming_t2i_seamless.json';
 import qwen21Graph from '#lib/image/comfyui/templates/qwen21_t2i.json';
+import qwen21TurboGraph from '#lib/image/comfyui/templates/qwen21_turbo_t2i.json';
 import type { ComfyGraph, FieldMap, ScalarBinding } from '#lib/image/comfyui/fieldMap.ts';
 import type { ModelFamily } from '#lib/image/comfyui/families.ts';
 import type { SamplerSettings } from '#lib/image/types.ts';
@@ -174,6 +175,28 @@ const QWEN21_BINDINGS: FieldMap = {
 
 const QWEN21_SAMPLER: SamplerSettings = { name: 'euler', steps: 25, cfg: 1 };
 
+/**
+ * Turbo samples on the schedule it ships with (`sample_sigmas` in its
+ * `model_index.json`), set in node 11, so there is no step count to bind.
+ * ComfyUI's `simple` scheduler at 8 steps drew grainier, over-sharpened
+ * pictures (`plan/local-image-generation/measurements-qwen-turbo.md`).
+ */
+const QWEN21_TURBO_BINDINGS: FieldMap = {
+	outputNode: '9',
+	prompt: { kind: 'scalar', node: '4', input: 'prompt' },
+	negativePrompt: { kind: 'scalar', node: '4', input: 'negative_prompt' },
+	seed: { kind: 'scalar', node: '7', input: 'noise_seed' },
+	model: { kind: 'scalar', node: '1', input: 'unet_name' },
+	textEncoder: { kind: 'scalar', node: '2', input: 'clip_name' },
+	vae: { kind: 'scalar', node: '3', input: 'vae_name' },
+	samplerName: { kind: 'scalar', node: '10', input: 'sampler_name' },
+	samplerCfg: { kind: 'scalar', node: '7', input: 'cfg' },
+	width: { kind: 'scalar', node: '6', input: 'width' },
+	height: { kind: 'scalar', node: '6', input: 'height' }
+};
+
+const QWEN21_TURBO_SAMPLER: SamplerSettings = { name: 'euler', steps: 8, cfg: 1 };
+
 /** The wrapper from the model's own template; its VAE always carries alpha. */
 export function qwen21Transparent(prompt: string): string {
 	return (
@@ -297,6 +320,28 @@ export const TEMPLATES: WorkflowTemplate[] = [
 		source: SOURCE,
 		supports: { transparent: true, seamless: false },
 		defaultSampler: QWEN21_SAMPLER,
+		wrapPrompt: qwen21Transparent
+	},
+	{
+		id: 'qwen21_turbo_t2i',
+		family: 'qwen21_turbo',
+		graph: qwen21TurboGraph as ComfyGraph,
+		map: QWEN21_TURBO_BINDINGS,
+		license: LICENSE,
+		source: SOURCE,
+		supports: { transparent: false, seamless: false },
+		defaultSampler: QWEN21_TURBO_SAMPLER
+	},
+	{
+		// As for the base model: alpha comes from the words.
+		id: 'qwen21_turbo_t2i_rgba',
+		family: 'qwen21_turbo',
+		graph: qwen21TurboGraph as ComfyGraph,
+		map: QWEN21_TURBO_BINDINGS,
+		license: LICENSE,
+		source: SOURCE,
+		supports: { transparent: true, seamless: false },
+		defaultSampler: QWEN21_TURBO_SAMPLER,
 		wrapPrompt: qwen21Transparent
 	}
 ];

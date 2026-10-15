@@ -43,7 +43,7 @@ describe('the bundled workflows', () => {
 	it('gives each family a plain workflow', () => {
 		// Selection falls back to an opaque one; a family without one would
 		// leave a request with nowhere to go.
-		for (const family of ['sd', 'ming', 'qwen21'] as const) {
+		for (const family of ['sd', 'ming', 'qwen21', 'qwen21_turbo'] as const) {
 			expect(
 				selectTemplate({ transparent: false, seamless: false }, templatesFor(family))
 			).toBeDefined();
@@ -245,6 +245,21 @@ describe('Qwen-Image-2.1', () => {
 	it('wraps nothing for an opaque request', () => {
 		const t = selectTemplate({ transparent: false, seamless: false }, templatesFor('qwen21'))!;
 		expect(t.wrapPrompt).toBeUndefined();
+	});
+
+	it('makes alpha the same way on Turbo', () => {
+		const t = selectTemplate({ transparent: true, seamless: false }, templatesFor('qwen21_turbo'))!;
+		expect(t.wrapPrompt).toBe(qwen21Transparent);
+	});
+
+	it('samples Turbo on its own schedule, not a step count', () => {
+		for (const t of templatesFor('qwen21_turbo')) {
+			expect(t.map.samplerSteps).toBeUndefined();
+			const sigmas = String(t.graph['11'].inputs.sigmas).split(',').map(Number);
+			expect(sigmas).toHaveLength(9);
+			expect(sigmas.at(-1)).toBe(0);
+			expect(t.graph['7'].inputs.sigmas).toEqual(['11', 0]);
+		}
 	});
 });
 

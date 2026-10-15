@@ -115,10 +115,14 @@ export function fromBase64(b64: string): Uint8Array {
 	return out;
 }
 
-/** Each family's sampler, as measured (`measurements-phase-24-gguf.md`). */
+/**
+ * Each family's sampler, as measured (`measurements-phase-24-gguf.md`; Qwen's
+ * entry is Turbo, `measurements-qwen-turbo.md`). Turbo's 8 steps are its own
+ * schedule, which the engine is started with (`--sigmas`).
+ */
 export const FAMILY_SAMPLER: Record<LocalFamily, { name: string; steps: number; cfg: number }> = {
 	ming: { name: 'euler', steps: 12, cfg: 1 },
-	qwen21: { name: 'euler', steps: 25, cfg: 1 }
+	qwen21: { name: 'euler', steps: 8, cfg: 1 }
 };
 
 /** For a request with no family to go by. */

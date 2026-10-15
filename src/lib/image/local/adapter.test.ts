@@ -218,6 +218,6 @@ describe('per family', () => {
 
 	it('samples each family as measured', () => {
 		expect(FAMILY_SAMPLER.ming).toEqual({ name: 'euler', steps: 12, cfg: 1 });
-		expect(FAMILY_SAMPLER.qwen21).toEqual({ name: 'euler', steps: 25, cfg: 1 });
+		expect(FAMILY_SAMPLER.qwen21).toEqual({ name: 'euler', steps: 8, cfg: 1 });
 	});
 });

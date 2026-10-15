@@ -21,7 +21,7 @@ Once a backend is set up, **Test generation → Generate a test image** makes on
 
 ### Set up the bundled engine
 
-Under **Bundled engine**, press **Download** on a model, then **Use**. Downloads are large (about 17 GB for Ming-Image, 10 GB for Qwen-Image). The engine starts when something needs it, or when you press **Start**, and stops when you press **Stop**, switch backend, or quit.
+Under **Bundled engine**, press **Download** on a model, then **Use**. Downloads are large (about 17 GB for Ming-Image, 10 GB for Qwen-Image Turbo). The engine starts when something needs it, or when you press **Start**, and stops when you press **Stop**, switch backend, or quit.
 
 ### Set up ComfyUI
 
@@ -34,7 +34,9 @@ The first picture after ComfyUI starts is slow: it loads the model from disk, wh
 | Model | Licence | Commercial use | Bundled engine needs |
 |---|---|---|---|
 | Ming-Image 0.1 Design (default) | MIT | Allowed | ~8 GB VRAM, ~10 GB free RAM |
-| Qwen-Image 2.1 | Qwen Research License | **Not allowed** | ~12 GB VRAM |
+| Qwen-Image 2.1 Turbo | Qwen Research License | **Not allowed** | ~12 GB VRAM |
+
+Qwen-Image Turbo draws a picture in about a third of the time the original Qwen-Image 2.1 took. If you downloaded Qwen-Image before, its row in Settings → Image offers **Download** again; that fetches only the Turbo model and removes the old one. In ComfyUI, an original Qwen-Image 2.1 model you already have keeps working.
 
 Settings → Image marks Qwen-Image "Not licensed for commercial use." and asks before downloading or installing it. When a non-commercial model is in use, the assistant is told, so it can tell you. Generated images are generally not copyrightable on their own, and some stores require AI-made content to be disclosed.
 

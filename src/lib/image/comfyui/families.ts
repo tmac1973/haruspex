@@ -15,10 +15,13 @@
 import { ImageBackendError } from '#lib/image/types.ts';
 import * as api from '#lib/image/comfyui/client.ts';
 
-export type ModelFamily = 'sd' | 'ming' | 'qwen21';
+export type ModelFamily = 'sd' | 'ming' | 'qwen21' | 'qwen21_turbo';
 
 const FAMILY_PATTERNS: Array<[ModelFamily, RegExp]> = [
 	['ming', /ming[_-]?image/i],
+	// Before the base model, whose pattern it also matches: Turbo samples in
+	// 8 steps on its own schedule, and the base model's 25 would waste them.
+	['qwen21_turbo', /qwen[_-]?image[_-]?2[._-]?1.*turbo/i],
 	['qwen21', /qwen[_-]?image[_-]?2[._-]?1/i]
 ];
 
@@ -41,15 +44,19 @@ export interface Companions {
  * `layer` and `pe` files are a different model and a prompt rewriter that
  * merely share the prefix.
  */
+const QWEN21_WANTED = {
+	textEncoder: [/^qwen3vl_8b.*int8/i, /^qwen3vl_8b.*w4a8/i, /^qwen3vl_8b/i],
+	vae: [/^qwen_image_2[._]1.*vae/i]
+};
+
 const WANTED: Record<Exclude<ModelFamily, 'sd'>, { textEncoder: RegExp[]; vae: RegExp[] }> = {
 	ming: {
 		textEncoder: [/^ming_image.*ling.*w4a8/i, /^ming_image.*ling.*int8/i, /^ming_image.*ling/i],
 		vae: [/^ming_image.*vae/i]
 	},
-	qwen21: {
-		textEncoder: [/^qwen3vl_8b.*int8/i, /^qwen3vl_8b.*w4a8/i, /^qwen3vl_8b/i],
-		vae: [/^qwen_image_2[._]1.*vae/i]
-	}
+	// Turbo shares the base model's text encoder and VAE.
+	qwen21: QWEN21_WANTED,
+	qwen21_turbo: QWEN21_WANTED
 };
 
 const NOT_A_COMPANION = /layer|_pe_/i;
@@ -132,6 +139,7 @@ export async function listDiffusionModels(cfg: api.ClientConfig): Promise<string
 const FAMILY_LABELS: Record<ModelFamily, string> = {
 	ming: 'Ming-Image',
 	qwen21: 'Qwen-Image-2.1, non-commercial',
+	qwen21_turbo: 'Qwen-Image-2.1 Turbo, non-commercial',
 	sd: 'SD checkpoint'
 };
 

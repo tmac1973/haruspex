@@ -84,7 +84,7 @@ describe('generate', () => {
 		expect(path).toBe('/sdapi/v1/txt2img');
 		expect(body.init_images).toBeUndefined();
 		expect(body.prompt).toMatch(/^This is an RGBA format image with transparency\. a coin/);
-		expect(body.steps).toBe(25);
+		expect(body.steps).toBe(8);
 		expect(tauri.invoke).not.toHaveBeenCalledWith('image_clear_canvas', expect.anything());
 	});
 

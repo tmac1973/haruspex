@@ -108,6 +108,19 @@ describe('generateForTool', () => {
 		expect((await generateForTool(req())).notes.join(' ')).not.toMatch(/non-commercial/);
 	});
 
+	it('says so for either Qwen model on ComfyUI', async () => {
+		state.kind = 'comfyui';
+		for (const model of [
+			'qwen_image_2.1_int8_convrot.safetensors',
+			'qwen_image_2.1_turbo_int8_convrot.safetensors'
+		]) {
+			state.comfyCheckpoint = model;
+			expect((await generateForTool(req())).notes.join(' ')).toMatch(/non-commercial/);
+		}
+		state.comfyCheckpoint = 'ming_image_0.1_design_int8_convrot.safetensors';
+		expect((await generateForTool(req())).notes.join(' ')).not.toMatch(/non-commercial/);
+	});
+
 	it('reports a texture that did not tile', async () => {
 		state.generate.mockResolvedValueOnce(drawn('vae encode compute failed'));
 		const out = await generateForTool(req({ seamless: true }));
