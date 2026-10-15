@@ -28,9 +28,9 @@ use std::time::Duration;
 
 /// Long enough for `status` in a big repo on a slow disk; a call that takes
 /// longer than this is stuck, not slow.
-const GIT_TIMEOUT: Duration = Duration::from_secs(20);
+pub(crate) const GIT_TIMEOUT: Duration = Duration::from_secs(20);
 /// `worktree add` checks out a whole tree.
-const WORKTREE_TIMEOUT: Duration = Duration::from_secs(120);
+pub(crate) const WORKTREE_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// One folder's git state, for the header.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, ts_rs::TS)]
@@ -85,7 +85,7 @@ impl Place {
 
     /// Is git installed where it runs? Checked once per place; installing it
     /// means restarting the app.
-    async fn available(&self) -> bool {
+    pub(crate) async fn available(&self) -> bool {
         let Place::Wsl(distro) = self else {
             return git_available();
         };
@@ -106,11 +106,18 @@ impl Place {
     }
 
     /// `git -C dir args…` here, with the environment every call gets.
-    fn command(&self, dir: &str, args: &[&str], write: bool) -> tokio::process::Command {
+    fn command(
+        &self,
+        dir: &str,
+        args: &[&str],
+        write: bool,
+        extra_env: &[String],
+    ) -> tokio::process::Command {
         let mut env = vec!["GIT_TERMINAL_PROMPT=0", "LC_ALL=C"];
         if !write {
             env.push("GIT_OPTIONAL_LOCKS=0");
         }
+        env.extend(extra_env.iter().map(String::as_str));
         let mut cmd = match self {
             Place::Host => {
                 let mut c = tokio::process::Command::new("git");
@@ -140,33 +147,33 @@ impl Place {
     }
 
     /// The host path to stat `path` through: itself, or its distro share.
-    fn host_path(&self, path: &str) -> PathBuf {
+    pub(crate) fn host_path(&self, path: &str) -> PathBuf {
         match self {
             Place::Host => PathBuf::from(path),
             Place::Wsl(distro) => super::wsl::share_path(distro, path),
         }
     }
 
-    fn exists(&self, path: &str) -> bool {
+    pub(crate) fn exists(&self, path: &str) -> bool {
         self.host_path(path).exists()
     }
 
-    fn is_dir(&self, path: &str) -> bool {
+    pub(crate) fn is_dir(&self, path: &str) -> bool {
         self.host_path(path).is_dir()
     }
 
-    fn create_dir_all(&self, path: &str) -> std::io::Result<()> {
+    pub(crate) fn create_dir_all(&self, path: &str) -> std::io::Result<()> {
         std::fs::create_dir_all(self.host_path(path))
     }
 
     /// Remove `path` if it is an empty folder; anything else stays.
-    fn remove_empty_dir(&self, path: &str) {
+    pub(crate) fn remove_empty_dir(&self, path: &str) {
         let _ = std::fs::remove_dir(self.host_path(path));
     }
 
     /// `path` with symlinks resolved, for comparing. Git's own answers inside
     /// a distro are absolute and resolved already, so those are kept as is.
-    fn canonical(&self, path: &str) -> String {
+    pub(crate) fn canonical(&self, path: &str) -> String {
         match self {
             Place::Host => canonical(Path::new(path)).to_string_lossy().into_owned(),
             Place::Wsl(_) => path.trim_end_matches('/').to_string(),
@@ -176,14 +183,14 @@ impl Place {
     /// A path git printed, as the platform spells it: git for Windows says
     /// `C:/Users/tim/proj`, which the branch control shows and which should
     /// match the session's `C:\Users\tim\proj`.
-    fn native(&self, path: String) -> String {
+    pub(crate) fn native(&self, path: String) -> String {
         match self {
             Place::Host if cfg!(windows) => path.replace('/', "\\"),
             _ => path,
         }
     }
 
-    fn join(&self, dir: &str, name: &str) -> String {
+    pub(crate) fn join(&self, dir: &str, name: &str) -> String {
         match self {
             Place::Host => Path::new(dir).join(name).to_string_lossy().into_owned(),
             Place::Wsl(_) if name.is_empty() => dir.to_string(),
@@ -191,7 +198,7 @@ impl Place {
         }
     }
 
-    fn parent(&self, path: &str) -> Option<String> {
+    pub(crate) fn parent(&self, path: &str) -> Option<String> {
         match self {
             Place::Host => Path::new(path)
                 .parent()
@@ -204,7 +211,7 @@ impl Place {
         }
     }
 
-    fn file_name(&self, path: &str) -> Option<String> {
+    pub(crate) fn file_name(&self, path: &str) -> Option<String> {
         match self {
             Place::Host => Path::new(path)
                 .file_name()
@@ -219,7 +226,7 @@ impl Place {
     }
 
     /// `path` relative to `base`, `""` for `base` itself; None outside it.
-    fn relative(&self, path: &str, base: &str) -> Option<String> {
+    pub(crate) fn relative(&self, path: &str, base: &str) -> Option<String> {
         match self {
             Place::Host => Path::new(path)
                 .strip_prefix(base)
@@ -238,7 +245,7 @@ impl Place {
     }
 
     /// Two folders git named are the same one.
-    fn same(&self, a: &str, b: &str) -> bool {
+    pub(crate) fn same(&self, a: &str, b: &str) -> bool {
         self.canonical(a) == self.canonical(b)
     }
 }
@@ -281,38 +288,87 @@ pub fn git_available() -> bool {
 }
 
 /// Git's answer, or its error text.
-struct Output {
-    ok: bool,
-    stdout: String,
-    stderr: String,
+pub(crate) struct Output {
+    pub ok: bool,
+    pub stdout: String,
+    pub stderr: String,
 }
 
 /// Run `git -C dir args…` in `place`. Errs only when git couldn't be run or
 /// timed out; a git failure comes back as `ok: false` with its stderr. (The
 /// messages are shown as they are and matched in tests: `LC_ALL=C`.)
-async fn run(
+pub(crate) async fn run(
     place: &Place,
     dir: &str,
     args: &[&str],
     timeout: Duration,
     write: bool,
 ) -> Result<Output, String> {
-    let mut cmd = place.command(dir, args, write);
-    cmd.stdin(Stdio::null());
-    let child = cmd.spawn().map_err(|e| format!("Couldn't run git: {e}"))?;
-    let out = tokio::time::timeout(timeout, child.wait_with_output())
+    let out = run_raw(place, dir, args, timeout, write, &[], None).await?;
+    Ok(Output {
+        ok: out.ok,
+        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr: out.stderr,
+    })
+}
+
+/// Git's answer with stdout as bytes (a patch need not be UTF-8).
+pub(crate) struct RawOutput {
+    pub ok: bool,
+    pub stdout: Vec<u8>,
+    pub stderr: String,
+}
+
+/// [`run`] with extra `KEY=value` environment (`GIT_INDEX_FILE`, say) and,
+/// when given, `stdin` fed to git.
+pub(crate) async fn run_raw(
+    place: &Place,
+    dir: &str,
+    args: &[&str],
+    timeout: Duration,
+    write: bool,
+    env: &[String],
+    stdin: Option<&[u8]>,
+) -> Result<RawOutput, String> {
+    use tokio::io::AsyncWriteExt;
+    let mut cmd = place.command(dir, args, write, env);
+    cmd.stdin(if stdin.is_some() {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    });
+    let mut child = cmd.spawn().map_err(|e| format!("Couldn't run git: {e}"))?;
+    let pipe = child.stdin.take();
+    let feed = stdin.map(<[u8]>::to_vec);
+    let work = async move {
+        // Git may exit before reading it all (a bad patch); its own answer
+        // says why, so a broken pipe here is not the error.
+        let writer = match (pipe, feed) {
+            (Some(mut pipe), Some(bytes)) => Some(tokio::spawn(async move {
+                let _ = pipe.write_all(&bytes).await;
+                let _ = pipe.shutdown().await;
+            })),
+            _ => None,
+        };
+        let out = child.wait_with_output().await;
+        if let Some(writer) = writer {
+            let _ = writer.await;
+        }
+        out
+    };
+    let out = tokio::time::timeout(timeout, work)
         .await
         .map_err(|_| format!("git {} took too long and was stopped.", args[0]))?
         .map_err(|e| format!("git {}: {e}", args[0]))?;
-    Ok(Output {
+    Ok(RawOutput {
         ok: out.status.success(),
-        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+        stdout: out.stdout,
         stderr: String::from_utf8_lossy(&out.stderr).trim().to_string(),
     })
 }
 
 /// Run git and return its stdout, or its error text as the error.
-async fn run_ok(
+pub(crate) async fn run_ok(
     place: &Place,
     dir: &str,
     args: &[&str],
@@ -331,7 +387,10 @@ async fn run_ok(
 
 /// The worktree top and the shared `.git` folder for `dir`, or `None` when
 /// `dir` is not in a git repository.
-async fn locate(place: &Place, dir: &str) -> Result<Option<(String, String, String)>, String> {
+pub(crate) async fn locate(
+    place: &Place,
+    dir: &str,
+) -> Result<Option<(String, String, String)>, String> {
     let out = run(
         place,
         dir,
@@ -588,6 +647,22 @@ pub fn slug(title: &str) -> String {
     }
 }
 
+/// The `<repo>-worktrees` folder beside the main repository, for the
+/// checkout at `top` whose shared git folder is `common`. The main worktree
+/// owns `.git`; every worktree goes beside it, so a fork of a fork doesn't
+/// nest `a-worktrees/b-worktrees/…`.
+pub(crate) fn worktrees_dir(place: &Place, top: &str, common: &str) -> Result<String, String> {
+    let main = match place.file_name(common).as_deref() {
+        Some(".git") => place.parent(common).unwrap_or(top.to_string()),
+        _ => top.to_string(),
+    };
+    let repo_name = place.file_name(&main).unwrap_or_else(|| "repo".to_string());
+    let parent = place
+        .parent(&main)
+        .ok_or_else(|| format!("{main} has no parent folder for worktrees."))?;
+    Ok(place.join(&parent, &format!("{repo_name}-worktrees")))
+}
+
 /// Make a worktree for a fork of a session rooted at `source_root`: a new
 /// branch named from `title` (de-duplicated against branches and folders),
 /// at the source checkout's HEAD, in `<repo>-worktrees/<branch>` beside the
@@ -616,17 +691,7 @@ pub async fn add_fork_worktree_in(
     let (top, common, _) = locate(place, source_root)
         .await?
         .ok_or_else(|| format!("{source_root} is not in a git repository."))?;
-    // The main worktree owns `.git`; every worktree goes beside it, so a fork
-    // of a fork doesn't nest `a-worktrees/b-worktrees/…`.
-    let main = match place.file_name(&common).as_deref() {
-        Some(".git") => place.parent(&common).unwrap_or(top.clone()),
-        _ => top.clone(),
-    };
-    let repo_name = place.file_name(&main).unwrap_or_else(|| "repo".to_string());
-    let parent = place
-        .parent(&main)
-        .ok_or_else(|| format!("{main} has no parent folder for worktrees."))?;
-    let base_dir = place.join(&parent, &format!("{repo_name}-worktrees"));
+    let base_dir = worktrees_dir(place, &top, &common)?;
 
     let base = slug(title);
     let mut branch = base.clone();
@@ -731,7 +796,7 @@ pub async fn remove_worktree_in(place: &Place, path: &str) -> Result<WorktreeRem
 /// The `<repo>-worktrees` folder [`add_fork_worktree_in`] made a worktree
 /// in, once its last worktree is gone. Only a folder of that name, and only
 /// when empty: a folder holding anything else, or one the user named, stays.
-fn remove_empty_worktrees_dir(place: &Place, worktree: &str) {
+pub(crate) fn remove_empty_worktrees_dir(place: &Place, worktree: &str) {
     if let Some(parent) = place.parent(worktree) {
         if place
             .file_name(&parent)
