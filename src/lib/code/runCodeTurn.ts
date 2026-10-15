@@ -44,7 +44,11 @@ import { shellProject } from '#lib/skills/project.ts';
 import { agentsMdPromptSection } from '#lib/skills/agentsMd.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import { buildCodeSystemPrompt, type BuildCodePromptOpts } from '#lib/code/system-prompt.ts';
+import {
+	buildCodeSystemPrompt,
+	delegationHint,
+	type BuildCodePromptOpts
+} from '#lib/code/system-prompt.ts';
 import { ioRoot } from '#lib/code/paths.ts';
 import { sessionLabel } from '#lib/code/sessionList.ts';
 import { loadShellPlatformSupported, shellPlatformSupported } from '#lib/shell/platformSupport.ts';
@@ -205,7 +209,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 		const { system, skills } = await prepareSystem(o, backend);
 		let compaction = o.compaction ?? null;
 		const prompt = () =>
-			assemble(system, modelThread({ messages: o.thread, compaction }), o.notice ?? null);
+			assemble(system, modelThread({ messages: o.thread, compaction }), turnNotice(o));
 		messages = prompt();
 
 		await withInferenceSlot(
@@ -375,6 +379,17 @@ export type SystemPromptInput = Pick<
 	/** The turn is a subtask's, handed this task (`delegate`); see `BuildCodePromptOpts.subtask`. */
 	subtask?: BuildCodePromptOpts['subtask'];
 };
+
+/** What the model is told ahead of the opening message: the caller's notice, and a hint to delegate. */
+function turnNotice(o: CodeTurnOptions): string | null {
+	const opening = o.thread[o.thread.length - 1];
+	const hint =
+		opening?.role === 'user'
+			? delegationHint(messageText(opening.content), delegateModes(o))
+			: null;
+	const parts = [o.notice, hint].filter((p): p is string => !!p);
+	return parts.length ? parts.join('\n\n') : null;
+}
 
 /** The subtask modes this turn's `delegate` offers; none for a subtask or with Subtasks off. */
 function delegateModes(o: SystemPromptInput): 'read' | 'write' | undefined {

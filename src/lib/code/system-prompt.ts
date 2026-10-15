@@ -173,12 +173,38 @@ const DELEGATE_READ = `
 SUBTASKS:
 - delegate — hand a self-contained part of the request to a helper agent. It starts with an empty context in this folder and returns a short report (paths and line numbers, not file contents). It cannot see this conversation or ask the user anything.
 - mode read: it reads, searches and runs read-only commands. Use it for independent parts that need many files read: "find every caller of X and how they handle errors", "work out how the tests mock Y". Not for one file you could read yourself, or for work that depends on another part's answer.
+- When a request has several independent parts, delegate them in your FIRST response, before reading files yourself: the subtasks run at the same time and keep your own context small. Do the parts that depend on their answers after they report.
 - Write each task in full: what to find out or change, where to start, and what the report must contain.
 - Several delegate calls in one response run at the same time where the server allows it; at most 8 per turn.
 - background: true returns at once and the subtask runs on after your answer; its report arrives in a notification turn. Use it for work you don't need before answering; don't wait or poll for it.`;
 
 const DELEGATE_WRITE = `
 - mode write: it makes a change in its own copy of the project, made from this folder as it is now, and can build and test there. When it finishes, its changes are applied to this folder for you; the result lists the files, or the conflict and the patch if they clash with changes made meanwhile. Give writers changes that touch different files from each other and from what you are editing, and check the applied files afterwards.`;
+
+/** Numbered items ("1." or "2)") at the start of a line. */
+const NUMBERED_ITEM = /^\s*\d+[.)]\s+\S/gm;
+
+/** The fewest numbered asks in one message that earn a hint to delegate. */
+export const DELEGATION_HINT_MIN_ASKS = 3;
+
+/**
+ * A note for a turn whose message lists several numbered asks, pointing at
+ * `delegate`: models that ignore the SUBTASKS section of the prompt follow a
+ * note on the message itself. Null with fewer asks or without the tool.
+ */
+export function delegationHint(
+	text: string,
+	modes: BuildCodePromptOpts['delegate']
+): string | null {
+	if (!modes) return null;
+	const asks = text.match(NUMBERED_ITEM)?.length ?? 0;
+	if (asks < DELEGATION_HINT_MIN_ASKS) return null;
+	const write =
+		modes === 'write'
+			? ' Changes that touch different files can go to writing subtasks (mode write).'
+			: '';
+	return `This message lists ${asks} separate asks. Where they are independent of each other, hand each to a subtask with delegate in one response, so they run at the same time, instead of working through them yourself one after another.${write}`;
+}
 
 function delegateSection(modes: BuildCodePromptOpts['delegate']): string {
 	if (!modes) return '';

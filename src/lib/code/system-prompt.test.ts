@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildCodeSystemPrompt, isMacOS } from '#lib/code/system-prompt.ts';
+import { buildCodeSystemPrompt, delegationHint, isMacOS } from '#lib/code/system-prompt.ts';
 
 const tab = (over: Partial<Parameters<typeof buildCodeSystemPrompt>[0]> = {}) =>
 	String(buildCodeSystemPrompt({ root: '/proj', ...over }).content);
@@ -151,5 +151,27 @@ describe('Code tab prompt with writing subtasks', () => {
 describe('Code tab prompt with background subtasks', () => {
 	it('tells the agent how background subtasks report', () => {
 		expect(tab({ delegate: 'read' })).toContain('background: true returns at once');
+	});
+});
+
+describe('delegationHint', () => {
+	const asks = (n: number) =>
+		Array.from({ length: n }, (_, i) => `${i + 1}. ask ${i + 1}`).join('\n');
+
+	it('needs three numbered asks and the tool', () => {
+		expect(delegationHint(asks(2), 'read')).toBeNull();
+		expect(delegationHint(asks(3), undefined)).toBeNull();
+		expect(delegationHint(`Steps:\n${asks(4)}`, 'read')).toContain('lists 4 separate asks');
+		expect(delegationHint('1) one\n2) two\n3) three', 'read')).toContain('lists 3');
+		expect(delegationHint('- a\n- b\n- c\n- d', 'read')).toBeNull();
+	});
+
+	it('mentions writing subtasks only when they are offered', () => {
+		expect(delegationHint(asks(3), 'write')).toContain('mode write');
+		expect(delegationHint(asks(3), 'read')).not.toContain('mode write');
+	});
+
+	it('is matched by a firmer line in the prompt', () => {
+		expect(tab({ delegate: 'read' })).toContain('delegate them in your FIRST response');
 	});
 });
