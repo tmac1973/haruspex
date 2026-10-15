@@ -127,48 +127,94 @@ impl std::fmt::Display for ImageEngineError {
 /// Dev keeps it in the source tree; a bundle ships it under `resources/`.
 /// Checked for existence rather than guessed at, so a missing bundle is a
 /// named error instead of a spawn that fails obscurely.
+///
+/// The source tree comes first. An unbundled build (`tauri build
+/// --no-bundle`, the e2e build) on a machine with the package installed gets
+/// a `resource_dir` of `/usr/lib/Haruspex`, and taking the installed
+/// libraries there would pair the tree's sd-server with another version's
+/// ggml. A packaged build has no `../../binaries` beside its executable, so
+/// the order costs it nothing.
 pub fn sd_libs_dir(app: &AppHandle) -> Option<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Ok(resource_dir) = app.path().resource_dir() {
-        candidates.push(resource_dir.join("binaries").join(LIBS_SUBDIR));
-    }
     // Dev: the binary runs from src-tauri/target/debug.
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             candidates.push(dir.join("..").join("..").join("binaries").join(LIBS_SUBDIR));
         }
     }
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        candidates.push(resource_dir.join("binaries").join(LIBS_SUBDIR));
+    }
     candidates.into_iter().find(|p| p.is_dir())
 }
 
-/// Place the sidecar beside its libraries and return the path to run.
+/// Where the engine is assembled before it runs: a directory of our own.
+fn stage_dir(app: &AppHandle) -> Result<PathBuf, ImageEngineError> {
+    app.path()
+        .app_local_data_dir()
+        .map(|d| d.join("sd-engine"))
+        .map_err(|e| ImageEngineError::Spawn(format!("no data directory to run from: {e}")))
+}
+
+/// Assemble the sidecar and its libraries in `dir` and return the path to run.
 ///
-/// A copy, not a symlink: Windows needs privileges for symlinks, and the
-/// binary is ~2 MB against ~100 MB of libraries, so copying the small half is
-/// the cheap direction. Re-copied only when absent or a different size, so
-/// repeated starts do not touch the disk.
-fn colocate(sidecar: &Path, libs: &Path) -> Result<PathBuf, ImageEngineError> {
+/// ggml finds its backends by scanning the directory of `/proc/self/exe`, so
+/// the binary must sit beside the libraries — but the directory that ships
+/// them is not ours to write: root-owned in a deb or rpm, read-only in an
+/// AppImage, inside the signed bundle on macOS, under Program Files from the
+/// MSI. So `dir` gets a copy of the ~2 MB binary (a symlinked executable
+/// would resolve `/proc/self/exe`, and `$ORIGIN`, back to where it came from)
+/// and a link to each of the ~100 MB of libraries, through
+/// [`crate::runtimes::place_shim`]. ggml's scan follows the links.
+///
+/// Idempotent: the binary is re-copied only when absent or a different size,
+/// links already pointing at the right file are left alone, and anything an
+/// older version left behind is removed, so a stale backend cannot be picked
+/// up beside new libraries.
+fn stage(sidecar: &Path, libs: &Path, dir: &Path) -> Result<PathBuf, ImageEngineError> {
+    let fail = |what: &str, path: &Path, e: std::io::Error| {
+        ImageEngineError::Spawn(format!("could not {what} {}: {e}", path.display()))
+    };
     let name = sidecar
         .file_name()
         .ok_or_else(|| ImageEngineError::SidecarMissing(sidecar.display().to_string()))?;
-    let dest = libs.join(name);
+    std::fs::create_dir_all(dir).map_err(|e| fail("create", dir, e))?;
 
+    let mut wanted = vec![name.to_os_string()];
+    for entry in std::fs::read_dir(libs).map_err(|e| fail("read", libs, e))? {
+        let entry = entry.map_err(|e| fail("read", libs, e))?;
+        let file = entry.file_name();
+        if file == name {
+            continue;
+        }
+        let link = dir.join(&file);
+        crate::runtimes::place_shim(&entry.path(), &link)
+            .map_err(|e| fail("link a library at", &link, e))?;
+        wanted.push(file);
+    }
+    for entry in std::fs::read_dir(dir).map_err(|e| fail("read", dir, e))? {
+        let entry = entry.map_err(|e| fail("read", dir, e))?;
+        if !wanted.contains(&entry.file_name()) {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+
+    let dest = dir.join(name);
     let same = match (std::fs::metadata(sidecar), std::fs::metadata(&dest)) {
         (Ok(a), Ok(b)) => a.len() == b.len(),
         _ => false,
     };
     if !same {
-        std::fs::copy(sidecar, &dest).map_err(|e| {
-            ImageEngineError::Spawn(format!(
-                "could not place the sidecar beside its libraries at {}: {e}",
-                dest.display()
-            ))
-        })?;
+        // Through a temporary name, so a half-written binary is never the
+        // one that runs.
+        let tmp = dir.join(".sd-server.partial");
+        std::fs::copy(sidecar, &tmp).map_err(|e| fail("copy the sidecar to", &tmp, e))?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755));
+            let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755));
         }
+        std::fs::rename(&tmp, &dest).map_err(|e| fail("place the sidecar at", &dest, e))?;
     }
     Ok(dest)
 }
@@ -252,7 +298,8 @@ impl ImageEngine {
         // the only thing that actually decides whether the engine can run.
         let sidecar_path = resolve_sidecar_binary(app)
             .ok_or_else(|| ImageEngineError::SidecarMissing("sd-server".into()))?;
-        let exe = colocate(&sidecar_path, &libs)?;
+        let staged = stage_dir(app)?;
+        let exe = stage(&sidecar_path, &libs, &staged)?;
 
         *self.status.lock().await = SidecarStatus::Starting;
         *self.model.lock().await = Some(want.to_string());
@@ -268,7 +315,7 @@ impl ImageEngine {
             ])
             .collect();
         let decided = self.vk_devices.lock().await.clone();
-        self.spawn(app, &exe, &libs, &args, decided.clone().flatten())
+        self.spawn(app, &exe, &staged, &args, decided.clone().flatten())
             .await?;
         if decided.is_none() {
             // First start on this machine: read the device list ggml prints
@@ -297,7 +344,7 @@ impl ImageEngine {
                 }
                 crate::sidecar_util::clear_logs(&self.log).await;
                 *self.status.lock().await = SidecarStatus::Starting;
-                self.spawn(app, &exe, &libs, &args, Some(ids)).await?;
+                self.spawn(app, &exe, &staged, &args, Some(ids)).await?;
             }
         }
 
@@ -344,9 +391,10 @@ impl ImageEngine {
         args: &[String],
         vk: Option<String>,
     ) -> Result<(), ImageEngineError> {
-        // sd-libs only, not `with_library_paths`. The exe directory carries
-        // llama.cpp's ggml under the same sonames at a different ABI; putting
-        // it on the path resolves sd-server against the wrong library.
+        // The staged libraries only, not `with_library_paths`. The app's exe
+        // directory carries llama.cpp's ggml under the same sonames at a
+        // different ABI; putting it on the path resolves sd-server against
+        // the wrong library.
         let (lib_var, lib_path) = library_path_env(vec![libs.to_string_lossy().to_string()]);
 
         let mut cmd = app
@@ -588,31 +636,93 @@ mod tests {
             .contains("no devices"));
     }
 
+    /// A shipped layout: the sidecar in one place, its libraries in another.
+    fn shipped(tag: &str) -> (crate::test_util::TestDir, PathBuf, PathBuf, PathBuf) {
+        let tmp = crate::test_util::temp_dir(tag);
+        let libs = tmp.join("sd-libs");
+        std::fs::create_dir_all(&libs).unwrap();
+        std::fs::write(libs.join("libggml-vulkan.so"), b"vulkan").unwrap();
+        std::fs::write(libs.join("libggml-cpu-zen4.so"), b"cpu").unwrap();
+        let src = tmp.join("haruspex-sd-server");
+        std::fs::write(&src, b"binary").unwrap();
+        let dir = tmp.join("sd-engine");
+        (tmp, src, libs, dir)
+    }
+
     #[test]
-    fn colocation_copies_the_binary_beside_the_libraries() {
+    fn staging_puts_the_binary_beside_its_libraries() {
         // ggml scans the directory containing /proc/self/exe for backends, so
         // a binary that is not beside its libraries finds none and the engine
         // reports "No devices found!" rather than starting.
-        let tmp = crate::test_util::temp_dir("colocate");
-        let libs = tmp.join("sd-libs");
-        std::fs::create_dir_all(&libs).unwrap();
-        let src = tmp.join("sd-server");
-        std::fs::write(&src, b"binary").unwrap();
+        let (_tmp, src, libs, dir) = shipped("stage");
+        let exe = stage(&src, &libs, &dir).unwrap();
+        assert_eq!(exe, dir.join("haruspex-sd-server"));
+        assert_eq!(std::fs::read(&exe).unwrap(), b"binary");
+        assert_eq!(
+            std::fs::read(dir.join("libggml-vulkan.so")).unwrap(),
+            b"vulkan"
+        );
+        assert_eq!(
+            std::fs::read(dir.join("libggml-cpu-zen4.so")).unwrap(),
+            b"cpu"
+        );
+        // The executable is a copy, never a link: a link would resolve
+        // /proc/self/exe back to the directory the libraries are not in.
+        assert!(!std::fs::symlink_metadata(&exe).unwrap().is_symlink());
+    }
 
-        let placed = colocate(&src, &libs).unwrap();
-        assert_eq!(placed.parent().unwrap(), libs);
-        assert_eq!(std::fs::read(&placed).unwrap(), b"binary");
+    #[cfg(unix)]
+    #[test]
+    fn staging_never_writes_where_the_package_put_the_libraries() {
+        // The deb/rpm installs sd-libs root-owned under /usr/lib, an AppImage
+        // mounts it read-only: copying the binary in there was the bug.
+        use std::os::unix::fs::PermissionsExt;
+        let (_tmp, src, libs, dir) = shipped("stage_ro");
+        std::fs::set_permissions(&libs, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let staged = stage(&src, &libs, &dir);
+        std::fs::set_permissions(&libs, std::fs::Permissions::from_mode(0o755)).unwrap();
+        staged.unwrap();
+        let shipped: Vec<_> = std::fs::read_dir(&libs).unwrap().collect();
+        assert_eq!(
+            shipped.len(),
+            2,
+            "nothing was added to the shipped libraries"
+        );
+    }
 
-        // A second call with the same bytes must not rewrite it.
-        let before = std::fs::metadata(&placed).unwrap().len();
-        let again = colocate(&src, &libs).unwrap();
-        assert_eq!(std::fs::metadata(&again).unwrap().len(), before);
+    #[test]
+    fn staging_again_follows_an_upgrade_and_drops_what_it_removed() {
+        let (_tmp, src, libs, dir) = shipped("stage_again");
+        stage(&src, &libs, &dir).unwrap();
 
-        // Different bytes replace it: a version bump must not keep running
-        // the old binary against new libraries.
+        // Same bytes: nothing to do, and nothing breaks.
+        let exe = stage(&src, &libs, &dir).unwrap();
+        assert_eq!(std::fs::read(&exe).unwrap(), b"binary");
+
+        // An upgrade: a new binary, one backend gone, one added. The old
+        // backend must not linger where ggml's scan would load it.
         std::fs::write(&src, b"a different binary").unwrap();
-        let updated = colocate(&src, &libs).unwrap();
-        assert_eq!(std::fs::read(&updated).unwrap(), b"a different binary");
+        std::fs::remove_file(libs.join("libggml-cpu-zen4.so")).unwrap();
+        std::fs::write(libs.join("libggml-cpu-haswell.so"), b"cpu2").unwrap();
+        let exe = stage(&src, &libs, &dir).unwrap();
+        assert_eq!(std::fs::read(&exe).unwrap(), b"a different binary");
+        assert!(!dir.join("libggml-cpu-zen4.so").exists());
+        assert!(std::fs::symlink_metadata(dir.join("libggml-cpu-zen4.so")).is_err());
+        assert_eq!(
+            std::fs::read(dir.join("libggml-cpu-haswell.so")).unwrap(),
+            b"cpu2"
+        );
+    }
+
+    #[test]
+    fn a_binary_left_inside_the_libraries_is_not_linked_over_the_copy() {
+        // Older builds copied sd-server into a dev tree's sd-libs, so one may
+        // still be there; the staged executable must be the real copy.
+        let (_tmp, src, libs, dir) = shipped("stage_leftover");
+        // Same size as the real one, so only the name keeps it out.
+        std::fs::write(libs.join("haruspex-sd-server"), b"binarx").unwrap();
+        let exe = stage(&src, &libs, &dir).unwrap();
+        assert_eq!(std::fs::read(&exe).unwrap(), b"binary");
     }
 
     #[tokio::test]
