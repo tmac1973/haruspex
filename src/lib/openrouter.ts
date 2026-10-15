@@ -15,9 +15,8 @@
  *     limits). Requires the Bearer key.
  *
  * Both are plain `fetch()` from the frontend — OpenRouter is CORS-open and
- * there's no benefit to proxying through Rust. The catalog is cached in
- * `InferenceBackendConfig.openrouterCatalog` (see `stores/settings.ts`) with
- * a 24 h TTL; the form re-fetches on demand.
+ * there's no benefit to proxying through Rust. The catalog is cached by
+ * `stores/openrouterCatalog.svelte.ts` with a 24 h TTL, apart from settings.
  */
 
 import { readErrorText } from '#lib/utils/http.ts';
