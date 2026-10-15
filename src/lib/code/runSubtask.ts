@@ -30,6 +30,42 @@ import type { CodeWriteGuard, SlotLender } from '#lib/agent/tools/types.ts';
 
 /** The most model rounds a subtask takes before it has to answer. */
 export const SUBTASK_MAX_ROUNDS = 25;
+/** The rounds a subtask gets after being told it stopped short. */
+export const SUBTASK_NUDGE_ROUNDS = 15;
+
+/** A final answer shorter than this is no report. */
+const MIN_REPORT_CHARS = 20;
+
+const WRITE_TOOLS = new Set(['fs_write_text', 'fs_edit_text']);
+
+/** Whether a step changed a file: a write or edit that didn't come back an error. */
+function wroteSomething(steps: SearchStep[]): boolean {
+	return steps.some(
+		(s) =>
+			WRITE_TOOLS.has(s.toolName) &&
+			s.status === 'done' &&
+			!(s.result ?? '').trimStart().startsWith('{"error"')
+	);
+}
+
+/**
+ * What to tell a child that ended before finishing, or null when it
+ * finished. A writer that changed no files usually announced the change and
+ * stopped ("Let me write the module…"); any child can end with no report.
+ */
+export function stoppedShort(
+	mode: 'read' | 'write',
+	steps: SearchStep[],
+	finalText: string
+): string | null {
+	if (mode === 'write' && !wroteSomething(steps)) {
+		return "You stopped before doing the task: you haven't changed any files yet. Make the change now with fs_write_text / fs_edit_text — don't describe it, do it — run the project's tests for what you changed, then give your report. If the task truly needs no change, say why in the report.";
+	}
+	if (finalText.trim().length < MIN_REPORT_CHARS) {
+		return 'Your last reply had no report. Give it now: what you found or changed, with file paths and line numbers, and anything you could not settle.';
+	}
+	return null;
+}
 
 export interface SubtaskOptions {
 	/** The parent's Code session: owns approvals and anything it runs. */
@@ -149,33 +185,47 @@ export async function runSubtask(o: SubtaskOptions): Promise<SubtaskResult> {
 			backend
 		);
 		const messages = assemble(system, [{ role: 'user', content: o.task }], null);
-		const out = await run(
-			() =>
-				runTurnCore(
-					{
-						...childLoop(o, backend),
-						messages,
-						skills,
-						onToolStart: (call) => {
-							setSteps([...steps, newRunningStep(call)]);
-							o.onToolStart?.(call);
-						},
-						onToolProgress: (call, status) => {
-							setSteps(markStepProgress(steps, call, status));
-							o.onToolProgress?.(call, status);
-						},
-						onToolEnd: (call, result) => {
-							setSteps(markStepDone(steps, call, result));
-							o.onToolEnd?.(call, result);
-						}
+		const pass = (maxIterations: number) =>
+			runTurnCore(
+				{
+					...childLoop(o, backend),
+					maxIterations,
+					messages,
+					skills,
+					onToolStart: (call) => {
+						setSteps([...steps, newRunningStep(call)]);
+						o.onToolStart?.(call);
 					},
-					{
-						finalize: (raw) => finalizeStreamText(raw).content,
-						onAssistantDelta: (text) => {
-							streamed = text;
-						}
+					onToolProgress: (call, status) => {
+						setSteps(markStepProgress(steps, call, status));
+						o.onToolProgress?.(call, status);
+					},
+					onToolEnd: (call, result) => {
+						setSteps(markStepDone(steps, call, result));
+						o.onToolEnd?.(call, result);
 					}
-				),
+				},
+				{
+					finalize: (raw) => finalizeStreamText(raw).content,
+					onAssistantDelta: (text) => {
+						streamed = text;
+					}
+				}
+			);
+		const out = await run(
+			async () => {
+				const first = await pass(SUBTASK_MAX_ROUNDS);
+				// One more go for a child that stopped short: it said what it
+				// would do instead of doing it, or ended without a report.
+				const nudge = o.signal?.aborted ? null : stoppedShort(o.mode, steps, first.finalText);
+				if (!nudge) return first;
+				messages.push(
+					{ role: 'assistant', content: first.finalText },
+					{ role: 'user', content: nudge }
+				);
+				streamed = '';
+				return pass(SUBTASK_NUDGE_ROUNDS);
+			},
 			{ onAdmitted: o.onAdmitted, signal: o.signal }
 		);
 		if (o.signal?.aborted) return stopped(steps, streamed);

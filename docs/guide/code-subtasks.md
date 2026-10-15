@@ -17,7 +17,7 @@ A read-only subtask searches, reads files and runs commands that only read (`ls`
 
 With Settings → Code → Subtasks at **Read and write**, the agent can also hand a change to a writing subtask. It works in its own copy of the project: a git worktree made from the folder as it is right then, uncommitted changes included, beside the repository in `<repo>-worktrees/.subtasks/`. Ignored dependency folders (`node_modules`, `.venv`, `venv`, `vendor`) are shared with it rather than copied, so it can build and test without installing. Its commands follow the session's approval rules: **Allow for this session** and **Auto-approve commands** cover it, and otherwise **Run this command?** names the subtask and its card says it is waiting for you.
 
-When it finishes, its changes are applied to the folder: as they are, or merged when the folder changed meanwhile. If they clash with those changes nothing is applied, the card says **Didn't apply**, and the agent gets the patch to make the change itself; that copy stays until you delete the session. Changes from a subtask you stop are dropped.
+When it finishes, its changes are applied to the folder: as they are, or merged when the folder changed meanwhile. If they clash with those changes nothing is applied, the card says **Didn't apply**, and the agent gets the patch to make the change itself; that copy stays until you delete the session. A writing subtask that ends without changing anything, or any subtask that ends without a report, is told once to finish before it hands back. Changes from a subtask you stop are dropped.
 
 Writing subtasks need a git repository, and aren't offered in a read-only session.
 
