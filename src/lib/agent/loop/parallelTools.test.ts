@@ -156,3 +156,16 @@ describe('runToolBatch', () => {
 		expect(started).toEqual(['a']);
 	});
 });
+
+describe('planToolBatches with subtasks', () => {
+	it('puts consecutive delegate calls in one batch, beside reads', () => {
+		const batches = planToolBatches([
+			call('delegate', 'd1'),
+			call('delegate', 'd2'),
+			call('fs_read_text', 'r1'),
+			call('run_command', 'x'),
+			call('delegate', 'd3')
+		]);
+		expect(batches.map((b) => b.map((c) => c.id))).toEqual([['d1', 'd2', 'r1'], ['x'], ['d3']]);
+	});
+});

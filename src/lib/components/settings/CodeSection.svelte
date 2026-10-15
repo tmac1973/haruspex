@@ -14,6 +14,8 @@
 	let codeMaxIterations = $state(getSettings().codeMaxIterations);
 	let codeAutoApprove = $state(getSettings().codeAutoApprove);
 	let codeBgLogCapMb = $state(getSettings().codeBgLogCapMb);
+	// 'write' is not offered yet; a saved one shows as Read only.
+	let codeSubtasks = $state<'off' | 'read'>(getSettings().codeSubtasks === 'off' ? 'off' : 'read');
 	let codeStorePowershell = $state(getSettings().codeStorePowershell);
 	/** Windows: what the agent's PowerShell is; the Store option shows only where it applies. */
 	let powershell = $state<AgentPowershell | null>(null);
@@ -36,6 +38,9 @@
 	async function persistStorePowershell() {
 		updateSettings({ codeStorePowershell });
 		powershell = await agentPowershell();
+	}
+	function persistSubtasks() {
+		updateSettings({ codeSubtasks });
 	}
 	function persistLogCap() {
 		codeBgLogCapMb = clampInt(codeBgLogCapMb, 1, 1024);
@@ -81,6 +86,20 @@
 		<span>steps</span>
 	</label>
 	<p class="help">How many steps the agent takes before it has to stop and report.</p>
+</section>
+
+<section class="settings-section">
+	<h2>Subtasks</h2>
+	<label
+		class="row"
+		title="The agent can hand a self-contained part of a task to a helper agent that starts with a fresh context and reports back. Several run at once when Settings → Inference → Parallel streams allows it. Read-only helpers read and search; they never write or ask you anything."
+	>
+		<select bind:value={codeSubtasks} onchange={persistSubtasks}>
+			<option value="off">Off</option>
+			<option value="read">Read only</option>
+		</select>
+	</label>
+	<p class="help">Let the agent hand parts of a task to helper agents.</p>
 </section>
 
 <section class="settings-section">

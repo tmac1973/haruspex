@@ -821,7 +821,14 @@ describe('Code-mode tool filtering', () => {
 			.map((s) => s.function.name)
 			.sort();
 		expect(names).toEqual(
-			[...CODE_TOOLS, 'command_output', 'command_stop', 'open_in_shell', 'open_in_editor'].sort()
+			[
+				...CODE_TOOLS,
+				'command_output',
+				'command_stop',
+				'open_in_shell',
+				'open_in_editor',
+				'delegate'
+			].sort()
 		);
 	});
 
@@ -1239,5 +1246,37 @@ describe('one writer per folder', () => {
 			{ ...codeCtx, codeSessionId: 's1', codeWriteGuard: g }
 		);
 		expect(g.changed).toHaveBeenCalledWith([]);
+	});
+});
+
+describe('run_command in a read-only subtask', () => {
+	const child = {
+		...codeCtx,
+		codeSessionId: 's1',
+		codeReadOnly: true,
+		interactive: true,
+		subtask: { depth: 1 as const }
+	};
+
+	it('runs a command that only reads, without asking', async () => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		await executeTool('run_command', { command: 'git log --oneline -5' }, child);
+		expect(mocks.askCommandApproval).not.toHaveBeenCalled();
+		expect(mocks.invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
+	});
+
+	it('refuses any other command, without asking', async () => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		const out = await executeTool('run_command', { command: 'npm install' }, child);
+		expect(out.result).toContain('read-only subtask');
+		expect(mocks.askCommandApproval).not.toHaveBeenCalled();
+		expect(mocks.invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
+	});
+
+	it('leaves a read-only session asking about reads as before', async () => {
+		mocks.askCommandApproval.mockResolvedValue('allow_once');
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		await executeTool('run_command', { command: 'git log' }, { ...child, subtask: undefined });
+		expect(mocks.askCommandApproval).toHaveBeenCalled();
 	});
 });

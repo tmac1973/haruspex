@@ -215,6 +215,16 @@ export interface ToolContext {
 	 * first; successful writes and edits report the files they changed.
 	 */
 	codeWriteGuard?: CodeWriteGuard;
+	/** The Code session's reasoning effort, for the subtasks it starts. Null follows Settings. */
+	codeEffort?: string | null;
+	/**
+	 * Set on the tools of a subtask (`delegate`'s child agent): it may not
+	 * start subtasks of its own, ask the user anything, or leave anything
+	 * running.
+	 */
+	subtask?: { depth: 1 };
+	/** How many subtasks this turn has started, shared by its calls (`delegate`'s cap). */
+	subtasksStartedThisTurn?: { count: number };
 	/**
 	 * Optional progress channel for long-running tools. The agent loop
 	 * wires this to the currently-running tool card so a tool can surface

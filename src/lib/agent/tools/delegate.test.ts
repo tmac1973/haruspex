@@ -1,0 +1,155 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { makeToolContext } from '#lib/testing/toolContext.ts';
+import type { SubtaskOptions } from '#lib/code/runSubtask.ts';
+
+const mocks = vi.hoisted(() => ({
+	runSubtask: vi.fn(),
+	settings: { codeSubtasks: 'read' as 'off' | 'read' | 'write' }
+}));
+
+vi.mock('#lib/code/runSubtask.ts', () => ({ runSubtask: mocks.runSubtask }));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
+	const real = await importOriginal<typeof import('#lib/stores/settings.ts')>();
+	return { ...real, getSettings: () => ({ ...real.getSettings(), ...mocks.settings }) };
+});
+
+import { getToolSchemas } from '#lib/agent/tools/index.ts';
+import { executeDelegate, subtaskLabel, SUBTASKS_PER_TURN } from '#lib/agent/tools/delegate.ts';
+
+const ctx = (over = {}) =>
+	makeToolContext({
+		workingDir: '/proj',
+		codeMode: true,
+		codeSessionId: 's1',
+		codeEffort: 'low',
+		wslDistro: null,
+		requester: () => 'Code · proj',
+		subtasksStartedThisTurn: { count: 0 },
+		...over
+	});
+
+const lastOptions = () => mocks.runSubtask.mock.calls.at(-1)![0] as SubtaskOptions;
+
+beforeEach(() => {
+	mocks.runSubtask.mockReset().mockResolvedValue({
+		outcome: 'done',
+		report: 'foo is called from bar.ts:3',
+		steps: [{ id: 'c1' }, { id: 'c2' }],
+		stopReason: 'complete'
+	});
+	mocks.settings.codeSubtasks = 'read';
+});
+
+const names = (opts: Parameters<typeof getToolSchemas>[0]) =>
+	getToolSchemas(opts).map((s) => s.function.name);
+
+describe('delegate is offered', () => {
+	it('in the Code tab only', () => {
+		expect(names({ hasWorkingDir: true, codeMode: true })).toContain('delegate');
+		expect(names({ hasWorkingDir: true, codeMode: true, shellMode: true })).not.toContain(
+			'delegate'
+		);
+		expect(names({ hasWorkingDir: true })).not.toContain('delegate');
+	});
+
+	it('not to a subtask, which also loses whatever needs the user', () => {
+		const child = names({ hasWorkingDir: true, codeMode: true, interactive: true, subtask: true });
+		for (const name of [
+			'delegate',
+			'command_output',
+			'command_stop',
+			'open_in_shell',
+			'open_in_editor'
+		]) {
+			expect(child).not.toContain(name);
+		}
+		expect(child).toContain('code_grep');
+		expect(child).toContain('run_command');
+	});
+
+	it('not when Settings → Code → Subtasks is off', () => {
+		mocks.settings.codeSubtasks = 'off';
+		expect(names({ hasWorkingDir: true, codeMode: true })).not.toContain('delegate');
+	});
+});
+
+describe('delegate', () => {
+	it('runs the task as a read-only subtask of the session and returns its report', async () => {
+		const runInSlot = vi.fn();
+		const signal = new AbortController().signal;
+		const out = await executeDelegate(
+			{ task: ' Find the callers of foo. ', mode: 'read', label: 'foo callers' },
+			ctx({ runInSlot, signal })
+		);
+		expect(out.result).toBe(
+			'Subtask "foo callers" (done, 2 tool calls):\n\nfoo is called from bar.ts:3'
+		);
+		expect(lastOptions()).toMatchObject({
+			sessionId: 's1',
+			root: '/proj',
+			task: 'Find the callers of foo.',
+			label: 'foo callers',
+			mode: 'read',
+			effort: 'low',
+			runInSlot,
+			signal
+		});
+		expect(lastOptions().requester?.()).toBe('Code · proj · subtask "foo callers"');
+	});
+
+	it('refuses inside a subtask', async () => {
+		const out = await executeDelegate({ task: 't', mode: 'read' }, ctx({ subtask: { depth: 1 } }));
+		expect(out.result).toContain('cannot start subtasks');
+		expect(mocks.runSubtask).not.toHaveBeenCalled();
+	});
+
+	it('refuses when Subtasks are off, naming the setting', async () => {
+		mocks.settings.codeSubtasks = 'off';
+		const out = await executeDelegate({ task: 't', mode: 'read' }, ctx());
+		expect(out.result).toContain('Settings → Code → Subtasks');
+		expect(mocks.runSubtask).not.toHaveBeenCalled();
+	});
+
+	it(`refuses the ${SUBTASKS_PER_TURN + 1}th of one turn`, async () => {
+		const turn = ctx();
+		for (let i = 0; i < SUBTASKS_PER_TURN; i++) {
+			await executeDelegate({ task: `t${i}`, mode: 'read' }, turn);
+		}
+		const out = await executeDelegate({ task: 'one more', mode: 'read' }, turn);
+		expect(out.result).toContain(`already started ${SUBTASKS_PER_TURN} subtasks`);
+		expect(mocks.runSubtask).toHaveBeenCalledTimes(SUBTASKS_PER_TURN);
+	});
+
+	it('says when a subtask was stopped or failed', async () => {
+		mocks.runSubtask.mockResolvedValueOnce({
+			outcome: 'stopped',
+			report: 'half',
+			steps: [{ id: 'c1' }],
+			stopReason: null
+		});
+		const stopped = await executeDelegate({ task: 't', mode: 'read', label: 'x' }, ctx());
+		expect(stopped.result).toContain('Subtask "x" (stopped, 1 tool call): stopped');
+		expect(stopped.result).toContain('half');
+		mocks.runSubtask.mockResolvedValueOnce({
+			outcome: 'failed',
+			report: '',
+			error: 'server went away',
+			steps: [],
+			stopReason: null
+		});
+		const failed = await executeDelegate({ task: 't', mode: 'read', label: 'x' }, ctx());
+		expect(JSON.parse(failed.result).error).toContain('server went away');
+	});
+
+	it('wants a task, and only mode read', async () => {
+		expect((await executeDelegate({ mode: 'read' }, ctx())).result).toContain('requires a task');
+		const write = await executeDelegate({ task: 't', mode: 'write' }, ctx());
+		expect(JSON.parse(write.result).error).toContain('Only mode "read"');
+	});
+
+	it('labels a call by its label, else the start of its task', () => {
+		expect(subtaskLabel({ label: ' Callers ', task: 'x' })).toBe('Callers');
+		expect(subtaskLabel({ task: 'a\n b' })).toBe('a b');
+		expect(subtaskLabel({ task: 'y'.repeat(80) })).toBe(`${'y'.repeat(59)}…`);
+	});
+});

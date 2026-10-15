@@ -5,7 +5,7 @@ description: What each Settings section holds, its most-used options with their 
 
 # Settings reference
 
-Settings has fifteen sections, listed down the left side. Each one below gives the main options, their defaults and the page with more detail.
+Settings has fifteen sections, down the left side. Each one below gives the main options, their defaults and the page with more detail.
 
 ## Open Settings
 
@@ -29,7 +29,7 @@ Where the model runs, which model is used and how big the context is.
 - **Models**: download and switch local models.
 - **Context Size**: 32K by default (8K to 256K).
 - **Let models use system RAM**: off.
-- **Parallel streams**: 1 (also 2 or 4). More lets a background job run beside chat. Each stream gets the full context size, so it needs more memory (larger sizes may grey out), and replies slow while two run.
+- **Parallel streams**: 1 (also 2 or 4). More lets a background job or Code subtasks run beside chat. Each stream needs its own memory (larger sizes may grey out), and replies slow while two run.
 - **Extra llama-server arguments**: empty. Added after Haruspex's own arguments, so they override them. Takes effect when the server restarts.
 - **Server**: status, port and Restart Server; **Run Setup Wizard**.
 
@@ -132,10 +132,11 @@ See the `shell` page.
 
 ## Code
 
-How the coding agent runs commands, in the Code tab and in the Shell assistant with Full access.
+How the coding agent works, in the Code tab and the Shell's Full access.
 
 - **run_command timeout**: 30 seconds.
 - **Max steps per task**: 40.
+- **Subtasks**: Read only, or Off. See the `code-subtasks` page.
 - **Background log size**: 5 MB per process.
 - **Auto-approve commands**: off.
 

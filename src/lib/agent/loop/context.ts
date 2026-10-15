@@ -121,6 +121,9 @@ export interface LoopContext {
 	codeReadOnly: boolean;
 	codeRemote: boolean;
 	codeWriteGuard?: ToolContext['codeWriteGuard'];
+	codeEffort: string | null;
+	subtask?: ToolContext['subtask'];
+	subtasksStartedThisTurn: { count: number };
 	wslDistro: string | null;
 	expectsFileOutput: boolean;
 	pendingImages: PendingImage[];
@@ -227,6 +230,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 			codeReadOnly: options.codeReadOnly ?? false,
 			codeRemote: options.codeRemote ?? false,
 			interactive: options.interactive ?? false,
+			subtask: options.subtask !== undefined,
 			// The forced final tool is always offered. A stage once listed its
 			// read tools but not its submit tool: the model, correctly, never
 			// called a tool it was not given, and the forced call then named a
@@ -269,6 +273,9 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		codeReadOnly: options.codeReadOnly ?? false,
 		codeRemote: options.codeRemote ?? false,
 		codeWriteGuard: options.codeWriteGuard,
+		codeEffort: options.codeEffort ?? null,
+		subtask: options.subtask,
+		subtasksStartedThisTurn: { count: 0 },
 		wslDistro: options.wslDistro ?? null,
 		expectsFileOutput,
 		pendingImages: [],

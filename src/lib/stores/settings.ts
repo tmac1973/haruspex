@@ -749,6 +749,11 @@ export interface AppSettings {
 	 */
 	codeBgLogCapMb: number;
 	/**
+	 * Code tab: what the agent may hand to a subtask (`delegate`'s child
+	 * agent). 'off' withdraws the tool; 'read' offers read-only subtasks.
+	 */
+	codeSubtasks: 'off' | 'read' | 'write';
+	/**
 	 * Windows: run the agent's commands in a Windows folder with the
 	 * Microsoft Store's PowerShell 7 when it is the only PowerShell 7,
 	 * rather than Windows PowerShell 5.1. Windows starts it outside the
@@ -922,6 +927,7 @@ const defaults: AppSettings = {
 	commandMemoryLimitPercent: 50,
 	codeMaxIterations: 40,
 	codeBgLogCapMb: 5,
+	codeSubtasks: 'read',
 	codeStorePowershell: false,
 	codeLastRoot: '',
 	codeLastWslDistro: '',

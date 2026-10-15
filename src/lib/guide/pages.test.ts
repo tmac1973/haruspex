@@ -21,6 +21,7 @@ const PAGES = [
 	'shell',
 	'code',
 	'code-sessions',
+	'code-subtasks',
 	'code-windows',
 	'skills',
 	'jobs',
