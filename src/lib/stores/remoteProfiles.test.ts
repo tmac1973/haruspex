@@ -13,6 +13,7 @@ const base: InferenceBackendConfig = {
 	remoteContextSize: 262144,
 	remoteVisionSupported: true,
 	remoteBackendKind: 'llama-toolchest',
+	remoteEngine: 'vllm',
 	remoteSampling: null,
 	remoteReasoning: null,
 	remoteParallel: 4,
@@ -29,6 +30,7 @@ describe('withRemoteOption', () => {
 		expect(or).toMatchObject({
 			remoteBaseUrl: OPENROUTER_BASE_URL,
 			remoteBackendKind: 'openrouter',
+			remoteEngine: null,
 			remoteApiKeyId: null,
 			remoteModelId: ''
 		});
@@ -44,6 +46,7 @@ describe('withRemoteOption', () => {
 			remoteApiKeyId: null,
 			remoteModelId: 'qwen3.8-27b',
 			remoteBackendKind: 'llama-toolchest',
+			remoteEngine: 'vllm',
 			remoteParallel: 4
 		});
 		cfg = withRemoteOption(cfg, 'openrouter');

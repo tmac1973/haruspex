@@ -144,6 +144,12 @@ export interface InferenceBackendConfig {
 	/** Backend kind recorded from the last successful probe. */
 	remoteBackendKind: InferenceBackendKind;
 	/**
+	 * The engine behind a toolchest (`'vllm'`, `'llama.cpp'`), as its status
+	 * names it: `'llama-toolchest'` is the management API both share. Null
+	 * for other backends and for a toolchest that doesn't say. Display only.
+	 */
+	remoteEngine?: string | null;
+	/**
 	 * Recommended sampling discovered for the selected remote model. Only
 	 * llama-toolchest reports this; `null` for every other backend (and
 	 * before the first probe), in which case the built-in `SAMPLING_PROFILES`
@@ -202,6 +208,7 @@ export type RemoteProfile = Pick<
 	| 'remoteContextSize'
 	| 'remoteVisionSupported'
 	| 'remoteBackendKind'
+	| 'remoteEngine'
 	| 'remoteSampling'
 	| 'remoteReasoning'
 	| 'remoteParallel'
@@ -788,6 +795,7 @@ const defaultInferenceBackend: InferenceBackendConfig = {
 	remoteContextSize: null,
 	remoteVisionSupported: null,
 	remoteBackendKind: null,
+	remoteEngine: null,
 	remoteSampling: null,
 	remoteReasoning: null,
 	remoteParallel: null,

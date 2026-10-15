@@ -13,6 +13,7 @@
 	import { untrack } from 'svelte';
 	import type { InferenceBackendConfig, InferenceBackendKind } from '#lib/stores/settings.ts';
 	import {
+		backendLabel,
 		pickProbedModel,
 		probeInferenceServer,
 		probedModelCaps,
@@ -200,6 +201,7 @@
 				remoteContextSize: typeof manualContextSize === 'number' ? manualContextSize : null,
 				remoteVisionSupported: visionOverride,
 				remoteBackendKind: result.kind,
+				remoteEngine: result.engine ?? null,
 				remoteServerUrls: serverUrls,
 				...capabilityCommit(selectedModel, result.kind)
 			});
@@ -245,21 +247,6 @@
 	function onVisionToggle(val: boolean) {
 		visionOverride = val;
 		commit({ remoteVisionSupported: val });
-	}
-
-	function backendDisplayName(kind: InferenceBackendKind): string {
-		switch (kind) {
-			case 'llama-toolchest':
-				return 'llama-toolchest';
-			case 'llama-server':
-				return 'llama-server';
-			case 'openai-compat':
-				return 'OpenAI-compatible';
-			case 'ollama':
-				return 'Ollama';
-			default:
-				return 'Unknown';
-		}
 	}
 </script>
 
@@ -334,7 +321,7 @@
 		</button>
 		{#if probeResult}
 			<span class="probe-status detected">
-				✓ Detected: {backendDisplayName(probeResult.kind)} — {probeResult.notes}
+				✓ Detected: {backendLabel(probeResult.kind, probeResult.engine)} — {probeResult.notes}
 			</span>
 		{/if}
 		{#if probeError}
@@ -408,7 +395,11 @@
 
 	{#if showCaps}
 		<div class="caps">
-			<div class="caps-title">Detected capabilities <span>llama-toolchest</span></div>
+			<div class="caps-title">
+				Detected capabilities <span
+					>{backendLabel(config.remoteBackendKind, config.remoteEngine ?? null)}</span
+				>
+			</div>
 			<dl class="caps-grid">
 				{#if config.remoteReasoning}
 					<dt>Reasoning</dt>

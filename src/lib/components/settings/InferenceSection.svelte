@@ -234,7 +234,8 @@
 				...withRemoteOption(inferenceBackend, 'openrouter'),
 				mode: 'remote',
 				remoteBaseUrl: OPENROUTER_BASE_URL,
-				remoteBackendKind: 'openrouter'
+				remoteBackendKind: 'openrouter',
+				remoteEngine: null
 			};
 			inferenceBackend = next;
 			updateInferenceBackend(next);
