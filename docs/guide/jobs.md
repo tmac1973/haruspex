@@ -5,13 +5,17 @@ description: The Jobs tab — saved prompts run by hand or on a schedule: resear
 
 # Jobs
 
-The Jobs tab runs saved prompts without you watching, on a schedule or when you press Run. Each run streams live in its own view, stops at the first error, and stays in that job's run history. If you start several, they run one after another.
+The Jobs tab runs saved prompts without you watching, on a schedule or when you press Run. Each run streams live, stops at the first error, and stays in the job's run history. Several runs queue one after another.
 
 ## Run a job by hand or on a schedule
 
 Set **Schedule** in the job editor: Manual only, Every hour, Daily, Weekly, or Every N minutes/hours. Haruspex must be open for a schedule to fire; a run that comes due while the app is closed is dropped, not run later. While a job runs, Haruspex keeps your machine from going to sleep.
 
 Guided planning, autonomous coding and asset generation can't be scheduled, because they stop to ask you things. They only run when you start them.
+
+## Find and organize jobs
+
+A job started by another job's run, such as the asset and coding jobs from guided planning, sits under that job; click its arrow to show them. **Filter jobs** matches names, descriptions and types. Drag the list's right edge to resize it. Deleting a job keeps the jobs it started.
 
 ## Choose a working directory
 
@@ -31,7 +35,7 @@ Each run's **Tokens** card shows what every step used and how close it came to f
 
 **Research.** A list of steps run in order. Each step is a fresh conversation that gets the previous step's output, so you can chain "search, summarise, write a report". Each step can turn on **Deep research**.
 
-**Audit.** Runs one prompt many times independently (1–20 runs), groups the findings, checks each group against the source, and writes one report sorted into confirmed, refuted and uncertain. Repeating the run cancels out the noise of any single run. Options: number of runs, max turns per run, **Read-only runs** (recommended), your own instructions, and an optional output file.
+**Audit.** Runs one prompt many times independently (1–20 runs), groups the findings, checks each group against the source, and writes one report sorted into confirmed, refuted and uncertain. Options: number of runs, max turns per run, **Read-only runs** (recommended), your own instructions, and an optional output file.
 
 **Guided planning.** Turns a rough idea into an `overview.md` and phase files (`phase-NN-*.md`) in dependency order. It plans only and never writes code.
 

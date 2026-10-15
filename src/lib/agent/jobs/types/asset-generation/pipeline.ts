@@ -421,6 +421,8 @@ async function handoffToCoding(
 		schedule_config: null,
 		next_due_at: null,
 		job_type: 'autonomous_coding',
+		parent_job_id: job.id,
+		parent_run_id: runId,
 		// The coding stage's model as the planning job resolved it, so an
 		// asset-stage override never leaks into the code. A hand-made asset
 		// job carries none and hands on its own.

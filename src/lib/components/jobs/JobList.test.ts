@@ -9,15 +9,43 @@ vi.mock('@tauri-apps/api/core', () => ({
 const job = {
 	id: 7,
 	name: 'Hangman plan',
+	description: null,
 	job_type: 'guided_planning',
 	schedule_kind: 'manual',
 	schedule_config: null,
-	step_count: 0
+	step_count: 0,
+	created_at: 1,
+	updated_at: 1,
+	parent_job_id: null as number | null,
+	parent_run_id: null as number | null
 };
+
+/** What the planning job's run 3 started: assets, which started coding. */
+const assets = {
+	...job,
+	id: 8,
+	name: 'Hangman plan — assets',
+	created_at: 2,
+	updated_at: 2,
+	parent_job_id: 7,
+	parent_run_id: 3
+};
+const coding = {
+	...job,
+	id: 9,
+	name: 'Hangman plan — coding',
+	created_at: 3,
+	updated_at: 3,
+	parent_job_id: 8,
+	parent_run_id: 4
+};
+const headlines = { ...job, id: 10, name: 'Morning headlines', description: 'news' };
+
+const store = vi.hoisted(() => ({ jobs: [] as unknown[] }));
 
 vi.mock('#lib/stores/jobs.svelte.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/stores/jobs.svelte.ts')>()),
-	getJobs: () => [job]
+	getJobs: () => store.jobs
 }));
 
 const runner = vi.hoisted(() => ({
@@ -45,6 +73,7 @@ beforeEach(() => {
 	vi.clearAllMocks();
 	runner.current = null;
 	runner.queue = [];
+	store.jobs = [job];
 });
 
 describe('JobList', () => {
@@ -119,5 +148,75 @@ describe('JobList', () => {
 		expect(onrun).toHaveBeenCalledWith(7);
 		// The row click behind the button must not also fire.
 		expect(onselect).not.toHaveBeenCalled();
+	});
+
+	describe('jobs a run started', () => {
+		beforeEach(() => {
+			store.jobs = [job, assets, coding, headlines];
+		});
+
+		const names = () =>
+			[...document.querySelectorAll('.row .name')].map((n) => n.firstChild?.textContent?.trim());
+
+		it('nests them under the job that started them, closed', async () => {
+			render(JobList, { selectedId: null, onselect: vi.fn(), onrun: vi.fn() });
+			expect(screen.queryByText('Hangman plan — assets')).toBeNull();
+			expect(screen.getByText(/2 started/)).toBeTruthy();
+
+			await fireEvent.click(screen.getByLabelText('Show the jobs it started'));
+			expect(screen.getByText('Hangman plan — assets')).toBeTruthy();
+			// The asset job's own coding job stays closed under it.
+			expect(screen.queryByText('Hangman plan — coding')).toBeNull();
+		});
+
+		it('opens the way down to a selected job', () => {
+			render(JobList, { selectedId: 9, onselect: vi.fn(), onrun: vi.fn() });
+			expect(screen.getByText('Hangman plan — coding')).toBeTruthy();
+		});
+
+		it('marks a closed parent when a job below it is running', () => {
+			runner.current = { jobId: 9, jobName: 'Hangman plan — coding', status: 'running' };
+			// A fresh parent id: open state is shared across mounts.
+			store.jobs = [
+				{ ...job, id: 70 },
+				{ ...assets, id: 80, parent_job_id: 70 },
+				{ ...coding, parent_job_id: 80 }
+			];
+			render(JobList, { selectedId: null, onselect: vi.fn(), onrun: vi.fn() });
+			expect(screen.getByLabelText('A job it started is running')).toBeTruthy();
+		});
+
+		it('filters by name and keeps the jobs above a match', async () => {
+			render(JobList, { selectedId: null, onselect: vi.fn(), onrun: vi.fn() });
+			await fireEvent.input(screen.getByLabelText('Filter jobs'), {
+				target: { value: 'coding' }
+			});
+			expect(screen.getByText('Hangman plan — coding')).toBeTruthy();
+			expect(screen.queryByText('Morning headlines')).toBeNull();
+			expect(names()).toHaveLength(3);
+		});
+
+		it('filters by description, and Escape clears it', async () => {
+			render(JobList, { selectedId: null, onselect: vi.fn(), onrun: vi.fn() });
+			const input = screen.getByLabelText('Filter jobs');
+			await fireEvent.input(input, { target: { value: 'news' } });
+			expect(names()).toHaveLength(1);
+			await fireEvent.keyDown(input, { key: 'Escape' });
+			expect(screen.getByText('Morning headlines')).toBeTruthy();
+			expect(names().length).toBeGreaterThan(1);
+		});
+
+		it('says so when nothing matches', async () => {
+			render(JobList, { selectedId: null, onselect: vi.fn(), onrun: vi.fn() });
+			await fireEvent.input(screen.getByLabelText('Filter jobs'), {
+				target: { value: 'zzz' }
+			});
+			expect(screen.getByText('No jobs match.')).toBeTruthy();
+		});
+	});
+
+	it('has a handle to resize the list', () => {
+		render(JobList, { selectedId: null, onselect: vi.fn(), onrun: vi.fn() });
+		expect(screen.getByLabelText('Drag to resize')).toBeTruthy();
 	});
 });

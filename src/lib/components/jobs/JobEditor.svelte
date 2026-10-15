@@ -17,6 +17,7 @@
 		updateJob,
 		deleteJob,
 		duplicateJob,
+		getJobs,
 		getJob,
 		replaceJobSteps,
 		scheduleToConfigJson,
@@ -357,6 +358,10 @@
 
 	// Job delete awaits ConfirmDialog approval.
 	let confirmingDelete = $state(false);
+	/** Jobs this one's runs started; deleting it moves them to the top level. */
+	const startedCount = $derived(
+		typeof jobId === 'number' ? getJobs().filter((j) => j.parent_job_id === jobId).length : 0
+	);
 
 	async function deleteJobConfirmed() {
 		confirmingDelete = false;
@@ -613,7 +618,10 @@
 <ConfirmDialog
 	open={confirmingDelete}
 	title="Delete job?"
-	message={`Delete job "${name}"? This cannot be undone.`}
+	message={`Delete job "${name}"? This cannot be undone.` +
+		(startedCount > 0
+			? ` The ${startedCount === 1 ? 'job' : `${startedCount} jobs`} it started will stay.`
+			: '')}
 	confirmLabel="Delete job"
 	onconfirm={deleteJobConfirmed}
 	oncancel={() => (confirmingDelete = false)}

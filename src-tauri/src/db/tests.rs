@@ -294,6 +294,8 @@ fn sample_job_input(name: &str) -> JobInput {
         model_remote_context_size: None,
         model_remote_vision_supported: None,
         model_advanced: None,
+        parent_job_id: None,
+        parent_run_id: None,
     }
 }
 
@@ -409,6 +411,8 @@ fn update_job_changes_fields_and_bumps_timestamp() {
             model_remote_context_size: None,
             model_remote_vision_supported: None,
             model_advanced: None,
+            parent_job_id: None,
+            parent_run_id: None,
         },
     )
     .unwrap();
@@ -518,6 +522,57 @@ fn update_missing_job_errors() {
     let db = test_db();
     let result = db.update_job(9999, &sample_job_input("ghost"));
     assert!(result.is_err());
+}
+
+#[test]
+fn spawned_job_lists_its_parent() {
+    let db = test_db();
+    let parent = db.create_job(&sample_job_input("Plan")).unwrap();
+    let child = db
+        .create_job(&JobInput {
+            parent_job_id: Some(parent),
+            parent_run_id: Some(42),
+            ..sample_job_input("Plan — coding")
+        })
+        .unwrap();
+
+    let jobs = db.list_jobs().unwrap();
+    let c = jobs.iter().find(|j| j.id == child).unwrap();
+    assert_eq!(c.parent_job_id, Some(parent));
+    assert_eq!(c.parent_run_id, Some(42));
+    let p = jobs.iter().find(|j| j.id == parent).unwrap();
+    assert_eq!(p.parent_job_id, None);
+
+    // An edit sends no parent, and must not drop the one the job has.
+    db.update_job(child, &sample_job_input("Renamed")).unwrap();
+    let c = db
+        .list_jobs()
+        .unwrap()
+        .into_iter()
+        .find(|j| j.id == child)
+        .unwrap();
+    assert_eq!(c.parent_job_id, Some(parent));
+}
+
+#[test]
+fn deleting_a_parent_keeps_its_children() {
+    let db = test_db();
+    let parent = db.create_job(&sample_job_input("Plan")).unwrap();
+    let child = db
+        .create_job(&JobInput {
+            parent_job_id: Some(parent),
+            parent_run_id: Some(1),
+            ..sample_job_input("Plan — assets")
+        })
+        .unwrap();
+
+    db.delete_job(parent).unwrap();
+
+    let jobs = db.list_jobs().unwrap();
+    assert_eq!(jobs.len(), 1);
+    assert_eq!(jobs[0].id, child);
+    assert_eq!(jobs[0].parent_job_id, None);
+    assert_eq!(jobs[0].parent_run_id, None);
 }
 
 #[test]
@@ -676,6 +731,8 @@ fn schedule_config_round_trips_as_opaque_json() {
             model_remote_context_size: None,
             model_remote_vision_supported: None,
             model_advanced: None,
+            parent_job_id: None,
+            parent_run_id: None,
         })
         .unwrap();
     let job = db.get_job(id).unwrap();
@@ -706,6 +763,8 @@ fn type_config_and_model_override_round_trip() {
             model_remote_context_size: Some(131072),
             model_remote_vision_supported: Some(true),
             model_advanced: Some(r#"{"reasoning":"off"}"#.to_string()),
+            parent_job_id: None,
+            parent_run_id: None,
         })
         .unwrap();
     let job = db.get_job(id).unwrap();

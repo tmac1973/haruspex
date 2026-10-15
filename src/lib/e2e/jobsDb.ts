@@ -5,6 +5,7 @@
  */
 import type {
 	JobInput,
+	JobLineage,
 	JobStep,
 	JobStepInput,
 	JobSummary,
@@ -18,11 +19,13 @@ interface Run extends JobRunSummary {
 	steps: JobRunStep[];
 }
 
-const jobs = new Map<number, JobWithSteps>();
+type StoredJob = JobWithSteps & Partial<JobLineage>;
+
+const jobs = new Map<number, StoredJob>();
 const runs = new Map<number, Run>();
 let nextId = 1;
 
-function summary(j: JobWithSteps): JobSummary {
+function summary(j: StoredJob): JobSummary {
 	return {
 		id: j.id,
 		name: j.name,
@@ -35,7 +38,9 @@ function summary(j: JobWithSteps): JobSummary {
 		next_due_at: j.next_due_at,
 		created_at: j.created_at,
 		updated_at: j.updated_at,
-		step_count: j.steps.length
+		step_count: j.steps.length,
+		parent_job_id: j.parent_job_id ?? null,
+		parent_run_id: j.parent_run_id ?? null
 	};
 }
 
@@ -65,6 +70,12 @@ export const JOBS_DB: Record<string, (a: Args) => unknown> = {
 	},
 	db_delete_job: (a) => {
 		jobs.delete(a?.id as number);
+		for (const j of jobs.values()) {
+			if (j.parent_job_id === a?.id) {
+				j.parent_job_id = null;
+				j.parent_run_id = null;
+			}
+		}
 		return null;
 	},
 	db_replace_job_steps: (a) => {
