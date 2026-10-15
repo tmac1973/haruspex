@@ -13,6 +13,10 @@
 	import { messageText } from '#lib/api.ts';
 	import { InputHistory, placeCaret, recallInto, sentHistory } from '#lib/inputHistory.ts';
 	import { isWatchNotification } from '#lib/shell/backgroundWatch.ts';
+	import { isSubtaskNotification } from '#lib/code/backgroundSubtasks.ts';
+
+	/** A turn Haruspex sent on the user's behalf, not one they typed. */
+	const isNotification = (text: string) => isWatchNotification(text) || isSubtaskNotification(text);
 	import { runSlash, type SlashHost } from '#lib/slash/slash.ts';
 	import { typedText } from '#lib/skills/content.ts';
 	import type { CodeSession } from '#lib/stores/code.svelte.ts';
@@ -102,7 +106,7 @@
 	const history = new InputHistory(() =>
 		sentHistory(
 			session.messages
-				.filter((m) => m.role === 'user' && !isWatchNotification(messageText(m.content)))
+				.filter((m) => m.role === 'user' && !isNotification(messageText(m.content)))
 				.map((m) => typedText(messageText(m.content)))
 		)
 	);

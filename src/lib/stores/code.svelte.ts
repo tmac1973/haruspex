@@ -22,7 +22,13 @@ import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { chooseCut, compactCodeThread } from '#lib/code/compaction.ts';
 import type { AgentStopReason, SearchStep } from '#lib/agent/loop.ts';
 import { markStepDone, markStepProgress } from '#lib/agent/steps.ts';
-import { SubtaskStops } from '#lib/code/subtask.ts';
+import { SubtaskStops, subtaskActive, type SubtaskState } from '#lib/code/subtask.ts';
+import {
+	BackgroundSubtasks,
+	buildSubtaskNotification,
+	type CompletedSubtask
+} from '#lib/code/backgroundSubtasks.ts';
+import type { SubtaskSpec } from '#lib/code/subtaskRun.ts';
 import { discardSessionSubtaskWorktrees } from '#lib/code/subtaskGit.ts';
 import { describeContextManaged } from '#lib/agent/context-budget.ts';
 import { computeMessageStats, type MessageStats } from '#lib/stores/chat.svelte.ts';
@@ -67,7 +73,7 @@ import { setShellWaitListener, type ShellWait } from '#lib/code/shellBridge.ts';
 import { registerCodeOpener } from '#lib/code/bridge.ts';
 import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
 import { updateSettings } from '#lib/stores/settings.ts';
-import { isUnsetTitle } from '#lib/code/sessionList.ts';
+import { isUnsetTitle, sessionLabel } from '#lib/code/sessionList.ts';
 import { claimSession, raiseWindow, releaseSession } from '#lib/code/claims.ts';
 import { forkPoint, type Prefill } from '#lib/code/fork.ts';
 import type { CodeForkMode } from '#lib/ipc/gen/CodeForkMode.ts';
@@ -83,8 +89,10 @@ import {
 	createWriteGuard,
 	formatFileNotices,
 	releaseFolder,
-	takeFileNotices
+	takeFileNotices,
+	type TurnWriteGuard
 } from '#lib/code/folders.ts';
+import type { CodeWriteGuard } from '#lib/agent/tools/types.ts';
 import { isSlashCommand, nameSession } from '#lib/code/sessionTitle.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import { errMessage } from '#lib/utils/error.ts';
@@ -206,8 +214,16 @@ export class CodeSession {
 	/** The branch the agent was last told or saw; undefined until it's been told. */
 	private branchSeenByAgent: string | null | undefined = undefined;
 	private abortController: AbortController | null = null;
-	/** Stop handles for the running turn's subtasks (`delegate`). */
+	/** Stop handles for the session's subtasks (`delegate`), its turn's and background ones. */
 	private readonly subtaskStops = new SubtaskStops();
+	/** Subtasks that run on after the turn that started them. */
+	private readonly backgroundSubtasks: BackgroundSubtasks;
+	/** Background subtasks that have ended, waiting to be reported in a turn. */
+	private completedSubtasks: CompletedSubtask[] = [];
+	/** The running turn's write guard, which a background apply shares. */
+	private turnGuard: TurnWriteGuard | null = null;
+	/** How many background subtasks are running or waiting to. */
+	backgroundSubtaskCount = $state(0);
 	/** Reads the input box's unsent text and images (`setDraftReader`). */
 	private draftReader: (() => Prefill) | null = null;
 	/** Settles once the running turn has been saved. */
@@ -249,6 +265,24 @@ export class CodeSession {
 		}
 		this.unwatch = setCodeWatchCompletionHandler(this.id, () => {
 			void this.flushWatchNotifications();
+		});
+		this.backgroundSubtasks = new BackgroundSubtasks({
+			place: () => ({
+				sessionId: this.id,
+				folder: this.root,
+				wslDistro: this.wslDistro,
+				backend: this.backend ? ($state.snapshot(this.backend) as BackendOverride) : null,
+				effort: this.effort,
+				requester: () => `Code · ${sessionLabel({ title: this.title, root: this.root })}`
+			}),
+			lease: () => this.backgroundLease(),
+			stops: this.subtaskStops,
+			onState: (state) => this.updateSubtaskCard(state),
+			onDone: (done) => {
+				this.completedSubtasks = [...this.completedSubtasks, done];
+				this.backgroundSubtaskCount = this.backgroundSubtasks.active;
+				void this.flushWatchNotifications();
+			}
 		});
 		this.unwatchShell = setShellWaitListener(this.id, (wait) => this.onShellWait(wait));
 	}
@@ -415,8 +449,67 @@ export class CodeSession {
 	 */
 	stop = (): void => {
 		this.abortController?.abort();
-		this.subtaskStops.stopAll();
+		// Background subtasks run on; their cards, and closing the session, stop them.
+		this.subtaskStops.stopAll({ background: false });
 	};
+
+	/**
+	 * Hand a `delegate` call with `background: true` to the session: it runs
+	 * on after the turn and reports in a notification turn.
+	 */
+	private startBackgroundSubtask = (spec: SubtaskSpec, initial: SubtaskState): void => {
+		this.backgroundSubtasks.start(spec, initial);
+		this.backgroundSubtaskCount = this.backgroundSubtasks.active;
+	};
+
+	/**
+	 * The write lease for a background subtask's apply: the running turn's,
+	 * which it then leaves for the turn to give back, or one of its own.
+	 */
+	private backgroundLease(): { guard: CodeWriteGuard; done: () => Promise<void> } {
+		if (this.turnGuard) return { guard: this.turnGuard, done: async () => {} };
+		const own = createWriteGuard({
+			sessionId: this.id,
+			root: this.root,
+			wslDistro: this.wslDistro,
+			title: () => this.title
+		});
+		const changed: string[] = [];
+		return {
+			guard: {
+				acquire: () => own.acquire(),
+				changed: (paths) => {
+					changed.push(...paths);
+					own.changed(paths);
+				}
+			},
+			done: async () => {
+				// A turn began meanwhile and holds the same lease: it gives it back.
+				if (this.turnGuard) this.turnGuard.changed(changed);
+				else await own.finish();
+			}
+		};
+	}
+
+	/**
+	 * Put a subtask's card where its step is now: the running turn's steps,
+	 * or a saved answer's once the turn that started it has ended.
+	 */
+	private updateSubtaskCard(state: SubtaskState): void {
+		const patch = (steps: SearchStep[]) =>
+			steps.map((s) => (s.subtask?.id === state.id ? { ...s, subtask: state } : s));
+		if (this.searchSteps.some((s) => s.subtask?.id === state.id)) {
+			this.searchSteps = patch(this.searchSteps);
+			return;
+		}
+		for (const [key, steps] of Object.entries(this.messageSteps)) {
+			if (!steps.some((s) => s.subtask?.id === state.id)) continue;
+			this.messageSteps = { ...this.messageSteps, [key]: patch(steps) };
+			// Saved once it ends; a running turn saves it with everything else.
+			if (!subtaskActive(state) && !this.busy) void this.persist();
+			return;
+		}
+	}
 
 	/** Stop one of the running turn's subtasks; the turn carries on without it. */
 	stopSubtask = (id: string): void => {
@@ -576,7 +669,10 @@ export class CodeSession {
 	flushWatchNotifications = async (): Promise<void> => {
 		if (this.busy || this.closed || this.flushing || this.folderMissing) return;
 		const completed = peekCompletedCodeWatches(this.id);
-		if (completed.length === 0) return;
+		if (completed.length === 0) {
+			await this.flushSubtaskNotifications();
+			return;
+		}
 		this.flushing = true;
 		let body: string;
 		try {
@@ -589,6 +685,18 @@ export class CodeSession {
 		consumeWatches(completed.map((w) => w.id));
 		await this.runTurn({ role: 'user', content: body });
 	};
+
+	/**
+	 * Deliver finished background subtasks' reports as a turn of their own,
+	 * once idle; all that have finished go in one turn. Watched commands go
+	 * first, in theirs (`flushWatchNotifications`).
+	 */
+	private async flushSubtaskNotifications(): Promise<void> {
+		if (this.busy || this.closed || this.completedSubtasks.length === 0) return;
+		const done = this.completedSubtasks;
+		this.completedSubtasks = [];
+		await this.runTurn({ role: 'user', content: buildSubtaskNotification(done) });
+	}
 
 	/** The thread as `encodeCodeSession` takes it. */
 	snapshot = (): CodeSessionState => ({
@@ -608,6 +716,7 @@ export class CodeSession {
 	dispose = async (): Promise<void> => {
 		this.closed = true;
 		this.stop();
+		this.subtaskStops.stopAll();
 		this.unwatch();
 		this.unwatchShell();
 		clearCodeWatches(this.id);
@@ -615,6 +724,8 @@ export class CodeSession {
 		if (this.bgTimer !== null) clearTimeout(this.bgTimer);
 		this.bgTimer = null;
 		await this.turnDone;
+		// Stopped writers tidy their worktrees away as they end.
+		await this.backgroundSubtasks.settle();
 		// The turn gives the folder back as it ends; this covers a turn that
 		// never got that far.
 		await releaseFolder(this.id);
@@ -661,6 +772,7 @@ export class CodeSession {
 			wslDistro: this.wslDistro,
 			title: () => this.title
 		});
+		this.turnGuard = guard;
 		// What the agent had been told, put back if the turn never starts.
 		const told = {
 			openingAt,
@@ -741,6 +853,7 @@ export class CodeSession {
 					this.searchSteps = markStepProgress(this.searchSteps, call, status);
 				},
 				subtaskStops: this.subtaskStops,
+				startBackgroundSubtask: this.startBackgroundSubtask,
 				onSubtaskUpdate: (call, subtask) => {
 					this.searchSteps = this.searchSteps.map((s) =>
 						s.id === call.id ? { ...s, subtask } : s
@@ -769,6 +882,7 @@ export class CodeSession {
 			this.abortController = null;
 			this.clearLive();
 			this.ticket = null;
+			this.turnGuard = null;
 			await guard.finish();
 			if (started) {
 				// What the turn itself did to the branch (a `git switch` it ran)
@@ -1083,7 +1197,8 @@ export async function handOffSession(id: string): Promise<boolean> {
 	const idx = sessions.findIndex((s) => s.id === id);
 	if (idx < 0) return false;
 	const session = sessions[idx];
-	if (session.busy) return false;
+	// Background subtasks run in this window, so they can't move with it.
+	if (session.busy || session.backgroundSubtaskCount > 0) return false;
 	// Read before the sub-tab goes, while the input box is still there.
 	const draft = session.readDraft();
 	sessions.splice(idx, 1);

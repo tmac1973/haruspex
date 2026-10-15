@@ -1,5 +1,6 @@
 import type { BackendOverride, ToolDefinition } from '#lib/api.ts';
 import type { SubtaskState, SubtaskStops } from '#lib/code/subtask.ts';
+import type { SubtaskSpec } from '#lib/code/subtaskRun.ts';
 import type { Artifact } from '#lib/sandbox/sandbox.ts';
 import type { LintIssue } from '#lib/sandbox/lint.ts';
 import type { FileDiff } from '#lib/code/diff.ts';
@@ -232,6 +233,11 @@ export interface ToolContext {
 	onSubtask?: (state: SubtaskState) => void;
 	/** Where a Code session keeps its running subtasks' stop handles. */
 	subtaskStops?: SubtaskStops;
+	/**
+	 * Hand a background subtask to the Code session, which runs it after the
+	 * turn and reports it in a notification turn. Absent outside the Code tab.
+	 */
+	startBackgroundSubtask?: (spec: SubtaskSpec, initial: SubtaskState) => void;
 	/**
 	 * A `run_command` approval prompt opened (true) or closed (false). A
 	 * subtask's card says it is waiting for the user meanwhile.

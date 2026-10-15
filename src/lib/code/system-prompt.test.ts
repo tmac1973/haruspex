@@ -147,3 +147,9 @@ describe('Code tab prompt with writing subtasks', () => {
 		expect(text).not.toContain('only commands that read');
 	});
 });
+
+describe('Code tab prompt with background subtasks', () => {
+	it('tells the agent how background subtasks report', () => {
+		expect(tab({ delegate: 'read' })).toContain('background: true returns at once');
+	});
+});

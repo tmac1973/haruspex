@@ -141,6 +141,8 @@ export interface CodeTurnOptions {
 	onSubtaskUpdate?: (call: ResolvedToolCall, state: SubtaskState) => void;
 	/** The session's stop handles for its subtasks. */
 	subtaskStops?: SubtaskStops;
+	/** Hand a background subtask to the session (`ToolContext.startBackgroundSubtask`). */
+	startBackgroundSubtask?: AgentLoopOptions['startBackgroundSubtask'];
 }
 
 export interface CodeTurnResult {
@@ -242,6 +244,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 					codeEffort: o.effort,
 					onSubtaskUpdate: o.onSubtaskUpdate,
 					subtaskStops: o.subtaskStops,
+					startBackgroundSubtask: o.startBackgroundSubtask,
 					wslDistro: o.wslDistro ?? null,
 					contextSize,
 					maxIterations: settings.codeMaxIterations,

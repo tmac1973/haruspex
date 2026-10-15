@@ -101,3 +101,10 @@ describe('SubtaskCard for a writing subtask', () => {
 		expect(screen.getByRole('button', { name: 'Copy path' })).toBeTruthy();
 	});
 });
+
+describe('SubtaskCard in the background', () => {
+	it('says it runs in the background', () => {
+		render(SubtaskCard, { subtask: newSubtaskState('b1', 'review', 't', 'read', true) });
+		expect(screen.getByText('Background subtask')).toBeTruthy();
+	});
+});
