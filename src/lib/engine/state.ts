@@ -18,7 +18,9 @@ function withDiff(step: SearchStep): StepState {
 		if (step.toolName === 'fs_edit_text') diff = editDiffFromStep(step);
 		else if (step.toolName === 'fs_write_text') diff = step.fileDiff ?? null;
 	}
-	return { ...step, diff };
+	// The web client shows a subtask's status and report, not its steps.
+	const subtask = step.subtask && { ...step.subtask, steps: [] };
+	return { ...step, diff, ...(subtask ? { subtask } : {}) };
 }
 
 export const stepsState = (steps: SearchStep[]): StepState[] => plain(steps.map(withDiff));

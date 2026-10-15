@@ -26,11 +26,10 @@ import { getSettings } from '#lib/stores/settings.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { assemble, prepareSystem } from '#lib/code/runCodeTurn.ts';
 import { SUBTASK_REPORT_CHARS } from '#lib/code/system-prompt.ts';
+import type { SlotLender } from '#lib/agent/tools/types.ts';
 
 /** The most model rounds a subtask takes before it has to answer. */
 export const SUBTASK_MAX_ROUNDS = 25;
-
-export type SlotRunner = <T>(fn: () => Promise<T>) => Promise<T>;
 
 export interface SubtaskOptions {
 	/** The parent's Code session: owns approvals and anything it runs. */
@@ -48,12 +47,16 @@ export interface SubtaskOptions {
 	mode: 'read';
 	signal?: AbortSignal;
 	/** The parent turn's slot lender; absent on a serialized lane. */
-	runInSlot?: SlotRunner;
+	runInSlot?: SlotLender;
 	/** Who is asking in an approval prompt. */
 	requester?: () => string;
 	onToolStart?: (call: ResolvedToolCall) => void;
 	onToolProgress?: (call: ResolvedToolCall, status: string) => void;
 	onToolEnd?: (call: ResolvedToolCall, result: string) => void;
+	/** The child's steps changed: one started, moved on or ended. */
+	onStep?: (steps: SearchStep[]) => void;
+	/** The child holds a slot and its model is about to work. */
+	onAdmitted?: () => void;
 }
 
 export interface SubtaskResult {
@@ -81,7 +84,17 @@ export async function runSubtask(o: SubtaskOptions): Promise<SubtaskResult> {
 	const backend = o.backend ?? undefined;
 	let steps: SearchStep[] = [];
 	let streamed = '';
-	const run = o.runInSlot ?? (<T>(fn: () => Promise<T>) => fn());
+	const run: SlotLender =
+		o.runInSlot ??
+		(<T>(fn: () => Promise<T>, opts?: { onAdmitted?: () => void }) => {
+			// No lender: the parent's slot is held and idle, so it's ours now.
+			opts?.onAdmitted?.();
+			return fn();
+		});
+	const setSteps = (next: SearchStep[]) => {
+		steps = next;
+		o.onStep?.(steps);
+	};
 
 	try {
 		const { system, skills } = await prepareSystem(
@@ -91,50 +104,52 @@ export async function runSubtask(o: SubtaskOptions): Promise<SubtaskResult> {
 		const messages = assemble(system, [{ role: 'user', content: o.task }], null);
 		const settings = getSettings();
 		const descriptor = resolveBackendDescriptor(backend);
-		const out = await run(() =>
-			runTurnCore(
-				{
-					messages,
-					workingDir: o.root,
-					codeSessionId: o.sessionId,
-					requester: o.requester,
-					codeReadOnly: true,
-					wslDistro: o.wslDistro ?? null,
-					contextSize: descriptor.contextSize,
-					maxIterations: SUBTASK_MAX_ROUNDS,
-					deepResearch: false,
-					codeMode: true,
-					shellMode: false,
-					codeAutoApprove: settings.codeAutoApprove,
-					subtask: { depth: 1 },
-					skills,
-					backend,
-					reasoningEffort: o.effort ?? null,
-					expectsFileOutput: false,
-					visionSupported: descriptor.vision,
-					interactive: true,
-					signal: o.signal,
-					takeSteering: () => [],
-					onToolStart: (call) => {
-						steps = [...steps, newRunningStep(call)];
-						o.onToolStart?.(call);
+		const out = await run(
+			() =>
+				runTurnCore(
+					{
+						messages,
+						workingDir: o.root,
+						codeSessionId: o.sessionId,
+						requester: o.requester,
+						codeReadOnly: true,
+						wslDistro: o.wslDistro ?? null,
+						contextSize: descriptor.contextSize,
+						maxIterations: SUBTASK_MAX_ROUNDS,
+						deepResearch: false,
+						codeMode: true,
+						shellMode: false,
+						codeAutoApprove: settings.codeAutoApprove,
+						subtask: { depth: 1 },
+						skills,
+						backend,
+						reasoningEffort: o.effort ?? null,
+						expectsFileOutput: false,
+						visionSupported: descriptor.vision,
+						interactive: true,
+						signal: o.signal,
+						takeSteering: () => [],
+						onToolStart: (call) => {
+							setSteps([...steps, newRunningStep(call)]);
+							o.onToolStart?.(call);
+						},
+						onToolProgress: (call, status) => {
+							setSteps(markStepProgress(steps, call, status));
+							o.onToolProgress?.(call, status);
+						},
+						onToolEnd: (call, result) => {
+							setSteps(markStepDone(steps, call, result));
+							o.onToolEnd?.(call, result);
+						}
 					},
-					onToolProgress: (call, status) => {
-						steps = markStepProgress(steps, call, status);
-						o.onToolProgress?.(call, status);
-					},
-					onToolEnd: (call, result) => {
-						steps = markStepDone(steps, call, result);
-						o.onToolEnd?.(call, result);
+					{
+						finalize: (raw) => finalizeStreamText(raw).content,
+						onAssistantDelta: (text) => {
+							streamed = text;
+						}
 					}
-				},
-				{
-					finalize: (raw) => finalizeStreamText(raw).content,
-					onAssistantDelta: (text) => {
-						streamed = text;
-					}
-				}
-			)
+				),
+			{ onAdmitted: o.onAdmitted, signal: o.signal }
 		);
 		if (o.signal?.aborted) return stopped(steps, streamed);
 		return {

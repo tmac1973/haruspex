@@ -22,6 +22,7 @@ import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { chooseCut, compactCodeThread } from '#lib/code/compaction.ts';
 import type { AgentStopReason, SearchStep } from '#lib/agent/loop.ts';
 import { markStepDone, markStepProgress } from '#lib/agent/steps.ts';
+import { SubtaskStops } from '#lib/code/subtask.ts';
 import { describeContextManaged } from '#lib/agent/context-budget.ts';
 import { computeMessageStats, type MessageStats } from '#lib/stores/chat.svelte.ts';
 import {
@@ -204,6 +205,8 @@ export class CodeSession {
 	/** The branch the agent was last told or saw; undefined until it's been told. */
 	private branchSeenByAgent: string | null | undefined = undefined;
 	private abortController: AbortController | null = null;
+	/** Stop handles for the running turn's subtasks (`delegate`). */
+	private readonly subtaskStops = new SubtaskStops();
 	/** Reads the input box's unsent text and images (`setDraftReader`). */
 	private draftReader: (() => Prefill) | null = null;
 	/** Settles once the running turn has been saved. */
@@ -411,6 +414,12 @@ export class CodeSession {
 	 */
 	stop = (): void => {
 		this.abortController?.abort();
+		this.subtaskStops.stopAll();
+	};
+
+	/** Stop one of the running turn's subtasks; the turn carries on without it. */
+	stopSubtask = (id: string): void => {
+		this.subtaskStops.stop(id);
 	};
 
 	/** Take the images handed back with an unsent message, clearing them. */
@@ -729,6 +738,12 @@ export class CodeSession {
 				},
 				onToolProgress: (call, status) => {
 					this.searchSteps = markStepProgress(this.searchSteps, call, status);
+				},
+				subtaskStops: this.subtaskStops,
+				onSubtaskUpdate: (call, subtask) => {
+					this.searchSteps = this.searchSteps.map((s) =>
+						s.id === call.id ? { ...s, subtask } : s
+					);
 				},
 				onToolEnd: (call, res, thumb, artifacts, fileDiff) => {
 					this.searchSteps = markStepDone(this.searchSteps, call, res, thumb, artifacts);

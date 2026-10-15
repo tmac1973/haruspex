@@ -16,6 +16,10 @@
 	import { describePendingCall, type PendingToolCall } from '#lib/code/pendingCall.ts';
 	import CommandCard from '#lib/components/code/CommandCard.svelte';
 	import DiffCard from '#lib/components/code/DiffCard.svelte';
+	import SubtaskCard from '#lib/components/code/SubtaskCard.svelte';
+	// A subtask's card lists the child's own steps with this same component.
+	import CodeSteps from '#lib/components/code/CodeSteps.svelte';
+	import type { SubtaskState } from '#lib/code/subtask.ts';
 	import type { SearchStep } from '#lib/agent/loop.ts';
 	import { editDiffFromStep, type FileDiff } from '#lib/code/diff.ts';
 	import { makeCodePathLinker, relativeToRoot } from '#lib/code/paths.ts';
@@ -33,7 +37,9 @@
 		root,
 		linkFiles = true,
 		wslDistro = null,
-		openFile
+		openFile,
+		compact = false,
+		onStopSubtask
 	}: {
 		steps: SearchStep[];
 		pending?: PendingToolCall[];
@@ -43,6 +49,10 @@
 		wslDistro?: string | null;
 		/** Open a file (relative to `root`) instead of in an editor window. */
 		openFile?: (rel: string) => void;
+		/** The web client: subtask cards without their steps or stop button. */
+		compact?: boolean;
+		/** Stop a running subtask, by its id; absent once the turn is over. */
+		onStopSubtask?: (id: string) => void;
 	} = $props();
 
 	/** Tools that hand a command over: shown as command cards. */
@@ -69,6 +79,7 @@
 		| { kind: 'lead'; text: string }
 		| { kind: 'command'; step: SearchStep }
 		| { kind: 'diff'; step: SearchStep; diff: FileDiff }
+		| { kind: 'subtask'; subtask: SubtaskState }
 		| { kind: 'steps'; steps: SearchStep[] };
 
 	function diffOf(step: SearchStep): FileDiff | null {
@@ -84,7 +95,9 @@
 			if (step.reasoning?.trim()) out.push({ kind: 'reasoning', text: step.reasoning.trim() });
 			if (step.lead?.trim()) out.push({ kind: 'lead', text: step.lead.trim() });
 			const diff = diffOf(step);
-			if (COMMAND_TOOLS.has(step.toolName)) out.push({ kind: 'command', step });
+			if (step.toolName === 'delegate' && step.subtask) {
+				out.push({ kind: 'subtask', subtask: step.subtask });
+			} else if (COMMAND_TOOLS.has(step.toolName)) out.push({ kind: 'command', step });
 			else if (diff) out.push({ kind: 'diff', step, diff });
 			else {
 				const last = out[out.length - 1];
@@ -108,6 +121,12 @@
 			<CommandCard step={block.step} {root} />
 		{:else if block.kind === 'diff'}
 			<DiffCard diff={block.diff} onOpen={opener(block.diff)} />
+		{:else if block.kind === 'subtask'}
+			<SubtaskCard subtask={block.subtask} {compact} onStop={onStopSubtask}>
+				{#snippet steps(s: SubtaskState)}
+					<CodeSteps steps={s.steps} {root} {linkFiles} {wslDistro} {openFile} />
+				{/snippet}
+			</SubtaskCard>
 		{:else}
 			<SearchStepComponent steps={block.steps} {pathLinks} />
 		{/if}

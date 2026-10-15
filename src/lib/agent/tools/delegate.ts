@@ -12,7 +12,17 @@ import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult } from '#lib/agent/tools/types.ts';
 import type { ToolContext, ToolExecOutput } from '#lib/agent/tools/types.ts';
 import { getSettings } from '#lib/stores/settings.ts';
-import type { SubtaskResult } from '#lib/code/runSubtask.ts';
+// A cycle (the runner reaches the agent loop, which imports every tool
+// module, this one included) that is safe: neither side uses the other until
+// a call runs.
+import { runSubtask, type SubtaskResult } from '#lib/code/runSubtask.ts';
+import {
+	finishedSubtask,
+	newSubtaskState,
+	startedSubtask,
+	withChildSteps,
+	type SubtaskState
+} from '#lib/code/subtask.ts';
 
 /** The most subtasks one parent turn may start. */
 export const SUBTASKS_PER_TURN = 8;
@@ -23,6 +33,22 @@ export function subtaskLabel(args: Record<string, unknown>): string {
 	if (label) return label;
 	const task = typeof args.task === 'string' ? args.task.trim().replace(/\s+/g, ' ') : '';
 	return task.length > 60 ? `${task.slice(0, 59)}…` : task;
+}
+
+/**
+ * A controller for one subtask that the turn's `signal` also aborts.
+ * `release` lets go of the turn's signal once the subtask has ended.
+ */
+function childController(signal?: AbortSignal): {
+	controller: AbortController;
+	release: () => void;
+} {
+	const controller = new AbortController();
+	if (!signal) return { controller, release: () => {} };
+	if (signal.aborted) controller.abort();
+	const onAbort = () => controller.abort();
+	signal.addEventListener('abort', onAbort, { once: true });
+	return { controller, release: () => signal.removeEventListener('abort', onAbort) };
 }
 
 /** Why this call can't start a subtask, or null when it can. */
@@ -39,7 +65,7 @@ function refusal(args: Record<string, unknown>, ctx: ToolContext): string | null
 }
 
 /** What the parent is told of a finished subtask. */
-function resultFor(label: string, res: SubtaskResult): ToolExecOutput {
+function resultFor(label: string, res: SubtaskResult, byUser: boolean): ToolExecOutput {
 	const calls = res.steps.length;
 	const head = `Subtask "${label}" (${res.outcome}, ${calls} tool call${calls === 1 ? '' : 's'})`;
 	switch (res.outcome) {
@@ -47,7 +73,7 @@ function resultFor(label: string, res: SubtaskResult): ToolExecOutput {
 			return toolResult(`${head}:\n\n${res.report || '(It gave no report.)'}`);
 		case 'stopped':
 			return toolResult(
-				`${head}: stopped before it finished.${res.report ? `\n\nWhat it had so far:\n${res.report}` : ''}`
+				`${head}: ${byUser ? 'the user stopped it; do not start it again' : 'stopped before it finished'}.${res.report ? `\n\nWhat it had so far:\n${res.report}` : ''}`
 			);
 		case 'failed':
 			return toolResult(toolError(`${head}: ${res.error ?? 'it failed.'}`));
@@ -63,25 +89,49 @@ export async function executeDelegate(
 	if (ctx.subtasksStartedThisTurn) ctx.subtasksStartedThisTurn.count += 1;
 
 	const label = subtaskLabel(args);
-	// Loaded here, not at the top: the runner reaches the agent loop, which
-	// imports every tool module, this one included.
-	const { runSubtask } = await import('#lib/code/runSubtask.ts');
-	const parent = ctx.requester;
-	const res = await runSubtask({
-		sessionId: ctx.codeSessionId,
-		root: ctx.workingDir as string,
-		wslDistro: ctx.wslDistro ?? null,
-		backend: ctx.backend ?? null,
-		effort: ctx.codeEffort ?? null,
-		task: (args.task as string).trim(),
-		label,
-		mode: 'read',
-		signal: ctx.signal,
-		runInSlot: ctx.runInSlot,
-		requester: () => `${parent?.() ?? 'Code'} · subtask "${label}"`,
-		onToolStart: (call) => ctx.onProgress?.(`${call.name}…`)
-	});
-	return resultFor(label, res);
+	const task = (args.task as string).trim();
+	const id = ctx.toolCallId ?? `subtask-${Date.now()}`;
+	// Its own stop, which the turn's stop also pulls.
+	const stop = childController(ctx.signal);
+	ctx.subtaskStops?.register(id, stop.controller);
+	let state = newSubtaskState(id, label, task);
+	const publish = (next: SubtaskState) => {
+		state = next;
+		ctx.onSubtask?.(state);
+	};
+	publish(state);
+	try {
+		const parent = ctx.requester;
+		const res = await runSubtask({
+			sessionId: ctx.codeSessionId,
+			root: ctx.workingDir as string,
+			wslDistro: ctx.wslDistro ?? null,
+			backend: ctx.backend ?? null,
+			effort: ctx.codeEffort ?? null,
+			task,
+			label,
+			mode: 'read',
+			signal: stop.controller.signal,
+			runInSlot: ctx.runInSlot,
+			requester: () => `${parent?.() ?? 'Code'} · subtask "${label}"`,
+			onAdmitted: () => publish(startedSubtask(state)),
+			onStep: (steps) => publish(withChildSteps(state, steps))
+		});
+		publish(
+			finishedSubtask(state, {
+				status: res.outcome,
+				report: res.report,
+				error: res.error,
+				steps: res.steps
+			})
+		);
+		// The subtask's own stop button, not the turn's Stop.
+		const byUser = stop.controller.signal.aborted && !ctx.signal?.aborted;
+		return resultFor(label, res, byUser);
+	} finally {
+		stop.release();
+		ctx.subtaskStops?.delete(id);
+	}
 }
 
 registerTool({

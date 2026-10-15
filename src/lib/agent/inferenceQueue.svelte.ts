@@ -276,6 +276,14 @@ export async function withInferenceSlot<T>(
 	}
 }
 
+/** What one borrower tells the lender. */
+export interface LendOptions {
+	/** Called once `fn` holds a slot. */
+	onAdmitted?: () => void;
+	/** Stops this borrower's wait for a slot; defaults to the turn's. */
+	signal?: AbortSignal;
+}
+
 /**
  * Slots for the model calls tools make while their turn runs them side by
  * side (several research_url summaries at once).
@@ -290,18 +298,28 @@ export async function withInferenceSlot<T>(
 export function createSlotLender(options: {
 	backend?: BackendOverride;
 	signal?: AbortSignal;
-}): <T>(fn: () => Promise<T>) => Promise<T> {
+}): <T>(fn: () => Promise<T>, opts?: LendOptions) => Promise<T> {
 	let borrowed = false;
-	return async <T>(fn: () => Promise<T>): Promise<T> => {
+	return async <T>(fn: () => Promise<T>, opts?: LendOptions): Promise<T> => {
 		if (!borrowed) {
 			borrowed = true;
 			try {
+				opts?.onAdmitted?.();
 				return await fn();
 			} finally {
 				borrowed = false;
 			}
 		}
-		return withInferenceSlot({ consumer: 'subagent', ...options }, fn);
+		return withInferenceSlot(
+			{
+				consumer: 'subagent',
+				...options,
+				// A child's own signal is tied to the turn's, so it covers both.
+				signal: opts?.signal ?? options.signal,
+				onAdmitted: opts?.onAdmitted
+			},
+			fn
+		);
 	};
 }
 

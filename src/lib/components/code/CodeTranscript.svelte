@@ -245,7 +245,12 @@
 		<div class="note">{note.text}</div>
 	{/each}
 	{#if session.searchSteps.length > 0}
-		<CodeSteps steps={session.searchSteps} root={session.root} wslDistro={session.wslDistro} />
+		<CodeSteps
+			steps={session.searchSteps}
+			root={session.root}
+			wslDistro={session.wslDistro}
+			onStopSubtask={session.stopSubtask}
+		/>
 	{/if}
 	{#each session.steeringDelivered as text, k (k)}
 		<div class="steer delivered" title="The agent has read this.">
