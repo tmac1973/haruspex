@@ -14,8 +14,7 @@
 	let codeMaxIterations = $state(getSettings().codeMaxIterations);
 	let codeAutoApprove = $state(getSettings().codeAutoApprove);
 	let codeBgLogCapMb = $state(getSettings().codeBgLogCapMb);
-	// 'write' is not offered yet; a saved one shows as Read only.
-	let codeSubtasks = $state<'off' | 'read'>(getSettings().codeSubtasks === 'off' ? 'off' : 'read');
+	let codeSubtasks = $state(getSettings().codeSubtasks);
 	let codeStorePowershell = $state(getSettings().codeStorePowershell);
 	/** Windows: what the agent's PowerShell is; the Store option shows only where it applies. */
 	let powershell = $state<AgentPowershell | null>(null);
@@ -92,11 +91,12 @@
 	<h2>Subtasks</h2>
 	<label
 		class="row"
-		title="The agent can hand a self-contained part of a task to a helper agent that starts with a fresh context and reports back. Several run at once when Settings → Inference → Parallel streams allows it. Read-only helpers read and search; they never write or ask you anything."
+		title="The agent can hand a self-contained part of a task to a helper agent that starts with a fresh context and reports back. Several run at once when Settings → Inference → Parallel streams allows it. Read-only helpers read and search. With Read and write, a helper can also change files in its own copy of the project (git repositories only), and its changes are applied when it finishes. Helpers never ask you anything; their commands follow the session's approval rules."
 	>
 		<select bind:value={codeSubtasks} onchange={persistSubtasks}>
 			<option value="off">Off</option>
 			<option value="read">Read only</option>
+			<option value="write">Read and write</option>
 		</select>
 	</label>
 	<p class="help">Let the agent hand parts of a task to helper agents.</p>

@@ -44,7 +44,7 @@ import { shellProject } from '#lib/skills/project.ts';
 import { agentsMdPromptSection } from '#lib/skills/agentsMd.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import { buildCodeSystemPrompt } from '#lib/code/system-prompt.ts';
+import { buildCodeSystemPrompt, type BuildCodePromptOpts } from '#lib/code/system-prompt.ts';
 import { ioRoot } from '#lib/code/paths.ts';
 import { sessionLabel } from '#lib/code/sessionList.ts';
 import { loadShellPlatformSupported, shellPlatformSupported } from '#lib/shell/platformSupport.ts';
@@ -369,9 +369,16 @@ export type SystemPromptInput = Pick<
 	CodeTurnOptions,
 	'root' | 'readOnly' | 'remote' | 'worktree' | 'wslDistro' | 'onProject'
 > & {
-	/** The turn is a subtask's, handed this task (`delegate`). */
-	subtask?: { task: string };
+	/** The turn is a subtask's, handed this task (`delegate`); see `BuildCodePromptOpts.subtask`. */
+	subtask?: BuildCodePromptOpts['subtask'];
 };
+
+/** The subtask modes this turn's `delegate` offers; none for a subtask or with Subtasks off. */
+function delegateModes(o: SystemPromptInput): 'read' | 'write' | undefined {
+	const setting = getSettings().codeSubtasks;
+	if (o.subtask || setting === 'off') return undefined;
+	return setting === 'write' && !o.readOnly ? 'write' : 'read';
+}
 
 /** The coding prompt for the folder, with the trusted repo's AGENTS.md and skills. */
 export async function prepareSystem(
@@ -391,7 +398,7 @@ export async function prepareSystem(
 		worktree: o.worktree,
 		wslDistro: o.wslDistro,
 		powershell: o.wslDistro ? null : await agentPowershell(),
-		delegate: !o.subtask && getSettings().codeSubtasks !== 'off',
+		delegate: delegateModes(o),
 		subtask: o.subtask
 	});
 	return { system, skills };

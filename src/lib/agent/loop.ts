@@ -206,6 +206,8 @@ export interface AgentLoopOptions {
 	onSubtaskUpdate?: (call: ResolvedToolCall, state: SubtaskState) => void;
 	/** Stop handles for the turn's subtasks; see ToolContext.subtaskStops. */
 	subtaskStops?: SubtaskStops;
+	/** A command is waiting for the user's approval; see ToolContext.onApprovalWait. */
+	onApprovalWait?: (waiting: boolean) => void;
 	/**
 	 * Optional progress channel for a running tool call. Wired to the
 	 * tool's ToolContext.onProgress so a long-running tool can update its

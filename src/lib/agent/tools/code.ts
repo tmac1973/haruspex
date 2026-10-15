@@ -134,6 +134,15 @@ async function ensureCommandApproved(
 	return askAboutCommand(command, risk.reasons, { sessionKey: approvalKey(ctx), ctx });
 }
 
+/** Why this turn can't start a background command, or null when it can. */
+function backgroundRefusal(ctx: ToolContext): string | null {
+	if (ctx.subtask) return "Subtasks can't leave processes running; run it in the foreground.";
+	if (ctx.codeReadOnly) {
+		return 'Background commands are not available in a read-only session. Run it in the foreground, or describe what to run.';
+	}
+	return null;
+}
+
 /** What a read-only subtask is told when a command might write. */
 export const SUBTASK_READ_ONLY_REFUSAL =
 	'A read-only subtask can only run commands that read (ls, cat, grep, git log…). Report what you would run instead.';
@@ -157,6 +166,7 @@ async function askAboutCommand(
 ): Promise<'ok' | { message: string }> {
 	const requester = opts.ctx.requester?.() || null;
 	let choice;
+	opts.ctx.onApprovalWait?.(true);
 	try {
 		choice = await askCommandApproval({
 			command,
@@ -167,6 +177,8 @@ async function askAboutCommand(
 		});
 	} catch (e) {
 		return { message: toolInvokeError('run_command approval', e) };
+	} finally {
+		opts.ctx.onApprovalWait?.(false);
 	}
 	if (choice === 'deny') {
 		return {
@@ -275,13 +287,8 @@ registerTool({
 		if (!root) return toolResult(toolError('No working directory set.'));
 
 		const wantsBackground = args.background === true || args.watch === true;
-		if (wantsBackground && ctx.codeReadOnly) {
-			return toolResult(
-				toolError(
-					'Background commands are not available in a read-only session. Run it in the foreground, or describe what to run.'
-				)
-			);
-		}
+		const noBackground = wantsBackground ? backgroundRefusal(ctx) : null;
+		if (noBackground) return toolResult(toolError(noBackground));
 
 		// One writer per folder: a command that may change files takes it.
 		// Before asking, so the user isn't asked about a command that then

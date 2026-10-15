@@ -142,10 +142,10 @@ describe('delegate', () => {
 		expect(JSON.parse(failed.result).error).toContain('server went away');
 	});
 
-	it('wants a task, and only mode read', async () => {
+	it('wants a task, and only read mode while writing is off', async () => {
 		expect((await executeDelegate({ mode: 'read' }, ctx())).result).toContain('requires a task');
 		const write = await executeDelegate({ task: 't', mode: 'write' }, ctx());
-		expect(JSON.parse(write.result).error).toContain('Only mode "read"');
+		expect(JSON.parse(write.result).error).toContain('Write subtasks are off');
 	});
 
 	it('labels a call by its label, else the start of its task', () => {

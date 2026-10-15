@@ -149,3 +149,27 @@ describe('runSubtask', () => {
 		expect(res).toMatchObject({ outcome: 'failed', error: 'server went away' });
 	});
 });
+
+describe('runSubtask in write mode', () => {
+	it('writes in its worktree, under a guard of its own, with the parent’s approvals', async () => {
+		answers('added it');
+		const onApprovalWait = vi.fn();
+		await runSubtask({
+			...base,
+			mode: 'write',
+			root: '/w/app',
+			worktree: { root: '/w/app', linked: ['node_modules'] },
+			sessionId: 's1',
+			onApprovalWait
+		});
+		const o = loopOptions();
+		expect(o).toMatchObject({ workingDir: '/w/app', codeReadOnly: false, codeSessionId: 's1' });
+		expect(o.onApprovalWait).toBe(onApprovalWait);
+		expect(await o.codeWriteGuard?.acquire()).toBeNull();
+		const system = String(o.messages[0].content);
+		expect(system).toContain('Project folder: /w/app');
+		expect(system).toContain('your own copy of the project');
+		expect(system).toContain('node_modules is shared');
+		expect(system).toContain('- fs_write_text');
+	});
+});

@@ -23,6 +23,7 @@ import { chooseCut, compactCodeThread } from '#lib/code/compaction.ts';
 import type { AgentStopReason, SearchStep } from '#lib/agent/loop.ts';
 import { markStepDone, markStepProgress } from '#lib/agent/steps.ts';
 import { SubtaskStops } from '#lib/code/subtask.ts';
+import { discardSessionSubtaskWorktrees } from '#lib/code/subtaskGit.ts';
 import { describeContextManaged } from '#lib/agent/context-budget.ts';
 import { computeMessageStats, type MessageStats } from '#lib/stores/chat.svelte.ts';
 import {
@@ -1114,9 +1115,16 @@ export async function deleteSession(
 		await raiseWindow(claim.owner);
 		return false;
 	}
+	// Where its subtasks' kept copies are: read before the record goes.
+	const place = await loadCodeSession(id).catch(() => null);
 	await closeSession(id);
 	// Processes a hand-off left running with no window to open them.
 	await invoke('code_bg_stop_owner', { owner: id }).catch(() => {});
+	if (place) {
+		await discardSessionSubtaskWorktrees(place.root, id, place.wsl_distro ?? null).catch((e) =>
+			logDebug('code', 'removing subtask worktrees failed', { id, error: errMessage(e) })
+		);
+	}
 	try {
 		await deleteCodeSession(id);
 	} finally {

@@ -8,6 +8,7 @@
 	import type { Snippet } from 'svelte';
 	import { subtaskActive, type SubtaskState } from '#lib/code/subtask.ts';
 	import { formatCommandDuration } from '#lib/code/commandResult.ts';
+	import { copyText } from '#lib/utils/copyText.ts';
 
 	let {
 		subtask,
@@ -27,6 +28,7 @@
 	const STATUS: Record<SubtaskState['status'], string> = {
 		queued: 'waiting for a slot',
 		running: 'running',
+		approval: 'waiting for your approval',
 		done: 'done',
 		stopped: 'stopped',
 		failed: 'failed'
@@ -46,6 +48,37 @@
 	});
 	const calls = $derived(subtask.steps.length);
 
+	/** One line on what became of a writing subtask's changes. */
+	const applyLine = $derived.by(() => {
+		const a = subtask.apply;
+		if (!a) return null;
+		const n = a.files.length;
+		const files = `${n} file${n === 1 ? '' : 's'}`;
+		switch (a.status) {
+			case 'none':
+				return 'Changed no files';
+			case 'applied':
+				return `Applied ${files}`;
+			case 'conflict':
+				return `Didn't apply: conflict in ${a.files.join(', ')}`;
+			case 'discarded':
+				return 'Not applied';
+			case 'kept':
+				return `Not applied; kept in ${a.worktree}`;
+		}
+	});
+
+	let copied = $state(false);
+	async function copyPath(path: string) {
+		try {
+			await copyText(path);
+			copied = true;
+			setTimeout(() => (copied = false), 1500);
+		} catch {
+			copied = false;
+		}
+	}
+
 	let stepsOpen = $state<boolean | null>(null);
 	/** Open while it runs, folded once it ends, unless the user chose. */
 	const showSteps = $derived(stepsOpen ?? active);
@@ -53,7 +86,7 @@
 
 <div class="card {subtask.status}" data-testid="subtask-card">
 	<div class="head">
-		<span class="kind">Subtask</span>
+		<span class="kind">{subtask.mode === 'write' ? 'Writing subtask' : 'Subtask'}</span>
 		<span class="label" title={subtask.task}>{subtask.label}</span>
 		<span class="status" data-testid="subtask-status">{STATUS[subtask.status]}</span>
 		{#if elapsed}<span class="time">{elapsed}</span>{/if}
@@ -70,6 +103,28 @@
 		{#if showSteps && steps}
 			<div class="steps">{@render steps(subtask)}</div>
 		{/if}
+	{/if}
+	{#if applyLine}
+		<div class="apply {subtask.apply?.status}" data-testid="subtask-apply">
+			{#if subtask.apply?.status === 'applied' && subtask.apply.files.length && !compact}
+				<details>
+					<summary>{applyLine}</summary>
+					<ul>
+						{#each subtask.apply.files as file (file)}<li><code>{file}</code></li>{/each}
+					</ul>
+				</details>
+			{:else}
+				<span>{applyLine}</span>
+				{#if subtask.apply?.worktree && !compact}
+					<button
+						class="toggle copy"
+						title="Copy the path of its copy of the project"
+						onclick={() => void copyPath(subtask.apply?.worktree ?? '')}
+						>{copied ? 'Copied' : 'Copy path'}</button
+					>
+				{/if}
+			{/if}
+		</div>
 	{/if}
 	{#if subtask.status === 'failed' && subtask.error}
 		<div class="error">{subtask.error}</div>
@@ -155,6 +210,36 @@
 		padding: 0 10px 4px 18px;
 		border-left: 2px solid var(--border);
 		margin: 0 10px 6px;
+	}
+
+	.apply {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 2px 10px 6px;
+		color: var(--text-secondary);
+	}
+
+	.apply.applied {
+		color: var(--success);
+	}
+
+	.apply.conflict {
+		color: var(--warning);
+	}
+
+	.apply ul {
+		margin: 4px 0 0;
+		padding-left: 1.4em;
+		color: var(--text-primary);
+	}
+
+	.apply summary {
+		cursor: pointer;
+	}
+
+	.toggle.copy {
+		margin: 0;
 	}
 
 	.error {

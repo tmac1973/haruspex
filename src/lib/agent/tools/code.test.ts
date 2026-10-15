@@ -1280,3 +1280,33 @@ describe('run_command in a read-only subtask', () => {
 		expect(mocks.askCommandApproval).toHaveBeenCalled();
 	});
 });
+
+describe('run_command in a writing subtask', () => {
+	const child = {
+		...codeCtx,
+		codeSessionId: 's1',
+		interactive: true,
+		subtask: { depth: 1 as const }
+	};
+
+	it('refuses background and watch', async () => {
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		for (const flag of ['background', 'watch']) {
+			const out = await executeTool('run_command', { command: 'npm run dev', [flag]: true }, child);
+			expect(out.result).toContain("Subtasks can't leave processes running");
+		}
+		expect(mocks.invoke).not.toHaveBeenCalledWith('code_bg_start', expect.anything());
+	});
+
+	it('says while an approval prompt is open', async () => {
+		const waits: boolean[] = [];
+		mocks.askCommandApproval.mockImplementation(async () => {
+			waits.push(true);
+			return 'allow_once';
+		});
+		const onApprovalWait = vi.fn();
+		const { executeTool } = await import('#lib/agent/tools/index.ts');
+		await executeTool('run_command', { command: 'rm -rf build' }, { ...child, onApprovalWait });
+		expect(onApprovalWait.mock.calls).toEqual([[true], [false]]);
+	});
+});

@@ -101,10 +101,14 @@ export interface BuildCodePromptOpts {
 	 * user is at this computer, not driving it from another.
 	 */
 	shellHandoff?: boolean;
-	/** The turn has `delegate` (Settings → Code → Subtasks is on). */
-	delegate?: boolean;
-	/** The turn is a subtask's: `task` is what the parent agent handed it. */
-	subtask?: { task: string };
+	/** The turn has `delegate`, offering these modes (Settings → Code → Subtasks). */
+	delegate?: 'read' | 'write';
+	/**
+	 * The turn is a subtask's: `task` is what the parent agent handed it.
+	 * With `worktree` it writes, in that copy of the project, sharing the
+	 * `linked` dependency folders with it.
+	 */
+	subtask?: { task: string; worktree?: { root: string; linked: string[] } };
 }
 
 const WRITE_TOOL_LINE = /^- fs_(write|edit)_text /;
@@ -164,17 +168,54 @@ function handoffRule(opts: BuildCodePromptOpts): string {
 /** The most a subtask's report may run to before the parent's copy is cut. */
 export const SUBTASK_REPORT_CHARS = 4000;
 
-const DELEGATE_SECTION = `
+const DELEGATE_READ = `
 
 SUBTASKS:
-- delegate — hand a self-contained part of the request to a helper agent. It starts with an empty context in this folder, can read, search and run read-only commands, and returns a short report (paths and line numbers, not file contents). It cannot see this conversation, ask the user anything or write files.
-- Use it for independent parts that need many files read: "find every caller of X and how they handle errors", "work out how the tests mock Y". Not for one file you could read yourself, or for work that depends on another part's answer.
-- Write each task in full: what to find out, where to start, and what the report must contain.
+- delegate — hand a self-contained part of the request to a helper agent. It starts with an empty context in this folder and returns a short report (paths and line numbers, not file contents). It cannot see this conversation or ask the user anything.
+- mode read: it reads, searches and runs read-only commands. Use it for independent parts that need many files read: "find every caller of X and how they handle errors", "work out how the tests mock Y". Not for one file you could read yourself, or for work that depends on another part's answer.
+- Write each task in full: what to find out or change, where to start, and what the report must contain.
 - Several delegate calls in one response run at the same time where the server allows it; at most 8 per turn.`;
 
-/** A subtask's prompt: the parent's task, read-only tools, a report at the end. */
+const DELEGATE_WRITE = `
+- mode write: it makes a change in its own copy of the project, made from this folder as it is now, and can build and test there. When it finishes, its changes are applied to this folder for you; the result lists the files, or the conflict and the patch if they clash with changes made meanwhile. Give writers changes that touch different files from each other and from what you are editing, and check the applied files afterwards.`;
+
+function delegateSection(modes: BuildCodePromptOpts['delegate']): string {
+	if (!modes) return '';
+	return DELEGATE_READ + (modes === 'write' ? DELEGATE_WRITE : '');
+}
+
+/** What a subtask may do in its folder, and its tools for it. */
+function subtaskSession(worktree: { root: string; linked: string[] } | undefined): {
+	rules: string;
+	tools: string;
+	run: string;
+} {
+	if (!worktree) {
+		return {
+			rules:
+				'You may read, not write: no file writes or edits. run_command runs only commands that read (ls, cat, grep, git log, git diff…); anything else is refused.',
+			tools: fileTools(true),
+			run: '- run_command — run ONE read-only shell command; returns output + exit code.'
+		};
+	}
+	const shared = worktree.linked.length
+		? ` ${worktree.linked.join(', ')} ${worktree.linked.length === 1 ? 'is' : 'are'} shared with the original folder: use what is installed, but don't install, upgrade or delete anything in ${worktree.linked.length === 1 ? 'it' : 'them'}.`
+		: ' Dependencies may not be installed here; if a build needs them, say so in the report rather than installing.';
+	return {
+		rules: `This folder is your own copy of the project, made for this task from the original as it was when you started. Edit files and run commands here; when you finish, your changes are applied to the original for you. Don't commit, and don't touch anything outside this folder.${shared} A command may need the user's approval; if it is denied, take another way or say so in the report.`,
+		tools: fileTools(false),
+		run: '- run_command — run ONE shell command (build, test, lint); returns output + exit code. Nothing may keep running after you finish, so no background commands.'
+	};
+}
+
+/** A subtask's prompt: the parent's task, its tools, a report at the end. */
 function buildSubtaskPrompt(opts: BuildCodePromptOpts, task: string): ChatMessage {
 	const timeout = getSettings().codeRunCommandTimeoutSecs;
+	const worktree = opts.subtask?.worktree;
+	const session = subtaskSession(worktree);
+	const verify = worktree
+		? "\n- After changing files, run the project's own build or tests for what you changed and fix what breaks."
+		: '';
 	return {
 		role: 'system',
 		content: `You are a subtask of Haruspex's coding agent, working in a project folder. Another agent handed you one task; do that task and nothing else. Nobody will answer questions: decide for yourself, and say in the report what you assumed. Today is ${formatTodayLong()}.
@@ -183,20 +224,20 @@ YOUR TASK:
 ${task}
 
 SESSION:
-Project folder: ${opts.root}
-You may read, not write: no file writes or edits. run_command runs only commands that read (ls, cat, grep, git log, git diff…); anything else is refused. Commands run one at a time in the project folder without a terminal, time out after ${timeout}s, and a \`cd\` does not carry over between calls. Paths for file tools are relative to the project folder.${platformNote(opts)}
+Project folder: ${worktree?.root ?? opts.root}
+${session.rules} Commands run one at a time in the project folder without a terminal, time out after ${timeout}s, and a \`cd\` does not carry over between calls. Paths for file tools are relative to the project folder.${platformNote(opts)}
 
 TOOLS:
-${fileTools(true)}
-- run_command — run ONE read-only shell command; returns output + exit code. ${UNIX_CAPTURE_NOTE}
+${session.tools}
+${session.run} ${UNIX_CAPTURE_NOTE}
 ${WEB_TOOLS}
 
 HOW TO WORK:
-- Search first (code_grep, code_glob), then read only the slices you need.
-- Stop once you can answer the task; don't explore beyond it.
+- Search first (code_grep, code_glob), then read only the slices you need.${verify}
+- Stop once the task is done; don't go beyond it.
 
 REPORT:
-Your final answer is the report the other agent receives, and the only thing it sees of your work. Keep it under ${SUBTASK_REPORT_CHARS} characters: what you found, with file paths and line numbers, and anything you could not settle. Quote code only where a line or two is the answer.${tail(opts)}`
+Your final answer is the report the other agent receives, and the only thing it sees of your work. Keep it under ${SUBTASK_REPORT_CHARS} characters: what you found${worktree ? ' and changed, and whether the build and tests pass' : ''}, with file paths and line numbers, and anything you could not settle. Quote code only where a line or two is the answer.${tail(opts)}`
 	};
 }
 
@@ -221,7 +262,7 @@ ${fileTools(opts.readOnly)}
 - command_output — the latest output of a background command, by the id run_command returned, and whether it is still running.
 - command_stop — stop a background command, and everything it started.
 ${handoffToolLine(opts)}- open_in_editor — open files in an editor window for the user to look at. It returns at once and does not report their edits.
-${WEB_TOOLS}${assetLine()}${opts.delegate ? DELEGATE_SECTION : ''}
+${WEB_TOOLS}${assetLine()}${delegateSection(opts.delegate)}
 
 RUNNING PROCESSES:
 - Servers / watchers / GUIs (anything that does not exit on its own): start them with run_command background:true. Check on one with command_output and stop it with command_stop when you are done with it. Do NOT run these in the foreground — they will just time out.
