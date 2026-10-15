@@ -15,6 +15,7 @@ pub mod folders;
 pub mod git;
 pub mod job;
 pub mod search;
+pub mod subtask_git;
 pub mod wsl;
 
 use crate::command_scope;
