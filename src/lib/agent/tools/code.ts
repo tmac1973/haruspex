@@ -93,6 +93,10 @@ async function ensureCommandApproved(
 	// reach Haruspex's own database and services unasked.
 	const boundary = await checkCommandBoundary(command, ctx);
 	if (boundary !== 'ok') return boundary;
+	// A read-only subtask has nobody to ask: what reads runs, nothing else does.
+	if (ctx.subtask && ctx.codeReadOnly) {
+		return isReadOnlyCommand(command) ? 'ok' : { message: toolError(SUBTASK_READ_ONLY_REFUSAL) };
+	}
 	// A read-only session asks about every command: a "harmless" one can
 	// still write. Neither auto-approve nor "for this session" skips it.
 	if (ctx.codeReadOnly) {
@@ -129,6 +133,10 @@ async function ensureCommandApproved(
 	}
 	return askAboutCommand(command, risk.reasons, { sessionKey: approvalKey(ctx), ctx });
 }
+
+/** What a read-only subtask is told when a command might write. */
+export const SUBTASK_READ_ONLY_REFUSAL =
+	'A read-only subtask can only run commands that read (ls, cat, grep, git log…). Report what you would run instead.';
 
 /** Why a read-only session's command is asked about. */
 const READ_ONLY_REASON: RiskMatch = {

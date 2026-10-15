@@ -195,6 +195,10 @@ export interface AgentLoopOptions {
 	wslDistro?: string | null;
 	/** One writer per folder; see ToolContext.codeWriteGuard. */
 	codeWriteGuard?: CodeWriteGuard;
+	/** The session's effort, for the subtasks it starts; see ToolContext.codeEffort. */
+	codeEffort?: string | null;
+	/** The turn is a subtask's; see ToolContext.subtask. */
+	subtask?: { depth: 1 };
 	/**
 	 * Optional progress channel for a running tool call. Wired to the
 	 * tool's ToolContext.onProgress so a long-running tool can update its

@@ -107,3 +107,21 @@ describe('Code tab prompt', () => {
 		expect(at('PROJECT INSTRUCTIONS:')).toBeLessThan(at('SKILLS:'));
 	});
 });
+
+describe('Code tab prompt with subtasks', () => {
+	it('tells the agent about delegate only when it has the tool', () => {
+		expect(tab({ delegate: true })).toContain('SUBTASKS:');
+		expect(tab()).not.toContain('SUBTASKS:');
+	});
+
+	it('gives a subtask its task, read-only tools and the report limit, without the parent’s tools', () => {
+		const text = tab({ subtask: { task: 'Find the callers of foo.' } });
+		expect(text).toContain('YOUR TASK:\nFind the callers of foo.');
+		expect(text).toContain('under 4000 characters');
+		expect(text).toContain('only commands that read');
+		expect(text).not.toContain('- fs_write_text');
+		expect(text).not.toContain('open_in_shell');
+		expect(text).not.toContain('command_output');
+		expect(text).not.toContain('SUBTASKS:');
+	});
+});

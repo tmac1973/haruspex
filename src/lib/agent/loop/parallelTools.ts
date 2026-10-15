@@ -32,7 +32,10 @@ const PARALLEL_SAFE_TOOLS = new Set([
 	// Read-only; `load_skill` marks a skill loaded before it reads, so two
 	// calls for one skill in a batch load it once.
 	'load_skill',
-	'read_skill_file'
+	'read_skill_file',
+	// A subtask: a child agent that only reads, with a model call of its own
+	// through the turn's slot lender (`createSlotLender`).
+	'delegate'
 ]);
 
 /** The most calls one response runs at once, even on an unbounded lane. */

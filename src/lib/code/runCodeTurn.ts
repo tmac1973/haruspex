@@ -234,6 +234,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 					codeReadOnly: o.readOnly ?? false,
 					codeRemote: o.remote ?? false,
 					codeWriteGuard: o.writeGuard,
+					codeEffort: o.effort,
 					wslDistro: o.wslDistro ?? null,
 					contextSize,
 					maxIterations: settings.codeMaxIterations,
@@ -356,9 +357,18 @@ function batchLeads(messages: () => ChatMessage[]): {
 	};
 }
 
+/** What `prepareSystem` needs of a turn. */
+export type SystemPromptInput = Pick<
+	CodeTurnOptions,
+	'root' | 'readOnly' | 'remote' | 'worktree' | 'wslDistro' | 'onProject'
+> & {
+	/** The turn is a subtask's, handed this task (`delegate`). */
+	subtask?: { task: string };
+};
+
 /** The coding prompt for the folder, with the trusted repo's AGENTS.md and skills. */
-async function prepareSystem(
-	o: CodeTurnOptions,
+export async function prepareSystem(
+	o: SystemPromptInput,
 	backend: BackendOverride | undefined
 ): Promise<{ system: ChatMessage; skills: TurnSkills }> {
 	// A WSL session's repo is read through its distro's share.
@@ -373,7 +383,9 @@ async function prepareSystem(
 		shellHandoff: !o.remote && shellPlatformSupported() !== false,
 		worktree: o.worktree,
 		wslDistro: o.wslDistro,
-		powershell: o.wslDistro ? null : await agentPowershell()
+		powershell: o.wslDistro ? null : await agentPowershell(),
+		delegate: !o.subtask && getSettings().codeSubtasks !== 'off',
+		subtask: o.subtask
 	});
 	return { system, skills };
 }
@@ -383,7 +395,7 @@ async function prepareSystem(
  * the thread may open with a system message of its own (a summary, or a note)
  * and strict chat templates reject two in a row.
  */
-function assemble(
+export function assemble(
 	system: ChatMessage,
 	thread: ChatMessage[],
 	notice: string | null

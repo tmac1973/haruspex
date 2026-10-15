@@ -61,6 +61,8 @@ interface ToolFilterOpts {
 	codeReadOnly: boolean;
 	/** A Code turn started from another computer: no hand-off to a Shell tab. */
 	codeRemote: boolean;
+	/** A subtask's turn (`delegate`'s child): see `SUBTASK_EXCLUDED`. */
+	subtask: boolean;
 	hasEmail: boolean;
 	sandboxEnabled: boolean;
 	/** Memory is on AND its embedding model is present — see memoryActive(). */
@@ -216,7 +218,27 @@ function isCodeTab(opts: ToolFilterOpts): boolean {
 	return opts.codeMode && !opts.shellMode;
 }
 
+/**
+ * What a subtask never gets: another subtask, anything that asks the user or
+ * opens something for them, anything left running after it ends, and art.
+ */
+function subtaskExcludes(reg: ToolRegistration): boolean {
+	const name = reg.schema.function.name;
+	return (
+		name === 'delegate' ||
+		name === 'make_asset' ||
+		CODE_TAB_ONLY.has(name) ||
+		reg.category === 'interaction' ||
+		reg.category === 'desktop'
+	);
+}
+
 function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
+	if (opts.subtask && subtaskExcludes(reg)) return false;
+	// Subtasks are the user's to switch off (Settings → Code → Subtasks).
+	if (reg.schema.function.name === 'delegate' && getSettings().codeSubtasks === 'off') {
+		return false;
+	}
 	// Background-process and hand-off tools belong to the Code tab alone. Shell
 	// Code mode has a real terminal for both, and Chat and Shell run nothing.
 	if (CODE_TAB_ONLY.has(reg.schema.function.name)) {
@@ -247,6 +269,8 @@ export function getToolSchemas(opts: {
 	codeReadOnly?: boolean;
 	/** A Code turn started from another computer: `open_in_shell` is left out. */
 	codeRemote?: boolean;
+	/** A subtask's turn: no `delegate`, and nothing that needs the user. */
+	subtask?: boolean;
 	/** A live user is present. Gates tools that only make sense for one. */
 	interactive?: boolean;
 	/**
@@ -293,6 +317,7 @@ export function getToolSchemas(opts: {
 		codeMode: opts.codeMode ?? false,
 		codeReadOnly: opts.codeReadOnly ?? false,
 		codeRemote: opts.codeRemote ?? false,
+		subtask: opts.subtask ?? false,
 		hasEmail: hasEnabledEmailAccount(),
 		hasCalendar: hasEnabledCalendarAccount(),
 		hasContacts: hasEnabledContactsAccount(),
@@ -322,9 +347,11 @@ function schemaFor(
 ): ToolDefinition | null {
 	// The user guide answers the person asking, in any mode; a job has nobody
 	// asking. Remote guests get it through their allowlist.
-	if (reg.category === 'guide') return filter.interactive ? reg.schema : null;
+	if (reg.category === 'guide') return filter.interactive && !filter.subtask ? reg.schema : null;
 	if (reg.category === 'skills-write') {
-		if (!skills.hasSkills || !filter.interactive || filter.codeReadOnly) return null;
+		if (!skills.hasSkills || !filter.interactive || filter.codeReadOnly || filter.subtask) {
+			return null;
+		}
 		// The repo's AGENTS.md is a Code mode file, like the repo itself.
 		if (reg.schema.function.name === 'write_agents_md') {
 			return filter.codeMode ? reg.schema : null;

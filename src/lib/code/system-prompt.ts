@@ -101,6 +101,10 @@ export interface BuildCodePromptOpts {
 	 * user is at this computer, not driving it from another.
 	 */
 	shellHandoff?: boolean;
+	/** The turn has `delegate` (Settings → Code → Subtasks is on). */
+	delegate?: boolean;
+	/** The turn is a subtask's: `task` is what the parent agent handed it. */
+	subtask?: { task: string };
 }
 
 const WRITE_TOOL_LINE = /^- fs_(write|edit)_text /;
@@ -157,8 +161,48 @@ function handoffRule(opts: BuildCodePromptOpts): string {
 		: `${cannot} Say in your reply what to run and why; the user runs it themselves, at this computer.`;
 }
 
+/** The most a subtask's report may run to before the parent's copy is cut. */
+export const SUBTASK_REPORT_CHARS = 4000;
+
+const DELEGATE_SECTION = `
+
+SUBTASKS:
+- delegate — hand a self-contained part of the request to a helper agent. It starts with an empty context in this folder, can read, search and run read-only commands, and returns a short report (paths and line numbers, not file contents). It cannot see this conversation, ask the user anything or write files.
+- Use it for independent parts that need many files read: "find every caller of X and how they handle errors", "work out how the tests mock Y". Not for one file you could read yourself, or for work that depends on another part's answer.
+- Write each task in full: what to find out, where to start, and what the report must contain.
+- Several delegate calls in one response run at the same time where the server allows it; at most 8 per turn.`;
+
+/** A subtask's prompt: the parent's task, read-only tools, a report at the end. */
+function buildSubtaskPrompt(opts: BuildCodePromptOpts, task: string): ChatMessage {
+	const timeout = getSettings().codeRunCommandTimeoutSecs;
+	return {
+		role: 'system',
+		content: `You are a subtask of Haruspex's coding agent, working in a project folder. Another agent handed you one task; do that task and nothing else. Nobody will answer questions: decide for yourself, and say in the report what you assumed. Today is ${formatTodayLong()}.
+
+YOUR TASK:
+${task}
+
+SESSION:
+Project folder: ${opts.root}
+You may read, not write: no file writes or edits. run_command runs only commands that read (ls, cat, grep, git log, git diff…); anything else is refused. Commands run one at a time in the project folder without a terminal, time out after ${timeout}s, and a \`cd\` does not carry over between calls. Paths for file tools are relative to the project folder.${platformNote(opts)}
+
+TOOLS:
+${fileTools(true)}
+- run_command — run ONE read-only shell command; returns output + exit code. ${UNIX_CAPTURE_NOTE}
+${WEB_TOOLS}
+
+HOW TO WORK:
+- Search first (code_grep, code_glob), then read only the slices you need.
+- Stop once you can answer the task; don't explore beyond it.
+
+REPORT:
+Your final answer is the report the other agent receives, and the only thing it sees of your work. Keep it under ${SUBTASK_REPORT_CHARS} characters: what you found, with file paths and line numbers, and anything you could not settle. Quote code only where a line or two is the answer.${tail(opts)}`
+	};
+}
+
 /** The Code tab's prompt: one-shot commands in a fixed project folder. */
 export function buildCodeSystemPrompt(opts: BuildCodePromptOpts): ChatMessage {
+	if (opts.subtask) return buildSubtaskPrompt(opts, opts.subtask.task);
 	const timeout = getSettings().codeRunCommandTimeoutSecs;
 	return {
 		role: 'system',
@@ -177,7 +221,7 @@ ${fileTools(opts.readOnly)}
 - command_output — the latest output of a background command, by the id run_command returned, and whether it is still running.
 - command_stop — stop a background command, and everything it started.
 ${handoffToolLine(opts)}- open_in_editor — open files in an editor window for the user to look at. It returns at once and does not report their edits.
-${WEB_TOOLS}${assetLine()}
+${WEB_TOOLS}${assetLine()}${opts.delegate ? DELEGATE_SECTION : ''}
 
 RUNNING PROCESSES:
 - Servers / watchers / GUIs (anything that does not exit on its own): start them with run_command background:true. Check on one with command_output and stop it with command_stop when you are done with it. Do NOT run these in the foreground — they will just time out.

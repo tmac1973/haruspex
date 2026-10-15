@@ -8,6 +8,7 @@ import '#lib/agent/tools/sandbox.ts';
 import '#lib/agent/tools/code.ts';
 import '#lib/agent/tools/code-bg.ts';
 import '#lib/agent/tools/code-handoff.ts';
+import '#lib/agent/tools/delegate.ts';
 import '#lib/agent/tools/shell-interactive.ts';
 import '#lib/agent/tools/audit.ts';
 import '#lib/agent/tools/planning.ts';
