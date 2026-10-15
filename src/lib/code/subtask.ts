@@ -7,15 +7,20 @@
  * saved thread, which `structuredClone` and the snapshot must be able to take.
  */
 import type { SearchStep } from '#lib/agent/loop.ts';
+import type { SubtaskApplyState } from '#lib/code/subtaskApply.ts';
 
-export type SubtaskStatus = 'queued' | 'running' | 'done' | 'stopped' | 'failed';
+/** `approval`: a command it wants to run is waiting for the user. */
+export type SubtaskStatus = 'queued' | 'running' | 'approval' | 'done' | 'stopped' | 'failed';
+
+/** read: reads and searches only. write: works in a worktree of its own. */
+export type SubtaskMode = 'read' | 'write';
 
 export interface SubtaskState {
 	/** The `delegate` tool call's id; also the step's. */
 	id: string;
 	label: string;
 	task: string;
-	mode: 'read';
+	mode: SubtaskMode;
 	status: SubtaskStatus;
 	/** The child's own tool steps, as they ran. */
 	steps: SearchStep[];
@@ -23,14 +28,21 @@ export interface SubtaskState {
 	error: string | null;
 	startedAt: number | null;
 	endedAt: number | null;
+	/** A writing subtask's changes, once it has ended. */
+	apply?: SubtaskApplyState;
 }
 
-export function newSubtaskState(id: string, label: string, task: string): SubtaskState {
+export function newSubtaskState(
+	id: string,
+	label: string,
+	task: string,
+	mode: SubtaskMode = 'read'
+): SubtaskState {
 	return {
 		id,
 		label,
 		task,
-		mode: 'read',
+		mode,
 		status: 'queued',
 		steps: [],
 		report: null,
@@ -48,6 +60,17 @@ export function startedSubtask(s: SubtaskState, at = Date.now()): SubtaskState {
 /** The subtask with its child's steps as they are now. */
 export function withChildSteps(s: SubtaskState, steps: SearchStep[]): SubtaskState {
 	return { ...s, steps: [...steps] };
+}
+
+/** The subtask waiting on the user's approval for a command, or back from it. */
+export function awaitingApproval(s: SubtaskState, waiting: boolean): SubtaskState {
+	if (!subtaskActive(s)) return s;
+	return { ...s, status: waiting ? 'approval' : 'running' };
+}
+
+/** The subtask with what became of its changes. */
+export function withApply(s: SubtaskState, apply: SubtaskApplyState): SubtaskState {
+	return { ...s, apply };
 }
 
 /** The subtask as it ended. */

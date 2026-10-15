@@ -119,6 +119,7 @@ export async function executeToolCalls(
 				toolCallId: call.id,
 				onSubtask: (state) => options.onSubtaskUpdate?.(call, state),
 				subtaskStops: options.subtaskStops,
+				onApprovalWait: options.onApprovalWait,
 				wslDistro: ctx.wslDistro,
 				filesWrittenThisTurn: ctx.filesWrittenThisTurn,
 				filesRewritableThisTurn: ctx.filesRewritableThisTurn,

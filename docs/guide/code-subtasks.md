@@ -1,6 +1,6 @@
 ---
 title: Code subtasks
-description: Subtasks in the Code tab — helper agents the coding agent hands parts of a task to, how many run at once, and how to turn them off.
+description: Subtasks in the Code tab — helper agents the coding agent hands parts of a task to, read-only or writing in their own copy, how many run at once, and how to turn them off.
 ---
 
 # Code subtasks
@@ -11,7 +11,15 @@ A subtask is a helper agent the coding agent starts on its own to handle one par
 
 The agent decides when to use subtasks; you ask as usual. Each subtask starts with an empty context in the session's folder, does its one task, and hands back a short report (at most 4,000 characters). The agent sees the report, not everything the subtask read, so long investigations take less of the session's context.
 
-In this release subtasks only read. They search, read files and run commands that only read (`ls`, `cat`, `grep`, `git log` and the like); any other command is refused without asking you. They use the session's model and effort.
+A read-only subtask searches, reads files and runs commands that only read (`ls`, `cat`, `grep`, `git log` and the like); any other command is refused without asking you. Subtasks use the session's model and effort.
+
+## Let subtasks change files
+
+With Settings → Code → Subtasks at **Read and write**, the agent can also hand a change to a writing subtask. It works in its own copy of the project: a git worktree made from the folder as it is right then, uncommitted changes included, beside the repository in `<repo>-worktrees/.subtasks/`. Ignored dependency folders (`node_modules`, `.venv`, `venv`, `vendor`) are shared with it rather than copied, so it can build and test without installing. Its commands follow the session's approval rules: **Allow for this session** and **Auto-approve commands** cover it, and otherwise **Run this command?** names the subtask and its card says it is waiting for you.
+
+When it finishes, its changes are applied to the folder: as they are, or merged when the folder changed meanwhile. If they clash with those changes nothing is applied, the card says **Didn't apply**, and the agent gets the patch to make the change itself; that copy stays until you delete the session. Changes from a subtask you stop are dropped.
+
+Writing subtasks need a git repository, and aren't offered in a read-only session.
 
 ## Follow a subtask
 
@@ -29,11 +37,12 @@ Up to 4 run at once, and the agent starts at most 8 per turn.
 
 ## Turn subtasks off
 
-Settings → Code → Subtasks: **Read only** (the default) or **Off**. Off, the agent does every part itself.
+Settings → Code → Subtasks: **Read only** (the default), **Read and write**, or **Off**. Off, the agent does every part itself.
 
 ## What subtasks don't do
 
-- They don't write or edit files, and don't run commands that might.
+- Read-only ones don't write or edit files, or run commands that might.
+- Writing ones don't commit, and don't install or upgrade the shared dependency folders.
 - They don't ask you anything, and can't see the conversation: the agent writes each one's task in full.
 - They don't start subtasks of their own, or leave anything running.
 - They're only in the Code tab, not the Shell tab's Full access or Chat.

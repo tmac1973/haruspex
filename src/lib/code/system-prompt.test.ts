@@ -110,7 +110,7 @@ describe('Code tab prompt', () => {
 
 describe('Code tab prompt with subtasks', () => {
 	it('tells the agent about delegate only when it has the tool', () => {
-		expect(tab({ delegate: true })).toContain('SUBTASKS:');
+		expect(tab({ delegate: 'read' })).toContain('SUBTASKS:');
 		expect(tab()).not.toContain('SUBTASKS:');
 	});
 
@@ -123,5 +123,27 @@ describe('Code tab prompt with subtasks', () => {
 		expect(text).not.toContain('open_in_shell');
 		expect(text).not.toContain('command_output');
 		expect(text).not.toContain('SUBTASKS:');
+	});
+});
+
+describe('Code tab prompt with writing subtasks', () => {
+	it('tells the agent about write mode only when it is offered', () => {
+		expect(tab({ delegate: 'write' })).toContain('mode write:');
+		expect(tab({ delegate: 'read' })).not.toContain('mode write:');
+	});
+
+	it('gives a writing subtask its copy, the write tools and the shared folders', () => {
+		const text = tab({
+			subtask: {
+				task: 'Add a mute toggle.',
+				worktree: { root: '/w', linked: ['node_modules', '.venv'] }
+			}
+		});
+		expect(text).toContain('Project folder: /w');
+		expect(text).toContain('your own copy of the project');
+		expect(text).toContain('node_modules, .venv are shared');
+		expect(text).toContain('- fs_edit_text');
+		expect(text).toContain("Don't commit");
+		expect(text).not.toContain('only commands that read');
 	});
 });

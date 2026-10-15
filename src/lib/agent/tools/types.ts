@@ -233,6 +233,11 @@ export interface ToolContext {
 	/** Where a Code session keeps its running subtasks' stop handles. */
 	subtaskStops?: SubtaskStops;
 	/**
+	 * A `run_command` approval prompt opened (true) or closed (false). A
+	 * subtask's card says it is waiting for the user meanwhile.
+	 */
+	onApprovalWait?: (waiting: boolean) => void;
+	/**
 	 * Optional progress channel for long-running tools. The agent loop
 	 * wires this to the currently-running tool card so a tool can surface
 	 * transient status (e.g. run_python reporting "Installing plotly…"

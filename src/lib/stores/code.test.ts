@@ -954,6 +954,16 @@ describe('one window per session', () => {
 		expect(db.rows.has(s.id)).toBe(false);
 		expect(db.owners.has(s.id)).toBe(false);
 	});
+
+	it('removes the copies its subtasks kept when the session is deleted', async () => {
+		const s = await newSession('/proj');
+		await deleteSession(s.id);
+		expect(mocks.invoke).toHaveBeenCalledWith('code_subtask_worktrees_discard_session', {
+			folder: '/proj',
+			sessionId: s.id,
+			wslDistro: null
+		});
+	});
 });
 
 describe('fork from a message', () => {

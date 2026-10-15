@@ -67,3 +67,37 @@ describe('SubtaskCard', () => {
 		expect(screen.queryByRole('button')).toBeNull();
 	});
 });
+
+describe('SubtaskCard for a writing subtask', () => {
+	const writer = newSubtaskState('d2', 'scores', 'Add a high-score table.', 'write');
+
+	it('says when it waits for approval', () => {
+		render(SubtaskCard, {
+			subtask: { ...startedSubtask(writer), status: 'approval' },
+			onStop: () => {}
+		});
+		expect(screen.getByTestId('subtask-status').textContent).toBe('waiting for your approval');
+		expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
+		expect(screen.getByText('Writing subtask')).toBeTruthy();
+	});
+
+	it('lists the files it applied', () => {
+		const s = finishedSubtask(writer, { status: 'done', report: 'r', steps: [] });
+		render(SubtaskCard, {
+			subtask: { ...s, apply: { status: 'applied', files: ['src/score.ts'] } }
+		});
+		expect(screen.getByTestId('subtask-apply').textContent).toContain('Applied 1 file');
+		expect(screen.getByText('src/score.ts')).toBeTruthy();
+	});
+
+	it('says when it didn’t apply, with its copy’s path to copy', () => {
+		const s = finishedSubtask(writer, { status: 'done', report: 'r', steps: [] });
+		render(SubtaskCard, {
+			subtask: { ...s, apply: { status: 'conflict', files: ['src/a.ts'], worktree: '/w/s1-1' } }
+		});
+		expect(screen.getByTestId('subtask-apply').textContent).toContain(
+			"Didn't apply: conflict in src/a.ts"
+		);
+		expect(screen.getByRole('button', { name: 'Copy path' })).toBeTruthy();
+	});
+});

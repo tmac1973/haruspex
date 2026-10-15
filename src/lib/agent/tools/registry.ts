@@ -372,8 +372,37 @@ function schemaFor(
  * swaps in its own where a tool behaves differently there.
  */
 function profileSchema(schema: ToolDefinition, filter: ToolFilterOpts): ToolDefinition {
+	if (schema.function.name === 'delegate') return delegateSchema(schema, filter);
 	const override = isCodeTab(filter) ? CODE_TAB_DESCRIPTIONS[schema.function.name] : undefined;
 	return override ? withDescription(schema, override) : schema;
+}
+
+/**
+ * `delegate` offers write mode only where Settings → Code → Subtasks allows
+ * it and the session may write; otherwise its `mode` is read alone.
+ */
+function delegateSchema(schema: ToolDefinition, filter: ToolFilterOpts): ToolDefinition {
+	if (getSettings().codeSubtasks === 'write' && !filter.codeReadOnly) return schema;
+	const params = schema.function.parameters as {
+		properties: Record<string, Record<string, unknown>>;
+	};
+	return {
+		...schema,
+		function: {
+			...schema.function,
+			parameters: {
+				...params,
+				properties: {
+					...params.properties,
+					mode: {
+						type: 'string',
+						enum: ['read'],
+						description: 'read: the subtask reads and searches the project only.'
+					}
+				}
+			}
+		}
+	};
 }
 
 /** A schema with its description, and any named parameters', replaced. */

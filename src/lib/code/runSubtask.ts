@@ -18,7 +18,7 @@
 import type { BackendOverride } from '#lib/api.ts';
 import type { AgentStopReason, SearchStep } from '#lib/agent/loop.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
-import { runTurnCore } from '#lib/agent/runTurn.ts';
+import { runTurnCore, type TurnLoopOptions } from '#lib/agent/runTurn.ts';
 import { markStepDone, markStepProgress, newRunningStep } from '#lib/agent/steps.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { finalizeStreamText } from '#lib/markdown.ts';
@@ -26,7 +26,7 @@ import { getSettings } from '#lib/stores/settings.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { assemble, prepareSystem } from '#lib/code/runCodeTurn.ts';
 import { SUBTASK_REPORT_CHARS } from '#lib/code/system-prompt.ts';
-import type { SlotLender } from '#lib/agent/tools/types.ts';
+import type { CodeWriteGuard, SlotLender } from '#lib/agent/tools/types.ts';
 
 /** The most model rounds a subtask takes before it has to answer. */
 export const SUBTASK_MAX_ROUNDS = 25;
@@ -34,7 +34,7 @@ export const SUBTASK_MAX_ROUNDS = 25;
 export interface SubtaskOptions {
 	/** The parent's Code session: owns approvals and anything it runs. */
 	sessionId?: string;
-	/** The folder the child works in. */
+	/** The folder the child works in: the session's, or its worktree's for write mode. */
 	root: string;
 	wslDistro?: string | null;
 	backend?: BackendOverride | null;
@@ -44,7 +44,9 @@ export interface SubtaskOptions {
 	task: string;
 	/** A few words naming the task, for approval prompts and the card. */
 	label: string;
-	mode: 'read';
+	mode: 'read' | 'write';
+	/** Write mode: the worktree made for it, and the dependency folders it shares. */
+	worktree?: { root: string; linked: string[] };
 	signal?: AbortSignal;
 	/** The parent turn's slot lender; absent on a serialized lane. */
 	runInSlot?: SlotLender;
@@ -57,7 +59,15 @@ export interface SubtaskOptions {
 	onStep?: (steps: SearchStep[]) => void;
 	/** The child holds a slot and its model is about to work. */
 	onAdmitted?: () => void;
+	/** A command the child wants to run is waiting for the user's approval (true), or no longer (false). */
+	onApprovalWait?: (waiting: boolean) => void;
 }
+
+/** A write guard for a private worktree: nobody else writes there. */
+const PRIVATE_FOLDER: CodeWriteGuard = {
+	acquire: async () => null,
+	changed: () => {}
+};
 
 export interface SubtaskResult {
 	outcome: 'done' | 'stopped' | 'failed';
@@ -80,6 +90,38 @@ export function capReport(report: string): string {
 		: text;
 }
 
+/** The child's loop: a Code-tab turn in its folder, marked as a subtask's. */
+function childLoop(
+	o: SubtaskOptions,
+	backend: BackendOverride | undefined
+): Omit<TurnLoopOptions, 'messages' | 'onToolStart' | 'onToolEnd'> {
+	const descriptor = resolveBackendDescriptor(backend);
+	const writes = o.mode === 'write';
+	return {
+		workingDir: o.root,
+		codeSessionId: o.sessionId,
+		requester: o.requester,
+		codeReadOnly: !writes,
+		codeWriteGuard: writes ? PRIVATE_FOLDER : undefined,
+		onApprovalWait: o.onApprovalWait,
+		wslDistro: o.wslDistro ?? null,
+		contextSize: descriptor.contextSize,
+		maxIterations: SUBTASK_MAX_ROUNDS,
+		deepResearch: false,
+		codeMode: true,
+		shellMode: false,
+		codeAutoApprove: getSettings().codeAutoApprove,
+		subtask: { depth: 1 },
+		backend,
+		reasoningEffort: o.effort ?? null,
+		expectsFileOutput: false,
+		visionSupported: descriptor.vision,
+		interactive: true,
+		signal: o.signal,
+		takeSteering: () => []
+	};
+}
+
 export async function runSubtask(o: SubtaskOptions): Promise<SubtaskResult> {
 	const backend = o.backend ?? undefined;
 	let steps: SearchStep[] = [];
@@ -98,37 +140,22 @@ export async function runSubtask(o: SubtaskOptions): Promise<SubtaskResult> {
 
 	try {
 		const { system, skills } = await prepareSystem(
-			{ root: o.root, readOnly: true, wslDistro: o.wslDistro, subtask: { task: o.task } },
+			{
+				root: o.root,
+				readOnly: o.mode === 'read',
+				wslDistro: o.wslDistro,
+				subtask: { task: o.task, worktree: o.mode === 'write' ? o.worktree : undefined }
+			},
 			backend
 		);
 		const messages = assemble(system, [{ role: 'user', content: o.task }], null);
-		const settings = getSettings();
-		const descriptor = resolveBackendDescriptor(backend);
 		const out = await run(
 			() =>
 				runTurnCore(
 					{
+						...childLoop(o, backend),
 						messages,
-						workingDir: o.root,
-						codeSessionId: o.sessionId,
-						requester: o.requester,
-						codeReadOnly: true,
-						wslDistro: o.wslDistro ?? null,
-						contextSize: descriptor.contextSize,
-						maxIterations: SUBTASK_MAX_ROUNDS,
-						deepResearch: false,
-						codeMode: true,
-						shellMode: false,
-						codeAutoApprove: settings.codeAutoApprove,
-						subtask: { depth: 1 },
 						skills,
-						backend,
-						reasoningEffort: o.effort ?? null,
-						expectsFileOutput: false,
-						visionSupported: descriptor.vision,
-						interactive: true,
-						signal: o.signal,
-						takeSteering: () => [],
 						onToolStart: (call) => {
 							setSteps([...steps, newRunningStep(call)]);
 							o.onToolStart?.(call);
