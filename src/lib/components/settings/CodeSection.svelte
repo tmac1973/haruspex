@@ -91,7 +91,7 @@
 	<h2>Subtasks</h2>
 	<label
 		class="row"
-		title="The agent can hand a self-contained part of a task to a helper agent that starts with a fresh context and reports back. Several run at once when Settings → Inference → Parallel streams allows it. Read-only helpers read and search. With Read and write, a helper can also change files in its own copy of the project (git repositories only), and its changes are applied when it finishes. Helpers never ask you anything; their commands follow the session's approval rules."
+		title="The agent can hand a self-contained part of a task to a helper agent that starts with a fresh context and reports back. Several run at once when Settings → Inference → Parallel streams allows it. Read-only helpers read and search. With Read and write, a helper can also change files in its own copy of the project (git repositories only), and its changes are applied when it finishes. Helpers never ask you anything; their commands follow the session's approval rules. Autonomous coding jobs use read-only helpers under this setting too."
 	>
 		<select bind:value={codeSubtasks} onchange={persistSubtasks}>
 			<option value="off">Off</option>

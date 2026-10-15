@@ -95,6 +95,29 @@ describe('runSubtask', () => {
 		expect(user).toEqual({ role: 'user', content: 'Find the callers of foo.' });
 	});
 
+	it('follows a job’s model settings, and runs with nobody to answer', async () => {
+		answers('foo is called from bar.ts:3');
+		const onCallStats = vi.fn();
+		await runSubtask({
+			...base,
+			effort: 'high',
+			job: {
+				thinkingEnabled: false,
+				reasoningEffort: 'low',
+				samplingSource: 'custom',
+				samplingParams: null,
+				onCallStats
+			}
+		});
+		expect(loopOptions()).toMatchObject({
+			reasoningEffort: 'low',
+			thinkingEnabled: false,
+			samplingSource: 'custom',
+			interactive: false,
+			onCallStats
+		});
+	});
+
 	it('never asks the queue for a slot: it runs in the lender, or straight in the parent’s', async () => {
 		answers('foo is called from bar.ts:3');
 		let lent = 0;

@@ -23,6 +23,10 @@
 	import MemoryRecallStep from '#lib/components/MemoryRecallStep.svelte';
 	import { MEMORY_RECALL_STEP } from '#lib/agent/memory/stepName.ts';
 	import { splitGrepLine } from '#lib/code/paths.ts';
+	import SubtaskCard from '#lib/components/code/SubtaskCard.svelte';
+	import type { SubtaskState } from '#lib/code/subtask.ts';
+	// A subtask's card lists the child's steps with this same component.
+	import SearchStepList from '#lib/components/SearchStep.svelte';
 
 	hljs.registerLanguage('python', python);
 
@@ -192,6 +196,13 @@
 				<!-- Not a tool call: a record of what memory put in the prompt.
 				     Rendered here so it sits with the turn it shaped. -->
 				<MemoryRecallStep {step} />
+			{:else if step.toolName === 'delegate' && step.subtask}
+				<!-- A job's subtask (the Code tab draws its own, in CodeSteps). -->
+				<SubtaskCard subtask={step.subtask}>
+					{#snippet steps(s: SubtaskState)}
+						<SearchStepList steps={s.steps} {pathLinks} {runControls} />
+					{/snippet}
+				</SubtaskCard>
 			{:else}
 				<!-- svelte-ignore a11y_click_events_have_key_events -->
 				<!-- svelte-ignore a11y_no_static_element_interactions -->

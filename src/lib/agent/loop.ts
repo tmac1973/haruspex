@@ -208,6 +208,8 @@ export interface AgentLoopOptions {
 	subtaskStops?: SubtaskStops;
 	/** See ToolContext.startBackgroundSubtask. */
 	startBackgroundSubtask?: ToolContext['startBackgroundSubtask'];
+	/** A job's turn; see ToolContext.jobSubtasks. */
+	jobSubtasks?: ToolContext['jobSubtasks'];
 	/** A command is waiting for the user's approval; see ToolContext.onApprovalWait. */
 	onApprovalWait?: (waiting: boolean) => void;
 	/**

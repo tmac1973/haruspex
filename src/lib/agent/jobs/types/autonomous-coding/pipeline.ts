@@ -165,6 +165,20 @@ const LOOP_TOOLS = [...CODING_TURN_TOOLS, SUBMIT_ITERATION_RESULT_TOOL];
 /** Phase-context turn: same tools, but the turn ends with submit_phase_result. */
 const PHASE_LOOP_TOOLS = [...CODING_TURN_TOOLS, SUBMIT_PHASE_RESULT_TOOL];
 
+/**
+ * Whether a loop turn may hand reading to subtasks (`delegate`, read mode
+ * only): Settings → Code → Subtasks, read when the turn starts so its tools
+ * and its prompt agree.
+ */
+function loopSubtasks(): boolean {
+	return getSettings().codeSubtasks !== 'off';
+}
+
+/** A loop turn's tools, with `delegate` when it has subtasks. */
+function withSubtasks(tools: readonly string[], subtasks: boolean): string[] {
+	return subtasks ? [...tools, 'delegate'] : [...tools];
+}
+
 /** Finalize: read + shell (git log) + the one report write (writeRoot-scoped). */
 const FINALIZE_TOOLS = [
 	'fs_read_text',
@@ -941,6 +955,7 @@ async function runPhaseContextTurn(deps: PhaseTurnDeps, phaseId: string): Promis
 	let phaseNote = '';
 	let wrote = 0;
 	const base = deps.ctx.buildStreamCallbacks(LOOP);
+	const subtasks = loopSubtasks();
 	deps.ctx.patchStep(LOOP, {
 		streaming: `Phase ${phaseId} — ${phase?.title ?? ''} (continuous build)`
 	});
@@ -950,8 +965,8 @@ async function runPhaseContextTurn(deps: PhaseTurnDeps, phaseId: string): Promis
 		contextSize: deps.ctx.contextSize(),
 		visionSupported: deps.ctx.visionSupported(),
 		maxIterations: deps.maxIterations,
-		systemPrompt: phaseTurnPrompt(deps.phaseVerifyCommand, deps.planDir),
-		toolAllowlist: PHASE_LOOP_TOOLS,
+		systemPrompt: phaseTurnPrompt(deps.phaseVerifyCommand, deps.planDir, subtasks),
+		toolAllowlist: withSubtasks(PHASE_LOOP_TOOLS, subtasks),
 		forceFinalTool: SUBMIT_PHASE_RESULT_TOOL,
 		...base,
 		onToolStart: (call: ResolvedToolCall) => {
@@ -1027,14 +1042,15 @@ async function runIterationTurn(
 
 	let captured: IterationResultArg | null = null;
 	const base = ctx.buildStreamCallbacks(LOOP);
+	const subtasks = loopSubtasks();
 	await ctx.runJobTurn({
 		turnKind: target.repair ? 'loop.repair' : 'loop.step',
 		userMessage,
 		contextSize: ctx.contextSize(),
 		visionSupported: ctx.visionSupported(),
 		maxIterations: maxTurns,
-		systemPrompt: iterationPrompt(phaseVerifyCommand, planDir),
-		toolAllowlist: LOOP_TOOLS,
+		systemPrompt: iterationPrompt(phaseVerifyCommand, planDir, subtasks),
+		toolAllowlist: withSubtasks(LOOP_TOOLS, subtasks),
 		forceFinalTool: SUBMIT_ITERATION_RESULT_TOOL,
 		...base,
 		onToolStart: (call: ResolvedToolCall) => {

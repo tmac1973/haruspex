@@ -155,6 +155,47 @@ describe('delegate', () => {
 	});
 });
 
+describe('delegate in a job', () => {
+	const job = {
+		thinkingEnabled: false,
+		reasoningEffort: 'low',
+		samplingSource: 'server' as const,
+		samplingParams: null
+	};
+	// A job's turn: no Code session, an allowlist rather than codeMode.
+	const jobCtx = (over = {}) =>
+		makeToolContext({
+			workingDir: '/proj',
+			jobSubtasks: job,
+			subtasksStartedThisTurn: { count: 0 },
+			...over
+		});
+
+	it('runs a read subtask that follows the job’s model settings', async () => {
+		const out = await executeDelegate({ task: 'Find foo.', mode: 'read', label: 'foo' }, jobCtx());
+		expect(out.result).toContain('Subtask "foo" (done');
+		expect(lastOptions()).toMatchObject({ root: '/proj', mode: 'read', job });
+	});
+
+	it('refuses write mode even while Settings allow writers', async () => {
+		mocks.settings.codeSubtasks = 'write';
+		const out = await executeDelegate({ task: 't', mode: 'write' }, jobCtx());
+		expect(JSON.parse(out.result).error).toContain('only read');
+		expect(mocks.runSubtask).not.toHaveBeenCalled();
+	});
+
+	it('refuses background mode: a job has no later turn to report to', async () => {
+		const out = await executeDelegate({ task: 't', mode: 'read', background: true }, jobCtx());
+		expect(out.result).toContain('Background subtasks are not available here');
+		expect(mocks.runSubtask).not.toHaveBeenCalled();
+	});
+
+	it('is offered to a job turn that lists it', () => {
+		const tools = names({ hasWorkingDir: true, toolAllowlist: ['code_grep', 'delegate'] });
+		expect(tools).toContain('delegate');
+	});
+});
+
 describe('delegate cards and stops', () => {
 	it('publishes its card queued, running, with steps, then done', async () => {
 		mocks.runSubtask.mockImplementation(async (o: SubtaskOptions) => {

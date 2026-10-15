@@ -13,7 +13,8 @@ const {
 	codingJob,
 	COMMAND_OK,
 	wireGit,
-	codingTurns
+	codingTurns,
+	settingsState
 } = await vi.hoisted(() => import('./runner.fixtures.ts'));
 
 vi.mock('@tauri-apps/api/core', () => m.tauriCore());
@@ -423,5 +424,83 @@ describe('jobs runner — autonomous coding', () => {
 
 		// The control for the test above: absent must not behave like off.
 		expect(commands.some((c) => c.includes('git commit'))).toBe(true);
+	});
+
+	describe('subtasks', () => {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const phaseTurn = (): any =>
+			mocks.runEphemeralTurn.mock.calls
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				.map(([o]: any[]) => o)
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				.find((o: any) => o.forceFinalTool === 'submit_phase_result');
+
+		it('gives the build turn delegate, with the job’s model settings for its subtasks', async () => {
+			mocks.getJob.mockResolvedValueOnce(codingJob());
+			wireGit();
+			mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+
+			const { enqueue, getCurrentRun } = await freshRunner();
+			await enqueue(1);
+			await settle(getCurrentRun);
+
+			const phase = phaseTurn();
+			expect([...phase.toolAllowlist]).toContain('delegate');
+			expect(phase.systemPrompt).toContain('SUBTASKS:');
+			// The job sets no reasoning policy: the global one, resolved.
+			expect(phase.jobSubtasks).toMatchObject({
+				thinkingEnabled: null,
+				reasoningEffort: null,
+				samplingSource: expect.any(String)
+			});
+			expect(typeof phase.jobSubtasks.onCallStats).toBe('function');
+			// No other stage may delegate.
+			const others = mocks.runEphemeralTurn.mock.calls
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				.map(([o]: any[]) => o)
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				.filter((o: any) => o !== phase && o.forceFinalTool !== 'submit_iteration_result');
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			expect(others.some((o: any) => [...(o.toolAllowlist ?? [])].includes('delegate'))).toBe(
+				false
+			);
+		});
+
+		it('leaves delegate out while Settings → Code → Subtasks is off', async () => {
+			settingsState.codeSubtasks = 'off';
+			mocks.getJob.mockResolvedValueOnce(codingJob());
+			wireGit();
+			mocks.runEphemeralTurn.mockImplementation(codingTurns(() => 'done'));
+
+			const { enqueue, getCurrentRun } = await freshRunner();
+			await enqueue(1);
+			await settle(getCurrentRun);
+
+			const phase = phaseTurn();
+			expect([...phase.toolAllowlist]).not.toContain('delegate');
+			expect(phase.systemPrompt).not.toContain('SUBTASKS:');
+		});
+
+		it('shows a subtask’s card on its delegate step', async () => {
+			mocks.getJob.mockResolvedValueOnce(codingJob());
+			wireGit();
+			const turns = codingTurns(() => 'done');
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			mocks.runEphemeralTurn.mockImplementation(async (opts: any) => {
+				if (opts.forceFinalTool === 'submit_phase_result') {
+					const call = { id: 'd1', name: 'delegate', arguments: { task: 't', mode: 'read' } };
+					opts.onToolStart?.(call);
+					opts.onSubtaskUpdate?.(call, { id: 'd1', label: 't', status: 'running' });
+				}
+				return turns(opts);
+			});
+
+			const { enqueue, getCurrentRun } = await freshRunner();
+			await enqueue(1);
+			await settle(getCurrentRun);
+
+			const step = getCurrentRun()!.steps[2].searchSteps.find((s) => s.id === 'd1');
+			expect(step?.subtask).toMatchObject({ id: 'd1', status: 'running' });
+		});
 	});
 });

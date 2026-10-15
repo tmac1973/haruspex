@@ -27,7 +27,7 @@ function flat(s: string): string {
  * and the model never owns it.
  */
 describe('iterationPrompt — runner-executed verification (command set)', () => {
-	const prompt = flat(iterationPrompt('npm test', 'plan/x/'));
+	const prompt = flat(iterationPrompt('npm test', 'plan/x/', false));
 
 	it('says who runs verification', () => {
 		expect(prompt).toContain("Verification is the RUNNER's job");
@@ -50,7 +50,7 @@ describe('iterationPrompt — runner-executed verification (command set)', () =>
 });
 
 describe('iterationPrompt — no command settled (bounded self-judgment fallback)', () => {
-	const prompt = flat(iterationPrompt(null, 'plan/x/'));
+	const prompt = flat(iterationPrompt(null, 'plan/x/', false));
 
 	it('still requires verification', () => {
 		expect(prompt).toContain('Unverified ≠ done');
@@ -88,8 +88,8 @@ describe('iterationPrompt — no command settled (bounded self-judgment fallback
 
 describe('iterationPrompt — invariants across branches', () => {
 	for (const [label, prompt] of [
-		['verification command', iterationPrompt('test', 'plan/x/')],
-		['no command', iterationPrompt(null, 'plan/x/')]
+		['verification command', iterationPrompt('test', 'plan/x/', false)],
+		['no command', iterationPrompt(null, 'plan/x/', false)]
 	] as const) {
 		it(`${label}: keeps the runner's ownership rules intact`, () => {
 			const f = flat(prompt);
@@ -127,9 +127,9 @@ describe('iterationPrompt — invariants across branches', () => {
 describe('shell safety rules — every stage that can run commands', () => {
 	for (const [label, raw] of [
 		['preflight', preflightPrompt('plan/x', 'plan/x/D.md', false)],
-		['iteration (with command)', iterationPrompt('test', 'plan/x/')],
-		['iteration (no command)', iterationPrompt(null, 'plan/x/')],
-		['phase turn', phaseTurnPrompt('npm test', 'plan/x/')]
+		['iteration (with command)', iterationPrompt('test', 'plan/x/', false)],
+		['iteration (no command)', iterationPrompt(null, 'plan/x/', false)],
+		['phase turn', phaseTurnPrompt('npm test', 'plan/x/', false)]
 	] as const) {
 		const prompt = flat(raw);
 
@@ -151,7 +151,9 @@ describe('shell safety rules — every stage that can run commands', () => {
 	}
 
 	it('tells the unattended stages the command is blocked outright', () => {
-		expect(flat(iterationPrompt('test', 'plan/x/'))).toContain('nobody is present to approve one');
+		expect(flat(iterationPrompt('test', 'plan/x/', false))).toContain(
+			'nobody is present to approve one'
+		);
 	});
 
 	it('tells preflight it would interrupt the user instead', () => {
@@ -205,7 +207,7 @@ describe('decomposePrompt — anchoring granularity to the plan', () => {
 });
 
 describe('phaseTurnPrompt — build whole phase, runner verifies and commits', () => {
-	const prompt = flat(phaseTurnPrompt('npm test', 'plan/x/'));
+	const prompt = flat(phaseTurnPrompt('npm test', 'plan/x/', false));
 
 	it('says build everything with no per-item reporting', () => {
 		// The step-report protocol interleaved bookkeeping with building and
@@ -235,7 +237,7 @@ describe('phaseTurnPrompt — build whole phase, runner verifies and commits', (
 	});
 
 	it('degrades honestly when no verification command exists', () => {
-		const bare = flat(phaseTurnPrompt(null, 'plan/x/'));
+		const bare = flat(phaseTurnPrompt(null, 'plan/x/', false));
 		expect(bare).toContain('your own check is the only one');
 	});
 });
@@ -444,7 +446,10 @@ describe('readmePrompt', () => {
 
 describe('the project boundary', () => {
 	it('tells every shell-using turn where its boundary is', () => {
-		for (const prompt of [iterationPrompt(null, 'plan/x/'), phaseTurnPrompt(null, 'plan/x/')]) {
+		for (const prompt of [
+			iterationPrompt(null, 'plan/x/', false),
+			phaseTurnPrompt(null, 'plan/x/', false)
+		]) {
 			const p = flat(prompt);
 			expect(p).toContain('YOUR BOUNDARY IS THE PROJECT DIRECTORY');
 			// The failure it exists for: making missing art some other way.
@@ -490,5 +495,23 @@ describe('generated art in preflight', () => {
 			])
 		);
 		expect(p).toContain('were NOT produced, and have no file: tower_entrance, human');
+	});
+});
+
+describe('loop prompts and subtasks', () => {
+	it('tell a turn with delegate to hand off reading, never writing', () => {
+		for (const prompt of [
+			flat(iterationPrompt('test', 'plan/x/', true)),
+			flat(phaseTurnPrompt('test', 'plan/x/', true))
+		]) {
+			expect(prompt).toContain('SUBTASKS:');
+			expect(prompt).toContain('`delegate` (mode "read")');
+			expect(prompt).toContain('make every change yourself');
+		}
+	});
+
+	it('say nothing of subtasks to a turn without the tool', () => {
+		expect(flat(iterationPrompt('test', 'plan/x/', false))).not.toContain('delegate');
+		expect(flat(phaseTurnPrompt('test', 'plan/x/', false))).not.toContain('delegate');
 	});
 });
