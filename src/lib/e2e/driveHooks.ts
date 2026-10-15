@@ -125,6 +125,7 @@ async function probeRemote(
 		remoteContextSize: caps.contextSize ?? result.default_context_size ?? null,
 		remoteVisionSupported: caps.vision,
 		remoteBackendKind: result.kind,
+		remoteEngine: result.engine ?? null,
 		remoteSampling: model.sampling ?? null,
 		remoteReasoning: model.reasoning ?? null,
 		remoteParallel: model.parallel ?? null

@@ -39,6 +39,40 @@ export interface ProbeResult {
 	models: NormalizedModel[];
 	default_context_size: number | null;
 	notes: string;
+	/** The engine behind a toolchest (`'vllm'`, `'llama.cpp'`), when its status names one. */
+	engine: string | null;
+}
+
+/** How an engine name a toolchest reports is written for people. */
+function engineName(engine: string): string {
+	const known: Record<string, string> = {
+		vllm: 'vLLM',
+		'llama.cpp': 'llama.cpp',
+		sglang: 'SGLang'
+	};
+	return known[engine.toLowerCase()] ?? engine;
+}
+
+/**
+ * A backend kind as Settings shows it. `llama-toolchest` is the management
+ * API that llama-toolchest and vllm-toolchest share, so it reads as
+ * "toolchest", with the engine when the server names it.
+ */
+export function backendLabel(kind: InferenceBackendKind, engine: string | null = null): string {
+	switch (kind) {
+		case 'llama-toolchest':
+			return engine ? `toolchest (${engineName(engine)})` : 'toolchest';
+		case 'llama-server':
+			return 'llama-server';
+		case 'openai-compat':
+			return 'OpenAI-compatible';
+		case 'ollama':
+			return 'Ollama';
+		case 'openrouter':
+			return 'OpenRouter';
+		default:
+			return 'Unknown';
+	}
 }
 
 /**

@@ -25,6 +25,7 @@ function profileOf(cfg: InferenceBackendConfig): RemoteProfile {
 		remoteContextSize: cfg.remoteContextSize,
 		remoteVisionSupported: cfg.remoteVisionSupported,
 		remoteBackendKind: cfg.remoteBackendKind,
+		remoteEngine: cfg.remoteEngine ?? null,
 		remoteSampling: cfg.remoteSampling,
 		remoteReasoning: cfg.remoteReasoning,
 		remoteParallel: cfg.remoteParallel,
@@ -40,6 +41,7 @@ function freshProfile(cfg: InferenceBackendConfig, option: RemoteOption): Remote
 		remoteModelId: '',
 		remoteContextSize: null,
 		remoteVisionSupported: null,
+		remoteEngine: null,
 		remoteSampling: null,
 		remoteReasoning: null,
 		remoteParallel: null

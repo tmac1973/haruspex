@@ -166,6 +166,18 @@ pub struct ProbeResult {
     /// Short human-readable note for the UI — e.g. "llama-toolchest
     /// (2 models loaded)" or "OpenAI-compatible (4 models available)".
     pub notes: String,
+    /// The inference engine behind a toolchest management API, as its
+    /// `/api/service/status` names it (`"vllm"`, `"llama.cpp"`): the same
+    /// API fronts llama-toolchest and vllm-toolchest. `None` for every
+    /// other backend, and for a toolchest that doesn't say.
+    pub engine: Option<String>,
+}
+
+/// The `engine` a toolchest status names, trimmed and kept short; `None`
+/// when it is missing, empty or not a string.
+fn status_engine(status: &serde_json::Value) -> Option<String> {
+    let engine = status.get("engine")?.as_str()?.trim();
+    (!engine.is_empty()).then(|| engine.chars().take(32).collect())
 }
 
 /// Normalize a user-entered base URL to a "service root" that downstream
@@ -290,6 +302,14 @@ async fn try_llama_toolchest(
     if !status_resp.status().is_success() {
         return None;
     }
+    // Which engine it fronts, when it says; an unreadable body is no reason
+    // to doubt it is a toolchest.
+    let engine = status_resp
+        .json::<serde_json::Value>()
+        .await
+        .ok()
+        .as_ref()
+        .and_then(status_engine);
 
     // Step 2: pull the router-facing list. This enumerates exactly the
     // models /v1/chat/completions will serve — every enabled model, with
@@ -340,10 +360,8 @@ async fn try_llama_toolchest(
         kind: BackendKind::LlamaToolchest,
         models,
         default_context_size,
-        notes: format!(
-            "llama-toolchest ({} loaded of {} enabled)",
-            loaded_count, total
-        ),
+        engine,
+        notes: format!("toolchest ({} loaded of {} enabled)", loaded_count, total),
     })
 }
 
@@ -397,6 +415,7 @@ async fn try_llama_server(
     Some(ProbeResult {
         base_url: base.to_string(),
         kind: BackendKind::LlamaServer,
+        engine: None,
         models,
         default_context_size: n_ctx,
         notes,
@@ -435,6 +454,7 @@ async fn try_openai_compat(
     Some(ProbeResult {
         base_url: base.to_string(),
         kind: BackendKind::OpenAiCompat,
+        engine: None,
         models,
         default_context_size: None,
         notes,
@@ -460,6 +480,7 @@ async fn try_ollama_native(
     Some(ProbeResult {
         base_url: base.to_string(),
         kind: BackendKind::Ollama,
+        engine: None,
         models,
         default_context_size: None,
         notes,
@@ -980,5 +1001,25 @@ mod tests {
         assert_eq!(models[0].caps.context_size, Some(8192));
         assert_eq!(models[0].caps.vision, Some(true));
         assert_eq!(models[0].caps.parallel, Some(2));
+    }
+
+    #[test]
+    fn a_toolchest_status_names_its_engine() {
+        let engine = |v: serde_json::Value| status_engine(&v);
+        assert_eq!(
+            engine(serde_json::json!({"state": "running", "engine": "vllm"})),
+            Some("vllm".into())
+        );
+        assert_eq!(
+            engine(serde_json::json!({"engine": " llama.cpp "})),
+            Some("llama.cpp".into())
+        );
+        assert_eq!(engine(serde_json::json!({"state": "running"})), None);
+        assert_eq!(engine(serde_json::json!({"engine": ""})), None);
+        assert_eq!(engine(serde_json::json!({"engine": 3})), None);
+        assert_eq!(
+            engine(serde_json::json!({"engine": "x".repeat(100)})).map(|e| e.len()),
+            Some(32)
+        );
     }
 }
