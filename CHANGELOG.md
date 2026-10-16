@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.2.6](https://github.com/tmac1973/haruspex/compare/v0.2.5...v0.2.6) (2026-10-16)
+
+
+### Features
+
+* **code:** background subtasks that report back in a new turn ([#583](https://github.com/tmac1973/haruspex/issues/583)) ([a9b59c5](https://github.com/tmac1973/haruspex/commit/a9b59c5a34683c41c251cffbfb05c756e12a81bf))
+* **code:** delegate read-only subtasks to child agents ([#577](https://github.com/tmac1973/haruspex/issues/577)) ([a6d81e2](https://github.com/tmac1973/haruspex/commit/a6d81e2bae53bb0d26e0d275e2f9d94eb67f33b2))
+* **code:** show subtasks as cards with live steps and their own stop ([#580](https://github.com/tmac1973/haruspex/issues/580)) ([3acc8a9](https://github.com/tmac1973/haruspex/commit/3acc8a9589cbb71864a57698450ab1bad77db41f))
+* **code:** steer the agent to delegate a message's independent asks ([#587](https://github.com/tmac1973/haruspex/issues/587)) ([6ff64ff](https://github.com/tmac1973/haruspex/commit/6ff64ffc882f8f59660a76dade84d03913b6a461))
+* **code:** subtasks that write, in their own worktrees ([#582](https://github.com/tmac1973/haruspex/issues/582)) ([dc1e737](https://github.com/tmac1973/haruspex/commit/dc1e7378bc445d99aabee1054bebc05cb69460a7))
+* **code:** worktrees, diff and apply for subtasks ([#581](https://github.com/tmac1973/haruspex/issues/581)) ([2de1069](https://github.com/tmac1973/haruspex/commit/2de10690bf591a6e41ed7631831bbe0f86272044))
+* **image:** run Qwen-Image 2.1 Turbo on its own schedule in both engines ([#589](https://github.com/tmac1973/haruspex/issues/589)) ([42f9218](https://github.com/tmac1973/haruspex/commit/42f9218c2ac8515330faec0af020d861f6780a1e))
+* **jobs:** let autonomous coding hand lookups to read-only subtasks ([#592](https://github.com/tmac1973/haruspex/issues/592)) ([5b4c762](https://github.com/tmac1973/haruspex/commit/5b4c762592175255542b956fc314e7510366eb67))
+* **jobs:** nest started jobs under their parent, filter the list, resize it ([#578](https://github.com/tmac1973/haruspex/issues/578)) ([9aa6840](https://github.com/tmac1973/haruspex/commit/9aa684073b77568f79a5123eed845b160adf07ab))
+
+
+### Bug Fixes
+
+* **code:** apply writing subtasks' changes when node_modules is ignored without a slash ([#584](https://github.com/tmac1973/haruspex/issues/584)) ([2bc7f5a](https://github.com/tmac1973/haruspex/commit/2bc7f5a0c8dd9aef7130d48efdea05a4c08d7a08))
+* **code:** nudge a subtask that stops before finishing ([#586](https://github.com/tmac1973/haruspex/issues/586)) ([0edee5e](https://github.com/tmac1973/haruspex/commit/0edee5e08c024d4f6a6066153907670ac6dacd04))
+* **image:** run sd-server from a per-user dir, not the shipped sd-libs ([#591](https://github.com/tmac1973/haruspex/issues/591)) ([56aa7b4](https://github.com/tmac1973/haruspex/commit/56aa7b4f1d881371d7c1dc19f574c60e91b7c57a)), closes [#590](https://github.com/tmac1973/haruspex/issues/590)
+* **inference:** name a toolchest by the engine it reports ([#588](https://github.com/tmac1973/haruspex/issues/588)) ([2a7b017](https://github.com/tmac1973/haruspex/commit/2a7b017c0a9070c81b33256ff3bb57e27689e0a5))
+* **settings:** keep the OpenRouter model catalog out of saved settings ([#576](https://github.com/tmac1973/haruspex/issues/576)) ([2c076ac](https://github.com/tmac1973/haruspex/commit/2c076ac0c9b4f1a86c4f4b1c7d68ca31e9c1dd7c)), closes [#575](https://github.com/tmac1973/haruspex/issues/575)
+* **settings:** share saved settings between dev and packaged builds ([#574](https://github.com/tmac1973/haruspex/issues/574)) ([72c87c2](https://github.com/tmac1973/haruspex/commit/72c87c2a9d92074826dffc2865c17273eecd3847))
+
 ## [0.2.5](https://github.com/tmac1973/haruspex/compare/v0.2.4...v0.2.5) (2026-10-14)
 
 
