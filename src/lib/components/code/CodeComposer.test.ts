@@ -43,9 +43,25 @@ describe('CodeComposer steering', () => {
 		expect(box.placeholder).toMatch(/Steer the agent/);
 		await fireEvent.input(box, { target: { value: 'try the other file' } });
 		await fireEvent.keyDown(box, { key: 'Enter' });
-		expect(session.send).toHaveBeenCalledWith('try the other file');
+		expect(session.send).toHaveBeenCalledWith('try the other file', { images: [] });
 		expect(box.value).toBe('');
 		expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
+	});
+
+	it('sends attached images with a steering message and clears them', async () => {
+		const session = fakeSession({
+			returnedImages: ['data:image/png;base64,x'],
+			takeReturnedImages: vi.fn(() => ['data:image/png;base64,x'])
+		});
+		render(CodeComposer, { session, slashHost: host });
+		const box = screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement;
+		expect(screen.getByAltText('attachment')).toBeTruthy();
+		await fireEvent.input(box, { target: { value: 'it looks like this' } });
+		await fireEvent.keyDown(box, { key: 'Enter' });
+		expect(session.send).toHaveBeenCalledWith('it looks like this', {
+			images: ['data:image/png;base64,x']
+		});
+		expect(screen.queryByAltText('attachment')).toBeNull();
 	});
 
 	it('Esc stops the turn', async () => {

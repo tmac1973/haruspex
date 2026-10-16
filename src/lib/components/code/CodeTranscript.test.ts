@@ -56,14 +56,16 @@ describe('CodeTranscript steering', () => {
 		const session = fakeSession({
 			status: 'running',
 			busy: true,
-			steeringDelivered: ['use the other API'],
-			steering: ['and add a test']
+			steeringDelivered: [{ text: 'use the other API' }],
+			steering: [{ text: 'and add a test', images: ['data:image/png;base64,x'] }]
 		});
 		render(CodeTranscript, { session });
 		expect(screen.getByText('use the other API').closest('.steer')!.textContent).toContain(
 			'Delivered'
 		);
-		expect(screen.getByText('and add a test').closest('.steer')!.textContent).toContain('Queued');
+		const queued = screen.getByText('and add a test').closest('.steer')!;
+		expect(queued.textContent).toContain('Queued');
+		expect(queued.querySelector('img')!.getAttribute('src')).toBe('data:image/png;base64,x');
 		await fireEvent.click(screen.getByRole('button', { name: 'Remove queued message' }));
 		expect(session.steering).toEqual([]);
 	});

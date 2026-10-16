@@ -26,6 +26,7 @@ import type { SamplingParams } from '#lib/stores/settings.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import { isAbortError } from '#lib/utils/error.ts';
 import { NudgeState } from '#lib/agent/loop/nudges.ts';
+import { queuedSteering, type SteeringMessage } from '#lib/agent/loop/steeringQueue.ts';
 import {
 	buildLoopContext,
 	LoopState,
@@ -34,6 +35,7 @@ import {
 } from '#lib/agent/loop/iteration.ts';
 
 export { isCodeContext } from '#lib/agent/loop/iteration.ts';
+export type { SteeringMessage } from '#lib/agent/loop/steeringQueue.ts';
 export type { PartialToolCall } from '#lib/streamAssembly.ts';
 
 /** How `onStreamChunk` labels a chunk. */
@@ -93,11 +95,11 @@ export interface CallStats {
 export interface CompletionMeta {
 	stopReason: AgentStopReason;
 	/**
-	 * Steering texts (see `AgentLoopOptions.takeSteering`) still queued when
-	 * the turn ended, which the model never saw. Present only when non-empty,
-	 * so the caller can put them back in the input box rather than lose them.
+	 * Steering (see `AgentLoopOptions.takeSteering`) still queued when the
+	 * turn ended, which the model never saw. Present only when non-empty, so
+	 * the caller can put it back in the input box rather than lose it.
 	 */
-	undeliveredSteering?: string[];
+	undeliveredSteering?: SteeringMessage[];
 	/**
 	 * The turn was cancelled. Set only on the `onComplete` an aborted loop
 	 * makes to hand back `undeliveredSteering`; the loop still throws its
@@ -437,14 +439,9 @@ export interface AgentLoopOptions {
 	 * in `onComplete`'s `meta.undeliveredSteering`. Returns and clears the
 	 * queue; an empty array means nothing is waiting.
 	 */
-	takeSteering?: () => string[];
-	/** Fired with the texts each time steering is delivered to the model. */
-	onSteering?: (texts: string[]) => void;
-}
-
-/** Drain a steering queue, dropping blank entries (the loop never sends them). */
-function queuedSteering(take: () => string[]): string[] {
-	return take().filter((t) => t.trim() !== '');
+	takeSteering?: () => SteeringMessage[];
+	/** Fired with the messages each time steering is delivered to the model. */
+	onSteering?: (steers: SteeringMessage[]) => void;
 }
 
 /**

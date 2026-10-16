@@ -3,7 +3,7 @@
  * event carries, and what the driver reads. Reads only the session's public
  * state, so it is the same thing the desktop's own UI renders.
  */
-import type { SearchStep } from '#lib/agent/loop.ts';
+import type { SearchStep, SteeringMessage } from '#lib/agent/loop.ts';
 import { editDiffFromStep } from '#lib/code/diff.ts';
 import type { CodeSession } from '#lib/stores/code.svelte.ts';
 import type { SessionMeta, SessionState, StepState } from '#lib/engine/types.ts';
@@ -25,6 +25,12 @@ function withDiff(step: SearchStep): StepState {
 
 export const stepsState = (steps: SearchStep[]): StepState[] => plain(steps.map(withDiff));
 
+function steeringLine(m: SteeringMessage): string {
+	const n = m.images?.length ?? 0;
+	const note = n === 0 ? '' : n === 1 ? '(1 image)' : `(${n} images)`;
+	return [m.text, note].filter(Boolean).join(' ');
+}
+
 export function metaState(s: CodeSession): SessionMeta {
 	return plain({
 		title: s.title,
@@ -32,7 +38,8 @@ export function metaState(s: CodeSession): SessionMeta {
 		lastError: s.lastError,
 		saveError: s.saveError,
 		folderMissing: s.folderMissing,
-		steering: s.steering,
+		// The web client shows text only, so it is told how many images go along.
+		steering: s.steering.map(steeringLine),
 		background: s.background,
 		shellWait: s.shellWait
 			? { shellName: s.shellWait.shellName, command: s.shellWait.command }

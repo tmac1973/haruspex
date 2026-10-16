@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ChatCompletionResponse, ChatMessage, StreamChunk, ToolDefinition } from '#lib/api.ts';
-import { runAgentLoop, type AgentLoopOptions } from '#lib/agent/loop.ts';
+import { runAgentLoop, type AgentLoopOptions, type SteeringMessage } from '#lib/agent/loop.ts';
 
 const api = vi.hoisted(() => ({
 	chatCompletion: vi.fn(),
@@ -93,10 +93,11 @@ beforeEach(() => {
 
 /** A steering queue the test can push into, as the UI's input box would. */
 function steeringQueue() {
-	const pending: string[] = [];
+	const pending: (string | SteeringMessage)[] = [];
 	return {
 		pending,
-		take: () => pending.splice(0)
+		take: (): SteeringMessage[] =>
+			pending.splice(0).map((m) => (typeof m === 'string' ? { text: m } : m))
 	};
 }
 
@@ -129,8 +130,26 @@ describe('steering', () => {
 		const second = sent[1];
 		expect(second.at(-2)).toMatchObject({ role: 'tool', tool_call_id: 'a' });
 		expect(second.at(-1)).toEqual({ role: 'user', content: 'also check the tests' });
-		expect(onSteering).toHaveBeenCalledWith(['also check the tests']);
+		expect(onSteering).toHaveBeenCalledWith([{ text: 'also check the tests' }]);
 		expect(opts.onComplete).toHaveBeenCalledWith(undefined);
+	});
+
+	it('carries the images attached to a steering message', async () => {
+		const q = steeringQueue();
+		const shot = 'data:image/png;base64,AAAA';
+		toolsMock.executeTool.mockImplementationOnce(async () => {
+			q.pending.push({ text: 'it looks like this', images: [shot] }, { text: '', images: [shot] });
+			return { result: 'file body' };
+		});
+		queue.push(toolCall('a'), text('Done.'));
+
+		await runAgentLoop(options({ takeSteering: q.take }));
+
+		const image = { type: 'image_url', image_url: { url: shot } };
+		expect(sent[1].slice(-2)).toEqual([
+			{ role: 'user', content: [{ type: 'text', text: 'it looks like this' }, image] },
+			{ role: 'user', content: [image] }
+		]);
 	});
 
 	it('is not drained before the first model call', async () => {
@@ -165,7 +184,7 @@ describe('steering', () => {
 			{ role: 'assistant', content: 'Fixed it.' },
 			{ role: 'user', content: 'and rename it too' }
 		]);
-		expect(onSteering).toHaveBeenCalledWith(['and rename it too']);
+		expect(onSteering).toHaveBeenCalledWith([{ text: 'and rename it too' }]);
 		// Both answers reach the transcript; only the last one finishes.
 		const chunks = vi.mocked(opts.onStreamChunk).mock.calls.map((c) => c[0] as StreamChunk);
 		expect(chunks).toEqual([
@@ -192,7 +211,7 @@ describe('steering', () => {
 		expect(opts.onComplete).toHaveBeenCalledWith({
 			stopReason: 'complete',
 			aborted: true,
-			undeliveredSteering: ['wait, stop']
+			undeliveredSteering: [{ text: 'wait, stop' }]
 		});
 		expect(sent).toHaveLength(1);
 	});
@@ -209,7 +228,7 @@ describe('steering', () => {
 
 		expect(onComplete).toHaveBeenCalledWith({
 			stopReason: 'complete',
-			undeliveredSteering: ['too late']
+			undeliveredSteering: [{ text: 'too late' }]
 		});
 	});
 

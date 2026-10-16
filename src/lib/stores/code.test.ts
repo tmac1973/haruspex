@@ -469,8 +469,13 @@ describe('a Code session', () => {
 		const sending = s.send('run the tests');
 		const o = await turn.running;
 		await s.send('only the unit ones');
-		expect(s.steering).toEqual(['only the unit ones']);
-		expect(o.takeSteering!()).toEqual(['only the unit ones']);
+		await s.send('', { images: ['data:image/png;base64,AAAA'] });
+		const queued = [
+			{ text: 'only the unit ones', images: [] },
+			{ text: '', images: ['data:image/png;base64,AAAA'] }
+		];
+		expect(s.steering).toEqual(queued);
+		expect(o.takeSteering!()).toEqual(queued);
 		expect(s.steering).toEqual([]);
 		turn.release();
 		await sending;
@@ -480,11 +485,18 @@ describe('a Code session', () => {
 	it('hands back steering the turn never delivered', async () => {
 		const s = await newSession('/proj');
 		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) =>
-			o.onComplete({ stopReason: 'max_iterations', undeliveredSteering: ['and lint'] })
+			o.onComplete({
+				stopReason: 'max_iterations',
+				undeliveredSteering: [
+					{ text: 'and lint' },
+					{ text: 'like this', images: ['data:image/png;base64,AAAA'] }
+				]
+			})
 		);
 		await s.send('go');
-		expect(s.takeReturnedSteering()).toEqual(['and lint']);
+		expect(s.takeReturnedSteering()).toEqual(['and lint', 'like this']);
 		expect(s.returnedSteering).toEqual([]);
+		expect(s.takeReturnedImages()).toEqual(['data:image/png;base64,AAAA']);
 		expect(s.messageStops[1]).toBe('max_iterations');
 	});
 
