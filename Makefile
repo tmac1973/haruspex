@@ -82,7 +82,7 @@ ifeq ($(OS),Windows_NT)
 else ifeq ($(shell uname),Darwin)
 	npm run tauri build -- $(TAURI_ARGS)
 else
-	NO_STRIP=1 LD_LIBRARY_PATH=$(CURDIR)/src-tauri/binaries/libs:$(CURDIR)/src-tauri/binaries npm run tauri build -- --bundles appimage,deb,rpm $(TAURI_ARGS)
+	NO_STRIP=1 LD_LIBRARY_PATH=$(CURDIR)/src-tauri/binaries/libs:$(CURDIR)/src-tauri/binaries:$(CURDIR)/src-tauri/binaries/sd-libs npm run tauri build -- --bundles appimage,deb,rpm $(TAURI_ARGS)
 endif
 
 .PHONY: release-local
