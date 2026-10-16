@@ -240,7 +240,7 @@ describe('the events a session sends', () => {
 		expect(s.streamingContent).toContain('Looking');
 
 		await s.send('also add a test');
-		expect(s.steering).toEqual(['also add a test']);
+		expect(s.steering).toEqual([{ text: 'also add a test', images: [] }]);
 		g.go();
 		await g.reached();
 		await agree(s);

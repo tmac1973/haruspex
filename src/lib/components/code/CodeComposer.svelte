@@ -80,12 +80,12 @@
 		const urls = images.urls;
 		if (!raw.trim() && urls.length === 0) return;
 		if (busy) {
-			// Steering: text only, and no slash commands mid-turn.
-			if (!raw.trim()) return;
+			// Steering: no slash commands mid-turn.
 			text = '';
 			autosize();
 			history.reset();
-			await session.send(raw);
+			images.clear();
+			await session.send(raw, { images: urls });
 			return;
 		}
 		let slash;

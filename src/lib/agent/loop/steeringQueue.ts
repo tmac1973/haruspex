@@ -4,7 +4,7 @@
  * turn with steering still queued.
  */
 
-import type { ChatCompletionResponse } from '#lib/api.ts';
+import type { ChatCompletionResponse, ChatMessage } from '#lib/api.ts';
 import { stripThinkBlocks } from '#lib/markdown.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import {
@@ -15,29 +15,57 @@ import {
 } from '#lib/agent/loop/context.ts';
 import { hasNonThinkingContent } from '#lib/agent/loop/heuristics.ts';
 
-/** Drain the caller's steering queue, dropping blank entries. */
-function takeQueuedSteering(ctx: LoopContext): string[] {
-	return (ctx.options.takeSteering?.() ?? []).filter((t) => t.trim() !== '');
+/** A message the user typed while the turn ran, with the images attached to it. */
+export interface SteeringMessage {
+	text: string;
+	/** Data URLs. */
+	images?: string[];
 }
 
-/** Append steering texts as `user` messages and tell the caller they went. */
-function appendSteering(ctx: LoopContext, texts: string[], iteration: number): void {
-	for (const content of texts) appendMessage(ctx, { role: 'user', content });
-	logDebug('agent', `iteration ${iteration} steering delivered`, { count: texts.length });
-	ctx.options.onSteering?.(texts);
+/** Drain a steering queue, dropping empty entries (the loop never sends them). */
+export function queuedSteering(take: () => SteeringMessage[]): SteeringMessage[] {
+	return take().filter((m) => m.text.trim() !== '' || (m.images?.length ?? 0) > 0);
+}
+
+/** Drain the caller's steering queue, dropping empty entries. */
+function takeQueuedSteering(ctx: LoopContext): SteeringMessage[] {
+	const take = ctx.options.takeSteering;
+	return take ? queuedSteering(take) : [];
+}
+
+/** A steering message as the `user` message the model reads, images after the text. */
+function steeringMessage({ text, images = [] }: SteeringMessage): ChatMessage {
+	if (images.length === 0) return { role: 'user', content: text };
+	return {
+		role: 'user',
+		content: [
+			...(text.trim() ? [{ type: 'text' as const, text }] : []),
+			...images.map((url) => ({ type: 'image_url' as const, image_url: { url } }))
+		]
+	};
+}
+
+/** Append steering as `user` messages and tell the caller it went. */
+function appendSteering(ctx: LoopContext, steers: SteeringMessage[], iteration: number): void {
+	for (const m of steers) appendMessage(ctx, steeringMessage(m));
+	logDebug('agent', `iteration ${iteration} steering delivered`, {
+		count: steers.length,
+		images: steers.reduce((n, m) => n + (m.images?.length ?? 0), 0)
+	});
+	ctx.options.onSteering?.(steers);
 }
 
 /** Deliver whatever steering is queued, at the iteration boundary. */
 export function deliverSteering(ctx: LoopContext, iteration: number): void {
-	const texts = takeQueuedSteering(ctx);
-	if (texts.length > 0) appendSteering(ctx, texts, iteration);
+	const steers = takeQueuedSteering(ctx);
+	if (steers.length > 0) appendSteering(ctx, steers, iteration);
 }
 
 /**
  * Steering must never be held past the turn. When some is queued at the point
  * the model would finish, show the
  * answer it gave (through the stream callback, without a finish reason),
- * echo it into the thread, and append the queued texts so the next iteration
+ * echo it into the thread, and append the queued messages so the next iteration
  * answers them. Null when nothing is queued.
  */
 export function continueForSteering(

@@ -33,6 +33,7 @@ import {
 	type AgentLoopOptions,
 	type AgentStopReason,
 	type PartialToolCall,
+	type SteeringMessage,
 	type StreamChunkMeta
 } from '#lib/agent/loop.ts';
 import type { ContextManagedInfo } from '#lib/agent/context-budget.ts';
@@ -103,8 +104,8 @@ export interface CodeTurnOptions {
 	notice?: string | null;
 	signal: AbortSignal;
 	/** Drains the session's steering queue (see `AgentLoopOptions.takeSteering`). */
-	takeSteering: () => string[];
-	onSteering?: (texts: string[]) => void;
+	takeSteering: () => SteeringMessage[];
+	onSteering?: (steers: SteeringMessage[]) => void;
 	/** The trusted repo and AGENTS.md this turn took instructions from. */
 	onProject?: (project: { root: string | null; agentsMd: AgentsMd | null }) => void;
 	onTicket?: (ticket: InferenceTicket) => void;
@@ -162,7 +163,7 @@ export interface CodeTurnResult {
 	added: ChatMessage[];
 	stopReason: AgentStopReason;
 	/** Steering the model never saw, for the caller to hand back to the user. */
-	undeliveredSteering: string[];
+	undeliveredSteering: SteeringMessage[];
 }
 
 export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
@@ -184,7 +185,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 	let answerStart = 0;
 	const live = liveRound(o, () => messages);
 	let stopReason: AgentStopReason = 'complete';
-	let undelivered: string[] = [];
+	let undelivered: SteeringMessage[] = [];
 	let loopError: Error | null = null;
 
 	const result = (
@@ -271,11 +272,11 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 					signal: o.signal,
 					takeSteering: o.takeSteering,
 					onMessageAdded: (m) => added.push(m),
-					onSteering: (texts) => {
+					onSteering: (steers) => {
 						// The loop has just added these as the newest messages.
-						for (const m of added.slice(-texts.length)) steered.add(m);
+						for (const m of added.slice(-steers.length)) steered.add(m);
 						answerStart = stream.length;
-						o.onSteering?.(texts);
+						o.onSteering?.(steers);
 					},
 					...live.options,
 					onStreamChunk: (chunk, meta) => {

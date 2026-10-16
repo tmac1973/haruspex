@@ -20,7 +20,7 @@ import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
 import { withInferenceSlot, type InferenceTicket } from '#lib/agent/inferenceQueue.svelte.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { chooseCut, compactCodeThread } from '#lib/code/compaction.ts';
-import type { AgentStopReason, SearchStep } from '#lib/agent/loop.ts';
+import type { AgentStopReason, SearchStep, SteeringMessage } from '#lib/agent/loop.ts';
 import { markStepDone, markStepProgress } from '#lib/agent/steps.ts';
 import { SubtaskStops, subtaskActive, type SubtaskState } from '#lib/code/subtask.ts';
 import {
@@ -167,15 +167,15 @@ export class CodeSession {
 	/** The waiting inference ticket while `status` is 'queued'. */
 	ticket = $state<InferenceTicket | null>(null);
 	/** Messages typed while a turn runs, not yet given to the model. */
-	steering = $state<string[]>([]);
+	steering = $state<SteeringMessage[]>([]);
 	/** Steering the running turn has given the model. Cleared when it ends. */
-	steeringDelivered = $state<string[]>([]);
+	steeringDelivered = $state<SteeringMessage[]>([]);
 	/**
 	 * Steering the turn ended without delivering (stopped, or out of
 	 * iterations), for the input box to take back. See `takeReturnedSteering`.
 	 */
 	returnedSteering = $state<string[]>([]);
-	/** Images of a message handed back unsent (see `stop` while queued). */
+	/** Images that went back with `returnedSteering`. */
 	returnedImages = $state<string[]>([]);
 	/** This session's background processes, from `code_bg_status`. */
 	background = $state<BgProcess[]>([]);
@@ -325,8 +325,8 @@ export class CodeSession {
 
 	/**
 	 * Send a message. While a turn runs it is queued as steering instead,
-	 * given to the model at the next step (images and skills are not: they
-	 * only start a turn).
+	 * given to the model, images and all, at the next step (a skill is not:
+	 * it only starts a turn).
 	 */
 	send = async (
 		text: string,
@@ -339,7 +339,7 @@ export class CodeSession {
 		// follow-up included.
 		this.remote = opts.remote ?? false;
 		if (this.busy) {
-			if (trimmed) this.steering = [...this.steering, trimmed];
+			this.steering = [...this.steering, { text: trimmed, images }];
 			return;
 		}
 		if (this.folderMissing) {
@@ -433,10 +433,8 @@ export class CodeSession {
 			this.abortController = null;
 			this.ticket = null;
 			this.status = 'idle';
-			if (this.steering.length > 0) {
-				this.returnedSteering = [...this.returnedSteering, ...this.steering];
-				this.steering = [];
-			}
+			this.handBack(this.steering);
+			this.steering = [];
 			queueMicrotask(() => void this.flushWatchNotifications());
 		}
 	};
@@ -814,12 +812,12 @@ export class CodeSession {
 				notice,
 				signal: abort.signal,
 				takeSteering: () => {
-					const texts = this.steering;
+					const steers = this.steering;
 					this.steering = [];
-					return texts;
+					return steers;
 				},
-				onSteering: (texts) => {
-					this.steeringDelivered = [...this.steeringDelivered, ...texts];
+				onSteering: (steers) => {
+					this.steeringDelivered = [...this.steeringDelivered, ...steers];
 				},
 				onProject: (project) => {
 					this.projectRoot = project.root;
@@ -923,17 +921,25 @@ export class CodeSession {
 		const queued = this.steering;
 		this.steering = [];
 		if (!typed) {
-			if (queued.length) this.returnedSteering = queued;
+			this.handBack(queued);
 			return;
 		}
 		const text = typedText(messageText(opening.content)).trim();
-		this.giveBack([text, ...queued].filter(Boolean).join('\n\n'), imagesOf(opening));
+		this.giveBack([text, ...queued.map((m) => m.text)].filter(Boolean).join('\n\n'), [
+			...imagesOf(opening),
+			...queued.flatMap((m) => m.images ?? [])
+		]);
 	}
 
 	/** Hand text and images back to the input box. */
 	private giveBack(text: string, images: string[]): void {
 		if (text) this.returnedSteering = [...this.returnedSteering, text];
 		if (images.length) this.returnedImages = [...this.returnedImages, ...images];
+	}
+
+	/** Hand steering the model never saw back to the input box. */
+	private handBack(steers: SteeringMessage[]): void {
+		for (const m of steers) this.giveBack(m.text, m.images ?? []);
 	}
 
 	/**
@@ -997,9 +1003,8 @@ export class CodeSession {
 		}
 		// What the model never saw goes back to the user, including anything
 		// typed after the loop's last look at the queue.
-		const returned = [...result.undeliveredSteering, ...this.steering];
+		this.handBack([...result.undeliveredSteering, ...this.steering]);
 		this.steering = [];
-		if (returned.length > 0) this.returnedSteering = returned;
 	}
 
 	/**

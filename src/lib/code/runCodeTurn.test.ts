@@ -247,7 +247,7 @@ describe('runCodeTurn', () => {
 	});
 
 	it('keeps steering in place after a round that said something', async () => {
-		const queue = ['use pnpm'];
+		const queue = [{ text: 'use pnpm' }];
 		const said: ChatMessage = { ...call('c1'), content: 'Installing first.' };
 		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
 			const live = { provisional: true as const };
@@ -257,9 +257,9 @@ describe('runCodeTurn', () => {
 			o.onToolStart({ id: 'c1', name: 'run_command', arguments: {} });
 			add(o, result('c1'));
 			// The iteration boundary: steering goes in after the results.
-			const texts = o.takeSteering!();
-			for (const t of texts) add(o, { role: 'user', content: t });
-			o.onSteering!(texts);
+			const steers = o.takeSteering!();
+			for (const m of steers) add(o, { role: 'user', content: m.text });
+			o.onSteering!(steers);
 			o.onToolRoundStart!();
 			o.onStreamChunk({ delta: { content: 'Switched.' }, finish_reason: null }, live);
 			o.onStreamChunk(chunk('Switched to pnpm.'));
@@ -275,19 +275,19 @@ describe('runCodeTurn', () => {
 	});
 
 	it('passes steering through and keeps it in the thread', async () => {
-		const queue = ['use pnpm'];
+		const queue = [{ text: 'use pnpm' }];
 		const onSteering = vi.fn();
 		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
 			o.onStreamChunk(chunk('Running npm. '));
-			const texts = o.takeSteering!();
+			const steers = o.takeSteering!();
 			add(o, { role: 'assistant', content: 'Running npm.' });
-			for (const t of texts) add(o, { role: 'user', content: t });
-			o.onSteering!(texts);
+			for (const m of steers) add(o, { role: 'user', content: m.text });
+			o.onSteering!(steers);
 			o.onStreamChunk(chunk('Switched to pnpm.'));
 			o.onComplete();
 		});
 		const res = await runCodeTurn(opts({ takeSteering: () => queue.splice(0), onSteering }));
-		expect(onSteering).toHaveBeenCalledWith(['use pnpm']);
+		expect(onSteering).toHaveBeenCalledWith([{ text: 'use pnpm' }]);
 		expect(queue).toEqual([]);
 		expect(res.added).toEqual([
 			{ role: 'assistant', content: 'Running npm.' },
@@ -298,10 +298,10 @@ describe('runCodeTurn', () => {
 
 	it('hands back steering the model never saw', async () => {
 		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) =>
-			o.onComplete({ stopReason: 'forced_stop', undeliveredSteering: ['also lint'] })
+			o.onComplete({ stopReason: 'forced_stop', undeliveredSteering: [{ text: 'also lint' }] })
 		);
 		const res = await runCodeTurn(opts());
-		expect(res.undeliveredSteering).toEqual(['also lint']);
+		expect(res.undeliveredSteering).toEqual([{ text: 'also lint' }]);
 	});
 
 	it('returns what a stopped turn finished, without throwing', async () => {
@@ -310,12 +310,16 @@ describe('runCodeTurn', () => {
 			add(o, call('c1'), result('c1'), call('c2'));
 			o.onStreamChunk(chunk('Half an ans'));
 			abort.abort();
-			o.onComplete({ stopReason: 'complete', aborted: true, undeliveredSteering: ['wait'] });
+			o.onComplete({
+				stopReason: 'complete',
+				aborted: true,
+				undeliveredSteering: [{ text: 'wait' }]
+			});
 			throw new DOMException('Aborted', 'AbortError');
 		});
 		const res = await runCodeTurn(opts({ signal: abort.signal }));
 		expect(res.outcome).toBe('aborted');
-		expect(res.undeliveredSteering).toEqual(['wait']);
+		expect(res.undeliveredSteering).toEqual([{ text: 'wait' }]);
 		expect(res.added).toEqual([
 			call('c1'),
 			result('c1'),

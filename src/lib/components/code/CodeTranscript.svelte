@@ -27,6 +27,7 @@
 	import { messageText } from '#lib/api.ts';
 	import { TURNS_PER_PAGE, turnsBefore, windowStart } from '#lib/code/sessionList.ts';
 	import type { CodeSession } from '#lib/stores/code.svelte.ts';
+	import type { SteeringMessage } from '#lib/agent/loop.ts';
 	import { makeCodePathLinker } from '#lib/code/paths.ts';
 	import { openFileFromClick } from '#lib/code/openEditor.ts';
 	import { forkFromMessage } from '#lib/code/windows.ts';
@@ -258,10 +259,20 @@
 			onStopSubtask={session.stopSubtask}
 		/>
 	{/if}
-	{#each session.steeringDelivered as text, k (k)}
+	{#snippet steerBody(steer: SteeringMessage)}
+		<span class="text">
+			{#if steer.text}{steer.text}{/if}
+			{#if steer.images?.length}
+				<span class="thumbs">
+					{#each steer.images as url, i (i)}<img src={url} alt="attachment" />{/each}
+				</span>
+			{/if}
+		</span>
+	{/snippet}
+	{#each session.steeringDelivered as steer, k (k)}
 		<div class="steer delivered" title="The agent has read this.">
 			<span class="tag">Delivered</span>
-			<span class="text">{text}</span>
+			{@render steerBody(steer)}
 		</div>
 	{/each}
 	{#if streamText}
@@ -278,10 +289,10 @@
 	{#if pending.length > 0}
 		<CodeSteps steps={[]} {pending} />
 	{/if}
-	{#each session.steering as text, k (k)}
+	{#each session.steering as steer, k (k)}
 		<div class="steer pending" title="Given to the agent at its next step.">
 			<span class="tag">Queued</span>
-			<span class="text">{text}</span>
+			{@render steerBody(steer)}
 			<button
 				class="drop"
 				onclick={() => removePending(k)}
@@ -425,6 +436,26 @@
 
 	.steer.delivered {
 		border: 1px solid var(--accent-soft);
+	}
+
+	.thumbs {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+	}
+
+	.text:has(.thumbs) {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.thumbs img {
+		width: 40px;
+		height: 40px;
+		object-fit: cover;
+		border-radius: 4px;
+		border: 1px solid var(--border);
 	}
 
 	.tag {
