@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.7](https://github.com/tmac1973/haruspex/compare/v0.2.6...v0.2.7) (2026-10-16)
+
+
+### Bug Fixes
+
+* **build:** put sd-libs on make app's library path for linuxdeploy ([#597](https://github.com/tmac1973/haruspex/issues/597)) ([0e20082](https://github.com/tmac1973/haruspex/commit/0e20082feb08a306f962211ed04ee1f189216a44))
+* **code:** send images attached to a steering message ([#600](https://github.com/tmac1973/haruspex/issues/600)) ([5a9f050](https://github.com/tmac1973/haruspex/commit/5a9f050030fc1e2c6261c2ab2d01fef03b04f958))
+* **code:** stop following the transcript when the wheel scrolls up ([#599](https://github.com/tmac1973/haruspex/issues/599)) ([2e66b61](https://github.com/tmac1973/haruspex/commit/2e66b6116f58895d2dd150f3b8614671fad6d450))
+* **setup:** fit the wizard to short windows and scroll when it can't ([#598](https://github.com/tmac1973/haruspex/issues/598)) ([fc15488](https://github.com/tmac1973/haruspex/commit/fc15488dac984dffa532fa411c33a74373a9a01c))
+
 ## [0.2.6](https://github.com/tmac1973/haruspex/compare/v0.2.5...v0.2.6) (2026-10-16)
 
 
