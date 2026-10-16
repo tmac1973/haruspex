@@ -447,17 +447,23 @@
 </div>
 
 <style>
+	/* <main> clips its children, so the wizard takes the height below the
+	   header (as the chat page does) and scrolls itself when a step is
+	   taller. `margin: auto` on the step centres it while it fits and pins
+	   it to the top once it doesn't — `align-items: center` would push the
+	   overflow off the top, out of scroll reach. */
 	.wizard {
 		display: flex;
-		align-items: center;
-		justify-content: center;
-		min-height: calc(100vh - 45px);
+		box-sizing: border-box;
+		height: calc(100vh - 45px);
+		overflow-y: auto;
 		padding: 32px;
 	}
 
 	.wizard-step {
 		max-width: 520px;
 		width: 100%;
+		margin: auto;
 		text-align: center;
 	}
 
@@ -887,5 +893,44 @@
 
 	.error-box p {
 		margin: 0 0 12px 0;
+	}
+
+	/* Short windows (a maximised window on a 1080p screen is ~950px of
+	   content): tighten the vertical rhythm so each step fits without
+	   scrolling where it can. */
+	@media (max-height: 1000px) {
+		.wizard {
+			padding: 16px 32px;
+		}
+
+		.subtitle {
+			margin-bottom: 16px;
+		}
+
+		.features {
+			margin: 12px 0 16px;
+			gap: 10px;
+		}
+
+		.choice-btn {
+			padding: 10px 16px;
+		}
+
+		.hardware-info {
+			margin: 12px 0;
+			padding: 12px 16px;
+		}
+
+		.model-select {
+			margin: 8px 0 16px;
+		}
+
+		.actions {
+			margin-top: 16px;
+		}
+
+		.progress-info {
+			margin: 16px 0;
+		}
 	}
 </style>
