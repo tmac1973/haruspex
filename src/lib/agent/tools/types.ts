@@ -1,6 +1,6 @@
 import type { BackendOverride, ToolDefinition } from '#lib/api.ts';
 import type { SubtaskState, SubtaskStops } from '#lib/code/subtask.ts';
-import type { SubtaskSpec } from '#lib/code/subtaskRun.ts';
+import type { JobSubtaskHost, SubtaskSpec } from '#lib/code/subtaskRun.ts';
 import type { Artifact } from '#lib/sandbox/sandbox.ts';
 import type { LintIssue } from '#lib/sandbox/lint.ts';
 import type { FileDiff } from '#lib/code/diff.ts';
@@ -238,6 +238,11 @@ export interface ToolContext {
 	 * turn and reports it in a notification turn. Absent outside the Code tab.
 	 */
 	startBackgroundSubtask?: (spec: SubtaskSpec, initial: SubtaskState) => void;
+	/**
+	 * Set on a job's turns: `delegate` there starts read-only subtasks that
+	 * follow the job's model settings. Absent in the Code tab.
+	 */
+	jobSubtasks?: JobSubtaskHost;
 	/**
 	 * A `run_command` approval prompt opened (true) or closed (false). A
 	 * subtask's card says it is waiting for the user meanwhile.

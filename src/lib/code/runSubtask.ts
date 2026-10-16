@@ -27,6 +27,7 @@ import { errMessage } from '#lib/utils/error.ts';
 import { assemble, prepareSystem } from '#lib/code/runCodeTurn.ts';
 import { SUBTASK_REPORT_CHARS } from '#lib/code/system-prompt.ts';
 import type { CodeWriteGuard, SlotLender } from '#lib/agent/tools/types.ts';
+import type { JobSubtaskHost } from '#lib/code/subtaskRun.ts';
 
 /** The most model rounds a subtask takes before it has to answer. */
 export const SUBTASK_MAX_ROUNDS = 25;
@@ -76,6 +77,8 @@ export interface SubtaskOptions {
 	backend?: BackendOverride | null;
 	/** Null follows the global setting. */
 	effort?: string | null;
+	/** The parent is a job's turn: its model settings and call stats. */
+	job?: JobSubtaskHost;
 	/** What the parent handed over, in full. */
 	task: string;
 	/** A few words naming the task, for approval prompts and the card. */
@@ -149,10 +152,18 @@ function childLoop(
 		codeAutoApprove: getSettings().codeAutoApprove,
 		subtask: { depth: 1 },
 		backend,
-		reasoningEffort: o.effort ?? null,
+		reasoningEffort: o.job ? o.job.reasoningEffort : (o.effort ?? null),
+		// A job's child follows the job's model settings, not the global ones.
+		...(o.job && {
+			thinkingEnabled: o.job.thinkingEnabled,
+			samplingSource: o.job.samplingSource,
+			samplingParams: o.job.samplingParams,
+			onCallStats: o.job.onCallStats
+		}),
 		expectsFileOutput: false,
 		visionSupported: descriptor.vision,
-		interactive: true,
+		// A job runs with nobody there to answer.
+		interactive: !o.job,
 		signal: o.signal,
 		takeSteering: () => []
 	};

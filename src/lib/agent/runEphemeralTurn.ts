@@ -16,7 +16,7 @@
 
 import { mergeLeadingSystemMessages } from '#lib/api.ts';
 import type { BackendOverride, ChatMessage, Usage } from '#lib/api.ts';
-import type { CallStats } from '#lib/agent/loop.ts';
+import type { AgentLoopOptions, CallStats } from '#lib/agent/loop.ts';
 import type { ContextManagedInfo } from '#lib/agent/context-budget.ts';
 import type { SamplingParams } from '#lib/stores/settings.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
@@ -122,6 +122,10 @@ export interface EphemeralTurnOptions {
 	onReasoning?: (reasoning: string) => void;
 	onAssistantDelta?: (full: string) => void;
 	onToolStart?: (call: ResolvedToolCall) => void;
+	/** A job's turn, whose `delegate` starts read-only subtasks; see ToolContext.jobSubtasks. */
+	jobSubtasks?: ToolContext['jobSubtasks'];
+	/** A `delegate` call's subtask changed; see AgentLoopOptions.onSubtaskUpdate. */
+	onSubtaskUpdate?: AgentLoopOptions['onSubtaskUpdate'];
 	/**
 	 * Keep an answer cut off at the response cap rather than failing the turn;
 	 * the result's `cutOff` says it happened. See TurnHooks.keepCutOffAnswer.
@@ -262,6 +266,8 @@ export async function runEphemeralTurn(
 			samplingSource: options.samplingSource,
 			samplingParams: options.samplingParams,
 			signal: options.signal,
+			jobSubtasks: options.jobSubtasks,
+			onSubtaskUpdate: options.onSubtaskUpdate,
 			onToolStart: (call) => options.onToolStart?.(call),
 			onToolEnd: (call, result, thumbDataUrl, artifacts, lintIssues) =>
 				options.onToolEnd?.(call, result, thumbDataUrl, artifacts, lintIssues)

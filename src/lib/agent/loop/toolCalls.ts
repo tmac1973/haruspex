@@ -120,6 +120,7 @@ export async function executeToolCalls(
 				onSubtask: (state) => options.onSubtaskUpdate?.(call, state),
 				subtaskStops: options.subtaskStops,
 				startBackgroundSubtask: options.startBackgroundSubtask,
+				jobSubtasks: options.jobSubtasks,
 				onApprovalWait: options.onApprovalWait,
 				wslDistro: ctx.wslDistro,
 				filesWrittenThisTurn: ctx.filesWrittenThisTurn,

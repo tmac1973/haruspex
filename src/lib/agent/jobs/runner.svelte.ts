@@ -11,6 +11,7 @@
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import type { Artifact, LintIssue } from '#lib/agent/tools/index.ts';
 import type { CallStats, SearchStep } from '#lib/agent/loop.ts';
+import type { SubtaskState } from '#lib/code/subtask.ts';
 import type { ContextManagedInfo } from '#lib/agent/context-budget.ts';
 import {
 	runEphemeralTurn,
@@ -129,7 +130,8 @@ function runEnvironment(job: JobWithSteps): RunEnvironment {
  * `waitingForSlot` on the active run while it queues for an inference slot,
  * auto-approve tool calls (jobs are unattended), and inject the per-job
  * defaults — workspace dir (empty string from the DB → null so fs_* tools drop
- * out), backend override, and abort signal — on top of `opts`. Used by the
+ * out), backend override, abort signal, and the job's settings for any
+ * subtasks a `delegate` call starts — on top of `opts`. Used by the
  * regular step, audit-sample, and cluster-verify turns.
  *
  * `opts` is spread first so the job's own policy wins: a pipeline must not be
@@ -139,7 +141,9 @@ function runJobTurn(
 	job: JobWithSteps,
 	runId: number,
 	abort: AbortController,
-	opts: Omit<EphemeralTurnOptions, 'workingDir' | 'backend' | 'signal'> & { turnKind?: string }
+	opts: Omit<EphemeralTurnOptions, 'workingDir' | 'backend' | 'signal' | 'jobSubtasks'> & {
+		turnKind?: string;
+	}
 ): Promise<EphemeralTurnResult> {
 	if (current && current.id === runId) {
 		current = { ...current, waitingForSlot: true };
@@ -160,17 +164,27 @@ function runJobTurn(
 			// turn's calls, which is worse than not labelling them at all.
 			currentTurnKind = opts.turnKind ?? null;
 			try {
+				const observability = observabilityCallbacks(runId);
+				const policy = jobTurnPolicy(job);
 				return await runWithAutoApprove(() =>
 					runEphemeralTurn({
 						// Ordering is the contract: observability is a default a
 						// pipeline may replace, the job's policy outranks the
-						// pipeline, and the runner owns the last three outright.
-						...observabilityCallbacks(runId),
+						// pipeline, and the runner owns the rest outright.
+						...observability,
 						...opts,
-						...jobTurnPolicy(job),
+						...policy,
 						workingDir: job.working_dir ? job.working_dir : null,
 						backend,
-						signal: abort.signal
+						signal: abort.signal,
+						// Offered only where a stage lists `delegate`.
+						jobSubtasks: {
+							thinkingEnabled: policy.thinkingEnabled,
+							reasoningEffort: policy.reasoningEffort,
+							samplingSource: policy.samplingSource,
+							samplingParams: policy.samplingParams,
+							onCallStats: observability.onCallStats
+						}
 					})
 				);
 			} finally {
@@ -767,6 +781,14 @@ function observabilityCallbacks(runId: number) {
 function buildStreamCallbacks(runId: number, stepIndex: number) {
 	return {
 		onAssistantDelta: (full: string) => patchStep(runId, stepIndex, { streaming: full }),
+		onSubtaskUpdate: (call: ResolvedToolCall, subtask: SubtaskState) => {
+			if (!current || current.id !== runId) return;
+			const step = current.steps[stepIndex];
+			if (!step) return;
+			patchStep(runId, stepIndex, {
+				searchSteps: step.searchSteps.map((s) => (s.id === call.id ? { ...s, subtask } : s))
+			});
+		},
 		onToolStart: (call: ResolvedToolCall) => {
 			if (!current || current.id !== runId) return;
 			const step = current.steps[stepIndex];

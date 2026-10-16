@@ -6,6 +6,8 @@
  * (`backgroundSubtasks.ts`), which deliver it in a notification turn.
  */
 import type { BackendOverride } from '#lib/api.ts';
+import type { CallStats } from '#lib/agent/loop.ts';
+import type { SamplingParams } from '#lib/stores/settings.ts';
 import type { CodeWriteGuard, SlotLender } from '#lib/agent/tools/types.ts';
 import { spillIfLarge } from '#lib/agent/tools/pty-exec.ts';
 import { runSubtask, type SubtaskResult } from '#lib/code/runSubtask.ts';
@@ -37,6 +39,19 @@ export interface SubtaskSpec {
 	wt: SubtaskWorktree | null;
 }
 
+/**
+ * A job's turn as the parent (`ToolContext.jobSubtasks`): its subtasks only
+ * read, follow the job's model settings rather than the global ones, and
+ * count toward the run's call stats.
+ */
+export interface JobSubtaskHost {
+	thinkingEnabled: boolean | null;
+	reasoningEffort: string | null;
+	samplingSource: 'server' | 'profile' | 'custom';
+	samplingParams: SamplingParams | null;
+	onCallStats?: (stats: CallStats) => void;
+}
+
 /** Where a subtask runs, and who hears about it. */
 export interface SubtaskEnv {
 	sessionId?: string;
@@ -45,6 +60,8 @@ export interface SubtaskEnv {
 	wslDistro: string | null;
 	backend: BackendOverride | null;
 	effort: string | null;
+	/** Set when the parent is a job's turn. */
+	job?: JobSubtaskHost;
 	/** Names the session in approval prompts; the subtask adds its label. */
 	requester?: () => string;
 	runInSlot?: SlotLender;
@@ -173,6 +190,7 @@ export async function runSubtaskSpec(
 		wslDistro: env.wslDistro,
 		backend: env.backend,
 		effort: env.effort,
+		job: env.job,
 		task: spec.task,
 		label: spec.label,
 		mode: spec.mode,

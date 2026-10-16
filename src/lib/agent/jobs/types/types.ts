@@ -44,7 +44,7 @@ export interface JobRunContext {
 	trigger: RunTrigger;
 	/** One ephemeral agent turn under the job harness (slot, auto-approve, backend). */
 	runJobTurn: (
-		opts: Omit<EphemeralTurnOptions, 'workingDir' | 'backend' | 'signal'> & {
+		opts: Omit<EphemeralTurnOptions, 'workingDir' | 'backend' | 'signal' | 'jobSubtasks'> & {
 			/**
 			 * What kind of turn this is, for the per-kind token split on the
 			 * step's stats. Free-form and pipeline-owned — "planning.write",
@@ -57,7 +57,10 @@ export interface JobRunContext {
 	patchStep: (stepIndex: number, patch: Partial<RunStepState>) => void;
 	buildStreamCallbacks: (
 		stepIndex: number
-	) => Pick<EphemeralTurnOptions, 'onAssistantDelta' | 'onToolStart' | 'onToolEnd'>;
+	) => Pick<
+		EphemeralTurnOptions,
+		'onAssistantDelta' | 'onToolStart' | 'onToolEnd' | 'onSubtaskUpdate'
+	>;
 	setCurrentStepIndex: (stepIndex: number) => void;
 	/** The step that was live when an error/cancel propagated (0 if unknown). */
 	liveStepIndex: () => number;

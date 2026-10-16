@@ -11,6 +11,9 @@
  * (`#lib/code/backgroundSubtasks.ts`). A child never gets this tool itself,
  * and a turn starts at most `SUBTASKS_PER_TURN`. Settings → Code → Subtasks
  * decides which modes it offers, or withdraws it.
+ *
+ * An autonomous coding job's loop turns have it too (`ctx.jobSubtasks`), in
+ * read mode only and never in the background.
  */
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult } from '#lib/agent/tools/types.ts';
@@ -25,11 +28,19 @@ import { newSubtaskState, type SubtaskMode, type SubtaskState } from '#lib/code/
 /** The most subtasks one parent turn may start. */
 export const SUBTASKS_PER_TURN = 8;
 
-/** The modes `delegate` offers here: none when it isn't offered at all. */
-export function delegateModes(ctx: { codeReadOnly?: boolean }): SubtaskMode[] {
+/**
+ * The modes `delegate` offers here: none when it isn't offered at all. A
+ * job's subtasks only read: its turn is already the one writer in its folder.
+ */
+export function delegateModes(ctx: {
+	codeReadOnly?: boolean;
+	jobSubtasks?: unknown;
+}): SubtaskMode[] {
 	const setting = getSettings().codeSubtasks;
 	if (setting === 'off') return [];
-	return setting === 'write' && !ctx.codeReadOnly ? ['read', 'write'] : ['read'];
+	return setting === 'write' && !ctx.codeReadOnly && !ctx.jobSubtasks
+		? ['read', 'write']
+		: ['read'];
 }
 
 /** The label shown for a call: the model's, else the start of the task. */
@@ -60,6 +71,8 @@ function childController(signal?: AbortSignal): {
 function modeRefusal(mode: unknown, ctx: ToolContext): string | null {
 	if (mode === undefined || mode === 'read') return null;
 	if (mode !== 'write') return 'mode must be "read" or "write".';
+	if (ctx.jobSubtasks)
+		return 'A job\'s subtasks only read: use mode "read", and make the change yourself.';
 	if (ctx.codeReadOnly) return 'This session is read-only: use mode "read".';
 	if (!delegateModes(ctx).includes('write')) {
 		return 'Write subtasks are off (Settings → Code → Subtasks): use mode "read", or make the change yourself.';
@@ -135,6 +148,7 @@ export async function executeDelegate(
 				wslDistro,
 				backend: ctx.backend ?? null,
 				effort: ctx.codeEffort ?? null,
+				job: ctx.jobSubtasks,
 				requester: ctx.requester,
 				runInSlot: ctx.runInSlot,
 				guard: ctx.codeWriteGuard,

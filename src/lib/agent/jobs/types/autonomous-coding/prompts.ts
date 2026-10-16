@@ -52,6 +52,28 @@ function shellSafetyRules(stage: 'preflight' | 'unattended'): string[] {
 }
 
 /**
+ * How a loop turn hands reading to subtasks (`delegate`), when it has the
+ * tool. Read mode only: the turn stays the one writer, so the runner's
+ * "did it build anything" check still sees every change. Appended as a
+ * labelled block, like the shell rules, so the rule numbering stays stable.
+ */
+function subtaskRules(subtasks: boolean): string[] {
+	if (!subtasks) return [];
+	return [
+		'',
+		'SUBTASKS:',
+		'`delegate` (mode "read") hands a reading task to a helper agent. It starts',
+		'with an empty context in the project, reads and searches, and returns a short',
+		'report with paths and line numbers. Use it for questions that need many files',
+		'read — "find every caller of X and how it handles errors", "work out how the',
+		'tests set up Y" — not for one file you could read yourself. Put independent',
+		'questions in several delegate calls in ONE response: they run at the same',
+		'time. Write each task in full; the helper cannot see this conversation. It',
+		'cannot change files: make every change yourself.'
+	];
+}
+
+/**
  * Stage 0 system prompt: the last human checkpoint before a fully unattended
  * run. Hunt every deferred/ambiguous decision in the plan, resolve each with
  * the user via ask_user_question, record the answers, then report readiness
@@ -362,7 +384,11 @@ export function decomposePrompt(planDir: string, decisionsPath: string): string 
  * built in one phase-context turn). The runner owns TODO/PROGRESS bookkeeping
  * and makes the git commits — the model works exactly one item, then reports.
  */
-export function iterationPrompt(phaseVerifyCommand: string | null, planDir: string): string {
+export function iterationPrompt(
+	phaseVerifyCommand: string | null,
+	planDir: string,
+	subtasks: boolean
+): string {
 	return [
 		'You are ONE iteration of an unattended coding loop. There is NO human',
 		'available — never ask questions; make the call yourself using the plan',
@@ -385,6 +411,7 @@ export function iterationPrompt(phaseVerifyCommand: string | null, planDir: stri
 		'7. Finish by calling `submit_iteration_result` exactly once: the item id you',
 		'   were given, "done" or "failed", and a note. A useful failure note names',
 		'   the error, the evidence, and what the next attempt should try instead.',
+		...subtaskRules(subtasks),
 		...shellSafetyRules('unattended')
 	].join('\n');
 }
@@ -398,7 +425,11 @@ export function iterationPrompt(phaseVerifyCommand: string | null, planDir: stri
  * in-context before finishing; the runner re-verifies afterwards and only
  * commits a verified phase (repair cycles are the backstop).
  */
-export function phaseTurnPrompt(phaseVerifyCommand: string | null, planDir: string): string {
+export function phaseTurnPrompt(
+	phaseVerifyCommand: string | null,
+	planDir: string,
+	subtasks: boolean
+): string {
 	return [
 		'You are implementing ONE PHASE of an unattended coding run, in a single',
 		'continuous session. There is NO human available — never ask questions;',
@@ -432,6 +463,7 @@ export function phaseTurnPrompt(phaseVerifyCommand: string | null, planDir: stri
 		'7. When the phase is implemented and verification passes — or you are',
 		'   genuinely stuck — call `submit_phase_result` exactly once with a summary',
 		'   and stop.',
+		...subtaskRules(subtasks),
 		...shellSafetyRules('unattended')
 	].join('\n');
 }

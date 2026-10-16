@@ -1,6 +1,6 @@
 ---
 title: Code subtasks
-description: Subtasks in the Code tab — helper agents the coding agent hands parts of a task to, read-only or writing in their own copy, how many run at once, and how to turn them off.
+description: Subtasks in the Code tab and autonomous coding jobs — helper agents the coding agent hands parts of a task to, read-only or writing in their own copy, how many run at once, and how to turn them off.
 ---
 
 # Code subtasks
@@ -39,9 +39,13 @@ The agent can also start a subtask in the background, for work it doesn't need b
 
 **Stop** on a card stops that subtask; the agent carries on with what the others found, and is told you stopped it. **Stop** on the session stops the turn and the subtasks it is waiting for; background subtasks keep running. Closing or deleting the session stops them all.
 
+## Subtasks in autonomous coding jobs
+
+An autonomous coding job's build and repair turns can use read-only subtasks too, to look things up across the project while it codes. They follow the job's model, reasoning and sampling settings, never write (even at **Read and write**), and never run in the background. Their cards show among the step's tool calls in the job's run, and their model calls count toward the step's stats. Other job types and stages don't use them.
+
 ## Turn subtasks off
 
-Settings → Code → Subtasks: **Read only** (the default), **Read and write**, or **Off**. Off, the agent does every part itself.
+Settings → Code → Subtasks: **Read only** (the default), **Read and write**, or **Off**. Off, the agent does every part itself, in the Code tab and in autonomous coding jobs.
 
 ## What subtasks don't do
 
@@ -49,4 +53,4 @@ Settings → Code → Subtasks: **Read only** (the default), **Read and write**,
 - Writing ones don't commit, and don't install or upgrade the shared dependency folders.
 - They don't ask you anything, and can't see the conversation: the agent writes each one's task in full.
 - They don't start subtasks of their own, or leave anything running.
-- They're only in the Code tab, not the Shell tab's Full access or Chat.
+- They're only in the Code tab and autonomous coding jobs, not the Shell tab's Full access, Chat or other job types.
