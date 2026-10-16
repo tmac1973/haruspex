@@ -33,6 +33,7 @@
 	import { forkFromMessage } from '#lib/code/windows.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { errMessage } from '#lib/utils/error.ts';
+	import { trackFollow } from '#lib/utils/followBottom.ts';
 
 	let { session, notes = [] }: { session: CodeSession; notes?: TranscriptNote[] } = $props();
 
@@ -95,15 +96,20 @@
 	// bottom: scrolling up to read stops the follow, and sending a message (or
 	// scrolling back down) resumes it.
 	let threadEl = $state<HTMLDivElement | null>(null);
-	let follow = true;
+	let tracker: ReturnType<typeof trackFollow> | null = null;
 	let seenLength = 0;
-	function onThreadScroll() {
+	$effect(() => {
 		if (!threadEl) return;
-		follow = threadEl.scrollHeight - threadEl.scrollTop - threadEl.clientHeight < 48;
-	}
+		const t = trackFollow(threadEl);
+		tracker = t;
+		return () => {
+			t.destroy();
+			if (tracker === t) tracker = null;
+		};
+	});
 	$effect(() => {
 		if (messages.length > seenLength && messages[messages.length - 1]?.role === 'user') {
-			follow = true;
+			tracker?.resume();
 		}
 		seenLength = messages.length;
 	});
@@ -115,7 +121,7 @@
 		void session.searchSteps.length;
 		void session.steering.length;
 		void allNotes.length;
-		if (!threadEl || !follow) return;
+		if (!threadEl || tracker?.following === false) return;
 		queueMicrotask(() => {
 			if (threadEl) threadEl.scrollTop = threadEl.scrollHeight;
 		});
@@ -170,13 +176,7 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div
-	class="thread"
-	bind:this={threadEl}
-	onscroll={onThreadScroll}
-	onclick={onThreadClick}
-	data-testid="code-transcript"
->
+<div class="thread" bind:this={threadEl} onclick={onThreadClick} data-testid="code-transcript">
 	{#if messages.length === 0 && !session.busy}
 		<div class="placeholder">
 			Ask for a change in <code>{session.root}</code>. Hold <kbd>F2</kbd> to speak.

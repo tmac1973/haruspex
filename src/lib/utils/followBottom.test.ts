@@ -46,4 +46,18 @@ describe('followBottom', () => {
 		await settle();
 		expect(s.node.scrollTop).toBe(900);
 	});
+
+	it('stops on an upward wheel even inside the slack', async () => {
+		const s = scroller(500);
+		const action = followBottom(s.node, 1)!;
+		await settle();
+		s.node.dispatchEvent(new Event('scroll'));
+		s.node.dispatchEvent(new WheelEvent('wheel', { deltaY: -40 }));
+		s.node.scrollTop = 390;
+		s.node.dispatchEvent(new Event('scroll'));
+		s.grow(800);
+		action.update!(2);
+		await settle();
+		expect(s.node.scrollTop).toBe(390);
+	});
 });
