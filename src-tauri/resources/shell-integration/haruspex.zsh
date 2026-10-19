@@ -22,6 +22,7 @@ __hsp_precmd() {
         print -n "\e]133;D;${__hsp_last_status}\a"
         __hsp_in_command=""
     fi
+    __hsp_wrap_prompt
 }
 
 # zsh's preexec receives the command line as $1. Encode it base64 and
@@ -47,8 +48,12 @@ add-zsh-hook precmd __hsp_precmd
 add-zsh-hook preexec __hsp_preexec
 
 # Wrap the prompt with A (start) and B (end). %{ ... %} marks bytes as
-# zero-width so prompt-width math stays correct.
-if [[ -z "${__HSP_PS1_WRAPPED:-}" ]]; then
-    PROMPT=$'%{\e]133;A\a%}'"${PROMPT}"$'%{\e]133;B\a%}'
-    typeset -g __HSP_PS1_WRAPPED=1
-fi
+# zero-width so prompt-width math stays correct. Themes that rebuild PROMPT
+# on every prompt (oh-my-zsh, powerlevel10k) overwrite the wrap, and without B
+# no command is ever captured — so __hsp_precmd re-applies it each prompt.
+typeset -g __HSP_PROMPT_A=$'%{\e]133;A\a%}'
+typeset -g __HSP_PROMPT_B=$'%{\e]133;B\a%}'
+__hsp_wrap_prompt() {
+    [[ "$PROMPT" == "$__HSP_PROMPT_A"* ]] || PROMPT="${__HSP_PROMPT_A}${PROMPT}${__HSP_PROMPT_B}"
+}
+__hsp_wrap_prompt

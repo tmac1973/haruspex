@@ -1187,4 +1187,29 @@ mod tests {
         let cap = integ.capture_last_command().unwrap();
         assert_eq!(cap.cwd.as_deref(), Some("/home/tim/projects"));
     }
+
+    #[test]
+    fn bash_hook_rewraps_a_prompt_rebuilt_every_prompt() {
+        // starship and oh-my-bash themes assign PS1 from PROMPT_COMMAND on
+        // every prompt, dropping the A/B wrap — and without B nothing is ever
+        // captured. Simulate one precmd that rebuilds PS1, then run the hook's
+        // PROMPT_COMMAND twice: the wrap must be back, and only once.
+        let hook = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/resources/shell-integration/haruspex.bash"
+        );
+        let script = format!(
+            "rebuild() {{ PS1='$ '; }}; PROMPT_COMMAND=rebuild; . '{hook}'; \
+             eval \"$PROMPT_COMMAND\"; eval \"$PROMPT_COMMAND\"; printf %s \"$PS1\" >&2"
+        );
+        let Ok(out) = std::process::Command::new("bash")
+            .args(["-c", &script])
+            .output()
+        else {
+            return; // no bash on this machine (Windows CI)
+        };
+        // PS1 goes to stderr: the hook writes its own markers to stdout.
+        let ps1 = String::from_utf8(out.stderr).unwrap();
+        assert_eq!(ps1, "\\[\\033]133;A\\007\\]$ \\[\\033]133;B\\007\\]");
+    }
 }
