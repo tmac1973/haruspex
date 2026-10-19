@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata. Software centres (KDE Discover, GNOME Software) read the
+     author from <developer>, not from the deb or rpm header. Installed by the deb
+     and rpm bundles via bundle.linux.*.files in tauri.conf.json. -->
+<component type="desktop-application">
+  <id>com.haruspex.app</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Haruspex</name>
+  <summary>Private AI that runs on your computer</summary>
+  <description>
+    <p>
+      Haruspex is a desktop AI assistant that runs language, speech and image
+      models locally, with web research, file tools and integrations.
+    </p>
+  </description>
+  <developer id="com.spronglehump">
+    <name>Tim MacDonald</name>
+  </developer>
+  <launchable type="desktop-id">Haruspex.desktop</launchable>
+  <url type="homepage">https://haruspex.spronglehump.com/</url>
+  <url type="bugtracker">https://github.com/tmac1973/haruspex/issues</url>
+  <url type="vcs-browser">https://github.com/tmac1973/haruspex</url>
+  <content_rating type="oars-1.1"/>
+</component>
