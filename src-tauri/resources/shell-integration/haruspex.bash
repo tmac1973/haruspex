@@ -68,9 +68,23 @@ __hsp_precmd() {
     fi
 }
 
+# Wrap PS1 so the visible prompt is bracketed by A (start) and B (end).
+# \[ ... \] tells bash these bytes are non-printing so prompt-width math
+# stays correct. Prompt tools that rebuild PS1 on every prompt (starship,
+# oh-my-bash themes) overwrite the wrap, and without B no command is ever
+# captured — so __hsp_arm re-applies it after their hooks have run.
+__HSP_PS1_A='\[\033]133;A\007\]'
+__HSP_PS1_B='\[\033]133;B\007\]'
+__hsp_wrap_ps1() {
+    [[ "$PS1" == "$__HSP_PS1_A"* ]] || PS1="$__HSP_PS1_A$PS1$__HSP_PS1_B"
+}
+
 # Re-arm the gate. Installed as the final PROMPT_COMMAND entry so it runs after
 # all other precmd hooks; the next DEBUG firing is then the user's real command.
-__hsp_arm() { __hsp_at_prompt=1; }
+__hsp_arm() {
+    __hsp_wrap_ps1
+    __hsp_at_prompt=1
+}
 
 __hsp_preexec() {
     # DEBUG fires before every simple command — including the precmd hooks bash
@@ -97,13 +111,7 @@ __hsp_preexec() {
     __hsp_output_start "$cmd"
 }
 
-# Wrap PS1 so the visible prompt is bracketed by A (start) and B (end).
-# \[ ... \] tells bash these bytes are non-printing so prompt-width math
-# stays correct.
-if [[ -z "${__HSP_PS1_WRAPPED:-}" ]]; then
-    PS1='\[\033]133;A\007\]'"$PS1"'\[\033]133;B\007\]'
-    __HSP_PS1_WRAPPED=1
-fi
+__hsp_wrap_ps1
 
 # Hook into PROMPT_COMMAND. __hsp_precmd runs FIRST so $? is the user's command
 # exit (not whatever a later hook returns) and so it disarms the gate before
