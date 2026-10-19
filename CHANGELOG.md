@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.8](https://github.com/tmac1973/haruspex/compare/v0.2.7...v0.2.8) (2026-10-19)
+
+
+### Bug Fixes
+
+* **agent:** retry an empty answer-only synthesis without tools ([#602](https://github.com/tmac1973/haruspex/issues/602)) ([2dcb992](https://github.com/tmac1973/haruspex/commit/2dcb992fd6fed5272d571c507c665106e046fa9d))
+* **bundle:** ship AppStream metainfo so software centres show the author ([#604](https://github.com/tmac1973/haruspex/issues/604)) ([cfee783](https://github.com/tmac1973/haruspex/commit/cfee7834ef0d0d2b0e6a7cd5be42f546b39c3364))
+* **shell:** re-wrap the prompt each time so starship users get captures ([#606](https://github.com/tmac1973/haruspex/issues/606)) ([4d6b5c8](https://github.com/tmac1973/haruspex/commit/4d6b5c81fb2978ce4e43430afc6d798d921f21ad))
+
 ## [0.2.7](https://github.com/tmac1973/haruspex/compare/v0.2.6...v0.2.7) (2026-10-16)
 
 
