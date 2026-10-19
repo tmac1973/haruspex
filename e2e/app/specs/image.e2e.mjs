@@ -44,10 +44,16 @@ describe('a test image from ComfyUI', () => {
 		// failures look identical: the app never asking ComfyUI at all, and the
 		// app asking but never rendering what came back. Waiting only on the
 		// <img> reports both as "still not displayed".
-		await browser.waitUntil(() => comfy.prompts.size === 1, {
-			timeout: 30_000,
-			timeoutMsg: `the app never submitted a prompt to the fake ComfyUI on ${port}`
-		});
+		try {
+			await browser.waitUntil(() => comfy.prompts.size === 1, { timeout: 30_000 });
+		} catch {
+			// Same reason as below: the panel may say why it never asked.
+			throw new Error(
+				`the app never submitted a prompt to the fake ComfyUI on ${port}\n` +
+					`  panel error: ${await detail('.detail.bad')}\n` +
+					`  panel progress: ${await detail('.detail')}`
+			);
+		}
 
 		const preview = await $('img[alt="Test generation"]');
 		try {
