@@ -263,6 +263,13 @@ export function injectPendingImages(messages: ChatMessage[], pending: PendingIma
  * session. llama.cpp and vLLM both render the tools under 'none', so the
  * prompt stays a cached prefix.
  *
+ * vLLM (0.29) renders them and then discards a tool call the model writes
+ * anyway, so a model that still wants to search ends the call with no text
+ * at all: the "research completed but the final answer did not arrive"
+ * error after an iteration cap. An answer-only call that streams no content
+ * is sent once more with the tools dropped — one uncached prompt, and an
+ * answer instead of none.
+ *
  * Uses `ctx.maxResponseTokens` — the SAME ceiling as the tool-check call.
  * This call produces the answer the user actually reads, so a second hardcoded
  * literal here silently overrode every value that resolves into the context:
@@ -279,6 +286,38 @@ export async function streamFinalSynthesis(
 	thinking: boolean | null = ctx.thinkingEnabled,
 	/** Offer `tools` but forbid calling them: the model must answer. */
 	answerOnly = false
+): Promise<{ lastFinish: string | null; totalChunks: number; totalContent: number }> {
+	const result = await streamSynthesisOnce(
+		ctx,
+		tools,
+		sampling,
+		templateKwargs,
+		thinking,
+		answerOnly
+	);
+	if (
+		!answerOnly ||
+		!tools?.length ||
+		result.totalContent > 0 ||
+		result.lastFinish === 'length' ||
+		ctx.signal?.aborted
+	) {
+		return result;
+	}
+	logDebug('agent', 'answer-only synthesis streamed no content; retrying without tools', {
+		chunks: result.totalChunks,
+		lastFinish: result.lastFinish
+	});
+	return streamSynthesisOnce(ctx, undefined, sampling, templateKwargs, thinking, false);
+}
+
+async function streamSynthesisOnce(
+	ctx: LoopContext,
+	tools: ToolDefinition[] | undefined,
+	sampling: ReturnType<typeof getSamplingParams>,
+	templateKwargs: ReturnType<typeof getChatTemplateKwargs>,
+	thinking: boolean | null,
+	answerOnly: boolean
 ): Promise<{ lastFinish: string | null; totalChunks: number; totalContent: number }> {
 	applyContextGuard(ctx, ctx.maxResponseTokens, tools);
 	const sentEstimate = estimateMessagesTokens(ctx.messages, tools);

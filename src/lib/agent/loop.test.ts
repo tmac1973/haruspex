@@ -1134,6 +1134,26 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 		expect(cb.onComplete).toHaveBeenCalledWith({ stopReason: 'max_iterations' });
 	});
 
+	it('retries the final synthesis without tools when the answer-only call is empty', async () => {
+		// vLLM renders the tools under tool_choice 'none', drops the tool call
+		// the model writes anyway, and streams nothing back.
+		nonStreamQueue.push(
+			toolCallResponse([{ id: 'c1', name: 'fetch_url', args: '{"url":"https://a.dev"}' }])
+		);
+		streamQueue.push([{ delta: {}, finish_reason: 'stop' }]);
+		streamQueue.push([contentChunk('Summary of findings.', 'stop')]);
+		const { options, cb } = makeOptions({ maxIterations: 1 });
+
+		await runAgentLoop(options);
+
+		expect(api.chatCompletionStream).toHaveBeenCalledTimes(2);
+		expect(streamToolChoice[0]).toBe('none');
+		expect(streamTools[1]).toBeUndefined();
+		expect(streamToolChoice[1]).toBeUndefined();
+		expect(streamedText(cb)).toBe('Summary of findings.');
+		expect(cb.onComplete).toHaveBeenCalledTimes(1);
+	});
+
 	it('writes the forced final answer with reasoning off', async () => {
 		nonStreamQueue.push(
 			toolCallResponse([{ id: 'c1', name: 'fetch_url', args: '{"url":"https://a.dev"}' }])
