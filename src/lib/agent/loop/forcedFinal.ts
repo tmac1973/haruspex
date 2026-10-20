@@ -127,6 +127,73 @@ export async function forceFinalToolCall(
 }
 
 /**
+ * A file request that used its whole iteration budget without writing: offer
+ * only the fs_write_* tools for one call, so the research becomes the file the
+ * user asked for. The answer-only synthesis after this can't call a tool, and
+ * on vLLM a write attempted there is dropped without a trace (a 1.5K-token PDF
+ * call, 2026-10-20). Best-effort: a failed call or no call goes on to the
+ * synthesis, which then has to explain in text.
+ */
+async function writeFileBeforeWrapUp(ctx: LoopContext, nudges: NudgeState): Promise<void> {
+	const writeTools = ctx.tools.filter((t) => t.function.name.startsWith('fs_write_'));
+	if (!ctx.expectsFileOutput || nudges.hasWrittenFile() || writeTools.length === 0) return;
+	logDebug('agent', 'branch=max-iterations file write', {
+		tools: writeTools.map((t) => t.function.name)
+	});
+	appendMessage(ctx, {
+		role: 'user',
+		content: automaticCheck(
+			'The research budget for this turn is spent and only the fs_write_* tools are ' +
+				'left. Write the file the user asked for now, with the complete content, from ' +
+				'what you have found. Do not search for anything else.'
+		)
+	});
+	// Reasoning off, as for the synthesis: the thinking is done, and the file
+	// content needs the response budget.
+	const sampling = getSamplingParams(ctx.descriptor, {
+		...samplingOptionsFor(ctx, ctx.messages),
+		thinkingEnabled: false
+	});
+	const templateKwargs = getChatTemplateKwargs(ctx.descriptor, false, ctx.reasoningEffort);
+	const reasoning =
+		getOpenRouterReasoningParam(ctx.descriptor, false, ctx.reasoningEffort) ?? undefined;
+	applyContextGuard(ctx, ctx.maxResponseTokens, writeTools);
+	let response: ChatCompletionResponse;
+	const callStartMs = Date.now();
+	try {
+		response = await completionSender(ctx)(
+			{
+				messages: ctx.messages,
+				tools: writeTools,
+				backend: ctx.backend ?? undefined,
+				...sampling,
+				max_tokens: ctx.maxResponseTokens,
+				chat_template_kwargs: templateKwargs,
+				reasoning
+			},
+			ctx.signal
+		);
+	} catch (e) {
+		if (isAbortError(e)) throw e;
+		logDebug('agent', 'max-iterations file write failed', { error: String(e) });
+		return;
+	}
+	if (response.usage) ctx.options.onUsageUpdate?.(response.usage);
+	reportCall(ctx, {
+		durationMs: Date.now() - callStartMs,
+		usage: response.usage,
+		text: response.content
+	});
+	const resolution = resolveToolCalls(response, writeTools);
+	const calls = resolution.kind === 'calls' ? resolution.calls : [];
+	logDebug('agent', 'max-iterations file write resolved', {
+		calls: calls.map((c) => c.name),
+		finish_reason: response.finish_reason
+	});
+	if (calls.length > 0) await executeToolCalls(ctx, nudges, calls, response);
+}
+
+/**
  * Final synthesis when the iteration cap was hit — push a "now answer
  * from what you have" nudge if any tool ran, then stream the answer
  * without offering tools. Called from runAgentLoop after the for-loop
@@ -149,15 +216,21 @@ export async function runMaxIterationsFinalSynthesis(
 		await forceFinalToolCall(ctx, nudges, { stopReason });
 		return;
 	}
+	await writeFileBeforeWrapUp(ctx, nudges);
 	if (state.usedTools) {
 		// Chat/research turns want a definitive "stop searching, answer
 		// now" nudge; shell-troubleshooting turns should wrap up with
 		// what they have AND tell the user what they would have looked
 		// at next. The harsh prompt for chat produces a clean answer;
 		// the same prompt in shell mode produces 128-char aborts.
+		//
+		// The chat prompt says the tools are off and a call is thrown away:
+		// told only "do not search", ThinkingCap 27B on vLLM wrote another
+		// tool call on 3 of 5 file requests, which vLLM drops, leaving no
+		// answer. This wording got text on 5 of 5.
 		const finalPrompt = ctx.shellMode
 			? 'Wrap up now using what you have found so far. If your investigation is incomplete, briefly say so and suggest the next command or file the user could share with you to continue.'
-			: 'Now please provide your complete answer based on everything you have researched. Do not search for anything else.';
+			: 'The research budget for this turn is spent and tools are switched off: a tool call now is discarded and the user sees nothing. Write your answer to the user as plain text now, from what you have found, and say what you could not confirm.';
 		appendMessage(ctx, { role: 'user', content: automaticCheck(finalPrompt) });
 	}
 	// Reasoning off: the thinking happened over the whole turn, and this call
