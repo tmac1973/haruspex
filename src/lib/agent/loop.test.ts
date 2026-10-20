@@ -1125,13 +1125,71 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 		expect(last).toEqual({
 			role: 'user',
 			content: automaticCheck(
-				'Now please provide your complete answer based on everything you have researched. ' +
-					'Do not search for anything else.'
+				'The research budget for this turn is spent and tools are switched off: a tool ' +
+					'call now is discarded and the user sees nothing. Write your answer to the user ' +
+					'as plain text now, from what you have found, and say what you could not confirm.'
 			)
 		});
 		expect(streamedText(cb)).toBe('Summary of findings.');
 		// The turn was force-stopped by the iteration cap, not the model.
 		expect(cb.onComplete).toHaveBeenCalledWith({ stopReason: 'max_iterations' });
+	});
+
+	describe('a file request that hits the cap without writing', () => {
+		const writeTool: ToolDefinition = {
+			type: 'function',
+			function: { name: 'fs_write_pdf', description: 'Write a PDF', parameters: {} }
+		};
+
+		beforeEach(() => {
+			toolsMock.getToolSchemas.mockReturnValue([...TOOL_SCHEMAS, writeTool]);
+		});
+
+		it('offers only the write tools for one call, then writes the answer', async () => {
+			nonStreamQueue.push(
+				toolCallResponse([{ id: 'c1', name: 'fetch_url', args: '{"url":"https://a.dev"}' }]),
+				toolCallResponse([
+					{ id: 'c2', name: 'fs_write_pdf', args: '{"path":"ballot.pdf","content":"# Ballot"}' }
+				])
+			);
+			streamQueue.push([contentChunk('Wrote ballot.pdf.', 'stop')]);
+			const { options, cb } = makeOptions({
+				maxIterations: 1,
+				workingDir: '/tmp/wd',
+				expectsFileOutput: true
+			});
+
+			await runAgentLoop(options);
+
+			expect(api.chatCompletion).toHaveBeenCalledTimes(2);
+			const writeCall = api.chatCompletion.mock.calls[1][0] as { tools?: ToolDefinition[] };
+			expect(writeCall.tools).toEqual([writeTool]);
+			expect(toolsMock.executeTool).toHaveBeenCalledWith(
+				'fs_write_pdf',
+				expect.anything(),
+				expect.anything()
+			);
+			expect(streamedText(cb)).toBe('Wrote ballot.pdf.');
+		});
+
+		it('goes straight to the answer when a file was already written', async () => {
+			nonStreamQueue.push(
+				toolCallResponse([
+					{ id: 'c1', name: 'fs_write_pdf', args: '{"path":"ballot.pdf","content":"# Ballot"}' }
+				])
+			);
+			toolsMock.executeTool.mockResolvedValue({ result: 'Wrote ballot.pdf' });
+			streamQueue.push([contentChunk('Wrote ballot.pdf.', 'stop')]);
+			const { options } = makeOptions({
+				maxIterations: 1,
+				workingDir: '/tmp/wd',
+				expectsFileOutput: true
+			});
+
+			await runAgentLoop(options);
+
+			expect(api.chatCompletion).toHaveBeenCalledTimes(1);
+		});
 	});
 
 	it('retries the final synthesis without tools when the answer-only call is empty', async () => {

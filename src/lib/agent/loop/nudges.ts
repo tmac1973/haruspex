@@ -103,6 +103,11 @@ export class NudgeState {
 		this.fileWritten = true;
 	}
 
+	/** True once an fs_write_* call has landed on disk this turn. */
+	hasWrittenFile(): boolean {
+		return this.fileWritten;
+	}
+
 	/** Record that web_search was invoked. */
 	markWebSearchUsed(): void {
 		this.webSearchUsed = true;
