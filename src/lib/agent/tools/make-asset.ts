@@ -4,8 +4,12 @@
  * made the way the asset job makes one: transparent, cropped, sized,
  * palette-reduced and checked (`assets/single.ts`).
  *
- * Code mode only, and only with an image backend. Chat has `generate_image`
- * for pictures; this is for a project's files.
+ * A texture is drawn by code from a recipe the model writes, as the job draws
+ * one (`assets/texture.ts`): it tiles by construction, takes a second, and
+ * needs no image backend. Everything else needs one.
+ *
+ * Code mode only. Chat has `generate_image` for pictures; this is for a
+ * project's files.
  */
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
@@ -27,15 +31,33 @@ import {
 	type SingleAssetInput,
 	type SingleKind
 } from '#lib/assets/single.ts';
+import {
+	MAX_VARIANTS,
+	renderTexture,
+	seedOf,
+	textureFiles,
+	tiledPreview,
+	validateRecipe
+} from '#lib/assets/texture.ts';
+import { recipeGuide } from '#lib/agent/jobs/types/asset-generation/prompts.ts';
+import type { TextureRecipe } from '#lib/ipc/gen/TextureRecipe.ts';
 import { ImageBackendError } from '#lib/image/types.ts';
+import { getSettings } from '#lib/stores/settings.ts';
 import { pngDataUrl as dataUrl } from '#lib/utils/base64.ts';
 
 const KINDS: SingleKind[] = ['sprite', 'icon', 'texture', 'image'];
+
+/** A texture's edge when none is asked for: the tile its recipe is written for. */
+const TEXTURE_SIZE = 32;
 
 interface ParsedInput {
 	asset: Omit<SingleAssetInput, 'palette'>;
 	path: string;
 	paletteFrom: string | null;
+	/** A texture's recipe, unchecked; Rust's check comes next. */
+	recipe: Record<string, unknown> | null;
+	/** Every file a texture writes: the path, then its variants. */
+	files: string[];
 }
 
 /** The call's arguments, or what is wrong with them. */
@@ -48,7 +70,17 @@ function parseInput(args: Record<string, unknown>): ParsedInput | string {
 	const size = typeof args.size === 'number' && args.size > 0 ? Math.round(args.size) : undefined;
 	const style = typeof args.style === 'string' ? args.style : undefined;
 	const from = typeof args.palette_from === 'string' ? args.palette_from.trim() : '';
-	return { asset: { kind, prompt, size, style }, path, paletteFrom: from || null };
+	const recipe = recipeArg(args.recipe);
+	if (kind === 'texture' && !recipe) {
+		return 'A texture is drawn from a recipe: pass "recipe" as described in its parameter.';
+	}
+	const files = textureFiles(path, args.variants);
+	return { asset: { kind, prompt, size, style }, path, paletteFrom: from || null, recipe, files };
+}
+
+/** A texture's recipe as given, unchecked, or null when it is not an object. */
+function recipeArg(r: unknown): ParsedInput['recipe'] {
+	return r && typeof r === 'object' && !Array.isArray(r) ? (r as ParsedInput['recipe']) : null;
 }
 
 /**
@@ -79,6 +111,15 @@ function assetIo(ctx: ToolContext): AssetIo {
 	};
 }
 
+/** Where one call writes, and how. */
+interface Target {
+	/** The file, resolved against the shell's or session's folder. */
+	path: string;
+	overwrite: boolean;
+	io: AssetIo;
+	cwd: string | null;
+}
+
 /** The colours of an existing image, to draw a new one of the set in. */
 async function paletteOf(path: string, io: AssetIo): Promise<number[]> {
 	return extractPalette(new Uint8Array(await io.read(path)), 16);
@@ -103,6 +144,126 @@ async function writeAsset(
 	}
 }
 
+/** A sprite, icon or picture, drawn by the image backend. */
+async function paintAsset(input: ParsedInput, target: Target, ctx: ToolContext) {
+	const { path, overwrite, io } = target;
+	if (getSettings().imageBackendKind === 'none') {
+		return toolResult(
+			toolError(
+				`A ${input.asset.kind} needs image generation: set one up in Settings → Image. ` +
+					'A texture works without it.'
+			)
+		);
+	}
+
+	// Refuse a path it could not write before spending a minute drawing.
+	const unwritable = await writeAsset(path, new Uint8Array(), overwrite, true, io);
+	if (unwritable) return toolResult(toolError(unwritable));
+
+	const palette = await paletteFor(input, target);
+	if (typeof palette === 'string') return toolResult(palette);
+
+	const started = Date.now();
+	const tick = setInterval(
+		() => ctx.onProgress?.(`Drawing… ${Math.round((Date.now() - started) / 1000)} s`),
+		1000
+	);
+	let asset;
+	try {
+		ctx.onProgress?.('Drawing…');
+		asset = await makeSingleAsset({ ...input.asset, palette }, { signal: ctx.signal });
+	} catch (e) {
+		if (e instanceof ImageBackendError && e.kind === 'cancelled') throw e;
+		return toolResult(toolError(`Could not make it: ${errMessage(e)}`));
+	} finally {
+		clearInterval(tick);
+	}
+
+	const failed = await writeAsset(path, asset.bytes, overwrite, false, io);
+	if (failed) return toolResult(toolError(failed));
+
+	const url = dataUrl(asset.bytes);
+	// So the assistant can look at what it made, and redo it if it's wrong.
+	if (ctx.visionSupported !== false && ctx.pendingImages.length < MAX_PENDING_IMAGES) {
+		ctx.pendingImages.push({ path, dataUrl: url });
+	}
+	return toolResult(
+		[
+			`Wrote ${path} (${asset.width}×${asset.height}, ${asset.model}, seed ${asset.seed}).`,
+			asset.checks.passed
+				? 'It passed its checks.'
+				: `It failed these checks: ${asset.checks.failed.join(', ')} — look at it and decide whether to redo it.`,
+			...asset.notes
+		].join(' '),
+		url
+	);
+}
+
+/**
+ * The colours of palette_from, undefined when none was named, or the error
+ * to return when it could not be read.
+ */
+async function paletteFor(
+	input: ParsedInput,
+	target: Target
+): Promise<number[] | undefined | string> {
+	if (!input.paletteFrom) return undefined;
+	try {
+		return await paletteOf(resolveShellPath(input.paletteFrom, target.cwd), target.io);
+	} catch (e) {
+		return toolInvokeError('make_asset palette_from', e);
+	}
+}
+
+/**
+ * A texture drawn by code from the model's recipe: every variant written,
+ * and the base shown back laid 3×3, so the model sees what repeats.
+ */
+async function makeTexture(input: ParsedInput, target: Target, ctx: ToolContext) {
+	const { path, overwrite, io } = target;
+	const refused = await validateRecipe(input.recipe);
+	if (refused) return toolResult(toolError(`The recipe was refused: ${refused}`));
+
+	const paths = input.files.map((f) => resolveShellPath(f, target.cwd));
+	for (const p of paths) {
+		const unwritable = await writeAsset(p, new Uint8Array(), overwrite, true, io);
+		if (unwritable) return toolResult(toolError(unwritable));
+	}
+	const palette = await paletteFor(input, target);
+	if (typeof palette === 'string') return toolResult(palette);
+
+	const size = input.asset.size ?? TEXTURE_SIZE;
+	let tiles: Uint8Array[];
+	try {
+		// Seeded from the path, so a revised recipe moves only what it changed.
+		const recipe = input.recipe as unknown as TextureRecipe;
+		tiles = await renderTexture(recipe, size, seedOf(path), paths.length, palette ?? []);
+	} catch (e) {
+		return toolResult(toolError(`Could not draw it: ${errMessage(e)}`));
+	}
+	for (const [k, bytes] of tiles.entries()) {
+		const failed = await writeAsset(paths[k], bytes, overwrite, false, io);
+		if (failed) return toolResult(toolError(failed));
+	}
+
+	const url = dataUrl(await tiledPreview(tiles[0], size));
+	const sees = ctx.visionSupported !== false && ctx.pendingImages.length < MAX_PENDING_IMAGES;
+	if (sees) ctx.pendingImages.push({ path, dataUrl: url });
+	return toolResult(
+		[
+			`Wrote ${paths.join(', ')} (${size}×${size}, drawn from the recipe).`,
+			...(sees
+				? [
+						'The image shows the first laid 3×3, as a map lays it. If a line or a spot sits ' +
+							'in the same place in every copy, take it out of the recipe and draw again ' +
+							'with overwrite: true.'
+					]
+				: [])
+		].join(' '),
+		url
+	);
+}
+
 registerTool({
 	category: 'image',
 	schema: {
@@ -112,8 +273,9 @@ registerTool({
 			description:
 				'Make an image file for the project: a sprite, icon or tiling texture made the way a game ' +
 				'asset should be (transparent background, cropped, sized, reduced to a palette), or a ' +
-				'plain picture. Uses the image generation in Settings → Image; takes 30 s to a few ' +
-				'minutes. Pass palette_from with an existing asset to keep a set consistent.',
+				'plain picture. A texture is drawn by code from your recipe in a second; the rest use ' +
+				'the image generation in Settings → Image and take 30 s to a few minutes. Pass ' +
+				'palette_from with an existing asset to keep a set consistent.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -129,7 +291,16 @@ registerTool({
 					},
 					size: {
 						type: 'number',
-						description: `Target edge in px (sprite ${DEFAULT_SIZE.sprite}, icon ${DEFAULT_SIZE.icon}, texture ${DEFAULT_SIZE.texture} by default). Use the size the project uses.`
+						description: `Target edge in px (sprite ${DEFAULT_SIZE.sprite}, icon ${DEFAULT_SIZE.icon}, texture ${TEXTURE_SIZE} by default; a texture's is a multiple of 4 from 8 to 256). Use the size the project uses.`
+					},
+					recipe: {
+						type: 'object',
+						description:
+							'Texture only, and required for one: how code draws it. ' + recipeGuide().join('\n')
+					},
+					variants: {
+						type: 'number',
+						description: `Texture only: tiles to write, 1–${MAX_VARIANTS}, default 1. The same material with its details moved, to mix on a map; the second is <name>_1.png.`
 					},
 					style: {
 						type: 'string',
@@ -156,56 +327,10 @@ registerTool({
 		if (elsewhere) return toolResult(toolError(elsewhere));
 		// Relative to the shell's folder, or in the Code tab the session's.
 		const cwd = ctxCwd(ctx);
-		const io = assetIo(ctx);
 		const path = resolveShellPath(input.path, cwd);
-		const overwrite = args.overwrite === true;
-
-		// Refuse a path it could not write before spending a minute drawing.
-		const unwritable = await writeAsset(path, new Uint8Array(), overwrite, true, io);
-		if (unwritable) return toolResult(toolError(unwritable));
-
-		let palette: number[] | undefined;
-		if (input.paletteFrom) {
-			try {
-				palette = await paletteOf(resolveShellPath(input.paletteFrom, cwd), io);
-			} catch (e) {
-				return toolResult(toolInvokeError('make_asset palette_from', e));
-			}
-		}
-
-		const started = Date.now();
-		const tick = setInterval(
-			() => ctx.onProgress?.(`Drawing… ${Math.round((Date.now() - started) / 1000)} s`),
-			1000
-		);
-		let asset;
-		try {
-			ctx.onProgress?.('Drawing…');
-			asset = await makeSingleAsset({ ...input.asset, palette }, { signal: ctx.signal });
-		} catch (e) {
-			if (e instanceof ImageBackendError && e.kind === 'cancelled') throw e;
-			return toolResult(toolError(`Could not make it: ${errMessage(e)}`));
-		} finally {
-			clearInterval(tick);
-		}
-
-		const failed = await writeAsset(path, asset.bytes, overwrite, false, io);
-		if (failed) return toolResult(toolError(failed));
-
-		const url = dataUrl(asset.bytes);
-		// So the assistant can look at what it made, and redo it if it's wrong.
-		if (ctx.visionSupported !== false && ctx.pendingImages.length < MAX_PENDING_IMAGES) {
-			ctx.pendingImages.push({ path, dataUrl: url });
-		}
-		return toolResult(
-			[
-				`Wrote ${path} (${asset.width}×${asset.height}, ${asset.model}, seed ${asset.seed}).`,
-				asset.checks.passed
-					? 'It passed its checks.'
-					: `It failed these checks: ${asset.checks.failed.join(', ')} — look at it and decide whether to redo it.`,
-				...asset.notes
-			].join(' '),
-			url
-		);
+		const target = { path, overwrite: args.overwrite === true, io: assetIo(ctx), cwd };
+		return input.asset.kind === 'texture'
+			? makeTexture(input, target, ctx)
+			: paintAsset(input, target, ctx);
 	}
 });

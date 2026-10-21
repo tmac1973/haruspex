@@ -1,3 +1,4 @@
+import { textureFiles } from '#lib/assets/texture.ts';
 import type { ToolDefinition } from '#lib/api.ts';
 import type { ToolRegistration, ToolExecOutput, ToolContext } from '#lib/agent/tools/types.ts';
 import { toolResult, toolError } from '#lib/agent/tools/types.ts';
@@ -167,8 +168,10 @@ function shouldIncludeCodeTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	// vanish in the other.
 	if (reg.category === 'mcp') return isMcpToolEnabled(name);
 	// Art for the project, written into it. Chat's `generate_image` is for
-	// pictures in an answer, so it stays out.
-	if (name === 'make_asset') return opts.imageGeneration;
+	// pictures in an answer, so it stays out. Offered without an image
+	// backend too: a texture is drawn by code, and the tool says what the
+	// other kinds need.
+	if (name === 'make_asset') return opts.interactive;
 	return false;
 }
 
@@ -532,11 +535,13 @@ export async function executeTool(
 	}
 
 	// Image generation spends GPU minutes, so the same gate as the schema:
-	// a backend, and someone there to see the result.
-	if (reg.category === 'image' && (getSettings().imageBackendKind === 'none' || !ctx.interactive)) {
+	// a backend, and someone there to see the result. make_asset checks the
+	// backend itself, since its textures are drawn by code without one.
+	const noBackend = getSettings().imageBackendKind === 'none' && name !== 'make_asset';
+	if (reg.category === 'image' && (noBackend || !ctx.interactive)) {
 		return toolResult(
 			toolError(
-				getSettings().imageBackendKind === 'none'
+				noBackend
 					? 'Image generation is not set up. The user can choose a backend in Settings → Image.'
 					: 'Image generation is only available in a conversation with the user.'
 			)
@@ -611,7 +616,8 @@ function changedFiles(
 		return out.result.startsWith('Edited ') && typeof args.path === 'string' ? [args.path] : [];
 	}
 	if (name === 'make_asset') {
-		return out.result.startsWith('Wrote ') && typeof args.path === 'string' ? [args.path] : [];
+		if (!out.result.startsWith('Wrote ') || typeof args.path !== 'string') return [];
+		return args.kind === 'texture' ? textureFiles(args.path, args.variants) : [args.path];
 	}
 	return [...after].filter((p) => !before.has(p));
 }

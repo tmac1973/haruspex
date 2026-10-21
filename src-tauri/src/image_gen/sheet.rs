@@ -132,6 +132,24 @@ mod tests {
     }
 
     #[test]
+    fn nine_copies_at_a_whole_scale_meet_edge_to_edge() {
+        // A texture's preview (`assets/texture.ts`): one tile laid 3×3. The
+        // copies must touch, with no checkerboard between them, or the
+        // preview shows seams the tile does not have.
+        let mut tile = solid(16, 16, [10, 20, 30, 255]);
+        tile.put_pixel(15, 15, Rgba([200, 0, 0, 255]));
+        let s = contact_sheet(&vec![tile; 9], 16 * 5);
+        assert_eq!((s.width(), s.height()), (240, 240));
+        assert!(s
+            .pixels()
+            .all(|p| p.0 == [10, 20, 30, 255] || p.0 == [200, 0, 0, 255]));
+        // The marked corner pixel, five pixels wide, in every copy.
+        for (cx, cy) in [(0, 0), (1, 1), (2, 2)] {
+            assert_eq!(s.get_pixel(cx * 80 + 79, cy * 80 + 79).0, [200, 0, 0, 255]);
+        }
+    }
+
+    #[test]
     fn a_short_last_row_still_gets_a_full_row_of_cells() {
         // Five assets: three columns, two rows, one empty cell. Cropping the
         // empty cell away would make the grid stop reading as a grid.

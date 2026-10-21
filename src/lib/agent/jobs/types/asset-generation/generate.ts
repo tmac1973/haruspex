@@ -73,6 +73,8 @@ export interface CodeTextureDeps {
 	variants: number;
 	/** PNG bytes for each variant, base first. */
 	render: (recipe: TextureRecipe, seed: number, variants: number) => Promise<Uint8Array[]>;
+	/** A tile laid 3×3, for the judge to see what repeats. */
+	preview: (tile: Uint8Array) => Promise<Uint8Array>;
 	/** A new recipe after the judge's no, with what it draws, or null. */
 	revise: (
 		entry: AssetEntry,
