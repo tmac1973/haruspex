@@ -1,9 +1,27 @@
 /**
  * Render a sandbox run result as the text handed back to the model / stored
- * in the transcript. This is a leaf module (no imports) on purpose: both the
+ * in the transcript. This stays a near-leaf module on purpose: both the
  * run_python tool (`#lib/agent/tools/sandbox`) and the chat store need it,
  * and the chat store must not import the agent tools module (circular).
  */
+
+import { truncateCapturedOutput } from '#lib/shell/truncate.ts';
+
+/**
+ * Most of each output stream (stdout, stderr, the final value) handed back.
+ * Without a cap one `print(resp.text)` of an API that ignored its filter put
+ * 900 KB in the prompt, over the whole context window, and the pre-send
+ * guard then cut it down to a quarter of the window that rode along in every
+ * call after.
+ */
+export const SANDBOX_OUTPUT_MAX_BYTES = 20 * 1024;
+
+const PYTHON_HINT =
+	'Variables you assigned still hold the full data: print a filtered slice, a count or a summary instead of the whole value';
+
+function capped(text: string): string {
+	return truncateCapturedOutput(text, SANDBOX_OUTPUT_MAX_BYTES, PYTHON_HINT).text;
+}
 
 /** Structural subset of `ToolResult` (from `#lib/sandbox/sandbox`) needed to render. */
 export interface SandboxRunOutput {
@@ -16,7 +34,13 @@ export interface SandboxRunOutput {
 	duration_ms: number;
 }
 
-export function formatSandboxResult(r: SandboxRunOutput): string {
+export function formatSandboxResult(output: SandboxRunOutput): string {
+	const r = {
+		...output,
+		stdout: capped(output.stdout.trim()),
+		stderr: capped(output.stderr.trim()),
+		result: capped(output.result)
+	};
 	const lines: string[] = [];
 	if (r.error) {
 		lines.push(`Error: ${r.error}`);

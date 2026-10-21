@@ -31,7 +31,7 @@ Small models often do the research and then forget to write the file, sometimes 
 
 ## Run Python for charts, maths and documents
 
-The assistant can write and run Python in a sandbox inside the app. It comes with numpy, pandas, matplotlib, scipy and others, can install more, and saves files to your working directory. It is on by default, and works best with a larger model.
+The assistant can write and run Python in a sandbox inside the app. It comes with numpy, pandas, matplotlib, scipy and others, can install more, and saves files to your working directory. It is on by default, and works best with a larger model. The assistant sees up to about 20 KB of each run's output; the middle of anything longer is cut.
 
 Before code runs you see **Allow code execution?** By default it asks once per chat. Change this in Settings → Agent → Python Sandbox → Approval prompt (Off, Once per chat, or Every run). The same section sets **Network access** (default: Internet and local network) and the timeout, and **Enable Python sandbox** turns it off.
 

@@ -220,11 +220,15 @@ export function describeContextManaged(info: ContextManagedInfo): string {
 			'cut short. Raise it in Settings → Inference → Context Size.'
 		);
 	}
-	// Without a drop or a trim there was no earlier history to compact, as
-	// in a new chat: a long message was shortened, and that is all to say.
-	if (info.droppedTurns === 0 && !info.trimmedTools) {
+	// Without a drop nothing left the conversation: a long message was cut, or
+	// tool results were set aside, as often as not this turn's own. "Earlier
+	// history" in a new chat read as though something had gone missing.
+	if (info.droppedTurns === 0) {
 		const n = info.truncatedMessages;
-		return `Shortened ${n > 1 ? `${n} long messages` : 'a long message'} to fit the model's context.`;
+		const what: string[] = [];
+		if (n > 0) what.push(n > 1 ? `${n} long messages` : 'a long message');
+		if (info.trimmedTools) what.push('older tool results');
+		if (what.length > 0) return `Shortened ${what.join(' and ')} to fit the model's context.`;
 	}
 	const parts: string[] = [];
 	if (info.droppedTurns > 0) parts.push(`dropped ${info.droppedTurns} older message(s)`);
@@ -320,7 +324,7 @@ export interface FitOptions {
  * effectiveBudget` always holds on return.
  *
  * Strategy, cheapest/least-lossy first, re-checking after each step:
- *   1. Stub older tool results.
+ *   1. Stub older tool results (after step 2 when stubbing alone can't fit).
  *   2. Head/tail-truncate any single oversized message.
  *   3. Drop oldest user/assistant turns (keep system + recent pairs).
  *   4. Force-fit: halve the largest remaining message repeatedly.
@@ -343,40 +347,25 @@ export function fitMessagesToBudget(
 	const beforeEst = estimateMessagesTokens(messages, opts.tools);
 	if (beforeEst <= effectiveBudget) return null;
 
-	// Step 1: stub older tool messages — only as many, and only as expensive,
-	// as it takes to fit. The later steps are strictly more destructive (whole
-	// turns dropped), so this one buying just enough is what keeps them from
-	// running at all.
-	const trimmedTools = trimOldToolMessages(messages, {
-		budget: effectiveBudget,
-		tools: opts.tools
-	});
-
-	// Step 2: head/tail-truncate oversized single messages, largest first.
-	// Never the system prompt: cutting it costs the model its instructions
-	// mid-sentence, and only the last resort below may.
+	// Steps 1 and 2: stub older tool results and head/tail-truncate any single
+	// oversized message. Stubbing goes first when it can make the prompt fit,
+	// since a stub can be fetched again and a cut message can't. When it can't,
+	// the excess is one oversized message, often the newest result, which
+	// stubbing never touches. Stubbing first then threw away every earlier
+	// result for a few thousand tokens and fit nothing: a 900 KB Python print
+	// cost a turn its search results, which the truncation alone would have
+	// spared.
+	let trimmedTools = false;
 	let truncatedMessages = 0;
-	if (!fits()) {
-		const oversizedTokenCap = Math.max(1, Math.floor(effectiveBudget * OVERSIZED_MESSAGE_FRACTION));
-		const candidates = messages
-			.map((m, i) => ({ i, m, tokens: messageTokens(m) }))
-			.filter(
-				(c) =>
-					typeof c.m.content === 'string' &&
-					c.m.role !== 'system' &&
-					c.tokens > oversizedTokenCap &&
-					!holdsSkillContent(c.m.content)
-			)
-			.sort((a, b) => b.tokens - a.tokens);
-		const maxBytes = Math.floor(oversizedTokenCap * TOKEN_BYTES_RATIO);
-		for (const c of candidates) {
-			if (fits()) break;
-			const result = truncateCapturedOutput(c.m.content as string, maxBytes);
-			if (result.truncated) {
-				messages[c.i] = { ...c.m, content: result.text };
-				truncatedMessages++;
-			}
-		}
+	const stub = () => {
+		trimmedTools = trimOldToolMessages(messages, { budget: effectiveBudget, tools: opts.tools });
+	};
+	if (stubbingCanFit(messages, beforeEst - effectiveBudget)) {
+		stub();
+		if (!fits()) truncatedMessages = truncateOversized(messages, effectiveBudget, fits);
+	} else {
+		truncatedMessages = truncateOversized(messages, effectiveBudget, fits);
+		if (!fits()) stub();
 	}
 
 	// Step 3: drop oldest user/assistant turns, keep system + recent pairs.
@@ -403,6 +392,50 @@ export function fitMessagesToBudget(
 		beforeEst,
 		afterEst: estimateMessagesTokens(messages, opts.tools)
 	};
+}
+
+/** Whether stubbing every eligible tool result would free `excess` tokens. */
+function stubbingCanFit(messages: ChatMessage[], excess: number): boolean {
+	let freeable = 0;
+	for (const c of trimCandidates(messages)) {
+		const stub = stubFor(messages, c.idx, c.text);
+		freeable += c.tokens - (estimateTokens(stub) + PER_MESSAGE_OVERHEAD_TOKENS);
+	}
+	return freeable >= excess;
+}
+
+/**
+ * Head/tail-truncate oversized single messages, largest first, until `fits`.
+ * Never the system prompt: cutting it costs the model its instructions
+ * mid-sentence, and only the last resort may. Returns the count truncated.
+ */
+function truncateOversized(
+	messages: ChatMessage[],
+	effectiveBudget: number,
+	fits: () => boolean
+): number {
+	const oversizedTokenCap = Math.max(1, Math.floor(effectiveBudget * OVERSIZED_MESSAGE_FRACTION));
+	const candidates = messages
+		.map((m, i) => ({ i, m, tokens: messageTokens(m) }))
+		.filter(
+			(c) =>
+				typeof c.m.content === 'string' &&
+				c.m.role !== 'system' &&
+				c.tokens > oversizedTokenCap &&
+				!holdsSkillContent(c.m.content)
+		)
+		.sort((a, b) => b.tokens - a.tokens);
+	const maxBytes = Math.floor(oversizedTokenCap * TOKEN_BYTES_RATIO);
+	let truncated = 0;
+	for (const c of candidates) {
+		if (fits()) break;
+		const result = truncateCapturedOutput(c.m.content as string, maxBytes);
+		if (result.truncated) {
+			messages[c.i] = { ...c.m, content: result.text };
+			truncated++;
+		}
+	}
+	return truncated;
 }
 
 /**
