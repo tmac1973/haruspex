@@ -1009,14 +1009,22 @@ describe('textures drawn in code', () => {
 	) {
 		const render = vi.fn(async (_r: unknown, _seed: number, n: number) => tiles(n));
 		const revise = vi.fn(async () => null);
+		const preview = vi.fn(async (tile: Uint8Array) => new Uint8Array([9, ...tile]));
 		const h = harness(
 			{
-				codeTextures: { variants: 4, render, revise, recipeFailures: new Map(), ...code },
+				codeTextures: {
+					variants: 4,
+					render,
+					preview,
+					revise,
+					recipeFailures: new Map(),
+					...code
+				},
 				...over
 			},
 			present
 		);
-		return { ...h, render, revise };
+		return { ...h, render, preview, revise };
 	}
 
 	it('never sends a texture to the image model, and writes every variant', async () => {
@@ -1083,6 +1091,24 @@ describe('textures drawn in code', () => {
 			reason: 'looks like carpet'
 		});
 		expect(judge).toHaveBeenCalledTimes(2);
+	});
+
+	it('shows the judge the base tile laid 3×3, not the tile alone', async () => {
+		const shown: Uint8Array[] = [];
+		const judge = vi.fn(async (_e: AssetEntry, image: Uint8Array) => {
+			shown.push(image);
+			return { ok: true, reason: '' };
+		});
+		const h = codeHarness({}, { judge: { enabled: true, visionSupported: true, judge } });
+		await generateEntries(specOf([{ kind: 'texture', recipe: RECIPE }]), h.deps);
+		expect(h.preview).toHaveBeenCalledWith(new Uint8Array([0]));
+		expect(shown).toEqual([new Uint8Array([9, 0])]);
+	});
+
+	it('builds no preview when nothing will judge it', async () => {
+		const h = codeHarness({});
+		await generateEntries(specOf([{ kind: 'texture', recipe: RECIPE }]), h.deps);
+		expect(h.preview).not.toHaveBeenCalled();
 	});
 
 	it('judges the tile against what the recipe draws, not the prompt', async () => {

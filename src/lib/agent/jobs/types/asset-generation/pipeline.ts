@@ -12,7 +12,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { PROJECT_READ_TOOLS } from '#lib/agent/jobs/readTools.ts';
 import { createJob } from '#lib/stores/jobs.svelte.ts';
 import { modelColumnsOf } from '#lib/agent/jobs/chainModel.ts';
-import { normalizeAbort, errMessage } from '#lib/utils/error.ts';
+import { normalizeAbort } from '#lib/utils/error.ts';
 import {
 	markRunStarted,
 	markRunStepFinished,
@@ -38,6 +38,7 @@ import { markRejections } from '#lib/agent/jobs/types/asset-generation/review.ts
 import { validateAssetSpec } from '#lib/assets/spec/validate.ts';
 import type { AssetSpec } from '#lib/assets/spec/types.ts';
 import { contactSheet, defaultProfile } from '#lib/assets/normalize.ts';
+import { renderTexture, tiledPreview, validateRecipe } from '#lib/assets/texture.ts';
 import { resolveImageBackend } from '#lib/image/index.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { SUBMIT_ASSET_SPEC_TOOL } from '#lib/agent/tools/coding.ts';
@@ -64,7 +65,6 @@ import {
 	type RecipeDeps
 } from '#lib/agent/jobs/types/asset-generation/recipes.ts';
 import { DEFAULT_TEXTURE_VARIANTS } from '#lib/agent/jobs/types/asset-generation/config.ts';
-import type { TextureRecipe } from '#lib/ipc/gen/TextureRecipe.ts';
 import type { AssetEntry } from '#lib/assets/spec/types.ts';
 import { generateEntries } from '#lib/agent/jobs/types/asset-generation/generate.ts';
 import { fitStyle } from '#lib/agent/jobs/types/asset-generation/promptBudget.ts';
@@ -312,33 +312,8 @@ function recipeDeps(ctx: JobRunContext): RecipeDeps {
 			});
 			return got;
 		},
-		validate: async (recipe) => {
-			try {
-				await invoke('texture_validate', { recipe });
-				return null;
-			} catch (e) {
-				return errMessage(e);
-			}
-		}
+		validate: validateRecipe
 	};
-}
-
-/** Draw a recipe's tiles in Rust: PNG bytes, base first. */
-async function renderTexture(
-	recipe: TextureRecipe,
-	size: number,
-	seed: number,
-	variants: number,
-	palette: number[]
-): Promise<Uint8Array[]> {
-	const tiles = await invoke<number[][]>('texture_render', {
-		recipe,
-		size,
-		seed,
-		variants,
-		palette
-	});
-	return tiles.map((t) => new Uint8Array(t));
 }
 
 /**
@@ -697,6 +672,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 						// offers them); not snapped to the palette, which comes from
 						// a sheet of sprites and can lack water blue or grass green.
 						render: (recipe, seed, n) => renderTexture(recipe, tileSize, seed, n, []),
+						preview: (tile) => tiledPreview(tile, tileSize),
 						revise: (entry, reason) => reviseRecipe(spec, entry, reason, recipeDeps(ctx)),
 						recipeFailures: recipesFailed
 					}

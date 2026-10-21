@@ -23,7 +23,12 @@ type Outcome = Omit<EntryOutcome, 'id' | 'durationMs'>;
 /** One more sentence for the judge, about a tile drawn by code. */
 export const CODE_TEXTURE_HINT =
 	'This tile was drawn by code from simple layers, not painted: judge only ' +
-	'whether it reads as the material, seen from directly above, not its detail.';
+	'whether it reads as the material, seen from directly above, not its detail. ' +
+	'It is shown laid 3×3, as a map lays it, so the nine copies are expected ' +
+	'and are not "a grid of separate tiles". Reject it if something that ' +
+	'should be occasional — a painted line, a stain, a crack, a patch — sits at ' +
+	'the same spot in every copy, so the copies read as a grid. A regular ' +
+	'pattern the material has, like bricks or floor tiles, is fine.';
 
 export interface CodeTextureContext {
 	spec: AssetSpec;
@@ -32,9 +37,15 @@ export interface CodeTextureContext {
 	record: (index: number, started: number, outcome: Outcome, report: CheckReport | null) => void;
 }
 
+/** The tile laid 3×3 for the judge; built only when the judge will look. */
+function forJudge(tile: Uint8Array, deps: GenerateDeps, code: CodeTextureDeps) {
+	const judging = deps.judge.visionSupported && deps.judge.enabled;
+	return judging ? code.preview(tile) : Promise.resolve(tile);
+}
+
 /**
  * A texture drawn by code: render its variants, write them, and show the
- * judge the first. One no gets one revised recipe; a second no keeps the
+ * judge the first, tiled 3×3. One no gets one revised recipe; a second no keeps the
  * tiles and marks them rejected, like any other asset that never passed.
  */
 export async function runCodeTexture(index: number, ctx: CodeTextureContext): Promise<void> {
@@ -80,7 +91,8 @@ export async function runCodeTexture(index: number, ctx: CodeTextureContext): Pr
 			// Judged against what the recipe draws, when the model said: the
 			// prompt may name details no recipe can draw ("graffiti-covered").
 			const subject = drawn ? { ...entry, prompt: drawn } : entry;
-			const judged = await maybeJudge(subject, first, deps.judge, false, CODE_TEXTURE_HINT);
+			const shown = await forJudge(first, deps, code);
+			const judged = await maybeJudge(subject, shown, deps.judge, false, CODE_TEXTURE_HINT);
 			if (judged.unavailable) degraded.push(judgeUnavailable(judged.unavailable));
 			const verdict = judged.verdict;
 			const base = {

@@ -12,6 +12,9 @@ import type { AssetEntry, AssetSpec } from '#lib/assets/spec/types.ts';
 import type { TextureRecipe } from '#lib/ipc/gen/TextureRecipe.ts';
 import { recipePrompt } from '#lib/agent/jobs/types/asset-generation/prompts.ts';
 import type { SubmittedRecipe } from '#lib/agent/jobs/types/asset-generation/tools.ts';
+import { seedOf } from '#lib/assets/texture.ts';
+
+export { variantPaths } from '#lib/assets/texture.ts';
 
 export interface RecipeDeps {
 	/** One model turn with `prompt`; the recipes it submitted, by id. */
@@ -120,27 +123,13 @@ export async function reviseRecipe(
 	return good.get(entry.id) ?? null;
 }
 
-/** Every tile file of a texture with `n` variants: `out` first, then `<stem>_k`. */
-export function variantPaths(out: string, n: number): string[] {
-	const slash = out.lastIndexOf('/');
-	const dot = out.lastIndexOf('.');
-	const [stem, ext] = dot > slash ? [out.slice(0, dot), out.slice(dot)] : [out, ''];
-	return [out, ...Array.from({ length: Math.max(0, n - 1) }, (_, i) => `${stem}_${i + 1}${ext}`)];
-}
-
 /**
  * A texture's seed: the entry's pinned one, else one from its id, so a re-run
  * draws the same tiles and two textures never share noise.
  */
 export function textureSeed(entry: AssetEntry): number {
 	if (typeof entry.seed === 'number' && Number.isFinite(entry.seed)) return entry.seed >>> 0;
-	// FNV-1a, 32-bit.
-	let h = 0x811c9dc5;
-	for (const ch of entry.id) {
-		h ^= ch.charCodeAt(0);
-		h = Math.imul(h, 0x01000193);
-	}
-	return h >>> 0;
+	return seedOf(entry.id);
 }
 
 /**

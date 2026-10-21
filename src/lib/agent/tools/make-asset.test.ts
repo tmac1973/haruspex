@@ -52,7 +52,10 @@ beforeEach(() => {
 			shell_pending_command: () => state.pending,
 			fs_read_bytes_absolute: () => Array.from(PNG),
 			fs_read_bytes: () => Array.from(PNG),
-			image_extract_palette: PALETTE
+			image_extract_palette: PALETTE,
+			texture_validate: () => undefined,
+			texture_render: (a) => Array.from({ length: Number(a?.variants) }, (_, k) => [k]),
+			image_contact_sheet: [7, 7]
 		})
 	);
 	state.make.mockReset().mockResolvedValue({
@@ -73,9 +76,13 @@ describe('make_asset is offered', () => {
 		expect(names(code)).toContain('make_asset');
 	});
 
-	it('not without a backend', () => {
+	it('without a backend too, for textures', () => {
 		state.backend = 'none';
-		expect(names(code)).not.toContain('make_asset');
+		expect(names(code)).toContain('make_asset');
+	});
+
+	it('not when nobody is there to see the result', () => {
+		expect(names({ ...code, interactive: false })).not.toContain('make_asset');
 	});
 
 	it('not in Chat, which has generate_image instead', () => {
@@ -223,5 +230,92 @@ describe('make_asset', () => {
 		await expect(
 			executeTool('make_asset', { kind: 'icon', prompt: 'a coin', path: 'c.png' }, context())
 		).rejects.toBeInstanceOf(ImageBackendError);
+	});
+});
+
+describe('make_asset textures', () => {
+	const RECIPE = { base: { ramp: ['#202020', '#808080'] }, layers: [] };
+	const texture = (over: Record<string, unknown> = {}) => ({
+		kind: 'texture',
+		prompt: 'grey gravel',
+		path: 'tiles/gravel.png',
+		recipe: RECIPE,
+		...over
+	});
+
+	it('draws from the recipe, never the image model, and needs no backend', async () => {
+		state.backend = 'none';
+		const ctx = context();
+		const out = await executeTool('make_asset', texture({ palette_from: 'hero.png' }), ctx);
+		expect(state.make).not.toHaveBeenCalled();
+		expect(calls('texture_validate')[0]).toEqual({ recipe: RECIPE });
+		expect(calls('texture_render')[0]).toMatchObject({
+			recipe: RECIPE,
+			size: 32,
+			variants: 1,
+			palette: PALETTE
+		});
+		expect(writes()).toEqual([
+			expect.objectContaining({ path: '/home/u/game/tiles/gravel.png', bytes: [0] })
+		]);
+		expect(out.result).toMatch(/^Wrote \/home\/u\/game\/tiles\/gravel.png \(32×32/);
+		expect(ctx.pendingImages).toHaveLength(1);
+	});
+
+	it('shows the model the first tile laid 3×3', async () => {
+		const out = await executeTool('make_asset', texture({ size: 16 }), context());
+		const [sheet] = calls('image_contact_sheet');
+		expect(sheet?.images).toEqual(Array(9).fill([0]));
+		// A whole-number scale, so the copies meet exactly.
+		expect(Number(sheet?.cell) % 16).toBe(0);
+		expect(out.result).toMatch(/laid 3×3/);
+		expect(out.thumbDataUrl).toBe(`data:image/png;base64,${btoa('\x07\x07')}`);
+	});
+
+	it('writes every variant beside the first', async () => {
+		const out = await executeTool('make_asset', texture({ variants: 3 }), context());
+		expect(writes().map((w) => [w?.path, w?.bytes])).toEqual([
+			['/home/u/game/tiles/gravel.png', [0]],
+			['/home/u/game/tiles/gravel_1.png', [1]],
+			['/home/u/game/tiles/gravel_2.png', [2]]
+		]);
+		expect(out.result).toContain('gravel_2.png');
+	});
+
+	it('draws the same tiles for the same path', async () => {
+		await executeTool('make_asset', texture(), context());
+		await executeTool('make_asset', texture({ overwrite: true }), context());
+		const [a, b] = calls('texture_render');
+		expect(a?.seed).toBe(b?.seed);
+	});
+
+	it('asks for a recipe when there is none', async () => {
+		const out = await executeTool('make_asset', texture({ recipe: undefined }), context());
+		expect(out.result).toMatch(/drawn from a recipe/);
+		expect(calls('texture_render')).toHaveLength(0);
+	});
+
+	it("passes Rust's refusal back, naming the field, before writing", async () => {
+		state.invoke.mockImplementation(
+			invokeRouter({
+				texture_validate: () => {
+					throw 'layers[0].color: "orange" is not a #rrggbb colour.';
+				}
+			})
+		);
+		const out = await executeTool('make_asset', texture(), context());
+		expect(out.result).toMatch(/recipe was refused: layers\[0\].color/);
+		expect(calls('fs_write_bytes_absolute')).toHaveLength(0);
+	});
+
+	it('refuses a sprite without a backend, and says where to set one up', async () => {
+		state.backend = 'none';
+		const out = await executeTool(
+			'make_asset',
+			{ kind: 'sprite', prompt: 'a slime', path: 's.png' },
+			context()
+		);
+		expect(out.result).toMatch(/Settings → Image/);
+		expect(state.make).not.toHaveBeenCalled();
 	});
 });

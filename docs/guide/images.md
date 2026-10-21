@@ -48,6 +48,8 @@ With a backend set up, ask Chat to draw, paint or illustrate something. A pictur
 
 In the Code tab, or the Shell assistant with Full access, ask for something like "a 32 px coin sprite in assets/". The assistant writes a finished sprite, icon, tiling texture or plain picture into your project as a PNG at the size you ask for: transparent background, cropped and reduced to a palette. Point it at an existing asset to match its colours. It does not overwrite a file unless you ask. See the `code` and `shell` pages.
 
+A tiling texture, such as "a 32 px gravel floor tile", is drawn by code from layers the assistant chooses, not by the image model. It takes a second, always tiles, and works without a backend in Settings → Image. Ask for variants to get the same material with its details moved, to mix on a map. It draws flat surfaces only: no painted lines, edges or objects, and nothing photographic.
+
 ## Make a whole set of game art
 
 The **Asset generation** job draws all of a project's sprites, icons and tiling textures in one style, checks each one, retries failures and writes a report. Guided planning can hand off to it. See the `jobs` page.

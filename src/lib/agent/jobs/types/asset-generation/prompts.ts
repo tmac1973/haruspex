@@ -139,24 +139,19 @@ export function judgePrompt(
 	].join('\n');
 }
 
-/** Three recipes from the phase 17 prototype, as the recipe stage's examples. */
+/**
+ * Three recipes from the phase 17 prototype, as worked examples. None has a
+ * painted line: a fill tile is laid edge to edge, and the asphalt example
+ * that once carried a centre line taught the model to stripe every tile.
+ */
 const RECIPE_EXAMPLES = [
 	[
-		'cracked asphalt with a worn yellow centre line',
+		'cracked grey asphalt',
 		{
 			base: { ramp: ['#2a2a2d', '#34343a', '#3e3e44'], cells: 4 },
 			layers: [
 				{ type: 'speckle', color: '#4c4c52', amount: 0.05 },
-				{ type: 'cracks', color: '#1d1d20', cells: 3, coverage: 0.55 },
-				{
-					type: 'stripes',
-					axis: 'x',
-					pos: 15,
-					width: 2,
-					dash: [8, 8],
-					color: '#b89a2e',
-					wear: 0.25
-				}
+				{ type: 'cracks', color: '#1d1d20', cells: 3, coverage: 0.55 }
 			]
 		}
 	],
@@ -193,6 +188,47 @@ export function hexOf(packed: number): string {
 }
 
 /**
+ * How to write a recipe: the format, every layer, the rules, and worked
+ * examples. The asset job's recipe stage and `make_asset` both say it.
+ */
+export function recipeGuide(): string[] {
+	return [
+		'A recipe is JSON: { "base": {...}, "layers": [...], "wall_face": {...} }.',
+		'Sizes and positions are in pixels of a 32-pixel tile.',
+		'- base: { ramp: 2–8 colours "#rrggbb", darkest first, close in value;',
+		'  cells: 1–16, noise cells across the tile (2 broad, 8 fine), default 4;',
+		'  octaves: 1–4, default 3; dither: true/false, default true }',
+		'Layers, in drawing order, at most 8:',
+		'- { type: "speckle", color, amount: 0–0.5 } — scattered single pixels: grit.',
+		'- { type: "cracks", color, cells: 1–12, coverage: 0–1, width?: 0.2–4 } —',
+		'  thin cracks along irregular cells; higher coverage, fewer cracks.',
+		'- { type: "blotches", color, cells: 4–16, threshold: 0–1 } — stains, moss,',
+		'  puddles; higher threshold, fewer and smaller.',
+		'- { type: "bricks", w, h, gap: 0–4, offset: true/false, colors: 1–6, mortar }',
+		'  — bricks, blocks or tiles in rows; offset staggers alternate rows.',
+		'- { type: "stripes", axis: "x" or "y", pos, width, dash?: [on, off], color,',
+		'  wear?: 0–0.9 } — a line through every copy of the tile: "x" runs left to',
+		'  right at row pos. Only for a surface lined all over, like plank seams.',
+		'- { type: "waves", color, freq: 1–16, threshold: -1–1 } — water ripples.',
+		'- { type: "grid", step, width?: 1–4, color } — seams: floor tiles, panels.',
+		'- { type: "bevel", step: 4–32, light, dark } — raised plates or tiles.',
+		'- wall_face: { height: 1–16, shade: 0–1 } — ONLY for a wall drawn with a',
+		'  front face; darkens a band at the bottom. Omit it for anything flat.',
+		'',
+		'Keep each recipe simple: a base and one to three layers reads best at 32',
+		'pixels. Do not draw objects: no doors, signs, furniture or vehicles.',
+		'The tile is laid edge to edge across the map, so whatever is in it is in',
+		'every copy. A painted line, a kerb or a border would repeat every 32',
+		'pixels: leave road markings and edges out of a ground or floor texture.',
+		'A description may name things no layer can draw (graffiti, a sign, a',
+		'window). Leave those out and draw the material under them.',
+		'',
+		'Examples:',
+		...RECIPE_EXAMPLES.map(([what, r]) => `- ${what}: ${JSON.stringify(r)}`)
+	];
+}
+
+/**
  * The recipe stage: one recipe per texture, from a fixed vocabulary of layers
  * that all wrap at the tile edge (`src-tauri/src/image_gen/texture/`).
  *
@@ -221,38 +257,11 @@ export function recipePrompt(
 				]
 			: []),
 		'',
-		'A recipe is JSON: { "base": {...}, "layers": [...], "wall_face": {...} }.',
-		'Sizes and positions are in pixels of a 32-pixel tile.',
-		'- base: { ramp: 2–8 colours "#rrggbb", darkest first, close in value;',
-		'  cells: 1–16, noise cells across the tile (2 broad, 8 fine), default 4;',
-		'  octaves: 1–4, default 3; dither: true/false, default true }',
-		'Layers, in drawing order, at most 8:',
-		'- { type: "speckle", color, amount: 0–0.5 } — scattered single pixels: grit.',
-		'- { type: "cracks", color, cells: 1–12, coverage: 0–1, width?: 0.2–4 } —',
-		'  thin cracks along irregular cells; higher coverage, fewer cracks.',
-		'- { type: "blotches", color, cells: 4–16, threshold: 0–1 } — stains, moss,',
-		'  puddles; higher threshold, fewer and smaller.',
-		'- { type: "bricks", w, h, gap: 0–4, offset: true/false, colors: 1–6, mortar }',
-		'  — bricks, blocks or tiles in rows; offset staggers alternate rows.',
-		'- { type: "stripes", axis: "x" or "y", pos, width, dash?: [on, off], color,',
-		'  wear?: 0–0.9 } — a painted line: "x" runs left to right at row pos.',
-		'- { type: "waves", color, freq: 1–16, threshold: -1–1 } — water ripples.',
-		'- { type: "grid", step, width?: 1–4, color } — seams: floor tiles, panels.',
-		'- { type: "bevel", step: 4–32, light, dark } — raised plates or tiles.',
-		'- wall_face: { height: 1–16, shade: 0–1 } — ONLY for a wall drawn with a',
-		'  front face; darkens a band at the bottom. Omit it for anything flat.',
-		'',
-		'Keep each recipe simple: a base and one to three layers reads best at 32',
-		'pixels. Do not draw objects: no doors, signs, furniture or vehicles.',
-		'A description may name things no layer can draw (graffiti, a sign, a',
-		'window). Leave those out and draw the material under them.',
+		...recipeGuide(),
 		'',
 		'With each recipe, give `drawn`: one line saying what the recipe actually',
 		'shows, from the layers you used ("white brick wall with a rusted pipe").',
 		'The tile is checked against that line, so name only what is there.',
-		'',
-		'Examples:',
-		...RECIPE_EXAMPLES.map(([what, r]) => `- ${what}: ${JSON.stringify(r)}`),
 		'',
 		'The textures:',
 		...textures.map((t) => {
