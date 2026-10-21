@@ -248,12 +248,14 @@ describe('fitMessagesToBudget', () => {
 			user('q'),
 			tool('x'.repeat(40_000)),
 			tool('y'.repeat(40_000)),
-			tool('z'.repeat(40_000)),
-			tool('recent')
+			tool('recent 1'),
+			tool('recent 2'),
+			tool('recent 3')
 		];
 		const info = fitMessagesToBudget(msgs, 32768, { reserveOutput: 8192 });
 		expect(info).not.toBeNull();
 		expect(info!.trimmedTools).toBe(true);
+		expect(info!.truncatedMessages).toBe(0);
 		expect(fits(msgs, 32768, 8192)).toBe(true);
 	});
 
@@ -262,6 +264,42 @@ describe('fitMessagesToBudget', () => {
 		const info = fitMessagesToBudget(msgs, 32768, { reserveOutput: 8192 });
 		expect(info).not.toBeNull();
 		expect(info!.truncatedMessages + info!.droppedTurns).toBeGreaterThan(0);
+		expect(fits(msgs, 32768, 8192)).toBe(true);
+	});
+
+	it('cuts one huge newest result without stubbing the small earlier ones', () => {
+		// The shape of a turn where one Python print dumped a whole API
+		// catalogue: stubbing every earlier result could not have made it fit.
+		const msgs = [
+			sys('p'),
+			user('q'),
+			tool('search result one '.repeat(200), 'a'),
+			tool('search result two '.repeat(200), 'b'),
+			tool('python', 'c'),
+			tool('python', 'd'),
+			tool('{"mod":1}\n'.repeat(100_000), 'e')
+		];
+		const info = fitMessagesToBudget(msgs, 262144, { reserveOutput: 8192 });
+		expect(info).not.toBeNull();
+		expect(info!.truncatedMessages).toBe(1);
+		expect(info!.trimmedTools).toBe(false);
+		expect(String(msgs[2].content)).toContain('search result one');
+		expect(String(msgs[3].content)).toContain('search result two');
+		expect(fits(msgs, 262144, 8192)).toBe(true);
+	});
+
+	it('still stubs after cutting when the cut alone does not fit', () => {
+		const msgs = [
+			sys('p'),
+			user('q'),
+			...Array.from({ length: 6 }, (_, i) => tool('o'.repeat(20_000), `old${i}`)),
+			tool('r1', 'r1'),
+			tool('r2', 'r2'),
+			tool('n'.repeat(400_000), 'new')
+		];
+		const info = fitMessagesToBudget(msgs, 32768, { reserveOutput: 8192 });
+		expect(info!.truncatedMessages).toBeGreaterThan(0);
+		expect(info!.trimmedTools).toBe(true);
 		expect(fits(msgs, 32768, 8192)).toBe(true);
 	});
 
@@ -497,6 +535,21 @@ describe('describeContextManaged', () => {
 			afterEst: 5000
 		});
 		expect(text).toBe("Shortened a long message to fit the model's context.");
+	});
+
+	it('does not claim history was compacted when only tool results were cut', () => {
+		const text = describeContextManaged({
+			kind: 'fit',
+			forced: false,
+			trimmedTools: true,
+			truncatedMessages: 1,
+			droppedTurns: 0,
+			beforeEst: 283576,
+			afterEst: 85309
+		});
+		expect(text).toBe(
+			"Shortened a long message and older tool results to fit the model's context."
+		);
 	});
 
 	it('mentions each action taken', () => {

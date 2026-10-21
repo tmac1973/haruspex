@@ -25,7 +25,19 @@ export interface TruncationResult {
 
 const NEWLINE_SNAP_WINDOW = 0.25; // up to 25% of the half-budget to find a newline
 
-export function truncateCapturedOutput(text: string, maxBytes: number): TruncationResult {
+const SHELL_HINT =
+	"Ask the user to narrow the command (e.g. `| tail -200`, `--since '1 hour ago'`, `| grep <pattern>`) if you need the dropped region";
+
+/**
+ * `hint` ends the marker: what the model can do to see the dropped middle.
+ * The default suits a shell command; a caller whose output came from
+ * somewhere else passes its own.
+ */
+export function truncateCapturedOutput(
+	text: string,
+	maxBytes: number,
+	hint: string = SHELL_HINT
+): TruncationResult {
 	if (maxBytes <= 0) {
 		return { text, truncated: false, originalBytes: byteLength(text) };
 	}
@@ -55,7 +67,7 @@ export function truncateCapturedOutput(text: string, maxBytes: number): Truncati
 	}
 
 	const droppedBytes = totalBytes - byteLength(head) - byteLength(tail);
-	const marker = `\n\n[... middle truncated — ${markerBytes(totalBytes)} total, ${markerBytes(droppedBytes)} dropped from the middle. Ask the user to narrow the command (e.g. \`| tail -200\`, \`--since '1 hour ago'\`, \`| grep <pattern>\`) if you need the dropped region ...]\n\n`;
+	const marker = `\n\n[... middle truncated — ${markerBytes(totalBytes)} total, ${markerBytes(droppedBytes)} dropped from the middle. ${hint} ...]\n\n`;
 
 	return {
 		text: `${head}${marker}${tail}`,
