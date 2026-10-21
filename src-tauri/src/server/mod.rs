@@ -1264,10 +1264,10 @@ mod tests {
     fn next_lower_ctx_walks_the_ladder() {
         assert_eq!(next_lower_ctx(262144), Some(131072));
         assert_eq!(next_lower_ctx(131072), Some(65536));
-        assert_eq!(next_lower_ctx(16384), Some(8192));
+        assert_eq!(next_lower_ctx(65536), Some(32768));
         // Floor: nothing below the smallest rung.
-        assert_eq!(next_lower_ctx(8192), None);
-        assert_eq!(next_lower_ctx(4096), None);
+        assert_eq!(next_lower_ctx(32768), None);
+        assert_eq!(next_lower_ctx(16384), None);
         // Custom off-ladder size backs down to the rung underneath it.
         assert_eq!(next_lower_ctx(100_000), Some(65536));
     }

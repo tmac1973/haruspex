@@ -737,6 +737,24 @@ describe('load-time file-write ceiling migration', () => {
 	});
 });
 
+describe('load-time context size floor', () => {
+	async function loadWith(stored: Record<string, unknown>) {
+		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
+		vi.resetModules();
+		const fresh = await import('#lib/stores/settings.ts');
+		return fresh.getSettings();
+	}
+
+	it('raises a saved 8K or 16K to 32K', async () => {
+		expect((await loadWith({ contextSize: 8192 })).contextSize).toBe(32768);
+		expect((await loadWith({ contextSize: 16384 })).contextSize).toBe(32768);
+	});
+
+	it('leaves 32K and above alone', async () => {
+		expect((await loadWith({ contextSize: 65536 })).contextSize).toBe(65536);
+	});
+});
+
 describe('load-time remoteServerUrls seeding', () => {
 	// The store is a module singleton, so exercising load() requires a
 	// fresh module instance: prime localStorage, reset the registry, and
