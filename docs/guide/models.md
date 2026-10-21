@@ -36,7 +36,7 @@ To use a GGUF file you already have, run Settings → Inference → **Run Setup 
 
 ## Context size: how long a conversation can be
 
-Settings → Inference → Context Size sets how much of the conversation the model can see at once: 8K, 16K, 32K (the default), 64K, 128K or 256K. Bigger needs more VRAM, and changing it restarts the model once any reply in progress finishes. Sizes your GPU cannot hold are greyed out.
+Settings → Inference → Context Size sets how much of the conversation the model can see at once: 32K (the default), 64K, 128K or 256K. Bigger needs more VRAM, and changing it restarts the model once any reply in progress finishes. Sizes your GPU cannot hold are greyed out.
 
 - **Let models use system RAM** (off by default) unlocks larger sizes. See below.
 - **Keep the vision projector in system RAM** (off by default) frees about 1 GB of VRAM, usually buying a longer conversation. Only messages with an image get slower.

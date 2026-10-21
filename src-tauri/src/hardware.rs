@@ -197,19 +197,24 @@ fn recommend(gpu: &GpuInfo, total_ram_mb: u64, available_ram_mb: u64) -> Recomme
     };
     // Context: computed per-model from the quant's weights, projector and
     // per-token KV growth against the memory found (see
-    // `models::recommended_context_for`). Slow integrated graphics and
-    // unknown memory can't be modelled reliably, so they get the floor.
-    let context_size = match memory_mb {
-        Some(vram_mb) if !integrated_slow => {
-            // First run has no saved preference, so assume the default (on).
-            // Models without an MTP head are unaffected either way.
-            crate::models::recommended_context_for(
-                quant,
-                vram_mb * 1024 * 1024,
-                crate::models::FitOptions::with_mtp(true),
-            )
-        }
-        _ => crate::models::MIN_CONTEXT,
+    // `models::recommended_context_for`). Slow integrated graphics are sized
+    // like a card too — they are slow at generating, not short of memory —
+    // but against no more than the RAM free now, since what Vulkan lets them
+    // use is system RAM the OS and other apps draw on. Unknown memory gets
+    // the floor.
+    let context_mb = match memory_mb {
+        Some(mb) if integrated_slow => Some(mb.min(available_ram_mb)),
+        other => other,
+    };
+    let context_size = match context_mb {
+        // First run has no saved preference, so assume the default (on).
+        // Models without an MTP head are unaffected either way.
+        Some(mb) => crate::models::recommended_context_for(
+            quant,
+            mb * 1024 * 1024,
+            crate::models::FitOptions::with_mtp(true),
+        ),
+        None => crate::models::MIN_CONTEXT,
     };
     let alternative = if integrated_slow {
         integrated_alternative(gpu.vram_mb, total_ram_mb)
@@ -971,7 +976,9 @@ ggml_vulkan: 1 = Intel(R) UHD Graphics 770 (Intel Corporation) | uma: 1 | fp16: 
         let rec = recommend(&gpu("AMD Radeon(TM) Graphics", 24445, true), 32_000, 20_000);
         assert_eq!(rec.quant, "Qwen3.5-4B-IQ4_NL");
         assert!(rec.integrated_slow);
-        assert_eq!(rec.context_size, crate::models::MIN_CONTEXT);
+        // Sized to its memory like a card, not floored: the 4B's KV cache is
+        // small, so 20 GB free holds far more than the minimum.
+        assert!(rec.context_size > crate::models::MIN_CONTEXT);
         let alt = rec.alternative.expect("the MoE fits in 24 GB");
         assert_eq!(alt.model_id, OFFLOAD_CANDIDATE);
         assert!(!alt.spill);
@@ -980,6 +987,19 @@ ggml_vulkan: 1 = Intel(R) UHD Graphics 770 (Intel Corporation) | uma: 1 | fp16: 
         assert!(small_ram.alternative.is_none());
         let small_heap = recommend(&gpu("AMD Radeon(TM) Graphics", 4096, true), 32_000, 20_000);
         assert!(small_heap.alternative.is_none());
+    }
+
+    #[test]
+    fn slow_integrated_graphics_size_context_to_the_ram_free_now() {
+        // ~8 GB the iGPU may use (a laptop with 16 GB of RAM): enough for the
+        // 4B with well over the minimum context.
+        let laptop = recommend(&gpu("AMD Radeon(TM) Graphics", 8192, true), 15_000, 9_000);
+        assert_eq!(laptop.quant, "Qwen3.5-4B-IQ4_NL");
+        assert!(laptop.context_size > crate::models::MIN_CONTEXT);
+        // A big heap but little RAM free: sized to what is free.
+        let busy = recommend(&gpu("AMD Radeon(TM) Graphics", 24445, true), 32_000, 6_000);
+        let idle = recommend(&gpu("AMD Radeon(TM) Graphics", 24445, true), 32_000, 20_000);
+        assert!(busy.context_size < idle.context_size);
     }
 
     #[test]

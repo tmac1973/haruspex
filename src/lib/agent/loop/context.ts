@@ -196,8 +196,9 @@ export function contextResponseFloor(contextSize: number): number {
  * leaves no room for the prompt and collapses the budget to 1 token, trimming
  * the conversation to nothing on every turn.
  *
- * That is reachable today without any of this: the 8K "Low VRAM" context tier
- * against the default 8192 ceiling is exactly `8192 - 8192`. Capping output at
+ * That was reachable with the old 8K context tier (since removed) against the
+ * default 8192 ceiling: exactly `8192 - 8192`. Imported or remote models can
+ * still report windows that small. Capping output at
  * half the window keeps a usable prompt budget at every tier, and only binds
  * on the small ones — a 256K context clamps to 128K, far above any ceiling the
  * settings allow.

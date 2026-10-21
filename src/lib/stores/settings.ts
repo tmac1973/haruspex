@@ -829,6 +829,12 @@ const defaultSearchProxy: SearchProxyConfig = {
 // caller always resolves to these before invoking, so the Rust command no
 // longer carries its own divergent fallback literal (audit X4/X5).
 export const DEFAULT_CONTEXT_SIZE = 32768;
+/**
+ * Smallest local context offered. Below it the system prompt, the tools and
+ * the reply reserve leave no room for a message. Matches `MIN_CONTEXT` in
+ * `models.rs`.
+ */
+export const MIN_CONTEXT_SIZE = 32768;
 /** Output cap for a normal agent turn. Historically the only cap, hardcoded. */
 export const DEFAULT_MAX_RESPONSE_TOKENS = 8192;
 /**
@@ -1085,9 +1091,16 @@ function load(): AppSettings {
 				(typeof shellCodeModeDefault === 'boolean'
 					? shellCodeModeDefault
 					: defaults.shellFullAccessDefault);
+			// 8K and 16K were offered once and could not hold a first message;
+			// an install still on one moves to the smallest size that can.
+			const contextSize =
+				typeof rest.contextSize === 'number' && rest.contextSize < MIN_CONTEXT_SIZE
+					? MIN_CONTEXT_SIZE
+					: (rest.contextSize ?? defaults.contextSize);
 			return {
 				...defaults,
 				...rest,
+				contextSize,
 				shellFullAccessDefault,
 				reasoningEffort,
 				reasoningEffortDefaulted: true,

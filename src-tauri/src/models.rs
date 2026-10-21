@@ -681,9 +681,15 @@ fn is_sibling_drafter(filename: &str) -> bool {
 /// architectural ceiling of the Qwen 3.5 / 3.6 models we ship. Also the
 /// rungs the server supervisor walks down when a start attempt fails on
 /// context/KV allocation (see `server::mod` context backoff).
-pub(crate) const CONTEXT_LADDER: &[u32] = &[8192, 16384, 32768, 65536, 131072, 262144];
+///
+/// Nothing below 32K: the system prompt and tool schemas alone take several
+/// thousand tokens, and the agent reserves up to half the window for the
+/// reply, so 8K could not hold a first message and 16K barely more. A model
+/// that can't fit 32K is better off falling back to the CPU than running in
+/// a window that refuses every turn.
+pub(crate) const CONTEXT_LADDER: &[u32] = &[32768, 65536, 131072, 262144];
 /// Floor: never recommend below this even on tight VRAM.
-pub const MIN_CONTEXT: u32 = 8192;
+pub const MIN_CONTEXT: u32 = 32768;
 /// VRAM left free for the display/compositor, driver, and fragmentation.
 const VRAM_RESERVE_BYTES: u64 = 1024 * 1024 * 1024;
 /// Non-KV runtime cost: compute/graph buffers plus the linear-attention

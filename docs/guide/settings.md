@@ -27,7 +27,7 @@ Where the model runs, which model is used and how big the context is.
 
 - **Inference backend**: Local (Haruspex-managed) (default), Remote server (advanced) or OpenRouter (cloud).
 - **Models**: download and switch local models.
-- **Context Size**: 32K by default (8K to 256K).
+- **Context Size**: 32K by default (32K to 256K).
 - **Let models use system RAM**: off.
 - **Parallel streams**: 1 (also 2 or 4). More lets a background job or Code subtasks run beside chat. Each stream needs its own memory (larger sizes may grey out), and replies slow while two run.
 - **Extra llama-server arguments**: empty. Added after Haruspex's own, so they override them. Takes effect when the server restarts.
