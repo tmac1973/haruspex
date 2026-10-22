@@ -165,7 +165,8 @@ async function paintAsset(asset: PaintInput, input: ParsedInput, target: Target,
 		return toolResult(
 			toolError(
 				`A ${asset.kind} needs image generation: set one up in Settings → Image. ` +
-					'A texture works without it.'
+					'Only kind texture works without it, and a texture is a surface that fills ' +
+					'the tile: it cannot draw an object.'
 			)
 		);
 	}

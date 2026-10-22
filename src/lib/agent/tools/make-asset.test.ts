@@ -349,6 +349,8 @@ describe('make_asset textures', () => {
 			context()
 		);
 		expect(out.result).toMatch(/Settings → Image/);
+		// The live run's model offered to draw the coin as a texture instead.
+		expect(out.result).toMatch(/cannot draw an object/);
 		expect(state.make).not.toHaveBeenCalled();
 	});
 });
