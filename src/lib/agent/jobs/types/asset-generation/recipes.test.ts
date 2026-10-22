@@ -265,8 +265,8 @@ describe('a texture used as a cap', () => {
 		await writeRecipes(s, d);
 		const prompt = vi.mocked(d.ask).mock.calls[0][0];
 		expect(prompt).toMatch(
-			/- grass: short grass\n  It is also the top surface of street in a side view/
+			/- grass: short grass\n {2}It is also the top surface of street in a side view/
 		);
-		expect(prompt).not.toMatch(/- street: cracked asphalt\n  It is also/);
+		expect(prompt).not.toMatch(/- street: cracked asphalt\n {2}It is also/);
 	});
 });
