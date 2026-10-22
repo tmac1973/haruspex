@@ -1188,6 +1188,9 @@ mod tests {
         assert_eq!(cap.cwd.as_deref(), Some("/home/tim/projects"));
     }
 
+    // Unix only: on Windows `bash` resolves to System32's WSL launcher before
+    // PATH, which spawns fine and prints nothing on a runner with no distro.
+    #[cfg(unix)]
     #[test]
     fn bash_hook_rewraps_a_prompt_rebuilt_every_prompt() {
         // starship and oh-my-bash themes assign PS1 from PROMPT_COMMAND on
@@ -1206,7 +1209,7 @@ mod tests {
             .args(["-c", &script])
             .output()
         else {
-            return; // no bash on this machine (Windows CI)
+            return; // no bash on this machine
         };
         // PS1 goes to stderr: the hook writes its own markers to stdout.
         let ps1 = String::from_utf8(out.stderr).unwrap();
