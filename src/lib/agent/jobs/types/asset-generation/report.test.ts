@@ -355,3 +355,22 @@ describe('the sheets section', () => {
 		expect(r).toContain('| `items` | 1 | 3 | no | 1 | 0 | 0 | yes | 7 |');
 	});
 });
+
+describe('the code-drawn texture section', () => {
+	const recipe = { base: { ramp: ['#000000', '#ffffff'] }, layers: [] };
+	const drawn = (over: Partial<EntryOutcome>) =>
+		renderAssetReport(
+			input({
+				entries: [outcome({ id: 'stone', codeDrawn: true, variants: ['a/stone.png'], ...over })]
+			})
+		);
+
+	it('says a texture passed first time', () => {
+		expect(drawn({})).toContain('| `stone` | base only | 1 | passed |');
+	});
+
+	it('counts the revisions a texture needed', () => {
+		expect(drawn({ attempts: 2, recipe })).toContain('passed after 1 revision(s)');
+		expect(drawn({ attempts: 3, recipe })).toContain('passed after 2 revision(s)');
+	});
+});
