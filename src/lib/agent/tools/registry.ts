@@ -1,4 +1,4 @@
-import { textureFiles } from '#lib/assets/texture.ts';
+import { textureFiles, transitionFiles } from '#lib/assets/texture.ts';
 import type { ToolDefinition } from '#lib/api.ts';
 import type { ToolRegistration, ToolExecOutput, ToolContext } from '#lib/agent/tools/types.ts';
 import { toolResult, toolError } from '#lib/agent/tools/types.ts';
@@ -617,6 +617,7 @@ function changedFiles(
 	}
 	if (name === 'make_asset') {
 		if (!out.result.startsWith('Wrote ') || typeof args.path !== 'string') return [];
+		if (args.kind === 'transition') return transitionFiles(args.path);
 		return args.kind === 'texture' ? textureFiles(args.path, args.variants) : [args.path];
 	}
 	return [...after].filter((p) => !before.has(p));

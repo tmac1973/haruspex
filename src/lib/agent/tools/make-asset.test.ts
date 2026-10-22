@@ -55,7 +55,10 @@ beforeEach(() => {
 			image_extract_palette: PALETTE,
 			texture_validate: () => undefined,
 			texture_render: (a) => Array.from({ length: Number(a?.variants) }, (_, k) => [k]),
-			image_contact_sheet: [7, 7]
+			image_contact_sheet: [7, 7],
+			texture_transition_validate: () => undefined,
+			texture_transition_render: [5, 5],
+			texture_transition_preview: [6, 6]
 		})
 	);
 	state.make.mockReset().mockResolvedValue({
@@ -352,5 +355,106 @@ describe('make_asset textures', () => {
 		// The live run's model offered to draw the coin as a texture instead.
 		expect(out.result).toMatch(/cannot draw an object/);
 		expect(state.make).not.toHaveBeenCalled();
+	});
+});
+
+describe('make_asset transitions', () => {
+	const GRASS = { base: { ramp: ['#304020', '#405030'] }, layers: [] };
+	const DIRT = { base: { ramp: ['#403020', '#504030'] }, layers: [] };
+	const top = (over: Record<string, unknown> = {}) => ({
+		kind: 'transition',
+		prompt: 'grass meeting dirt',
+		path: 'tiles/grass_dirt.png',
+		view: 'top',
+		recipe: GRASS,
+		recipe_b: DIRT,
+		...over
+	});
+	const bytesOf = (w: Record<string, unknown> | undefined) =>
+		new TextDecoder().decode(new Uint8Array(w?.bytes as number[]));
+
+	it('writes the sheet and its JSON map, and shows the model the map', async () => {
+		state.backend = 'none';
+		const ctx = context();
+		const out = await executeTool('make_asset', top(), ctx);
+		expect(calls('texture_transition_render')[0]).toMatchObject({
+			view: 'top',
+			a: GRASS,
+			other: DIRT,
+			size: 32
+		});
+		const [sheet, json] = writes();
+		expect(sheet).toMatchObject({ path: '/home/u/game/tiles/grass_dirt.png', bytes: [5, 5] });
+		expect(json?.path).toBe('/home/u/game/tiles/grass_dirt.json');
+		const map = JSON.parse(bytesOf(json));
+		expect(map).toMatchObject({ view: 'top', a: 'a', b: 'b', columns: 4 });
+		expect(map.tiles).toHaveLength(16);
+		expect(out.result).toMatch(/Wrote .*grass_dirt\.png and .*grass_dirt\.json/);
+		expect(ctx.pendingImages).toHaveLength(1);
+		expect(state.make).not.toHaveBeenCalled();
+	});
+
+	it('draws a side set with a cap, or without one', async () => {
+		await executeTool(
+			'make_asset',
+			top({ view: 'side', recipe_b: undefined, cap: GRASS, recipe: DIRT }),
+			context()
+		);
+		expect(calls('texture_transition_render')[0]).toMatchObject({ view: 'side', other: GRASS });
+		expect(JSON.parse(bytesOf(writes()[1]))).toMatchObject({ a: 'solid', cap: 'cap' });
+		state.invoke.mockClear();
+		await executeTool(
+			'make_asset',
+			top({ view: 'side', recipe_b: undefined, recipe: DIRT, overwrite: true }),
+			context()
+		);
+		expect(calls('texture_transition_render')[0]?.other).toBeNull();
+	});
+
+	it('names what is missing before writing anything', async () => {
+		for (const [over, want] of [
+			[{ recipe_b: undefined }, /recipe_b/],
+			[{ view: undefined }, /needs \\"view\\"/],
+			[{ recipe: undefined }, /first material/]
+		] as const) {
+			const out = await executeTool('make_asset', top(over), context());
+			expect(out.result).toMatch(want);
+		}
+		expect(calls('fs_write_bytes_absolute')).toHaveLength(0);
+	});
+
+	it('names which recipe Rust refused', async () => {
+		state.invoke.mockImplementation(
+			invokeRouter({
+				texture_validate: (a: Record<string, unknown> | undefined) => {
+					if (a?.recipe === DIRT) throw 'base.ramp: give 2 to 8 colours';
+				}
+			})
+		);
+		const out = await executeTool('make_asset', top(), context());
+		expect(out.result).toMatch(/recipe_b was refused: base\.ramp/);
+		expect(calls('fs_write_bytes_absolute')).toHaveLength(0);
+	});
+
+	it("seeds each material from its texture's file, so the plain tiles match it", async () => {
+		await executeTool(
+			'make_asset',
+			top({ seed_from: 'tiles/grass.png', seed_from_b: 'tiles/dirt.png' }),
+			context()
+		);
+		await executeTool(
+			'make_asset',
+			{ kind: 'texture', prompt: 'g', path: 'tiles/grass.png', recipe: GRASS },
+			context()
+		);
+		await executeTool(
+			'make_asset',
+			{ kind: 'texture', prompt: 'd', path: 'tiles/dirt.png', recipe: DIRT },
+			context()
+		);
+		const set = calls('texture_transition_render')[0];
+		const [grass, dirt] = calls('texture_render');
+		expect(set?.seedA).toBe(grass?.seed);
+		expect(set?.seedOther).toBe(dirt?.seed);
 	});
 });

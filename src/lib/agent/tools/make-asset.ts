@@ -11,20 +11,18 @@
  * Code mode only. Chat has `generate_image` for pictures; this is for a
  * project's files.
  */
-import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
+import { ctxCwd, resolveShellPath } from '#lib/agent/tools/_helpers.ts';
+import { assetIo, paletteFor, writeAsset, type Target } from '#lib/agent/tools/_assetIo.ts';
 import {
-	ctxCwd,
-	ctxWslDistroArg,
-	fsWorkdir,
-	resolveShellPath,
-	toolInvokeError
-} from '#lib/agent/tools/_helpers.ts';
+	makeTransition,
+	parseTransition,
+	type TransitionInput
+} from '#lib/agent/tools/_assetTransition.ts';
 import { localWriteBlocked } from '#lib/agent/tools/nested-session.ts';
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
-import { extractPalette } from '#lib/assets/normalize.ts';
 import {
 	DEFAULT_SIZE,
 	makeSingleAsset,
@@ -45,10 +43,10 @@ import { ImageBackendError } from '#lib/image/types.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { pngDataUrl as dataUrl } from '#lib/utils/base64.ts';
 
-/** What make_asset makes: the image backend's kinds, and textures drawn by code. */
-type Kind = SingleKind | 'texture';
+/** What make_asset makes: the image backend's kinds, and what code draws. */
+type Kind = SingleKind | 'texture' | 'transition';
 
-const KINDS: Kind[] = ['sprite', 'icon', 'texture', 'image'];
+const KINDS: Kind[] = ['sprite', 'icon', 'texture', 'transition', 'image'];
 
 /** A texture's edge when none is asked for: the tile its recipe is written for. */
 const TEXTURE_SIZE = 32;
@@ -64,6 +62,8 @@ interface ParsedInput {
 	recipe: Record<string, unknown> | null;
 	/** Every file a texture writes: the path, then its variants. */
 	files: string[];
+	/** A transition's arguments. */
+	transition: TransitionInput | null;
 }
 
 /** The call's arguments, or what is wrong with them. */
@@ -76,86 +76,36 @@ function parseInput(args: Record<string, unknown>): ParsedInput | string {
 	const size = typeof args.size === 'number' && args.size > 0 ? Math.round(args.size) : undefined;
 	const style = typeof args.style === 'string' ? args.style : undefined;
 	const from = typeof args.palette_from === 'string' ? args.palette_from.trim() : '';
-	const recipe = recipeArg(args.recipe);
-	if (kind === 'texture' && !recipe) {
-		return 'A texture is drawn from a recipe: pass "recipe" as described in its parameter.';
-	}
-	const files = textureFiles(path, args.variants);
+	const drawn = codeArgs(kind, args, path);
+	if (typeof drawn === 'string') return drawn;
 	// A tiling picture is the image backend's; a pixel-art tile is a texture.
 	const seamless = kind === 'image' && args.seamless === true;
 	return {
 		asset: { kind, prompt, size, style, ...(seamless ? { seamless } : {}) },
 		path,
 		paletteFrom: from || null,
-		recipe,
-		files
+		...drawn
 	};
+}
+
+/** What code draws from: a texture's recipe and files, or a transition's arguments. */
+function codeArgs(
+	kind: Kind,
+	args: Record<string, unknown>,
+	path: string
+): Pick<ParsedInput, 'recipe' | 'files' | 'transition'> | string {
+	const transition = kind === 'transition' ? parseTransition(args) : null;
+	if (typeof transition === 'string') return transition;
+	const recipe = recipeArg(args.recipe);
+	if (kind === 'texture' && !recipe) {
+		return 'A texture is drawn from a recipe: pass "recipe" as described in its parameter.';
+	}
+	return { recipe, files: textureFiles(path, args.variants), transition };
 }
 
 /** A texture's recipe as given, unchecked, or null when it is not an object. */
 function recipeArg(r: unknown): ParsedInput['recipe'] {
 	return r && typeof r === 'object' && !Array.isArray(r) ? (r as ParsedInput['recipe']) : null;
-}
-
-/**
- * Where `make_asset` reads and writes. A Code session's folder is its
- * boundary, as for `fs_write_text`: the workdir-relative commands refuse a
- * path outside it (a WSL one is reached through its distro's share). A
- * Shell turn writes wherever the shell is, through the absolute ones.
- */
-interface AssetIo {
-	read(path: string): Promise<number[]>;
-	write(path: string, bytes: number[], overwrite: boolean, dryRun: boolean): Promise<void>;
-}
-
-function assetIo(ctx: ToolContext): AssetIo {
-	const workdir = ctx.shellMode ? null : fsWorkdir(ctx);
-	if (workdir) {
-		return {
-			read: (relPath) => invoke<number[]>('fs_read_bytes', { workdir, relPath }),
-			write: (relPath, bytes, overwrite, dryRun) =>
-				invoke('fs_write_bytes', { workdir, relPath, bytes, overwrite, dryRun })
-		};
-	}
-	const distro = ctxWslDistroArg(ctx);
-	return {
-		read: (path) => invoke<number[]>('fs_read_bytes_absolute', { path, ...distro }),
-		write: (path, bytes, overwrite, dryRun) =>
-			invoke('fs_write_bytes_absolute', { path, bytes, overwrite, dryRun, ...distro })
-	};
-}
-
-/** Where one call writes, and how. */
-interface Target {
-	/** The file, resolved against the shell's or session's folder. */
-	path: string;
-	overwrite: boolean;
-	io: AssetIo;
-	cwd: string | null;
-}
-
-/** The colours of an existing image, to draw a new one of the set in. */
-async function paletteOf(path: string, io: AssetIo): Promise<number[]> {
-	return extractPalette(new Uint8Array(await io.read(path)), 16);
-}
-
-/** Write (or with `dryRun`, check it could write) the PNG; the refusal, or null. */
-async function writeAsset(
-	path: string,
-	bytes: Uint8Array,
-	overwrite: boolean,
-	dryRun: boolean,
-	io: AssetIo
-): Promise<string | null> {
-	try {
-		await io.write(path, Array.from(bytes), overwrite, dryRun);
-		return null;
-	} catch (e) {
-		const msg = errMessage(e);
-		return /exists/i.test(msg)
-			? `${path} already exists. Choose another name, or pass overwrite: true.`
-			: `Could not write ${path}: ${msg}`;
-	}
 }
 
 /** A sprite, icon or picture, drawn by the image backend. */
@@ -175,7 +125,7 @@ async function paintAsset(asset: PaintInput, input: ParsedInput, target: Target,
 	const unwritable = await writeAsset(path, new Uint8Array(), overwrite, true, io);
 	if (unwritable) return toolResult(toolError(unwritable));
 
-	const palette = await paletteFor(input, target);
+	const palette = await paletteFor(input.paletteFrom, target);
 	if (typeof palette === 'string') return toolResult(palette);
 
 	const started = Date.now();
@@ -215,22 +165,6 @@ async function paintAsset(asset: PaintInput, input: ParsedInput, target: Target,
 }
 
 /**
- * The colours of palette_from, undefined when none was named, or the error
- * to return when it could not be read.
- */
-async function paletteFor(
-	input: ParsedInput,
-	target: Target
-): Promise<number[] | undefined | string> {
-	if (!input.paletteFrom) return undefined;
-	try {
-		return await paletteOf(resolveShellPath(input.paletteFrom, target.cwd), target.io);
-	} catch (e) {
-		return toolInvokeError('make_asset palette_from', e);
-	}
-}
-
-/**
  * A texture drawn by code from the model's recipe: every variant written,
  * and the base shown back laid 3×3, so the model sees what repeats.
  */
@@ -244,7 +178,7 @@ async function makeTexture(input: ParsedInput, target: Target, ctx: ToolContext)
 		const unwritable = await writeAsset(p, new Uint8Array(), overwrite, true, io);
 		if (unwritable) return toolResult(toolError(unwritable));
 	}
-	const palette = await paletteFor(input, target);
+	const palette = await paletteFor(input.paletteFrom, target);
 	if (typeof palette === 'string') return toolResult(palette);
 
 	const size = input.asset.size ?? TEXTURE_SIZE;
@@ -288,7 +222,8 @@ registerTool({
 			description:
 				'Make an image file for the project: a sprite, icon or tiling texture made the way a game ' +
 				'asset should be (transparent background, cropped, sized, reduced to a palette), or a ' +
-				'plain picture. A texture is drawn by code from your recipe in a second; the rest use ' +
+				'plain picture; or a transition set, the 16 edge tiles where two of your textures meet. ' +
+				'Textures and transitions are drawn by code from your recipes in a second; the rest use ' +
 				'the image generation in Settings → Image and take 30 s to a few minutes. Pass ' +
 				'palette_from with an existing asset to keep a set consistent.',
 			parameters: {
@@ -311,7 +246,39 @@ registerTool({
 					recipe: {
 						type: 'object',
 						description:
-							'Texture only, and required for one: how code draws it. ' + recipeGuide().join('\n')
+							'Texture or transition, and required for one: how code draws it (for a transition, ' +
+							'the first material or the solid). ' +
+							recipeGuide().join('\n')
+					},
+					view: {
+						type: 'string',
+						enum: ['top', 'side'],
+						description:
+							'Transition only: top for two ground textures meeting, side for platform ground against air.'
+					},
+					recipe_b: {
+						type: 'object',
+						description:
+							"Transition, top only: the second material's recipe, as you wrote it for its texture."
+					},
+					cap: {
+						type: 'object',
+						description:
+							'Transition, side only: a recipe drawn along upward faces (grass on dirt). Optional.'
+					},
+					edge: {
+						type: 'object',
+						description:
+							'Transition only: { wobble?: 0–0.25, how far the border wanders; rim?: "#rrggbb", a line along it; cap_height?: 1–8, side only }.'
+					},
+					seed_from: {
+						type: 'string',
+						description:
+							"Transition only: the texture file you drew recipe into, so the set's plain tiles match it exactly."
+					},
+					seed_from_b: {
+						type: 'string',
+						description: 'Transition, top only: the texture file you drew recipe_b into.'
 					},
 					variants: {
 						type: 'number',
@@ -350,6 +317,11 @@ registerTool({
 		const path = resolveShellPath(input.path, cwd);
 		const target = { path, overwrite: args.overwrite === true, io: assetIo(ctx), cwd };
 		const { kind, ...rest } = input.asset;
+		if (kind === 'transition') {
+			// parseInput refuses a transition without its arguments.
+			const size = input.asset.size ?? TEXTURE_SIZE;
+			return makeTransition(input.transition!, size, input.paletteFrom, target, ctx);
+		}
 		return kind === 'texture'
 			? makeTexture(input, target, ctx)
 			: paintAsset({ ...rest, kind }, input, target, ctx);

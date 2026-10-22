@@ -65,6 +65,14 @@ export function textureFiles(path: string, variants: unknown): string[] {
 	return variantPaths(path, n);
 }
 
+/** A transition set's files: the sheet at `path`, and its JSON map beside it. */
+export function transitionFiles(path: string): [string, string] {
+	const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+	const dot = path.lastIndexOf('.');
+	const stem = dot > slash ? path.slice(0, dot) : path;
+	return [path, `${stem}.json`];
+}
+
 /** How wide a tiled preview aims to be, in pixels. */
 const PREVIEW_EDGE = 480;
 
