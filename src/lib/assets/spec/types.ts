@@ -11,6 +11,8 @@
  */
 
 import type { TextureRecipe } from '#lib/ipc/gen/TextureRecipe.ts';
+import type { TransitionEdge } from '#lib/ipc/gen/TransitionEdge.ts';
+import type { TransitionView } from '#lib/ipc/gen/TransitionView.ts';
 import type { LoraRef, SamplerSettings } from '#lib/image/types.ts';
 import type { NormalizeProfile } from '#lib/ipc/gen/NormalizeProfile.ts';
 
@@ -142,12 +144,38 @@ export interface AssetStyle {
 	loras?: LoraRef[];
 }
 
+/**
+ * A transition set: the 16 edge tiles where two textures meet (`top`), or
+ * platform ground against air (`side`), drawn by code from the named texture
+ * entries' recipes (`assets/texture.ts`).
+ */
+export interface TransitionEntry {
+	/** Unique across entries and transitions. */
+	id: string;
+	view: TransitionView;
+	/** A texture entry: material A, or the solid ground. */
+	a: string;
+	/** A texture entry: material B. Top sets only, and required there. */
+	b?: string;
+	/** A texture entry drawn on upward faces. Side sets only. */
+	cap?: string;
+	/** The sheet; its JSON map is the same path ending `.json`. */
+	out: string;
+	/** Written by the recipe stage; Rust checks it when drawing. */
+	edge?: TransitionEdge;
+	/** As on an entry: why the kept sheet never passed the check. */
+	rejected?: string;
+	notes?: string;
+}
+
 export interface AssetSpec {
 	version: 1;
 	style: AssetStyle;
 	anchor: AnchorRef;
 	normalize: NormalizeProfile;
 	entries: AssetEntry[];
+	/** Edge sets where the entries' textures meet. */
+	transitions?: TransitionEntry[];
 	/**
 	 * Top-level keys we did not recognise, kept so a user's own annotations
 	 * survive a round trip through a job that rewrites the file.

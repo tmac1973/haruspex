@@ -19,6 +19,11 @@ export function defaultOutPath(kind: AssetKind, id: string): string {
 	return `assets/generated/${kind}/${id}.png`;
 }
 
+/** Where a derived transition set's sheet goes. */
+export function defaultTransitionOut(id: string): string {
+	return `assets/generated/transition/${id}.png`;
+}
+
 /**
  * Turn a title into an id: lowercase, runs of non-alphanumerics become one
  * `_`, trimmed, prefixed when it would not start with a letter, truncated to

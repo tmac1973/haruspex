@@ -31,6 +31,19 @@ export const KIND_RULE: string[] = [
 	'     (a roof texture, or a building sprite).'
 ];
 
+/**
+ * When a spec lists transition sets, said the same way by both prompts that
+ * write a spec. Indented to sit under the entry bullets.
+ */
+export const TRANSITION_RULE: string[] = [
+	'   - `transitions`: where two ground textures touch on the map (grass and',
+	'     a dirt path, sand and water), list one `top` set naming both, as `a`',
+	'     and `b`. For a side-view game, list one `side` set per platform ground,',
+	'     naming its texture as `a` and, if its top surface differs (grass on',
+	"     dirt, snow on rock), that surface's texture as `cap`. Skip pairs that",
+	'     never meet. Both materials must be texture entries in your list.'
+];
+
 export function specDerivationPrompt(description: string, specPath: string): string {
 	return [
 		'You are listing the images a project needs, so they can be generated.',
@@ -56,6 +69,7 @@ export function specDerivationPrompt(description: string, specPath: string): str
 		'   Too long: anything with semicolons, or a list of six clauses.',
 		'3. List every image the project needs, and nothing it does not. Each entry:',
 		...KIND_RULE,
+		...TRANSITION_RULE,
 		'   - `prompt`: the SUBJECT only, with its own colours ("green weeds",',
 		'     "rusty red barrel"). The shared style is added automatically, so',
 		'     repeating it here just dilutes both. For a texture, name the surface,',

@@ -2,7 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { parseAssetSpec } from './parse';
 import { renderAssetSpec } from './write';
 import { validateAssetSpec } from './validate';
-import { defaultOutPath, slugify, uniqueId, DEFAULT_ANCHOR_IMAGE } from './paths';
+import {
+	defaultOutPath,
+	defaultTransitionOut,
+	slugify,
+	uniqueId,
+	DEFAULT_ANCHOR_IMAGE
+} from './paths';
 import { joinNegativePrompts, type AssetSpec } from './types';
 import type { NormalizeProfile } from '#lib/ipc/gen/NormalizeProfile.ts';
 
@@ -363,5 +369,57 @@ describe('joinNegativePrompts', () => {
 		expect(joinNegativePrompts(undefined, 'blurry')).toBe('blurry');
 		expect(joinNegativePrompts('no hilt', undefined)).toBe('no hilt');
 		expect(joinNegativePrompts('  ', '')).toBe('');
+	});
+});
+
+describe('transitions', () => {
+	const withSets = (transitions: NonNullable<AssetSpec['transitions']>) =>
+		spec({
+			entries: [
+				{ id: 'grass', kind: 'texture', prompt: 'grass', out: 'a/grass.png', seamless: true },
+				{ id: 'dirt', kind: 'texture', prompt: 'dirt', out: 'a/dirt.png', seamless: true },
+				{ id: 'well', kind: 'sprite', prompt: 'a well', out: 'a/well.png' }
+			],
+			transitions
+		});
+	const top = { id: 'grass_dirt', view: 'top' as const, a: 'grass', b: 'dirt', out: 't/gd.png' };
+	const side = { id: 'ledge', view: 'side' as const, a: 'dirt', cap: 'grass', out: 't/ledge.png' };
+
+	it('round-trips sets, with their edges', () => {
+		const s = withSets([{ ...top, edge: { wobble: 0.2, rim: '#202020' } }, side]);
+		expect(ok(renderAssetSpec(s))).toEqual(s);
+		expect(validateAssetSpec(s)).toEqual([]);
+	});
+
+	it('writes a spec without sets exactly as before', () => {
+		expect(renderAssetSpec(spec())).not.toContain('transitions');
+		expect(ok(renderAssetSpec(spec()))).not.toHaveProperty('transitions');
+	});
+
+	it('names the set in every problem', () => {
+		const cases: Array<[Partial<typeof top> & Record<string, unknown>, RegExp]> = [
+			[{ id: 'Bad Id' }, /Bad Id: the id must/],
+			[{ id: 'grass' }, /grass: duplicate id/],
+			[{ a: 'stone' }, /grass_dirt: a "stone" names no entry/],
+			[{ b: 'well' }, /grass_dirt: b "well" is a sprite/],
+			[{ b: undefined }, /grass_dirt: a top set needs a second material/],
+			[{ cap: 'grass' }, /grass_dirt: only a side set has a cap/],
+			[{ b: 'grass' }, /grass_dirt: both materials are "grass"/],
+			[{ out: '' }, /grass_dirt: no output path/],
+			[{ out: '../x.png' }, /grass_dirt: the output path/],
+			[{ out: 'a/grass.png' }, /grass_dirt: writes to "a\/grass.png", which grass/]
+		];
+		for (const [over, want] of cases) {
+			const problems = validateAssetSpec(withSets([{ ...top, ...over }]));
+			expect(problems.join('\n')).toMatch(want);
+		}
+		const sided = validateAssetSpec(withSets([{ ...side, b: 'grass' }]));
+		expect(sided.join('\n')).toMatch(/ledge: a side set is ground against air/);
+		const sameCap = validateAssetSpec(withSets([{ ...side, cap: 'dirt' }]));
+		expect(sameCap.join('\n')).toMatch(/ledge: both materials are "dirt"/);
+	});
+
+	it('puts a derived set under transition/', () => {
+		expect(defaultTransitionOut('grass_dirt')).toBe('assets/generated/transition/grass_dirt.png');
 	});
 });

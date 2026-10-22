@@ -7,7 +7,14 @@
  * survive a job rewriting the file.
  */
 
-import type { AssetEntry, AssetKind, AssetSpec, AssetStyle } from '#lib/assets/spec/types.ts';
+import type {
+	AssetEntry,
+	AssetKind,
+	AssetSpec,
+	AssetStyle,
+	TransitionEntry
+} from '#lib/assets/spec/types.ts';
+import type { TransitionEdge } from '#lib/ipc/gen/TransitionEdge.ts';
 import { ASSET_KINDS } from '#lib/assets/spec/types.ts';
 import { DEFAULT_ANCHOR_IMAGE, DEFAULT_ANCHOR_RECIPE } from '#lib/assets/spec/paths.ts';
 import type { LoraRef } from '#lib/image/types.ts';
@@ -15,7 +22,7 @@ import type { NormalizeProfile } from '#lib/ipc/gen/NormalizeProfile.ts';
 
 export type ParseResult = { spec: AssetSpec } | { errors: string[] };
 
-const KNOWN_KEYS = new Set(['version', 'style', 'anchor', 'normalize', 'entries']);
+const KNOWN_KEYS = new Set(['version', 'style', 'anchor', 'normalize', 'entries', 'transitions']);
 
 function str(v: unknown, fallback = ''): string {
 	return typeof v === 'string' ? v : fallback;
@@ -36,6 +43,23 @@ function loras(v: unknown): LoraRef[] | undefined {
 		.map((l) => ({ name: str(l.name), strength: typeof l.strength === 'number' ? l.strength : 1 }))
 		.filter((l) => l.name.length > 0);
 	return out.length > 0 ? out : undefined;
+}
+
+function transition(raw: unknown): TransitionEntry | null {
+	if (!raw || typeof raw !== 'object') return null;
+	const t = raw as Record<string, unknown>;
+	return {
+		id: str(t.id),
+		view: t.view === 'side' ? 'side' : 'top',
+		a: str(t.a),
+		...(optionalStr(t.b) ? { b: str(t.b) } : {}),
+		...(optionalStr(t.cap) ? { cap: str(t.cap) } : {}),
+		out: str(t.out),
+		// Kept as written: Rust checks it when the set is drawn.
+		...(t.edge && typeof t.edge === 'object' ? { edge: t.edge as TransitionEdge } : {}),
+		...(optionalStr(t.rejected) ? { rejected: str(t.rejected) } : {}),
+		...(optionalStr(t.notes) ? { notes: str(t.notes) } : {})
+	};
 }
 
 function entry(raw: unknown): AssetEntry | null {
@@ -125,6 +149,11 @@ export function parseAssetSpec(json: string): ParseResult {
 		},
 		normalize: o.normalize as NormalizeProfile,
 		entries: o.entries.map(entry).filter((e): e is AssetEntry => e !== null),
+		...(Array.isArray(o.transitions)
+			? {
+					transitions: o.transitions.map(transition).filter((t): t is TransitionEntry => t !== null)
+				}
+			: {}),
 		...(Object.keys(unknown).length > 0 ? { unknown } : {})
 	};
 	return { spec };

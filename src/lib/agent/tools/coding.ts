@@ -229,6 +229,15 @@ export const SUBMIT_ASSET_SPEC_TOOL = 'submit_asset_spec';
  * leaves the game referencing something that does not exist, and a model that
  * chooses output paths can collide two of them or escape the project.
  */
+/** One transition set as the derivation submits it, naming entries by title. */
+export interface AssetSpecTransitionArg {
+	title?: string;
+	view?: string;
+	a?: string;
+	b?: string;
+	cap?: string;
+}
+
 export interface AssetSpecEntryArg {
 	/** Human title, e.g. "Iron sword". The runner slugifies it into an id. */
 	title: string;
@@ -324,6 +333,36 @@ registerTool({
 								}
 							},
 							required: ['title', 'kind', 'prompt']
+						}
+					},
+					transitions: {
+						type: 'array',
+						description:
+							'Edge tile sets where textures meet: "top" for two ground textures that touch ' +
+							'on the map, "side" for platform ground against air. Both name texture entries.',
+						items: {
+							type: 'object',
+							properties: {
+								title: {
+									type: 'string',
+									description: 'A short name, e.g. "Grass to dirt".'
+								},
+								view: { type: 'string', enum: ['top', 'side'] },
+								a: {
+									type: 'string',
+									description: 'The title of a texture entry: one material, or the platform ground.'
+								},
+								b: {
+									type: 'string',
+									description: 'Top only: the title of the other texture entry.'
+								},
+								cap: {
+									type: 'string',
+									description:
+										'Side only, optional: the title of the texture on its upward faces (grass on dirt).'
+								}
+							},
+							required: ['view', 'a']
 						}
 					}
 				},

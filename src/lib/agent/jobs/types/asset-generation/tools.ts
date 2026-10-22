@@ -78,6 +78,15 @@ export const SUBMIT_PLAN_ASSET_SPEC_TOOL = 'submit_plan_asset_spec';
  * it, so a model that submits `Iron Sword` is rejected rather than silently
  * given `iron_sword` while the plan still says something else.
  */
+/** One transition set as guided planning submits it, naming entries by id. */
+export interface PlanAssetTransitionArg {
+	id?: string;
+	view?: string;
+	a?: string;
+	b?: string;
+	cap?: string;
+}
+
 export interface PlanAssetEntryArg {
 	id: string;
 	kind?: string;
@@ -175,6 +184,37 @@ registerTool({
 								notes: { type: 'string', description: 'A note for whoever reads the file.' }
 							},
 							required: ['id', 'kind', 'prompt']
+						}
+					},
+					transitions: {
+						type: 'array',
+						description:
+							'Edge tile sets where textures meet: "top" for two ground textures that touch ' +
+							'on the map, "side" for platform ground against air. Both name texture entries.',
+						items: {
+							type: 'object',
+							properties: {
+								id: {
+									type: 'string',
+									description:
+										'The set\'s id: lowercase letters, digits and underscores, e.g. "grass_dirt".'
+								},
+								view: { type: 'string', enum: ['top', 'side'] },
+								a: {
+									type: 'string',
+									description: 'The id of a texture entry: one material, or the platform ground.'
+								},
+								b: {
+									type: 'string',
+									description: 'Top only: the id of the other texture entry.'
+								},
+								cap: {
+									type: 'string',
+									description:
+										'Side only, optional: the id of the texture on its upward faces (grass on dirt).'
+								}
+							},
+							required: ['view', 'a']
 						}
 					}
 				},

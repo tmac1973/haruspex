@@ -7,6 +7,7 @@ import {
 	type PlanDerivePayload
 } from './derive';
 import { coerceCallArguments } from '#lib/agent/tools/index.ts';
+import { validateAssetSpec } from '#lib/assets/spec/validate.ts';
 import { SUBMIT_PLAN_ASSET_SPEC_TOOL } from './tools';
 import type { NormalizeProfile } from '#lib/ipc/gen/NormalizeProfile.ts';
 
@@ -171,5 +172,99 @@ describe('the style line', () => {
 			profile
 		);
 		expect(spec.style.prompt).toBe('flat pixel art');
+	});
+});
+
+describe('transitions', () => {
+	const entries = [
+		{ title: 'Short grass', kind: 'texture', prompt: 'short grass' },
+		{ title: 'Dirt path', kind: 'texture', prompt: 'a dirt path' },
+		{ title: 'Well', kind: 'sprite', prompt: 'a stone well' }
+	];
+
+	it('names materials by their entries ids, and gives each set an id and a path', () => {
+		const spec = deriveSpec(
+			{
+				style: { prompt: 'x' },
+				entries,
+				transitions: [
+					{ title: 'Grass to path', view: 'top', a: 'Short grass', b: 'dirt path' },
+					{ view: 'side', a: 'Dirt path', cap: 'Short grass' }
+				]
+			},
+			{} as NormalizeProfile
+		);
+		expect(spec.transitions).toEqual([
+			{
+				id: 'grass_to_path',
+				view: 'top',
+				a: 'short_grass',
+				b: 'dirt_path',
+				out: 'assets/generated/transition/grass_to_path.png'
+			},
+			{
+				id: 'dirt_path_platform',
+				view: 'side',
+				a: 'dirt_path',
+				cap: 'short_grass',
+				out: 'assets/generated/transition/dirt_path_platform.png'
+			}
+		]);
+	});
+
+	it('keeps a material it cannot find, so validation names it', () => {
+		const spec = deriveSpec(
+			{
+				style: { prompt: 'x' },
+				entries,
+				transitions: [
+					{ view: 'top', a: 'Short grass', b: 'Lava' },
+					{ view: 'top', a: 'Well', b: 'Short grass' }
+				]
+			},
+			{} as NormalizeProfile
+		);
+		const problems = validateAssetSpec(spec).join('\n');
+		expect(problems).toMatch(/b "Lava" names no entry/);
+		expect(problems).toMatch(/a "well" is a sprite/);
+	});
+
+	it('gives a set an id no entry has', () => {
+		const spec = deriveSpec(
+			{
+				style: { prompt: 'x' },
+				entries,
+				transitions: [{ title: 'Well', view: 'top', a: 'Short grass', b: 'Dirt path' }]
+			},
+			{} as NormalizeProfile
+		);
+		expect(spec.transitions?.[0].id).not.toBe('well');
+	});
+
+	it('leaves the key out when there are none', () => {
+		const spec = deriveSpec({ style: { prompt: 'x' }, entries }, {} as NormalizeProfile);
+		expect(spec).not.toHaveProperty('transitions');
+	});
+
+	it('takes the plan its ids as given', () => {
+		const { spec } = derivePlanSpec(
+			{
+				style: { prompt: 'x' },
+				entries: [
+					{ id: 'grass', kind: 'texture', prompt: 'grass' },
+					{ id: 'water', kind: 'texture', prompt: 'water' }
+				],
+				transitions: [
+					{ id: 'shore', view: 'top', a: 'grass', b: 'water' },
+					{ id: 'Bad Id', view: 'top', a: 'water', b: 'grass' }
+				]
+			},
+			{ target_size: 32 } as unknown as NormalizeProfile
+		);
+		expect(spec.transitions?.map((t) => [t.id, t.a, t.b])).toEqual([
+			['shore', 'grass', 'water'],
+			['water_to_grass', 'water', 'grass']
+		]);
+		expect(validateAssetSpec(spec)).toEqual([]);
 	});
 });
