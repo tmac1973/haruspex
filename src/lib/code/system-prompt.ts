@@ -68,7 +68,7 @@ export function isMacOS(
 /** Textures need no image backend; the other kinds are named only with one. */
 function assetLine(): string {
 	return getSettings().imageBackendKind !== 'none'
-		? '\n- make_asset — make art for the project: a sprite, icon or tiling texture (or a plain picture), written as a PNG at the size the project uses. Pass palette_from with an existing asset to keep a set consistent. A texture is drawn by code from a recipe you write, in a second; the rest take a minute or more. Check the result before moving on.'
+		? '\n- make_asset — make art for the project: a sprite, icon or tiling texture (or a plain picture), written as a PNG at the size the project uses. Pass palette_from with an existing asset to keep a set consistent. A texture is drawn by code from a recipe you write, in a second; the rest take a minute or more. For a painted material that must tile, pass seamless: true with kind image. Check the result before moving on.'
 		: '\n- make_asset — make a tiling texture for the project, drawn by code from a recipe you write, as a PNG at the size the project uses. Sprites and icons need image generation in Settings → Image. Check the result before moving on.';
 }
 

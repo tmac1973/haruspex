@@ -79,11 +79,6 @@ describe('makeSingleAsset', () => {
 		expect(state.generate.mock.calls[0][0].transparent).toBeFalsy();
 	});
 
-	it('asks for a texture to tile', async () => {
-		await makeSingleAsset({ kind: 'texture', prompt: 'mossy cobblestones' });
-		expect(state.generate.mock.calls[0][0].seamless).toBe(true);
-	});
-
 	it('tries again when the checks fail, and keeps the better of the two', async () => {
 		state.check
 			.mockResolvedValueOnce({ passed: false, failed: ['a', 'b'] })
@@ -95,20 +90,17 @@ describe('makeSingleAsset', () => {
 		expect(out.checks.failed).toEqual(['a']);
 	});
 
-	it('does not hold a texture that could not tile to the seam check', async () => {
-		state.generate.mockResolvedValue(drawn(['It does not tile: vae encode failed']));
-		await makeSingleAsset({ kind: 'texture', prompt: 'bricks' });
-		// The plain profile, not the one carrying the texture seam limit.
-		expect(state.check.mock.calls[0][1].checks.seam_max).toBeUndefined();
-		state.generate.mockResolvedValue(drawn());
-		await makeSingleAsset({ kind: 'texture', prompt: 'bricks' });
-		expect(state.check.mock.calls[1][1].checks.seam_max).toBeDefined();
-	});
-
 	it('draws a plain picture at a size the model can draw, without normalising it', async () => {
 		await makeSingleAsset({ kind: 'image', prompt: 'a lighthouse', size: 64 });
 		expect(state.generate.mock.calls[0][0]).toMatchObject({ width: 512, height: 512 });
 		expect(state.normalize).not.toHaveBeenCalled();
+	});
+
+	it('asks for a plain picture to tile only when told to', async () => {
+		await makeSingleAsset({ kind: 'image', prompt: 'mossy stone', seamless: true });
+		expect(state.generate.mock.calls[0][0].seamless).toBe(true);
+		await makeSingleAsset({ kind: 'image', prompt: 'a lighthouse' });
+		expect(state.generate.mock.calls[1][0].seamless).toBe(false);
 	});
 });
 

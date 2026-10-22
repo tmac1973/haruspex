@@ -45,13 +45,19 @@ import { ImageBackendError } from '#lib/image/types.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { pngDataUrl as dataUrl } from '#lib/utils/base64.ts';
 
-const KINDS: SingleKind[] = ['sprite', 'icon', 'texture', 'image'];
+/** What make_asset makes: the image backend's kinds, and textures drawn by code. */
+type Kind = SingleKind | 'texture';
+
+const KINDS: Kind[] = ['sprite', 'icon', 'texture', 'image'];
 
 /** A texture's edge when none is asked for: the tile its recipe is written for. */
 const TEXTURE_SIZE = 32;
 
+/** A sprite, icon or picture as the image backend draws it. */
+type PaintInput = Omit<SingleAssetInput, 'palette'>;
+
 interface ParsedInput {
-	asset: Omit<SingleAssetInput, 'palette'>;
+	asset: Omit<PaintInput, 'kind'> & { kind: Kind };
 	path: string;
 	paletteFrom: string | null;
 	/** A texture's recipe, unchecked; Rust's check comes next. */
@@ -75,7 +81,15 @@ function parseInput(args: Record<string, unknown>): ParsedInput | string {
 		return 'A texture is drawn from a recipe: pass "recipe" as described in its parameter.';
 	}
 	const files = textureFiles(path, args.variants);
-	return { asset: { kind, prompt, size, style }, path, paletteFrom: from || null, recipe, files };
+	// A tiling picture is the image backend's; a pixel-art tile is a texture.
+	const seamless = kind === 'image' && args.seamless === true;
+	return {
+		asset: { kind, prompt, size, style, ...(seamless ? { seamless } : {}) },
+		path,
+		paletteFrom: from || null,
+		recipe,
+		files
+	};
 }
 
 /** A texture's recipe as given, unchecked, or null when it is not an object. */
@@ -145,12 +159,12 @@ async function writeAsset(
 }
 
 /** A sprite, icon or picture, drawn by the image backend. */
-async function paintAsset(input: ParsedInput, target: Target, ctx: ToolContext) {
+async function paintAsset(asset: PaintInput, input: ParsedInput, target: Target, ctx: ToolContext) {
 	const { path, overwrite, io } = target;
 	if (getSettings().imageBackendKind === 'none') {
 		return toolResult(
 			toolError(
-				`A ${input.asset.kind} needs image generation: set one up in Settings → Image. ` +
+				`A ${asset.kind} needs image generation: set one up in Settings → Image. ` +
 					'A texture works without it.'
 			)
 		);
@@ -168,10 +182,10 @@ async function paintAsset(input: ParsedInput, target: Target, ctx: ToolContext) 
 		() => ctx.onProgress?.(`Drawing… ${Math.round((Date.now() - started) / 1000)} s`),
 		1000
 	);
-	let asset;
+	let made;
 	try {
 		ctx.onProgress?.('Drawing…');
-		asset = await makeSingleAsset({ ...input.asset, palette }, { signal: ctx.signal });
+		made = await makeSingleAsset({ ...asset, palette }, { signal: ctx.signal });
 	} catch (e) {
 		if (e instanceof ImageBackendError && e.kind === 'cancelled') throw e;
 		return toolResult(toolError(`Could not make it: ${errMessage(e)}`));
@@ -179,21 +193,21 @@ async function paintAsset(input: ParsedInput, target: Target, ctx: ToolContext) 
 		clearInterval(tick);
 	}
 
-	const failed = await writeAsset(path, asset.bytes, overwrite, false, io);
+	const failed = await writeAsset(path, made.bytes, overwrite, false, io);
 	if (failed) return toolResult(toolError(failed));
 
-	const url = dataUrl(asset.bytes);
+	const url = dataUrl(made.bytes);
 	// So the assistant can look at what it made, and redo it if it's wrong.
 	if (ctx.visionSupported !== false && ctx.pendingImages.length < MAX_PENDING_IMAGES) {
 		ctx.pendingImages.push({ path, dataUrl: url });
 	}
 	return toolResult(
 		[
-			`Wrote ${path} (${asset.width}×${asset.height}, ${asset.model}, seed ${asset.seed}).`,
-			asset.checks.passed
+			`Wrote ${path} (${made.width}×${made.height}, ${made.model}, seed ${made.seed}).`,
+			made.checks.passed
 				? 'It passed its checks.'
-				: `It failed these checks: ${asset.checks.failed.join(', ')} — look at it and decide whether to redo it.`,
-			...asset.notes
+				: `It failed these checks: ${made.checks.failed.join(', ')} — look at it and decide whether to redo it.`,
+			...made.notes
 		].join(' '),
 		url
 	);
@@ -306,6 +320,11 @@ registerTool({
 						type: 'string',
 						description: 'One line of style, e.g. "16-bit pixel art, dark outlines".'
 					},
+					seamless: {
+						type: 'boolean',
+						description:
+							'Image only: make the picture tile edge to edge, for a painted material. A pixel-art tile is kind texture.'
+					},
 					palette_from: {
 						type: 'string',
 						description: "An existing image whose colours to draw in, to match a set's palette."
@@ -329,8 +348,9 @@ registerTool({
 		const cwd = ctxCwd(ctx);
 		const path = resolveShellPath(input.path, cwd);
 		const target = { path, overwrite: args.overwrite === true, io: assetIo(ctx), cwd };
-		return input.asset.kind === 'texture'
+		const { kind, ...rest } = input.asset;
+		return kind === 'texture'
 			? makeTexture(input, target, ctx)
-			: paintAsset(input, target, ctx);
+			: paintAsset({ ...rest, kind }, input, target, ctx);
 	}
 });
