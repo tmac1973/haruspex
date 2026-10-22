@@ -29,7 +29,6 @@ Running list of things to address. Status annotations added 2026-07-19.
   `plan/archive/inline-chat-images/`.
 
 - **Code-drawn textures, next steps** (phase 17's "not in this phase"):
-  - transition tiles where two materials meet, as an autotile set drawn from two recipes and a mask;
   - animated water from `waves` variants;
   - a way to turn an existing spec's object textures into sprites. The kind rule only reaches asset lists written after it, and dark_times_5's seven were changed by hand.
 

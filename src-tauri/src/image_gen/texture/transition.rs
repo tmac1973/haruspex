@@ -583,4 +583,33 @@ mod tests {
             .save(format!("{dir}/side-map.png"))
             .unwrap();
     }
+
+    /// Not a check: lays out a set from a live run as a map, and says whether
+    /// its plain tile matches the material's own file.
+    /// `LIVE_SHEET=s.png LIVE_VIEW=top LIVE_MATERIAL=grass.png cargo test --lib live_map -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn live_map_from_sheet() {
+        let Ok(path) = std::env::var("LIVE_SHEET") else {
+            return;
+        };
+        let view = match std::env::var("LIVE_VIEW").as_deref() {
+            Ok("side") => TransitionView::Side,
+            _ => TransitionView::Top,
+        };
+        let sheet = image::open(&path).unwrap().to_rgba8();
+        let n = sheet.width() / 4;
+        let map = transition_preview(view, &sheet, n);
+        let out = format!("{}-map.png", path.trim_end_matches(".png"));
+        map.save(&out).unwrap();
+        eprintln!("map: {out}");
+        if let Ok(material) = std::env::var("LIVE_MATERIAL") {
+            let m = image::open(&material).unwrap().to_rgba8();
+            let same = tile(&sheet, 15, n).as_raw() == m.as_raw();
+            eprintln!(
+                "tile 15 against {material}: {}",
+                if same { "match" } else { "differs" }
+            );
+        }
+    }
 }

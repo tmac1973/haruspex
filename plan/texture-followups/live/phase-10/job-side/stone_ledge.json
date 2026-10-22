@@ -1,0 +1,186 @@
+{
+	"version": 1,
+	"view": "side",
+	"tile_size": 64,
+	"columns": 4,
+	"a": "stone",
+	"order": "NW=1 NE=2 SW=4 SE=8; a set bit is a/solid",
+	"tiles": [
+		{
+			"index": 0,
+			"x": 0,
+			"y": 0,
+			"corners": {
+				"nw": "air",
+				"ne": "air",
+				"sw": "air",
+				"se": "air"
+			}
+		},
+		{
+			"index": 1,
+			"x": 64,
+			"y": 0,
+			"corners": {
+				"nw": "stone",
+				"ne": "air",
+				"sw": "air",
+				"se": "air"
+			}
+		},
+		{
+			"index": 2,
+			"x": 128,
+			"y": 0,
+			"corners": {
+				"nw": "air",
+				"ne": "stone",
+				"sw": "air",
+				"se": "air"
+			}
+		},
+		{
+			"index": 3,
+			"x": 192,
+			"y": 0,
+			"corners": {
+				"nw": "stone",
+				"ne": "stone",
+				"sw": "air",
+				"se": "air"
+			}
+		},
+		{
+			"index": 4,
+			"x": 0,
+			"y": 64,
+			"corners": {
+				"nw": "air",
+				"ne": "air",
+				"sw": "stone",
+				"se": "air"
+			}
+		},
+		{
+			"index": 5,
+			"x": 64,
+			"y": 64,
+			"corners": {
+				"nw": "stone",
+				"ne": "air",
+				"sw": "stone",
+				"se": "air"
+			}
+		},
+		{
+			"index": 6,
+			"x": 128,
+			"y": 64,
+			"corners": {
+				"nw": "air",
+				"ne": "stone",
+				"sw": "stone",
+				"se": "air"
+			}
+		},
+		{
+			"index": 7,
+			"x": 192,
+			"y": 64,
+			"corners": {
+				"nw": "stone",
+				"ne": "stone",
+				"sw": "stone",
+				"se": "air"
+			}
+		},
+		{
+			"index": 8,
+			"x": 0,
+			"y": 128,
+			"corners": {
+				"nw": "air",
+				"ne": "air",
+				"sw": "air",
+				"se": "stone"
+			}
+		},
+		{
+			"index": 9,
+			"x": 64,
+			"y": 128,
+			"corners": {
+				"nw": "stone",
+				"ne": "air",
+				"sw": "air",
+				"se": "stone"
+			}
+		},
+		{
+			"index": 10,
+			"x": 128,
+			"y": 128,
+			"corners": {
+				"nw": "air",
+				"ne": "stone",
+				"sw": "air",
+				"se": "stone"
+			}
+		},
+		{
+			"index": 11,
+			"x": 192,
+			"y": 128,
+			"corners": {
+				"nw": "stone",
+				"ne": "stone",
+				"sw": "air",
+				"se": "stone"
+			}
+		},
+		{
+			"index": 12,
+			"x": 0,
+			"y": 192,
+			"corners": {
+				"nw": "air",
+				"ne": "air",
+				"sw": "stone",
+				"se": "stone"
+			}
+		},
+		{
+			"index": 13,
+			"x": 64,
+			"y": 192,
+			"corners": {
+				"nw": "stone",
+				"ne": "air",
+				"sw": "stone",
+				"se": "stone"
+			}
+		},
+		{
+			"index": 14,
+			"x": 128,
+			"y": 192,
+			"corners": {
+				"nw": "air",
+				"ne": "stone",
+				"sw": "stone",
+				"se": "stone"
+			}
+		},
+		{
+			"index": 15,
+			"x": 192,
+			"y": 192,
+			"corners": {
+				"nw": "stone",
+				"ne": "stone",
+				"sw": "stone",
+				"se": "stone"
+			}
+		}
+	]
+}

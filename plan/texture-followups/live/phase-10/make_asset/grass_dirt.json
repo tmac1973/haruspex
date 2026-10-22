@@ -1,0 +1,187 @@
+{
+	"version": 1,
+	"view": "top",
+	"tile_size": 32,
+	"columns": 4,
+	"a": "a",
+	"b": "b",
+	"order": "NW=1 NE=2 SW=4 SE=8; a set bit is a/solid",
+	"tiles": [
+		{
+			"index": 0,
+			"x": 0,
+			"y": 0,
+			"corners": {
+				"nw": "b",
+				"ne": "b",
+				"sw": "b",
+				"se": "b"
+			}
+		},
+		{
+			"index": 1,
+			"x": 32,
+			"y": 0,
+			"corners": {
+				"nw": "a",
+				"ne": "b",
+				"sw": "b",
+				"se": "b"
+			}
+		},
+		{
+			"index": 2,
+			"x": 64,
+			"y": 0,
+			"corners": {
+				"nw": "b",
+				"ne": "a",
+				"sw": "b",
+				"se": "b"
+			}
+		},
+		{
+			"index": 3,
+			"x": 96,
+			"y": 0,
+			"corners": {
+				"nw": "a",
+				"ne": "a",
+				"sw": "b",
+				"se": "b"
+			}
+		},
+		{
+			"index": 4,
+			"x": 0,
+			"y": 32,
+			"corners": {
+				"nw": "b",
+				"ne": "b",
+				"sw": "a",
+				"se": "b"
+			}
+		},
+		{
+			"index": 5,
+			"x": 32,
+			"y": 32,
+			"corners": {
+				"nw": "a",
+				"ne": "b",
+				"sw": "a",
+				"se": "b"
+			}
+		},
+		{
+			"index": 6,
+			"x": 64,
+			"y": 32,
+			"corners": {
+				"nw": "b",
+				"ne": "a",
+				"sw": "a",
+				"se": "b"
+			}
+		},
+		{
+			"index": 7,
+			"x": 96,
+			"y": 32,
+			"corners": {
+				"nw": "a",
+				"ne": "a",
+				"sw": "a",
+				"se": "b"
+			}
+		},
+		{
+			"index": 8,
+			"x": 0,
+			"y": 64,
+			"corners": {
+				"nw": "b",
+				"ne": "b",
+				"sw": "b",
+				"se": "a"
+			}
+		},
+		{
+			"index": 9,
+			"x": 32,
+			"y": 64,
+			"corners": {
+				"nw": "a",
+				"ne": "b",
+				"sw": "b",
+				"se": "a"
+			}
+		},
+		{
+			"index": 10,
+			"x": 64,
+			"y": 64,
+			"corners": {
+				"nw": "b",
+				"ne": "a",
+				"sw": "b",
+				"se": "a"
+			}
+		},
+		{
+			"index": 11,
+			"x": 96,
+			"y": 64,
+			"corners": {
+				"nw": "a",
+				"ne": "a",
+				"sw": "b",
+				"se": "a"
+			}
+		},
+		{
+			"index": 12,
+			"x": 0,
+			"y": 96,
+			"corners": {
+				"nw": "b",
+				"ne": "b",
+				"sw": "a",
+				"se": "a"
+			}
+		},
+		{
+			"index": 13,
+			"x": 32,
+			"y": 96,
+			"corners": {
+				"nw": "a",
+				"ne": "b",
+				"sw": "a",
+				"se": "a"
+			}
+		},
+		{
+			"index": 14,
+			"x": 64,
+			"y": 96,
+			"corners": {
+				"nw": "b",
+				"ne": "a",
+				"sw": "a",
+				"se": "a"
+			}
+		},
+		{
+			"index": 15,
+			"x": 96,
+			"y": 96,
+			"corners": {
+				"nw": "a",
+				"ne": "a",
+				"sw": "a",
+				"se": "a"
+			}
+		}
+	]
+}
