@@ -8,6 +8,7 @@ use image::{Rgba, RgbaImage};
 
 use super::noise::{cell_len, cell_of, count_for, fbm, worley, Rng};
 use super::recipe::{parse_color, Axis, Layer, TextureRecipe, DESIGN_SIZE};
+use super::shade::{jitter_cells, relief_cut, relief_raised, NONE};
 
 const BAYER: [[f32; 4]; 4] = [
     [0.0, 8.0, 2.0, 10.0],
@@ -75,6 +76,7 @@ fn layer(img: &mut RgbaImage, rng: &mut Rng, l: &Layer) {
             cells,
             coverage,
             width,
+            relief,
         } => {
             let c = rgb(color);
             let (f1, f2) = worley(rng, n, *cells);
@@ -82,25 +84,36 @@ fn layer(img: &mut RgbaImage, rng: &mut Rng, l: &Layer) {
             // are not a complete net of cells.
             let keep = fbm(rng, n, 2, 2);
             let w = scaled(width.unwrap_or(0.8), n, 0.6);
+            let mut groove = vec![false; (n * n) as usize];
             for i in 0..(n * n) as usize {
                 if f2[i] - f1[i] < w && keep[i] > *coverage {
                     put(img, i as u32 % n, i as u32 / n, c);
+                    groove[i] = true;
                 }
+            }
+            if let Some(r) = relief.filter(|r| *r > 0.0) {
+                relief_cut(img, &groove, r);
             }
         }
         Layer::Blotches {
             color,
             cells,
             threshold,
+            relief,
         } => {
             let c = rgb(color);
             // Never coarser than 4 cells: a field with a period of 2 repeats
             // visibly when the tile is laid 2×2 — the prototype's park.
             let f = fbm(rng, n, (*cells).max(4), 2);
+            let mut patch = vec![NONE; (n * n) as usize];
             for (i, v) in f.iter().enumerate() {
                 if v > threshold {
                     put(img, i as u32 % n, i as u32 / n, c);
+                    patch[i] = 0;
                 }
+            }
+            if let Some(r) = relief.filter(|r| *r > 0.0) {
+                relief_raised(img, &patch, r);
             }
         }
         Layer::Bricks {
@@ -110,6 +123,8 @@ fn layer(img: &mut RgbaImage, rng: &mut Rng, l: &Layer) {
             offset,
             colors,
             mortar,
+            relief,
+            jitter,
         } => {
             let cols = count_for(n, scaled(*w, n, 2.0));
             let mut rows = count_for(n, scaled(*h, n, 2.0));
@@ -123,6 +138,7 @@ fn layer(img: &mut RgbaImage, rng: &mut Rng, l: &Layer) {
             let ids: Vec<usize> = (0..cols * rows).map(|_| rng.below(shades.len())).collect();
             let m = rgb(mortar);
             let brick_w = n / cols;
+            let mut cell = vec![NONE; (n * n) as usize];
             for y in 0..n {
                 let (row, oy) = cell_of(y, n, rows);
                 // Odd rows shift by half a brick: running bond.
@@ -136,6 +152,7 @@ fn layer(img: &mut RgbaImage, rng: &mut Rng, l: &Layer) {
                     if oy < gap || ox < gap {
                         put(img, x, y, m);
                     } else {
+                        cell[(y * n + x) as usize] = row * cols + col;
                         let p = img.get_pixel(x, y).0;
                         let s = shades[ids[(row * cols + col) as usize]];
                         // Half the brick's own colour, half the base under it,
@@ -149,6 +166,12 @@ fn layer(img: &mut RgbaImage, rng: &mut Rng, l: &Layer) {
                         );
                     }
                 }
+            }
+            if let Some(j) = jitter.filter(|j| *j > 0.0) {
+                jitter_cells(img, &cell, j, rng);
+            }
+            if let Some(r) = relief.filter(|r| *r > 0.0) {
+                relief_raised(img, &cell, r);
             }
         }
         Layer::Stripes {
@@ -489,6 +512,8 @@ mod tests {
                 offset,
                 colors: vec!["#c8c8c8".into()],
                 mortar: "#ff0000".into(),
+                relief: None,
+                jitter: None,
             }])
         };
         // Stack bond: mortar on every 8th row and column, faces half brick
@@ -536,6 +561,7 @@ mod tests {
                 color: "#ffffff".into(),
                 cells: 4,
                 threshold,
+                relief: None,
             }])
         };
         assert!(all_pixels(&draw(&blotch(1.0), 32, 2), BLACK));
@@ -559,6 +585,7 @@ mod tests {
                 cells: 3,
                 coverage,
                 width: None,
+                relief: None,
             }])
         };
         assert!(all_pixels(&draw(&cracks(1.0), 32, 2), BLACK));
@@ -607,5 +634,118 @@ mod tests {
             shade: 0.0,
         });
         assert!(all_pixels(&draw(&r, 16, 1), BLACK));
+    }
+
+    fn lum(img: &RgbaImage, x: u32, y: u32) -> f64 {
+        let p = img.get_pixel(x, y).0;
+        p[0] as f64 + p[1] as f64 + p[2] as f64
+    }
+
+    fn mean(v: &[f64]) -> f64 {
+        v.iter().sum::<f64>() / v.len().max(1) as f64
+    }
+
+    fn bricks(relief: Option<f32>, jitter: Option<f32>) -> TextureRecipe {
+        let mut r = flat(vec![Layer::Bricks {
+            w: 8.0,
+            h: 8.0,
+            gap: 1.0,
+            offset: false,
+            colors: vec!["#808080".into()],
+            mortar: "#000000".into(),
+            relief,
+            jitter,
+        }]);
+        r.base.ramp = vec!["#808080".into(), "#808080".into()];
+        r
+    }
+
+    #[test]
+    fn relief_lights_the_top_left_of_each_brick() {
+        let img = draw(&bricks(Some(1.0), None), 32, 3);
+        let mortar = |x: u32, y: u32| rgb_at(&img, x, y) == BLACK;
+        let (mut lit, mut shaded, mut inside) = (vec![], vec![], vec![]);
+        for y in 0..32 {
+            for x in 0..32 {
+                if mortar(x, y) {
+                    continue;
+                }
+                let up = mortar(x, (y + 31) % 32);
+                let down = mortar(x, (y + 1) % 32);
+                if up {
+                    lit.push(lum(&img, x, y));
+                } else if down {
+                    shaded.push(lum(&img, x, y));
+                } else if !mortar((x + 31) % 32, y) && !mortar((x + 1) % 32, y) {
+                    inside.push(lum(&img, x, y));
+                }
+            }
+        }
+        assert!(
+            mean(&lit) > mean(&inside),
+            "lit {} inside {}",
+            mean(&lit),
+            mean(&inside)
+        );
+        assert!(
+            mean(&shaded) < mean(&inside),
+            "shaded {} inside {}",
+            mean(&shaded),
+            mean(&inside)
+        );
+    }
+
+    #[test]
+    fn relief_cuts_cracks_in() {
+        let crack = |relief| {
+            let mut r = flat(vec![Layer::Cracks {
+                color: "#000000".into(),
+                cells: 3,
+                coverage: 0.0,
+                width: None,
+                relief,
+            }]);
+            r.base.ramp = vec!["#808080".into(), "#808080".into()];
+            draw(&r, 32, 4)
+        };
+        let (plain, cut) = (crack(None), crack(Some(1.0)));
+        // Below a crack pixel, on the plain base: the lip catches the light.
+        let mut lips = vec![];
+        for y in 0..32 {
+            for x in 0..32 {
+                let below = (y + 1) % 32;
+                if rgb_at(&plain, x, y) == BLACK && rgb_at(&plain, x, below) != BLACK {
+                    lips.push(lum(&cut, x, below) - lum(&plain, x, below));
+                }
+            }
+        }
+        assert!(!lips.is_empty());
+        assert!(mean(&lips) > 0.0);
+    }
+
+    #[test]
+    fn jitter_changes_brick_shades_only_when_set() {
+        let none = draw(&bricks(None, None), 32, 5);
+        assert_eq!(
+            none.as_raw(),
+            draw(&bricks(None, Some(0.0)), 32, 5).as_raw()
+        );
+        assert_eq!(
+            none.as_raw(),
+            draw(&bricks(Some(0.0), None), 32, 5).as_raw()
+        );
+        let jittered = draw(&bricks(None, Some(1.0)), 32, 5);
+        // Brick interiors: one colour without jitter, several with it.
+        let shades = |img: &RgbaImage| {
+            let mut set = std::collections::HashSet::new();
+            for y in (4..32).step_by(8) {
+                for x in (4..32).step_by(8) {
+                    set.insert(rgb_at(img, x, y));
+                }
+            }
+            set.len()
+        };
+        assert_eq!(shades(&none), 1);
+        assert!(shades(&jittered) > 1);
     }
 }

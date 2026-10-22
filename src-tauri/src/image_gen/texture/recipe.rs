@@ -80,6 +80,10 @@ pub enum Layer {
         #[serde(default = "default_crack_width")]
         #[ts(optional)]
         width: Option<f32>,
+        /// 0 to 1: how deeply the cracks look cut in, lit from the top left.
+        #[serde(default)]
+        #[ts(optional)]
+        relief: Option<f32>,
     },
     /// Irregular patches: stains, moss, puddles, bare earth. Higher
     /// `threshold` means fewer, smaller patches.
@@ -87,6 +91,10 @@ pub enum Layer {
         color: String,
         cells: u32,
         threshold: f32,
+        /// 0 to 1: how raised the patches look, lit from the top left.
+        #[serde(default)]
+        #[ts(optional)]
+        relief: Option<f32>,
     },
     /// Bricks or blocks in rows, each a random one of `colors`, with mortar.
     Bricks {
@@ -96,6 +104,14 @@ pub enum Layer {
         offset: bool,
         colors: Vec<String>,
         mortar: String,
+        /// 0 to 1: how raised the bricks look, lit from the top left.
+        #[serde(default)]
+        #[ts(optional)]
+        relief: Option<f32>,
+        /// 0 to 1: how much each brick's shade differs from its colour.
+        #[serde(default)]
+        #[ts(optional)]
+        jitter: Option<f32>,
     },
     /// A painted line, solid or dashed: lane markings, parking bays.
     Stripes {
@@ -172,6 +188,11 @@ fn range(field: &str, v: f32, lo: f32, hi: f32) -> Result<(), String> {
     }
 }
 
+/// An optional 0-to-1 strength, checked when given.
+fn unit(field: &str, v: Option<f32>) -> Result<(), String> {
+    v.map_or(Ok(()), |v| range(field, v, 0.0, 1.0))
+}
+
 fn range_u(field: &str, v: u32, lo: u32, hi: u32) -> Result<(), String> {
     range(field, v as f32, lo as f32, hi as f32)
 }
@@ -203,20 +224,24 @@ pub fn validate(r: &TextureRecipe) -> Result<(), String> {
                 cells,
                 coverage,
                 width,
+                relief,
             } => {
                 color(&p("color"), c)?;
                 range_u(&p("cells"), *cells, 1, 12)?;
                 range(&p("coverage"), *coverage, 0.0, 1.0)?;
                 range(&p("width"), width.unwrap_or(0.8), 0.2, 4.0)?;
+                unit(&p("relief"), *relief)?;
             }
             Layer::Blotches {
                 color: c,
                 cells,
                 threshold,
+                relief,
             } => {
                 color(&p("color"), c)?;
                 range_u(&p("cells"), *cells, 1, 16)?;
                 range(&p("threshold"), *threshold, 0.0, 1.0)?;
+                unit(&p("relief"), *relief)?;
             }
             Layer::Bricks {
                 w,
@@ -224,6 +249,8 @@ pub fn validate(r: &TextureRecipe) -> Result<(), String> {
                 gap,
                 colors,
                 mortar,
+                relief,
+                jitter,
                 ..
             } => {
                 range(&p("w"), *w, 2.0, DESIGN_SIZE)?;
@@ -236,6 +263,8 @@ pub fn validate(r: &TextureRecipe) -> Result<(), String> {
                     color(&format!("{}[{k}]", p("colors")), c)?;
                 }
                 color(&p("mortar"), mortar)?;
+                unit(&p("relief"), *relief)?;
+                unit(&p("jitter"), *jitter)?;
             }
             Layer::Stripes {
                 pos,
@@ -340,11 +369,13 @@ mod tests {
                 cells: 12,
                 coverage: 0.0,
                 width: None,
+                relief: None,
             },
             Layer::Blotches {
                 color: "#111111".into(),
                 cells: 1,
                 threshold: 1.0,
+                relief: None,
             },
             Layer::Bricks {
                 w: 8.0,
@@ -353,6 +384,8 @@ mod tests {
                 offset: true,
                 colors: vec!["#aa0000".into(); 6],
                 mortar: "#cccccc".into(),
+                relief: None,
+                jitter: None,
             },
             Layer::Stripes {
                 axis: Axis::X,
@@ -421,7 +454,7 @@ mod tests {
 
     #[test]
     fn validate_names_the_out_of_range_layer_field() {
-        let cases: Vec<(Layer, &str)> = vec![
+        let mut cases: Vec<(Layer, &str)> = vec![
             (
                 Layer::Speckle {
                     color: "#111111".into(),
@@ -449,6 +482,7 @@ mod tests {
                     cells: 13,
                     coverage: 0.5,
                     width: None,
+                    relief: None,
                 },
                 "layers[0].cells:",
             ),
@@ -458,6 +492,7 @@ mod tests {
                     cells: 4,
                     coverage: 0.5,
                     width: Some(0.1),
+                    relief: None,
                 },
                 "layers[0].width:",
             ),
@@ -466,6 +501,7 @@ mod tests {
                     color: "#111111".into(),
                     cells: 4,
                     threshold: 1.1,
+                    relief: None,
                 },
                 "layers[0].threshold:",
             ),
@@ -477,6 +513,8 @@ mod tests {
                     offset: false,
                     colors: vec!["#111111".into()],
                     mortar: "#222222".into(),
+                    relief: None,
+                    jitter: None,
                 },
                 "layers[0].w:",
             ),
@@ -488,6 +526,8 @@ mod tests {
                     offset: false,
                     colors: vec![],
                     mortar: "#222222".into(),
+                    relief: None,
+                    jitter: None,
                 },
                 "layers[0].colors: give 1 to 6",
             ),
@@ -499,6 +539,8 @@ mod tests {
                     offset: false,
                     colors: vec!["#111111".into(), "#gggggg".into()],
                     mortar: "#222222".into(),
+                    relief: None,
+                    jitter: None,
                 },
                 "layers[0].colors[1]:",
             ),
@@ -510,6 +552,8 @@ mod tests {
                     offset: false,
                     colors: vec!["#111111".into()],
                     mortar: "nope".into(),
+                    relief: None,
+                    jitter: None,
                 },
                 "layers[0].mortar:",
             ),
@@ -571,6 +615,42 @@ mod tests {
                 "layers[0].step:",
             ),
         ];
+        cases.push((
+            Layer::Bricks {
+                w: 4.0,
+                h: 4.0,
+                gap: 1.0,
+                offset: false,
+                colors: vec!["#111111".into()],
+                mortar: "#222222".into(),
+                relief: Some(1.1),
+                jitter: None,
+            },
+            "layers[0].relief:",
+        ));
+        cases.push((
+            Layer::Bricks {
+                w: 4.0,
+                h: 4.0,
+                gap: 1.0,
+                offset: false,
+                colors: vec!["#111111".into()],
+                mortar: "#222222".into(),
+                relief: None,
+                jitter: Some(-0.1),
+            },
+            "layers[0].jitter:",
+        ));
+        cases.push((
+            Layer::Cracks {
+                color: "#111111".into(),
+                cells: 4,
+                coverage: 0.5,
+                width: None,
+                relief: Some(2.0),
+            },
+            "layers[0].relief:",
+        ));
         for (layer, want) in cases {
             let msg = err_of(&recipe(vec![layer]));
             assert!(msg.starts_with(want), "{msg:?} should start with {want:?}");

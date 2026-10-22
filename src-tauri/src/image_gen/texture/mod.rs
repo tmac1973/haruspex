@@ -12,6 +12,7 @@
 pub mod layers;
 pub mod noise;
 pub mod recipe;
+pub mod shade;
 
 use image::RgbaImage;
 
@@ -94,6 +95,7 @@ mod tests {
                     cells: 3,
                     coverage: 0.4,
                     width: None,
+                    relief: None,
                 },
             ),
             (
@@ -102,6 +104,7 @@ mod tests {
                     color: c(),
                     cells: 4,
                     threshold: 0.7,
+                    relief: None,
                 },
             ),
             (
@@ -113,6 +116,8 @@ mod tests {
                     offset: true,
                     colors: vec!["#c2bcaa".into(), "#b8b2a0".into()],
                     mortar: "#6e6a60".into(),
+                    relief: None,
+                    jitter: None,
                 },
             ),
             (
@@ -148,6 +153,38 @@ mod tests {
                     step: 8.0,
                     light: "#77746b".into(),
                     dark: "#4a4843".into(),
+                },
+            ),
+            (
+                "bricks with relief and jitter",
+                Layer::Bricks {
+                    w: 8.0,
+                    h: 4.0,
+                    gap: 1.0,
+                    offset: true,
+                    colors: vec!["#c2bcaa".into(), "#b8b2a0".into()],
+                    mortar: "#6e6a60".into(),
+                    relief: Some(1.0),
+                    jitter: Some(1.0),
+                },
+            ),
+            (
+                "cracks with relief",
+                Layer::Cracks {
+                    color: c(),
+                    cells: 3,
+                    coverage: 0.4,
+                    width: None,
+                    relief: Some(1.0),
+                },
+            ),
+            (
+                "blotches with relief",
+                Layer::Blotches {
+                    color: c(),
+                    cells: 4,
+                    threshold: 0.7,
+                    relief: Some(1.0),
                 },
             ),
         ]
@@ -251,7 +288,7 @@ mod tests {
 
     #[test]
     fn a_recipe_and_seed_always_give_the_same_pixels() {
-        let r = with(every_layer().into_iter().map(|(_, l)| l).collect());
+        let r = with(every_layer().into_iter().take(8).map(|(_, l)| l).collect());
         let a = render(&r, 32, 9, 2, &[]).unwrap();
         let b = render(&r, 32, 9, 2, &[]).unwrap();
         assert_eq!(a[0].as_raw(), b[0].as_raw());
@@ -279,6 +316,7 @@ mod tests {
                 cells: 3,
                 coverage: 0.55,
                 width: None,
+                relief: None,
             },
         ]);
         let v = render(&r, 32, 1, 4, &[]).unwrap();
@@ -308,7 +346,7 @@ mod tests {
     #[test]
     fn snaps_to_the_palette_given() {
         let palette = [0x101010ff, 0x808080ff, 0xf0f0f0ff];
-        let r = with(every_layer().into_iter().map(|(_, l)| l).collect());
+        let r = with(every_layer().into_iter().take(8).map(|(_, l)| l).collect());
         let img = &render(&r, 32, 3, 1, &palette).unwrap()[0];
         let allowed: Vec<[u8; 4]> = palette
             .iter()
@@ -355,7 +393,11 @@ mod tests {
     }
 
     fn prototype_recipes() -> Vec<(String, TextureRecipe)> {
-        let text = include_str!("fixtures/prototype-recipes.json");
+        fixture_recipes(include_str!("fixtures/prototype-recipes.json"))
+    }
+
+    /// Named recipes from a fixture file, in file order.
+    fn fixture_recipes(text: &str) -> Vec<(String, TextureRecipe)> {
         let map: serde_json::Map<String, serde_json::Value> = serde_json::from_str(text).unwrap();
         map.into_iter()
             .map(|(k, v)| {
@@ -365,6 +407,13 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    #[test]
+    fn the_shaded_example_recipes_parse_and_render() {
+        for (name, r) in fixture_recipes(include_str!("fixtures/shaded-recipes.json")) {
+            render(&r, 32, 1, 4, &[]).unwrap_or_else(|e| panic!("{name}: {e}"));
+        }
     }
 
     #[test]
@@ -430,7 +479,10 @@ mod tests {
             return;
         };
         std::fs::create_dir_all(&dir).unwrap();
-        let recipes = prototype_recipes();
+        let mut recipes = prototype_recipes();
+        recipes.extend(fixture_recipes(include_str!(
+            "fixtures/shaded-recipes.json"
+        )));
         let (n, scale) = (32u32, 6u32);
         let t = n * scale;
         let cols = 4u32;
