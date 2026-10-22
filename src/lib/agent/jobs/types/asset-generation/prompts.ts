@@ -280,7 +280,7 @@ export function recipeGuide(): string[] {
  * river forced into their colours is brown.
  */
 export function recipePrompt(
-	textures: Array<{ id: string; prompt: string }>,
+	textures: Array<{ id: string; prompt: string; capOf?: string }>,
 	palette: number[],
 	stylePrompt: string,
 	feedback?: Map<string, string>,
@@ -316,7 +316,13 @@ export function recipePrompt(
 						const seen = imageShown
 							? '. The image shows your last recipe laid 3×3, as a map lays it.'
 							: ':';
-						return `- ${t.id}: ${t.prompt}${fix ? `\n  Your last recipe for this needs changing${seen} ${fix}` : ''}`;
+						// A cap is laid as a band along the top of platform ground,
+						// so it must be the surface itself: the live run's grass
+						// cap was blades over dark soil and read as dirt.
+						const cap = t.capOf
+							? `\n  It is also the top surface of ${t.capOf} in a side view, drawn as a band on its upper faces: make it the surface itself filling the tile (solid turf, snow, moss), not tufts over soil.`
+							: '';
+						return `- ${t.id}: ${t.prompt}${cap}${fix ? `\n  Your last recipe for this needs changing${seen} ${fix}` : ''}`;
 					}),
 					''
 				]

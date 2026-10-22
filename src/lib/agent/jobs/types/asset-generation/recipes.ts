@@ -92,8 +92,14 @@ async function askFor(
 	sets: TransitionEntry[] = []
 ): Promise<Asked> {
 	const shown = image !== undefined && deps.visionSupported;
+	// The ground each texture caps, when a side set uses it as a cap.
+	const capOf = new Map((spec.transitions ?? []).filter((t) => t.cap).map((t) => [t.cap!, t.a]));
 	const prompt = recipePrompt(
-		entries.map((e) => ({ id: e.id, prompt: e.prompt })),
+		entries.map((e) => ({
+			id: e.id,
+			prompt: e.prompt,
+			...(capOf.has(e.id) ? { capOf: capOf.get(e.id) } : {})
+		})),
 		paletteOf(spec),
 		spec.style.prompt,
 		feedback,

@@ -252,3 +252,21 @@ describe('transition edges', () => {
 		expect(await reviseEdge(withSets().transitions[1], 'no', d)).toBeNull();
 	});
 });
+
+describe('a texture used as a cap', () => {
+	it('is asked for as the surface itself, not tufts over soil', async () => {
+		const s: AssetSpec = {
+			...spec(),
+			transitions: [
+				{ id: 'ledge', view: 'side', a: 'street', cap: 'grass', out: 't/l.png', edge: {} }
+			]
+		};
+		const d = deps([{ street: R, grass: R }]);
+		await writeRecipes(s, d);
+		const prompt = vi.mocked(d.ask).mock.calls[0][0];
+		expect(prompt).toMatch(
+			/- grass: short grass\n  It is also the top surface of street in a side view/
+		);
+		expect(prompt).not.toMatch(/- street: cracked asphalt\n  It is also/);
+	});
+});
