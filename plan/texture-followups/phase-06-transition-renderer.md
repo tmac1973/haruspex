@@ -186,3 +186,25 @@ Look at them before the PR.
 
 Revert the commit and rerun `./scripts/export-ipc-types.sh`. Nothing in
 phases 01–05 uses it. Revert phases 07–09 first if they have landed.
+
+## As built
+
+- **The blend is sampled on the tile's edges.** Columns and rows 0 and
+  `n − 1` sit exactly at `u, v = 0` and `1`, so the edge pixels depend only
+  on that edge's two corners. A pixel one past an edge (`solid_at` with an
+  out-of-tile coordinate) is then exactly what the neighbour draws there.
+  The rim uses that one-pixel look past the edge. Sampling at pixel centres
+  left a one-pixel break in the rim wherever a border crossed a tile edge;
+  `neighbours_agree_at_every_edge` caught it.
+- **The cap bound holds for flat and inner-corner tiles only** (12, 13,
+  14). A tile with one solid corner curves its upward face down toward the
+  tile below, and the cap there is clipped by a few pixels. That is where
+  the corner turns into a side face, which takes the rim. The test checks
+  12–14, not every tile.
+- **The border field is finer than planned:** `fbm` at 8 cells, 3 octaves,
+  with a default wobble of 0.1. At 4 cells and 0.15, every island in the
+  preview had the same two big lumps on its top edge.
+- **Lone pixels are cleaned up.** A pixel whose four neighbours all
+  disagree with it takes their side, which removes specks the noise left
+  along the border, each ringed in rim.
+- `checker` in `sheet.rs` is `pub(crate)` so the preview can show air.

@@ -13,6 +13,7 @@ pub mod layers;
 pub mod noise;
 pub mod recipe;
 pub mod shade;
+pub mod transition;
 
 use image::RgbaImage;
 
