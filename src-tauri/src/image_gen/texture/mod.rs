@@ -376,6 +376,50 @@ mod tests {
         }
     }
 
+    /// FNV-1a over an image's raw bytes, for the pixel record below.
+    fn pixel_hash(img: &RgbaImage) -> u64 {
+        img.as_raw().iter().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+            (h ^ *b as u64).wrapping_mul(0x0100_0000_01b3)
+        })
+    }
+
+    /// Each prototype recipe's four variants at 32 px, seed 1, hashed.
+    fn prototype_hashes() -> std::collections::BTreeMap<String, Vec<String>> {
+        prototype_recipes()
+            .into_iter()
+            .map(|(name, r)| {
+                let hashes = render(&r, 32, 1, 4, &[])
+                    .unwrap()
+                    .iter()
+                    .map(|img| format!("{:016x}", pixel_hash(img)))
+                    .collect();
+                (name, hashes)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_prototype_recipes_draw_the_pixels_they_always_have() {
+        // A recipe saved in someone's spec must keep drawing the same tiles
+        // when the renderer learns new things. Rewrite the record only on
+        // purpose: `cargo test --lib record_prototype_pixels -- --ignored`.
+        let want: std::collections::BTreeMap<String, Vec<String>> =
+            serde_json::from_str(include_str!("fixtures/prototype-pixels.json")).unwrap();
+        assert_eq!(prototype_hashes(), want);
+    }
+
+    /// Not a check: rewrites `fixtures/prototype-pixels.json`.
+    #[test]
+    #[ignore]
+    fn record_prototype_pixels() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/image_gen/texture/fixtures/prototype-pixels.json"
+        );
+        let text = serde_json::to_string_pretty(&prototype_hashes()).unwrap();
+        std::fs::write(path, text + "\n").unwrap();
+    }
+
     /// Not a check: writes each prototype recipe tiled 2×2, with its four
     /// variants, for a person to look at.
     /// `TEXTURE_PREVIEW_DIR=/tmp/t cargo test --lib texture -- --ignored`
