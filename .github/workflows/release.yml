@@ -67,14 +67,27 @@ jobs:
       # tag for a draft release until it's published — but the action still
       # reports release_created=true. Without this step, the build job below
       # tries to checkout a tag that doesn't exist and fails immediately.
+      #
+      # always(): release-please sets its outputs as soon as it creates the
+      # release, then goes on to update the next release PR. If that later
+      # part fails (v0.2.9 hit a transient GitHub GraphQL error), the step
+      # fails with release_created=true already set — the build job still
+      # runs, so the tag must still be created or every build fails at
+      # checkout. Skips when the tag already exists, so a re-run is safe.
       - name: Create tag for draft release
-        if: steps.release.outputs.release_created == 'true'
+        if: always() && steps.release.outputs.release_created == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag_name }}
+          SHA: ${{ steps.release.outputs.sha }}
         run: |
+          if gh api "repos/${{ github.repository }}/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists"
+            exit 0
+          fi
           gh api repos/${{ github.repository }}/git/refs \
-            -f ref="refs/tags/${{ steps.release.outputs.tag_name }}" \
-            -f sha="${{ steps.release.outputs.sha }}"
+            -f ref="refs/tags/$TAG" \
+            -f sha="$SHA"
 
   build:
     needs: [release-please]
