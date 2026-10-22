@@ -45,6 +45,7 @@ A long-lived app, driven step by step:
   click <selector>          click something in the main window (CSS, or button=Text)
   fill <selector> <text>    fill a field in the main window (quote the selector)
   select <selector> <label> choose a <select>'s option by the text it shows
+  settings <json>           merge a patch into the app's settings, e.g. '{"imageBackendKind":"none"}'
                             (these three act on the one match on screen;
                             --nth N picks among several, --nth last the last)
   chats                     the desktop's chats (through the engine)
@@ -336,6 +337,7 @@ async function daemon(opts) {
 		click: (a) => app.click(a.selector, a.nth),
 		fill: (a) => app.fill(a.selector, a.text, a.nth),
 		select: (a) => app.select(a.selector, a.label, a.nth),
+		settings: (a) => app.settings(a.patch),
 		chats: () => app.engine({ type: 'chats.list' }),
 		'chat-send': (a) => app.chatSend(a.id, a.text, { wait: a.wait, ...turnOpts(a) }),
 		'chat-state': (a) => app.engine({ type: 'chat.get', id: a.id }),
@@ -458,6 +460,14 @@ async function client(cmd, values, positionals) {
 			need(2, 'a selector and an option');
 			args = { selector: positionals[0], label: positionals.slice(1).join(' '), nth: nth(values) };
 			break;
+		case 'settings':
+			need(1, 'a JSON patch');
+			try {
+				args = { patch: JSON.parse(positionals.join(' ')) };
+			} catch {
+				fail('the patch must be JSON, e.g. \'{"imageBackendKind":"none"}\'');
+			}
+			break;
 		case 'access':
 			need(1, 'tokens, trusted or lan');
 			args = { mode: positionals[0], hosts: positionals.slice(1) };
@@ -535,6 +545,7 @@ const CLIENT_COMMANDS = new Set([
 	'click',
 	'fill',
 	'select',
+	'settings',
 	'chats',
 	'chat-send',
 	'chat-state',
