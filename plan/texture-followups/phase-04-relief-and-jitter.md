@@ -123,3 +123,14 @@ with `relief` or `jitter` in a spec would then be refused by
 field is removed. Revert phases 05 and 06 first if they have landed:
 phase 05 uses `shade.rs`, and phase 06's tests draw materials with
 relief.
+
+## As built
+
+- The pixel record is `fixtures/prototype-pixels.json`: FNV-1a of each
+  prototype recipe's four variants at 32 px, seed 1. It was taken before
+  the renderer changed, and it still matches.
+- `fixtures/shaded-recipes.json` holds four relief and jitter examples
+  (subway tile, red brick, rubble, mossy ground) for `write_previews`. A
+  test renders them.
+- The tests that put every layer into one recipe take the first eight, the
+  layer cap, now that `every_layer()` lists more than that.

@@ -156,3 +156,18 @@ writes a new one only when the entry has no recipe. Phases 06–09 don't
 reference the new layers by name, so they survive a revert. Phase 10's
 live cases ask for materials (grass, wood) that would fall back to noise
 layers, so rerun phase 10 after a revert.
+
+## As built
+
+- **Hex scale corrected.** The vertical factor is `0.866 · r / c`, not
+  `c / r · 0.866` as step 3 says. The first value makes row spacing 0.866
+  of column spacing, which a true hexagonal lattice needs.
+- **Herringbone mortar is one-sided,** like `bricks`: on each brick's top
+  and left edges only. Mortar on all four sides drew twice the asked-for
+  gap, and the first preview showed bricks drowned in mortar.
+- **Stones take the averaged tiling bar,** like cracks, not the patterned
+  one. Their mortar falls anywhere, so one seed's seam can beat that
+  seed's sharpest column step by chance. Over 20 seeds, the worst seam
+  stays below the worst interior step for every option.
+- `fixtures/new-layer-recipes.json` holds one example per layer, rendered
+  by `write_previews` and checked by a test.
