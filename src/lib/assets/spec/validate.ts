@@ -5,7 +5,7 @@
  * "an output path escapes the working directory" is search for it.
  */
 
-import type { AssetSpec } from '#lib/assets/spec/types.ts';
+import type { AssetSpec, TransitionEntry } from '#lib/assets/spec/types.ts';
 import { ID_PATTERN } from '#lib/assets/spec/types.ts';
 
 /** Absolute, drive-lettered, or climbing out of the working directory. */
@@ -88,6 +88,71 @@ export function validateAssetSpec(spec: AssetSpec): string[] {
 				sheetKinds.set(e.sheet, { kind: e.kind, by: at });
 			}
 		}
+	}
+	problems.push(...transitionProblems(spec, seenIds, seenOut));
+	return problems;
+}
+
+/** What is wrong with the spec's transition sets, each naming its set. */
+function transitionProblems(
+	spec: AssetSpec,
+	ids: Set<string>,
+	outs: Map<string, string>
+): string[] {
+	const problems: string[] = [];
+	const kindOf = new Map(spec.entries.map((e) => [e.id, e.kind]));
+	const tiles = new Set(spec.entries.flatMap((e) => e.variants ?? []));
+	const material = (at: string, field: string, id: string | undefined) => {
+		if (id === undefined) return;
+		const kind = kindOf.get(id);
+		if (kind === undefined) problems.push(`${at}: ${field} "${id}" names no entry.`);
+		else if (kind !== 'texture') {
+			problems.push(`${at}: ${field} "${id}" is a ${kind}; a transition is drawn from textures.`);
+		}
+	};
+	for (const t of spec.transitions ?? []) {
+		const at = t.id || '(no id)';
+		if (!ID_PATTERN.test(t.id)) {
+			problems.push(
+				`${at}: the id must start with a letter and use only lowercase letters, digits and underscores (2-48 characters).`
+			);
+		}
+		if (ids.has(t.id)) problems.push(`${at}: duplicate id.`);
+		ids.add(t.id);
+		problems.push(...shapeProblems(at, t, material));
+		if (t.out.trim().length === 0) {
+			problems.push(`${at}: no output path.`);
+		} else if (escapesWorkdir(t.out)) {
+			problems.push(`${at}: the output path "${t.out}" is outside the working directory.`);
+		} else if (outs.has(t.out) || tiles.has(t.out)) {
+			problems.push(
+				`${at}: writes to "${t.out}", which ${outs.get(t.out) ?? 'a texture'} also writes to.`
+			);
+		} else {
+			outs.set(t.out, at);
+		}
+	}
+	return problems;
+}
+
+/** What is wrong with a set's materials and view; `material` checks one id. */
+function shapeProblems(
+	at: string,
+	t: TransitionEntry,
+	material: (at: string, field: string, id: string | undefined) => void
+): string[] {
+	const problems: string[] = [];
+	material(at, 'a', t.a || undefined);
+	if (!t.a) problems.push(`${at}: names no material as "a".`);
+	material(at, 'b', t.b);
+	material(at, 'cap', t.cap);
+	if (t.view === 'top' && !t.b) problems.push(`${at}: a top set needs a second material as "b".`);
+	if (t.view === 'top' && t.cap) problems.push(`${at}: only a side set has a cap.`);
+	if (t.view === 'side' && t.b) {
+		problems.push(`${at}: a side set is ground against air; drop "b" (a surface goes in "cap").`);
+	}
+	if (t.a && (t.a === t.b || t.a === t.cap)) {
+		problems.push(`${at}: both materials are "${t.a}".`);
 	}
 	return problems;
 }

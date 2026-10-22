@@ -113,4 +113,46 @@ describe('ReviewAssets', () => {
 		expect(mocks.invoke.mock.calls.some(([c]) => c === 'fs_move_in_workdir')).toBe(false);
 		expect(mocks.enqueue).not.toHaveBeenCalled();
 	});
+
+	it('shows a transition set as its sheet, starts it marked when rejected, and sends it back', async () => {
+		const withSet = {
+			...spec,
+			transitions: [
+				{
+					id: 'shore',
+					view: 'top',
+					a: 'coin',
+					b: 'grass',
+					out: 'assets/generated/transition/shore.png',
+					edge: { wobble: 0.2 },
+					rejected: 'Seams show.'
+				}
+			]
+		};
+		mocks.invoke.mockImplementation(
+			invokeRouter(
+				{
+					fs_read_text_full: () => JSON.stringify(withSet),
+					fs_read_bytes: () => [137, 80, 78, 71],
+					fs_path_exists: true
+				},
+				undefined
+			)
+		);
+		open();
+		await waitFor(() => screen.getByAltText('shore'));
+		expect(screen.getByText('rejected')).toBeTruthy();
+		expect(screen.getByLabelText('Note for shore')).toBeTruthy();
+		await fireEvent.click(screen.getByRole('button', { name: /Make 1 again/ }));
+		await waitFor(() => expect(mocks.enqueue).toHaveBeenCalled());
+		const written = mocks.invoke.mock.calls.find(([c]) => c === 'fs_write_text');
+		expect(JSON.parse(String(written?.[1]?.content)).transitions[0]).not.toHaveProperty('edge');
+		const moved = mocks.invoke.mock.calls
+			.filter(([c]) => c === 'fs_move_in_workdir')
+			.map(([, a]) => a?.fromRel);
+		expect(moved).toEqual([
+			'assets/generated/transition/shore.png',
+			'assets/generated/transition/shore.json'
+		]);
+	});
 });

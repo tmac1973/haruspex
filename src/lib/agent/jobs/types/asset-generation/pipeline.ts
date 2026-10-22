@@ -38,7 +38,19 @@ import { markRejections } from '#lib/agent/jobs/types/asset-generation/review.ts
 import { validateAssetSpec } from '#lib/assets/spec/validate.ts';
 import type { AssetSpec } from '#lib/assets/spec/types.ts';
 import { contactSheet, defaultProfile } from '#lib/assets/normalize.ts';
-import { renderTexture, tiledPreview, validateRecipe } from '#lib/assets/texture.ts';
+import {
+	renderTexture,
+	renderTransition,
+	tiledPreview,
+	transitionPreview,
+	validateRecipe,
+	validateTransitionEdge
+} from '#lib/assets/texture.ts';
+import {
+	applyTransitions,
+	runTransition,
+	type TransitionOutcome
+} from '#lib/agent/jobs/types/asset-generation/transitions.ts';
 import { resolveImageBackend } from '#lib/image/index.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { SUBMIT_ASSET_SPEC_TOOL } from '#lib/agent/tools/coding.ts';
@@ -46,26 +58,29 @@ import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import { deriveSpec, type DerivePayload } from '#lib/agent/jobs/types/asset-generation/derive.ts';
 import {
 	judgePrompt,
+	SIDE_HINT,
 	specDerivationPrompt,
-	specRetryPrompt
+	specRetryPrompt,
+	TRANSITION_HINT
 } from '#lib/agent/jobs/types/asset-generation/prompts.ts';
 import { establishAnchor } from '#lib/agent/jobs/types/asset-generation/anchor.ts';
 import {
 	parseJudgement,
-	parseRecipes,
+	parseSubmitted,
 	SUBMIT_ASSET_JUDGEMENT_TOOL,
 	SUBMIT_TEXTURE_RECIPES_TOOL,
 	type AssetJudgement,
-	type SubmittedRecipe
+	type Submitted
 } from '#lib/agent/jobs/types/asset-generation/tools.ts';
 import {
 	applyCodeTextures,
+	reviseEdge,
 	reviseRecipe,
 	writeRecipes,
 	type RecipeDeps
 } from '#lib/agent/jobs/types/asset-generation/recipes.ts';
 import { DEFAULT_TEXTURE_VARIANTS } from '#lib/agent/jobs/types/asset-generation/config.ts';
-import type { AssetEntry } from '#lib/assets/spec/types.ts';
+import type { AssetEntry, TransitionEntry } from '#lib/assets/spec/types.ts';
 import { generateEntries } from '#lib/agent/jobs/types/asset-generation/generate.ts';
 import { fitStyle } from '#lib/agent/jobs/types/asset-generation/promptBudget.ts';
 import {
@@ -268,9 +283,43 @@ async function judgeAsset(
 	anchor: Uint8Array,
 	hint?: string
 ): Promise<AssetJudgement | null> {
+	return judgeImage(
+		ctx,
+		judgePrompt(entry.prompt, spec.style.prompt, entry.kind, hint),
+		image,
+		anchor
+	);
+}
+
+/** A transition set's judging turn: the anchor, and the set laid out as a map. */
+function judgeTransition(
+	ctx: JobRunContext,
+	spec: AssetSpec,
+	t: TransitionEntry,
+	image: Uint8Array,
+	anchor: Uint8Array
+): Promise<AssetJudgement | null> {
+	const name = (id: string | undefined) => {
+		const e = spec.entries.find((x) => x.id === id);
+		return e?.drawn || e?.prompt || id || '';
+	};
+	const subject =
+		t.view === 'top'
+			? `${name(t.a)} meeting ${name(t.b)}, as edge tiles`
+			: `platform ground of ${name(t.a)}${t.cap ? ` with ${name(t.cap)} on top` : ''}`;
+	const hint = TRANSITION_HINT + (t.view === 'side' ? SIDE_HINT : '');
+	return judgeImage(ctx, judgePrompt(subject, spec.style.prompt, undefined, hint), image, anchor);
+}
+
+async function judgeImage(
+	ctx: JobRunContext,
+	userMessage: string,
+	image: Uint8Array,
+	anchor: Uint8Array
+): Promise<AssetJudgement | null> {
 	let verdict: AssetJudgement | null = null;
 	await ctx.runJobTurn({
-		userMessage: judgePrompt(entry.prompt, spec.style.prompt, entry.kind, hint),
+		userMessage,
 		history: [
 			{
 				role: 'user',
@@ -293,12 +342,61 @@ async function judgeAsset(
 	return verdict;
 }
 
+/**
+ * Draw the spec's transition sets, after its textures: each from its
+ * materials' recipes, judged as a small map when a judge will look. The spec
+ * with revised edges and rejection marks, when anything changed.
+ */
+async function drawTransitions(
+	ctx: JobRunContext,
+	spec: AssetSpec,
+	opts: { tileSize: number; anchor: Uint8Array; judging: boolean; signal: AbortSignal }
+): Promise<{ spec: AssetSpec | null; outcomes: TransitionOutcome[] }> {
+	const outcomes: TransitionOutcome[] = [];
+	const { tileSize, anchor } = opts;
+	for (const t of spec.transitions ?? []) {
+		ctx.patchStep(GENERATE, { streaming: `Drawing transition set ${t.id}…` });
+		outcomes.push(
+			await runTransition(t, {
+				spec,
+				tileSize,
+				signal: opts.signal,
+				exists: (rel) => workdirPathExists(ctx, rel),
+				writeBytes: (rel, bytes) => writeWorkdirBytes(ctx, rel, bytes),
+				writeText: (rel, text) => writeWorkdirFile(ctx, rel, text),
+				render: (view, a, other, edge, seeds) =>
+					renderTransition(view, a, other, edge, tileSize, seeds, []),
+				preview: (view, sheet) => transitionPreview(view, sheet, tileSize),
+				judge: opts.judging ? (set, image) => judgeTransition(ctx, spec, set, image, anchor) : null,
+				revise: (set, reason, preview) => reviseEdge(set, reason, recipeDeps(ctx), preview)
+			})
+		);
+	}
+	return { spec: applyTransitions(spec, outcomes), outcomes };
+}
+
+/** The step's line about transition sets, or none. */
+function transitionSummary(
+	spec: AssetSpec,
+	outcomes: TransitionOutcome[],
+	codeTextures: boolean
+): string[] {
+	if (!spec.transitions?.length) return [];
+	if (!codeTextures) {
+		return [
+			'Transition sets were skipped: they are drawn from code-drawn textures (Draw textures in code).'
+		];
+	}
+	const drawnSets = outcomes.filter((o) => o.status === 'done' || o.status === 'unresolved');
+	return [`${drawnSets.length} transition set(s) drawn of ${outcomes.length}.`];
+}
+
 /** The recipe stage's model turn and Rust's check, for `recipes.ts`. */
 function recipeDeps(ctx: JobRunContext): RecipeDeps {
 	return {
 		visionSupported: ctx.visionSupported(),
 		ask: async (prompt, image) => {
-			let got = new Map<string, SubmittedRecipe>();
+			let got: Submitted = { recipes: new Map(), edges: new Map() };
 			await ctx.runJobTurn({
 				userMessage: prompt,
 				// A revision looks at the tiles the judge turned down.
@@ -319,12 +417,13 @@ function recipeDeps(ctx: JobRunContext): RecipeDeps {
 				maxIterations: 1,
 				turnKind: 'asset.recipes',
 				onToolStart: (call: ResolvedToolCall) => {
-					if (call.name === SUBMIT_TEXTURE_RECIPES_TOOL) got = parseRecipes(call.arguments);
+					if (call.name === SUBMIT_TEXTURE_RECIPES_TOOL) got = parseSubmitted(call.arguments);
 				}
 			});
 			return got;
 		},
-		validate: validateRecipe
+		validate: validateRecipe,
+		validateEdge: validateTransitionEdge
 	};
 }
 
@@ -700,6 +799,19 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 			spec = marked ?? drawn!;
 			await writeWorkdirFile(ctx, specPath, renderAssetSpec(spec));
 		}
+		// Sets are drawn from code-drawn textures' recipes, after them.
+		const sets = codeTextures
+			? await drawTransitions(ctx, spec, {
+					tileSize,
+					anchor: anchored.image,
+					judging: ctx.visionSupported() && (cfg.vision_judge ?? DEFAULT_VISION_JUDGE),
+					signal: abort.signal
+				})
+			: { spec: null, outcomes: [] };
+		if (sets.spec) {
+			spec = sets.spec;
+			await writeWorkdirFile(ctx, specPath, renderAssetSpec(spec));
+		}
 		const tally = countByStatus(entries);
 		finishStep(
 			GENERATE,
@@ -712,6 +824,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 								`${variants} tile(s) each.`
 						]
 					: []),
+				...transitionSummary(spec, sets.outcomes, codeTextures),
 				...(sheets.length > 0 ? [sheetSummary(sheets)] : []),
 				...(degradedSummary(entries) ? [degradedSummary(entries)] : [])
 			].join('\n')
@@ -728,6 +841,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 				specPath,
 				anchor,
 				entries,
+				transitions: sets.outcomes,
 				reports: new Map(generated.map((g) => [g.outcome.id, g.report])),
 				sheets,
 				contactSheet: sheetPath,

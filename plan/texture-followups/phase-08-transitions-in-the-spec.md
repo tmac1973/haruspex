@@ -134,3 +134,11 @@ Revert the commit. A spec written with `transitions` meanwhile still
 parses: `parse.ts` keeps unknown top-level keys in `spec.unknown` and
 writes them back, so the sets survive untouched until this phase returns.
 Revert phase 09 first if it has landed.
+
+## As built
+
+- As planned. A set's id in `derivePlanSpec` is the plan's when it is a
+  valid, unused id; otherwise it is made from its materials ("water to
+  grass"), so one bad id doesn't drop the set.
+- `assetSpecPrompt` (guided planning) had no test. It now has
+  `pipeline.assetSpec.test.ts`, which checks both rules are in it.

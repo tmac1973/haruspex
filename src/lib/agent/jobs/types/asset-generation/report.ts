@@ -11,6 +11,7 @@
 import type { CheckReport } from '#lib/ipc/gen/CheckReport.ts';
 import type { AssetSpec } from '#lib/assets/spec/types.ts';
 import { describeFailures } from '#lib/agent/jobs/types/asset-generation/gate.ts';
+import type { TransitionOutcome } from '#lib/agent/jobs/types/asset-generation/transitions.ts';
 import type {
 	AnchorOutcome,
 	EntryOutcome,
@@ -25,6 +26,8 @@ export interface ReportInput {
 	reports: Map<string, CheckReport | null>;
 	/** Every generation of every sheet, in order. Empty when nothing used one. */
 	sheets?: SheetOutcome[];
+	/** What each transition set came to. Empty when the spec lists none. */
+	transitions?: TransitionOutcome[];
 	/** Relative path of the contact sheet, or null when none was made. */
 	contactSheet: string | null;
 	/** Set when the judge was wanted but the model could not see. */
@@ -229,6 +232,39 @@ function codeTextureSection(input: ReportInput): string[] {
 	];
 }
 
+function transitionSection(input: ReportInput): string[] {
+	const outcomes = input.transitions ?? [];
+	if (outcomes.length === 0) return [];
+	const rows = outcomes.map((o) => {
+		const t = input.spec.transitions?.find((x) => x.id === o.id);
+		const what = t
+			? t.view === 'top'
+				? `\`${t.a}\` meets \`${t.b}\``
+				: `\`${t.a}\`${t.cap ? ` with \`${t.cap}\` on top` : ''}`
+			: '';
+		const verdict =
+			o.status === 'done'
+				? o.edge
+					? 'passed after a new edge'
+					: 'passed'
+				: o.status === 'skipped'
+					? 'already present'
+					: `${o.status === 'failed' ? 'failed' : 'kept, rejected'}: ${o.reason ?? ''}`;
+		return `| \`${o.id}\` | ${t?.view ?? ''} | ${what} | ${t ? `\`${t.out}\`` : ''} | ${verdict} |`;
+	});
+	return [
+		'## Transition sets',
+		'',
+		'The 16 edge tiles where two textures meet, or platform ground against air, drawn from ' +
+			"the textures' recipes: a 4×4 sheet, with a JSON file beside it naming each tile's corners.",
+		'',
+		'| Set | View | Materials | Sheet | Verdict |',
+		'| --- | --- | --- | --- | --- |',
+		...rows,
+		''
+	];
+}
+
 /** Assets on disk that never passed: the best attempt, kept for the code to load. */
 function keptSection(input: ReportInput): string[] {
 	const kept = input.entries.filter((e) => e.kept);
@@ -384,6 +420,7 @@ export function renderAssetReport(input: ReportInput): string {
 	lines.push(...unresolvedSection(input));
 	lines.push(...keptSection(input));
 	lines.push(...codeTextureSection(input));
+	lines.push(...transitionSection(input));
 	lines.push(...degradedSection(input));
 	lines.push(...licensingSection(input.licensing));
 	return lines.join('\n');

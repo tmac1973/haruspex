@@ -6,7 +6,7 @@
  * diff rather than a reordered file the user has to read in full to trust.
  */
 
-import type { AssetEntry, AssetSpec } from '#lib/assets/spec/types.ts';
+import type { AssetEntry, AssetSpec, TransitionEntry } from '#lib/assets/spec/types.ts';
 
 /** Drop `undefined` members so they do not become `null` in JSON. */
 function defined<T extends object>(o: T): Partial<T> {
@@ -32,6 +32,20 @@ function orderedEntry(e: AssetEntry): Record<string, unknown> {
 	});
 }
 
+function orderedTransition(t: TransitionEntry): Record<string, unknown> {
+	return defined({
+		id: t.id,
+		view: t.view,
+		a: t.a,
+		b: t.b,
+		cap: t.cap,
+		out: t.out,
+		edge: t.edge,
+		notes: t.notes,
+		rejected: t.rejected
+	});
+}
+
 export function renderAssetSpec(spec: AssetSpec): string {
 	const ordered = {
 		// The user's own keys first: they are annotations about the file, and
@@ -50,7 +64,9 @@ export function renderAssetSpec(spec: AssetSpec): string {
 			sheet: spec.anchor.sheet
 		}),
 		normalize: spec.normalize,
-		entries: spec.entries.map(orderedEntry)
+		entries: spec.entries.map(orderedEntry),
+		// Left out when there are none, so a spec without sets is unchanged.
+		...(spec.transitions?.length ? { transitions: spec.transitions.map(orderedTransition) } : {})
 	};
 	return `${JSON.stringify(ordered, null, 2)}\n`;
 }

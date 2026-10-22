@@ -8,10 +8,16 @@
  * on, and that texture fails with the reason in the report.
  */
 
-import type { AssetEntry, AssetSpec } from '#lib/assets/spec/types.ts';
+import type { AssetEntry, AssetSpec, TransitionEntry } from '#lib/assets/spec/types.ts';
 import type { TextureRecipe } from '#lib/ipc/gen/TextureRecipe.ts';
-import { recipePrompt } from '#lib/agent/jobs/types/asset-generation/prompts.ts';
-import type { SubmittedRecipe } from '#lib/agent/jobs/types/asset-generation/tools.ts';
+import type { TransitionEdge } from '#lib/ipc/gen/TransitionEdge.ts';
+import type { TransitionView } from '#lib/ipc/gen/TransitionView.ts';
+import {
+	edgeRevisionPrompt,
+	recipePrompt,
+	type TransitionLine
+} from '#lib/agent/jobs/types/asset-generation/prompts.ts';
+import type { Submitted } from '#lib/agent/jobs/types/asset-generation/tools.ts';
 import { seedOf } from '#lib/assets/texture.ts';
 
 export { variantPaths } from '#lib/assets/texture.ts';
@@ -21,11 +27,13 @@ export interface RecipeDeps {
 	 * One model turn with `prompt`; the recipes it submitted, by id. `image`
 	 * goes in ahead of the prompt, when the model can see.
 	 */
-	ask: (prompt: string, image?: Uint8Array) => Promise<Map<string, SubmittedRecipe>>;
+	ask: (prompt: string, image?: Uint8Array) => Promise<Submitted>;
 	/** Whether the recipe model can see an image put before its prompt. */
 	visionSupported: boolean;
 	/** Null when the recipe is good, else what is wrong with it. */
 	validate: (recipe: unknown) => Promise<string | null>;
+	/** Null when a set's edge settings are good, else what is wrong with them. */
+	validateEdge: (view: TransitionView, edge: unknown) => Promise<string | null>;
 }
 
 /** A recipe that passed Rust's check, and the model's line on what it draws. */
@@ -42,6 +50,23 @@ export interface RecipeResult {
 	failed: Map<string, string>;
 }
 
+/** The transition sets that still need edge settings. */
+export function needingEdges(spec: AssetSpec): TransitionEntry[] {
+	return (spec.transitions ?? []).filter((t) => !t.edge);
+}
+
+/** A set as the recipe stage lists it. */
+function lineOf(t: TransitionEntry): TransitionLine {
+	return {
+		id: t.id,
+		view: t.view,
+		a: t.a,
+		...(t.b ? { b: t.b } : {}),
+		...(t.cap ? { cap: t.cap } : {}),
+		...(t.notes ? { notes: t.notes } : {})
+	};
+}
+
 /** The texture entries that still need a recipe. */
 export function needingRecipes(spec: AssetSpec): AssetEntry[] {
 	return spec.entries.filter((e) => e.kind === 'texture' && !e.recipe);
@@ -52,24 +77,50 @@ function paletteOf(spec: AssetSpec): number[] {
 	return spec.normalize.palette ?? [];
 }
 
+interface Asked {
+	good: Map<string, DrawnRecipe>;
+	refused: Map<string, string>;
+	edges: Map<string, TransitionEdge>;
+}
+
 async function askFor(
 	spec: AssetSpec,
 	entries: AssetEntry[],
 	deps: RecipeDeps,
 	feedback?: Map<string, string>,
-	image?: Uint8Array
-): Promise<{ good: Map<string, DrawnRecipe>; refused: Map<string, string> }> {
+	image?: Uint8Array,
+	sets: TransitionEntry[] = []
+): Promise<Asked> {
 	const shown = image !== undefined && deps.visionSupported;
+	// The ground each texture caps, when a side set uses it as a cap.
+	const capOf = new Map((spec.transitions ?? []).filter((t) => t.cap).map((t) => [t.cap!, t.a]));
 	const prompt = recipePrompt(
-		entries.map((e) => ({ id: e.id, prompt: e.prompt })),
+		entries.map((e) => ({
+			id: e.id,
+			prompt: e.prompt,
+			...(capOf.has(e.id) ? { capOf: capOf.get(e.id) } : {})
+		})),
 		paletteOf(spec),
 		spec.style.prompt,
 		feedback,
-		shown
+		shown,
+		sets.map(lineOf)
 	);
-	const got = await deps.ask(prompt, shown ? image : undefined);
+	const submitted = await deps.ask(prompt, shown ? image : undefined);
+	const got = submitted.recipes;
 	const good = new Map<string, DrawnRecipe>();
 	const refused = new Map<string, string>();
+	const edges = new Map<string, TransitionEdge>();
+	for (const t of sets) {
+		const edge = submitted.edges.get(t.id);
+		if (edge === undefined) {
+			refused.set(t.id, 'No edge was submitted for it.');
+			continue;
+		}
+		const why = await deps.validateEdge(t.view, edge);
+		if (why) refused.set(t.id, `${why} The edge was: ${JSON.stringify(edge)}`);
+		else edges.set(t.id, edge as TransitionEdge);
+	}
 	for (const e of entries) {
 		const r = got.get(e.id);
 		if (!r) {
@@ -80,34 +131,70 @@ async function askFor(
 		if (why) refused.set(e.id, `${why} The recipe was: ${JSON.stringify(r.recipe)}`);
 		else good.set(e.id, { recipe: r.recipe as unknown as TextureRecipe, drawn: r.drawn });
 	}
-	return { good, refused };
+	return { good, refused, edges };
 }
 
-/** A recipe for every texture entry that has none; one retry for refusals. */
+/**
+ * A recipe for every texture entry that has none, and edge settings for every
+ * transition set that has none, in one turn; one retry for refusals. A set
+ * still without an edge takes the defaults rather than failing: its
+ * materials are what matter, and they are drawn either way.
+ */
 export async function writeRecipes(spec: AssetSpec, deps: RecipeDeps): Promise<RecipeResult> {
 	const todo = needingRecipes(spec);
-	if (todo.length === 0) return { spec, written: [], failed: new Map() };
+	const sets = needingEdges(spec);
+	if (todo.length === 0 && sets.length === 0) return { spec, written: [], failed: new Map() };
 
-	const first = await askFor(spec, todo, deps);
+	const first = await askFor(spec, todo, deps, undefined, undefined, sets);
 	const recipes = new Map(first.good);
+	const edges = new Map(first.edges);
 	let failed = first.refused;
 	if (failed.size > 0) {
 		const again = todo.filter((e) => failed.has(e.id));
-		const second = await askFor(spec, again, deps, failed);
+		const setsAgain = sets.filter((t) => failed.has(t.id));
+		const second = await askFor(spec, again, deps, failed, undefined, setsAgain);
 		for (const [id, r] of second.good) recipes.set(id, r);
+		for (const [id, e] of second.edges) edges.set(id, e);
 		failed = second.refused;
 	}
+	for (const t of sets) failed.delete(t.id);
 	return {
 		spec: {
 			...spec,
 			entries: spec.entries.map((e) => {
 				const r = recipes.get(e.id);
 				return r ? { ...e, recipe: r.recipe, ...(r.drawn ? { drawn: r.drawn } : {}) } : e;
-			})
+			}),
+			...(spec.transitions
+				? {
+						transitions: spec.transitions.map((t) =>
+							t.edge ? t : { ...t, edge: edges.get(t.id) ?? {} }
+						)
+					}
+				: {})
 		},
-		written: [...recipes.keys()],
+		written: [...recipes.keys(), ...sets.map((t) => t.id)],
 		failed
 	};
+}
+
+/**
+ * One set's edge again, after the judge said no, looking at the set laid out
+ * as a map when the model can see. Null when it gave nothing usable; the
+ * caller keeps the sheet it has.
+ */
+export async function reviseEdge(
+	t: TransitionEntry,
+	reason: string,
+	deps: RecipeDeps,
+	preview?: Uint8Array
+): Promise<TransitionEdge | null> {
+	const shown = preview !== undefined && deps.visionSupported;
+	const prompt = edgeRevisionPrompt(lineOf(t), reason, t.edge, shown);
+	const { edges } = await deps.ask(prompt, shown ? preview : undefined);
+	const edge = edges.get(t.id);
+	if (edge === undefined || (await deps.validateEdge(t.view, edge))) return null;
+	return edge as TransitionEdge;
 }
 
 /**

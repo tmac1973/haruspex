@@ -31,6 +31,19 @@ export const KIND_RULE: string[] = [
 	'     (a roof texture, or a building sprite).'
 ];
 
+/**
+ * When a spec lists transition sets, said the same way by both prompts that
+ * write a spec. Indented to sit under the entry bullets.
+ */
+export const TRANSITION_RULE: string[] = [
+	'   - `transitions`: where two ground textures touch on the map (grass and',
+	'     a dirt path, sand and water), list one `top` set naming both, as `a`',
+	'     and `b`. For a side-view game, list one `side` set per platform ground,',
+	'     naming its texture as `a` and, if its top surface differs (grass on',
+	"     dirt, snow on rock), that surface's texture as `cap`. Skip pairs that",
+	'     never meet. Both materials must be texture entries in your list.'
+];
+
 export function specDerivationPrompt(description: string, specPath: string): string {
 	return [
 		'You are listing the images a project needs, so they can be generated.',
@@ -56,6 +69,7 @@ export function specDerivationPrompt(description: string, specPath: string): str
 		'   Too long: anything with semicolons, or a list of six clauses.',
 		'3. List every image the project needs, and nothing it does not. Each entry:',
 		...KIND_RULE,
+		...TRANSITION_RULE,
 		'   - `prompt`: the SUBJECT only, with its own colours ("green weeds",',
 		'     "rusty red barrel"). The shared style is added automatically, so',
 		'     repeating it here just dilutes both. For a texture, name the surface,',
@@ -266,11 +280,12 @@ export function recipeGuide(): string[] {
  * river forced into their colours is brown.
  */
 export function recipePrompt(
-	textures: Array<{ id: string; prompt: string }>,
+	textures: Array<{ id: string; prompt: string; capOf?: string }>,
 	palette: number[],
 	stylePrompt: string,
 	feedback?: Map<string, string>,
-	imageShown = false
+	imageShown = false,
+	transitions: TransitionLine[] = []
 ): string {
 	return [
 		'You are designing tileable ground and wall textures for a top-down 2D game.',
@@ -293,16 +308,99 @@ export function recipePrompt(
 		'shows, from the layers you used ("white brick wall with a rusted pipe").',
 		'The tile is checked against that line, so name only what is there.',
 		'',
-		'The textures:',
-		...textures.map((t) => {
+		...(textures.length
+			? [
+					'The textures:',
+					...textures.map((t) => {
+						const fix = feedback?.get(t.id);
+						const seen = imageShown
+							? '. The image shows your last recipe laid 3×3, as a map lays it.'
+							: ':';
+						// A cap is laid as a band along the top of platform ground,
+						// so it must be the surface itself: the live run's grass
+						// cap was blades over dark soil and read as dirt.
+						const cap = t.capOf
+							? `\n  It is also the top surface of ${t.capOf} in a side view, drawn as a band on its upper faces: make it the surface itself filling the tile (solid turf, snow, moss), not tufts over soil.`
+							: '';
+						return `- ${t.id}: ${t.prompt}${cap}${fix ? `\n  Your last recipe for this needs changing${seen} ${fix}` : ''}`;
+					}),
+					''
+				]
+			: []),
+		...transitionLines(transitions, feedback),
+		textures.length
+			? 'Call `submit_texture_recipes` once, with a recipe and its `drawn` line for every texture above' +
+				(transitions.length ? ', and an edge for every set.' : '.')
+			: 'Call `submit_texture_recipes` once, with `recipes` empty and an edge for every set above.'
+	].join('\n');
+}
+
+/** A transition set as the recipe stage lists it. */
+export interface TransitionLine {
+	id: string;
+	view: 'top' | 'side';
+	a: string;
+	b?: string;
+	cap?: string;
+	/** What the person asked for when they sent it back from Review assets. */
+	notes?: string;
+}
+
+/** The recipe stage's lines for transition sets, or none. */
+function transitionLines(sets: TransitionLine[], feedback?: Map<string, string>): string[] {
+	if (sets.length === 0) return [];
+	return [
+		'Transition sets, drawn from the textures where they meet. For each, give an',
+		'`edge`: wobble 0–0.25, how far the border wanders (0.1 for built edges, 0.2',
+		'for natural ones); rim, a #rrggbb line along the border, usually a shade',
+		'darker than the material it borders, or none; and for a side set, cap_height',
+		'1–8, how deep its top surface is.',
+		...sets.flatMap((t) => {
+			const what =
+				t.view === 'top'
+					? `top, ${t.a} meets ${t.b}`
+					: `side, ${t.a} ${t.cap ? `with ${t.cap} on top` : 'alone against air'}`;
 			const fix = feedback?.get(t.id);
-			const seen = imageShown
-				? '. The image shows your last recipe laid 3×3, as a map lays it.'
-				: ':';
-			return `- ${t.id}: ${t.prompt}${fix ? `\n  Your last recipe for this needs changing${seen} ${fix}` : ''}`;
+			return [
+				`- ${t.id}: ${what}`,
+				...(t.notes ? [`  The user asked for this set: ${t.notes}`] : []),
+				...(fix ? [`  Your last edge for this needs changing: ${fix}`] : [])
+			];
 		}),
+		''
+	];
+}
+
+/** The judge's hint for a transition set, shown as a small map. */
+export const TRANSITION_HINT =
+	'This is a set of edge tiles drawn by code, shown laid out as a small map. ' +
+	'Judge whether the two materials meet naturally — a border that wanders, not a ' +
+	'ruler line or a grid of squares — and whether any tile shows a seam against its ' +
+	'neighbours. Do not judge the materials themselves; they were approved already.';
+
+/** The hint's extra sentence for a side set. */
+export const SIDE_HINT = ' Empty air is shown as a checkerboard.';
+
+/**
+ * Asking for one set's edge again, after the judge said no. Only the edge:
+ * the materials were approved as textures, and a set must not change them.
+ */
+export function edgeRevisionPrompt(
+	t: TransitionLine,
+	reason: string,
+	edge: unknown,
+	imageShown: boolean
+): string {
+	return [
+		`You set the edge of a transition set, ${t.id}, drawn by code where two textures meet.`,
+		...(imageShown ? ['The image shows the set laid out as a small map.'] : []),
+		`A reviewer said: ${reason}`,
+		`The edge was: ${JSON.stringify(edge ?? {})}`,
 		'',
-		'Call `submit_texture_recipes` once, with a recipe and its `drawn` line for',
-		'every id above.'
+		'An edge is { wobble?: 0–0.25, how far the border wanders; rim?: "#rrggbb", a',
+		'line along the border, or leave it out for none; cap_height?: 1–8, side sets',
+		'only, how deep the top surface is }.',
+		'',
+		`Call \`submit_texture_recipes\` once, with \`recipes\` empty and a new edge for ${t.id}.`
 	].join('\n');
 }

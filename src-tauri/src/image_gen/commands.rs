@@ -17,6 +17,9 @@ use super::profile::{
 use super::sheet::contact_sheet;
 use super::split::{split_sheet, SplitOptions};
 use super::stats::ImageStats;
+use super::texture::transition::{
+    render_transition, transition_preview, validate_edge, TransitionEdge, TransitionView,
+};
 use super::texture::{render as render_texture, validate as validate_texture, TextureRecipe};
 
 #[derive(Debug, Serialize, ts_rs::TS)]
@@ -369,6 +372,60 @@ pub fn texture_validate(recipe: serde_json::Value) -> Result<(), String> {
     let r: TextureRecipe =
         serde_json::from_value(recipe).map_err(|e| format!("Not a texture recipe: {e}"))?;
     validate_texture(&r)
+}
+
+/// Draw a transition set: one PNG, a 4×4 sheet of 16 corner tiles. `other` is
+/// material B (top, required) or the cap (side, optional). Each material is
+/// seeded as its own texture was, so the uniform tiles match those tiles.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub fn texture_transition_render(
+    view: TransitionView,
+    a: TextureRecipe,
+    other: Option<TextureRecipe>,
+    edge: TransitionEdge,
+    size: u32,
+    seed_a: u32,
+    seed_other: u32,
+    palette: Vec<u32>,
+) -> Result<Vec<u8>, String> {
+    encode(&render_transition(
+        view,
+        &a,
+        other.as_ref(),
+        &edge,
+        size,
+        seed_a as u64,
+        seed_other as u64,
+        &palette,
+    )?)
+}
+
+/// A drawn set laid out as a small map, for a person or the judge to look at.
+#[tauri::command]
+pub fn texture_transition_preview(
+    view: TransitionView,
+    sheet: Vec<u8>,
+    size: u32,
+) -> Result<Vec<u8>, String> {
+    let img = decode(&sheet)?;
+    if img.width() != 4 * size || img.height() != 4 * size {
+        return Err(format!("The sheet is not 4×4 tiles of {size} pixels."));
+    }
+    encode(&transition_preview(view, &img, size))
+}
+
+/// Check a set's edge settings a model wrote, before anything is drawn. Raw
+/// JSON, so a shape error comes back as a sentence, as `texture_validate`
+/// does.
+#[tauri::command]
+pub fn texture_transition_validate(
+    view: TransitionView,
+    edge: serde_json::Value,
+) -> Result<(), String> {
+    let e: TransitionEdge =
+        serde_json::from_value(edge).map_err(|e| format!("Not a transition edge: {e}"))?;
+    validate_edge(view, &e)
 }
 
 #[cfg(test)]
@@ -725,5 +782,43 @@ mod tests {
             .starts_with("Not a texture recipe"));
         let off = serde_json::json!({"base": {"ramp": ["#000000"]}});
         assert!(texture_validate(off).unwrap_err().contains("base.ramp"));
+    }
+
+    #[test]
+    fn a_transition_set_is_drawn_previewed_and_its_edge_checked() {
+        let grass: TextureRecipe =
+            serde_json::from_str(r##"{"base":{"ramp":["#3d5a26","#507032"]},"layers":[]}"##)
+                .unwrap();
+        let dirt: TextureRecipe =
+            serde_json::from_str(r##"{"base":{"ramp":["#3e3428","#564836"]},"layers":[]}"##)
+                .unwrap();
+        let sheet = texture_transition_render(
+            TransitionView::Top,
+            grass,
+            Some(dirt),
+            TransitionEdge::default(),
+            16,
+            1,
+            2,
+            vec![],
+        )
+        .unwrap();
+        let img = image::load_from_memory(&sheet).unwrap().to_rgba8();
+        assert_eq!(img.dimensions(), (64, 64));
+        let map = texture_transition_preview(TransitionView::Top, sheet.clone(), 16).unwrap();
+        assert!(image::load_from_memory(&map).unwrap().width() >= 96);
+        assert!(texture_transition_preview(TransitionView::Top, sheet, 32).is_err());
+
+        let bad = serde_json::json!({"wobble": 0.1, "sparkle": true});
+        assert!(texture_transition_validate(TransitionView::Top, bad)
+            .unwrap_err()
+            .starts_with("Not a transition edge"));
+        let cap = serde_json::json!({"cap_height": 4});
+        assert!(
+            texture_transition_validate(TransitionView::Top, cap.clone())
+                .unwrap_err()
+                .contains("cap_height")
+        );
+        texture_transition_validate(TransitionView::Side, cap).unwrap();
     }
 }

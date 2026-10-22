@@ -59,6 +59,44 @@ describe('jobs runner — asset generation', () => {
 		expect(getCurrentRun()!.steps[2].output).toContain('3 generated');
 	});
 
+	it('draws the spec its transition sets after the textures, and reports them', async () => {
+		const recipe = { base: { ramp: ['#000000', '#ffffff'] }, layers: [] };
+		const spec = JSON.parse(goodSpec(3));
+		spec.entries[0] = { ...spec.entries[0], id: 'grass', out: 'assets/t/grass.png', recipe };
+		spec.entries[2] = {
+			...spec.entries[2],
+			id: 'dirt',
+			kind: 'texture',
+			out: 'assets/t/dirt.png',
+			recipe
+		};
+		spec.transitions = [
+			{
+				id: 'grass_dirt',
+				view: 'top',
+				a: 'grass',
+				b: 'dirt',
+				out: 'assets/t/sets/gd.png',
+				edge: {}
+			}
+		];
+		mocks.getJob.mockResolvedValueOnce(
+			assetJob({ code_textures: true, texture_variants: 1, vision_judge: false })
+		);
+		const written = wireFs(JSON.stringify(spec), { recipe: goodRecipe() });
+		const { enqueue, getCurrentRun } = await freshRunner();
+		await enqueue(1);
+		await settle(getCurrentRun);
+
+		expect(getCurrentRun()?.status).toBe('succeeded');
+		expect(written.bytes).toContain('assets/t/sets/gd.png');
+		const map = written.find((w) => w.relPath === 'assets/t/sets/gd.json');
+		expect(JSON.parse(map!.content)).toMatchObject({ view: 'top', a: 'grass', b: 'dirt' });
+		expect(getCurrentRun()!.steps[2].output).toContain('1 transition set(s) drawn of 1.');
+		const report = written.find((w) => w.relPath.endsWith('REPORT-assets.md'));
+		expect(report?.content).toContain('| `grass_dirt` | top | `grass` meets `dirt`');
+	});
+
 	it("makes an existing spec's asset size match the job, and says so", async () => {
 		// The job is authoritative: a size set in the job used to do nothing at
 		// all once a spec existed, which is a trap the user walked into.

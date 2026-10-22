@@ -55,7 +55,10 @@ beforeEach(() => {
 			image_extract_palette: PALETTE,
 			texture_validate: () => undefined,
 			texture_render: (a) => Array.from({ length: Number(a?.variants) }, (_, k) => [k]),
-			image_contact_sheet: [7, 7]
+			image_contact_sheet: [7, 7],
+			texture_transition_validate: () => undefined,
+			texture_transition_render: [5, 5],
+			texture_transition_preview: [6, 6]
 		})
 	);
 	state.make.mockReset().mockResolvedValue({

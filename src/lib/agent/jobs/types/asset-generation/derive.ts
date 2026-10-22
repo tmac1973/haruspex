@@ -7,19 +7,24 @@
  * something that does not exist.
  */
 
-import type { AssetSpecEntryArg } from '#lib/agent/tools/coding.ts';
-import type { PlanAssetEntryArg } from '#lib/agent/jobs/types/asset-generation/tools.ts';
+import type { AssetSpecEntryArg, AssetSpecTransitionArg } from '#lib/agent/tools/coding.ts';
+import type {
+	PlanAssetEntryArg,
+	PlanAssetTransitionArg
+} from '#lib/agent/jobs/types/asset-generation/tools.ts';
 import {
 	ASSET_KINDS,
 	ID_PATTERN,
 	type AssetEntry,
 	type AssetKind,
-	type AssetSpec
+	type AssetSpec,
+	type TransitionEntry
 } from '#lib/assets/spec/types.ts';
 import {
 	DEFAULT_ANCHOR_IMAGE,
 	DEFAULT_ANCHOR_RECIPE,
 	defaultOutPath,
+	defaultTransitionOut,
 	uniqueId
 } from '#lib/assets/spec/paths.ts';
 import type { NormalizeProfile } from '#lib/ipc/gen/NormalizeProfile.ts';
@@ -29,6 +34,62 @@ export interface DerivePayload {
 	/** The sheet the model chose as the style anchor. */
 	anchorSheet?: string;
 	entries?: AssetSpecEntryArg[];
+	transitions?: AssetSpecTransitionArg[];
+}
+
+/**
+ * Transition sets from what the model submitted. `resolve` turns a material
+ * as the model named it into an entry id; one it can't resolve is kept as
+ * written, so validation names it and the retry asks for it to be fixed.
+ * `idFor` gives the set's id from its submission and a fallback title.
+ */
+function transitionsOf(
+	raw: unknown,
+	resolve: (name: string) => string,
+	idFor: (t: { title?: string; id?: string }, fallback: string) => string
+): TransitionEntry[] {
+	const out: TransitionEntry[] = [];
+	for (const t of Array.isArray(raw) ? (raw as Array<Record<string, unknown>>) : []) {
+		const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+		const a = text(t?.a);
+		if (!a) continue;
+		const view = t.view === 'side' ? 'side' : 'top';
+		const b = text(t.b);
+		const cap = text(t.cap);
+		const fallback = view === 'top' ? `${a} to ${b}` : `${a} platform`;
+		const id = idFor({ title: text(t.title), id: text(t.id) }, fallback);
+		out.push({
+			id,
+			view,
+			a: resolve(a),
+			...(view === 'top' && b ? { b: resolve(b) } : {}),
+			...(view === 'side' && cap ? { cap: resolve(cap) } : {}),
+			out: defaultTransitionOut(id)
+		});
+	}
+	return out;
+}
+
+/** The derivation's sets: materials named by title, ids made from titles. */
+function titledTransitions(
+	raw: unknown,
+	byTitle: Map<string, string>,
+	taken: Set<string>
+): TransitionEntry[] {
+	return transitionsOf(
+		raw,
+		(name) => byTitle.get(name.toLowerCase()) ?? name,
+		(t, fallback) => {
+			const id = uniqueId(t.title || fallback, taken);
+			taken.add(id);
+			return id;
+		}
+	);
+}
+
+/** A spec's `transitions`, left out when there are none. */
+function withTransitions(sets: TransitionEntry[]): { transitions?: TransitionEntry[] } {
+	return sets.length ? { transitions: sets } : {};
 }
 
 function kindOf(raw: unknown): AssetKind {
@@ -102,6 +163,8 @@ function anchorSheetOf(raw: unknown, entries: AssetEntry[]): { sheet?: string } 
 export function deriveSpec(payload: DerivePayload, profile: NormalizeProfile): AssetSpec {
 	const taken = new Set<string>();
 	const entries: AssetEntry[] = [];
+	/** Each entry's id by its title, lowercased: transitions name materials so. */
+	const byTitle = new Map<string, string>();
 	const style = styleOf(payload.style);
 	for (const raw of Array.isArray(payload.entries) ? payload.entries : []) {
 		const title = (raw?.title ?? '').trim();
@@ -110,6 +173,7 @@ export function deriveSpec(payload: DerivePayload, profile: NormalizeProfile): A
 		const kind = kindOf(raw.kind);
 		const id = uniqueId(title, taken);
 		taken.add(id);
+		byTitle.set(title.toLowerCase(), id);
 		const sheet = sheetName(raw.sheet, kind);
 		entries.push({
 			id,
@@ -123,6 +187,8 @@ export function deriveSpec(payload: DerivePayload, profile: NormalizeProfile): A
 			...(raw.notes?.trim() ? { notes: raw.notes.trim() } : {})
 		});
 	}
+
+	const transitions = titledTransitions(payload.transitions, byTitle, taken);
 
 	return {
 		version: 1,
@@ -140,13 +206,15 @@ export function deriveSpec(payload: DerivePayload, profile: NormalizeProfile): A
 			...anchorSheetOf(payload.anchorSheet, entries)
 		},
 		normalize: profile,
-		entries
+		entries,
+		...withTransitions(transitions)
 	};
 }
 
 export interface PlanDerivePayload {
 	style?: { prompt?: string; negativePrompt?: string };
 	entries?: PlanAssetEntryArg[];
+	transitions?: PlanAssetTransitionArg[];
 	anchorSheet?: string;
 	/** The pixel size the plan draws its art at. */
 	targetSize?: number;
@@ -219,6 +287,17 @@ export function derivePlanSpec(
 		});
 	}
 
+	// Ids are the plan's, used as given; a set's own id is checked the same way.
+	const transitions = transitionsOf(
+		payload.transitions,
+		(name) => name,
+		(t, fallback) => {
+			const id = t.id && ID_PATTERN.test(t.id) && !seen.has(t.id) ? t.id : uniqueId(fallback, seen);
+			seen.add(id);
+			return id;
+		}
+	);
+
 	return {
 		spec: {
 			version: 1,
@@ -235,7 +314,8 @@ export function derivePlanSpec(
 				...profile,
 				target_size: planTargetSize(payload.targetSize) ?? profile.target_size
 			},
-			entries
+			entries,
+			...withTransitions(transitions)
 		},
 		rejected,
 		styleFallback: style.fallback

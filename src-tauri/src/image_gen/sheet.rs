@@ -26,7 +26,7 @@ pub fn columns_for(n: usize) -> u32 {
     (n as f64).sqrt().ceil() as u32
 }
 
-fn checker(x: u32, y: u32) -> [u8; 4] {
+pub(crate) fn checker(x: u32, y: u32) -> [u8; 4] {
     if ((x / CHECK_SIZE) + (y / CHECK_SIZE)).is_multiple_of(2) {
         CHECK_A
     } else {

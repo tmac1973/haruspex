@@ -91,3 +91,12 @@ the PR merges.
 
 The results are plan files. Revert any fix commit on its own. The
 `live_map_from_sheet` test is ignored by default and harmless to keep.
+
+## As built
+
+- Driven by `scripts/drive.mjs` (as in phases 01 and 05), with no
+  `cases-10.json`: four prompts, two through `make_asset` and two jobs.
+  Results are in `live/phase-10/results.md`.
+- One defect was found and fixed: a cap texture is now asked for as the
+  surface itself. The other observations are listed in the results and
+  left as they are.

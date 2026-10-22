@@ -18,7 +18,7 @@ import {
 	derivePlanSpec,
 	type PlanDerivePayload
 } from '#lib/agent/jobs/types/asset-generation/derive.ts';
-import { KIND_RULE } from '#lib/agent/jobs/types/asset-generation/prompts.ts';
+import { KIND_RULE, TRANSITION_RULE } from '#lib/agent/jobs/types/asset-generation/prompts.ts';
 import { SUBMIT_PLAN_ASSET_SPEC_TOOL } from '#lib/agent/jobs/types/asset-generation/tools.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import { SUBMIT_PLAN_OUTLINE_TOOL, type PlanOutlinePhaseArg } from '#lib/agent/tools/planning.ts';
@@ -880,6 +880,7 @@ export function assetSpecPrompt(outDir: string, specPath: string): string {
 		'     nothing opens. If the plan does not name an id for something it plainly',
 		'     needs, coin one in that form and use it consistently.',
 		...KIND_RULE,
+		...TRANSITION_RULE,
 		'   - `prompt`: the SUBJECT only, with its own colours. The shared style is',
 		'     added automatically, so repeating it here dilutes both. For a texture,',
 		'     name the surface, not "seamless" or "tiling" — those draw a grid of tiles.',

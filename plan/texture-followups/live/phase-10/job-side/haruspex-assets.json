@@ -1,0 +1,267 @@
+{
+  "version": 1,
+  "style": {
+    "prompt": "16-bit pixel art, flat shading, bold dark outline, saturated colours",
+    "negativePrompt": "photo, 3d render, gradient"
+  },
+  "anchor": {
+    "image": "assets/haruspex-anchor.png",
+    "recipe": "assets/haruspex-anchor.json",
+    "sheet": "characters"
+  },
+  "normalize": {
+    "target_size": 64,
+    "upscale": 16,
+    "palette_size": 32,
+    "palette": [
+      185276927,
+      1646073343,
+      808204287,
+      2870418431,
+      373855999,
+      3542231039,
+      626925823,
+      2185501695,
+      1364925695,
+      577358847,
+      1014013183,
+      3043507967,
+      1368535807,
+      1588603391,
+      1689464319,
+      3734666751,
+      2076586495,
+      2211066879,
+      2177577727,
+      2227844607,
+      2244622079,
+      2211132671,
+      2211132927,
+      2278177023,
+      2412401663,
+      2429763583,
+      3988359423,
+      4106066687,
+      3419060479,
+      4126601983
+    ],
+    "background": {
+      "color": 4278255615,
+      "tolerance": 40,
+      "hue_tolerance_deg": 20,
+      "min_saturation": 90,
+      "min_value": 60,
+      "auto_detect": true
+    },
+    "crop": {
+      "enabled": true,
+      "margin": 1,
+      "min_island_fraction": 0.05
+    },
+    "outline": {
+      "enabled": true,
+      "color": 437918463,
+      "width": 2
+    },
+    "checks": {
+      "alpha_min": 0.05,
+      "alpha_max": 0.95,
+      "entropy_min": 1,
+      "palette_distance_max": 0.15
+    },
+    "by_kind": {
+      "texture": {
+        "crop_enabled": false,
+        "outline_enabled": false,
+        "background_auto": false,
+        "alpha_min": 0.999,
+        "alpha_max": 1
+      }
+    }
+  },
+  "entries": [
+    {
+      "id": "dirt_ground",
+      "kind": "texture",
+      "prompt": "brown dirt with small pebbles and thin roots, side view",
+      "out": "assets/generated/texture/dirt_ground.png",
+      "seamless": true,
+      "recipe": {
+        "base": {
+          "ramp": [
+            "#6e3c1c",
+            "#7c4420",
+            "#8a4c24",
+            "#95542a"
+          ],
+          "cells": 7,
+          "octaves": 3,
+          "dither": true
+        },
+        "layers": [
+          {
+            "type": "speckle",
+            "color": "#b5683e",
+            "amount": 0.06
+          },
+          {
+            "type": "speckle",
+            "color": "#3a2010",
+            "amount": 0.04
+          },
+          {
+            "type": "cracks",
+            "color": "#3a2010",
+            "cells": 9,
+            "coverage": 0.18,
+            "width": 0.3
+          }
+        ]
+      },
+      "drawn": "brown dirt with fine mottled patches, light pebbles and scattered thin rootlets",
+      "variants": [
+        "assets/generated/texture/dirt_ground.png",
+        "assets/generated/texture/dirt_ground_1.png",
+        "assets/generated/texture/dirt_ground_2.png",
+        "assets/generated/texture/dirt_ground_3.png"
+      ]
+    },
+    {
+      "id": "grass_top",
+      "kind": "texture",
+      "prompt": "strip of bright green grass blades over dark soil",
+      "out": "assets/generated/texture/grass_top.png",
+      "seamless": true,
+      "recipe": {
+        "base": {
+          "ramp": [
+            "#255e20",
+            "#3c701c",
+            "#519232"
+          ],
+          "cells": 8,
+          "octaves": 3,
+          "dither": true
+        },
+        "layers": [
+          {
+            "type": "speckle",
+            "color": "#1c4a18",
+            "amount": 0.12
+          },
+          {
+            "type": "speckle",
+            "color": "#7bc631",
+            "amount": 0.14
+          },
+          {
+            "type": "speckle",
+            "color": "#83ca33",
+            "amount": 0.08
+          }
+        ]
+      },
+      "drawn": "solid green turf with scattered bright grass-blade speckles and dark soil flecks",
+      "variants": [
+        "assets/generated/texture/grass_top.png",
+        "assets/generated/texture/grass_top_1.png",
+        "assets/generated/texture/grass_top_2.png",
+        "assets/generated/texture/grass_top_3.png"
+      ]
+    },
+    {
+      "id": "stone",
+      "kind": "texture",
+      "prompt": "grey stone blocks with dark mortar lines",
+      "out": "assets/generated/texture/stone.png",
+      "seamless": true,
+      "recipe": {
+        "base": {
+          "ramp": [
+            "#8f8e9c",
+            "#a09fac",
+            "#b0afbb"
+          ],
+          "cells": 4
+        },
+        "layers": [
+          {
+            "type": "bricks",
+            "w": 8,
+            "h": 8,
+            "gap": 1,
+            "offset": true,
+            "colors": [
+              "#b8b7c4",
+              "#cbcab8",
+              "#a5a4b0"
+            ],
+            "mortar": "#302c37",
+            "relief": 0.5,
+            "jitter": 0.4
+          }
+        ]
+      },
+      "drawn": "grey stone blocks in offset rows with dark mortar lines",
+      "variants": [
+        "assets/generated/texture/stone.png",
+        "assets/generated/texture/stone_1.png",
+        "assets/generated/texture/stone_2.png",
+        "assets/generated/texture/stone_3.png"
+      ]
+    },
+    {
+      "id": "wooden_bridge",
+      "kind": "sprite",
+      "sheet": "structures",
+      "prompt": "a wooden plank bridge with simple railings, warm brown wood",
+      "out": "assets/generated/sprite/wooden_bridge.png"
+    },
+    {
+      "id": "player",
+      "kind": "sprite",
+      "sheet": "characters",
+      "prompt": "a small adventurer with a red cap and blue tunic, side view facing right",
+      "out": "assets/generated/sprite/player.png"
+    },
+    {
+      "id": "slime",
+      "kind": "sprite",
+      "sheet": "characters",
+      "prompt": "a round green slime blob with two white eyes",
+      "out": "assets/generated/sprite/slime.png"
+    },
+    {
+      "id": "coin",
+      "kind": "sprite",
+      "sheet": "items",
+      "prompt": "a shiny gold coin with a star emblem",
+      "out": "assets/generated/sprite/coin.png"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "dirt_with_grass_cap",
+      "view": "side",
+      "a": "dirt_ground",
+      "cap": "grass_top",
+      "out": "assets/generated/transition/dirt_with_grass_cap.png",
+      "edge": {
+        "wobble": 0.2,
+        "rim": "#255e20",
+        "cap_height": 4
+      }
+    },
+    {
+      "id": "stone_ledge",
+      "view": "side",
+      "a": "stone",
+      "out": "assets/generated/transition/stone_ledge.png",
+      "edge": {
+        "wobble": 0.1,
+        "rim": "#302c37",
+        "cap_height": 4
+      }
+    }
+  ]
+}

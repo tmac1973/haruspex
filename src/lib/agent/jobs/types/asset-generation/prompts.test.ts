@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { hexOf, judgePrompt, KIND_RULE, recipePrompt, specDerivationPrompt } from './prompts';
+import {
+	hexOf,
+	judgePrompt,
+	KIND_RULE,
+	recipePrompt,
+	specDerivationPrompt,
+	TRANSITION_RULE
+} from './prompts';
 
 describe('judgePrompt', () => {
 	it('does not hold a subject to the reference colours', () => {
@@ -20,6 +27,11 @@ describe('specDerivationPrompt', () => {
 		const p = specDerivationPrompt('a game', 'assets/spec.json');
 		expect(p).toContain('Do NOT name colours or a colour scheme');
 		expect(p).not.toMatch(/rust and concrete\s+palette/);
+	});
+
+	it('asks for transition sets where ground textures meet', () => {
+		const p = specDerivationPrompt('a game', 'assets/spec.json');
+		expect(p).toContain(TRANSITION_RULE.join('\n'));
 	});
 });
 

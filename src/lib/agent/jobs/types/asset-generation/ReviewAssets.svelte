@@ -6,7 +6,7 @@
 	import Tooltip from '#lib/components/Tooltip.svelte';
 	import { parseAssetSpec } from '#lib/assets/spec/parse.ts';
 	import { renderAssetSpec } from '#lib/assets/spec/write.ts';
-	import type { AssetEntry, AssetSpec } from '#lib/assets/spec/types.ts';
+	import type { AssetEntry, AssetSpec, TransitionEntry } from '#lib/assets/spec/types.ts';
 	import { enqueue } from '#lib/agent/jobs/runner.svelte.ts';
 	import { resolveImageBackend } from '#lib/image/index.ts';
 	import {
@@ -34,8 +34,15 @@
 		url: string | null;
 	}
 
+	/** A transition set, shown as its 4×4 sheet. */
+	interface SetTile {
+		set: TransitionEntry;
+		url: string | null;
+	}
+
 	let spec = $state<AssetSpec | null>(null);
 	let tiles = $state<Tile[]>([]);
+	let sets = $state<SetTile[]>([]);
 	let error = $state('');
 	let busy = $state(false);
 	/**
@@ -57,12 +64,23 @@
 		}
 	}
 
+	/** An object URL for the PNG at `relPath`, or null when it isn't there. */
+	async function imageAt(relPath: string): Promise<string | null> {
+		try {
+			const bytes = await invoke<number[]>('fs_read_bytes', { workdir: workingDir, relPath });
+			return URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'image/png' }));
+		} catch {
+			return null;
+		}
+	}
+
 	async function load() {
 		error = '';
 		void checkBackend();
 		marks = {};
-		for (const t of tiles) if (t.url) URL.revokeObjectURL(t.url);
+		for (const t of [...tiles, ...sets]) if (t.url) URL.revokeObjectURL(t.url);
 		tiles = [];
+		sets = [];
 		try {
 			const text = await invoke<string>('fs_read_text_full', {
 				workdir: workingDir,
@@ -75,23 +93,17 @@
 			}
 			spec = parsed.spec;
 			tiles = await Promise.all(
-				parsed.spec.entries.map(async (entry) => {
-					try {
-						const bytes = await invoke<number[]>('fs_read_bytes', {
-							workdir: workingDir,
-							relPath: entry.out
-						});
-						const blob = new Blob([new Uint8Array(bytes)], { type: 'image/png' });
-						return { entry, url: URL.createObjectURL(blob) };
-					} catch {
-						return { entry, url: null };
-					}
-				})
+				parsed.spec.entries.map(async (entry) => ({ entry, url: await imageAt(entry.out) }))
+			);
+			sets = await Promise.all(
+				(parsed.spec.transitions ?? []).map(async (set) => ({ set, url: await imageAt(set.out) }))
 			);
 			// What a run kept despite its checks starts marked: it is what the
 			// person most likely came here to fix.
 			marks = Object.fromEntries(
-				parsed.spec.entries.filter((e) => e.rejected).map((e) => [e.id, ''])
+				[...parsed.spec.entries, ...(parsed.spec.transitions ?? [])]
+					.filter((e) => e.rejected)
+					.map((e) => [e.id, ''])
 			);
 		} catch (e) {
 			error = `Could not read ${specPath}: ${errMessage(e)}`;
@@ -188,6 +200,40 @@
 						placeholder="what to change (optional)"
 						bind:value={marks[t.entry.id]}
 						aria-label={`Note for ${t.entry.id}`}
+					/>
+				{/if}
+			</div>
+		{/each}
+		{#each sets as s (s.set.id)}
+			{@const marked = s.set.id in marks}
+			{@const joins =
+				s.set.view === 'top'
+					? `${s.set.a} meets ${s.set.b}`
+					: `${s.set.a}${s.set.cap ? ` with ${s.set.cap} on top` : ''}, side view`}
+			<div class="tile" class:marked>
+				<button
+					type="button"
+					class="pick"
+					onclick={() => toggle(s.set.id)}
+					aria-pressed={marked}
+					title={`Edge tiles: ${joins}`}
+				>
+					{#if s.url}
+						<img src={s.url} alt={s.set.id} />
+					{:else}
+						<span class="missing">not made</span>
+					{/if}
+					<span class="name">{s.set.id}</span>
+					{#if s.set.rejected}
+						<span class="rejected" title={s.set.rejected}>rejected</span>
+					{/if}
+				</button>
+				{#if marked}
+					<input
+						type="text"
+						placeholder="what to change (optional)"
+						bind:value={marks[s.set.id]}
+						aria-label={`Note for ${s.set.id}`}
 					/>
 				{/if}
 			</div>

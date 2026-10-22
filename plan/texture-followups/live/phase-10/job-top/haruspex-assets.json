@@ -1,0 +1,336 @@
+{
+  "version": 1,
+  "style": {
+    "prompt": "16-bit pixel art, flat shading, bold dark outline, saturated colours",
+    "negativePrompt": "photo, 3d render, gradient, text, watermark"
+  },
+  "anchor": {
+    "image": "assets/haruspex-anchor.png",
+    "recipe": "assets/haruspex-anchor.json",
+    "sheet": "farm"
+  },
+  "normalize": {
+    "target_size": 64,
+    "upscale": 16,
+    "palette_size": 32,
+    "palette": [
+      269029375,
+      403576063,
+      722933759,
+      1628508159,
+      2400391679,
+      942813695,
+      1497049343,
+      3240369919,
+      1330132223,
+      1783247103,
+      1498626815,
+      1834435071,
+      1532913151,
+      1181886207,
+      2170898431,
+      2472812031,
+      1853047295,
+      2657565183,
+      2305643775,
+      2188336383,
+      2238799359,
+      2507690239,
+      2390386175,
+      2491708671,
+      3381993983,
+      2929296127,
+      3416146687,
+      3064436479,
+      3954982399,
+      3653341695,
+      4023949567,
+      4243636735
+    ],
+    "background": {
+      "color": 4278255615,
+      "tolerance": 40,
+      "hue_tolerance_deg": 20,
+      "min_saturation": 90,
+      "min_value": 60,
+      "auto_detect": true
+    },
+    "crop": {
+      "enabled": true,
+      "margin": 1,
+      "min_island_fraction": 0.05
+    },
+    "outline": {
+      "enabled": true,
+      "color": 437918463,
+      "width": 2
+    },
+    "checks": {
+      "alpha_min": 0.05,
+      "alpha_max": 0.95,
+      "entropy_min": 1,
+      "palette_distance_max": 0.15
+    },
+    "by_kind": {
+      "texture": {
+        "crop_enabled": false,
+        "outline_enabled": false,
+        "background_auto": false,
+        "alpha_min": 0.999,
+        "alpha_max": 1
+      }
+    }
+  },
+  "entries": [
+    {
+      "id": "grass",
+      "kind": "texture",
+      "prompt": "short green grass, evenly mown, a few lighter blades",
+      "out": "assets/generated/texture/grass.png",
+      "seamless": true,
+      "recipe": {
+        "base": {
+          "ramp": [
+            "#385420",
+            "#467226",
+            "#527c2e"
+          ],
+          "cells": 6,
+          "octaves": 3,
+          "dither": true
+        },
+        "layers": [
+          {
+            "type": "tufts",
+            "color": "#467226",
+            "light": "#6e9a3c",
+            "density": 0.12,
+            "height": 3
+          },
+          {
+            "type": "speckle",
+            "color": "#6e7341",
+            "amount": 0.06
+          }
+        ]
+      },
+      "drawn": "short mown green grass with a few lighter blades",
+      "variants": [
+        "assets/generated/texture/grass.png",
+        "assets/generated/texture/grass_1.png",
+        "assets/generated/texture/grass_2.png",
+        "assets/generated/texture/grass_3.png"
+      ]
+    },
+    {
+      "id": "tilled_soil",
+      "kind": "texture",
+      "prompt": "brown tilled soil, parallel furrow rows, cloddy",
+      "out": "assets/generated/texture/tilled_soil.png",
+      "seamless": true,
+      "recipe": {
+        "base": {
+          "ramp": [
+            "#4a2f1e",
+            "#593b28",
+            "#6a4a30"
+          ],
+          "cells": 5,
+          "octaves": 3,
+          "dither": true
+        },
+        "layers": [
+          {
+            "type": "stripes",
+            "axis": "x",
+            "pos": 8,
+            "width": 3,
+            "color": "#3a2416"
+          },
+          {
+            "type": "stripes",
+            "axis": "x",
+            "pos": 24,
+            "width": 3,
+            "color": "#3a2416"
+          },
+          {
+            "type": "speckle",
+            "color": "#816547",
+            "amount": 0.12
+          }
+        ]
+      },
+      "drawn": "brown tilled soil with parallel dark furrow rows and clods",
+      "variants": [
+        "assets/generated/texture/tilled_soil.png",
+        "assets/generated/texture/tilled_soil_1.png",
+        "assets/generated/texture/tilled_soil_2.png",
+        "assets/generated/texture/tilled_soil_3.png"
+      ]
+    },
+    {
+      "id": "dirt_path",
+      "kind": "texture",
+      "prompt": "tan packed dirt path, faint footprints and small pebbles",
+      "out": "assets/generated/texture/dirt_path.png",
+      "seamless": true,
+      "recipe": {
+        "base": {
+          "ramp": [
+            "#7a6a58",
+            "#896d54",
+            "#948474"
+          ],
+          "cells": 5,
+          "octaves": 3,
+          "dither": true
+        },
+        "layers": [
+          {
+            "type": "blotches",
+            "color": "#6a5a48",
+            "cells": 6,
+            "threshold": 0.7,
+            "relief": 0.15
+          },
+          {
+            "type": "speckle",
+            "color": "#ae9982",
+            "amount": 0.08
+          }
+        ]
+      },
+      "drawn": "tan packed dirt with faint dark stains and small light pebbles",
+      "variants": [
+        "assets/generated/texture/dirt_path.png",
+        "assets/generated/texture/dirt_path_1.png",
+        "assets/generated/texture/dirt_path_2.png",
+        "assets/generated/texture/dirt_path_3.png"
+      ]
+    },
+    {
+      "id": "pond",
+      "kind": "texture",
+      "prompt": "still blue pond water, pale ripples, a few lily pads",
+      "out": "assets/generated/texture/pond.png",
+      "seamless": true,
+      "recipe": {
+        "base": {
+          "ramp": [
+            "#2c4652",
+            "#35525f",
+            "#3f5c6a"
+          ],
+          "cells": 4,
+          "octaves": 2,
+          "dither": false
+        },
+        "layers": [
+          {
+            "type": "waves",
+            "color": "#5a7a88",
+            "freq": 3,
+            "threshold": -0.4
+          },
+          {
+            "type": "waves",
+            "color": "#486876",
+            "freq": 5,
+            "threshold": 0.3
+          },
+          {
+            "type": "speckle",
+            "color": "#5f8290",
+            "amount": 0.03
+          }
+        ]
+      },
+      "drawn": "still blue pond water with pale ripples and a faint surface glint",
+      "variants": [
+        "assets/generated/texture/pond.png",
+        "assets/generated/texture/pond_1.png",
+        "assets/generated/texture/pond_2.png",
+        "assets/generated/texture/pond_3.png"
+      ]
+    },
+    {
+      "id": "farmhouse",
+      "kind": "sprite",
+      "sheet": "farm",
+      "prompt": "a small farmhouse, red roof, cream walls, chimney, seen from directly above",
+      "out": "assets/generated/sprite/farmhouse.png"
+    },
+    {
+      "id": "fence",
+      "kind": "sprite",
+      "sheet": "farm",
+      "prompt": "a wooden fence post with two rails, weathered grey-brown, top-down",
+      "out": "assets/generated/sprite/fence.png"
+    },
+    {
+      "id": "scarecrow",
+      "kind": "sprite",
+      "sheet": "farm",
+      "prompt": "a scarecrow on a wooden pole, straw hat, patched shirt, top-down",
+      "out": "assets/generated/sprite/scarecrow.png"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "grass_to_tilled_soil",
+      "view": "top",
+      "a": "grass",
+      "b": "tilled_soil",
+      "out": "assets/generated/transition/grass_to_tilled_soil.png",
+      "edge": {
+        "wobble": 0.2,
+        "rim": "#2b1717"
+      }
+    },
+    {
+      "id": "grass_to_dirt_path",
+      "view": "top",
+      "a": "grass",
+      "b": "dirt_path",
+      "out": "assets/generated/transition/grass_to_dirt_path.png",
+      "edge": {
+        "wobble": 0.2,
+        "rim": "#593b28"
+      }
+    },
+    {
+      "id": "grass_to_pond",
+      "view": "top",
+      "a": "grass",
+      "b": "pond",
+      "out": "assets/generated/transition/grass_to_pond.png",
+      "edge": {
+        "wobble": 0.2,
+        "rim": "#2f4a1c"
+      }
+    },
+    {
+      "id": "tilled_soil_to_dirt_path",
+      "view": "top",
+      "a": "tilled_soil",
+      "b": "dirt_path",
+      "out": "assets/generated/transition/tilled_soil_to_dirt_path.png",
+      "edge": {
+        "wobble": 0.2,
+        "rim": "#3a2416"
+      }
+    },
+    {
+      "id": "dirt_path_to_pond",
+      "view": "top",
+      "a": "dirt_path",
+      "b": "pond",
+      "out": "assets/generated/transition/dirt_path_to_pond.png",
+      "edge": {
+        "wobble": 0.2,
+        "rim": "#593b28"
+      }
+    }
+  ]
+}

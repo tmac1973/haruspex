@@ -1,0 +1,187 @@
+{
+	"version": 1,
+	"view": "top",
+	"tile_size": 64,
+	"columns": 4,
+	"a": "dirt_path",
+	"b": "pond",
+	"order": "NW=1 NE=2 SW=4 SE=8; a set bit is a/solid",
+	"tiles": [
+		{
+			"index": 0,
+			"x": 0,
+			"y": 0,
+			"corners": {
+				"nw": "pond",
+				"ne": "pond",
+				"sw": "pond",
+				"se": "pond"
+			}
+		},
+		{
+			"index": 1,
+			"x": 64,
+			"y": 0,
+			"corners": {
+				"nw": "dirt_path",
+				"ne": "pond",
+				"sw": "pond",
+				"se": "pond"
+			}
+		},
+		{
+			"index": 2,
+			"x": 128,
+			"y": 0,
+			"corners": {
+				"nw": "pond",
+				"ne": "dirt_path",
+				"sw": "pond",
+				"se": "pond"
+			}
+		},
+		{
+			"index": 3,
+			"x": 192,
+			"y": 0,
+			"corners": {
+				"nw": "dirt_path",
+				"ne": "dirt_path",
+				"sw": "pond",
+				"se": "pond"
+			}
+		},
+		{
+			"index": 4,
+			"x": 0,
+			"y": 64,
+			"corners": {
+				"nw": "pond",
+				"ne": "pond",
+				"sw": "dirt_path",
+				"se": "pond"
+			}
+		},
+		{
+			"index": 5,
+			"x": 64,
+			"y": 64,
+			"corners": {
+				"nw": "dirt_path",
+				"ne": "pond",
+				"sw": "dirt_path",
+				"se": "pond"
+			}
+		},
+		{
+			"index": 6,
+			"x": 128,
+			"y": 64,
+			"corners": {
+				"nw": "pond",
+				"ne": "dirt_path",
+				"sw": "dirt_path",
+				"se": "pond"
+			}
+		},
+		{
+			"index": 7,
+			"x": 192,
+			"y": 64,
+			"corners": {
+				"nw": "dirt_path",
+				"ne": "dirt_path",
+				"sw": "dirt_path",
+				"se": "pond"
+			}
+		},
+		{
+			"index": 8,
+			"x": 0,
+			"y": 128,
+			"corners": {
+				"nw": "pond",
+				"ne": "pond",
+				"sw": "pond",
+				"se": "dirt_path"
+			}
+		},
+		{
+			"index": 9,
+			"x": 64,
+			"y": 128,
+			"corners": {
+				"nw": "dirt_path",
+				"ne": "pond",
+				"sw": "pond",
+				"se": "dirt_path"
+			}
+		},
+		{
+			"index": 10,
+			"x": 128,
+			"y": 128,
+			"corners": {
+				"nw": "pond",
+				"ne": "dirt_path",
+				"sw": "pond",
+				"se": "dirt_path"
+			}
+		},
+		{
+			"index": 11,
+			"x": 192,
+			"y": 128,
+			"corners": {
+				"nw": "dirt_path",
+				"ne": "dirt_path",
+				"sw": "pond",
+				"se": "dirt_path"
+			}
+		},
+		{
+			"index": 12,
+			"x": 0,
+			"y": 192,
+			"corners": {
+				"nw": "pond",
+				"ne": "pond",
+				"sw": "dirt_path",
+				"se": "dirt_path"
+			}
+		},
+		{
+			"index": 13,
+			"x": 64,
+			"y": 192,
+			"corners": {
+				"nw": "dirt_path",
+				"ne": "pond",
+				"sw": "dirt_path",
+				"se": "dirt_path"
+			}
+		},
+		{
+			"index": 14,
+			"x": 128,
+			"y": 192,
+			"corners": {
+				"nw": "pond",
+				"ne": "dirt_path",
+				"sw": "dirt_path",
+				"se": "dirt_path"
+			}
+		},
+		{
+			"index": 15,
+			"x": 192,
+			"y": 192,
+			"corners": {
+				"nw": "dirt_path",
+				"ne": "dirt_path",
+				"sw": "dirt_path",
+				"se": "dirt_path"
+			}
+		}
+	]
+}
