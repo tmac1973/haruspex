@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.2.9](https://github.com/tmac1973/haruspex/compare/v0.2.8...v0.2.9) (2026-10-22)
+
+
+### Features
+
+* **assets:** draw make_asset textures from a recipe, judge them tiled 3×3 ([#613](https://github.com/tmac1973/haruspex/issues/613)) ([4f9177c](https://github.com/tmac1973/haruspex/commit/4f9177ccede1106cd72b972d9b8c1f0b7a32bcd0))
+* **assets:** live check of recipe textures, seamless pictures, two recipe revisions ([#616](https://github.com/tmac1973/haruspex/issues/616)) ([4161ffc](https://github.com/tmac1973/haruspex/commit/4161ffc1cd9e4e117e3fce49179ba921d5c4a96e))
+* **assets:** transition sets — 16-tile corner edges, top-down and side-view, in make_asset and the asset job ([#618](https://github.com/tmac1973/haruspex/issues/618)) ([70a64e4](https://github.com/tmac1973/haruspex/commit/70a64e468d000867a8e788054be5a42732f3e9e8))
+* **textures:** relief and jitter, and planks, stones, hex, herringbone and tufts layers ([#617](https://github.com/tmac1973/haruspex/issues/617)) ([0715179](https://github.com/tmac1973/haruspex/commit/0715179357b267f1ee987b4613f57fd507aa0d17))
+
+
+### Bug Fixes
+
+* **agent:** cap run_python output and cut an oversized result before stubbing ([#612](https://github.com/tmac1973/haruspex/issues/612)) ([c5b7d21](https://github.com/tmac1973/haruspex/commit/c5b7d214a382eaad52196c8e05caca703b9ed9a4))
+* **agent:** let a capped file request write its file, and say tools are off ([#609](https://github.com/tmac1973/haruspex/issues/609)) ([0637e83](https://github.com/tmac1973/haruspex/commit/0637e83d3addb02d35014b9e4b74bd2a91c8f165))
+* **ci:** run e2e-app on ubuntu 24.04, which still ships webkit2gtk-driver ([#621](https://github.com/tmac1973/haruspex/issues/621)) ([c574bef](https://github.com/tmac1973/haruspex/commit/c574befaaf7a3bac9ea9eba241865c47771c9ecc))
+* **inference:** size iGPU context to its memory and drop the 8K/16K tiers ([#610](https://github.com/tmac1973/haruspex/issues/610)) ([106c71b](https://github.com/tmac1973/haruspex/commit/106c71b7feda8ebe1d7be0ae163ff3edfa6fae64))
+
+
+### Documentation
+
+* **plan:** texture follow-ups — new layers, depth, revisions, transition sets ([#614](https://github.com/tmac1973/haruspex/issues/614)) ([#615](https://github.com/tmac1973/haruspex/issues/615)) ([4909bd9](https://github.com/tmac1973/haruspex/commit/4909bd92cfc4e3b7dea306426001b57ac9cfb3bc))
+
 ## [0.2.8](https://github.com/tmac1973/haruspex/compare/v0.2.7...v0.2.8) (2026-10-19)
 
 
