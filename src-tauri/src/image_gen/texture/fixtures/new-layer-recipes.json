@@ -1,0 +1,28 @@
+{
+	"oak planks": {
+		"base": { "ramp": ["#5a3a22", "#6b4529", "#7a5030"], "cells": 6 },
+		"layers": [{ "type": "planks", "axis": "x", "w": 6, "len": 24, "gap": 1, "colors": ["#8a5a34", "#7c5030", "#946238"], "seam": "#3a2414", "grain": 0.6, "relief": 0.4, "jitter": 0.5 }]
+	},
+	"cobblestones": {
+		"base": { "ramp": ["#4a4744", "#58544f", "#65605a"], "cells": 4 },
+		"layers": [
+			{ "type": "stones", "cells": 5, "gap": 1, "colors": ["#7a746c", "#857e75", "#6c665f"], "mortar": "#2e2b28", "relief": 0.7, "jitter": 0.6 },
+			{ "type": "speckle", "color": "#3a3632", "amount": 0.03 }
+		]
+	},
+	"hex paving": {
+		"base": { "ramp": ["#8a857b", "#968f84"], "cells": 4 },
+		"layers": [{ "type": "hex", "size": 10, "gap": 1, "colors": ["#a39d91", "#9a9488", "#aca69a"], "mortar": "#55514a", "relief": 0.5, "jitter": 0.5 }]
+	},
+	"herringbone path": {
+		"base": { "ramp": ["#6e3a2c", "#7d4434"], "cells": 4 },
+		"layers": [{ "type": "herringbone", "w": 4, "gap": 1, "colors": ["#9a4a36", "#8c4231", "#a5543e"], "mortar": "#4a4038", "relief": 0.6, "jitter": 0.7 }]
+	},
+	"meadow grass": {
+		"base": { "ramp": ["#3d5a26", "#46652c", "#507032"], "cells": 5 },
+		"layers": [
+			{ "type": "tufts", "color": "#2f4a1c", "light": "#6a9a3c", "density": 0.18, "height": 3 },
+			{ "type": "tufts", "color": "#5a8434", "light": "#86b450", "density": 0.08, "height": 2 }
+		]
+	}
+}

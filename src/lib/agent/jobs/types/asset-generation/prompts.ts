@@ -140,7 +140,8 @@ export function judgePrompt(
 }
 
 /**
- * Three recipes from the phase 17 prototype, as worked examples. None has a
+ * Three worked examples: two from the phase 17 prototype, and oak planks for
+ * the layers the prototype lacked. None has a
  * painted line: a fill tile is laid edge to edge, and the asphalt example
  * that once carried a centre line taught the model to stripe every tile.
  */
@@ -175,10 +176,23 @@ const RECIPE_EXAMPLES = [
 		}
 	],
 	[
-		'dark river water',
+		'oak plank floor',
 		{
-			base: { ramp: ['#1d3446', '#24405a', '#2c4c68'], cells: 2 },
-			layers: [{ type: 'waves', color: '#4f7690', freq: 5, threshold: 0.9 }]
+			base: { ramp: ['#5a3a22', '#6b4529', '#7a5030'], cells: 6 },
+			layers: [
+				{
+					type: 'planks',
+					axis: 'x',
+					w: 6,
+					len: 24,
+					gap: 1,
+					colors: ['#8a5a34', '#7c5030', '#946238'],
+					seam: '#3a2414',
+					grain: 0.6,
+					relief: 0.4,
+					jitter: 0.5
+				}
+			]
 		}
 	]
 ] as const;
@@ -214,9 +228,19 @@ export function recipeGuide(): string[] {
 		'- { type: "waves", color, freq: 1–16, threshold: -1–1 } — water ripples.',
 		'- { type: "grid", step, width?: 1–4, color } — seams: floor tiles, panels.',
 		'- { type: "bevel", step: 4–32, light, dark } — raised plates or tiles.',
+		'- { type: "planks", axis: "x" or "y", w: 2–16, len: 4–32, gap: 0–2, colors: 1–6,',
+		'  seam, grain?: 0–1, relief?, jitter? } — boards with staggered ends: wood floors.',
+		'- { type: "stones", cells: 2–12, gap: 0–3, colors: 1–6, mortar, relief?, jitter? }',
+		'  — irregular rounded stones: cobbles, pebbles, dry-stone walls.',
+		'- { type: "hex", size: 4–32, gap: 0–2, colors: 1–6, mortar, relief?, jitter? } —',
+		'  hexagonal paving.',
+		'- { type: "herringbone", w: 2–8, gap: 0–2, colors: 1–6, mortar, relief?, jitter? }',
+		'  — 2:1 bricks at right angles: paths, parquet.',
+		'- { type: "tufts", color, light?, density: 0.01–0.3, height: 1–6 } — clumps of',
+		'  grass blades, reeds or weeds; light tips each blade.',
 		'- wall_face: { height: 1–16, shade: 0–1 } — ONLY for a wall drawn with a',
 		'  front face; darkens a band at the bottom. Omit it for anything flat.',
-		'relief lights each brick or patch from the top left so it looks raised, and',
+		'relief lights each brick, stone, board or patch from the top left so it looks raised, and',
 		'makes cracks look cut in. Use it on built or lumpy surfaces; leave it off',
 		'flat ones like water or painted floors.',
 		'',

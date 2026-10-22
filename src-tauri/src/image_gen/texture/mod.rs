@@ -179,6 +179,62 @@ mod tests {
                 },
             ),
             (
+                "planks",
+                Layer::Planks {
+                    axis: Axis::X,
+                    w: 6.0,
+                    len: 24.0,
+                    gap: 1.0,
+                    colors: vec!["#8a5a34".into(), "#7c5030".into()],
+                    seam: "#3a2414".into(),
+                    grain: Some(0.6),
+                    relief: Some(0.4),
+                    jitter: Some(0.5),
+                },
+            ),
+            (
+                "stones",
+                Layer::Stones {
+                    cells: 4,
+                    gap: 1.0,
+                    colors: vec!["#7a746c".into(), "#6c665f".into()],
+                    mortar: "#3a3632".into(),
+                    relief: Some(0.6),
+                    jitter: Some(0.5),
+                },
+            ),
+            (
+                "hex",
+                Layer::Hex {
+                    size: 8.0,
+                    gap: 1.0,
+                    colors: vec!["#8f8a80".into(), "#9b968b".into()],
+                    mortar: "#4a4640".into(),
+                    relief: Some(0.5),
+                    jitter: Some(0.5),
+                },
+            ),
+            (
+                "herringbone",
+                Layer::Herringbone {
+                    w: 4.0,
+                    gap: 1.0,
+                    colors: vec!["#9a4a36".into(), "#8c4231".into()],
+                    mortar: "#4a4038".into(),
+                    relief: Some(0.5),
+                    jitter: Some(0.5),
+                },
+            ),
+            (
+                "tufts",
+                Layer::Tufts {
+                    color: "#4f7a32".into(),
+                    light: Some("#8ab05a".into()),
+                    density: 0.15,
+                    height: 3.0,
+                },
+            ),
+            (
                 "blotches with relief",
                 Layer::Blotches {
                     color: c(),
@@ -222,6 +278,9 @@ mod tests {
         // its wrap seam is no more discontinuous than its own interior.
         // Averaged over 20 seeds, because a single seam of 32 pixels is noisy.
         //
+        // Stones are irregular cells, like cracks: their mortar falls
+        // anywhere, so they take the averaged bar below.
+        //
         // A patterned layer is held to a different bar. Bricks, grids and
         // bevels put a line on one side of the seam by design, so the seam is
         // as sharp as the edge between any two cells — sharper than the average step,
@@ -230,7 +289,12 @@ mod tests {
         for (name, l) in every_layer() {
             let patterned = matches!(
                 l,
-                Layer::Bricks { .. } | Layer::Grid { .. } | Layer::Bevel { .. }
+                Layer::Bricks { .. }
+                    | Layer::Grid { .. }
+                    | Layer::Bevel { .. }
+                    | Layer::Planks { .. }
+                    | Layer::Hex { .. }
+                    | Layer::Herringbone { .. }
             );
             for n in [16, 32, 64] {
                 let (mut seams, mut inners, mut worst) = (0.0, 0.0, 0.0f64);
@@ -410,8 +474,10 @@ mod tests {
     }
 
     #[test]
-    fn the_shaded_example_recipes_parse_and_render() {
-        for (name, r) in fixture_recipes(include_str!("fixtures/shaded-recipes.json")) {
+    fn the_example_recipes_parse_and_render() {
+        let shaded = fixture_recipes(include_str!("fixtures/shaded-recipes.json"));
+        let new = fixture_recipes(include_str!("fixtures/new-layer-recipes.json"));
+        for (name, r) in shaded.into_iter().chain(new) {
             render(&r, 32, 1, 4, &[]).unwrap_or_else(|e| panic!("{name}: {e}"));
         }
     }
@@ -482,6 +548,9 @@ mod tests {
         let mut recipes = prototype_recipes();
         recipes.extend(fixture_recipes(include_str!(
             "fixtures/shaded-recipes.json"
+        )));
+        recipes.extend(fixture_recipes(include_str!(
+            "fixtures/new-layer-recipes.json"
         )));
         let (n, scale) = (32u32, 6u32);
         let t = n * scale;
