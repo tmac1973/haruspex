@@ -27,8 +27,13 @@ function spec(): AssetSpec {
 	};
 }
 
-function deps(answers: Array<Record<string, unknown>>, bad: Set<unknown> = new Set()): RecipeDeps {
+function deps(
+	answers: Array<Record<string, unknown>>,
+	bad: Set<unknown> = new Set(),
+	visionSupported = true
+): RecipeDeps {
 	return {
+		visionSupported,
 		ask: vi.fn(
 			async () =>
 				new Map(
@@ -93,6 +98,28 @@ describe('reviseRecipe', () => {
 		const prompt = vi.mocked(d.ask).mock.calls[0][0];
 		expect(prompt).toContain('looks like carpet');
 		expect(prompt).toContain('"ramp":["#000000","#ffffff"]');
+		expect(vi.mocked(d.ask).mock.calls[0][1]).toBeUndefined();
+		expect(prompt).not.toContain('laid 3×3');
+	});
+
+	it('shows the reviser the tiled preview, and says so', async () => {
+		const d = deps([{ street: R }]);
+		const s = spec();
+		const preview = new Uint8Array([1, 2, 3]);
+		await reviseRecipe(s, { ...s.entries[0], recipe: R }, 'looks like carpet', d, preview);
+		const [prompt, image] = vi.mocked(d.ask).mock.calls[0];
+		expect(image).toBe(preview);
+		expect(prompt).toContain('The image shows your last recipe laid 3×3');
+	});
+
+	it('neither sends nor mentions the preview to a model that cannot see', async () => {
+		const d = deps([{ street: R }], new Set(), false);
+		const s = spec();
+		const preview = new Uint8Array([1, 2, 3]);
+		await reviseRecipe(s, { ...s.entries[0], recipe: R }, 'looks like carpet', d, preview);
+		const [prompt, image] = vi.mocked(d.ask).mock.calls[0];
+		expect(image).toBeUndefined();
+		expect(prompt).not.toContain('laid 3×3');
 	});
 });
 

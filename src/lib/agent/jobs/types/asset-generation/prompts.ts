@@ -240,7 +240,8 @@ export function recipePrompt(
 	textures: Array<{ id: string; prompt: string }>,
 	palette: number[],
 	stylePrompt: string,
-	feedback?: Map<string, string>
+	feedback?: Map<string, string>,
+	imageShown = false
 ): string {
 	return [
 		'You are designing tileable ground and wall textures for a top-down 2D game.',
@@ -266,7 +267,10 @@ export function recipePrompt(
 		'The textures:',
 		...textures.map((t) => {
 			const fix = feedback?.get(t.id);
-			return `- ${t.id}: ${t.prompt}${fix ? `\n  Your last recipe for this needs changing: ${fix}` : ''}`;
+			const seen = imageShown
+				? '. The image shows your last recipe laid 3×3, as a map lays it.'
+				: ':';
+			return `- ${t.id}: ${t.prompt}${fix ? `\n  Your last recipe for this needs changing${seen} ${fix}` : ''}`;
 		}),
 		'',
 		'Call `submit_texture_recipes` once, with a recipe and its `drawn` line for',

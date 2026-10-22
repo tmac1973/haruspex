@@ -75,10 +75,14 @@ export interface CodeTextureDeps {
 	render: (recipe: TextureRecipe, seed: number, variants: number) => Promise<Uint8Array[]>;
 	/** A tile laid 3×3, for the judge to see what repeats. */
 	preview: (tile: Uint8Array) => Promise<Uint8Array>;
-	/** A new recipe after the judge's no, with what it draws, or null. */
+	/**
+	 * A new recipe after the judge's no, with what it draws, or null.
+	 * `preview` is what the judge saw: the tile laid 3×3.
+	 */
 	revise: (
 		entry: AssetEntry,
-		reason: string
+		reason: string,
+		preview: Uint8Array
 	) => Promise<{ recipe: TextureRecipe; drawn: string } | null>;
 	/** Why an entry has no recipe, when the recipe stage gave up on it. */
 	recipeFailures: Map<string, string>;
