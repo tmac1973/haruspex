@@ -181,3 +181,22 @@ the sets beside the textures.
 Revert the commit. Specs keep their `transitions` (phase 08) and any
 written `edge`. Sets already drawn stay on disk, and nothing draws new
 ones.
+
+## As built
+
+- `RecipeDeps.ask` resolves to `Submitted` (`{ recipes, edges }`), read by
+  `parseSubmitted`. `parseRecipes` is still there for the recipes alone.
+- **A run with every texture recipe in place still asks for edges** when a
+  set has none, with `recipes` empty. That covers Make again on a set, so
+  its note reaches the model.
+- The pipeline's set step is a helper, `drawTransitions`; the pipeline
+  function was already far over the lint limits. `judgeAsset` and the new
+  `judgeTransition` share `judgeImage`.
+- **Review assets shows a set as its 4×4 sheet,** not the preview map.
+  The sheet is already on disk, and showing it calls nothing in Rust.
+- **The guide is on the `textures` page,** not `jobs`, which has no room.
+- The report's code-texture table now counts revisions ("passed after 2
+  revision(s)"). That fix is in PR 1, since phase 03 is what made two
+  possible.
+- The end-to-end test is in `runner.assetGenerate.test.ts`, with the
+  texture commands added to `wireFs`.

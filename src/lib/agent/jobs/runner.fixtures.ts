@@ -624,6 +624,12 @@ export function wireFs(
 			failed: checks.failed
 		}),
 		image_contact_sheet: () => [...PNG_BYTES],
+		texture_validate: () => undefined,
+		texture_render: (args) =>
+			Array.from({ length: Number(args?.variants ?? 1) }, () => [...PNG_BYTES]),
+		texture_transition_validate: () => undefined,
+		texture_transition_render: () => [...PNG_BYTES],
+		texture_transition_preview: () => [...PNG_BYTES],
 		image_models: () => structuredClone(IMAGE_MODELS),
 		image_default_profile: () => profileFixture(),
 		image_extract_palette: PALETTE,

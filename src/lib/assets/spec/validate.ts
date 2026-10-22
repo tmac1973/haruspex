@@ -5,7 +5,7 @@
  * "an output path escapes the working directory" is search for it.
  */
 
-import type { AssetSpec } from '#lib/assets/spec/types.ts';
+import type { AssetSpec, TransitionEntry } from '#lib/assets/spec/types.ts';
 import { ID_PATTERN } from '#lib/assets/spec/types.ts';
 
 /** Absolute, drive-lettered, or climbing out of the working directory. */
@@ -119,18 +119,7 @@ function transitionProblems(
 		}
 		if (ids.has(t.id)) problems.push(`${at}: duplicate id.`);
 		ids.add(t.id);
-		material(at, 'a', t.a || undefined);
-		if (!t.a) problems.push(`${at}: names no material as "a".`);
-		material(at, 'b', t.b);
-		material(at, 'cap', t.cap);
-		if (t.view === 'top' && !t.b) problems.push(`${at}: a top set needs a second material as "b".`);
-		if (t.view === 'top' && t.cap) problems.push(`${at}: only a side set has a cap.`);
-		if (t.view === 'side' && t.b) {
-			problems.push(`${at}: a side set is ground against air; drop "b" (a surface goes in "cap").`);
-		}
-		if (t.a && (t.a === t.b || t.a === t.cap)) {
-			problems.push(`${at}: both materials are "${t.a}".`);
-		}
+		problems.push(...shapeProblems(at, t, material));
 		if (t.out.trim().length === 0) {
 			problems.push(`${at}: no output path.`);
 		} else if (escapesWorkdir(t.out)) {
@@ -142,6 +131,28 @@ function transitionProblems(
 		} else {
 			outs.set(t.out, at);
 		}
+	}
+	return problems;
+}
+
+/** What is wrong with a set's materials and view; `material` checks one id. */
+function shapeProblems(
+	at: string,
+	t: TransitionEntry,
+	material: (at: string, field: string, id: string | undefined) => void
+): string[] {
+	const problems: string[] = [];
+	material(at, 'a', t.a || undefined);
+	if (!t.a) problems.push(`${at}: names no material as "a".`);
+	material(at, 'b', t.b);
+	material(at, 'cap', t.cap);
+	if (t.view === 'top' && !t.b) problems.push(`${at}: a top set needs a second material as "b".`);
+	if (t.view === 'top' && t.cap) problems.push(`${at}: only a side set has a cap.`);
+	if (t.view === 'side' && t.b) {
+		problems.push(`${at}: a side set is ground against air; drop "b" (a surface goes in "cap").`);
+	}
+	if (t.a && (t.a === t.b || t.a === t.cap)) {
+		problems.push(`${at}: both materials are "${t.a}".`);
 	}
 	return problems;
 }

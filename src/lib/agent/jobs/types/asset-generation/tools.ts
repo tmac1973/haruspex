@@ -245,7 +245,9 @@ registerTool({
 		type: 'function',
 		function: {
 			name: SUBMIT_TEXTURE_RECIPES_TOOL,
-			description: 'Submit a recipe for every texture you were given. Call this exactly once.',
+			description:
+				'Submit a recipe for every texture you were given, and an edge for every transition ' +
+				'set. Call this exactly once.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -268,6 +270,22 @@ registerTool({
 							},
 							required: ['id', 'recipe', 'drawn']
 						}
+					},
+					edges: {
+						type: 'array',
+						description: 'One per transition set you were given, if any.',
+						items: {
+							type: 'object',
+							properties: {
+								id: { type: 'string', description: 'The set id, exactly as given.' },
+								edge: {
+									type: 'object',
+									description:
+										'{ wobble?: 0–0.25, rim?: "#rrggbb", cap_height?: 1–8 (side sets only) }.'
+								}
+							},
+							required: ['id', 'edge']
+						}
 					}
 				},
 				required: ['recipes']
@@ -288,6 +306,23 @@ export interface SubmittedRecipe {
 	recipe: Record<string, unknown>;
 	/** Empty when the model left it out; the judge then falls back to the prompt. */
 	drawn: string;
+}
+
+/** What one recipe turn submitted: recipes by texture id, edges by set id. */
+export interface Submitted {
+	recipes: Map<string, SubmittedRecipe>;
+	/** Unchecked; Rust checks each before it is used. */
+	edges: Map<string, unknown>;
+}
+
+/** Read the recipes and edges out of a tool call, by id. Malformed ones are dropped. */
+export function parseSubmitted(args: Record<string, unknown> | undefined): Submitted {
+	const edges = new Map<string, unknown>();
+	for (const e of Array.isArray(args?.edges) ? args.edges : []) {
+		const { id, edge } = (e ?? {}) as { id?: unknown; edge?: unknown };
+		if (typeof id === 'string' && edge && typeof edge === 'object') edges.set(id.trim(), edge);
+	}
+	return { recipes: parseRecipes(args), edges };
 }
 
 /** Read the recipes out of a tool call, by id. Malformed ones are dropped. */

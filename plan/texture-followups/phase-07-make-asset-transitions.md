@@ -110,3 +110,16 @@ the invoke mock:
 
 Revert the commit. The renderer (phase 06) and the job (phase 09) don't
 depend on it.
+
+## As built
+
+- **The JSON map goes through the bytes writer** as UTF-8, with no
+  `writeText` on `AssetIo`. The file is the same, and the code is smaller.
+- `make-asset.ts` would have passed the 400-line lint limit. Its file
+  helpers moved to `tools/_assetIo.ts`, and the transition kind to
+  `tools/_assetTransition.ts`; the tests for it are in
+  `make-asset.transition.test.ts`.
+- **The guide has a new `textures` page.** `images` was at 5865 of its
+  6000 bytes and `jobs` at 5973, with no room for transition sets. The page
+  covers tiling textures, variants, the 3×3 check, transition sets, and
+  how the job draws them. `images` keeps one line pointing at it.

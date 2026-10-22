@@ -99,6 +99,35 @@ describe('regenerateMarked', () => {
 		expect(d.run).toHaveBeenCalledTimes(1);
 	});
 
+	it('sends a transition set back: both files aside, its edge dropped, the note kept', async () => {
+		const withSet: AssetSpec = {
+			...spec(),
+			transitions: [
+				{
+					id: 'shore',
+					view: 'top',
+					a: 'grass',
+					b: 'grass',
+					out: 'assets/generated/transition/shore.png',
+					edge: { wobble: 0.2 }
+				}
+			]
+		};
+		const { d } = deps([
+			'assets/generated/transition/shore.png',
+			'assets/generated/transition/shore.json'
+		]);
+		const r = await regenerateMarked(withSet, [{ id: 'shore', note: 'a softer edge' }], d);
+		expect(r.moved.map((m) => m.to)).toEqual([
+			'assets/generated/transition/.history/shore-20261002-203011.png',
+			'assets/generated/transition/.history/shore-20261002-203011.json'
+		]);
+		const saved = vi.mocked(d.writeSpec).mock.calls[0][0];
+		expect(saved.transitions?.[0]).not.toHaveProperty('edge');
+		expect(saved.transitions?.[0].notes).toBe('a softer edge');
+		expect(r.amended).toEqual(['shore']);
+	});
+
 	it('moves nothing when saving the note fails', async () => {
 		const { d } = deps(['assets/generated/sprite/player.png']);
 		d.writeSpec.mockRejectedValueOnce(new Error('disk full'));

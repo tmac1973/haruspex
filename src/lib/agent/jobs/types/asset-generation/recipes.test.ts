@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { AssetSpec } from '#lib/assets/spec/types.ts';
+import type { AssetSpec, TransitionEntry } from '#lib/assets/spec/types.ts';
 import {
 	applyCodeTextures,
 	needingRecipes,
+	reviseEdge,
 	reviseRecipe,
 	textureSeed,
 	variantPaths,
@@ -27,23 +28,33 @@ function spec(): AssetSpec {
 	};
 }
 
+/**
+ * Each answer is one turn: recipes by texture id, and `edges` by set id when
+ * the turn sent any.
+ */
 function deps(
-	answers: Array<Record<string, unknown>>,
+	answers: Array<Record<string, unknown> & { edges?: Record<string, unknown> }>,
 	bad: Set<unknown> = new Set(),
 	visionSupported = true
 ): RecipeDeps {
 	return {
 		visionSupported,
-		ask: vi.fn(
-			async () =>
-				new Map(
-					Object.entries(answers.shift() ?? {}).map(([id, recipe]) => [
+		ask: vi.fn(async () => {
+			const { edges = {}, ...recipes } = answers.shift() ?? {};
+			return {
+				recipes: new Map(
+					Object.entries(recipes).map(([id, recipe]) => [
 						id,
 						{ recipe: recipe as Record<string, unknown>, drawn: `drawn ${id}` }
 					])
-				)
-		),
-		validate: vi.fn(async (r: unknown) => (bad.has(r) ? 'base.ramp: too few' : null))
+				),
+				edges: new Map(Object.entries(edges))
+			};
+		}),
+		validate: vi.fn(async (r: unknown) => (bad.has(r) ? 'base.ramp: too few' : null)),
+		validateEdge: vi.fn(async (_v: unknown, e: unknown) =>
+			bad.has(e) ? 'edge.wobble: 0.9 is outside 0–0.25.' : null
+		)
 	};
 }
 
@@ -174,5 +185,70 @@ describe('parseRecipes', () => {
 		expect([...got.keys()]).toEqual(['street', 'grass']);
 		expect(got.get('street')?.drawn).toBe('cracked asphalt');
 		expect(got.get('grass')?.drawn).toBe('');
+	});
+});
+
+describe('transition edges', () => {
+	const withSets = (): AssetSpec & { transitions: TransitionEntry[] } => ({
+		...spec(),
+		transitions: [
+			{ id: 'grass_street', view: 'top', a: 'grass', b: 'street', out: 't/gs.png' },
+			{ id: 'kerb', view: 'top', a: 'street', b: 'grass', out: 't/k.png', edge: { wobble: 0.1 } }
+		]
+	});
+	const E = { wobble: 0.2, rim: '#202020' };
+
+	it('asks for an edge for each set without one, in the same turn as the recipes', async () => {
+		const d = deps([{ street: R, grass: R, edges: { grass_street: E } }]);
+		const r = await writeRecipes(withSets(), d);
+		expect(d.ask).toHaveBeenCalledTimes(1);
+		const prompt = vi.mocked(d.ask).mock.calls[0][0];
+		expect(prompt).toContain('- grass_street: top, grass meets street');
+		expect(prompt).not.toContain('- kerb:');
+		expect(r.spec.transitions?.map((t) => t.edge)).toEqual([E, { wobble: 0.1 }]);
+	});
+
+	it('asks again for a refused edge, then settles for the defaults', async () => {
+		const bad = { wobble: 0.9 };
+		const d = deps(
+			[{ street: R, grass: R, edges: { grass_street: bad } }, { edges: { grass_street: bad } }],
+			new Set([bad])
+		);
+		const r = await writeRecipes(withSets(), d);
+		expect(d.ask).toHaveBeenCalledTimes(2);
+		expect(vi.mocked(d.ask).mock.calls[1][0]).toContain('Your last edge for this needs changing');
+		expect(r.spec.transitions?.[0].edge).toEqual({});
+		expect(r.failed.size).toBe(0);
+	});
+
+	it('asks for edges alone when every texture has its recipe, with the set its note', async () => {
+		const s = withSets();
+		s.entries = s.entries.map((e) =>
+			e.kind === 'texture' ? { ...e, recipe: R } : e
+		) as typeof s.entries;
+		s.transitions[0] = { ...s.transitions[0], notes: 'a softer edge' };
+		const d = deps([{ edges: { grass_street: E } }]);
+		await writeRecipes(s, d);
+		const prompt = vi.mocked(d.ask).mock.calls[0][0];
+		expect(prompt).toContain('with `recipes` empty');
+		expect(prompt).toContain('The user asked for this set: a softer edge');
+		expect(prompt).not.toContain('The textures:');
+	});
+
+	it('revises one edge, showing the map to a model that can see', async () => {
+		const t = withSets().transitions[1];
+		const d = deps([{ edges: { kerb: E } }]);
+		const preview = new Uint8Array([4]);
+		expect(await reviseEdge(t, 'a ruler line', d, preview)).toEqual(E);
+		const [prompt, image] = vi.mocked(d.ask).mock.calls[0];
+		expect(image).toBe(preview);
+		expect(prompt).toContain('A reviewer said: a ruler line');
+		expect(prompt).toContain('The edge was: {"wobble":0.1}');
+	});
+
+	it('gives up on a revised edge Rust refuses', async () => {
+		const bad = { wobble: 0.9 };
+		const d = deps([{ edges: { kerb: bad } }], new Set([bad]));
+		expect(await reviseEdge(withSets().transitions[1], 'no', d)).toBeNull();
 	});
 });

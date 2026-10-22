@@ -374,3 +374,37 @@ describe('the code-drawn texture section', () => {
 		expect(drawn({ attempts: 3, recipe })).toContain('passed after 2 revision(s)');
 	});
 });
+
+describe('the transition sets section', () => {
+	const withSets = (): AssetSpec =>
+		({
+			...spec(),
+			transitions: [
+				{ id: 'shore', view: 'top', a: 'stone', b: 'grass', out: 'a/sets/shore.png' },
+				{ id: 'ledge', view: 'side', a: 'stone', out: 'a/sets/ledge.png' }
+			]
+		}) as AssetSpec;
+
+	it('lists each set with what it joins and how it went', () => {
+		const md = renderAssetReport(
+			input({
+				spec: withSets(),
+				transitions: [
+					{ id: 'shore', status: 'done', attempts: 2, durationMs: 1, edge: { wobble: 0.2 } },
+					{ id: 'ledge', status: 'unresolved', attempts: 2, durationMs: 1, reason: 'Seams show.' }
+				]
+			})
+		);
+		expect(md).toContain('## Transition sets');
+		expect(md).toContain(
+			'| `shore` | top | `stone` meets `grass` | `a/sets/shore.png` | passed after a new edge |'
+		);
+		expect(md).toContain(
+			'| `ledge` | side | `stone` | `a/sets/ledge.png` | kept, rejected: Seams show. |'
+		);
+	});
+
+	it('is left out when there are no sets', () => {
+		expect(renderAssetReport(input())).not.toContain('Transition sets');
+	});
+});

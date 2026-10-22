@@ -45,6 +45,12 @@ function loras(v: unknown): LoraRef[] | undefined {
 	return out.length > 0 ? out : undefined;
 }
 
+/** The spec's `transitions`, or nothing when it has no list. */
+function transitionsOf(raw: unknown): { transitions?: TransitionEntry[] } {
+	if (!Array.isArray(raw)) return {};
+	return { transitions: raw.map(transition).filter((t): t is TransitionEntry => t !== null) };
+}
+
 function transition(raw: unknown): TransitionEntry | null {
 	if (!raw || typeof raw !== 'object') return null;
 	const t = raw as Record<string, unknown>;
@@ -149,11 +155,7 @@ export function parseAssetSpec(json: string): ParseResult {
 		},
 		normalize: o.normalize as NormalizeProfile,
 		entries: o.entries.map(entry).filter((e): e is AssetEntry => e !== null),
-		...(Array.isArray(o.transitions)
-			? {
-					transitions: o.transitions.map(transition).filter((t): t is TransitionEntry => t !== null)
-				}
-			: {}),
+		...transitionsOf(o.transitions),
 		...(Object.keys(unknown).length > 0 ? { unknown } : {})
 	};
 	return { spec };

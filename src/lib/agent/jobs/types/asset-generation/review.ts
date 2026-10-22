@@ -13,7 +13,8 @@
  * a regeneration can come out worse, and the one before must be recoverable.
  */
 
-import type { AssetEntry, AssetSpec } from '#lib/assets/spec/types.ts';
+import type { AssetEntry, AssetSpec, TransitionEntry } from '#lib/assets/spec/types.ts';
+import { transitionFiles } from '#lib/assets/texture.ts';
 
 /** One asset the person wants made again. */
 export interface ReviewMark {
@@ -78,6 +79,26 @@ export function applyNotes(spec: AssetSpec, marks: ReviewMark[]): AssetSpec {
 	};
 }
 
+/**
+ * The spec with these transition sets sent back: their edge settings
+ * dropped, so the next run writes new ones, and the person's note kept as
+ * the set's notes, which the recipe stage reads out.
+ */
+export function redoSets(spec: AssetSpec, marks: ReviewMark[]): AssetSpec {
+	const notes = new Map(marks.map((m) => [m.id, (m.note ?? '').trim()]));
+	if (!spec.transitions?.some((t) => notes.has(t.id))) return spec;
+	return {
+		...spec,
+		transitions: spec.transitions.map((t): TransitionEntry => {
+			if (!notes.has(t.id)) return t;
+			// eslint-disable-next-line @typescript-eslint/no-unused-vars
+			const { edge, ...rest } = t;
+			const note = notes.get(t.id);
+			return note ? { ...rest, notes: note } : rest;
+		})
+	};
+}
+
 export interface ReviewDeps {
 	exists: (rel: string) => Promise<boolean>;
 	move: (fromRel: string, toRel: string) => Promise<void>;
@@ -106,20 +127,26 @@ export async function regenerateMarked(
 	deps: ReviewDeps
 ): Promise<ReviewResult> {
 	const byId = new Map(spec.entries.map((e) => [e.id, e]));
+	const setsById = new Map((spec.transitions ?? []).map((t) => [t.id, t]));
 	const chosen = marks.filter((m) => byId.has(m.id));
-	const amended = chosen.filter((m) => (m.note ?? '').trim()).map((m) => m.id);
+	const sets = marks.filter((m) => setsById.has(m.id));
+	const amended = [...chosen, ...sets].filter((m) => (m.note ?? '').trim()).map((m) => m.id);
 	// A code-drawn texture is made again from a new recipe, never the same
-	// one: the same recipe and seed draw the same pixels.
+	// one: the same recipe and seed draw the same pixels. A set likewise gets
+	// new edge settings.
 	const redraw = chosen.filter((m) => byId.get(m.id)!.recipe).map((m) => m.id);
-	if (amended.length > 0 || redraw.length > 0) {
-		await deps.writeSpec(dropRecipes(applyNotes(spec, chosen), redraw));
+	if (amended.length > 0 || redraw.length > 0 || sets.length > 0) {
+		await deps.writeSpec(redoSets(dropRecipes(applyNotes(spec, chosen), redraw), sets));
 	}
 
 	const when = stamp((deps.now ?? (() => new Date()))());
 	const moved: ReviewResult['moved'] = [];
-	for (const m of chosen) {
-		const entry = byId.get(m.id)!;
-		for (const out of entry.variants ?? [entry.out]) {
+	const files = (m: ReviewMark) => {
+		const entry = byId.get(m.id);
+		return entry ? (entry.variants ?? [entry.out]) : transitionFiles(setsById.get(m.id)!.out);
+	};
+	for (const m of [...chosen, ...sets]) {
+		for (const out of files(m)) {
 			if (!(await deps.exists(out))) continue;
 			const to = historyPath(out, when);
 			await deps.move(out, to);

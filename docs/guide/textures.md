@@ -38,4 +38,6 @@ It doesn't make 47-tile ("blob") sets or isometric tiles. Each set has one sheet
 
 ## In an asset generation job
 
-The **Asset generation** job draws its textures the same way when **Draw textures in code** is on. See the `jobs` page.
+The **Asset generation** job draws its textures the same way when **Draw textures in code** is on. Its reviewer looks at each tile laid 3×3, and a texture it rejects is redrawn up to twice.
+
+Where two of the job's ground textures meet on the map, it also draws a transition set, or a platform set for a side-view game. The reviewer looks at each set laid out as a small map; one it rejects gets one new edge, then is kept and marked. In **Review assets** a set shows as its sheet, and **Make again** with a note draws it again. See the `jobs` page.
