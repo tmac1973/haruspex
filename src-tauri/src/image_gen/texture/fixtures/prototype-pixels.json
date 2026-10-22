@@ -1,0 +1,74 @@
+{
+  "building": [
+    "db10559ea74f0734",
+    "6db20e700f61224e",
+    "1a85aa9591576d09",
+    "89b479d20c0c8cb0"
+  ],
+  "camp": [
+    "126ca59569d27b2a",
+    "26c58643b0966fa7",
+    "0a4312ace8ad7262",
+    "c0e50a00f06a9ef3"
+  ],
+  "garage_floor": [
+    "71464ec1303c5471",
+    "912f2bd53461c3a9",
+    "3fd604342b64c4fd",
+    "251b3320be3d3650"
+  ],
+  "garage_wall": [
+    "cf423c0454214ef9",
+    "bb46e156cd680b17",
+    "e2372212b97aa9ee",
+    "a2bd4cc477f62291"
+  ],
+  "park": [
+    "d10fc02015003bca",
+    "cb81fb3c4573a6a0",
+    "5ba65620e819b6c4",
+    "e53eaea4df53d844"
+  ],
+  "rubble": [
+    "99b5c84a0d61c2be",
+    "bc259347defa9dbf",
+    "1bd9897baf63d5b7",
+    "069a80b7e9869778"
+  ],
+  "street": [
+    "0f73ed7b672f3a9a",
+    "a01ddec511681c6f",
+    "5776abc389221ce1",
+    "972307ea2839faa1"
+  ],
+  "subway_floor": [
+    "7dd5b55b6fe3ae80",
+    "ea47c9a3073d82a1",
+    "1a105eb95aa05867",
+    "aa70ac6d799947e0"
+  ],
+  "subway_wall": [
+    "8a0b3349538a62f6",
+    "d2d292b982e767d8",
+    "8463b39823b2c621",
+    "c3284df3b2bbc1b9"
+  ],
+  "tower_floor": [
+    "1f50b3f0df41fa36",
+    "7d38e3411c99a493",
+    "d4920458ebae7f0c",
+    "19656da2b68cdee9"
+  ],
+  "tower_wall": [
+    "0d82aeeb69bb78e5",
+    "d46bb61f1e538829",
+    "f4cfa7a875ff8ced",
+    "688b6c5f58232439"
+  ],
+  "water": [
+    "19ffc77c915e1690",
+    "a411c7170d8612f5",
+    "2cadec6b3fb49af7",
+    "04c3a306b7165297"
+  ]
+}

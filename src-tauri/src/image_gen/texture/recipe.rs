@@ -80,6 +80,10 @@ pub enum Layer {
         #[serde(default = "default_crack_width")]
         #[ts(optional)]
         width: Option<f32>,
+        /// 0 to 1: how deeply the cracks look cut in, lit from the top left.
+        #[serde(default)]
+        #[ts(optional)]
+        relief: Option<f32>,
     },
     /// Irregular patches: stains, moss, puddles, bare earth. Higher
     /// `threshold` means fewer, smaller patches.
@@ -87,6 +91,10 @@ pub enum Layer {
         color: String,
         cells: u32,
         threshold: f32,
+        /// 0 to 1: how raised the patches look, lit from the top left.
+        #[serde(default)]
+        #[ts(optional)]
+        relief: Option<f32>,
     },
     /// Bricks or blocks in rows, each a random one of `colors`, with mortar.
     Bricks {
@@ -96,6 +104,14 @@ pub enum Layer {
         offset: bool,
         colors: Vec<String>,
         mortar: String,
+        /// 0 to 1: how raised the bricks look, lit from the top left.
+        #[serde(default)]
+        #[ts(optional)]
+        relief: Option<f32>,
+        /// 0 to 1: how much each brick's shade differs from its colour.
+        #[serde(default)]
+        #[ts(optional)]
+        jitter: Option<f32>,
     },
     /// A painted line, solid or dashed: lane markings, parking bays.
     Stripes {
@@ -123,6 +139,76 @@ pub enum Layer {
         #[ts(optional)]
         width: Option<f32>,
         color: String,
+    },
+    /// Boards in rows along `axis`, their ends staggered row to row: wood
+    /// floors, decks, bridges. `grain` darkens streaks along each board.
+    Planks {
+        axis: Axis,
+        w: f32,
+        len: f32,
+        gap: f32,
+        colors: Vec<String>,
+        seam: String,
+        #[serde(default)]
+        #[ts(optional)]
+        grain: Option<f32>,
+        #[serde(default)]
+        #[ts(optional)]
+        relief: Option<f32>,
+        #[serde(default)]
+        #[ts(optional)]
+        jitter: Option<f32>,
+    },
+    /// Irregular rounded stones with mortar between: cobbles, pebbles,
+    /// dry-stone walls. `cells` stones across the tile.
+    Stones {
+        cells: u32,
+        gap: f32,
+        colors: Vec<String>,
+        mortar: String,
+        #[serde(default)]
+        #[ts(optional)]
+        relief: Option<f32>,
+        #[serde(default)]
+        #[ts(optional)]
+        jitter: Option<f32>,
+    },
+    /// Pointy-topped hexagons `size` across: hex paving, honeycomb.
+    Hex {
+        size: f32,
+        gap: f32,
+        colors: Vec<String>,
+        mortar: String,
+        #[serde(default)]
+        #[ts(optional)]
+        relief: Option<f32>,
+        #[serde(default)]
+        #[ts(optional)]
+        jitter: Option<f32>,
+    },
+    /// 2:1 bricks at right angles, `w` the short side: herringbone paths,
+    /// parquet.
+    Herringbone {
+        w: f32,
+        gap: f32,
+        colors: Vec<String>,
+        mortar: String,
+        #[serde(default)]
+        #[ts(optional)]
+        relief: Option<f32>,
+        #[serde(default)]
+        #[ts(optional)]
+        jitter: Option<f32>,
+    },
+    /// Clumps of short upright blades: grass, reeds, weeds through gravel.
+    /// `light` tips each blade.
+    Tufts {
+        color: String,
+        #[serde(default)]
+        #[ts(optional)]
+        light: Option<String>,
+        density: f32,
+        height: f32,
     },
     /// A light top-left and dark bottom-right edge on each grid cell, so
     /// tiles or plates look raised.
@@ -172,6 +258,22 @@ fn range(field: &str, v: f32, lo: f32, hi: f32) -> Result<(), String> {
     }
 }
 
+/// 1 to 6 colours, each `#rrggbb`.
+fn palette(field: &str, colors: &[String]) -> Result<(), String> {
+    if colors.is_empty() || colors.len() > 6 {
+        return Err(format!("{field}: give 1 to 6 colours."));
+    }
+    for (k, c) in colors.iter().enumerate() {
+        color(&format!("{field}[{k}]"), c)?;
+    }
+    Ok(())
+}
+
+/// An optional 0-to-1 strength, checked when given.
+fn unit(field: &str, v: Option<f32>) -> Result<(), String> {
+    v.map_or(Ok(()), |v| range(field, v, 0.0, 1.0))
+}
+
 fn range_u(field: &str, v: u32, lo: u32, hi: u32) -> Result<(), String> {
     range(field, v as f32, lo as f32, hi as f32)
 }
@@ -203,20 +305,24 @@ pub fn validate(r: &TextureRecipe) -> Result<(), String> {
                 cells,
                 coverage,
                 width,
+                relief,
             } => {
                 color(&p("color"), c)?;
                 range_u(&p("cells"), *cells, 1, 12)?;
                 range(&p("coverage"), *coverage, 0.0, 1.0)?;
                 range(&p("width"), width.unwrap_or(0.8), 0.2, 4.0)?;
+                unit(&p("relief"), *relief)?;
             }
             Layer::Blotches {
                 color: c,
                 cells,
                 threshold,
+                relief,
             } => {
                 color(&p("color"), c)?;
                 range_u(&p("cells"), *cells, 1, 16)?;
                 range(&p("threshold"), *threshold, 0.0, 1.0)?;
+                unit(&p("relief"), *relief)?;
             }
             Layer::Bricks {
                 w,
@@ -224,6 +330,8 @@ pub fn validate(r: &TextureRecipe) -> Result<(), String> {
                 gap,
                 colors,
                 mortar,
+                relief,
+                jitter,
                 ..
             } => {
                 range(&p("w"), *w, 2.0, DESIGN_SIZE)?;
@@ -236,6 +344,8 @@ pub fn validate(r: &TextureRecipe) -> Result<(), String> {
                     color(&format!("{}[{k}]", p("colors")), c)?;
                 }
                 color(&p("mortar"), mortar)?;
+                unit(&p("relief"), *relief)?;
+                unit(&p("jitter"), *jitter)?;
             }
             Layer::Stripes {
                 pos,
@@ -271,6 +381,84 @@ pub fn validate(r: &TextureRecipe) -> Result<(), String> {
                 range(&p("step"), *step, 2.0, DESIGN_SIZE)?;
                 range(&p("width"), width.unwrap_or(1.0), 1.0, 4.0)?;
                 color(&p("color"), c)?;
+            }
+            Layer::Planks {
+                w,
+                len,
+                gap,
+                colors,
+                seam,
+                grain,
+                relief,
+                jitter,
+                ..
+            } => {
+                range(&p("w"), *w, 2.0, 16.0)?;
+                range(&p("len"), *len, 4.0, DESIGN_SIZE)?;
+                range(&p("gap"), *gap, 0.0, 2.0)?;
+                palette(&p("colors"), colors)?;
+                color(&p("seam"), seam)?;
+                unit(&p("grain"), *grain)?;
+                unit(&p("relief"), *relief)?;
+                unit(&p("jitter"), *jitter)?;
+            }
+            Layer::Stones {
+                cells,
+                gap,
+                colors,
+                mortar,
+                relief,
+                jitter,
+            } => {
+                range_u(&p("cells"), *cells, 2, 12)?;
+                range(&p("gap"), *gap, 0.0, 3.0)?;
+                palette(&p("colors"), colors)?;
+                color(&p("mortar"), mortar)?;
+                unit(&p("relief"), *relief)?;
+                unit(&p("jitter"), *jitter)?;
+            }
+            Layer::Hex {
+                size,
+                gap,
+                colors,
+                mortar,
+                relief,
+                jitter,
+            } => {
+                range(&p("size"), *size, 4.0, DESIGN_SIZE)?;
+                range(&p("gap"), *gap, 0.0, 2.0)?;
+                palette(&p("colors"), colors)?;
+                color(&p("mortar"), mortar)?;
+                unit(&p("relief"), *relief)?;
+                unit(&p("jitter"), *jitter)?;
+            }
+            Layer::Herringbone {
+                w,
+                gap,
+                colors,
+                mortar,
+                relief,
+                jitter,
+            } => {
+                range(&p("w"), *w, 2.0, 8.0)?;
+                range(&p("gap"), *gap, 0.0, 2.0)?;
+                palette(&p("colors"), colors)?;
+                color(&p("mortar"), mortar)?;
+                unit(&p("relief"), *relief)?;
+                unit(&p("jitter"), *jitter)?;
+            }
+            Layer::Tufts {
+                color: c,
+                light,
+                density,
+                height,
+            } => {
+                color(&p("color"), c)?;
+                if let Some(l) = light {
+                    color(&p("light"), l)?;
+                }
+                range(&p("density"), *density, 0.01, 0.3)?;
+                range(&p("height"), *height, 1.0, 6.0)?;
             }
             Layer::Bevel { step, light, dark } => {
                 range(&p("step"), *step, 4.0, DESIGN_SIZE)?;
@@ -340,11 +528,13 @@ mod tests {
                 cells: 12,
                 coverage: 0.0,
                 width: None,
+                relief: None,
             },
             Layer::Blotches {
                 color: "#111111".into(),
                 cells: 1,
                 threshold: 1.0,
+                relief: None,
             },
             Layer::Bricks {
                 w: 8.0,
@@ -353,6 +543,8 @@ mod tests {
                 offset: true,
                 colors: vec!["#aa0000".into(); 6],
                 mortar: "#cccccc".into(),
+                relief: None,
+                jitter: None,
             },
             Layer::Stripes {
                 axis: Axis::X,
@@ -421,7 +613,7 @@ mod tests {
 
     #[test]
     fn validate_names_the_out_of_range_layer_field() {
-        let cases: Vec<(Layer, &str)> = vec![
+        let mut cases: Vec<(Layer, &str)> = vec![
             (
                 Layer::Speckle {
                     color: "#111111".into(),
@@ -449,6 +641,7 @@ mod tests {
                     cells: 13,
                     coverage: 0.5,
                     width: None,
+                    relief: None,
                 },
                 "layers[0].cells:",
             ),
@@ -458,6 +651,7 @@ mod tests {
                     cells: 4,
                     coverage: 0.5,
                     width: Some(0.1),
+                    relief: None,
                 },
                 "layers[0].width:",
             ),
@@ -466,6 +660,7 @@ mod tests {
                     color: "#111111".into(),
                     cells: 4,
                     threshold: 1.1,
+                    relief: None,
                 },
                 "layers[0].threshold:",
             ),
@@ -477,6 +672,8 @@ mod tests {
                     offset: false,
                     colors: vec!["#111111".into()],
                     mortar: "#222222".into(),
+                    relief: None,
+                    jitter: None,
                 },
                 "layers[0].w:",
             ),
@@ -488,6 +685,8 @@ mod tests {
                     offset: false,
                     colors: vec![],
                     mortar: "#222222".into(),
+                    relief: None,
+                    jitter: None,
                 },
                 "layers[0].colors: give 1 to 6",
             ),
@@ -499,6 +698,8 @@ mod tests {
                     offset: false,
                     colors: vec!["#111111".into(), "#gggggg".into()],
                     mortar: "#222222".into(),
+                    relief: None,
+                    jitter: None,
                 },
                 "layers[0].colors[1]:",
             ),
@@ -510,6 +711,8 @@ mod tests {
                     offset: false,
                     colors: vec!["#111111".into()],
                     mortar: "nope".into(),
+                    relief: None,
+                    jitter: None,
                 },
                 "layers[0].mortar:",
             ),
@@ -571,6 +774,107 @@ mod tests {
                 "layers[0].step:",
             ),
         ];
+        cases.push((
+            Layer::Bricks {
+                w: 4.0,
+                h: 4.0,
+                gap: 1.0,
+                offset: false,
+                colors: vec!["#111111".into()],
+                mortar: "#222222".into(),
+                relief: Some(1.1),
+                jitter: None,
+            },
+            "layers[0].relief:",
+        ));
+        cases.push((
+            Layer::Bricks {
+                w: 4.0,
+                h: 4.0,
+                gap: 1.0,
+                offset: false,
+                colors: vec!["#111111".into()],
+                mortar: "#222222".into(),
+                relief: None,
+                jitter: Some(-0.1),
+            },
+            "layers[0].jitter:",
+        ));
+        cases.push((
+            Layer::Cracks {
+                color: "#111111".into(),
+                cells: 4,
+                coverage: 0.5,
+                width: None,
+                relief: Some(2.0),
+            },
+            "layers[0].relief:",
+        ));
+        cases.push((
+            Layer::Planks {
+                axis: Axis::X,
+                w: 1.0,
+                len: 8.0,
+                gap: 1.0,
+                colors: vec!["#111111".into()],
+                seam: "#222222".into(),
+                grain: None,
+                relief: None,
+                jitter: None,
+            },
+            "layers[0].w:",
+        ));
+        cases.push((
+            Layer::Stones {
+                cells: 13,
+                gap: 1.0,
+                colors: vec!["#111111".into()],
+                mortar: "#222222".into(),
+                relief: None,
+                jitter: None,
+            },
+            "layers[0].cells:",
+        ));
+        cases.push((
+            Layer::Hex {
+                size: 8.0,
+                gap: 1.0,
+                colors: vec![],
+                mortar: "#222222".into(),
+                relief: None,
+                jitter: None,
+            },
+            "layers[0].colors: give 1 to 6",
+        ));
+        cases.push((
+            Layer::Herringbone {
+                w: 9.0,
+                gap: 1.0,
+                colors: vec!["#111111".into()],
+                mortar: "#222222".into(),
+                relief: None,
+                jitter: None,
+            },
+            "layers[0].w:",
+        ));
+        cases.push((
+            Layer::Tufts {
+                color: "#111111".into(),
+                light: Some("green".into()),
+                density: 0.1,
+                height: 3.0,
+            },
+            "layers[0].light:",
+        ));
+        cases.push((
+            Layer::Tufts {
+                color: "#111111".into(),
+                light: None,
+                density: 0.5,
+                height: 3.0,
+            },
+            "layers[0].density:",
+        ));
         for (layer, want) in cases {
             let msg = err_of(&recipe(vec![layer]));
             assert!(msg.starts_with(want), "{msg:?} should start with {want:?}");

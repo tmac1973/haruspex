@@ -1,0 +1,26 @@
+{
+	"subway_wall relief": {
+		"base": { "ramp": ["#c9c4b4", "#d6d1c1"], "cells": 4 },
+		"layers": [
+			{ "type": "bricks", "w": 8, "h": 4, "gap": 1, "offset": true, "colors": ["#c2bcaa", "#d1ccbc", "#b8b2a0"], "mortar": "#6e6a60", "relief": 0.5, "jitter": 0.6 },
+			{ "type": "blotches", "color": "#8a8270", "cells": 2, "threshold": 0.85 }
+		]
+	},
+	"red brick relief": {
+		"base": { "ramp": ["#6e3a2c", "#7d4434"], "cells": 4 },
+		"layers": [
+			{ "type": "bricks", "w": 8, "h": 4, "gap": 1, "offset": true, "colors": ["#9a4a36", "#8c4231", "#a5543e"], "mortar": "#4a4038", "relief": 0.8, "jitter": 0.8 }
+		]
+	},
+	"rubble relief": {
+		"base": { "ramp": ["#4a4540", "#57514b", "#655e57", "#726b63"], "cells": 6, "octaves": 2 },
+		"layers": [
+			{ "type": "cracks", "color": "#2e2a27", "cells": 4, "coverage": 0.2, "relief": 0.8 },
+			{ "type": "speckle", "color": "#857d74", "amount": 0.04 }
+		]
+	},
+	"mossy ground relief": {
+		"base": { "ramp": ["#4a4232", "#554c3a", "#605644"], "cells": 4 },
+		"layers": [{ "type": "blotches", "color": "#4f6a32", "cells": 6, "threshold": 0.6, "relief": 0.7 }]
+	}
+}

@@ -140,7 +140,8 @@ export function judgePrompt(
 }
 
 /**
- * Three recipes from the phase 17 prototype, as worked examples. None has a
+ * Three worked examples: two from the phase 17 prototype, and oak planks for
+ * the layers the prototype lacked. None has a
  * painted line: a fill tile is laid edge to edge, and the asphalt example
  * that once carried a centre line taught the model to stripe every tile.
  */
@@ -167,17 +168,31 @@ const RECIPE_EXAMPLES = [
 					gap: 1,
 					offset: true,
 					colors: ['#c2bcaa', '#d1ccbc', '#b8b2a0'],
-					mortar: '#6e6a60'
+					mortar: '#6e6a60',
+					relief: 0.5
 				},
 				{ type: 'blotches', color: '#8a8270', cells: 4, threshold: 0.85 }
 			]
 		}
 	],
 	[
-		'dark river water',
+		'oak plank floor',
 		{
-			base: { ramp: ['#1d3446', '#24405a', '#2c4c68'], cells: 2 },
-			layers: [{ type: 'waves', color: '#4f7690', freq: 5, threshold: 0.9 }]
+			base: { ramp: ['#5a3a22', '#6b4529', '#7a5030'], cells: 6 },
+			layers: [
+				{
+					type: 'planks',
+					axis: 'x',
+					w: 6,
+					len: 24,
+					gap: 1,
+					colors: ['#8a5a34', '#7c5030', '#946238'],
+					seam: '#3a2414',
+					grain: 0.6,
+					relief: 0.4,
+					jitter: 0.5
+				}
+			]
 		}
 	]
 ] as const;
@@ -200,20 +215,34 @@ export function recipeGuide(): string[] {
 		'  octaves: 1–4, default 3; dither: true/false, default true }',
 		'Layers, in drawing order, at most 8:',
 		'- { type: "speckle", color, amount: 0–0.5 } — scattered single pixels: grit.',
-		'- { type: "cracks", color, cells: 1–12, coverage: 0–1, width?: 0.2–4 } —',
-		'  thin cracks along irregular cells; higher coverage, fewer cracks.',
-		'- { type: "blotches", color, cells: 4–16, threshold: 0–1 } — stains, moss,',
-		'  puddles; higher threshold, fewer and smaller.',
-		'- { type: "bricks", w, h, gap: 0–4, offset: true/false, colors: 1–6, mortar }',
-		'  — bricks, blocks or tiles in rows; offset staggers alternate rows.',
+		'- { type: "cracks", color, cells: 1–12, coverage: 0–1, width?: 0.2–4, relief?: 0–1 }',
+		'  — thin cracks along irregular cells; higher coverage, fewer cracks.',
+		'- { type: "blotches", color, cells: 4–16, threshold: 0–1, relief?: 0–1 } —',
+		'  stains, moss, puddles; higher threshold, fewer and smaller.',
+		'- { type: "bricks", w, h, gap: 0–4, offset: true/false, colors: 1–6, mortar,',
+		'  relief?: 0–1, jitter?: 0–1 } — bricks, blocks or tiles in rows; offset',
+		'  staggers alternate rows; jitter makes each brick a little lighter or darker.',
 		'- { type: "stripes", axis: "x" or "y", pos, width, dash?: [on, off], color,',
 		'  wear?: 0–0.9 } — a line through every copy of the tile: "x" runs left to',
 		'  right at row pos. Only for a surface lined all over, like plank seams.',
 		'- { type: "waves", color, freq: 1–16, threshold: -1–1 } — water ripples.',
 		'- { type: "grid", step, width?: 1–4, color } — seams: floor tiles, panels.',
 		'- { type: "bevel", step: 4–32, light, dark } — raised plates or tiles.',
+		'- { type: "planks", axis: "x" or "y", w: 2–16, len: 4–32, gap: 0–2, colors: 1–6,',
+		'  seam, grain?: 0–1, relief?, jitter? } — boards with staggered ends: wood floors.',
+		'- { type: "stones", cells: 2–12, gap: 0–3, colors: 1–6, mortar, relief?, jitter? }',
+		'  — irregular rounded stones: cobbles, pebbles, dry-stone walls.',
+		'- { type: "hex", size: 4–32, gap: 0–2, colors: 1–6, mortar, relief?, jitter? } —',
+		'  hexagonal paving.',
+		'- { type: "herringbone", w: 2–8, gap: 0–2, colors: 1–6, mortar, relief?, jitter? }',
+		'  — 2:1 bricks at right angles: paths, parquet.',
+		'- { type: "tufts", color, light?, density: 0.01–0.3, height: 1–6 } — clumps of',
+		'  grass blades, reeds or weeds; light tips each blade.',
 		'- wall_face: { height: 1–16, shade: 0–1 } — ONLY for a wall drawn with a',
 		'  front face; darkens a band at the bottom. Omit it for anything flat.',
+		'relief lights each brick, stone, board or patch from the top left so it looks raised, and',
+		'makes cracks look cut in. Use it on built or lumpy surfaces; leave it off',
+		'flat ones like water or painted floors.',
 		'',
 		'Keep each recipe simple: a base and one to three layers reads best at 32',
 		'pixels. Do not draw objects: no doors, signs, furniture or vehicles.',

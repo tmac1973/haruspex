@@ -143,6 +143,49 @@ pub fn worley(rng: &mut Rng, n: u32, cells: u32) -> (Field, Field) {
     (f1, f2)
 }
 
+/// As [`worley`], also naming each pixel's nearest point, so the cells can
+/// be coloured and shaded one by one. Kept apart from `worley` so the layers
+/// that use that draw exactly what they always have.
+pub fn worley_ids(rng: &mut Rng, n: u32, cells: u32) -> (Field, Field, Vec<u32>) {
+    let c = cells.clamp(1, n) as usize;
+    let size = n as f32;
+    let step = size / c as f32;
+    let pts: Vec<(f32, f32)> = (0..c * c)
+        .map(|i| {
+            let (gx, gy) = ((i % c) as f32, (i / c) as f32);
+            ((gx + rng.next_f32()) * step, (gy + rng.next_f32()) * step)
+        })
+        .collect();
+    let wrap = |d: f32| {
+        let d = d.abs();
+        d.min(size - d)
+    };
+    let len = (n * n) as usize;
+    let (mut f1, mut f2, mut ids) = (vec![0.0; len], vec![0.0; len], vec![0; len]);
+    for y in 0..n {
+        for x in 0..n {
+            let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
+            let (mut a, mut b, mut id) = (f32::MAX, f32::MAX, 0);
+            for (k, &(qx, qy)) in pts.iter().enumerate() {
+                let (dx, dy) = (wrap(px - qx), wrap(py - qy));
+                let d = (dx * dx + dy * dy).sqrt();
+                if d < a {
+                    b = a;
+                    a = d;
+                    id = k as u32;
+                } else if d < b {
+                    b = d;
+                }
+            }
+            let i = (y * n + x) as usize;
+            f1[i] = a;
+            f2[i] = b;
+            ids[i] = id;
+        }
+    }
+    (f1, f2, ids)
+}
+
 /// Split `n` pixels into `count` cells that partition it exactly, so a
 /// pattern of cells repeats with the tile. Returns (cell index, offset within
 /// the cell) for pixel `x`.

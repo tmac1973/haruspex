@@ -12,6 +12,7 @@
 pub mod layers;
 pub mod noise;
 pub mod recipe;
+pub mod shade;
 
 use image::RgbaImage;
 
@@ -94,6 +95,7 @@ mod tests {
                     cells: 3,
                     coverage: 0.4,
                     width: None,
+                    relief: None,
                 },
             ),
             (
@@ -102,6 +104,7 @@ mod tests {
                     color: c(),
                     cells: 4,
                     threshold: 0.7,
+                    relief: None,
                 },
             ),
             (
@@ -113,6 +116,8 @@ mod tests {
                     offset: true,
                     colors: vec!["#c2bcaa".into(), "#b8b2a0".into()],
                     mortar: "#6e6a60".into(),
+                    relief: None,
+                    jitter: None,
                 },
             ),
             (
@@ -150,6 +155,94 @@ mod tests {
                     dark: "#4a4843".into(),
                 },
             ),
+            (
+                "bricks with relief and jitter",
+                Layer::Bricks {
+                    w: 8.0,
+                    h: 4.0,
+                    gap: 1.0,
+                    offset: true,
+                    colors: vec!["#c2bcaa".into(), "#b8b2a0".into()],
+                    mortar: "#6e6a60".into(),
+                    relief: Some(1.0),
+                    jitter: Some(1.0),
+                },
+            ),
+            (
+                "cracks with relief",
+                Layer::Cracks {
+                    color: c(),
+                    cells: 3,
+                    coverage: 0.4,
+                    width: None,
+                    relief: Some(1.0),
+                },
+            ),
+            (
+                "planks",
+                Layer::Planks {
+                    axis: Axis::X,
+                    w: 6.0,
+                    len: 24.0,
+                    gap: 1.0,
+                    colors: vec!["#8a5a34".into(), "#7c5030".into()],
+                    seam: "#3a2414".into(),
+                    grain: Some(0.6),
+                    relief: Some(0.4),
+                    jitter: Some(0.5),
+                },
+            ),
+            (
+                "stones",
+                Layer::Stones {
+                    cells: 4,
+                    gap: 1.0,
+                    colors: vec!["#7a746c".into(), "#6c665f".into()],
+                    mortar: "#3a3632".into(),
+                    relief: Some(0.6),
+                    jitter: Some(0.5),
+                },
+            ),
+            (
+                "hex",
+                Layer::Hex {
+                    size: 8.0,
+                    gap: 1.0,
+                    colors: vec!["#8f8a80".into(), "#9b968b".into()],
+                    mortar: "#4a4640".into(),
+                    relief: Some(0.5),
+                    jitter: Some(0.5),
+                },
+            ),
+            (
+                "herringbone",
+                Layer::Herringbone {
+                    w: 4.0,
+                    gap: 1.0,
+                    colors: vec!["#9a4a36".into(), "#8c4231".into()],
+                    mortar: "#4a4038".into(),
+                    relief: Some(0.5),
+                    jitter: Some(0.5),
+                },
+            ),
+            (
+                "tufts",
+                Layer::Tufts {
+                    color: "#4f7a32".into(),
+                    light: Some("#8ab05a".into()),
+                    density: 0.15,
+                    height: 3.0,
+                },
+            ),
+            (
+                "blotches with relief",
+                Layer::Blotches {
+                    color: c(),
+                    cells: 4,
+                    threshold: 0.7,
+                    relief: Some(1.0),
+                },
+            ),
         ]
     }
 
@@ -185,6 +278,9 @@ mod tests {
         // its wrap seam is no more discontinuous than its own interior.
         // Averaged over 20 seeds, because a single seam of 32 pixels is noisy.
         //
+        // Stones are irregular cells, like cracks: their mortar falls
+        // anywhere, so they take the averaged bar below.
+        //
         // A patterned layer is held to a different bar. Bricks, grids and
         // bevels put a line on one side of the seam by design, so the seam is
         // as sharp as the edge between any two cells — sharper than the average step,
@@ -193,7 +289,12 @@ mod tests {
         for (name, l) in every_layer() {
             let patterned = matches!(
                 l,
-                Layer::Bricks { .. } | Layer::Grid { .. } | Layer::Bevel { .. }
+                Layer::Bricks { .. }
+                    | Layer::Grid { .. }
+                    | Layer::Bevel { .. }
+                    | Layer::Planks { .. }
+                    | Layer::Hex { .. }
+                    | Layer::Herringbone { .. }
             );
             for n in [16, 32, 64] {
                 let (mut seams, mut inners, mut worst) = (0.0, 0.0, 0.0f64);
@@ -251,7 +352,7 @@ mod tests {
 
     #[test]
     fn a_recipe_and_seed_always_give_the_same_pixels() {
-        let r = with(every_layer().into_iter().map(|(_, l)| l).collect());
+        let r = with(every_layer().into_iter().take(8).map(|(_, l)| l).collect());
         let a = render(&r, 32, 9, 2, &[]).unwrap();
         let b = render(&r, 32, 9, 2, &[]).unwrap();
         assert_eq!(a[0].as_raw(), b[0].as_raw());
@@ -279,6 +380,7 @@ mod tests {
                 cells: 3,
                 coverage: 0.55,
                 width: None,
+                relief: None,
             },
         ]);
         let v = render(&r, 32, 1, 4, &[]).unwrap();
@@ -308,7 +410,7 @@ mod tests {
     #[test]
     fn snaps_to_the_palette_given() {
         let palette = [0x101010ff, 0x808080ff, 0xf0f0f0ff];
-        let r = with(every_layer().into_iter().map(|(_, l)| l).collect());
+        let r = with(every_layer().into_iter().take(8).map(|(_, l)| l).collect());
         let img = &render(&r, 32, 3, 1, &palette).unwrap()[0];
         let allowed: Vec<[u8; 4]> = palette
             .iter()
@@ -355,7 +457,11 @@ mod tests {
     }
 
     fn prototype_recipes() -> Vec<(String, TextureRecipe)> {
-        let text = include_str!("fixtures/prototype-recipes.json");
+        fixture_recipes(include_str!("fixtures/prototype-recipes.json"))
+    }
+
+    /// Named recipes from a fixture file, in file order.
+    fn fixture_recipes(text: &str) -> Vec<(String, TextureRecipe)> {
         let map: serde_json::Map<String, serde_json::Value> = serde_json::from_str(text).unwrap();
         map.into_iter()
             .map(|(k, v)| {
@@ -368,12 +474,65 @@ mod tests {
     }
 
     #[test]
+    fn the_example_recipes_parse_and_render() {
+        let shaded = fixture_recipes(include_str!("fixtures/shaded-recipes.json"));
+        let new = fixture_recipes(include_str!("fixtures/new-layer-recipes.json"));
+        for (name, r) in shaded.into_iter().chain(new) {
+            render(&r, 32, 1, 4, &[]).unwrap_or_else(|e| panic!("{name}: {e}"));
+        }
+    }
+
+    #[test]
     fn the_prototype_recipes_parse_and_render() {
         let recipes = prototype_recipes();
         assert_eq!(recipes.len(), 12);
         for (name, r) in &recipes {
             render(r, 32, 1, 4, &[]).unwrap_or_else(|e| panic!("{name}: {e}"));
         }
+    }
+
+    /// FNV-1a over an image's raw bytes, for the pixel record below.
+    fn pixel_hash(img: &RgbaImage) -> u64 {
+        img.as_raw().iter().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+            (h ^ *b as u64).wrapping_mul(0x0100_0000_01b3)
+        })
+    }
+
+    /// Each prototype recipe's four variants at 32 px, seed 1, hashed.
+    fn prototype_hashes() -> std::collections::BTreeMap<String, Vec<String>> {
+        prototype_recipes()
+            .into_iter()
+            .map(|(name, r)| {
+                let hashes = render(&r, 32, 1, 4, &[])
+                    .unwrap()
+                    .iter()
+                    .map(|img| format!("{:016x}", pixel_hash(img)))
+                    .collect();
+                (name, hashes)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_prototype_recipes_draw_the_pixels_they_always_have() {
+        // A recipe saved in someone's spec must keep drawing the same tiles
+        // when the renderer learns new things. Rewrite the record only on
+        // purpose: `cargo test --lib record_prototype_pixels -- --ignored`.
+        let want: std::collections::BTreeMap<String, Vec<String>> =
+            serde_json::from_str(include_str!("fixtures/prototype-pixels.json")).unwrap();
+        assert_eq!(prototype_hashes(), want);
+    }
+
+    /// Not a check: rewrites `fixtures/prototype-pixels.json`.
+    #[test]
+    #[ignore]
+    fn record_prototype_pixels() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/image_gen/texture/fixtures/prototype-pixels.json"
+        );
+        let text = serde_json::to_string_pretty(&prototype_hashes()).unwrap();
+        std::fs::write(path, text + "\n").unwrap();
     }
 
     /// Not a check: writes each prototype recipe tiled 2×2, with its four
@@ -386,7 +545,13 @@ mod tests {
             return;
         };
         std::fs::create_dir_all(&dir).unwrap();
-        let recipes = prototype_recipes();
+        let mut recipes = prototype_recipes();
+        recipes.extend(fixture_recipes(include_str!(
+            "fixtures/shaded-recipes.json"
+        )));
+        recipes.extend(fixture_recipes(include_str!(
+            "fixtures/new-layer-recipes.json"
+        )));
         let (n, scale) = (32u32, 6u32);
         let t = n * scale;
         let cols = 4u32;
