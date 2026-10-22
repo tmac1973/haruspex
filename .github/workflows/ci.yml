@@ -204,7 +204,10 @@ jobs:
   # call writing to disk, a ComfyUI test image, and a sidecar dying with the
   # app. See e2e/app/ and docs/testing.md.
   e2e-app:
-    runs-on: ubuntu-latest
+    # Pinned, as release.yml's Linux build is: Ubuntu 26.04 dropped
+    # webkit2gtk-driver (WebKitWebDriver for webkit2gtk-4.1, which the app
+    # embeds), and ubuntu-latest moved to 26.04 on 2026-10-22.
+    runs-on: ubuntu-24.04
     needs: changes
     if: needs.changes.outputs.code == 'true'
     steps:
