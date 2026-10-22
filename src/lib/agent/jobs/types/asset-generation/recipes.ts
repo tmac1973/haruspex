@@ -17,7 +17,6 @@ import { seedOf } from '#lib/assets/texture.ts';
 export { variantPaths } from '#lib/assets/texture.ts';
 
 export interface RecipeDeps {
-	/** One model turn with `prompt`; the recipes it submitted, by id. */
 	/**
 	 * One model turn with `prompt`; the recipes it submitted, by id. `image`
 	 * goes in ahead of the prompt, when the model can see.
