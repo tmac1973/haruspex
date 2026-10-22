@@ -15,14 +15,15 @@ import {
 	effectiveProfile,
 	normalizeImage
 } from '#lib/assets/normalize.ts';
-import { buildEntryRequest, checkProfile } from '#lib/agent/jobs/types/asset-generation/request.ts';
+import { buildEntryRequest } from '#lib/agent/jobs/types/asset-generation/request.ts';
 import { sheetRequest } from '#lib/agent/jobs/types/asset-generation/sheets.ts';
 import { FALLBACK_STYLE } from '#lib/agent/jobs/types/asset-generation/derive.ts';
 import { generateForTool } from '#lib/image/forTool.ts';
 import { resolveImageBackend } from '#lib/image/backend.ts';
 import type { ImageProgress } from '#lib/image/types.ts';
 
-export type SingleKind = AssetKind | 'image';
+/** What `makeSingleAsset` draws. Textures are drawn by code (`assets/texture.ts`). */
+export type SingleKind = Exclude<AssetKind, 'texture'> | 'image';
 
 export interface SingleAssetInput {
 	kind: SingleKind;
@@ -33,6 +34,8 @@ export interface SingleAssetInput {
 	style?: string;
 	/** Colours to draw in (0xRRGGBBAA), from an existing asset, to match a set. */
 	palette?: number[];
+	/** A plain picture that tiles edge to edge: a painted material. Image only. */
+	seamless?: boolean;
 }
 
 export interface SingleAsset {
@@ -49,7 +52,6 @@ export interface SingleAsset {
 export const DEFAULT_SIZE: Record<SingleKind, number> = {
 	sprite: 64,
 	icon: 32,
-	texture: 128,
 	image: 1024
 };
 
@@ -62,10 +64,10 @@ export async function makeSingleAsset(
 ): Promise<SingleAsset> {
 	const size = input.size ?? DEFAULT_SIZE[input.kind];
 
-	if (input.kind === 'image') return plainPicture(input.prompt, size, opts);
+	if (input.kind === 'image') return plainPicture(input.prompt, size, input.seamless, opts);
 
 	const caps = await resolveImageBackend().capabilities();
-	const kind: AssetKind = input.kind;
+	const kind = input.kind;
 	const profile = await profileFor(kind, size, input.palette, caps.transparency);
 
 	const entry: AssetEntry = { id: 'asset', kind, prompt: input.prompt, out: 'asset.png' };
@@ -77,16 +79,12 @@ export async function makeSingleAsset(
 		entries: [entry]
 	} as AssetSpec;
 
-	// Sprites and icons on a backend with alpha are drawn the way the job
-	// draws them — as a sheet of one, asked for transparency. Everything else
-	// takes the single-entry request, keyed background and texture scaffold
-	// included.
-	const sprite = kind !== 'texture';
-	const request =
-		sprite && caps.transparency
-			? sheetRequest([entry], spec)
-			: buildEntryRequest(entry, spec, profile, caps, { maxEdge: MAX_EDGE }).request;
-	const checked = checkProfile(profile, request);
+	// On a backend with alpha, drawn the way the job draws them: as a sheet of
+	// one, asked for transparency. Otherwise the single-entry request, with
+	// its keyed background.
+	const request = caps.transparency
+		? sheetRequest([entry], spec)
+		: buildEntryRequest(entry, spec, profile, caps, { maxEdge: MAX_EDGE }).request;
 
 	let best: SingleAsset | null = null;
 	for (let attempt = 1; attempt <= 2; attempt++) {
@@ -94,7 +92,7 @@ export async function makeSingleAsset(
 			{ ...request, seed: attempt === 1 ? request.seed : null },
 			opts
 		);
-		const result = await finish(img, kind, profile, checked, size);
+		const result = await finish(img, kind, profile, size);
 		if (result.checks.passed) return result;
 		// Keep the one that failed fewer checks; never throw a usable image away.
 		if (!best || result.checks.failed.length < best.checks.failed.length) best = result;
@@ -102,21 +100,15 @@ export async function makeSingleAsset(
 	return best!;
 }
 
-/**
- * Normalise and check one drawing. A texture the backend could not make tile
- * is not held to the seam check it was always going to fail.
- */
+/** Normalise and check one drawing. */
 async function finish(
 	img: Awaited<ReturnType<typeof generateForTool>>,
 	kind: AssetKind,
 	profile: NormalizeProfile,
-	checked: NormalizeProfile,
 	size: number
 ): Promise<SingleAsset> {
-	const untiled = img.notes.some((n) => n.startsWith('It does not tile'));
-	const rules = untiled ? profile : checked;
-	const normalized = await normalizeImage(img.bytes, rules, kind);
-	const report = await checkImage(normalized.stats, rules, kind);
+	const normalized = await normalizeImage(img.bytes, profile, kind);
+	const report = await checkImage(normalized.stats, profile, kind);
 	const bytes = new Uint8Array(normalized.bytes);
 	return {
 		...img,
@@ -126,16 +118,23 @@ async function finish(
 	};
 }
 
-/** A plain picture: drawn, not normalised. */
+/**
+ * A plain picture: drawn, not normalised. `seamless` asks the backend to make
+ * it tile; one that can't says so in the notes.
+ */
 async function plainPicture(
 	prompt: string,
 	size: number,
+	seamless: boolean | undefined,
 	opts: { signal?: AbortSignal; onProgress?: (p: ImageProgress) => void }
 ): Promise<SingleAsset> {
 	// A plain picture is not downscaled, so it is drawn at a size the
 	// models can draw: they make mush below 512.
 	const edge = Math.round(Math.min(Math.max(size, 512), MAX_EDGE) / 64) * 64;
-	const img = await generateForTool({ prompt, width: edge, height: edge, seed: null }, opts);
+	const img = await generateForTool(
+		{ prompt, width: edge, height: edge, seed: null, seamless: seamless === true },
+		opts
+	);
 	return { ...img, checks: { passed: true, failed: [] } };
 }
 

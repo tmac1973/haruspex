@@ -31,10 +31,10 @@ The first picture after ComfyUI starts is slow: it loads the model from disk, wh
 
 ## Pick a model and check its licence
 
-| Model | Licence | Commercial use | Bundled engine needs |
-|---|---|---|---|
-| Ming-Image 0.1 Design (default) | MIT | Allowed | ~8 GB VRAM, ~10 GB free RAM |
-| Qwen-Image 2.1 Turbo | Qwen Research License | **Not allowed** | ~12 GB VRAM |
+| Model                           | Licence               | Commercial use  | Bundled engine needs        |
+| ------------------------------- | --------------------- | --------------- | --------------------------- |
+| Ming-Image 0.1 Design (default) | MIT                   | Allowed         | ~8 GB VRAM, ~10 GB free RAM |
+| Qwen-Image 2.1 Turbo            | Qwen Research License | **Not allowed** | ~12 GB VRAM                 |
 
 Qwen-Image Turbo draws a picture in about a third of the time the original Qwen-Image 2.1 took. If you downloaded Qwen-Image before, its row in Settings → Image offers **Download** again; that fetches only the Turbo model and removes the old one. In ComfyUI, an original Qwen-Image 2.1 model you already have keeps working.
 
@@ -48,11 +48,11 @@ With a backend set up, ask Chat to draw, paint or illustrate something. A pictur
 
 In the Code tab, or the Shell assistant with Full access, ask for something like "a 32 px coin sprite in assets/". The assistant writes a finished sprite, icon, tiling texture or plain picture into your project as a PNG at the size you ask for: transparent background, cropped and reduced to a palette. Point it at an existing asset to match its colours. It does not overwrite a file unless you ask. See the `code` and `shell` pages.
 
-A tiling texture, such as "a 32 px gravel floor tile", is drawn by code from layers the assistant chooses, not by the image model. It takes a second, always tiles, and works without a backend in Settings → Image. Ask for variants to get the same material with its details moved, to mix on a map. It draws flat surfaces only: no painted lines, edges or objects, and nothing photographic.
+A tiling texture, such as "a 32 px gravel floor tile", is drawn by code from layers the assistant chooses, not by the image model. It takes a second, always tiles, and works without a backend in Settings → Image. Ask for variants to get the same material with its details moved, to mix on a map. It draws flat surfaces only: no painted lines, edges or objects, and nothing photographic. For a painted or photographic material that must tile, such as one for a 3D model, ask for a tiling picture instead. If the backend in Settings → Image can't tile, the picture is still written, and the assistant says it won't tile.
 
 ## Make a whole set of game art
 
-The **Asset generation** job draws all of a project's sprites, icons and tiling textures in one style, checks each one, retries failures and writes a report. Guided planning can hand off to it. See the `jobs` page.
+The **Asset generation** job draws all of a project's sprites, icons and tiling textures in one style, checks each one, retries failures and writes a report. A texture it draws in code that the check rejects is redrawn up to twice, then kept and marked for **Review assets**. Guided planning can hand off to it. See the `jobs` page.
 
 ## What it costs your computer
 

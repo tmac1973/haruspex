@@ -217,6 +217,7 @@ npm run drive -- screenshot | minimise | restore | status
 npm run drive -- click "button=Jobs"                     # anything else in the main window:
 npm run drive -- fill 'input[placeholder="Name"]' "text" # click, fill a field, pick an option
 npm run drive -- select 'select.type-select' Research
+npm run drive -- settings '{"imageBackendKind":"none"}' # merge a patch into the settings
 npm run drive -- stop                                    # saves the results, stops everything
 ```
 

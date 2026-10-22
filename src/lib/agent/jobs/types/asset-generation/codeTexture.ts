@@ -37,6 +37,9 @@ export interface CodeTextureContext {
 	record: (index: number, started: number, outcome: Outcome, report: CheckReport | null) => void;
 }
 
+/** How many times a rejected recipe is rewritten before its tiles are kept as they are. */
+export const MAX_RECIPE_REVISIONS = 2;
+
 /** The tile laid 3×3 for the judge; built only when the judge will look. */
 function forJudge(tile: Uint8Array, deps: GenerateDeps, code: CodeTextureDeps) {
 	const judging = deps.judge.visionSupported && deps.judge.enabled;
@@ -45,7 +48,8 @@ function forJudge(tile: Uint8Array, deps: GenerateDeps, code: CodeTextureDeps) {
 
 /**
  * A texture drawn by code: render its variants, write them, and show the
- * judge the first, tiled 3×3. One no gets one revised recipe; a second no keeps the
+ * judge the first, tiled 3×3. Each no gets a revised recipe, written while
+ * looking at that preview, up to MAX_RECIPE_REVISIONS; one more no keeps the
  * tiles and marks them rejected, like any other asset that never passed.
  */
 export async function runCodeTexture(index: number, ctx: CodeTextureContext): Promise<void> {
@@ -108,7 +112,9 @@ export async function runCodeTexture(index: number, ctx: CodeTextureContext): Pr
 				return;
 			}
 			const next =
-				attempt === 1 ? await code.revise({ ...entry, recipe, drawn }, verdict.reason) : null;
+				attempt <= MAX_RECIPE_REVISIONS
+					? await code.revise({ ...entry, recipe, drawn }, verdict.reason, shown)
+					: null;
 			if (!next) {
 				// The tiles stay: they tile, which is more than the image
 				// model's would. The spec marks them for Review assets.

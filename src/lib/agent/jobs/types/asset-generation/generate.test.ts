@@ -1059,7 +1059,7 @@ describe('textures drawn in code', () => {
 		expect(h.render).not.toHaveBeenCalled();
 	});
 
-	it('revises the recipe once on a no, and keeps the revision', async () => {
+	it('revises the recipe on a no, and keeps the revision', async () => {
 		const revised = { base: { ramp: ['#111111', '#eeeeee'] }, layers: [] };
 		let n = 0;
 		const judge = vi.fn(async () => ({ ok: n++ > 0, reason: 'looks like carpet' }));
@@ -1078,19 +1078,33 @@ describe('textures drawn in code', () => {
 		expect(h.render.mock.calls[1][0]).toBe(revised);
 	});
 
-	it('keeps the tiles and marks them rejected after a second no', async () => {
+	it('revises twice, showing the reviser what the judge saw', async () => {
+		let n = 0;
+		const judge = vi.fn(async () => ({ ok: n++ > 1, reason: 'looks like carpet' }));
+		const revise = vi.fn<NonNullable<GenerateDeps['codeTextures']>['revise']>(async () => ({
+			recipe: RECIPE,
+			drawn: ''
+		}));
+		const h = codeHarness({ revise }, { judge: { enabled: true, visionSupported: true, judge } });
+		const [r] = await generateEntries(specOf([{ kind: 'texture', recipe: RECIPE }]), h.deps);
+		expect(r.outcome).toMatchObject({ status: 'done', attempts: 3 });
+		expect(revise).toHaveBeenCalledTimes(2);
+		// The harness's preview: 9, then the tile's bytes.
+		expect(revise.mock.calls[0][2]).toEqual(new Uint8Array([9, 0]));
+	});
+
+	it('keeps the tiles and marks them rejected after a third no', async () => {
 		const judge = vi.fn(async () => ({ ok: false, reason: 'looks like carpet' }));
-		const h = codeHarness(
-			{ revise: vi.fn(async () => ({ recipe: RECIPE, drawn: '' })) },
-			{ judge: { enabled: true, visionSupported: true, judge } }
-		);
+		const revise = vi.fn(async () => ({ recipe: RECIPE, drawn: '' }));
+		const h = codeHarness({ revise }, { judge: { enabled: true, visionSupported: true, judge } });
 		const [r] = await generateEntries(specOf([{ kind: 'texture', recipe: RECIPE }]), h.deps);
 		expect(r.outcome).toMatchObject({
 			status: 'unresolved',
 			kept: true,
 			reason: 'looks like carpet'
 		});
-		expect(judge).toHaveBeenCalledTimes(2);
+		expect(judge).toHaveBeenCalledTimes(3);
+		expect(revise).toHaveBeenCalledTimes(2);
 	});
 
 	it('shows the judge the base tile laid 3×3, not the tile alone', async () => {

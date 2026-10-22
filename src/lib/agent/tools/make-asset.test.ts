@@ -16,7 +16,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
 	};
 });
 vi.mock('#lib/assets/single.ts', () => ({
-	DEFAULT_SIZE: { sprite: 64, icon: 32, texture: 128, image: 1024 },
+	DEFAULT_SIZE: { sprite: 64, icon: 32, image: 1024 },
 	makeSingleAsset: state.make
 }));
 
@@ -215,6 +215,39 @@ describe('make_asset', () => {
 		expect(out.result).toMatch(/failed these checks: opaque background/);
 	});
 
+	it('asks for a tiling picture only for kind image', async () => {
+		await executeTool(
+			'make_asset',
+			{ kind: 'image', prompt: 'mossy stone', path: 'm.png', seamless: true },
+			context()
+		);
+		expect(state.make.mock.calls[0][0]).toMatchObject({ kind: 'image', seamless: true });
+		await executeTool(
+			'make_asset',
+			{ kind: 'sprite', prompt: 'a slime', path: 's.png', seamless: true },
+			context()
+		);
+		expect(state.make.mock.calls[1][0].seamless).toBeUndefined();
+	});
+
+	it("passes on the backend's word that a picture won't tile", async () => {
+		state.make.mockResolvedValueOnce({
+			bytes: PNG,
+			width: 512,
+			height: 512,
+			checks: { passed: true, failed: [] },
+			notes: ['This backend cannot make tiling textures, so the edges may not wrap.'],
+			seed: 3,
+			model: 'ming'
+		});
+		const out = await executeTool(
+			'make_asset',
+			{ kind: 'image', prompt: 'mossy stone', path: 'm.png', seamless: true },
+			context()
+		);
+		expect(out.result).toMatch(/cannot make tiling textures/);
+	});
+
 	it('rejects a kind it does not make', async () => {
 		const out = await executeTool(
 			'make_asset',
@@ -316,6 +349,8 @@ describe('make_asset textures', () => {
 			context()
 		);
 		expect(out.result).toMatch(/Settings → Image/);
+		// The live run's model offered to draw the coin as a texture instead.
+		expect(out.result).toMatch(/cannot draw an object/);
 		expect(state.make).not.toHaveBeenCalled();
 	});
 });

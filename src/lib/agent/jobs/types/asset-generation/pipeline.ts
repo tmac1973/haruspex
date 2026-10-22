@@ -296,12 +296,24 @@ async function judgeAsset(
 /** The recipe stage's model turn and Rust's check, for `recipes.ts`. */
 function recipeDeps(ctx: JobRunContext): RecipeDeps {
 	return {
-		ask: async (prompt) => {
+		visionSupported: ctx.visionSupported(),
+		ask: async (prompt, image) => {
 			let got = new Map<string, SubmittedRecipe>();
 			await ctx.runJobTurn({
 				userMessage: prompt,
+				// A revision looks at the tiles the judge turned down.
+				...(image
+					? {
+							history: [
+								{
+									role: 'user' as const,
+									content: [{ type: 'image_url' as const, image_url: { url: dataUrl(image) } }]
+								}
+							]
+						}
+					: {}),
 				contextSize: ctx.contextSize(),
-				visionSupported: false,
+				visionSupported: image !== undefined,
 				toolAllowlist: [SUBMIT_TEXTURE_RECIPES_TOOL],
 				forceFinalTool: SUBMIT_TEXTURE_RECIPES_TOOL,
 				maxIterations: 1,
@@ -673,7 +685,8 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 						// a sheet of sprites and can lack water blue or grass green.
 						render: (recipe, seed, n) => renderTexture(recipe, tileSize, seed, n, []),
 						preview: (tile) => tiledPreview(tile, tileSize),
-						revise: (entry, reason) => reviseRecipe(spec, entry, reason, recipeDeps(ctx)),
+						revise: (entry, reason, preview) =>
+							reviseRecipe(spec, entry, reason, recipeDeps(ctx), preview),
 						recipeFailures: recipesFailed
 					}
 				: undefined

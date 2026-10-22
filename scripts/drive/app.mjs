@@ -469,6 +469,12 @@ export class App {
 		return { mode, hosts, page: `${this.api.base}/app/`, lan, hostname };
 	}
 
+	/** Merge `patch` into the app's settings, as a settings panel would save it. */
+	async settings(patch) {
+		await this.call('updateSettings', patch);
+		return { updated: Object.keys(patch) };
+	}
+
 	/**
 	 * Add the Rust tests' MCP fixture (src-tauri/tests/fixtures/mcp-era-server.js)
 	 * as server `fake`, with its tool that says nothing about what it changes,

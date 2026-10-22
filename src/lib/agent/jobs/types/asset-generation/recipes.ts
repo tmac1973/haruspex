@@ -17,8 +17,13 @@ import { seedOf } from '#lib/assets/texture.ts';
 export { variantPaths } from '#lib/assets/texture.ts';
 
 export interface RecipeDeps {
-	/** One model turn with `prompt`; the recipes it submitted, by id. */
-	ask: (prompt: string) => Promise<Map<string, SubmittedRecipe>>;
+	/**
+	 * One model turn with `prompt`; the recipes it submitted, by id. `image`
+	 * goes in ahead of the prompt, when the model can see.
+	 */
+	ask: (prompt: string, image?: Uint8Array) => Promise<Map<string, SubmittedRecipe>>;
+	/** Whether the recipe model can see an image put before its prompt. */
+	visionSupported: boolean;
 	/** Null when the recipe is good, else what is wrong with it. */
 	validate: (recipe: unknown) => Promise<string | null>;
 }
@@ -51,15 +56,18 @@ async function askFor(
 	spec: AssetSpec,
 	entries: AssetEntry[],
 	deps: RecipeDeps,
-	feedback?: Map<string, string>
+	feedback?: Map<string, string>,
+	image?: Uint8Array
 ): Promise<{ good: Map<string, DrawnRecipe>; refused: Map<string, string> }> {
+	const shown = image !== undefined && deps.visionSupported;
 	const prompt = recipePrompt(
 		entries.map((e) => ({ id: e.id, prompt: e.prompt })),
 		paletteOf(spec),
 		spec.style.prompt,
-		feedback
+		feedback,
+		shown
 	);
-	const got = await deps.ask(prompt);
+	const got = await deps.ask(prompt, shown ? image : undefined);
 	const good = new Map<string, DrawnRecipe>();
 	const refused = new Map<string, string>();
 	for (const e of entries) {
@@ -103,14 +111,16 @@ export async function writeRecipes(spec: AssetSpec, deps: RecipeDeps): Promise<R
 }
 
 /**
- * One texture's recipe again, after the judge said no. Null when the model
- * gave nothing usable; the caller keeps the tiles it has.
+ * One texture's recipe again, after the judge said no. `preview` is the tile
+ * laid 3×3 as the judge saw it, shown to a model that can see. Null when the
+ * model gave nothing usable; the caller keeps the tiles it has.
  */
 export async function reviseRecipe(
 	spec: AssetSpec,
 	entry: AssetEntry,
 	reason: string,
-	deps: RecipeDeps
+	deps: RecipeDeps,
+	preview?: Uint8Array
 ): Promise<DrawnRecipe | null> {
 	const feedback = new Map([
 		[
@@ -119,7 +129,7 @@ export async function reviseRecipe(
 				`The recipe was: ${JSON.stringify(entry.recipe)}`
 		]
 	]);
-	const { good } = await askFor(spec, [entry], deps, feedback);
+	const { good } = await askFor(spec, [entry], deps, feedback, preview);
 	return good.get(entry.id) ?? null;
 }
 

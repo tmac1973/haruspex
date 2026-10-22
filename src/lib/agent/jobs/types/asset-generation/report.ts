@@ -211,7 +211,7 @@ function codeTextureSection(input: ReportInput): string[] {
 		const verdict =
 			e.status === 'done'
 				? e.recipe
-					? 'passed after one revision'
+					? `passed after ${e.attempts - 1} revision(s)`
 					: 'passed'
 				: `kept, rejected: ${e.reason ?? ''}`;
 		return `| \`${e.id}\` | ${layers} | ${e.variants?.length ?? 1} | ${verdict} |`;
