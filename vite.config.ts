@@ -32,8 +32,10 @@ export default defineConfig({
 		// ("beforeDevCommand terminated with a non-zero status code"). Exclude
 		// the Rust crate dir from the watcher — nothing under src-tauri is a
 		// frontend source anyway. (Standard Tauri + Vite guidance.)
+		// Claude Code's worktrees sit inside the checkout: a new one is a whole
+		// second copy of src/, and watching it reloads the running app.
 		watch: {
-			ignored: ['**/src-tauri/**']
+			ignored: ['**/src-tauri/**', '**/.claude/worktrees/**']
 		}
 	},
 	// Pyodide is only imported by python.worker.ts, which Vite reaches through

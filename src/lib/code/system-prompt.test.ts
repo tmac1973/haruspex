@@ -119,6 +119,7 @@ describe('Code tab prompt with subtasks', () => {
 		expect(text).toContain('YOUR TASK:\nFind the callers of foo.');
 		expect(text).toContain('under 4000 characters');
 		expect(text).toContain('only commands that read');
+		expect(text).toContain('tests, builds and installs included');
 		expect(text).not.toContain('- fs_write_text');
 		expect(text).not.toContain('open_in_shell');
 		expect(text).not.toContain('command_output');

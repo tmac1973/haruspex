@@ -11,7 +11,7 @@ A subtask is a helper agent the coding agent starts on its own to handle one par
 
 The agent decides when to use subtasks; you ask as usual. A message that lists three or more numbered asks reminds it that it can hand them out. Each subtask starts with an empty context in the session's folder, does its one task, and hands back a short report (at most 4,000 characters). The agent sees the report, not everything the subtask read, so long investigations take less of the session's context.
 
-A read-only subtask searches, reads files and runs commands that only read (`ls`, `cat`, `grep`, `git log` and the like); any other command is refused without asking you. Subtasks use the session's model and effort.
+A read-only subtask searches, reads files and runs commands that only read (`ls`, `cat`, `grep`, `sed -n`, `git log` and the like, including pipes and loops made of them); any other command, such as a test run or a build, is refused without asking you. Subtasks use the session's model and effort.
 
 ## Let subtasks change files
 
