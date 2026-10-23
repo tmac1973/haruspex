@@ -220,7 +220,7 @@ function subtaskSession(worktree: { root: string; linked: string[] } | undefined
 	if (!worktree) {
 		return {
 			rules:
-				'You may read, not write: no file writes or edits. run_command runs only commands that read (ls, cat, grep, git log, git diff…); anything else is refused.',
+				'You may read, not write: no file writes or edits. run_command runs only commands that read (ls, cat, grep, sed -n, git log, git diff…); anything else is refused, tests, builds and installs included. Name the ones worth running in the report instead.',
 			tools: fileTools(true),
 			run: '- run_command — run ONE read-only shell command; returns output + exit code.'
 		};

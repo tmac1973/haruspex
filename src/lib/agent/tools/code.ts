@@ -145,7 +145,7 @@ function backgroundRefusal(ctx: ToolContext): string | null {
 
 /** What a read-only subtask is told when a command might write. */
 export const SUBTASK_READ_ONLY_REFUSAL =
-	'A read-only subtask can only run commands that read (ls, cat, grep, git log…). Report what you would run instead.';
+	'A read-only subtask can only run commands that read (ls, cat, grep, git log…), not tests, builds or installs. Report what you would run instead.';
 
 /** Why a read-only session's command is asked about. */
 const READ_ONLY_REASON: RiskMatch = {
