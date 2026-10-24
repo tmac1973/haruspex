@@ -115,6 +115,11 @@ async function chosen(): Promise<{ id: string; family: SdFamily; model: Lemonade
 	return { id, family, model };
 }
 
+/** A model's name for a dropdown: its description up to the dash. */
+export function modelLabel(m: LemonadeModel): string {
+	return m.description.split(' — ')[0];
+}
+
 /** Said of every tiling request: see the top of this file. */
 const NO_TILING = 'Lemonade cannot make tiling textures, so the edges may not wrap.';
 
@@ -142,12 +147,24 @@ export const lemonadeBackend: ImageBackend = {
 		if (!state.sdcpp.usable) {
 			return { ok: false, detail: `${where} cannot run stable-diffusion.cpp on this hardware.` };
 		}
-		const model = (await lemonadeCatalogue()).find((m) => m.id === modelId());
-		if (!model) return { ok: false, detail: `${where}. No model is chosen — Settings → Image.` };
-		if (!state.downloaded.has(bareName(model.name))) {
-			return { ok: false, detail: `${where}. The model is not installed — Settings → Image.` };
+		// Listed before the model is checked, as ComfyUI's are: "no model is
+		// chosen" is exactly when the list is wanted.
+		const catalogue = await lemonadeCatalogue();
+		const models = catalogue
+			.filter((m) => state.downloaded.has(bareName(m.name)))
+			.map((m) => ({ name: m.id, label: modelLabel(m) }));
+		const model = catalogue.find((m) => m.id === modelId());
+		if (!model) {
+			return { ok: false, detail: 'No model is chosen — Settings → Image.', models };
 		}
-		return { ok: true, detail: `${where}, ${state.sdcpp.backend}.` };
+		if (!state.downloaded.has(bareName(model.name))) {
+			return {
+				ok: false,
+				detail: `${modelLabel(model)} is not installed on the server — Settings → Image → Install.`,
+				models
+			};
+		}
+		return { ok: true, detail: `Connected — ${where}, ${state.sdcpp.backend}.`, models };
 	},
 
 	async generate(req: ImageRequest, opts: GenerateOptions = {}): Promise<ImageResult> {

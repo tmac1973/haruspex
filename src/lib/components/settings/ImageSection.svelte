@@ -4,7 +4,9 @@
 	import { formatGigabytes } from '#lib/utils/format.ts';
 	import { invoke } from '@tauri-apps/api/core';
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
-	import { comfyApiKey } from '#lib/stores/imageSecrets.ts';
+	import { comfyApiKey, lemonadeApiKey } from '#lib/stores/imageSecrets.ts';
+	import type { SettingSecret } from '#lib/stores/settingSecrets.ts';
+	import type { AppSettings } from '#lib/stores/settings.ts';
 	import {
 		savedSecretPlaceholder,
 		secretStoreHint,
@@ -13,7 +15,7 @@
 	} from '#lib/stores/secrets.ts';
 	import Tooltip from '#lib/components/Tooltip.svelte';
 	import ComfyModels from '#lib/components/settings/ComfyModels.svelte';
-	import LemonadeSection from '#lib/components/settings/LemonadeSection.svelte';
+	import LemonadeModels from '#lib/components/settings/LemonadeModels.svelte';
 	import DownloadProgressBar from '#lib/components/settings/DownloadProgressBar.svelte';
 	import {
 		cancelDownload,
@@ -34,18 +36,54 @@
 	import type { ImageModelInfo } from '#lib/ipc/gen/ImageModelInfo.ts';
 
 	let imageBackendKind = $state(getSettings().imageBackendKind);
-	let imageBackendBaseUrl = $state(getSettings().imageBackendBaseUrl);
+
+	/**
+	 * The backends that are a server the user runs. They share one Connection
+	 * section — address, key, Probe, the Model dropdown it fills, and an install
+	 * list — each over its own settings, so switching between them loses
+	 * neither.
+	 */
+	interface ServerFields {
+		url: 'imageBackendBaseUrl' | 'imageLemonadeBaseUrl';
+		model: 'imageComfyCheckpoint' | 'imageLemonadeModelId';
+		key: SettingSecret;
+		placeholder: string;
+		modelTip: string;
+	}
+	const SERVERS: Partial<Record<ImageBackendKind, ServerFields>> = {
+		comfyui: {
+			url: 'imageBackendBaseUrl',
+			model: 'imageComfyCheckpoint',
+			key: comfyApiKey,
+			placeholder: 'http://127.0.0.1:8188',
+			modelTip:
+				'Models the server can run, listed by Probe. A Ming-Image or Qwen-Image-2.1 file in models/diffusion_models brings its own text encoder and VAE, which are found by name; anything in models/checkpoints is run as an SD checkpoint.'
+		},
+		lemonade: {
+			url: 'imageLemonadeBaseUrl',
+			model: 'imageLemonadeModelId',
+			key: lemonadeApiKey,
+			placeholder: 'http://127.0.0.1:13305',
+			modelTip:
+				"Models installed on the server, listed by Probe: the bundled engine's Ming-Image and Qwen-Image Turbo, run by Lemonade's stable-diffusion.cpp. Lemonade keeps one image model loaded, so the first picture after a switch waits for it to load. It cannot make tiling textures."
+		}
+	};
+	const server = $derived(SERVERS[imageBackendKind] ?? null);
+
+	const initial = SERVERS[getSettings().imageBackendKind];
+	let serverUrl = $state(initial ? getSettings()[initial.url] : '');
+	let serverModel = $state(initial ? getSettings()[initial.model] : '');
 	/** A key being typed. Stored when the field loses focus, then cleared. */
 	let apiKeyDraft = $state('');
-	let apiKeySaved = $state(comfyApiKey.configured());
+	let apiKeySaved = $state(initial?.key.configured() ?? false);
 	let storeKind = $state<SecretStoreKind>('keychain');
 	void secretStoreKind().then((k) => (storeKind = k));
 
 	async function saveApiKey() {
 		const value = apiKeyDraft.trim();
-		if (!value) return;
+		if (!value || !server) return;
 		try {
-			await comfyApiKey.save(value);
+			await server.key.save(value);
 			apiKeyDraft = '';
 			apiKeySaved = true;
 		} catch (e) {
@@ -54,10 +92,9 @@
 	}
 
 	async function removeApiKey() {
-		await comfyApiKey.remove();
+		await server?.key.remove();
 		apiKeySaved = false;
 	}
-	let imageComfyCheckpoint = $state(getSettings().imageComfyCheckpoint);
 	let imageLocalModelId = $state(getSettings().imageLocalModelId);
 
 	type ImageModel = ImageModelInfo;
@@ -147,7 +184,7 @@
 	let serverModels = $state<ModelOption[]>([]);
 	/** The dropdown's options: the server's, plus the saved one if it is not among them. */
 	const modelOptions = $derived.by((): ModelOption[] => {
-		const current = imageComfyCheckpoint.trim();
+		const current = serverModel.trim();
 		if (!current || serverModels.some((m) => m.name === current)) return serverModels;
 		const why = serverModels.length > 0 ? 'not on the server' : 'probe to check';
 		return [{ name: current, label: `${current} — ${why}` }, ...serverModels];
@@ -226,6 +263,15 @@
 		updateSettings({ imageBackendKind });
 		probeResult = null;
 		capabilities = null;
+		// Another server's fields: its own address, key, model and list.
+		const s = getSettings();
+		serverUrl = server ? s[server.url] : '';
+		serverModel = server ? s[server.model] : '';
+		apiKeySaved = server?.key.configured() ?? false;
+		apiKeyDraft = '';
+		serverModels = [];
+		probeCount = 0;
+		probedOnOpen = false;
 		// The asset job type is gated on a configured backend, and that gate's
 		// answer is cached for the session. Without this, turning a backend on
 		// leaves the type missing from the job picker until the app restarts.
@@ -253,24 +299,26 @@
 	}
 
 	function chooseModel(e: Event) {
-		imageComfyCheckpoint = (e.currentTarget as HTMLSelectElement).value;
-		persist({ imageComfyCheckpoint });
+		if (!server) return;
+		serverModel = (e.currentTarget as HTMLSelectElement).value;
+		persist({ [server.model]: serverModel } as Partial<AppSettings>);
 		// Re-checked at once: a DiT model also needs its text encoder and VAE
 		// on the server, and that is the probe's job to say.
 		void probe();
 	}
 
 	function saveUrl() {
-		const next = imageBackendBaseUrl.trim();
-		const changed = next !== getSettings().imageBackendBaseUrl;
-		persist({ imageBackendBaseUrl: next });
+		if (!server) return;
+		const next = serverUrl.trim();
+		const changed = next !== getSettings()[server.url];
+		persist({ [server.url]: next } as Partial<AppSettings>);
 		if (changed && next) void probe();
 	}
 
 	// Probe once on opening, so the model list is there without a click.
 	let probedOnOpen = false;
 	$effect(() => {
-		if (isComfy && !probedOnOpen && imageBackendBaseUrl.trim()) {
+		if (server && !probedOnOpen && serverUrl.trim()) {
 			probedOnOpen = true;
 			void probe();
 		}
@@ -395,11 +443,7 @@
 	</section>
 {/if}
 
-{#if imageBackendKind === 'lemonade'}
-	<LemonadeSection />
-{/if}
-
-{#if isComfy}
+{#if server}
 	<section class="settings-section">
 		<h2>Connection</h2>
 		<div class="fields">
@@ -407,8 +451,8 @@
 			<input
 				id="image-url"
 				type="text"
-				placeholder="http://127.0.0.1:8188"
-				bind:value={imageBackendBaseUrl}
+				placeholder={server.placeholder}
+				bind:value={serverUrl}
 				onblur={saveUrl}
 			/>
 
@@ -429,20 +473,17 @@
 
 			<label for="image-model">
 				Model:
-				<Tooltip
-					label="About the model"
-					text="Models the server can run, listed by Probe. A Ming-Image or Qwen-Image-2.1 file in models/diffusion_models brings its own text encoder and VAE, which are found by name; anything in models/checkpoints is run as an SD checkpoint."
-				/>
+				<Tooltip label="About the model" text={server.modelTip} />
 			</label>
 			<select
 				id="image-model"
-				value={imageComfyCheckpoint}
+				value={serverModel}
 				onchange={chooseModel}
 				disabled={modelOptions.length === 0}
 			>
 				{#if modelOptions.length === 0}
 					<option value="">Probe to list the server's models</option>
-				{:else if !imageComfyCheckpoint}
+				{:else if !serverModel}
 					<option value="" disabled>Choose a model</option>
 				{/if}
 				{#each modelOptions as m (m.name)}
@@ -467,7 +508,11 @@
 	</section>
 
 	{#if probeCount > 0}
-		<ComfyModels {probeCount} onInstalled={() => void probe()} />
+		{#if isComfy}
+			<ComfyModels {probeCount} onInstalled={() => void probe()} />
+		{:else}
+			<LemonadeModels {probeCount} onInstalled={() => void probe()} />
+		{/if}
 	{/if}
 {/if}
 
