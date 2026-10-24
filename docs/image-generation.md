@@ -34,7 +34,75 @@ stops when you say. It runs Ming-Image (the default) and, as an opt-in,
 Qwen-Image-2.1 Turbo, from GGUF weights downloaded in Settings → Image. Sheets,
 transparency and tiling textures work as on ComfyUI.
 
+**Lemonade** is a [Lemonade](https://lemonade-server.ai) server the user
+runs, whose `sd-cpp` recipe is stable-diffusion.cpp again. It runs the bundled
+engine's catalogue — the same GGUF files, installed on the server from
+Settings → Image — with the same transparency, but no tiling textures. Pick
+it to draw on another machine's GPU without ComfyUI. See
+[Lemonade](#the-lemonade-backend) below.
+
 **None** is the default. No process, no download, no startup cost.
+
+## The Lemonade backend
+
+`src/lib/image/lemonade/`, with `src-tauri/src/lemonade.rs`. Calls go through
+`comfy.rs`'s client from Rust (no `Origin`; the key is `lemonade:key`), since
+Lemonade's `allowed_origins` is empty by default.
+
+**Generation** is Lemonade's OpenAI-style `/api/v1/images/generations`, which
+has no field for a start image, a mask or a strength. sd-server reads native
+parameters from a `<sd_cpp_extra_args>{…}</sd_cpp_extra_args>` block in the
+prompt, takes the **first** one and strips them all
+(`examples/server/routes_openai.cpp`). Lemonade appends a block of its own;
+ours leads the prompt, so it wins whole: seed, size, sampler, and
+`init_image`/`strength` for Ming's clear start. `adapter.test.ts` pins that
+our block comes first. The response has no seed, so every request sends a
+concrete one.
+
+**No tiling.** sd-server finds that block with a `std::regex` over the whole
+prompt, and a long block crashes it: no answer, then Lemonade's watchdog
+resets it and the next request reloads the model. Measured: 24 KB of base64
+drew, 61 KB crashed. A 1024 clear canvas is 5.5 KB, so Ming's transparency
+fits; the seam pass's start image, the rolled texture, does not (2.2 MB as
+PNG, 220 KB even as JPEG, all crashed). A small start image and a mask drew
+fine, so the masked img2img itself works. The edits route takes files rather
+than base64, but sd-server makes them reference images, never the start
+image. So the backend reports `seamlessTiling: false`, a seamless request
+comes back untiled with `seamFailed` saying so, and `buildGeneration` refuses
+a block over 20 KB rather than crash the user's server. It would work if
+sd-server found the block with a plain string search.
+
+**Install** is `/api/v1/pull` with `stream: true, subscribe: false`: Lemonade
+owns the download, Haruspex polls `/api/v1/downloads`, and a download running
+when Settings closes is picked up again when it opens. Then two things the
+recipe does not do for a model, saved as its `sdcpp_args`:
+
+- Lemonade maps only `main`, `text_encoder` and `vae` to sd-server flags. Ming
+  needs `--tokenizer` too, so the tokenizer is pulled as a fourth role (any role
+  is downloaded) and its path in Lemonade's Hugging Face cache is passed by
+  hand: `<model_storage.path>/models--<owner>--<repo>/snapshots/<commit>/<file>`.
+  `/api/v1/models/{id}/files` does not report paths, so the commit is asked of
+  Hugging Face (`/api/models/<repo>/revision/main`), and install loads the model
+  once to check it.
+- Lemonade adds `--diffusion-fa --vae-tiling` on Vulkan only. The rest of the
+  bundled engine's flags (`image_models::engine_options`) go in on every
+  backend.
+
+Models register as `user.Ming-Image-0.1-Design-GGUF` and
+`user.Qwen-Image-2.1-Turbo-GGUF`; the names are fixed so a server already set
+up is recognised.
+
+Measured on 2026-10-23 (Lemonade 2026.43.3, Radeon AI PRO R9700, ROCm sd-cpp
+`master-957-90e86d1`), 1024 nine-sprite sheets through this backend: Ming
+24–30 s and Qwen Turbo 27–31 s, each 4 of 4 transparent and 4 of 4 laid out
+exactly across both runs. Installing Qwen Turbo from scratch took 128 s;
+re-installing Ming over itself, 48 s. Ming's text encoder runs on the CPU as
+on the bundled engine (`--backend te=cpu`); with it on the GPU a sheet took
+24.4 s, so it costs nothing measurable there.
+
+Lemonade's other image engine, TheNoise, is not used. It ran Ming faster
+(~17 s) but has no start image, and Ming drew alpha 0 times in 12 there with
+any prompt.
 
 ## The asset job
 

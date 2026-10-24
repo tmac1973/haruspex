@@ -587,7 +587,15 @@ pub async fn require(key: &str, what: &str) -> Result<String, String> {
 /// bug cannot overwrite an entry it does not own, and a fixed list, so a key
 /// the app does not use cannot be written at all.
 const NAMESPACES: &[&str] = &[
-    "email:", "dav:", "mcp:", "apikey:", "proxy:", "brave:", "comfy:", "remote:",
+    "email:",
+    "dav:",
+    "mcp:",
+    "apikey:",
+    "proxy:",
+    "brave:",
+    "comfy:",
+    "lemonade:",
+    "remote:",
 ];
 
 /// The namespaces the webview may read back, because it is what uses them:
@@ -865,6 +873,7 @@ mod tests {
             "proxy:search",
             "brave:key",
             "comfy:key",
+            "lemonade:key",
             "remote:token",
         ] {
             assert!(check_key(ok).is_ok(), "{ok}");

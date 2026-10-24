@@ -1,6 +1,6 @@
 ---
 title: Image generation
-description: Turning on image generation, ComfyUI or the bundled engine, the models and their licences, drawing in Chat, art for a project, and GPU cost.
+description: Turning on image generation, ComfyUI, the bundled engine or Lemonade, the models and their licences, drawing in Chat, art for a project, and GPU cost.
 ---
 
 # Image generation
@@ -16,6 +16,7 @@ Open Settings → Image → **Image backend** and choose a **Backend**:
 - **None** — the default. No process and no download.
 - **ComfyUI** — a [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server you run, on this computer or another. Choose this if you already use ComfyUI.
 - **Bundled engine** — stable-diffusion.cpp, shipped with Haruspex. Nothing else to install. It is offered on Linux, Windows and Apple Silicon Macs.
+- **Lemonade** — a [Lemonade](https://lemonade-server.ai) server you run, which draws with the bundled engine's models on its own GPU.
 
 Once a backend is set up, **Test generation → Generate a test image** makes one picture to check it works.
 
@@ -27,7 +28,11 @@ Under **Bundled engine**, press **Download** on a model, then **Use**. Downloads
 
 Under **Connection**, enter the **Server address** (for example `http://127.0.0.1:8188`) and an **API key** only if your server needs one, then press **Probe**. **Models on the server** then shows what each model is missing. **Install** downloads the files into ComfyUI when it runs on this computer, or queues them with ComfyUI-Manager on another server. Without either, **Copy file list** gives you the files to place by hand. Then choose the **Model**.
 
-The first picture after ComfyUI starts is slow: it loads the model from disk, which can take a minute or more. The progress line says **Loading the model** with a running clock while it does, then counts the drawing steps. Later pictures skip the load.
+The first picture after ComfyUI starts is slow while it loads the model; the progress line says **Loading the model** until it draws.
+
+### Set up Lemonade
+
+Under **Lemonade**, enter the **Server address** (for example `http://127.0.0.1:13305`) and an **API key** only if your server needs one, then press **Probe**. **Models on the server** lists the two models; **Install** downloads one on the server and sets it up there, then **Use** picks it. The download carries on if you close Settings. Lemonade keeps one image model loaded, so the first picture after switching waits for it to load. It does not make tiling textures, and Lemonade's own models are not offered.
 
 ## Pick a model and check its licence
 
@@ -36,7 +41,7 @@ The first picture after ComfyUI starts is slow: it loads the model from disk, wh
 | Ming-Image 0.1 Design (default) | MIT                   | Allowed         | ~8 GB VRAM, ~10 GB free RAM |
 | Qwen-Image 2.1 Turbo            | Qwen Research License | **Not allowed** | ~12 GB VRAM                 |
 
-Qwen-Image Turbo draws a picture in about a third of the time the original Qwen-Image 2.1 took. If you downloaded Qwen-Image before, its row in Settings → Image offers **Download** again; that fetches only the Turbo model and removes the old one. In ComfyUI, an original Qwen-Image 2.1 model you already have keeps working.
+If you downloaded the original Qwen-Image 2.1 before, its row offers **Download** again for Turbo, which is about three times faster. In ComfyUI, an original Qwen-Image 2.1 model keeps working.
 
 Settings → Image marks Qwen-Image "Not licensed for commercial use." and asks before downloading or installing it. When a non-commercial model is in use, the assistant is told, so it can tell you. Generated images are generally not copyrightable on their own, and some stores require AI-made content to be disclosed.
 

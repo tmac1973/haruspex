@@ -9,8 +9,9 @@ Private local AI desktop app — Tauri 2.x + SvelteKit 5 + llama.cpp sidecar.
 - **LLM Inference**: llama-server sidecar (port 8765, OpenAI-compatible API)
 - **Speech-to-Text**: whisper-server sidecar (port 8766, whisper.cpp)
 - **Text-to-Speech**: koko sidecar (port 3001, Kokoros OpenAI-compatible API)
-- **Image generation**: ComfyUI (a server the user runs) or the bundled
-  sd-server sidecar (port 8767, stable-diffusion.cpp). Off by default; nothing
+- **Image generation**: ComfyUI (a server the user runs), the bundled
+  sd-server sidecar (port 8767, stable-diffusion.cpp), or a Lemonade server's
+  sd-cpp recipe (the user runs it; `lemonade.rs`). Off by default; nothing
   starts until Settings → Image selects one. See `docs/image-generation.md`.
 - **Integrations**: MCP servers (stdio + streamable HTTP), IMAP email, CalDAV/CardDAV, screen capture
 - **Default model**: Qwen 3.5 9B (Q4_K_M, ~5.7 GB)
@@ -18,8 +19,8 @@ Private local AI desktop app — Tauri 2.x + SvelteKit 5 + llama.cpp sidecar.
   Qwen-Image-2.1 (non-commercial), installed into the user's ComfyUI from
   Settings → Image (`comfy_models.rs`); the bundled engine runs the same two
   as GGUF (`image_models.rs`, Ming converted by us and hosted on Hugging Face),
-  downloaded to `models/image/<id>/`. Licence and commercial use are
-  first-class fields in both
+  downloaded to `models/image/<id>/`, or installed on a Lemonade server.
+  Licence and commercial use are first-class fields in both
 
 ## Dev Setup
 

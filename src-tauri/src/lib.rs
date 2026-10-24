@@ -23,6 +23,7 @@ mod image_models;
 mod inference;
 mod inference_queue;
 mod integrations;
+mod lemonade;
 mod links;
 mod lint;
 mod memory;
@@ -378,6 +379,9 @@ pub fn run() {
             comfy_models::comfy_model_catalogue,
             comfy_models::comfy_can_install_directly,
             comfy_models::comfy_install_direct,
+            lemonade::lemonade_json,
+            lemonade::lemonade_catalogue,
+            lemonade::lemonade_sdcpp_args,
             image_models::image_models,
             image_models::image_model_recommended,
             image_models::download_image_model,

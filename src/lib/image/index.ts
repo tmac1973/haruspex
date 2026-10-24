@@ -7,9 +7,11 @@
 import { registerImageBackend } from '#lib/image/registry.ts';
 import { comfyUiBackend } from '#lib/image/comfyui/backend.ts';
 import { localBackend } from '#lib/image/local/backend.ts';
+import { lemonadeBackend } from '#lib/image/lemonade/backend.ts';
 
 registerImageBackend(comfyUiBackend);
 registerImageBackend(localBackend);
+registerImageBackend(lemonadeBackend);
 
 export {
 	resolveImageBackend,

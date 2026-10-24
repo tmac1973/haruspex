@@ -1,0 +1,68 @@
+{
+	"all_models_loaded": [
+		{
+			"backend_alive": true,
+			"backend_health": "ready",
+			"backend_url": "http://127.0.0.1:8001/v1",
+			"checkpoint": "voltaire321/Ming-Image-0.1-Design-GGUF:ming_image_0.1_design-Q8_0.gguf",
+			"device": "gpu",
+			"is_busy": false,
+			"is_streaming": false,
+			"last_use": 790599332,
+			"loaded": true,
+			"model_name": "Ming-Image-0.1-Design-GGUF",
+			"pid": 3029048,
+			"pinned": false,
+			"recipe": "sd-cpp",
+			"recipe_options": {
+				"cfg_scale": 1.0,
+				"ctx_size": 32768,
+				"height": 1024,
+				"sampling_method": "euler",
+				"sdcpp_args": "--tokenizer /opt/var/lib/lemonade/.cache/huggingface/hub/models--inclusionAI--Ming-Image-0.1-Design/snapshots/c57c49689d12ef7d4e24a170014f1dc43d3ce258/mllm/tokenizer.json --diffusion-fa --vae-tiling",
+				"steps": 12,
+				"width": 1024
+			},
+			"residency_class": "standard",
+			"slot_pool": "standard/image",
+			"status": "ready",
+			"type": "image",
+			"watchdog_reset": false
+		}
+	],
+	"max_models": {
+		"classification": 1,
+		"embedding": 1,
+		"image": 1,
+		"llm": 1,
+		"reranking": 1,
+		"transcription": 1,
+		"tts": 1
+	},
+	"model_loaded": "Ming-Image-0.1-Design-GGUF",
+	"pinned_helper_models": {
+		"classification": 0,
+		"embedding": 0,
+		"image": 0,
+		"llm": 0,
+		"reranking": 0,
+		"transcription": 0,
+		"tts": 0
+	},
+	"pinned_models": {
+		"classification": 0,
+		"embedding": 0,
+		"image": 0,
+		"llm": 0,
+		"reranking": 0,
+		"transcription": 0,
+		"tts": 0
+	},
+	"status": "ok",
+	"telemetry": {
+		"enabled": false
+	},
+	"update_check_done": true,
+	"version": "2026.43.3",
+	"websocket_port": 9000
+}

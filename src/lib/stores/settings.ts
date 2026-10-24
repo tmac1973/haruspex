@@ -744,6 +744,16 @@ export interface AppSettings {
 	imageLocalModelId: string;
 	imageLocalModelPath: string;
 	/**
+	 * A Lemonade server, apart from ComfyUI's address and key: the two run on
+	 * different ports, often side by side, and switching backends should not
+	 * lose either. The key is kept under `lemonade:key` like ComfyUI's.
+	 */
+	imageLemonadeBaseUrl: string;
+	imageLemonadeApiKey: string;
+	imageLemonadeApiKeySaved: boolean;
+	/** The bundled engine's catalogue id it runs, installed on the server. */
+	imageLemonadeModelId: string;
+	/**
 	 * Max agent-loop iterations (model calls) for a Code-mode turn before it's
 	 * forced to wrap up. Coding tasks chain many tool calls (grep → read → edit
 	 * → test → fix), so this is higher than chat/shell. Raise it for big tasks;
@@ -964,7 +974,11 @@ const defaults: AppSettings = {
 	imageComfyWorkflowPath: '',
 	imageComfyFieldMapPath: '',
 	imageLocalModelId: '',
-	imageLocalModelPath: ''
+	imageLocalModelPath: '',
+	imageLemonadeBaseUrl: '',
+	imageLemonadeApiKey: '',
+	imageLemonadeApiKeySaved: false,
+	imageLemonadeModelId: ''
 };
 
 function load(): AppSettings {

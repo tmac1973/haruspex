@@ -23,7 +23,7 @@ import {
 	type ImageRequest,
 	type ImageResult
 } from '#lib/image/types.ts';
-import { mingTransparent, qwen21Transparent } from '#lib/image/comfyui/templates/index.ts';
+import { seamSeed, tileTexture, transparentStart } from '#lib/image/sdcpp.ts';
 import {
 	FAMILY_SAMPLER,
 	FIXTURE,
@@ -33,7 +33,6 @@ import {
 	familyOfId,
 	imagesFrom,
 	seedFrom,
-	toBase64,
 	type LocalFamily
 } from '#lib/image/local/adapter.ts';
 
@@ -143,42 +142,27 @@ const EMPTY_RESULT = /generate_image returned no results/;
 const EMPTY_RESULT_ATTEMPTS = 3;
 const EMPTY_RESULT_RETRY_MS = 1000;
 
-/**
- * Make a texture tile: roll it by half so its seams cross in the middle, repaint
- * a band over them, and keep everything else to the byte. The edges of the
- * result are the original's middle, so they wrap by construction; the repaint
- * only has to hide the cross. Phase 28 measured the band and strength.
- */
+/** The seam pass (`tileTexture`), as a masked img2img on this engine. */
 async function tile(
 	base: Uint8Array,
 	req: ImageRequest & { sampler: { name: string; steps: number; cfg: number }; seed: number },
 	signal?: AbortSignal
 ): Promise<Uint8Array> {
-	const inputs = await invoke<{ rolled: number[]; mask: number[] }>('image_seam_inputs', {
-		bytes: Array.from(base)
-	});
-	const { route, body } = buildRequest({
-		...req,
-		// A different seed from the base: the same one redraws the same layout
-		// on top of a rolled one.
-		seed: req.seed >= 0 ? req.seed + 1 : -1,
-		repaint: {
-			image: toBase64(new Uint8Array(inputs.rolled)),
-			mask: toBase64(new Uint8Array(inputs.mask))
+	return tileTexture(base, async (image, mask) => {
+		const { route, body } = buildRequest({
+			...req,
+			seed: seamSeed(req.seed),
+			repaint: { image, mask }
+		});
+		const repainted = imagesFrom(await call(route, body, signal));
+		if (repainted.length === 0) {
+			throw new ImageBackendError(
+				'rejected',
+				'The image engine returned no image for the seam pass.'
+			);
 		}
+		return repainted[0];
 	});
-	const repainted = imagesFrom(await call(route, body, signal));
-	if (repainted.length === 0) {
-		throw new ImageBackendError(
-			'rejected',
-			'The image engine returned no image for the seam pass.'
-		);
-	}
-	const out = await invoke<number[]>('image_seam_finish', {
-		rolled: inputs.rolled,
-		repainted: Array.from(repainted[0])
-	});
-	return new Uint8Array(out);
 }
 
 export const localBackend: ImageBackend = {
@@ -216,24 +200,8 @@ export const localBackend: ImageBackend = {
 		opts.onProgress?.({ phase: 'running' });
 
 		const sampler = req.sampler ?? { ...FAMILY_SAMPLER[family] };
-		// Transparency as each family makes it: Ming from a clear canvas AND its
-		// RGBA phrase (neither alone works), Qwen from its phrase alone.
-		// A tiling texture is opaque by nature; asked for both, it tiles.
 		const seamless = Boolean(req.seamless);
-		let prompt = req.prompt;
-		let clearStart: string | undefined;
-		if (req.transparent && !seamless) {
-			if (family === 'ming') {
-				prompt = mingTransparent(req.prompt);
-				const canvas = await invoke<number[]>('image_clear_canvas', {
-					width: req.width,
-					height: req.height
-				});
-				clearStart = toBase64(new Uint8Array(canvas));
-			} else {
-				prompt = qwen21Transparent(req.prompt);
-			}
-		}
+		const { prompt, clearStart } = await transparentStart(family, req);
 		const { route, body } = buildRequest({ ...req, prompt, sampler, clearStart });
 		const started = Date.now();
 		const payload = await call(route, body, opts.signal);

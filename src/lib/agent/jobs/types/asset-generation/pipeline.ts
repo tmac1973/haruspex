@@ -173,6 +173,7 @@ function configuredModelName(): string {
 	const s = getSettings();
 	if (s.imageBackendKind === 'comfyui') return s.imageComfyCheckpoint.trim();
 	if (s.imageBackendKind === 'local') return (s.imageLocalModelId || s.imageLocalModelPath).trim();
+	if (s.imageBackendKind === 'lemonade') return s.imageLemonadeModelId.trim();
 	return '';
 }
 
