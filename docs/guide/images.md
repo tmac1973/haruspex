@@ -47,11 +47,11 @@ Settings → Image marks Qwen-Image "Not licensed for commercial use." and asks 
 
 ## Draw a picture in Chat
 
-With a backend set up, ask Chat to draw, paint or illustrate something. A picture takes from about 30 seconds to a few minutes. It appears in the answer and is kept with the conversation. Click it to see it full size; Escape or a click outside closes it. If the model forgets to place it, it is shown under the answer. You can ask for a shape other than square, or a transparent background for an object on its own.
+With a backend set up, ask Chat to draw, paint or illustrate something. A picture takes from about 30 seconds to a few minutes. It appears in the answer and is kept with the conversation; click it to see it full size. If the model forgets to place it, it is shown under the answer. You can ask for a shape other than square, or a transparent background for an object on its own. A chat model that can see images is shown the picture, so you can ask what it thinks of it.
 
 ## Make art for a project
 
-In the Code tab, or the Shell assistant with Full access, ask for something like "a 32 px coin sprite in assets/". The assistant writes a finished sprite, icon, tiling texture or plain picture into your project as a PNG at the size you ask for: transparent background, cropped and reduced to a palette. Point it at an existing asset to match its colours. It does not overwrite a file unless you ask. See the `code` and `shell` pages.
+In the Code tab, or the Shell assistant with Full access, ask for something like "a 32 px coin sprite in assets/". The assistant writes a finished sprite, icon, tiling texture or plain picture into your project as a PNG at the size you ask for: transparent background, cropped and reduced to a palette. Point it at an existing asset to match its colours. It won't overwrite a file unless you ask. See the `code` and `shell` pages.
 
 A tiling texture, such as "a 32 px gravel floor tile", or the edge tiles where two textures meet, is drawn by code, not by the image model, and works without a backend; see the `textures` page. For a painted or photographic material that must tile, such as one for a 3D model, ask for a tiling picture instead. If the backend in Settings → Image can't tile, the picture is still written, and the assistant says it won't tile.
 
@@ -61,8 +61,8 @@ The **Asset generation** job draws all of a project's sprites, icons and tiling 
 
 ## What it costs your computer
 
-Image generation uses your GPU heavily. While it runs, the bundled engine holds most of a 16 GB card, and other GPU work — including your chat model and games — will slow down or may not fit. Stop the engine in Settings → Image when you are done.
+Image generation uses your GPU heavily. The bundled engine holds most of a 16 GB card while it runs, so other GPU work, your chat model and games included, slows down or may not fit. Stop the engine in Settings → Image when you are done.
 
 ## What has been tested
 
-Image generation is new. The asset job has been run end to end on Linux with an AMD GPU. Drawing in Chat and art for a project are newer and so far covered only by automated tests. It builds and passes its tests on macOS and Windows, but nobody has generated images there yet. If something fails, see the `troubleshooting` page.
+The asset job has been run end to end on Linux with an AMD GPU; drawing in Chat and art for a project are so far covered only by automated tests. It passes its tests on macOS and Windows, but nobody has generated images there yet. If something fails, see the `troubleshooting` page.
