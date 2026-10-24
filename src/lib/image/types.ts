@@ -14,7 +14,7 @@
  */
 
 /** Which backend implementation a request is served by. */
-export type ImageBackendKind = 'none' | 'comfyui' | 'local';
+export type ImageBackendKind = 'none' | 'comfyui' | 'local' | 'lemonade';
 
 /** Sampler settings, named because the anchor recipe has to store them. */
 export interface SamplerSettings {

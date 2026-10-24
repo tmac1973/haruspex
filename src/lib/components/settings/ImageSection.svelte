@@ -13,6 +13,7 @@
 	} from '#lib/stores/secrets.ts';
 	import Tooltip from '#lib/components/Tooltip.svelte';
 	import ComfyModels from '#lib/components/settings/ComfyModels.svelte';
+	import LemonadeSection from '#lib/components/settings/LemonadeSection.svelte';
 	import DownloadProgressBar from '#lib/components/settings/DownloadProgressBar.svelte';
 	import {
 		cancelDownload,
@@ -160,6 +161,7 @@
 
 	const configured = $derived(imageBackendKind !== 'none');
 	const isLocal = $derived(imageBackendKind === 'local');
+	const isComfy = $derived(imageBackendKind === 'comfyui');
 
 	// The bundled engine, if this platform has one. Asked once: the answer is
 	// a property of the install, not of the session.
@@ -268,7 +270,7 @@
 	// Probe once on opening, so the model list is there without a click.
 	let probedOnOpen = false;
 	$effect(() => {
-		if (configured && !isLocal && !probedOnOpen && imageBackendBaseUrl.trim()) {
+		if (isComfy && !probedOnOpen && imageBackendBaseUrl.trim()) {
 			probedOnOpen = true;
 			void probe();
 		}
@@ -326,6 +328,7 @@
 			{#if engine?.available !== false}
 				<option value="local">Bundled engine</option>
 			{/if}
+			<option value="lemonade">Lemonade</option>
 		</select>
 	</div>
 	<p class="help">Off until you pick one; nothing is downloaded or started before that.</p>
@@ -392,7 +395,11 @@
 	</section>
 {/if}
 
-{#if configured && !isLocal}
+{#if imageBackendKind === 'lemonade'}
+	<LemonadeSection />
+{/if}
+
+{#if isComfy}
 	<section class="settings-section">
 		<h2>Connection</h2>
 		<div class="fields">
@@ -479,7 +486,7 @@
 	</section>
 {/if}
 
-{#if configured && !isLocal}
+{#if isComfy}
 	<details class="settings-section">
 		<summary><h2>Custom workflow</h2></summary>
 		<div class="fields">

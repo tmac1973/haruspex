@@ -1,0 +1,104 @@
+{
+	"data": [
+		{
+			"checkpoint": "voltaire321/Ming-Image-0.1-Design-GGUF:ming_image_0.1_design-Q8_0.gguf",
+			"checkpoints": {
+				"main": "voltaire321/Ming-Image-0.1-Design-GGUF:ming_image_0.1_design-Q8_0.gguf",
+				"text_encoder": "voltaire321/Ming-Image-0.1-Design-GGUF:ming_ling_mini_2.0-Q4_K.gguf",
+				"tokenizer": "inclusionAI/Ming-Image-0.1-Design:mllm/tokenizer.json",
+				"vae": "Comfy-Org/Ming-Image:vae/ming_image_vae_bf16.safetensors"
+			},
+			"components": [],
+			"context_length": 32768,
+			"created": 1234567890,
+			"downloaded": true,
+			"id": "Ming-Image-0.1-Design-GGUF",
+			"labels": ["custom", "image"],
+			"object": "model",
+			"owned_by": "lemonade",
+			"recipe": "sd-cpp",
+			"recipe_options": {
+				"cfg_scale": 1.0,
+				"height": 1024,
+				"sampling_method": "euler",
+				"sdcpp_args": "--tokenizer /opt/var/lib/lemonade/.cache/huggingface/hub/models--inclusionAI--Ming-Image-0.1-Design/snapshots/c57c49689d12ef7d4e24a170014f1dc43d3ce258/mllm/tokenizer.json --diffusion-fa --vae-tiling",
+				"steps": 12,
+				"width": 1024
+			},
+			"registry_source": "huggingface",
+			"size": 16.1,
+			"source": "huggingface",
+			"suggested": true,
+			"update_available": false
+		},
+		{
+			"checkpoint": "Comfy-Org/Qwen-Image-2.1:diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors",
+			"checkpoints": {
+				"main": "Comfy-Org/Qwen-Image-2.1:diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors",
+				"text_encoder": "Comfy-Org/Qwen-Image-2.1:text_encoders/qwen3vl_8b_int8_convrot.safetensors",
+				"vae": "Comfy-Org/Qwen-Image-2.1:vae/qwen_image_2.1_vae_bf16.safetensors"
+			},
+			"components": [],
+			"created": 1234567890,
+			"downloaded": true,
+			"id": "Qwen-Image-2.1-Turbo-INT8",
+			"image_defaults": {
+				"cfg_scale": 1.0,
+				"height": 1440,
+				"soft_pixel_cap": 4194304,
+				"steps": 8,
+				"width": 1440
+			},
+			"labels": ["image", "edit"],
+			"object": "model",
+			"owned_by": "lemonade",
+			"recipe": "thenoise",
+			"recipe_options": {
+				"cfg_scale": 1.0,
+				"height": 1440,
+				"steps": 8,
+				"width": 1440
+			},
+			"registry_source": "huggingface",
+			"size": 16.1,
+			"source": "huggingface",
+			"suggested": true,
+			"update_available": false
+		},
+		{
+			"checkpoint": "Comfy-Org/z_image_turbo:split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+			"checkpoints": {
+				"main": "Comfy-Org/z_image_turbo:split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+				"text_encoder": "Comfy-Org/z_image_turbo:split_files/text_encoders/qwen_3_4b.safetensors",
+				"vae": "Comfy-Org/z_image_turbo:split_files/vae/ae.safetensors"
+			},
+			"components": [],
+			"created": 1234567890,
+			"downloaded": false,
+			"id": "Z-Image-Turbo",
+			"image_defaults": {
+				"cfg_scale": 1.0,
+				"height": 1024,
+				"soft_pixel_cap": 2097152,
+				"steps": 9,
+				"width": 1024
+			},
+			"labels": ["image"],
+			"object": "model",
+			"owned_by": "lemonade",
+			"recipe": "sd-cpp",
+			"recipe_options": {
+				"cfg_scale": 1.0,
+				"height": 1024,
+				"steps": 9,
+				"width": 1024
+			},
+			"registry_source": "huggingface",
+			"size": 20.7,
+			"source": "huggingface",
+			"suggested": true,
+			"update_available": false
+		}
+	],
+	"object": "list"
+}

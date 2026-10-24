@@ -286,6 +286,15 @@ pub fn engine_args(models_dir: &Path, id: &str) -> Option<Vec<String>> {
         args.push(f.role.flag().to_string());
         args.push(path.to_string_lossy().to_string());
     }
+    args.extend(engine_options(&entry));
+    Some(args)
+}
+
+/// The sd-server flags an entry runs with besides its files. Shared with
+/// `crate::lemonade`, whose sd-cpp recipe runs the same build of the same
+/// engine on the same files.
+pub fn engine_options(entry: &ImageModelInfo) -> Vec<String> {
+    let mut args = Vec::new();
     // Flash attention in the diffusion model: measured with it for both.
     args.push("--diffusion-fa".to_string());
     // Ming's text encoder on the CPU. Faster, not slower: with it on the GPU
@@ -313,7 +322,7 @@ pub fn engine_args(models_dir: &Path, id: &str) -> Option<Vec<String>> {
     // no results", first now and then and then every time, while 512 and
     // txt2img still worked. Tiled, both fit.
     args.push("--vae-tiling".to_string());
-    Some(args)
+    args
 }
 
 // Tauri commands

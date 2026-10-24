@@ -38,7 +38,9 @@ export async function nativeEdgeFor(specModel: string | undefined): Promise<numb
 	// The spec pins the model for the whole set; the backend's configured
 	// default is what it falls back to. Same precedence the request uses.
 	const name = (specModel ?? '').trim() || (s.imageComfyCheckpoint ?? '').trim();
-	const id = (s.imageLocalModelId ?? '').trim();
+	const id = (
+		(s.imageBackendKind === 'lemonade' ? s.imageLemonadeModelId : s.imageLocalModelId) ?? ''
+	).trim();
 
 	try {
 		const catalogue = await invoke<CatalogueEntry[]>('image_models');

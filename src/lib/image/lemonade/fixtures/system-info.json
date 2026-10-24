@@ -1,0 +1,175 @@
+{
+	"OS Version": "Linux-7.2.10-200.fc44.x86_64 (Fedora Linux 44)",
+	"devices": {
+		"amd_gpu": [
+			{
+				"available": true,
+				"family": "gfx1201",
+				"integrated": false,
+				"name": "AMD Radeon AI PRO R9700 (gfx1201)",
+				"virtual_mem_gb": 62.8,
+				"vram_gb": 31.9
+			}
+		],
+		"amd_npu": {
+			"available": false,
+			"error": "No NPU device found with amdxdna driver",
+			"family": "",
+			"name": "AMD Ryzen 9 5950X 16-Core Processor",
+			"utilization": 0.0
+		},
+		"cpu": {
+			"available": true,
+			"cores": 16,
+			"family": "x86_64",
+			"name": "AMD Ryzen 9 5950X 16-Core Processor",
+			"threads": 32
+		},
+		"nvidia_gpu": [
+			{
+				"available": false,
+				"error": "No NVIDIA discrete GPU found",
+				"name": ""
+			}
+		]
+	},
+	"model_storage": {
+		"free_bytes": 883193954304,
+		"path": "/opt/var/lib/lemonade/.cache/huggingface/hub",
+		"total_bytes": 997426462720,
+		"used_bytes": 114232508416
+	},
+	"recipes": {
+		"sd-cpp": {
+			"backends": {
+				"cpu": {
+					"action": "lemonade backends install sd-cpp:cpu",
+					"devices": ["cpu"],
+					"download_filename": "sd-master-90e86d1-bin-Linux-Ubuntu-24.04-x86_64.zip",
+					"format": "native",
+					"message": "Backend is supported but not installed.",
+					"release_url": "https://github.com/lemonade-sdk/stable-diffusion.cpp/releases/tag/master-957-90e86d1",
+					"state": "installable",
+					"tier": "core",
+					"version": "master-957-90e86d1"
+				},
+				"cuda": {
+					"action": "",
+					"devices": [],
+					"format": "native",
+					"message": "Unsupported GPU",
+					"state": "unsupported",
+					"tier": "core"
+				},
+				"metal": {
+					"action": "",
+					"can_uninstall": true,
+					"devices": [],
+					"format": "native",
+					"message": "Requires macOS",
+					"release_url": "https://github.com/lemonade-sdk/stable-diffusion.cpp/releases/tag/master-957-90e86d1",
+					"state": "unsupported",
+					"tier": "core",
+					"version": "master-957-90e86d1"
+				},
+				"rocm": {
+					"action": "",
+					"devices": ["amd_gpu"],
+					"download_filename": "sd-master-90e86d1-bin-Linux-Ubuntu-24.04-x86_64-rocm-10.1.0.zip",
+					"format": "native",
+					"message": "",
+					"release_url": "https://github.com/lemonade-sdk/stable-diffusion.cpp/releases/tag/master-957-90e86d1",
+					"state": "installed",
+					"tier": "core",
+					"version": "master-957-90e86d1"
+				},
+				"vulkan": {
+					"action": "lemonade backends install sd-cpp:vulkan",
+					"devices": ["amd_gpu", "cpu"],
+					"download_filename": "sd-master-90e86d1-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip",
+					"format": "native",
+					"message": "Backend is supported but not installed.",
+					"release_url": "https://github.com/lemonade-sdk/stable-diffusion.cpp/releases/tag/master-957-90e86d1",
+					"state": "installable",
+					"tier": "core",
+					"version": "master-957-90e86d1"
+				}
+			},
+			"default_backend": "rocm",
+			"display_name": "StableDiffusion.cpp",
+			"experimental": false,
+			"modality": "Image generation",
+			"options": [
+				{
+					"cli_flag": "--sdcpp",
+					"default": "",
+					"group": "Stable Diffusion Options",
+					"help": "SD.cpp backend to use",
+					"name": "sd-cpp_backend",
+					"type_name": "BACKEND"
+				},
+				{
+					"cli_flag": "--sdcpp-args",
+					"default": "",
+					"group": "Stable Diffusion Options",
+					"help": "Custom arguments to pass to sd-server (must not conflict with managed args)",
+					"name": "sdcpp_args",
+					"type_name": "ARGS"
+				},
+				{
+					"cli_flag": "",
+					"default": 20,
+					"group": "Stable Diffusion Options",
+					"help": "Number of diffusion steps",
+					"name": "steps",
+					"type_name": "SIZE"
+				},
+				{
+					"cli_flag": "",
+					"default": 7.0,
+					"group": "Stable Diffusion Options",
+					"help": "Classifier-free guidance scale",
+					"name": "cfg_scale",
+					"type_name": "SIZE"
+				},
+				{
+					"cli_flag": "",
+					"default": 512,
+					"group": "Stable Diffusion Options",
+					"help": "Output image width",
+					"name": "width",
+					"type_name": "SIZE"
+				},
+				{
+					"cli_flag": "",
+					"default": 512,
+					"group": "Stable Diffusion Options",
+					"help": "Output image height",
+					"name": "height",
+					"type_name": "SIZE"
+				},
+				{
+					"cli_flag": "",
+					"default": "",
+					"group": "Stable Diffusion Options",
+					"help": "Sampling method",
+					"name": "sampling_method",
+					"type_name": "ARGS"
+				},
+				{
+					"cli_flag": "",
+					"default": 0.0,
+					"group": "Stable Diffusion Options",
+					"help": "Flow shift",
+					"name": "flow_shift",
+					"type_name": "SIZE"
+				}
+			],
+			"order": 5,
+			"selectable_backend": true,
+			"slot_policy": "standard",
+			"uses_ctx_size": false,
+			"web_display_name": "stable-diffusion.cpp"
+		}
+	}
+}

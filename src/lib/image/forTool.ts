@@ -44,6 +44,7 @@ export const GPU_FULL_SENTENCE =
 export function nonCommercialModel(): boolean {
 	const s = getSettings();
 	if (s.imageBackendKind === 'local') return s.imageLocalModelId === 'qwen21';
+	if (s.imageBackendKind === 'lemonade') return s.imageLemonadeModelId === 'qwen21';
 	if (s.imageBackendKind === 'comfyui') {
 		const family = familyOf(s.imageComfyCheckpoint ?? '');
 		return family === 'qwen21' || family === 'qwen21_turbo';

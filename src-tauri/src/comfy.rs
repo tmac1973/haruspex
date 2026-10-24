@@ -26,7 +26,8 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::sidecar_util::{clear_logs, new_log_buffer, push_log, snapshot_logs, LogBuffer};
 
-/// One HTTP call. `id` lets the caller cancel it with [`comfy_cancel`].
+/// One HTTP call to an image server (ComfyUI or Lemonade). `id` lets the
+/// caller cancel it with [`comfy_cancel`].
 #[derive(Clone, Deserialize, ts_rs::TS)]
 #[ts(export)]
 pub struct ComfyCall {
@@ -135,17 +136,29 @@ fn base(url: &str) -> &str {
     url.trim().trim_end_matches('/')
 }
 
-/// Where the API key is kept in the secret store.
-const API_KEY_SECRET: &str = "comfy:key";
+/// An image server these calls can go to: where its API key is kept in the
+/// secret store, and what an error calls it. Lemonade (`crate::lemonade`)
+/// shares this client, so it gets the same no-`Origin` calls, cancellation and
+/// log, with its own key.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ImageServer {
+    pub secret: &'static str,
+    pub name: &'static str,
+}
+
+pub(crate) const COMFYUI: ImageServer = ImageServer {
+    secret: "comfy:key",
+    name: "ComfyUI",
+};
 
 /// The key to send: the one the webview gave (inline only where no secret
 /// store works), else the stored one, else none.
-async fn effective_api_key(given: &str) -> String {
+async fn effective_api_key(given: &str, secret: &str) -> String {
     let given = given.trim();
     if !given.is_empty() {
         return given.to_string();
     }
-    crate::secrets::get(API_KEY_SECRET)
+    crate::secrets::get(secret)
         .await
         .ok()
         .flatten()
@@ -153,14 +166,14 @@ async fn effective_api_key(given: &str) -> String {
 }
 
 /// Make the call and return the body's bytes, or why not.
-async fn send(call: &ComfyCall) -> Result<Vec<u8>, ComfyError> {
+async fn send(call: &ComfyCall, to: ImageServer) -> Result<Vec<u8>, ComfyError> {
     let url = format!("{}{}", base(&call.base_url), call.path);
     let mut req = match call.method.as_str() {
         "POST" => client().post(&url),
         _ => client().get(&url),
     };
-    // Absent rather than empty: a bare local ComfyUI has no auth.
-    let key = effective_api_key(&call.api_key).await;
+    // Absent rather than empty: a bare local server has no auth.
+    let key = effective_api_key(&call.api_key, to.secret).await;
     if !key.is_empty() {
         req = req.bearer_auth(key);
     }
@@ -180,9 +193,10 @@ async fn send(call: &ComfyCall) -> Result<Vec<u8>, ComfyError> {
         } else {
             ComfyError::Unreachable {
                 message: format!(
-                    "Could not reach the image backend at {} — {}. Is ComfyUI running there?",
+                    "Could not reach the image backend at {} — {}. Is {} running there?",
                     base(&call.base_url),
-                    root_cause(&e)
+                    root_cause(&e),
+                    to.name
                 ),
             }
         }
@@ -260,16 +274,16 @@ fn call_line(call: &ComfyCall, out: &Result<Vec<u8>, ComfyError>, elapsed: Durat
 }
 
 /// Run `call` as a task registered under its id, so [`comfy_cancel`] can stop it.
-async fn cancellable(call: ComfyCall) -> Result<Vec<u8>, ComfyError> {
+async fn cancellable(call: ComfyCall, to: ImageServer) -> Result<Vec<u8>, ComfyError> {
     let started = std::time::Instant::now();
-    let out = cancellable_unlogged(call.clone()).await;
+    let out = cancellable_unlogged(call.clone(), to).await;
     log_line(call_line(&call, &out, started.elapsed())).await;
     out
 }
 
-async fn cancellable_unlogged(call: ComfyCall) -> Result<Vec<u8>, ComfyError> {
+async fn cancellable_unlogged(call: ComfyCall, to: ImageServer) -> Result<Vec<u8>, ComfyError> {
     let id = call.id.clone();
-    let task = tokio::spawn(async move { send(&call).await });
+    let task = tokio::spawn(async move { send(&call, to).await });
     if let Some(id) = &id {
         running()
             .lock_or_recover()
@@ -298,19 +312,28 @@ fn as_json(bytes: &[u8]) -> serde_json::Value {
         .unwrap_or_else(|_| serde_json::Value::String(String::from_utf8_lossy(bytes).into_owned()))
 }
 
+/// A call to `to` whose answer is JSON (or text, or nothing).
+pub(crate) async fn json_from(
+    call: ComfyCall,
+    to: ImageServer,
+) -> Result<serde_json::Value, ComfyError> {
+    cancellable(call, to).await.map(|b| as_json(&b))
+}
+
 /// A call whose answer is JSON (or text, or nothing).
 #[tauri::command]
 pub async fn comfy_json(call: ComfyCall) -> Result<serde_json::Value, ComfyError> {
-    cancellable(call).await.map(|b| as_json(&b))
+    json_from(call, COMFYUI).await
 }
 
 /// A call whose answer is bytes: `/view`.
 #[tauri::command]
 pub async fn comfy_bytes(call: ComfyCall) -> Result<Response, ComfyError> {
-    cancellable(call).await.map(Response::new)
+    cancellable(call, COMFYUI).await.map(Response::new)
 }
 
 /// Stop a call or close a socket. Unknown ids are ignored: it already ended.
+/// Any image server's: the ids share one table.
 #[tauri::command]
 pub fn comfy_cancel(id: String) {
     if let Some(h) = running().lock_or_recover().remove(&id) {
@@ -367,7 +390,7 @@ pub async fn comfy_subscribe(
         .map_err(|e| ComfyError::Unreachable {
             message: format!("Bad image backend URL {base_url}: {e}"),
         })?;
-    let api_key = effective_api_key(&api_key).await;
+    let api_key = effective_api_key(&api_key, COMFYUI.secret).await;
     if !api_key.is_empty() {
         let value = format!("Bearer {api_key}");
         request.headers_mut().insert(
@@ -534,7 +557,7 @@ mod tests {
         let url = serve(Router::new().route("/view", get(|| async { vec![0u8, 159, 255] }))).await;
         assert!(comfy_bytes(call(&url, "GET", "/view")).await.is_ok());
         assert_eq!(
-            send(&call(&url, "GET", "/view")).await.unwrap(),
+            send(&call(&url, "GET", "/view"), COMFYUI).await.unwrap(),
             vec![0, 159, 255]
         );
     }
