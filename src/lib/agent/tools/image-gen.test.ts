@@ -69,6 +69,27 @@ describe('generate_image', () => {
 		expect(out.result).toContain('seed 9');
 	});
 
+	it('shows a model that can see the picture it drew', async () => {
+		// Asked which of two it preferred, a model told only the size and seed made an answer up.
+		const sees = makeToolContext({ interactive: true, conversationId: 'chat-1' });
+		const out = await executeTool('generate_image', { prompt: 'a lighthouse at dusk' }, sees);
+		expect(sees.pendingImages).toEqual([
+			{ path: expect.stringContaining(HASH), dataUrl: 'data:image/png;base64,AQI=' }
+		]);
+		expect(out.result).toContain('The picture is attached');
+	});
+
+	it('shows nothing to a model that cannot see', async () => {
+		const blind = makeToolContext({
+			interactive: true,
+			conversationId: 'chat-1',
+			visionSupported: false
+		});
+		const out = await executeTool('generate_image', { prompt: 'a lighthouse at dusk' }, blind);
+		expect(blind.pendingImages).toEqual([]);
+		expect(out.result).not.toContain('attached');
+	});
+
 	it('draws the shape asked for', async () => {
 		await executeTool('generate_image', { prompt: 'a road', shape: 'landscape' }, ctx);
 		expect(state.generate.mock.calls[0][0]).toMatchObject({ width: 1344, height: 768 });

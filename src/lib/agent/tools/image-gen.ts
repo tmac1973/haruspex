@@ -7,11 +7,17 @@
  * the model is told the markdown to place. If it leaves the image out of its
  * answer, the chat appends it (`placeGeneratedImages`), so a picture the user
  * asked for is never lost to a forgetful model.
+ *
+ * A model that can see images is shown the picture too, in its next request,
+ * as `make_asset` shows the Code tab's: otherwise asked what it drew, or which
+ * of two it prefers, it can only make an answer up.
  */
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult } from '#lib/agent/tools/types.ts';
+import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
+import { pngDataUrl } from '#lib/utils/base64.ts';
 import { generateForTool } from '#lib/image/forTool.ts';
 import { describeImageProgress } from '#lib/image/progress.ts';
 import { ImageBackendError, type ImageProgress } from '#lib/image/types.ts';
@@ -119,10 +125,13 @@ registerTool({
 		if (!url) return toolResult(toolError('The image was drawn but could not be stored.'));
 
 		const markdown = `![${altOf(prompt)}](${url})`;
+		const sees = ctx.visionSupported !== false && ctx.pendingImages.length < MAX_PENDING_IMAGES;
+		if (sees) ctx.pendingImages.push({ path: url, dataUrl: pngDataUrl(image.bytes) });
 		return toolResult(
 			[
 				`Image ready (${image.width}×${image.height}, ${image.model}, seed ${image.seed}).`,
 				`Put ${markdown} in your answer where it belongs.`,
+				...(sees ? ['The picture is attached, so you can look at it before you answer.'] : []),
 				...image.notes
 			].join(' ')
 		);
