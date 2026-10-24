@@ -32,7 +32,7 @@ The first picture after ComfyUI starts is slow while it loads the model; the pro
 
 ### Set up Lemonade
 
-Under **Lemonade**, enter the **Server address** (for example `http://127.0.0.1:13305`) and an **API key** only if your server needs one, then press **Probe**. **Models on the server** lists the two models; **Install** downloads one on the server and sets it up there, then **Use** picks it. The download carries on if you close Settings. Lemonade keeps one image model loaded, so the first picture after switching waits for it to load. It does not make tiling textures, and Lemonade's own models are not offered.
+Under **Connection**, enter the **Server address** (for example `http://127.0.0.1:13305`) and an **API key** only if your server needs one, then press **Probe**. Under **Models on the server**, **Install** downloads a model onto the server and **Remove** deletes it. Then choose the **Model**. The download carries on if you close Settings. Lemonade keeps one image model loaded, so the first picture after switching waits for it to load. It does not make tiling textures, and Lemonade's own models are not offered.
 
 ## Pick a model and check its licence
 

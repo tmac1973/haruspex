@@ -20,8 +20,16 @@ import { invokeRouter } from '#lib/testing/invoke.ts';
 import type { ImageProgress } from '#lib/image/types.ts';
 
 const catalogue = [
-	{ id: 'ming', name: 'user.Ming-Image-0.1-Design-GGUF' },
-	{ id: 'qwen21', name: 'user.Qwen-Image-2.1-Turbo-GGUF' }
+	{
+		id: 'ming',
+		name: 'user.Ming-Image-0.1-Design-GGUF',
+		description: 'Ming-Image 0.1 Design — transparent sprites, the default (~17 GB)'
+	},
+	{
+		id: 'qwen21',
+		name: 'user.Qwen-Image-2.1-Turbo-GGUF',
+		description: 'Qwen-Image 2.1 Turbo — transparent by prompt, non-commercial (~10 GB)'
+	}
 ];
 
 interface Call {
@@ -69,18 +77,24 @@ describe('lemonade backend', () => {
 		);
 	});
 
-	it('probes a real server’s answers into one sentence', async () => {
+	it('probes a real server’s answers into one sentence and the Model list', async () => {
 		expect(await lemonadeBackend.probe()).toEqual({
 			ok: true,
-			detail: 'Lemonade 2026.43.3 on AMD Radeon AI PRO R9700 (gfx1201), rocm.'
+			detail: 'Connected — Lemonade 2026.43.3 on AMD Radeon AI PRO R9700 (gfx1201), rocm.',
+			// Only what is installed there: the dropdown chooses among these.
+			models: [{ name: 'ming', label: 'Ming-Image 0.1 Design' }]
 		});
 	});
 
-	it('says what is missing before it says anything else', async () => {
+	it('lists the models even when the chosen one is missing or none is chosen', async () => {
 		settings.imageLemonadeModelId = 'qwen21';
-		expect((await lemonadeBackend.probe()).detail).toMatch(/not installed — Settings → Image/);
+		const missing = await lemonadeBackend.probe();
+		expect(missing.detail).toMatch(/Qwen-Image 2.1 Turbo is not installed on the server/);
+		expect(missing.models).toEqual([{ name: 'ming', label: 'Ming-Image 0.1 Design' }]);
 		settings.imageLemonadeModelId = '';
-		expect((await lemonadeBackend.probe()).detail).toMatch(/No model is chosen/);
+		const none = await lemonadeBackend.probe();
+		expect(none.detail).toMatch(/No model is chosen/);
+		expect(none.models).toHaveLength(1);
 		settings.imageLemonadeBaseUrl = '';
 		expect(await lemonadeBackend.probe()).toEqual({
 			ok: false,
