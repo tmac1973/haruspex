@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.10](https://github.com/tmac1973/haruspex/compare/v0.2.9...v0.2.10) (2026-10-24)
+
+
+### Features
+
+* **image:** add lemonade as an image backend ([#627](https://github.com/tmac1973/haruspex/issues/627)) ([a5573fe](https://github.com/tmac1973/haruspex/commit/a5573fec8dedff479c0ba2e364baf798324e4c5d))
+
+
+### Bug Fixes
+
+* **chat:** show a vision model the picture generate_image drew ([#629](https://github.com/tmac1973/haruspex/issues/629)) ([e52c1da](https://github.com/tmac1973/haruspex/commit/e52c1da9348fb849f0382cbda0281398d1fec64c))
+* **ci:** create the release tag even when release-please fails after creating the release ([#622](https://github.com/tmac1973/haruspex/issues/622)) ([bef3c56](https://github.com/tmac1973/haruspex/commit/bef3c5669adfa6bba247f680759a6a81d5abeb6a))
+* **code:** let read-only subtasks run sed -n, cd, loops and quoted pipes ([#625](https://github.com/tmac1973/haruspex/issues/625)) ([2cb2f4a](https://github.com/tmac1973/haruspex/commit/2cb2f4adc909c9b364a62a33ecd0ca8eec7e03a9))
+* **image:** give lemonade the same connection section and model dropdown as comfyui ([#628](https://github.com/tmac1973/haruspex/issues/628)) ([1802518](https://github.com/tmac1973/haruspex/commit/1802518cf1cb3127a21deeacce63b89411df1d87))
+
 ## [0.2.9](https://github.com/tmac1973/haruspex/compare/v0.2.8...v0.2.9) (2026-10-22)
 
 
