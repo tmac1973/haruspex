@@ -39,3 +39,36 @@ pub async fn video_probe_file(
     let ffprobe = found.require(Tool::Ffprobe)?;
     probe::probe_file(ffprobe, &file, paths::display_path(&working_dir, &file)).await
 }
+
+/// The project's main track and what else is in it.
+#[tauri::command]
+pub async fn video_project_summary(
+    working_dir: String,
+    episode: String,
+    project: Option<String>,
+) -> Result<super::kdenlive::ProjectSummary, String> {
+    super::project::summary(&working_dir, &episode, project.as_deref())
+}
+
+/// Make the main track hold a cut, creating the project if there is none.
+#[tauri::command]
+pub async fn video_project_cut(
+    working_dir: String,
+    episode: String,
+    spec: super::project::CutSpec,
+    settings: super::project::VideoSettings,
+) -> Result<super::project::CutResult, String> {
+    super::project::cut(&working_dir, &episode, spec, &settings).await
+}
+
+/// Trim, remove or move one clip.
+#[tauri::command]
+pub async fn video_project_op(
+    working_dir: String,
+    episode: String,
+    project: Option<String>,
+    op: super::project::ProjectOp,
+    settings: super::project::VideoSettings,
+) -> Result<super::project::CutResult, String> {
+    super::project::op(&working_dir, &episode, project.as_deref(), op, &settings).await
+}

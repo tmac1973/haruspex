@@ -1,6 +1,6 @@
 ---
 title: Video editing
-description: Setting up video editing with Kdenlive, ffmpeg and melt, picking a series or episode folder, and asking about your clips in Chat or the Code tab.
+description: Setting up video editing with Kdenlive, ffmpeg and melt, picking a series or episode folder, asking about your clips, and having the assistant cut a Kdenlive project you can also edit yourself.
 ---
 
 # Video editing
@@ -33,6 +33,25 @@ Settings → Video → **New videos** has **Intro** and **Outro**: a clip to put
 ## Ask about your clips
 
 Ask "what clips are in ep012?" or "how long is the footage for ep012?". The assistant lists each clip's length, size, frame rate and codecs, and says when the clips are mixed (different sizes, frame rates or codecs) or when one has no sound. Files it can't read are listed with the reason.
+
+## Make a cut
+
+Ask "make ep012 from the clips in order, intro as usual" or "cut ep012: the first clip from 0:10, then the second". The assistant writes a Kdenlive project and lays the clips end to end on the main track (V1 with A1), with the intro first and the outro last when you ask.
+
+A new project is `ep012/ep012.kdenlive`, made in the Settings → Video → **Format**. If the episode already has one, that is used: one in the episode folder, or one in the working folder whose name ends in the episode's number, such as `show_012.kdenlive` for `ep012`. Name another to use it.
+
+Ask for changes the same way: "trim the first 4 seconds off clip 2", "drop clip 3", "move the last clip to the start". The assistant numbers clips from 1 as it lists them.
+
+Before each change the project is copied to `.haruspex/backups/` next to it (the last 20 are kept), and the change is kept only if melt can still load the project.
+
+## Edit it in Kdenlive too
+
+The project is a normal Kdenlive project: open it, change it and save. The assistant reads the saved file before each change, and only edits the main track. Clips on other tracks, effects, guides and titles you add stay as they are, and a clip keeps its effects when it is trimmed or moved.
+
+- Close the project in Kdenlive without saving before asking for a change, then reopen it, or Kdenlive will save over the change.
+- A crossfade you add in Kdenlive keeps its two clips together. The assistant won't move one of them away from the other; remove the crossfade in Kdenlive first.
+- Clips on other tracks don't move when the main track gets shorter or longer.
+- Projects saved by a Kdenlive older than 25.04 can be read but not edited.
 
 ## What it doesn't do
 

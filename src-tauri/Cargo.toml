@@ -45,6 +45,8 @@ axum = { version = "0.8.4", default-features = false, features = ["http1", "json
 # image or SVG renderers it can also produce.
 qrcode = { version = "0.14.1", default-features = false }
 sha2 = "0.11.0"
+md-5 = "0.11.0"
+uuid = { version = "1.28", features = ["v4"] }
 sysinfo = "0.39.6"
 tauri-plugin-dialog = "2.6.0"
 futures-util = "0.3.32"

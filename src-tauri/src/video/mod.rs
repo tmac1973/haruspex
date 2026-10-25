@@ -6,8 +6,10 @@
 
 pub mod binaries;
 pub mod commands;
+pub mod kdenlive;
 pub mod paths;
 pub mod probe;
+pub mod project;
 
 /// Hide the console window a spawned program would open on Windows.
 pub(crate) fn no_window(cmd: &mut tokio::process::Command) {
