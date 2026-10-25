@@ -58,6 +58,25 @@ describe('AudioPlayer', () => {
 		expect(Number(slider.value)).toBeCloseTo(2.1);
 	});
 
+	it('mutes, sets the volume, and starts the next player at it', async () => {
+		localStorage.removeItem('haruspex-audio-volume');
+		const audio = await loaded();
+		expect(audio.volume).toBe(1);
+		await fireEvent.click(screen.getByRole('button', { name: 'Mute Rain' }));
+		expect(audio.muted).toBe(true);
+		await fireEvent.click(screen.getByRole('button', { name: 'Unmute Rain' }));
+		expect(audio.muted).toBe(false);
+
+		const volume = screen.getByRole('slider', { name: 'Volume of Rain' });
+		await fireEvent.input(volume, { target: { value: '0.35' } });
+		expect(audio.volume).toBeCloseTo(0.35);
+		expect(localStorage.getItem('haruspex-audio-volume')).toBe('0.35');
+
+		document.body.innerHTML = '';
+		const next = await loaded();
+		expect(next.volume).toBeCloseTo(0.35);
+	});
+
 	it('plays and pauses from its button, and seeks from the slider', async () => {
 		const audio = await loaded();
 		const play = vi.spyOn(audio, 'play').mockResolvedValue();
