@@ -141,6 +141,8 @@ const TABLE: Record<string, Handler> = {
 	secret_get: none,
 	mcp_catalog: empty,
 	mcp_runtimes_available: () => ({ node: true, npm: true, uv: true }),
+	// No ffmpeg or melt in the e2e world: the video tools stay off.
+	video_binaries_status: () => ({ ffmpeg: null, ffprobe: null, melt: null, hints: [] }),
 	download_status: none,
 	remote_status: () => ({
 		running: false,

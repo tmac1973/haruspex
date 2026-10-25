@@ -12,6 +12,7 @@ import type { EmailAccount } from '#lib/ipc/gen/EmailAccount.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import type { ImageBackendKind } from '#lib/image/types.ts';
 import type { MusicBackendKind } from '#lib/music/types.ts';
+import type { VideoPreset } from '#lib/video/types.ts';
 import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
 import type { EmailProvider } from '#lib/ipc/gen/EmailProvider.ts';
 import type { ProxyConfig } from '#lib/ipc/gen/ProxyConfig.ts';
@@ -787,6 +788,21 @@ export interface AppSettings {
 	/** A song's length when the request names none, in seconds (5–240). */
 	musicDefaultDurationSec: number;
 	/**
+	 * Paths to ffmpeg, ffprobe and melt set in Settings → Video. Empty (the
+	 * default) means find it: PATH, then inside a Kdenlive install.
+	 */
+	videoFfmpegPath: string;
+	videoFfprobePath: string;
+	videoMeltPath: string;
+	/** The format a new video project is made in. */
+	videoPreset: VideoPreset;
+	/**
+	 * An intro and outro to put on every video, anywhere on disk. The only
+	 * files outside the working folder the video tools may read.
+	 */
+	videoIntroPath: string;
+	videoOutroPath: string;
+	/**
 	 * Max agent-loop iterations (model calls) for a Code-mode turn before it's
 	 * forced to wrap up. Coding tasks chain many tool calls (grep → read → edit
 	 * → test → fix), so this is higher than chat/shell. Raise it for big tasks;
@@ -1022,7 +1038,13 @@ const defaults: AppSettings = {
 	musicToolchestModelId: '',
 	musicAceBaseUrl: '',
 	musicAceModel: '',
-	musicDefaultDurationSec: 30
+	musicDefaultDurationSec: 30,
+	videoFfmpegPath: '',
+	videoFfprobePath: '',
+	videoMeltPath: '',
+	videoPreset: '1080p60',
+	videoIntroPath: '',
+	videoOutroPath: ''
 };
 
 function load(): AppSettings {

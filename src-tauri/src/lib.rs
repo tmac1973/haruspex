@@ -54,6 +54,7 @@ mod text_util;
 mod time_util;
 mod toolchest;
 mod tts;
+mod video;
 mod webview_store;
 mod whisper;
 
@@ -358,6 +359,9 @@ pub fn run() {
             audio_cache::commands::audio_rehydrate,
             audio_cache::commands::audio_cache_size,
             audio_cache::commands::audio_cache_clear,
+            video::commands::video_binaries_status,
+            video::commands::video_probe_folder,
+            video::commands::video_probe_file,
             audio_cache::commands::audio_sweep,
             audio_cache::commands::audio_read_bytes,
             audio_cache::commands::audio_save_as,

@@ -307,6 +307,9 @@ export interface ToolRegistration {
 		| 'image'
 		/** Uses the music backend (Settings → Music). Chat and the Code tab, interactive only. */
 		| 'music'
+		/** Runs ffmpeg and melt on the working folder (Settings → Video). Chat and
+		 *  the Code tab, interactive only. */
+		| 'video'
 		/** Loading skills. Only for a turn that carries `ToolContext.skills`. */
 		| 'skills'
 		/** Writing skills, each one approved by the user. Interactive Chat and

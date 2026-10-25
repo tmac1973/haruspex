@@ -28,6 +28,7 @@ const PAGES = [
 	'memory',
 	'images',
 	'music',
+	'video',
 	'textures',
 	'integrations',
 	'search-and-network',
