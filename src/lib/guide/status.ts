@@ -38,12 +38,14 @@ const IMAGE: Record<string, string> = {
 	comfyui: 'on, through a ComfyUI server',
 	local: 'on, with the bundled engine',
 	lemonade: 'on, through a Lemonade server',
-	'llama-toolchest': 'on, through a llama-toolchest server'
+	'llama-toolchest': 'on, through a llama-toolchest server',
+	'ace-server': 'on, through an acestep.cpp ace-server'
 };
 
 const MUSIC: Record<string, string> = {
 	none: 'off',
-	'llama-toolchest': 'on, through a llama-toolchest server'
+	'llama-toolchest': 'on, through a llama-toolchest server',
+	'ace-server': 'on, through an acestep.cpp ace-server'
 };
 
 const onOff = (on: boolean) => (on ? 'on' : 'off');

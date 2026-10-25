@@ -1,0 +1,180 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+const settings = vi.hoisted(() => ({
+	musicAceBaseUrl: 'http://box:8083/',
+	musicAceModel: ''
+}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
+	getSettings: () => settings
+}));
+vi.mock('#lib/utils/async.ts', () => ({ sleep: () => Promise.resolve() }));
+
+import asmodean from './fixtures/props-asmodean.json';
+import composed from './fixtures/lm-result.json';
+import { aceMusicBackend } from './backend';
+import { invokeRouter } from '#lib/testing/invoke.ts';
+import { MusicBackendError, type MusicProgress, type MusicRequest } from '#lib/music/types.ts';
+
+interface Call {
+	method: string;
+	path: string;
+	body: Record<string, unknown> | null;
+}
+type Answer = unknown | ((call: Call) => unknown);
+
+const HASH = 'c'.repeat(64);
+const DIT = 'acestep-v15-xl-sft-Q8_0.gguf';
+
+function use(answers: Record<string, Answer>) {
+	tauri.invoke.mockReset().mockImplementation(
+		invokeRouter({
+			comfy_cancel: null,
+			audio_store_url: { hash: HASH, mime: 'audio/mpeg', bytes: 1024 },
+			ace_json: (args) => {
+				const call = (args as { call: Call }).call;
+				const a = answers[`${call.method} ${call.path}`];
+				if (a === undefined) throw { kind: 'rejected', status: 404, body: '{"error":"nope"}' };
+				return typeof a === 'function' ? (a as (c: Call) => unknown)(call) : a;
+			}
+		})
+	);
+}
+
+/** A server that composes as `lm`, then synthesizes as `syn`, each running once. */
+function songRoutes(extra: Record<string, Answer> = {}): Record<string, Answer> {
+	const once = () => {
+		let n = 0;
+		return () => ({ status: n++ === 0 ? 'running' : 'done' });
+	};
+	return {
+		'GET /props': asmodean,
+		'POST /lm': { id: 'lm' },
+		'GET /job?id=lm': once(),
+		'GET /job?id=lm&result=1': composed,
+		'POST /synth': { id: 'syn' },
+		'GET /job?id=syn': once(),
+		...extra
+	};
+}
+
+function sent(method: string, path: string) {
+	const found = tauri.invoke.mock.calls.find(
+		([c, a]) => c === 'ace_json' && a.call.method === method && a.call.path === path
+	);
+	return found?.[1].call.body as Record<string, unknown> | undefined;
+}
+
+const request: MusicRequest = {
+	title: 'Rain',
+	caption: 'lo-fi, rain',
+	instrumental: true,
+	durationSec: 15,
+	seed: 42,
+	format: 'wav'
+};
+
+describe('ace-server music backend', () => {
+	beforeEach(() => {
+		settings.musicAceBaseUrl = 'http://box:8083/';
+		settings.musicAceModel = '';
+		use(songRoutes());
+	});
+
+	it('composes, synthesizes the composed request, and keeps the song', async () => {
+		const seen: MusicProgress[] = [];
+		const result = await aceMusicBackend.generate(request, {
+			conversationId: 'chat-1',
+			onProgress: (p) => seen.push(p)
+		});
+		expect([...new Set(seen.map((p) => p.phase))]).toEqual(['composing', 'synthesizing', 'saving']);
+		expect(sent('POST', '/lm')).toEqual({
+			caption: 'lo-fi, rain',
+			lyrics: '[Instrumental]',
+			duration: 15,
+			seed: 42,
+			lm_seed: 42,
+			use_cot_caption: false
+		});
+		// The composed request goes on whole, audio codes and all.
+		expect(sent('POST', '/synth')).toEqual({ ...composed[0], output_format: 'wav16' });
+		expect(result).toMatchObject({
+			hash: HASH,
+			durationSec: 15,
+			seed: 42,
+			bpm: 86,
+			key: 'C major',
+			model: DIT
+		});
+		const [, stored] = tauri.invoke.mock.calls.find(([c]) => c === 'audio_store_url')!;
+		expect(stored).toEqual({
+			url: 'http://box:8083/job?id=syn&result=1',
+			apiKey: null,
+			mimeHint: 'audio/wav',
+			title: 'Rain',
+			conversationId: 'chat-1',
+			codeSessionId: null
+		});
+	});
+
+	it('names the chosen model to synthesis', async () => {
+		settings.musicAceModel = DIT;
+		await aceMusicBackend.generate(request);
+		expect(sent('POST', '/synth')?.synth_model).toBe(DIT);
+	});
+
+	it('cancels the job in flight on the server when the turn is cancelled', async () => {
+		const controller = new AbortController();
+		use(
+			songRoutes({
+				'GET /job?id=lm': () => {
+					controller.abort();
+					return { status: 'running' };
+				},
+				'POST /job?id=lm&cancel=1': { status: 'cancelled' }
+			})
+		);
+		await expect(
+			aceMusicBackend.generate(request, { signal: controller.signal })
+		).rejects.toMatchObject({ kind: 'cancelled' });
+		expect(tauri.invoke.mock.calls.some(([, a]) => a?.call?.path === '/job?id=lm&cancel=1')).toBe(
+			true
+		);
+		expect(sent('POST', '/synth')).toBeUndefined();
+	});
+
+	it('says which stage failed', async () => {
+		use(songRoutes({ 'GET /job?id=syn': { status: 'failed' } }));
+		await expect(aceMusicBackend.generate(request)).rejects.toThrow(
+			'ace-server: synthesis failed.'
+		);
+	});
+
+	it('refuses a model the server does not have, before starting a job', async () => {
+		settings.musicAceModel = 'gone.gguf';
+		const err = await aceMusicBackend.generate(request).catch((e) => e);
+		expect(err).toBeInstanceOf(MusicBackendError);
+		expect(err.message).toBe('gone.gguf is not on box:8083 any more — Settings → Music.');
+		expect(sent('POST', '/lm')).toBeUndefined();
+	});
+
+	it('probes into a sentence and lists the synthesis models', async () => {
+		expect(await aceMusicBackend.probe()).toEqual({
+			ok: true,
+			detail: `Connected — ${DIT} on box:8083.`,
+			models: [{ name: DIT, label: DIT }]
+		});
+		use({ 'GET /props': { status: 'ok' } });
+		expect((await aceMusicBackend.probe()).detail).toBe('box:8083 is not an ace-server.');
+		use({
+			'GET /props': () => {
+				throw { kind: 'unreachable', message: 'down' };
+			}
+		});
+		expect((await aceMusicBackend.probe()).detail).toBe("Can't reach box:8083.");
+		settings.musicAceBaseUrl = ' ';
+		expect((await aceMusicBackend.probe()).detail).toBe('No server address — Settings → Music.');
+	});
+});

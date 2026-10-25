@@ -4,7 +4,7 @@
  */
 
 /** Which server makes music, if any. `'none'` is the shipped default. */
-export type MusicBackendKind = 'none' | 'llama-toolchest';
+export type MusicBackendKind = 'none' | 'llama-toolchest' | 'ace-server';
 
 /** One song. */
 export interface MusicRequest {

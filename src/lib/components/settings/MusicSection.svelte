@@ -22,9 +22,14 @@
 	let baseUrl = $state(getSettings().musicToolchestBaseUrl);
 	let apiKeyId = $state<string | null>(getSettings().musicToolchestApiKeyId);
 	let modelId = $state(getSettings().musicToolchestModelId);
+	let aceUrl = $state(getSettings().musicAceBaseUrl);
+	let aceModel = $state(getSettings().musicAceModel);
 	let defaultSec = $state(getSettings().musicDefaultDurationSec);
 
 	const isToolchest = $derived(kind === 'llama-toolchest');
+	const isAce = $derived(kind === 'ace-server');
+	/** The address the chosen backend is set to, if it has one. */
+	const configuredUrl = $derived((isAce ? aceUrl : isToolchest ? baseUrl : '').trim());
 
 	let probing = $state(false);
 	let probeResult = $state<ProbeResult | null>(null);
@@ -63,7 +68,8 @@
 			apiKeyId = found.apiKeyId;
 		}
 		probeResult = null;
-		if (isToolchest && baseUrl.trim()) void probe();
+		serverModels = [];
+		if (configuredUrl) void probe();
 	}
 
 	async function probe() {
@@ -99,6 +105,19 @@
 		void probe();
 	}
 
+	function saveAceUrl() {
+		const next = aceUrl.trim();
+		const changed = next !== getSettings().musicAceBaseUrl;
+		updateSettings({ musicAceBaseUrl: next });
+		if (changed && next) void probe();
+	}
+
+	function chooseAceModel(e: Event) {
+		aceModel = (e.currentTarget as HTMLSelectElement).value;
+		updateSettings({ musicAceModel: aceModel });
+		void probe();
+	}
+
 	function saveDefault() {
 		const n = Math.round(Number(defaultSec));
 		defaultSec = Number.isFinite(n) ? Math.min(MAX_SEC, Math.max(MIN_SEC, n)) : 30;
@@ -108,7 +127,7 @@
 	// Probe once on opening, so the model list is there without a click.
 	let probedOnOpen = false;
 	$effect(() => {
-		if (isToolchest && !probedOnOpen && baseUrl.trim()) {
+		if (!probedOnOpen && configuredUrl) {
 			probedOnOpen = true;
 			void probe();
 		}
@@ -191,6 +210,7 @@
 		<select id="music-backend" value={kind} onchange={persistKind}>
 			<option value="none">None</option>
 			<option value="llama-toolchest">llama-toolchest</option>
+			<option value="ace-server">ace-server</option>
 		</select>
 	</div>
 	<p class="help">Off until you pick one.</p>
@@ -251,7 +271,49 @@
 	{#if probeResult?.models}
 		<ToolchestModels kind="music" {instances} baseUrl={baseUrl.trim()} />
 	{/if}
+{:else if isAce}
+	<section class="settings-section">
+		<h2>Connection</h2>
+		<div class="fields">
+			<label for="music-ace-url">Server address:</label>
+			<input
+				id="music-ace-url"
+				type="text"
+				placeholder="http://host:8083"
+				bind:value={aceUrl}
+				onblur={saveAceUrl}
+				title="acestep.cpp's ace-server, not a llama-toolchest in front of it."
+			/>
 
+			<label for="music-ace-model">
+				Model:
+				<Tooltip
+					label="About the model"
+					text="The synthesis models ace-server loaded, listed by Probe. Server default uses its first."
+				/>
+			</label>
+			<select id="music-ace-model" value={aceModel} onchange={chooseAceModel}>
+				<option value="">Server default</option>
+				{#if aceModel && !serverModels.some((m) => m.name === aceModel)}
+					<option value={aceModel}>
+						{aceModel} — {serverModels.length > 0 ? 'not on the server' : 'probe to check'}
+					</option>
+				{/if}
+				{#each serverModels as m (m.name)}
+					<option value={m.name}>{m.label}</option>
+				{/each}
+			</select>
+		</div>
+		<div class="actions">
+			<button onclick={probe} disabled={probing}>{probing ? 'Probing…' : 'Probe'}</button>
+			{#if probeResult}
+				<span class="detail" class:bad={!probeResult.ok}>{probeResult.detail}</span>
+			{/if}
+		</div>
+	</section>
+{/if}
+
+{#if isToolchest || isAce}
 	<section class="settings-section">
 		<h2>Songs</h2>
 		<div class="fields">

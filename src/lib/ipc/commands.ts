@@ -7,6 +7,7 @@
 // which this script checks in CI.
 
 export const IPC = {
+	ace_json: 'ace_json',
 	agents_md_draft: 'agents_md_draft',
 	agents_md_save: 'agents_md_save',
 	app_protected_targets: 'app_protected_targets',

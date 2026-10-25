@@ -1,0 +1,19 @@
+[
+	{
+		"caption": "lo-fi hip hop, mellow piano, vinyl crackle",
+		"seed": 42,
+		"lyrics": "[Instrumental]",
+		"audio_codes": "22592,43456,56066,36288,13257,2498,2241,48448",
+		"bpm": 86,
+		"duration": 15.0,
+		"keyscale": "C major",
+		"timesignature": "4",
+		"vocal_language": "hi",
+		"lm_seed": 846206583,
+		"use_cot_caption": false,
+		"solver": "euler",
+		"lm_mode": "generate",
+		"output_format": "mp3",
+		"task_type": "text2music"
+	}
+]
