@@ -1,7 +1,7 @@
 {
 	"$schema": "../gen/schemas/desktop-schema.json",
 	"identifier": "code",
-	"description": "Detached Code session windows (code-*): run one session's turns through app commands, open editor windows, and raise the main window for open_in_shell. No sidecars and no shell plugin; the one dialog is the folder picker for a session whose folder is gone.",
+	"description": "Detached Code session windows (code-*): run one session's turns through app commands, open editor windows, and raise the main window for open_in_shell. No sidecars and no shell plugin; the dialogs are the folder picker for a session whose folder is gone, and a song player's Save as.",
 	"windows": ["code-*"],
 	"permissions": [
 		"core:default",
@@ -12,6 +12,7 @@
 		"core:window:allow-set-title",
 		"core:window:allow-set-focus",
 		"core:window:allow-unminimize",
-		"dialog:allow-open"
+		"dialog:allow-open",
+		"dialog:allow-save"
 	]
 }

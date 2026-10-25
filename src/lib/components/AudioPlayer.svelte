@@ -13,8 +13,11 @@
 	 * `src` is the cache's URL; the song loads through `playableUrl`, since
 	 * the desktop webview can't play the cache's own scheme.
 	 */
+	import { invoke } from '@tauri-apps/api/core';
+	import { save } from '@tauri-apps/plugin-dialog';
+	import { errMessage } from '#lib/utils/error.ts';
 	import { audioHashFromUrl } from '#lib/audio/url.ts';
-	import { playableUrl } from '#lib/audio/playable.ts';
+	import { audioExtension, playableSong, songFileName } from '#lib/audio/playable.ts';
 
 	interface Props {
 		src: string;
@@ -23,19 +26,55 @@
 	let { src, title }: Props = $props();
 
 	let loaded = $state<string | undefined>(undefined);
+	let mime = $state('audio/mpeg');
 	let missing = $state(false);
+	const hash = $derived(audioHashFromUrl(src));
 	$effect(() => {
-		const hash = audioHashFromUrl(src);
+		const h = hash;
 		loaded = undefined;
 		missing = false;
-		if (!hash) {
+		if (!h) {
 			loaded = src;
 			return;
 		}
-		playableUrl(hash)
-			.then((url) => (loaded = url))
+		playableSong(h)
+			.then((song) => {
+				loaded = song.url;
+				mime = song.mime;
+			})
 			.catch(() => (missing = true));
 	});
+
+	/** What Save as last did, when there is something to say. */
+	let saveNote = $state('');
+
+	/**
+	 * Save the song where the user picks: the native dialog and a copy from
+	 * the cache on the desktop, a download of the blob on the web client.
+	 */
+	async function saveAs() {
+		if (!hash || !loaded) return;
+		const name = songFileName(title, mime);
+		if (import.meta.env.VITE_HARUSPEX_WEB === '1') {
+			const a = document.createElement('a');
+			a.href = loaded;
+			a.download = name;
+			a.click();
+			return;
+		}
+		try {
+			const path = await save({
+				title: 'Save song',
+				defaultPath: name,
+				filters: [{ name: 'Audio', extensions: [audioExtension(mime)] }]
+			});
+			if (!path) return;
+			await invoke('audio_save_as', { hash, path });
+			saveNote = `Saved to ${path}`;
+		} catch (e) {
+			saveNote = `Could not save: ${errMessage(e)}`;
+		}
+	}
 
 	let audio = $state<HTMLAudioElement | undefined>(undefined);
 	let currentTime = $state(0);
@@ -161,7 +200,24 @@
 			oninput={setVolume}
 			aria-label={`Volume of ${title}`}
 		/>
+		{#if hash}
+			<button
+				type="button"
+				class="save"
+				onclick={saveAs}
+				disabled={!loaded}
+				aria-label={`Save ${title} as…`}
+				title="Save as…"
+			>
+				<svg viewBox="0 0 24 24" aria-hidden="true"
+					><path d="M12 4v11"></path><polyline points="7 10 12 15 17 10"></polyline><path
+						d="M5 19h14"
+					></path></svg
+				>
+			</button>
+		{/if}
 	</div>
+	{#if saveNote}<p class="save-note">{saveNote}</p>{/if}
 	<audio
 		bind:this={audio}
 		bind:currentTime
@@ -239,7 +295,8 @@
 		accent-color: var(--accent);
 	}
 
-	.mute {
+	.mute,
+	.save {
 		display: inline-flex;
 		align-items: center;
 		padding: 0;
@@ -250,11 +307,25 @@
 		flex: none;
 	}
 
-	.mute:hover {
+	.mute:hover,
+	.save:hover:not(:disabled) {
 		color: var(--text-primary);
 	}
 
-	.mute svg {
+	.save:disabled {
+		opacity: 0.4;
+		cursor: default;
+	}
+
+	.save-note {
+		margin: 4px 0 0;
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		overflow-wrap: anywhere;
+	}
+
+	.mute svg,
+	.save svg {
 		width: 18px;
 		height: 18px;
 		fill: none;

@@ -32,6 +32,12 @@ Ask for one: "a 45-second lo-fi track about rain", or give lyrics. The assistant
 
 You can ask for a length (5 to 240 seconds), tempo, key, language, or WAV instead of MP3.
 
+With a working folder set in Chat, the assistant can also save the song there: ask "save it as rain.mp3", when you ask for it or later. Without a folder it can't save files.
+
+## Save a song yourself
+
+The player's **Save as…** button (the arrow) saves the song wherever you choose. On the Remote control page it downloads the file.
+
 ## Add music to a project
 
 In the Code tab, ask for something like "background music for the title screen at assets/bgm.mp3". The song plays on the step and is also written into the project; the path is checked before the server starts, and an existing file is kept unless you ask to replace it. A read-only session can make a song but not save it. The Shell assistant doesn't make music.
@@ -47,6 +53,7 @@ llama-toolchest deletes a song a day after making it, so Haruspex downloads each
 - Only llama-toolchest can make music.
 - Players use your system's default audio output, not the device in Settings → Audio.
 - A song can't be longer than 240 seconds.
+- The assistant can only save into the working folder (Chat) or the project (Code tab); use **Save as…** for anywhere else.
 - A short song can come out a little shorter than asked: a 10-second request once gave 7.85 seconds.
 
 ## What has been tested

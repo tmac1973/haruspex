@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
+const tauri = vi.hoisted(() => ({ invoke: vi.fn(), save: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+vi.mock('@tauri-apps/plugin-dialog', () => ({ save: tauri.save }));
 
 import AudioPlayer from './AudioPlayer.svelte';
 
@@ -88,5 +89,27 @@ describe('AudioPlayer', () => {
 		const slider = screen.getByRole('slider', { name: 'Position in Rain' });
 		await fireEvent.input(slider, { target: { value: '42' } });
 		expect(audio.currentTime).toBe(42);
+	});
+
+	it('saves the song where the user picks, named after its title', async () => {
+		await loaded();
+		tauri.save.mockResolvedValueOnce('/home/me/Rain.mp3');
+		await fireEvent.click(screen.getByRole('button', { name: 'Save Rain as…' }));
+		await vi.waitFor(() =>
+			expect(tauri.invoke).toHaveBeenCalledWith('audio_save_as', {
+				hash: 'c'.repeat(64),
+				path: '/home/me/Rain.mp3'
+			})
+		);
+		expect(tauri.save.mock.calls[0][0]).toMatchObject({ defaultPath: 'rain.mp3' });
+		expect(await screen.findByText('Saved to /home/me/Rain.mp3')).toBeTruthy();
+	});
+
+	it('does nothing when the dialog is cancelled', async () => {
+		await loaded();
+		tauri.save.mockResolvedValueOnce(null);
+		await fireEvent.click(screen.getByRole('button', { name: 'Save Rain as…' }));
+		await Promise.resolve();
+		expect(tauri.invoke).not.toHaveBeenCalledWith('audio_save_as', expect.anything());
 	});
 });
