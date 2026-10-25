@@ -22,7 +22,7 @@ use crate::engine::EngineHub;
 use crate::image_cache::protocol;
 use clients::Clients;
 use pairing::PairingCodes;
-use server::{BoxFuture, Dispatch, Images, Running};
+use server::{Audio, BoxFuture, Dispatch, Images, Running};
 use trust::Trust;
 
 /// Managed state: the running server, if any, and the devices.
@@ -109,6 +109,15 @@ impl Dispatch for AppDispatch {
 
     fn subscribe(&self) -> broadcast::Receiver<Value> {
         self.0.state::<EngineHub>().subscribe()
+    }
+}
+
+/// The audio cache, for the server's audio route.
+struct AppAudio(AppHandle);
+
+impl Audio for AppAudio {
+    fn file(&self, hash: &str) -> Option<(String, PathBuf)> {
+        crate::audio_cache::protocol::locate(&self.0, hash).ok()
     }
 }
 

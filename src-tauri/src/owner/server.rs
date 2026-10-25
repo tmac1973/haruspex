@@ -26,8 +26,8 @@ use std::time::{Duration, Instant};
 use axum::body::Bytes;
 use axum::extract::{ConnectInfo, DefaultBodyLimit, Path, State};
 use axum::http::header::{
-    AUTHORIZATION, CACHE_CONTROL, CONTENT_SECURITY_POLICY, CONTENT_TYPE, COOKIE, HOST, LOCATION,
-    ORIGIN, SET_COOKIE,
+    ACCEPT_RANGES, AUTHORIZATION, CACHE_CONTROL, CONTENT_RANGE, CONTENT_SECURITY_POLICY,
+    CONTENT_TYPE, COOKIE, HOST, LOCATION, ORIGIN, RANGE, SET_COOKIE,
 };
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -85,6 +85,12 @@ pub trait Images: Send + Sync + 'static {
     fn bytes(&self, hash: &str) -> Option<(String, Vec<u8>)>;
 }
 
+/// The desktop's audio cache, read only, for `/api/v1/audio/<hash>`.
+pub trait Audio: Send + Sync + 'static {
+    /// One cached file's type and path, by hash.
+    fn file(&self, hash: &str) -> Option<(String, PathBuf)>;
+}
+
 /// Most image URLs one lookup may ask about: a long chat's worth.
 const MAX_IMAGE_LOOKUP: usize = 500;
 
@@ -92,6 +98,7 @@ const MAX_IMAGE_LOOKUP: usize = 500;
 pub struct Services {
     pub dispatch: Arc<dyn Dispatch>,
     pub images: Arc<dyn Images>,
+    pub audio: Arc<dyn Audio>,
     pub clients: Arc<Clients>,
     pub pairing: Arc<PairingCodes>,
     /// The built web client (`index.html` and its assets), if there is one.
@@ -104,6 +111,7 @@ pub struct Services {
 struct AppState {
     dispatch: Arc<dyn Dispatch>,
     images: Arc<dyn Images>,
+    audio: Arc<dyn Audio>,
     clients: Arc<Clients>,
     pairing: Arc<PairingCodes>,
     web_root: Option<Arc<PathBuf>>,
@@ -172,6 +180,7 @@ pub async fn start(
         stopping: shutdown.subscribe(),
         dispatch: services.dispatch,
         images: services.images,
+        audio: services.audio,
         clients: services.clients,
         pairing: services.pairing,
         web_root: services.web_root.map(Arc::new),
@@ -191,6 +200,7 @@ pub async fn start(
         .route("/api/v1/events", get(events))
         .route("/api/v1/images", post(images))
         .route("/api/v1/image/{hash}", get(image))
+        .route("/api/v1/audio/{hash}", get(audio))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .layer(axum::middleware::map_response(no_referrer))
         .with_state(state);
@@ -671,6 +681,83 @@ async fn image(
     response
 }
 
+/// One cached audio file, or the part of it `Range` asks for, so a page's
+/// player can seek. Authorised like an image: a cookie is enough, since an
+/// `<audio>` element can't add headers.
+async fn audio(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<PeerAddr>,
+    headers: HeaderMap,
+    Path(hash): Path<String>,
+) -> Response {
+    use crate::audio_cache::range::{self, Slice};
+    let client = match authorise_with(&state, peer.ip(), &headers, false).await {
+        Ok(c) => c,
+        Err((status, why)) => return refuse(status, why),
+    };
+    if let Some(r) = missing(&client, Scope::Read) {
+        return r;
+    }
+    if !is_valid_hash(&hash) {
+        return refuse(StatusCode::NOT_FOUND, "no such audio");
+    }
+    let wanted = headers
+        .get(RANGE)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let source = state.audio.clone();
+    let found = tokio::task::spawn_blocking(move || {
+        let (mime, path) = source.file(&hash)?;
+        range::read(&path, wanted.as_deref())
+            .ok()
+            .map(|s| (mime, s))
+    })
+    .await
+    .ok()
+    .flatten();
+    let Some((mime, slice)) = found else {
+        return refuse(StatusCode::NOT_FOUND, "no such audio");
+    };
+    let mut response = match slice {
+        Slice::Whole(bytes) => bytes.into_response(),
+        Slice::Part {
+            bytes,
+            start,
+            end,
+            total,
+        } => {
+            let mut r = (StatusCode::PARTIAL_CONTENT, bytes).into_response();
+            if let Ok(v) = format!("bytes {start}-{end}/{total}").parse() {
+                r.headers_mut().insert(CONTENT_RANGE, v);
+            }
+            r
+        }
+        Slice::Unsatisfiable { total } => {
+            let mut r = StatusCode::RANGE_NOT_SATISFIABLE.into_response();
+            if let Ok(v) = format!("bytes */{total}").parse() {
+                r.headers_mut().insert(CONTENT_RANGE, v);
+            }
+            return r;
+        }
+    };
+    let h = response.headers_mut();
+    if let Ok(v) = mime.parse() {
+        h.insert(CONTENT_TYPE, v);
+    }
+    h.insert(ACCEPT_RANGES, "bytes".parse().expect("static header"));
+    h.insert(
+        CACHE_CONTROL,
+        "private, max-age=31536000, immutable"
+            .parse()
+            .expect("static header"),
+    );
+    h.insert(
+        "x-content-type-options",
+        "nosniff".parse().expect("static header"),
+    );
+    response
+}
+
 /// `ready` first, so a client knows it is connected, then every engine event.
 /// A reader that falls behind is told `resync-all` and asks for snapshots of
 /// the sessions it follows (`session.resync`). The stream ends when the
@@ -767,6 +854,30 @@ mod tests {
             embeddable: true,
             created_at: 0,
             last_used_at: 0,
+        }
+    }
+
+    /// One cached song, `cc…`, the bytes `0123456789`.
+    #[derive(Default)]
+    struct StubAudio {
+        dir: std::sync::OnceLock<crate::test_util::TestDir>,
+    }
+
+    fn song_hash() -> String {
+        "c".repeat(64)
+    }
+
+    impl Audio for StubAudio {
+        fn file(&self, hash: &str) -> Option<(String, PathBuf)> {
+            if hash != song_hash() {
+                return None;
+            }
+            let dir = self.dir.get_or_init(|| {
+                let d = crate::test_util::temp_dir("owner_audio");
+                std::fs::write(d.join("song"), b"0123456789").unwrap();
+                d
+            });
+            Some(("audio/mpeg".into(), dir.join("song")))
         }
     }
 
@@ -868,6 +979,7 @@ mod tests {
         let services = Services {
             dispatch: stub.clone(),
             images: Arc::new(StubImages),
+            audio: Arc::new(StubAudio::default()),
             clients: clients.clone(),
             pairing: pairing.clone(),
             web_root: Some(web.to_path_buf()),
@@ -948,6 +1060,60 @@ mod tests {
                 .unwrap();
             assert_eq!(r.status(), 404, "{bad}");
         }
+        h.running.stop();
+    }
+
+    #[tokio::test]
+    async fn audio_is_served_whole_or_by_range_to_a_device() {
+        let h = serve().await;
+        let url = format!("{}/api/v1/audio/{}", h.base, song_hash());
+        assert_eq!(h.http.get(&url).send().await.unwrap().status(), 401);
+        let token = h.token(&[Scope::Read]);
+        let cookie = format!("{OWNER_COOKIE}={token}");
+
+        let r = h
+            .http
+            .get(&url)
+            .header(COOKIE, &cookie)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200);
+        assert_eq!(r.headers()[CONTENT_TYPE], "audio/mpeg");
+        assert_eq!(r.headers()[ACCEPT_RANGES], "bytes");
+        assert_eq!(r.bytes().await.unwrap().as_ref(), b"0123456789");
+
+        let r = h
+            .http
+            .get(&url)
+            .header(COOKIE, &cookie)
+            .header(RANGE, "bytes=2-4")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 206);
+        assert_eq!(r.headers()[CONTENT_RANGE], "bytes 2-4/10");
+        assert_eq!(r.bytes().await.unwrap().as_ref(), b"234");
+
+        let r = h
+            .http
+            .get(&url)
+            .header(COOKIE, &cookie)
+            .header(RANGE, "bytes=50-")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 416);
+
+        let other = format!("{}/api/v1/audio/{}", h.base, "d".repeat(64));
+        let r = h
+            .http
+            .get(&other)
+            .header(COOKIE, &cookie)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 404);
         h.running.stop();
     }
 
@@ -1432,6 +1598,7 @@ mod tests {
         let services = Services {
             dispatch: h.stub.clone(),
             images: Arc::new(StubImages),
+            audio: Arc::new(StubAudio::default()),
             clients: h.clients.clone(),
             pairing: h.pairing.clone(),
             web_root: None,

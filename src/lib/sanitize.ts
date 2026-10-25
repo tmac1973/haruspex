@@ -20,17 +20,18 @@ import DOMPurify from 'dompurify';
 const FORBID_TAGS = ['form', 'input', 'select', 'textarea', 'option', 'dialog'];
 
 /**
- * DOMPurify's default URI allowlist does not include our custom scheme, so
+ * DOMPurify's default URI allowlist does not include our custom schemes, so
  * `haruspex-img:` in an `<img src>` would be stripped and every cached image
- * would silently vanish. This is DOMPurify's default expression with that one
- * scheme added, and its Windows form (`http://haruspex-img.localhost/…`) needs
- * no entry because it is already plain http.
+ * would silently vanish, and the same for `haruspex-audio:` in an `<audio>`.
+ * This is DOMPurify's default expression with those two schemes added; their
+ * Windows forms (`http://haruspex-img.localhost/…`) need no entry because
+ * they are already plain http.
  *
  * Adding a scheme here is not a licence to add more: everything else the model
  * can write stays on the default list.
  */
 const ALLOWED_URI_REGEXP =
-	/^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|haruspex-img):|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))/i;
+	/^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|haruspex-img|haruspex-audio):|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))/i;
 
 export function sanitizeHtml(html: string): string {
 	return DOMPurify.sanitize(html, { FORBID_TAGS, ALLOWED_URI_REGEXP });

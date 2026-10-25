@@ -115,6 +115,12 @@ pub enum ComfySocketEvent {
 /// How much of a refusal's body comes back.
 const REJECTED_BODY_MAX: usize = 4000;
 
+/// The no-proxy LAN client, for other code that talks to the same servers
+/// (`audio_cache` downloads the songs a server made).
+pub(crate) fn lan_client() -> &'static reqwest::Client {
+    client()
+}
+
 fn client() -> &'static reqwest::Client {
     static C: OnceLock<reqwest::Client> = OnceLock::new();
     C.get_or_init(|| {

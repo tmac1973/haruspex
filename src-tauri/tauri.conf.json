@@ -21,7 +21,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: haruspex-img: http://haruspex-img.localhost; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http: https: ws: wss:; worker-src 'self' blob:; frame-src haruspex-artifact: http://haruspex-artifact.localhost; object-src 'none'; base-uri 'self'; form-action 'none'",
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: haruspex-img: http://haruspex-img.localhost; media-src 'self' blob: data: haruspex-audio: http://haruspex-audio.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http: https: ws: wss:; worker-src 'self' blob:; frame-src haruspex-artifact: http://haruspex-artifact.localhost; object-src 'none'; base-uri 'self'; form-action 'none'",
       "dangerousDisableAssetCspModification": [
         "style-src"
       ],
