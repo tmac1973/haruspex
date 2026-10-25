@@ -685,7 +685,40 @@ impl Database {
             );
 
             CREATE INDEX IF NOT EXISTS idx_conversation_images_hash
-                ON conversation_images(image_hash);",
+                ON conversation_images(image_hash);
+
+            CREATE TABLE IF NOT EXISTS audio (
+                hash TEXT PRIMARY KEY,
+                mime TEXT NOT NULL,
+                bytes INTEGER NOT NULL,
+                duration_ms INTEGER,
+                title TEXT,
+                source TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                last_used_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS conversation_audio (
+                conversation_id TEXT NOT NULL
+                    REFERENCES conversations(id) ON DELETE CASCADE,
+                audio_hash TEXT NOT NULL
+                    REFERENCES audio(hash) ON DELETE CASCADE,
+                PRIMARY KEY (conversation_id, audio_hash)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_conversation_audio_hash
+                ON conversation_audio(audio_hash);
+
+            CREATE TABLE IF NOT EXISTS code_session_audio (
+                code_session_id TEXT NOT NULL
+                    REFERENCES code_sessions(id) ON DELETE CASCADE,
+                audio_hash TEXT NOT NULL
+                    REFERENCES audio(hash) ON DELETE CASCADE,
+                PRIMARY KEY (code_session_id, audio_hash)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_code_session_audio_hash
+                ON code_session_audio(audio_hash);",
         )
         .map_err(|e| format!("Migration failed: {}", e))?;
 
@@ -857,6 +890,7 @@ fn chrono_now() -> i64 {
     crate::time_util::now_ms()
 }
 
+mod audio;
 mod code_notices;
 mod code_sessions;
 mod commands;
@@ -869,6 +903,7 @@ mod prompts;
 mod runs;
 mod stats;
 
+pub use audio::AudioRow;
 pub use code_notices::StoredNotice;
 pub use code_sessions::{CodeSessionMetaPatch, CodeSessionRow, CodeSessionSummary};
 pub use commands::*;

@@ -2,6 +2,7 @@ mod app_log;
 mod app_windows;
 mod artifact_frame;
 mod audio;
+mod audio_cache;
 mod clipboard;
 mod code_tools;
 mod comfy;
@@ -112,6 +113,14 @@ pub fn run() {
                 responder.respond(image_cache::protocol::handle(&app, request));
             });
         })
+        // Generated audio by content hash, with Range so a player can seek.
+        // See audio_cache::protocol.
+        .register_asynchronous_uri_scheme_protocol("haruspex-audio", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                responder.respond(audio_cache::protocol::handle(&app, request));
+            });
+        })
         .setup(|app| {
             // A failure here ends startup with the reason in the log, rather
             // than a panic backtrace.
@@ -205,6 +214,15 @@ pub fn run() {
                             }
                         }
                         Err(e) => log::warn!("image cache dir unavailable: {}", e),
+                    }
+                    match audio_cache::cache_dir(&handle) {
+                        Ok(dir) => {
+                            let now = time_util::now_ms();
+                            if let Err(e) = audio_cache::sweep_orphans(&db, &dir, now) {
+                                log::warn!("audio cache sweep failed: {}", e);
+                            }
+                        }
+                        Err(e) => log::warn!("audio cache dir unavailable: {}", e),
                     }
                 });
             }
@@ -332,6 +350,11 @@ pub fn run() {
             image_cache::commands::image_sweep,
             image_cache::commands::image_store_bytes,
             image_cache::commands::image_rehydrate_local,
+            audio_cache::commands::audio_store_url,
+            audio_cache::commands::audio_rehydrate,
+            audio_cache::commands::audio_cache_size,
+            audio_cache::commands::audio_cache_clear,
+            audio_cache::commands::audio_sweep,
             image_gen::commands::image_check,
             image_gen::commands::image_palette_spread,
             image_gen::commands::image_contact_sheet,

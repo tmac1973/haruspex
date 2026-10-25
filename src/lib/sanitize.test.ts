@@ -94,6 +94,21 @@ describe('image URI scheme allowance', () => {
 		expect(html).toContain('haruspex-img.localhost');
 	});
 
+	it('lets cached audio through, in an <audio> or its <source>', () => {
+		const hash = '0123456789abcdef'.repeat(4);
+		const html = sanitizeHtml(
+			`<audio controls preload="metadata" src="haruspex-audio://localhost/${hash}"></audio>` +
+				`<audio controls><source src="haruspex-audio://localhost/${hash}" type="audio/mpeg"></audio>`
+		);
+		expect(html.match(new RegExp(`haruspex-audio://localhost/${hash}`, 'g'))).toHaveLength(2);
+		expect(html).toContain('controls');
+		expect(html).toContain('preload="metadata"');
+	});
+
+	it('does not let an <audio> reach a file: URL', () => {
+		expect(sanitizeHtml('<audio src="file:///etc/passwd"></audio>')).not.toContain('file:');
+	});
+
 	it('still strips javascript: URLs', () => {
 		expect(sanitizeHtml('<a href="javascript:alert(1)">x</a>')).not.toContain('javascript:');
 		expect(sanitizeHtml('<img src="javascript:alert(1)">')).not.toContain('javascript:');
