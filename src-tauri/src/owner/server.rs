@@ -894,7 +894,7 @@ mod tests {
     }
 
     fn test_tls() -> Arc<rustls::ServerConfig> {
-        let names = crate::owner::tls::names_for(Some("box"), None);
+        let names = crate::owner::tls::names_for(Some("box"), &[]);
         let ips = ["127.0.0.1".parse().unwrap()];
         let id =
             crate::owner::tls::generate(&names, &ips, time::OffsetDateTime::now_utc()).unwrap();

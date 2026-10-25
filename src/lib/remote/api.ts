@@ -96,6 +96,21 @@ export function qrPath(qr: QrMatrix): string {
 	return parts.join('');
 }
 
+/**
+ * The host name in Settings → Guest chat → Link address, however it was typed
+ * (`box.lan`, `https://box.lan:8787/`), or `null` when there is none.
+ */
+export function linkHostName(raw: string): string | null {
+	const text = raw.trim();
+	if (!text) return null;
+	try {
+		const host = new URL(/^[a-z]+:\/\//i.test(text) ? text : `https://${text}`).hostname;
+		return host.replace(/\.$/, '') || null;
+	} catch {
+		return null;
+	}
+}
+
 /** The link a guest is given: address, port, and the token that opens it. */
 export function remoteLink(address: string, port: number, token: string): string {
 	return `https://${address}:${port}/?t=${encodeURIComponent(token)}`;

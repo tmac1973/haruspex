@@ -17,7 +17,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 vi.mock('#lib/remote/driver.ts', () => ({ startRemoteDriver: mocks.startRemoteDriver }));
 
 import { syncRemoteServer } from '#lib/remote/service.ts';
-import { qrPath, remoteLink, generateRemoteToken } from '#lib/remote/api.ts';
+import { qrPath, remoteLink, generateRemoteToken, linkHostName } from '#lib/remote/api.ts';
 
 const RUNNING = { running: true, port: 8787, bindAll: true, sessions: 0 };
 const STOPPED = { running: false, port: null, bindAll: false, sessions: 0 };
@@ -29,6 +29,7 @@ function settings(overrides: Record<string, unknown> = {}) {
 		remoteAccessToken: 'a-token',
 		remoteAccessMode: 'tokens',
 		remoteAccessTrustedHosts: [],
+		remoteAccessLinkHost: '',
 		...overrides
 	};
 }
@@ -99,6 +100,14 @@ describe('turning remote access on and off', () => {
 		});
 	});
 
+	it('tells the server the name guests reach it by', async () => {
+		mocks.getSettings.mockReturnValue(
+			settings({ remoteAccessLinkHost: 'https://box.example.internal:8787/' })
+		);
+		await syncRemoteServer();
+		expect(invocations('remote_start')[0].config.access.extraHost).toBe('box.example.internal');
+	});
+
 	it('survives a port that is already taken', async () => {
 		mocks.invoke.mockRejectedValue(new Error('address in use'));
 		// Remote access stays off; the app does not come down with it.
@@ -109,6 +118,20 @@ describe('turning remote access on and off', () => {
 describe('the link the host hands out', () => {
 	it('uses the LAN address, never localhost', () => {
 		expect(remoteLink('192.168.1.50', 8787, 'abc')).toBe('https://192.168.1.50:8787/?t=abc');
+	});
+
+	it('takes the link address however it was typed', () => {
+		for (const typed of [
+			'box.example.internal',
+			' Box.Example.Internal. ',
+			'box.example.internal:8787',
+			'https://box.example.internal:8787/'
+		]) {
+			expect(linkHostName(typed), typed).toBe('box.example.internal');
+		}
+		expect(linkHostName('100.64.0.7')).toBe('100.64.0.7');
+		expect(linkHostName('')).toBeNull();
+		expect(linkHostName('not a name')).toBeNull();
 	});
 
 	it('escapes a token that would break the query string', () => {

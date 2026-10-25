@@ -334,8 +334,8 @@ enum Admission {
 }
 
 /// Why a trusted computer's request was turned away anyway.
-const NOT_OUR_NAME: &str =
-    "open this page by this computer's address or name, as Settings → Guest chat shows it";
+const NOT_OUR_NAME: &str = "open this page by this computer's address or name, as Settings → \
+     Guest chat shows it, or add the name you used as Settings → Guest chat → Link address";
 
 /// Whether the request may use the server, and how; `Err` is the response to
 /// send instead. `allow_link` is for the page load, the only place the link's
@@ -363,8 +363,9 @@ async fn admit(
         .get(HOST)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
+    let extra = state.trust.access().extra_host;
     if crate::owner::server::cross_site(headers)
-        || !host_is_ours(host, state.own_name.as_deref(), None)
+        || !host_is_ours(host, state.own_name.as_deref(), extra.as_deref())
     {
         return Err((StatusCode::FORBIDDEN, NOT_OUR_NAME));
     }
@@ -929,7 +930,7 @@ mod http_tests {
 
     /// A certificate made for the test, as the app makes the owner API's.
     fn test_tls() -> Tls {
-        let names = crate::owner::tls::names_for(Some("box"), None);
+        let names = crate::owner::tls::names_for(Some("box"), &[]);
         let ips = ["127.0.0.1".parse().unwrap()];
         let id =
             crate::owner::tls::generate(&names, &ips, time::OffsetDateTime::now_utc()).unwrap();
@@ -1120,6 +1121,26 @@ mod http_tests {
             .await
             .unwrap();
         assert_eq!(cross.status(), 403);
+        running.stop();
+    }
+
+    #[tokio::test]
+    async fn the_link_address_is_one_of_our_names() {
+        let (base, trust, running) = serve_trusting(OwnerAccess {
+            extra_host: Some("box.example.internal".into()),
+            ..mode(AccessMode::Lan, &[])
+        })
+        .await;
+        let page = || {
+            client()
+                .get(format!("{base}/"))
+                .header("host", "box.example.internal:8787")
+                .send()
+        };
+        assert_eq!(page().await.unwrap().status(), 200);
+        // Taken back, it is just another domain pointed at this computer.
+        trust.set(mode(AccessMode::Lan, &[]));
+        assert_eq!(page().await.unwrap().status(), 403);
         running.stop();
     }
 

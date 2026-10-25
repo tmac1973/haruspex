@@ -13,6 +13,7 @@ import { getRemoteToken, remoteToken } from '#lib/stores/remoteSecrets.ts';
 
 import {
 	generateRemoteToken,
+	linkHostName,
 	startRemoteServer,
 	stopRemoteServer,
 	type RemoteStatus
@@ -51,7 +52,7 @@ export async function syncRemoteServer(): Promise<RemoteStatus | null> {
 			access: {
 				mode: settings.remoteAccessMode,
 				trustedHosts: settings.remoteAccessTrustedHosts,
-				extraHost: null
+				extraHost: linkHostName(settings.remoteAccessLinkHost)
 			}
 		});
 		logDebug('remote', `serving on port ${status.port}`);

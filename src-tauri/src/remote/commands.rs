@@ -87,16 +87,25 @@ pub async fn remote_start(
     state: State<'_, RemoteServer>,
     config: RemoteConfig,
 ) -> Result<RemoteStatus, String> {
-    // Who can connect changes in place: no restart, nobody dropped.
+    // Who can connect, and the link address, change in place: no restart,
+    // nobody dropped — unless the certificate has to grow to cover the name.
     state.trust().set(config.access.clone());
-    if state.matches(&config) {
+    // The owner API's certificate, made on first use if that has never run.
+    let owner = app.state::<crate::owner::OwnerApi>();
+    let remote_control = owner.extra_host();
+    let extras: Vec<&str> = [&config.access.extra_host, &remote_control]
+        .into_iter()
+        .flatten()
+        .map(String::as_str)
+        .collect();
+    let identity = owner.certificate(&extras)?;
+    if state.matches(&config) && state.status().fingerprint.as_ref() == Some(&identity.fingerprint)
+    {
         return Ok(state.status());
     }
     // Stop first: rebinding the same port while the old listener holds it is
     // the obvious way for a port change to fail on the way back.
     state.shutdown().await;
-    // The owner API's certificate, made on first use if that has never run.
-    let identity = app.state::<crate::owner::OwnerApi>().certificate(None)?;
     let tls = server::Tls {
         config: crate::owner::tls::server_config(&identity)?,
         fingerprint: identity.fingerprint,

@@ -24,6 +24,10 @@ The page uses HTTPS with a certificate Haruspex makes itself, so the guest's bro
 
 If there is no link, your computer has no network address: it is probably offline, or on a network that does not let devices reach each other.
 
+## Reach it by another name, such as a VPN's
+
+If devices reach your computer by a name other than the one Haruspex shows (for example a NetBird or Tailscale DNS name), enter it in Settings → Guest chat → **Link address**. Links and QR codes then use that name, and the page accepts it. IP addresses always work. A VPN address (like 100.64.x.x) isn't part of **My whole network**; list the device under **These computers**, or use the link.
+
 ## Who can connect
 
 - **People with the link**: only someone you give the link (or its QR code) to. This is the default.

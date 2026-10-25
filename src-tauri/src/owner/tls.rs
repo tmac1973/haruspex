@@ -160,9 +160,10 @@ pub fn server_config(identity: &Identity) -> Result<Arc<rustls::ServerConfig>, S
     Ok(Arc::new(config))
 }
 
-/// The names to cover: this computer's, its `.local` one, the link address
-/// Settings gives, and `localhost`. Addresses go in separately.
-pub fn names_for(hostname: Option<&str>, extra_host: Option<&str>) -> Vec<String> {
+/// The names to cover: this computer's, its `.local` one, the link addresses
+/// Settings gives (Remote control's and Guest chat's), and `localhost`.
+/// Addresses go in separately.
+pub fn names_for(hostname: Option<&str>, extra_hosts: &[&str]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut add = |n: &str| {
         let n = n.trim().trim_end_matches('.').to_ascii_lowercase();
@@ -176,7 +177,7 @@ pub fn names_for(hostname: Option<&str>, extra_host: Option<&str>) -> Vec<String
             add(&format!("{h}.local"));
         }
     }
-    if let Some(extra) = extra_host.and_then(host_of) {
+    for extra in extra_hosts.iter().filter_map(|e| host_of(e)) {
         add(&extra);
     }
     add("localhost");
@@ -210,21 +211,30 @@ mod tests {
     #[test]
     fn names_cover_this_computer_and_the_link_address() {
         assert_eq!(
-            names_for(Some("Asmodean"), Some("https://box.lan:8788")),
-            ["asmodean", "asmodean.local", "box.lan", "localhost"]
+            names_for(
+                Some("Asmodean"),
+                &["https://box.lan:8788", "asmodean.example.internal"]
+            ),
+            [
+                "asmodean",
+                "asmodean.local",
+                "box.lan",
+                "asmodean.example.internal",
+                "localhost"
+            ]
         );
         // An address is not a name, and nothing is listed twice.
         assert_eq!(
-            names_for(Some("box.lan"), Some("192.168.1.9")),
+            names_for(Some("box.lan"), &["192.168.1.9"]),
             ["box.lan", "localhost"]
         );
-        assert_eq!(names_for(None, None), ["localhost"]);
+        assert_eq!(names_for(None, &[]), ["localhost"]);
     }
 
     #[test]
     fn a_new_certificate_serves_and_shows_its_fingerprint() {
         let id = generate(
-            &names_for(Some("box"), None),
+            &names_for(Some("box"), &[]),
             &["192.168.1.9".parse().unwrap()],
             OffsetDateTime::now_utc(),
         )
@@ -237,7 +247,7 @@ mod tests {
     #[test]
     fn it_is_kept_until_it_nears_its_end_or_a_name_is_new() {
         let (_dir, path) = tmp("keep");
-        let names = names_for(Some("box"), None);
+        let names = names_for(Some("box"), &[]);
         let first = load_or_create(&path, &names, &[]).unwrap();
         // Restarting keeps it, so browsers keep the owner's answer.
         let again = load_or_create(&path, &names, &[]).unwrap();
@@ -246,13 +256,13 @@ mod tests {
         let moved = load_or_create(&path, &names, &["10.0.0.4".parse().unwrap()]).unwrap();
         assert_eq!(first.fingerprint, moved.fingerprint);
         // A new link address does.
-        let renamed = load_or_create(&path, &names_for(Some("box"), Some("box.lan")), &[]).unwrap();
+        let renamed = load_or_create(&path, &names_for(Some("box"), &["box.lan"]), &[]).unwrap();
         assert_ne!(first.fingerprint, renamed.fingerprint);
         // So does one near its end.
         let mut old = renamed.clone();
         old.not_after = OffsetDateTime::now_utc().unix_timestamp() + 86_400;
         save(&path, &old).unwrap();
-        let renewed = load_or_create(&path, &names_for(Some("box"), Some("box.lan")), &[]).unwrap();
+        let renewed = load_or_create(&path, &names_for(Some("box"), &["box.lan"]), &[]).unwrap();
         assert_ne!(renewed.fingerprint, renamed.fingerprint);
         #[cfg(unix)]
         {
@@ -266,6 +276,6 @@ mod tests {
     fn an_unreadable_file_is_replaced() {
         let (_dir, path) = tmp("junk");
         std::fs::write(&path, b"not json").unwrap();
-        assert!(load_or_create(&path, &names_for(Some("box"), None), &[]).is_ok());
+        assert!(load_or_create(&path, &names_for(Some("box"), &[]), &[]).is_ok());
     }
 }
