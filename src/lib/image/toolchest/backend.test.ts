@@ -1,0 +1,221 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+const settings = vi.hoisted(() => ({
+	imageToolchestBaseUrl: 'http://box:3000',
+	imageToolchestApiKeyId: 'k1' as string | null,
+	imageToolchestModelId: 'qwen-turbo-local'
+}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
+	getSettings: () => settings,
+	getApiKeyValue: (id: string) => (id === 'k1' ? 'sekrit' : undefined)
+}));
+vi.mock('#lib/stores/apiKeySecrets.ts', () => ({ apiKeysReady: () => Promise.resolve() }));
+// Polls wait a second each; not in tests.
+vi.mock('#lib/utils/async.ts', () => ({ sleep: () => Promise.resolve() }));
+
+import asmodean from '#lib/toolchest/fixtures/models-asmodean.json';
+import compute2 from '#lib/toolchest/fixtures/models-compute2.json';
+import { toolchestBackend } from './backend';
+import { invokeRouter } from '#lib/testing/invoke.ts';
+import { ImageBackendError, type ImageProgress } from '#lib/image/types.ts';
+
+interface Call {
+	method: string;
+	path: string;
+	api_key: string;
+	body: Record<string, unknown> | null;
+	timeout_ms: number;
+	id: string;
+}
+
+type Answer = unknown | ((call: Call) => unknown);
+
+function route(answers: Record<string, Answer>) {
+	return (args?: Record<string, unknown>) => {
+		const call = args!.call as Call;
+		const a = answers[`${call.method} ${call.path}`];
+		if (a === undefined) throw { kind: 'rejected', status: 404, body: '{}' };
+		return typeof a === 'function' ? (a as (c: Call) => unknown)(call) : a;
+	};
+}
+
+const calls = () =>
+	tauri.invoke.mock.calls
+		.filter(([c]) => c === 'toolchest_json' || c === 'toolchest_bytes')
+		.map(([, a]) => `${a.call.method} ${a.call.path}`);
+
+/** A job that is queued behind one, then draws, then is done. */
+function jobRoutes(extra: Record<string, Answer> = {}): Record<string, Answer> {
+	const states = [
+		{ id: 'j1', status: 'queued', phase: 'queued', queue_position: 1 },
+		{ id: 'j1', status: 'running', phase: 'generating', queue_position: 0 },
+		{ id: 'j1', status: 'succeeded', images: [{ url: '/v1/images/jobs/j1/image/0' }] }
+	];
+	let n = 0;
+	return {
+		'GET /v1/models': asmodean,
+		'POST /v1/images/jobs': states[0],
+		'GET /v1/images/jobs/j1': () => states[Math.min(++n, states.length - 1)],
+		...extra
+	};
+}
+
+function use(answers: Record<string, Answer>) {
+	tauri.invoke.mockReset().mockImplementation(
+		invokeRouter({
+			image_clear_canvas: [1, 2, 3],
+			comfy_cancel: null,
+			toolchest_json: route(answers),
+			toolchest_bytes: () => new Uint8Array([137, 80, 78, 71]).buffer
+		})
+	);
+}
+
+const request = { prompt: 'a fox', width: 512, height: 512, seed: 5 };
+
+describe('llama-toolchest image backend', () => {
+	beforeEach(() => {
+		settings.imageToolchestBaseUrl = 'http://box:3000';
+		settings.imageToolchestApiKeyId = 'k1';
+		settings.imageToolchestModelId = 'qwen-turbo-local';
+		use(jobRoutes());
+	});
+
+	it('probes into a sentence and the Model list, sending the named key', async () => {
+		const result = await toolchestBackend.probe();
+		expect(result).toEqual({
+			ok: true,
+			detail: 'Connected — qwen-turbo-local on box:3000, image jobs.',
+			models: [{ name: 'qwen-turbo-local', label: 'qwen-turbo-local' }]
+		});
+		const [, args] = tauri.invoke.mock.calls.find(([c]) => c === 'toolchest_json')!;
+		expect(args.call.api_key).toBe('sekrit');
+	});
+
+	it('says what is wrong rather than failing quietly', async () => {
+		settings.imageToolchestModelId = '';
+		expect((await toolchestBackend.probe()).detail).toBe('No model is chosen — Settings → Image.');
+
+		settings.imageToolchestBaseUrl = '';
+		expect((await toolchestBackend.probe()).detail).toBe('No server address — Settings → Image.');
+
+		settings.imageToolchestBaseUrl = 'http://box:3000';
+		use({
+			'GET /v1/models': () => {
+				throw { kind: 'rejected', status: 401, body: '' };
+			}
+		});
+		expect((await toolchestBackend.probe()).detail).toBe('Wrong or missing API key.');
+
+		use({
+			'GET /v1/models': () => {
+				throw { kind: 'unreachable', message: 'refused' };
+			}
+		});
+		expect((await toolchestBackend.probe()).detail).toBe("Can't reach box:3000.");
+	});
+
+	it('draws through a job, reporting the queue and then the drawing', async () => {
+		const seen: ImageProgress[] = [];
+		const result = await toolchestBackend.generate(request, { onProgress: (p) => seen.push(p) });
+		expect(result.images[0].bytes).toEqual(new Uint8Array([137, 80, 78, 71]));
+		expect(result.meta).toMatchObject({
+			seed: 5,
+			model: 'qwen-turbo-local',
+			backend: 'llama-toolchest'
+		});
+		expect(seen).toContainEqual({ phase: 'queued', ahead: 1 });
+		expect(seen).toContainEqual({ phase: 'running' });
+		expect(calls()).toContain('GET /v1/images/jobs/j1/image/0');
+		expect(calls()).not.toContain('POST /v1/images/generations');
+	});
+
+	it('uses the blocking route on a build without image jobs', async () => {
+		const old = structuredClone(asmodean);
+		for (const m of old.data) delete (m.meta as { api?: unknown }).api;
+		use({
+			'GET /v1/models': old,
+			'POST /v1/images/generations': (call: Call) => {
+				expect(call.timeout_ms).toBe(900_000);
+				return { data: [{ b64_json: 'AQID' }] };
+			}
+		});
+		const result = await toolchestBackend.generate(request);
+		expect(result.images[0].bytes).toEqual(new Uint8Array([1, 2, 3]));
+		expect(calls()).not.toContain('POST /v1/images/jobs');
+	});
+
+	it('cancels the job on the server when the turn is cancelled', async () => {
+		const controller = new AbortController();
+		use(
+			jobRoutes({
+				'GET /v1/images/jobs/j1': () => {
+					controller.abort();
+					return { id: 'j1', status: 'running', phase: 'generating' };
+				},
+				'DELETE /v1/images/jobs/j1': null
+			})
+		);
+		await expect(
+			toolchestBackend.generate(request, { signal: controller.signal })
+		).rejects.toMatchObject({ kind: 'cancelled' });
+		expect(calls()).toContain('DELETE /v1/images/jobs/j1');
+	});
+
+	it('turns a failed job, a full queue and a stopped instance into errors', async () => {
+		use(
+			jobRoutes({
+				'GET /v1/images/jobs/j1': { id: 'j1', status: 'failed', error: 'generating: boom' }
+			})
+		);
+		await expect(toolchestBackend.generate(request)).rejects.toThrow(
+			'llama-toolchest: generating: boom'
+		);
+
+		use(
+			jobRoutes({
+				'POST /v1/images/jobs': () => {
+					throw {
+						kind: 'rejected',
+						status: 429,
+						body: '{"error":{"message":"queue full","code":"queue_full"}}'
+					};
+				}
+			})
+		);
+		await expect(toolchestBackend.generate(request)).rejects.toThrow(/queue is full/);
+
+		settings.imageToolchestModelId = 'ace-xl';
+		use({ 'GET /v1/models': asmodean });
+		const err = await toolchestBackend.generate(request).catch((e) => e);
+		expect(err).toBeInstanceOf(ImageBackendError);
+		expect(err.kind).toBe('unconfigured');
+	});
+
+	it('starts Ming from a clear canvas for a transparent picture', async () => {
+		settings.imageToolchestModelId = 'ming-gpu1';
+		let body: Record<string, unknown> | null = null;
+		use(
+			jobRoutes({
+				'GET /v1/models': compute2,
+				'POST /v1/images/jobs': (call: Call) => {
+					body = call.body;
+					return { id: 'j1', status: 'queued', phase: 'queued' };
+				}
+			})
+		);
+		await toolchestBackend.generate({ ...request, transparent: true });
+		const prompt = String(body!.prompt);
+		const extras = JSON.parse(/^<sd_cpp_extra_args>(.*?)<\/sd_cpp_extra_args>/.exec(prompt)![1]);
+		expect(extras.init_image).toBeTruthy();
+		expect(extras.strength).toBe(0.9);
+		expect(extras.sample_params.sample_steps).toBe(12);
+		expect(await toolchestBackend.capabilities()).toMatchObject({
+			transparency: true,
+			seamlessTiling: false
+		});
+	});
+});

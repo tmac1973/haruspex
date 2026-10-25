@@ -1,6 +1,6 @@
 ---
 title: Image generation
-description: Turning on image generation, ComfyUI, the bundled engine or Lemonade, the models and their licences, drawing in Chat, art for a project, and GPU cost.
+description: Turning on image generation, ComfyUI, the bundled engine, Lemonade or llama-toolchest, the models and their licences, drawing in Chat, art for a project, and GPU cost.
 ---
 
 # Image generation
@@ -17,22 +17,27 @@ Open Settings → Image → **Image backend** and choose a **Backend**:
 - **ComfyUI** — a [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server you run, on this computer or another. Choose this if you already use ComfyUI.
 - **Bundled engine** — stable-diffusion.cpp, shipped with Haruspex. Nothing else to install. It is offered on Linux, Windows and Apple Silicon Macs.
 - **Lemonade** — a [Lemonade](https://lemonade-server.ai) server you run, which draws with the bundled engine's models on its own GPU.
+- **llama-toolchest** — a llama-toolchest server you run with generation on.
 
-Once a backend is set up, **Test generation → Generate a test image** makes one picture to check it works.
+**Test generation → Generate a test image** checks that a backend works.
 
 ### Set up the bundled engine
 
-Under **Bundled engine**, press **Download** on a model, then **Use**. Downloads are large (about 17 GB for Ming-Image, 10 GB for Qwen-Image Turbo). The engine starts when something needs it, or when you press **Start**, and stops when you press **Stop**, switch backend, or quit.
+Under **Bundled engine**, press **Download** on a model (about 17 GB for Ming-Image, 10 GB for Qwen-Image Turbo), then **Use**. The engine starts when something needs it or on **Start**, and stops on **Stop**, a backend switch, or quitting.
 
 ### Set up ComfyUI
 
 Under **Connection**, enter the **Server address** (for example `http://127.0.0.1:8188`) and an **API key** only if your server needs one, then press **Probe**. **Models on the server** then shows what each model is missing. **Install** downloads the files into ComfyUI when it runs on this computer, or queues them with ComfyUI-Manager on another server. Without either, **Copy file list** gives you the files to place by hand. Then choose the **Model**.
 
-The first picture after ComfyUI starts is slow while it loads the model; the progress line says **Loading the model** until it draws.
+The first picture after ComfyUI starts waits while it loads the model (**Loading the model**).
 
 ### Set up Lemonade
 
-Under **Connection**, enter the **Server address** (for example `http://127.0.0.1:13305`) and an **API key** only if your server needs one, then press **Probe**. Under **Models on the server**, **Install** downloads a model onto the server and **Remove** deletes it. Then choose the **Model**. The download carries on if you close Settings. Lemonade keeps one image model loaded, so the first picture after switching waits for it to load. It does not make tiling textures, and Lemonade's own models are not offered.
+Under **Connection**, enter the **Server address** (for example `http://127.0.0.1:13305`) and an **API key** only if your server needs one, then press **Probe**. Under **Models on the server**, **Install** downloads a model onto the server and **Remove** deletes it. Then choose the **Model**. The download carries on if you close Settings. Lemonade keeps one image model loaded, so the first picture after switching waits for it to load. It does not make tiling textures.
+
+### Set up llama-toolchest
+
+If your chat model comes from a toolchest, its address and key are filled in; otherwise enter the **Server address** and an **API key** from Settings → Inference → API Keys. Choose one of its image instances as the **Model**; you start instances in llama-toolchest. It does not make tiling textures.
 
 ## Pick a model and check its licence
 
@@ -41,13 +46,13 @@ Under **Connection**, enter the **Server address** (for example `http://127.0.0.
 | Ming-Image 0.1 Design (default) | MIT                   | Allowed         | ~8 GB VRAM, ~10 GB free RAM |
 | Qwen-Image 2.1 Turbo            | Qwen Research License | **Not allowed** | ~12 GB VRAM                 |
 
-If you downloaded the original Qwen-Image 2.1 before, its row offers **Download** again for Turbo, which is about three times faster. In ComfyUI, an original Qwen-Image 2.1 model keeps working.
+An earlier Qwen-Image 2.1 download is offered again as Turbo, about three times faster; in ComfyUI the original keeps working.
 
-Settings → Image marks Qwen-Image "Not licensed for commercial use." and asks before downloading or installing it. When a non-commercial model is in use, the assistant is told, so it can tell you. Generated images are generally not copyrightable on their own, and some stores require AI-made content to be disclosed.
+Settings → Image marks Qwen-Image "Not licensed for commercial use." and asks before downloading or installing it. When a non-commercial model is in use, the assistant is told, so it can tell you. Some stores require AI-made content to be disclosed.
 
 ## Draw a picture in Chat
 
-With a backend set up, ask Chat to draw, paint or illustrate something. A picture takes from about 30 seconds to a few minutes. It appears in the answer and is kept with the conversation; click it to see it full size. If the model forgets to place it, it is shown under the answer. You can ask for a shape other than square, or a transparent background for an object on its own. A chat model that can see images is shown the picture, so you can ask what it thinks of it.
+Ask Chat to draw, paint or illustrate something. A picture takes from about 30 seconds to a few minutes. It appears in the answer and is kept with the conversation; click it for full size. If the model forgets to place it, it is shown under the answer. You can ask for a shape other than square, or a transparent background for an object on its own. A chat model that can see images is shown the picture, so you can ask what it thinks of it.
 
 ## Make art for a project
 
@@ -61,8 +66,8 @@ The **Asset generation** job draws all of a project's sprites, icons and tiling 
 
 ## What it costs your computer
 
-Image generation uses your GPU heavily. The bundled engine holds most of a 16 GB card while it runs, so other GPU work, your chat model and games included, slows down or may not fit. Stop the engine in Settings → Image when you are done.
+Image generation uses your GPU heavily. The bundled engine holds most of a 16 GB card while it runs, so your chat model and games may slow down or not fit. Stop it in Settings → Image when you are done.
 
 ## What has been tested
 
-The asset job has been run end to end on Linux with an AMD GPU; drawing in Chat and art for a project are so far covered only by automated tests. It passes its tests on macOS and Windows, but nobody has generated images there yet. If something fails, see the `troubleshooting` page.
+The asset job has been run end to end on Linux with an AMD GPU; drawing in Chat and art for a project only by automated tests, which also pass on macOS and Windows. If something fails, see the `troubleshooting` page.

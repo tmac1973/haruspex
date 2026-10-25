@@ -754,6 +754,15 @@ export interface AppSettings {
 	/** The bundled engine's catalogue id it runs, installed on the server. */
 	imageLemonadeModelId: string;
 	/**
+	 * A llama-toolchest server's image instances. The key is a named key from
+	 * Settings → Inference → API Keys (often the one its chat models use),
+	 * so it has no secret of its own; the model is an instance id from its
+	 * `/v1/models`.
+	 */
+	imageToolchestBaseUrl: string;
+	imageToolchestApiKeyId: string | null;
+	imageToolchestModelId: string;
+	/**
 	 * Max agent-loop iterations (model calls) for a Code-mode turn before it's
 	 * forced to wrap up. Coding tasks chain many tool calls (grep → read → edit
 	 * → test → fix), so this is higher than chat/shell. Raise it for big tasks;
@@ -978,7 +987,10 @@ const defaults: AppSettings = {
 	imageLemonadeBaseUrl: '',
 	imageLemonadeApiKey: '',
 	imageLemonadeApiKeySaved: false,
-	imageLemonadeModelId: ''
+	imageLemonadeModelId: '',
+	imageToolchestBaseUrl: '',
+	imageToolchestApiKeyId: null,
+	imageToolchestModelId: ''
 };
 
 function load(): AppSettings {

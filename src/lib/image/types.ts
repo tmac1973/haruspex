@@ -14,7 +14,7 @@
  */
 
 /** Which backend implementation a request is served by. */
-export type ImageBackendKind = 'none' | 'comfyui' | 'local' | 'lemonade';
+export type ImageBackendKind = 'none' | 'comfyui' | 'local' | 'lemonade' | 'llama-toolchest';
 
 /** Sampler settings, named because the anchor recipe has to store them. */
 export interface SamplerSettings {
@@ -100,6 +100,8 @@ export interface ImageResult {
 export interface ImageProgress {
 	/** `loading`: the backend is loading model weights before it can draw. */
 	phase: 'queued' | 'loading' | 'running' | 'downloading';
+	/** While queued, the jobs ahead of this one, when the backend says. */
+	ahead?: number;
 	step?: number;
 	totalSteps?: number;
 	detail?: string;

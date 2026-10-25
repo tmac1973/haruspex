@@ -357,6 +357,8 @@ export const IPC = {
 	texture_transition_render: 'texture_transition_render',
 	texture_transition_validate: 'texture_transition_validate',
 	texture_validate: 'texture_validate',
+	toolchest_bytes: 'toolchest_bytes',
+	toolchest_json: 'toolchest_json',
 	transcribe_audio: 'transcribe_audio',
 	tts_initialize: 'tts_initialize',
 	tts_is_initialized: 'tts_is_initialized',

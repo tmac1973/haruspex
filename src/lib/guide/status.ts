@@ -36,7 +36,9 @@ const OVERRIDE: Record<string, string> = {
 const IMAGE: Record<string, string> = {
 	none: 'off',
 	comfyui: 'on, through a ComfyUI server',
-	local: 'on, with the bundled engine'
+	local: 'on, with the bundled engine',
+	lemonade: 'on, through a Lemonade server',
+	'llama-toolchest': 'on, through a llama-toolchest server'
 };
 
 const onOff = (on: boolean) => (on ? 'on' : 'off');

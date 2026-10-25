@@ -14,6 +14,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { getSettings } from '#lib/stores/settings.ts';
+import { toolchestFamily } from '#lib/image/toolchest/backend.ts';
 import type { AssetSpec } from '#lib/assets/spec/types.ts';
 import { MAX_GENERATION_EDGE } from '#lib/agent/jobs/types/asset-generation/config.ts';
 
@@ -39,7 +40,11 @@ export async function nativeEdgeFor(specModel: string | undefined): Promise<numb
 	// default is what it falls back to. Same precedence the request uses.
 	const name = (specModel ?? '').trim() || (s.imageComfyCheckpoint ?? '').trim();
 	const id = (
-		(s.imageBackendKind === 'lemonade' ? s.imageLemonadeModelId : s.imageLocalModelId) ?? ''
+		s.imageBackendKind === 'lemonade'
+			? s.imageLemonadeModelId
+			: s.imageBackendKind === 'llama-toolchest'
+				? (toolchestFamily() ?? '')
+				: s.imageLocalModelId
 	).trim();
 
 	try {

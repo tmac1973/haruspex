@@ -6,6 +6,6 @@
  */
 export type ComfyCall = { base_url: string, api_key: string, 
 /**
- * `GET` or `POST`.
+ * `GET`, `POST` or `DELETE`.
  */
 method: string, path: string, body: unknown, timeout_ms: bigint, id: string | null, };

@@ -6,6 +6,7 @@ describe('describeImageProgress', () => {
 		expect(describeImageProgress(null, 0)).toBe('Drawing… 0 s');
 		expect(describeImageProgress({ phase: 'loading' }, 31)).toBe('Loading the model… 31 s');
 		expect(describeImageProgress({ phase: 'queued' }, 2)).toBe('Queued… 2 s');
+		expect(describeImageProgress({ phase: 'queued', ahead: 3 }, 2)).toBe('Queued (3 ahead)… 2 s');
 	});
 
 	it('prefers steps, then the backend detail, over the phase name', () => {

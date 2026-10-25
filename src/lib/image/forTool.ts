@@ -16,6 +16,7 @@ import { errMessage } from '#lib/utils/error.ts';
 import { ImageBackendError, type ImageProgress, type ImageRequest } from '#lib/image/types.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { familyOf } from '#lib/image/comfyui/families.ts';
+import { toolchestInstance } from '#lib/image/toolchest/backend.ts';
 
 export interface ToolImage {
 	bytes: Uint8Array;
@@ -45,6 +46,8 @@ export function nonCommercialModel(): boolean {
 	const s = getSettings();
 	if (s.imageBackendKind === 'local') return s.imageLocalModelId === 'qwen21';
 	if (s.imageBackendKind === 'lemonade') return s.imageLemonadeModelId === 'qwen21';
+	// As the last probe or generation saw it; an unknown recipe isn't flagged.
+	if (s.imageBackendKind === 'llama-toolchest') return toolchestInstance()?.commercialUse === false;
 	if (s.imageBackendKind === 'comfyui') {
 		const family = familyOf(s.imageComfyCheckpoint ?? '');
 		return family === 'qwen21' || family === 'qwen21_turbo';

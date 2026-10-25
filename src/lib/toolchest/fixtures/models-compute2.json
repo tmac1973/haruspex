@@ -1,0 +1,57 @@
+{
+	"data": [
+		{
+			"created": 1792899351,
+			"id": "unsloth-Qwen3.6-35B-A3B.UD_IQ4_NL",
+			"meta": {
+				"arch": "qwen35moe",
+				"capabilities": ["chat", "tools", "vision"],
+				"context_per_request": 262144,
+				"context_shared": true,
+				"context_size": 262144,
+				"kind": "text",
+				"n_ctx_train": 262144,
+				"n_embd": 2048,
+				"n_layers": 40,
+				"parallel": 4,
+				"quant": "UD_IQ4_NL",
+				"size": 19500506080
+			},
+			"object": "model",
+			"owned_by": "llama-toolchest"
+		},
+		{
+			"created": 1792888184,
+			"id": "ace-gpu2",
+			"meta": {
+				"api": ["music.jobs", "music.ace_step"],
+				"capabilities": [],
+				"gpu": 2,
+				"kind": "music",
+				"model_set": "ace-step-turbo",
+				"recipe": "",
+				"reserved_mib": 7680,
+				"state": "running"
+			},
+			"object": "model",
+			"owned_by": "llama-toolchest"
+		},
+		{
+			"created": 1792888184,
+			"id": "ming-gpu1",
+			"meta": {
+				"api": ["images.sync", "images.jobs"],
+				"capabilities": ["alpha"],
+				"gpu": 1,
+				"kind": "image",
+				"model_set": "ming-image",
+				"recipe": "ming-image",
+				"reserved_mib": 10752,
+				"state": "running"
+			},
+			"object": "model",
+			"owned_by": "llama-toolchest"
+		}
+	],
+	"object": "list"
+}

@@ -174,6 +174,7 @@ function configuredModelName(): string {
 	if (s.imageBackendKind === 'comfyui') return s.imageComfyCheckpoint.trim();
 	if (s.imageBackendKind === 'local') return (s.imageLocalModelId || s.imageLocalModelPath).trim();
 	if (s.imageBackendKind === 'lemonade') return s.imageLemonadeModelId.trim();
+	if (s.imageBackendKind === 'llama-toolchest') return s.imageToolchestModelId.trim();
 	return '';
 }
 
