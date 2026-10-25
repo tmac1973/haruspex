@@ -16,8 +16,10 @@ import {
 	MusicBackendError,
 	type MusicGenerateOptions,
 	type MusicRequest,
-	type MusicResult
+	type MusicResult,
+	type MusicTask
 } from '#lib/music/types.ts';
+import { knownTasks, uploadsOf } from '#lib/music/tasks.ts';
 import {
 	parseGenerationModels,
 	toolchestKeyFor,
@@ -27,6 +29,7 @@ import {
 	ToolchestError,
 	hostOf,
 	toolchestJson,
+	toolchestUpload,
 	type ToolchestConfig
 } from '#lib/toolchest/client.ts';
 import { followJob } from '#lib/toolchest/jobs.ts';
@@ -125,12 +128,12 @@ async function run(
 	opts: MusicGenerateOptions
 ): Promise<MusicResult> {
 	const instance = await readyInstance(cfg, opts.signal);
+	const body = buildJobBody(req, instance.id);
+	const files = uploadsOf(req);
 	const created = readMusicJob(
-		await toolchestJson(
-			cfg,
-			{ method: 'POST', path: ROUTES.jobs, body: buildJobBody(req, instance.id) },
-			opts.signal
-		)
+		files.length
+			? await toolchestUpload(cfg, { path: ROUTES.jobs, body }, files, opts.signal)
+			: await toolchestJson(cfg, { method: 'POST', path: ROUTES.jobs, body }, opts.signal)
 	);
 	if (!created) throw new MusicBackendError('rejected', 'llama-toolchest made no job.');
 	const job = await followJob(cfg, created, ROUTES.job, readMusicJob, {
@@ -195,6 +198,15 @@ export const toolchestMusicBackend: MusicBackend = {
 			};
 		}
 		return { ok: true, detail: `Connected — ${chosen.id} on ${host}.`, models };
+	},
+
+	async tasks(): Promise<MusicTask[]> {
+		const cfg = await config();
+		try {
+			return knownTasks((await readyInstance(cfg)).tasks);
+		} catch (e) {
+			throw asMusicError(e);
+		}
 	},
 
 	async generate(req: MusicRequest, opts: MusicGenerateOptions = {}): Promise<MusicResult> {

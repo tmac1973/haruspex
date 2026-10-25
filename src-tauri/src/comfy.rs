@@ -72,16 +72,30 @@ impl std::fmt::Debug for ComfyCall {
 #[ts(export)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ComfyError {
-    Unreachable { message: String },
-    Timeout { message: String },
-    Rejected { status: u16, body: String },
+    Unreachable {
+        message: String,
+    },
+    Timeout {
+        message: String,
+    },
+    Rejected {
+        status: u16,
+        body: String,
+    },
     Cancelled,
+    /// Refused before anything was sent, such as an upload whose song is
+    /// gone from the cache.
+    Invalid {
+        message: String,
+    },
 }
 
 impl std::fmt::Display for ComfyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Unreachable { message } | Self::Timeout { message } => f.write_str(message),
+            Self::Unreachable { message }
+            | Self::Timeout { message }
+            | Self::Invalid { message } => f.write_str(message),
             Self::Rejected { status, body } => {
                 write!(
                     f,
@@ -173,8 +187,74 @@ async fn effective_api_key(given: &str, secret: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Make the call and return the body's bytes, or why not.
-async fn send(call: &ComfyCall, to: ImageServer) -> Result<Vec<u8>, ComfyError> {
+/// One file of a multipart upload, as sent: a song for ace-server's `/synth`
+/// or llama-toolchest's music jobs.
+#[derive(Clone)]
+pub(crate) struct FilePart {
+    pub field: String,
+    pub filename: String,
+    pub bytes: Vec<u8>,
+}
+
+/// One file of an upload, as the webview names it: a song in the audio cache
+/// by `hash`, or the `bytes` of a file it read from the working folder.
+#[derive(Deserialize, ts_rs::TS)]
+#[ts(export)]
+pub struct UploadFile {
+    /// The form field, such as `audio` or `ref_audio`.
+    pub field: String,
+    pub filename: String,
+    pub hash: Option<String>,
+    pub bytes: Option<Vec<u8>>,
+}
+
+/// The files to send, read from the audio cache where they are named by hash.
+pub(crate) fn resolve_uploads(
+    db: &crate::db::Database,
+    dir: &std::path::Path,
+    files: Vec<UploadFile>,
+) -> Result<Vec<FilePart>, ComfyError> {
+    files
+        .into_iter()
+        .map(|f| {
+            let bytes = match (f.hash, f.bytes) {
+                (Some(hash), _) => crate::audio_cache::commands::read_bytes(db, dir, &hash)
+                    .map_err(|_| ComfyError::Invalid {
+                        message: "That song is no longer in the audio cache.".into(),
+                    })?,
+                (None, Some(bytes)) => bytes,
+                (None, None) => {
+                    return Err(ComfyError::Invalid {
+                        message: format!("No file was given for {}.", f.field),
+                    })
+                }
+            };
+            if bytes.is_empty() || bytes.len() as u64 > crate::audio_cache::MAX_AUDIO_BYTES {
+                return Err(ComfyError::Invalid {
+                    message: format!(
+                        "{} is empty or over {} MB.",
+                        f.filename,
+                        crate::audio_cache::MAX_AUDIO_BYTES >> 20
+                    ),
+                });
+            }
+            Ok(FilePart {
+                field: f.field,
+                filename: f.filename,
+                bytes,
+            })
+        })
+        .collect()
+}
+
+/// Make the call and return the body's bytes, or why not. With `files` it is
+/// multipart: the body in a `request` part and each file in its own, the
+/// shape ace-server's `/synth` and llama-toolchest's music jobs take.
+async fn send(
+    call: &ComfyCall,
+    to: ImageServer,
+    files: &[FilePart],
+) -> Result<Vec<u8>, ComfyError> {
     let url = format!("{}{}", base(&call.base_url), call.path);
     let mut req = match call.method.as_str() {
         "POST" => client().post(&url),
@@ -186,7 +266,19 @@ async fn send(call: &ComfyCall, to: ImageServer) -> Result<Vec<u8>, ComfyError> 
     if !key.is_empty() {
         req = req.bearer_auth(key);
     }
-    if let Some(body) = &call.body {
+    if !files.is_empty() {
+        let json = call
+            .body
+            .as_ref()
+            .map_or_else(|| "{}".into(), |b| b.to_string());
+        let mut form = reqwest::multipart::Form::new().text("request", json);
+        for f in files {
+            let part =
+                reqwest::multipart::Part::bytes(f.bytes.clone()).file_name(f.filename.clone());
+            form = form.part(f.field.clone(), part);
+        }
+        req = req.multipart(form);
+    } else if let Some(body) = &call.body {
         req = req.json(body);
     }
     let timeout = Duration::from_millis(call.timeout_ms);
@@ -283,16 +375,24 @@ fn call_line(call: &ComfyCall, out: &Result<Vec<u8>, ComfyError>, elapsed: Durat
 }
 
 /// Run `call` as a task registered under its id, so [`comfy_cancel`] can stop it.
-async fn cancellable(call: ComfyCall, to: ImageServer) -> Result<Vec<u8>, ComfyError> {
+async fn cancellable(
+    call: ComfyCall,
+    to: ImageServer,
+    files: Vec<FilePart>,
+) -> Result<Vec<u8>, ComfyError> {
     let started = std::time::Instant::now();
-    let out = cancellable_unlogged(call.clone(), to).await;
+    let out = cancellable_unlogged(call.clone(), to, files).await;
     log_line(call_line(&call, &out, started.elapsed())).await;
     out
 }
 
-async fn cancellable_unlogged(call: ComfyCall, to: ImageServer) -> Result<Vec<u8>, ComfyError> {
+async fn cancellable_unlogged(
+    call: ComfyCall,
+    to: ImageServer,
+    files: Vec<FilePart>,
+) -> Result<Vec<u8>, ComfyError> {
     let id = call.id.clone();
-    let task = tokio::spawn(async move { send(&call, to).await });
+    let task = tokio::spawn(async move { send(&call, to, &files).await });
     if let Some(id) = &id {
         running()
             .lock_or_recover()
@@ -326,12 +426,21 @@ pub(crate) async fn json_from(
     call: ComfyCall,
     to: ImageServer,
 ) -> Result<serde_json::Value, ComfyError> {
-    cancellable(call, to).await.map(|b| as_json(&b))
+    cancellable(call, to, Vec::new()).await.map(|b| as_json(&b))
+}
+
+/// A multipart call to `to` with `files`, whose answer is JSON.
+pub(crate) async fn upload_json(
+    call: ComfyCall,
+    to: ImageServer,
+    files: Vec<FilePart>,
+) -> Result<serde_json::Value, ComfyError> {
+    cancellable(call, to, files).await.map(|b| as_json(&b))
 }
 
 /// A call to `to` whose answer is bytes, such as a finished image.
 pub(crate) async fn bytes_from(call: ComfyCall, to: ImageServer) -> Result<Response, ComfyError> {
-    cancellable(call, to).await.map(Response::new)
+    cancellable(call, to, Vec::new()).await.map(Response::new)
 }
 
 /// A call whose answer is JSON (or text, or nothing).
@@ -343,7 +452,9 @@ pub async fn comfy_json(call: ComfyCall) -> Result<serde_json::Value, ComfyError
 /// A call whose answer is bytes: `/view`.
 #[tauri::command]
 pub async fn comfy_bytes(call: ComfyCall) -> Result<Response, ComfyError> {
-    cancellable(call, COMFYUI).await.map(Response::new)
+    cancellable(call, COMFYUI, Vec::new())
+        .await
+        .map(Response::new)
 }
 
 /// Stop a call or close a socket. Unknown ids are ignored: it already ended.
@@ -571,7 +682,9 @@ mod tests {
         let url = serve(Router::new().route("/view", get(|| async { vec![0u8, 159, 255] }))).await;
         assert!(comfy_bytes(call(&url, "GET", "/view")).await.is_ok());
         assert_eq!(
-            send(&call(&url, "GET", "/view"), COMFYUI).await.unwrap(),
+            send(&call(&url, "GET", "/view"), COMFYUI, &[])
+                .await
+                .unwrap(),
             vec![0, 159, 255]
         );
     }

@@ -3,4 +3,4 @@
 /**
  * Why a call failed, in the kinds `ImageBackendError` already has.
  */
-export type ComfyError = { "kind": "unreachable", message: string, } | { "kind": "timeout", message: string, } | { "kind": "rejected", status: number, body: string, } | { "kind": "cancelled" };
+export type ComfyError = { "kind": "unreachable", message: string, } | { "kind": "timeout", message: string, } | { "kind": "rejected", status: number, body: string, } | { "kind": "cancelled" } | { "kind": "invalid", message: string, };

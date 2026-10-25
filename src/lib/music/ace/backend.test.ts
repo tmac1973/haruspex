@@ -33,14 +33,17 @@ function use(answers: Record<string, Answer>) {
 		invokeRouter({
 			comfy_cancel: null,
 			audio_store_url: { hash: HASH, mime: 'audio/mpeg', bytes: 1024 },
-			ace_json: (args) => {
-				const call = (args as { call: Call }).call;
-				const a = answers[`${call.method} ${call.path}`];
-				if (a === undefined) throw { kind: 'rejected', status: 404, body: '{"error":"nope"}' };
-				return typeof a === 'function' ? (a as (c: Call) => unknown)(call) : a;
-			}
+			ace_json: (args) => answer(answers, args),
+			ace_upload: (args) => answer(answers, args)
 		})
 	);
+}
+
+function answer(answers: Record<string, Answer>, args: unknown) {
+	const call = (args as { call: Call }).call;
+	const a = answers[`${call.method} ${call.path}`];
+	if (a === undefined) throw { kind: 'rejected', status: 404, body: '{"error":"nope"}' };
+	return typeof a === 'function' ? (a as (c: Call) => unknown)(call) : a;
 }
 
 /** A server that composes as `lm`, then synthesizes as `syn`, each running once. */
@@ -176,5 +179,49 @@ describe('ace-server music backend', () => {
 		expect((await aceMusicBackend.probe()).detail).toBe("Can't reach box:8083.");
 		settings.musicAceBaseUrl = ' ';
 		expect((await aceMusicBackend.probe()).detail).toBe('No server address — Settings → Music.');
+	});
+
+	it('sends a task on a song straight to /synth with the song, skipping composing', async () => {
+		const seen: MusicProgress[] = [];
+		const result = await aceMusicBackend.generate(
+			{
+				...request,
+				task: 'repaint',
+				repaintStart: 30,
+				repaintEnd: 50,
+				durationSec: 50,
+				source: { name: 'song.mp3', hash: 'a'.repeat(64) },
+				reference: { name: 'voice.wav', bytes: [1, 2] }
+			},
+			{ onProgress: (p) => seen.push(p) }
+		);
+		expect(sent('POST', '/lm')).toBeUndefined();
+		expect([...new Set(seen.map((p) => p.phase))]).toEqual(['synthesizing', 'saving']);
+		const [, args] = tauri.invoke.mock.calls.find(([c]) => c === 'ace_upload')!;
+		expect(args.call).toMatchObject({ method: 'POST', path: '/synth' });
+		expect(args.call.body).toEqual({
+			caption: 'lo-fi, rain',
+			lyrics: '[Instrumental]',
+			seed: 42,
+			output_format: 'wav16',
+			task_type: 'repaint',
+			repainting_start: 30,
+			repainting_end: 50
+		});
+		expect(args.files.map((f: { field: string }) => f.field)).toEqual(['audio', 'ref_audio']);
+		expect(result).toMatchObject({ durationSec: 50, seed: 42 });
+	});
+
+	it('runs every task on an SFT or base model, and no stem tasks on turbo', async () => {
+		expect(await aceMusicBackend.tasks()).toEqual([
+			'text2music',
+			'cover',
+			'repaint',
+			'lego',
+			'extract',
+			'complete'
+		]);
+		settings.musicAceModel = 'acestep-v15-turbo-Q8_0.gguf';
+		expect(await aceMusicBackend.tasks()).toEqual(['text2music', 'cover', 'repaint']);
 	});
 });

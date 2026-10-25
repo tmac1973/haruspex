@@ -32,6 +32,7 @@ import {
 import { resolveMusicBackend, MusicBackendError, type MusicRequest } from '#lib/music/index.ts';
 import type { MusicProgress, MusicResult } from '#lib/music/types.ts';
 import { describeMusicProgress } from '#lib/music/progress.ts';
+import { resolveSong } from '#lib/agent/tools/_musicSource.ts';
 
 export const MIN_SECONDS = 5;
 export const MAX_SECONDS = 240;
@@ -127,7 +128,8 @@ function summary(made: MusicResult, title: string): string {
 	return `Made "${title}" (${facts.join(', ')}).`;
 }
 
-async function run(args: MusicArgs, ctx: ToolContext): Promise<ToolExecOutput> {
+/** Make the song `args` asks for and answer with its player line; `edit_music` shares it. */
+export async function runMusic(args: MusicArgs, ctx: ToolContext): Promise<ToolExecOutput> {
 	let target: SaveTarget | null = null;
 	if (args.path) {
 		const settled = await prepareSave(args.path, args.overwrite, ctx, 'generate_music');
@@ -215,7 +217,13 @@ registerTool({
 						type: 'string',
 						description: 'Also save it here, in the working folder, ending .mp3 or .wav.'
 					},
-					overwrite: { type: 'boolean', description: 'Replace an existing file. Default false.' }
+					overwrite: { type: 'boolean', description: 'Replace an existing file. Default false.' },
+					style_reference: {
+						type: 'string',
+						description:
+							'A song whose sound (voice, timbre) to borrow: a haruspex-audio:// URL from this ' +
+							'conversation, or an audio file in the working folder.'
+					}
 				},
 				required: ['caption']
 			}
@@ -225,6 +233,11 @@ registerTool({
 	execute: async (args, ctx) => {
 		const parsed = parseMusicArgs(args, getSettings().musicDefaultDurationSec);
 		if (typeof parsed === 'string') return toolResult(toolError(parsed));
-		return run(parsed, ctx);
+		if (str(args.style_reference)) {
+			const ref = await resolveSong(str(args.style_reference), 'style_reference', ctx);
+			if (typeof ref === 'string') return toolResult(toolError(ref));
+			parsed.req.reference = ref.input;
+		}
+		return runMusic(parsed, ctx);
 	}
 });

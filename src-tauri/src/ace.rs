@@ -22,3 +22,18 @@ pub(crate) const ACE_SERVER: ImageServer = ImageServer {
 pub async fn ace_json(call: ComfyCall) -> Result<serde_json::Value, ComfyError> {
     crate::comfy::json_from(call, ACE_SERVER).await
 }
+
+/// `POST /synth` with songs: multipart, the request in a `request` part and
+/// the source and timbre reference in `audio` and `ref_audio` parts.
+#[tauri::command]
+pub async fn ace_upload(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, crate::db::Database>,
+    call: ComfyCall,
+    files: Vec<crate::comfy::UploadFile>,
+) -> Result<serde_json::Value, ComfyError> {
+    let dir =
+        crate::audio_cache::cache_dir(&app).map_err(|message| ComfyError::Invalid { message })?;
+    let parts = crate::comfy::resolve_uploads(&db, &dir, files)?;
+    crate::comfy::upload_json(call, ACE_SERVER, parts).await
+}

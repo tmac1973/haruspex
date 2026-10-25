@@ -36,7 +36,7 @@ registerTool({
 					url: {
 						type: 'string',
 						description:
-							'The haruspex-img:// or haruspex-audio:// URL from generate_image or generate_music.'
+							'The haruspex-img:// or haruspex-audio:// URL from generate_image, generate_music or edit_music.'
 					},
 					path: {
 						type: 'string',

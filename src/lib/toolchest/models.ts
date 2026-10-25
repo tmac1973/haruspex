@@ -26,6 +26,8 @@ export interface ToolchestInstance {
 	state: string;
 	/** Routes this build has for it: `images.jobs`, `music.jobs`, … */
 	api: string[];
+	/** A music model's `task_type`s; empty from a build that lists none. */
+	tasks: string[];
 	licence: string;
 	/** Null when the recipe isn't one whose licence Haruspex knows. */
 	commercialUse: boolean | null;
@@ -83,6 +85,7 @@ export function parseGenerationModels(json: unknown, kind: GenerationKind): Tool
 				capabilities: strings(meta.capabilities),
 				state: str(meta.state) || 'unknown',
 				api: Array.isArray(meta.api) ? strings(meta.api) : OLD_API[kind],
+				tasks: strings(meta.tasks),
 				licence: known?.licence ?? 'unknown',
 				commercialUse: known ? known.commercial : null
 			};

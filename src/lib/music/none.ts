@@ -8,6 +8,7 @@ const NOT_CONFIGURED = 'No music backend configured — Settings → Music.';
 export const noneMusicBackend: MusicBackend = {
 	kind: 'none',
 	probe: async () => ({ ok: false, detail: NOT_CONFIGURED }),
+	tasks: async () => [],
 	generate: async () => {
 		throw new MusicBackendError('unconfigured', NOT_CONFIGURED);
 	}
