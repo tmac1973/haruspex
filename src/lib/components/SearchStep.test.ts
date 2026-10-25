@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import SearchStep from './SearchStep.svelte';
 import type { SearchStep as Step } from '#lib/agent/loop.ts';
 import type { Artifact } from '#lib/sandbox/protocol.ts';
@@ -26,7 +26,7 @@ function makeStep(artifacts: Artifact[], overrides: Partial<Step> = {}): Step {
 }
 
 describe('SearchStep artifacts', () => {
-	it('plays a generated-audio artifact on the step card, as a blob of its bytes', async () => {
+	it('plays a generated-audio artifact on the step card once it is opened', async () => {
 		URL.createObjectURL = vi.fn(() => 'blob:step-song');
 		const src = `haruspex-audio://localhost/${'a'.repeat(64)}`;
 		render(SearchStep, {
@@ -36,6 +36,9 @@ describe('SearchStep artifacts', () => {
 				})
 			]
 		});
+		// Closed, the answer's player is the one to use.
+		expect(document.querySelector('.step-artifacts audio')).toBeNull();
+		await fireEvent.click(document.querySelector('.step')!);
 		const audio = document.querySelector('.step-artifacts audio') as HTMLAudioElement;
 		expect(audio).toBeTruthy();
 		// The webview can't play the cache's scheme, so not that URL.

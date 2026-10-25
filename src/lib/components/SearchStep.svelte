@@ -338,7 +338,10 @@
 									onclick={(e) => openViewer(artifact.dataUrl, artifact.alt ?? 'plot', e)}
 								/>
 							{:else if artifact.kind === 'audio'}
-								<AudioPlayer src={artifact.src} title={artifact.title} />
+								<!-- The answer has the player; the card's is for when it doesn't. -->
+								{#if detailsExpanded[step.id]}
+									<AudioPlayer src={artifact.src} title={artifact.title} />
+								{/if}
 							{:else if artifactTooLarge(artifact.html)}
 								<!--
 								Refuse to inject an oversized artifact: parsing it in WebKitGTK
