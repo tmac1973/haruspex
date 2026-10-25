@@ -24,6 +24,7 @@ const ORDER = [
 	'jobs',
 	'memory',
 	'images',
+	'music',
 	'textures',
 	'integrations',
 	'search-and-network',

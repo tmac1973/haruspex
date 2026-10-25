@@ -11,6 +11,7 @@ import type { BackendDescriptor, EffortCaps } from '#lib/inference/descriptor.ts
 import type { EmailAccount } from '#lib/ipc/gen/EmailAccount.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import type { ImageBackendKind } from '#lib/image/types.ts';
+import type { MusicBackendKind } from '#lib/music/types.ts';
 import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
 import type { EmailProvider } from '#lib/ipc/gen/EmailProvider.ts';
 import type { ProxyConfig } from '#lib/ipc/gen/ProxyConfig.ts';
@@ -763,6 +764,17 @@ export interface AppSettings {
 	imageToolchestApiKeyId: string | null;
 	imageToolchestModelId: string;
 	/**
+	 * Which server makes music, if any. `'none'` is the shipped default, and
+	 * the `generate_music` tool is offered only off it.
+	 */
+	musicBackendKind: MusicBackendKind;
+	/** A llama-toolchest's music instances: address, named key, instance id. */
+	musicToolchestBaseUrl: string;
+	musicToolchestApiKeyId: string | null;
+	musicToolchestModelId: string;
+	/** A song's length when the request names none, in seconds (5–240). */
+	musicDefaultDurationSec: number;
+	/**
 	 * Max agent-loop iterations (model calls) for a Code-mode turn before it's
 	 * forced to wrap up. Coding tasks chain many tool calls (grep → read → edit
 	 * → test → fix), so this is higher than chat/shell. Raise it for big tasks;
@@ -990,7 +1002,12 @@ const defaults: AppSettings = {
 	imageLemonadeModelId: '',
 	imageToolchestBaseUrl: '',
 	imageToolchestApiKeyId: null,
-	imageToolchestModelId: ''
+	imageToolchestModelId: '',
+	musicBackendKind: 'none',
+	musicToolchestBaseUrl: '',
+	musicToolchestApiKeyId: null,
+	musicToolchestModelId: '',
+	musicDefaultDurationSec: 30
 };
 
 function load(): AppSettings {
