@@ -169,7 +169,7 @@ export async function resolveWritePathInteractive(
 	}
 }
 
-function userCanceledWriteError(relPath: string, command: string): ToolExecOutput {
+export function userCanceledWriteError(relPath: string, command: string): ToolExecOutput {
 	return toolResult(
 		toolError(
 			`User canceled the ${command} write. The file "${relPath}" already exists in the working directory and the user chose to stop instead of overwriting or renaming. Do NOT retry automatically — stop what you were doing, briefly explain to the user that the file already exists, and ask them how they'd like to proceed (pick a different filename, overwrite the existing file, or skip the write entirely).`

@@ -29,7 +29,7 @@ export function isCodeWriteTool(name: string): boolean {
 		name.startsWith('fs_write_') ||
 		name === 'fs_edit_text' ||
 		name === 'make_asset' ||
-		name === 'save_audio'
+		name === 'save_generated'
 	);
 }
 

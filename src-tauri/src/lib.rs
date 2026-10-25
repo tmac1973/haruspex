@@ -351,6 +351,8 @@ pub fn run() {
             image_cache::commands::image_sweep,
             image_cache::commands::image_store_bytes,
             image_cache::commands::image_rehydrate_local,
+            image_cache::commands::image_read_bytes,
+            image_cache::commands::image_save_as,
             audio_cache::commands::audio_store_url,
             audio_cache::commands::audio_rehydrate,
             audio_cache::commands::audio_cache_size,

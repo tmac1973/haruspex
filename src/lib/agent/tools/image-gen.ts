@@ -8,6 +8,10 @@
  * answer, the chat appends it (`placeGeneratedImages`), so a picture the user
  * asked for is never lost to a forgetful model.
  *
+ * With a working folder in Chat, `path` also saves the picture there, the
+ * target settled (and the user asked about an existing file) before the
+ * drawing starts; `save_generated` saves one drawn earlier.
+ *
  * A model that can see images is shown the picture too, in its next request,
  * as `make_asset` shows the Code tab's: otherwise asked what it drew, or which
  * of two it prefers, it can only make an answer up.
@@ -15,13 +19,24 @@
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
-import { toolError, toolResult } from '#lib/agent/tools/types.ts';
+import {
+	toolError,
+	toolResult,
+	type ToolContext,
+	type ToolExecOutput
+} from '#lib/agent/tools/types.ts';
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
 import { pngDataUrl } from '#lib/utils/base64.ts';
 import { generateForTool } from '#lib/image/forTool.ts';
 import { describeImageProgress } from '#lib/image/progress.ts';
 import { ImageBackendError, type ImageProgress } from '#lib/image/types.ts';
 import { registerLocalImage } from '#lib/images/resolve.svelte.ts';
+import {
+	isSaveTarget,
+	prepareSave,
+	writeSaved,
+	type SaveTarget
+} from '#lib/agent/tools/_saveGenerated.ts';
 
 const SHAPES = {
 	square: { width: 1024, height: 1024 },
@@ -46,6 +61,23 @@ function altOf(prompt: string): string {
 		.slice(0, 8)
 		.join(' ');
 	return words || 'generated image';
+}
+
+/** Where `path` saves, settled before drawing; null with no `path`. */
+async function saveTarget(
+	args: Record<string, unknown>,
+	ctx: ToolContext
+): Promise<SaveTarget | ToolExecOutput | null> {
+	const raw = typeof args.path === 'string' ? args.path.trim() : '';
+	if (!raw) return null;
+	if (!/\.png$/i.test(raw)) return toolResult(toolError('path must end in .png.'));
+	return prepareSave(raw, args.overwrite === true, ctx, 'generate_image');
+}
+
+/** The line saying where the picture was saved, or why not. */
+async function savedLine(target: SaveTarget, bytes: Uint8Array, ctx: ToolContext): Promise<string> {
+	const failed = await writeSaved(target, bytes, ctx);
+	return failed ? `It is in the chat, but ${failed}` : `Wrote ${target.path}.`;
 }
 
 registerTool({
@@ -73,6 +105,15 @@ registerTool({
 					transparent: {
 						type: 'boolean',
 						description: 'A transparent background, for an object on its own. Default false.'
+					},
+					path: {
+						type: 'string',
+						description: 'Also save it here, in the working folder, ending .png.'
+					},
+					overwrite: {
+						type: 'boolean',
+						description:
+							'Replace an existing file. Default false. In Chat the user is asked instead.'
 					}
 				},
 				required: ['prompt']
@@ -84,6 +125,8 @@ registerTool({
 		const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : '';
 		if (!prompt) return toolResult(toolError('generate_image needs a "prompt".'));
 		const { width, height } = SHAPES[shapeOf(args.shape)];
+		const save = await saveTarget(args, ctx);
+		if (save && !isSaveTarget(save)) return save;
 
 		const started = Date.now();
 		let latest: ImageProgress | null = null;
@@ -125,6 +168,7 @@ registerTool({
 		if (!url) return toolResult(toolError('The image was drawn but could not be stored.'));
 
 		const markdown = `![${altOf(prompt)}](${url})`;
+		const saved = save ? await savedLine(save, image.bytes, ctx) : null;
 		const sees = ctx.visionSupported !== false && ctx.pendingImages.length < MAX_PENDING_IMAGES;
 		if (sees) ctx.pendingImages.push({ path: url, dataUrl: pngDataUrl(image.bytes) });
 		return toolResult(
@@ -132,6 +176,7 @@ registerTool({
 				`Image ready (${image.width}×${image.height}, ${image.model}, seed ${image.seed}).`,
 				`Put ${markdown} in your answer where it belongs.`,
 				...(sees ? ['The picture is attached, so you can look at it before you answer.'] : []),
+				...(saved ? [saved] : []),
 				...image.notes
 			].join(' ')
 		);

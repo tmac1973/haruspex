@@ -120,3 +120,50 @@ describe('generate_image', () => {
 		});
 	});
 });
+
+describe('generate_image with a path', () => {
+	const params = (o: Parameters<typeof getToolSchemas>[0]) =>
+		Object.keys(
+			(
+				getToolSchemas(o).find((s) => s.function.name === 'generate_image')!.function
+					.parameters as { properties: Record<string, unknown> }
+			).properties
+		);
+
+	it('offers path only with a working folder', () => {
+		expect(params({ hasWorkingDir: false, interactive: true })).not.toContain('path');
+		expect(params({ hasWorkingDir: true, interactive: true })).toContain('path');
+	});
+
+	it('saves the picture into the working folder too', async () => {
+		state.invoke.mockImplementation(async (cmd: string) =>
+			cmd === 'fs_path_exists' ? false : cmd === 'image_store_bytes' ? HASH : null
+		);
+		const withFolder = makeToolContext({
+			interactive: true,
+			conversationId: 'chat-1',
+			workingDir: '/home/me/pics'
+		});
+		const out = await executeTool(
+			'generate_image',
+			{ prompt: 'a lighthouse', path: 'lighthouse.png' },
+			withFolder
+		);
+		expect(state.invoke).toHaveBeenCalledWith(
+			'fs_write_bytes',
+			expect.objectContaining({
+				workdir: '/home/me/pics',
+				relPath: 'lighthouse.png',
+				bytes: [1, 2]
+			})
+		);
+		expect(out.result).toContain('Wrote lighthouse.png.');
+	});
+
+	it('refuses a path that isn’t a .png, before drawing', async () => {
+		const withFolder = makeToolContext({ interactive: true, workingDir: '/home/me/pics' });
+		const out = await executeTool('generate_image', { prompt: 'x', path: 'x.jpg' }, withFolder);
+		expect(out.result).toMatch(/\.png/);
+		expect(state.generate).not.toHaveBeenCalled();
+	});
+});

@@ -9,8 +9,9 @@
  *
  * With a folder to write in (the Code tab's project, or Chat's working
  * folder) `path` also writes the file there, checked before the minutes of
- * work start, so a bad path fails at once. `save_audio` saves a song made
- * earlier.
+ * work start, so a bad path fails at once (`_saveGenerated.ts`, which in
+ * Chat asks the user before replacing a file). `save_generated` saves a song
+ * made earlier.
  */
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
@@ -22,8 +23,12 @@ import {
 	type ToolContext,
 	type ToolExecOutput
 } from '#lib/agent/tools/types.ts';
-import { assetIo, writeAsset } from '#lib/agent/tools/_assetIo.ts';
-import { ctxCwd, resolveShellPath } from '#lib/agent/tools/_helpers.ts';
+import {
+	isSaveTarget,
+	prepareSave,
+	writeSaved,
+	type SaveTarget
+} from '#lib/agent/tools/_saveGenerated.ts';
 import { resolveMusicBackend, MusicBackendError, type MusicRequest } from '#lib/music/index.ts';
 import type { MusicProgress, MusicResult } from '#lib/music/types.ts';
 import { describeMusicProgress } from '#lib/music/progress.ts';
@@ -112,39 +117,6 @@ export function parseMusicArgs(
 	};
 }
 
-/** Why a song can't be saved in this turn, or null when it can. */
-export function songSaveRefusal(ctx: ToolContext): string | null {
-	if (ctx.codeReadOnly) return "This Code session is read-only; it can't save files.";
-	if (!ctx.workingDir || ctx.shellMode) {
-		return 'There is no folder to save into. In Chat, the user picks one with the folder button.';
-	}
-	return null;
-}
-
-/** `path` resolved in the turn's folder, and checked writable; or the refusal. */
-export async function songTarget(
-	rawPath: string,
-	overwrite: boolean,
-	ctx: ToolContext
-): Promise<{ path: string } | { refusal: string }> {
-	const refusal = songSaveRefusal(ctx);
-	if (refusal) return { refusal };
-	const path = resolveShellPath(rawPath, ctxCwd(ctx));
-	const unwritable = await writeAsset(path, new Uint8Array(), overwrite, true, assetIo(ctx));
-	return unwritable ? { refusal: unwritable } : { path };
-}
-
-/** Write a cached song to `path`; the refusal, or null. */
-export async function writeSong(
-	hash: string,
-	path: string,
-	overwrite: boolean,
-	ctx: ToolContext
-): Promise<string | null> {
-	const bytes = new Uint8Array(await invoke<ArrayBuffer>('audio_read_bytes', { hash }));
-	return writeAsset(path, bytes, overwrite, false, assetIo(ctx));
-}
-
 function summary(made: MusicResult, title: string): string {
 	const facts = [
 		`${Math.round(made.durationSec)} s`,
@@ -156,11 +128,11 @@ function summary(made: MusicResult, title: string): string {
 }
 
 async function run(args: MusicArgs, ctx: ToolContext): Promise<ToolExecOutput> {
-	let path = '';
+	let target: SaveTarget | null = null;
 	if (args.path) {
-		const target = await songTarget(args.path, args.overwrite, ctx);
-		if ('refusal' in target) return toolResult(toolError(target.refusal));
-		path = target.path;
+		const settled = await prepareSave(args.path, args.overwrite, ctx, 'generate_music');
+		if (!isSaveTarget(settled)) return settled;
+		target = settled;
 	}
 
 	const started = Date.now();
@@ -192,9 +164,12 @@ async function run(args: MusicArgs, ctx: ToolContext): Promise<ToolExecOutput> {
 
 	const title = args.req.title;
 	const lines = [summary(made, title), `Put ![${title}](${made.url}) in your answer.`];
-	if (path) {
-		const failed = await writeSong(made.hash, path, args.overwrite, ctx);
-		lines.push(failed ? `It is in the chat, but ${failed}` : `Wrote ${path}.`);
+	if (target) {
+		const bytes = new Uint8Array(
+			await invoke<ArrayBuffer>('audio_read_bytes', { hash: made.hash })
+		);
+		const failed = await writeSaved(target, bytes, ctx);
+		lines.push(failed ? `It is in the chat, but ${failed}` : `Wrote ${target.path}.`);
 	}
 	return {
 		result: [...lines, ...args.notes].join(' '),

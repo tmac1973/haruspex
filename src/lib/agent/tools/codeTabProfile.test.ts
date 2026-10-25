@@ -38,8 +38,8 @@ function runCommand(codeMode: boolean, shellMode: boolean) {
 
 describe('tool profiles over (codeMode, shellMode)', () => {
 	it('(code, no shell) — the Code tab: code tools plus its own, no terminal tools', () => {
-		// save_audio too: the Code tab saves songs into the project.
-		expect(names(true, false)).toEqual([...CODE_TOOLS, ...CODE_TAB_ONLY, 'save_audio'].sort());
+		// save_generated too: the Code tab saves pictures and songs into the project.
+		expect(names(true, false)).toEqual([...CODE_TOOLS, ...CODE_TAB_ONLY, 'save_generated'].sort());
 	});
 
 	it('(code, shell) — Shell Code mode: code tools plus the terminal tools, none of the tab’s', () => {

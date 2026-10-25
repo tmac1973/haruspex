@@ -281,6 +281,39 @@ pub fn rehydrate_local(
     Ok(rows)
 }
 
+/// One cached picture's bytes, for a tool saving it into a folder
+/// (`save_generated`, `generate_image` with a `path`). As a raw response, not
+/// a number array.
+#[tauri::command]
+pub async fn image_read_bytes(
+    app: AppHandle,
+    db: State<'_, Database>,
+    hash: String,
+) -> Result<tauri::ipc::Response, String> {
+    read_cached(&db, &cache_dir(&app)?, &hash).map(tauri::ipc::Response::new)
+}
+
+/// A cached picture's bytes by hash, or why not.
+pub fn read_cached(db: &Database, dir: &std::path::Path, hash: &str) -> Result<Vec<u8>, String> {
+    if !super::is_valid_hash(hash) || db.image_by_hash(hash)?.is_none() {
+        return Err("Image not found".into());
+    }
+    std::fs::read(super::image_path(dir, hash)).map_err(|_| "Image not found".to_string())
+}
+
+/// Copy a cached picture to `path`, the file the user chose in the image
+/// viewer's Save as dialog (which asked about replacing a file already).
+#[tauri::command]
+pub async fn image_save_as(
+    app: AppHandle,
+    db: State<'_, Database>,
+    hash: String,
+    path: String,
+) -> Result<(), String> {
+    let bytes = read_cached(&db, &cache_dir(&app)?, &hash)?;
+    std::fs::write(&path, bytes).map_err(|e| format!("Could not save the picture to {path}: {e}"))
+}
+
 /// The guards on [`image_store_bytes`], split out because the command itself
 /// needs an `AppHandle` and a `Database` and so cannot be unit tested.
 ///
@@ -347,6 +380,22 @@ mod generated_tests {
         let db = Database::open_in_memory();
         db.create_conversation("chat-1", "Chat").unwrap();
         (db, temp_dir(name))
+    }
+
+    #[test]
+    fn cached_bytes_read_back_and_unknown_hashes_do_not() {
+        let (db, dir) = setup("read-cached");
+        let hash =
+            store_generated(&db, &dir, &png(), "image/png".into(), 4, 4, Some("chat-1")).unwrap();
+        assert_eq!(read_cached(&db, &dir, &hash).unwrap(), png());
+        assert_eq!(
+            read_cached(&db, &dir, &"f".repeat(64)).unwrap_err(),
+            "Image not found"
+        );
+        assert_eq!(
+            read_cached(&db, &dir, "../x").unwrap_err(),
+            "Image not found"
+        );
     }
 
     #[test]
