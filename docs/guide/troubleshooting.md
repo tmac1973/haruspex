@@ -5,13 +5,13 @@ description: Known issues and fixes: small-model limits, cut-off answers, comman
 
 # Troubleshooting
 
-Common problems, what causes them, and what to try. If none of this helps, report a bug (see the end of this page).
+Common problems and what to try. If none of this helps, report a bug (see the last section).
 
 ## The model did only half of what I asked
 
-Small local models (Qwen 3.5 4B and 9B) often do only the first part of a two-part request. Ask "research X and make a PDF report" and you may get a good answer in the chat but no file. Sometimes the model even says it made a file that does not exist.
+Small local models (Qwen 3.5 4B and 9B) often do only the first part of a two-part request. Ask "research X and make a PDF report" and you may get a good answer in the chat but no file. It may even claim a file that does not exist.
 
-**What to do:** ask again, as a separate message: "write that to a PDF". The second request almost always works, because the content is already in the conversation. For big tasks, ask one step at a time. Larger models rarely have this problem.
+**What to do:** ask again, as a separate message: "write that to a PDF". It almost always works, as the content is already in the conversation. For big tasks, ask one step at a time. Larger models rarely have this problem.
 
 ## Coding features make mistakes or get stuck
 
@@ -32,7 +32,7 @@ If instead it says the model's tool call "could not be run", the reply was not c
 
 ## It ran a command without asking me
 
-The Shell assistant is read-only by default and runs nothing. With **Full access**, it runs commands in your real terminal. Commands it flags as risky (sudo, destructive deletes, piping a download into a shell and similar) stop and ask you first. Commands it thinks are safe run without asking. The check helps, but it is not a guarantee.
+The Shell assistant is read-only by default and runs nothing. With **Full access**, it runs commands in your real terminal. Commands it flags as risky (sudo, destructive deletes, piping a download into a shell and similar) stop and ask you first. Commands it thinks are safe run without asking. The check helps but is no guarantee.
 
 If even risky commands ran without a prompt, check Settings → Code → Auto-approve commands. It is off by default; turn it off again to get the prompts back. Also check Settings → Shell → Start new shells with Full access if a tab had Full access when you did not expect it. See the `shell` page.
 
@@ -44,7 +44,7 @@ If the command really needs more, raise Settings → Shell → Memory limit (a p
 
 ## Pictures in answers are missing or wrong
 
-The picture sources are good for places, animals, landmarks and general subjects, and weak for new products and recent events. If no good picture exists, the answer comes without one. Small models sometimes pick a loosely related picture. Turning off Settings → Agent → Pictures in answers → Include images in answers stops them being added unasked.
+The picture sources are good for places, animals, landmarks and general subjects, and weak for new products and recent events. If no good picture exists, the answer comes without one. Small models may pick a loosely related one. Turn off Settings → Agent → Pictures in answers → Include images in answers to stop them being added unasked.
 
 ## Presentations with images are unreliable
 
@@ -61,6 +61,10 @@ Haruspex keeps the model in GPU memory while it runs. Close Haruspex before play
 ## The app will not open (Windows or macOS)
 
 The app is not code-signed. On Windows, click **More info → Run anyway** at the SmartScreen warning. On macOS, right-click the app the first time and choose **Open**.
+
+## Can't reach a server on my network (macOS)
+
+Turn Haruspex on in System Settings → Privacy & Security → Local Network and reopen it. If it's on but fails after an update, toggle it.
 
 ## The model server will not start
 
