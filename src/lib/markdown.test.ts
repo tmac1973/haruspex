@@ -305,6 +305,37 @@ describe('renderMarkdown image stripping', () => {
 	});
 });
 
+describe('renderMarkdown generated audio', () => {
+	const hash = '0123456789abcdef'.repeat(4);
+
+	it('turns cached audio into a native player with its title', () => {
+		const html = renderMarkdown(`Here:\n\n![Rain <lo-fi>](haruspex-audio://localhost/${hash})`);
+		expect(html).toContain('<audio');
+		expect(html).toContain('controls');
+		expect(html).toContain('preload="metadata"');
+		expect(html).toContain(hash);
+		expect(html).toContain('Rain &lt;lo-fi&gt;');
+		expect(html).not.toContain('<img');
+	});
+
+	it('reads the Windows form of the URL too', () => {
+		const html = renderMarkdown(`![song](http://haruspex-audio.localhost/${hash})`);
+		expect(html).toContain('<audio');
+	});
+
+	it('drops audio from anywhere else', () => {
+		for (const src of [
+			'https://example.com/song.mp3',
+			'song.mp3',
+			'haruspex-audio://localhost/../x'
+		]) {
+			const html = renderMarkdown(`![song](${src})`);
+			expect(html).not.toContain('<audio');
+			expect(html).not.toContain(src);
+		}
+	});
+});
+
 describe('splitShellCommands', () => {
 	it('splits a flat list of independent commands', () => {
 		expect(splitShellCommands('sudo apt update\nsudo apt upgrade -y\nreboot')).toEqual([

@@ -22,6 +22,21 @@ function makeStep(artifacts: Artifact[], overrides: Partial<Step> = {}): Step {
 }
 
 describe('SearchStep artifacts', () => {
+	it('plays a generated-audio artifact on the step card', () => {
+		const src = `haruspex-audio://localhost/${'a'.repeat(64)}`;
+		render(SearchStep, {
+			steps: [
+				makeStep([{ kind: 'audio', mime: 'audio/mpeg', src, title: 'Rain' }], {
+					toolName: 'generate_music'
+				})
+			]
+		});
+		const audio = document.querySelector('.step-artifacts audio') as HTMLAudioElement;
+		expect(audio).toBeTruthy();
+		expect(audio.getAttribute('src')).toBe(src);
+		expect(screen.getByText('Rain')).toBeTruthy();
+	});
+
 	it('sanitization regression: strips onerror/onload handlers from plain HTML artifacts', () => {
 		render(SearchStep, {
 			steps: [
