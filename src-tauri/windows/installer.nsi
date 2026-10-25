@@ -913,6 +913,11 @@ SectionEnd
 ; Upstream reads only ${MANUPRODUCTKEY}; an install made under another publisher
 ; wrote that key elsewhere, so fall back to the uninstall key's InstallLocation,
 ; which is written quoted.
+;
+; ReadRegStr sets the error flag when a value is missing, and the publisher key is
+; missing in exactly the case this exists for. PageLeaveReinstall checks ${Errors}
+; after ExecWait to tell whether the uninstaller ran, so leave the flag clear or a
+; successful uninstall is reported as "unable to uninstall".
 Function ReadPreviousInstallDir
   ReadRegStr $4 SHCTX "${MANUPRODUCTKEY}" ""
   ${If} $4 == ""
@@ -925,6 +930,7 @@ Function ReadPreviousInstallDir
     ${EndIf}
     Pop $0
   ${EndIf}
+  ClearErrors
 FunctionEnd
 
 Function RestorePreviousInstallLocation
