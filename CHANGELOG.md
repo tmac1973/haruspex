@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.12](https://github.com/tmac1973/haruspex/compare/v0.2.11...v0.2.12) (2026-10-25)
+
+
+### Features
+
+* **audio:** save songs from Chat, and a Save as button on the player ([#648](https://github.com/tmac1973/haruspex/issues/648)) ([3f5376d](https://github.com/tmac1973/haruspex/commit/3f5376dfa33d3e06f142b855f50c58b2dc599a2a)), closes [#638](https://github.com/tmac1973/haruspex/issues/638)
+* **images:** save generated pictures and songs from Chat, through the overwrite prompt ([#653](https://github.com/tmac1973/haruspex/issues/653)) ([49a1c9a](https://github.com/tmac1973/haruspex/commit/49a1c9aeb569e1746961e228b4c2084b94758e61)), closes [#638](https://github.com/tmac1973/haruspex/issues/638)
+* **music:** connect to acestep.cpp's ace-server directly ([#654](https://github.com/tmac1973/haruspex/issues/654)) ([81b4016](https://github.com/tmac1973/haruspex/commit/81b401603606a6655c0935b1e1ff23b1b3b7a296))
+
+
+### Bug Fixes
+
+* **guest-chat:** accept a link address so a VPN name opens the page ([#655](https://github.com/tmac1973/haruspex/issues/655)) ([3d92788](https://github.com/tmac1973/haruspex/commit/3d92788a35b4118ae14c1749a9ba84609b232077))
+* **installer:** don't report a successful uninstall as failed when upgrading on Windows ([#652](https://github.com/tmac1973/haruspex/issues/652)) ([bc108ab](https://github.com/tmac1973/haruspex/commit/bc108aba88a8c49632922d554b4076397a7b1648))
+* **installer:** find an install made under the old publisher when upgrading on Windows ([#649](https://github.com/tmac1973/haruspex/issues/649)) ([b393d74](https://github.com/tmac1973/haruspex/commit/b393d74162519bf2efd306509b966a59ebc477db))
+* **macos:** reach servers on the local network from the bundled app ([#651](https://github.com/tmac1973/haruspex/issues/651)) ([36b3d37](https://github.com/tmac1973/haruspex/commit/36b3d37cdaf3987d10db823ea1b1962be31ba297))
+
 ## [0.2.11](https://github.com/tmac1973/haruspex/compare/v0.2.10...v0.2.11) (2026-10-25)
 
 
