@@ -5,11 +5,11 @@ description: What each Settings section holds, its most-used options with their 
 
 # Settings reference
 
-Settings has fifteen sections, down the left side. Each gives its main options, their defaults and the page with more.
+Settings has sixteen sections, down the left side. Each gives its main options, their defaults and the page with more.
 
 ## Open Settings
 
-Click the gear at the right of the header; click it again, or **← Back**, to close it. There is no shortcut for it. Settings remembers the last section you opened.
+Click the gear at the right of the header; click it again, or **← Back**, to close it. It reopens on the last section you used.
 
 ## General
 
@@ -29,8 +29,8 @@ Where the model runs, which model is used and how big the context is.
 - **Models**: download and switch local models.
 - **Context Size**: 32K by default (32K to 256K).
 - **Let models use system RAM**: off.
-- **Parallel streams**: 1 (also 2 or 4). More lets a background job or Code subtasks run beside chat. Each stream needs its own memory (larger sizes may grey out), and replies slow while two run.
-- **Extra llama-server arguments**: empty. Added after Haruspex's own, so they override them. Takes effect when the server restarts.
+- **Parallel streams**: 1 (also 2 or 4). More lets a job or Code subtasks run beside chat; each needs its own memory, and replies slow while two run.
+- **Extra llama-server arguments**: empty. Added after Haruspex's own, so they override them, from the next server restart.
 - **Server**: status, port and Restart Server; **Run Setup Wizard**.
 
 See the `models` page.
@@ -65,7 +65,7 @@ Instructions the assistant can load for specific tasks.
 - **When the model uses skills**: Automatic (remote models only).
 - **Skills**: turn single skills on or off; **Open skills folder**.
 - **Other skill folders**: extra folders to read skills from.
-- **Repos**: whether the Shell assistant and Code sessions use a repo's own skills and AGENTS.md.
+- **Repos**: whether Shell and Code use a repo's own skills and AGENTS.md.
 
 See the `skills` page.
 
@@ -150,6 +150,15 @@ Where pictures are generated, if anywhere.
 
 See the `images` page.
 
+## Music
+
+Where songs are made, if anywhere.
+
+- **Backend**: None (default) or llama-toolchest.
+- **Default length**: 30 seconds.
+
+See the `music` page.
+
 ## Guest chat
 
 - **Let people on your network chat with this Haruspex**: off. Uses HTTPS.
@@ -169,7 +178,7 @@ See the `remote-control` page.
 
 Report a bug or ask for a feature.
 
-- **Open feedback issue…**: opens a filled-in GitHub issue in your browser. API keys are removed, but check it before you send it.
-- **Save Full Diagnostics…**: saves logs to a file you can attach to the issue.
+- **Open feedback issue…**: opens a filled-in GitHub issue in your browser. API keys are removed; check it before sending.
+- **Save Full Diagnostics…**: saves logs to attach to the issue.
 
 See the `troubleshooting` page.

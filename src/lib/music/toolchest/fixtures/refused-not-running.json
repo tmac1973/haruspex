@@ -1,0 +1,7 @@
+{
+	"error": {
+		"code": "backend_unavailable",
+		"message": "backend ace-gpu2 is not running",
+		"type": "server_error"
+	}
+}

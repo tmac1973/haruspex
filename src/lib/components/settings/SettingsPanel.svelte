@@ -16,6 +16,7 @@
 	import ShellSection from '#lib/components/settings/ShellSection.svelte';
 	import CodeSection from '#lib/components/settings/CodeSection.svelte';
 	import ImageSection from '#lib/components/settings/ImageSection.svelte';
+	import MusicSection from '#lib/components/settings/MusicSection.svelte';
 	import RemoteSection from '#lib/components/settings/RemoteSection.svelte';
 	import OwnerApiSection from '#lib/components/settings/OwnerApiSection.svelte';
 	import FeedbackSection from '#lib/components/settings/FeedbackSection.svelte';
@@ -39,6 +40,7 @@
 		| 'shell'
 		| 'code'
 		| 'image'
+		| 'music'
 		| 'remote'
 		| 'remoteControl'
 		| 'feedback';
@@ -142,6 +144,12 @@
 					label: 'Image',
 					subtitle: 'Where pictures are generated, if anywhere.',
 					icon: '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>'
+				},
+				{
+					id: 'music',
+					label: 'Music',
+					subtitle: 'Where songs are made, if anywhere.',
+					icon: '<path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle>'
 				},
 				{
 					id: 'remote',
@@ -266,6 +274,8 @@
 				<CodeSection />
 			{:else if activeCategory === 'image'}
 				<ImageSection />
+			{:else if activeCategory === 'music'}
+				<MusicSection />
 			{:else if activeCategory === 'remote'}
 				<RemoteSection />
 			{:else if activeCategory === 'remoteControl'}

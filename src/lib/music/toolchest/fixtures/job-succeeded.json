@@ -1,0 +1,28 @@
+{
+	"id": "3f9a1c0d7e2b4a61",
+	"model": "ace-gpu2",
+	"status": "succeeded",
+	"queue_position": 0,
+	"request": {
+		"model": "ace-gpu2",
+		"caption": "lo-fi hip hop, rain, mellow piano",
+		"lyrics": "[Instrumental]",
+		"duration": 45,
+		"seed": 1234,
+		"output_format": "mp3"
+	},
+	"result": {
+		"caption": "lo-fi hip hop, rain, mellow piano",
+		"lyrics": "[Instrumental]",
+		"bpm": 82,
+		"duration": 45,
+		"keyscale": "D minor",
+		"timesignature": "4",
+		"vocal_language": "en",
+		"seed": 1234
+	},
+	"audio_url": "/v1/music/jobs/3f9a1c0d7e2b4a61/audio",
+	"submitted": "2026-10-25T05:40:00Z",
+	"started": "2026-10-25T05:40:00Z",
+	"finished": "2026-10-25T05:40:31Z"
+}

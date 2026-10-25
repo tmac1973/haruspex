@@ -41,6 +41,11 @@ const IMAGE: Record<string, string> = {
 	'llama-toolchest': 'on, through a llama-toolchest server'
 };
 
+const MUSIC: Record<string, string> = {
+	none: 'off',
+	'llama-toolchest': 'on, through a llama-toolchest server'
+};
+
 const onOff = (on: boolean) => (on ? 'on' : 'off');
 
 /**
@@ -84,6 +89,7 @@ export async function guideStatus(override?: BackendOverride): Promise<string> {
 		`- Memory across chats: ${onOff(memoryActive())}`,
 		`- Python sandbox: ${onOff(s.sandboxEnabled)}`,
 		`- Image generation: ${IMAGE[s.imageBackendKind] ?? s.imageBackendKind}`,
+		`- Music generation: ${MUSIC[s.musicBackendKind] ?? s.musicBackendKind}`,
 		`- Screen capture: ${onOff(s.screenCaptureEnabled)}`,
 		`- Model uses skills by itself: ${skillsAutonomous() ? 'yes' : 'no'} (setting: ${s.skills.autonomous})`,
 		`- Memory limit for commands and terminals: ${limit > 0 ? `${limit}% of RAM` : 'off'}`,

@@ -12,7 +12,7 @@ import { apiKeysReady } from '#lib/stores/apiKeySecrets.ts';
 export type GenerationKind = 'image' | 'music';
 
 /** The settings fields that hold a toolchest server's named key. */
-export type ApiKeyIdField = 'imageToolchestApiKeyId';
+export type ApiKeyIdField = 'imageToolchestApiKeyId' | 'musicToolchestApiKeyId';
 
 /** What a request names, and what Settings shows about it. */
 export interface ToolchestInstance {

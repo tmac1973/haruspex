@@ -13,7 +13,6 @@
  * only while the request still waits in its queue.
  */
 
-import { sleep } from '#lib/utils/async.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { registerImageBackend } from '#lib/image/registry.ts';
 import type { GenerateOptions, ImageBackend, ProbeResult } from '#lib/image/backend.ts';
@@ -45,15 +44,12 @@ import {
 	buildImageBody,
 	imagesFrom,
 	progressOf,
-	readJob,
-	type ImageJob
+	readJob
 } from '#lib/image/toolchest/adapter.ts';
+import { followJob } from '#lib/toolchest/jobs.ts';
 
 /** The blocking route waits through the queue and the render. */
 const SYNC_TIMEOUT_MS = 900_000;
-const POLL_MS = 1000;
-/** Polls in a row that may fail before the server counts as gone. */
-const MAX_FAILED_POLLS = 20;
 
 /** What a probe or a generation last saw, for the sync questions asked after. */
 let lastInstances: ToolchestInstance[] = [];
@@ -141,33 +137,6 @@ async function readyInstance(cfg: ToolchestConfig, signal?: AbortSignal) {
 	return instance;
 }
 
-/**
- * Poll a job until it ends, reporting its phase. A poll that fails is
- * retried, up to {@link MAX_FAILED_POLLS} in a row: a server being redeployed
- * comes back with the job gone, which ends it as a failure anyway.
- */
-async function pollToEnd(
-	cfg: ToolchestConfig,
-	created: ImageJob,
-	opts: GenerateOptions
-): Promise<ImageJob> {
-	let job = created;
-	let failed = 0;
-	while (job.status === 'queued' || job.status === 'running') {
-		opts.onProgress?.(progressOf(job));
-		await sleep(POLL_MS);
-		if (opts.signal?.aborted) throw new ImageBackendError('cancelled', 'Generation cancelled.');
-		try {
-			job = readJob(await toolchestJson(cfg, { path: ROUTES.job(job.id) }, opts.signal)) ?? job;
-			failed = 0;
-		} catch (e) {
-			if (e instanceof ToolchestError && e.kind === 'cancelled') throw e;
-			if (++failed >= MAX_FAILED_POLLS) throw e;
-		}
-	}
-	return job;
-}
-
 /** Run a job to its end and fetch its images. Cancelling the turn cancels the job. */
 async function runJob(
 	cfg: ToolchestConfig,
@@ -178,24 +147,20 @@ async function runJob(
 		await toolchestJson(cfg, { method: 'POST', path: ROUTES.jobs, body }, opts.signal)
 	);
 	if (!created) throw new ImageBackendError('rejected', 'llama-toolchest made no job.');
-	const cancel = () =>
-		void toolchestJson(cfg, { method: 'DELETE', path: ROUTES.job(created.id) }).catch(() => {});
-	opts.signal?.addEventListener('abort', cancel, { once: true });
-	try {
-		const job = await pollToEnd(cfg, created, opts);
-		if (job.status === 'cancelled') {
-			throw new ImageBackendError('cancelled', 'Generation cancelled.');
-		}
-		if (job.status === 'failed') {
-			throw new ImageBackendError('rejected', `llama-toolchest: ${job.error ?? 'the job failed'}`);
-		}
-		opts.onProgress?.({ phase: 'downloading' });
-		const images: Uint8Array[] = [];
-		for (const path of job.images) images.push(await toolchestBytes(cfg, path, opts.signal));
-		return images;
-	} finally {
-		opts.signal?.removeEventListener('abort', cancel);
+	const job = await followJob(cfg, created, ROUTES.job, readJob, {
+		signal: opts.signal,
+		onJob: (j) => opts.onProgress?.(progressOf(j))
+	});
+	if (job.status === 'cancelled') {
+		throw new ImageBackendError('cancelled', 'Generation cancelled.');
 	}
+	if (job.status === 'failed') {
+		throw new ImageBackendError('rejected', `llama-toolchest: ${job.error ?? 'the job failed'}`);
+	}
+	opts.onProgress?.({ phase: 'downloading' });
+	const images: Uint8Array[] = [];
+	for (const path of job.images) images.push(await toolchestBytes(cfg, path, opts.signal));
+	return images;
 }
 
 /**
