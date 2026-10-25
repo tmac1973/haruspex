@@ -65,6 +65,9 @@
       "icons/icon.ico"
     ],
     "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      },
       "deb": {
         "files": {
           "/usr/share/metainfo/com.haruspex.app.metainfo.xml": "linux/com.haruspex.app.metainfo.xml"
