@@ -163,6 +163,15 @@ describe('edit_music', () => {
 		]);
 	});
 
+	it('passes a seed on', async () => {
+		await executeTool(
+			'edit_music',
+			{ source: SRC_URL, action: 'restyle', caption: 'jazz', seed: 99 },
+			chat
+		);
+		expect(state.generate.mock.calls[0][0]).toMatchObject({ task: 'cover', seed: 99 });
+	});
+
 	it('reads a file from the working folder and sends its bytes', async () => {
 		const ctx = makeToolContext({ interactive: true, conversationId: 'c', workingDir: '/music' });
 		await executeTool(

@@ -33,9 +33,9 @@ Under **Songs**, **Make a test clip** makes a 10-second instrumental and plays i
 
 ## Make a song in Chat
 
-Ask for one: "a 45-second lo-fi track about rain", or give lyrics. The assistant writes a caption of style tags and, for a song with vocals, the lyrics, then the server makes it. A song takes a minute or more; the step shows your place in the queue, then **Composing** and **Synthesizing**. It plays in the answer, one player at a time, and starting it stops read-aloud. If the assistant forgets to place it, it is added under the answer. Stopping the reply cancels the song on the server.
+Ask for one: "a 45-second lo-fi track about rain", or give lyrics. The assistant writes style tags and, for vocals, the lyrics. A song takes a minute or more; the step shows its progress. It plays in the answer, one player at a time, and starting it stops read-aloud. If the assistant forgets to place it, it is added under the answer. Stopping the reply cancels the song on the server.
 
-You can ask for a length (5 to 240 seconds), tempo, key, language, or WAV instead of MP3.
+You can ask for a length (5 to 240 seconds), tempo, key, time signature, language, or WAV instead of MP3. Each song's seed is noted, so "the same, but faster" keeps the rest.
 
 With a working folder set in Chat, the assistant can also save the song there: ask "save it as rain.mp3", when you ask for it or later. If that file exists you're asked before it is replaced. Without a folder it can't save files.
 
