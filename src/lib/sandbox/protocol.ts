@@ -8,6 +8,8 @@ export type InstallPhase = 'resolving' | 'downloading' | 'installing' | 'bundled
 
 export type Artifact =
 	| { kind: 'image'; mime: string; dataUrl: string; alt?: string }
+	/** Generated audio, by its cache URL (`haruspex-audio:`), played on the step card. */
+	| { kind: 'audio'; mime: string; src: string; title: string }
 	| {
 			kind: 'html';
 			html: string;

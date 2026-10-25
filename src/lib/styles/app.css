@@ -828,6 +828,24 @@ body:not(.shell-tab-active) .code-block .run-btn {
 	border: 1px solid var(--border);
 }
 
+/* Generated audio in an answer: a native player for haruspex-audio:// (on the
+   web page, the owner API's audio route). See audio/figure.ts. */
+.markdown figure.chat-audio {
+	margin: 0.75rem 0;
+}
+
+.markdown figure.chat-audio audio {
+	display: block;
+	width: 100%;
+	max-width: 28rem;
+}
+
+.markdown figcaption.chat-audio-title {
+	margin-top: 0.3rem;
+	font-size: 0.8rem;
+	color: var(--text-muted);
+}
+
 /* Credit line. CC BY and CC BY-SA require this wherever the image is
    shown, so it is generated from stored provenance rather than left to
    the model. */

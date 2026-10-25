@@ -2,6 +2,7 @@ import { Marked } from 'marked';
 import hljs from 'highlight.js/lib/core';
 import { classifyShellRisk } from '#lib/shell/risky-commands.ts';
 import { sanitizeHtml } from '#lib/sanitize.ts';
+import { audioFigureHtml } from '#lib/audio/figure.ts';
 import type { CodePathLinker, PathRef } from '#lib/code/paths.ts';
 
 // Register only the languages we need to keep the bundle small
@@ -440,15 +441,16 @@ function sanitizeForRender(text: string, resolved?: ResolvedImages): string {
 	// character class excludes space so plain text like `5 < 10` isn't
 	// matched.
 	out = out.replace(/<\/?[a-zA-Z0-9_-]*$/, '');
-	// Every markdown image ref resolves to exactly one of three outcomes:
+	// Every markdown image ref resolves to exactly one of four outcomes:
 	//
 	//   1. A cached image → a <figure> served from haruspex-img://, with an
 	//      attribution caption built from stored provenance.
-	//   2. A data: URL → left alone. The Python sandbox writes these for
+	//   2. Cached audio (haruspex-audio://) → a <figure> with a native player.
+	//   3. A data: URL → left alone. The Python sandbox writes these for
 	//      inline plots and they are already local.
-	//   3. Anything else → dropped entirely.
+	//   4. Anything else → dropped entirely.
 	//
-	// Case 3 covers three situations with one behaviour, deliberately: a
+	// Case 4 covers three situations with one behaviour, deliberately: a
 	// relative path the model invented (`![plot](sine_wave.png)`), an image
 	// still being fetched, and an image whose fetch failed or was never
 	// eligible. All render as nothing, so a failure is indistinguishable from
@@ -460,6 +462,8 @@ function sanitizeForRender(text: string, resolved?: ResolvedImages): string {
 	out = out.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, src) => {
 		const trimmed = String(src).trim();
 		if (/^data:/i.test(trimmed)) return match;
+		const audio = audioFigureHtml(trimmed, String(alt));
+		if (audio) return audio;
 		const figure = resolved?.figureFor(trimmed, String(alt));
 		return figure ?? '';
 	});
