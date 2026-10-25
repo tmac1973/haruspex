@@ -827,7 +827,8 @@ describe('Code-mode tool filtering', () => {
 				'command_stop',
 				'open_in_shell',
 				'open_in_editor',
-				'delegate'
+				'delegate',
+				'save_audio'
 			].sort()
 		);
 	});

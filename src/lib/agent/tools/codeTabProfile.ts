@@ -25,7 +25,12 @@ export const CODE_TAB_ONLY: ReadonlySet<string> = new Set([
  * and in any Code session they take the folder's writer lease first.
  */
 export function isCodeWriteTool(name: string): boolean {
-	return name.startsWith('fs_write_') || name === 'fs_edit_text' || name === 'make_asset';
+	return (
+		name.startsWith('fs_write_') ||
+		name === 'fs_edit_text' ||
+		name === 'make_asset' ||
+		name === 'save_audio'
+	);
 }
 
 /** What a read-only Code session's write is told. */

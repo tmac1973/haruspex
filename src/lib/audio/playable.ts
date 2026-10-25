@@ -17,8 +17,14 @@ import { audioSrc } from '#lib/audio/url.ts';
 
 const WEB = import.meta.env.VITE_HARUSPEX_WEB === '1';
 
+/** A song ready for a player: its blob URL and its type. */
+export interface PlayableSong {
+	url: string;
+	mime: string;
+}
+
 /** One blob URL per song for the life of the window: re-renders reuse it. */
-const urls = new Map<string, Promise<string>>();
+const songs = new Map<string, Promise<PlayableSong>>();
 
 /** The type of an audio file from its first bytes, as the cache stores them. */
 export function sniffAudioMime(b: Uint8Array): string {
@@ -29,18 +35,51 @@ export function sniffAudioMime(b: Uint8Array): string {
 	return 'audio/mpeg';
 }
 
-/** A URL the player can load for a cached song, by hash. */
-export function playableUrl(hash: string): Promise<string> {
-	if (WEB) return Promise.resolve(audioSrc(hash) ?? '');
-	let url = urls.get(hash);
-	if (!url) {
-		url = invoke<ArrayBuffer>('audio_read_bytes', { hash }).then((buf) => {
+/** A song's bytes: over IPC on the desktop, the HTTP route on the web client. */
+async function songBytes(hash: string): Promise<ArrayBuffer> {
+	if (!WEB) return invoke<ArrayBuffer>('audio_read_bytes', { hash });
+	const r = await fetch(audioSrc(hash) ?? '', { credentials: 'same-origin' });
+	if (!r.ok) throw new Error(`Audio not found (${r.status})`);
+	return r.arrayBuffer();
+}
+
+/**
+ * A cached song as a blob the player can load, by hash. The web client could
+ * play its route directly, but a blob gives Save as a file to hand over, and
+ * its type, there as on the desktop.
+ */
+export function playableSong(hash: string): Promise<PlayableSong> {
+	let song = songs.get(hash);
+	if (!song) {
+		song = songBytes(hash).then((buf) => {
 			const bytes = new Uint8Array(buf);
-			return URL.createObjectURL(new Blob([bytes], { type: sniffAudioMime(bytes) }));
+			const mime = sniffAudioMime(bytes);
+			return { url: URL.createObjectURL(new Blob([bytes], { type: mime })), mime };
 		});
 		// A failure isn't kept: the next player asks again.
-		url.catch(() => urls.delete(hash));
-		urls.set(hash, url);
+		song.catch(() => songs.delete(hash));
+		songs.set(hash, song);
 	}
-	return url;
+	return song;
+}
+
+/** A URL the player can load for a cached song, by hash. */
+export async function playableUrl(hash: string): Promise<string> {
+	return (await playableSong(hash)).url;
+}
+
+/** The file extension for a song's type. */
+export function audioExtension(mime: string): string {
+	return { 'audio/wav': 'wav', 'audio/ogg': 'ogg', 'audio/flac': 'flac' }[mime] ?? 'mp3';
+}
+
+/** A file name from a song's title: letters, digits and dashes. */
+export function songFileName(title: string, mime: string): string {
+	const base =
+		title
+			.toLowerCase()
+			.replace(/[^\p{L}\p{N}]+/gu, '-')
+			.replace(/^-+|-+$/g, '')
+			.slice(0, 60) || 'song';
+	return `${base}.${audioExtension(mime)}`;
 }

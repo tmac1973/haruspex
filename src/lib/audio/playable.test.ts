@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
 
-import { playableUrl, sniffAudioMime } from './playable';
+import { playableUrl, sniffAudioMime, songFileName } from './playable';
 
 const bytes = (s: string) => new Uint8Array([...s].map((c) => c.charCodeAt(0)));
 let made: Blob[] = [];
@@ -45,5 +45,15 @@ describe('playableUrl', () => {
 		await expect(playableUrl(gone)).rejects.toBe('Audio not found');
 		await expect(playableUrl(gone)).rejects.toBe('Audio not found');
 		expect(tauri.invoke).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe('songFileName', () => {
+	it('makes a file name from a title, with the type’s extension', () => {
+		expect(songFileName('Pour It Up (The Liver Is a Terrible Thing to Taste)', 'audio/mpeg')).toBe(
+			'pour-it-up-the-liver-is-a-terrible-thing-to-taste.mp3'
+		);
+		expect(songFileName('Café Theme', 'audio/wav')).toBe('café-theme.wav');
+		expect(songFileName('???', 'audio/flac')).toBe('song.flac');
 	});
 });
