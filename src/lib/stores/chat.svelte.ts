@@ -46,6 +46,8 @@ import {
 } from '#lib/agent/memory/recall.ts';
 import { rehydrateImages, resolveReplyImages, sweepImages } from '#lib/images/resolve.svelte.ts';
 import { placeGeneratedImages } from '#lib/images/eligible.ts';
+import { placeGeneratedAudio } from '#lib/audio/eligible.ts';
+import { rehydrateAudio } from '#lib/audio/rehydrate.ts';
 import { getSettings, SETTINGS_KEY } from '#lib/stores/settings.ts';
 import { persistItem } from '#lib/persist.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
@@ -338,6 +340,11 @@ async function loadConversationMessages(id: string): Promise<void> {
 		// URLs have to come back from the archived steps.
 		conv.messages.map((_m, i) => conv.messageSteps[i] ?? []),
 		() => getActiveConversationId() === id
+	);
+	// Generated audio: relinked by hash so the cache's sweep keeps it.
+	void rehydrateAudio(
+		id,
+		conv.messages.map((m) => messageText(m.content))
 	);
 }
 
@@ -1233,9 +1240,13 @@ function finalizeStreamedTurn(
 ): void {
 	const fetched = extractUrlsFromSteps(conversation.searchSteps);
 	const processed = processCitations(stripToolCallArtifacts(streamingContent).trim(), fetched);
-	// A picture drawn this turn and left out of the answer is placed after it.
+	// A picture drawn, or a song made, this turn and left out of the answer is
+	// placed after it.
 	const finalContent = processed.content
-		? placeGeneratedImages(processed.content, conversation.searchSteps)
+		? placeGeneratedAudio(
+				placeGeneratedImages(processed.content, conversation.searchSteps),
+				conversation.searchSteps
+			)
 		: processed.content;
 	// Snapshot before committing: commitMessage archives these into
 	// messageSteps and then empties the live array, so anything reading

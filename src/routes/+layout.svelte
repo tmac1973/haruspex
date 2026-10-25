@@ -74,7 +74,8 @@
 		startVoiceCapture,
 		stopAndTranscribe
 	} from '#lib/audio/voiceCapture.svelte.ts';
-	import { toggleTts } from '#lib/audio/ttsControl.svelte.ts';
+	import { stopTts, toggleTts } from '#lib/audio/ttsControl.svelte.ts';
+	import { installAudioExclusivity } from '#lib/audio/exclusive.ts';
 	import { getActiveTab, mainTabs, setActiveTab } from '#lib/stores/activeTab.svelte.ts';
 	import { getActiveSession as getActiveCodeSession } from '#lib/stores/code.svelte.ts';
 	import { listenInMainWindow as listenForCodeWindows } from '#lib/code/windows.ts';
@@ -121,6 +122,9 @@
 	// markdown (sanitization strips inline onclick). Installed in every
 	// window — the detached shell window renders markdown too.
 	onMount(() => installMarkdownActions());
+
+	// One generated-audio player at a time, and none over read-aloud.
+	onMount(() => installAudioExclusivity(document, () => void stopTts()));
 
 	// Windows: hand Rust Settings → Code's PowerShell choice before any command
 	// runs (a Code turn hands it again as it starts).

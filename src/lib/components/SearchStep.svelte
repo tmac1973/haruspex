@@ -12,6 +12,7 @@
 <script lang="ts">
 	import { cancelSandboxRun, rerunSandboxStep } from '#lib/sandbox/runControls.ts';
 	import type { SearchStep } from '#lib/agent/loop.ts';
+	import AudioPlayer from '#lib/components/AudioPlayer.svelte';
 	import { stepLabel, stepIcon } from '#lib/components/searchStepLabels.ts';
 	import hljs from 'highlight.js/lib/core';
 	import python from 'highlight.js/lib/languages/python';
@@ -336,6 +337,8 @@
 									title="Click to enlarge"
 									onclick={(e) => openViewer(artifact.dataUrl, artifact.alt ?? 'plot', e)}
 								/>
+							{:else if artifact.kind === 'audio'}
+								<AudioPlayer src={artifact.src} title={artifact.title} />
 							{:else if artifactTooLarge(artifact.html)}
 								<!--
 								Refuse to inject an oversized artifact: parsing it in WebKitGTK
