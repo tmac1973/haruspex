@@ -1,4 +1,4 @@
-use super::doc::{Doc, Fps};
+use super::doc::{Doc, Fps, Item};
 use super::edit::{apply, current, Media, Placement, Source};
 use super::*;
 use std::path::Path;
@@ -32,19 +32,30 @@ fn media(resource: &str, secs: f64, fps: Fps) -> Media {
 }
 
 fn new(m: Media) -> Placement {
-    Placement {
-        source: Source::New(m),
-        in_frame: None,
-        out_frame: None,
-    }
+    Placement::of(Source::New(m))
 }
 
 fn keep(i: usize) -> Placement {
-    Placement {
-        source: Source::Existing(i),
-        in_frame: None,
-        out_frame: None,
+    Placement::of(Source::Existing(i))
+}
+
+/// Equal texts, or a panic naming the first line that differs.
+fn assert_same(got: &str, want: &str) {
+    if got == want {
+        return;
     }
+    let (g, w): (Vec<&str>, Vec<&str>) = (got.lines().collect(), want.lines().collect());
+    let at = g
+        .iter()
+        .zip(&w)
+        .position(|(a, b)| a != b)
+        .unwrap_or(g.len().min(w.len()));
+    let around = |v: &[&str]| v[at.saturating_sub(3)..(at + 4).min(v.len())].join("\n");
+    panic!(
+        "differs at line {at}:\n--- got\n{}\n--- want\n{}",
+        around(&g),
+        around(&w)
+    );
 }
 
 fn reparse(text: String) -> Doc {
@@ -191,6 +202,8 @@ fn trimming_the_start_keeps_the_leading_gap_and_the_groups() {
         source: Source::Existing(0),
         in_frame: Some(fps.frames(10.0)),
         out_frame: None,
+        mix_in: None,
+        gain_db: None,
     };
     let out = apply(&doc, &[trimmed]).unwrap();
     let after = reparse(out.text.clone());
@@ -241,6 +254,8 @@ fn an_effect_on_a_kept_clip_survives_a_trim() {
         source: Source::Existing(1),
         in_frame: Some(fps.frames(2.0)),
         out_frame: None,
+        mix_in: None,
+        gain_db: None,
     };
     let out = reparse(apply(&doc, &[keep(0), trimmed]).unwrap().text);
     assert_eq!(out.items()[1].filters(), 1);
@@ -336,6 +351,8 @@ fn a_crossfade_made_in_kdenlive_keeps_its_clips_together() {
         source: Source::Existing(0),
         in_frame: Some(fps.frames(1.0)),
         out_frame: None,
+        mix_in: None,
+        gain_db: None,
     };
     let out = reparse(apply(&doc, &[trimmed, keep(1), keep(2)]).unwrap().text);
     let m = &out.mixes(out.main_video)[0];
@@ -353,6 +370,8 @@ fn an_end_past_the_clip_is_clamped_and_said() {
         source: Source::New(media("a.mp4", 2.0, fps)),
         in_frame: None,
         out_frame: Some(fps.frames(9.0)),
+        mix_in: None,
+        gain_db: None,
     };
     let out = apply(&doc, &[p]).unwrap();
     assert!(out.notes.iter().any(|n| n.contains("past the clip's end")));
@@ -527,11 +546,15 @@ fn a_clip_split_in_two_keeps_its_effect_in_both_pieces() {
         source: Source::Existing(0),
         in_frame: Some(0),
         out_frame: Some(119),
+        mix_in: None,
+        gain_db: None,
     };
     let second = Placement {
         source: Source::Piece(0),
         in_frame: Some(300),
         out_frame: Some(599),
+        mix_in: None,
+        gain_db: None,
     };
     let out = reparse(apply(&doc, &[first, second]).unwrap().text);
     let items = out.items();
@@ -547,4 +570,281 @@ fn a_clip_split_in_two_keeps_its_effect_in_both_pieces() {
     );
     assert_eq!(out.groups().as_array().unwrap().len(), 2);
     assert_eq!(apply(&out, &current(&out)).unwrap().text, out.text);
+}
+
+/// The user's reference project: clips on V2/A2, one 1 s mix made in
+/// Kdenlive, and Volume effects on two clips' sound.
+fn mix_fixture() -> Doc {
+    Doc::parse(fixture("mix-26.08.kdenlive")).unwrap()
+}
+
+/// The same with its tracks reordered so those clips are the main track
+/// (V1 / A1), and the groups' track numbers moved to match.
+fn mix_on_main() -> Doc {
+    let text = fixture("mix-26.08.kdenlive")
+        .replace(
+            "  <track producer=\"tractor0\"/>\n  <track producer=\"tractor1\"/>\n  <track producer=\"tractor2\"/>\n  <track producer=\"tractor3\"/>",
+            "  <track producer=\"tractor1\"/>\n  <track producer=\"tractor0\"/>\n  <track producer=\"tractor3\"/>\n  <track producer=\"tractor2\"/>",
+        )
+        .replace("\"data\": \"3:", "\"data\": \"2:")
+        .replace("\"data\": \"0:", "\"data\": \"1:");
+    let doc = Doc::parse(text).unwrap();
+    assert_eq!(
+        doc.items().len(),
+        5,
+        "the reorder put the clips on the main track"
+    );
+    doc
+}
+
+#[test]
+fn kdenlives_own_mix_and_effects_read_as_the_users() {
+    let doc = mix_fixture();
+    // Its clips are on V2/A2: nothing on the main track, all of it elsewhere.
+    assert!(doc.items().is_empty());
+    let s = summary(&doc, "/videos", Path::new("/videos/mix.kdenlive"));
+    assert!(s.other_clips.iter().any(|c| c.track == "V2"));
+    assert_eq!(apply(&doc, &current(&doc)).unwrap().text, doc.text);
+
+    let doc = mix_on_main();
+    let items = doc.items();
+    let mixes = doc.mixes(doc.main_audio);
+    assert_eq!(mixes.len(), 1);
+    assert!(!mixes[0].ours);
+    // The mix overlaps clips 2 and 3 by its whole length (30 frames, 1 s).
+    assert_eq!(items[1].end() - items[2].start(), 30);
+    assert_eq!(mixes[0].in_frame, items[2].start());
+    // The Volume effects are inside the entries, and are the user's.
+    assert_eq!(items[0].filters(), 1);
+    assert!(doc
+        .our_gain(items[0].audio.as_ref().unwrap().node)
+        .is_none());
+    assert_eq!(apply(&doc, &current(&doc)).unwrap().text, doc.text);
+}
+
+#[test]
+fn a_trim_moves_the_users_mix_and_keeps_its_effects() {
+    let doc = mix_on_main();
+    let fps = doc.fps;
+    let mut wanted = current(&doc);
+    wanted[0].in_frame = Some(fps.frames(1.0));
+    let out = reparse(apply(&doc, &wanted).unwrap().text);
+    let items = out.items();
+    assert_eq!(items.len(), 5);
+    let mix = &out.mixes(out.main_audio)[0];
+    assert_eq!(mix.in_frame, items[2].start());
+    assert_eq!(
+        items[1].end() - items[2].start(),
+        30,
+        "still overlapping by the mix"
+    );
+    assert_eq!(out.mixes(out.main_video)[0].in_frame, items[2].start());
+    assert_eq!(
+        items[0].filters() + items[1].filters(),
+        2,
+        "the user's Volume effects stay"
+    );
+    // Moving clip 3 away from clip 2 is refused.
+    let mut moved = current(&out);
+    let third = moved.remove(2);
+    moved.insert(0, third);
+    assert!(apply(&out, &moved)
+        .unwrap_err()
+        .contains("crossfade made in Kdenlive"));
+}
+
+#[test]
+fn haruspex_gain_is_one_tagged_filter_beside_the_users() {
+    let doc = mix_on_main();
+    let mut wanted = current(&doc);
+    wanted[0].gain_db = Some(2.5);
+    wanted[3].gain_db = Some(-4.0);
+    let once = reparse(apply(&doc, &wanted).unwrap().text);
+    let items = once.items();
+    let a0 = items[0].audio.as_ref().unwrap().node;
+    assert_eq!(once.our_gain(a0).map(|(_, g)| g), Some(2.5));
+    assert_eq!(items[0].filters(), 2, "the user's Volume and Haruspex's");
+    assert_eq!(
+        once.our_gain(items[3].audio.as_ref().unwrap().node)
+            .map(|(_, g)| g),
+        Some(-4.0)
+    );
+    assert!(once
+        .text
+        .contains("<property name=\"level\">00:00:00.000=2.5</property>"));
+    // Leaving gains alone changes nothing; setting one again replaces it.
+    assert_eq!(apply(&once, &current(&once)).unwrap().text, once.text);
+    let mut again = current(&once);
+    again[0].gain_db = Some(1.0);
+    let twice = reparse(apply(&once, &again).unwrap().text);
+    let a0 = twice.items()[0].audio.as_ref().unwrap().node;
+    assert_eq!(twice.our_gain(a0).map(|(_, g)| g), Some(1.0));
+    assert_eq!(twice.items()[0].filters(), 2);
+    // Zero removes it.
+    let mut off = current(&twice);
+    off[0].gain_db = Some(0.0);
+    let gone = reparse(apply(&twice, &off).unwrap().text);
+    assert!(gone
+        .our_gain(gone.items()[0].audio.as_ref().unwrap().node)
+        .is_none());
+    assert_eq!(gone.items()[0].filters(), 1);
+}
+
+#[test]
+fn crossfades_overlap_alternate_lanes_and_come_off_again() {
+    let doc = empty_project();
+    let fps = doc.fps;
+    let mut wanted: Vec<Placement> = ["a.mp4", "b.mp4", "c.mp4"]
+        .iter()
+        .map(|n| new(media(n, 4.0, fps)))
+        .collect();
+    wanted[1].mix_in = Some(30);
+    wanted[2].mix_in = Some(30);
+    let out = reparse(apply(&doc, &wanted).unwrap().text);
+    let items = out.items();
+    assert_eq!(
+        items.iter().map(Item::start).collect::<Vec<_>>(),
+        [0, 210, 420]
+    );
+    let lanes: Vec<usize> = items
+        .iter()
+        .map(|i| i.video.as_ref().unwrap().lane)
+        .collect();
+    assert_eq!(lanes, [0, 1, 0]);
+    for track in [out.main_video, out.main_audio] {
+        let mixes = out.mixes(track);
+        assert_eq!(mixes.len(), 2);
+        assert!(mixes.iter().all(|m| m.ours));
+        assert_eq!((mixes[0].in_frame, mixes[0].out_frame), (210, 240));
+    }
+    // Kdenlive's shape: luma on video, mix on audio, centred, reversed coming into lane A.
+    assert!(out
+        .text
+        .contains("<property name=\"mlt_service\">luma</property>"));
+    assert!(out
+        .text
+        .contains("<property name=\"kdenlive:mixcut\">15</property>"));
+    let rev: Vec<&str> = out
+        .mixes(out.main_audio)
+        .iter()
+        .map(|m| out.tree.property(m.node, "reverse").unwrap())
+        .collect();
+    assert_eq!(rev, ["0", "1"]);
+    // Carried over unchanged; then taken off.
+    assert_same(&apply(&out, &current(&out)).unwrap().text, &out.text);
+    let plain: Vec<Placement> = (0..3).map(keep).collect();
+    let off = reparse(apply(&out, &plain).unwrap().text);
+    assert!(off.mixes(off.main_video).is_empty() && off.mixes(off.main_audio).is_empty());
+    assert_eq!(
+        off.items().iter().map(Item::start).collect::<Vec<_>>(),
+        [0, 240, 480]
+    );
+}
+
+#[test]
+fn a_crossfade_longer_than_half_a_clip_is_shortened() {
+    let doc = empty_project();
+    let fps = doc.fps;
+    let mut wanted = vec![new(media("a.mp4", 1.0, fps)), new(media("b.mp4", 4.0, fps))];
+    wanted[1].mix_in = Some(fps.frames(3.0));
+    let out = apply(&doc, &wanted).unwrap();
+    assert!(out.notes.iter().any(|n| n.contains("shortened")));
+    let d = reparse(out.text);
+    assert_eq!(d.items()[1].start(), 60 - 30);
+}
+
+/// A project with Haruspex's crossfade and gain, rendered by melt and by
+/// Kdenlive: the two must agree on length and loudness, which they can only
+/// if Kdenlive read the mix and the Volume filter the way melt does.
+/// `cargo test -- --ignored kdenlive_reads_crossfades_and_gains --nocapture`
+#[tokio::test]
+#[ignore = "needs ffmpeg, melt and Kdenlive"]
+async fn kdenlive_reads_crossfades_and_gains() {
+    let dir = crate::test_util::temp_dir("kdenlive_mixes");
+    for (name, color, volume) in [
+        ("a.mp4", "red", "0.2"),
+        ("b.mp4", "blue", "0.8"),
+        ("c.mp4", "green", "0.1"),
+    ] {
+        let ok = std::process::Command::new("ffmpeg")
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
+            .arg(format!("color=c={color}:s=640x360:r=60:d=3"))
+            .args(["-f", "lavfi", "-i"])
+            .arg(format!("sine=f=440:d=3,volume={volume}"))
+            .args(["-shortest", "-c:v", "libx264", "-c:a", "aac"])
+            .arg(dir.join(name))
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok);
+    }
+    let doc = Doc::parse(template_text("1080p60", &dir).unwrap()).unwrap();
+    let fps = doc.fps;
+    let mut wanted: Vec<Placement> = ["a.mp4", "b.mp4", "c.mp4"]
+        .iter()
+        .map(|n| {
+            let mut m = media(n, 3.0, fps);
+            m.file_hash = file_hash(&dir.join(n)).unwrap();
+            new(m)
+        })
+        .collect();
+    wanted[1].mix_in = Some(30);
+    wanted[2].gain_db = Some(12.0);
+    let project = dir.join("mixes.kdenlive");
+    std::fs::write(&project, apply(&doc, &wanted).unwrap().text).unwrap();
+    let render = |cmd: &mut std::process::Command| assert!(cmd.status().unwrap().success());
+    let melt_out = dir.join("melt.mp4");
+    render(
+        std::process::Command::new("melt")
+            .arg(&project)
+            .arg("-consumer")
+            .arg(format!("avformat:{}", melt_out.display()))
+            .args(["vcodec=libx264", "acodec=aac", "ab=192k"]),
+    );
+    let kd_out = dir.join("kdenlive.mp4");
+    render(
+        std::process::Command::new("kdenlive")
+            .env("QT_QPA_PLATFORM", "offscreen")
+            .arg(&project)
+            .arg(&kd_out)
+            .arg("--render"),
+    );
+    let info = |f: &Path| {
+        let rt = tokio::runtime::Handle::current();
+        let _ = rt;
+        f.to_path_buf()
+    };
+    let (m, k) = (info(&melt_out), info(&kd_out));
+    let mi = crate::video::probe::probe_file("ffprobe", &m, "m".into())
+        .await
+        .unwrap();
+    let ki = crate::video::probe::probe_file("ffprobe", &k, "k".into())
+        .await
+        .unwrap();
+    let ml = crate::video::check::measure("ffmpeg", &m).await.unwrap();
+    let kl = crate::video::check::measure("ffmpeg", &k).await.unwrap();
+    println!(
+        "melt {:.3}s {:?}\nkdenlive {:.3}s {:?}\n{}",
+        mi.duration_secs,
+        ml,
+        ki.duration_secs,
+        kl,
+        project.display()
+    );
+    // 3 + 3 + 3 seconds less the 0.5 s crossfade.
+    assert!((mi.duration_secs - 8.5).abs() < 0.1, "{}", mi.duration_secs);
+    assert!((ki.duration_secs - mi.duration_secs).abs() < 0.1);
+    assert!(
+        (kl.lufs - ml.lufs).abs() < 0.5,
+        "loudness differs: {} vs {}",
+        kl.lufs,
+        ml.lufs
+    );
+    // Kept for a look in Kdenlive's window.
+    let keep = std::env::temp_dir().join("haruspex-mixes-check");
+    let _ = std::fs::remove_dir_all(&keep);
+    std::fs::create_dir_all(&keep).unwrap();
+    for f in ["a.mp4", "b.mp4", "c.mp4", "mixes.kdenlive"] {
+        std::fs::copy(dir.join(f), keep.join(f)).unwrap();
+    }
 }

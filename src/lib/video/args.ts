@@ -58,7 +58,8 @@ export function parseCut(args: Record<string, unknown>): CutSpec | string {
 			index: index === null ? null : Math.round(index),
 			path,
 			inSecs: num(o.in_secs),
-			outSecs: num(o.out_secs)
+			outSecs: num(o.out_secs),
+			crossfadeSecs: num(o.crossfade_secs)
 		});
 	}
 	const preset = str(args.preset);
@@ -70,7 +71,9 @@ export function parseCut(args: Record<string, unknown>): CutSpec | string {
 		preset,
 		intro: endClip(args.intro),
 		outro: endClip(args.outro),
-		items
+		items,
+		crossfadeSecs: num(args.crossfade_secs),
+		normalize: typeof args.normalize === 'boolean' ? args.normalize : null
 	};
 }
 

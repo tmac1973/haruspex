@@ -41,6 +41,8 @@ pub struct CutItemSpec {
     /// Where to start and stop in the clip.
     pub in_secs: Option<f64>,
     pub out_secs: Option<f64>,
+    /// A crossfade into this clip, overriding the cut's.
+    pub crossfade_secs: Option<f64>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, ts_rs::TS)]
@@ -52,6 +54,10 @@ pub struct CutSpec {
     pub intro: Option<EndClip>,
     pub outro: Option<EndClip>,
     pub items: Vec<CutItemSpec>,
+    /// A crossfade at every join, in seconds; 0 or none for hard cuts.
+    pub crossfade_secs: Option<f64>,
+    /// Even out the sound to YouTube's -14 LUFS. Default true.
+    pub normalize: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
@@ -83,6 +89,76 @@ pub enum ProjectOp {
         min_secs: f64,
         pad_secs: f64,
     },
+    /// Measure every clip again and set its gain to reach -14 LUFS.
+    Normalize,
+}
+
+/// Set each placement's gain so its stretch of sound reaches -14 LUFS.
+/// Returns a note for the model.
+async fn normalize_gains(
+    doc: &Doc,
+    wanted: &mut [Placement],
+    ffmpeg: &str,
+    episode_dir: &Path,
+) -> Result<String, String> {
+    use super::loudness::{self, Stretch};
+    let items = doc.items();
+    let spans = super::kdenlive::timeline_map::spans(doc);
+    let fps = doc.fps;
+    let mut stretches = Vec::new();
+    let mut which = Vec::new();
+    for (k, p) in wanted.iter().enumerate() {
+        let (file, stream, in_f, out_f) = match &p.source {
+            Source::Existing(i) | Source::Piece(i) => {
+                let Some(a) = &items[*i].audio else { continue };
+                let stream = doc
+                    .tree
+                    .by_id(&a.chain)
+                    .and_then(|c| doc.tree.property(c, "audio_index"))
+                    .and_then(|v| v.parse::<u32>().ok())
+                    .unwrap_or(1);
+                (
+                    spans[*i].file.clone(),
+                    stream,
+                    p.in_frame.unwrap_or(a.in_frame),
+                    p.out_frame.unwrap_or(a.out_frame),
+                )
+            }
+            Source::New(m) => {
+                let Some(stream) = m.audio_index else {
+                    continue;
+                };
+                let r = Path::new(&m.resource);
+                let file = if r.is_absolute() {
+                    r.to_path_buf()
+                } else {
+                    Path::new(&doc.root_dir).join(r)
+                };
+                (
+                    file,
+                    stream,
+                    p.in_frame.unwrap_or(0),
+                    p.out_frame.unwrap_or(m.length - 1),
+                )
+            }
+        };
+        stretches.push(Stretch {
+            file,
+            stream,
+            from: fps.secs(in_f),
+            to: fps.secs(out_f + 1),
+        });
+        which.push(k);
+    }
+    let measured = loudness::measure_all(ffmpeg, episode_dir, &stretches, &|_, _| {}).await?;
+    let n = which.len();
+    for (k, m) in which.into_iter().zip(measured) {
+        wanted[k].gain_db = Some(loudness::gain_for(&m).unwrap_or(0.0));
+    }
+    Ok(format!(
+        "Evened out the sound of {n} clip{} to about -14 LUFS.",
+        if n == 1 { "" } else { "s" }
+    ))
 }
 
 /// The shortest piece a cut leaves: anything shorter is dropped with its gap.
@@ -119,6 +195,8 @@ fn cut_ranges(
     }
     keeps.retain(|(a, b)| b - a + 1 >= min_piece);
     let kept: i64 = keeps.iter().map(|(a, b)| b - a + 1).sum();
+    let first_mix = wanted[pos].mix_in;
+    let gain = wanted[pos].gain_db;
     let pieces: Vec<Placement> = keeps
         .iter()
         .enumerate()
@@ -130,6 +208,8 @@ fn cut_ranges(
             },
             in_frame: Some(a),
             out_frame: Some(b),
+            mix_in: if n == 0 { first_mix } else { None },
+            gain_db: gain,
         })
         .collect();
     wanted.splice(pos..=pos, pieces);
@@ -356,11 +436,12 @@ fn end_clip_path<'a>(
     }
 }
 
-async fn tools(settings: &VideoSettings) -> Result<(String, String), String> {
+async fn tools(settings: &VideoSettings) -> Result<(String, String, String), String> {
     let found = binaries::resolve(&settings.overrides).await;
     Ok((
         found.require(Tool::Ffprobe)?.to_string(),
         found.require(Tool::Melt)?.to_string(),
+        found.require(Tool::Ffmpeg)?.to_string(),
     ))
 }
 
@@ -371,7 +452,7 @@ pub async fn cut(
     spec: CutSpec,
     settings: &VideoSettings,
 ) -> Result<CutResult, String> {
-    let (ffprobe, melt) = tools(settings).await?;
+    let (ffprobe, melt, ffmpeg) = tools(settings).await?;
     let path = default_project(working_dir, episode, spec.project.as_deref(), true)?;
     let created = !path.exists();
     let mut notes = Vec::new();
@@ -409,6 +490,8 @@ pub async fn cut(
     let resources = item_resources(&doc);
     let elsewhere = other_track_resources(&doc);
     let mut wanted: Vec<Placement> = Vec::new();
+    // Each placement's own crossfade, when its item names one.
+    let mut fades: Vec<Option<f64>> = Vec::new();
     let mut ends: Vec<(usize, Placement)> = Vec::new();
     for (which, choice, setting) in [
         ("intro", &spec.intro, &settings.intro),
@@ -430,11 +513,15 @@ pub async fn cut(
                 source: Source::Existing(i),
                 in_frame: None,
                 out_frame: None,
+                mix_in: None,
+                gain_db: None,
             },
             None => Placement {
                 source: Source::New(m),
                 in_frame: None,
                 out_frame: None,
+                mix_in: None,
+                gain_db: None,
             },
         };
         ends.push((if which == "intro" { 0 } else { 1 }, placement));
@@ -454,19 +541,38 @@ pub async fn cut(
             source,
             in_frame: item.in_secs.map(|s| doc.fps.frames(s.max(0.0))),
             out_frame: item.out_secs.map(|s| doc.fps.frames(s) - 1),
+            mix_in: None,
+            gain_db: None,
         });
+        fades.push(item.crossfade_secs);
     }
     // The intro and outro go at the ends, and are not listed twice.
-    wanted.retain(|p| !ends.iter().any(|(_, e)| matches!((&e.source, &p.source), (Source::Existing(a), Source::Existing(b)) if a == b)));
+    let mut paired: Vec<(Placement, Option<f64>)> = wanted.into_iter().zip(fades).collect();
+    paired.retain(|(p, _)| !ends.iter().any(|(_, e)| matches!((&e.source, &p.source), (Source::Existing(a), Source::Existing(b)) if a == b)));
     for (end, p) in ends {
         if end == 0 {
-            wanted.insert(0, p);
+            paired.insert(0, (p, None));
         } else {
-            wanted.push(p);
+            paired.push((p, None));
         }
     }
-    if wanted.is_empty() {
+    if paired.is_empty() {
         return Err("The cut has no clips. List them in items.".into());
+    }
+    let mut wanted: Vec<Placement> = paired
+        .into_iter()
+        .enumerate()
+        .map(|(k, (mut p, own))| {
+            let secs = own.or(spec.crossfade_secs).unwrap_or(0.0).clamp(0.0, 3.0);
+            if k > 0 && secs > 0.0 {
+                p.mix_in = Some(doc.fps.frames(secs));
+            }
+            p
+        })
+        .collect();
+    if spec.normalize.unwrap_or(true) {
+        let episode_dir = resolve_episode(working_dir, episode)?;
+        notes.push(normalize_gains(&doc, &mut wanted, &ffmpeg, &episode_dir).await?);
     }
     let edited = edit::apply(&doc, &wanted)?;
     notes.extend(edited.notes);
@@ -494,7 +600,7 @@ pub async fn op(
     op: ProjectOp,
     settings: &VideoSettings,
 ) -> Result<CutResult, String> {
-    let (_, melt) = tools(settings).await?;
+    let (_, melt, ffmpeg) = tools(settings).await?;
     let path = default_project(working_dir, episode, project, false)?;
     let doc = kdenlive::open(&path)?;
     let mut wanted = edit::current(&doc);
@@ -552,6 +658,10 @@ pub async fn op(
                 "Removed {} from clip {index}.",
                 format_secs(doc.fps.secs(removed))
             ));
+        }
+        ProjectOp::Normalize => {
+            let episode_dir = resolve_episode(working_dir, episode)?;
+            notes.push(normalize_gains(&doc, &mut wanted, &ffmpeg, &episode_dir).await?);
         }
         ProjectOp::RemoveSilences {
             index,
@@ -692,11 +802,15 @@ mod tests {
                 source: Source::Existing(0),
                 in_frame: None,
                 out_frame: None,
+                mix_in: None,
+                gain_db: None,
             },
             Placement {
                 source: Source::Existing(1),
                 in_frame: None,
                 out_frame: None,
+                mix_in: None,
+                gain_db: None,
             },
         ];
         // Item 1 shows 0–599; cut 100–199 and 400–404 (too short a piece after it? no).
@@ -719,6 +833,8 @@ mod tests {
             source: Source::Existing(0),
             in_frame: None,
             out_frame: None,
+            mix_in: None,
+            gain_db: None,
         }];
         let removed = cut_ranges(&mut w, 0, 0, 0, 99, &[(10, 97)], 6);
         assert_eq!((w.len(), removed), (1, 90));
@@ -826,5 +942,86 @@ mod tests {
                 >= 1
         );
         println!("{}", dir.join("ep010/ep010.kdenlive").display());
+    }
+}
+
+#[cfg(test)]
+mod loudness_end_to_end {
+    use super::*;
+
+    /// Clips at very different levels, cut with a crossfade and evened out,
+    /// render at YouTube's loudness.
+    /// `cargo test -- --ignored a_normalised_cut_renders_at_minus_14 --nocapture`
+    #[tokio::test]
+    #[ignore = "needs ffmpeg, ffprobe and melt"]
+    async fn a_normalised_cut_renders_at_minus_14() {
+        let dir = crate::test_util::temp_dir("normalised_cut");
+        std::fs::create_dir_all(dir.join("ep1")).unwrap();
+        for (name, volume) in [("ep1/quiet.mp4", "0.05"), ("ep1/loud.mp4", "0.9")] {
+            let ok = std::process::Command::new("ffmpeg")
+                .args([
+                    "-v",
+                    "error",
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "testsrc=s=640x360:r=30:d=5",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                ])
+                .arg(format!("sine=f=330:d=5,volume={volume}"))
+                .args(["-ac", "2", "-shortest"])
+                .arg(dir.join(name))
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok);
+        }
+        let wd = dir.to_string_lossy().into_owned();
+        let settings = VideoSettings {
+            preset: "1080p30".into(),
+            ..Default::default()
+        };
+        let spec = CutSpec {
+            items: vec![
+                CutItemSpec {
+                    path: Some("ep1/quiet.mp4".into()),
+                    ..Default::default()
+                },
+                CutItemSpec {
+                    path: Some("ep1/loud.mp4".into()),
+                    ..Default::default()
+                },
+            ],
+            crossfade_secs: Some(1.0),
+            ..Default::default()
+        };
+        let r = cut(&wd, "ep1", spec, &settings).await.unwrap();
+        println!("{:?}\n{:#?}", r.notes, r.summary.items);
+        assert!(r.summary.items[1]
+            .crossfade_in_secs
+            .is_some_and(|c| (c - 1.0).abs() < 0.05));
+        assert!(r.summary.items.iter().all(|i| i.gain_db.is_some()));
+        let out = dir.join("out.mp4");
+        let ok = std::process::Command::new("melt")
+            .arg(dir.join("ep1/ep1.kdenlive"))
+            .arg("-consumer")
+            .arg(format!("avformat:{}", out.display()))
+            .args(["vcodec=libx264", "acodec=aac", "ab=192k"])
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok);
+        let l = crate::video::check::measure("ffmpeg", &out).await.unwrap();
+        println!("render: {l:?}");
+        assert!((l.lufs + 14.0).abs() <= 1.0, "{l:?}");
+        assert!(l.true_peak_db.unwrap_or(-99.0) <= -0.9, "{l:?}");
+        // Asking again changes nothing.
+        let again = op(&wd, "ep1", None, ProjectOp::Normalize, &settings)
+            .await
+            .unwrap();
+        assert_eq!(again.summary.items, r.summary.items);
     }
 }

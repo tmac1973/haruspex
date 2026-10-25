@@ -12,4 +12,8 @@ path: string | null,
 /**
  * Where to start and stop in the clip.
  */
-inSecs: number | null, outSecs: number | null, };
+inSecs: number | null, outSecs: number | null, 
+/**
+ * A crossfade into this clip, overriding the cut's.
+ */
+crossfadeSecs: number | null, };

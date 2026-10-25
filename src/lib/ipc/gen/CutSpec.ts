@@ -2,4 +2,12 @@
 import type { CutItemSpec } from "./CutItemSpec";
 import type { EndClip } from "./EndClip";
 
-export type CutSpec = { project: string | null, preset: string | null, intro: EndClip | null, outro: EndClip | null, items: Array<CutItemSpec>, };
+export type CutSpec = { project: string | null, preset: string | null, intro: EndClip | null, outro: EndClip | null, items: Array<CutItemSpec>, 
+/**
+ * A crossfade at every join, in seconds; 0 or none for hard cuts.
+ */
+crossfadeSecs: number | null, 
+/**
+ * Even out the sound to YouTube's -14 LUFS. Default true.
+ */
+normalize: boolean | null, };

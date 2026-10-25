@@ -109,7 +109,7 @@ pub fn problems(
     if let Some(l) = loudness {
         if l.lufs.is_finite() && (l.lufs - TARGET_LUFS).abs() > LUFS_TOLERANCE {
             out.push(format!(
-                "Loudness is {:.1} LUFS, outside YouTube's {TARGET_LUFS} ±{LUFS_TOLERANCE}.",
+                "Loudness is {:.1} LUFS, outside YouTube's {TARGET_LUFS} ±{LUFS_TOLERANCE}; video_normalize evens it out.",
                 l.lufs
             ));
         }

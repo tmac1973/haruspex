@@ -279,6 +279,10 @@ pub struct SummaryItem {
     pub effects: u32,
     pub has_video: bool,
     pub has_audio: bool,
+    /// How long it crossfades from the clip before.
+    pub crossfade_in_secs: Option<f64>,
+    /// The gain Haruspex set on its sound, in dB.
+    pub gain_db: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
@@ -340,12 +344,17 @@ fn resource_of(doc: &Doc, chain: &str) -> String {
 
 pub fn summary(doc: &Doc, working_dir: &str, project: &Path) -> ProjectSummary {
     let fps = doc.fps;
-    let items = doc
-        .items()
+    let all = doc.items();
+    let items = all
         .iter()
         .enumerate()
         .map(|(i, item)| {
             let e = item.any();
+            let overlap = if i > 0 {
+                all[i - 1].end() - item.start()
+            } else {
+                0
+            };
             SummaryItem {
                 index: i as u32 + 1,
                 path: shown_resource(doc, working_dir, &resource_of(doc, &e.chain)),
@@ -356,6 +365,12 @@ pub fn summary(doc: &Doc, working_dir: &str, project: &Path) -> ProjectSummary {
                 effects: item.filters() as u32,
                 has_video: item.video.is_some(),
                 has_audio: item.audio.is_some(),
+                crossfade_in_secs: (overlap > 0).then(|| fps.secs(overlap)),
+                gain_db: item
+                    .audio
+                    .as_ref()
+                    .and_then(|a| doc.our_gain(a.node))
+                    .map(|(_, g)| g),
             }
         })
         .collect();
