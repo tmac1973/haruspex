@@ -874,10 +874,7 @@ mod tests {
             .ends_with("ep011"));
         // A series-folder project with no episode named: the series folder.
         let top = dir.join("show_010.kdenlive");
-        assert_eq!(
-            episode_home(&wd, "", &top).unwrap(),
-            dir.canonicalize().unwrap()
-        );
+        assert_eq!(episode_home(&wd, "", &top).unwrap(), dir.to_path_buf());
     }
 
     #[test]
