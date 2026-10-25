@@ -829,8 +829,9 @@ body:not(.shell-tab-active) .code-block .run-btn {
 }
 
 /* Generated audio in an answer: the place an AudioPlayer is mounted. See
-   audio/figure.ts and audio/mountPlayers.ts. */
-.markdown .chat-audio {
+   audio/figure.ts and audio/mountPlayers.ts. Not under .markdown: the Code
+   tab's answers render outside it. */
+.chat-audio {
 	margin: 0.75rem 0;
 }
 

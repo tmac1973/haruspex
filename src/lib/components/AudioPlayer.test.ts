@@ -38,6 +38,45 @@ describe('AudioPlayer', () => {
 		expect(Number(slider.value)).toBeCloseTo(90.4);
 	});
 
+	it('picks up a length WebKit sets without saying so', async () => {
+		const audio = await loaded();
+		// At load: one durationchange, with 0.
+		Object.defineProperty(audio, 'duration', { value: 0, configurable: true });
+		await fireEvent(audio, new Event('durationchange'));
+		const slider = screen.getByRole('slider', { name: 'Position in Rain' }) as HTMLInputElement;
+		expect(screen.getAllByText('--:--')).toHaveLength(1);
+		expect(slider.disabled).toBe(true);
+		expect(Number(slider.value)).toBe(0);
+
+		// Playing: the real length is there, but no durationchange says so.
+		Object.defineProperty(audio, 'duration', { value: 30, configurable: true });
+		Object.defineProperty(audio, 'currentTime', { value: 2.1, writable: true, configurable: true });
+		await fireEvent(audio, new Event('timeupdate'));
+		expect(screen.getByText('0:30')).toBeTruthy();
+		expect(slider.disabled).toBe(false);
+		expect(Number(slider.max)).toBe(30);
+		expect(Number(slider.value)).toBeCloseTo(2.1);
+	});
+
+	it('mutes, sets the volume, and starts the next player at it', async () => {
+		localStorage.removeItem('haruspex-audio-volume');
+		const audio = await loaded();
+		expect(audio.volume).toBe(1);
+		await fireEvent.click(screen.getByRole('button', { name: 'Mute Rain' }));
+		expect(audio.muted).toBe(true);
+		await fireEvent.click(screen.getByRole('button', { name: 'Unmute Rain' }));
+		expect(audio.muted).toBe(false);
+
+		const volume = screen.getByRole('slider', { name: 'Volume of Rain' });
+		await fireEvent.input(volume, { target: { value: '0.35' } });
+		expect(audio.volume).toBeCloseTo(0.35);
+		expect(localStorage.getItem('haruspex-audio-volume')).toBe('0.35');
+
+		document.body.innerHTML = '';
+		const next = await loaded();
+		expect(next.volume).toBeCloseTo(0.35);
+	});
+
 	it('plays and pauses from its button, and seeks from the slider', async () => {
 		const audio = await loaded();
 		const play = vi.spyOn(audio, 'play').mockResolvedValue();

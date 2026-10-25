@@ -42,7 +42,41 @@
 	let duration = $state(0);
 	let paused = $state(true);
 
+	/** The last volume set on any player, so a new song starts at it. */
+	const VOLUME_KEY = 'haruspex-audio-volume';
+	function savedVolume(): number {
+		try {
+			const v = Number(localStorage.getItem(VOLUME_KEY));
+			return localStorage.getItem(VOLUME_KEY) !== null && v >= 0 && v <= 1 ? v : 1;
+		} catch {
+			return 1;
+		}
+	}
+	let volume = $state(savedVolume());
+	let muted = $state(false);
+
+	function setVolume(e: Event) {
+		volume = Number((e.currentTarget as HTMLInputElement).value);
+		muted = volume === 0;
+		try {
+			localStorage.setItem(VOLUME_KEY, String(volume));
+		} catch {
+			// Not kept; this player still has it.
+		}
+	}
+
 	const ready = $derived(!!loaded && Number.isFinite(duration) && duration > 0);
+
+	/**
+	 * The length, read from the element rather than bound. WebKitGTK fires
+	 * `durationchange` once, at load, with 0 for an MP3 with no length header
+	 * (ACE's), then sets the real length when playback starts without firing
+	 * it again (measured 2026-10-25), so a binding stayed at 0. Read on every
+	 * playback event instead.
+	 */
+	function syncDuration() {
+		if (audio) duration = audio.duration;
+	}
 
 	/** `m:ss`, or `--:--` before the length is known. */
 	function clock(s: number): string {
@@ -92,20 +126,53 @@
 			type="range"
 			class="seek"
 			min="0"
-			max={ready ? duration : 1}
+			max={ready ? duration : 0}
 			step="0.1"
-			value={currentTime}
+			value={ready ? currentTime : 0}
 			oninput={seek}
 			disabled={!ready}
 			aria-label={`Position in ${title}`}
 		/>
 		<span class="time">{ready ? clock(duration) : '--:--'}</span>
+		<button
+			type="button"
+			class="mute"
+			onclick={() => (muted = !muted)}
+			aria-label={muted ? `Unmute ${title}` : `Mute ${title}`}
+			title={muted ? 'Unmute' : 'Mute'}
+		>
+			<svg viewBox="0 0 24 24" aria-hidden="true">
+				<polygon points="4 9 8 9 13 5 13 19 8 15 4 15 4 9"></polygon>
+				{#if muted || volume === 0}
+					<line x1="17" y1="9" x2="22" y2="14"></line><line x1="22" y1="9" x2="17" y2="14"></line>
+				{:else}
+					<path d="M16 9a4 4 0 0 1 0 6"></path>{#if volume > 0.5}<path d="M18.5 6.5a8 8 0 0 1 0 11"
+						></path>{/if}
+				{/if}
+			</svg>
+		</button>
+		<input
+			type="range"
+			class="volume"
+			min="0"
+			max="1"
+			step="0.05"
+			value={muted ? 0 : volume}
+			oninput={setVolume}
+			aria-label={`Volume of ${title}`}
+		/>
 	</div>
 	<audio
 		bind:this={audio}
 		bind:currentTime
-		bind:duration
 		bind:paused
+		bind:volume
+		bind:muted
+		ondurationchange={syncDuration}
+		onloadedmetadata={syncDuration}
+		onplay={syncDuration}
+		onplaying={syncDuration}
+		ontimeupdate={syncDuration}
 		preload="metadata"
 		src={loaded}
 	></audio>
@@ -169,6 +236,41 @@
 	.seek {
 		flex: 1;
 		min-width: 0;
+		accent-color: var(--accent);
+	}
+
+	.mute {
+		display: inline-flex;
+		align-items: center;
+		padding: 0;
+		border: none;
+		background: none;
+		color: var(--text-muted);
+		cursor: pointer;
+		flex: none;
+	}
+
+	.mute:hover {
+		color: var(--text-primary);
+	}
+
+	.mute svg {
+		width: 18px;
+		height: 18px;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.mute svg polygon {
+		fill: currentColor;
+	}
+
+	.volume {
+		width: 4.5rem;
+		flex: none;
 		accent-color: var(--accent);
 	}
 
