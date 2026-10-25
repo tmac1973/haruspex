@@ -3,8 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
 
-import { installAudioSources, playableUrl, sniffAudioMime } from './playable';
-import { renderMarkdown } from '#lib/markdown.ts';
+import { playableUrl, sniffAudioMime } from './playable';
 
 const bytes = (s: string) => new Uint8Array([...s].map((c) => c.charCodeAt(0)));
 let made: Blob[] = [];
@@ -46,36 +45,5 @@ describe('playableUrl', () => {
 		await expect(playableUrl(gone)).rejects.toBe('Audio not found');
 		await expect(playableUrl(gone)).rejects.toBe('Audio not found');
 		expect(tauri.invoke).toHaveBeenCalledTimes(2);
-	});
-});
-
-describe('installAudioSources', () => {
-	it('gives an answer’s player its song, including one rendered later', async () => {
-		const hash = 'b'.repeat(64);
-		const html = renderMarkdown(`![Song](haruspex-audio://localhost/${hash})`);
-		// The desktop's markdown leaves the source to the loader.
-		expect(html).toContain(`data-audio-hash="${hash}"`);
-		expect(html).not.toContain(' src=');
-
-		document.body.innerHTML = html;
-		const stop = installAudioSources(document);
-		const first = document.querySelector('audio')!;
-		await vi.waitFor(() => expect(first.getAttribute('src')).toMatch(/^blob:song-/));
-
-		const later = document.createElement('div');
-		later.innerHTML = html;
-		document.body.append(later);
-		const second = later.querySelector('audio')!;
-		await vi.waitFor(() => expect(second.getAttribute('src')).toBe(first.getAttribute('src')));
-		stop();
-	});
-
-	it('says on the player when the song has gone', async () => {
-		document.body.innerHTML = `<audio data-audio-hash="${'f'.repeat(64)}"></audio>`;
-		const stop = installAudioSources(document);
-		const audio = document.querySelector('audio')!;
-		await vi.waitFor(() => expect(audio.title).toMatch(/no longer in the audio cache/));
-		expect(audio.getAttribute('src')).toBeNull();
-		stop();
 	});
 });

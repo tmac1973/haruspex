@@ -5,7 +5,7 @@
  * syntax, because that is the one it already uses for what a tool made.
  */
 
-import { audioHashFromUrl, audioSrc } from '#lib/audio/url.ts';
+import { audioHashFromUrl } from '#lib/audio/url.ts';
 
 function esc(s: string): string {
 	return s
@@ -16,23 +16,12 @@ function esc(s: string): string {
 }
 
 /**
- * The player for `url`, or `null` when it is not one of our audio URLs. On the
- * web client the source is Settings → Remote control's route for the same
- * hash; on the desktop it is left to `installAudioSources` (`playable.ts`),
- * since the webview can't play the cache's own scheme.
+ * The placeholder for `url`'s player, or `null` when it is not one of our
+ * audio URLs. `installAudioPlayers` (`mountPlayers.ts`) mounts the player:
+ * its own controls, and the song loaded so the webview can play it.
  */
 export function audioFigureHtml(url: string, title: string): string | null {
 	const hash = audioHashFromUrl(url);
-	if (!hash || !audioSrc(hash)) return null;
-	const src =
-		import.meta.env.VITE_HARUSPEX_WEB === '1' ? ` src="${esc(audioSrc(hash) ?? '')}"` : '';
-	const caption = title.trim()
-		? `<figcaption class="chat-audio-title">${esc(title.trim())}</figcaption>`
-		: '';
-	return (
-		`<figure class="chat-audio">` +
-		`<audio controls preload="metadata" data-audio-hash="${hash}"${src}></audio>` +
-		caption +
-		`</figure>`
-	);
+	if (!hash) return null;
+	return `<div class="chat-audio" data-audio-hash="${hash}" data-audio-title="${esc(title.trim())}"></div>`;
 }

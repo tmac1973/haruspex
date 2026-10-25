@@ -308,19 +308,20 @@ describe('renderMarkdown image stripping', () => {
 describe('renderMarkdown generated audio', () => {
 	const hash = '0123456789abcdef'.repeat(4);
 
-	it('turns cached audio into a native player with its title', () => {
+	it('turns cached audio into a player’s place, with its hash and title', () => {
 		const html = renderMarkdown(`Here:\n\n![Rain <lo-fi>](haruspex-audio://localhost/${hash})`);
-		expect(html).toContain('<audio');
-		expect(html).toContain('controls');
-		expect(html).toContain('preload="metadata"');
-		expect(html).toContain(hash);
-		expect(html).toContain('Rain &lt;lo-fi&gt;');
+		expect(html).toContain('class="chat-audio"');
+		expect(html).toContain(`data-audio-hash="${hash}"`);
+		// Inside an attribute, so < and > are harmless and come back as they were.
+		expect(html).toContain('data-audio-title="Rain <lo-fi>"');
+		// No source of its own: the scheme won't play in the webview.
+		expect(html).not.toContain('haruspex-audio://');
 		expect(html).not.toContain('<img');
 	});
 
 	it('reads the Windows form of the URL too', () => {
 		const html = renderMarkdown(`![song](http://haruspex-audio.localhost/${hash})`);
-		expect(html).toContain('<audio');
+		expect(html).toContain(`data-audio-hash="${hash}"`);
 	});
 
 	it('drops audio from anywhere else', () => {
@@ -330,7 +331,7 @@ describe('renderMarkdown generated audio', () => {
 			'haruspex-audio://localhost/../x'
 		]) {
 			const html = renderMarkdown(`![song](${src})`);
-			expect(html).not.toContain('<audio');
+			expect(html).not.toContain('chat-audio');
 			expect(html).not.toContain(src);
 		}
 	});

@@ -9,8 +9,7 @@
  * blob of them. The web client plays Settings → Remote control's HTTP route
  * directly, which needs no help.
  *
- * Players in answers are plain HTML from markdown, so they carry the hash in
- * `data-audio-hash` and {@link installAudioSources} fills in their `src`.
+ * `AudioPlayer` loads every player's song through here.
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -44,40 +43,4 @@ export function playableUrl(hash: string): Promise<string> {
 		urls.set(hash, url);
 	}
 	return url;
-}
-
-/** Give a player its source, or say on it why it has none. */
-function fill(audio: HTMLAudioElement): void {
-	const hash = audio.dataset.audioHash;
-	if (!hash || audio.getAttribute('src') || audio.dataset.audioLoading) return;
-	audio.dataset.audioLoading = '1';
-	playableUrl(hash)
-		.then((url) => {
-			audio.src = url;
-		})
-		.catch((e: unknown) => {
-			audio.title = 'This song is no longer in the audio cache.';
-			console.warn('Could not load a song for its player:', e);
-		})
-		.finally(() => delete audio.dataset.audioLoading);
-}
-
-/**
- * Fill in every answer's player, now and as answers render. One observer for
- * the document, as markdown is re-rendered while a reply streams.
- */
-export function installAudioSources(doc: Document): () => void {
-	const scan = (root: ParentNode) =>
-		root.querySelectorAll<HTMLAudioElement>('audio[data-audio-hash]').forEach(fill);
-	scan(doc);
-	const observer = new MutationObserver((records) => {
-		for (const r of records) {
-			for (const node of r.addedNodes) {
-				if (node instanceof HTMLAudioElement) fill(node);
-				else if (node instanceof Element) scan(node);
-			}
-		}
-	});
-	observer.observe(doc.body, { childList: true, subtree: true });
-	return () => observer.disconnect();
 }

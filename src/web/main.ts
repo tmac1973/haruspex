@@ -7,6 +7,7 @@ import { mount } from 'svelte';
 import '#lib/styles/app.css';
 import { installMarkdownActions } from '#lib/markdown-actions.ts';
 import { installAudioExclusivity } from '#lib/audio/exclusive.ts';
+import { installAudioPlayers } from '#lib/audio/mountPlayers.ts';
 import App from './App.svelte';
 
 // Code blocks' Copy buttons (rendered markdown can't carry handlers).
@@ -14,3 +15,5 @@ installMarkdownActions();
 // One generated-audio player at a time.
 installAudioExclusivity(document);
 mount(App, { target: document.getElementById('app')! });
+// A player for each song an answer names.
+installAudioPlayers(document);
