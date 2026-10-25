@@ -161,7 +161,7 @@ async function unsupported(task: MusicTask): Promise<string | null> {
 	}
 	return (
 		'The music model in Settings → Music can only ' +
-		'restyle, redo or extend a song; adding, pulling out or completing instruments needs a base or SFT model.'
+		'restyle, redo or extend a song; adding, pulling out or completing instruments needs a base model, such as ACE-Step 1.5 XL base.'
 	);
 }
 

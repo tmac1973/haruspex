@@ -201,7 +201,7 @@ describe('edit_music', () => {
 			{ source: SRC_URL, action: 'add_instrument', instrument: 'drums', caption: 'rock' },
 			chat
 		);
-		expect(out.result).toMatch(/needs a base or SFT model/);
+		expect(out.result).toMatch(/needs a base model/);
 		state.tasks.mockResolvedValue(['text2music']);
 		const old = await executeTool(
 			'edit_music',

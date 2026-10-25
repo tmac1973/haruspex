@@ -212,7 +212,12 @@ describe('ace-server music backend', () => {
 		expect(result).toMatchObject({ durationSec: 50, seed: 42 });
 	});
 
-	it('runs every task on an SFT or base model, and no stem tasks on turbo', async () => {
+	it('runs every task on a base model, and no instrument tasks on SFT or turbo', async () => {
+		// The recorded server loaded XL SFT.
+		expect(await aceMusicBackend.tasks()).toEqual(['text2music', 'cover', 'repaint']);
+		settings.musicAceModel = 'acestep-v15-turbo-Q8_0.gguf';
+		expect(await aceMusicBackend.tasks()).toEqual(['text2music', 'cover', 'repaint']);
+		settings.musicAceModel = 'acestep-v15-xl-base-Q8_0.gguf';
 		expect(await aceMusicBackend.tasks()).toEqual([
 			'text2music',
 			'cover',
@@ -221,7 +226,5 @@ describe('ace-server music backend', () => {
 			'extract',
 			'complete'
 		]);
-		settings.musicAceModel = 'acestep-v15-turbo-Q8_0.gguf';
-		expect(await aceMusicBackend.tasks()).toEqual(['text2music', 'cover', 'repaint']);
 	});
 });

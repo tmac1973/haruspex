@@ -106,12 +106,13 @@ export function buildEditSynthBody(req: MusicRequest, model: string): Json {
 }
 
 /**
- * The tasks a synthesis model runs. acestep.cpp warns that a turbo model's
- * stem tasks come out incoherent; it tells turbo apart by the model's
- * metadata, and every ACE-Step GGUF we know of says so in its name.
+ * The tasks a synthesis model runs: every one on a base model, all but the
+ * instrument tasks on turbo or SFT. acestep.cpp only warns about turbo, but
+ * XL SFT hands back the source mix for them (llama-toolchest#350). Every
+ * ACE-Step base GGUF we know of says "base" in its name.
  */
 export function tasksFor(model: string): MusicTask[] {
-	if (!/turbo/i.test(model)) return MUSIC_TASKS;
+	if (/base/i.test(model)) return MUSIC_TASKS;
 	return MUSIC_TASKS.filter((t) => t !== 'lego' && t !== 'extract' && t !== 'complete');
 }
 

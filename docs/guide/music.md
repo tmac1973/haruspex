@@ -50,7 +50,7 @@ Ask the assistant to work on a song it made in the chat, or an audio file in the
 
 A new song can also borrow another's sound: "a ballad in the voice of that last song".
 
-Instrument changes need a base or SFT model; a turbo model can only restyle, redo and extend. A llama-toolchest server from before October 2026 can't change songs at all.
+Instrument changes need a base model, such as ACE-Step 1.5 XL base; turbo and SFT models can only restyle, redo and extend. A llama-toolchest server from before October 2026 can't change songs at all.
 
 ## Save a song yourself
 
@@ -77,4 +77,4 @@ The server forgets a song after a while (llama-toolchest after a day), so Harusp
 
 ## What has been tested
 
-Making songs in the Code tab, saving one into a project, cancelling one, and keeping songs across a restart have been run against a llama-toolchest server with ACE-Step turbo. A 30-second song took about 10 seconds to make. Songs in Chat are covered only by automated tests so far. ace-server directly has been tested with the ACE-Step XL SFT model. Restyling, redoing, extending and adding or pulling out instruments were tested on a llama-toolchest server with ACE-Step XL SFT.
+Making songs in the Code tab, saving one into a project, cancelling one, and keeping songs across a restart have been run against a llama-toolchest server with ACE-Step turbo. A 30-second song took about 10 seconds to make. Songs in Chat are covered only by automated tests so far. ace-server directly has been tested with the ACE-Step XL SFT model. Changing songs in Chat was tested on llama-toolchest: extending and restyling with XL SFT, instruments with XL base.
