@@ -18,8 +18,11 @@ import {
 	type MusicGenerateOptions,
 	type MusicProgress,
 	type MusicRequest,
-	type MusicResult
+	type MusicResult,
+	type MusicTask
 } from '#lib/music/types.ts';
+import { onSource, uploadsOf } from '#lib/music/tasks.ts';
+import type { UploadFile } from '#lib/ipc/gen/UploadFile.ts';
 import { hostOf } from '#lib/toolchest/client.ts';
 import { mimeFor } from '#lib/music/toolchest/adapter.ts';
 import { audioSrc } from '#lib/audio/url.ts';
@@ -27,6 +30,7 @@ import type { StoredAudio } from '#lib/ipc/gen/StoredAudio.ts';
 import { aceJson } from '#lib/music/ace/client.ts';
 import {
 	ROUTES,
+	buildEditSynthBody,
 	buildLmBody,
 	buildSynthBody,
 	composedFacts,
@@ -34,6 +38,7 @@ import {
 	readJobId,
 	readProps,
 	readStatus,
+	tasksFor,
 	type AceProps,
 	type AceStatus
 } from '#lib/music/ace/adapter.ts';
@@ -83,9 +88,10 @@ async function runJob(
 	path: string,
 	body: unknown,
 	phase: MusicProgress['phase'],
-	opts: MusicGenerateOptions
+	opts: MusicGenerateOptions,
+	files: UploadFile[] = []
 ): Promise<string> {
-	const id = readJobId(await aceJson(base, { method: 'POST', path, body }, opts.signal));
+	const id = readJobId(await aceJson(base, { method: 'POST', path, body }, opts.signal, files));
 	if (!id) throw new MusicBackendError('rejected', `ace-server made no ${path.slice(1)} job.`);
 	const cancel = () =>
 		void aceJson(base, { method: 'POST', path: ROUTES.cancel(id) }).catch(() => {});
@@ -123,18 +129,24 @@ async function run(
 	const why = unusable(p, model, host);
 	if (why) throw new MusicBackendError('unconfigured', why);
 
-	const lm = await runJob(base, ROUTES.lm, buildLmBody(req), 'composing', opts);
-	const composed = readComposed(await aceJson(base, { path: ROUTES.result(lm) }, opts.signal));
-	if (!composed) throw new MusicBackendError('rejected', 'ace-server composed nothing.');
-	const facts = composedFacts(composed);
+	let synthBody;
+	let facts: ReturnType<typeof composedFacts> = {
+		bpm: req.bpm,
+		duration: undefined,
+		keyscale: req.key,
+		seed: req.seed
+	};
+	if (onSource(req)) {
+		synthBody = buildEditSynthBody(req, model);
+	} else {
+		const lm = await runJob(base, ROUTES.lm, buildLmBody(req), 'composing', opts);
+		const composed = readComposed(await aceJson(base, { path: ROUTES.result(lm) }, opts.signal));
+		if (!composed) throw new MusicBackendError('rejected', 'ace-server composed nothing.');
+		facts = composedFacts(composed);
+		synthBody = buildSynthBody(composed, req.format, model);
+	}
 
-	const synth = await runJob(
-		base,
-		ROUTES.synth,
-		buildSynthBody(composed, req.format, model),
-		'synthesizing',
-		opts
-	);
+	const synth = await runJob(base, ROUTES.synth, synthBody, 'synthesizing', opts, uploadsOf(req));
 	opts.onProgress?.({ phase: 'saving' });
 	const stored = await invoke<StoredAudio>('audio_store_url', {
 		url: `${base}${ROUTES.result(synth)}`,
@@ -177,6 +189,13 @@ export const aceMusicBackend: MusicBackend = {
 		const why = unusable(p, model, host);
 		if (why) return { ok: false, detail: why, models };
 		return { ok: true, detail: `Connected — ${model || p.synthModels[0]} on ${host}.`, models };
+	},
+
+	async tasks(): Promise<MusicTask[]> {
+		const base = baseUrl();
+		if (!base) return [];
+		const p = await props(base);
+		return tasksFor(chosenModel() || p.synthModels[0] || '');
 	},
 
 	generate(req: MusicRequest, opts: MusicGenerateOptions = {}): Promise<MusicResult> {

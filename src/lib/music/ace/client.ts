@@ -8,9 +8,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
 import type { ComfyError } from '#lib/ipc/gen/ComfyError.ts';
 import { MusicBackendError } from '#lib/music/types.ts';
+import type { UploadFile } from '#lib/ipc/gen/UploadFile.ts';
 import { errorOf } from '#lib/music/ace/adapter.ts';
 
 const TIMEOUT_MS = 30_000;
+/** A song can be tens of megabytes; the job itself is only queued. */
+const UPLOAD_TIMEOUT_MS = 120_000;
 
 let nextId = 0;
 
@@ -22,6 +25,8 @@ function fromRust(e: unknown, path: string, signal?: AbortSignal): MusicBackendE
 		case 'timeout':
 		case 'unreachable':
 			return new MusicBackendError(err.kind, err.message);
+		case 'invalid':
+			return new MusicBackendError('rejected', err.message);
 		case 'rejected': {
 			const why = errorOf(err.body) ?? `status ${err.status}`;
 			return new MusicBackendError('rejected', `ace-server refused ${path}: ${why}`, {
@@ -37,10 +42,15 @@ function fromRust(e: unknown, path: string, signal?: AbortSignal): MusicBackendE
 	}
 }
 
+/**
+ * A call to ace-server. With `files` it is a multipart POST (`ace_upload`):
+ * the body in a `request` part and each song in its own.
+ */
 export async function aceJson(
 	baseUrl: string,
 	req: { method?: 'GET' | 'POST'; path: string; body?: unknown },
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	files?: UploadFile[]
 ): Promise<unknown> {
 	if (signal?.aborted) throw new MusicBackendError('cancelled', 'Cancelled.');
 	const id = `ace-${++nextId}`;
@@ -48,17 +58,18 @@ export async function aceJson(
 	const onAbort = () => void invoke('comfy_cancel', { id }).catch(() => {});
 	signal?.addEventListener('abort', onAbort, { once: true });
 	try {
-		return await invoke<unknown>('ace_json', {
-			call: {
-				base_url: baseUrl,
-				api_key: '',
-				method: req.method ?? 'GET',
-				path: req.path,
-				body: req.body ?? null,
-				timeout_ms: TIMEOUT_MS,
-				id
-			}
-		});
+		const call = {
+			base_url: baseUrl,
+			api_key: '',
+			method: files?.length ? 'POST' : (req.method ?? 'GET'),
+			path: req.path,
+			body: req.body ?? null,
+			timeout_ms: files?.length ? UPLOAD_TIMEOUT_MS : TIMEOUT_MS,
+			id
+		};
+		return files?.length
+			? await invoke<unknown>('ace_upload', { call, files })
+			: await invoke<unknown>('ace_json', { call });
 	} catch (e) {
 		throw fromRust(e, req.path.split('?')[0], signal);
 	} finally {

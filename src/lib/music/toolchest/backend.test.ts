@@ -46,14 +46,17 @@ function use(answers: Record<string, Answer>) {
 		invokeRouter({
 			comfy_cancel: null,
 			audio_store_url: { hash: HASH, mime: 'audio/mpeg', bytes: 1024 },
-			toolchest_json: (args) => {
-				const call = (args as { call: Call }).call;
-				const a = answers[`${call.method} ${call.path}`];
-				if (a === undefined) throw { kind: 'rejected', status: 404, body: '{}' };
-				return typeof a === 'function' ? (a as (c: Call) => unknown)(call) : a;
-			}
+			toolchest_json: (args) => answer(answers, args),
+			toolchest_upload: (args) => answer(answers, args)
 		})
 	);
+}
+
+function answer(answers: Record<string, Answer>, args: unknown) {
+	const call = (args as { call: Call }).call;
+	const a = answers[`${call.method} ${call.path}`];
+	if (a === undefined) throw { kind: 'rejected', status: 404, body: '{}' };
+	return typeof a === 'function' ? (a as (c: Call) => unknown)(call) : a;
 }
 
 function jobRoutes(extra: Record<string, Answer> = {}): Record<string, Answer> {
@@ -178,5 +181,45 @@ describe('llama-toolchest music backend', () => {
 		});
 		use({ 'GET /v1/models': musicState(asmodean, 'running') });
 		expect((await toolchestMusicBackend.probe()).detail).toBe('Connected — ace-xl on box:3000.');
+	});
+
+	it('sends a task on a song as a multipart job, with no length', async () => {
+		const source = { name: 'song.mp3', hash: 'a'.repeat(64) };
+		await toolchestMusicBackend.generate({
+			...request,
+			task: 'cover',
+			coverStrength: 0.3,
+			lyrics: 'la la',
+			instrumental: false,
+			source
+		});
+		const [, args] = tauri.invoke.mock.calls.find(([c]) => c === 'toolchest_upload')!;
+		expect(args.call).toMatchObject({ method: 'POST', path: '/v1/music/jobs' });
+		expect(args.call.body).toMatchObject({
+			model: 'ace-gpu2',
+			task_type: 'cover',
+			audio_cover_strength: 0.3,
+			lyrics: 'la la'
+		});
+		expect(args.call.body).not.toHaveProperty('duration');
+		expect(args.files).toEqual([
+			{ field: 'audio', filename: 'song.mp3', hash: 'a'.repeat(64), bytes: null }
+		]);
+		expect(
+			tauri.invoke.mock.calls.some(
+				([c, a]) => c === 'toolchest_json' && a.call.path === '/v1/music/jobs'
+			)
+		).toBe(false);
+	});
+
+	it('lists the tasks the chosen model runs, or text2music from an older build', async () => {
+		expect(await toolchestMusicBackend.tasks()).toEqual(['text2music']);
+		const models = musicState(compute2, 'running');
+		for (const m of models.data) {
+			if (m.meta?.kind === 'music')
+				Object.assign(m.meta, { tasks: ['text2music', 'cover', 'repaint'] });
+		}
+		use({ 'GET /v1/models': models });
+		expect(await toolchestMusicBackend.tasks()).toEqual(['text2music', 'cover', 'repaint']);
 	});
 });

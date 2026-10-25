@@ -7,6 +7,7 @@
 
 import type { JobLike } from '#lib/toolchest/jobs.ts';
 import type { MusicProgress, MusicRequest } from '#lib/music/types.ts';
+import { onSource, taskFields } from '#lib/music/tasks.ts';
 
 export const ROUTES = {
 	models: '/v1/models',
@@ -17,19 +18,23 @@ export const ROUTES = {
 /** What ACE-Step reads as "no vocals". */
 export const INSTRUMENTAL = '[Instrumental]';
 
-/** The job request. Zero and empty values are left out, so ACE picks its own. */
+/**
+ * The job request. Zero and empty values are left out, so ACE picks its own.
+ * A task on a song takes its length from the song, so none is sent.
+ */
 export function buildJobBody(req: MusicRequest, model: string): Record<string, unknown> {
 	const lyrics = req.lyrics?.trim() || (req.instrumental ? INSTRUMENTAL : '');
 	const body: Record<string, unknown> = {
 		model,
 		caption: req.caption.trim(),
-		duration: req.durationSec,
 		seed: req.seed,
 		output_format: req.format,
 		// ACE's model may rewrite the caption first; off, as toolchest has it,
 		// because it turned a male vocal into a female one in testing.
-		rewrite_caption: false
+		rewrite_caption: false,
+		...taskFields(req)
 	};
+	if (!onSource(req)) body.duration = req.durationSec;
 	if (lyrics) body.lyrics = lyrics;
 	if (req.bpm) body.bpm = req.bpm;
 	if (req.key?.trim()) body.keyscale = req.key.trim();

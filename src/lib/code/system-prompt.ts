@@ -72,13 +72,13 @@ function assetLine(): string {
 		: '\n- make_asset — make a tiling texture for the project, or a transition set where two textures meet, drawn by code from recipes you write, as PNGs at the size the project uses. Sprites and icons need image generation in Settings → Image. Check the result before moving on.';
 }
 
-/** generate_music, when Settings → Music has a backend. */
+/** generate_music and edit_music, when Settings → Music has a backend. */
 function musicLine(readOnly: boolean | undefined): string {
 	if (getSettings().musicBackendKind === 'none') return '';
 	const save = readOnly
 		? ''
 		: ' Pass path (ending .mp3 or .wav) to also save it into the project; save_generated saves one made earlier.';
-	return `\n- generate_music — make a song or instrumental from a caption of tags, with lyrics if it has vocals. It takes a minute or more and plays in your answer.${save}`;
+	return `\n- generate_music — make a song or instrumental from a caption of tags, with lyrics if it has vocals. It takes a minute or more and plays in your answer.${save}\n- edit_music — a new version of a song made earlier or a file in the project: restyle it, redo or extend a stretch, or add or pull out an instrument.`;
 }
 
 /** Custom instructions, then the repo's AGENTS.md, then the skill list. */

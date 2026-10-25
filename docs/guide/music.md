@@ -1,6 +1,6 @@
 ---
 title: Music generation
-description: Turning on music generation with a llama-toolchest server or an acestep.cpp ace-server, making songs in Chat and the Code tab, the test clip, and where songs are kept.
+description: Turning on music generation with llama-toolchest or ace-server, making songs in Chat and the Code tab, changing a song you already have, the test clip, and where songs are kept.
 ---
 
 # Music generation
@@ -39,6 +39,19 @@ You can ask for a length (5 to 240 seconds), tempo, key, language, or WAV instea
 
 With a working folder set in Chat, the assistant can also save the song there: ask "save it as rain.mp3", when you ask for it or later. If that file exists you're asked before it is replaced. Without a folder it can't save files.
 
+## Change a song you already have
+
+Ask the assistant to work on a song it made in the chat, or an audio file in the working folder (MP3, WAV, FLAC or OGG, up to 10 minutes). The original is kept; the new version plays as a new song.
+
+- **Restyle**: "the same song as smoky jazz". Give the lyrics again to keep the vocals. It can follow the original closely or loosely.
+- **Redo a stretch**: "redo 0:30 to 0:45 with a guitar solo".
+- **Extend**: "add 30 seconds at the end", or an intro at the start.
+- **Add or pull out an instrument**: "add drums", "give me just the vocals", or fill in a band around a part. It knows vocals, backing vocals, drums, bass, guitar, keyboard, percussion, strings, synth, effects, brass and woodwinds.
+
+A new song can also borrow another's sound: "a ballad in the voice of that last song".
+
+Instrument changes need a base model, such as ACE-Step 1.5 XL base; turbo and SFT models can only restyle, redo and extend. A llama-toolchest server from before October 2026 can't change songs at all.
+
 ## Save a song yourself
 
 The player's **Save as…** button (the arrow) saves the song wherever you choose. On the Remote control page it downloads the file.
@@ -58,10 +71,10 @@ The server forgets a song after a while (llama-toolchest after a day), so Harusp
 - Only llama-toolchest and ace-server can make music.
 - With ace-server, the server's own settings (steps, guidance) are used; Haruspex doesn't change them.
 - Players use your system's default audio output, not the device in Settings → Audio.
-- A song can't be longer than 240 seconds.
+- A new song can't be longer than 240 seconds; a changed one can be up to 600.
 - The assistant can only save into the working folder (Chat) or the project (Code tab); use **Save as…** for anywhere else.
 - A short song can come out a little shorter than asked: a 10-second request once gave 7.85 seconds.
 
 ## What has been tested
 
-Making songs in the Code tab, saving one into a project, cancelling one, and keeping songs across a restart have been run against a llama-toolchest server with ACE-Step turbo. A 30-second song took about 10 seconds to make. Songs in Chat are covered only by automated tests so far. ace-server directly has been tested with the ACE-Step XL SFT model.
+Making songs in the Code tab, saving one into a project, cancelling one, and keeping songs across a restart have been run against a llama-toolchest server with ACE-Step turbo. A 30-second song took about 10 seconds to make. Songs in Chat are covered only by automated tests so far. ace-server directly has been tested with the ACE-Step XL SFT model. Changing songs in Chat was tested on llama-toolchest: extending and restyling with XL SFT, instruments with XL base.

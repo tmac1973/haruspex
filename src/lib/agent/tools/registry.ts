@@ -41,6 +41,9 @@ export function unregisterTool(name: string): void {
 	tools.delete(name);
 }
 
+/** The tools that make a song, offered and saved alike. */
+const SONG_TOOLS = new Set(['generate_music', 'edit_music']);
+
 /**
  * Get the tool schemas to expose to the model for this request.
  *
@@ -176,7 +179,7 @@ function shouldIncludeCodeTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	if (name === 'make_asset') return opts.interactive;
 	// A song for the project or the answer. The Code tab only: Shell has no
 	// saved session to keep the song in.
-	if (name === 'generate_music') return opts.musicGeneration && isCodeTab(opts);
+	if (SONG_TOOLS.has(name)) return opts.musicGeneration && isCodeTab(opts);
 	// Saving a picture or song made earlier into the project.
 	if (name === 'save_generated') return isCodeTab(opts) && !opts.codeReadOnly;
 	return false;
@@ -238,7 +241,7 @@ function subtaskExcludes(reg: ToolRegistration): boolean {
 	return (
 		name === 'delegate' ||
 		name === 'make_asset' ||
-		name === 'generate_music' ||
+		SONG_TOOLS.has(name) ||
 		name === 'save_generated' ||
 		CODE_TAB_ONLY.has(name) ||
 		reg.category === 'interaction' ||
@@ -383,7 +386,7 @@ function schemaFor(
 	// project, or Chat's working folder.
 	const canSave = filter.codeMode ? !filter.codeReadOnly : filter.hasWorkingDir;
 	const name = reg.schema.function.name;
-	if ((name === 'generate_music' || name === 'generate_image') && !canSave) {
+	if ((SONG_TOOLS.has(name) || name === 'generate_image') && !canSave) {
 		return withoutProjectWrite(reg.schema);
 	}
 	return profileSchema(reg.schema, filter);

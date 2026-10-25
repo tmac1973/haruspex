@@ -10,7 +10,8 @@ import type {
 	MusicBackendKind,
 	MusicGenerateOptions,
 	MusicRequest,
-	MusicResult
+	MusicResult,
+	MusicTask
 } from '#lib/music/types.ts';
 import type { ModelOption, ProbeResult } from '#lib/image/backend.ts';
 
@@ -20,6 +21,8 @@ export interface MusicBackend {
 	kind: MusicBackendKind;
 	/** Is it reachable and usable? Lists its models when it can. */
 	probe(): Promise<ProbeResult>;
+	/** The tasks the chosen model runs; `text2music` alone on a server that says nothing. */
+	tasks(): Promise<MusicTask[]>;
 	generate(req: MusicRequest, opts?: MusicGenerateOptions): Promise<MusicResult>;
 }
 

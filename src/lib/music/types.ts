@@ -6,6 +6,46 @@
 /** Which server makes music, if any. `'none'` is the shipped default. */
 export type MusicBackendKind = 'none' | 'llama-toolchest' | 'ace-server';
 
+/**
+ * What a request does, as ACE-Step names it. `text2music` writes a new song;
+ * the rest work on a `source` song: `cover` restyles it, `repaint` redoes a
+ * stretch (and extends it, with a window past either end), `lego` adds an
+ * instrument, `extract` pulls one out and `complete` fills in the rest.
+ */
+export type MusicTask = 'text2music' | 'cover' | 'repaint' | 'lego' | 'extract' | 'complete';
+
+export const MUSIC_TASKS: MusicTask[] = [
+	'text2music',
+	'cover',
+	'repaint',
+	'lego',
+	'extract',
+	'complete'
+];
+
+/** The instruments ACE-Step knows, for `lego`, `extract` and `complete`. */
+export const MUSIC_TRACKS = [
+	'vocals',
+	'backing_vocals',
+	'drums',
+	'bass',
+	'guitar',
+	'keyboard',
+	'percussion',
+	'strings',
+	'synth',
+	'fx',
+	'brass',
+	'woodwinds'
+] as const;
+
+/**
+ * A song sent with a request: one in the audio cache by hash, or the bytes of
+ * a file read from the working folder. Rust reads a cached one itself, so it
+ * never crosses the bridge.
+ */
+export type MusicInput = { name: string } & ({ hash: string } | { bytes: number[] });
+
 /** One song. */
 export interface MusicRequest {
 	/** What the player and a saved file are called. */
@@ -24,6 +64,19 @@ export interface MusicRequest {
 	language?: string;
 	seed: number;
 	format: 'mp3' | 'wav';
+	/** Default `text2music`; every other task needs a `source`. */
+	task?: MusicTask;
+	/** The song the task works on. */
+	source?: MusicInput;
+	/** A song whose sound (timbre) to borrow; any task takes one. */
+	reference?: MusicInput;
+	/** The instrument for `lego` and `extract`; `complete` takes several. */
+	tracks?: string[];
+	/** For `cover`, 0–1: how closely it follows the source. */
+	coverStrength?: number;
+	/** The stretch `repaint` redoes, in seconds; past either end extends the song. */
+	repaintStart?: number;
+	repaintEnd?: number;
 }
 
 export interface MusicProgress {

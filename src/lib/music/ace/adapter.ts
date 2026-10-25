@@ -5,7 +5,8 @@
  */
 
 import { INSTRUMENTAL } from '#lib/music/toolchest/adapter.ts';
-import type { MusicRequest } from '#lib/music/types.ts';
+import { MUSIC_TASKS, type MusicRequest, type MusicTask } from '#lib/music/types.ts';
+import { taskFields } from '#lib/music/tasks.ts';
 
 export const ROUTES = {
 	props: '/props',
@@ -81,6 +82,38 @@ export function buildSynthBody(
 	const body: Json = { ...composed, output_format: format === 'wav' ? 'wav16' : 'mp3' };
 	if (model) body.synth_model = model;
 	return body;
+}
+
+/**
+ * The synth request for a task on a song, which skips composing: the song
+ * stands in for the arrangement `/lm` would write, as the official server
+ * has it. Its length comes from the song.
+ */
+export function buildEditSynthBody(req: MusicRequest, model: string): Json {
+	const lyrics = req.lyrics?.trim() || (req.instrumental ? INSTRUMENTAL : '');
+	const body: Json = {
+		caption: req.caption.trim(),
+		seed: req.seed,
+		output_format: req.format === 'wav' ? 'wav16' : 'mp3',
+		...taskFields(req)
+	};
+	if (lyrics) body.lyrics = lyrics;
+	if (req.bpm) body.bpm = req.bpm;
+	if (req.key?.trim()) body.keyscale = req.key.trim();
+	if (req.language?.trim()) body.vocal_language = req.language.trim();
+	if (model) body.synth_model = model;
+	return body;
+}
+
+/**
+ * The tasks a synthesis model runs: every one on a base model, all but the
+ * instrument tasks on turbo or SFT. acestep.cpp only warns about turbo, but
+ * XL SFT hands back the source mix for them (llama-toolchest#350). Every
+ * ACE-Step base GGUF we know of says "base" in its name.
+ */
+export function tasksFor(model: string): MusicTask[] {
+	if (/base/i.test(model)) return MUSIC_TASKS;
+	return MUSIC_TASKS.filter((t) => t !== 'lego' && t !== 'extract' && t !== 'complete');
 }
 
 /** The tempo, key, length and seed a composed request holds. */

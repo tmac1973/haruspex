@@ -8,6 +8,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
 import type { ComfyError } from '#lib/ipc/gen/ComfyError.ts';
+import type { UploadFile } from '#lib/ipc/gen/UploadFile.ts';
 import { toolchestCall } from '#lib/toolchest/models.ts';
 
 export interface ToolchestConfig {
@@ -80,6 +81,8 @@ function fromRust(e: unknown, path: string, signal?: AbortSignal): ToolchestErro
 			return new ToolchestError(err.kind, err.message);
 		case 'rejected':
 			return fromRefusal(err.status, err.body, path);
+		case 'invalid':
+			return new ToolchestError('rejected', err.message);
 		default:
 			if (signal?.aborted) return new ToolchestError('cancelled', 'Cancelled.');
 			return new ToolchestError(
@@ -92,10 +95,11 @@ function fromRust(e: unknown, path: string, signal?: AbortSignal): ToolchestErro
 let nextId = 0;
 
 async function call<T>(
-	command: 'toolchest_json' | 'toolchest_bytes',
+	command: 'toolchest_json' | 'toolchest_bytes' | 'toolchest_upload',
 	cfg: ToolchestConfig,
 	req: { method?: 'GET' | 'POST' | 'DELETE'; path: string; body?: unknown; timeoutMs?: number },
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	files?: UploadFile[]
 ): Promise<T> {
 	if (signal?.aborted) throw new ToolchestError('cancelled', 'Cancelled.');
 	const id = `toolchest-${++nextId}`;
@@ -112,7 +116,8 @@ async function call<T>(
 				req.body,
 				req.timeoutMs,
 				id
-			)
+			),
+			...(files ? { files } : {})
 		});
 	} catch (e) {
 		throw fromRust(e, req.path, signal);
@@ -127,6 +132,24 @@ export function toolchestJson(
 	signal?: AbortSignal
 ): Promise<unknown> {
 	return call<unknown>('toolchest_json', cfg, req, signal);
+}
+
+/** A multipart POST: `body` in a `request` part and each song in its own. */
+export function toolchestUpload(
+	cfg: ToolchestConfig,
+	req: { path: string; body: unknown; timeoutMs?: number },
+	files: UploadFile[],
+	signal?: AbortSignal
+): Promise<unknown> {
+	// A song can be tens of megabytes; the job itself is only queued.
+	const timeoutMs = req.timeoutMs ?? 120_000;
+	return call<unknown>(
+		'toolchest_upload',
+		cfg,
+		{ ...req, method: 'POST', timeoutMs },
+		signal,
+		files
+	);
 }
 
 export async function toolchestBytes(

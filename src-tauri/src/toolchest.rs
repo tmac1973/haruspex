@@ -33,6 +33,21 @@ pub async fn toolchest_bytes(call: ComfyCall) -> Result<Response, ComfyError> {
     crate::comfy::bytes_from(call, TOOLCHEST).await
 }
 
+/// A music job with songs: `POST /v1/music/jobs` as multipart, the body in
+/// a `request` part and each song in its own (`audio`, `ref_audio`).
+#[tauri::command]
+pub async fn toolchest_upload(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, crate::db::Database>,
+    call: ComfyCall,
+    files: Vec<crate::comfy::UploadFile>,
+) -> Result<serde_json::Value, ComfyError> {
+    let dir =
+        crate::audio_cache::cache_dir(&app).map_err(|message| ComfyError::Invalid { message })?;
+    let parts = crate::comfy::resolve_uploads(&db, &dir, files)?;
+    crate::comfy::upload_json(call, TOOLCHEST, parts).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,6 +100,44 @@ mod tests {
             refused,
             Err(ComfyError::Rejected { status: 401, .. })
         ));
+    }
+
+    /// The body goes in a `request` part and each file in a part of its own.
+    #[tokio::test]
+    async fn an_upload_is_multipart_with_the_request_and_its_files() {
+        let app = axum::Router::new().route(
+            "/v1/music/jobs",
+            axum::routing::post(|headers: HeaderMap, body: String| async move {
+                let ctype = headers["content-type"].to_str().unwrap().to_string();
+                axum::Json(serde_json::json!({ "type": ctype, "body": body }))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let mut c = call(&format!("http://{addr}"), "POST", "/v1/music/jobs", "");
+        c.body = Some(serde_json::json!({ "task_type": "cover" }));
+        let files = vec![crate::comfy::FilePart {
+            field: "audio".into(),
+            filename: "song.mp3".into(),
+            bytes: b"MP3".to_vec(),
+        }];
+        let out = crate::comfy::upload_json(c, TOOLCHEST, files)
+            .await
+            .unwrap();
+        assert!(out["type"]
+            .as_str()
+            .unwrap()
+            .starts_with("multipart/form-data"));
+        let body = out["body"].as_str().unwrap();
+        for want in [
+            "name=\"request\"\r\n\r\n{\"task_type\":\"cover\"}",
+            "name=\"audio\"; filename=\"song.mp3\"",
+            "\r\n\r\nMP3\r\n",
+        ] {
+            assert!(body.contains(want), "{want:?} missing from {body:?}");
+        }
     }
 
     #[tokio::test]

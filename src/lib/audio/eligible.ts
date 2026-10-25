@@ -8,7 +8,7 @@ import type { SearchStep } from '#lib/agent/loop.ts';
 import { LOCAL_AUDIO_URL, audioHashFromUrl } from '#lib/audio/url.ts';
 
 /** The tools whose results carry a player line for the answer. */
-export const AUDIO_TOOLS: readonly string[] = ['generate_music'];
+export const AUDIO_TOOLS: readonly string[] = ['generate_music', 'edit_music'];
 
 /** `![title](url)`, the syntax a player is written in. */
 const REF_RE = /!\[[^\]]*\]\(([^)\s]+)\)/g;
