@@ -5,5 +5,13 @@
 <dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Haruspex connects to servers on your local network that you set up, such as model, image and MCP servers.</string>
+	<!-- The webview fetches user-configured servers over plain http (e.g.
+	     http://host.lan:3000). App Transport Security only exempts bare names,
+	     .local and IPs, so any other http host fails with "Load failed". -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 </dict>
 </plist>
