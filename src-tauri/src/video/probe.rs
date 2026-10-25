@@ -353,7 +353,9 @@ mod tests {
     async fn probe_a_real_folder() {
         let dir = std::env::var("HARUSPEX_VIDEO_DIR").expect("set HARUSPEX_VIDEO_DIR");
         let found = super::super::binaries::resolve(&Default::default()).await;
-        let ffprobe = found.require(super::super::binaries::Tool::Ffprobe).unwrap();
+        let ffprobe = found
+            .require(super::super::binaries::Tool::Ffprobe)
+            .unwrap();
         let probe = probe_episode(ffprobe, &dir, Path::new(&dir)).await;
         println!("{probe:#?}");
         assert!(!probe.clips.is_empty());
