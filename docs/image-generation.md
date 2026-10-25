@@ -148,6 +148,23 @@ Recorded answers are in `src/lib/toolchest/fixtures/` and
 `src/lib/image/toolchest/fixtures/` (asmodean and compute2, 2026-10-25). A
 512² Qwen-Image Turbo job on asmodean took 5 s.
 
+**Measured** (2026-10-25, a dev build driven over Settings → Remote control,
+Code sessions, chat model Qwen3.8-Flash on another toolchest):
+
+| What | Instance | Result |
+| --- | --- | --- |
+| `make_asset` 64 px transparent sprite | asmodean `qwen-turbo-local` (R9700) | 22 s on the GPU, 34 s for the turn; RGBA, 36% fully clear; non-commercial note given |
+| `generate_music` 30 s song with lyrics | compute2 `ace-gpu2` (ACE-Step turbo) | 9 s on the GPU, 16 s for the turn; 480 KB mp3, 128 kbit/s; linked to the Code session |
+| `generate_music` 10 s instrumental to `assets/bgm.mp3` | compute2 `ace-gpu2` | 5 s on the GPU, 14 s for the turn; file written; **7.85 s long**, though the tool said 10 s (#638) |
+| Cancel a 120 s song 9 s in | compute2 `ace-gpu2` | the job left the GPU ~2 s after the stop; nothing stored |
+| Restart the app | — | both songs kept by the sweep, served whole (200) and by range (206) on `/api/v1/audio` |
+
+Not covered: Chat (`generate_image`, `generate_music` in an answer), which
+the Remote control API cannot drive, and a Ming transparent sprite, as
+compute2's `ming-gpu1` was stopped. The synchronous fallback is covered by
+`src/lib/image/toolchest/backend.test.ts` alone, since both servers run image
+jobs. See #638.
+
 ## The asset job
 
 Create a job of type **Asset generation**, point it at a project directory,

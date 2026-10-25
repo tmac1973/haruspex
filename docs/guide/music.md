@@ -37,3 +37,8 @@ llama-toolchest deletes a song a day after making it, so Haruspex downloads each
 - Only llama-toolchest can make music.
 - Players use your system's default audio output, not the device in Settings → Audio.
 - A song can't be longer than 240 seconds.
+- A short song can come out a little shorter than asked: a 10-second request once gave 7.85 seconds.
+
+## What has been tested
+
+Making songs in the Code tab, saving one into a project, cancelling one, and keeping songs across a restart have been run against a llama-toolchest server with ACE-Step turbo. A 30-second song took about 10 seconds to make. Songs in Chat are covered only by automated tests so far.
