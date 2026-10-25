@@ -11,6 +11,8 @@
  * exactly `items`, then start the app over at `/`.
  */
 export async function replaceSavedItems(items) {
+	// So this page, until it is replaced, can't pass for the restarted one.
+	delete window.__haruspexSavedLoaded;
 	const { invoke } = window.__TAURI_INTERNALS__;
 	const stored = (await invoke('webview_store_load')) ?? {};
 	for (const key of Object.keys(stored)) {
@@ -36,13 +38,18 @@ export async function seedSavedItems(browser, items, { attempts = 5 } = {}) {
 	for (let attempt = 1; ; attempt++) {
 		await browser.execute(replaceSavedItems, items);
 		await browser.pause(500);
+		// What the app started from, before it changed anything itself. Read in
+		// the same call that sees it, since the page can still be swapping.
+		let loaded;
 		await browser.waitUntil(
-			() =>
-				browser.execute(() => document.readyState === 'complete' && !!window.__haruspexSavedLoaded),
+			async () => {
+				loaded = await browser.execute(() =>
+					document.readyState === 'complete' ? (window.__haruspexSavedLoaded ?? null) : null
+				);
+				return !!loaded;
+			},
 			{ timeout: 30_000, timeoutMsg: 'the app did not come back after seeding' }
 		);
-		// What the app started from, before it changed anything itself.
-		const loaded = await browser.execute(() => window.__haruspexSavedLoaded);
 		if (Object.entries(items).every(([k, v]) => loaded[k] === v)) return;
 		if (attempt === attempts) {
 			throw new Error(`the app kept loading other settings than the seeded ones`);
