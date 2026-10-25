@@ -164,9 +164,14 @@ jobs:
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
+        # The gstreamer plugins are for the AppImage's bundleMediaFramework,
+        # which copies them from here. Without them WebKit's web process
+        # aborts on a window resize once a page holds an <audio> element, and
+        # the window goes grey.
         run: |
           apt-get update
           apt-get install -y \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
             build-essential pkg-config cmake clang libclang-dev \
             libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev \
             libxcb1-dev \
