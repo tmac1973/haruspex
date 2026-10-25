@@ -144,9 +144,19 @@ describe('generate_music', () => {
 			workingDir: '/home/me/music'
 		});
 		const out = await executeTool('generate_music', { caption: 'x', path: 'rain.mp3' }, withFolder);
+		// Chat checks for an existing file (and would ask) instead of a dry run.
+		expect(state.invoke).toHaveBeenCalledWith('fs_path_exists', {
+			workdir: '/home/me/music',
+			relPath: 'rain.mp3'
+		});
 		const writes = state.invoke.mock.calls.filter(([c]) => String(c).startsWith('fs_write_bytes'));
-		expect(writes.map(([, a]) => a.dryRun)).toEqual([true, false]);
-		expect(writes[1][1]).toMatchObject({ workdir: '/home/me/music', bytes: [9, 9] });
+		expect(writes).toHaveLength(1);
+		expect(writes[0][1]).toMatchObject({
+			workdir: '/home/me/music',
+			relPath: 'rain.mp3',
+			bytes: [9, 9],
+			dryRun: false
+		});
 		expect(state.generate.mock.calls[0][1]).toMatchObject({ conversationId: 'chat-1' });
 		expect(out.result).toContain('Wrote');
 	});

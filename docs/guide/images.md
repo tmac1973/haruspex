@@ -52,7 +52,7 @@ Settings → Image marks Qwen-Image "Not licensed for commercial use." and asks 
 
 ## Draw a picture in Chat
 
-Ask Chat to draw, paint or illustrate something. A picture takes from about 30 seconds to a few minutes. It appears in the answer and is kept with the conversation; click it for full size. If the model forgets to place it, it is shown under the answer. You can ask for a shape other than square, or a transparent background for an object on its own. A chat model that can see images is shown the picture, so you can ask what it thinks of it.
+Ask Chat to draw, paint or illustrate something. A picture takes 30 seconds to a few minutes. It appears in the answer and is kept with the conversation; click it for full size, where **Save as…** saves it anywhere. If the model forgets to place it, it is shown under the answer. Ask for another shape or a transparent background. With a working folder set, ask it to save the picture there; an existing file asks you first. A model that sees images is shown it.
 
 ## Make art for a project
 
@@ -66,7 +66,7 @@ The **Asset generation** job draws all of a project's sprites, icons and tiling 
 
 ## What it costs your computer
 
-Image generation uses your GPU heavily. The bundled engine holds most of a 16 GB card while it runs, so your chat model and games may slow down or not fit. Stop it in Settings → Image when you are done.
+Image generation uses your GPU heavily. The bundled engine holds most of a 16 GB card, so your chat model and games may slow or not fit. Stop it in Settings → Image when done.
 
 ## What has been tested
 

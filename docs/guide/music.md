@@ -32,7 +32,7 @@ Ask for one: "a 45-second lo-fi track about rain", or give lyrics. The assistant
 
 You can ask for a length (5 to 240 seconds), tempo, key, language, or WAV instead of MP3.
 
-With a working folder set in Chat, the assistant can also save the song there: ask "save it as rain.mp3", when you ask for it or later. Without a folder it can't save files.
+With a working folder set in Chat, the assistant can also save the song there: ask "save it as rain.mp3", when you ask for it or later. If that file exists you're asked before it is replaced. Without a folder it can't save files.
 
 ## Save a song yourself
 

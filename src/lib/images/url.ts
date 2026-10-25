@@ -34,3 +34,16 @@ export function imageSrc(hash: string): string | null {
 	if (!HASH_RE.test(hash)) return null;
 	return `${BASE}${hash}`;
 }
+
+/**
+ * The hash in one of our cached-image URLs, or `null` for any other: either
+ * platform's scheme form, or the web client's route.
+ */
+export function imageHashFromUrl(url: string): string | null {
+	const m = url
+		.trim()
+		.match(
+			/^(?:haruspex-img:\/\/localhost\/|http:\/\/haruspex-img\.localhost\/|\/api\/v1\/image\/)([0-9a-f]{64})$/
+		);
+	return m ? m[1] : null;
+}
