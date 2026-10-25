@@ -18,4 +18,4 @@ workingDir: string, percent: number, etaSecs: number | null, startedMs: number, 
 /**
  * The same file, absolute: what Open and Show in folder use.
  */
-absPath: string, check: RenderCheck | null, } | { "state": "failed", message: string, logTail: string, } | { "state": "cancelled" });
+absPath: string, check: RenderCheck | null, } | { "state": "failed", message: string, logTail: string, } | { "state": "cancelled" } | { "state": "uploaded", url: string, studioUrl: string, videoId: string, visibility: string, problems: Array<string>, });

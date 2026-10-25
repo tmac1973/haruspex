@@ -399,7 +399,12 @@ export const IPC = {
 	video_write_chapters: 'video_write_chapters',
 	webview_store_load: 'webview_store_load',
 	webview_store_seed: 'webview_store_seed',
-	webview_store_set: 'webview_store_set'
+	webview_store_set: 'webview_store_set',
+	youtube_account: 'youtube_account',
+	youtube_sign_in: 'youtube_sign_in',
+	youtube_sign_out: 'youtube_sign_out',
+	youtube_upload_plan: 'youtube_upload_plan',
+	youtube_upload_start: 'youtube_upload_start'
 } as const;
 
 export type IpcCommand = (typeof IPC)[keyof typeof IPC];
