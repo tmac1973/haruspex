@@ -1,0 +1,57 @@
+{
+	"data": [
+		{
+			"created": 1792891624,
+			"id": "unsloth-Qwen3-4B.Q8_0",
+			"meta": {
+				"arch": "qwen3",
+				"capabilities": ["chat", "tools"],
+				"context_per_request": 8192,
+				"context_shared": true,
+				"context_size": 8192,
+				"kind": "text",
+				"n_ctx_train": 40960,
+				"n_embd": 2560,
+				"n_layers": 36,
+				"parallel": 4,
+				"quant": "Q8_0",
+				"size": 4280405792
+			},
+			"object": "model",
+			"owned_by": "llama-toolchest"
+		},
+		{
+			"created": 1792880578,
+			"id": "qwen-turbo-local",
+			"meta": {
+				"api": ["images.sync", "images.jobs"],
+				"capabilities": [],
+				"gpu": 0,
+				"kind": "image",
+				"model_set": "qwen-turbo-local",
+				"recipe": "qwen-image-21-turbo",
+				"reserved_mib": 11264,
+				"state": "running"
+			},
+			"object": "model",
+			"owned_by": "llama-toolchest"
+		},
+		{
+			"created": 1792891501,
+			"id": "ace-xl",
+			"meta": {
+				"api": ["music.jobs", "music.ace_step"],
+				"capabilities": [],
+				"gpu": 0,
+				"kind": "music",
+				"model_set": "ace-step-xl-sft",
+				"recipe": "",
+				"reserved_mib": 8192,
+				"state": "stopped"
+			},
+			"object": "model",
+			"owned_by": "llama-toolchest"
+		}
+	],
+	"object": "list"
+}

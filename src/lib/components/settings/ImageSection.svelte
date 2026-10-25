@@ -16,6 +16,11 @@
 	import Tooltip from '#lib/components/Tooltip.svelte';
 	import ComfyModels from '#lib/components/settings/ComfyModels.svelte';
 	import LemonadeModels from '#lib/components/settings/LemonadeModels.svelte';
+	import ToolchestModels from '#lib/components/settings/ToolchestModels.svelte';
+	import ApiKeyPicker from '#lib/components/settings/ApiKeyPicker.svelte';
+	import { seenInstances } from '#lib/image/toolchest/backend.ts';
+	import { inferenceToolchest, toolchestHint } from '#lib/toolchest/detect.ts';
+	import type { ApiKeyIdField, ToolchestInstance } from '#lib/toolchest/models.ts';
 	import DownloadProgressBar from '#lib/components/settings/DownloadProgressBar.svelte';
 	import {
 		cancelDownload,
@@ -44,9 +49,10 @@
 	 * neither.
 	 */
 	interface ServerFields {
-		url: 'imageBackendBaseUrl' | 'imageLemonadeBaseUrl';
-		model: 'imageComfyCheckpoint' | 'imageLemonadeModelId';
-		key: SettingSecret;
+		url: 'imageBackendBaseUrl' | 'imageLemonadeBaseUrl' | 'imageToolchestBaseUrl';
+		model: 'imageComfyCheckpoint' | 'imageLemonadeModelId' | 'imageToolchestModelId';
+		/** Its own secret, or a named key from Settings → Inference → API Keys. */
+		key: SettingSecret | { picker: ApiKeyIdField };
 		placeholder: string;
 		modelTip: string;
 	}
@@ -66,6 +72,14 @@
 			placeholder: 'http://127.0.0.1:13305',
 			modelTip:
 				"Models installed on the server, listed by Probe: the bundled engine's Ming-Image and Qwen-Image Turbo, run by Lemonade's stable-diffusion.cpp. Lemonade keeps one image model loaded, so the first picture after a switch waits for it to load. It cannot make tiling textures."
+		},
+		'llama-toolchest': {
+			url: 'imageToolchestBaseUrl',
+			model: 'imageToolchestModelId',
+			key: { picker: 'imageToolchestApiKeyId' },
+			placeholder: 'http://host:3000',
+			modelTip:
+				"The server's image instances, listed by Probe. One must be running to draw; start it in llama-toolchest. It cannot make tiling textures."
 		}
 	};
 	const server = $derived(SERVERS[imageBackendKind] ?? null);
@@ -75,13 +89,31 @@
 	let serverModel = $state(initial ? getSettings()[initial.model] : '');
 	/** A key being typed. Stored when the field loses focus, then cleared. */
 	let apiKeyDraft = $state('');
-	let apiKeySaved = $state(initial?.key.configured() ?? false);
+	let apiKeySaved = $state(
+		initial && 'configured' in initial.key ? initial.key.configured() : false
+	);
+	/** The named key, for a server that uses one. */
+	let apiKeyId = $state<string | null>(
+		initial && 'picker' in initial.key ? getSettings()[initial.key.picker] : null
+	);
+	/** The toolchest's instances from the last probe, for its table. */
+	let toolchestInstances = $state<ToolchestInstance[]>([]);
+	/** "llama-toolchest on host has image models", while the backend is off. */
+	let hint = $state<{ host: string; count: number } | null>(null);
+	void toolchestHint('image').then((h) => (hint = h));
+
+	function chooseKey(id: string | null) {
+		if (!server || !('picker' in server.key)) return;
+		apiKeyId = id;
+		persist({ [server.key.picker]: id } as Partial<AppSettings>);
+		if (serverUrl.trim()) void probe();
+	}
 	let storeKind = $state<SecretStoreKind>('keychain');
 	void secretStoreKind().then((k) => (storeKind = k));
 
 	async function saveApiKey() {
 		const value = apiKeyDraft.trim();
-		if (!value || !server) return;
+		if (!value || !server || !('save' in server.key)) return;
 		try {
 			await server.key.save(value);
 			apiKeyDraft = '';
@@ -92,7 +124,7 @@
 	}
 
 	async function removeApiKey() {
-		await server?.key.remove();
+		if (server && 'remove' in server.key) await server.key.remove();
 		apiKeySaved = false;
 	}
 	let imageLocalModelId = $state(getSettings().imageLocalModelId);
@@ -199,6 +231,7 @@
 	const configured = $derived(imageBackendKind !== 'none');
 	const isLocal = $derived(imageBackendKind === 'local');
 	const isComfy = $derived(imageBackendKind === 'comfyui');
+	const isToolchest = $derived(imageBackendKind === 'llama-toolchest');
 
 	// The bundled engine, if this platform has one. Asked once: the answer is
 	// a property of the install, not of the session.
@@ -263,11 +296,22 @@
 		updateSettings({ imageBackendKind });
 		probeResult = null;
 		capabilities = null;
+		// A toolchest with nothing set yet starts from the inference server,
+		// when that is a toolchest: usually the same machine and key.
+		const found = imageBackendKind === 'llama-toolchest' ? inferenceToolchest() : null;
+		if (found && !getSettings().imageToolchestBaseUrl.trim()) {
+			updateSettings({
+				imageToolchestBaseUrl: found.baseUrl,
+				imageToolchestApiKeyId: found.apiKeyId
+			});
+		}
 		// Another server's fields: its own address, key, model and list.
 		const s = getSettings();
 		serverUrl = server ? s[server.url] : '';
 		serverModel = server ? s[server.model] : '';
-		apiKeySaved = server?.key.configured() ?? false;
+		apiKeySaved = server && 'configured' in server.key ? server.key.configured() : false;
+		apiKeyId = server && 'picker' in server.key ? s[server.key.picker] : null;
+		toolchestInstances = [];
 		apiKeyDraft = '';
 		serverModels = [];
 		probeCount = 0;
@@ -290,6 +334,7 @@
 				serverModels = probeResult.models;
 				probeCount++;
 			}
+			if (isToolchest) toolchestInstances = seenInstances();
 			capabilities = probeResult.ok ? await backend.capabilities() : null;
 		} catch (e) {
 			probeResult = { ok: false, detail: errMessage(e) };
@@ -377,9 +422,13 @@
 				<option value="local">Bundled engine</option>
 			{/if}
 			<option value="lemonade">Lemonade</option>
+			<option value="llama-toolchest">llama-toolchest</option>
 		</select>
 	</div>
 	<p class="help">Off until you pick one; nothing is downloaded or started before that.</p>
+	{#if hint && imageBackendKind === 'none'}
+		<p class="help">llama-toolchest on {hint.host} has image models.</p>
+	{/if}
 </section>
 
 {#if isLocal}
@@ -457,18 +506,24 @@
 			/>
 
 			<label for="image-key">API key:</label>
-			<input
-				id="image-key"
-				type="password"
-				placeholder={apiKeySaved
-					? savedSecretPlaceholder(storeKind)
-					: 'only if the server needs one'}
-				title={apiKeySaved ? secretStoreHint(storeKind) : undefined}
-				bind:value={apiKeyDraft}
-				onblur={saveApiKey}
-			/>
-			{#if apiKeySaved}
-				<button type="button" onclick={removeApiKey}>Remove key</button>
+			{#if 'picker' in server.key}
+				<div id="image-key" title="Keys are kept in Settings → Inference → API Keys.">
+					<ApiKeyPicker selectedId={apiKeyId} onSelect={chooseKey} />
+				</div>
+			{:else}
+				<input
+					id="image-key"
+					type="password"
+					placeholder={apiKeySaved
+						? savedSecretPlaceholder(storeKind)
+						: 'only if the server needs one'}
+					title={apiKeySaved ? secretStoreHint(storeKind) : undefined}
+					bind:value={apiKeyDraft}
+					onblur={saveApiKey}
+				/>
+				{#if apiKeySaved}
+					<button type="button" onclick={removeApiKey}>Remove key</button>
+				{/if}
 			{/if}
 
 			<label for="image-model">
@@ -510,6 +565,8 @@
 	{#if probeCount > 0}
 		{#if isComfy}
 			<ComfyModels {probeCount} onInstalled={() => void probe()} />
+		{:else if isToolchest}
+			<ToolchestModels kind="image" instances={toolchestInstances} baseUrl={serverUrl.trim()} />
 		{:else}
 			<LemonadeModels {probeCount} onInstalled={() => void probe()} />
 		{/if}

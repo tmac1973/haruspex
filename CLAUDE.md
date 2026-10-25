@@ -10,8 +10,9 @@ Private local AI desktop app — Tauri 2.x + SvelteKit 5 + llama.cpp sidecar.
 - **Speech-to-Text**: whisper-server sidecar (port 8766, whisper.cpp)
 - **Text-to-Speech**: koko sidecar (port 3001, Kokoros OpenAI-compatible API)
 - **Image generation**: ComfyUI (a server the user runs), the bundled
-  sd-server sidecar (port 8767, stable-diffusion.cpp), or a Lemonade server's
-  sd-cpp recipe (the user runs it; `lemonade.rs`). Off by default; nothing
+  sd-server sidecar (port 8767, stable-diffusion.cpp), a Lemonade server's
+  sd-cpp recipe (the user runs it; `lemonade.rs`), or a llama-toolchest
+  server's image instances (`toolchest.rs`). Off by default; nothing
   starts until Settings → Image selects one. See `docs/image-generation.md`.
 - **Integrations**: MCP servers (stdio + streamable HTTP), IMAP email, CalDAV/CardDAV, screen capture
 - **Default model**: Qwen 3.5 9B (Q4_K_M, ~5.7 GB)

@@ -41,6 +41,11 @@ Settings → Image — with the same transparency, but no tiling textures. Pick
 it to draw on another machine's GPU without ComfyUI. See
 [Lemonade](#the-lemonade-backend) below.
 
+**llama-toolchest** is a llama-toolchest server with generation on: it runs
+sd-server instances behind its own port and per-GPU queue. Pick it when the
+chat model already comes from one. See
+[llama-toolchest](#the-llama-toolchest-backend) below.
+
 **None** is the default. No process, no download, no startup cost.
 
 ## The Lemonade backend
@@ -103,6 +108,45 @@ on the bundled engine (`--backend te=cpu`); with it on the GPU a sheet took
 Lemonade's other image engine, TheNoise, is not used. It ran Ming faster
 (~17 s) but has no start image, and Ming drew alpha 0 times in 12 there with
 any prompt.
+
+## The llama-toolchest backend
+
+`src/lib/image/toolchest/`, with `src/lib/toolchest/` (shared with music) and
+`src-tauri/src/toolchest.rs`. Calls go through `comfy.rs`'s client like
+Lemonade's. The key is not a secret of its own: it is a named key from
+Settings → Inference → API Keys (`imageToolchestApiKeyId`), resolved in the
+webview and sent inline, because it is usually the key the toolchest's chat
+models already use.
+
+**Discovery** is `GET /v1/models`. Toolchest lists each generation instance
+beside the chat models with `meta.kind` (`image`, `music`), `meta.state`,
+`meta.capabilities` (`alpha`, `edit`), `meta.recipe` and `meta.api`, the
+routes the build has. A build from before `meta.api` gets `images.sync`.
+Haruspex never calls `/api/*`, which needs the admin login in toolchest's
+secure mode, so it cannot start an instance; a stopped one is a sentence
+pointing at toolchest.
+
+**Generation** is the request Lemonade sends, because toolchest forwards it
+byte for byte to sd-server: OpenAI images with the native fields in a leading
+`<sd_cpp_extra_args>` block, and the same size limit on that block. Ming and
+Qwen-Image instances (by `recipe`) get their measured sampler and their
+transparency recipe; any other set keeps the sampler toolchest launched it
+with and draws opaque unless it has `alpha`. No tiling, for the reason
+Lemonade has none.
+
+**Image jobs** (`meta.api` has `images.jobs`): `POST /v1/images/jobs` with
+that body, then `GET /v1/images/jobs/{id}` once a second for `status`,
+`phase` (`queued`, `generating`, `saving`) and `queue_position`, which the
+progress line shows as "Queued (N ahead)". The PNG is
+`GET /v1/images/jobs/{id}/image/0`. Cancelling sends `DELETE`, which takes a
+queued job out of the queue; a running one finishes on the GPU and is thrown
+away. Without image jobs it falls back to the blocking
+`/v1/images/generations` with a 15-minute timeout; cancelling then drops the
+request, which only helps while it is still queued.
+
+Recorded answers are in `src/lib/toolchest/fixtures/` and
+`src/lib/image/toolchest/fixtures/` (asmodean and compute2, 2026-10-25). A
+512² Qwen-Image Turbo job on asmodean took 5 s.
 
 ## The asset job
 

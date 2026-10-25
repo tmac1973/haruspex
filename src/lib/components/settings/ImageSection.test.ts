@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { invoke } from '@tauri-apps/api/core';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import health from '#lib/image/lemonade/fixtures/health.json';
 import systemInfo from '#lib/image/lemonade/fixtures/system-info.json';
 import models from '#lib/image/lemonade/fixtures/models.json';
+import toolchestModels from '#lib/toolchest/fixtures/models-asmodean.json';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(), isTauri: () => true }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
@@ -23,6 +24,15 @@ const settings = vi.hoisted(() => ({
 	imageLemonadeApiKey: '',
 	imageLemonadeApiKeySaved: false,
 	imageLemonadeModelId: 'ming',
+	imageToolchestBaseUrl: '',
+	imageToolchestApiKeyId: null as string | null,
+	imageToolchestModelId: '',
+	inferenceBackend: {
+		mode: 'remote',
+		remoteBaseUrl: 'http://box:3000',
+		remoteBackendKind: 'llama-toolchest',
+		remoteApiKeyId: 'k1' as string | null
+	},
 	proxy: null
 }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
@@ -59,6 +69,11 @@ beforeEach(() => {
 		invokeRouter({
 			lemonade_catalogue: catalogue,
 			image_engine_status: { status: { type: 'Stopped' }, model: null, available: true },
+			toolchest_json: (args) => {
+				const path = (args!.call as { path: string }).path;
+				if (path === '/v1/models') return toolchestModels;
+				throw { kind: 'rejected', status: 404, body: '{}' };
+			},
 			lemonade_json: (args) => {
 				const path = (args!.call as { path: string }).path;
 				if (path === '/api/v1/health') return health;
@@ -103,5 +118,46 @@ describe('ImageSection with Lemonade', () => {
 	it('keeps ComfyUI’s address apart from Lemonade’s', () => {
 		render(ImageSection);
 		expect(screen.queryByDisplayValue('http://comfy:8188')).toBeNull();
+	});
+});
+
+describe('ImageSection with llama-toolchest', () => {
+	beforeEach(() => {
+		settings.imageBackendKind = 'none';
+		settings.imageToolchestBaseUrl = '';
+		settings.imageToolchestApiKeyId = null;
+		settings.imageToolchestModelId = '';
+	});
+
+	it('says when the inference toolchest has image models, while the backend is off', async () => {
+		render(ImageSection);
+		await screen.findByText('llama-toolchest on box:3000 has image models.');
+	});
+
+	it('starts from the inference server’s address and key, then lists its instances', async () => {
+		render(ImageSection);
+		const backend = screen.getByLabelText('Backend:') as HTMLSelectElement;
+		await fireEvent.change(backend, { target: { value: 'llama-toolchest' } });
+		expect(settings.imageToolchestBaseUrl).toBe('http://box:3000');
+		expect(settings.imageToolchestApiKeyId).toBe('k1');
+		await waitFor(() =>
+			expect((screen.getByLabelText('Server address:') as HTMLInputElement).value).toBe(
+				'http://box:3000'
+			)
+		);
+		const heading = await screen.findByRole('heading', { name: /Models on the server/ });
+		const section = heading.closest('section')!;
+		await waitFor(() => expect(within(section).getByText('qwen-turbo-local')).toBeTruthy());
+		expect(within(section).getByText('Not licensed for commercial use.')).toBeTruthy();
+		// Toolchest's key is a named key: no password field of its own.
+		expect(document.querySelector('input[type="password"]')).toBeNull();
+	});
+
+	it('keeps an address already set rather than overwriting it', async () => {
+		settings.imageToolchestBaseUrl = 'http://other:3000';
+		render(ImageSection);
+		const backend = screen.getByLabelText('Backend:') as HTMLSelectElement;
+		await fireEvent.change(backend, { target: { value: 'llama-toolchest' } });
+		expect(settings.imageToolchestBaseUrl).toBe('http://other:3000');
 	});
 });

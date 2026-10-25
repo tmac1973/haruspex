@@ -5,7 +5,7 @@ description: What each Settings section holds, its most-used options with their 
 
 # Settings reference
 
-Settings has fifteen sections, down the left side. Each one below gives the main options, their defaults and the page with more detail.
+Settings has fifteen sections, down the left side. Each gives its main options, their defaults and the page with more.
 
 ## Open Settings
 
@@ -146,7 +146,7 @@ See the `code` page.
 
 Where pictures are generated, if anywhere.
 
-- **Backend**: None (default), ComfyUI or Bundled engine. Nothing is downloaded or started until you pick one. Bundled engine is hidden where it can't run.
+- **Backend**: None (default), ComfyUI, Bundled engine (where it can run), Lemonade or llama-toolchest. Nothing is downloaded or started until you pick one.
 
 See the `images` page.
 

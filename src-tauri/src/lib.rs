@@ -51,6 +51,7 @@ mod sync_util;
 mod test_util;
 mod text_util;
 mod time_util;
+mod toolchest;
 mod tts;
 mod webview_store;
 mod whisper;
@@ -405,6 +406,8 @@ pub fn run() {
             lemonade::lemonade_json,
             lemonade::lemonade_catalogue,
             lemonade::lemonade_sdcpp_args,
+            toolchest::toolchest_json,
+            toolchest::toolchest_bytes,
             image_models::image_models,
             image_models::image_model_recommended,
             image_models::download_image_model,

@@ -33,7 +33,7 @@ use crate::sidecar_util::{clear_logs, new_log_buffer, push_log, snapshot_logs, L
 pub struct ComfyCall {
     pub base_url: String,
     pub api_key: String,
-    /// `GET` or `POST`.
+    /// `GET`, `POST` or `DELETE`.
     pub method: String,
     pub path: String,
     #[ts(type = "unknown")]
@@ -158,10 +158,12 @@ pub(crate) const COMFYUI: ImageServer = ImageServer {
 };
 
 /// The key to send: the one the webview gave (inline only where no secret
-/// store works), else the stored one, else none.
+/// store works), else the stored one, else none. A server with no secret of
+/// its own (llama-toolchest's key is a named key the webview resolves) is
+/// never looked up.
 async fn effective_api_key(given: &str, secret: &str) -> String {
     let given = given.trim();
-    if !given.is_empty() {
+    if !given.is_empty() || secret.is_empty() {
         return given.to_string();
     }
     crate::secrets::get(secret)
@@ -176,6 +178,7 @@ async fn send(call: &ComfyCall, to: ImageServer) -> Result<Vec<u8>, ComfyError> 
     let url = format!("{}{}", base(&call.base_url), call.path);
     let mut req = match call.method.as_str() {
         "POST" => client().post(&url),
+        "DELETE" => client().delete(&url),
         _ => client().get(&url),
     };
     // Absent rather than empty: a bare local server has no auth.
@@ -324,6 +327,11 @@ pub(crate) async fn json_from(
     to: ImageServer,
 ) -> Result<serde_json::Value, ComfyError> {
     cancellable(call, to).await.map(|b| as_json(&b))
+}
+
+/// A call to `to` whose answer is bytes, such as a finished image.
+pub(crate) async fn bytes_from(call: ComfyCall, to: ImageServer) -> Result<Response, ComfyError> {
+    cancellable(call, to).await.map(Response::new)
 }
 
 /// A call whose answer is JSON (or text, or nothing).

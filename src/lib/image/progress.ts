@@ -11,12 +11,14 @@ export function describeImageProgress(p: ImageProgress | null, seconds: number):
 		? 'Drawing'
 		: p.step && p.totalSteps
 			? `Drawing, step ${p.step} of ${p.totalSteps}`
-			: (p.detail ??
-				{
-					queued: 'Queued',
-					loading: 'Loading the model',
-					running: 'Drawing',
-					downloading: 'Fetching the image'
-				}[p.phase]);
+			: p.phase === 'queued' && p.ahead
+				? `Queued (${p.ahead} ahead)`
+				: (p.detail ??
+					{
+						queued: 'Queued',
+						loading: 'Loading the model',
+						running: 'Drawing',
+						downloading: 'Fetching the image'
+					}[p.phase]);
 	return `${what}… ${seconds} s`;
 }

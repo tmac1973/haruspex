@@ -1,0 +1,16 @@
+{
+	"id": "8ffd10ab645e7e1b",
+	"model": "qwen-turbo-local",
+	"status": "succeeded",
+	"queue_position": 0,
+	"request": {
+		"model": "qwen-turbo-local",
+		"prompt": "a red apple on a plain background",
+		"size": "512x512",
+		"n": 1
+	},
+	"images": [{ "url": "/v1/images/jobs/8ffd10ab645e7e1b/image/0" }],
+	"submitted": "2026-10-25T05:08:48.329490616Z",
+	"started": "2026-10-25T05:08:48.329490846Z",
+	"finished": "2026-10-25T05:08:53.491709586Z"
+}
