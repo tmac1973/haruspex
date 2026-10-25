@@ -80,6 +80,8 @@ interface ToolFilterOpts {
 	 * this filter too, and must not spend GPU minutes drawing for nobody.
 	 */
 	imageGeneration: boolean;
+	/** A music backend is set up AND someone is there to hear the song. */
+	musicGeneration: boolean;
 	/**
 	 * An account has Allow sending on AND someone is there to review the
 	 * draft. A job never gets `email_compose`, allowlist or not.
@@ -172,6 +174,9 @@ function shouldIncludeCodeTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	// backend too: a texture is drawn by code, and the tool says what the
 	// other kinds need.
 	if (name === 'make_asset') return opts.interactive;
+	// A song for the project or the answer. The Code tab only: Shell has no
+	// saved session to keep the song in.
+	if (name === 'generate_music') return opts.musicGeneration && isCodeTab(opts);
 	return false;
 }
 
@@ -204,6 +209,7 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	if (reg.category === 'contacts' && !opts.hasContacts) return false;
 	if (reg.category === 'desktop' && !opts.screenCapture) return false;
 	if (reg.category === 'image' && !opts.imageGeneration) return false;
+	if (reg.category === 'music' && !opts.musicGeneration) return false;
 	// make_asset writes into a project; Chat has no project.
 	if (name === 'make_asset') return false;
 	if (reg.category === 'sandbox' && !opts.sandboxEnabled) return false;
@@ -230,6 +236,7 @@ function subtaskExcludes(reg: ToolRegistration): boolean {
 	return (
 		name === 'delegate' ||
 		name === 'make_asset' ||
+		name === 'generate_music' ||
 		CODE_TAB_ONLY.has(name) ||
 		reg.category === 'interaction' ||
 		reg.category === 'desktop'
@@ -326,6 +333,7 @@ export function getToolSchemas(opts: {
 		hasContacts: hasEnabledContactsAccount(),
 		screenCapture: getSettings().screenCaptureEnabled,
 		imageGeneration: interactive && getSettings().imageBackendKind !== 'none',
+		musicGeneration: interactive && getSettings().musicBackendKind !== 'none',
 		sendableEmail: interactive && hasSendableEmailAccount(),
 		sandboxEnabled: getSettings().sandboxEnabled,
 		memoryWritable: memoryActive()
@@ -367,7 +375,12 @@ function schemaFor(
 			reg.schema.function.name === 'read_skill_file' ? skills.skillFileNames : skills.skillNames;
 		return names?.length ? withSkillEnum(reg.schema, names) : null;
 	}
-	return shouldIncludeTool(reg, filter) ? profileSchema(reg.schema, filter) : null;
+	if (!shouldIncludeTool(reg, filter)) return null;
+	// Saving a song into the project is for a Code session that may write.
+	if (reg.schema.function.name === 'generate_music' && (!filter.codeMode || filter.codeReadOnly)) {
+		return withoutProjectWrite(reg.schema);
+	}
+	return profileSchema(reg.schema, filter);
 }
 
 /**
@@ -424,6 +437,43 @@ function withDescription(schema: ToolDefinition, override: DescriptionOverride):
 			description: override.description,
 			parameters: { ...params, properties }
 		}
+	};
+}
+
+/**
+ * Image and music generation spend GPU minutes, so the same gate as the
+ * schema: a backend, and someone there to see or hear the result. make_asset
+ * checks the image backend itself, since its textures are drawn by code
+ * without one. Null when the call may go ahead.
+ */
+function generationRefusal(reg: ToolRegistration, ctx: ToolContext): string | null {
+	const s = getSettings();
+	if (reg.category === 'image') {
+		if (s.imageBackendKind === 'none' && reg.schema.function.name !== 'make_asset') {
+			return 'Image generation is not set up. The user can choose a backend in Settings → Image.';
+		}
+		if (!ctx.interactive)
+			return 'Image generation is only available in a conversation with the user.';
+	}
+	if (reg.category === 'music') {
+		if (s.musicBackendKind === 'none') {
+			return 'Music generation is off. The user can choose a backend in Settings → Music.';
+		}
+		if (!ctx.interactive)
+			return 'Music generation is only available in a conversation with the user.';
+	}
+	return null;
+}
+
+/** `generate_music` without `path` and `overwrite`, where nothing may be written. */
+function withoutProjectWrite(schema: ToolDefinition): ToolDefinition {
+	const params = schema.function.parameters as { properties: Record<string, unknown> };
+	const properties = { ...params.properties };
+	delete properties.path;
+	delete properties.overwrite;
+	return {
+		...schema,
+		function: { ...schema.function, parameters: { ...params, properties } }
 	};
 }
 
@@ -534,19 +584,8 @@ export async function executeTool(
 		);
 	}
 
-	// Image generation spends GPU minutes, so the same gate as the schema:
-	// a backend, and someone there to see the result. make_asset checks the
-	// backend itself, since its textures are drawn by code without one.
-	const noBackend = getSettings().imageBackendKind === 'none' && name !== 'make_asset';
-	if (reg.category === 'image' && (noBackend || !ctx.interactive)) {
-		return toolResult(
-			toolError(
-				noBackend
-					? 'Image generation is not set up. The user can choose a backend in Settings → Image.'
-					: 'Image generation is only available in a conversation with the user.'
-			)
-		);
-	}
+	const generation = generationRefusal(reg, ctx);
+	if (generation) return toolResult(toolError(generation));
 
 	// And for contacts, which is a separate account capability: a server can
 	// serve calendars and not address books.

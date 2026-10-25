@@ -236,6 +236,31 @@ pub fn rehydrate(
     Ok(rows)
 }
 
+/// One cached file's bytes, for writing a song into a project
+/// (`generate_music` with a `path`). As a raw response, not a number array.
+#[tauri::command]
+pub async fn audio_read_bytes(
+    app: AppHandle,
+    db: State<'_, Database>,
+    hash: String,
+) -> Result<tauri::ipc::Response, String> {
+    read_bytes(&db, &cache_dir(&app)?, &hash).map(tauri::ipc::Response::new)
+}
+
+pub fn read_bytes(db: &Database, dir: &Path, hash: &str) -> Result<Vec<u8>, String> {
+    if !is_valid_hash(hash) || db.audio_by_hash(hash)?.is_none() {
+        return Err("Audio not found".into());
+    }
+    let path = super::audio_path(dir, hash);
+    let len = std::fs::metadata(&path)
+        .map_err(|_| "Audio not found".to_string())?
+        .len();
+    if len > MAX_AUDIO_BYTES {
+        return Err(too_large());
+    }
+    std::fs::read(&path).map_err(|e| format!("Could not read the audio: {e}"))
+}
+
 /// Bytes the cache holds, linked or not.
 #[tauri::command]
 pub async fn audio_cache_size(db: State<'_, Database>) -> Result<i64, String> {
@@ -377,6 +402,29 @@ mod tests {
         assert!(download(&client, &format!("{base}/secret"), "k", &dir)
             .await
             .is_ok());
+    }
+
+    #[tokio::test]
+    async fn stored_bytes_read_back_and_unknown_hashes_do_not() {
+        let base = serve().await;
+        let (db, dir) = setup("audio-read");
+        let client = reqwest::Client::new();
+        let got = download(&client, &format!("{base}/song"), "", &dir)
+            .await
+            .unwrap();
+        let stored = store_download(&db, &dir, got, None, None, None, None).unwrap();
+        assert_eq!(
+            read_bytes(&db, &dir, &stored.hash).unwrap(),
+            vec![7u8; 1024]
+        );
+        assert_eq!(
+            read_bytes(&db, &dir, &"f".repeat(64)).unwrap_err(),
+            "Audio not found"
+        );
+        assert_eq!(
+            read_bytes(&db, &dir, "../x").unwrap_err(),
+            "Audio not found"
+        );
     }
 
     #[tokio::test]
