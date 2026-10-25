@@ -391,6 +391,8 @@ export const IPC = {
 	video_task_list: 'video_task_list',
 	video_task_open: 'video_task_open',
 	video_task_status: 'video_task_status',
+	video_thumbnail_from_frame: 'video_thumbnail_from_frame',
+	video_thumbnail_from_image: 'video_thumbnail_from_image',
 	video_transcribe: 'video_transcribe',
 	video_transcribe_cancel: 'video_transcribe_cancel',
 	video_write_captions: 'video_write_captions',

@@ -17,6 +17,7 @@ pub mod scenes;
 pub mod silence;
 pub mod subtitles;
 pub mod tasks;
+pub mod thumbnail;
 pub mod transcribe;
 
 /// Hide the console window a spawned program would open on Windows.
