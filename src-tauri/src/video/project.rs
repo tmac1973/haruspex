@@ -375,10 +375,12 @@ pub async fn cut(
         let source = match (&item.index, &item.path) {
             (Some(i), None) if *i >= 1 => Source::Existing(*i as usize - 1),
             (None, Some(p)) => Source::New(media(&doc, working_dir, p, settings, &ffprobe).await?),
-            _ => return Err(format!(
+            _ => {
+                return Err(format!(
                 "Item {} needs exactly one of index (a clip already in the cut, from 1) or path.",
                 n + 1
-            )),
+            ))
+            }
         };
         wanted.push(Placement {
             source,
