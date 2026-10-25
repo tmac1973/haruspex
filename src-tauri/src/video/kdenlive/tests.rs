@@ -510,3 +510,41 @@ async fn trim_a_real_project() {
     let after = Doc::parse(out.text).unwrap();
     println!("{:#?}", summary(&after, &doc.root_dir, &copy).items);
 }
+
+#[test]
+fn a_clip_split_in_two_keeps_its_effect_in_both_pieces() {
+    let doc = empty_project();
+    let fps = doc.fps;
+    let text = apply(&doc, &[new(media("a.mp4", 10.0, fps))]).unwrap().text;
+    // An effect on its video entry, as in the trim test above.
+    let effect = "<filter id=\"filter99\">\n    <property name=\"mlt_service\">brightness</property>\n   </filter>\n   ";
+    let d = reparse(text.clone());
+    let v = d.items()[0].video.clone().unwrap();
+    let mut with_effect = text;
+    with_effect.insert_str(d.tree.node(v.node).inner_start + 4, effect);
+    let doc = reparse(with_effect);
+    let first = Placement {
+        source: Source::Existing(0),
+        in_frame: Some(0),
+        out_frame: Some(119),
+    };
+    let second = Placement {
+        source: Source::Piece(0),
+        in_frame: Some(300),
+        out_frame: Some(599),
+    };
+    let out = reparse(apply(&doc, &[first, second]).unwrap().text);
+    let items = out.items();
+    assert_eq!(items.len(), 2);
+    assert_eq!((items[1].start(), items[1].any().in_frame), (120, 300));
+    assert!(items
+        .iter()
+        .all(|i| i.video.is_some() && i.audio.is_some() && i.filters() == 1));
+    // Each piece has chains of its own, and both are linked.
+    assert_ne!(
+        items[0].video.as_ref().unwrap().chain,
+        items[1].video.as_ref().unwrap().chain
+    );
+    assert_eq!(out.groups().as_array().unwrap().len(), 2);
+    assert_eq!(apply(&out, &current(&out)).unwrap().text, out.text);
+}

@@ -100,7 +100,7 @@ describe('parseOp', () => {
 		expect(parseOp({ op: 'trim', index: 2 })).toContain('in_secs, out_secs');
 		expect(parseOp({ op: 'move', index: 3, to: 1 })).toEqual({ op: 'move', from: 3, to: 1 });
 		expect(parseOp({ op: 'move', index: 3 })).toContain('"to"');
-		expect(parseOp({ op: 'split', index: 1 })).toContain('trim, remove or move');
+		expect(parseOp({ op: 'split', index: 1 })).toContain('trim, remove, move');
 	});
 });
 

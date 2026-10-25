@@ -53,7 +53,7 @@ The project is a normal Kdenlive project: open it, change it and save. The assis
 - Clips on other tracks don't move when the main track gets shorter or longer.
 - Projects saved by a Kdenlive older than 25.04 can be read but not edited.
 
-To turn the project into a video file, see the `video-render` page.
+To turn the project into a video file, see the `video-render` page. To cut by what was said, and for chapters and captions, see the `video-speech` page.
 
 ## What it doesn't do
 

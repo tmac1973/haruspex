@@ -1786,6 +1786,73 @@ pub async fn download_whisper_model(
     Ok(final_path.to_string_lossy().to_string())
 }
 
+/// The more accurate whisper model the video tools can use for footage
+/// (Settings → Video): large-v3-turbo, multilingual, about 1.6 GB.
+pub const WHISPER_VIDEO_MODEL: &str = "ggml-large-v3-turbo.bin";
+const WHISPER_VIDEO_SIZE: u64 = 1_624_555_275;
+/// Its LFS oid, from the Hugging Face API (2026-10-25).
+const WHISPER_VIDEO_SHA256: &str =
+    "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69";
+
+/// large-v3-turbo's path, when it has been downloaded.
+#[tauri::command]
+pub async fn get_whisper_video_model_path(
+    state: tauri::State<'_, ModelManager>,
+) -> Result<Option<String>, ()> {
+    let path = state.models_dir().join("whisper").join(WHISPER_VIDEO_MODEL);
+    Ok(path.exists().then(|| path.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+pub async fn download_whisper_video_model(
+    app: AppHandle,
+    state: tauri::State<'_, ModelManager>,
+) -> Result<String, String> {
+    let whisper_dir = state.models_dir().join("whisper");
+    fs::create_dir_all(&whisper_dir)
+        .await
+        .map_err(|e| format!("Failed to create whisper dir: {}", e))?;
+    let final_path = whisper_dir.join(WHISPER_VIDEO_MODEL);
+    if final_path.exists() {
+        return Ok(final_path.to_string_lossy().to_string());
+    }
+    let partial_path = whisper_dir.join(format!("{WHISPER_VIDEO_MODEL}.partial"));
+    let url =
+        format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{WHISPER_VIDEO_MODEL}");
+    {
+        let mut cancel = state.cancel_flag.lock().await;
+        *cancel = false;
+    }
+    state
+        .download_to_partial(
+            &app,
+            &url,
+            &partial_path,
+            &final_path,
+            WHISPER_VIDEO_SIZE,
+            "Downloading the transcription model",
+            Some((WHISPER_VIDEO_SHA256, "Verifying the transcription model")),
+        )
+        .await?;
+    info!("Video whisper model downloaded");
+    Ok(final_path.to_string_lossy().to_string())
+}
+
+/// Delete large-v3-turbo, stopping the video whisper-server first.
+#[tauri::command]
+pub async fn delete_whisper_video_model(
+    state: tauri::State<'_, ModelManager>,
+    video: tauri::State<'_, crate::whisper::VideoWhisper>,
+) -> Result<(), String> {
+    let _ = video.0.stop().await;
+    let path = state.models_dir().join("whisper").join(WHISPER_VIDEO_MODEL);
+    match fs::remove_file(&path).await {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("Failed to delete the transcription model: {e}")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

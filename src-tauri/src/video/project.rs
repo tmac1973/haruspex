@@ -71,6 +71,74 @@ pub enum ProjectOp {
         from: u32,
         to: u32,
     },
+    /// Cut stretches out of one clip, in its own time; it becomes pieces.
+    RemoveRanges {
+        index: u32,
+        ranges: Vec<super::silence::SilenceRange>,
+    },
+    /// Cut the silences out of one clip, or every clip when `index` is none.
+    #[serde(rename_all = "camelCase")]
+    RemoveSilences {
+        index: Option<u32>,
+        min_secs: f64,
+        pad_secs: f64,
+    },
+}
+
+/// The shortest piece a cut leaves: anything shorter is dropped with its gap.
+const MIN_PIECE_SECS: f64 = 0.2;
+
+/// Cut `ranges` (source frames) out of the placement at `pos`, which shows
+/// item `item` from `in_f` to `out_f`. Its first piece stays the item, so its
+/// identity and effects stay; the rest are copies. Returns frames removed.
+fn cut_ranges(
+    wanted: &mut Vec<Placement>,
+    pos: usize,
+    item: usize,
+    in_f: i64,
+    out_f: i64,
+    ranges: &[(i64, i64)],
+    min_piece: i64,
+) -> i64 {
+    let mut cuts: Vec<(i64, i64)> = ranges
+        .iter()
+        .map(|&(a, b)| (a.max(in_f), b.min(out_f + 1)))
+        .filter(|(a, b)| b > a)
+        .collect();
+    cuts.sort();
+    let mut keeps = Vec::new();
+    let mut at = in_f;
+    for (a, b) in cuts {
+        if a > at {
+            keeps.push((at, a - 1));
+        }
+        at = at.max(b);
+    }
+    if at <= out_f {
+        keeps.push((at, out_f));
+    }
+    keeps.retain(|(a, b)| b - a + 1 >= min_piece);
+    let kept: i64 = keeps.iter().map(|(a, b)| b - a + 1).sum();
+    let pieces: Vec<Placement> = keeps
+        .iter()
+        .enumerate()
+        .map(|(n, &(a, b))| Placement {
+            source: if n == 0 {
+                Source::Existing(item)
+            } else {
+                Source::Piece(item)
+            },
+            in_frame: Some(a),
+            out_frame: Some(b),
+        })
+        .collect();
+    wanted.splice(pos..=pos, pieces);
+    (out_f - in_f + 1) - kept
+}
+
+fn format_secs(secs: f64) -> String {
+    let t = secs.round() as i64;
+    format!("{}:{:02}", t / 60, t % 60)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
@@ -430,6 +498,9 @@ pub async fn op(
     let path = default_project(working_dir, episode, project, false)?;
     let doc = kdenlive::open(&path)?;
     let mut wanted = edit::current(&doc);
+    let items = doc.items();
+    let min_piece = doc.fps.frames(MIN_PIECE_SECS).max(1);
+    let mut notes = Vec::new();
     let count = wanted.len() as u32;
     let check = |i: u32| {
         if i == 0 || i > count {
@@ -461,13 +532,87 @@ pub async fn op(
             let p = wanted.remove(from);
             wanted.insert(to, p);
         }
+        ProjectOp::RemoveRanges { index, ranges } => {
+            let i = check(index)?;
+            let e = items[i].any();
+            let frames: Vec<(i64, i64)> = ranges
+                .iter()
+                .map(|r| (doc.fps.frames(r.start), doc.fps.frames(r.end)))
+                .collect();
+            let removed = cut_ranges(
+                &mut wanted,
+                i,
+                i,
+                e.in_frame,
+                e.out_frame,
+                &frames,
+                min_piece,
+            );
+            notes.push(format!(
+                "Removed {} from clip {index}.",
+                format_secs(doc.fps.secs(removed))
+            ));
+        }
+        ProjectOp::RemoveSilences {
+            index,
+            min_secs,
+            pad_secs,
+        } => {
+            let found = binaries::resolve(&settings.overrides).await;
+            let ffmpeg = found.require(Tool::Ffmpeg)?.to_string();
+            let targets: Vec<usize> = match index {
+                Some(n) => vec![check(n)?],
+                None => (0..items.len()).collect(),
+            };
+            let spans = super::kdenlive::timeline_map::spans(&doc);
+            let mut total = 0;
+            let mut cut_count = 0;
+            // From the last, so earlier positions in `wanted` stay put.
+            for &i in targets.iter().rev() {
+                let e = items[i].any();
+                if items[i].audio.is_none() {
+                    continue;
+                }
+                let span = &spans[i];
+                let found = super::silence::detect(
+                    &ffmpeg,
+                    &span.file,
+                    -35.0,
+                    min_secs.max(0.3),
+                    Some((span.source_in, span.source_out)),
+                )
+                .await?;
+                let pad = pad_secs.max(0.0);
+                let frames: Vec<(i64, i64)> = found
+                    .iter()
+                    .filter(|r| r.len() > 2.0 * pad)
+                    .map(|r| (doc.fps.frames(r.start + pad), doc.fps.frames(r.end - pad)))
+                    .collect();
+                cut_count += frames.len();
+                total += cut_ranges(
+                    &mut wanted,
+                    i,
+                    i,
+                    e.in_frame,
+                    e.out_frame,
+                    &frames,
+                    min_piece,
+                );
+            }
+            notes.push(format!(
+                "Cut {cut_count} silence{} longer than {min_secs} s, {} in all.",
+                if cut_count == 1 { "" } else { "s" },
+                format_secs(doc.fps.secs(total))
+            ));
+        }
     }
     let edited = edit::apply(&doc, &wanted)?;
+    notes.extend(edited.notes);
     kdenlive::save(&path, &edited.text, &melt).await?;
     let after = kdenlive::open(&path)?;
     Ok(CutResult {
         summary: kdenlive::summary(&after, working_dir, &path),
-        notes: edited.notes,
+        notes,
         created: false,
     })
 }
@@ -538,6 +683,45 @@ mod tests {
         let wd = dir.to_string_lossy();
         assert!(default_project(&wd, "ep010", Some("notes.txt"), true).is_err());
         assert!(default_project(&wd, "ep010", Some("../x.kdenlive"), true).is_err());
+    }
+
+    #[test]
+    fn cutting_ranges_leaves_pieces_and_keeps_the_first_as_the_item() {
+        let mut wanted = vec![
+            Placement {
+                source: Source::Existing(0),
+                in_frame: None,
+                out_frame: None,
+            },
+            Placement {
+                source: Source::Existing(1),
+                in_frame: None,
+                out_frame: None,
+            },
+        ];
+        // Item 1 shows 0–599; cut 100–199 and 400–404 (too short a piece after it? no).
+        let removed = cut_ranges(&mut wanted, 1, 1, 0, 599, &[(100, 200), (400, 405)], 6);
+        assert_eq!(removed, 105);
+        let got: Vec<(bool, i64, i64)> = wanted[1..]
+            .iter()
+            .map(|p| {
+                (
+                    matches!(p.source, Source::Existing(1)),
+                    p.in_frame.unwrap(),
+                    p.out_frame.unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(got, [(true, 0, 99), (false, 200, 399), (false, 405, 599)]);
+        assert!(matches!(wanted[2].source, Source::Piece(1)));
+        // A sliver shorter than the minimum goes with its gap.
+        let mut w = vec![Placement {
+            source: Source::Existing(0),
+            in_frame: None,
+            out_frame: None,
+        }];
+        let removed = cut_ranges(&mut w, 0, 0, 0, 99, &[(10, 97)], 6);
+        assert_eq!((w.len(), removed), (1, 90));
     }
 
     #[test]

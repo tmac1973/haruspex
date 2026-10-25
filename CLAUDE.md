@@ -94,6 +94,7 @@ to Region….
 | 8765 | llama-server |
 | 8766 | whisper-server |
 | 8767 | sd-server, when the bundled image engine is running |
+| 8768 | whisper-server for the video tools, while they transcribe |
 | 9876 | Blender, when its companion addon is running |
 | 9080 | Godot's editor bridge, when its addon is enabled |
 

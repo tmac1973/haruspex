@@ -9,6 +9,7 @@ import type { CutItemSpec } from '#lib/ipc/gen/CutItemSpec.ts';
 import type { EndClip } from '#lib/ipc/gen/EndClip.ts';
 import type { ProjectOp } from '#lib/ipc/gen/ProjectOp.ts';
 import type { VideoSettings } from '#lib/ipc/gen/VideoSettings.ts';
+import type { Chapter } from '#lib/ipc/gen/Chapter.ts';
 
 /** What the Rust side needs from Settings → Video. */
 export function videoSettings(): VideoSettings {
@@ -73,8 +74,26 @@ export function parseCut(args: Record<string, unknown>): CutSpec | string {
 	};
 }
 
+/** `75`, `"1:15"`, `"1:15.5"` or `"0:01:15"` as seconds; null when it is none of those. */
+export function parseTime(v: unknown): number | null {
+	const n = num(v);
+	if (n !== null) return n;
+	const s = str(v);
+	if (!s || !/^\d+(:\d{1,2}){1,2}(\.\d+)?$/.test(s)) return null;
+	return s.split(':').reduce((acc, part) => acc * 60 + Number(part), 0);
+}
+
 export function parseOp(args: Record<string, unknown>): ProjectOp | string {
 	const op = str(args.op);
+	if (op === 'remove_silences') {
+		const index = num(args.index);
+		return {
+			op: 'removeSilences',
+			index: index === null ? null : Math.round(index),
+			minSecs: num(args.min_secs) ?? 1.5,
+			padSecs: num(args.pad_secs) ?? 0.25
+		};
+	}
 	const index = num(args.index);
 	if (index === null) return 'video_edit needs "index", the clip number from 1.';
 	if (op === 'trim') {
@@ -84,10 +103,37 @@ export function parseOp(args: Record<string, unknown>): ProjectOp | string {
 		return { op: 'trim', index, inSecs, outSecs };
 	}
 	if (op === 'remove') return { op: 'remove', index };
+	if (op === 'remove_ranges') {
+		const raw = Array.isArray(args.ranges) ? args.ranges : [];
+		const ranges = raw.flatMap((r) => {
+			const o = (r ?? {}) as Record<string, unknown>;
+			const start = parseTime(o.from);
+			const end = parseTime(o.to);
+			return start !== null && end !== null && end > start ? [{ start, end }] : [];
+		});
+		if (ranges.length === 0)
+			return 'remove_ranges needs "ranges": [{from, to}] in the clip\'s own time.';
+		return { op: 'removeRanges', index, ranges };
+	}
 	if (op === 'move') {
 		const to = num(args.to);
 		if (to === null) return 'A move needs "to", the position from 1.';
 		return { op: 'move', from: index, to };
 	}
-	return 'op must be trim, remove or move.';
+	return 'op must be trim, remove, move, remove_ranges or remove_silences.';
+}
+
+/** `chapters: [{title, at}]` as the Rust side takes them, or what is wrong. */
+export function parseChapters(v: unknown): Chapter[] | string {
+	const raw = Array.isArray(v) ? v : [];
+	const out: Chapter[] = [];
+	for (const [n, c] of raw.entries()) {
+		const o = (c ?? {}) as Record<string, unknown>;
+		const title = str(o.title);
+		const at = parseTime(o.at);
+		if (!title || at === null) return `chapters[${n}] needs "title" and "at" (a time like 1:23).`;
+		out.push({ title, atSecs: at });
+	}
+	if (out.length === 0) return 'video_chapters needs "chapters".';
+	return out;
 }

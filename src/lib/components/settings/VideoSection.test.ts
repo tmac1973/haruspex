@@ -6,6 +6,7 @@ import type { VideoBinariesStatus } from '#lib/ipc/gen/VideoBinariesStatus.ts';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(), isTauri: () => true }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
+vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 
 const settings = vi.hoisted(() => ({
 	videoFfmpegPath: '',
@@ -52,6 +53,8 @@ beforeEach(() => {
 	vi.mocked(invoke).mockImplementation(
 		invokeRouter({
 			video_binaries_status: () => status,
+			get_whisper_video_model_path: () => null,
+			download_whisper_video_model: () => '/models/whisper/ggml-large-v3-turbo.bin',
 			video_encoders_test: () => [
 				{ id: 'libx264', label: 'x264 (software)' },
 				{ id: 'h264_vaapi', label: 'VA-API (AMD, Intel)' }
@@ -95,6 +98,13 @@ describe('VideoSection', () => {
 		const select = screen.getByLabelText('Encoder:') as HTMLSelectElement;
 		await fireEvent.change(select, { target: { value: 'h264_vaapi' } });
 		expect(updateSettings).toHaveBeenCalledWith({ videoEncoder: 'h264_vaapi' });
+	});
+
+	it('downloads the transcription model', async () => {
+		render(VideoSection);
+		const button = await screen.findByText('Download large-v3-turbo (1.6 GB)');
+		await fireEvent.click(button);
+		expect(await screen.findByText('whisper large-v3-turbo')).toBeTruthy();
 	});
 
 	it('saves the format', async () => {

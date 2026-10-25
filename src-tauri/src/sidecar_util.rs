@@ -29,6 +29,8 @@ pub mod ports {
     pub const TTS: u16 = 3001;
     /// The bundled image engine (sd-server), when it runs.
     pub const IMAGE: u16 = 8767;
+    /// A second whisper-server for the video tools, while they transcribe.
+    pub const WHISPER_VIDEO: u16 = 8768;
 }
 
 /// Common timeouts. Tweak in one place rather than chasing magic
@@ -322,8 +324,11 @@ pub fn watch_health(
 
 /// What differs between the sidecars that `start_sidecar` launches.
 pub struct SidecarStart {
-    /// The log and registry name; the binary is `haruspex-<name>`.
+    /// The binary is `haruspex-<name>`.
     pub name: &'static str,
+    /// The log and orphan-registry name: `name`, unless two instances of one
+    /// binary run at once (voice input's whisper and the video tools').
+    pub id: &'static str,
     pub port: u16,
     pub args: Vec<String>,
     /// Extra environment on top of the library search path.
@@ -345,13 +350,13 @@ pub async fn start_sidecar(
     status: &Arc<Mutex<SidecarStatus>>,
     log: &LogBuffer,
 ) -> Result<(), String> {
-    let name = spec.name;
+    let name = spec.id;
     kill_process_on_port(spec.port, name, sidecar_registry(app)).await?;
     *status.lock().await = SidecarStatus::Starting;
 
     let mut cmd = app
         .shell()
-        .sidecar(format!("haruspex-{name}"))
+        .sidecar(format!("haruspex-{}", spec.name))
         .map_err(|e| format!("Failed to create {name} sidecar: {e}"))?
         .args(&spec.args);
     cmd = with_library_paths(cmd, app);

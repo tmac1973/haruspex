@@ -14,6 +14,7 @@
 
 pub mod doc;
 pub mod edit;
+pub mod timeline_map;
 pub mod xml;
 
 #[cfg(test)]

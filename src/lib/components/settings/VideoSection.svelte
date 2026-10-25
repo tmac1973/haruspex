@@ -1,5 +1,9 @@
 <script lang="ts">
 	import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
+	import { invoke } from '@tauri-apps/api/core';
+	import { listen } from '@tauri-apps/api/event';
+	import DownloadProgressBar from '#lib/components/settings/DownloadProgressBar.svelte';
+	import type { DownloadProgress } from '#lib/ipc/gen/DownloadProgress.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import { refreshVideoBinaries, videoBinariesStatus, videoEncoders } from '#lib/video/binaries.ts';
@@ -27,6 +31,42 @@
 	let intro = $state(getSettings().videoIntroPath);
 	let outro = $state(getSettings().videoOutroPath);
 	let encoder = $state(getSettings().videoEncoder);
+
+	/** large-v3-turbo's path once downloaded; null while base.en is what transcribes. */
+	let turbo = $state<string | null>(null);
+	let downloading = $state(false);
+	let download = $state<DownloadProgress | null>(null);
+	void invoke<string | null>('get_whisper_video_model_path')
+		.then((p) => (turbo = p))
+		.catch(() => {});
+
+	async function downloadTurbo() {
+		error = '';
+		downloading = true;
+		download = null;
+		const unlisten = await listen<DownloadProgress>(
+			'download-progress',
+			(e) => (download = e.payload)
+		);
+		try {
+			turbo = await invoke<string>('download_whisper_video_model');
+		} catch (e) {
+			error = errMessage(e);
+		} finally {
+			unlisten();
+			downloading = false;
+		}
+	}
+
+	async function deleteTurbo() {
+		error = '';
+		try {
+			await invoke('delete_whisper_video_model');
+			turbo = null;
+		} catch (e) {
+			error = errMessage(e);
+		}
+	}
 	let encoderOptions = $state<EncoderOption[]>([]);
 	let testingEncoders = $state(false);
 
@@ -145,6 +185,32 @@
 			{checking ? 'Checking…' : 'Check again'}
 		</button>
 	</div>
+</section>
+
+<section class="settings-section">
+	<h2>Transcription</h2>
+	<div class="fields">
+		<span>Model:</span>
+		<div class="path-row">
+			<span
+				class="detail"
+				title="Transcribes footage for cutting by speech, chapters and captions. Voice input keeps its own model."
+			>
+				{turbo ? 'whisper large-v3-turbo' : 'whisper base.en (voice input’s)'}
+			</span>
+			{#if turbo}
+				<button class="btn" type="button" onclick={() => void deleteTurbo()}>Delete</button>
+			{:else if !downloading}
+				<button class="btn" type="button" onclick={() => void downloadTurbo()}>
+					Download large-v3-turbo (1.6 GB)
+				</button>
+			{/if}
+		</div>
+	</div>
+	{#if downloading}
+		<DownloadProgressBar progress={download} oncancel={() => void invoke('cancel_download')} />
+	{/if}
+	<p class="help">large-v3-turbo is more accurate and knows more languages.</p>
 </section>
 
 <section class="settings-section">

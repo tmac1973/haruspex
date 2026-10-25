@@ -298,6 +298,7 @@ pub fn run() {
         .manage(SearchStats::new())
         .manage(AudioRecorder::new())
         .manage(WhisperServer::new())
+        .manage(WhisperServer::video())
         .manage(TtsEngine::new())
         .manage(ShellManager::new())
         .manage(code_tools::claims::CodeSessionClaims::default())
@@ -332,6 +333,9 @@ pub fn run() {
             models::delete_model,
             models::get_whisper_model_path,
             models::download_whisper_model,
+            models::get_whisper_video_model_path,
+            models::download_whisper_video_model,
+            models::delete_whisper_video_model,
             proxy::proxy_search,
             proxy::proxy_fetch,
             proxy::get_search_stats,
@@ -376,6 +380,12 @@ pub fn run() {
             video::commands::video_task_cancel,
             video::commands::video_encoders_test,
             video::commands::video_task_open,
+            video::commands::video_transcribe,
+            video::commands::video_transcribe_cancel,
+            video::commands::video_silences,
+            video::commands::video_project_transcript,
+            video::commands::video_write_captions,
+            video::commands::video_write_chapters,
             audio_cache::commands::audio_sweep,
             audio_cache::commands::audio_read_bytes,
             audio_cache::commands::audio_save_as,
@@ -720,6 +730,7 @@ pub fn run() {
                     mcp.stop_all().await;
                     let _ = llama.stop().await;
                     let _ = whisper.stop().await;
+                    let _ = app.state::<whisper::VideoWhisper>().0.stop().await;
                     let _ = tts.stop().await;
                     // ~7 GB of VRAM for Ming: left behind, it outlived the app.
                     app.state::<image_engine::ImageEngine>().stop().await;

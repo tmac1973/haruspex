@@ -13,7 +13,13 @@ import { errMessage } from '#lib/utils/error.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
 import { videoOverrides } from '#lib/video/binaries.ts';
-import { cutReport, probeReport, summaryReport } from '#lib/video/report.ts';
+import {
+	cutReport,
+	probeReport,
+	summaryReport,
+	timelineTranscriptReport
+} from '#lib/video/report.ts';
+import type { TimelineTranscript } from '#lib/ipc/gen/TimelineTranscript.ts';
 import { parseCut, parseOp, str, videoSettings } from '#lib/video/args.ts';
 import { VIDEO_PRESETS } from '#lib/video/types.ts';
 import type { EpisodeProbe } from '#lib/ipc/gen/EpisodeProbe.ts';
@@ -42,14 +48,27 @@ async function probe(args: Record<string, unknown>, ctx: ToolContext) {
 	}
 }
 
+function editLabel(args: Record<string, unknown>): string {
+	const op = str(args.op) ?? 'edit';
+	if (op === 'remove_silences') {
+		return args.index ? `Cutting silences from clip ${String(args.index)}` : 'Cutting silences';
+	}
+	if (op === 'remove_ranges') return `Cutting parts of clip ${String(args.index ?? '')}`;
+	const verb = { trim: 'Trimming', remove: 'Removing', move: 'Moving' }[op] ?? 'Editing';
+	return `${verb} clip ${String(args.index ?? '')}`;
+}
+
 async function projectRead(args: Record<string, unknown>, ctx: ToolContext) {
 	try {
-		const summary = await invoke<ProjectSummary>('video_project_summary', {
+		const where = {
 			workingDir: ctx.workingDir,
 			episode: episodeArg(args),
 			project: str(args.project)
-		});
-		return toolResult(summaryReport(summary));
+		};
+		const summary = await invoke<ProjectSummary>('video_project_summary', where);
+		if (args.transcript !== true) return toolResult(summaryReport(summary));
+		const t = await invoke<TimelineTranscript>('video_project_transcript', where);
+		return toolResult(`${summaryReport(summary)}\n\n${timelineTranscriptReport(t)}`);
 	} catch (e) {
 		return toolResult(toolError(errMessage(e)));
 	}
@@ -128,7 +147,15 @@ registerTool({
 				"Read an episode's Kdenlive project: the main track's clips in order (numbered from 1) with their trims, and what is on other tracks.",
 			parameters: {
 				type: 'object',
-				properties: { episode: EPISODE_PARAM, project: PROJECT_PARAM }
+				properties: {
+					episode: EPISODE_PARAM,
+					project: PROJECT_PARAM,
+					transcript: {
+						type: 'boolean',
+						description:
+							"Also give the cut's speech in the video's own time, from the clips' transcripts (video_transcribe makes them)."
+					}
+				}
 			}
 		}
 	},
@@ -216,28 +243,40 @@ registerTool({
 				properties: {
 					episode: EPISODE_PARAM,
 					project: PROJECT_PARAM,
-					op: { type: 'string', enum: ['trim', 'remove', 'move'] },
-					index: { type: 'integer', description: 'The clip, from 1.' },
+					op: {
+						type: 'string',
+						enum: ['trim', 'remove', 'move', 'remove_ranges', 'remove_silences']
+					},
+					index: {
+						type: 'integer',
+						description: 'The clip, from 1. remove_silences: omit for every clip.'
+					},
 					in_secs: { type: 'number', description: 'trim: start this far into the clip.' },
 					out_secs: { type: 'number', description: 'trim: stop this far into the clip.' },
-					to: { type: 'integer', description: 'move: its new position, from 1.' }
+					to: { type: 'integer', description: 'move: its new position, from 1.' },
+					ranges: {
+						type: 'array',
+						description:
+							"remove_ranges: stretches to cut, in the clip's own time (as video_transcribe and video_silences give it), e.g. a retake.",
+						items: {
+							type: 'object',
+							properties: { from: { type: 'string' }, to: { type: 'string' } }
+						}
+					},
+					min_secs: {
+						type: 'number',
+						description: 'remove_silences: shortest silence to cut. Default 1.5.'
+					},
+					pad_secs: {
+						type: 'number',
+						description: 'remove_silences: quiet kept at each side of a cut. Default 0.25.'
+					}
 				},
-				required: ['op', 'index']
+				required: ['op']
 			}
 		}
 	},
-	displayLabel: (args) => {
-		const op = str(args.op) ?? 'edit';
-		const verb =
-			op === 'trim'
-				? 'Trimming'
-				: op === 'remove'
-					? 'Removing'
-					: op === 'move'
-						? 'Moving'
-						: 'Editing';
-		return `${verb} clip ${String(args.index ?? '')}`;
-	},
+	displayLabel: (args) => editLabel(args),
 	execute: edit
 });
 
