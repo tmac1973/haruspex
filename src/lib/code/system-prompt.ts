@@ -72,6 +72,13 @@ function assetLine(): string {
 		: '\n- make_asset — make a tiling texture for the project, or a transition set where two textures meet, drawn by code from recipes you write, as PNGs at the size the project uses. Sprites and icons need image generation in Settings → Image. Check the result before moving on.';
 }
 
+/** generate_music, when Settings → Music has a backend. */
+function musicLine(readOnly: boolean | undefined): string {
+	if (getSettings().musicBackendKind === 'none') return '';
+	const save = readOnly ? '' : ' Pass path (ending .mp3 or .wav) to also save it into the project.';
+	return `\n- generate_music — make a song or instrumental from a caption of tags, with lyrics if it has vocals. It takes a minute or more and plays in your answer.${save}`;
+}
+
 /** Custom instructions, then the repo's AGENTS.md, then the skill list. */
 function tail(opts: { projectInstructions?: string; skillsSection?: string }): string {
 	const custom = getSettings().customSystemPrompt?.trim();
@@ -289,7 +296,7 @@ ${fileTools(opts.readOnly)}
 - command_output — the latest output of a background command, by the id run_command returned, and whether it is still running.
 - command_stop — stop a background command, and everything it started.
 ${handoffToolLine(opts)}- open_in_editor — open files in an editor window for the user to look at. It returns at once and does not report their edits.
-${WEB_TOOLS}${assetLine()}${delegateSection(opts.delegate)}
+${WEB_TOOLS}${assetLine()}${musicLine(opts.readOnly)}${delegateSection(opts.delegate)}
 
 RUNNING PROCESSES:
 - Servers / watchers / GUIs (anything that does not exit on its own): start them with run_command background:true. Check on one with command_output and stop it with command_stop when you are done with it. Do NOT run these in the foreground — they will just time out.

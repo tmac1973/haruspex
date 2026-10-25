@@ -22,6 +22,7 @@ import '#lib/agent/tools/contacts.ts';
 import '#lib/agent/tools/screen.ts';
 import '#lib/agent/tools/image-gen.ts';
 import '#lib/agent/tools/make-asset.ts';
+import '#lib/agent/tools/music-gen.ts';
 import '#lib/agent/tools/skills.ts';
 import '#lib/agent/tools/skillsWrite.ts';
 import '#lib/agent/tools/guide.ts';

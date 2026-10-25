@@ -356,6 +356,7 @@ pub fn run() {
             audio_cache::commands::audio_cache_size,
             audio_cache::commands::audio_cache_clear,
             audio_cache::commands::audio_sweep,
+            audio_cache::commands::audio_read_bytes,
             image_gen::commands::image_check,
             image_gen::commands::image_palette_spread,
             image_gen::commands::image_contact_sheet,
