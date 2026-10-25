@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.11](https://github.com/tmac1973/haruspex/compare/v0.2.10...v0.2.11) (2026-10-25)
+
+
+### Bug Fixes
+
+* **release:** bundle gstreamer plugins into the appimage ([#645](https://github.com/tmac1973/haruspex/issues/645)) ([c46615a](https://github.com/tmac1973/haruspex/commit/c46615a7ef1b3339c03469d01e7bcac8734ac867))
+
 ## [0.2.10](https://github.com/tmac1973/haruspex/compare/v0.2.9...v0.2.10) (2026-10-25)
 
 
