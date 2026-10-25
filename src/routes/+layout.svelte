@@ -76,6 +76,7 @@
 	} from '#lib/audio/voiceCapture.svelte.ts';
 	import { stopTts, toggleTts } from '#lib/audio/ttsControl.svelte.ts';
 	import { installAudioExclusivity } from '#lib/audio/exclusive.ts';
+	import { installAudioSources } from '#lib/audio/playable.ts';
 	import { getActiveTab, mainTabs, setActiveTab } from '#lib/stores/activeTab.svelte.ts';
 	import { getActiveSession as getActiveCodeSession } from '#lib/stores/code.svelte.ts';
 	import { listenInMainWindow as listenForCodeWindows } from '#lib/code/windows.ts';
@@ -125,6 +126,8 @@
 
 	// One generated-audio player at a time, and none over read-aloud.
 	onMount(() => installAudioExclusivity(document, () => void stopTts()));
+	// Answers' players get their songs as blobs: see audio/playable.ts.
+	onMount(() => installAudioSources(document));
 
 	// Windows: hand Rust Settings → Code's PowerShell choice before any command
 	// runs (a Code turn hands it again as it starts).

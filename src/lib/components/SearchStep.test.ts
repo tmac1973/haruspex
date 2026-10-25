@@ -5,7 +5,11 @@ import type { SearchStep as Step } from '#lib/agent/loop.ts';
 import type { Artifact } from '#lib/sandbox/protocol.ts';
 
 const tauri = vi.hoisted(() => ({
-	invoke: vi.fn(async (cmd: string) => (cmd === 'artifact_register' ? 'artifact-1' : null))
+	invoke: vi.fn(async (cmd: string) => {
+		if (cmd === 'artifact_register') return 'artifact-1';
+		if (cmd === 'audio_read_bytes') return new Uint8Array([0xff, 0xfb]).buffer;
+		return null;
+	})
 }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
 
@@ -22,7 +26,8 @@ function makeStep(artifacts: Artifact[], overrides: Partial<Step> = {}): Step {
 }
 
 describe('SearchStep artifacts', () => {
-	it('plays a generated-audio artifact on the step card', () => {
+	it('plays a generated-audio artifact on the step card, as a blob of its bytes', async () => {
+		URL.createObjectURL = vi.fn(() => 'blob:step-song');
 		const src = `haruspex-audio://localhost/${'a'.repeat(64)}`;
 		render(SearchStep, {
 			steps: [
@@ -33,7 +38,9 @@ describe('SearchStep artifacts', () => {
 		});
 		const audio = document.querySelector('.step-artifacts audio') as HTMLAudioElement;
 		expect(audio).toBeTruthy();
-		expect(audio.getAttribute('src')).toBe(src);
+		// The webview can't play the cache's scheme, so not that URL.
+		await waitFor(() => expect(audio.getAttribute('src')).toBe('blob:step-song'));
+		expect(tauri.invoke).toHaveBeenCalledWith('audio_read_bytes', { hash: 'a'.repeat(64) });
 		expect(screen.getByText('Rain')).toBeTruthy();
 	});
 

@@ -2,9 +2,15 @@
 //!
 //! The server that made a song keeps it for a day at most (llama-toolchest
 //! prunes music jobs after 24 h), so Haruspex keeps its own copy:
-//! content-addressed under `<app_data_dir>/audio/`, served over the
-//! `haruspex-audio://` scheme with Range support so a player can seek, and to
-//! Settings → Remote control's page over `/api/v1/audio/<hash>`.
+//! content-addressed under `<app_data_dir>/audio/`, and served to Settings →
+//! Remote control's page over `/api/v1/audio/<hash>` with Range support so a
+//! player can seek.
+//!
+//! The desktop's players read the bytes over IPC (`audio_read_bytes`) and
+//! play a `blob:` URL: WebKitGTK 2.54 won't play `<audio>` from a custom
+//! scheme (MEDIA_ERR_SRC_NOT_SUPPORTED, measured 2026-10-25; see
+//! `src/lib/audio/playable.ts`). The `haruspex-audio://` scheme still names a
+//! song in a message, and still serves it, but no player loads from it.
 //!
 //! It mirrors `image_cache` in shape (hash-named files, rows in `db/audio.rs`,
 //! a startup sweep) but not in policy. Linked audio is the user's work and is
