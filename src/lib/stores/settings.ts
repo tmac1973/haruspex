@@ -412,6 +412,12 @@ export interface AppSettings {
 	/** Hostnames or IP addresses, for `remoteAccessMode: 'trusted'`. */
 	remoteAccessTrustedHosts: string[];
 	/**
+	 * The name guests reach this computer by when it isn't its own hostname
+	 * (a VPN's DNS name, say). Links and QR codes use it, and the server
+	 * accepts it as this computer's name; empty means the LAN address.
+	 */
+	remoteAccessLinkHost: string;
+	/**
 	 * Settings → Remote control: the owner API, for the owner's own devices
 	 * (plan/remote-api/). Off by default; on, it listens on this computer only
 	 * unless `ownerApiBindAll`. Its devices and their tokens live in Rust
@@ -923,6 +929,7 @@ const defaults: AppSettings = {
 	remoteAccessTokenSaved: false,
 	remoteAccessMode: 'tokens',
 	remoteAccessTrustedHosts: [],
+	remoteAccessLinkHost: '',
 	ownerApiEnabled: false,
 	// Next to remote chat's 8787.
 	ownerApiPort: 8788,

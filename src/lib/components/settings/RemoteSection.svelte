@@ -8,6 +8,7 @@
 		getLanAddress,
 		getLinkQr,
 		getRemoteStatus,
+		linkHostName,
 		listRemoteSessions,
 		qrPath,
 		remoteLink,
@@ -51,6 +52,7 @@
 	let port = $state(getSettings().remoteAccessPort);
 	let mode = $state<AccessMode>(getSettings().remoteAccessMode);
 	let trustedHosts = $state<string[]>([...getSettings().remoteAccessTrustedHosts]);
+	let linkHost = $state(getSettings().remoteAccessLinkHost);
 	let found = $state<TrustedHost[]>([]);
 	/** Read back from the secret store on mount; needed for the link and QR. */
 	let token = $state('');
@@ -69,9 +71,11 @@
 	let busy = $state(false);
 
 	const activity = $derived(getRemoteActivity());
-	const link = $derived(address && status?.running ? remoteLink(address, port, token) : null);
+	/** What links and QR codes name: the link address, else the LAN address. */
+	const shareHost = $derived(linkHostName(linkHost) ?? address);
+	const link = $derived(shareHost && status?.running ? remoteLink(shareHost, port, token) : null);
 	/** The page without the link's secret, for a device let in without it. */
-	const pageUrl = $derived(address && status?.running ? `https://${address}:${port}/` : null);
+	const pageUrl = $derived(shareHost && status?.running ? `https://${shareHost}:${port}/` : null);
 	/** Said next to the switch, so it matches who can actually get in. */
 	const consent = $derived(
 		mode === 'lan'
@@ -104,11 +108,11 @@
 		address = await getLanAddress().catch(() => null);
 		qr = null;
 		pageQr = null;
-		if (!address || !status?.running || !token) return;
+		if (!link || !pageUrl) return;
 		// A missing QR is a missing convenience, not a broken feature: the
 		// link is still on screen and still copyable.
-		qr = await getLinkQr(remoteLink(address, port, token)).catch(() => null);
-		pageQr = await getLinkQr(`https://${address}:${port}/`).catch(() => null);
+		qr = await getLinkQr(link).catch(() => null);
+		pageQr = await getLinkQr(pageUrl).catch(() => null);
 	}
 
 	async function apply() {
@@ -121,7 +125,8 @@
 				remoteAccessEnabled: enabled,
 				remoteAccessPort: port,
 				remoteAccessMode: mode,
-				remoteAccessTrustedHosts: [...trustedHosts]
+				remoteAccessTrustedHosts: [...trustedHosts],
+				remoteAccessLinkHost: linkHost.trim()
 			});
 			const result = await syncRemoteServer();
 			if (enabled && !result?.running) {
@@ -245,6 +250,25 @@
 			min="1024"
 			max="65535"
 			bind:value={port}
+			onchange={apply}
+			disabled={busy}
+		/>
+	</div>
+
+	<div class="field">
+		<label
+			for="remote-link-host"
+			title="The name devices use to reach this computer, if it isn't the address shown below (for example a VPN's name for it). Links and QR codes use it, and the page accepts it as this computer's name. IP addresses always work."
+			>Link address</label
+		>
+		<input
+			id="remote-link-host"
+			class="wide"
+			type="text"
+			spellcheck="false"
+			autocomplete="off"
+			placeholder={address ?? 'box.example.internal'}
+			bind:value={linkHost}
 			onchange={apply}
 			disabled={busy}
 		/>
@@ -377,6 +401,12 @@
 
 	.field input {
 		width: 8rem;
+	}
+
+	.field input.wide {
+		flex: 1;
+		min-width: 0;
+		max-width: 20rem;
 	}
 
 	.label {

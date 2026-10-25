@@ -117,7 +117,13 @@ pub async fn owner_api_apply(
     // Who may connect changes in place: no restart, nobody dropped.
     api.trust.set(config.access.clone());
     let identity = if config.enabled {
-        Some(api.certificate(config.access.extra_host.as_deref())?)
+        let guest_chat = app.state::<crate::remote::RemoteServer>().trust().access();
+        let extras: Vec<&str> = [&config.access.extra_host, &guest_chat.extra_host]
+            .into_iter()
+            .flatten()
+            .map(String::as_str)
+            .collect();
+        Some(api.certificate(&extras)?)
     } else {
         None
     };

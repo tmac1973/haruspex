@@ -60,21 +60,27 @@ impl OwnerApi {
         }
     }
 
+    /// Remote control's link address, which guest chat's certificate covers too.
+    pub fn extra_host(&self) -> Option<String> {
+        self.trust.access().extra_host
+    }
+
     pub fn clients(&self) -> Result<Arc<Clients>, String> {
         self.clients.clone()
     }
 
     /// The HTTPS certificate to serve: the kept one, or a new one when it no
-    /// longer covers this computer's names (plus `extra_host`). Guest chat
+    /// longer covers this computer's names (plus `extra_hosts`). Guest chat
     /// serves the same one, so a browser that has accepted it for one server
-    /// sees the same fingerprint on the other.
-    pub fn certificate(&self, extra_host: Option<&str>) -> Result<tls::Identity, String> {
+    /// sees the same fingerprint on the other; each server passes both link
+    /// addresses, or starting one would drop the other's name.
+    pub fn certificate(&self, extra_hosts: &[&str]) -> Result<tls::Identity, String> {
         let path = self
             .tls_path
             .as_deref()
             .ok_or("no app data folder for the HTTPS certificate")?;
         let hostname = trust::system_hostname();
-        let names = tls::names_for(hostname.as_deref(), extra_host);
+        let names = tls::names_for(hostname.as_deref(), extra_hosts);
         let mut ips: Vec<std::net::IpAddr> = vec![
             std::net::Ipv4Addr::LOCALHOST.into(),
             std::net::Ipv6Addr::LOCALHOST.into(),
