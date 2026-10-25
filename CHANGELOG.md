@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.2.10](https://github.com/tmac1973/haruspex/compare/v0.2.9...v0.2.10) (2026-10-25)
+
+
+### Features
+
+* **audio:** add a content-addressed audio cache served as haruspex-audio: ([#632](https://github.com/tmac1973/haruspex/issues/632)) ([dd06a54](https://github.com/tmac1973/haruspex/commit/dd06a5472b35d43bd2e5d0a83cfb84a11d29b272)), closes [#630](https://github.com/tmac1973/haruspex/issues/630)
+* **audio:** play cached audio inline in answers and tool steps ([#634](https://github.com/tmac1973/haruspex/issues/634)) ([11d12da](https://github.com/tmac1973/haruspex/commit/11d12dafd00bc21a1b45512dad102552f3b9fa5e)), closes [#630](https://github.com/tmac1973/haruspex/issues/630)
+* **image:** add lemonade as an image backend ([#627](https://github.com/tmac1973/haruspex/issues/627)) ([a5573fe](https://github.com/tmac1973/haruspex/commit/a5573fec8dedff479c0ba2e364baf798324e4c5d))
+* **image:** add llama-toolchest as an image backend ([#633](https://github.com/tmac1973/haruspex/issues/633)) ([5901b69](https://github.com/tmac1973/haruspex/commit/5901b69b74340e3f7255ac3f5118a076be1ae126)), closes [#630](https://github.com/tmac1973/haruspex/issues/630)
+* **music:** add a music backend layer and Settings → Music with llama-toolchest ([#635](https://github.com/tmac1973/haruspex/issues/635)) ([44f6b01](https://github.com/tmac1973/haruspex/commit/44f6b014aa72f98773ba5e2b73bd4985b706fd7f)), closes [#630](https://github.com/tmac1973/haruspex/issues/630)
+* **music:** add the generate_music tool for chat and code ([#636](https://github.com/tmac1973/haruspex/issues/636)) ([71c5843](https://github.com/tmac1973/haruspex/commit/71c5843799ccb5d5e89173e24f68370f0aa51470)), closes [#630](https://github.com/tmac1973/haruspex/issues/630)
+
+
+### Bug Fixes
+
+* **audio:** draw the player's own controls, and keep it off closed step cards ([#641](https://github.com/tmac1973/haruspex/issues/641)) ([7412343](https://github.com/tmac1973/haruspex/commit/7412343db4cd4f688a1220205f9ee4c01cbe2931)), closes [#638](https://github.com/tmac1973/haruspex/issues/638)
+* **audio:** play songs from a blob, since WebKitGTK can't play the cache's scheme ([#640](https://github.com/tmac1973/haruspex/issues/640)) ([b7662d4](https://github.com/tmac1973/haruspex/commit/b7662d436ca3da6e653141c67dce1d982b400c95)), closes [#638](https://github.com/tmac1973/haruspex/issues/638)
+* **audio:** read the song's length from the player, and add volume ([#642](https://github.com/tmac1973/haruspex/issues/642)) ([bc14f9e](https://github.com/tmac1973/haruspex/commit/bc14f9e2f9443f992fa223690a429489367ab7f0)), closes [#638](https://github.com/tmac1973/haruspex/issues/638)
+* **chat:** show a vision model the picture generate_image drew ([#629](https://github.com/tmac1973/haruspex/issues/629)) ([e52c1da](https://github.com/tmac1973/haruspex/commit/e52c1da9348fb849f0382cbda0281398d1fec64c))
+* **ci:** create the release tag even when release-please fails after creating the release ([#622](https://github.com/tmac1973/haruspex/issues/622)) ([bef3c56](https://github.com/tmac1973/haruspex/commit/bef3c5669adfa6bba247f680759a6a81d5abeb6a))
+* **code:** let read-only subtasks run sed -n, cd, loops and quoted pipes ([#625](https://github.com/tmac1973/haruspex/issues/625)) ([2cb2f4a](https://github.com/tmac1973/haruspex/commit/2cb2f4adc909c9b364a62a33ecd0ca8eec7e03a9))
+* **image:** give lemonade the same connection section and model dropdown as comfyui ([#628](https://github.com/tmac1973/haruspex/issues/628)) ([1802518](https://github.com/tmac1973/haruspex/commit/1802518cf1cb3127a21deeacce63b89411df1d87))
+
+
+### Documentation
+
+* **image,music:** record llama-toolchest live results ([#639](https://github.com/tmac1973/haruspex/issues/639)) ([727f44b](https://github.com/tmac1973/haruspex/commit/727f44ba1052d7012eecfc6040320d4a2cd22fcb)), closes [#630](https://github.com/tmac1973/haruspex/issues/630)
+* **plan:** llama-toolchest image and music backends ([#631](https://github.com/tmac1973/haruspex/issues/631)) ([6c855be](https://github.com/tmac1973/haruspex/commit/6c855be71e4a949ed0d1343f8851a4ab5d3a88f3))
+
 ## [0.2.9](https://github.com/tmac1973/haruspex/compare/v0.2.8...v0.2.9) (2026-10-22)
 
 
