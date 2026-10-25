@@ -44,6 +44,17 @@
 
 	const ready = $derived(!!loaded && Number.isFinite(duration) && duration > 0);
 
+	/**
+	 * The length, read from the element rather than bound. WebKitGTK fires
+	 * `durationchange` once, at load, with 0 for an MP3 with no length header
+	 * (ACE's), then sets the real length when playback starts without firing
+	 * it again (measured 2026-10-25), so a binding stayed at 0. Read on every
+	 * playback event instead.
+	 */
+	function syncDuration() {
+		if (audio) duration = audio.duration;
+	}
+
 	/** `m:ss`, or `--:--` before the length is known. */
 	function clock(s: number): string {
 		if (!Number.isFinite(s) || s < 0) return '--:--';
@@ -92,9 +103,9 @@
 			type="range"
 			class="seek"
 			min="0"
-			max={ready ? duration : 1}
+			max={ready ? duration : 0}
 			step="0.1"
-			value={currentTime}
+			value={ready ? currentTime : 0}
 			oninput={seek}
 			disabled={!ready}
 			aria-label={`Position in ${title}`}
@@ -104,8 +115,12 @@
 	<audio
 		bind:this={audio}
 		bind:currentTime
-		bind:duration
 		bind:paused
+		ondurationchange={syncDuration}
+		onloadedmetadata={syncDuration}
+		onplay={syncDuration}
+		onplaying={syncDuration}
+		ontimeupdate={syncDuration}
 		preload="metadata"
 		src={loaded}
 	></audio>
