@@ -2,7 +2,8 @@
 	import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
-	import { refreshVideoBinaries, videoBinariesStatus } from '#lib/video/binaries.ts';
+	import { refreshVideoBinaries, videoBinariesStatus, videoEncoders } from '#lib/video/binaries.ts';
+	import type { EncoderOption } from '#lib/ipc/gen/EncoderOption.ts';
 	import { VIDEO_PRESETS, type VideoPreset } from '#lib/video/types.ts';
 	import type { VideoBinariesStatus } from '#lib/ipc/gen/VideoBinariesStatus.ts';
 	import type { FoundBinary } from '#lib/ipc/gen/FoundBinary.ts';
@@ -25,6 +26,25 @@
 	let preset = $state<VideoPreset>(getSettings().videoPreset);
 	let intro = $state(getSettings().videoIntroPath);
 	let outro = $state(getSettings().videoOutroPath);
+	let encoder = $state(getSettings().videoEncoder);
+	let encoderOptions = $state<EncoderOption[]>([]);
+	let testingEncoders = $state(false);
+
+	async function loadEncoders(again = false) {
+		testingEncoders = true;
+		try {
+			encoderOptions = await videoEncoders(again);
+		} catch (e) {
+			error = errMessage(e);
+		} finally {
+			testingEncoders = false;
+		}
+	}
+
+	function chooseEncoder(e: Event) {
+		encoder = (e.currentTarget as HTMLSelectElement).value;
+		updateSettings({ videoEncoder: encoder });
+	}
 
 	let status = $state<VideoBinariesStatus | null>(videoBinariesStatus());
 	let checking = $state(false);
@@ -37,6 +57,7 @@
 		error = '';
 		try {
 			status = await refreshVideoBinaries();
+			if (status.melt && encoderOptions.length === 0) void loadEncoders();
 		} catch (e) {
 			error = errMessage(e);
 		} finally {
@@ -140,6 +161,31 @@
 				<option value={p.id}>{p.label}</option>
 			{/each}
 		</select>
+
+		<label for="video-encoder">Encoder:</label>
+		<div class="path-row">
+			<select
+				id="video-encoder"
+				value={encoder}
+				onchange={chooseEncoder}
+				title="Hardware encoders are listed only when a test encode with them works."
+			>
+				{#if !encoderOptions.some((o) => o.id === encoder)}
+					<option value={encoder}>{encoder}</option>
+				{/if}
+				{#each encoderOptions as o (o.id)}
+					<option value={o.id}>{o.label}</option>
+				{/each}
+			</select>
+			<button
+				class="btn"
+				type="button"
+				disabled={testingEncoders || !status?.melt}
+				onclick={() => void loadEncoders(true)}
+			>
+				{testingEncoders ? 'Testing…' : 'Retest'}
+			</button>
+		</div>
 
 		<label for="video-intro">Intro:</label>
 		<div class="path-row">

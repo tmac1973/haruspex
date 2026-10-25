@@ -5,11 +5,11 @@ description: What each Settings section holds, its most-used options with their 
 
 # Settings reference
 
-Settings has seventeen sections. Each gives its main options, their defaults and the page with more.
+Settings has seventeen sections. Each lists its main options, defaults and the page with more.
 
 ## Open Settings
 
-Click the gear at the right of the header; click it again, or **← Back**, to close it.
+Click the gear at the right of the header; click it again or **← Back** to close.
 
 ## General
 
@@ -27,11 +27,11 @@ Where the model runs, which model is used and how big the context is.
 
 - **Inference backend**: Local (Haruspex-managed) (default), Remote server (advanced) or OpenRouter (cloud).
 - **Models**: download and switch local models.
-- **Context Size**: 32K by default (32K to 256K).
+- **Context Size**: 32K (up to 256K).
 - **Let models use system RAM**: off.
-- **Parallel streams**: 1 (also 2 or 4). More lets a job or Code subtasks run beside chat; each needs its own memory.
+- **Parallel streams**: 1 (also 2 or 4). More let a job or Code subtasks run beside chat, each with its own memory.
 - **Extra llama-server arguments**: empty. They override Haruspex's own, from the next server restart.
-- **Server**: status, port and Restart Server; **Run Setup Wizard**.
+- **Server**: status, port, Restart Server; **Run Setup Wizard**.
 
 See the `models` page.
 
@@ -73,8 +73,7 @@ See the `skills` page.
 
 Voice input and spoken replies.
 
-- **Text-to-speech voice**: Heart (Female).
-- **Read tables by subject**: on.
+- **Text-to-speech voice**: Heart (Female). **Read tables by subject**: on.
 - **Audio output (TTS playback)** and **Audio input (microphone)**: pick a device; **Refresh** rescans.
 
 See the `chat` page.
@@ -161,10 +160,10 @@ See the `music` page.
 
 ## Video
 
-- **ffmpeg**, **ffprobe**, **melt**: found on PATH or in Kdenlive unless you set a path.
-- **Format**: 1080p, 60 fps. **Intro**, **Outro**: none.
+- **ffmpeg**, **ffprobe**, **melt**: found on PATH or in Kdenlive, or set a path.
+- **Format**: 1080p, 60 fps. **Encoder**: x264. **Intro**, **Outro**: none.
 
-See the `video` page.
+See the `video` and `video-render` pages.
 
 ## Guest chat
 

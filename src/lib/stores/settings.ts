@@ -802,6 +802,8 @@ export interface AppSettings {
 	 */
 	videoIntroPath: string;
 	videoOutroPath: string;
+	/** The H.264 encoder renders use: `libx264`, or a hardware one that passed its test. */
+	videoEncoder: string;
 	/**
 	 * Max agent-loop iterations (model calls) for a Code-mode turn before it's
 	 * forced to wrap up. Coding tasks chain many tool calls (grep → read → edit
@@ -1044,7 +1046,8 @@ const defaults: AppSettings = {
 	videoMeltPath: '',
 	videoPreset: '1080p60',
 	videoIntroPath: '',
-	videoOutroPath: ''
+	videoOutroPath: '',
+	videoEncoder: 'libx264'
 };
 
 function load(): AppSettings {

@@ -11,7 +11,8 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
 			...actual.getSettings(),
 			videoIntroPath: '/elsewhere/intro.mp4',
 			videoOutroPath: '',
-			videoPreset: '1440p60'
+			videoPreset: '1440p60',
+			videoEncoder: 'libx264'
 		})
 	};
 });
@@ -165,5 +166,47 @@ describe('video_cut', () => {
 		const out = await executeTool('video_cut', { items: [{}] }, chat);
 		expect(out.result).toContain('exactly one of index');
 		expect(state.invoke).not.toHaveBeenCalled();
+	});
+});
+
+describe('video_render', () => {
+	it('starts in the background, names its owner and attaches the card', async () => {
+		state.invoke.mockResolvedValue({
+			id: 'render-9',
+			kind: 'render',
+			label: 'Rendering ep010',
+			owner: 'chat:c9',
+			workingDir: '/videos',
+			state: 'running',
+			percent: 0,
+			etaSecs: null,
+			startedMs: 1
+		});
+		const ctx = makeToolContext({ interactive: true, workingDir: '/videos', conversationId: 'c9' });
+		const out = await executeTool('video_render', { episode: 'ep010' }, ctx);
+		const call = state.invoke.mock.calls[0];
+		expect(call[0]).toBe('video_render_start');
+		expect(call[1].request).toMatchObject({
+			episode: 'ep010',
+			owner: 'chat:c9',
+			encoder: 'libx264'
+		});
+		expect(out.result).toContain('Do not poll');
+		expect(out.artifacts).toEqual([
+			{ kind: 'videoTask', taskId: 'render-9', label: 'Rendering ep010' }
+		]);
+	});
+
+	it('cancels only when the user agrees', async () => {
+		const ask = vi.fn().mockResolvedValue({ kind: 'selected', labels: ['Keep rendering'] });
+		const ctx = makeToolContext({ interactive: true, workingDir: '/videos', askUser: ask });
+		const kept = await executeTool('video_render_cancel', { id: 'render-9' }, ctx);
+		expect(kept.result).toContain('kept the render');
+		expect(state.invoke).not.toHaveBeenCalled();
+		ask.mockResolvedValue({ kind: 'selected', labels: ['Cancel the render'] });
+		state.invoke.mockResolvedValue(true);
+		const out = await executeTool('video_render_cancel', { id: 'render-9' }, ctx);
+		expect(state.invoke).toHaveBeenCalledWith('video_task_cancel', { id: 'render-9' });
+		expect(out.result).toBe('Render cancelled.');
 	});
 });

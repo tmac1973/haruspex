@@ -48,6 +48,7 @@ import {
 	setCodeWatchCompletionHandler,
 	takeCodeWatches
 } from '#lib/shell/backgroundWatch.ts';
+import { setVideoTaskHandler, takeVideoNotices } from '#lib/video/taskWatch.ts';
 import {
 	createCodeSession,
 	decodeAgentBranch,
@@ -236,6 +237,7 @@ export class CodeSession {
 	private bgTimer: ReturnType<typeof setTimeout> | null = null;
 	private readonly unwatch: () => void;
 	private readonly unwatchShell: () => void;
+	private readonly unwatchVideo: () => void;
 
 	constructor(record: CodeSessionRecord) {
 		this.id = record.id;
@@ -285,6 +287,9 @@ export class CodeSession {
 			}
 		});
 		this.unwatchShell = setShellWaitListener(this.id, (wait) => this.onShellWait(wait));
+		this.unwatchVideo = setVideoTaskHandler(`code:${this.id}`, () => {
+			void this.flushWatchNotifications();
+		});
 	}
 
 	/** `open_in_shell` started or stopped waiting on a Shell tab. */
@@ -668,6 +673,12 @@ export class CodeSession {
 		if (this.busy || this.closed || this.flushing || this.folderMissing) return;
 		const completed = peekCompletedCodeWatches(this.id);
 		if (completed.length === 0) {
+			// A render or upload this session started, then subtasks.
+			const video = takeVideoNotices(`code:${this.id}`);
+			if (video) {
+				await this.runTurn({ role: 'user', content: video });
+				return;
+			}
 			await this.flushSubtaskNotifications();
 			return;
 		}
@@ -717,6 +728,7 @@ export class CodeSession {
 		this.subtaskStops.stopAll();
 		this.unwatch();
 		this.unwatchShell();
+		this.unwatchVideo();
 		clearCodeWatches(this.id);
 		resetSessionApproval(codeApprovalKey(this.id));
 		if (this.bgTimer !== null) clearTimeout(this.bgTimer);

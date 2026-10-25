@@ -84,6 +84,11 @@ import {
 import { getServerState } from '#lib/stores/llamaServer.svelte.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import {
+	hasVideoNotices,
+	setChatVideoTaskHandler,
+	takeVideoNotices
+} from '#lib/video/taskWatch.ts';
+import {
 	initDb,
 	dbSaveMessage,
 	dbCreateConversation,
@@ -308,6 +313,31 @@ export async function initChatStore(): Promise<void> {
 		setActiveConversationId(conversations[0].id);
 		await loadConversationMessages(conversations[0].id);
 	}
+	setChatVideoTaskHandler(onVideoTaskEnded);
+}
+
+/**
+ * A render started from a chat ended. Its conversation gets the notice as a
+ * follow-up turn once it is open and idle; one that isn't open says where to
+ * look.
+ */
+function onVideoTaskEnded(owner: string): void {
+	const id = owner.slice('chat:'.length);
+	if (id !== getActiveConversationId()) {
+		const title = conversations.find((c) => c.id === id)?.title;
+		if (title) showToast(`A video task finished in “${title}”.`);
+		return;
+	}
+	flushVideoNotices();
+}
+
+/** Run the active conversation's waiting video notices as a turn, when idle. */
+export function flushVideoNotices(): void {
+	const id = getActiveConversationId();
+	if (!id || isGenerating || isCompacting) return;
+	const owner = `chat:${id}`;
+	if (!hasVideoNotices(owner)) return;
+	void sendMessage(takeVideoNotices(owner));
 }
 
 async function loadConversationMessages(id: string): Promise<void> {
@@ -728,6 +758,7 @@ export async function setActiveConversation(id: string): Promise<void> {
 		// Fire-and-forget; the replay updates conv.isRestoringSession so
 		// the UI can show a small indicator while it runs.
 		void restoreSandboxSession(id);
+		flushVideoNotices();
 	}
 }
 
@@ -1542,5 +1573,8 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 			abortController = null;
 		}
 		conversation.updatedAt = Date.now();
+		// A render that ended during this turn reports now; after this turn's
+		// own bookkeeping, so it is a turn of its own.
+		setTimeout(flushVideoNotices, 0);
 	}
 }

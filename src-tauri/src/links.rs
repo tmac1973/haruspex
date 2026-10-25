@@ -56,6 +56,21 @@ pub async fn open_folder(path: String) -> Result<(), String> {
     })
 }
 
+/// Open a video Haruspex rendered with the system's player. Only an `.mp4`
+/// the video task registry recorded reaches this, never a path the model or a
+/// page chose.
+pub(crate) fn open_render(file: &std::path::Path) -> Result<(), String> {
+    let is_mp4 = file
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("mp4"));
+    if !is_mp4 || !file.is_file() {
+        return Err(format!("not a rendered video: {}", file.display()));
+    }
+    info!("open_render: {}", file.display());
+    spawn_folder_handler(file)
+}
+
 #[cfg(target_os = "linux")]
 fn spawn_folder_handler(dir: &std::path::Path) -> Result<(), String> {
     let mut cmd = std::process::Command::new("xdg-open");

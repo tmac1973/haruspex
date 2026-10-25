@@ -72,3 +72,72 @@ pub async fn video_project_op(
 ) -> Result<super::project::CutResult, String> {
     super::project::op(&working_dir, &episode, project.as_deref(), op, &settings).await
 }
+
+/// Start rendering a project in the background.
+#[tauri::command]
+pub async fn video_render_start(
+    app: tauri::AppHandle,
+    tasks: tauri::State<'_, super::tasks::VideoTasks>,
+    request: super::tasks::RenderRequest,
+) -> Result<super::tasks::VideoTask, String> {
+    use tauri::Emitter;
+    let emit: super::tasks::Emit = std::sync::Arc::new(move |t: &super::tasks::VideoTask| {
+        let _ = app.emit("video-task-progress", t);
+    });
+    super::tasks::start_render(emit, tasks.inner().clone(), request).await
+}
+
+/// A background task, or none when this run never started it.
+#[tauri::command]
+pub fn video_task_status(
+    tasks: tauri::State<'_, super::tasks::VideoTasks>,
+    id: String,
+) -> Option<super::tasks::VideoTask> {
+    tasks.status(&id)
+}
+
+/// Every background task this run started.
+#[tauri::command]
+pub fn video_task_list(
+    tasks: tauri::State<'_, super::tasks::VideoTasks>,
+) -> Vec<super::tasks::VideoTask> {
+    tasks.list()
+}
+
+/// Cancel a running task. False when it wasn't running.
+#[tauri::command]
+pub fn video_task_cancel(tasks: tauri::State<'_, super::tasks::VideoTasks>, id: String) -> bool {
+    tasks.cancel(&id)
+}
+
+/// libx264 and the hardware encoders melt can use here.
+#[tauri::command]
+pub async fn video_encoders_test(
+    app: tauri::AppHandle,
+    overrides: BinaryOverrides,
+) -> Result<Vec<super::encode::EncoderOption>, String> {
+    use tauri::Manager;
+    let found = binaries::resolve(&overrides).await;
+    let melt = found.require(Tool::Melt)?;
+    let scratch = app
+        .path()
+        .app_cache_dir()
+        .unwrap_or_else(|_| std::env::temp_dir().join("haruspex"))
+        .join("video-encoder-test");
+    Ok(super::encode::test_encoders(melt, &scratch).await)
+}
+
+/// Open a finished render in the system's player, or its folder.
+#[tauri::command]
+pub async fn video_task_open(
+    tasks: tauri::State<'_, super::tasks::VideoTasks>,
+    id: String,
+    folder: bool,
+) -> Result<(), String> {
+    let file = tasks.output(&id).ok_or("That render hasn't finished.")?;
+    if folder {
+        let dir = file.parent().ok_or("The render has no folder.")?;
+        return crate::links::open_folder(dir.to_string_lossy().into_owned()).await;
+    }
+    crate::links::open_render(&file)
+}

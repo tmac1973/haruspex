@@ -168,6 +168,11 @@ pub fn run() {
             // The same for the sidecars: an orphaned image engine otherwise
             // holds its VRAM until the next image is asked for.
             orphans::sweep(app.handle(), orphans::SIDECARS);
+            // A render's melt left by a crash; then the registry for this run.
+            orphans::sweep(app.handle(), video::tasks::ORPHAN_KIND);
+            app.manage(video::tasks::VideoTasks::new(
+                orphans::registry_path(app.handle(), video::tasks::ORPHAN_KIND).ok(),
+            ));
             // The coding tools' background processes: kill what a crash left
             // running, then hold the registry for this run.
             {
@@ -365,6 +370,12 @@ pub fn run() {
             video::commands::video_project_summary,
             video::commands::video_project_cut,
             video::commands::video_project_op,
+            video::commands::video_render_start,
+            video::commands::video_task_status,
+            video::commands::video_task_list,
+            video::commands::video_task_cancel,
+            video::commands::video_encoders_test,
+            video::commands::video_task_open,
             audio_cache::commands::audio_sweep,
             audio_cache::commands::audio_read_bytes,
             audio_cache::commands::audio_save_as,
@@ -692,6 +703,9 @@ pub fn run() {
                 // Let the machine sleep again if a run was still holding the
                 // inhibit when the window closed.
                 app.state::<PowerInhibitor>().shutdown();
+                // A render's melt is kill_on_drop, but managed state need not
+                // drop at exit.
+                app.state::<video::tasks::VideoTasks>().cancel_all();
                 shell_mgr.shutdown_all();
                 app.state::<fs_tools::editor::EditorWatches>().stop_all();
                 // MCP children are the ones most likely to outlive us: there
