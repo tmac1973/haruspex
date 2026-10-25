@@ -25,6 +25,7 @@ import {
 	type DescriptionOverride
 } from '#lib/agent/tools/codeTabProfile.ts';
 import { shellPlatformSupported } from '#lib/shell/platformSupport.ts';
+import { videoAvailable } from '#lib/video/binaries.ts';
 
 const tools = new Map<string, ToolRegistration>();
 
@@ -85,6 +86,12 @@ interface ToolFilterOpts {
 	imageGeneration: boolean;
 	/** A music backend is set up AND someone is there to hear the song. */
 	musicGeneration: boolean;
+	/**
+	 * ffmpeg, ffprobe and melt were found, there is a working folder for the
+	 * footage, AND someone is there: a render runs for minutes and an upload
+	 * publishes, so neither belongs in a job.
+	 */
+	videoTools: boolean;
 	/**
 	 * An account has Allow sending on AND someone is there to review the
 	 * draft. A job never gets `email_compose`, allowlist or not.
@@ -182,6 +189,9 @@ function shouldIncludeCodeTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	if (SONG_TOOLS.has(name)) return opts.musicGeneration && isCodeTab(opts);
 	// Saving a picture or song made earlier into the project.
 	if (name === 'save_generated') return isCodeTab(opts) && !opts.codeReadOnly;
+	// Editing the videos in the project folder. The Code tab only: Shell has
+	// no folder that stays put.
+	if (reg.category === 'video') return opts.videoTools && isCodeTab(opts);
 	return false;
 }
 
@@ -215,6 +225,7 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	if (reg.category === 'desktop' && !opts.screenCapture) return false;
 	if (reg.category === 'image' && !opts.imageGeneration) return false;
 	if (reg.category === 'music' && !opts.musicGeneration) return false;
+	if (reg.category === 'video' && !opts.videoTools) return false;
 	// make_asset writes into a project; Chat has no project.
 	if (name === 'make_asset') return false;
 	if (reg.category === 'sandbox' && !opts.sandboxEnabled) return false;
@@ -244,6 +255,7 @@ function subtaskExcludes(reg: ToolRegistration): boolean {
 		SONG_TOOLS.has(name) ||
 		name === 'save_generated' ||
 		CODE_TAB_ONLY.has(name) ||
+		reg.category === 'video' ||
 		reg.category === 'interaction' ||
 		reg.category === 'desktop'
 	);
@@ -340,6 +352,7 @@ export function getToolSchemas(opts: {
 		screenCapture: getSettings().screenCaptureEnabled,
 		imageGeneration: interactive && getSettings().imageBackendKind !== 'none',
 		musicGeneration: interactive && getSettings().musicBackendKind !== 'none',
+		videoTools: interactive && opts.hasWorkingDir && videoAvailable(),
 		sendableEmail: interactive && hasSendableEmailAccount(),
 		sandboxEnabled: getSettings().sandboxEnabled,
 		memoryWritable: memoryActive()
@@ -451,7 +464,8 @@ function withDescription(schema: ToolDefinition, override: DescriptionOverride):
 
 /**
  * Image and music generation spend GPU minutes, so the same gate as the
- * schema: a backend, and someone there to see or hear the result. make_asset
+ * schema: a backend, and someone there to see or hear the result. Video tools
+ * likewise: the binaries, a folder, and someone there. make_asset
  * checks the image backend itself, since its textures are drawn by code
  * without one. Null when the call may go ahead.
  */
@@ -463,6 +477,14 @@ function generationRefusal(reg: ToolRegistration, ctx: ToolContext): string | nu
 		}
 		if (!ctx.interactive)
 			return 'Image generation is only available in a conversation with the user.';
+	}
+	if (reg.category === 'video') {
+		if (!ctx.interactive) return 'Video tools are only available in a conversation with the user.';
+		if (ctx.shellMode) return 'Video tools work in Chat and the Code tab, not the Shell tab.';
+		if (!ctx.workingDir) return 'Video tools need a working folder. The user can pick one.';
+		if (!videoAvailable()) {
+			return 'Video tools need ffmpeg, ffprobe and melt. The user can check Settings → Video.';
+		}
 	}
 	if (reg.category === 'music') {
 		if (s.musicBackendKind === 'none') {

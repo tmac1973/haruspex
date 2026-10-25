@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { openInBrowser } from '#lib/utils/openInBrowser.ts';
 	import { agentPowershell } from '#lib/code/powershell.ts';
+	import { refreshVideoBinaries } from '#lib/video/binaries.ts';
 	import favicon from '#lib/assets/favicon.svg';
 	import ServerStatusBadge from '#lib/components/ServerStatusBadge.svelte';
 	import ContextIndicator from '#lib/components/ContextIndicator.svelte';
@@ -132,6 +133,10 @@
 	// Windows: hand Rust Settings → Code's PowerShell choice before any command
 	// runs (a Code turn hands it again as it starts).
 	onMount(() => void agentPowershell());
+
+	// Whether ffmpeg and melt are here decides whether the video tools are
+	// offered; the registry asks synchronously, so look once now.
+	onMount(() => void refreshVideoBinaries().catch(() => {}));
 
 	// Other clients' way into this window's Code sessions (plan/remote-api/).
 	// Does nothing outside the main and Code windows, or while Rust has it off.

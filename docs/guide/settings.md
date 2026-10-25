@@ -5,11 +5,11 @@ description: What each Settings section holds, its most-used options with their 
 
 # Settings reference
 
-Settings has sixteen sections, down the left side. Each gives its main options, their defaults and the page with more.
+Settings has seventeen sections. Each gives its main options, their defaults and the page with more.
 
 ## Open Settings
 
-Click the gear at the right of the header; click it again, or **← Back**, to close it. It reopens on the last section you used.
+Click the gear at the right of the header; click it again, or **← Back**, to close it.
 
 ## General
 
@@ -29,8 +29,8 @@ Where the model runs, which model is used and how big the context is.
 - **Models**: download and switch local models.
 - **Context Size**: 32K by default (32K to 256K).
 - **Let models use system RAM**: off.
-- **Parallel streams**: 1 (also 2 or 4). More lets a job or Code subtasks run beside chat; each needs its own memory, and replies slow while two run.
-- **Extra llama-server arguments**: empty. Added after Haruspex's own, so they override them, from the next server restart.
+- **Parallel streams**: 1 (also 2 or 4). More lets a job or Code subtasks run beside chat; each needs its own memory.
+- **Extra llama-server arguments**: empty. They override Haruspex's own, from the next server restart.
 - **Server**: status, port and Restart Server; **Run Setup Wizard**.
 
 See the `models` page.
@@ -51,7 +51,7 @@ See the `chat` page.
 
 What the assistant remembers between chats.
 
-- **Carry facts and preferences from one conversation into the next**: on. It needs a small embedding model (about 65 MB), downloaded only when you ask.
+- **Carry facts and preferences from one conversation into the next**: on. It needs a 65 MB embedding model, downloaded when you ask.
 - **Ask before saving something you asked me to remember**: on.
 - **Find duplicates**: merges memories that say the same thing, after you approve each.
 - A list of everything remembered, to edit or delete.
@@ -146,7 +146,7 @@ See the `code` page.
 
 Where pictures are generated, if anywhere.
 
-- **Backend**: None (default), ComfyUI, Bundled engine (where it can run), Lemonade or llama-toolchest. Nothing is downloaded or started until you pick one.
+- **Backend**: None (default), ComfyUI, Bundled engine (where it can run), Lemonade or llama-toolchest.
 
 See the `images` page.
 
@@ -158,6 +158,13 @@ Where songs are made, if anywhere.
 - **Default length**: 30 seconds.
 
 See the `music` page.
+
+## Video
+
+- **ffmpeg**, **ffprobe**, **melt**: found on PATH or in Kdenlive unless you set a path.
+- **Format**: 1080p, 60 fps. **Intro**, **Outro**: none.
+
+See the `video` page.
 
 ## Guest chat
 

@@ -17,6 +17,7 @@
 	import CodeSection from '#lib/components/settings/CodeSection.svelte';
 	import ImageSection from '#lib/components/settings/ImageSection.svelte';
 	import MusicSection from '#lib/components/settings/MusicSection.svelte';
+	import VideoSection from '#lib/components/settings/VideoSection.svelte';
 	import RemoteSection from '#lib/components/settings/RemoteSection.svelte';
 	import OwnerApiSection from '#lib/components/settings/OwnerApiSection.svelte';
 	import FeedbackSection from '#lib/components/settings/FeedbackSection.svelte';
@@ -41,6 +42,7 @@
 		| 'code'
 		| 'image'
 		| 'music'
+		| 'video'
 		| 'remote'
 		| 'remoteControl'
 		| 'feedback';
@@ -150,6 +152,12 @@
 					label: 'Music',
 					subtitle: 'Where songs are made, if anywhere.',
 					icon: '<path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle>'
+				},
+				{
+					id: 'video',
+					label: 'Video',
+					subtitle: 'The programs that cut and render your videos.',
+					icon: '<polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>'
 				},
 				{
 					id: 'remote',
@@ -276,6 +284,8 @@
 				<ImageSection />
 			{:else if activeCategory === 'music'}
 				<MusicSection />
+			{:else if activeCategory === 'video'}
+				<VideoSection />
 			{:else if activeCategory === 'remote'}
 				<RemoteSection />
 			{:else if activeCategory === 'remoteControl'}

@@ -372,6 +372,9 @@ export const IPC = {
 	tts_is_playing: 'tts_is_playing',
 	tts_stop_playback: 'tts_stop_playback',
 	tts_synthesize_and_play: 'tts_synthesize_and_play',
+	video_binaries_status: 'video_binaries_status',
+	video_probe_file: 'video_probe_file',
+	video_probe_folder: 'video_probe_folder',
 	webview_store_load: 'webview_store_load',
 	webview_store_seed: 'webview_store_seed',
 	webview_store_set: 'webview_store_set'
