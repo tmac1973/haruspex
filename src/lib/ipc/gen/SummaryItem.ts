@@ -16,4 +16,8 @@ crossfadeInSecs: number | null,
 /**
  * The gain Haruspex set on its sound, in dB.
  */
-gainDb: number | null, };
+gainDb: number | null, 
+/**
+ * Haruspex put a Limiter after the gain to hold its peaks.
+ */
+limited: boolean, };

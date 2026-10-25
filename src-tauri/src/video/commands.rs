@@ -311,10 +311,14 @@ pub fn video_write_captions(
     if lines.is_empty() {
         return Err("There is no transcript to caption yet. Transcribe the clips first.".into());
     }
-    let episode_dir = paths::resolve_episode(&working_dir, &episode)?;
+    let episode_dir = super::project::episode_home(&working_dir, &episode, &project_path)?;
+    // A render older than the cut would get captions that don't fit it.
+    let modified = |p: &std::path::Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    let current = latest_render(&episode_dir, &project_path)
+        .filter(|r| modified(r) >= modified(&project_path));
     let target = match render.as_deref().map(str::trim).filter(|r| !r.is_empty()) {
         Some(r) => paths::resolve_in_working(&working_dir, r)?.with_extension("srt"),
-        None => match latest_render(&episode_dir, &project_path) {
+        None => match current {
             Some(r) => r.with_extension("srt"),
             None => episode_dir.join(format!(
                 "{}.srt",
@@ -332,14 +336,15 @@ pub fn video_write_captions(
         .map_err(|e| format!("can't write the captions: {e}"))?;
     let mut shown = paths::display_path(&working_dir, &target);
     if !t.untranscribed.is_empty() {
-        shown.push_str(&format!(
-            " (clips {} have no transcript, so no captions)",
-            t.untranscribed
-                .iter()
-                .map(u32::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
+        let list: Vec<String> = t.untranscribed.iter().map(u32::to_string).collect();
+        shown.push_str(&if list.len() == 1 {
+            format!(" (clip {} has no transcript, so no captions)", list[0])
+        } else {
+            format!(
+                " (clips {} have no transcripts, so no captions)",
+                list.join(", ")
+            )
+        });
     }
     Ok(shown)
 }
@@ -371,7 +376,7 @@ pub fn video_write_chapters(
         return Err(problems.join(" "));
     }
     let text = subtitles::chapters_text(&chapters);
-    let episode_dir = paths::resolve_episode(&working_dir, &episode)?;
+    let episode_dir = super::project::episode_home(&working_dir, &episode, &path)?;
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("video");
     let target = episode_dir.join(format!("{stem}.chapters.txt"));
     std::fs::write(&target, &text).map_err(|e| format!("can't write the chapters: {e}"))?;
@@ -544,7 +549,10 @@ fn thumbnail_target(
     project: Option<&str>,
     name: Option<&str>,
 ) -> Result<std::path::PathBuf, String> {
-    let episode_dir = paths::resolve_episode(working_dir, episode)?;
+    let episode_dir = match super::project::default_project(working_dir, episode, project, false) {
+        Ok(p) => super::project::episode_home(working_dir, episode, &p)?,
+        Err(_) => paths::resolve_episode(working_dir, episode)?,
+    };
     let file = match name.map(str::trim).filter(|n| !n.is_empty()) {
         Some(n) => {
             let n = n.trim_end_matches(".jpg");
@@ -717,9 +725,12 @@ pub async fn youtube_upload_plan(
     settings: super::project::VideoSettings,
 ) -> Result<UploadPlan, String> {
     use base64::Engine;
-    let episode_dir = paths::resolve_episode(&working_dir, &episode)?;
     let project_path =
         super::project::default_project(&working_dir, &episode, project.as_deref(), false).ok();
+    let episode_dir = match &project_path {
+        Some(p) => super::project::episode_home(&working_dir, &episode, p)?,
+        None => paths::resolve_episode(&working_dir, &episode)?,
+    };
     let render_path = match render.as_deref().map(str::trim).filter(|r| !r.is_empty()) {
         Some(r) => paths::resolve_in_working(&working_dir, r)?,
         None => project_path

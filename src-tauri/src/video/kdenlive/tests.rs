@@ -204,6 +204,7 @@ fn trimming_the_start_keeps_the_leading_gap_and_the_groups() {
         out_frame: None,
         mix_in: None,
         gain_db: None,
+        limiter: false,
     };
     let out = apply(&doc, &[trimmed]).unwrap();
     let after = reparse(out.text.clone());
@@ -256,6 +257,7 @@ fn an_effect_on_a_kept_clip_survives_a_trim() {
         out_frame: None,
         mix_in: None,
         gain_db: None,
+        limiter: false,
     };
     let out = reparse(apply(&doc, &[keep(0), trimmed]).unwrap().text);
     assert_eq!(out.items()[1].filters(), 1);
@@ -353,6 +355,7 @@ fn a_crossfade_made_in_kdenlive_keeps_its_clips_together() {
         out_frame: None,
         mix_in: None,
         gain_db: None,
+        limiter: false,
     };
     let out = reparse(apply(&doc, &[trimmed, keep(1), keep(2)]).unwrap().text);
     let m = &out.mixes(out.main_video)[0];
@@ -372,6 +375,7 @@ fn an_end_past_the_clip_is_clamped_and_said() {
         out_frame: Some(fps.frames(9.0)),
         mix_in: None,
         gain_db: None,
+        limiter: false,
     };
     let out = apply(&doc, &[p]).unwrap();
     assert!(out.notes.iter().any(|n| n.contains("past the clip's end")));
@@ -548,6 +552,7 @@ fn a_clip_split_in_two_keeps_its_effect_in_both_pieces() {
         out_frame: Some(119),
         mix_in: None,
         gain_db: None,
+        limiter: false,
     };
     let second = Placement {
         source: Source::Piece(0),
@@ -555,6 +560,7 @@ fn a_clip_split_in_two_keeps_its_effect_in_both_pieces() {
         out_frame: Some(599),
         mix_in: None,
         gain_db: None,
+        limiter: false,
     };
     let out = reparse(apply(&doc, &[first, second]).unwrap().text);
     let items = out.items();
@@ -663,7 +669,12 @@ fn haruspex_gain_is_one_tagged_filter_beside_the_users() {
     let items = once.items();
     let a0 = items[0].audio.as_ref().unwrap().node;
     assert_eq!(once.our_gain(a0).map(|(_, g)| g), Some(2.5));
-    assert_eq!(items[0].filters(), 2, "the user's Volume and Haruspex's");
+    assert_eq!(
+        items[0].filters(),
+        1,
+        "the user's Volume; Haruspex's isn't the user's"
+    );
+    assert_eq!(once.our_filters(a0).len(), 1);
     assert_eq!(
         once.our_gain(items[3].audio.as_ref().unwrap().node)
             .map(|(_, g)| g),
@@ -679,7 +690,7 @@ fn haruspex_gain_is_one_tagged_filter_beside_the_users() {
     let twice = reparse(apply(&once, &again).unwrap().text);
     let a0 = twice.items()[0].audio.as_ref().unwrap().node;
     assert_eq!(twice.our_gain(a0).map(|(_, g)| g), Some(1.0));
-    assert_eq!(twice.items()[0].filters(), 2);
+    assert_eq!(twice.our_filters(a0).len(), 1, "replaced, not added");
     // Zero removes it.
     let mut off = current(&twice);
     off[0].gain_db = Some(0.0);
@@ -687,6 +698,9 @@ fn haruspex_gain_is_one_tagged_filter_beside_the_users() {
     assert!(gone
         .our_gain(gone.items()[0].audio.as_ref().unwrap().node)
         .is_none());
+    assert!(gone
+        .our_filters(gone.items()[0].audio.as_ref().unwrap().node)
+        .is_empty());
     assert_eq!(gone.items()[0].filters(), 1);
 }
 
@@ -847,4 +861,33 @@ async fn kdenlive_reads_crossfades_and_gains() {
     for f in ["a.mp4", "b.mp4", "c.mp4", "mixes.kdenlive"] {
         std::fs::copy(dir.join(f), keep.join(f)).unwrap();
     }
+}
+
+#[test]
+fn a_limiter_follows_the_gain_and_goes_with_it() {
+    let doc = empty_project();
+    let fps = doc.fps;
+    let mut p = new(media("a.mp4", 4.0, fps));
+    p.gain_db = Some(16.8);
+    p.limiter = true;
+    let out = reparse(apply(&doc, &[p]).unwrap().text);
+    let a = out.items()[0].audio.as_ref().unwrap().node;
+    let ours = out.our_filters(a);
+    let services: Vec<&str> = ours
+        .iter()
+        .map(|&f| out.tree.property(f, "mlt_service").unwrap())
+        .collect();
+    assert_eq!(services, ["volume", "avfilter.alimiter"]);
+    assert_eq!(out.tree.property(ours[1], "av.limit"), Some("0.841"));
+    assert!(out.our_limiter(a));
+    assert_eq!(out.items()[0].filters(), 0, "neither counts as the user's");
+    let s = summary(&out, "/videos", Path::new("/videos/p.kdenlive"));
+    assert!(s.items[0].limited);
+    // A gain without a limiter takes the limiter away.
+    let mut plain = current(&out);
+    plain[0].gain_db = Some(3.0);
+    let after = reparse(apply(&out, &plain).unwrap().text);
+    let a = after.items()[0].audio.as_ref().unwrap().node;
+    assert!(!after.our_limiter(a));
+    assert_eq!(after.our_gain(a).map(|(_, g)| g), Some(3.0));
 }

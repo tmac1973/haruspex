@@ -153,7 +153,9 @@ async fn normalize_gains(
     let measured = loudness::measure_all(ffmpeg, episode_dir, &stretches, &|_, _| {}).await?;
     let n = which.len();
     for (k, m) in which.into_iter().zip(measured) {
-        wanted[k].gain_db = Some(loudness::gain_for(&m).unwrap_or(0.0));
+        let gain = loudness::gain_for(&m);
+        wanted[k].gain_db = Some(gain.map_or(0.0, |g| g.db));
+        wanted[k].limiter = gain.is_some_and(|g| g.limit);
     }
     Ok(format!(
         "Evened out the sound of {n} clip{} to about -14 LUFS.",
@@ -197,6 +199,7 @@ fn cut_ranges(
     let kept: i64 = keeps.iter().map(|(a, b)| b - a + 1).sum();
     let first_mix = wanted[pos].mix_in;
     let gain = wanted[pos].gain_db;
+    let limiter = wanted[pos].limiter;
     let pieces: Vec<Placement> = keeps
         .iter()
         .enumerate()
@@ -210,6 +213,7 @@ fn cut_ranges(
             out_frame: Some(b),
             mix_in: if n == 0 { first_mix } else { None },
             gain_db: gain,
+            limiter,
         })
         .collect();
     wanted.splice(pos..=pos, pieces);
@@ -344,6 +348,19 @@ pub fn default_project(
             episode.trim()
         }
     ))
+}
+
+/// Where an episode's own files go (renders, captions, chapters, thumbnail):
+/// the episode folder when one is named, else the project's folder, so a
+/// call naming only `ep01/ep01.kdenlive` still writes into `ep01/`.
+pub fn episode_home(working_dir: &str, episode: &str, project: &Path) -> Result<PathBuf, String> {
+    if !episode.trim().is_empty() {
+        return resolve_episode(working_dir, episode);
+    }
+    match project.parent() {
+        Some(dir) if dir.is_dir() => resolve_episode(working_dir, &display_path(working_dir, dir)),
+        _ => resolve_episode(working_dir, ""),
+    }
 }
 
 /// The resource string a file gets in a project rooted at `root`.
@@ -515,6 +532,7 @@ pub async fn cut(
                 out_frame: None,
                 mix_in: None,
                 gain_db: None,
+                limiter: false,
             },
             None => Placement {
                 source: Source::New(m),
@@ -522,6 +540,7 @@ pub async fn cut(
                 out_frame: None,
                 mix_in: None,
                 gain_db: None,
+                limiter: false,
             },
         };
         ends.push((if which == "intro" { 0 } else { 1 }, placement));
@@ -543,6 +562,7 @@ pub async fn cut(
             out_frame: item.out_secs.map(|s| doc.fps.frames(s) - 1),
             mix_in: None,
             gain_db: None,
+            limiter: false,
         });
         fades.push(item.crossfade_secs);
     }
@@ -804,6 +824,7 @@ mod tests {
                 out_frame: None,
                 mix_in: None,
                 gain_db: None,
+                limiter: false,
             },
             Placement {
                 source: Source::Existing(1),
@@ -811,6 +832,7 @@ mod tests {
                 out_frame: None,
                 mix_in: None,
                 gain_db: None,
+                limiter: false,
             },
         ];
         // Item 1 shows 0–599; cut 100–199 and 400–404 (too short a piece after it? no).
@@ -835,9 +857,27 @@ mod tests {
             out_frame: None,
             mix_in: None,
             gain_db: None,
+            limiter: false,
         }];
         let removed = cut_ranges(&mut w, 0, 0, 0, 99, &[(10, 97)], 6);
         assert_eq!((w.len(), removed), (1, 90));
+    }
+
+    #[test]
+    fn an_episodes_files_go_beside_its_project_when_no_episode_is_named() {
+        let dir = series();
+        let wd = dir.to_string_lossy();
+        let project = dir.join("ep010/ep010.kdenlive");
+        assert!(episode_home(&wd, "", &project).unwrap().ends_with("ep010"));
+        assert!(episode_home(&wd, "ep011", &project)
+            .unwrap()
+            .ends_with("ep011"));
+        // A series-folder project with no episode named: the series folder.
+        let top = dir.join("show_010.kdenlive");
+        assert_eq!(
+            episode_home(&wd, "", &top).unwrap(),
+            dir.canonicalize().unwrap()
+        );
     }
 
     #[test]

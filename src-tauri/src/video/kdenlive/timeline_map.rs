@@ -64,21 +64,41 @@ pub struct Line {
     pub index: usize,
 }
 
-/// Each span's transcribed speech, mapped into the cut. A segment that starts
-/// before a trim is cut to it; one that starts after it is left out.
+/// Shorter than this, a stretch of speech left by a cut is a sliver, not a line.
+const MIN_LINE_SECS: f64 = 0.3;
+
+/// Each span's transcribed speech, mapped into the cut. A segment shows once,
+/// in the piece that plays most of it (a clip split by a cut would otherwise
+/// say its sentence twice), clipped to that piece; slivers are left out.
 pub fn lines(
     spans: &[Span],
     transcript_for: impl Fn(&Path) -> Option<Vec<crate::whisper::Segment>>,
 ) -> (Vec<Line>, Vec<usize>) {
     let mut out = Vec::new();
     let mut missing = Vec::new();
+    let mut transcripts: std::collections::HashMap<PathBuf, Option<Vec<crate::whisper::Segment>>> =
+        std::collections::HashMap::new();
     for span in spans {
-        let Some(segments) = transcript_for(&span.file) else {
+        let segments = transcripts
+            .entry(span.file.clone())
+            .or_insert_with(|| transcript_for(&span.file));
+        if segments.is_none() {
             missing.push(span.index);
-            continue;
-        };
+        }
+    }
+    let overlap = |span: &Span, s: &crate::whisper::Segment| {
+        (s.end.min(span.source_out) - s.start.max(span.source_in)).max(0.0)
+    };
+    for (file, segments) in &transcripts {
+        let Some(segments) = segments else { continue };
+        let pieces: Vec<&Span> = spans.iter().filter(|s| &s.file == file).collect();
         for s in segments {
-            if s.end <= span.source_in || s.start >= span.source_out {
+            let best = pieces
+                .iter()
+                .filter(|p| overlap(p, s) > 0.0)
+                .max_by(|a, b| overlap(a, s).total_cmp(&overlap(b, s)));
+            let Some(span) = best else { continue };
+            if overlap(span, s) < MIN_LINE_SECS {
                 continue;
             }
             let from = s.start.max(span.source_in);
@@ -86,7 +106,7 @@ pub fn lines(
             out.push(Line {
                 start: span.start + from - span.source_in,
                 end: span.start + to - span.source_in,
-                text: s.text,
+                text: s.text.clone(),
                 index: span.index,
             });
         }
@@ -167,5 +187,30 @@ mod tests {
             ]
         );
         assert_eq!(missing, [3]);
+    }
+
+    #[test]
+    fn a_sentence_split_by_a_cut_shows_once_and_slivers_go() {
+        // A silence cut 1.7–3.8 s out of a sentence that runs 0–8.9 s.
+        let spans = [
+            span(1, "/a.mp4", 0.0, 0.0, 1.7),
+            span(2, "/a.mp4", 1.7, 3.8, 40.0),
+        ];
+        let segs = vec![
+            Segment {
+                start: 0.0,
+                end: 8.9,
+                text: "the sentence".into(),
+            },
+            Segment {
+                start: 1.6,
+                end: 1.75,
+                text: "know,".into(),
+            },
+        ];
+        let (lines, _) = lines(&spans, |_| Some(segs.clone()));
+        let got: Vec<(usize, &str)> = lines.iter().map(|l| (l.index, l.text.as_str())).collect();
+        assert_eq!(got, [(2, "the sentence")]);
+        assert!((lines[0].start - 1.7).abs() < 1e-9);
     }
 }

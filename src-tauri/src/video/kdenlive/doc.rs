@@ -344,7 +344,12 @@ impl Doc {
                                 .map(str::to_string)
                         })
                         .unwrap_or_default();
-                    let filters = self.tree.children_named(c, "filter").count();
+                    // The user's effects: Haruspex's own gain and limiter aren't.
+                    let filters = self
+                        .tree
+                        .children_named(c, "filter")
+                        .filter(|&f| self.tree.property(f, OURS) != Some("1"))
+                        .count();
                     let e = Entry {
                         node: c,
                         lane,
@@ -401,6 +406,21 @@ impl Doc {
                 }
             })
             .collect()
+    }
+
+    /// Haruspex's own filters on an entry: its Volume and Limiter.
+    pub fn our_filters(&self, entry: usize) -> Vec<usize> {
+        self.tree
+            .children_named(entry, "filter")
+            .filter(|&f| self.tree.property(f, OURS) == Some("1"))
+            .collect()
+    }
+
+    /// Whether Haruspex put a Limiter on an entry.
+    pub fn our_limiter(&self, entry: usize) -> bool {
+        self.our_filters(entry)
+            .into_iter()
+            .any(|f| self.tree.property(f, "mlt_service") == Some("avfilter.alimiter"))
     }
 
     /// The gain Haruspex set on an entry (its tagged Volume filter), in dB.

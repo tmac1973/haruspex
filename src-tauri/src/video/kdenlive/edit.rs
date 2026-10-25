@@ -57,6 +57,8 @@ pub struct Placement {
     /// The gain to set on its sound, in dB; `None` leaves what is there, and
     /// 0 removes Haruspex's.
     pub gain_db: Option<f64>,
+    /// With `gain_db`: a Limiter after the gain, holding peaks at -1.5 dB.
+    pub limiter: bool,
 }
 
 impl Placement {
@@ -67,6 +69,7 @@ impl Placement {
             out_frame: None,
             mix_in: None,
             gain_db: None,
+            limiter: false,
         }
     }
 }
@@ -90,6 +93,7 @@ struct Laid {
     /// The crossfade from the clip before, Haruspex's, after clamping.
     mix_in: Option<i64>,
     gain_db: Option<f64>,
+    limiter: bool,
     /// Set for a new clip once its chains are named.
     video_chain: Option<String>,
     audio_chain: Option<String>,
@@ -272,6 +276,7 @@ fn layout(
             bin_id,
             mix_in,
             gain_db: p.gain_db,
+            limiter: p.limiter,
         });
     }
     assign_lanes(&mut laid, &mixes)?;
@@ -331,6 +336,40 @@ fn gain_filter(id: &str, gain_db: f64) -> String {
          \x20   <property name=\"{OURS}\">1</property>\n\
          \x20  </filter>\n"
     )
+}
+
+/// Haruspex's Limiter, as Kdenlive writes its Limiter effect
+/// (`avfilter.alimiter`): peaks held at -1.5 dB, nothing else changed.
+fn limiter_filter(id: &str) -> String {
+    let limit = format!("{:.3}", 10f64.powf(super::super::loudness::LIMIT_DB / 20.0));
+    let props = [
+        ("av.level_in", "1"),
+        ("av.level_out", "1"),
+        ("av.limit", limit.as_str()),
+        ("av.attack", "5"),
+        ("av.release", "50"),
+        ("av.asc", "0"),
+        ("av.asc_level", "0.5"),
+        ("av.level", "0"),
+        ("mlt_service", "avfilter.alimiter"),
+        ("kdenlive_id", "avfilter.alimiter"),
+        ("kdenlive:collapsed", "0"),
+        (OURS, "1"),
+    ];
+    let mut out = format!("   <filter id=\"{id}\">\n");
+    for (k, v) in props {
+        out.push_str(&format!("    <property name=\"{k}\">{v}</property>\n"));
+    }
+    out.push_str("   </filter>\n");
+    out
+}
+
+/// What to write for a clip's sound: its gain and, when its peaks need one,
+/// a limiter, with the ids they get.
+struct GainWrite {
+    db: f64,
+    volume_id: String,
+    limiter_id: Option<String>,
 }
 
 /// A same-track mix as Kdenlive writes one: `luma` on a video track, `mix` on
@@ -593,14 +632,21 @@ fn entry_text(
     l: &Laid,
     old: Option<&Entry>,
     chain: &str,
-    gain: Option<(f64, String)>,
+    gain: Option<GainWrite>,
 ) -> String {
     let in_tc = fps.timecode(l.in_frame);
     let out_tc = fps.timecode(l.out_frame);
-    let filter = gain
-        .as_ref()
-        .filter(|(g, _)| g.abs() >= 0.01)
-        .map(|(g, id)| gain_filter(id, *g));
+    // Volume, then the Limiter that catches what the gain pushed over.
+    let filter = gain.as_ref().and_then(|g| {
+        let mut text = String::new();
+        if g.db.abs() >= 0.01 {
+            text.push_str(&gain_filter(&g.volume_id, g.db));
+        }
+        if let Some(id) = &g.limiter_id {
+            text.push_str(&limiter_filter(id));
+        }
+        (!text.is_empty()).then_some(text)
+    });
     match old {
         Some(e) => {
             let n = doc.tree.node(e.node);
@@ -619,7 +665,7 @@ fn entry_text(
             if gain.is_some() {
                 // Positions inside `body`, applied from the end so neither moves the other.
                 let mut edits: Vec<(std::ops::Range<usize>, String)> = Vec::new();
-                if let Some((f, _)) = doc.our_gain(e.node) {
+                for f in doc.our_filters(e.node) {
                     let r = line_of(&doc.text, doc.tree.node(f).span.clone());
                     edits.push((r.start - n.inner_start..r.end - n.inner_start, String::new()));
                 }
@@ -855,10 +901,18 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
             };
             let _ = lane;
             let lane = if is_audio { l.audio_lane } else { l.video_lane }.min(lanes.len() - 1);
-            let gain = l.gain_db.filter(|_| is_audio).map(|g| {
-                let id = format!("filter{next_filter}");
+            let gain = l.gain_db.filter(|_| is_audio).map(|db| {
+                let volume_id = format!("filter{next_filter}");
                 next_filter += 1;
-                (g, id)
+                let limiter_id = l.limiter.then(|| {
+                    next_filter += 1;
+                    format!("filter{}", next_filter - 1)
+                });
+                GainWrite {
+                    db,
+                    volume_id,
+                    limiter_id,
+                }
             });
             lanes[lane].push((
                 l.start,

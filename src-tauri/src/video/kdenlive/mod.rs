@@ -283,6 +283,8 @@ pub struct SummaryItem {
     pub crossfade_in_secs: Option<f64>,
     /// The gain Haruspex set on its sound, in dB.
     pub gain_db: Option<f64>,
+    /// Haruspex put a Limiter after the gain to hold its peaks.
+    pub limited: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
@@ -371,6 +373,7 @@ pub fn summary(doc: &Doc, working_dir: &str, project: &Path) -> ProjectSummary {
                     .as_ref()
                     .and_then(|a| doc.our_gain(a.node))
                     .map(|(_, g)| g),
+                limited: item.audio.as_ref().is_some_and(|a| doc.our_limiter(a.node)),
             }
         })
         .collect();
@@ -403,7 +406,17 @@ pub fn summary(doc: &Doc, working_dir: &str, project: &Path) -> ProjectSummary {
         read_only: doc.editable().err(),
         items,
         other_clips,
-        mixes: (doc.mixes(doc.main_video).len() + doc.mixes(doc.main_audio).len()) as u32,
+        // A crossfade is a mix on each of the picture and sound tracks: count joins.
+        mixes: {
+            let mut joins: Vec<i64> = [doc.main_video, doc.main_audio]
+                .iter()
+                .flat_map(|&t| doc.mixes(t))
+                .map(|m| m.in_frame)
+                .collect();
+            joins.sort();
+            joins.dedup();
+            joins.len() as u32
+        },
         guides,
         total_secs: fps.secs(doc.sequence_end()),
     }

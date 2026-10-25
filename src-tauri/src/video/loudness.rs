@@ -5,7 +5,7 @@
 //! kept in `<episode>/.haruspex/loudness.json` until the clip changes, so a
 //! second cut or a re-trim of the same range costs nothing.
 
-use super::check::{parse_ebur128, MAX_TRUE_PEAK, TARGET_LUFS};
+use super::check::{parse_ebur128, TARGET_LUFS};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -22,17 +22,42 @@ pub struct Measured {
     pub true_peak: Option<f64>,
 }
 
-/// The gain for a measured stretch: to -14 LUFS, within ±20 dB, and lowered
-/// so the true peak stays at or under -1 dBTP. None for silence.
-pub fn gain_for(m: &Measured) -> Option<f64> {
+/// Where a limiter holds the peaks: a little under YouTube's -1 dBTP, since a
+/// sample-peak limiter lets inter-sample peaks through.
+pub const LIMIT_DB: f64 = -1.5;
+/// Limiting peaks by more than this squashes speech audibly; past it the
+/// gain gives way and the clip stays a little quieter.
+const MAX_LIMITING: f64 = 6.0;
+
+/// A clip's gain, and whether its peaks need a limiter after it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Gain {
+    pub db: f64,
+    pub limit: bool,
+}
+
+/// The gain for a measured stretch: to -14 LUFS, within ±20 dB. Speech is
+/// peaky (a recording at -30 LUFS often peaks near -11 dB), so reaching -14
+/// usually pushes peaks over the top: those get a limiter, and the gain is
+/// lowered only as far as keeps the limiting within `MAX_LIMITING`. None for
+/// silence.
+pub fn gain_for(m: &Measured) -> Option<Gain> {
     if !m.lufs.is_finite() || m.lufs < SILENT_LUFS {
         return None;
     }
-    let mut gain = (TARGET_LUFS - m.lufs).clamp(-MAX_GAIN, MAX_GAIN);
+    let mut db = (TARGET_LUFS - m.lufs).clamp(-MAX_GAIN, MAX_GAIN);
+    let mut limit = false;
     if let Some(peak) = m.true_peak {
-        gain = gain.min(MAX_TRUE_PEAK - peak);
+        let over = peak + db - LIMIT_DB;
+        if over > MAX_LIMITING {
+            db -= over - MAX_LIMITING;
+        }
+        limit = peak + db > LIMIT_DB;
     }
-    Some((gain * 10.0).round() / 10.0)
+    Some(Gain {
+        db: (db * 10.0).round() / 10.0,
+        limit,
+    })
 }
 
 fn cache_path(episode_dir: &Path) -> PathBuf {
@@ -155,45 +180,62 @@ mod tests {
     use super::*;
 
     #[test]
-    fn gains_reach_minus_14_without_clipping() {
-        assert_eq!(
+    fn gains_reach_minus_14_limiting_peaks_when_needed() {
+        let g = |lufs, peak| {
             gain_for(&Measured {
-                lufs: -20.0,
-                true_peak: Some(-12.0)
-            }),
-            Some(6.0)
+                lufs,
+                true_peak: peak,
+            })
+        };
+        // Headroom to spare: plain gain.
+        assert_eq!(
+            g(-20.0, Some(-12.0)),
+            Some(Gain {
+                db: 6.0,
+                limit: false
+            })
         );
-        // A loud peak caps the gain.
+        // Peaks would pass -1.5: full gain, and a limiter.
         assert_eq!(
-            gain_for(&Measured {
-                lufs: -20.0,
-                true_peak: Some(-4.0)
-            }),
-            Some(3.0)
+            g(-20.0, Some(-4.0)),
+            Some(Gain {
+                db: 6.0,
+                limit: true
+            })
         );
-        // Too loud comes down.
+        // Speech as OBS records it: -30.8 LUFS peaking at -13.3.
         assert_eq!(
-            gain_for(&Measured {
-                lufs: -9.5,
-                true_peak: Some(0.5)
-            }),
-            Some(-4.5)
+            g(-30.8, Some(-13.3)),
+            Some(Gain {
+                db: 16.8,
+                limit: true
+            })
+        );
+        // So peaky that full gain would limit by 10 dB: it gives way to 6.
+        assert_eq!(
+            g(-30.0, Some(-7.5)),
+            Some(Gain {
+                db: 12.0,
+                limit: true
+            })
+        );
+        // Too loud comes down, with no limiter needed.
+        assert_eq!(
+            g(-9.5, Some(0.5)),
+            Some(Gain {
+                db: -4.5,
+                limit: false
+            })
         );
         // Very quiet is capped at +20; silence gets nothing.
         assert_eq!(
-            gain_for(&Measured {
-                lufs: -50.0,
-                true_peak: None
-            }),
-            Some(20.0)
+            g(-50.0, None),
+            Some(Gain {
+                db: 20.0,
+                limit: false
+            })
         );
-        assert_eq!(
-            gain_for(&Measured {
-                lufs: -80.0,
-                true_peak: None
-            }),
-            None
-        );
+        assert_eq!(g(-80.0, None), None);
     }
 
     #[test]
@@ -251,6 +293,6 @@ mod tests {
             .unwrap();
         println!("{m:?} gain {:?}", gain_for(&m[0]));
         assert!(m[0].lufs < -30.0 && m[0].lufs > -50.0);
-        assert!(gain_for(&m[0]).unwrap() > 5.0);
+        assert!(gain_for(&m[0]).unwrap().db > 5.0);
     }
 }

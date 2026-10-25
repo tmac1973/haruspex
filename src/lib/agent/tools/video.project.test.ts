@@ -46,7 +46,8 @@ const summary: ProjectSummary = {
 			hasVideo: true,
 			hasAudio: true,
 			crossfadeInSecs: null,
-			gainDb: null
+			gainDb: null,
+			limited: false
 		},
 		{
 			index: 2,
@@ -59,7 +60,8 @@ const summary: ProjectSummary = {
 			hasVideo: true,
 			hasAudio: true,
 			crossfadeInSecs: 1,
-			gainDb: 3.5
+			gainDb: 3.5,
+			limited: true
 		}
 	],
 	otherClips: [{ track: 'V2', path: 'logo.png', startSecs: 0, endSecs: 3 }],
@@ -113,7 +115,7 @@ describe('the summary report', () => {
 		const text = summaryReport(summary);
 		expect(text).toContain('ep010/ep010.kdenlive · 1920×1080 @ 60 fps · 2:06 long');
 		expect(text).toContain(
-			'2. ep010/raw/obs.mp4 · at 0:05.0 · 2:00.5 long · clip 0:10.0–2:10.5 · crossfades in over 1.0 s · gain +3.5 dB · 1 effect added in Kdenlive'
+			'2. ep010/raw/obs.mp4 · at 0:05.0 · 2:00.5 long · clip 0:10.0–2:10.5 · crossfades in over 1.0 s · gain +3.5 dB, peaks limited · 1 effect added in Kdenlive'
 		);
 		expect(text).toContain('- V2: logo.png 0:00.0–0:03.0');
 		expect(text).toContain('1 crossfade on the main track · 2 guides');
