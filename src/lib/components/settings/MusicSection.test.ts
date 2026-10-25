@@ -51,6 +51,7 @@ beforeEach(() => {
 			audio_cache_size: 3 * 1024 * 1024,
 			audio_cache_clear: null,
 			audio_store_url: { hash: HASH, mime: 'audio/mpeg', bytes: 10 },
+			audio_read_bytes: () => new Uint8Array([0xff, 0xfb]).buffer,
 			toolchest_json: (args) => {
 				const { method, path } = (args as { call: { method: string; path: string } }).call;
 				if (path === '/v1/models') return running();
@@ -109,11 +110,12 @@ describe('Settings → Music', () => {
 		settings.musicBackendKind = 'llama-toolchest';
 		settings.musicToolchestBaseUrl = 'http://box:3000';
 		settings.musicToolchestModelId = 'ace-xl';
+		URL.createObjectURL = vi.fn(() => 'blob:test-clip');
 		render(MusicSection);
 		await fireEvent.click(screen.getByRole('button', { name: 'Make a test clip' }));
 		await waitFor(() => {
 			const audio = document.querySelector('audio');
-			expect(audio?.getAttribute('src')).toContain(HASH);
+			expect(audio?.getAttribute('src')).toBe('blob:test-clip');
 		});
 		const [, stored] = vi.mocked(invoke).mock.calls.find(([c]) => c === 'audio_store_url')!;
 		expect(stored).toMatchObject({ title: 'Test clip', conversationId: null });

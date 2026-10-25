@@ -17,18 +17,21 @@ function esc(s: string): string {
 
 /**
  * The player for `url`, or `null` when it is not one of our audio URLs. On the
- * web client the source is Settings → Remote control's route for the same hash.
+ * web client the source is Settings → Remote control's route for the same
+ * hash; on the desktop it is left to `installAudioSources` (`playable.ts`),
+ * since the webview can't play the cache's own scheme.
  */
 export function audioFigureHtml(url: string, title: string): string | null {
 	const hash = audioHashFromUrl(url);
-	const src = hash ? audioSrc(hash) : null;
-	if (!src) return null;
+	if (!hash || !audioSrc(hash)) return null;
+	const src =
+		import.meta.env.VITE_HARUSPEX_WEB === '1' ? ` src="${esc(audioSrc(hash) ?? '')}"` : '';
 	const caption = title.trim()
 		? `<figcaption class="chat-audio-title">${esc(title.trim())}</figcaption>`
 		: '';
 	return (
 		`<figure class="chat-audio">` +
-		`<audio controls preload="metadata" src="${esc(src)}"></audio>` +
+		`<audio controls preload="metadata" data-audio-hash="${hash}"${src}></audio>` +
 		caption +
 		`</figure>`
 	);
