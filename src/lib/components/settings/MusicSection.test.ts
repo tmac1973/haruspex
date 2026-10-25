@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import { invoke } from '@tauri-apps/api/core';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import asmodean from '#lib/toolchest/fixtures/models-asmodean.json';
+import aceProps from '#lib/music/ace/fixtures/props-asmodean.json';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(), isTauri: () => true }));
 vi.mock('#lib/utils/async.ts', () => ({ sleep: () => Promise.resolve() }));
@@ -12,6 +13,8 @@ const settings = vi.hoisted(() => ({
 	musicToolchestBaseUrl: '',
 	musicToolchestApiKeyId: null as string | null,
 	musicToolchestModelId: '',
+	musicAceBaseUrl: '',
+	musicAceModel: '',
 	musicDefaultDurationSec: 30,
 	inferenceBackend: {
 		mode: 'remote',
@@ -44,6 +47,8 @@ beforeEach(() => {
 		musicToolchestBaseUrl: '',
 		musicToolchestApiKeyId: null,
 		musicToolchestModelId: '',
+		musicAceBaseUrl: '',
+		musicAceModel: '',
 		musicDefaultDurationSec: 30
 	});
 	vi.mocked(invoke).mockImplementation(
@@ -59,6 +64,11 @@ beforeEach(() => {
 					return { id: 'j1', status: 'queued', phase: 'queued' };
 				}
 				if (path === JOB) return { id: 'j1', status: 'succeeded', audio_url: `${JOB}/audio` };
+				throw { kind: 'rejected', status: 404, body: '{}' };
+			},
+			ace_json: (args) => {
+				const { path } = (args as { call: { path: string } }).call;
+				if (path === '/props') return aceProps;
 				throw { kind: 'rejected', status: 404, body: '{}' };
 			}
 		})
@@ -125,5 +135,21 @@ describe('Settings → Music', () => {
 		render(MusicSection);
 		await fireEvent.click(screen.getByRole('button', { name: 'Clear unused audio' }));
 		expect(vi.mocked(invoke).mock.calls.some(([c]) => c === 'audio_cache_clear')).toBe(true);
+	});
+
+	it('connects to an ace-server by address and lists its synthesis models', async () => {
+		render(MusicSection);
+		const backend = screen.getByLabelText('Backend:') as HTMLSelectElement;
+		await fireEvent.change(backend, { target: { value: 'ace-server' } });
+		const url = screen.getByLabelText('Server address:') as HTMLInputElement;
+		await fireEvent.input(url, { target: { value: 'http://box:8083' } });
+		await fireEvent.blur(url);
+		expect(settings.musicAceBaseUrl).toBe('http://box:8083');
+		await screen.findByText('Connected — acestep-v15-xl-sft-Q8_0.gguf on box:8083.');
+		const model = document.getElementById('music-ace-model') as HTMLSelectElement;
+		expect([...model.options].map((o) => o.value)).toEqual(['', 'acestep-v15-xl-sft-Q8_0.gguf']);
+		await fireEvent.change(model, { target: { value: 'acestep-v15-xl-sft-Q8_0.gguf' } });
+		expect(settings.musicAceModel).toBe('acestep-v15-xl-sft-Q8_0.gguf');
+		expect(screen.getByRole('button', { name: 'Make a test clip' })).toBeTruthy();
 	});
 });

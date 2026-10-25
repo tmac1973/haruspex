@@ -1,3 +1,4 @@
+mod ace;
 mod app_log;
 mod app_windows;
 mod artifact_frame;
@@ -412,6 +413,7 @@ pub fn run() {
             lemonade::lemonade_sdcpp_args,
             toolchest::toolchest_json,
             toolchest::toolchest_bytes,
+            ace::ace_json,
             image_models::image_models,
             image_models::image_model_recommended,
             image_models::download_image_model,

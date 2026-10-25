@@ -135,17 +135,91 @@ pub async fn download(
     }
     .await;
     match result {
-        Ok((hash, bytes)) => Ok(Downloaded {
-            temp,
-            hash,
-            bytes,
-            content_type,
-        }),
+        Ok((hash, bytes)) => {
+            let fetched = Downloaded {
+                temp,
+                hash,
+                bytes,
+                content_type,
+            };
+            match multipart_boundary(fetched.content_type.as_deref()) {
+                Some(boundary) => keep_audio_part(fetched, &boundary, dir),
+                None => Ok(fetched),
+            }
+        }
         Err(e) => {
             let _ = std::fs::remove_file(&temp);
             Err(e)
         }
     }
+}
+
+/// The boundary of a `multipart/*` type, which ace-server's `/synth` result
+/// is: the song, then its latent.
+fn multipart_boundary(content_type: Option<&str>) -> Option<String> {
+    let ct = content_type?;
+    let (kind, params) = ct.split_once(';')?;
+    if !kind.trim().to_ascii_lowercase().starts_with("multipart/") {
+        return None;
+    }
+    params.split(';').find_map(|p| {
+        let (k, v) = p.split_once('=')?;
+        let v = v.trim().trim_matches('"');
+        (k.trim().eq_ignore_ascii_case("boundary") && !v.is_empty()).then(|| v.to_string())
+    })
+}
+
+/// The first `audio/*` part of a multipart body, and its type.
+fn first_audio_part<'a>(body: &'a [u8], boundary: &str) -> Option<(&'a [u8], String)> {
+    let delim = format!("--{boundary}").into_bytes();
+    let find = |from: usize| {
+        body.get(from..)?
+            .windows(delim.len())
+            .position(|w| w == delim.as_slice())
+            .map(|i| from + i)
+    };
+    let mut at = find(0)?;
+    while let Some(next) = find(at + delim.len()) {
+        let part = &body[at + delim.len()..next];
+        let part = part.strip_prefix(b"\r\n").unwrap_or(part);
+        let part = part.strip_suffix(b"\r\n").unwrap_or(part);
+        if let Some(split) = part.windows(4).position(|w| w == b"\r\n\r\n") {
+            let headers = String::from_utf8_lossy(&part[..split]);
+            let kind = headers.lines().find_map(|l| {
+                let (k, v) = l.split_once(':')?;
+                k.trim()
+                    .eq_ignore_ascii_case("content-type")
+                    .then(|| v.trim().to_string())
+            });
+            if let Some(kind) = kind.filter(|k| k.to_ascii_lowercase().starts_with("audio/")) {
+                return Some((&part[split + 4..], kind));
+            }
+        }
+        at = next;
+    }
+    None
+}
+
+/// Swap a multipart download for its audio part, in a temp file of its own.
+fn keep_audio_part(fetched: Downloaded, boundary: &str, dir: &Path) -> Result<Downloaded, String> {
+    let read = std::fs::read(&fetched.temp);
+    let _ = std::fs::remove_file(&fetched.temp);
+    let body = read.map_err(|e| format!("Failed to read the audio: {}", e))?;
+    let Some((audio, kind)) = first_audio_part(&body, boundary).filter(|(a, _)| !a.is_empty())
+    else {
+        return Err("The server's answer holds no audio.".to_string());
+    };
+    let temp = dir.join(temp_name());
+    if let Err(e) = std::fs::write(&temp, audio) {
+        let _ = std::fs::remove_file(&temp);
+        return Err(format!("Failed to write audio: {}", e));
+    }
+    Ok(Downloaded {
+        temp,
+        hash: crate::hash_util::hex(&Sha256::digest(audio)),
+        bytes: audio.len() as u64,
+        content_type: Some(kind),
+    })
 }
 
 /// Commit a download to the cache: check its type, then move, insert, link.
@@ -331,6 +405,28 @@ mod tests {
                 }),
             )
             .route(
+                "/synth",
+                get(|| async {
+                    let mut body = b"--b\r\nContent-Type: audio/mpeg\r\n\r\n".to_vec();
+                    body.extend([7u8; 1024]);
+                    body.extend(b"\r\n--b\r\nContent-Type: application/octet-stream\r\n");
+                    body.extend(b"Content-Disposition: form-data; name=\"latent\"\r\n\r\n");
+                    body.extend([9u8; 64]);
+                    body.extend(b"\r\n--b--\r\n");
+                    ([(CONTENT_TYPE, "multipart/mixed; boundary=b")], body)
+                }),
+            )
+            .route(
+                "/latent-only",
+                get(|| async {
+                    (
+                        [(CONTENT_TYPE, "multipart/mixed; boundary=b")],
+                        b"--b\r\nContent-Type: application/octet-stream\r\n\r\nxx\r\n--b--\r\n"
+                            .to_vec(),
+                    )
+                }),
+            )
+            .route(
                 "/empty",
                 get(|| async { ([(CONTENT_TYPE, "audio/mpeg")], Vec::<u8>::new()) }),
             )
@@ -385,6 +481,38 @@ mod tests {
         let row = db.audio_by_hash(&stored.hash).unwrap().unwrap();
         assert_eq!(row.title.as_deref(), Some("Rain"));
         assert_eq!(files(&dir), 1, "only the cached file, no .part");
+    }
+
+    #[tokio::test]
+    async fn a_multipart_answer_keeps_only_its_audio_part() {
+        let base = serve().await;
+        let (db, dir) = setup("audio-dl-multipart");
+        let client = reqwest::Client::new();
+        let got = download(&client, &format!("{base}/synth"), "", &dir)
+            .await
+            .unwrap();
+        let stored = store_download(&db, &dir, got, None, None, None, None).unwrap();
+        assert_eq!(stored.mime, "audio/mpeg");
+        assert_eq!(
+            read_bytes(&db, &dir, &stored.hash).unwrap(),
+            vec![7u8; 1024]
+        );
+        assert_eq!(files(&dir), 1, "only the cached file, no .part");
+
+        let none = download(&client, &format!("{base}/latent-only"), "", &dir).await;
+        assert!(none.err().unwrap().contains("no audio"));
+        assert_eq!(files(&dir), 1);
+    }
+
+    #[test]
+    fn the_boundary_is_read_from_a_multipart_type_only() {
+        assert_eq!(
+            multipart_boundary(Some("multipart/mixed; boundary=\"x y\"")).as_deref(),
+            Some("x y")
+        );
+        assert_eq!(multipart_boundary(Some("audio/mpeg")), None);
+        assert_eq!(multipart_boundary(Some("audio/mpeg; boundary=x")), None);
+        assert_eq!(multipart_boundary(None), None);
     }
 
     #[tokio::test]

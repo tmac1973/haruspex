@@ -1,0 +1,71 @@
+{
+	"version": "de858d8 (2026-10-16)",
+	"models": {
+		"lm": ["acestep-5Hz-lm-4B-Q8_0.gguf"],
+		"embedding": ["Qwen3-Embedding-0.6B-BF16.gguf"],
+		"dit": ["acestep-v15-xl-sft-Q8_0.gguf"],
+		"vae": ["vae-BF16.gguf"]
+	},
+	"adapters": [],
+	"cli": {
+		"max_batch": 1
+	},
+	"default": {
+		"caption": "",
+		"seed": -1,
+		"lyrics": "",
+		"audio_codes": "",
+		"bpm": 0,
+		"duration": 0.0,
+		"keyscale": "",
+		"timesignature": "",
+		"vocal_language": "",
+		"lm_batch_size": 1,
+		"lm_temperature": 0.85,
+		"lm_cfg_scale": 2.0,
+		"lm_top_p": 0.9,
+		"lm_top_k": 0,
+		"lm_negative_prompt": "",
+		"lm_seed": -1,
+		"use_cot_caption": true,
+		"inference_steps": 0,
+		"guidance_scale": 0.0,
+		"shift": 0.0,
+		"dcw_scaler": 0.0,
+		"dcw_high_scaler": 0.0,
+		"dcw_mode": "low",
+		"solver": "euler",
+		"stork_substeps": 10,
+		"lm_mode": "generate",
+		"output_format": "mp3",
+		"synth_batch_size": 1,
+		"audio_cover_strength": 1.0,
+		"cover_noise_strength": 0.0,
+		"repainting_start": 0.0,
+		"repainting_end": -1.0,
+		"latent_shift": 0.0,
+		"latent_rescale": 1.0,
+		"custom_timesteps": "",
+		"task_type": "text2music",
+		"track": "",
+		"peak_clip": 10,
+		"mp3_bitrate": 128,
+		"synth_model": "",
+		"lm_model": "",
+		"adapter": "",
+		"adapter_scale": 1.0,
+		"vae": ""
+	},
+	"presets": {
+		"turbo": {
+			"inference_steps": 8,
+			"guidance_scale": 1.0,
+			"shift": 3.0
+		},
+		"sft": {
+			"inference_steps": 50,
+			"guidance_scale": 1.0,
+			"shift": 1.0
+		}
+	}
+}

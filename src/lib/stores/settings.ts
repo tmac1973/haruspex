@@ -772,6 +772,12 @@ export interface AppSettings {
 	musicToolchestBaseUrl: string;
 	musicToolchestApiKeyId: string | null;
 	musicToolchestModelId: string;
+	/**
+	 * acestep.cpp's ace-server, reached directly: its address, and the DiT
+	 * model a song names (empty for the server's own).
+	 */
+	musicAceBaseUrl: string;
+	musicAceModel: string;
 	/** A song's length when the request names none, in seconds (5–240). */
 	musicDefaultDurationSec: number;
 	/**
@@ -1007,6 +1013,8 @@ const defaults: AppSettings = {
 	musicToolchestBaseUrl: '',
 	musicToolchestApiKeyId: null,
 	musicToolchestModelId: '',
+	musicAceBaseUrl: '',
+	musicAceModel: '',
 	musicDefaultDurationSec: 30
 };
 
