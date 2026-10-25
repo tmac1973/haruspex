@@ -177,6 +177,8 @@ function shouldIncludeCodeTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	// A song for the project or the answer. The Code tab only: Shell has no
 	// saved session to keep the song in.
 	if (name === 'generate_music') return opts.musicGeneration && isCodeTab(opts);
+	// Saving a song made earlier into the project.
+	if (name === 'save_audio') return isCodeTab(opts) && !opts.codeReadOnly;
 	return false;
 }
 
@@ -237,6 +239,7 @@ function subtaskExcludes(reg: ToolRegistration): boolean {
 		name === 'delegate' ||
 		name === 'make_asset' ||
 		name === 'generate_music' ||
+		name === 'save_audio' ||
 		CODE_TAB_ONLY.has(name) ||
 		reg.category === 'interaction' ||
 		reg.category === 'desktop'
@@ -376,8 +379,10 @@ function schemaFor(
 		return names?.length ? withSkillEnum(reg.schema, names) : null;
 	}
 	if (!shouldIncludeTool(reg, filter)) return null;
-	// Saving a song into the project is for a Code session that may write.
-	if (reg.schema.function.name === 'generate_music' && (!filter.codeMode || filter.codeReadOnly)) {
+	// Saving a song needs a folder that may be written: the Code tab's
+	// project, or Chat's working folder.
+	const canSave = filter.codeMode ? !filter.codeReadOnly : filter.hasWorkingDir;
+	if (reg.schema.function.name === 'generate_music' && !canSave) {
 		return withoutProjectWrite(reg.schema);
 	}
 	return profileSchema(reg.schema, filter);
@@ -465,7 +470,7 @@ function generationRefusal(reg: ToolRegistration, ctx: ToolContext): string | nu
 	return null;
 }
 
-/** `generate_music` without `path` and `overwrite`, where nothing may be written. */
+/** `generate_music` without `path` and `overwrite`, where there's no folder to write in. */
 function withoutProjectWrite(schema: ToolDefinition): ToolDefinition {
 	const params = schema.function.parameters as { properties: Record<string, unknown> };
 	const properties = { ...params.properties };

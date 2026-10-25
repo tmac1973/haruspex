@@ -68,6 +68,11 @@
       "signingIdentity": "-",
       "hardenedRuntime": false
     },
+    "windows": {
+      "nsis": {
+        "template": "windows/installer.nsi"
+      }
+    },
     "linux": {
       "appimage": {
         "bundleMediaFramework": true

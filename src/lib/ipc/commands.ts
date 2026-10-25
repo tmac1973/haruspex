@@ -16,6 +16,7 @@ export const IPC = {
 	audio_cache_size: 'audio_cache_size',
 	audio_read_bytes: 'audio_read_bytes',
 	audio_rehydrate: 'audio_rehydrate',
+	audio_save_as: 'audio_save_as',
 	audio_store_url: 'audio_store_url',
 	audio_sweep: 'audio_sweep',
 	cancel_download: 'cancel_download',

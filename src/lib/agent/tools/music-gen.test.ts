@@ -62,11 +62,12 @@ beforeEach(() => {
 });
 
 describe('generate_music is offered', () => {
-	it('in Chat with a backend and someone there, without path', () => {
+	it('in Chat with a backend and someone there; with path only given a working folder', () => {
 		expect(names({ hasWorkingDir: false, interactive: true })).toContain('generate_music');
 		const props = paramsOf({ hasWorkingDir: false, interactive: true });
 		expect(props).not.toContain('path');
 		expect(props).not.toContain('overwrite');
+		expect(paramsOf({ hasWorkingDir: true, interactive: true })).toContain('path');
 	});
 
 	it('in the Code tab, with path, unless the session is read-only', () => {
@@ -130,10 +131,24 @@ describe('generate_music', () => {
 		expect(out.artifacts).toEqual([{ kind: 'audio', mime: 'audio/mpeg', src: URL, title: 'Rain' }]);
 	});
 
-	it('refuses a path outside a Code session before making anything', async () => {
+	it('refuses a path with no folder to save into, before making anything', async () => {
 		const out = await executeTool('generate_music', { caption: 'x', path: 'a.mp3' }, chat);
-		expect(out.result).toMatch(/only for a Code session/);
+		expect(out.result).toMatch(/no folder to save into/);
 		expect(state.generate).not.toHaveBeenCalled();
+	});
+
+	it('in Chat with a working folder, saves the song there too', async () => {
+		const withFolder = makeToolContext({
+			interactive: true,
+			conversationId: 'chat-1',
+			workingDir: '/home/me/music'
+		});
+		const out = await executeTool('generate_music', { caption: 'x', path: 'rain.mp3' }, withFolder);
+		const writes = state.invoke.mock.calls.filter(([c]) => String(c).startsWith('fs_write_bytes'));
+		expect(writes.map(([, a]) => a.dryRun)).toEqual([true, false]);
+		expect(writes[1][1]).toMatchObject({ workdir: '/home/me/music', bytes: [9, 9] });
+		expect(state.generate.mock.calls[0][1]).toMatchObject({ conversationId: 'chat-1' });
+		expect(out.result).toContain('Wrote');
 	});
 
 	it('in a Code session, checks the path first, then writes the song there', async () => {

@@ -261,6 +261,27 @@ pub fn read_bytes(db: &Database, dir: &Path, hash: &str) -> Result<Vec<u8>, Stri
     std::fs::read(&path).map_err(|e| format!("Could not read the audio: {e}"))
 }
 
+/// Copy a cached song to `path`, the file the user chose in a save dialog
+/// (the player's Save as). The dialog asked about replacing a file already.
+#[tauri::command]
+pub async fn audio_save_as(
+    app: AppHandle,
+    db: State<'_, Database>,
+    hash: String,
+    path: String,
+) -> Result<(), String> {
+    save_as(&db, &cache_dir(&app)?, &hash, Path::new(&path))
+}
+
+pub fn save_as(db: &Database, dir: &Path, hash: &str, to: &Path) -> Result<(), String> {
+    if !is_valid_hash(hash) || db.audio_by_hash(hash)?.is_none() {
+        return Err("Audio not found".into());
+    }
+    std::fs::copy(super::audio_path(dir, hash), to)
+        .map(|_| ())
+        .map_err(|e| format!("Could not save the song to {}: {e}", to.display()))
+}
+
 /// Bytes the cache holds, linked or not.
 #[tauri::command]
 pub async fn audio_cache_size(db: State<'_, Database>) -> Result<i64, String> {
@@ -423,6 +444,29 @@ mod tests {
         );
         assert_eq!(
             read_bytes(&db, &dir, "../x").unwrap_err(),
+            "Audio not found"
+        );
+    }
+
+    #[tokio::test]
+    async fn save_as_copies_a_cached_song_and_nothing_else() {
+        let base = serve().await;
+        let (db, dir) = setup("audio-save-as");
+        let client = reqwest::Client::new();
+        let got = download(&client, &format!("{base}/song"), "", &dir)
+            .await
+            .unwrap();
+        let stored = store_download(&db, &dir, got, None, None, None, None).unwrap();
+        let out = temp_dir("audio-save-as-out");
+        let to = out.join("song.mp3");
+        save_as(&db, &dir, &stored.hash, &to).unwrap();
+        assert_eq!(std::fs::read(&to).unwrap(), vec![7u8; 1024]);
+        assert_eq!(
+            save_as(&db, &dir, &"f".repeat(64), &out.join("x.mp3")).unwrap_err(),
+            "Audio not found"
+        );
+        assert_eq!(
+            save_as(&db, &dir, "../x", &out.join("y.mp3")).unwrap_err(),
             "Audio not found"
         );
     }

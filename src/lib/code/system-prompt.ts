@@ -75,7 +75,9 @@ function assetLine(): string {
 /** generate_music, when Settings → Music has a backend. */
 function musicLine(readOnly: boolean | undefined): string {
 	if (getSettings().musicBackendKind === 'none') return '';
-	const save = readOnly ? '' : ' Pass path (ending .mp3 or .wav) to also save it into the project.';
+	const save = readOnly
+		? ''
+		: ' Pass path (ending .mp3 or .wav) to also save it into the project; save_audio saves one made earlier.';
 	return `\n- generate_music — make a song or instrumental from a caption of tags, with lyrics if it has vocals. It takes a minute or more and plays in your answer.${save}`;
 }
 
