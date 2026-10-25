@@ -305,6 +305,8 @@ export interface ToolRegistration {
 		| 'desktop'
 		/** Uses the image backend (Settings → Image). Chat only, and only interactive. */
 		| 'image'
+		/** Uses the music backend (Settings → Music). Chat and the Code tab, interactive only. */
+		| 'music'
 		/** Loading skills. Only for a turn that carries `ToolContext.skills`. */
 		| 'skills'
 		/** Writing skills, each one approved by the user. Interactive Chat and

@@ -34,8 +34,8 @@ describe('placeGeneratedAudio', () => {
 		expect(placeGeneratedAudio('Hi.', steps, tools)).toBe('Hi.');
 	});
 
-	it('adds nothing until a tool is listed', () => {
-		expect(placeGeneratedAudio('Hi.', [step('generate_music', line(A))])).toBe('Hi.');
+	it('covers generate_music by default', () => {
+		expect(placeGeneratedAudio('Hi.', [step('generate_music', line(A))])).toBe(`Hi.\n\n${line(A)}`);
 	});
 });
 
