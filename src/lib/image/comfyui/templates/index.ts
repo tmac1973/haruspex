@@ -22,6 +22,8 @@ import qwen21Graph from '#lib/image/comfyui/templates/qwen21_t2i.json';
 import qwen21TurboGraph from '#lib/image/comfyui/templates/qwen21_turbo_t2i.json';
 import qwen21EditGraph from '#lib/image/comfyui/templates/qwen21_edit.json';
 import qwen21TurboEditGraph from '#lib/image/comfyui/templates/qwen21_turbo_edit.json';
+import kleinGraph from '#lib/image/comfyui/templates/flux2_klein_t2i.json';
+import kleinEditGraph from '#lib/image/comfyui/templates/flux2_klein_edit.json';
 import type { ComfyGraph, FieldMap, ScalarBinding } from '#lib/image/comfyui/fieldMap.ts';
 import type { ModelFamily } from '#lib/image/comfyui/families.ts';
 import type { SamplerSettings } from '#lib/image/types.ts';
@@ -221,6 +223,26 @@ function editBindings(base: FieldMap): FieldMap {
 	};
 }
 
+// ---- FLUX.2 klein 4B ---------------------------------------------------------------
+
+/**
+ * The distilled model as ComfyUI's own klein workflows run it: 4 steps on
+ * `Flux2Scheduler`, CFG 1 against a zeroed negative. No alpha and no tiling.
+ */
+const KLEIN_BINDINGS: Omit<FieldMap, 'width' | 'height'> = {
+	outputNode: '9',
+	prompt: { kind: 'scalar', node: '4', input: 'text' },
+	seed: { kind: 'scalar', node: '7', input: 'noise_seed' },
+	model: { kind: 'scalar', node: '1', input: 'unet_name' },
+	textEncoder: { kind: 'scalar', node: '2', input: 'clip_name' },
+	vae: { kind: 'scalar', node: '3', input: 'vae_name' },
+	samplerName: { kind: 'scalar', node: '8', input: 'sampler_name' },
+	samplerSteps: { kind: 'scalar', node: '10', input: 'steps' },
+	samplerCfg: { kind: 'scalar', node: '11', input: 'cfg' }
+};
+
+const KLEIN_SAMPLER: SamplerSettings = { name: 'euler', steps: 4, cfg: 1 };
+
 /** The wrapper from the model's own template; its VAE always carries alpha. */
 export function qwen21Transparent(prompt: string): string {
 	return (
@@ -387,6 +409,34 @@ export const TEMPLATES: WorkflowTemplate[] = [
 		source: SOURCE,
 		supports: { transparent: false, seamless: false, edit: true },
 		defaultSampler: QWEN21_TURBO_SAMPLER
+	},
+	{
+		id: 'flux2_klein_t2i',
+		family: 'flux2_klein',
+		graph: kleinGraph as ComfyGraph,
+		map: {
+			...KLEIN_BINDINGS,
+			width: [at('6', 'width'), at('10', 'width')],
+			height: [at('6', 'height'), at('10', 'height')]
+		},
+		license: LICENSE,
+		source: SOURCE,
+		supports: { transparent: false, seamless: false },
+		defaultSampler: KLEIN_SAMPLER
+	},
+	{
+		// Sized from the first picture, so no size bindings.
+		id: 'flux2_klein_edit',
+		family: 'flux2_klein',
+		graph: kleinEditGraph as ComfyGraph,
+		map: {
+			...KLEIN_BINDINGS,
+			referenceLatents: { kind: 'referenceLatents', guider: '11', vae: '3', size: '14' }
+		},
+		license: LICENSE,
+		source: SOURCE,
+		supports: { transparent: false, seamless: false, edit: true },
+		defaultSampler: KLEIN_SAMPLER
 	}
 ];
 

@@ -37,7 +37,11 @@ describe('the bundled workflows', () => {
 				id: t.id,
 				// An edit takes its size from its first picture, at `resolution`.
 				bound: [
-					...(t.supports.edit ? [m.resolution, m.editImages] : [m.width, m.height]),
+					...(t.supports.edit
+						? m.referenceLatents
+							? [m.referenceLatents]
+							: [m.resolution, m.editImages]
+						: [m.width, m.height]),
 					m.seed,
 					m.prompt,
 					m.model
@@ -49,7 +53,7 @@ describe('the bundled workflows', () => {
 	it('gives each family a plain workflow', () => {
 		// Selection falls back to an opaque one; a family without one would
 		// leave a request with nowhere to go.
-		for (const family of ['sd', 'ming', 'qwen21', 'qwen21_turbo'] as const) {
+		for (const family of ['sd', 'ming', 'qwen21', 'qwen21_turbo', 'flux2_klein'] as const) {
 			expect(
 				selectTemplate({ transparent: false, seamless: false }, templatesFor(family))
 			).toBeDefined();

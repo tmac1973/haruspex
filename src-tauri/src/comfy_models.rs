@@ -19,7 +19,7 @@ use tauri::AppHandle;
 
 use crate::comfy::{comfy_json, ComfyCall};
 use crate::image_models::{
-    filename_of, WeightFile, MING_LICENCE, MING_VAE, QWEN21_LICENCE, QWEN21_VAE, UPSCALER,
+    filename_of, Licence, WeightFile, MING_LICENCE, MING_VAE, QWEN21_LICENCE, QWEN21_VAE, UPSCALER,
     UPSCALER_LICENCE,
 };
 use crate::models::{ModelManager, VerifiedFile};
@@ -104,11 +104,19 @@ fn shared(folder: ComfyFolder, w: &WeightFile) -> ComfyModelFile {
     }
 }
 
+/// FLUX.2 klein 4B, the distilled model: ComfyUI only, for now.
+pub const KLEIN_LICENCE: Licence = Licence {
+    text: "Apache 2.0 — commercial use allowed.",
+    url: "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B",
+    commercial_use: true,
+};
+
 /// The shipped sets: the files the templates were measured with.
 pub fn comfy_model_sets() -> Vec<ComfyModelSet> {
     use ComfyFolder::*;
     const MING: &str = "Comfy-Org/Ming-Image";
     const QWEN: &str = "Comfy-Org/Qwen-Image-2.1";
+    const KLEIN: &str = "Comfy-Org/Flux-2-Klein-4B";
     vec![
         ComfyModelSet {
             family: "ming".into(),
@@ -166,6 +174,41 @@ pub fn comfy_model_sets() -> Vec<ComfyModelSet> {
                     9_350_798_360,
                 ),
                 shared(Vae, &QWEN21_VAE),
+            ],
+        },
+        ComfyModelSet {
+            family: "flux2_klein".into(),
+            label: "FLUX.2 klein 4B".into(),
+            license: KLEIN_LICENCE.text.into(),
+            license_url: KLEIN_LICENCE.url.into(),
+            commercial_use: KLEIN_LICENCE.commercial_use,
+            vram_mb: 12_288,
+            ram_mb: 16_384,
+            files: vec![
+                // BFL's own fp8, which ComfyUI's klein workflows load: half
+                // the size of the bf16 Comfy-Org ships.
+                file(
+                    DiffusionModels,
+                    "black-forest-labs/FLUX.2-klein-4b-fp8",
+                    "flux-2-klein-4b-fp8.safetensors",
+                    "97ed34fe0567e436200f2faee3939b88f2b5d99f8af2a4dc16532c4245c0ccb6",
+                    4_070_624_520,
+                ),
+                file(
+                    TextEncoders,
+                    KLEIN,
+                    "split_files/text_encoders/qwen_3_4b.safetensors",
+                    "6c671498573ac2f7a5501502ccce8d2b08ea6ca2f661c458e708f36b36edfc5a",
+                    8_044_982_048,
+                ),
+                // The klein repo's copy (Apache 2.0), not FLUX.2 dev's.
+                file(
+                    Vae,
+                    KLEIN,
+                    "split_files/vae/flux2-vae.safetensors",
+                    "868fe7b343cc8f3a19dbcfcafbc3d5f888802be3f89bd81b65b3621a066ce8f3",
+                    336_211_292,
+                ),
             ],
         },
     ]
@@ -368,7 +411,11 @@ mod tests {
     #[test]
     fn both_engines_agree_on_each_familys_licence_and_vae() {
         let bundled = crate::image_models::image_registry();
-        for set in comfy_model_sets() {
+        // klein runs on ComfyUI only.
+        for set in comfy_model_sets()
+            .into_iter()
+            .filter(|s| s.family != "flux2_klein")
+        {
             let entry = bundled
                 .iter()
                 .find(|m| m.family == set.family)
@@ -418,6 +465,12 @@ mod tests {
             !sets
                 .iter()
                 .find(|s| s.family == "qwen21_turbo")
+                .unwrap()
+                .commercial_use
+        );
+        assert!(
+            sets.iter()
+                .find(|s| s.family == "flux2_klein")
                 .unwrap()
                 .commercial_use
         );

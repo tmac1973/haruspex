@@ -11,6 +11,7 @@ const saved = {
 const MING = 'ming_image_0.1_design_int8_convrot.safetensors';
 const QWEN21 = 'qwen_image_2.1_int8_convrot.safetensors';
 const TURBO = 'qwen_image_2.1_turbo_int8_convrot.safetensors';
+const KLEIN = 'flux-2-klein-4b-fp8.safetensors';
 
 /** A 1184×880 PNG's first bytes: signature, then the IHDR with its size. */
 const PNG_1184x880 = new Uint8Array([
@@ -18,14 +19,22 @@ const PNG_1184x880 = new Uint8Array([
 ]);
 
 const LISTS: Record<string, [string, string[]]> = {
-	UNETLoader: ['unet_name', [MING, QWEN21, TURBO]],
+	UNETLoader: ['unet_name', [MING, QWEN21, TURBO, KLEIN]],
 	CLIPLoader: [
 		'clip_name',
-		['ming_image_0.1_ling_mini_2.0_w4a8.safetensors', 'qwen3vl_8b_int8_convrot.safetensors']
+		[
+			'ming_image_0.1_ling_mini_2.0_w4a8.safetensors',
+			'qwen3vl_8b_int8_convrot.safetensors',
+			'qwen_3_4b.safetensors'
+		]
 	],
 	VAELoader: [
 		'vae_name',
-		['ming_image_vae_bf16.safetensors', 'qwen_image_2.1_vae_bf16.safetensors']
+		[
+			'ming_image_vae_bf16.safetensors',
+			'qwen_image_2.1_vae_bf16.safetensors',
+			'flux2-vae.safetensors'
+		]
 	]
 };
 
@@ -36,7 +45,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
  * With `encoderTakesImages`, its Qwen-Image-2.1 encoder lists `images` and
  * `vae`, as ComfyUI 0.39's does.
  */
-function server(opts: { encoderTakesImages?: boolean } = {}) {
+function server(opts: { encoderTakesImages?: boolean; referenceLatent?: boolean } = {}) {
 	fetchMock.mockImplementation(async (url: string) => {
 		const body = (b: unknown) =>
 			({
@@ -55,6 +64,13 @@ function server(opts: { encoderTakesImages?: boolean } = {}) {
 		if (url.includes('/object_info/TextEncodeQwenImage21')) {
 			const optional = opts.encoderTakesImages ? { vae: ['VAE'], images: ['AUTOGROW'] } : {};
 			return body({ TextEncodeQwenImage21: { input: { required: { clip: ['CLIP'] }, optional } } });
+		}
+		if (url.includes('/object_info/ReferenceLatent')) {
+			return body(
+				opts.referenceLatent
+					? { ReferenceLatent: { input: { required: { conditioning: ['CONDITIONING'] } } } }
+					: {}
+			);
 		}
 		const cls = url.split('/object_info/')[1];
 		if (cls && LISTS[cls]) {
@@ -146,6 +162,50 @@ describe('ComfyUI edits', () => {
 		const g = submitted();
 		expect(g['11'].class_type).toBe('ManualSigmas');
 		expect(g['7'].inputs.latent_image).toEqual(['4', 2]);
+	});
+
+	it('edits with FLUX.2 klein, up to four pictures, when the server has ReferenceLatent', async () => {
+		updateSettings({ imageBackendBaseUrl: 'http://klein:8188', imageComfyCheckpoint: KLEIN });
+		server({ referenceLatent: true });
+		expect(await comfyUiBackend.capabilities()).toMatchObject({ edit: true, maxEditImages: 4 });
+		updateSettings({ imageBackendBaseUrl: 'http://older:8188' });
+		server({ referenceLatent: false });
+		expect(await comfyUiBackend.capabilities()).toMatchObject({ edit: false });
+	});
+
+	it('chains each klein picture onto both conditionings, sized from the first', async () => {
+		updateSettings({ imageComfyCheckpoint: KLEIN });
+		server({ referenceLatent: true });
+		await comfyUiBackend.generate(edit());
+		const g = submitted();
+		expect(g['edit_scale_1'].inputs).toMatchObject({
+			image: ['edit_image_1', 0],
+			megapixels: 0.75
+		});
+		expect(g['edit_latent_2'].inputs).toEqual({ pixels: ['edit_scale_2', 0], vae: ['3', 0] });
+		// positive: prompt → picture 1 → picture 2; negative the same from the zeroed one.
+		expect(g['edit_positive_1'].inputs.conditioning).toEqual(['4', 0]);
+		expect(g['edit_positive_2'].inputs.conditioning).toEqual(['edit_positive_1', 0]);
+		expect(g['edit_negative_1'].inputs.conditioning).toEqual(['5', 0]);
+		expect(g['11'].inputs).toMatchObject({
+			positive: ['edit_positive_2', 0],
+			negative: ['edit_negative_2', 0]
+		});
+		expect(g['14'].inputs.image).toEqual(['edit_scale_1', 0]);
+		expect(g['6'].inputs.width).toEqual(['14', 0]);
+		expect(g['10'].inputs).toMatchObject({ steps: 4, height: ['14', 1] });
+		expect(g['2'].inputs).toMatchObject({ clip_name: 'qwen_3_4b.safetensors', type: 'flux2' });
+		expect(g['3'].inputs.vae_name).toBe('flux2-vae.safetensors');
+	});
+
+	it('draws with klein at the size asked for', async () => {
+		updateSettings({ imageComfyCheckpoint: KLEIN });
+		server();
+		await comfyUiBackend.generate(edit({ edit: undefined }));
+		const g = submitted();
+		expect(g['6'].inputs).toMatchObject({ width: 1024, height: 768 });
+		expect(g['10'].inputs).toMatchObject({ width: 1024, height: 768, steps: 4 });
+		expect(g['edit_image_1']).toBeUndefined();
 	});
 
 	it('refuses an edit for a model with no edit workflow, before uploading', async () => {

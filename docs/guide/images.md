@@ -5,7 +5,7 @@ description: Turning on image generation, ComfyUI, the bundled engine, Lemonade 
 
 # Image generation
 
-Haruspex can draw pictures with a diffusion model on your own machine. It is off by default: nothing is downloaded or started until you pick a backend in Settings → Image.
+Haruspex can draw pictures with a diffusion model. It is off by default: nothing is downloaded or started until you pick a backend in Settings → Image.
 
 This page is about drawing new pictures. To change one, see the `image-editing` page; for web photos in answers, the `chat` page.
 
@@ -14,9 +14,9 @@ This page is about drawing new pictures. To change one, see the `image-editing` 
 Open Settings → Image → **Image backend** and choose a **Backend**:
 
 - **None** — the default. No process and no download.
-- **ComfyUI** — a [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server you run, on this computer or another. Choose this if you already use ComfyUI.
+- **ComfyUI** — a [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server you run, on this computer or another.
 - **Bundled engine** — stable-diffusion.cpp, shipped with Haruspex. Nothing else to install. It is offered on Linux, Windows and Apple Silicon Macs.
-- **Lemonade** — a [Lemonade](https://lemonade-server.ai) server you run, which draws with the bundled engine's models on its own GPU.
+- **Lemonade** — a [Lemonade](https://lemonade-server.ai) server you run, which draws with the bundled engine's models.
 - **llama-toolchest** — a llama-toolchest server you run with generation on.
 
 **Test generation → Generate a test image** checks that a backend works.
@@ -27,13 +27,13 @@ Under **Bundled engine**, press **Download** on a model (about 17 GB for Ming-Im
 
 ### Set up ComfyUI
 
-Under **Connection**, enter the **Server address** (for example `http://127.0.0.1:8188`) and an **API key** only if your server needs one, then press **Probe**. **Models on the server** then shows what each model is missing. **Install** downloads the files into ComfyUI when it runs on this computer, or queues them with ComfyUI-Manager on another server. Without either, **Copy file list** gives you the files to place by hand. Then choose the **Model**.
+Under **Connection**, enter the **Server address** (for example `http://127.0.0.1:8188`) and an **API key** only if your server needs one, then press **Probe**. **Models on the server** shows what each model lacks. **Install** downloads the files into ComfyUI when it runs on this computer, or queues them with ComfyUI-Manager elsewhere. Without either, **Copy file list** gives you the files to place by hand. Then choose the **Model**.
 
-The first picture after ComfyUI starts waits while it loads the model (**Loading the model**).
+The first picture after ComfyUI starts waits for the model to load (**Loading the model**).
 
 ### Set up Lemonade
 
-Under **Connection**, enter the **Server address** (for example `http://127.0.0.1:13305`) and an **API key** only if your server needs one, then press **Probe**. Under **Models on the server**, **Install** downloads a model onto the server and **Remove** deletes it. Then choose the **Model**. The download carries on if you close Settings. Lemonade keeps one image model loaded, so the first picture after switching waits for it to load. It does not make tiling textures.
+Under **Connection**, enter the **Server address** (for example `http://127.0.0.1:13305`) and an **API key** only if your server needs one, then press **Probe**. Under **Models on the server**, **Install** downloads a model onto the server and **Remove** deletes it. Then choose the **Model**. The download continues if you close Settings. Lemonade keeps one image model loaded, so the first picture after switching waits for it to load. It does not make tiling textures.
 
 ### Set up llama-toolchest
 
@@ -45,8 +45,9 @@ If your chat model comes from a toolchest, its address and key are filled in; ot
 | ------------------------------- | --------------------- | --------------- | --------------------------- |
 | Ming-Image 0.1 Design (default) | MIT                   | Allowed         | ~8 GB VRAM, ~10 GB free RAM |
 | Qwen-Image 2.1 Turbo            | Qwen Research License | **Not allowed** | ~12 GB VRAM                 |
+| FLUX.2 klein 4B (ComfyUI only)  | Apache 2.0            | Allowed         | —                           |
 
-An earlier Qwen-Image 2.1 download is offered again as Turbo, about three times faster; in ComfyUI the original keeps working.
+An earlier Qwen-Image 2.1 download is offered again as Turbo, three times faster; ComfyUI keeps running the original.
 
 Settings → Image marks Qwen-Image "Not licensed for commercial use." and asks before downloading or installing it. When a non-commercial model is in use, the assistant is told, so it can tell you. Some stores require AI-made content to be disclosed.
 

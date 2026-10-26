@@ -25,7 +25,8 @@ const EDIT_HOW: Record<ImageBackendKind, string> = {
 	none: '',
 	local:
 		'Editing needs Qwen-Image 2.1 with its editing weights (Add editing, under Bundled engine).',
-	comfyui: 'Editing needs Qwen-Image 2.1 or its Turbo, on ComfyUI 0.39 or later.',
+	comfyui:
+		'Editing needs FLUX.2 klein 4B, or Qwen-Image 2.1 or its Turbo on ComfyUI 0.39 or later.',
 	'llama-toolchest':
 		'Editing needs an instance whose model edits, such as FLUX.2 klein or Qwen-Image-Edit 2511.',
 	lemonade:

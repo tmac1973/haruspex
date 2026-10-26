@@ -9,6 +9,13 @@ describe('familyOf', () => {
 		expect(familyOf('Qwen-Image-2.1-Q4_K_M.gguf')).toBe('qwen21');
 		expect(familyOf('qwen_image_2.1_turbo_int8_convrot.safetensors')).toBe('qwen21_turbo');
 		expect(familyOf('qwen-image-2.1-turbo-Q4_K_M.gguf')).toBe('qwen21_turbo');
+		expect(familyOf('flux-2-klein-4b-fp8.safetensors')).toBe('flux2_klein');
+		expect(familyOf('flux-2-klein-4b.safetensors')).toBe('flux2_klein');
+	});
+
+	it('leaves klein base and 9B out: other steps, and 9B is non-commercial', () => {
+		expect(familyOf('flux-2-klein-base-4b.safetensors')).toBe('sd');
+		expect(familyOf('flux-2-klein-9b-fp8.safetensors')).toBe('sd');
 	});
 
 	it('treats anything else as an SD checkpoint, so old settings keep working', () => {
