@@ -1,4 +1,6 @@
 <script lang="ts">
+	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
+	import { imageEngineLog } from '#lib/reportLogs.ts';
 	import { imageSrc } from '#lib/images/url.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { formatGigabytes } from '#lib/utils/format.ts';
@@ -679,6 +681,16 @@
 			<button onclick={testGeneration}>{generating ? 'Stop' : 'Generate a test image'}</button>
 			{#if testProgress}<span class="detail">{testProgress}</span>{/if}
 			{#if testError}<span class="detail bad">{testError}</span>{/if}
+			<!-- Only the bundled engine is ours: another backend's failure is
+			     usually its own server's. -->
+			{#if testError && isLocal}
+				<ReportIssueButton
+					where="Bundled image engine"
+					error={testError}
+					log={imageEngineLog}
+					logTitle="Image engine log"
+				/>
+			{/if}
 		</div>
 		{#if testHash}
 			<img class="preview" src={imageSrc(testHash)} alt="Test generation" />

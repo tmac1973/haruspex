@@ -10,6 +10,7 @@
 	 * override can disable it wholesale.
 	 */
 	import { getToasts, dismissToast, type Toast } from '#lib/stores/toasts.svelte.ts';
+	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
 
 	const toasts = $derived(getToasts());
 
@@ -25,6 +26,14 @@
 			<span class="message">{toast.message}</span>
 			{#if toast.actionLabel}
 				<button class="action" onclick={() => runAction(toast)}>{toast.actionLabel}</button>
+			{/if}
+			{#if toast.report}
+				<ReportIssueButton
+					where={toast.report.where}
+					error={toast.message}
+					log={toast.report.log}
+					logTitle={toast.report.logTitle}
+				/>
 			{/if}
 			<button class="dismiss" onclick={() => dismissToast(toast.id)} aria-label="Dismiss">×</button>
 		</div>

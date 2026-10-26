@@ -1,4 +1,6 @@
 <script lang="ts">
+	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
+	import { jobReport } from '#lib/reportLogs.ts';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
 	import SearchStepView from '#lib/components/SearchStep.svelte';
 	import ThinkingIndicator from '#lib/components/ThinkingIndicator.svelte';
@@ -233,14 +235,24 @@
 					{/if}
 
 					{#if step.error}
-						<div class="error">{step.error}</div>
+						<div class="error">
+							{step.error}
+							{#if step.status === 'failed'}
+								<ReportIssueButton inline {...jobReport(step.error)} />
+							{/if}
+						</div>
 					{/if}
 				</JobStepCard>
 			{/each}
 		</div>
 
 		{#if run.error && run.steps.every((s) => s.status !== 'failed' && s.status !== 'cancelled')}
-			<div class="error">{run.error}</div>
+			<div class="error">
+				{run.error}
+				{#if run.status === 'failed'}
+					<ReportIssueButton inline {...jobReport(run.error)} />
+				{/if}
+			</div>
 		{/if}
 
 		<!-- Supersedes the old header roll-up: same source, but the whole

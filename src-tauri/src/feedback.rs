@@ -154,6 +154,55 @@ fn looks_like_email(s: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || ".-".contains(c))
 }
 
+/// Where a file for an issue is saved without asking: Downloads, or the home
+/// folder when there is none. No save dialog, since GTK's file chooser once
+/// crashed the app in glycin while loading thumbnails (2026-10-26).
+pub(crate) fn downloads_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    use tauri::Manager;
+    app.path()
+        .download_dir()
+        .or_else(|_| app.path().home_dir())
+        .map_err(|e| format!("no Downloads or home folder: {e}"))
+}
+
+/// `dir/stem.ext`, or `stem-2.ext` and so on when that is taken.
+pub(crate) fn unique_path(dir: &std::path::Path, stem: &str, ext: &str) -> std::path::PathBuf {
+    let first = dir.join(format!("{stem}.{ext}"));
+    if !first.exists() {
+        return first;
+    }
+    (2..)
+        .map(|n| dir.join(format!("{stem}-{n}.{ext}")))
+        .find(|p| !p.exists())
+        .expect("an unused name")
+}
+
+/// Save `contents` into Downloads as `stem.extension`, never over an earlier
+/// file. Returns the path. The diagnostics bundle a Report issue button
+/// leaves for the user to drag onto the issue.
+#[tauri::command]
+pub async fn feedback_save_download(
+    app: tauri::AppHandle,
+    stem: String,
+    extension: String,
+    contents: String,
+) -> Result<String, String> {
+    if stem.contains(['/', '\\']) || extension.contains(['/', '\\', '.']) {
+        return Err("a file name, not a path".into());
+    }
+    let dir = downloads_dir(&app)?;
+    tokio::task::spawn_blocking(move || {
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("could not create {}: {e}", dir.display()))?;
+        let path = unique_path(&dir, &stem, &extension);
+        std::fs::write(&path, contents)
+            .map_err(|e| format!("could not write {}: {e}", path.display()))?;
+        Ok(path.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| format!("saving the file panicked: {e}"))?
+}
+
 #[tauri::command]
 pub async fn save_export_file(path: String, contents: String) -> Result<(), String> {
     tokio::fs::write(&path, contents)
@@ -191,6 +240,19 @@ mod tests {
         for (input, want) in cases {
             assert_eq!(for_report(vec![input.to_string()]), vec![want.to_string()]);
         }
+    }
+
+    #[test]
+    fn a_saved_file_never_overwrites_an_earlier_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let first = unique_path(tmp.path(), "f", "md");
+        assert_eq!(first.file_name().unwrap(), "f.md");
+        std::fs::write(&first, "").unwrap();
+        std::fs::write(tmp.path().join("f-2.md"), "").unwrap();
+        assert_eq!(
+            unique_path(tmp.path(), "f", "md").file_name().unwrap(),
+            "f-3.md"
+        );
     }
 
     #[test]

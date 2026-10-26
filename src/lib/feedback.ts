@@ -387,9 +387,14 @@ function buildLifetimeStatsBlock(d: Diagnostics): string {
  * Logs are intentionally omitted — they rarely fit and rarely help at
  * the truncation budget; users can attach the full bundle separately.
  */
-export function buildFeedbackUrl(d: Diagnostics): string {
+export function buildFeedbackUrl(
+	d: Diagnostics,
+	prefill: { title?: string; whatHappened?: string } = {}
+): string {
 	const params = new URLSearchParams({
 		template: TEMPLATE,
+		...(prefill.title ? { title: prefill.title } : {}),
+		...(prefill.whatHappened ? { 'what-happened': prefill.whatHappened } : {}),
 		version: d.app_version,
 		system: buildSystemBlock(d),
 		settings: buildSettingsSnapshot(),

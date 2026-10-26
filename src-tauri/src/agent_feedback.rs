@@ -157,18 +157,6 @@ fn write_export(
     Ok(count)
 }
 
-/// `dir/stem.zip`, or `stem-2.zip` and so on when that is taken.
-fn unique_zip_path(dir: &Path, stem: &str) -> PathBuf {
-    let first = dir.join(format!("{stem}.zip"));
-    if !first.exists() {
-        return first;
-    }
-    (2..)
-        .map(|n| dir.join(format!("{stem}-{n}.zip")))
-        .find(|p| !p.exists())
-        .expect("an unused name")
-}
-
 /// A saved export: where it went and how many reports it holds.
 #[derive(serde::Serialize, ts_rs::TS)]
 #[ts(export)]
@@ -178,21 +166,14 @@ pub struct AgentFeedbackExport {
     pub count: usize,
 }
 
-/// Write the redacted zip into the Downloads folder (the home folder when
-/// there is none). No save dialog: GTK's file chooser crashed the app while
-/// it loaded thumbnails (a glycin fault, 2026-10-26), and a known place is one
-/// step fewer anyway.
+/// Write the redacted zip into Downloads (see `feedback::downloads_dir`).
 #[tauri::command]
 pub async fn agent_feedback_export(
     app: tauri::AppHandle,
     summary: String,
     reports: Vec<serde_json::Value>,
 ) -> Result<AgentFeedbackExport, String> {
-    let dir = app
-        .path()
-        .download_dir()
-        .or_else(|_| app.path().home_dir())
-        .map_err(|e| format!("no Downloads or home folder: {e}"))?;
+    let dir = crate::feedback::downloads_dir(&app)?;
     let stem = format!(
         "haruspex-model-feedback-{}",
         chrono::Local::now().format("%Y-%m-%d")
@@ -200,7 +181,7 @@ pub async fn agent_feedback_export(
     tokio::task::spawn_blocking(move || {
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("could not create {}: {e}", dir.display()))?;
-        let out = unique_zip_path(&dir, &stem);
+        let out = crate::feedback::unique_path(&dir, &stem, "zip");
         let count = write_export(&out, &summary, reports)?;
         Ok(AgentFeedbackExport {
             path: out.to_string_lossy().into_owned(),
@@ -291,19 +272,6 @@ mod tests {
         assert!(result.contains("https://a.test/x"), "{result}");
         assert!(!result.contains("token=abc"), "{result}");
         assert!(!result.contains("me@example.com"), "{result}");
-    }
-
-    #[test]
-    fn an_export_never_overwrites_an_earlier_one() {
-        let tmp = tempfile::tempdir().unwrap();
-        let first = unique_zip_path(tmp.path(), "f");
-        assert_eq!(first.file_name().unwrap(), "f.zip");
-        std::fs::write(&first, "").unwrap();
-        std::fs::write(tmp.path().join("f-2.zip"), "").unwrap();
-        assert_eq!(
-            unique_zip_path(tmp.path(), "f").file_name().unwrap(),
-            "f-3.zip"
-        );
     }
 
     #[test]

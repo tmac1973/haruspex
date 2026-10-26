@@ -14,6 +14,8 @@
 	 * The whole thread is saved, so a long session is rendered from its last
 	 * `TURNS_PER_PAGE` turns, with "Show earlier" for the rest.
 	 */
+	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
+	import { appLog, debugLog, worthReporting } from '#lib/reportLogs.ts';
 	import { codePathFromClick } from '#lib/markdown.ts';
 	import { onDestroy, untrack } from 'svelte';
 	import { isWatchNotification, watchNotificationCommands } from '#lib/shell/backgroundWatch.ts';
@@ -327,11 +329,29 @@
 		<div class="hint">ⓘ {session.contextNotice}</div>
 	{/if}
 	{#if session.lastError}
-		<div class="error">{session.lastError}</div>
+		<div class="error">
+			{session.lastError}
+			{#if worthReporting(session.lastError)}
+				<ReportIssueButton
+					inline
+					where="Code tab"
+					error={session.lastError}
+					log={debugLog('code', 'agent', 'api')}
+					logTitle="Recent debug log (Code, agent and API lines)"
+				/>
+			{/if}
+		</div>
 	{/if}
 	{#if session.saveError}
 		<div class="error" title={session.saveError}>
 			This session couldn't be saved. It will try again after the next message.
+			<ReportIssueButton
+				inline
+				where="Saving a Code session"
+				error={session.saveError}
+				log={appLog}
+				logTitle="App log"
+			/>
 		</div>
 	{/if}
 </div>

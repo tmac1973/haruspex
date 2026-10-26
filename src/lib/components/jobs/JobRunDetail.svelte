@@ -1,4 +1,6 @@
 <script lang="ts">
+	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
+	import { jobReport } from '#lib/reportLogs.ts';
 	import ChatMessage from '#lib/components/ChatMessage.svelte';
 	import JobStepCard from '#lib/components/jobs/JobStepCard.svelte';
 	import { formatDuration } from '#lib/utils/format.ts';
@@ -159,7 +161,12 @@
 		<div class="error">{error}</div>
 	{:else if run}
 		{#if run.error}
-			<div class="error">{run.error}</div>
+			<div class="error">
+				{run.error}
+				{#if run.status === 'failed'}
+					<ReportIssueButton inline {...jobReport(run.error)} />
+				{/if}
+			</div>
 		{/if}
 
 		<div class="steps">
@@ -188,7 +195,12 @@
 					{/if}
 
 					{#if step.error}
-						<div class="error">{step.error}</div>
+						<div class="error">
+							{step.error}
+							{#if step.status === 'failed'}
+								<ReportIssueButton inline {...jobReport(step.error)} />
+							{/if}
+						</div>
 					{/if}
 				</JobStepCard>
 			{/each}
