@@ -138,12 +138,21 @@ export async function answerWithImage(
 	return toolResult(
 		[
 			`${verb} (${image.width}×${image.height}, ${image.model}, seed ${image.seed}).`,
-			`Put ${markdown} in your answer where it belongs.`,
+			placeLine(markdown),
 			...(sees ? ['The picture is attached, so you can look at it before you answer.'] : []),
 			...(saved ? [saved] : []),
 			...image.notes
 		].join(' ')
 	);
+}
+
+/**
+ * The line telling the model where the picture goes. It also says the picture
+ * is the answer: one of a fox otherwise reads as an answer about foxes, and
+ * the model goes off to search for photos to put beside it.
+ */
+export function placeLine(markdown: string): string {
+	return `Put ${markdown} in your answer where it belongs; it needs no other images.`;
 }
 
 /** The line saying where the picture was saved, or why not. */

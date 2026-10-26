@@ -78,6 +78,8 @@ export class NudgeState {
 	/** Set to true on the first web_search tool call this turn. */
 	private webSearchUsed = false;
 	private imageSearchUsed = false;
+	/** Set when generate_image, edit_image or upscale_image made a picture. */
+	private pictureMade = false;
 	private researchNudged = false;
 	private phantomImageNudged = false;
 	/** Distinct URLs fetched via fetch_url / research_url this turn. */
@@ -118,6 +120,11 @@ export class NudgeState {
 		this.imageSearchUsed = true;
 	}
 
+	/** Record that a drawing tool put a picture in the answer. */
+	markPictureMade(): void {
+		this.pictureMade = true;
+	}
+
 	/** Record a successful fetch_url / research_url call by URL. */
 	recordFetchedUrl(url: string): void {
 		this.fetchedUrls.add(url);
@@ -135,7 +142,9 @@ export class NudgeState {
 	 *
 	 * The caller supplies `imageOnlyRequest`, because someone who asked only
 	 * for a picture has already been served and must not be nudged into
-	 * researching something they did not ask about. Fires at most once.
+	 * researching something they did not ask about. So has someone who asked
+	 * for a picture to be drawn, which the regex can't tell from a question;
+	 * the drawing tool having run can. Fires at most once.
 	 */
 	needsResearchNudge(usedTools: boolean, imageOnlyRequest: boolean): boolean {
 		return (
@@ -144,6 +153,7 @@ export class NudgeState {
 			!this.webSearchUsed &&
 			this.fetchedUrls.size === 0 &&
 			!imageOnlyRequest &&
+			!this.pictureMade &&
 			!this.researchNudged
 		);
 	}

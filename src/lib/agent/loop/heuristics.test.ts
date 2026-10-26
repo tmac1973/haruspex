@@ -46,7 +46,8 @@ describe('wroteRemoteImageMarkdown', () => {
 		'![x](https://example.com/a.png)',
 		'![](http://example.com/a.png)',
 		'Here: ![cat]( https://cats.example/cat.jpg ) done',
-		'![X](HTTPS://EXAMPLE.COM/A.PNG)'
+		'![X](HTTPS://EXAMPLE.COM/A.PNG)',
+		'![fox](http://haruspex-img.localhost/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) and ![fox](https://example.com/fox.jpg)'
 	])('detects %s', (s) => {
 		expect(wroteRemoteImageMarkdown(s)).toBe(true);
 	});
@@ -58,7 +59,10 @@ describe('wroteRemoteImageMarkdown', () => {
 		'[link](https://example.com)',
 		'![plot](data:image/png;base64,AAAA)',
 		'![plot](out/plot.png)',
-		'![plot](ftp://example.com/a.png)'
+		'![plot](ftp://example.com/a.png)',
+		// Our image cache on Windows, then on Linux and macOS: a drawn picture.
+		'![fox](http://haruspex-img.localhost/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)',
+		'![fox](haruspex-img://localhost/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)'
 	])('ignores %s', (s) => {
 		expect(wroteRemoteImageMarkdown(s)).toBe(false);
 	});

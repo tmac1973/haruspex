@@ -90,6 +90,7 @@ describe('buildSystemPrompt — search rules', () => {
 		expect(p).toContain('Do NOT search');
 		expect(p).toMatch(/arithmetic/);
 		expect(p).toMatch(/creative writing/);
+		expect(p).toMatch(/a picture to draw/);
 	});
 
 	it('keeps the fetch and citation rules that follow it', () => {

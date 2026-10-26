@@ -303,12 +303,16 @@ export function localImageHashesInText(texts: readonly string[]): string[] {
  * never lost to a model that forgot to place it.
  */
 /** The tools whose results carry a picture for the answer. */
-const PICTURE_TOOLS = ['generate_image', 'edit_image', 'upscale_image'];
+export const PICTURE_TOOLS: ReadonlySet<string> = new Set([
+	'generate_image',
+	'edit_image',
+	'upscale_image'
+]);
 
 export function placeGeneratedImages(text: string, steps: readonly SearchStep[]): string {
 	const missing: string[] = [];
 	for (const step of steps) {
-		if (!PICTURE_TOOLS.includes(step.toolName ?? '') || !step.result) continue;
+		if (!PICTURE_TOOLS.has(step.toolName ?? '') || !step.result) continue;
 		const md = step.result.match(/!\[[^\]]*\]\(([^)\s]+)\)/);
 		if (md && LOCAL_IMAGE_URL.test(md[1]) && !text.includes(md[1])) missing.push(md[0]);
 	}

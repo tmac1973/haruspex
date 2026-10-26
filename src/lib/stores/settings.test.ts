@@ -955,6 +955,18 @@ describe('include images setting', () => {
 		expect(prompt).toContain('Do NOT include images for abstract or technical questions');
 		expect(prompt).toContain('Never invent an image URL');
 	});
+
+	// A drawn picture of an animal is still "about something visual", so
+	// without this line the model goes looking for photos to add to it.
+	it('says a drawn picture is the image only when it can draw', () => {
+		updateSettings({ includeImages: true, imageBackendKind: 'none' });
+		expect(getIncludeImagesPrompt()).not.toContain('you drew');
+		updateSettings({ imageBackendKind: 'comfyui' });
+		expect(getIncludeImagesPrompt()).toContain(
+			'A picture you drew, edited or upscaled is the image'
+		);
+		updateSettings({ imageBackendKind: 'none' });
+	});
 });
 
 describe('MCP servers', () => {

@@ -9,6 +9,7 @@ import { coerceCallArguments, executeTool } from '#lib/agent/tools/index.ts';
 import { isFetchFailureResult, isToolErrorResult } from '#lib/agent/tools/_helpers.ts';
 import { isVerbosePayloads, logDebug } from '#lib/debug-log.ts';
 import { NudgeState } from '#lib/agent/loop/nudges.ts';
+import { PICTURE_TOOLS } from '#lib/images/eligible.ts';
 import {
 	planToolBatches,
 	runToolBatch,
@@ -161,6 +162,9 @@ export async function executeToolCalls(
 		let toolContent = output.result;
 		if (call.name === 'image_search') {
 			nudges.markImageSearchUsed();
+		}
+		if (PICTURE_TOOLS.has(call.name) && !isToolErrorResult(toolContent)) {
+			nudges.markPictureMade();
 		}
 		if (call.name === 'web_search') {
 			nudges.markWebSearchUsed();

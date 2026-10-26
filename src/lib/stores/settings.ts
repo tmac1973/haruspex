@@ -1925,21 +1925,26 @@ export function getSamplingParams(
  * ones that do not is what produces consistent behaviour. The three-image
  * ceiling is stated here and separately enforced in images/eligible, because
  * the prompt sets intent and only code can guarantee it.
+ *
+ * With image generation on, one more line: written before the model could
+ * draw, the block read "the answer is about an animal" as "add found photos"
+ * even when the answer was a fox it had just drawn. The line costs nothing
+ * when there is no backend, because then there is no drawing tool to confuse.
  */
 export function getIncludeImagesPrompt(): string {
 	if (!settings.includeImages) return '';
+	const drawn =
+		settings.imageBackendKind !== 'none'
+			? '\n- A picture you drew, edited or upscaled is the image. Add no found ones unless the user asks.'
+			: '';
 	return `
 
 IMAGES:
-- Images are an addition to a good answer, never a replacement for one. Follow the SEARCH RULES first: research the question as you normally would, and only then consider a picture. Calling image_search does not count as researching the topic.
-- When the answer is about something visual — a place, an animal, an object, a person, a plant, a building — add 1 to 3 relevant images.
-- You can use an [Image: <url>] line from a page you already fetched, or call image_search once you know what the answer is about.
-- Embed with markdown in the answer itself: ![short description](URL). An image you do not write into your answer is never shown to the user.
-- Use the thumb_url from an image_search result, not the full-size url.
-- Only use image URLs that appeared in a tool result in this conversation. Never invent an image URL.
-- Put each image right after the paragraph it illustrates, not all at the end.
-- Do NOT include images for abstract or technical questions — code, maths, definitions, comparisons of numbers, step-by-step instructions.
-- Never use more than 3 images in one answer. Fewer is better. An image that does not help the reader understand something is just noise.`;
+- Images add to a researched answer and never replace one: follow the SEARCH RULES first. Calling image_search is not research.
+- When the answer is about something visual — a place, an animal, an object, a person, a plant, a building — add 1 to 3 images. Fewer is better.
+- Do NOT include images for abstract or technical questions — code, maths, definitions, numbers, step-by-step instructions.
+- Use an [Image: <url>] line from a fetched page, or the thumb_url from an image_search result. Never invent an image URL.
+- Write each into the answer as ![short description](URL), right after the paragraph it illustrates. An image you do not write is never shown.${drawn}`;
 }
 
 export function getResponseFormatPrompt(): string {
