@@ -192,6 +192,29 @@ describe('python.worker boot', () => {
 		expect(posted).toEqual([{ kind: 'load_error', error: 'wasm missing' }]);
 	});
 
+	it('says the runtime is missing when pyodide.asm.js is not served', async () => {
+		origFetch.mockResolvedValue(new Response('<html>', { status: 404 }));
+		await load(Promise.reject(new TypeError('Importing a module script failed.')));
+		await settle();
+		expect(origFetch).toHaveBeenCalledWith(`${ORIGIN}/pyodide/pyodide.asm.js`, {
+			method: 'HEAD'
+		});
+		expect(posted).toEqual([
+			{
+				kind: 'load_error',
+				error:
+					'The Python runtime is missing from /pyodide/. In a dev checkout, run ./scripts/fetch-pyodide.sh.'
+			}
+		]);
+	});
+
+	it('keeps the load error when the runtime is served', async () => {
+		origFetch.mockResolvedValue(new Response('', { status: 200 }));
+		await load(Promise.reject(new Error('wasm missing')));
+		await settle();
+		expect(posted).toEqual([{ kind: 'load_error', error: 'wasm missing' }]);
+	});
+
 	it('answers a run that arrives before Pyodide loads with an error result', async () => {
 		await load(new Promise(() => {}));
 		send({ kind: 'run', id: 'early', code: 'USER' });

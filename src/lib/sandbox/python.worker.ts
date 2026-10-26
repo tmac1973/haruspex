@@ -1142,9 +1142,27 @@ function installSandboxFetchProxy(): void {
 	};
 }
 
+/**
+ * static/pyodide/ is gitignored and filled by scripts/fetch-pyodide.sh, so a
+ * fresh dev checkout has none. loadPyodide then imports pyodide.asm.js from a
+ * 404 page, and WebKit reports only "Importing a module script failed." When
+ * loading fails, check for that file so the error names what is missing.
+ */
+async function runtimeMissing(fetchFn: typeof fetch, indexURL: string): Promise<boolean> {
+	try {
+		const resp = await fetchFn(indexURL + 'pyodide.asm.js', { method: 'HEAD' });
+		return !resp.ok;
+	} catch {
+		return false;
+	}
+}
+
 async function init(): Promise<void> {
 	if (initStarted) return;
 	initStarted = true;
+	const indexURL = new URL('/pyodide/', self.location.origin).href;
+	// Before installLocalFirstFetch, whose CDN fallback would hide a local miss.
+	const nativeFetch = self.fetch.bind(self);
 	try {
 		// loadPyodide comes from the npm package; the assets it pulls at
 		// runtime (core .wasm, stdlib zip, lock file, package wheels) are
@@ -1157,9 +1175,7 @@ async function init(): Promise<void> {
 		// (see installSandboxFetchProxy) — must be in place before any model
 		// code runs a pyodide-http XHR.
 		installSandboxFetchProxy();
-		const py = await loadPyodide({
-			indexURL: new URL('/pyodide/', self.location.origin).href
-		});
+		const py = await loadPyodide({ indexURL });
 		pyodide = py;
 
 		await loadCorePackages(py);
@@ -1172,7 +1188,10 @@ async function init(): Promise<void> {
 		await py.runPythonAsync(HARUSPEX_INIT_PY);
 		post({ kind: 'ready' });
 	} catch (err) {
-		post({ kind: 'load_error', error: errMessage(err) });
+		const error = (await runtimeMissing(nativeFetch, indexURL))
+			? 'The Python runtime is missing from /pyodide/. In a dev checkout, run ./scripts/fetch-pyodide.sh.'
+			: errMessage(err);
+		post({ kind: 'load_error', error });
 	}
 }
 
