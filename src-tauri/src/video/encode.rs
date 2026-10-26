@@ -109,6 +109,61 @@ pub fn consumer_args(encoder: &str, height: u32, fps: f64) -> Vec<String> {
     args
 }
 
+/// The first DRM render node, which VA-API encodes on.
+fn render_node() -> Option<std::path::PathBuf> {
+    let mut nodes: Vec<_> = std::fs::read_dir("/dev/dri")
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with("renderD"))
+        })
+        .collect();
+    nodes.sort();
+    nodes.into_iter().next()
+}
+
+/// The ffmpeg arguments that encode a few frames of black with `encoder` and
+/// throw them away. None when `encoder` can't run here at all.
+fn ffmpeg_probe_args(encoder: &str) -> Option<Vec<String>> {
+    let mut args: Vec<String> = ["-hide_banner", "-nostdin", "-v", "error"]
+        .map(String::from)
+        .into();
+    if encoder == "h264_vaapi" {
+        args.extend([
+            "-vaapi_device".into(),
+            render_node()?.to_string_lossy().into_owned(),
+        ]);
+    }
+    args.extend(["-f", "lavfi", "-i", "color=black:s=1920x1080:r=30:d=0.2"].map(String::from));
+    if encoder == "h264_vaapi" {
+        args.extend(["-vf".into(), "format=nv12,hwupload".into()]);
+    }
+    args.extend(["-c:v", encoder, "-f", "null", "-"].map(String::from));
+    Some(args)
+}
+
+/// Whether ffmpeg can open `encoder`. melt segfaults when a hardware encoder
+/// fails to open (and the desktop reports each crash), so it only tries one
+/// that ffmpeg could.
+async fn ffmpeg_opens(ffmpeg: &str, encoder: &str) -> bool {
+    let Some(args) = ffmpeg_probe_args(encoder) else {
+        return false;
+    };
+    let mut cmd = tokio::process::Command::new(ffmpeg);
+    cmd.args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
+    super::prepare_child(&mut cmd);
+    matches!(
+        tokio::time::timeout(Duration::from_secs(20), cmd.status()).await,
+        Ok(Ok(s)) if s.success()
+    )
+}
+
 /// Whether melt can encode two seconds of black with `encoder`.
 async fn works(melt: &str, encoder: &str, dir: &Path) -> bool {
     let out = dir.join(format!("encoder-test-{encoder}.mp4"));
@@ -136,14 +191,14 @@ async fn works(melt: &str, encoder: &str, dir: &Path) -> bool {
 }
 
 /// libx264 and each hardware encoder that works here.
-pub async fn test_encoders(melt: &str, scratch: &Path) -> Vec<EncoderOption> {
+pub async fn test_encoders(ffmpeg: &str, melt: &str, scratch: &Path) -> Vec<EncoderOption> {
     let _ = std::fs::create_dir_all(scratch);
     let mut found = vec![EncoderOption {
         id: SOFTWARE.into(),
         label: "x264 (software)".into(),
     }];
     for (id, label) in hardware_candidates() {
-        if works(melt, id, scratch).await {
+        if ffmpeg_opens(ffmpeg, id).await && works(melt, id, scratch).await {
             found.push(EncoderOption {
                 id: (*id).into(),
                 label: (*label).into(),
@@ -162,9 +217,31 @@ mod tests {
     #[ignore = "needs melt"]
     async fn encoders_here() {
         let dir = crate::test_util::temp_dir("encoders");
-        let found = test_encoders("melt", &dir).await;
+        let found = test_encoders("ffmpeg", "melt", &dir).await;
         println!("{found:?}");
         assert_eq!(found[0].id, SOFTWARE);
+    }
+
+    #[test]
+    fn the_ffmpeg_probe_uploads_frames_for_vaapi_only() {
+        let n = ffmpeg_probe_args("h264_nvenc").unwrap();
+        assert!(n.windows(2).any(|w| w == ["-c:v", "h264_nvenc"]));
+        assert!(!n.iter().any(|a| a == "-vaapi_device" || a == "-vf"));
+        if let Some(v) = ffmpeg_probe_args("h264_vaapi") {
+            let at = |s: &str| v.iter().position(|a| a == s).unwrap();
+            assert!(v[at("-vaapi_device") + 1].contains("renderD"));
+            assert!(at("-vaapi_device") < at("-i"));
+            assert_eq!(v[at("-vf") + 1], "format=nv12,hwupload");
+        }
+    }
+
+    /// A hardware encoder this machine lacks is turned down by ffmpeg, without
+    /// a crash. `cargo test -- --ignored ffmpeg_turns_down --nocapture`
+    #[tokio::test]
+    #[ignore = "needs ffmpeg"]
+    async fn ffmpeg_turns_down_a_missing_encoder() {
+        assert!(ffmpeg_opens("ffmpeg", "libx264").await);
+        assert!(!ffmpeg_opens("ffmpeg", "no_such_encoder").await);
     }
 
     #[test]

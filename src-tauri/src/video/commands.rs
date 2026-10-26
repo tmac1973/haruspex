@@ -118,13 +118,14 @@ pub async fn video_encoders_test(
 ) -> Result<Vec<super::encode::EncoderOption>, String> {
     use tauri::Manager;
     let found = binaries::resolve(&overrides).await;
+    let ffmpeg = found.require(Tool::Ffmpeg)?;
     let melt = found.require(Tool::Melt)?;
     let scratch = app
         .path()
         .app_cache_dir()
         .unwrap_or_else(|_| std::env::temp_dir().join("haruspex"))
         .join("video-encoder-test");
-    Ok(super::encode::test_encoders(melt, &scratch).await)
+    Ok(super::encode::test_encoders(ffmpeg, melt, &scratch).await)
 }
 
 /// Open a finished render in the system's player, or its folder.
