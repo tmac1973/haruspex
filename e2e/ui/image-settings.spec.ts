@@ -14,5 +14,10 @@ test('Settings → Image probes ComfyUI and lists its model', async ({ app }) =>
 	await app.getByRole('button', { name: 'Probe' }).click();
 	await expect(app.getByText('Connected — E2E GPU.')).toBeVisible();
 	await expect(app.getByLabel(/Model/)).toContainText('e2e-sd15.safetensors');
-	await expect(app.getByText(/Supports: transparency/)).toBeVisible();
+	// What Haruspex can do with an SD checkpoint on ComfyUI, in words.
+	await expect(
+		app.getByText(
+			"Can: draw pictures, tiling textures, LoRAs (up to 2). Can't: edit pictures, upscale pictures, transparent backgrounds."
+		)
+	).toBeVisible();
 });
