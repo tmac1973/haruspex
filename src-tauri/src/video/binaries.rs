@@ -40,6 +40,16 @@ impl Tool {
             Tool::Melt => "melt",
         }
     }
+
+    /// The file names it goes by, in order of preference. Fedora installs melt
+    /// only as `melt-7`, with a `mlt-melt` link to it.
+    fn file_names(self) -> &'static [&'static str] {
+        match self {
+            Tool::Ffmpeg => &["ffmpeg"],
+            Tool::Ffprobe => &["ffprobe"],
+            Tool::Melt => &["melt", "mlt-melt", "melt-7"],
+        }
+    }
 }
 
 /// The paths set in Settings → Video editing. Empty means "find it".
@@ -152,6 +162,14 @@ fn which_in(dirs: impl IntoIterator<Item = PathBuf>, name: &str) -> Option<PathB
         .find(|candidate| is_executable(candidate))
 }
 
+/// The first of `names` found in `dirs`. Every directory is searched for one
+/// name before the next name is tried.
+fn which_any(dirs: &[PathBuf], names: &[&str]) -> Option<PathBuf> {
+    names
+        .iter()
+        .find_map(|name| which_in(dirs.iter().cloned(), name))
+}
+
 fn path_dirs() -> Vec<PathBuf> {
     std::env::var_os("PATH")
         .map(|p| std::env::split_paths(&p).collect())
@@ -224,10 +242,10 @@ fn candidates(tool: Tool, overrides: &BinaryOverrides) -> Vec<(PathBuf, BinarySo
     if !set.is_empty() {
         out.push((PathBuf::from(set), BinarySource::Override));
     }
-    if let Some(p) = which_in(path_dirs(), tool.name()) {
+    if let Some(p) = which_any(&path_dirs(), tool.file_names()) {
         out.push((p, BinarySource::Path));
     }
-    if let Some(p) = which_in(kdenlive_dirs(), tool.name()) {
+    if let Some(p) = which_any(&kdenlive_dirs(), tool.file_names()) {
         out.push((p, BinarySource::Kdenlive));
     }
     out
@@ -341,6 +359,21 @@ mod tests {
             Some(in_b)
         );
         assert_eq!(which_in([a.to_path_buf()], "melt"), None);
+    }
+
+    #[test]
+    fn melt_is_found_under_fedoras_names() {
+        let a = temp_dir("which_any_a");
+        let b = temp_dir("which_any_b");
+        let dirs = [a.to_path_buf(), b.to_path_buf()];
+        let names = Tool::Melt.file_names();
+        let versioned = make_exe(&a, "melt-7", "");
+        assert_eq!(which_any(&dirs, names), Some(versioned));
+        let link = make_exe(&b, "mlt-melt", "");
+        assert_eq!(which_any(&dirs, names), Some(link));
+        // A plain melt anywhere wins over the other names.
+        let plain = make_exe(&b, "melt", "");
+        assert_eq!(which_any(&dirs, names), Some(plain));
     }
 
     #[cfg(unix)]
