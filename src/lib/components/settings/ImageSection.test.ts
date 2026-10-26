@@ -102,7 +102,12 @@ describe('ImageSection with Lemonade', () => {
 		);
 		expect(select.value).toBe('ming');
 		await screen.findByText(/Connected — Lemonade 2026\.43\.3/);
-		expect(screen.getByText(/Supports: transparency yes, seamless tiling no/)).toBeTruthy();
+		const line = [...document.querySelectorAll('p.help')]
+			.map((p) => p.textContent?.replace(/\s+/g, ' ').trim())
+			.find((t) => t?.startsWith('Can:'));
+		expect(line).toBe(
+			"Can: draw pictures, transparent backgrounds. Can't: edit pictures, upscale pictures, tiling textures."
+		);
 	});
 
 	it('lists the server’s models below, installing what is missing, with no Use buttons', async () => {
@@ -145,7 +150,7 @@ describe('ImageSection with llama-toolchest', () => {
 				'http://box:3000'
 			)
 		);
-		const heading = await screen.findByRole('heading', { name: /Models on the server/ });
+		const heading = await screen.findByRole('heading', { name: /Instances on the server/ });
 		const section = heading.closest('section')!;
 		await waitFor(() => expect(within(section).getByText('qwen-turbo-local')).toBeTruthy());
 		expect(within(section).getByText('Not licensed for commercial use.')).toBeTruthy();

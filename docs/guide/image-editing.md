@@ -23,7 +23,7 @@ Name up to four pictures in one request, such as "put the cat from my second pic
 
 ## Which backends can edit
 
-Editing needs a model that was made for it:
+Settings → Image says what Haruspex can do with the chosen model (draw, edit, upscale, transparent backgrounds, tiling textures); hover over that line for how to get the rest. Editing needs a model that was made for it:
 
 - **Bundled engine with Qwen-Image 2.1.** It edits once it has its vision weights, 1.2 GB more. A new download includes them; for one made earlier, press **Add editing** under Settings → Image → Bundled engine. Qwen-Image may not be used commercially. Ming-Image can't edit.
 - **ComfyUI with Qwen-Image 2.1** (or its Turbo), on ComfyUI 0.39 or later. The files it already uses for drawing are enough. Pictures are uploaded to the server's input folder.
