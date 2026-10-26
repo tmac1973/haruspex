@@ -9,7 +9,7 @@ The assistant can look at the clips for a video in Chat or the Code tab. It uses
 
 ## Set up video editing
 
-Install Kdenlive. On Linux, use your distribution's package: the Flatpak's melt can't be run from outside it. On macOS and Windows, Kdenlive ships ffmpeg, ffprobe and melt, and Haruspex finds them inside the install.
+Install Kdenlive. On Linux, use your distribution's package: the Flatpak's melt can't be run from outside it. Fedora's `mlt-melt` and `melt-7` are found too. On macOS and Windows, Kdenlive ships ffmpeg, ffprobe and melt, and Haruspex finds them inside the install.
 
 Open Settings → Video editing. **Programs** shows each one with its version and where it was found: **PATH**, **Kdenlive** or **set here**. If one says **Not found**, type its path or click **Browse…**, then **Check again**.
 
