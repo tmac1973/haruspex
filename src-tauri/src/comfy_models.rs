@@ -33,6 +33,7 @@ pub enum ComfyFolder {
     TextEncoders,
     Vae,
     UpscaleModels,
+    Loras,
 }
 
 impl ComfyFolder {
@@ -42,6 +43,7 @@ impl ComfyFolder {
             Self::TextEncoders => "text_encoders",
             Self::Vae => "vae",
             Self::UpscaleModels => "upscale_models",
+            Self::Loras => "loras",
         }
     }
 }
@@ -250,6 +252,14 @@ pub fn comfy_model_sets() -> Vec<ComfyModelSet> {
                     "a70580f0213e67967ee9c95f05bb400e8fb08307e017a924bf3441223e023d1f",
                     253_806_246,
                 ),
+                // 4 steps at CFG 1 instead of 20 at CFG 4 (Apache 2.0).
+                file(
+                    Loras,
+                    "lightx2v/Qwen-Image-Edit-2511-Lightning",
+                    "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
+                    "22226e8d05d354bb356627d428809f5afd7819399b077238a2b70a82883a904f",
+                    849_608_296,
+                ),
             ],
         },
     ]
@@ -307,8 +317,8 @@ fn writable(dir: &Path) -> bool {
 /// kept only where they exist here and can be written. `None` when the
 /// server is not on this machine, or any model kind has no such folder — then
 /// the direct route is not available and the caller goes through Manager.
-/// `upscale_models` is kept when it is here, and not asked for: a ComfyUI
-/// without it still installs models directly.
+/// `upscale_models` and `loras` are kept when they are here, and not asked
+/// for: a ComfyUI without them still installs models directly.
 ///
 /// A loopback URL is necessary but not enough: a ComfyUI in a container
 /// answers on loopback with paths that mean nothing here. Requiring the path
@@ -331,17 +341,19 @@ pub fn local_folders(answer: &serde_json::Value) -> Option<HashMap<ComfyFolder, 
         }
         out.insert(kind, dirs);
     }
-    let upscale: Vec<PathBuf> = answer
-        .get(ComfyFolder::UpscaleModels.key())
-        .and_then(|v| v.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(PathBuf::from))
-                .collect()
-        })
-        .unwrap_or_default();
-    if upscale.first().is_some_and(|d| writable(d)) {
-        out.insert(ComfyFolder::UpscaleModels, upscale);
+    for kind in [ComfyFolder::UpscaleModels, ComfyFolder::Loras] {
+        let dirs: Vec<PathBuf> = answer
+            .get(kind.key())
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(PathBuf::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if dirs.first().is_some_and(|d| writable(d)) {
+            out.insert(kind, dirs);
+        }
     }
     Some(out)
 }
@@ -482,7 +494,7 @@ mod tests {
     #[test]
     fn every_file_can_be_downloaded_and_verified() {
         for s in comfy_model_sets() {
-            assert_eq!(s.files.len(), 3, "{}: model, encoder, VAE", s.family);
+            assert!(s.files.len() >= 3, "{}: model, encoder, VAE", s.family);
             for f in &s.files {
                 assert!(f.url.starts_with("https://huggingface.co/"), "{}", f.url);
                 assert!(f.url.ends_with(&f.filename), "{}", f.url);

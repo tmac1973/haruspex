@@ -65,6 +65,7 @@ export async function missingFiles(
 		diffusion_models: dits.some((n) => familyOf(n) === family),
 		text_encoders: companions.textEncoder,
 		vae: companions.vae,
+		loras: companions.lora,
 		upscale_models: false
 	};
 	return set.files.filter((f) => !have[f.folder]);
@@ -115,6 +116,7 @@ const MANAGER_TYPE: Record<ComfyModelFile['folder'], string> = {
 	diffusion_models: 'diffusion_model',
 	text_encoders: 'text_encoders',
 	vae: 'vae',
+	loras: 'lora',
 	upscale_models: 'upscale'
 };
 

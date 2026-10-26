@@ -75,6 +75,7 @@
 		diffusion_models: 'model',
 		text_encoders: 'text encoder',
 		vae: 'VAE',
+		loras: 'Lightning LoRA',
 		upscale_models: 'upscaler'
 	};
 

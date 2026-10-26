@@ -11,7 +11,7 @@
 		"inputs": {
 			"clip_name": "",
 			"type": "qwen_image",
-			"device": "default"
+			"device": "cpu"
 		}
 	},
 	"3": {
@@ -71,13 +71,13 @@
 	"13": {
 		"class_type": "KSampler",
 		"inputs": {
-			"model": ["10", 0],
+			"model": ["15", 0],
 			"positive": ["4", 0],
 			"negative": ["5", 0],
 			"latent_image": ["12", 0],
 			"seed": 0,
-			"steps": 20,
-			"cfg": 4,
+			"steps": 4,
+			"cfg": 1,
 			"sampler_name": "euler",
 			"scheduler": "simple",
 			"denoise": 1
@@ -88,6 +88,14 @@
 		"inputs": {
 			"samples": ["13", 0],
 			"vae": ["3", 0]
+		}
+	},
+	"15": {
+		"class_type": "LoraLoaderModelOnly",
+		"inputs": {
+			"model": ["10", 0],
+			"lora_name": "",
+			"strength_model": 1
 		}
 	}
 }

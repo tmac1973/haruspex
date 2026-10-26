@@ -30,6 +30,10 @@ const LISTS: Record<string, [string, string[]]> = {
 			'qwen_2.5_vl_7b_fp8_scaled.safetensors'
 		]
 	],
+	LoraLoaderModelOnly: [
+		'lora_name',
+		['Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors']
+	],
 	VAELoader: [
 		'vae_name',
 		[
@@ -246,7 +250,12 @@ describe('ComfyUI edits', () => {
 			class_type: 'VAEEncode',
 			inputs: { pixels: ['6', 0], vae: ['3', 0] }
 		});
-		expect(g['13'].inputs).toMatchObject({ steps: 20, cfg: 4, seed: 7 });
+		// Through its Lightning LoRA: 4 steps at CFG 1.
+		expect(g['13'].inputs).toMatchObject({ model: ['15', 0], steps: 4, cfg: 1, seed: 7 });
+		expect(g['15'].inputs).toMatchObject({
+			model: ['10', 0],
+			lora_name: 'Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors'
+		});
 		expect(g['2'].inputs.clip_name).toBe('qwen_2.5_vl_7b_fp8_scaled.safetensors');
 		expect(g['3'].inputs.vae_name).toBe('qwen_image_vae.safetensors');
 	});
@@ -261,6 +270,16 @@ describe('ComfyUI edits', () => {
 			inputs: { width: 1024, height: 768 }
 		});
 		expect(g['4'].inputs.image1).toBeUndefined();
+	});
+
+	it('says what to install when 2511 has no Lightning LoRA', async () => {
+		updateSettings({ imageComfyCheckpoint: EDIT_2511 });
+		const loras = LISTS.LoraLoaderModelOnly[1].splice(0);
+		server({ editPlus: true });
+		await expect(comfyUiBackend.generate(edit())).rejects.toThrow(
+			/Lightning LoRA in models\/loras — Settings → Image → Install/
+		);
+		LISTS.LoraLoaderModelOnly[1].push(...loras);
 	});
 
 	it('refuses an edit for a model with no edit workflow, before uploading', async () => {

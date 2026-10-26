@@ -249,8 +249,9 @@ const KLEIN_SAMPLER: SamplerSettings = { name: 'euler', steps: 4, cfg: 1 };
 
 /**
  * As ComfyUI's own 2511 workflow: `ModelSamplingAuraFlow` at 3.1 and `CFGNorm`,
- * then 20 steps at CFG 4 (the vendor's 40 gave no better picture in Comfy's
- * table). Its encoder, `TextEncodeQwenImageEditPlus`, takes up to three
+ * then its Lightning LoRA at 4 steps and CFG 1 — measured on an R9700 at 55 s
+ * an edit against 127 s for 20 steps at CFG 4, as good a picture, with the
+ * encoder on the CPU (on the GPU beside the model, 32 GB ran out). Its encoder, `TextEncodeQwenImageEditPlus`, takes up to three
  * pictures on both conditionings; the first is scaled to a size the model
  * knows, and sampling starts from it. With no pictures it draws.
  */
@@ -262,12 +263,13 @@ const QWEN_EDIT_BINDINGS: FieldMap = {
 	model: { kind: 'scalar', node: '1', input: 'unet_name' },
 	textEncoder: { kind: 'scalar', node: '2', input: 'clip_name' },
 	vae: { kind: 'scalar', node: '3', input: 'vae_name' },
+	lora: { kind: 'scalar', node: '15', input: 'lora_name' },
 	samplerName: { kind: 'scalar', node: '13', input: 'sampler_name' },
 	samplerSteps: { kind: 'scalar', node: '13', input: 'steps' },
 	samplerCfg: { kind: 'scalar', node: '13', input: 'cfg' }
 };
 
-const QWEN_EDIT_SAMPLER: SamplerSettings = { name: 'euler', steps: 20, cfg: 4 };
+const QWEN_EDIT_SAMPLER: SamplerSettings = { name: 'euler', steps: 4, cfg: 1 };
 
 /** The wrapper from the model's own template; its VAE always carries alpha. */
 export function qwen21Transparent(prompt: string): string {

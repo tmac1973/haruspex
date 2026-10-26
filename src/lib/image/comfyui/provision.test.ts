@@ -54,7 +54,7 @@ const MING: ComfyModelSet = {
 
 /** A fake server: loader lists, and routes answered by `extra`. */
 function server(
-	lists: { unet?: string[]; clip?: string[]; vae?: string[]; upscale?: string[] },
+	lists: { unet?: string[]; clip?: string[]; vae?: string[]; upscale?: string[]; lora?: string[] },
 	extra: (url: string, init?: RequestInit) => unknown = () => undefined
 ) {
 	const reply = (b: unknown, status = 200) =>
@@ -67,7 +67,8 @@ function server(
 		UNETLoader: ['unet_name', lists.unet ?? []],
 		CLIPLoader: ['clip_name', lists.clip ?? []],
 		VAELoader: ['vae_name', lists.vae ?? []],
-		UpscaleModelLoader: ['model_name', lists.upscale ?? []]
+		UpscaleModelLoader: ['model_name', lists.upscale ?? []],
+		LoraLoaderModelOnly: ['lora_name', lists.lora ?? []]
 	};
 	const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
 		const answer = extra(url, init);
@@ -107,7 +108,40 @@ const UPSCALER: ComfyModelSet = {
 	]
 };
 
+const LIGHTNING = 'Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors';
+const EDIT_2511: ComfyModelSet = {
+	...UPSCALER,
+	family: 'qwen_edit_2511',
+	label: 'Qwen-Image-Edit-2511',
+	files: [
+		{
+			...UPSCALER.files[0],
+			folder: 'diffusion_models',
+			filename: 'qwen_image_edit_2511_int8_convrot.safetensors'
+		},
+		{
+			...UPSCALER.files[0],
+			folder: 'text_encoders',
+			filename: 'qwen_2.5_vl_7b_fp8_scaled.safetensors'
+		},
+		{ ...UPSCALER.files[0], folder: 'vae', filename: 'qwen_image_vae.safetensors' },
+		{ ...UPSCALER.files[0], folder: 'loras', filename: LIGHTNING }
+	]
+};
+
 describe('missingFiles', () => {
+	it('asks for 2511 Lightning LoRA as one of its files', async () => {
+		const have = {
+			unet: [EDIT_2511.files[0].filename],
+			clip: [EDIT_2511.files[1].filename],
+			vae: [EDIT_2511.files[2].filename]
+		};
+		server(have);
+		expect((await missingFiles(cfg, EDIT_2511)).map((f) => f.folder)).toEqual(['loras']);
+		server({ ...have, lora: [LIGHTNING] });
+		expect(await missingFiles(cfg, EDIT_2511)).toEqual([]);
+	});
+
 	it('asks for the upscaler until models/upscale_models has one', async () => {
 		server({ upscale: ['4x-UltraSharp.pth'] });
 		expect(await missingFiles(cfg, UPSCALER)).toEqual(UPSCALER.files);

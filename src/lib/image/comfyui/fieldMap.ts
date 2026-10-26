@@ -112,6 +112,8 @@ export interface FieldMap {
 	textEncoder?: ScalarBinding;
 	/** A DiT family's separate VAE file. */
 	vae?: ScalarBinding;
+	/** A LoRA the family always loads (`Companions.lora`). */
+	lora?: ScalarBinding;
 	samplerName?: ScalarBinding;
 	samplerSteps?: ScalarBinding;
 	samplerCfg?: ScalarBinding;
@@ -133,6 +135,7 @@ export interface DerivedValues {
 	/** Resolved from the server's own file lists, for a DiT family. */
 	textEncoder?: string;
 	vae?: string;
+	lora?: string;
 	/** An edit's pictures, as `/upload/image` named them on the server. */
 	editImages?: string[];
 }
@@ -230,6 +233,7 @@ export function applyFieldMap(
 		[map.model, derived.model ?? req.model],
 		[map.textEncoder, derived.textEncoder],
 		[map.vae, derived.vae],
+		[map.lora, derived.lora],
 		[map.samplerName, req.sampler?.name],
 		[map.samplerSteps, req.sampler?.steps],
 		[map.samplerCfg, req.sampler?.cfg],

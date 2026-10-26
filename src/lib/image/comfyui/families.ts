@@ -41,6 +41,8 @@ export function familyOf(model: string): ModelFamily {
 export interface Companions {
 	textEncoder: string;
 	vae: string;
+	/** A LoRA the family's workflows always load, such as 2511's Lightning. */
+	lora?: string;
 }
 
 /**
@@ -54,7 +56,10 @@ const QWEN21_WANTED = {
 	vae: [/^qwen_image_2[._]1.*vae/i]
 };
 
-const WANTED: Record<Exclude<ModelFamily, 'sd'>, { textEncoder: RegExp[]; vae: RegExp[] }> = {
+const WANTED: Record<
+	Exclude<ModelFamily, 'sd'>,
+	{ textEncoder: RegExp[]; vae: RegExp[]; lora?: RegExp[] }
+> = {
 	ming: {
 		textEncoder: [/^ming_image.*ling.*w4a8/i, /^ming_image.*ling.*int8/i, /^ming_image.*ling/i],
 		vae: [/^ming_image.*vae/i]
@@ -67,10 +72,12 @@ const WANTED: Record<Exclude<ModelFamily, 'sd'>, { textEncoder: RegExp[]; vae: R
 		textEncoder: [/^qwen_3_4b\.safetensors$/i, /^qwen_3_4b.*fp8/i, /^qwen_3_4b/i],
 		vae: [/^flux2[_-]?vae/i]
 	},
-	// Qwen-Image's own encoder and VAE, which 2511 shares.
+	// Qwen-Image's own encoder and VAE, which 2511 shares, and lightx2v's
+	// 4-step LoRA: 4 steps at CFG 1 against 20 at CFG 4, as good a picture.
 	qwen_edit_2511: {
 		textEncoder: [/^qwen_2\.5_vl_7b.*fp8/i, /^qwen_2\.5_vl_7b/i],
-		vae: [/^qwen_image_vae/i]
+		vae: [/^qwen_image_vae/i],
+		lora: [/qwen[_-]?image[_-]?edit[_-]?2511[_-]?lightning[_-]?4steps/i]
 	}
 };
 
@@ -122,12 +129,14 @@ export async function resolveCompanions(
 	family: Exclude<ModelFamily, 'sd'>
 ): Promise<Companions> {
 	const want = WANTED[family];
-	const [encoders, vaes] = await Promise.all([
+	const [encoders, vaes, loras] = await Promise.all([
 		optionsOf(cfg, 'CLIPLoader', 'clip_name'),
-		optionsOf(cfg, 'VAELoader', 'vae_name')
+		optionsOf(cfg, 'VAELoader', 'vae_name'),
+		want.lora ? optionsOf(cfg, 'LoraLoaderModelOnly', 'lora_name') : []
 	]);
 	const textEncoder = pickCompanion(encoders, want.textEncoder);
 	const vae = pickCompanion(vaes, want.vae);
+	const lora = want.lora ? pickCompanion(loras, want.lora) : undefined;
 	const label = FILE_LABELS[family];
 	if (!textEncoder) {
 		throw new ImageBackendError(
@@ -141,22 +150,30 @@ export async function resolveCompanions(
 			`The backend has no ${label} VAE in models/vae — Settings → Image → Install.`
 		);
 	}
-	return { textEncoder, vae };
+	if (lora === null) {
+		throw new ImageBackendError(
+			'unconfigured',
+			`The backend has no ${label} Lightning LoRA in models/loras — Settings → Image → Install.`
+		);
+	}
+	return lora ? { textEncoder, vae, lora } : { textEncoder, vae };
 }
 
 /** Whether the server has an acceptable text encoder and VAE for `family`, without throwing. */
 export async function hasCompanions(
 	cfg: api.ClientConfig,
 	family: Exclude<ModelFamily, 'sd'>
-): Promise<{ textEncoder: boolean; vae: boolean }> {
+): Promise<{ textEncoder: boolean; vae: boolean; lora: boolean }> {
 	const want = WANTED[family];
-	const [encoders, vaes] = await Promise.all([
+	const [encoders, vaes, loras] = await Promise.all([
 		optionsOf(cfg, 'CLIPLoader', 'clip_name'),
-		optionsOf(cfg, 'VAELoader', 'vae_name')
+		optionsOf(cfg, 'VAELoader', 'vae_name'),
+		want.lora ? optionsOf(cfg, 'LoraLoaderModelOnly', 'lora_name') : []
 	]);
 	return {
 		textEncoder: pickCompanion(encoders, want.textEncoder) !== null,
-		vae: pickCompanion(vaes, want.vae) !== null
+		vae: pickCompanion(vaes, want.vae) !== null,
+		lora: !want.lora || pickCompanion(loras, want.lora) !== null
 	};
 }
 
