@@ -35,8 +35,8 @@ const EDIT_HOW: Record<ImageBackendKind, string> = {
 const UPSCALE_HOW: Record<ImageBackendKind, string> = {
 	none: '',
 	local: 'Upscaling needs the upscaler, under Bundled engine.',
-	comfyui: 'Only the bundled engine and Lemonade upscale.',
-	'llama-toolchest': 'Only the bundled engine and Lemonade upscale.',
+	comfyui: 'Upscaling needs the upscaler, under Models on the server.',
+	'llama-toolchest': 'Only the bundled engine, ComfyUI and Lemonade upscale.',
 	lemonade: 'Upscaling needs the upscaler, under Models on the server.'
 };
 

@@ -27,12 +27,16 @@ import { ImageBackendError } from '#lib/image/types.ts';
 import * as api from '#lib/image/comfyui/client.ts';
 import {
 	familyOf,
+	findUpscaler,
 	hasCompanions,
 	listDiffusionModels,
 	type ModelFamily
 } from '#lib/image/comfyui/families.ts';
 
 export type DitFamily = Exclude<ModelFamily, 'sd'>;
+/** The upscaler's set in the catalogue (`comfy_models.rs`). */
+export const UPSCALER_FAMILY = 'upscaler';
+export type InstallFamily = DitFamily | typeof UPSCALER_FAMILY;
 export type InstallRoute = 'direct' | 'manager' | 'manual';
 export type ManagerApi = 'v2' | 'legacy';
 
@@ -49,6 +53,9 @@ export async function missingFiles(
 	cfg: api.ClientConfig,
 	set: ComfyModelSet
 ): Promise<ComfyModelFile[]> {
+	if (set.family === UPSCALER_FAMILY) {
+		return (await findUpscaler(cfg)) ? [] : set.files;
+	}
 	const family = set.family as DitFamily;
 	const [dits, companions] = await Promise.all([
 		listDiffusionModels(cfg),
@@ -57,7 +64,8 @@ export async function missingFiles(
 	const have = {
 		diffusion_models: dits.some((n) => familyOf(n) === family),
 		text_encoders: companions.textEncoder,
-		vae: companions.vae
+		vae: companions.vae,
+		upscale_models: false
 	};
 	return set.files.filter((f) => !have[f.folder]);
 }
@@ -91,7 +99,7 @@ export async function chooseRoute(
 /** Download straight into the server's folders. Progress arrives as `download-progress` events. */
 export async function installDirect(
 	cfg: api.ClientConfig,
-	family: DitFamily,
+	family: InstallFamily,
 	proxy: ProxyConfig | null
 ): Promise<string[]> {
 	return invoke<string[]>('comfy_install_direct', {
@@ -106,7 +114,8 @@ export async function installDirect(
 const MANAGER_TYPE: Record<ComfyModelFile['folder'], string> = {
 	diffusion_models: 'diffusion_model',
 	text_encoders: 'text_encoders',
-	vae: 'vae'
+	vae: 'vae',
+	upscale_models: 'upscale'
 };
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {

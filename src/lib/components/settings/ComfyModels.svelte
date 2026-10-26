@@ -16,7 +16,7 @@
 		manualList,
 		missingFiles,
 		modelSets,
-		type DitFamily,
+		type InstallFamily,
 		type InstallRoute,
 		type ManagerApi
 	} from '#lib/image/comfyui/provision.ts';
@@ -74,7 +74,8 @@
 	const ROLE: Record<ComfyModelFile['folder'], string> = {
 		diffusion_models: 'model',
 		text_encoders: 'text encoder',
-		vae: 'VAE'
+		vae: 'VAE',
+		upscale_models: 'upscaler'
 	};
 
 	const ROUTE_TIP: Record<InstallRoute, string> = {
@@ -104,7 +105,7 @@
 		});
 		try {
 			if (route === 'direct') {
-				await installDirect(cfg(), row.set.family as DitFamily, getSettings().proxy);
+				await installDirect(cfg(), row.set.family as InstallFamily, getSettings().proxy);
 			} else if (route === 'manager' && manager) {
 				await installViaManager(cfg(), manager, row.missing, (f) => {
 					status = `ComfyUI-Manager is downloading ${f}…`;

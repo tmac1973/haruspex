@@ -54,7 +54,7 @@ const MING: ComfyModelSet = {
 
 /** A fake server: loader lists, and routes answered by `extra`. */
 function server(
-	lists: { unet?: string[]; clip?: string[]; vae?: string[] },
+	lists: { unet?: string[]; clip?: string[]; vae?: string[]; upscale?: string[] },
 	extra: (url: string, init?: RequestInit) => unknown = () => undefined
 ) {
 	const reply = (b: unknown, status = 200) =>
@@ -66,7 +66,8 @@ function server(
 	const loaders: Record<string, [string, string[]]> = {
 		UNETLoader: ['unet_name', lists.unet ?? []],
 		CLIPLoader: ['clip_name', lists.clip ?? []],
-		VAELoader: ['vae_name', lists.vae ?? []]
+		VAELoader: ['vae_name', lists.vae ?? []],
+		UpscaleModelLoader: ['model_name', lists.upscale ?? []]
 	};
 	const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
 		const answer = extra(url, init);
@@ -87,7 +88,33 @@ function server(
 beforeEach(() => invoke.mockReset());
 afterEach(() => vi.unstubAllGlobals());
 
+const UPSCALER: ComfyModelSet = {
+	family: 'upscaler',
+	label: 'Upscaler — Real-ESRGAN x4plus',
+	license: 'BSD 3-Clause',
+	license_url: 'https://example.com',
+	commercial_use: true,
+	vram_mb: 1024,
+	ram_mb: 1024,
+	files: [
+		{
+			folder: 'upscale_models',
+			filename: 'RealESRGAN_x4plus.pth',
+			url: 'https://huggingface.co/x/up',
+			sha256: 'd'.repeat(64),
+			size_bytes: 67e6
+		}
+	]
+};
+
 describe('missingFiles', () => {
+	it('asks for the upscaler until models/upscale_models has one', async () => {
+		server({ upscale: ['4x-UltraSharp.pth'] });
+		expect(await missingFiles(cfg, UPSCALER)).toEqual(UPSCALER.files);
+		server({ upscale: ['RealESRGAN_x4plus.pth'] });
+		expect(await missingFiles(cfg, UPSCALER)).toEqual([]);
+	});
+
 	it('is empty when every role is filled', async () => {
 		server({
 			unet: [MING.files[0].filename],

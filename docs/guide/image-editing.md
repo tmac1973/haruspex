@@ -36,15 +36,15 @@ With Ming-Image, a ComfyUI model other than Qwen-Image 2.1, or an older ComfyUI,
 
 Ask the assistant to upscale a picture, two or four times: "make it four times bigger for printing". It sharpens as it enlarges, and a transparent background stays transparent. The result is at most 4096 pixels on its longest side, so pictures up to 2048 pixels can be upscaled. A 1024-pixel picture takes about 12 seconds.
 
-This needs Real-ESRGAN (BSD 3-Clause), on the bundled engine or Lemonade: press **Download** under Settings → Image → Bundled engine → **Upscaler** (67 MB), or **Install** on Lemonade's **Upscaler** under **Models on the server** (62 MB). It works with whichever model is chosen.
+This needs Real-ESRGAN (BSD 3-Clause), on the bundled engine, ComfyUI or Lemonade: press **Download** under Settings → Image → Bundled engine → **Upscaler** (67 MB), or **Install** on the **Upscaler** under **Models on the server** for ComfyUI (67 MB, into `models/upscale_models`; a ComfyUI on another machine may give you the file to copy instead) or Lemonade (62 MB). It works with whichever model is chosen.
 
 ## What it doesn't do
 
 - It doesn't paint into a region you mark; describe the area in words instead.
 - An edit doesn't make a transparent background or tile.
-- ComfyUI and llama-toolchest don't upscale yet.
+- llama-toolchest doesn't upscale yet.
 - A picture pasted into Chat is shrunk to 1024 pixels on its longest side, so edits of it are at most that size.
 
 ## What has been tested
 
-Editing with FLUX.2 klein 4B on a llama-toolchest server, and with Qwen-Image 2.1 Turbo on the bundled engine on a 16 GB AMD card (about 30 seconds), on ComfyUI 0.39 and on Lemonade (about 20 seconds), has been tested, as has upscaling on the bundled engine and Lemonade. See the `images` page for setting up a backend.
+Editing with FLUX.2 klein 4B on a llama-toolchest server, and with Qwen-Image 2.1 Turbo on the bundled engine on a 16 GB AMD card (about 30 seconds), on ComfyUI 0.39 and on Lemonade (about 20 seconds), has been tested, as has upscaling on the bundled engine, ComfyUI 0.39 and Lemonade. See the `images` page for setting up a backend.

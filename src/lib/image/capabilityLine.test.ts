@@ -14,7 +14,7 @@ describe('capabilityLine', () => {
 		const line = capabilityLine({ ...base, edit: true, maxEditImages: 4 }, 'llama-toolchest');
 		expect(line.can).toBe('draw pictures, edit pictures (up to 4 together)');
 		expect(line.cannot).toBe('upscale pictures, transparent backgrounds, tiling textures');
-		expect(line.howTo).toContain('Only the bundled engine and Lemonade upscale.');
+		expect(line.howTo).toContain('Only the bundled engine, ComfyUI and Lemonade upscale.');
 		expect(line.howTo).not.toContain('Editing needs');
 		expect(line.text).toBe(
 			"Can: draw pictures, edit pictures (up to 4 together). Can't: upscale pictures, transparent backgrounds, tiling textures."
