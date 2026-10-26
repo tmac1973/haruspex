@@ -34,6 +34,7 @@ const EMIT_EVERY: Duration = Duration::from_millis(500);
 #[serde(rename_all = "camelCase")]
 pub enum TaskKind {
     Render,
+    Upload,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
@@ -55,6 +56,15 @@ pub enum TaskState {
         log_tail: String,
     },
     Cancelled,
+    /// An upload that finished; `problems` are what didn't (a thumbnail).
+    #[serde(rename_all = "camelCase")]
+    Uploaded {
+        url: String,
+        studio_url: String,
+        video_id: String,
+        visibility: String,
+        problems: Vec<String>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
@@ -397,6 +407,163 @@ pub async fn start_render(
         orphans::deregister_pid(worker.registry.as_deref(), &id, pid);
         let finished = worker.update(&id, |t| {
             if matches!(state, TaskState::Done { .. }) {
+                t.percent = 100.0;
+            }
+            t.eta_secs = None;
+            t.state = state;
+        });
+        if let Ok(mut m) = worker.tasks.lock() {
+            if let Some(e) = m.get_mut(&id) {
+                e.cancel = None;
+            }
+        }
+        if let Some(t) = finished {
+            emit(&t);
+        }
+    });
+    Ok(task)
+}
+
+#[derive(Clone, Debug, Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadRequest {
+    pub working_dir: String,
+    pub owner: String,
+    /// The render, relative to the working folder.
+    pub render: String,
+    /// A thumbnail JPEG, relative to the working folder.
+    pub thumbnail: Option<String>,
+    pub meta: super::youtube::VideoMeta,
+    pub proxy: Option<crate::proxy::ProxyConfig>,
+}
+
+/// Start uploading a render the user confirmed.
+pub async fn start_upload(
+    emit: Emit,
+    tasks: VideoTasks,
+    req: UploadRequest,
+) -> Result<VideoTask, String> {
+    use super::youtube;
+    if let Some(id) = tasks.running(TaskKind::Upload) {
+        return Err(format!(
+            "An upload is already running (id {id}). Wait for it or cancel it."
+        ));
+    }
+    let problems = youtube::check_meta(&req.meta);
+    if !problems.is_empty() {
+        return Err(problems.join(" "));
+    }
+    let file = paths::resolve_in_working(&req.working_dir, &req.render)?;
+    if !file.is_file() || file.extension().is_none_or(|e| e != "mp4") {
+        return Err(format!(
+            "{} is not a rendered MP4 in the working folder.",
+            req.render
+        ));
+    }
+    let thumbnail = match req
+        .thumbnail
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+    {
+        Some(t) => Some(
+            std::fs::read(paths::resolve_in_working(&req.working_dir, t)?)
+                .map_err(|e| format!("can't read the thumbnail: {e}"))?,
+        ),
+        None => None,
+    };
+    let refresh = crate::secrets::get(youtube::REFRESH_KEY)
+        .await?
+        .ok_or("Sign in to YouTube in Settings → Video first.")?;
+    let auth = youtube::account_auth(refresh, req.proxy.clone());
+    let http = crate::proxy::apply_proxy(
+        reqwest::Client::builder().timeout(Duration::from_secs(10 * 60)),
+        req.proxy.as_ref(),
+    )?
+    .build()
+    .map_err(|e| format!("could not create an HTTP client: {e}"))?;
+    let id = format!("upload-{}", uuid::Uuid::new_v4().simple());
+    let name = file
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("video")
+        .to_string();
+    let task = VideoTask {
+        id: id.clone(),
+        kind: TaskKind::Upload,
+        label: format!("Uploading {name} to YouTube"),
+        owner: req.owner.clone(),
+        working_dir: req.working_dir.clone(),
+        state: TaskState::Running,
+        percent: 0.0,
+        eta_secs: None,
+        started_ms: crate::time_util::now_ms_u64(),
+    };
+    let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
+    tasks
+        .tasks
+        .lock()
+        .map_err(|_| "task list poisoned")?
+        .insert(
+            id.clone(),
+            Entry {
+                task: task.clone(),
+                cancel: Some(cancel_tx),
+            },
+        );
+    emit(&task);
+    let worker = tasks.clone();
+    let meta = req.meta.clone();
+    tauri::async_runtime::spawn(async move {
+        let started = Instant::now();
+        let ep = youtube::Endpoints::default();
+        let progress = {
+            let (worker, emit, id) = (worker.clone(), emit.clone(), id.clone());
+            let last = Mutex::new(Instant::now() - EMIT_EVERY);
+            move |sent: u64, total: u64| {
+                let pct = if total > 0 {
+                    sent as f64 * 100.0 / total as f64
+                } else {
+                    0.0
+                };
+                let mut l = last.lock().unwrap_or_else(|e| e.into_inner());
+                if l.elapsed() < EMIT_EVERY && sent < total {
+                    return;
+                }
+                *l = Instant::now();
+                if let Some(t) = worker.update(&id, |t| {
+                    t.percent = pct;
+                    t.eta_secs = eta(started.elapsed(), pct);
+                }) {
+                    emit(&t);
+                }
+            }
+        };
+        let never = || false;
+        let state = tokio::select! {
+            r = youtube::upload(&http, &ep, &auth, &file, &meta, &never, &progress) => match r {
+                Ok(video_id) => {
+                    let mut problems = Vec::new();
+                    if let Some(jpeg) = thumbnail {
+                        if let Err(e) = youtube::set_thumbnail(&http, &ep, &auth, &video_id, jpeg).await {
+                            problems.push(e);
+                        }
+                    }
+                    TaskState::Uploaded {
+                        url: format!("https://youtu.be/{video_id}"),
+                        studio_url: format!("https://studio.youtube.com/video/{video_id}/edit"),
+                        visibility: meta.visibility.api().into(),
+                        video_id,
+                        problems,
+                    }
+                }
+                Err(message) => TaskState::Failed { message, log_tail: String::new() },
+            },
+            _ = &mut cancel_rx => TaskState::Cancelled,
+        };
+        let finished = worker.update(&id, |t| {
+            if matches!(state, TaskState::Uploaded { .. }) {
                 t.percent = 100.0;
             }
             t.eta_secs = None;

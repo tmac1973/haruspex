@@ -54,6 +54,9 @@ beforeEach(() => {
 		invokeRouter({
 			video_binaries_status: () => status,
 			get_whisper_video_model_path: () => null,
+			google_sign_in_available: () => true,
+			youtube_account: () => null,
+			youtube_sign_in: () => ({ email: 'tim@example.com' }),
 			download_whisper_video_model: () => '/models/whisper/ggml-large-v3-turbo.bin',
 			video_encoders_test: () => [
 				{ id: 'libx264', label: 'x264 (software)' },
@@ -105,6 +108,12 @@ describe('VideoSection', () => {
 		const button = await screen.findByText('Download large-v3-turbo (1.6 GB)');
 		await fireEvent.click(button);
 		expect(await screen.findByText('whisper large-v3-turbo')).toBeTruthy();
+	});
+
+	it('signs in to YouTube for uploads', async () => {
+		render(VideoSection);
+		await fireEvent.click(await screen.findByText('Sign in to YouTube'));
+		expect(await screen.findByText('Signed in as tim@example.com')).toBeTruthy();
 	});
 
 	it('saves the format', async () => {

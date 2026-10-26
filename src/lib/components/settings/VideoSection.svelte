@@ -4,6 +4,7 @@
 	import { listen } from '@tauri-apps/api/event';
 	import DownloadProgressBar from '#lib/components/settings/DownloadProgressBar.svelte';
 	import type { DownloadProgress } from '#lib/ipc/gen/DownloadProgress.ts';
+	import type { YoutubeAccount } from '#lib/ipc/gen/YoutubeAccount.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import { refreshVideoBinaries, videoBinariesStatus, videoEncoders } from '#lib/video/binaries.ts';
@@ -31,6 +32,39 @@
 	let intro = $state(getSettings().videoIntroPath);
 	let outro = $state(getSettings().videoOutroPath);
 	let encoder = $state(getSettings().videoEncoder);
+
+	/** Whether this build has Google sign-in, and who is signed in for uploads. */
+	let googleAvailable = $state(false);
+	let youtube = $state<YoutubeAccount | null>(null);
+	let signingIn = $state(false);
+	void invoke<boolean>('google_sign_in_available')
+		.then((ok) => {
+			googleAvailable = ok;
+			if (ok) return invoke<YoutubeAccount | null>('youtube_account').then((a) => (youtube = a));
+		})
+		.catch(() => {});
+
+	async function youtubeSignIn() {
+		error = '';
+		signingIn = true;
+		try {
+			youtube = await invoke<YoutubeAccount>('youtube_sign_in', { proxy: getSettings().proxy });
+		} catch (e) {
+			error = errMessage(e);
+		} finally {
+			signingIn = false;
+		}
+	}
+
+	async function youtubeSignOut() {
+		error = '';
+		try {
+			await invoke('youtube_sign_out', { proxy: getSettings().proxy });
+			youtube = null;
+		} catch (e) {
+			error = errMessage(e);
+		}
+	}
 
 	/** large-v3-turbo's path once downloaded; null while base.en is what transcribes. */
 	let turbo = $state<string | null>(null);
@@ -212,6 +246,29 @@
 	{/if}
 	<p class="help">large-v3-turbo is more accurate and knows more languages.</p>
 </section>
+
+{#if googleAvailable}
+	<section class="settings-section">
+		<h2>YouTube</h2>
+		<div class="path-row">
+			{#if youtube}
+				<span class="detail">Signed in as {youtube.email}</span>
+				<button class="btn" type="button" onclick={() => void youtubeSignOut()}>Sign out</button>
+			{:else}
+				<button
+					class="btn"
+					type="button"
+					disabled={signingIn}
+					onclick={() => void youtubeSignIn()}
+					title="Asks Google only for uploading videos: not reading, changing or deleting them."
+				>
+					{signingIn ? 'Waiting for Google…' : 'Sign in to YouTube'}
+				</button>
+			{/if}
+		</div>
+		<p class="help">Every upload asks you first.</p>
+	</section>
+{/if}
 
 <section class="settings-section">
 	<h2>New videos</h2>

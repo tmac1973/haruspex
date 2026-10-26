@@ -82,9 +82,45 @@ struct TokenError {
     error_description: Option<String>,
 }
 
+/// The YouTube upload sign-in's scopes: who signed in, and uploading videos.
+/// Nothing else: not reading, editing or deleting a channel's videos.
+pub const YOUTUBE_SCOPES: &str = "openid email https://www.googleapis.com/auth/youtube.upload";
+pub const YOUTUBE_UPLOAD_SCOPE: &str = "https://www.googleapis.com/auth/youtube.upload";
+
+/// What a finished consent hands back, before a caller checks its scopes.
+pub struct Consent {
+    pub email: String,
+    pub refresh_token: String,
+    /// The scopes Google granted, space-separated.
+    pub granted: String,
+}
+
 /// Run the consent flow: open the browser, wait for Google to redirect back,
 /// and trade the code for a refresh token.
 pub async fn sign_in(proxy: Option<&ProxyConfig>) -> Result<Grant, String> {
+    let consent = consent(SCOPES, proxy).await?;
+    let grant = Grant {
+        email: consent.email,
+        calendars: has_scope(&consent.granted, CALENDAR_SCOPE),
+        contacts: has_scope(&consent.granted, CONTACTS_SCOPE),
+        refresh_token: consent.refresh_token,
+    };
+    if !grant.calendars && !grant.contacts {
+        return Err(
+            "Google signed in without calendar or contacts access. Sign in again and tick both boxes."
+                .into(),
+        );
+    }
+    Ok(grant)
+}
+
+/// Whether `granted` (space-separated) includes `scope`.
+pub fn granted(granted: &str, scope: &str) -> bool {
+    has_scope(granted, scope)
+}
+
+/// The consent flow for `scopes`, with no opinion on what was granted.
+pub async fn consent(scopes: &str, proxy: Option<&ProxyConfig>) -> Result<Consent, String> {
     let client = client().ok_or("This build of Haruspex has no Google sign-in.")?;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -97,7 +133,13 @@ pub async fn sign_in(proxy: Option<&ProxyConfig>) -> Result<Grant, String> {
 
     let verifier = random_token(48)?;
     let state = random_token(24)?;
-    let url = consent_url(client.id, &redirect_uri, &challenge(&verifier), &state);
+    let url = consent_url(
+        client.id,
+        scopes,
+        &redirect_uri,
+        &challenge(&verifier),
+        &state,
+    );
     crate::links::open_in_browser(&url)?;
 
     let code = tokio::time::timeout(CONSENT_TIMEOUT, receive_code(&listener, &state))
@@ -129,21 +171,13 @@ pub async fn sign_in(proxy: Option<&ProxyConfig>) -> Result<Grant, String> {
         .as_deref()
         .and_then(email_from_id_token)
         .ok_or("Google did not say which account signed in.")?;
-    let granted = tokens.scope.as_deref().unwrap_or_default();
-    let grant = Grant {
+    let granted = tokens.scope.clone().unwrap_or_default();
+    cache_token(&refresh_token, &tokens);
+    Ok(Consent {
         email,
-        calendars: has_scope(granted, CALENDAR_SCOPE),
-        contacts: has_scope(granted, CONTACTS_SCOPE),
         refresh_token,
-    };
-    if !grant.calendars && !grant.contacts {
-        return Err(
-            "Google signed in without calendar or contacts access. Sign in again and tick both boxes."
-                .into(),
-        );
-    }
-    cache_token(&grant.refresh_token, &tokens);
-    Ok(grant)
+        granted,
+    })
 }
 
 /// A current access token for a stored refresh token, refreshed when the
@@ -187,7 +221,13 @@ pub async fn revoke(refresh_token: &str, proxy: Option<&ProxyConfig>) {
     }
 }
 
-fn consent_url(client_id: &str, redirect_uri: &str, challenge: &str, state: &str) -> String {
+fn consent_url(
+    client_id: &str,
+    scopes: &str,
+    redirect_uri: &str,
+    challenge: &str,
+    state: &str,
+) -> String {
     let mut url = url::Url::parse(AUTH_URL).expect("the auth URL is valid");
     url.query_pairs_mut()
         .append_pair("client_id", client_id)
@@ -195,7 +235,7 @@ fn consent_url(client_id: &str, redirect_uri: &str, challenge: &str, state: &str
         .append_pair("response_type", "code")
         .append_pair(
             "scope",
-            &SCOPES.split_whitespace().collect::<Vec<_>>().join(" "),
+            &scopes.split_whitespace().collect::<Vec<_>>().join(" "),
         )
         .append_pair("code_challenge", challenge)
         .append_pair("code_challenge_method", "S256")
@@ -390,6 +430,12 @@ fn cache_token(refresh_token: &str, tokens: &TokenResponse) {
     );
 }
 
+/// Drop a cached access token, so the next `access_token` asks Google again
+/// (after a 401: the token was revoked or expired early).
+pub fn forget_access_token(refresh_token: &str) {
+    cache().lock_or_recover().remove(refresh_token);
+}
+
 fn cached_token(refresh_token: &str) -> Option<String> {
     let cache = cache().lock_or_recover();
     let (token, expires) = cache.get(refresh_token)?;
@@ -482,7 +528,7 @@ mod tests {
 
     #[test]
     fn the_consent_url_asks_for_offline_read_access_with_pkce() {
-        let url = consent_url("id.apps", "http://127.0.0.1:5000", "chal", "st");
+        let url = consent_url("id.apps", SCOPES, "http://127.0.0.1:5000", "chal", "st");
         let parsed = url::Url::parse(&url).unwrap();
         let q: HashMap<_, _> = parsed.query_pairs().into_owned().collect();
         assert_eq!(q["redirect_uri"], "http://127.0.0.1:5000");
@@ -529,6 +575,28 @@ mod tests {
             Some("me@gmail.com")
         );
         assert_eq!(email_from_id_token("garbage"), None);
+    }
+
+    #[test]
+    fn the_youtube_consent_asks_for_upload_only() {
+        let url = consent_url(
+            "id.apps",
+            YOUTUBE_SCOPES,
+            "http://127.0.0.1:5000",
+            "chal",
+            "st",
+        );
+        let parsed = url::Url::parse(&url).unwrap();
+        let scope: String = parsed
+            .query_pairs()
+            .find(|(k, _)| k == "scope")
+            .map(|(_, v)| v.into_owned())
+            .unwrap();
+        assert_eq!(
+            scope,
+            "openid email https://www.googleapis.com/auth/youtube.upload"
+        );
+        assert!(!scope.contains("calendar"));
     }
 
     #[test]

@@ -94,3 +94,27 @@ Branding page.
 Verified apps that later add a scope go through review again. If Haruspex
 ever needs to write to calendars or contacts, that's a new submission, and
 the privacy policy must say so first.
+
+## YouTube uploads (youtube.upload)
+
+The video tools upload a render to the user's channel after they confirm it
+(`plan/video-editing/phase-08-youtube-upload.md`). It is a separate sign-in
+(Settings → Video → **Sign in to YouTube**) asking for `openid email` and
+`https://www.googleapis.com/auth/youtube.upload` only, so it needs its own
+review round:
+
+1. Google Auth Platform → **Data access** → add `youtube.upload`, and enable
+   the YouTube Data API v3 in the Cloud project.
+2. Check the privacy policy says videos are uploaded only when the user
+   confirms each one, and that the app reads nothing from the channel. Keep it
+   in step with the justification.
+3. Paste this justification (under 1,000 characters):
+
+> Haruspex is a desktop AI assistant that can cut and render the user's own videos on their computer. youtube.upload lets it upload a finished video to the user's channel, and only after the user confirms that upload in a dialog showing the file, title, description, thumbnail and visibility (private by default). The app never reads, changes or deletes videos, playlists or comments, so it asks for youtube.upload alone, the narrowest scope that can upload. The video goes directly from the user's device to YouTube and is never sent to the developer. Sign-in tokens stay on the device in the system keychain. Google data is not sold, used for ads or used to train models.
+
+4. Record a demo video as in section 4: the consent screen listing the upload
+   permission, the upload dialog with Private selected, the progress card, the
+   video in YouTube Studio as Private, then **Sign out** in Settings → Video
+   and myaccount.google.com/permissions no longer listing it.
+5. Submit as in section 5. Until it is approved, the YouTube sign-in shows
+   the "unverified app" screen and the 100-user cap applies.

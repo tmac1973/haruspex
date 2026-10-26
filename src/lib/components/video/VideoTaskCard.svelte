@@ -26,6 +26,15 @@
 		}
 	}
 
+	async function openUrl(url: string) {
+		error = '';
+		try {
+			await invoke('open_url', { url });
+		} catch (e) {
+			error = errMessage(e);
+		}
+	}
+
 	async function open(folder: boolean) {
 		error = '';
 		try {
@@ -59,6 +68,18 @@
 		<div class="actions">
 			<button class="btn" type="button" onclick={() => void open(false)}>Open</button>
 			<button class="btn" type="button" onclick={() => void open(true)}>Show in folder</button>
+		</div>
+	{:else if task?.state === 'uploaded'}
+		<p class="detail">
+			Uploaded, {task.visibility}.{task.problems.length ? ` ${task.problems.join(' ')}` : ''}
+		</p>
+		<div class="actions">
+			<button class="btn" type="button" onclick={() => void openUrl(task.url)}
+				>Open on YouTube</button
+			>
+			<button class="btn" type="button" onclick={() => void openUrl(task.studioUrl)}
+				>Open in Studio</button
+			>
 		</div>
 	{:else if task?.state === 'failed'}
 		<p class="detail bad" title={task.logTail}>{task.message}</p>

@@ -145,6 +145,7 @@ const TABLE: Record<string, Handler> = {
 	video_binaries_status: () => ({ ffmpeg: null, ffprobe: null, melt: null, hints: [] }),
 	video_task_list: empty,
 	get_whisper_video_model_path: none,
+	youtube_account: none,
 	download_status: none,
 	remote_status: () => ({
 		running: false,

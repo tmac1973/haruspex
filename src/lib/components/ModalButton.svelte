@@ -21,17 +21,26 @@
 		 *  focuses the first `[autofocus]` element when it opens). */
 		autofocus?: boolean;
 		onclick: () => void;
+		/** Shown but not pressable, as Upload until a required answer is given. */
+		disabled?: boolean;
 		title: Snippet;
 		subtitle?: Snippet;
 	}
 
-	let { variant = 'default', autofocus = false, onclick, title, subtitle }: Props = $props();
+	let {
+		variant = 'default',
+		autofocus = false,
+		onclick,
+		disabled = false,
+		title,
+		subtitle
+	}: Props = $props();
 </script>
 
 <!-- Inside a modal, moving focus to the safe default action is the
      accessible behavior, not a hijack. -->
 <!-- svelte-ignore a11y_autofocus -->
-<button class="modal-btn {variant}" {autofocus} {onclick}>
+<button class="modal-btn {variant}" {autofocus} {onclick} {disabled}>
 	<strong>{@render title()}</strong>
 	{#if subtitle}<span>{@render subtitle()}</span>{/if}
 </button>
@@ -73,5 +82,10 @@
 
 	.modal-btn.subtle:hover {
 		border-color: var(--text-secondary);
+	}
+
+	.modal-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 </style>

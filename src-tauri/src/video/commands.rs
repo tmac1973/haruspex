@@ -656,3 +656,127 @@ pub fn video_thumbnail_from_image(
     let target = thumbnail_target(&working_dir, &episode, project.as_deref(), name.as_deref())?;
     write_thumbnail(&working_dir, &target, jpeg)
 }
+
+/// The YouTube account the upload sign-in is for, if any.
+#[tauri::command]
+pub async fn youtube_account() -> Option<super::youtube::YoutubeAccount> {
+    super::youtube::account().await
+}
+
+/// Sign in to YouTube for uploads (only the `youtube.upload` scope).
+#[tauri::command]
+pub async fn youtube_sign_in(
+    proxy: Option<crate::proxy::ProxyConfig>,
+) -> Result<super::youtube::YoutubeAccount, String> {
+    super::youtube::sign_in(proxy.as_ref()).await
+}
+
+#[tauri::command]
+pub async fn youtube_sign_out(proxy: Option<crate::proxy::ProxyConfig>) -> Result<(), String> {
+    super::youtube::sign_out(proxy.as_ref()).await
+}
+
+/// Upload a render the user confirmed, in the background.
+#[tauri::command]
+pub async fn youtube_upload_start(
+    app: tauri::AppHandle,
+    tasks: tauri::State<'_, super::tasks::VideoTasks>,
+    request: super::tasks::UploadRequest,
+) -> Result<super::tasks::VideoTask, String> {
+    use tauri::Emitter;
+    let emit: super::tasks::Emit = std::sync::Arc::new(move |t: &super::tasks::VideoTask| {
+        let _ = app.emit("video-task-progress", t);
+    });
+    super::tasks::start_upload(emit, tasks.inner().clone(), request).await
+}
+
+#[derive(serde::Serialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadPlan {
+    /// The render, relative to the working folder.
+    pub render: String,
+    pub duration_secs: Option<f64>,
+    #[ts(type = "number")]
+    pub size_bytes: u64,
+    pub thumbnail: Option<String>,
+    pub thumbnail_data_url: Option<String>,
+    /// The project's chapters file, when there is one.
+    pub chapters: Option<String>,
+}
+
+/// What an upload of an episode would send: the render (the one named, or the
+/// project's newest), its thumbnail and chapters.
+#[tauri::command]
+pub async fn youtube_upload_plan(
+    working_dir: String,
+    episode: String,
+    project: Option<String>,
+    render: Option<String>,
+    thumbnail: Option<String>,
+    settings: super::project::VideoSettings,
+) -> Result<UploadPlan, String> {
+    use base64::Engine;
+    let episode_dir = paths::resolve_episode(&working_dir, &episode)?;
+    let project_path =
+        super::project::default_project(&working_dir, &episode, project.as_deref(), false).ok();
+    let render_path = match render.as_deref().map(str::trim).filter(|r| !r.is_empty()) {
+        Some(r) => paths::resolve_in_working(&working_dir, r)?,
+        None => project_path
+            .as_deref()
+            .and_then(|p| latest_render(&episode_dir, p))
+            .ok_or("There is no render to upload yet. Render the video first.")?,
+    };
+    if !render_path.is_file() {
+        return Err(format!(
+            "{} doesn't exist.",
+            paths::display_path(&working_dir, &render_path)
+        ));
+    }
+    let size_bytes = std::fs::metadata(&render_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+    let found = binaries::resolve(&settings.overrides).await;
+    let duration_secs = match found.require(Tool::Ffprobe) {
+        Ok(ffprobe) => super::probe::probe_file(ffprobe, &render_path, String::new())
+            .await
+            .ok()
+            .map(|i| i.duration_secs),
+        Err(_) => None,
+    };
+    let stem = project_path
+        .as_deref()
+        .and_then(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_string))
+        .or_else(|| {
+            episode_dir
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(str::to_string)
+        })
+        .unwrap_or_default();
+    let thumb_path = match thumbnail
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+    {
+        Some(t) => Some(paths::resolve_in_working(&working_dir, t)?),
+        None => Some(episode_dir.join(format!("{stem}.thumbnail.jpg"))).filter(|p| p.is_file()),
+    };
+    let thumbnail_data_url = match &thumb_path {
+        Some(p) => Some(format!(
+            "data:image/jpeg;base64,{}",
+            base64::engine::general_purpose::STANDARD
+                .encode(std::fs::read(p).map_err(|e| format!("can't read the thumbnail: {e}"))?)
+        )),
+        None => None,
+    };
+    let chapters = std::fs::read_to_string(episode_dir.join(format!("{stem}.chapters.txt"))).ok();
+    Ok(UploadPlan {
+        render: paths::display_path(&working_dir, &render_path),
+        duration_secs,
+        size_bytes,
+        thumbnail: thumb_path.map(|p| paths::display_path(&working_dir, &p)),
+        thumbnail_data_url,
+        chapters,
+    })
+}

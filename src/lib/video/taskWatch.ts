@@ -45,16 +45,24 @@ export function isVideoNotice(text: string): boolean {
 
 /** The follow-up text for a task that ended. */
 export function buildVideoNotice(t: VideoTask): string {
+	const what = t.kind === 'upload' ? 'upload' : 'render';
 	switch (t.state) {
 		case 'done':
 			return (
 				`Video render finished: ${t.path}. ` +
 				(t.check ? describeCheck(t.check) : 'It could not be checked.')
 			);
+		case 'uploaded':
+			return (
+				`Video upload finished: ${t.url} (${t.visibility}). YouTube Studio: ${t.studioUrl}. ` +
+				(t.problems.length ? t.problems.join(' ') : 'Everything was set.')
+			);
 		case 'failed':
-			return `Video render failed: ${t.message}${t.logTail ? `\n--- melt said ---\n${t.logTail}` : ''}`;
+			return `Video ${what} failed: ${t.message}${t.logTail ? `\n--- melt said ---\n${t.logTail}` : ''}`;
 		case 'cancelled':
-			return 'Video render cancelled. Nothing was saved.';
+			return what === 'upload'
+				? 'Video upload cancelled. YouTube keeps nothing of it.'
+				: 'Video render cancelled. Nothing was saved.';
 		default:
 			return '';
 	}
