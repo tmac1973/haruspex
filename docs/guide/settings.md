@@ -9,7 +9,7 @@ Settings has seventeen sections. Each lists its main options, defaults and the p
 
 ## Open Settings
 
-Click the gear at the right of the header; click it again or **← Back** to close.
+Click the gear in the header; click it again or **← Back** to close.
 
 ## General
 
@@ -158,12 +158,12 @@ Where songs are made, if anywhere.
 
 See the `music` page.
 
-## Video
+## Video editing
 
 - **Let the assistant edit videos**: off. **ffmpeg**, **ffprobe**, **melt**: found or set.
 - **Format**: 1080p, 60 fps. **Encoder**: x264. **Intro**, **Outro**: none.
 
-See the `video` and `video-render` pages.
+See the `video-editing` and `video-render` pages.
 
 ## Guest chat
 

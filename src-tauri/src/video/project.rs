@@ -10,7 +10,7 @@ use super::probe;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-/// What the frontend passes from Settings → Video.
+/// What the frontend passes from Settings → Video editing.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase", default)]
@@ -21,7 +21,7 @@ pub struct VideoSettings {
     pub preset: String,
 }
 
-/// `true` for the one set in Settings → Video, or a path.
+/// `true` for the one set in Settings → Video editing, or a path.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 #[serde(untagged)]
@@ -446,7 +446,7 @@ fn end_clip_path<'a>(
     match choice {
         EndClip::Settings(false) => Ok(None),
         EndClip::Settings(true) if setting.trim().is_empty() => Err(format!(
-            "No {which} is set in Settings → Video; name the file."
+            "No {which} is set in Settings → Video editing; name the file."
         )),
         EndClip::Settings(true) => Ok(Some(setting)),
         EndClip::Path(p) => Ok(Some(p.as_str())),
@@ -880,7 +880,7 @@ mod tests {
     #[test]
     fn an_empty_intro_setting_is_an_error_naming_settings() {
         let err = end_clip_path(&EndClip::Settings(true), "", "intro").unwrap_err();
-        assert!(err.contains("Settings → Video"));
+        assert!(err.contains("Settings → Video editing"));
         assert_eq!(
             end_clip_path(&EndClip::Settings(false), "x", "intro").unwrap(),
             None

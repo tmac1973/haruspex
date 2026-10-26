@@ -25,7 +25,7 @@ const ORDER = [
 	'memory',
 	'images',
 	'music',
-	'video',
+	'video-editing',
 	'video-render',
 	'video-speech',
 	'youtube',

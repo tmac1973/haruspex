@@ -8,7 +8,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
 		...actual,
 		getSettings: () => ({
 			...actual.getSettings(),
-			videoEnabled: true,
+			videoEditingEnabled: true,
 			imageBackendKind: state.backend
 		})
 	};

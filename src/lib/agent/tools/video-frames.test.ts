@@ -5,7 +5,7 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
 
 vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
-	return { ...actual, getSettings: () => ({ ...actual.getSettings(), videoEnabled: true }) };
+	return { ...actual, getSettings: () => ({ ...actual.getSettings(), videoEditingEnabled: true }) };
 });
 
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';

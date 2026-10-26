@@ -6,7 +6,7 @@ vi.mock('#lib/stores/youtubeUploadApproval.svelte.ts', () => ({ askYoutubeUpload
 
 vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
-	return { ...actual, getSettings: () => ({ ...actual.getSettings(), videoEnabled: true }) };
+	return { ...actual, getSettings: () => ({ ...actual.getSettings(), videoEditingEnabled: true }) };
 });
 
 import { executeTool } from '#lib/agent/tools/index.ts';
@@ -136,7 +136,7 @@ describe('youtube_upload', () => {
 		).toContain('conversation');
 		state.invoke.mockImplementation(invokeRouter({ youtube_account: () => null }));
 		const out = await executeTool('youtube_upload', { title: 'T', description: 'D' }, chat());
-		expect(out.result).toContain('Sign in to YouTube in Settings → Video');
+		expect(out.result).toContain('Sign in to YouTube in Settings → Video editing');
 		expect(state.ask).not.toHaveBeenCalled();
 	});
 

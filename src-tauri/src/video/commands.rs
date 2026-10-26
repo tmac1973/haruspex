@@ -4,7 +4,7 @@ use super::binaries::{self, BinaryOverrides, Tool, VideoBinariesStatus};
 use super::paths;
 use super::probe::{self, EpisodeProbe};
 
-/// Find ffmpeg, ffprobe and melt, honouring the paths set in Settings → Video.
+/// Find ffmpeg, ffprobe and melt, honouring the paths set in Settings → Video editing.
 #[tauri::command]
 pub async fn video_binaries_status(overrides: BinaryOverrides) -> VideoBinariesStatus {
     binaries::resolve(&overrides).await
@@ -25,7 +25,7 @@ pub async fn video_probe_folder(
 }
 
 /// One clip: a path in the working folder, or the intro or outro set in
-/// Settings → Video.
+/// Settings → Video editing.
 #[tauri::command]
 pub async fn video_probe_file(
     working_dir: String,

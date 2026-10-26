@@ -210,17 +210,17 @@ registerTool({
 					intro: {
 						type: 'string',
 						description:
-							'"settings" for the intro in Settings → Video, or a file path. Omit for none.'
+							'"settings" for the intro in Settings → Video editing, or a file path. Omit for none.'
 					},
 					outro: {
 						type: 'string',
 						description:
-							'"settings" for the outro in Settings → Video, or a file path. Omit for none.'
+							'"settings" for the outro in Settings → Video editing, or a file path. Omit for none.'
 					},
 					preset: {
 						type: 'string',
 						enum: VIDEO_PRESETS.map((p) => p.id),
-						description: 'Format for a new project. Default from Settings → Video.'
+						description: 'Format for a new project. Default from Settings → Video editing.'
 					},
 					crossfade_secs: {
 						type: 'number',

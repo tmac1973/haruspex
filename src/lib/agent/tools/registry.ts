@@ -479,13 +479,13 @@ function generationRefusal(reg: ToolRegistration, ctx: ToolContext): string | nu
 			return 'Image generation is only available in a conversation with the user.';
 	}
 	if (reg.category === 'video') {
-		if (!s.videoEnabled)
-			return 'Video tools are off. The user can turn them on in Settings → Video.';
+		if (!s.videoEditingEnabled)
+			return 'Video tools are off. The user can turn them on in Settings → Video editing.';
 		if (!ctx.interactive) return 'Video tools are only available in a conversation with the user.';
 		if (ctx.shellMode) return 'Video tools work in Chat and the Code tab, not the Shell tab.';
 		if (!ctx.workingDir) return 'Video tools need a working folder. The user can pick one.';
 		if (!videoAvailable()) {
-			return 'Video tools need ffmpeg, ffprobe and melt. The user can check Settings → Video.';
+			return 'Video tools need ffmpeg, ffprobe and melt. The user can check Settings → Video editing.';
 		}
 	}
 	if (reg.category === 'music') {

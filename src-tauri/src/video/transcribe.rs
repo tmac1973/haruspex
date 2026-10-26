@@ -2,7 +2,7 @@
 //! chapters and captions.
 //!
 //! The video tools run their own whisper-server (port 8768, `VideoWhisper`)
-//! with the best model there is: large-v3-turbo once Settings → Video has
+//! with the best model there is: large-v3-turbo once Settings → Video editing has
 //! downloaded it, base.en until then. It starts on the first transcription and
 //! stops five minutes after the last, so it holds no memory between videos and
 //! voice input's instance is never touched.

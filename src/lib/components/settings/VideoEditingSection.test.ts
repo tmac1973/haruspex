@@ -9,7 +9,7 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 
 const settings = vi.hoisted(() => ({
-	videoEnabled: false,
+	videoEditingEnabled: false,
 	videoFfmpegPath: '',
 	videoFfprobePath: '',
 	videoMeltPath: '',
@@ -24,7 +24,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	updateSettings: vi.fn((patch: object) => Object.assign(settings, patch))
 }));
 
-import VideoSection from './VideoSection.svelte';
+import VideoEditingSection from './VideoEditingSection.svelte';
 import { updateSettings } from '#lib/stores/settings.ts';
 
 const found = (name: string, source: 'path' | 'kdenlive' | 'override' = 'path') => ({
@@ -37,7 +37,7 @@ let status: VideoBinariesStatus;
 
 beforeEach(() => {
 	Object.assign(settings, {
-		videoEnabled: false,
+		videoEditingEnabled: false,
 		videoFfmpegPath: '',
 		videoFfprobePath: '',
 		videoMeltPath: '',
@@ -69,30 +69,30 @@ beforeEach(() => {
 	vi.mocked(updateSettings).mockClear();
 });
 
-describe('VideoSection', () => {
+describe('VideoEditingSection', () => {
 	it('shows what it found and where', async () => {
-		render(VideoSection);
+		render(VideoEditingSection);
 		expect(await screen.findByText('melt 7.1 (Kdenlive)')).toBeTruthy();
 		expect(screen.getByText('ffmpeg 7.1 (PATH)')).toBeTruthy();
 	});
 
 	it('turns the video tools on with its switch', async () => {
-		render(VideoSection);
+		render(VideoEditingSection);
 		const box = screen.getByLabelText(/edit videos/) as HTMLInputElement;
 		expect(box.checked).toBe(false);
 		await fireEvent.click(box);
-		expect(updateSettings).toHaveBeenCalledWith({ videoEnabled: true });
+		expect(updateSettings).toHaveBeenCalledWith({ videoEditingEnabled: true });
 	});
 
 	it('says what to install when one is missing', async () => {
 		status = { ...status, melt: null, hints: ['Not found: melt.'] };
-		render(VideoSection);
+		render(VideoEditingSection);
 		expect(await screen.findByText('Not found')).toBeTruthy();
 		expect(screen.getByText('Install Kdenlive, or set the paths above.')).toBeTruthy();
 	});
 
 	it('saves an override path as a plain string and looks again', async () => {
-		render(VideoSection);
+		render(VideoEditingSection);
 		await screen.findByText('melt 7.1 (Kdenlive)');
 		const input = screen.getByLabelText('melt:') as HTMLInputElement;
 		await fireEvent.input(input, { target: { value: ' /opt/melt ' } });
@@ -105,7 +105,7 @@ describe('VideoSection', () => {
 	});
 
 	it('offers the encoders that passed their test and saves the choice', async () => {
-		render(VideoSection);
+		render(VideoEditingSection);
 		expect(await screen.findByText('VA-API (AMD, Intel)')).toBeTruthy();
 		const select = screen.getByLabelText('Encoder:') as HTMLSelectElement;
 		await fireEvent.change(select, { target: { value: 'h264_vaapi' } });
@@ -113,20 +113,20 @@ describe('VideoSection', () => {
 	});
 
 	it('downloads the transcription model', async () => {
-		render(VideoSection);
+		render(VideoEditingSection);
 		const button = await screen.findByText('Download large-v3-turbo (1.6 GB)');
 		await fireEvent.click(button);
 		expect(await screen.findByText('whisper large-v3-turbo')).toBeTruthy();
 	});
 
 	it('signs in to YouTube for uploads', async () => {
-		render(VideoSection);
+		render(VideoEditingSection);
 		await fireEvent.click(await screen.findByText('Sign in to YouTube'));
 		expect(await screen.findByText('Signed in as tim@example.com')).toBeTruthy();
 	});
 
 	it('saves the format', async () => {
-		render(VideoSection);
+		render(VideoEditingSection);
 		const select = screen.getByLabelText('Format:') as HTMLSelectElement;
 		await fireEvent.change(select, { target: { value: '1440p60' } });
 		expect(updateSettings).toHaveBeenCalledWith({ videoPreset: '1440p60' });

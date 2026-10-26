@@ -5,7 +5,7 @@ description: Transcribing video footage, cutting silences and retakes by what wa
 
 # Transcripts, chapters and captions
 
-The assistant can transcribe an episode's footage and use what was said to cut it, mark chapters and write captions. Setting up the video tools and making the project are on the `video` page.
+The assistant can transcribe an episode's footage and use what was said to cut it, mark chapters and write captions. Setting up the video tools and making the project are on the `video-editing` page.
 
 ## Transcribe the footage
 
@@ -15,7 +15,7 @@ Transcripts are kept in the episode's `.haruspex/transcripts/` folder, so asking
 
 ### The transcription model
 
-Settings → Video → **Transcription** shows the model. Until you download one, it is voice input's whisper base.en: fast, English only, and it misses words. **Download large-v3-turbo (1.6 GB)** gets a more accurate one that knows more languages; ask to transcribe again with the new model afterwards. **Delete** removes it.
+Settings → Video editing → **Transcription** shows the model. Until you download one, it is voice input's whisper base.en: fast, English only, and it misses words. **Download large-v3-turbo (1.6 GB)** gets a more accurate one that knows more languages; ask to transcribe again with the new model afterwards. **Delete** removes it.
 
 Transcription runs its own copy of whisper-server on port 8768, so voice input keeps working. It stops five minutes after the last transcription.
 
@@ -25,7 +25,7 @@ Transcription runs its own copy of whisper-server on port 8768, so voice input k
 - "Cut the retake at 4:10 in clip 2" cuts a stretch the assistant finds in the transcript. A clip cut in the middle becomes two pieces on the main track; each keeps the clip's effects.
 - "Where are the silences in the OBS recording?" lists them without cutting.
 
-The cuts go into the Kdenlive project like any other edit, and you can undo one there. Clips joined by a crossfade made in Kdenlive can't be cut this way; see the `video` page.
+The cuts go into the Kdenlive project like any other edit, and you can undo one there. Clips joined by a crossfade made in Kdenlive can't be cut this way; see the `video-editing` page.
 
 ## Write chapters
 

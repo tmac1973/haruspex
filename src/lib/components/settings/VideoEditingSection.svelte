@@ -28,7 +28,7 @@
 		ffprobe: getSettings().videoFfprobePath,
 		melt: getSettings().videoMeltPath
 	});
-	let enabled = $state(getSettings().videoEnabled);
+	let enabled = $state(getSettings().videoEditingEnabled);
 	let preset = $state<VideoPreset>(getSettings().videoPreset);
 	let intro = $state(getSettings().videoIntroPath);
 	let outro = $state(getSettings().videoOutroPath);
@@ -142,7 +142,7 @@
 	void check();
 
 	function toggle() {
-		updateSettings({ videoEnabled: enabled });
+		updateSettings({ videoEditingEnabled: enabled });
 	}
 
 	function savePath(tool: Tool) {

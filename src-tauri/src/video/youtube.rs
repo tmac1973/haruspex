@@ -311,7 +311,8 @@ pub async fn upload(
             }
             Step::Unauthorized => {
                 return Err(
-                    "YouTube refused the sign-in. Sign in again in Settings → Video.".into(),
+                    "YouTube refused the sign-in. Sign in again in Settings → Video editing."
+                        .into(),
                 )
             }
             Step::Retry(_) => unreachable!("retries are handled above"),

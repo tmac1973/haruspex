@@ -475,7 +475,7 @@ pub async fn start_upload(
     };
     let refresh = crate::secrets::get(youtube::REFRESH_KEY)
         .await?
-        .ok_or("Sign in to YouTube in Settings → Video first.")?;
+        .ok_or("Sign in to YouTube in Settings → Video editing first.")?;
     let auth = youtube::account_auth(refresh, req.proxy.clone());
     let http = crate::proxy::apply_proxy(
         reqwest::Client::builder().timeout(Duration::from_secs(10 * 60)),

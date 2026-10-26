@@ -99,7 +99,7 @@ the privacy policy must say so first.
 
 The video tools upload a render to the user's channel after they confirm it
 (`plan/video-editing/phase-08-youtube-upload.md`). It is a separate sign-in
-(Settings → Video → **Sign in to YouTube**) asking for `openid email` and
+(Settings → Video editing → **Sign in to YouTube**) asking for `openid email` and
 `https://www.googleapis.com/auth/youtube.upload` only, so it needs its own
 review round:
 
@@ -114,7 +114,7 @@ review round:
 
 4. Record a demo video as in section 4: the consent screen listing the upload
    permission, the upload dialog with Private selected, the progress card, the
-   video in YouTube Studio as Private, then **Sign out** in Settings → Video
+   video in YouTube Studio as Private, then **Sign out** in Settings → Video editing
    and myaccount.google.com/permissions no longer listing it.
 5. Submit as in section 5. Until it is approved, the YouTube sign-in shows
    the "unverified app" screen and the 100-user cap applies.
