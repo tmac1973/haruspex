@@ -2,9 +2,11 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { openFeedbackIssue, saveFullDiagnostics } from '#lib/feedback.ts';
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
+	import ModelFeedbackModal from '#lib/components/settings/ModelFeedbackModal.svelte';
 	import { errMessage } from '#lib/utils/error.ts';
 
 	let modelFeedback = $state(getSettings().agentFeedbackEnabled);
+	let viewing = $state(false);
 	let folderError = $state('');
 
 	function toggleModelFeedback() {
@@ -97,12 +99,20 @@
 		<span>Let the model report problems with Haruspex's tools</span>
 	</label>
 	<div class="actions folder">
+		<button
+			class="btn"
+			onclick={() => (viewing = true)}
+			title="Read the reports with the tool calls behind them, and share them as a GitHub issue."
+			>View reports…</button
+		>
 		<button class="btn" onclick={openReports}>Open reports folder</button>
 	</div>
 	{#if folderError}
 		<p class="status error">{folderError}</p>
 	{/if}
 </section>
+
+<ModelFeedbackModal open={viewing} onclose={() => (viewing = false)} />
 
 <style>
 	.folder {

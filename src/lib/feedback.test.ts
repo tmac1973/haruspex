@@ -67,7 +67,11 @@ function diagnostics(): Diagnostics {
 		llama_log: [],
 		whisper_log: [],
 		tts_log: [],
+		crash_log: ['crash line'],
+		image_engine_log: ['sd line'],
+		comfy_log: ['comfy line'],
 		debug_log: ['debug line'],
+		mcp_logs: [{ label: 'GitHub', lines: ['mcp line'] }],
 		search_stats: {
 			session: {
 				engines: [
@@ -140,6 +144,14 @@ describe('feedback reports', () => {
 		expect(bundle).toContain('app line');
 		expect(bundle).toContain('debug line');
 	});
+
+	it('saves every log the log viewer shows', () => {
+		const bundle = buildFullBundle(diagnostics());
+		expect(bundle).toContain('## llama-server crash log (1 lines)\n```\ncrash line');
+		expect(bundle).toContain('## Image engine (sd-server) (1 lines)\n```\nsd line');
+		expect(bundle).toContain('## ComfyUI calls (1 lines)\n```\ncomfy line');
+		expect(bundle).toContain('## MCP: GitHub (1 lines)\n```\nmcp line');
+	});
 });
 
 describe('gatherDiagnostics', () => {
@@ -161,5 +173,35 @@ describe('gatherDiagnostics', () => {
 		expect(sent[0].some((l) => l.includes('hunter2'))).toBe(true);
 		expect(d.debug_log.join('\n')).not.toContain('hunter2');
 		expect(d.debug_log.join('\n')).toContain('token=[redacted] sent');
+	});
+
+	it("collects each switched-on MCP server's log, redacted, under its name", async () => {
+		const s = getSettings();
+		updateSettings({
+			integrations: {
+				...s.integrations,
+				mcp: {
+					...s.integrations.mcp,
+					servers: [
+						{ id: 'on', label: 'Blender', enabled: true, setupComplete: true },
+						{ id: 'off', label: 'Godot', enabled: false, setupComplete: true },
+						{ id: 'broken', label: 'Broken', enabled: true, setupComplete: true }
+					]
+				}
+			} as never
+		});
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter({
+				get_diagnostics: { app_log: [], llama_log: [], whisper_log: [], tts_log: [] },
+				mcp_server_logs: (args) => {
+					if ((args as { id: string }).id === 'broken') throw new Error('gone');
+					return ['key=abc started'];
+				},
+				feedback_redact: (args) =>
+					(args as { lines: string[] }).lines.map((l) => l.replace('abc', '[redacted]'))
+			})
+		);
+		const d = await gatherDiagnostics();
+		expect(d.mcp_logs).toEqual([{ label: 'Blender', lines: ['key=[redacted] started'] }]);
 	});
 });
