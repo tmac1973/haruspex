@@ -70,6 +70,24 @@ fn registered_name(id: &str) -> String {
     }
 }
 
+/// `POST /api/v1/images/edits`: the form's fields as text parts, beside the
+/// `image[]` pictures, read from the image cache here when named by hash.
+#[tauri::command]
+pub async fn lemonade_upload(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, crate::db::Database>,
+    call: ComfyCall,
+    files: Vec<crate::comfy::UploadFile>,
+) -> Result<serde_json::Value, ComfyError> {
+    let parts = crate::comfy::resolve_uploads(
+        &db,
+        &crate::audio_cache::cache_dir(&app).map_err(|message| ComfyError::Invalid { message })?,
+        &crate::image_cache::cache_dir(&app).map_err(|message| ComfyError::Invalid { message })?,
+        files,
+    )?;
+    crate::comfy::upload_json(call, LEMONADE, parts, crate::comfy::FormShape::Fields).await
+}
+
 /// Lemonade's name for the checkpoint a role fills.
 fn role_name(role: ImageFileRole) -> &'static str {
     match role {
@@ -99,9 +117,9 @@ fn pull_body(entry: &ImageModelInfo) -> serde_json::Value {
     let checkpoints: serde_json::Map<String, serde_json::Value> = entry
         .files
         .iter()
-        // Lemonade isn't given the optional vision weights: its sd-cpp recipe
-        // maps no flag to them, and nothing edits through Lemonade yet.
-        .filter(|f| !f.optional)
+        // Every file, the optional vision weights included: Lemonade pulls a
+        // checkpoint of any role, and those it maps no flag to are passed by
+        // path in `sdcpp_args` (see `lemonade_sdcpp_args`).
         .filter_map(|f| {
             let cp = checkpoint_of(&f.url)?;
             Some((role_name(f.role).to_string(), cp.into()))
@@ -123,7 +141,8 @@ fn model_of(entry: &ImageModelInfo) -> LemonadeModel {
         license: entry.license.clone(),
         license_url: entry.license_url.clone(),
         commercial_use: entry.commercial_use,
-        size_bytes: entry.size_bytes,
+        // Everything the pull fetches, the optional vision weights too.
+        size_bytes: entry.files.iter().map(|f| f.size_bytes).sum(),
         name: registered_name(&entry.id),
         pull: pull_body(entry),
     }
@@ -187,18 +206,23 @@ fn arg(a: &str) -> String {
     }
 }
 
-fn sdcpp_args(entry: &ImageModelInfo, tokenizer: Option<&str>) -> String {
+/// The files sd-cpp has no checkpoint flag for, with where Lemonade put them:
+/// Ming's tokenizer, and Qwen's vision weights, which it edits with.
+const BY_PATH: [ImageFileRole; 2] = [ImageFileRole::Tokenizer, ImageFileRole::Vision];
+
+fn sdcpp_args(entry: &ImageModelInfo, cached: &[(ImageFileRole, String)]) -> String {
     let mut args = Vec::new();
-    if let Some(path) = tokenizer {
-        args.push("--tokenizer".to_string());
-        args.push(path.to_string());
+    for (role, path) in cached {
+        args.push(role.flag().to_string());
+        args.push(path.clone());
     }
     args.extend(engine_options(entry));
     args.iter().map(|a| arg(a)).collect::<Vec<_>>().join(" ")
 }
 
 /// The `sdcpp_args` to save on an entry once it is pulled. `storage` is the
-/// server's model storage directory, which a tokenizer path is under.
+/// server's model storage directory, which the tokenizer's and vision
+/// weights' paths are under.
 #[tauri::command]
 pub async fn lemonade_sdcpp_args(
     id: String,
@@ -209,24 +233,17 @@ pub async fn lemonade_sdcpp_args(
         .into_iter()
         .find(|m| m.id == id)
         .ok_or_else(|| format!("Unknown image model: {id}"))?;
-    let tokenizer = match entry
-        .files
-        .iter()
-        .find(|f| f.role == ImageFileRole::Tokenizer)
-    {
-        None => None,
-        Some(f) => {
-            let cp = checkpoint_of(&f.url)
-                .ok_or_else(|| format!("{} is not a Hugging Face file.", f.url))?;
-            let repo = cp.split_once(':').map(|(r, _)| r).unwrap_or_default();
-            let revision = main_revision(repo, proxy.as_ref()).await?;
-            Some(
-                cached_path(&storage, &cp, &revision)
-                    .ok_or_else(|| format!("Cannot place {cp} in Lemonade's cache."))?,
-            )
-        }
-    };
-    Ok(sdcpp_args(&entry, tokenizer.as_deref()))
+    let mut cached = Vec::new();
+    for f in entry.files.iter().filter(|f| BY_PATH.contains(&f.role)) {
+        let cp = checkpoint_of(&f.url)
+            .ok_or_else(|| format!("{} is not a Hugging Face file.", f.url))?;
+        let repo = cp.split_once(':').map(|(r, _)| r).unwrap_or_default();
+        let revision = main_revision(repo, proxy.as_ref()).await?;
+        let path = cached_path(&storage, &cp, &revision)
+            .ok_or_else(|| format!("Cannot place {cp} in Lemonade's cache."))?;
+        cached.push((f.role, path));
+    }
+    Ok(sdcpp_args(&entry, &cached))
 }
 
 #[cfg(test)]
@@ -278,12 +295,12 @@ mod tests {
     }
 
     #[test]
-    fn every_entry_maps_every_file_it_needs() {
+    fn every_entry_maps_every_file() {
         for m in lemonade_catalogue() {
             let cps = m.pull["checkpoints"].as_object().unwrap();
-            let needed = entry(&m.id).files.iter().filter(|f| !f.optional).count();
-            assert_eq!(cps.len(), needed, "{}", m.id);
-            assert!(!cps.contains_key("llm_vision"), "{}", m.id);
+            assert_eq!(cps.len(), entry(&m.id).files.len(), "{}", m.id);
+            // Qwen's vision weights go in too, for editing.
+            assert_eq!(cps.contains_key("llm_vision"), m.id == "qwen21", "{}", m.id);
             assert!(cps.contains_key("main"), "{}", m.id);
             assert!(m.name.starts_with("user."), "{}", m.id);
         }
@@ -307,16 +324,24 @@ mod tests {
     #[test]
     fn args_carry_the_tokenizer_and_the_engine_options() {
         let ming = entry("ming");
-        let args = sdcpp_args(&ming, Some("/cache/tok.json"));
+        let tok = [(ImageFileRole::Tokenizer, "/cache/tok.json".to_string())];
+        let args = sdcpp_args(&ming, &tok);
         assert!(args.starts_with("--tokenizer /cache/tok.json "), "{args}");
         assert!(args.ends_with(&engine_options(&ming).join(" ")), "{args}");
-        let qwen = sdcpp_args(&entry("qwen21"), None);
+        let vision = [(ImageFileRole::Vision, "/cache/mmproj.gguf".to_string())];
+        let qwen = sdcpp_args(&entry("qwen21"), &vision);
+        assert!(
+            qwen.starts_with("--llm_vision /cache/mmproj.gguf "),
+            "{qwen}"
+        );
         assert!(!qwen.contains("--tokenizer"), "{qwen}");
         assert!(qwen.contains("--sigmas"), "{qwen}");
+        let spaced = [(
+            ImageFileRole::Tokenizer,
+            "C:\\Lemonade Models\\tok.json".to_string(),
+        )];
         assert_eq!(
-            sdcpp_args(&ming, Some("C:\\Lemonade Models\\tok.json"))
-                .split(' ')
-                .nth(1),
+            sdcpp_args(&ming, &spaced).split(' ').nth(1),
             Some("\"C:\\Lemonade")
         );
     }

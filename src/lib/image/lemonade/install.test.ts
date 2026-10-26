@@ -18,7 +18,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 }));
 
 import systemInfo from './fixtures/system-info.json';
-import { getInstall, installModel, resumeInstall } from './install.svelte';
+import { getInstall, installModel, installUpscaler, resumeInstall } from './install.svelte';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import type { LemonadeModel } from '#lib/ipc/gen/LemonadeModel.ts';
 
@@ -141,5 +141,55 @@ describe('resumeInstall', () => {
 		tauri.invoke.mockImplementation(server([[]]));
 		await resumeInstall();
 		expect(posts()).toEqual([]);
+	});
+});
+
+describe('the engine and the upscaler', () => {
+	/** A fresh server: sd-cpp's Vulkan engine can be installed but isn't. */
+	const fresh = {
+		...systemInfo,
+		recipes: {
+			'sd-cpp': { default_backend: 'vulkan', backends: { vulkan: { state: 'installable' } } }
+		}
+	};
+	const freshServer = (pulled: unknown) =>
+		invokeRouter({
+			lemonade_catalogue: [ming],
+			lemonade_sdcpp_args: '--diffusion-fa',
+			lemonade_json: (args) => {
+				const call = args!.call as Call;
+				if (call.path === '/api/v1/pull') return pulled;
+				if (call.path === '/api/v1/downloads') return [];
+				if (call.path === '/api/v1/system-info') return fresh;
+				return { status: 'success' };
+			}
+		});
+
+	it('installs the sd-cpp engine before the model on a server that has none', async () => {
+		tauri.invoke.mockReset().mockImplementation(freshServer(job({ complete: true })));
+		await installModel(ming);
+		const paths = posts().map((p) => p.path);
+		expect(paths.indexOf('/api/v1/install')).toBeLessThan(paths.indexOf('/api/v1/pull'));
+		expect(posts().find((p) => p.path === '/api/v1/install')!.body).toEqual({
+			recipe: 'sd-cpp',
+			backend: 'vulkan',
+			stream: false
+		});
+	});
+
+	it('installs the upscaler by name, with nothing to set up after', async () => {
+		tauri.invoke
+			.mockReset()
+			.mockImplementation(
+				freshServer({ id: 'model:RealESRGAN-x4plus', status: 'completed', complete: true })
+			);
+		await installUpscaler();
+		const paths = posts().map((p) => p.path);
+		expect(posts().find((p) => p.path === '/api/v1/pull')!.body).toMatchObject({
+			model_name: 'RealESRGAN-x4plus'
+		});
+		expect(paths).toContain('/api/v1/install');
+		expect(paths.some((p) => p.includes('/options') || p === '/api/v1/load')).toBe(false);
+		expect(getInstall()).toBeNull();
 	});
 });

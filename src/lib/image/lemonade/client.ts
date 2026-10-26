@@ -9,6 +9,7 @@ import { errMessage } from '#lib/utils/error.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { ImageBackendError } from '#lib/image/types.ts';
 import type { ComfyError } from '#lib/ipc/gen/ComfyError.ts';
+import type { UploadFile } from '#lib/ipc/gen/UploadFile.ts';
 import { errorMessage } from '#lib/image/lemonade/adapter.ts';
 
 export interface LemonadeConfig {
@@ -72,6 +73,37 @@ export async function lemonadeJson(
 				timeout_ms: call.timeoutMs ?? DEFAULT_TIMEOUT_MS,
 				id
 			}
+		});
+	} catch (e) {
+		throw fromRust(e, call.path, signal);
+	} finally {
+		signal?.removeEventListener('abort', onAbort);
+	}
+}
+
+/** A multipart POST (`lemonade_upload`): each of `fields` a text part, each file its own. */
+export async function lemonadeUpload(
+	cfg: LemonadeConfig,
+	call: { path: string; fields: Record<string, string>; timeoutMs: number },
+	files: UploadFile[],
+	signal?: AbortSignal
+): Promise<unknown> {
+	if (signal?.aborted) throw new ImageBackendError('cancelled', 'Generation cancelled.');
+	const id = `lemonade-${++nextId}`;
+	const onAbort = () => void invoke('comfy_cancel', { id }).catch(() => {});
+	signal?.addEventListener('abort', onAbort, { once: true });
+	try {
+		return await invoke<unknown>('lemonade_upload', {
+			call: {
+				base_url: cfg.baseUrl,
+				api_key: cfg.apiKey,
+				method: 'POST',
+				path: call.path,
+				body: call.fields,
+				timeout_ms: call.timeoutMs,
+				id
+			},
+			files
 		});
 	} catch (e) {
 		throw fromRust(e, call.path, signal);

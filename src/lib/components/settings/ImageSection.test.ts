@@ -102,7 +102,7 @@ describe('ImageSection with Lemonade', () => {
 		);
 		expect(select.value).toBe('ming');
 		await screen.findByText(/Connected — Lemonade 2026\.43\.3/);
-		expect(screen.getByText(/Supports: transparency yes, seamless tiling no/)).toBeTruthy();
+		expect(await screen.findByText(/Supports: transparency yes, seamless tiling no/)).toBeTruthy();
 	});
 
 	it('lists the server’s models below, installing what is missing, with no Use buttons', async () => {
@@ -110,7 +110,9 @@ describe('ImageSection with Lemonade', () => {
 		const heading = await screen.findByRole('heading', { name: /Models on the server/ });
 		const section = heading.closest('section')!;
 		await waitFor(() => expect(within(section).getByText('installed')).toBeTruthy());
-		expect(within(section).getByRole('button', { name: 'Install' })).toBeTruthy();
+		// A model to install, and the upscaler.
+		expect(within(section).getAllByRole('button', { name: 'Install' })).toHaveLength(2);
+		expect(within(section).getByText(/Upscaler — Real-ESRGAN x4plus/)).toBeTruthy();
 		expect(within(section).getByRole('button', { name: 'Remove' })).toBeTruthy();
 		expect(within(section).queryByRole('button', { name: 'Use' })).toBeNull();
 	});

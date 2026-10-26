@@ -448,6 +448,7 @@ pub fn run() {
             comfy_models::comfy_can_install_directly,
             comfy_models::comfy_install_direct,
             lemonade::lemonade_json,
+            lemonade::lemonade_upload,
             lemonade::lemonade_catalogue,
             lemonade::lemonade_sdcpp_args,
             toolchest::toolchest_json,

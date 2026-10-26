@@ -95,7 +95,7 @@ describe('readServer', () => {
 		expect(s.version).toBe('2026.43.3');
 		expect(s.gpu).toBe('AMD Radeon AI PRO R9700 (gfx1201)');
 		expect(s.storage).toBe('/opt/var/lib/lemonade/.cache/huggingface/hub');
-		expect(s.sdcpp).toEqual({ usable: true, backend: 'rocm' });
+		expect(s.sdcpp).toEqual({ usable: true, backend: 'rocm', installed: true });
 		expect(s.loadedImage).toBe('Ming-Image-0.1-Design-GGUF');
 		expect(s.downloaded.has(bareName('user.Ming-Image-0.1-Design-GGUF'))).toBe(true);
 		expect(s.downloaded.has('Z-Image-Turbo')).toBe(false);
@@ -103,7 +103,35 @@ describe('readServer', () => {
 
 	it('says when sd-cpp cannot run there', () => {
 		const none = { recipes: { 'sd-cpp': { backends: { cuda: { state: 'unsupported' } } } } };
-		expect(readServer({}, none, {}).sdcpp).toEqual({ usable: false, backend: null });
+		expect(readServer({}, none, {}).sdcpp).toEqual({
+			usable: false,
+			backend: null,
+			installed: false
+		});
+	});
+
+	it('reads which installed models edit, whether the upscaler is there, and an engine still to install', () => {
+		const fresh = {
+			recipes: {
+				'sd-cpp': { default_backend: 'vulkan', backends: { vulkan: { state: 'installable' } } }
+			}
+		};
+		const list = {
+			data: [
+				{
+					id: 'user.Qwen-Image-2.1-Turbo-GGUF',
+					downloaded: true,
+					checkpoints: { main: 'a:b.gguf', llm_vision: 'a:mmproj.gguf' }
+				},
+				{ id: 'user.Ming-Image-0.1-Design-GGUF', downloaded: true, checkpoints: { main: 'm:x' } },
+				{ id: 'RealESRGAN-x4plus', downloaded: true, checkpoints: { main: 'amd/r:x.pth' } }
+			]
+		};
+		const s = readServer({}, fresh, list);
+		expect(s.sdcpp).toEqual({ usable: true, backend: 'vulkan', installed: false });
+		expect([...s.edits]).toEqual(['Qwen-Image-2.1-Turbo-GGUF']);
+		expect(s.upscaler).toBe(true);
+		expect(readServer({}, fresh, { data: [] }).upscaler).toBe(false);
 	});
 
 	it('survives a server that answers with something else', () => {

@@ -215,3 +215,90 @@ describe('lemonade backend', () => {
 		});
 	});
 });
+
+describe('lemonade edits and upscaling', () => {
+	/** The recorded model list, with Qwen installed with its vision weights and the upscaler. */
+	const withEditing = {
+		data: [
+			...(models as { data: unknown[] }).data,
+			{
+				id: 'user.Qwen-Image-2.1-Turbo-GGUF',
+				downloaded: true,
+				checkpoints: { main: 'q:main.gguf', llm_vision: 'q:mmproj.gguf' }
+			},
+			{ id: 'RealESRGAN-x4plus', downloaded: true, checkpoints: { main: 'amd/r:x.pth' } }
+		]
+	};
+	const use = (list: unknown) =>
+		tauri.invoke.mockReset().mockImplementation(
+			invokeRouter({
+				lemonade_catalogue: catalogue,
+				image_read_bytes: () => new Uint8Array([1, 2, 3]).buffer,
+				lemonade_upload: () => ({ data: [{ b64_json: 'BAUG' }] }),
+				lemonade_json: route({
+					'/api/v1/health': health,
+					'/api/v1/system-info': systemInfo,
+					'/api/v1/models?show_all=true': list,
+					'/api/v1/images/upscale': { data: [{ b64_json: 'BwgJ' }] }
+				})
+			})
+		);
+	const edit = {
+		prompt: 'make it night',
+		width: 1024,
+		height: 768,
+		seed: 3,
+		edit: { images: [{ name: 'car.png', hash: 'a'.repeat(64) }] }
+	};
+
+	it('says Qwen can edit only with its vision weights, and upscales once the upscaler is in', async () => {
+		settings.imageLemonadeModelId = 'qwen21';
+		use(withEditing);
+		expect(await lemonadeBackend.capabilities()).toMatchObject({
+			edit: true,
+			maxEditImages: 3,
+			upscale: true
+		});
+		use(models);
+		expect(await lemonadeBackend.capabilities()).toMatchObject({ edit: false, upscale: false });
+	});
+
+	it('edits through /api/v1/images/edits, the picture a file part from the cache', async () => {
+		settings.imageLemonadeModelId = 'qwen21';
+		use(withEditing);
+		const r = await lemonadeBackend.generate(edit);
+		expect(Array.from(r.images[0].bytes)).toEqual([4, 5, 6]);
+		const [, args] = tauri.invoke.mock.calls.find(([c]) => c === 'lemonade_upload')!;
+		expect(args.call.path).toBe('/api/v1/images/edits');
+		expect(args.call.body).toMatchObject({
+			model: 'user.Qwen-Image-2.1-Turbo-GGUF',
+			size: '1024x768',
+			n: '1'
+		});
+		expect(String(args.call.body.prompt)).toMatch(
+			/^<sd_cpp_extra_args>\{"seed":3,.*<\/sd_cpp_extra_args> make it night$/
+		);
+		expect(args.files).toEqual([
+			{ field: 'image[]', filename: 'car.png', hash: 'a'.repeat(64), cache: 'image', bytes: null }
+		]);
+	});
+
+	it('refuses an edit without the vision weights, pointing at Add editing', async () => {
+		settings.imageLemonadeModelId = 'qwen21';
+		use(models);
+		await expect(lemonadeBackend.generate(edit)).rejects.toMatchObject({
+			kind: 'unconfigured',
+			message: expect.stringContaining('Add editing')
+		});
+	});
+
+	it('upscales with Lemonade’s Real-ESRGAN, sending the cached picture', async () => {
+		use(withEditing);
+		const out = await lemonadeBackend.upscale!({ name: 'a.png', hash: 'a'.repeat(64) });
+		expect(Array.from(out)).toEqual([7, 8, 9]);
+		const call = tauri.invoke.mock.calls.find(
+			([c, a]) => c === 'lemonade_json' && a.call.path === '/api/v1/images/upscale'
+		)!;
+		expect(call[1].call.body).toEqual({ model: 'RealESRGAN-x4plus', image: 'AQID' });
+	});
+});
