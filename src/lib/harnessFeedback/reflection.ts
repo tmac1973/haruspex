@@ -14,8 +14,10 @@ import { FEEDBACK_TOOL, traceEntry, type TraceEntry } from '#lib/harnessFeedback
 
 /** Calls kept per run. Failed ones are kept over the rest when it fills. */
 const RUN_TRACE_CAP = 60;
-/** Calls attached to each reflection report: the failures, then the latest. */
+/** Calls attached to each reflection report. */
 const REPORT_TRACE_CAP = 10;
+/** Of those, the most that may be calls to tools other than the one reported. */
+const OTHER_TOOLS_CAP = 3;
 
 export interface RunTrace {
 	calls: TraceEntry[];
@@ -54,12 +56,27 @@ export function takeRunTrace(runId: number): RunTrace | null {
 	return trace;
 }
 
-/** What each reflection report carries: the failed calls, then the latest. */
-export function reportTrace(trace: RunTrace): TraceEntry[] {
-	const failed = trace.calls.filter((c) => c.error);
-	const rest = trace.calls.filter((c) => !c.error);
-	const room = Math.max(0, REPORT_TRACE_CAP - failed.length);
-	return [...failed.slice(-REPORT_TRACE_CAP), ...(room ? rest.slice(-room) : [])];
+/**
+ * What a reflection report about `tool` carries, in run order: its calls to
+ * that tool, failed ones first to keep, then a few failed calls to other tools
+ * for context. Without a match (a missing capability, say) it is the run's
+ * failures, then its latest calls.
+ */
+export function reportTrace(trace: RunTrace, tool?: string): TraceEntry[] {
+	const indexed = trace.calls.map((c, i) => ({ c, i }));
+	const own = indexed.filter(({ c }) => c.tool === tool);
+	const failedFirst = (xs: typeof indexed) => [
+		...xs.filter(({ c }) => c.error),
+		...xs.filter(({ c }) => !c.error)
+	];
+	const others = indexed.filter(({ c }) => c.tool !== tool);
+	const picked = own.length
+		? [
+				...failedFirst(own).slice(0, REPORT_TRACE_CAP - OTHER_TOOLS_CAP),
+				...others.filter(({ c }) => c.error).slice(-OTHER_TOOLS_CAP)
+			]
+		: failedFirst(indexed.reverse()).slice(0, REPORT_TRACE_CAP);
+	return picked.sort((a, b) => a.i - b.i).map(({ c }) => c);
 }
 
 export const REFLECTION_SYSTEM_PROMPT = `You are reviewing a finished run of a Haruspex job, to help Haruspex's developers improve its tools. You are given the job, how the run ended, and the tool calls it made with their results.

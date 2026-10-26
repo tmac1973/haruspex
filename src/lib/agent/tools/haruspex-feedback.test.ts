@@ -125,7 +125,12 @@ describe('a report', () => {
 				transcript: () => transcript
 			})
 		);
-		expect(written()).toMatchObject({ origin: 'reflection', source: 'job "x", run 3', trace });
+		expect(written()).toMatchObject({
+			origin: 'reflection',
+			mode: 'job-review',
+			source: 'job "x", run 3',
+			trace
+		});
 	});
 
 	it(`stops after ${MAX_REPORTS_PER_TURN} in a turn`, async () => {

@@ -31,6 +31,7 @@ function str(v: unknown): string {
 }
 
 function turnMode(ctx: ToolContext): string {
+	if (ctx.feedback?.origin === 'reflection') return 'job-review';
 	if (ctx.subtask) return 'subtask';
 	if (ctx.jobSubtasks) return 'job';
 	if (ctx.codeMode) return ctx.shellMode ? 'shell-code' : 'code';
@@ -67,7 +68,7 @@ function feedbackEntry(
 		mode: turnMode(ctx),
 		source: turnSource(ctx),
 		model: modelName(ctx.backend),
-		trace: ctx.feedback?.trace?.() ?? traceFromMessages(ctx.transcript?.() ?? [], 5, tool)
+		trace: ctx.feedback?.trace?.(tool) ?? traceFromMessages(ctx.transcript?.() ?? [], 5, tool)
 	};
 }
 

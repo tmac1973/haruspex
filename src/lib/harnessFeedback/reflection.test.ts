@@ -48,13 +48,22 @@ describe("a run's trace", () => {
 		expect(trace.byTool.get('fetch_url')).toEqual({ calls: 1, errors: 1 });
 	});
 
-	it('gives each report the failures first, then the latest calls', () => {
+	it('gives a report with no matching tool the failures, then the latest calls', () => {
 		for (let i = 0; i < 20; i++) noteRunToolCall(1, 'web_search', { q: i }, 'ok');
 		noteRunToolCall(1, 'fetch_url', { url: 'u' }, '{"error":"403"}');
 		const attached = reportTrace(takeRunTrace(1)!);
 		expect(attached).toHaveLength(10);
-		expect(attached[0].tool).toBe('fetch_url');
-		expect(attached.at(-1)!.args).toBe('{"q":19}');
+		expect(attached.at(-1)!.tool).toBe('fetch_url');
+		expect(attached[0].args).toBe('{"q":11}');
+	});
+
+	it("gives a report about a tool that tool's calls, and a few other failures", () => {
+		noteRunToolCall(1, 'run_python', {}, '{"error":"no runtime"}');
+		noteRunToolCall(1, 'research_url', { url: 'a' }, 'No relevant information found');
+		for (let i = 0; i < 5; i++) noteRunToolCall(1, 'web_search', { q: i }, 'ok');
+		noteRunToolCall(1, 'research_url', { url: 'b' }, 'found it');
+		const attached = reportTrace(takeRunTrace(1)!, 'research_url');
+		expect(attached.map((c) => c.tool)).toEqual(['run_python', 'research_url', 'research_url']);
 	});
 });
 

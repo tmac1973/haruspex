@@ -67,7 +67,7 @@ describe('jobs runner — model feedback on tools', () => {
 		expect(review.userMessage).toContain('Nightly (research)');
 		expect(review.userMessage).toContain('fetch_url (failed)');
 		expect(review.feedback?.origin).toBe('reflection');
-		expect(review.feedback?.trace?.()).toEqual([
+		expect(review.feedback?.trace?.('fetch_url')).toEqual([
 			expect.objectContaining({ tool: 'fetch_url', error: true })
 		]);
 	});

@@ -941,7 +941,7 @@ async function reflectOnRun(
 					feedback: {
 						source: runSource(job, runId),
 						origin: 'reflection',
-						trace: () => reportTrace(trace)
+						trace: (tool) => reportTrace(trace, tool)
 					}
 				})
 		);

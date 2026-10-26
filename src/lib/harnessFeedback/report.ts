@@ -36,8 +36,8 @@ export type FeedbackKind = (typeof FEEDBACK_KINDS)[number];
 export interface FeedbackTurn {
 	source: string;
 	origin?: FeedbackEntry['origin'];
-	/** The calls a report is about, when they are not the turn's own. */
-	trace?: () => TraceEntry[];
+	/** The calls a report about `tool` attaches, when they are not the turn's own. */
+	trace?: (tool: string) => TraceEntry[];
 }
 
 /** One tool call the model made, shortened for the report. */
