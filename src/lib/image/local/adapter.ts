@@ -58,11 +58,25 @@ export function familyOfId(id: string): LocalFamily | null {
  * prompt), neither tiles here (`--circular` is a UNet trick; the DiT remedy,
  * offset-and-inpaint, is ComfyUI-only for now), and neither takes our LoRAs.
  */
-export function declaredCapabilities(family: LocalFamily | null = null): ImageBackendCapabilities {
+export function declaredCapabilities(
+	family: LocalFamily | null = null,
+	canEdit = false
+): ImageBackendCapabilities {
 	const build = capabilitiesFrom(FIXTURE);
 	if (!family) return build;
-	return { transparency: true, seamlessTiling: true, loras: false, maxLoras: 0 };
+	return {
+		transparency: true,
+		seamlessTiling: true,
+		loras: false,
+		maxLoras: 0,
+		// Qwen with its vision weights (`--llm_vision`); Ming draws only.
+		edit: family === 'qwen21' && canEdit,
+		maxEditImages: family === 'qwen21' && canEdit ? MAX_EDIT_IMAGES : 0
+	};
 }
+
+/** Pictures one Qwen edit combines; sd.cpp's docs show it taking several. */
+export const MAX_EDIT_IMAGES = 3;
 
 /**
  * The same rule, as a function of a fixture.
@@ -90,6 +104,9 @@ export interface A1111Request {
 	mask?: string;
 	/** img2img only: how far from the start image to go, 0..1. */
 	denoising_strength?: number;
+	/** Reference pictures, base64: what an edit changes. sd-server takes them
+	 *  on txt2img too, as `ref_images`. */
+	extra_images?: string[];
 	prompt: string;
 	negative_prompt: string;
 	seed: number;
@@ -146,7 +163,8 @@ export const SEAM_REPAINT_STRENGTH = 0.75;
  * The request body for one generation.
  *
  * txt2img, unless `clearStart` carries a transparent canvas: then img2img
- * from it, which is how Ming-Image makes alpha here as in ComfyUI.
+ * from it, which is how Ming-Image makes alpha here as in ComfyUI. An edit is
+ * txt2img with the pictures to change as `extra_images`.
  */
 export function buildRequest(req: {
 	prompt: string;
@@ -159,6 +177,8 @@ export function buildRequest(req: {
 	clearStart?: string;
 	/** The seam pass: the rolled texture and the mask over its seams, base64. */
 	repaint?: { image: string; mask: string };
+	/** An edit's pictures, base64. */
+	references?: string[];
 }): { route: string; body: A1111Request } {
 	const sampler = req.sampler ?? DEFAULT_SAMPLER;
 	const body: A1111Request = {
@@ -175,6 +195,9 @@ export function buildRequest(req: {
 		batch_size: 1,
 		n_iter: 1
 	};
+	if (req.references?.length) {
+		return { route: ROUTES.txt2img, body: { ...body, extra_images: req.references } };
+	}
 	if (req.repaint) {
 		return {
 			route: ROUTES.img2img,

@@ -36,6 +36,11 @@ vram_mb: number, files: Array<ImageModelFile>,
  */
 size_bytes: number, 
 /**
- * True when every file is on disk.
+ * True when every file it needs to draw is on disk.
  */
-downloaded: boolean, };
+downloaded: boolean, 
+/**
+ * True when it can edit pictures with what is on disk: it lists vision
+ * weights and they are there.
+ */
+can_edit: boolean, };

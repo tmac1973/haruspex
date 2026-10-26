@@ -20,9 +20,11 @@ import type { ImageBackend, GenerateOptions } from '#lib/image/backend.ts';
 import {
 	ImageBackendError,
 	type ImageBackendCapabilities,
+	type ImageInput,
 	type ImageRequest,
 	type ImageResult
 } from '#lib/image/types.ts';
+import type { ImageModelInfo } from '#lib/ipc/gen/ImageModelInfo.ts';
 import { seamSeed, tileTexture, transparentStart } from '#lib/image/sdcpp.ts';
 import {
 	FAMILY_SAMPLER,
@@ -33,6 +35,7 @@ import {
 	familyOfId,
 	imagesFrom,
 	seedFrom,
+	toBase64,
 	type LocalFamily
 } from '#lib/image/local/adapter.ts';
 
@@ -50,6 +53,40 @@ async function engineStatus(): Promise<ImageEngineStatus> {
  * licence. The hand-typed single-file path the SD catalogue allowed has no
  * meaning for a model that needs four files.
  */
+/** The chosen model can edit with what is on disk (Qwen with its vision weights). */
+async function canEdit(id: string): Promise<boolean> {
+	const models = await invoke<ImageModelInfo[]>('image_models').catch(() => []);
+	return models.some((m) => m.id === id && m.can_edit);
+}
+
+/** An edit's picture as base64, read from the image cache when it is there. */
+async function base64Of(input: ImageInput): Promise<string> {
+	if ('bytes' in input) return toBase64(new Uint8Array(input.bytes));
+	try {
+		return toBase64(
+			new Uint8Array(await invoke<ArrayBuffer>('image_read_bytes', { hash: input.hash }))
+		);
+	} catch {
+		throw new ImageBackendError('rejected', 'That picture is no longer in the image cache.');
+	}
+}
+
+/** An edit's pictures as base64, or undefined for a drawing; throws when it can't edit. */
+async function editReferences(
+	req: ImageRequest,
+	family: LocalFamily
+): Promise<string[] | undefined> {
+	if (!req.edit) return undefined;
+	if (family !== 'qwen21' || !(await canEdit(modelId()))) {
+		throw new ImageBackendError(
+			'unconfigured',
+			'The bundled engine edits only with Qwen-Image 2.1 and its editing weights — ' +
+				'Settings → Image → Add editing.'
+		);
+	}
+	return Promise.all(req.edit.images.map(base64Of));
+}
+
 function modelId(): string {
 	return (getSettings().imageLocalModelId ?? '').trim();
 }
@@ -169,7 +206,8 @@ export const localBackend: ImageBackend = {
 	kind: 'local',
 
 	async capabilities(): Promise<ImageBackendCapabilities> {
-		return declaredCapabilities(familyOfId(modelId()));
+		const id = modelId();
+		return declaredCapabilities(familyOfId(id), await canEdit(id));
 	},
 
 	async probe() {
@@ -201,8 +239,12 @@ export const localBackend: ImageBackend = {
 
 		const sampler = req.sampler ?? { ...FAMILY_SAMPLER[family] };
 		const seamless = Boolean(req.seamless);
-		const { prompt, clearStart } = await transparentStart(family, req);
-		const { route, body } = buildRequest({ ...req, prompt, sampler, clearStart });
+		const references = await editReferences(req, family);
+		// An edit draws from its pictures, so no clear start or RGBA phrase.
+		const { prompt, clearStart } = references
+			? { prompt: req.prompt, clearStart: undefined }
+			: await transparentStart(family, req);
+		const { route, body } = buildRequest({ ...req, prompt, sampler, clearStart, references });
 		const started = Date.now();
 		const payload = await call(route, body, opts.signal);
 

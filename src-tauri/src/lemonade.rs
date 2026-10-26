@@ -77,6 +77,7 @@ fn role_name(role: ImageFileRole) -> &'static str {
         ImageFileRole::TextEncoder => "text_encoder",
         ImageFileRole::Vae => "vae",
         ImageFileRole::Tokenizer => "tokenizer",
+        ImageFileRole::Vision => "llm_vision",
     }
 }
 
@@ -98,6 +99,9 @@ fn pull_body(entry: &ImageModelInfo) -> serde_json::Value {
     let checkpoints: serde_json::Map<String, serde_json::Value> = entry
         .files
         .iter()
+        // Lemonade isn't given the optional vision weights: its sd-cpp recipe
+        // maps no flag to them, and nothing edits through Lemonade yet.
+        .filter(|f| !f.optional)
         .filter_map(|f| {
             let cp = checkpoint_of(&f.url)?;
             Some((role_name(f.role).to_string(), cp.into()))
@@ -274,10 +278,12 @@ mod tests {
     }
 
     #[test]
-    fn every_entry_maps_every_file() {
+    fn every_entry_maps_every_file_it_needs() {
         for m in lemonade_catalogue() {
             let cps = m.pull["checkpoints"].as_object().unwrap();
-            assert_eq!(cps.len(), entry(&m.id).files.len(), "{}", m.id);
+            let needed = entry(&m.id).files.iter().filter(|f| !f.optional).count();
+            assert_eq!(cps.len(), needed, "{}", m.id);
+            assert!(!cps.contains_key("llm_vision"), "{}", m.id);
             assert!(cps.contains_key("main"), "{}", m.id);
             assert!(m.name.starts_with("user."), "{}", m.id);
         }

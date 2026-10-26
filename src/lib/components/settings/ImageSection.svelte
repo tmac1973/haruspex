@@ -175,6 +175,24 @@
 		}
 	}
 
+	/** Size of the optional files not yet on disk (Qwen's vision weights). */
+	const editingBytes = (m: ImageModel) =>
+		m.files.filter((f) => f.optional).reduce((n, f) => n + f.size_bytes, 0);
+
+	/** The optional vision weights for a model already downloaded, so it can edit. */
+	async function addEditing(m: ImageModel) {
+		downloadError = '';
+		try {
+			await runDownload(keyOf(m), () =>
+				invoke('download_image_model', { id: m.id, proxy: getSettings().proxy })
+			);
+		} catch (e) {
+			downloadError = errMessage(e);
+		} finally {
+			await refreshModels();
+		}
+	}
+
 	async function selectModel(m: ImageModel) {
 		imageLocalModelId = m.id;
 		persist({ imageLocalModelId: m.id });
@@ -443,7 +461,7 @@
 				<p class="help" title={m.files.map((f) => `${f.role}: ${f.filename}`).join('\n')}>
 					{m.license}
 					<a href={m.license_url} target="_blank" rel="noreferrer">Full text</a>
-					· {formatGigabytes(m.size_bytes)} in {m.files.length} files
+					· {formatGigabytes(m.size_bytes)} in {m.files.filter((f) => !f.optional).length} files
 				</p>
 				{#if !m.commercial_use}
 					<p class="warn">Not licensed for commercial use.</p>
@@ -454,6 +472,15 @@
 							Use
 						</button>
 						<button onclick={() => deleteModel(m)}>Delete</button>
+						{#if !m.can_edit && editingBytes(m) > 0 && active?.key !== keyOf(m)}
+							<button
+								onclick={() => addEditing(m)}
+								disabled={active !== null}
+								title={`Downloads the vision weights it edits pictures with (${formatGigabytes(editingBytes(m))}).`}
+							>
+								Add editing
+							</button>
+						{/if}
 					{:else if active?.key !== keyOf(m)}
 						<button
 							onclick={() => downloadModel(m)}
