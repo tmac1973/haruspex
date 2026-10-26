@@ -10,6 +10,7 @@
 	import { refreshVideoBinaries, videoBinariesStatus, videoEncoders } from '#lib/video/binaries.ts';
 	import type { EncoderOption } from '#lib/ipc/gen/EncoderOption.ts';
 	import { VIDEO_PRESETS, type VideoPreset } from '#lib/video/types.ts';
+	import { YOUTUBE_UPLOAD } from '#lib/video/youtube.ts';
 	import type { VideoBinariesStatus } from '#lib/ipc/gen/VideoBinariesStatus.ts';
 	import type { FoundBinary } from '#lib/ipc/gen/FoundBinary.ts';
 
@@ -38,12 +39,14 @@
 	let googleAvailable = $state(false);
 	let youtube = $state<YoutubeAccount | null>(null);
 	let signingIn = $state(false);
-	void invoke<boolean>('google_sign_in_available')
-		.then((ok) => {
-			googleAvailable = ok;
-			if (ok) return invoke<YoutubeAccount | null>('youtube_account').then((a) => (youtube = a));
-		})
-		.catch(() => {});
+	if (YOUTUBE_UPLOAD) {
+		void invoke<boolean>('google_sign_in_available')
+			.then((ok) => {
+				googleAvailable = ok;
+				if (ok) return invoke<YoutubeAccount | null>('youtube_account').then((a) => (youtube = a));
+			})
+			.catch(() => {});
+	}
 
 	async function youtubeSignIn() {
 		error = '';

@@ -15,6 +15,7 @@ import { str, videoSettings } from '#lib/video/args.ts';
 import { askYoutubeUpload } from '#lib/stores/youtubeUploadApproval.svelte.ts';
 import { upsertVideoTask } from '#lib/video/tasks.svelte.ts';
 import { videoOwner } from '#lib/video/taskWatch.ts';
+import { YOUTUBE_UPLOAD } from '#lib/video/youtube.ts';
 import type { UploadPlan } from '#lib/ipc/gen/UploadPlan.ts';
 import type { VideoMeta } from '#lib/ipc/gen/VideoMeta.ts';
 import type { VideoTask } from '#lib/ipc/gen/VideoTask.ts';
@@ -127,46 +128,49 @@ async function upload(args: Record<string, unknown>, ctx: ToolContext) {
 	}
 }
 
-registerTool({
-	category: 'video',
-	schema: {
-		type: 'function',
-		function: {
-			name: 'youtube_upload',
-			description:
-				"Propose uploading an episode's render to YouTube. The user sees it all in a dialog, may edit it, picks who can see it and confirms; nothing is sent without that. The chapters file and thumbnail go with it when they exist.",
-			parameters: {
-				type: 'object',
-				properties: {
-					episode: {
-						type: 'string',
-						description: 'The episode folder. Empty when the working folder is the episode.'
+// Hidden until Google verifies the upload scope; see `video/youtube.ts`.
+if (YOUTUBE_UPLOAD) {
+	registerTool({
+		category: 'video',
+		schema: {
+			type: 'function',
+			function: {
+				name: 'youtube_upload',
+				description:
+					"Propose uploading an episode's render to YouTube. The user sees it all in a dialog, may edit it, picks who can see it and confirms; nothing is sent without that. The chapters file and thumbnail go with it when they exist.",
+				parameters: {
+					type: 'object',
+					properties: {
+						episode: {
+							type: 'string',
+							description: 'The episode folder. Empty when the working folder is the episode.'
+						},
+						project: { type: 'string', description: 'The .kdenlive file, if not the episode’s.' },
+						render: {
+							type: 'string',
+							description: 'The MP4 to upload. Default: the project’s newest render.'
+						},
+						title: { type: 'string', description: 'Up to 100 characters.' },
+						description: { type: 'string', description: 'Without the chapters; they are added.' },
+						tags: { type: 'array', items: { type: 'string' } },
+						category_id: {
+							type: 'string',
+							description: 'YouTube category id. Default 22 (People & Blogs); 20 is Gaming.'
+						},
+						thumbnail: {
+							type: 'string',
+							description: 'A JPEG. Default: <project>.thumbnail.jpg when there is one.'
+						},
+						chapters: {
+							type: 'boolean',
+							description: 'Add the chapters file to the description. Default true.'
+						}
 					},
-					project: { type: 'string', description: 'The .kdenlive file, if not the episode’s.' },
-					render: {
-						type: 'string',
-						description: 'The MP4 to upload. Default: the project’s newest render.'
-					},
-					title: { type: 'string', description: 'Up to 100 characters.' },
-					description: { type: 'string', description: 'Without the chapters; they are added.' },
-					tags: { type: 'array', items: { type: 'string' } },
-					category_id: {
-						type: 'string',
-						description: 'YouTube category id. Default 22 (People & Blogs); 20 is Gaming.'
-					},
-					thumbnail: {
-						type: 'string',
-						description: 'A JPEG. Default: <project>.thumbnail.jpg when there is one.'
-					},
-					chapters: {
-						type: 'boolean',
-						description: 'Add the chapters file to the description. Default true.'
-					}
-				},
-				required: ['title', 'description']
+					required: ['title', 'description']
+				}
 			}
-		}
-	},
-	displayLabel: () => 'Preparing a YouTube upload',
-	execute: upload
-});
+		},
+		displayLabel: () => 'Preparing a YouTube upload',
+		execute: upload
+	});
+}

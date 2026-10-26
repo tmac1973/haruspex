@@ -23,8 +23,6 @@ Ask "make a thumbnail from 3:12 in the cut", "use the frame at 40 seconds of the
 
 Haruspex doesn't put text on a thumbnail. An image model can draw a short title into the picture if the prompt asks for it.
 
-To upload the render, see the `youtube` page.
-
 ## What it doesn't do
 
 - It doesn't render anything but the project's main sequence, at the project's size and frame rate. Change those in Kdenlive (Project → Project Settings) or ask for another format before the first cut.

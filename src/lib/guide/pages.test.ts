@@ -32,7 +32,6 @@ const PAGES = [
 	'video-editing',
 	'video-render',
 	'video-speech',
-	'youtube',
 	'textures',
 	'integrations',
 	'search-and-network',
