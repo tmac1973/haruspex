@@ -16,6 +16,7 @@ import { isMcpToolEnabled } from '#lib/agent/tools/mcp-names.ts';
 // The predicate, not the tool module: memoryWrite.ts registers THROUGH this
 // file, so importing it here would be a cycle.
 import { memoryActive } from '#lib/stores/memory.svelte.ts';
+import { PYTHON_UNAVAILABLE, pythonRuntimeMissing } from '#lib/sandbox/availability.ts';
 import {
 	CODE_TAB_ONLY,
 	CODE_TAB_DESCRIPTIONS,
@@ -365,7 +366,7 @@ export function getToolSchemas(opts: {
 		musicGeneration: interactive && getSettings().musicBackendKind !== 'none',
 		videoTools: interactive && opts.hasWorkingDir && videoToolsOn(),
 		sendableEmail: interactive && hasSendableEmailAccount(),
-		sandboxEnabled: getSettings().sandboxEnabled,
+		sandboxEnabled: getSettings().sandboxEnabled && !pythonRuntimeMissing(),
 		memoryWritable: memoryActive()
 	};
 	const schemas: ToolDefinition[] = [];
@@ -585,6 +586,9 @@ export async function executeTool(
 		return toolResult(
 			toolError('Python sandbox is disabled. Enable it in Settings → Agent to run code.')
 		);
+	}
+	if (reg.category === 'sandbox' && pythonRuntimeMissing()) {
+		return toolResult(toolError(PYTHON_UNAVAILABLE));
 	}
 
 	// Same hard gate for memory writes, and for the same reason: schema

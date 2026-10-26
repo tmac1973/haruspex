@@ -9,7 +9,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	hasEnabledContactsAccount: () => false
 }));
 
-import { ensureUrlScheme, isToolErrorResult } from './_helpers';
+import { ensureUrlScheme, isToolErrorResult, toolInvokeError } from './_helpers';
 import { toolError } from './types';
 
 describe('isToolErrorResult', () => {
@@ -83,5 +83,22 @@ describe('unknown-tool nearest-match hint', () => {
 		} as never);
 		expect(out.result).toContain('Unknown tool: launch_rocket');
 		expect(out.result).not.toContain('Did you mean');
+	});
+});
+
+describe('toolInvokeError', () => {
+	const error = (e: unknown) => JSON.parse(toolInvokeError('fs_read_text', e)).error as string;
+
+	it('passes an ordinary failure through as it is', () => {
+		expect(error(new Error('disk full'))).toBe('fs_read_text failed: disk full');
+	});
+
+	it('says what to tell the user when a path is outside the working directory', () => {
+		const msg = error('path escapes working directory');
+		expect(msg).toMatch(
+			/^fs_read_text failed: path escapes working directory\. File tools only reach/
+		);
+		expect(msg).toContain('copy the file into the working directory');
+		expect(msg).toContain('the folder icon in the chat box');
 	});
 });

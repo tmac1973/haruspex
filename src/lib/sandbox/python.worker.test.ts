@@ -203,7 +203,8 @@ describe('python.worker boot', () => {
 			{
 				kind: 'load_error',
 				error:
-					'The Python runtime is missing from /pyodide/. In a dev checkout, run ./scripts/fetch-pyodide.sh.'
+					'The Python runtime is missing from /pyodide/. In a dev checkout, run ./scripts/fetch-pyodide.sh.',
+				runtimeMissing: true
 			}
 		]);
 	});

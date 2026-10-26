@@ -4,6 +4,7 @@ import { type ChatMessage } from '#lib/api.ts';
 import { detectPaywall } from '#lib/agent/paywall.ts';
 import { getSettings, DEFAULT_SEARXNG_URL, getSearchProxy } from '#lib/stores/settings.ts';
 import type { ImageSearchResult } from '#lib/ipc/gen/ImageSearchResult.ts';
+import type { FetchedPage } from '#lib/ipc/gen/FetchedPage.ts';
 import type { PageImage } from '#lib/ipc/gen/PageImage.ts';
 import type { SearchResult } from '#lib/ipc/gen/SearchResult.ts';
 import {
@@ -14,9 +15,17 @@ import {
 	ensureUrlScheme
 } from '#lib/agent/tools/_helpers.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
+import {
+	cutPage,
+	fetchCutNote,
+	fetchUrlBudget,
+	researchBudget,
+	researchNote
+} from '#lib/agent/tools/_webPage.ts';
 import { fetchResult, toolError, toolResult, type ToolExecOutput } from '#lib/agent/tools/types.ts';
 
 const RESEARCH_AGENT_MAX_TOKENS = 3072;
+const NOTHING_FOUND = 'No relevant information found on this page.';
 
 /**
  * Ready-to-paste markdown appended to an `image_search` result.
@@ -123,7 +132,7 @@ registerTool({
 		function: {
 			name: 'fetch_url',
 			description:
-				'Fetch and extract the raw text content from a web page URL. Use this when you need to see the full page text yourself — for example, structured data, code samples, or content where you cannot describe in advance what is relevant. For research questions where you only need the parts of a page that answer a specific question, prefer research_url instead — it is much cheaper on context.',
+				'Fetch a URL and return its text: the visible text of a web page, or the body of a JSON, XML, CSV or plain-text response as it is (so it works for APIs and feeds). Use this when you need to see the content yourself — structured data, code samples, or content where you cannot describe in advance what is relevant. Long pages are cut, and the result says where. For research questions where you only need the parts of a page that answer a specific question, prefer research_url instead — it is much cheaper on context.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -134,7 +143,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('url'),
-	async execute(args) {
+	async execute(args, ctx) {
 		const missing = missingArg('fetch_url', args, 'url');
 		if (missing) return missing;
 		const url = args.url as string;
@@ -144,7 +153,8 @@ registerTool({
 			if (paywall.paywalled) {
 				return toolResult(paywallErrorMessage(url, paywall.reason || 'page is paywalled'));
 			}
-			return fetchResult(page.text, page.hero_image ?? undefined);
+			const cut = cutPage(page, fetchUrlBudget(ctx.backend));
+			return fetchResult(cut.text + fetchCutNote(cut), page.hero_image ?? undefined);
 		} catch (e) {
 			// Plain text, not toolError(): the "Failed to fetch" prefix is how the
 			// loop and the chat store spot an unreadable page (FETCH_FAILURE_PREFIXES).
@@ -186,20 +196,18 @@ registerTool({
 		const url = args.url as string;
 		const focus = args.focus as string;
 
-		let pageContent: string;
-		let heroImage: string | undefined;
+		let page: FetchedPage;
 		try {
-			const page = await proxyFetch(url, 'research_url');
-			pageContent = page.text;
-			heroImage = page.hero_image ?? undefined;
+			page = await proxyFetch(url, 'research_url');
 		} catch (e) {
 			return toolResult(`Failed to fetch URL: ${errMessage(e)}`);
 		}
-		if (!pageContent || pageContent.startsWith('Failed to fetch')) {
-			return toolResult(pageContent || `Failed to fetch URL: ${url}`);
+		if (!page.text || page.text.startsWith('Failed to fetch')) {
+			return toolResult(page.text || `Failed to fetch URL: ${url}`);
 		}
+		const heroImage = page.hero_image ?? undefined;
 
-		const paywall = detectPaywall(url, pageContent);
+		const paywall = detectPaywall(url, page.text);
 		if (paywall.paywalled) {
 			return toolResult(paywallErrorMessage(url, paywall.reason || 'page is paywalled'));
 		}
@@ -211,13 +219,14 @@ registerTool({
 			'- Use bullet points organized by sub-topic when helpful.\n' +
 			'- Do not summarize parts of the page that are not relevant to the focus.\n' +
 			'- Do not invent or extrapolate — every claim must be supported by the page text.\n' +
-			'- If the page contains no information relevant to the focus, reply with exactly: "No relevant information found on this page."\n' +
+			`- If the page contains no information relevant to the focus, reply with exactly: "${NOTHING_FOUND}"\n` +
 			'- Do not add preamble, meta-commentary, or closing remarks. Output only the findings.';
 
+		const cut = cutPage(page, researchBudget(RESEARCH_AGENT_MAX_TOKENS, ctx.backend));
 		const userPrompt =
 			`Focus: ${focus}\n\n` +
 			`Page URL: ${url}\n\n` +
-			`Page content:\n${pageContent}\n\n` +
+			`Page content:\n${cut.text}\n\n` +
 			`Extract from the page above only the information relevant to the focus.`;
 
 		const messages: ChatMessage[] = [
@@ -236,7 +245,8 @@ registerTool({
 			if (!findings) {
 				return toolResult(`Sub-agent returned no findings for ${url}.`);
 			}
-			return fetchResult(`Source: ${url}\nFocus: ${focus}\n\n${findings}`, heroImage);
+			const note = researchNote(cut, findings.trim().startsWith(NOTHING_FOUND));
+			return fetchResult(`Source: ${url}\nFocus: ${focus}\n\n${findings}${note}`, heroImage);
 		} catch (e) {
 			if (isAbortError(e)) throw e;
 			return toolResult(toolInvokeError(`research_url sub-agent for ${url}`, e));

@@ -37,8 +37,8 @@ describe('interactive shell tool gating', () => {
 	it('offers the web tools in the Code tab', () => {
 		const n = names({ hasWorkingDir: true, codeMode: true, shellMode: false });
 		for (const t of ['web_search', 'research_url']) expect(n).toContain(t);
-		// fetch_url trims indentation and stops at 4 KB; run_command's curl gets a
-		// page's exact text.
+		// fetch_url tidies a page's whitespace and cuts it to fit the context;
+		// run_command's curl gets a page's exact text.
 		expect(n).not.toContain('fetch_url');
 	});
 

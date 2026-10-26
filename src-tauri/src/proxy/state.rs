@@ -175,6 +175,9 @@ impl ProxyState {
 
     pub(super) fn cache_fetch(&self, url: &str, content: &super::extract::FetchedPage) {
         let mut cache = self.fetch_cache.lock_or_recover();
+        // Pages run to hundreds of KB, so expired ones go rather than wait.
+        let now = Instant::now();
+        cache.retain(|_, entry| entry.expires_at > now);
         cache.insert(
             url.to_string(),
             CacheEntry {
@@ -215,6 +218,7 @@ mod tests {
             "https://example.com",
             &crate::proxy::extract::FetchedPage {
                 text: "cached content".to_string(),
+                full_length: 14,
                 hero_image: None,
             },
         );

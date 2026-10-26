@@ -142,6 +142,17 @@ export function ctxCwd(ctx: {
 	return ctx.shellMode ? (ctx.shellCwd ?? null) : (ctx.workingDir ?? null);
 }
 
+/** What Rust says when a path leaves the folder the file tools are confined to. */
+const OUTSIDE_FOLDER = 'path escapes working directory';
+
+/**
+ * The model's next step after `OUTSIDE_FOLDER`. On its own the error left a
+ * model to try relative paths and Python before telling the user anything
+ * (#687): it is a boundary, so say so, and say what the user can do about it.
+ */
+const OUTSIDE_FOLDER_HINT =
+	'File tools only reach the working directory and what is inside it, so another spelling of the path will not get there either. Tell the user: they can copy the file into the working directory, or choose a folder that contains it (in Chat, the folder icon in the chat box; in the Code tab, a session on that folder).';
+
 /**
  * Format a tool error as `<command> failed: <reason>`. Pulls `e.message`
  * when available so DOMException / Error instances surface a clean
@@ -149,7 +160,9 @@ export function ctxCwd(ctx: {
  * error envelope the model expects.
  */
 export function toolInvokeError(command: string, e: unknown): string {
-	return toolError(`${command} failed: ${errMessage(e)}`);
+	const reason = errMessage(e);
+	const hint = reason.includes(OUTSIDE_FOLDER) ? `. ${OUTSIDE_FOLDER_HINT}` : '';
+	return toolError(`${command} failed: ${reason}${hint}`);
 }
 
 /**

@@ -31,6 +31,10 @@ Free public engines are unreliable: they rate-limit and change their pages. If s
 
 The deep research button in the chat box makes the assistant search more sources. If deep research is on, the provider is Auto and you have no Brave key, searches use slow mode: they wait longer between engines so the engines don't block you. A search step in the chat says when this is happening. A Brave key or SearXNG skips slow mode.
 
+## How the assistant reads a page
+
+It reads a page's visible text, or a JSON, XML, CSV or plain-text response as it is, so it can use an API or a feed. A long page is cut to fit the model's context, more for a model with a bigger window, and the assistant is told how much it read. It doesn't run a page's JavaScript, so a page that builds itself in the browser can come back nearly empty. PDFs and other files are downloaded to the working directory and read there.
+
 ## What pages the assistant may open
 
 Pages, images and downloads the assistant fetches must be on the internet. An address on this computer or your local network is refused, and so is a name that leads there, such as `nas.local` or a Tailscale peer. Through a proxy, the proxy decides where a name leads.
