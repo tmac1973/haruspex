@@ -5,6 +5,7 @@ import {
 	clearAllConversations,
 	deleteConversation,
 	getConversations,
+	getRun,
 	renameConversation
 } from '#lib/stores/chat.svelte.ts';
 
@@ -16,6 +17,12 @@ vi.mock('#lib/stores/chat.svelte.ts', () => ({
 	deleteConversation: vi.fn(),
 	getActiveConversationId: vi.fn(() => 'c1'),
 	getConversations: vi.fn(),
+	getRun: vi.fn(() => ({
+		generating: false,
+		waitingForSlot: false,
+		queuedForStartup: false,
+		compacting: false
+	})),
 	renameConversation: vi.fn(),
 	setActiveConversation: vi.fn()
 }));
@@ -100,5 +107,34 @@ describe('ConversationSidebar rename affordance', () => {
 		await fireEvent.keyDown(input, { key: 'Enter' });
 		expect(renameConversation).toHaveBeenCalledTimes(1);
 		expect(renameConversation).toHaveBeenCalledWith('c2', 'Renamed chat');
+	});
+});
+
+describe('ConversationSidebar marks', () => {
+	type Run = ReturnType<typeof getRun>;
+
+	it('marks a working, a waiting and an unread conversation, and leaves an idle one bare', () => {
+		vi.mocked(getConversations).mockReturnValue([
+			{ id: 'c1', title: 'Working' },
+			{ id: 'c2', title: 'Waiting' },
+			{ id: 'c3', title: 'Unread', unread: true },
+			{ id: 'c4', title: 'Idle' }
+		] as unknown as ReturnType<typeof getConversations>);
+		vi.mocked(getRun).mockImplementation(
+			(id: string) =>
+				({
+					generating: id === 'c1' || id === 'c2',
+					waitingForSlot: id === 'c2',
+					queuedForStartup: false,
+					compacting: false
+				}) as Run
+		);
+
+		const { container } = render(ConversationSidebar);
+		const marks = [...container.querySelectorAll('[data-mark]')].map((m) =>
+			m.getAttribute('data-mark')
+		);
+		expect(marks).toEqual(['running', 'queued', 'unread']);
+		expect(screen.getByLabelText('Finished while you were elsewhere')).toBeTruthy();
 	});
 });

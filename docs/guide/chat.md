@@ -18,7 +18,7 @@ Search can fail or be rate limited. Which search engine is used, and proxies, ar
 
 ## Run several conversations at once
 
-While one conversation answers, send in another. Each has its own Stop and error message. With one stream (Settings → Inference → Parallel streams) the second waits for the first; with more, or a server that runs several, they answer at once.
+While one conversation answers, send in another, or send more in the same one to steer it. See the `chat-conversations` page.
 
 ## Let the assistant read and write files
 

@@ -91,6 +91,7 @@ export const IPC = {
 	conversation_memory_cursor: 'conversation_memory_cursor',
 	conversation_set_memory_enabled: 'conversation_set_memory_enabled',
 	conversation_set_memory_extracted_to: 'conversation_set_memory_extracted_to',
+	conversation_set_unread: 'conversation_set_unread',
 	dav_discover_collections: 'dav_discover_collections',
 	dav_get_contact: 'dav_get_contact',
 	dav_list_events: 'dav_list_events',

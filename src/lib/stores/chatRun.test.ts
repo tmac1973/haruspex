@@ -44,6 +44,23 @@ describe('ChatRun', () => {
 		expect(run.errorMessage).toBe('Cancelled before the model started.');
 	});
 
+	it('queues steering and hands the loop all of it at once', () => {
+		const run = new ChatRun();
+		run.steer({ text: 'one' });
+		run.steer({ text: 'two', images: ['data:a'] });
+
+		expect(run.takeSteering()).toEqual([{ text: 'one' }, { text: 'two', images: ['data:a'] }]);
+		expect(run.steering).toEqual([]);
+	});
+
+	it('hands undelivered steering back for the input box, once', () => {
+		const run = new ChatRun();
+		run.handBack([{ text: 'one' }, { text: '', images: ['data:a'] }]);
+
+		expect(run.takeReturned()).toEqual({ text: ['one'], images: ['data:a'] });
+		expect(run.takeReturned()).toEqual({ text: [], images: [] });
+	});
+
 	it('cancelling a running turn aborts it', () => {
 		const run = new ChatRun();
 		const signal = run.begin(1);

@@ -15,6 +15,7 @@ const ORDER = [
 	'getting-started',
 	'models',
 	'chat',
+	'chat-conversations',
 	'shell',
 	'code',
 	'code-sessions',

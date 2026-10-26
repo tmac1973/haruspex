@@ -16,8 +16,10 @@
 		deleteConversation,
 		getActiveConversationId,
 		getConversations,
+		getRun,
 		renameConversation,
-		setActiveConversation
+		setActiveConversation,
+		type Conversation
 	} from '#lib/stores/chat.svelte.ts';
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 
@@ -55,6 +57,16 @@
 
 	const conversations = $derived(getConversations());
 	const activeId = $derived(getActiveConversationId());
+
+	/** What a row's dot shows: a turn working, one waiting, or an answer not yet seen. */
+	function markOf(conv: Conversation): { kind: string; title: string } | null {
+		const run = getRun(conv.id);
+		if (run.queuedForStartup) return { kind: 'queued', title: 'Waiting for the model to start' };
+		if (run.waitingForSlot) return { kind: 'queued', title: 'Waiting for another turn to finish' };
+		if (run.generating || run.compacting) return { kind: 'running', title: 'Working' };
+		if (conv.unread) return { kind: 'unread', title: 'Finished while you were elsewhere' };
+		return null;
+	}
 
 	function startRename(id: string, currentTitle: string) {
 		renamingId = id;
@@ -115,7 +127,18 @@
 							onclick={(e) => e.stopPropagation()}
 						/>
 					{:else}
-						<span class="conv-title" title={conv.title}>{conv.title}</span>
+						{@const mark = markOf(conv)}
+						{#if mark}
+							<span
+								class="mark {mark.kind}"
+								data-mark={mark.kind}
+								title={mark.title}
+								aria-label={mark.title}
+							></span>
+						{/if}
+						<span class="conv-title" class:unread={mark?.kind === 'unread'} title={conv.title}
+							>{conv.title}</span
+						>
 						<button
 							class="rename-btn"
 							onclick={(e) => {
@@ -239,6 +262,46 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.conv-title.unread {
+		font-weight: 600;
+	}
+
+	/* Same dots as the Code tab strip: working, waiting, and unread. */
+	.mark {
+		width: 7px;
+		height: 7px;
+		margin-right: 6px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	.mark.running {
+		background: var(--accent);
+		animation: mark-pulse 1.2s ease-in-out infinite;
+	}
+
+	/* Hollow: waiting its turn rather than working. */
+	.mark.queued {
+		border: 1.5px solid var(--warning);
+		box-sizing: border-box;
+	}
+
+	.mark.unread {
+		background: var(--accent);
+	}
+
+	@keyframes mark-pulse {
+		50% {
+			opacity: 0.35;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.mark.running {
+			animation: none;
+		}
 	}
 	/* The rename pencil and delete × share the opacity-on-hover treatment:
 	   invisible until the row is hovered — or contains keyboard focus, so

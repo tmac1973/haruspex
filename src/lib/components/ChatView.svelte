@@ -38,8 +38,11 @@
 		isActiveConversationRemembered,
 		isActiveConversationRemote,
 		setConversationMemoryEnabled,
-		addLocalNote
+		addLocalNote,
+		getActiveRun,
+		dropSteering
 	} from '#lib/stores/chat.svelte.ts';
+	import type { SteeringMessage } from '#lib/agent/loop.ts';
 	import SlashMenu from '#lib/components/SlashMenu.svelte';
 	import { runSlash, type SlashHost } from '#lib/slash/slash.ts';
 	import { InputHistory, recallInto, sentHistory } from '#lib/inputHistory.ts';
@@ -81,10 +84,11 @@
 	};
 
 	/** Single send path for the button, Enter, and voice — folds in any
-	 *  attached images and clears the composer. */
+	 *  attached images and clears the composer. While this conversation's
+	 *  turn runs, the store queues the message as steering for its next step. */
 	async function doSend(text: string) {
 		const images = pendingImages.urls;
-		if ((!text.trim() && images.length === 0) || isGenerating || isCompacting) return;
+		if (!text.trim() && images.length === 0) return;
 		let slash;
 		try {
 			slash = await runSlash(text, slashHost);
@@ -145,6 +149,20 @@
 	const sourceUrls = $derived(getSourceUrls());
 	const lastTurnFailed = $derived(getLastTurnFailed());
 	const queuedForStartup = $derived(getQueuedForStartup());
+	const run = $derived(getActiveRun());
+	/** Messages sent while the turn runs, waiting for its next step. */
+	const steering = $derived<SteeringMessage[]>(run.steering);
+
+	// Steering the turn ended without delivering comes back into the box,
+	// ahead of anything typed since.
+	$effect(() => {
+		if (run.returnedText.length === 0 && run.returnedImages.length === 0) return;
+		untrack(() => {
+			const back = run.takeReturned();
+			inputText = [...back.text, inputText].filter((t) => t.trim()).join('\n\n');
+			if (back.images.length) pendingImages.prepend(back.images);
+		});
+	});
 	const serverState = $derived(getServerState());
 
 	// Chat is usable whenever a backend is ready to take requests. That
@@ -638,6 +656,29 @@
 					{queuedForStartup ? 'Cancel queued message' : 'Stop generating'}
 				</button>
 			{/if}
+			{#if steering.length}
+				<div class="steering">
+					{#each steering as steer, k (k)}
+						<div class="steer" title="Given to the model at its next step.">
+							<span class="tag">Queued</span>
+							<span class="steer-text">
+								{#if steer.text}{steer.text}{/if}
+								{#if steer.images?.length}
+									<span class="thumbs">
+										{#each steer.images as url, i (i)}<img src={url} alt="attachment" />{/each}
+									</span>
+								{/if}
+							</span>
+							<button
+								class="drop"
+								onclick={() => dropSteering(k)}
+								title="Don't send this"
+								aria-label="Remove queued message">×</button
+							>
+						</div>
+					{/each}
+				</div>
+			{/if}
 			{#if pendingImages.length}
 				<div class="attachments">
 					{#each pendingImages.items as img (img.id)}
@@ -763,15 +804,15 @@
 						onTranscription={async (text) => {
 							await doSend(text);
 						}}
-						disabled={isGenerating || isCompacting}
 					/>
 				</div>
 				<button
 					class="send-btn"
 					onclick={handleSend}
-					disabled={(!inputText.trim() && pendingImages.length === 0) ||
-						isGenerating ||
-						isCompacting}
+					disabled={!inputText.trim() && pendingImages.length === 0}
+					title={isGenerating || isCompacting
+						? 'Sends to the running turn, which reads it at its next step'
+						: undefined}
 				>
 					Send
 				</button>
@@ -1093,6 +1134,68 @@
 		color: white;
 		font-size: 14px;
 		cursor: pointer;
+	}
+
+	.steering {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 4px;
+		margin-bottom: 6px;
+	}
+
+	.steer {
+		display: flex;
+		align-items: flex-start;
+		gap: 8px;
+		max-width: 80%;
+		padding: 6px 10px;
+		border-radius: 10px;
+		border: 1px dashed var(--border-strong);
+		background: var(--user-bubble);
+		font-size: 0.85rem;
+		opacity: 0.85;
+	}
+
+	.steer-text {
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+	}
+
+	.steer .thumbs {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+	}
+
+	.steer .thumbs img {
+		max-height: 40px;
+		border-radius: 4px;
+	}
+
+	.steer .tag {
+		flex-shrink: 0;
+		font-size: 0.65rem;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--text-secondary);
+		padding-top: 2px;
+	}
+
+	.steer .drop {
+		appearance: none;
+		background: none;
+		border: 0;
+		color: var(--text-secondary);
+		cursor: pointer;
+		font-size: 0.95rem;
+		line-height: 1;
+		padding: 0 2px;
+	}
+
+	.steer .drop:hover {
+		color: var(--text-primary);
 	}
 
 	.stop-btn {

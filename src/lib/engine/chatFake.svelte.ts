@@ -35,7 +35,8 @@ export function conv(id: string, messages: ChatMessage[] = []): Conversation {
 		messageStops: {},
 		sourceUrls: [],
 		isRestoringSession: false,
-		sessionRestoreSkipped: false
+		sessionRestoreSkipped: false,
+		unread: false
 	};
 }
 

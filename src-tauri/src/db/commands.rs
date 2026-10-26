@@ -96,6 +96,16 @@ pub async fn db_rename_conversation(
 }
 
 #[tauri::command]
+pub async fn conversation_set_unread(
+    state: tauri::State<'_, Database>,
+    id: String,
+    unread: bool,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.set_conversation_unread(&id, unread)).await
+}
+
+#[tauri::command]
 pub async fn db_delete_conversation(
     state: tauri::State<'_, Database>,
     id: String,

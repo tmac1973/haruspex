@@ -18,6 +18,7 @@ const PAGES = [
 	'getting-started',
 	'models',
 	'chat',
+	'chat-conversations',
 	'shell',
 	'code',
 	'code-sessions',

@@ -102,6 +102,7 @@ import {
 	dbReplaceMessages,
 	dbGetConversationMemoryEnabled,
 	dbSetConversationMemoryEnabled,
+	dbSetUnread,
 	type DbConversationSummary
 } from '#lib/stores/db.ts';
 import { setSandboxRunControls } from '#lib/sandbox/runControls.ts';
@@ -180,6 +181,11 @@ export interface Conversation {
 	 * by sniffing the id.
 	 */
 	isRemote?: boolean;
+	/**
+	 * A turn finished here while another conversation was open, and the user
+	 * hasn't looked yet. Persisted, so it survives a restart.
+	 */
+	unread: boolean;
 }
 
 export interface MessageStats {
@@ -281,6 +287,18 @@ export function getRun(id: string): ChatRun {
 	return runs.get(id) ?? IDLE;
 }
 
+/** The open conversation's turn state, or an idle one. */
+export function getActiveRun(): ChatRun {
+	return activeRun();
+}
+
+/** Take a queued steering message back before the model sees it. */
+export function dropSteering(index: number): void {
+	const run = activeRun();
+	if (run === IDLE) return;
+	run.steering = run.steering.filter((_, k) => k !== index);
+}
+
 function generateId(): string {
 	return crypto.randomUUID();
 }
@@ -307,7 +325,8 @@ export async function initChatStore(): Promise<void> {
 		messageStops: {},
 		sourceUrls: [],
 		isRestoringSession: false,
-		sessionRestoreSkipped: false
+		sessionRestoreSkipped: false,
+		unread: s.unread
 	}));
 
 	if (conversations.length > 0) {
@@ -317,28 +336,35 @@ export async function initChatStore(): Promise<void> {
 	setChatVideoTaskHandler(onVideoTaskEnded);
 }
 
+/** The toast for a task that finished in a conversation that isn't open. */
+export function noticeToast(title: string): string {
+	return `A task finished in “${title}”.`;
+}
+
 /**
- * A render started from a chat ended. Its conversation gets the notice as a
- * follow-up turn once it is open and idle; one that isn't open says where to
- * look.
+ * A task started from a chat ended. Its conversation gets the notice as a
+ * follow-up turn as soon as it is idle, open or not; one that isn't open
+ * also says so in a toast, with a way to go there.
  */
 function onVideoTaskEnded(owner: string): void {
 	const id = owner.slice('chat:'.length);
+	const conv = conversations.find((c) => c.id === id);
+	if (!conv) return;
 	if (id !== getActiveConversationId()) {
-		const title = conversations.find((c) => c.id === id)?.title;
-		if (title) showToast(`A video task finished in “${title}”.`);
-		return;
+		showToast(noticeToast(conv.title), {
+			actionLabel: 'Open',
+			onAction: () => void setActiveConversation(id)
+		});
 	}
-	flushVideoNotices();
+	void deliverNotices(id);
 }
 
-/** Run the active conversation's waiting video notices as a turn, when idle. */
-export function flushVideoNotices(): void {
-	const id = getActiveConversationId();
-	if (!id || getRun(id).busy) return;
+/** Run a conversation's waiting task notices as a turn there, if it is idle. */
+async function deliverNotices(id: string): Promise<void> {
+	if (getRun(id).busy) return;
 	const owner = `chat:${id}`;
 	if (!hasVideoNotices(owner)) return;
-	void sendMessage(takeVideoNotices(owner));
+	await sendMessageTo(id, takeVideoNotices(owner));
 }
 
 async function loadConversationMessages(id: string): Promise<void> {
@@ -444,7 +470,8 @@ export function noteExternalConversation(id: string, title: string): void {
 			messageStops: {},
 			sourceUrls: [],
 			isRestoringSession: false,
-			sessionRestoreSkipped: false
+			sessionRestoreSkipped: false,
+			unread: false
 		},
 		...conversations
 	];
@@ -731,7 +758,8 @@ export function createConversation(): string {
 		messageStops: {},
 		sourceUrls: [],
 		isRestoringSession: false,
-		sessionRestoreSkipped: false
+		sessionRestoreSkipped: false,
+		unread: false
 	});
 	setActiveConversationId(id);
 	resetContextUsage();
@@ -748,6 +776,21 @@ function restoreContextUsageFor(id: string | null): void {
 	}
 }
 
+/** The user has seen this conversation: clear its unread mark. */
+export function markConversationRead(id: string): void {
+	const conv = conversations.find((c) => c.id === id);
+	if (!conv?.unread) return;
+	conv.unread = false;
+	void dbSetUnread(id, false);
+}
+
+/** A turn finished where the user isn't looking: mark it until they do. */
+function markUnreadUnlessOpen(conversation: Conversation): void {
+	if (getActiveConversationId() === conversation.id || conversation.unread) return;
+	conversation.unread = true;
+	void dbSetUnread(conversation.id, true);
+}
+
 export async function setActiveConversation(id: string): Promise<void> {
 	if (conversations.some((c) => c.id === id)) {
 		// Leaving a conversation is the strongest signal it is finished, and
@@ -762,7 +805,8 @@ export async function setActiveConversation(id: string): Promise<void> {
 		// Fire-and-forget; the replay updates conv.isRestoringSession so
 		// the UI can show a small indicator while it runs.
 		void restoreSandboxSession(id);
-		flushVideoNotices();
+		markConversationRead(id);
+		void deliverNotices(id);
 	}
 }
 
@@ -962,16 +1006,14 @@ function computeStats(stats: TurnStats): MessageStats | null {
 }
 
 /**
- * Validate the send precondition and ensure an active conversation
- * exists. Returns the conversation when sending is allowed, `null` if
- * the caller should no-op (empty input, this conversation already busy,
- * backend down, or no conversation could be created). Other conversations'
- * turns don't block it. The backend-down rejection surfaces its own error
- * toast; the caller must leave the composer text intact (nothing was
- * consumed).
+ * The conversation a send goes to, when it may start a turn: `id`'s, or a
+ * new one when `id` is null. `null` when the send must not start one (the
+ * backend is down, or `id` names no conversation); the backend-down
+ * rejection shows its own error toast, and the caller must leave the
+ * composer text intact (nothing was consumed).
  */
-function ensureSendableConversation(content: string, hasImages: boolean): Conversation | null {
-	if ((!content.trim() && !hasImages) || activeRun().busy) return null;
+function sendableConversation(id: string | null): Conversation | null {
+	if (id && !conversations.some((c) => c.id === id)) return null;
 	// Don't append silently-doomed work: with the server stopped or errored
 	// the turn can only fail, so reject the send up front. 'starting' is
 	// accepted — the message queues and auto-sends once the server is ready.
@@ -980,8 +1022,21 @@ function ensureSendableConversation(content: string, hasImages: boolean): Conver
 		showToast("The model isn't running. Check Settings → Inference backend.", { kind: 'error' });
 		return null;
 	}
-	if (!getActiveConversationId()) createConversation();
-	return getActiveConversation() ?? null;
+	const target = id ?? createConversation();
+	return conversations.find((c) => c.id === target) ?? null;
+}
+
+/** A user message: plain text, or content parts when there are images. */
+function userMessageOf(text: string, images: string[]): ChatMessage {
+	return {
+		role: 'user',
+		content: images.length
+			? [
+					...(text ? [{ type: 'text' as const, text }] : []),
+					...images.map((url) => ({ type: 'image_url' as const, image_url: { url } }))
+				]
+			: text
+	};
 }
 
 /**
@@ -1002,17 +1057,7 @@ function finalizeUserTurn(
 		void dbRenameConversation(conversation.id, title);
 	}
 	const text = skill ? renderSlashMessage(skill, content.trim()) : content.trim();
-	// Plain string when there are no images (the common case); otherwise a
-	// multimodal content-parts array the API forwards as image_url parts.
-	const userMessage: ChatMessage = {
-		role: 'user',
-		content: images.length
-			? [
-					...(text ? [{ type: 'text' as const, text }] : []),
-					...images.map((url) => ({ type: 'image_url' as const, image_url: { url } }))
-				]
-			: text
-	};
+	const userMessage = userMessageOf(text, images);
 	conversation.messages.push(userMessage);
 	conversation.updatedAt = Date.now();
 	void dbSaveMessage(conversation.id, userMessage);
@@ -1188,6 +1233,8 @@ type AgentLoopCallbacks = Pick<
 	| 'onStreamChunk'
 	| 'onComplete'
 	| 'onError'
+	| 'takeSteering'
+	| 'onSteering'
 >;
 
 /**
@@ -1239,9 +1286,24 @@ function buildAgentLoopCallbacks(
 		onStreamChunk: (chunk) => {
 			run.streamingContent = appendStreamDelta(run.streamingContent, chunk.delta, thinkState);
 		},
-		onComplete: (meta) =>
-			finalizeStreamedTurn(conversation, run, turnStats, exhaustive, meta?.stopReason),
-		onError: (e) => handleTurnError(run, e)
+		onComplete: (meta) => {
+			// Steering the model never saw goes back to the input box. A
+			// cancelled loop calls this only to hand it back, then throws.
+			if (meta?.undeliveredSteering) run.handBack(meta.undeliveredSteering);
+			if (meta?.aborted) return;
+			finalizeStreamedTurn(conversation, run, turnStats, exhaustive, meta?.stopReason);
+		},
+		onError: (e) => handleTurnError(run, e),
+		takeSteering: () => run.takeSteering(),
+		onSteering: (steers) => {
+			// Delivered: part of the conversation from here on, ahead of the
+			// answer it steers.
+			for (const m of steers) {
+				const message = userMessageOf(m.text, m.images ?? []);
+				conversation.messages.push(message);
+				void dbSaveMessage(conversation.id, message);
+			}
+		}
 	};
 }
 
@@ -1319,6 +1381,7 @@ function finalizeStreamedTurn(
 			() => getActiveConversationId() === conversation.id
 		);
 	}
+	markUnreadUnlessOpen(conversation);
 	// Arms the idle countdown; extraction itself happens minutes later, in
 	// agent/memory/, and only when memory is on.
 	noteTurnFinished(conversation.id);
@@ -1390,23 +1453,49 @@ export async function retryLastTurn(): Promise<void> {
 	await runCurrentTurn(conversation);
 }
 
-/**
- * Append the user's message and dispatch the turn. Returns `true` when the
- * message was accepted into history (turn started, or queued for startup)
- * and `false` when the send was rejected without consuming anything — the
- * caller keeps its composer text. The rejected path resolves synchronously
- * (before any awaits), so callers can clear optimistically and restore.
- */
-export async function sendMessage(
+/** Send in the open conversation, or a new one when none is open. See `sendMessageTo`. */
+export function sendMessage(
 	content: string,
 	images: string[] = [],
 	/** A skill the user ran with `/name`, sent ahead of what they typed. */
 	skill?: SkillDoc
 ): Promise<boolean> {
-	const conversation = ensureSendableConversation(content, images.length > 0);
+	return sendMessageTo(getActiveConversationId(), content, images, skill);
+}
+
+/**
+ * Append the user's message to conversation `id` (a new one when null) and
+ * dispatch the turn, without opening it. While that conversation's turn
+ * runs, the message steers it instead: the model gets it at its next step
+ * (a skill does not go with it; it only starts a turn).
+ *
+ * Returns `true` when the message was accepted (turn started, queued for
+ * startup, or queued as steering) and `false` when the send was rejected
+ * without consuming anything — the caller keeps its composer text. The
+ * rejected path resolves synchronously (before any awaits), so callers can
+ * clear optimistically and restore.
+ */
+export async function sendMessageTo(
+	id: string | null,
+	content: string,
+	images: string[] = [],
+	skill?: SkillDoc
+): Promise<boolean> {
+	if (!content.trim() && images.length === 0) return false;
+	const running = id ? runs.get(id) : undefined;
+	if (running?.busy) {
+		running.steer({ text: content.trim(), images });
+		return true;
+	}
+	const conversation = sendableConversation(id);
 	if (!conversation) return false;
 	const run = runFor(conversation.id);
 
+	// A conversation that isn't open may not have its history loaded yet (a
+	// notice turn sent to it); the turn needs it.
+	if (conversation.id !== getActiveConversationId() && conversation.messages.length === 0) {
+		await loadConversationMessages(conversation.id);
+	}
 	run.contextNotice = null;
 	await compactIfNeeded(conversation, run, content);
 	finalizeUserTurn(conversation, content, images, skill);
@@ -1577,8 +1666,13 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 		// cancel and dispatch a new turn while this one is still unwinding.
 		run.end(signal);
 		conversation.updatedAt = Date.now();
-		// A render that ended during this turn reports now; after this turn's
-		// own bookkeeping, so it is a turn of its own.
-		setTimeout(flushVideoNotices, 0);
+		if (!run.busy) {
+			// Typed after the loop's last look at the queue: back to the input
+			// box, like steering it ended without delivering.
+			run.handBack(run.takeSteering());
+			// A task that ended during this turn reports now; after this turn's
+			// own bookkeeping, so it is a turn of its own.
+			setTimeout(() => void deliverNotices(conversation.id), 0);
+		}
 	}
 }
