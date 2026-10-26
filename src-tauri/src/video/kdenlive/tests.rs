@@ -448,7 +448,7 @@ fn paths_are_written_with_forward_slashes() {
 async fn kdenlive_accepts() {
     let dir = crate::test_util::temp_dir("kdenlive_accepts");
     let make = |name: &str, color: &str| {
-        let status = std::process::Command::new("ffmpeg")
+        let status = crate::test_util::host_command("ffmpeg")
             .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
             .arg(format!("color=c={color}:s=640x360:r=60:d=2"))
             .args([
@@ -484,7 +484,7 @@ async fn kdenlive_accepts() {
     std::fs::write(&project, &text).unwrap();
     melt_loads("melt", &project).await.unwrap();
     let out = dir.join("melt.mp4");
-    let status = std::process::Command::new("melt")
+    let status = crate::test_util::host_command("melt")
         .arg(&project)
         .arg("-consumer")
         .arg(format!("avformat:{}", out.display()))
@@ -493,13 +493,13 @@ async fn kdenlive_accepts() {
         .unwrap();
     assert!(status.success() && out.metadata().unwrap().len() > 0);
     println!("project: {}", project.display());
-    if std::process::Command::new("kdenlive")
+    if crate::test_util::host_command("kdenlive")
         .arg("--version")
         .output()
         .is_ok()
     {
         let kout = dir.join("kdenlive.mp4");
-        let status = std::process::Command::new("kdenlive")
+        let status = crate::test_util::host_command("kdenlive")
             .env("QT_QPA_PLATFORM", "offscreen")
             .arg(&project)
             .arg(&kout)
@@ -780,7 +780,7 @@ async fn kdenlive_reads_crossfades_and_gains() {
         ("b.mp4", "blue", "0.8"),
         ("c.mp4", "green", "0.1"),
     ] {
-        let ok = std::process::Command::new("ffmpeg")
+        let ok = crate::test_util::host_command("ffmpeg")
             .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
             .arg(format!("color=c={color}:s=640x360:r=60:d=3"))
             .args(["-f", "lavfi", "-i"])
@@ -809,7 +809,7 @@ async fn kdenlive_reads_crossfades_and_gains() {
     let render = |cmd: &mut std::process::Command| assert!(cmd.status().unwrap().success());
     let melt_out = dir.join("melt.mp4");
     render(
-        std::process::Command::new("melt")
+        crate::test_util::host_command("melt")
             .arg(&project)
             .arg("-consumer")
             .arg(format!("avformat:{}", melt_out.display()))
@@ -817,7 +817,7 @@ async fn kdenlive_reads_crossfades_and_gains() {
     );
     let kd_out = dir.join("kdenlive.mp4");
     render(
-        std::process::Command::new("kdenlive")
+        crate::test_util::host_command("kdenlive")
             .env("QT_QPA_PLATFORM", "offscreen")
             .arg(&project)
             .arg(&kd_out)

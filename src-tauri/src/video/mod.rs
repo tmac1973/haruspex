@@ -1,7 +1,7 @@
 //! Video editing: finding ffmpeg and melt, reading an episode's clips, and
 //! (in later modules) building and rendering Kdenlive projects.
 //!
-//! See `plan/video-editing/` for the design and `docs/guide/video.md` for what
+//! See `plan/video-editing/` for the design and `docs/guide/video-editing.md` for what
 //! the user sees.
 
 pub mod binaries;
@@ -22,10 +22,11 @@ pub mod thumbnail;
 pub mod transcribe;
 pub mod youtube;
 
-/// Hide the console window a spawned program would open on Windows.
-pub(crate) fn no_window(cmd: &mut tokio::process::Command) {
+/// Ready a spawned ffmpeg, ffprobe or melt: undo an AppImage's environment,
+/// whose bundled libraries stop the system ffmpeg starting, and hide the
+/// console window it would open on Windows.
+pub(crate) fn prepare_child(cmd: &mut tokio::process::Command) {
+    crate::env_util::sanitize_appimage_env(cmd.as_std_mut());
     #[cfg(windows)]
     cmd.creation_flags(crate::shell::platform::CREATE_NO_WINDOW);
-    #[cfg(not(windows))]
-    let _ = cmd;
 }

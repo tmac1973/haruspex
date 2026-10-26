@@ -195,7 +195,7 @@ async fn version_of(path: &Path) -> Option<String> {
     cmd.arg("-version")
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);
-    super::no_window(&mut cmd);
+    super::prepare_child(&mut cmd);
     let out = tokio::time::timeout(VERSION_TIMEOUT, cmd.output())
         .await
         .ok()?
@@ -270,6 +270,7 @@ async fn flatpak_kdenlive() -> bool {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .kill_on_drop(true);
+    super::prepare_child(&mut cmd);
     matches!(
         tokio::time::timeout(VERSION_TIMEOUT, cmd.status()).await,
         Ok(Ok(status)) if status.success()

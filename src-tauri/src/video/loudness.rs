@@ -127,7 +127,7 @@ async fn measure_one(ffmpeg: &str, s: &Stretch) -> Result<Measured, String> {
     ])
     .stdin(std::process::Stdio::null())
     .kill_on_drop(true);
-    super::no_window(&mut cmd);
+    super::prepare_child(&mut cmd);
     let out = tokio::time::timeout(Duration::from_secs(30 * 60), cmd.output())
         .await
         .map_err(|_| "measuring the loudness took too long".to_string())?
@@ -265,7 +265,7 @@ mod tests {
     async fn measure_real_tones() {
         let dir = crate::test_util::temp_dir("loudness_real");
         let f = dir.join("t.m4a");
-        let ok = std::process::Command::new("ffmpeg")
+        let ok = crate::test_util::host_command("ffmpeg")
             .args([
                 "-v",
                 "error",

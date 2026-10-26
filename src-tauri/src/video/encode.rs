@@ -126,7 +126,7 @@ async fn works(melt: &str, encoder: &str, dir: &Path) -> bool {
     .stdout(std::process::Stdio::null())
     .stderr(std::process::Stdio::null())
     .kill_on_drop(true);
-    super::no_window(&mut cmd);
+    super::prepare_child(&mut cmd);
     let ok = matches!(
         tokio::time::timeout(Duration::from_secs(20), cmd.status()).await,
         Ok(Ok(s)) if s.success()
