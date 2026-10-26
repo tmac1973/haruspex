@@ -1,6 +1,6 @@
 /**
- * Whether ffmpeg, ffprobe and melt are on this computer, which decides whether
- * the video tools are offered at all.
+ * Whether ffmpeg, ffprobe and melt are on this computer, which with the switch
+ * in Settings → Video decides whether the video tools are offered at all.
  *
  * The registry asks synchronously, once per turn, so the answer is cached here
  * and refreshed in the background: at startup, whenever Settings → Video
@@ -23,6 +23,11 @@ export function videoOverrides(): BinaryOverrides {
 /** All three were found the last time anyone looked. */
 export function videoAvailable(): boolean {
 	return !!status?.ffmpeg && !!status.ffprobe && !!status.melt;
+}
+
+/** The switch is on and all three were found. */
+export function videoToolsOn(): boolean {
+	return getSettings().videoEnabled && videoAvailable();
 }
 
 /** The last status, or null before the first look. */

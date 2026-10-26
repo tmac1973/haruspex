@@ -9,6 +9,7 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 
 const settings = vi.hoisted(() => ({
+	videoEnabled: false,
 	videoFfmpegPath: '',
 	videoFfprobePath: '',
 	videoMeltPath: '',
@@ -36,6 +37,7 @@ let status: VideoBinariesStatus;
 
 beforeEach(() => {
 	Object.assign(settings, {
+		videoEnabled: false,
 		videoFfmpegPath: '',
 		videoFfprobePath: '',
 		videoMeltPath: '',
@@ -72,7 +74,14 @@ describe('VideoSection', () => {
 		render(VideoSection);
 		expect(await screen.findByText('melt 7.1 (Kdenlive)')).toBeTruthy();
 		expect(screen.getByText('ffmpeg 7.1 (PATH)')).toBeTruthy();
-		expect(screen.getByText(/Video tools are on/)).toBeTruthy();
+	});
+
+	it('turns the video tools on with its switch', async () => {
+		render(VideoSection);
+		const box = screen.getByLabelText(/edit videos/) as HTMLInputElement;
+		expect(box.checked).toBe(false);
+		await fireEvent.click(box);
+		expect(updateSettings).toHaveBeenCalledWith({ videoEnabled: true });
 	});
 
 	it('says what to install when one is missing', async () => {

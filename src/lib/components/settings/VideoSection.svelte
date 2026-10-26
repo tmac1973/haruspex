@@ -28,6 +28,7 @@
 		ffprobe: getSettings().videoFfprobePath,
 		melt: getSettings().videoMeltPath
 	});
+	let enabled = $state(getSettings().videoEnabled);
 	let preset = $state<VideoPreset>(getSettings().videoPreset);
 	let intro = $state(getSettings().videoIntroPath);
 	let outro = $state(getSettings().videoOutroPath);
@@ -140,6 +141,10 @@
 	}
 	void check();
 
+	function toggle() {
+		updateSettings({ videoEnabled: enabled });
+	}
+
 	function savePath(tool: Tool) {
 		updateSettings({ [SETTING[tool]]: paths[tool].trim() });
 		void check();
@@ -181,6 +186,15 @@
 </script>
 
 <section class="settings-section">
+	<h2>Video tools</h2>
+	<label class="toggle-row">
+		<input type="checkbox" bind:checked={enabled} onchange={toggle} />
+		<span>Let the assistant edit videos</span>
+	</label>
+	<p class="help">In Chat with a folder picked, and in the Code tab.</p>
+</section>
+
+<section class="settings-section">
 	<h2>Programs</h2>
 	<div class="fields">
 		{#each TOOLS as tool (tool)}
@@ -207,8 +221,6 @@
 	</div>
 	{#if missing.length > 0}
 		<p class="help" title={LOOKED}>Install Kdenlive, or set the paths above.</p>
-	{:else if status}
-		<p class="help">Video tools are on in Chat and the Code tab when a folder is picked.</p>
 	{/if}
 	{#each status?.hints.filter((h) => !h.startsWith('Not found')) ?? [] as hint (hint)}
 		<p class="help bad">{hint}</p>

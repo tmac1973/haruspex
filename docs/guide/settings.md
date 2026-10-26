@@ -30,7 +30,7 @@ Where the model runs, which model is used and how big the context is.
 - **Context Size**: 32K (up to 256K).
 - **Let models use system RAM**: off.
 - **Parallel streams**: 1 (also 2 or 4). More let a job or Code subtasks run beside chat, each with its own memory.
-- **Extra llama-server arguments**: empty. They override Haruspex's own, from the next server restart.
+- **Extra llama-server arguments**: empty. They override Haruspex's own after a restart.
 - **Server**: status, port, Restart Server; **Run Setup Wizard**.
 
 See the `models` page.
@@ -160,7 +160,7 @@ See the `music` page.
 
 ## Video
 
-- **ffmpeg**, **ffprobe**, **melt**: found on PATH or in Kdenlive, or set a path.
+- **Let the assistant edit videos**: off. **ffmpeg**, **ffprobe**, **melt**: found or set.
 - **Format**: 1080p, 60 fps. **Encoder**: x264. **Intro**, **Outro**: none.
 
 See the `video` and `video-render` pages.

@@ -9,6 +9,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
 		...actual,
 		getSettings: () => ({
 			...actual.getSettings(),
+			videoEnabled: true,
 			videoIntroPath: '/elsewhere/intro.mp4',
 			videoOutroPath: '',
 			videoPreset: '1440p60',

@@ -25,7 +25,7 @@ import {
 	type DescriptionOverride
 } from '#lib/agent/tools/codeTabProfile.ts';
 import { shellPlatformSupported } from '#lib/shell/platformSupport.ts';
-import { videoAvailable } from '#lib/video/binaries.ts';
+import { videoAvailable, videoToolsOn } from '#lib/video/binaries.ts';
 
 const tools = new Map<string, ToolRegistration>();
 
@@ -352,7 +352,7 @@ export function getToolSchemas(opts: {
 		screenCapture: getSettings().screenCaptureEnabled,
 		imageGeneration: interactive && getSettings().imageBackendKind !== 'none',
 		musicGeneration: interactive && getSettings().musicBackendKind !== 'none',
-		videoTools: interactive && opts.hasWorkingDir && videoAvailable(),
+		videoTools: interactive && opts.hasWorkingDir && videoToolsOn(),
 		sendableEmail: interactive && hasSendableEmailAccount(),
 		sandboxEnabled: getSettings().sandboxEnabled,
 		memoryWritable: memoryActive()
@@ -465,7 +465,7 @@ function withDescription(schema: ToolDefinition, override: DescriptionOverride):
 /**
  * Image and music generation spend GPU minutes, so the same gate as the
  * schema: a backend, and someone there to see or hear the result. Video tools
- * likewise: the binaries, a folder, and someone there. make_asset
+ * likewise: the switch, the binaries, a folder, and someone there. make_asset
  * checks the image backend itself, since its textures are drawn by code
  * without one. Null when the call may go ahead.
  */
@@ -479,6 +479,8 @@ function generationRefusal(reg: ToolRegistration, ctx: ToolContext): string | nu
 			return 'Image generation is only available in a conversation with the user.';
 	}
 	if (reg.category === 'video') {
+		if (!s.videoEnabled)
+			return 'Video tools are off. The user can turn them on in Settings → Video.';
 		if (!ctx.interactive) return 'Video tools are only available in a conversation with the user.';
 		if (ctx.shellMode) return 'Video tools work in Chat and the Code tab, not the Shell tab.';
 		if (!ctx.workingDir) return 'Video tools need a working folder. The user can pick one.';

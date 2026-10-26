@@ -5,13 +5,15 @@ description: Setting up video editing with Kdenlive, picking a series or episode
 
 # Video editing
 
-The assistant can look at the clips for a video in Chat or the Code tab. It uses ffmpeg, ffprobe and melt on your computer, the programs Kdenlive runs on. Nothing is bundled or downloaded, and the tools are off until all three are found.
+The assistant can look at the clips for a video in Chat or the Code tab. It uses ffmpeg, ffprobe and melt on your computer, the programs Kdenlive runs on. Nothing is bundled or downloaded. The tools are off until you turn them on and all three are found.
 
 ## Set up video editing
 
 Install Kdenlive. On Linux, use your distribution's package: the Flatpak's melt can't be run from outside it. On macOS and Windows, Kdenlive ships ffmpeg, ffprobe and melt, and Haruspex finds them inside the install.
 
 Open Settings → Video. **Programs** shows each one with its version and where it was found: **PATH**, **Kdenlive** or **set here**. If one says **Not found**, type its path or click **Browse…**, then **Check again**.
+
+Then turn on **Let the assistant edit videos** under **Video tools**.
 
 ## Pick a folder
 
