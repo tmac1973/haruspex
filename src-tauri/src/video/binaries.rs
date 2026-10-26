@@ -307,14 +307,27 @@ mod tests {
     use super::*;
     use crate::test_util::temp_dir;
 
+    /// On Unix the script is put in place by `install`, a child process, so
+    /// this process never holds a write fd on it. Writing it here would race
+    /// the other tests' spawns: a child forked while the fd is open keeps a
+    /// copy until it execs, and running the script then fails with ETXTBSY.
     fn make_exe(dir: &Path, name: &str, script: &str) -> PathBuf {
         let path = dir.join(exe_name(name));
-        std::fs::write(&path, script).unwrap();
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let src = dir.join(format!(".{name}.src"));
+            std::fs::write(&src, script).unwrap();
+            let status = std::process::Command::new("install")
+                .args(["-m", "755"])
+                .arg(&src)
+                .arg(&path)
+                .status()
+                .unwrap();
+            assert!(status.success(), "install {}", path.display());
+            std::fs::remove_file(&src).unwrap();
         }
+        #[cfg(not(unix))]
+        std::fs::write(&path, script).unwrap();
         path
     }
 
