@@ -101,6 +101,21 @@ describe('parseMusicArgs', () => {
 		});
 	});
 
+	it('takes a seed and a time signature, and refuses bad ones', () => {
+		expect(
+			parseMusicArgs({ caption: 'x', seed: 4294967295, time_signature: '3/4' }, 30)
+		).toMatchObject({ seed: 4294967295, req: { timeSignature: '3' } });
+		expect(parseMusicArgs({ caption: 'x', time_signature: '6' }, 30)).toMatchObject({
+			seed: undefined,
+			req: { timeSignature: '6' }
+		});
+		expect(parseMusicArgs({ caption: 'x', seed: -1 }, 30)).toMatch(/seed must be a whole number/);
+		expect(parseMusicArgs({ caption: 'x', seed: 1.5 }, 30)).toMatch(/seed must be/);
+		expect(parseMusicArgs({ caption: 'x', time_signature: '5/4' }, 30)).toBe(
+			'time_signature must be 2/4, 3/4, 4/4 or 6/8.'
+		);
+	});
+
 	it('clamps the length and says so', () => {
 		const a = parseMusicArgs({ caption: 'x', duration_seconds: 300 }, 30);
 		expect(a).toMatchObject({ req: { durationSec: 240 }, notes: ['Length set to 240 s (5–240).'] });
@@ -129,6 +144,11 @@ describe('generate_music', () => {
 		expect(out.result).toContain('Made "Rain" (45 s, 82 bpm, D minor, seed 7).');
 		expect(out.result).toContain(`![Rain](${URL})`);
 		expect(out.artifacts).toEqual([{ kind: 'audio', mime: 'audio/mpeg', src: URL, title: 'Rain' }]);
+	});
+
+	it('makes the song with the seed asked for, so a follow-up can keep it', async () => {
+		await executeTool('generate_music', { caption: 'x', seed: 1234 }, chat);
+		expect(state.generate.mock.calls[0][0]).toMatchObject({ seed: 1234 });
 	});
 
 	it('refuses a path with no folder to save into, before making anything', async () => {

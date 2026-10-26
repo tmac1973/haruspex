@@ -40,6 +40,8 @@ export const MAX_SECONDS = 240;
 /** What a request asked for, cleaned, with what was changed on the way. */
 export interface MusicArgs {
 	req: Omit<MusicRequest, 'seed'>;
+	/** The seed asked for; a random one when none was. */
+	seed?: number;
 	path: string;
 	overwrite: boolean;
 	notes: string[];
@@ -85,6 +87,37 @@ function formatOf(raw: unknown, path: string, notes: string[]): 'mp3' | 'wav' | 
 	return asked;
 }
 
+/**
+ * The `seed` parameter, shared with `edit_music`: the summary gives the seed
+ * each song used, so a follow-up can change one thing and keep the rest.
+ */
+export const SEED_PARAM = {
+	type: 'integer',
+	description:
+		'Reuse the seed of an earlier song to change one thing and keep the rest. Omit for a new one.'
+};
+
+/** ACE-Step's seeds run from 0 to 2^32 − 1 (acestep.cpp's Philox noise). */
+const MAX_SEED = 2 ** 32 - 1;
+
+/** The seed asked for, undefined for none, or what is wrong with it. */
+function seedOf(raw: unknown): number | undefined | string {
+	if (raw === undefined || raw === null || raw === '') return undefined;
+	const n = typeof raw === 'string' ? Number(raw.trim()) : raw;
+	if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > MAX_SEED) {
+		return `seed must be a whole number from 0 to ${MAX_SEED}.`;
+	}
+	return n;
+}
+
+/** The beats in a bar ACE takes ("2", "3", "4" or "6"), from "3" or "3/4". */
+const METERS = ['2', '3', '4', '6'];
+function meterOf(raw: unknown): string | undefined | null {
+	if (raw === undefined || raw === null || raw === '') return undefined;
+	const beats = String(raw).trim().split('/')[0];
+	return METERS.includes(beats) ? beats : null;
+}
+
 /** Parse and clamp the arguments, or say what is wrong. */
 export function parseMusicArgs(
 	args: Record<string, unknown>,
@@ -100,6 +133,10 @@ export function parseMusicArgs(
 	const format = formatOf(args.format, path, notes);
 	if (!format) return 'path must end in .mp3 or .wav.';
 	const bpm = typeof args.bpm === 'number' ? Math.round(args.bpm) : undefined;
+	const seed = seedOf(args.seed);
+	if (typeof seed === 'string') return seed;
+	const timeSignature = meterOf(args.time_signature);
+	if (timeSignature === null) return 'time_signature must be 2/4, 3/4, 4/4 or 6/8.';
 	return {
 		req: {
 			title: str(args.title) || titleOf(caption),
@@ -110,8 +147,10 @@ export function parseMusicArgs(
 			bpm: bpm && bpm >= 40 && bpm <= 220 ? bpm : undefined,
 			key: str(args.key) || undefined,
 			language: str(args.language) || undefined,
+			timeSignature,
 			format
 		},
+		seed,
 		path,
 		overwrite: args.overwrite === true,
 		notes
@@ -146,7 +185,7 @@ export async function runMusic(args: MusicArgs, ctx: ToolContext): Promise<ToolE
 	try {
 		show();
 		made = await resolveMusicBackend().generate(
-			{ ...args.req, seed: Math.floor(Math.random() * 2 ** 31) },
+			{ ...args.req, seed: args.seed ?? Math.floor(Math.random() * 2 ** 31) },
 			{
 				signal: ctx.signal,
 				conversationId: ctx.conversationId,
@@ -211,6 +250,12 @@ registerTool({
 					bpm: { type: 'integer', description: 'Tempo, 40 to 220. Omit to let it choose.' },
 					key: { type: 'string', description: 'Key, e.g. "C major". Omit to let it choose.' },
 					language: { type: 'string', description: 'ISO code of the lyrics, e.g. "en".' },
+					time_signature: {
+						type: 'string',
+						enum: ['2/4', '3/4', '4/4', '6/8'],
+						description: 'Omit to let it choose.'
+					},
+					seed: SEED_PARAM,
 					format: { type: 'string', enum: ['mp3', 'wav'], description: 'Default mp3.' },
 					title: { type: 'string', description: 'A short title for the player and the file.' },
 					path: {

@@ -15,7 +15,12 @@ import { getSettings } from '#lib/stores/settings.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult } from '#lib/agent/tools/types.ts';
-import { parseMusicArgs, runMusic, type MusicArgs } from '#lib/agent/tools/music-gen.ts';
+import {
+	SEED_PARAM,
+	parseMusicArgs,
+	runMusic,
+	type MusicArgs
+} from '#lib/agent/tools/music-gen.ts';
 import {
 	MAX_SOURCE_SECONDS,
 	resolveSong,
@@ -231,6 +236,7 @@ registerTool({
 						items: { type: 'string', enum: [...MUSIC_TRACKS] },
 						description: 'complete: which to add. Omit to let it choose.'
 					},
+					seed: SEED_PARAM,
 					format: { type: 'string', enum: ['mp3', 'wav'], description: 'Default mp3.' },
 					title: { type: 'string', description: 'A short title for the player and the file.' },
 					path: {
