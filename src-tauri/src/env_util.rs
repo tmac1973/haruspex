@@ -46,58 +46,76 @@ pub fn browser_path_override() -> Option<String> {
 /// returns the decisions and each caller applies them to its own
 /// builder.
 #[cfg(target_os = "linux")]
+#[derive(Debug, PartialEq)]
 pub enum EnvFix {
     /// Remove the variable from the child's environment.
-    Remove(&'static str),
+    Remove(String),
     /// Set the variable to the given cleaned value.
-    Set(&'static str, String),
+    Set(String, String),
 }
+
+/// Variables that point into `$APPDIR` and are left alone: `PATH` (its
+/// `$APPDIR/usr/bin` holds only `haruspex-*` sidecars, named so they collide
+/// with nothing), the working directory, and AppImage's own description of
+/// itself.
+#[cfg(target_os = "linux")]
+const KEPT: &[&str] = &["PATH", "PWD", "OWD", "APPDIR", "APPIMAGE", "ARGV0"];
 
 /// Compute the corrections needed to undo AppImage's AppRun env mangling
 /// for a child process.
 ///
-/// AppImage's AppRun script points several variables into the mounted
-/// `$APPDIR` so the main binary can find its bundled payload; every
-/// child process then inherits them, which breaks tools that expect the
-/// system layout:
+/// AppImage's AppRun, and the linuxdeploy GTK and GStreamer hooks it
+/// sources, point some twenty variables into the mounted `$APPDIR` so the
+/// main binary finds its bundled payload; every child process then
+/// inherits them, which breaks programs that expect the system layout:
 ///
 ///   - `LD_LIBRARY_PATH` gets `$APPDIR/usr/lib` prepended, so children
-///     load AppImage-bundled libs (libssl, libpcre2, libnss3, …) that
-///     can ABI-collide with their own.
+///     load AppImage-bundled libs (libssl, libpcre2, libmpg123, …) that
+///     ABI-collide with their own: the system ffmpeg won't start
+///     ("libopenmpt.so.0: undefined symbol: mpg123_open_handle64").
+///   - `QT_PLUGIN_PATH`, `GTK_PATH`, `GIO_MODULE_DIR`,
+///     `GDK_PIXBUF_MODULE_FILE` and the like make a Qt or GTK program
+///     (melt, Kdenlive, a file manager) load the AppImage's modules.
 ///   - `PYTHONHOME` / `PYTHONPATH` point at `$APPDIR/usr/`, which
 ///     bundles no Python stdlib — any `python` run by a child fails to
 ///     even initialize ("Could not find platform independent
 ///     libraries"), and the mount vanishes once the app exits.
 ///   - `PYTHONDONTWRITEBYTECODE=1` is exported alongside them.
 ///
-/// Path-list variables keep any entries the user had that aren't
-/// `$APPDIR`-prefixed; `PYTHONHOME` is dropped only when it points into
-/// `$APPDIR` (and `PYTHONDONTWRITEBYTECODE` with it, since an
-/// AppImage-set `PYTHONHOME` is the tell that AppRun exported both).
-/// Returns no fixes when not running inside an AppImage (`APPDIR`
-/// unset), so dev mode and .deb / .rpm installs are unaffected.
+/// Every variable but those in [`KEPT`] loses its `$APPDIR` entries,
+/// keeping the ones the user had; one left with nothing is removed.
+/// `PYTHONDONTWRITEBYTECODE` goes with an AppImage-set `PYTHONHOME`, the
+/// tell that AppRun exported both. Returns no fixes when not running
+/// inside an AppImage (`APPDIR` unset), so dev mode and .deb / .rpm
+/// installs are unaffected.
 #[cfg(target_os = "linux")]
 pub fn appimage_env_fixes() -> Vec<EnvFix> {
-    let appdir = match std::env::var("APPDIR") {
-        Ok(v) if !v.is_empty() => v,
-        _ => return Vec::new(),
-    };
-    let get = |var: &str| std::env::var(var).unwrap_or_default();
-    let mut fixes = vec![
-        path_list_fix("LD_LIBRARY_PATH", &get("LD_LIBRARY_PATH"), &appdir),
-        path_list_fix("PYTHONPATH", &get("PYTHONPATH"), &appdir),
-    ];
-    if get("PYTHONHOME").starts_with(&appdir) {
-        fixes.push(EnvFix::Remove("PYTHONHOME"));
-        fixes.push(EnvFix::Remove("PYTHONDONTWRITEBYTECODE"));
+    match std::env::var("APPDIR") {
+        Ok(appdir) if !appdir.is_empty() => fixes_for(std::env::vars(), &appdir),
+        _ => Vec::new(),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn fixes_for(vars: impl Iterator<Item = (String, String)>, appdir: &str) -> Vec<EnvFix> {
+    let mut fixes = Vec::new();
+    for (var, value) in vars {
+        if KEPT.contains(&var.as_str()) || !value.contains(appdir) {
+            continue;
+        }
+        if var == "PYTHONHOME" {
+            fixes.push(EnvFix::Remove("PYTHONDONTWRITEBYTECODE".into()));
+        }
+        fixes.push(path_list_fix(var, &value, appdir));
     }
     fixes
 }
 
 /// Apply [`appimage_env_fixes`] to a std `Command` (a tokio one through
 /// `as_std_mut`). Every host child that may run the user's own tools needs
-/// it: the URL opener, the Code tab's commands, git. The PTY spawn in
-/// `shell/session.rs` applies the same fixes to its own builder.
+/// it: the URL opener, the Code tab's commands, git, the video tools'
+/// ffmpeg and melt. The PTY spawn in `shell/session.rs` applies the same
+/// fixes to its own builder.
 #[cfg(target_os = "linux")]
 pub fn sanitize_appimage_env(cmd: &mut std::process::Command) {
     for fix in appimage_env_fixes() {
@@ -115,10 +133,11 @@ pub fn sanitize_appimage_env(cmd: &mut std::process::Command) {
 #[cfg(not(target_os = "linux"))]
 pub fn sanitize_appimage_env(_cmd: &mut std::process::Command) {}
 
-/// Strip `$APPDIR`-prefixed entries from a colon-separated path list,
-/// removing the variable outright when nothing survives.
+/// Strip `$APPDIR`-prefixed entries from a colon-separated path list (a
+/// single path is a list of one), removing the variable outright when
+/// nothing survives.
 #[cfg(target_os = "linux")]
-fn path_list_fix(var: &'static str, value: &str, appdir: &str) -> EnvFix {
+fn path_list_fix(var: String, value: &str, appdir: &str) -> EnvFix {
     let cleaned: Vec<&str> = value
         .split(':')
         .filter(|p| !p.is_empty() && !p.starts_with(appdir))
@@ -141,29 +160,69 @@ mod tests {
         // AppRun's exact shape: bundled entry plus a trailing colon from
         // appending an empty inherited value.
         let fix = path_list_fix(
-            "PYTHONPATH",
+            "PYTHONPATH".into(),
             "/tmp/.mount_Haruspx/usr/share/pyshared/:",
             APPDIR,
         );
-        assert!(matches!(fix, EnvFix::Remove("PYTHONPATH")));
+        assert_eq!(fix, EnvFix::Remove("PYTHONPATH".into()));
     }
 
     #[test]
     fn path_list_keeps_user_entries() {
         let fix = path_list_fix(
-            "LD_LIBRARY_PATH",
+            "LD_LIBRARY_PATH".into(),
             "/tmp/.mount_Haruspx/usr/lib:/opt/mylibs:/tmp/.mount_Haruspx/usr/lib/x86_64",
             APPDIR,
         );
-        match fix {
-            EnvFix::Set("LD_LIBRARY_PATH", v) => assert_eq!(v, "/opt/mylibs"),
-            _ => panic!("expected Set with cleaned value"),
-        }
+        assert_eq!(
+            fix,
+            EnvFix::Set("LD_LIBRARY_PATH".into(), "/opt/mylibs".into())
+        );
     }
 
     #[test]
     fn path_list_empty_value_removes_var() {
-        let fix = path_list_fix("LD_LIBRARY_PATH", "", APPDIR);
-        assert!(matches!(fix, EnvFix::Remove("LD_LIBRARY_PATH")));
+        let fix = path_list_fix("LD_LIBRARY_PATH".into(), "", APPDIR);
+        assert_eq!(fix, EnvFix::Remove("LD_LIBRARY_PATH".into()));
+    }
+
+    /// What AppRun and linuxdeploy's GTK hook hand the app, trimmed.
+    #[test]
+    fn every_variable_into_the_mount_is_undone_but_path() {
+        let m = APPDIR;
+        let vars = [
+            ("PATH", format!("{m}/usr/bin/:/usr/bin")),
+            ("PWD", format!("{m}/usr")),
+            ("LD_LIBRARY_PATH", format!("{m}/usr/lib/:{m}/lib/:")),
+            (
+                "QT_PLUGIN_PATH",
+                format!("{m}/usr/lib/qt5/plugins/:/opt/qt"),
+            ),
+            (
+                "GDK_PIXBUF_MODULE_FILE",
+                format!("{m}//usr/lib/loaders.cache"),
+            ),
+            (
+                "XDG_DATA_DIRS",
+                format!("{m}/usr/share/:/usr/local/share:/usr/share"),
+            ),
+            ("PYTHONHOME", format!("{m}/usr/")),
+            ("PYTHONDONTWRITEBYTECODE", "1".to_string()),
+            ("HOME", "/home/tim".to_string()),
+        ];
+        let fixes = fixes_for(vars.into_iter().map(|(k, v)| (k.to_string(), v)), APPDIR);
+        let set = |k: &str, v: &str| EnvFix::Set(k.into(), v.into());
+        let remove = |k: &str| EnvFix::Remove(k.into());
+        assert_eq!(
+            fixes,
+            vec![
+                remove("LD_LIBRARY_PATH"),
+                set("QT_PLUGIN_PATH", "/opt/qt"),
+                remove("GDK_PIXBUF_MODULE_FILE"),
+                set("XDG_DATA_DIRS", "/usr/local/share:/usr/share"),
+                remove("PYTHONDONTWRITEBYTECODE"),
+                remove("PYTHONHOME"),
+            ]
+        );
     }
 }

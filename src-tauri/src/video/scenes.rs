@@ -50,7 +50,7 @@ pub async fn detect(ffmpeg: &str, file: &Path, threshold: f64) -> Result<(Vec<f6
         ])
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);
-    super::no_window(&mut cmd);
+    super::prepare_child(&mut cmd);
     let out = tokio::time::timeout(Duration::from_secs(60 * 60), cmd.output())
         .await
         .map_err(|_| "finding the shot changes took too long".to_string())?
@@ -88,7 +88,7 @@ mod tests {
     async fn scene_cuts_in_a_test_video() {
         let dir = crate::test_util::temp_dir("scenes");
         let file = dir.join("cuts.mp4");
-        let ok = std::process::Command::new("ffmpeg")
+        let ok = crate::test_util::host_command("ffmpeg")
             .args([
                 "-v",
                 "error",

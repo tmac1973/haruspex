@@ -273,7 +273,7 @@ pub async fn start_render(
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
-    super::no_window(&mut cmd);
+    super::prepare_child(&mut cmd);
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("could not start melt: {e}"))?;
@@ -630,7 +630,7 @@ mod tests {
     async fn render_a_real_project() {
         let dir = temp_dir("render_real");
         std::fs::create_dir_all(dir.join("ep1")).unwrap();
-        let ok = std::process::Command::new("ffmpeg")
+        let ok = crate::test_util::host_command("ffmpeg")
             .args([
                 "-v",
                 "error",

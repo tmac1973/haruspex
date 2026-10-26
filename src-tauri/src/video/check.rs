@@ -79,7 +79,7 @@ pub async fn measure(ffmpeg: &str, file: &Path) -> Result<Loudness, String> {
         ])
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);
-    super::no_window(&mut cmd);
+    super::prepare_child(&mut cmd);
     let out = tokio::time::timeout(Duration::from_secs(30 * 60), cmd.output())
         .await
         .map_err(|_| "measuring the loudness took too long".to_string())?

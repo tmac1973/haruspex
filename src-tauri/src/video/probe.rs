@@ -259,7 +259,7 @@ pub async fn probe_file(ffprobe: &str, file: &Path, shown_as: String) -> Result<
     .arg(file)
     .stdin(std::process::Stdio::null())
     .kill_on_drop(true);
-    super::no_window(&mut cmd);
+    super::prepare_child(&mut cmd);
     let out = tokio::time::timeout(PROBE_TIMEOUT, cmd.output())
         .await
         .map_err(|_| "ffprobe took too long".to_string())?

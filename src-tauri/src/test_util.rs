@@ -47,3 +47,11 @@ impl From<&TestDir> for PathBuf {
         dir.path.clone()
     }
 }
+
+/// A system program for a test to run, cleaned of an AppImage's environment
+/// as the app's own spawns are, so the real-tool tests can run inside one.
+pub fn host_command(program: &str) -> std::process::Command {
+    let mut cmd = std::process::Command::new(program);
+    crate::env_util::sanitize_appimage_env(&mut cmd);
+    cmd
+}

@@ -918,7 +918,7 @@ mod tests {
         ] {
             let p = dir.join(name);
             fs::create_dir_all(p.parent().unwrap()).unwrap();
-            let ok = std::process::Command::new("ffmpeg")
+            let ok = crate::test_util::host_command("ffmpeg")
                 .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
                 .arg(format!("color=c={color}:s=640x360:r=60:d=3"))
                 .args(["-f", "lavfi", "-i", "sine=d=3", "-shortest"])
@@ -995,7 +995,7 @@ mod loudness_end_to_end {
         let dir = crate::test_util::temp_dir("normalised_cut");
         std::fs::create_dir_all(dir.join("ep1")).unwrap();
         for (name, volume) in [("ep1/quiet.mp4", "0.05"), ("ep1/loud.mp4", "0.9")] {
-            let ok = std::process::Command::new("ffmpeg")
+            let ok = crate::test_util::host_command("ffmpeg")
                 .args([
                     "-v",
                     "error",
@@ -1042,7 +1042,7 @@ mod loudness_end_to_end {
             .is_some_and(|c| (c - 1.0).abs() < 0.05));
         assert!(r.summary.items.iter().all(|i| i.gain_db.is_some()));
         let out = dir.join("out.mp4");
-        let ok = std::process::Command::new("melt")
+        let ok = crate::test_util::host_command("melt")
             .arg(dir.join("ep1/ep1.kdenlive"))
             .arg("-consumer")
             .arg(format!("avformat:{}", out.display()))

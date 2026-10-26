@@ -223,7 +223,7 @@ pub async fn melt_loads(melt: &str, project: &Path) -> Result<(), String> {
         .args(["out=0", "-consumer", "null"])
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);
-    super::no_window(&mut cmd);
+    super::prepare_child(&mut cmd);
     let out = tokio::time::timeout(std::time::Duration::from_secs(60), cmd.output())
         .await
         .map_err(|_| "melt took too long to load the project".to_string())?
