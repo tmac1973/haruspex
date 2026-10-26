@@ -505,6 +505,25 @@ pub async fn comfy_bytes(call: ComfyCall) -> Result<Response, ComfyError> {
         .map(Response::new)
 }
 
+/// `POST /upload/image`: a picture into ComfyUI's input folder, for an edit's
+/// `LoadImage`. A cached picture is read here by hash; the body's fields
+/// (`overwrite`) go as text parts beside the `image` file.
+#[tauri::command]
+pub async fn comfy_upload(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, crate::db::Database>,
+    call: ComfyCall,
+    files: Vec<UploadFile>,
+) -> Result<serde_json::Value, ComfyError> {
+    let parts = resolve_uploads(
+        &db,
+        &crate::audio_cache::cache_dir(&app).map_err(|message| ComfyError::Invalid { message })?,
+        &crate::image_cache::cache_dir(&app).map_err(|message| ComfyError::Invalid { message })?,
+        files,
+    )?;
+    upload_json(call, COMFYUI, parts, FormShape::Fields).await
+}
+
 /// Stop a call or close a socket. Unknown ids are ignored: it already ended.
 /// Any image server's: the ids share one table.
 #[tauri::command]

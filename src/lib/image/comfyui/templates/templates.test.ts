@@ -35,7 +35,13 @@ describe('the bundled workflows', () => {
 			const m = t.map;
 			expect({
 				id: t.id,
-				bound: [m.width, m.height, m.seed, m.prompt, m.model].every((b) => b !== undefined)
+				// An edit takes its size from its first picture, at `resolution`.
+				bound: [
+					...(t.supports.edit ? [m.resolution, m.editImages] : [m.width, m.height]),
+					m.seed,
+					m.prompt,
+					m.model
+				].every((b) => b !== undefined)
 			}).toEqual({ id: t.id, bound: true });
 		}
 	});

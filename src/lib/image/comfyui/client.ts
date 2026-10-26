@@ -88,7 +88,7 @@ export function rejectionMessage(path: string, body: string): string {
 	return `${base}.`;
 }
 
-function trimUrl(base: string): string {
+export function trimUrl(base: string): string {
 	return base.trim().replace(/\/+$/, '');
 }
 
@@ -96,8 +96,13 @@ function trimUrl(base: string): string {
 
 let nextId = 0;
 
+/** An id for a call `comfy_cancel` can stop; shared with `upload.ts`. */
+export function nextCallId(): string {
+	return `comfy-${++nextId}`;
+}
+
 /** Map a `ComfyError` from Rust onto the kinds callers branch on. */
-function fromRust(e: unknown, path: string, signal?: AbortSignal): ImageBackendError {
+export function fromRust(e: unknown, path: string, signal?: AbortSignal): ImageBackendError {
 	const err = (e !== null && typeof e === 'object' && 'kind' in e ? e : null) as ComfyError | null;
 	switch (err?.kind) {
 		case 'cancelled':
@@ -151,7 +156,7 @@ async function viaRust<T>(
 
 // ---- Through fetch (tests, Node) --------------------------------------------
 
-function authHeaders(cfg: ClientConfig): Record<string, string> {
+export function authHeaders(cfg: ClientConfig): Record<string, string> {
 	// Absent rather than empty: a bare local ComfyUI has no auth, and an empty
 	// Authorization header is worse than none at all.
 	return cfg.apiKey.trim() ? { Authorization: `Bearer ${cfg.apiKey.trim()}` } : {};

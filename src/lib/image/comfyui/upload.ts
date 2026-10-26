@@ -1,0 +1,109 @@
+/**
+ * `POST /upload/image`: a picture into a ComfyUI server's input folder, for an
+ * edit's `LoadImage`. Apart from `client.ts`, whose calls carry JSON, because
+ * this one is a multipart form.
+ *
+ * In the app it goes through Rust (`comfy_upload`), which reads a cached
+ * picture by hash so it never crosses the bridge; outside the app (tests,
+ * Node) through `fetch`, which can only send bytes it was given.
+ */
+
+import { invoke, isTauri } from '@tauri-apps/api/core';
+import { ImageBackendError, type ImageInput } from '#lib/image/types.ts';
+import {
+	HTTP_TIMEOUT_MS,
+	authHeaders,
+	fromRust,
+	nextCallId,
+	rejectionMessage,
+	trimUrl,
+	type ClientConfig
+} from '#lib/image/comfyui/client.ts';
+
+const PATH = '/upload/image';
+
+async function viaRust(
+	cfg: ClientConfig,
+	input: ImageInput,
+	name: string,
+	signal?: AbortSignal
+): Promise<unknown> {
+	if (signal?.aborted) throw new ImageBackendError('cancelled', 'Generation cancelled.');
+	const id = nextCallId();
+	const onAbort = () => void invoke('comfy_cancel', { id }).catch(() => {});
+	signal?.addEventListener('abort', onAbort, { once: true });
+	try {
+		return await invoke('comfy_upload', {
+			call: {
+				base_url: cfg.baseUrl,
+				api_key: cfg.apiKey,
+				method: 'POST',
+				path: PATH,
+				body: { overwrite: 'true' },
+				timeout_ms: HTTP_TIMEOUT_MS,
+				id
+			},
+			files: [
+				{
+					field: 'image',
+					filename: name,
+					hash: 'hash' in input ? input.hash : null,
+					cache: 'hash' in input ? 'image' : null,
+					bytes: 'bytes' in input ? input.bytes : null
+				}
+			]
+		});
+	} catch (e) {
+		throw fromRust(e, PATH, signal);
+	} finally {
+		signal?.removeEventListener('abort', onAbort);
+	}
+}
+
+async function viaFetch(
+	cfg: ClientConfig,
+	input: ImageInput,
+	name: string,
+	signal?: AbortSignal
+): Promise<unknown> {
+	if (!('bytes' in input)) {
+		throw new ImageBackendError('rejected', 'A cached picture can only be uploaded from the app.');
+	}
+	const form = new FormData();
+	form.append('image', new Blob([new Uint8Array(input.bytes)], { type: 'image/png' }), name);
+	form.append('overwrite', 'true');
+	const res = await fetch(`${trimUrl(cfg.baseUrl)}${PATH}`, {
+		method: 'POST',
+		headers: authHeaders(cfg),
+		body: form,
+		signal
+	});
+	if (!res.ok) {
+		const body = await res.text().catch(() => '');
+		throw new ImageBackendError('rejected', rejectionMessage(PATH, body), { status: res.status });
+	}
+	return res.json();
+}
+
+/**
+ * Upload `input` as `name` and return what `LoadImage` takes. `overwrite`, so
+ * a name the caller made unique is kept as it is rather than numbered.
+ */
+export async function uploadImage(
+	cfg: ClientConfig,
+	input: ImageInput,
+	name: string,
+	signal?: AbortSignal
+): Promise<string> {
+	const answer = isTauri()
+		? await viaRust(cfg, input, name, signal)
+		: await viaFetch(cfg, input, name, signal);
+	const a = (answer ?? {}) as { name?: unknown; subfolder?: unknown };
+	if (typeof a.name !== 'string' || !a.name) {
+		throw new ImageBackendError(
+			'rejected',
+			'The image backend did not say where it put the picture.'
+		);
+	}
+	return typeof a.subfolder === 'string' && a.subfolder ? `${a.subfolder}/${a.name}` : a.name;
+}

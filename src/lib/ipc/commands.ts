@@ -81,6 +81,7 @@ export const IPC = {
 	comfy_logs: 'comfy_logs',
 	comfy_model_catalogue: 'comfy_model_catalogue',
 	comfy_subscribe: 'comfy_subscribe',
+	comfy_upload: 'comfy_upload',
 	context_fit_ceiling: 'context_fit_ceiling',
 	conversation_memory_cursor: 'conversation_memory_cursor',
 	conversation_set_memory_enabled: 'conversation_set_memory_enabled',

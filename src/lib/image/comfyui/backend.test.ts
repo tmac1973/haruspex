@@ -105,7 +105,9 @@ describe('capabilities', () => {
 			transparency: false,
 			seamlessTiling: true,
 			loras: true,
-			maxLoras: 2
+			maxLoras: 2,
+			edit: false,
+			maxEditImages: 0
 		});
 	});
 
@@ -115,7 +117,9 @@ describe('capabilities', () => {
 			transparency: true,
 			seamlessTiling: true,
 			loras: false,
-			maxLoras: 0
+			maxLoras: 0,
+			edit: false,
+			maxEditImages: 0
 		});
 	});
 });

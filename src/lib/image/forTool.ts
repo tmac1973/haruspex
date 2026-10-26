@@ -48,9 +48,9 @@ export const GPU_FULL_SENTENCE =
 	'Settings → Inference → Models, or ComfyUI on another machine in Settings → Image, would leave room.';
 
 export const NO_EDIT_SENTENCE =
-	"The image generation in Settings → Image can't edit pictures. Qwen-Image 2.1 on the bundled " +
-	'engine (Settings → Image → Add editing), or a llama-toolchest model that edits such as ' +
-	'FLUX.2 klein 4B, can.';
+	"The image generation in Settings → Image can't edit pictures. Qwen-Image 2.1 can, on the " +
+	'bundled engine (Settings → Image → Add editing) or ComfyUI 0.39 or later, and so can a ' +
+	'llama-toolchest model that edits, such as FLUX.2 klein 4B.';
 
 /** The configured model can't be used commercially. */
 export function nonCommercialModel(): boolean {
