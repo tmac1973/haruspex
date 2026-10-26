@@ -129,7 +129,8 @@ async function activeTemplates(family: ModelFamily): Promise<WorkflowTemplate[]>
 const MAX_EDIT_IMAGES: Partial<Record<ModelFamily, number>> = {
 	qwen21: 3,
 	qwen21_turbo: 3,
-	flux2_klein: 4
+	flux2_klein: 4,
+	qwen_edit_2511: 3
 };
 
 function capabilitiesOf(
@@ -196,8 +197,8 @@ async function nodeInputs(cfg: api.ClientConfig, cls: string): Promise<object | 
 /**
  * Whether the server can edit with `family`. Qwen-Image-2.1: ComfyUI added its
  * encoder's `images` input (and `vae`) after the node itself, so an older build
- * draws with it but cannot edit. klein: `ReferenceLatent`. Asked once per
- * server and family; a failure isn't remembered.
+ * draws with it but cannot edit. klein: `ReferenceLatent`. 2511: its encoder.
+ * Asked once per server and family; a failure isn't remembered.
  */
 function serverEdits(cfg: api.ClientConfig, family: ModelFamily): Promise<boolean> {
 	const key = `${cfg.baseUrl.trim()} ${family}`;
@@ -206,9 +207,11 @@ function serverEdits(cfg: api.ClientConfig, family: ModelFamily): Promise<boolea
 		known = (
 			family === 'flux2_klein'
 				? nodeInputs(cfg, 'ReferenceLatent').then((all) => all !== null)
-				: nodeInputs(cfg, 'TextEncodeQwenImage21').then(
-						(all) => !!all && 'images' in all && 'vae' in all
-					)
+				: family === 'qwen_edit_2511'
+					? nodeInputs(cfg, 'TextEncodeQwenImageEditPlus').then((all) => all !== null)
+					: nodeInputs(cfg, 'TextEncodeQwenImage21').then(
+							(all) => !!all && 'images' in all && 'vae' in all
+						)
 		).catch(() => {
 			editsByServer.delete(key);
 			return false;
@@ -237,7 +240,7 @@ function templateFor(req: ImageRequest, templates: WorkflowTemplate[]): Workflow
 		throw new ImageBackendError(
 			'unconfigured',
 			req.edit
-				? "This model can't edit pictures here — choose Qwen-Image-2.1 or FLUX.2 klein 4B in Settings → Image."
+				? "This model can't edit pictures here — choose Qwen-Image-2.1, FLUX.2 klein 4B or Qwen-Image-Edit-2511 in Settings → Image."
 				: 'No bundled workflow serves this model.'
 		);
 	}

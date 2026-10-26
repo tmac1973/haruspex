@@ -68,9 +68,11 @@ describe('ComfyUI edit, live', () => {
 				);
 				writeFileSync(`${OUT_DIR}/comfy-car-edit.png`, out.bytes);
 			}
-			// Sized from the picture: its 4:3 shape at about a megapixel.
+			// Sized from the picture: its 4:3 shape at about a megapixel (2511's
+			// scaler picks the nearest size the model knows, 1184×880).
 			expect(out.width / out.height).toBeCloseTo(1024 / 768, 1);
-			expect(Math.abs(out.width * out.height - 1024 * 768)).toBeLessThan(80_000);
+			expect(out.width * out.height).toBeGreaterThan(700_000);
+			expect(out.width * out.height).toBeLessThan(1_100_000);
 		},
 		600_000
 	);

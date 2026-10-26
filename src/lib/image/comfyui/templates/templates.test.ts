@@ -40,7 +40,9 @@ describe('the bundled workflows', () => {
 					...(t.supports.edit
 						? m.referenceLatents
 							? [m.referenceLatents]
-							: [m.resolution, m.editImages]
+							: m.editImages?.firstThrough
+								? [m.editImages]
+								: [m.resolution, m.editImages]
 						: [m.width, m.height]),
 					m.seed,
 					m.prompt,
@@ -53,7 +55,14 @@ describe('the bundled workflows', () => {
 	it('gives each family a plain workflow', () => {
 		// Selection falls back to an opaque one; a family without one would
 		// leave a request with nowhere to go.
-		for (const family of ['sd', 'ming', 'qwen21', 'qwen21_turbo', 'flux2_klein'] as const) {
+		for (const family of [
+			'sd',
+			'ming',
+			'qwen21',
+			'qwen21_turbo',
+			'flux2_klein',
+			'qwen_edit_2511'
+		] as const) {
 			expect(
 				selectTemplate({ transparent: false, seamless: false }, templatesFor(family))
 			).toBeDefined();

@@ -51,7 +51,7 @@ export const GPU_FULL_SENTENCE =
 export const NO_EDIT_SENTENCE =
 	"The image generation in Settings → Image can't edit pictures. Qwen-Image 2.1 can, on the " +
 	'bundled engine or Lemonade (Settings → Image → Add editing) or ComfyUI 0.39 or later, and ' +
-	'so can FLUX.2 klein 4B, on ComfyUI or as a llama-toolchest model.';
+	'so can FLUX.2 klein 4B (on ComfyUI or llama-toolchest) and Qwen-Image-Edit-2511 (on ComfyUI).';
 
 export const NO_UPSCALE_SENTENCE =
 	"The image generation in Settings → Image can't upscale pictures. The bundled engine, " +

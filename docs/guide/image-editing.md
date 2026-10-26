@@ -26,7 +26,7 @@ Name up to four pictures in one request, such as "put the cat from my second pic
 Settings → Image says what Haruspex can do with the chosen model (draw, edit, upscale, transparent backgrounds, tiling textures); hover over that line for how to get the rest. Editing needs a model that was made for it:
 
 - **Bundled engine with Qwen-Image 2.1.** It edits once it has its vision weights, 1.2 GB more. A new download includes them; for one made earlier, press **Add editing** under Settings → Image → Bundled engine. Qwen-Image may not be used commercially. Ming-Image can't edit.
-- **ComfyUI with Qwen-Image 2.1** (or its Turbo), on ComfyUI 0.39 or later, **or FLUX.2 klein 4B** (Apache 2.0, commercial use allowed; **Install** it under **Models on the server**, 12.4 GB). The files a model draws with are enough. Pictures are uploaded to the server's input folder.
+- **ComfyUI with Qwen-Image 2.1** (or its Turbo), on ComfyUI 0.39 or later, **FLUX.2 klein 4B** (12.4 GB) **or Qwen-Image-Edit-2511** (31 GB, about 24 GB of VRAM). Both are Apache 2.0, commercial use allowed; **Install** them under **Models on the server**. The files a model draws with are enough. Pictures are uploaded to the server's input folder.
 - **Lemonade with Qwen-Image 2.1.** Installing it from Settings → Image now includes the vision weights; for one installed earlier, press **Add editing** under **Models on the server**. Haruspex also installs Lemonade's image engine the first time, if the server has none.
 - **llama-toolchest** with a model that edits, such as FLUX.2 klein 4B (Apache 2.0, commercial use allowed). Add it in llama-toolchest; Settings → Image lists it like any other model.
 
@@ -47,4 +47,4 @@ This needs Real-ESRGAN (BSD 3-Clause), on the bundled engine, ComfyUI or Lemonad
 
 ## What has been tested
 
-Editing with FLUX.2 klein 4B on a llama-toolchest server, and with Qwen-Image 2.1 Turbo on the bundled engine on a 16 GB AMD card (about 30 seconds), on ComfyUI 0.39 and on Lemonade (about 20 seconds), and with FLUX.2 klein 4B on ComfyUI (about 5 seconds), has been tested, as has upscaling on the bundled engine, ComfyUI 0.39 and Lemonade. See the `images` page for setting up a backend.
+Editing with FLUX.2 klein 4B on a llama-toolchest server, and with Qwen-Image 2.1 Turbo on the bundled engine on a 16 GB AMD card (about 30 seconds), on ComfyUI 0.39 and on Lemonade (about 20 seconds), and with FLUX.2 klein 4B (about 5 seconds) and Qwen-Image-Edit-2511 (about 45 seconds) on ComfyUI, has been tested, as has upscaling on the bundled engine, ComfyUI 0.39 and Lemonade. See the `images` page for setting up a backend.

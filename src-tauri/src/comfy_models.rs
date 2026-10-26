@@ -33,6 +33,7 @@ pub enum ComfyFolder {
     TextEncoders,
     Vae,
     UpscaleModels,
+    Loras,
 }
 
 impl ComfyFolder {
@@ -42,6 +43,7 @@ impl ComfyFolder {
             Self::TextEncoders => "text_encoders",
             Self::Vae => "vae",
             Self::UpscaleModels => "upscale_models",
+            Self::Loras => "loras",
         }
     }
 }
@@ -111,12 +113,20 @@ pub const KLEIN_LICENCE: Licence = Licence {
     commercial_use: true,
 };
 
+/// Qwen-Image-Edit-2511: ComfyUI only, for now.
+pub const QWEN_EDIT_LICENCE: Licence = Licence {
+    text: "Apache 2.0 — commercial use allowed.",
+    url: "https://huggingface.co/Qwen/Qwen-Image-Edit-2511",
+    commercial_use: true,
+};
+
 /// The shipped sets: the files the templates were measured with.
 pub fn comfy_model_sets() -> Vec<ComfyModelSet> {
     use ComfyFolder::*;
     const MING: &str = "Comfy-Org/Ming-Image";
     const QWEN: &str = "Comfy-Org/Qwen-Image-2.1";
     const KLEIN: &str = "Comfy-Org/Flux-2-Klein-4B";
+    const QWEN_IMAGE: &str = "Comfy-Org/Qwen-Image";
     vec![
         ComfyModelSet {
             family: "ming".into(),
@@ -211,6 +221,47 @@ pub fn comfy_model_sets() -> Vec<ComfyModelSet> {
                 ),
             ],
         },
+        ComfyModelSet {
+            family: "qwen_edit_2511".into(),
+            label: "Qwen-Image-Edit-2511".into(),
+            license: QWEN_EDIT_LICENCE.text.into(),
+            license_url: QWEN_EDIT_LICENCE.url.into(),
+            commercial_use: QWEN_EDIT_LICENCE.commercial_use,
+            // A 20B model at int8: ComfyUI offloads what doesn't fit.
+            vram_mb: 24_576,
+            ram_mb: 32_768,
+            files: vec![
+                file(
+                    DiffusionModels,
+                    "Comfy-Org/Qwen-Image-Edit",
+                    "split_files/diffusion_models/qwen_image_edit_2511_int8_convrot.safetensors",
+                    "11b5af5ac601821d73930c84846c9a158e67177356daf927ce1c8d10f3963829",
+                    20_499_083_824,
+                ),
+                file(
+                    TextEncoders,
+                    QWEN_IMAGE,
+                    "split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors",
+                    "cb5636d852a0ea6a9075ab1bef496c0db7aef13c02350571e388aea959c5c0b4",
+                    9_384_670_680,
+                ),
+                file(
+                    Vae,
+                    QWEN_IMAGE,
+                    "split_files/vae/qwen_image_vae.safetensors",
+                    "a70580f0213e67967ee9c95f05bb400e8fb08307e017a924bf3441223e023d1f",
+                    253_806_246,
+                ),
+                // 4 steps at CFG 1 instead of 20 at CFG 4 (Apache 2.0).
+                file(
+                    Loras,
+                    "lightx2v/Qwen-Image-Edit-2511-Lightning",
+                    "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
+                    "22226e8d05d354bb356627d428809f5afd7819399b077238a2b70a82883a904f",
+                    849_608_296,
+                ),
+            ],
+        },
     ]
 }
 
@@ -266,8 +317,8 @@ fn writable(dir: &Path) -> bool {
 /// kept only where they exist here and can be written. `None` when the
 /// server is not on this machine, or any model kind has no such folder — then
 /// the direct route is not available and the caller goes through Manager.
-/// `upscale_models` is kept when it is here, and not asked for: a ComfyUI
-/// without it still installs models directly.
+/// `upscale_models` and `loras` are kept when they are here, and not asked
+/// for: a ComfyUI without them still installs models directly.
 ///
 /// A loopback URL is necessary but not enough: a ComfyUI in a container
 /// answers on loopback with paths that mean nothing here. Requiring the path
@@ -290,17 +341,19 @@ pub fn local_folders(answer: &serde_json::Value) -> Option<HashMap<ComfyFolder, 
         }
         out.insert(kind, dirs);
     }
-    let upscale: Vec<PathBuf> = answer
-        .get(ComfyFolder::UpscaleModels.key())
-        .and_then(|v| v.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(PathBuf::from))
-                .collect()
-        })
-        .unwrap_or_default();
-    if upscale.first().is_some_and(|d| writable(d)) {
-        out.insert(ComfyFolder::UpscaleModels, upscale);
+    for kind in [ComfyFolder::UpscaleModels, ComfyFolder::Loras] {
+        let dirs: Vec<PathBuf> = answer
+            .get(kind.key())
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(PathBuf::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if dirs.first().is_some_and(|d| writable(d)) {
+            out.insert(kind, dirs);
+        }
     }
     Some(out)
 }
@@ -411,10 +464,10 @@ mod tests {
     #[test]
     fn both_engines_agree_on_each_familys_licence_and_vae() {
         let bundled = crate::image_models::image_registry();
-        // klein runs on ComfyUI only.
+        // klein and 2511 run on ComfyUI only.
         for set in comfy_model_sets()
             .into_iter()
-            .filter(|s| s.family != "flux2_klein")
+            .filter(|s| s.family != "flux2_klein" && s.family != "qwen_edit_2511")
         {
             let entry = bundled
                 .iter()
@@ -441,7 +494,7 @@ mod tests {
     #[test]
     fn every_file_can_be_downloaded_and_verified() {
         for s in comfy_model_sets() {
-            assert_eq!(s.files.len(), 3, "{}: model, encoder, VAE", s.family);
+            assert!(s.files.len() >= 3, "{}: model, encoder, VAE", s.family);
             for f in &s.files {
                 assert!(f.url.starts_with("https://huggingface.co/"), "{}", f.url);
                 assert!(f.url.ends_with(&f.filename), "{}", f.url);
@@ -468,12 +521,15 @@ mod tests {
                 .unwrap()
                 .commercial_use
         );
-        assert!(
-            sets.iter()
-                .find(|s| s.family == "flux2_klein")
-                .unwrap()
-                .commercial_use
-        );
+        for family in ["flux2_klein", "qwen_edit_2511"] {
+            assert!(
+                sets.iter()
+                    .find(|s| s.family == family)
+                    .unwrap()
+                    .commercial_use,
+                "{family}"
+            );
+        }
     }
 
     #[test]

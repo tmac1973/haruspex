@@ -15,7 +15,8 @@
 import { ImageBackendError } from '#lib/image/types.ts';
 import * as api from '#lib/image/comfyui/client.ts';
 
-export type ModelFamily = 'sd' | 'ming' | 'qwen21' | 'qwen21_turbo' | 'flux2_klein';
+export type ModelFamily =
+	'sd' | 'ming' | 'qwen21' | 'qwen21_turbo' | 'flux2_klein' | 'qwen_edit_2511';
 
 const FAMILY_PATTERNS: Array<[ModelFamily, RegExp]> = [
 	['ming', /ming[_-]?image/i],
@@ -25,7 +26,8 @@ const FAMILY_PATTERNS: Array<[ModelFamily, RegExp]> = [
 	['qwen21', /qwen[_-]?image[_-]?2[._-]?1/i],
 	// The distilled 4B only: the base model samples in 20 steps at CFG 5, and
 	// the 9B is non-commercial.
-	['flux2_klein', /flux[._-]?2[._-]?klein[._-]?4b/i]
+	['flux2_klein', /flux[._-]?2[._-]?klein[._-]?4b/i],
+	['qwen_edit_2511', /qwen[_-]?image[_-]?edit[_-]?2511/i]
 ];
 
 export function familyOf(model: string): ModelFamily {
@@ -39,6 +41,8 @@ export function familyOf(model: string): ModelFamily {
 export interface Companions {
 	textEncoder: string;
 	vae: string;
+	/** A LoRA the family's workflows always load, such as 2511's Lightning. */
+	lora?: string;
 }
 
 /**
@@ -52,7 +56,10 @@ const QWEN21_WANTED = {
 	vae: [/^qwen_image_2[._]1.*vae/i]
 };
 
-const WANTED: Record<Exclude<ModelFamily, 'sd'>, { textEncoder: RegExp[]; vae: RegExp[] }> = {
+const WANTED: Record<
+	Exclude<ModelFamily, 'sd'>,
+	{ textEncoder: RegExp[]; vae: RegExp[]; lora?: RegExp[] }
+> = {
 	ming: {
 		textEncoder: [/^ming_image.*ling.*w4a8/i, /^ming_image.*ling.*int8/i, /^ming_image.*ling/i],
 		vae: [/^ming_image.*vae/i]
@@ -64,6 +71,13 @@ const WANTED: Record<Exclude<ModelFamily, 'sd'>, { textEncoder: RegExp[]; vae: R
 	flux2_klein: {
 		textEncoder: [/^qwen_3_4b\.safetensors$/i, /^qwen_3_4b.*fp8/i, /^qwen_3_4b/i],
 		vae: [/^flux2[_-]?vae/i]
+	},
+	// Qwen-Image's own encoder and VAE, which 2511 shares, and lightx2v's
+	// 4-step LoRA: 4 steps at CFG 1 against 20 at CFG 4, as good a picture.
+	qwen_edit_2511: {
+		textEncoder: [/^qwen_2\.5_vl_7b.*fp8/i, /^qwen_2\.5_vl_7b/i],
+		vae: [/^qwen_image_vae/i],
+		lora: [/qwen[_-]?image[_-]?edit[_-]?2511[_-]?lightning[_-]?4steps/i]
 	}
 };
 
@@ -72,7 +86,8 @@ const FILE_LABELS: Record<Exclude<ModelFamily, 'sd'>, string> = {
 	ming: 'Ming-Image',
 	qwen21: 'Qwen-Image-2.1',
 	qwen21_turbo: 'Qwen-Image-2.1',
-	flux2_klein: 'FLUX.2 klein'
+	flux2_klein: 'FLUX.2 klein',
+	qwen_edit_2511: 'Qwen-Image-Edit-2511'
 };
 
 const NOT_A_COMPANION = /layer|_pe_/i;
@@ -114,12 +129,14 @@ export async function resolveCompanions(
 	family: Exclude<ModelFamily, 'sd'>
 ): Promise<Companions> {
 	const want = WANTED[family];
-	const [encoders, vaes] = await Promise.all([
+	const [encoders, vaes, loras] = await Promise.all([
 		optionsOf(cfg, 'CLIPLoader', 'clip_name'),
-		optionsOf(cfg, 'VAELoader', 'vae_name')
+		optionsOf(cfg, 'VAELoader', 'vae_name'),
+		want.lora ? optionsOf(cfg, 'LoraLoaderModelOnly', 'lora_name') : []
 	]);
 	const textEncoder = pickCompanion(encoders, want.textEncoder);
 	const vae = pickCompanion(vaes, want.vae);
+	const lora = want.lora ? pickCompanion(loras, want.lora) : undefined;
 	const label = FILE_LABELS[family];
 	if (!textEncoder) {
 		throw new ImageBackendError(
@@ -133,22 +150,30 @@ export async function resolveCompanions(
 			`The backend has no ${label} VAE in models/vae — Settings → Image → Install.`
 		);
 	}
-	return { textEncoder, vae };
+	if (lora === null) {
+		throw new ImageBackendError(
+			'unconfigured',
+			`The backend has no ${label} Lightning LoRA in models/loras — Settings → Image → Install.`
+		);
+	}
+	return lora ? { textEncoder, vae, lora } : { textEncoder, vae };
 }
 
 /** Whether the server has an acceptable text encoder and VAE for `family`, without throwing. */
 export async function hasCompanions(
 	cfg: api.ClientConfig,
 	family: Exclude<ModelFamily, 'sd'>
-): Promise<{ textEncoder: boolean; vae: boolean }> {
+): Promise<{ textEncoder: boolean; vae: boolean; lora: boolean }> {
 	const want = WANTED[family];
-	const [encoders, vaes] = await Promise.all([
+	const [encoders, vaes, loras] = await Promise.all([
 		optionsOf(cfg, 'CLIPLoader', 'clip_name'),
-		optionsOf(cfg, 'VAELoader', 'vae_name')
+		optionsOf(cfg, 'VAELoader', 'vae_name'),
+		want.lora ? optionsOf(cfg, 'LoraLoaderModelOnly', 'lora_name') : []
 	]);
 	return {
 		textEncoder: pickCompanion(encoders, want.textEncoder) !== null,
-		vae: pickCompanion(vaes, want.vae) !== null
+		vae: pickCompanion(vaes, want.vae) !== null,
+		lora: !want.lora || pickCompanion(loras, want.lora) !== null
 	};
 }
 
@@ -174,6 +199,7 @@ const FAMILY_LABELS: Record<ModelFamily, string> = {
 	qwen21: 'Qwen-Image-2.1, non-commercial',
 	qwen21_turbo: 'Qwen-Image-2.1 Turbo, non-commercial',
 	flux2_klein: 'FLUX.2 klein 4B',
+	qwen_edit_2511: 'Qwen-Image-Edit-2511',
 	sd: 'SD checkpoint'
 };
 
