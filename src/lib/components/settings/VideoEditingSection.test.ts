@@ -7,6 +7,12 @@ import type { VideoBinariesStatus } from '#lib/ipc/gen/VideoBinariesStatus.ts';
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(), isTauri: () => true }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
+const flags = vi.hoisted(() => ({ youtube: true }));
+vi.mock('#lib/video/youtube.ts', () => ({
+	get YOUTUBE_UPLOAD() {
+		return flags.youtube;
+	}
+}));
 
 const settings = vi.hoisted(() => ({
 	videoEditingEnabled: false,
@@ -117,6 +123,14 @@ describe('VideoEditingSection', () => {
 		const button = await screen.findByText('Download large-v3-turbo (1.6 GB)');
 		await fireEvent.click(button);
 		expect(await screen.findByText('whisper large-v3-turbo')).toBeTruthy();
+	});
+
+	it('shows no YouTube sign-in while the upload is hidden', async () => {
+		flags.youtube = false;
+		render(VideoEditingSection);
+		await screen.findByText('melt 7.1 (Kdenlive)');
+		expect(screen.queryByText('Sign in to YouTube')).toBeNull();
+		flags.youtube = true;
 	});
 
 	it('signs in to YouTube for uploads', async () => {

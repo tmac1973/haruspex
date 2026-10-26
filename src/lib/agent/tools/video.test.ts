@@ -91,6 +91,10 @@ describe('video_probe is offered', () => {
 		expect(names({ hasWorkingDir: true, interactive: true })).not.toContain('video_probe');
 	});
 
+	it('without youtube_upload while the upload is hidden', () => {
+		expect(names({ hasWorkingDir: true, interactive: true })).not.toContain('youtube_upload');
+	});
+
 	it('not while Settings → Video editing has them off', async () => {
 		state.enabled = false;
 		expect(names({ hasWorkingDir: true, interactive: true, codeMode: true })).not.toContain(
