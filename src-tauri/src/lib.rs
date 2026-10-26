@@ -437,6 +437,7 @@ pub fn run() {
             image_engine::image_engine_clear_logs,
             image_engine::image_engine_request,
             comfy::comfy_json,
+            comfy::comfy_upload,
             comfy::comfy_bytes,
             comfy::comfy_cancel,
             comfy::comfy_logs,

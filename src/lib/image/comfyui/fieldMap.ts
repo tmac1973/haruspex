@@ -67,6 +67,18 @@ export interface LoraSlotsBinding {
 	source: string;
 }
 
+/**
+ * The pictures an edit changes. Each uploaded picture gets a `LoadImage` node
+ * of its own, wired to `node`'s `${prefix}1`, `${prefix}2`, …: the slots of an
+ * autogrow input, which ComfyUI's API names `<input>.<slot>` (`images.image_1`
+ * on `TextEncodeQwenImage21`). Built here because the count varies per request.
+ */
+export interface EditImagesBinding {
+	kind: 'editImages';
+	node: string;
+	prefix: string;
+}
+
 export interface FieldMap {
 	/** The SaveImage node whose results are collected. */
 	outputNode: string;
@@ -84,6 +96,13 @@ export interface FieldMap {
 	samplerSteps?: ScalarBinding;
 	samplerCfg?: ScalarBinding;
 	loras?: LoraSlotsBinding;
+	editImages?: EditImagesBinding;
+	/**
+	 * The edge an edit's reference pictures are resized to, about: the square
+	 * root of the request's area, in 32s. The result takes the first picture's
+	 * shape at that size.
+	 */
+	resolution?: ScalarBinding;
 }
 
 /** Values a binding can carry that are not on the request verbatim. */
@@ -93,6 +112,8 @@ export interface DerivedValues {
 	/** Resolved from the server's own file lists, for a DiT family. */
 	textEncoder?: string;
 	vae?: string;
+	/** An edit's pictures, as `/upload/image` named them on the server. */
+	editImages?: string[];
 }
 
 function missingNode(graph: ComfyGraph, node: string): boolean {
@@ -130,8 +151,13 @@ export function validateFieldMap(graph: ComfyGraph, map: FieldMap): string[] {
 			binding.forEach((b: ScalarBinding, i) => checkSlot(`${label} [${i}]`, b.node, b.input));
 			continue;
 		}
-		const b = binding as ScalarBinding | LoraSlotsBinding;
-		if (b.kind === 'loraSlots') {
+		const b = binding as ScalarBinding | LoraSlotsBinding | EditImagesBinding;
+		if (b.kind === 'editImages') {
+			// Its slots are made per request; the node they join must be there.
+			if (missingNode(graph, b.node)) {
+				problems.push(`${label} binds node "${b.node}", which the workflow does not contain.`);
+			}
+		} else if (b.kind === 'loraSlots') {
 			if (b.nodes.length === 0) {
 				problems.push('The LoRA binding declares no slots; omit it instead.');
 			}
@@ -177,7 +203,8 @@ export function applyFieldMap(
 		[map.vae, derived.vae],
 		[map.samplerName, req.sampler?.name],
 		[map.samplerSteps, req.sampler?.steps],
-		[map.samplerCfg, req.sampler?.cfg]
+		[map.samplerCfg, req.sampler?.cfg],
+		[map.resolution, Math.max(32, Math.round(Math.sqrt(req.width * req.height) / 32) * 32)]
 	];
 	for (const [binding, value] of scalars) {
 		// An absent value leaves the template's own default in place; an absent
@@ -186,8 +213,22 @@ export function applyFieldMap(
 	}
 
 	if (map.loras) applyLoraChain(out, map.loras, req.loras ?? []);
+	if (map.editImages) applyEditImages(out, map.editImages, derived.editImages ?? []);
 
 	return out;
+}
+
+/** A `LoadImage` node per uploaded picture, each wired to its slot. */
+function applyEditImages(graph: ComfyGraph, binding: EditImagesBinding, names: string[]): void {
+	if (missingNode(graph, binding.node)) {
+		throw new Error(`Workflow has no node "${binding.node}" for the edit's pictures.`);
+	}
+	if (names.length === 0) throw new Error('An edit workflow needs at least one picture.');
+	names.forEach((name, i) => {
+		const id = `edit_image_${i + 1}`;
+		graph[id] = { class_type: 'LoadImage', inputs: { image: name } };
+		graph[binding.node].inputs[`${binding.prefix}${i + 1}`] = [id, 0];
+	});
 }
 
 /**

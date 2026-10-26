@@ -227,3 +227,33 @@ describe('validateFieldMap', () => {
 		expect(validateFieldMap(graph(), bad)).toHaveLength(3);
 	});
 });
+
+describe('edit pictures', () => {
+	const graph = {
+		'4': { class_type: 'TextEncodeQwenImage21', inputs: { prompt: '', resolution: 1024 } },
+		'9': { class_type: 'SaveImage', inputs: {} }
+	};
+	const map: FieldMap = {
+		outputNode: '9',
+		prompt: { kind: 'scalar', node: '4', input: 'prompt' },
+		editImages: { kind: 'editImages', node: '4', prefix: 'images.image_' },
+		resolution: { kind: 'scalar', node: '4', input: 'resolution' }
+	};
+	const req = { prompt: 'x', width: 1600, height: 900, seed: 1 };
+
+	it('adds a LoadImage per picture and sets resolution from the area, in 32s', () => {
+		const out = applyFieldMap(graph, map, req, { editImages: ['a.png', 'b.png'] });
+		expect(out['edit_image_2']).toEqual({ class_type: 'LoadImage', inputs: { image: 'b.png' } });
+		expect(out['4'].inputs['images.image_1']).toEqual(['edit_image_1', 0]);
+		expect(out['4'].inputs.resolution).toBe(1216);
+		expect(graph['4'].inputs).not.toHaveProperty('images.image_1');
+	});
+
+	it('refuses an edit with no pictures, and a binding to a missing node', () => {
+		expect(() => applyFieldMap(graph, map, req)).toThrow(/at least one picture/);
+		const bad: FieldMap = { ...map, editImages: { kind: 'editImages', node: '99', prefix: 'x' } };
+		expect(validateFieldMap(graph, bad)).toEqual([
+			'editImages binds node "99", which the workflow does not contain.'
+		]);
+	});
+});

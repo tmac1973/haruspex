@@ -1,0 +1,73 @@
+{
+	"1": {
+		"class_type": "UNETLoader",
+		"inputs": {
+			"unet_name": "",
+			"weight_dtype": "default"
+		}
+	},
+	"2": {
+		"class_type": "CLIPLoader",
+		"inputs": {
+			"clip_name": "",
+			"type": "qwen_image",
+			"device": "cpu"
+		}
+	},
+	"3": {
+		"class_type": "VAELoader",
+		"inputs": {
+			"vae_name": ""
+		}
+	},
+	"4": {
+		"class_type": "TextEncodeQwenImage21",
+		"inputs": {
+			"clip": ["2", 0],
+			"prompt": "",
+			"negative_prompt": "",
+			"resolution": 1024,
+			"vae": ["3", 0]
+		}
+	},
+	"7": {
+		"class_type": "SamplerCustom",
+		"inputs": {
+			"model": ["1", 0],
+			"add_noise": true,
+			"noise_seed": 0,
+			"cfg": 1,
+			"positive": ["4", 0],
+			"negative": ["4", 1],
+			"sampler": ["10", 0],
+			"sigmas": ["11", 0],
+			"latent_image": ["4", 2]
+		}
+	},
+	"8": {
+		"class_type": "VAEDecode",
+		"inputs": {
+			"samples": ["7", 0],
+			"vae": ["3", 0]
+		}
+	},
+	"9": {
+		"class_type": "SaveImage",
+		"inputs": {
+			"filename_prefix": "haruspex",
+			"images": ["8", 0]
+		}
+	},
+	"10": {
+		"class_type": "KSamplerSelect",
+		"inputs": {
+			"sampler_name": "euler"
+		}
+	},
+	"11": {
+		"class_type": "ManualSigmas",
+		"inputs": {
+			"sigmas": "1.0, 0.978453, 0.95418, 0.926626, 0.89508, 0.845148, 0.704534, 0.414568, 0.0"
+		}
+	}
+}

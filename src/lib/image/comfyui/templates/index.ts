@@ -20,6 +20,8 @@ import mingRgbaGraph from '#lib/image/comfyui/templates/ming_t2i_rgba.json';
 import mingSeamlessGraph from '#lib/image/comfyui/templates/ming_t2i_seamless.json';
 import qwen21Graph from '#lib/image/comfyui/templates/qwen21_t2i.json';
 import qwen21TurboGraph from '#lib/image/comfyui/templates/qwen21_turbo_t2i.json';
+import qwen21EditGraph from '#lib/image/comfyui/templates/qwen21_edit.json';
+import qwen21TurboEditGraph from '#lib/image/comfyui/templates/qwen21_turbo_edit.json';
 import type { ComfyGraph, FieldMap, ScalarBinding } from '#lib/image/comfyui/fieldMap.ts';
 import type { ModelFamily } from '#lib/image/comfyui/families.ts';
 import type { SamplerSettings } from '#lib/image/types.ts';
@@ -33,7 +35,11 @@ export interface WorkflowTemplate {
 	license: string;
 	/** Who authored it. */
 	source: string;
-	supports: { transparent: boolean; seamless: boolean };
+	/**
+	 * `edit`: changes the request's `edit` pictures rather than drawing from
+	 * nothing. Only ever chosen for an edit, and an edit only gets one of these.
+	 */
+	supports: { transparent: boolean; seamless: boolean; edit?: boolean };
 	/** What the graph samples with when the request names nothing. */
 	defaultSampler: SamplerSettings;
 	/**
@@ -197,6 +203,24 @@ const QWEN21_TURBO_BINDINGS: FieldMap = {
 
 const QWEN21_TURBO_SAMPLER: SamplerSettings = { name: 'euler', steps: 8, cfg: 1 };
 
+/**
+ * Editing with Qwen-Image-2.1's own text encoder (ComfyUI 0.39's
+ * `TextEncodeQwenImage21`, which takes reference pictures and the VAE): the
+ * drawing graphs with the pictures wired in, sampling from the encoder's latent,
+ * which is sized from the first picture. No size bindings: the size is the
+ * picture's, at `resolution`.
+ */
+function editBindings(base: FieldMap): FieldMap {
+	const rest = { ...base };
+	delete rest.width;
+	delete rest.height;
+	return {
+		...rest,
+		editImages: { kind: 'editImages', node: '4', prefix: 'images.image_' },
+		resolution: { kind: 'scalar', node: '4', input: 'resolution' }
+	};
+}
+
 /** The wrapper from the model's own template; its VAE always carries alpha. */
 export function qwen21Transparent(prompt: string): string {
 	return (
@@ -343,6 +367,26 @@ export const TEMPLATES: WorkflowTemplate[] = [
 		supports: { transparent: true, seamless: false },
 		defaultSampler: QWEN21_TURBO_SAMPLER,
 		wrapPrompt: qwen21Transparent
+	},
+	{
+		id: 'qwen21_edit',
+		family: 'qwen21',
+		graph: qwen21EditGraph as ComfyGraph,
+		map: editBindings(QWEN21_BINDINGS),
+		license: LICENSE,
+		source: SOURCE,
+		supports: { transparent: false, seamless: false, edit: true },
+		defaultSampler: QWEN21_SAMPLER
+	},
+	{
+		id: 'qwen21_turbo_edit',
+		family: 'qwen21_turbo',
+		graph: qwen21TurboEditGraph as ComfyGraph,
+		map: editBindings(QWEN21_TURBO_BINDINGS),
+		license: LICENSE,
+		source: SOURCE,
+		supports: { transparent: false, seamless: false, edit: true },
+		defaultSampler: QWEN21_TURBO_SAMPLER
 	}
 ];
 
@@ -355,11 +399,14 @@ export const TEMPLATES: WorkflowTemplate[] = [
  * still generates, and says so in `capabilities().transparency`.
  */
 export function selectTemplate(
-	want: { transparent: boolean; seamless: boolean },
+	want: { transparent: boolean; seamless: boolean; edit?: boolean },
 	from: WorkflowTemplate[]
 ): WorkflowTemplate | undefined {
+	// An edit and a drawing never stand in for each other.
+	const kind = from.filter((t) => Boolean(t.supports.edit) === Boolean(want.edit));
+	if (want.edit) return kind[0];
 	const match = (transparent: boolean, seamless: boolean) =>
-		from.find((t) => t.supports.transparent === transparent && t.supports.seamless === seamless);
+		kind.find((t) => t.supports.transparent === transparent && t.supports.seamless === seamless);
 	return (
 		match(want.transparent, want.seamless) ??
 		match(want.transparent, false) ??

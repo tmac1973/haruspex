@@ -42,6 +42,7 @@ import {
 	type ModelFamily
 } from '#lib/image/comfyui/families.ts';
 import * as api from '#lib/image/comfyui/client.ts';
+import { uploadImage } from '#lib/image/comfyui/upload.ts';
 
 /** What a custom workflow samples with when a request says nothing. */
 export const DEFAULT_SAMPLER: SamplerSettings = { name: 'euler_ancestral', steps: 28, cfg: 7 };
@@ -119,25 +120,79 @@ async function activeTemplates(family: ModelFamily): Promise<WorkflowTemplate[]>
 	return custom ? [custom] : templatesFor(family);
 }
 
-function capabilitiesOf(templates: WorkflowTemplate[]): ImageBackendCapabilities {
+/** Pictures one Qwen-Image-2.1 edit combines here; its encoder takes up to 16. */
+const MAX_EDIT_IMAGES = 3;
+
+function capabilitiesOf(
+	templates: WorkflowTemplate[],
+	serverEdits: boolean
+): ImageBackendCapabilities {
 	const loraNodes = Math.max(
 		0,
 		...templates.map((t) => (t.map.loras ? t.map.loras.nodes.length : 0))
 	);
+	const edit = serverEdits && templates.some((t) => t.supports.edit);
 	return {
 		transparency: templates.some((t) => t.supports.transparent),
 		seamlessTiling: templates.some((t) => t.supports.seamless),
 		loras: loraNodes > 0,
-		maxLoras: loraNodes
+		maxLoras: loraNodes,
+		edit,
+		maxEditImages: edit ? MAX_EDIT_IMAGES : 0
 	};
+}
+
+/** Per server: does its `TextEncodeQwenImage21` take reference pictures? */
+const editsByServer = new Map<string, Promise<boolean>>();
+
+/**
+ * Whether the server can edit with Qwen-Image-2.1: ComfyUI added the encoder's
+ * `images` input (and `vae`) after the node itself, so an older build draws
+ * with it but cannot edit. Asked once per server; a failure isn't remembered.
+ */
+function serverEdits(cfg: api.ClientConfig): Promise<boolean> {
+	const key = cfg.baseUrl.trim();
+	let known = editsByServer.get(key);
+	if (!known) {
+		known = api
+			.objectInfo(cfg, 'TextEncodeQwenImage21')
+			.then((info) => {
+				const inputs = (info as Record<string, { input?: Record<string, object> }>)
+					?.TextEncodeQwenImage21?.input;
+				const all = { ...inputs?.required, ...inputs?.optional };
+				return 'images' in all && 'vae' in all;
+			})
+			.catch(() => {
+				editsByServer.delete(key);
+				return false;
+			});
+		editsByServer.set(key, known);
+	}
+	return known;
+}
+
+/** A PNG's size from its header, or null for anything else. */
+export function pngSize(bytes: Uint8Array): { width: number; height: number } | null {
+	if (bytes.length < 24 || bytes[0] !== 0x89 || bytes[1] !== 0x50) return null;
+	const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+	return { width: v.getUint32(16), height: v.getUint32(20) };
 }
 
 /** The template for this request. Falls back as `selectTemplate` describes. */
 function templateFor(req: ImageRequest, templates: WorkflowTemplate[]): WorkflowTemplate {
-	const want = { transparent: Boolean(req.transparent), seamless: Boolean(req.seamless) };
-	const picked = selectTemplate(want, templates) ?? templates[0];
+	const want = {
+		transparent: Boolean(req.transparent),
+		seamless: Boolean(req.seamless),
+		edit: Boolean(req.edit)
+	};
+	const picked = selectTemplate(want, templates) ?? (req.edit ? undefined : templates[0]);
 	if (!picked) {
-		throw new ImageBackendError('unconfigured', 'No bundled workflow serves this model.');
+		throw new ImageBackendError(
+			'unconfigured',
+			req.edit
+				? "This model can't edit pictures here — choose Qwen-Image-2.1 in Settings → Image."
+				: 'No bundled workflow serves this model.'
+		);
 	}
 	return picked;
 }
@@ -172,7 +227,7 @@ async function probeModel(
  * the model and its family, the family's workflow and companion files, the
  * sampler the workflow runs, and a real seed.
  */
-async function prepare(cfg: api.ClientConfig, req: ImageRequest) {
+async function prepare(cfg: api.ClientConfig, req: ImageRequest, signal?: AbortSignal) {
 	const model = (req.model ?? configuredModel()).trim();
 	const family = familyOf(model);
 	const template = templateFor(req, await activeTemplates(family));
@@ -188,12 +243,20 @@ async function prepare(cfg: api.ClientConfig, req: ImageRequest) {
 		req.transparent && template.supports.transparent && template.wrapPrompt
 			? template.wrapPrompt(req.prompt)
 			: req.prompt;
+	// Each under a name of its own, so two edits at once can't swap pictures.
+	const editImages = req.edit
+		? await Promise.all(
+				req.edit.images.map((input) =>
+					uploadImage(cfg, input, `haruspex-edit-${crypto.randomUUID()}.png`, signal)
+				)
+			)
+		: undefined;
 
 	const graph = applyFieldMap(
 		template.graph,
 		template.map,
 		{ ...req, prompt, seed, sampler, loras },
-		{ model, ...companions }
+		{ model, ...companions, editImages }
 	);
 	return { template, graph, model, sampler, loras, seed };
 }
@@ -236,7 +299,9 @@ export const comfyUiBackend: ImageBackend = {
 	kind: 'comfyui',
 
 	async capabilities() {
-		return capabilitiesOf(await activeTemplates(familyOf(configuredModel())));
+		const templates = await activeTemplates(familyOf(configuredModel()));
+		const edits = templates.some((t) => t.supports.edit) && (await serverEdits(config()));
+		return capabilitiesOf(templates, edits);
 	},
 
 	async probe() {
@@ -278,7 +343,7 @@ export const comfyUiBackend: ImageBackend = {
 	async generate(req: ImageRequest, opts: GenerateOptions = {}): Promise<ImageResult> {
 		const cfg = config();
 		const started = Date.now();
-		const { template, graph, model, sampler, loras, seed } = await prepare(cfg, req);
+		const { template, graph, model, sampler, loras, seed } = await prepare(cfg, req, opts.signal);
 		const clientId = crypto.randomUUID();
 		// Unique per request so concurrent submissions cannot be confused for
 		// one another in /history.
@@ -327,11 +392,11 @@ export const comfyUiBackend: ImageBackend = {
 			opts.onProgress?.({ phase: 'downloading' });
 			const bytes = await Promise.all(images.map((i) => api.view(cfg, i, opts.signal)));
 			return {
+				// An edit is sized from its first picture, so read what came back.
 				images: bytes.map((b) => ({
 					bytes: b,
 					mimeType: 'image/png',
-					width: req.width,
-					height: req.height
+					...(pngSize(b) ?? { width: req.width, height: req.height })
 				})),
 				meta: {
 					seed,

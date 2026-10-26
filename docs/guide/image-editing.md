@@ -26,9 +26,10 @@ Name up to four pictures in one request, such as "put the cat from my second pic
 Editing needs a model that was made for it:
 
 - **Bundled engine with Qwen-Image 2.1.** It edits once it has its vision weights, 1.2 GB more. A new download includes them; for one made earlier, press **Add editing** under Settings → Image → Bundled engine. Qwen-Image may not be used commercially. Ming-Image can't edit.
+- **ComfyUI with Qwen-Image 2.1** (or its Turbo), on ComfyUI 0.39 or later. The files it already uses for drawing are enough. Pictures are uploaded to the server's input folder.
 - **llama-toolchest** with a model that edits, such as FLUX.2 klein 4B (Apache 2.0, commercial use allowed). Add it in llama-toolchest; Settings → Image lists it like any other model.
 
-With ComfyUI or Lemonade, or a model that can't edit, the assistant says so and what can. Choosing a different model in Settings → Image is up to you.
+With Lemonade, a ComfyUI model other than Qwen-Image 2.1, or an older ComfyUI, the assistant says it can't edit and what can. Choosing a different model in Settings → Image is up to you.
 
 ## What it doesn't do
 
@@ -38,4 +39,4 @@ With ComfyUI or Lemonade, or a model that can't edit, the assistant says so and 
 
 ## What has been tested
 
-Editing with FLUX.2 klein 4B on a llama-toolchest server, and with Qwen-Image 2.1 Turbo on the bundled engine on a 16 GB AMD card (about 30 seconds), has been tested; the rest is covered by automated tests. See the `images` page for setting up a backend.
+Editing with FLUX.2 klein 4B on a llama-toolchest server, and with Qwen-Image 2.1 Turbo on the bundled engine on a 16 GB AMD card (about 30 seconds), and with Qwen-Image 2.1 Turbo on ComfyUI 0.39, has been tested; the rest is covered by automated tests. See the `images` page for setting up a backend.
