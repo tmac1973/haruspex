@@ -87,6 +87,33 @@ export function isSaveTarget(v: SaveTarget | ToolExecOutput): v is SaveTarget {
 	return 'mode' in v;
 }
 
+/**
+ * Write a picture from the image cache to a settled target, by hash; the
+ * refusal, or null. Rust reads and writes it (`fs_save_cached_image`), so a
+ * large one, an upscale of 20 MB or more, never crosses the bridge and isn't
+ * held to the cap on what a model writes.
+ */
+export async function writeCachedImage(
+	target: SaveTarget,
+	hash: string,
+	ctx: ToolContext
+): Promise<string | null> {
+	const workdir = target.mode === 'chat' ? target.workdir : fsWorkdir(ctx);
+	if (!workdir) return `Could not write ${target.path}: there is no folder to save into.`;
+	try {
+		await invoke('fs_save_cached_image', {
+			hash,
+			workdir,
+			relPath: target.path,
+			overwrite: target.overwrite
+		});
+		ctx.filesWrittenThisTurn.add(target.path);
+		return null;
+	} catch (e) {
+		return `Could not write ${target.path}: ${e instanceof Error ? e.message : String(e)}`;
+	}
+}
+
 /** Write the bytes to a settled target; the refusal, or null. */
 export async function writeSaved(
 	target: SaveTarget,

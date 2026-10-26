@@ -43,7 +43,7 @@ export function unregisterTool(name: string): void {
 }
 
 /** The tools that make a picture in Chat, offered and saved alike. */
-const IMAGE_TOOLS = new Set(['generate_image', 'edit_image']);
+const IMAGE_TOOLS = new Set(['generate_image', 'edit_image', 'upscale_image']);
 
 /** The tools that make a song, offered and saved alike. */
 const SONG_TOOLS = new Set(['generate_music', 'edit_music']);

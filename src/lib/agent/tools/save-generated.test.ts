@@ -17,6 +17,8 @@ const names = (o: Parameters<typeof getToolSchemas>[0]) =>
 	getToolSchemas(o).map((s) => s.function.name);
 const writes = () =>
 	state.invoke.mock.calls.filter(([c]) => c === 'fs_write_bytes').map(([, a]) => a);
+const copies = () =>
+	state.invoke.mock.calls.filter(([c]) => c === 'fs_save_cached_image').map(([, a]) => a);
 
 beforeEach(() => {
 	state.existing = new Set();
@@ -27,6 +29,9 @@ beforeEach(() => {
 			if (cmd === 'audio_read_bytes' || cmd === 'image_read_bytes') {
 				if (args.hash === 'f'.repeat(64)) throw 'not found';
 				return new Uint8Array(cmd === 'image_read_bytes' ? [137, 80] : [1, 2, 3]).buffer;
+			}
+			if (cmd === 'fs_save_cached_image' && args.hash === 'f'.repeat(64)) {
+				throw 'That picture is no longer cached; make it again.';
 			}
 			if (cmd === 'fs_path_exists') return state.existing.has(String(args.relPath));
 			if (cmd === 'fs_find_available_path') return 'rain (1).mp3';
@@ -63,14 +68,11 @@ describe('save_generated in Chat', () => {
 				bytes: [1, 2, 3],
 				overwrite: false,
 				dryRun: false
-			},
-			{
-				workdir: '/home/me/out',
-				relPath: 'fox.png',
-				bytes: [137, 80],
-				overwrite: false,
-				dryRun: false
 			}
+		]);
+		// A picture is copied from the cache in Rust, whatever its size.
+		expect(copies()).toEqual([
+			{ hash: 'b'.repeat(64), workdir: '/home/me/out', relPath: 'fox.png', overwrite: false }
 		]);
 	});
 
@@ -117,6 +119,10 @@ describe('save_generated in Chat', () => {
 		const gone = `haruspex-img://localhost/${'f'.repeat(64)}`;
 		const out = await executeTool('save_generated', { url: gone, path: 'old.png' }, chat());
 		expect(out.result).toMatch(/picture is no longer cached/);
+		const song = `haruspex-audio://localhost/${'f'.repeat(64)}`;
+		expect(
+			(await executeTool('save_generated', { url: song, path: 'old.mp3' }, chat())).result
+		).toMatch(/song is no longer cached/);
 	});
 });
 

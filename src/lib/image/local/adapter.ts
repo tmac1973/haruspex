@@ -32,6 +32,7 @@ export const ROUTES = {
 	/** Answers only once the weights are loaded, so it doubles as readiness. */
 	ready: '/sdcpp/v1/capabilities',
 	txt2img: '/sdapi/v1/txt2img',
+	upscale: '/sdcpp/v1/upscale',
 	img2img: '/sdapi/v1/img2img',
 	models: '/sdapi/v1/sd-models'
 } as const;
@@ -60,7 +61,8 @@ export function familyOfId(id: string): LocalFamily | null {
  */
 export function declaredCapabilities(
 	family: LocalFamily | null = null,
-	canEdit = false
+	canEdit = false,
+	canUpscale = false
 ): ImageBackendCapabilities {
 	const build = capabilitiesFrom(FIXTURE);
 	if (!family) return build;
@@ -69,6 +71,8 @@ export function declaredCapabilities(
 		seamlessTiling: true,
 		loras: false,
 		maxLoras: 0,
+		// The ESRGAN upscaler is the engine's, whichever model it runs.
+		upscale: canUpscale,
 		// Qwen with its vision weights (`--llm_vision`); Ming draws only.
 		edit: family === 'qwen21' && canEdit,
 		maxEditImages: family === 'qwen21' && canEdit ? MAX_EDIT_IMAGES : 0

@@ -15,7 +15,7 @@
 //! against, `sheet.rs` the contact sheet a run is reviewed through,
 //! `split.rs` the cut that turns one generated sheet into its sprites,
 //! `tiling.rs` whether a texture tiles, `texture/` textures drawn by code
-//! from a recipe, and
+//! from a recipe, `upscale.rs` the finish an ESRGAN upscale needs, and
 //! `commands.rs` the thin Tauri wrappers.
 
 pub mod checks;
@@ -28,3 +28,4 @@ pub mod split;
 pub mod stats;
 pub mod texture;
 pub mod tiling;
+pub mod upscale;

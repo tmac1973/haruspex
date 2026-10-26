@@ -39,6 +39,7 @@
 	} from '#lib/image/types.ts';
 	import type { ModelOption, ProbeResult } from '#lib/image/backend.ts';
 	import type { ImageModelInfo } from '#lib/ipc/gen/ImageModelInfo.ts';
+	import type { UpscalerInfo } from '#lib/ipc/gen/UpscalerInfo.ts';
 
 	let imageBackendKind = $state(getSettings().imageBackendKind);
 
@@ -149,8 +150,33 @@
 		wasActive = now;
 	});
 
+	let upscaler = $state<UpscalerInfo | null>(null);
+	const UPSCALER_KEY = 'image:upscaler';
+
 	async function refreshModels() {
 		models = await invoke<ImageModel[]>('image_models').catch(() => []);
+		upscaler = await invoke<UpscalerInfo>('image_upscaler').catch(() => null);
+	}
+
+	async function downloadUpscaler() {
+		downloadError = '';
+		try {
+			await runDownload(UPSCALER_KEY, () =>
+				invoke('image_upscaler_download', { proxy: getSettings().proxy })
+			);
+		} catch (e) {
+			downloadError = errMessage(e);
+		} finally {
+			await refreshModels();
+		}
+	}
+
+	async function deleteUpscaler() {
+		downloadError = '';
+		await invoke('image_upscaler_delete').catch((e: unknown) => {
+			downloadError = errMessage(e);
+		});
+		await refreshModels();
 	}
 
 	async function downloadModel(m: ImageModel) {
@@ -496,6 +522,34 @@
 				{/if}
 			</div>
 		{/each}
+		{#if upscaler}
+			<div class="model">
+				<div class="model-head">
+					<strong>Upscaler — Real-ESRGAN x4plus, for making pictures larger</strong>
+				</div>
+				<p class="help" title={upscaler.filename}>
+					{upscaler.license}
+					<a href={upscaler.license_url} target="_blank" rel="noreferrer">Full text</a>
+					· {Math.round(upscaler.size_bytes / 1e6)} MB
+				</p>
+				<div class="row">
+					{#if upscaler.downloaded}
+						<button onclick={deleteUpscaler}>Delete</button>
+					{:else if active?.key !== UPSCALER_KEY}
+						<button
+							onclick={downloadUpscaler}
+							disabled={active !== null}
+							title={active ? 'Another download is running.' : undefined}
+						>
+							Download
+						</button>
+					{/if}
+				</div>
+				{#if active?.key === UPSCALER_KEY}
+					<DownloadProgressBar progress={active.progress} oncancel={cancelDownload} />
+				{/if}
+			</div>
+		{/if}
 		{#if downloadError}
 			<p class="warn">{downloadError}</p>
 		{/if}

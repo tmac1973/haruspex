@@ -213,7 +213,8 @@ describe('per family', () => {
 				loras: false,
 				maxLoras: 0,
 				edit: false,
-				maxEditImages: 0
+				maxEditImages: 0,
+				upscale: false
 			});
 		}
 	});

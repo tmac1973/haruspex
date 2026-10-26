@@ -52,6 +52,11 @@ pub struct ImageRequest {
 /// fires automatically off model output.
 pub const MAX_IMAGE_BYTES: u64 = 5 * 1024 * 1024;
 
+/// Per-image ceiling for a picture we made, 64 MB: an upscaled one is a few
+/// thousand pixels a side, 20 MB or more as a PNG. Nothing fetches these, so
+/// the reason for the tighter limit on fetched images doesn't apply.
+pub const MAX_GENERATED_BYTES: u64 = 64 * 1024 * 1024;
+
 /// Total cache ceiling, 500 MB — thousands of images. A disk limit, not a
 /// retention promise: eviction may take an image a stored conversation still
 /// references, and because rehydration is lookup-only that image then stops

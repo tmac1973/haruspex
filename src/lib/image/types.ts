@@ -142,6 +142,8 @@ export interface ImageBackendCapabilities {
 	edit?: boolean;
 	/** How many pictures one edit may combine; absent means one. */
 	maxEditImages?: number;
+	/** `ImageBackend.upscale` works: it has an upscaling model. Absent means no. */
+	upscale?: boolean;
 }
 
 /**

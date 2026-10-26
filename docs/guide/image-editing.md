@@ -1,6 +1,6 @@
 ---
 title: Image editing
-description: Changing a picture in Chat (one you attached, one the assistant drew, or a file in the working folder), combining pictures, and which image backends and models can do it.
+description: Changing a picture in Chat (one you attached, one the assistant drew, or a file in the working folder), combining pictures, making one larger, and which image backends and models can do each.
 ---
 
 # Image editing
@@ -31,10 +31,17 @@ Editing needs a model that was made for it:
 
 With Lemonade, a ComfyUI model other than Qwen-Image 2.1, or an older ComfyUI, the assistant says it can't edit and what can. Choosing a different model in Settings → Image is up to you.
 
+## Make a picture larger
+
+Ask the assistant to upscale a picture, two or four times: "make it four times bigger for printing". It sharpens as it enlarges, and a transparent background stays transparent. The result is at most 4096 pixels on its longest side, so pictures up to 2048 pixels can be upscaled. A 1024-pixel picture takes about 12 seconds.
+
+This needs the bundled engine in Settings → Image with its upscaler, Real-ESRGAN (BSD 3-Clause, 67 MB): press **Download** under Settings → Image → Bundled engine → **Upscaler**. It works with whichever model the engine runs.
+
 ## What it doesn't do
 
 - It doesn't paint into a region you mark; describe the area in words instead.
-- It doesn't make a transparent background or tile.
+- An edit doesn't make a transparent background or tile.
+- Only the bundled engine upscales; ComfyUI, Lemonade and llama-toolchest don't yet.
 - A picture pasted into Chat is shrunk to 1024 pixels on its longest side, so edits of it are at most that size.
 
 ## What has been tested
