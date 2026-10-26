@@ -37,6 +37,9 @@ pub struct Media {
 pub enum Source {
     /// The main-track item with this index in `Doc::items`.
     Existing(usize),
+    /// Another copy of that item, with chains of its own and its effects: a
+    /// piece of a clip split in two.
+    Piece(usize),
     New(Media),
 }
 
@@ -115,6 +118,11 @@ fn layout(
     let mixes = item_mixes(doc, items);
     let mut seen = HashSet::new();
     for p in wanted {
+        if let Source::Piece(i) = p.source {
+            if i >= items.len() {
+                return Err(format!("There is no clip {} on the main track.", i + 1));
+            }
+        }
         if let Source::Existing(i) = p.source {
             if i >= items.len() {
                 return Err(format!(
@@ -155,7 +163,7 @@ fn layout(
     let mut laid: Vec<Laid> = Vec::new();
     for (pos, p) in wanted.iter().enumerate() {
         let (default_in, default_out, max_out, bin_id, video_lane, audio_lane) = match &p.source {
-            Source::Existing(i) => {
+            Source::Existing(i) | Source::Piece(i) => {
                 let e = items[*i].any();
                 let max = bin_length(doc, &items[*i]).map(|l| l - 1);
                 (
@@ -195,7 +203,7 @@ fn layout(
             (Some(prev), Source::Existing(i)) => {
                 let prev_index = match prev.source {
                     Source::Existing(pi) => Some(pi),
-                    Source::New(_) => None,
+                    Source::Piece(_) | Source::New(_) => None,
                 };
                 if let Some(&(_, _, frames)) = mixes
                     .iter()
@@ -209,7 +217,7 @@ fn layout(
                     prev.end()
                 }
             }
-            (Some(prev), Source::New(_)) => prev.end(),
+            (Some(prev), Source::New(_) | Source::Piece(_)) => prev.end(),
         };
         laid.push(Laid {
             source: p.source.clone(),
@@ -423,7 +431,11 @@ fn entry_text(doc: &Doc, fps: Fps, l: &Laid, old: Option<&Entry>, chain: &str) -
     match old {
         Some(e) => {
             let n = doc.tree.node(e.node);
-            let tag = retag(doc, e.node, &[("in", in_tc), ("out", out_tc)]);
+            let tag = retag(
+                doc,
+                e.node,
+                &[("in", in_tc), ("out", out_tc), ("producer", chain.to_string())],
+            );
             let rest = &doc.text[if n.self_closing() { n.span.end } else { n.inner_start }..n.span.end];
             format!("{tag}{rest}")
         }
@@ -571,6 +583,33 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
         }
     }
 
+    // Pieces: a copy of each of the item's chains, under a new id.
+    for l in laid.iter_mut() {
+        let Source::Piece(i) = l.source else { continue };
+        for (entry, is_audio) in [(&items[i].audio, true), (&items[i].video, false)] {
+            let Some(e) = entry else { continue };
+            let Some(chain) = doc.tree.by_id(&e.chain) else {
+                continue;
+            };
+            let id = format!("chain{next_chain}");
+            next_chain += 1;
+            let text = &doc.text[line_of(&doc.text, doc.tree.node(chain).span.clone())];
+            new_chains.push_str(&text.replacen(
+                &format!("id=\"{}\"", e.chain),
+                &format!("id=\"{id}\""),
+                1,
+            ));
+            if !text.ends_with('\n') {
+                new_chains.push('\n');
+            }
+            if is_audio {
+                l.audio_chain = Some(id);
+            } else {
+                l.video_chain = Some(id);
+            }
+        }
+    }
+
     // The playlists.
     for (track, is_audio) in [(doc.main_audio, true), (doc.main_video, false)] {
         let playlists = doc.tracks[track].playlists.clone();
@@ -585,6 +624,22 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
                     };
                     let Some(e) = e else { continue };
                     (Some(e), e.chain.clone(), e.lane)
+                }
+                Source::Piece(i) => {
+                    let e = if is_audio {
+                        items[*i].audio.as_ref()
+                    } else {
+                        items[*i].video.as_ref()
+                    };
+                    let chain = if is_audio {
+                        &l.audio_chain
+                    } else {
+                        &l.video_chain
+                    };
+                    let (Some(e), Some(chain)) = (e, chain) else {
+                        continue;
+                    };
+                    (Some(e), chain.clone(), e.lane)
                 }
                 Source::New(_) => {
                     let chain = if is_audio {
@@ -620,7 +675,7 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
         .iter()
         .filter_map(|l| match l.source {
             Source::Existing(i) => Some(i),
-            Source::New(_) => None,
+            Source::Piece(_) | Source::New(_) => None,
         })
         .collect();
     let all_entries: Vec<Entry> = (0..doc.tracks.len())
@@ -673,7 +728,7 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
         .iter()
         .filter_map(|l| match l.source {
             Source::Existing(i) => Some((i, l.start)),
-            Source::New(_) => None,
+            Source::Piece(_) | Source::New(_) => None,
         })
         .collect();
     for (i, item) in items.iter().enumerate() {
@@ -688,7 +743,9 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
     let mut groups = doc.groups();
     let mut groups_changed = remap_groups(&mut groups, &moves);
     for l in &laid {
-        if matches!(l.source, Source::New(_)) && l.video_chain.is_some() && l.audio_chain.is_some()
+        if !matches!(l.source, Source::Existing(_))
+            && l.video_chain.is_some()
+            && l.audio_chain.is_some()
         {
             if let Some(list) = groups.as_array_mut() {
                 list.push(serde_json::json!({

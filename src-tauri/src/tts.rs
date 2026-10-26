@@ -151,6 +151,7 @@ impl TtsEngine {
         // buffers stdout past the moment it starts accepting connections.
         let spec = SidecarStart {
             name: "koko",
+            id: "koko",
             port: TTS_PORT,
             args,
             env,

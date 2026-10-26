@@ -27,6 +27,7 @@ const ORDER = [
 	'music',
 	'video',
 	'video-render',
+	'video-speech',
 	'textures',
 	'integrations',
 	'search-and-network',

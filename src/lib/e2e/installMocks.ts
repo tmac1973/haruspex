@@ -144,6 +144,7 @@ const TABLE: Record<string, Handler> = {
 	// No ffmpeg or melt in the e2e world: the video tools stay off.
 	video_binaries_status: () => ({ ffmpeg: null, ffprobe: null, melt: null, hints: [] }),
 	video_task_list: empty,
+	get_whisper_video_model_path: none,
 	download_status: none,
 	remote_status: () => ({
 		running: false,

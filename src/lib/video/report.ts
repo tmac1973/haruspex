@@ -8,6 +8,7 @@ import type { EpisodeProbe } from '#lib/ipc/gen/EpisodeProbe.ts';
 import type { ProjectSummary } from '#lib/ipc/gen/ProjectSummary.ts';
 import type { SummaryItem } from '#lib/ipc/gen/SummaryItem.ts';
 import type { CutResult } from '#lib/ipc/gen/CutResult.ts';
+import type { TimelineTranscript } from '#lib/ipc/gen/TimelineTranscript.ts';
 
 /** `12:03`, or `1:02:03` past an hour. */
 export function formatDuration(secs: number): string {
@@ -144,5 +145,25 @@ export function cutReport(r: CutResult): string {
 	const lines = [`${r.created ? 'Made' : 'Saved'} ${r.summary.project}.`, summaryReport(r.summary)];
 	if (r.notes.length) lines.push(...r.notes);
 	lines.push(KDENLIVE_OPEN);
+	return lines.join('\n');
+}
+
+/** The cut's speech, `[h:mm:ss] text`, as long as it fits in `cap`. */
+export function timelineTranscriptReport(t: TimelineTranscript, cap = 12_000): string {
+	const lines = [`The cut's speech, in the video's time:`];
+	let used = 0;
+	for (const l of t.lines) {
+		const line = `[${formatDuration(l.start)}] ${l.text}`;
+		if (used + line.length > cap) {
+			lines.push('… (cut here to fit)');
+			break;
+		}
+		lines.push(line);
+		used += line.length + 1;
+	}
+	if (t.lines.length === 0) lines.push('(nothing transcribed yet: use video_transcribe)');
+	if (t.untranscribed.length > 0) {
+		lines.push(`Clips ${t.untranscribed.join(', ')} have no transcript yet.`);
+	}
 	return lines.join('\n');
 }
