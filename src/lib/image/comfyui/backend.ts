@@ -122,11 +122,19 @@ async function activeTemplates(family: ModelFamily): Promise<WorkflowTemplate[]>
 	return custom ? [custom] : templatesFor(family);
 }
 
-/** Pictures one Qwen-Image-2.1 edit combines here; its encoder takes up to 16. */
-const MAX_EDIT_IMAGES = 3;
+/**
+ * Pictures one edit combines, by family: Qwen-Image-2.1's encoder takes up to
+ * 16, and three is where it still keeps them apart; klein is made for four.
+ */
+const MAX_EDIT_IMAGES: Partial<Record<ModelFamily, number>> = {
+	qwen21: 3,
+	qwen21_turbo: 3,
+	flux2_klein: 4
+};
 
 function capabilitiesOf(
 	templates: WorkflowTemplate[],
+	family: ModelFamily,
 	serverEdits: boolean,
 	upscaler: boolean
 ): ImageBackendCapabilities {
@@ -141,7 +149,7 @@ function capabilitiesOf(
 		loras: loraNodes > 0,
 		maxLoras: loraNodes,
 		edit,
-		maxEditImages: edit ? MAX_EDIT_IMAGES : 0,
+		maxEditImages: edit ? (MAX_EDIT_IMAGES[family] ?? 1) : 0,
 		upscale: upscaler
 	};
 }
@@ -172,30 +180,39 @@ export function upscaleGraph(image: string, model: string, prefix: string): Comf
 }
 const UPSCALE_OUTPUT = '4';
 
-/** Per server: does its `TextEncodeQwenImage21` take reference pictures? */
+/** Per server and family: can it run the family's edit workflow? */
 const editsByServer = new Map<string, Promise<boolean>>();
 
+/** A node's inputs, required and optional; null when the server hasn't the node. */
+async function nodeInputs(cfg: api.ClientConfig, cls: string): Promise<object | null> {
+	const info = (await api.objectInfo(cfg, cls)) as Record<
+		string,
+		{ input?: Record<string, object> }
+	> | null;
+	const node = info?.[cls];
+	return node ? { ...node.input?.required, ...node.input?.optional } : null;
+}
+
 /**
- * Whether the server can edit with Qwen-Image-2.1: ComfyUI added the encoder's
- * `images` input (and `vae`) after the node itself, so an older build draws
- * with it but cannot edit. Asked once per server; a failure isn't remembered.
+ * Whether the server can edit with `family`. Qwen-Image-2.1: ComfyUI added its
+ * encoder's `images` input (and `vae`) after the node itself, so an older build
+ * draws with it but cannot edit. klein: `ReferenceLatent`. Asked once per
+ * server and family; a failure isn't remembered.
  */
-function serverEdits(cfg: api.ClientConfig): Promise<boolean> {
-	const key = cfg.baseUrl.trim();
+function serverEdits(cfg: api.ClientConfig, family: ModelFamily): Promise<boolean> {
+	const key = `${cfg.baseUrl.trim()} ${family}`;
 	let known = editsByServer.get(key);
 	if (!known) {
-		known = api
-			.objectInfo(cfg, 'TextEncodeQwenImage21')
-			.then((info) => {
-				const inputs = (info as Record<string, { input?: Record<string, object> }>)
-					?.TextEncodeQwenImage21?.input;
-				const all = { ...inputs?.required, ...inputs?.optional };
-				return 'images' in all && 'vae' in all;
-			})
-			.catch(() => {
-				editsByServer.delete(key);
-				return false;
-			});
+		known = (
+			family === 'flux2_klein'
+				? nodeInputs(cfg, 'ReferenceLatent').then((all) => all !== null)
+				: nodeInputs(cfg, 'TextEncodeQwenImage21').then(
+						(all) => !!all && 'images' in all && 'vae' in all
+					)
+		).catch(() => {
+			editsByServer.delete(key);
+			return false;
+		});
 		editsByServer.set(key, known);
 	}
 	return known;
@@ -220,7 +237,7 @@ function templateFor(req: ImageRequest, templates: WorkflowTemplate[]): Workflow
 		throw new ImageBackendError(
 			'unconfigured',
 			req.edit
-				? "This model can't edit pictures here — choose Qwen-Image-2.1 in Settings → Image."
+				? "This model can't edit pictures here — choose Qwen-Image-2.1 or FLUX.2 klein 4B in Settings → Image."
 				: 'No bundled workflow serves this model.'
 		);
 	}
@@ -394,13 +411,14 @@ export const comfyUiBackend: ImageBackend = {
 	kind: 'comfyui',
 
 	async capabilities() {
-		const templates = await activeTemplates(familyOf(configuredModel()));
+		const family = familyOf(configuredModel());
+		const templates = await activeTemplates(family);
 		const cfg = config();
 		const [edits, upscaler] = await Promise.all([
-			templates.some((t) => t.supports.edit) ? serverEdits(cfg) : false,
+			templates.some((t) => t.supports.edit) ? serverEdits(cfg, family) : false,
 			upscalerOf(cfg)
 		]);
-		return capabilitiesOf(templates, edits, upscaler !== null);
+		return capabilitiesOf(templates, family, edits, upscaler !== null);
 	},
 
 	async probe() {

@@ -79,6 +79,19 @@ export interface EditImagesBinding {
 	prefix: string;
 }
 
+/**
+ * The pictures of a FLUX.2 edit: each is scaled to the request's area,
+ * VAE-encoded and chained through a `ReferenceLatent` on both of `guider`'s
+ * conditionings, as ComfyUI's klein workflows do. `size` (a `GetImageSize`)
+ * reads the first picture as scaled, so the result takes its shape.
+ */
+export interface ReferenceLatentsBinding {
+	kind: 'referenceLatents';
+	guider: string;
+	vae: string;
+	size: string;
+}
+
 export interface FieldMap {
 	/** The SaveImage node whose results are collected. */
 	outputNode: string;
@@ -97,6 +110,7 @@ export interface FieldMap {
 	samplerCfg?: ScalarBinding;
 	loras?: LoraSlotsBinding;
 	editImages?: EditImagesBinding;
+	referenceLatents?: ReferenceLatentsBinding;
 	/**
 	 * The edge an edit's reference pictures are resized to, about: the square
 	 * root of the request's area, in 32s. The result takes the first picture's
@@ -151,8 +165,15 @@ export function validateFieldMap(graph: ComfyGraph, map: FieldMap): string[] {
 			binding.forEach((b: ScalarBinding, i) => checkSlot(`${label} [${i}]`, b.node, b.input));
 			continue;
 		}
-		const b = binding as ScalarBinding | LoraSlotsBinding | EditImagesBinding;
-		if (b.kind === 'editImages') {
+		const b = binding as
+			ScalarBinding | LoraSlotsBinding | EditImagesBinding | ReferenceLatentsBinding;
+		if (b.kind === 'referenceLatents') {
+			for (const node of [b.guider, b.vae, b.size]) {
+				if (missingNode(graph, node)) {
+					problems.push(`${label} binds node "${node}", which the workflow does not contain.`);
+				}
+			}
+		} else if (b.kind === 'editImages') {
 			// Its slots are made per request; the node they join must be there.
 			if (missingNode(graph, b.node)) {
 				problems.push(`${label} binds node "${b.node}", which the workflow does not contain.`);
@@ -213,9 +234,15 @@ export function applyFieldMap(
 	}
 
 	if (map.loras) applyLoraChain(out, map.loras, req.loras ?? []);
-	if (map.editImages) applyEditImages(out, map.editImages, derived.editImages ?? []);
+	applyPictures(out, map, derived.editImages ?? [], req);
 
 	return out;
+}
+
+/** An edit's pictures, by whichever binding the workflow has. */
+function applyPictures(graph: ComfyGraph, map: FieldMap, names: string[], req: ImageRequest): void {
+	if (map.editImages) applyEditImages(graph, map.editImages, names);
+	if (map.referenceLatents) applyReferenceLatents(graph, map.referenceLatents, names, req);
 }
 
 /** A `LoadImage` node per uploaded picture, each wired to its slot. */
@@ -229,6 +256,53 @@ function applyEditImages(graph: ComfyGraph, binding: EditImagesBinding, names: s
 		graph[id] = { class_type: 'LoadImage', inputs: { image: name } };
 		graph[binding.node].inputs[`${binding.prefix}${i + 1}`] = [id, 0];
 	});
+}
+
+/** Each picture loaded, scaled, encoded and chained onto both conditionings. */
+function applyReferenceLatents(
+	graph: ComfyGraph,
+	binding: ReferenceLatentsBinding,
+	names: string[],
+	req: ImageRequest
+): void {
+	for (const node of [binding.guider, binding.vae, binding.size]) {
+		if (missingNode(graph, node)) throw new Error(`Workflow has no node "${node}" for the edit.`);
+	}
+	if (names.length === 0) throw new Error('An edit workflow needs at least one picture.');
+	const megapixels = Math.max(0.01, Math.round((req.width * req.height) / 1048576 / 0.01) * 0.01);
+	const guider = graph[binding.guider].inputs;
+	let positive = guider.positive;
+	let negative = guider.negative;
+	names.forEach((name, i) => {
+		const n = i + 1;
+		graph[`edit_image_${n}`] = { class_type: 'LoadImage', inputs: { image: name } };
+		graph[`edit_scale_${n}`] = {
+			class_type: 'ImageScaleToTotalPixels',
+			inputs: {
+				image: [`edit_image_${n}`, 0],
+				upscale_method: 'nearest-exact',
+				megapixels: Number(megapixels.toFixed(2)),
+				resolution_steps: 1
+			}
+		};
+		graph[`edit_latent_${n}`] = {
+			class_type: 'VAEEncode',
+			inputs: { pixels: [`edit_scale_${n}`, 0], vae: [binding.vae, 0] }
+		};
+		graph[`edit_positive_${n}`] = {
+			class_type: 'ReferenceLatent',
+			inputs: { conditioning: positive, latent: [`edit_latent_${n}`, 0] }
+		};
+		graph[`edit_negative_${n}`] = {
+			class_type: 'ReferenceLatent',
+			inputs: { conditioning: negative, latent: [`edit_latent_${n}`, 0] }
+		};
+		positive = [`edit_positive_${n}`, 0];
+		negative = [`edit_negative_${n}`, 0];
+	});
+	guider.positive = positive;
+	guider.negative = negative;
+	graph[binding.size].inputs.image = ['edit_scale_1', 0];
 }
 
 /**

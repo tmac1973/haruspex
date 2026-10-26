@@ -15,14 +15,17 @@
 import { ImageBackendError } from '#lib/image/types.ts';
 import * as api from '#lib/image/comfyui/client.ts';
 
-export type ModelFamily = 'sd' | 'ming' | 'qwen21' | 'qwen21_turbo';
+export type ModelFamily = 'sd' | 'ming' | 'qwen21' | 'qwen21_turbo' | 'flux2_klein';
 
 const FAMILY_PATTERNS: Array<[ModelFamily, RegExp]> = [
 	['ming', /ming[_-]?image/i],
 	// Before the base model, whose pattern it also matches: Turbo samples in
 	// 8 steps on its own schedule, and the base model's 25 would waste them.
 	['qwen21_turbo', /qwen[_-]?image[_-]?2[._-]?1.*turbo/i],
-	['qwen21', /qwen[_-]?image[_-]?2[._-]?1/i]
+	['qwen21', /qwen[_-]?image[_-]?2[._-]?1/i],
+	// The distilled 4B only: the base model samples in 20 steps at CFG 5, and
+	// the 9B is non-commercial.
+	['flux2_klein', /flux[._-]?2[._-]?klein[._-]?4b/i]
 ];
 
 export function familyOf(model: string): ModelFamily {
@@ -56,7 +59,20 @@ const WANTED: Record<Exclude<ModelFamily, 'sd'>, { textEncoder: RegExp[]; vae: R
 	},
 	// Turbo shares the base model's text encoder and VAE.
 	qwen21: QWEN21_WANTED,
-	qwen21_turbo: QWEN21_WANTED
+	qwen21_turbo: QWEN21_WANTED,
+	// The bf16 encoder first, as ComfyUI's klein workflows load it.
+	flux2_klein: {
+		textEncoder: [/^qwen_3_4b\.safetensors$/i, /^qwen_3_4b.*fp8/i, /^qwen_3_4b/i],
+		vae: [/^flux2[_-]?vae/i]
+	}
+};
+
+/** What the error messages call each family's files. */
+const FILE_LABELS: Record<Exclude<ModelFamily, 'sd'>, string> = {
+	ming: 'Ming-Image',
+	qwen21: 'Qwen-Image-2.1',
+	qwen21_turbo: 'Qwen-Image-2.1',
+	flux2_klein: 'FLUX.2 klein'
 };
 
 const NOT_A_COMPANION = /layer|_pe_/i;
@@ -104,7 +120,7 @@ export async function resolveCompanions(
 	]);
 	const textEncoder = pickCompanion(encoders, want.textEncoder);
 	const vae = pickCompanion(vaes, want.vae);
-	const label = family === 'ming' ? 'Ming-Image' : 'Qwen-Image-2.1';
+	const label = FILE_LABELS[family];
 	if (!textEncoder) {
 		throw new ImageBackendError(
 			'unconfigured',
@@ -157,6 +173,7 @@ const FAMILY_LABELS: Record<ModelFamily, string> = {
 	ming: 'Ming-Image',
 	qwen21: 'Qwen-Image-2.1, non-commercial',
 	qwen21_turbo: 'Qwen-Image-2.1 Turbo, non-commercial',
+	flux2_klein: 'FLUX.2 klein 4B',
 	sd: 'SD checkpoint'
 };
 

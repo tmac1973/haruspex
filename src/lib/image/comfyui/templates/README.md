@@ -18,6 +18,8 @@ DiT that ships its text encoder and VAE as separate files.
 | `ming_t2i_seamless.json` | Ming-Image           | —           | yes      | Textures, by offset and inpaint      |
 | `qwen21_t2i.json`        | Qwen-Image-2.1       | by prompt   | —        | Both; alpha is a prompt wrapper      |
 | `qwen21_turbo_t2i.json`  | Qwen-Image-2.1 Turbo | by prompt   | —        | As above, on Turbo's 8-step schedule |
+| `flux2_klein_t2i.json`   | FLUX.2 klein 4B      | —           | —        | Plain generation, 4 steps            |
+| `flux2_klein_edit.json`  | FLUX.2 klein 4B      | —           | —        | Edits, through `ReferenceLatent`     |
 
 Reference conditioning (IP-Adapter) is gone. It is UNet-only, neither DiT family
 can use it, and phase 17 measured a Ming reference image as making sets less
