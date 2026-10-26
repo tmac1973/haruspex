@@ -13,8 +13,16 @@
  */
 
 import { SvelteMap } from 'svelte/reactivity';
+import type { LogSource } from '#lib/reportLogs.ts';
 
 export type ToastKind = 'info' | 'success' | 'error';
+
+/** A Report issue button on an error toast: where it failed, and its log. */
+export interface ToastReport {
+	where: string;
+	log?: LogSource;
+	logTitle?: string;
+}
 
 export interface Toast {
 	id: number;
@@ -23,6 +31,7 @@ export interface Toast {
 	duration: number;
 	actionLabel?: string;
 	onAction?: () => void;
+	report?: ToastReport;
 }
 
 interface ShowToastOptions {
@@ -30,6 +39,7 @@ interface ShowToastOptions {
 	duration?: number;
 	actionLabel?: string;
 	onAction?: () => void;
+	report?: ToastReport;
 }
 
 const MAX_VISIBLE = 4;
@@ -74,7 +84,8 @@ export function showToast(message: string, opts: ShowToastOptions = {}): void {
 		message,
 		duration: opts.duration ?? (kind === 'error' ? ERROR_DURATION_MS : DEFAULT_DURATION_MS),
 		actionLabel: opts.actionLabel,
-		onAction: opts.onAction
+		onAction: opts.onAction,
+		report: opts.report
 	};
 
 	if (visible.length < MAX_VISIBLE) {

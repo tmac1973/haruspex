@@ -55,6 +55,8 @@
 		setActiveLocalModel
 	} from '#lib/stores/settings.ts';
 	import { getDebugLogsForTurn } from '#lib/debug-log.ts';
+	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
+	import { serverLog, worthReporting } from '#lib/reportLogs.ts';
 	import { createCopyAction } from '#lib/utils/clipboard.svelte.ts';
 	import { createPendingImages } from '#lib/utils/pendingImages.svelte.ts';
 	import { openShellFromChat } from '#lib/shell/fromChat.ts';
@@ -399,7 +401,8 @@
 			showToast(`GPU restart failed: ${errMessage(e)}`, {
 				kind: 'error',
 				actionLabel: 'View logs',
-				onAction: openLogViewer
+				onAction: openLogViewer,
+				report: { where: 'Restart on GPU', log: serverLog, logTitle: 'llama-server log' }
 			});
 		} finally {
 			restartingOnGpu = false;
@@ -438,6 +441,12 @@
 					>
 						{restartingOnGpu ? 'Restarting…' : 'Restart on GPU'}
 					</button>
+					<ReportIssueButton
+						where="Loading the model on the GPU"
+						error={serverState.cpuFallback?.reason ?? "The GPU couldn't load the model."}
+						log={serverLog}
+						logTitle="llama-server log"
+					/>
 					<button
 						class="cpu-fallback-dismiss"
 						onclick={dismissCpuFallback}
@@ -563,6 +572,16 @@
 										Copy debug log
 									{/if}
 								</button>
+							{/if}
+							{#if worthReporting(errorMessage)}
+								<ReportIssueButton
+									where="Chat"
+									error={errorMessage}
+									log={errorTurnId != null ? () => getDebugLogsForTurn(errorTurnId!) : serverLog}
+									logTitle={errorTurnId != null
+										? 'Debug log for the failed turn'
+										: 'llama-server log'}
+								/>
 							{/if}
 						</div>
 					</div>

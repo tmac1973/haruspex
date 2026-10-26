@@ -666,6 +666,7 @@ pub fn run() {
             feedback::get_diagnostics,
             feedback::feedback_redact,
             feedback::save_export_file,
+            feedback::feedback_save_download,
             shell::shell_spawn,
             shell::shell_write,
             shell::shell_mark_ready,

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
+	import { debugLog, worthReporting } from '#lib/reportLogs.ts';
 	import { startDragResize } from '#lib/utils/dragResize.ts';
 	import { isWatchNotification, watchNotificationCommands } from '#lib/shell/backgroundWatch.ts';
 	import AgentsMdBadge from '#lib/components/shell/AgentsMdBadge.svelte';
@@ -519,7 +521,18 @@
 				<div class="context-notice">ⓘ {contextNotice}</div>
 			{/if}
 			{#if lastError}
-				<div class="error">{lastError}</div>
+				<div class="error">
+					{lastError}
+					{#if worthReporting(lastError)}
+						<ReportIssueButton
+							inline
+							where="Shell assistant"
+							error={lastError}
+							log={debugLog('shell', 'agent', 'api')}
+							logTitle="Recent debug log (Shell, agent and API lines)"
+						/>
+					{/if}
+				</div>
 			{/if}
 		</div>
 		<footer

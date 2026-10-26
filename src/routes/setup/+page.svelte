@@ -1,4 +1,6 @@
 <script lang="ts">
+	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
+	import { appLog, serverLog } from '#lib/reportLogs.ts';
 	import { onMount } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { open } from '@tauri-apps/plugin-dialog';
@@ -386,6 +388,12 @@
 				<div class="error-box">
 					<p>{downloadError}</p>
 					<button class="primary-btn" onclick={goToDownload}>Retry</button>
+					<ReportIssueButton
+						where="Setup: downloading the model"
+						error={downloadError}
+						log={appLog}
+						logTitle="App log"
+					/>
 				</div>
 			{/if}
 
@@ -420,6 +428,12 @@
 					<div class="actions">
 						<button class="primary-btn" onclick={goToTest}>Retry</button>
 						<button class="secondary-btn" onclick={() => setStep('done')}>Skip</button>
+						<ReportIssueButton
+							where="Setup: testing the model"
+							error={testStatusMessage || 'Something went wrong with the test.'}
+							log={serverLog}
+							logTitle="llama-server log"
+						/>
 					</div>
 				</div>
 			{/if}

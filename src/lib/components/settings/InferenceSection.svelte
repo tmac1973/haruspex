@@ -1,4 +1,6 @@
 <script lang="ts">
+	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
+	import { serverLog } from '#lib/reportLogs.ts';
 	import { invoke } from '@tauri-apps/api/core';
 	import { goto } from '$app/navigation';
 	import {
@@ -208,7 +210,8 @@
 		showToast(`Couldn't ${verb} the inference server: ${errMessage(e)}`, {
 			kind: 'error',
 			actionLabel: 'View logs',
-			onAction: openLogViewer
+			onAction: openLogViewer,
+			report: { where: 'Inference server', log: serverLog, logTitle: 'llama-server log' }
 		});
 	}
 
@@ -531,6 +534,16 @@
 			<span>Status</span>
 			<span class="status-value" data-status={serverState.status}>{serverState.status}</span>
 		</div>
+		{#if serverState.status === 'error'}
+			<div class="server-report">
+				<ReportIssueButton
+					where="Inference server"
+					error={serverState.errorMessage ?? 'The server stopped with an error.'}
+					log={serverLog}
+					logTitle="llama-server log"
+				/>
+			</div>
+		{/if}
 		{#if serverState.status === 'error' && extraArgs.trim()}
 			<p class="hint">
 				Extra llama-server arguments are set ({extraArgs.trim()}). If the server won't start, clear
@@ -566,6 +579,10 @@
 {/if}
 
 <style>
+	.server-report {
+		margin: 4px 0 8px;
+	}
+
 	.hint {
 		margin: 0 0 16px 0;
 	}

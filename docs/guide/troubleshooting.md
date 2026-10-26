@@ -74,8 +74,8 @@ If you set Settings → Inference → **Extra llama-server arguments**, clear th
 
 ## Find the logs
 
-Click the terminal icon in the toolbar (tooltip "Sidecar Logs"), or click the status badge. The log viewer lists its logs on the left: Haruspex's own (App, Debug, Tools, and search Stats), then the servers (LLM, TTS, Whisper, Image, MCP), then Crashes. **Image** shows either the bundled engine's output or the calls made to your ComfyUI server. Each one has **Copy all** to copy its log for a bug report.
+Click the terminal icon in the toolbar (tooltip "Sidecar Logs"), or click the status badge. The log viewer lists its logs on the left: Haruspex's own (App, Debug, Tools, and search Stats), then the servers (LLM, TTS, Whisper, Image, MCP), then Crashes. **Image** shows either the bundled engine's output or the calls made to your ComfyUI server. Each has **Copy all**.
 
 ## Report a bug
 
-Go to Settings → Feedback and press **Open feedback issue…**. It opens a pre-filled GitHub issue in your browser with the app version, system info and settings (API keys removed). Read it before you submit. To add logs, press **Save Full Diagnostics…** and drag the saved file onto the issue.
+When something fails, press **Report issue** beside the error. It saves the diagnostics to Downloads and opens a GitHub issue with the error and its log; drag the file onto the issue. Otherwise use Settings → Feedback → **Open feedback issue…** and **Save Full Diagnostics…**. Secrets are removed; read it before you submit.

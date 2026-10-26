@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { refreshVideoTask, videoTask } from '#lib/video/tasks.svelte.ts';
@@ -83,6 +84,14 @@
 		</div>
 	{:else if task?.state === 'failed'}
 		<p class="detail bad" title={task.logTail}>{task.message}</p>
+		<div class="actions">
+			<ReportIssueButton
+				where="Video task"
+				error={task.message}
+				log={() => (task?.logTail ?? '').split('\n').filter(Boolean)}
+				logTitle="The task's output"
+			/>
+		</div>
 	{:else if task?.state === 'cancelled'}
 		<p class="detail">Cancelled.</p>
 	{:else if missing}

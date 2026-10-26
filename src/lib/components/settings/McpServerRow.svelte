@@ -7,6 +7,8 @@
 	 * is this row, so a failure says what went wrong in words first, with the
 	 * raw log available behind a disclosure rather than shouted.
 	 */
+	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
+	import { mcpLog } from '#lib/reportLogs.ts';
 	import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 	import type { CatalogEntry } from '#lib/ipc/gen/CatalogEntry.ts';
 	import {
@@ -187,7 +189,16 @@
 	{/if}
 
 	{#if runtime.error}
-		<p class="error">{runtime.error}</p>
+		<p class="error">
+			{runtime.error}
+			<ReportIssueButton
+				inline
+				where={`MCP server "${config.label}"`}
+				error={runtime.error}
+				log={mcpLog(config.id)}
+				logTitle="The server's output"
+			/>
+		</p>
 	{/if}
 
 	<!-- Available whether or not the server failed: a running server's own
