@@ -39,4 +39,4 @@ With Lemonade, a ComfyUI model other than Qwen-Image 2.1, or an older ComfyUI, t
 
 ## What has been tested
 
-Editing with FLUX.2 klein 4B on a llama-toolchest server, and with Qwen-Image 2.1 Turbo on the bundled engine on a 16 GB AMD card (about 30 seconds), has been tested; ComfyUI and the rest are covered by automated tests. See the `images` page for setting up a backend.
+Editing with FLUX.2 klein 4B on a llama-toolchest server, and with Qwen-Image 2.1 Turbo on the bundled engine on a 16 GB AMD card (about 30 seconds), and with Qwen-Image 2.1 Turbo on ComfyUI 0.39, has been tested; the rest is covered by automated tests. See the `images` page for setting up a backend.
