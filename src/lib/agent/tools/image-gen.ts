@@ -27,9 +27,9 @@ import {
 } from '#lib/agent/tools/types.ts';
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
 import { pngDataUrl } from '#lib/utils/base64.ts';
-import { generateForTool } from '#lib/image/forTool.ts';
+import { generateForTool, type ToolImage } from '#lib/image/forTool.ts';
 import { describeImageProgress } from '#lib/image/progress.ts';
-import { ImageBackendError, type ImageProgress } from '#lib/image/types.ts';
+import { ImageBackendError, type ImageProgress, type ImageRequest } from '#lib/image/types.ts';
 import { registerLocalImage } from '#lib/images/resolve.svelte.ts';
 import {
 	isSaveTarget,
@@ -53,7 +53,7 @@ function shapeOf(raw: unknown): Shape {
 }
 
 /** Alt text from the prompt: its first few words. */
-function altOf(prompt: string): string {
+export function altOf(prompt: string): string {
 	const words = prompt
 		.replace(/[[\]()]/g, '')
 		.trim()
@@ -64,14 +64,86 @@ function altOf(prompt: string): string {
 }
 
 /** Where `path` saves, settled before drawing; null with no `path`. */
-async function saveTarget(
+export async function saveTarget(
 	args: Record<string, unknown>,
-	ctx: ToolContext
+	ctx: ToolContext,
+	tool = 'generate_image'
 ): Promise<SaveTarget | ToolExecOutput | null> {
 	const raw = typeof args.path === 'string' ? args.path.trim() : '';
 	if (!raw) return null;
 	if (!/\.png$/i.test(raw)) return toolResult(toolError('path must end in .png.'));
-	return prepareSave(raw, args.overwrite === true, ctx, 'generate_image');
+	return prepareSave(raw, args.overwrite === true, ctx, tool);
+}
+
+/**
+ * Draw `req` with the step showing progress; the picture, or the tool's
+ * answer saying why not. `edit_image` shares it.
+ */
+export async function drawForTool(
+	req: ImageRequest,
+	ctx: ToolContext
+): Promise<ToolImage | ToolExecOutput> {
+	const started = Date.now();
+	let latest: ImageProgress | null = null;
+	const show = () =>
+		ctx.onProgress?.(describeImageProgress(latest, Math.round((Date.now() - started) / 1000)));
+	const tick = setInterval(show, 1000);
+	try {
+		show();
+		return await generateForTool(req, {
+			signal: ctx.signal,
+			onProgress: (p) => {
+				latest = p;
+				show();
+			}
+		});
+	} catch (e) {
+		if (e instanceof ImageBackendError && e.kind === 'cancelled') throw e;
+		const verb = req.edit ? 'edit it' : 'draw it';
+		return toolResult(toolError(`Could not ${verb}: ${errMessage(e)}`));
+	} finally {
+		clearInterval(tick);
+	}
+}
+
+/**
+ * Keep a picture in the image cache, show it to a model that can see, save it
+ * if asked, and tell the model the markdown to place.
+ */
+export async function answerWithImage(
+	image: ToolImage,
+	alt: string,
+	save: SaveTarget | null,
+	ctx: ToolContext,
+	verb = 'Image ready'
+): Promise<ToolExecOutput> {
+	const hash = await invoke<string>('image_store_bytes', {
+		bytes: Array.from(image.bytes),
+		mime: 'image/png',
+		width: image.width,
+		height: image.height,
+		conversationId: ctx.conversationId ?? null
+	});
+	const url = registerLocalImage(hash, {
+		mime: 'image/png',
+		width: image.width,
+		height: image.height
+	});
+	if (!url) return toolResult(toolError('The image was drawn but could not be stored.'));
+
+	const markdown = `![${alt}](${url})`;
+	const saved = save ? await savedLine(save, image.bytes, ctx) : null;
+	const sees = ctx.visionSupported !== false && ctx.pendingImages.length < MAX_PENDING_IMAGES;
+	if (sees) ctx.pendingImages.push({ path: url, dataUrl: pngDataUrl(image.bytes) });
+	return toolResult(
+		[
+			`${verb} (${image.width}×${image.height}, ${image.model}, seed ${image.seed}).`,
+			`Put ${markdown} in your answer where it belongs.`,
+			...(sees ? ['The picture is attached, so you can look at it before you answer.'] : []),
+			...(saved ? [saved] : []),
+			...image.notes
+		].join(' ')
+	);
 }
 
 /** The line saying where the picture was saved, or why not. */
@@ -128,57 +200,11 @@ registerTool({
 		const save = await saveTarget(args, ctx);
 		if (save && !isSaveTarget(save)) return save;
 
-		const started = Date.now();
-		let latest: ImageProgress | null = null;
-		const show = () =>
-			ctx.onProgress?.(describeImageProgress(latest, Math.round((Date.now() - started) / 1000)));
-		const tick = setInterval(show, 1000);
-		let image;
-		try {
-			show();
-			image = await generateForTool(
-				{ prompt, width, height, seed: null, transparent: args.transparent === true },
-				{
-					signal: ctx.signal,
-					onProgress: (p) => {
-						latest = p;
-						show();
-					}
-				}
-			);
-		} catch (e) {
-			if (e instanceof ImageBackendError && e.kind === 'cancelled') throw e;
-			return toolResult(toolError(`Could not draw it: ${errMessage(e)}`));
-		} finally {
-			clearInterval(tick);
-		}
-
-		const hash = await invoke<string>('image_store_bytes', {
-			bytes: Array.from(image.bytes),
-			mime: 'image/png',
-			width: image.width,
-			height: image.height,
-			conversationId: ctx.conversationId ?? null
-		});
-		const url = registerLocalImage(hash, {
-			mime: 'image/png',
-			width: image.width,
-			height: image.height
-		});
-		if (!url) return toolResult(toolError('The image was drawn but could not be stored.'));
-
-		const markdown = `![${altOf(prompt)}](${url})`;
-		const saved = save ? await savedLine(save, image.bytes, ctx) : null;
-		const sees = ctx.visionSupported !== false && ctx.pendingImages.length < MAX_PENDING_IMAGES;
-		if (sees) ctx.pendingImages.push({ path: url, dataUrl: pngDataUrl(image.bytes) });
-		return toolResult(
-			[
-				`Image ready (${image.width}×${image.height}, ${image.model}, seed ${image.seed}).`,
-				`Put ${markdown} in your answer where it belongs.`,
-				...(sees ? ['The picture is attached, so you can look at it before you answer.'] : []),
-				...(saved ? [saved] : []),
-				...image.notes
-			].join(' ')
+		const image = await drawForTool(
+			{ prompt, width, height, seed: null, transparent: args.transparent === true },
+			ctx
 		);
+		if (!('bytes' in image)) return image;
+		return answerWithImage(image, altOf(prompt), save, ctx);
 	}
 });

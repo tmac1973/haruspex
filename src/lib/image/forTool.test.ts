@@ -32,7 +32,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	})
 }));
 
-import { generateForTool, GPU_FULL_SENTENCE } from './forTool';
+import { generateForTool, GPU_FULL_SENTENCE, NO_EDIT_SENTENCE } from './forTool';
 
 const req = (over: Partial<ImageRequest> = {}): ImageRequest => ({
 	prompt: 'a lighthouse',
@@ -125,5 +125,33 @@ describe('generateForTool', () => {
 		state.generate.mockResolvedValueOnce(drawn('vae encode compute failed'));
 		const out = await generateForTool(req({ seamless: true }));
 		expect(out.notes.join(' ')).toMatch(/does not tile/);
+	});
+});
+
+describe('generateForTool edits', () => {
+	const edit = { images: [{ name: 'a.png', hash: 'a'.repeat(64) }] };
+
+	it('says what can edit when the backend can’t, before drawing', async () => {
+		state.kind = 'local';
+		state.caps = { transparency: true, seamlessTiling: true, loras: false, maxLoras: 0 };
+		await expect(generateForTool(req({ edit }))).rejects.toMatchObject({
+			kind: 'unconfigured',
+			message: NO_EDIT_SENTENCE
+		});
+		expect(state.generate).not.toHaveBeenCalled();
+	});
+
+	it('refuses more pictures than the backend combines', async () => {
+		state.caps = {
+			transparency: false,
+			seamlessTiling: false,
+			loras: false,
+			maxLoras: 0,
+			edit: true,
+			maxEditImages: 2
+		};
+		const three = { images: [...edit.images, ...edit.images, ...edit.images] };
+		await expect(generateForTool(req({ edit: three }))).rejects.toThrow(/at most 2 pictures/);
+		expect(state.generate).not.toHaveBeenCalled();
 	});
 });

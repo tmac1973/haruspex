@@ -32,8 +32,17 @@ pub async fn ace_upload(
     call: ComfyCall,
     files: Vec<crate::comfy::UploadFile>,
 ) -> Result<serde_json::Value, ComfyError> {
-    let dir =
-        crate::audio_cache::cache_dir(&app).map_err(|message| ComfyError::Invalid { message })?;
-    let parts = crate::comfy::resolve_uploads(&db, &dir, files)?;
-    crate::comfy::upload_json(call, ACE_SERVER, parts).await
+    let parts = crate::comfy::resolve_uploads(
+        &db,
+        &crate::audio_cache::cache_dir(&app).map_err(|message| ComfyError::Invalid { message })?,
+        &crate::image_cache::cache_dir(&app).map_err(|message| ComfyError::Invalid { message })?,
+        files,
+    )?;
+    crate::comfy::upload_json(
+        call,
+        ACE_SERVER,
+        parts,
+        crate::comfy::FormShape::RequestPart,
+    )
+    .await
 }

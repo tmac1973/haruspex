@@ -22,6 +22,17 @@ const IN_LOOP_TRIM_THRESHOLD = 0.7;
  * any already in the conversation with files — a skill the user ran with
  * `/name` is readable whether or not autonomous use is on.
  */
+/** The data URLs of the pictures in the newest user message that has any. */
+export function latestUserImages(messages: ChatMessage[]): string[] {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const m = messages[i];
+		if (m.role !== 'user' || typeof m.content === 'string') continue;
+		const urls = m.content.flatMap((p) => (p.type === 'image_url' ? [p.image_url.url] : []));
+		if (urls.length) return urls;
+	}
+	return [];
+}
+
 function readableSkills(skills: TurnSkills, messages: ChatMessage[]): string[] {
 	const names = new Set(skills.catalog.map((s) => s.name));
 	for (const name of skillsWithFiles(messages)) names.add(name);
@@ -127,6 +138,8 @@ export interface LoopContext {
 	wslDistro: string | null;
 	expectsFileOutput: boolean;
 	pendingImages: PendingImage[];
+	/** See `ToolContext.userImages`. */
+	userImages: string[];
 	filesWrittenThisTurn: Set<string>;
 	filesRewritableThisTurn: Set<string>;
 	maxIterations: number;
@@ -280,6 +293,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		wslDistro: options.wslDistro ?? null,
 		expectsFileOutput,
 		pendingImages: [],
+		userImages: latestUserImages(options.messages),
 		filesWrittenThisTurn: new Set(),
 		filesRewritableThisTurn: new Set(),
 		maxIterations: options.maxIterations ?? 8,

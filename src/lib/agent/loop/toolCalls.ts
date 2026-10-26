@@ -94,6 +94,7 @@ export async function executeToolCalls(
 				workingDir: ctx.workingDir,
 				signal,
 				pendingImages: ctx.pendingImages,
+				userImages: ctx.userImages,
 				visionSupported: ctx.options.visionSupported ?? true,
 				deepResearch: ctx.deepResearch,
 				shellMode: ctx.shellMode,

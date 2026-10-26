@@ -37,11 +37,14 @@ import {
 	hostOf,
 	toolchestBytes,
 	toolchestJson,
+	toolchestUpload,
 	type ToolchestConfig
 } from '#lib/toolchest/client.ts';
 import {
 	ROUTES,
+	buildEditFields,
 	buildImageBody,
+	editUploads,
 	imagesFrom,
 	progressOf,
 	readJob
@@ -98,6 +101,14 @@ export function toolchestInstance(): ToolchestInstance | undefined {
 /** Its catalogue family (`ming`, `qwen21`), when Haruspex knows the recipe. */
 export function toolchestFamily(): 'ming' | 'qwen21' | null {
 	return familyOfRecipe(toolchestInstance()?.recipe ?? '');
+}
+
+/** sd-server's reference pictures for FLUX.2 klein, the set that edits. */
+const MAX_EDIT_IMAGES = 4;
+
+/** The set edits, and this build serves `/v1/images/edits` for it. */
+function canEdit(i: ToolchestInstance | undefined): boolean {
+	return !!i && i.capabilities.includes('edit') && i.api.includes('images.edits');
 }
 
 function canBeTransparent(i: ToolchestInstance | undefined): boolean {
@@ -193,7 +204,9 @@ export const toolchestBackend: ImageBackend = {
 			transparency: canBeTransparent(instance),
 			seamlessTiling: false,
 			loras: false,
-			maxLoras: 0
+			maxLoras: 0,
+			edit: canEdit(instance),
+			maxEditImages: canEdit(instance) ? MAX_EDIT_IMAGES : 0
 		};
 	},
 
@@ -248,6 +261,33 @@ export const toolchestBackend: ImageBackend = {
 		const sent: SamplerSettings | undefined =
 			req.sampler ?? (family ? { ...FAMILY_SAMPLER[family] } : undefined);
 		const seed = req.seed ?? randomSeed();
+		if (req.edit) {
+			if (!canEdit(instance)) {
+				throw new ImageBackendError(
+					'unconfigured',
+					`${instance.id} can't edit pictures — choose a model that can in Settings → Image.`
+				);
+			}
+			const fields = buildEditFields({
+				model: instance.id,
+				prompt: req.prompt,
+				negativePrompt: req.negativePrompt,
+				seed,
+				width: req.width,
+				height: req.height,
+				sampler: sent
+			});
+			return finish(req, instance, seed, sent, Date.now(), () => {
+				opts.onProgress?.({ phase: 'running' });
+				return toolchestUpload(
+					cfg,
+					{ path: ROUTES.edits, body: fields, timeoutMs: SYNC_TIMEOUT_MS },
+					editUploads(req.edit!),
+					opts.signal,
+					true
+				).then(imagesFrom);
+			});
+		}
 		const start = await startFor(instance, req);
 		const body = buildImageBody({
 			model: instance.id,
@@ -260,46 +300,55 @@ export const toolchestBackend: ImageBackend = {
 			clearStart: start.clearStart
 		});
 
-		const started = Date.now();
-		let images: Uint8Array[];
-		try {
-			if (instance.api.includes('images.jobs')) {
-				images = await runJob(cfg, body, opts);
-			} else {
-				opts.onProgress?.({ phase: 'running' });
-				images = imagesFrom(
-					await toolchestJson(
-						cfg,
-						{ method: 'POST', path: ROUTES.generate, body, timeoutMs: SYNC_TIMEOUT_MS },
-						opts.signal
-					)
-				);
-			}
-		} catch (e) {
-			throw asImageError(e);
-		}
-		if (images.length === 0) {
-			throw new ImageBackendError('rejected', 'llama-toolchest returned no image.');
-		}
-
-		return {
-			images: images.map((bytes) => ({
-				bytes,
-				mimeType: 'image/png',
-				width: req.width,
-				height: req.height
-			})),
-			meta: {
-				seed,
-				model: instance.id,
-				backend: 'llama-toolchest',
-				sampler: sent ?? { name: 'instance default', steps: 0, cfg: 0 },
-				loras: [],
-				durationMs: Date.now() - started,
-				...(req.seamless ? { seamFailed: NO_TILING } : {})
-			}
-		};
+		return finish(req, instance, seed, sent, Date.now(), async () => {
+			if (instance.api.includes('images.jobs')) return runJob(cfg, body, opts);
+			opts.onProgress?.({ phase: 'running' });
+			return imagesFrom(
+				await toolchestJson(
+					cfg,
+					{ method: 'POST', path: ROUTES.generate, body, timeoutMs: SYNC_TIMEOUT_MS },
+					opts.signal
+				)
+			);
+		});
 	}
 };
+
+/** Run `draw` and shape what it made into a result. */
+async function finish(
+	req: ImageRequest,
+	instance: ToolchestInstance,
+	seed: number,
+	sent: SamplerSettings | undefined,
+	started: number,
+	draw: () => Promise<Uint8Array[]>
+): Promise<ImageResult> {
+	let images: Uint8Array[];
+	try {
+		images = await draw();
+	} catch (e) {
+		throw asImageError(e);
+	}
+	if (images.length === 0) {
+		throw new ImageBackendError('rejected', 'llama-toolchest returned no image.');
+	}
+	return {
+		images: images.map((bytes) => ({
+			bytes,
+			mimeType: 'image/png',
+			width: req.width,
+			height: req.height
+		})),
+		meta: {
+			seed,
+			model: instance.id,
+			backend: 'llama-toolchest',
+			sampler: sent ?? { name: 'instance default', steps: 0, cfg: 0 },
+			loras: [],
+			durationMs: Date.now() - started,
+			...(req.seamless ? { seamFailed: NO_TILING } : {})
+		}
+	};
+}
 
 registerImageBackend(toolchestBackend);

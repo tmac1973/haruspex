@@ -24,6 +24,7 @@ const ORDER = [
 	'jobs',
 	'memory',
 	'images',
+	'image-editing',
 	'music',
 	'video-editing',
 	'video-render',

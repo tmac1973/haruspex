@@ -13,7 +13,13 @@
  */
 import { resolveImageBackend } from '#lib/image/backend.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import { ImageBackendError, type ImageProgress, type ImageRequest } from '#lib/image/types.ts';
+import {
+	ImageBackendError,
+	type ImageBackendCapabilities,
+	type ImageEdit,
+	type ImageProgress,
+	type ImageRequest
+} from '#lib/image/types.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { familyOf } from '#lib/image/comfyui/families.ts';
 import { toolchestInstance } from '#lib/image/toolchest/backend.ts';
@@ -41,6 +47,10 @@ export const GPU_FULL_SENTENCE =
 	'The image engine ran out of GPU memory beside the chat model. A smaller chat model in ' +
 	'Settings → Inference → Models, or ComfyUI on another machine in Settings → Image, would leave room.';
 
+export const NO_EDIT_SENTENCE =
+	"The image generation in Settings → Image can't edit pictures. A llama-toolchest model that " +
+	'edits, such as FLUX.2 klein 4B, can.';
+
 /** The configured model can't be used commercially. */
 export function nonCommercialModel(): boolean {
 	const s = getSettings();
@@ -53,6 +63,18 @@ export function nonCommercialModel(): boolean {
 		return family === 'qwen21' || family === 'qwen21_turbo';
 	}
 	return false;
+}
+
+/** Throws when the backend can't make this edit. */
+function checkEdit(edit: ImageEdit, caps: ImageBackendCapabilities): void {
+	if (!caps.edit) throw new ImageBackendError('unconfigured', NO_EDIT_SENTENCE);
+	const most = caps.maxEditImages ?? 1;
+	if (edit.images.length > most) {
+		throw new ImageBackendError(
+			'rejected',
+			`This model combines at most ${most} picture${most === 1 ? '' : 's'} in one edit.`
+		);
+	}
 }
 
 export async function generateForTool(
@@ -72,6 +94,7 @@ export async function generateForTool(
 	const notes: string[] = [];
 	const caps = await backend.capabilities();
 	const request: ImageRequest = { ...req };
+	if (request.edit) checkEdit(request.edit, caps);
 	if (request.transparent && !caps.transparency) {
 		request.transparent = false;
 		notes.push('This backend cannot make transparent images, so the background is solid.');

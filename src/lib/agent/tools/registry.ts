@@ -42,6 +42,9 @@ export function unregisterTool(name: string): void {
 	tools.delete(name);
 }
 
+/** The tools that make a picture in Chat, offered and saved alike. */
+const IMAGE_TOOLS = new Set(['generate_image', 'edit_image']);
+
 /** The tools that make a song, offered and saved alike. */
 const SONG_TOOLS = new Set(['generate_music', 'edit_music']);
 
@@ -399,7 +402,7 @@ function schemaFor(
 	// project, or Chat's working folder.
 	const canSave = filter.codeMode ? !filter.codeReadOnly : filter.hasWorkingDir;
 	const name = reg.schema.function.name;
-	if ((SONG_TOOLS.has(name) || name === 'generate_image') && !canSave) {
+	if ((SONG_TOOLS.has(name) || IMAGE_TOOLS.has(name)) && !canSave) {
 		return withoutProjectWrite(reg.schema);
 	}
 	return profileSchema(reg.schema, filter);

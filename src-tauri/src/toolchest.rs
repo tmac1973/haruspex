@@ -33,19 +33,29 @@ pub async fn toolchest_bytes(call: ComfyCall) -> Result<Response, ComfyError> {
     crate::comfy::bytes_from(call, TOOLCHEST).await
 }
 
-/// A music job with songs: `POST /v1/music/jobs` as multipart, the body in
-/// a `request` part and each song in its own (`audio`, `ref_audio`).
+/// A multipart POST with songs or pictures. Music jobs take the body in a
+/// `request` part; `/v1/images/edits` (with `fields`) takes each field as a
+/// text part of its own, beside `image[]` and `mask`.
 #[tauri::command]
 pub async fn toolchest_upload(
     app: tauri::AppHandle,
     db: tauri::State<'_, crate::db::Database>,
     call: ComfyCall,
     files: Vec<crate::comfy::UploadFile>,
+    fields: Option<bool>,
 ) -> Result<serde_json::Value, ComfyError> {
-    let dir =
-        crate::audio_cache::cache_dir(&app).map_err(|message| ComfyError::Invalid { message })?;
-    let parts = crate::comfy::resolve_uploads(&db, &dir, files)?;
-    crate::comfy::upload_json(call, TOOLCHEST, parts).await
+    let parts = crate::comfy::resolve_uploads(
+        &db,
+        &crate::audio_cache::cache_dir(&app).map_err(|message| ComfyError::Invalid { message })?,
+        &crate::image_cache::cache_dir(&app).map_err(|message| ComfyError::Invalid { message })?,
+        files,
+    )?;
+    let shape = if fields == Some(true) {
+        crate::comfy::FormShape::Fields
+    } else {
+        crate::comfy::FormShape::RequestPart
+    };
+    crate::comfy::upload_json(call, TOOLCHEST, parts, shape).await
 }
 
 #[cfg(test)]
@@ -123,9 +133,10 @@ mod tests {
             filename: "song.mp3".into(),
             bytes: b"MP3".to_vec(),
         }];
-        let out = crate::comfy::upload_json(c, TOOLCHEST, files)
-            .await
-            .unwrap();
+        let out =
+            crate::comfy::upload_json(c, TOOLCHEST, files, crate::comfy::FormShape::RequestPart)
+                .await
+                .unwrap();
         assert!(out["type"]
             .as_str()
             .unwrap()
@@ -138,6 +149,39 @@ mod tests {
         ] {
             assert!(body.contains(want), "{want:?} missing from {body:?}");
         }
+    }
+
+    /// With `Fields`, each body field is a text part of its own, as the
+    /// OpenAI edits form wants, and no `request` part is sent.
+    #[tokio::test]
+    async fn an_edit_upload_sends_each_field_as_its_own_part() {
+        let app = axum::Router::new().route(
+            "/v1/images/edits",
+            axum::routing::post(|body: String| async move { axum::Json(serde_json::json!(body)) }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let mut c = call(&format!("http://{addr}"), "POST", "/v1/images/edits", "");
+        c.body = Some(serde_json::json!({ "prompt": "make it night", "n": 1 }));
+        let files = vec![crate::comfy::FilePart {
+            field: "image[]".into(),
+            filename: "a.png".into(),
+            bytes: b"PNG".to_vec(),
+        }];
+        let out = crate::comfy::upload_json(c, TOOLCHEST, files, crate::comfy::FormShape::Fields)
+            .await
+            .unwrap();
+        let body = out.as_str().unwrap();
+        for want in [
+            "name=\"prompt\"\r\n\r\nmake it night\r\n",
+            "name=\"n\"\r\n\r\n1\r\n",
+            "name=\"image[]\"; filename=\"a.png\"",
+        ] {
+            assert!(body.contains(want), "{want:?} missing from {body:?}");
+        }
+        assert!(!body.contains("name=\"request\""));
     }
 
     #[tokio::test]

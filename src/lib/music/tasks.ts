@@ -38,6 +38,7 @@ function upload(field: string, input: MusicInput): UploadFile {
 		field,
 		filename: input.name,
 		hash: 'hash' in input ? input.hash : null,
+		cache: 'hash' in input ? 'audio' : null,
 		bytes: 'bytes' in input ? input.bytes : null
 	};
 }
