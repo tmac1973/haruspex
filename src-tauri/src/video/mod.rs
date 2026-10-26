@@ -10,6 +10,7 @@ pub mod commands;
 pub mod encode;
 pub mod frames;
 pub mod kdenlive;
+pub mod loudness;
 pub mod paths;
 pub mod probe;
 pub mod project;

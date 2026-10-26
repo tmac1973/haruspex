@@ -10,12 +10,14 @@
 //! - group leaves pointing at main-track clips that moved, and an `AVSplit`
 //!   group for each clip it adds;
 //! - the start of each same-track mix whose clips moved;
+//! - Haruspex's own crossfades and gains (tagged `kdenlive:haruspex`), which it
+//!   rewrites freely; mixes and effects the user made stay as they are;
 //! - the sequence's lengths.
 //!
 //! Everything else in the file is left as it was. A kept item keeps its whole
 //! `<entry>`, effects included; only its `in` and `out` change.
 
-use super::doc::{parse_leaf, Doc, Entry, Fps, Item};
+use super::doc::{parse_leaf, Doc, Entry, Fps, Item, OURS};
 use super::xml::{escape, Splices};
 use std::collections::{HashMap, HashSet};
 
@@ -50,8 +52,29 @@ pub struct Placement {
     pub source: Source,
     pub in_frame: Option<i64>,
     pub out_frame: Option<i64>,
+    /// A crossfade of this many frames from the clip before (Haruspex's own).
+    pub mix_in: Option<i64>,
+    /// The gain to set on its sound, in dB; `None` leaves what is there, and
+    /// 0 removes Haruspex's.
+    pub gain_db: Option<f64>,
+    /// With `gain_db`: a Limiter after the gain, holding peaks at -1.5 dB.
+    pub limiter: bool,
 }
 
+impl Placement {
+    pub fn of(source: Source) -> Placement {
+        Placement {
+            source,
+            in_frame: None,
+            out_frame: None,
+            mix_in: None,
+            gain_db: None,
+            limiter: false,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Edited {
     pub text: String,
     /// Things worth telling the model (a clamped trim, other tracks).
@@ -67,6 +90,10 @@ struct Laid {
     /// Lanes for the video and audio entries.
     video_lane: usize,
     audio_lane: usize,
+    /// The crossfade from the clip before, Haruspex's, after clamping.
+    mix_in: Option<i64>,
+    gain_db: Option<f64>,
+    limiter: bool,
     /// Set for a new clip once its chains are named.
     video_chain: Option<String>,
     audio_chain: Option<String>,
@@ -87,7 +114,7 @@ impl Laid {
 fn item_mixes(doc: &Doc, items: &[Item]) -> Vec<(usize, usize, i64)> {
     let mut out = Vec::new();
     for track in [doc.main_video, doc.main_audio] {
-        for mix in doc.mixes(track) {
+        for mix in doc.mixes(track).into_iter().filter(|m| !m.ours) {
             let b = items.iter().position(|i| i.start() == mix.in_frame);
             if let Some(b) = b.filter(|&b| b > 0) {
                 // How far the two clips overlap now, which is what the layout
@@ -197,7 +224,25 @@ fn layout(
         // Where it starts: after the one before, overlapping it by a mix, or
         // after the gap the user left between the two.
         let prev = laid.last();
+        let user_mix = match (prev, &p.source) {
+            (Some(prev), Source::Existing(i)) => {
+                matches!(prev.source, Source::Existing(pi) if mixes.iter().any(|&(a, b, _)| a == pi && b == *i))
+            }
+            _ => false,
+        };
+        let mut mix_in = None;
+        if let (Some(prev), Some(want), false) = (prev, p.mix_in.filter(|&d| d > 0), user_mix) {
+            let most = prev.len().min(out_frame - in_frame + 1) / 2;
+            if want > most {
+                notes.push(format!(
+                    "Clip {}: the crossfade is shortened to half the shorter clip.",
+                    pos + 1
+                ));
+            }
+            mix_in = Some(want.min(most)).filter(|&d| d > 0);
+        }
         let start = match (prev, &p.source) {
+            (Some(prev), _) if mix_in.is_some() => prev.end() - mix_in.unwrap_or(0),
             (None, Source::Existing(i)) if *i == 0 => items[0].start(),
             (None, _) => 0,
             (Some(prev), Source::Existing(i)) => {
@@ -229,9 +274,163 @@ fn layout(
             video_chain: None,
             audio_chain: None,
             bin_id,
+            mix_in,
+            gain_db: p.gain_db,
+            limiter: p.limiter,
         });
     }
+    assign_lanes(&mut laid, &mixes)?;
     Ok(laid)
+}
+
+/// Which playlist each clip goes on. A clip with a crossfade into it goes on
+/// the other one from the clip before, as Kdenlive puts them; any other on A.
+/// Clips joined by a crossfade the user made keep the lanes they have.
+fn assign_lanes(laid: &mut [Laid], mixes: &[(usize, usize, i64)]) -> Result<(), String> {
+    let user: HashSet<usize> = mixes.iter().flat_map(|&(a, b, _)| [a, b]).collect();
+    for k in 0..laid.len() {
+        if matches!(laid[k].source, Source::Existing(i) if user.contains(&i)) {
+            continue;
+        }
+        let lane = if k > 0 && laid[k].mix_in.is_some() {
+            1 - laid[k - 1].video_lane.min(1)
+        } else {
+            0
+        };
+        laid[k].video_lane = lane;
+        laid[k].audio_lane = lane;
+    }
+    // Two clips on one lane may not overlap.
+    for lane in 0..2 {
+        let mut on: Vec<(i64, i64, usize)> = laid
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.video_lane == lane)
+            .map(|(k, l)| (l.start, l.end(), k))
+            .collect();
+        on.sort();
+        if let Some(w) = on.windows(2).find(|w| w[1].0 < w[0].1) {
+            return Err(format!(
+                "Clips {} and {} would overlap next to a crossfade made in Kdenlive; change one of them there first.",
+                w[0].2 + 1,
+                w[1].2 + 1
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Haruspex's Volume filter, as Kdenlive writes a Volume effect.
+fn gain_filter(id: &str, gain_db: f64) -> String {
+    let g = format!("{gain_db:.2}");
+    let g = g.trim_end_matches('0').trim_end_matches('.');
+    format!(
+        "   <filter id=\"{id}\">\n\
+         \x20   <property name=\"window\">75</property>\n\
+         \x20   <property name=\"max_gain\">20dB</property>\n\
+         \x20   <property name=\"level\">00:00:00.000={g}</property>\n\
+         \x20   <property name=\"channel_mask\">-1</property>\n\
+         \x20   <property name=\"mlt_service\">volume</property>\n\
+         \x20   <property name=\"kdenlive_id\">volume</property>\n\
+         \x20   <property name=\"kdenlive:collapsed\">0</property>\n\
+         \x20   <property name=\"{OURS}\">1</property>\n\
+         \x20  </filter>\n"
+    )
+}
+
+/// Haruspex's Limiter, as Kdenlive writes its Limiter effect
+/// (`avfilter.alimiter`): peaks held at -1.5 dB, nothing else changed.
+fn limiter_filter(id: &str) -> String {
+    let limit = format!("{:.3}", 10f64.powf(super::super::loudness::LIMIT_DB / 20.0));
+    let props = [
+        ("av.level_in", "1"),
+        ("av.level_out", "1"),
+        ("av.limit", limit.as_str()),
+        ("av.attack", "5"),
+        ("av.release", "50"),
+        ("av.asc", "0"),
+        ("av.asc_level", "0.5"),
+        ("av.level", "0"),
+        ("mlt_service", "avfilter.alimiter"),
+        ("kdenlive_id", "avfilter.alimiter"),
+        ("kdenlive:collapsed", "0"),
+        (OURS, "1"),
+    ];
+    let mut out = format!("   <filter id=\"{id}\">\n");
+    for (k, v) in props {
+        out.push_str(&format!("    <property name=\"{k}\">{v}</property>\n"));
+    }
+    out.push_str("   </filter>\n");
+    out
+}
+
+/// What to write for a clip's sound: its gain and, when its peaks need one,
+/// a limiter, with the ids they get.
+struct GainWrite {
+    db: f64,
+    volume_id: String,
+    limiter_id: Option<String>,
+}
+
+/// A same-track mix as Kdenlive writes one: `luma` on a video track, `mix` on
+/// an audio track, centred on the cut (`mixcut`), reversed when the clip
+/// coming in is on lane A.
+fn mix_transition(
+    id: &str,
+    fps: Fps,
+    start: i64,
+    frames: i64,
+    audio: bool,
+    reverse: bool,
+) -> String {
+    let mut props: Vec<(&str, String)> = vec![("a_track", "0".into()), ("b_track", "1".into())];
+    if audio {
+        props.extend([
+            ("duck_threshold", "0".into()),
+            ("duck_attenuation", "-12".into()),
+            ("duck_level", "0".into()),
+            ("duck_fade_in", "1500".into()),
+            ("duck_fade_out", "250".into()),
+            ("prefix", String::new()),
+            ("mlt_service", "mix".into()),
+            ("kdenlive_id", "mix".into()),
+            ("kdenlive:mixcut", (frames / 2).to_string()),
+            ("start", "-1".into()),
+            ("accepts_blanks", "1".into()),
+            ("reverse", if reverse { "1" } else { "0" }.into()),
+        ]);
+    } else {
+        props.extend([
+            ("factory", "loader".into()),
+            ("resource", String::new()),
+            ("mlt_service", "luma".into()),
+            ("kdenlive_id", "luma".into()),
+            ("kdenlive:mixcut", (frames / 2).to_string()),
+            ("softness", "0".into()),
+            ("alpha_over", "0".into()),
+            ("fix_background_alpha", "1".into()),
+            ("invert", "0".into()),
+            ("reverse", if reverse { "1" } else { "0" }.into()),
+        ]);
+    }
+    props.push((OURS, "1".into()));
+    let mut out = format!(
+        "  <transition id=\"{id}\" in=\"{}\" out=\"{}\">\n",
+        fps.timecode(start),
+        fps.timecode(start + frames)
+    );
+    for (k, v) in props {
+        if v.is_empty() {
+            out.push_str(&format!("   <property name=\"{k}\"/>\n"));
+        } else {
+            out.push_str(&format!(
+                "   <property name=\"{k}\">{}</property>\n",
+                escape(&v)
+            ));
+        }
+    }
+    out.push_str("  </transition>\n");
+    out
 }
 
 /// The text of an element's start tag with some attributes set.
@@ -370,8 +569,9 @@ fn rewrite_playlist(doc: &Doc, splices: &mut Splices, playlist: usize, lane: usi
         && current
             .iter()
             .zip(wanted)
-            .all(|(c, (start, len, _, node, in_f, out_f))| {
+            .all(|(c, (start, len, text, node, in_f, out_f))| {
                 *node == Some(c.node)
+                    && doc.text[doc.tree.node(c.node).span.clone()] == **text
                     && c.start == *start
                     && c.len() == *len
                     && c.in_frame == *in_f
@@ -424,10 +624,29 @@ fn rewrite_playlist(doc: &Doc, splices: &mut Splices, playlist: usize, lane: usi
     splices.replace(from..n.inner_end, format!("{body}\n "));
 }
 
-/// The entry text for a laid clip on one track.
-fn entry_text(doc: &Doc, fps: Fps, l: &Laid, old: Option<&Entry>, chain: &str) -> String {
+/// The entry text for a laid clip on one track. `gain` (on the sound only)
+/// replaces Haruspex's Volume filter: `Some(0)` removes it, `None` leaves it.
+fn entry_text(
+    doc: &Doc,
+    fps: Fps,
+    l: &Laid,
+    old: Option<&Entry>,
+    chain: &str,
+    gain: Option<GainWrite>,
+) -> String {
     let in_tc = fps.timecode(l.in_frame);
     let out_tc = fps.timecode(l.out_frame);
+    // Volume, then the Limiter that catches what the gain pushed over.
+    let filter = gain.as_ref().and_then(|g| {
+        let mut text = String::new();
+        if g.db.abs() >= 0.01 {
+            text.push_str(&gain_filter(&g.volume_id, g.db));
+        }
+        if let Some(id) = &g.limiter_id {
+            text.push_str(&limiter_filter(id));
+        }
+        (!text.is_empty()).then_some(text)
+    });
     match old {
         Some(e) => {
             let n = doc.tree.node(e.node);
@@ -436,12 +655,40 @@ fn entry_text(doc: &Doc, fps: Fps, l: &Laid, old: Option<&Entry>, chain: &str) -
                 e.node,
                 &[("in", in_tc), ("out", out_tc), ("producer", chain.to_string())],
             );
-            let rest = &doc.text[if n.self_closing() { n.span.end } else { n.inner_start }..n.span.end];
-            format!("{tag}{rest}")
+            if n.self_closing() {
+                return match filter {
+                    Some(f) => format!("{}\n{f}  </entry>", tag.replacen("/>", ">", 1)),
+                    None => tag,
+                };
+            }
+            let mut body = doc.text[n.inner_start..n.span.end].to_string();
+            if gain.is_some() {
+                // Positions inside `body`, applied from the end so neither moves the other.
+                let mut edits: Vec<(std::ops::Range<usize>, String)> = Vec::new();
+                for f in doc.our_filters(e.node) {
+                    let r = line_of(&doc.text, doc.tree.node(f).span.clone());
+                    edits.push((r.start - n.inner_start..r.end - n.inner_start, String::new()));
+                }
+                if let Some(f) = filter {
+                    let at = doc
+                        .tree
+                        .children_named(e.node, "property")
+                        .last()
+                        .map(|p| line_of(&doc.text, doc.tree.node(p).span.clone()).end - n.inner_start)
+                        .unwrap_or_else(|| usize::from(body.starts_with('\n')));
+                    edits.push((at..at, f));
+                }
+                edits.sort_by_key(|(r, _)| std::cmp::Reverse((r.start, r.end)));
+                for (r, text) in edits {
+                    body.replace_range(r, &text);
+                }
+            }
+            format!("{tag}{body}")
         }
         None => format!(
-            "<entry in=\"{in_tc}\" out=\"{out_tc}\" producer=\"{chain}\">\n   <property name=\"kdenlive:id\">{}</property>\n  </entry>",
-            l.bin_id
+            "<entry in=\"{in_tc}\" out=\"{out_tc}\" producer=\"{chain}\">\n   <property name=\"kdenlive:id\">{}</property>\n{}  </entry>",
+            l.bin_id,
+            filter.unwrap_or_default()
         ),
     }
 }
@@ -611,6 +858,7 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
     }
 
     // The playlists.
+    let mut next_filter = doc.max_nested_id("filter") + 1;
     for (track, is_audio) in [(doc.main_audio, true), (doc.main_video, false)] {
         let playlists = doc.tracks[track].playlists.clone();
         let mut lanes: Vec<Lane> = vec![Vec::new(); playlists.len().max(1)];
@@ -623,7 +871,7 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
                         items[*i].video.as_ref()
                     };
                     let Some(e) = e else { continue };
-                    (Some(e), e.chain.clone(), e.lane)
+                    (Some(e), e.chain.clone(), 0)
                 }
                 Source::Piece(i) => {
                     let e = if is_audio {
@@ -639,7 +887,7 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
                     let (Some(e), Some(chain)) = (e, chain) else {
                         continue;
                     };
-                    (Some(e), chain.clone(), e.lane)
+                    (Some(e), chain.clone(), 0)
                 }
                 Source::New(_) => {
                     let chain = if is_audio {
@@ -648,18 +896,28 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
                         &l.video_chain
                     };
                     let Some(chain) = chain else { continue };
-                    (
-                        None,
-                        chain.clone(),
-                        if is_audio { l.audio_lane } else { l.video_lane },
-                    )
+                    (None, chain.clone(), 0)
                 }
             };
-            let lane = lane.min(lanes.len() - 1);
+            let _ = lane;
+            let lane = if is_audio { l.audio_lane } else { l.video_lane }.min(lanes.len() - 1);
+            let gain = l.gain_db.filter(|_| is_audio).map(|db| {
+                let volume_id = format!("filter{next_filter}");
+                next_filter += 1;
+                let limiter_id = l.limiter.then(|| {
+                    next_filter += 1;
+                    format!("filter{}", next_filter - 1)
+                });
+                GainWrite {
+                    db,
+                    volume_id,
+                    limiter_id,
+                }
+            });
             lanes[lane].push((
                 l.start,
                 l.len(),
-                entry_text(doc, fps, l, old, &chain),
+                entry_text(doc, fps, l, old, &chain, gain),
                 old.map(|e| e.node),
                 l.in_frame,
                 l.out_frame,
@@ -766,9 +1024,68 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
         );
     }
 
-    // Mixes follow the clip that starts in them.
+    // Haruspex's crossfades are written afresh; the user's follow their clips.
+    let mut next_transition = doc.max_nested_id("transition") + 1;
+    for (track, audio) in [(doc.main_video, false), (doc.main_audio, true)] {
+        let tractor = doc.tracks[track].tractor;
+        let has = |l: &Laid| {
+            let chain = if audio {
+                &l.audio_chain
+            } else {
+                &l.video_chain
+            };
+            chain.is_some()
+                || matches!(l.source, Source::Existing(i) if if audio { items[i].audio.is_some() } else { items[i].video.is_some() })
+        };
+        // (start, frames, reverse): wanted, and as written now. Unchanged, the
+        // track's transitions are left alone, ids and all.
+        let mut wanted_mixes: Vec<(i64, i64, bool)> = (1..laid.len())
+            .filter(|&k| has(&laid[k]) && has(&laid[k - 1]))
+            .filter_map(|k| {
+                laid[k]
+                    .mix_in
+                    .map(|f| (laid[k].start, f, laid[k].video_lane == 0))
+            })
+            .collect();
+        let ours: Vec<_> = doc.mixes(track).into_iter().filter(|m| m.ours).collect();
+        let mut written: Vec<(i64, i64, bool)> = ours
+            .iter()
+            .map(|m| {
+                let reverse = doc.tree.property(m.node, "reverse") == Some("1");
+                (m.in_frame, m.out_frame - m.in_frame, reverse)
+            })
+            .collect();
+        wanted_mixes.sort();
+        written.sort();
+        if wanted_mixes == written {
+            continue;
+        }
+        for mix in &ours {
+            splices.replace(
+                line_of(&doc.text, doc.tree.node(mix.node).span.clone()),
+                String::new(),
+            );
+        }
+        let mut added = String::new();
+        for (start, frames, reverse) in wanted_mixes {
+            let id = format!("transition{next_transition}");
+            next_transition += 1;
+            added.push_str(&mix_transition(&id, fps, start, frames, audio, reverse));
+        }
+        if !added.is_empty() {
+            let after = doc
+                .tree
+                .children_named(tractor, "track")
+                .last()
+                .map(|t| line_of(&doc.text, doc.tree.node(t).span.clone()).end)
+                .ok_or("a main track has no lanes")?;
+            splices.insert(after, added);
+        }
+    }
+
+    // The user's mixes follow the clip that starts in them.
     for track in [doc.main_video, doc.main_audio] {
-        for mix in doc.mixes(track) {
+        for mix in doc.mixes(track).into_iter().filter(|m| !m.ours) {
             let Some(b) = items.iter().position(|i| i.start() == mix.in_frame) else {
                 continue;
             };
@@ -873,13 +1190,23 @@ pub fn apply(doc: &Doc, wanted: &[Placement]) -> Result<Edited, String> {
     })
 }
 
-/// The current main track as placements that change nothing.
+/// The current main track as placements that change nothing: Haruspex's own
+/// crossfades are carried over at their length.
 pub fn current(doc: &Doc) -> Vec<Placement> {
-    (0..doc.items().len())
-        .map(|i| Placement {
-            source: Source::Existing(i),
-            in_frame: None,
-            out_frame: None,
+    let items = doc.items();
+    let ours: Vec<i64> = [doc.main_video, doc.main_audio]
+        .iter()
+        .flat_map(|&t| doc.mixes(t))
+        .filter(|m| m.ours)
+        .map(|m| m.in_frame)
+        .collect();
+    (0..items.len())
+        .map(|i| {
+            let mut p = Placement::of(Source::Existing(i));
+            if i > 0 && ours.contains(&items[i].start()) {
+                p.mix_in = Some((items[i - 1].end() - items[i].start()).max(0)).filter(|&d| d > 0);
+            }
+            p
         })
         .collect()
 }

@@ -199,6 +199,10 @@ registerTool({
 								out_secs: {
 									type: 'number',
 									description: 'Stop this far into the clip. Default: its end, or its current trim.'
+								},
+								crossfade_secs: {
+									type: 'number',
+									description: 'A crossfade into this clip, 0–3 s; overrides crossfade_secs below.'
 								}
 							}
 						}
@@ -217,6 +221,14 @@ registerTool({
 						type: 'string',
 						enum: VIDEO_PRESETS.map((p) => p.id),
 						description: 'Format for a new project. Default from Settings → Video.'
+					},
+					crossfade_secs: {
+						type: 'number',
+						description: 'A crossfade at every join, 0–3 s. Default 0: hard cuts.'
+					},
+					normalize: {
+						type: 'boolean',
+						description: "Even out each clip's sound to YouTube's -14 LUFS. Default true."
 					}
 				},
 				required: ['items']
@@ -381,4 +393,38 @@ registerTool({
 	},
 	displayLabel: () => 'Cancelling the render',
 	execute: renderCancel
+});
+
+async function normalize(args: Record<string, unknown>, ctx: ToolContext) {
+	ctx.onProgress?.('Measuring how loud each clip is');
+	try {
+		const result = await invoke<CutResult>('video_project_op', {
+			workingDir: ctx.workingDir,
+			episode: episodeArg(args),
+			project: str(args.project),
+			op: { op: 'normalize' },
+			settings: videoSettings()
+		});
+		return toolResult(cutReport(result));
+	} catch (e) {
+		return toolResult(toolError(errMessage(e)));
+	}
+}
+
+registerTool({
+	category: 'video',
+	schema: {
+		type: 'function',
+		function: {
+			name: 'video_normalize',
+			description:
+				"Measure every clip on the main track again and set its gain so the video sounds even at YouTube's -14 LUFS. Use it when a render's check reports the loudness is off.",
+			parameters: {
+				type: 'object',
+				properties: { episode: EPISODE_PARAM, project: PROJECT_PARAM }
+			}
+		}
+	},
+	displayLabel: (args) => `Evening out the sound of ${episodeArg(args) || 'the video'}`,
+	execute: normalize
 });

@@ -9,13 +9,21 @@
 //! live anywhere, and nothing else outside. Writes stay inside the working
 //! folder, always through `resolve_episode` or `resolve_in_working`.
 
+use crate::fs_tools::path::strip_verbatim;
 use crate::fs_tools::resolve_in_workdir;
 use std::path::{Path, PathBuf};
+
+/// A checked path as other programs can open it. Canonicalising gives a
+/// `\\?\C:\…` path on Windows, which melt can't load and ffmpeg won't always
+/// take; every path these return goes to one of them sooner or later.
+fn plain(path: PathBuf) -> PathBuf {
+    strip_verbatim(&path)
+}
 
 /// The episode folder `episode` names, inside `working_dir`. It must exist.
 pub fn resolve_episode(working_dir: &str, episode: &str) -> Result<PathBuf, String> {
     let episode = episode.trim().trim_matches(['/', '\\']);
-    let dir = resolve_in_workdir(Path::new(working_dir), episode)?;
+    let dir = plain(resolve_in_workdir(Path::new(working_dir), episode)?);
     if !dir.is_dir() {
         return Err(format!("No folder named {episode} in the working folder."));
     }
@@ -25,7 +33,7 @@ pub fn resolve_episode(working_dir: &str, episode: &str) -> Result<PathBuf, Stri
 /// Any path inside `working_dir`, existing or not (for a file about to be
 /// written).
 pub fn resolve_in_working(working_dir: &str, path: &str) -> Result<PathBuf, String> {
-    resolve_in_workdir(Path::new(working_dir), path.trim())
+    resolve_in_workdir(Path::new(working_dir), path.trim()).map(plain)
 }
 
 /// A media file to read: inside `working_dir`, or exactly the intro or outro
@@ -40,7 +48,7 @@ pub fn resolve_media(
     for setting in [intro, outro] {
         let setting = setting.trim();
         if !setting.is_empty() && same_file(Path::new(wanted), Path::new(setting)) {
-            return Ok(PathBuf::from(setting));
+            return Ok(plain(PathBuf::from(setting)));
         }
     }
     let resolved = resolve_in_working(working_dir, wanted)?;
@@ -98,10 +106,7 @@ mod tests {
         assert!(resolve_episode(&wd, "ep010").unwrap().ends_with("ep010"));
         assert!(resolve_episode(&wd, "ep010/raw").unwrap().ends_with("raw"));
         // Empty: the working folder is the episode.
-        assert_eq!(
-            resolve_episode(&wd, "").unwrap(),
-            dir.canonicalize().unwrap()
-        );
+        assert_eq!(resolve_episode(&wd, "").unwrap(), dir.to_path_buf());
     }
 
     #[test]
@@ -135,6 +140,19 @@ mod tests {
         // Without the setting, the same file is outside and refused.
         assert!(resolve_media(&wd, &intro, "", "").is_err());
         assert!(resolve_media(&wd, "raw/obs.mp4", "", "").is_ok());
+    }
+
+    #[test]
+    fn checked_paths_are_never_verbatim() {
+        let dir = series();
+        let wd = dir.to_string_lossy();
+        for p in [
+            resolve_episode(&wd, "ep010").unwrap(),
+            resolve_in_working(&wd, "ep010/new.kdenlive").unwrap(),
+            resolve_media(&wd, "ep010/raw/obs.mp4", "", "").unwrap(),
+        ] {
+            assert!(!p.to_string_lossy().starts_with(r"\\?\"), "{}", p.display());
+        }
     }
 
     #[test]

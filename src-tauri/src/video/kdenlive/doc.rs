@@ -124,7 +124,13 @@ pub struct Mix {
     pub track: usize,
     pub in_frame: i64,
     pub out_frame: i64,
+    /// Haruspex wrote it (`kdenlive:haruspex`), so Haruspex may rewrite it.
+    /// Any other mix is the user's.
+    pub ours: bool,
 }
+
+/// The property that marks a filter or transition as Haruspex's own.
+pub const OURS: &str = "kdenlive:haruspex";
 
 /// A clip on the main track: its picture and its sound, together.
 #[derive(Clone, Debug, PartialEq)]
@@ -338,7 +344,12 @@ impl Doc {
                                 .map(str::to_string)
                         })
                         .unwrap_or_default();
-                    let filters = self.tree.children_named(c, "filter").count();
+                    // The user's effects: Haruspex's own gain and limiter aren't.
+                    let filters = self
+                        .tree
+                        .children_named(c, "filter")
+                        .filter(|&f| self.tree.property(f, OURS) != Some("1"))
+                        .count();
                     let e = Entry {
                         node: c,
                         lane,
@@ -391,9 +402,52 @@ impl Doc {
                     track,
                     in_frame: n.attr("in").and_then(|v| self.fps.parse(v)).unwrap_or(0),
                     out_frame: n.attr("out").and_then(|v| self.fps.parse(v)).unwrap_or(0),
+                    ours: self.tree.property(t, OURS) == Some("1"),
                 }
             })
             .collect()
+    }
+
+    /// Haruspex's own filters on an entry: its Volume and Limiter.
+    pub fn our_filters(&self, entry: usize) -> Vec<usize> {
+        self.tree
+            .children_named(entry, "filter")
+            .filter(|&f| self.tree.property(f, OURS) == Some("1"))
+            .collect()
+    }
+
+    /// Whether Haruspex put a Limiter on an entry.
+    pub fn our_limiter(&self, entry: usize) -> bool {
+        self.our_filters(entry)
+            .into_iter()
+            .any(|f| self.tree.property(f, "mlt_service") == Some("avfilter.alimiter"))
+    }
+
+    /// The gain Haruspex set on an entry (its tagged Volume filter), in dB.
+    pub fn our_gain(&self, entry: usize) -> Option<(usize, f64)> {
+        self.tree
+            .children_named(entry, "filter")
+            .find(|&f| {
+                self.tree.property(f, OURS) == Some("1")
+                    && self.tree.property(f, "mlt_service") == Some("volume")
+            })
+            .and_then(|f| {
+                let level = self.tree.property(f, "level")?;
+                // "00:00:00.000=3" (a keyframe), or a plain number.
+                let value = level.rsplit('=').next()?.trim().parse::<f64>().ok()?;
+                Some((f, value))
+            })
+    }
+
+    /// The highest number in any element id of the form `<prefix><n>`,
+    /// nested ones too (filters live inside entries).
+    pub fn max_nested_id(&self, prefix: &str) -> i64 {
+        self.tree
+            .nodes
+            .iter()
+            .filter_map(|n| n.attr("id")?.strip_prefix(prefix)?.parse::<i64>().ok())
+            .max()
+            .unwrap_or(-1)
     }
 
     /// The `"track:position"` pairs of every `AVSplit` group.

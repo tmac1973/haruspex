@@ -110,6 +110,11 @@ export function itemLine(i: SummaryItem): string {
 		`${formatTime(i.durationSecs)} long`,
 		`clip ${formatTime(i.sourceInSecs)}–${formatTime(i.sourceOutSecs)}`
 	];
+	if (i.crossfadeInSecs != null) parts.push(`crossfades in over ${i.crossfadeInSecs.toFixed(1)} s`);
+	if (i.gainDb != null) {
+		const limited = i.limited ? ', peaks limited' : '';
+		parts.push(`gain ${i.gainDb > 0 ? '+' : ''}${i.gainDb} dB${limited}`);
+	}
 	if (!i.hasVideo) parts.push('sound only');
 	if (!i.hasAudio) parts.push('no sound');
 	if (i.effects > 0) parts.push(`${plural(i.effects, 'effect')} added in Kdenlive`);

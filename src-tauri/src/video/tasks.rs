@@ -252,7 +252,7 @@ pub async fn start_render(
     }
     let expected = doc.fps.secs(frames);
     let fps = doc.fps.num as f64 / doc.fps.den as f64;
-    let episode_dir = paths::resolve_episode(&req.working_dir, &req.episode)?;
+    let episode_dir = project::episode_home(&req.working_dir, &req.episode, &project_path)?;
     let out = output_path(&episode_dir, &project_path);
     std::fs::create_dir_all(out.parent().unwrap_or(&episode_dir))
         .map_err(|e| format!("can't make the renders folder: {e}"))?;

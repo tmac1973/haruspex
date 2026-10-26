@@ -8,4 +8,16 @@ index: number, path: string, sourceInSecs: number, sourceOutSecs: number, startS
 /**
  * Effects the user put on it.
  */
-effects: number, hasVideo: boolean, hasAudio: boolean, };
+effects: number, hasVideo: boolean, hasAudio: boolean, 
+/**
+ * How long it crossfades from the clip before.
+ */
+crossfadeInSecs: number | null, 
+/**
+ * The gain Haruspex set on its sound, in dB.
+ */
+gainDb: number | null, 
+/**
+ * Haruspex put a Limiter after the gain to hold its peaks.
+ */
+limited: boolean, };

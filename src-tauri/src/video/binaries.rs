@@ -384,6 +384,22 @@ mod tests {
         assert!(hints[0].contains("does not run"), "{hints:?}");
     }
 
+    /// The real lookup on this machine: with Kdenlive installed and nothing on
+    /// PATH, all three come from the Kdenlive install.
+    /// `PATH=/usr/bin:/bin cargo test -- --ignored finds_kdenlives_own --nocapture`
+    #[tokio::test]
+    #[ignore = "needs Kdenlive installed"]
+    async fn finds_kdenlives_own() {
+        let status = resolve(&BinaryOverrides::default()).await;
+        println!("{status:#?}");
+        for tool in Tool::ALL {
+            let found = status
+                .get(tool)
+                .unwrap_or_else(|| panic!("{} not found", tool.name()));
+            assert_eq!(found.source, BinarySource::Kdenlive, "{}", tool.name());
+        }
+    }
+
     #[test]
     fn require_names_the_settings_path() {
         let status = VideoBinariesStatus::default();
