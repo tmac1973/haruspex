@@ -46,6 +46,15 @@ pub fn spans(doc: &Doc) -> Vec<Span> {
         .collect()
 }
 
+/// Which item shows the cut at `t` seconds, and the moment of its source.
+pub fn source_at(spans: &[Span], t: f64) -> Option<(&Span, f64)> {
+    spans
+        .iter()
+        .rev()
+        .find(|s| t >= s.start && t < s.start + (s.source_out - s.source_in))
+        .map(|s| (s, s.source_in + t - s.start))
+}
+
 /// A stretch of speech in the cut's time.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Line {
@@ -99,6 +108,19 @@ mod tests {
             source_in,
             source_out,
         }
+    }
+
+    #[test]
+    fn the_cut_maps_back_to_its_sources() {
+        let spans = [
+            span(1, "/a.mp4", 0.0, 10.0, 20.0),
+            span(2, "/b.mp4", 10.0, 0.0, 5.0),
+        ];
+        let (s, at) = source_at(&spans, 4.0).unwrap();
+        assert_eq!((s.index, at), (1, 14.0));
+        let (s, at) = source_at(&spans, 12.5).unwrap();
+        assert_eq!((s.index, at), (2, 2.5));
+        assert!(source_at(&spans, 15.0).is_none());
     }
 
     #[test]

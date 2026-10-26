@@ -380,3 +380,148 @@ pub fn video_write_chapters(
         text,
     })
 }
+
+#[derive(serde::Serialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneCuts {
+    pub cuts: Vec<f64>,
+    /// More were found than are listed.
+    pub capped: bool,
+}
+
+/// Where a clip's picture changes shot.
+#[tauri::command]
+pub async fn video_scenes(
+    working_dir: String,
+    path: String,
+    threshold: f64,
+    settings: super::project::VideoSettings,
+) -> Result<SceneCuts, String> {
+    let found = binaries::resolve(&settings.overrides).await;
+    let ffmpeg = found.require(Tool::Ffmpeg)?;
+    let file = paths::resolve_media(&working_dir, &path, &settings.intro, &settings.outro)?;
+    let (cuts, capped) = super::scenes::detect(ffmpeg, &file, threshold.clamp(0.05, 0.95)).await?;
+    Ok(SceneCuts { cuts, capped })
+}
+
+/// Which frames a contact sheet shows.
+#[derive(serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct FrameRequest {
+    /// A clip, with `times` or `every_secs`.
+    pub path: Option<String>,
+    pub times: Option<Vec<f64>>,
+    pub every_secs: Option<f64>,
+    /// Or times in the cut of a project (`project` or the episode's).
+    pub timeline_times: Option<Vec<f64>>,
+    pub project: Option<String>,
+}
+
+#[derive(serde::Serialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct Tile {
+    /// 1-based, as drawn on the sheet.
+    pub n: u32,
+    pub path: String,
+    pub source_secs: f64,
+    pub timeline_secs: Option<f64>,
+}
+
+#[derive(serde::Serialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct ContactSheet {
+    /// `data:image/jpeg;base64,…`
+    pub data_url: String,
+    pub tiles: Vec<Tile>,
+}
+
+/// A numbered sheet of frames from a clip or from the cut.
+#[tauri::command]
+pub async fn video_frames(
+    working_dir: String,
+    episode: String,
+    request: FrameRequest,
+    settings: super::project::VideoSettings,
+) -> Result<ContactSheet, String> {
+    use super::frames;
+    use base64::Engine;
+    let found = binaries::resolve(&settings.overrides).await;
+    let ffmpeg = found.require(Tool::Ffmpeg)?.to_string();
+    let ffprobe = found.require(Tool::Ffprobe)?.to_string();
+    // (file, shown path, source secs, timeline secs)
+    let mut wanted: Vec<(std::path::PathBuf, String, f64, Option<f64>)> = Vec::new();
+    match (&request.path, &request.timeline_times) {
+        (Some(path), None) => {
+            let file = paths::resolve_media(&working_dir, path, &settings.intro, &settings.outro)?;
+            let shown = paths::display_path(&working_dir, &file);
+            let times = match (&request.times, request.every_secs) {
+                (Some(t), None) if !t.is_empty() => t.clone(),
+                (None, Some(every)) if every > 0.0 => {
+                    let info = super::probe::probe_file(&ffprobe, &file, shown.clone()).await?;
+                    let n = ((info.duration_secs / every).floor() as usize)
+                        .clamp(1, frames::MAX_FRAMES);
+                    let step = info.duration_secs / n as f64;
+                    (0..n).map(|i| step * i as f64 + step / 2.0).collect()
+                }
+                _ => return Err("Give either times or every_secs with a path.".into()),
+            };
+            wanted.extend(
+                times
+                    .into_iter()
+                    .map(|t| (file.clone(), shown.clone(), t, None)),
+            );
+        }
+        (None, Some(times)) if !times.is_empty() => {
+            let project = super::project::default_project(
+                &working_dir,
+                &episode,
+                request.project.as_deref(),
+                false,
+            )?;
+            let doc = super::kdenlive::open(&project)?;
+            let spans = super::kdenlive::timeline_map::spans(&doc);
+            for &t in times {
+                let (span, at) = super::kdenlive::timeline_map::source_at(&spans, t)
+                    .ok_or_else(|| format!("Nothing is on the main track at {t:.1} s."))?;
+                wanted.push((
+                    span.file.clone(),
+                    paths::display_path(&working_dir, &span.file),
+                    at,
+                    Some(t),
+                ));
+            }
+        }
+        _ => return Err("Give a path (with times or every_secs), or timeline_times.".into()),
+    }
+    if wanted.len() > frames::MAX_FRAMES {
+        return Err(format!(
+            "At most {} frames fit on a sheet.",
+            frames::MAX_FRAMES
+        ));
+    }
+    let mut pngs = Vec::new();
+    for (file, _, at, _) in &wanted {
+        pngs.push(frames::extract_frame(&ffmpeg, file, *at, 960).await?);
+    }
+    let jpeg = frames::contact_sheet(&pngs)?;
+    Ok(ContactSheet {
+        data_url: format!(
+            "data:image/jpeg;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(jpeg)
+        ),
+        tiles: wanted
+            .into_iter()
+            .enumerate()
+            .map(|(i, (_, path, at, tl))| Tile {
+                n: i as u32 + 1,
+                path,
+                source_secs: at,
+                timeline_secs: tl,
+            })
+            .collect(),
+    })
+}

@@ -26,6 +26,7 @@ import '#lib/agent/tools/music-gen.ts';
 import '#lib/agent/tools/music-edit.ts';
 import '#lib/agent/tools/video.ts';
 import '#lib/agent/tools/video-transcribe.ts';
+import '#lib/agent/tools/video-frames.ts';
 import '#lib/agent/tools/save-generated.ts';
 import '#lib/agent/tools/skills.ts';
 import '#lib/agent/tools/skillsWrite.ts';

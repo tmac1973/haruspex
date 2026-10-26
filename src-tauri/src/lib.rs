@@ -386,6 +386,8 @@ pub fn run() {
             video::commands::video_project_transcript,
             video::commands::video_write_captions,
             video::commands::video_write_chapters,
+            video::commands::video_scenes,
+            video::commands::video_frames,
             audio_cache::commands::audio_sweep,
             audio_cache::commands::audio_read_bytes,
             audio_cache::commands::audio_save_as,

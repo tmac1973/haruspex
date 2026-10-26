@@ -1,6 +1,6 @@
 ---
 title: Video editing
-description: Setting up video editing with Kdenlive, picking a series or episode folder, asking about your clips, and having the assistant cut a Kdenlive project you can also edit.
+description: Setting up video editing with Kdenlive, picking a series or episode folder, asking about and looking at your clips, and having the assistant cut a Kdenlive project you can also edit.
 ---
 
 # Video editing
@@ -33,6 +33,10 @@ Settings → Video → **New videos** has **Intro** and **Outro**: a clip to put
 ## Ask about your clips
 
 Ask "what clips are in ep012?" or "how long is the footage for ep012?". The assistant lists each clip's length, size, frame rate and codecs, and says when the clips are mixed (different sizes, frame rates or codecs) or when one has no sound. Files it can't read are listed with the reason.
+
+## Let it look at the footage
+
+With a model that can see images, ask "look at ep012 every two minutes" or "show me the cut at 4:10 and 9:30". The assistant gets one sheet of up to 16 numbered frames, and the sheet shows in the chat too. It can also list where a clip changes shot ("where are the scene changes in the phone clip?"), with any model.
 
 ## Make a cut
 
