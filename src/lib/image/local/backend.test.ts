@@ -221,3 +221,65 @@ describe('generate', () => {
 		expect(tauri.invoke).not.toHaveBeenCalledWith('image_engine_start', expect.anything());
 	});
 });
+
+describe('edits', () => {
+	const models = (canEdit: boolean) => [
+		{ id: 'ming', can_edit: false },
+		{ id: 'qwen21', can_edit: canEdit }
+	];
+	const routes = (canEdit: boolean) => ({
+		image_models: models(canEdit),
+		image_read_bytes: () => new Uint8Array([1, 2, 3]).buffer,
+		image_engine_request: () => JSON.stringify({ images: ['AQID'], info: '{}' })
+	});
+	const sent = () => {
+		const call = tauri.invoke.mock.calls.find(([c]) => c === 'image_engine_request')!;
+		return { path: call[1].path as string, body: JSON.parse(call[1].body as string) };
+	};
+	const edit = {
+		prompt: 'make it night',
+		width: 1024,
+		height: 768,
+		seed: 3,
+		transparent: true,
+		edit: {
+			images: [
+				{ name: 'a.png', hash: 'a'.repeat(64) },
+				{ name: 'b.png', bytes: [4, 5, 6] }
+			]
+		}
+	};
+
+	it('says Qwen can edit once its vision weights are on disk, and Ming never', async () => {
+		settings.imageLocalModelId = 'qwen21';
+		tauri.invoke.mockReset().mockImplementation(invokeRouter(routes(true), undefined));
+		expect(await localBackend.capabilities()).toMatchObject({ edit: true, maxEditImages: 3 });
+		tauri.invoke.mockReset().mockImplementation(invokeRouter(routes(false), undefined));
+		expect(await localBackend.capabilities()).toMatchObject({ edit: false, maxEditImages: 0 });
+		settings.imageLocalModelId = 'ming';
+		expect(await localBackend.capabilities()).toMatchObject({ edit: false });
+	});
+
+	it('sends the pictures as extra_images on txt2img, with no clear start or RGBA phrase', async () => {
+		settings.imageLocalModelId = 'qwen21';
+		tauri.invoke.mockReset().mockImplementation(invokeRouter(routes(true), undefined));
+		await localBackend.generate(edit);
+		const { path, body } = sent();
+		expect(path).toBe('/sdapi/v1/txt2img');
+		expect(body.extra_images).toEqual(['AQID', 'BAUG']);
+		expect(body).toMatchObject({ prompt: 'make it night', width: 1024, height: 768, steps: 8 });
+		expect(body.init_images).toBeUndefined();
+		expect(tauri.invoke).toHaveBeenCalledWith('image_read_bytes', { hash: 'a'.repeat(64) });
+		expect(tauri.invoke).not.toHaveBeenCalledWith('image_clear_canvas', expect.anything());
+	});
+
+	it('refuses an edit without the vision weights, saying where to get them', async () => {
+		settings.imageLocalModelId = 'qwen21';
+		tauri.invoke.mockReset().mockImplementation(invokeRouter(routes(false), undefined));
+		await expect(localBackend.generate(edit)).rejects.toMatchObject({
+			kind: 'unconfigured',
+			message: expect.stringContaining('Add editing')
+		});
+		expect(tauri.invoke.mock.calls.some(([c]) => c === 'image_engine_request')).toBe(false);
+	});
+});

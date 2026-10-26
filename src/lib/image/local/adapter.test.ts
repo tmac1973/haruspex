@@ -211,9 +211,16 @@ describe('per family', () => {
 				transparency: true,
 				seamlessTiling: true,
 				loras: false,
-				maxLoras: 0
+				maxLoras: 0,
+				edit: false,
+				maxEditImages: 0
 			});
 		}
+	});
+
+	it('edits only with Qwen, and only with its vision weights', () => {
+		expect(declaredCapabilities('qwen21', true)).toMatchObject({ edit: true, maxEditImages: 3 });
+		expect(declaredCapabilities('ming', true)).toMatchObject({ edit: false, maxEditImages: 0 });
 	});
 
 	it('samples each family as measured', () => {

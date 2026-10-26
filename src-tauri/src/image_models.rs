@@ -39,6 +39,8 @@ pub enum ImageFileRole {
     TextEncoder,
     Vae,
     Tokenizer,
+    /// The text encoder's vision weights, which Qwen-Image 2.1 edits with.
+    Vision,
 }
 
 impl ImageFileRole {
@@ -49,6 +51,7 @@ impl ImageFileRole {
             Self::TextEncoder => "--llm",
             Self::Vae => "--vae",
             Self::Tokenizer => "--tokenizer",
+            Self::Vision => "--llm_vision",
         }
     }
 }
@@ -62,6 +65,10 @@ pub struct ImageModelFile {
     pub sha256: String,
     #[ts(type = "number")]
     pub size_bytes: u64,
+    /// Not needed to draw: a model is `downloaded` without it, and runs
+    /// without it. Qwen's vision weights, which only editing needs, so a
+    /// download made before they were listed keeps working.
+    pub optional: bool,
 }
 
 /// One downloadable model.
@@ -93,8 +100,11 @@ pub struct ImageModelInfo {
     /// Sum of `files`.
     #[ts(type = "number")]
     pub size_bytes: u64,
-    /// True when every file is on disk.
+    /// True when every file it needs to draw is on disk.
     pub downloaded: bool,
+    /// True when it can edit pictures with what is on disk: it lists vision
+    /// weights and they are there.
+    pub can_edit: bool,
 }
 
 /// A model's licence: the one-line summary shown, the full text's URL, and
@@ -159,6 +169,15 @@ fn file(role: ImageFileRole, url: &str, sha256: &str, size_bytes: u64) -> ImageM
         url: url.to_string(),
         sha256: sha256.to_string(),
         size_bytes,
+        optional: false,
+    }
+}
+
+/// A file a model can run without (see [`ImageModelFile::optional`]).
+fn optional(file: ImageModelFile) -> ImageModelFile {
+    ImageModelFile {
+        optional: true,
+        ..file
     }
 }
 
@@ -179,9 +198,14 @@ fn entry(
         commercial_use: licence.commercial_use,
         native_edge: 1024,
         vram_mb,
-        size_bytes: files.iter().map(|f| f.size_bytes).sum(),
+        size_bytes: files
+            .iter()
+            .filter(|f| !f.optional)
+            .map(|f| f.size_bytes)
+            .sum(),
         files,
         downloaded: false,
+        can_edit: false,
     }
 }
 
@@ -244,6 +268,16 @@ pub fn image_registry() -> Vec<ImageModelInfo> {
                     5_027_784_800,
                 ),
                 file(Vae, QWEN21_VAE.url, QWEN21_VAE.sha256, QWEN21_VAE.size_bytes),
+                // For editing: sd-server's Qwen 2.1 edit wants the text
+                // encoder's vision weights (`--llm_vision`). F16, as sd.cpp's
+                // docs name; Turbo edited with it on a 16 GB card, 30 s at
+                // 1024×768, peaking at 12.8 GB with the desktop.
+                optional(file(
+                    Vision,
+                    "https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct-GGUF/resolve/main/mmproj-Qwen3VL-8B-Instruct-F16.gguf",
+                    "ca524100ebf825c9a870db1c580d03879e0da0ab2541697e2458e64891cf9d38",
+                    1_159_029_824,
+                )),
             ],
         ),
     ]
@@ -266,14 +300,20 @@ pub fn catalogue_with_state(models_dir: &Path) -> Vec<ImageModelInfo> {
         .into_iter()
         .map(|mut m| {
             let dir = model_dir(models_dir, &m.id);
-            m.downloaded = m.files.iter().all(|f| dir.join(&f.filename).is_file());
+            let on_disk = |f: &ImageModelFile| dir.join(&f.filename).is_file();
+            m.downloaded = m.files.iter().filter(|f| !f.optional).all(on_disk);
+            m.can_edit = m.downloaded
+                && m.files
+                    .iter()
+                    .any(|f| f.role == ImageFileRole::Vision && on_disk(f));
             m
         })
         .collect()
 }
 
 /// What sd-server needs to load an entry: each file's flag and path, plus the
-/// entry's own options. `None` for an unknown id or a set not fully on disk.
+/// entry's own options. `None` for an unknown id or a set missing a file it
+/// needs; an optional file is passed only when it is there.
 pub fn engine_args(models_dir: &Path, id: &str) -> Option<Vec<String>> {
     let entry = image_registry().into_iter().find(|m| m.id == id)?;
     let dir = model_dir(models_dir, id);
@@ -281,6 +321,9 @@ pub fn engine_args(models_dir: &Path, id: &str) -> Option<Vec<String>> {
     for f in &entry.files {
         let path = dir.join(&f.filename);
         if !path.is_file() {
+            if f.optional {
+                continue;
+            }
             return None;
         }
         args.push(f.role.flag().to_string());
@@ -429,9 +472,14 @@ mod tests {
                 assert!(f.sha256.chars().all(|c| c.is_ascii_hexdigit()));
                 assert!(f.size_bytes > 0, "{}", f.filename);
             }
+            // What drawing needs; optional files are offered on their own.
             assert_eq!(
                 m.size_bytes,
-                m.files.iter().map(|f| f.size_bytes).sum::<u64>()
+                m.files
+                    .iter()
+                    .filter(|f| !f.optional)
+                    .map(|f| f.size_bytes)
+                    .sum::<u64>()
             );
         }
     }
@@ -500,6 +548,52 @@ mod tests {
         assert!(engine_args(&dir, "ming").is_none());
         std::fs::write(sub.join(&m.files.last().unwrap().filename), b"x").unwrap();
         assert!(ming(&dir).downloaded);
+    }
+
+    /// Qwen draws without its vision weights, as a download from before they
+    /// were listed has none, and edits once they are there.
+    #[test]
+    fn qwen_draws_without_its_vision_weights_and_edits_with_them() {
+        let dir = temp_dir("vision");
+        let m = image_registry()
+            .into_iter()
+            .find(|m| m.id == "qwen21")
+            .unwrap();
+        let vision = m
+            .files
+            .iter()
+            .find(|f| f.role == ImageFileRole::Vision)
+            .unwrap();
+        assert!(vision.optional);
+        let sub = model_dir(&dir, "qwen21");
+        std::fs::create_dir_all(&sub).unwrap();
+        for f in m.files.iter().filter(|f| !f.optional) {
+            std::fs::write(sub.join(&f.filename), b"x").unwrap();
+        }
+        let qwen = || {
+            catalogue_with_state(&dir)
+                .into_iter()
+                .find(|m| m.id == "qwen21")
+                .unwrap()
+        };
+        assert!(qwen().downloaded);
+        assert!(!qwen().can_edit);
+        let args = engine_args(&dir, "qwen21").unwrap();
+        assert!(!args.contains(&"--llm_vision".to_string()));
+
+        std::fs::write(sub.join(&vision.filename), b"x").unwrap();
+        assert!(qwen().can_edit);
+        let args = engine_args(&dir, "qwen21").unwrap();
+        let at = args.iter().position(|a| a == "--llm_vision").unwrap();
+        assert!(args[at + 1].ends_with("mmproj-Qwen3VL-8B-Instruct-F16.gguf"));
+        // Ming lists no vision weights, so it never edits here.
+        assert!(
+            !catalogue_with_state(&dir)
+                .into_iter()
+                .find(|m| m.id == "ming")
+                .unwrap()
+                .can_edit
+        );
     }
 
     #[test]

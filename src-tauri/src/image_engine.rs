@@ -54,6 +54,9 @@ pub struct ImageEngine {
     /// The weights the running process was started with, so a request for
     /// different ones restarts rather than silently generating from the old.
     model: Mutex<Option<String>>,
+    /// The model arguments it was started with. The same model with other
+    /// files (Qwen's vision weights, added later for editing) restarts it.
+    args: Mutex<Option<Vec<String>>>,
     /// `GGML_VK_VISIBLE_DEVICES` for this machine, decided on the first start
     /// (see [`discrete_vulkan_devices`]). `None` until then; `Some(None)` when
     /// nothing needs pinning.
@@ -232,6 +235,7 @@ impl ImageEngine {
             child: Mutex::new(None),
             log: new_log_buffer(),
             model: Mutex::new(None),
+            args: Mutex::new(None),
             vk_devices: Mutex::new(None),
         }
     }
@@ -251,9 +255,10 @@ impl ImageEngine {
 
     /// Start the engine on catalogue entry `model_id`, or return a named reason.
     ///
-    /// Idempotent for the same model: a second call while ready or starting
-    /// returns immediately. A different model restarts, because the
-    /// alternative is generating from weights nobody asked for.
+    /// Idempotent for the same model and files: a second call while ready or
+    /// starting returns immediately. A different model, or the same one with
+    /// files added since, restarts, because the alternative is generating from
+    /// weights nobody asked for, or without the ones they just downloaded.
     pub async fn start(
         &self,
         app: &AppHandle,
@@ -275,8 +280,9 @@ impl ImageEngine {
         {
             let status = self.status.lock().await;
             let loaded = self.model.lock().await;
+            let args = self.args.lock().await;
             let running = *status == SidecarStatus::Ready || *status == SidecarStatus::Starting;
-            if running && loaded.as_deref() == Some(want) {
+            if running && loaded.as_deref() == Some(want) && args.as_ref() == Some(&model_args) {
                 return Ok(());
             }
         }
@@ -303,6 +309,7 @@ impl ImageEngine {
 
         *self.status.lock().await = SidecarStatus::Starting;
         *self.model.lock().await = Some(want.to_string());
+        *self.args.lock().await = Some(model_args.clone());
         info!("Starting sd-server on port {IMAGE_PORT}");
 
         let args: Vec<String> = model_args
@@ -444,6 +451,7 @@ impl ImageEngine {
         }
         *self.status.lock().await = SidecarStatus::Stopped;
         *self.model.lock().await = None;
+        *self.args.lock().await = None;
     }
 }
 

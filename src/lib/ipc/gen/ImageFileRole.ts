@@ -3,4 +3,4 @@
 /**
  * What a file is for. Each maps to one sd-server flag.
  */
-export type ImageFileRole = "diffusion" | "text_encoder" | "vae" | "tokenizer";
+export type ImageFileRole = "diffusion" | "text_encoder" | "vae" | "tokenizer" | "vision";
