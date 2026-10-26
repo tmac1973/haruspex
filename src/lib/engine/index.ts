@@ -50,10 +50,23 @@ let started = false;
 export async function startEngine(): Promise<void> {
 	const label = getCurrentWindow().label;
 	if (!isEngineWindow(label)) return;
-	// Listening before asking, so a switch-on between the two isn't missed.
-	const stop = await listen<boolean>('engine://enabled', ({ payload }) => {
+	// Listening before asking, so a switch-on between the two isn't missed. A
+	// switch-on can arrive before `listen` resolves, while there is nothing to
+	// unlisten yet: it starts the engine, and the listener goes once it's known.
+	let unlisten: (() => void) | null = null;
+	let done = false;
+	const stop = () => {
+		if (done || !unlisten) return;
+		done = true;
+		unlisten();
+	};
+	unlisten = await listen<boolean>('engine://enabled', ({ payload }) => {
 		if (payload) void run(label).then(stop);
 	});
+	if (started) {
+		stop();
+		return;
+	}
 	if (await invoke<boolean>('engine_enabled').catch(() => false)) {
 		stop();
 		await run(label);
