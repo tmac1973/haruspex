@@ -192,6 +192,65 @@ pub async fn image_store_bytes(
     )
 }
 
+/// An upscaled picture, kept: its hash and the size it was finished at.
+#[derive(serde::Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct StoredUpscale {
+    pub hash: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+fn header<'a>(request: &'a tauri::ipc::Request<'_>, name: &str) -> Option<&'a str> {
+    request.headers().get(name).and_then(|v| v.to_str().ok())
+}
+
+/// Finish an upscale and keep it: the engine's result arrives as the raw body
+/// (it can be 20 MB or more, too much for a JSON number array), resized to
+/// `x-width`×`x-height` with the alpha of the cached source `x-source-hash` put
+/// back ([`crate::image_gen::upscale::finish_upscale`]), stored as a generated
+/// picture and linked to `x-conversation-id` when there is one.
+#[tauri::command]
+pub async fn image_store_upscaled(
+    app: AppHandle,
+    db: State<'_, Database>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<StoredUpscale, String> {
+    let tauri::ipc::InvokeBody::Raw(upscaled) = request.body() else {
+        return Err("The upscaled picture must be sent as raw bytes.".into());
+    };
+    let size = |name: &str| -> Result<u32, String> {
+        header(&request, name)
+            .and_then(|v| v.parse().ok())
+            .ok_or_else(|| format!("No {name} was given."))
+    };
+    let (width, height) = (size("x-width")?, size("x-height")?);
+    let hash = header(&request, "x-source-hash").ok_or("No x-source-hash was given.")?;
+    let conversation = header(&request, "x-conversation-id").map(str::to_string);
+    let dir = cache_dir(&app)?;
+    let source = read_cached(&db, &dir, hash)?;
+    let upscaled = upscaled.clone();
+    let finished = tokio::task::spawn_blocking(move || {
+        crate::image_gen::upscale::finish_upscale(&upscaled, &source, width, height)
+    })
+    .await
+    .map_err(|e| format!("The upscale could not be finished: {e}"))??;
+    let hash = store_generated(
+        &db,
+        &dir,
+        &finished.png,
+        "image/png".into(),
+        finished.width,
+        finished.height,
+        conversation.as_deref(),
+    )?;
+    Ok(StoredUpscale {
+        hash,
+        width: finished.width,
+        height: finished.height,
+    })
+}
+
 /// [`image_store_bytes`], with what it needs passed in, so it can be tested.
 pub fn store_generated(
     db: &Database,
@@ -319,16 +378,17 @@ pub async fn image_save_as(
 ///
 /// An empty body is refused rather than stored: it would hash, write a
 /// zero-byte file, and serve a broken image forever, which is worse than a
-/// visible error at the point of failure.
+/// visible error at the point of failure. The limit is the one for pictures we
+/// made ([`super::MAX_GENERATED_BYTES`]), which an upscaled one needs.
 pub fn check_storable(bytes: &[u8]) -> Result<(), String> {
     if bytes.is_empty() {
         return Err("Refusing to store an empty image.".into());
     }
-    if bytes.len() as u64 > super::MAX_IMAGE_BYTES {
+    if bytes.len() as u64 > super::MAX_GENERATED_BYTES {
         return Err(format!(
             "Image is {} bytes, over the {} byte cache limit.",
             bytes.len(),
-            super::MAX_IMAGE_BYTES
+            super::MAX_GENERATED_BYTES
         ));
     }
     Ok(())
@@ -346,14 +406,14 @@ mod store_tests {
 
     #[test]
     fn refuses_a_body_over_the_cache_ceiling() {
-        let too_big = vec![0u8; (super::super::MAX_IMAGE_BYTES + 1) as usize];
+        let too_big = vec![0u8; (super::super::MAX_GENERATED_BYTES + 1) as usize];
         let err = check_storable(&too_big).unwrap_err();
         assert!(err.contains("over the"), "{err}");
     }
 
     #[test]
     fn accepts_a_body_exactly_at_the_ceiling() {
-        let exact = vec![0u8; super::super::MAX_IMAGE_BYTES as usize];
+        let exact = vec![0u8; super::super::MAX_GENERATED_BYTES as usize];
         assert!(check_storable(&exact).is_ok());
     }
 

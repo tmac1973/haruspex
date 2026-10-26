@@ -303,7 +303,7 @@ export function localImageHashesInText(texts: readonly string[]): string[] {
  * never lost to a model that forgot to place it.
  */
 /** The tools whose results carry a picture for the answer. */
-const PICTURE_TOOLS = ['generate_image', 'edit_image'];
+const PICTURE_TOOLS = ['generate_image', 'edit_image', 'upscale_image'];
 
 export function placeGeneratedImages(text: string, steps: readonly SearchStep[]): string {
 	const missing: string[] = [];

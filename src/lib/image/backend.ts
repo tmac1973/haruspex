@@ -14,6 +14,7 @@ import { noneBackend } from '#lib/image/none.ts';
 import type {
 	ImageBackendCapabilities,
 	ImageBackendKind,
+	ImageInput,
 	ImageProgress,
 	ImageRequest,
 	ImageResult
@@ -51,6 +52,12 @@ export interface ImageBackend {
 	/** Is it reachable and usable? */
 	probe(): Promise<ProbeResult>;
 	generate(req: ImageRequest, opts?: GenerateOptions): Promise<ImageResult>;
+	/**
+	 * A picture four times larger, as the upscaler made it: RGB, whatever the
+	 * picture's alpha (`image_store_upscaled` puts that back). Only where
+	 * `capabilities().upscale` says so.
+	 */
+	upscale?(input: ImageInput, opts?: GenerateOptions): Promise<Uint8Array>;
 }
 
 /**

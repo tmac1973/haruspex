@@ -17,6 +17,7 @@ import {
 	ImageBackendError,
 	type ImageBackendCapabilities,
 	type ImageEdit,
+	type ImageInput,
 	type ImageProgress,
 	type ImageRequest
 } from '#lib/image/types.ts';
@@ -51,6 +52,40 @@ export const NO_EDIT_SENTENCE =
 	"The image generation in Settings → Image can't edit pictures. Qwen-Image 2.1 can, on the " +
 	'bundled engine (Settings → Image → Add editing) or ComfyUI 0.39 or later, and so can a ' +
 	'llama-toolchest model that edits, such as FLUX.2 klein 4B.';
+
+export const NO_UPSCALE_SENTENCE =
+	"The image generation in Settings → Image can't upscale pictures. The bundled engine can, " +
+	'once its upscaler is downloaded under Settings → Image → Bundled engine.';
+
+/**
+ * A picture four times larger, from the configured backend, or a sentence the
+ * model can pass on when it can't. RGB: the caller restores alpha.
+ */
+export async function upscaleForTool(
+	input: ImageInput,
+	opts: ForToolOptions = {}
+): Promise<Uint8Array> {
+	const backend = resolveImageBackend();
+	if (backend.kind === 'none') {
+		throw new ImageBackendError(
+			'unconfigured',
+			'Image generation is not set up. The user can choose a backend in Settings → Image.'
+		);
+	}
+	const caps = await backend.capabilities();
+	if (!caps.upscale || !backend.upscale) {
+		throw new ImageBackendError('unconfigured', NO_UPSCALE_SENTENCE);
+	}
+	try {
+		return await backend.upscale(input, { signal: opts.signal, onProgress: opts.onProgress });
+	} catch (e) {
+		const detail = errMessage(e);
+		if (backend.kind === 'local' && GPU_FULL.test(detail)) {
+			throw new ImageBackendError('unreachable', `${GPU_FULL_SENTENCE} (${detail})`);
+		}
+		throw e;
+	}
+}
 
 /** The configured model can't be used commercially. */
 export function nonCommercialModel(): boolean {

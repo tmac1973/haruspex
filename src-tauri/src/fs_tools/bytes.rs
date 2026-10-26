@@ -52,6 +52,30 @@ pub async fn fs_write_bytes(
     write_bytes_to_workdir(&resolved, &bytes).await
 }
 
+/// Write a picture from the image cache into the working directory, by hash.
+///
+/// For a picture we made, which can be past [`MAX_WRITE_BYTES`] (an upscale
+/// is 20 MB or more): that cap is for content a model writes, and this is
+/// bytes the cache already holds, under the cache's own limit for generated
+/// pictures. Read here, so a large picture never crosses the bridge.
+#[tauri::command]
+pub async fn fs_save_cached_image(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, crate::db::Database>,
+    hash: String,
+    workdir: String,
+    rel_path: String,
+    overwrite: Option<bool>,
+) -> Result<(), String> {
+    let workdir = workdir_path_for_write(&workdir)?;
+    let resolved = resolve_in_workdir(&workdir, &rel_path)?;
+    refuse_if_exists(&resolved, overwrite, &rel_path)?;
+    let dir = crate::image_cache::cache_dir(&app)?;
+    let bytes = crate::image_cache::commands::read_cached(&db, &dir, &hash)
+        .map_err(|_| "That picture is no longer cached; make it again.".to_string())?;
+    write_bytes_to_workdir(&resolved, &bytes).await
+}
+
 /// Move a file within the working directory, creating the destination's
 /// parents. Never overwrites: a destination that exists is an error, so a
 /// move cannot destroy a file it was not asked about.

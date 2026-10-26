@@ -283,3 +283,40 @@ describe('edits', () => {
 		expect(tauri.invoke.mock.calls.some(([c]) => c === 'image_engine_request')).toBe(false);
 	});
 });
+
+describe('upscale', () => {
+	const routes = (downloaded: boolean) => ({
+		image_models: [{ id: 'ming', can_edit: false }],
+		image_upscaler: { downloaded },
+		image_read_bytes: () => new Uint8Array([1, 2, 3]).buffer,
+		image_engine_request: () =>
+			JSON.stringify({ upscaler: 'RealESRGAN_x4plus', scale: 4, images: [{ b64_json: 'BAUG' }] })
+	});
+
+	it('says it can upscale once the upscaler is downloaded', async () => {
+		settings.imageLocalModelId = 'ming';
+		tauri.invoke.mockReset().mockImplementation(invokeRouter(routes(true), undefined));
+		expect(await localBackend.capabilities()).toMatchObject({ upscale: true });
+		tauri.invoke.mockReset().mockImplementation(invokeRouter(routes(false), undefined));
+		expect(await localBackend.capabilities()).toMatchObject({ upscale: false });
+	});
+
+	it('starts the engine and sends the cached picture to /sdcpp/v1/upscale', async () => {
+		settings.imageLocalModelId = 'ming';
+		tauri.invoke.mockReset().mockImplementation(invokeRouter(routes(true), undefined));
+		const out = await localBackend.upscale!({ name: 'a.png', hash: 'a'.repeat(64) });
+		expect(Array.from(out)).toEqual([4, 5, 6]);
+		expect(tauri.invoke).toHaveBeenCalledWith('image_engine_start', { modelId: 'ming' });
+		const call = tauri.invoke.mock.calls.find(([c]) => c === 'image_engine_request')!;
+		expect(call[1].path).toBe('/sdcpp/v1/upscale');
+		expect(JSON.parse(call[1].body as string)).toEqual({ image: 'AQID' });
+	});
+
+	it('refuses without the upscaler, saying where to get it', async () => {
+		tauri.invoke.mockReset().mockImplementation(invokeRouter(routes(false), undefined));
+		await expect(localBackend.upscale!({ name: 'a.png', bytes: [1] })).rejects.toMatchObject({
+			kind: 'unconfigured',
+			message: expect.stringContaining('Settings → Image → Bundled engine')
+		});
+	});
+});

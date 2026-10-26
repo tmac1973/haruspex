@@ -32,7 +32,13 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	})
 }));
 
-import { generateForTool, GPU_FULL_SENTENCE, NO_EDIT_SENTENCE } from './forTool';
+import {
+	generateForTool,
+	upscaleForTool,
+	GPU_FULL_SENTENCE,
+	NO_EDIT_SENTENCE,
+	NO_UPSCALE_SENTENCE
+} from './forTool';
 
 const req = (over: Partial<ImageRequest> = {}): ImageRequest => ({
 	prompt: 'a lighthouse',
@@ -153,5 +159,16 @@ describe('generateForTool edits', () => {
 		const three = { images: [...edit.images, ...edit.images, ...edit.images] };
 		await expect(generateForTool(req({ edit: three }))).rejects.toThrow(/at most 2 pictures/);
 		expect(state.generate).not.toHaveBeenCalled();
+	});
+});
+
+describe('upscaleForTool', () => {
+	it('says what can upscale when the backend can’t', async () => {
+		state.kind = 'comfyui';
+		state.caps = { transparency: true, seamlessTiling: true, loras: false, maxLoras: 0 };
+		await expect(upscaleForTool({ name: 'a.png', bytes: [1] })).rejects.toMatchObject({
+			kind: 'unconfigured',
+			message: NO_UPSCALE_SENTENCE
+		});
 	});
 });

@@ -12,6 +12,7 @@ import {
 	generatedFromUrl,
 	isSaveTarget,
 	prepareSave,
+	writeCachedImage,
 	writeSaved
 } from '#lib/agent/tools/_saveGenerated.ts';
 
@@ -59,7 +60,7 @@ registerTool({
 		if (!made) {
 			return toolResult(
 				toolError(
-					'url must be a haruspex-img:// or haruspex-audio:// URL from generate_image or generate_music.'
+					'url must be a haruspex-img:// or haruspex-audio:// URL from a picture or song made here.'
 				)
 			);
 		}
@@ -67,16 +68,21 @@ registerTool({
 		if (!EXTENSIONS[made.kind].test(raw)) {
 			return toolResult(toolError(`path must end in ${WANTED[made.kind]}.`));
 		}
-		let bytes: Uint8Array;
-		try {
-			bytes = await generatedBytes(made);
-		} catch {
-			const what = made.kind === 'image' ? 'picture' : 'song';
-			return toolResult(toolError(`That ${what} is no longer cached; make it again.`));
+		// A picture is copied from the cache in Rust: an upscaled one is past
+		// what a write from here may carry. A song still comes through here.
+		let bytes: Uint8Array | null = null;
+		if (made.kind === 'audio') {
+			try {
+				bytes = await generatedBytes(made);
+			} catch {
+				return toolResult(toolError('That song is no longer cached; make it again.'));
+			}
 		}
 		const target = await prepareSave(raw, args.overwrite === true, ctx, 'save_generated');
 		if (!isSaveTarget(target)) return target;
-		const failed = await writeSaved(target, bytes, ctx);
+		const failed = bytes
+			? await writeSaved(target, bytes, ctx)
+			: await writeCachedImage(target, made.hash, ctx);
 		return toolResult(failed ? toolError(failed) : `Saved ${target.path}.`);
 	}
 });

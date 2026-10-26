@@ -25,6 +25,7 @@ import {
 	type ImageResult
 } from '#lib/image/types.ts';
 import type { ImageModelInfo } from '#lib/ipc/gen/ImageModelInfo.ts';
+import type { UpscalerInfo } from '#lib/ipc/gen/UpscalerInfo.ts';
 import { seamSeed, tileTexture, transparentStart } from '#lib/image/sdcpp.ts';
 import {
 	FAMILY_SAMPLER,
@@ -35,6 +36,7 @@ import {
 	familyOfId,
 	imagesFrom,
 	seedFrom,
+	fromBase64,
 	toBase64,
 	type LocalFamily
 } from '#lib/image/local/adapter.ts';
@@ -57,6 +59,13 @@ async function engineStatus(): Promise<ImageEngineStatus> {
 async function canEdit(id: string): Promise<boolean> {
 	const models = await invoke<ImageModelInfo[]>('image_models').catch(() => []);
 	return models.some((m) => m.id === id && m.can_edit);
+}
+
+/** The upscaler is downloaded, so the engine starts with it. */
+async function canUpscale(): Promise<boolean> {
+	return invoke<UpscalerInfo>('image_upscaler')
+		.then((u) => u.downloaded)
+		.catch(() => false);
 }
 
 /** An edit's picture as base64, read from the image cache when it is there. */
@@ -207,7 +216,7 @@ export const localBackend: ImageBackend = {
 
 	async capabilities(): Promise<ImageBackendCapabilities> {
 		const id = modelId();
-		return declaredCapabilities(familyOfId(id), await canEdit(id));
+		return declaredCapabilities(familyOfId(id), await canEdit(id), await canUpscale());
 	},
 
 	async probe() {
@@ -286,8 +295,34 @@ export const localBackend: ImageBackend = {
 				...(seamFailed ? { seamFailed } : {})
 			}
 		};
-	}
+	},
+
+	upscale
 };
+
+/**
+ * `/sdcpp/v1/upscale`, with the Real-ESRGAN model the engine was started with
+ * (`--hires-upscalers-dir`). The engine starts on the chosen model first, as
+ * the server needs one loaded, and restarts if the upscaler came after it.
+ */
+async function upscale(input: ImageInput, opts: GenerateOptions = {}): Promise<Uint8Array> {
+	if (!(await canUpscale())) {
+		throw new ImageBackendError(
+			'unconfigured',
+			'The upscaler is not downloaded — Settings → Image → Bundled engine.'
+		);
+	}
+	await ensureRunning();
+	opts.onProgress?.({ phase: 'running', detail: 'Upscaling' });
+	const payload = (await call(ROUTES.upscale, { image: await base64Of(input) }, opts.signal)) as {
+		images?: Array<{ b64_json?: unknown }>;
+	};
+	const b64 = payload.images?.[0]?.b64_json;
+	if (typeof b64 !== 'string') {
+		throw new ImageBackendError('rejected', 'The image engine returned no upscaled picture.');
+	}
+	return fromBase64(b64);
+}
 
 export { ROUTES };
 registerImageBackend(localBackend);

@@ -150,6 +150,31 @@ pub const QWEN21_VAE: WeightFile = WeightFile {
     size_bytes: 675_509_688,
 };
 
+/// The upscaler the bundled engine runs `/sdcpp/v1/upscale` with: Real-ESRGAN
+/// x4plus, the general model for photos and art. The Hugging Face copy is the
+/// official v0.1.0 release byte for byte (same SHA-256).
+pub const UPSCALER: WeightFile = WeightFile {
+    url: "https://huggingface.co/lllyasviel/Annotators/resolve/main/RealESRGAN_x4plus.pth",
+    sha256: "4fa0d38905f75ac06eb49a7951b426670021be3018265fd191d2125df9d682f1",
+    size_bytes: 67_040_989,
+};
+
+pub const UPSCALER_LICENCE: Licence = Licence {
+    text: "BSD 3-Clause — commercial use allowed.",
+    url: "https://github.com/xinntao/Real-ESRGAN/blob/master/LICENSE",
+    commercial_use: true,
+};
+
+/// Where the upscaler lives: a folder of its own, which sd-server scans
+/// (`--hires-upscalers-dir`).
+pub fn upscaler_dir(models_dir: &Path) -> PathBuf {
+    models_dir.join(IMAGE_SUBDIR).join("upscalers")
+}
+
+fn upscaler_path(models_dir: &Path) -> PathBuf {
+    upscaler_dir(models_dir).join(filename_of(UPSCALER.url))
+}
+
 /// The noise levels Qwen-Image-2.1 Turbo was distilled to sample at.
 pub const QWEN21_TURBO_SIGMAS: &str =
     "1.0,0.978453,0.95418,0.926626,0.89508,0.845148,0.704534,0.414568,0.0";
@@ -330,6 +355,11 @@ pub fn engine_args(models_dir: &Path, id: &str) -> Option<Vec<String>> {
         args.push(path.to_string_lossy().to_string());
     }
     args.extend(engine_options(&entry));
+    // The upscaler, when it is downloaded; any model can be upscaled with.
+    if upscaler_path(models_dir).is_file() {
+        args.push("--hires-upscalers-dir".to_string());
+        args.push(upscaler_dir(models_dir).to_string_lossy().to_string());
+    }
     Some(args)
 }
 
@@ -434,6 +464,65 @@ fn remove_stale(dir: &Path, entry: &ImageModelInfo) {
             }
         }
     }
+}
+
+/// The upscaler, for Settings → Image → Bundled engine.
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct UpscalerInfo {
+    pub filename: String,
+    #[ts(type = "number")]
+    pub size_bytes: u64,
+    pub license: String,
+    pub license_url: String,
+    pub downloaded: bool,
+}
+
+#[tauri::command]
+pub async fn image_upscaler(state: tauri::State<'_, ModelManager>) -> Result<UpscalerInfo, ()> {
+    Ok(UpscalerInfo {
+        filename: filename_of(UPSCALER.url),
+        size_bytes: UPSCALER.size_bytes,
+        license: UPSCALER_LICENCE.text.into(),
+        license_url: UPSCALER_LICENCE.url.into(),
+        downloaded: upscaler_path(state.models_dir()).is_file(),
+    })
+}
+
+/// Download the upscaler, verified, with `download-progress` events.
+#[tauri::command]
+pub async fn image_upscaler_download(
+    app: AppHandle,
+    state: tauri::State<'_, ModelManager>,
+    proxy: Option<crate::proxy::ProxyConfig>,
+) -> Result<(), String> {
+    let dir = upscaler_dir(state.models_dir());
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|e| format!("Could not create {}: {e}", dir.display()))?;
+    let filename = filename_of(UPSCALER.url);
+    let file = VerifiedFile {
+        url: UPSCALER.url,
+        dir: &dir,
+        filename: &filename,
+        size_bytes: UPSCALER.size_bytes,
+        sha256: UPSCALER.sha256,
+    };
+    state
+        .download_set(&app, "image:upscaler", proxy, std::slice::from_ref(&file))
+        .await
+}
+
+/// Delete the upscaler. The engine restarts without it on its next start,
+/// since its arguments change.
+#[tauri::command]
+pub async fn image_upscaler_delete(state: tauri::State<'_, ModelManager>) -> Result<(), String> {
+    let path = upscaler_path(state.models_dir());
+    if path.is_file() {
+        std::fs::remove_file(&path)
+            .map_err(|e| format!("Could not delete {}: {e}", path.display()))?;
+    }
+    Ok(())
 }
 
 /// Delete an entry's files. Stopping the engine first is the caller's job —
@@ -594,6 +683,33 @@ mod tests {
                 .unwrap()
                 .can_edit
         );
+    }
+
+    /// The upscaler's folder goes to sd-server only once the upscaler is in it.
+    #[test]
+    fn the_engine_gets_the_upscaler_folder_once_it_is_downloaded() {
+        let dir = temp_dir("upscaler");
+        let m = image_registry()
+            .into_iter()
+            .find(|m| m.id == "ming")
+            .unwrap();
+        let sub = model_dir(&dir, "ming");
+        std::fs::create_dir_all(&sub).unwrap();
+        for f in &m.files {
+            std::fs::write(sub.join(&f.filename), b"x").unwrap();
+        }
+        let args = engine_args(&dir, "ming").unwrap();
+        assert!(!args.contains(&"--hires-upscalers-dir".to_string()));
+        std::fs::create_dir_all(upscaler_dir(&dir)).unwrap();
+        std::fs::write(upscaler_path(&dir), b"x").unwrap();
+        let args = engine_args(&dir, "ming").unwrap();
+        let at = args
+            .iter()
+            .position(|a| a == "--hires-upscalers-dir")
+            .unwrap();
+        assert_eq!(args[at + 1], upscaler_dir(&dir).to_string_lossy());
+        assert!(UPSCALER.url.ends_with("RealESRGAN_x4plus.pth"));
+        assert_eq!(UPSCALER.sha256.len(), 64);
     }
 
     #[test]
