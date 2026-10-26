@@ -52,9 +52,9 @@ Before each change the project is copied to `.haruspex/backups/` next to it (the
 
 ## Crossfades and even sound
 
-Ask for "1 second crossfades between the clips", or a crossfade into one clip. Each is a normal Kdenlive mix: a dissolve on the picture and a crossfade on the sound, up to 3 seconds, and never more than half the shorter clip. Without one the clips join with a hard cut.
+Ask for "1 second crossfades between the clips", or a crossfade into one clip (not the first). Each is a normal Kdenlive mix: a dissolve on the picture and a crossfade on the sound, up to 3 seconds, and never more than half the shorter clip. Without one the clips join with a hard cut.
 
-Each clip's sound is measured and given a gain that brings it to YouTube's loudness (-14 LUFS) without clipping, so a quiet phone clip and a loud recording sound alike. The gain is a Volume effect on the clip, followed by a Limiter when the gain would push the loudest moments past -1.5 dB, as it usually does for speech; you can see and change both in Kdenlive. Ask to "leave the volume alone" to skip it. If a render's check says the loudness is off, ask to even out the sound again.
+Each clip's sound is measured and given a gain that brings it to YouTube's loudness (-14 LUFS) without clipping, so a quiet phone clip and a loud recording sound alike. The gain is a Volume effect on the clip, followed by a Limiter when the gain would push the loudest moments past -1.5 dB, as it usually does for speech; you can see and change both in Kdenlive. Ask to "leave the volume alone" to skip it. A gain adds at most 20 dB, so very quiet footage stays quieter, and the assistant says so.
 
 ## Edit it in Kdenlive too
 

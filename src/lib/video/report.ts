@@ -98,6 +98,9 @@ export function formatTime(secs: number): string {
 	return `${m}:${s.toFixed(1).padStart(4, '0')}`;
 }
 
+/** The most gain loudness evening adds, as `MAX_GAIN` in `loudness.rs`. */
+const MAX_GAIN_DB = 20;
+
 function plural(n: number, word: string): string {
 	return `${n} ${word}${n === 1 ? '' : 's'}`;
 }
@@ -113,7 +116,9 @@ export function itemLine(i: SummaryItem): string {
 	if (i.crossfadeInSecs != null) parts.push(`crossfades in over ${i.crossfadeInSecs.toFixed(1)} s`);
 	if (i.gainDb != null) {
 		const limited = i.limited ? ', peaks limited' : '';
-		parts.push(`gain ${i.gainDb > 0 ? '+' : ''}${i.gainDb} dB${limited}`);
+		// The most loudness evening adds (MAX_GAIN in loudness.rs).
+		const most = i.gainDb >= MAX_GAIN_DB - 0.05 ? ', the most allowed' : '';
+		parts.push(`gain ${i.gainDb > 0 ? '+' : ''}${i.gainDb} dB${most}${limited}`);
 	}
 	if (!i.hasVideo) parts.push('sound only');
 	if (!i.hasAudio) parts.push('no sound');

@@ -21,7 +21,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
 import { executeTool } from '#lib/agent/tools/index.ts';
 import { _setVideoBinariesForTests } from '#lib/video/binaries.ts';
 import { endClip, parseCut, parseOp } from '#lib/video/args.ts';
-import { formatTime, summaryReport } from '#lib/video/report.ts';
+import { formatTime, itemLine, summaryReport } from '#lib/video/report.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import type { ProjectSummary } from '#lib/ipc/gen/ProjectSummary.ts';
 
@@ -120,6 +120,12 @@ describe('the summary report', () => {
 		);
 		expect(text).toContain('- V2: logo.png 0:00.0–0:03.0');
 		expect(text).toContain('1 crossfade on the main track · 2 guides');
+	});
+
+	it('says when a gain is the most loudness evening adds', () => {
+		const at = { ...summary.items[1], gainDb: 20, limited: false };
+		expect(itemLine(at)).toContain('gain +20 dB, the most allowed');
+		expect(itemLine({ ...at, gainDb: 17.9 })).not.toContain('the most');
 	});
 
 	it('formats times to a tenth', () => {

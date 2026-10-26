@@ -10,6 +10,7 @@
 //! when the app exits.
 
 use super::check::{self, RenderCheck};
+use super::loudness::MAX_GAIN;
 use super::project::VideoSettings;
 use super::{binaries, encode, kdenlive, paths, project};
 use crate::orphans::{self, RunningServer};
@@ -251,6 +252,13 @@ pub async fn start_render(
         return Err("The project is empty: there is nothing to render.".into());
     }
     let expected = doc.fps.secs(frames);
+    // Clips whose gain is at its bound, so normalising can't raise them.
+    let at_limit: Vec<String> = kdenlive::summary(&doc, &req.working_dir, &project_path)
+        .items
+        .into_iter()
+        .filter(|i| i.gain_db.is_some_and(|g| g >= MAX_GAIN - 0.05))
+        .map(|i| i.path)
+        .collect();
     let fps = doc.fps.num as f64 / doc.fps.den as f64;
     let episode_dir = project::episode_home(&req.working_dir, &req.episode, &project_path)?;
     let out = output_path(&episode_dir, &project_path);
@@ -376,7 +384,9 @@ pub async fn start_render(
             Some(Ok(status)) if status.success() && part.exists() => {
                 match std::fs::rename(&part, &out) {
                     Ok(()) => {
-                        let check = check::check(&ffprobe, &ffmpeg, &out, expected).await.ok();
+                        let check = check::check(&ffprobe, &ffmpeg, &out, expected, &at_limit)
+                            .await
+                            .ok();
                         TaskState::Done {
                             path: paths::display_path(&working_dir, &out),
                             abs_path: out.to_string_lossy().into_owned(),
