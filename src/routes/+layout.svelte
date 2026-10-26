@@ -2,6 +2,7 @@
 	import { openInBrowser } from '#lib/utils/openInBrowser.ts';
 	import { agentPowershell } from '#lib/code/powershell.ts';
 	import { refreshVideoBinaries } from '#lib/video/binaries.ts';
+	import { initVideoTasks } from '#lib/video/tasks.svelte.ts';
 	import favicon from '#lib/assets/favicon.svg';
 	import ServerStatusBadge from '#lib/components/ServerStatusBadge.svelte';
 	import ContextIndicator from '#lib/components/ContextIndicator.svelte';
@@ -137,6 +138,9 @@
 	// Whether ffmpeg and melt are here decides whether the video tools are
 	// offered; the registry asks synchronously, so look once now.
 	onMount(() => void refreshVideoBinaries().catch(() => {}));
+	// Renders report progress and their end as events; every window listens,
+	// and the one holding the conversation that started a render tells it.
+	onMount(() => void initVideoTasks().catch(() => {}));
 
 	// Other clients' way into this window's Code sessions (plan/remote-api/).
 	// Does nothing outside the main and Code windows, or while Rust has it off.

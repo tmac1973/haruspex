@@ -13,6 +13,7 @@
 	import { cancelSandboxRun, rerunSandboxStep } from '#lib/sandbox/runControls.ts';
 	import type { SearchStep } from '#lib/agent/loop.ts';
 	import AudioPlayer from '#lib/components/AudioPlayer.svelte';
+	import VideoTaskCard from '#lib/components/video/VideoTaskCard.svelte';
 	import { stepLabel, stepIcon } from '#lib/components/searchStepLabels.ts';
 	import hljs from 'highlight.js/lib/core';
 	import python from 'highlight.js/lib/languages/python';
@@ -337,6 +338,8 @@
 									title="Click to enlarge"
 									onclick={(e) => openViewer(artifact.dataUrl, artifact.alt ?? 'plot', e)}
 								/>
+							{:else if artifact.kind === 'videoTask'}
+								<VideoTaskCard taskId={artifact.taskId} label={artifact.label} />
 							{:else if artifact.kind === 'audio'}
 								<!-- The answer has the player; the card's is for when it doesn't. -->
 								{#if detailsExpanded[step.id]}

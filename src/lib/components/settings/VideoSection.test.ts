@@ -13,7 +13,8 @@ const settings = vi.hoisted(() => ({
 	videoMeltPath: '',
 	videoPreset: '1080p60',
 	videoIntroPath: '',
-	videoOutroPath: ''
+	videoOutroPath: '',
+	videoEncoder: 'libx264'
 }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
@@ -39,7 +40,8 @@ beforeEach(() => {
 		videoMeltPath: '',
 		videoPreset: '1080p60',
 		videoIntroPath: '',
-		videoOutroPath: ''
+		videoOutroPath: '',
+		videoEncoder: 'libx264'
 	});
 	status = {
 		ffmpeg: found('ffmpeg'),
@@ -47,7 +49,15 @@ beforeEach(() => {
 		melt: found('melt', 'kdenlive'),
 		hints: []
 	};
-	vi.mocked(invoke).mockImplementation(invokeRouter({ video_binaries_status: () => status }));
+	vi.mocked(invoke).mockImplementation(
+		invokeRouter({
+			video_binaries_status: () => status,
+			video_encoders_test: () => [
+				{ id: 'libx264', label: 'x264 (software)' },
+				{ id: 'h264_vaapi', label: 'VA-API (AMD, Intel)' }
+			]
+		})
+	);
 	vi.mocked(updateSettings).mockClear();
 });
 
@@ -77,6 +87,14 @@ describe('VideoSection', () => {
 		expect(
 			vi.mocked(invoke).mock.calls.filter(([c]) => c === 'video_binaries_status')
 		).toHaveLength(2);
+	});
+
+	it('offers the encoders that passed their test and saves the choice', async () => {
+		render(VideoSection);
+		expect(await screen.findByText('VA-API (AMD, Intel)')).toBeTruthy();
+		const select = screen.getByLabelText('Encoder:') as HTMLSelectElement;
+		await fireEvent.change(select, { target: { value: 'h264_vaapi' } });
+		expect(updateSettings).toHaveBeenCalledWith({ videoEncoder: 'h264_vaapi' });
 	});
 
 	it('saves the format', async () => {

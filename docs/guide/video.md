@@ -1,6 +1,6 @@
 ---
 title: Video editing
-description: Setting up video editing with Kdenlive, ffmpeg and melt, picking a series or episode folder, asking about your clips, and having the assistant cut a Kdenlive project you can also edit yourself.
+description: Setting up video editing with Kdenlive, picking a series or episode folder, asking about your clips, and having the assistant cut a Kdenlive project you can also edit.
 ---
 
 # Video editing
@@ -52,6 +52,8 @@ The project is a normal Kdenlive project: open it, change it and save. The assis
 - A crossfade you add in Kdenlive keeps its two clips together. The assistant won't move one of them away from the other; remove the crossfade in Kdenlive first.
 - Clips on other tracks don't move when the main track gets shorter or longer.
 - Projects saved by a Kdenlive older than 25.04 can be read but not edited.
+
+To turn the project into a video file, see the `video-render` page.
 
 ## What it doesn't do
 
