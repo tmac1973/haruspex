@@ -73,12 +73,21 @@ function clip(text: string, max: number): string {
 	return text.length > max ? `${text.slice(0, max)}… [${text.length - max} more chars]` : text;
 }
 
+/** Failed calls to the reported tool kept however far back they were. */
+const MATCHING_FAILURES = 3;
+
 /**
  * The last `limit` tool calls in `messages`, oldest first, each with its
- * result. Calls to `haruspex_feedback` itself are left out: they are the
- * report, not what it is about.
+ * result, plus the latest few failed calls to `tool` from earlier in the turn:
+ * a model reports after working around a problem, by which time the calls
+ * that show it can be well behind the last few. Calls to `haruspex_feedback`
+ * itself are left out: they are the report, not what it is about.
  */
-export function traceFromMessages(messages: readonly ChatMessage[], limit = 5): TraceEntry[] {
+export function traceFromMessages(
+	messages: readonly ChatMessage[],
+	limit = 5,
+	tool?: string
+): TraceEntry[] {
 	const results = new Map<string, string>();
 	for (const m of messages) {
 		if (m.role === 'tool' && m.tool_call_id) results.set(m.tool_call_id, messageText(m.content));
@@ -90,7 +99,13 @@ export function traceFromMessages(messages: readonly ChatMessage[], limit = 5): 
 			trace.push(traceEntry(call.function.name, call.function.arguments, results.get(call.id)));
 		}
 	}
-	return trace.slice(-limit);
+	const keep = new Set(trace.map((_, i) => i).slice(-limit));
+	trace
+		.map((e, i) => (e.error && e.tool === tool ? i : -1))
+		.filter((i) => i >= 0)
+		.slice(-MATCHING_FAILURES)
+		.forEach((i) => keep.add(i));
+	return trace.filter((_, i) => keep.has(i));
 }
 
 /** One call as a trace entry; `result` is undefined while it is still running. */

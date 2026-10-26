@@ -8,6 +8,7 @@ import type { ChatMessage } from '#lib/api.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { formatTodayLong } from '#lib/utils/format.ts';
 import { GUIDE_PROMPT } from '#lib/guide/prompt.ts';
+import { feedbackPromptSection } from '#lib/harnessFeedback/prompt.ts';
 
 const SEARCH_AND_FILE_TOOLS = `- code_grep — search file CONTENTS (gitignore-aware); returns file:line locations, not bodies. Find where something is defined/used, then read those lines.
 - code_glob — find files by path glob (e.g. "src/**/*.ts").
@@ -285,7 +286,7 @@ export function buildCodeSystemPrompt(opts: BuildCodePromptOpts): ChatMessage {
 		role: 'system',
 		content: `You are Haruspex's coding agent, working in a project folder. Today is ${formatTodayLong()}.
 
-${GUIDE_PROMPT}
+${GUIDE_PROMPT}${feedbackPromptSection()}
 
 SESSION:
 Project folder: ${opts.root}${sessionNotes(opts)}

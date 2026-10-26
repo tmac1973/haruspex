@@ -1,8 +1,14 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
+const settingsMock = vi.hoisted(() => ({ agentFeedbackEnabled: false }));
+
 vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({ customSystemPrompt: '', sandboxEnabled: false }),
+	getSettings: () => ({
+		customSystemPrompt: '',
+		sandboxEnabled: false,
+		agentFeedbackEnabled: settingsMock.agentFeedbackEnabled
+	}),
 	getResponseFormatPrompt: () => '',
 	getIncludeImagesPrompt: () => '\n\nIMAGES:\n- When the answer is about something visual',
 	hasEnabledEmailAccount: () => false,
@@ -225,5 +231,19 @@ describe('buildSystemPrompt — the user guide', () => {
 		expect(text({ guide: true })).toContain('call haruspex_docs');
 		// A job builds its prompt here too, and is never offered the tool.
 		expect(text()).not.toContain('haruspex_docs');
+	});
+});
+
+describe('buildSystemPrompt — model feedback on tools', () => {
+	const text = (opts?: Parameters<typeof buildSystemPrompt>[1]) =>
+		String(buildSystemPrompt(null, opts).content);
+
+	it('asks Chat for reports only while Settings → Feedback has them on', () => {
+		settingsMock.agentFeedbackEnabled = true;
+		expect(text({ feedback: true })).toContain('call haruspex_feedback');
+		// A job or a remote guest builds its prompt here without the flag.
+		expect(text()).not.toContain('haruspex_feedback');
+		settingsMock.agentFeedbackEnabled = false;
+		expect(text({ feedback: true })).not.toContain('haruspex_feedback');
 	});
 });

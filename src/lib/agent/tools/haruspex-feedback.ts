@@ -18,6 +18,7 @@ import {
 	modelName,
 	recordFeedback,
 	traceFromMessages,
+	type FeedbackEntry,
 	type FeedbackKind
 } from '#lib/harnessFeedback/report.ts';
 import { errMessage } from '#lib/utils/error.ts';
@@ -42,6 +43,32 @@ function turnSource(ctx: ToolContext): string | undefined {
 	if (ctx.codeSessionId) return `code session ${ctx.codeSessionId}`;
 	if (ctx.conversationId) return `conversation ${ctx.conversationId}`;
 	return undefined;
+}
+
+/** The report as it is written: the model's words, and what Haruspex knows of the turn. */
+function feedbackEntry(
+	args: Record<string, unknown>,
+	ctx: ToolContext,
+	what: string,
+	expected: string
+): FeedbackEntry {
+	const tool = str(args.tool) || 'unknown';
+	const kind = FEEDBACK_KINDS.includes(args.kind as FeedbackKind)
+		? (args.kind as FeedbackKind)
+		: 'other';
+	const suggestion = str(args.suggestion);
+	return {
+		origin: ctx.feedback?.origin ?? 'tool',
+		tool,
+		kind,
+		what_happened: what,
+		expected,
+		...(suggestion ? { suggestion } : {}),
+		mode: turnMode(ctx),
+		source: turnSource(ctx),
+		model: modelName(ctx.backend),
+		trace: ctx.feedback?.trace?.() ?? traceFromMessages(ctx.transcript?.() ?? [], 5, tool)
+	};
 }
 
 registerTool({
@@ -89,23 +116,8 @@ registerTool({
 			);
 		}
 		counter.count++;
-		const kind = FEEDBACK_KINDS.includes(args.kind as FeedbackKind)
-			? (args.kind as FeedbackKind)
-			: 'other';
-		const suggestion = str(args.suggestion);
 		try {
-			await recordFeedback({
-				origin: ctx.feedback?.origin ?? 'tool',
-				tool: str(args.tool) || 'unknown',
-				kind,
-				what_happened: what,
-				expected,
-				...(suggestion ? { suggestion } : {}),
-				mode: turnMode(ctx),
-				source: turnSource(ctx),
-				model: modelName(ctx.backend),
-				trace: ctx.feedback?.trace?.() ?? traceFromMessages(ctx.transcript?.() ?? [])
-			});
+			await recordFeedback(feedbackEntry(args, ctx, what, expected));
 		} catch (e) {
 			// Not the model's problem to solve: say so and let it get on.
 			console.warn('haruspex_feedback: could not save a report', errMessage(e));

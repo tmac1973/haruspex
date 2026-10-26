@@ -97,4 +97,26 @@ describe('traceFromMessages', () => {
 		expect(cmd.result.length).toBeGreaterThan(3999);
 		expect(traceFromMessages(messages, 1).map((t) => t.tool)).toEqual(['run_command']);
 	});
+
+	it('keeps earlier failures of the reported tool that fell out of the window', () => {
+		const call = (id: string, name: string) => ({
+			id,
+			type: 'function' as const,
+			function: { name, arguments: '{}' }
+		});
+		const messages: ChatMessage[] = [
+			{ role: 'assistant', content: '', tool_calls: [call('a', 'fs_read_text')] },
+			{ role: 'tool', tool_call_id: 'a', content: '{"error":"path escapes working directory"}' },
+			...['b', 'c', 'd'].flatMap((id): ChatMessage[] => [
+				{ role: 'assistant', content: '', tool_calls: [call(id, 'web_search')] },
+				{ role: 'tool', tool_call_id: id, content: 'ok' }
+			])
+		];
+		expect(traceFromMessages(messages, 2).map((t) => t.tool)).toEqual(['web_search', 'web_search']);
+		expect(traceFromMessages(messages, 2, 'fs_read_text').map((t) => t.tool)).toEqual([
+			'fs_read_text',
+			'web_search',
+			'web_search'
+		]);
+	});
 });
