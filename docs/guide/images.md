@@ -7,7 +7,7 @@ description: Turning on image generation, ComfyUI, the bundled engine, Lemonade 
 
 Haruspex can draw pictures with a diffusion model on your own machine. It is off by default: nothing is downloaded or started until you pick a backend in Settings → Image.
 
-This page is about drawing new pictures. For photos found on the web inside answers, see the `chat` page.
+This page is about drawing new pictures. To change one, see the `image-editing` page; for web photos in answers, the `chat` page.
 
 ## Turn it on
 
@@ -52,7 +52,7 @@ Settings → Image marks Qwen-Image "Not licensed for commercial use." and asks 
 
 ## Draw a picture in Chat
 
-Ask Chat to draw, paint or illustrate something. A picture takes 30 seconds to a few minutes. It appears in the answer and is kept with the conversation; click it for full size, where **Save as…** saves it anywhere. If the model forgets to place it, it is shown under the answer. Ask for another shape or a transparent background. With a working folder set, ask it to save the picture there; an existing file asks you first. A model that sees images is shown it.
+Ask Chat to draw, paint or illustrate something. A picture takes 30 seconds to a few minutes. It appears in the answer and is kept with the conversation; click it for full size and **Save as…**. If the model forgets to place it, it is shown under the answer. Ask for another shape or a transparent background. With a working folder set, it can save the picture there; an existing file asks you first. A model that sees images is shown it.
 
 ## Make art for a project
 

@@ -81,6 +81,12 @@ export interface ToolContext {
 	conversationId?: string;
 	pendingImages: PendingImage[];
 	/**
+	 * The pictures the user attached to their newest message that has any, as
+	 * data URLs, in order: what `edit_image` reads as "attached". Captured when
+	 * the turn starts, before the loop adds pictures of its own to that message.
+	 */
+	userImages?: string[];
+	/**
 	 * The model can see images. A tool that makes one only hands it to the
 	 * model (`pendingImages`) when it can; absent means true, as the loop
 	 * defaults it.

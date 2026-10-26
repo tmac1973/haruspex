@@ -1,0 +1,37 @@
+{
+	"data": [
+		{
+			"created": 1792891501,
+			"id": "ming-image",
+			"meta": {
+				"api": ["images.sync", "images.jobs"],
+				"capabilities": ["alpha"],
+				"gpu": 0,
+				"kind": "image",
+				"model_set": "ming-image",
+				"recipe": "ming-image",
+				"reserved_mib": 10752,
+				"state": "running"
+			},
+			"object": "model",
+			"owned_by": "llama-toolchest"
+		},
+		{
+			"created": 1792979333,
+			"id": "klein",
+			"meta": {
+				"api": ["images.sync", "images.jobs", "images.edits"],
+				"capabilities": ["edit"],
+				"gpu": 0,
+				"kind": "image",
+				"model_set": "flux2-klein-4b",
+				"recipe": "flux2-klein-4b",
+				"reserved_mib": 10240,
+				"state": "running"
+			},
+			"object": "model",
+			"owned_by": "llama-toolchest"
+		}
+	],
+	"object": "list"
+}

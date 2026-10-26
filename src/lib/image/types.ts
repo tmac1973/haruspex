@@ -29,6 +29,23 @@ export interface LoraRef {
 	strength: number;
 }
 
+/**
+ * A picture sent with a request: one in the image cache by hash (Rust reads
+ * it, so it never crosses the bridge), or the bytes of one read from the
+ * working folder or attached to a chat message.
+ */
+export type ImageInput = { name: string } & ({ hash: string } | { bytes: number[] });
+
+/**
+ * Change pictures rather than draw from nothing: the prompt says what to
+ * change, `images` are what to change (several, to combine them), and a
+ * `mask`'s white marks where the change may go.
+ */
+export interface ImageEdit {
+	images: ImageInput[];
+	mask?: ImageInput;
+}
+
 /** One generation. */
 export interface ImageRequest {
 	prompt: string;
@@ -54,6 +71,8 @@ export interface ImageRequest {
 	sampler?: SamplerSettings;
 	/** Ask for an edge-wrapping result (terrain textures). */
 	seamless?: boolean;
+	/** Edit these pictures instead; read `capabilities().edit` first. */
+	edit?: ImageEdit;
 }
 
 /** One generated image. */
@@ -119,6 +138,10 @@ export interface ImageBackendCapabilities {
 	loras: boolean;
 	/** LoRA slots available; 0 when `loras` is false. */
 	maxLoras: number;
+	/** A request's `edit` is honoured. Absent means no. */
+	edit?: boolean;
+	/** How many pictures one edit may combine; absent means one. */
+	maxEditImages?: number;
 }
 
 /**

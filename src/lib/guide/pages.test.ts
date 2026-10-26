@@ -27,6 +27,7 @@ const PAGES = [
 	'jobs',
 	'memory',
 	'images',
+	'image-editing',
 	'music',
 	'video',
 	'video-render',

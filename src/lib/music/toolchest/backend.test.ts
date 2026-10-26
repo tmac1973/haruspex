@@ -203,7 +203,7 @@ describe('llama-toolchest music backend', () => {
 		});
 		expect(args.call.body).not.toHaveProperty('duration');
 		expect(args.files).toEqual([
-			{ field: 'audio', filename: 'song.mp3', hash: 'a'.repeat(64), bytes: null }
+			{ field: 'audio', filename: 'song.mp3', hash: 'a'.repeat(64), cache: 'audio', bytes: null }
 		]);
 		expect(
 			tauri.invoke.mock.calls.some(

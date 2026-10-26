@@ -11,16 +11,21 @@
  *
  * Two routes draw: `/v1/images/jobs` (a job to poll, with a phase and a
  * place in the queue) on builds whose `meta.api` lists `images.jobs`, and the
- * blocking `/v1/images/generations` on older ones.
+ * blocking `/v1/images/generations` on older ones. An edit is the blocking
+ * `/v1/images/edits` form, on a set whose `meta.api` lists `images.edits`:
+ * sd-server takes each `image[]` as a reference picture and the optional
+ * `mask` as where the change may go.
  */
 
 import { CLEAR_START_STRENGTH, fromBase64 } from '#lib/image/local/adapter.ts';
 import { MAX_EXTRAS_CHARS, type SdExtras } from '#lib/image/lemonade/adapter.ts';
-import type { ImageProgress } from '#lib/image/types.ts';
+import type { ImageEdit, ImageInput, ImageProgress } from '#lib/image/types.ts';
+import type { UploadFile } from '#lib/ipc/gen/UploadFile.ts';
 
 export const ROUTES = {
 	models: '/v1/models',
 	generate: '/v1/images/generations',
+	edits: '/v1/images/edits',
 	jobs: '/v1/images/jobs',
 	job: (id: string) => `/v1/images/jobs/${encodeURIComponent(id)}`
 } as const;
@@ -31,6 +36,39 @@ export interface ImageBody {
 	size: string;
 	n: 1;
 	response_format: 'b64_json';
+}
+
+/**
+ * The fields of an edit form: the generation body's, as plain text parts,
+ * with the seed and sampler in the prompt's extras block as before.
+ */
+export function buildEditFields(req: Parameters<typeof buildImageBody>[0]): Record<string, string> {
+	const body = buildImageBody(req);
+	return {
+		model: body.model,
+		prompt: body.prompt,
+		size: body.size,
+		n: '1',
+		response_format: body.response_format
+	};
+}
+
+function upload(field: string, input: ImageInput): UploadFile {
+	return {
+		field,
+		filename: input.name,
+		hash: 'hash' in input ? input.hash : null,
+		cache: 'hash' in input ? 'image' : null,
+		bytes: 'bytes' in input ? input.bytes : null
+	};
+}
+
+/** An edit's pictures as the form's `image[]` parts, then its `mask`. */
+export function editUploads(edit: ImageEdit): UploadFile[] {
+	return [
+		...edit.images.map((i) => upload('image[]', i)),
+		...(edit.mask ? [upload('mask', edit.mask)] : [])
+	];
 }
 
 export function buildImageBody(req: {

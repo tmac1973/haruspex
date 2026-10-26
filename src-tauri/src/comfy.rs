@@ -196,32 +196,59 @@ pub(crate) struct FilePart {
     pub bytes: Vec<u8>,
 }
 
-/// One file of an upload, as the webview names it: a song in the audio cache
-/// by `hash`, or the `bytes` of a file it read from the working folder.
+/// One file of an upload, as the webview names it: a song or picture in its
+/// cache by `hash`, or the `bytes` of a file it read from the working folder.
 #[derive(Deserialize, ts_rs::TS)]
 #[ts(export)]
 pub struct UploadFile {
-    /// The form field, such as `audio` or `ref_audio`.
+    /// The form field, such as `audio`, `ref_audio` or `image[]`.
     pub field: String,
     pub filename: String,
     pub hash: Option<String>,
+    /// Which cache `hash` names; the audio cache when absent.
+    pub cache: Option<UploadCache>,
     pub bytes: Option<Vec<u8>>,
+}
+
+#[derive(Clone, Copy, Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "lowercase")]
+pub enum UploadCache {
+    Audio,
+    Image,
+}
+
+/// How an upload carries its body: as JSON in a `request` part (ace-server's
+/// `/synth`, llama-toolchest's music jobs), or each top-level field as a text
+/// part of its own (the OpenAI `/v1/images/edits` form).
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum FormShape {
+    RequestPart,
+    Fields,
 }
 
 /// The files to send, read from the audio cache where they are named by hash.
 pub(crate) fn resolve_uploads(
     db: &crate::db::Database,
-    dir: &std::path::Path,
+    audio_dir: &std::path::Path,
+    image_dir: &std::path::Path,
     files: Vec<UploadFile>,
 ) -> Result<Vec<FilePart>, ComfyError> {
     files
         .into_iter()
         .map(|f| {
             let bytes = match (f.hash, f.bytes) {
-                (Some(hash), _) => crate::audio_cache::commands::read_bytes(db, dir, &hash)
+                (Some(hash), _) if matches!(f.cache, Some(UploadCache::Image)) => {
+                    crate::image_cache::commands::read_cached(db, image_dir, &hash).map_err(
+                        |_| ComfyError::Invalid {
+                            message: "That picture is no longer in the image cache.".into(),
+                        },
+                    )?
+                }
+                (Some(hash), _) => crate::audio_cache::commands::read_bytes(db, audio_dir, &hash)
                     .map_err(|_| ComfyError::Invalid {
-                        message: "That song is no longer in the audio cache.".into(),
-                    })?,
+                    message: "That song is no longer in the audio cache.".into(),
+                })?,
                 (None, Some(bytes)) => bytes,
                 (None, None) => {
                     return Err(ComfyError::Invalid {
@@ -254,6 +281,7 @@ async fn send(
     call: &ComfyCall,
     to: ImageServer,
     files: &[FilePart],
+    shape: FormShape,
 ) -> Result<Vec<u8>, ComfyError> {
     let url = format!("{}{}", base(&call.base_url), call.path);
     let mut req = match call.method.as_str() {
@@ -267,11 +295,22 @@ async fn send(
         req = req.bearer_auth(key);
     }
     if !files.is_empty() {
-        let json = call
-            .body
-            .as_ref()
-            .map_or_else(|| "{}".into(), |b| b.to_string());
-        let mut form = reqwest::multipart::Form::new().text("request", json);
+        let mut form = reqwest::multipart::Form::new();
+        match (shape, &call.body) {
+            (FormShape::Fields, Some(serde_json::Value::Object(fields))) => {
+                for (k, v) in fields {
+                    let text = match v {
+                        serde_json::Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    };
+                    form = form.text(k.clone(), text);
+                }
+            }
+            (_, body) => {
+                let json = body.as_ref().map_or_else(|| "{}".into(), |b| b.to_string());
+                form = form.text("request", json);
+            }
+        }
         for f in files {
             let part =
                 reqwest::multipart::Part::bytes(f.bytes.clone()).file_name(f.filename.clone());
@@ -379,9 +418,10 @@ async fn cancellable(
     call: ComfyCall,
     to: ImageServer,
     files: Vec<FilePart>,
+    shape: FormShape,
 ) -> Result<Vec<u8>, ComfyError> {
     let started = std::time::Instant::now();
-    let out = cancellable_unlogged(call.clone(), to, files).await;
+    let out = cancellable_unlogged(call.clone(), to, files, shape).await;
     log_line(call_line(&call, &out, started.elapsed())).await;
     out
 }
@@ -390,9 +430,10 @@ async fn cancellable_unlogged(
     call: ComfyCall,
     to: ImageServer,
     files: Vec<FilePart>,
+    shape: FormShape,
 ) -> Result<Vec<u8>, ComfyError> {
     let id = call.id.clone();
-    let task = tokio::spawn(async move { send(&call, to, &files).await });
+    let task = tokio::spawn(async move { send(&call, to, &files, shape).await });
     if let Some(id) = &id {
         running()
             .lock_or_recover()
@@ -426,7 +467,9 @@ pub(crate) async fn json_from(
     call: ComfyCall,
     to: ImageServer,
 ) -> Result<serde_json::Value, ComfyError> {
-    cancellable(call, to, Vec::new()).await.map(|b| as_json(&b))
+    cancellable(call, to, Vec::new(), FormShape::RequestPart)
+        .await
+        .map(|b| as_json(&b))
 }
 
 /// A multipart call to `to` with `files`, whose answer is JSON.
@@ -434,13 +477,18 @@ pub(crate) async fn upload_json(
     call: ComfyCall,
     to: ImageServer,
     files: Vec<FilePart>,
+    shape: FormShape,
 ) -> Result<serde_json::Value, ComfyError> {
-    cancellable(call, to, files).await.map(|b| as_json(&b))
+    cancellable(call, to, files, shape)
+        .await
+        .map(|b| as_json(&b))
 }
 
 /// A call to `to` whose answer is bytes, such as a finished image.
 pub(crate) async fn bytes_from(call: ComfyCall, to: ImageServer) -> Result<Response, ComfyError> {
-    cancellable(call, to, Vec::new()).await.map(Response::new)
+    cancellable(call, to, Vec::new(), FormShape::RequestPart)
+        .await
+        .map(Response::new)
 }
 
 /// A call whose answer is JSON (or text, or nothing).
@@ -452,7 +500,7 @@ pub async fn comfy_json(call: ComfyCall) -> Result<serde_json::Value, ComfyError
 /// A call whose answer is bytes: `/view`.
 #[tauri::command]
 pub async fn comfy_bytes(call: ComfyCall) -> Result<Response, ComfyError> {
-    cancellable(call, COMFYUI, Vec::new())
+    cancellable(call, COMFYUI, Vec::new(), FormShape::RequestPart)
         .await
         .map(Response::new)
 }
@@ -682,9 +730,14 @@ mod tests {
         let url = serve(Router::new().route("/view", get(|| async { vec![0u8, 159, 255] }))).await;
         assert!(comfy_bytes(call(&url, "GET", "/view")).await.is_ok());
         assert_eq!(
-            send(&call(&url, "GET", "/view"), COMFYUI, &[])
-                .await
-                .unwrap(),
+            send(
+                &call(&url, "GET", "/view"),
+                COMFYUI,
+                &[],
+                FormShape::RequestPart
+            )
+            .await
+            .unwrap(),
             vec![0, 159, 255]
         );
     }

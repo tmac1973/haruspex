@@ -99,7 +99,8 @@ async function call<T>(
 	cfg: ToolchestConfig,
 	req: { method?: 'GET' | 'POST' | 'DELETE'; path: string; body?: unknown; timeoutMs?: number },
 	signal?: AbortSignal,
-	files?: UploadFile[]
+	files?: UploadFile[],
+	fields?: boolean
 ): Promise<T> {
 	if (signal?.aborted) throw new ToolchestError('cancelled', 'Cancelled.');
 	const id = `toolchest-${++nextId}`;
@@ -117,7 +118,8 @@ async function call<T>(
 				req.timeoutMs,
 				id
 			),
-			...(files ? { files } : {})
+			...(files ? { files } : {}),
+			...(fields ? { fields } : {})
 		});
 	} catch (e) {
 		throw fromRust(e, req.path, signal);
@@ -134,12 +136,17 @@ export function toolchestJson(
 	return call<unknown>('toolchest_json', cfg, req, signal);
 }
 
-/** A multipart POST: `body` in a `request` part and each song in its own. */
+/**
+ * A multipart POST: `body` in a `request` part and each file in its own; with
+ * `fields`, each of `body`'s fields in a text part of its own instead, the
+ * form `/v1/images/edits` takes.
+ */
 export function toolchestUpload(
 	cfg: ToolchestConfig,
 	req: { path: string; body: unknown; timeoutMs?: number },
 	files: UploadFile[],
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	fields = false
 ): Promise<unknown> {
 	// A song can be tens of megabytes; the job itself is only queued.
 	const timeoutMs = req.timeoutMs ?? 120_000;
@@ -148,7 +155,8 @@ export function toolchestUpload(
 		cfg,
 		{ ...req, method: 'POST', timeoutMs },
 		signal,
-		files
+		files,
+		fields
 	);
 }
 

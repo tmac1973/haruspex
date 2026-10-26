@@ -18,6 +18,7 @@ vi.mock('#lib/utils/async.ts', () => ({ sleep: () => Promise.resolve() }));
 
 import asmodean from '#lib/toolchest/fixtures/models-asmodean.json';
 import compute2 from '#lib/toolchest/fixtures/models-compute2.json';
+import klein from '#lib/toolchest/fixtures/models-asmodean-klein.json';
 import { toolchestBackend } from './backend';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import { ImageBackendError, type ImageProgress } from '#lib/image/types.ts';
@@ -69,6 +70,7 @@ function use(answers: Record<string, Answer>) {
 			image_clear_canvas: [1, 2, 3],
 			comfy_cancel: null,
 			toolchest_json: route(answers),
+			toolchest_upload: route(answers),
 			toolchest_bytes: () => new Uint8Array([137, 80, 78, 71]).buffer
 		})
 	);
@@ -216,6 +218,68 @@ describe('llama-toolchest image backend', () => {
 		expect(await toolchestBackend.capabilities()).toMatchObject({
 			transparency: true,
 			seamlessTiling: false
+		});
+	});
+
+	describe('edits', () => {
+		const edit = {
+			...request,
+			prompt: 'make it night',
+			width: 1024,
+			height: 768,
+			edit: { images: [{ name: 'image.png', hash: 'a'.repeat(64) }] }
+		};
+		const b64 = btoa(String.fromCharCode(137, 80, 78, 71));
+
+		it('says a set that edits can, with up to four pictures, and one that doesn’t can’t', async () => {
+			settings.imageToolchestModelId = 'klein';
+			use({ 'GET /v1/models': klein });
+			expect(await toolchestBackend.capabilities()).toMatchObject({ edit: true, maxEditImages: 4 });
+			settings.imageToolchestModelId = 'ming-image';
+			use({ 'GET /v1/models': klein });
+			await toolchestBackend.probe();
+			expect(await toolchestBackend.capabilities()).toMatchObject({
+				edit: false,
+				maxEditImages: 0
+			});
+		});
+
+		it('sends the edit form with each field as a part and the picture from the cache', async () => {
+			settings.imageToolchestModelId = 'klein';
+			use({ 'GET /v1/models': klein, 'POST /v1/images/edits': { data: [{ b64_json: b64 }] } });
+			const result = await toolchestBackend.generate(edit);
+			expect(result.images[0]).toMatchObject({ width: 1024, height: 768 });
+			const [, args] = tauri.invoke.mock.calls.find(([c]) => c === 'toolchest_upload')!;
+			expect(args.fields).toBe(true);
+			expect(args.call.body).toMatchObject({
+				model: 'klein',
+				size: '1024x768',
+				n: '1',
+				response_format: 'b64_json'
+			});
+			expect(args.call.body.prompt).toMatch(
+				/^<sd_cpp_extra_args>\{"seed":5,.*\}<\/sd_cpp_extra_args> make it night$/
+			);
+			expect(args.files).toEqual([
+				{
+					field: 'image[]',
+					filename: 'image.png',
+					hash: 'a'.repeat(64),
+					cache: 'image',
+					bytes: null
+				}
+			]);
+			// Edits are the blocking form; there is no edit job.
+			expect(calls()).not.toContain('POST /v1/images/jobs');
+		});
+
+		it('refuses an edit on a set that can’t', async () => {
+			settings.imageToolchestModelId = 'ming-image';
+			use({ 'GET /v1/models': klein });
+			await expect(toolchestBackend.generate(edit)).rejects.toMatchObject({
+				kind: 'unconfigured',
+				message: expect.stringContaining("can't edit pictures")
+			});
 		});
 	});
 });

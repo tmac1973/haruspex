@@ -44,8 +44,8 @@ describe('uploadsOf', () => {
 				reference: { name: 'voice.wav', bytes: [1, 2] }
 			})
 		).toEqual([
-			{ field: 'audio', filename: 'song.mp3', hash: 'a'.repeat(64), bytes: null },
-			{ field: 'ref_audio', filename: 'voice.wav', hash: null, bytes: [1, 2] }
+			{ field: 'audio', filename: 'song.mp3', hash: 'a'.repeat(64), cache: 'audio', bytes: null },
+			{ field: 'ref_audio', filename: 'voice.wav', hash: null, cache: null, bytes: [1, 2] }
 		]);
 		expect(uploadsOf(base)).toEqual([]);
 	});
