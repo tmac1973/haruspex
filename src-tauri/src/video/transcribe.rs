@@ -431,25 +431,61 @@ mod tests {
         assert_eq!(cached(&dir, &clip), None);
     }
 
+    /// Where the OS looks for the sidecar's shared libraries.
+    fn lib_path_var() -> &'static str {
+        if cfg!(windows) {
+            "PATH"
+        } else if cfg!(target_os = "macos") {
+            "DYLD_LIBRARY_PATH"
+        } else {
+            "LD_LIBRARY_PATH"
+        }
+    }
+
+    fn lib_path(libs: &Path) -> std::ffi::OsString {
+        let mut dirs = vec![libs.to_path_buf()];
+        if let Some(old) = std::env::var_os(lib_path_var()) {
+            dirs.extend(std::env::split_paths(&old));
+        }
+        std::env::join_paths(dirs).unwrap()
+    }
+
     /// Transcribe a real clip against a whisper-server the test starts.
     /// `HARUSPEX_VIDEO_CLIP=/path/clip.mp4 cargo test -- --ignored transcribe_a_real_clip --nocapture`
-    /// (needs ffmpeg, ffprobe, the sidecar binaries and base.en).
+    /// (needs ffmpeg, ffprobe, the sidecar binaries and base.en, or the model
+    /// named by `HARUSPEX_WHISPER_MODEL`; `HARUSPEX_WHISPER_SERVER` picks another
+    /// whisper-server, such as an installed app's).
     #[tokio::test]
     #[ignore = "needs whisper-server, its model and a clip"]
     async fn transcribe_a_real_clip() {
         let clip =
             PathBuf::from(std::env::var("HARUSPEX_VIDEO_CLIP").expect("set HARUSPEX_VIDEO_CLIP"));
-        let home = PathBuf::from(std::env::var("HOME").unwrap());
-        let model = home.join(".local/share/com.haruspex.app/models/whisper/ggml-base.en.bin");
+        let model = std::env::var("HARUSPEX_WHISPER_MODEL")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                PathBuf::from(std::env::var("HOME").unwrap())
+                    .join(".local/share/com.haruspex.app/models/whisper/ggml-base.en.bin")
+            });
         let bins = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries");
-        let server = std::fs::read_dir(&bins)
-            .unwrap()
-            .filter_map(|e| e.ok().map(|e| e.path()))
-            .find(|p| {
-                let n = p.file_name().unwrap().to_string_lossy().into_owned();
-                n.starts_with("haruspex-whisper-server-") && !n.ends_with(".version")
+        let server = std::env::var_os("HARUSPEX_WHISPER_SERVER")
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::fs::read_dir(&bins)
+                    .unwrap()
+                    .filter_map(|e| e.ok().map(|e| e.path()))
+                    .find(|p| {
+                        let n = p.file_name().unwrap().to_string_lossy().into_owned();
+                        n.starts_with("haruspex-whisper-server-") && !n.ends_with(".version")
+                    })
             })
             .expect("no whisper-server sidecar");
+        // An installed app keeps its libraries beside the sidecar, in binaries/libs.
+        let installed = server.with_file_name("binaries").join("libs");
+        let libs = if installed.is_dir() {
+            installed
+        } else {
+            bins.join("libs")
+        };
         let mut child = tokio::process::Command::new(&server)
             .args([
                 "--model",
@@ -459,7 +495,7 @@ mod tests {
                 "--port",
                 "8768",
             ])
-            .env("LD_LIBRARY_PATH", bins.join("libs"))
+            .env(lib_path_var(), lib_path(&libs))
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .kill_on_drop(true)
