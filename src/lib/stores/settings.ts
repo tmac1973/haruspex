@@ -787,8 +787,10 @@ export interface AppSettings {
 	musicAceModel: string;
 	/** A song's length when the request names none, in seconds (5–240). */
 	musicDefaultDurationSec: number;
+	/** Settings → Video editing's switch: the video tools are offered only while it is on. */
+	videoEditingEnabled: boolean;
 	/**
-	 * Paths to ffmpeg, ffprobe and melt set in Settings → Video. Empty (the
+	 * Paths to ffmpeg, ffprobe and melt set in Settings → Video editing. Empty (the
 	 * default) means find it: PATH, then inside a Kdenlive install.
 	 */
 	videoFfmpegPath: string;
@@ -1041,6 +1043,7 @@ const defaults: AppSettings = {
 	musicAceBaseUrl: '',
 	musicAceModel: '',
 	musicDefaultDurationSec: 30,
+	videoEditingEnabled: false,
 	videoFfmpegPath: '',
 	videoFfprobePath: '',
 	videoMeltPath: '',

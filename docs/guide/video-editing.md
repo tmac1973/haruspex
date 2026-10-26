@@ -5,13 +5,15 @@ description: Setting up video editing with Kdenlive, picking a series or episode
 
 # Video editing
 
-The assistant can look at the clips for a video in Chat or the Code tab. It uses ffmpeg, ffprobe and melt on your computer, the programs Kdenlive runs on. Nothing is bundled or downloaded, and the tools are off until all three are found.
+The assistant can look at the clips for a video in Chat or the Code tab. It uses ffmpeg, ffprobe and melt on your computer, the programs Kdenlive runs on. Nothing is bundled or downloaded. The tools are off until you turn them on and all three are found.
 
 ## Set up video editing
 
 Install Kdenlive. On Linux, use your distribution's package: the Flatpak's melt can't be run from outside it. On macOS and Windows, Kdenlive ships ffmpeg, ffprobe and melt, and Haruspex finds them inside the install.
 
-Open Settings → Video. **Programs** shows each one with its version and where it was found: **PATH**, **Kdenlive** or **set here**. If one says **Not found**, type its path or click **Browse…**, then **Check again**.
+Open Settings → Video editing. **Programs** shows each one with its version and where it was found: **PATH**, **Kdenlive** or **set here**. If one says **Not found**, type its path or click **Browse…**, then **Check again**.
+
+Then turn on **Let the assistant edit videos** under **Video tools**.
 
 ## Pick a folder
 
@@ -26,7 +28,7 @@ Clips are found in the episode folder and one level of subfolders. Folders start
 
 ## Set an intro and outro
 
-Settings → Video → **New videos** has **Intro** and **Outro**: a clip to put at the start or end of a video when you ask for it. They may be anywhere on disk; they are the only files outside the working folder the video tools may read. An intro inside a series folder (a file or folder whose name starts with "intro" or "outro") works too: the assistant lists those it sees.
+Settings → Video editing → **New videos** has **Intro** and **Outro**: a clip to put at the start or end of a video when you ask for it. They may be anywhere on disk; they are the only files outside the working folder the video tools may read. An intro inside a series folder (a file or folder whose name starts with "intro" or "outro") works too: the assistant lists those it sees.
 
 **Format** is the size and frame rate new video projects are made in: 1080p at 30 or 60 fps, 1440p at 60 fps, or 4K at 30 fps.
 
@@ -42,7 +44,7 @@ With a model that can see images, ask "look at ep012 every two minutes" or "show
 
 Ask "make ep012 from the clips in order, intro as usual" or "cut ep012: the first clip from 0:10, then the second". The assistant writes a Kdenlive project and lays the clips end to end on the main track (V1 with A1), with the intro first and the outro last when you ask.
 
-A new project is `ep012/ep012.kdenlive`, made in the Settings → Video → **Format**. If the episode already has one, that is used: one in the episode folder, or one in the working folder whose name ends in the episode's number, such as `show_012.kdenlive` for `ep012`. Name another to use it.
+A new project is `ep012/ep012.kdenlive`, made in the Settings → Video editing → **Format**. If the episode already has one, that is used: one in the episode folder, or one in the working folder whose name ends in the episode's number, such as `show_012.kdenlive` for `ep012`. Name another to use it.
 
 Ask for changes the same way: "trim the first 4 seconds off clip 2", "drop clip 3", "move the last clip to the start". The assistant numbers clips from 1 as it lists them.
 
@@ -70,4 +72,4 @@ To turn the project into a video file, see the `video-render` page. To cut by wh
 - It doesn't control a running Kdenlive window.
 - It doesn't add effects, titles, colour grading or picture-in-picture, beyond its crossfades and gains.
 - It doesn't run in Shell tabs, jobs or subtasks.
-- It doesn't read files outside the working folder, except the intro and outro set in Settings → Video.
+- It doesn't read files outside the working folder, except the intro and outro set in Settings → Video editing.

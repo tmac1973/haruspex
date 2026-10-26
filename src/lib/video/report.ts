@@ -81,8 +81,8 @@ export function probeReport(episode: string, probe: EpisodeProbe): string {
 	if (probe.unreadable.length > 0) {
 		lines.push('Could not read:', ...probe.unreadable.map((u) => `- ${u}`));
 	}
-	if (s.videoIntroPath.trim()) lines.push(`Intro (Settings → Video): ${s.videoIntroPath}`);
-	if (s.videoOutroPath.trim()) lines.push(`Outro (Settings → Video): ${s.videoOutroPath}`);
+	if (s.videoIntroPath.trim()) lines.push(`Intro (Settings → Video editing): ${s.videoIntroPath}`);
+	if (s.videoOutroPath.trim()) lines.push(`Outro (Settings → Video editing): ${s.videoOutroPath}`);
 	const candidates = probe.introCandidates.filter((p) => !probe.clips.some((c) => c.path === p));
 	if (candidates.length > 0) {
 		lines.push(`Possible intro/outro files: ${candidates.join(', ')}`);

@@ -1787,7 +1787,7 @@ pub async fn download_whisper_model(
 }
 
 /// The more accurate whisper model the video tools can use for footage
-/// (Settings → Video): large-v3-turbo, multilingual, about 1.6 GB.
+/// (Settings → Video editing): large-v3-turbo, multilingual, about 1.6 GB.
 pub const WHISPER_VIDEO_MODEL: &str = "ggml-large-v3-turbo.bin";
 const WHISPER_VIDEO_SIZE: u64 = 1_624_555_275;
 /// Its LFS oid, from the Hugging Face API (2026-10-25).

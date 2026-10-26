@@ -50,7 +50,7 @@ export function transcriptReport(list: Transcript[], cap = TRANSCRIPT_CAP): stri
 	}
 	if (list.some((t) => t.model === 'ggml-base.en.bin')) {
 		parts.push(
-			'Transcribed with base.en; Settings → Video can download a more accurate model, then transcribe again with refresh.'
+			'Transcribed with base.en; Settings → Video editing can download a more accurate model, then transcribe again with refresh.'
 		);
 	}
 	return parts.join('\n').trim();

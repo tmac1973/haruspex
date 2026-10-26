@@ -6,7 +6,11 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
 	return {
 		...actual,
-		getSettings: () => ({ ...actual.getSettings(), imageBackendKind: state.backend })
+		getSettings: () => ({
+			...actual.getSettings(),
+			videoEditingEnabled: true,
+			imageBackendKind: state.backend
+		})
 	};
 });
 vi.mock('#lib/image/generateOne.ts', () => ({ generateOneImage: state.generate }));

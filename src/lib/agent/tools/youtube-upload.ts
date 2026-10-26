@@ -72,7 +72,8 @@ async function upload(args: Record<string, unknown>, ctx: ToolContext) {
 	const categoryId = str(args.category_id) ?? '22';
 	try {
 		const account = await invoke<YoutubeAccount | null>('youtube_account');
-		if (!account) return toolResult(toolError('Sign in to YouTube in Settings → Video first.'));
+		if (!account)
+			return toolResult(toolError('Sign in to YouTube in Settings → Video editing first.'));
 		const plan = await invoke<UploadPlan>('youtube_upload_plan', {
 			workingDir: ctx.workingDir,
 			episode: episodeArg(args),

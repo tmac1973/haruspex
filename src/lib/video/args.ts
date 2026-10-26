@@ -11,7 +11,7 @@ import type { ProjectOp } from '#lib/ipc/gen/ProjectOp.ts';
 import type { VideoSettings } from '#lib/ipc/gen/VideoSettings.ts';
 import type { Chapter } from '#lib/ipc/gen/Chapter.ts';
 
-/** What the Rust side needs from Settings → Video. */
+/** What the Rust side needs from Settings → Video editing. */
 export function videoSettings(): VideoSettings {
 	const s = getSettings();
 	return {
@@ -31,7 +31,7 @@ export function str(v: unknown): string | null {
 	return typeof v === 'string' && v.trim() ? v.trim() : null;
 }
 
-/** `intro` / `outro`: "settings" (or true) for the one in Settings → Video, else a path. */
+/** `intro` / `outro`: "settings" (or true) for the one in Settings → Video editing, else a path. */
 export function endClip(v: unknown): EndClip | null {
 	if (v === true) return true;
 	if (v === false) return false;

@@ -9,7 +9,7 @@ The assistant can upload an episode's render to your channel. It never uploads a
 
 ## Sign in to YouTube
 
-Open Settings → Video → **YouTube** and click **Sign in to YouTube**. Your browser opens Google's consent screen; allow uploading. Haruspex asks Google only to upload videos: it can't read, change or delete your videos, playlists or comments. The card then shows the account. **Sign out** removes the permission from Google too.
+Open Settings → Video editing → **YouTube** and click **Sign in to YouTube**. Your browser opens Google's consent screen; allow uploading. Haruspex asks Google only to upload videos: it can't read, change or delete your videos, playlists or comments. The card then shows the account. **Sign out** removes the permission from Google too.
 
 This is separate from the Google sign-in for calendars in Settings → Integrations; signing out of one leaves the other.
 

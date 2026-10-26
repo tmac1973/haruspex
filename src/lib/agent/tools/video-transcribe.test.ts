@@ -15,6 +15,11 @@ vi.mock('@tauri-apps/api/core', () => ({
 	}
 }));
 
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
+	return { ...actual, getSettings: () => ({ ...actual.getSettings(), videoEditingEnabled: true }) };
+});
+
 import { executeTool } from '#lib/agent/tools/index.ts';
 import { transcriptReport } from './video-transcribe';
 import { parseChapters, parseOp, parseTime } from '#lib/video/args.ts';
@@ -104,7 +109,7 @@ describe('the transcript report', () => {
 
 	it('points to the better model when base.en was used', () => {
 		expect(transcriptReport([{ ...transcript, model: 'ggml-base.en.bin' }])).toContain(
-			'Settings → Video'
+			'Settings → Video editing'
 		);
 	});
 });

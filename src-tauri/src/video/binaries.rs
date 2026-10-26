@@ -4,7 +4,7 @@
 //! ffmpeg and ffprobe on macOS and Windows, so the one thing a user installs is
 //! Kdenlive. Each binary is looked for in three places, first hit wins:
 //!
-//! 1. The path the user set in Settings → Video.
+//! 1. The path the user set in Settings → Video editing.
 //! 2. PATH.
 //! 3. Inside a Kdenlive install. On Linux that is the distro's `/usr/bin`,
 //!    which PATH already covers; on macOS the app bundle; on Windows Kdenlive's
@@ -42,7 +42,7 @@ impl Tool {
     }
 }
 
-/// The paths set in Settings → Video. Empty means "find it".
+/// The paths set in Settings → Video editing. Empty means "find it".
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase", default)]
@@ -67,7 +67,7 @@ impl BinaryOverrides {
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub enum BinarySource {
-    /// The path set in Settings → Video.
+    /// The path set in Settings → Video editing.
     Override,
     Path,
     /// Inside a Kdenlive install.
@@ -84,7 +84,7 @@ pub struct FoundBinary {
     pub source: BinarySource,
 }
 
-/// What Settings → Video shows, and what decides whether the tools are offered.
+/// What Settings → Video editing shows, and what decides whether the tools are offered.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
@@ -109,7 +109,7 @@ impl VideoBinariesStatus {
     pub fn require(&self, tool: Tool) -> Result<&str, String> {
         self.get(tool).map(|b| b.path.as_str()).ok_or_else(|| {
             format!(
-                "{} was not found. The user can check Settings → Video.",
+                "{} was not found. The user can check Settings → Video editing.",
                 tool.name()
             )
         })
@@ -248,7 +248,7 @@ async fn find(
                 })
             }
             None if source == BinarySource::Override => hints.push(format!(
-                "The {} path in Settings → Video does not run: {}",
+                "The {} path in Settings → Video editing does not run: {}",
                 tool.name(),
                 path.display()
             )),
@@ -404,6 +404,6 @@ mod tests {
     fn require_names_the_settings_path() {
         let status = VideoBinariesStatus::default();
         let err = status.require(Tool::Melt).unwrap_err();
-        assert!(err.contains("melt") && err.contains("Settings → Video"));
+        assert!(err.contains("melt") && err.contains("Settings → Video editing"));
     }
 }

@@ -2,6 +2,6 @@
 import type { BinaryOverrides } from "./BinaryOverrides";
 
 /**
- * What the frontend passes from Settings → Video.
+ * What the frontend passes from Settings → Video editing.
  */
 export type VideoSettings = { overrides: BinaryOverrides, intro: string, outro: string, preset: string, };

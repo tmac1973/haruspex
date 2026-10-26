@@ -1,4 +1,4 @@
-/** The format a new video project is made in (Settings → Video). */
+/** The format a new video project is made in (Settings → Video editing). */
 export type VideoPreset = '1080p30' | '1080p60' | '1440p60' | '2160p30';
 
 export const VIDEO_PRESETS: { id: VideoPreset; label: string }[] = [

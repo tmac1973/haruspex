@@ -9,6 +9,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
 		...actual,
 		getSettings: () => ({
 			...actual.getSettings(),
+			videoEditingEnabled: true,
 			videoIntroPath: '/elsewhere/intro.mp4',
 			videoOutroPath: '',
 			videoPreset: '1440p60',
@@ -129,7 +130,7 @@ describe('the summary report', () => {
 });
 
 describe('video_cut', () => {
-	it('sends the cut with Settings → Video and warns about Kdenlive', async () => {
+	it('sends the cut with Settings → Video editing and warns about Kdenlive', async () => {
 		state.invoke.mockResolvedValue({
 			summary,
 			notes: ['Clips on other tracks did not move.'],

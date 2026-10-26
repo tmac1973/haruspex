@@ -2,7 +2,7 @@
 import type { FoundBinary } from "./FoundBinary";
 
 /**
- * What Settings → Video shows, and what decides whether the tools are offered.
+ * What Settings → Video editing shows, and what decides whether the tools are offered.
  */
 export type VideoBinariesStatus = { ffmpeg: FoundBinary | null, ffprobe: FoundBinary | null, melt: FoundBinary | null, 
 /**

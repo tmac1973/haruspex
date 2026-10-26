@@ -5,7 +5,7 @@
 //! `videos/intro001/`), but picking one episode folder directly works too: an
 //! empty `episode` then means the working folder itself.
 //!
-//! Reads may also reach the intro and outro set in Settings → Video, which may
+//! Reads may also reach the intro and outro set in Settings → Video editing, which may
 //! live anywhere, and nothing else outside. Writes stay inside the working
 //! folder, always through `resolve_episode` or `resolve_in_working`.
 
@@ -37,7 +37,7 @@ pub fn resolve_in_working(working_dir: &str, path: &str) -> Result<PathBuf, Stri
 }
 
 /// A media file to read: inside `working_dir`, or exactly the intro or outro
-/// set in Settings → Video.
+/// set in Settings → Video editing.
 pub fn resolve_media(
     working_dir: &str,
     path: &str,

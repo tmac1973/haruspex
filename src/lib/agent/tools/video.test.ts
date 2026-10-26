@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state = vi.hoisted(() => ({
 	invoke: vi.fn(),
+	enabled: true,
 	intro: '',
 	outro: ''
 }));
@@ -13,6 +14,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
 		...actual,
 		getSettings: () => ({
 			...actual.getSettings(),
+			videoEditingEnabled: state.enabled,
 			videoIntroPath: state.intro,
 			videoOutroPath: state.outro
 		})
@@ -59,6 +61,7 @@ const obs: ClipInfo = {
 
 beforeEach(() => {
 	state.invoke.mockReset();
+	state.enabled = true;
 	state.intro = '';
 	state.outro = '';
 	_setVideoBinariesForTests(ALL);
@@ -87,13 +90,25 @@ describe('video_probe is offered', () => {
 		_setVideoBinariesForTests({ ...ALL, melt: null });
 		expect(names({ hasWorkingDir: true, interactive: true })).not.toContain('video_probe');
 	});
+
+	it('not while Settings → Video editing has them off', async () => {
+		state.enabled = false;
+		expect(names({ hasWorkingDir: true, interactive: true, codeMode: true })).not.toContain(
+			'video_probe'
+		);
+		const chat = makeToolContext({ interactive: true, workingDir: '/videos' });
+		expect((await executeTool('video_probe', {}, chat)).result).toContain('turn them on');
+		expect(state.invoke).not.toHaveBeenCalled();
+	});
 });
 
 describe('video_probe refuses', () => {
 	it('without the binaries, a folder or a person, naming what to do', async () => {
 		_setVideoBinariesForTests(null);
 		const chat = makeToolContext({ interactive: true, workingDir: '/videos' });
-		expect((await executeTool('video_probe', {}, chat)).result).toContain('Settings → Video');
+		expect((await executeTool('video_probe', {}, chat)).result).toContain(
+			'Settings → Video editing'
+		);
 		_setVideoBinariesForTests(ALL);
 		const noFolder = makeToolContext({ interactive: true, workingDir: null });
 		expect((await executeTool('video_probe', {}, noFolder)).result).toContain('working folder');
@@ -121,7 +136,7 @@ describe('video_probe', () => {
 		expect(out.result).toContain('1 clips in ep010:');
 		expect(out.result).toContain('- ep010/raw/obs.mp4 · 32:23 · 1920×1080 @ 60 · h264 · aac 2ch');
 		expect(out.result).toContain('moov atom not found');
-		expect(out.result).toContain('Intro (Settings → Video): /elsewhere/intro.mp4');
+		expect(out.result).toContain('Intro (Settings → Video editing): /elsewhere/intro.mp4');
 		expect(out.result).toContain('Possible intro/outro files: intro001/intro.mp4');
 	});
 

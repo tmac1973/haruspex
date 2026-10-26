@@ -4,6 +4,11 @@ const state = vi.hoisted(() => ({ invoke: vi.fn(), ask: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
 vi.mock('#lib/stores/youtubeUploadApproval.svelte.ts', () => ({ askYoutubeUpload: state.ask }));
 
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
+	return { ...actual, getSettings: () => ({ ...actual.getSettings(), videoEditingEnabled: true }) };
+});
+
 import { executeTool } from '#lib/agent/tools/index.ts';
 import { changes, checkProposal, withChapters } from './youtube-upload';
 import { _setVideoBinariesForTests } from '#lib/video/binaries.ts';
@@ -131,7 +136,7 @@ describe('youtube_upload', () => {
 		).toContain('conversation');
 		state.invoke.mockImplementation(invokeRouter({ youtube_account: () => null }));
 		const out = await executeTool('youtube_upload', { title: 'T', description: 'D' }, chat());
-		expect(out.result).toContain('Sign in to YouTube in Settings → Video');
+		expect(out.result).toContain('Sign in to YouTube in Settings → Video editing');
 		expect(state.ask).not.toHaveBeenCalled();
 	});
 
