@@ -11,6 +11,8 @@ describe('familyOf', () => {
 		expect(familyOf('qwen-image-2.1-turbo-Q4_K_M.gguf')).toBe('qwen21_turbo');
 		expect(familyOf('flux-2-klein-4b-fp8.safetensors')).toBe('flux2_klein');
 		expect(familyOf('flux-2-klein-4b.safetensors')).toBe('flux2_klein');
+		expect(familyOf('qwen_image_edit_2511_int8_convrot.safetensors')).toBe('qwen_edit_2511');
+		expect(familyOf('Qwen-Image-Edit-2511-Q4_K_M.gguf')).toBe('qwen_edit_2511');
 	});
 
 	it('leaves klein base and 9B out: other steps, and 9B is non-commercial', () => {

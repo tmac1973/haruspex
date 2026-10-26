@@ -24,6 +24,8 @@ import qwen21EditGraph from '#lib/image/comfyui/templates/qwen21_edit.json';
 import qwen21TurboEditGraph from '#lib/image/comfyui/templates/qwen21_turbo_edit.json';
 import kleinGraph from '#lib/image/comfyui/templates/flux2_klein_t2i.json';
 import kleinEditGraph from '#lib/image/comfyui/templates/flux2_klein_edit.json';
+import qwenEditGraph from '#lib/image/comfyui/templates/qwen_edit_2511_edit.json';
+import qwenEditDrawGraph from '#lib/image/comfyui/templates/qwen_edit_2511_t2i.json';
 import type { ComfyGraph, FieldMap, ScalarBinding } from '#lib/image/comfyui/fieldMap.ts';
 import type { ModelFamily } from '#lib/image/comfyui/families.ts';
 import type { SamplerSettings } from '#lib/image/types.ts';
@@ -243,6 +245,30 @@ const KLEIN_BINDINGS: Omit<FieldMap, 'width' | 'height'> = {
 
 const KLEIN_SAMPLER: SamplerSettings = { name: 'euler', steps: 4, cfg: 1 };
 
+// ---- Qwen-Image-Edit-2511 -------------------------------------------------------------
+
+/**
+ * As ComfyUI's own 2511 workflow: `ModelSamplingAuraFlow` at 3.1 and `CFGNorm`,
+ * then 20 steps at CFG 4 (the vendor's 40 gave no better picture in Comfy's
+ * table). Its encoder, `TextEncodeQwenImageEditPlus`, takes up to three
+ * pictures on both conditionings; the first is scaled to a size the model
+ * knows, and sampling starts from it. With no pictures it draws.
+ */
+const QWEN_EDIT_BINDINGS: FieldMap = {
+	outputNode: '9',
+	prompt: { kind: 'scalar', node: '4', input: 'prompt' },
+	negativePrompt: { kind: 'scalar', node: '5', input: 'prompt' },
+	seed: { kind: 'scalar', node: '13', input: 'seed' },
+	model: { kind: 'scalar', node: '1', input: 'unet_name' },
+	textEncoder: { kind: 'scalar', node: '2', input: 'clip_name' },
+	vae: { kind: 'scalar', node: '3', input: 'vae_name' },
+	samplerName: { kind: 'scalar', node: '13', input: 'sampler_name' },
+	samplerSteps: { kind: 'scalar', node: '13', input: 'steps' },
+	samplerCfg: { kind: 'scalar', node: '13', input: 'cfg' }
+};
+
+const QWEN_EDIT_SAMPLER: SamplerSettings = { name: 'euler', steps: 20, cfg: 4 };
+
 /** The wrapper from the model's own template; its VAE always carries alpha. */
 export function qwen21Transparent(prompt: string): string {
 	return (
@@ -437,6 +463,34 @@ export const TEMPLATES: WorkflowTemplate[] = [
 		source: SOURCE,
 		supports: { transparent: false, seamless: false, edit: true },
 		defaultSampler: KLEIN_SAMPLER
+	},
+	{
+		id: 'qwen_edit_2511_t2i',
+		family: 'qwen_edit_2511',
+		graph: qwenEditDrawGraph as ComfyGraph,
+		map: {
+			...QWEN_EDIT_BINDINGS,
+			width: at('12', 'width'),
+			height: at('12', 'height')
+		},
+		license: LICENSE,
+		source: SOURCE,
+		supports: { transparent: false, seamless: false },
+		defaultSampler: QWEN_EDIT_SAMPLER
+	},
+	{
+		// Sized from the first picture, as `FluxKontextImageScale` scales it.
+		id: 'qwen_edit_2511_edit',
+		family: 'qwen_edit_2511',
+		graph: qwenEditGraph as ComfyGraph,
+		map: {
+			...QWEN_EDIT_BINDINGS,
+			editImages: { kind: 'editImages', node: ['4', '5'], prefix: 'image', firstThrough: '6' }
+		},
+		license: LICENSE,
+		source: SOURCE,
+		supports: { transparent: false, seamless: false, edit: true },
+		defaultSampler: QWEN_EDIT_SAMPLER
 	}
 ];
 

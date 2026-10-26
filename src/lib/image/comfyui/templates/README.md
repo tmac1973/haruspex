@@ -9,17 +9,19 @@ They are grouped by **model family**, read from the configured model's
 filename (`../families.ts`): a graph that loads an SD checkpoint cannot load a
 DiT that ships its text encoder and VAE as separate files.
 
-| File                     | Family               | Transparent | Seamless | For                                  |
-| ------------------------ | -------------------- | ----------- | -------- | ------------------------------------ |
-| `txt2img.json`           | SD                   | —           | —        | Plain generation                     |
-| `seamless.json`          | SD                   | —           | yes      | Edge-wrapping terrain                |
-| `ming_t2i.json`          | Ming-Image           | —           | —        | Plain generation                     |
-| `ming_t2i_rgba.json`     | Ming-Image           | yes         | —        | Sprites with real alpha              |
-| `ming_t2i_seamless.json` | Ming-Image           | —           | yes      | Textures, by offset and inpaint      |
-| `qwen21_t2i.json`        | Qwen-Image-2.1       | by prompt   | —        | Both; alpha is a prompt wrapper      |
-| `qwen21_turbo_t2i.json`  | Qwen-Image-2.1 Turbo | by prompt   | —        | As above, on Turbo's 8-step schedule |
-| `flux2_klein_t2i.json`   | FLUX.2 klein 4B      | —           | —        | Plain generation, 4 steps            |
-| `flux2_klein_edit.json`  | FLUX.2 klein 4B      | —           | —        | Edits, through `ReferenceLatent`     |
+| File                       | Family               | Transparent | Seamless | For                                  |
+| -------------------------- | -------------------- | ----------- | -------- | ------------------------------------ |
+| `txt2img.json`             | SD                   | —           | —        | Plain generation                     |
+| `seamless.json`            | SD                   | —           | yes      | Edge-wrapping terrain                |
+| `ming_t2i.json`            | Ming-Image           | —           | —        | Plain generation                     |
+| `ming_t2i_rgba.json`       | Ming-Image           | yes         | —        | Sprites with real alpha              |
+| `ming_t2i_seamless.json`   | Ming-Image           | —           | yes      | Textures, by offset and inpaint      |
+| `qwen21_t2i.json`          | Qwen-Image-2.1       | by prompt   | —        | Both; alpha is a prompt wrapper      |
+| `qwen21_turbo_t2i.json`    | Qwen-Image-2.1 Turbo | by prompt   | —        | As above, on Turbo's 8-step schedule |
+| `flux2_klein_t2i.json`     | FLUX.2 klein 4B      | —           | —        | Plain generation, 4 steps            |
+| `flux2_klein_edit.json`    | FLUX.2 klein 4B      | —           | —        | Edits, through `ReferenceLatent`     |
+| `qwen_edit_2511_t2i.json`  | Qwen-Image-Edit-2511 | —           | —        | Plain generation                     |
+| `qwen_edit_2511_edit.json` | Qwen-Image-Edit-2511 | —           | —        | Edits, up to three pictures          |
 
 Reference conditioning (IP-Adapter) is gone. It is UNet-only, neither DiT family
 can use it, and phase 17 measured a Ming reference image as making sets less

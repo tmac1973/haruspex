@@ -75,8 +75,15 @@ export interface LoraSlotsBinding {
  */
 export interface EditImagesBinding {
 	kind: 'editImages';
-	node: string;
+	/** The node whose slots take the pictures, or several that each take them all. */
+	node: string | string[];
 	prefix: string;
+	/**
+	 * A node whose `image` input takes the first picture, and whose output
+	 * then fills slot 1: Qwen-Image-Edit scales its first picture
+	 * (`FluxKontextImageScale`), and samples from it.
+	 */
+	firstThrough?: string;
 }
 
 /**
@@ -138,6 +145,13 @@ function missingInput(graph: ComfyGraph, node: string, input: string): boolean {
 	return !Object.prototype.hasOwnProperty.call(graph[node].inputs, input);
 }
 
+/** The template's own nodes an edit's pictures are wired into. */
+function pictureNodes(b: EditImagesBinding | ReferenceLatentsBinding): string[] {
+	return b.kind === 'referenceLatents'
+		? [b.guider, b.vae, b.size]
+		: [b.node, b.firstThrough ?? []].flat();
+}
+
 /**
  * Every problem with a map against a graph, as sentences. Run when the backend
  * is configured, so a broken bundled template or a bad user map fails there
@@ -167,16 +181,10 @@ export function validateFieldMap(graph: ComfyGraph, map: FieldMap): string[] {
 		}
 		const b = binding as
 			ScalarBinding | LoraSlotsBinding | EditImagesBinding | ReferenceLatentsBinding;
-		if (b.kind === 'referenceLatents') {
-			for (const node of [b.guider, b.vae, b.size]) {
-				if (missingNode(graph, node)) {
-					problems.push(`${label} binds node "${node}", which the workflow does not contain.`);
-				}
-			}
-		} else if (b.kind === 'editImages') {
-			// Its slots are made per request; the node they join must be there.
-			if (missingNode(graph, b.node)) {
-				problems.push(`${label} binds node "${b.node}", which the workflow does not contain.`);
+		if (b.kind === 'referenceLatents' || b.kind === 'editImages') {
+			// Their nodes are made per request; the nodes they join must be there.
+			for (const node of pictureNodes(b).filter((n) => missingNode(graph, n))) {
+				problems.push(`${label} binds node "${node}", which the workflow does not contain.`);
 			}
 		} else if (b.kind === 'loraSlots') {
 			if (b.nodes.length === 0) {
@@ -247,14 +255,22 @@ function applyPictures(graph: ComfyGraph, map: FieldMap, names: string[], req: I
 
 /** A `LoadImage` node per uploaded picture, each wired to its slot. */
 function applyEditImages(graph: ComfyGraph, binding: EditImagesBinding, names: string[]): void {
-	if (missingNode(graph, binding.node)) {
-		throw new Error(`Workflow has no node "${binding.node}" for the edit's pictures.`);
+	const nodes = [binding.node].flat();
+	for (const node of [...nodes, binding.firstThrough ?? []].flat()) {
+		if (missingNode(graph, node)) {
+			throw new Error(`Workflow has no node "${node}" for the edit's pictures.`);
+		}
 	}
 	if (names.length === 0) throw new Error('An edit workflow needs at least one picture.');
 	names.forEach((name, i) => {
 		const id = `edit_image_${i + 1}`;
 		graph[id] = { class_type: 'LoadImage', inputs: { image: name } };
-		graph[binding.node].inputs[`${binding.prefix}${i + 1}`] = [id, 0];
+		let source = [id, 0];
+		if (i === 0 && binding.firstThrough) {
+			graph[binding.firstThrough].inputs.image = source;
+			source = [binding.firstThrough, 0];
+		}
+		for (const node of nodes) graph[node].inputs[`${binding.prefix}${i + 1}`] = source;
 	});
 }
 

@@ -111,12 +111,20 @@ pub const KLEIN_LICENCE: Licence = Licence {
     commercial_use: true,
 };
 
+/// Qwen-Image-Edit-2511: ComfyUI only, for now.
+pub const QWEN_EDIT_LICENCE: Licence = Licence {
+    text: "Apache 2.0 — commercial use allowed.",
+    url: "https://huggingface.co/Qwen/Qwen-Image-Edit-2511",
+    commercial_use: true,
+};
+
 /// The shipped sets: the files the templates were measured with.
 pub fn comfy_model_sets() -> Vec<ComfyModelSet> {
     use ComfyFolder::*;
     const MING: &str = "Comfy-Org/Ming-Image";
     const QWEN: &str = "Comfy-Org/Qwen-Image-2.1";
     const KLEIN: &str = "Comfy-Org/Flux-2-Klein-4B";
+    const QWEN_IMAGE: &str = "Comfy-Org/Qwen-Image";
     vec![
         ComfyModelSet {
             family: "ming".into(),
@@ -208,6 +216,39 @@ pub fn comfy_model_sets() -> Vec<ComfyModelSet> {
                     "split_files/vae/flux2-vae.safetensors",
                     "868fe7b343cc8f3a19dbcfcafbc3d5f888802be3f89bd81b65b3621a066ce8f3",
                     336_211_292,
+                ),
+            ],
+        },
+        ComfyModelSet {
+            family: "qwen_edit_2511".into(),
+            label: "Qwen-Image-Edit-2511".into(),
+            license: QWEN_EDIT_LICENCE.text.into(),
+            license_url: QWEN_EDIT_LICENCE.url.into(),
+            commercial_use: QWEN_EDIT_LICENCE.commercial_use,
+            // A 20B model at int8: ComfyUI offloads what doesn't fit.
+            vram_mb: 24_576,
+            ram_mb: 32_768,
+            files: vec![
+                file(
+                    DiffusionModels,
+                    "Comfy-Org/Qwen-Image-Edit",
+                    "split_files/diffusion_models/qwen_image_edit_2511_int8_convrot.safetensors",
+                    "11b5af5ac601821d73930c84846c9a158e67177356daf927ce1c8d10f3963829",
+                    20_499_083_824,
+                ),
+                file(
+                    TextEncoders,
+                    QWEN_IMAGE,
+                    "split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors",
+                    "cb5636d852a0ea6a9075ab1bef496c0db7aef13c02350571e388aea959c5c0b4",
+                    9_384_670_680,
+                ),
+                file(
+                    Vae,
+                    QWEN_IMAGE,
+                    "split_files/vae/qwen_image_vae.safetensors",
+                    "a70580f0213e67967ee9c95f05bb400e8fb08307e017a924bf3441223e023d1f",
+                    253_806_246,
                 ),
             ],
         },
@@ -411,10 +452,10 @@ mod tests {
     #[test]
     fn both_engines_agree_on_each_familys_licence_and_vae() {
         let bundled = crate::image_models::image_registry();
-        // klein runs on ComfyUI only.
+        // klein and 2511 run on ComfyUI only.
         for set in comfy_model_sets()
             .into_iter()
-            .filter(|s| s.family != "flux2_klein")
+            .filter(|s| s.family != "flux2_klein" && s.family != "qwen_edit_2511")
         {
             let entry = bundled
                 .iter()
@@ -468,12 +509,15 @@ mod tests {
                 .unwrap()
                 .commercial_use
         );
-        assert!(
-            sets.iter()
-                .find(|s| s.family == "flux2_klein")
-                .unwrap()
-                .commercial_use
-        );
+        for family in ["flux2_klein", "qwen_edit_2511"] {
+            assert!(
+                sets.iter()
+                    .find(|s| s.family == family)
+                    .unwrap()
+                    .commercial_use,
+                "{family}"
+            );
+        }
     }
 
     #[test]

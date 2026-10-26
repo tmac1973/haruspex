@@ -27,9 +27,9 @@ Under **Bundled engine**, press **Download** on a model (about 17 GB for Ming-Im
 
 ### Set up ComfyUI
 
-Under **Connection**, enter the **Server address** (for example `http://127.0.0.1:8188`) and an **API key** only if your server needs one, then press **Probe**. **Models on the server** shows what each model lacks. **Install** downloads the files into ComfyUI when it runs on this computer, or queues them with ComfyUI-Manager elsewhere. Without either, **Copy file list** gives you the files to place by hand. Then choose the **Model**.
+Under **Connection**, enter the **Server address** (for example `http://127.0.0.1:8188`) and an **API key** if your server needs one, then press **Probe**. **Models on the server** shows what each model lacks. **Install** downloads the files into ComfyUI when it runs on this computer, or queues them with ComfyUI-Manager elsewhere. Without either, **Copy file list** gives you the files to place by hand. Then choose the **Model**.
 
-The first picture after ComfyUI starts waits for the model to load (**Loading the model**).
+The first picture after ComfyUI starts waits for the model to load.
 
 ### Set up Lemonade
 
@@ -41,11 +41,11 @@ If your chat model comes from a toolchest, its address and key are filled in; ot
 
 ## Pick a model and check its licence
 
-| Model                           | Licence               | Commercial use  | Bundled engine needs        |
-| ------------------------------- | --------------------- | --------------- | --------------------------- |
-| Ming-Image 0.1 Design (default) | MIT                   | Allowed         | ~8 GB VRAM, ~10 GB free RAM |
-| Qwen-Image 2.1 Turbo            | Qwen Research License | **Not allowed** | ~12 GB VRAM                 |
-| FLUX.2 klein 4B (ComfyUI only)  | Apache 2.0            | Allowed         | —                           |
+| Model                                 | Licence               | Commercial use  | Bundled engine needs        |
+| ------------------------------------- | --------------------- | --------------- | --------------------------- |
+| Ming-Image 0.1 Design (default)       | MIT                   | Allowed         | ~8 GB VRAM, ~10 GB free RAM |
+| Qwen-Image 2.1 Turbo                  | Qwen Research License | **Not allowed** | ~12 GB VRAM                 |
+| FLUX.2 klein 4B, Qwen-Image-Edit-2511 | Apache 2.0            | Allowed         | ComfyUI only                |
 
 An earlier Qwen-Image 2.1 download is offered again as Turbo, three times faster; ComfyUI keeps running the original.
 
