@@ -1,4 +1,5 @@
 mod ace;
+mod agent_feedback;
 mod app_log;
 mod app_windows;
 mod artifact_frame;
@@ -657,6 +658,8 @@ pub fn run() {
             links::open_url,
             links::open_folder,
             app_windows::app_window_open,
+            agent_feedback::agent_feedback_append,
+            agent_feedback::agent_feedback_dir,
             feedback::get_diagnostics,
             feedback::feedback_redact,
             feedback::save_export_file,

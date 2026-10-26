@@ -135,6 +135,8 @@ export interface LoopContext {
 	codeEffort: string | null;
 	subtask?: ToolContext['subtask'];
 	subtasksStartedThisTurn: { count: number };
+	/** How many `haruspex_feedback` reports this turn has made (capped). */
+	feedbackThisTurn: { count: number };
 	wslDistro: string | null;
 	expectsFileOutput: boolean;
 	pendingImages: PendingImage[];
@@ -254,6 +256,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 				options.toolAllowlist && options.forceFinalTool
 					? [...options.toolAllowlist, options.forceFinalTool]
 					: options.toolAllowlist,
+			harnessFeedback: options.feedback !== undefined,
 			skillNames: options.skills?.catalog.map((s) => s.name),
 			skillFileNames: options.skills && readableSkills(options.skills, options.messages),
 			hasSkills: options.skills !== undefined
@@ -290,6 +293,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		codeEffort: options.codeEffort ?? null,
 		subtask: options.subtask,
 		subtasksStartedThisTurn: { count: 0 },
+		feedbackThisTurn: { count: 0 },
 		wslDistro: options.wslDistro ?? null,
 		expectsFileOutput,
 		pendingImages: [],

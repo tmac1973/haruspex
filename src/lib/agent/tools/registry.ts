@@ -319,6 +319,12 @@ export function getToolSchemas(opts: {
 	/** The skills whose files it may read; the same for `read_skill_file`. */
 	skillFileNames?: string[];
 	/**
+	 * An allowlisted turn that may also carry `haruspex_feedback` when Settings
+	 * → Feedback has it on: a job's, not a remote guest's or memory's own.
+	 * Every other turn carries it whenever the setting is on.
+	 */
+	harnessFeedback?: boolean;
+	/**
 	 * The turn carries skills (Chat or Shell). With `interactive`, it gets
 	 * `create_skill` and `update_skill`.
 	 */
@@ -333,6 +339,8 @@ export function getToolSchemas(opts: {
 			// keyboard, and an allowlisted turn is a job's: no allowlist can
 			// grant them.
 			if (allow.has(name) && name !== 'email_compose' && reg.category !== 'skills-write') {
+				schemas.push(reg.schema);
+			} else if (reg.category === 'harness-feedback' && opts.harnessFeedback && feedbackOn()) {
 				schemas.push(reg.schema);
 			}
 		}
@@ -381,6 +389,8 @@ function schemaFor(
 	// The user guide answers the person asking, in any mode; a job has nobody
 	// asking. Remote guests get it through their allowlist.
 	if (reg.category === 'guide') return filter.interactive && !filter.subtask ? reg.schema : null;
+	// Every mode, subtasks and all: friction is friction wherever it happens.
+	if (reg.category === 'harness-feedback') return feedbackOn() ? reg.schema : null;
 	if (reg.category === 'skills-write') {
 		if (!skills.hasSkills || !filter.interactive || filter.codeReadOnly || filter.subtask) {
 			return null;
@@ -545,6 +555,11 @@ function withSkillEnum(schema: ToolDefinition, names: string[]): ToolDefinition 
 	};
 }
 
+/** Settings → Feedback → Model feedback on tools. */
+function feedbackOn(): boolean {
+	return getSettings().agentFeedbackEnabled === true;
+}
+
 /**
  * Execute a tool by name. Replaces the 30-arm switch statement.
  */
@@ -583,6 +598,12 @@ export async function executeTool(
 				'Long-term memory is off, or its embedding model has not been downloaded. ' +
 					'Nothing was saved. The user can turn it on in Settings → Memory.'
 			)
+		);
+	}
+
+	if (reg.category === 'harness-feedback' && !feedbackOn()) {
+		return toolResult(
+			toolError('Feedback on tools is off. The user can turn it on in Settings → Feedback.')
 		);
 	}
 

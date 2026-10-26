@@ -45,7 +45,8 @@ export const settingsState = {
 	imageBackendKind: 'none' as string,
 	imageComfyCheckpoint: '' as string,
 	imageLocalModelId: '' as string,
-	codeSubtasks: 'read' as 'off' | 'read' | 'write'
+	codeSubtasks: 'read' as 'off' | 'read' | 'write',
+	agentFeedbackEnabled: false
 };
 
 /**
@@ -121,6 +122,7 @@ async function settingsModule(importOriginal: () => Promise<unknown>) {
 			imageComfyCheckpoint: settingsState.imageComfyCheckpoint,
 			imageLocalModelId: settingsState.imageLocalModelId,
 			codeSubtasks: settingsState.codeSubtasks,
+			agentFeedbackEnabled: settingsState.agentFeedbackEnabled,
 			inferenceBackend: { mode: 'local' as const },
 			// What a job inherits when it sets no reasoning policy of its own —
 			// the runner records the RESOLVED values with the run.
@@ -211,6 +213,7 @@ export function useRunnerFixtures() {
 
 	beforeEach(() => {
 		settingsState.codeSubtasks = 'read';
+		settingsState.agentFeedbackEnabled = false;
 		mocks.runEphemeralTurn.mockReset();
 		mocks.getJob.mockReset();
 		mocks.createJob.mockReset().mockResolvedValue(900);

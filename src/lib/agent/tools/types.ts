@@ -1,9 +1,10 @@
-import type { BackendOverride, ToolDefinition } from '#lib/api.ts';
+import type { BackendOverride, ChatMessage, ToolDefinition } from '#lib/api.ts';
 import type { SubtaskState, SubtaskStops } from '#lib/code/subtask.ts';
 import type { JobSubtaskHost, SubtaskSpec } from '#lib/code/subtaskRun.ts';
 import type { Artifact } from '#lib/sandbox/sandbox.ts';
 import type { LintIssue } from '#lib/sandbox/lint.ts';
 import type { FileDiff } from '#lib/code/diff.ts';
+import type { FeedbackTurn } from '#lib/harnessFeedback/report.ts';
 
 export type { Artifact, LintIssue };
 
@@ -233,6 +234,12 @@ export interface ToolContext {
 	subtask?: { depth: 1 };
 	/** How many subtasks this turn has started, shared by its calls (`delegate`'s cap). */
 	subtasksStartedThisTurn?: { count: number };
+	/** The turn's messages so far: `haruspex_feedback` attaches the calls behind a report. */
+	transcript?: () => readonly ChatMessage[];
+	/** How many reports this turn has made; `haruspex_feedback` stops at a few. */
+	feedbackThisTurn?: { count: number };
+	/** How the turn's reports are labelled, when it isn't a chat or Code session. */
+	feedback?: FeedbackTurn;
 	/** The id of the call being run: names a subtask after its `delegate` call. */
 	toolCallId?: string;
 	/** A subtask's card changed (`delegate`); the loop routes it to the call's step. */
@@ -322,7 +329,10 @@ export interface ToolRegistration {
 		 *  Shell turns only: one that carries `skills` and has someone there. */
 		| 'skills-write'
 		/** Haruspex's own user guide (`haruspex_docs`). Any turn with someone there. */
-		| 'guide';
+		| 'guide'
+		/** The model's notes on Haruspex's tools (`haruspex_feedback`). Settings →
+		 *  Feedback switches it on; an allowlisted turn needs `harnessFeedback`. */
+		| 'harness-feedback';
 	requiresVision?: boolean;
 }
 

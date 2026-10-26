@@ -36,6 +36,7 @@ const ORDER = [
 	'remote-control',
 	'settings',
 	'shortcuts',
+	'model-feedback',
 	'troubleshooting'
 ];
 
