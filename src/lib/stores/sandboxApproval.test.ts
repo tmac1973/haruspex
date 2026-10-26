@@ -16,7 +16,7 @@ describe('sandbox approval prompts', () => {
 
 		expect(getPendingApproval()).toBeNull();
 
-		void askApproval({ code: 'print(1)', mode: 'once-per-chat' });
+		void askApproval({ code: 'print(1)', mode: 'once-per-chat', chatId: 'c1' });
 
 		const pending = getPendingApproval();
 		expect(pending).not.toBeNull();
@@ -27,7 +27,7 @@ describe('sandbox approval prompts', () => {
 	it('resolves the pending promise with allow_once and clears the prompt', async () => {
 		const { askApproval, getPendingApproval, resolveApproval } = await freshStore();
 
-		const promise = askApproval({ code: 'print(1)', mode: 'every-run' });
+		const promise = askApproval({ code: 'print(1)', mode: 'every-run', chatId: 'c1' });
 		resolveApproval('allow_once');
 
 		await expect(promise).resolves.toBe('allow_once');
@@ -37,7 +37,7 @@ describe('sandbox approval prompts', () => {
 	it('resolves with deny so the caller can refuse the run', async () => {
 		const { askApproval, getPendingApproval, resolveApproval } = await freshStore();
 
-		const promise = askApproval({ code: 'import os', mode: 'once-per-chat' });
+		const promise = askApproval({ code: 'import os', mode: 'once-per-chat', chatId: 'c1' });
 		resolveApproval('deny');
 
 		// Denial is a resolved choice (not a rejection) — the run_python
@@ -46,26 +46,40 @@ describe('sandbox approval prompts', () => {
 		expect(getPendingApproval()).toBeNull();
 	});
 
-	it('rejects a second overlapping ask and leaves the first pending', async () => {
+	it('queues a second ask behind the first, as two chats can ask at once', async () => {
 		const { askApproval, getPendingApproval, resolveApproval } = await freshStore();
 
-		const first = askApproval({ code: 'a', mode: 'every-run' });
-		await expect(askApproval({ code: 'b', mode: 'every-run' })).rejects.toThrow(/already pending/);
+		const first = askApproval({ code: 'a', mode: 'every-run', chatId: 'c1' });
+		const second = askApproval({ code: 'b', mode: 'every-run', chatId: 'c2' });
 
-		// First prompt is untouched by the rejected second ask.
-		expect(getPendingApproval()!.code).toBe('a');
+		expect(getPendingApproval()).toMatchObject({ code: 'a', chatId: 'c1' });
 		resolveApproval('allow_once');
 		await expect(first).resolves.toBe('allow_once');
+
+		expect(getPendingApproval()).toMatchObject({ code: 'b', chatId: 'c2' });
+		resolveApproval('deny');
+		await expect(second).resolves.toBe('deny');
+	});
+
+	it('withdraws an ask as a denial when its turn stops', async () => {
+		const { askApproval, getPendingApproval } = await freshStore();
+
+		const stop = new AbortController();
+		const ask = askApproval({ code: 'a', mode: 'every-run', chatId: 'c1' }, stop.signal);
+		stop.abort();
+
+		await expect(ask).resolves.toBe('deny');
+		expect(getPendingApproval()).toBeNull();
 	});
 
 	it('supports sequential prompts once the previous one resolves', async () => {
 		const { askApproval, resolveApproval } = await freshStore();
 
-		const first = askApproval({ code: 'a', mode: 'every-run' });
+		const first = askApproval({ code: 'a', mode: 'every-run', chatId: 'c1' });
 		resolveApproval('deny');
 		await first;
 
-		const second = askApproval({ code: 'b', mode: 'every-run' });
+		const second = askApproval({ code: 'b', mode: 'every-run', chatId: 'c1' });
 		resolveApproval('allow_once');
 		await expect(second).resolves.toBe('allow_once');
 	});

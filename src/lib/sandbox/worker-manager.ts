@@ -746,4 +746,9 @@ export class WorkerManager {
 	get hasWorker(): boolean {
 		return this.worker !== null;
 	}
+
+	/** A run or install is in flight. */
+	get busy(): boolean {
+		return this.pending.size > 0;
+	}
 }

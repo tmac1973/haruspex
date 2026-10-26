@@ -20,13 +20,13 @@ import {
 	cancelGeneration,
 	continueTurn,
 	createConversation,
-	getActiveConversation,
 	getConversations,
 	getErrorMessage,
 	getIsCompacting,
 	getIsGenerating,
 	getIsWaitingForSlot,
 	getLastTurnFailed,
+	getRun,
 	getStreamingContent,
 	retryLastTurn,
 	sendMessage,
@@ -121,16 +121,11 @@ export function listChats(): ChatListItem[] {
 	}));
 }
 
-/** Refuse a turn on a chat that isn't the open one while a turn runs. */
+/** Refuse a turn on a chat whose own turn is still running. Other chats' turns don't block it. */
 function mustBeFree(id: string): void {
-	if (!getIsGenerating()) return;
-	if (getActiveConversationId() === id) {
+	if (getRun(id).busy) {
 		throw new Error('A reply is being written in this chat; stop it or wait for it.');
 	}
-	const busy = getActiveConversation();
-	throw new Error(
-		`A reply is being written in "${busy?.title ?? 'another chat'}"; stop it or wait for it.`
-	);
 }
 
 /** Open `id` on the desktop unless it already is. */
@@ -166,10 +161,8 @@ export async function dispatchChat(op: { type: string; id?: string; text?: strin
 			return listChats();
 		case 'chat.get':
 			return chatState(op.id!);
-		case 'chat.new': {
-			mustBeFree('');
+		case 'chat.new':
 			return { id: createConversation() };
-		}
 		case 'chat.send': {
 			const text = (op.text ?? '').trim();
 			if (!text) throw new Error('nothing to send');

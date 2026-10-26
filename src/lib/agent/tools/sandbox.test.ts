@@ -23,7 +23,7 @@ vi.mock('#lib/stores/sandboxApproval.svelte.ts', () => ({
 	approveChatSandbox: vi.fn()
 }));
 
-const ctx = makeToolContext();
+const ctx = makeToolContext({ conversationId: 'c1' });
 
 function ok(overrides: Partial<ToolResult> = {}): ToolResult {
 	return {
@@ -69,6 +69,7 @@ describe('sandbox tools', () => {
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_python', { code: 'print("hello"); 2+2' }, ctx);
 		expect(mocks.runPython).toHaveBeenCalledWith(
+			'c1',
 			'print("hello"); 2+2',
 			expect.objectContaining({ timeoutMs: expect.any(Number) })
 		);
@@ -123,6 +124,7 @@ describe('sandbox tools', () => {
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('install_package', { package: 'numpy' }, ctx);
 		expect(mocks.installPackage).toHaveBeenCalledWith(
+			'c1',
 			'numpy',
 			expect.objectContaining({ timeoutMs: expect.any(Number) })
 		);

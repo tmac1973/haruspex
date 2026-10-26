@@ -20,7 +20,8 @@ interface PerChat {
  * Pyodide Web Worker, so variables / imports / installed packages
  * persist across chat switches. When the cap is exceeded the
  * least-recently-touched chat's Worker is terminated; returning to
- * that chat boots a fresh Worker (lazy spawn). No persistence /
+ * that chat boots a fresh Worker (lazy spawn). A Worker with a run in
+ * flight is never evicted. No persistence /
  * snapshot — the chat store's session-restore path replays the
  * conversation's prior tool calls when needed.
  */
@@ -60,11 +61,15 @@ export class WorkerPool {
 
 	private evictIfOver(): void {
 		while (this.order.length > this.cap) {
-			// Pop from the back. Never evict the chat we just touched
-			// (it sits at the front of the LRU order, so the for loop
-			// naturally skips it).
-			const victim = this.order.pop();
-			if (!victim) return;
+			// The least recently touched chat whose Worker is idle. Never the
+			// chat just touched (it sits at the front), and never one with a
+			// run in flight: turns in several chats run Python at once, and
+			// terminating one mid-run would fail its tool call. With every
+			// Worker busy the pool runs over its cap until one finishes.
+			let i = this.order.length - 1;
+			while (i > 0 && this.mgrs.get(this.order[i])?.mgr.busy) i--;
+			if (i === 0) return;
+			const [victim] = this.order.splice(i, 1);
 			this.evict(victim);
 		}
 	}

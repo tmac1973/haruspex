@@ -49,13 +49,13 @@ interface RawLintIssue {
 }
 
 /**
- * Lint the snippet about to run in the sandbox. The active chat's persistent
+ * Lint the snippet about to run in the chat's sandbox. Its persistent
  * Python globals are sent along as ruff `builtins` so F821 doesn't false-
  * positive on names defined by a prior `run_python` call.
  */
-export async function lintSandboxCode(code: string): Promise<LintIssue[]> {
+export async function lintSandboxCode(chatId: string, code: string): Promise<LintIssue[]> {
 	try {
-		const builtins = await listSandboxGlobals();
+		const builtins = await listSandboxGlobals(chatId);
 		const raw = await invoke<RawLintIssue[]>('lint_python_source', { code, builtins });
 		return raw.map((d) => ({
 			code: d.code,

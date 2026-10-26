@@ -13,49 +13,42 @@
  *   - every-run:     shows two buttons — Allow / Deny. The "allow_once"
  *                    return covers both modes' allow-this-time path.
  *
- * Only one prompt can be pending at a time (the agent loop serializes
- * tool calls). A second overlapping ask rejects.
+ * Prompts queue (`approvalQueue.svelte.ts`), one shown at a time: turns in
+ * several chats can each ask at once.
  */
 
 import { SvelteSet } from 'svelte/reactivity';
+import { createApprovalQueue } from '#lib/stores/approvalQueue.svelte.ts';
 
 export type SandboxApprovalMode = 'once-per-chat' | 'every-run';
 export type SandboxApprovalChoice = 'allow_once' | 'allow_chat' | 'deny';
 
-interface PendingApproval {
+export interface SandboxApprovalRequest {
 	code: string;
 	mode: SandboxApprovalMode;
-	resolve: (choice: SandboxApprovalChoice) => void;
+	/** The chat whose turn asks. */
+	chatId: string | null;
 }
 
-let pending = $state<PendingApproval | null>(null);
+const queue = createApprovalQueue<SandboxApprovalRequest, SandboxApprovalChoice>();
 
-export function askApproval(args: {
-	code: string;
-	mode: SandboxApprovalMode;
-}): Promise<SandboxApprovalChoice> {
-	if (pending !== null) {
-		return Promise.reject(
-			new Error(
-				'Sandbox approval prompt is already pending; ' +
-					'a second overlapping request is a bug in the caller.'
-			)
-		);
-	}
-	return new Promise<SandboxApprovalChoice>((resolve) => {
-		pending = { code: args.code, mode: args.mode, resolve };
-	});
+/**
+ * Ask before running code. Waits behind any prompt already showing; stopping
+ * the turn withdraws it as a denial.
+ */
+export function askApproval(
+	request: SandboxApprovalRequest,
+	signal?: AbortSignal
+): Promise<SandboxApprovalChoice> {
+	return queue.ask(request, { signal, abortResult: 'deny' });
 }
 
-export function getPendingApproval(): PendingApproval | null {
-	return pending;
+export function getPendingApproval(): SandboxApprovalRequest | null {
+	return queue.current();
 }
 
 export function resolveApproval(choice: SandboxApprovalChoice): void {
-	const current = pending;
-	if (current === null) return;
-	pending = null;
-	current.resolve(choice);
+	queue.resolve(choice);
 }
 
 // Per-chat "Allow for chat" memory. Lives here (rather than as a field on the

@@ -1,7 +1,7 @@
 import { runPython, installPackage, resetSandbox } from '#lib/sandbox/sandbox.ts';
 import { lintSandboxCode, formatLintFailure } from '#lib/sandbox/lint.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
-import { toolResult, toolError } from '#lib/agent/tools/types.ts';
+import { toolResult, toolError, type ToolContext } from '#lib/agent/tools/types.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { getActiveConversationId } from '#lib/stores/session.svelte.ts';
 import {
@@ -12,6 +12,16 @@ import {
 import { isAutoApproveActive } from '#lib/stores/approvalOverride.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { formatSandboxResult } from '#lib/sandbox/format-result.ts';
+
+/**
+ * The chat whose sandbox the call uses: the turn's own. Outside a chat turn
+ * (nothing else offers these tools today) it falls back to the open chat.
+ */
+function chatIdFor(ctx: ToolContext): string | null {
+	return ctx.conversationId ?? getActiveConversationId();
+}
+
+const NO_CHAT = 'The Python sandbox needs a chat to run in.';
 
 function firstLine(code: string, max = 60): string {
 	const line = code.split('\n')[0]?.trim() ?? '';
@@ -51,8 +61,9 @@ registerTool({
 		if (typeof code !== 'string' || !code.trim()) {
 			return toolResult(toolError('Missing or empty `code` argument'));
 		}
+		const chatId = chatIdFor(ctx);
+		if (!chatId) return toolResult(toolError(NO_CHAT));
 		const mode = getSettings().sandboxApproval;
-		const chatId = getActiveConversationId();
 		// 'off' bypasses; 'once-per-chat' bypasses if the user has already
 		// approved this chat. 'every-run' always prompts.
 		const needsPrompt =
@@ -60,7 +71,7 @@ registerTool({
 			(mode === 'every-run' || (mode === 'once-per-chat' && !isChatSandboxApproved(chatId)));
 		if (needsPrompt) {
 			try {
-				const choice = await askApproval({ code, mode });
+				const choice = await askApproval({ code, mode, chatId }, ctx.signal);
 				if (choice === 'deny') {
 					return toolResult(toolError('User denied code execution.'));
 				}
@@ -76,7 +87,7 @@ registerTool({
 		// gets actionable feedback in microseconds instead of failing
 		// mid-execution after side effects. Failures here are advisory:
 		// if the ruff sidecar is missing the call returns [] and we run.
-		const lintIssues = await lintSandboxCode(code);
+		const lintIssues = await lintSandboxCode(chatId, code);
 		if (lintIssues.length > 0) {
 			return {
 				result: formatLintFailure(lintIssues),
@@ -85,7 +96,7 @@ registerTool({
 		}
 		try {
 			const timeoutMs = Math.round((getSettings().sandboxTimeoutSeconds ?? 60) * 1000);
-			const r = await runPython(code, {
+			const r = await runPython(chatId, code, {
 				timeoutMs,
 				// Surface package installs on the running tool card so a slow
 				// first import reads as progress rather than a hang. Bundled
@@ -115,9 +126,11 @@ registerTool({
 		}
 	},
 	displayLabel: () => 'reset',
-	async execute() {
+	async execute(_args, ctx) {
+		const chatId = chatIdFor(ctx);
+		if (!chatId) return toolResult(toolError(NO_CHAT));
 		try {
-			await resetSandbox();
+			await resetSandbox(chatId);
 			return toolResult('Python sandbox reset.');
 		} catch (e) {
 			return toolResult(toolError(`Reset failed: ${errMessage(e)}`));
@@ -146,14 +159,16 @@ registerTool({
 		}
 	},
 	displayLabel: (args) => `install ${args.package as string}`,
-	async execute(args) {
+	async execute(args, ctx) {
 		const pkg = args.package;
 		if (typeof pkg !== 'string' || !pkg.trim()) {
 			return toolResult(toolError('Missing or empty `package` argument'));
 		}
+		const chatId = chatIdFor(ctx);
+		if (!chatId) return toolResult(toolError(NO_CHAT));
 		try {
 			const timeoutMs = Math.round((getSettings().sandboxTimeoutSeconds ?? 60) * 1000);
-			const r = await installPackage(pkg, { timeoutMs });
+			const r = await installPackage(chatId, pkg, { timeoutMs });
 			return toolResult(formatSandboxResult(r));
 		} catch (e) {
 			return toolResult(toolError(`Install failed: ${errMessage(e)}`));

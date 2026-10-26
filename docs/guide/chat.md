@@ -16,6 +16,10 @@ Type a question and press `Enter` (`Shift`+`Enter` for a new line). When the que
 
 Search can fail or be rate limited. Which search engine is used, and proxies, are covered on the `search-and-network` page. The model can be wrong even with sources, so check anything that matters.
 
+## Run several conversations at once
+
+While one conversation answers, send in another. Each has its own Stop and error message. With one stream (Settings → Inference → Parallel streams) the second waits for the first; with more, or a server that runs several, they answer at once.
+
 ## Let the assistant read and write files
 
 Click the folder icon in the chat box to pick a working directory. The assistant can then read and write files there, and only there. With no folder set, it has no file access at all. The folder belongs to that one conversation and is forgotten when you close the app.

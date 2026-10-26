@@ -74,13 +74,15 @@ import {
 	installPackage,
 	resetSandbox,
 	hasLiveWorkerFor,
-	cancelActiveRun
+	cancelRun
 } from '#lib/sandbox/sandbox.ts';
 import {
 	updateContextUsage,
 	resetContextUsage,
 	setContextUsage
 } from '#lib/stores/context.svelte.ts';
+import { ChatRun } from '#lib/stores/chatRun.svelte.ts';
+import { SvelteMap } from 'svelte/reactivity';
 import { getServerState } from '#lib/stores/llamaServer.svelte.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import {
@@ -251,34 +253,33 @@ let conversations = $state<Conversation[]>([]);
 // import at the top of this file) so the sandbox/worker layer can read them
 // without importing this module and forming a cycle.
 setWorkingDirState(loadWorkingDir());
-let isGenerating = $state(false);
-let isWaitingForSlot = $state(false);
-let isCompacting = $state(false);
-// Transient notice set when the pre-send guard had to reduce history to
-// fit the model's context window. Shown inline in the thread, cleared at
-// the start of the next turn.
-let contextNotice = $state<string | null>(null);
-let streamingContent = $state('');
-let errorMessage = $state<string | null>(null);
-// Turn id of the agent run that produced the current error, if any. The
-// chat UI uses this to render a "copy debug log for this failure" button
-// that filters the debug-log ring buffer down to a single turn's worth
-// of entries — much easier to share than the full interleaved buffer.
-let errorTurnId = $state<number | null>(null);
-let currentTurnId: number | null = null;
+// Each conversation's turn state, made the first time it sends. A
+// conversation with none is idle.
+const runs = new SvelteMap<string, ChatRun>();
+// What the getters report for a conversation with no run. Never written.
+const IDLE = new ChatRun();
+// The composer's toggle, for the next send from the open conversation.
 let exhaustiveResearch = $state(false);
-// Set when the last turn ended in a retryable failure (agent-loop error,
-// startup failure, cancel-while-queued). The user message is already in
-// history, so retryLastTurn() just re-runs the turn against it — no
-// duplicate user bubble.
-let lastTurnFailed = $state(false);
-// Conversation whose just-appended user message is waiting for the
-// llama-server sidecar to finish starting. Non-null means "queued for
-// startup"; the module-scope watcher below dispatches the turn when the
-// server reports ready, or converts it into the error banner on failure.
-let queuedConversation = $state<Conversation | null>(null);
 
-let abortController: AbortController | null = null;
+function runFor(id: string): ChatRun {
+	let run = runs.get(id);
+	if (!run) {
+		run = new ChatRun();
+		runs.set(id, run);
+	}
+	return run;
+}
+
+/** The open conversation's run, for the getters. Reading never creates one. */
+function activeRun(): ChatRun {
+	const id = getActiveConversationId();
+	return (id && runs.get(id)) || IDLE;
+}
+
+/** A conversation's turn state, or an idle one. Read-only for callers. */
+export function getRun(id: string): ChatRun {
+	return runs.get(id) ?? IDLE;
+}
 
 function generateId(): string {
 	return crypto.randomUUID();
@@ -334,7 +335,7 @@ function onVideoTaskEnded(owner: string): void {
 /** Run the active conversation's waiting video notices as a turn, when idle. */
 export function flushVideoNotices(): void {
 	const id = getActiveConversationId();
-	if (!id || isGenerating || isCompacting) return;
+	if (!id || getRun(id).busy) return;
 	const owner = `chat:${id}`;
 	if (!hasVideoNotices(owner)) return;
 	void sendMessage(takeVideoNotices(owner));
@@ -466,37 +467,40 @@ export function setWorkingDir(path: string | null): void {
 	// absolute paths. Leaving them in place leaks ghost files and means
 	// Python's cwd doesn't follow the change. Respawning forces the next
 	// run_python to do a fresh sync against the new workdir.
-	if (previous !== path) {
-		void resetSandbox();
+	const active = getActiveConversationId();
+	if (previous !== path && active) {
+		void resetSandbox(active);
 	}
 }
 
+// The getters below report the open conversation's run.
+
 export function getIsGenerating(): boolean {
-	return isGenerating;
+	return activeRun().generating;
 }
 
 export function getIsWaitingForSlot(): boolean {
-	return isWaitingForSlot;
+	return activeRun().waitingForSlot;
 }
 
 export function getStreamingContent(): string {
-	return streamingContent;
+	return activeRun().streamingContent;
 }
 
 export function getErrorMessage(): string | null {
-	return errorMessage;
+	return activeRun().errorMessage;
 }
 
 export function getErrorTurnId(): number | null {
-	return errorTurnId;
+	return activeRun().errorTurnId;
 }
 
 export function getLastTurnFailed(): boolean {
-	return lastTurnFailed;
+	return activeRun().lastTurnFailed;
 }
 
 export function getQueuedForStartup(): boolean {
-	return queuedConversation !== null;
+	return activeRun().queuedForStartup;
 }
 
 export function getSearchSteps(): SearchStep[] {
@@ -506,9 +510,10 @@ export function getSearchSteps(): SearchStep[] {
 export function getSourceUrls(): string[] {
 	const conv = getActiveConversation();
 	if (!conv) return [];
-	if (isGenerating && streamingContent) {
+	const run = activeRun();
+	if (run.generating && run.streamingContent) {
 		const fetched = extractUrlsFromSteps(conv.searchSteps);
-		const { citedUrls } = processCitations(streamingContent, fetched);
+		const { citedUrls } = processCitations(run.streamingContent, fetched);
 		return citedUrls;
 	}
 	return conv.sourceUrls;
@@ -523,11 +528,11 @@ export function renderStreamingHtml(text: string): string {
 }
 
 export function getIsCompacting(): boolean {
-	return isCompacting;
+	return activeRun().compacting;
 }
 
 export function getContextNotice(): string | null {
-	return contextNotice;
+	return activeRun().contextNotice;
 }
 
 export function getExhaustiveResearch(): boolean {
@@ -569,7 +574,7 @@ export async function rerunSandboxStep(stepId: string): Promise<void> {
 	);
 	try {
 		const timeoutMs = Math.round((getSettings().sandboxTimeoutSeconds ?? 60) * 1000);
-		const r = await runPython(code, { timeoutMs });
+		const r = await runPython(conv.id, code, { timeoutMs });
 		const formatted = formatSandboxResult(r);
 		conv.searchSteps = conv.searchSteps.map((s) =>
 			s.id === stepId
@@ -599,7 +604,8 @@ export async function rerunSandboxStep(stepId: string): Promise<void> {
  * shows the Run-again button.
  */
 export function cancelActiveSandboxRun(): void {
-	cancelActiveRun();
+	const id = getActiveConversationId();
+	if (id) cancelRun(id);
 }
 
 // The sandbox step's buttons reach these through runControls.ts.
@@ -613,9 +619,11 @@ export function setExhaustiveResearch(value: boolean): void {
 }
 
 /** `pending`: the message about to be sent, not yet in the conversation. */
-async function compactIfNeeded(pending: string): Promise<void> {
-	const conversation = getActiveConversation();
-	if (!conversation) return;
+async function compactIfNeeded(
+	conversation: Conversation,
+	run: ChatRun,
+	pending: string
+): Promise<void> {
 	// What the model is sent: from the latest summary on. Everything before
 	// it stays in the chat for the reader, already summarised.
 	const view = chatModelView(conversation.messages);
@@ -636,7 +644,7 @@ async function compactIfNeeded(pending: string): Promise<void> {
 	const known = usage ? usage.promptTokens + usage.completionTokens + pendingTokens : 0;
 	if (!shouldCompact(Math.max(estimated, known), descriptor.contextSize)) return;
 
-	isCompacting = true;
+	run.compacting = true;
 	try {
 		// Summarising is a model call like any other, so it queues for the
 		// same inference slot: otherwise it runs straight past a job or
@@ -699,11 +707,11 @@ async function compactIfNeeded(pending: string): Promise<void> {
 		// keeping the raw tool messages would re-inflate the same context we
 		// just compacted.
 		conversation.lastTurnTools = undefined;
-		resetContextUsage();
+		if (getActiveConversationId() === conversation.id) resetContextUsage();
 
 		await dbReplaceMessages(conversation.id, newMessages, newSteps);
 	} finally {
-		isCompacting = false;
+		run.compacting = false;
 	}
 }
 
@@ -726,9 +734,6 @@ export function createConversation(): string {
 		sessionRestoreSkipped: false
 	});
 	setActiveConversationId(id);
-	errorMessage = null;
-	errorTurnId = null;
-	lastTurnFailed = false;
 	resetContextUsage();
 	void dbCreateConversation(id, 'New chat');
 	return id;
@@ -749,10 +754,9 @@ export async function setActiveConversation(id: string): Promise<void> {
 		// the trigger that catches someone who closes the app soon after.
 		const leaving = getActiveConversationId();
 		if (leaving && leaving !== id) noteConversationLeft(leaving);
+		// A failed turn's banner stays with its conversation, and shows again
+		// when the user comes back to it.
 		setActiveConversationId(id);
-		errorMessage = null;
-		errorTurnId = null;
-		lastTurnFailed = false;
 		restoreContextUsageFor(id);
 		await loadConversationMessages(id);
 		// Fire-and-forget; the replay updates conv.isRestoringSession so
@@ -817,9 +821,9 @@ function isLongRunningLaunch(code: string): boolean {
  * chat mid-flight.
  */
 /** Replay one collected sandbox call during session restore. */
-async function replaySandboxCall(call: SandboxCallToReplay): Promise<void> {
+async function replaySandboxCall(chatId: string, call: SandboxCallToReplay): Promise<void> {
 	if (call.name === 'install_package' && call.args.package) {
-		await installPackage(call.args.package);
+		await installPackage(chatId, call.args.package);
 	} else if (call.name === 'run_python' && call.args.code) {
 		if (isLongRunningLaunch(call.args.code)) {
 			logDebug('sandbox', 'session restore: skipping long-running launch', {
@@ -827,9 +831,9 @@ async function replaySandboxCall(call: SandboxCallToReplay): Promise<void> {
 			});
 			return;
 		}
-		await runPython(call.args.code);
+		await runPython(chatId, call.args.code);
 	} else if (call.name === 'reset_python') {
-		await resetSandbox();
+		await resetSandbox(chatId);
 	}
 }
 
@@ -867,7 +871,7 @@ async function restoreSandboxSession(id: string): Promise<void> {
 				return;
 			}
 			try {
-				await replaySandboxCall(call);
+				await replaySandboxCall(id, call);
 			} catch (err) {
 				logDebug('sandbox', `session restore: ${call.name} failed (skipping)`, {
 					error: errMessage(err)
@@ -884,9 +888,10 @@ async function restoreSandboxSession(id: string): Promise<void> {
 }
 
 export async function deleteConversation(id: string): Promise<void> {
-	// Drop a startup-queued send whose conversation is going away, so the
-	// watcher can't dispatch a turn against a deleted conversation later.
-	if (queuedConversation?.id === id) queuedConversation = null;
+	// Stop its turn, and drop a startup-queued send, so nothing runs against
+	// a deleted conversation later.
+	runs.get(id)?.cancel();
+	runs.delete(id);
 	const wasActive = getActiveConversationId() === id;
 	conversations = conversations.filter((c) => c.id !== id);
 	if (wasActive) {
@@ -910,32 +915,20 @@ export async function renameConversation(id: string, title: string): Promise<voi
 }
 
 export async function clearAllConversations(): Promise<void> {
-	if (isGenerating) cancelGeneration();
-	queuedConversation = null;
+	for (const run of runs.values()) run.cancel();
+	runs.clear();
 	conversations = [];
 	setActiveConversationId(null);
-	errorMessage = null;
-	errorTurnId = null;
-	lastTurnFailed = false;
 	await dbClearAll();
 }
 
-export function cancelGeneration(): void {
-	// Cancelling a startup-queued send: nothing is running yet, so just
-	// unqueue it. The user message stays in history and the standard error
-	// banner (with Retry) lets the user re-dispatch it later.
-	if (queuedConversation) {
-		queuedConversation = null;
-		errorMessage = 'Cancelled before the model started.';
-		errorTurnId = null;
-		lastTurnFailed = true;
-		return;
-	}
-	if (abortController) {
-		abortController.abort();
-		abortController = null;
-	}
-	isGenerating = false;
+/**
+ * Stop a conversation's turn: the open one's when no id is given. A send
+ * queued for startup is unqueued; its message stays in history, and the
+ * error banner's Retry dispatches it later.
+ */
+export function cancelGeneration(id = getActiveConversationId()): void {
+	if (id) runs.get(id)?.cancel();
 }
 
 function extractUrlsFromSteps(steps: SearchStep[]): string[] {
@@ -971,13 +964,14 @@ function computeStats(stats: TurnStats): MessageStats | null {
 /**
  * Validate the send precondition and ensure an active conversation
  * exists. Returns the conversation when sending is allowed, `null` if
- * the caller should no-op (empty input, already generating,
- * mid-compaction, backend down, or no conversation could be created).
- * The backend-down rejection surfaces its own error toast; the caller
- * must leave the composer text intact (nothing was consumed).
+ * the caller should no-op (empty input, this conversation already busy,
+ * backend down, or no conversation could be created). Other conversations'
+ * turns don't block it. The backend-down rejection surfaces its own error
+ * toast; the caller must leave the composer text intact (nothing was
+ * consumed).
  */
 function ensureSendableConversation(content: string, hasImages: boolean): Conversation | null {
-	if ((!content.trim() && !hasImages) || isGenerating || isCompacting) return null;
+	if ((!content.trim() && !hasImages) || activeRun().busy) return null;
 	// Don't append silently-doomed work: with the server stopped or errored
 	// the turn can only fail, so reject the send up front. 'starting' is
 	// accepted — the message queues and auto-sends once the server is ready.
@@ -1025,21 +1019,14 @@ function finalizeUserTurn(
 }
 
 /**
- * Reset per-turn UI state (streaming buffer, error indicators, search
- * steps, abort controller) and start a fresh turn id. Returns the new
- * abort controller's signal for convenience.
+ * Reset per-turn state (the run's streaming buffer, error indicators and
+ * abort controller; the conversation's live steps) and start a fresh turn
+ * id. Returns the new abort controller's signal.
  */
-function resetTurnState(conversation: Conversation): AbortSignal {
-	isGenerating = true;
-	streamingContent = '';
-	errorMessage = null;
-	errorTurnId = null;
-	lastTurnFailed = false;
-	currentTurnId = beginTurn();
+function resetTurnState(conversation: Conversation, run: ChatRun): AbortSignal {
 	conversation.searchSteps = [];
 	conversation.sourceUrls = [];
-	abortController = new AbortController();
-	return abortController.signal;
+	return run.begin(beginTurn());
 }
 
 /**
@@ -1051,6 +1038,7 @@ function buildApiPrompt(
 	conversation: Conversation,
 	workingDir: string | null,
 	keepRecentTools: boolean,
+	exhaustive: boolean,
 	memorySection: string,
 	skillsSection = ''
 ): ChatMessage[] {
@@ -1101,7 +1089,7 @@ function buildApiPrompt(
 
 	messagesForApi = injectMessageHints(messagesForApi, {
 		workingDir,
-		exhaustiveResearch
+		exhaustiveResearch: exhaustive
 	});
 	return messagesForApi;
 }
@@ -1171,28 +1159,21 @@ function captureToolPairsForNextTurn(
  * Persist whatever content streamed before an AbortError, then clear
  * the live UI state. No-op if nothing streamed yet.
  */
-function commitPartialOnAbort(conversation: Conversation, stats: TurnStats): void {
-	if (!streamingContent) return;
+function commitPartialOnAbort(conversation: Conversation, run: ChatRun, stats: TurnStats): void {
+	if (!run.streamingContent) return;
 	const fetched = extractUrlsFromSteps(conversation.searchSteps);
-	const { content, citedUrls } = processCitations(streamingContent, fetched);
+	const { content, citedUrls } = processCitations(run.streamingContent, fetched);
 	commitMessage(conversation, content, stats);
 	conversation.sourceUrls = citedUrls;
 }
 
 /**
  * Map a caught exception to the user-facing error banner. Aborts are
- * handled separately by commitPartialOnAbort and skip this path.
+ * handled separately by commitPartialOnAbort and skip this path. The user
+ * message is already in history, so retryLastTurn() just re-runs the turn.
  */
-function handleTurnError(e: unknown): void {
-	if (e instanceof ApiError) {
-		errorMessage = e.message;
-	} else {
-		errorMessage = 'An unexpected error occurred.';
-	}
-	errorTurnId = currentTurnId;
-	// The user message is already in history — nothing else to stash for a
-	// retry; retryLastTurn() just re-runs the turn against it.
-	lastTurnFailed = true;
+function handleTurnError(run: ChatRun, e: unknown): void {
+	run.fail(e instanceof ApiError ? e.message : 'An unexpected error occurred.', run.currentTurnId);
 }
 
 /** The subset of AgentLoopOptions wired up per turn by sendMessage. */
@@ -1211,25 +1192,29 @@ type AgentLoopCallbacks = Pick<
 
 /**
  * Build the agent-loop callback bundle for one turn. Each callback closes
- * over the active `conversation`, the turn's `turnStats`, and the module
- * state it mutates (streaming content, context notice, error fields).
+ * over the turn's `conversation`, its `run` (streaming content, context
+ * notice, error fields) and the turn's `turnStats`.
  */
 function buildAgentLoopCallbacks(
 	conversation: Conversation,
+	run: ChatRun,
 	activeCtxSize: number,
-	turnStats: TurnStats
+	turnStats: TurnStats,
+	exhaustive: boolean
 ): AgentLoopCallbacks {
 	const thinkState = createThinkStreamState();
 	return {
 		onUsageUpdate: (u: Usage) => {
-			updateContextUsage(u, activeCtxSize);
+			// The gauge shows the open conversation; a turn elsewhere only
+			// records its usage for when the user comes back.
+			if (getActiveConversationId() === conversation.id) updateContextUsage(u, activeCtxSize);
 			conversation.contextUsage = {
 				promptTokens: u.prompt_tokens,
 				completionTokens: u.completion_tokens
 			};
 		},
 		onContextManaged: (info) => {
-			contextNotice = describeContextManaged(info);
+			run.contextNotice = describeContextManaged(info);
 		},
 		onCallStats: (stats) => {
 			turnStats.lastCallStats = stats;
@@ -1252,11 +1237,20 @@ function buildAgentLoopCallbacks(
 			);
 		},
 		onStreamChunk: (chunk) => {
-			streamingContent = appendStreamDelta(streamingContent, chunk.delta, thinkState);
+			run.streamingContent = appendStreamDelta(run.streamingContent, chunk.delta, thinkState);
 		},
-		onComplete: (meta) => finalizeStreamedTurn(conversation, turnStats, meta?.stopReason),
-		onError: handleTurnError
+		onComplete: (meta) =>
+			finalizeStreamedTurn(conversation, run, turnStats, exhaustive, meta?.stopReason),
+		onError: (e) => handleTurnError(run, e)
 	};
+}
+
+/**
+ * A deep-research turn that answered turns the toggle back off — unless the
+ * user has since switched it off and on again for another send.
+ */
+function endExhaustiveResearch(exhaustive: boolean): void {
+	if (exhaustive && exhaustiveResearch) exhaustiveResearch = false;
 }
 
 /**
@@ -1267,9 +1261,12 @@ function buildAgentLoopCallbacks(
  */
 function finalizeStreamedTurn(
 	conversation: Conversation,
+	run: ChatRun,
 	turnStats: TurnStats,
+	exhaustive: boolean,
 	stopReason?: AgentStopReason
 ): void {
+	const streamingContent = run.streamingContent;
 	const fetched = extractUrlsFromSteps(conversation.searchSteps);
 	const processed = processCitations(stripToolCallArtifacts(streamingContent).trim(), fetched);
 	// A picture drawn, or a song made, this turn and left out of the answer is
@@ -1294,7 +1291,7 @@ function finalizeStreamedTurn(
 			stopReason
 		});
 		commitMessage(conversation, finalContent, turnStats, stopReason);
-		if (exhaustiveResearch) exhaustiveResearch = false;
+		endExhaustiveResearch(exhaustive);
 	} else {
 		const diagnosis = diagnoseEmptyResponse(conversation.searchSteps, streamingContent);
 		logDebug('chat', `onComplete empty → diagnosis ${diagnosis.type}`, {
@@ -1303,10 +1300,10 @@ function finalizeStreamedTurn(
 		});
 		if (diagnosis.type === 'commit') {
 			commitMessage(conversation, diagnosis.content, turnStats, stopReason);
-			if (exhaustiveResearch) exhaustiveResearch = false;
+			endExhaustiveResearch(exhaustive);
 		} else {
-			errorMessage = diagnosis.message;
-			errorTurnId = currentTurnId;
+			run.errorMessage = diagnosis.message;
+			run.errorTurnId = run.currentTurnId;
 		}
 	}
 	conversation.sourceUrls = processed.citedUrls;
@@ -1343,48 +1340,51 @@ function lastUserText(conversation: Conversation): string {
 }
 
 /** Park the turn until the sidecar finishes starting; clears stale errors. */
-function queueTurnForStartup(conversation: Conversation): void {
-	queuedConversation = conversation;
-	errorMessage = null;
-	errorTurnId = null;
-	lastTurnFailed = false;
+function queueTurnForStartup(run: ChatRun): void {
+	run.queuedForStartup = true;
+	run.clearError();
 }
 
-// Watches the server lifecycle while a send is queued for startup. Lives in
+// Watches the server lifecycle while any send is queued for startup. Lives in
 // a module-level $effect.root because this store is plain module state, not
-// a component. On 'ready'/'remote' the queued turn dispatches exactly once
-// (the queue slot is cleared before the run starts); on 'error'/'stopped'
-// it converts into the standard error banner with Retry.
+// a component. On 'ready'/'remote' each queued turn dispatches exactly once
+// (its flag is cleared before the run starts); on 'error'/'stopped' each
+// converts into the standard error banner with Retry.
 $effect.root(() => {
 	$effect(() => {
 		const { status, errorMessage: serverError } = getServerState();
-		if (!queuedConversation || status === 'starting') return;
-		const conversation = queuedConversation;
-		queuedConversation = null;
-		if (status === 'ready' || status === 'remote') {
-			void runCurrentTurn(conversation);
-		} else {
-			errorMessage = serverError
-				? `The model failed to start: ${serverError}`
-				: 'The model failed to start.';
-			errorTurnId = null;
-			lastTurnFailed = true;
+		if (status === 'starting') return;
+		for (const [id, run] of runs) {
+			if (!run.queuedForStartup) continue;
+			run.queuedForStartup = false;
+			const conversation = conversations.find((c) => c.id === id);
+			if (!conversation) continue;
+			if (status === 'ready' || status === 'remote') {
+				void runCurrentTurn(conversation);
+			} else {
+				run.fail(
+					serverError ? `The model failed to start: ${serverError}` : 'The model failed to start.',
+					null
+				);
+			}
 		}
 	});
 });
 
 /**
- * Re-run the last failed turn. The user message is already in history, so
- * this clears the error state and runs the turn again — no duplicate user
- * bubble. If the server is (still) starting — e.g. retrying right after
- * cancelling a queued send — the retry re-queues just like a fresh send.
+ * Re-run the open conversation's last failed turn. The user message is
+ * already in history, so this clears the error state and runs the turn
+ * again — no duplicate user bubble. If the server is (still) starting —
+ * e.g. retrying right after cancelling a queued send — the retry re-queues
+ * just like a fresh send.
  */
 export async function retryLastTurn(): Promise<void> {
-	if (!lastTurnFailed || isGenerating || isCompacting) return;
 	const conversation = getActiveConversation();
 	if (!conversation || conversation.messages.length === 0) return;
+	const run = runFor(conversation.id);
+	if (!run.lastTurnFailed || run.busy) return;
 	if (getServerState().status === 'starting') {
-		queueTurnForStartup(conversation);
+		queueTurnForStartup(run);
 		return;
 	}
 	await runCurrentTurn(conversation);
@@ -1405,16 +1405,17 @@ export async function sendMessage(
 ): Promise<boolean> {
 	const conversation = ensureSendableConversation(content, images.length > 0);
 	if (!conversation) return false;
+	const run = runFor(conversation.id);
 
-	contextNotice = null;
-	await compactIfNeeded(content);
+	run.contextNotice = null;
+	await compactIfNeeded(conversation, run, content);
 	finalizeUserTurn(conversation, content, images, skill);
 
 	// Locked startup behavior: a send while llama-server is still starting
 	// stays visible in history and is auto-dispatched by the module-scope
 	// watcher above the moment the server reports ready.
 	if (getServerState().status === 'starting') {
-		queueTurnForStartup(conversation);
+		queueTurnForStartup(run);
 		return true;
 	}
 
@@ -1428,7 +1429,7 @@ export async function sendMessage(
  * later turns see it as one.
  */
 export function addLocalNote(text: string): void {
-	if (isGenerating || isCompacting) return;
+	if (activeRun().busy) return;
 	if (!getActiveConversationId()) createConversation();
 	const conversation = getActiveConversation();
 	if (!conversation) return;
@@ -1462,12 +1463,16 @@ function priorUserTexts(conversation: Conversation): string[] {
  * next to the answer itself. Nothing recalled means no step at all, rather
  * than an empty one.
  */
-function recordRecallStep(conversation: Conversation, memories: RecalledMemory[]): void {
+function recordRecallStep(
+	conversation: Conversation,
+	turnId: number | null,
+	memories: RecalledMemory[]
+): void {
 	if (memories.length === 0) return;
 	conversation.searchSteps = [
 		...conversation.searchSteps,
 		{
-			id: `memory-recall-${currentTurnId}`,
+			id: `memory-recall-${turnId}`,
 			toolName: MEMORY_RECALL_STEP,
 			query: `${memories.length} ${memories.length === 1 ? 'memory' : 'memories'} recalled`,
 			status: 'done' as const,
@@ -1482,7 +1487,11 @@ function recordRecallStep(conversation: Conversation, memories: RecalledMemory[]
  * the queued-startup watcher.
  */
 async function runCurrentTurn(conversation: Conversation): Promise<void> {
-	const signal = resetTurnState(conversation);
+	const run = runFor(conversation.id);
+	const signal = resetTurnState(conversation, run);
+	// Read once: the toggle belongs to the composer, and may change for
+	// another conversation's send while this turn runs.
+	const exhaustive = exhaustiveResearch;
 
 	// Tok/s timing: the agent loop emits per-call timing via onCallStats.
 	// Latch the most recent one — it corresponds to the model call whose
@@ -1511,7 +1520,7 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 			priorUserTurns: priorUserTexts(conversation),
 			contextSize: activeCtxSize
 		});
-		recordRecallStep(conversation, recalled);
+		recordRecallStep(conversation, run.currentTurnId, recalled);
 
 		// Chat always uses the Settings backend, and has no project.
 		const skills = await prepareTurnSkills({});
@@ -1523,34 +1532,35 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 			conversation,
 			currentWorkingDir,
 			keepRecentTools,
+			exhaustive,
 			renderMemorySection(recalled),
 			skillsPromptSection(skills)
 		);
 		const visionSupported = backendDescriptor.vision;
 
-		isWaitingForSlot = true;
+		run.waitingForSlot = true;
 		await withInferenceSlot(
 			{
 				consumer: 'chat',
 				signal,
 				onAdmitted: () => {
-					isWaitingForSlot = false;
+					run.waitingForSlot = false;
 				}
 			},
 			() =>
 				runAgentLoop({
 					messages: messagesForApi,
 					workingDir: currentWorkingDir,
-					maxIterations: exhaustiveResearch ? 25 : 10,
+					maxIterations: exhaustive ? 25 : 10,
 					contextSize: activeCtxSize,
-					deepResearch: exhaustiveResearch,
+					deepResearch: exhaustive,
 					expectsFileOutput,
 					visionSupported,
 					interactive: true,
 					conversationId: conversation.id,
 					skills,
 					signal,
-					...buildAgentLoopCallbacks(conversation, activeCtxSize, turnStats),
+					...buildAgentLoopCallbacks(conversation, run, activeCtxSize, turnStats, exhaustive),
 					onMessageAdded: (m) => appended.push(m)
 				})
 		);
@@ -1558,21 +1568,14 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 		captureToolPairsForNextTurn(conversation, appended, keepRecentTools);
 	} catch (e) {
 		if (isAbortError(e)) {
-			commitPartialOnAbort(conversation, turnStats);
+			commitPartialOnAbort(conversation, run, turnStats);
 		} else {
-			handleTurnError(e);
+			handleTurnError(run, e);
 		}
 	} finally {
-		// Only clear shared turn state if this turn still owns it. The user
-		// can cancel and immediately dispatch a new turn while this one is
-		// still unwinding its abort — clearing unconditionally here would
-		// clobber the new turn's abort controller and streaming buffer.
-		if (abortController === null || abortController.signal === signal) {
-			isGenerating = false;
-			isWaitingForSlot = false;
-			streamingContent = '';
-			abortController = null;
-		}
+		// Only clears the run's state if this turn still owns it: the user can
+		// cancel and dispatch a new turn while this one is still unwinding.
+		run.end(signal);
 		conversation.updatedAt = Date.now();
 		// A render that ended during this turn reports now; after this turn's
 		// own bookkeeping, so it is a turn of its own.

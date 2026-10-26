@@ -20,48 +20,41 @@
  *   - allow_session: write it and stop prompting for the rest of the session
  *   - deny:          don't write; the tool tells the model the user declined
  *
- * Only one prompt can be pending at a time (the agent loop serializes tool
- * calls). A second overlapping ask rejects.
+ * Prompts queue (`approvalQueue.svelte.ts`), one shown at a time: turns in
+ * several chats can each ask at once.
  */
 
 import type { MemoryCategory } from '#lib/agent/tools/memory.ts';
+import { createApprovalQueue } from '#lib/stores/approvalQueue.svelte.ts';
 
 export type MemoryApprovalChoice = 'allow_once' | 'allow_session' | 'deny';
 
-interface PendingMemoryApproval {
+export interface MemoryApprovalRequest {
 	content: string;
 	category: MemoryCategory;
-	resolve: (choice: MemoryApprovalChoice) => void;
+	/** The chat whose turn asks. */
+	chatId: string | null;
 }
 
-let pending = $state<PendingMemoryApproval | null>(null);
+const queue = createApprovalQueue<MemoryApprovalRequest, MemoryApprovalChoice>();
 
-export function askMemoryApproval(args: {
-	content: string;
-	category: MemoryCategory;
-}): Promise<MemoryApprovalChoice> {
-	if (pending !== null) {
-		return Promise.reject(
-			new Error(
-				'Memory approval prompt is already pending; ' +
-					'a second overlapping request is a bug in the caller.'
-			)
-		);
-	}
-	return new Promise<MemoryApprovalChoice>((resolve) => {
-		pending = { content: args.content, category: args.category, resolve };
-	});
+/**
+ * Ask before writing a memory. Waits behind any prompt already showing;
+ * stopping the turn withdraws it as a denial.
+ */
+export function askMemoryApproval(
+	request: MemoryApprovalRequest,
+	signal?: AbortSignal
+): Promise<MemoryApprovalChoice> {
+	return queue.ask(request, { signal, abortResult: 'deny' });
 }
 
-export function getPendingMemoryApproval(): PendingMemoryApproval | null {
-	return pending;
+export function getPendingMemoryApproval(): MemoryApprovalRequest | null {
+	return queue.current();
 }
 
 export function resolveMemoryApproval(choice: MemoryApprovalChoice): void {
-	const current = pending;
-	if (current === null) return;
-	pending = null;
-	current.resolve(choice);
+	queue.resolve(choice);
 }
 
 // Session-wide "stop asking". In-memory only — re-prompts on app restart,
