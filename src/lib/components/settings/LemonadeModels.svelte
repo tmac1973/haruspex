@@ -6,9 +6,11 @@
 	import { lemonadeCatalogue, serverState } from '#lib/image/lemonade/backend.ts';
 	import { bareName } from '#lib/image/lemonade/adapter.ts';
 	import {
+		UPSCALER_INSTALL,
 		cancelInstall,
 		getInstall,
 		installModel,
+		installUpscaler,
 		removeModel,
 		resumeInstall
 	} from '#lib/image/lemonade/install.svelte.ts';
@@ -26,6 +28,12 @@
 
 	let models = $state<LemonadeModel[]>([]);
 	let downloaded = $state<Set<string>>(new Set());
+	/** Installed models with vision weights, which edit. */
+	let edits = $state<Set<string>>(new Set());
+	let upscaler = $state(false);
+	/** Lists vision weights, so an install without them can add them. */
+	const editable = (m: LemonadeModel) =>
+		(m.pull as { checkpoints?: Record<string, string> })?.checkpoints?.llm_vision !== undefined;
 	let error = $state('');
 	const install = $derived(getInstall());
 
@@ -34,7 +42,10 @@
 	async function refresh() {
 		try {
 			models = await lemonadeCatalogue();
-			downloaded = (await serverState()).downloaded;
+			const state = await serverState();
+			downloaded = state.downloaded;
+			edits = state.edits;
+			upscaler = state.upscaler;
 		} catch (e) {
 			error = errMessage(e);
 		}
@@ -64,6 +75,17 @@
 		error = '';
 		try {
 			await installModel(m);
+		} catch (e) {
+			error = errMessage(e);
+		} finally {
+			onInstalled();
+		}
+	}
+
+	async function installTheUpscaler() {
+		error = '';
+		try {
+			await installUpscaler();
 		} catch (e) {
 			error = errMessage(e);
 		} finally {
@@ -111,6 +133,15 @@
 					<div class="actions">
 						{#if installed(m)}
 							<button onclick={() => remove(m)} disabled={install !== null}>Remove</button>
+							{#if editable(m) && !edits.has(bareName(m.name))}
+								<button
+									onclick={() => installIt(m)}
+									disabled={install !== null}
+									title="Downloads the vision weights it edits pictures with."
+								>
+									Add editing
+								</button>
+							{/if}
 						{:else}
 							<span class="help">Needs {formatGigabytes(m.size_bytes)}.</span>
 							<button
@@ -125,6 +156,26 @@
 				{/if}
 			</div>
 		{/each}
+		<div class="model">
+			<div class="model-head">
+				<strong>Upscaler — Real-ESRGAN x4plus, for making pictures larger</strong>
+				{#if upscaler}<span class="badge">installed</span>{/if}
+			</div>
+			<p class="help">BSD 3-Clause — commercial use allowed. Lemonade's own copy, 62 MB.</p>
+			{#if install?.id === UPSCALER_INSTALL}
+				<DownloadProgressBar progress={install.progress} oncancel={() => void cancelInstall()} />
+			{:else if !upscaler}
+				<div class="actions">
+					<button
+						onclick={installTheUpscaler}
+						disabled={install !== null}
+						title={install ? 'Another model is installing.' : undefined}
+					>
+						Install
+					</button>
+				</div>
+			{/if}
+		</div>
 		{#if error}<p class="warn">{error}</p>{/if}
 	</section>
 {/if}

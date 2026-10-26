@@ -102,12 +102,15 @@ describe('ImageSection with Lemonade', () => {
 		);
 		expect(select.value).toBe('ming');
 		await screen.findByText(/Connected — Lemonade 2026\.43\.3/);
-		const line = [...document.querySelectorAll('p.help')]
-			.map((p) => p.textContent?.replace(/\s+/g, ' ').trim())
-			.find((t) => t?.startsWith('Can:'));
-		expect(line).toBe(
-			"Can: draw pictures, transparent backgrounds. Can't: edit pictures, upscale pictures, tiling textures."
-		);
+		// capabilities() asks the server now, so the line comes after a fetch.
+		await waitFor(() => {
+			const line = [...document.querySelectorAll('p.help')]
+				.map((p) => p.textContent?.replace(/\s+/g, ' ').trim())
+				.find((t) => t?.startsWith('Can:'));
+			expect(line).toBe(
+				"Can: draw pictures, transparent backgrounds. Can't: edit pictures, upscale pictures, tiling textures."
+			);
+		});
 	});
 
 	it('lists the server’s models below, installing what is missing, with no Use buttons', async () => {
@@ -115,7 +118,9 @@ describe('ImageSection with Lemonade', () => {
 		const heading = await screen.findByRole('heading', { name: /Models on the server/ });
 		const section = heading.closest('section')!;
 		await waitFor(() => expect(within(section).getByText('installed')).toBeTruthy());
-		expect(within(section).getByRole('button', { name: 'Install' })).toBeTruthy();
+		// A model to install, and the upscaler.
+		expect(within(section).getAllByRole('button', { name: 'Install' })).toHaveLength(2);
+		expect(within(section).getByText(/Upscaler — Real-ESRGAN x4plus/)).toBeTruthy();
 		expect(within(section).getByRole('button', { name: 'Remove' })).toBeTruthy();
 		expect(within(section).queryByRole('button', { name: 'Use' })).toBeNull();
 	});

@@ -27,23 +27,24 @@ Settings → Image says what Haruspex can do with the chosen model (draw, edit, 
 
 - **Bundled engine with Qwen-Image 2.1.** It edits once it has its vision weights, 1.2 GB more. A new download includes them; for one made earlier, press **Add editing** under Settings → Image → Bundled engine. Qwen-Image may not be used commercially. Ming-Image can't edit.
 - **ComfyUI with Qwen-Image 2.1** (or its Turbo), on ComfyUI 0.39 or later. The files it already uses for drawing are enough. Pictures are uploaded to the server's input folder.
+- **Lemonade with Qwen-Image 2.1.** Installing it from Settings → Image now includes the vision weights; for one installed earlier, press **Add editing** under **Models on the server**. Haruspex also installs Lemonade's image engine the first time, if the server has none.
 - **llama-toolchest** with a model that edits, such as FLUX.2 klein 4B (Apache 2.0, commercial use allowed). Add it in llama-toolchest; Settings → Image lists it like any other model.
 
-With Lemonade, a ComfyUI model other than Qwen-Image 2.1, or an older ComfyUI, the assistant says it can't edit and what can. Choosing a different model in Settings → Image is up to you.
+With Ming-Image, a ComfyUI model other than Qwen-Image 2.1, or an older ComfyUI, the assistant says it can't edit and what can. Lemonade's own edit models, such as its FLUX.2 klein, can't be chosen in Haruspex yet. Choosing a different model in Settings → Image is up to you.
 
 ## Make a picture larger
 
 Ask the assistant to upscale a picture, two or four times: "make it four times bigger for printing". It sharpens as it enlarges, and a transparent background stays transparent. The result is at most 4096 pixels on its longest side, so pictures up to 2048 pixels can be upscaled. A 1024-pixel picture takes about 12 seconds.
 
-This needs the bundled engine in Settings → Image with its upscaler, Real-ESRGAN (BSD 3-Clause, 67 MB): press **Download** under Settings → Image → Bundled engine → **Upscaler**. It works with whichever model the engine runs.
+This needs Real-ESRGAN (BSD 3-Clause), on the bundled engine or Lemonade: press **Download** under Settings → Image → Bundled engine → **Upscaler** (67 MB), or **Install** on Lemonade's **Upscaler** under **Models on the server** (62 MB). It works with whichever model is chosen.
 
 ## What it doesn't do
 
 - It doesn't paint into a region you mark; describe the area in words instead.
 - An edit doesn't make a transparent background or tile.
-- Only the bundled engine upscales; ComfyUI, Lemonade and llama-toolchest don't yet.
+- ComfyUI and llama-toolchest don't upscale yet.
 - A picture pasted into Chat is shrunk to 1024 pixels on its longest side, so edits of it are at most that size.
 
 ## What has been tested
 
-Editing with FLUX.2 klein 4B on a llama-toolchest server, and with Qwen-Image 2.1 Turbo on the bundled engine on a 16 GB AMD card (about 30 seconds), and with Qwen-Image 2.1 Turbo on ComfyUI 0.39, has been tested; the rest is covered by automated tests. See the `images` page for setting up a backend.
+Editing with FLUX.2 klein 4B on a llama-toolchest server, and with Qwen-Image 2.1 Turbo on the bundled engine on a 16 GB AMD card (about 30 seconds), on ComfyUI 0.39 and on Lemonade (about 20 seconds), has been tested, as has upscaling on the bundled engine and Lemonade. See the `images` page for setting up a backend.

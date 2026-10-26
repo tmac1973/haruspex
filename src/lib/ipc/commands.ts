@@ -243,6 +243,7 @@ export const IPC = {
 	lemonade_catalogue: 'lemonade_catalogue',
 	lemonade_json: 'lemonade_json',
 	lemonade_sdcpp_args: 'lemonade_sdcpp_args',
+	lemonade_upload: 'lemonade_upload',
 	lint_python_source: 'lint_python_source',
 	list_audio_input_devices: 'list_audio_input_devices',
 	list_audio_output_devices: 'list_audio_output_devices',

@@ -37,6 +37,9 @@ export const ROUTES = {
 	load: '/api/v1/load',
 	remove: '/api/v1/delete',
 	generate: '/api/v1/images/generations',
+	edits: '/api/v1/images/edits',
+	upscale: '/api/v1/images/upscale',
+	install: '/api/v1/install',
 	options: (name: string) => `/api/v1/models/${encodeURIComponent(name)}/options`
 } as const;
 
@@ -121,6 +124,28 @@ export function buildGeneration(req: {
 	};
 }
 
+/**
+ * The fields of an edit (`/api/v1/images/edits`), each a text part beside the
+ * `image[]` pictures: the generation's, seed and sampler in the prompt's
+ * extras block as there. The pictures travel as file parts, not inside the
+ * prompt, so the size limit on that block (above) doesn't reach them.
+ */
+export function buildEditFields(
+	req: Omit<Parameters<typeof buildGeneration>[0], 'clearStart'>
+): Record<string, string> {
+	const body = buildGeneration(req);
+	return {
+		model: body.model,
+		prompt: body.prompt,
+		size: body.size,
+		n: '1',
+		response_format: body.response_format
+	};
+}
+
+/** Lemonade's Real-ESRGAN, which `/api/v1/images/upscale` runs on sd-cpp. */
+export const UPSCALER = 'RealESRGAN-x4plus';
+
 /** The images in an OpenAI-style answer, in order. */
 export function imagesFrom(payload: unknown): Uint8Array[] {
 	const data = (payload as { data?: unknown })?.data;
@@ -149,12 +174,19 @@ export interface ServerState {
 	gpu: string | null;
 	/** Where its model files live, for the tokenizer's path. */
 	storage: string | null;
-	/** Can the sd-cpp recipe run here at all, and on what. */
-	sdcpp: { usable: boolean; backend: string | null };
+	/**
+	 * Can the sd-cpp recipe run here at all, on what, and is that engine
+	 * installed yet (Lemonade installs it on request, `/api/v1/install`).
+	 */
+	sdcpp: { usable: boolean; backend: string | null; installed: boolean };
 	/** Image model loaded now, without `user.`. */
 	loadedImage: string | null;
 	/** Registered models whose files are all down, without `user.`. */
 	downloaded: Set<string>;
+	/** Of those, the ones with vision weights (`llm_vision`), which edit. */
+	edits: Set<string>;
+	/** The upscaler (`UPSCALER`) is installed. */
+	upscaler: boolean;
 }
 
 type Json = Record<string, unknown>;
@@ -181,19 +213,24 @@ export function readServer(health: unknown, systemInfo: unknown, models: unknown
 	const loaded = asArray(h.all_models_loaded)
 		.map(obj)
 		.find((m) => m.type === 'image');
+	const down = asArray(obj(models).data)
+		.map(obj)
+		.filter((m) => m.downloaded === true);
+	const named = (ms: Json[]) => new Set(ms.map((m) => bareName(str(m.id) ?? '')));
 
 	return {
 		version: str(h.version) ?? 'unknown version',
 		gpu: gpu ? str(gpu.name) : null,
 		storage: str(obj(si.model_storage).path),
-		sdcpp: { usable: backend !== null, backend },
+		sdcpp: {
+			usable: backend !== null,
+			backend,
+			installed: backend !== null && str(obj(backends[backend]).state) === 'installed'
+		},
 		loadedImage: loaded ? bareName(str(loaded.model_name) ?? '') || null : null,
-		downloaded: new Set(
-			asArray(obj(models).data)
-				.map(obj)
-				.filter((m) => m.downloaded === true)
-				.map((m) => bareName(str(m.id) ?? ''))
-		)
+		downloaded: named(down),
+		edits: named(down.filter((m) => 'llm_vision' in obj(m.checkpoints))),
+		upscaler: down.some((m) => str(m.id) === UPSCALER)
 	};
 }
 

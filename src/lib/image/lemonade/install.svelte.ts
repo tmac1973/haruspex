@@ -7,8 +7,15 @@
  * picks a running install up again when Settings opens (`resumeInstall`).
  *
  * Once the files are down, the model's `sdcpp_args` are saved on the server
- * (`lemonade_sdcpp_args`: the tokenizer's path and the engine's flags) and it
- * is loaded once, which is the only check that the tokenizer's path is right.
+ * (`lemonade_sdcpp_args`: the tokenizer's and vision weights' paths and the
+ * engine's flags) and it is loaded once, which is the only check that those
+ * paths are right. Installing again adds what a model is missing (Qwen's
+ * vision weights, for an install from before they were listed): Lemonade
+ * only fetches files it doesn't have.
+ *
+ * A fresh server has no sd-cpp engine; it is installed first
+ * (`/api/v1/install`), or the load that ends an install fails with
+ * "sd-server not found".
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -16,9 +23,9 @@ import { getSettings } from '#lib/stores/settings.ts';
 import { sleep } from '#lib/utils/async.ts';
 import type { DownloadProgress } from '#lib/ipc/gen/DownloadProgress.ts';
 import type { LemonadeModel } from '#lib/ipc/gen/LemonadeModel.ts';
-import { ROUTES, findJob, jobId, type DownloadJob } from '#lib/image/lemonade/adapter.ts';
+import { ROUTES, UPSCALER, findJob, jobId, type DownloadJob } from '#lib/image/lemonade/adapter.ts';
 import { lemonadeConfig, lemonadeJson } from '#lib/image/lemonade/client.ts';
-import { lemonadeCatalogue } from '#lib/image/lemonade/backend.ts';
+import { lemonadeCatalogue, serverState } from '#lib/image/lemonade/backend.ts';
 
 export interface ActiveInstall {
 	id: string;
@@ -35,18 +42,60 @@ export function getInstall(): ActiveInstall | null {
 const POLL_MS = 1000;
 /** Loading checks the saved arguments; a first load can take most of a minute. */
 const LOAD_TIMEOUT_MS = 300_000;
+/** The engine is a download of its own, a few hundred MB. */
+const ENGINE_TIMEOUT_MS = 900_000;
+
+/** `active.id` while the upscaler installs. */
+export const UPSCALER_INSTALL = 'upscaler';
+
+/** Install Lemonade's sd-cpp engine when it isn't yet. */
+async function ensureEngine(): Promise<void> {
+	const { sdcpp } = await serverState();
+	if (!sdcpp.usable || !sdcpp.backend) {
+		throw new Error('This Lemonade server cannot run stable-diffusion.cpp.');
+	}
+	if (sdcpp.installed) return;
+	if (active) {
+		active.progress = { downloaded: 0, total: 1, speed_bps: 0, stage: 'Installing the engine' };
+	}
+	await lemonadeJson(lemonadeConfig(), {
+		method: 'POST',
+		path: ROUTES.install,
+		body: { recipe: 'sd-cpp', backend: sdcpp.backend, stream: false },
+		timeoutMs: ENGINE_TIMEOUT_MS
+	});
+}
+
+/** Lemonade's Real-ESRGAN, for `upscale_image`; nothing to set up after. */
+export async function installUpscaler(): Promise<void> {
+	if (active) throw new Error('Another model is installing.');
+	active = { id: UPSCALER_INSTALL, progress: null };
+	try {
+		await ensureEngine();
+		const snapshot = await lemonadeJson(lemonadeConfig(), {
+			method: 'POST',
+			path: ROUTES.pull,
+			body: { model_name: UPSCALER, stream: true, subscribe: false }
+		});
+		await follow(UPSCALER, snapshot);
+	} finally {
+		active = null;
+	}
+}
 
 /** Register `m` on the server and download it, then set it up. */
 export async function installModel(m: LemonadeModel): Promise<void> {
 	if (active) throw new Error('Another model is installing.');
 	active = { id: m.id, progress: null };
 	try {
+		await ensureEngine();
 		const snapshot = await lemonadeJson(lemonadeConfig(), {
 			method: 'POST',
 			path: ROUTES.pull,
 			body: { ...(m.pull as object), stream: true, subscribe: false }
 		});
-		await follow(m, snapshot);
+		await follow(m.name, snapshot);
+		await configure(m);
 	} finally {
 		active = null;
 	}
@@ -61,7 +110,8 @@ export async function resumeInstall(): Promise<void> {
 		if (!job?.running) continue;
 		active = { id: m.id, progress: progressOf(job, null) };
 		try {
-			await follow(m, null);
+			await follow(m.name, null);
+			await configure(m);
 		} finally {
 			active = null;
 		}
@@ -72,12 +122,13 @@ export async function resumeInstall(): Promise<void> {
 /** Stop the running install. Files already down stay on the server. */
 export async function cancelInstall(): Promise<void> {
 	const id = active?.id;
-	const m = (await lemonadeCatalogue()).find((e) => e.id === id);
-	if (!m) return;
+	const name =
+		id === UPSCALER_INSTALL ? UPSCALER : (await lemonadeCatalogue()).find((e) => e.id === id)?.name;
+	if (!name) return;
 	await lemonadeJson(lemonadeConfig(), {
 		method: 'POST',
 		path: ROUTES.downloadsControl,
-		body: { id: jobId(m.name), action: 'cancel' }
+		body: { id: jobId(name), action: 'cancel' }
 	});
 }
 
@@ -106,42 +157,41 @@ function progressOf(
 	return { downloaded: job.downloaded, total: job.total, speed_bps: speed, stage };
 }
 
-/** Poll the job until it ends, then set the model up. */
-async function follow(m: LemonadeModel, first: unknown): Promise<void> {
+/** Poll the download of `name` until it ends. */
+async function follow(name: string, first: unknown): Promise<void> {
 	const cfg = lemonadeConfig();
 	let last: { at: number; bytes: number } | null = null;
-	let job = first ? findJob([first], m.name) : null;
+	let job = first ? findJob([first], name) : null;
 	for (;;) {
 		if (job) {
 			if (active) active.progress = progressOf(job, last);
 			last = { at: Date.now(), bytes: job.downloaded };
 			if (job.complete || job.status === 'completed') break;
 			if (job.status === 'error') {
-				await forget(m);
+				await forget(name);
 				throw new Error(job.error ?? 'Lemonade could not download the model.');
 			}
 			if (job.status === 'cancelled' || job.status === 'paused') {
-				if (!job.running) await forget(m);
+				if (!job.running) await forget(name);
 				throw new Error('The download was stopped.');
 			}
 		}
 		await sleep(POLL_MS);
 		const list = await lemonadeJson(cfg, { path: ROUTES.downloads });
-		job = findJob(list, m.name);
+		job = findJob(list, name);
 		// A finished job is listed for 30 s only. Gone, it is done or it was
 		// never started; the model list says which.
 		if (!job) break;
 	}
-	await forget(m);
-	await configure(m);
+	await forget(name);
 }
 
 /** Take the finished job off the server's list. */
-async function forget(m: LemonadeModel): Promise<void> {
+async function forget(name: string): Promise<void> {
 	await lemonadeJson(lemonadeConfig(), {
 		method: 'POST',
 		path: ROUTES.downloadsControl,
-		body: { id: jobId(m.name), action: 'remove' }
+		body: { id: jobId(name), action: 'remove' }
 	}).catch(() => {});
 }
 

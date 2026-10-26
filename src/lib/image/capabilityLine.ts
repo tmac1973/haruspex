@@ -28,15 +28,16 @@ const EDIT_HOW: Record<ImageBackendKind, string> = {
 	comfyui: 'Editing needs Qwen-Image 2.1 or its Turbo, on ComfyUI 0.39 or later.',
 	'llama-toolchest':
 		'Editing needs an instance whose model edits, such as FLUX.2 klein or Qwen-Image-Edit 2511.',
-	lemonade: "Lemonade can't edit here yet."
+	lemonade:
+		'Editing needs Qwen-Image 2.1 with its editing weights (Add editing, under Models on the server).'
 };
 
 const UPSCALE_HOW: Record<ImageBackendKind, string> = {
 	none: '',
 	local: 'Upscaling needs the upscaler, under Bundled engine.',
-	comfyui: 'Only the bundled engine upscales.',
-	'llama-toolchest': 'Only the bundled engine upscales.',
-	lemonade: 'Only the bundled engine upscales.'
+	comfyui: 'Only the bundled engine and Lemonade upscale.',
+	'llama-toolchest': 'Only the bundled engine and Lemonade upscale.',
+	lemonade: 'Upscaling needs the upscaler, under Models on the server.'
 };
 
 const TRANSPARENT_HOW = 'Transparent backgrounds need Ming-Image or Qwen-Image 2.1.';

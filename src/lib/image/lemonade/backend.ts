@@ -6,6 +6,11 @@
  * server from Settings → Image (`./install.svelte.ts`) under a fixed name, so
  * every request knows its family and how to make it transparent.
  *
+ * It edits with Qwen-Image 2.1 when its vision weights were installed with
+ * it (`/api/v1/images/edits`, pictures as file parts), and upscales with
+ * Lemonade's own Real-ESRGAN (`/api/v1/images/upscale`) once that is
+ * installed; Settings → Image installs both.
+ *
  * It does not tile. The seam pass is an img2img from the rolled texture, and
  * the only way to hand sd-server a start image through Lemonade is inside the
  * prompt, where a picture that size crashes it (`adapter.ts`). A seamless
@@ -22,22 +27,27 @@ import type { GenerateOptions, ImageBackend, ProbeResult } from '#lib/image/back
 import {
 	ImageBackendError,
 	type ImageBackendCapabilities,
+	type ImageInput,
 	type ImageRequest,
 	type ImageResult
 } from '#lib/image/types.ts';
+import type { UploadFile } from '#lib/ipc/gen/UploadFile.ts';
+import { fromBase64, toBase64 } from '#lib/image/local/adapter.ts';
 import { FAMILY_SAMPLER, familyOfId } from '#lib/image/local/adapter.ts';
 import { transparentStart, type SdFamily } from '#lib/image/sdcpp.ts';
 import type { LemonadeModel } from '#lib/ipc/gen/LemonadeModel.ts';
 import {
 	ROUTES,
+	UPSCALER,
 	bareName,
+	buildEditFields,
 	buildGeneration,
 	imagesFrom,
 	randomSeed,
 	readServer,
 	type ServerState
 } from '#lib/image/lemonade/adapter.ts';
-import { lemonadeConfig, lemonadeJson } from '#lib/image/lemonade/client.ts';
+import { lemonadeConfig, lemonadeJson, lemonadeUpload } from '#lib/image/lemonade/client.ts';
 
 /**
  * One generation, plus a model load when another image model is resident:
@@ -115,6 +125,64 @@ async function chosen(): Promise<{ id: string; family: SdFamily; model: Lemonade
 	return { id, family, model };
 }
 
+/** Pictures one Qwen edit combines here, as on the bundled engine. */
+const MAX_EDIT_IMAGES = 3;
+
+function upload(input: ImageInput): UploadFile {
+	return {
+		field: 'image[]',
+		filename: input.name,
+		hash: 'hash' in input ? input.hash : null,
+		cache: 'hash' in input ? 'image' : null,
+		bytes: 'bytes' in input ? input.bytes : null
+	};
+}
+
+/** An edit through `/api/v1/images/edits`; throws when the model can't edit. */
+async function edit(
+	req: ImageRequest,
+	model: LemonadeModel,
+	sampler: { name: string; steps: number; cfg: number },
+	seed: number,
+	signal?: AbortSignal
+): Promise<Uint8Array[]> {
+	const state = await serverState(signal);
+	if (!state.edits.has(bareName(model.name))) {
+		throw new ImageBackendError(
+			'unconfigured',
+			`${modelLabel(model)} on Lemonade can't edit — Settings → Image → Add editing.`
+		);
+	}
+	const fields = buildEditFields({
+		model: model.name,
+		prompt: req.prompt,
+		negativePrompt: req.negativePrompt,
+		seed,
+		width: req.width,
+		height: req.height,
+		sampler
+	});
+	const payload = await lemonadeUpload(
+		lemonadeConfig(),
+		{ path: ROUTES.edits, fields, timeoutMs: GENERATE_TIMEOUT_MS },
+		req.edit!.images.map(upload),
+		signal
+	);
+	return imagesFrom(payload);
+}
+
+/** An edit's or upscale's picture as base64, read from the image cache when it is there. */
+async function base64Of(input: ImageInput): Promise<string> {
+	if ('bytes' in input) return toBase64(new Uint8Array(input.bytes));
+	try {
+		return toBase64(
+			new Uint8Array(await invoke<ArrayBuffer>('image_read_bytes', { hash: input.hash }))
+		);
+	} catch {
+		throw new ImageBackendError('rejected', 'That picture is no longer in the image cache.');
+	}
+}
+
 /** A model's name for a dropdown: its description up to the dash. */
 export function modelLabel(m: LemonadeModel): string {
 	return m.description.split(' — ')[0];
@@ -128,9 +196,21 @@ export const lemonadeBackend: ImageBackend = {
 
 	async capabilities(): Promise<ImageBackendCapabilities> {
 		// Both families draw transparent images, as on the bundled engine.
-		// Neither tiles here, and LoRAs are not offered.
+		// Neither tiles here, and LoRAs are not offered. Editing and upscaling
+		// depend on what is installed, so the server is asked.
 		const ok = familyOfId(modelId()) !== null;
-		return { transparency: ok, seamlessTiling: false, loras: false, maxLoras: 0 };
+		const model = (await lemonadeCatalogue().catch(() => [])).find((m) => m.id === modelId());
+		const state = ok ? await serverState().catch(() => null) : null;
+		const edits = !!state && !!model && state.edits.has(bareName(model.name));
+		return {
+			transparency: ok,
+			seamlessTiling: false,
+			loras: false,
+			maxLoras: 0,
+			edit: edits,
+			maxEditImages: edits ? MAX_EDIT_IMAGES : 0,
+			upscale: !!state?.upscaler
+		};
 	},
 
 	async probe(): Promise<ProbeResult> {
@@ -178,19 +258,24 @@ export const lemonadeBackend: ImageBackend = {
 
 		const sampler = req.sampler ?? { ...FAMILY_SAMPLER[family] };
 		const seed = req.seed ?? randomSeed();
-		const { prompt, clearStart } = await transparentStart(family, req);
-		const body = buildGeneration({
-			model: model.name,
-			prompt,
-			negativePrompt: req.negativePrompt,
-			seed,
-			width: req.width,
-			height: req.height,
-			sampler,
-			clearStart
-		});
 		const started = Date.now();
-		const images = await draw(body, opts.signal);
+		let images: Uint8Array[];
+		if (req.edit) {
+			images = await edit(req, model, sampler, seed, opts.signal);
+		} else {
+			const { prompt, clearStart } = await transparentStart(family, req);
+			const body = buildGeneration({
+				model: model.name,
+				prompt,
+				negativePrompt: req.negativePrompt,
+				seed,
+				width: req.width,
+				height: req.height,
+				sampler,
+				clearStart
+			});
+			images = await draw(body, opts.signal);
+		}
 		if (images.length === 0) {
 			throw new ImageBackendError('rejected', 'Lemonade returned no image.');
 		}
@@ -212,6 +297,29 @@ export const lemonadeBackend: ImageBackend = {
 				...(req.seamless ? { seamFailed: NO_TILING } : {})
 			}
 		};
+	},
+
+	/**
+	 * Four times larger with Lemonade's Real-ESRGAN, RGB as it returns it;
+	 * `image_store_upscaled` puts the alpha back.
+	 */
+	async upscale(input: ImageInput, opts: GenerateOptions = {}): Promise<Uint8Array> {
+		opts.onProgress?.({ phase: 'running', detail: 'Upscaling' });
+		const payload = await lemonadeJson(
+			lemonadeConfig(),
+			{
+				method: 'POST',
+				path: ROUTES.upscale,
+				body: { model: UPSCALER, image: await base64Of(input) },
+				timeoutMs: GENERATE_TIMEOUT_MS
+			},
+			opts.signal
+		);
+		const out = (payload as { data?: Array<{ b64_json?: unknown }> })?.data?.[0]?.b64_json;
+		if (typeof out !== 'string') {
+			throw new ImageBackendError('rejected', 'Lemonade returned no upscaled picture.');
+		}
+		return fromBase64(out);
 	}
 };
 
