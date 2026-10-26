@@ -375,6 +375,9 @@ export const IPC = {
 	video_binaries_status: 'video_binaries_status',
 	video_probe_file: 'video_probe_file',
 	video_probe_folder: 'video_probe_folder',
+	video_project_cut: 'video_project_cut',
+	video_project_op: 'video_project_op',
+	video_project_summary: 'video_project_summary',
 	webview_store_load: 'webview_store_load',
 	webview_store_seed: 'webview_store_seed',
 	webview_store_set: 'webview_store_set'

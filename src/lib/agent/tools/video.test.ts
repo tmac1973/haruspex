@@ -20,7 +20,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
 });
 
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
-import { clipLine, formatDuration, mixNotes, probeReport } from './video';
+import { clipLine, formatDuration, mixNotes, probeReport } from '#lib/video/report.ts';
 import { _setVideoBinariesForTests } from '#lib/video/binaries.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import type { ClipInfo } from '#lib/ipc/gen/ClipInfo.ts';

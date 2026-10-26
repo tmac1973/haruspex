@@ -10,92 +10,15 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
-import { getSettings } from '#lib/stores/settings.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
 import { videoOverrides } from '#lib/video/binaries.ts';
-import type { ClipInfo } from '#lib/ipc/gen/ClipInfo.ts';
+import { cutReport, probeReport, summaryReport } from '#lib/video/report.ts';
+import { parseCut, parseOp, str, videoSettings } from '#lib/video/args.ts';
+import { VIDEO_PRESETS } from '#lib/video/types.ts';
 import type { EpisodeProbe } from '#lib/ipc/gen/EpisodeProbe.ts';
-
-/** `12:03`, or `1:02:03` past an hour. */
-export function formatDuration(secs: number): string {
-	const total = Math.max(0, Math.round(secs));
-	const h = Math.floor(total / 3600);
-	const m = Math.floor((total % 3600) / 60);
-	const s = total % 60;
-	const mm = h > 0 ? String(m).padStart(2, '0') : String(m);
-	return `${h > 0 ? `${h}:` : ''}${mm}:${String(s).padStart(2, '0')}`;
-}
-
-function formatFps(num: number, den: number): string {
-	if (!num || !den) return '?';
-	const fps = num / den;
-	return Number.isInteger(fps) ? String(fps) : fps.toFixed(2);
-}
-
-/** One line per clip: `ep010/raw/obs.mp4 · 32:23 · 1920×1080 @ 60 · h264 · aac 2ch`. */
-export function clipLine(c: ClipInfo): string {
-	const parts = [c.path, formatDuration(c.durationSecs)];
-	if (c.video) {
-		const turned = Math.abs(c.video.rotation) === 90 || Math.abs(c.video.rotation) === 270;
-		const size = `${c.video.width}×${c.video.height}`;
-		parts.push(`${size} @ ${formatFps(c.video.fpsNum, c.video.fpsDen)}`);
-		parts.push(c.video.codec);
-		if (turned) parts.push(`rotated ${c.video.rotation}°`);
-	} else {
-		parts.push('sound only');
-	}
-	if (c.audio.length === 0) parts.push('no sound');
-	else {
-		const a = c.audio[0];
-		parts.push(`${a.codec} ${a.channels}ch`);
-		if (c.audio.length > 1) parts.push(`${c.audio.length} audio tracks`);
-	}
-	return parts.join(' · ');
-}
-
-/** What differs between the clips, which decides how a render treats them. */
-export function mixNotes(clips: ClipInfo[]): string[] {
-	const video = clips.flatMap((c) => (c.video ? [c.video] : []));
-	const notes: string[] = [];
-	const sizes = new Set(video.map((v) => `${v.width}×${v.height}`));
-	const rates = new Set(video.map((v) => formatFps(v.fpsNum, v.fpsDen)));
-	const codecs = new Set(video.map((v) => v.codec));
-	if (sizes.size > 1 || rates.size > 1 || codecs.size > 1) {
-		notes.push(
-			'Mixed sources (different size, frame rate or codec): a render scales them to the project format.'
-		);
-	}
-	if (clips.some((c) => c.video && c.audio.length === 0)) {
-		notes.push('Some clips have no sound.');
-	}
-	return notes;
-}
-
-export function probeReport(episode: string, probe: EpisodeProbe): string {
-	const s = getSettings();
-	const where = episode.trim() || 'the working folder';
-	const lines: string[] = [];
-	if (probe.clips.length === 0) {
-		lines.push(`No video or audio files in ${where}.`);
-	} else {
-		lines.push(`${probe.clips.length} clips in ${where}:`);
-		for (const c of probe.clips) lines.push(`- ${clipLine(c)}`);
-		const total = probe.clips.reduce((n, c) => n + c.durationSecs, 0);
-		lines.push(`Total: ${formatDuration(total)}.`);
-		lines.push(...mixNotes(probe.clips));
-	}
-	if (probe.unreadable.length > 0) {
-		lines.push('Could not read:', ...probe.unreadable.map((u) => `- ${u}`));
-	}
-	if (s.videoIntroPath.trim()) lines.push(`Intro (Settings → Video): ${s.videoIntroPath}`);
-	if (s.videoOutroPath.trim()) lines.push(`Outro (Settings → Video): ${s.videoOutroPath}`);
-	const candidates = probe.introCandidates.filter((p) => !probe.clips.some((c) => c.path === p));
-	if (candidates.length > 0) {
-		lines.push(`Possible intro/outro files: ${candidates.join(', ')}`);
-	}
-	return lines.join('\n');
-}
+import type { ProjectSummary } from '#lib/ipc/gen/ProjectSummary.ts';
+import type { CutResult } from '#lib/ipc/gen/CutResult.ts';
 
 function episodeArg(args: Record<string, unknown>): string {
 	return typeof args.episode === 'string' ? args.episode : '';
@@ -110,6 +33,52 @@ async function probe(args: Record<string, unknown>, ctx: ToolContext) {
 			overrides: videoOverrides()
 		});
 		return toolResult(probeReport(episode, result));
+	} catch (e) {
+		return toolResult(toolError(errMessage(e)));
+	}
+}
+
+async function projectRead(args: Record<string, unknown>, ctx: ToolContext) {
+	try {
+		const summary = await invoke<ProjectSummary>('video_project_summary', {
+			workingDir: ctx.workingDir,
+			episode: episodeArg(args),
+			project: str(args.project)
+		});
+		return toolResult(summaryReport(summary));
+	} catch (e) {
+		return toolResult(toolError(errMessage(e)));
+	}
+}
+
+async function cut(args: Record<string, unknown>, ctx: ToolContext) {
+	const spec = parseCut(args);
+	if (typeof spec === 'string') return toolResult(toolError(spec));
+	try {
+		const result = await invoke<CutResult>('video_project_cut', {
+			workingDir: ctx.workingDir,
+			episode: episodeArg(args),
+			spec,
+			settings: videoSettings()
+		});
+		return toolResult(cutReport(result));
+	} catch (e) {
+		return toolResult(toolError(errMessage(e)));
+	}
+}
+
+async function edit(args: Record<string, unknown>, ctx: ToolContext) {
+	const op = parseOp(args);
+	if (typeof op === 'string') return toolResult(toolError(op));
+	try {
+		const result = await invoke<CutResult>('video_project_op', {
+			workingDir: ctx.workingDir,
+			episode: episodeArg(args),
+			project: str(args.project),
+			op,
+			settings: videoSettings()
+		});
+		return toolResult(cutReport(result));
 	} catch (e) {
 		return toolResult(toolError(errMessage(e)));
 	}
@@ -137,4 +106,133 @@ registerTool({
 	},
 	displayLabel: (args) => `Looking at clips in ${episodeArg(args) || 'the folder'}`,
 	execute: probe
+});
+
+const PROJECT_PARAM = {
+	type: 'string',
+	description:
+		"The .kdenlive file, relative to the working folder. Omit to use the episode's project (the last one cut, the only one in the episode folder, or one in the working folder ending in the episode number)."
+};
+
+registerTool({
+	category: 'video',
+	schema: {
+		type: 'function',
+		function: {
+			name: 'video_project_read',
+			description:
+				"Read an episode's Kdenlive project: the main track's clips in order (numbered from 1) with their trims, and what is on other tracks.",
+			parameters: {
+				type: 'object',
+				properties: { episode: EPISODE_PARAM, project: PROJECT_PARAM }
+			}
+		}
+	},
+	displayLabel: (args) => `Reading the ${episodeArg(args) || 'video'} project`,
+	execute: projectRead
+});
+
+registerTool({
+	category: 'video',
+	schema: {
+		type: 'function',
+		function: {
+			name: 'video_cut',
+			description:
+				'Set the main track (V1/A1) of the Kdenlive project to these clips, end to end, in order. Makes the project if there is none. Clips already in the cut are kept by index with their effects; anything on other tracks is left alone. The user can open the project in Kdenlive and change it too.',
+			parameters: {
+				type: 'object',
+				properties: {
+					episode: EPISODE_PARAM,
+					project: PROJECT_PARAM,
+					items: {
+						type: 'array',
+						description: 'The clips in order. Leave out the intro and outro; use those parameters.',
+						items: {
+							type: 'object',
+							properties: {
+								index: {
+									type: 'integer',
+									description: 'A clip already in the cut, by its number from video_project_read.'
+								},
+								path: {
+									type: 'string',
+									description:
+										'A new clip, relative to the working folder, as video_probe lists it.'
+								},
+								in_secs: {
+									type: 'number',
+									description:
+										'Start this far into the clip. Default: its start, or its current trim.'
+								},
+								out_secs: {
+									type: 'number',
+									description: 'Stop this far into the clip. Default: its end, or its current trim.'
+								}
+							}
+						}
+					},
+					intro: {
+						type: 'string',
+						description:
+							'"settings" for the intro in Settings → Video, or a file path. Omit for none.'
+					},
+					outro: {
+						type: 'string',
+						description:
+							'"settings" for the outro in Settings → Video, or a file path. Omit for none.'
+					},
+					preset: {
+						type: 'string',
+						enum: VIDEO_PRESETS.map((p) => p.id),
+						description: 'Format for a new project. Default from Settings → Video.'
+					}
+				},
+				required: ['items']
+			}
+		}
+	},
+	displayLabel: (args) => {
+		const n = Array.isArray(args.items) ? args.items.length : 0;
+		return `Cutting ${episodeArg(args) || 'the video'} (${n} clip${n === 1 ? '' : 's'})`;
+	},
+	execute: cut
+});
+
+registerTool({
+	category: 'video',
+	schema: {
+		type: 'function',
+		function: {
+			name: 'video_edit',
+			description:
+				'Change one clip on the main track: trim its start or end, remove it, or move it. Clips are numbered from 1 as video_project_read lists them; later clips close up behind a change.',
+			parameters: {
+				type: 'object',
+				properties: {
+					episode: EPISODE_PARAM,
+					project: PROJECT_PARAM,
+					op: { type: 'string', enum: ['trim', 'remove', 'move'] },
+					index: { type: 'integer', description: 'The clip, from 1.' },
+					in_secs: { type: 'number', description: 'trim: start this far into the clip.' },
+					out_secs: { type: 'number', description: 'trim: stop this far into the clip.' },
+					to: { type: 'integer', description: 'move: its new position, from 1.' }
+				},
+				required: ['op', 'index']
+			}
+		}
+	},
+	displayLabel: (args) => {
+		const op = str(args.op) ?? 'edit';
+		const verb =
+			op === 'trim'
+				? 'Trimming'
+				: op === 'remove'
+					? 'Removing'
+					: op === 'move'
+						? 'Moving'
+						: 'Editing';
+		return `${verb} clip ${String(args.index ?? '')}`;
+	},
+	execute: edit
 });
