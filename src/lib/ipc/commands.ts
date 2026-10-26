@@ -222,6 +222,8 @@ export const IPC = {
 	image_engine_status: 'image_engine_status',
 	image_engine_stop: 'image_engine_stop',
 	image_extract_palette: 'image_extract_palette',
+	image_mask_finish: 'image_mask_finish',
+	image_mask_prepare: 'image_mask_prepare',
 	image_model_recommended: 'image_model_recommended',
 	image_models: 'image_models',
 	image_normalize: 'image_normalize',

@@ -283,6 +283,16 @@ describe('lemonade edits and upscaling', () => {
 		]);
 	});
 
+	it('sends an edit’s mask as the form’s mask part', async () => {
+		settings.imageLemonadeModelId = 'qwen21';
+		use(withEditing);
+		const mask = { name: 'mask.png', hash: 'b'.repeat(64) };
+		await lemonadeBackend.generate({ ...edit, edit: { ...edit.edit!, mask } });
+		const [, args] = tauri.invoke.mock.calls.findLast(([c]) => c === 'lemonade_upload')!;
+		expect(args.files.map((f: { field: string }) => f.field)).toEqual(['image[]', 'mask']);
+		expect(args.files[1]).toMatchObject({ hash: 'b'.repeat(64), cache: 'image' });
+	});
+
 	it('refuses an edit without the vision weights, pointing at Add editing', async () => {
 		settings.imageLemonadeModelId = 'qwen21';
 		use(models);

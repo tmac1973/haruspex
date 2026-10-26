@@ -201,6 +201,120 @@ pub struct StoredUpscale {
     pub height: u32,
 }
 
+/// A picture to edit part of: a cached one by hash, or its bytes.
+#[derive(serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
+pub struct MaskSource {
+    pub hash: Option<String>,
+    pub bytes: Option<Vec<u8>>,
+}
+
+/// The canvas an edit to part of a picture runs on and the mask it is held
+/// to, both kept in the image cache, and the canvas's size.
+#[derive(serde::Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct PreparedEdit {
+    pub canvas: String,
+    pub mask: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+fn png_of(img: &image::DynamicImage) -> Result<Vec<u8>, String> {
+    let mut png = Vec::new();
+    img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .map_err(|e| format!("Could not encode the picture: {e}"))?;
+    Ok(png)
+}
+
+/// The canvas and mask for `edit_image`'s `area` or `extend`
+/// (`image_gen::mask`), kept in the cache so the edit sends them by hash.
+#[tauri::command]
+pub async fn image_mask_prepare(
+    app: AppHandle,
+    db: State<'_, Database>,
+    source: MaskSource,
+    area: Option<crate::image_gen::mask::MaskArea>,
+    extend: Option<crate::image_gen::mask::MaskExtend>,
+    conversation_id: Option<String>,
+) -> Result<PreparedEdit, String> {
+    let dir = cache_dir(&app)?;
+    let bytes = match (source.hash, source.bytes) {
+        (Some(hash), _) => read_cached(&db, &dir, &hash)?,
+        (None, Some(bytes)) => bytes,
+        (None, None) => return Err("No picture was given.".into()),
+    };
+    let (canvas, mask) = tokio::task::spawn_blocking(move || {
+        let src = image::load_from_memory(&bytes)
+            .map_err(|e| format!("Could not read the picture: {e}"))?
+            .to_rgba8();
+        let p = crate::image_gen::mask::prepare(&src, area, extend)?;
+        let (w, h) = p.canvas.dimensions();
+        Ok::<_, String>((
+            (png_of(&image::DynamicImage::ImageRgba8(p.canvas))?, w, h),
+            png_of(&image::DynamicImage::ImageLuma8(p.mask))?,
+        ))
+    })
+    .await
+    .map_err(|e| format!("The edit could not be prepared: {e}"))??;
+    let ((canvas, width, height), mask) = (canvas, mask);
+    let conversation = conversation_id.as_deref();
+    let keep = |png: &[u8]| {
+        store_generated(
+            &db,
+            &dir,
+            png,
+            "image/png".into(),
+            width,
+            height,
+            conversation,
+        )
+    };
+    Ok(PreparedEdit {
+        canvas: keep(&canvas)?,
+        mask: keep(&mask)?,
+        width,
+        height,
+    })
+}
+
+/// An edit held to its mask: the backend's picture arrives as the raw body and
+/// is pasted over the cached canvas `x-canvas-hash` through the cached mask
+/// `x-mask-hash`. Answers the finished PNG's bytes, which `edit_image` keeps
+/// like any other edit.
+#[tauri::command]
+pub async fn image_mask_finish(
+    app: AppHandle,
+    db: State<'_, Database>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<tauri::ipc::Response, String> {
+    let tauri::ipc::InvokeBody::Raw(edited) = request.body() else {
+        return Err("The edited picture must be sent as raw bytes.".into());
+    };
+    let canvas = header(&request, "x-canvas-hash").ok_or("No x-canvas-hash was given.")?;
+    let mask = header(&request, "x-mask-hash").ok_or("No x-mask-hash was given.")?;
+    let dir = cache_dir(&app)?;
+    let (canvas, mask) = (
+        read_cached(&db, &dir, canvas)?,
+        read_cached(&db, &dir, mask)?,
+    );
+    let edited = edited.clone();
+    let png = tokio::task::spawn_blocking(move || {
+        let load = |b: &[u8], what: &str| {
+            image::load_from_memory(b).map_err(|e| format!("Could not read the {what}: {e}"))
+        };
+        let out = crate::image_gen::mask::composite(
+            &load(&canvas, "canvas")?.to_rgba8(),
+            &load(&edited, "edited picture")?.to_rgba8(),
+            &load(&mask, "mask")?.to_luma8(),
+        );
+        png_of(&image::DynamicImage::ImageRgba8(out))
+    })
+    .await
+    .map_err(|e| format!("The edit could not be finished: {e}"))??;
+    Ok(tauri::ipc::Response::new(png))
+}
+
 fn header<'a>(request: &'a tauri::ipc::Request<'_>, name: &str) -> Option<&'a str> {
     request.headers().get(name).and_then(|v| v.to_str().ok())
 }

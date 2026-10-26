@@ -363,6 +363,8 @@ pub fn run() {
             image_cache::commands::image_sweep,
             image_cache::commands::image_store_bytes,
             image_cache::commands::image_store_upscaled,
+            image_cache::commands::image_mask_prepare,
+            image_cache::commands::image_mask_finish,
             image_cache::commands::image_rehydrate_local,
             image_cache::commands::image_read_bytes,
             image_cache::commands::image_save_as,
