@@ -19,7 +19,8 @@ use tauri::AppHandle;
 
 use crate::comfy::{comfy_json, ComfyCall};
 use crate::image_models::{
-    filename_of, WeightFile, MING_LICENCE, MING_VAE, QWEN21_LICENCE, QWEN21_VAE,
+    filename_of, WeightFile, MING_LICENCE, MING_VAE, QWEN21_LICENCE, QWEN21_VAE, UPSCALER,
+    UPSCALER_LICENCE,
 };
 use crate::models::{ModelManager, VerifiedFile};
 
@@ -31,6 +32,7 @@ pub enum ComfyFolder {
     DiffusionModels,
     TextEncoders,
     Vae,
+    UpscaleModels,
 }
 
 impl ComfyFolder {
@@ -39,6 +41,7 @@ impl ComfyFolder {
             Self::DiffusionModels => "diffusion_models",
             Self::TextEncoders => "text_encoders",
             Self::Vae => "vae",
+            Self::UpscaleModels => "upscale_models",
         }
     }
 }
@@ -168,6 +171,30 @@ pub fn comfy_model_sets() -> Vec<ComfyModelSet> {
     ]
 }
 
+/// Real-ESRGAN for `upscale_image`, the file the bundled engine runs, as a
+/// set of its own: the Settings card installs it like a model, by any route.
+pub const UPSCALER_FAMILY: &str = "upscaler";
+
+pub fn comfy_upscaler_set() -> ComfyModelSet {
+    ComfyModelSet {
+        family: UPSCALER_FAMILY.into(),
+        label: "Upscaler — Real-ESRGAN x4plus".into(),
+        license: UPSCALER_LICENCE.text.into(),
+        license_url: UPSCALER_LICENCE.url.into(),
+        commercial_use: UPSCALER_LICENCE.commercial_use,
+        vram_mb: 1_024,
+        ram_mb: 1_024,
+        files: vec![shared(ComfyFolder::UpscaleModels, &UPSCALER)],
+    }
+}
+
+/// Everything the Settings card offers: the model families, then the upscaler.
+fn catalogue() -> Vec<ComfyModelSet> {
+    let mut all = comfy_model_sets();
+    all.push(comfy_upscaler_set());
+    all
+}
+
 /// True for a base URL on this machine.
 fn is_loopback(base_url: &str) -> bool {
     let Ok(url) = reqwest::Url::parse(base_url.trim()) else {
@@ -194,8 +221,10 @@ fn writable(dir: &Path) -> bool {
 
 /// ComfyUI's folders for each kind we install into, from its own answer,
 /// kept only where they exist here and can be written. `None` when the
-/// server is not on this machine, or any kind has no such folder — then the
-/// direct route is not available and the caller goes through Manager.
+/// server is not on this machine, or any model kind has no such folder — then
+/// the direct route is not available and the caller goes through Manager.
+/// `upscale_models` is kept when it is here, and not asked for: a ComfyUI
+/// without it still installs models directly.
 ///
 /// A loopback URL is necessary but not enough: a ComfyUI in a container
 /// answers on loopback with paths that mean nothing here. Requiring the path
@@ -217,6 +246,18 @@ pub fn local_folders(answer: &serde_json::Value) -> Option<HashMap<ComfyFolder, 
             return None;
         }
         out.insert(kind, dirs);
+    }
+    let upscale: Vec<PathBuf> = answer
+        .get(ComfyFolder::UpscaleModels.key())
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(PathBuf::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    if upscale.first().is_some_and(|d| writable(d)) {
+        out.insert(ComfyFolder::UpscaleModels, upscale);
     }
     Some(out)
 }
@@ -254,7 +295,7 @@ async fn folder_answer(base_url: &str, api_key: &str) -> Result<serde_json::Valu
 
 #[tauri::command]
 pub fn comfy_model_catalogue() -> Vec<ComfyModelSet> {
-    comfy_model_sets()
+    catalogue()
 }
 
 /// Whether Haruspex can write the server's model folders directly.
@@ -284,7 +325,7 @@ pub async fn comfy_install_direct(
     if !is_loopback(&base_url) {
         return Err("The image backend is not on this machine.".into());
     }
-    let set = comfy_model_sets()
+    let set = catalogue()
         .into_iter()
         .find(|s| s.family == family)
         .ok_or_else(|| format!("No model files are listed for {family}."))?;
@@ -292,16 +333,27 @@ pub async fn comfy_install_direct(
     let folders = local_folders(&answer)
         .ok_or("ComfyUI's model folders are not on this machine, or cannot be written.")?;
     let todo = missing(&set, &folders);
-    let files: Vec<VerifiedFile> = todo
+    let files = todo
         .iter()
-        .map(|f| VerifiedFile {
-            url: &f.url,
-            dir: &folders[&f.folder][0],
-            filename: &f.filename,
-            size_bytes: f.size_bytes,
-            sha256: &f.sha256,
+        .map(|f| {
+            let dir = folders
+                .get(&f.folder)
+                .and_then(|d| d.first())
+                .ok_or_else(|| {
+                    format!(
+                        "ComfyUI's models/{} folder is not on this machine, or cannot be written.",
+                        f.folder.key()
+                    )
+                })?;
+            Ok(VerifiedFile {
+                url: &f.url,
+                dir,
+                filename: &f.filename,
+                size_bytes: f.size_bytes,
+                sha256: &f.sha256,
+            })
         })
-        .collect();
+        .collect::<Result<Vec<VerifiedFile>, String>>()?;
     state
         .download_set(&app, &format!("comfy:{family}"), proxy, &files)
         .await?;
@@ -404,6 +456,8 @@ mod tests {
         });
         let f = local_folders(&answer).unwrap();
         assert_eq!(f[&ComfyFolder::DiffusionModels][0], dm);
+        // No upscale_models folder: models still install directly.
+        assert!(!f.contains_key(&ComfyFolder::UpscaleModels));
         // A container's paths: they mean nothing here.
         let elsewhere = serde_json::json!({
             "diffusion_models": ["/opt/ComfyUI/models/diffusion_models"],
@@ -412,6 +466,27 @@ mod tests {
         });
         assert!(local_folders(&elsewhere).is_none());
         assert!(local_folders(&serde_json::json!({ "vae": [vae] })).is_none());
+    }
+
+    #[test]
+    fn the_upscaler_installs_into_upscale_models_when_it_is_here() {
+        let (_root, [dm, te, vae, up]) = folders(["dm", "te", "vae", "up"]);
+        let answer = serde_json::json!({
+            "diffusion_models": [dm],
+            "text_encoders": [te],
+            "vae": [vae],
+            "upscale_models": [up]
+        });
+        let f = local_folders(&answer).unwrap();
+        assert_eq!(f[&ComfyFolder::UpscaleModels][0], up);
+        let set = comfy_upscaler_set();
+        assert_eq!(missing(&set, &f).len(), 1);
+        std::fs::write(up.join(&set.files[0].filename), b"x").unwrap();
+        assert!(missing(&set, &f).is_empty());
+        // The bundled engine's file, so both verify against one checksum.
+        assert_eq!(set.files[0].sha256, UPSCALER.sha256);
+        assert!(set.commercial_use);
+        assert_eq!(catalogue().last().unwrap().family, UPSCALER_FAMILY);
     }
 
     #[test]

@@ -71,13 +71,18 @@ export function pickCompanion(names: string[], wanted: RegExp[]): string | null 
 	return null;
 }
 
-/** The option list of one loader input, as `object_info` reports it. */
+/**
+ * The option list of one loader input, as `object_info` reports it: a bare
+ * list, or `["COMBO", {options}]` from a node on ComfyUI's newer node API
+ * (`UpscaleModelLoader` on 0.39).
+ */
 async function optionsOf(cfg: api.ClientConfig, cls: string, input: string): Promise<string[]> {
 	const info = (await api.objectInfo(cfg, cls)) as Record<
 		string,
-		{ input?: { required?: Record<string, [unknown]> } }
+		{ input?: { required?: Record<string, [unknown, { options?: unknown }?]> } }
 	>;
-	const names = info[cls]?.input?.required?.[input]?.[0];
+	const declared = info[cls]?.input?.required?.[input];
+	const names = declared?.[0] === 'COMBO' ? declared[1]?.options : declared?.[0];
 	return Array.isArray(names) ? names.filter((n): n is string => typeof n === 'string') : [];
 }
 
@@ -129,6 +134,18 @@ export async function hasCompanions(
 		textEncoder: pickCompanion(encoders, want.textEncoder) !== null,
 		vae: pickCompanion(vaes, want.vae) !== null
 	};
+}
+
+/** Real-ESRGAN x4plus, as the upscaler set installs it or under a name of the user's. */
+const UPSCALER = /realesrgan[_-]?x4plus(?!_anime)/i;
+
+/**
+ * The upscaler `upscale_image` runs, from the server's `models/upscale_models`,
+ * or null when it has none. An anime-only or ×2 model isn't taken for it.
+ */
+export async function findUpscaler(cfg: api.ClientConfig): Promise<string | null> {
+	const names = await optionsOf(cfg, 'UpscaleModelLoader', 'model_name');
+	return names.find((n) => UPSCALER.test(n)) ?? null;
 }
 
 /** The server's diffusion models (`models/diffusion_models`), any family. */

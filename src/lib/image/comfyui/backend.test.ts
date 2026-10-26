@@ -107,7 +107,8 @@ describe('capabilities', () => {
 			loras: true,
 			maxLoras: 2,
 			edit: false,
-			maxEditImages: 0
+			maxEditImages: 0,
+			upscale: false
 		});
 	});
 
@@ -119,7 +120,8 @@ describe('capabilities', () => {
 			loras: false,
 			maxLoras: 0,
 			edit: false,
-			maxEditImages: 0
+			maxEditImages: 0,
+			upscale: false
 		});
 	});
 });

@@ -54,8 +54,8 @@ export const NO_EDIT_SENTENCE =
 	'so can a llama-toolchest model that edits, such as FLUX.2 klein 4B.';
 
 export const NO_UPSCALE_SENTENCE =
-	"The image generation in Settings → Image can't upscale pictures. The bundled engine and " +
-	'Lemonade can, once their upscaler is installed in Settings → Image.';
+	"The image generation in Settings → Image can't upscale pictures. The bundled engine, " +
+	'ComfyUI and Lemonade can, once their upscaler is installed in Settings → Image.';
 
 /**
  * A picture four times larger, from the configured backend, or a sentence the

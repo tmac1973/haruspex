@@ -17,6 +17,7 @@ import { sleep } from '#lib/utils/async.ts';
 import {
 	ImageBackendError,
 	type ImageBackendCapabilities,
+	type ImageInput,
 	type ImageRequest,
 	type ImageResult,
 	type LoraRef,
@@ -36,6 +37,7 @@ import {
 } from '#lib/image/comfyui/templates/index.ts';
 import {
 	familyOf,
+	findUpscaler,
 	hasModel,
 	listModels,
 	resolveCompanions,
@@ -125,7 +127,8 @@ const MAX_EDIT_IMAGES = 3;
 
 function capabilitiesOf(
 	templates: WorkflowTemplate[],
-	serverEdits: boolean
+	serverEdits: boolean,
+	upscaler: boolean
 ): ImageBackendCapabilities {
 	const loraNodes = Math.max(
 		0,
@@ -138,9 +141,36 @@ function capabilitiesOf(
 		loras: loraNodes > 0,
 		maxLoras: loraNodes,
 		edit,
-		maxEditImages: edit ? MAX_EDIT_IMAGES : 0
+		maxEditImages: edit ? MAX_EDIT_IMAGES : 0,
+		upscale: upscaler
 	};
 }
+
+/**
+ * The server's upscaler, or null. Asked every time rather than kept, so an
+ * install from Settings → Image counts at once; a server that won't answer
+ * has none.
+ */
+async function upscalerOf(cfg: api.ClientConfig): Promise<string | null> {
+	return findUpscaler(cfg).catch(() => null);
+}
+
+/**
+ * `upscale_image`'s graph: the picture through `UpscaleModelLoader` and
+ * `ImageUpscaleWithModel`, which tiles it, so any size the tool accepts fits.
+ */
+export function upscaleGraph(image: string, model: string, prefix: string): ComfyGraph {
+	return {
+		'1': { class_type: 'LoadImage', inputs: { image } },
+		'2': { class_type: 'UpscaleModelLoader', inputs: { model_name: model } },
+		'3': {
+			class_type: 'ImageUpscaleWithModel',
+			inputs: { upscale_model: ['2', 0], image: ['1', 0] }
+		},
+		'4': { class_type: 'SaveImage', inputs: { images: ['3', 0], filename_prefix: prefix } }
+	};
+}
+const UPSCALE_OUTPUT = '4';
 
 /** Per server: does its `TextEncodeQwenImage21` take reference pictures? */
 const editsByServer = new Map<string, Promise<boolean>>();
@@ -295,13 +325,82 @@ function untilAborted<T>(
 	});
 }
 
+/**
+ * Queue `graph`, follow it to the end and download what `outputNode` saved.
+ * A cancel removes the prompt from the server's queue.
+ */
+async function run(
+	cfg: api.ClientConfig,
+	graph: ComfyGraph,
+	outputNode: string,
+	clientId: string,
+	opts: GenerateOptions
+): Promise<Uint8Array[]> {
+	const started = Date.now();
+	let socketAlive = true;
+	const closeSocket = api.subscribe(
+		cfg,
+		clientId,
+		(p) => opts.onProgress?.(p),
+		() => {
+			socketAlive = false;
+		},
+		(id) => graph[id]?.class_type
+	);
+
+	let promptId: string | null = null;
+	try {
+		// Not given the abort signal: a submit cut short can leave the prompt
+		// queued with its id lost, and it would then run anyway. A cancel
+		// during submit settles at once; the prompt is removed once submit
+		// says what it was.
+		const submitting = api.submit(cfg, graph, clientId);
+		promptId = await untilAborted(submitting, opts.signal, () => {
+			submitting.then(
+				(id) => api.cancelPrompt(cfg, id),
+				() => {}
+			);
+		});
+		const deadline = started + api.GENERATION_TIMEOUT_MS;
+		let images: api.HistoryImage[] | null = null;
+		while (images === null) {
+			if (opts.signal?.aborted) throw new ImageBackendError('cancelled', 'Generation cancelled.');
+			if (Date.now() > deadline) {
+				throw new ImageBackendError(
+					'timeout',
+					`The image backend did not finish within ${api.GENERATION_TIMEOUT_MS / 1000}s.`
+				);
+			}
+			await sleep(api.HISTORY_POLL_MS);
+			if (!socketAlive) opts.onProgress?.({ phase: 'running' });
+			images = await api.history(cfg, promptId, outputNode, opts.signal);
+		}
+
+		opts.onProgress?.({ phase: 'downloading' });
+		return await Promise.all(images.map((i) => api.view(cfg, i, opts.signal)));
+	} catch (e) {
+		if (opts.signal?.aborted) {
+			// In the background: the generation settles as cancelled now.
+			if (promptId) void api.cancelPrompt(cfg, promptId);
+			throw new ImageBackendError('cancelled', 'Generation cancelled.');
+		}
+		throw e;
+	} finally {
+		closeSocket();
+	}
+}
+
 export const comfyUiBackend: ImageBackend = {
 	kind: 'comfyui',
 
 	async capabilities() {
 		const templates = await activeTemplates(familyOf(configuredModel()));
-		const edits = templates.some((t) => t.supports.edit) && (await serverEdits(config()));
-		return capabilitiesOf(templates, edits);
+		const cfg = config();
+		const [edits, upscaler] = await Promise.all([
+			templates.some((t) => t.supports.edit) ? serverEdits(cfg) : false,
+			upscalerOf(cfg)
+		]);
+		return capabilitiesOf(templates, edits, upscaler !== null);
 	},
 
 	async probe() {
@@ -349,73 +448,39 @@ export const comfyUiBackend: ImageBackend = {
 		// one another in /history.
 		const save = graph[template.map.outputNode];
 		if (save) save.inputs.filename_prefix = `haruspex/${clientId}`;
-
-		let socketAlive = true;
-		const closeSocket = api.subscribe(
-			cfg,
-			clientId,
-			(p) => opts.onProgress?.(p),
-			() => {
-				socketAlive = false;
-			},
-			(id) => graph[id]?.class_type
-		);
-
-		let promptId: string | null = null;
-		try {
-			// Not given the abort signal: a submit cut short can leave the prompt
-			// queued with its id lost, and it would then run anyway. A cancel
-			// during submit settles at once; the prompt is removed once submit
-			// says what it was.
-			const submitting = api.submit(cfg, graph, clientId);
-			promptId = await untilAborted(submitting, opts.signal, () => {
-				submitting.then(
-					(id) => api.cancelPrompt(cfg, id),
-					() => {}
-				);
-			});
-			const deadline = started + api.GENERATION_TIMEOUT_MS;
-			let images: api.HistoryImage[] | null = null;
-			while (images === null) {
-				if (opts.signal?.aborted) throw new ImageBackendError('cancelled', 'Generation cancelled.');
-				if (Date.now() > deadline) {
-					throw new ImageBackendError(
-						'timeout',
-						`The image backend did not finish within ${api.GENERATION_TIMEOUT_MS / 1000}s.`
-					);
-				}
-				await sleep(api.HISTORY_POLL_MS);
-				if (!socketAlive) opts.onProgress?.({ phase: 'running' });
-				images = await api.history(cfg, promptId, template.map.outputNode, opts.signal);
+		const bytes = await run(cfg, graph, template.map.outputNode, clientId, opts);
+		return {
+			// An edit is sized from its first picture, so read what came back.
+			images: bytes.map((b) => ({
+				bytes: b,
+				mimeType: 'image/png',
+				...(pngSize(b) ?? { width: req.width, height: req.height })
+			})),
+			meta: {
+				seed,
+				model,
+				backend: 'comfyui',
+				sampler,
+				loras,
+				durationMs: Date.now() - started
 			}
+		};
+	},
 
-			opts.onProgress?.({ phase: 'downloading' });
-			const bytes = await Promise.all(images.map((i) => api.view(cfg, i, opts.signal)));
-			return {
-				// An edit is sized from its first picture, so read what came back.
-				images: bytes.map((b) => ({
-					bytes: b,
-					mimeType: 'image/png',
-					...(pngSize(b) ?? { width: req.width, height: req.height })
-				})),
-				meta: {
-					seed,
-					model,
-					backend: 'comfyui',
-					sampler,
-					loras,
-					durationMs: Date.now() - started
-				}
-			};
-		} catch (e) {
-			if (opts.signal?.aborted) {
-				// In the background: the generation settles as cancelled now.
-				if (promptId) void api.cancelPrompt(cfg, promptId);
-				throw new ImageBackendError('cancelled', 'Generation cancelled.');
-			}
-			throw e;
-		} finally {
-			closeSocket();
+	async upscale(input: ImageInput, opts: GenerateOptions = {}): Promise<Uint8Array> {
+		const cfg = config();
+		const model = await upscalerOf(cfg);
+		if (!model) {
+			throw new ImageBackendError(
+				'unconfigured',
+				'ComfyUI has no Real-ESRGAN x4plus in models/upscale_models — Settings → Image → Install.'
+			);
 		}
+		const clientId = crypto.randomUUID();
+		const image = await uploadImage(cfg, input, `haruspex-upscale-${clientId}.png`, opts.signal);
+		const graph = upscaleGraph(image, model, `haruspex/${clientId}`);
+		const [bytes] = await run(cfg, graph, UPSCALE_OUTPUT, clientId, opts);
+		if (!bytes) throw new ImageBackendError('rejected', 'ComfyUI returned no upscaled picture.');
+		return bytes;
 	}
 };
