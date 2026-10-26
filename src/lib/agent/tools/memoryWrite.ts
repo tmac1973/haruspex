@@ -91,7 +91,10 @@ registerTool({
 		const content = typeof args.content === 'string' ? args.content : '';
 		return content ? `remember: “${content}”` : 'remember a fact';
 	},
-	async execute(args) {
+	async execute(args, ctx) {
+		// The turn's own chat; outside a chat turn, the open one. Read from the
+		// leaf session store — tools/ must not import the chat store (CI guard).
+		const sourceConversationId = ctx.conversationId ?? getActiveConversationId();
 		const content = typeof args.content === 'string' ? args.content.trim() : '';
 		const category = MEMORY_CATEGORIES.includes(args.category as MemoryCategory)
 			? (args.category as MemoryCategory)
@@ -109,7 +112,10 @@ registerTool({
 		// Ask before writing, unless the user has turned the prompt off or
 		// already allowed it for this session.
 		if (getSettings().memoryConfirmWrites && !isMemorySessionApproved()) {
-			const choice = await askMemoryApproval({ content, category });
+			const choice = await askMemoryApproval(
+				{ content, category, chatId: sourceConversationId },
+				ctx.signal
+			);
 			if (choice === 'deny') {
 				return toolResult(
 					'The user declined to save that. Do not try again for the same fact; ' +
@@ -134,10 +140,7 @@ registerTool({
 			await invoke('memory_add', {
 				content,
 				category,
-				// The ambient id from the leaf session store — tools/ must not
-				// import the chat store (CI guard), and this module exists so
-				// non-chat layers can read it anyway.
-				sourceConversationId: getActiveConversationId(),
+				sourceConversationId,
 				origin: 'explicit'
 			});
 			await refreshMemoryCount();

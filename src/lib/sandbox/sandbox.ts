@@ -1,53 +1,44 @@
 // Public surface for the python sandbox. Dispatches through the
-// per-chat WorkerPool (one Web Worker per chat, LRU cap 3) scoped to
-// the active conversation.
+// per-chat WorkerPool (one Web Worker per chat, LRU cap 3). Every call
+// names its chat: turns in several chats can run Python at once.
 
-import { getActiveConversationId } from '#lib/stores/session.svelte.ts';
 import { getWorkerPool } from '#lib/sandbox/worker-pool.ts';
 import type { RunOptions } from '#lib/sandbox/worker-manager.ts';
 import type { ToolResult } from '#lib/sandbox/protocol.ts';
 
-function requireChatId(): string {
-	const id = getActiveConversationId();
-	if (!id) throw new Error('Python sandbox call without an active conversation');
-	return id;
+export function runPython(chatId: string, code: string, opts?: RunOptions): Promise<ToolResult> {
+	return getWorkerPool().runPython(chatId, code, opts);
 }
 
-export function runPython(code: string, opts?: RunOptions): Promise<ToolResult> {
-	return getWorkerPool().runPython(requireChatId(), code, opts);
-}
-
-export function installPackage(packageName: string, opts?: RunOptions): Promise<ToolResult> {
-	return getWorkerPool().installPackage(requireChatId(), packageName, opts);
-}
-
-/**
- * Snapshot the names bound in the active chat's persistent Python globals.
- * Returns [] if no worker is alive for this chat (first run — no prior state)
- * or no active conversation. Used by the pre-run lint pass to suppress F821
- * on names defined by an earlier run_python call.
- */
-export function listSandboxGlobals(): Promise<string[]> {
-	const id = getActiveConversationId();
-	if (!id) return Promise.resolve([]);
-	return getWorkerPool().listGlobals(id);
-}
-
-export async function resetSandbox(): Promise<void> {
-	const id = getActiveConversationId();
-	if (!id) return;
-	await getWorkerPool().reset(id);
+export function installPackage(
+	chatId: string,
+	packageName: string,
+	opts?: RunOptions
+): Promise<ToolResult> {
+	return getWorkerPool().installPackage(chatId, packageName, opts);
 }
 
 /**
- * Cancel the active chat's in-flight run (if any) by terminating the
- * Worker. The Worker respawns lazily on the next call. Used by the
- * Cancel button on the in-progress tool-result card.
+ * Snapshot the names bound in the chat's persistent Python globals.
+ * Returns [] if no worker is alive for this chat (first run — no prior
+ * state). Used by the pre-run lint pass to suppress F821 on names defined
+ * by an earlier run_python call.
  */
-export function cancelActiveRun(): void {
-	const id = getActiveConversationId();
-	if (!id) return;
-	getWorkerPool().cancel(id);
+export function listSandboxGlobals(chatId: string): Promise<string[]> {
+	return getWorkerPool().listGlobals(chatId);
+}
+
+export async function resetSandbox(chatId: string): Promise<void> {
+	await getWorkerPool().reset(chatId);
+}
+
+/**
+ * Cancel the chat's in-flight run (if any) by terminating its Worker. The
+ * Worker respawns lazily on the next call. Used by the Cancel button on the
+ * in-progress tool-result card.
+ */
+export function cancelRun(chatId: string): void {
+	getWorkerPool().cancel(chatId);
 }
 
 /** True if the chat has a live Worker (Python state intact). Used by

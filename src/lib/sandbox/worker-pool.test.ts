@@ -137,6 +137,29 @@ describe('WorkerPool', () => {
 		await expect(install).rejects.toThrow('sandbox reset');
 	});
 
+	it('never evicts a chat whose worker has a run in flight', async () => {
+		const pool = makePool(2);
+		// No `done` for an install from the fake, so a's worker stays busy.
+		const install = pool.installPackage('a', 'numpy');
+		await runIn(pool, 'b');
+		await runIn(pool, 'c');
+		// a is the least recently used, but busy: b goes instead.
+		expect(pool.hasWorkerFor('a')).toBe(true);
+		expect(pool.hasWorkerFor('b')).toBe(false);
+		pool.cancel('a');
+		await expect(install).rejects.toThrow('sandbox reset');
+	});
+
+	it('runs over its cap while every other worker is busy', async () => {
+		const pool = makePool(1);
+		const install = pool.installPackage('a', 'numpy');
+		await runIn(pool, 'b');
+		expect(pool.hasWorkerFor('a')).toBe(true);
+		expect(pool.size).toBe(2);
+		pool.cancel('a');
+		await expect(install).rejects.toThrow('sandbox reset');
+	});
+
 	it('listGlobals answers [] for a chat with no worker, without spawning one', async () => {
 		const pool = makePool();
 		expect(await pool.listGlobals('nobody')).toEqual([]);

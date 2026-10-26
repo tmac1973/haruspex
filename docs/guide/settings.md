@@ -29,7 +29,7 @@ Where the model runs, which model is used and how big the context is.
 - **Models**: download and switch local models.
 - **Context Size**: 32K (up to 256K).
 - **Let models use system RAM**: off.
-- **Parallel streams**: 1 (also 2 or 4). More let a job or Code subtasks run beside chat.
+- **Parallel streams**: 1 (also 2 or 4). More let several chats, a job or Code subtasks run at the same time.
 - **Extra llama-server arguments**: empty. They override Haruspex's own after a restart.
 - **Server**: status, port, Restart Server; **Run Setup Wizard**.
 

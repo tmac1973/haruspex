@@ -20,7 +20,6 @@ import {
 	resolveMemoryApproval
 } from '#lib/stores/memoryApproval.svelte.ts';
 import { getPendingApproval, resolveApproval } from '#lib/stores/sandboxApproval.svelte.ts';
-import { getActiveConversationId } from '#lib/stores/session.svelte.ts';
 import { getPendingRepoTrust, resolveRepoTrust } from '#lib/stores/repoTrust.svelte.ts';
 import { getPendingSkillApproval, resolveSkillApproval } from '#lib/stores/skillApproval.svelte.ts';
 import { getPendingQuestion, resolveUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
@@ -72,14 +71,14 @@ export function currentPrompts(label: string): Prompt[] {
 			}
 		});
 	}
-	// The sandbox and memory ask on behalf of the chat that is open.
+	// The sandbox and memory ask on behalf of the chat whose turn runs.
 	const sandbox = getPendingApproval();
 	if (sandbox) {
 		out.push({
 			promptId: idFor(label, sandbox),
 			kind: 'sandbox',
 			sessionId: null,
-			chatId: getActiveConversationId(),
+			chatId: sandbox.chatId,
 			answerable: true,
 			requester: null,
 			detail: { code: sandbox.code, mode: sandbox.mode }
@@ -91,7 +90,7 @@ export function currentPrompts(label: string): Prompt[] {
 			promptId: idFor(label, memory),
 			kind: 'memory',
 			sessionId: null,
-			chatId: getActiveConversationId(),
+			chatId: memory.chatId,
 			answerable: true,
 			requester: null,
 			detail: { content: memory.content, category: memory.category }

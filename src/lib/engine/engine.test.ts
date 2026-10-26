@@ -394,16 +394,25 @@ describe('prompts', () => {
 	});
 
 	it('lists and answers the sandbox and memory prompts a chat raises', async () => {
-		const run = askApproval({ code: 'print(1)', mode: 'once-per-chat' });
+		const run = askApproval({ code: 'print(1)', mode: 'once-per-chat', chatId: 'c1' });
 		const [p] = currentPrompts('main');
-		expect(p).toMatchObject({ kind: 'sandbox', answerable: true, detail: { code: 'print(1)' } });
+		expect(p).toMatchObject({
+			kind: 'sandbox',
+			chatId: 'c1',
+			answerable: true,
+			detail: { code: 'print(1)' }
+		});
 		await expect(
 			answerPrompt('main', p.promptId, { kind: 'memory', choice: 'deny' })
 		).rejects.toThrow('sandbox prompt');
 		await answerPrompt('main', p.promptId, { kind: 'sandbox', choice: 'allow_chat' });
 		expect(await run).toBe('allow_chat');
 
-		const remember = askMemoryApproval({ content: 'Likes tabs', category: 'preference' as never });
+		const remember = askMemoryApproval({
+			content: 'Likes tabs',
+			category: 'preference' as never,
+			chatId: 'c1'
+		});
 		const [m] = currentPrompts('main');
 		expect(m).toMatchObject({ kind: 'memory', detail: { content: 'Likes tabs' } });
 		await answerPrompt('main', m.promptId, { kind: 'memory', choice: 'deny' });

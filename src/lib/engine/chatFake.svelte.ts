@@ -65,6 +65,8 @@ export const chatStore = {
 	getStreamingContent: () => fake.streaming,
 	getErrorMessage: () => fake.error,
 	getLastTurnFailed: () => false,
+	// Only the open chat ever has a turn in this fake.
+	getRun: (id: string) => ({ busy: fake.generating && id === fake.active }),
 	createConversation: () => {
 		const id = `c${fake.conversations.length + 1}`;
 		fake.conversations.unshift(conv(id));

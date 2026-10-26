@@ -34,7 +34,7 @@ describe('lintSandboxCode', () => {
 				url: 'https://docs.astral.sh/ruff/rules/undefined-name'
 			}
 		]);
-		const out = await lintSandboxCode('print(df_cleand)');
+		const out = await lintSandboxCode('c1', 'print(df_cleand)');
 		expect(out).toHaveLength(1);
 		expect(out[0].code).toBe('F821');
 		expect(out[0].line).toBe(4);
@@ -44,7 +44,8 @@ describe('lintSandboxCode', () => {
 	it('passes the chat globals through as ruff builtins', async () => {
 		mocks.listGlobals.mockResolvedValue(['df', 'pd']);
 		mocks.invoke.mockResolvedValue([]);
-		await lintSandboxCode('df.head()');
+		await lintSandboxCode('c1', 'df.head()');
+		expect(mocks.listGlobals).toHaveBeenCalledWith('c1');
 		expect(mocks.invoke).toHaveBeenCalledWith('lint_python_source', {
 			code: 'df.head()',
 			builtins: ['df', 'pd']
@@ -53,7 +54,7 @@ describe('lintSandboxCode', () => {
 
 	it('returns [] when the Tauri call throws — lint is advisory', async () => {
 		mocks.invoke.mockRejectedValue(new Error('ruff sidecar missing'));
-		const out = await lintSandboxCode('print("hi")');
+		const out = await lintSandboxCode('c1', 'print("hi")');
 		expect(out).toEqual([]);
 	});
 
@@ -61,7 +62,7 @@ describe('lintSandboxCode', () => {
 		mocks.invoke.mockResolvedValue([
 			{ code: 'F541', message: 'f-string', line: 1, column: 1, endLine: 1, endColumn: 5, url: null }
 		]);
-		const out = await lintSandboxCode('f""');
+		const out = await lintSandboxCode('c1', 'f""');
 		expect(out[0].url).toBeUndefined();
 	});
 });

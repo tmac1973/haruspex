@@ -69,15 +69,17 @@ describe('chat operations', () => {
 		expect(fake.sent).toEqual([{ id: 'b', text: 'hi b' }]);
 	});
 
-	it('refuse a send while a reply is being written', async () => {
+	it('refuse a send only to the chat whose reply is being written', async () => {
 		fake.generating = true;
-		await expect(dispatchChat({ type: 'chat.send', id: 'b', text: 'x' })).rejects.toThrow(
-			'"Chat a"'
-		);
 		await expect(dispatchChat({ type: 'chat.send', id: 'a', text: 'x' })).rejects.toThrow(
 			'this chat'
 		);
 		expect(fake.sent).toEqual([]);
+		// Another chat's turn runs beside it.
+		expect(await dispatchChat({ type: 'chat.send', id: 'b', text: 'y' })).toEqual({
+			started: true
+		});
+		expect(fake.sent).toEqual([{ id: 'b', text: 'y' }]);
 	});
 
 	it('say so when chat refuses to send', async () => {

@@ -152,7 +152,10 @@ describe('remember_this approval', () => {
 	it('asks before writing, and writes on approval', async () => {
 		mocks.askMemoryApproval.mockResolvedValue('allow_once');
 		await executeTool(REMEMBER_TOOL, { content: FACT, category: 'fact' }, ctx);
-		expect(mocks.askMemoryApproval).toHaveBeenCalledWith({ content: FACT, category: 'fact' });
+		expect(mocks.askMemoryApproval).toHaveBeenCalledWith(
+			{ content: FACT, category: 'fact', chatId: 'conv-7' },
+			undefined
+		);
 		expect(mocks.invoke).toHaveBeenCalledWith('memory_add', expect.anything());
 	});
 
