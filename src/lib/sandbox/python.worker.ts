@@ -1188,10 +1188,16 @@ async function init(): Promise<void> {
 		await py.runPythonAsync(HARUSPEX_INIT_PY);
 		post({ kind: 'ready' });
 	} catch (err) {
-		const error = (await runtimeMissing(nativeFetch, indexURL))
-			? 'The Python runtime is missing from /pyodide/. In a dev checkout, run ./scripts/fetch-pyodide.sh.'
-			: errMessage(err);
-		post({ kind: 'load_error', error });
+		if (await runtimeMissing(nativeFetch, indexURL)) {
+			post({
+				kind: 'load_error',
+				error:
+					'The Python runtime is missing from /pyodide/. In a dev checkout, run ./scripts/fetch-pyodide.sh.',
+				runtimeMissing: true
+			});
+		} else {
+			post({ kind: 'load_error', error: errMessage(err) });
+		}
 	}
 }
 

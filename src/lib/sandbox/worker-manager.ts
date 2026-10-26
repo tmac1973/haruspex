@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { noteRuntimeMissing, PYTHON_UNAVAILABLE } from '#lib/sandbox/availability.ts';
 import type {
 	Artifact,
 	ArtifactMessage,
@@ -237,7 +238,12 @@ export class WorkerManager {
 	}
 
 	private handleLoadError(msg: Extract<WorkerToMain, { kind: 'load_error' }>): void {
-		this.readyError = msg.error;
+		// The setup hint is for whoever runs this checkout, not the model.
+		if (msg.runtimeMissing) {
+			console.warn('python sandbox:', msg.error);
+			noteRuntimeMissing();
+		}
+		this.readyError = msg.runtimeMissing ? PYTHON_UNAVAILABLE : msg.error;
 		this.readyWaiters.splice(0).forEach((fn) => fn());
 	}
 

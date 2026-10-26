@@ -171,6 +171,15 @@ describe('fetch_url', () => {
 		);
 	});
 
+	it('cuts a long page to fit the context, and says so', async () => {
+		mocks.settings = { contextSize: 32_768 };
+		const text = 'word '.repeat(10_000).trim();
+		backend({ proxy_fetch: () => ({ text, full_length: text.length, hero_image: null }) });
+		const out = await call('fetch_url', { url: 'https://a.test' });
+		expect(out.result.length).toBeLessThan(10_100);
+		expect(out.result).toMatch(/\[Showing the first 9,8\d\d of 49,999 characters/);
+	});
+
 	it('refuses a missing url without fetching', async () => {
 		const out = await call('fetch_url', {});
 		expect(JSON.parse(out.result).error).toMatch(/needs a non-empty "url"/);
@@ -187,6 +196,27 @@ describe('fetch_url', () => {
 
 describe('research_url', () => {
 	const args = { url: 'https://a.test/post', focus: 'release date' };
+
+	it('says why "nothing found" may be wrong for a page with little text', async () => {
+		backend({ proxy_fetch: page('Loading…') });
+		mocks.runSubAgent.mockResolvedValue('No relevant information found on this page.');
+		const out = await call('research_url', args);
+		expect(out.result).toMatch(
+			/No relevant information found on this page\.\n\n\[The page gave only 8 characters/
+		);
+	});
+
+	it('gives the reader as much of a long page as the context allows', async () => {
+		mocks.settings = { contextSize: 32_768 };
+		const text = 'word '.repeat(40_000).trim();
+		backend({ proxy_fetch: () => ({ text, full_length: text.length, hero_image: null }) });
+		mocks.runSubAgent.mockResolvedValue('- found it');
+		const out = await call('research_url', args);
+		const sent = mocks.runSubAgent.mock.calls[0][0][1].content as string;
+		expect(sent.length).toBeGreaterThan(60_000);
+		expect(sent.length).toBeLessThan(66_000);
+		expect(out.result).toMatch(/- found it\n\n\[Read the first 64,5\d\d of 199,999 characters/);
+	});
 
 	it('returns the sub-agent findings with the source and focus', async () => {
 		backend({ proxy_fetch: page('Released on 3 March.', 'https://a.test/h.png') });

@@ -17,6 +17,7 @@ vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
 }));
 
 import { WorkerManager } from './worker-manager';
+import { PYTHON_UNAVAILABLE, pythonRuntimeMissing } from './availability';
 
 /** Minimal Worker stand-in: captures postMessage and replays messages. */
 class FakeWorker {
@@ -70,6 +71,26 @@ describe('WorkerManager message dispatch', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+	});
+
+	it('tells the model Python is unavailable when its runtime is missing, and remembers', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const wm = makeManager();
+		const p = wm.runPython('print(1)');
+		fake.emit({
+			kind: 'load_error',
+			error:
+				'The Python runtime is missing from /pyodide/. In a dev checkout, run ./scripts/fetch-pyodide.sh.',
+			runtimeMissing: true
+		});
+		await expect(p).rejects.toThrow(PYTHON_UNAVAILABLE);
+		expect(pythonRuntimeMissing()).toBe(true);
+		// The setup hint goes to the log, for whoever runs this checkout.
+		expect(warn).toHaveBeenCalledWith(
+			'python sandbox:',
+			expect.stringContaining('fetch-pyodide.sh')
+		);
+		warn.mockRestore();
 	});
 
 	it('runs to completion, forwarding stdout and the final result', async () => {

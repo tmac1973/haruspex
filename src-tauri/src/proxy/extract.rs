@@ -12,7 +12,9 @@ use scraper::{Html, Selector};
 use serde::Serialize;
 use std::net::IpAddr;
 
-const MAX_FETCH_LENGTH: usize = 4000;
+/// The most page text kept, in bytes. The tools cut it again to fit the
+/// model's context (see `web.ts`); this only bounds memory and the cache.
+const MAX_FETCH_LENGTH: usize = 400_000;
 pub(crate) const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 pub(super) fn diagnostic_snippet(html: &str, needles: &[&str], window: usize) -> String {
@@ -104,8 +106,9 @@ async fn fetch_first_ok(
     Err(refusal.unwrap_or_else(|| "Fetch failed: no candidate URLs".to_string()))
 }
 
-/// A fetched page: its extracted text, plus the hero image the page declares
-/// about itself.
+/// A fetched page: its extracted text, how long that text was before it was
+/// cut to `MAX_FETCH_LENGTH`, plus the hero image the page declares about
+/// itself.
 ///
 /// The image is harvested here because the HTML is already in hand — the page
 /// is being parsed for text regardless, so finding its `og:image` costs one
@@ -116,7 +119,77 @@ async fn fetch_first_ok(
 #[ts(export)]
 pub struct FetchedPage {
     pub text: String,
+    /// Characters in the page's text before any cut, so a tool can say how
+    /// much of the page the model is seeing.
+    #[ts(type = "number")]
+    pub full_length: usize,
     pub hero_image: Option<String>,
+}
+
+impl FetchedPage {
+    /// `text` cut to `MAX_FETCH_LENGTH`, remembering how long it was.
+    fn from_text(text: String, hero_image: Option<String>) -> Self {
+        let full_length = text.chars().count();
+        FetchedPage {
+            text: truncate_text(text),
+            full_length,
+            hero_image,
+        }
+    }
+}
+
+/// What a response's content type says to do with its body.
+#[derive(Debug, PartialEq)]
+enum BodyKind {
+    /// A web page: extract the visible text.
+    Html,
+    /// Text a model can read as it is: JSON, XML, CSV, Markdown, plain text.
+    Text,
+    Unsupported,
+}
+
+fn body_kind(content_type: &str) -> BodyKind {
+    let mime = content_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    // A server that sends no type at all is most often serving a page.
+    if mime.is_empty() || mime == "text/html" || mime == "application/xhtml+xml" {
+        return BodyKind::Html;
+    }
+    let text = mime.starts_with("text/")
+        || mime.ends_with("+json")
+        || mime.ends_with("+xml")
+        || matches!(
+            mime.as_str(),
+            "application/json"
+                | "application/xml"
+                | "application/javascript"
+                | "application/x-ndjson"
+                | "application/yaml"
+                | "application/x-yaml"
+                | "application/toml"
+        );
+    if text {
+        BodyKind::Text
+    } else {
+        BodyKind::Unsupported
+    }
+}
+
+/// The refusal for a body that isn't text, naming what can read it instead.
+fn unsupported_type(content_type: &str) -> String {
+    let mime = content_type.split(';').next().unwrap_or("").trim();
+    let instead = if mime == "application/pdf" {
+        "a PDF: save it with fs_download_url and read it with fs_read_pdf"
+    } else if mime.starts_with("image/") {
+        "an image: fetch_url_images lists a page's pictures"
+    } else {
+        "not text: fs_download_url can save it to the working directory"
+    };
+    format!("Content type not supported: {mime}. This is {instead}.")
 }
 
 pub(super) async fn fetch_and_extract(
@@ -140,8 +213,9 @@ pub(super) async fn fetch_and_extract(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    if !content_type.contains("text/html") && !content_type.contains("text/plain") {
-        return Err(format!("Content type not supported: {}", content_type));
+    let kind = body_kind(content_type);
+    if kind == BodyKind::Unsupported {
+        return Err(unsupported_type(content_type));
     }
 
     // Captured before the body is consumed: redirects mean the URL we asked
@@ -154,18 +228,24 @@ pub(super) async fn fetch_and_extract(
         .await
         .map_err(|e| format!("Failed to read response: {}", e))?;
 
+    // JSON, XML and the like are already what the model needs; parsing them
+    // as HTML would only lose their structure.
+    if kind == BodyKind::Text {
+        return Ok(FetchedPage::from_text(html.trim().to_string(), None));
+    }
+
     // Before stripping to plain text, check whether the raw HTML carries
     // a standardized paywall marker. When a page self-declares as gated,
     // return a sentinel instead of the extracted body — the model can't
     // usefully cite a preview, and the TS layer will reject the URL as a
     // citation source. See the comment on PAYWALL_SENTINEL.
     if let Some(reason) = detect_paywall_signal(&html) {
-        return Ok(FetchedPage {
-            text: format!("{} {}", PAYWALL_SENTINEL, reason),
-            // A paywalled page's hero image is its promotional art, and the
-            // model has no body text to pair it with anyway.
-            hero_image: None,
-        });
+        // A paywalled page's hero image is its promotional art, and the
+        // model has no body text to pair it with anyway.
+        return Ok(FetchedPage::from_text(
+            format!("{} {}", PAYWALL_SENTINEL, reason),
+            None,
+        ));
     }
 
     // Resolve against the post-redirect URL so a relative og:image points
@@ -174,10 +254,7 @@ pub(super) async fn fetch_and_extract(
         .ok()
         .and_then(|base| super::images::extract_hero_image(&html, &base));
 
-    Ok(FetchedPage {
-        text: extract_text(&html),
-        hero_image,
-    })
+    Ok(FetchedPage::from_text(extract_text(&html), hero_image))
 }
 
 pub(crate) fn validate_url(url: &str) -> Result<(), String> {
@@ -299,6 +376,7 @@ pub(super) async fn fetch_ok(
     Ok(response)
 }
 
+/// The page's visible text, whitespace tidied, uncut.
 pub(super) fn extract_text(html: &str) -> String {
     let document = Html::parse_document(html);
 
@@ -309,31 +387,31 @@ pub(super) fn extract_text(html: &str) -> String {
         .unwrap_or_else(|| extract_body_text(&document));
 
     // Clean up whitespace
-    let cleaned = content
+    content
         .lines()
         .map(|line| line.trim())
         .filter(|line| !line.is_empty())
         .collect::<Vec<&str>>()
-        .join("\n");
+        .join("\n")
+}
 
-    // Truncate without splitting a UTF-8 code point.
-    if cleaned.len() > MAX_FETCH_LENGTH {
-        let truncated = crate::text_util::truncate_at_char_boundary(&cleaned, MAX_FETCH_LENGTH);
-        // Find the last complete word
-        if let Some(pos) = truncated.rfind(char::is_whitespace) {
-            format!("{}...", &truncated[..pos])
-        } else {
-            format!("{}...", truncated)
-        }
-    } else {
-        cleaned
+/// `text` cut to `MAX_FETCH_LENGTH` at a word, without splitting a UTF-8 code
+/// point.
+fn truncate_text(text: String) -> String {
+    if text.len() <= MAX_FETCH_LENGTH {
+        return text;
+    }
+    let truncated = crate::text_util::truncate_at_char_boundary(&text, MAX_FETCH_LENGTH);
+    match truncated.rfind(char::is_whitespace) {
+        Some(pos) => format!("{}...", &truncated[..pos]),
+        None => format!("{}...", truncated),
     }
 }
 
 fn try_select_text(document: &Html, selector_str: &str) -> Option<String> {
     let selector = Selector::parse(selector_str).ok()?;
     let element = document.select(&selector).next()?;
-    let text = element.text().collect::<String>();
+    let text = visible_text(element);
     let trimmed = text.trim();
     if trimmed.len() > 100 {
         Some(trimmed.to_string())
@@ -343,15 +421,35 @@ fn try_select_text(document: &Html, selector_str: &str) -> Option<String> {
 }
 
 fn extract_body_text(document: &Html) -> String {
-    // Remove script, style, nav, header, footer, aside elements by collecting
-    // text only from visible content elements
     let body_selector = Selector::parse("body").expect("static selector");
-
-    if let Some(body) = document.select(&body_selector).next() {
-        body.text().collect::<String>()
-    } else {
-        document.root_element().text().collect::<String>()
+    match document.select(&body_selector).next() {
+        Some(body) => visible_text(body),
+        None => visible_text(document.root_element()),
     }
+}
+
+/// Elements whose text is never shown. An app page keeps its data in a
+/// `<script>` (GitHub's releases page opens with a JSON blob), and counting it
+/// as text once filled the whole page budget before any visible line.
+const HIDDEN_ELEMENTS: &[&str] = &["script", "style", "noscript", "template"];
+
+/// The text under `element`, leaving out what sits in a hidden element.
+fn visible_text(element: scraper::ElementRef) -> String {
+    let mut out = String::new();
+    for node in element.descendants() {
+        let Some(text) = node.value().as_text() else {
+            continue;
+        };
+        let hidden = node.ancestors().any(|a| {
+            a.value()
+                .as_element()
+                .is_some_and(|e| HIDDEN_ELEMENTS.contains(&e.name()))
+        });
+        if !hidden {
+            out.push_str(text);
+        }
+    }
+    out
 }
 
 pub(super) fn strip_html_tags(s: &str) -> String {
@@ -521,30 +619,61 @@ mod tests {
     }
 
     #[test]
-    fn extract_text_truncates_long_content() {
-        let long_text = "word ".repeat(2000);
-        let html = format!(
-            "<html><body><article><p>{}</p></article></body></html>",
-            long_text
-        );
-        let text = extract_text(&html);
-        assert!(text.len() <= MAX_FETCH_LENGTH + 10); // +10 for "..."
-        assert!(text.ends_with("..."));
+    fn a_long_page_is_cut_and_remembers_its_length() {
+        let long_text = "word ".repeat(MAX_FETCH_LENGTH / 4);
+        let page = FetchedPage::from_text(long_text.trim().to_string(), None);
+        assert!(page.text.len() <= MAX_FETCH_LENGTH + 10); // +10 for "..."
+        assert!(page.text.ends_with("..."));
+        assert_eq!(page.full_length, long_text.trim().len());
     }
 
     #[test]
-    fn extract_text_truncates_multibyte_content_on_char_boundary() {
+    fn a_long_page_is_cut_on_a_char_boundary() {
         // 3-byte chars with no whitespace guarantee a char straddles the
-        // MAX_FETCH_LENGTH byte index (4000 is not a multiple of 3), which
-        // panicked before truncation backed off to a char boundary.
-        let long_text = "—".repeat(3000);
-        let html = format!(
-            "<html><body><article><p>{}</p></article></body></html>",
-            long_text
-        );
-        let text = extract_text(&html);
-        assert!(text.len() <= MAX_FETCH_LENGTH + 3); // +3 for "..."
-        assert!(text.ends_with("..."));
+        // MAX_FETCH_LENGTH byte index, which panicked before truncation backed
+        // off to a char boundary.
+        let page = FetchedPage::from_text("—".repeat(MAX_FETCH_LENGTH / 2), None);
+        assert!(page.text.len() <= MAX_FETCH_LENGTH + 3); // +3 for "..."
+        assert!(page.text.ends_with("..."));
+        assert_eq!(page.full_length, MAX_FETCH_LENGTH / 2);
+    }
+
+    #[test]
+    fn script_and_style_text_is_not_page_text() {
+        let html = r#"<html><head><style>p{}</style></head><body>
+            <script type="application/json">{"props":{"payload":"x"}}</script>
+            <noscript>enable JS</noscript>
+            <p>b11901 released</p>
+            <script>var y = 1;</script>
+            </body></html>"#;
+        let text = extract_text(html);
+        assert_eq!(text, "b11901 released");
+    }
+
+    #[test]
+    fn json_xml_and_csv_are_read_as_text() {
+        for t in [
+            "application/json; charset=utf-8",
+            "application/atom+xml; charset=utf-8",
+            "application/vnd.github+json",
+            "text/xml",
+            "text/csv",
+            "text/plain",
+            "text/markdown",
+        ] {
+            assert_eq!(body_kind(t), BodyKind::Text, "{t}");
+        }
+        assert_eq!(body_kind("text/html; charset=utf-8"), BodyKind::Html);
+        assert_eq!(body_kind(""), BodyKind::Html);
+        assert_eq!(body_kind("application/pdf"), BodyKind::Unsupported);
+        assert_eq!(body_kind("image/png"), BodyKind::Unsupported);
+    }
+
+    #[test]
+    fn a_refused_type_names_what_can_read_it() {
+        assert!(unsupported_type("application/pdf").contains("fs_read_pdf"));
+        assert!(unsupported_type("image/png; q=1").contains("fetch_url_images"));
+        assert!(unsupported_type("application/zip").contains("fs_download_url"));
     }
 
     #[test]

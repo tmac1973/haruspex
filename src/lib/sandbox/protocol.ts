@@ -107,7 +107,7 @@ export interface ArtifactMessage {
 
 export type WorkerToMain =
 	| { kind: 'ready' }
-	| { kind: 'load_error'; error: string }
+	| { kind: 'load_error'; error: string; runtimeMissing?: boolean }
 	| { kind: 'get_runtime_config' }
 	| { kind: 'sync_workdir_ack'; sync_id: string; error?: string }
 	| { kind: 'stdout'; id: string; data: string }
