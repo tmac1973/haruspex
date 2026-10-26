@@ -11,8 +11,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-/// Gains are kept within this many dB either way.
-const MAX_GAIN: f64 = 20.0;
+/// Gains are kept within this many dB either way, so a near-silent clip's
+/// noise isn't raised to speech level.
+pub const MAX_GAIN: f64 = 20.0;
 /// Quieter than this is silence, which gets no gain.
 const SILENT_LUFS: f64 = -70.0;
 
@@ -58,6 +59,12 @@ pub fn gain_for(m: &Measured) -> Option<Gain> {
         db: (db * 10.0).round() / 10.0,
         limit,
     })
+}
+
+/// How many dB under -14 LUFS a clip stays with its gain: none unless the
+/// ±20 dB bound or the limiting bound held the gain back.
+pub fn short_of_target(m: &Measured, g: &Gain) -> f64 {
+    (TARGET_LUFS - (m.lufs + g.db)).max(0.0)
 }
 
 fn cache_path(episode_dir: &Path) -> PathBuf {
@@ -236,6 +243,22 @@ mod tests {
             })
         );
         assert_eq!(g(-80.0, None), None);
+    }
+
+    #[test]
+    fn a_gain_held_back_leaves_the_clip_short() {
+        let short = |lufs, peak| {
+            let m = Measured {
+                lufs,
+                true_peak: peak,
+            };
+            short_of_target(&m, &gain_for(&m).unwrap())
+        };
+        assert_eq!(short(-20.0, Some(-12.0)), 0.0);
+        // The demo clip from the AppImage run: needs +27, gets +20.
+        assert!((short(-41.2, Some(-30.2)) - 7.2).abs() < 0.05);
+        // Limiting held back to 6 dB.
+        assert!((short(-30.0, Some(-7.5)) - 4.0).abs() < 0.05);
     }
 
     #[test]

@@ -1,6 +1,7 @@
 //! What a finished render is: its length, streams and loudness, and what is
 //! wrong with it.
 
+use super::loudness::MAX_GAIN;
 use super::probe;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -95,6 +96,7 @@ pub fn problems(
     has_audio: bool,
     loudness: Option<&Loudness>,
     frame: f64,
+    at_limit: &[String],
 ) -> Vec<String> {
     let mut out = Vec::new();
     // A frame either way is rounding; more is a real difference.
@@ -107,7 +109,17 @@ pub fn problems(
         out.push("The render has no sound.".into());
     }
     if let Some(l) = loudness {
-        if l.lufs.is_finite() && (l.lufs - TARGET_LUFS).abs() > LUFS_TOLERANCE {
+        let quiet = l.lufs < TARGET_LUFS - LUFS_TOLERANCE;
+        if l.lufs.is_finite() && quiet && !at_limit.is_empty() {
+            out.push(format!(
+                "Loudness is {:.1} LUFS, under YouTube's {TARGET_LUFS} ±{LUFS_TOLERANCE}, and \
+                 video_normalize can't raise it: {} already {} the most gain allowed \
+                 (+{MAX_GAIN} dB). Tell the user that footage is too quiet to bring up.",
+                l.lufs,
+                at_limit.join(", "),
+                if at_limit.len() == 1 { "has" } else { "have" }
+            ));
+        } else if l.lufs.is_finite() && (l.lufs - TARGET_LUFS).abs() > LUFS_TOLERANCE {
             out.push(format!(
                 "Loudness is {:.1} LUFS, outside YouTube's {TARGET_LUFS} ±{LUFS_TOLERANCE}; video_normalize evens it out.",
                 l.lufs
@@ -132,6 +144,7 @@ pub async fn check(
     ffmpeg: &str,
     file: &Path,
     expected_secs: f64,
+    at_limit: &[String],
 ) -> Result<RenderCheck, String> {
     let info = probe::probe_file(ffprobe, file, file.display().to_string()).await?;
     let has_audio = !info.audio.is_empty();
@@ -166,6 +179,7 @@ pub async fn check(
             has_audio,
             loudness.as_ref(),
             frame,
+            at_limit,
         ),
         loudness,
     })
@@ -204,17 +218,39 @@ mod tests {
             lra: 6.0,
             true_peak_db: Some(-1.5),
         };
-        assert!(problems(120.0, 120.01, true, Some(&ok), 1.0 / 60.0).is_empty());
-        let p = problems(110.0, 120.0, true, Some(&ok), 1.0 / 60.0);
+        assert!(problems(120.0, 120.01, true, Some(&ok), 1.0 / 60.0, &[]).is_empty());
+        let p = problems(110.0, 120.0, true, Some(&ok), 1.0 / 60.0, &[]);
         assert!(p[0].contains("110.0 s long"));
         let quiet = Loudness {
             lufs: -21.1,
             lra: 6.0,
             true_peak_db: Some(-0.2),
         };
-        let p = problems(120.0, 120.0, true, Some(&quiet), 1.0 / 60.0);
+        let p = problems(120.0, 120.0, true, Some(&quiet), 1.0 / 60.0, &[]);
         assert!(p.iter().any(|x| x.contains("-21.1 LUFS")));
         assert!(p.iter().any(|x| x.contains("true peak")));
-        assert!(problems(120.0, 120.0, false, None, 0.04)[0].contains("no sound"));
+        assert!(p.iter().any(|x| x.contains("video_normalize evens it out")));
+        assert!(problems(120.0, 120.0, false, None, 0.04, &[])[0].contains("no sound"));
+    }
+
+    #[test]
+    fn a_gain_at_its_bound_is_not_sent_back_to_normalise() {
+        let quiet = Loudness {
+            lufs: -17.2,
+            lra: 9.0,
+            true_peak_db: Some(-1.4),
+        };
+        let at_limit = ["raw/02-demo.mp4".to_string()];
+        let p = problems(50.0, 50.0, true, Some(&quiet), 1.0 / 60.0, &at_limit);
+        assert_eq!(p.len(), 1);
+        assert!(p[0].contains("can't raise it: raw/02-demo.mp4 already has"));
+        assert!(!p[0].contains("evens it out"));
+        // Too loud: normalising still helps, whatever the bound.
+        let loud = Loudness {
+            lufs: -9.0,
+            ..quiet
+        };
+        let p = problems(50.0, 50.0, true, Some(&loud), 1.0 / 60.0, &at_limit);
+        assert!(p[0].contains("evens it out"));
     }
 }

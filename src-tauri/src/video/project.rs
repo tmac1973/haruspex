@@ -152,15 +152,47 @@ async fn normalize_gains(
     }
     let measured = loudness::measure_all(ffmpeg, episode_dir, &stretches, &|_, _| {}).await?;
     let n = which.len();
-    for (k, m) in which.into_iter().zip(measured) {
+    let mut quiet = Vec::new();
+    for ((k, m), s) in which.into_iter().zip(measured).zip(&stretches) {
         let gain = loudness::gain_for(&m);
         wanted[k].gain_db = Some(gain.map_or(0.0, |g| g.db));
         wanted[k].limiter = gain.is_some_and(|g| g.limit);
+        if let Some(g) = gain {
+            let short = loudness::short_of_target(&m, &g);
+            if short > super::check::LUFS_TOLERANCE {
+                let name = s.file.file_name().map_or_else(
+                    || s.file.display().to_string(),
+                    |f| f.to_string_lossy().into_owned(),
+                );
+                quiet.push(format!("{name} (about {short:.0} dB under)"));
+            }
+        }
     }
-    Ok(format!(
+    let mut note = format!(
         "Evened out the sound of {n} clip{} to about -14 LUFS.",
         if n == 1 { "" } else { "s" }
-    ))
+    );
+    if !quiet.is_empty() {
+        note.push_str(&format!(
+            " Some stay under it, as more gain would raise their noise or squash their \
+             peaks: {}. Tell the user.",
+            quiet.join(", ")
+        ));
+    }
+    Ok(note)
+}
+
+/// A crossfade on the cut's first clip has nothing before it to fade from.
+fn first_clip_fade(own: Option<f64>) -> Result<(), String> {
+    if own.is_some_and(|s| s > 0.0) {
+        return Err(
+            "The first clip has nothing before it to crossfade from. Put \
+                    crossfade_secs on the clip after the join, or set the cut's \
+                    crossfade_secs for every join."
+                .into(),
+        );
+    }
+    Ok(())
 }
 
 /// The shortest piece a cut leaves: anything shorter is dropped with its gap.
@@ -579,6 +611,7 @@ pub async fn cut(
     if paired.is_empty() {
         return Err("The cut has no clips. List them in items.".into());
     }
+    first_clip_fade(paired[0].1)?;
     let mut wanted: Vec<Placement> = paired
         .into_iter()
         .enumerate()
@@ -861,6 +894,14 @@ mod tests {
         }];
         let removed = cut_ranges(&mut w, 0, 0, 0, 99, &[(10, 97)], 6);
         assert_eq!((w.len(), removed), (1, 90));
+    }
+
+    #[test]
+    fn a_crossfade_into_the_first_clip_is_refused() {
+        assert!(first_clip_fade(None).is_ok());
+        assert!(first_clip_fade(Some(0.0)).is_ok());
+        let e = first_clip_fade(Some(1.0)).unwrap_err();
+        assert!(e.contains("on the clip after the join"));
     }
 
     #[test]
