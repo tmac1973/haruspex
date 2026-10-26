@@ -99,7 +99,7 @@ describe('Settings → Music', () => {
 			selector: 'select'
 		})) as HTMLSelectElement;
 		await waitFor(() => expect([...select.options].map((o) => o.value)).toContain('ace-xl'));
-		const heading = await screen.findByRole('heading', { name: /Models on the server/ });
+		const heading = await screen.findByRole('heading', { name: /Instances on the server/ });
 		expect(within(heading.closest('section')!).getByText('ace-xl')).toBeTruthy();
 	});
 

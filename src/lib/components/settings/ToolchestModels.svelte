@@ -2,8 +2,10 @@
 	import Tooltip from '#lib/components/Tooltip.svelte';
 	import type { GenerationKind, ToolchestInstance } from '#lib/toolchest/models.ts';
 
-	// What a llama-toolchest server runs, as its last probe listed it. Read
-	// only: instances are started, and model sets installed, in toolchest.
+	// The instances a llama-toolchest server has enabled, running or not, as
+	// its last probe listed them. Not the model sets it has downloaded: one
+	// without an instance isn't listed, and isn't usable. Read only: instances
+	// are made and started, and model sets installed, in toolchest.
 	interface Props {
 		kind: GenerationKind;
 		instances: ToolchestInstance[];
@@ -16,10 +18,10 @@
 
 <section class="settings-section">
 	<h2>
-		Models on the server
+		Instances on the server
 		<Tooltip
 			label="Where these come from"
-			text={`llama-toolchest lists every ${what} instance it has. Starting one, or adding a model, happens in llama-toolchest.`}
+			text={`llama-toolchest lists each ${what} instance it has enabled. A downloaded model needs an instance, made and started in llama-toolchest.`}
 		/>
 	</h2>
 	{#each instances as i (i.id)}
@@ -41,6 +43,7 @@
 		<p class="help">No {what} models on this server.</p>
 	{/each}
 	<p class="help">
+		Haruspex can use an instance only while it is running.
 		<a href={baseUrl} target="_blank" rel="noreferrer">Open llama-toolchest</a> to start or add one.
 	</p>
 </section>
