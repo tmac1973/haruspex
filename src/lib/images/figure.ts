@@ -24,6 +24,11 @@ function esc(s: string): string {
 		.replace(/"/g, '&quot;');
 }
 
+/** The download arrow `ImageSaveButton.svelte` draws. */
+const SAVE_ICON =
+	'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11"></path>' +
+	'<polyline points="7 10 12 15 17 10"></polyline><path d="M5 19h14"></path></svg>';
+
 /**
  * The `<figure>` for one cached image, or `null` if it is not displayable.
  *
@@ -54,14 +59,21 @@ export function figureHtml(row: ImageRow, alt: string): string | null {
 	// `data-action` rather than an inline handler: this HTML goes through
 	// DOMPurify, which strips `onclick`, and the CSP would block it anyway.
 	// markdown-actions.ts routes the click, the same way the code-block
-	// copy/paste/run buttons work.
+	// copy/paste/run buttons work. Save as… sits beside the zoom button, not
+	// in it, since a button can't hold another.
 	return (
 		`<figure class="chat-image">` +
+		`<span class="image-frame">` +
 		`<button type="button" class="chat-image-zoom" data-action="view-image" ` +
 		`title="Click to enlarge" aria-label="Enlarge image">` +
 		`<img src="${esc(src)}" alt="${esc(alt)}" width="${row.width}" height="${row.height}" ` +
 		`loading="lazy">` +
 		`</button>` +
+		`<button type="button" class="image-save" data-action="save-image" ` +
+		`data-hash="${esc(row.hash)}" title="Save as…" aria-label="Save image as…">` +
+		SAVE_ICON +
+		`</button>` +
+		`</span>` +
 		captionHtml +
 		`</figure>`
 	);

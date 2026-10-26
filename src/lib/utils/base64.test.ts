@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bytesToBase64, pngDataUrl } from './base64';
+import { bytesToBase64, dataUrlBytes, pngDataUrl } from './base64';
 
 describe('bytesToBase64', () => {
 	it('encodes bytes', () => {
@@ -19,5 +19,19 @@ describe('bytesToBase64', () => {
 describe('pngDataUrl', () => {
 	it('prefixes the PNG media type', () => {
 		expect(pngDataUrl(new Uint8Array([1]))).toBe('data:image/png;base64,AQ==');
+	});
+});
+
+describe('dataUrlBytes', () => {
+	it('decodes what pngDataUrl encodes', () => {
+		expect(dataUrlBytes(pngDataUrl(new Uint8Array([1, 2, 255])))).toEqual(
+			new Uint8Array([1, 2, 255])
+		);
+	});
+
+	it('refuses anything that is not a base64 data URL', () => {
+		expect(dataUrlBytes('https://example.com/a.png')).toBeNull();
+		expect(dataUrlBytes('data:text/plain,hello')).toBeNull();
+		expect(dataUrlBytes('data:image/png;base64,***')).toBeNull();
 	});
 });
