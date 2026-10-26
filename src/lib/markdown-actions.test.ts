@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { installMarkdownActions, VIEW_IMAGE_EVENT } from './markdown-actions';
 
+const saveImageAs = vi.fn(async () => ({ kind: 'cancelled' as const }));
+vi.mock('#lib/images/save.ts', () => ({
+	saveImageAs: (...args: unknown[]) => saveImageAs(...(args as [])),
+	saveWithToast: (run: () => Promise<unknown>) => run()
+}));
+
 function mountCodeBlock(action: string): HTMLButtonElement {
 	document.body.innerHTML = `
 		<div class="code-block">
@@ -116,5 +122,34 @@ describe('view-image action', () => {
 		document.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 		expect(seen).toHaveBeenCalledTimes(1);
 		expect((seen.mock.calls[0][0] as CustomEvent).detail).toBe('ls -la');
+	});
+});
+
+describe('save-image action', () => {
+	let uninstall: () => void;
+
+	beforeEach(() => {
+		saveImageAs.mockClear();
+		uninstall = installMarkdownActions();
+	});
+
+	afterEach(() => {
+		uninstall();
+		document.body.innerHTML = '';
+	});
+
+	it('saves the cached picture by hash, named from its alt text', () => {
+		document.body.innerHTML = `
+			<span class="image-frame">
+				<button type="button" data-action="view-image">
+					<img src="haruspex-img://localhost/abc" alt="a red panda">
+				</button>
+				<button type="button" data-action="save-image" data-hash="abc"><svg></svg></button>
+			</span>`;
+		const seen = vi.fn();
+		document.addEventListener(VIEW_IMAGE_EVENT, seen as EventListener, { once: true });
+		document.querySelector('svg')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		expect(saveImageAs).toHaveBeenCalledWith('abc', 'a red panda');
+		expect(seen).not.toHaveBeenCalled();
 	});
 });

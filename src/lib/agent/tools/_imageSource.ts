@@ -7,6 +7,7 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
+import { dataUrlBytes } from '#lib/utils/base64.ts';
 import { imageHashFromUrl } from '#lib/images/url.ts';
 import type { ToolContext } from '#lib/agent/tools/types.ts';
 import { assetIo } from '#lib/agent/tools/_assetIo.ts';
@@ -34,16 +35,6 @@ export const measureImage: MeasureImage = async (bytes) => {
 
 const IMAGE_FILE = /\.(png|jpe?g|webp)$/i;
 const ATTACHED = /^attached(?::(\d+))?$/i;
-
-/** The bytes of a `data:` URL, or null for anything else. */
-function dataUrlBytes(url: string): Uint8Array | null {
-	const m = url.match(/^data:[^;,]*;base64,(.*)$/);
-	if (!m) return null;
-	const bin = atob(m[1]);
-	const out = new Uint8Array(bin.length);
-	for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-	return out;
-}
 
 type Read = { input: ImageInput; bytes: Uint8Array } | string;
 

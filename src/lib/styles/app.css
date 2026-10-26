@@ -828,6 +828,61 @@ body:not(.shell-tab-active) .code-block .run-btn {
 	border: 1px solid var(--border);
 }
 
+/* Only the image shows; the cursor and focus ring say it opens. */
+.markdown .chat-image-zoom {
+	display: block;
+	padding: 0;
+	border: none;
+	background: none;
+}
+
+/* A picture with Save as… over its top-right corner, shown on hover: an
+   answer's images (images/figure.ts) and ImageSaveButton.svelte's. */
+.image-frame {
+	position: relative;
+	display: inline-block;
+	max-width: 100%;
+	vertical-align: top;
+}
+
+.image-frame .image-save {
+	position: absolute;
+	top: 6px;
+	right: 6px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--bg-primary);
+	color: var(--text-secondary);
+	cursor: pointer;
+	opacity: 0;
+	transition: opacity 0.12s;
+}
+
+.image-frame:hover .image-save,
+.image-frame .image-save:focus-visible {
+	opacity: 1;
+}
+
+.image-frame .image-save:hover {
+	color: var(--text-primary);
+}
+
+.image-frame .image-save svg {
+	width: 16px;
+	height: 16px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 2;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
 /* Generated audio in an answer: the place an AudioPlayer is mounted. See
    audio/figure.ts and audio/mountPlayers.ts. Not under .markdown: the Code
    tab's answers render outside it. */

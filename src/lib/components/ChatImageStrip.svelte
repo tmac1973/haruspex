@@ -17,6 +17,7 @@
 	import { captionFor } from '#lib/images/caption.ts';
 	import { imageSrc } from '#lib/images/url.ts';
 	import { VIEW_IMAGE_EVENT } from '#lib/markdown-actions.ts';
+	import ImageSaveButton from '#lib/components/ImageSaveButton.svelte';
 
 	/**
 	 * Same event the inline images raise, so one viewer at the chat level
@@ -40,15 +41,18 @@
 			{@const caption = captionFor(row)}
 			{#if src}
 				<figure>
-					<button
-						type="button"
-						class="zoom"
-						title="Click to enlarge"
-						aria-label="Enlarge image"
-						onclick={() => enlarge(src, row.attribution ?? 'image')}
-					>
-						<img {src} alt="" width={row.width} height={row.height} loading="lazy" />
-					</button>
+					<span class="image-frame">
+						<button
+							type="button"
+							class="zoom"
+							title="Click to enlarge"
+							aria-label="Enlarge image"
+							onclick={() => enlarge(src, row.attribution ?? 'image')}
+						>
+							<img {src} alt="" width={row.width} height={row.height} loading="lazy" />
+						</button>
+						<ImageSaveButton hash={row.hash} alt={row.attribution ?? 'image'} />
+					</span>
 					{#if caption}
 						<figcaption>
 							{caption.text}{#if caption.linkHref}<a
@@ -80,6 +84,11 @@
 		   width when the pane is narrow. */
 		flex: 1 1 200px;
 		max-width: 280px;
+	}
+
+	/* The frame fills the figure, so the image keeps its width. */
+	.image-frame {
+		display: block;
 	}
 
 	/* Strips the button chrome so only the image is visible; the cursor and
