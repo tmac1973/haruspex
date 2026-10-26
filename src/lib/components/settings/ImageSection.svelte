@@ -29,6 +29,7 @@
 		syncDownloads
 	} from '#lib/stores/downloads.svelte.ts';
 	import { resolveImageBackend } from '#lib/image/index.ts';
+	import { capabilityLine, type CapabilityLine } from '#lib/image/capabilityLine.ts';
 	import { invalidateTypeAvailability } from '#lib/agent/jobs/types/availability.svelte.ts';
 	import { generateOneImage } from '#lib/image/generateOne.ts';
 	import { describeImageProgress } from '#lib/image/progress.ts';
@@ -153,8 +154,21 @@
 	let upscaler = $state<UpscalerInfo | null>(null);
 	const UPSCALER_KEY = 'image:upscaler';
 
+	/** What the bundled engine can do with the chosen model, for its line. */
+	let localCapabilities = $state<ImageBackendCapabilities | null>(null);
+
+	async function refreshLocalCapabilities() {
+		localCapabilities =
+			getSettings().imageBackendKind === 'local' && imageLocalModelId
+				? await resolveImageBackend()
+						.capabilities()
+						.catch(() => null)
+				: null;
+	}
+
 	async function refreshModels() {
 		models = await invoke<ImageModel[]>('image_models').catch(() => []);
+		void refreshLocalCapabilities();
 		upscaler = await invoke<UpscalerInfo>('image_upscaler').catch(() => null);
 	}
 
@@ -222,6 +236,7 @@
 	async function selectModel(m: ImageModel) {
 		imageLocalModelId = m.id;
 		persist({ imageLocalModelId: m.id });
+		void refreshLocalCapabilities();
 		await refreshEngine();
 	}
 
@@ -455,6 +470,10 @@
 	}
 </script>
 
+{#snippet canLine(line: CapabilityLine)}
+	<p class="help" title={line.howTo || undefined}>{line.text}</p>
+{/snippet}
+
 <section class="settings-section">
 	<h2>Image backend</h2>
 	<div class="fields">
@@ -554,6 +573,9 @@
 			<p class="warn">{downloadError}</p>
 		{/if}
 
+		{#if localCapabilities}
+			{@render canLine(capabilityLine(localCapabilities, 'local'))}
+		{/if}
 		<p class="help">Nothing starts until you ask.</p>
 		<div class="row">
 			<button onclick={startEngine} disabled={engineBusy || engine?.status === 'Ready'}>
@@ -635,11 +657,7 @@
 			{/if}
 		</div>
 		{#if capabilities}
-			<p class="help">
-				Supports: transparency {capabilities.transparency ? 'yes' : 'no'}, seamless tiling {capabilities.seamlessTiling
-					? 'yes'
-					: 'no'}, LoRA slots {capabilities.maxLoras}.
-			</p>
+			{@render canLine(capabilityLine(capabilities, imageBackendKind))}
 		{/if}
 	</section>
 

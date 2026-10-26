@@ -19,7 +19,7 @@ While it is off, Settings → Music says so if the llama-toolchest your chat mod
 
 ### Set up llama-toolchest
 
-If your chat model comes from a toolchest, its address and key are filled in; otherwise enter the **Server address** (for example `http://host:3000`) and pick an **API key** from Settings → Inference → API Keys. Press **Probe**, then choose one of its music instances as the **Model**. **Models on the server** lists them and whether each is running. Starting an instance, or adding a model, happens in llama-toolchest; Haruspex can't start one.
+If your chat model comes from a toolchest, its address and key are filled in; otherwise enter the **Server address** (for example `http://host:3000`) and pick an **API key** from Settings → Inference → API Keys. Press **Probe**, then choose one of its music instances as the **Model**. **Instances on the server** lists its enabled instances; Haruspex uses one only while it runs. Starting an instance, or adding a model, happens in llama-toolchest; Haruspex can't start one.
 
 ### Set up ace-server
 
