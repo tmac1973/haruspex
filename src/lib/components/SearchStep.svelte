@@ -21,6 +21,7 @@
 	import { isToolErrorResult } from '#lib/agent/tools/toolResult.ts';
 	import { sanitizeHtml } from '#lib/sanitize.ts';
 	import ImageViewerModal from '#lib/components/ImageViewerModal.svelte';
+	import ImageSaveButton from '#lib/components/ImageSaveButton.svelte';
 	import ArtifactFrame from '#lib/components/ArtifactFrame.svelte';
 	import MemoryRecallStep from '#lib/components/MemoryRecallStep.svelte';
 	import { MEMORY_RECALL_STEP } from '#lib/agent/memory/stepName.ts';
@@ -314,14 +315,17 @@
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div class="step-thumb" onclick={(e) => e.stopPropagation()}>
-						<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-						<img
-							src={step.thumbDataUrl}
-							alt={step.query}
-							class="clickable"
-							title="Click to enlarge"
-							onclick={(e) => openViewer(step.thumbDataUrl!, step.query, e)}
-						/>
+						<span class="image-frame">
+							<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+							<img
+								src={step.thumbDataUrl}
+								alt={step.query}
+								class="clickable"
+								title="Click to enlarge"
+								onclick={(e) => openViewer(step.thumbDataUrl!, step.query, e)}
+							/>
+							<ImageSaveButton dataUrl={step.thumbDataUrl} alt={step.query} />
+						</span>
 					</div>
 				{/if}
 				{#if step.artifacts && step.artifacts.length > 0}
@@ -330,14 +334,17 @@
 					<div class="step-artifacts" onclick={(e) => e.stopPropagation()}>
 						{#each step.artifacts as artifact, i (i)}
 							{#if artifact.kind === 'image'}
-								<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-								<img
-									class="artifact-image clickable"
-									src={artifact.dataUrl}
-									alt={artifact.alt ?? 'plot'}
-									title="Click to enlarge"
-									onclick={(e) => openViewer(artifact.dataUrl, artifact.alt ?? 'plot', e)}
-								/>
+								<span class="image-frame">
+									<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+									<img
+										class="artifact-image clickable"
+										src={artifact.dataUrl}
+										alt={artifact.alt ?? 'plot'}
+										title="Click to enlarge"
+										onclick={(e) => openViewer(artifact.dataUrl, artifact.alt ?? 'plot', e)}
+									/>
+									<ImageSaveButton dataUrl={artifact.dataUrl} alt={artifact.alt ?? 'plot'} />
+								</span>
 							{:else if artifact.kind === 'videoTask'}
 								<VideoTaskCard taskId={artifact.taskId} label={artifact.label} />
 							{:else if artifact.kind === 'audio'}
@@ -591,6 +598,11 @@
 		flex-direction: column;
 		gap: 8px;
 		cursor: default;
+	}
+
+	/* Sized to the plot, so Save as… sits on its corner, not the card's. */
+	.step-artifacts .image-frame {
+		align-self: flex-start;
 	}
 
 	.artifact-image {

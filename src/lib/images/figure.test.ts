@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { figureHtml } from './figure';
+import { sanitizeHtml } from '#lib/sanitize.ts';
 import { captionFor } from './caption';
 import type { ImageRow } from '#lib/ipc/gen/ImageRow.ts';
 
@@ -44,6 +45,21 @@ describe('figureHtml', () => {
 		const html = figureHtml(row(), '"><script>alert(1)</script>')!;
 		expect(html).not.toContain('<script>');
 		expect(html).toContain('&quot;');
+	});
+
+	it('puts Save as… beside the zoom button, carrying the hash', () => {
+		const doc = new DOMParser().parseFromString(figureHtml(row(), 'x')!, 'text/html');
+		const save = doc.querySelector<HTMLElement>('[data-action="save-image"]')!;
+		expect(save.dataset.hash).toBe(HASH);
+		expect(save.closest('[data-action="view-image"]')).toBeNull();
+		expect(save.closest('.image-frame')?.querySelector('img')).not.toBeNull();
+	});
+
+	it('keeps Save as… through the sanitizer every answer passes', () => {
+		const clean = sanitizeHtml(figureHtml(row(), 'x')!);
+		expect(clean).toContain(`data-hash="${HASH}"`);
+		expect(clean).toContain('data-action="save-image"');
+		expect(clean).toContain('<polyline');
 	});
 
 	it('renders nothing when the row carries a corrupt hash', () => {

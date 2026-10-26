@@ -9,6 +9,7 @@
  */
 
 import { copyText } from '#lib/utils/copyText.ts';
+import { saveImageAs, saveWithToast } from '#lib/images/save.ts';
 
 const codeFor = (btn: HTMLElement): string =>
 	btn.closest('.code-block')?.querySelector('code')?.textContent ?? '';
@@ -46,6 +47,12 @@ export function handleMarkdownAction(event: MouseEvent): void {
 		case 'shell-run':
 			document.dispatchEvent(new CustomEvent('hsp-shell-run', { detail: codeFor(btn) }));
 			break;
+		case 'save-image': {
+			const hash = btn.dataset.hash;
+			const alt = btn.closest('.image-frame')?.querySelector('img')?.alt ?? '';
+			if (hash) void saveWithToast(() => saveImageAs(hash, alt));
+			break;
+		}
 	}
 }
 
