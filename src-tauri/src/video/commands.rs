@@ -525,3 +525,134 @@ pub async fn video_frames(
             .collect(),
     })
 }
+
+#[derive(serde::Serialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct ThumbnailWritten {
+    pub path: String,
+    pub data_url: String,
+    #[ts(type = "number")]
+    pub bytes: u64,
+}
+
+/// Where a thumbnail goes: `<episode>/<name or project stem or episode>.thumbnail.jpg`
+/// (a given name ends `.jpg` as it is), the old one backed up first.
+fn thumbnail_target(
+    working_dir: &str,
+    episode: &str,
+    project: Option<&str>,
+    name: Option<&str>,
+) -> Result<std::path::PathBuf, String> {
+    let episode_dir = paths::resolve_episode(working_dir, episode)?;
+    let file = match name.map(str::trim).filter(|n| !n.is_empty()) {
+        Some(n) => {
+            let n = n.trim_end_matches(".jpg");
+            if n.contains(['/', '\\']) || n.starts_with('.') {
+                return Err("name is a file name, not a path.".into());
+            }
+            format!("{n}.jpg")
+        }
+        None => {
+            let stem = super::project::default_project(working_dir, episode, project, false)
+                .ok()
+                .and_then(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_string))
+                .or_else(|| {
+                    episode_dir
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .map(str::to_string)
+                })
+                .unwrap_or_else(|| "video".into());
+            format!("{stem}.thumbnail.jpg")
+        }
+    };
+    let target = episode_dir.join(file);
+    if target.exists() {
+        let backups = episode_dir.join(".haruspex").join("backups");
+        std::fs::create_dir_all(&backups)
+            .map_err(|e| format!("can't back up the old thumbnail: {e}"))?;
+        let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%S");
+        let stem = target
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("thumbnail");
+        let _ = std::fs::copy(&target, backups.join(format!("{stem}-{stamp}.jpg")));
+    }
+    Ok(target)
+}
+
+fn write_thumbnail(
+    working_dir: &str,
+    target: &std::path::Path,
+    jpeg: Vec<u8>,
+) -> Result<ThumbnailWritten, String> {
+    use base64::Engine;
+    std::fs::write(target, &jpeg).map_err(|e| format!("can't save the thumbnail: {e}"))?;
+    Ok(ThumbnailWritten {
+        path: paths::display_path(working_dir, target),
+        bytes: jpeg.len() as u64,
+        data_url: format!(
+            "data:image/jpeg;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(jpeg)
+        ),
+    })
+}
+
+/// A thumbnail from a frame: of a clip or render (`path` and `at`), or of the
+/// cut (`timeline_at`).
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn video_thumbnail_from_frame(
+    working_dir: String,
+    episode: String,
+    project: Option<String>,
+    path: Option<String>,
+    at: Option<f64>,
+    timeline_at: Option<f64>,
+    contain: bool,
+    name: Option<String>,
+    settings: super::project::VideoSettings,
+) -> Result<ThumbnailWritten, String> {
+    let found = binaries::resolve(&settings.overrides).await;
+    let ffmpeg = found.require(Tool::Ffmpeg)?;
+    let (file, at) = match (path.as_deref(), at, timeline_at) {
+        (Some(p), Some(at), None) => (
+            paths::resolve_media(&working_dir, p, &settings.intro, &settings.outro)?,
+            at,
+        ),
+        (None, None, Some(t)) => {
+            let proj =
+                super::project::default_project(&working_dir, &episode, project.as_deref(), false)?;
+            let doc = super::kdenlive::open(&proj)?;
+            let spans = super::kdenlive::timeline_map::spans(&doc);
+            let (span, at) = super::kdenlive::timeline_map::source_at(&spans, t)
+                .ok_or_else(|| format!("Nothing is on the main track at {t:.1} s."))?;
+            (span.file.clone(), at)
+        }
+        _ => return Err("Give path with at, or timeline_at.".into()),
+    };
+    let png = super::frames::extract_frame(ffmpeg, &file, at, 3840).await?;
+    let jpeg = super::thumbnail::make(&png, contain)?;
+    let target = thumbnail_target(&working_dir, &episode, project.as_deref(), name.as_deref())?;
+    write_thumbnail(&working_dir, &target, jpeg)
+}
+
+/// A thumbnail from a picture the image backend made.
+#[tauri::command]
+pub fn video_thumbnail_from_image(
+    working_dir: String,
+    episode: String,
+    project: Option<String>,
+    image_base64: String,
+    contain: bool,
+    name: Option<String>,
+) -> Result<ThumbnailWritten, String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(image_base64.trim())
+        .map_err(|e| format!("the picture didn't decode: {e}"))?;
+    let jpeg = super::thumbnail::make(&bytes, contain)?;
+    let target = thumbnail_target(&working_dir, &episode, project.as_deref(), name.as_deref())?;
+    write_thumbnail(&working_dir, &target, jpeg)
+}
