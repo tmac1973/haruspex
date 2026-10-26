@@ -251,7 +251,7 @@ registerTool({
 		function: {
 			name: 'image_search',
 			description:
-				'Find a picture of something. Searches Openverse, Wikimedia Commons and Wikipedia together and returns freely-licensed images with their url, dimensions, license and credit. Use it when a picture would help the reader — a place, an animal, an object, a person, a plant, a building — either because the user asked for one or because the answer is about something visual.',
+				'Find real, freely-licensed photos on Openverse, Wikimedia Commons and Wikipedia, with url, dimensions, license and credit. Use it when the user asks for a photo or the answer is about something visual — a place, an animal, an object, a person, a plant, a building. Not for a picture the user wants made.',
 			parameters: {
 				type: 'object',
 				properties: {

@@ -7,6 +7,7 @@
 import { messageText, type ChatMessage } from '#lib/api.ts';
 import { TOKEN_BYTES_RATIO } from '#lib/agent/context-budget.ts';
 import type { LoopContext } from '#lib/agent/loop/context.ts';
+import { imageHashFromUrl } from '#lib/images/url.ts';
 
 /**
  * Decide whether the next completion should use the active model's
@@ -63,10 +64,14 @@ export function looksLikeImageOnlyRequest(content: string): boolean {
  * Only `http(s)` counts. The Python sandbox legitimately produces
  * `![plot](data:image/png;base64,…)` for inline charts, and models routinely
  * write `![plot](sine_wave.png)` after saving a figure — neither is a claim to
- * have found a picture on the web.
+ * have found a picture on the web. Nor is our own image cache, which is
+ * `http://haruspex-img.localhost/` on Windows: a picture the model just drew.
  */
 export function wroteRemoteImageMarkdown(content: string | null | undefined): boolean {
-	return /!\[[^\]]*\]\(\s*https?:/i.test(content ?? '');
+	for (const m of (content ?? '').matchAll(/!\[[^\]]*\]\(\s*(https?:[^)\s]*)/gi)) {
+		if (imageHashFromUrl(m[1]) === null) return true;
+	}
+	return false;
 }
 
 export function phantomImageNudgePrompt(): string {

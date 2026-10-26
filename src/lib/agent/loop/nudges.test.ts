@@ -121,6 +121,15 @@ describe('research nudge', () => {
 		expect(n.needsResearchNudge(true, false)).toBe(false);
 	});
 
+	// "Draw me a fox" is not a question about foxes, whatever the model did
+	// after drawing it.
+	it('does not fire once a picture was drawn', () => {
+		const n = new NudgeState();
+		n.markPictureMade();
+		n.markImageSearchUsed();
+		expect(n.needsResearchNudge(true, false)).toBe(false);
+	});
+
 	it('does not fire when no image_search happened', () => {
 		const n = new NudgeState();
 		expect(n.needsResearchNudge(true, false)).toBe(false);

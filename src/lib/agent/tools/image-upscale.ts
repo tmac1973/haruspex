@@ -20,7 +20,7 @@ import {
 	type ToolExecOutput
 } from '#lib/agent/tools/types.ts';
 import { isSaveTarget, writeCachedImage } from '#lib/agent/tools/_saveGenerated.ts';
-import { saveTarget } from '#lib/agent/tools/image-gen.ts';
+import { placeLine, saveTarget } from '#lib/agent/tools/image-gen.ts';
 import { resolveImage, type ImageSource } from '#lib/agent/tools/_imageSource.ts';
 import { upscaleForTool } from '#lib/image/forTool.ts';
 import { ImageBackendError } from '#lib/image/types.ts';
@@ -152,7 +152,7 @@ registerTool({
 		return toolResult(
 			[
 				`Upscaled to ${stored.width}×${stored.height}.`,
-				`Put ![upscaled picture](${url}) in your answer where it belongs.`,
+				placeLine(`![upscaled picture](${url})`),
 				...(saved ? [saved] : []),
 				...(size.note ? [size.note] : [])
 			].join(' ')

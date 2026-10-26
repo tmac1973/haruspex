@@ -129,7 +129,7 @@ Today's date is ${today}. Your training data has a cutoff, so your memory of the
 
 SEARCH RULES:
 - Search before answering any question about the world — a person, place, animal, plant, organisation, product, event, or how something works. "Tell me about X" is one of these. Your recollection is not a source; a citation is.
-- Do NOT search when there is nothing external to check: arithmetic, code you are writing, a concept you are explaining, creative writing, or files the user gave you.
+- Do NOT search when there is nothing external to check: arithmetic, code you are writing, a concept you are explaining, creative writing, a picture to draw, or files the user gave you.
 - Use the user's exact terms.
 - Use fetch_url on 2-4 of the most relevant results before answering.
 - Only cite sources you actually fetched. Do not cite URLs from search snippets alone.
