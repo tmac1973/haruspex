@@ -45,6 +45,13 @@ import {
 } from '#lib/stores/jobRuns.svelte.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import { setKeepAwake } from '#lib/agent/jobs/keepAwake.ts';
+import {
+	noteRunToolCall,
+	reflectionPrompt,
+	reportTrace,
+	takeRunTrace,
+	REFLECTION_SYSTEM_PROMPT
+} from '#lib/harnessFeedback/reflection.ts';
 
 export type RunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled' | 'needs_input';
 export type StepStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled';
@@ -177,6 +184,12 @@ function runJobTurn(
 						workingDir: job.working_dir ? job.working_dir : null,
 						backend,
 						signal: abort.signal,
+						// Offered only while Settings → Feedback has it on.
+						feedback: { source: runSource(job, runId) },
+						onToolEnd: (call, result, ...rest) => {
+							noteRunToolCall(runId, call.name, call.arguments, result);
+							opts.onToolEnd?.(call, result, ...rest);
+						},
 						// Offered only where a stage lists `delegate`.
 						jobSubtasks: {
 							thinkingEnabled: policy.thinkingEnabled,
@@ -850,7 +863,10 @@ function buildRunContext(
 		isLive: () => current?.id === runId,
 		contextSize: () => jobDescriptor(job).contextSize,
 		visionSupported: () => jobDescriptor(job).vision,
-		finalizeRun: (status, error) => finalizeRun(runId, job.id, status, error),
+		finalizeRun: (status, error) => {
+			finalizeRun(runId, job.id, status, error);
+			void reflectOnRun(job, runId, status, error);
+		},
 		onSettled: () => {
 			if (activeAbort === abort) activeAbort = null;
 			if (pending.length > 0) queueMicrotask(drainNext);
@@ -876,6 +892,62 @@ function finalizeRun(runId: number, jobId: number, status: RunStatus, error: str
 		current = { ...current, status, error, finishedAt };
 	}
 	void markRunFinished(runId, jobId, status as JobRunStatus, finishedAt, error);
+}
+
+function runSource(job: JobWithSteps, runId: number): string {
+	return `job "${job.name}", run ${runId}`;
+}
+
+/**
+ * After a run, when Settings → Feedback → Model feedback on tools is on: one
+ * turn on the job's model that reviews the run's tool calls and reports what
+ * got in the way (see `harnessFeedback/reflection.ts`). Not after a cancelled
+ * run, which the user stopped, nor one that made no calls. Nobody waits on it,
+ * so a failure is only logged.
+ */
+async function reflectOnRun(
+	job: JobWithSteps,
+	runId: number,
+	status: RunStatus,
+	error: string | null
+): Promise<void> {
+	const trace = takeRunTrace(runId);
+	if (!trace || status === 'cancelled' || !getSettings().agentFeedbackEnabled) return;
+	const backend = jobBackendOverride(job);
+	const userMessage = reflectionPrompt(
+		{
+			jobName: job.name,
+			jobType: job.job_type,
+			goal: job.description || job.steps[0]?.prompt || '',
+			status,
+			error
+		},
+		trace
+	);
+	try {
+		await withInferenceSlot(
+			{ consumer: { kind: 'job', jobName: `${job.name} (tool feedback)` }, backend },
+			() =>
+				runEphemeralTurn({
+					...jobTurnPolicy(job),
+					systemPrompt: REFLECTION_SYSTEM_PROMPT,
+					userMessage,
+					workingDir: null,
+					contextSize: jobDescriptor(job).contextSize,
+					backend,
+					// The allowlist is empty: `feedback` adds haruspex_feedback alone.
+					toolAllowlist: [],
+					maxIterations: 4,
+					feedback: {
+						source: runSource(job, runId),
+						origin: 'reflection',
+						trace: (tool) => reportTrace(trace, tool)
+					}
+				})
+		);
+	} catch (e) {
+		console.warn('tool feedback: the reflection after a job run failed', String(e));
+	}
 }
 
 export function cancel(runId: number): void {

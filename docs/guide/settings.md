@@ -29,7 +29,7 @@ Where the model runs, which model is used and how big the context is.
 - **Models**: download and switch local models.
 - **Context Size**: 32K (up to 256K).
 - **Let models use system RAM**: off.
-- **Parallel streams**: 1 (also 2 or 4). More let a job or Code subtasks run beside chat, each with its own memory.
+- **Parallel streams**: 1 (also 2 or 4). More let a job or Code subtasks run beside chat.
 - **Extra llama-server arguments**: empty. They override Haruspex's own after a restart.
 - **Server**: status, port, Restart Server; **Run Setup Wizard**.
 
@@ -51,7 +51,7 @@ See the `chat` page.
 
 What the assistant remembers between chats.
 
-- **Carry facts and preferences from one conversation into the next**: on. It needs a 65 MB embedding model, downloaded when you ask.
+- **Carry facts and preferences from one conversation into the next**: on. It needs a 65 MB embedding model.
 - **Ask before saving something you asked me to remember**: on.
 - **Find duplicates**: merges memories that say the same thing, after you approve each.
 - A list of everything remembered, to edit or delete.
@@ -82,7 +82,7 @@ See the `chat` page.
 
 Which provider answers web searches.
 
-- **Search provider**: Auto (rotates free engines). Also DuckDuckGo, Brave Search (API key required), SearXNG (self-hosted) and Browser-assisted.
+- **Search provider**: Auto (rotates free engines). Also DuckDuckGo, Brave Search (API key), SearXNG (self-hosted) and Browser-assisted.
 - **SearXNG Instance URL**: http://localhost:8080.
 - **Result recency**: Any time.
 
@@ -90,7 +90,7 @@ See the `search-and-network` page.
 
 ## Network
 
-Proxy settings for network connections. Proxies never apply to this computer's own services.
+Proxy settings. Proxies never apply to this computer's own services.
 
 - **Network Proxy**: None (default) or Manual.
 - **Web Search Proxy**: Network proxy (default), None or Manual.
@@ -184,7 +184,8 @@ See the `remote-control` page.
 
 Report a bug or ask for a feature.
 
-- **Open feedback issue…**: opens a filled-in GitHub issue in your browser. API keys are removed; check it before sending.
+- **Open feedback issue…**: a filled-in GitHub issue, API keys removed; check it before sending.
 - **Save Full Diagnostics…**: saves logs to attach to the issue.
+- **Let the model report problems with Haruspex's tools**: off. See the `model-feedback` page.
 
 See the `troubleshooting` page.

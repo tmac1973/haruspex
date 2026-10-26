@@ -520,6 +520,12 @@ export interface AppSettings {
 	 */
 	screenCaptureEnabled: boolean;
 	/**
+	 * Offer the model `haruspex_feedback`, and ask it after each job run, so it
+	 * can report where Haruspex's own tools got in its way. Off by default: it
+	 * is for whoever is improving Haruspex, and the reports are kept on disk.
+	 */
+	agentFeedbackEnabled: boolean;
+	/**
 	 * Master switch for the Python code sandbox. On by default. When false,
 	 * run_python / install_package / reset_python are filtered out of the
 	 * model's tool list entirely, the same way fs tools are when no working
@@ -976,6 +982,7 @@ const defaults: AppSettings = {
 	activeLocalModelFilename: '',
 	legacyModelNoticeDismissed: false,
 	screenCaptureEnabled: false,
+	agentFeedbackEnabled: false,
 	sandboxEnabled: true,
 	sandboxApproval: 'once-per-chat',
 	sandboxTimeoutSeconds: 60,

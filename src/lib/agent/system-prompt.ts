@@ -10,6 +10,7 @@ import {
 } from '#lib/stores/settings.ts';
 import { formatTodayLong } from '#lib/utils/format.ts';
 import { GUIDE_PROMPT } from '#lib/guide/prompt.ts';
+import { feedbackPromptSection } from '#lib/harnessFeedback/prompt.ts';
 import { registeredMcpServerLabels } from '#lib/agent/tools/mcp.ts';
 
 const REVIEW_PATTERNS =
@@ -57,6 +58,12 @@ export interface SystemPromptOptions {
 	 * neither the tool nor the line.
 	 */
 	guide?: boolean;
+	/**
+	 * Ask for `haruspex_feedback` reports, when Settings → Feedback has them on.
+	 * The Chat tab only: a remote guest never has the tool, and a job is asked
+	 * after its run instead.
+	 */
+	feedback?: boolean;
 }
 
 /** The `haruspex_docs` line, for a turn offered the tool; empty otherwise. */
@@ -125,7 +132,7 @@ CONNECTED INTEGRATIONS: ${connected.join(', ')}
 		role: 'system',
 		content: `You are Haruspex, a helpful, private AI assistant running on the user's computer.
 
-Today's date is ${today}. Your training data has a cutoff, so your memory of the world may be incomplete, wrong, or out of date.${guideSection(opts.guide)}
+Today's date is ${today}. Your training data has a cutoff, so your memory of the world may be incomplete, wrong, or out of date.${guideSection(opts.guide)}${feedbackPromptSection(opts.feedback === true)}
 
 SEARCH RULES:
 - Search before answering any question about the world — a person, place, animal, plant, organisation, product, event, or how something works. "Tell me about X" is one of these. Your recollection is not a source; a citation is.

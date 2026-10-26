@@ -9,6 +9,8 @@
 export const IPC = {
 	ace_json: 'ace_json',
 	ace_upload: 'ace_upload',
+	agent_feedback_append: 'agent_feedback_append',
+	agent_feedback_dir: 'agent_feedback_dir',
 	agents_md_draft: 'agents_md_draft',
 	agents_md_save: 'agents_md_save',
 	app_protected_targets: 'app_protected_targets',

@@ -13,6 +13,7 @@
  * `loop/nudges.ts`.
  */
 
+import type { FeedbackTurn } from '#lib/harnessFeedback/report.ts';
 import type { SubtaskState, SubtaskStops } from '#lib/code/subtask.ts';
 import type { TurnSkills } from '#lib/skills/turn.ts';
 import type { BackendOverride, StreamChunk, Usage } from '#lib/api.ts';
@@ -414,6 +415,12 @@ export interface AgentLoopOptions {
 	 * read-only subset plus a structured-output tool. See `getToolSchemas`.
 	 */
 	toolAllowlist?: Iterable<string>;
+	/**
+	 * How this turn's `haruspex_feedback` reports are labelled. On an
+	 * allowlisted turn it is also what offers the tool: a job's turns set it,
+	 * a remote guest's and memory's bookkeeping turns do not.
+	 */
+	feedback?: FeedbackTurn;
 	/**
 	 * When set, the turn MUST end with a call to this tool. If the model
 	 * reaches the iteration cap (or tries to answer in prose) without having

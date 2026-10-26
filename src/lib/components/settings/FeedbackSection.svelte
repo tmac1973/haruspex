@@ -1,6 +1,24 @@
 <script lang="ts">
+	import { invoke } from '@tauri-apps/api/core';
 	import { openFeedbackIssue, saveFullDiagnostics } from '#lib/feedback.ts';
+	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import { errMessage } from '#lib/utils/error.ts';
+
+	let modelFeedback = $state(getSettings().agentFeedbackEnabled);
+	let folderError = $state('');
+
+	function toggleModelFeedback() {
+		updateSettings({ agentFeedbackEnabled: modelFeedback });
+	}
+
+	async function openReports() {
+		folderError = '';
+		try {
+			await invoke('open_folder', { path: await invoke<string>('agent_feedback_dir') });
+		} catch (e) {
+			folderError = errMessage(e);
+		}
+	}
 
 	type Status =
 		| { kind: 'idle' }
@@ -69,7 +87,28 @@
 	{/if}
 </section>
 
+<section class="settings-section">
+	<h2>Model feedback on tools</h2>
+	<label
+		class="toggle-row"
+		title="Adds a haruspex_feedback tool to every turn and a short review after each job run. Reports, with the tool calls behind them, are saved as JSON lines on this computer and never sent anywhere. They can include file contents and command output."
+	>
+		<input type="checkbox" bind:checked={modelFeedback} onchange={toggleModelFeedback} />
+		<span>Let the model report problems with Haruspex's tools</span>
+	</label>
+	<div class="actions folder">
+		<button class="btn" onclick={openReports}>Open reports folder</button>
+	</div>
+	{#if folderError}
+		<p class="status error">{folderError}</p>
+	{/if}
+</section>
+
 <style>
+	.folder {
+		margin-top: 12px;
+	}
+
 	.lede {
 		margin: 0 0 12px 0;
 		font-size: 0.9rem;

@@ -25,6 +25,7 @@ import type { SessionContext } from '#lib/ipc/gen/SessionContext.ts';
 import { nestedSessionPromptBlock, type NestedSession } from '#lib/shell/nestedSession.ts';
 import { formatTodayLong } from '#lib/utils/format.ts';
 import { GUIDE_PROMPT } from '#lib/guide/prompt.ts';
+import { feedbackPromptSection } from '#lib/harnessFeedback/prompt.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 
 /** Re-export of the ts-rs-generated Rust `SessionContext` under the
@@ -96,7 +97,7 @@ export function buildShellSystemPrompt(opts: BuildShellPromptOpts): ChatMessage 
 
 Today's date is ${today}.
 
-${GUIDE_PROMPT}
+${GUIDE_PROMPT}${feedbackPromptSection()}
 
 SESSION CONTEXT:
 ${sessionBlock}

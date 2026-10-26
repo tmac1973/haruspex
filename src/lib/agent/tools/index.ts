@@ -35,6 +35,7 @@ import '#lib/agent/tools/save-generated.ts';
 import '#lib/agent/tools/skills.ts';
 import '#lib/agent/tools/skillsWrite.ts';
 import '#lib/agent/tools/guide.ts';
+import '#lib/agent/tools/haruspex-feedback.ts';
 
 // Re-export registry API
 export {

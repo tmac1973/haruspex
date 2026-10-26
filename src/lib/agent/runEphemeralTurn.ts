@@ -43,6 +43,8 @@ export interface EphemeralTurnOptions {
 	visionSupported?: boolean;
 	/** Pin the turn to an exact tool subset (by name). See `getToolSchemas`. */
 	toolAllowlist?: Iterable<string>;
+	/** How `haruspex_feedback` reports are labelled. See `AgentLoopOptions`. */
+	feedback?: AgentLoopOptions['feedback'];
 	/** Force the turn to end with a call to this tool. See `AgentLoopOptions`. */
 	forceFinalTool?: string;
 	/** Remote backend override for this turn's model calls. See `AgentLoopOptions`. */
@@ -252,6 +254,7 @@ export async function runEphemeralTurn(
 			expectsFileOutput,
 			visionSupported: options.visionSupported ?? true,
 			toolAllowlist: options.toolAllowlist,
+			feedback: options.feedback,
 			forceFinalTool: options.forceFinalTool,
 			backend: options.backend,
 			interactive: options.interactive,

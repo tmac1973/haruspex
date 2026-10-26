@@ -39,6 +39,7 @@ const PAGES = [
 	'remote-control',
 	'settings',
 	'shortcuts',
+	'model-feedback',
 	'troubleshooting'
 ];
 

@@ -817,6 +817,7 @@ describe('runAgentLoop: tool-call round trip', () => {
 			codeRemote: false,
 			interactive: false,
 			subtask: false,
+			harnessFeedback: false,
 			hasSkills: false
 		});
 	});
