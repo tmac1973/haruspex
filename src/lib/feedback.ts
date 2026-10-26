@@ -20,7 +20,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
-import { getSettings, hasBraveApiKey } from '#lib/stores/settings.ts';
+import { getSettings, hasBraveApiKey, startableMcpServers } from '#lib/stores/settings.ts';
 import { getDebugLogs } from '#lib/debug-log.ts';
 import { urlForReport } from '#lib/utils/http.ts';
 
@@ -93,6 +93,9 @@ interface RustDiagnostics {
 	llama_log: string[];
 	whisper_log: string[];
 	tts_log: string[];
+	crash_log: string[];
+	image_engine_log: string[];
+	comfy_log: string[];
 	search_stats: {
 		session: {
 			engines: SessionEngineStats[];
@@ -105,8 +108,35 @@ interface RustDiagnostics {
 	};
 }
 
+/** One MCP server's log, under the name it has in Settings → Integrations. */
+export interface McpServerLog {
+	label: string;
+	lines: string[];
+}
+
 export interface Diagnostics extends RustDiagnostics {
 	debug_log: string[];
+	mcp_logs: McpServerLog[];
+}
+
+/**
+ * Each switched-on MCP server's log, redacted. Gathered here because Rust
+ * knows the servers by id; their names are in the settings. A server whose
+ * log can't be read is left out rather than failing the whole report.
+ */
+async function gatherMcpLogs(): Promise<McpServerLog[]> {
+	const logs = await Promise.all(
+		startableMcpServers().map(async (s) => {
+			try {
+				const raw = await invoke<string[]>('mcp_server_logs', { id: s.id });
+				const lines = await invoke<string[]>('feedback_redact', { lines: raw });
+				return { label: s.label, lines };
+			} catch {
+				return null;
+			}
+		})
+	);
+	return logs.filter((l): l is McpServerLog => l !== null);
 }
 
 /**
@@ -115,11 +145,12 @@ export interface Diagnostics extends RustDiagnostics {
  * (`feedback.rs`), since the bundle is meant for a public issue.
  */
 export async function gatherDiagnostics(): Promise<Diagnostics> {
-	const [rust, debug_log] = await Promise.all([
+	const [rust, debug_log, mcp_logs] = await Promise.all([
 		invoke<RustDiagnostics>('get_diagnostics'),
-		invoke<string[]>('feedback_redact', { lines: getDebugLogs() })
+		invoke<string[]>('feedback_redact', { lines: getDebugLogs() }),
+		gatherMcpLogs()
 	]);
-	return { ...rust, debug_log };
+	return { ...rust, debug_log, mcp_logs };
 }
 
 function buildSystemBlock(d: Diagnostics): string {
@@ -409,32 +440,21 @@ export function buildFullBundle(d: Diagnostics): string {
 		buildLifetimeStatsBlock(d),
 		'```',
 		``,
-		`## App log (${d.app_log.length} lines)`,
-		'```',
-		d.app_log.join('\n'),
-		'```',
-		``,
-		`## Debug log — agent loop (${d.debug_log.length} lines)`,
-		'```',
-		d.debug_log.join('\n'),
-		'```',
-		``,
-		`## llama-server (${d.llama_log.length} lines)`,
-		'```',
-		d.llama_log.join('\n'),
-		'```',
-		``,
-		`## whisper-server (${d.whisper_log.length} lines)`,
-		'```',
-		d.whisper_log.join('\n'),
-		'```',
-		``,
-		`## koko / tts (${d.tts_log.length} lines)`,
-		'```',
-		d.tts_log.join('\n'),
-		'```',
+		logSection('App log', d.app_log),
+		logSection('Debug log — agent loop', d.debug_log),
+		logSection('llama-server', d.llama_log),
+		logSection('whisper-server', d.whisper_log),
+		logSection('koko / tts', d.tts_log),
+		logSection('llama-server crash log', d.crash_log),
+		logSection('Image engine (sd-server)', d.image_engine_log),
+		logSection('ComfyUI calls', d.comfy_log),
+		...d.mcp_logs.map((m) => logSection(`MCP: ${m.label}`, m.lines)),
 		''
 	].join('\n');
+}
+
+function logSection(title: string, lines: string[]): string {
+	return [`## ${title} (${lines.length} lines)`, '```', lines.join('\n'), '```', ''].join('\n');
 }
 
 /**

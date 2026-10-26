@@ -2,8 +2,9 @@
 //!
 //! Exposes two Tauri commands:
 //!   - `get_diagnostics` — assembles a snapshot of OS/arch, app version,
-//!     and the tail of the four log buffers (app, llama-server, whisper,
-//!     koko). The frontend merges this with settings + the debug-log
+//!     and the tail of the Rust-side logs: app, llama-server and its crash
+//!     log, whisper, koko, the bundled image engine and ComfyUI. MCP
+//!     servers' logs are gathered by the frontend, which knows their names. The frontend merges this with settings + the debug-log
 //!     ring buffer and either composes a pre-filled GitHub issue URL or
 //!     a full-bundle file for the "Save Full Diagnostics" path.
 //!   - `feedback_redact` — the same redaction for the webview's own debug
@@ -40,12 +41,19 @@ pub struct Diagnostics {
     pub llama_log: Vec<String>,
     pub whisper_log: Vec<String>,
     pub tts_log: Vec<String>,
+    /// The persisted llama-server crash log, one entry per line.
+    pub crash_log: Vec<String>,
+    /// The bundled image engine (sd-server) and the ComfyUI call log.
+    pub image_engine_log: Vec<String>,
+    pub comfy_log: Vec<String>,
     pub search_stats: DiagnosticsSearchStats,
 }
 
 #[tauri::command]
 pub async fn get_diagnostics(
+    app: tauri::AppHandle,
     llama: tauri::State<'_, LlamaServer>,
+    image_engine: tauri::State<'_, crate::image_engine::ImageEngine>,
     whisper: tauri::State<'_, WhisperServer>,
     tts: tauri::State<'_, TtsEngine>,
     search_stats: tauri::State<'_, SearchStats>,
@@ -64,6 +72,14 @@ pub async fn get_diagnostics(
         llama_log: for_report(llama.get_logs().await),
         whisper_log: for_report(whisper.get_logs().await),
         tts_log: for_report(tts.get_logs().await),
+        crash_log: for_report(
+            crate::server::get_llama_crash_log(app)
+                .lines()
+                .map(str::to_string)
+                .collect(),
+        ),
+        image_engine_log: for_report(image_engine.logs().await),
+        comfy_log: for_report(crate::comfy::comfy_logs().await),
         search_stats: DiagnosticsSearchStats { session, lifetime },
     })
 }
@@ -78,6 +94,11 @@ pub fn feedback_redact(lines: Vec<String>) -> Vec<String> {
 /// every secret read this session ([`crate::text_util::redact_secrets`]),
 /// URL query strings, which carry signed links and tokens under any name,
 /// and email addresses.
+/// One piece of text as [`for_report`] leaves it.
+pub(crate) fn redact_for_report(text: &str) -> String {
+    for_report(vec![text.to_string()]).remove(0)
+}
+
 fn for_report(lines: Vec<String>) -> Vec<String> {
     let known = crate::secrets::known_values();
     lines

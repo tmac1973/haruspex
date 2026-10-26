@@ -27,7 +27,7 @@ Each report is one line of JSON in a file per month, in the `agent_feedback` fol
 
 A report holds what the model said, the tool it was about, the model's name, the app version, and the last few tool calls behind it with their arguments and results, shortened. Those calls can include file contents, web pages and command output.
 
-Nothing is sent anywhere. To share a report, copy it out yourself.
+Nothing is sent anywhere unless you share it (below).
 
 ## What it doesn't do
 
@@ -37,4 +37,14 @@ Nothing is sent anywhere. To share a report, copy it out yourself.
 
 ## Read the reports
 
-From a Haruspex checkout, `node scripts/agent-feedback.mjs` counts reports by tool and kind and prints the latest. Pass a folder or `.jsonl` file to read somewhere else, and `--all` to print every report.
+Settings → Feedback → **View reports…** lists them, newest first. Pick a tool or a kind to narrow the list, and open **calls** under a report to see the tool calls behind it. **Delete all** removes every report.
+
+## Send them to the developers
+
+1. In **View reports…**, narrow the list if you only want to send some, then press **Share**.
+2. The zip is saved in your Downloads folder, which opens. It holds a readable summary and the reports, with secrets, URL query strings and email addresses removed.
+3. A GitHub issue opens in your browser with a short summary filled in. Drag the zip onto it, read what it says, and submit.
+
+The calls in a report can still hold file contents, page text and command output, so look through the summary before you submit.
+
+From a Haruspex checkout, `node scripts/agent-feedback.mjs` prints the same reports in a terminal.
