@@ -188,6 +188,7 @@ registerTool({
 
 registerTool({
 	category: 'email',
+	usesModel: true,
 	schema: {
 		type: 'function',
 		function: {

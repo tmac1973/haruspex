@@ -44,7 +44,8 @@ export {
 	getToolSchemas,
 	executeTool,
 	getDisplayLabel,
-	coerceCallArguments
+	coerceCallArguments,
+	toolUsesModel
 } from '#lib/agent/tools/registry.ts';
 export { registerMcpTools, unregisterMcpServer } from '#lib/agent/tools/mcp.ts';
 

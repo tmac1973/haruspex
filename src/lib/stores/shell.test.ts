@@ -180,6 +180,29 @@ describe('ShellSession state independence', () => {
 		expect(b.messages).toHaveLength(0);
 	});
 
+	it('shows a turn queued again while it takes its slot back', async () => {
+		const s = createShellSession();
+		const seen: unknown[] = [];
+		const ticket = { id: 'main:2', consumer: 'shell', state: 'waiting', enqueuedAt: 0 };
+		runShellTurn.mockImplementationOnce(
+			async (opts: { onAdmitted?: () => void; onRequeue?: (t: unknown) => void }) => {
+				opts.onAdmitted?.();
+				opts.onRequeue?.(ticket);
+				seen.push(s.ticket);
+				opts.onRequeue?.(null);
+				seen.push(s.ticket);
+				return { finalText: 'done', rawText: 'done' };
+			}
+		);
+		await s.submitShell({
+			body: 'tail the log',
+			sessionContext: {} as never,
+			currentCwd: '/home',
+			recentHistory: []
+		});
+		expect(seen).toEqual([ticket, null]);
+	});
+
 	it('newChat clears the thread', () => {
 		const a = new ShellSession('shell-x', 'Shell X');
 		a.messages = [{ role: 'user', content: 'hi' }];

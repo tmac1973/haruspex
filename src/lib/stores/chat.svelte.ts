@@ -1654,9 +1654,13 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 				signal,
 				onAdmitted: () => {
 					run.waitingForSlot = false;
+				},
+				// Taking its slot back after a long tool, it shows as waiting again.
+				onRequeue: (ticket) => {
+					run.waitingForSlot = ticket !== null;
 				}
 			},
-			() =>
+			(slot) =>
 				runAgentLoop({
 					messages: messagesForApi,
 					workingDir: currentWorkingDir,
@@ -1669,6 +1673,7 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 					conversationId: conversation.id,
 					skills,
 					signal,
+					slot,
 					...buildAgentLoopCallbacks(conversation, run, activeCtxSize, turnStats, exhaustive),
 					onMessageAdded: (m) => appended.push(m)
 				})

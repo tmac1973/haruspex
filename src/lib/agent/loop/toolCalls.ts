@@ -6,6 +6,7 @@ import type { ChatCompletionResponse } from '#lib/api.ts';
 import { toolRoundText } from '#lib/agent/textToolCalls.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import { coerceCallArguments, executeTool } from '#lib/agent/tools/index.ts';
+import { toolUsesModel } from '#lib/agent/tools/registry.ts';
 import { isFetchFailureResult, isToolErrorResult } from '#lib/agent/tools/_helpers.ts';
 import { isVerbosePayloads, logDebug } from '#lib/debug-log.ts';
 import { NudgeState } from '#lib/agent/loop/nudges.ts';
@@ -18,6 +19,7 @@ import {
 import { createSlotLender, laneConcurrency } from '#lib/agent/inferenceQueue.svelte.ts';
 import { appendMessage, type LoopContext } from '#lib/agent/loop/context.ts';
 import { raceWithAbort } from '#lib/agent/loop/modelCall.ts';
+import { runReleasingSlot } from '#lib/agent/loop/slotRelease.ts';
 
 /**
  * Execute the model's tool calls: append the assistant tool_calls message,
@@ -214,9 +216,21 @@ export async function executeToolCalls(
 		});
 	};
 
+	// A batch that runs past a few seconds gives the turn's slot back, and it
+	// stays given back through the batches after it until one calls the model
+	// itself, or the tools are done: the loop holds its slot whenever this
+	// returns. A stop while it waits to come back throws AbortError.
 	for (const batch of planToolBatches(toolCalls)) {
-		await runToolBatch(batch, concurrency, runCall, recordResult);
+		if (batch.some((call) => toolUsesModel(call.name))) {
+			await ctx.slot?.reacquire();
+			await runToolBatch(batch, concurrency, runCall, recordResult);
+		} else {
+			await runReleasingSlot(ctx.slot, () =>
+				runToolBatch(batch, concurrency, runCall, recordResult)
+			);
+		}
 	}
+	await ctx.slot?.reacquire();
 
 	// Whole iteration spent on web reads that were all blocked → signal the
 	// driver to grant a free retry. An empty toolCalls list never reaches here.

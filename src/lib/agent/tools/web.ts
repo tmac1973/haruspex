@@ -165,6 +165,7 @@ registerTool({
 
 registerTool({
 	category: 'web',
+	usesModel: true,
 	schema: {
 		type: 'function',
 		function: {

@@ -15,8 +15,6 @@ Type what you want and press `Enter`. After the first reply the model names the 
 
 To show the agent a UI bug, the camera button takes the screen, a window or a region for your next message.
 
-The list on the left holds every session; see the `code-sessions` page.
-
 ## Look things up on the web
 
 The agent can search the web and read pages, with Chat's search and proxy setup; see the `search-and-network` page. To test your web app in a browser, see the `integrations` page.
@@ -46,7 +44,7 @@ An outside edit reloads the file and keeps your place. With unsaved edits it sho
 
 While the agent works, `Enter` queues your message and its images (**Queued**); the agent reads them at its next step (**Delivered**). **×** drops a queued message. **Stop** (`Esc`) ends the turn; anything unread returns to the input box. `/` opens the commands and skills list, as in Chat.
 
-A dot on a session's tab shows it working (filled) or waiting for another turn (hollow): only one turn uses the model at a time. **Stop** on a waiting session gives your message back.
+A dot on a session's tab shows it working (filled) or waiting for the model (hollow), which one turn uses at a time; a turn lets go of it while a tool runs over a few seconds. **Stop** on a waiting session gives your message back.
 
 ## Pick the model and effort
 
@@ -66,7 +64,7 @@ Servers, watchers and long builds run in the background. **Running: N** in the h
 
 ## Command approval and limits
 
-Safe-looking commands run on their own. A risky one (`sudo`, `rm -rf`, a pipe to a shell) opens **Run this command?** first; one that reaches outside the folder always asks. Prompts from several sessions queue. **Allow for this session** lasts until its tab closes, even across windows. Settings → Code holds the command time limit, the step limit, the background log size and **Auto-approve commands**. See the `settings` page.
+Safe-looking commands run on their own. A risky one (`sudo`, `rm -rf`, a pipe to a shell) opens **Run this command?** first; one that reaches outside the folder always asks. Prompts from several sessions queue. **Allow for this session** lasts until its tab closes. Settings → Code holds the command time limit, the step limit, the background log size and **Auto-approve commands**. See the `settings` page.
 
 ## What it doesn't do yet
 

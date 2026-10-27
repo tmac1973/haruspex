@@ -132,6 +132,15 @@ describe('runSubtask', () => {
 		expect(mocks.withInferenceSlot).not.toHaveBeenCalled();
 	});
 
+	it('gives its loop a slot of its own to give back, and never the parent’s', async () => {
+		answers('foo is called from bar.ts:3');
+		const slot = { held: true, release: () => {}, reacquire: async () => {} };
+		await runSubtask({ ...base, runInSlot: (fn) => fn(slot) });
+		expect(loopOptions().slot).toBe(slot);
+		await runSubtask(base);
+		expect((mocks.runAgentLoop.mock.calls[1][0] as AgentLoopOptions).slot).toBeUndefined();
+	});
+
 	it('cuts a long report and says so', async () => {
 		answers('x'.repeat(SUBTASK_REPORT_CHARS + 500));
 		const res = await runSubtask(base);

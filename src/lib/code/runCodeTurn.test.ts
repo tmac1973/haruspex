@@ -5,6 +5,7 @@ import type { ChatMessage } from '#lib/api.ts';
 const mocks = vi.hoisted(() => ({
 	runAgentLoop: vi.fn(),
 	withInferenceSlot: vi.fn(),
+	slot: { held: true, release: () => {}, reacquire: async () => {} },
 	shellProject: vi.fn(),
 	prepareTurnSkills: vi.fn(),
 	chatCompletion: vi.fn()
@@ -82,10 +83,12 @@ beforeEach(() => {
 	mocks.runAgentLoop.mockReset();
 	mocks.withInferenceSlot
 		.mockReset()
-		.mockImplementation(async (o: { onAdmitted?: () => void }, fn: () => Promise<unknown>) => {
-			o.onAdmitted?.();
-			return fn();
-		});
+		.mockImplementation(
+			async (o: { onAdmitted?: () => void }, fn: (slot: unknown) => Promise<unknown>) => {
+				o.onAdmitted?.();
+				return fn(mocks.slot);
+			}
+		);
 	mocks.shellProject.mockReset().mockResolvedValue({ root: null, agentsMd: null });
 	mocks.prepareTurnSkills.mockReset().mockResolvedValue({ catalog: [], projectRoot: null });
 });
@@ -94,7 +97,8 @@ describe('runCodeTurn', () => {
 	it('runs the code profile in the project folder', async () => {
 		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => o.onComplete());
 		const backend = { baseUrl: 'http://remote', modelId: 'm' };
-		await runCodeTurn(opts({ backend, effort: 'high' }));
+		const onRequeue = vi.fn();
+		await runCodeTurn(opts({ backend, effort: 'high', onRequeue }));
 		const o = loopOptions();
 		expect(o).toMatchObject({
 			codeMode: true,
@@ -109,7 +113,13 @@ describe('runCodeTurn', () => {
 			codeAutoApprove: true,
 			contextSize: 16384
 		});
-		expect(mocks.withInferenceSlot.mock.calls[0][0]).toMatchObject({ consumer: 'code', backend });
+		expect(mocks.withInferenceSlot.mock.calls[0][0]).toMatchObject({
+			consumer: 'code',
+			backend,
+			onRequeue
+		});
+		// The loop gets the slot, to give back while a long tool runs.
+		expect(o.slot).toBe(mocks.slot);
 		// writeRoot is relative to the working dir; the absolute root refused every write.
 		expect(o.writeRoot ?? null).toBeNull();
 	});

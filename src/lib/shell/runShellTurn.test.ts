@@ -4,6 +4,7 @@ import type { AgentLoopOptions } from '#lib/agent/loop.ts';
 const mocks = vi.hoisted(() => ({
 	runAgentLoop: vi.fn(),
 	withInferenceSlot: vi.fn(),
+	slot: { held: true, release: () => {}, reacquire: async () => {} },
 	updateContextUsage: vi.fn(),
 	stripToolCallArtifacts: vi.fn((s: string) => s.replace(/<tc>[\s\S]*?<\/tc>/g, ''))
 }));
@@ -44,9 +45,9 @@ beforeEach(() => {
 	mocks.stripToolCallArtifacts.mockClear();
 	// Default pass-through gate: admit immediately and run the turn.
 	mocks.withInferenceSlot.mockImplementation(
-		async (opts: { onAdmitted?: () => void }, fn: () => Promise<unknown>) => {
+		async (opts: { onAdmitted?: () => void }, fn: (slot: unknown) => Promise<unknown>) => {
 			opts.onAdmitted?.();
-			return fn();
+			return fn(mocks.slot);
 		}
 	);
 });
@@ -90,6 +91,7 @@ describe('runShellTurn', () => {
 		const ctrl = new AbortController();
 		const onTicket = vi.fn();
 		const onAdmitted = vi.fn();
+		const onRequeue = vi.fn();
 		mocks.runAgentLoop.mockImplementationOnce(async (opts: AgentLoopOptions) => {
 			opts.onComplete();
 		});
@@ -99,7 +101,8 @@ describe('runShellTurn', () => {
 			contextSize: 4096,
 			signal: ctrl.signal,
 			onTicket,
-			onAdmitted
+			onAdmitted,
+			onRequeue
 		});
 
 		expect(mocks.withInferenceSlot).toHaveBeenCalledTimes(1);
@@ -108,11 +111,15 @@ describe('runShellTurn', () => {
 			signal?: AbortSignal;
 			onTicket?: unknown;
 			onAdmitted?: unknown;
+			onRequeue?: unknown;
 		};
 		expect(slotOpts.consumer).toBe('shell');
 		expect(slotOpts.signal).toBe(ctrl.signal);
 		expect(slotOpts.onTicket).toBe(onTicket);
+		expect(slotOpts.onRequeue).toBe(onRequeue);
 		expect(onAdmitted).toHaveBeenCalledTimes(1);
+		// The loop gets the slot, to give back while a long tool runs.
+		expect(loopOptions().slot).toBe(mocks.slot);
 	});
 
 	it('builds shell-mode loop options with sane defaults', async () => {

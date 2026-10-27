@@ -22,6 +22,9 @@ import type { JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 import type { EphemeralTurnOptions } from '#lib/agent/runEphemeralTurn.ts';
 import { invokeRouter, type InvokeRoute } from '#lib/testing/invoke.ts';
 
+/** The slot the stand-in `withInferenceSlot` hands each turn. */
+export const fakeSlot = { held: true, release: () => {}, reacquire: async () => {} };
+
 export const mocks = {
 	runEphemeralTurn: vi.fn(),
 	getJob: vi.fn(),
@@ -171,10 +174,10 @@ export const mockModules = {
 		// observable without the queue's await-ready microtask in the middle.
 		withInferenceSlot: async <T>(
 			opts: { onAdmitted?: () => void },
-			fn: () => Promise<T>
+			fn: (slot: typeof fakeSlot) => Promise<T>
 		): Promise<T> => {
 			opts.onAdmitted?.();
-			return fn();
+			return fn(fakeSlot);
 		}
 	})
 };

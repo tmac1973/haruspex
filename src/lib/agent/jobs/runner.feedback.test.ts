@@ -10,7 +10,8 @@ const {
 	freshRunner,
 	settle,
 	settingsState,
-	tick
+	tick,
+	fakeSlot
 } = await vi.hoisted(() => import('./runner.fixtures.ts'));
 
 vi.mock('@tauri-apps/api/core', () => m.tauriCore());
@@ -62,6 +63,7 @@ describe('jobs runner — model feedback on tools', () => {
 		expect(mocks.runEphemeralTurn).toHaveBeenCalledTimes(2);
 		const review = mocks.runEphemeralTurn.mock.calls[1][0] as EphemeralTurnOptions;
 		expect(review.toolAllowlist).toEqual([]);
+		expect(review.slot).toBe(fakeSlot);
 		expect(review.workingDir).toBeNull();
 		expect(review.systemPrompt).toContain('haruspex_feedback');
 		expect(review.userMessage).toContain('Nightly (research)');

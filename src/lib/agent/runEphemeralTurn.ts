@@ -49,6 +49,8 @@ export interface EphemeralTurnOptions {
 	forceFinalTool?: string;
 	/** Remote backend override for this turn's model calls. See `AgentLoopOptions`. */
 	backend?: BackendOverride;
+	/** The turn's inference slot, given back while long tools run. See `AgentLoopOptions`. */
+	slot?: AgentLoopOptions['slot'];
 	/**
 	 * True when a live user can answer interactive tools (ask_user_question) —
 	 * set by foreground guided-planning runs. Defaults to false so unattended
@@ -257,6 +259,7 @@ export async function runEphemeralTurn(
 			feedback: options.feedback,
 			forceFinalTool: options.forceFinalTool,
 			backend: options.backend,
+			slot: options.slot,
 			interactive: options.interactive,
 			askUser: options.askUser,
 			writeRoot: options.writeRoot,

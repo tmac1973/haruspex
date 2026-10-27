@@ -5,6 +5,7 @@ import type { Artifact } from '#lib/sandbox/sandbox.ts';
 import type { LintIssue } from '#lib/sandbox/lint.ts';
 import type { FileDiff } from '#lib/code/diff.ts';
 import type { FeedbackTurn } from '#lib/harnessFeedback/report.ts';
+import type { HeldSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 
 export type { Artifact, LintIssue };
 
@@ -277,7 +278,7 @@ export interface ToolContext {
  * turn's own, else when the queue lets it in. `signal` stops its wait.
  */
 export type SlotLender = <T>(
-	fn: () => Promise<T>,
+	fn: (slot?: HeldSlot) => Promise<T>,
 	opts?: { onAdmitted?: () => void; signal?: AbortSignal }
 ) => Promise<T>;
 
@@ -340,6 +341,9 @@ export interface ToolRegistration {
 		 *  whose owner has started one. */
 		| 'tasks';
 	requiresVision?: boolean;
+	/** Calls the model while it runs, in the turn's slot; the turn keeps its
+	 *  slot for it. */
+	usesModel?: true;
 }
 
 /** Wrap a plain-string result into a ToolExecOutput. */

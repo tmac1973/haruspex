@@ -7,7 +7,7 @@ description: Several Chat conversations at once, adding to an answer as it is wr
 
 ## Run several conversations at once
 
-While one conversation answers, open another and send there. Each has its own **Stop** and its own error message, and stopping one leaves the others running. With one stream (Settings → Inference → Parallel streams, 1 by default) the second waits for the first to finish; with more streams, or a server that runs several, they answer at the same time.
+While one conversation answers, open another and send there. Each has its own **Stop** and its own error message, and stopping one leaves the others running. With one stream (Settings → Inference → Parallel streams, 1 by default) the second waits for the first, unless the first is running a tool for more than a few seconds (a command, a picture, a slow server), when the second goes ahead; with more streams, or a server that runs several, they answer at the same time.
 
 ## Send while it's working
 
