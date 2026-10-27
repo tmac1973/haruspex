@@ -16,6 +16,7 @@ import { toolResult, type ToolContext, type ToolExecOutput } from '#lib/agent/to
 import { finishMasked } from '#lib/agent/tools/_imageMask.ts';
 import { savedLineOf } from '#lib/agent/tools/_imageAnswer.ts';
 import type { SaveTarget } from '#lib/agent/tools/_saveGenerated.ts';
+import { detachedTarget } from '#lib/agent/tools/_helpers.ts';
 import { generateForTool, resumeForTool, upscaleForTool } from '#lib/image/forTool.ts';
 import type { ImageJobHandle } from '#lib/image/backend.ts';
 import type { ImageInput, ImageProgress, ImageRequest } from '#lib/image/types.ts';
@@ -202,7 +203,7 @@ export async function startImageTask(
 ): Promise<ToolExecOutput> {
 	const spec: ImageTaskSpec = {
 		job,
-		save,
+		save: save && detachedTarget(save, ctx),
 		conversationId: ctx.conversationId ?? null,
 		visionSupported: ctx.visionSupported !== false
 	};

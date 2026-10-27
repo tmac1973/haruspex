@@ -21,6 +21,7 @@ import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { stripThinkBlocks } from '#lib/markdown.ts';
 import { toolError } from '#lib/agent/tools/types.ts';
+import type { SaveTarget } from '#lib/agent/tools/_saveGenerated.ts';
 
 /**
  * Build a `displayLabel` function that pulls one named arg as a string.
@@ -108,6 +109,22 @@ export function fsWorkdir(ctx: {
 }): string | null {
 	const root = ctx.workingDir ?? null;
 	return root && !ctx.shellMode ? ioRoot(root, ctx.wslDistro) : root;
+}
+
+/**
+ * A target a background task can write with no turn behind it: a Code
+ * session's project becomes its folder, which is what `writeSaved` writes
+ * into for it anyway.
+ */
+export function detachedTarget(
+	target: SaveTarget,
+	ctx: Parameters<typeof fsWorkdir>[0]
+): SaveTarget {
+	if (target.mode === 'chat') return target;
+	const workdir = fsWorkdir(ctx);
+	return workdir
+		? { mode: 'chat', workdir, path: target.path, overwrite: target.overwrite }
+		: target;
 }
 
 /**

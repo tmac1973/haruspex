@@ -16,7 +16,12 @@ import asmodean from './fixtures/props-asmodean.json';
 import composed from './fixtures/lm-result.json';
 import { aceMusicBackend } from './backend';
 import { invokeRouter } from '#lib/testing/invoke.ts';
-import { MusicBackendError, type MusicProgress, type MusicRequest } from '#lib/music/types.ts';
+import {
+	MusicBackendError,
+	type MusicJobHandle,
+	type MusicProgress,
+	type MusicRequest
+} from '#lib/music/types.ts';
 
 interface Call {
 	method: string;
@@ -226,5 +231,86 @@ describe('ace-server music backend', () => {
 			'extract',
 			'complete'
 		]);
+	});
+});
+
+describe('ace-server music jobs after a restart', () => {
+	beforeEach(() => {
+		settings.musicAceBaseUrl = 'http://box:8083/';
+		settings.musicAceModel = '';
+		use(songRoutes());
+	});
+
+	it('reports the composing job, then the synthesis job with what composing settled', async () => {
+		const handles: MusicJobHandle[] = [];
+		await aceMusicBackend.generate(request, { onHandle: (h) => handles.push(h) });
+		expect(handles).toEqual([
+			{
+				backend: 'ace-server',
+				baseUrl: 'http://box:8083',
+				id: 'lm',
+				model: DIT,
+				stage: 'lm',
+				extra: { synthModel: '' }
+			},
+			{
+				backend: 'ace-server',
+				baseUrl: 'http://box:8083',
+				id: 'syn',
+				model: DIT,
+				stage: 'synth',
+				facts: { bpm: 86, duration: 15, keyscale: 'C major', seed: 42 },
+				extra: { synthModel: '' }
+			}
+		]);
+	});
+
+	it('picks up while composing: waits for it, then synthesizes', async () => {
+		settings.musicAceBaseUrl = 'http://elsewhere:8083/';
+		const handles: MusicJobHandle[] = [];
+		const result = await aceMusicBackend.resume!(
+			{
+				backend: 'ace-server',
+				baseUrl: 'http://box:8083',
+				id: 'lm',
+				model: DIT,
+				stage: 'lm',
+				extra: { synthModel: '' }
+			},
+			request,
+			{ onHandle: (h) => handles.push(h) }
+		);
+		expect(sent('POST', '/lm')).toBeUndefined();
+		expect(sent('POST', '/synth')).toEqual({ ...composed[0], output_format: 'wav16' });
+		expect(handles.map((h) => h.stage)).toEqual(['synth']);
+		expect(result).toMatchObject({ hash: HASH, bpm: 86, key: 'C major', model: DIT });
+	});
+
+	it('picks up while synthesizing: follows it and keeps the song', async () => {
+		const result = await aceMusicBackend.resume!(
+			{
+				backend: 'ace-server',
+				baseUrl: 'http://box:8083',
+				id: 'syn',
+				model: DIT,
+				stage: 'synth',
+				facts: { bpm: 90, keyscale: 'A minor', seed: 7 }
+			},
+			request
+		);
+		expect(sent('POST', '/synth')).toBeUndefined();
+		expect(result).toMatchObject({ hash: HASH, bpm: 90, key: 'A minor', seed: 7, durationSec: 15 });
+	});
+
+	it('passes on a 404 at once for a job the server no longer has', async () => {
+		use({});
+		await expect(
+			aceMusicBackend.resume!(
+				{ backend: 'ace-server', baseUrl: 'http://box:8083', id: 'x', model: DIT, stage: 'synth' },
+				request
+			)
+		).rejects.toMatchObject({ status: 404 });
+		const polls = tauri.invoke.mock.calls.filter(([c]) => c === 'ace_json');
+		expect(polls).toHaveLength(1);
 	});
 });

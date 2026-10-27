@@ -5,6 +5,8 @@
  * second for its phase, then downloaded straight into the audio cache by
  * Rust (`audio_store_url`), because toolchest forgets it after a day.
  * Cancelling the turn sends `DELETE`, which ace-server honours mid-song.
+ * The job's id is reported (`onHandle`), so `resume` can follow it again
+ * after a restart.
  * Instances are started in toolchest; a stopped one is a sentence here.
  */
 
@@ -15,6 +17,7 @@ import type { MusicBackend, ProbeResult } from '#lib/music/backend.ts';
 import {
 	MusicBackendError,
 	type MusicGenerateOptions,
+	type MusicJobHandle,
 	type MusicRequest,
 	type MusicResult,
 	type MusicTask
@@ -136,6 +139,24 @@ async function run(
 			: await toolchestJson(cfg, { method: 'POST', path: ROUTES.jobs, body }, opts.signal)
 	);
 	if (!created) throw new MusicBackendError('rejected', 'llama-toolchest made no job.');
+	opts.onHandle?.({
+		backend: 'llama-toolchest',
+		baseUrl: cfg.baseUrl,
+		id: created.id,
+		model: instance.id,
+		extra: { keyId: getSettings().musicToolchestApiKeyId ?? '' }
+	});
+	return finish(cfg, created, instance.id, req, opts);
+}
+
+/** Follow a job to its end and keep the song. */
+async function finish(
+	cfg: ToolchestConfig,
+	created: MusicJob,
+	model: string,
+	req: MusicRequest,
+	opts: MusicGenerateOptions
+): Promise<MusicResult> {
 	const job = await followJob(cfg, created, ROUTES.job, readMusicJob, {
 		signal: opts.signal,
 		onJob: (j) => opts.onProgress?.(musicProgressOf(j))
@@ -152,7 +173,7 @@ async function run(
 		mime: stored.mime,
 		durationSec: job.result.duration ?? req.durationSec,
 		seed: job.result.seed ?? req.seed,
-		model: instance.id,
+		model,
 		bpm: job.result.bpm,
 		key: job.result.keyscale
 	};
@@ -213,6 +234,23 @@ export const toolchestMusicBackend: MusicBackend = {
 		const cfg = await config();
 		try {
 			return await run(cfg, req, opts);
+		} catch (e) {
+			throw asMusicError(e);
+		}
+	},
+
+	async resume(
+		handle: MusicJobHandle,
+		req: MusicRequest,
+		opts: MusicGenerateOptions = {}
+	): Promise<MusicResult> {
+		// The server it went to, whatever Settings → Music says now.
+		const cfg: ToolchestConfig = {
+			baseUrl: handle.baseUrl,
+			apiKey: await toolchestKeyFor(handle.extra?.keyId || null)
+		};
+		try {
+			return await finish(cfg, readMusicJob({ id: handle.id })!, handle.model, req, opts);
 		} catch (e) {
 			throw asMusicError(e);
 		}

@@ -33,6 +33,13 @@ import { resolveMusicBackend, MusicBackendError, type MusicRequest } from '#lib/
 import type { MusicProgress, MusicResult } from '#lib/music/types.ts';
 import { describeMusicProgress } from '#lib/music/progress.ts';
 import { resolveSong } from '#lib/agent/tools/_musicSource.ts';
+import { canRunInBackground } from '#lib/agent/tools/_imageJob.ts';
+import {
+	BACKGROUND_PARAM,
+	musicAnswerText,
+	savedLineOf,
+	startMusicTask
+} from '#lib/agent/tools/_musicJob.ts';
 
 export const MIN_SECONDS = 5;
 export const MAX_SECONDS = 240;
@@ -44,6 +51,8 @@ export interface MusicArgs {
 	seed?: number;
 	path: string;
 	overwrite: boolean;
+	/** Asked to run in the background. */
+	background: boolean;
 	notes: string[];
 }
 
@@ -153,18 +162,9 @@ export function parseMusicArgs(
 		seed,
 		path,
 		overwrite: args.overwrite === true,
+		background: args.background === true,
 		notes
 	};
-}
-
-function summary(made: MusicResult, title: string): string {
-	const facts = [
-		`${Math.round(made.durationSec)} s`,
-		made.bpm ? `${made.bpm} bpm` : '',
-		made.key ?? '',
-		`seed ${made.seed}`
-	].filter(Boolean);
-	return `Made "${title}" (${facts.join(', ')}).`;
 }
 
 /** Make the song `args` asks for and answer with its player line; `edit_music` shares it. */
@@ -174,6 +174,10 @@ export async function runMusic(args: MusicArgs, ctx: ToolContext): Promise<ToolE
 		const settled = await prepareSave(args.path, args.overwrite, ctx, 'generate_music');
 		if (!isSaveTarget(settled)) return settled;
 		target = settled;
+	}
+	const seed = args.seed ?? Math.floor(Math.random() * 2 ** 31);
+	if (canRunInBackground({ background: args.background }, ctx)) {
+		return startMusicTask({ ...args.req, seed }, args.notes, target, ctx);
 	}
 
 	const started = Date.now();
@@ -185,7 +189,7 @@ export async function runMusic(args: MusicArgs, ctx: ToolContext): Promise<ToolE
 	try {
 		show();
 		made = await resolveMusicBackend().generate(
-			{ ...args.req, seed: args.seed ?? Math.floor(Math.random() * 2 ** 31) },
+			{ ...args.req, seed },
 			{
 				signal: ctx.signal,
 				conversationId: ctx.conversationId,
@@ -204,16 +208,15 @@ export async function runMusic(args: MusicArgs, ctx: ToolContext): Promise<ToolE
 	}
 
 	const title = args.req.title;
-	const lines = [summary(made, title), `Put ![${title}](${made.url}) in your answer.`];
+	let saved: string | null = null;
 	if (target) {
 		const bytes = new Uint8Array(
 			await invoke<ArrayBuffer>('audio_read_bytes', { hash: made.hash })
 		);
-		const failed = await writeSaved(target, bytes, ctx);
-		lines.push(failed ? `It is in the chat, but ${failed}` : `Wrote ${target.path}.`);
+		saved = savedLineOf(target.path, await writeSaved(target, bytes, ctx));
 	}
 	return {
-		result: [...lines, ...args.notes].join(' '),
+		result: musicAnswerText({ made, title, saved, notes: args.notes }),
 		artifacts: [{ kind: 'audio', mime: made.mime, src: made.url, title }]
 	};
 }
@@ -268,7 +271,8 @@ registerTool({
 						description:
 							'A song whose sound (voice, timbre) to borrow: a haruspex-audio:// URL from this ' +
 							'conversation, or an audio file in the working folder.'
-					}
+					},
+					background: BACKGROUND_PARAM
 				},
 				required: ['caption']
 			}

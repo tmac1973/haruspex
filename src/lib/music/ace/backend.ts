@@ -5,7 +5,9 @@
  * request, and `/job?id=` is polled once a second for each. The result is
  * downloaded straight into the audio cache by Rust (`audio_store_url`, which
  * keeps the audio part of ace-server's multipart answer). Cancelling the turn
- * cancels the job in flight on the server.
+ * cancels the job in flight on the server. Each job's id is reported
+ * (`onHandle`), so `resume` can pick the song up after a restart at
+ * whichever of the two it had reached.
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -16,6 +18,7 @@ import type { MusicBackend, ProbeResult } from '#lib/music/backend.ts';
 import {
 	MusicBackendError,
 	type MusicGenerateOptions,
+	type MusicJobHandle,
 	type MusicProgress,
 	type MusicRequest,
 	type MusicResult,
@@ -82,17 +85,26 @@ function finished(status: AceStatus, phase: MusicProgress['phase']): boolean {
 	return status === 'done';
 }
 
-/** Submit one job and follow it to its end; aborting cancels it on the server. */
-async function runJob(
+/** Send one job; its id. */
+async function submitJob(
 	base: string,
 	path: string,
 	body: unknown,
-	phase: MusicProgress['phase'],
 	opts: MusicGenerateOptions,
 	files: UploadFile[] = []
 ): Promise<string> {
 	const id = readJobId(await aceJson(base, { method: 'POST', path, body }, opts.signal, files));
 	if (!id) throw new MusicBackendError('rejected', `ace-server made no ${path.slice(1)} job.`);
+	return id;
+}
+
+/** Follow a job to its end; aborting cancels it on the server. */
+async function followAceJob(
+	base: string,
+	id: string,
+	phase: MusicProgress['phase'],
+	opts: MusicGenerateOptions
+): Promise<void> {
 	const cancel = () =>
 		void aceJson(base, { method: 'POST', path: ROUTES.cancel(id) }).catch(() => {});
 	opts.signal?.addEventListener('abort', cancel, { once: true });
@@ -108,48 +120,69 @@ async function runJob(
 				failed = 0;
 			} catch (e) {
 				if (e instanceof MusicBackendError && e.kind === 'cancelled') throw e;
+				// A job the server doesn't know is gone, not a server that is down.
+				if (e instanceof MusicBackendError && e.status === 404) throw e;
 				if (++failed >= MAX_FAILED_POLLS) throw e;
 				continue;
 			}
-			if (finished(status, phase)) return id;
+			if (finished(status, phase)) return;
 		}
 	} finally {
 		opts.signal?.removeEventListener('abort', cancel);
 	}
 }
 
-async function run(
-	base: string,
+type Facts = NonNullable<MusicJobHandle['facts']>;
+
+/** Where a song is going: the server, and the model as sent and as reported. */
+interface AceTarget {
+	base: string;
+	/** The synthesis model asked for; empty for the server's own. */
+	synthModel: string;
+	/** What the result names. */
+	model: string;
+}
+
+function handleOf(t: AceTarget, id: string, stage: 'lm' | 'synth', facts?: Facts): MusicJobHandle {
+	return {
+		backend: 'ace-server',
+		baseUrl: t.base,
+		id,
+		model: t.model,
+		stage,
+		...(facts ? { facts } : {}),
+		extra: { synthModel: t.synthModel }
+	};
+}
+
+/** Render the composed song, once the composing job `lm` has finished. */
+async function synthesize(
+	t: AceTarget,
+	lm: string,
 	req: MusicRequest,
 	opts: MusicGenerateOptions
 ): Promise<MusicResult> {
-	const host = hostOf(base);
-	const model = chosenModel();
-	const p = await props(base, opts.signal);
-	const why = unusable(p, model, host);
-	if (why) throw new MusicBackendError('unconfigured', why);
+	const composed = readComposed(await aceJson(t.base, { path: ROUTES.result(lm) }, opts.signal));
+	if (!composed) throw new MusicBackendError('rejected', 'ace-server composed nothing.');
+	const facts = composedFacts(composed);
+	const body = buildSynthBody(composed, req.format, t.synthModel);
+	const synth = await submitJob(t.base, ROUTES.synth, body, opts);
+	opts.onHandle?.(handleOf(t, synth, 'synth', facts));
+	return render(t, synth, facts, req, opts);
+}
 
-	let synthBody;
-	let facts: ReturnType<typeof composedFacts> = {
-		bpm: req.bpm,
-		duration: undefined,
-		keyscale: req.key,
-		seed: req.seed
-	};
-	if (onSource(req)) {
-		synthBody = buildEditSynthBody(req, model);
-	} else {
-		const lm = await runJob(base, ROUTES.lm, buildLmBody(req), 'composing', opts);
-		const composed = readComposed(await aceJson(base, { path: ROUTES.result(lm) }, opts.signal));
-		if (!composed) throw new MusicBackendError('rejected', 'ace-server composed nothing.');
-		facts = composedFacts(composed);
-		synthBody = buildSynthBody(composed, req.format, model);
-	}
-
-	const synth = await runJob(base, ROUTES.synth, synthBody, 'synthesizing', opts, uploadsOf(req));
+/** Follow the `synth` job and keep the song. */
+async function render(
+	t: AceTarget,
+	synth: string,
+	facts: Facts,
+	req: MusicRequest,
+	opts: MusicGenerateOptions
+): Promise<MusicResult> {
+	await followAceJob(t.base, synth, 'synthesizing', opts);
 	opts.onProgress?.({ phase: 'saving' });
 	const stored = await invoke<StoredAudio>('audio_store_url', {
-		url: `${base}${ROUTES.result(synth)}`,
+		url: `${t.base}${ROUTES.result(synth)}`,
 		apiKey: null,
 		mimeHint: mimeFor(req.format),
 		title: req.title || null,
@@ -162,10 +195,35 @@ async function run(
 		mime: stored.mime,
 		durationSec: facts.duration ?? req.durationSec,
 		seed: facts.seed ?? req.seed,
-		model: model || p.synthModels[0],
+		model: t.model,
 		bpm: facts.bpm,
 		key: facts.keyscale
 	};
+}
+
+async function run(
+	base: string,
+	req: MusicRequest,
+	opts: MusicGenerateOptions
+): Promise<MusicResult> {
+	const host = hostOf(base);
+	const synthModel = chosenModel();
+	const p = await props(base, opts.signal);
+	const why = unusable(p, synthModel, host);
+	if (why) throw new MusicBackendError('unconfigured', why);
+	const t: AceTarget = { base, synthModel, model: synthModel || p.synthModels[0] };
+
+	if (onSource(req)) {
+		const facts: Facts = { bpm: req.bpm, keyscale: req.key, seed: req.seed };
+		const body = buildEditSynthBody(req, synthModel);
+		const synth = await submitJob(base, ROUTES.synth, body, opts, uploadsOf(req));
+		opts.onHandle?.(handleOf(t, synth, 'synth', facts));
+		return render(t, synth, facts, req, opts);
+	}
+	const lm = await submitJob(base, ROUTES.lm, buildLmBody(req), opts);
+	opts.onHandle?.(handleOf(t, lm, 'lm'));
+	await followAceJob(base, lm, 'composing', opts);
+	return synthesize(t, lm, req, opts);
 }
 
 export const aceMusicBackend: MusicBackend = {
@@ -206,6 +264,24 @@ export const aceMusicBackend: MusicBackend = {
 			);
 		}
 		return run(base, req, opts);
+	},
+
+	async resume(
+		handle: MusicJobHandle,
+		req: MusicRequest,
+		opts: MusicGenerateOptions = {}
+	): Promise<MusicResult> {
+		// The server it went to, whatever Settings → Music says now.
+		const t: AceTarget = {
+			base: handle.baseUrl,
+			synthModel: handle.extra?.synthModel ?? '',
+			model: handle.model
+		};
+		if (handle.stage === 'lm') {
+			await followAceJob(t.base, handle.id, 'composing', opts);
+			return synthesize(t, handle.id, req, opts);
+		}
+		return render(t, handle.id, handle.facts ?? {}, req, opts);
 	}
 };
 
