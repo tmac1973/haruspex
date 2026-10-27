@@ -1,11 +1,11 @@
 ---
 title: Settings reference
-description: What each Settings section holds, its most-used options with their defaults, and which guide page explains it in detail.
+description: What each Settings section holds, its main options and defaults, and which guide page explains it.
 ---
 
 # Settings reference
 
-Settings has seventeen sections. Each lists its main options, defaults and the page with more.
+Settings has eighteen sections. Each lists its main options, defaults and the page with more.
 
 ## Open Settings
 
@@ -23,13 +23,13 @@ See the `chat` page.
 
 ## Inference
 
-Where the model runs, which model is used and how big the context is.
+Where the model runs, which model, and how much context.
 
 - **Inference backend**: Local (Haruspex-managed) (default), Remote server (advanced) or OpenRouter (cloud).
 - **Models**: download and switch local models.
 - **Context Size**: 32K (up to 256K).
 - **Let models use system RAM**: off.
-- **Parallel streams**: 1 (also 2 or 4). More let several chats, a job or Code subtasks run at the same time.
+- **Parallel streams**: 1 (also 2 or 4). More let chats, jobs and Code subtasks run at once.
 - **Extra llama-server arguments**: empty. They override Haruspex's own after a restart.
 - **Server**: status, port, Restart Server; **Run Setup Wizard**.
 
@@ -37,7 +37,7 @@ See the `models` page.
 
 ## Agent
 
-How the model reasons and how long its replies may be, the Python sandbox, and pictures in answers.
+Reasoning, reply length, the Python sandbox and pictures in answers.
 
 - **Reasoning mode**: on. **Reasoning effort**: medium.
 - **Additional system prompt**: empty.
@@ -82,7 +82,7 @@ See the `chat` page.
 
 Which provider answers web searches.
 
-- **Search provider**: Auto (rotates free engines). Also DuckDuckGo, Brave Search (API key), SearXNG (self-hosted) and Browser-assisted.
+- **Search provider**: Auto (rotates free engines), DuckDuckGo, Brave Search (API key), SearXNG or Browser-assisted.
 - **SearXNG Instance URL**: http://localhost:8080.
 - **Result recency**: Any time.
 
@@ -158,6 +158,12 @@ Where songs are made, if anywhere.
 
 See the `music` page.
 
+## Video generation
+
+- **Backend**: None (default) or llama-toolchest.
+
+See the `video-generation` page.
+
 ## Video editing
 
 - **Let the assistant edit videos**: off. **ffmpeg**, **ffprobe**, **melt**: found or set.
@@ -170,7 +176,7 @@ See the `video-editing` and `video-render` pages.
 - **Let people on your network chat with this Haruspex**: off. Uses HTTPS.
 - **Who can connect**: **People with the link**.
 - **Port**: 8787.
-- Once it is on: a link and QR code to share, and a list of guests you can disconnect.
+- Once on: a link and QR code to share, and guests you can disconnect.
 
 See the `guest-chat` page.
 

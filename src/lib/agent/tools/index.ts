@@ -26,6 +26,7 @@ import '#lib/agent/tools/image-upscale.ts';
 import '#lib/agent/tools/make-asset.ts';
 import '#lib/agent/tools/music-gen.ts';
 import '#lib/agent/tools/music-edit.ts';
+import '#lib/agent/tools/video-gen.ts';
 import '#lib/agent/tools/video.ts';
 import '#lib/agent/tools/tasks.ts';
 import '#lib/agent/tools/video-transcribe.ts';

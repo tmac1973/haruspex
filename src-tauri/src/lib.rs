@@ -126,6 +126,14 @@ pub fn run() {
                 responder.respond(audio_cache::protocol::handle(&app, request));
             });
         })
+        // A generated clip: kept in the same cache, named apart so an answer
+        // shows a video player for it.
+        .register_asynchronous_uri_scheme_protocol("haruspex-video", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                responder.respond(audio_cache::protocol::handle(&app, request));
+            });
+        })
         .setup(|app| {
             // A failure here ends startup with the reason in the log, rather
             // than a panic backtrace.

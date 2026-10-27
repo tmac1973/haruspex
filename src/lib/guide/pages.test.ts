@@ -30,6 +30,7 @@ const PAGES = [
 	'images',
 	'image-editing',
 	'music',
+	'video-generation',
 	'video-editing',
 	'video-render',
 	'video-speech',

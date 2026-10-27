@@ -97,8 +97,11 @@ export function savedLineOf(path: string, failed: string | null): string {
 	return failed ? `It is in the chat, but ${failed}` : `Wrote ${path}.`;
 }
 
-/** Write the cached song where a folder target says; the line saying how it went. */
-async function saveCached(target: SaveTarget, hash: string): Promise<string> {
+/**
+ * Write a cached song or clip where a folder target says; the line saying how
+ * it went. `generate_video`'s job shares it.
+ */
+export async function saveCachedAudio(target: SaveTarget, hash: string): Promise<string> {
 	if (target.mode !== 'chat') {
 		return savedLineOf(
 			target.path,
@@ -152,7 +155,7 @@ export async function runMusicJob(
 		...(made.bpm ? { bpm: made.bpm } : {}),
 		...(made.key ? { key: made.key } : {}),
 		notes: spec.notes,
-		saved: spec.save ? await saveCached(spec.save, made.hash) : null
+		saved: spec.save ? await saveCachedAudio(spec.save, made.hash) : null
 	};
 }
 

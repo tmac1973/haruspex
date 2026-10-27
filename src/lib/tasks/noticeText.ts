@@ -10,6 +10,7 @@ import { imageAnswerText, upscaleAnswerText } from '#lib/agent/tools/_imageAnswe
 import type { ImageTaskResult, ImageTaskSpec } from '#lib/agent/tools/_imageJob.ts';
 import { imageSrc } from '#lib/images/url.ts';
 import { musicAnswerText, songUrl, type MusicTaskResult } from '#lib/agent/tools/_musicJob.ts';
+import { clipUrl, videoAnswerText, type VideoTaskResult } from '#lib/agent/tools/_videoJob.ts';
 
 function megabytes(bytes: number): string {
 	return bytes >= 1024 ** 3
@@ -93,6 +94,20 @@ function imageNotice(t: BackgroundTask, name: string): { text: string; images: s
 	return { text: `${name} finished: ${text}`, images: sees ? [r.hash] : [] };
 }
 
+/** A finished song's or clip's answer, the one its tool's blocking path gives (music). */
+const RESULT_TEXT: Partial<Record<BackgroundTask['kind'], (t: BackgroundTask) => string>> = {
+	music: (t) => {
+		const r = t.result as MusicTaskResult;
+		const made = { ...r, url: songUrl(r) };
+		return musicAnswerText({ made, title: r.title, saved: r.saved, notes: r.notes });
+	},
+	video: (t) => {
+		const r = t.result as VideoTaskResult;
+		const made = { ...r, url: clipUrl(r) };
+		return videoAnswerText({ made, title: r.title, saved: r.saved, notes: r.notes });
+	}
+};
+
 /**
  * The notice for an ended task; empty for one that hasn't ended. `images`
  * are image-cache hashes of pictures to show the model (`takeNotices` turns
@@ -104,12 +119,8 @@ export function noticeFor(t: BackgroundTask): { text: string; images: string[] }
 	}
 	const name = `Background task "${t.label}"`;
 	if (t.kind === 'image' && t.state === 'done' && t.result) return imageNotice(t, name);
-	if (t.kind === 'music' && t.state === 'done' && t.result) {
-		const r = t.result as MusicTaskResult;
-		const made = { ...r, url: songUrl(r) };
-		const text = musicAnswerText({ made, title: r.title, saved: r.saved, notes: r.notes });
-		return { text: `${name} finished: ${text}`, images: [] };
-	}
+	const result = t.state === 'done' && t.result ? RESULT_TEXT[t.kind] : undefined;
+	if (result) return { text: `${name} finished: ${result(t)}`, images: [] };
 	const text =
 		t.state === 'done'
 			? `${name} finished.`
