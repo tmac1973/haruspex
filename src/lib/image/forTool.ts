@@ -58,7 +58,7 @@ export const NO_EDIT_SENTENCE =
 
 export const NO_EXTEND_SENTENCE =
 	"The image generation in Settings → Image can't grow a picture past its edges. The bundled " +
-	'engine can, with either model.';
+	'engine and ComfyUI can, with any of their models.';
 
 export const NO_UPSCALE_SENTENCE =
 	"The image generation in Settings → Image can't upscale pictures. The bundled engine, " +

@@ -176,9 +176,11 @@ registerTool({
 						description:
 							'Make the picture larger, painting the new part: how far to grow each side, as a ' +
 							'fraction of its size. {"left":0.5,"right":0.5} makes it twice as wide. The ' +
-							'picture is kept, blended into the new part at the join. With extend, the prompt describes the whole ' +
-							'picture as it should look, its light and style too ("a country road through ' +
-							'green fields in golden evening haze"), not a change. Only some backends can.',
+							'picture is kept, blended into the new part at the join. With extend, look at the ' +
+							'picture first, then make the prompt describe the whole picture as it shows it, ' +
+							'its sky, light and colours too ("a country road through green fields in golden ' +
+							'evening haze"), not a change: the new part is drawn from those words. Only some ' +
+							'backends can.',
 						properties: {
 							left: { type: 'number' },
 							right: { type: 'number' },

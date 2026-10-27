@@ -41,7 +41,7 @@ const UPSCALE_HOW: Record<ImageBackendKind, string> = {
 	lemonade: 'Upscaling needs the upscaler, under Models on the server.'
 };
 
-const EXTEND_HOW = 'Only the bundled engine extends pictures past their edges.';
+const EXTEND_HOW = 'Only the bundled engine and ComfyUI extend pictures past their edges.';
 const TRANSPARENT_HOW = 'Transparent backgrounds need Ming-Image or Qwen-Image 2.1.';
 const TILING_HOW =
 	'Tiling textures need the bundled engine, or ComfyUI with Ming-Image or an SD checkpoint.';

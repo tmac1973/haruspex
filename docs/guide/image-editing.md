@@ -23,7 +23,7 @@ Say which part: "change only the sky", "just the left half". The assistant marks
 
 ## Extend a picture past its edges
 
-Ask for it wider or taller: "extend it by half on the right, continuing the road". The picture is kept, apart from a narrow blend where it meets the new part, which is painted to continue it, on the bundled engine with either model. Say what the scene's light is like if it matters; a faint seam can still show in an even sky. ComfyUI, Lemonade and llama-toolchest can't extend yet.
+Ask for it wider or taller: "extend it by half on the right, continuing the road". The picture is kept, apart from a narrow blend where it meets the new part, which is painted to continue it, on the bundled engine or ComfyUI with any of their models. Say what the scene's light is like if it matters; a faint seam can still show in an even sky. Lemonade and llama-toolchest can't extend.
 
 ## Combine pictures
 
@@ -61,4 +61,4 @@ If Haruspex closes first, anything on ComfyUI, and a new picture on llama-toolch
 
 ## What has been tested
 
-Editing with FLUX.2 klein 4B on a llama-toolchest server, and with Qwen-Image 2.1 Turbo on the bundled engine on a 16 GB AMD card (about 30 seconds), on ComfyUI 0.39 and on Lemonade (about 20 seconds), and with FLUX.2 klein 4B (about 5 seconds) and Qwen-Image-Edit-2511 (about 45 seconds) on ComfyUI, has been tested, as has changing only part of a picture on Lemonade, as has upscaling on the bundled engine, ComfyUI 0.39 and Lemonade. See the `images` page for setting up a backend.
+Editing with FLUX.2 klein 4B on a llama-toolchest server, and with Qwen-Image 2.1 Turbo on the bundled engine on a 16 GB AMD card (about 30 seconds), on ComfyUI 0.39 and on Lemonade (about 20 seconds), and with FLUX.2 klein 4B (about 5 seconds) and Qwen-Image-Edit-2511 (about 45 seconds) on ComfyUI, has been tested, as has changing only part of a picture on Lemonade, and extending one on the bundled engine and on ComfyUI with FLUX.2 klein (about 10 seconds), as has upscaling on the bundled engine, ComfyUI 0.39 and Lemonade. See the `images` page for setting up a backend.

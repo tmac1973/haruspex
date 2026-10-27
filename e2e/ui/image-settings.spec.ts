@@ -17,7 +17,7 @@ test('Settings → Image probes ComfyUI and lists its model', async ({ app }) =>
 	// What Haruspex can do with an SD checkpoint on ComfyUI, in words.
 	await expect(
 		app.getByText(
-			"Can: draw pictures, tiling textures, LoRAs (up to 2). Can't: edit pictures, upscale pictures, extend pictures, transparent backgrounds."
+			"Can: draw pictures, extend pictures, tiling textures, LoRAs (up to 2). Can't: edit pictures, upscale pictures, transparent backgrounds."
 		)
 	).toBeVisible();
 });

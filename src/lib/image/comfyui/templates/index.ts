@@ -26,7 +26,12 @@ import kleinGraph from '#lib/image/comfyui/templates/flux2_klein_t2i.json';
 import kleinEditGraph from '#lib/image/comfyui/templates/flux2_klein_edit.json';
 import qwenEditGraph from '#lib/image/comfyui/templates/qwen_edit_2511_edit.json';
 import qwenEditDrawGraph from '#lib/image/comfyui/templates/qwen_edit_2511_t2i.json';
-import type { ComfyGraph, FieldMap, ScalarBinding } from '#lib/image/comfyui/fieldMap.ts';
+import type {
+	ComfyGraph,
+	FieldMap,
+	InpaintBinding,
+	ScalarBinding
+} from '#lib/image/comfyui/fieldMap.ts';
 import type { ModelFamily } from '#lib/image/comfyui/families.ts';
 import type { SamplerSettings } from '#lib/image/types.ts';
 
@@ -54,6 +59,11 @@ export interface WorkflowTemplate {
 }
 
 const LICENSE = 'Same licence as Haruspex itself.';
+
+/** The plain drawing graph's sampler latent and VAE, for an inpaint. */
+function inpaintAt(node: string, vae: [string, number] = ['3', 0]): InpaintBinding {
+	return { kind: 'inpaint', node, input: 'latent_image', vae };
+}
 const SOURCE = 'Authored for Haruspex.';
 
 // ---- SD-family checkpoints ---------------------------------------------------
@@ -284,7 +294,8 @@ export const TEMPLATES: WorkflowTemplate[] = [
 		id: 'txt2img',
 		family: 'sd',
 		graph: txt2imgGraph as ComfyGraph,
-		map: { outputNode: '9', ...SD_BINDINGS },
+		// The checkpoint carries the VAE, as its third output.
+		map: { outputNode: '9', ...SD_BINDINGS, inpaint: inpaintAt('7', ['1', 2]) },
 		license: LICENSE,
 		source: SOURCE,
 		supports: { transparent: false, seamless: false },
@@ -308,7 +319,8 @@ export const TEMPLATES: WorkflowTemplate[] = [
 			outputNode: '9',
 			...MING_BINDINGS,
 			width: { kind: 'scalar', node: '6', input: 'width' },
-			height: { kind: 'scalar', node: '6', input: 'height' }
+			height: { kind: 'scalar', node: '6', input: 'height' },
+			inpaint: inpaintAt('12')
 		},
 		license: LICENSE,
 		source: SOURCE,
@@ -378,7 +390,7 @@ export const TEMPLATES: WorkflowTemplate[] = [
 		id: 'qwen21_t2i',
 		family: 'qwen21',
 		graph: qwen21Graph as ComfyGraph,
-		map: QWEN21_BINDINGS,
+		map: { ...QWEN21_BINDINGS, inpaint: inpaintAt('7') },
 		license: LICENSE,
 		source: SOURCE,
 		supports: { transparent: false, seamless: false },
@@ -400,7 +412,7 @@ export const TEMPLATES: WorkflowTemplate[] = [
 		id: 'qwen21_turbo_t2i',
 		family: 'qwen21_turbo',
 		graph: qwen21TurboGraph as ComfyGraph,
-		map: QWEN21_TURBO_BINDINGS,
+		map: { ...QWEN21_TURBO_BINDINGS, inpaint: inpaintAt('7') },
 		license: LICENSE,
 		source: SOURCE,
 		supports: { transparent: false, seamless: false },
@@ -445,7 +457,8 @@ export const TEMPLATES: WorkflowTemplate[] = [
 		map: {
 			...KLEIN_BINDINGS,
 			width: [at('6', 'width'), at('10', 'width')],
-			height: [at('6', 'height'), at('10', 'height')]
+			height: [at('6', 'height'), at('10', 'height')],
+			inpaint: inpaintAt('12')
 		},
 		license: LICENSE,
 		source: SOURCE,
@@ -473,7 +486,8 @@ export const TEMPLATES: WorkflowTemplate[] = [
 		map: {
 			...QWEN_EDIT_BINDINGS,
 			width: at('12', 'width'),
-			height: at('12', 'height')
+			height: at('12', 'height'),
+			inpaint: inpaintAt('13')
 		},
 		license: LICENSE,
 		source: SOURCE,
