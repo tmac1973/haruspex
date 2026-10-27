@@ -18,6 +18,10 @@ sprites: Array<number>,
  */
 blending: number, 
 /**
+ * Which ones, in the order given.
+ */
+blends: Array<boolean>, 
+/**
  * True when no more than half the sprites blend in.
  */
 ok: boolean, tone: SpriteTone, };

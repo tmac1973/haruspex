@@ -15,6 +15,10 @@ It can draw noise, cracks, stains, moss, bricks, wooden planks, cobbles, hex and
 
 It draws flat surfaces only: no objects, signs or doors. Ask for those as sprites, which need an image backend; see the `images` page.
 
+## Check sprites show up on it
+
+Name the sprites that will stand on it, as in "a stone floor for sprites/goblin.png and sprites/rat.png". The assistant is told whether they would be hard to see on the tile, with how much lighter or darker to make it, and is shown them standing on it. A texture drawn in the sprites' own colours is ground they vanish into, so it doesn't use their palette.
+
 ## Check it repeats well
 
 The assistant is shown the tile laid 3×3, as a map lays it. A line or a spot at the same place in every copy shows up there, and the assistant redraws without it. Road markings and kerbs belong on their own tiles: in a fill tile they would repeat every tile.
