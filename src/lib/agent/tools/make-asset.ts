@@ -16,7 +16,12 @@ import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
 import { ctxCwd, resolveShellPath } from '#lib/agent/tools/_helpers.ts';
 import { assetIo, paletteFor, writeAsset, type Target } from '#lib/agent/tools/_assetIo.ts';
-import { checkGround, MAX_SPRITES, spritesArg } from '#lib/agent/tools/_assetGround.ts';
+import {
+	checkGround,
+	MAX_SPRITES,
+	spritesArg,
+	type GroundCheck
+} from '#lib/agent/tools/_assetGround.ts';
 import {
 	makeTransition,
 	parseTransition,
@@ -208,21 +213,27 @@ async function makeTexture(input: ParsedInput, target: Target, ctx: ToolContext)
 	const url = dataUrl(ground ? ground.preview : await tiledPreview(tiles[0], size));
 	const sees = ctx.visionSupported !== false && ctx.pendingImages.length < MAX_PENDING_IMAGES;
 	if (sees) ctx.pendingImages.push({ path, dataUrl: url });
-	return toolResult(
-		[
-			`Wrote ${paths.join(', ')} (${size}×${size}, drawn from the recipe).`,
-			...(sees
-				? [
-						'The image shows the first laid 3×3, as a map lays it' +
-							(ground ? ', with the sprites on the diagonal' : '') +
-							'. If a line or a spot sits in the same place in every copy, take it out of ' +
-							'the recipe and draw again with overwrite: true.'
-					]
-				: []),
-			...(ground ? [ground.note] : [])
-		].join(' '),
-		url
-	);
+	return toolResult(textureNote(paths, size, sees, ground), url);
+}
+
+/** What a drawn texture's result says: the files, and what the preview shows. */
+function textureNote(
+	paths: string[],
+	size: number,
+	sees: boolean,
+	ground: GroundCheck | null
+): string {
+	const lines = [`Wrote ${paths.join(', ')} (${size}×${size}, drawn from the recipe).`];
+	if (sees) {
+		const shown = ground ? ', with the sprites on the diagonal' : '';
+		lines.push(
+			`The image shows the first laid 3×3, as a map lays it${shown}. If a line or a spot ` +
+				'sits in the same place in every copy, take it out of the recipe and draw again ' +
+				'with overwrite: true.'
+		);
+	}
+	if (ground) lines.push(ground.note);
+	return lines.join(' ');
 }
 
 registerTool({
