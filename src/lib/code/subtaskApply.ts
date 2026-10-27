@@ -17,6 +17,7 @@ import {
 } from '#lib/code/subtaskGit.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { sleep } from '#lib/utils/async.ts';
 
 /** What became of a writing subtask's changes. */
 export interface SubtaskApplyState {
@@ -56,20 +57,6 @@ export function withApplyLock<T>(sessionId: string, fn: () => Promise<T>): Promi
 		if (locks.get(sessionId) === tail) locks.delete(sessionId);
 	});
 	return run;
-}
-
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-	return new Promise((resolve) => {
-		const t = setTimeout(resolve, ms);
-		signal?.addEventListener(
-			'abort',
-			() => {
-				clearTimeout(t);
-				resolve();
-			},
-			{ once: true }
-		);
-	});
 }
 
 /**

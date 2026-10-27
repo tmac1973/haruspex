@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bytesToBase64, dataUrlBytes, pngDataUrl } from './base64';
+import { base64ToBytes, bytesToBase64, dataUrlBytes, pngDataUrl } from './base64';
 
 describe('bytesToBase64', () => {
 	it('encodes bytes', () => {
@@ -13,6 +13,17 @@ describe('bytesToBase64', () => {
 	it('handles buffers larger than the spread-argument limit', () => {
 		const big = new Uint8Array(300_000).fill(255);
 		expect(atob(bytesToBase64(big)).length).toBe(300_000);
+	});
+});
+
+describe('base64ToBytes', () => {
+	it('decodes what bytesToBase64 encodes', () => {
+		const bytes = new Uint8Array([0, 1, 127, 128, 255]);
+		expect(base64ToBytes(bytesToBase64(bytes))).toEqual(bytes);
+	});
+
+	it('throws on malformed input', () => {
+		expect(() => base64ToBytes('not base64!')).toThrow();
 	});
 });
 

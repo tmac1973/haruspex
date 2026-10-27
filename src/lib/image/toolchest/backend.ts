@@ -29,8 +29,9 @@ import {
 	type SamplerSettings
 } from '#lib/image/types.ts';
 import { FAMILY_SAMPLER } from '#lib/image/local/adapter.ts';
-import { randomSeed } from '#lib/image/lemonade/adapter.ts';
+import { randomSeed } from '#lib/utils/random.ts';
 import { transparentStart } from '#lib/image/sdcpp.ts';
+import { editUploads, imagesFrom } from '#lib/image/openaiImages.ts';
 import {
 	familyOfRecipe,
 	parseGenerationModels,
@@ -49,8 +50,6 @@ import {
 	ROUTES,
 	buildEditFields,
 	buildImageBody,
-	editUploads,
-	imagesFrom,
 	progressOf,
 	readJob,
 	type ImageJob
@@ -365,25 +364,14 @@ export const toolchestBackend: ImageBackend = {
 		} catch (e) {
 			throw asImageError(e);
 		}
-		if (images.length === 0) {
-			throw new ImageBackendError('rejected', 'llama-toolchest returned no image.');
-		}
-		return {
-			images: images.map((bytes) => ({
-				bytes,
-				mimeType: 'image/png',
-				width: handle.width,
-				height: handle.height
-			})),
-			meta: {
-				seed: handle.seed,
-				model: handle.model,
-				backend: 'llama-toolchest',
-				sampler: { name: 'as sent', steps: 0, cfg: 0 },
-				loras: [],
-				durationMs: Date.now() - started
-			}
-		};
+		return toImageResult(images, {
+			width: handle.width,
+			height: handle.height,
+			seed: handle.seed,
+			model: handle.model,
+			sampler: { name: 'as sent', steps: 0, cfg: 0 },
+			started
+		});
 	}
 };
 
@@ -402,6 +390,30 @@ async function finish(
 	} catch (e) {
 		throw asImageError(e);
 	}
+	return toImageResult(images, {
+		width: req.width,
+		height: req.height,
+		seed,
+		model: instance.id,
+		sampler: sent ?? { name: 'instance default', steps: 0, cfg: 0 },
+		started,
+		seamFailed: req.seamless ? NO_TILING : undefined
+	});
+}
+
+/** What a generation or a resumed job made, as a result; refused when it made nothing. */
+function toImageResult(
+	images: Uint8Array[],
+	made: {
+		width: number;
+		height: number;
+		seed: number;
+		model: string;
+		sampler: SamplerSettings;
+		started: number;
+		seamFailed?: string;
+	}
+): ImageResult {
 	if (images.length === 0) {
 		throw new ImageBackendError('rejected', 'llama-toolchest returned no image.');
 	}
@@ -409,17 +421,17 @@ async function finish(
 		images: images.map((bytes) => ({
 			bytes,
 			mimeType: 'image/png',
-			width: req.width,
-			height: req.height
+			width: made.width,
+			height: made.height
 		})),
 		meta: {
-			seed,
-			model: instance.id,
+			seed: made.seed,
+			model: made.model,
 			backend: 'llama-toolchest',
-			sampler: sent ?? { name: 'instance default', steps: 0, cfg: 0 },
+			sampler: made.sampler,
 			loras: [],
-			durationMs: Date.now() - started,
-			...(req.seamless ? { seamFailed: NO_TILING } : {})
+			durationMs: Date.now() - made.started,
+			...(made.seamFailed ? { seamFailed: made.seamFailed } : {})
 		}
 	};
 }

@@ -4,6 +4,7 @@
 // that confuse pure-text extractors.
 
 import { invoke } from '@tauri-apps/api/core';
+import { base64ToBytes } from '#lib/utils/base64.ts';
 
 // PDF.js worker is bundled by Vite. We import the worker as a URL.
 import * as pdfjsLib from 'pdfjs-dist';
@@ -21,15 +22,6 @@ const MAX_PAGES = 3;
 const RENDER_SCALE = 2.0;
 const MAX_DIMENSION = 1536;
 const JPEG_QUALITY = 0.92;
-
-function base64ToBytes(b64: string): Uint8Array {
-	const bin = atob(b64);
-	const bytes = new Uint8Array(bin.length);
-	for (let i = 0; i < bin.length; i++) {
-		bytes[i] = bin.charCodeAt(i);
-	}
-	return bytes;
-}
 
 /**
  * Load a PDF from the working directory via the sandboxed Rust command,

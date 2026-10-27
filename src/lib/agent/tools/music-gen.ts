@@ -13,6 +13,7 @@
  * Chat asks the user before replacing a file). `save_generated` saves a song
  * made earlier.
  */
+import { randomSeed } from '#lib/utils/random.ts';
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
 import { getSettings } from '#lib/stores/settings.ts';
@@ -175,7 +176,7 @@ export async function runMusic(args: MusicArgs, ctx: ToolContext): Promise<ToolE
 		if (!isSaveTarget(settled)) return settled;
 		target = settled;
 	}
-	const seed = args.seed ?? Math.floor(Math.random() * 2 ** 31);
+	const seed = args.seed ?? randomSeed();
 	if (canRunInBackground({ background: args.background }, ctx)) {
 		return startMusicTask({ ...args.req, seed }, args.notes, target, ctx);
 	}

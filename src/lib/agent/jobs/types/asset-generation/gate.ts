@@ -12,6 +12,7 @@
  * user does not have.
  */
 
+import { randomSeed } from '#lib/utils/random.ts';
 import type { CheckName } from '#lib/ipc/gen/CheckName.ts';
 import { errMessage, isAbortError } from '#lib/utils/error.ts';
 import type { CheckReport } from '#lib/ipc/gen/CheckReport.ts';
@@ -133,7 +134,7 @@ export function rejectionReason(report: CheckReport, judge: AssetJudgement | nul
  * most expensive possible way to produce the same bad image four times.
  */
 export function retrySeed(): number {
-	return Math.floor(Math.random() * 2_147_483_647);
+	return randomSeed();
 }
 
 export interface JudgeDeps {

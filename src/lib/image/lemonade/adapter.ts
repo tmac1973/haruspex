@@ -22,7 +22,7 @@
  * not, which is why this backend does not tile (`backend.ts`).
  */
 
-import { CLEAR_START_STRENGTH, fromBase64 } from '#lib/image/local/adapter.ts';
+import { CLEAR_START_STRENGTH } from '#lib/image/local/adapter.ts';
 
 /** Longest extras block sent: under the measured 24 KB that drew, with room. */
 export const MAX_EXTRAS_CHARS = 20_000;
@@ -74,11 +74,6 @@ export interface GenerationBody {
 	seed: number;
 	n: 1;
 	response_format: 'b64_json';
-}
-
-/** A seed for a request that pinned none: the response does not say which was used. */
-export function randomSeed(): number {
-	return Math.floor(Math.random() * 2 ** 31);
 }
 
 export function buildGeneration(req: {
@@ -146,16 +141,6 @@ export function buildEditFields(
 
 /** Lemonade's Real-ESRGAN, which `/api/v1/images/upscale` runs on sd-cpp. */
 export const UPSCALER = 'RealESRGAN-x4plus';
-
-/** The images in an OpenAI-style answer, in order. */
-export function imagesFrom(payload: unknown): Uint8Array[] {
-	const data = (payload as { data?: unknown })?.data;
-	if (!Array.isArray(data)) return [];
-	return data
-		.map((d) => (d as { b64_json?: unknown })?.b64_json)
-		.filter((b): b is string => typeof b === 'string')
-		.map(fromBase64);
-}
 
 /** Lemonade's own error sentence from a refusal's body, when it has one. */
 export function errorMessage(body: string): string | null {
