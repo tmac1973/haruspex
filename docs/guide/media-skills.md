@@ -14,6 +14,7 @@ Each works in certain tabs and needs something set up first:
 | Skill | Where | Needs |
 |---|---|---|
 | `fix-picture` | Chat | an image backend (Settings → Image) |
+| `game-assets` | the Code tab, or the Shell with Full access | nothing for textures; an image backend for sprites and icons |
 | `write-song` | Chat and the Code tab | a music backend (Settings → Music) |
 | `cut-video` | Chat and the Code tab, with a working folder | the video tools (Settings → Video editing) |
 
@@ -29,18 +30,27 @@ Until that is set up, the skill is greyed out in Settings → Skills, with what 
 - **Bigger or sharper** ("for printing"): it upscales, two or four times.
 - **Several pictures together** ("put the cat from the second picture on the sofa"): one edit that combines them.
 
-For several changes it works in that order, edits first and upscaling last, each on the last result. It looks at each result before going on. A change that didn't take is tried once more with a clearer prompt; if that also fails, it says so.
+Several changes go in that order, upscaling last, each on the last result. A change that didn't take is tried once more, then reported.
 
-The skill is told what the image backend can do when it loads. If you ask for something the backend can't do, such as extending on Lemonade or editing with Ming-Image, it says what is missing and where to set it up, rather than trying. See the `image-editing` page for which backends and models do what.
+It knows what the image backend can do, so for something it can't (extending on Lemonade, editing with Ming-Image) it says where to set it up rather than trying. See the `image-editing` page.
 
-To try it: `/fix-picture make it look like late evening, then make it big enough to print`.
+## Make art for a game: game-assets
+
+`game-assets` makes a few assets for the project in the Code tab: sprites, icons, tiling textures and the edge tiles where two textures meet. Ask for something like "a goblin, a rat and a dungeon floor for this game".
+
+- It reads the project first: the tile size the code draws, the folder it loads images from, and any art already there to match.
+- It uses one style line for every asset, makes the sprites first, shows you the first, and draws the rest in its colours.
+- It draws the ground to stand apart from the sprites: each texture is measured against them, and redrawn lighter or darker if they would be hard to see on it (see the `textures` page).
+- It doesn't replace a file that exists unless you ask.
+
+For more than about eight assets it suggests an Asset generation job (see the `jobs` page).
 
 ## Make a song: write-song
 
-`write-song` writes the style and the words before making anything, since a song takes a minute or more. The style is a few tags (genre, mood, instruments, tempo, voice), using only what you asked for. Lyrics get section tags such as `[verse]` and `[chorus]`, and as many lines as fit the length. An instrumental gets none.
+`write-song` writes the style and the words before making anything, since a song takes a minute or more. The style is a few tags (genre, mood, instruments, tempo, voice): it keeps to what you named, and says what it chose for the rest. Lyrics get section tags such as `[verse]` and `[chorus]`, and as many lines as fit the length. An instrumental gets none.
 
 - **Music for a game or a video:** an instrumental loop with no intro or outro, 30 to 60 seconds. In the Code tab it's saved where the code loads its music.
-- **Changing a song:** it changes the part you name rather than making the whole song again. It can redo a stretch, restyle the song, extend it, or add or pull out an instrument (see the `music` page). For "the same but faster" it reuses the song's seed.
+- **Changing a song:** it changes the part you name rather than making the whole song again. It can redo a stretch, restyle the song, extend it, or add or pull out an instrument (see the `music` page). For "the same but faster" it remakes a song it made from the same seed; one it has already changed can't be remade that way, and it says so.
 - **Afterwards:** it says what it made, with the length and the seed. It doesn't claim how the song sounds, since it can't hear it.
 
 ## Finish a video: cut-video
@@ -62,4 +72,4 @@ It never uploads. See the `video-editing`, `video-speech` and `video-render` pag
 
 ## What has been tested
 
-`fix-picture` was tested by running `/fix-picture` with Qwen3.8-Flash. It made an area edit, and an edit then an upscale, upscaling last even when asked for it first. It extended a picture to 16:9 on ComfyUI with FLUX.2 klein. On Lemonade it said extending isn't possible there, and offered what is. Before a skill loaded with its first tool call, that model used the picture tools directly without loading the skill.
+Each skill was run with Qwen3.8-Flash and loaded itself: `fix-picture` on Lemonade and ComfyUI, `game-assets` on a small pygame game, `cut-video` on three clips with a retake, and `write-song` with ACE-Step 1.5 XL.

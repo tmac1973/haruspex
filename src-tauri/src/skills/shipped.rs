@@ -347,6 +347,7 @@ mod tests {
             "guided-planning",
             "plan-2d-game",
             "fix-picture",
+            "game-assets",
             "write-song",
             "cut-video",
         ] {

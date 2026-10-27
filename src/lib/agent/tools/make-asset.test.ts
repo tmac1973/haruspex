@@ -308,6 +308,53 @@ describe('make_asset textures', () => {
 		expect(out.thumbDataUrl).toBe(`data:image/png;base64,${btoa('\x07\x07')}`);
 	});
 
+	describe('with the sprites that stand on it', () => {
+		const tone = { lightness: 0.22, target: 0.47, targetGrey: 0x5c5c5cff };
+		const routes = (ok: boolean) =>
+			invokeRouter({
+				shell_pending_command: () => null,
+				fs_read_bytes_absolute: () => Array.from(PNG),
+				texture_validate: () => undefined,
+				texture_render: [[0]],
+				texture_ground_contrast: ok
+					? { ground: 0.45, sprites: [0.22, 0.25], blending: 0, blends: [false, false], ok, tone }
+					: { ground: 0.2, sprites: [0.22], blending: 1, blends: [true], ok, tone },
+				texture_ground_preview: [8, 8]
+			});
+
+		it('says the sprites show up, and shows them on the tile', async () => {
+			state.invoke.mockImplementation(routes(true));
+			const sprites = ['sprites/goblin.png', 'sprites/rat.png'];
+			const out = await executeTool('make_asset', texture({ sprites }), context());
+			expect(calls('fs_read_bytes_absolute').map((a) => a?.path)).toEqual([
+				'/home/u/game/sprites/goblin.png',
+				'/home/u/game/sprites/rat.png'
+			]);
+			expect(calls('texture_ground_preview')[0]).toMatchObject({ tile: [0], scale: 5 });
+			expect(out.thumbDataUrl).toBe(`data:image/png;base64,${btoa('\x08\x08')}`);
+			expect(out.result).toContain('with the sprites on the diagonal');
+			expect(out.result).toContain('The sprites show up on it: its lightness is 0.45');
+		});
+
+		it('says how to change a tile they would vanish into', async () => {
+			state.invoke.mockImplementation(routes(false));
+			const out = await executeTool(
+				'make_asset',
+				texture({ sprites: ['sprites/goblin.png'] }),
+				context()
+			);
+			expect(out.result).toContain('hard to see on it: sprites/goblin.png (0.22)');
+			expect(out.result).toContain('lighter than 0.32');
+			expect(out.result).toContain('overwrite: true');
+		});
+
+		it('refuses a list that is not file paths', async () => {
+			const out = await executeTool('make_asset', texture({ sprites: [3] }), context());
+			expect(out.result).toMatch(/list of sprite file paths/);
+			expect(calls('texture_render')).toHaveLength(0);
+		});
+	});
+
 	it('writes every variant beside the first', async () => {
 		const out = await executeTool('make_asset', texture({ variants: 3 }), context());
 		expect(writes().map((w) => [w?.path, w?.bytes])).toEqual([

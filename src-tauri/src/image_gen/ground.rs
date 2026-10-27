@@ -45,6 +45,8 @@ pub struct GroundContrast {
     pub sprites: Vec<f32>,
     /// Sprites within `MIN_GAP` of the ground.
     pub blending: u32,
+    /// Which ones, in the order given.
+    pub blends: Vec<bool>,
     /// True when no more than half the sprites blend in.
     pub ok: bool,
     pub tone: SpriteTone,
@@ -127,15 +129,17 @@ pub fn ground_contrast(tile: &RgbaImage, sprites: &[RgbaImage]) -> Option<Ground
     let ground = median_lightness(tile)?;
     let lights: Vec<f32> = sprites.iter().filter_map(median_lightness).collect();
     let tone = tone_of(&lights)?;
-    let blending = lights
+    let blends: Vec<bool> = lights
         .iter()
-        .filter(|l| (*l - ground).abs() < MIN_GAP)
-        .count() as u32;
+        .map(|l| (l - ground).abs() < MIN_GAP)
+        .collect();
+    let blending = blends.iter().filter(|b| **b).count() as u32;
     Some(GroundContrast {
         ground,
         ok: blending * 2 <= lights.len() as u32,
         sprites: lights,
         blending,
+        blends,
         tone,
     })
 }
@@ -245,6 +249,7 @@ mod tests {
         let sprites = [sprite([30, 30, 30]), sprite([230, 230, 230])];
         let c = ground_contrast(&solid(8, 8, [30, 30, 30, 255]), &sprites).unwrap();
         assert_eq!(c.blending, 1);
+        assert_eq!(c.blends, vec![true, false]);
         assert!(c.ok);
     }
 
