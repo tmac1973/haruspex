@@ -24,8 +24,9 @@ The caption is comma-separated tags, not a sentence. Include:
   "choir".
 
 For example: "lo-fi hip hop, mellow, rainy night, Rhodes piano, vinyl
-crackle, soft drums, slow". Use only what the user said or clearly
-implied. Don't add a genre they didn't ask for. Pass `bpm`, `key` or
+crackle, soft drums, slow". Keep to whatever the user named: their genre,
+their instruments, their kind of voice. Fill in only what they left open,
+and say in your answer what you chose. Pass `bpm`, `key` or
 `time_signature` only when the user names them.
 
 ## The words: lyrics
@@ -72,8 +73,11 @@ the working folder. Never make the whole song again to fix one part of it.
 | "Fill in a band around it" | `complete` |
 
 Each song's seed is reported with it. For "the same but faster", or any
-small change to the whole song, make a new one with the same `seed` and the
-changed caption.
+small change to a whole song that `generate_music` made, make it again with
+that song's `seed`, the same lyrics, and the changed caption or `bpm`. A
+song that `edit_music` changed can't be remade that way: its seed doesn't
+make the whole song. Say that remaking it from the original seed loses the
+edit, and ask whether to remake the original and redo the edit after.
 
 If the tool says the model can't do a change (instrument changes need a
 base model such as ACE-Step 1.5 XL base), tell the user. Don't try a
