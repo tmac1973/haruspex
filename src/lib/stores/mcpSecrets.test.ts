@@ -20,7 +20,14 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 import { getSettings, setMcpServers } from './settings';
-import { forgetMcpSecrets, hasMcpSecret, migrateMcpSecrets, storeMcpSecret } from './mcpSecrets';
+import {
+	customEnvProblem,
+	forgetMcpSecrets,
+	hasMcpSecret,
+	migrateMcpSecrets,
+	storeCustomEnv,
+	storeMcpSecret
+} from './mcpSecrets';
 import { isStepSatisfied, setupStateOf } from './mcpSetup';
 
 function server(over: Partial<McpServerConfig> = {}): McpServerConfig {
@@ -117,5 +124,28 @@ describe('MCP secrets', () => {
 		await migrateMcpSecrets();
 		expect(getSettings().integrations.mcp.servers[0].secrets.token).toBe('ghp_old');
 		expect(state.stored.size).toBe(0);
+	});
+
+	it("keep a custom server's variables in the store under env: keys", async () => {
+		const c = await storeCustomEnv(server({ source: { kind: 'custom', program: 'x', args: [] } }), [
+			{ name: ' API_KEY ', value: 'sk_1' },
+			{ name: '', value: '' }
+		]);
+		expect(state.stored.get('mcp:s1:env:API_KEY')).toBe('sk_1');
+		expect(c.secrets).toEqual({ 'env:API_KEY': '' });
+		expect(c.storedSecrets).toEqual(['env:API_KEY']);
+	});
+
+	it('refuse a variable name the server could not be given', () => {
+		expect(customEnvProblem([{ name: 'API_KEY', value: 'x' }])).toBeNull();
+		expect(customEnvProblem([{ name: '', value: '' }])).toBeNull();
+		expect(customEnvProblem([{ name: '1KEY', value: 'x' }])).toMatch(/not a variable name/);
+		expect(customEnvProblem([{ name: '', value: 'x' }])).toMatch(/not a variable name/);
+		expect(
+			customEnvProblem([
+				{ name: 'A', value: '1' },
+				{ name: 'A', value: '2' }
+			])
+		).toMatch(/twice/);
 	});
 });

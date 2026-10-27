@@ -12,7 +12,12 @@
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { onMount, onDestroy } from 'svelte';
 	import { getSettings, setMcpServers, snapshot } from '#lib/stores/settings.ts';
-	import { storeMcpSecret } from '#lib/stores/mcpSecrets.ts';
+	import {
+		customEnvProblem,
+		storeCustomEnv,
+		storeMcpSecret,
+		type EnvVar
+	} from '#lib/stores/mcpSecrets.ts';
 	import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 	import type { CatalogEntry } from '#lib/ipc/gen/CatalogEntry.ts';
 	import type { RuntimeAvailability } from '#lib/ipc/gen/RuntimeAvailability.ts';
@@ -45,6 +50,8 @@
 	let showCustom = $state(false);
 	let customProgram = $state('');
 	let customArgs = $state('');
+	let customEnv = $state<EnvVar[]>([]);
+	const customEnvError = $derived(customEnvProblem(customEnv));
 	let showRemote = $state(false);
 	let remoteUrl = $state('');
 	let remoteToken = $state('');
@@ -116,30 +123,34 @@
 		await invoke('mcp_cancel_install');
 	}
 
-	function addCustom(): void {
+	async function addCustom(): Promise<void> {
 		const program = customProgram.trim();
-		if (!program) return;
-		persist([
-			...servers,
-			{
-				id: newId('mcp'),
-				addonProjects: [],
-				label: program.split(/[\\/]/).pop() || 'Custom server',
-				enabled: true,
-				source: {
-					kind: 'custom',
-					program,
-					args: customArgs.trim() ? customArgs.trim().split(/\s+/) : []
-				},
-				secrets: {},
-				toolEnabled: {},
-				proxyUse: 'auto',
-				// No catalog entry means no setup steps to complete.
-				setupComplete: true
-			}
-		]);
+		if (!program || customEnvError) return;
+		let server: McpServerConfig = {
+			id: newId('mcp'),
+			addonProjects: [],
+			label: program.split(/[\\/]/).pop() || 'Custom server',
+			enabled: true,
+			source: {
+				kind: 'custom',
+				program,
+				args: customArgs.trim() ? customArgs.trim().split(/\s+/) : []
+			},
+			secrets: {},
+			toolEnabled: {},
+			proxyUse: 'auto',
+			// No catalog entry means no setup steps to complete.
+			setupComplete: true
+		};
+		// Plain copies: the rows are $state proxies.
+		server = await storeCustomEnv(
+			server,
+			customEnv.map(({ name, value }) => ({ name, value }))
+		);
+		persist([...servers, server]);
 		customProgram = '';
 		customArgs = '';
+		customEnv = [];
 		showCustom = false;
 	}
 
@@ -298,10 +309,40 @@
 				<input
 					bind:value={customArgs}
 					placeholder="--stdio"
-					title="Saved in plain settings. Don't put API keys here."
+					title="Saved in plain settings. Put keys in a secret variable instead."
 				/>
 			</label>
-			<button type="button" disabled={!customProgram.trim()} onclick={addCustom}>Add</button>
+			{#each customEnv as envVar, i (i)}
+				<div class="env-row">
+					<input bind:value={envVar.name} placeholder="API_KEY" aria-label="Variable name" />
+					<input
+						type="password"
+						bind:value={envVar.value}
+						placeholder="Value"
+						aria-label="Variable value"
+						title="Kept in Haruspex's secret store and passed to the server as an environment variable."
+					/>
+					<button
+						type="button"
+						aria-label="Remove variable"
+						onclick={() => (customEnv = customEnv.filter((_, j) => j !== i))}>×</button
+					>
+				</div>
+			{/each}
+			<button
+				type="button"
+				class="add-var"
+				onclick={() => (customEnv = [...customEnv, { name: '', value: '' }])}
+				>Add secret variable</button
+			>
+			{#if customEnvError}
+				<p class="error">{customEnvError}</p>
+			{/if}
+			<button
+				type="button"
+				disabled={!customProgram.trim() || !!customEnvError}
+				onclick={() => void addCustom()}>Add</button
+			>
 		</div>
 	{/if}
 </section>
@@ -335,6 +376,17 @@
 	}
 	.advanced {
 		font-size: 0.9em;
+	}
+	.add-var {
+		align-self: flex-start;
+	}
+	.env-row {
+		display: flex;
+		gap: 0.5rem;
+	}
+	.env-row input {
+		flex: 1;
+		min-width: 0;
 	}
 	.custom-form {
 		margin-top: 0.75rem;
