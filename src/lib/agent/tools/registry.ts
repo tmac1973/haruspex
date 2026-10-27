@@ -559,6 +559,20 @@ function generationRefusal(reg: ToolRegistration, ctx: ToolContext): string | nu
 	return null;
 }
 
+/**
+ * What comes back in place of the call, if anything: a generation tool's
+ * refusal, or the skill that covers the tool when it isn't loaded yet
+ * (`_skillGate.ts`), which the model then follows to make the call again.
+ */
+async function generationOrSkill(
+	reg: ToolRegistration,
+	ctx: ToolContext
+): Promise<ToolExecOutput | null> {
+	const generation = generationRefusal(reg, ctx);
+	if (generation) return toolResult(toolError(generation));
+	return skillGate(reg.schema.function.name, ctx);
+}
+
 /** A generation tool's refusal: its backend off, or no one there for what it makes. */
 function backendRefusal(off: boolean, offText: string, what: string, ctx: ToolContext) {
 	if (off) return offText;
@@ -710,11 +724,8 @@ export async function executeTool(
 		);
 	}
 
-	const generation = generationRefusal(reg, ctx);
-	if (generation) return toolResult(toolError(generation));
-
-	const gated = await skillGate(name, ctx);
-	if (gated) return gated;
+	const early = await generationOrSkill(reg, ctx);
+	if (early) return early;
 
 	// And for contacts, which is a separate account capability: a server can
 	// serve calendars and not address books.
