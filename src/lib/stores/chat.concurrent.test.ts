@@ -55,6 +55,28 @@ vi.mock('@tauri-apps/api/core', () => ({
 	invoke: vi.fn().mockRejectedValue(new Error('not available'))
 }));
 
+// The video task watcher, reduced to what the chat store uses: the test
+// queues a notice and calls the handler the store registered.
+const tasks = vi.hoisted(() => ({
+	handler: null as ((owner: string) => void) | null,
+	pending: new Map<string, string>()
+}));
+vi.mock('#lib/video/taskWatch.ts', () => ({
+	setChatVideoTaskHandler: (fn: (owner: string) => void) => {
+		tasks.handler = fn;
+		return () => {};
+	},
+	hasVideoNotices: (owner: string) => tasks.pending.has(owner),
+	takeVideoNotices: (owner: string) => {
+		const text = tasks.pending.get(owner) ?? '';
+		tasks.pending.delete(owner);
+		return text;
+	}
+}));
+
+const toasts = vi.hoisted(() => ({ showToast: vi.fn() }));
+vi.mock('#lib/stores/toasts.svelte.ts', () => toasts);
+
 describe('concurrent chat conversations', () => {
 	beforeEach(() => {
 		vi.resetModules();
@@ -74,7 +96,9 @@ describe('concurrent chat conversations', () => {
 
 	/**
 	 * A model that streams `text` and then waits until the test lets it
-	 * finish (or the turn is stopped), so turns can overlap.
+	 * finish (or the turn is stopped), so turns can overlap. Like the real
+	 * loop, it delivers queued steering before it finishes, and hands back
+	 * what it never delivered when stopped.
 	 */
 	async function heldTurns() {
 		const { runAgentLoop } = await import('#lib/agent/loop.ts');
@@ -84,10 +108,20 @@ describe('concurrent chat conversations', () => {
 				new Promise<void>((resolve, reject) => {
 					const id = options.conversationId!;
 					options.onStreamChunk({ delta: { content: `answer in ${id}` }, finish_reason: null });
-					options.signal?.addEventListener('abort', () =>
-						reject(new DOMException('aborted', 'AbortError'))
-					);
+					options.signal?.addEventListener('abort', () => {
+						const left = options.takeSteering?.() ?? [];
+						if (left.length) {
+							options.onComplete({
+								stopReason: 'complete',
+								aborted: true,
+								undeliveredSteering: left
+							});
+						}
+						reject(new DOMException('aborted', 'AbortError'));
+					});
 					finish.set(id, () => {
+						const steers = options.takeSteering?.() ?? [];
+						if (steers.length) options.onSteering?.(steers);
 						options.onComplete();
 						resolve();
 					});
@@ -126,17 +160,127 @@ describe('concurrent chat conversations', () => {
 		expect(conv(b).messages.map((m) => m.content)).toEqual(['second', `answer in ${b}`]);
 	});
 
-	it('refuses a second send in a conversation that is already busy', async () => {
+	it('steers a busy conversation with a second send, ahead of the answer', async () => {
+		const { runAgentLoop } = await import('#lib/agent/loop.ts');
 		const finish = await heldTurns();
 		const chat = await setup();
 
 		const a = chat.createConversation();
 		const sent = chat.sendMessage('first');
 		await settle();
-		expect(await chat.sendMessage('again')).toBe(false);
+		expect(await chat.sendMessage('also this')).toBe(true);
+		expect(chat.getRun(a).steering).toEqual([{ text: 'also this', images: [] }]);
+		// No second turn: the running one takes it.
+		expect(runAgentLoop).toHaveBeenCalledTimes(1);
 
 		finish.get(a)!();
 		await sent;
+		const conv = chat.getConversations().find((c) => c.id === a)!;
+		expect(conv.messages.map((m) => m.content)).toEqual(['first', 'also this', `answer in ${a}`]);
+		expect(chat.getRun(a).steering).toEqual([]);
+	});
+
+	it('hands steering a stopped turn never delivered back to the input box', async () => {
+		await heldTurns();
+		const chat = await setup();
+
+		const a = chat.createConversation();
+		const sent = chat.sendMessage('first');
+		await settle();
+		await chat.sendMessage('never mind');
+		chat.cancelGeneration(a);
+		await sent;
+
+		const conv = chat.getConversations().find((c) => c.id === a)!;
+		expect(conv.messages.map((m) => m.content)).not.toContain('never mind');
+		expect(chat.getRun(a).takeReturned()).toEqual({ text: ['never mind'], images: [] });
+	});
+
+	it('marks a conversation unread when its turn ends elsewhere, until it is opened', async () => {
+		const finish = await heldTurns();
+		const chat = await setup();
+
+		const a = chat.createConversation();
+		const sent = chat.sendMessage('first');
+		await settle();
+		chat.createConversation();
+
+		finish.get(a)!();
+		await sent;
+		const conv = () => chat.getConversations().find((c) => c.id === a)!;
+		expect(conv().unread).toBe(true);
+
+		await chat.setActiveConversation(a);
+		expect(conv().unread).toBe(false);
+	});
+
+	/** A video task ended for `id`. */
+	function taskEnded(id: string, notice: string): void {
+		tasks.pending.set(`chat:${id}`, notice);
+		tasks.handler!(`chat:${id}`);
+	}
+
+	it('runs a notice turn in an idle conversation that is not open, and says so', async () => {
+		const finish = await heldTurns();
+		const chat = await setup();
+		await chat.initChatStore();
+
+		const a = chat.createConversation();
+		const b = chat.createConversation();
+		taskEnded(a, 'Video render finished: /tmp/a.mp4.');
+		await settle();
+
+		expect(chat.getActiveConversationId()).toBe(b);
+		expect(chat.getRun(a).generating).toBe(true);
+		expect(toasts.showToast).toHaveBeenCalledWith(
+			chat.noticeToast('New chat'),
+			expect.objectContaining({ actionLabel: 'Open' })
+		);
+
+		finish.get(a)!();
+		await settle();
+		const conv = chat.getConversations().find((c) => c.id === a)!;
+		expect(conv.messages[0].content).toBe('Video render finished: /tmp/a.mp4.');
+		expect(conv.unread).toBe(true);
+	});
+
+	it('holds a notice for a busy conversation until its turn ends', async () => {
+		const { runAgentLoop } = await import('#lib/agent/loop.ts');
+		const finish = await heldTurns();
+		const chat = await setup();
+		await chat.initChatStore();
+
+		const a = chat.createConversation();
+		const sent = chat.sendMessage('first');
+		await settle();
+		taskEnded(a, 'Video render finished: /tmp/a.mp4.');
+		await settle();
+		expect(runAgentLoop).toHaveBeenCalledTimes(1);
+
+		finish.get(a)!();
+		await sent;
+		await new Promise((r) => setTimeout(r, 0));
+		await settle();
+		expect(runAgentLoop).toHaveBeenCalledTimes(2);
+		const conv = chat.getConversations().find((c) => c.id === a)!;
+		expect(conv.messages.map((m) => m.content).slice(0, 3)).toEqual([
+			'first',
+			`answer in ${a}`,
+			'Video render finished: /tmp/a.mp4.'
+		]);
+	});
+
+	it('does not mark the open conversation unread', async () => {
+		const finish = await heldTurns();
+		const chat = await setup();
+
+		const a = chat.createConversation();
+		const sent = chat.sendMessage('first');
+		await settle();
+		finish.get(a)!();
+		await sent;
+
+		expect(chat.getConversations().find((c) => c.id === a)!.unread).toBe(false);
 	});
 
 	it('stopping one conversation leaves the other running', async () => {

@@ -33,6 +33,8 @@ pub struct ConversationSummary {
     pub created_at: i64,
     #[ts(type = "number")]
     pub updated_at: i64,
+    /// A turn finished here that the user hasn't opened the chat to see.
+    pub unread: bool,
 }
 
 #[derive(Clone, Debug, Serialize, ts_rs::TS)]
@@ -817,6 +819,9 @@ impl Database {
             // (`delete_job`) rather than deleting them.
             "ALTER TABLE jobs ADD COLUMN parent_job_id INTEGER",
             "ALTER TABLE jobs ADD COLUMN parent_run_id INTEGER",
+            // A chat that finished a turn while another was open. Kept so a
+            // notice turn that ran overnight still shows on the next launch.
+            "ALTER TABLE conversations ADD COLUMN unread INTEGER NOT NULL DEFAULT 0",
         ] {
             if let Err(e) = conn.execute(stmt, []) {
                 let msg = e.to_string();

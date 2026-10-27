@@ -89,6 +89,19 @@ fn rename_conversation() {
 }
 
 #[test]
+fn conversation_unread_round_trips() {
+    let db = test_db();
+    db.create_conversation("c1", "Chat").unwrap();
+    assert!(!db.list_conversations().unwrap()[0].unread);
+
+    db.set_conversation_unread("c1", true).unwrap();
+    assert!(db.list_conversations().unwrap()[0].unread);
+
+    db.set_conversation_unread("c1", false).unwrap();
+    assert!(!db.list_conversations().unwrap()[0].unread);
+}
+
+#[test]
 fn clear_all() {
     let db = test_db();
     db.create_conversation("c1", "Chat 1").unwrap();

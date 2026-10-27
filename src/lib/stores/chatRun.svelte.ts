@@ -8,7 +8,20 @@
  * the `Conversation` in the chat store.
  */
 
+import type { SteeringMessage } from '#lib/agent/loop.ts';
+
 export class ChatRun {
+	/**
+	 * Messages sent while the turn runs, given to the model at its next step.
+	 * See `AgentLoopOptions.takeSteering`.
+	 */
+	steering = $state<SteeringMessage[]>([]);
+	/**
+	 * Steering the turn ended without delivering (stopped, or typed after
+	 * its last step), for the input box to take back.
+	 */
+	returnedText = $state<string[]>([]);
+	returnedImages = $state<string[]>([]);
 	/** A turn is running, or waiting for an inference slot. */
 	generating = $state(false);
 	/** The turn is waiting for an inference slot. */
@@ -76,6 +89,34 @@ export class ChatRun {
 		this.waitingForSlot = false;
 		this.streamingContent = '';
 		this.abortController = null;
+	}
+
+	/** Queue a message for the running turn's next step. */
+	steer(message: SteeringMessage): void {
+		this.steering = [...this.steering, message];
+	}
+
+	/** Take the queue, for the loop to deliver. */
+	takeSteering(): SteeringMessage[] {
+		const steers = this.steering;
+		this.steering = [];
+		return steers;
+	}
+
+	/** Give steering the model never saw back to the input box. */
+	handBack(steers: SteeringMessage[]): void {
+		for (const m of steers) {
+			if (m.text) this.returnedText = [...this.returnedText, m.text];
+			if (m.images?.length) this.returnedImages = [...this.returnedImages, ...m.images];
+		}
+	}
+
+	/** Take what was handed back, clearing it. */
+	takeReturned(): { text: string[]; images: string[] } {
+		const out = { text: this.returnedText, images: this.returnedImages };
+		this.returnedText = [];
+		this.returnedImages = [];
+		return out;
 	}
 
 	/**

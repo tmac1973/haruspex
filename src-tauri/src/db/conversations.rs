@@ -5,7 +5,10 @@ impl Database {
     pub fn list_conversations(&self) -> Result<Vec<ConversationSummary>, String> {
         let conn = self.conn();
         let mut stmt = conn
-            .prepare("SELECT id, title, created_at, updated_at FROM conversations ORDER BY updated_at DESC")
+            .prepare(
+                "SELECT id, title, created_at, updated_at, unread FROM conversations \
+                 ORDER BY updated_at DESC",
+            )
             .map_err(|e| format!("Query failed: {}", e))?;
 
         let rows = stmt
@@ -15,6 +18,7 @@ impl Database {
                     title: row.get(1)?,
                     created_at: row.get(2)?,
                     updated_at: row.get(3)?,
+                    unread: row.get::<_, i64>(4)? != 0,
                 })
             })
             .map_err(|e| format!("Query failed: {}", e))?;
@@ -136,6 +140,16 @@ impl Database {
         conn.execute(
             "UPDATE conversations SET title = ?1 WHERE id = ?2",
             params![title, id],
+        )
+        .map_err(|e| format!("Update failed: {}", e))?;
+        Ok(())
+    }
+
+    pub fn set_conversation_unread(&self, id: &str, unread: bool) -> Result<(), String> {
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE conversations SET unread = ?1 WHERE id = ?2",
+            params![unread as i64, id],
         )
         .map_err(|e| format!("Update failed: {}", e))?;
         Ok(())

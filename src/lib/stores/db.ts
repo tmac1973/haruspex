@@ -200,6 +200,15 @@ export async function dbRenameConversation(id: string, title: string): Promise<v
 	}
 }
 
+export async function dbSetUnread(id: string, unread: boolean): Promise<void> {
+	if (!available) return;
+	try {
+		await invoke('conversation_set_unread', { id, unread });
+	} catch (e) {
+		logDebug('db', 'dbSetUnread failed', { id, error: String(e) });
+	}
+}
+
 export async function dbDeleteConversation(id: string): Promise<void> {
 	if (!available) return;
 	try {

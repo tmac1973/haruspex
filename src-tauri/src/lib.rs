@@ -477,6 +477,7 @@ pub fn run() {
             db::db_save_message,
             db::db_update_last_message_steps,
             db::db_rename_conversation,
+            db::conversation_set_unread,
             db::db_delete_conversation,
             db::db_clear_all_conversations,
             db::code_session_list,

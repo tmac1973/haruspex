@@ -44,7 +44,15 @@ vi.mock('#lib/stores/chat.svelte.ts', () => ({
 	isActiveConversationRemembered: vi.fn(() => true),
 	isActiveConversationRemote: vi.fn(() => false),
 	setConversationMemoryEnabled: vi.fn(),
+	getActiveRun: vi.fn(() => ({
+		steering: [],
+		returnedText: [],
+		returnedImages: [],
+		takeReturned: () => ({ text: [], images: [] })
+	})),
+	dropSteering: vi.fn(),
 	// ConversationSidebar
+	getRun: vi.fn(() => ({ generating: false, waitingForSlot: false, queuedForStartup: false })),
 	clearAllConversations: vi.fn(),
 	deleteConversation: vi.fn(),
 	getActiveConversationId: vi.fn(() => 'c1'),
