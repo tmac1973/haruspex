@@ -7,10 +7,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('#lib/utils/async.ts', () => ({ sleep: mocks.sleep }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({ codeCommandExec: 'pty' })
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: { codeCommandExec: 'pty' }
+	})
+);
 
 import { invokeCalls, invokeRouter } from '#lib/testing/invoke.ts';
 

@@ -229,17 +229,18 @@ vi.mock('#lib/api.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/api.ts')>()),
 	chatCompletion: mocks.chatCompletion
 }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({
-		codeMaxIterations: 40,
-		codeAutoApprove: false,
-		maxResponseTokensFileWrite: 8192,
-		codeRunCommandTimeoutSecs: 30,
-		imageBackendKind: 'none',
-		customSystemPrompt: ''
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: {
+			codeMaxIterations: 40,
+			codeAutoApprove: false,
+			maxResponseTokensFileWrite: 8192,
+			codeRunCommandTimeoutSecs: 30,
+			imageBackendKind: 'none',
+			customSystemPrompt: ''
+		}
 	})
-}));
+);
 vi.mock('#lib/shell/backgroundWatch.ts', () => ({
 	setCodeWatchCompletionHandler: (owner: string, fn: () => void) => {
 		mocks.watchHandlers.set(owner, fn);

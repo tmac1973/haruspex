@@ -6,16 +6,15 @@ const settings = vi.hoisted(() => ({
 	musicAceBaseUrl: 'http://box:8083/',
 	musicAceModel: ''
 }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => settings
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, { settings })
+);
 vi.mock('#lib/utils/async.ts', () => ({ sleep: () => Promise.resolve() }));
 
 import asmodean from './fixtures/props-asmodean.json';
 import composed from './fixtures/lm-result.json';
 import { aceMusicBackend } from './backend';
-import { invokeRouter } from '#lib/testing/invoke.ts';
+import { httpRouter, invokeRouter, type HttpAnswer } from '#lib/testing/invoke.ts';
 import {
 	MusicBackendError,
 	type MusicJobHandle,
@@ -23,12 +22,7 @@ import {
 	type MusicRequest
 } from '#lib/music/types.ts';
 
-interface Call {
-	method: string;
-	path: string;
-	body: Record<string, unknown> | null;
-}
-type Answer = unknown | ((call: Call) => unknown);
+type Answer = HttpAnswer;
 
 const HASH = 'c'.repeat(64);
 const DIT = 'acestep-v15-xl-sft-Q8_0.gguf';
@@ -38,18 +32,13 @@ function use(answers: Record<string, Answer>) {
 		invokeRouter({
 			comfy_cancel: null,
 			audio_store_url: { hash: HASH, mime: 'audio/mpeg', bytes: 1024 },
-			ace_json: (args) => answer(answers, args),
-			ace_upload: (args) => answer(answers, args)
+			ace_json: httpRouter(answers, NOPE),
+			ace_upload: httpRouter(answers, NOPE)
 		})
 	);
 }
 
-function answer(answers: Record<string, Answer>, args: unknown) {
-	const call = (args as { call: Call }).call;
-	const a = answers[`${call.method} ${call.path}`];
-	if (a === undefined) throw { kind: 'rejected', status: 404, body: '{"error":"nope"}' };
-	return typeof a === 'function' ? (a as (c: Call) => unknown)(call) : a;
-}
+const NOPE = '{"error":"nope"}';
 
 /** A server that composes as `lm`, then synthesizes as `syn`, each running once. */
 function songRoutes(extra: Record<string, Answer> = {}): Record<string, Answer> {

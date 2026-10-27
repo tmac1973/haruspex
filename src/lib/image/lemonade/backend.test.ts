@@ -7,16 +7,15 @@ const settings = vi.hoisted(() => ({
 	imageLemonadeApiKey: '',
 	imageLemonadeModelId: 'ming'
 }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => settings
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, { settings })
+);
 
 import health from './fixtures/health.json';
 import systemInfo from './fixtures/system-info.json';
 import models from './fixtures/models.json';
 import { lemonadeBackend, TRANSPARENCY_LOST } from './backend';
-import { invokeRouter } from '#lib/testing/invoke.ts';
+import { httpCalls, httpRouter, invokeRouter, type HttpCall } from '#lib/testing/invoke.ts';
 import type { ImageProgress } from '#lib/image/types.ts';
 
 const catalogue = [
@@ -32,26 +31,14 @@ const catalogue = [
 	}
 ];
 
-interface Call {
-	method: string;
-	path: string;
-	body: Record<string, unknown> | null;
+interface Call extends HttpCall {
 	timeout_ms: number;
 }
 
-function route(answers: Record<string, unknown>) {
-	return (args?: Record<string, unknown>) => {
-		const call = args!.call as Call;
-		const a = answers[call.path];
-		if (a === undefined) throw { kind: 'rejected', status: 404, body: '{}' };
-		return typeof a === 'function' ? a(call) : a;
-	};
-}
-
 const generations = () =>
-	tauri.invoke.mock.calls
-		.filter(([c, a]) => c === 'lemonade_json' && a.call.path === '/api/v1/images/generations')
-		.map(([, a]) => a.call as Call);
+	httpCalls<Call>(tauri.invoke, 'lemonade_json').filter(
+		(c) => c.path === '/api/v1/images/generations'
+	);
 
 /** The native parameters a generation carried, from its leading block. */
 const extrasOf = (call: Call) =>
@@ -67,11 +54,11 @@ describe('lemonade backend', () => {
 				image_clear_canvas: [1, 2, 3],
 				image_seam_inputs: { rolled: [4, 5, 6], mask: [7, 8, 9] },
 				image_seam_finish: [9, 9, 9],
-				lemonade_json: route({
-					'/api/v1/health': health,
-					'/api/v1/system-info': systemInfo,
-					'/api/v1/models?show_all=true': models,
-					'/api/v1/images/generations': { data: [{ b64_json: 'AQID' }] }
+				lemonade_json: httpRouter({
+					'GET /api/v1/health': health,
+					'GET /api/v1/system-info': systemInfo,
+					'GET /api/v1/models?show_all=true': models,
+					'POST /api/v1/images/generations': { data: [{ b64_json: 'AQID' }] }
 				})
 			})
 		);
@@ -211,11 +198,11 @@ describe('lemonade backend', () => {
 		tauri.invoke.mockImplementation(
 			invokeRouter({
 				lemonade_catalogue: catalogue,
-				lemonade_json: route({
-					'/api/v1/health': health,
-					'/api/v1/system-info': systemInfo,
-					'/api/v1/models?show_all=true': models,
-					'/api/v1/images/generations': () => {
+				lemonade_json: httpRouter({
+					'GET /api/v1/health': health,
+					'GET /api/v1/system-info': systemInfo,
+					'GET /api/v1/models?show_all=true': models,
+					'POST /api/v1/images/generations': () => {
 						throw {
 							kind: 'rejected',
 							status: 404,
@@ -248,20 +235,18 @@ describe('lemonade options from an older Haruspex', () => {
 			invokeRouter({
 				lemonade_catalogue: catalogue,
 				lemonade_sdcpp_args: '--tokenizer /t.json --diffusion-fa --vae-tiling',
-				lemonade_json: route({
-					'/api/v1/health': health,
-					'/api/v1/system-info': systemInfo,
-					'/api/v1/models?show_all=true': { data },
-					'/api/v1/models/user.Ming-Image-0.1-Design-GGUF/options': {},
-					'/api/v1/unload': {},
-					'/api/v1/images/generations': { data: [{ b64_json: 'AQID' }] }
+				lemonade_json: httpRouter({
+					'GET /api/v1/health': health,
+					'GET /api/v1/system-info': systemInfo,
+					'GET /api/v1/models?show_all=true': { data },
+					'POST /api/v1/models/user.Ming-Image-0.1-Design-GGUF/options': {},
+					'POST /api/v1/unload': {},
+					'POST /api/v1/images/generations': { data: [{ b64_json: 'AQID' }] }
 				})
 			})
 		);
 		await lemonadeBackend.generate({ prompt: 'a coin', width: 512, height: 512, seed: 1 });
-		const paths = tauri.invoke.mock.calls
-			.filter(([c]) => c === 'lemonade_json')
-			.map(([, a]) => (a as { call: Call }).call);
+		const paths = httpCalls(tauri.invoke, 'lemonade_json');
 		const options = paths.find((c) => c.path.endsWith('/options'))!;
 		expect(options.body).toEqual({ sdcpp_args: '--tokenizer /t.json --diffusion-fa --vae-tiling' });
 		// The recorded server has Ming loaded, so it is unloaded to take them.
@@ -292,11 +277,11 @@ describe('lemonade edits and upscaling', () => {
 				lemonade_catalogue: catalogue,
 				image_read_bytes: () => new Uint8Array([1, 2, 3]).buffer,
 				lemonade_upload: () => ({ data: [{ b64_json: 'BAUG' }] }),
-				lemonade_json: route({
-					'/api/v1/health': health,
-					'/api/v1/system-info': systemInfo,
-					'/api/v1/models?show_all=true': list,
-					'/api/v1/images/upscale': { data: [{ b64_json: 'BwgJ' }] }
+				lemonade_json: httpRouter({
+					'GET /api/v1/health': health,
+					'GET /api/v1/system-info': systemInfo,
+					'GET /api/v1/models?show_all=true': list,
+					'POST /api/v1/images/upscale': { data: [{ b64_json: 'BwgJ' }] }
 				})
 			})
 		);

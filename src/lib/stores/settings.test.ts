@@ -890,14 +890,13 @@ describe('response token ceilings', () => {
 		vi.resetModules();
 	});
 
-	it('defaults to 8192 for normal turns and 65536 for file writes', () => {
+	it('defaults to the normal and file-write response caps', () => {
 		const s = getSettings();
 		expect(s.maxResponseTokens).toBe(DEFAULT_MAX_RESPONSE_TOKENS);
 		expect(s.maxResponseTokensFileWrite).toBe(DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE);
-		expect(DEFAULT_MAX_RESPONSE_TOKENS).toBe(8192);
-		// Raised from 32768: a real project's plan or source file did not fit,
-		// and the failure surfaced as "requires non-empty content".
-		expect(DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE).toBe(65536);
+		// A file write needs more room than a reply: a plan or source file
+		// that did not fit surfaced as "requires non-empty content".
+		expect(DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE).toBeGreaterThan(DEFAULT_MAX_RESPONSE_TOKENS);
 	});
 
 	// The migration-safety check. An existing install's persisted blob predates

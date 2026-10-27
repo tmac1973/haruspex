@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { invokeCalls, invokeRouter, unexpectedInvoke } from './invoke';
+import {
+	httpCalls,
+	httpRouter,
+	invokeCalls,
+	invokeRouter,
+	unexpectedInvoke,
+	type HttpCall
+} from './invoke';
 
 describe('invokeRouter', () => {
 	it('returns a routed value', async () => {
@@ -49,5 +56,42 @@ describe('invokeCalls', () => {
 		await invoke('b', { n: 2 });
 		await invoke('a', { n: 3 });
 		expect(invokeCalls(invoke, 'a')).toEqual([{ n: 1 }, { n: 3 }]);
+	});
+});
+
+describe('httpRouter', () => {
+	const call = (method: string, path: string, body: Record<string, unknown> | null = null) => ({
+		call: { method, path, body }
+	});
+
+	it('answers by method and path', () => {
+		const route = httpRouter({ 'GET /v1/models': { data: [] }, 'POST /v1/models': 'made' });
+		expect(route(call('GET', '/v1/models'))).toEqual({ data: [] });
+		expect(route(call('POST', '/v1/models'))).toBe('made');
+	});
+
+	it('hands a function answer the call', () => {
+		const route = httpRouter({ 'POST /jobs': (c: HttpCall) => c.body?.prompt });
+		expect(route(call('POST', '/jobs', { prompt: 'a fox' }))).toBe('a fox');
+	});
+
+	it('refuses an unanswered request as a 404', () => {
+		const route = httpRouter({ 'GET /a': 1 });
+		expect(() => route(call('POST', '/a'))).toThrow(
+			expect.objectContaining({ kind: 'rejected', status: 404, body: '{}' })
+		);
+		expect(() => httpRouter({}, '{"error":"nope"}')(call('GET', '/b'))).toThrow(
+			expect.objectContaining({ body: '{"error":"nope"}' })
+		);
+	});
+
+	it('works as an invokeRouter route, and httpCalls lists what was sent', async () => {
+		const invoke = vi.fn(
+			invokeRouter({ srv_json: httpRouter({ 'GET /a': 1 }), other: httpRouter({ 'GET /b': 2 }) })
+		);
+		await invoke('srv_json', call('GET', '/a'));
+		await invoke('other', call('GET', '/b'));
+		expect(httpCalls(invoke, 'srv_json').map((c) => `${c.method} ${c.path}`)).toEqual(['GET /a']);
+		expect(httpCalls(invoke, 'srv_json', 'other')).toHaveLength(2);
 	});
 });

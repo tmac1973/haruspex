@@ -104,17 +104,18 @@ vi.mock('#lib/skills/turn.ts', () => ({
 vi.mock('#lib/inference/descriptor.ts', () => ({
 	resolveBackendDescriptor: () => ({ contextSize: 8192 })
 }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({
-		codeMaxIterations: 40,
-		codeAutoApprove: false,
-		maxResponseTokensFileWrite: 8192,
-		codeRunCommandTimeoutSecs: 30,
-		imageBackendKind: 'none',
-		customSystemPrompt: ''
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: {
+			codeMaxIterations: 40,
+			codeAutoApprove: false,
+			maxResponseTokensFileWrite: 8192,
+			codeRunCommandTimeoutSecs: 30,
+			imageBackendKind: 'none',
+			customSystemPrompt: ''
+		}
 	})
-}));
+);
 vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
 	logDebug: () => {}

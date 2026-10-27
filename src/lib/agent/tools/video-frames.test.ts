@@ -3,10 +3,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const state = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
 
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
-	return { ...actual, getSettings: () => ({ ...actual.getSettings(), videoEditingEnabled: true }) };
-});
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: { videoEditingEnabled: true },
+		overDefaults: true
+	})
+);
 
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import { parseFrames } from './video-frames';

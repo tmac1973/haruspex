@@ -12,14 +12,13 @@ const settings = vi.hoisted(() => ({
 	imageLemonadeModelId: '',
 	proxy: { mode: 'none' }
 }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => settings
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, { settings })
+);
 
 import systemInfo from './fixtures/system-info.json';
 import { getInstall, installModel, installUpscaler, resumeInstall } from './install.svelte';
-import { invokeRouter } from '#lib/testing/invoke.ts';
+import { httpCalls, invokeRouter, type HttpCall } from '#lib/testing/invoke.ts';
 import type { LemonadeModel } from '#lib/ipc/gen/LemonadeModel.ts';
 
 const ming = {
@@ -42,12 +41,6 @@ const job = (over: Record<string, unknown>) => ({
 	...over
 });
 
-interface Call {
-	method: string;
-	path: string;
-	body: Record<string, unknown> | null;
-}
-
 /** A server whose download list answers `lists` in turn, then the last forever. */
 function server(lists: unknown[][], pulled: unknown = job({})) {
 	let n = 0;
@@ -55,7 +48,7 @@ function server(lists: unknown[][], pulled: unknown = job({})) {
 		lemonade_catalogue: [ming],
 		lemonade_sdcpp_args: '--tokenizer /cache/tok.json --diffusion-fa',
 		lemonade_json: (args) => {
-			const call = args!.call as Call;
+			const call = args!.call as HttpCall;
 			if (call.path === '/api/v1/pull') return pulled;
 			if (call.path === '/api/v1/downloads') return lists[Math.min(n++, lists.length - 1)];
 			if (call.path === '/api/v1/system-info') return systemInfo;
@@ -65,9 +58,9 @@ function server(lists: unknown[][], pulled: unknown = job({})) {
 }
 
 const posts = () =>
-	tauri.invoke.mock.calls
-		.filter(([c, a]) => c === 'lemonade_json' && a.call.method === 'POST')
-		.map(([, a]) => ({ path: a.call.path, body: a.call.body }));
+	httpCalls(tauri.invoke, 'lemonade_json')
+		.filter((c) => c.method === 'POST')
+		.map(({ path, body }) => ({ path, body }));
 
 describe('installModel', () => {
 	beforeEach(() => tauri.invoke.mockReset());
@@ -157,7 +150,7 @@ describe('the engine and the upscaler', () => {
 			lemonade_catalogue: [ming],
 			lemonade_sdcpp_args: '--diffusion-fa',
 			lemonade_json: (args) => {
-				const call = args!.call as Call;
+				const call = args!.call as HttpCall;
 				if (call.path === '/api/v1/pull') return pulled;
 				if (call.path === '/api/v1/downloads') return [];
 				if (call.path === '/api/v1/system-info') return fresh;

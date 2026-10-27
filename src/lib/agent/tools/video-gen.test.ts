@@ -8,13 +8,12 @@ const state = vi.hoisted(() => ({
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
-	return {
-		...actual,
-		getSettings: () => ({ ...actual.getSettings(), videoGenBackendKind: state.backend })
-	};
-});
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({ videoGenBackendKind: state.backend }),
+		overDefaults: true
+	})
+);
 vi.mock('#lib/videogen/toolchest.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/videogen/toolchest.ts')>()),
 	readyVideoInstance: state.ready
