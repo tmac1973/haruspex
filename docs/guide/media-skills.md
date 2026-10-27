@@ -9,11 +9,12 @@ Haruspex ships skills that chain the picture, music and video tools into whole t
 
 ## When they are offered
 
-Each one needs something set up first:
+Each works in certain tabs and needs something set up first:
 
-| Skill | Needs |
-|---|---|
-| `fix-picture` | an image backend (Settings → Image) |
+| Skill | Where | Needs |
+|---|---|---|
+| `fix-picture` | Chat | an image backend (Settings → Image) |
+| `game-assets` | the Code tab, or the Shell with Full access | nothing for textures; an image backend for sprites and icons |
 
 Until that is set up, the skill is greyed out in Settings → Skills, with what it needs, and isn't offered. Once it is, the model can load the skill when a request matches, and a skill also loads by itself the first time the model reaches for one of its tools, such as editing a picture. That depends on Settings → Skills → When the model uses skills: by default, remote and OpenRouter models load skills and the local model doesn't. On any model you can run one yourself by typing `/` and its name, followed by what you want.
 
@@ -32,6 +33,18 @@ For several changes it works in that order, edits first and upscaling last, each
 The skill is told what the image backend can do when it loads. If you ask for something the backend can't do, such as extending on Lemonade or editing with Ming-Image, it says what is missing and where to set it up, rather than trying. See the `image-editing` page for which backends and models do what.
 
 To try it: `/fix-picture make it look like late evening, then make it big enough to print`.
+
+## Make art for a game: game-assets
+
+`game-assets` makes a few assets for the project in the Code tab: sprites, icons, tiling textures and the edge tiles where two textures meet. Ask for something like "a goblin, a rat and a dungeon floor for this game".
+
+- It reads the project first: the tile size the code draws, the folder it loads images from, and any art already there to match.
+- It writes one style line and uses it for every asset, so they look like one game.
+- It makes the sprites first, shows you the first one, and draws the rest in its colours.
+- It draws the ground to stand apart from the sprites: each texture is measured against them, and redrawn lighter or darker if they would be hard to see on it (see the `textures` page).
+- It doesn't replace a file that exists unless you ask.
+
+For more than about eight assets, or the art for a whole game, it suggests an Asset generation job in the Jobs tab, which plans the set and checks every asset (see the `jobs` page).
 
 ## What they don't do
 
