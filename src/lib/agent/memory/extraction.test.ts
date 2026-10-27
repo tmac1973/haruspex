@@ -115,7 +115,8 @@ describe('renderTranscript', () => {
 				dir: null,
 				compatibility: null,
 				files: [],
-				filesTruncated: false
+				filesTruncated: false,
+				needs: []
 			},
 			'/haiku about rain'
 		);

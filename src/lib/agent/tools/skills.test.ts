@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
 
 const client = vi.hoisted(() => ({
-	readSkill: vi.fn(),
+	readSkillForTurn: vi.fn(),
 	readSkillFile: vi.fn()
 }));
 vi.mock('#lib/skills/client.ts', () => client);
@@ -16,7 +16,8 @@ const doc: SkillDoc = {
 	dir: '/s/deploy',
 	compatibility: null,
 	files: ['scripts/go.sh'],
-	filesTruncated: false
+	filesTruncated: false,
+	needs: []
 };
 
 function ctx(skills?: ToolContext['skills']): ToolContext {
@@ -31,7 +32,7 @@ const turnSkills = (): NonNullable<ToolContext['skills']> => ({
 });
 
 beforeEach(() => {
-	client.readSkill.mockReset().mockResolvedValue(doc);
+	client.readSkillForTurn.mockReset().mockResolvedValue(doc);
 	client.readSkillFile.mockReset().mockResolvedValue('#!/bin/sh');
 });
 
@@ -83,12 +84,12 @@ describe('load_skill', () => {
 		const out = await executeTool('load_skill', { name: 'deploy' }, ctx(skills));
 		expect(out.result).toContain('<skill_content name="deploy">');
 		expect(out.result).toContain('Run the deploy.');
-		expect(client.readSkill).toHaveBeenCalledWith('deploy', '/code/repo');
+		expect(client.readSkillForTurn).toHaveBeenCalledWith('deploy', '/code/repo');
 		expect(skills.loaded.has('deploy')).toBe(true);
 
 		const again = await executeTool('load_skill', { name: 'deploy' }, ctx(skills));
 		expect(again.result).toContain('already loaded');
-		expect(client.readSkill).toHaveBeenCalledTimes(1);
+		expect(client.readSkillForTurn).toHaveBeenCalledTimes(1);
 	});
 
 	it('refuses an unknown skill, or a turn without skills', async () => {
@@ -97,12 +98,12 @@ describe('load_skill', () => {
 		expect(error).toBe('No skill named "nope". Available: deploy.');
 		const none = await executeTool('load_skill', { name: 'deploy' }, ctx());
 		expect(none.result).toContain('not available');
-		expect(client.readSkill).not.toHaveBeenCalled();
+		expect(client.readSkillForTurn).not.toHaveBeenCalled();
 	});
 
 	it('reports a read failure without throwing, and can try again', async () => {
 		const skills = turnSkills();
-		client.readSkill.mockRejectedValueOnce('no skill named "deploy"');
+		client.readSkillForTurn.mockRejectedValueOnce('no skill named "deploy"');
 		const out = await executeTool('load_skill', { name: 'deploy' }, ctx(skills));
 		expect(out.result).toContain('Could not load');
 		expect(skills.loaded.has('deploy')).toBe(false);
@@ -114,7 +115,7 @@ describe('load_skill', () => {
 			executeTool('load_skill', { name: 'deploy' }, ctx(skills)),
 			executeTool('load_skill', { name: 'deploy' }, ctx(skills))
 		]);
-		expect(client.readSkill).toHaveBeenCalledTimes(1);
+		expect(client.readSkillForTurn).toHaveBeenCalledTimes(1);
 		expect([a.result, b.result].filter((r) => r.includes('<skill_content')).length).toBe(1);
 	});
 });

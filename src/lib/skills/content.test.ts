@@ -16,6 +16,7 @@ const doc = (over: Partial<SkillDoc> = {}): SkillDoc => ({
 	compatibility: null,
 	files: [],
 	filesTruncated: false,
+	needs: [],
 	...over
 });
 

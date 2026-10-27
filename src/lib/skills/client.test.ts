@@ -1,20 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
 import type { SkillSummary } from '#lib/ipc/gen/SkillSummary.ts';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue([]) }));
+vi.mock('#lib/skills/needs.ts', async (original) => ({
+	...(await original<typeof import('#lib/skills/needs.ts')>()),
+	needsNotes: async (needs: string[]) => (needs.includes('image') ? ['Can: draw pictures.'] : [])
+}));
 
 import { invoke } from '@tauri-apps/api/core';
 import {
 	listSkills,
 	readSkill,
 	readSkillFile,
+	readSkillForTurn,
 	repoKey,
 	repoLabel,
 	repoTrust,
 	skillsAutonomous,
 	usableSkills
 } from './client';
-import { defaultSkills, updateInferenceBackend, updateSkills } from '#lib/stores/settings.ts';
+import {
+	defaultSkills,
+	updateInferenceBackend,
+	updateSettings,
+	updateSkills
+} from '#lib/stores/settings.ts';
 
 function skill(name: string, extra: Partial<SkillSummary> = {}): SkillSummary {
 	return {
@@ -31,6 +42,7 @@ function skill(name: string, extra: Partial<SkillSummary> = {}): SkillSummary {
 		createdByModel: false,
 		codeModeOnly: false,
 		forGuidedPlanning: false,
+		needs: [],
 		...extra
 	};
 }
@@ -88,6 +100,43 @@ describe('usableSkills in and out of Code mode', () => {
 		expect(usableSkills([init])).toEqual([]);
 		expect(usableSkills([init], true)).toEqual([init]);
 		expect(usableSkills([skill('init')])).toHaveLength(1);
+	});
+});
+
+describe('usableSkills and what a skill needs', () => {
+	it('leaves out a skill whose backend is off', () => {
+		updateSettings({ musicBackendKind: 'none' });
+		const song = skill('write-song', { needs: ['music'] });
+		expect(usableSkills([song])).toEqual([]);
+		updateSettings({ musicBackendKind: 'ace-server' });
+		expect(usableSkills([song])).toEqual([song]);
+	});
+});
+
+describe('readSkillForTurn', () => {
+	const doc = (needs: SkillDoc['needs']): SkillDoc => ({
+		name: 'fix-picture',
+		body: 'Pick edit, area, extend or upscale.\n',
+		dir: null,
+		compatibility: null,
+		files: [],
+		filesTruncated: false,
+		needs
+	});
+
+	it('puts what the backend can do after an image skill', async () => {
+		vi.mocked(invoke).mockResolvedValueOnce(doc(['image']));
+		const got = await readSkillForTurn('fix-picture');
+		expect(got.body).toBe(
+			'Pick edit, area, extend or upscale.\n\nSet up now:\n- Can: draw pictures.'
+		);
+	});
+
+	it('leaves any other skill as it is', async () => {
+		vi.mocked(invoke).mockResolvedValueOnce(doc([]));
+		expect((await readSkillForTurn('fix-picture')).body).toBe(
+			'Pick edit, area, extend or upscale.\n'
+		);
 	});
 });
 

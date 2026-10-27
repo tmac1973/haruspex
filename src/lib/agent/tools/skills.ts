@@ -12,7 +12,7 @@
  * Per the CI grep guard, nothing under `tools/` may import `stores/chat`.
  */
 
-import { readSkill, readSkillFile } from '#lib/skills/client.ts';
+import { readSkillFile, readSkillForTurn } from '#lib/skills/client.ts';
 import { renderSkillContent } from '#lib/skills/content.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
@@ -65,7 +65,7 @@ registerTool({
 		// sees it and doesn't load a duplicate copy.
 		ctx.skills!.loaded.add(name);
 		try {
-			const doc = await readSkill(name, ctx.skills!.projectRoot);
+			const doc = await readSkillForTurn(name, ctx.skills!.projectRoot);
 			return toolResult(renderSkillContent(doc));
 		} catch (e) {
 			ctx.skills!.loaded.delete(name);

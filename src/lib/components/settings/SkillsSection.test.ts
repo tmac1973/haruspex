@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { invoke } from '@tauri-apps/api/core';
 import type { SkillSummary } from '#lib/ipc/gen/SkillSummary.ts';
 import SkillsSection from './SkillsSection.svelte';
-import { defaultSkills, getSettings, updateSkills } from '#lib/stores/settings.ts';
+import { defaultSkills, getSettings, updateSettings, updateSkills } from '#lib/stores/settings.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
@@ -24,6 +24,7 @@ function skill(name: string, extra: Partial<SkillSummary> = {}): SkillSummary {
 		createdByModel: false,
 		codeModeOnly: false,
 		forGuidedPlanning: false,
+		needs: [],
 		...extra
 	};
 }
@@ -59,6 +60,15 @@ describe('Settings → Skills', () => {
 		expect(screen.getByText('name does not match its folder "x"')).toBeTruthy();
 		// Only skills in Haruspex's own folder can be deleted.
 		expect(screen.getAllByText('Delete')).toHaveLength(1);
+	});
+
+	it('says why a skill whose backend is off is not offered', async () => {
+		updateSettings({ musicBackendKind: 'none' });
+		listed.push(skill('write-song', { needs: ['music'] }));
+		render(SkillsSection);
+		expect(
+			await screen.findByText('Not offered: Needs a music backend: Settings → Music.')
+		).toBeTruthy();
 	});
 
 	it('labels shipped skills, and restores an edited or deleted one', async () => {

@@ -18,6 +18,7 @@ import type { SkillDraft } from '#lib/ipc/gen/SkillDraft.ts';
 import type { SkillSummary } from '#lib/ipc/gen/SkillSummary.ts';
 import type { SkillWriteRequest } from '#lib/ipc/gen/SkillWriteRequest.ts';
 import { getSettings } from '#lib/stores/settings.ts';
+import { needsNotes, unmetNeed } from '#lib/skills/needs.ts';
 
 /** A WSL distro's share: `\\wsl.localhost\<distro>\…`, `\\wsl$\…` or `\\?\UNC\…`. */
 const WSL_SHARE = /^(?:\\\\\?\\UNC\\|\\\\)(?:wsl\.localhost|wsl\$)\\([^\\]+)(.*)$/i;
@@ -71,18 +72,40 @@ export function codeModeOnly(skill: SkillSummary): boolean {
 }
 
 /**
- * Skills a turn may use: parsed, not overridden, not switched off, and
- * outside Code mode not one that needs it.
+ * Skills a turn may use: parsed, not overridden, not switched off, outside
+ * Code mode not one that needs it, and not one whose backend is off.
  */
 export function usableSkills(all: SkillSummary[], codeMode = false): SkillSummary[] {
 	const disabled = new Set(getSettings().skills.disabled);
 	return all.filter(
-		(s) => !s.error && !s.shadowed && !disabled.has(s.name) && (codeMode || !codeModeOnly(s))
+		(s) =>
+			!s.error &&
+			!s.shadowed &&
+			!disabled.has(s.name) &&
+			(codeMode || !codeModeOnly(s)) &&
+			!unmetNeed(s.needs)
 	);
 }
 
 export function readSkill(name: string, projectRoot?: string | null): Promise<SkillDoc> {
 	return invoke<SkillDoc>('skill_read', { name, ...searchArgs(projectRoot) });
+}
+
+/**
+ * A skill as a turn loads it: its instructions, then what its backend can
+ * do now (`needsNotes`), so the model reads both together.
+ */
+export async function readSkillForTurn(
+	name: string,
+	projectRoot?: string | null
+): Promise<SkillDoc> {
+	const doc = await readSkill(name, projectRoot);
+	const notes = await needsNotes(doc.needs);
+	if (notes.length === 0) return doc;
+	return {
+		...doc,
+		body: `${doc.body.trimEnd()}\n\nSet up now:\n${notes.map((n) => `- ${n}`).join('\n')}`
+	};
 }
 
 export function readSkillFile(

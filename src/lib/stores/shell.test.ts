@@ -465,7 +465,8 @@ describe('command auto-attach de-duplication', () => {
 			dir: null,
 			compatibility: null,
 			files: [],
-			filesTruncated: false
+			filesTruncated: false,
+			needs: []
 		};
 		await s.submitChatMessage('/triage nginx is down', [], skill);
 		const content = String(s.messages[0].content);

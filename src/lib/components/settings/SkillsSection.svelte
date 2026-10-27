@@ -19,6 +19,7 @@
 	import type { SkillSummary } from '#lib/ipc/gen/SkillSummary.ts';
 	import type { SkillSource } from '#lib/ipc/gen/SkillSource.ts';
 	import { listSkills, readSkill, repoLabel } from '#lib/skills/client.ts';
+	import { unmetNeed } from '#lib/skills/needs.ts';
 	import { setRepoTrust, setRepoTrusted } from '#lib/skills/project.ts';
 	import { getSettings, updateSkills, type SkillsConfig } from '#lib/stores/settings.ts';
 	import { errMessage } from '#lib/utils/error.ts';
@@ -193,7 +194,8 @@
 		<ul class="skill-list">
 			{#each skills as skill (skill.source + ':' + (skill.dir ?? skill.name))}
 				{@const enabled = !config.disabled.includes(skill.name)}
-				<li class="skill" class:muted={!!skill.error || skill.shadowed}>
+				{@const unmet = unmetNeed(skill.needs)}
+				<li class="skill" class:muted={!!skill.error || skill.shadowed || !!unmet}>
 					<div class="skill-head">
 						<label class="toggle">
 							<input
@@ -240,6 +242,9 @@
 						<p class="error-text">Not usable: {skill.error}.</p>
 					{:else}
 						<p class="description">{skill.description}</p>
+						{#if unmet}
+							<p class="unmet">Not offered: {unmet}</p>
+						{/if}
 					{/if}
 					{#each skill.warnings as warning (warning)}
 						<p class="warning">{warning}</p>
@@ -331,7 +336,8 @@
 	}
 
 	.skill.muted .name,
-	.skill.muted .description {
+	.skill.muted .description,
+	.unmet {
 		color: var(--text-secondary);
 	}
 
@@ -366,6 +372,7 @@
 	}
 
 	.description,
+	.unmet,
 	.warning,
 	.error-text {
 		margin: 0.25rem 0 0 1.6rem;

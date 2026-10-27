@@ -236,7 +236,8 @@ describe('chat store', () => {
 			dir: null,
 			compatibility: null,
 			files: [],
-			filesTruncated: false
+			filesTruncated: false,
+			needs: []
 		};
 		await sendMessage('/haiku about rain', [], skill);
 
