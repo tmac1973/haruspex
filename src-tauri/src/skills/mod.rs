@@ -53,6 +53,54 @@ pub enum SkillSource {
     Project,
 }
 
+/// Something a skill needs set up before it can do its work, named in
+/// `metadata.haruspex-needs` (`image`, `music`, `video`, separated by commas
+/// or spaces). The frontend hides a skill whose need is off, so a turn never
+/// carries one it can't run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum SkillNeed {
+    /// An image backend (Settings → Image).
+    Image,
+    /// A music backend (Settings → Music).
+    Music,
+    /// The video editing tools (Settings → Video editing).
+    Video,
+}
+
+/// The needs a skill names, and a warning for each word that isn't one.
+fn needs_of(
+    metadata: &std::collections::BTreeMap<String, String>,
+) -> (Vec<SkillNeed>, Vec<String>) {
+    let mut needs = Vec::new();
+    let mut warnings = Vec::new();
+    let Some(raw) = metadata.get("haruspex-needs") else {
+        return (needs, warnings);
+    };
+    for word in raw
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|w| !w.is_empty())
+    {
+        let need = match word.to_ascii_lowercase().as_str() {
+            "image" => SkillNeed::Image,
+            "music" => SkillNeed::Music,
+            "video" => SkillNeed::Video,
+            _ => {
+                warnings.push(format!(
+                    "metadata \"haruspex-needs\" names \"{word}\", which is not image, music \
+                     or video; ignored"
+                ));
+                continue;
+            }
+        };
+        if !needs.contains(&need) {
+            needs.push(need);
+        }
+    }
+    (needs, warnings)
+}
+
 /// One skill as Settings and the autocomplete see it.
 #[derive(Clone, Debug, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
@@ -76,6 +124,8 @@ pub struct SkillSummary {
     pub created_by_model: bool,
     /// Only for Code mode (`metadata.haruspex-mode: code`), such as `init`.
     pub code_mode_only: bool,
+    /// What must be set up for it to run (`metadata.haruspex-needs`).
+    pub needs: Vec<SkillNeed>,
     /// Written for guided planning (`metadata.haruspex-job: guided-planning`),
     /// which lists these first in its skill picker.
     pub for_guided_planning: bool,
@@ -94,11 +144,14 @@ pub struct SkillDoc {
     pub files: Vec<String>,
     /// The file list stopped at its cap.
     pub files_truncated: bool,
+    /// What must be set up for it to run (`metadata.haruspex-needs`).
+    pub needs: Vec<SkillNeed>,
 }
 
 impl From<&Found> for SkillSummary {
     fn from(f: &Found) -> Self {
         let p = &f.parsed;
+        let (needs, need_warnings) = needs_of(&p.metadata);
         SkillSummary {
             name: p.name.clone(),
             description: p.description.clone(),
@@ -107,13 +160,14 @@ impl From<&Found> for SkillSummary {
             license: p.license.clone(),
             compatibility: p.compatibility.clone(),
             allowed_tools: p.allowed_tools.clone(),
-            warnings: p.warnings.clone(),
+            warnings: p.warnings.iter().cloned().chain(need_warnings).collect(),
             error: p.error.clone(),
             shadowed: f.shadowed,
             created_by_model: p.metadata.get("created-by").map(String::as_str) == Some("haruspex"),
             code_mode_only: p.metadata.get("haruspex-mode").map(String::as_str) == Some("code"),
             for_guided_planning: p.metadata.get("haruspex-job").map(String::as_str)
                 == Some("guided-planning"),
+            needs,
         }
     }
 }
@@ -222,6 +276,7 @@ pub async fn skill_read(
             compatibility: skill.parsed.compatibility.clone(),
             files,
             files_truncated,
+            needs: needs_of(&skill.parsed.metadata).0,
         })
     })
     .await
@@ -518,6 +573,24 @@ mod tests {
         let plan = SkillSummary::from(discover::find(&all, "plan-2d-game").unwrap());
         assert!(!plan.code_mode_only);
         assert!(plan.for_guided_planning);
+    }
+
+    #[test]
+    fn reads_needs_and_warns_on_unknown_ones() {
+        let meta = |v: &str| {
+            std::collections::BTreeMap::from([("haruspex-needs".to_string(), v.to_string())])
+        };
+        assert_eq!(needs_of(&Default::default()), (vec![], vec![]));
+        let (needs, warnings) = needs_of(&meta("image, Music video image"));
+        assert_eq!(
+            needs,
+            vec![SkillNeed::Image, SkillNeed::Music, SkillNeed::Video]
+        );
+        assert!(warnings.is_empty());
+        let (needs, warnings) = needs_of(&meta("image,lasers"));
+        assert_eq!(needs, vec![SkillNeed::Image]);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("\"lasers\""), "{warnings:?}");
     }
 
     #[test]

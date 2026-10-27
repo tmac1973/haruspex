@@ -40,6 +40,7 @@ function skill(name: string, extra: Partial<SkillSummary> = {}): SkillSummary {
 		createdByModel: false,
 		codeModeOnly: false,
 		forGuidedPlanning: false,
+		needs: [],
 		...extra
 	};
 }

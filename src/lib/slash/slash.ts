@@ -12,7 +12,7 @@
  */
 
 import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
-import { codeModeOnly, listSkills, readSkill, usableSkills } from '#lib/skills/client.ts';
+import { codeModeOnly, listSkills, readSkillForTurn, usableSkills } from '#lib/skills/client.ts';
 import { knownTrustedRoot } from '#lib/skills/project.ts';
 
 export { knownTrustedRoot };
@@ -100,7 +100,7 @@ export async function resolveSlash(
 		const codeOnly = usableSkills(all, true).some((s) => s.name === parsed.name && codeModeOnly(s));
 		return codeOnly ? { kind: 'needsCodeMode', name: parsed.name } : { kind: 'none' };
 	}
-	return { kind: 'skill', doc: await readSkill(parsed.name, projectRoot) };
+	return { kind: 'skill', doc: await readSkillForTurn(parsed.name, projectRoot) };
 }
 
 /** `/skills`: what can be run here, as a note in the conversation. */
