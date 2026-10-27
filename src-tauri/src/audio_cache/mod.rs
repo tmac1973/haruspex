@@ -23,11 +23,11 @@ pub mod commands;
 pub mod protocol;
 pub mod range;
 
+use crate::blob_cache;
 use crate::db::{AudioRow, Database};
-use crate::image_cache::is_valid_hash;
-use log::{debug, warn};
+use log::debug;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 /// Per-file ceiling, 50 MiB: a 240 s 16-bit stereo WAV is about 46 MB.
 pub const MAX_AUDIO_BYTES: u64 = 50 * 1024 * 1024;
@@ -41,14 +41,7 @@ pub const UNLINKED_GRACE_MS: i64 = 60 * 60 * 1000;
 
 /// `<app_data_dir>/audio/`, created if absent.
 pub fn cache_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to resolve app data dir: {}", e))?
-        .join("audio");
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create audio cache dir: {}", e))?;
-    Ok(dir)
+    blob_cache::cache_dir(app, "audio", "audio")
 }
 
 /// Path of one cached file. Callers validate the hash first.
@@ -152,7 +145,7 @@ fn evict_to(db: &Database, dir: &Path, cap: i64) -> Result<(), String> {
         return Ok(());
     }
     debug!("audio cache over cap; evicting {} files", doomed.len());
-    remove_files(dir, &doomed);
+    blob_cache::remove_files(dir, &doomed, "audio");
     db.delete_audio(&doomed)
 }
 
@@ -162,23 +155,10 @@ pub fn sweep_orphans(db: &Database, dir: &Path, now_ms: i64) -> Result<(), Strin
     let orphans = db.unlinked_audio_before(now_ms - UNLINKED_GRACE_MS)?;
     if !orphans.is_empty() {
         debug!("sweeping {} unlinked audio files", orphans.len());
-        remove_files(dir, &orphans);
+        blob_cache::remove_files(dir, &orphans, "audio");
         db.delete_audio(&orphans)?;
     }
-    let known = db.all_audio_hashes()?;
-    let entries = match std::fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(e) => {
-            warn!("could not scan audio cache dir: {}", e);
-            return Ok(());
-        }
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !(is_valid_hash(&name) && known.iter().any(|h| h == &name)) {
-            let _ = std::fs::remove_file(entry.path());
-        }
-    }
+    blob_cache::remove_strays(dir, &db.all_audio_hashes()?, "audio");
     Ok(())
 }
 
@@ -186,25 +166,15 @@ pub fn sweep_orphans(db: &Database, dir: &Path, now_ms: i64) -> Result<(), Strin
 /// "Clear unused audio".
 pub fn clear_unlinked(db: &Database, dir: &Path) -> Result<(), String> {
     let doomed = db.unlinked_audio_before(i64::MAX)?;
-    remove_files(dir, &doomed);
+    blob_cache::remove_files(dir, &doomed, "audio");
     db.delete_audio(&doomed)
-}
-
-fn remove_files(dir: &Path, hashes: &[String]) {
-    for hash in hashes {
-        if let Err(e) = std::fs::remove_file(audio_path(dir, hash)) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                warn!("failed to remove cached audio {}: {}", hash, e);
-            }
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::blob_cache::hash_bytes;
     use crate::code_tools::wsl::CodeLocation;
-    use crate::image_cache::hash_bytes;
     use crate::test_util::{temp_dir, TestDir};
 
     fn setup(name: &str) -> (Database, TestDir) {

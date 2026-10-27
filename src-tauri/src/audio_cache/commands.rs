@@ -6,12 +6,11 @@
 
 use super::{cache_dir, clear_unlinked, commit_file, link_best_effort, normalize_mime, StoreMeta};
 use super::{sweep_orphans, MAX_AUDIO_BYTES};
+use crate::blob_cache::{self, hash_bytes, is_valid_hash};
 use crate::db::{AudioRow, Database};
-use crate::image_cache::is_valid_hash;
+use crate::http_util::{stream_to_file, DownloadError};
 use log::debug;
 use serde::Serialize;
-use sha2::{Digest, Sha256};
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -76,8 +75,8 @@ pub struct Downloaded {
     content_type: Option<String>,
 }
 
-/// Stream `url` into a temp file in `dir`, hashing as it goes. Refuses an
-/// empty body or one over [`MAX_AUDIO_BYTES`], leaving nothing on disk.
+/// Stream `url` into a temp file in `dir`, then hash it. Refuses an empty
+/// body or one over [`MAX_AUDIO_BYTES`], leaving nothing on disk.
 pub async fn download(
     client: &reqwest::Client,
     url: &str,
@@ -88,7 +87,7 @@ pub async fn download(
     if !api_key.trim().is_empty() {
         req = req.bearer_auth(api_key.trim());
     }
-    let mut resp = req
+    let resp = req
         .send()
         .await
         .map_err(|e| format!("Could not download the audio: {}", e))?;
@@ -108,30 +107,25 @@ pub async fn download(
         .map(str::to_string);
 
     let temp = dir.join(temp_name());
-    let result = async {
-        let mut file =
-            std::fs::File::create(&temp).map_err(|e| format!("Failed to write audio: {}", e))?;
-        let mut hasher = Sha256::new();
-        let mut bytes = 0u64;
-        while let Some(chunk) = resp
-            .chunk()
-            .await
-            .map_err(|e| format!("The audio download broke off: {}", e))?
-        {
-            bytes += chunk.len() as u64;
-            if bytes > MAX_AUDIO_BYTES {
-                return Err(too_large());
+    // A failed stream has already removed the temp file.
+    let bytes = stream_to_file(resp, &temp, Some(MAX_AUDIO_BYTES), |_| async { true })
+        .await
+        .map_err(|e| match e {
+            DownloadError::TooLarge(_) => too_large(),
+            DownloadError::Read(e) => format!("The audio download broke off: {}", e),
+            DownloadError::Create(e) | DownloadError::Write(e) => {
+                format!("Failed to write audio: {}", e)
             }
-            hasher.update(&chunk);
-            file.write_all(&chunk)
-                .map_err(|e| format!("Failed to write audio: {}", e))?;
-        }
+            DownloadError::Stopped => "The audio download was stopped.".to_string(),
+        })?;
+    let result = async {
         if bytes == 0 {
             return Err("The server sent no audio.".to_string());
         }
-        file.sync_all()
-            .map_err(|e| format!("Failed to write audio: {}", e))?;
-        Ok((crate::hash_util::hex(&hasher.finalize()), bytes))
+        let hash = crate::hash_util::sha256_file(&temp, |_| {})
+            .await
+            .map_err(|e| format!("Failed to read the audio: {}", e))?;
+        Ok((hash, bytes))
     }
     .await;
     match result {
@@ -216,7 +210,7 @@ fn keep_audio_part(fetched: Downloaded, boundary: &str, dir: &Path) -> Result<Do
     }
     Ok(Downloaded {
         temp,
-        hash: crate::hash_util::hex(&Sha256::digest(audio)),
+        hash: hash_bytes(audio),
         bytes: audio.len() as u64,
         content_type: Some(kind),
     })
@@ -326,7 +320,7 @@ pub fn store_bytes(
         let _ = std::fs::remove_file(&temp);
         return Err(format!("Failed to write audio: {}", e));
     }
-    let hash = crate::hash_util::hex(&Sha256::digest(bytes));
+    let hash = hash_bytes(bytes);
     let meta = StoreMeta {
         mime,
         title: None,
@@ -387,10 +381,7 @@ pub async fn audio_read_bytes(
 }
 
 pub fn read_bytes(db: &Database, dir: &Path, hash: &str) -> Result<Vec<u8>, String> {
-    if !is_valid_hash(hash) || db.audio_by_hash(hash)?.is_none() {
-        return Err("Audio not found".into());
-    }
-    let path = super::audio_path(dir, hash);
+    let path = cached_path(db, dir, hash)?;
     let len = std::fs::metadata(&path)
         .map_err(|_| "Audio not found".to_string())?
         .len();
@@ -413,12 +404,12 @@ pub async fn audio_save_as(
 }
 
 pub fn save_as(db: &Database, dir: &Path, hash: &str, to: &Path) -> Result<(), String> {
-    if !is_valid_hash(hash) || db.audio_by_hash(hash)?.is_none() {
-        return Err("Audio not found".into());
-    }
-    std::fs::copy(super::audio_path(dir, hash), to)
-        .map(|_| ())
-        .map_err(|e| format!("Could not save the song to {}: {e}", to.display()))
+    blob_cache::save_as(&cached_path(db, dir, hash)?, to, "song")
+}
+
+fn cached_path(db: &Database, dir: &Path, hash: &str) -> Result<PathBuf, String> {
+    blob_cache::find(dir, hash, |h| Ok(db.audio_by_hash(h)?.is_some()))?
+        .ok_or_else(|| "Audio not found".to_string())
 }
 
 /// Bytes the cache holds, linked or not.

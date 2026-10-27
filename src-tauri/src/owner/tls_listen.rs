@@ -4,7 +4,8 @@
 //! old `http://` link or bookmark) is sent to the same address over HTTPS.
 
 use std::io;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::connect_info::Connected;
@@ -26,9 +27,76 @@ const TLS_HANDSHAKE: u8 = 0x16;
 
 type Accepted = (TlsStream<TcpStream>, SocketAddr);
 
+/// A server [`serve`] started: its port, the switch that stops it, and the
+/// task that ends once the port is free again.
+pub struct Serving {
+    pub port: u16,
+    pub shutdown: watch::Sender<bool>,
+    pub task: tokio::task::JoinHandle<()>,
+}
+
+/// Listen on `port` (0.0.0.0 when `bind_all`, else 127.0.0.1) and serve the
+/// router over HTTPS with `tls` until `shutdown` is sent `true`. `router` is
+/// handed a receiver for that signal, for state that ends streams on it.
+/// Returns once the socket is listening. `tag` names the server in the log.
+pub async fn serve(
+    tag: &'static str,
+    port: u16,
+    bind_all: bool,
+    tls: Arc<rustls::ServerConfig>,
+    router: impl FnOnce(watch::Receiver<bool>) -> axum::Router,
+) -> Result<Serving, String> {
+    let ip = if bind_all {
+        Ipv4Addr::UNSPECIFIED
+    } else {
+        Ipv4Addr::LOCALHOST
+    };
+    let addr = SocketAddr::new(IpAddr::V4(ip), port);
+    let listener = TcpListener::bind(addr).await.map_err(|e| {
+        format!("could not listen on {addr}: {e} — another program may already have that port")
+    })?;
+    let local = listener.local_addr().map_err(|e| e.to_string())?;
+
+    let (shutdown, mut rx) = watch::channel(false);
+    let router = router(shutdown.subscribe());
+
+    // The acceptor owns the socket and returns on the same stop signal, so
+    // the port is free as soon as the server is asked to stop — a restart on
+    // the same port rebinds it straight away.
+    let (accepted, incoming) = mpsc::channel(64);
+    let acceptor = tokio::spawn(accept_loop(
+        tag,
+        listener,
+        TlsAcceptor::from(tls),
+        accepted,
+        shutdown.subscribe(),
+    ));
+    let task = tokio::spawn(async move {
+        let served = axum::serve(
+            TlsListener::new(incoming, local),
+            router.into_make_service_with_connect_info::<PeerAddr>(),
+        )
+        .with_graceful_shutdown(async move {
+            let _ = rx.wait_for(|stop| *stop).await;
+        });
+        if let Err(e) = served.await {
+            log::error!("[{tag}] server stopped: {e}");
+        }
+        // The port is the acceptor's: it is free once that has ended.
+        acceptor.abort();
+        let _ = acceptor.await;
+    });
+    log::info!("[{tag}] serving HTTPS on {ip}:{}", local.port());
+    Ok(Serving {
+        port: local.port(),
+        shutdown,
+        task,
+    })
+}
+
 /// Accept until `stopping`, sending each finished handshake on `out`. `tag`
 /// names the server in the log (`"owner"`, `"remote"`).
-pub async fn accept_loop(
+async fn accept_loop(
     tag: &'static str,
     listener: TcpListener,
     acceptor: TlsAcceptor,
@@ -139,7 +207,7 @@ pub struct TlsListener {
 }
 
 impl TlsListener {
-    pub fn new(incoming: mpsc::Receiver<Accepted>, local: SocketAddr) -> Self {
+    fn new(incoming: mpsc::Receiver<Accepted>, local: SocketAddr) -> Self {
         TlsListener { incoming, local }
     }
 }

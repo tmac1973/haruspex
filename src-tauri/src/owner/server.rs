@@ -17,7 +17,7 @@
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::future::Future;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::IpAddr;
 use std::path::{Component, Path as FsPath, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -42,8 +42,8 @@ use super::clients::{required_scope, Clients, OwnerClient, Scope};
 use super::pairing::PairingCodes;
 use super::tls_listen::PeerAddr;
 use super::trust::{host_is_ours, Trust};
+use crate::blob_cache::is_valid_hash;
 use crate::db::ImageRow;
-use crate::image_cache::is_valid_hash;
 use crate::sync_util::LockExt;
 
 /// Largest operation body. A prompt is the only big thing in one.
@@ -163,75 +163,41 @@ pub async fn start(
     bind_all: bool,
     tls: Arc<rustls::ServerConfig>,
 ) -> Result<Running, String> {
-    let ip = if bind_all {
-        IpAddr::V4(Ipv4Addr::UNSPECIFIED)
-    } else {
-        IpAddr::V4(Ipv4Addr::LOCALHOST)
+    let router = |stopping| {
+        let state = AppState {
+            stopping,
+            dispatch: services.dispatch,
+            images: services.images,
+            audio: services.audio,
+            clients: services.clients,
+            pairing: services.pairing,
+            web_root: services.web_root.map(Arc::new),
+            throttle: Arc::new(Throttle::default()),
+            trust: services.trust,
+            own_name: super::trust::system_hostname().map(Arc::from),
+        };
+        Router::new()
+            .route("/", get(to_app))
+            .route("/app", get(to_app))
+            .route("/app/", get(web_index))
+            .route("/app/{*path}", get(web_file))
+            .route("/api/v1/health", get(health))
+            .route("/api/v1/pair", post(pair))
+            .route("/api/v1/logout", post(logout))
+            .route("/api/v1/op", post(op))
+            .route("/api/v1/events", get(events))
+            .route("/api/v1/images", post(images))
+            .route("/api/v1/image/{hash}", get(image))
+            .route("/api/v1/audio/{hash}", get(audio))
+            .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
+            .layer(axum::middleware::map_response(no_referrer))
+            .with_state(state)
     };
-    let addr = SocketAddr::new(ip, port);
-    let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
-        format!("could not listen on {addr}: {e} — another program may already have that port")
-    })?;
-    let local = listener.local_addr().map_err(|e| e.to_string())?;
-    let port = local.port();
-
-    let (shutdown, mut rx) = watch::channel(false);
-    let state = AppState {
-        stopping: shutdown.subscribe(),
-        dispatch: services.dispatch,
-        images: services.images,
-        audio: services.audio,
-        clients: services.clients,
-        pairing: services.pairing,
-        web_root: services.web_root.map(Arc::new),
-        throttle: Arc::new(Throttle::default()),
-        trust: services.trust,
-        own_name: super::trust::system_hostname().map(Arc::from),
-    };
-    let router = Router::new()
-        .route("/", get(to_app))
-        .route("/app", get(to_app))
-        .route("/app/", get(web_index))
-        .route("/app/{*path}", get(web_file))
-        .route("/api/v1/health", get(health))
-        .route("/api/v1/pair", post(pair))
-        .route("/api/v1/logout", post(logout))
-        .route("/api/v1/op", post(op))
-        .route("/api/v1/events", get(events))
-        .route("/api/v1/images", post(images))
-        .route("/api/v1/image/{hash}", get(image))
-        .route("/api/v1/audio/{hash}", get(audio))
-        .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
-        .layer(axum::middleware::map_response(no_referrer))
-        .with_state(state);
-
-    let (accepted, incoming) = tokio::sync::mpsc::channel(64);
-    let acceptor = tokio::spawn(super::tls_listen::accept_loop(
-        "owner",
-        listener,
-        tokio_rustls::TlsAcceptor::from(tls),
-        accepted,
-        shutdown.subscribe(),
-    ));
-    let task = tokio::spawn(async move {
-        let served = axum::serve(
-            super::tls_listen::TlsListener::new(incoming, local),
-            router.into_make_service_with_connect_info::<PeerAddr>(),
-        )
-        .with_graceful_shutdown(async move {
-            let _ = rx.wait_for(|stop| *stop).await;
-        });
-        if let Err(e) = served.await {
-            log::error!("[owner] server stopped: {e}");
-        }
-        // The port is the acceptor's: it is free once that has ended.
-        acceptor.abort();
-        let _ = acceptor.await;
-    });
-    log::info!(
-        "[owner] serving HTTPS on {}:{port}",
-        if bind_all { "0.0.0.0" } else { "127.0.0.1" }
-    );
+    let super::tls_listen::Serving {
+        port,
+        shutdown,
+        task,
+    } = super::tls_listen::serve("owner", port, bind_all, tls, router).await?;
     Ok(Running {
         port,
         bind_all,
@@ -366,16 +332,17 @@ fn trusted_client(ip: IpAddr) -> OwnerClient {
     }
 }
 
-/// A cookie's value from the `Cookie` header.
-fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
+/// A cookie's value from the `Cookie` header, or headers: HTTP/2 may send
+/// one per cookie. Guest chat (`remote/auth.rs`) reads its cookie here too.
+pub fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
     headers
         .get_all(COOKIE)
         .iter()
         .filter_map(|v| v.to_str().ok())
         .flat_map(|v| v.split(';'))
-        .filter_map(|pair| pair.trim().split_once('='))
-        .find(|(k, _)| *k == name)
-        .map(|(_, v)| v.to_string())
+        .filter_map(|pair| pair.split_once('='))
+        .find(|(k, _)| k.trim() == name)
+        .map(|(_, v)| v.trim().to_string())
 }
 
 /// The refusal for a device without `scope`, if it hasn't got it.

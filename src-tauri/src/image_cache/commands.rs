@@ -502,10 +502,18 @@ pub async fn image_read_bytes(
 
 /// A cached picture's bytes by hash, or why not.
 pub fn read_cached(db: &Database, dir: &std::path::Path, hash: &str) -> Result<Vec<u8>, String> {
-    if !super::is_valid_hash(hash) || db.image_by_hash(hash)?.is_none() {
-        return Err("Image not found".into());
-    }
-    std::fs::read(super::image_path(dir, hash)).map_err(|_| "Image not found".to_string())
+    std::fs::read(cached_path(db, dir, hash)?).map_err(|_| NOT_FOUND.to_string())
+}
+
+const NOT_FOUND: &str = "Image not found";
+
+fn cached_path(
+    db: &Database,
+    dir: &std::path::Path,
+    hash: &str,
+) -> Result<std::path::PathBuf, String> {
+    crate::blob_cache::find(dir, hash, |h| Ok(db.image_by_hash(h)?.is_some()))?
+        .ok_or_else(|| NOT_FOUND.to_string())
 }
 
 /// Copy a cached picture to `path`, the file the user chose in the image
@@ -517,8 +525,8 @@ pub async fn image_save_as(
     hash: String,
     path: String,
 ) -> Result<(), String> {
-    let bytes = read_cached(&db, &cache_dir(&app)?, &hash)?;
-    std::fs::write(&path, bytes).map_err(|e| format!("Could not save the picture to {path}: {e}"))
+    let from = cached_path(&db, &cache_dir(&app)?, &hash)?;
+    crate::blob_cache::save_as(&from, std::path::Path::new(&path), "picture")
 }
 
 /// The guards on [`image_store_bytes`], split out because the command itself

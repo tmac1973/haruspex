@@ -11,8 +11,8 @@
 
 use super::range::{self, Slice};
 use super::{audio_path, cache_dir};
+use crate::blob_cache::is_valid_hash;
 use crate::db::Database;
-use crate::image_cache::is_valid_hash;
 use log::debug;
 use std::path::PathBuf;
 use tauri::http::{header, Request, Response, StatusCode};

@@ -5,6 +5,7 @@ mod app_windows;
 mod artifact_frame;
 mod audio;
 mod audio_cache;
+mod blob_cache;
 mod clipboard;
 mod code_tools;
 mod comfy;
