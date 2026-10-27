@@ -24,7 +24,7 @@
 		loaded = undefined;
 		missing = false;
 		if (!h) return;
-		playableClip(h)
+		void playableClip(h)
 			.then((clip) => {
 				if (h !== hash) return;
 				loaded = clip.url;

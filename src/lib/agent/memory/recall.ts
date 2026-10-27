@@ -48,6 +48,7 @@ const CHARS_PER_TOKEN = 4;
 // The step's name lives in a module of its own, so the step UI can know it
 // without loading memory (see `stepName.ts`).
 import { MEMORY_RECALL_STEP } from '#lib/agent/memory/stepName.ts';
+import { errMessage } from '#lib/utils/error.ts';
 export { MEMORY_RECALL_STEP };
 
 export interface RecalledMemory {
@@ -141,7 +142,7 @@ export async function recallForTurn(opts: {
 	} catch (e) {
 		// Recall failing must never fail the user's turn. They asked for an
 		// answer, not for memory.
-		logDebug('memory', 'recall failed', { error: String(e) });
+		logDebug('memory', 'recall failed', { error: errMessage(e) });
 		return [];
 	}
 }

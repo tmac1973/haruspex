@@ -4,6 +4,7 @@ import type { ConversationSummary } from '#lib/ipc/gen/ConversationSummary.ts';
 import type { ConversationWithMessages } from '#lib/ipc/gen/ConversationWithMessages.ts';
 import type { DbMessage } from '#lib/ipc/gen/DbMessage.ts';
 import { logDebug } from '#lib/debug-log.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 // ts-rs-generated mirrors of the Rust row types, re-exported under the
 // names this module historically used.
@@ -66,7 +67,7 @@ export async function initDb(): Promise<{
 		// DB unavailable is non-fatal — the app falls back to in-memory
 		// state. Still log so a corrupt DB or schema-mismatch isn't
 		// totally invisible.
-		logDebug('db', 'initDb failed', { error: String(e) });
+		logDebug('db', 'initDb failed', { error: errMessage(e) });
 		available = false;
 		return { available: false, summaries: [] };
 	}
@@ -88,7 +89,7 @@ export async function dbSaveMessage(
 			steps: stepsJson ?? null
 		});
 	} catch (e) {
-		logDebug('db', 'dbSaveMessage failed', { conversationId, error: String(e) });
+		logDebug('db', 'dbSaveMessage failed', { conversationId, error: errMessage(e) });
 	}
 }
 
@@ -107,7 +108,7 @@ export async function dbUpdateLastMessageSteps(
 			steps: stepsJson
 		});
 	} catch (e) {
-		logDebug('db', 'dbUpdateLastMessageSteps failed', { conversationId, error: String(e) });
+		logDebug('db', 'dbUpdateLastMessageSteps failed', { conversationId, error: errMessage(e) });
 	}
 }
 
@@ -131,7 +132,7 @@ export async function dbLoadMessageSteps(id: string): Promise<Record<number, unk
 		});
 		return out;
 	} catch (e) {
-		logDebug('db', 'dbLoadMessageSteps failed', { id, error: String(e) });
+		logDebug('db', 'dbLoadMessageSteps failed', { id, error: errMessage(e) });
 		return {};
 	}
 }
@@ -141,7 +142,7 @@ export async function dbCreateConversation(id: string, title: string): Promise<v
 	try {
 		await invoke('db_create_conversation', { id, title });
 	} catch (e) {
-		logDebug('db', 'dbCreateConversation failed', { id, error: String(e) });
+		logDebug('db', 'dbCreateConversation failed', { id, error: errMessage(e) });
 	}
 }
 
@@ -170,7 +171,7 @@ export async function dbGetConversationMemoryEnabled(conversationId: string): Pr
 	} catch (e) {
 		logDebug('db', 'dbGetConversationMemoryEnabled failed', {
 			conversationId,
-			error: String(e)
+			error: errMessage(e)
 		});
 		return true;
 	}
@@ -186,7 +187,7 @@ export async function dbSetConversationMemoryEnabled(
 	} catch (e) {
 		logDebug('db', 'dbSetConversationMemoryEnabled failed', {
 			conversationId,
-			error: String(e)
+			error: errMessage(e)
 		});
 	}
 }
@@ -196,7 +197,7 @@ export async function dbRenameConversation(id: string, title: string): Promise<v
 	try {
 		await invoke('db_rename_conversation', { id, title });
 	} catch (e) {
-		logDebug('db', 'dbRenameConversation failed', { id, error: String(e) });
+		logDebug('db', 'dbRenameConversation failed', { id, error: errMessage(e) });
 	}
 }
 
@@ -205,7 +206,7 @@ export async function dbSetUnread(id: string, unread: boolean): Promise<void> {
 	try {
 		await invoke('conversation_set_unread', { id, unread });
 	} catch (e) {
-		logDebug('db', 'dbSetUnread failed', { id, error: String(e) });
+		logDebug('db', 'dbSetUnread failed', { id, error: errMessage(e) });
 	}
 }
 
@@ -214,7 +215,7 @@ export async function dbDeleteConversation(id: string): Promise<void> {
 	try {
 		await invoke('db_delete_conversation', { id });
 	} catch (e) {
-		logDebug('db', 'dbDeleteConversation failed', { id, error: String(e) });
+		logDebug('db', 'dbDeleteConversation failed', { id, error: errMessage(e) });
 	}
 }
 
@@ -223,7 +224,7 @@ export async function dbClearAll(): Promise<void> {
 	try {
 		await invoke('db_clear_all_conversations');
 	} catch (e) {
-		logDebug('db', 'dbClearAll failed', { error: String(e) });
+		logDebug('db', 'dbClearAll failed', { error: errMessage(e) });
 	}
 }
 
@@ -233,7 +234,7 @@ export async function dbLoadMessages(id: string): Promise<ChatMessage[]> {
 		const full = await invoke<DbConversation>('db_get_conversation', { id });
 		return full.messages.map(dbMessageToChatMessage);
 	} catch (e) {
-		logDebug('db', 'dbLoadMessages failed', { id, error: String(e) });
+		logDebug('db', 'dbLoadMessages failed', { id, error: errMessage(e) });
 		return [];
 	}
 }
@@ -258,6 +259,6 @@ export async function dbReplaceMessages(
 			}))
 		});
 	} catch (e) {
-		logDebug('db', 'dbReplaceMessages failed', { conversationId, error: String(e) });
+		logDebug('db', 'dbReplaceMessages failed', { conversationId, error: errMessage(e) });
 	}
 }

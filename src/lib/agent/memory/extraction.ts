@@ -39,6 +39,7 @@ import {
 	type Decision,
 	type ReviewItem
 } from '#lib/agent/memory/dedupe.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 /**
  * Two exchanges. Below this there is rarely a durable fact, and an extraction
@@ -175,7 +176,7 @@ export async function extractMemories(conversationId: string): Promise<Extractio
 				})
 		);
 	} catch (e) {
-		logDebug('memory', 'extraction turn failed', { conversationId, error: String(e) });
+		logDebug('memory', 'extraction turn failed', { conversationId, error: errMessage(e) });
 		return { added: 0, deduped: 0, skipped: 'failed' };
 	}
 
@@ -226,7 +227,7 @@ async function storeCandidates(
 			// One bad candidate must not abandon the rest of the batch.
 			logDebug('memory', 'storing a candidate failed', {
 				content: candidate.content.slice(0, 60),
-				error: String(e)
+				error: errMessage(e)
 			});
 		}
 	}
@@ -262,7 +263,7 @@ async function applyReview(
 	try {
 		decisions = await reviewCandidates(items);
 	} catch (e) {
-		logDebug('memory', 'duplicate review failed; storing as new', { error: String(e) });
+		logDebug('memory', 'duplicate review failed; storing as new', { error: errMessage(e) });
 		decisions = items.map(() => ({ action: 'new' }));
 	}
 	for (const [i, item] of items.entries()) {
@@ -281,7 +282,7 @@ async function applyReview(
 		} catch (e) {
 			logDebug('memory', 'acting on a duplicate decision failed', {
 				content: item.candidate.content.slice(0, 60),
-				error: String(e)
+				error: errMessage(e)
 			});
 		}
 	}

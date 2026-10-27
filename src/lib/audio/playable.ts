@@ -57,7 +57,7 @@ export function playableSong(hash: string): Promise<PlayableSong> {
 			return { url: URL.createObjectURL(new Blob([bytes], { type: mime })), mime };
 		});
 		// A failure isn't kept: the next player asks again.
-		song.catch(() => songs.delete(hash));
+		void song.catch(() => songs.delete(hash));
 		songs.set(hash, song);
 	}
 	return song;

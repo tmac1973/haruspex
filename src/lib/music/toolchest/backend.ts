@@ -46,6 +46,7 @@ import {
 	readMusicJob,
 	type MusicJob
 } from '#lib/music/toolchest/adapter.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 /** What the last probe saw, for Settings' table. */
 let lastInstances: ToolchestInstance[] = [];
@@ -197,7 +198,7 @@ export const toolchestMusicBackend: MusicBackend = {
 			if (e instanceof ToolchestError && e.kind === 'unreachable') {
 				return { ok: false, detail: `Can't reach ${host}.` };
 			}
-			return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+			return { ok: false, detail: errMessage(e) };
 		}
 		const models = instances.map((i) => ({
 			name: i.id,

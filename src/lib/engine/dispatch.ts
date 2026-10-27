@@ -117,7 +117,7 @@ export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 			if (s.folderMissing) throw new Error(`the session's folder is missing: ${s.root}`);
 			const steered = s.busy;
 			// Resolves when the turn ends; its progress goes out as events.
-			s.send(op.text, { remote: true }).catch((e: unknown) => {
+			void s.send(op.text, { remote: true }).catch((e: unknown) => {
 				logDebug('engine', 'send failed', { id: s.id, error: errMessage(e) });
 			});
 			return steered ? { steered: true } : { started: true };
@@ -128,7 +128,7 @@ export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 			if (!s.canCompact()) return { started: false, reason: 'nothing to summarise yet' };
 			// Answers at once, as every operation does; the summary arrives as
 			// a meta event (`compaction`), a failure as `lastError`.
-			s.compactNow(op.instructions ?? '').catch((e: unknown) => {
+			void s.compactNow(op.instructions ?? '').catch((e: unknown) => {
 				logDebug('engine', 'compact failed', { id: s.id, error: errMessage(e) });
 			});
 			return { started: true };

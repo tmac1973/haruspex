@@ -24,7 +24,7 @@
 	ensureShellSession();
 
 	onMount(() => {
-		invoke<boolean>('shell_platform_supported')
+		void invoke<boolean>('shell_platform_supported')
 			.then((ok) => (platformSupported = ok))
 			.catch(() => (platformSupported = true));
 		// Adopt shells handed back from detached windows (this is the main

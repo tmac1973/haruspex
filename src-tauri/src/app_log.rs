@@ -176,18 +176,37 @@ fn debug_log_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> 
 }
 
 /// Append `lines` to `path`, rotating it first when it has grown past `cap`.
-fn append_debug_lines(path: &std::path::Path, lines: &[String], cap: u64) -> std::io::Result<()> {
+/// Each line goes through [`crate::text_util::redact_secrets`] with `known`,
+/// as a feedback report does: the lines hold prompts and tool output, which
+/// can carry a key the user pasted. The file is created readable by the owner
+/// only on Unix.
+fn append_debug_lines(
+    path: &std::path::Path,
+    lines: &[String],
+    known: &[String],
+    cap: u64,
+) -> std::io::Result<()> {
     use std::io::Write;
     if std::fs::metadata(path).is_ok_and(|m| m.len() > cap) {
         std::fs::rename(path, path.with_extension("log.1"))?;
     }
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)?;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.create(true).append(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut file = opts.open(path)?;
+    // A file an older build created stays as it was without this.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
     let mut out = String::new();
     for line in lines {
-        out.push_str(line);
+        out.push_str(&crate::text_util::redact_secrets(line, known));
         out.push('\n');
     }
     file.write_all(out.as_bytes())
@@ -208,7 +227,8 @@ pub async fn debug_log_append(app: tauri::AppHandle, lines: Vec<String>) -> Resu
         return Ok(());
     }
     let path = debug_log_path(&app)?;
-    append_debug_lines(&path, &lines, DEBUG_LOG_CAP).map_err(|e| e.to_string())
+    let known = crate::secrets::known_values();
+    append_debug_lines(&path, &lines, &known, DEBUG_LOG_CAP).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -253,15 +273,43 @@ mod tests {
     fn debug_lines_append_and_rotate_past_the_cap() {
         let dir = crate::test_util::temp_dir("debuglog");
         let path = dir.join(DEBUG_LOG_FILE);
-        append_debug_lines(&path, &["one".into(), "two".into()], 1024).unwrap();
-        append_debug_lines(&path, &["three".into()], 1024).unwrap();
+        append_debug_lines(&path, &["one".into(), "two".into()], &[], 1024).unwrap();
+        append_debug_lines(&path, &["three".into()], &[], 1024).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "one\ntwo\nthree\n");
         // Over the cap: the next append starts a fresh file and keeps one old one.
-        append_debug_lines(&path, &["four".into()], 4).unwrap();
+        append_debug_lines(&path, &["four".into()], &[], 4).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "four\n");
         assert_eq!(
             std::fs::read_to_string(dir.join("agent-debug.log.1")).unwrap(),
             "one\ntwo\nthree\n"
         );
+    }
+
+    #[test]
+    fn debug_lines_are_redacted() {
+        let dir = crate::test_util::temp_dir("debuglog-redact");
+        let path = dir.join(DEBUG_LOG_FILE);
+        let lines = [
+            "tool output: Authorization: Bearer abc123def456".to_string(),
+            "the user pasted my-stored-key-value here".to_string(),
+            "plain line".to_string(),
+        ];
+        append_debug_lines(&path, &lines, &["my-stored-key-value".into()], 1024).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("abc123def456"), "{text}");
+        assert!(!text.contains("my-stored-key-value"), "{text}");
+        assert!(text.contains("plain line"));
+        assert_eq!(text.matches(crate::text_util::REDACTED).count(), 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn debug_log_is_created_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = crate::test_util::temp_dir("debuglog-mode");
+        let path = dir.join(DEBUG_LOG_FILE);
+        append_debug_lines(&path, &["one".into()], &[], 1024).unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
     }
 }

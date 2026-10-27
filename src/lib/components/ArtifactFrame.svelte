@@ -23,7 +23,7 @@
 		let stale = false;
 		src = null;
 		failed = false;
-		invoke<string>('artifact_register', { html: doc })
+		void invoke<string>('artifact_register', { html: doc })
 			.then((id) => {
 				if (!stale) src = artifactUrl(id);
 			})

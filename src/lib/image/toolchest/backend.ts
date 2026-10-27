@@ -56,6 +56,7 @@ import {
 	type ImageJob
 } from '#lib/image/toolchest/adapter.ts';
 import { followJob, removeJob } from '#lib/toolchest/jobs.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 /** The blocking route waits through the queue and the render. */
 const SYNC_TIMEOUT_MS = 900_000;
@@ -245,7 +246,7 @@ export const toolchestBackend: ImageBackend = {
 			if (e instanceof ToolchestError && e.kind === 'unreachable') {
 				return { ok: false, detail: `Can't reach ${host}.` };
 			}
-			return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+			return { ok: false, detail: errMessage(e) };
 		}
 		const models = instances.map((i) => ({ name: i.id, label: instanceLabel(i) }));
 		if (instances.length === 0) {

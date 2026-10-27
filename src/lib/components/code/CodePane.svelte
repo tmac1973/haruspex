@@ -39,7 +39,7 @@
 		codeMode: () => true,
 		// `/new` here is a new session in the same folder.
 		newConversation: () => {
-			newSessionBeside(session).catch((e: unknown) =>
+			void newSessionBeside(session).catch((e: unknown) =>
 				showToast(`Couldn't start a session: ${errMessage(e)}`, { kind: 'error' })
 			);
 		},

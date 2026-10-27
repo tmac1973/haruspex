@@ -69,7 +69,7 @@ export async function refreshModelStatus(): Promise<void> {
 		state.status = present ? 'ready' : 'absent';
 		if (present) state.error = null;
 	} catch (e) {
-		logDebug('memory', 'model status check failed', { error: String(e) });
+		logDebug('memory', 'model status check failed', { error: errMessage(e) });
 		state.status = 'absent';
 	}
 }
@@ -78,7 +78,7 @@ export async function refreshMemoryCount(): Promise<void> {
 	try {
 		state.count = await invoke<number>('memory_count');
 	} catch (e) {
-		logDebug('memory', 'memory count failed', { error: String(e) });
+		logDebug('memory', 'memory count failed', { error: errMessage(e) });
 	}
 }
 
@@ -152,7 +152,7 @@ export async function disableMemory(): Promise<void> {
 	} catch (e) {
 		// Not worth surfacing: the setting is already off, so nothing will
 		// embed regardless of whether the session was actually released.
-		logDebug('memory', 'model unload failed', { error: String(e) });
+		logDebug('memory', 'model unload failed', { error: errMessage(e) });
 	}
 }
 

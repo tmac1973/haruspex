@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
+	import { loggedFallback } from '#lib/debug-log.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import Tooltip from '#lib/components/Tooltip.svelte';
@@ -49,7 +50,9 @@
 
 	let cacheBytes = $state<number | null>(null);
 	async function refreshCache() {
-		cacheBytes = await invoke<number>('audio_cache_size').catch(() => null);
+		cacheBytes = await invoke<number>('audio_cache_size').catch(
+			loggedFallback(null, 'settings', 'could not read the audio cache size')
+		);
 	}
 	void refreshCache();
 

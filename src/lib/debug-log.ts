@@ -22,6 +22,8 @@
  * unless verbose payloads are on.
  */
 
+import { errMessage } from '#lib/utils/error.ts';
+
 const RING_CAPACITY = 5000;
 
 /**
@@ -104,6 +106,21 @@ export function logDebug(category: string, message: string, data?: unknown): voi
 	fileQueue?.push(line);
 }
 
+/**
+ * A `.catch` handler for a failure the caller shows as missing rather than
+ * as an error: it logs `message` under `category` and gives `fallback`.
+ */
+export function loggedFallback<T>(
+	fallback: T,
+	category: string,
+	message: string
+): (e: unknown) => T {
+	return (e) => {
+		logDebug(category, message, { error: errMessage(e) });
+		return fallback;
+	};
+}
+
 /** Lines waiting for the next file flush; null while mirroring is off. */
 let fileQueue: string[] | null = null;
 const FILE_FLUSH_MS = 1000;
@@ -130,7 +147,7 @@ export async function startDebugLogFile(
 		if (!fileQueue || fileQueue.length === 0) return;
 		const lines = fileQueue;
 		fileQueue = [];
-		invoke('debug_log_append', { lines }).catch(() => {
+		void invoke('debug_log_append', { lines }).catch(() => {
 			// A failing write would fail again every second: stop mirroring.
 			fileQueue = null;
 			clearInterval(timer);

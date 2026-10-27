@@ -26,6 +26,7 @@ import {
 import { enqueue } from '#lib/agent/jobs/runner.svelte.ts';
 import { getJobType } from '#lib/agent/jobs/types/index.ts';
 import { logDebug } from '#lib/debug-log.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 const TICK_MS = 30_000;
 
@@ -67,7 +68,7 @@ export async function tick(): Promise<void> {
 			await processDueJob(job, now);
 		}
 	} catch (e) {
-		logDebug('jobs', 'scheduler tick failed', { error: String(e) });
+		logDebug('jobs', 'scheduler tick failed', { error: errMessage(e) });
 	} finally {
 		ticking = false;
 	}

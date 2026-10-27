@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
+	import { loggedFallback } from '#lib/debug-log.ts';
 	import { imageEngineLog } from '#lib/reportLogs.ts';
 	import { imageSrc } from '#lib/images/url.ts';
 	import { errMessage } from '#lib/utils/error.ts';
@@ -169,9 +170,13 @@
 	}
 
 	async function refreshModels() {
-		models = await invoke<ImageModel[]>('image_models').catch(() => []);
+		models = await invoke<ImageModel[]>('image_models').catch(
+			loggedFallback([], 'settings', 'could not list the image models')
+		);
 		void refreshLocalCapabilities();
-		upscaler = await invoke<UpscalerInfo>('image_upscaler').catch(() => null);
+		upscaler = await invoke<UpscalerInfo>('image_upscaler').catch(
+			loggedFallback(null, 'settings', 'could not read the upscaler')
+		);
 	}
 
 	async function downloadUpscaler() {

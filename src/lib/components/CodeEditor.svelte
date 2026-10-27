@@ -26,7 +26,7 @@
 
 	onMount(() => {
 		let gone = false;
-		import('#lib/editor/codemirror.ts')
+		void import('#lib/editor/codemirror.ts')
 			.then(({ createEditor }) => {
 				if (gone) return;
 				editor = createEditor(host, {

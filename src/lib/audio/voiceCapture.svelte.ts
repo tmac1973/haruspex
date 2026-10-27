@@ -13,6 +13,7 @@ import { sleep } from '#lib/utils/async.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import type { SidecarStatus } from '#lib/ipc/gen/SidecarStatus.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 export type VoiceCaptureStatus = 'idle' | 'recording' | 'processing' | 'downloading';
 
@@ -42,7 +43,7 @@ export async function startVoiceCapture(): Promise<void> {
 		await invoke('start_recording', { deviceName });
 		status = 'recording';
 	} catch (e) {
-		toastError(`Mic error: ${e}`);
+		toastError(`Mic error: ${errMessage(e)}`);
 	}
 }
 

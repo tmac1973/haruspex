@@ -1579,7 +1579,7 @@ function closestScaleIndex(scale: number): number {
 export function applyUiScale(scale?: number): void {
 	const raw = scale ?? settings.uiScale;
 	const value = typeof raw === 'number' && raw >= 0.5 && raw <= 2 ? raw : 1;
-	getCurrentWebview()
+	void getCurrentWebview()
 		.setZoom(value)
 		.catch(() => {
 			document.documentElement.style.setProperty('zoom', String(value));

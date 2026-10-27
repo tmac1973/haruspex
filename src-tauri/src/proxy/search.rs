@@ -1029,6 +1029,9 @@ pub(super) async fn search_auto(
     ))
 }
 
+/// How much of a Brave error body goes into the error.
+const BRAVE_ERROR_BODY_CHARS: usize = 300;
+
 // Brave Search API
 pub(super) async fn search_brave(
     query: &str,
@@ -1065,9 +1068,16 @@ pub(super) async fn search_brave(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
+        // The body can echo the key or the query back; neither belongs in the log.
+        let body =
+            crate::text_util::redact_secrets(&body, &[api_key.to_string(), query.to_string()]);
         return Err(SearchFailure::new(
             SearchFailureKind::Http,
-            format!("Brave search error {}: {}", status, body),
+            format!(
+                "Brave search error {}: {}",
+                status,
+                crate::text_util::upstream_message(&body, BRAVE_ERROR_BODY_CHARS)
+            ),
         ));
     }
 

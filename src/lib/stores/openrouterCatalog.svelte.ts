@@ -90,7 +90,7 @@ export function refreshOpenRouterCatalog(): Promise<OpenRouterModel[]> {
  */
 export function ensureOpenRouterCatalog(): void {
 	if (!isOpenRouterCatalogStale()) return;
-	refreshOpenRouterCatalog().catch((e) => {
+	void refreshOpenRouterCatalog().catch((e) => {
 		console.warn('OpenRouter catalog refresh failed:', e);
 	});
 }

@@ -185,7 +185,7 @@
 			if (el.offsetWidth === 0 || el.offsetHeight === 0) return;
 			fit.fit();
 			if (t.cols === 0 || t.rows === 0) return;
-			invoke('shell_resize', { sessionId: id, cols: t.cols, rows: t.rows }).catch((e) =>
+			void invoke('shell_resize', { sessionId: id, cols: t.cols, rows: t.rows }).catch((e) =>
 				console.error('shell_resize failed', e)
 			);
 		});
@@ -351,7 +351,7 @@
 			// and output capture is marker-based, so it isn't corrupted. The
 			// "agent running" badge signals that takeover.
 			if (isInputBlocked?.()) return;
-			invoke('shell_write', { sessionId, data }).catch((e) =>
+			void invoke('shell_write', { sessionId, data }).catch((e) =>
 				console.error('shell_write failed', e)
 			);
 		});
@@ -429,7 +429,7 @@
 	onMount(() => {
 		let cancelled = false;
 
-		(async () => {
+		void (async () => {
 			const { t, fit } = createTerminal();
 			term = t;
 			t.open(container);

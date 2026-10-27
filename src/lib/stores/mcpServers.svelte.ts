@@ -25,6 +25,7 @@ import { mcpDefaultTools } from '#lib/agent/tools/mcp-names.ts';
 import { forgetServerApprovals } from '#lib/stores/mcpApproval.svelte.ts';
 import { getSettings, startableMcpServers } from '#lib/stores/settings.ts';
 import { forgetMcpSecrets } from '#lib/stores/mcpSecrets.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 /** Everything the UI knows about one server right now. */
 export interface McpRuntimeState {
@@ -248,7 +249,7 @@ export async function removeMcpServer(serverId: string): Promise<void> {
 	try {
 		await invoke('mcp_uninstall_server', { serverId });
 	} catch (e) {
-		patch(serverId, { error: String(e) });
+		patch(serverId, { error: errMessage(e) });
 		return;
 	}
 	if (config) void forgetMcpSecrets(config);

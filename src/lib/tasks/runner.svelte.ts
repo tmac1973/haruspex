@@ -83,7 +83,7 @@ function envFor(task: BackgroundTask, controller: AbortController): FollowerEnv 
 			const now = Date.now();
 			if (now - last < PROGRESS_EVERY_MS || controller.signal.aborted) return;
 			last = now;
-			update(task.id, patch as TaskPatch).catch((e: unknown) => {
+			void update(task.id, patch as TaskPatch).catch((e: unknown) => {
 				if (e instanceof TaskGone) controller.abort();
 			});
 		},

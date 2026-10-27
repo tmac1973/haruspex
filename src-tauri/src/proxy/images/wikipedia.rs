@@ -46,7 +46,7 @@ pub(super) async fn search(
     // No such article. Common and uninteresting — most queries are not page
     // titles — so it contributes nothing rather than failing the search.
     if response.status() == reqwest::StatusCode::NOT_FOUND {
-        debug!("no wikipedia page for {:?}", title);
+        debug!("no wikipedia page for the query");
         return Ok(Vec::new());
     }
     if !response.status().is_success() {
@@ -80,7 +80,10 @@ pub(super) fn parse(body: &Value) -> Vec<ImageSearchResult> {
     // The non-free trap. Anything not served from the Commons namespace is
     // discarded outright rather than displayed with an unknown licence.
     if !original.starts_with(COMMONS_PREFIX) {
-        debug!("discarding non-Commons wikipedia lead image: {}", original);
+        debug!(
+            "discarding non-Commons wikipedia lead image: {}",
+            crate::text_util::url_for_log(original)
+        );
         return Vec::new();
     }
 

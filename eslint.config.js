@@ -86,8 +86,10 @@ export default ts.config(
 	{
 		// A promise nobody awaits, voids or catches turns a failure into an
 		// unhandled rejection: say `void` when the callee handles its own
-		// errors, `.catch` when it doesn't. Needs type information, so only
-		// this rule runs typed.
+		// errors, `void … .catch` when it doesn't. Needs type information, so
+		// only this rule runs typed. no-floating-promises counts a bare
+		// `.catch(…)` statement as handled, so the second rule asks for the
+		// `void` there too: it marks the call as fire-and-forget at a glance.
 		files: ['src/**/*.ts', 'src/**/*.svelte'],
 		ignores: ['**/*.test.ts'],
 		languageOptions: {
@@ -98,7 +100,14 @@ export default ts.config(
 			}
 		},
 		rules: {
-			'@typescript-eslint/no-floating-promises': 'error'
+			'@typescript-eslint/no-floating-promises': 'error',
+			'no-restricted-syntax': [
+				'error',
+				{
+					selector: "ExpressionStatement > CallExpression[callee.property.name='catch']",
+					message: 'Mark a fire-and-forget promise with `void`, even with a `.catch`.'
+				}
+			]
 		}
 	},
 	{

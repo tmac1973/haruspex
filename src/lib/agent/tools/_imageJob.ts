@@ -26,6 +26,7 @@ import type { StoredUpscale } from '#lib/ipc/gen/StoredUpscale.ts';
 import { taskOwner } from '#lib/tasks/notices.ts';
 import { upsertTask } from '#lib/tasks/store.svelte.ts';
 import type { BackgroundTask } from '#lib/tasks/types.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 /** What to make. Every picture in it is named by its image-cache hash. */
 export type ImageJob =
@@ -121,7 +122,7 @@ async function saveCached(target: SaveTarget, hash: string): Promise<string> {
 		});
 		return savedLineOf(target.path, null);
 	} catch (e) {
-		const why = e instanceof Error ? e.message : String(e);
+		const why = errMessage(e);
 		return savedLineOf(target.path, `Could not write ${target.path}: ${why}`);
 	}
 }

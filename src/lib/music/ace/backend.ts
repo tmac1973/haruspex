@@ -45,6 +45,7 @@ import {
 	type AceProps,
 	type AceStatus
 } from '#lib/music/ace/adapter.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 const POLL_MS = 1000;
 /** Polls in a row that may fail before the server counts as gone. */
@@ -240,7 +241,7 @@ export const aceMusicBackend: MusicBackend = {
 			if (e instanceof MusicBackendError && e.kind === 'unreachable') {
 				return { ok: false, detail: `Can't reach ${host}.` };
 			}
-			return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+			return { ok: false, detail: errMessage(e) };
 		}
 		const models = p.synthModels.map((name) => ({ name, label: name }));
 		const model = chosenModel();

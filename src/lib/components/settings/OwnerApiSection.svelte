@@ -8,6 +8,7 @@
 	 * local network with no token. Explanations live in tooltips.
 	 */
 	import { onMount } from 'svelte';
+	import { loggedFallback } from '#lib/debug-log.ts';
 
 	import { getLinkQr, qrPath, type QrMatrix } from '#lib/remote/api.ts';
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
@@ -129,7 +130,9 @@
 			found = await ownerTrustedHosts();
 		} catch (e) {
 			error = errMessage(e);
-			status = await ownerApiStatus().catch(() => null);
+			status = await ownerApiStatus().catch(
+				loggedFallback(null, 'settings', 'could not read the owner API status')
+			);
 		} finally {
 			busy = false;
 		}
@@ -150,7 +153,11 @@
 	async function show(made: CreatedOwnerClient): Promise<void> {
 		const link = base ? pairingLink(base, made.pairCode) : null;
 		shown = { name: made.client.name, token: made.token, link };
-		qr = link ? await getLinkQr(link).catch(() => null) : null;
+		qr = link
+			? await getLinkQr(link).catch(
+					loggedFallback(null, 'settings', 'could not make the pairing QR code')
+				)
+			: null;
 	}
 
 	async function add(): Promise<void> {

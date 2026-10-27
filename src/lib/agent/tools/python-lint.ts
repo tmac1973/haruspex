@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { logDebug } from '#lib/debug-log.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 interface RuffLocation {
 	row: number;
@@ -31,7 +32,7 @@ export async function lintPythonIfApplicable(
 	try {
 		raw = await invoke<string>('fs_lint_python', { workdir, relPath });
 	} catch (e) {
-		logDebug('lint', 'fs_lint_python invocation failed', { relPath, error: String(e) });
+		logDebug('lint', 'fs_lint_python invocation failed', { relPath, error: errMessage(e) });
 		return '';
 	}
 

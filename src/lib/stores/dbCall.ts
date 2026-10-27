@@ -10,6 +10,7 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import { logDebug } from '#lib/debug-log.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 interface DbCallBase {
 	/** Tauri command name, e.g. `'db_list_jobs'`. */
@@ -37,7 +38,7 @@ export async function dbQuery<T>(
 		await opts.onSuccess?.();
 		return result;
 	} catch (e) {
-		logDebug('jobs', opts.onError, { ...opts.ctx, error: String(e) });
+		logDebug('jobs', opts.onError, { ...opts.ctx, error: errMessage(e) });
 		return opts.fallback;
 	}
 }
@@ -56,7 +57,7 @@ export async function dbMutate(
 		await opts.onSuccess?.();
 		return true;
 	} catch (e) {
-		logDebug('jobs', opts.onError, { ...opts.ctx, error: String(e) });
+		logDebug('jobs', opts.onError, { ...opts.ctx, error: errMessage(e) });
 		return false;
 	}
 }

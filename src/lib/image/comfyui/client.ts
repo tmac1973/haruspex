@@ -441,7 +441,7 @@ function subscribeViaRust(
 		const p = progressOf(ev.type, ev.value, ev.max, ev.node, nodeClass);
 		if (p) onProgress(p);
 	};
-	invoke('comfy_subscribe', {
+	void invoke('comfy_subscribe', {
 		baseUrl: cfg.baseUrl,
 		apiKey: cfg.apiKey,
 		clientId,
