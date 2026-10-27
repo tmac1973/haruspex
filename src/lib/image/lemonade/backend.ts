@@ -128,9 +128,9 @@ async function chosen(): Promise<{ id: string; family: SdFamily; model: Lemonade
 /** Pictures one Qwen edit combines here, as on the bundled engine. */
 const MAX_EDIT_IMAGES = 3;
 
-function upload(input: ImageInput): UploadFile {
+function upload(input: ImageInput, field = 'image[]'): UploadFile {
 	return {
-		field: 'image[]',
+		field,
 		filename: input.name,
 		hash: 'hash' in input ? input.hash : null,
 		cache: 'hash' in input ? 'image' : null,
@@ -165,7 +165,11 @@ async function edit(
 	const payload = await lemonadeUpload(
 		lemonadeConfig(),
 		{ path: ROUTES.edits, fields, timeoutMs: GENERATE_TIMEOUT_MS },
-		req.edit!.images.map(upload),
+		// The mask, white where it may change, as OpenAI's edits route names it.
+		[
+			...req.edit!.images.map((i) => upload(i)),
+			...(req.edit!.mask ? [upload(req.edit!.mask, 'mask')] : [])
+		],
 		signal
 	);
 	return imagesFrom(payload);

@@ -152,3 +152,59 @@ describe('latestUserImages', () => {
 		expect(latestUserImages([{ role: 'user', content: 'hi' }])).toEqual([]);
 	});
 });
+
+describe('edit_image with an area', () => {
+	const CANVAS = 'c'.repeat(64);
+	const MASK = 'd'.repeat(64);
+
+	beforeEach(() => {
+		const plain = state.invoke.getMockImplementation()!;
+		state.invoke.mockImplementation(async (cmd: string, args: unknown) => {
+			if (cmd === 'image_mask_prepare') {
+				return { canvas: CANVAS, mask: MASK, width: 2400, height: 1200 };
+			}
+			if (cmd === 'image_mask_finish') return new Uint8Array([7, 7]).buffer;
+			return plain(cmd, args);
+		});
+	});
+
+	it('edits the canvas held to its mask, and pastes it back at the canvas’s size', async () => {
+		const out = await executeTool(
+			'edit_image',
+			{ image: SRC_URL, prompt: 'make the sky red', area: { x: 0, y: 0, width: 1, height: 0.4 } },
+			chat
+		);
+		const prep = state.invoke.mock.calls.find(([c]) => c === 'image_mask_prepare')![1];
+		expect(prep).toEqual({
+			source: { hash: SRC },
+			area: { x: 0, y: 0, width: 1, height: 0.4 },
+			extend: null,
+			conversationId: 'chat-1'
+		});
+		const [req] = state.generate.mock.calls[0];
+		expect(req.edit).toEqual({
+			images: [{ name: 'canvas.png', hash: CANVAS }],
+			mask: { name: 'mask.png', hash: MASK }
+		});
+		// Sized from the canvas, with the prompt as given.
+		expect(req).toMatchObject({ prompt: 'make the sky red', width: 1456, height: 720 });
+		const [, edited, opts] = state.invoke.mock.calls.find(([c]) => c === 'image_mask_finish')!;
+		expect(Array.from(edited as Uint8Array)).toEqual([9]);
+		expect(opts.headers).toEqual({ 'x-canvas-hash': CANVAS, 'x-mask-hash': MASK });
+		const stored = state.invoke.mock.calls.find(([c]) => c === 'image_store_bytes')![1];
+		expect(stored).toMatchObject({ bytes: [7, 7], width: 2400, height: 1200 });
+		expect(out.result).toMatch(/^Edited \(2400×1200/);
+	});
+
+	it('says what is wrong with an area before drawing', async () => {
+		for (const [args, said] of [
+			[{ area: { x: 0.5, y: 0, width: 2, height: 1 } }, /area.width must be a fraction/],
+			[{ area: { x: 0, y: 0, width: 0, height: 1 } }, /area needs a width and a height/],
+			[{ area: 'top half' }, /area must be an object/]
+		] as const) {
+			const out = await executeTool('edit_image', { image: SRC_URL, prompt: 'x', ...args }, chat);
+			expect(out.result).toMatch(said);
+		}
+		expect(state.generate).not.toHaveBeenCalled();
+	});
+});

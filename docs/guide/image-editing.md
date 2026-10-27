@@ -1,6 +1,6 @@
 ---
 title: Image editing
-description: Changing a picture in Chat (one you attached, one the assistant drew, or a file in the working folder), combining pictures, making one larger, and which image backends and models can do each.
+description: Changing a picture in Chat (attached, drawn earlier, or a file), or only part of it, combining pictures, making one larger, and which image backends and models can do each.
 ---
 
 # Image editing
@@ -16,6 +16,10 @@ Give the assistant a picture, then say what to change:
 - **A file**: with a working folder set, name a PNG, JPEG or WebP file in it.
 
 Say what should stay the same if it matters ("keep his face"). An edit takes 10 seconds to a few minutes. The result has the original's shape, at about a megapixel. With a working folder set, ask it to save the result there; an existing file asks you first.
+
+## Change only part of a picture
+
+Say which part: "change only the sky", "just the left half". The assistant marks that part of the picture and the edit changes nothing outside it, on every backend; the edge is blended so the join doesn't show. The result keeps the original's full size.
 
 ## Combine pictures
 
@@ -40,11 +44,12 @@ This needs Real-ESRGAN (BSD 3-Clause), on the bundled engine, ComfyUI or Lemonad
 
 ## What it doesn't do
 
-- It doesn't paint into a region you mark; describe the area in words instead.
+- You can't mark a region by hand; name the part in words.
+- It doesn't make a picture bigger by painting past its edges yet.
 - An edit doesn't make a transparent background or tile.
 - llama-toolchest doesn't upscale yet.
 - A picture pasted into Chat is shrunk to 1024 pixels on its longest side, so edits of it are at most that size.
 
 ## What has been tested
 
-Editing with FLUX.2 klein 4B on a llama-toolchest server, and with Qwen-Image 2.1 Turbo on the bundled engine on a 16 GB AMD card (about 30 seconds), on ComfyUI 0.39 and on Lemonade (about 20 seconds), and with FLUX.2 klein 4B (about 5 seconds) and Qwen-Image-Edit-2511 (about 45 seconds) on ComfyUI, has been tested, as has upscaling on the bundled engine, ComfyUI 0.39 and Lemonade. See the `images` page for setting up a backend.
+Editing with FLUX.2 klein 4B on a llama-toolchest server, and with Qwen-Image 2.1 Turbo on the bundled engine on a 16 GB AMD card (about 30 seconds), on ComfyUI 0.39 and on Lemonade (about 20 seconds), and with FLUX.2 klein 4B (about 5 seconds) and Qwen-Image-Edit-2511 (about 45 seconds) on ComfyUI, has been tested, as has changing only part of a picture on Lemonade, as has upscaling on the bundled engine, ComfyUI 0.39 and Lemonade. See the `images` page for setting up a backend.

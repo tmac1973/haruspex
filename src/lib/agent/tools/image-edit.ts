@@ -6,15 +6,31 @@
  * shape and is answered like `generate_image`'s: cached, shown to a model that
  * can see, and saved to `path` if asked.
  *
+ * `area` changes only a rectangle of the picture (`_imageMask.ts`): everything
+ * outside it stays the original's.
+ *
  * Only a backend whose `capabilities().edit` says so can do it (a
  * llama-toolchest model with the `edit` capability, FLUX.2 klein); any other
  * is a sentence saying what can.
  */
 import { registerTool } from '#lib/agent/tools/registry.ts';
-import { toolError, toolResult } from '#lib/agent/tools/types.ts';
+import {
+	toolError,
+	toolResult,
+	type ToolContext,
+	type ToolExecOutput
+} from '#lib/agent/tools/types.ts';
+import { errMessage } from '#lib/utils/error.ts';
 import { isSaveTarget } from '#lib/agent/tools/_saveGenerated.ts';
 import { answerWithImage, drawForTool, saveTarget } from '#lib/agent/tools/image-gen.ts';
 import { editSize, resolveImage, type ImageSource } from '#lib/agent/tools/_imageSource.ts';
+import {
+	finishMasked,
+	maskRequest,
+	prepareMasked,
+	type MaskRequest
+} from '#lib/agent/tools/_imageMask.ts';
+import type { SaveTarget } from '#lib/agent/tools/_saveGenerated.ts';
 
 /** The most pictures one call combines; the backend may allow fewer. */
 const MAX_IMAGES = 4;
@@ -29,6 +45,46 @@ function refsOf(args: Record<string, unknown>): string[] {
 			? [str(args.also)]
 			: [];
 	return [str(args.image), ...also].filter(Boolean);
+}
+
+/** An edit held to a mask: only part of the picture changes. */
+async function editMasked(
+	prompt: string,
+	sources: ImageSource[],
+	mask: MaskRequest,
+	save: SaveTarget | null,
+	ctx: ToolContext
+): Promise<ToolExecOutput> {
+	let prepared;
+	try {
+		prepared = await prepareMasked(sources[0].input, mask, ctx.conversationId ?? null);
+	} catch (e) {
+		return toolResult(toolError(`Could not edit it: ${errMessage(e)}`));
+	}
+	const { width, height } = editSize(prepared.width, prepared.height);
+	const canvas = { name: 'canvas.png', hash: prepared.canvas };
+	const image = await drawForTool(
+		{
+			prompt,
+			width,
+			height,
+			seed: null,
+			edit: {
+				images: [canvas, ...sources.slice(1).map((s) => s.input)],
+				mask: { name: 'mask.png', hash: prepared.mask }
+			}
+		},
+		ctx
+	);
+	if (!('bytes' in image)) return image;
+	let bytes;
+	try {
+		bytes = await finishMasked(image.bytes, prepared);
+	} catch (e) {
+		return toolResult(toolError(`Could not edit it: ${errMessage(e)}`));
+	}
+	const finished = { ...image, bytes, width: prepared.width, height: prepared.height };
+	return answerWithImage(finished, prompt.slice(0, 60), save, ctx, 'Edited');
 }
 
 registerTool({
@@ -61,6 +117,19 @@ registerTool({
 						items: { type: 'string' },
 						description: `Up to ${MAX_IMAGES - 1} more pictures to combine with it, named the same way.`
 					},
+					area: {
+						type: 'object',
+						description:
+							'Change only this rectangle of the picture, as fractions of its width and ' +
+							'height from the top left: {"x":0.5,"y":0,"width":0.5,"height":1} is the right ' +
+							'half. The rest stays exactly as it is.',
+						properties: {
+							x: { type: 'number' },
+							y: { type: 'number' },
+							width: { type: 'number' },
+							height: { type: 'number' }
+						}
+					},
 					path: {
 						type: 'string',
 						description: 'Also save it here, in the working folder, ending .png.'
@@ -84,6 +153,8 @@ registerTool({
 		if (refs.length > MAX_IMAGES) {
 			return toolResult(toolError(`edit_image combines at most ${MAX_IMAGES} pictures.`));
 		}
+		const mask = maskRequest(args);
+		if (typeof mask === 'string') return toolResult(toolError(mask));
 		const save = await saveTarget(args, ctx, 'edit_image');
 		if (save && !isSaveTarget(save)) return save;
 
@@ -93,12 +164,16 @@ registerTool({
 			if (typeof got === 'string') return toolResult(toolError(got));
 			sources.push(got);
 		}
-		const { width, height } = editSize(sources[0].width, sources[0].height);
-		const image = await drawForTool(
-			{ prompt, width, height, seed: null, edit: { images: sources.map((s) => s.input) } },
-			ctx
-		);
-		if (!('bytes' in image)) return image;
-		return answerWithImage(image, prompt.slice(0, 60), save, ctx, 'Edited');
+		if (!mask.area) {
+			const { width, height } = editSize(sources[0].width, sources[0].height);
+			const image = await drawForTool(
+				{ prompt, width, height, seed: null, edit: { images: sources.map((s) => s.input) } },
+				ctx
+			);
+			if (!('bytes' in image)) return image;
+			return answerWithImage(image, prompt.slice(0, 60), save, ctx, 'Edited');
+		}
+
+		return editMasked(prompt, sources, mask, save, ctx);
 	}
 });
