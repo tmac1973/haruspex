@@ -293,3 +293,54 @@ describe('ComfyUI edits', () => {
 		expect(sent.some((u) => u.includes('/upload/image') || u.includes('/prompt'))).toBe(false);
 	});
 });
+
+describe('ComfyUI inpaints', () => {
+	const inpaint = {
+		image: { name: 'canvas.png', bytes: [1, 2] },
+		mask: { name: 'mask.png', bytes: [3] }
+	};
+
+	it('starts the drawing graph from the canvas under a noise mask', async () => {
+		updateSettings({ imageComfyCheckpoint: KLEIN });
+		server();
+		await comfyUiBackend.generate(edit({ edit: undefined, inpaint }));
+		const uploads = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/upload/image'));
+		expect(uploads).toHaveLength(2);
+		const g = submitted();
+		expect(g['12'].inputs.latent_image).toEqual(['inpaint_noise_mask', 0]);
+		expect(g.inpaint_noise_mask.inputs).toEqual({
+			samples: ['inpaint_latent', 0],
+			mask: ['inpaint_mask', 0]
+		});
+		expect(g.inpaint_latent.inputs).toEqual({
+			pixels: ['inpaint_canvas_scaled', 0],
+			vae: ['3', 0]
+		});
+		// Both scaled to the request's size, the mask read from its red channel.
+		expect(g.inpaint_canvas_scaled.inputs).toMatchObject({ width: 1024, height: 768 });
+		expect(g.inpaint_mask_scaled.inputs).toMatchObject({ width: 1024, height: 768 });
+		expect(g.inpaint_mask.inputs).toMatchObject({
+			image: ['inpaint_mask_scaled', 0],
+			channel: 'red'
+		});
+		// Still a drawing: no reference pictures.
+		expect(g['edit_image_1']).toBeUndefined();
+	});
+
+	it('takes an SD checkpoint’s VAE from the checkpoint', async () => {
+		updateSettings({ imageComfyCheckpoint: 'sd15.safetensors' });
+		server();
+		await comfyUiBackend.generate(edit({ edit: undefined, inpaint }));
+		const g = submitted();
+		expect(g.inpaint_latent.inputs.vae).toEqual(['1', 2]);
+		expect(g['7'].inputs.latent_image).toEqual(['inpaint_noise_mask', 0]);
+	});
+
+	it('says every family can', async () => {
+		for (const ckpt of [MING, QWEN21, TURBO, KLEIN, EDIT_2511, 'sd15.safetensors']) {
+			updateSettings({ imageComfyCheckpoint: ckpt });
+			server();
+			expect((await comfyUiBackend.capabilities()).inpaint).toBe(true);
+		}
+	});
+});

@@ -37,14 +37,14 @@ import {
 } from '#lib/image/comfyui/templates/index.ts';
 import {
 	familyOf,
-	findUpscaler,
 	hasModel,
 	listModels,
 	resolveCompanions,
 	type ModelFamily
 } from '#lib/image/comfyui/families.ts';
 import * as api from '#lib/image/comfyui/client.ts';
-import { uploadImage } from '#lib/image/comfyui/upload.ts';
+import { uploadImage, uploadInpaint } from '#lib/image/comfyui/upload.ts';
+import { UPSCALE_OUTPUT, upscaleGraph, upscalerOf } from '#lib/image/comfyui/upscale.ts';
 
 /** What a custom workflow samples with when a request says nothing. */
 export const DEFAULT_SAMPLER: SamplerSettings = { name: 'euler_ancestral', steps: 28, cfg: 7 };
@@ -151,35 +151,11 @@ function capabilitiesOf(
 		maxLoras: loraNodes,
 		edit,
 		maxEditImages: edit ? (MAX_EDIT_IMAGES[family] ?? 1) : 0,
-		upscale: upscaler
+		upscale: upscaler,
+		// A plain drawing graph that can start from a canvas under a noise mask.
+		inpaint: templates.some((t) => t.map.inpaint)
 	};
 }
-
-/**
- * The server's upscaler, or null. Asked every time rather than kept, so an
- * install from Settings → Image counts at once; a server that won't answer
- * has none.
- */
-async function upscalerOf(cfg: api.ClientConfig): Promise<string | null> {
-	return findUpscaler(cfg).catch(() => null);
-}
-
-/**
- * `upscale_image`'s graph: the picture through `UpscaleModelLoader` and
- * `ImageUpscaleWithModel`, which tiles it, so any size the tool accepts fits.
- */
-export function upscaleGraph(image: string, model: string, prefix: string): ComfyGraph {
-	return {
-		'1': { class_type: 'LoadImage', inputs: { image } },
-		'2': { class_type: 'UpscaleModelLoader', inputs: { model_name: model } },
-		'3': {
-			class_type: 'ImageUpscaleWithModel',
-			inputs: { upscale_model: ['2', 0], image: ['1', 0] }
-		},
-		'4': { class_type: 'SaveImage', inputs: { images: ['3', 0], filename_prefix: prefix } }
-	};
-}
-const UPSCALE_OUTPUT = '4';
 
 /** Per server and family: can it run the family's edit workflow? */
 const editsByServer = new Map<string, Promise<boolean>>();
@@ -230,6 +206,16 @@ export function pngSize(bytes: Uint8Array): { width: number; height: number } | 
 
 /** The template for this request. Falls back as `selectTemplate` describes. */
 function templateFor(req: ImageRequest, templates: WorkflowTemplate[]): WorkflowTemplate {
+	if (req.inpaint) {
+		const plain = templates.find((t) => t.map.inpaint);
+		if (!plain) {
+			throw new ImageBackendError(
+				'unconfigured',
+				"This workflow can't extend a picture — a custom workflow has no inpaint."
+			);
+		}
+		return plain;
+	}
 	const want = {
 		transparent: Boolean(req.transparent),
 		seamless: Boolean(req.seamless),
@@ -302,11 +288,13 @@ async function prepare(cfg: api.ClientConfig, req: ImageRequest, signal?: AbortS
 			)
 		: undefined;
 
+	const inpaint = req.inpaint ? await uploadInpaint(cfg, req.inpaint, signal) : undefined;
+
 	const graph = applyFieldMap(
 		template.graph,
 		template.map,
 		{ ...req, prompt, seed, sampler, loras },
-		{ model, ...companions, editImages }
+		{ model, ...companions, editImages, inpaint }
 	);
 	return { template, graph, model, sampler, loras, seed };
 }
