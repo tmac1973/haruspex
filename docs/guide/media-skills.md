@@ -15,7 +15,7 @@ Each one needs something set up first:
 |---|---|
 | `fix-picture` | an image backend (Settings → Image) |
 
-Until that is set up, the skill is greyed out in Settings → Skills, with what it needs, and isn't offered. Once it is, the model can load the skill when a request matches. That depends on Settings → Skills → When the model uses skills: by default, remote and OpenRouter models load skills and the local model doesn't. On any model you can run one yourself by typing `/` and its name, followed by what you want.
+Until that is set up, the skill is greyed out in Settings → Skills, with what it needs, and isn't offered. Once it is, the model can load the skill when a request matches, and a skill also loads by itself the first time the model reaches for one of its tools, such as editing a picture. That depends on Settings → Skills → When the model uses skills: by default, remote and OpenRouter models load skills and the local model doesn't. On any model you can run one yourself by typing `/` and its name, followed by what you want.
 
 ## Change a picture you already have: fix-picture
 
@@ -40,4 +40,4 @@ To try it: `/fix-picture make it look like late evening, then make it big enough
 
 ## What has been tested
 
-`fix-picture` was tested by running `/fix-picture` with Qwen3.8-Flash. It made an area edit, and an edit then an upscale, upscaling last even when asked for it first. It extended a picture to 16:9 on ComfyUI with FLUX.2 klein. On Lemonade it said extending isn't possible there, and offered what is. Without `/fix-picture`, that model used the picture tools directly without loading the skill.
+`fix-picture` was tested by running `/fix-picture` with Qwen3.8-Flash. It made an area edit, and an edit then an upscale, upscaling last even when asked for it first. It extended a picture to 16:9 on ComfyUI with FLUX.2 klein. On Lemonade it said extending isn't possible there, and offered what is. Before a skill loaded with its first tool call, that model used the picture tools directly without loading the skill.
