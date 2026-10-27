@@ -18,6 +18,7 @@ use crate::comfy::{ComfyCall, ComfyError, ImageServer};
 pub(crate) const TOOLCHEST: ImageServer = ImageServer {
     secret: "",
     name: "llama-toolchest",
+    one_at_a_time: None,
 };
 
 /// A call whose answer is JSON (or text, or nothing). Cancelled with

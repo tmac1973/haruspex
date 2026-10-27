@@ -15,7 +15,12 @@
 
 import { getSettings } from '#lib/stores/settings.ts';
 import { registerImageBackend } from '#lib/image/registry.ts';
-import type { GenerateOptions, ImageBackend, ProbeResult } from '#lib/image/backend.ts';
+import type {
+	GenerateOptions,
+	ImageBackend,
+	ImageJobHandle,
+	ProbeResult
+} from '#lib/image/backend.ts';
 import {
 	ImageBackendError,
 	type ImageBackendCapabilities,
@@ -47,7 +52,8 @@ import {
 	editUploads,
 	imagesFrom,
 	progressOf,
-	readJob
+	readJob,
+	type ImageJob
 } from '#lib/image/toolchest/adapter.ts';
 import { followJob } from '#lib/toolchest/jobs.ts';
 
@@ -148,16 +154,30 @@ async function readyInstance(cfg: ToolchestConfig, signal?: AbortSignal) {
 	return instance;
 }
 
-/** Run a job to its end and fetch its images. Cancelling the turn cancels the job. */
+/**
+ * Run a job to its end and fetch its images. Cancelling the turn cancels the
+ * job. `onJob` hears its id as soon as the server has it.
+ */
 async function runJob(
 	cfg: ToolchestConfig,
 	body: unknown,
-	opts: GenerateOptions
+	opts: GenerateOptions,
+	onJob: (id: string) => void
 ): Promise<Uint8Array[]> {
 	const created = readJob(
 		await toolchestJson(cfg, { method: 'POST', path: ROUTES.jobs, body }, opts.signal)
 	);
 	if (!created) throw new ImageBackendError('rejected', 'llama-toolchest made no job.');
+	onJob(created.id);
+	return awaitJob(cfg, created, opts);
+}
+
+/** Follow a job the server has to its end, and fetch its images. */
+async function awaitJob(
+	cfg: ToolchestConfig,
+	created: ImageJob,
+	opts: GenerateOptions
+): Promise<Uint8Array[]> {
 	const job = await followJob(cfg, created, ROUTES.job, readJob, {
 		signal: opts.signal,
 		onJob: (j) => opts.onProgress?.(progressOf(j))
@@ -301,7 +321,20 @@ export const toolchestBackend: ImageBackend = {
 		});
 
 		return finish(req, instance, seed, sent, Date.now(), async () => {
-			if (instance.api.includes('images.jobs')) return runJob(cfg, body, opts);
+			if (instance.api.includes('images.jobs')) {
+				return runJob(cfg, body, opts, (id) =>
+					opts.onHandle?.({
+						backend: 'llama-toolchest',
+						baseUrl: cfg.baseUrl,
+						id,
+						seed,
+						model: instance.id,
+						width: req.width,
+						height: req.height,
+						extra: { keyId: getSettings().imageToolchestApiKeyId ?? '' }
+					})
+				);
+			}
 			opts.onProgress?.({ phase: 'running' });
 			return imagesFrom(
 				await toolchestJson(
@@ -311,6 +344,44 @@ export const toolchestBackend: ImageBackend = {
 				)
 			);
 		});
+	},
+
+	async resume(handle: ImageJobHandle, opts: GenerateOptions = {}): Promise<ImageResult> {
+		// The server it went to, whatever Settings → Image says now.
+		const cfg: ToolchestConfig = {
+			baseUrl: handle.baseUrl,
+			apiKey: await toolchestKeyFor(handle.extra?.keyId || null)
+		};
+		const started = Date.now();
+		let images: Uint8Array[];
+		try {
+			images = await awaitJob(
+				cfg,
+				{ id: handle.id, status: 'queued', phase: '', ahead: 0, images: [], error: null },
+				opts
+			);
+		} catch (e) {
+			throw asImageError(e);
+		}
+		if (images.length === 0) {
+			throw new ImageBackendError('rejected', 'llama-toolchest returned no image.');
+		}
+		return {
+			images: images.map((bytes) => ({
+				bytes,
+				mimeType: 'image/png',
+				width: handle.width,
+				height: handle.height
+			})),
+			meta: {
+				seed: handle.seed,
+				model: handle.model,
+				backend: 'llama-toolchest',
+				sampler: { name: 'as sent', steps: 0, cfg: 0 },
+				loras: [],
+				durationMs: Date.now() - started
+			}
+		};
 	}
 };
 

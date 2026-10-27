@@ -14,6 +14,7 @@ use crate::comfy::{ComfyCall, ComfyError, ImageServer};
 pub(crate) const ACE_SERVER: ImageServer = ImageServer {
     secret: "",
     name: "ace-server",
+    one_at_a_time: None,
 };
 
 /// A call whose answer is JSON (or text, or nothing). Cancelled with

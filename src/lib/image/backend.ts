@@ -23,6 +23,32 @@ import type {
 export interface GenerateOptions {
 	signal?: AbortSignal;
 	onProgress?: (p: ImageProgress) => void;
+	/**
+	 * Told the job's reference once the server holds it, by a backend whose
+	 * server queues jobs it can be asked about later (toolchest's job API,
+	 * ComfyUI's prompts). A background task keeps it, to follow the job again
+	 * after a restart (`resume`).
+	 */
+	onHandle?: (handle: ImageJobHandle) => void;
+}
+
+/**
+ * A job a server holds, as `onHandle` reports it: enough for `resume` to
+ * follow it to its end and say what it made, on the server it went to,
+ * whatever the settings say now. Plain JSON: it is saved with the task.
+ */
+export interface ImageJobHandle {
+	backend: ImageBackendKind;
+	baseUrl: string;
+	/** The server's id for the job. */
+	id: string;
+	/** What the result reports, settled when the job was sent. */
+	seed: number;
+	model: string;
+	width: number;
+	height: number;
+	/** Anything else the backend needs to find the job's output. */
+	extra?: Record<string, string>;
 }
 
 /** A model the backend can run, for a settings dropdown. */
@@ -58,6 +84,11 @@ export interface ImageBackend {
 	 * `capabilities().upscale` says so.
 	 */
 	upscale?(input: ImageInput, opts?: GenerateOptions): Promise<Uint8Array>;
+	/**
+	 * Follow a job `onHandle` reported, sent by an earlier run of the app, to
+	 * its end. Throws an `ImageBackendError` when the server no longer has it.
+	 */
+	resume?(handle: ImageJobHandle, opts?: GenerateOptions): Promise<ImageResult>;
 }
 
 /**

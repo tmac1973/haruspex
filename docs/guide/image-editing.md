@@ -1,6 +1,6 @@
 ---
 title: Image editing
-description: Changing a picture in Chat (attached, drawn earlier, or a file), or only part of it, extending it, combining pictures, upscaling, and which image backends and models can do each.
+description: Changing a picture in Chat (attached, drawn earlier, or a file), or part of it, extending, combining, upscaling, working in the background, and which backends and models do each.
 ---
 
 # Image editing
@@ -45,6 +45,12 @@ With Ming-Image, another ComfyUI model, or an older ComfyUI, the assistant says 
 Ask the assistant to upscale a picture, two or four times: "make it four times bigger for printing". It sharpens as it enlarges, and a transparent background stays transparent. The result is at most 4096 pixels on its longest side, so pictures up to 2048 pixels can be upscaled. A 1024-pixel picture takes about 12 seconds.
 
 This needs Real-ESRGAN (BSD 3-Clause), on the bundled engine, ComfyUI or Lemonade: press **Download** under Settings → Image → Bundled engine → **Upscaler** (67 MB), or **Install** on the **Upscaler** under **Models on the server** for ComfyUI (67 MB, into `models/upscale_models`; a ComfyUI on another machine may give you the file to copy instead) or Lemonade (62 MB). It works with whichever model is chosen.
+
+## Draw, edit or upscale in the background
+
+Ask for a picture "in the background" (or several, "four variations in the background") and the assistant starts it and finishes its answer, so you can keep chatting. Each one gets a card with its progress and **Cancel**, and is in the **Tasks** list (see the `chat-conversations` page). When it's done, the assistant places it in that conversation.
+
+If Haruspex closes first, anything on ComfyUI, and a new picture on llama-toolchest, is picked up again when it reopens, as long as the server still has it. An edit on llama-toolchest, and anything on the bundled engine or Lemonade, is reported as failed instead. The bundled engine and Lemonade draw one picture at a time.
 
 ## What it doesn't do
 

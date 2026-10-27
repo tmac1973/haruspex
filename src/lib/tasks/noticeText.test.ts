@@ -185,3 +185,55 @@ describe('loading the list', () => {
 		expect(ownersWithNotices('chat:')).toEqual(['chat:c1']);
 	});
 });
+
+describe('a background picture’s notice', () => {
+	const hash = 'c'.repeat(64);
+	const picture = (visionSupported: boolean): BackgroundTask => ({
+		...base,
+		id: 'image-1',
+		kind: 'image',
+		label: 'Drawing a fox',
+		state: 'done',
+		follower: 'frontend',
+		spec: { visionSupported },
+		result: {
+			op: 'draw',
+			hash,
+			width: 1024,
+			height: 768,
+			model: 'ming',
+			seed: 7,
+			alt: 'a fox',
+			verb: 'Image ready',
+			notes: [],
+			saved: 'Wrote fox.png.'
+		}
+	});
+
+	it('is the answer the tool would have given, with the picture to place', () => {
+		const { text, images } = noticeFor(picture(true));
+		expect(text).toBe(
+			'Background task "Drawing a fox" finished: Image ready (1024×768, ming, seed 7). ' +
+				`Put ![a fox](haruspex-img://localhost/${hash}) in your answer where it belongs; ` +
+				'it needs no other images. The picture is attached, so you can look at it before you ' +
+				'answer. Wrote fox.png.'
+		);
+		expect(isTaskNotice(text)).toBe(true);
+		expect(images).toEqual([hash]);
+	});
+
+	it('shows the picture only to a model that can see', () => {
+		const { text, images } = noticeFor(picture(false));
+		expect(text).not.toContain('attached');
+		expect(images).toEqual([]);
+	});
+
+	it('reaches the model as a data URL', async () => {
+		tauri.invoke.mockImplementation(async (cmd: string) =>
+			cmd === 'task_take_notices' ? [picture(true)] : new Uint8Array([1, 2]).buffer
+		);
+		const notice = await takeNotices('chat:c1');
+		expect(tauri.invoke).toHaveBeenCalledWith('image_read_bytes', { hash });
+		expect(notice.images).toEqual(['data:image/png;base64,AQI=']);
+	});
+});

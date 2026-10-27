@@ -3,6 +3,7 @@
 	import { agentPowershell } from '#lib/code/powershell.ts';
 	import { refreshVideoBinaries } from '#lib/video/binaries.ts';
 	import { initTasks } from '#lib/tasks/store.svelte.ts';
+	import { startTaskRunner } from '#lib/tasks/followers.ts';
 	import favicon from '#lib/assets/favicon.svg';
 	import ServerStatusBadge from '#lib/components/ServerStatusBadge.svelte';
 	import ContextIndicator from '#lib/components/ContextIndicator.svelte';
@@ -143,6 +144,9 @@
 	// listens, and the one holding the conversation or session that started a
 	// task tells it.
 	onMount(() => void initTasks().catch(() => {}));
+	// The main window does the background tasks the frontend follows (a picture
+	// drawn after its turn), and picks up the ones a restart cut short.
+	onMount(() => void startTaskRunner().catch(() => {}));
 
 	// Other clients' way into this window's Code sessions (plan/remote-api/).
 	// Does nothing outside the main and Code windows, or while Rust has it off.

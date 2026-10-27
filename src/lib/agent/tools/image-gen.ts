@@ -31,6 +31,14 @@ import { generateForTool, type ToolImage } from '#lib/image/forTool.ts';
 import { describeImageProgress } from '#lib/image/progress.ts';
 import { ImageBackendError, type ImageProgress, type ImageRequest } from '#lib/image/types.ts';
 import { registerLocalImage } from '#lib/images/resolve.svelte.ts';
+import { imageAnswerText, placeLine, savedLineOf } from '#lib/agent/tools/_imageAnswer.ts';
+import {
+	BACKGROUND_PARAM,
+	canRunInBackground,
+	startImageTask
+} from '#lib/agent/tools/_imageJob.ts';
+
+export { placeLine };
 import {
 	isSaveTarget,
 	prepareSave,
@@ -136,29 +144,23 @@ export async function answerWithImage(
 	const sees = ctx.visionSupported !== false && ctx.pendingImages.length < MAX_PENDING_IMAGES;
 	if (sees) ctx.pendingImages.push({ path: url, dataUrl: pngDataUrl(image.bytes) });
 	return toolResult(
-		[
-			`${verb} (${image.width}×${image.height}, ${image.model}, seed ${image.seed}).`,
-			placeLine(markdown),
-			...(sees ? ['The picture is attached, so you can look at it before you answer.'] : []),
-			...(saved ? [saved] : []),
-			...image.notes
-		].join(' ')
+		imageAnswerText({
+			verb,
+			width: image.width,
+			height: image.height,
+			model: image.model,
+			seed: image.seed,
+			markdown,
+			sees,
+			saved,
+			notes: image.notes
+		})
 	);
-}
-
-/**
- * The line telling the model where the picture goes. It also says the picture
- * is the answer: one of a fox otherwise reads as an answer about foxes, and
- * the model goes off to search for photos to put beside it.
- */
-export function placeLine(markdown: string): string {
-	return `Put ${markdown} in your answer where it belongs; it needs no other images.`;
 }
 
 /** The line saying where the picture was saved, or why not. */
 async function savedLine(target: SaveTarget, bytes: Uint8Array, ctx: ToolContext): Promise<string> {
-	const failed = await writeSaved(target, bytes, ctx);
-	return failed ? `It is in the chat, but ${failed}` : `Wrote ${target.path}.`;
+	return savedLineOf(target.path, await writeSaved(target, bytes, ctx));
 }
 
 registerTool({
@@ -195,7 +197,8 @@ registerTool({
 						type: 'boolean',
 						description:
 							'Replace an existing file. Default false. In Chat the user is asked instead.'
-					}
+					},
+					background: BACKGROUND_PARAM
 				},
 				required: ['prompt']
 			}
@@ -209,10 +212,17 @@ registerTool({
 		const save = await saveTarget(args, ctx);
 		if (save && !isSaveTarget(save)) return save;
 
-		const image = await drawForTool(
-			{ prompt, width, height, seed: null, transparent: args.transparent === true },
-			ctx
-		);
+		const request = { prompt, width, height, seed: null, transparent: args.transparent === true };
+		if (canRunInBackground(args, ctx)) {
+			const alt = altOf(prompt);
+			return startImageTask(
+				`Drawing ${alt}`,
+				{ op: 'draw', request, alt, verb: 'Image ready' },
+				save,
+				ctx
+			);
+		}
+		const image = await drawForTool(request, ctx);
 		if (!('bytes' in image)) return image;
 		return answerWithImage(image, altOf(prompt), save, ctx);
 	}

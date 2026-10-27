@@ -28,9 +28,15 @@ use crate::comfy::{ComfyCall, ComfyError, ImageServer};
 use crate::image_models::{engine_options, image_registry, ImageFileRole, ImageModelInfo};
 use crate::proxy::ProxyConfig;
 
+/// Lemonade's sd-server takes one generation at a time and answers a second
+/// with an error rather than queueing it, so generations wait their turn
+/// here: background tasks and blocking calls alike.
+static GENERATING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 pub(crate) const LEMONADE: ImageServer = ImageServer {
     secret: "lemonade:key",
     name: "Lemonade",
+    one_at_a_time: Some((&GENERATING, &["/api/v1/images/"])),
 };
 
 /// A call whose answer is JSON (or text, or nothing). Cancelled with

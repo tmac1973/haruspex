@@ -221,6 +221,49 @@ describe('llama-toolchest image backend', () => {
 		});
 	});
 
+	it('reports the job it sent, and a later run follows it to its end on that server', async () => {
+		const onHandle = vi.fn();
+		await toolchestBackend.generate(request, { onHandle });
+		expect(onHandle).toHaveBeenCalledWith({
+			backend: 'llama-toolchest',
+			baseUrl: 'http://box:3000',
+			id: 'j1',
+			seed: 5,
+			model: 'qwen-turbo-local',
+			width: 512,
+			height: 512,
+			extra: { keyId: 'k1' }
+		});
+
+		// Settings have moved to another server since; the job is followed where it went.
+		settings.imageToolchestBaseUrl = 'http://elsewhere:3000';
+		use(jobRoutes());
+		const result = await toolchestBackend.resume!(onHandle.mock.calls[0][0]);
+		expect(calls()).not.toContain('POST /v1/images/jobs');
+		expect(calls()).toContain('GET /v1/images/jobs/j1/image/0');
+		const urls = tauri.invoke.mock.calls
+			.filter(([c]) => c === 'toolchest_json')
+			.map(([, a]) => a.call.base_url);
+		expect(new Set(urls)).toEqual(new Set(['http://box:3000']));
+		expect(result.meta).toMatchObject({ seed: 5, model: 'qwen-turbo-local' });
+		expect(result.images[0]).toMatchObject({ width: 512, height: 512 });
+	});
+
+	it('says so when the server no longer has the job', async () => {
+		use({});
+		await expect(
+			toolchestBackend.resume!({
+				backend: 'llama-toolchest',
+				baseUrl: 'http://box:3000',
+				id: 'gone',
+				seed: 1,
+				model: 'm',
+				width: 8,
+				height: 8
+			})
+		).rejects.toBeInstanceOf(ImageBackendError);
+	});
+
 	describe('edits', () => {
 		const edit = {
 			...request,
