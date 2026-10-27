@@ -1,5 +1,5 @@
 <script lang="ts">
-	/** The desktop's chats, newest first; the open one is where a reply can be written. */
+	/** The desktop's chats, newest first, each marked with what it is doing. */
 	import type { WebStore } from '../store.svelte.ts';
 
 	let { store }: { store: WebStore } = $props();
@@ -16,7 +16,6 @@
 <button
 	class="btn btn-small new-btn"
 	title="Start a new chat on your computer."
-	disabled={!!store.busyChat}
 	onclick={() => store.newChat()}>New chat</button
 >
 
@@ -31,9 +30,17 @@
 				<span class="name">{c.title || 'New chat'}</span>
 				<span class="meta">
 					<span>{when(c.updatedAt)}</span>
-					{#if c.busy}
+					{#if c.waiting}
+						<span class="sep">·</span>
+						<span class="status" title="Waiting for the model, or for another reply to finish."
+							>Waiting</span
+						>
+					{:else if c.busy}
 						<span class="sep">·</span>
 						<span class="status" title="A reply is being written.">Writing</span>
+					{:else if c.unread}
+						<span class="sep">·</span>
+						<span class="status" title="It finished a reply you haven't opened yet.">New</span>
 					{:else if c.open}
 						<span class="sep">·</span>
 						<span title="The chat open on your computer.">Open</span>

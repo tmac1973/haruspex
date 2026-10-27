@@ -270,6 +270,21 @@ describe('concurrent chat conversations', () => {
 		]);
 	});
 
+	it('does not mark unread a conversation shown on the Remote control page', async () => {
+		const finish = await heldTurns();
+		const chat = await setup();
+
+		const a = chat.createConversation();
+		const sent = chat.sendMessage('first');
+		await settle();
+		chat.createConversation();
+		chat.noteViewedOnWeb(a);
+
+		finish.get(a)!();
+		await sent;
+		expect(chat.getConversations().find((c) => c.id === a)!.unread).toBe(false);
+	});
+
 	it('does not mark the open conversation unread', async () => {
 		const finish = await heldTurns();
 		const chat = await setup();

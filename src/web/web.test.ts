@@ -11,6 +11,7 @@ import FileViewer from './components/FileViewer.svelte';
 import Message from './components/Message.svelte';
 import Transcript from './components/Transcript.svelte';
 import ChatTranscript from './components/ChatTranscript.svelte';
+import ChatList from './components/ChatList.svelte';
 import { imageRefs, resetImages, wantImages } from './images.ts';
 import { clearResolvedImages } from '#lib/images/resolve.svelte.ts';
 import { VIEW_IMAGE_EVENT } from '#lib/markdown-actions.ts';
@@ -532,6 +533,59 @@ describe('chat in the web store', () => {
 		store.stop();
 	});
 
+	it('follows a chat with a turn running though it is not open on the desktop', async () => {
+		const d = fakeDesktop({ 'chat.get': chatState({ open: false, busy: true }) });
+		const store = new WebStore(d.transport);
+		store.start();
+		await store.selectChat('c1');
+		expect(d.ops.map((o) => o.type)).toEqual(['chat.get', 'chat.resync']);
+		store.stop();
+	});
+
+	it('picks up the events of a chat it read once, from the snapshot its turn starts with', async () => {
+		const d = fakeDesktop({ 'chat.get': chatState({ open: false }) });
+		const store = new WebStore(d.transport);
+		store.start();
+		await store.selectChat('c1');
+		// A send from the page starts a turn there; the desktop starts following it.
+		d.push({
+			seq: 7,
+			chatId: 'c1',
+			type: 'chat-snapshot',
+			state: chatState({ busy: true }) as never
+		});
+		d.push({ seq: 8, chatId: 'c1', type: 'chat-update', patch: { streamingContent: 'Hi' } });
+		expect(store.currentChat).toMatchObject({ busy: true, streamingContent: 'Hi' });
+		store.stop();
+	});
+
+	it('marks each chat with what it is doing, and blocks no other chat', () => {
+		const store = new WebStore(fakeDesktop().transport);
+		const item = (id: string, over = {}) => ({
+			id,
+			title: id,
+			updatedAt: 0,
+			open: false,
+			busy: false,
+			waiting: false,
+			unread: false,
+			...over
+		});
+		store.chats = [
+			item('writing', { busy: true }),
+			item('waiting', { busy: true, waiting: true }),
+			item('new', { unread: true }),
+			item('open', { open: true })
+		];
+		render(ChatList, { store });
+		for (const mark of ['Writing', 'Waiting', 'New', 'Open']) {
+			expect(screen.getByText(mark)).toBeTruthy();
+		}
+		expect((screen.getByRole('button', { name: 'New chat' }) as HTMLButtonElement).disabled).toBe(
+			false
+		);
+	});
+
 	it('keeps chat prompts out of Code sessions, and the reverse', () => {
 		const store = new WebStore(fakeDesktop().transport);
 		const base = { answerable: true, requester: null, detail: {} };
@@ -545,23 +599,33 @@ describe('chat in the web store', () => {
 	});
 });
 
-describe('the composer in a chat', () => {
-	it("waits while a reply is written: chat can't be steered", () => {
+describe('the composer', () => {
+	it('waits while busy when it may not steer', () => {
 		render(Composer, { busy: true, steer: false, onsend: vi.fn(), onstop: vi.fn() });
 		expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
 		expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
 	});
 
-	it('says why it is disabled while another chat writes', () => {
+	it('says why it is disabled', () => {
 		render(Composer, {
 			busy: false,
-			steer: false,
 			disabled: true,
-			why: 'A reply is being written in "Notes".',
+			why: 'Folder not found.',
 			onsend: vi.fn(),
 			onstop: vi.fn()
 		});
-		expect(screen.getByLabelText('Message').getAttribute('title')).toContain('"Notes"');
+		expect(screen.getByLabelText('Message').getAttribute('title')).toContain('Folder not found');
+	});
+
+	it('steers a busy chat: the box stays open, with Stop beside Send', async () => {
+		const onsend = vi.fn(async () => true);
+		render(Composer, { busy: true, onsend, onstop: vi.fn() });
+		const box = screen.getByLabelText('Message') as HTMLTextAreaElement;
+		expect(box.disabled).toBe(false);
+		expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
+		await fireEvent.input(box, { target: { value: 'also this' } });
+		await fireEvent.keyDown(box, { key: 'Enter' });
+		expect(onsend).toHaveBeenCalledWith('also this');
 	});
 });
 

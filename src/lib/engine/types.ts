@@ -161,12 +161,20 @@ export interface ChatListItem {
 	id: string;
 	title: string;
 	updatedAt: number;
-	/** The chat open on the desktop: the only one a turn can run in. */
+	/** The chat open on the desktop. */
 	open: boolean;
+	/** A turn is running, or a send waits for the model. A send to it steers the turn. */
 	busy: boolean;
+	/** Waiting: for the model to start, or for another turn to finish. */
+	waiting: boolean;
+	/** It finished an answer nobody has looked at yet. */
+	unread: boolean;
 }
 
-/** A chat as a client holds it. Turn fields are live only for the open chat. */
+/**
+ * A chat as a client holds it. Turn fields are live for a chat that is open
+ * on the desktop or has a turn running; any other is its saved thread.
+ */
 export interface ChatState {
 	id: string;
 	title: string;

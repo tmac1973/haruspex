@@ -500,7 +500,7 @@
 							<StopIndicator
 								reason={activeConversation.messageStops[i]}
 								disabled={isGenerating || isCompacting}
-								onContinue={continueTurn}
+								onContinue={() => continueTurn()}
 							/>
 						{/if}
 					{/if}

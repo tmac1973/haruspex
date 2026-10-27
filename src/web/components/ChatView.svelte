@@ -1,8 +1,8 @@
 <script lang="ts">
 	/**
-	 * One chat. Sending goes through the desktop's own chat, which opens this
-	 * conversation there; only one reply can be written at a time, so the
-	 * input waits while another chat's is.
+	 * One chat. Sending goes through the desktop's own chat, without opening
+	 * it there. Each chat runs its own turns, and a message sent while this
+	 * one's runs steers it.
 	 */
 	import type { WebStore } from '../store.svelte.ts';
 	import ChatTranscript from './ChatTranscript.svelte';
@@ -14,7 +14,6 @@
 	const id = $derived(store.selectedChat!);
 	const chat = $derived(store.currentChat);
 	const prompts = $derived(store.promptsForChat(id));
-	const elsewhere = $derived(store.busyChat && store.busyChat.id !== id ? store.busyChat : null);
 </script>
 
 <header>
@@ -47,11 +46,6 @@
 	{/each}
 	<Composer
 		busy={chat.busy}
-		steer={false}
-		disabled={!!elsewhere}
-		why={elsewhere
-			? `A reply is being written in "${elsewhere.title}". One chat at a time: wait, or stop it there.`
-			: null}
 		onsend={(text) => store.sendChat(id, text)}
 		onstop={() => store.chatAction(id, 'chat.stop')}
 	/>

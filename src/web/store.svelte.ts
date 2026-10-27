@@ -100,23 +100,23 @@ export class WebStore {
 		return this.selectedChat ? (this.chatMirrors[this.selectedChat]?.state ?? null) : null;
 	}
 
-	/** A chat whose reply is being written: the only chat a turn can run in. */
-	get busyChat(): ChatListItem | null {
-		return this.chats.find((c) => c.busy) ?? null;
-	}
-
 	async refreshChats(): Promise<void> {
 		const list = await this.run(() => this.transport.op<ChatListItem[]>({ type: 'chats.list' }));
 		if (list) this.chats = list;
 	}
 
-	/** Show a chat: the open one follows its events; any other is read once. */
+	/**
+	 * Show a chat. One the desktop follows (open there, or with a turn
+	 * running) is brought up to date by a snapshot; any other is read once,
+	 * and follows its events from the snapshot a turn there starts with.
+	 */
 	async selectChat(id: string): Promise<void> {
 		this.selectedChat = id;
 		const state = await this.run(() => this.transport.op<ChatState>({ type: 'chat.get', id }));
 		if (!state) return;
-		this.chatMirrors[id] = { state, seq: 0, resync: state.open };
-		if (state.open) void this.run(() => this.transport.op({ type: 'chat.resync', id }));
+		const live = state.open || state.busy;
+		this.chatMirrors[id] = { state, seq: 0, resync: live };
+		if (live) void this.run(() => this.transport.op({ type: 'chat.resync', id }));
 	}
 
 	async newChat(): Promise<void> {
