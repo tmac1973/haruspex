@@ -73,8 +73,18 @@ export interface CodeTextureDeps {
 	variants: number;
 	/** PNG bytes for each variant, base first. */
 	render: (recipe: TextureRecipe, seed: number, variants: number) => Promise<Uint8Array[]>;
-	/** A tile laid 3×3, for the judge to see what repeats. */
+	/**
+	 * A tile laid 3×3, for the judge to see what repeats, with some of the
+	 * set's sprites stood on it when `withSprites`.
+	 */
 	preview: (tile: Uint8Array) => Promise<Uint8Array>;
+	/** Whether `preview` stands sprites on the tile. */
+	withSprites: boolean;
+	/**
+	 * Null when the set's sprites show up on this tile, else why not, said to
+	 * the recipe writer. Absent when the set has no sprites to measure.
+	 */
+	contrast?: (tile: Uint8Array) => Promise<string | null>;
 	/**
 	 * A new recipe after the judge's no, with what it draws, or null.
 	 * `preview` is what the judge saw: the tile laid 3×3.
@@ -141,6 +151,10 @@ export async function generateEntries(spec: AssetSpec, deps: GenerateDeps): Prom
 	// where it is what holds a set of separately drawn images together.
 	const base = deps.caps.transparency ? { ...spec.normalize, palette: [] } : spec.normalize;
 	const profiles = await profilesByKind(spec, base);
+	// Never the ground, though. The palette is the sprites', and ground drawn
+	// in their colours is ground they cannot be seen on.
+	const texture = profiles.get('texture');
+	if (texture) profiles.set('texture', { ...texture, palette: [] });
 	const results: (EntryResult | null)[] = spec.entries.map(() => null);
 	const transient: number[] = [];
 	let done = 0;

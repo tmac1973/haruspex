@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { generateEntries, escapesWorkdir, type GenerateDeps } from './generate';
 import type { SheetOutcome } from './types';
+import { SPRITES_HINT } from './codeTexture';
 import type { AssetEntry, AssetSpec, NormalizeProfile } from '#lib/assets/spec/types.ts';
 import { ImageBackendError } from '#lib/image/types.ts';
 import type { ImageBackendCapabilities, ImageRequest } from '#lib/image/types.ts';
@@ -996,6 +997,15 @@ describe('sheets', () => {
 		const call = invoke.mock.calls.find(([cmd]) => cmd === 'image_normalize');
 		expect((call![1].profile as NormalizeProfile).palette).toEqual([0xff0000ff]);
 	});
+
+	it('keeps the sprite palette off textures on that path', async () => {
+		// The palette is the sprites'; ground drawn in it is ground they vanish into.
+		const spec = specOf([{ kind: 'texture' }]);
+		spec.normalize = { ...spec.normalize, palette: [0xff0000ff] };
+		await generateEntries(spec, harness({ caps: FULL }).deps);
+		const call = invoke.mock.calls.find(([cmd]) => cmd === 'image_normalize');
+		expect((call![1].profile as NormalizeProfile).palette).toEqual([]);
+	});
 });
 
 describe('textures drawn in code', () => {
@@ -1016,6 +1026,7 @@ describe('textures drawn in code', () => {
 					variants: 4,
 					render,
 					preview,
+					withSprites: false,
 					revise,
 					recipeFailures: new Map(),
 					...code
@@ -1117,6 +1128,45 @@ describe('textures drawn in code', () => {
 		await generateEntries(specOf([{ kind: 'texture', recipe: RECIPE }]), h.deps);
 		expect(h.preview).toHaveBeenCalledWith(new Uint8Array([0]));
 		expect(shown).toEqual([new Uint8Array([9, 0])]);
+	});
+
+	it('sends a tile the sprites vanish into back, without asking the judge', async () => {
+		let n = 0;
+		const contrast = vi.fn(async () => (n++ === 0 ? 'hard to see' : null));
+		const judge = vi.fn(async () => ({ ok: true, reason: '' }));
+		const revise = vi.fn<NonNullable<GenerateDeps['codeTextures']>['revise']>(async () => ({
+			recipe: RECIPE,
+			drawn: ''
+		}));
+		const h = codeHarness(
+			{ contrast, revise },
+			{ judge: { enabled: true, visionSupported: true, judge } }
+		);
+		const [r] = await generateEntries(specOf([{ kind: 'texture', recipe: RECIPE }]), h.deps);
+		expect(r.outcome).toMatchObject({ status: 'done', attempts: 2 });
+		expect(revise.mock.calls[0][1]).toBe('hard to see');
+		expect(judge).toHaveBeenCalledTimes(1);
+	});
+
+	it('checks contrast even when nothing will judge it', async () => {
+		const contrast = vi.fn(async () => 'hard to see');
+		const h = codeHarness({ contrast });
+		const [r] = await generateEntries(specOf([{ kind: 'texture', recipe: RECIPE }]), h.deps);
+		expect(r.outcome).toMatchObject({ status: 'unresolved', reason: 'hard to see' });
+	});
+
+	it('tells the judge about the sprites stood on the tile', async () => {
+		const hints: (string | undefined)[] = [];
+		const judge = vi.fn(async (_e: AssetEntry, _i: Uint8Array, hint?: string) => {
+			hints.push(hint);
+			return { ok: true, reason: '' };
+		});
+		const h = codeHarness(
+			{ withSprites: true },
+			{ judge: { enabled: true, visionSupported: true, judge } }
+		);
+		await generateEntries(specOf([{ kind: 'texture', recipe: RECIPE }]), h.deps);
+		expect(hints[0]).toContain(SPRITES_HINT);
 	});
 
 	it('builds no preview when nothing will judge it', async () => {

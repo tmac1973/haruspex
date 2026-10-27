@@ -17,6 +17,7 @@ import { escapesWorkdir, isCancellation } from '#lib/agent/jobs/types/asset-gene
 import { errMessage } from '#lib/utils/error.ts';
 import { textureSeed, variantPaths } from '#lib/agent/jobs/types/asset-generation/recipes.ts';
 import type { EntryOutcome } from '#lib/agent/jobs/types/asset-generation/types.ts';
+import type { AssetJudgement } from '#lib/agent/jobs/types/asset-generation/tools.ts';
 
 type Outcome = Omit<EntryOutcome, 'id' | 'durationMs'>;
 
@@ -29,6 +30,12 @@ export const CODE_TEXTURE_HINT =
 	'should be occasional — a painted line, a stain, a crack, a patch — sits at ' +
 	'the same spot in every copy, so the copies read as a grid. A regular ' +
 	'pattern the material has, like bricks or floor tiles, is fine.';
+
+/** The judge's sentence for a preview with the set's sprites stood on it. */
+export const SPRITES_HINT =
+	"Three of the set's sprites stand on the diagonal to show how they read on " +
+	'this ground; they are not part of the tile. Reject it as well if any of ' +
+	'them is hard to pick out against the ground.';
 
 export interface CodeTextureContext {
 	spec: AssetSpec;
@@ -44,6 +51,26 @@ export const MAX_RECIPE_REVISIONS = 2;
 function forJudge(tile: Uint8Array, deps: GenerateDeps, code: CodeTextureDeps) {
 	const judging = deps.judge.visionSupported && deps.judge.enabled;
 	return judging ? code.preview(tile) : Promise.resolve(tile);
+}
+
+/**
+ * The measured check first, then the judge. A tile the sprites vanish into
+ * goes back to the recipe writer with the numbers, without spending a look.
+ */
+async function review(
+	tile: Uint8Array,
+	shown: Uint8Array,
+	subject: AssetSpec['entries'][number],
+	ctx: CodeTextureContext,
+	degraded: string[]
+): Promise<AssetJudgement | null> {
+	const { deps, code } = ctx;
+	const blends = code.contrast ? await code.contrast(tile) : null;
+	if (blends) return { ok: false, reason: blends };
+	const hint = code.withSprites ? `${CODE_TEXTURE_HINT} ${SPRITES_HINT}` : CODE_TEXTURE_HINT;
+	const judged = await maybeJudge(subject, shown, deps.judge, false, hint);
+	if (judged.unavailable) degraded.push(judgeUnavailable(judged.unavailable));
+	return judged.verdict ?? null;
 }
 
 /**
@@ -96,9 +123,7 @@ export async function runCodeTexture(index: number, ctx: CodeTextureContext): Pr
 			// prompt may name details no recipe can draw ("graffiti-covered").
 			const subject = drawn ? { ...entry, prompt: drawn } : entry;
 			const shown = await forJudge(first, deps, code);
-			const judged = await maybeJudge(subject, shown, deps.judge, false, CODE_TEXTURE_HINT);
-			if (judged.unavailable) degraded.push(judgeUnavailable(judged.unavailable));
-			const verdict = judged.verdict;
+			const verdict = await review(first, shown, subject, ctx, degraded);
 			const base = {
 				attempts: attempt,
 				seed,
