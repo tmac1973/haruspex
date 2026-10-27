@@ -16,6 +16,7 @@ import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
 import { ctxCwd, resolveShellPath } from '#lib/agent/tools/_helpers.ts';
 import { assetIo, paletteFor, writeAsset, type Target } from '#lib/agent/tools/_assetIo.ts';
+import { checkGround, MAX_SPRITES, spritesArg } from '#lib/agent/tools/_assetGround.ts';
 import {
 	makeTransition,
 	parseTransition,
@@ -58,6 +59,8 @@ interface ParsedInput {
 	asset: Omit<PaintInput, 'kind'> & { kind: Kind };
 	path: string;
 	paletteFrom: string | null;
+	/** Texture only: sprites that will stand on it, to measure it against. */
+	sprites: string[];
 	/** A texture's recipe, unchecked; Rust's check comes next. */
 	recipe: Record<string, unknown> | null;
 	/** Every file a texture writes: the path, then its variants. */
@@ -78,12 +81,15 @@ function parseInput(args: Record<string, unknown>): ParsedInput | string {
 	const from = typeof args.palette_from === 'string' ? args.palette_from.trim() : '';
 	const drawn = codeArgs(kind, args, path);
 	if (typeof drawn === 'string') return drawn;
+	const sprites = spritesArg(args.sprites);
+	if (typeof sprites === 'string') return sprites;
 	// A tiling picture is the image backend's; a pixel-art tile is a texture.
 	const seamless = kind === 'image' && args.seamless === true;
 	return {
 		asset: { kind, prompt, size, style, ...(seamless ? { seamless } : {}) },
 		path,
 		paletteFrom: from || null,
+		sprites,
 		...drawn
 	};
 }
@@ -195,7 +201,11 @@ async function makeTexture(input: ParsedInput, target: Target, ctx: ToolContext)
 		if (failed) return toolResult(toolError(failed));
 	}
 
-	const url = dataUrl(await tiledPreview(tiles[0], size));
+	const ground = input.sprites.length
+		? await checkGround(tiles[0], size, input.sprites, target)
+		: null;
+	if (typeof ground === 'string') return toolResult(toolError(ground));
+	const url = dataUrl(ground ? ground.preview : await tiledPreview(tiles[0], size));
 	const sees = ctx.visionSupported !== false && ctx.pendingImages.length < MAX_PENDING_IMAGES;
 	if (sees) ctx.pendingImages.push({ path, dataUrl: url });
 	return toolResult(
@@ -203,11 +213,13 @@ async function makeTexture(input: ParsedInput, target: Target, ctx: ToolContext)
 			`Wrote ${paths.join(', ')} (${size}×${size}, drawn from the recipe).`,
 			...(sees
 				? [
-						'The image shows the first laid 3×3, as a map lays it. If a line or a spot sits ' +
-							'in the same place in every copy, take it out of the recipe and draw again ' +
-							'with overwrite: true.'
+						'The image shows the first laid 3×3, as a map lays it' +
+							(ground ? ', with the sprites on the diagonal' : '') +
+							'. If a line or a spot sits in the same place in every copy, take it out of ' +
+							'the recipe and draw again with overwrite: true.'
 					]
-				: [])
+				: []),
+			...(ground ? [ground.note] : [])
 		].join(' '),
 		url
 	);
@@ -295,7 +307,14 @@ registerTool({
 					},
 					palette_from: {
 						type: 'string',
-						description: "An existing image whose colours to draw in, to match a set's palette."
+						description:
+							"An existing image whose colours to draw in, to match a set's palette. For a " +
+							"texture, another texture, never a sprite: ground in the sprites' colours hides them."
+					},
+					sprites: {
+						type: 'array',
+						items: { type: 'string' },
+						description: `Texture only: up to ${MAX_SPRITES} sprite files that will stand on it. The result says whether they would be hard to see on it, and the preview shows them on the tile.`
 					},
 					overwrite: { type: 'boolean', description: 'Replace an existing file. Default false.' }
 				},
