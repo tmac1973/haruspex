@@ -49,6 +49,7 @@ mod sidecar_process;
 mod sidecar_util;
 mod skills;
 mod sync_util;
+mod tasks;
 #[cfg(test)]
 mod test_util;
 mod text_util;
@@ -174,6 +175,20 @@ pub fn run() {
             app.manage(video::tasks::VideoTasks::new(
                 orphans::registry_path(app.handle(), video::tasks::ORPHAN_KIND).ok(),
             ));
+            // Background tasks, with the ones that died with the last run ended.
+            {
+                use tauri::Emitter;
+                let (changed, cancel) = (app.handle().clone(), app.handle().clone());
+                app.manage(tasks::BackgroundTasks::new(
+                    Some(app.state::<Database>().inner().clone()),
+                    std::sync::Arc::new(move |t| {
+                        let _ = changed.emit("task://changed", t);
+                    }),
+                    std::sync::Arc::new(move |id| {
+                        let _ = cancel.emit("task://cancel", id);
+                    }),
+                ));
+            }
             // The coding tools' background processes: kill what a crash left
             // running, then hold the registry for this run.
             {
@@ -379,11 +394,13 @@ pub fn run() {
             video::commands::video_project_cut,
             video::commands::video_project_op,
             video::commands::video_render_start,
-            video::commands::video_task_status,
-            video::commands::video_task_list,
-            video::commands::video_task_cancel,
+            tasks::commands::task_create,
+            tasks::commands::task_update,
+            tasks::commands::task_list,
+            tasks::commands::task_cancel,
+            tasks::commands::task_take_notices,
+            tasks::commands::task_open,
             video::commands::video_encoders_test,
-            video::commands::video_task_open,
             video::commands::video_transcribe,
             video::commands::video_transcribe_cancel,
             video::commands::video_silences,
@@ -741,7 +758,7 @@ pub fn run() {
                 app.state::<PowerInhibitor>().shutdown();
                 // A render's melt is kill_on_drop, but managed state need not
                 // drop at exit.
-                app.state::<video::tasks::VideoTasks>().cancel_all();
+                app.state::<tasks::BackgroundTasks>().cancel_all();
                 shell_mgr.shutdown_all();
                 app.state::<fs_tools::editor::EditorWatches>().stop_all();
                 // MCP children are the ones most likely to outlive us: there

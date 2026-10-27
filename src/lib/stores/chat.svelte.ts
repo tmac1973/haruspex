@@ -85,11 +85,8 @@ import { ChatRun } from '#lib/stores/chatRun.svelte.ts';
 import { SvelteMap } from 'svelte/reactivity';
 import { getServerState } from '#lib/stores/llamaServer.svelte.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
-import {
-	hasVideoNotices,
-	setChatVideoTaskHandler,
-	takeVideoNotices
-} from '#lib/video/taskWatch.ts';
+import { setChatTaskHandler, takeNotices } from '#lib/tasks/notices.ts';
+import { hasPendingNotices, initTasks, ownersWithNotices } from '#lib/tasks/store.svelte.ts';
 import {
 	initDb,
 	dbSaveMessage,
@@ -333,7 +330,11 @@ export async function initChatStore(): Promise<void> {
 		setActiveConversationId(conversations[0].id);
 		await loadConversationMessages(conversations[0].id);
 	}
-	setChatVideoTaskHandler(onVideoTaskEnded);
+	setChatTaskHandler(onTaskEnded);
+	// Notices left from before a reload or a restart.
+	void initTasks().then(() => {
+		for (const owner of ownersWithNotices('chat:')) void deliverNotices(owner.slice(5));
+	});
 }
 
 /** The toast for a task that finished in a conversation that isn't open. */
@@ -346,7 +347,7 @@ export function noticeToast(title: string): string {
  * follow-up turn as soon as it is idle, open or not; one that isn't open
  * also says so in a toast, with a way to go there.
  */
-function onVideoTaskEnded(owner: string): void {
+function onTaskEnded(owner: string): void {
 	const id = owner.slice('chat:'.length);
 	const conv = conversations.find((c) => c.id === id);
 	if (!conv) return;
@@ -359,12 +360,16 @@ function onVideoTaskEnded(owner: string): void {
 	void deliverNotices(id);
 }
 
-/** Run a conversation's waiting task notices as a turn there, if it is idle. */
+/**
+ * Run a conversation's waiting task notices as a turn there, if it is idle.
+ * A turn the user starts while they are taken gets them as steering.
+ */
 async function deliverNotices(id: string): Promise<void> {
-	if (getRun(id).busy) return;
 	const owner = `chat:${id}`;
-	if (!hasVideoNotices(owner)) return;
-	await sendMessageTo(id, takeVideoNotices(owner));
+	if (getRun(id).busy || !hasPendingNotices(owner)) return;
+	if (!conversations.some((c) => c.id === id)) return;
+	const notice = await takeNotices(owner);
+	if (notice.text) await sendMessageTo(id, notice.text, notice.images);
 }
 
 async function loadConversationMessages(id: string): Promise<void> {

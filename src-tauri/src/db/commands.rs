@@ -108,14 +108,21 @@ pub async fn conversation_set_unread(
 #[tauri::command]
 pub async fn db_delete_conversation(
     state: tauri::State<'_, Database>,
+    tasks: tauri::State<'_, crate::tasks::BackgroundTasks>,
     id: String,
 ) -> Result<(), String> {
+    // Its background tasks go with it.
+    tasks.remove_owner(&format!("chat:{id}"));
     let db = state.inner().clone();
     on_pool(db, move |db| db.delete_conversation(&id)).await
 }
 
 #[tauri::command]
-pub async fn db_clear_all_conversations(state: tauri::State<'_, Database>) -> Result<(), String> {
+pub async fn db_clear_all_conversations(
+    state: tauri::State<'_, Database>,
+    tasks: tauri::State<'_, crate::tasks::BackgroundTasks>,
+) -> Result<(), String> {
+    tasks.remove_owners_with_prefix("chat:");
     let db = state.inner().clone();
     on_pool(db, move |db| db.clear_all_conversations()).await
 }
@@ -497,8 +504,11 @@ pub async fn code_session_update_meta(
 #[tauri::command]
 pub async fn code_session_delete(
     state: tauri::State<'_, Database>,
+    tasks: tauri::State<'_, crate::tasks::BackgroundTasks>,
     id: String,
 ) -> Result<(), String> {
+    // Its background tasks go with it.
+    tasks.remove_owner(&format!("code:{id}"));
     let db = state.inner().clone();
     on_pool(db, move |db| db.delete_code_session(&id)).await
 }

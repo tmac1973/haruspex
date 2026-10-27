@@ -55,23 +55,27 @@ vi.mock('@tauri-apps/api/core', () => ({
 	invoke: vi.fn().mockRejectedValue(new Error('not available'))
 }));
 
-// The video task watcher, reduced to what the chat store uses: the test
+// The task notices and store, reduced to what the chat store uses: the test
 // queues a notice and calls the handler the store registered.
 const tasks = vi.hoisted(() => ({
 	handler: null as ((owner: string) => void) | null,
 	pending: new Map<string, string>()
 }));
-vi.mock('#lib/video/taskWatch.ts', () => ({
-	setChatVideoTaskHandler: (fn: (owner: string) => void) => {
+vi.mock('#lib/tasks/notices.ts', () => ({
+	setChatTaskHandler: (fn: (owner: string) => void) => {
 		tasks.handler = fn;
 		return () => {};
 	},
-	hasVideoNotices: (owner: string) => tasks.pending.has(owner),
-	takeVideoNotices: (owner: string) => {
+	takeNotices: async (owner: string) => {
 		const text = tasks.pending.get(owner) ?? '';
 		tasks.pending.delete(owner);
-		return text;
+		return { text, images: [] };
 	}
+}));
+vi.mock('#lib/tasks/store.svelte.ts', () => ({
+	hasPendingNotices: (owner: string) => tasks.pending.has(owner),
+	initTasks: async () => {},
+	ownersWithNotices: () => []
 }));
 
 const toasts = vi.hoisted(() => ({ showToast: vi.fn() }));

@@ -48,7 +48,8 @@ import {
 	setCodeWatchCompletionHandler,
 	takeCodeWatches
 } from '#lib/shell/backgroundWatch.ts';
-import { setVideoTaskHandler, takeVideoNotices } from '#lib/video/taskWatch.ts';
+import { setTaskHandler, takeNotices } from '#lib/tasks/notices.ts';
+import { hasPendingNotices, initTasks } from '#lib/tasks/store.svelte.ts';
 import {
 	createCodeSession,
 	decodeAgentBranch,
@@ -237,7 +238,7 @@ export class CodeSession {
 	private bgTimer: ReturnType<typeof setTimeout> | null = null;
 	private readonly unwatch: () => void;
 	private readonly unwatchShell: () => void;
-	private readonly unwatchVideo: () => void;
+	private readonly unwatchTasks: () => void;
 
 	constructor(record: CodeSessionRecord) {
 		this.id = record.id;
@@ -287,9 +288,11 @@ export class CodeSession {
 			}
 		});
 		this.unwatchShell = setShellWaitListener(this.id, (wait) => this.onShellWait(wait));
-		this.unwatchVideo = setVideoTaskHandler(`code:${this.id}`, () => {
+		this.unwatchTasks = setTaskHandler(`code:${this.id}`, () => {
 			void this.flushWatchNotifications();
 		});
+		// Notices that waited while the session wasn't loaded.
+		void initTasks().then(() => this.flushWatchNotifications());
 	}
 
 	/** `open_in_shell` started or stopped waiting on a Shell tab. */
@@ -673,11 +676,22 @@ export class CodeSession {
 		if (this.busy || this.closed || this.flushing || this.folderMissing) return;
 		const completed = peekCompletedCodeWatches(this.id);
 		if (completed.length === 0) {
-			// A render or upload this session started, then subtasks.
-			const video = takeVideoNotices(`code:${this.id}`);
-			if (video) {
-				await this.runTurn({ role: 'user', content: video });
-				return;
+			// A background task this session started, then subtasks.
+			const owner = `code:${this.id}`;
+			if (hasPendingNotices(owner)) {
+				this.flushing = true;
+				let notice: { text: string; images: string[] };
+				try {
+					notice = await takeNotices(owner);
+				} finally {
+					this.flushing = false;
+				}
+				if (notice.text) {
+					// A turn the user started meanwhile takes it as steering.
+					if (this.busy) this.steering = [...this.steering, notice];
+					else await this.runTurn(userMessage(notice.text, notice.images));
+					return;
+				}
 			}
 			await this.flushSubtaskNotifications();
 			return;
@@ -728,7 +742,7 @@ export class CodeSession {
 		this.subtaskStops.stopAll();
 		this.unwatch();
 		this.unwatchShell();
-		this.unwatchVideo();
+		this.unwatchTasks();
 		clearCodeWatches(this.id);
 		resetSessionApproval(codeApprovalKey(this.id));
 		if (this.bgTimer !== null) clearTimeout(this.bgTimer);

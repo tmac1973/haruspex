@@ -332,7 +332,10 @@ export interface ToolRegistration {
 		| 'guide'
 		/** The model's notes on Haruspex's tools (`haruspex_feedback`). Settings →
 		 *  Feedback switches it on; an allowlisted turn needs `harnessFeedback`. */
-		| 'harness-feedback';
+		| 'harness-feedback'
+		/** Checking and cancelling background tasks. Only for a Chat or Code turn
+		 *  whose owner has started one. */
+		| 'tasks';
 	requiresVision?: boolean;
 }
 

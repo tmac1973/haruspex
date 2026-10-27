@@ -720,7 +720,30 @@ impl Database {
             );
 
             CREATE INDEX IF NOT EXISTS idx_code_session_audio_hash
-                ON code_session_audio(audio_hash);",
+                ON code_session_audio(audio_hash);
+
+            -- Background work a chat or Code session started (tasks::). No
+            -- foreign key: an owner is a conversation or a Code session, and
+            -- deleting one removes its tasks through the registry.
+            CREATE TABLE IF NOT EXISTS background_tasks (
+                id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                owner TEXT NOT NULL,
+                label TEXT NOT NULL,
+                state TEXT NOT NULL,
+                follower TEXT NOT NULL,
+                spec TEXT NOT NULL,
+                handle TEXT,
+                result TEXT,
+                error TEXT,
+                log_tail TEXT,
+                started_ms INTEGER NOT NULL,
+                ended_ms INTEGER,
+                notice_delivered INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_background_tasks_owner
+                ON background_tasks(owner);",
         )
         .map_err(|e| format!("Migration failed: {}", e))?;
 
@@ -907,6 +930,7 @@ mod memory_commands;
 mod prompts;
 mod runs;
 mod stats;
+mod tasks;
 
 pub use audio::AudioRow;
 pub use code_notices::StoredNotice;

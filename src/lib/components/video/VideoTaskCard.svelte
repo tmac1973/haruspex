@@ -2,26 +2,30 @@
 	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { errMessage } from '#lib/utils/error.ts';
-	import { refreshVideoTask, videoTask } from '#lib/video/tasks.svelte.ts';
-	import { describeCheck } from '#lib/video/taskWatch.ts';
+	import { getTask, refreshTasks } from '#lib/tasks/store.svelte.ts';
+	import { describeCheck } from '#lib/tasks/noticeText.ts';
+	import { renderResult, uploadResult } from '#lib/tasks/types.ts';
 	import { formatDuration } from '#lib/video/report.ts';
 
 	let { taskId, label }: { taskId: string; label: string } = $props();
 
-	const task = $derived(videoTask(taskId));
+	const task = $derived(getTask(taskId));
+	const render = $derived(task ? renderResult(task) : null);
+	const upload = $derived(task ? uploadResult(task) : null);
+	const running = $derived(task?.state === 'running' || task?.state === 'pending');
 	let missing = $state(false);
 	let error = $state('');
 
 	$effect(() => {
-		if (!videoTask(taskId)) {
-			void refreshVideoTask(taskId).then((t) => (missing = !t));
+		if (!getTask(taskId)) {
+			void refreshTasks().then(() => (missing = !getTask(taskId)));
 		}
 	});
 
 	async function cancel() {
 		error = '';
 		try {
-			await invoke('video_task_cancel', { id: taskId });
+			await invoke('task_cancel', { id: taskId });
 		} catch (e) {
 			error = errMessage(e);
 		}
@@ -39,7 +43,7 @@
 	async function open(folder: boolean) {
 		error = '';
 		try {
-			await invoke('video_task_open', { id: taskId, folder });
+			await invoke('task_open', { id: taskId, folder });
 		} catch (e) {
 			error = errMessage(e);
 		}
@@ -49,45 +53,45 @@
 <div class="video-task">
 	<div class="head">
 		<span class="label">{task?.label ?? label}</span>
-		{#if task?.state === 'running'}
+		{#if running}
 			<span class="detail">
-				{Math.round(task.percent)}%{task.etaSecs != null
+				{Math.round(task?.percent ?? 0)}%{task?.etaSecs != null
 					? ` · ${formatDuration(task.etaSecs)} left`
 					: ''}
 			</span>
 		{/if}
 	</div>
-	{#if task?.state === 'running'}
-		<progress max="100" value={task.percent}></progress>
+	{#if running}
+		<progress max="100" value={task?.percent ?? 0}></progress>
 		<div class="actions">
 			<button class="btn" type="button" onclick={() => void cancel()}>Cancel</button>
 		</div>
-	{:else if task?.state === 'done'}
-		<p class="detail" title={task.absPath}>
-			{task.path}{task.check ? ` · ${describeCheck(task.check)}` : ''}
+	{:else if render}
+		<p class="detail" title={render.absPath}>
+			{render.path}{render.check ? ` · ${describeCheck(render.check)}` : ''}
 		</p>
 		<div class="actions">
 			<button class="btn" type="button" onclick={() => void open(false)}>Open</button>
 			<button class="btn" type="button" onclick={() => void open(true)}>Show in folder</button>
 		</div>
-	{:else if task?.state === 'uploaded'}
+	{:else if upload}
 		<p class="detail">
-			Uploaded, {task.visibility}.{task.problems.length ? ` ${task.problems.join(' ')}` : ''}
+			Uploaded, {upload.visibility}.{upload.problems.length ? ` ${upload.problems.join(' ')}` : ''}
 		</p>
 		<div class="actions">
-			<button class="btn" type="button" onclick={() => void openUrl(task.url)}
+			<button class="btn" type="button" onclick={() => void openUrl(upload.url)}
 				>Open on YouTube</button
 			>
-			<button class="btn" type="button" onclick={() => void openUrl(task.studioUrl)}
+			<button class="btn" type="button" onclick={() => void openUrl(upload.studioUrl)}
 				>Open in Studio</button
 			>
 		</div>
 	{:else if task?.state === 'failed'}
-		<p class="detail bad" title={task.logTail}>{task.message}</p>
+		<p class="detail bad" title={task.logTail ?? undefined}>{task.error}</p>
 		<div class="actions">
 			<ReportIssueButton
 				where="Video task"
-				error={task.message}
+				error={task.error ?? ''}
 				log={() => (task?.logTail ?? '').split('\n').filter(Boolean)}
 				logTitle="The task's output"
 			/>
@@ -95,7 +99,7 @@
 	{:else if task?.state === 'cancelled'}
 		<p class="detail">Cancelled.</p>
 	{:else if missing}
-		<p class="detail">Ended when the app closed.</p>
+		<p class="detail">This task is no longer kept.</p>
 	{/if}
 	{#if error}<p class="detail bad">{error}</p>{/if}
 </div>

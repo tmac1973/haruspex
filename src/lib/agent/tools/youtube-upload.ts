@@ -13,12 +13,12 @@ import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
 import { str, videoSettings } from '#lib/video/args.ts';
 import { askYoutubeUpload } from '#lib/stores/youtubeUploadApproval.svelte.ts';
-import { upsertVideoTask } from '#lib/video/tasks.svelte.ts';
-import { videoOwner } from '#lib/video/taskWatch.ts';
+import { upsertTask } from '#lib/tasks/store.svelte.ts';
+import { taskOwner } from '#lib/tasks/notices.ts';
 import { YOUTUBE_UPLOAD } from '#lib/video/youtube.ts';
 import type { UploadPlan } from '#lib/ipc/gen/UploadPlan.ts';
 import type { VideoMeta } from '#lib/ipc/gen/VideoMeta.ts';
-import type { VideoTask } from '#lib/ipc/gen/VideoTask.ts';
+import type { BackgroundTask } from '#lib/tasks/types.ts';
 import type { YoutubeAccount } from '#lib/ipc/gen/YoutubeAccount.ts';
 
 /** YouTube's limits on what the model proposes. */
@@ -104,17 +104,17 @@ async function upload(args: Record<string, unknown>, ctx: ToolContext) {
 			ctx.signal
 		).finally(() => ctx.onApprovalWait?.(false));
 		if (answer.kind === 'cancelled') return toolResult(answer.reason);
-		const task = await invoke<VideoTask>('youtube_upload_start', {
+		const task = await invoke<BackgroundTask>('youtube_upload_start', {
 			request: {
 				workingDir: ctx.workingDir,
-				owner: videoOwner(ctx),
+				owner: taskOwner(ctx),
 				render: plan.render,
 				thumbnail: plan.thumbnail,
 				meta: answer.meta,
 				proxy: getSettings().proxy
 			}
 		});
-		upsertVideoTask(task);
+		upsertTask(task);
 		const changed = changes(proposed, answer.meta);
 		return {
 			result:

@@ -1,9 +1,10 @@
-//! Background video work: renders now, uploads later.
+//! Background video work: renders and uploads.
 //!
-//! A task starts and the tool returns at once; progress goes out as
-//! `video-task-progress` events, and the frontend queues a follow-up turn in
-//! the conversation that started it when it ends. One render runs at a time:
-//! two would only share the CPU and both take twice as long.
+//! A task starts and the tool returns at once. The task is a record in the
+//! background-task registry (`crate::tasks`), which sends its progress out,
+//! keeps how it ended, and holds the notice for the conversation that started
+//! it. One render runs at a time: two would only share the CPU and both take
+//! twice as long.
 //!
 //! A render's melt is recorded in the orphan registry while it runs, so a
 //! crash's leftover is killed on the next launch, and every task is stopped
@@ -14,8 +15,9 @@ use super::loudness::MAX_GAIN;
 use super::project::VideoSettings;
 use super::{binaries, encode, kdenlive, paths, project};
 use crate::orphans::{self, RunningServer};
+use crate::tasks::{BackgroundTask, BackgroundTasks, TaskFollower, TaskKind, TaskPatch, TaskState};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -27,65 +29,32 @@ pub const ORPHAN_KIND: &str = "video";
 /// Lines of melt's stderr kept for a failure report.
 const LOG_TAIL: usize = 40;
 
-/// Progress events at most this often.
+/// Progress updates at most this often.
 const EMIT_EVERY: Duration = Duration::from_millis(500);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
-#[ts(export)]
-#[serde(rename_all = "camelCase")]
-pub enum TaskKind {
-    Render,
-    Upload,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
-#[ts(export)]
-#[serde(tag = "state", rename_all = "camelCase")]
-pub enum TaskState {
-    Running,
-    /// `path` is relative to the working folder.
-    #[serde(rename_all = "camelCase")]
-    Done {
-        path: String,
-        /// The same file, absolute: what Open and Show in folder use.
-        abs_path: String,
-        check: Option<RenderCheck>,
-    },
-    #[serde(rename_all = "camelCase")]
-    Failed {
-        message: String,
-        log_tail: String,
-    },
-    Cancelled,
-    /// An upload that finished; `problems` are what didn't (a thumbnail).
-    #[serde(rename_all = "camelCase")]
-    Uploaded {
-        url: String,
-        studio_url: String,
-        video_id: String,
-        visibility: String,
-        problems: Vec<String>,
-    },
-}
-
+/// A finished render, as its task's `result`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
-pub struct VideoTask {
-    pub id: String,
-    pub kind: TaskKind,
-    /// "Rendering ep012".
-    pub label: String,
-    /// `chat:<conversation id>` or `code:<session id>`: where its follow-up goes.
-    pub owner: String,
-    /// The working folder it runs in, for opening its result.
-    pub working_dir: String,
-    #[serde(flatten)]
-    pub state: TaskState,
-    pub percent: f64,
-    pub eta_secs: Option<f64>,
-    #[ts(type = "number")]
-    pub started_ms: u64,
+pub struct RenderResult {
+    /// Relative to the working folder.
+    pub path: String,
+    /// The same file, absolute: what Open and Show in folder use.
+    pub abs_path: String,
+    pub check: Option<RenderCheck>,
+}
+
+/// A finished upload, as its task's `result`. `problems` are what didn't
+/// work (a thumbnail).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadResult {
+    pub url: String,
+    pub studio_url: String,
+    pub video_id: String,
+    pub visibility: String,
+    pub problems: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
@@ -100,82 +69,75 @@ pub struct RenderRequest {
     pub settings: VideoSettings,
 }
 
-struct Entry {
-    task: VideoTask,
-    /// Set while it runs; taking it cancels.
-    cancel: Option<tokio::sync::oneshot::Sender<()>>,
-}
-
+/// Where a render's melt is recorded while it runs.
 #[derive(Clone)]
 pub struct VideoTasks {
-    tasks: Arc<Mutex<HashMap<String, Entry>>>,
     registry: Option<PathBuf>,
 }
 
 impl VideoTasks {
     pub fn new(registry: Option<PathBuf>) -> Self {
-        VideoTasks {
-            tasks: Arc::default(),
-            registry,
+        VideoTasks { registry }
+    }
+}
+
+/// How a task ended: its state and what goes with it.
+struct Ending {
+    state: TaskState,
+    result: Option<serde_json::Value>,
+    error: Option<String>,
+    log_tail: Option<String>,
+}
+
+impl Ending {
+    fn done<T: Serialize>(result: &T) -> Self {
+        Ending {
+            state: TaskState::Done,
+            result: serde_json::to_value(result).ok(),
+            error: None,
+            log_tail: None,
         }
     }
 
-    pub fn status(&self, id: &str) -> Option<VideoTask> {
-        self.tasks.lock().ok()?.get(id).map(|e| e.task.clone())
-    }
-
-    pub fn list(&self) -> Vec<VideoTask> {
-        let Ok(map) = self.tasks.lock() else {
-            return Vec::new();
-        };
-        let mut all: Vec<VideoTask> = map.values().map(|e| e.task.clone()).collect();
-        all.sort_by_key(|t| t.started_ms);
-        all
-    }
-
-    fn running(&self, kind: TaskKind) -> Option<String> {
-        let map = self.tasks.lock().ok()?;
-        map.values()
-            .find(|e| e.task.kind == kind && e.task.state == TaskState::Running)
-            .map(|e| e.task.id.clone())
-    }
-
-    fn update(&self, id: &str, f: impl FnOnce(&mut VideoTask)) -> Option<VideoTask> {
-        let mut map = self.tasks.lock().ok()?;
-        let e = map.get_mut(id)?;
-        f(&mut e.task);
-        Some(e.task.clone())
-    }
-
-    /// Cancel a running task. False when it isn't running.
-    pub fn cancel(&self, id: &str) -> bool {
-        let sender = self
-            .tasks
-            .lock()
-            .ok()
-            .and_then(|mut m| m.get_mut(id).and_then(|e| e.cancel.take()));
-        sender.is_some_and(|s| s.send(()).is_ok())
-    }
-
-    /// The file a finished render wrote.
-    pub fn output(&self, id: &str) -> Option<PathBuf> {
-        match self.status(id)?.state {
-            TaskState::Done { abs_path, .. } => Some(PathBuf::from(abs_path)),
-            _ => None,
+    fn failed(message: String, log_tail: String) -> Self {
+        Ending {
+            state: TaskState::Failed,
+            result: None,
+            error: Some(message),
+            log_tail: (!log_tail.is_empty()).then_some(log_tail),
         }
     }
 
-    /// Cancel everything still running (app exit).
-    pub fn cancel_all(&self) {
-        let senders: Vec<_> = self
-            .tasks
-            .lock()
-            .map(|mut m| m.values_mut().filter_map(|e| e.cancel.take()).collect())
-            .unwrap_or_default();
-        for s in senders {
-            let _ = s.send(());
+    fn cancelled() -> Self {
+        Ending {
+            state: TaskState::Cancelled,
+            result: None,
+            error: None,
+            log_tail: None,
         }
     }
+
+    fn patch(self) -> TaskPatch {
+        TaskPatch {
+            state: Some(self.state),
+            result: self.result,
+            error: self.error,
+            log_tail: self.log_tail,
+            ..Default::default()
+        }
+    }
+}
+
+/// Record a progress figure; the registry sends it on.
+fn progress(tasks: &BackgroundTasks, id: &str, pct: f64, started: Instant) {
+    let _ = tasks.update(
+        id,
+        TaskPatch {
+            percent: Some(pct),
+            eta_secs: eta(started.elapsed(), pct),
+            ..Default::default()
+        },
+    );
 }
 
 /// melt's `-progress` line: `Current Frame:   86, percentage:   94`.
@@ -222,16 +184,13 @@ fn part_path(out: &Path) -> PathBuf {
     out.with_file_name(format!("{}.part.mp4", name.trim_end_matches(".mp4")))
 }
 
-/// Where progress goes: `video-task-progress` events in the app, anything in tests.
-pub type Emit = Arc<dyn Fn(&VideoTask) + Send + Sync>;
-
 /// Start rendering a project in the background.
 pub async fn start_render(
-    emit: Emit,
-    tasks: VideoTasks,
+    tasks: BackgroundTasks,
+    video: VideoTasks,
     req: RenderRequest,
-) -> Result<VideoTask, String> {
-    if let Some(id) = tasks.running(TaskKind::Render) {
+) -> Result<BackgroundTask, String> {
+    if let Some(id) = tasks.running(TaskKind::VideoRender) {
         return Err(format!(
             "A render is already running (id {id}). Wait for it or cancel it."
         ));
@@ -286,10 +245,21 @@ pub async fn start_render(
         .spawn()
         .map_err(|e| format!("could not start melt: {e}"))?;
     let pid = child.id().unwrap_or(0);
-    let id = format!("render-{}", uuid::Uuid::new_v4().simple());
+    let name = project_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("video");
+    let task = tasks.create(
+        TaskKind::VideoRender,
+        &req.owner,
+        &format!("Rendering {name}"),
+        TaskFollower::Rust,
+        serde_json::json!({ "workingDir": req.working_dir }),
+    );
+    let id = task.id.clone();
     // The part file is in melt's command line and nobody else's.
     orphans::register(
-        tasks.registry.as_deref(),
+        video.registry.as_deref(),
         RunningServer {
             id: id.clone(),
             pid,
@@ -297,34 +267,8 @@ pub async fn start_render(
             program: part.to_string_lossy().into_owned(),
         },
     );
-    let name = project_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("video");
-    let task = VideoTask {
-        id: id.clone(),
-        kind: TaskKind::Render,
-        label: format!("Rendering {name}"),
-        owner: req.owner.clone(),
-        working_dir: req.working_dir.clone(),
-        state: TaskState::Running,
-        percent: 0.0,
-        eta_secs: None,
-        started_ms: crate::time_util::now_ms_u64(),
-    };
     let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel();
-    tasks
-        .tasks
-        .lock()
-        .map_err(|_| "task list poisoned")?
-        .insert(
-            id.clone(),
-            Entry {
-                task: task.clone(),
-                cancel: Some(cancel_tx),
-            },
-        );
-    emit(&task);
+    tasks.attach_cancel(&id, cancel_tx);
 
     let stderr = child.stderr.take();
     let worker = tasks.clone();
@@ -333,7 +277,7 @@ pub async fn start_render(
         let started = Instant::now();
         let tail = Arc::new(Mutex::new(VecDeque::<String>::new()));
         let reader = {
-            let (worker, emit, id, tail) = (worker.clone(), emit.clone(), id.clone(), tail.clone());
+            let (worker, id, tail) = (worker.clone(), id.clone(), tail.clone());
             async move {
                 let Some(mut stderr) = stderr else { return };
                 let mut buf = [0u8; 4096];
@@ -351,12 +295,7 @@ pub async fn start_render(
                         if let Some((_, pct)) = parse_progress(&line) {
                             if last_emit.elapsed() >= EMIT_EVERY {
                                 last_emit = Instant::now();
-                                if let Some(t) = worker.update(&id, |t| {
-                                    t.percent = pct;
-                                    t.eta_secs = eta(started.elapsed(), pct);
-                                }) {
-                                    emit(&t);
-                                }
+                                progress(&worker, &id, pct, started);
                             }
                         } else if !line.trim().is_empty() && !line.contains("mlt_repository") {
                             if let Ok(mut t) = tail.lock() {
@@ -375,11 +314,11 @@ pub async fn start_render(
             status = async { reader.await; child.wait().await } => Some(status),
             _ = &mut cancel_rx => None,
         };
-        let state = match outcome {
+        let ending = match outcome {
             None => {
                 let _ = child.start_kill();
                 let _ = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
-                TaskState::Cancelled
+                Ending::cancelled()
             }
             Some(Ok(status)) if status.success() && part.exists() => {
                 match std::fs::rename(&part, &out) {
@@ -387,16 +326,15 @@ pub async fn start_render(
                         let check = check::check(&ffprobe, &ffmpeg, &out, expected, &at_limit)
                             .await
                             .ok();
-                        TaskState::Done {
+                        Ending::done(&RenderResult {
                             path: paths::display_path(&working_dir, &out),
                             abs_path: out.to_string_lossy().into_owned(),
                             check,
-                        }
+                        })
                     }
-                    Err(e) => TaskState::Failed {
-                        message: format!("could not save the render: {e}"),
-                        log_tail: String::new(),
-                    },
+                    Err(e) => {
+                        Ending::failed(format!("could not save the render: {e}"), String::new())
+                    }
                 }
             }
             Some(result) => {
@@ -408,28 +346,14 @@ pub async fn start_render(
                     Ok(status) => format!("melt stopped with {status}"),
                     Err(e) => format!("melt failed: {e}"),
                 };
-                TaskState::Failed { message, log_tail }
+                Ending::failed(message, log_tail)
             }
         };
-        if !matches!(state, TaskState::Done { .. }) {
+        if ending.state != TaskState::Done {
             let _ = std::fs::remove_file(&part);
         }
-        orphans::deregister_pid(worker.registry.as_deref(), &id, pid);
-        let finished = worker.update(&id, |t| {
-            if matches!(state, TaskState::Done { .. }) {
-                t.percent = 100.0;
-            }
-            t.eta_secs = None;
-            t.state = state;
-        });
-        if let Ok(mut m) = worker.tasks.lock() {
-            if let Some(e) = m.get_mut(&id) {
-                e.cancel = None;
-            }
-        }
-        if let Some(t) = finished {
-            emit(&t);
-        }
+        orphans::deregister_pid(video.registry.as_deref(), &id, pid);
+        let _ = worker.update(&id, ending.patch());
     });
     Ok(task)
 }
@@ -450,12 +374,11 @@ pub struct UploadRequest {
 
 /// Start uploading a render the user confirmed.
 pub async fn start_upload(
-    emit: Emit,
-    tasks: VideoTasks,
+    tasks: BackgroundTasks,
     req: UploadRequest,
-) -> Result<VideoTask, String> {
+) -> Result<BackgroundTask, String> {
     use super::youtube;
-    if let Some(id) = tasks.running(TaskKind::Upload) {
+    if let Some(id) = tasks.running(TaskKind::YoutubeUpload) {
         return Err(format!(
             "An upload is already running (id {id}). Wait for it or cancel it."
         ));
@@ -493,43 +416,28 @@ pub async fn start_upload(
     )?
     .build()
     .map_err(|e| format!("could not create an HTTP client: {e}"))?;
-    let id = format!("upload-{}", uuid::Uuid::new_v4().simple());
     let name = file
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("video")
         .to_string();
-    let task = VideoTask {
-        id: id.clone(),
-        kind: TaskKind::Upload,
-        label: format!("Uploading {name} to YouTube"),
-        owner: req.owner.clone(),
-        working_dir: req.working_dir.clone(),
-        state: TaskState::Running,
-        percent: 0.0,
-        eta_secs: None,
-        started_ms: crate::time_util::now_ms_u64(),
-    };
+    let task = tasks.create(
+        TaskKind::YoutubeUpload,
+        &req.owner,
+        &format!("Uploading {name} to YouTube"),
+        TaskFollower::Rust,
+        serde_json::json!({ "workingDir": req.working_dir }),
+    );
+    let id = task.id.clone();
     let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
-    tasks
-        .tasks
-        .lock()
-        .map_err(|_| "task list poisoned")?
-        .insert(
-            id.clone(),
-            Entry {
-                task: task.clone(),
-                cancel: Some(cancel_tx),
-            },
-        );
-    emit(&task);
+    tasks.attach_cancel(&id, cancel_tx);
     let worker = tasks.clone();
     let meta = req.meta.clone();
     tauri::async_runtime::spawn(async move {
         let started = Instant::now();
         let ep = youtube::Endpoints::default();
         let progress = {
-            let (worker, emit, id) = (worker.clone(), emit.clone(), id.clone());
+            let (worker, id) = (worker.clone(), id.clone());
             let last = Mutex::new(Instant::now() - EMIT_EVERY);
             move |sent: u64, total: u64| {
                 let pct = if total > 0 {
@@ -542,16 +450,11 @@ pub async fn start_upload(
                     return;
                 }
                 *l = Instant::now();
-                if let Some(t) = worker.update(&id, |t| {
-                    t.percent = pct;
-                    t.eta_secs = eta(started.elapsed(), pct);
-                }) {
-                    emit(&t);
-                }
+                progress(&worker, &id, pct, started);
             }
         };
         let never = || false;
-        let state = tokio::select! {
+        let ending = tokio::select! {
             r = youtube::upload(&http, &ep, &auth, &file, &meta, &never, &progress) => match r {
                 Ok(video_id) => {
                     let mut problems = Vec::new();
@@ -560,33 +463,19 @@ pub async fn start_upload(
                             problems.push(e);
                         }
                     }
-                    TaskState::Uploaded {
+                    Ending::done(&UploadResult {
                         url: format!("https://youtu.be/{video_id}"),
                         studio_url: format!("https://studio.youtube.com/video/{video_id}/edit"),
                         visibility: meta.visibility.api().into(),
                         video_id,
                         problems,
-                    }
+                    })
                 }
-                Err(message) => TaskState::Failed { message, log_tail: String::new() },
+                Err(message) => Ending::failed(message, String::new()),
             },
-            _ = &mut cancel_rx => TaskState::Cancelled,
+            _ = &mut cancel_rx => Ending::cancelled(),
         };
-        let finished = worker.update(&id, |t| {
-            if matches!(state, TaskState::Uploaded { .. }) {
-                t.percent = 100.0;
-            }
-            t.eta_secs = None;
-            t.state = state;
-        });
-        if let Ok(mut m) = worker.tasks.lock() {
-            if let Some(e) = m.get_mut(&id) {
-                e.cancel = None;
-            }
-        }
-        if let Some(t) = finished {
-            emit(&t);
-        }
+        let _ = worker.update(&id, ending.patch());
     });
     Ok(task)
 }
@@ -625,13 +514,6 @@ mod tests {
         let q = output_path(&dir, Path::new("/x/ep012.kdenlive"));
         assert_ne!(p, q);
         assert!(part_path(&p).to_str().unwrap().ends_with(".part.mp4"));
-    }
-
-    #[test]
-    fn cancel_is_false_for_unknown_tasks() {
-        let t = VideoTasks::new(None);
-        assert!(!t.cancel("nope"));
-        assert!(t.list().is_empty());
     }
 
     /// A real render of a generated project, through the task.
@@ -673,10 +555,14 @@ mod tests {
             ..Default::default()
         };
         project::cut(&wd, "ep1", spec, &settings).await.unwrap();
-        let seen = Arc::new(Mutex::new(Vec::<VideoTask>::new()));
+        let seen = Arc::new(Mutex::new(Vec::<BackgroundTask>::new()));
         let sink = seen.clone();
-        let emit: Emit = Arc::new(move |t| sink.lock().unwrap().push(t.clone()));
-        let tasks = VideoTasks::new(None);
+        let tasks = BackgroundTasks::new(
+            None,
+            Arc::new(move |t| sink.lock().unwrap().push(t.clone())),
+            Arc::new(|_| {}),
+        );
+        let video = VideoTasks::new(None);
         let req = RenderRequest {
             working_dir: wd.clone(),
             episode: "ep1".into(),
@@ -685,25 +571,28 @@ mod tests {
             encoder: String::new(),
             settings,
         };
-        let started = start_render(emit, tasks.clone(), req.clone())
+        let started = start_render(tasks.clone(), video.clone(), req.clone())
             .await
             .unwrap();
-        assert!(start_render(Arc::new(|_| {}), tasks.clone(), req)
+        assert!(start_render(tasks.clone(), video, req)
             .await
             .unwrap_err()
             .contains("already running"));
         let done = loop {
             tokio::time::sleep(Duration::from_millis(200)).await;
-            let t = tasks.status(&started.id).unwrap();
+            let t = tasks.get(&started.id).unwrap();
             if t.state != TaskState::Running {
                 break t;
             }
         };
-        let TaskState::Done { path, check, .. } = &done.state else {
-            panic!("{:?}", done.state)
-        };
-        assert!(path.starts_with("ep1/renders/ep1-"), "{path}");
-        let check = check.as_ref().unwrap();
+        assert_eq!(done.state, TaskState::Done, "{:?}", done.error);
+        let result: RenderResult = serde_json::from_value(done.result.unwrap()).unwrap();
+        assert!(
+            result.path.starts_with("ep1/renders/ep1-"),
+            "{}",
+            result.path
+        );
+        let check = result.check.as_ref().unwrap();
         assert!((check.duration_secs - 4.0).abs() < 0.2, "{check:?}");
         assert_eq!((check.width, check.height), (1920, 1080));
         assert!(check.has_audio);
@@ -716,24 +605,22 @@ mod tests {
     }
 
     #[test]
-    fn task_state_serialises_flat() {
-        let task = VideoTask {
-            id: "r".into(),
-            kind: TaskKind::Render,
-            label: "Rendering ep012".into(),
-            owner: "chat:1".into(),
-            working_dir: "/v".into(),
-            state: TaskState::Failed {
-                message: "m".into(),
-                log_tail: "t".into(),
-            },
-            percent: 3.0,
-            eta_secs: None,
-            started_ms: 1,
-        };
-        let v = serde_json::to_value(&task).unwrap();
-        assert_eq!(v["state"], "failed");
-        assert_eq!(v["logTail"], "t");
-        assert_eq!(v["kind"], "render");
+    fn results_serialise_camel_case() {
+        let v = serde_json::to_value(RenderResult {
+            path: "ep1/renders/a.mp4".into(),
+            abs_path: "/v/ep1/renders/a.mp4".into(),
+            check: None,
+        })
+        .unwrap();
+        assert_eq!(v["absPath"], "/v/ep1/renders/a.mp4");
+        let v = serde_json::to_value(UploadResult {
+            url: "u".into(),
+            studio_url: "s".into(),
+            video_id: "i".into(),
+            visibility: "private".into(),
+            problems: vec![],
+        })
+        .unwrap();
+        assert_eq!(v["studioUrl"], "s");
     }
 }
