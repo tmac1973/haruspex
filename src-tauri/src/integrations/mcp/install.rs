@@ -1214,6 +1214,28 @@ mod tests {
         assert_eq!(setup.args, expected);
     }
 
+    #[tokio::test]
+    async fn a_stored_secret_reaches_the_spawned_servers_environment() {
+        let mut config = custom_server(ProxyUse::Auto);
+        config.id = "spawn-stored".into();
+        config.source = McpServerSource::Catalog {
+            entry_id: "github".into(),
+        };
+        config.secrets = BTreeMap::from([("token".into(), String::new())]);
+        config.stored_secrets = Some(vec!["token".into()]);
+        crate::secrets::seed_for_test(
+            &super::super::server_config::secret_store_key(&config.id, "token"),
+            "ghp_stored",
+        );
+        let dir = Path::new("/data/mcp/servers/spawn-stored");
+        let spawn = build_spawn_config(dir, &config.resolved().await.unwrap(), None).unwrap();
+        assert!(
+            spawn.env.iter().any(|(_, v)| v == "ghp_stored"),
+            "{:?}",
+            spawn.env.iter().map(|(k, _)| k).collect::<Vec<_>>()
+        );
+    }
+
     #[test]
     fn a_setup_command_gets_the_desktop_session_without_overriding_the_catalog() {
         let mut env = vec![("HOME".to_string(), "/data/mcp/servers/x".to_string())];

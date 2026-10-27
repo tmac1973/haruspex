@@ -8,12 +8,17 @@
 //!
 //! # Secrets
 //!
-//! Secrets collected during guided setup live in this struct, and therefore in
-//! the settings blob — the same trust level as the Brave key, the
-//! remote-inference key and CalDAV passwords. Email passwords have since moved
-//! to the system keychain (`secrets.rs`, `email/auth.rs`); the rest are meant
-//! to follow by the same route, all at once, rather than one integration at a
-//! time.
+//! Secrets collected during guided setup, and a remote server's bearer token,
+//! live in the secret store (`secrets.rs`) under [`secret_store_key`], as email
+//! passwords do. The config keeps an empty value in `secrets` and lists the key
+//! in `stored_secrets`; [`McpServerConfig::resolved`] reads them back inside
+//! Rust when a server is started, runs a setup command or connects, so they
+//! never cross to the webview. The frontend writes, migrates and deletes them
+//! (`stores/mcpSecrets.ts`).
+//!
+//! A custom server's `args` and a remote server's `url` stay in the settings
+//! blob. Either can carry a credential; the settings fields say not to, and
+//! `Debug` below hides both.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -214,7 +219,8 @@ impl McpServerConfig {
         }
     }
 
-    /// The pasted credential for a remote server.
+    /// The pasted credential for a remote server. Empty until [`Self::resolved`]
+    /// when it is kept in the secret store.
     pub fn remote_token(&self) -> Option<&str> {
         self.secrets.get(REMOTE_TOKEN_KEY).map(String::as_str)
     }
@@ -272,6 +278,23 @@ mod tests {
         assert_eq!(resolved.secrets["token"], "ghp_stored");
         // The config the webview holds is untouched.
         assert_eq!(config.secrets["token"], "");
+    }
+
+    #[tokio::test]
+    async fn a_remote_server_connects_with_its_stored_token() {
+        let id = "22222222-2222-2222-2222-222222222222";
+        crate::secrets::seed_for_test(&secret_store_key(id, REMOTE_TOKEN_KEY), "sk_stored");
+        let remote = McpServerConfig {
+            id: id.into(),
+            source: McpServerSource::Remote {
+                url: "https://mcp.example.test/mcp".into(),
+            },
+            secrets: BTreeMap::from([(REMOTE_TOKEN_KEY.to_string(), String::new())]),
+            stored_secrets: Some(vec![REMOTE_TOKEN_KEY.into()]),
+            ..catalog_server()
+        };
+        let resolved = remote.resolved().await.unwrap();
+        assert_eq!(resolved.remote_token(), Some("sk_stored"));
     }
 
     #[test]

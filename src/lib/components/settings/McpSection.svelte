@@ -271,7 +271,11 @@
 			</p>
 			<label>
 				Server URL
-				<input bind:value={remoteUrl} placeholder="https://mcp.example.com/mcp" />
+				<input
+					bind:value={remoteUrl}
+					placeholder="https://mcp.example.com/mcp"
+					title="Saved in plain settings. Put a key in the token field, not the URL."
+				/>
 			</label>
 			<label>
 				Token or API key (optional)
@@ -291,7 +295,11 @@
 			</label>
 			<label>
 				Arguments
-				<input bind:value={customArgs} placeholder="--stdio" />
+				<input
+					bind:value={customArgs}
+					placeholder="--stdio"
+					title="Saved in plain settings. Don't put API keys here."
+				/>
 			</label>
 			<button type="button" disabled={!customProgram.trim()} onclick={addCustom}>Add</button>
 		</div>
