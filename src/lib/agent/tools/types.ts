@@ -320,6 +320,9 @@ export interface ToolRegistration {
 		| 'image'
 		/** Uses the music backend (Settings → Music). Chat and the Code tab, interactive only. */
 		| 'music'
+		/** Makes clips on llama-toolchest (Settings → Video generation), always in the
+		 *  background. Chat and the Code tab, interactive only, with a task owner. */
+		| 'video-gen'
 		/** Runs ffmpeg and melt on the working folder (Settings → Video editing). Chat and
 		 *  the Code tab, interactive only. */
 		| 'video'

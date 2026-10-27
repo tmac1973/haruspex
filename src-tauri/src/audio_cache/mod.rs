@@ -1,7 +1,8 @@
-//! On-disk cache for audio the app generated (music today).
+//! On-disk cache for audio and video the app generated: songs, and clips
+//! from a llama-toolchest video instance, which play the same way.
 //!
-//! The server that made a song keeps it for a day at most (llama-toolchest
-//! prunes music jobs after 24 h), so Haruspex keeps its own copy:
+//! The server that made a song or clip keeps it for a day at most
+//! (llama-toolchest prunes jobs after 24 h), so Haruspex keeps its own copy:
 //! content-addressed under `<app_data_dir>/audio/`, and served to Settings →
 //! Remote control's page over `/api/v1/audio/<hash>` with Range support so a
 //! player can seek.
@@ -55,8 +56,8 @@ pub fn audio_path(dir: &Path, hash: &str) -> PathBuf {
     dir.join(hash)
 }
 
-/// The audio types the cache stores, with the aliases servers use folded
-/// into one spelling. Anything else is refused.
+/// The audio and video types the cache stores, with the aliases servers use
+/// folded into one spelling. Anything else is refused.
 pub fn normalize_mime(mime: &str) -> Option<&'static str> {
     let base = mime
         .split(';')
@@ -69,6 +70,8 @@ pub fn normalize_mime(mime: &str) -> Option<&'static str> {
         "audio/wav" | "audio/x-wav" | "audio/wave" | "audio/vnd.wave" => Some("audio/wav"),
         "audio/ogg" => Some("audio/ogg"),
         "audio/flac" | "audio/x-flac" => Some("audio/flac"),
+        "video/webm" => Some("video/webm"),
+        "video/mp4" => Some("video/mp4"),
         _ => None,
     }
 }
@@ -333,6 +336,7 @@ mod tests {
         assert_eq!(normalize_mime("audio/x-wav"), Some("audio/wav"));
         assert_eq!(normalize_mime("Audio/WAV; codecs=1"), Some("audio/wav"));
         assert_eq!(normalize_mime("audio/flac"), Some("audio/flac"));
+        assert_eq!(normalize_mime("video/webm"), Some("video/webm"));
         assert_eq!(normalize_mime("text/html"), None);
         assert_eq!(normalize_mime(""), None);
     }

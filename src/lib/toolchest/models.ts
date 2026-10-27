@@ -1,18 +1,19 @@
 /**
  * What a llama-toolchest server can generate, from its `/v1/models`: every
  * generation instance it runs is listed beside the chat models, with
- * `meta.kind` saying image or music, `meta.state` whether it can take a
- * request now, and `meta.api` which routes this build has (`images.jobs`
- * and so on). Shared by the image backend and the music backend.
+ * `meta.kind` saying image, music or video, `meta.state` whether it can take
+ * a request now, and `meta.api` which routes this build has (`images.jobs`
+ * and so on). Shared by the image, music and video backends.
  */
 
 import { getApiKeyValue } from '#lib/stores/settings.ts';
 import { apiKeysReady } from '#lib/stores/apiKeySecrets.ts';
 
-export type GenerationKind = 'image' | 'music';
+export type GenerationKind = 'image' | 'music' | 'video';
 
 /** The settings fields that hold a toolchest server's named key. */
-export type ApiKeyIdField = 'imageToolchestApiKeyId' | 'musicToolchestApiKeyId';
+export type ApiKeyIdField =
+	'imageToolchestApiKeyId' | 'musicToolchestApiKeyId' | 'videoGenToolchestApiKeyId';
 
 /** What a request names, and what Settings shows about it. */
 export interface ToolchestInstance {
@@ -28,9 +29,27 @@ export interface ToolchestInstance {
 	api: string[];
 	/** A music model's `task_type`s; empty from a build that lists none. */
 	tasks: string[];
+	/** A video instance's defaults and limits; null for any other kind. */
+	video: VideoLimits | null;
 	licence: string;
 	/** Null when the recipe isn't one whose licence Haruspex knows. */
 	commercialUse: boolean | null;
+}
+
+/** What a video instance makes by default, and the most it can. */
+export interface VideoLimits {
+	defaultFps: number;
+	defaultFrames: number;
+	/** `WxH`. */
+	defaultSize: string;
+	/** Absent when the model set names no limit. */
+	maxFrames: number | null;
+	maxSize: string | null;
+	/**
+	 * Frames × width × height the instance was measured for: its GPU memory
+	 * covers no more. Null from a build that doesn't say.
+	 */
+	maxPixelFrames: number | null;
 }
 
 /** The two families Haruspex knows, by toolchest recipe, as `image_models.rs` has them. */
@@ -60,11 +79,27 @@ const obj = (v: unknown): Json => (v && typeof v === 'object' ? (v as Json) : {}
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const strings = (v: unknown): string[] =>
 	Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string') : [];
+const num = (v: unknown): number | null =>
+	typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null;
+
+function videoLimits(v: unknown): VideoLimits | null {
+	const o = obj(v);
+	if (!Object.keys(o).length) return null;
+	return {
+		defaultFps: num(o.default_fps) ?? 24,
+		defaultFrames: num(o.default_frames) ?? 33,
+		defaultSize: str(o.default_size) || '832x480',
+		maxFrames: num(o.max_frames),
+		maxSize: str(o.max_size) || null,
+		maxPixelFrames: num(o.measured_pixel_frames)
+	};
+}
 
 /** Builds before `meta.api` existed had these routes and no others. */
 const OLD_API: Record<GenerationKind, string[]> = {
 	image: ['images.sync'],
-	music: ['music.jobs']
+	music: ['music.jobs'],
+	video: ['video.jobs']
 };
 
 /** A toolchest's generation instances of one kind, in the order it lists them. */
@@ -86,6 +121,7 @@ export function parseGenerationModels(json: unknown, kind: GenerationKind): Tool
 				state: str(meta.state) || 'unknown',
 				api: Array.isArray(meta.api) ? strings(meta.api) : OLD_API[kind],
 				tasks: strings(meta.tasks),
+				video: kind === 'video' ? videoLimits(meta.video) : null,
 				licence: known?.licence ?? 'unknown',
 				commercialUse: known ? known.commercial : null
 			};

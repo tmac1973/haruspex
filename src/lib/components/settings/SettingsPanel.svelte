@@ -17,6 +17,7 @@
 	import CodeSection from '#lib/components/settings/CodeSection.svelte';
 	import ImageSection from '#lib/components/settings/ImageSection.svelte';
 	import MusicSection from '#lib/components/settings/MusicSection.svelte';
+	import VideoGenSection from '#lib/components/settings/VideoGenSection.svelte';
 	import VideoEditingSection from '#lib/components/settings/VideoEditingSection.svelte';
 	import RemoteSection from '#lib/components/settings/RemoteSection.svelte';
 	import OwnerApiSection from '#lib/components/settings/OwnerApiSection.svelte';
@@ -42,6 +43,7 @@
 		| 'code'
 		| 'image'
 		| 'music'
+		| 'videoGen'
 		| 'videoEditing'
 		| 'remote'
 		| 'remoteControl'
@@ -152,6 +154,12 @@
 					label: 'Music',
 					subtitle: 'Where songs are made, if anywhere.',
 					icon: '<path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle>'
+				},
+				{
+					id: 'videoGen',
+					label: 'Video generation',
+					subtitle: 'Where clips are generated, if anywhere.',
+					icon: '<polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>'
 				},
 				{
 					id: 'videoEditing',
@@ -284,6 +292,8 @@
 				<ImageSection />
 			{:else if activeCategory === 'music'}
 				<MusicSection />
+			{:else if activeCategory === 'videoGen'}
+				<VideoGenSection />
 			{:else if activeCategory === 'videoEditing'}
 				<VideoEditingSection />
 			{:else if activeCategory === 'remote'}

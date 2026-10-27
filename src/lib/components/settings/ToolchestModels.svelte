@@ -13,7 +13,7 @@
 	}
 	let { kind, instances, baseUrl }: Props = $props();
 
-	const what = $derived(kind === 'image' ? 'image' : 'music');
+	const what = $derived(kind);
 </script>
 
 <section class="settings-section">

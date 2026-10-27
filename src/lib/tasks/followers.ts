@@ -9,6 +9,8 @@ import type { ImageJobHandle } from '#lib/image/backend.ts';
 import type { ImageProgress } from '#lib/image/types.ts';
 import { runMusicJob, type MusicJobEnv, type MusicTaskSpec } from '#lib/agent/tools/_musicJob.ts';
 import type { MusicJobHandle, MusicProgress } from '#lib/music/types.ts';
+import { runVideoJob, type VideoJobEnv, type VideoTaskSpec } from '#lib/agent/tools/_videoJob.ts';
+import type { VideoJobHandle, VideoProgress } from '#lib/videogen/types.ts';
 
 /** What the server said a job is doing, as the task's phase. */
 function phaseOf(p: ImageProgress): string {
@@ -46,6 +48,19 @@ function musicEnv(env: FollowerEnv): MusicJobEnv {
 	};
 }
 
+function videoEnv(env: FollowerEnv): VideoJobEnv {
+	return {
+		signal: env.signal,
+		onProgress: (p: VideoProgress) =>
+			env.progress({
+				phase: p.phase === 'starting' ? 'loading the model' : p.phase,
+				percent: p.step && p.totalSteps ? (100 * p.step) / p.totalSteps : null,
+				queuePosition: p.phase === 'queued' && p.ahead ? p.ahead + 1 : null
+			}),
+		onHandle: (handle) => void env.setHandle(handle).catch(() => {})
+	};
+}
+
 /** A server that has forgotten the job says so as a 404. */
 function lostJob(e: unknown): unknown {
 	return (e as { status?: unknown } | null)?.status === 404
@@ -67,6 +82,16 @@ registerFollower('music', {
 	run: (task, env) => runMusicJob(task.spec as MusicTaskSpec, musicEnv(env)),
 	resume: (task, handle, env) =>
 		runMusicJob(task.spec as MusicTaskSpec, musicEnv(env), handle as MusicJobHandle).catch(
+			(e: unknown) => {
+				throw lostJob(e);
+			}
+		)
+});
+
+registerFollower('video', {
+	run: (task, env) => runVideoJob(task.spec as VideoTaskSpec, videoEnv(env)),
+	resume: (task, handle, env) =>
+		runVideoJob(task.spec as VideoTaskSpec, videoEnv(env), handle as VideoJobHandle).catch(
 			(e: unknown) => {
 				throw lostJob(e);
 			}

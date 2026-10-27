@@ -50,6 +50,9 @@ const IMAGE_TOOLS = new Set(['generate_image', 'edit_image', 'upscale_image']);
 /** The tools that make a song, offered and saved alike. */
 const SONG_TOOLS = new Set(['generate_music', 'edit_music']);
 
+/** The tools that write what they make into the folder when given a `path`. */
+const SAVING_TOOLS = new Set([...IMAGE_TOOLS, ...SONG_TOOLS, 'generate_video']);
+
 /**
  * Get the tool schemas to expose to the model for this request.
  *
@@ -91,6 +94,11 @@ interface ToolFilterOpts {
 	imageGeneration: boolean;
 	/** A music backend is set up AND someone is there to hear the song. */
 	musicGeneration: boolean;
+	/**
+	 * A video backend is set up AND someone is there to watch. A clip always
+	 * runs in the background, so `generate_video` also needs `taskOwner`.
+	 */
+	videoGeneration: boolean;
 	/**
 	 * ffmpeg, ffprobe and melt were found, there is a working folder for the
 	 * footage, AND someone is there: a render runs for minutes and an upload
@@ -194,6 +202,7 @@ function shouldIncludeCodeTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	// A song for the project or the answer. The Code tab only: Shell has no
 	// saved session to keep the song in.
 	if (SONG_TOOLS.has(name)) return opts.musicGeneration && isCodeTab(opts);
+	if (reg.category === 'video-gen') return videoGenOffered(opts) && isCodeTab(opts);
 	// Saving a picture or song made earlier into the project.
 	if (name === 'save_generated') return isCodeTab(opts) && !opts.codeReadOnly;
 	// Editing the videos in the project folder. The Code tab only: Shell has
@@ -232,6 +241,7 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	if (reg.category === 'desktop' && !opts.screenCapture) return false;
 	if (reg.category === 'image' && !opts.imageGeneration) return false;
 	if (reg.category === 'music' && !opts.musicGeneration) return false;
+	if (reg.category === 'video-gen' && !videoGenOffered(opts)) return false;
 	if (reg.category === 'video' && !opts.videoTools) return false;
 	// make_asset writes into a project; Chat has no project.
 	if (name === 'make_asset') return false;
@@ -260,6 +270,7 @@ function subtaskExcludes(reg: ToolRegistration): boolean {
 		name === 'delegate' ||
 		name === 'make_asset' ||
 		SONG_TOOLS.has(name) ||
+		reg.category === 'video-gen' ||
 		name === 'save_generated' ||
 		CODE_TAB_ONLY.has(name) ||
 		reg.category === 'video' ||
@@ -376,6 +387,7 @@ export function getToolSchemas(opts: {
 		screenCapture: getSettings().screenCaptureEnabled,
 		imageGeneration: interactive && getSettings().imageBackendKind !== 'none',
 		musicGeneration: interactive && getSettings().musicBackendKind !== 'none',
+		videoGeneration: interactive && getSettings().videoGenBackendKind !== 'none',
 		videoTools: interactive && opts.hasWorkingDir && videoToolsOn(),
 		sendableEmail: interactive && hasSendableEmailAccount(),
 		sandboxEnabled: getSettings().sandboxEnabled && !pythonRuntimeMissing(),
@@ -427,7 +439,7 @@ function schemaFor(
 	const canSave = filter.codeMode ? !filter.codeReadOnly : filter.hasWorkingDir;
 	const name = reg.schema.function.name;
 	let schema = reg.schema;
-	if ((SONG_TOOLS.has(name) || IMAGE_TOOLS.has(name)) && !canSave) {
+	if (SAVING_TOOLS.has(name) && !canSave) {
 		schema = withoutProjectWrite(schema);
 	}
 	// Running in the background needs a chat or Code session for the task,
@@ -436,9 +448,7 @@ function schemaFor(
 	if (backgroundable && !(filter.taskOwner && filter.interactive && !filter.shellMode)) {
 		schema = withoutParams(schema, ['background']);
 	}
-	return (SONG_TOOLS.has(name) || IMAGE_TOOLS.has(name)) && !canSave
-		? schema
-		: profileSchema(schema, filter);
+	return SAVING_TOOLS.has(name) && !canSave ? schema : profileSchema(schema, filter);
 }
 
 /**
@@ -524,14 +534,37 @@ function generationRefusal(reg: ToolRegistration, ctx: ToolContext): string | nu
 			return 'Video tools need ffmpeg, ffprobe and melt. The user can check Settings → Video editing.';
 		}
 	}
+	if (reg.category === 'video-gen') {
+		return backendRefusal(
+			s.videoGenBackendKind === 'none',
+			'Video generation is off. The user can set it up in Settings → Video generation.',
+			'Video generation',
+			ctx
+		);
+	}
 	if (reg.category === 'music') {
-		if (s.musicBackendKind === 'none') {
-			return 'Music generation is off. The user can choose a backend in Settings → Music.';
-		}
-		if (!ctx.interactive)
-			return 'Music generation is only available in a conversation with the user.';
+		return backendRefusal(
+			s.musicBackendKind === 'none',
+			'Music generation is off. The user can choose a backend in Settings → Music.',
+			'Music generation',
+			ctx
+		);
 	}
 	return null;
+}
+
+/** A generation tool's refusal: its backend off, or no one there for what it makes. */
+function backendRefusal(off: boolean, offText: string, what: string, ctx: ToolContext) {
+	if (off) return offText;
+	return ctx.interactive ? null : `${what} is only available in a conversation with the user.`;
+}
+
+/**
+ * Whether `generate_video` is offered: a backend, someone there, and a chat or
+ * Code session to own the task its clip runs as.
+ */
+function videoGenOffered(opts: ToolFilterOpts): boolean {
+	return opts.videoGeneration && !!opts.taskOwner && !opts.shellMode;
 }
 
 /** A generate tool without `path` and `overwrite`, where there's no folder to write in. */

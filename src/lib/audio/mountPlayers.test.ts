@@ -45,6 +45,20 @@ describe('installAudioPlayers', () => {
 		stop();
 	});
 
+	it('mounts a video player for a generated clip', async () => {
+		const clip = 'c'.repeat(64);
+		document.body.innerHTML = renderMarkdown(`Here:\n\n![Fox](haruspex-video://localhost/${clip})`);
+		const stop = installAudioPlayers(document);
+		const host = document.querySelector('.chat-video')!;
+		expect(host.getAttribute('data-video-title')).toBe('Fox');
+		await vi.waitFor(() =>
+			expect(host.querySelector('video')?.getAttribute('src')).toBe('blob:song')
+		);
+		expect(tauri.invoke).toHaveBeenCalledWith('audio_read_bytes', { hash: clip });
+		expect(document.querySelector('.chat-audio')).toBeNull();
+		stop();
+	});
+
 	it('says on the player when the song has gone', async () => {
 		document.body.innerHTML = `<div class="chat-audio" data-audio-hash="${'f'.repeat(64)}" data-audio-title="Old"></div>`;
 		const stop = installAudioPlayers(document);

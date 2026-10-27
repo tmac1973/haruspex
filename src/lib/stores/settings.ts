@@ -793,6 +793,15 @@ export interface AppSettings {
 	musicAceModel: string;
 	/** A song's length when the request names none, in seconds (5–240). */
 	musicDefaultDurationSec: number;
+	/**
+	 * Which server makes video clips, if any: only a llama-toolchest's video
+	 * instances. `'none'` is the shipped default, and `generate_video` is
+	 * offered only off it.
+	 */
+	videoGenBackendKind: 'none' | 'llama-toolchest';
+	videoGenToolchestBaseUrl: string;
+	videoGenToolchestApiKeyId: string | null;
+	videoGenToolchestModelId: string;
 	/** Settings → Video editing's switch: the video tools are offered only while it is on. */
 	videoEditingEnabled: boolean;
 	/**
@@ -1050,6 +1059,10 @@ const defaults: AppSettings = {
 	musicAceBaseUrl: '',
 	musicAceModel: '',
 	musicDefaultDurationSec: 30,
+	videoGenBackendKind: 'none',
+	videoGenToolchestBaseUrl: '',
+	videoGenToolchestApiKeyId: null,
+	videoGenToolchestModelId: '',
 	videoEditingEnabled: false,
 	videoFfmpegPath: '',
 	videoFfprobePath: '',
