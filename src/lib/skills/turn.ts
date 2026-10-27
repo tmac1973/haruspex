@@ -17,7 +17,7 @@ export interface TurnSkills {
 	 * when autonomous use is off or none is usable: the turn still carries
 	 * skills the user ran with `/name`, and may read their files.
 	 */
-	catalog: { name: string; description: string }[];
+	catalog: { name: string; description: string; tools: string[] }[];
 	/** The trusted repo the turn's project skills come from, if any. */
 	projectRoot: string | null;
 }
@@ -39,9 +39,19 @@ export async function prepareTurnSkills(opts: {
 	const all = await listSkills(projectRoot).catch(() => []);
 	const catalog = usableSkills(all, opts.codeMode ?? false).map((s) => ({
 		name: s.name,
-		description: s.description
+		description: s.description,
+		tools: s.tools
 	}));
 	return { catalog, projectRoot };
+}
+
+/** Each covered tool's skill; the first skill to name a tool keeps it. */
+export function coveredTools(catalog: TurnSkills['catalog']): Map<string, string> {
+	const covers = new Map<string, string>();
+	for (const s of catalog) {
+		for (const t of s.tools) if (!covers.has(t)) covers.set(t, s.name);
+	}
+	return covers;
 }
 
 /** The system-prompt section listing the turn's skills; empty without any. */

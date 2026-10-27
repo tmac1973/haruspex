@@ -38,4 +38,8 @@ needs: Array<SkillNeed>,
  * Written for guided planning (`metadata.haruspex-job: guided-planning`),
  * which lists these first in its skill picker.
  */
-forGuidedPlanning: boolean, };
+forGuidedPlanning: boolean, 
+/**
+ * Tools whose first call loads this skill (`metadata.haruspex-tools`).
+ */
+tools: Array<string>, };

@@ -9,7 +9,7 @@ import { getToolSchemas, type PendingImage, type ToolContext } from '#lib/agent/
 import { getSettings, type SamplingParams } from '#lib/stores/settings.ts';
 import { resolveBackendDescriptor, type BackendDescriptor } from '#lib/inference/descriptor.ts';
 import { loadedSkillNames, skillsWithFiles } from '#lib/skills/content.ts';
-import type { TurnSkills } from '#lib/skills/turn.ts';
+import { coveredTools, type TurnSkills } from '#lib/skills/turn.ts';
 import type { AgentLoopOptions } from '#lib/agent/loop.ts';
 import type { HeldSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 
@@ -284,7 +284,8 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 			names: options.skills.catalog.map((s) => s.name),
 			readable: readableSkills(options.skills, options.messages),
 			projectRoot: options.skills.projectRoot,
-			loaded: loadedSkillNames(options.messages)
+			loaded: loadedSkillNames(options.messages),
+			covers: coveredTools(options.skills.catalog)
 		},
 		writeRoot: options.writeRoot ?? null,
 		thinkingEnabled: options.thinkingEnabled ?? null,

@@ -45,6 +45,7 @@ function skill(name: string, extra: Partial<SkillSummary> = {}): SkillSummary {
 		codeModeOnly: false,
 		forGuidedPlanning: false,
 		needs: [],
+		tools: [],
 		...extra
 	};
 }
@@ -56,7 +57,8 @@ const doc = {
 	compatibility: null,
 	files: [],
 	filesTruncated: false,
-	needs: []
+	needs: [],
+	tools: []
 };
 
 beforeEach(() => {

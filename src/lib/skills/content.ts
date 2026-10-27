@@ -19,6 +19,17 @@ export function holdsSkillContent(text: string): boolean {
 	return text.includes(OPEN);
 }
 
+/**
+ * The skill a covered tool's call loaded in place of running
+ * (`agent/tools/_skillGate.ts`), from that call's result; null for any
+ * other result, including `load_skill`'s own.
+ */
+export function gatedSkill(tool: string, result: string): string | null {
+	if (tool === 'load_skill' || !result.startsWith(OPEN)) return null;
+	const end = result.indexOf('"', OPEN.length);
+	return end > OPEN.length ? result.slice(OPEN.length, end) : null;
+}
+
 /** Names of the skills already loaded somewhere in `messages`. */
 export function loadedSkillNames(messages: ChatMessage[]): Set<string> {
 	const names = new Set<string>();

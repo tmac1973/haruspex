@@ -1,6 +1,7 @@
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import type { SearchStep } from '#lib/agent/loop.ts';
 import { getDisplayLabel, type Artifact, type LintIssue } from '#lib/agent/tools/index.ts';
+import { gatedSkill } from '#lib/skills/content.ts';
 
 /**
  * Build the `SearchStep` for a tool call that just started. Shared by every
@@ -44,10 +45,14 @@ export function markStepDone(
 	lintIssues?: LintIssue[],
 	heroImage?: string
 ): SearchStep[] {
+	// A call a skill took the place of says so, rather than looking like a
+	// second run of the tool.
+	const skill = gatedSkill(call.name, result);
 	return steps.map((s) =>
 		s.id === call.id
 			? {
 					...s,
+					...(skill ? { query: `loaded the ${skill} skill first` } : {}),
 					status: 'done' as const,
 					result,
 					thumbDataUrl,

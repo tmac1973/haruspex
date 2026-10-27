@@ -43,6 +43,7 @@ function skill(name: string, extra: Partial<SkillSummary> = {}): SkillSummary {
 		codeModeOnly: false,
 		forGuidedPlanning: false,
 		needs: [],
+		tools: [],
 		...extra
 	};
 }

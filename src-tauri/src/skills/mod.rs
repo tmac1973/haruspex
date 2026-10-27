@@ -101,6 +101,35 @@ fn needs_of(
     (needs, warnings)
 }
 
+/// The tools a skill covers (`metadata.haruspex-tools`, names separated by
+/// commas or spaces), and a warning for each word that can't be a tool name.
+/// The first call to one of them in a conversation loads the skill instead of
+/// running, so a model that reaches for the tool directly still gets the
+/// skill's instructions.
+fn tools_of(metadata: &std::collections::BTreeMap<String, String>) -> (Vec<String>, Vec<String>) {
+    let mut tools: Vec<String> = Vec::new();
+    let mut warnings = Vec::new();
+    let Some(raw) = metadata.get("haruspex-tools") else {
+        return (tools, warnings);
+    };
+    for word in raw
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|w| !w.is_empty())
+    {
+        let valid = word
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+        if !valid {
+            warnings.push(format!(
+                "metadata \"haruspex-tools\" names \"{word}\", which is not a tool name; ignored"
+            ));
+        } else if !tools.iter().any(|t| t == word) {
+            tools.push(word.to_string());
+        }
+    }
+    (tools, warnings)
+}
+
 /// One skill as Settings and the autocomplete see it.
 #[derive(Clone, Debug, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
@@ -129,6 +158,8 @@ pub struct SkillSummary {
     /// Written for guided planning (`metadata.haruspex-job: guided-planning`),
     /// which lists these first in its skill picker.
     pub for_guided_planning: bool,
+    /// Tools whose first call loads this skill (`metadata.haruspex-tools`).
+    pub tools: Vec<String>,
 }
 
 /// A skill's instructions, as loaded into a turn.
@@ -152,6 +183,7 @@ impl From<&Found> for SkillSummary {
     fn from(f: &Found) -> Self {
         let p = &f.parsed;
         let (needs, need_warnings) = needs_of(&p.metadata);
+        let (tools, tool_warnings) = tools_of(&p.metadata);
         SkillSummary {
             name: p.name.clone(),
             description: p.description.clone(),
@@ -160,7 +192,13 @@ impl From<&Found> for SkillSummary {
             license: p.license.clone(),
             compatibility: p.compatibility.clone(),
             allowed_tools: p.allowed_tools.clone(),
-            warnings: p.warnings.iter().cloned().chain(need_warnings).collect(),
+            warnings: p
+                .warnings
+                .iter()
+                .cloned()
+                .chain(need_warnings)
+                .chain(tool_warnings)
+                .collect(),
             error: p.error.clone(),
             shadowed: f.shadowed,
             created_by_model: p.metadata.get("created-by").map(String::as_str) == Some("haruspex"),
@@ -168,6 +206,7 @@ impl From<&Found> for SkillSummary {
             for_guided_planning: p.metadata.get("haruspex-job").map(String::as_str)
                 == Some("guided-planning"),
             needs,
+            tools,
         }
     }
 }
@@ -596,6 +635,20 @@ mod tests {
         assert_eq!(needs, vec![SkillNeed::Image]);
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("\"lasers\""), "{warnings:?}");
+    }
+
+    #[test]
+    fn reads_the_tools_a_skill_covers() {
+        let meta = |v: &str| {
+            std::collections::BTreeMap::from([("haruspex-tools".to_string(), v.to_string())])
+        };
+        assert_eq!(tools_of(&Default::default()), (vec![], vec![]));
+        let (tools, warnings) = tools_of(&meta("edit_image, upscale_image edit_image"));
+        assert_eq!(tools, vec!["edit_image", "upscale_image"]);
+        assert!(warnings.is_empty());
+        let (tools, warnings) = tools_of(&meta("edit_image a/b"));
+        assert_eq!(tools, vec!["edit_image"]);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
     }
 
     #[test]

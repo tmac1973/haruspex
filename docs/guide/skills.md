@@ -20,15 +20,15 @@ When two skills share a name, a trusted repo's wins, then your Haruspex folder, 
 
 ## Manage skills
 
-Settings → Skills lists every skill with where it came from. You can switch each one on or off, **View** its instructions, open its **Folder**, or **Delete** one from your own folder. A broken skill is greyed out with the reason. **Refresh** rereads the folders.
+Settings → Skills lists every skill with where it came from. Switch each on or off, **View** its instructions, open its **Folder**, or **Delete** one from your own folder. A broken skill is greyed out with the reason. **Refresh** rereads the folders.
 
-A skill can need an image or music backend or the video tools (`haruspex-needs: image`, `music` or `video` under `metadata:`). While that is off, it is greyed out and not offered. An image skill is told what the backend can do when it loads.
+A skill can need an image or music backend or the video tools (`haruspex-needs: image`, `music` or `video` under `metadata:`). While that is off, it is greyed out and not offered. An image skill is told what the backend can do when it loads. With `haruspex-tools: edit_image`, a call to that tool first loads the skill.
 
 ## Run a skill
 
-Type `/` in the Chat or Shell input box: a list of commands and skills opens and narrows as you type; pick with the arrow keys and Enter or Tab, or Esc to close it. A name typed in full, such as `/init`, runs on Enter. Then type `/name what you want`. The skill's instructions go with your message, so this works on every model, whatever the setting below says.
+Type `/` in the Chat or Shell input box: a list of commands and skills narrows as you type; pick with the arrow keys and Enter or Tab, or Esc to close. Type `/name what you want`; a name typed in full, such as `/init`, runs on Enter. The skill's instructions go with your message, so this works on every model, whatever the setting below says.
 
-Two built-in commands are always there: `/new` starts over with an empty conversation, and `/skills` lists the skills you can run. The Code tab adds `/compact`, which summarises a session's older turns now; text after it says what to keep (`/compact keep the API notes`). See the `code-sessions` page.
+`/new` starts an empty conversation and `/skills` lists the skills you can run. The Code tab adds `/compact`, which summarises a session's older turns now; text after it says what to keep (`/compact keep the API notes`). See the `code-sessions` page.
 
 ## Let the model choose a skill
 
