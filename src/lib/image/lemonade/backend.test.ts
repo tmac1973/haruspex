@@ -235,6 +235,44 @@ describe('lemonade backend', () => {
 	});
 });
 
+describe('lemonade options from an older Haruspex', () => {
+	it('rewrites stale arguments and unloads the model before drawing with it', async () => {
+		settings.imageLemonadeBaseUrl = 'http://box:13305';
+		settings.imageLemonadeModelId = 'ming';
+		const data = (models as { data: Array<Record<string, unknown>> }).data.map((m) =>
+			String(m.id).includes('Ming')
+				? { ...m, recipe_options: { sdcpp_args: '--tokenizer /t.json --backend te=cpu' } }
+				: m
+		);
+		tauri.invoke.mockReset().mockImplementation(
+			invokeRouter({
+				lemonade_catalogue: catalogue,
+				lemonade_sdcpp_args: '--tokenizer /t.json --diffusion-fa --vae-tiling',
+				lemonade_json: route({
+					'/api/v1/health': health,
+					'/api/v1/system-info': systemInfo,
+					'/api/v1/models?show_all=true': { data },
+					'/api/v1/models/user.Ming-Image-0.1-Design-GGUF/options': {},
+					'/api/v1/unload': {},
+					'/api/v1/images/generations': { data: [{ b64_json: 'AQID' }] }
+				})
+			})
+		);
+		await lemonadeBackend.generate({ prompt: 'a coin', width: 512, height: 512, seed: 1 });
+		const paths = tauri.invoke.mock.calls
+			.filter(([c]) => c === 'lemonade_json')
+			.map(([, a]) => (a as { call: Call }).call);
+		const options = paths.find((c) => c.path.endsWith('/options'))!;
+		expect(options.body).toEqual({ sdcpp_args: '--tokenizer /t.json --diffusion-fa --vae-tiling' });
+		// The recorded server has Ming loaded, so it is unloaded to take them.
+		const order = paths.map((c) => c.path);
+		expect(order.indexOf('/api/v1/unload')).toBeGreaterThan(order.indexOf(options.path));
+		expect(order.indexOf('/api/v1/images/generations')).toBeGreaterThan(
+			order.indexOf('/api/v1/unload')
+		);
+	});
+});
+
 describe('lemonade edits and upscaling', () => {
 	/** The recorded model list, with Qwen installed with its vision weights and the upscaler. */
 	const withEditing = {

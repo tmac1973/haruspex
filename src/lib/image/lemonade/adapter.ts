@@ -36,6 +36,7 @@ export const ROUTES = {
 	downloadsControl: '/api/v1/downloads/control',
 	load: '/api/v1/load',
 	remove: '/api/v1/delete',
+	unload: '/api/v1/unload',
 	generate: '/api/v1/images/generations',
 	edits: '/api/v1/images/edits',
 	upscale: '/api/v1/images/upscale',
@@ -187,7 +188,16 @@ export interface ServerState {
 	edits: Set<string>;
 	/** The upscaler (`UPSCALER`) is installed. */
 	upscaler: boolean;
+	/** Downloaded models whose saved `sdcpp_args` an older Haruspex wrote (`STALE_ARGS`). */
+	stale: Set<string>;
 }
+
+/**
+ * Saved `sdcpp_args` from before Ming lost `--backend te=cpu` on Lemonade:
+ * its newer sd-server then put the rest of Ming on an integrated GPU, if the
+ * machine had one (`lemonade.rs`, `lemonade_options`). Rewritten before use.
+ */
+export const STALE_ARGS = /--backend\s+te=cpu/;
 
 type Json = Record<string, unknown>;
 const obj = (v: unknown): Json => (v && typeof v === 'object' ? (v as Json) : {});
@@ -230,7 +240,8 @@ export function readServer(health: unknown, systemInfo: unknown, models: unknown
 		loadedImage: loaded ? bareName(str(loaded.model_name) ?? '') || null : null,
 		downloaded: named(down),
 		edits: named(down.filter((m) => 'llm_vision' in obj(m.checkpoints))),
-		upscaler: down.some((m) => str(m.id) === UPSCALER)
+		upscaler: down.some((m) => str(m.id) === UPSCALER),
+		stale: named(down.filter((m) => STALE_ARGS.test(str(obj(m.recipe_options).sdcpp_args) ?? '')))
 	};
 }
 

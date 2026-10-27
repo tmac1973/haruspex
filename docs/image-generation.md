@@ -67,6 +67,22 @@ warning), so a server that started reading the last block shows up as a
 sentence in Chat rather than as solid sprites. The response has no seed, so
 every request sends a concrete one.
 
+**No `--backend`.** Lemonade's sd-server is newer than the bundled one and
+auto-fits: given the bundled engine's `--backend te=cpu` for Ming, it keeps
+that and places the diffusion model and VAE itself, and on a machine with an
+integrated GPU it chose that one (a 2 GB Radeon 610M: minutes a picture, then
+a hang). Without `--backend` it picks one GPU, the discrete card: Ming 30 s a
+1024 picture on an RX 9070 XT, against 24 s with every device named, which
+would mean guessing each backend's device names (`lemonade_options`). An
+install saved before this carries `te=cpu`; the backend rewrites it and
+unloads the model before drawing (`STALE_ARGS`, `options.ts`). The clear
+canvas is PNG-compressed hard, since the default left a 1024 canvas at
+30 000 characters of base64, over the limit below.
+
+**Cancelling** ends the request at once, but Lemonade doesn't stop sd-server:
+measured, the picture went on drawing for ~15 s unseen before the GPU went
+idle.
+
 **No tiling.** sd-server finds that block with a `std::regex` over the whole
 prompt, and a long block crashes it: no answer, then Lemonade's watchdog
 resets it and the next request reloads the model. Measured: 24 KB of base64
