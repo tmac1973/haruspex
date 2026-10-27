@@ -713,8 +713,6 @@ export async function executeTool(
 	const generation = generationRefusal(reg, ctx);
 	if (generation) return toolResult(toolError(generation));
 
-	// A skill that covers this tool and isn't loaded yet comes back in place
-	// of the call, which the model then makes again by its instructions.
 	const gated = await skillGate(name, ctx);
 	if (gated) return gated;
 
