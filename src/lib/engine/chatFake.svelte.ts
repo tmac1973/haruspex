@@ -8,18 +8,48 @@ import type { SearchStep } from '#lib/agent/loop.ts';
 import type { ChatMessage } from '#lib/api.ts';
 import type { Conversation } from '#lib/stores/chat.svelte.ts';
 
+/** A chat's turn, as `ChatRun` holds it. */
+export interface FakeRun {
+	generating: boolean;
+	waitingForSlot: boolean;
+	queuedForStartup: boolean;
+	compacting: boolean;
+	streamingContent: string;
+	errorMessage: string | null;
+	lastTurnFailed: boolean;
+}
+
+const IDLE_RUN: FakeRun = {
+	generating: false,
+	waitingForSlot: false,
+	queuedForStartup: false,
+	compacting: false,
+	streamingContent: '',
+	errorMessage: null,
+	lastTurnFailed: false
+};
+
 export const fake = $state({
 	conversations: [] as Conversation[],
 	active: null as string | null,
-	generating: false,
-	streaming: '',
-	error: null as string | null,
-	/** What sendMessage answers: false is a refusal (model not ready). */
+	/** Turns by chat; a chat with none is idle. */
+	runs: {} as Record<string, FakeRun>,
+	/** What a send answers: false is a refusal (model not ready). */
 	accept: true,
+	/** Sends that started a turn, and sends that steered one. */
 	sent: [] as { id: string | null; text: string }[],
-	cancelled: 0,
-	opened: [] as string[]
+	steered: [] as { id: string; text: string }[],
+	cancelled: [] as string[],
+	continued: [] as string[],
+	retried: [] as string[],
+	opened: [] as string[],
+	viewed: [] as string[]
 });
+
+/** Set part of a chat's turn. */
+export function setRun(id: string, patch: Partial<FakeRun>): void {
+	fake.runs[id] = { ...(fake.runs[id] ?? IDLE_RUN), ...patch };
+}
 
 export function conv(id: string, messages: ChatMessage[] = []): Conversation {
 	return {
@@ -43,13 +73,15 @@ export function conv(id: string, messages: ChatMessage[] = []): Conversation {
 export function reset(): void {
 	fake.conversations = [];
 	fake.active = null;
-	fake.generating = false;
-	fake.streaming = '';
-	fake.error = null;
+	fake.runs = {};
 	fake.accept = true;
 	fake.sent = [];
-	fake.cancelled = 0;
+	fake.steered = [];
+	fake.cancelled = [];
+	fake.continued = [];
+	fake.retried = [];
 	fake.opened = [];
+	fake.viewed = [];
 }
 
 /** The open conversation, as the store's own proxy. */
@@ -57,17 +89,20 @@ export function open(): Conversation | undefined {
 	return fake.conversations.find((c) => c.id === fake.active);
 }
 
+/** A conversation by id, as the store's own proxy. */
+export function chat(id: string): Conversation {
+	return fake.conversations.find((c) => c.id === id)!;
+}
+
+function runOf(id: string) {
+	const r = fake.runs[id] ?? IDLE_RUN;
+	return { ...r, busy: r.generating || r.queuedForStartup || r.compacting };
+}
+
 export const chatStore = {
 	getConversations: () => fake.conversations,
 	getActiveConversation: () => open(),
-	getIsGenerating: () => fake.generating,
-	getIsWaitingForSlot: () => false,
-	getIsCompacting: () => false,
-	getStreamingContent: () => fake.streaming,
-	getErrorMessage: () => fake.error,
-	getLastTurnFailed: () => false,
-	// Only the open chat ever has a turn in this fake.
-	getRun: (id: string) => ({ busy: fake.generating && id === fake.active }),
+	getRun: (id: string) => runOf(id),
 	createConversation: () => {
 		const id = `c${fake.conversations.length + 1}`;
 		fake.conversations.unshift(conv(id));
@@ -78,19 +113,31 @@ export const chatStore = {
 		fake.opened.push(id);
 		fake.active = id;
 	},
-	sendMessage: async (text: string) => {
-		fake.sent.push({ id: fake.active, text });
+	noteViewedOnWeb: (id: string) => {
+		fake.viewed.push(id);
+	},
+	sendMessageTo: async (id: string | null, text: string) => {
+		if (id && runOf(id).busy) {
+			fake.steered.push({ id, text });
+			return true;
+		}
+		fake.sent.push({ id, text });
 		if (!fake.accept) return false;
-		fake.generating = true;
+		if (id) setRun(id, { generating: true });
 		// The turn runs until the test ends it.
 		return new Promise<boolean>(() => {});
 	},
-	cancelGeneration: () => {
-		fake.cancelled += 1;
-		fake.generating = false;
+	cancelGeneration: (id: string) => {
+		fake.cancelled.push(id);
+		setRun(id, { generating: false, queuedForStartup: false });
 	},
-	continueTurn: async () => true,
-	retryLastTurn: async () => {}
+	continueTurn: async (id: string) => {
+		fake.continued.push(id);
+		return true;
+	},
+	retryLastTurn: async (id: string) => {
+		fake.retried.push(id);
+	}
 };
 
 export const sessionStore = {

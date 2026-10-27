@@ -18,8 +18,8 @@ vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
 }));
 
 import { flushSync } from 'svelte';
-import { chatState, dispatchChat, listChats, openChatState, watchChats } from './chat.svelte.ts';
-import { conv, fake, open, reset } from './chatFake.svelte.ts';
+import { chatState, dispatchChat, listChats, liveChatState, watchChats } from './chat.svelte.ts';
+import { chat, conv, fake, open, reset, setRun } from './chatFake.svelte.ts';
 import { emptyChatMirror, reduceChat } from './reduce.ts';
 import { LIVE_MS } from './watch.svelte.ts';
 import type { ChatEvent } from './types.ts';
@@ -32,22 +32,26 @@ async function settle() {
 
 beforeEach(() => {
 	reset();
-	fake.conversations.push(conv('a', [{ role: 'user', content: 'hello' }]), conv('b'));
+	fake.conversations.push(conv('a', [{ role: 'user', content: 'hello' }]), conv('b'), conv('c'));
 	fake.active = 'a';
 });
 
 describe('chat operations', () => {
-	it('list every chat, marking the open one and the one writing', () => {
-		fake.generating = true;
-		expect(listChats().map((c) => [c.id, c.open, c.busy])).toEqual([
-			['a', true, true],
-			['b', false, false]
+	it('list every chat with what it is doing', () => {
+		setRun('a', { generating: true });
+		setRun('b', { generating: true, waitingForSlot: true });
+		chat('c').unread = true;
+		expect(listChats().map((c) => [c.id, c.open, c.busy, c.waiting, c.unread])).toEqual([
+			['a', true, true, false, false],
+			['b', false, true, true, false],
+			['c', false, false, false, true]
 		]);
 	});
 
-	it('read a chat that is not open from the database, without opening it', async () => {
+	it('read an idle chat that is not open from the database, without opening it', async () => {
 		const state = await chatState('b');
 		expect(state.open).toBe(false);
+		expect(state.busy).toBe(false);
 		expect(state.messages[0].content).toBe('stored question in b');
 		expect(state.messageSteps[1]).toHaveLength(1);
 		expect(fake.active).toBe('a');
@@ -55,27 +59,38 @@ describe('chat operations', () => {
 	});
 
 	it('read the open chat live', async () => {
-		fake.streaming = 'Thinking about';
+		setRun('a', { streamingContent: 'Thinking about' });
 		const state = await chatState('a');
 		expect(state).toMatchObject({ open: true, streamingContent: 'Thinking about' });
 		expect(state.workingDir).toBe('/home/me/notes');
 	});
 
-	it('send to another chat by opening it first', async () => {
+	it('read a chat with a turn running live, though it is not open', async () => {
+		setRun('b', { generating: true, streamingContent: 'Writing in b' });
+		const state = await chatState('b');
+		expect(state).toMatchObject({ open: false, busy: true, streamingContent: 'Writing in b' });
+	});
+
+	it('count a chat opened on the page as seen', async () => {
+		await dispatchChat({ type: 'chat.get', id: 'b' });
+		expect(fake.viewed).toEqual(['b']);
+	});
+
+	it('send to another chat without opening it on the desktop', async () => {
 		expect(await dispatchChat({ type: 'chat.send', id: 'b', text: 'hi b' })).toEqual({
 			started: true
 		});
-		expect(fake.opened).toEqual(['b']);
+		expect(fake.opened).toEqual([]);
+		expect(fake.active).toBe('a');
 		expect(fake.sent).toEqual([{ id: 'b', text: 'hi b' }]);
 	});
 
-	it('refuse a send only to the chat whose reply is being written', async () => {
-		fake.generating = true;
-		await expect(dispatchChat({ type: 'chat.send', id: 'a', text: 'x' })).rejects.toThrow(
-			'this chat'
-		);
-		expect(fake.sent).toEqual([]);
-		// Another chat's turn runs beside it.
+	it('steer a chat whose reply is being written, while another runs beside it', async () => {
+		setRun('a', { generating: true });
+		expect(await dispatchChat({ type: 'chat.send', id: 'a', text: 'also this' })).toEqual({
+			started: true
+		});
+		expect(fake.steered).toEqual([{ id: 'a', text: 'also this' }]);
 		expect(await dispatchChat({ type: 'chat.send', id: 'b', text: 'y' })).toEqual({
 			started: true
 		});
@@ -89,12 +104,23 @@ describe('chat operations', () => {
 		);
 	});
 
-	it('stop only the open chat, and only while it writes', async () => {
-		expect(await dispatchChat({ type: 'chat.stop', id: 'a' })).toEqual({ stopping: false });
-		fake.generating = true;
+	it('stop the chat named, and only while it writes', async () => {
 		expect(await dispatchChat({ type: 'chat.stop', id: 'b' })).toEqual({ stopping: false });
-		expect(await dispatchChat({ type: 'chat.stop', id: 'a' })).toEqual({ stopping: true });
-		expect(fake.cancelled).toBe(1);
+		setRun('a', { generating: true });
+		setRun('b', { generating: true });
+		expect(await dispatchChat({ type: 'chat.stop', id: 'b' })).toEqual({ stopping: true });
+		expect(fake.cancelled).toEqual(['b']);
+		expect(fake.runs.a.generating).toBe(true);
+	});
+
+	it('continue and retry the chat named, refusing one that is busy', async () => {
+		await dispatchChat({ type: 'chat.continue', id: 'b' });
+		await dispatchChat({ type: 'chat.retry', id: 'c' });
+		expect(fake.continued).toEqual(['b']);
+		expect(fake.retried).toEqual(['c']);
+		expect(fake.opened).toEqual([]);
+		setRun('b', { generating: true });
+		await expect(dispatchChat({ type: 'chat.continue', id: 'b' })).rejects.toThrow('this chat');
 	});
 });
 
@@ -115,20 +141,53 @@ describe('chat events', () => {
 		await settle();
 		expect(events[0]).toMatchObject({ type: 'chat-snapshot', chatId: 'a', seq: 1 });
 
-		fake.generating = true;
-		fake.streaming = 'Partial';
+		setRun('a', { generating: true, streamingContent: 'Partial' });
 		await settle();
-		expect(mirrorOf('a').state).toEqual(openChatState(open()!));
+		expect(mirrorOf('a').state).toEqual(liveChatState(open()!));
 
 		const c = open()!;
 		c.messages = [...c.messages, { role: 'assistant', content: 'Partial answer.' }];
-		fake.streaming = '';
-		fake.generating = false;
+		setRun('a', { generating: false, streamingContent: '' });
 		await settle();
 		const m = mirrorOf('a');
 		expect(m.resync).toBe(false);
-		expect(m.state).toEqual(openChatState(open()!));
+		expect(m.state).toEqual(liveChatState(open()!));
 		expect(m.state?.messages.at(-1)?.content).toBe('Partial answer.');
+	});
+
+	it('follow a chat that is not open while its turn runs, and let it go after', async () => {
+		await settle();
+		expect(events.some((e) => e.chatId === 'b')).toBe(false);
+
+		setRun('b', { generating: true, streamingContent: 'Writing in b' });
+		await settle();
+		expect(mirrorOf('b').state).toMatchObject({
+			id: 'b',
+			open: false,
+			busy: true,
+			streamingContent: 'Writing in b'
+		});
+
+		chat('b').messages = [{ role: 'assistant', content: 'Done in b.' }];
+		setRun('b', { generating: false, streamingContent: '' });
+		await settle();
+		const b = mirrorOf('b');
+		expect(b.resync).toBe(false);
+		expect(b.state).toMatchObject({ busy: false, streamingContent: '' });
+		expect(b.state?.messages.at(-1)?.content).toBe('Done in b.');
+
+		const count = events.length;
+		chat('b').title = 'Renamed';
+		await settle();
+		expect(events.length).toBe(count);
+	});
+
+	it('follow two chats at once, each with its own stream', async () => {
+		setRun('a', { generating: true, streamingContent: 'in a' });
+		setRun('b', { generating: true, streamingContent: 'in b' });
+		await settle();
+		expect(mirrorOf('a').state?.streamingContent).toBe('in a');
+		expect(mirrorOf('b').state?.streamingContent).toBe('in b');
 	});
 
 	it('start following once a chat opens, when none was open at first', async () => {
@@ -140,21 +199,32 @@ describe('chat events', () => {
 		expect(events).toEqual([]);
 		fake.active = 'b';
 		await settle();
-		fake.generating = true;
-		fake.streaming = 'Writing';
+		setRun('b', { generating: true, streamingContent: 'Writing' });
 		await settle();
 		const b = mirrorOf('b');
 		expect(b.state).toMatchObject({ id: 'b', busy: true, streamingContent: 'Writing' });
 		expect(b.resync).toBe(false);
 	});
 
-	it('close one chat and open the next when the desktop switches', async () => {
+	it('let one chat go and follow the next when the desktop switches', async () => {
 		await settle();
 		fake.active = 'b';
 		await settle();
 		const left = mirrorOf('a').state!;
 		expect(left).toMatchObject({ open: false, busy: false, streamingContent: '' });
 		expect(mirrorOf('b').state).toMatchObject({ id: 'b', open: true });
+	});
+
+	it('keep following a chat left on the desktop while its turn still runs', async () => {
+		setRun('a', { generating: true, streamingContent: 'still going' });
+		await settle();
+		fake.active = 'b';
+		await settle();
+		expect(mirrorOf('a').state).toMatchObject({
+			open: false,
+			busy: true,
+			streamingContent: 'still going'
+		});
 	});
 });
 

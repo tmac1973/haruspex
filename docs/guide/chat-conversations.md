@@ -23,7 +23,7 @@ The conversation list shows a dot by each conversation that's doing something:
 - **Hollow dot**: waiting, for the model to start or for another conversation's turn to finish.
 - **Solid dot**, title in bold: it finished an answer while you were in another conversation. Opening it clears the mark. It stays after a restart.
 
-Hover over a dot to see what it means.
+Hover over a dot to see what it means. The Remote control page (see the `remote-control` page) marks its chat list the same way, and can send and steer in any chat without changing which one this computer shows.
 
 ## Results that arrive while you're elsewhere
 

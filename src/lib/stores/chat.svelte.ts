@@ -784,9 +784,23 @@ export function markConversationRead(id: string): void {
 	void dbSetUnread(id, false);
 }
 
+// The chat the Remote control page last opened: it counts as seen there.
+let viewedOnWeb: string | null = null;
+
+/** The Remote control page opened this chat: it is read, and stays read while shown there. */
+export function noteViewedOnWeb(id: string): void {
+	viewedOnWeb = id;
+	markConversationRead(id);
+}
+
+/** Open on the desktop, or on the Remote control page. */
+function isConversationViewed(id: string): boolean {
+	return getActiveConversationId() === id || viewedOnWeb === id;
+}
+
 /** A turn finished where the user isn't looking: mark it until they do. */
 function markUnreadUnlessOpen(conversation: Conversation): void {
-	if (getActiveConversationId() === conversation.id || conversation.unread) return;
+	if (isConversationViewed(conversation.id) || conversation.unread) return;
 	conversation.unread = true;
 	void dbSetUnread(conversation.id, true);
 }
@@ -1389,8 +1403,8 @@ function finalizeStreamedTurn(
 
 /** Resume after a turn-limit / forced stop — the Continue button on the stop
  *  indicator. Same as the user typing "continue". */
-export function continueTurn(): Promise<boolean> {
-	return sendMessage('Please continue from where you stopped.');
+export function continueTurn(id = getActiveConversationId()): Promise<boolean> {
+	return sendMessageTo(id, 'Please continue from where you stopped.');
 }
 
 /** Text of the most recent user message — the turn being (re)run. */
@@ -1435,14 +1449,14 @@ $effect.root(() => {
 });
 
 /**
- * Re-run the open conversation's last failed turn. The user message is
- * already in history, so this clears the error state and runs the turn
- * again — no duplicate user bubble. If the server is (still) starting —
- * e.g. retrying right after cancelling a queued send — the retry re-queues
- * just like a fresh send.
+ * Re-run a conversation's last failed turn (the open one's by default). The
+ * user message is already in history, so this clears the error state and
+ * runs the turn again — no duplicate user bubble. If the server is (still)
+ * starting — e.g. retrying right after cancelling a queued send — the retry
+ * re-queues just like a fresh send.
  */
-export async function retryLastTurn(): Promise<void> {
-	const conversation = getActiveConversation();
+export async function retryLastTurn(id = getActiveConversationId()): Promise<void> {
+	const conversation = conversations.find((c) => c.id === id);
 	if (!conversation || conversation.messages.length === 0) return;
 	const run = runFor(conversation.id);
 	if (!run.lastTurnFailed || run.busy) return;

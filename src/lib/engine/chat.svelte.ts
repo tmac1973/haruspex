@@ -1,15 +1,14 @@
 /**
  * Chat, for clients other than the main window's own chat tab
- * (plan/remote-api phase 5): read the desktop's chats, follow the open one,
- * and drive it.
+ * (plan/remote-api phase 5): read the desktop's chats, follow the ones with
+ * something going on, and drive them.
  *
- * The page drives the desktop's own chat (decided 2026-10-10): sending opens
- * that chat here, exactly as clicking it in the sidebar would, and calls
- * `sendMessage`, so every chat feature (tools, the working folder, the
- * sandbox, images, memory) works unchanged. The chat store runs one turn at a
- * time and its turn state is global, so a send to another chat while a turn
- * runs is refused. Reading a chat that isn't open never opens it: it comes
- * from the database.
+ * The page drives the desktop's own chat store, so every chat feature (tools,
+ * the working folder, the sandbox, images, memory) works unchanged. Each
+ * conversation runs its own turns: a send goes to the chat it names without
+ * opening it on the desktop, and a send to a chat whose turn is running
+ * steers that turn. Reading a chat nothing is happening in never loads it
+ * into the store: it comes from the database.
  *
  * Main window only; `chat.*` ops name no Code session, so the hub sends them
  * here.
@@ -21,16 +20,10 @@ import {
 	continueTurn,
 	createConversation,
 	getConversations,
-	getErrorMessage,
-	getIsCompacting,
-	getIsGenerating,
-	getIsWaitingForSlot,
-	getLastTurnFailed,
 	getRun,
-	getStreamingContent,
+	noteViewedOnWeb,
 	retryLastTurn,
-	sendMessage,
-	setActiveConversation,
+	sendMessageTo,
 	type Conversation
 } from '#lib/stores/chat.svelte.ts';
 import { dbLoadMessages, dbLoadMessageSteps } from '#lib/stores/db.ts';
@@ -49,17 +42,32 @@ function find(id: string): Conversation {
 	return conv;
 }
 
-/** The open chat's turn fields, as the chat tab shows them. */
-function liveFields(conv: Conversation) {
+/** A turn is running, or a send waits for the model to start. */
+function isBusy(id: string): boolean {
+	const run = getRun(id);
+	return run.generating || run.queuedForStartup;
+}
+
+/**
+ * Followed live: open on the desktop, or with a turn running. Any other
+ * chat's state is its thread as saved.
+ */
+function isLive(id: string): boolean {
+	return getActiveConversationId() === id || isBusy(id);
+}
+
+/** A chat's turn fields, from its run. */
+function turnFields(conv: Conversation) {
+	const run = getRun(conv.id);
 	return {
-		open: true,
-		busy: getIsGenerating(),
-		waitingForSlot: getIsWaitingForSlot(),
-		compacting: getIsCompacting(),
-		streamingContent: getStreamingContent(),
+		open: getActiveConversationId() === conv.id,
+		busy: isBusy(conv.id),
+		waitingForSlot: run.waitingForSlot || run.queuedForStartup,
+		compacting: run.compacting,
+		streamingContent: run.streamingContent,
 		searchSteps: plain(conv.searchSteps) as SearchStep[],
-		error: getErrorMessage(),
-		lastTurnFailed: getLastTurnFailed()
+		error: run.errorMessage,
+		lastTurnFailed: run.lastTurnFailed
 	};
 }
 
@@ -74,8 +82,8 @@ const IDLE = {
 	lastTurnFailed: false
 };
 
-/** The open chat, from the store. */
-export function openChatState(conv: Conversation): ChatState {
+/** A chat as the store holds it: its thread and its turn, live. */
+export function liveChatState(conv: Conversation): ChatState {
 	return {
 		id: conv.id,
 		title: conv.title,
@@ -83,17 +91,17 @@ export function openChatState(conv: Conversation): ChatState {
 		messageSteps: plain(conv.messageSteps),
 		messageStats: plain(conv.messageStats),
 		messageStops: plain(conv.messageStops),
-		...liveFields(conv),
+		...turnFields(conv),
 		contextUsage: plain(conv.contextUsage),
 		workingDir: getWorkingDir(),
 		memoryEnabled: conv.memoryEnabled !== false
 	};
 }
 
-/** Any chat: live if it's the open one, else from the database, without opening it. */
+/** Any chat: live if it's followed, else from the database, without loading it. */
 export async function chatState(id: string): Promise<ChatState> {
 	const conv = find(id);
-	if (getActiveConversationId() === id) return openChatState(conv);
+	if (isLive(id)) return liveChatState(conv);
 	const [messages, steps] = await Promise.all([dbLoadMessages(id), dbLoadMessageSteps(id)]);
 	return {
 		id,
@@ -103,6 +111,8 @@ export async function chatState(id: string): Promise<ChatState> {
 		messageStats: {},
 		messageStops: {},
 		...IDLE,
+		error: getRun(id).errorMessage,
+		lastTurnFailed: getRun(id).lastTurnFailed,
 		contextUsage: plain(conv.contextUsage),
 		workingDir: null,
 		memoryEnabled: conv.memoryEnabled !== false
@@ -111,14 +121,18 @@ export async function chatState(id: string): Promise<ChatState> {
 
 export function listChats(): ChatListItem[] {
 	const open = getActiveConversationId();
-	const busy = getIsGenerating();
-	return getConversations().map((c) => ({
-		id: c.id,
-		title: c.title,
-		updatedAt: c.updatedAt,
-		open: c.id === open,
-		busy: busy && c.id === open
-	}));
+	return getConversations().map((c) => {
+		const run = getRun(c.id);
+		return {
+			id: c.id,
+			title: c.title,
+			updatedAt: c.updatedAt,
+			open: c.id === open,
+			busy: isBusy(c.id),
+			waiting: run.waitingForSlot || run.queuedForStartup,
+			unread: c.unread
+		};
+	});
 }
 
 /** Refuse a turn on a chat whose own turn is still running. Other chats' turns don't block it. */
@@ -128,16 +142,10 @@ function mustBeFree(id: string): void {
 	}
 }
 
-/** Open `id` on the desktop unless it already is. */
-async function open(id: string): Promise<void> {
-	find(id);
-	if (getActiveConversationId() !== id) await setActiveConversation(id);
-}
-
 /**
- * Start a turn without waiting for it: `sendMessage` resolves when the turn
- * ends. A refusal (the model server stopped, say) resolves `false` at once,
- * so it is told apart from a turn that started by a short race.
+ * Start a turn without waiting for it: a send resolves when the turn ends.
+ * A refusal (the model server stopped, say) resolves `false` at once, so it
+ * is told apart from a turn that started by a short race.
  */
 async function startTurn(run: () => Promise<boolean | void>): Promise<{ started: true }> {
 	const outcome = await Promise.race([
@@ -160,25 +168,29 @@ export async function dispatchChat(op: { type: string; id?: string; text?: strin
 		case 'chats.list':
 			return listChats();
 		case 'chat.get':
+			find(op.id!);
+			// Opened on the page: seen, as opening it on the desktop would be.
+			noteViewedOnWeb(op.id!);
 			return chatState(op.id!);
 		case 'chat.new':
 			return { id: createConversation() };
 		case 'chat.send': {
 			const text = (op.text ?? '').trim();
 			if (!text) throw new Error('nothing to send');
-			mustBeFree(op.id!);
-			await open(op.id!);
-			return startTurn(() => sendMessage(text));
+			const id = find(op.id!).id;
+			// A chat whose turn runs takes it as steering, at the turn's next step.
+			return startTurn(() => sendMessageTo(id, text));
 		}
 		case 'chat.stop':
-			if (getActiveConversationId() !== op.id || !getIsGenerating()) return { stopping: false };
-			cancelGeneration();
+			if (!getRun(find(op.id!).id).busy) return { stopping: false };
+			cancelGeneration(op.id!);
 			return { stopping: true };
 		case 'chat.continue':
-		case 'chat.retry':
-			mustBeFree(op.id!);
-			await open(op.id!);
-			return startTurn(op.type === 'chat.continue' ? continueTurn : retryLastTurn);
+		case 'chat.retry': {
+			const id = find(op.id!).id;
+			mustBeFree(id);
+			return startTurn(() => (op.type === 'chat.continue' ? continueTurn(id) : retryLastTurn(id)));
+		}
 		default:
 			throw new Error(`unknown operation ${op.type}`);
 	}
@@ -186,11 +198,20 @@ export async function dispatchChat(op: { type: string; id?: string; text?: strin
 
 // --- events -----------------------------------------------------------------
 
+type Body =
+	{ type: 'chat-snapshot'; state: ChatState } | { type: 'chat-update'; patch: Partial<ChatState> };
+
+interface Follower {
+	snapshot: () => void;
+	stop: () => void;
+}
+
 /**
- * Turn the chat store into events for the open chat: a snapshot when it opens
- * and whenever its thread changes, patches for its turn fields, the live text
- * coalesced to one patch per `LIVE_MS`. When another chat opens, the one left
- * gets a last snapshot (no longer open, not busy) and the new one its first.
+ * Turn the chat store into events for every followed chat (the one open on
+ * the desktop, and every one with a turn running): a snapshot when it starts
+ * being followed and whenever its thread changes, patches for its turn
+ * fields, the live text coalesced to one patch per `LIVE_MS`. A chat that
+ * stops being followed gets a last snapshot of where it was left.
  */
 export function watchChats(sink: (e: ChatEvent) => void): {
 	stop: () => void;
@@ -199,63 +220,74 @@ export function watchChats(sink: (e: ChatEvent) => void): {
 	// Bookkeeping, never rendered: not a SvelteMap.
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity
 	const seqs = new Map<string, number>();
-	type Body =
-		| { type: 'chat-snapshot'; state: ChatState }
-		| { type: 'chat-update'; patch: Partial<ChatState> };
 	const send = (chatId: string, body: Body) => {
 		const seq = (seqs.get(chatId) ?? 0) + 1;
 		seqs.set(chatId, seq);
 		sink({ ...body, seq, chatId } as ChatEvent);
 	};
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const followers = new Map<string, Follower>();
 
-	let current: Conversation | null = null;
-	let liveTimer: ReturnType<typeof setTimeout> | null = null;
+	const stopRoot = $effect.root(() => {
+		// Which chats are followed.
+		$effect(() => {
+			const want = getConversations().filter((c) => isLive(c.id));
+			untrack(() => {
+				const ids = want.map((c) => c.id);
+				for (const [id, f] of followers) {
+					if (ids.includes(id)) continue;
+					f.stop();
+					followers.delete(id);
+				}
+				for (const conv of want) {
+					if (!followers.has(conv.id)) followers.set(conv.id, follow(conv, send));
+				}
+			});
+		});
+	});
+
+	return {
+		stop: () => {
+			stopRoot();
+			for (const f of followers.values()) f.stop();
+			followers.clear();
+		},
+		resync: (id) => {
+			const f = followers.get(id);
+			if (!f) return false;
+			f.snapshot();
+			return true;
+		}
+	};
+}
+
+/** Follow one chat until `stop`, which sends its last snapshot. */
+function follow(conv: Conversation, send: (chatId: string, body: Body) => void): Follower {
+	let alive = true;
 	let last = '';
+	let liveTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const flushLive = () => {
-		if (liveTimer === null || !current) return;
+		if (liveTimer === null) return;
 		clearTimeout(liveTimer);
 		liveTimer = null;
-		send(current.id, { type: 'chat-update', patch: { streamingContent: getStreamingContent() } });
+		send(conv.id, {
+			type: 'chat-update',
+			patch: { streamingContent: getRun(conv.id).streamingContent }
+		});
 	};
-	const snapshot = (conv: Conversation) => {
+	const snapshot = () => {
 		flushLive();
-		const state = openChatState(conv);
+		const state = liveChatState(conv);
 		last = JSON.stringify(withoutBulk(state));
 		send(conv.id, { type: 'chat-snapshot', state });
 	};
 
-	/**
-	 * The open chat, read reactively. Every effect below reads it itself: an
-	 * effect whose first run found nothing open and returned early would
-	 * track nothing, and so never run again.
-	 */
-	const openConv = () => {
-		const id = getActiveConversationId();
-		return getConversations().find((c) => c.id === id) ?? null;
-	};
-
+	snapshot();
+	let first = true;
 	const stopRoot = $effect.root(() => {
-		// Which chat is open.
-		$effect(() => {
-			const conv = openConv();
-			untrack(() => {
-				if (conv === current) return;
-				if (current) {
-					flushLive();
-					// The chat left behind: its thread as it stands, nothing live.
-					const left = openChatState(current);
-					send(current.id, { type: 'chat-snapshot', state: { ...left, ...IDLE } });
-				}
-				current = conv;
-				if (conv) snapshot(conv);
-			});
-		});
-
 		// Its thread: reassigned or appended as a turn opens and commits.
 		$effect(() => {
-			const conv = openConv();
-			if (!conv) return;
 			void [
 				conv.messages,
 				conv.messages.length,
@@ -265,20 +297,22 @@ export function watchChats(sink: (e: ChatEvent) => void): {
 				conv.title
 			];
 			untrack(() => {
-				if (conv === current) queueMicrotask(() => conv === current && snapshot(conv));
+				// The snapshot above covers the first run.
+				if (first) {
+					first = false;
+					return;
+				}
+				queueMicrotask(() => alive && snapshot());
 			});
 		});
 
 		// Its turn fields, as one patch when any changes.
 		$effect(() => {
-			const conv = openConv();
-			if (!conv) return;
-			const state = openChatState(conv);
+			const state = liveChatState(conv);
 			const key = JSON.stringify(withoutBulk(state));
 			if (key === last) return;
 			untrack(() => {
-				// The opening effect's snapshot covers a chat it just opened.
-				if (conv !== current) return;
+				if (!alive) return;
 				const before = JSON.parse(last || '{}') as Partial<ChatState>;
 				last = key;
 				const now = withoutBulk(state);
@@ -297,31 +331,29 @@ export function watchChats(sink: (e: ChatEvent) => void): {
 
 		// The live text, coalesced.
 		$effect(() => {
-			void getStreamingContent();
-			if (!current) return;
+			void getRun(conv.id).streamingContent;
 			untrack(() => {
 				liveTimer ??= setTimeout(() => {
 					liveTimer = null;
-					if (current) {
-						send(current.id, {
-							type: 'chat-update',
-							patch: { streamingContent: getStreamingContent() }
-						});
-					}
+					if (!alive) return;
+					send(conv.id, {
+						type: 'chat-update',
+						patch: { streamingContent: getRun(conv.id).streamingContent }
+					});
 				}, LIVE_MS);
 			});
 		});
 	});
 
 	return {
+		snapshot,
 		stop: () => {
+			if (!alive) return;
 			stopRoot();
-			if (liveTimer !== null) clearTimeout(liveTimer);
-		},
-		resync: (id) => {
-			if (!current || current.id !== id) return false;
-			snapshot(current);
-			return true;
+			flushLive();
+			alive = false;
+			// Where it was left: its thread, and a turn that is over.
+			send(conv.id, { type: 'chat-snapshot', state: liveChatState(conv) });
 		}
 	};
 }

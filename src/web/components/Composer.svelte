@@ -1,9 +1,9 @@
 <script lang="ts">
 	/**
 	 * The input box. Idle, Enter starts a turn; while the agent works, Enter
-	 * queues the text to steer its next step, as on the computer (`steer`: a
-	 * Code session; chat can't be steered, so it waits). Shift+Enter is a new
-	 * line. `why`: the tooltip saying why it's disabled.
+	 * queues the text to steer its next step, as on the computer (`steer`
+	 * false: it waits instead). Shift+Enter is a new line. `why`: the tooltip
+	 * saying why it's disabled.
 	 */
 	let {
 		busy,
