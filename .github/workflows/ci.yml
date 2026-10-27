@@ -44,6 +44,7 @@ jobs:
   # (compiled into the app). Keep the two in step.
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       code: ${{ steps.diff.outputs.code }}
     steps:
@@ -64,6 +65,7 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: changes
     if: needs.changes.outputs.code == 'true'
     steps:
@@ -114,6 +116,7 @@ jobs:
   # in step with @playwright/test and scripts/e2e-ui-visual.sh.
   e2e-ui:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: changes
     if: needs.changes.outputs.code == 'true'
     container:
@@ -145,6 +148,7 @@ jobs:
 
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     needs: changes
     if: needs.changes.outputs.code == 'true'
     steps:
@@ -165,14 +169,25 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - name: Install system dependencies
+      # The runner's Ubuntu mirror sometimes crawls (77 MB at 40 kB/s, half an
+      # hour), so the packages come from the Actions cache after the first run.
+      # Recommends are left out to shrink the download; nothing here needs
+      # them. The cache key carries the Ubuntu release, so an image bump
+      # starts a fresh cache rather than restoring another release's files.
+      - name: Prepare apt
+        id: apt
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            libasound2-dev \
+          echo 'APT::Install-Recommends "false";' | sudo tee /etc/apt/apt.conf.d/99-no-recommends
+          echo "release=$(. /etc/os-release && echo "$VERSION_ID")" >> "$GITHUB_OUTPUT"
+      - name: Install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.3
+        with:
+          version: ubuntu-${{ steps.apt.outputs.release }}-1
+          packages: >-
+            libwebkit2gtk-4.1-dev
+            libappindicator3-dev
+            librsvg2-dev
+            libasound2-dev
             libxcb1-dev
 
       - name: Create placeholder sidecar binaries and libs
@@ -208,6 +223,7 @@ jobs:
     # webkit2gtk-driver (WebKitWebDriver for webkit2gtk-4.1, which the app
     # embeds), and ubuntu-latest moved to 26.04 on 2026-10-22.
     runs-on: ubuntu-24.04
+    timeout-minutes: 25
     needs: changes
     if: needs.changes.outputs.code == 'true'
     steps:
@@ -224,16 +240,23 @@ jobs:
         with:
           workspaces: src-tauri -> target-e2e
           cache-bin: true
-      - name: Install system dependencies
+      # Cached as in the backend job; see the note there.
+      - name: Prepare apt
+        id: apt
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            libasound2-dev \
-            libxcb1-dev \
-            webkit2gtk-driver \
+          echo 'APT::Install-Recommends "false";' | sudo tee /etc/apt/apt.conf.d/99-no-recommends
+          echo "release=$(. /etc/os-release && echo "$VERSION_ID")" >> "$GITHUB_OUTPUT"
+      - name: Install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.3
+        with:
+          version: ubuntu-${{ steps.apt.outputs.release }}-1
+          packages: >-
+            libwebkit2gtk-4.1-dev
+            libappindicator3-dev
+            librsvg2-dev
+            libasound2-dev
+            libxcb1-dev
+            webkit2gtk-driver
             xvfb
       - run: scripts/ci-placeholder-sidecars.sh
       - run: npm ci
