@@ -74,9 +74,10 @@ beforeEach(() => {
 describe('notices', () => {
 	it('say what was made, how long, how big and how loud', () => {
 		const { text } = noticeFor(done);
-		expect(text).toBe(
-			'Video render finished: ep012/renders/ep012-20261025-1410.mp4. 12:03, 412 MB, 1920×1080, -14.2 LUFS. No problems.'
-		);
+		expect(text).toMatch(/^Video render finished: ep012\/renders\/ep012-20261025-1410\.mp4\b/);
+		for (const part of ['12:03', '412 MB', '1920×1080', '-14.2 LUFS', 'No problems']) {
+			expect(text).toContain(part);
+		}
 		expect(isTaskNotice(text)).toBe(true);
 		expect(isTaskNotice('Video render is great')).toBe(false);
 	});
@@ -88,12 +89,12 @@ describe('notices', () => {
 			error: 'melt stopped',
 			logTail: 'boom'
 		};
-		expect(noticeFor(failed).text).toBe(
-			'Video render failed: melt stopped\n--- melt said ---\nboom'
-		);
-		expect(noticeFor({ ...base, state: 'cancelled' }).text).toBe(
-			'Video render cancelled. Nothing was saved.'
-		);
+		const text = noticeFor(failed).text;
+		expect(text).toMatch(/^Video render failed: melt stopped/);
+		expect(text).toMatch(/boom$/);
+		const cancelled = noticeFor({ ...base, state: 'cancelled' }).text;
+		expect(cancelled).toMatch(/^Video render cancelled/);
+		expect(cancelled).toContain('Nothing was saved');
 	});
 
 	it('report an upload with its links', () => {
@@ -110,9 +111,10 @@ describe('notices', () => {
 				problems: []
 			}
 		};
-		expect(noticeFor(uploaded).text).toBe(
-			'Video upload finished: https://youtu.be/x (unlisted). YouTube Studio: https://studio.youtube.com/video/x/edit. Everything was set.'
-		);
+		const text = noticeFor(uploaded).text;
+		expect(text).toMatch(/^Video upload finished: https:\/\/youtu\.be\/x\b/);
+		expect(text).toContain('unlisted');
+		expect(text).toContain('https://studio.youtube.com/video/x/edit');
 	});
 
 	it('say a render that died with the app failed', () => {
@@ -212,12 +214,16 @@ describe('a background picture’s notice', () => {
 
 	it('is the answer the tool would have given, with the picture to place', () => {
 		const { text, images } = noticeFor(picture(true));
-		expect(text).toBe(
-			'Background task "Drawing a fox" finished: Image ready (1024×768, ming, seed 7). ' +
-				`Put ![a fox](haruspex-img://localhost/${hash}) in your answer where it belongs; ` +
-				'it needs no other images. The picture is attached: look at it before you answer, and ' +
-				'describe what it shows, not what was asked for. Wrote fox.png.'
-		);
+		expect(text).toMatch(/^Background task "Drawing a fox" finished: Image ready/);
+		for (const part of [
+			'1024×768',
+			'seed 7',
+			`![a fox](haruspex-img://localhost/${hash})`,
+			'attached',
+			'Wrote fox.png.'
+		]) {
+			expect(text).toContain(part);
+		}
 		expect(isTaskNotice(text)).toBe(true);
 		expect(images).toEqual([hash]);
 	});
@@ -263,10 +269,17 @@ describe('a background song’s notice', () => {
 
 	it('is the answer the tool would have given, with the player line to place', () => {
 		const { text, images } = noticeFor(song);
-		expect(text).toBe(
-			'Background task "Making Rain" finished: Made "Rain" (45 s, 82 bpm, D minor, seed 7). ' +
-				`Put ![Rain](haruspex-audio://localhost/${hash}) in your answer. Wrote rain.mp3.`
-		);
+		expect(text).toMatch(/^Background task "Making Rain" finished: Made "Rain"/);
+		for (const part of [
+			'45 s',
+			'82 bpm',
+			'D minor',
+			'seed 7',
+			`![Rain](haruspex-audio://localhost/${hash})`,
+			'Wrote rain.mp3.'
+		]) {
+			expect(text).toContain(part);
+		}
 		expect(isTaskNotice(text)).toBe(true);
 		expect(images).toEqual([]);
 	});

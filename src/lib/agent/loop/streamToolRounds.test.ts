@@ -262,7 +262,7 @@ describe('streamed tool rounds', () => {
 		);
 		const opts = options({ signal: abort.signal });
 
-		await runAgentLoop(opts).catch(() => {});
+		await expect(runAgentLoop(opts)).rejects.toMatchObject({ name: 'AbortError' });
 
 		expect(toolsMock.executeTool).not.toHaveBeenCalled();
 		expect(api.chatCompletionStream).toHaveBeenCalledTimes(1);

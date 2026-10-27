@@ -23,14 +23,15 @@ vi.mock('./backend', () => ({
 		generate: state.generate
 	})
 }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => ({
-		imageBackendKind: state.kind,
-		imageLocalModelId: state.localModel,
-		imageComfyCheckpoint: state.comfyCheckpoint
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({
+			imageBackendKind: state.kind,
+			imageLocalModelId: state.localModel,
+			imageComfyCheckpoint: state.comfyCheckpoint
+		})
 	})
-}));
+);
 
 import {
 	generateForTool,

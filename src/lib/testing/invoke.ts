@@ -62,3 +62,43 @@ export function unexpectedInvoke(cmd: string): never {
 export function invokeCalls(invoke: Mock, cmd: string): Args[] {
 	return invoke.mock.calls.filter((c) => c[0] === cmd).map((c) => c[1] as Args);
 }
+
+/** An HTTP request a backend hands to Rust as `invoke(cmd, { call })`. */
+export interface HttpCall {
+	method: string;
+	path: string;
+	body: Record<string, unknown> | null;
+}
+
+/** A server's answer to one request: a value, or a function of the call (which
+ *  may throw, to stand in for an error status). */
+export type HttpAnswer<C extends HttpCall = HttpCall> = unknown | ((call: C) => unknown);
+
+/**
+ * An `invokeRouter` route for a command that carries an HTTP call
+ * (`toolchest_json`, `lemonade_json`, `ace_json` …), answering by
+ * `"METHOD path"` — the query string included:
+ *
+ *   invokeRouter({ toolchest_json: httpRouter({ 'GET /v1/models': models }) })
+ *
+ * A request with no answer is refused the way the Rust side reports a 404:
+ * `{ kind: 'rejected', status: 404, body: notFoundBody }`.
+ */
+export function httpRouter<C extends HttpCall = HttpCall>(
+	answers: Record<string, HttpAnswer<C>>,
+	notFoundBody = '{}'
+): (args: Args) => unknown {
+	return (args) => {
+		const call = (args as { call: C }).call;
+		const answer = answers[`${call.method} ${call.path}`];
+		if (answer === undefined) throw { kind: 'rejected', status: 404, body: notFoundBody };
+		return typeof answer === 'function' ? (answer as (c: C) => unknown)(call) : answer;
+	};
+}
+
+/** The HTTP calls `invoke` sent through `cmds`, in order. */
+export function httpCalls<C extends HttpCall = HttpCall>(invoke: Mock, ...cmds: string[]): C[] {
+	return invoke.mock.calls
+		.filter((c) => cmds.includes(c[0] as string))
+		.map((c) => (c[1] as { call: C }).call);
+}

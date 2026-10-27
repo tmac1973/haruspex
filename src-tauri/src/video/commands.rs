@@ -256,6 +256,36 @@ fn latest_render(
     renders.pop()
 }
 
+/// Where [`video_write_captions`] writes: beside `render` when named, else
+/// beside the newest render that isn't older than the cut, else beside the
+/// project in `episode_dir`. Always inside the working folder.
+fn captions_target(
+    working_dir: &str,
+    episode_dir: &std::path::Path,
+    project_path: &std::path::Path,
+    render: Option<&str>,
+) -> Result<std::path::PathBuf, String> {
+    // A render older than the cut would get captions that don't fit it.
+    let modified = |p: &std::path::Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    let current =
+        latest_render(episode_dir, project_path).filter(|r| modified(r) >= modified(project_path));
+    let target = match render.map(str::trim).filter(|r| !r.is_empty()) {
+        Some(r) => paths::resolve_in_working(working_dir, r)?.with_extension("srt"),
+        None => match current {
+            Some(r) => r.with_extension("srt"),
+            None => episode_dir.join(format!(
+                "{}.srt",
+                project_path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("captions")
+            )),
+        },
+    };
+    // Through the working-folder check, so nothing lands outside it.
+    paths::resolve_in_working(working_dir, &paths::display_path(working_dir, &target))
+}
+
 /// Write the cut's captions as SRT: next to `render` when named, else next to
 /// the newest render, else beside the project. Returns where.
 #[tauri::command]
@@ -271,26 +301,7 @@ pub fn video_write_captions(
         return Err("There is no transcript to caption yet. Transcribe the clips first.".into());
     }
     let episode_dir = super::project::episode_home(&working_dir, &episode, &project_path)?;
-    // A render older than the cut would get captions that don't fit it.
-    let modified = |p: &std::path::Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
-    let current = latest_render(&episode_dir, &project_path)
-        .filter(|r| modified(r) >= modified(&project_path));
-    let target = match render.as_deref().map(str::trim).filter(|r| !r.is_empty()) {
-        Some(r) => paths::resolve_in_working(&working_dir, r)?.with_extension("srt"),
-        None => match current {
-            Some(r) => r.with_extension("srt"),
-            None => episode_dir.join(format!(
-                "{}.srt",
-                project_path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("captions")
-            )),
-        },
-    };
-    // Through the working-folder check, so nothing lands outside it.
-    let target =
-        paths::resolve_in_working(&working_dir, &paths::display_path(&working_dir, &target))?;
+    let target = captions_target(&working_dir, &episode_dir, &project_path, render.as_deref())?;
     std::fs::write(&target, super::subtitles::srt(&lines))
         .map_err(|e| format!("can't write the captions: {e}"))?;
     let mut shown = paths::display_path(&working_dir, &target);
@@ -744,4 +755,181 @@ pub async fn youtube_upload_plan(
         thumbnail_data_url,
         chapters,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_util::{temp_dir, TestDir};
+    use std::fs;
+    use std::path::Path;
+    use std::time::{Duration, SystemTime};
+
+    /// A working folder with episode `ep010` holding `cut.kdenlive`.
+    fn episode() -> (TestDir, std::path::PathBuf, std::path::PathBuf) {
+        let dir = temp_dir("video_cmds");
+        let ep = dir.join("ep010");
+        fs::create_dir_all(ep.join("renders")).unwrap();
+        let project = ep.join("cut.kdenlive");
+        fs::write(&project, "").unwrap();
+        (dir, ep, project)
+    }
+
+    /// Write `path` with its modified time `secs` after `base`.
+    fn touch(path: &Path, base: SystemTime, secs: u64) {
+        fs::write(path, b"x").unwrap();
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(base + Duration::from_secs(secs))
+            .unwrap();
+    }
+
+    #[test]
+    fn latest_render_is_the_newest_finished_mp4_named_for_the_project() {
+        let (_dir, ep, project) = episode();
+        let r = ep.join("renders");
+        let base = SystemTime::now() - Duration::from_secs(3600);
+        touch(&r.join("cut-1.mp4"), base, 10);
+        touch(&r.join("cut-2.mp4"), base, 20);
+        // Newer, but still rendering, another project's, or not a video.
+        touch(&r.join("cut-3.part.mp4"), base, 30);
+        touch(&r.join("other.mp4"), base, 40);
+        touch(&r.join("cut-4.mov"), base, 50);
+        assert_eq!(latest_render(&ep, &project), Some(r.join("cut-2.mp4")));
+
+        // By modified time, not by name.
+        touch(&r.join("cut-1.mp4"), base, 60);
+        assert_eq!(latest_render(&ep, &project), Some(r.join("cut-1.mp4")));
+    }
+
+    #[test]
+    fn latest_render_is_none_without_renders() {
+        let (_dir, ep, project) = episode();
+        assert_eq!(latest_render(&ep, &project), None);
+        fs::remove_dir(ep.join("renders")).unwrap();
+        assert_eq!(latest_render(&ep, &project), None);
+    }
+
+    #[test]
+    fn captions_go_beside_a_named_render_inside_the_working_folder() {
+        let (dir, ep, project) = episode();
+        let wd = dir.to_string_lossy();
+        let target =
+            captions_target(&wd, &ep, &project, Some(" ep010/renders/final.mp4 ")).unwrap();
+        assert_eq!(target, ep.join("renders/final.srt"));
+    }
+
+    #[test]
+    fn captions_are_never_written_outside_the_working_folder() {
+        let (dir, ep, project) = episode();
+        let wd = dir.to_string_lossy();
+        let outside = temp_dir("video_cmds_outside");
+        let render = outside.join("final.mp4");
+        fs::write(&render, b"x").unwrap();
+        assert!(captions_target(&wd, &ep, &project, Some("../elsewhere/final.mp4")).is_err());
+        assert!(captions_target(&wd, &ep, &project, Some(&render.to_string_lossy())).is_err());
+        assert!(!outside.join("final.srt").exists());
+    }
+
+    #[test]
+    fn captions_follow_the_newest_render_unless_the_cut_is_newer() {
+        let (dir, ep, project) = episode();
+        let wd = dir.to_string_lossy();
+        let base = SystemTime::now() - Duration::from_secs(3600);
+        touch(&project, base, 10);
+        touch(&ep.join("renders/cut-1.mp4"), base, 20);
+        assert_eq!(
+            captions_target(&wd, &ep, &project, None).unwrap(),
+            ep.join("renders/cut-1.srt")
+        );
+        // An empty name is no name.
+        assert_eq!(
+            captions_target(&wd, &ep, &project, Some("  ")).unwrap(),
+            ep.join("renders/cut-1.srt")
+        );
+
+        // Edited since: the render no longer fits, so beside the project.
+        touch(&project, base, 30);
+        assert_eq!(
+            captions_target(&wd, &ep, &project, None).unwrap(),
+            ep.join("cut.srt")
+        );
+    }
+
+    #[test]
+    fn captions_fall_back_beside_the_project_without_a_render() {
+        let (dir, ep, project) = episode();
+        let wd = dir.to_string_lossy();
+        assert_eq!(
+            captions_target(&wd, &ep, &project, None).unwrap(),
+            ep.join("cut.srt")
+        );
+    }
+
+    fn chapter(title: &str, at_secs: f64) -> super::super::subtitles::Chapter {
+        super::super::subtitles::Chapter {
+            title: title.into(),
+            at_secs,
+        }
+    }
+
+    /// `ep010/cut.kdenlive` from the OBS fixture, and its length in seconds.
+    fn fixture_episode() -> (TestDir, f64) {
+        let (dir, _ep, project) = episode();
+        fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("src/video/kdenlive/fixtures/intro-plus-obs.kdenlive"),
+            &project,
+        )
+        .unwrap();
+        let doc = super::super::kdenlive::open(&project).unwrap();
+        let total = doc.fps.secs(doc.sequence_end());
+        assert!(total >= 40.0, "the fixture is only {total}s");
+        (dir, total)
+    }
+
+    #[test]
+    fn chapters_are_sorted_and_written_beside_the_project() {
+        let (dir, total) = fixture_episode();
+        let third = (total / 3.0).floor();
+        let written = video_write_chapters(
+            dir.to_string_lossy().into_owned(),
+            "ep010".into(),
+            None,
+            vec![
+                chapter("Outro", third * 2.0),
+                chapter(" Intro ", 0.0),
+                chapter("Middle", third),
+            ],
+        )
+        .unwrap();
+        assert_eq!(written.path, "ep010/cut.chapters.txt");
+        let lines: Vec<&str> = written.text.lines().collect();
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0], "0:00 Intro");
+        assert!(lines[1].ends_with(" Middle"), "{lines:?}");
+        assert!(lines[2].ends_with(" Outro"), "{lines:?}");
+        assert_eq!(
+            fs::read_to_string(dir.join("ep010/cut.chapters.txt")).unwrap(),
+            written.text
+        );
+    }
+
+    #[test]
+    fn chapters_that_break_youtubes_rules_are_refused_and_not_written() {
+        let (dir, _total) = fixture_episode();
+        let err = video_write_chapters(
+            dir.to_string_lossy().into_owned(),
+            "ep010".into(),
+            None,
+            vec![chapter("Intro", 5.0), chapter("End", 20.0)],
+        )
+        .err()
+        .unwrap();
+        assert!(err.contains("at least 3 chapters"), "{err}");
+        assert!(err.contains("must start at 0:00"), "{err}");
+        assert!(!dir.join("ep010/cut.chapters.txt").exists());
+    }
 }

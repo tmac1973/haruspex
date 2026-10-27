@@ -165,6 +165,45 @@ impl Database {
         Ok(n > 0)
     }
 
+    /// Merge duplicates into one: `keep_id` takes `content` and `embedding`
+    /// and every id in `delete_ids` is removed, all or nothing.
+    pub fn merge_memories(
+        &self,
+        keep_id: &str,
+        delete_ids: &[String],
+        content: &str,
+        embedding: &[f32],
+        embedding_model: &str,
+    ) -> Result<(), String> {
+        if delete_ids.iter().any(|id| id == keep_id) {
+            return Err("the memory kept can't also be deleted".into());
+        }
+        let mut conn = self.conn();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("Transaction failed: {}", e))?;
+        let n = tx
+            .execute(
+                "UPDATE memories SET content = ?1, embedding = ?2, embedding_model = ?3
+                 WHERE id = ?4",
+                params![
+                    content,
+                    encode_embedding(embedding),
+                    embedding_model,
+                    keep_id
+                ],
+            )
+            .map_err(|e| format!("Memory update failed: {}", e))?;
+        if n == 0 {
+            return Err("that memory no longer exists".into());
+        }
+        for id in delete_ids {
+            tx.execute("DELETE FROM memories WHERE id = ?1", params![id])
+                .map_err(|e| format!("Memory delete failed: {}", e))?;
+        }
+        tx.commit().map_err(|e| format!("Commit failed: {}", e))
+    }
+
     pub fn delete_all_memories(&self) -> Result<i64, String> {
         let conn = self.conn();
         let n = conn

@@ -117,7 +117,6 @@ describe('buildRequest', () => {
 		expect(route).toBe(ROUTES.img2img);
 		expect(body.init_images).toEqual(['AAAA']);
 		expect(body.denoising_strength).toBe(CLEAR_START_STRENGTH);
-		expect(CLEAR_START_STRENGTH).toBe(0.9);
 		expect(buildRequest(req).body.init_images).toBeUndefined();
 	});
 

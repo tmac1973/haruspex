@@ -7,11 +7,12 @@ const settings = vi.hoisted(() => ({
 	musicToolchestApiKeyId: 'k1' as string | null,
 	musicToolchestModelId: 'ace-gpu2'
 }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => settings,
-	getApiKeyValue: (id: string) => (id === 'k1' ? 'sekrit' : undefined)
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings,
+		apiKeys: { k1: 'sekrit' }
+	})
+);
 vi.mock('#lib/stores/apiKeySecrets.ts', () => ({ apiKeysReady: () => Promise.resolve() }));
 vi.mock('#lib/utils/async.ts', () => ({ sleep: () => Promise.resolve() }));
 
@@ -20,7 +21,7 @@ import asmodean from '#lib/toolchest/fixtures/models-asmodean.json';
 import succeeded from './fixtures/job-succeeded.json';
 import refused from './fixtures/refused-not-running.json';
 import { toolchestMusicBackend } from './backend';
-import { invokeRouter } from '#lib/testing/invoke.ts';
+import { httpRouter, invokeRouter, type HttpAnswer, type HttpCall } from '#lib/testing/invoke.ts';
 import {
 	MusicBackendError,
 	type MusicJobHandle,
@@ -35,13 +36,10 @@ function musicState(fixture: typeof compute2, state: string) {
 	return models;
 }
 
-interface Call {
-	method: string;
-	path: string;
+interface Call extends HttpCall {
 	api_key: string;
-	body: Record<string, unknown> | null;
 }
-type Answer = unknown | ((call: Call) => unknown);
+type Answer = HttpAnswer<Call>;
 
 const HASH = 'c'.repeat(64);
 const JOB = '/v1/music/jobs/3f9a1c0d7e2b4a61';
@@ -51,17 +49,10 @@ function use(answers: Record<string, Answer>) {
 		invokeRouter({
 			comfy_cancel: null,
 			audio_store_url: { hash: HASH, mime: 'audio/mpeg', bytes: 1024 },
-			toolchest_json: (args) => answer(answers, args),
-			toolchest_upload: (args) => answer(answers, args)
+			toolchest_json: httpRouter(answers),
+			toolchest_upload: httpRouter(answers)
 		})
 	);
-}
-
-function answer(answers: Record<string, Answer>, args: unknown) {
-	const call = (args as { call: Call }).call;
-	const a = answers[`${call.method} ${call.path}`];
-	if (a === undefined) throw { kind: 'rejected', status: 404, body: '{}' };
-	return typeof a === 'function' ? (a as (c: Call) => unknown)(call) : a;
 }
 
 function jobRoutes(extra: Record<string, Answer> = {}): Record<string, Answer> {

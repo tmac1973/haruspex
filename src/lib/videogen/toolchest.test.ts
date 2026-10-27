@@ -7,16 +7,17 @@ const settings = vi.hoisted(() => ({
 	videoGenToolchestApiKeyId: 'k1' as string | null,
 	videoGenToolchestModelId: 'ti2v'
 }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => settings,
-	getApiKeyValue: (id: string) => (id === 'k1' ? 'sekrit' : undefined)
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings,
+		apiKeys: { k1: 'sekrit' }
+	})
+);
 vi.mock('#lib/stores/apiKeySecrets.ts', () => ({ apiKeysReady: () => Promise.resolve() }));
 vi.mock('#lib/utils/async.ts', () => ({ sleep: () => Promise.resolve() }));
 
 import compute2 from '#lib/toolchest/fixtures/models-compute2.json';
-import { invokeRouter } from '#lib/testing/invoke.ts';
+import { httpRouter, invokeRouter, type HttpAnswer, type HttpCall } from '#lib/testing/invoke.ts';
 import { parseGenerationModels } from '#lib/toolchest/models.ts';
 import {
 	generateVideo,
@@ -27,13 +28,10 @@ import {
 } from './toolchest.ts';
 import type { VideoJobHandle, VideoProgress, VideoRequest } from './types.ts';
 
-interface Call {
-	method: string;
-	path: string;
+interface Call extends HttpCall {
 	api_key: string;
-	body: Record<string, unknown> | null;
 }
-type Answer = unknown | ((call: Call) => unknown);
+type Answer = HttpAnswer<Call>;
 
 const HASH = 'c'.repeat(64);
 const ID = 'a1b2c3d4e5f60718';
@@ -106,20 +104,13 @@ function jobRoutes(extra: Record<string, Answer> = {}): Record<string, Answer> {
 	};
 }
 
-function answer(answers: Record<string, Answer>, args: unknown) {
-	const call = (args as { call: Call }).call;
-	const a = answers[`${call.method} ${call.path}`];
-	if (a === undefined) throw { kind: 'rejected', status: 404, body: '{}' };
-	return typeof a === 'function' ? (a as (c: Call) => unknown)(call) : a;
-}
-
 function use(answers: Record<string, Answer>) {
 	tauri.invoke.mockReset().mockImplementation(
 		invokeRouter({
 			comfy_cancel: null,
 			audio_store_url: { hash: HASH, mime: 'video/webm', bytes: 123456 },
-			toolchest_json: (args) => answer(answers, args),
-			toolchest_upload: (args) => answer(answers, args)
+			toolchest_json: httpRouter(answers),
+			toolchest_upload: httpRouter(answers)
 		})
 	);
 }

@@ -199,13 +199,13 @@ pub async fn memory_merge(
     let db = state.inner().clone();
     on_pool_with_model(&app, db, move |db, dir| {
         let vector = embed_one(&dir, &content)?;
-        if !db.update_memory_content(&keep_id, &content, &vector, embedder::EMBEDDING_MODEL_NAME)? {
-            return Err("that memory no longer exists".into());
-        }
-        for id in &delete_ids {
-            db.delete_memory(id)?;
-        }
-        Ok(())
+        db.merge_memories(
+            &keep_id,
+            &delete_ids,
+            &content,
+            &vector,
+            embedder::EMBEDDING_MODEL_NAME,
+        )
     })
     .await
 }

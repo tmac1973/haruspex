@@ -5,10 +5,12 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
 vi.mock('#lib/stores/youtubeUploadApproval.svelte.ts', () => ({ askYoutubeUpload: state.ask }));
 vi.mock('#lib/video/youtube.ts', () => ({ YOUTUBE_UPLOAD: true }));
 
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
-	return { ...actual, getSettings: () => ({ ...actual.getSettings(), videoEditingEnabled: true }) };
-});
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: { videoEditingEnabled: true },
+		overDefaults: true
+	})
+);
 
 import { executeTool } from '#lib/agent/tools/index.ts';
 import { changes, checkProposal, withChapters } from './youtube-upload';

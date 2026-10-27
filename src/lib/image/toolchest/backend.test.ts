@@ -7,11 +7,12 @@ const settings = vi.hoisted(() => ({
 	imageToolchestApiKeyId: 'k1' as string | null,
 	imageToolchestModelId: 'qwen-turbo-local'
 }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
-	getSettings: () => settings,
-	getApiKeyValue: (id: string) => (id === 'k1' ? 'sekrit' : undefined)
-}));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings,
+		apiKeys: { k1: 'sekrit' }
+	})
+);
 vi.mock('#lib/stores/apiKeySecrets.ts', () => ({ apiKeysReady: () => Promise.resolve() }));
 // Polls wait a second each; not in tests.
 vi.mock('#lib/utils/async.ts', () => ({ sleep: () => Promise.resolve() }));
@@ -20,33 +21,25 @@ import asmodean from '#lib/toolchest/fixtures/models-asmodean.json';
 import compute2 from '#lib/toolchest/fixtures/models-compute2.json';
 import klein from '#lib/toolchest/fixtures/models-asmodean-klein.json';
 import { toolchestBackend } from './backend';
-import { invokeRouter } from '#lib/testing/invoke.ts';
+import {
+	httpCalls,
+	httpRouter,
+	invokeRouter,
+	type HttpAnswer,
+	type HttpCall
+} from '#lib/testing/invoke.ts';
 import { ImageBackendError, type ImageProgress } from '#lib/image/types.ts';
 
-interface Call {
-	method: string;
-	path: string;
+interface Call extends HttpCall {
 	api_key: string;
-	body: Record<string, unknown> | null;
 	timeout_ms: number;
 	id: string;
 }
 
-type Answer = unknown | ((call: Call) => unknown);
-
-function route(answers: Record<string, Answer>) {
-	return (args?: Record<string, unknown>) => {
-		const call = args!.call as Call;
-		const a = answers[`${call.method} ${call.path}`];
-		if (a === undefined) throw { kind: 'rejected', status: 404, body: '{}' };
-		return typeof a === 'function' ? (a as (c: Call) => unknown)(call) : a;
-	};
-}
+type Answer = HttpAnswer<Call>;
 
 const calls = () =>
-	tauri.invoke.mock.calls
-		.filter(([c]) => c === 'toolchest_json' || c === 'toolchest_bytes')
-		.map(([, a]) => `${a.call.method} ${a.call.path}`);
+	httpCalls(tauri.invoke, 'toolchest_json', 'toolchest_bytes').map((c) => `${c.method} ${c.path}`);
 
 /** A job that is queued behind one, then draws, then is done. */
 function jobRoutes(extra: Record<string, Answer> = {}): Record<string, Answer> {
@@ -69,8 +62,8 @@ function use(answers: Record<string, Answer>) {
 		invokeRouter({
 			image_clear_canvas: [1, 2, 3],
 			comfy_cancel: null,
-			toolchest_json: route(answers),
-			toolchest_upload: route(answers),
+			toolchest_json: httpRouter(answers),
+			toolchest_upload: httpRouter(answers),
 			toolchest_bytes: () => new Uint8Array([137, 80, 78, 71]).buffer
 		})
 	);

@@ -8,13 +8,12 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
-vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
-	return {
-		...actual,
-		getSettings: () => ({ ...actual.getSettings(), imageBackendKind: state.backend })
-	};
-});
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => ({ imageBackendKind: state.backend }),
+		overDefaults: true
+	})
+);
 vi.mock('#lib/assets/single.ts', () => ({
 	DEFAULT_SIZE: { sprite: 64, icon: 32, image: 1024 },
 	makeSingleAsset: state.make
