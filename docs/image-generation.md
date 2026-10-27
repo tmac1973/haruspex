@@ -61,8 +61,11 @@ prompt, takes the **first** one and strips them all
 (`examples/server/routes_openai.cpp`). Lemonade appends a block of its own;
 ours leads the prompt, so it wins whole: seed, size, sampler, and
 `init_image`/`strength` for Ming's clear start. `adapter.test.ts` pins that
-our block comes first. The response has no seed, so every request sends a
-concrete one.
+our block comes first; at run time, a transparent Ming request that comes back
+with no transparent pixel sets `meta.transparencyFailed` (and a debug-log
+warning), so a server that started reading the last block shows up as a
+sentence in Chat rather than as solid sprites. The response has no seed, so
+every request sends a concrete one.
 
 **No tiling.** sd-server finds that block with a `std::regex` over the whole
 prompt, and a long block crashes it: no answer, then Lemonade's watchdog

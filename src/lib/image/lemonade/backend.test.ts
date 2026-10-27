@@ -15,7 +15,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 import health from './fixtures/health.json';
 import systemInfo from './fixtures/system-info.json';
 import models from './fixtures/models.json';
-import { lemonadeBackend } from './backend';
+import { lemonadeBackend, TRANSPARENCY_LOST } from './backend';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 import type { ImageProgress } from '#lib/image/types.ts';
 
@@ -123,6 +123,25 @@ describe('lemonade backend', () => {
 		});
 		expect(r.images[0].bytes).toEqual(new Uint8Array([1, 2, 3]));
 		expect(r.meta).toMatchObject({ seed: 5, model: 'ming', backend: 'lemonade' });
+	});
+
+	it('says so when a transparent Ming request comes back with no transparency', async () => {
+		const plain = tauri.invoke.getMockImplementation()!;
+		const answer = (clear: number) =>
+			tauri.invoke.mockImplementation((cmd: string, args?: Record<string, unknown>) =>
+				cmd === 'image_transparent_fraction' ? clear : plain(cmd, args)
+			);
+		const coin = { prompt: 'a coin', width: 1024, height: 1024, seed: 5, transparent: true };
+		answer(0);
+		expect((await lemonadeBackend.generate(coin)).meta.transparencyFailed).toBe(TRANSPARENCY_LOST);
+		answer(0.42);
+		expect((await lemonadeBackend.generate(coin)).meta.transparencyFailed).toBeUndefined();
+		// Not asked for transparency, so not checked.
+		answer(0);
+		const opaque = await lemonadeBackend.generate({ ...coin, transparent: false });
+		expect(opaque.meta.transparencyFailed).toBeUndefined();
+		const checks = tauri.invoke.mock.calls.filter(([c]) => c === 'image_transparent_fraction');
+		expect(checks).toHaveLength(2);
 	});
 
 	it('pins a seed when the request has none, so the recipe records a real one', async () => {
