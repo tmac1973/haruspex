@@ -37,3 +37,7 @@ To try it: `/fix-picture make it look like late evening, then make it big enough
 
 - `fix-picture` doesn't draw a new picture; just ask for one (see the `images` page).
 - The skills don't run in jobs or subtasks.
+
+## What has been tested
+
+`fix-picture` was tested by running `/fix-picture` with Qwen3.8-Flash. It made an area edit, and an edit then an upscale, upscaling last even when asked for it first. It extended a picture to 16:9 on ComfyUI with FLUX.2 klein. On Lemonade it said extending isn't possible there, and offered what is. Without `/fix-picture`, that model used the picture tools directly without loading the skill.
