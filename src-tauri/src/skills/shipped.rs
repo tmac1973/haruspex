@@ -347,6 +347,8 @@ mod tests {
             "guided-planning",
             "plan-2d-game",
             "fix-picture",
+            "write-song",
+            "cut-video",
         ] {
             assert!(skills.contains_key(name), "{name} isn't shipped");
         }

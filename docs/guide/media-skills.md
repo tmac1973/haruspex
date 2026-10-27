@@ -9,11 +9,13 @@ Haruspex ships skills that chain the picture, music and video tools into whole t
 
 ## When they are offered
 
-Each one needs something set up first:
+Each works in certain tabs and needs something set up first:
 
-| Skill | Needs |
-|---|---|
-| `fix-picture` | an image backend (Settings → Image) |
+| Skill | Where | Needs |
+|---|---|---|
+| `fix-picture` | Chat | an image backend (Settings → Image) |
+| `write-song` | Chat and the Code tab | a music backend (Settings → Music) |
+| `cut-video` | Chat and the Code tab, with a working folder | the video tools (Settings → Video editing) |
 
 Until that is set up, the skill is greyed out in Settings → Skills, with what it needs, and isn't offered. Once it is, the model can load the skill when a request matches, and a skill also loads by itself the first time the model reaches for one of its tools, such as editing a picture. That depends on Settings → Skills → When the model uses skills: by default, remote and OpenRouter models load skills and the local model doesn't. On any model you can run one yourself by typing `/` and its name, followed by what you want.
 
@@ -32,6 +34,26 @@ For several changes it works in that order, edits first and upscaling last, each
 The skill is told what the image backend can do when it loads. If you ask for something the backend can't do, such as extending on Lemonade or editing with Ming-Image, it says what is missing and where to set it up, rather than trying. See the `image-editing` page for which backends and models do what.
 
 To try it: `/fix-picture make it look like late evening, then make it big enough to print`.
+
+## Make a song: write-song
+
+`write-song` writes the style and the words before making anything, since a song takes a minute or more. The style is a few tags (genre, mood, instruments, tempo, voice), using only what you asked for. Lyrics get section tags such as `[verse]` and `[chorus]`, and as many lines as fit the length. An instrumental gets none.
+
+- **Music for a game or a video:** an instrumental loop with no intro or outro, 30 to 60 seconds. In the Code tab it's saved where the code loads its music.
+- **Changing a song:** it changes the part you name rather than making the whole song again. It can redo a stretch, restyle the song, extend it, or add or pull out an instrument (see the `music` page). For "the same but faster" it reuses the song's seed.
+- **Afterwards:** it says what it made, with the length and the seed. It doesn't claim how the song sounds, since it can't hear it.
+
+## Finish a video: cut-video
+
+`cut-video` takes an episode from raw clips to a finished video, in order, and stops where you need to decide:
+
+1. It lists the clips, saying which are mixed formats or have no sound, and transcribes them.
+2. It makes the cut, then **stops** for you to look. Close the project in Kdenlive before it goes on.
+3. It cuts out silences, and lists the retakes it finds in the transcript. It **asks** which to cut, and cuts only those.
+4. It writes chapters for a longer video, renders in the background, and checks the render's loudness, length and sound.
+5. It writes captions next to the render, and offers moments for a thumbnail.
+
+It never uploads. See the `video-editing`, `video-speech` and `video-render` pages for each step.
 
 ## What they don't do
 
