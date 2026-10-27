@@ -20,7 +20,9 @@
 //!   Face and checked by loading the model.
 //! - It adds `--diffusion-fa --vae-tiling` on Vulkan only. These models were
 //!   measured with both, so they go in on every backend, with the rest of
-//!   [`engine_options`].
+//!   [`engine_options`] — except Ming's `--backend te=cpu` ([`lemonade_options`]).
+//!
+//! [`lemonade_options`]: fn@lemonade_options
 
 use serde::Serialize;
 
@@ -216,13 +218,33 @@ fn arg(a: &str) -> String {
 /// Ming's tokenizer, and Qwen's vision weights, which it edits with.
 const BY_PATH: [ImageFileRole; 2] = [ImageFileRole::Tokenizer, ImageFileRole::Vision];
 
+/// [`engine_options`] without a `--backend`. Lemonade's sd-server is newer
+/// than the bundled one and auto-fits: given `--backend te=cpu`, it keeps
+/// that and places the diffusion model and VAE itself, and on a machine with
+/// an integrated GPU it chose that one (minutes a picture, 2 GB of VRAM).
+/// Without it, it picks one GPU, the discrete card: Ming took 30 s a 1024
+/// picture there, against 24 s with every device named, which would mean
+/// guessing each backend's device names.
+fn lemonade_options(entry: &ImageModelInfo) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut it = engine_options(entry).into_iter();
+    while let Some(a) = it.next() {
+        if a == "--backend" {
+            it.next();
+        } else {
+            out.push(a);
+        }
+    }
+    out
+}
+
 fn sdcpp_args(entry: &ImageModelInfo, cached: &[(ImageFileRole, String)]) -> String {
     let mut args = Vec::new();
     for (role, path) in cached {
         args.push(role.flag().to_string());
         args.push(path.clone());
     }
-    args.extend(engine_options(entry));
+    args.extend(lemonade_options(entry));
     args.iter().map(|a| arg(a)).collect::<Vec<_>>().join(" ")
 }
 
@@ -333,7 +355,12 @@ mod tests {
         let tok = [(ImageFileRole::Tokenizer, "/cache/tok.json".to_string())];
         let args = sdcpp_args(&ming, &tok);
         assert!(args.starts_with("--tokenizer /cache/tok.json "), "{args}");
-        assert!(args.ends_with(&engine_options(&ming).join(" ")), "{args}");
+        assert!(args.ends_with(&lemonade_options(&ming).join(" ")), "{args}");
+        // The bundled engine runs Ming's text encoder on the CPU; Lemonade's
+        // sd-server is left to place it, or it may pick an integrated GPU.
+        assert!(engine_options(&ming).contains(&"te=cpu".to_string()));
+        assert!(!args.contains("--backend"), "{args}");
+        assert!(args.contains("--diffusion-fa"), "{args}");
         let vision = [(ImageFileRole::Vision, "/cache/mmproj.gguf".to_string())];
         let qwen = sdcpp_args(&entry("qwen21"), &vision);
         assert!(

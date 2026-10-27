@@ -283,11 +283,24 @@ pub fn image_clear_canvas(width: u32, height: u32) -> Result<Vec<u8>, String> {
             "A canvas of {width}x{height} is not one to generate at."
         ));
     }
-    encode(&RgbaImage::from_pixel(
+    // Compressed hard: Lemonade carries it inside the prompt, where sd-server
+    // fails above ~20 000 characters, and the default compression left a 1024
+    // canvas at 22 KB (30 000 characters of base64) where this makes ~4 KB.
+    let canvas = RgbaImage::from_pixel(width, height, Rgba([128, 128, 128, 0]));
+    let mut out = Vec::new();
+    image::codecs::png::PngEncoder::new_with_quality(
+        &mut out,
+        image::codecs::png::CompressionType::Best,
+        image::codecs::png::FilterType::NoFilter,
+    )
+    .write_image(
+        canvas.as_raw(),
         width,
         height,
-        Rgba([128, 128, 128, 0]),
-    ))
+        image::ExtendedColorType::Rgba8,
+    )
+    .map_err(|e| format!("Could not encode the image: {e}"))?;
+    Ok(out)
 }
 
 /// The fraction of a picture's pixels that aren't fully opaque (`stats.rs`):
@@ -773,6 +786,9 @@ mod tests {
         assert_eq!(img.dimensions(), (64, 32));
         assert!(img.pixels().all(|p| p.0[3] == 0));
         assert!(image_clear_canvas(0, 32).is_err());
+        // Small enough to ride in a Lemonade prompt (base64 under ~20 000).
+        let big = image_clear_canvas(1024, 1024).unwrap();
+        assert!(big.len() * 4 / 3 < 12_000, "{} bytes", big.len());
     }
 
     #[test]

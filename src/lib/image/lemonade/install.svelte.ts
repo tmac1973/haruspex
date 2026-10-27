@@ -18,14 +18,13 @@
  * "sd-server not found".
  */
 
-import { invoke } from '@tauri-apps/api/core';
-import { getSettings } from '#lib/stores/settings.ts';
 import { sleep } from '#lib/utils/async.ts';
 import type { DownloadProgress } from '#lib/ipc/gen/DownloadProgress.ts';
 import type { LemonadeModel } from '#lib/ipc/gen/LemonadeModel.ts';
 import { ROUTES, UPSCALER, findJob, jobId, type DownloadJob } from '#lib/image/lemonade/adapter.ts';
 import { lemonadeConfig, lemonadeJson } from '#lib/image/lemonade/client.ts';
 import { lemonadeCatalogue, serverState } from '#lib/image/lemonade/backend.ts';
+import { saveOptions } from '#lib/image/lemonade/options.ts';
 
 export interface ActiveInstall {
 	id: string;
@@ -198,21 +197,7 @@ async function forget(name: string): Promise<void> {
 async function configure(m: LemonadeModel): Promise<void> {
 	const cfg = lemonadeConfig();
 	if (active) active.progress = { downloaded: 1, total: 1, speed_bps: 0, stage: 'Setting it up' };
-	const info = (await lemonadeJson(cfg, { path: ROUTES.systemInfo })) as {
-		model_storage?: { path?: string };
-	};
-	const storage = info?.model_storage?.path;
-	if (!storage) throw new Error('Lemonade did not say where it keeps model files.');
-	const args = await invoke<string>('lemonade_sdcpp_args', {
-		id: m.id,
-		storage,
-		proxy: getSettings().proxy
-	});
-	await lemonadeJson(cfg, {
-		method: 'POST',
-		path: ROUTES.options(m.name),
-		body: { sdcpp_args: args }
-	});
+	await saveOptions(m);
 	if (active) active.progress = { downloaded: 1, total: 1, speed_bps: 0, stage: 'Loading it once' };
 	await lemonadeJson(cfg, {
 		method: 'POST',
