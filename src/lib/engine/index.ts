@@ -41,6 +41,26 @@ export function batcher(send: (events: EngineEvent[]) => void): (e: EngineEvent)
 
 let started = false;
 
+/** What `run` started, the op listener and the watchers, for `stopEngine`. */
+const teardown: Array<() => void> = [];
+
+/** Stop listening for ops and stop the watchers, so a fresh start is the only one. */
+export function stopEngine(): void {
+	for (const undo of teardown.splice(0)) undo();
+	started = false;
+}
+
+/**
+ * The engine running in this window, whichever copy of this module started
+ * it. A dev build's hot reload runs this module again without disposing the
+ * old copy (Vite disposes only the module that accepts the update), and the
+ * old copy's listener kept answering ops from the old chat store, which
+ * didn't know a chat made since: its fast "no chat" beat the real answer.
+ * So a starting engine stops the one before it.
+ */
+const RUNNING = '__haruspexEngineStop';
+type WithEngine = typeof globalThis & { [RUNNING]?: () => void };
+
 /**
  * Start this window's engine, now if Rust has it on, else when it is switched
  * on (the owner API starting: `engine://enabled`), so turning Settings →
@@ -76,21 +96,31 @@ export async function startEngine(): Promise<void> {
 async function run(label: string): Promise<void> {
 	if (started) return;
 	started = true;
+	const g = globalThis as WithEngine;
+	g[RUNNING]?.();
+	g[RUNNING] = stopEngine;
 
 	const sink = batcher((events) => {
 		invoke('engine_events', { events }).catch((e: unknown) => {
 			logDebug('engine', 'sending events failed', { error: errMessage(e) });
 		});
 	});
-	setResync(watchOpenSessions(sink).resync);
-	watchPrompts(label, sink);
+	const sessions = watchOpenSessions(sink);
+	setResync(sessions.resync);
+	const keep = (undo: (() => void) | undefined) => {
+		if (undo) teardown.push(undo);
+	};
+	keep(sessions.stop);
+	keep(watchPrompts(label, sink));
 	if (label === MAIN_WINDOW) {
 		// Chat lives in the main window; loaded here only, not in Code windows.
 		const { watchChats } = await import('#lib/engine/chat.svelte.ts');
-		setChatResync(watchChats(sink).resync);
+		const chats = watchChats(sink);
+		setChatResync(chats.resync);
+		keep(chats.stop);
 	}
 
-	await listen<{ reqId: string; op: EngineOp; window: string }>(
+	const unlistenOps = await listen<{ reqId: string; op: EngineOp; window: string }>(
 		'engine://op',
 		async ({ payload }) => {
 			const { reqId, op, window } = payload;
@@ -105,5 +135,6 @@ async function run(label: string): Promise<void> {
 			await invoke('engine_reply', { reply }).catch(() => {});
 		}
 	);
+	keep(unlistenOps);
 	logDebug('engine', 'started', { window: label });
 }

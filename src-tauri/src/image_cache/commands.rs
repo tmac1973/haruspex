@@ -278,6 +278,40 @@ pub async fn image_mask_prepare(
     })
 }
 
+/// How much an edit changed where its mask allows (`image_gen::mask::masked_change`),
+/// 0–255: the backend's picture as the raw body, the cached canvas and mask
+/// named by `x-canvas-hash` and `x-mask-hash`.
+#[tauri::command]
+pub async fn image_mask_change(
+    app: AppHandle,
+    db: State<'_, Database>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<f32, String> {
+    let tauri::ipc::InvokeBody::Raw(edited) = request.body() else {
+        return Err("The edited picture must be sent as raw bytes.".into());
+    };
+    let canvas = header(&request, "x-canvas-hash").ok_or("No x-canvas-hash was given.")?;
+    let mask = header(&request, "x-mask-hash").ok_or("No x-mask-hash was given.")?;
+    let dir = cache_dir(&app)?;
+    let (canvas, mask) = (
+        read_cached(&db, &dir, canvas)?,
+        read_cached(&db, &dir, mask)?,
+    );
+    let edited = edited.clone();
+    tokio::task::spawn_blocking(move || {
+        let load = |b: &[u8], what: &str| {
+            image::load_from_memory(b).map_err(|e| format!("Could not read the {what}: {e}"))
+        };
+        Ok(crate::image_gen::mask::masked_change(
+            &load(&canvas, "canvas")?.to_rgba8(),
+            &load(&edited, "edited picture")?.to_rgba8(),
+            &load(&mask, "mask")?.to_luma8(),
+        ))
+    })
+    .await
+    .map_err(|e| format!("The edit could not be measured: {e}"))?
+}
+
 /// An edit held to its mask: the backend's picture arrives as the raw body and
 /// is pasted over the cached canvas `x-canvas-hash` through the cached mask
 /// `x-mask-hash`. Answers the finished PNG's bytes, which `edit_image` keeps

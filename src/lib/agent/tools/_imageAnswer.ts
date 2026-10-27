@@ -34,7 +34,12 @@ export function imageAnswerText(a: {
 	return [
 		`${a.verb} (${a.width}×${a.height}, ${a.model}, seed ${a.seed}).`,
 		placeLine(a.markdown),
-		...(a.sees ? ['The picture is attached, so you can look at it before you answer.'] : []),
+		...(a.sees
+			? [
+					'The picture is attached: look at it before you answer, and describe what it ' +
+						'shows, not what was asked for.'
+				]
+			: []),
 		...(a.saved ? [a.saved] : []),
 		...a.notes
 	].join(' ');

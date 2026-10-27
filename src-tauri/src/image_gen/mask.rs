@@ -195,6 +195,39 @@ fn extended_canvas(src: &RgbaImage, cw: u32, ch: u32, l: u32, t: u32) -> RgbaIma
     canvas
 }
 
+/// How much `edited` differs from `canvas` where the mask lets it change: the
+/// mean colour difference, 0–255, weighted by the mask. Near 0 means the
+/// backend left the masked part as it was, as an edit model does with an empty
+/// border, though the model may still describe the change it was asked for.
+pub fn masked_change(canvas: &RgbaImage, edited: &RgbaImage, mask: &GrayImage) -> f32 {
+    let (w, h) = canvas.dimensions();
+    let edited = if edited.dimensions() == (w, h) {
+        edited.clone()
+    } else {
+        image::imageops::resize(edited, w, h, FilterType::Triangle)
+    };
+    let mask = if mask.dimensions() == (w, h) {
+        mask.clone()
+    } else {
+        image::imageops::resize(mask, w, h, FilterType::Triangle)
+    };
+    let (mut sum, mut weight) = (0f64, 0f64);
+    for ((a, b), m) in canvas.pixels().zip(edited.pixels()).zip(mask.pixels()) {
+        let m = m.0[0] as f64 / 255.0;
+        let d: f64 = (0..3)
+            .map(|i| (a.0[i] as f64 - b.0[i] as f64).abs())
+            .sum::<f64>()
+            / 3.0;
+        sum += d * m;
+        weight += m;
+    }
+    if weight == 0.0 {
+        0.0
+    } else {
+        (sum / weight) as f32
+    }
+}
+
 /// The edit pasted over `canvas` through `mask`: the model's pixels where the
 /// mask is white, the canvas's where it is black, blended between. The edit is
 /// scaled to the canvas first, since a model returns the size it likes.
@@ -288,6 +321,25 @@ mod tests {
             ..Default::default()
         };
         assert!(prepare(&solid(2000, 10, [0; 4]), None, Some(huge)).is_err());
+    }
+
+    #[test]
+    fn masked_change_is_near_zero_when_the_masked_part_came_back_as_it_was() {
+        let canvas = solid(100, 100, [10, 20, 30, 255]);
+        let p = prepare(&canvas, area(0.5, 0.0, 0.5, 1.0), None).unwrap();
+        assert!(masked_change(&canvas, &canvas, &p.mask) < 0.01);
+        // Changed everywhere, at another size: the full difference shows.
+        let edited = solid(64, 64, [250, 20, 30, 255]);
+        let d = masked_change(&canvas, &edited, &p.mask);
+        assert!((d - 80.0).abs() < 1.0, "{d}");
+        // A change only outside the mask doesn't count.
+        let mut outside = canvas.clone();
+        for y in 0..100 {
+            for x in 0..30 {
+                outside.put_pixel(x, y, Rgba([255, 255, 255, 255]));
+            }
+        }
+        assert!(masked_change(&canvas, &outside, &p.mask) < 0.01);
     }
 
     #[test]
