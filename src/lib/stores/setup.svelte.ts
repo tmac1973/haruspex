@@ -140,7 +140,7 @@ async function applyRecommendedContext(modelId: string): Promise<void> {
 		});
 		updateSettings({ contextSize: ctx });
 	} catch (e) {
-		console.error('Context recommendation failed:', e);
+		console.warn('Context recommendation failed:', e);
 	}
 }
 

@@ -146,7 +146,7 @@ export function createEditor(parent: HTMLElement, options: EditorOptions): Edito
 	// Other languages are chunks of their own; the text shows plain until
 	// one arrives, which is a moment the first time and instant after.
 	if (lang && lang !== 'markdown') {
-		lang
+		void lang
 			.load()
 			.then((support) => {
 				if (!destroyed) view.dispatch({ effects: language.reconfigure(support) });

@@ -22,6 +22,7 @@ import { assetIo, writeAsset } from '#lib/agent/tools/_assetIo.ts';
 import { resolveWritePathInteractive, userCanceledWriteError } from '#lib/agent/tools/fs-write.ts';
 import { audioHashFromUrl } from '#lib/audio/url.ts';
 import { imageHashFromUrl } from '#lib/images/url.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 /** Something Haruspex made, by its cache URL. */
 export interface Generated {
@@ -111,7 +112,7 @@ export async function writeCachedImage(
 		ctx.filesWrittenThisTurn.add(target.path);
 		return null;
 	} catch (e) {
-		return `Could not write ${target.path}: ${e instanceof Error ? e.message : String(e)}`;
+		return `Could not write ${target.path}: ${errMessage(e)}`;
 	}
 }
 
@@ -135,6 +136,6 @@ export async function writeSaved(
 		ctx.filesWrittenThisTurn.add(target.path);
 		return null;
 	} catch (e) {
-		return `Could not write ${target.path}: ${e instanceof Error ? e.message : String(e)}`;
+		return `Could not write ${target.path}: ${errMessage(e)}`;
 	}
 }

@@ -58,7 +58,7 @@ export function imageDropTarget(node: HTMLElement, options: ImageDropOptions) {
 	// getCurrentWebview()/onDragDropEvent only exist inside the Tauri webview;
 	// guard so browser dev mode (and tests) don't throw.
 	try {
-		getCurrentWebview()
+		void getCurrentWebview()
 			.onDragDropEvent((event) => {
 				if (disposed) return;
 				const p = event.payload;

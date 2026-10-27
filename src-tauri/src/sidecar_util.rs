@@ -246,7 +246,7 @@ pub fn spawn_log_reader(
                 CommandEvent::Stderr(line) => {
                     let s = String::from_utf8_lossy(&line);
                     let trimmed = s.trim();
-                    info!("{name}: {}", trimmed);
+                    warn!("{name}: {}", trimmed);
                     let mut buf = log.lock().await;
                     push_log(&mut buf, trimmed);
                 }

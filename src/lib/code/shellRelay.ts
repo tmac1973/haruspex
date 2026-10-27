@@ -120,7 +120,7 @@ export function createShellRelay(
 				return;
 			}
 			req.signal?.addEventListener('abort', onAbort, { once: true });
-			bus
+			void bus
 				.emitTo(main, SHELL_OPEN_EVENT, {
 					reqId,
 					from: self,

@@ -47,7 +47,7 @@
 			setTimeout(() => (copyFeedback = null), 1200);
 			return true;
 		} catch (e) {
-			console.error('clipboard.writeText failed', e);
+			console.warn('clipboard.writeText failed', e);
 			return false;
 		}
 	}
@@ -65,7 +65,7 @@
 			handle.focus();
 			return true;
 		} catch (e) {
-			console.error('clipboard_read_text failed', e);
+			console.warn('clipboard_read_text failed', e);
 			return false;
 		}
 	}

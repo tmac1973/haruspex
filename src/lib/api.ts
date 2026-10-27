@@ -6,7 +6,7 @@ import { apiKeysReady } from '#lib/stores/apiKeySecrets.ts';
 import { localServerKeyReady } from '#lib/inference/localServerKey.ts';
 import { baseUrl } from '#lib/ports.ts';
 import { OPENROUTER_ATTRIBUTION_HEADERS } from '#lib/openrouter.ts';
-import { isAbortError } from '#lib/utils/error.ts';
+import { isAbortError, errMessage } from '#lib/utils/error.ts';
 import { readErrorText, urlForReport } from '#lib/utils/http.ts';
 import { combineReasoningAndContent } from '#lib/streamAssembly.ts';
 
@@ -582,7 +582,7 @@ async function sendChatRequest(
 				throw e;
 			}
 			// A dropped/refused connection is transient (sidecar restarting) — retry.
-			logDebug('api', `${label} request #${reqId} fetch failed`, { error: String(e), attempt });
+			logDebug('api', `${label} request #${reqId} fetch failed`, { error: errMessage(e), attempt });
 			lastError = new ApiError('Failed to connect to the AI model. Is it still loading?');
 			continue;
 		}

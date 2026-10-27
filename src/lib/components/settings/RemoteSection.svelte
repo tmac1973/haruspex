@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { loggedFallback } from '#lib/debug-log.ts';
 
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import {
@@ -105,14 +106,20 @@
 	}
 
 	async function refreshLink() {
-		address = await getLanAddress().catch(() => null);
+		address = await getLanAddress().catch(
+			loggedFallback(null, 'settings', 'could not read the LAN address')
+		);
 		qr = null;
 		pageQr = null;
 		if (!link || !pageUrl) return;
 		// A missing QR is a missing convenience, not a broken feature: the
 		// link is still on screen and still copyable.
-		qr = await getLinkQr(link).catch(() => null);
-		pageQr = await getLinkQr(pageUrl).catch(() => null);
+		qr = await getLinkQr(link).catch(
+			loggedFallback(null, 'settings', 'could not make the link QR code')
+		);
+		pageQr = await getLinkQr(pageUrl).catch(
+			loggedFallback(null, 'settings', 'could not make the page QR code')
+		);
 	}
 
 	async function apply() {

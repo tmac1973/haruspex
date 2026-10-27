@@ -40,7 +40,7 @@ export function playableClip(hash: string): Promise<PlayableClip> {
 			return { url: URL.createObjectURL(new Blob([bytes], { type: mime })), mime };
 		});
 		// A failure isn't kept: the next player asks again.
-		clip.catch(() => clips.delete(hash));
+		void clip.catch(() => clips.delete(hash));
 		clips.set(hash, clip);
 	}
 	return clip;

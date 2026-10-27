@@ -37,7 +37,7 @@
 			loaded = src;
 			return;
 		}
-		playableSong(h)
+		void playableSong(h)
 			.then((song) => {
 				loaded = song.url;
 				mime = song.mime;

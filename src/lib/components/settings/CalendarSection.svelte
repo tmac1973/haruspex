@@ -52,7 +52,7 @@
 	let googleError = $state('');
 
 	onMount(() => {
-		invoke<boolean>('google_sign_in_available')
+		void invoke<boolean>('google_sign_in_available')
 			.then((ok) => (googleAvailable = ok))
 			.catch(() => (googleAvailable = false));
 	});

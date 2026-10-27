@@ -11,7 +11,7 @@ import {
 	getSamplingParams,
 	getOpenRouterReasoningParam
 } from '#lib/stores/settings.ts';
-import { isAbortError } from '#lib/utils/error.ts';
+import { isAbortError, errMessage } from '#lib/utils/error.ts';
 import { logDebug } from '#lib/debug-log.ts';
 import { NudgeState, automaticCheck } from '#lib/agent/loop/nudges.ts';
 import type { CompletionMeta } from '#lib/agent/loop.ts';
@@ -97,7 +97,7 @@ export async function forceFinalToolCall(
 		);
 	} catch (e) {
 		if (isAbortError(e)) throw e;
-		logDebug('agent', 'forced final tool call failed', { tool: name, error: String(e) });
+		logDebug('agent', 'forced final tool call failed', { tool: name, error: errMessage(e) });
 		ctx.options.onComplete(meta);
 		return;
 	}
@@ -175,7 +175,7 @@ async function writeFileBeforeWrapUp(ctx: LoopContext, nudges: NudgeState): Prom
 		);
 	} catch (e) {
 		if (isAbortError(e)) throw e;
-		logDebug('agent', 'max-iterations file write failed', { error: String(e) });
+		logDebug('agent', 'max-iterations file write failed', { error: errMessage(e) });
 		return;
 	}
 	if (response.usage) ctx.options.onUsageUpdate?.(response.usage);

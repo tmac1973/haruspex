@@ -220,6 +220,31 @@ impl ServerConfig {
     }
 }
 
+/// `args` as the log shows them: the values in the user's `extra` args are
+/// redacted and their flag names kept, since an extra arg can be a key or a
+/// path the user would rather not post with a feedback report. `extra` is the
+/// run [`ServerConfig::build_args`] appended, found as the last place it
+/// occurs in `args`.
+fn args_for_log(args: &[String], extra: &[String]) -> Vec<String> {
+    let mut out = args.to_vec();
+    if extra.is_empty() {
+        return out;
+    }
+    let Some(start) = args.windows(extra.len()).rposition(|w| w == extra) else {
+        return out;
+    };
+    for arg in &mut out[start..start + extra.len()] {
+        *arg = if !arg.starts_with('-') {
+            crate::text_util::REDACTED.to_string()
+        } else if let Some((flag, _)) = arg.split_once('=') {
+            format!("{flag}={}", crate::text_util::REDACTED)
+        } else {
+            continue;
+        };
+    }
+    out
+}
+
 /// Environment variable llama-server reads its `--api-key` from. The key goes
 /// in the environment rather than argv because `/proc/<pid>/cmdline` is
 /// readable by every user on the machine; `environ` is not.
@@ -480,8 +505,12 @@ impl LlamaServer {
         self.set_status(ServerStatus::Starting, app).await;
 
         let args = Self::build_llama_args(app, &self.inner, model_path).await;
+        let extra = self.inner.lock().await.config.extra_args.clone();
 
-        info!("Starting llama-server with args: {:?}", args);
+        info!(
+            "Starting llama-server with args: {:?}",
+            args_for_log(&args, &extra)
+        );
 
         let (rx, child) = Self::spawn_llama(app, &args)?;
 
@@ -1778,5 +1807,45 @@ mod tests {
 
         assert_eq!(inner.log_buffer.len(), LOG_RING_BUFFER_SIZE);
         assert_eq!(inner.log_buffer.front().unwrap(), "line 100");
+    }
+
+    #[test]
+    fn args_for_log_redacts_extra_values_and_keeps_flags() {
+        let extra: Vec<String> = [
+            "--api-key-file",
+            "/home/me/key.txt",
+            "--hf-token=hf_abcdef",
+            "--verbose",
+        ]
+        .map(String::from)
+        .to_vec();
+        let config = ServerConfig {
+            extra_args: extra.clone(),
+            ..Default::default()
+        };
+        let args = config.build_args("/path/to/model.gguf");
+        let logged = args_for_log(&args, &extra);
+        let tail = &logged[logged.len() - extra.len()..];
+        assert_eq!(
+            tail,
+            [
+                "--api-key-file",
+                "[redacted]",
+                "--hf-token=[redacted]",
+                "--verbose"
+            ]
+        );
+        // Our own args, the model path among them, are left alone.
+        assert_eq!(
+            &logged[..args.len() - extra.len()],
+            &args[..args.len() - extra.len()]
+        );
+        assert!(logged.contains(&"/path/to/model.gguf".to_string()));
+    }
+
+    #[test]
+    fn args_for_log_without_extra_args_is_unchanged() {
+        let args = ServerConfig::default().build_args("/m.gguf");
+        assert_eq!(args_for_log(&args, &[]), args);
     }
 }

@@ -43,7 +43,7 @@ export function wantImages(urls: readonly string[]): void {
 		const batch = [...pending];
 		pending = new Set();
 		scheduled = false;
-		lookupImages(batch)
+		void lookupImages(batch)
 			.then((found) => {
 				rememberImages(found);
 				for (const url of batch) if (!(url in found)) retryLater(url);

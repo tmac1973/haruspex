@@ -37,6 +37,7 @@ import type {
 	VideoRequest,
 	VideoResult
 } from '#lib/videogen/types.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 export const ROUTES = {
 	models: '/v1/models',
@@ -271,7 +272,7 @@ export async function probeVideo(): Promise<ProbeResult> {
 		if (e instanceof ToolchestError && e.kind === 'unreachable') {
 			return { ok: false, detail: `Can't reach ${host}.` };
 		}
-		return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+		return { ok: false, detail: errMessage(e) };
 	}
 	const models = instances.map((i) => ({
 		name: i.id,

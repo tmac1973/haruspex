@@ -45,8 +45,8 @@
 	}
 
 	function openFolder() {
-		invoke('open_folder', { path: ioRoot(session.root, session.wslDistro) }).catch((e: unknown) =>
-			showToast(`Couldn't open the folder: ${errMessage(e)}`, { kind: 'error' })
+		void invoke('open_folder', { path: ioRoot(session.root, session.wslDistro) }).catch(
+			(e: unknown) => showToast(`Couldn't open the folder: ${errMessage(e)}`, { kind: 'error' })
 		);
 	}
 

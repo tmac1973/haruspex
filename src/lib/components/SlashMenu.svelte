@@ -9,6 +9,7 @@
 	 */
 	import { matchItems, slashItems, typingName, type SlashItem } from '#lib/slash/slash.ts';
 	import { logDebug } from '#lib/debug-log.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	let {
 		text,
@@ -51,7 +52,7 @@
 			.then((root) => slashItems(root, codeMode, compact))
 			.then((list) => (items = list))
 			// Keep whatever list was shown; the next `/` tries again.
-			.catch((e) => logDebug('slash', 'could not load slash commands', { error: String(e) }));
+			.catch((e) => logDebug('slash', 'could not load slash commands', { error: errMessage(e) }));
 	});
 
 	// A name typed in full starts selected, so Enter runs it (below).

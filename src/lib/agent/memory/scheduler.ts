@@ -24,6 +24,7 @@
 import { extractMemories } from '#lib/agent/memory/extraction.ts';
 import { memoryActive } from '#lib/stores/memory.svelte.ts';
 import { logDebug } from '#lib/debug-log.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 /** How long a conversation must sit still before it is distilled. */
 const IDLE_DELAY_MS = 120_000;
@@ -112,7 +113,7 @@ async function drain(): Promise<void> {
 				// unexpected so one bad conversation cannot stall the queue.
 				logDebug('memory', 'extraction threw out of the pipeline', {
 					conversationId: next,
-					error: String(e)
+					error: errMessage(e)
 				});
 			}
 		}

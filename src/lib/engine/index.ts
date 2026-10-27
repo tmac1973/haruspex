@@ -101,7 +101,7 @@ async function run(label: string): Promise<void> {
 	g[RUNNING] = stopEngine;
 
 	const sink = batcher((events) => {
-		invoke('engine_events', { events }).catch((e: unknown) => {
+		void invoke('engine_events', { events }).catch((e: unknown) => {
 			logDebug('engine', 'sending events failed', { error: errMessage(e) });
 		});
 	});

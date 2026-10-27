@@ -37,7 +37,7 @@
 	function detach(event: MouseEvent, session: CodeSession) {
 		event.stopPropagation();
 		if (moveBlockedReason(session)) return;
-		detachSession(session).catch((e: unknown) =>
+		void detachSession(session).catch((e: unknown) =>
 			showToast(`Couldn't open a window for it: ${errMessage(e)}`, { kind: 'error' })
 		);
 	}
