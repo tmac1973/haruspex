@@ -41,7 +41,7 @@ pub(super) async fn search(
         .header("User-Agent", USER_AGENT)
         .send()
         .await
-        .map_err(|e| format!("Wikipedia request failed: {}", e))?;
+        .map_err(|e| format!("Wikipedia request failed: {}", e.without_url()))?;
 
     // No such article. Common and uninteresting — most queries are not page
     // titles — so it contributes nothing rather than failing the search.
@@ -56,7 +56,7 @@ pub(super) async fn search(
     let body: Value = response
         .json()
         .await
-        .map_err(|e| format!("Wikipedia JSON parse failed: {}", e))?;
+        .map_err(|e| format!("Wikipedia JSON parse failed: {}", e.without_url()))?;
     Ok(parse(&body))
 }
 

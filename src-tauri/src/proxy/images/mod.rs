@@ -80,7 +80,7 @@ pub async fn proxy_fetch_url_images(
     let html = response
         .text()
         .await
-        .map_err(|e| format!("Failed to read response body: {}", e))?;
+        .map_err(|e| format!("Failed to read response body: {}", e.without_url()))?;
 
     Ok(extract_page_images(&html, &base_url))
 }
