@@ -1,6 +1,6 @@
 ---
 title: Chat conversations
-description: Running several Chat conversations at once, adding to an answer while it's written, the busy and unread marks in the conversation list, and results that arrive while you're elsewhere.
+description: Several Chat conversations at once, adding to an answer as it is written, the busy and unread marks, results that arrive while you are elsewhere, and the Tasks list.
 ---
 
 # Chat conversations
@@ -30,3 +30,9 @@ Hover over a dot to see what it means. The Remote control page (see the `remote-
 A long task started from a conversation, such as a video render or an upload (see the `video-render` page), reports back to that conversation when it ends. The assistant gets the result and answers in that conversation straight away, even if you're in a different one. A notice says which conversation it was, with **Open** to go there, and the conversation is marked unread.
 
 If that conversation is busy when the task ends, the result waits until its current answer is done.
+
+## See background tasks
+
+While anything runs in the background, **Tasks: N** shows at the right of the tabs, whichever tab you're in. It counts renders and uploads from any chat or Code session, and the background commands and subtasks of Code sessions open in this window. Click it for the list: each row names the chat or session it belongs to (click the name to go there), with **Cancel** or **Stop**. Tasks that ended in the last ten minutes are listed under **Done**, and the chip stays that long after the last one.
+
+In the chat or session that started it, a task has a card with its progress and **Cancel**, then what it made (**Open**, **Show in folder**) or why it failed.

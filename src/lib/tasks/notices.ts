@@ -16,7 +16,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { joinNotices } from '#lib/tasks/noticeText.ts';
 import type { BackgroundTask } from '#lib/tasks/types.ts';
 
-const handlers = new Map<string, (owner: string) => void>();
+/** Told an owner's task ended; the task comes too, for what to call it. */
+type Handler = (owner: string, task?: BackgroundTask) => void;
+
+const handlers = new Map<string, Handler>();
 
 /** The owner string a tool records for its turn: its Code session, or its chat. */
 export function taskOwner(ctx: { conversationId?: string; codeSessionId?: string }): string {
@@ -26,7 +29,7 @@ export function taskOwner(ctx: { conversationId?: string; codeSessionId?: string
 }
 
 /** A handler for an owner's notices; returns its unregister. */
-export function setTaskHandler(owner: string, fn: (owner: string) => void): () => void {
+export function setTaskHandler(owner: string, fn: Handler): () => void {
 	handlers.set(owner, fn);
 	return () => {
 		if (handlers.get(owner) === fn) handlers.delete(owner);
@@ -34,7 +37,7 @@ export function setTaskHandler(owner: string, fn: (owner: string) => void): () =
 }
 
 /** Every chat owner (`chat:…`) is handled by the one Chat store. */
-export function setChatTaskHandler(fn: (owner: string) => void): () => void {
+export function setChatTaskHandler(fn: Handler): () => void {
 	return setTaskHandler('chat:*', fn);
 }
 
@@ -43,7 +46,7 @@ export function noteEnded(t: BackgroundTask): void {
 	if (!t.owner || t.noticeDelivered) return;
 	const handler =
 		handlers.get(t.owner) ?? (t.owner.startsWith('chat:') ? handlers.get('chat:*') : undefined);
-	handler?.(t.owner);
+	handler?.(t.owner, t);
 }
 
 /**

@@ -209,8 +209,6 @@ describe('video_render', () => {
 			encoder: 'libx264'
 		});
 		expect(out.result).toContain('Do not poll');
-		expect(out.artifacts).toEqual([
-			{ kind: 'videoTask', taskId: 'render-9', label: 'Rendering ep010' }
-		]);
+		expect(out.artifacts).toEqual([{ kind: 'task', taskId: 'render-9', label: 'Rendering ep010' }]);
 	});
 });

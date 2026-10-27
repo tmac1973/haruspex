@@ -1,18 +1,21 @@
 <script lang="ts">
+	/**
+	 * A background task on a card in the conversation or session that started
+	 * it: how far it has got, with Cancel, and then what it made or why it
+	 * failed. Read from the registry's mirror (`#lib/tasks/store.svelte.ts`).
+	 */
 	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
+	import VideoTaskResult from '#lib/components/video/VideoTaskResult.svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { getTask, refreshTasks } from '#lib/tasks/store.svelte.ts';
-	import { describeCheck } from '#lib/tasks/noticeText.ts';
-	import { renderResult, uploadResult } from '#lib/tasks/types.ts';
 	import { formatDuration } from '#lib/video/report.ts';
+	import { progressLine } from '#lib/tasks/progress.ts';
 
 	let { taskId, label }: { taskId: string; label: string } = $props();
 
 	const task = $derived(getTask(taskId));
-	const render = $derived(task ? renderResult(task) : null);
-	const upload = $derived(task ? uploadResult(task) : null);
-	const running = $derived(task?.state === 'running' || task?.state === 'pending');
+	const active = $derived(task?.state === 'pending' || task?.state === 'running');
 	let missing = $state(false);
 	let error = $state('');
 
@@ -30,67 +33,45 @@
 			error = errMessage(e);
 		}
 	}
-
-	async function openUrl(url: string) {
-		error = '';
-		try {
-			await invoke('open_url', { url });
-		} catch (e) {
-			error = errMessage(e);
-		}
-	}
-
-	async function open(folder: boolean) {
-		error = '';
-		try {
-			await invoke('task_open', { id: taskId, folder });
-		} catch (e) {
-			error = errMessage(e);
-		}
-	}
 </script>
 
-<div class="video-task">
+<div class="task-card">
 	<div class="head">
 		<span class="label">{task?.label ?? label}</span>
-		{#if running}
+		{#if task?.state === 'running'}
 			<span class="detail">
-				{Math.round(task?.percent ?? 0)}%{task?.etaSecs != null
-					? ` · ${formatDuration(task.etaSecs)} left`
-					: ''}
+				{progressLine(task)}{task.etaSecs != null ? ` · ${formatDuration(task.etaSecs)} left` : ''}
 			</span>
 		{/if}
 	</div>
-	{#if running}
-		<progress max="100" value={task?.percent ?? 0}></progress>
+	{#if active && task}
+		{#if task.state === 'pending'}
+			<p class="detail">Waiting to start</p>
+		{:else if task.percent != null}
+			<progress max="100" value={task.percent}></progress>
+		{:else}
+			<progress></progress>
+		{/if}
 		<div class="actions">
 			<button class="btn" type="button" onclick={() => void cancel()}>Cancel</button>
 		</div>
-	{:else if render}
-		<p class="detail" title={render.absPath}>
-			{render.path}{render.check ? ` · ${describeCheck(render.check)}` : ''}
-		</p>
-		<div class="actions">
-			<button class="btn" type="button" onclick={() => void open(false)}>Open</button>
-			<button class="btn" type="button" onclick={() => void open(true)}>Show in folder</button>
-		</div>
-	{:else if upload}
-		<p class="detail">
-			Uploaded, {upload.visibility}.{upload.problems.length ? ` ${upload.problems.join(' ')}` : ''}
-		</p>
-		<div class="actions">
-			<button class="btn" type="button" onclick={() => void openUrl(upload.url)}
-				>Open on YouTube</button
-			>
-			<button class="btn" type="button" onclick={() => void openUrl(upload.studioUrl)}
-				>Open in Studio</button
-			>
-		</div>
+	{:else if task?.state === 'done'}
+		{#if task.kind === 'video_render' || task.kind === 'youtube_upload'}
+			<VideoTaskResult {task} />
+		{:else}
+			<p class="detail">Done.</p>
+		{/if}
 	{:else if task?.state === 'failed'}
-		<p class="detail bad" title={task.logTail ?? undefined}>{task.error}</p>
+		<p class="detail bad">{task.error ?? 'It failed.'}</p>
+		{#if task.logTail}
+			<details>
+				<summary class="detail">Output</summary>
+				<pre>{task.logTail}</pre>
+			</details>
+		{/if}
 		<div class="actions">
 			<ReportIssueButton
-				where="Video task"
+				where="Background task"
 				error={task.error ?? ''}
 				log={() => (task?.logTail ?? '').split('\n').filter(Boolean)}
 				logTitle="The task's output"
@@ -99,13 +80,13 @@
 	{:else if task?.state === 'cancelled'}
 		<p class="detail">Cancelled.</p>
 	{:else if missing}
-		<p class="detail">This task is no longer kept.</p>
+		<p class="detail">Task no longer available.</p>
 	{/if}
 	{#if error}<p class="detail bad">{error}</p>{/if}
 </div>
 
 <style>
-	.video-task {
+	.task-card {
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
@@ -142,5 +123,13 @@
 
 	.bad {
 		color: var(--error, #c33);
+	}
+
+	pre {
+		margin: 4px 0 0;
+		max-height: 12em;
+		overflow: auto;
+		font-size: 0.8em;
+		white-space: pre-wrap;
 	}
 </style>

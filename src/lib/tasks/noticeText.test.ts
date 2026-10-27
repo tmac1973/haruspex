@@ -149,7 +149,10 @@ describe('when a task ends', () => {
 		setChatTaskHandler(chat);
 		upsertTask(running);
 		upsertTask(done);
-		expect(chat).toHaveBeenCalledWith('chat:c1');
+		expect(chat).toHaveBeenCalledWith(
+			'chat:c1',
+			expect.objectContaining({ label: 'Rendering ep012' })
+		);
 		expect(getTask('render-1')?.state).toBe('done');
 	});
 

@@ -522,6 +522,23 @@ export class CodeSession {
 		this.subtaskStops.stop(id);
 	};
 
+	/** Background subtasks still running or waiting to, from their cards. */
+	runningBackgroundSubtasks(): SubtaskState[] {
+		const steps = [...this.searchSteps, ...Object.values(this.messageSteps).flat()];
+		return steps
+			.map((s) => s.subtask)
+			.filter((st): st is SubtaskState => !!st?.background && subtaskActive(st));
+	}
+
+	/** Stop one of the session's background processes. */
+	stopBackground = async (id: string): Promise<void> => {
+		try {
+			await invoke('code_bg_stop', { id });
+		} finally {
+			await this.refreshBackground();
+		}
+	};
+
 	/** Take the images handed back with an unsent message, clearing them. */
 	takeReturnedImages = (): string[] => {
 		const images = this.returnedImages;
@@ -1085,6 +1102,41 @@ let activeId = $state<string | null>(null);
 /** Sessions open as sub-tabs, in tab order. */
 export function getOpenSessions(): CodeSession[] {
 	return sessions;
+}
+
+/** One thing a Code session left running beside its turns. */
+export interface BackgroundWork {
+	sessionId: string;
+	kind: 'process' | 'subtask';
+	id: string;
+	label: string;
+	stop: () => void;
+}
+
+/**
+ * What the sessions open in this window are running in the background: their
+ * processes (`run_command` in the background) and background subtasks. Each
+ * window lists its own; their state lives where the session is open.
+ */
+export function getAllBackgroundWork(): BackgroundWork[] {
+	return sessions.flatMap((s): BackgroundWork[] => [
+		...s.background
+			.filter((p) => p.running)
+			.map((p) => ({
+				sessionId: s.id,
+				kind: 'process' as const,
+				id: p.id,
+				label: p.command,
+				stop: () => void s.stopBackground(p.id).catch(() => {})
+			})),
+		...s.runningBackgroundSubtasks().map((st) => ({
+			sessionId: s.id,
+			kind: 'subtask' as const,
+			id: st.id,
+			label: st.label,
+			stop: () => s.stopSubtask(st.id)
+		}))
+	]);
 }
 
 export function getActiveSessionId(): string | null {
