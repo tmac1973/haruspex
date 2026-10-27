@@ -1,6 +1,6 @@
 ---
 name: fix-picture
-description: Change a picture the user already has, whether attached, drawn earlier in the chat, or a file in the working folder. It covers the whole picture, one part, more room past its edges, or a bigger, sharper copy, and picks the right tool for each. Use when the user wants an existing picture changed rather than a new one drawn.
+description: Load this before calling edit_image or upscale_image. It covers changing a picture the user already has (attached, drawn earlier, or a file), whether the whole picture, one part, more room past its edges, or a bigger copy. It picks the right tool and order, and checks each result.
 metadata:
   haruspex-needs: image
 ---
@@ -38,6 +38,11 @@ call a tool the backend can't run.
 - **Combining pictures**: "put the cat from the second picture on the
   sofa". Use `edit_image` with `also`, saying in the prompt which picture
   is which. "Set up now" says how many pictures the backend takes at once.
+
+Name the picture by where it came from. Use `attached` only for a picture
+the user attached to their message. A picture drawn or edited earlier in the
+chat is named by its haruspex-img:// URL, and a file in the working folder
+by its path.
 
 A new picture from scratch is not this skill. Use `generate_image` for that.
 
