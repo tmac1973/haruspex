@@ -17,6 +17,10 @@
  *   3. `inference_cancel(reqId)` on abort, to bail a still-queued waiter.
  *   4. `inference_release(reqId)` in `finally`.
  *
+ * Between 1 and 4 a turn may give its slot back (`HeldSlot.release`) while a
+ * long tool runs, and take one again (`HeldSlot.reacquire`) under a new
+ * request id acquired with `front`, ahead of the lane's waiting turns.
+ *
  * Rust broadcasts a full `inference://queue` snapshot on every change; we
  * mirror it into `$state` so `getQueueSnapshot()`/`getRunningCount()` reflect
  * every window, not just this one.
@@ -28,6 +32,7 @@ import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 
 import type { BackendOverride } from '#lib/api.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
+import { logDebug } from '#lib/debug-log.ts';
 
 export type InferenceConsumer =
 	| 'chat'
@@ -68,7 +73,29 @@ export interface WithSlotOptions {
 	signal?: AbortSignal;
 	onTicket?: (ticket: InferenceTicket) => void;
 	onAdmitted?: () => void;
+	/**
+	 * A turn taking its slot back (`HeldSlot.reacquire`): called with the
+	 * waiting ticket once it has waited 250 ms, and with null when it gets the
+	 * slot or stops waiting. The counterpart of `onTicket` / `onAdmitted`.
+	 */
+	onRequeue?: (ticket: InferenceTicket | null) => void;
 }
+
+/** The slot a turn holds, which it can give back while a long tool runs. */
+export interface HeldSlot {
+	/** Whether the turn holds its slot right now. */
+	readonly held: boolean;
+	/** Give the slot back. A no-op when it isn't held. */
+	release(): void;
+	/**
+	 * Take a slot again, ahead of the lane's waiting turns. Resolves at once
+	 * when held; throws AbortError when the turn's signal fires first.
+	 */
+	reacquire(): Promise<void>;
+}
+
+/** How long a returning turn waits before it shows as queued again. */
+const REQUEUE_NOTICE_MS = 250;
 
 /**
  * Refresh the lease well inside the Rust-side TTL (5 min). 60 s gives a
@@ -217,13 +244,16 @@ export function getRunningCount(): number {
  * with the waiting ticket so the UI can render "waiting behind …";
  * `onAdmitted` fires when the slot is granted.
  *
+ * `fn` gets the `HeldSlot`, so a turn can give the slot back while a long
+ * tool runs and take one again before its next model call.
+ *
  * Honors `signal`: aborting before admission cancels the queued waiter and
  * throws `AbortError` without ever calling `fn`. Aborting while `fn` runs is
  * `fn`'s responsibility to propagate; the slot is released regardless.
  */
 export async function withInferenceSlot<T>(
 	options: WithSlotOptions,
-	fn: () => Promise<T>
+	fn: (slot: HeldSlot) => Promise<T>
 ): Promise<T> {
 	const { consumer, backend, signal, onTicket, onAdmitted } = options;
 	if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
@@ -232,27 +262,32 @@ export async function withInferenceSlot<T>(
 
 	const { lane, maxParallel } = laneFor(backend);
 
-	const reqId = nextReqId();
-	onTicket?.({ id: reqId, consumer, state: 'waiting', enqueuedAt: Date.now() });
+	let abortInitiated = false;
+	const turn: TurnRequest = {
+		reqId: nextReqId(),
+		held: false,
+		finished: false,
+		aborted: () => abortInitiated || !!signal?.aborted
+	};
+	onTicket?.({ id: turn.reqId, consumer, state: 'waiting', enqueuedAt: Date.now() });
 
 	// Heartbeat from enqueue (covers the waiting period too).
 	const heartbeat = setInterval(() => {
-		void invoke('inference_heartbeat', { reqId }).catch(() => {});
+		void invoke('inference_heartbeat', { reqId: turn.reqId }).catch(() => {});
 	}, HEARTBEAT_INTERVAL_MS);
 
-	let abortInitiated = false;
 	let abortListener: (() => void) | null = null;
 	if (signal) {
 		abortListener = () => {
 			abortInitiated = true;
-			void invoke('inference_cancel', { reqId }).catch(() => {});
+			void invoke('inference_cancel', { reqId: turn.reqId }).catch(() => {});
 		};
 		signal.addEventListener('abort', abortListener);
 	}
 
 	try {
 		await invoke('inference_acquire', {
-			reqId,
+			reqId: turn.reqId,
 			consumer,
 			lane,
 			maxParallel,
@@ -260,20 +295,104 @@ export async function withInferenceSlot<T>(
 		});
 		// Abort could have raced in between the grant and here.
 		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+		turn.held = true;
 		onAdmitted?.();
-		return await fn();
+		return await fn(heldSlot(turn, options));
 	} catch (e) {
 		// A cancelled/reclaimed acquire rejects; surface it as AbortError when
 		// we (or the caller's signal) initiated the abort, so callers see a
 		// consistent "Aborted" rather than the raw Rust string.
-		if (abortInitiated || signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+		if (turn.aborted()) throw new DOMException('Aborted', 'AbortError');
 		throw e;
 	} finally {
+		// A tool that a stop left running may still call release() or
+		// reacquire(); neither does anything now.
+		turn.finished = true;
+		turn.held = false;
 		clearInterval(heartbeat);
 		if (abortListener && signal) signal.removeEventListener('abort', abortListener);
 		// Harmless no-op server-side if the ticket was never admitted.
-		void invoke('inference_release', { reqId }).catch(() => {});
+		void invoke('inference_release', { reqId: turn.reqId }).catch(() => {});
 	}
+}
+
+/** One turn's place in the queue, shared by `withInferenceSlot` and its `HeldSlot`. */
+interface TurnRequest {
+	/**
+	 * The newest request: it changes when the turn takes a slot back, and
+	 * every later heartbeat, cancel and release is for it.
+	 */
+	reqId: string;
+	held: boolean;
+	/** `withInferenceSlot` has returned. */
+	finished: boolean;
+	/** The turn was stopped. */
+	aborted: () => boolean;
+}
+
+function heldSlot(turn: TurnRequest, options: WithSlotOptions): HeldSlot {
+	const { consumer, backend } = options;
+	let returning: Promise<void> | null = null;
+
+	const takeBack = async (): Promise<void> => {
+		turn.reqId = nextReqId();
+		const ticket: InferenceTicket = {
+			id: turn.reqId,
+			consumer,
+			state: 'waiting',
+			enqueuedAt: Date.now()
+		};
+		// A Settings change made while the tool ran applies, as it would to a
+		// fresh turn.
+		const { lane, maxParallel } = laneFor(backend);
+		let noticed = false;
+		const notice = setTimeout(() => {
+			noticed = true;
+			options.onRequeue?.(ticket);
+		}, REQUEUE_NOTICE_MS);
+		try {
+			await invoke('inference_acquire', {
+				reqId: turn.reqId,
+				consumer,
+				lane,
+				maxParallel,
+				windowLabel: getWindowLabel(),
+				front: true
+			});
+			if (turn.aborted() || turn.finished) throw new DOMException('Aborted', 'AbortError');
+			turn.held = true;
+			logDebug('inference', 'slot back', { consumer, waitedMs: Date.now() - ticket.enqueuedAt });
+		} catch (e) {
+			if (turn.aborted() || turn.finished) throw new DOMException('Aborted', 'AbortError');
+			throw e;
+		} finally {
+			clearTimeout(notice);
+			if (noticed) options.onRequeue?.(null);
+		}
+	};
+
+	return {
+		get held() {
+			return turn.held;
+		},
+		release() {
+			if (!turn.held || turn.finished) return;
+			turn.held = false;
+			void invoke('inference_release', { reqId: turn.reqId }).catch(() => {});
+			logDebug('inference', 'slot released', { consumer });
+		},
+		reacquire() {
+			if (turn.held) return Promise.resolve();
+			if (turn.finished || turn.aborted()) {
+				return Promise.reject(new DOMException('Aborted', 'AbortError'));
+			}
+			// Two callers share one request rather than queueing two tickets.
+			returning ??= takeBack().finally(() => {
+				returning = null;
+			});
+			return returning;
+		}
+	};
 }
 
 /** What one borrower tells the lender. */

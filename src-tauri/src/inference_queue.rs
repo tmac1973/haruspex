@@ -26,6 +26,9 @@
 //!   - Each waiter holds a client-supplied `req_id` (unique per window) so
 //!     it can be cancelled while still queued (abort-before-grant) and
 //!     heartbeated while held.
+//!   - A ticket acquired with `front` (a turn taking its slot back after a
+//!     long tool gave it up) goes ahead of its lane's waiting tickets, after
+//!     any earlier `front` ones. It never displaces a running ticket.
 //!   - State changes broadcast a full `inference://queue` snapshot to every
 //!     window so each can render who is waiting / running.
 //!
@@ -84,6 +87,8 @@ struct Ticket {
     /// own lane. Rust never parses it beyond equality.
     lane: String,
     state: TicketState,
+    /// Queued ahead of the lane's ordinary waiters; see `enqueue_with`.
+    front: bool,
     owner_window: String,
     enqueued_at: u64,
     lease_expires_at: u64,
@@ -190,9 +195,8 @@ impl InferenceQueue {
         Self::default()
     }
 
-    /// Register a waiting ticket and return its wakeup receiver. The caller
-    /// awaits the receiver; `pump` may have admitted it before this returns
-    /// (oneshot buffers the value, so the await still resolves immediately).
+    /// Register a waiting ticket at the back of the queue; see `enqueue_with`.
+    #[cfg(test)]
     fn enqueue(
         &self,
         req_id: String,
@@ -200,6 +204,25 @@ impl InferenceQueue {
         lane: String,
         max_parallel: Option<u32>,
         window_label: String,
+    ) -> Result<oneshot::Receiver<()>, String> {
+        self.enqueue_with(req_id, consumer, lane, max_parallel, window_label, false)
+    }
+
+    /// Register a waiting ticket and return its wakeup receiver. The caller
+    /// awaits the receiver; `pump` may have admitted it before this returns
+    /// (oneshot buffers the value, so the await still resolves immediately).
+    ///
+    /// A `front` ticket is a turn coming back for a slot it gave up while a
+    /// tool ran: it goes before the lane's first ordinary waiter, so turns
+    /// coming back keep their own order and all go ahead of new turns.
+    fn enqueue_with(
+        &self,
+        req_id: String,
+        consumer: Value,
+        lane: String,
+        max_parallel: Option<u32>,
+        window_label: String,
+        front: bool,
     ) -> Result<oneshot::Receiver<()>, String> {
         let mut inner = self.inner.lock().map_err(|e| e.to_string())?;
         if inner.tickets.iter().any(|t| t.id == req_id) {
@@ -218,15 +241,28 @@ impl InferenceQueue {
         );
         let (tx, rx) = oneshot::channel();
         inner.senders.insert(req_id.clone(), tx);
-        inner.tickets.push(Ticket {
+        let at = if front {
+            inner
+                .tickets
+                .iter()
+                .position(|t| t.lane == lane && t.state == TicketState::Waiting && !t.front)
+        } else {
+            None
+        };
+        let ticket = Ticket {
             id: req_id,
             consumer,
             lane,
             state: TicketState::Waiting,
+            front,
             owner_window: window_label,
             enqueued_at: now,
             lease_expires_at: now + LEASE_TTL_MS,
-        });
+        };
+        match at {
+            Some(i) => inner.tickets.insert(i, ticket),
+            None => inner.tickets.push(ticket),
+        }
         inner.pump();
         Ok(rx)
     }
@@ -370,6 +406,9 @@ pub fn spawn_lease_sweeper(app: AppHandle) {
 
 // ---- Tauri commands -------------------------------------------------------
 
+/// Wait for a slot in `lane`. `front` is for a turn taking back a slot it
+/// gave up while a long tool ran: it goes ahead of the lane's waiting turns.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn inference_acquire(
     app: AppHandle,
@@ -379,8 +418,16 @@ pub async fn inference_acquire(
     lane: String,
     max_parallel: Option<u32>,
     window_label: String,
+    front: Option<bool>,
 ) -> Result<TicketDto, String> {
-    let rx = state.enqueue(req_id.clone(), consumer, lane, max_parallel, window_label)?;
+    let rx = state.enqueue_with(
+        req_id.clone(),
+        consumer,
+        lane,
+        max_parallel,
+        window_label,
+        front.unwrap_or(false),
+    )?;
     state.emit_snapshot(&app);
 
     match rx.await {
@@ -452,6 +499,19 @@ mod tests {
     fn enqueue_local(q: &InferenceQueue, id: &str, consumer: Value) -> oneshot::Receiver<()> {
         q.enqueue(id.into(), consumer, "local".into(), Some(1), "main".into())
             .unwrap()
+    }
+
+    /// A turn coming back for its slot after a long tool.
+    fn enqueue_local_front(q: &InferenceQueue, id: &str) -> oneshot::Receiver<()> {
+        q.enqueue_with(
+            id.into(),
+            json!("code"),
+            "local".into(),
+            Some(1),
+            "main".into(),
+            true,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -768,5 +828,84 @@ mod tests {
         // Local lane is serialized — second waits.
         assert!(admitted(&mut local_a));
         assert!(!admitted(&mut local_b));
+    }
+
+    #[test]
+    fn front_ticket_goes_ahead_of_waiters() {
+        let q = InferenceQueue::new();
+        let mut a = enqueue_local(&q, "a", json!("chat"));
+        let mut b = enqueue_local(&q, "b", json!("chat"));
+        let mut c = enqueue_local(&q, "c", json!("chat"));
+        let mut d = enqueue_local_front(&q, "d");
+        assert!(admitted(&mut a));
+        // A full lane: the front ticket waits, and the running one keeps its slot.
+        assert!(!admitted(&mut d));
+        assert_eq!(q.snapshot()[0].state, "running");
+        q.release("a");
+        assert!(admitted(&mut d));
+        assert!(!admitted(&mut b));
+        q.release("d");
+        assert!(admitted(&mut b));
+        assert!(!admitted(&mut c));
+    }
+
+    #[test]
+    fn front_tickets_keep_their_own_order() {
+        let q = InferenceQueue::new();
+        let mut a = enqueue_local(&q, "a", json!("chat"));
+        let mut b = enqueue_local(&q, "b", json!("chat"));
+        let mut d = enqueue_local_front(&q, "d");
+        let mut e = enqueue_local_front(&q, "e");
+        assert!(admitted(&mut a));
+        let ids: Vec<_> = q.snapshot().iter().map(|t| t.id.clone()).collect();
+        assert_eq!(ids, vec!["a", "d", "e", "b"]);
+        q.release("a");
+        assert!(admitted(&mut d));
+        q.release("d");
+        assert!(admitted(&mut e));
+        q.release("e");
+        assert!(admitted(&mut b));
+    }
+
+    #[test]
+    fn front_ticket_stays_in_its_lane() {
+        let q = InferenceQueue::new();
+        let mut a = enqueue_local(&q, "a", json!("chat"));
+        let mut b = enqueue_local(&q, "b", json!("chat"));
+        let mut r1 = q
+            .enqueue(
+                "r1".into(),
+                json!("chat"),
+                "remote:x".into(),
+                Some(1),
+                "main".into(),
+            )
+            .unwrap();
+        let mut r2 = q
+            .enqueue_with(
+                "r2".into(),
+                json!("code"),
+                "remote:x".into(),
+                Some(1),
+                "main".into(),
+                true,
+            )
+            .unwrap();
+        assert!(admitted(&mut a));
+        assert!(admitted(&mut r1));
+        assert!(!admitted(&mut r2));
+        // The remote turn coming back doesn't move ahead of the local waiter.
+        let ids: Vec<_> = q.snapshot().iter().map(|t| t.id.clone()).collect();
+        assert_eq!(ids, vec!["a", "b", "r1", "r2"]);
+        q.release("a");
+        assert!(admitted(&mut b));
+        assert!(!admitted(&mut r2));
+    }
+
+    #[test]
+    fn front_ticket_on_a_free_lane_is_admitted_at_once() {
+        let q = InferenceQueue::new();
+        let mut d = enqueue_local_front(&q, "d");
+        assert!(admitted(&mut d));
     }
 }
