@@ -256,6 +256,7 @@ jobs:
           sudo apt-get update
           echo "release=$(. /etc/os-release && echo "$VERSION_ID")" >> "$GITHUB_OUTPUT"
       - name: Install system dependencies
+        id: apt-install
         uses: awalsh128/cache-apt-pkgs-action@v1.6.3
         with:
           version: ubuntu-${{ steps.apt.outputs.release }}-1
@@ -274,6 +275,16 @@ jobs:
         run: |
           pkg-config --exists --print-errors webkit2gtk-4.1 alsa xcb
           command -v WebKitWebDriver xvfb-run
+      # A cache restore unpacks files without running apt's triggers, and the
+      # app aborts without the compiled GSettings schemas WebKit reads. These
+      # are the caches those triggers build; each is quick and idempotent.
+      - name: Rebuild the caches apt's triggers make
+        if: steps.apt-install.outputs.cache-hit == 'true'
+        run: |
+          sudo ldconfig
+          sudo glib-compile-schemas /usr/share/glib-2.0/schemas
+          sudo gio-querymodules /usr/lib/x86_64-linux-gnu/gio/modules
+          sudo /usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/gdk-pixbuf-query-loaders --update-cache
       - run: scripts/ci-placeholder-sidecars.sh
       - run: npm ci
       - run: cargo install tauri-driver --locked
