@@ -277,6 +277,71 @@ fn temp_name() -> String {
     )
 }
 
+/// Keep a song the webview already holds: a file from the working folder that
+/// a background music task works on, so its spec can name it by hash. The
+/// bytes are the raw body; `x-mime` is required, and `x-conversation-id` or
+/// `x-code-session-id` links it.
+#[tauri::command]
+pub async fn audio_store_bytes(
+    app: AppHandle,
+    db: State<'_, Database>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<StoredAudio, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("The song must be sent as raw bytes.".into());
+    };
+    let header = |name: &str| request.headers().get(name).and_then(|v| v.to_str().ok());
+    let mime = header("x-mime").ok_or("No x-mime was given.")?;
+    store_bytes(
+        &db,
+        &cache_dir(&app)?,
+        bytes,
+        mime,
+        header("x-conversation-id"),
+        header("x-code-session-id"),
+    )
+}
+
+pub fn store_bytes(
+    db: &Database,
+    dir: &Path,
+    bytes: &[u8],
+    mime: &str,
+    conversation_id: Option<&str>,
+    code_session_id: Option<&str>,
+) -> Result<StoredAudio, String> {
+    let Some(mime) = normalize_mime(mime) else {
+        return Err(format!(
+            "{mime} is not audio this cache stores (mp3, wav, ogg, flac)."
+        ));
+    };
+    if bytes.is_empty() {
+        return Err("The song is empty.".into());
+    }
+    if bytes.len() as u64 > MAX_AUDIO_BYTES {
+        return Err(too_large());
+    }
+    let temp = dir.join(temp_name());
+    if let Err(e) = std::fs::write(&temp, bytes) {
+        let _ = std::fs::remove_file(&temp);
+        return Err(format!("Failed to write audio: {}", e));
+    }
+    let hash = crate::hash_util::hex(&Sha256::digest(bytes));
+    let meta = StoreMeta {
+        mime,
+        title: None,
+        duration_ms: None,
+        conversation_id,
+        code_session_id,
+    };
+    commit_file(db, dir, &temp, &hash, bytes.len() as u64, &meta)?;
+    Ok(StoredAudio {
+        hash,
+        mime: mime.to_string(),
+        bytes: bytes.len() as u64,
+    })
+}
+
 /// The audio a chat's or Code session's messages show by hash, linked to it
 /// so the sweep keeps it. Unknown and malformed hashes are skipped.
 #[tauri::command]
@@ -597,6 +662,23 @@ mod tests {
             save_as(&db, &dir, "../x", &out.join("y.mp3")).unwrap_err(),
             "Audio not found"
         );
+    }
+
+    #[test]
+    fn bytes_are_stored_linked_and_checked() {
+        let (db, dir) = setup("audio-bytes");
+        let stored =
+            store_bytes(&db, &dir, &[7u8; 512], "audio/mp3", Some("chat-1"), None).unwrap();
+        assert_eq!(stored.mime, "audio/mpeg");
+        assert_eq!(read_bytes(&db, &dir, &stored.hash).unwrap(), vec![7u8; 512]);
+        let later = crate::time_util::now_ms() + 2 * super::super::UNLINKED_GRACE_MS;
+        sweep_orphans(&db, &dir, later).unwrap();
+        assert!(
+            db.audio_by_hash(&stored.hash).unwrap().is_some(),
+            "linked to the chat"
+        );
+        assert!(store_bytes(&db, &dir, &[1u8; 8], "text/html", None, None).is_err());
+        assert!(store_bytes(&db, &dir, &[], "audio/wav", None, None).is_err());
     }
 
     #[tokio::test]

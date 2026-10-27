@@ -1,6 +1,6 @@
 ---
 title: Music generation
-description: Turning on music generation with llama-toolchest or ace-server, making songs in Chat and the Code tab, changing a song you already have, the test clip, and where songs are kept.
+description: Turning on music generation with llama-toolchest or ace-server, making songs in Chat and the Code tab or in the background, changing a song, the test clip, and where songs are kept.
 ---
 
 # Music generation
@@ -19,11 +19,11 @@ While it is off, Settings → Music says so if the llama-toolchest your chat mod
 
 ### Set up llama-toolchest
 
-If your chat model comes from a toolchest, its address and key are filled in; otherwise enter the **Server address** (for example `http://host:3000`) and pick an **API key** from Settings → Inference → API Keys. Press **Probe**, then choose one of its music instances as the **Model**. **Instances on the server** lists its enabled instances; Haruspex uses one only while it runs. Starting an instance, or adding a model, happens in llama-toolchest; Haruspex can't start one.
+If your chat model comes from a toolchest, its address and key are filled in; otherwise enter the **Server address** (`http://host:3000`) and pick an **API key** from Settings → Inference → API Keys. Press **Probe**, then choose one of its music instances as the **Model**. **Instances on the server** lists its enabled instances; Haruspex uses one only while it runs. Starting an instance, or adding a model, happens in llama-toolchest; Haruspex can't start one.
 
 ### Set up ace-server
 
-Enter the **Server address** of ace-server itself (for example `http://host:8083`), not a llama-toolchest in front of it. Press **Probe**. **Model** lists the synthesis models the server loaded; **Server default** uses its first. ace-server has no API key, and it makes one song at a time with no queue Haruspex can see, so a second request waits without showing its place.
+Enter the **Server address** of ace-server itself (`http://host:8083`), not a llama-toolchest in front of it. Press **Probe**. **Model** lists the synthesis models the server loaded; **Server default** uses its first. ace-server has no API key and makes one song at a time; a second request waits without showing its place.
 
 ## Check it works
 
@@ -33,11 +33,15 @@ Under **Songs**, **Make a test clip** makes a 10-second instrumental and plays i
 
 ## Make a song in Chat
 
-Ask for one: "a 45-second lo-fi track about rain", or give lyrics. The assistant writes style tags and, for vocals, the lyrics. A song takes a minute or more; the step shows its progress. It plays in the answer, one player at a time, and starting it stops read-aloud. If the assistant forgets to place it, it is added under the answer. Stopping the reply cancels the song on the server.
+Ask for one: "a 45-second lo-fi track about rain", or give lyrics. The assistant writes style tags and, for vocals, the lyrics. The step shows its progress. It plays in the answer, one player at a time, and starting it stops read-aloud. If the assistant forgets to place it, it is added under the answer. Stopping the reply cancels the song on the server.
 
 You can ask for a length (5 to 240 seconds), tempo, key, time signature, language, or WAV instead of MP3. Each song's seed is noted, so "the same, but faster" keeps the rest.
 
 With a working folder set in Chat, the assistant can also save the song there: ask "save it as rain.mp3", when you ask for it or later. If that file exists you're asked before it is replaced. Without a folder it can't save files.
+
+## Make songs in the background
+
+Ask for a song "in the background" (or several) and the assistant starts it and carries on, so you can keep chatting. Each gets a card with progress and **Cancel**, then a player, and is in the **Tasks** list (see the `chat-conversations` page); the assistant places it in the conversation. If Haruspex closes first, it is picked up when it reopens, as long as the server still has it.
 
 ## Change a song you already have
 
@@ -72,9 +76,8 @@ Haruspex downloads each song and keeps its own copy, then deletes it from llama-
 - With ace-server, the server's own settings (steps, guidance) are used; Haruspex doesn't change them.
 - Players use your system's default audio output, not the device in Settings → Audio.
 - A new song can't be longer than 240 seconds; a changed one can be up to 600.
-- The assistant can only save into the working folder (Chat) or the project (Code tab); use **Save as…** for anywhere else.
-- A short song can come out a little shorter than asked: a 10-second request once gave 7.85 seconds.
+- A short song can come out a little shorter than asked.
 
 ## What has been tested
 
-Making songs in the Code tab, saving one into a project, cancelling one, and keeping songs across a restart have been run against a llama-toolchest server with ACE-Step turbo. A 30-second song took about 10 seconds to make. Songs in Chat are covered only by automated tests so far. ace-server directly has been tested with the ACE-Step XL SFT model. Changing songs in Chat was tested on llama-toolchest: extending and restyling with XL SFT, instruments with XL base.
+On llama-toolchest with ACE-Step turbo: songs in the Code tab, saving into a project, cancelling, and keeping songs across a restart (a 30-second song took about 10 seconds). ace-server with XL SFT. Changing songs in Chat on llama-toolchest: extending and restyling with XL SFT, instruments with XL base.

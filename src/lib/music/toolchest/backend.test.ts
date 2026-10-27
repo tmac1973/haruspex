@@ -21,7 +21,12 @@ import succeeded from './fixtures/job-succeeded.json';
 import refused from './fixtures/refused-not-running.json';
 import { toolchestMusicBackend } from './backend';
 import { invokeRouter } from '#lib/testing/invoke.ts';
-import { MusicBackendError, type MusicProgress, type MusicRequest } from '#lib/music/types.ts';
+import {
+	MusicBackendError,
+	type MusicJobHandle,
+	type MusicProgress,
+	type MusicRequest
+} from '#lib/music/types.ts';
 
 /** A recorded `/v1/models` with its ACE instance in `state`. */
 function musicState(fixture: typeof compute2, state: string) {
@@ -224,5 +229,69 @@ describe('llama-toolchest music backend', () => {
 		}
 		use({ 'GET /v1/models': models });
 		expect(await toolchestMusicBackend.tasks()).toEqual(['text2music', 'cover', 'repaint']);
+	});
+});
+
+describe('llama-toolchest music jobs after a restart', () => {
+	beforeEach(() => {
+		settings.musicToolchestBaseUrl = 'http://box:3000/';
+		settings.musicToolchestApiKeyId = 'k1';
+		settings.musicToolchestModelId = 'ace-gpu2';
+		use(jobRoutes());
+	});
+
+	it('reports the job it sent, with the server, instance and key', async () => {
+		const handles: MusicJobHandle[] = [];
+		await toolchestMusicBackend.generate(request, { onHandle: (h) => handles.push(h) });
+		expect(handles).toEqual([
+			{
+				backend: 'llama-toolchest',
+				baseUrl: 'http://box:3000/',
+				id: '3f9a1c0d7e2b4a61',
+				model: 'ace-gpu2',
+				extra: { keyId: 'k1' }
+			}
+		]);
+	});
+
+	it('follows the job on the server it went to, whatever Settings → Music says now', async () => {
+		settings.musicToolchestBaseUrl = 'http://elsewhere:3000/';
+		settings.musicToolchestApiKeyId = null;
+		const handle: MusicJobHandle = {
+			backend: 'llama-toolchest',
+			baseUrl: 'http://box:3000/',
+			id: '3f9a1c0d7e2b4a61',
+			model: 'ace-gpu2',
+			extra: { keyId: 'k1' }
+		};
+		const result = await toolchestMusicBackend.resume!(handle, request, {
+			codeSessionId: 'code-1'
+		});
+		expect(result).toMatchObject({ hash: HASH, model: 'ace-gpu2', bpm: 82 });
+		// Polls of the job, then its delete once the song is kept; nothing is sent again.
+		const calls = tauri.invoke.mock.calls
+			.filter(([c]) => c === 'toolchest_json')
+			.map(([, a]) => `${a.call.method} ${a.call.path}`);
+		expect(new Set(calls)).toEqual(new Set([`GET ${JOB}`, `DELETE ${JOB}`]));
+		expect(calls.at(-1)).toBe(`DELETE ${JOB}`);
+		const [, stored] = tauri.invoke.mock.calls.find(([c]) => c === 'audio_store_url')!;
+		expect(stored).toMatchObject({
+			url: `http://box:3000${JOB}/audio`,
+			apiKey: 'sekrit',
+			codeSessionId: 'code-1'
+		});
+	});
+
+	it('passes on a 404 for a job the server no longer has', async () => {
+		use({});
+		const handle: MusicJobHandle = {
+			backend: 'llama-toolchest',
+			baseUrl: 'http://box:3000/',
+			id: 'gone',
+			model: 'ace-gpu2'
+		};
+		await expect(toolchestMusicBackend.resume!(handle, request)).rejects.toMatchObject({
+			status: 404
+		});
 	});
 });

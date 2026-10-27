@@ -9,6 +9,7 @@ import { renderResult, uploadResult, type BackgroundTask } from '#lib/tasks/type
 import { imageAnswerText, upscaleAnswerText } from '#lib/agent/tools/_imageAnswer.ts';
 import type { ImageTaskResult, ImageTaskSpec } from '#lib/agent/tools/_imageJob.ts';
 import { imageSrc } from '#lib/images/url.ts';
+import { musicAnswerText, songUrl, type MusicTaskResult } from '#lib/agent/tools/_musicJob.ts';
 
 function megabytes(bytes: number): string {
 	return bytes >= 1024 ** 3
@@ -103,6 +104,12 @@ export function noticeFor(t: BackgroundTask): { text: string; images: string[] }
 	}
 	const name = `Background task "${t.label}"`;
 	if (t.kind === 'image' && t.state === 'done' && t.result) return imageNotice(t, name);
+	if (t.kind === 'music' && t.state === 'done' && t.result) {
+		const r = t.result as MusicTaskResult;
+		const made = { ...r, url: songUrl(r) };
+		const text = musicAnswerText({ made, title: r.title, saved: r.saved, notes: r.notes });
+		return { text: `${name} finished: ${text}`, images: [] };
+	}
 	const text =
 		t.state === 'done'
 			? `${name} finished.`

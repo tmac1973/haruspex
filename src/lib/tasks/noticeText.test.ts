@@ -237,3 +237,37 @@ describe('a background picture’s notice', () => {
 		expect(notice.images).toEqual(['data:image/png;base64,AQI=']);
 	});
 });
+
+describe('a background song’s notice', () => {
+	const hash = 'c'.repeat(64);
+	const song: BackgroundTask = {
+		...base,
+		id: 'music-1',
+		kind: 'music',
+		label: 'Making Rain',
+		state: 'done',
+		follower: 'frontend',
+		result: {
+			hash,
+			mime: 'audio/mpeg',
+			title: 'Rain',
+			durationSec: 45,
+			seed: 7,
+			model: 'ace-gpu2',
+			bpm: 82,
+			key: 'D minor',
+			notes: [],
+			saved: 'Wrote rain.mp3.'
+		}
+	};
+
+	it('is the answer the tool would have given, with the player line to place', () => {
+		const { text, images } = noticeFor(song);
+		expect(text).toBe(
+			'Background task "Making Rain" finished: Made "Rain" (45 s, 82 bpm, D minor, seed 7). ' +
+				`Put ![Rain](haruspex-audio://localhost/${hash}) in your answer. Wrote rain.mp3.`
+		);
+		expect(isTaskNotice(text)).toBe(true);
+		expect(images).toEqual([]);
+	});
+});

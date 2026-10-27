@@ -27,6 +27,7 @@ import {
 	type MusicSource
 } from '#lib/agent/tools/_musicSource.ts';
 import { resolveMusicBackend, MUSIC_TRACKS, type MusicTask } from '#lib/music/index.ts';
+import { BACKGROUND_PARAM } from '#lib/agent/tools/_musicJob.ts';
 
 export const ACTIONS = {
 	restyle: 'cover',
@@ -243,7 +244,8 @@ registerTool({
 						type: 'string',
 						description: 'Also save it here, in the working folder, ending .mp3 or .wav.'
 					},
-					overwrite: { type: 'boolean', description: 'Replace an existing file. Default false.' }
+					overwrite: { type: 'boolean', description: 'Replace an existing file. Default false.' },
+					background: BACKGROUND_PARAM
 				},
 				required: ['source', 'action']
 			}

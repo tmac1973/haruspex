@@ -7,6 +7,7 @@
 	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
 	import VideoTaskResult from '#lib/components/video/VideoTaskResult.svelte';
 	import ImageTaskResult from '#lib/components/tasks/ImageTaskResult.svelte';
+	import MusicTaskResult from '#lib/components/tasks/MusicTaskResult.svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { getTask, refreshTasks } from '#lib/tasks/store.svelte.ts';
@@ -61,6 +62,8 @@
 			<VideoTaskResult {task} />
 		{:else if task.kind === 'image' && task.result}
 			<ImageTaskResult {task} />
+		{:else if task.kind === 'music' && task.result}
+			<MusicTaskResult {task} />
 		{:else}
 			<p class="detail">Done.</p>
 		{/if}

@@ -9,6 +9,7 @@ import { noneMusicBackend } from '#lib/music/none.ts';
 import type {
 	MusicBackendKind,
 	MusicGenerateOptions,
+	MusicJobHandle,
 	MusicRequest,
 	MusicResult,
 	MusicTask
@@ -24,6 +25,15 @@ export interface MusicBackend {
 	/** The tasks the chosen model runs; `text2music` alone on a server that says nothing. */
 	tasks(): Promise<MusicTask[]>;
 	generate(req: MusicRequest, opts?: MusicGenerateOptions): Promise<MusicResult>;
+	/**
+	 * Follow a job `generate` reported through `onHandle` to its end, from a
+	 * later run of the app; `req` is the request it was sent for.
+	 */
+	resume?(
+		handle: MusicJobHandle,
+		req: MusicRequest,
+		opts?: MusicGenerateOptions
+	): Promise<MusicResult>;
 }
 
 /** The configured backend, or the no-op one for an unset or unknown kind. */

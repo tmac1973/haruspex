@@ -99,6 +99,19 @@ describe('TaskCard', () => {
 		expect(screen.getByText('1024×768')).toBeTruthy();
 	});
 
+	it('plays a finished song, and says where it was saved', () => {
+		upsertTask(
+			task({
+				kind: 'music',
+				state: 'done',
+				result: { hash: 'd'.repeat(64), title: 'Rain', saved: 'Wrote rain.mp3.' }
+			})
+		);
+		card();
+		expect(screen.getByText('Rain')).toBeTruthy();
+		expect(screen.getByText('Wrote rain.mp3.')).toBeTruthy();
+	});
+
 	it('shows why it failed, with its output behind a disclosure', () => {
 		upsertTask(task({ state: 'failed', error: 'melt stopped', logTail: 'boom' }));
 		const { container } = card();

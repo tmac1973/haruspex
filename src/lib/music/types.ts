@@ -106,6 +106,28 @@ export interface MusicGenerateOptions {
 	/** Who the song belongs to, so the cache keeps it: a chat or a Code session. */
 	conversationId?: string;
 	codeSessionId?: string;
+	/** Called once the server holds the job, and again when it moves to another. */
+	onHandle?: (handle: MusicJobHandle) => void;
+}
+
+/**
+ * A job a server holds, as `onHandle` reports it: enough for `resume` to
+ * follow it to its end on the server it went to, whatever the settings say
+ * now. Plain JSON: it is saved with the task.
+ */
+export interface MusicJobHandle {
+	backend: MusicBackendKind;
+	baseUrl: string;
+	/** The server's id for the job. */
+	id: string;
+	/** The instance or model that makes it, as the result reports it. */
+	model: string;
+	/** ace-server's two jobs: `lm` composes, then `synth` renders. */
+	stage?: 'lm' | 'synth';
+	/** What composing settled, once a `synth` job is sent. */
+	facts?: { bpm?: number; duration?: number; keyscale?: string; seed?: number };
+	/** Anything else the backend needs: toolchest's key id, ace-server's synthesis model. */
+	extra?: Record<string, string>;
 }
 
 /** As `ImageBackendErrorKind`: `unreachable` and `timeout` are worth retrying. */

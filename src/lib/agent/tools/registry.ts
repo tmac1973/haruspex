@@ -432,7 +432,8 @@ function schemaFor(
 	}
 	// Running in the background needs a chat or Code session for the task,
 	// and someone there for its notice.
-	if (IMAGE_TOOLS.has(name) && !(filter.taskOwner && filter.interactive && !filter.shellMode)) {
+	const backgroundable = IMAGE_TOOLS.has(name) || SONG_TOOLS.has(name);
+	if (backgroundable && !(filter.taskOwner && filter.interactive && !filter.shellMode)) {
 		schema = withoutParams(schema, ['background']);
 	}
 	return (SONG_TOOLS.has(name) || IMAGE_TOOLS.has(name)) && !canSave
