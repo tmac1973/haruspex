@@ -3,6 +3,7 @@ name: fix-picture
 description: Load this before calling edit_image or upscale_image. It covers changing a picture the user already has (attached, drawn earlier, or a file), whether the whole picture, one part, more room past its edges, or a bigger copy. It picks the right tool and order, and checks each result.
 metadata:
   haruspex-needs: image
+  haruspex-tools: edit_image upscale_image
 ---
 
 # Fixing a picture
