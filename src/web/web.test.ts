@@ -288,6 +288,25 @@ describe('the prompt card', () => {
 		await fireEvent.click(screen.getByText('Ignore them'));
 		expect(onanswer).toHaveBeenCalledWith('main:5', { kind: 'repo-trust', trust: false });
 	});
+
+	it("answers the assistant's screenshot prompt", async () => {
+		const onanswer = vi.fn();
+		render(PromptCard, {
+			prompt: {
+				promptId: 'main:6',
+				kind: 'screen-capture',
+				sessionId: null,
+				chatId: 'c1',
+				answerable: true,
+				requester: null,
+				detail: { target: 'screen' }
+			},
+			onanswer
+		});
+		expect(screen.getByText('Take a screenshot?')).toBeTruthy();
+		await fireEvent.click(screen.getByText("Don't"));
+		expect(onanswer).toHaveBeenCalledWith('main:6', { kind: 'screen-capture', choice: 'deny' });
+	});
 });
 
 describe('the composer', () => {

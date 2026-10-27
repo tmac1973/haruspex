@@ -129,6 +129,7 @@ import { askMemoryApproval } from '#lib/stores/memoryApproval.svelte.ts';
 import { askMcpApproval } from '#lib/stores/mcpApproval.svelte.ts';
 import { askRepoTrust } from '#lib/stores/repoTrust.svelte.ts';
 import { askSkillApproval } from '#lib/stores/skillApproval.svelte.ts';
+import { askScreenCapture } from '#lib/stores/screenCaptureApproval.svelte.ts';
 import { dispatch, setResync } from './dispatch.ts';
 import { emptyMirror, reduce, type Mirror } from './reduce.ts';
 import { answerPrompt, currentPrompts, watchPrompts } from './prompts.svelte.ts';
@@ -442,6 +443,19 @@ describe('prompts', () => {
 		expect(t).toMatchObject({ kind: 'repo-trust', detail: { skills: 2, agentsMd: true } });
 		await answerPrompt('main', t.promptId, { kind: 'repo-trust', trust: false });
 		expect(await trusted).toBe(false);
+	});
+
+	it("answers the assistant's screenshot prompt, in the chat that asked", async () => {
+		const shot = askScreenCapture({ target: 'window', chatId: 'c1', sessionId: null });
+		const [p] = currentPrompts('main');
+		expect(p).toMatchObject({
+			kind: 'screen-capture',
+			chatId: 'c1',
+			answerable: true,
+			detail: { target: 'window' }
+		});
+		await answerPrompt('main', p.promptId, { kind: 'screen-capture', choice: 'allow' });
+		expect(await shot).toBe('allow');
 	});
 
 	it('saves a skill as edited, or rejects it, and keeps it when saving fails', async () => {

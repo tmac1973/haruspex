@@ -89,7 +89,7 @@ describe('the prompt before each screenshot', () => {
 
 	it('captures only after the user says yes', async () => {
 		const { ctx, out } = await asked('window');
-		expect(getPendingScreenCapture()).toEqual({ target: 'window' });
+		expect(getPendingScreenCapture()).toEqual({ target: 'window', chatId: null, sessionId: null });
 		expect(mocks.invoke).not.toHaveBeenCalled();
 
 		resolveScreenCapture('allow');

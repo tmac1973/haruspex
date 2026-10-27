@@ -21,6 +21,10 @@ import {
 } from '#lib/stores/memoryApproval.svelte.ts';
 import { getPendingApproval, resolveApproval } from '#lib/stores/sandboxApproval.svelte.ts';
 import { getPendingRepoTrust, resolveRepoTrust } from '#lib/stores/repoTrust.svelte.ts';
+import {
+	getPendingScreenCapture,
+	resolveScreenCapture
+} from '#lib/stores/screenCaptureApproval.svelte.ts';
 import { getPendingSkillApproval, resolveSkillApproval } from '#lib/stores/skillApproval.svelte.ts';
 import { getPendingQuestion, resolveUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
 import type { Prompt, PromptAnswer, PromptEvent } from '#lib/engine/types.ts';
@@ -148,6 +152,18 @@ export function currentPrompts(label: string): Prompt[] {
 			}
 		});
 	}
+	const screen = getPendingScreenCapture();
+	if (screen) {
+		out.push({
+			promptId: idFor(label, screen),
+			kind: 'screen-capture',
+			sessionId: screen.sessionId,
+			chatId: screen.chatId,
+			answerable: true,
+			requester: null,
+			detail: { target: screen.target }
+		});
+	}
 	return JSON.parse(JSON.stringify(out)) as Prompt[];
 }
 
@@ -180,20 +196,24 @@ export async function answerPrompt(
 			return resolveMcpApproval(answer.choice);
 		case 'repo-trust':
 			return resolveRepoTrust(answer.trust);
-		case 'skill': {
-			const skill = getPendingSkillApproval();
-			if (!skill) return;
-			if (answer.action === 'reject') {
-				return resolveSkillApproval({ kind: 'rejected', reason: answer.reason });
-			}
-			const text = answer.text ?? skill.text;
-			await skill.save(text);
-			// Still the one showing: another screen may have answered meanwhile.
-			if (getPendingSkillApproval() === skill) {
-				resolveSkillApproval({ kind: 'saved', edited: text !== skill.text });
-			}
-			return;
-		}
+		case 'screen-capture':
+			return resolveScreenCapture(answer.choice);
+		case 'skill':
+			return answerSkill(answer);
+	}
+}
+
+async function answerSkill(answer: Extract<PromptAnswer, { kind: 'skill' }>): Promise<void> {
+	const skill = getPendingSkillApproval();
+	if (!skill) return;
+	if (answer.action === 'reject') {
+		return resolveSkillApproval({ kind: 'rejected', reason: answer.reason });
+	}
+	const text = answer.text ?? skill.text;
+	await skill.save(text);
+	// Still the one showing: another screen may have answered meanwhile.
+	if (getPendingSkillApproval() === skill) {
+		resolveSkillApproval({ kind: 'saved', edited: text !== skill.text });
 	}
 }
 

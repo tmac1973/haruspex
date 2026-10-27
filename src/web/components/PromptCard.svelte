@@ -228,6 +228,26 @@
 				>Ignore them</button
 			>
 		</div>
+	{:else if prompt.kind === 'screen-capture'}
+		<p
+			class="title"
+			title="Haruspex hides on your computer while it captures, and the assistant sees the picture."
+		>
+			{d.target === 'window' ? 'Take a screenshot of your window?' : 'Take a screenshot?'}
+		</p>
+		<div class="buttons">
+			<button
+				class="btn btn-small"
+				onclick={() => onanswer(prompt.promptId, { kind: 'screen-capture', choice: 'allow' })}
+				>Take it</button
+			>
+			<button
+				class="btn btn-small btn-danger"
+				title="Nothing is captured; the model is told you declined."
+				onclick={() => onanswer(prompt.promptId, { kind: 'screen-capture', choice: 'deny' })}
+				>Don't</button
+			>
+		</div>
 	{:else}
 		<p class="title">Something is waiting</p>
 		<p class="why">Answer it on your computer; the turn carries on after that.</p>
