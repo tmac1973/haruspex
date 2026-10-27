@@ -48,6 +48,7 @@ import {
 	type ServerState
 } from '#lib/image/lemonade/adapter.ts';
 import { lemonadeConfig, lemonadeJson, lemonadeUpload } from '#lib/image/lemonade/client.ts';
+import { refreshOptions } from '#lib/image/lemonade/options.ts';
 
 /**
  * One generation, plus a model load when another image model is resident:
@@ -278,10 +279,14 @@ export const lemonadeBackend: ImageBackend = {
 		const { id, family, model } = await chosen();
 
 		// Say so when the server has to load it first: that is most of a minute.
-		const loaded = await serverState(opts.signal)
-			.then((s) => s.loadedImage)
-			.catch(() => null);
-		opts.onProgress?.({ phase: loaded === bareName(model.name) ? 'running' : 'loading' });
+		const state = await serverState(opts.signal).catch(() => null);
+		const name = bareName(model.name);
+		let loaded = state?.loadedImage === name;
+		if (state?.stale.has(name)) {
+			await refreshOptions(model, loaded, opts.signal);
+			loaded = false;
+		}
+		opts.onProgress?.({ phase: loaded ? 'running' : 'loading' });
 
 		const sampler = req.sampler ?? { ...FAMILY_SAMPLER[family] };
 		const seed = req.seed ?? randomSeed();

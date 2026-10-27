@@ -168,6 +168,23 @@ describe('edit_image with an area', () => {
 		});
 	});
 
+	it('says when the part that was to change came back nearly as it was', async () => {
+		const plain = state.invoke.getMockImplementation()!;
+		const measured = (change: number) =>
+			state.invoke.mockImplementation(async (cmd: string, args: unknown) =>
+				cmd === 'image_mask_change' ? change : plain(cmd, args)
+			);
+		const args = { image: SRC_URL, prompt: 'red sky', area: { x: 0, y: 0, width: 1, height: 0.4 } };
+		measured(2.5);
+		const flat = await executeTool('edit_image', args, chat);
+		expect(flat.result).toMatch(/came back nearly as it was/);
+		const [, edited, opts] = state.invoke.mock.calls.find(([c]) => c === 'image_mask_change')!;
+		expect(Array.from(edited as Uint8Array)).toEqual([9]);
+		expect(opts.headers).toEqual({ 'x-canvas-hash': CANVAS, 'x-mask-hash': MASK });
+		measured(40);
+		expect((await executeTool('edit_image', args, chat)).result).not.toMatch(/nearly as it was/);
+	});
+
 	it('edits the canvas held to its mask, and pastes it back at the canvas’s size', async () => {
 		const out = await executeTool(
 			'edit_image',

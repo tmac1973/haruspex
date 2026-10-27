@@ -90,6 +90,19 @@ describe('responses', () => {
 });
 
 describe('readServer', () => {
+	it('spots arguments an older Haruspex saved, with Ming’s text encoder pinned to the CPU', () => {
+		const list = {
+			data: [
+				{
+					id: 'user.Ming-Image-0.1-Design-GGUF',
+					downloaded: true,
+					recipe_options: { sdcpp_args: '--tokenizer /t.json --diffusion-fa --backend te=cpu' }
+				}
+			]
+		};
+		expect([...readServer(health, systemInfo, list).stale]).toEqual(['Ming-Image-0.1-Design-GGUF']);
+	});
+
 	it('reads a real server: version, GPU, storage, sd-cpp, and what is loaded and installed', () => {
 		const s = readServer(health, systemInfo, models);
 		expect(s.version).toBe('2026.43.3');
@@ -98,6 +111,8 @@ describe('readServer', () => {
 		expect(s.sdcpp).toEqual({ usable: true, backend: 'rocm', installed: true });
 		expect(s.loadedImage).toBe('Ming-Image-0.1-Design-GGUF');
 		expect(s.downloaded.has(bareName('user.Ming-Image-0.1-Design-GGUF'))).toBe(true);
+		// Its saved arguments are current: no `--backend te=cpu`.
+		expect(s.stale.size).toBe(0);
 		expect(s.downloaded.has('Z-Image-Turbo')).toBe(false);
 	});
 

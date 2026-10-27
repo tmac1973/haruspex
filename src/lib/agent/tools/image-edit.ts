@@ -26,6 +26,9 @@ import { answerWithImage, drawForTool, saveTarget } from '#lib/agent/tools/image
 import { editSize, resolveImage, type ImageSource } from '#lib/agent/tools/_imageSource.ts';
 import {
 	finishMasked,
+	maskedChange,
+	UNCHANGED,
+	UNCHANGED_NOTE,
 	maskRequest,
 	prepareMasked,
 	type MaskRequest
@@ -117,7 +120,12 @@ async function editMasked(
 	} catch (e) {
 		return toolResult(toolError(`Could not edit it: ${errMessage(e)}`));
 	}
-	const finished = { ...image, bytes, width: prepared.width, height: prepared.height };
+	// A model shown a picture that didn't change still tends to describe the
+	// change it asked for (#703), so say so when the masked part barely moved.
+	const change = await maskedChange(image.bytes, prepared);
+	const notes =
+		change !== null && change < UNCHANGED ? [...image.notes, UNCHANGED_NOTE] : image.notes;
+	const finished = { ...image, bytes, notes, width: prepared.width, height: prepared.height };
 	return answerWithImage(finished, prompt.slice(0, 60), save, ctx, 'Edited');
 }
 

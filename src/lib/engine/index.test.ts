@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
 	listen: vi.fn(),
 	unlisten: vi.fn(),
 	watchPrompts: vi.fn(),
+	stopSessions: vi.fn(),
 	enabled: false
 }));
 
@@ -18,7 +19,9 @@ vi.mock('#lib/engine/dispatch.ts', () => ({
 	setResync: vi.fn()
 }));
 vi.mock('#lib/engine/prompts.svelte.ts', () => ({ watchPrompts: mocks.watchPrompts }));
-vi.mock('#lib/engine/watch.svelte.ts', () => ({ watchOpenSessions: () => ({ resync: vi.fn() }) }));
+vi.mock('#lib/engine/watch.svelte.ts', () => ({
+	watchOpenSessions: () => ({ resync: vi.fn(), stop: mocks.stopSessions })
+}));
 vi.mock('#lib/debug-log.ts', () => ({ logDebug: vi.fn() }));
 
 type Handler = (e: { payload: boolean }) => void;
@@ -33,9 +36,12 @@ async function startEngine() {
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
 beforeEach(() => {
+	// Each test's engine is the first in its window.
+	delete (globalThis as Record<string, unknown>).__haruspexEngineStop;
 	mocks.enabled = false;
 	mocks.unlisten.mockReset();
 	mocks.watchPrompts.mockReset();
+	mocks.stopSessions.mockReset();
 	mocks.invoke.mockReset().mockImplementation(async (cmd: string) => {
 		if (cmd === 'engine_enabled') return mocks.enabled;
 		return null;
@@ -63,6 +69,39 @@ describe('startEngine', () => {
 		await settle();
 		expect(mocks.watchPrompts).toHaveBeenCalledTimes(1);
 		expect(mocks.unlisten).toHaveBeenCalledTimes(1);
+	});
+
+	it('stops listening for ops and stops its watchers, so a restart answers alone', async () => {
+		// A dev build's hot reload: the old engine must not keep answering.
+		mocks.enabled = true;
+		const stopPrompts = vi.fn();
+		mocks.watchPrompts.mockReturnValue(stopPrompts);
+		const unlistenOps = vi.fn();
+		mocks.listen.mockImplementation(async (event: string) =>
+			event === 'engine://op' ? unlistenOps : mocks.unlisten
+		);
+		vi.resetModules();
+		const engine = await import('./index');
+		await engine.startEngine();
+		engine.stopEngine();
+		expect(unlistenOps).toHaveBeenCalledTimes(1);
+		expect(stopPrompts).toHaveBeenCalledTimes(1);
+		expect(mocks.stopSessions).toHaveBeenCalledTimes(1);
+		// Started again, it listens again, once.
+		await engine.startEngine();
+		const opListens = mocks.listen.mock.calls.filter(([e]) => e === 'engine://op');
+		expect(opListens).toHaveLength(2);
+		engine.stopEngine();
+		expect(unlistenOps).toHaveBeenCalledTimes(2);
+	});
+
+	it('stops an engine another copy of this module started, as after a hot reload', async () => {
+		mocks.enabled = true;
+		const stopOld = vi.fn();
+		(globalThis as Record<string, unknown>).__haruspexEngineStop = stopOld;
+		await startEngine();
+		expect(stopOld).toHaveBeenCalledTimes(1);
+		expect((globalThis as Record<string, unknown>).__haruspexEngineStop).not.toBe(stopOld);
 	});
 
 	it('handles a switch-on that arrives before listen resolves', async () => {
