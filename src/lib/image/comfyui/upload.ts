@@ -107,3 +107,16 @@ export async function uploadImage(
 	}
 	return typeof a.subfolder === 'string' && a.subfolder ? `${a.subfolder}/${a.name}` : a.name;
 }
+
+/** An inpaint's canvas and mask, each under a name of its own. */
+export async function uploadInpaint(
+	cfg: ClientConfig,
+	inpaint: { image: ImageInput; mask: ImageInput },
+	signal?: AbortSignal
+): Promise<{ image: string; mask: string }> {
+	const id = crypto.randomUUID();
+	return {
+		image: await uploadImage(cfg, inpaint.image, `haruspex-inpaint-${id}.png`, signal),
+		mask: await uploadImage(cfg, inpaint.mask, `haruspex-mask-${id}.png`, signal)
+	};
+}

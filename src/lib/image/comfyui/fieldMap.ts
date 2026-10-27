@@ -99,6 +99,19 @@ export interface ReferenceLatentsBinding {
 	size: string;
 }
 
+/**
+ * Where an inpaint goes into a drawing graph: `node`'s `input` (the sampler's
+ * latent) takes the canvas, scaled to the request's size and VAE-encoded with
+ * `vae` (a node and its output), under a noise mask from the mask picture, so
+ * only the white part is redrawn. Unused for a plain drawing.
+ */
+export interface InpaintBinding {
+	kind: 'inpaint';
+	node: string;
+	input: string;
+	vae: [string, number];
+}
+
 export interface FieldMap {
 	/** The SaveImage node whose results are collected. */
 	outputNode: string;
@@ -120,6 +133,7 @@ export interface FieldMap {
 	loras?: LoraSlotsBinding;
 	editImages?: EditImagesBinding;
 	referenceLatents?: ReferenceLatentsBinding;
+	inpaint?: InpaintBinding;
 	/**
 	 * The edge an edit's reference pictures are resized to, about: the square
 	 * root of the request's area, in 32s. The result takes the first picture's
@@ -138,6 +152,8 @@ export interface DerivedValues {
 	lora?: string;
 	/** An edit's pictures, as `/upload/image` named them on the server. */
 	editImages?: string[];
+	/** An inpaint's canvas and mask, as uploaded. */
+	inpaint?: { image: string; mask: string };
 }
 
 function missingNode(graph: ComfyGraph, node: string): boolean {
@@ -183,8 +199,17 @@ export function validateFieldMap(graph: ComfyGraph, map: FieldMap): string[] {
 			continue;
 		}
 		const b = binding as
-			ScalarBinding | LoraSlotsBinding | EditImagesBinding | ReferenceLatentsBinding;
-		if (b.kind === 'referenceLatents' || b.kind === 'editImages') {
+			| ScalarBinding
+			| LoraSlotsBinding
+			| EditImagesBinding
+			| ReferenceLatentsBinding
+			| InpaintBinding;
+		if (b.kind === 'inpaint') {
+			checkSlot(label, b.node, b.input);
+			if (missingNode(graph, b.vae[0])) {
+				problems.push(`${label} binds node "${b.vae[0]}", which the workflow does not contain.`);
+			}
+		} else if (b.kind === 'referenceLatents' || b.kind === 'editImages') {
 			// Their nodes are made per request; the nodes they join must be there.
 			for (const node of pictureNodes(b).filter((n) => missingNode(graph, n))) {
 				problems.push(`${label} binds node "${node}", which the workflow does not contain.`);
@@ -247,8 +272,48 @@ export function applyFieldMap(
 
 	if (map.loras) applyLoraChain(out, map.loras, req.loras ?? []);
 	applyPictures(out, map, derived.editImages ?? [], req);
+	if (map.inpaint && derived.inpaint) applyInpaint(out, map.inpaint, derived.inpaint, req);
 
 	return out;
+}
+
+/** The canvas, encoded under a noise mask, as the sampler's latent. */
+function applyInpaint(
+	graph: ComfyGraph,
+	binding: InpaintBinding,
+	uploaded: { image: string; mask: string },
+	req: ImageRequest
+): void {
+	if (missingNode(graph, binding.node) || missingNode(graph, binding.vae[0])) {
+		throw new Error('Workflow has no sampler or VAE for the inpaint.');
+	}
+	const scaled = (id: string, image: string) => {
+		graph[`${id}_image`] = { class_type: 'LoadImage', inputs: { image } };
+		graph[`${id}_scaled`] = {
+			class_type: 'ImageScale',
+			inputs: {
+				image: [`${id}_image`, 0],
+				upscale_method: 'lanczos',
+				width: req.width,
+				height: req.height,
+				crop: 'disabled'
+			}
+		};
+		return [`${id}_scaled`, 0];
+	};
+	graph.inpaint_latent = {
+		class_type: 'VAEEncode',
+		inputs: { pixels: scaled('inpaint_canvas', uploaded.image), vae: binding.vae }
+	};
+	graph.inpaint_mask = {
+		class_type: 'ImageToMask',
+		inputs: { image: scaled('inpaint_mask', uploaded.mask), channel: 'red' }
+	};
+	graph.inpaint_noise_mask = {
+		class_type: 'SetLatentNoiseMask',
+		inputs: { samples: ['inpaint_latent', 0], mask: ['inpaint_mask', 0] }
+	};
+	graph[binding.node].inputs[binding.input] = ['inpaint_noise_mask', 0];
 }
 
 /** An edit's pictures, by whichever binding the workflow has. */

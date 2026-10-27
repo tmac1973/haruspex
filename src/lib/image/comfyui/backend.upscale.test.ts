@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { getSettings, updateSettings } from '#lib/stores/settings.ts';
-import { comfyUiBackend, upscaleGraph } from './backend';
+import { comfyUiBackend } from './backend';
+import { upscaleGraph } from './upscale';
 import { findUpscaler } from './families';
 
 const saved = {
