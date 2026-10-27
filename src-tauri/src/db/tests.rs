@@ -2861,3 +2861,205 @@ fn an_older_code_sessions_table_gains_the_seen_columns_and_the_notice_table() {
     db.delete_code_notices(&[stored[0].id]).unwrap();
     assert!(db.code_notices().unwrap().is_empty());
 }
+
+fn message(role: &str, content: &str) -> MessageInput {
+    MessageInput {
+        role: role.into(),
+        content: content.into(),
+        tool_calls: None,
+        tool_call_id: None,
+        steps: None,
+    }
+}
+
+fn contents(db: &Database, id: &str) -> Vec<String> {
+    db.get_conversation(id)
+        .unwrap()
+        .messages
+        .into_iter()
+        .map(|m| m.content)
+        .collect()
+}
+
+#[test]
+fn replace_messages_swaps_the_whole_list_in_order() {
+    let db = test_db();
+    db.create_conversation("c1", "Chat").unwrap();
+    db.create_conversation("c2", "Other").unwrap();
+    db.save_message("c1", "user", "old", None, None, None)
+        .unwrap();
+    db.save_message("c2", "user", "untouched", None, None, None)
+        .unwrap();
+
+    let mut tool = message("tool", "result");
+    tool.tool_call_id = Some("call-1".into());
+    tool.steps = Some("[1]".into());
+    db.replace_messages("c1", &[message("user", "new"), tool])
+        .unwrap();
+
+    let conv = db.get_conversation("c1").unwrap();
+    assert_eq!(conv.messages.len(), 2);
+    assert_eq!(conv.messages[0].content, "new");
+    assert_eq!(conv.messages[0].sort_order, 1);
+    assert_eq!(conv.messages[1].role, "tool");
+    assert_eq!(conv.messages[1].tool_call_id.as_deref(), Some("call-1"));
+    assert_eq!(conv.messages[1].steps.as_deref(), Some("[1]"));
+    assert_eq!(conv.messages[1].sort_order, 2);
+    assert_eq!(contents(&db, "c2"), ["untouched"]);
+
+    db.replace_messages("c1", &[]).unwrap();
+    assert!(contents(&db, "c1").is_empty());
+}
+
+#[test]
+fn a_failed_insert_leaves_the_old_messages() {
+    let db = test_db();
+    db.create_conversation("c1", "Chat").unwrap();
+    db.save_message("c1", "user", "first", None, None, None)
+        .unwrap();
+    db.save_message("c1", "assistant", "second", None, None, None)
+        .unwrap();
+    db.conn
+        .lock()
+        .unwrap()
+        .execute_batch(
+            "CREATE TEMP TRIGGER refuse_boom BEFORE INSERT ON messages
+             WHEN NEW.content = 'boom' BEGIN SELECT RAISE(ABORT, 'refused'); END;",
+        )
+        .unwrap();
+
+    let err = db
+        .replace_messages(
+            "c1",
+            &[message("user", "fine"), message("assistant", "boom")],
+        )
+        .unwrap_err();
+    assert!(err.contains("Insert failed"), "{err}");
+    assert_eq!(contents(&db, "c1"), ["first", "second"]);
+}
+
+#[test]
+fn update_last_message_steps_touches_only_the_newest_message_of_that_conversation() {
+    let db = test_db();
+    db.create_conversation("c1", "Chat").unwrap();
+    db.create_conversation("c2", "Other").unwrap();
+    db.save_message("c1", "user", "q", None, None, None)
+        .unwrap();
+    db.save_message("c1", "assistant", "a", None, None, None)
+        .unwrap();
+    db.save_message("c2", "assistant", "other", None, None, None)
+        .unwrap();
+
+    db.update_last_message_steps("c1", Some(r#"[{"kind":"image"}]"#))
+        .unwrap();
+    let steps = |id: &str| -> Vec<Option<String>> {
+        db.get_conversation(id)
+            .unwrap()
+            .messages
+            .into_iter()
+            .map(|m| m.steps)
+            .collect()
+    };
+    assert_eq!(steps("c1"), [None, Some(r#"[{"kind":"image"}]"#.into())]);
+    assert_eq!(steps("c2"), [None]);
+
+    db.update_last_message_steps("c1", None).unwrap();
+    assert_eq!(steps("c1"), [None, None]);
+    // A conversation with no messages is not an error.
+    db.create_conversation("c3", "Empty").unwrap();
+    db.update_last_message_steps("c3", Some("[]")).unwrap();
+}
+
+fn memory(db: &Database, content: &str, axis: usize) -> String {
+    db.insert_memory(
+        content,
+        "fact",
+        &axis_vector(axis),
+        MODEL,
+        None,
+        "extracted",
+        1_000,
+    )
+    .unwrap()
+}
+
+fn memory_contents(db: &Database) -> Vec<String> {
+    let mut all: Vec<String> = db
+        .list_memories(0, 100, None)
+        .unwrap()
+        .into_iter()
+        .map(|m| m.content)
+        .collect();
+    all.sort();
+    all
+}
+
+#[test]
+fn merge_memories_keeps_one_with_the_new_text_and_deletes_the_rest() {
+    let db = test_db();
+    let a = memory(&db, "likes tea", 0);
+    let b = memory(&db, "drinks tea", 1);
+    let c = memory(&db, "tea person", 2);
+    memory(&db, "unrelated", 4);
+
+    db.merge_memories(&a, &[b, c], "Drinks tea daily", &axis_vector(3), MODEL)
+        .unwrap();
+    assert_eq!(memory_contents(&db), ["Drinks tea daily", "unrelated"]);
+    // Re-embedded with the merged text's vector.
+    let hits = db
+        .search_memories(&axis_vector(3), MODEL, 10, 0.5, 2_000)
+        .unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].memory.id, a);
+}
+
+#[test]
+fn merge_memories_refuses_to_delete_the_one_it_keeps() {
+    let db = test_db();
+    let a = memory(&db, "likes tea", 0);
+    let b = memory(&db, "drinks tea", 1);
+    let err = db
+        .merge_memories(&a, &[b, a.clone()], "merged", &axis_vector(3), MODEL)
+        .unwrap_err();
+    assert!(err.contains("can't also be deleted"), "{err}");
+    assert_eq!(memory_contents(&db), ["drinks tea", "likes tea"]);
+}
+
+#[test]
+fn merge_memories_into_a_missing_memory_deletes_nothing() {
+    let db = test_db();
+    let b = memory(&db, "drinks tea", 1);
+    let err = db
+        .merge_memories("mem-gone", &[b], "merged", &axis_vector(3), MODEL)
+        .unwrap_err();
+    assert!(err.contains("no longer exists"), "{err}");
+    assert_eq!(memory_contents(&db), ["drinks tea"]);
+}
+
+#[test]
+fn a_failed_delete_rolls_the_whole_merge_back() {
+    let db = test_db();
+    let a = memory(&db, "likes tea", 0);
+    let b = memory(&db, "drinks tea", 1);
+    let c = memory(&db, "tea person", 2);
+    db.conn
+        .lock()
+        .unwrap()
+        .execute(
+            &format!(
+                "CREATE TEMP TRIGGER refuse_delete BEFORE DELETE ON memories
+                 WHEN OLD.id = '{c}' BEGIN SELECT RAISE(ABORT, 'refused'); END;"
+            ),
+            [],
+        )
+        .unwrap();
+
+    let err = db
+        .merge_memories(&a, &[b, c], "merged", &axis_vector(3), MODEL)
+        .unwrap_err();
+    assert!(err.contains("Memory delete failed"), "{err}");
+    assert_eq!(
+        memory_contents(&db),
+        ["drinks tea", "likes tea", "tea person"]
+    );
+}

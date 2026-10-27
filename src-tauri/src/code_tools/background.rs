@@ -431,10 +431,34 @@ impl CodeBgManager {
 /// Kill the groups a previous run left behind, and delete its logs. Call once
 /// at launch, before anything starts.
 pub fn sweep_orphans(log_dir: &Path, registry: Option<&Path>) {
+    sweep_orphans_with(
+        log_dir,
+        registry,
+        orphans::pid_command,
+        |pid| signal_group(pid, Signal::Kill),
+        |by_distro| {
+            // A stopped distro takes seconds to start: off this thread.
+            std::thread::spawn(move || {
+                for (distro, groups) in by_distro {
+                    wsl::sweep_groups(&distro, &groups);
+                }
+            });
+        },
+    );
+}
+
+/// [`sweep_orphans`] with what it reads and kills passed in, so a test can
+/// run it without touching real processes. `sweep_wsl` gets the groups inside
+/// WSL distros, by distro, as (group id, marker).
+fn sweep_orphans_with(
+    log_dir: &Path,
+    registry: Option<&Path>,
+    pid_command: impl Fn(u32) -> Option<String>,
+    mut kill: impl FnMut(u32),
+    sweep_wsl: impl FnOnce(HashMap<String, Vec<(u32, String)>>),
+) {
     if let Some(registry) = registry {
         let entries = orphans::load(registry);
-        // Groups inside WSL distros: one `wsl.exe` per distro, off this thread
-        // (a stopped distro takes seconds to start).
         let mut by_distro: HashMap<String, Vec<(u32, String)>> = HashMap::new();
         for e in &entries {
             if let Some((distro, mark)) = parse_wsl_orphan_program(&e.program) {
@@ -445,20 +469,14 @@ pub fn sweep_orphans(log_dir: &Path, registry: Option<&Path>) {
             }
         }
         if !by_distro.is_empty() {
-            std::thread::spawn(move || {
-                for (distro, groups) in by_distro {
-                    wsl::sweep_groups(&distro, &groups);
-                }
-            });
+            sweep_wsl(by_distro);
         }
         for e in &entries {
             if parse_wsl_orphan_program(&e.program).is_some() {
                 continue;
             }
-            if e.pid > 1
-                && orphans::command_matches(&e.program, orphans::pid_command(e.pid).as_deref())
-            {
-                signal_group(e.pid, Signal::Kill);
+            if e.pid > 1 && orphans::command_matches(&e.program, pid_command(e.pid).as_deref()) {
+                kill(e.pid);
                 log::info!(
                     "{ORPHAN_KIND}: reaped orphaned {} from a previous run",
                     e.id
@@ -787,18 +805,6 @@ mod wsl_tests {
             "group {pgid} left running"
         );
     }
-
-    #[test]
-    fn wsl_orphan_entries_round_trip() {
-        let program = wsl_orphan_program("Ubuntu-24.04", "bg-1");
-        assert_eq!(
-            parse_wsl_orphan_program(&program),
-            Some(("Ubuntu-24.04", "haruspex-code-bg:bg-1"))
-        );
-        assert_eq!(parse_wsl_orphan_program("haruspex-code-bg:bg-1"), None);
-        assert_eq!(parse_wsl_orphan_program("wsl:-d:haruspex-code-bg:x"), None);
-        assert_eq!(parse_wsl_orphan_program("wsl:Ubuntu:something-else"), None);
-    }
 }
 
 /// A Windows folder: PowerShell in a Job object.
@@ -1109,5 +1115,116 @@ mod tests {
         .await;
         assert!(orphans::load(&dir.join("running.json")).is_empty());
         assert!(!dir.join("logs").exists());
+    }
+}
+
+/// The sweep's bookkeeping, with processes faked: runs on every platform.
+#[cfg(test)]
+mod sweep_tests {
+    use super::*;
+    use crate::test_util::temp_dir;
+
+    fn entry(id: &str, pid: u32, program: &str) -> RunningServer {
+        RunningServer {
+            id: id.into(),
+            pid,
+            started_at: 0,
+            program: program.into(),
+        }
+    }
+
+    #[test]
+    fn wsl_orphan_entries_round_trip() {
+        let program = wsl_orphan_program("Ubuntu-24.04", "bg-1");
+        assert_eq!(
+            parse_wsl_orphan_program(&program),
+            Some(("Ubuntu-24.04", "haruspex-code-bg:bg-1"))
+        );
+        assert_eq!(parse_wsl_orphan_program("haruspex-code-bg:bg-1"), None);
+        assert_eq!(parse_wsl_orphan_program("wsl:-d:haruspex-code-bg:x"), None);
+        assert_eq!(parse_wsl_orphan_program("wsl:Ubuntu:something-else"), None);
+        assert_eq!(parse_wsl_orphan_program("wsl:Ubuntu"), None);
+        assert_eq!(parse_wsl_orphan_program("wsl::haruspex-code-bg:x"), None);
+        assert_eq!(
+            parse_wsl_orphan_program("wsl:Ubuntu;rm:haruspex-code-bg:x"),
+            None
+        );
+    }
+
+    #[test]
+    fn kills_only_groups_still_running_their_recorded_command() {
+        let dir = temp_dir("bg_sweep_fake");
+        let registry = dir.join("running.json");
+        let logs = dir.join("logs");
+        std::fs::create_dir_all(&logs).unwrap();
+        std::fs::write(logs.join("bg-1.log"), "old output").unwrap();
+        let ours = format!("sh -c sleep 30\nexit $? # {}", marker("bg-1"));
+        orphans::save(
+            &registry,
+            &[
+                entry("bg-1", 100, &marker("bg-1")),
+                // The pid was reused by something else.
+                entry("bg-2", 200, &marker("bg-2")),
+                // Gone.
+                entry("bg-3", 300, &marker("bg-3")),
+                // A corrupt entry matches nothing.
+                entry("bg-4", 400, ""),
+                // Never our own group or init.
+                entry("bg-5", 1, &marker("bg-5")),
+                entry("bg-6", 0, &marker("bg-6")),
+                // Inside WSL: handed to the distro, never killed on the host.
+                entry("bg-7", 700, &wsl_orphan_program("Ubuntu", "bg-7")),
+            ],
+        )
+        .unwrap();
+        let mut killed = Vec::new();
+        let mut wsl = HashMap::new();
+        sweep_orphans_with(
+            &logs,
+            Some(&registry),
+            |pid| match pid {
+                100 => Some(ours.clone()),
+                200 => Some("/usr/bin/vim notes.txt".into()),
+                400 | 1 | 0 | 700 => Some(format!("anything {}", marker("bg-5"))),
+                _ => None,
+            },
+            |pid| killed.push(pid),
+            |groups| wsl = groups,
+        );
+        assert_eq!(killed, vec![100]);
+        assert_eq!(
+            wsl.get("Ubuntu"),
+            Some(&vec![(700, marker("bg-7"))]),
+            "{wsl:?}"
+        );
+        assert_eq!(wsl.len(), 1);
+        assert!(orphans::load(&registry).is_empty());
+        assert!(!logs.exists());
+    }
+
+    #[test]
+    fn an_empty_or_missing_registry_kills_nothing_and_still_clears_logs() {
+        let dir = temp_dir("bg_sweep_empty");
+        let logs = dir.join("logs");
+        std::fs::create_dir_all(&logs).unwrap();
+        let mut killed = Vec::new();
+        let mut wsl_called = false;
+        sweep_orphans_with(
+            &logs,
+            Some(&dir.join("absent.json")),
+            |_| Some("anything".into()),
+            |pid| killed.push(pid),
+            |_| wsl_called = true,
+        );
+        assert!(killed.is_empty());
+        assert!(!wsl_called);
+        assert!(!logs.exists());
+        // Nothing was recorded, so nothing is written either.
+        assert!(!dir.join("absent.json").exists());
+
+        std::fs::create_dir_all(&logs).unwrap();
+        sweep_orphans_with(&logs, None, |_| None, |pid| killed.push(pid), |_| ());
+        assert!(killed.is_empty());
+        assert!(!logs.exists());
     }
 }

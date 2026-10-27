@@ -492,21 +492,25 @@ describe('runAgentLoop: the forced final tool', () => {
 		// The model never called a tool it was not given, and the forced call
 		// then named a tool missing from the request: vLLM refused it with a
 		// 400, the turn ended empty, and the chain lost its art.
-		nonStreamQueue.push(textResponse('done'));
-		const { options } = makeOptions({
+		// The answer, then the forced call, which comes back empty.
+		nonStreamQueue.push(textResponse('done'), textResponse(''));
+		const { options, cb } = makeOptions({
 			toolAllowlist: ['fs_read_text'],
 			forceFinalTool: 'submit_plan_asset_spec'
 		});
-		await runAgentLoop(options).catch(() => {});
+		await runAgentLoop(options);
+		expect(api.chatCompletion).toHaveBeenCalledTimes(2);
+		expect(cb.onError).not.toHaveBeenCalled();
 		expect(toolsMock.getToolSchemas).toHaveBeenCalledWith(
 			expect.objectContaining({ toolAllowlist: ['fs_read_text', 'submit_plan_asset_spec'] })
 		);
 	});
 
 	it('leaves an unrestricted turn unrestricted', async () => {
-		nonStreamQueue.push(textResponse('done'));
-		const { options } = makeOptions({ forceFinalTool: 'submit_plan_asset_spec' });
-		await runAgentLoop(options).catch(() => {});
+		nonStreamQueue.push(textResponse('done'), textResponse(''));
+		const { options, cb } = makeOptions({ forceFinalTool: 'submit_plan_asset_spec' });
+		await runAgentLoop(options);
+		expect(cb.onError).not.toHaveBeenCalled();
 		expect(toolsMock.getToolSchemas).toHaveBeenCalledWith(
 			expect.objectContaining({ toolAllowlist: undefined })
 		);
