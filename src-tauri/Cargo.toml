@@ -70,11 +70,11 @@ pdf-extract = "0.12"
 # fails, and every PDF silently falls back to pdf-extract.
 pdfium-render = { version = "0.9.4", default-features = false, features = ["pdfium_7763", "image_latest", "thread_safe"] }
 printpdf = { version = "0.12", features = ["png", "jpeg", "gif"] }
-calamine = "0.36"
+calamine = "0.37"
 zip = "9.0"
 image = "0.25"
 base64 = "0.23"
-rust_xlsxwriter = "0.99"
+rust_xlsxwriter = "0.101"
 portable-pty = "0.9"
 # Editor windows reload a file when something else changes it: inotify on
 # Linux, FSEvents on macOS. See fs_tools/editor.rs.

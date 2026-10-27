@@ -22,13 +22,16 @@ use scraper::{ElementRef, Html, Selector};
 const MAX_RESULTS: usize = 8;
 
 /// Classify a reqwest error: timeouts go to Timeout, everything else
-/// (connect, DNS, TLS, broken pipe, response read) is Network.
+/// (connect, DNS, TLS, broken pipe, response read) is Network. The URL is
+/// stripped: it carries the user's query, and a SearXNG instance URL may
+/// carry credentials, and this text reaches the log.
 fn classify_reqwest_err(e: reqwest::Error, context: &str) -> SearchFailure {
-    if e.is_timeout() {
-        SearchFailure::new(SearchFailureKind::Timeout, format!("{}: {}", context, e))
+    let kind = if e.is_timeout() {
+        SearchFailureKind::Timeout
     } else {
-        SearchFailure::new(SearchFailureKind::Network, format!("{}: {}", context, e))
-    }
+        SearchFailureKind::Network
+    };
+    SearchFailure::new(kind, format!("{}: {}", context, e.without_url()))
 }
 
 /// Build the HTTP client for one search-engine request: shared fetch

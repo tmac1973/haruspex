@@ -49,10 +49,10 @@ pub(super) async fn search(
         .header("User-Agent", USER_AGENT)
         .send()
         .await
-        .map_err(|e| format!("Commons search request failed: {}", e))?
+        .map_err(|e| format!("Commons search request failed: {}", e.without_url()))?
         .json()
         .await
-        .map_err(|e| format!("Commons search JSON parse failed: {}", e))?;
+        .map_err(|e| format!("Commons search JSON parse failed: {}", e.without_url()))?;
 
     let titles: Vec<String> = search_resp
         .get("query")
@@ -82,10 +82,10 @@ pub(super) async fn search(
         .header("User-Agent", USER_AGENT)
         .send()
         .await
-        .map_err(|e| format!("Commons imageinfo request failed: {}", e))?
+        .map_err(|e| format!("Commons imageinfo request failed: {}", e.without_url()))?
         .json()
         .await
-        .map_err(|e| format!("Commons imageinfo JSON parse failed: {}", e))?;
+        .map_err(|e| format!("Commons imageinfo JSON parse failed: {}", e.without_url()))?;
 
     let results = parse_commons_imageinfo(&info_resp, &titles);
     Ok(results)

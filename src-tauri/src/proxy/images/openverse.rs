@@ -35,7 +35,7 @@ pub(super) async fn search(
         .header("User-Agent", USER_AGENT)
         .send()
         .await
-        .map_err(|e| format!("Openverse request failed: {}", e))?;
+        .map_err(|e| format!("Openverse request failed: {}", e.without_url()))?;
 
     // Anonymous quota exhausted. Expected, and not the caller's problem.
     if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
@@ -49,7 +49,7 @@ pub(super) async fn search(
     let body: Value = response
         .json()
         .await
-        .map_err(|e| format!("Openverse JSON parse failed: {}", e))?;
+        .map_err(|e| format!("Openverse JSON parse failed: {}", e.without_url()))?;
     Ok(parse(&body))
 }
 
