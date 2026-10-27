@@ -66,6 +66,9 @@ against them.
   pass that texture.
 - Keep the ground less saturated and less busy than the sprites. They are
   what the player looks at.
+- Make floors and walls easy to tell apart at a glance: give them different
+  patterns (a floor of flagstones or planks, not the bricks of the wall), and
+  make the walls darker or lighter than the floor.
 - Where two textures meet on the map, make a `kind: "transition"` set from
   their two recipes. For a side-view platformer, use the `side` view with
   the ground and a `cap` such as grass.

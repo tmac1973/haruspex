@@ -9,7 +9,9 @@ const tone = { lightness: 0.22, target: 0.47, targetGrey: 0x5c5c5cff };
 
 describe('blendReason', () => {
 	it('is null when the sprites show up', () => {
-		expect(blendReason({ ground: 0.5, sprites: [0.2], blending: 0, ok: true, tone })).toBeNull();
+		expect(
+			blendReason({ ground: 0.5, sprites: [0.2], blending: 0, blends: [false], ok: true, tone })
+		).toBeNull();
 	});
 
 	it('gives the recipe writer the numbers and the way to go', () => {
@@ -17,6 +19,7 @@ describe('blendReason', () => {
 			ground: 0.19,
 			sprites: [0.22, 0.25, 0.6],
 			blending: 2,
+			blends: [true, true, false],
 			ok: false,
 			tone
 		});

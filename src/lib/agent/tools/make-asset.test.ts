@@ -316,13 +316,9 @@ describe('make_asset textures', () => {
 				fs_read_bytes_absolute: () => Array.from(PNG),
 				texture_validate: () => undefined,
 				texture_render: [[0]],
-				texture_ground_contrast: {
-					ground: ok ? 0.45 : 0.2,
-					sprites: [0.22, 0.25],
-					blending: ok ? 0 : 2,
-					ok,
-					tone
-				},
+				texture_ground_contrast: ok
+					? { ground: 0.45, sprites: [0.22, 0.25], blending: 0, blends: [false, false], ok, tone }
+					: { ground: 0.2, sprites: [0.22], blending: 1, blends: [true], ok, tone },
 				texture_ground_preview: [8, 8]
 			});
 
@@ -347,8 +343,8 @@ describe('make_asset textures', () => {
 				texture({ sprites: ['sprites/goblin.png'] }),
 				context()
 			);
-			expect(out.result).toContain('hard to see on this tile');
-			expect(out.result).toContain('clearly lighter, around #5c5c5c');
+			expect(out.result).toContain('hard to see on it: sprites/goblin.png (0.22)');
+			expect(out.result).toContain('lighter than 0.32');
 			expect(out.result).toContain('overwrite: true');
 		});
 
