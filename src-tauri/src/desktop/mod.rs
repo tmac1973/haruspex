@@ -16,13 +16,13 @@
 //!
 //! # Per platform
 //!
-//! - **Linux** — the XDG desktop portal, via [`linux`]. A capture the
-//!   assistant asked for opens the portal's own dialog: that *is* the
-//!   user-initiated guarantee, enforced by the compositor rather than promised
-//!   by us. The composer's button skips the dialog, since pressing it is the
-//!   request; the portal asks once whether Haruspex may take screenshots. On
-//!   KDE Plasma, Window… is a click on the window, via [`kwin`]. A bare X11
-//!   session with no portal running falls back to reading the root window.
+//! - **Linux** — the XDG desktop portal, via [`linux`], without its dialog:
+//!   the portal asks once whether Haruspex may take screenshots. A capture the
+//!   assistant asks for is confirmed in Haruspex's own prompt instead, on by
+//!   default (Settings → Screen). On KDE Plasma, Window… is a click on the
+//!   window and the assistant's window capture is the focused one, both via
+//!   [`kwin`]. A bare X11 session with no portal running falls back to
+//!   reading the root window.
 //! - **macOS / Windows** — [`xcap`], via [`external`]. Deviation from the plan,
 //!   which named ScreenCaptureKit and Win32 directly: xcap's backends are
 //!   exactly those APIs, and taking them as a dependency trades a page of

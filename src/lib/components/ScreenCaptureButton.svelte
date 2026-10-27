@@ -55,10 +55,7 @@
 
 	const screen = () =>
 		run(async () => {
-			const capture = await invoke<ScreenCapture>('capture_screen', {
-				target: 'screen',
-				fromButton: true
-			});
+			const capture = await invoke<ScreenCapture>('capture_screen', { target: 'screen' });
 			await onCapture(capture.dataUrl);
 		});
 

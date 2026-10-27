@@ -5,7 +5,8 @@
 //! setting a delay, switching to it, and pressing Save. KWin's own
 //! `org.kde.KWin.ScreenShot2.CaptureInteractive` is what Spectacle uses
 //! underneath: the cursor becomes a crosshair, the user clicks a window, and
-//! its pixels come back over a pipe. Escape cancels.
+//! its pixels come back over a pipe. Escape cancels. The assistant's window
+//! capture uses `CaptureActiveWindow`, the same thing without the crosshair.
 //!
 //! KWin keeps this interface to the apps whose `.desktop` file lists it under
 //! `X-KDE-DBUS-Restricted-Interfaces`, matched by the caller's executable. The
@@ -23,7 +24,7 @@ use super::screenshot::Capture;
 /// `CaptureInteractive`'s kind for "a window" (1 is a whole screen).
 const KIND_WINDOW: u32 = 0;
 
-/// Why a click capture did not produce an image.
+/// Why a KWin capture did not produce an image.
 pub enum KwinError {
     /// Not Plasma, or KWin does not trust this executable.
     Unavailable(String),
@@ -33,8 +34,27 @@ pub enum KwinError {
     Failed(String),
 }
 
+/// Which window KWin captures.
+#[derive(Clone, Copy)]
+enum Pick {
+    /// The one the user clicks (`CaptureInteractive`).
+    Click,
+    /// The focused one, with no crosshair (`CaptureActiveWindow`).
+    Active,
+}
+
 /// Let the user click a window and return its pixels.
 pub async fn click_window() -> Result<Capture, KwinError> {
+    capture(Pick::Click).await
+}
+
+/// The focused window's pixels, for the assistant's `capture_screen` tool.
+/// Haruspex is hidden first, so this is the window the user was in before it.
+pub async fn active_window() -> Result<Capture, KwinError> {
+    capture(Pick::Active).await
+}
+
+async fn capture(pick: Pick) -> Result<Capture, KwinError> {
     let conn = zbus::Connection::session()
         .await
         .map_err(|e| KwinError::Unavailable(e.to_string()))?;
@@ -63,12 +83,21 @@ pub async fn click_window() -> Result<Capture, KwinError> {
         ("include-cursor", Value::from(false)),
         ("native-resolution", Value::from(true)),
     ]);
-    let reply: zbus::Result<HashMap<String, OwnedValue>> = proxy
-        .call(
-            "CaptureInteractive",
-            &(KIND_WINDOW, options, Fd::from(&writer)),
-        )
-        .await;
+    let reply: zbus::Result<HashMap<String, OwnedValue>> = match pick {
+        Pick::Click => {
+            proxy
+                .call(
+                    "CaptureInteractive",
+                    &(KIND_WINDOW, options, Fd::from(&writer)),
+                )
+                .await
+        }
+        Pick::Active => {
+            proxy
+                .call("CaptureActiveWindow", &(options, Fd::from(&writer)))
+                .await
+        }
+    };
     drop(writer);
 
     let bytes = pixels

@@ -6,6 +6,10 @@
  * returned as `thumbDataUrl` so the user sees exactly what was sent. Those two
  * are the same image, which is the point — there is no version of this where
  * something goes to the model that the person did not also get to look at.
+ *
+ * It takes the picture the way the composer's camera button does: no desktop
+ * dialog, with Haruspex hidden so the screen or window behind it is what is
+ * captured. Haruspex's own prompt asks first, unless Settings → Screen says not to.
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -14,6 +18,9 @@ import type { CaptureTarget } from '#lib/ipc/gen/CaptureTarget.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolResult, toolError } from '#lib/agent/tools/types.ts';
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
+import { getSettings } from '#lib/stores/settings.ts';
+import { askScreenCapture } from '#lib/stores/screenCaptureApproval.svelte.ts';
+import { hideSettled, withHaruspexHidden } from '#lib/shell/captureRegion.ts';
 
 /**
  * Normalize whatever the model wrote into a target the backend knows.
@@ -64,17 +71,43 @@ registerTool({
 			);
 		}
 		const target = normalizeTarget(args.target);
+		if (getSettings().screenCaptureConfirm) {
+			if (!ctx.interactive) {
+				return toolResult(
+					toolError(
+						'Screenshots need the user to confirm each one, and nobody is here to. The user can stop the question in Settings → Screen.'
+					)
+				);
+			}
+			ctx.onApprovalWait?.(true);
+			const choice = await askScreenCapture({ target }, ctx.signal).finally(() =>
+				ctx.onApprovalWait?.(false)
+			);
+			if (choice === 'deny') {
+				return toolResult(
+					'The user declined the screenshot. Nothing was captured; do not ask for another unless they do.'
+				);
+			}
+		}
 		try {
-			const capture = await invoke<ScreenCapture>('capture_screen', { target });
-			ctx.pendingImages.push({ path: `screen capture (${target})`, dataUrl: capture.dataUrl });
+			const capture = await withHaruspexHidden(async () => {
+				await hideSettled();
+				return invoke<ScreenCapture>('capture_screen', { target });
+			});
+			const took = capture.target;
+			ctx.pendingImages.push({ path: `screen capture (${took})`, dataUrl: capture.dataUrl });
+			const note =
+				took === target
+					? ''
+					: ' The window could not be captured on its own here, so this is the whole screen.';
 			return {
-				result: `Captured the ${target} at ${capture.width}x${capture.height}. You can now see it — describe or analyze it in your next response.`,
+				result: `Captured the ${took} at ${capture.width}x${capture.height}.${note} You can now see it — describe or analyze it in your next response.`,
 				thumbDataUrl: capture.dataUrl
 			};
 		} catch (e) {
-			// The backend's messages name the actual obstacle — a cancelled
-			// portal dialog, a missing macOS grant — so they are passed through
-			// rather than flattened into "capture failed".
+			// The backend's messages name the actual obstacle — a refused
+			// desktop permission, a missing macOS grant — so they are passed
+			// through rather than flattened into "capture failed".
 			return toolResult(toolError(String(e)));
 		}
 	}

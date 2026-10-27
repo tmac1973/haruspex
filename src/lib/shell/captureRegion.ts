@@ -73,12 +73,17 @@ export async function withHaruspexHidden<T>(work: () => Promise<T>): Promise<T> 
 	}
 }
 
+/** Wait, Haruspex just hidden, for the compositor to repaint what was behind it. */
+export function hideSettled(): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, HIDE_SETTLE_MS));
+}
+
 /**
  * Take the screen for a region, Haruspex already hidden: wait for the
  * compositor to repaint what was behind it, then hold the frame in Rust.
  */
 export async function regionFrameWhileHidden(): Promise<ScreenCapture> {
-	await new Promise((resolve) => setTimeout(resolve, HIDE_SETTLE_MS));
+	await hideSettled();
 	return invoke<ScreenCapture>('capture_region_start');
 }
 

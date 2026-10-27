@@ -1,6 +1,7 @@
 <script lang="ts">
 	/**
-	 * Settings → Screen. One toggle.
+	 * Settings → Screen. Whether the assistant may take a screenshot, and
+	 * whether it asks first.
 	 *
 	 * The button in the chat composer captures whether or not this is on — a
 	 * person pressing a button is not a permission question. What this decides
@@ -10,9 +11,14 @@
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 
 	let enabled = $state(getSettings().screenCaptureEnabled);
+	let confirm = $state(getSettings().screenCaptureConfirm);
 
 	function toggle() {
 		updateSettings({ screenCaptureEnabled: enabled });
+	}
+
+	function toggleConfirm() {
+		updateSettings({ screenCaptureConfirm: confirm });
 	}
 </script>
 
@@ -22,6 +28,15 @@
 		<input type="checkbox" bind:checked={enabled} onchange={toggle} />
 		<span>Let the assistant take a screenshot when you ask it to</span>
 	</label>
+	{#if enabled}
+		<label
+			class="toggle-row"
+			title="Haruspex hides while the screenshot is taken, and your desktop shows no dialog of its own."
+		>
+			<input type="checkbox" bind:checked={confirm} onchange={toggleConfirm} />
+			<span>Ask before each screenshot</span>
+		</label>
+	{/if}
 	<p
 		class="section-help"
 		title="Each capture happens at the moment it is asked for. The screen is never watched, sampled on a timer, or captured in the background."
