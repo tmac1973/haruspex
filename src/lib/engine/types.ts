@@ -108,7 +108,7 @@ export interface SessionListItem {
 }
 
 export type PromptKind =
-	'command' | 'question' | 'sandbox' | 'memory' | 'mcp' | 'skill' | 'repo-trust';
+	'command' | 'question' | 'sandbox' | 'memory' | 'mcp' | 'skill' | 'repo-trust' | 'screen-capture';
 
 /** Something a turn is waiting on a person for. */
 export interface Prompt {
@@ -136,7 +136,8 @@ export type PromptAnswer =
 	/** Save the file as shown, or as `text` when it was edited first; or reject it, saying why. */
 	| { kind: 'skill'; action: 'save'; text?: string }
 	| { kind: 'skill'; action: 'reject'; reason: string }
-	| { kind: 'repo-trust'; trust: boolean };
+	| { kind: 'repo-trust'; trust: boolean }
+	| { kind: 'screen-capture'; choice: 'allow' | 'deny' };
 
 /**
  * What a session did. `seq` counts per session, so a client that sees a gap

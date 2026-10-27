@@ -37,7 +37,7 @@ The page lists your Code sessions, the open ones first. Pick one to follow it as
 
 `/compact` and the summary divider work as in the Code tab (see `code-sessions`). File names in a session are links: click one to read the file (it can't be edited from the page). Images attached to messages show as thumbnails, and pictures the model put in an answer show as they do here; click one for full size.
 
-**Chat** (the switch at the top of the list) shows your chats, newest first. Open one to read it or carry it on; its working folder, Python sandbox and memory work as usual, and this computer stays on its chat. Chats answer at once, and sending to one that's answering steers it (see `chat-conversations`); each is marked Writing, Waiting or New. You can stop, continue or retry a reply, and answer **Run this Python?** and **Remember this?** from the page.
+**Chat** (the switch atop the list) shows your chats, newest first. Open one to read it or carry it on; its working folder, Python sandbox and memory work as usual, and this computer stays on its chat. Chats answer at once, and sending to one that's answering steers it (see `chat-conversations`); each is marked Writing, Waiting or New. You can stop, continue or retry a reply, and answer **Run this Python?**, **Remember this?** and **Take a screenshot?** from the page.
 
 ## Advanced
 

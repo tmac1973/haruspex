@@ -8,7 +8,8 @@
  * dialog, so without this the first the user sees of a screenshot is the
  * thumbnail of one already sent. Settings → Screen turns it off.
  *
- * Prompts queue (`approvalQueue.svelte.ts`), one shown at a time.
+ * Prompts queue (`approvalQueue.svelte.ts`), one shown at a time. The remote
+ * page (Settings → Remote control) answers it too, through `engine/prompts`.
  */
 
 import { createApprovalQueue } from '#lib/stores/approvalQueue.svelte.ts';
@@ -16,6 +17,9 @@ import type { CaptureTarget } from '#lib/ipc/gen/CaptureTarget.ts';
 
 export interface ScreenCaptureRequest {
 	target: CaptureTarget;
+	/** The chat or Code session whose turn asks, so the remote page shows it there. */
+	chatId: string | null;
+	sessionId: string | null;
 }
 
 export type ScreenCaptureChoice = 'allow' | 'deny';

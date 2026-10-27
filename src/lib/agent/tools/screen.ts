@@ -80,9 +80,14 @@ registerTool({
 				);
 			}
 			ctx.onApprovalWait?.(true);
-			const choice = await askScreenCapture({ target }, ctx.signal).finally(() =>
-				ctx.onApprovalWait?.(false)
-			);
+			const choice = await askScreenCapture(
+				{
+					target,
+					chatId: ctx.conversationId ?? null,
+					sessionId: ctx.codeSessionId ?? null
+				},
+				ctx.signal
+			).finally(() => ctx.onApprovalWait?.(false));
 			if (choice === 'deny') {
 				return toolResult(
 					'The user declined the screenshot. Nothing was captured; do not ask for another unless they do.'
