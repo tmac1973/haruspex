@@ -348,6 +348,8 @@ mod tests {
             "plan-2d-game",
             "fix-picture",
             "game-assets",
+            "write-song",
+            "cut-video",
         ] {
             assert!(skills.contains_key(name), "{name} isn't shipped");
         }
