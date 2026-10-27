@@ -146,6 +146,19 @@ const THREAD_TRIM_AT = 40;
 /** How many prose bubbles (user + assistant answers) the trim keeps. */
 const THREAD_KEEP_PROSE = 8;
 
+/** The message a submission adds: its text, with its pictures when it has any. */
+function userMessage(payload: ShellSubmission): ChatMessage {
+	return {
+		role: 'user',
+		content: payload.images?.length
+			? [
+					...(payload.body ? [{ type: 'text' as const, text: payload.body }] : []),
+					...payload.images.map((url) => ({ type: 'image_url' as const, image_url: { url } }))
+				]
+			: payload.body
+	};
+}
+
 export class ShellSession {
 	readonly id: string;
 	name = $state('');
@@ -865,16 +878,7 @@ export class ShellSession {
 		this.searchSteps = [];
 		this.contextNotice = null;
 
-		const userMsg: ChatMessage = {
-			role: 'user',
-			content: payload.images?.length
-				? [
-						...(payload.body ? [{ type: 'text' as const, text: payload.body }] : []),
-						...payload.images.map((url) => ({ type: 'image_url' as const, image_url: { url } }))
-					]
-				: payload.body
-		};
-		this.messages = [...this.messages, userMsg];
+		this.messages = [...this.messages, userMessage(payload)];
 		if (payload.recentHistory.length) {
 			this.messageHistorySent = {
 				...this.messageHistorySent,
@@ -929,6 +933,7 @@ export class ShellSession {
 				signal: this.abortController.signal,
 				onTicket: (t) => (this.ticket = t),
 				onAdmitted: () => (this.ticket = null),
+				onRequeue: (t) => (this.ticket = t),
 				onAssistantDelta: (full) => (this.streamingContent = full),
 				onCallStats: (stats) => (lastCallStats = stats),
 				// The notice is for the pre-send fit, which can drop turns; the

@@ -168,6 +168,7 @@ export async function executeDelegate(
 
 registerTool({
 	category: 'exec',
+	usesModel: true,
 	schema: {
 		type: 'function',
 		function: {

@@ -28,6 +28,7 @@ import { assemble, prepareSystem } from '#lib/code/runCodeTurn.ts';
 import { SUBTASK_REPORT_CHARS } from '#lib/code/system-prompt.ts';
 import type { CodeWriteGuard, SlotLender } from '#lib/agent/tools/types.ts';
 import type { JobSubtaskHost } from '#lib/code/subtaskRun.ts';
+import type { HeldSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 
 /** The most model rounds a subtask takes before it has to answer. */
 export const SUBTASK_MAX_ROUNDS = 25;
@@ -175,7 +176,7 @@ export async function runSubtask(o: SubtaskOptions): Promise<SubtaskResult> {
 	let streamed = '';
 	const run: SlotLender =
 		o.runInSlot ??
-		(<T>(fn: () => Promise<T>, opts?: { onAdmitted?: () => void }) => {
+		(<T>(fn: (slot?: HeldSlot) => Promise<T>, opts?: { onAdmitted?: () => void }) => {
 			// No lender: the parent's slot is held and idle, so it's ours now.
 			opts?.onAdmitted?.();
 			return fn();
@@ -196,11 +197,12 @@ export async function runSubtask(o: SubtaskOptions): Promise<SubtaskResult> {
 			backend
 		);
 		const messages = assemble(system, [{ role: 'user', content: o.task }], null);
-		const pass = (maxIterations: number) =>
+		const pass = (maxIterations: number, slot: HeldSlot | undefined) =>
 			runTurnCore(
 				{
 					...childLoop(o, backend),
 					maxIterations,
+					slot,
 					messages,
 					skills,
 					onToolStart: (call) => {
@@ -224,8 +226,10 @@ export async function runSubtask(o: SubtaskOptions): Promise<SubtaskResult> {
 				}
 			);
 		const out = await run(
-			async () => {
-				const first = await pass(SUBTASK_MAX_ROUNDS);
+			// A slot of its own (a background subtask, or a queued child) it gives
+			// back while its long tools run; the parent's it never does.
+			async (slot) => {
+				const first = await pass(SUBTASK_MAX_ROUNDS, slot);
 				// One more go for a child that stopped short: it said what it
 				// would do instead of doing it, or ended without a report.
 				const nudge = o.signal?.aborted ? null : stoppedShort(o.mode, steps, first.finalText);
@@ -235,7 +239,7 @@ export async function runSubtask(o: SubtaskOptions): Promise<SubtaskResult> {
 					{ role: 'user', content: nudge }
 				);
 				streamed = '';
-				return pass(SUBTASK_NUDGE_ROUNDS);
+				return pass(SUBTASK_NUDGE_ROUNDS, slot);
 			},
 			{ onAdmitted: o.onAdmitted, signal: o.signal }
 		);

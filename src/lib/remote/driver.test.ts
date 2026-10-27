@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
 	invoke: vi.fn(),
 	runEphemeralTurn: vi.fn(),
 	withInferenceSlot: vi.fn(),
+	slot: { held: true, release: () => {}, reacquire: async () => {} },
 	resolveBackendDescriptor: vi.fn(),
 	dbCreateConversation: vi.fn(),
 	dbSetConversationMemoryEnabled: vi.fn(),
@@ -71,10 +72,12 @@ beforeEach(() => {
 	mocks.noteExternalConversation.mockReset();
 	mocks.withInferenceSlot
 		.mockReset()
-		.mockImplementation(async (opts: { onAdmitted?: () => void }, fn: () => Promise<unknown>) => {
-			opts.onAdmitted?.();
-			return fn();
-		});
+		.mockImplementation(
+			async (opts: { onAdmitted?: () => void }, fn: (slot: unknown) => Promise<unknown>) => {
+				opts.onAdmitted?.();
+				return fn(mocks.slot);
+			}
+		);
 });
 
 describe('the remote turn driver', () => {
@@ -104,6 +107,8 @@ describe('the remote turn driver', () => {
 		await runRemoteTurn(prompt);
 		const slotOptions = mocks.withInferenceSlot.mock.calls[0][0];
 		expect(slotOptions.consumer).toEqual({ kind: 'remote', client: 'guest1' });
+		// The turn gets the slot, to give back while a long tool runs.
+		expect(turnOptions().slot).toBe(mocks.slot);
 	});
 
 	it('tells the client it is running only once it has a slot', async () => {

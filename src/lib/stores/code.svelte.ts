@@ -875,6 +875,10 @@ export class CodeSession {
 					this.ticket = null;
 					this.status = 'running';
 				},
+				onRequeue: (t) => {
+					this.ticket = t;
+					this.status = t ? 'queued' : 'running';
+				},
 				...this.live.callbacks(),
 				onCallStats: (stats) => (lastCallStats = stats),
 				onUsage: (usage: Usage, contextSize) => {

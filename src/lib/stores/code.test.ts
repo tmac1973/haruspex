@@ -551,6 +551,38 @@ describe('a Code session', () => {
 		expect(s.ticket).toBeNull();
 	});
 
+	it('shows queued again while a turn takes its slot back after a long tool', async () => {
+		const s = await newSession('/proj');
+		let requeue!: (t: unknown) => void;
+		const slot = { held: true, release: () => {}, reacquire: async () => {} };
+		mocks.withInferenceSlot.mockImplementationOnce(
+			async (
+				o: { onAdmitted?: () => void; onRequeue?: (t: unknown) => void },
+				fn: (slot: unknown) => Promise<unknown>
+			) => {
+				requeue = o.onRequeue!;
+				o.onAdmitted?.();
+				return fn(slot);
+			}
+		);
+		const turn = held();
+		mocks.runAgentLoop.mockImplementationOnce(turn.impl);
+		const sending = s.send('build it');
+		const o = await turn.running;
+		expect(o.slot).toBe(slot);
+
+		const ticket = { id: 'main:2', consumer: 'code', state: 'waiting', enqueuedAt: 0 };
+		requeue(ticket);
+		expect(s.status).toBe('queued');
+		expect(s.ticket).toEqual(ticket);
+		requeue(null);
+		expect(s.status).toBe('running');
+		expect(s.ticket).toBeNull();
+
+		turn.release();
+		await sending;
+	});
+
 	it('shows waiting-shell while open_in_shell waits, then runs on', async () => {
 		const s = await newSession('/proj');
 		const turn = held();

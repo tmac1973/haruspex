@@ -18,7 +18,11 @@ import type { Artifact } from '#lib/agent/tools/index.ts';
 import type { AgentStopReason } from '#lib/agent/loop.ts';
 import { runTurnCore } from '#lib/agent/runTurn.ts';
 import type { ContextManagedInfo } from '#lib/agent/context-budget.ts';
-import { withInferenceSlot, type InferenceTicket } from '#lib/agent/inferenceQueue.svelte.ts';
+import {
+	withInferenceSlot,
+	type HeldSlot,
+	type InferenceTicket
+} from '#lib/agent/inferenceQueue.svelte.ts';
 import { updateContextUsage } from '#lib/stores/context.svelte.ts';
 import { stripToolCallArtifacts } from '#lib/markdown.ts';
 
@@ -47,6 +51,8 @@ export interface ShellTurnOptions {
 	signal?: AbortSignal;
 	onTicket?: (ticket: InferenceTicket) => void;
 	onAdmitted?: () => void;
+	/** Taking the slot back after a long tool (see `WithSlotOptions.onRequeue`). */
+	onRequeue?: (ticket: InferenceTicket | null) => void;
 	onAssistantDelta?: (full: string) => void;
 	onCallStats?: (stats: { durationMs: number; completionTokens: number }) => void;
 	onContextManaged?: (info: ContextManagedInfo) => void;
@@ -77,16 +83,18 @@ export async function runShellTurn(options: ShellTurnOptions): Promise<ShellTurn
 			consumer: 'shell',
 			signal: options.signal,
 			onTicket: options.onTicket,
-			onAdmitted: options.onAdmitted
+			onAdmitted: options.onAdmitted,
+			onRequeue: options.onRequeue
 		},
-		() => drive(options)
+		(slot) => drive(options, slot)
 	);
 }
 
-async function drive(options: ShellTurnOptions): Promise<ShellTurnResult> {
+async function drive(options: ShellTurnOptions, slot: HeldSlot): Promise<ShellTurnResult> {
 	return runTurnCore(
 		{
 			messages: options.messages,
+			slot,
 			workingDir: null,
 			contextSize: options.contextSize,
 			// Shell-tab questions like "what does this code do?" or "find the

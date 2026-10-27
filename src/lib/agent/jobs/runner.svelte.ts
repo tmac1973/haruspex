@@ -163,9 +163,12 @@ function runJobTurn(
 			signal: abort.signal,
 			onAdmitted: () => {
 				if (current && current.id === runId) current = { ...current, waitingForSlot: false };
+			},
+			onRequeue: (t) => {
+				if (current && current.id === runId) current = { ...current, waitingForSlot: t !== null };
 			}
 		},
-		async () => {
+		async (slot) => {
 			// Set for the duration of the turn so onCallStats can attribute each
 			// call, and always cleared — a leaked kind would mis-label the next
 			// turn's calls, which is worse than not labelling them at all.
@@ -184,6 +187,7 @@ function runJobTurn(
 						workingDir: job.working_dir ? job.working_dir : null,
 						backend,
 						signal: abort.signal,
+						slot,
 						// Offered only while Settings → Feedback has it on.
 						feedback: { source: runSource(job, runId) },
 						onToolEnd: (call, result, ...rest) => {
@@ -927,9 +931,10 @@ async function reflectOnRun(
 	try {
 		await withInferenceSlot(
 			{ consumer: { kind: 'job', jobName: `${job.name} (tool feedback)` }, backend },
-			() =>
+			(slot) =>
 				runEphemeralTurn({
 					...jobTurnPolicy(job),
+					slot,
 					systemPrompt: REFLECTION_SYSTEM_PROMPT,
 					userMessage,
 					workingDir: null,

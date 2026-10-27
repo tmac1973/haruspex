@@ -110,6 +110,8 @@ export interface CodeTurnOptions {
 	onProject?: (project: { root: string | null; agentsMd: AgentsMd | null }) => void;
 	onTicket?: (ticket: InferenceTicket) => void;
 	onAdmitted?: () => void;
+	/** Taking the slot back after a long tool (see `WithSlotOptions.onRequeue`). */
+	onRequeue?: (ticket: InferenceTicket | null) => void;
 	onAssistantDelta?: (full: string) => void;
 	/**
 	 * A model call that may still end in tool calls has started; whatever the
@@ -219,9 +221,10 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 				backend,
 				signal: o.signal,
 				onTicket: o.onTicket,
-				onAdmitted: o.onAdmitted
+				onAdmitted: o.onAdmitted,
+				onRequeue: o.onRequeue
 			},
-			async () => {
+			async (slot) => {
 				// In the slot the turn already holds: summarising is a model
 				// call, and queueing it apart would let another consumer in
 				// between it and the turn it makes room for.
@@ -241,6 +244,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 					// is a folder *relative* to it and refused every write when given
 					// the absolute root.
 					workingDir: o.root,
+					slot,
 					codeSessionId: o.sessionId,
 					requester: () => `Code · ${sessionLabel({ title: o.title?.() ?? '', root: o.root })}`,
 					codeReadOnly: o.readOnly ?? false,

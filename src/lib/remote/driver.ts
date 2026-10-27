@@ -212,7 +212,7 @@ export async function runRemoteTurn(event: RemotePromptEvent): Promise<void> {
 					void invoke('remote_turn_running', { turnId }).catch(() => {});
 				}
 			},
-			async () => {
+			async (slot) => {
 				// Inside the slot deliberately: summarising is itself a model
 				// call, and running it outside the queue would let a guest
 				// collide with the person at the keyboard.
@@ -240,6 +240,7 @@ export async function runRemoteTurn(event: RemotePromptEvent): Promise<void> {
 					interactive: false,
 					visionSupported: false,
 					signal: abort.signal,
+					slot,
 					// The person who can answer is in another room, so the
 					// question goes down the guest's stream rather than opening
 					// a modal on the host's screen — which they could not see

@@ -9,13 +9,20 @@ vi.mock('#lib/agent/loop.ts', () => ({
 	runAgentLoop: vi.fn()
 }));
 
+const slots = vi.hoisted(() => ({
+	fake: { held: true, release: () => {}, reacquire: async () => {} },
+	/** Each turn's `onRequeue`, in the order the turns asked for a slot. */
+	onRequeue: [] as ((ticket: unknown) => void)[]
+}));
+
 vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => ({
 	withInferenceSlot: async <T>(
-		opts: { onAdmitted?: () => void },
-		fn: () => Promise<T>
+		opts: { onAdmitted?: () => void; onRequeue?: (ticket: unknown) => void },
+		fn: (slot: unknown) => Promise<T>
 	): Promise<T> => {
+		if (opts.onRequeue) slots.onRequeue.push(opts.onRequeue);
 		opts.onAdmitted?.();
-		return fn();
+		return fn(slots.fake);
 	},
 	getRunningCount: () => 0
 }));
@@ -85,6 +92,7 @@ describe('concurrent chat conversations', () => {
 	beforeEach(() => {
 		vi.resetModules();
 		vi.clearAllMocks();
+		slots.onRequeue = [];
 	});
 
 	async function setup() {
@@ -162,6 +170,26 @@ describe('concurrent chat conversations', () => {
 		const conv = (id: string) => chat.getConversations().find((c) => c.id === id)!;
 		expect(conv(a).messages.map((m) => m.content)).toEqual(['first', `answer in ${a}`]);
 		expect(conv(b).messages.map((m) => m.content)).toEqual(['second', `answer in ${b}`]);
+	});
+
+	it('gives the loop its slot, and shows it waiting while it takes the slot back', async () => {
+		const finish = await heldTurns();
+		const chat = await setup();
+		const { runAgentLoop } = await import('#lib/agent/loop.ts');
+
+		const a = chat.createConversation();
+		const sent = chat.sendMessage('first');
+		await settle();
+		expect(vi.mocked(runAgentLoop).mock.calls[0][0].slot).toBe(slots.fake);
+		expect(chat.getRun(a).waitingForSlot).toBe(false);
+
+		slots.onRequeue[0]({ id: 'main:2', consumer: 'chat', state: 'waiting', enqueuedAt: 0 });
+		expect(chat.getRun(a).waitingForSlot).toBe(true);
+		slots.onRequeue[0](null);
+		expect(chat.getRun(a).waitingForSlot).toBe(false);
+
+		finish.get(a)!();
+		await sent;
 	});
 
 	it('steers a busy conversation with a second send, ahead of the answer', async () => {

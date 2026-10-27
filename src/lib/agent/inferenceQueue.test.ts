@@ -343,6 +343,30 @@ describe('inferenceQueue client — slot lender', () => {
 		expect(acquires()).toHaveLength(1);
 	});
 
+	it('gives a queued child its own slot to give back, and the borrower none', async () => {
+		mocks.mode = 'remote';
+		mocks.allowParallelInference = true;
+		const lend = createSlotLender({});
+		const first = deferred<string>();
+		let borrowed: unknown = 'unset';
+		let queuedHeld: boolean | undefined;
+		const p1 = lend((slot) => {
+			borrowed = slot;
+			return first.promise;
+		});
+		const p2 = lend(async (slot) => {
+			queuedHeld = slot?.held;
+			return 'second';
+		});
+		await tick();
+		admit('main:1');
+		await p2;
+		expect(borrowed).toBeUndefined();
+		expect(queuedHeld).toBe(true);
+		first.resolve('first');
+		await p1;
+	});
+
 	it('says when a borrower holds a slot: at once when it borrows, on admission when it queues', async () => {
 		mocks.mode = 'remote';
 		mocks.allowParallelInference = true;

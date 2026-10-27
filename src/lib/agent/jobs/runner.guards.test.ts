@@ -10,7 +10,8 @@ const {
 	tick,
 	guidedTurns,
 	phaseWriteMessages,
-	routeInvoke
+	routeInvoke,
+	fakeSlot
 } = await vi.hoisted(() => import('./runner.fixtures.ts'));
 
 vi.mock('@tauri-apps/api/core', () => m.tauriCore());
@@ -58,6 +59,8 @@ describe('jobs runner — guards', () => {
 		expect(opts.workingDir).toBeNull();
 		// No model override configured → the turn inherits the Settings backend.
 		expect(opts.backend).toBeUndefined();
+		// The turn gets its slot, to give back while a long tool runs.
+		expect(opts.slot).toBe(fakeSlot);
 	});
 
 	/**

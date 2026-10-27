@@ -11,6 +11,7 @@ import { resolveBackendDescriptor, type BackendDescriptor } from '#lib/inference
 import { loadedSkillNames, skillsWithFiles } from '#lib/skills/content.ts';
 import type { TurnSkills } from '#lib/skills/turn.ts';
 import type { AgentLoopOptions } from '#lib/agent/loop.ts';
+import type { HeldSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 
 // Trim older tool results when context usage crosses this fraction.
 // Lower than the conversation-level compaction threshold (0.8) so we
@@ -100,6 +101,8 @@ export interface LoopContext {
 	messages: ChatMessage[];
 	tools: ToolDefinition[];
 	signal?: AbortSignal;
+	/** The turn's inference slot, given back while long tools run (`executeToolCalls`). */
+	slot?: HeldSlot;
 	workingDir: string | null;
 	contextSize: number;
 	deepResearch: boolean;
@@ -267,6 +270,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 					: undefined
 		}),
 		signal: options.signal,
+		slot: options.slot,
 		workingDir,
 		contextSize: options.contextSize ?? 0,
 		deepResearch: options.deepResearch ?? false,

@@ -21,6 +21,7 @@ import type { PartialToolCall } from '#lib/streamAssembly.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import type { Artifact, LintIssue, ToolContext } from '#lib/agent/tools/index.ts';
 import type { CodeWriteGuard } from '#lib/agent/tools/types.ts';
+import type { HeldSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 import type { ContextManagedInfo } from '#lib/agent/context-budget.ts';
 import type { FileDiff } from '#lib/code/diff.ts';
 import type { SamplingParams } from '#lib/stores/settings.ts';
@@ -293,6 +294,11 @@ export interface AgentLoopOptions {
 	 */
 	onReasoning?: (reasoning: string) => void;
 	signal?: AbortSignal;
+	/**
+	 * The turn's inference slot. The loop gives it back while long tools run;
+	 * omitted, it never does.
+	 */
+	slot?: HeldSlot;
 	maxIterations?: number;
 	/**
 	 * Configured server context size. Used for in-loop trimming of older

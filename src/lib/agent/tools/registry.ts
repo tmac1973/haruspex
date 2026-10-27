@@ -35,6 +35,11 @@ export function registerTool(reg: ToolRegistration): void {
 	tools.set(reg.schema.function.name, reg);
 }
 
+/** Whether the tool calls the model itself (`usesModel`). False for a name not registered. */
+export function toolUsesModel(name: string): boolean {
+	return tools.get(name)?.usesModel === true;
+}
+
 /**
  * Remove a tool. Only MCP tools are ever withdrawn — built-ins register once at
  * module load and stay — but the registry does not need to know that, so this

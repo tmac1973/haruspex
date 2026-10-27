@@ -413,13 +413,17 @@ export interface LendOptions {
  * admits. Only for parallel lanes: on a serialized lane a second child would
  * wait for the parent's slot, which is not released until the children
  * finish.
+ *
+ * A child with a slot of its own gets it as `fn`'s argument, to give back
+ * while its own long tools run; the borrower gets none, since the parent's
+ * slot isn't its to give back.
  */
 export function createSlotLender(options: {
 	backend?: BackendOverride;
 	signal?: AbortSignal;
-}): <T>(fn: () => Promise<T>, opts?: LendOptions) => Promise<T> {
+}): <T>(fn: (slot?: HeldSlot) => Promise<T>, opts?: LendOptions) => Promise<T> {
 	let borrowed = false;
-	return async <T>(fn: () => Promise<T>, opts?: LendOptions): Promise<T> => {
+	return async <T>(fn: (slot?: HeldSlot) => Promise<T>, opts?: LendOptions): Promise<T> => {
 		if (!borrowed) {
 			borrowed = true;
 			try {
@@ -437,7 +441,7 @@ export function createSlotLender(options: {
 				signal: opts?.signal ?? options.signal,
 				onAdmitted: opts?.onAdmitted
 			},
-			fn
+			(slot) => fn(slot)
 		);
 	};
 }
