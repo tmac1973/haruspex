@@ -44,7 +44,9 @@ export function upsertTask(t: BackgroundTask): void {
 
 /** Read the whole list again (a card for a task this window hasn't seen). */
 export async function refreshTasks(): Promise<void> {
-	const known = await invoke<BackgroundTask[]>('task_list').catch(() => [] as BackgroundTask[]);
+	const known = await invoke<BackgroundTask[] | null>('task_list').catch(() => null);
+	// Anything but a list (no registry, as in a test with invoke stubbed) is no tasks.
+	if (!Array.isArray(known)) return;
 	for (const t of known) tasks[t.id] = t;
 }
 

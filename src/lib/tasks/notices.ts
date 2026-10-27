@@ -51,10 +51,10 @@ export function noteEnded(t: BackgroundTask): void {
  * there are none (another window, or an earlier take, had them).
  */
 export async function takeNotices(owner: string): Promise<{ text: string; images: string[] }> {
-	const tasks = await invoke<BackgroundTask[]>('task_take_notices', { owner }).catch(
-		() => [] as BackgroundTask[]
+	const tasks = await invoke<BackgroundTask[] | null>('task_take_notices', { owner }).catch(
+		() => null
 	);
-	return joinNotices(tasks);
+	return joinNotices(Array.isArray(tasks) ? tasks : []);
 }
 
 export function _resetForTests(): void {
