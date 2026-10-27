@@ -68,6 +68,33 @@ export async function prepareMasked(
 	});
 }
 
+/**
+ * Below this mean difference (0–255) where the mask allowed change, the
+ * backend left that part nearly as it was. Measured: an edit model handed a
+ * blurred border scored ~3–5; real extends ~35, a new sky ~90.
+ */
+export const UNCHANGED = 8;
+
+/** Said when the masked part came back nearly unchanged. */
+export const UNCHANGED_NOTE =
+	'The part that was to change came back nearly as it was, so the backend may not have made ' +
+	'the change. Check the picture, and if so tell the user it didn’t work rather than ' +
+	'describing what was asked for.';
+
+/** How much `edited` changed where the mask allowed, 0–255; null when it couldn't be measured. */
+export async function maskedChange(
+	edited: Uint8Array,
+	prepared: PreparedEdit
+): Promise<number | null> {
+	try {
+		return await invoke<number>('image_mask_change', edited, {
+			headers: { 'x-canvas-hash': prepared.canvas, 'x-mask-hash': prepared.mask }
+		});
+	} catch {
+		return null;
+	}
+}
+
 /** `edited` pasted over the prepared canvas through its mask, as PNG bytes. */
 export async function finishMasked(
 	edited: Uint8Array,

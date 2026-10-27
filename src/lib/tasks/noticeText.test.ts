@@ -215,8 +215,8 @@ describe('a background picture’s notice', () => {
 		expect(text).toBe(
 			'Background task "Drawing a fox" finished: Image ready (1024×768, ming, seed 7). ' +
 				`Put ![a fox](haruspex-img://localhost/${hash}) in your answer where it belongs; ` +
-				'it needs no other images. The picture is attached, so you can look at it before you ' +
-				'answer. Wrote fox.png.'
+				'it needs no other images. The picture is attached: look at it before you answer, and ' +
+				'describe what it shows, not what was asked for. Wrote fox.png.'
 		);
 		expect(isTaskNotice(text)).toBe(true);
 		expect(images).toEqual([hash]);
