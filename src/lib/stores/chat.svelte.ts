@@ -86,6 +86,7 @@ import { SvelteMap } from 'svelte/reactivity';
 import { getServerState } from '#lib/stores/llamaServer.svelte.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import { setChatTaskHandler, takeNotices } from '#lib/tasks/notices.ts';
+import type { BackgroundTask } from '#lib/tasks/types.ts';
 import { hasPendingNotices, initTasks, ownersWithNotices } from '#lib/tasks/store.svelte.ts';
 import {
 	initDb,
@@ -338,8 +339,8 @@ export async function initChatStore(): Promise<void> {
 }
 
 /** The toast for a task that finished in a conversation that isn't open. */
-export function noticeToast(title: string): string {
-	return `A task finished in “${title}”.`;
+export function noticeToast(title: string, label?: string): string {
+	return label ? `“${label}” finished in “${title}”.` : `A task finished in “${title}”.`;
 }
 
 /**
@@ -347,12 +348,12 @@ export function noticeToast(title: string): string {
  * follow-up turn as soon as it is idle, open or not; one that isn't open
  * also says so in a toast, with a way to go there.
  */
-function onTaskEnded(owner: string): void {
+function onTaskEnded(owner: string, task?: BackgroundTask): void {
 	const id = owner.slice('chat:'.length);
 	const conv = conversations.find((c) => c.id === id);
 	if (!conv) return;
 	if (id !== getActiveConversationId()) {
-		showToast(noticeToast(conv.title), {
+		showToast(noticeToast(conv.title, task?.label), {
 			actionLabel: 'Open',
 			onAction: () => void setActiveConversation(id)
 		});

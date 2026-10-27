@@ -2,6 +2,7 @@
 	import { getActiveTab, setActiveTab, type ActiveTab } from '#lib/stores/activeTab.svelte.ts';
 	import { getOpenSessions } from '#lib/stores/code.svelte.ts';
 	import { getCurrentRun, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
+	import TasksChip from '#lib/components/tasks/TasksChip.svelte';
 
 	interface Tab {
 		id: ActiveTab;
@@ -51,6 +52,7 @@
 			{/if}
 		</button>
 	{/each}
+	<TasksChip />
 </div>
 
 <style>

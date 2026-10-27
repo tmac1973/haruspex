@@ -121,7 +121,7 @@ async function upload(args: Record<string, unknown>, ctx: ToolContext) {
 				`The user confirmed: uploading ${plan.render} as ${answer.meta.visibility}` +
 				(changed.length ? `, after changing the ${changed.join(', ')}` : '') +
 				'. A message will arrive in this conversation when it finishes; do not poll.',
-			artifacts: [{ kind: 'videoTask' as const, taskId: task.id, label: task.label }]
+			artifacts: [{ kind: 'task' as const, taskId: task.id, label: task.label }]
 		};
 	} catch (e) {
 		return toolResult(toolError(errMessage(e)));

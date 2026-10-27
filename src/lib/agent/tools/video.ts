@@ -309,7 +309,7 @@ async function render(args: Record<string, unknown>, ctx: ToolContext) {
 			result:
 				`Rendering started (task ${task.id}). A message will arrive in this conversation when it ` +
 				'finishes, with the file and a check of its length and loudness. Do not poll; carry on or end your turn.',
-			artifacts: [{ kind: 'videoTask' as const, taskId: task.id, label: task.label }]
+			artifacts: [{ kind: 'task' as const, taskId: task.id, label: task.label }]
 		};
 	} catch (e) {
 		return toolResult(toolError(errMessage(e)));

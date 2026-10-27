@@ -10,7 +10,9 @@ export type Artifact =
 	| { kind: 'image'; mime: string; dataUrl: string; alt?: string }
 	/** Generated audio, by its cache URL (`haruspex-audio:`), played on the step card. */
 	| { kind: 'audio'; mime: string; src: string; title: string }
-	/** A background render or upload, followed on a card of its own. */
+	/** A background task (a render, an upload, a generation), followed on a card of its own. */
+	| { kind: 'task'; taskId: string; label: string }
+	/** What a background render or upload was called before every kind had a card. Read only. */
 	| { kind: 'videoTask'; taskId: string; label: string }
 	| {
 			kind: 'html';

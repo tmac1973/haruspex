@@ -26,6 +26,23 @@ function makeStep(artifacts: Artifact[], overrides: Partial<Step> = {}): Step {
 }
 
 describe('SearchStep artifacts', () => {
+	it('shows a task card for a task artifact, and for one saved as videoTask', async () => {
+		render(SearchStep, {
+			steps: [
+				makeStep(
+					[
+						{ kind: 'task', taskId: 'render-new', label: 'Rendering ep2' },
+						{ kind: 'videoTask', taskId: 'render-old', label: 'Rendering ep1' }
+					],
+					{ toolName: 'video_render' }
+				)
+			]
+		});
+		await fireEvent.click(document.querySelector('.step')!);
+		expect(screen.getByText('Rendering ep2')).toBeTruthy();
+		expect(screen.getByText('Rendering ep1')).toBeTruthy();
+	});
+
 	it('plays a generated-audio artifact on the step card once it is opened', async () => {
 		URL.createObjectURL = vi.fn(() => 'blob:step-song');
 		const src = `haruspex-audio://localhost/${'a'.repeat(64)}`;

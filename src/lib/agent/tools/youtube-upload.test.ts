@@ -120,7 +120,7 @@ describe('youtube_upload', () => {
 			meta: { visibility: 'unlisted', madeForKids: false }
 		});
 		expect(out.result).toContain('as unlisted');
-		expect(out.artifacts?.[0]).toMatchObject({ kind: 'videoTask', taskId: 'upload-1' });
+		expect(out.artifacts?.[0]).toMatchObject({ kind: 'task', taskId: 'upload-1' });
 	});
 
 	it('a cancel in the dialog sends nothing', async () => {
