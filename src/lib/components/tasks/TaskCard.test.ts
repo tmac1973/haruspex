@@ -78,6 +78,27 @@ describe('TaskCard', () => {
 		expect(tauri.invoke).toHaveBeenCalledWith('task_open', { id: 't1', folder: true });
 	});
 
+	it('shows a finished picture, which opens in the viewer', async () => {
+		const hash = 'd'.repeat(64);
+		upsertTask(
+			task({
+				kind: 'image',
+				state: 'done',
+				result: { op: 'draw', hash, width: 1024, height: 768, alt: 'a fox', saved: null }
+			})
+		);
+		const opened = vi.fn();
+		document.addEventListener('hsp-view-image', opened);
+		card();
+		await fireEvent.click(screen.getByRole('button', { name: 'a fox' }));
+		document.removeEventListener('hsp-view-image', opened);
+		expect((opened.mock.calls[0][0] as CustomEvent).detail).toEqual({
+			src: `haruspex-img://localhost/${hash}`,
+			alt: 'a fox'
+		});
+		expect(screen.getByText('1024×768')).toBeTruthy();
+	});
+
 	it('shows why it failed, with its output behind a disclosure', () => {
 		upsertTask(task({ state: 'failed', error: 'melt stopped', logTail: 'boom' }));
 		const { container } = card();

@@ -426,10 +426,18 @@ function schemaFor(
 	// project, or Chat's working folder.
 	const canSave = filter.codeMode ? !filter.codeReadOnly : filter.hasWorkingDir;
 	const name = reg.schema.function.name;
+	let schema = reg.schema;
 	if ((SONG_TOOLS.has(name) || IMAGE_TOOLS.has(name)) && !canSave) {
-		return withoutProjectWrite(reg.schema);
+		schema = withoutProjectWrite(schema);
 	}
-	return profileSchema(reg.schema, filter);
+	// Running in the background needs a chat or Code session for the task,
+	// and someone there for its notice.
+	if (IMAGE_TOOLS.has(name) && !(filter.taskOwner && filter.interactive && !filter.shellMode)) {
+		schema = withoutParams(schema, ['background']);
+	}
+	return (SONG_TOOLS.has(name) || IMAGE_TOOLS.has(name)) && !canSave
+		? schema
+		: profileSchema(schema, filter);
 }
 
 /**
@@ -527,10 +535,14 @@ function generationRefusal(reg: ToolRegistration, ctx: ToolContext): string | nu
 
 /** A generate tool without `path` and `overwrite`, where there's no folder to write in. */
 function withoutProjectWrite(schema: ToolDefinition): ToolDefinition {
+	return withoutParams(schema, ['path', 'overwrite']);
+}
+
+/** The schema without these parameters. */
+function withoutParams(schema: ToolDefinition, names: string[]): ToolDefinition {
 	const params = schema.function.parameters as { properties: Record<string, unknown> };
 	const properties = { ...params.properties };
-	delete properties.path;
-	delete properties.overwrite;
+	for (const name of names) delete properties[name];
 	return {
 		...schema,
 		function: { ...schema.function, parameters: { ...params, properties } }

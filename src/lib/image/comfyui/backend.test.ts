@@ -218,6 +218,54 @@ describe('generate', () => {
 		expect(result.meta.backend).toBe('comfyui');
 	});
 
+	it('reports the prompt it queued, and a later run follows it on that server', async () => {
+		happyServer();
+		const onHandle = vi.fn();
+		await comfyUiBackend.generate(req(), { onHandle });
+		const handle = onHandle.mock.calls[0][0];
+		expect(handle).toMatchObject({
+			backend: 'comfyui',
+			baseUrl: 'http://box:8188',
+			id: 'p1',
+			seed: 7,
+			model: 'sd15.safetensors',
+			extra: { outputNode: '9' }
+		});
+
+		updateSettings({ imageBackendBaseUrl: 'http://elsewhere:8188' });
+		fetchMock.mockClear();
+		const result = await comfyUiBackend.resume!(handle);
+		const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+		expect(urls.every((u) => u.startsWith('http://box:8188'))).toBe(true);
+		expect(urls.some((u) => u.includes('/prompt'))).toBe(false);
+		expect(result.meta).toMatchObject({ seed: 7, model: 'sd15.safetensors' });
+		expect(result.images).toHaveLength(1);
+	});
+
+	it('says so when ComfyUI no longer has the prompt', async () => {
+		fetchMock.mockImplementation(
+			async () =>
+				({
+					ok: true,
+					status: 200,
+					json: async () => ({ queue_running: [], queue_pending: [] }),
+					text: async () => '{}'
+				}) as Response
+		);
+		await expect(
+			comfyUiBackend.resume!({
+				backend: 'comfyui',
+				baseUrl: 'http://box:8188',
+				id: 'lost',
+				seed: 1,
+				model: 'm',
+				width: 8,
+				height: 8,
+				extra: { outputNode: '9', clientId: 'c' }
+			})
+		).rejects.toMatchObject({ status: 404 });
+	});
+
 	it('resolves an unset model to the configured checkpoint', async () => {
 		happyServer();
 		await comfyUiBackend.generate(req());

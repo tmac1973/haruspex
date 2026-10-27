@@ -6,6 +6,7 @@
 	 */
 	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
 	import VideoTaskResult from '#lib/components/video/VideoTaskResult.svelte';
+	import ImageTaskResult from '#lib/components/tasks/ImageTaskResult.svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { getTask, refreshTasks } from '#lib/tasks/store.svelte.ts';
@@ -58,6 +59,8 @@
 	{:else if task?.state === 'done'}
 		{#if task.kind === 'video_render' || task.kind === 'youtube_upload'}
 			<VideoTaskResult {task} />
+		{:else if task.kind === 'image' && task.result}
+			<ImageTaskResult {task} />
 		{:else}
 			<p class="detail">Done.</p>
 		{/if}

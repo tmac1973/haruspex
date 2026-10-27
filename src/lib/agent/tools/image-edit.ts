@@ -31,6 +31,14 @@ import {
 	type MaskRequest
 } from '#lib/agent/tools/_imageMask.ts';
 import type { SaveTarget } from '#lib/agent/tools/_saveGenerated.ts';
+import {
+	BACKGROUND_PARAM,
+	canRunInBackground,
+	hashedInput,
+	startImageTask
+} from '#lib/agent/tools/_imageJob.ts';
+import type { ImageRequest } from '#lib/image/types.ts';
+import type { PreparedEdit } from '#lib/ipc/gen/PreparedEdit.ts';
 
 /** The most pictures one call combines; the backend may allow fewer. */
 const MAX_IMAGES = 4;
@@ -48,16 +56,32 @@ function refsOf(args: Record<string, unknown>): string[] {
 }
 
 /**
- * An edit held to a mask: only part of the picture changes. An extend is an
- * inpaint of the canvas, painting the new strips from the prompt; an area
- * alone is an edit of it.
+ * The request for an edit held to a mask, drawn over the prepared canvas. An
+ * extend is an inpaint of the canvas, painting the new strips from the
+ * prompt; an area alone is an edit of it.
  */
+function maskedRequest(
+	prompt: string,
+	others: ImageSource['input'][],
+	mask: MaskRequest,
+	prepared: PreparedEdit
+): ImageRequest {
+	const { width, height } = editSize(prepared.width, prepared.height);
+	const canvas = { name: 'canvas.png', hash: prepared.canvas };
+	const maskImage = { name: 'mask.png', hash: prepared.mask };
+	return mask.extend
+		? { prompt, width, height, seed: null, inpaint: { image: canvas, mask: maskImage } }
+		: { prompt, width, height, seed: null, edit: { images: [canvas, ...others], mask: maskImage } };
+}
+
+/** An edit held to a mask: only part of the picture changes. */
 async function editMasked(
 	prompt: string,
 	sources: ImageSource[],
 	mask: MaskRequest,
 	save: SaveTarget | null,
-	ctx: ToolContext
+	ctx: ToolContext,
+	background: boolean
 ): Promise<ToolExecOutput> {
 	let prepared;
 	try {
@@ -65,19 +89,25 @@ async function editMasked(
 	} catch (e) {
 		return toolResult(toolError(`Could not edit it: ${errMessage(e)}`));
 	}
-	const { width, height } = editSize(prepared.width, prepared.height);
-	const canvas = { name: 'canvas.png', hash: prepared.canvas };
-	const maskImage = { name: 'mask.png', hash: prepared.mask };
+	const others = sources.slice(1);
+	if (background) {
+		const hashed = await hashedSources(others, ctx);
+		const request = maskedRequest(prompt, hashed, mask, prepared);
+		const alt = prompt.slice(0, 60);
+		return startImageTask(
+			`Editing: ${alt}`,
+			{ op: 'draw', request, alt, verb: 'Edited', masked: prepared },
+			save,
+			ctx
+		);
+	}
 	const image = await drawForTool(
-		mask.extend
-			? { prompt, width, height, seed: null, inpaint: { image: canvas, mask: maskImage } }
-			: {
-					prompt,
-					width,
-					height,
-					seed: null,
-					edit: { images: [canvas, ...sources.slice(1).map((s) => s.input)], mask: maskImage }
-				},
+		maskedRequest(
+			prompt,
+			others.map((s) => s.input),
+			mask,
+			prepared
+		),
 		ctx
 	);
 	if (!('bytes' in image)) return image;
@@ -89,6 +119,13 @@ async function editMasked(
 	}
 	const finished = { ...image, bytes, width: prepared.width, height: prepared.height };
 	return answerWithImage(finished, prompt.slice(0, 60), save, ctx, 'Edited');
+}
+
+/** The sources' pictures in the image cache, as a background task names them. */
+function hashedSources(sources: ImageSource[], ctx: ToolContext): Promise<ImageSource['input'][]> {
+	return Promise.all(
+		sources.map((s) => hashedInput(s.input, s.width, s.height, ctx.conversationId ?? null))
+	);
 }
 
 registerTool({
@@ -159,7 +196,8 @@ registerTool({
 						type: 'boolean',
 						description:
 							'Replace an existing file. Default false. In Chat the user is asked instead.'
-					}
+					},
+					background: BACKGROUND_PARAM
 				},
 				required: ['image', 'prompt']
 			}
@@ -185,8 +223,24 @@ registerTool({
 			if (typeof got === 'string') return toolResult(toolError(got));
 			sources.push(got);
 		}
+		const background = canRunInBackground(args, ctx);
 		if (!mask.area && !mask.extend) {
 			const { width, height } = editSize(sources[0].width, sources[0].height);
+			if (background) {
+				const images = await hashedSources(sources, ctx);
+				const alt = prompt.slice(0, 60);
+				return startImageTask(
+					`Editing: ${alt}`,
+					{
+						op: 'draw',
+						request: { prompt, width, height, seed: null, edit: { images } },
+						alt,
+						verb: 'Edited'
+					},
+					save,
+					ctx
+				);
+			}
 			const image = await drawForTool(
 				{ prompt, width, height, seed: null, edit: { images: sources.map((s) => s.input) } },
 				ctx
@@ -195,6 +249,6 @@ registerTool({
 			return answerWithImage(image, prompt.slice(0, 60), save, ctx, 'Edited');
 		}
 
-		return editMasked(prompt, sources, mask, save, ctx);
+		return editMasked(prompt, sources, mask, save, ctx, background);
 	}
 });

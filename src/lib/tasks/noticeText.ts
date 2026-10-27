@@ -6,6 +6,9 @@
 import type { RenderCheck } from '#lib/ipc/gen/RenderCheck.ts';
 import { formatDuration } from '#lib/video/report.ts';
 import { renderResult, uploadResult, type BackgroundTask } from '#lib/tasks/types.ts';
+import { imageAnswerText, upscaleAnswerText } from '#lib/agent/tools/_imageAnswer.ts';
+import type { ImageTaskResult, ImageTaskSpec } from '#lib/agent/tools/_imageJob.ts';
+import { imageSrc } from '#lib/images/url.ts';
 
 function megabytes(bytes: number): string {
 	return bytes >= 1024 ** 3
@@ -55,13 +58,51 @@ function videoNotice(t: BackgroundTask): string {
 	return '';
 }
 
-/** The notice for an ended task; empty for one that hasn't ended. */
+/**
+ * A finished picture's notice: the answer its tool would have given, so the
+ * model places it as it would have; and the picture to show a model that can
+ * see, by hash.
+ */
+function imageNotice(t: BackgroundTask, name: string): { text: string; images: string[] } {
+	const r = t.result as ImageTaskResult;
+	const spec = t.spec as ImageTaskSpec;
+	const url = imageSrc(r.hash) ?? '';
+	if (r.op === 'upscale') {
+		const text = upscaleAnswerText({
+			width: r.width,
+			height: r.height,
+			url,
+			saved: r.saved,
+			note: r.notes[0]
+		});
+		return { text: `${name} finished: ${text}`, images: [] };
+	}
+	const sees = spec.visionSupported;
+	const text = imageAnswerText({
+		verb: r.verb,
+		width: r.width,
+		height: r.height,
+		model: r.model ?? 'unknown model',
+		seed: r.seed ?? 0,
+		markdown: `![${r.alt}](${url})`,
+		sees,
+		saved: r.saved,
+		notes: r.notes
+	});
+	return { text: `${name} finished: ${text}`, images: sees ? [r.hash] : [] };
+}
+
+/**
+ * The notice for an ended task; empty for one that hasn't ended. `images`
+ * are image-cache hashes of pictures to show the model (`takeNotices` turns
+ * them into what the model reads).
+ */
 export function noticeFor(t: BackgroundTask): { text: string; images: string[] } {
 	if (t.kind === 'video_render' || t.kind === 'youtube_upload') {
 		return { text: videoNotice(t), images: [] };
 	}
-	// The generation kinds say more once they run (plan phases 06–08).
 	const name = `Background task "${t.label}"`;
+	if (t.kind === 'image' && t.state === 'done' && t.result) return imageNotice(t, name);
 	const text =
 		t.state === 'done'
 			? `${name} finished.`

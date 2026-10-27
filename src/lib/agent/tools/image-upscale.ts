@@ -20,7 +20,13 @@ import {
 	type ToolExecOutput
 } from '#lib/agent/tools/types.ts';
 import { isSaveTarget, writeCachedImage } from '#lib/agent/tools/_saveGenerated.ts';
-import { placeLine, saveTarget } from '#lib/agent/tools/image-gen.ts';
+import { saveTarget } from '#lib/agent/tools/image-gen.ts';
+import { savedLineOf, upscaleAnswerText } from '#lib/agent/tools/_imageAnswer.ts';
+import {
+	BACKGROUND_PARAM,
+	canRunInBackground,
+	startImageTask
+} from '#lib/agent/tools/_imageJob.ts';
 import { resolveImage, type ImageSource } from '#lib/agent/tools/_imageSource.ts';
 import { upscaleForTool } from '#lib/image/forTool.ts';
 import { ImageBackendError } from '#lib/image/types.ts';
@@ -118,7 +124,8 @@ registerTool({
 						type: 'boolean',
 						description:
 							'Replace an existing file. Default false. In Chat the user is asked instead.'
-					}
+					},
+					background: BACKGROUND_PARAM
 				},
 				required: ['image']
 			}
@@ -134,6 +141,21 @@ registerTool({
 		const save = await saveTarget(args, ctx, 'upscale_image');
 		if (save && !isSaveTarget(save)) return save;
 
+		if (canRunInBackground(args, ctx)) {
+			const sourceHash = await cachedHash(source, ctx);
+			return startImageTask(
+				'Upscaling a picture',
+				{
+					op: 'upscale',
+					sourceHash,
+					width: size.width,
+					height: size.height,
+					note: size.note
+				},
+				save,
+				ctx
+			);
+		}
 		ctx.onProgress?.('Upscaling');
 		const stored = await upscaleAndStore(source, size, ctx);
 		if (!('hash' in stored)) return stored;
@@ -143,19 +165,17 @@ registerTool({
 			height: stored.height
 		});
 		if (!url) return toolResult(toolError('The picture was upscaled but could not be stored.'));
-		const failed = save ? await writeCachedImage(save, stored.hash, ctx) : null;
 		const saved = save
-			? failed
-				? `It is in the chat, but ${failed}`
-				: `Wrote ${save.path}.`
+			? savedLineOf(save.path, await writeCachedImage(save, stored.hash, ctx))
 			: null;
 		return toolResult(
-			[
-				`Upscaled to ${stored.width}×${stored.height}.`,
-				placeLine(`![upscaled picture](${url})`),
-				...(saved ? [saved] : []),
-				...(size.note ? [size.note] : [])
-			].join(' ')
+			upscaleAnswerText({
+				width: stored.width,
+				height: stored.height,
+				url,
+				saved,
+				note: size.note
+			})
 		);
 	}
 });

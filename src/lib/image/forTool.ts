@@ -11,7 +11,8 @@
  * It takes a whole `ImageRequest`, so the Shell assistant's asset tool can
  * pass the asset job's requests through unchanged (phase 08).
  */
-import { resolveImageBackend } from '#lib/image/backend.ts';
+import { resolveImageBackend, type ImageJobHandle } from '#lib/image/backend.ts';
+import { getImageBackend } from '#lib/image/registry.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import {
 	ImageBackendError,
@@ -38,6 +39,8 @@ export interface ToolImage {
 export interface ForToolOptions {
 	signal?: AbortSignal;
 	onProgress?: (p: ImageProgress) => void;
+	/** The job's reference, once a queueing server has it; see `GenerateOptions.onHandle`. */
+	onHandle?: (handle: ImageJobHandle) => void;
 }
 
 /** What a failure from a full GPU looks like, from either engine. */
@@ -81,7 +84,11 @@ export async function upscaleForTool(
 		throw new ImageBackendError('unconfigured', NO_UPSCALE_SENTENCE);
 	}
 	try {
-		return await backend.upscale(input, { signal: opts.signal, onProgress: opts.onProgress });
+		return await backend.upscale(input, {
+			signal: opts.signal,
+			onProgress: opts.onProgress,
+			onHandle: opts.onHandle
+		});
 	} catch (e) {
 		const detail = errMessage(e);
 		if (backend.kind === 'local' && GPU_FULL.test(detail)) {
@@ -161,7 +168,11 @@ export async function generateForTool(
 
 	let result;
 	try {
-		result = await backend.generate(request, { signal: opts.signal, onProgress: opts.onProgress });
+		result = await backend.generate(request, {
+			signal: opts.signal,
+			onProgress: opts.onProgress,
+			onHandle: opts.onHandle
+		});
 	} catch (e) {
 		const detail = errMessage(e);
 		if (backend.kind === 'local' && GPU_FULL.test(detail)) {
@@ -182,5 +193,30 @@ export async function generateForTool(
 		seed: result.meta.seed,
 		model: result.meta.model,
 		notes
+	};
+}
+
+/**
+ * A job an earlier run of the app sent (`ForToolOptions.onHandle`), followed
+ * to its end on the backend and server it went to.
+ */
+export async function resumeForTool(
+	handle: ImageJobHandle,
+	opts: ForToolOptions = {}
+): Promise<ToolImage> {
+	const backend = getImageBackend(handle.backend);
+	if (!backend?.resume) {
+		throw new ImageBackendError('unconfigured', `${handle.backend} can't pick a job up again.`);
+	}
+	const result = await backend.resume(handle, { signal: opts.signal, onProgress: opts.onProgress });
+	const image = result.images[0];
+	if (!image) throw new ImageBackendError('rejected', 'The image backend returned no image.');
+	return {
+		bytes: image.bytes,
+		width: image.width,
+		height: image.height,
+		seed: result.meta.seed,
+		model: result.meta.model,
+		notes: []
 	};
 }

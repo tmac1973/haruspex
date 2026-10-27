@@ -13,7 +13,6 @@
 
 import { getSettings } from '#lib/stores/settings.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import { sleep } from '#lib/utils/async.ts';
 import {
 	ImageBackendError,
 	type ImageBackendCapabilities,
@@ -23,7 +22,7 @@ import {
 	type LoraRef,
 	type SamplerSettings
 } from '#lib/image/types.ts';
-import type { GenerateOptions, ImageBackend } from '#lib/image/backend.ts';
+import type { GenerateOptions, ImageBackend, ImageJobHandle } from '#lib/image/backend.ts';
 import {
 	applyFieldMap,
 	validateFieldMap,
@@ -45,6 +44,7 @@ import {
 import * as api from '#lib/image/comfyui/client.ts';
 import { uploadImage, uploadInpaint } from '#lib/image/comfyui/upload.ts';
 import { UPSCALE_OUTPUT, upscaleGraph, upscalerOf } from '#lib/image/comfyui/upscale.ts';
+import { resumePrompt, run } from '#lib/image/comfyui/run.ts';
 
 /** What a custom workflow samples with when a request says nothing. */
 export const DEFAULT_SAMPLER: SamplerSettings = { name: 'euler_ancestral', steps: 28, cfg: 7 };
@@ -299,105 +299,6 @@ async function prepare(cfg: api.ClientConfig, req: ImageRequest, signal?: AbortS
 	return { template, graph, model, sampler, loras, seed };
 }
 
-/**
- * `p`, unless `signal` aborts first: then `onAbort` runs and this rejects as
- * cancelled at once, while `p` carries on.
- */
-function untilAborted<T>(
-	p: Promise<T>,
-	signal: AbortSignal | undefined,
-	onAbort: () => void
-): Promise<T> {
-	if (!signal) return p;
-	const cancelled = () => new ImageBackendError('cancelled', 'Generation cancelled.');
-	if (signal.aborted) {
-		onAbort();
-		return Promise.reject(cancelled());
-	}
-	return new Promise<T>((resolve, reject) => {
-		const abort = () => {
-			onAbort();
-			reject(cancelled());
-		};
-		signal.addEventListener('abort', abort, { once: true });
-		p.then(
-			(v) => {
-				signal.removeEventListener('abort', abort);
-				resolve(v);
-			},
-			(e) => {
-				signal.removeEventListener('abort', abort);
-				reject(e);
-			}
-		);
-	});
-}
-
-/**
- * Queue `graph`, follow it to the end and download what `outputNode` saved.
- * A cancel removes the prompt from the server's queue.
- */
-async function run(
-	cfg: api.ClientConfig,
-	graph: ComfyGraph,
-	outputNode: string,
-	clientId: string,
-	opts: GenerateOptions
-): Promise<Uint8Array[]> {
-	const started = Date.now();
-	let socketAlive = true;
-	const closeSocket = api.subscribe(
-		cfg,
-		clientId,
-		(p) => opts.onProgress?.(p),
-		() => {
-			socketAlive = false;
-		},
-		(id) => graph[id]?.class_type
-	);
-
-	let promptId: string | null = null;
-	try {
-		// Not given the abort signal: a submit cut short can leave the prompt
-		// queued with its id lost, and it would then run anyway. A cancel
-		// during submit settles at once; the prompt is removed once submit
-		// says what it was.
-		const submitting = api.submit(cfg, graph, clientId);
-		promptId = await untilAborted(submitting, opts.signal, () => {
-			submitting.then(
-				(id) => api.cancelPrompt(cfg, id),
-				() => {}
-			);
-		});
-		const deadline = started + api.GENERATION_TIMEOUT_MS;
-		let images: api.HistoryImage[] | null = null;
-		while (images === null) {
-			if (opts.signal?.aborted) throw new ImageBackendError('cancelled', 'Generation cancelled.');
-			if (Date.now() > deadline) {
-				throw new ImageBackendError(
-					'timeout',
-					`The image backend did not finish within ${api.GENERATION_TIMEOUT_MS / 1000}s.`
-				);
-			}
-			await sleep(api.HISTORY_POLL_MS);
-			if (!socketAlive) opts.onProgress?.({ phase: 'running' });
-			images = await api.history(cfg, promptId, outputNode, opts.signal);
-		}
-
-		opts.onProgress?.({ phase: 'downloading' });
-		return await Promise.all(images.map((i) => api.view(cfg, i, opts.signal)));
-	} catch (e) {
-		if (opts.signal?.aborted) {
-			// In the background: the generation settles as cancelled now.
-			if (promptId) void api.cancelPrompt(cfg, promptId);
-			throw new ImageBackendError('cancelled', 'Generation cancelled.');
-		}
-		throw e;
-	} finally {
-		closeSocket();
-	}
-}
-
 export const comfyUiBackend: ImageBackend = {
 	kind: 'comfyui',
 
@@ -457,7 +358,17 @@ export const comfyUiBackend: ImageBackend = {
 		// one another in /history.
 		const save = graph[template.map.outputNode];
 		if (save) save.inputs.filename_prefix = `haruspex/${clientId}`;
-		const bytes = await run(cfg, graph, template.map.outputNode, clientId, opts);
+		const outputNode = template.map.outputNode;
+		const bytes = await run(cfg, graph, outputNode, clientId, opts, (id) => ({
+			backend: 'comfyui',
+			baseUrl: cfg.baseUrl,
+			id,
+			seed,
+			model,
+			width: req.width,
+			height: req.height,
+			extra: { clientId, outputNode }
+		}));
 		return {
 			// An edit is sized from its first picture, so read what came back.
 			images: bytes.map((b) => ({
@@ -488,8 +399,37 @@ export const comfyUiBackend: ImageBackend = {
 		const clientId = crypto.randomUUID();
 		const image = await uploadImage(cfg, input, `haruspex-upscale-${clientId}.png`, opts.signal);
 		const graph = upscaleGraph(image, model, `haruspex/${clientId}`);
-		const [bytes] = await run(cfg, graph, UPSCALE_OUTPUT, clientId, opts);
+		const [bytes] = await run(cfg, graph, UPSCALE_OUTPUT, clientId, opts, (id) => ({
+			backend: 'comfyui',
+			baseUrl: cfg.baseUrl,
+			id,
+			seed: 0,
+			model,
+			width: 0,
+			height: 0,
+			extra: { clientId, outputNode: UPSCALE_OUTPUT }
+		}));
 		if (!bytes) throw new ImageBackendError('rejected', 'ComfyUI returned no upscaled picture.');
 		return bytes;
+	},
+
+	async resume(handle: ImageJobHandle, opts: GenerateOptions = {}): Promise<ImageResult> {
+		const started = Date.now();
+		const bytes = await resumePrompt(config(), handle, opts);
+		return {
+			images: bytes.map((b) => ({
+				bytes: b,
+				mimeType: 'image/png',
+				...(pngSize(b) ?? { width: handle.width, height: handle.height })
+			})),
+			meta: {
+				seed: handle.seed,
+				model: handle.model,
+				backend: 'comfyui',
+				sampler: { name: 'as sent', steps: 0, cfg: 0 },
+				loras: [],
+				durationMs: Date.now() - started
+			}
+		};
 	}
 };

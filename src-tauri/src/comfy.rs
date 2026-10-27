@@ -164,11 +164,17 @@ fn base(url: &str) -> &str {
 pub(crate) struct ImageServer {
     pub secret: &'static str,
     pub name: &'static str,
+    /// For a server that runs one generation at a time and doesn't queue
+    /// the rest: the lock its generation calls take, and the path prefixes
+    /// that are generation calls. A call waits inside its cancellable task,
+    /// so one cancelled while waiting is never sent.
+    pub one_at_a_time: Option<(&'static tokio::sync::Mutex<()>, &'static [&'static str])>,
 }
 
 pub(crate) const COMFYUI: ImageServer = ImageServer {
     secret: "comfy:key",
     name: "ComfyUI",
+    one_at_a_time: None,
 };
 
 /// The key to send: the one the webview gave (inline only where no secret
@@ -433,7 +439,15 @@ async fn cancellable_unlogged(
     shape: FormShape,
 ) -> Result<Vec<u8>, ComfyError> {
     let id = call.id.clone();
-    let task = tokio::spawn(async move { send(&call, to, &files, shape).await });
+    let task = tokio::spawn(async move {
+        let _turn = match to.one_at_a_time {
+            Some((gate, paths)) if paths.iter().any(|p| call.path.starts_with(p)) => {
+                Some(gate.lock().await)
+            }
+            _ => None,
+        };
+        send(&call, to, &files, shape).await
+    });
     if let Some(id) = &id {
         running()
             .lock_or_recover()
@@ -804,6 +818,46 @@ mod tests {
         comfy_cancel("cancel-me".into());
         assert_eq!(pending.await.unwrap(), Err(ComfyError::Cancelled));
         assert!(!running().lock().unwrap().contains_key("cancel-me"));
+    }
+
+    #[tokio::test]
+    async fn a_one_at_a_time_server_takes_turns_and_never_sends_a_cancelled_waiter() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static GATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+        const GATED: ImageServer = ImageServer {
+            secret: "",
+            name: "gated",
+            one_at_a_time: Some((&GATE, &["/draw"])),
+        };
+        static NOW: AtomicUsize = AtomicUsize::new(0);
+        static MOST: AtomicUsize = AtomicUsize::new(0);
+        static SEEN: AtomicUsize = AtomicUsize::new(0);
+        let url = serve(Router::new().route(
+            "/draw",
+            get(|| async {
+                SEEN.fetch_add(1, Ordering::SeqCst);
+                let n = NOW.fetch_add(1, Ordering::SeqCst) + 1;
+                MOST.fetch_max(n, Ordering::SeqCst);
+                tokio::time::sleep(Duration::from_millis(300)).await;
+                NOW.fetch_sub(1, Ordering::SeqCst);
+                "drawn"
+            }),
+        ))
+        .await;
+        let first = tokio::spawn(json_from(call(&url, "GET", "/draw"), GATED));
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let second = tokio::spawn(json_from(call(&url, "GET", "/draw"), GATED));
+        let mut waiting = call(&url, "GET", "/draw");
+        waiting.id = Some("gated-waiter".into());
+        let third = tokio::spawn(json_from(waiting, GATED));
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        comfy_cancel("gated-waiter".into());
+
+        assert!(first.await.unwrap().is_ok());
+        assert!(second.await.unwrap().is_ok());
+        assert_eq!(third.await.unwrap(), Err(ComfyError::Cancelled));
+        assert_eq!(MOST.load(Ordering::SeqCst), 1);
+        assert_eq!(SEEN.load(Ordering::SeqCst), 2);
     }
 
     #[test]

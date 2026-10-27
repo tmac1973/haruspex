@@ -546,6 +546,9 @@ pub async fn image_engine_status(
     })
 }
 
+/// The engine's requests, one at a time; see `image_engine_request`.
+static ENGINE_REQUESTS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// POST JSON to the running engine and return its response body.
 ///
 /// The URL is built here from [`IMAGE_PORT`], and the caller supplies only a
@@ -565,6 +568,10 @@ pub async fn image_engine_request(
     if !path.starts_with('/') || path.starts_with("//") || path.contains("://") {
         return Err(format!("Not an engine path: {path}"));
     }
+    // sd-server draws one picture at a time and fails a second rather than
+    // queueing it, so requests take turns here: a background task's and a
+    // turn's, from every window.
+    let _turn = ENGINE_REQUESTS.lock().await;
     let url = format!("{}{path}", base_url(IMAGE_PORT));
     let client = http_client(std::time::Duration::from_millis(
         timeout_ms.clamp(1_000, 1_800_000),

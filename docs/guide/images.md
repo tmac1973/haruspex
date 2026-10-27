@@ -15,7 +15,7 @@ Open Settings → Image → **Image backend** and choose a **Backend**:
 
 - **None** — the default. No process and no download.
 - **ComfyUI** — a [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server you run, on this computer or another.
-- **Bundled engine** — stable-diffusion.cpp, shipped with Haruspex. Nothing else to install. It is offered on Linux, Windows and Apple Silicon Macs.
+- **Bundled engine** — stable-diffusion.cpp, shipped with Haruspex. Nothing else to install. It runs on Linux, Windows and Apple Silicon Macs.
 - **Lemonade** — a [Lemonade](https://lemonade-server.ai) server you run, which draws with the bundled engine's models.
 - **llama-toolchest** — a llama-toolchest server you run with generation on.
 
@@ -33,7 +33,7 @@ The first picture after ComfyUI starts waits for the model to load.
 
 ### Set up Lemonade
 
-Under **Connection**, enter the **Server address** (for example `http://127.0.0.1:13305`) and an **API key** only if your server needs one, then press **Probe**. Under **Models on the server**, **Install** downloads a model onto the server and **Remove** deletes it. Then choose the **Model**. The download continues if you close Settings. Lemonade keeps one image model loaded, so the first picture after switching waits for it to load. It does not make tiling textures.
+Under **Connection**, enter the **Server address** (for example `http://127.0.0.1:13305`) and an **API key** if your server needs one, then press **Probe**. Under **Models on the server**, **Install** downloads a model onto the server and **Remove** deletes it. Then choose the **Model**. The download continues if you close Settings. Lemonade keeps one image model loaded, so the first picture after switching waits for it to load. It does not make tiling textures.
 
 ### Set up llama-toolchest
 
@@ -53,7 +53,7 @@ Settings → Image marks Qwen-Image "Not licensed for commercial use." and asks 
 
 ## Draw a picture in Chat
 
-Ask Chat to draw, paint or illustrate something. A picture takes 30 seconds to a few minutes. It appears in the answer and is kept with the conversation; click it for full size, or hover for **Save as…**, with or without a working folder. If the model forgets to place it, it is shown under the answer. Ask for another shape or a transparent background. With a working folder set, it can save the picture there; an existing file asks you first. A model that sees images is shown it.
+Ask Chat to draw, paint or illustrate something. It takes 30 seconds to a few minutes, or ask for it in the background (see the `image-editing` page). It appears in the answer and is kept with the conversation; click it for full size, or hover for **Save as…**. If the model forgets to place it, it shows under the answer. Ask for another shape or a transparent background. With a working folder set, it can save it there, asking before replacing a file. A model that sees images is shown it.
 
 ## Make art for a project
 

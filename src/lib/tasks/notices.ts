@@ -14,6 +14,10 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import { joinNotices } from '#lib/tasks/noticeText.ts';
+import { pngDataUrl } from '#lib/utils/base64.ts';
+
+/** The most pictures one notice turn shows the model. */
+const MAX_NOTICE_IMAGES = 6;
 import type { BackgroundTask } from '#lib/tasks/types.ts';
 
 /** Told an owner's task ended; the task comes too, for what to call it. */
@@ -57,7 +61,22 @@ export async function takeNotices(owner: string): Promise<{ text: string; images
 	const tasks = await invoke<BackgroundTask[] | null>('task_take_notices', { owner }).catch(
 		() => null
 	);
-	return joinNotices(Array.isArray(tasks) ? tasks : []);
+	const notice = joinNotices(Array.isArray(tasks) ? tasks : []);
+	return { text: notice.text, images: await asDataUrls(notice.images) };
+}
+
+/** Pictures in the image cache, as data URLs a model reads; one that is gone is left out. */
+async function asDataUrls(hashes: string[]): Promise<string[]> {
+	const out: string[] = [];
+	for (const hash of hashes.slice(0, MAX_NOTICE_IMAGES)) {
+		try {
+			const bytes = await invoke<ArrayBuffer>('image_read_bytes', { hash });
+			out.push(pngDataUrl(new Uint8Array(bytes)));
+		} catch {
+			// Swept from the cache; the notice still says where it was.
+		}
+	}
+	return out;
 }
 
 export function _resetForTests(): void {
