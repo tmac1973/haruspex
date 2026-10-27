@@ -12,6 +12,7 @@ import {
 import { isAutoApproveActive } from '#lib/stores/approvalOverride.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { formatSandboxResult } from '#lib/sandbox/format-result.ts';
+import { waitOnUser } from '#lib/agent/tools/_helpers.ts';
 
 /**
  * The chat whose sandbox the call uses: the turn's own. Outside a chat turn
@@ -71,7 +72,7 @@ registerTool({
 			(mode === 'every-run' || (mode === 'once-per-chat' && !isChatSandboxApproved(chatId)));
 		if (needsPrompt) {
 			try {
-				const choice = await askApproval({ code, mode, chatId }, ctx.signal);
+				const choice = await waitOnUser(ctx, () => askApproval({ code, mode, chatId }, ctx.signal));
 				if (choice === 'deny') {
 					return toolResult(toolError('User denied code execution.'));
 				}

@@ -5,7 +5,8 @@ import {
 	ctxShell,
 	ctxWslDistroArg,
 	labelArg,
-	toolInvokeError
+	toolInvokeError,
+	waitOnUser
 } from '#lib/agent/tools/_helpers.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { noteCommandRan, toolError, toolResult } from '#lib/agent/tools/types.ts';
@@ -168,13 +169,15 @@ async function askAboutCommand(
 	let choice;
 	opts.ctx.onApprovalWait?.(true);
 	try {
-		choice = await askCommandApproval({
-			command,
-			reasons,
-			requester,
-			sessionId: opts.ctx.codeSessionId ?? null,
-			signal: opts.ctx.signal
-		});
+		choice = await waitOnUser(opts.ctx, () =>
+			askCommandApproval({
+				command,
+				reasons,
+				requester,
+				sessionId: opts.ctx.codeSessionId ?? null,
+				signal: opts.ctx.signal
+			})
+		);
 	} catch (e) {
 		return { message: toolInvokeError('run_command approval', e) };
 	} finally {

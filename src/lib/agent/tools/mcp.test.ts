@@ -311,6 +311,16 @@ describe('approval flow', () => {
 		expect((await running).result).toBe('created');
 	});
 
+	it("gives the turn's slot back before it asks", async () => {
+		registerMcpTools(SERVER, 'One', [writeTool], ['create_issue']);
+		invoke.mockResolvedValue(complete('created'));
+		const releaseSlot = vi.fn(() => expect(getPendingMcpApproval()).toBeNull());
+		const running = executeTool('mcp__srv-1__create_issue', {}, { ...ctx(), releaseSlot });
+		await answerApproval('allow_once');
+		await running;
+		expect(releaseSlot).toHaveBeenCalledTimes(1);
+	});
+
 	it('returns a denial the model can act on rather than throwing', async () => {
 		registerMcpTools(SERVER, 'One', [writeTool], ['create_issue']);
 		const running = executeTool('mcp__srv-1__create_issue', {}, ctx());

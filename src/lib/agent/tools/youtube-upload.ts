@@ -20,6 +20,7 @@ import type { UploadPlan } from '#lib/ipc/gen/UploadPlan.ts';
 import type { VideoMeta } from '#lib/ipc/gen/VideoMeta.ts';
 import type { BackgroundTask } from '#lib/tasks/types.ts';
 import type { YoutubeAccount } from '#lib/ipc/gen/YoutubeAccount.ts';
+import { waitOnUser } from '#lib/agent/tools/_helpers.ts';
 
 /** YouTube's limits on what the model proposes. */
 export function checkProposal(title: string, description: string, tags: string[]): string[] {
@@ -91,17 +92,19 @@ async function upload(args: Record<string, unknown>, ctx: ToolContext) {
 		if (problems.length) return toolResult(toolError(`Not asked: ${problems.join(' ')}`));
 		const proposed = { title, description, tags, categoryId };
 		ctx.onApprovalWait?.(true);
-		const answer = await askYoutubeUpload(
-			{
-				render: plan.render,
-				durationSecs: plan.durationSecs,
-				sizeBytes: plan.sizeBytes,
-				thumbnail: plan.thumbnail,
-				thumbnailDataUrl: plan.thumbnailDataUrl,
-				email: account.email,
-				...proposed
-			},
-			ctx.signal
+		const answer = await waitOnUser(ctx, () =>
+			askYoutubeUpload(
+				{
+					render: plan.render,
+					durationSecs: plan.durationSecs,
+					sizeBytes: plan.sizeBytes,
+					thumbnail: plan.thumbnail,
+					thumbnailDataUrl: plan.thumbnailDataUrl,
+					email: account.email,
+					...proposed
+				},
+				ctx.signal
+			)
 		).finally(() => ctx.onApprovalWait?.(false));
 		if (answer.kind === 'cancelled') return toolResult(answer.reason);
 		const task = await invoke<BackgroundTask>('youtube_upload_start', {

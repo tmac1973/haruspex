@@ -9,7 +9,7 @@
 import { getSettings, type EmailAccount } from '#lib/stores/settings.ts';
 import { askEmailReview, type EmailDraft } from '#lib/stores/emailReview.svelte.ts';
 import type { ReplyContext } from '#lib/ipc/gen/ReplyContext.ts';
-import { toolInvokeError } from '#lib/agent/tools/_helpers.ts';
+import { toolInvokeError, waitOnUser } from '#lib/agent/tools/_helpers.ts';
 import { emailCall, resolveEmailAccounts } from '#lib/agent/tools/email.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult } from '#lib/agent/tools/types.ts';
@@ -146,7 +146,7 @@ registerTool({
 		}
 		if (typeof draft === 'string') return toolResult(toolError(draft));
 
-		const outcome = await askEmailReview(draft, sendableAccounts());
+		const outcome = await waitOnUser(ctx, () => askEmailReview(draft, sendableAccounts()));
 		if (outcome.kind === 'discarded') {
 			return toolResult(
 				outcome.note

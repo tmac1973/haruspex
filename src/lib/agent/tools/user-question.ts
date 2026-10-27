@@ -1,5 +1,6 @@
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolResult, toolError, type UserAnswer } from '#lib/agent/tools/types.ts';
+import { waitOnUser } from '#lib/agent/tools/_helpers.ts';
 
 /**
  * `ask_user_question` — the agent-facing half of the reusable human-in-the-loop
@@ -127,15 +128,17 @@ registerTool({
 		}
 
 		const ask = ctx.askUser ?? (await import('#lib/stores/userQuestion.svelte.ts')).askUserQuestion;
-		const answer = await ask(
-			{
-				question,
-				...(typeof args.body === 'string' && args.body.trim() ? { body: args.body.trim() } : {}),
-				options,
-				allowMultiple: args.allow_multiple === true,
-				...(ctx.codeSessionId ? { sessionId: ctx.codeSessionId } : {})
-			},
-			ctx.signal
+		const answer = await waitOnUser(ctx, () =>
+			ask(
+				{
+					question,
+					...(typeof args.body === 'string' && args.body.trim() ? { body: args.body.trim() } : {}),
+					options,
+					allowMultiple: args.allow_multiple === true,
+					...(ctx.codeSessionId ? { sessionId: ctx.codeSessionId } : {})
+				},
+				ctx.signal
+			)
 		);
 
 		return toolResult(describeAnswer(answer, args.allow_multiple === true));

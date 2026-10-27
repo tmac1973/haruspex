@@ -11,6 +11,7 @@ import { taskOwner } from '#lib/tasks/notices.ts';
 import { noticeFor } from '#lib/tasks/noticeText.ts';
 import { getTasks } from '#lib/tasks/store.svelte.ts';
 import { hasEnded, type BackgroundTask } from '#lib/tasks/types.ts';
+import { waitOnUser } from '#lib/agent/tools/_helpers.ts';
 
 /** Ended tasks older than this are left out of `task_status`'s list. */
 const RECENT_MS = 24 * 60 * 60 * 1000;
@@ -59,12 +60,14 @@ async function cancel(args: Record<string, unknown>, ctx: ToolContext) {
 	if (!t) return toolResult(toolError(`No task ${id} here.`));
 	if (hasEnded(t.state)) return toolResult(`That task has already ended (${t.state}).`);
 	if (ctx.askUser) {
-		const answer = await ctx.askUser(
-			{
-				question: `Cancel “${t.label}”? What it has done so far is thrown away.`,
-				options: [{ label: 'Cancel it' }, { label: 'Keep it going' }]
-			},
-			ctx.signal
+		const answer = await waitOnUser(ctx, () =>
+			ctx.askUser!(
+				{
+					question: `Cancel “${t.label}”? What it has done so far is thrown away.`,
+					options: [{ label: 'Cancel it' }, { label: 'Keep it going' }]
+				},
+				ctx.signal
+			)
 		);
 		if (answer.kind !== 'selected' || answer.labels[0] !== 'Cancel it') {
 			return toolResult('The user kept the task going.');

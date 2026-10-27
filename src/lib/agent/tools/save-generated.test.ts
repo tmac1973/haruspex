@@ -97,6 +97,21 @@ describe('save_generated in Chat', () => {
 		expect(writes().at(-1)).toMatchObject({ relPath: 'rain (1).mp3', overwrite: false });
 	});
 
+	it('gives the turn’s slot back before it asks', async () => {
+		state.existing.add('rain.mp3');
+		const order: string[] = [];
+		state.ask.mockImplementationOnce(async () => {
+			order.push('ask');
+			return 'cancel';
+		});
+		await executeTool(
+			'save_generated',
+			{ url: SONG, path: 'rain.mp3' },
+			{ ...chat(), releaseSlot: () => order.push('release') }
+		);
+		expect(order).toEqual(['release', 'ask']);
+	});
+
 	it('refuses what it can’t do, before writing anything', async () => {
 		for (const [args, ctx, why] of [
 			[{ url: 'https://x/a.mp3', path: 'a.mp3' }, chat(), /haruspex-img/],

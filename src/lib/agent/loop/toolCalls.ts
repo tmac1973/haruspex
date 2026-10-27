@@ -73,7 +73,11 @@ export async function executeToolCalls(
 	const runInSlot =
 		concurrency > 1 ? createSlotLender({ backend: ctx.backend ?? undefined, signal }) : undefined;
 
-	const runCall = async (call: ResolvedToolCall) => {
+	// A tool waiting on the user gives the slot back at once (`releaseSlot`),
+	// unless its batch calls the model: then the slot is in use, perhaps lent
+	// to a child with no ticket of its own (`createSlotLender`).
+	const releaseSlot = () => ctx.slot?.release();
+	const runCall = async (call: ResolvedToolCall, batchUsesModel: boolean) => {
 		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
 		// Arguments carry email bodies, file contents and shell commands, and this
@@ -107,6 +111,7 @@ export async function executeToolCalls(
 				conversationId: ctx.conversationId,
 				backend: ctx.backend,
 				runInSlot,
+				releaseSlot: ctx.slot && !batchUsesModel ? releaseSlot : undefined,
 				askUser: ctx.askUser,
 				skills: ctx.skills,
 				writeRoot: ctx.writeRoot,
@@ -223,10 +228,10 @@ export async function executeToolCalls(
 	for (const batch of planToolBatches(toolCalls)) {
 		if (batch.some((call) => toolUsesModel(call.name))) {
 			await ctx.slot?.reacquire();
-			await runToolBatch(batch, concurrency, runCall, recordResult);
+			await runToolBatch(batch, concurrency, (c) => runCall(c, true), recordResult);
 		} else {
 			await runReleasingSlot(ctx.slot, () =>
-				runToolBatch(batch, concurrency, runCall, recordResult)
+				runToolBatch(batch, concurrency, (c) => runCall(c, false), recordResult)
 			);
 		}
 	}
