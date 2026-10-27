@@ -183,6 +183,7 @@ export async function generateForTool(
 	const image = result.images[0];
 	if (!image) throw new ImageBackendError('rejected', 'The image backend returned no image.');
 	if (result.meta.seamFailed) notes.push(`It does not tile: ${result.meta.seamFailed}`);
+	if (result.meta.transparencyFailed) notes.push(result.meta.transparencyFailed);
 	if (nonCommercialModel()) {
 		notes.push('The model that drew it is licensed for non-commercial use only.');
 	}

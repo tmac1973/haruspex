@@ -108,6 +108,12 @@ export interface ImageResultMeta {
 	 * returned — a visible seam beats a missing texture.
 	 */
 	seamFailed?: string;
+	/**
+	 * Set when a transparent request came back with no transparency at all,
+	 * where the backend can tell that something it relied on stopped working.
+	 * The image is still returned; the caller says so.
+	 */
+	transparencyFailed?: string;
 	/** Backend-specific payload, for debugging only. Never parsed. */
 	raw?: unknown;
 }
