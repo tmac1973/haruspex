@@ -70,7 +70,7 @@ describe('writeRecipes', () => {
 		const prompt = vi.mocked(d.ask).mock.calls[0][0];
 		expect(prompt).toContain('#2a2a2d');
 		expect(prompt).toContain('street: cracked asphalt');
-		expect(prompt).not.toContain('rat');
+		expect(prompt).not.toContain('- rat');
 	});
 
 	it('asks again once for a refused recipe, quoting the refusal', async () => {

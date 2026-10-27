@@ -41,6 +41,7 @@ import { contactSheet, defaultProfile } from '#lib/assets/normalize.ts';
 import {
 	renderTexture,
 	renderTransition,
+	groundPreview,
 	tiledPreview,
 	transitionPreview,
 	validateRecipe,
@@ -64,6 +65,8 @@ import {
 	TRANSITION_HINT
 } from '#lib/agent/jobs/types/asset-generation/prompts.ts';
 import { establishAnchor } from '#lib/agent/jobs/types/asset-generation/anchor.ts';
+import { checkGround, groundOf } from '#lib/agent/jobs/types/asset-generation/ground.ts';
+import type { SpriteTone } from '#lib/ipc/gen/SpriteTone.ts';
 import {
 	parseJudgement,
 	parseSubmitted,
@@ -394,9 +397,10 @@ function transitionSummary(
 }
 
 /** The recipe stage's model turn and Rust's check, for `recipes.ts`. */
-function recipeDeps(ctx: JobRunContext): RecipeDeps {
+function recipeDeps(ctx: JobRunContext, tone?: SpriteTone): RecipeDeps {
 	return {
 		visionSupported: ctx.visionSupported(),
+		...(tone ? { tone } : {}),
 		ask: async (prompt, image) => {
 			let got: Submitted = { recipes: new Map(), edges: new Map() };
 			await ctx.runJobTurn({
@@ -743,9 +747,11 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 		// one turn for the whole set. Saved in the spec, so a re-run reuses them.
 		const codeTextures = cfg.code_textures === true;
 		const recipesFailed = new Map<string, string>();
+		// The anchor's sprites, which every code-drawn tile must show them up on.
+		const ground = codeTextures ? await groundOf(anchored.image, spec.normalize) : null;
 		if (codeTextures) {
 			ctx.patchStep(GENERATE, { streaming: 'Writing texture recipes…' });
-			const rd = recipeDeps(ctx);
+			const rd = recipeDeps(ctx, ground?.tone);
 			const r = await writeRecipes(spec, rd);
 			for (const [id, why] of r.failed) recipesFailed.set(id, why);
 			if (r.written.length > 0) {
@@ -785,9 +791,12 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 						// offers them); not snapped to the palette, which comes from
 						// a sheet of sprites and can lack water blue or grass green.
 						render: (recipe, seed, n) => renderTexture(recipe, tileSize, seed, n, []),
-						preview: (tile) => tiledPreview(tile, tileSize),
+						preview: (tile) =>
+							ground ? groundPreview(tile, tileSize, ground.sprites) : tiledPreview(tile, tileSize),
+						withSprites: ground !== null,
+						...(ground ? { contrast: (tile: Uint8Array) => checkGround(tile, ground) } : {}),
 						revise: (entry, reason, preview) =>
-							reviseRecipe(spec, entry, reason, recipeDeps(ctx), preview),
+							reviseRecipe(spec, entry, reason, recipeDeps(ctx, ground?.tone), preview),
 						recipeFailures: recipesFailed
 					}
 				: undefined

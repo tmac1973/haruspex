@@ -8,6 +8,7 @@ use image::{ImageEncoder, Rgba, RgbaImage};
 use serde::Serialize;
 
 use super::checks::{evaluate, CheckReport};
+use super::ground::{ground_contrast, ground_preview, sprite_tone, GroundContrast, SpriteTone};
 use super::normalize::{carries_alpha, chroma_key, dominant_border_color, harden_alpha, normalize};
 use super::palette::{extract_palette, hue_spread};
 use super::profile::{
@@ -436,6 +437,40 @@ pub fn texture_transition_preview(
         return Err(format!("The sheet is not 4×4 tiles of {size} pixels."));
     }
     encode(&transition_preview(view, &img, size))
+}
+
+/// The set's sprites' lightness and the ground to aim for; None when no
+/// sprite has an opaque pixel.
+#[tauri::command]
+pub fn texture_sprite_tone(sprites: Vec<Vec<u8>>) -> Result<Option<SpriteTone>, String> {
+    let sprites = decode_all(&sprites)?;
+    Ok(sprite_tone(&sprites))
+}
+
+/// One tile measured against the set's sprites: does each show up on it?
+#[tauri::command]
+pub fn texture_ground_contrast(
+    tile: Vec<u8>,
+    sprites: Vec<Vec<u8>>,
+) -> Result<Option<GroundContrast>, String> {
+    let sprites = decode_all(&sprites)?;
+    Ok(ground_contrast(&decode(&tile)?, &sprites))
+}
+
+/// The tile laid 3×3 with up to three of the sprites stood on it, for the
+/// judge to see whether they show up.
+#[tauri::command]
+pub fn texture_ground_preview(
+    tile: Vec<u8>,
+    scale: u32,
+    sprites: Vec<Vec<u8>>,
+) -> Result<Vec<u8>, String> {
+    let sprites = decode_all(&sprites)?;
+    encode(&ground_preview(&decode(&tile)?, scale, &sprites))
+}
+
+fn decode_all(images: &[Vec<u8>]) -> Result<Vec<RgbaImage>, String> {
+    images.iter().map(|b| decode(b)).collect()
 }
 
 /// Check a set's edge settings a model wrote, before anything is drawn. Raw

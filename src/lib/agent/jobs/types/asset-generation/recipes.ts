@@ -12,6 +12,7 @@ import type { AssetEntry, AssetSpec, TransitionEntry } from '#lib/assets/spec/ty
 import type { TextureRecipe } from '#lib/ipc/gen/TextureRecipe.ts';
 import type { TransitionEdge } from '#lib/ipc/gen/TransitionEdge.ts';
 import type { TransitionView } from '#lib/ipc/gen/TransitionView.ts';
+import type { SpriteTone } from '#lib/ipc/gen/SpriteTone.ts';
 import {
 	edgeRevisionPrompt,
 	recipePrompt,
@@ -34,6 +35,8 @@ export interface RecipeDeps {
 	validate: (recipe: unknown) => Promise<string | null>;
 	/** Null when a set's edge settings are good, else what is wrong with them. */
 	validateEdge: (view: TransitionView, edge: unknown) => Promise<string | null>;
+	/** The sprites' lightness, so the ground is drawn to stand apart from it. */
+	tone?: SpriteTone;
 }
 
 /** A recipe that passed Rust's check, and the model's line on what it draws. */
@@ -104,7 +107,8 @@ async function askFor(
 		spec.style.prompt,
 		feedback,
 		shown,
-		sets.map(lineOf)
+		sets.map(lineOf),
+		deps.tone
 	);
 	const submitted = await deps.ask(prompt, shown ? image : undefined);
 	const got = submitted.recipes;

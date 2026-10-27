@@ -1,6 +1,7 @@
 /** Asset-generation prompts. */
 
 import type { AssetKind } from '#lib/assets/spec/types.ts';
+import type { SpriteTone } from '#lib/ipc/gen/SpriteTone.ts';
 
 /**
  * The spec-derivation turn.
@@ -272,12 +273,43 @@ export function recipeGuide(): string[] {
 }
 
 /**
+ * What the ground must do for the sprites that stand on it. Empty when the
+ * set has no sprites to measure.
+ */
+function groundLines(palette: number[], tone?: SpriteTone): string[] {
+	if (!palette.length && !tone) return [];
+	const way = tone
+		? tone.target > tone.lightness
+			? ['mostly dark', 'lighter']
+			: ['mostly light', 'darker']
+		: null;
+	return [
+		'',
+		"The set's sprites stand on these tiles and must show up against them.",
+		...(palette.length
+			? [
+					`The sprites' colours: ${palette.map(hexOf).join(' ')}.`,
+					"Do not build the ground from these: use the material's own colours,",
+					'less saturated than the sprites.'
+				]
+			: []),
+		way && tone
+			? `The sprites are ${way[0]} (lightness ${tone.lightness.toFixed(2)}, 0 black to 1 ` +
+				`white), so make every texture clearly ${way[1]}: its base ramp around ` +
+				`${hexOf(tone.targetGrey)} in value, in the material's own hue.`
+			: 'Make the ground clearly lighter or darker than most of them.'
+	];
+}
+
+/**
  * The recipe stage: one recipe per texture, from a fixed vocabulary of layers
  * that all wrap at the tile edge (`src-tauri/src/image_gen/texture/`).
  *
- * The palette is offered, not imposed. It comes from the anchor, which is a
- * sheet of sprites: a set of monsters has no water blue or grass green, and a
- * river forced into their colours is brown.
+ * The palette is the sprites', from the anchor, and it is named so the ground
+ * stays clear of it. It used to be offered for the ground to use ("prefer
+ * these"), and a dungeon of near-black monsters got near-black floors they
+ * vanished into. `tone` says which way to go: lighter than dark sprites,
+ * darker than light ones.
  */
 export function recipePrompt(
 	textures: Array<{ id: string; prompt: string; capOf?: string }>,
@@ -285,7 +317,8 @@ export function recipePrompt(
 	stylePrompt: string,
 	feedback?: Map<string, string>,
 	imageShown = false,
-	transitions: TransitionLine[] = []
+	transitions: TransitionLine[] = [],
+	tone?: SpriteTone
 ): string {
 	return [
 		'You are designing tileable ground and wall textures for a top-down 2D game.',
@@ -294,13 +327,7 @@ export function recipePrompt(
 		'tiles; your job is to make it read as the right material from above.',
 		'',
 		`The set's style: ${stylePrompt}`,
-		...(palette.length
-			? [
-					`The set's colours, from its sprites: ${palette.map(hexOf).join(' ')}.`,
-					'Prefer these. Use another colour only where the material needs one the',
-					'list lacks (water, grass), and keep it as muted as these are.'
-				]
-			: []),
+		...groundLines(palette, tone),
 		'',
 		...recipeGuide(),
 		'',

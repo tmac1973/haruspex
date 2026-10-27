@@ -8,6 +8,8 @@ import { invoke } from '@tauri-apps/api/core';
 import type { TextureRecipe } from '#lib/ipc/gen/TextureRecipe.ts';
 import type { TransitionEdge } from '#lib/ipc/gen/TransitionEdge.ts';
 import type { TransitionView } from '#lib/ipc/gen/TransitionView.ts';
+import type { SpriteTone } from '#lib/ipc/gen/SpriteTone.ts';
+import type { GroundContrast } from '#lib/ipc/gen/GroundContrast.ts';
 import { contactSheet } from '#lib/assets/normalize.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
@@ -84,6 +86,41 @@ const PREVIEW_EDGE = 480;
 export function tiledPreview(tile: Uint8Array, size: number): Promise<Uint8Array> {
 	const scale = Math.max(1, Math.floor(PREVIEW_EDGE / 3 / size));
 	return contactSheet(Array(9).fill(tile), size * scale);
+}
+
+/** The set's sprites' lightness and the ground to aim for; null when none is opaque. */
+export function spriteTone(sprites: Uint8Array[]): Promise<SpriteTone | null> {
+	return invoke<SpriteTone | null>('texture_sprite_tone', {
+		sprites: sprites.map((s) => Array.from(s))
+	});
+}
+
+/** One tile measured against the set's sprites; null when either is empty. */
+export function groundContrast(
+	tile: Uint8Array,
+	sprites: Uint8Array[]
+): Promise<GroundContrast | null> {
+	return invoke<GroundContrast | null>('texture_ground_contrast', {
+		tile: Array.from(tile),
+		sprites: sprites.map((s) => Array.from(s))
+	});
+}
+
+/**
+ * The tiled preview with up to three of the set's sprites stood on it, one
+ * tile big, so the judge sees whether they show up on the ground.
+ */
+export async function groundPreview(
+	tile: Uint8Array,
+	size: number,
+	sprites: Uint8Array[]
+): Promise<Uint8Array> {
+	const bytes = await invoke<number[]>('texture_ground_preview', {
+		tile: Array.from(tile),
+		scale: Math.max(1, Math.floor(PREVIEW_EDGE / 3 / size)),
+		sprites: sprites.map((s) => Array.from(s))
+	});
+	return new Uint8Array(bytes);
 }
 
 /** A 32-bit seed from text (FNV-1a), so the same name draws the same tiles. */

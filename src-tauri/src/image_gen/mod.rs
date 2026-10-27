@@ -14,13 +14,14 @@
 //! way past, `checks.rs` the thresholds those measurements are judged
 //! against, `sheet.rs` the contact sheet a run is reviewed through,
 //! `split.rs` the cut that turns one generated sheet into its sprites,
-//! `tiling.rs` whether a texture tiles, `texture/` textures drawn by code
-//! from a recipe, `upscale.rs` the finish an ESRGAN upscale needs, `mask.rs`
+//! `tiling.rs` whether a texture tiles, `ground.rs` whether sprites show up
+//! on it, `texture/` textures drawn by code from a recipe, `upscale.rs` the finish an ESRGAN upscale needs, `mask.rs`
 //! the canvas, mask and paste-back of an edit to part of a picture, and
 //! `commands.rs` the thin Tauri wrappers.
 
 pub mod checks;
 pub mod commands;
+pub mod ground;
 pub mod mask;
 pub mod normalize;
 pub mod palette;

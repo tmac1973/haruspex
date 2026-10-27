@@ -57,6 +57,32 @@ describe('recipePrompt', () => {
 		expect(p).toContain('submit_texture_recipes');
 	});
 
+	it('names the sprites so the ground stays clear of them', () => {
+		const p = recipePrompt([{ id: 'floor', prompt: 'stone' }], [0x2a2a2dff], 'pixel art');
+		expect(p).toContain("The sprites' colours: #2a2a2d");
+		expect(p).toContain('Do not build the ground from these');
+		expect(p).not.toContain('Prefer these');
+	});
+
+	it('says which way to take the ground from the sprites', () => {
+		const dark = { lightness: 0.22, target: 0.47, targetGrey: 0x5c5c5cff };
+		const p = recipePrompt(
+			[{ id: 'floor', prompt: 'stone' }],
+			[],
+			'pixel art',
+			undefined,
+			false,
+			[],
+			dark
+		);
+		expect(p).toContain('mostly dark (lightness 0.22');
+		expect(p).toContain('clearly lighter: its base ramp around #5c5c5c');
+		const light = { lightness: 0.8, target: 0.55, targetGrey: 0x777777ff };
+		expect(
+			recipePrompt([{ id: 'f', prompt: 's' }], [], 'x', undefined, false, [], light)
+		).toContain('clearly darker');
+	});
+
 	it('writes a packed colour as hex', () => {
 		expect(hexOf(0x2a2a2dff)).toBe('#2a2a2d');
 		expect(hexOf(0x000000ff)).toBe('#000000');
