@@ -8,7 +8,7 @@
 
 use std::convert::Infallible;
 use std::future::Future;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
@@ -219,19 +219,6 @@ async fn start_with_tts_port(
         return Err("refusing to start without an access token".into());
     }
 
-    let bind_ip = if config.bind_all {
-        IpAddr::V4(Ipv4Addr::UNSPECIFIED)
-    } else {
-        IpAddr::V4(Ipv4Addr::LOCALHOST)
-    };
-    let addr = SocketAddr::new(bind_ip, config.port);
-
-    let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
-        format!("could not listen on {addr}: {e} — another program may already have that port")
-    })?;
-    let local = listener.local_addr().map_err(|e| e.to_string())?;
-    let port = local.port();
-
     let state = AppState {
         host: host.clone(),
         relay: relay.clone(),
@@ -240,7 +227,6 @@ async fn start_with_tts_port(
         own_name: crate::owner::trust::system_hostname().map(Arc::from),
         tts_port,
     };
-
     let router = Router::new()
         .route("/", get(index))
         .route("/app.css", get(stylesheet))
@@ -255,35 +241,15 @@ async fn start_with_tts_port(
             crate::owner::server::no_referrer,
         ))
         .with_state(state);
-
-    let (shutdown, mut shutdown_rx) = watch::channel(false);
-
-    // The acceptor owns the socket and returns on the same stop signal, so
-    // the port is free as soon as the server is asked to stop — rotating the
-    // link rebinds it straight away.
-    let (accepted, incoming) = tokio::sync::mpsc::channel(64);
-    let acceptor = tokio::spawn(crate::owner::tls_listen::accept_loop(
-        "remote",
-        listener,
-        tokio_rustls::TlsAcceptor::from(tls.config),
-        accepted,
-        shutdown.subscribe(),
-    ));
-    let mut serve_rx = shutdown.subscribe();
-    let serve = tokio::spawn(async move {
-        let served = axum::serve(
-            crate::owner::tls_listen::TlsListener::new(incoming, local),
-            router.into_make_service_with_connect_info::<PeerAddr>(),
-        )
-        .with_graceful_shutdown(async move {
-            let _ = serve_rx.wait_for(|stop| *stop).await;
-        });
-        if let Err(e) = served.await {
-            log::error!("[remote] server stopped: {e}");
-        }
-        acceptor.abort();
-        let _ = acceptor.await;
-    });
+    let crate::owner::tls_listen::Serving {
+        port,
+        shutdown,
+        task: serve,
+    } = crate::owner::tls_listen::serve("remote", config.port, config.bind_all, tls.config, |_| {
+        router
+    })
+    .await?;
+    let mut shutdown_rx = shutdown.subscribe();
 
     // Orphan sweep: a client that closed its tab mid-answer must not hold an
     // inference slot until the app restarts.
@@ -301,15 +267,6 @@ async fn start_with_tts_port(
             }
         }
     });
-
-    log::info!(
-        "[remote] serving HTTPS on {}:{port}",
-        if config.bind_all {
-            "0.0.0.0"
-        } else {
-            "127.0.0.1"
-        }
-    );
 
     Ok(Running {
         port,
@@ -416,8 +373,7 @@ async fn index(
     } else {
         client_page()
     };
-    // Set on every visit: it renews the cookie's 30 days, and replaces one
-    // left by an older build, which held the raw token.
+    // Set on every visit: it renews the cookie's 30 days.
     if let Ok(cookie) = auth::guest_cookie(&state.token).parse() {
         response.headers_mut().insert(SET_COOKIE, cookie);
     }
@@ -1296,7 +1252,7 @@ mod http_tests {
     }
 
     #[tokio::test]
-    async fn an_old_raw_token_cookie_is_upgraded_on_the_page() {
+    async fn an_old_raw_token_cookie_needs_the_link_again() {
         // A phone shortcut made before the cookie held a derived value.
         let (base, _relay, running) = serve(Arc::new(RecordingSink::default())).await;
         let legacy = format!("{}={TOKEN}", auth::TOKEN_COOKIE);
@@ -1306,10 +1262,9 @@ mod http_tests {
             .send()
             .await
             .unwrap();
-        assert_eq!(page.status(), 200);
-        let set = page.headers()["set-cookie"].to_str().unwrap().to_string();
-        assert!(set.starts_with(&guest_cookie(TOKEN)), "{set}");
-        // But the API doesn't take the old form.
+        assert!(page.headers().get("set-cookie").is_none());
+        assert_eq!(page.text().await.unwrap(), NO_TOKEN_PAGE);
+        // Nor does the API take it.
         let api = client()
             .get(format!("{base}/api/stream/s1"))
             .header("Cookie", &legacy)

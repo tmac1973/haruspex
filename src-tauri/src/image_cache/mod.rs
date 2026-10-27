@@ -22,12 +22,14 @@ pub mod fetch;
 pub mod license;
 pub mod protocol;
 
+use crate::blob_cache;
 use crate::db::{Database, ImageRow};
-use log::{debug, warn};
+use log::debug;
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
+
+pub use crate::blob_cache::{hash_bytes, is_valid_hash};
 
 /// One image the caller wants resolved, carrying whatever provenance the tool
 /// that surfaced it already knew.
@@ -65,39 +67,13 @@ pub const MAX_CACHE_BYTES: i64 = 500 * 1024 * 1024;
 
 /// `<app_data_dir>/images/`, created if absent.
 pub fn cache_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to resolve app data dir: {}", e))?
-        .join("images");
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create image cache dir: {}", e))?;
-    Ok(dir)
+    blob_cache::cache_dir(app, "images", "image")
 }
 
 /// Path of one cached image. Callers must have validated the hash shape —
 /// [`is_valid_hash`] — before calling this.
 pub fn image_path(dir: &Path, hash: &str) -> PathBuf {
     dir.join(hash)
-}
-
-/// Exactly 64 lowercase hex characters.
-///
-/// This is the path-traversal guard for the whole module. Because a hash is
-/// checked for shape before it is ever joined to the cache directory, `..`,
-/// absolute paths and separators cannot be expressed — the protocol handler
-/// relies on this, so keep it strict.
-pub fn is_valid_hash(hash: &str) -> bool {
-    hash.len() == 64
-        && hash
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-}
-
-pub fn hash_bytes(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    crate::hash_util::hex(&hasher.finalize())
 }
 
 /// Write bytes to `<dir>/<hash>` via a `.part` file and an atomic rename.
@@ -126,7 +102,7 @@ pub fn evict_to_cap(db: &Database, dir: &Path) -> Result<(), String> {
         return Ok(());
     }
     debug!("image cache over cap; evicting {} images", doomed.len());
-    remove_files(dir, &doomed);
+    blob_cache::remove_files(dir, &doomed, "image");
     db.delete_images(&doomed)
 }
 
@@ -140,40 +116,11 @@ pub fn sweep_orphans(db: &Database, dir: &Path) -> Result<(), String> {
     let orphans = db.unreferenced_image_hashes()?;
     if !orphans.is_empty() {
         debug!("sweeping {} unreferenced images", orphans.len());
-        remove_files(dir, &orphans);
+        blob_cache::remove_files(dir, &orphans, "image");
         db.delete_images(&orphans)?;
     }
-
-    // Files with no row: leftovers from a crash between the write and the
-    // insert, abandoned `.part` files, or a database reset. Nothing will ever
-    // read them.
-    let known = db.all_image_hashes()?;
-    let entries = match std::fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(e) => {
-            warn!("could not scan image cache dir: {}", e);
-            return Ok(());
-        }
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().to_string();
-        let is_known = is_valid_hash(&name) && known.iter().any(|h| h == &name);
-        if !is_known {
-            let _ = std::fs::remove_file(entry.path());
-        }
-    }
+    blob_cache::remove_strays(dir, &db.all_image_hashes()?, "image");
     Ok(())
-}
-
-fn remove_files(dir: &Path, hashes: &[String]) {
-    for hash in hashes {
-        let path = image_path(dir, hash);
-        if let Err(e) = std::fs::remove_file(&path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                warn!("failed to remove cached image {}: {}", hash, e);
-            }
-        }
-    }
 }
 
 /// Build the row for freshly fetched bytes, applying the licence rules.
@@ -208,31 +155,6 @@ pub fn row_for(hash: String, req: &ImageRequest, fetched: &fetch::FetchedImage) 
 mod tests {
     use super::*;
     use crate::test_util::temp_dir;
-
-    #[test]
-    fn hash_validation_rejects_traversal_and_wrong_shapes() {
-        let good = "a".repeat(64);
-        assert!(is_valid_hash(&good));
-        assert!(is_valid_hash(&"0123456789abcdef".repeat(4)));
-
-        assert!(!is_valid_hash("../../etc/passwd"));
-        assert!(
-            !is_valid_hash(&"A".repeat(64)),
-            "uppercase is not our shape"
-        );
-        assert!(!is_valid_hash(&"a".repeat(63)));
-        assert!(!is_valid_hash(&"a".repeat(65)));
-        assert!(!is_valid_hash(""));
-        assert!(!is_valid_hash(&format!("{}/", "a".repeat(63))));
-        assert!(!is_valid_hash(&"g".repeat(64)), "g is not hex");
-    }
-
-    #[test]
-    fn identical_bytes_hash_identically() {
-        assert_eq!(hash_bytes(b"same"), hash_bytes(b"same"));
-        assert_ne!(hash_bytes(b"same"), hash_bytes(b"different"));
-        assert_eq!(hash_bytes(b"x").len(), 64);
-    }
 
     /// Matches the `temp_repo` idiom in `code_tools.rs` — a named directory
     /// under the system temp dir, wiped on entry, rather than a new dependency

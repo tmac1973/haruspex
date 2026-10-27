@@ -64,11 +64,9 @@ pub enum Proof {
     Bearer,
     /// `?t=<token>`: the shared link, accepted on the page load only.
     Link,
-    /// The derived cookie.
+    /// The derived cookie. One holding the raw token, as builds before
+    /// 2026-10-12 set it, proves nothing: that guest needs the link again.
     Cookie,
-    /// A cookie holding the raw token, as builds before the derived cookie
-    /// set it. Accepted on the page load only, which replaces it.
-    LegacyCookie,
 }
 
 /// How the request proves it knows `token`, if it does. `allow_link` is for
@@ -90,11 +88,8 @@ pub fn check(
     {
         return Some(Proof::Link);
     }
-    let cookie = cookie_token(headers)?;
-    if token_matches(&cookie_value(token), &cookie) {
-        return Some(Proof::Cookie);
-    }
-    (allow_link && token_matches(token, &cookie)).then_some(Proof::LegacyCookie)
+    let cookie = crate::owner::server::cookie(headers, TOKEN_COOKIE)?;
+    token_matches(&cookie_value(token), &cookie).then_some(Proof::Cookie)
 }
 
 fn bearer(headers: &HeaderMap) -> Option<String> {
@@ -115,19 +110,6 @@ fn query_token(query: &str) -> Option<String> {
         };
         if key == TOKEN_QUERY_KEY {
             return urlencoding::decode(value).ok().map(|v| v.into_owned());
-        }
-    }
-    None
-}
-
-fn cookie_token(headers: &HeaderMap) -> Option<String> {
-    let cookies = headers.get(axum::http::header::COOKIE)?.to_str().ok()?;
-    for pair in cookies.split(';') {
-        let Some((key, value)) = pair.split_once('=') else {
-            continue;
-        };
-        if key.trim() == TOKEN_COOKIE {
-            return Some(value.trim().to_string());
         }
     }
     None
@@ -238,9 +220,9 @@ mod tests {
     }
 
     #[test]
-    fn an_old_raw_token_cookie_is_accepted_on_the_page_only() {
+    fn an_old_raw_token_cookie_is_refused() {
         let h = with(COOKIE, &format!("{TOKEN_COOKIE}={TOKEN}"));
-        assert_eq!(check(&h, None, TOKEN, true), Some(Proof::LegacyCookie));
+        assert_eq!(check(&h, None, TOKEN, true), None);
         assert_eq!(check(&h, None, TOKEN, false), None);
     }
 
