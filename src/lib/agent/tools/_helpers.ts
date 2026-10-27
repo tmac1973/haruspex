@@ -20,7 +20,7 @@ import type { FetchedPage } from '#lib/ipc/gen/FetchedPage.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { stripThinkBlocks } from '#lib/markdown.ts';
-import { toolError } from '#lib/agent/tools/types.ts';
+import { toolError, type ToolContext } from '#lib/agent/tools/types.ts';
 import type { SaveTarget } from '#lib/agent/tools/_saveGenerated.ts';
 
 /**
@@ -235,6 +235,15 @@ export async function runSubAgent(
  * already carrying a scheme (or not URL-shaped) passes through for the
  * backend to reject with its normal error.
  */
+/** Ask the user something, giving the turn's slot back while they decide. */
+export function waitOnUser<T>(
+	ctx: Pick<ToolContext, 'releaseSlot'>,
+	ask: () => Promise<T>
+): Promise<T> {
+	ctx.releaseSlot?.();
+	return ask();
+}
+
 export function ensureUrlScheme(url: string): string {
 	if (typeof url !== 'string') return url;
 	const trimmed = url.trim();

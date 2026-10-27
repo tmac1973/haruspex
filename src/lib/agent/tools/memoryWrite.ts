@@ -38,6 +38,7 @@ import { getSettings } from '#lib/stores/settings.ts';
 import { getActiveConversationId } from '#lib/stores/session.svelte.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import { logDebug } from '#lib/debug-log.ts';
+import { waitOnUser } from '#lib/agent/tools/_helpers.ts';
 
 export const REMEMBER_TOOL = 'remember_this';
 
@@ -112,9 +113,8 @@ registerTool({
 		// Ask before writing, unless the user has turned the prompt off or
 		// already allowed it for this session.
 		if (getSettings().memoryConfirmWrites && !isMemorySessionApproved()) {
-			const choice = await askMemoryApproval(
-				{ content, category, chatId: sourceConversationId },
-				ctx.signal
+			const choice = await waitOnUser(ctx, () =>
+				askMemoryApproval({ content, category, chatId: sourceConversationId }, ctx.signal)
 			);
 			if (choice === 'deny') {
 				return toolResult(

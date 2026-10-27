@@ -48,6 +48,7 @@ import {
 	requiresApproval
 } from '#lib/stores/mcpApproval.svelte.ts';
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
+import { waitOnUser } from '#lib/agent/tools/_helpers.ts';
 
 /**
  * Maximum MRTR round trips for one tool call.
@@ -182,7 +183,7 @@ async function executeMcpTool(
 	}
 	const { serverId, serverLabel, descriptor } = entry;
 
-	const approved = await resolveApproval(entry, args);
+	const approved = await resolveApproval(entry, args, ctx);
 	if (!approved) {
 		return toolResult(
 			toolError(
@@ -230,20 +231,23 @@ async function executeMcpTool(
 /** True to run, false if the user said no. */
 async function resolveApproval(
 	entry: McpToolEntry,
-	args: Record<string, unknown>
+	args: Record<string, unknown>,
+	ctx: Pick<ToolContext, 'releaseSlot'>
 ): Promise<boolean> {
 	const { serverId, serverLabel, descriptor } = entry;
 	if (!requiresApproval(descriptor.annotations)) return true;
 	if (isAlwaysAllowed(serverId, descriptor.name)) return true;
 
-	const choice = await askMcpApproval({
-		serverId,
-		serverLabel,
-		toolName: descriptor.name,
-		description: descriptor.description,
-		annotations: descriptor.annotations,
-		args
-	});
+	const choice = await waitOnUser(ctx, () =>
+		askMcpApproval({
+			serverId,
+			serverLabel,
+			toolName: descriptor.name,
+			description: descriptor.description,
+			annotations: descriptor.annotations,
+			args
+		})
+	);
 	if (choice === 'allow_always') {
 		rememberAlwaysAllow(serverId, descriptor.name);
 		return true;
@@ -282,7 +286,7 @@ async function answerInputRequests(
 		// Deliberately unguarded: `askUser` rejects with an AbortError when the
 		// user cancels, and that has to unwind the turn the way a job-cancel
 		// does. Catching it here would feed the model an answer nobody gave.
-		const answer = await ctx.askUser({ question, options: [] }, ctx.signal);
+		const answer = await waitOnUser(ctx, () => ctx.askUser!({ question, options: [] }, ctx.signal));
 		responses[request.key] =
 			answer.kind === 'freeText'
 				? { action: 'accept', content: { text: answer.text } }

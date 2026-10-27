@@ -116,6 +116,19 @@ describe('an existing file, with someone at the keyboard', () => {
 		expect(r).toEqual({ kind: 'ok', finalPath: 'a.md', overwrite: true });
 	});
 
+	it('gives the turn’s slot back before it asks', async () => {
+		disk({});
+		const order: string[] = [];
+		mocks.askFileConflict.mockImplementation(async () => {
+			order.push('ask');
+			return 'overwrite';
+		});
+		await resolveWritePathInteractive('/w', 'a.md', new Set(), {
+			releaseSlot: () => order.push('release')
+		});
+		expect(order).toEqual(['release', 'ask']);
+	});
+
 	it('stops when the user cancels', async () => {
 		disk({});
 		mocks.askFileConflict.mockResolvedValue('cancel');

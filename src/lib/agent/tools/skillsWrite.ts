@@ -18,7 +18,7 @@
  */
 
 import type { SkillWriteRequest } from '#lib/ipc/gen/SkillWriteRequest.ts';
-import { ctxHostCwd } from '#lib/agent/tools/_helpers.ts';
+import { ctxHostCwd, waitOnUser } from '#lib/agent/tools/_helpers.ts';
 import { draftAgentsMd, draftSkill, saveAgentsMd, saveSkill } from '#lib/skills/client.ts';
 import { noteProjectSkill, trustApprovedAgentsMd } from '#lib/skills/project.ts';
 import { askSkillApproval } from '#lib/stores/skillApproval.svelte.ts';
@@ -132,20 +132,22 @@ async function writeSkill(ctx: ToolContext, request: SkillWriteRequest): Promise
 		return toolResult(toolError(`Nothing was saved: ${errMessage(e)}.`));
 	}
 	let path = '';
-	const result = await askSkillApproval(
-		{
-			kind: 'skill',
-			update: request.update,
-			name: request.name,
-			dir: draft.dir,
-			project: request.project,
-			text: draft.text,
-			current: draft.current,
-			save: async (text) => {
-				path = await saveSkill(request, text, projectRoot);
-			}
-		},
-		ctx.signal
+	const result = await waitOnUser(ctx, () =>
+		askSkillApproval(
+			{
+				kind: 'skill',
+				update: request.update,
+				name: request.name,
+				dir: draft.dir,
+				project: request.project,
+				text: draft.text,
+				current: draft.current,
+				save: async (text) => {
+					path = await saveSkill(request, text, projectRoot);
+				}
+			},
+			ctx.signal
+		)
 	);
 	if (result.kind === 'rejected') return declined(result.reason);
 	if (request.project && projectRoot) noteProjectSkill(projectRoot, request.name);
@@ -196,20 +198,22 @@ registerTool({
 			return toolResult(toolError(`Nothing was saved: ${errMessage(e)}.`));
 		}
 		let path = '';
-		const result = await askSkillApproval(
-			{
-				kind: 'agentsMd',
-				update: draft.current !== null,
-				name: 'AGENTS.md',
-				dir: draft.path,
-				project: true,
-				text: content,
-				current: draft.current,
-				save: async (text) => {
-					path = await saveAgentsMd(cwd, text);
-				}
-			},
-			ctx.signal
+		const result = await waitOnUser(ctx, () =>
+			askSkillApproval(
+				{
+					kind: 'agentsMd',
+					update: draft.current !== null,
+					name: 'AGENTS.md',
+					dir: draft.path,
+					project: true,
+					text: content,
+					current: draft.current,
+					save: async (text) => {
+						path = await saveAgentsMd(cwd, text);
+					}
+				},
+				ctx.signal
+			)
 		);
 		if (result.kind === 'rejected') return declined(result.reason);
 		const read = await trustApprovedAgentsMd(cwd);

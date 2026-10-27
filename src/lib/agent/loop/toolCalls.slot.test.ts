@@ -67,10 +67,16 @@ function call(name: string, ms: number): ResolvedToolCall {
 beforeEach(() => {
 	vi.useFakeTimers();
 	events = [];
-	tools.executeTool.mockReset().mockImplementation(async (_name, args: { ms: number }) => {
-		await new Promise((r) => setTimeout(r, args.ms));
-		return { result: 'ok' };
-	});
+	tools.executeTool
+		.mockReset()
+		.mockImplementation(
+			async (_name, args: { ms: number; asks?: boolean }, tctx: { releaseSlot?: () => void }) => {
+				// A tool putting a prompt up: it gives the slot back at once.
+				if (args.asks) tctx.releaseSlot?.();
+				await new Promise((r) => setTimeout(r, args.ms));
+				return { result: 'ok' };
+			}
+		);
 });
 afterEach(() => {
 	vi.useRealTimers();
@@ -147,5 +153,25 @@ describe('executeToolCalls: giving the slot back', () => {
 		);
 		await vi.runAllTimersAsync();
 		await expect(p).resolves.toEqual({ allWebReadsBlocked: false });
+	});
+
+	it('gives the slot back at once for a tool waiting on the user', async () => {
+		const slot = fakeSlot();
+		const ask = { ...call('run_command', 60_000), arguments: { ms: 60_000, asks: true } };
+		const p = executeToolCalls(makeCtx(slot), new NudgeState(), [ask]);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(events).toEqual(['start:run_command:true', 'release']);
+		await vi.runAllTimersAsync();
+		await p;
+		// The 5 s timer's own release found nothing to give back.
+		expect(events).toEqual(['start:run_command:true', 'release', 'reacquire']);
+	});
+
+	it('offers no early release in a batch that calls the model', async () => {
+		const slot = fakeSlot();
+		await run(slot, [call('research_url', 1_000)]);
+		expect(tools.executeTool.mock.calls[0][2].releaseSlot).toBeUndefined();
+		await run(slot, [call('run_command', 1_000)]);
+		expect(tools.executeTool.mock.calls[1][2].releaseSlot).toBeTypeOf('function');
 	});
 });

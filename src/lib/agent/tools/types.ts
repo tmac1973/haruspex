@@ -144,6 +144,12 @@ export interface ToolContext {
 	 */
 	runInSlot?: SlotLender;
 	/**
+	 * Give the turn's inference slot back now, while the tool waits on the
+	 * user. The loop takes it back when the tool batch ends. Absent in a batch
+	 * with a tool that calls the model, whose slot is in use.
+	 */
+	releaseSlot?: () => void;
+	/**
 	 * The skills this turn may load: Chat and Shell turns with autonomous use
 	 * on (see `#lib/skills/turn.ts`). Absent everywhere else, and the skills
 	 * tools refuse without it.
