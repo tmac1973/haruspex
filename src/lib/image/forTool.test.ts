@@ -135,6 +135,18 @@ describe('generateForTool', () => {
 	});
 });
 
+describe('generateForTool notes', () => {
+	it('passes on a backend’s word that transparency was lost', async () => {
+		const result = drawn();
+		state.generate.mockResolvedValue({
+			...result,
+			meta: { ...result.meta, transparencyFailed: 'It came back solid.' }
+		});
+		const out = await generateForTool(req({ transparent: true }));
+		expect(out.notes).toContain('It came back solid.');
+	});
+});
+
 describe('generateForTool edits', () => {
 	const edit = { images: [{ name: 'a.png', hash: 'a'.repeat(64) }] };
 

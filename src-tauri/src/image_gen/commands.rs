@@ -290,6 +290,16 @@ pub fn image_clear_canvas(width: u32, height: u32) -> Result<Vec<u8>, String> {
     ))
 }
 
+/// The fraction of a picture's pixels that aren't fully opaque (`stats.rs`):
+/// how a backend checks that a transparent request came back transparent.
+#[tauri::command]
+pub fn image_transparent_fraction(bytes: Vec<u8>) -> Result<f32, String> {
+    let img = image::load_from_memory(&bytes)
+        .map_err(|e| format!("Could not read the picture: {e}"))?
+        .to_rgba8();
+    Ok(super::stats::transparent_fraction(&img))
+}
+
 /// What a seamless repaint starts from: the texture rolled by half, so its
 /// seams cross in the middle, and the mask over them. PNG bytes, both.
 #[derive(Serialize, ts_rs::TS)]

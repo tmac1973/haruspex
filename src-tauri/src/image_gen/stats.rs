@@ -31,6 +31,15 @@ pub struct ImageStats {
     pub seam: Option<f32>,
 }
 
+/// The fraction of pixels that aren't fully opaque: 0 for a picture with no
+/// transparency at all, which a request for a transparent background should
+/// never get.
+pub fn transparent_fraction(img: &RgbaImage) -> f32 {
+    let total = (img.width() as u64 * img.height() as u64).max(1);
+    let clear = img.pixels().filter(|p| p.0[3] < 255).count() as u64;
+    clear as f32 / total as f32
+}
+
 /// Shannon entropy of the SUBJECT's colour histogram, in bits.
 ///
 /// Over a 16-colour palette the ceiling is 4 bits, reached when every colour
@@ -107,6 +116,15 @@ mod tests {
         // Same subject, wildly different amounts of background: same score.
         assert!((entropy_bits(&small) - entropy_bits(&big)).abs() < 1e-5);
         assert!((entropy_bits(&small) - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn transparent_fraction_counts_every_pixel_short_of_opaque() {
+        let mut img = RgbaImage::from_pixel(4, 1, image::Rgba([9, 9, 9, 255]));
+        assert_eq!(transparent_fraction(&img), 0.0);
+        img.put_pixel(0, 0, image::Rgba([9, 9, 9, 0]));
+        img.put_pixel(1, 0, image::Rgba([9, 9, 9, 254]));
+        assert_eq!(transparent_fraction(&img), 0.5);
     }
 
     #[test]

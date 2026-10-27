@@ -3,10 +3,10 @@
  *
  * A song is a job on toolchest's queue (`/v1/music/jobs`): polled once a
  * second for its phase, then downloaded straight into the audio cache by
- * Rust (`audio_store_url`), because toolchest forgets it after a day.
- * Cancelling the turn sends `DELETE`, which ace-server honours mid-song.
- * The job's id is reported (`onHandle`), so `resume` can follow it again
- * after a restart.
+ * Rust (`audio_store_url`), because toolchest forgets it after a day, and
+ * then deleted from the server. Cancelling the turn sends `DELETE`, which
+ * ace-server honours mid-song. The job's id is reported (`onHandle`), so
+ * `resume` can follow it again after a restart.
  * Instances are started in toolchest; a stopped one is a sentence here.
  */
 
@@ -35,7 +35,7 @@ import {
 	toolchestUpload,
 	type ToolchestConfig
 } from '#lib/toolchest/client.ts';
-import { followJob } from '#lib/toolchest/jobs.ts';
+import { followJob, removeJob } from '#lib/toolchest/jobs.ts';
 import { audioSrc } from '#lib/audio/url.ts';
 import type { StoredAudio } from '#lib/ipc/gen/StoredAudio.ts';
 import {
@@ -167,6 +167,7 @@ async function finish(
 	}
 	opts.onProgress?.({ phase: 'saving' });
 	const stored = await keep(cfg, job, req, opts);
+	removeJob(cfg, ROUTES.job(job.id));
 	return {
 		hash: stored.hash,
 		url: audioSrc(stored.hash) ?? '',

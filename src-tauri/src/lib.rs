@@ -429,6 +429,7 @@ pub fn run() {
             image_gen::commands::image_effective_profile,
             image_gen::commands::image_default_profile,
             image_gen::commands::image_clear_canvas,
+            image_gen::commands::image_transparent_fraction,
             image_gen::commands::image_seam_inputs,
             image_gen::commands::texture_render,
             image_gen::commands::texture_validate,

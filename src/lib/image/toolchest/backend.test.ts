@@ -133,6 +133,22 @@ describe('llama-toolchest image backend', () => {
 		expect(seen).toContainEqual({ phase: 'running' });
 		expect(calls()).toContain('GET /v1/images/jobs/j1/image/0');
 		expect(calls()).not.toContain('POST /v1/images/generations');
+		// Kept here, so the server can let go of it.
+		expect(calls().at(-1)).toBe('DELETE /v1/images/jobs/j1');
+	});
+
+	it('keeps polling while the server restarts', async () => {
+		let n = 0;
+		use(
+			jobRoutes({
+				'GET /v1/images/jobs/j1': () => {
+					if (++n <= 3) throw { kind: 'unreachable', message: 'connection refused' };
+					return { id: 'j1', status: 'succeeded', images: [{ url: '/v1/images/jobs/j1/image/0' }] };
+				}
+			})
+		);
+		const result = await toolchestBackend.generate(request);
+		expect(result.images).toHaveLength(1);
 	});
 
 	it('uses the blocking route on a build without image jobs', async () => {
@@ -249,19 +265,22 @@ describe('llama-toolchest image backend', () => {
 		expect(result.images[0]).toMatchObject({ width: 512, height: 512 });
 	});
 
-	it('says so when the server no longer has the job', async () => {
+	it('says so at once when the server no longer has the job', async () => {
 		use({});
-		await expect(
-			toolchestBackend.resume!({
-				backend: 'llama-toolchest',
-				baseUrl: 'http://box:3000',
-				id: 'gone',
-				seed: 1,
-				model: 'm',
-				width: 8,
-				height: 8
-			})
-		).rejects.toBeInstanceOf(ImageBackendError);
+		const err = await toolchestBackend.resume!({
+			backend: 'llama-toolchest',
+			baseUrl: 'http://box:3000',
+			id: 'gone',
+			seed: 1,
+			model: 'm',
+			width: 8,
+			height: 8
+		}).catch((e) => e);
+		expect(err).toBeInstanceOf(ImageBackendError);
+		expect(err.message).toBe(
+			'llama-toolchest no longer has this job: it was deleted, or ended over a day ago.'
+		);
+		expect(calls()).toEqual(['GET /v1/images/jobs/gone']);
 	});
 
 	describe('edits', () => {

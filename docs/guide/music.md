@@ -41,7 +41,7 @@ With a working folder set in Chat, the assistant can also save the song there: a
 
 ## Make songs in the background
 
-Ask for a song "in the background" (or several) and the assistant starts it and carries on, so you can keep chatting. Each gets a card with progress and **Cancel**, then a player, and is in the **Tasks** list (see the `chat-conversations` page); the assistant places it in the conversation. If Haruspex closes first, it is picked up on reopening while the server still has it; restarting llama-toolchest or its music model loses it.
+Ask for a song "in the background" (or several) and the assistant starts it and carries on, so you can keep chatting. Each gets a card with progress and **Cancel**, then a player, and is in the **Tasks** list (see the `chat-conversations` page); the assistant places it in the conversation. If Haruspex closes first, it is picked up when it reopens, as long as the server still has it.
 
 ## Change a song you already have
 
@@ -66,7 +66,7 @@ In the Code tab, ask for something like "background music for the title screen a
 
 ## Where songs are kept
 
-The server forgets a song (llama-toolchest after a day), so Haruspex keeps its own copy. A song that belongs to a chat or a Code session stays until you delete that chat or session. The test clip belongs to neither and is removed an hour later.
+Haruspex downloads each song and keeps its own copy, then deletes it from llama-toolchest, which would otherwise keep it for a day. A song that belongs to a chat or a Code session stays until you delete that chat or session. The test clip belongs to neither and is removed an hour later.
 
 **Audio cache** shows how much space songs use. **Clear unused audio** deletes the ones no chat or session plays; it doesn't touch the rest.
 

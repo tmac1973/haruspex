@@ -240,6 +240,7 @@ export const IPC = {
 	image_store_bytes: 'image_store_bytes',
 	image_store_upscaled: 'image_store_upscaled',
 	image_sweep: 'image_sweep',
+	image_transparent_fraction: 'image_transparent_fraction',
 	image_upscaler: 'image_upscaler',
 	image_upscaler_delete: 'image_upscaler_delete',
 	image_upscaler_download: 'image_upscaler_download',

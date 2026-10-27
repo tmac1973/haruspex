@@ -126,6 +126,9 @@ describe('llama-toolchest music backend', () => {
 			conversationId: 'chat-1',
 			codeSessionId: null
 		});
+		// Kept in the audio cache, so the server can let go of it.
+		const last = tauri.invoke.mock.calls.filter(([c]) => c === 'toolchest_json').at(-1)!;
+		expect(`${last[1].call.method} ${last[1].call.path}`).toBe(`DELETE ${JOB}`);
 	});
 
 	it('cancels the job on the server when the turn is cancelled', async () => {
@@ -265,8 +268,12 @@ describe('llama-toolchest music jobs after a restart', () => {
 			codeSessionId: 'code-1'
 		});
 		expect(result).toMatchObject({ hash: HASH, model: 'ace-gpu2', bpm: 82 });
-		const calls = tauri.invoke.mock.calls.filter(([c]) => c === 'toolchest_json');
-		expect(calls.every(([, a]) => a.call.method === 'GET' && a.call.path === JOB)).toBe(true);
+		// Polls of the job, then its delete once the song is kept; nothing is sent again.
+		const calls = tauri.invoke.mock.calls
+			.filter(([c]) => c === 'toolchest_json')
+			.map(([, a]) => `${a.call.method} ${a.call.path}`);
+		expect(new Set(calls)).toEqual(new Set([`GET ${JOB}`, `DELETE ${JOB}`]));
+		expect(calls.at(-1)).toBe(`DELETE ${JOB}`);
 		const [, stored] = tauri.invoke.mock.calls.find(([c]) => c === 'audio_store_url')!;
 		expect(stored).toMatchObject({
 			url: `http://box:3000${JOB}/audio`,

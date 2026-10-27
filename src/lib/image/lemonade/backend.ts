@@ -195,6 +195,29 @@ export function modelLabel(m: LemonadeModel): string {
 /** Said of every tiling request: see the top of this file. */
 const NO_TILING = 'Lemonade cannot make tiling textures, so the edges may not wrap.';
 
+/**
+ * Said when Ming's transparent start came back opaque. That start rides in the
+ * first `<sd_cpp_extra_args>` block of the prompt, ahead of Lemonade's own; an
+ * sd-server that read the last block instead would drop it without a word, and
+ * every transparent picture would quietly come back solid.
+ */
+export const TRANSPARENCY_LOST =
+	'Lemonade returned it with a solid background although a transparent one was asked for, ' +
+	'so the server may no longer read the settings Haruspex sends. The bundled engine and ' +
+	'ComfyUI can make it transparent.';
+
+/** `TRANSPARENCY_LOST` when `png` has no pixel short of opaque; undefined otherwise or unsure. */
+async function lostTransparency(png: Uint8Array): Promise<string | undefined> {
+	try {
+		const clear = await invoke<number>('image_transparent_fraction', { bytes: Array.from(png) });
+		if (clear > 0) return undefined;
+		console.warn('lemonade: a transparent Ming request came back fully opaque');
+		return TRANSPARENCY_LOST;
+	} catch {
+		return undefined;
+	}
+}
+
 export const lemonadeBackend: ImageBackend = {
 	kind: 'lemonade',
 
@@ -264,10 +287,13 @@ export const lemonadeBackend: ImageBackend = {
 		const seed = req.seed ?? randomSeed();
 		const started = Date.now();
 		let images: Uint8Array[];
+		let clearStart: string | undefined;
 		if (req.edit) {
 			images = await edit(req, model, sampler, seed, opts.signal);
 		} else {
-			const { prompt, clearStart } = await transparentStart(family, req);
+			const start = await transparentStart(family, req);
+			const prompt = start.prompt;
+			clearStart = start.clearStart;
 			const body = buildGeneration({
 				model: model.name,
 				prompt,
@@ -283,6 +309,7 @@ export const lemonadeBackend: ImageBackend = {
 		if (images.length === 0) {
 			throw new ImageBackendError('rejected', 'Lemonade returned no image.');
 		}
+		const transparencyFailed = clearStart ? await lostTransparency(images[0]) : undefined;
 
 		return {
 			images: images.map((bytes) => ({
@@ -298,7 +325,8 @@ export const lemonadeBackend: ImageBackend = {
 				sampler,
 				loras: [],
 				durationMs: Date.now() - started,
-				...(req.seamless ? { seamFailed: NO_TILING } : {})
+				...(req.seamless ? { seamFailed: NO_TILING } : {}),
+				...(transparencyFailed ? { transparencyFailed } : {})
 			}
 		};
 	},

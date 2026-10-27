@@ -55,7 +55,7 @@ import {
 	readJob,
 	type ImageJob
 } from '#lib/image/toolchest/adapter.ts';
-import { followJob } from '#lib/toolchest/jobs.ts';
+import { followJob, removeJob } from '#lib/toolchest/jobs.ts';
 
 /** The blocking route waits through the queue and the render. */
 const SYNC_TIMEOUT_MS = 900_000;
@@ -172,7 +172,7 @@ async function runJob(
 	return awaitJob(cfg, created, opts);
 }
 
-/** Follow a job the server has to its end, and fetch its images. */
+/** Follow a job the server has to its end, fetch its images, and delete it there. */
 async function awaitJob(
 	cfg: ToolchestConfig,
 	created: ImageJob,
@@ -191,6 +191,7 @@ async function awaitJob(
 	opts.onProgress?.({ phase: 'downloading' });
 	const images: Uint8Array[] = [];
 	for (const path of job.images) images.push(await toolchestBytes(cfg, path, opts.signal));
+	removeJob(cfg, ROUTES.job(job.id));
 	return images;
 }
 
