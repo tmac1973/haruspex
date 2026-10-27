@@ -9,7 +9,7 @@ import { getToolSchemas, type PendingImage, type ToolContext } from '#lib/agent/
 import { getSettings, type SamplingParams } from '#lib/stores/settings.ts';
 import { resolveBackendDescriptor, type BackendDescriptor } from '#lib/inference/descriptor.ts';
 import { loadedSkillNames, skillsWithFiles } from '#lib/skills/content.ts';
-import type { TurnSkills } from '#lib/skills/turn.ts';
+import { coveredTools, type TurnSkills } from '#lib/skills/turn.ts';
 import type { AgentLoopOptions } from '#lib/agent/loop.ts';
 import type { HeldSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 
@@ -32,15 +32,6 @@ export function latestUserImages(messages: ChatMessage[]): string[] {
 		if (urls.length) return urls;
 	}
 	return [];
-}
-
-/** Each covered tool's skill; the first skill to name a tool keeps it. */
-export function coveredTools(catalog: TurnSkills['catalog']): Map<string, string> {
-	const covers = new Map<string, string>();
-	for (const s of catalog) {
-		for (const t of s.tools) if (!covers.has(t)) covers.set(t, s.name);
-	}
-	return covers;
 }
 
 function readableSkills(skills: TurnSkills, messages: ChatMessage[]): string[] {

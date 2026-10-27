@@ -45,6 +45,15 @@ export async function prepareTurnSkills(opts: {
 	return { catalog, projectRoot };
 }
 
+/** Each covered tool's skill; the first skill to name a tool keeps it. */
+export function coveredTools(catalog: TurnSkills['catalog']): Map<string, string> {
+	const covers = new Map<string, string>();
+	for (const s of catalog) {
+		for (const t of s.tools) if (!covers.has(t)) covers.set(t, s.name);
+	}
+	return covers;
+}
+
 /** The system-prompt section listing the turn's skills; empty without any. */
 export function skillsPromptSection(skills: TurnSkills | undefined): string {
 	if (!skills?.catalog.length) return '';

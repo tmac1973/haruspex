@@ -5,7 +5,7 @@ const client = vi.hoisted(() => ({ readSkillForTurn: vi.fn() }));
 vi.mock('#lib/skills/client.ts', () => client);
 
 import { gateNote, skillGate } from './_skillGate';
-import { coveredTools } from '#lib/agent/loop/context.ts';
+import { coveredTools } from '#lib/skills/turn.ts';
 import type { ToolContext } from './types';
 
 const doc: SkillDoc = {
@@ -56,10 +56,11 @@ describe('skillGate', () => {
 	});
 
 	it('lets the call run when the skill cannot be read', async () => {
-		client.readSkillForTurn.mockRejectedValue(new Error('gone'));
+		client.readSkillForTurn.mockRejectedValueOnce('gone');
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 		expect(await skillGate('edit_image', ctx())).toBeNull();
 		expect(warn).toHaveBeenCalled();
+		warn.mockRestore();
 	});
 });
 
