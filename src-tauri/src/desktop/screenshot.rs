@@ -80,6 +80,10 @@ pub struct ScreenCapture {
     /// The display's own dimensions, not the downscaled ones.
     pub width: u32,
     pub height: u32,
+    /// What was captured: a window, or the whole screen when a window was
+    /// asked for and the desktop would not hand one over. A region reports
+    /// the screen it was cut from.
+    pub target: CaptureTarget,
 }
 
 /// A window the user can pick to capture, where the platform has no picker of
@@ -149,7 +153,7 @@ pub async fn list_capture_windows() -> Result<Vec<CaptureWindow>, String> {
 #[tauri::command]
 pub async fn capture_window(id: u32) -> Result<ScreenCapture, String> {
     let capture = grab_window(id).await?;
-    encode(capture).await
+    encode(capture, CaptureTarget::Window).await
 }
 
 /// How a click-a-window capture ended.
@@ -178,7 +182,7 @@ async fn click_window() -> Result<WindowClick, String> {
     use super::kwin::{click_window, KwinError};
     match click_window().await {
         Ok(capture) => Ok(WindowClick::Captured {
-            capture: encode(capture).await?,
+            capture: encode(capture, CaptureTarget::Window).await?,
         }),
         Err(KwinError::Cancelled) => Ok(WindowClick::Cancelled),
         Err(KwinError::Unavailable(why)) => {
@@ -222,9 +226,9 @@ static HELD_REGION: std::sync::Mutex<Option<image::DynamicImage>> = std::sync::M
 #[tauri::command]
 pub async fn capture_region_start() -> Result<ScreenCapture, String> {
     use crate::sync_util::LockExt;
-    let capture = grab(CaptureTarget::Screen, false).await?;
+    let (capture, took) = grab(CaptureTarget::Screen).await?;
     *HELD_REGION.lock_or_recover() = Some(capture.image.clone());
-    encode(capture).await
+    encode(capture, took).await
 }
 
 /// Crop the held frame to `rect` and encode it, or with `None` discard it.
@@ -245,7 +249,7 @@ pub async fn capture_region_finish(
         source_height: image.height(),
         image,
     };
-    encode(capture).await.map(Some)
+    encode(capture, CaptureTarget::Screen).await.map(Some)
 }
 
 /// `rect` cut out of `image`, clamped to its edges; `None` when nothing is left.
@@ -260,7 +264,7 @@ fn crop(image: &image::DynamicImage, rect: CaptureRect) -> Option<image::Dynamic
     Some(image.crop_imm(x, y, width, height))
 }
 
-async fn encode(capture: Capture) -> Result<ScreenCapture, String> {
+async fn encode(capture: Capture, target: CaptureTarget) -> Result<ScreenCapture, String> {
     let (width, height) = (capture.source_width, capture.source_height);
     let long_edge = target_long_edge(width, height);
     let data_url = tokio::task::spawn_blocking(move || {
@@ -272,6 +276,7 @@ async fn encode(capture: Capture) -> Result<ScreenCapture, String> {
         data_url,
         width,
         height,
+        target,
     })
 }
 
@@ -309,34 +314,32 @@ async fn grab_window(_id: u32) -> Result<Capture, String> {
 /// Capture the screen or the focused window.
 ///
 /// Called from exactly two places, both of them something the user just did:
-/// the composer's capture button (`from_button`), and the `capture_screen`
-/// tool in reply to a question they asked. Nothing calls it on a schedule.
+/// the composer's capture button, and the `capture_screen` tool in reply to a
+/// question they asked, after Haruspex's own prompt unless they turned it off
+/// (Settings → Screen). Nothing calls it on a schedule.
 #[tauri::command]
-pub async fn capture_screen(
-    target: Option<CaptureTarget>,
-    from_button: Option<bool>,
-) -> Result<ScreenCapture, String> {
-    let target = target.unwrap_or_default();
-    let interactive = !from_button.unwrap_or(false);
+pub async fn capture_screen(target: Option<CaptureTarget>) -> Result<ScreenCapture, String> {
+    let (capture, took) = grab(target.unwrap_or_default()).await?;
     // Downscaling a 4K frame is tens of milliseconds of CPU; `encode` does it
     // off the async runtime so it cannot stall the UI thread's other work.
-    encode(grab(target, interactive).await?).await
+    encode(capture, took).await
 }
 
-/// `interactive` asks for the desktop's own confirmation where it has one
-/// (the Linux portal); see [`super::linux::capture`].
+/// The pixels, and what they are of: see [`super::linux::capture`].
 #[cfg(target_os = "linux")]
-async fn grab(target: CaptureTarget, interactive: bool) -> Result<Capture, String> {
-    super::linux::capture(target, interactive).await
+async fn grab(target: CaptureTarget) -> Result<(Capture, CaptureTarget), String> {
+    super::linux::capture(target).await
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
-async fn grab(target: CaptureTarget, _interactive: bool) -> Result<Capture, String> {
-    super::external::capture(target).await
+async fn grab(target: CaptureTarget) -> Result<(Capture, CaptureTarget), String> {
+    super::external::capture(target)
+        .await
+        .map(|capture| (capture, target))
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-async fn grab(_target: CaptureTarget, _interactive: bool) -> Result<Capture, String> {
+async fn grab(_target: CaptureTarget) -> Result<(Capture, CaptureTarget), String> {
     Err("Screen capture is not supported on this platform.".into())
 }
 

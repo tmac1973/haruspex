@@ -109,9 +109,8 @@ See the `integrations` page.
 
 ## Screen
 
-Whether the assistant can see your screen.
-
 - **Let the assistant take a screenshot when you ask it to**: off.
+- **Ask before each screenshot**: on.
 
 See the `integrations` page.
 

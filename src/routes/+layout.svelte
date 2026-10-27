@@ -14,6 +14,7 @@
 	import MemoryApprovalModal from '#lib/components/MemoryApprovalModal.svelte';
 	import RepoTrustModal from '#lib/components/RepoTrustModal.svelte';
 	import SkillApprovalModal from '#lib/components/SkillApprovalModal.svelte';
+	import ScreenCaptureApprovalModal from '#lib/components/ScreenCaptureApprovalModal.svelte';
 	import YoutubeUploadDialog from '#lib/components/video/YoutubeUploadDialog.svelte';
 	import EmailReviewModal from '#lib/components/EmailReviewModal.svelte';
 	import UserQuestionModal from '#lib/components/UserQuestionModal.svelte';
@@ -590,6 +591,7 @@
 	<MemoryApprovalModal />
 	<RepoTrustModal />
 	<SkillApprovalModal />
+	<ScreenCaptureApprovalModal />
 	<YoutubeUploadDialog />
 	<UserQuestionModal />
 {/snippet}

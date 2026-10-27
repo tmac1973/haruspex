@@ -92,7 +92,7 @@ export async function guideStatus(override?: BackendOverride): Promise<string> {
 		`- Python sandbox: ${onOff(s.sandboxEnabled)}`,
 		`- Image generation: ${IMAGE[s.imageBackendKind] ?? s.imageBackendKind}`,
 		`- Music generation: ${MUSIC[s.musicBackendKind] ?? s.musicBackendKind}`,
-		`- Screen capture: ${onOff(s.screenCaptureEnabled)}`,
+		`- Screen capture: ${onOff(s.screenCaptureEnabled)}${s.screenCaptureEnabled ? `, asks before each: ${s.screenCaptureConfirm ? 'yes' : 'no'}` : ''}`,
 		`- Model uses skills by itself: ${skillsAutonomous() ? 'yes' : 'no'} (setting: ${s.skills.autonomous})`,
 		`- Memory limit for commands and terminals: ${limit > 0 ? `${limit}% of RAM` : 'off'}`,
 		`- Email accounts switched on: ${emails}`,

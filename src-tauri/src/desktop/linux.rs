@@ -4,9 +4,12 @@
 //! That ordering is deliberate. Under Wayland there is no other way — a client
 //! cannot read the screen, and that is the point of the design. Under X11 any
 //! client can read the root window at any time, so going through the portal
-//! anyway means the same compositor-drawn dialog, or the same remembered
-//! permission, applies on both, and the user does not have to know which
-//! session they are in to know what just happened.
+//! anyway means the same remembered permission applies on both, and the user
+//! does not have to know which session they are in to know what just happened.
+//!
+//! The portal's own dialog is never opened. The portal asks once whether
+//! Haruspex may take screenshots and remembers the answer; whether the
+//! assistant asks before each one is Haruspex's prompt (Settings → Screen).
 //!
 //! The X11 path exists for a session with no portal running at all — a bare
 //! window manager, no desktop environment. It reads the root window directly,
@@ -16,72 +19,66 @@ use std::path::{Path, PathBuf};
 
 use super::screenshot::{Capture, CaptureTarget};
 
-/// Capture through the portal, falling back to X11 where there is none.
+/// Capture through the portal, falling back to X11 where there is none, and
+/// say what was captured.
 ///
-/// `interactive` opens the portal's own dialog. The composer's button passes
-/// false: pressing it is the request, and the portal asks once whether
-/// Haruspex may take screenshots and remembers the answer. The assistant's
-/// `capture_screen` tool passes true, so a capture the model asked for always
-/// shows the desktop's confirmation.
-pub async fn capture(target: CaptureTarget, interactive: bool) -> Result<Capture, String> {
-    match capture_via_portal(target, interactive).await {
-        Ok(capture) => Ok(capture),
-        Err(PortalError::Refused) if interactive => Err(
-            "The screenshot was cancelled. Nothing was captured — try again and \
-             confirm the request your desktop shows."
-                .into(),
-        ),
+/// A window is asked of KWin. Where KWin will not hand one over, the portal
+/// takes the whole screen: without its dialog it cannot pick a window.
+pub async fn capture(target: CaptureTarget) -> Result<(Capture, CaptureTarget), String> {
+    if target == CaptureTarget::Window {
+        use super::kwin::{active_window, KwinError};
+        match active_window().await {
+            Ok(capture) => return Ok((capture, CaptureTarget::Window)),
+            Err(KwinError::Unavailable(why)) => {
+                log::debug!("active-window capture unavailable: {why}");
+            }
+            Err(KwinError::Cancelled) => return Err("The screenshot was cancelled.".into()),
+            Err(KwinError::Failed(why)) => return Err(format!("The screenshot failed: {why}")),
+        }
+    }
+    match capture_via_portal().await {
+        Ok(capture) => Ok((capture, CaptureTarget::Screen)),
         Err(PortalError::Refused) => Err(
             "Your desktop refused the screenshot. If you said no when it asked \
              whether Haruspex may take screenshots, that answer is remembered; \
              change it in your desktop's app permissions."
                 .into(),
         ),
-        Err(PortalError::Unavailable(why)) => capture_via_x11(target).map_err(|x11| {
-            format!(
-                "Could not take a screenshot. The desktop portal is not available \
-                 ({why}), and reading the screen directly failed too ({x11}). On \
-                 Wayland, install xdg-desktop-portal and the backend for your \
-                 desktop."
-            )
-        }),
+        Err(PortalError::Unavailable(why)) => capture_via_x11(target)
+            .map(|capture| (capture, target))
+            .map_err(|x11| {
+                format!(
+                    "Could not take a screenshot. The desktop portal is not available \
+                     ({why}), and reading the screen directly failed too ({x11}). On \
+                     Wayland, install xdg-desktop-portal and the backend for your \
+                     desktop."
+                )
+            }),
         Err(PortalError::Failed(why)) => Err(format!("The screenshot failed: {why}")),
     }
 }
 
 /// Why a portal capture did not produce an image.
 ///
-/// The distinction matters: a user who cancelled the picker should be told
-/// nothing was captured, not have the request quietly retried behind their back
-/// through a path that does not ask.
+/// The distinction matters: a user who refused Haruspex screenshots should be
+/// told so, not have the request quietly retried behind their back through a
+/// path that does not ask.
 enum PortalError {
     /// No portal is running, or it does not implement Screenshot.
     Unavailable(String),
-    /// The user dismissed the portal's own dialog.
+    /// The desktop said no: the user refused Haruspex screenshots.
     Refused,
     /// The portal was there and tried, but could not.
     Failed(String),
 }
 
-async fn capture_via_portal(
-    target: CaptureTarget,
-    interactive: bool,
-) -> Result<Capture, PortalError> {
-    use ashpd::desktop::screenshot::{AvailableTargets, Screenshot};
+/// The whole screen, without the portal's dialog.
+async fn capture_via_portal() -> Result<Capture, PortalError> {
+    use ashpd::desktop::screenshot::Screenshot;
 
-    let mut request = Screenshot::request()
-        .interactive(interactive)
-        .modal(interactive);
-    // A hint only, and only where the portal says it takes one. KDE's portal
-    // (version 2, AvailableTargets 0 on Plasma, 2026-10-06) rejects any
-    // target with "Unavailable screenshot target 2" rather than ignoring it,
-    // which failed every window capture. Without it the picker still lets the
-    // user choose the window.
-    if interactive && target == CaptureTarget::Window && window_target_available().await {
-        request = request.target(AvailableTargets::Window);
-    }
-
-    let response = request
+    let response = Screenshot::request()
+        .interactive(false)
+        .modal(false)
         .send()
         .await
         .map_err(classify)?
@@ -98,26 +95,8 @@ async fn capture_via_portal(
     // happens whether the read above succeeded or not. Without the dialog
     // nobody chose where it went — Plasma writes it to ~/Pictures — so it is
     // ours wherever it is.
-    discard(&path, !interactive);
+    let _ = std::fs::remove_file(&path);
     capture
-}
-
-/// Whether the portal advertises a window target. False when it cannot say:
-/// `AvailableTargets` is new in version 3, and an older portal may reject the
-/// option outright.
-async fn window_target_available() -> bool {
-    use ashpd::desktop::screenshot::ScreenshotProxy;
-    let Ok(proxy) = ScreenshotProxy::new().await else {
-        return false;
-    };
-    takes_window_target(proxy.available_targets().await.ok())
-}
-
-/// The decision, apart from D-Bus: a window hint only when the portal lists it.
-fn takes_window_target(
-    targets: Option<ashpd::enumflags2::BitFlags<ashpd::desktop::screenshot::AvailableTargets>>,
-) -> bool {
-    targets.is_some_and(|t| t.contains(ashpd::desktop::screenshot::AvailableTargets::Window))
 }
 
 /// Map an ashpd error onto what the user should be told.
@@ -141,37 +120,6 @@ fn read_capture(path: &Path) -> Result<Capture, String> {
         source_height: image.height(),
         image,
     })
-}
-
-/// Delete a portal screenshot once it has been read, if it is ours to delete.
-///
-/// Portals write to a temporary location and hand ownership to the caller. But
-/// after an interactive capture the path may be one the *user* chose in the
-/// portal's dialog — their Pictures directory, say — and that file must not be
-/// removed, so there anything outside a temporary directory is left exactly
-/// where it is. `unattended` captures had no dialog, so the file is always ours.
-fn discard(path: &Path, unattended: bool) {
-    if unattended || is_disposable(path, &temp_roots()) {
-        let _ = std::fs::remove_file(path);
-    }
-}
-
-/// Directories a portal's own scratch file may live in.
-fn temp_roots() -> Vec<PathBuf> {
-    let mut roots = vec![std::env::temp_dir()];
-    if let Ok(runtime) = std::env::var("XDG_RUNTIME_DIR") {
-        roots.push(PathBuf::from(runtime));
-    }
-    if let Ok(cache) = std::env::var("XDG_CACHE_HOME") {
-        roots.push(PathBuf::from(cache));
-    } else if let Ok(home) = std::env::var("HOME") {
-        roots.push(PathBuf::from(home).join(".cache"));
-    }
-    roots
-}
-
-fn is_disposable(path: &Path, roots: &[PathBuf]) -> bool {
-    roots.iter().any(|root| path.starts_with(root))
 }
 
 /// Turn a `file://` URI into a path, undoing percent-encoding.
@@ -423,21 +371,6 @@ mod tests {
     }
 
     #[test]
-    fn a_portal_scratch_file_is_deleted_but_a_users_own_file_is_not() {
-        let roots = vec![PathBuf::from("/tmp"), PathBuf::from("/run/user/1000")];
-        assert!(is_disposable(Path::new("/tmp/shot.png"), &roots));
-        assert!(is_disposable(
-            Path::new("/run/user/1000/doc/abc/shot.png"),
-            &roots
-        ));
-        // The one that matters: never remove something out of Pictures.
-        assert!(!is_disposable(
-            Path::new("/home/tim/Pictures/shot.png"),
-            &roots
-        ));
-    }
-
-    #[test]
     fn x11_pixels_are_repacked_in_the_order_the_server_sent_them() {
         // One pixel, pure red, as a little-endian server writes it: B G R X.
         let little = [0x00, 0x00, 0xff, 0x00];
@@ -484,15 +417,15 @@ mod tests {
         );
     }
 
-    /// A real portal capture. Needs a human to accept the picker, which is the
-    /// whole point of the path, so it can only ever be run by hand:
+    /// A real portal capture. The first one asks whether this test binary may
+    /// take screenshots, so it can only ever be run by hand:
     /// `cargo test --manifest-path src-tauri/Cargo.toml portal_capture -- --ignored --nocapture`
     #[test]
-    #[ignore = "opens the desktop portal's picker and waits for a person"]
+    #[ignore = "needs a desktop portal, and may ask a person the first time"]
     fn a_real_portal_capture_produces_a_plausible_image() {
         let capture = tokio::runtime::Runtime::new()
             .expect("a runtime")
-            .block_on(capture_via_portal(CaptureTarget::Screen, true))
+            .block_on(capture_via_portal())
             .map_err(|e| match e {
                 PortalError::Refused => "cancelled".to_string(),
                 PortalError::Unavailable(w) => format!("no portal: {w}"),
@@ -512,15 +445,5 @@ mod tests {
         // explanation of what the server actually did.
         let err = to_rgb(&[0, 0, 0, 0], 4, 4, 32, false).unwrap_err();
         assert!(err.contains("4x4"), "got {err}");
-    }
-
-    #[test]
-    fn a_window_hint_is_sent_only_to_a_portal_that_lists_it() {
-        use ashpd::desktop::screenshot::AvailableTargets as T;
-        // KDE: version 2, no AvailableTargets property to read.
-        assert!(!takes_window_target(None));
-        // A version-3 portal that lists targets but not windows.
-        assert!(!takes_window_target(Some(T::Screen | T::Area)));
-        assert!(takes_window_target(Some(T::Screen | T::Window)));
     }
 }
