@@ -25,6 +25,7 @@ const PAGES = [
 	'code-subtasks',
 	'code-windows',
 	'skills',
+	'media-skills',
 	'jobs',
 	'memory',
 	'images',

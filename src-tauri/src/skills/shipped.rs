@@ -341,7 +341,13 @@ mod tests {
     #[test]
     fn this_build_ships_valid_skills() {
         let skills = by_skill(SHIPPED);
-        for name in ["init", "code-audit", "guided-planning", "plan-2d-game"] {
+        for name in [
+            "init",
+            "code-audit",
+            "guided-planning",
+            "plan-2d-game",
+            "fix-picture",
+        ] {
             assert!(skills.contains_key(name), "{name} isn't shipped");
         }
         for (name, files) in skills {

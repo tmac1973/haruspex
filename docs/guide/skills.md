@@ -48,7 +48,7 @@ Ask, for example, "save what we just did as a skill called deploy-check", or ask
 
 ## Skills that ship with Haruspex
 
-`init`, `code-audit`, `guided-planning` and the planning skills are copied into your skills folder on first run, labelled **Shipped with Haruspex**. They are ordinary files: edit them, delete them, or replace them with your own of the same name. An update replaces only the ones you haven't edited. An edited one gets a **Restore** button to put it back as shipped. A deleted one stays deleted until you click **Restore deleted shipped skills**.
+`init`, `code-audit`, `guided-planning`, the planning skills and the media skills (see the `media-skills` page) are copied into your skills folder on first run, labelled **Shipped with Haruspex**. Edit, delete or replace them with your own of the same name. An update replaces only the ones you haven't edited. An edited one gets **Restore** to put it back. A deleted one stays deleted until you click **Restore deleted shipped skills**.
 
 ## Repo instructions (AGENTS.md)
 

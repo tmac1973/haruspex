@@ -573,6 +573,11 @@ mod tests {
         let plan = SkillSummary::from(discover::find(&all, "plan-2d-game").unwrap());
         assert!(!plan.code_mode_only);
         assert!(plan.for_guided_planning);
+        assert!(plan.needs.is_empty());
+        let fix = SkillSummary::from(discover::find(&all, "fix-picture").unwrap());
+        assert_eq!(fix.needs, vec![SkillNeed::Image]);
+        assert!(fix.warnings.is_empty(), "{:?}", fix.warnings);
+        assert!(!fix.code_mode_only);
     }
 
     #[test]
