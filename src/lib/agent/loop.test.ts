@@ -624,7 +624,7 @@ describe('runAgentLoop: skills', () => {
 			messages: [
 				{ role: 'user', content: '<skill_content name="lint">\nold\n</skill_content>\nhi' }
 			],
-			skills: { catalog: [{ name: 'deploy', description: 'd' }], projectRoot: '/repo' }
+			skills: { catalog: [{ name: 'deploy', description: 'd', tools: [] }], projectRoot: '/repo' }
 		});
 
 		await runAgentLoop(options);

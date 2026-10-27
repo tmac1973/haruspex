@@ -157,6 +157,12 @@ export interface ToolContext {
 		projectRoot: string | null;
 		/** Skills already in the conversation, so one isn't loaded twice. */
 		loaded: Set<string>;
+		/**
+		 * Tool name → the skill that covers it (`metadata.haruspex-tools`). The
+		 * first call to such a tool, while its skill isn't loaded, returns the
+		 * skill instead of running (`_skillGate.ts`).
+		 */
+		covers?: Map<string, string>;
 	};
 	/**
 	 * Where `ask_user_question` sends its question, when the person who can

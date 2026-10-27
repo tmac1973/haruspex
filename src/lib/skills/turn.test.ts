@@ -41,6 +41,7 @@ function skill(name: string, extra: Partial<SkillSummary> = {}): SkillSummary {
 		codeModeOnly: false,
 		forGuidedPlanning: false,
 		needs: [],
+		tools: [],
 		...extra
 	};
 }
@@ -59,7 +60,7 @@ describe('prepareTurnSkills', () => {
 	it('lists only usable skills', async () => {
 		const skills = await prepareTurnSkills({});
 		expect(skills).toEqual({
-			catalog: [{ name: 'deploy', description: 'deploy desc' }],
+			catalog: [{ name: 'deploy', description: 'deploy desc', tools: [] }],
 			projectRoot: null
 		});
 	});
@@ -218,7 +219,7 @@ describe('shellProject', () => {
 describe('skillsPromptSection', () => {
 	it('lists the skills and says how to load one', () => {
 		const text = skillsPromptSection({
-			catalog: [{ name: 'deploy', description: 'Ship it.' }],
+			catalog: [{ name: 'deploy', description: 'Ship it.', tools: [] }],
 			projectRoot: null
 		});
 		expect(text).toContain('SKILLS:');

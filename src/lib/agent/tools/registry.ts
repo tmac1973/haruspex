@@ -28,6 +28,7 @@ import {
 import { shellPlatformSupported } from '#lib/shell/platformSupport.ts';
 import { videoAvailable, videoToolsOn } from '#lib/video/binaries.ts';
 import { getTasks } from '#lib/tasks/store.svelte.ts';
+import { skillGate } from '#lib/agent/tools/_skillGate.ts';
 
 const tools = new Map<string, ToolRegistration>();
 
@@ -711,6 +712,11 @@ export async function executeTool(
 
 	const generation = generationRefusal(reg, ctx);
 	if (generation) return toolResult(toolError(generation));
+
+	// A skill that covers this tool and isn't loaded yet comes back in place
+	// of the call, which the model then makes again by its instructions.
+	const gated = await skillGate(name, ctx);
+	if (gated) return gated;
 
 	// And for contacts, which is a separate account capability: a server can
 	// serve calendars and not address books.

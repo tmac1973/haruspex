@@ -127,7 +127,8 @@ describe('guided-planning Editor', () => {
 			createdByModel: false,
 			codeModeOnly: false,
 			forGuidedPlanning,
-			needs: []
+			needs: [],
+			tools: []
 		});
 
 		it('lists planning skills first, then the rest', async () => {

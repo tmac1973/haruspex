@@ -34,6 +34,15 @@ export function latestUserImages(messages: ChatMessage[]): string[] {
 	return [];
 }
 
+/** Each covered tool's skill; the first skill to name a tool keeps it. */
+export function coveredTools(catalog: TurnSkills['catalog']): Map<string, string> {
+	const covers = new Map<string, string>();
+	for (const s of catalog) {
+		for (const t of s.tools) if (!covers.has(t)) covers.set(t, s.name);
+	}
+	return covers;
+}
+
 function readableSkills(skills: TurnSkills, messages: ChatMessage[]): string[] {
 	const names = new Set(skills.catalog.map((s) => s.name));
 	for (const name of skillsWithFiles(messages)) names.add(name);
@@ -284,7 +293,8 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 			names: options.skills.catalog.map((s) => s.name),
 			readable: readableSkills(options.skills, options.messages),
 			projectRoot: options.skills.projectRoot,
-			loaded: loadedSkillNames(options.messages)
+			loaded: loadedSkillNames(options.messages),
+			covers: coveredTools(options.skills.catalog)
 		},
 		writeRoot: options.writeRoot ?? null,
 		thinkingEnabled: options.thinkingEnabled ?? null,
