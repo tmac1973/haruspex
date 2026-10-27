@@ -174,10 +174,13 @@ jobs:
       # Recommends are left out to shrink the download; nothing here needs
       # them. The cache key carries the Ubuntu release, so an image bump
       # starts a fresh cache rather than restoring another release's files.
+      # The action skips `apt-get update` on a fresh image, and the image's
+      # lists can name packages the mirror has dropped, so it runs here.
       - name: Prepare apt
         id: apt
         run: |
           echo 'APT::Install-Recommends "false";' | sudo tee /etc/apt/apt.conf.d/99-no-recommends
+          sudo apt-get update
           echo "release=$(. /etc/os-release && echo "$VERSION_ID")" >> "$GITHUB_OUTPUT"
       - name: Install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@v1.6.3
@@ -189,6 +192,11 @@ jobs:
             librsvg2-dev
             libasound2-dev
             libxcb1-dev
+      # The action reports success even when apt fails, and then caches the
+      # empty result under the same key. Fail here instead of at link time;
+      # if it trips on a cache hit, bump the `-1` in `version`.
+      - name: Check system dependencies
+        run: pkg-config --exists --print-errors webkit2gtk-4.1 alsa xcb
 
       - name: Create placeholder sidecar binaries and libs
         run: scripts/ci-placeholder-sidecars.sh
@@ -240,11 +248,12 @@ jobs:
         with:
           workspaces: src-tauri -> target-e2e
           cache-bin: true
-      # Cached as in the backend job; see the note there.
+      # Cached as in the backend job; see the notes there.
       - name: Prepare apt
         id: apt
         run: |
           echo 'APT::Install-Recommends "false";' | sudo tee /etc/apt/apt.conf.d/99-no-recommends
+          sudo apt-get update
           echo "release=$(. /etc/os-release && echo "$VERSION_ID")" >> "$GITHUB_OUTPUT"
       - name: Install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@v1.6.3
@@ -258,6 +267,13 @@ jobs:
             libxcb1-dev
             webkit2gtk-driver
             xvfb
+      # The action reports success even when apt fails, and then caches the
+      # empty result under the same key. Fail here instead of at link time;
+      # if it trips on a cache hit, bump the `-1` in `version`.
+      - name: Check system dependencies
+        run: |
+          pkg-config --exists --print-errors webkit2gtk-4.1 alsa xcb
+          command -v WebKitWebDriver xvfb-run
       - run: scripts/ci-placeholder-sidecars.sh
       - run: npm ci
       - run: cargo install tauri-driver --locked
