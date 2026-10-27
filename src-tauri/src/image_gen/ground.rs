@@ -129,7 +129,10 @@ pub fn ground_contrast(tile: &RgbaImage, sprites: &[RgbaImage]) -> Option<Ground
     let ground = median_lightness(tile)?;
     let lights: Vec<f32> = sprites.iter().filter_map(median_lightness).collect();
     let tone = tone_of(&lights)?;
-    let blends: Vec<bool> = lights.iter().map(|l| (l - ground).abs() < MIN_GAP).collect();
+    let blends: Vec<bool> = lights
+        .iter()
+        .map(|l| (l - ground).abs() < MIN_GAP)
+        .collect();
     let blending = blends.iter().filter(|b| **b).count() as u32;
     Some(GroundContrast {
         ground,
