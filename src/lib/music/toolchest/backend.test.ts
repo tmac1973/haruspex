@@ -121,6 +121,9 @@ describe('llama-toolchest music backend', () => {
 			conversationId: 'chat-1',
 			codeSessionId: null
 		});
+		// Kept in the audio cache, so the server can let go of it.
+		const last = tauri.invoke.mock.calls.filter(([c]) => c === 'toolchest_json').at(-1)!;
+		expect(`${last[1].call.method} ${last[1].call.path}`).toBe(`DELETE ${JOB}`);
 	});
 
 	it('cancels the job on the server when the turn is cancelled', async () => {

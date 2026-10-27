@@ -62,7 +62,7 @@ In the Code tab, ask for something like "background music for the title screen a
 
 ## Where songs are kept
 
-The server forgets a song after a while (llama-toolchest after a day), so Haruspex downloads each one and keeps its own copy. A song that belongs to a chat or a Code session stays until you delete that chat or session. The test clip belongs to neither and is removed an hour later.
+Haruspex downloads each song and keeps its own copy, then deletes it from llama-toolchest, which would otherwise keep it for a day. A song that belongs to a chat or a Code session stays until you delete that chat or session. The test clip belongs to neither and is removed an hour later.
 
 **Audio cache** shows how much space songs use. **Clear unused audio** deletes the ones no chat or session plays; it doesn't touch the rest.
 
