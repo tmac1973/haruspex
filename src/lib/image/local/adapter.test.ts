@@ -132,6 +132,11 @@ describe('buildRequest', () => {
 		expect(body).not.toHaveProperty('mask_image');
 	});
 
+	it('inpaints at the strength it is given', () => {
+		const { body } = buildRequest({ ...req, repaint: { image: 'IMG', mask: 'MASK', strength: 1 } });
+		expect(body).toMatchObject({ init_images: ['IMG'], mask: 'MASK', denoising_strength: 1 });
+	});
+
 	it('carries the prompt, negative prompt and size', () => {
 		const { body } = buildRequest(req);
 		expect(body.prompt).toBe('a sword');
@@ -204,7 +209,7 @@ describe('per family', () => {
 		expect(familyOfId('')).toBeNull();
 	});
 
-	it('claims transparency and tiling for both families, and no LoRAs', () => {
+	it('claims transparency, tiling and inpainting for both families, and no LoRAs', () => {
 		// Tiling by offset-and-inpaint, not --circular, which a DiT ignores.
 		for (const f of ['ming', 'qwen21'] as const) {
 			expect(declaredCapabilities(f)).toEqual({
@@ -214,7 +219,8 @@ describe('per family', () => {
 				maxLoras: 0,
 				edit: false,
 				maxEditImages: 0,
-				upscale: false
+				upscale: false,
+				inpaint: true
 			});
 		}
 	});

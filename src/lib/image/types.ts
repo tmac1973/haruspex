@@ -73,6 +73,12 @@ export interface ImageRequest {
 	seamless?: boolean;
 	/** Edit these pictures instead; read `capabilities().edit` first. */
 	edit?: ImageEdit;
+	/**
+	 * Redraw only the white part of `mask` on `image`, from the prompt, keeping
+	 * the rest: what growing a picture past its edges needs, since an edit
+	 * model keeps an empty border as it is. Read `capabilities().inpaint` first.
+	 */
+	inpaint?: { image: ImageInput; mask: ImageInput };
 }
 
 /** One generated image. */
@@ -144,6 +150,8 @@ export interface ImageBackendCapabilities {
 	maxEditImages?: number;
 	/** `ImageBackend.upscale` works: it has an upscaling model. Absent means no. */
 	upscale?: boolean;
+	/** A request's `inpaint` is honoured. Absent means no. */
+	inpaint?: boolean;
 }
 
 /**

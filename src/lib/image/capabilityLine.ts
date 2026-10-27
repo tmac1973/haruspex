@@ -1,6 +1,6 @@
 /**
  * What Haruspex can do with the configured image model, in words, for
- * Settings → Image: drawing, editing, upscaling, transparency, tiling and
+ * Settings → Image: drawing, editing, upscaling, extending, transparency, tiling and
  * LoRAs, with what it can't do and how to get it in a tooltip.
  *
  * Read from `capabilities()`, the same answer the tools act on, so the line
@@ -41,6 +41,7 @@ const UPSCALE_HOW: Record<ImageBackendKind, string> = {
 	lemonade: 'Upscaling needs the upscaler, under Models on the server.'
 };
 
+const EXTEND_HOW = 'Only the bundled engine extends pictures past their edges.';
 const TRANSPARENT_HOW = 'Transparent backgrounds need Ming-Image or Qwen-Image 2.1.';
 const TILING_HOW =
 	'Tiling textures need the bundled engine, or ComfyUI with Ming-Image or an SD checkpoint.';
@@ -61,6 +62,7 @@ export function capabilityLine(
 			EDIT_HOW[kind]
 		],
 		[!!caps.upscale, 'upscale pictures', 'upscale pictures', UPSCALE_HOW[kind]],
+		[!!caps.inpaint, 'extend pictures', 'extend pictures', EXTEND_HOW],
 		[caps.transparency, 'transparent backgrounds', 'transparent backgrounds', TRANSPARENT_HOW],
 		[caps.seamlessTiling, 'tiling textures', 'tiling textures', TILING_HOW]
 	];

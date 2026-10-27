@@ -75,7 +75,9 @@ export function declaredCapabilities(
 		upscale: canUpscale,
 		// Qwen with its vision weights (`--llm_vision`); Ming draws only.
 		edit: family === 'qwen21' && canEdit,
-		maxEditImages: family === 'qwen21' && canEdit ? MAX_EDIT_IMAGES : 0
+		maxEditImages: family === 'qwen21' && canEdit ? MAX_EDIT_IMAGES : 0,
+		// Masked img2img, which every model draws with.
+		inpaint: true
 	};
 }
 
@@ -164,6 +166,13 @@ export const CLEAR_START_STRENGTH = 0.9;
 export const SEAM_REPAINT_STRENGTH = 0.75;
 
 /**
+ * How far an inpaint departs from what's under its mask: all the way, since
+ * what's there (a blurred border) is only colour to continue from, and the
+ * mask's soft edge already blends it in.
+ */
+export const INPAINT_STRENGTH = 1;
+
+/**
  * The request body for one generation.
  *
  * txt2img, unless `clearStart` carries a transparent canvas: then img2img
@@ -179,8 +188,11 @@ export function buildRequest(req: {
 	sampler?: { name: string; steps: number; cfg: number };
 	/** A transparent PNG of the request's size, base64. */
 	clearStart?: string;
-	/** The seam pass: the rolled texture and the mask over its seams, base64. */
-	repaint?: { image: string; mask: string };
+	/**
+	 * Masked img2img: the image and the mask over what to redraw, base64. The
+	 * seam pass by default; `strength` for an inpaint.
+	 */
+	repaint?: { image: string; mask: string; strength?: number };
 	/** An edit's pictures, base64. */
 	references?: string[];
 }): { route: string; body: A1111Request } {
@@ -209,7 +221,7 @@ export function buildRequest(req: {
 				...body,
 				init_images: [req.repaint.image],
 				mask: req.repaint.mask,
-				denoising_strength: SEAM_REPAINT_STRENGTH
+				denoising_strength: req.repaint.strength ?? SEAM_REPAINT_STRENGTH
 			}
 		};
 	}

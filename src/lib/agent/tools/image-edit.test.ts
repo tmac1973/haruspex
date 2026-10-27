@@ -196,11 +196,38 @@ describe('edit_image with an area', () => {
 		expect(out.result).toMatch(/^Edited \(2400×1200/);
 	});
 
+	it('grows the picture by inpainting the canvas, not editing it', async () => {
+		await executeTool(
+			'edit_image',
+			{ image: SRC_URL, prompt: 'a beach at noon', extend: { left: 0.25, right: 0.25 } },
+			chat
+		);
+		const prep = state.invoke.mock.calls.find(([c]) => c === 'image_mask_prepare')![1];
+		expect(prep).toMatchObject({
+			area: null,
+			extend: { left: 0.25, right: 0.25, top: 0, bottom: 0 }
+		});
+		const [req] = state.generate.mock.calls[0];
+		expect(req.edit).toBeUndefined();
+		expect(req).toMatchObject({
+			prompt: 'a beach at noon',
+			width: 1456,
+			height: 720,
+			inpaint: {
+				image: { name: 'canvas.png', hash: CANVAS },
+				mask: { name: 'mask.png', hash: MASK }
+			}
+		});
+		expect(state.invoke.mock.calls.some(([c]) => c === 'image_mask_finish')).toBe(true);
+	});
+
 	it('says what is wrong with an area before drawing', async () => {
 		for (const [args, said] of [
 			[{ area: { x: 0.5, y: 0, width: 2, height: 1 } }, /area.width must be a fraction/],
 			[{ area: { x: 0, y: 0, width: 0, height: 1 } }, /area needs a width and a height/],
-			[{ area: 'top half' }, /area must be an object/]
+			[{ area: 'top half' }, /area must be an object/],
+			[{ extend: { left: 0 } }, /at least one side/],
+			[{ extend: { right: 3 } }, /extend.right must be a fraction/]
 		] as const) {
 			const out = await executeTool('edit_image', { image: SRC_URL, prompt: 'x', ...args }, chat);
 			expect(out.result).toMatch(said);

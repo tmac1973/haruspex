@@ -30,6 +30,7 @@ import { seamSeed, tileTexture, transparentStart } from '#lib/image/sdcpp.ts';
 import {
 	FAMILY_SAMPLER,
 	FIXTURE,
+	INPAINT_STRENGTH,
 	ROUTES,
 	buildRequest,
 	declaredCapabilities,
@@ -249,11 +250,26 @@ export const localBackend: ImageBackend = {
 		const sampler = req.sampler ?? { ...FAMILY_SAMPLER[family] };
 		const seamless = Boolean(req.seamless);
 		const references = await editReferences(req, family);
-		// An edit draws from its pictures, so no clear start or RGBA phrase.
-		const { prompt, clearStart } = references
-			? { prompt: req.prompt, clearStart: undefined }
-			: await transparentStart(family, req);
-		const { route, body } = buildRequest({ ...req, prompt, sampler, clearStart, references });
+		const repaint = req.inpaint
+			? {
+					image: await base64Of(req.inpaint.image),
+					mask: await base64Of(req.inpaint.mask),
+					strength: INPAINT_STRENGTH
+				}
+			: undefined;
+		// An edit or inpaint draws from its pictures, so no clear start or RGBA phrase.
+		const { prompt, clearStart } =
+			references || repaint
+				? { prompt: req.prompt, clearStart: undefined }
+				: await transparentStart(family, req);
+		const { route, body } = buildRequest({
+			...req,
+			prompt,
+			sampler,
+			clearStart,
+			references,
+			repaint
+		});
 		const started = Date.now();
 		const payload = await call(route, body, opts.signal);
 

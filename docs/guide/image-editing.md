@@ -1,6 +1,6 @@
 ---
 title: Image editing
-description: Changing a picture in Chat (attached, drawn earlier, or a file), or only part of it, combining pictures, making one larger, and which image backends and models can do each.
+description: Changing a picture in Chat (attached, drawn earlier, or a file), or only part of it, extending it, combining pictures, upscaling, and which image backends and models can do each.
 ---
 
 # Image editing
@@ -20,6 +20,10 @@ Say what should stay the same if it matters ("keep his face"). An edit takes 10 
 ## Change only part of a picture
 
 Say which part: "change only the sky", "just the left half". The assistant marks that part of the picture and the edit changes nothing outside it, on every backend; the edge is blended so the join doesn't show. The result keeps the original's full size.
+
+## Extend a picture past its edges
+
+Ask for it wider or taller: "extend it by half on the right, continuing the road". The picture is kept, apart from a narrow blend where it meets the new part, which is painted to continue it, on the bundled engine with either model. Say what the scene's light is like if it matters; a faint seam can still show in an even sky. ComfyUI, Lemonade and llama-toolchest can't extend yet.
 
 ## Combine pictures
 
@@ -45,7 +49,6 @@ This needs Real-ESRGAN (BSD 3-Clause), on the bundled engine, ComfyUI or Lemonad
 ## What it doesn't do
 
 - You can't mark a region by hand; name the part in words.
-- It doesn't make a picture bigger by painting past its edges yet.
 - An edit doesn't make a transparent background or tile.
 - llama-toolchest doesn't upscale yet.
 - A picture pasted into Chat is shrunk to 1024 pixels on its longest side, so edits of it are at most that size.

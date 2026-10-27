@@ -53,6 +53,10 @@ export const NO_EDIT_SENTENCE =
 	'bundled engine or Lemonade (Settings → Image → Add editing) or ComfyUI 0.39 or later, and ' +
 	'so can FLUX.2 klein 4B (on ComfyUI or llama-toolchest) and Qwen-Image-Edit-2511 (on ComfyUI).';
 
+export const NO_EXTEND_SENTENCE =
+	"The image generation in Settings → Image can't grow a picture past its edges. The bundled " +
+	'engine can, with either model.';
+
 export const NO_UPSCALE_SENTENCE =
 	"The image generation in Settings → Image can't upscale pictures. The bundled engine, " +
 	'ComfyUI and Lemonade can, once their upscaler is installed in Settings → Image.';
@@ -113,6 +117,31 @@ function checkEdit(edit: ImageEdit, caps: ImageBackendCapabilities): void {
 	}
 }
 
+/**
+ * `req` as the backend can take it: throws for an edit or inpaint it can't do,
+ * and drops transparency or tiling it can't, saying so in `notes`.
+ */
+function fitRequest(
+	req: ImageRequest,
+	caps: ImageBackendCapabilities,
+	notes: string[]
+): ImageRequest {
+	const request: ImageRequest = { ...req };
+	if (request.edit) checkEdit(request.edit, caps);
+	if (request.inpaint && !caps.inpaint) {
+		throw new ImageBackendError('unconfigured', NO_EXTEND_SENTENCE);
+	}
+	if (request.transparent && !caps.transparency) {
+		request.transparent = false;
+		notes.push('This backend cannot make transparent images, so the background is solid.');
+	}
+	if (request.seamless && !caps.seamlessTiling) {
+		request.seamless = false;
+		notes.push('This backend cannot make tiling textures, so the edges may not wrap.');
+	}
+	return request;
+}
+
 export async function generateForTool(
 	req: ImageRequest,
 	opts: ForToolOptions = {}
@@ -128,17 +157,7 @@ export async function generateForTool(
 	if (!probe.ok) throw new ImageBackendError('unreachable', probe.detail);
 
 	const notes: string[] = [];
-	const caps = await backend.capabilities();
-	const request: ImageRequest = { ...req };
-	if (request.edit) checkEdit(request.edit, caps);
-	if (request.transparent && !caps.transparency) {
-		request.transparent = false;
-		notes.push('This backend cannot make transparent images, so the background is solid.');
-	}
-	if (request.seamless && !caps.seamlessTiling) {
-		request.seamless = false;
-		notes.push('This backend cannot make tiling textures, so the edges may not wrap.');
-	}
+	const request = fitRequest(req, await backend.capabilities(), notes);
 
 	let result;
 	try {
