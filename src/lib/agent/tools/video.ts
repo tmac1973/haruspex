@@ -25,9 +25,9 @@ import { VIDEO_PRESETS } from '#lib/video/types.ts';
 import type { EpisodeProbe } from '#lib/ipc/gen/EpisodeProbe.ts';
 import type { ProjectSummary } from '#lib/ipc/gen/ProjectSummary.ts';
 import type { CutResult } from '#lib/ipc/gen/CutResult.ts';
-import type { VideoTask } from '#lib/ipc/gen/VideoTask.ts';
-import { upsertVideoTask } from '#lib/video/tasks.svelte.ts';
-import { buildVideoNotice, videoOwner } from '#lib/video/taskWatch.ts';
+import type { BackgroundTask } from '#lib/tasks/types.ts';
+import { upsertTask } from '#lib/tasks/store.svelte.ts';
+import { taskOwner } from '#lib/tasks/notices.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 
 function episodeArg(args: Record<string, unknown>): string {
@@ -294,17 +294,17 @@ registerTool({
 
 async function render(args: Record<string, unknown>, ctx: ToolContext) {
 	try {
-		const task = await invoke<VideoTask>('video_render_start', {
+		const task = await invoke<BackgroundTask>('video_render_start', {
 			request: {
 				workingDir: ctx.workingDir,
 				episode: episodeArg(args),
 				project: str(args.project),
-				owner: videoOwner(ctx),
+				owner: taskOwner(ctx),
 				encoder: getSettings().videoEncoder,
 				settings: videoSettings()
 			}
 		});
-		upsertVideoTask(task);
+		upsertTask(task);
 		return {
 			result:
 				`Rendering started (task ${task.id}). A message will arrive in this conversation when it ` +
@@ -315,38 +315,6 @@ async function render(args: Record<string, unknown>, ctx: ToolContext) {
 		return toolResult(toolError(errMessage(e)));
 	}
 }
-
-async function renderStatus(args: Record<string, unknown>) {
-	const id = str(args.id);
-	if (!id) return toolResult(toolError('video_render_status needs "id".'));
-	const task = await invoke<VideoTask | null>('video_task_status', { id }).catch(() => null);
-	if (!task) return toolResult(toolError(`No render ${id} in this run of Haruspex.`));
-	if (task.state === 'running') {
-		return toolResult(`${task.label}: ${Math.round(task.percent)}% done.`);
-	}
-	return toolResult(buildVideoNotice(task));
-}
-
-async function renderCancel(args: Record<string, unknown>, ctx: ToolContext) {
-	const id = str(args.id);
-	if (!id) return toolResult(toolError('video_render_cancel needs "id".'));
-	if (ctx.askUser) {
-		const answer = await ctx.askUser(
-			{
-				question: 'Cancel the render? What it has made so far is thrown away.',
-				options: [{ label: 'Cancel the render' }, { label: 'Keep rendering' }]
-			},
-			ctx.signal
-		);
-		if (answer.kind !== 'selected' || answer.labels[0] !== 'Cancel the render') {
-			return toolResult('The user kept the render going.');
-		}
-	}
-	const stopped = await invoke<boolean>('video_task_cancel', { id }).catch(() => false);
-	return toolResult(stopped ? 'Render cancelled.' : 'That render is not running.');
-}
-
-const TASK_ID = { type: 'string', description: 'The task id video_render returned.' };
 
 registerTool({
 	category: 'video',
@@ -364,35 +332,6 @@ registerTool({
 	},
 	displayLabel: (args) => `Rendering ${episodeArg(args) || 'the video'}`,
 	execute: render
-});
-
-registerTool({
-	category: 'video',
-	schema: {
-		type: 'function',
-		function: {
-			name: 'video_render_status',
-			description:
-				'How far a render has got, or how it ended. Only when the user asks; you are told when it ends.',
-			parameters: { type: 'object', properties: { id: TASK_ID }, required: ['id'] }
-		}
-	},
-	displayLabel: () => 'Checking the render',
-	execute: renderStatus
-});
-
-registerTool({
-	category: 'video',
-	schema: {
-		type: 'function',
-		function: {
-			name: 'video_render_cancel',
-			description: 'Stop a running render, after the user confirms. Nothing is saved.',
-			parameters: { type: 'object', properties: { id: TASK_ID }, required: ['id'] }
-		}
-	},
-	displayLabel: () => 'Cancelling the render',
-	execute: renderCancel
 });
 
 async function normalize(args: Record<string, unknown>, ctx: ToolContext) {

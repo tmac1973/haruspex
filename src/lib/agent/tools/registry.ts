@@ -27,6 +27,7 @@ import {
 } from '#lib/agent/tools/codeTabProfile.ts';
 import { shellPlatformSupported } from '#lib/shell/platformSupport.ts';
 import { videoAvailable, videoToolsOn } from '#lib/video/binaries.ts';
+import { getTasks } from '#lib/tasks/store.svelte.ts';
 
 const tools = new Map<string, ToolRegistration>();
 
@@ -101,6 +102,8 @@ interface ToolFilterOpts {
 	 * draft. A job never gets `email_compose`, allowlist or not.
 	 */
 	sendableEmail: boolean;
+	/** The background-task owner the turn speaks for; see `getToolSchemas`. */
+	taskOwner?: string;
 }
 
 // Tools exposed to the Shell-tab assistant (non-Code mode). Reads only —
@@ -267,6 +270,10 @@ function subtaskExcludes(reg: ToolRegistration): boolean {
 
 function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean {
 	if (opts.subtask && subtaskExcludes(reg)) return false;
+	// Checking or cancelling a background task: only an owner that has one.
+	if (reg.category === 'tasks') {
+		return !!opts.taskOwner && opts.interactive && getTasks(opts.taskOwner).length > 0;
+	}
 	// Subtasks are the user's to switch off (Settings → Code → Subtasks).
 	if (reg.schema.function.name === 'delegate' && getSettings().codeSubtasks === 'off') {
 		return false;
@@ -330,6 +337,11 @@ export function getToolSchemas(opts: {
 	 * `create_skill` and `update_skill`.
 	 */
 	hasSkills?: boolean;
+	/**
+	 * The background-task owner the turn speaks for (`chat:…` or `code:…`).
+	 * The `tasks` tools are offered only when it has started a task.
+	 */
+	taskOwner?: string;
 }): ToolDefinition[] {
 	if (opts.toolAllowlist) {
 		const allow = new Set(opts.toolAllowlist);
@@ -367,7 +379,8 @@ export function getToolSchemas(opts: {
 		videoTools: interactive && opts.hasWorkingDir && videoToolsOn(),
 		sendableEmail: interactive && hasSendableEmailAccount(),
 		sandboxEnabled: getSettings().sandboxEnabled && !pythonRuntimeMissing(),
-		memoryWritable: memoryActive()
+		memoryWritable: memoryActive(),
+		taskOwner: opts.taskOwner
 	};
 	const schemas: ToolDefinition[] = [];
 	for (const reg of tools.values()) {

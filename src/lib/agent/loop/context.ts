@@ -259,7 +259,12 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 			harnessFeedback: options.feedback !== undefined,
 			skillNames: options.skills?.catalog.map((s) => s.name),
 			skillFileNames: options.skills && readableSkills(options.skills, options.messages),
-			hasSkills: options.skills !== undefined
+			hasSkills: options.skills !== undefined,
+			taskOwner: options.codeSessionId
+				? `code:${options.codeSessionId}`
+				: options.conversationId
+					? `chat:${options.conversationId}`
+					: undefined
 		}),
 		signal: options.signal,
 		workingDir,
