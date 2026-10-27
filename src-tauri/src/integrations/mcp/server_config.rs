@@ -16,9 +16,10 @@
 //! never cross to the webview. The frontend writes, migrates and deletes them
 //! (`stores/mcpSecrets.ts`).
 //!
-//! A custom server's `args` and a remote server's `url` stay in the settings
-//! blob. Either can carry a credential; the settings fields say not to, and
-//! `Debug` below hides both.
+//! A custom server's secret environment variables are kept the same way,
+//! under [`CUSTOM_ENV_PREFIX`] keys. Its `args`, and a remote server's `url`,
+//! stay in the settings blob. Either can carry a credential; the settings
+//! fields say not to, and `Debug` below hides both.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -78,6 +79,19 @@ impl std::fmt::Debug for McpServerSource {
 /// writes it, the spawn path reads it, and a typo between them would produce a
 /// server that authenticates as nobody with no error to explain it.
 pub const REMOTE_TOKEN_KEY: &str = "remoteToken";
+
+/// The `secrets` key prefix for a custom server's environment variables:
+/// `env:API_KEY` is passed to the server as `API_KEY`.
+pub const CUSTOM_ENV_PREFIX: &str = "env:";
+
+/// `[A-Za-z_][A-Za-z0-9_]*`, the names every platform's shell accepts.
+fn is_env_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
 
 /// A server the user has added.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
@@ -219,6 +233,21 @@ impl McpServerConfig {
         }
     }
 
+    /// A custom server's secret environment variables: every `secrets` entry
+    /// keyed [`CUSTOM_ENV_PREFIX`]`NAME`, as `(NAME, value)`. Empty values are
+    /// skipped, so call it on a [`Self::resolved`] config. A name that is not
+    /// a plain variable name is skipped too, since the frontend checks it and
+    /// anything else came from a hand-edited settings file.
+    pub fn custom_env(&self) -> Vec<(String, String)> {
+        self.secrets
+            .iter()
+            .filter_map(|(key, value)| {
+                let name = key.strip_prefix(CUSTOM_ENV_PREFIX)?;
+                (is_env_name(name) && !value.is_empty()).then(|| (name.to_string(), value.clone()))
+            })
+            .collect()
+    }
+
     /// The pasted credential for a remote server. Empty until [`Self::resolved`]
     /// when it is kept in the secret store.
     pub fn remote_token(&self) -> Option<&str> {
@@ -295,6 +324,24 @@ mod tests {
         };
         let resolved = remote.resolved().await.unwrap();
         assert_eq!(resolved.remote_token(), Some("sk_stored"));
+    }
+
+    #[test]
+    fn custom_env_takes_only_plain_names_with_values() {
+        let config = McpServerConfig {
+            secrets: BTreeMap::from([
+                ("env:API_KEY".into(), "sk".into()),
+                ("env:EMPTY".into(), String::new()),
+                ("env:1BAD".into(), "x".into()),
+                ("env:A=B".into(), "x".into()),
+                ("token".into(), "ghp".into()),
+            ]),
+            ..catalog_server()
+        };
+        assert_eq!(
+            config.custom_env(),
+            vec![("API_KEY".to_string(), "sk".to_string())]
+        );
     }
 
     #[test]

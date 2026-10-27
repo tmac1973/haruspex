@@ -42,6 +42,42 @@ export async function storeMcpSecret(
 	};
 }
 
+/** The `secrets` key prefix for a custom server's environment variables
+ *  (`CUSTOM_ENV_PREFIX` in Rust): `env:API_KEY` reaches the server as `API_KEY`. */
+export const CUSTOM_ENV_PREFIX = 'env:';
+
+export interface EnvVar {
+	name: string;
+	value: string;
+}
+
+/** What is wrong with a custom server's variables, or null. Rows with no
+ *  name and no value are ignored. */
+export function customEnvProblem(vars: EnvVar[]): string | null {
+	const seen = new Set<string>();
+	for (const { name, value } of vars) {
+		const n = name.trim();
+		if (!n && !value) continue;
+		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(n)) return `"${n}" is not a variable name.`;
+		if (seen.has(n)) return `${n} is set twice.`;
+		seen.add(n);
+	}
+	return null;
+}
+
+/** The config with each variable kept in the secret store. Check
+ *  `customEnvProblem` first. */
+export async function storeCustomEnv(
+	config: McpServerConfig,
+	vars: EnvVar[]
+): Promise<McpServerConfig> {
+	for (const { name, value } of vars) {
+		if (!name.trim() || !value) continue;
+		config = await storeMcpSecret(config, CUSTOM_ENV_PREFIX + name.trim(), value);
+	}
+	return config;
+}
+
 /** Whether `key` has a value, wherever it is kept. */
 export function hasMcpSecret(config: McpServerConfig, key: string): boolean {
 	return (config.secrets[key] ?? '').trim() !== '' || !!config.storedSecrets?.includes(key);

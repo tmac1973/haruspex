@@ -667,17 +667,26 @@ fn build_spawn_config(
             "{} is a remote server; there is nothing to launch on this machine",
             config.label
         )),
-        McpServerSource::Custom { program, args } => Ok(SpawnConfig {
-            id: config.id.clone(),
-            program: PathBuf::from(program),
-            args: args.clone(),
+        McpServerSource::Custom { program, args } => {
             // A custom server has no catalog entry to declare an environment,
             // and inheriting ours would undo the guarantee in process.rs that a
-            // server behaves the same everywhere. The proxy variables are
-            // composed rather than inherited, so they do not breach that.
-            env: proxy_vars,
-            cwd: Some(dir.to_path_buf()),
-        }),
+            // server behaves the same everywhere. Its secret variables and the
+            // proxy variables are composed rather than inherited, so they do
+            // not breach that. A secret variable wins over a proxy one.
+            let mut env = config.custom_env();
+            for (key, value) in proxy_vars {
+                if !env.iter().any(|(k, _)| *k == key) {
+                    env.push((key, value));
+                }
+            }
+            Ok(SpawnConfig {
+                id: config.id.clone(),
+                program: PathBuf::from(program),
+                args: args.clone(),
+                env,
+                cwd: Some(dir.to_path_buf()),
+            })
+        }
         McpServerSource::Catalog { entry_id } => {
             let catalog = super::catalog::load()?;
             let entry = catalog
@@ -1233,6 +1242,24 @@ mod tests {
             spawn.env.iter().any(|(_, v)| v == "ghp_stored"),
             "{:?}",
             spawn.env.iter().map(|(k, _)| k).collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_custom_server_gets_its_stored_secret_variables() {
+        let mut config = custom_server(ProxyUse::Auto);
+        config.id = "custom-env".into();
+        config.secrets = BTreeMap::from([("env:API_KEY".into(), String::new())]);
+        config.stored_secrets = Some(vec!["env:API_KEY".into()]);
+        crate::secrets::seed_for_test(
+            &super::super::server_config::secret_store_key(&config.id, "env:API_KEY"),
+            "sk_custom",
+        );
+        let dir = Path::new("/data/mcp/servers/custom-env");
+        let spawn = build_spawn_config(dir, &config.resolved().await.unwrap(), None).unwrap();
+        assert_eq!(
+            spawn.env,
+            vec![("API_KEY".to_string(), "sk_custom".to_string())]
         );
     }
 
