@@ -6,8 +6,8 @@
  * shape and is answered like `generate_image`'s: cached, shown to a model that
  * can see, and saved to `path` if asked.
  *
- * `area` changes only a rectangle of the picture (`_imageMask.ts`): everything
- * outside it stays the original's.
+ * `area` changes only a rectangle of the picture and `extend` grows it past its
+ * edges (`_imageMask.ts`): everything outside the mask stays the original's.
  *
  * Only a backend whose `capabilities().edit` says so can do it (a
  * llama-toolchest model with the `edit` capability, FLUX.2 klein); any other
@@ -47,7 +47,11 @@ function refsOf(args: Record<string, unknown>): string[] {
 	return [str(args.image), ...also].filter(Boolean);
 }
 
-/** An edit held to a mask: only part of the picture changes. */
+/**
+ * An edit held to a mask: only part of the picture changes. An extend is an
+ * inpaint of the canvas, painting the new strips from the prompt; an area
+ * alone is an edit of it.
+ */
 async function editMasked(
 	prompt: string,
 	sources: ImageSource[],
@@ -63,17 +67,17 @@ async function editMasked(
 	}
 	const { width, height } = editSize(prepared.width, prepared.height);
 	const canvas = { name: 'canvas.png', hash: prepared.canvas };
+	const maskImage = { name: 'mask.png', hash: prepared.mask };
 	const image = await drawForTool(
-		{
-			prompt,
-			width,
-			height,
-			seed: null,
-			edit: {
-				images: [canvas, ...sources.slice(1).map((s) => s.input)],
-				mask: { name: 'mask.png', hash: prepared.mask }
-			}
-		},
+		mask.extend
+			? { prompt, width, height, seed: null, inpaint: { image: canvas, mask: maskImage } }
+			: {
+					prompt,
+					width,
+					height,
+					seed: null,
+					edit: { images: [canvas, ...sources.slice(1).map((s) => s.input)], mask: maskImage }
+				},
 		ctx
 	);
 	if (!('bytes' in image)) return image;
@@ -130,6 +134,21 @@ registerTool({
 							height: { type: 'number' }
 						}
 					},
+					extend: {
+						type: 'object',
+						description:
+							'Make the picture larger, painting the new part: how far to grow each side, as a ' +
+							'fraction of its size. {"left":0.5,"right":0.5} makes it twice as wide. The ' +
+							'picture is kept, blended into the new part at the join. With extend, the prompt describes the whole ' +
+							'picture as it should look, its light and style too ("a country road through ' +
+							'green fields in golden evening haze"), not a change. Only some backends can.',
+						properties: {
+							left: { type: 'number' },
+							right: { type: 'number' },
+							top: { type: 'number' },
+							bottom: { type: 'number' }
+						}
+					},
 					path: {
 						type: 'string',
 						description: 'Also save it here, in the working folder, ending .png.'
@@ -164,7 +183,7 @@ registerTool({
 			if (typeof got === 'string') return toolResult(toolError(got));
 			sources.push(got);
 		}
-		if (!mask.area) {
+		if (!mask.area && !mask.extend) {
 			const { width, height } = editSize(sources[0].width, sources[0].height);
 			const image = await drawForTool(
 				{ prompt, width, height, seed: null, edit: { images: sources.map((s) => s.input) } },

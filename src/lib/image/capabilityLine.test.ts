@@ -13,21 +13,23 @@ describe('capabilityLine', () => {
 	it('says what an editing model on llama-toolchest can and can’t do, and how to get the rest', () => {
 		const line = capabilityLine({ ...base, edit: true, maxEditImages: 4 }, 'llama-toolchest');
 		expect(line.can).toBe('draw pictures, edit pictures (up to 4 together)');
-		expect(line.cannot).toBe('upscale pictures, transparent backgrounds, tiling textures');
+		expect(line.cannot).toBe(
+			'upscale pictures, extend pictures, transparent backgrounds, tiling textures'
+		);
 		expect(line.howTo).toContain('Only the bundled engine, ComfyUI and Lemonade upscale.');
 		expect(line.howTo).not.toContain('Editing needs');
 		expect(line.text).toBe(
-			"Can: draw pictures, edit pictures (up to 4 together). Can't: upscale pictures, transparent backgrounds, tiling textures."
+			"Can: draw pictures, edit pictures (up to 4 together). Can't: upscale pictures, extend pictures, transparent backgrounds, tiling textures."
 		);
 	});
 
 	it('names the bundled engine’s own fixes, and LoRAs only when there are some', () => {
 		const ming = capabilityLine(
-			{ ...base, transparency: true, seamlessTiling: true, upscale: true },
+			{ ...base, transparency: true, seamlessTiling: true, upscale: true, inpaint: true },
 			'local'
 		);
 		expect(ming.can).toBe(
-			'draw pictures, upscale pictures, transparent backgrounds, tiling textures'
+			'draw pictures, upscale pictures, extend pictures, transparent backgrounds, tiling textures'
 		);
 		expect(ming.cannot).toBe('edit pictures');
 		expect(ming.howTo).toBe(

@@ -37,6 +37,7 @@ import {
 	upscaleForTool,
 	GPU_FULL_SENTENCE,
 	NO_EDIT_SENTENCE,
+	NO_EXTEND_SENTENCE,
 	NO_UPSCALE_SENTENCE
 } from './forTool';
 
@@ -159,6 +160,28 @@ describe('generateForTool edits', () => {
 		const three = { images: [...edit.images, ...edit.images, ...edit.images] };
 		await expect(generateForTool(req({ edit: three }))).rejects.toThrow(/at most 2 pictures/);
 		expect(state.generate).not.toHaveBeenCalled();
+	});
+});
+
+describe('generateForTool inpaints', () => {
+	const inpaint = {
+		image: { name: 'canvas.png', hash: 'c'.repeat(64) },
+		mask: { name: 'mask.png', hash: 'd'.repeat(64) }
+	};
+
+	it('says what can grow a picture when the backend can’t inpaint, before drawing', async () => {
+		state.kind = 'comfyui';
+		await expect(generateForTool(req({ inpaint }))).rejects.toMatchObject({
+			kind: 'unconfigured',
+			message: NO_EXTEND_SENTENCE
+		});
+		expect(state.generate).not.toHaveBeenCalled();
+	});
+
+	it('passes the inpaint on where the backend can', async () => {
+		state.caps = { ...state.caps, inpaint: true };
+		await generateForTool(req({ inpaint }));
+		expect(state.generate.mock.calls[0][0].inpaint).toEqual(inpaint);
 	});
 });
 

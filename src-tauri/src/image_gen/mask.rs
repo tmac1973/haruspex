@@ -67,6 +67,13 @@ fn feather(width: u32, height: u32) -> f32 {
     (width.min(height) as f32 * 0.04).round().max(8.0)
 }
 
+/// How far into the picture an extend repaints, along the axis it grew: wider
+/// than an area's band, since an inpaint redraws the new strip from scratch
+/// and needs room to blend into the picture (6% of 1536 at measured best).
+fn extend_band(along: u32, area_band: f32) -> f32 {
+    (along as f32 * 0.06).round().max(area_band)
+}
+
 /// 0 at the edge of the soft band, 1 at its far side, eased.
 fn ease(d: f32, band: f32) -> f32 {
     let t = (1.0 - d / band).clamp(0.0, 1.0);
@@ -130,6 +137,7 @@ pub fn prepare(
     };
 
     let band = feather(cw, ch);
+    let (across, down) = (extend_band(cw, band), extend_band(ch, band));
     let grown = [l > 0, r > 0, t > 0, b > 0];
     let mask = GrayImage::from_fn(cw, ch, |x, y| {
         let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
@@ -148,14 +156,14 @@ pub fn prepare(
             } else {
                 // Inside the picture, fading in from each side that grew.
                 let edges = [
-                    (grown[0], fx - o.l as f32),
-                    (grown[1], o.r as f32 - fx),
-                    (grown[2], fy - o.t as f32),
-                    (grown[3], o.b as f32 - fy),
+                    (grown[0], fx - o.l as f32, across),
+                    (grown[1], o.r as f32 - fx, across),
+                    (grown[2], fy - o.t as f32, down),
+                    (grown[3], o.b as f32 - fy, down),
                 ];
-                for (g, d) in edges {
+                for (g, d, wide) in edges {
                     if g {
-                        m = m.max(ease(d, band));
+                        m = m.max(ease(d, wide));
                     }
                 }
             }
@@ -261,9 +269,10 @@ mod tests {
         assert_eq!(p.canvas.get_pixel(290, 50).0, [200, 10, 10, 255]);
         assert_eq!(p.mask.get_pixel(250, 50).0[0], 255);
         assert_eq!(p.mask.get_pixel(10, 50).0[0], 0);
-        // Fading in from the side that grew, not from the others.
-        let seam = p.mask.get_pixel(196, 50).0[0];
+        // Fading in from the side that grew (6% of 300 = 18 px), not from the others.
+        let seam = p.mask.get_pixel(190, 50).0[0];
         assert!(seam > 0 && seam < 255, "{seam}");
+        assert_eq!(p.mask.get_pixel(180, 50).0[0], 0);
         assert_eq!(p.mask.get_pixel(100, 2).0[0], 0);
     }
 

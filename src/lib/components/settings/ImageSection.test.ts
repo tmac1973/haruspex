@@ -108,7 +108,7 @@ describe('ImageSection with Lemonade', () => {
 				.map((p) => p.textContent?.replace(/\s+/g, ' ').trim())
 				.find((t) => t?.startsWith('Can:'));
 			expect(line).toBe(
-				"Can: draw pictures, transparent backgrounds. Can't: edit pictures, upscale pictures, tiling textures."
+				"Can: draw pictures, transparent backgrounds. Can't: edit pictures, upscale pictures, extend pictures, tiling textures."
 			);
 		});
 	});
