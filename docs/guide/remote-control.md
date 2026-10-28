@@ -27,7 +27,7 @@ The page uses HTTPS with a certificate Haruspex makes itself, so a browser warns
 - **These computers**: the computers you list, by name or IP address, connect without a token. Names are looked up on your network, so a computer whose address changes keeps working; the list shows where each name points, or "not found".
 - **My whole network**: any computer on your local network connects without a token. Only for a network you trust.
 
-With either of the last two, open the address shown under **Open on your other computer** on that computer. Devices with a token work in every mode.
+With either of the last two, open the address shown under **Open on your other computer** on that computer. Those computers can do everything a device can, except change settings: tick **Let them change settings** to allow that too (scripts only; see `remote-control-api`). Devices with a token work in every mode.
 
 Each device with a token has its own permissions: **Read** (list and follow sessions), **Drive** (start, send, steer and stop), **Approve** (answer **Run this command?** and the agent's questions) and **Settings** (scripts only; off for a new device). **New link** gives a device a fresh link and a new token; **Revoke** cuts it off at once.
 

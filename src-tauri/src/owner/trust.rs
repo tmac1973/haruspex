@@ -57,6 +57,11 @@ pub struct OwnerAccess {
     /// e.g. `box.lan`), allowed as a `Host` alongside its own names.
     #[serde(default)]
     pub extra_host: Option<String>,
+    /// Remote control only: a computer let in without a token may also read
+    /// and change settings (`Scope::Settings`). Off unless ticked; guest chat
+    /// has no settings to change.
+    #[serde(default)]
+    pub trusted_settings: bool,
 }
 
 /// A listed computer and the addresses it was last found at, for Settings.
@@ -315,6 +320,7 @@ mod tests {
             mode: AccessMode::Trusted,
             trusted_hosts: vec!["192.168.1.20".into(), "localhost".into()],
             extra_host: None,
+            trusted_settings: false,
         });
         assert!(t.trusts(ip("192.168.1.20")).await);
         assert!(t.trusts(ip("127.0.0.1")).await, "localhost resolves");
@@ -331,6 +337,7 @@ mod tests {
             mode: AccessMode::Trusted,
             trusted_hosts: vec!["no-such-host.invalid".into()],
             extra_host: None,
+            trusted_settings: false,
         });
         assert!(!t.trusts(ip("127.0.0.1")).await);
         assert!(t.resolve_all().await[0].addresses.is_empty());

@@ -81,6 +81,7 @@
 	let linkBase = $state(getSettings().ownerApiLinkBase);
 	let mode = $state<AccessMode>(getSettings().ownerApiAccess);
 	let trustedHosts = $state<string[]>([...getSettings().ownerApiTrustedHosts]);
+	let trustedSettings = $state(getSettings().ownerApiTrustedSettings);
 
 	let status = $state<OwnerApiStatus | null>(null);
 	let devices = $state<OwnerClient[]>([]);
@@ -136,7 +137,8 @@
 			ownerApiBindAll: bindAll,
 			ownerApiLinkBase: linkBase.trim(),
 			ownerApiAccess: mode,
-			ownerApiTrustedHosts: [...trustedHosts]
+			ownerApiTrustedHosts: [...trustedHosts],
+			ownerApiTrustedSettings: trustedSettings
 		});
 		try {
 			status = await applyOwnerApi();
@@ -248,6 +250,15 @@
 			onmode={setMode}
 			onhosts={setHosts}
 		>
+			{#if mode !== 'tokens'}
+				<label
+					class="row trusted-settings"
+					title="Lets these computers read and change settings from a script (settings.get, settings.patch). Secrets, accounts, MCP servers, Remote control and Guest chat stay off limits. Off, they can do everything else; settings need a device token with the Settings permission."
+				>
+					<input type="checkbox" bind:checked={trustedSettings} onchange={apply} disabled={busy} />
+					Let them change settings
+				</label>
+			{/if}
 			{#if mode !== 'tokens' && pageUrl}
 				<div class="row open">
 					<span
@@ -531,6 +542,10 @@
 
 	.made > button {
 		align-self: flex-start;
+	}
+
+	.trusted-settings {
+		font-size: 0.85rem;
 	}
 
 	.scope {
