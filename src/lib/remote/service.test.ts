@@ -66,7 +66,7 @@ describe('turning remote access on and off', () => {
 					port: 8787,
 					token: 'a-token',
 					bindAll: true,
-					access: { mode: 'tokens', trustedHosts: [], extraHost: null }
+					access: { mode: 'tokens', trustedHosts: [], extraHost: null, trustedSettings: false }
 				}
 			}
 		]);
@@ -96,7 +96,8 @@ describe('turning remote access on and off', () => {
 		expect(invocations('remote_start')[0].config.access).toEqual({
 			mode: 'trusted',
 			trustedHosts: ['laptop'],
-			extraHost: null
+			extraHost: null,
+			trustedSettings: false
 		});
 	});
 

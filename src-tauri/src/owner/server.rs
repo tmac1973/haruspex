@@ -331,18 +331,22 @@ async fn authorise_with(
                 "this computer isn't known by that name: add it as the link address in Settings → Remote control",
             ));
         }
-        return Ok(trusted_client(ip));
+        return Ok(trusted_client(ip, state.trust.access().trusted_settings));
     }
     state.throttle.fail(ip);
     Err((StatusCode::UNAUTHORIZED, "a device token is needed"))
 }
 
-/// A computer let in without a token: everything a device may do.
-fn trusted_client(ip: IpAddr) -> OwnerClient {
+/// A computer let in without a token: everything a device may do, and
+/// settings only when Settings → Remote control lets them.
+fn trusted_client(ip: IpAddr, settings: bool) -> OwnerClient {
     OwnerClient {
         id: format!("trusted:{ip}"),
         name: ip.to_string(),
-        scopes: Scope::ALL.to_vec(),
+        scopes: Scope::ALL
+            .into_iter()
+            .filter(|s| settings || *s != Scope::Settings)
+            .collect(),
         created_at: 0,
         last_seen: None,
     }
@@ -1619,6 +1623,7 @@ mod tests {
             mode: AccessMode::Trusted,
             trusted_hosts: vec!["127.0.0.1".into()],
             extra_host: None,
+            trusted_settings: false,
         });
         let send = |header: bool, host: Option<&str>| {
             let mut req = h
@@ -1640,6 +1645,39 @@ mod tests {
         // Back to tokens only: the same request is refused.
         h.trust.set(OwnerAccess::default());
         assert_eq!(send(true, None).await.unwrap().status(), 401);
+        h.running.stop();
+    }
+
+    #[tokio::test]
+    async fn a_trusted_computer_changes_settings_only_when_let() {
+        use crate::owner::trust::{AccessMode, OwnerAccess};
+        let h = serve().await;
+        let access = |trusted_settings| OwnerAccess {
+            mode: AccessMode::Lan,
+            trusted_settings,
+            ..Default::default()
+        };
+        let get = || {
+            h.http
+                .post(format!("{}/api/v1/op", h.base))
+                .header("X-Haruspex", "1")
+                .json(&json!({ "type": "settings.get" }))
+                .send()
+        };
+        h.trust.set(access(false));
+        assert_eq!(get().await.unwrap().status(), 403);
+        // Everything else a trusted computer could do, it still can.
+        let r = h
+            .http
+            .post(format!("{}/api/v1/op", h.base))
+            .header("X-Haruspex", "1")
+            .json(&json!({ "type": "session.send", "id": "s", "text": "hi" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200);
+        h.trust.set(access(true));
+        assert_eq!(get().await.unwrap().status(), 200);
         h.running.stop();
     }
 

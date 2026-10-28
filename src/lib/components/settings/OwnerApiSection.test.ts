@@ -169,4 +169,28 @@ describe('Settings → Remote control', () => {
 		);
 		expect(screen.queryByLabelText('Computer name or IP address')).toBeNull();
 	});
+
+	it("keeps settings from computers let in without a token until it's ticked", async () => {
+		render(OwnerApiSection);
+		await fireEvent.click(await screen.findByRole('button', { name: 'Devices with a token' }));
+		// Only once some computer gets in without a token.
+		expect(screen.queryByLabelText('Let them change settings')).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'My whole network' }));
+		const box = (await screen.findByLabelText('Let them change settings')) as HTMLInputElement;
+		expect(box.checked).toBe(false);
+		await waitFor(() =>
+			expect(backend.lastConfig).toMatchObject({ access: { trustedSettings: false } })
+		);
+		await fireEvent.click(box);
+		await waitFor(() =>
+			expect(backend.lastConfig).toMatchObject({ access: { mode: 'lan', trustedSettings: true } })
+		);
+	});
+
+	it('offers a new device every permission but settings', async () => {
+		render(OwnerApiSection);
+		await fireEvent.click(await screen.findByRole('button', { name: 'Add a device…' }));
+		expect((screen.getByLabelText('Read') as HTMLInputElement).checked).toBe(true);
+		expect((screen.getByLabelText('Settings') as HTMLInputElement).checked).toBe(false);
+	});
 });

@@ -991,6 +991,7 @@ mod http_tests {
             mode,
             trusted_hosts: hosts.iter().map(|h| h.to_string()).collect(),
             extra_host: None,
+            trusted_settings: false,
         }
     }
 

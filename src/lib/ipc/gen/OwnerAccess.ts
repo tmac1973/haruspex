@@ -13,4 +13,10 @@ trustedHosts: Array<string>,
  * An extra name this computer is reached by (Settings' link address,
  * e.g. `box.lan`), allowed as a `Host` alongside its own names.
  */
-extraHost: string | null, };
+extraHost: string | null, 
+/**
+ * Remote control only: a computer let in without a token may also read
+ * and change settings (`Scope::Settings`). Off unless ticked; guest chat
+ * has no settings to change.
+ */
+trustedSettings: boolean, };

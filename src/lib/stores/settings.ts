@@ -441,6 +441,12 @@ export interface AppSettings {
 	ownerApiAccess: 'tokens' | 'trusted' | 'lan';
 	/** Hostnames or IP addresses, for `ownerApiAccess: 'trusted'`. */
 	ownerApiTrustedHosts: string[];
+	/**
+	 * A computer let in without a token may also read and change settings
+	 * (`settings.get` / `settings.patch`). Off: it gets every other
+	 * permission, but settings need a device whose token has them.
+	 */
+	ownerApiTrustedSettings: boolean;
 	contextSize: number;
 	/**
 	 * "Let models use system RAM". On: `start_server` omits `--n-gpu-layers`,
@@ -978,6 +984,7 @@ const defaults: AppSettings = {
 	ownerApiLinkBase: '',
 	ownerApiAccess: 'tokens',
 	ownerApiTrustedHosts: [],
+	ownerApiTrustedSettings: false,
 	braveApiKey: '',
 	braveApiKeySaved: false,
 	searxngUrl: DEFAULT_SEARXNG_URL,

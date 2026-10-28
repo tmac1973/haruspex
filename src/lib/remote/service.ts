@@ -52,7 +52,9 @@ export async function syncRemoteServer(): Promise<RemoteStatus | null> {
 			access: {
 				mode: settings.remoteAccessMode,
 				trustedHosts: settings.remoteAccessTrustedHosts,
-				extraHost: linkHostName(settings.remoteAccessLinkHost)
+				extraHost: linkHostName(settings.remoteAccessLinkHost),
+				// Guests have no settings to change.
+				trustedSettings: false
 			}
 		});
 		logDebug('remote', `serving on port ${status.port}`);

@@ -44,7 +44,8 @@ export function applyOwnerApi(): Promise<OwnerApiStatus> {
 			access: {
 				mode: s.ownerApiAccess,
 				trustedHosts: s.ownerApiTrustedHosts,
-				extraHost: linkHost(s.ownerApiLinkBase)
+				extraHost: linkHost(s.ownerApiLinkBase),
+				trustedSettings: s.ownerApiTrustedSettings
 			}
 		}
 	});
