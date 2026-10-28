@@ -7,7 +7,6 @@ import {
 	buildGeneration,
 	errorMessage,
 	findJob,
-	imagesFrom,
 	MAX_EXTRAS_CHARS,
 	readServer
 } from './adapter';
@@ -73,13 +72,6 @@ describe('buildGeneration', () => {
 });
 
 describe('responses', () => {
-	it('reads OpenAI-style images', () => {
-		expect(imagesFrom({ data: [{ b64_json: 'AQID' }, { url: 'x' }] })).toEqual([
-			new Uint8Array([1, 2, 3])
-		]);
-		expect(imagesFrom({ error: 'x' })).toEqual([]);
-	});
-
 	it('takes Lemonade’s own sentence from a refusal', () => {
 		// Recorded from Lemonade 2026.43.3 for a model it does not have.
 		const body =

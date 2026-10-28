@@ -17,10 +17,9 @@
  * `mask` as where the change may go.
  */
 
-import { CLEAR_START_STRENGTH, fromBase64 } from '#lib/image/local/adapter.ts';
+import { CLEAR_START_STRENGTH } from '#lib/image/local/adapter.ts';
 import { MAX_EXTRAS_CHARS, type SdExtras } from '#lib/image/lemonade/adapter.ts';
-import type { ImageEdit, ImageInput, ImageProgress } from '#lib/image/types.ts';
-import type { UploadFile } from '#lib/ipc/gen/UploadFile.ts';
+import type { ImageProgress } from '#lib/image/types.ts';
 
 export const ROUTES = {
 	models: '/v1/models',
@@ -51,24 +50,6 @@ export function buildEditFields(req: Parameters<typeof buildImageBody>[0]): Reco
 		n: '1',
 		response_format: body.response_format
 	};
-}
-
-function upload(field: string, input: ImageInput): UploadFile {
-	return {
-		field,
-		filename: input.name,
-		hash: 'hash' in input ? input.hash : null,
-		cache: 'hash' in input ? 'image' : null,
-		bytes: 'bytes' in input ? input.bytes : null
-	};
-}
-
-/** An edit's pictures as the form's `image[]` parts, then its `mask`. */
-export function editUploads(edit: ImageEdit): UploadFile[] {
-	return [
-		...edit.images.map((i) => upload('image[]', i)),
-		...(edit.mask ? [upload('mask', edit.mask)] : [])
-	];
 }
 
 export function buildImageBody(req: {
@@ -115,16 +96,6 @@ export function buildImageBody(req: {
 		n: 1,
 		response_format: 'b64_json'
 	};
-}
-
-/** The images in an OpenAI-style answer, in order. */
-export function imagesFrom(payload: unknown): Uint8Array[] {
-	const data = (payload as { data?: unknown })?.data;
-	if (!Array.isArray(data)) return [];
-	return data
-		.map((d) => (d as { b64_json?: unknown })?.b64_json)
-		.filter((b): b is string => typeof b === 'string')
-		.map(fromBase64);
 }
 
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';

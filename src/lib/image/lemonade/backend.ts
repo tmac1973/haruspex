@@ -20,7 +20,6 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
-import { sleep } from '#lib/utils/async.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { registerImageBackend } from '#lib/image/registry.ts';
 import type { GenerateOptions, ImageBackend, ProbeResult } from '#lib/image/backend.ts';
@@ -31,10 +30,11 @@ import {
 	type ImageRequest,
 	type ImageResult
 } from '#lib/image/types.ts';
-import type { UploadFile } from '#lib/ipc/gen/UploadFile.ts';
-import { fromBase64, toBase64 } from '#lib/image/local/adapter.ts';
+import { fromBase64 } from '#lib/image/local/adapter.ts';
 import { FAMILY_SAMPLER, familyOfId } from '#lib/image/local/adapter.ts';
-import { transparentStart, type SdFamily } from '#lib/image/sdcpp.ts';
+import { base64Of, retryEmptyResult, transparentStart, type SdFamily } from '#lib/image/sdcpp.ts';
+import { editUploads, imagesFrom } from '#lib/image/openaiImages.ts';
+import { randomSeed } from '#lib/utils/random.ts';
 import type { LemonadeModel } from '#lib/ipc/gen/LemonadeModel.ts';
 import {
 	ROUTES,
@@ -42,8 +42,6 @@ import {
 	bareName,
 	buildEditFields,
 	buildGeneration,
-	imagesFrom,
-	randomSeed,
 	readServer,
 	type ServerState
 } from '#lib/image/lemonade/adapter.ts';
@@ -80,36 +78,20 @@ export async function serverState(signal?: AbortSignal): Promise<ServerState> {
 	return readServer(health, systemInfo, models);
 }
 
-/**
- * sd-server sometimes answers a 1024² Ming img2img with "generate_image
- * returned no results" before sampling starts, and the identical request
- * succeeds straight after — measured on the bundled engine, whose build this
- * is. Retried, briefly, as it is there.
- */
-const EMPTY_RESULT = /generate_image returned no results/;
-const EMPTY_RESULT_ATTEMPTS = 3;
-const EMPTY_RESULT_RETRY_MS = 1000;
-
 async function draw(
 	body: ReturnType<typeof buildGeneration>,
 	signal?: AbortSignal
 ): Promise<Uint8Array[]> {
-	for (let attempt = 1; ; attempt++) {
-		try {
-			const payload = await lemonadeJson(
+	const payload = await retryEmptyResult(
+		() =>
+			lemonadeJson(
 				lemonadeConfig(),
 				{ method: 'POST', path: ROUTES.generate, body, timeoutMs: GENERATE_TIMEOUT_MS },
 				signal
-			);
-			return imagesFrom(payload);
-		} catch (e) {
-			if (EMPTY_RESULT.test(errMessage(e)) && attempt < EMPTY_RESULT_ATTEMPTS) {
-				await sleep(EMPTY_RESULT_RETRY_MS);
-				continue;
-			}
-			throw e;
-		}
-	}
+			),
+		signal
+	);
+	return imagesFrom(payload);
 }
 
 /** The configured server and model, or why a generation cannot start. */
@@ -128,16 +110,6 @@ async function chosen(): Promise<{ id: string; family: SdFamily; model: Lemonade
 
 /** Pictures one Qwen edit combines here, as on the bundled engine. */
 const MAX_EDIT_IMAGES = 3;
-
-function upload(input: ImageInput, field = 'image[]'): UploadFile {
-	return {
-		field,
-		filename: input.name,
-		hash: 'hash' in input ? input.hash : null,
-		cache: 'hash' in input ? 'image' : null,
-		bytes: 'bytes' in input ? input.bytes : null
-	};
-}
 
 /** An edit through `/api/v1/images/edits`; throws when the model can't edit. */
 async function edit(
@@ -166,26 +138,10 @@ async function edit(
 	const payload = await lemonadeUpload(
 		lemonadeConfig(),
 		{ path: ROUTES.edits, fields, timeoutMs: GENERATE_TIMEOUT_MS },
-		// The mask, white where it may change, as OpenAI's edits route names it.
-		[
-			...req.edit!.images.map((i) => upload(i)),
-			...(req.edit!.mask ? [upload(req.edit!.mask, 'mask')] : [])
-		],
+		editUploads(req.edit!),
 		signal
 	);
 	return imagesFrom(payload);
-}
-
-/** An edit's or upscale's picture as base64, read from the image cache when it is there. */
-async function base64Of(input: ImageInput): Promise<string> {
-	if ('bytes' in input) return toBase64(new Uint8Array(input.bytes));
-	try {
-		return toBase64(
-			new Uint8Array(await invoke<ArrayBuffer>('image_read_bytes', { hash: input.hash }))
-		);
-	} catch {
-		throw new ImageBackendError('rejected', 'That picture is no longer in the image cache.');
-	}
 }
 
 /** A model's name for a dropdown: its description up to the dash. */

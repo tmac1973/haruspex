@@ -11,12 +11,20 @@ export function pngDataUrl(bytes: Uint8Array): string {
 	return `data:image/png;base64,${bytesToBase64(bytes)}`;
 }
 
+/** The bytes of plain base64 (no data: prefix). Throws on malformed input, as `atob` does. */
+export function base64ToBytes(b64: string): Uint8Array {
+	const bin = atob(b64);
+	const out = new Uint8Array(bin.length);
+	for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+	return out;
+}
+
 /** The bytes of a base64 `data:` URL, or null for anything else. */
 export function dataUrlBytes(url: string): Uint8Array | null {
 	const m = url.match(/^data:[^;,]*;base64,(.*)$/s);
 	if (!m) return null;
 	try {
-		return Uint8Array.from(atob(m[1]), (c) => c.charCodeAt(0));
+		return base64ToBytes(m[1]);
 	} catch {
 		return null;
 	}

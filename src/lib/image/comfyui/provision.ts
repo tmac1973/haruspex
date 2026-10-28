@@ -23,6 +23,7 @@ import type { ComfyModelFile } from '#lib/ipc/gen/ComfyModelFile.ts';
 import type { ComfyModelSet } from '#lib/ipc/gen/ComfyModelSet.ts';
 import type { ProxyConfig } from '#lib/ipc/gen/ProxyConfig.ts';
 import { formatGigabytes } from '#lib/utils/format.ts';
+import { sleep } from '#lib/utils/async.ts';
 import { ImageBackendError } from '#lib/image/types.ts';
 import * as api from '#lib/image/comfyui/client.ts';
 import {
@@ -120,20 +121,6 @@ const MANAGER_TYPE: Record<ComfyModelFile['folder'], string> = {
 	upscale_models: 'upscale'
 };
 
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-	return new Promise((resolve, reject) => {
-		const t = setTimeout(resolve, ms);
-		signal?.addEventListener(
-			'abort',
-			() => {
-				clearTimeout(t);
-				reject(new ImageBackendError('cancelled', 'Install cancelled.'));
-			},
-			{ once: true }
-		);
-	});
-}
-
 /**
  * Queue every file with ComfyUI-Manager and wait for its queue to empty.
  *
@@ -178,6 +165,7 @@ export async function installViaManager(
 	const deadline = Date.now() + MANAGER_TIMEOUT_MS;
 	for (;;) {
 		await sleep(MANAGER_POLL_MS, signal);
+		if (signal?.aborted) throw new ImageBackendError('cancelled', 'Install cancelled.');
 		const q = (await api.requestJson(
 			cfg,
 			{ path: `${prefix}/queue/status${which === 'v2' ? `?client_id=${clientId}` : ''}` },

@@ -13,6 +13,7 @@
  * the instance was measured for. A request past them is shortened, and the
  * answer says so.
  */
+import { randomSeed } from '#lib/utils/random.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
@@ -90,7 +91,7 @@ export function fitClip(
 
 /** The seed asked for, a random one for none, or what is wrong with it. */
 function seedOf(raw: unknown): number | string {
-	if (raw === undefined || raw === null || raw === '') return Math.floor(Math.random() * 2 ** 31);
+	if (raw === undefined || raw === null || raw === '') return randomSeed();
 	const n = typeof raw === 'string' ? Number(raw.trim()) : raw;
 	if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > 2 ** 32 - 1) {
 		return 'seed must be a whole number from 0 to 4294967295.';

@@ -12,7 +12,6 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
-import { sleep } from '#lib/utils/async.ts';
 import type { ImageEngineStatus } from '#lib/ipc/gen/ImageEngineStatus.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { registerImageBackend } from '#lib/image/registry.ts';
@@ -26,7 +25,13 @@ import {
 } from '#lib/image/types.ts';
 import type { ImageModelInfo } from '#lib/ipc/gen/ImageModelInfo.ts';
 import type { UpscalerInfo } from '#lib/ipc/gen/UpscalerInfo.ts';
-import { seamSeed, tileTexture, transparentStart } from '#lib/image/sdcpp.ts';
+import {
+	base64Of,
+	retryEmptyResult,
+	seamSeed,
+	tileTexture,
+	transparentStart
+} from '#lib/image/sdcpp.ts';
 import {
 	FAMILY_SAMPLER,
 	FIXTURE,
@@ -38,7 +43,6 @@ import {
 	imagesFrom,
 	seedFrom,
 	fromBase64,
-	toBase64,
 	type LocalFamily
 } from '#lib/image/local/adapter.ts';
 
@@ -67,18 +71,6 @@ async function canUpscale(): Promise<boolean> {
 	return invoke<UpscalerInfo>('image_upscaler')
 		.then((u) => u.downloaded)
 		.catch(() => false);
-}
-
-/** An edit's picture as base64, read from the image cache when it is there. */
-async function base64Of(input: ImageInput): Promise<string> {
-	if ('bytes' in input) return toBase64(new Uint8Array(input.bytes));
-	try {
-		return toBase64(
-			new Uint8Array(await invoke<ArrayBuffer>('image_read_bytes', { hash: input.hash }))
-		);
-	} catch {
-		throw new ImageBackendError('rejected', 'That picture is no longer in the image cache.');
-	}
 }
 
 /** An edit's pictures as base64, or undefined for a drawing; throws when it can't edit. */
@@ -158,36 +150,26 @@ async function ensureRunning(): Promise<LocalFamily> {
  * means no origin, no preflight, and no CORS configuration to get wrong.
  */
 async function call(path: string, body: unknown, signal?: AbortSignal): Promise<unknown> {
-	for (let attempt = 1; ; attempt++) {
+	if (signal?.aborted) throw new ImageBackendError('cancelled', 'Generation cancelled.');
+	try {
+		const text = await retryEmptyResult(
+			() =>
+				invoke<string>('image_engine_request', {
+					path,
+					body: JSON.stringify(body),
+					timeoutMs: GENERATE_TIMEOUT_MS
+				}),
+			signal
+		);
+		return JSON.parse(text);
+	} catch (e) {
 		if (signal?.aborted) throw new ImageBackendError('cancelled', 'Generation cancelled.');
-		try {
-			const text = await invoke<string>('image_engine_request', {
-				path,
-				body: JSON.stringify(body),
-				timeoutMs: GENERATE_TIMEOUT_MS
-			});
-			return JSON.parse(text);
-		} catch (e) {
-			if (signal?.aborted) throw new ImageBackendError('cancelled', 'Generation cancelled.');
-			const msg = errMessage(e);
-			if (EMPTY_RESULT.test(msg) && attempt < EMPTY_RESULT_ATTEMPTS) {
-				await sleep(EMPTY_RESULT_RETRY_MS);
-				continue;
-			}
-			throw new ImageBackendError('unreachable', `The image engine failed ${path} — ${msg}`);
-		}
+		throw new ImageBackendError(
+			'unreachable',
+			`The image engine failed ${path} — ${errMessage(e)}`
+		);
 	}
 }
-
-/**
- * sd-server sometimes answers a 1024² Ming img2img with a 500 "generate_image
- * returned no results" in a fifth of a second, before sampling starts, and the
- * identical request succeeds straight after (2 of 9 in a row on 2026-10-05).
- * It cost a whole asset run its style anchor, so it is retried, briefly.
- */
-const EMPTY_RESULT = /generate_image returned no results/;
-const EMPTY_RESULT_ATTEMPTS = 3;
-const EMPTY_RESULT_RETRY_MS = 1000;
 
 /** The seam pass (`tileTexture`), as a masked img2img on this engine. */
 async function tile(

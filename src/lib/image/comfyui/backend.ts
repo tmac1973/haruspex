@@ -13,6 +13,7 @@
 
 import { getSettings } from '#lib/stores/settings.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { randomSeed } from '#lib/utils/random.ts';
 import {
 	ImageBackendError,
 	type ImageBackendCapabilities,
@@ -48,17 +49,6 @@ import { resumePrompt, run } from '#lib/image/comfyui/run.ts';
 
 /** What a custom workflow samples with when a request says nothing. */
 export const DEFAULT_SAMPLER: SamplerSettings = { name: 'euler_ancestral', steps: 28, cfg: 7 };
-
-/**
- * A seed for a request that left it to the backend.
- *
- * Resolved here rather than left to the template: a template's own default is
- * a constant, so every unpinned request ran at the same seed, a retry repeated
- * the attempt it was retrying, and `meta.seed` reported a value nobody chose.
- */
-export function randomSeed(): number {
-	return Math.floor(Math.random() * 2_147_483_647);
-}
 
 function config(): api.ClientConfig {
 	const s = getSettings();

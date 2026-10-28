@@ -9,10 +9,53 @@
 import { invoke } from '@tauri-apps/api/core';
 import { mingTransparent, qwen21Transparent } from '#lib/image/comfyui/templates/index.ts';
 import { toBase64 } from '#lib/image/local/adapter.ts';
-import type { ImageRequest } from '#lib/image/types.ts';
+import { ImageBackendError, type ImageInput, type ImageRequest } from '#lib/image/types.ts';
+import { sleep } from '#lib/utils/async.ts';
+import { errMessage } from '#lib/utils/error.ts';
 
 /** The two families the catalogue holds; a catalogue id is its family. */
 export type SdFamily = 'ming' | 'qwen21';
+
+/** An edit's or upscale's picture as base64, read from the image cache when it is there. */
+export async function base64Of(input: ImageInput): Promise<string> {
+	if ('bytes' in input) return toBase64(new Uint8Array(input.bytes));
+	try {
+		return toBase64(
+			new Uint8Array(await invoke<ArrayBuffer>('image_read_bytes', { hash: input.hash }))
+		);
+	} catch {
+		throw new ImageBackendError('rejected', 'That picture is no longer in the image cache.');
+	}
+}
+
+/**
+ * sd-server sometimes answers a 1024² Ming img2img with a 500 "generate_image
+ * returned no results" in a fifth of a second, before sampling starts, and the
+ * identical request succeeds straight after (2 of 9 in a row on the bundled
+ * engine, 2026-10-05; Lemonade runs the same build). It cost a whole asset run
+ * its style anchor, so it is retried, briefly.
+ */
+const EMPTY_RESULT = /generate_image returned no results/;
+const EMPTY_RESULT_ATTEMPTS = 3;
+const EMPTY_RESULT_RETRY_MS = 1000;
+
+/** Run `attempt`, again on sd-server's spurious empty result, unless `signal` aborted. */
+export async function retryEmptyResult<T>(
+	attempt: () => Promise<T>,
+	signal?: AbortSignal
+): Promise<T> {
+	for (let n = 1; ; n++) {
+		try {
+			return await attempt();
+		} catch (e) {
+			if (n < EMPTY_RESULT_ATTEMPTS && !signal?.aborted && EMPTY_RESULT.test(errMessage(e))) {
+				await sleep(EMPTY_RESULT_RETRY_MS, signal);
+				continue;
+			}
+			throw e;
+		}
+	}
+}
 
 /**
  * The prompt to send, and the transparent canvas to start from if any.

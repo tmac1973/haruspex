@@ -17,6 +17,7 @@
 
 import capabilities from '#lib/image/local/capabilities.json';
 import type { ImageBackendCapabilities } from '#lib/image/types.ts';
+import { base64ToBytes } from '#lib/utils/base64.ts';
 
 /** The committed fixture, as emitted for the pinned build. */
 export interface SdCapabilityFixture {
@@ -131,11 +132,7 @@ export { bytesToBase64 as toBase64 } from '#lib/utils/base64.ts';
 export function fromBase64(b64: string): Uint8Array {
 	// Tolerate a data: URL: some builds return one and the difference is not
 	// worth a failed generation.
-	const raw = b64.includes(',') ? b64.slice(b64.indexOf(',') + 1) : b64;
-	const bin = atob(raw);
-	const out = new Uint8Array(bin.length);
-	for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-	return out;
+	return base64ToBytes(b64.includes(',') ? b64.slice(b64.indexOf(',') + 1) : b64);
 }
 
 /**

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { randomSeed } from '#lib/utils/random.ts';
 	import { invoke } from '@tauri-apps/api/core';
 	import { loggedFallback } from '#lib/debug-log.ts';
 	import { errMessage } from '#lib/utils/error.ts';
@@ -165,7 +166,7 @@
 					caption: 'short upbeat chiptune loop',
 					instrumental: true,
 					durationSec: 10,
-					seed: Math.floor(Math.random() * 2 ** 31),
+					seed: randomSeed(),
 					format: 'mp3'
 				},
 				{

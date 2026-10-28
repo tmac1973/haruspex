@@ -15,6 +15,7 @@
  * reference image.
  */
 
+import { randomSeed } from '#lib/utils/random.ts';
 import { invoke } from '@tauri-apps/api/core';
 import { askUserQuestion } from '#lib/stores/userQuestion.svelte.ts';
 import { registerLocalImage } from '#lib/images/resolve.svelte.ts';
@@ -387,7 +388,7 @@ export async function establishAnchor(
 			// Silently is wrong, but so is asking: it is mechanically
 			// unusable, so re-roll and say so in the outcome.
 			rejected++;
-			seed = Math.floor(Math.random() * 2_147_483_647);
+			seed = randomSeed();
 			continue;
 		}
 
@@ -455,7 +456,7 @@ export async function establishAnchor(
 		if (choice === 'Regenerate' && !last) {
 			// A new seed, or the same picture comes back and the button looks
 			// broken.
-			seed = Math.floor(Math.random() * 2_147_483_647);
+			seed = randomSeed();
 			continue;
 		}
 		// Stop, a dismissed modal, or an answer we did not offer — including a
