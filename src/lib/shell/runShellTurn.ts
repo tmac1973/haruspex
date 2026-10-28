@@ -17,7 +17,7 @@ import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import type { Artifact } from '#lib/agent/tools/index.ts';
 import type { AgentStopReason } from '#lib/agent/loop.ts';
 import { runTurnCore } from '#lib/agent/runTurn.ts';
-import type { ContextManagedInfo } from '#lib/agent/context-budget.ts';
+import type { ContextManagedInfo } from '#lib/agent/contextBudget.ts';
 import {
 	withInferenceSlot,
 	type HeldSlot,

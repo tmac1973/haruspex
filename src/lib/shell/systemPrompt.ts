@@ -1,6 +1,6 @@
 /**
  * System prompt builder for the Shell-tab agent. Models the same shape as
- * `agent/system-prompt.ts` but tuned for an admin/troubleshooting role:
+ * `agent/systemPrompt.ts` but tuned for an admin/troubleshooting role:
  *
  *  - Identifies the agent's job (analyze terminal output, suggest commands).
  *  - Includes the captured session context (OS / distro / kernel / shell /

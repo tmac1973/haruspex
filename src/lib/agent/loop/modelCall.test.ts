@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ChatMessage } from '#lib/api.ts';
-import { resetTokenCalibration, type ContextManagedInfo } from '#lib/agent/context-budget.ts';
+import { resetTokenCalibration, type ContextManagedInfo } from '#lib/agent/contextBudget.ts';
 import type { LoopContext } from './context';
 import {
 	applyContextGuard,
@@ -9,8 +9,8 @@ import {
 	samplingOptionsFor
 } from './modelCall';
 
-vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
+vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
 	logDebug: vi.fn()
 }));
 

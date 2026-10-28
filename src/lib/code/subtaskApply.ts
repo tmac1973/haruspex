@@ -15,7 +15,7 @@ import {
 	subtaskWorktreeDiff,
 	type SubtaskWorktree
 } from '#lib/code/subtaskGit.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { sleep } from '#lib/utils/async.ts';
 

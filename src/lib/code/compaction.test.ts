@@ -28,7 +28,7 @@ import {
 	summarizeTurns,
 	summaryMaxTokens
 } from '#lib/code/compaction.ts';
-import { estimateMessagesTokens, resetTokenCalibration } from '#lib/agent/context-budget.ts';
+import { estimateMessagesTokens, resetTokenCalibration } from '#lib/agent/contextBudget.ts';
 
 const user = (content: string): ChatMessage => ({ role: 'user', content });
 const answer = (content: string): ChatMessage => ({ role: 'assistant', content });

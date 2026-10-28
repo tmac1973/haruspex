@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { inLoopTrimBudget } from './iteration';
-import { trimOldToolMessages, estimateMessagesTokens } from '#lib/agent/context-budget.ts';
+import { trimOldToolMessages, estimateMessagesTokens } from '#lib/agent/contextBudget.ts';
 import type { ChatMessage } from '#lib/api.ts';
 
 /**

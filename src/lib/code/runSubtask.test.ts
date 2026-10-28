@@ -41,7 +41,7 @@ import {
 	SUBTASK_NUDGE_ROUNDS
 } from '#lib/code/runSubtask.ts';
 import type { SlotLender } from '#lib/agent/tools/types.ts';
-import { SUBTASK_REPORT_CHARS } from '#lib/code/system-prompt.ts';
+import { SUBTASK_REPORT_CHARS } from '#lib/code/systemPrompt.ts';
 
 function loopOptions(): AgentLoopOptions {
 	return mocks.runAgentLoop.mock.calls[0][0] as AgentLoopOptions;

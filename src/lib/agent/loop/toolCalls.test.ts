@@ -25,8 +25,8 @@ const dbg = vi.hoisted(() => ({
 	lines: [] as Array<[string, Record<string, unknown> | undefined]>,
 	verbose: false
 }));
-vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
+vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
 	logDebug: (_cat: string, msg: string, data?: Record<string, unknown>) =>
 		dbg.lines.push([msg, data]),
 	isVerbosePayloads: () => dbg.verbose

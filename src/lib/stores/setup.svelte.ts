@@ -146,7 +146,7 @@ async function applyRecommendedContext(modelId: string): Promise<void> {
 
 export async function detectHardware(): Promise<void> {
 	try {
-		hardware = await invoke<HardwareInfo>('cmd_detect_hardware');
+		hardware = await invoke<HardwareInfo>('hardware_detect');
 		selectedModel = hardware.recommended_quant;
 		updateSettings({ contextSize: hardware.recommended_context_size });
 		models = await invoke<ModelInfo[]>('list_models');

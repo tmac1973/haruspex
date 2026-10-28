@@ -20,7 +20,7 @@ haruspex/
 │   │   ├── stores/          # Svelte 5 runes-based state (.svelte.ts)
 │   │   ├── api.ts           # Chat-completion HTTP client (llama-server)
 │   │   ├── markdown.ts      # Markdown → HTML rendering
-│   │   └── debug-log.ts     # In-memory ring for the Log Viewer
+│   │   └── debugLog.ts     # In-memory ring for the Log Viewer
 ├── src-tauri/               # Tauri 2.x backend (Rust)
 │   └── src/
 │       ├── fs_tools/        # File read/write tools (13 modules)
@@ -114,7 +114,7 @@ sendMessage (chat.svelte.ts)
   series of `if (nudges.needsX()) { … nudges.consumeX(); continue; }`.
 - **Change the per-turn execution flow** → edit `runIteration`. Don't put
   per-turn state in `runAgentLoop` — it intentionally stays a dispatcher.
-- **Add a system-prompt fragment** → `system-prompt.ts`. Don't inline
+- **Add a system-prompt fragment** → `systemPrompt.ts`. Don't inline
   prompts inside `runIteration`.
 - **Add a streaming-response hook** → `iteration.ts:streamFinalSynthesis` is
   the canonical helper.
@@ -533,9 +533,9 @@ src-tauri/resources/shell-integration/
   haruspex.ps1    same markers for PowerShell (prompt wrap + PSReadLine)
 
 src/lib/shell/
-  system-prompt.ts  buildShellSystemPrompt — captured context + role
+  systemPrompt.ts  buildShellSystemPrompt — captured context + role
   runShellTurn.ts   wraps runAgentLoop, acquires inferenceQueue ticket
-  risky-commands.ts pattern matcher for visual risk badges
+  riskyCommands.ts pattern matcher for visual risk badges
 
 src/lib/components/shell/
   ShellTab.svelte   tab shell + toolbar + paste handler + tab key gating
@@ -561,9 +561,9 @@ src/lib/stores/shell.svelte.ts
 
 ### Adding a risky pattern
 
-`src/lib/shell/risky-commands.ts` is the only source. Append a
+`src/lib/shell/riskyCommands.ts` is the only source. Append a
 `{ label, description, test }` to `PATTERNS` and a positive +
-boundary-negative case to `risky-commands.test.ts`. The markdown
+boundary-negative case to `riskyCommands.test.ts`. The markdown
 renderer picks it up automatically — no schema or registration step.
 
 ### Platform branches (where the per-OS work lives)
@@ -877,7 +877,7 @@ deferred.** They include:
 - `settings.ts` (484 LOC)
 - `setup.svelte.ts` (runTestQuery 130 LOC + complexity 33)
 - `python.worker.ts` (846 LOC — Pyodide bridge)
-- `worker-manager.ts` (490 LOC — sandbox protocol dispatch)
+- `workerManager.ts` (490 LOC — sandbox protocol dispatch)
 - `+page.svelte` (662 LOC), `settings/+page.svelte` (1258 LOC), `setup/+page.svelte` (677 LOC)
 
 **Rule**: don't make these worse. A new function over 80 LOC or a new file

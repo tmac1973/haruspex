@@ -6,9 +6,9 @@
  */
 
 import { ApiError, type ChatCompletionResponse } from '#lib/api.ts';
-import { TOKEN_BYTES_RATIO } from '#lib/agent/context-budget.ts';
+import { TOKEN_BYTES_RATIO } from '#lib/agent/contextBudget.ts';
 import { stripThinkBlocks, stripToolCallArtifacts } from '#lib/markdown.ts';
-import { logDebug, previewPayload } from '#lib/debug-log.ts';
+import { logDebug, previewPayload } from '#lib/debugLog.ts';
 import { MAX_TRUNCATION_RETRIES, NudgeState, automaticCheck } from '#lib/agent/loop/nudges.ts';
 import {
 	appendMessage,

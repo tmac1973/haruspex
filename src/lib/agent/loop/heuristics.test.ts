@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ChatMessage } from '#lib/api.ts';
-import { TOKEN_BYTES_RATIO } from '#lib/agent/context-budget.ts';
+import { TOKEN_BYTES_RATIO } from '#lib/agent/contextBudget.ts';
 import type { LoopContext } from './context';
 import {
 	diversityNudgePrompt,

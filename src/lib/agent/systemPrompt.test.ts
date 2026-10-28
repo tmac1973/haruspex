@@ -30,7 +30,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	]
 }));
 
-import { buildSystemPrompt } from './system-prompt';
+import { buildSystemPrompt } from './systemPrompt';
 import { registerMcpTools, unregisterMcpServer } from '#lib/agent/tools/mcp.ts';
 import { getToolSchemas } from '#lib/agent/tools/registry.ts';
 import type { McpToolDescriptor } from '#lib/ipc/gen/McpToolDescriptor.ts';

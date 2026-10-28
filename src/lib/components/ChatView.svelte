@@ -4,14 +4,14 @@
 	import ThinkingIndicator from '#lib/components/ThinkingIndicator.svelte';
 	import SearchStepComponent from '#lib/components/SearchStep.svelte';
 	import ImageViewerModal from '#lib/components/ImageViewerModal.svelte';
-	import { VIEW_IMAGE_EVENT } from '#lib/markdown-actions.ts';
+	import { VIEW_IMAGE_EVENT } from '#lib/markdownActions.ts';
 	import SourceChip from '#lib/components/SourceChip.svelte';
 	import MicButton from '#lib/components/MicButton.svelte';
 	import WorkingDirButton from '#lib/components/WorkingDirButton.svelte';
 	import ScreenCaptureButton from '#lib/components/ScreenCaptureButton.svelte';
 	import StopIndicator from '#lib/components/StopIndicator.svelte';
 	import { imageDropTarget } from '#lib/utils/imageDrop.ts';
-	import { hasStreamingAnswer } from '#lib/agent/think-stream.ts';
+	import { hasStreamingAnswer } from '#lib/agent/thinkStream.ts';
 	import { messageText } from '#lib/api.ts';
 	import { isSummaryMessage, summaryText } from '#lib/agent/summaryMessage.ts';
 	import {
@@ -57,7 +57,7 @@
 		hasBraveApiKey,
 		setActiveLocalModel
 	} from '#lib/stores/settings.ts';
-	import { getDebugLogsForTurn } from '#lib/debug-log.ts';
+	import { getDebugLogsForTurn } from '#lib/debugLog.ts';
 	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
 	import { serverLog, worthReporting } from '#lib/reportLogs.ts';
 	import { createCopyAction } from '#lib/utils/clipboard.svelte.ts';

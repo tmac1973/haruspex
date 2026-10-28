@@ -6,7 +6,7 @@ import {
 	recordTokenCalibration,
 	resetTokenCalibration,
 	type ContextManagedInfo
-} from '#lib/agent/context-budget.ts';
+} from '#lib/agent/contextBudget.ts';
 
 // The same seams as loop.test.ts: the model and the tool registry are fakes,
 // context-budget runs for real.
@@ -91,8 +91,8 @@ vi.mock('#lib/markdown.ts', async (importOriginal) => ({
 			.trim()
 }));
 
-vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
+vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
 	logDebug: vi.fn()
 }));
 

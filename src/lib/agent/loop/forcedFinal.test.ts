@@ -8,8 +8,8 @@ const send = vi.hoisted(() => vi.fn());
 const executeToolCalls = vi.hoisted(() => vi.fn());
 const reportCall = vi.hoisted(() => vi.fn());
 
-vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
+vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
 	logDebug: vi.fn()
 }));
 

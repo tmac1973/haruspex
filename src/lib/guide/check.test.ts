@@ -7,7 +7,7 @@ describe('the guide check CI runs', () => {
 	it('fails a change users can see that leaves the guide alone', () => {
 		for (const f of [
 			settings,
-			'src/lib/agent/tools/memoryWrite.ts',
+			'src/lib/agent/tools/remember.ts',
 			'src/lib/agent/jobs/types/guided-planning/Editor.svelte',
 			'src/lib/slash/slash.ts',
 			'src/lib/shortcuts.ts',

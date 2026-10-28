@@ -2,8 +2,8 @@
 // per-chat WorkerPool (one Web Worker per chat, LRU cap 3). Every call
 // names its chat: turns in several chats can run Python at once.
 
-import { getWorkerPool } from '#lib/sandbox/worker-pool.ts';
-import type { RunOptions } from '#lib/sandbox/worker-manager.ts';
+import { getWorkerPool } from '#lib/sandbox/workerPool.ts';
+import type { RunOptions } from '#lib/sandbox/workerManager.ts';
 import type { ToolResult } from '#lib/sandbox/protocol.ts';
 
 export function runPython(chatId: string, code: string, opts?: RunOptions): Promise<ToolResult> {
@@ -56,4 +56,4 @@ export function __setManagerForTesting(): void {
 }
 
 export type { Artifact, ToolResult } from '#lib/sandbox/protocol.ts';
-export type { RunOptions } from '#lib/sandbox/worker-manager.ts';
+export type { RunOptions } from '#lib/sandbox/workerManager.ts';

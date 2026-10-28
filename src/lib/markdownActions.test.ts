@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { installMarkdownActions, VIEW_IMAGE_EVENT } from './markdown-actions';
+import { installMarkdownActions, VIEW_IMAGE_EVENT } from './markdownActions';
 
 const saveImageAs = vi.fn(async () => ({ kind: 'cancelled' as const }));
 vi.mock('#lib/images/save.ts', () => ({

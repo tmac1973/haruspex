@@ -798,7 +798,7 @@ fn detect_gpu() -> GpuInfo {
 }
 
 #[tauri::command]
-pub async fn cmd_detect_hardware(app: tauri::AppHandle) -> HardwareInfo {
+pub async fn hardware_detect(app: tauri::AppHandle) -> HardwareInfo {
     let devices = probe_vulkan(&app).await;
     tokio::task::spawn_blocking(move || detect_hardware_with(devices.as_deref()))
         .await

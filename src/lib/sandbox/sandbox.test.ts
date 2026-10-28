@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { WorkerManager } from './worker-manager';
+import { WorkerManager } from './workerManager';
 import type { MainToWorker, WorkerToMain, ToolResult } from './protocol';
 
 // jsdom has no Worker. We model just enough of it: a constructor that

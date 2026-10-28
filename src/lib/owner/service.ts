@@ -7,7 +7,7 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import type { CreatedOwnerClient } from '#lib/ipc/gen/CreatedOwnerClient.ts';
 import type { OwnerApiStatus } from '#lib/ipc/gen/OwnerApiStatus.ts';
 import type { OwnerClient } from '#lib/ipc/gen/OwnerClient.ts';

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 
-import { clearDebugLogs, logDebug } from '#lib/debug-log.ts';
+import { clearDebugLogs, logDebug } from '#lib/debugLog.ts';
 import { debugLog, jobReport, serverLog, worthReporting } from '#lib/reportLogs.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
 

@@ -8,7 +8,7 @@
 	 * Opens above the input, which sits at the bottom of the window.
 	 */
 	import { matchItems, slashItems, typingName, type SlashItem } from '#lib/slash/slash.ts';
-	import { logDebug } from '#lib/debug-log.ts';
+	import { logDebug } from '#lib/debugLog.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
 	let {

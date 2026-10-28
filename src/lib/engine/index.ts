@@ -11,7 +11,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { dispatch, MAIN_WINDOW, setChatResync, setResync } from '#lib/engine/dispatch.ts';
 import { watchPrompts } from '#lib/engine/prompts.svelte.ts';

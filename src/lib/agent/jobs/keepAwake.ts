@@ -8,7 +8,7 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import { IPC } from '#lib/ipc/commands.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 
 let desired = false;
 let applied = false;

@@ -5,7 +5,7 @@ import {
 	getDebugLogs,
 	logDebug,
 	startDebugLogFile
-} from './debug-log';
+} from './debugLog';
 
 describe('forwardConsoleToDebugLog', () => {
 	afterEach(() => {

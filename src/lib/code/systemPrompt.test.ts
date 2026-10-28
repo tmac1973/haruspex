@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildCodeSystemPrompt, delegationHint, isMacOS } from '#lib/code/system-prompt.ts';
+import { buildCodeSystemPrompt, delegationHint, isMacOS } from '#lib/code/systemPrompt.ts';
 
 const tab = (over: Partial<Parameters<typeof buildCodeSystemPrompt>[0]> = {}) =>
 	String(buildCodeSystemPrompt({ root: '/proj', ...over }).content);

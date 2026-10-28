@@ -13,7 +13,7 @@ vi.mock('#lib/agent/compaction.ts', () => ({
 	compactConversation: mocks.compactConversation,
 	shouldCompact: mocks.shouldCompact
 }));
-vi.mock('#lib/agent/context-budget.ts', () => ({
+vi.mock('#lib/agent/contextBudget.ts', () => ({
 	estimateMessagesTokens: mocks.estimateMessagesTokens,
 	getTokenCalibration: mocks.getTokenCalibration
 }));

@@ -21,7 +21,7 @@ import {
 	getSamplingParams,
 	getOpenRouterReasoningParam
 } from '#lib/stores/settings.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import { NudgeState } from '#lib/agent/loop/nudges.ts';
 import type { IterationOutcome, LoopContext, LoopState } from '#lib/agent/loop/context.ts';
 import {

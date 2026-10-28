@@ -12,8 +12,8 @@
 
 import type { ChatMessage } from '#lib/api.ts';
 import { SUMMARY_PREFIX, compactConversation, shouldCompact } from '#lib/agent/compaction.ts';
-import { estimateMessagesTokens, getTokenCalibration } from '#lib/agent/context-budget.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { estimateMessagesTokens, getTokenCalibration } from '#lib/agent/contextBudget.ts';
+import { logDebug } from '#lib/debugLog.ts';
 
 /**
  * Turns kept verbatim when a session is summarised. Matches the local chat

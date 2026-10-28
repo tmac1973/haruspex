@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyShellRisk } from './risky-commands';
+import { classifyShellRisk } from './riskyCommands';
 
 describe('classifyShellRisk', () => {
 	it('returns matched=false for an obviously safe command', () => {

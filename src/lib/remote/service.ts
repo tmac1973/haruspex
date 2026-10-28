@@ -8,7 +8,7 @@
  */
 
 import { getSettings } from '#lib/stores/settings.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import { getRemoteToken, remoteToken } from '#lib/stores/remoteSecrets.ts';
 
 import {

@@ -12,7 +12,7 @@
 	import ChatImageStrip from '#lib/components/ChatImageStrip.svelte';
 	import { resolvedImages, stripFor } from '#lib/images/figure.ts';
 	import { stripCandidates } from '#lib/images/eligible.ts';
-	import { VIEW_IMAGE_EVENT } from '#lib/markdown-actions.ts';
+	import { VIEW_IMAGE_EVENT } from '#lib/markdownActions.ts';
 	import { imageRefs, wantImages } from '../images.ts';
 	import ThinkingPanel from '#lib/components/ThinkingPanel.svelte';
 	import { makeCodePathLinker } from '#lib/code/paths.ts';

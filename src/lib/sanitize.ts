@@ -11,7 +11,7 @@ import DOMPurify from 'dompurify';
  * DOMPurify's defaults already strip <script>, inline event handlers and
  * javascript: URIs. Interactive UI inside rendered markdown (copy/paste/run
  * buttons) therefore must not use inline handlers — it uses `data-action`
- * attributes dispatched by markdown-actions.ts instead.
+ * attributes dispatched by markdownActions.ts instead.
  *
  * On top of the defaults we forbid form controls (other than <button>, which
  * the code-block header needs): rendered chat content must not be able to

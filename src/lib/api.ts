@@ -1,7 +1,7 @@
 // llama-server OpenAI-compatible API client wrapper
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import type { RemoteReasoningCaps, RemoteSamplingCaps } from '#lib/stores/settings.ts';
-import { logDebug, isVerbosePayloads, previewPayload } from '#lib/debug-log.ts';
+import { logDebug, isVerbosePayloads, previewPayload } from '#lib/debugLog.ts';
 import { apiKeysReady } from '#lib/stores/apiKeySecrets.ts';
 import { localServerKeyReady } from '#lib/inference/localServerKey.ts';
 import { baseUrl } from '#lib/ports.ts';
@@ -377,7 +377,7 @@ function applyOpenRouterAttribution(headers: Record<string, string>): void {
  * isn't enough (malformed content parts, tool-schema bugs).
  *
  * Sizes are reported in characters, not tokens: the token estimator lives
- * in `context-budget.ts`, which imports from this module, so calling it
+ * in `contextBudget.ts`, which imports from this module, so calling it
  * here would create an import cycle. Chars are sufficient for spotting
  * runaway growth; use the `pre-send context guard` entries for token math.
  */

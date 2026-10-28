@@ -14,7 +14,7 @@ import {
 	estimateMessagesTokens,
 	estimateTokens,
 	getTokenCalibration
-} from '#lib/agent/context-budget.ts';
+} from '#lib/agent/contextBudget.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { splitThinkChannels, stripThinkBlocks } from '#lib/markdown.ts';
 import { truncateCapturedOutput } from '#lib/shell/truncate.ts';

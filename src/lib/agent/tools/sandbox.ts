@@ -11,7 +11,7 @@ import {
 } from '#lib/stores/sandboxApproval.svelte.ts';
 import { isAutoApproveActive } from '#lib/stores/approvalOverride.ts';
 import { errMessage } from '#lib/utils/error.ts';
-import { formatSandboxResult } from '#lib/sandbox/format-result.ts';
+import { formatSandboxResult } from '#lib/sandbox/formatResult.ts';
 import { waitOnUser } from '#lib/agent/tools/_helpers.ts';
 
 /**

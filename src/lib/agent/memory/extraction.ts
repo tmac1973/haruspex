@@ -27,7 +27,7 @@ import {
 	type SubmittedMemory
 } from '#lib/agent/tools/memory.ts';
 import { memoryActive, refreshMemoryCount } from '#lib/stores/memory.svelte.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import { typedText } from '#lib/skills/content.ts';
 import {
 	extractionSystemPrompt,

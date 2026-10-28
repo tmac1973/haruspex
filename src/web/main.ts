@@ -5,7 +5,7 @@
  */
 import { mount } from 'svelte';
 import '#lib/styles/app.css';
-import { installMarkdownActions } from '#lib/markdown-actions.ts';
+import { installMarkdownActions } from '#lib/markdownActions.ts';
 import { installAudioExclusivity } from '#lib/audio/exclusive.ts';
 import { installAudioPlayers } from '#lib/audio/mountPlayers.ts';
 import App from './App.svelte';

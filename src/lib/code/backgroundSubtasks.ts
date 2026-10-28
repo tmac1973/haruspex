@@ -16,7 +16,7 @@ import type { CodeWriteGuard, SlotLender } from '#lib/agent/tools/types.ts';
 import { finishedSubtask, type SubtaskState, type SubtaskStops } from '#lib/code/subtask.ts';
 import { discardQuietly } from '#lib/code/subtaskApply.ts';
 import { runSubtaskSpec, type SubtaskEnv, type SubtaskSpec } from '#lib/code/subtaskRun.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
 /** The most background subtasks one session runs at once. */

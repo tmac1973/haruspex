@@ -3,7 +3,7 @@
 	 * What a finished background picture made, under its task card: the
 	 * picture, which opens in the image viewer, and where it was saved.
 	 */
-	import { VIEW_IMAGE_EVENT } from '#lib/markdown-actions.ts';
+	import { VIEW_IMAGE_EVENT } from '#lib/markdownActions.ts';
 	import { imageSrc } from '#lib/images/url.ts';
 	import type { ImageTaskResult } from '#lib/agent/tools/_imageJob.ts';
 	import type { BackgroundTask } from '#lib/tasks/types.ts';

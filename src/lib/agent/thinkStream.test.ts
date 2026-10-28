@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { appendStreamDelta, createThinkStreamState, hasStreamingAnswer } from './think-stream';
+import { appendStreamDelta, createThinkStreamState, hasStreamingAnswer } from './thinkStream';
 import type { StreamChunk } from '#lib/api.ts';
 
 describe('appendStreamDelta', () => {

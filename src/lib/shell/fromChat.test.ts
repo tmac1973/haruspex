@@ -4,7 +4,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // registry + handoff, not the inference pipeline or the Tauri boundary.
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('#lib/shell/runShellTurn.ts', () => ({ runShellTurn: vi.fn() }));
-vi.mock('#lib/shell/system-prompt.ts', () => ({
+vi.mock('#lib/shell/systemPrompt.ts', () => ({
 	buildShellSystemPrompt: () => ({ role: 'system', content: 'sys' })
 }));
 const fullAccessDefault = vi.hoisted(() => ({ value: false }));
@@ -21,9 +21,9 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	getApiKeyValue: () => undefined
 }));
 vi.mock('#lib/agent/tools/index.ts', () => ({ getDisplayLabel: () => 'tool' }));
-vi.mock('#lib/agent/context-budget.ts', () => ({ describeContextManaged: () => 'managed' }));
-vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
+vi.mock('#lib/agent/contextBudget.ts', () => ({ describeContextManaged: () => 'managed' }));
+vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
 	logDebug: vi.fn()
 }));
 

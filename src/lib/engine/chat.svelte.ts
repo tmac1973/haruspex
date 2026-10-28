@@ -28,7 +28,7 @@ import {
 } from '#lib/stores/chat.svelte.ts';
 import { dbLoadMessages, dbLoadMessageSteps } from '#lib/stores/db.ts';
 import { getActiveConversationId, getWorkingDir } from '#lib/stores/session.svelte.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { LIVE_MS } from '#lib/engine/watch.svelte.ts';
 import type { ChatEvent, ChatListItem, ChatState } from '#lib/engine/types.ts';

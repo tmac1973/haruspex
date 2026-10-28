@@ -96,7 +96,7 @@ export type MainToWorker =
 
 /**
  * Payload of a worker `artifact` message (minus the envelope's kind/run id).
- * Exported so `worker-manager.ts`'s `toArtifact` types its parameter against
+ * Exported so `workerManager.ts`'s `toArtifact` types its parameter against
  * the protocol instead of re-declaring the shape inline.
  */
 export interface ArtifactMessage {

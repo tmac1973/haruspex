@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 
-vi.mock('#lib/agent/pdf-render.ts', () => ({ renderPdfPages: mocks.renderPdfPages }));
+vi.mock('#lib/agent/pdfRender.ts', () => ({ renderPdfPages: mocks.renderPdfPages }));
 
 import { IMAGE_EXT_RE, MAX_PENDING_IMAGES } from './fs-read';
 import { makeToolContext } from '#lib/testing/toolContext.ts';

@@ -22,8 +22,8 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	hasEnabledCalendarAccount: () => false,
 	hasEnabledContactsAccount: () => false
 }));
-vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
+vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
 	logDebug: vi.fn()
 }));
 
@@ -35,8 +35,8 @@ vi.mock('#lib/stores/memoryApproval.svelte.ts', () => ({
 }));
 
 import { executeTool, getToolSchemas } from './registry';
-import './memoryWrite';
-import { REMEMBER_TOOL } from './memoryWrite';
+import './remember';
+import { REMEMBER_TOOL } from './remember';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 
 const ctx = makeToolContext();

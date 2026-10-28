@@ -37,7 +37,7 @@ import {
 import { getSettings } from '#lib/stores/settings.ts';
 import { getActiveConversationId } from '#lib/stores/session.svelte.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import { waitOnUser } from '#lib/agent/tools/_helpers.ts';
 import { errMessage } from '#lib/utils/error.ts';
 

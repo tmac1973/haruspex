@@ -25,7 +25,7 @@ import { finalizeStreamText } from '#lib/markdown.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { assemble, prepareSystem } from '#lib/code/runCodeTurn.ts';
-import { SUBTASK_REPORT_CHARS } from '#lib/code/system-prompt.ts';
+import { SUBTASK_REPORT_CHARS } from '#lib/code/systemPrompt.ts';
 import type { CodeWriteGuard, SlotLender } from '#lib/agent/tools/types.ts';
 import type { JobSubtaskHost } from '#lib/code/subtaskRun.ts';
 import type { HeldSlot } from '#lib/agent/inferenceQueue.svelte.ts';

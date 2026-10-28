@@ -993,7 +993,7 @@ describe('run_command without a terminal (Code session)', () => {
 		);
 		expect(started.result).toContain('id bg-1');
 		expect(started.result).not.toContain('4242');
-		const { describeBgProcess } = await import('./code-bg');
+		const { describeBgProcess } = await import('./command');
 		const wsl = { ...bgProc, wsl_distro: 'Ubuntu', wsl_pgid: 812 };
 		expect(describeBgProcess(wsl)).toContain('process group 812 in Ubuntu');
 		expect(describeBgProcess(wsl)).not.toContain('4242');
@@ -1002,7 +1002,7 @@ describe('run_command without a terminal (Code session)', () => {
 	});
 
 	it('says a background process was stopped for its memory limit', async () => {
-		const { describeBgProcess } = await import('./code-bg');
+		const { describeBgProcess } = await import('./command');
 		const done = { ...bgProc, running: false, exit_code: -536870911, out_of_memory: true };
 		expect(describeBgProcess(done)).toContain('went over its memory limit');
 		expect(describeBgProcess({ ...done, out_of_memory: false })).toContain('exit code -536870911');

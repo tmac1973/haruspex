@@ -12,12 +12,12 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 		settings: { proxy: { mode: 'none' }, sandboxNetAccess: 'internet' }
 	})
 );
-vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
+vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
 	logDebug: () => {}
 }));
 
-import { WorkerManager } from './worker-manager';
+import { WorkerManager } from './workerManager';
 import { PYTHON_UNAVAILABLE, pythonRuntimeMissing } from './availability';
 
 /** Minimal Worker stand-in: captures postMessage and replays messages. */

@@ -73,7 +73,7 @@
 	import { startEngine } from '#lib/engine/index.ts';
 	import { syncOwnerApi } from '#lib/owner/service.ts';
 	import { messageText, type ChatMessage } from '#lib/api.ts';
-	import { installMarkdownActions } from '#lib/markdown-actions.ts';
+	import { installMarkdownActions } from '#lib/markdownActions.ts';
 	import {
 		isVoiceCaptureActive,
 		startVoiceCapture,

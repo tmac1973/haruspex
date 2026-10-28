@@ -11,12 +11,12 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 		settings: { proxy: { mode: 'none' }, sandboxNetAccess: 'internet' }
 	})
 );
-vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
+vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
 	logDebug: () => {}
 }));
 
-import { WorkerPool, getWorkerPool, __setPoolForTesting } from './worker-pool';
+import { WorkerPool, getWorkerPool, __setPoolForTesting } from './workerPool';
 
 /** A Worker stand-in that answers `run` and `list_globals` like a booted Pyodide. */
 class FakeWorker {

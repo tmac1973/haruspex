@@ -14,7 +14,7 @@ import ChatTranscript from './components/ChatTranscript.svelte';
 import ChatList from './components/ChatList.svelte';
 import { imageRefs, resetImages, wantImages } from './images.ts';
 import { clearResolvedImages } from '#lib/images/resolve.svelte.ts';
-import { VIEW_IMAGE_EVENT } from '#lib/markdown-actions.ts';
+import { VIEW_IMAGE_EVENT } from '#lib/markdownActions.ts';
 
 const state = (over: Partial<SessionState> = {}): SessionState => ({
 	id: 's1',

@@ -12,7 +12,7 @@ import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import type { Artifact, LintIssue } from '#lib/agent/tools/index.ts';
 import type { CallStats, SearchStep } from '#lib/agent/loop.ts';
 import type { SubtaskState } from '#lib/code/subtask.ts';
-import type { ContextManagedInfo } from '#lib/agent/context-budget.ts';
+import type { ContextManagedInfo } from '#lib/agent/contextBudget.ts';
 import {
 	runEphemeralTurn,
 	type EphemeralTurnOptions,
@@ -43,7 +43,7 @@ import {
 	type StepStats,
 	type TurnKindStats
 } from '#lib/stores/jobRuns.svelte.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import { setKeepAwake } from '#lib/agent/jobs/keepAwake.ts';
 import {
 	noteRunToolCall,

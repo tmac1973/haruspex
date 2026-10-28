@@ -6,7 +6,7 @@
 
 import type { ChatCompletionResponse, ChatMessage } from '#lib/api.ts';
 import { stripThinkBlocks } from '#lib/markdown.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import {
 	appendMessage,
 	type IterationOutcome,

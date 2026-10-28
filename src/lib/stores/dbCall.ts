@@ -9,7 +9,7 @@
  * here on purpose.
  */
 import { invoke } from '@tauri-apps/api/core';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
 interface DbCallBase {

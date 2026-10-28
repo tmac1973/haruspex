@@ -12,7 +12,7 @@ import {
 	getOpenRouterReasoningParam
 } from '#lib/stores/settings.ts';
 import { isAbortError, errMessage } from '#lib/utils/error.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import { NudgeState, automaticCheck } from '#lib/agent/loop/nudges.ts';
 import type { CompletionMeta } from '#lib/agent/loop.ts';
 import { appendMessage, type LoopContext, type LoopState } from '#lib/agent/loop/context.ts';

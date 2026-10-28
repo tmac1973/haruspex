@@ -3,7 +3,7 @@ import {
 	buildShellSystemPrompt,
 	shellTerminalNote,
 	type ShellSessionContext
-} from '#lib/shell/system-prompt.ts';
+} from '#lib/shell/systemPrompt.ts';
 
 function ctx(shellPath: string, shellName: string): ShellSessionContext {
 	return {

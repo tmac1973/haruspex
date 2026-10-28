@@ -9,7 +9,7 @@
 	import ChatSidebar from '#lib/components/shell/ChatSidebar.svelte';
 	import Modal from '#lib/components/Modal.svelte';
 	import ModalButton from '#lib/components/ModalButton.svelte';
-	import { classifyShellRisk, type RiskMatch } from '#lib/shell/risky-commands.ts';
+	import { classifyShellRisk, type RiskMatch } from '#lib/shell/riskyCommands.ts';
 	import { stripCommandComments, toPtyPaste } from '#lib/shell/commandBlock.ts';
 	import { getActiveTab } from '#lib/stores/activeTab.svelte.ts';
 	import { getActiveShellId, type ShellSession } from '#lib/stores/shell.svelte.ts';

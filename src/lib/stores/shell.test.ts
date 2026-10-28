@@ -14,7 +14,7 @@ vi.mock('#lib/shell/runShellTurn.ts', () => ({ runShellTurn }));
 // them arrive.
 // The terminal note is off unless a test turns it on (`terminalNote.on`).
 const terminalNote = vi.hoisted(() => ({ on: false }));
-vi.mock('#lib/shell/system-prompt.ts', () => ({
+vi.mock('#lib/shell/systemPrompt.ts', () => ({
 	buildShellSystemPrompt: (opts: { projectInstructions?: string; fullAccess?: boolean }) => ({
 		role: 'system',
 		content: `${opts.fullAccess ? 'full-sys' : 'sys'}${opts.projectInstructions ?? ''}`
@@ -65,9 +65,9 @@ vi.mock('#lib/skills/turn.ts', async (importOriginal) => {
 	skillsTurn.prepareTurnSkills.mockImplementation(real.prepareTurnSkills);
 	return { ...real, prepareTurnSkills: skillsTurn.prepareTurnSkills };
 });
-vi.mock('#lib/agent/context-budget.ts', () => ({ describeContextManaged: () => 'managed' }));
-vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
+vi.mock('#lib/agent/contextBudget.ts', () => ({ describeContextManaged: () => 'managed' }));
+vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
 	logDebug: vi.fn()
 }));
 

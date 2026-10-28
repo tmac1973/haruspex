@@ -30,7 +30,7 @@ import {
 } from '#lib/code/backgroundSubtasks.ts';
 import type { SubtaskSpec } from '#lib/code/subtaskRun.ts';
 import { discardSessionSubtaskWorktrees } from '#lib/code/subtaskGit.ts';
-import { describeContextManaged } from '#lib/agent/context-budget.ts';
+import { describeContextManaged } from '#lib/agent/contextBudget.ts';
 import { computeMessageStats, type MessageStats } from '#lib/stores/chat.svelte.ts';
 import {
 	approveSession,
@@ -96,7 +96,7 @@ import {
 } from '#lib/code/folders.ts';
 import type { CodeWriteGuard } from '#lib/agent/tools/types.ts';
 import { isSlashCommand, nameSession } from '#lib/code/sessionTitle.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
 /**

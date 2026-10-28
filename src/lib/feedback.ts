@@ -21,7 +21,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { getSettings, hasBraveApiKey, startableMcpServers } from '#lib/stores/settings.ts';
-import { getDebugLogs } from '#lib/debug-log.ts';
+import { getDebugLogs } from '#lib/debugLog.ts';
 import { urlForReport } from '#lib/utils/http.ts';
 
 export { urlForReport };

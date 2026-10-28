@@ -1,6 +1,6 @@
 import { Marked } from 'marked';
 import hljs from 'highlight.js/lib/core';
-import { classifyShellRisk } from '#lib/shell/risky-commands.ts';
+import { classifyShellRisk } from '#lib/shell/riskyCommands.ts';
 import { sanitizeHtml } from '#lib/sanitize.ts';
 import { audioFigureHtml } from '#lib/audio/figure.ts';
 import type { CodePathLinker, PathRef } from '#lib/code/paths.ts';
@@ -56,7 +56,7 @@ function renderShellHeaderExtras(text: string): string {
 				)
 				.join('')
 		: '';
-	// data-action clicks are routed by markdown-actions.ts to a CustomEvent
+	// data-action clicks are routed by markdownActions.ts to a CustomEvent
 	// the Shell tab listens for. Outside the Shell tab the .paste-btn /
 	// .run-btn are hidden via the body:not(.shell-tab-active) CSS rule, so
 	// this is dead UI in chat or jobs context.

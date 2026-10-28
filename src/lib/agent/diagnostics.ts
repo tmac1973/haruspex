@@ -1,5 +1,5 @@
 import type { SearchStep } from '#lib/agent/loop.ts';
-import { isVerbosePayloads, logDebug } from '#lib/debug-log.ts';
+import { isVerbosePayloads, logDebug } from '#lib/debugLog.ts';
 
 export type Diagnosis = { type: 'commit'; content: string } | { type: 'error'; message: string };
 
