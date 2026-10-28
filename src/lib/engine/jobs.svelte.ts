@@ -37,9 +37,11 @@ import {
 	replaceJobSteps,
 	scheduleToConfigJson,
 	updateJob,
+	type JobCore,
 	type JobInput,
 	type JobStepInput,
 	type JobWithSteps,
+	type ModelOverrideConfig,
 	type Schedule
 } from '#lib/stores/jobs.svelte.ts';
 import {
@@ -154,7 +156,9 @@ interface JobWrite {
 }
 
 /** A new job's stored columns, before a write lays its fields over them. */
-const BLANK: Omit<JobInput, 'job_type' | 'auto_approve_tools' | 'type_config'> = {
+type StoredColumns = Omit<JobCore & ModelOverrideConfig, 'job_type' | 'auto_approve_tools'>;
+
+const BLANK: StoredColumns = {
 	name: '',
 	description: null,
 	working_dir: '',
@@ -171,11 +175,11 @@ const BLANK: Omit<JobInput, 'job_type' | 'auto_approve_tools' | 'type_config'> =
 };
 
 /** A job's stored columns, or a new job's. */
-function storedColumns(existing: JobWithSteps | null): typeof BLANK {
+function storedColumns(existing: JobWithSteps | null): StoredColumns {
 	if (!existing) return { ...BLANK };
 	return Object.fromEntries(
-		Object.keys(BLANK).map((k) => [k, existing[k as keyof typeof BLANK]])
-	) as typeof BLANK;
+		Object.keys(BLANK).map((k) => [k, existing[k as keyof StoredColumns]])
+	) as StoredColumns;
 }
 
 /** The job's type and config: the write's config over the job's, or the type's defaults. */
