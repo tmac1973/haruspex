@@ -34,6 +34,7 @@
 	} from '#lib/stores/downloads.svelte.ts';
 	import { resolveImageBackend } from '#lib/image/index.ts';
 	import { capabilityLine, type CapabilityLine } from '#lib/image/capabilityLine.ts';
+	import { declaredCapabilities, familyOfId } from '#lib/image/local/adapter.ts';
 	import { invalidateTypeAvailability } from '#lib/agent/jobs/types/availability.svelte.ts';
 	import { generateOneImage } from '#lib/image/generateOne.ts';
 	import { describeImageProgress } from '#lib/image/progress.ts';
@@ -158,23 +159,18 @@
 	let upscaler = $state<UpscalerInfo | null>(null);
 	const UPSCALER_KEY = 'image:upscaler';
 
-	/** What the bundled engine can do with the chosen model, for its line. */
-	let localCapabilities = $state<ImageBackendCapabilities | null>(null);
-
-	async function refreshLocalCapabilities() {
-		localCapabilities =
-			getSettings().imageBackendKind === 'local' && imageLocalModelId
-				? await resolveImageBackend()
-						.capabilities()
-						.catch(() => null)
-				: null;
+	/** What the bundled engine could do with this model, whether or not it is the chosen one. */
+	function localLine(m: ImageModel): CapabilityLine {
+		return capabilityLine(
+			declaredCapabilities(familyOfId(m.id), m.can_edit, upscaler?.downloaded ?? false),
+			'local'
+		);
 	}
 
 	async function refreshModels() {
 		models = await invoke<ImageModel[]>('image_models').catch(
 			loggedFallback([], 'settings', 'could not list the image models')
 		);
-		void refreshLocalCapabilities();
 		upscaler = await invoke<UpscalerInfo>('image_upscaler').catch(
 			loggedFallback(null, 'settings', 'could not read the upscaler')
 		);
@@ -244,7 +240,6 @@
 	async function selectModel(m: ImageModel) {
 		imageLocalModelId = m.id;
 		persist({ imageLocalModelId: m.id });
-		void refreshLocalCapabilities();
 		await refreshEngine();
 	}
 
@@ -505,6 +500,7 @@
 				{#if !m.commercial_use}
 					<p class="warn">Not licensed for commercial use.</p>
 				{/if}
+				{@render canLine(localLine(m))}
 				<div class="row">
 					{#if m.downloaded}
 						<button onclick={() => selectModel(m)} disabled={imageLocalModelId === m.id}>
@@ -567,9 +563,6 @@
 			<p class="warn">{downloadError}</p>
 		{/if}
 
-		{#if localCapabilities}
-			{@render canLine(capabilityLine(localCapabilities, 'local'))}
-		{/if}
 		<p class="help">Nothing starts until you ask.</p>
 		<div class="row">
 			<button onclick={startEngine} disabled={engineBusy || engine?.status === 'Ready'}>
