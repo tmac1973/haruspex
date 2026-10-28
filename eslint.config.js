@@ -46,11 +46,13 @@ export default ts.config(
 		}
 	},
 	{
-		// Test files: `describe`/`it` callbacks are naturally long and the
-		// length-per-function rule isn't a useful signal there.
+		// Test files: `describe`/`it` callbacks are naturally long, and a file
+		// grows with every case its source needs; neither length rule is a
+		// useful signal there.
 		files: ['**/*.test.ts', '**/*.test.js'],
 		rules: {
-			'max-lines-per-function': 'off'
+			'max-lines-per-function': 'off',
+			'max-lines': 'off'
 		}
 	},
 	{
