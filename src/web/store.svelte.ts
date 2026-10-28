@@ -23,7 +23,8 @@ import {
 	type SessionListItem,
 	type SessionState
 } from '#lib/engine/types.ts';
-import { ApiError, events, op, type Connection, type StreamEvent } from './api.ts';
+import { ApiError, events, op, upload, type Connection, type StreamEvent } from './api.ts';
+import { dataUrlBytes } from '#lib/utils/base64.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
 /** How long to gather list-changing events before reading the list again. */
@@ -33,6 +34,14 @@ const LIST_REFRESH_MS = 800;
 export interface Transport {
 	op: typeof op;
 	events: typeof events;
+	upload: typeof upload;
+}
+
+/** What a send answers when its `/name` was a built-in, not a message. */
+interface Handled {
+	handled?: boolean;
+	note?: string;
+	id?: string;
 }
 
 export class WebStore {
@@ -48,6 +57,8 @@ export class WebStore {
 	prompts = $state<Record<string, Prompt>>({});
 	selected = $state<string | null>(null);
 	error = $state<string | null>(null);
+	/** What the last `/skills` or the like said, until the next send. */
+	note = $state<string | null>(null);
 	/** The file the viewer shows, if one is open. */
 	viewer = $state<{ file: FileContent | null; error: string | null; line: number | null } | null>(
 		null
@@ -60,7 +71,45 @@ export class WebStore {
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity
 	private resyncing = new Set<string>();
 
-	constructor(private transport: Transport = { op, events }) {}
+	constructor(private transport: Transport = { op, events, upload }) {}
+
+	/** Pictures (data URLs) up to the desktop, as the hashes a send carries. Null when one failed. */
+	private async uploadAll(pictures: string[]): Promise<string[] | null> {
+		const hashes: string[] = [];
+		for (const url of pictures) {
+			const bytes = dataUrlBytes(url);
+			const type = /^data:([^;,]+)/.exec(url)?.[1] ?? 'image/png';
+			if (!bytes) {
+				this.error = "That picture couldn't be read.";
+				return null;
+			}
+			const up = await this.run(() => this.transport.upload(new Blob([bytes.slice()], { type })));
+			if (!up) return null;
+			hashes.push(up.hash);
+		}
+		return hashes;
+	}
+
+	/**
+	 * A send, pictures first. A `/name` that was a built-in shows its note
+	 * here, and `/new` opens what it made.
+	 */
+	private async sendOp(
+		files: string[],
+		send: (images: string[]) => Promise<Handled | null | undefined>,
+		opened: (id: string) => Promise<void>
+	): Promise<boolean> {
+		this.note = null;
+		const images = await this.uploadAll(files);
+		if (!images) return false;
+		const out = await send(images);
+		if (out === undefined) return false;
+		if (out?.handled) {
+			this.note = out.note ?? null;
+			if (out.id) await opened(out.id);
+		}
+		return true;
+	}
 
 	start(): void {
 		this.stopStream = this.transport.events(
@@ -127,10 +176,18 @@ export class WebStore {
 		await this.selectChat(made.id);
 	}
 
-	async sendChat(id: string, text: string): Promise<boolean> {
-		const sent = await this.run(() => this.transport.op({ type: 'chat.send', id, text }));
-		if (sent !== undefined) this.refreshChatsSoon();
-		return sent !== undefined;
+	async sendChat(id: string, text: string, files: string[] = []): Promise<boolean> {
+		const sent = await this.sendOp(
+			files,
+			(images) =>
+				this.run(() => this.transport.op<Handled>({ type: 'chat.send', id, text, images })),
+			async (made) => {
+				await this.refreshChats();
+				await this.selectChat(made);
+			}
+		);
+		if (sent) this.refreshChatsSoon();
+		return sent;
 	}
 
 	async chatAction(id: string, type: 'chat.stop' | 'chat.continue' | 'chat.retry'): Promise<void> {
@@ -237,13 +294,20 @@ export class WebStore {
 		await this.select(made.id);
 	}
 
-	async send(id: string, text: string): Promise<boolean> {
-		// `/compact` runs here, as the desktop's input box runs it; sent as a
-		// message, it would only reach the model as text.
+	async send(id: string, text: string, files: string[] = []): Promise<boolean> {
+		// `/compact` runs here, so "nothing to summarise" shows as it does on
+		// the desktop; the computer runs every other `/name`.
 		const compact = /^\s*\/compact(?:\s+([\s\S]*))?$/i.exec(text);
-		if (compact) return this.compact(id, compact[1]?.trim() ?? '');
-		const sent = await this.run(() => this.transport.op({ type: 'session.send', id, text }));
-		return sent !== undefined;
+		if (compact && files.length === 0) return this.compact(id, compact[1]?.trim() ?? '');
+		return this.sendOp(
+			files,
+			(images) =>
+				this.run(() => this.transport.op<Handled>({ type: 'session.send', id, text, images })),
+			async () => {
+				// `/new`: the computer opened it beside this one; the list shows it.
+				await this.refreshList();
+			}
+		);
 	}
 
 	/** `/compact`: summarise the session's older turns now. */

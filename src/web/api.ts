@@ -46,6 +46,19 @@ export async function lookupImages(urls: string[]): Promise<Record<string, Image
 	return ((await r.json()) as { images: Record<string, ImageRow> }).images;
 }
 
+/** Keep a picture on the desktop for a message to carry; `images` in a send takes the hash. */
+export async function upload(file: Blob): Promise<{ hash: string }> {
+	const r = await fetch('/api/v1/upload', {
+		method: 'POST',
+		headers: { 'X-Haruspex': '1', 'Content-Type': file.type || 'application/octet-stream' },
+		credentials: 'same-origin',
+		body: file
+	});
+	const json = (await r.json().catch(() => ({}))) as { hash?: string; error?: string };
+	if (!r.ok || !json.hash) throw new ApiError(r.status, json.error ?? `HTTP ${r.status}`);
+	return { hash: json.hash };
+}
+
 /** Swap a pairing code for the device cookie. */
 export async function pair(code: string): Promise<void> {
 	await post('/api/v1/pair', { code });

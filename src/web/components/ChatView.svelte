@@ -6,6 +6,7 @@
 	 */
 	import type { WebStore } from '../store.svelte.ts';
 	import ChatTranscript from './ChatTranscript.svelte';
+	import { renderMarkdown } from '#lib/markdown.ts';
 	import Composer from './Composer.svelte';
 	import PromptCard from './PromptCard.svelte';
 
@@ -34,6 +35,14 @@
 {#if store.error}
 	<p class="error-text banner" role="alert">{store.error}</p>
 {/if}
+{#if store.note}
+	<div class="banner note" role="status">
+		<!-- renderMarkdown sanitises its output. -->
+		<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+		<div class="note-text">{@html renderMarkdown(store.note)}</div>
+		<button class="btn btn-small" onclick={() => (store.note = null)}>OK</button>
+	</div>
+{/if}
 
 {#if chat}
 	<ChatTranscript
@@ -46,7 +55,7 @@
 	{/each}
 	<Composer
 		busy={chat.busy}
-		onsend={(text) => store.sendChat(id, text)}
+		onsend={(text, pictures) => store.sendChat(id, text, pictures)}
 		onstop={() => store.chatAction(id, 'chat.stop')}
 	/>
 {:else}
@@ -54,6 +63,13 @@
 {/if}
 
 <style>
+	.note {
+		display: flex;
+		gap: 8px;
+		align-items: flex-start;
+		justify-content: space-between;
+	}
+
 	header {
 		display: flex;
 		align-items: center;

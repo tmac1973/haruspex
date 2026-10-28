@@ -13,12 +13,15 @@ Send the token as `Authorization: Bearer <token>`, and trust the certificate: sa
 
 - `POST /api/v1/op` with an operation as JSON. The answer is `{"value": …}`, or an error message.
 - `GET /api/v1/events` streams what sessions, chats and job runs do (server-sent events).
+- `POST /api/v1/upload` with a picture as the body (PNG, JPEG, WebP or GIF, up to 16 MB) answers its `hash`. Needs **Drive**.
 - `POST /api/v1/images` with `{"urls":[…]}` says which image URLs in the messages this computer has cached; `GET /api/v1/image/<hash>` returns one.
 - `GET /api/v1/health` needs no token.
 
 ## Code sessions and chats
 
 `{"type":"sessions.list"}`, `session.new` (`root`, and on Windows a `wslDistro` with a Linux `root`; `wsl.distros` lists them), `session.send` (`id`, `text`), `session.get`, `session.stop`, `session.compact`. Chats: `chats.list`, `chat.new`, `chat.send`, `chat.get`, `chat.stop`, `chat.continue`, `chat.retry`. Prompts waiting on you: `prompts.list` and `prompts.answer`.
+
+`session.send` and `chat.send` take `images`, a list of up to 8 hashes from `/api/v1/upload`; a message can be pictures alone. A message starting with `/name` runs as it does in the input box: a skill goes with the message, and a built-in such as `/skills` or `/new` answers `{"handled":true}` with its `note` or the new `id` instead of sending anything. Mid-turn, a send steers and a `/name` is just text.
 
 ## Jobs
 
@@ -49,5 +52,4 @@ A patch can't set a secret, the API keys, Settings → Integrations (accounts an
 ## What it doesn't do
 
 - No Shell tab, Images, Music or Video tabs, and no MCP servers.
-- Messages can't carry pictures or start a skill with `/name`.
 - No debug log, and no inference queue.

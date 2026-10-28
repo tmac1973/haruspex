@@ -12,6 +12,11 @@ vi.mock('#lib/stores/db.ts', () => ({
 	]),
 	dbLoadMessageSteps: vi.fn(async () => ({ 1: [{ id: 't1', toolName: 'web_search' }] }))
 }));
+const slash = vi.hoisted(() => ({ result: { kind: 'send' } as Record<string, unknown> }));
+vi.mock('#lib/engine/attach.ts', () => ({
+	attachImages: async (refs?: string[]) => (refs ?? []).map((r) => `data:image/png;base64,${r}`),
+	slashFor: async () => slash.result
+}));
 vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
 	logDebug: () => {}
@@ -83,6 +88,31 @@ describe('chat operations', () => {
 		expect(fake.opened).toEqual([]);
 		expect(fake.active).toBe('a');
 		expect(fake.sent).toEqual([{ id: 'b', text: 'hi b' }]);
+	});
+
+	it('send pictures, and the skill a /name named, with the message', async () => {
+		slash.result = { kind: 'send', skill: { name: 'fix-picture' } };
+		await dispatchChat({ type: 'chat.send', id: 'b', text: '/fix-picture night', images: ['AA'] });
+		expect(fake.sent).toEqual([
+			{
+				id: 'b',
+				text: '/fix-picture night',
+				images: ['data:image/png;base64,AA'],
+				skill: { name: 'fix-picture' }
+			}
+		]);
+		slash.result = { kind: 'send' };
+	});
+
+	it('answer what a built-in said instead of sending it', async () => {
+		slash.result = { kind: 'handled', id: 'new-chat' };
+		expect(await dispatchChat({ type: 'chat.send', id: 'b', text: '/new' })).toEqual({
+			handled: true,
+			id: 'new-chat',
+			note: undefined
+		});
+		expect(fake.sent).toEqual([]);
+		slash.result = { kind: 'send' };
 	});
 
 	it('steer a chat whose reply is being written, while another runs beside it', async () => {

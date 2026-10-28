@@ -16,6 +16,9 @@ import {
 	type CodeSession
 } from '#lib/stores/code.svelte.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { newSessionBeside } from '#lib/code/windows.ts';
+import { shellProject } from '#lib/skills/project.ts';
+import { attachImages, slashFor } from '#lib/engine/attach.ts';
 import { answerPrompt, currentPrompts } from '#lib/engine/prompts.svelte.ts';
 import { sessionState } from '#lib/engine/state.ts';
 import type { EngineOp, FileContent, SessionListItem } from '#lib/engine/types.ts';
@@ -53,6 +56,27 @@ export function setResync(fn: (id: string) => boolean): void {
 /** How `chat.resync` reaches the chat watcher (`chat.svelte.ts`), main window only. */
 export function setChatResync(fn: (id: string) => boolean): void {
 	resyncChat = fn;
+}
+
+/** What the Code tab's input box lends `/name` (`CodePane.svelte`), for a send from elsewhere. */
+function codeSlashHost(s: CodeSession, addNote: (text: string) => void) {
+	return {
+		projectRoot: async () =>
+			s.projectRoot ?? (await shellProject(ioRoot(s.root, s.wslDistro))).root,
+		codeMode: () => true,
+		// `/new`: a new session in the same folder, as a sub-tab.
+		newConversation: () => newSessionBeside(s),
+		// Answers at once, as `session.compact` does; the summary arrives as a meta event.
+		compact: async (instructions: string) => {
+			if (!s.canCompact()) {
+				addNote('Nothing to summarise yet: the conversation is still short.');
+				return;
+			}
+			void s.compactNow(instructions).catch((e: unknown) => {
+				logDebug('engine', 'compact failed', { id: s.id, error: errMessage(e) });
+			});
+		}
+	};
 }
 
 function openHere(id: string): CodeSession {
@@ -113,11 +137,17 @@ export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 			return wslDistros();
 		case 'session.send': {
 			const s = openHere(op.id);
-			if (!op.text.trim()) throw new Error('nothing to send');
+			const images = await attachImages(op.images);
+			if (!op.text.trim() && images.length === 0) throw new Error('nothing to send');
 			if (s.folderMissing) throw new Error(`the session's folder is missing: ${s.root}`);
 			const steered = s.busy;
+			// As the input box: no `/name` mid-turn, where it is steering.
+			const slash = steered
+				? null
+				: await slashFor(op.text, (addNote) => codeSlashHost(s, addNote));
+			if (slash?.kind === 'handled') return { handled: true, note: slash.note, id: slash.id };
 			// Resolves when the turn ends; its progress goes out as events.
-			void s.send(op.text, { remote: true }).catch((e: unknown) => {
+			void s.send(op.text, { remote: true, images, skill: slash?.skill }).catch((e: unknown) => {
 				logDebug('engine', 'send failed', { id: s.id, error: errMessage(e) });
 			});
 			return steered ? { steered: true } : { started: true };

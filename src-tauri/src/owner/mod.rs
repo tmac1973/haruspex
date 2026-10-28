@@ -22,7 +22,7 @@ use crate::engine::EngineHub;
 use crate::image_cache::protocol;
 use clients::Clients;
 use pairing::PairingCodes;
-use server::{Audio, BoxFuture, Dispatch, Images, Running};
+use server::{Audio, BoxFuture, Dispatch, Images, Running, StoredImage};
 use trust::Trust;
 
 /// Managed state: the running server, if any, and the devices.
@@ -146,5 +146,34 @@ impl Images for AppImages {
 
     fn bytes(&self, hash: &str) -> Option<(String, Vec<u8>)> {
         protocol::load(&self.0, hash).ok()
+    }
+
+    /// Kept as the app keeps a picture it drew: nothing was borrowed, and the
+    /// message that carries it links it to its conversation.
+    fn store(&self, bytes: Vec<u8>) -> Result<StoredImage, String> {
+        let image = crate::image_cache::fetch::verify_bytes(bytes, "")?;
+        if !crate::image_cache::fetch::is_accepted_mime(&image.mime) {
+            return Err(format!(
+                "{} can't be attached: send a PNG, JPEG, WebP or GIF",
+                image.mime
+            ));
+        }
+        let db = self.0.state::<Database>();
+        let dir = crate::image_cache::cache_dir(&self.0)?;
+        let hash = crate::image_cache::commands::store_generated(
+            &db,
+            &dir,
+            &image.bytes,
+            image.mime.clone(),
+            image.width,
+            image.height,
+            None,
+        )?;
+        Ok(StoredImage {
+            hash,
+            mime: image.mime,
+            width: image.width,
+            height: image.height,
+        })
     }
 }

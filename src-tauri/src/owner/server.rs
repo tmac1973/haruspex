@@ -83,6 +83,18 @@ pub trait Images: Send + Sync + 'static {
     fn lookup(&self, urls: &[String]) -> Vec<(String, ImageRow)>;
     /// One image's type and bytes, by hash.
     fn bytes(&self, hash: &str) -> Option<(String, Vec<u8>)>;
+    /// Keep a picture a client sends, to attach to a message. Refused unless
+    /// it decodes as one of the types a message can carry.
+    fn store(&self, bytes: Vec<u8>) -> Result<StoredImage, String>;
+}
+
+/// An uploaded picture, as `/api/v1/upload` answers.
+#[derive(Debug, serde::Serialize)]
+pub struct StoredImage {
+    pub hash: String,
+    pub mime: String,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// The desktop's audio cache, read only, for `/api/v1/audio/<hash>`.
@@ -93,6 +105,9 @@ pub trait Audio: Send + Sync + 'static {
 
 /// Most image URLs one lookup may ask about: a long chat's worth.
 const MAX_IMAGE_LOOKUP: usize = 500;
+
+/// The largest picture `/api/v1/upload` takes: a phone photo, with room.
+const MAX_UPLOAD_BYTES: usize = 16 * 1024 * 1024;
 
 /// What the server serves from.
 pub struct Services {
@@ -188,6 +203,7 @@ pub async fn start(
             .route("/api/v1/events", get(events))
             .route("/api/v1/images", post(images))
             .route("/api/v1/image/{hash}", get(image))
+            .route("/api/v1/upload", post(upload))
             .route("/api/v1/audio/{hash}", get(audio))
             .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
             .layer(axum::middleware::map_response(no_referrer))
@@ -605,6 +621,39 @@ async fn images(
     Json(json!({ "images": map })).into_response()
 }
 
+/// Keep a picture for a message to carry: the body is its bytes, and the
+/// answer its hash, which `chat.send` and `session.send` take in `images`.
+/// The body is read only once the client is known, and is not held to the
+/// small limit the other routes have.
+async fn upload(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<PeerAddr>,
+    headers: HeaderMap,
+    body: axum::body::Body,
+) -> Response {
+    let client = match authorise(&state, peer.ip(), &headers).await {
+        Ok(c) => c,
+        Err((status, why)) => return refuse(status, why),
+    };
+    if let Some(r) = missing(&client, Scope::Drive) {
+        return r;
+    }
+    let Ok(bytes) = axum::body::to_bytes(body, MAX_UPLOAD_BYTES).await else {
+        return refuse(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "a picture can be at most 16 MB",
+        );
+    };
+    let source = state.images.clone();
+    let stored = tokio::task::spawn_blocking(move || source.store(bytes.to_vec()))
+        .await
+        .unwrap_or_else(|e| Err(e.to_string()));
+    match stored {
+        Ok(image) => Json(image).into_response(),
+        Err(why) => refuse(StatusCode::UNPROCESSABLE_ENTITY, &why),
+    }
+}
+
 /// One cached image.
 async fn image(
     State(state): State<AppState>,
@@ -859,6 +908,17 @@ mod tests {
         fn bytes(&self, hash: &str) -> Option<(String, Vec<u8>)> {
             (hash == cat_hash()).then(|| ("image/png".into(), vec![1, 2, 3, 4]))
         }
+        fn store(&self, bytes: Vec<u8>) -> Result<StoredImage, String> {
+            if !bytes.starts_with(b"\x89PNG") {
+                return Err("Image failed to decode".into());
+            }
+            Ok(StoredImage {
+                hash: cat_hash(),
+                mime: "image/png".into(),
+                width: 2,
+                height: 3,
+            })
+        }
     }
 
     fn test_tls() -> Arc<rustls::ServerConfig> {
@@ -1082,6 +1142,61 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(r.status(), 404);
+        h.running.stop();
+    }
+
+    #[tokio::test]
+    async fn a_driving_device_uploads_a_picture_bigger_than_an_operation() {
+        let h = serve().await;
+        let url = format!("{}/api/v1/upload", h.base);
+        // Past the 64 KB the other routes take, as a photo is.
+        let mut png = b"\x89PNG".to_vec();
+        png.resize(MAX_BODY_BYTES * 4, 0);
+        let r = h.http.post(&url).body(png.clone()).send().await.unwrap();
+        assert_eq!(r.status(), 401);
+        let reader = h.token(&[Scope::Read]);
+        let r = h
+            .http
+            .post(&url)
+            .bearer_auth(&reader)
+            .body(png.clone())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 403);
+
+        let driver = h.token(&[Scope::Drive]);
+        let r = h
+            .http
+            .post(&url)
+            .bearer_auth(&driver)
+            .body(png)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200);
+        let body: Value = r.json().await.unwrap();
+        assert_eq!(body["hash"], cat_hash());
+        assert_eq!(body["mime"], "image/png");
+
+        let r = h
+            .http
+            .post(&url)
+            .bearer_auth(&driver)
+            .body("not a picture")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 422);
+        let r = h
+            .http
+            .post(&url)
+            .bearer_auth(&driver)
+            .body(vec![0u8; MAX_UPLOAD_BYTES + 1])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 413);
         h.running.stop();
     }
 
