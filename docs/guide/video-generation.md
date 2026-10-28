@@ -21,7 +21,7 @@ Under the model, Settings says the size and frame rate it makes, and how many fr
 
 Ask for one in Chat or the Code tab: "a five-second clip of a red fox running through snow". You can ask for portrait instead of landscape, a seed to repeat one, or give a picture from the conversation (or an image file in the working folder) to start from, if the model can.
 
-A clip takes minutes, so it always runs in the background. The assistant starts it and carries on, so you can keep chatting. The clip gets a card with its place in the queue, its progress and **Cancel**, and is in the **Tasks** list (see the `chat-conversations` page). When it's done, the assistant places it in that conversation, where it plays; **Save as…** under the player saves a copy anywhere.
+A clip takes minutes, so it always runs in the background. The assistant starts it and carries on, so you can keep chatting. The clip gets a card with its place in the queue, its progress and **Cancel**, and is in the **Tasks** list (see the `chat-conversations` page). When it's done, the assistant places it in that conversation, where it plays; the button in its top-left corner, shown when you point at it, plays it full screen (Esc leaves), and **Save as…** under the player saves a copy anywhere.
 
 With a working folder set in Chat, or in a Code session's project, the assistant can also save it there as a `.webm` file: ask "save it as fox.webm". If that file exists in Chat, you're asked before it is replaced.
 
