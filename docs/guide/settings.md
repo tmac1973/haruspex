@@ -37,11 +37,12 @@ See the `models` page.
 
 ## Agent
 
-Reasoning, reply length, the Python sandbox and pictures in answers.
+Reasoning, reply length, steps, the sandbox and pictures.
 
 - **Reasoning mode**: on. **Reasoning effort**: medium.
 - **Additional system prompt**: empty.
 - **Max response tokens**: 8192. **Max response tokens (file writes)**: 65536.
+- **Max steps per turn**: 10.
 - **Enable Python sandbox**: on. **Approval prompt**: Once per chat. **Network access**: Internet and local network. **Execution timeout (seconds)**: 60.
 - **Pictures in answers** → **Include images in answers**: on.
 
@@ -51,7 +52,7 @@ See the `chat` page.
 
 What the assistant remembers between chats.
 
-- **Carry facts and preferences from one conversation into the next**: on. It needs a 65 MB embedding model.
+- **Carry facts and preferences from one conversation into the next**: on. Needs a 65 MB embedding model.
 - **Ask before saving something you asked me to remember**: on.
 - **Find duplicates**: merges memories that say the same thing, after you approve each.
 - A list of everything remembered, to edit or delete.

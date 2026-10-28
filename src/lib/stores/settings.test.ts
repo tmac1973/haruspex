@@ -10,6 +10,7 @@ import {
 	SETTINGS_KEY,
 	getIncludeImagesPrompt,
 	clampResponseTokens,
+	chatTurnMaxIterations,
 	DEFAULT_MAX_RESPONSE_TOKENS,
 	DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE,
 	MIN_MAX_RESPONSE_TOKENS,
@@ -1185,5 +1186,24 @@ describe('load-time Shell Full access default migration', () => {
 	it('prefers the new key once it has been written', async () => {
 		const s = await loadWith({ shellCodeModeDefault: true, shellFullAccessDefault: false });
 		expect(s.shellFullAccessDefault).toBe(false);
+	});
+});
+
+describe('chatTurnMaxIterations', () => {
+	it('uses the setting for a normal turn', () => {
+		expect(getSettings().chatMaxIterations).toBe(10);
+		expect(chatTurnMaxIterations(10, false)).toBe(10);
+		expect(chatTurnMaxIterations(60, false)).toBe(60);
+	});
+
+	it('gives deep research at least 25, or more when the setting is higher', () => {
+		expect(chatTurnMaxIterations(10, true)).toBe(25);
+		expect(chatTurnMaxIterations(60, true)).toBe(60);
+	});
+
+	it('clamps a stored value it cannot use', () => {
+		expect(chatTurnMaxIterations(0, false)).toBe(5);
+		expect(chatTurnMaxIterations(5000, false)).toBe(200);
+		expect(chatTurnMaxIterations(Number.NaN, false)).toBe(10);
 	});
 });

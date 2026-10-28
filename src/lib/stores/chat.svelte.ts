@@ -50,7 +50,7 @@ import { rehydrateImages, resolveReplyImages, sweepImages } from '#lib/images/re
 import { placeGeneratedImages } from '#lib/images/eligible.ts';
 import { placeGeneratedAudio } from '#lib/audio/eligible.ts';
 import { rehydrateAudio } from '#lib/audio/rehydrate.ts';
-import { getSettings, SETTINGS_KEY } from '#lib/stores/settings.ts';
+import { chatTurnMaxIterations, getSettings, SETTINGS_KEY } from '#lib/stores/settings.ts';
 import { persistItem } from '#lib/persist.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import {
@@ -1669,7 +1669,7 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 				runAgentLoop({
 					messages: messagesForApi,
 					workingDir: currentWorkingDir,
-					maxIterations: exhaustive ? 25 : 10,
+					maxIterations: chatTurnMaxIterations(getSettings().chatMaxIterations, exhaustive),
 					contextSize: activeCtxSize,
 					deepResearch: exhaustive,
 					expectsFileOutput,
