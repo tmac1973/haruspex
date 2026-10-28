@@ -35,6 +35,14 @@ Send the token as `Authorization: Bearer <token>`, and trust the certificate: sa
 
 Events: `job-run` when a run's status or steps change, `job-run-live` with the running step's text, and `job-queue`. A guided-planning or asset job's question shows in `prompts.list` with its `runId`.
 
+## Watching the app
+
+- `debug.tail`: the debug log's newest lines (`lines`, default 200, at most 2000), or those after `since`; pass back the `next` it answers to read on. `contains` keeps only lines holding that text, such as `branch=`. Each window keeps its own log: `window` picks one (`main` by default). Secrets are blanked as in the log file.
+- `inference.queue`: who holds a model slot and who is waiting, on which lane.
+- `tasks.list`: the background tasks (renders, uploads, pictures and songs made in the background), or one owner's (`chat:<id>`, `code:<id>`). `tasks.cancel` (`taskId`) stops one.
+
+Events: `task` each time a background task starts, moves on or ends.
+
 ## Settings
 
 - `settings.get`: every setting, or `keys` for a few. Secrets come back blank, and `redacted` lists where.
@@ -44,12 +52,11 @@ A patch can't set a secret, the API keys, Settings → Integrations (accounts an
 
 ## What each permission allows
 
-- **Read**: list, read and follow everything above, and `jobs.types`.
-- **Drive**: start, send, steer and stop sessions and chats; run, cancel and delete jobs and runs; duplicate a job.
+- **Read**: list, read and follow everything above, the debug log, the queue and the tasks.
+- **Drive**: start, send, steer and stop sessions and chats; run, cancel and delete jobs and runs; duplicate a job; upload pictures; cancel a task.
 - **Approve**: answer prompts, and `jobs.create` and `jobs.update`. A job's tools run without asking, so writing one approves its commands ahead.
 - **Settings**: `settings.get` and `settings.patch`. A new device doesn't get it unless you tick it; a trusted computer has it.
 
 ## What it doesn't do
 
 - No Shell tab, Images, Music or Video tabs, and no MCP servers.
-- No debug log, and no inference queue.

@@ -9,6 +9,7 @@ import type { ChatMessage } from '#lib/api.ts';
 import type { SearchStep } from '#lib/agent/loop.ts';
 import type { FileDiff } from '#lib/code/diff.ts';
 import type { BgProcess } from '#lib/ipc/gen/BgProcess.ts';
+import type { BackgroundTask } from '#lib/ipc/gen/BackgroundTask.ts';
 import type { CodeSessionStatus } from '#lib/stores/code.svelte.ts';
 import type { UserAnswer } from '#lib/stores/userQuestion.svelte.ts';
 import type { JobInput, JobType, Schedule } from '#lib/stores/jobs.svelte.ts';
@@ -58,6 +59,7 @@ export type EngineOp =
 	| { type: 'prompts.list' }
 	| { type: 'prompts.answer'; promptId: string; answer: PromptAnswer }
 	| JobOp
+	| ObserveOp
 	/** The settings, secrets blanked; `keys` picks top-level settings. */
 	| { type: 'settings.get'; keys?: string[] }
 	/** Lay `patch` over the settings: objects merge key by key, anything else is replaced. */
@@ -124,6 +126,23 @@ export type JobOp =
 	| { type: 'runs.delete'; runId: number }
 	/** Send a fresh `job-run` event for the current run: the client saw a gap in `seq`. */
 	| { type: 'runs.resync'; runId: number };
+
+/** Watching the app: its debug log, the inference queue, and the background tasks. */
+export type ObserveOp =
+	/**
+	 * The debug log's lines after `since` (a `seq`; 0 for the newest), at
+	 * most `lines` (default 200, at most 2000), holding `contains` if given.
+	 * One window's log: `window`, or the main one. `next` reads on.
+	 */
+	| { type: 'debug.tail'; since?: number; lines?: number; contains?: string; window?: string }
+	/** The inference queue's tickets: who holds a slot, who waits, on which lane. */
+	| { type: 'inference.queue' }
+	/** The background tasks, or one owner's (`chat:<id>`, `code:<id>`). */
+	| { type: 'tasks.list'; owner?: string }
+	| { type: 'tasks.cancel'; taskId: string };
+
+/** A background task changed: started, moved on, or ended. `seq` counts these alone. */
+export type TaskEvent = { type: 'task'; seq: number; task: BackgroundTask };
 
 /** A run's step as events carry it: no streaming text, reasoning or tool steps. */
 export interface JobRunStepLive {
@@ -322,7 +341,7 @@ export type ChatEvent = { seq: number; chatId: string } & (
 	{ type: 'chat-snapshot'; state: ChatState } | { type: 'chat-update'; patch: Partial<ChatState> }
 );
 
-export type EngineEvent = (SessionEvent | PromptEvent | ChatEvent | JobEvent) & {
+export type EngineEvent = (SessionEvent | PromptEvent | ChatEvent | JobEvent | TaskEvent) & {
 	/** Stamped by Rust: the window the event came from. */
 	window?: string;
 };
@@ -341,6 +360,10 @@ const JOB_EVENTS = new Set(['job-run', 'job-run-live', 'job-queue']);
 
 export function isJobEvent(e: EngineEvent): e is JobEvent & { window?: string } {
 	return JOB_EVENTS.has(e.type);
+}
+
+export function isTaskEvent(e: EngineEvent): e is TaskEvent & { window?: string } {
+	return e.type === 'task';
 }
 
 /** `session.readFile`'s answer. */

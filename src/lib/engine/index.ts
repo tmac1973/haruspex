@@ -120,6 +120,8 @@ async function run(label: string): Promise<void> {
 		keep(chats.stop);
 		const { watchJobs } = await import('#lib/engine/jobs.svelte.ts');
 		keep(watchJobs(sink).stop);
+		const { watchTasks } = await import('#lib/engine/observe.ts');
+		keep(watchTasks(sink).stop);
 	}
 
 	const unlistenOps = await listen<{ reqId: string; op: EngineOp; window: string }>(

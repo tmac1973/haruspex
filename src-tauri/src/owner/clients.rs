@@ -48,9 +48,8 @@ pub fn required_scope(op_type: &str) -> Option<Scope> {
     Some(match op_type {
         "sessions.list" | "session.get" | "session.resync" | "session.readFile" | "chats.list"
         | "chat.get" | "chat.resync" | "prompts.list" | "wsl.distros" | "jobs.types"
-        | "jobs.list" | "jobs.get" | "runs.list" | "runs.get" | "runs.current" | "runs.resync" => {
-            Scope::Read
-        }
+        | "jobs.list" | "jobs.get" | "runs.list" | "runs.get" | "runs.current" | "runs.resync"
+        | "debug.tail" | "inference.queue" | "tasks.list" => Scope::Read,
         "session.open"
         | "session.new"
         | "session.send"
@@ -66,7 +65,8 @@ pub fn required_scope(op_type: &str) -> Option<Scope> {
         | "jobs.delete"
         | "jobs.run"
         | "run.cancel"
-        | "runs.delete" => Scope::Drive,
+        | "runs.delete"
+        | "tasks.cancel" => Scope::Drive,
         "prompts.answer" | "jobs.create" | "jobs.update" => Scope::Approve,
         "settings.get" | "settings.patch" => Scope::Settings,
         _ => return None,
@@ -399,6 +399,10 @@ mod tests {
         assert_eq!(required_scope("jobs.create"), Some(Scope::Approve));
         assert_eq!(required_scope("jobs.update"), Some(Scope::Approve));
         assert_eq!(required_scope("settings.get"), Some(Scope::Settings));
+        assert_eq!(required_scope("debug.tail"), Some(Scope::Read));
+        assert_eq!(required_scope("inference.queue"), Some(Scope::Read));
+        assert_eq!(required_scope("tasks.list"), Some(Scope::Read));
+        assert_eq!(required_scope("tasks.cancel"), Some(Scope::Drive));
         assert_eq!(required_scope("settings.patch"), Some(Scope::Settings));
         assert_eq!(required_scope("session.delete"), None);
     }

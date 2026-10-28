@@ -61,13 +61,18 @@ pub enum Route {
     Fanout,
 }
 
-/// Route by the operation's `type`, `promptId` or session `id`: every window
-/// for the listings, the window a prompt showed in, the session's owner, and
-/// the main window for a session open nowhere (it opens there).
+/// Route by the operation's `type`, `window`, `promptId` or session `id`:
+/// every window for the listings, the window it names, the window a prompt
+/// showed in, the session's owner, and the main window for a session open
+/// nowhere (it opens there).
 pub fn route(op: &Value, owner_of: impl Fn(&str) -> Option<String>) -> Route {
     let kind = op.get("type").and_then(Value::as_str).unwrap_or_default();
     if FANOUT_OPS.contains(&kind) {
         return Route::Fanout;
+    }
+    // An operation that names its window (`debug.tail`): that window.
+    if let Some(window) = op.get("window").and_then(Value::as_str) {
+        return Route::Window(window.to_string());
     }
     // A prompt lives in the window that showed it, which its id names.
     if let Some((label, _)) = op
@@ -325,6 +330,14 @@ mod tests {
         let op = json!({ "type": "session.open", "id": "s2" });
         assert_eq!(route(&op, |_| None), Route::Window("main".into()));
         let op = json!({ "type": "session.new", "root": "/p" });
+        assert_eq!(route(&op, |_| None), Route::Window("main".into()));
+    }
+
+    #[test]
+    fn an_operation_that_names_a_window_goes_there() {
+        let op = json!({ "type": "debug.tail", "window": "code-s1" });
+        assert_eq!(route(&op, |_| None), Route::Window("code-s1".into()));
+        let op = json!({ "type": "debug.tail" });
         assert_eq!(route(&op, |_| None), Route::Window("main".into()));
     }
 
