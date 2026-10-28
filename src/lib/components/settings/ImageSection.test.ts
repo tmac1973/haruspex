@@ -171,3 +171,46 @@ describe('ImageSection with llama-toolchest', () => {
 		expect(settings.imageToolchestBaseUrl).toBe('http://other:3000');
 	});
 });
+
+describe('ImageSection with the bundled engine', () => {
+	const files = [{ role: 'diffusion', filename: 'model.gguf', optional: false }];
+
+	beforeEach(() => {
+		settings.imageBackendKind = 'local';
+		settings.imageLocalModelId = 'ming';
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter({
+				image_engine_status: { status: { type: 'Stopped' }, model: null, available: true },
+				image_models: [
+					{ ...catalogue[0], files, downloaded: true, can_edit: false },
+					{ ...catalogue[1], files, downloaded: true, can_edit: true }
+				],
+				image_upscaler: {
+					filename: 'esrgan.pth',
+					license: 'BSD 3-Clause — commercial use allowed.',
+					license_url: 'https://example.com/esrgan',
+					size_bytes: 67e6,
+					downloaded: false
+				}
+			})
+		);
+	});
+
+	it('says what each model can do, chosen or not', async () => {
+		render(ImageSection);
+		const section = (await screen.findByRole('heading', { name: 'Bundled engine' })).closest(
+			'section'
+		)!;
+		await waitFor(() => expect(section.querySelectorAll('.model')).toHaveLength(3));
+		const lines = [...section.querySelectorAll('.model')].map((el) =>
+			[...el.querySelectorAll('p.help')]
+				.map((p) => p.textContent?.replace(/\s+/g, ' ').trim())
+				.find((t) => t?.startsWith('Can:'))
+		);
+		expect(lines).toEqual([
+			"Can: draw pictures, extend pictures, transparent backgrounds, tiling textures. Can't: edit pictures, upscale pictures.",
+			"Can: draw pictures, edit pictures (up to 3 together), extend pictures, transparent backgrounds, tiling textures. Can't: upscale pictures.",
+			undefined
+		]);
+	});
+});

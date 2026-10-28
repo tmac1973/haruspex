@@ -189,6 +189,33 @@ a {
 	flex: none;
 }
 
+/* A list of models in a settings section (`.model`, each with a
+   `.model-head` and optional `.badge`): a rule between models, and above
+   whatever follows the last one. */
+.settings-section .model {
+	padding: 10px 0;
+}
+.settings-section .model + .model,
+.settings-section .model + :not(.model) {
+	border-top: 1px solid var(--border);
+}
+.settings-section .model + :not(.model) {
+	padding-top: 10px;
+}
+.settings-section .model-head {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+.settings-section .model-head .badge {
+	font-size: 0.8em;
+	padding: 1px 6px;
+	border-radius: 4px;
+	background: var(--accent-soft);
+	color: var(--accent);
+}
+
 /* Segmented control — a flex track of equal-width buttons; the active
    one fills with the accent. ModeSelector renders one, and standalone
    button groups (e.g. the theme picker) reuse the classes directly. */

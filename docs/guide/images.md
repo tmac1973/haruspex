@@ -23,7 +23,7 @@ Open Settings → Image → **Image backend** and choose a **Backend**:
 
 ### Set up the bundled engine
 
-Under **Bundled engine**, press **Download** on a model (about 17 GB for Ming-Image, 10 GB for Qwen-Image Turbo), then **Use**. The engine starts when something needs it or on **Start**, and stops on **Stop**, a backend switch, or quitting.
+Under **Bundled engine**, press **Download** on a model (about 17 GB for Ming-Image, 10 GB for Qwen-Image Turbo), then **Use**. Each model lists what it can do. The engine starts when something needs it or on **Start**, and stops on **Stop**, a backend switch, or quitting.
 
 ### Set up ComfyUI
 
@@ -53,7 +53,7 @@ Settings → Image marks Qwen-Image "Not licensed for commercial use." and asks 
 
 ## Draw a picture in Chat
 
-Ask Chat to draw, paint or illustrate something. It takes 30 seconds to a few minutes, or ask for it in the background (see the `image-editing` page). It appears in the answer and is kept with the conversation; click it for full size, or hover for **Save as…**. If the model forgets to place it, it shows under the answer. Ask for another shape or a transparent background. With a working folder set, it can save it there, asking before replacing a file. A model that sees images is shown it.
+Ask Chat to draw, paint or illustrate something. It takes 30 seconds to a few minutes, or ask for it in the background (see the `image-editing` page). It appears in the answer and is kept with the conversation; click it for full size, or hover for **Save as…**. Ask for another shape or a transparent background. With a working folder set, it can save it there, asking before replacing a file. A model that sees images is shown it.
 
 ## Make art for a project
 
