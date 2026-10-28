@@ -4,7 +4,7 @@
 	import { onMount } from 'svelte';
 	import { dismissable } from '#lib/actions/dismissable.ts';
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
-	import { clearDebugLogs, getDebugLogs } from '#lib/debug-log.ts';
+	import { clearDebugLogs, getDebugLogs } from '#lib/debugLog.ts';
 	import { createCopyAction } from '#lib/utils/clipboard.svelte.ts';
 	import { getSettings } from '#lib/stores/settings.ts';
 	import type { CombinedSearchStats } from '#lib/ipc/gen/CombinedSearchStats.ts';

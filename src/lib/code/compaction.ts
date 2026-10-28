@@ -14,7 +14,7 @@
  */
 
 import { messageText, type BackendOverride, type ChatMessage } from '#lib/api.ts';
-import { estimateMessagesTokens, getTokenCalibration } from '#lib/agent/context-budget.ts';
+import { estimateMessagesTokens, getTokenCalibration } from '#lib/agent/contextBudget.ts';
 import { answerForSummary, summarizeInChunks } from '#lib/agent/summarize.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { truncateCapturedOutput } from '#lib/shell/truncate.ts';

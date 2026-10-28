@@ -13,7 +13,7 @@ import {
 	markRunStepStarted,
 	type JobRunStepStatus
 } from '#lib/stores/jobRuns.svelte.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import type { JobRunContext, PlannedStep } from '#lib/agent/jobs/types/types.ts';
 import type { RunStatus } from '#lib/agent/jobs/runner.svelte.ts';
 

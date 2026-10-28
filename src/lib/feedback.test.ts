@@ -12,7 +12,7 @@ import {
 } from './feedback';
 import { invoke } from '@tauri-apps/api/core';
 import { invokeRouter } from '#lib/testing/invoke.ts';
-import { beginTurn, logDebug } from '#lib/debug-log.ts';
+import { beginTurn, logDebug } from '#lib/debugLog.ts';
 import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 
 const SECRETS = [

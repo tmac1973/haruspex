@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { randomSeed } from '#lib/utils/random.ts';
 	import { invoke } from '@tauri-apps/api/core';
-	import { loggedFallback } from '#lib/debug-log.ts';
+	import { loggedFallback } from '#lib/debugLog.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import Tooltip from '#lib/components/Tooltip.svelte';

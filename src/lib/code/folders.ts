@@ -19,7 +19,7 @@ import type { FileNotice } from '#lib/ipc/gen/FileNotice.ts';
 import type { FileNotices } from '#lib/ipc/gen/FileNotices.ts';
 import type { WorktreeRemoval } from '#lib/ipc/gen/WorktreeRemoval.ts';
 import { listCodeSessions, type CodeSessionSummary } from '#lib/code/db.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
 /** What a write is told while another session has the folder. */

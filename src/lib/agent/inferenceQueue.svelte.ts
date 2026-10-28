@@ -32,7 +32,7 @@ import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 
 import type { BackendOverride } from '#lib/api.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 
 export type InferenceConsumer =
 	| 'chat'

@@ -149,7 +149,7 @@ pub async fn clear_app_logs() -> Result<(), ()> {
     Ok(())
 }
 
-/// Where dev builds mirror the webview's agent debug log (`debug-log.ts`),
+/// Where dev builds mirror the webview's agent debug log (`debugLog.ts`),
 /// so a session can be read after the fact instead of being copied out of the
 /// Log Viewer before the app closes. Off in release builds unless
 /// `HARUSPEX_DEBUG_LOG_FILE` is set: a whole agent turn's log is large, and it

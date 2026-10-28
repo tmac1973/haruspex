@@ -6,7 +6,7 @@
 	import ThinkingIndicator from '#lib/components/ThinkingIndicator.svelte';
 	import JobStepCard from '#lib/components/jobs/JobStepCard.svelte';
 	import ContextGauge from '#lib/components/ContextGauge.svelte';
-	import { hasStreamingAnswer } from '#lib/agent/think-stream.ts';
+	import { hasStreamingAnswer } from '#lib/agent/thinkStream.ts';
 	import JobRunStats from '#lib/components/jobs/JobRunStats.svelte';
 	import ThinkingPanel from '#lib/components/ThinkingPanel.svelte';
 	import { splitThinkChannels } from '#lib/markdown.ts';

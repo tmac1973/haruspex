@@ -1,6 +1,6 @@
 <script lang="ts">
 	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
-	import { loggedFallback } from '#lib/debug-log.ts';
+	import { loggedFallback } from '#lib/debugLog.ts';
 	import { imageEngineLog } from '#lib/reportLogs.ts';
 	import { imageSrc } from '#lib/images/url.ts';
 	import { errMessage } from '#lib/utils/error.ts';

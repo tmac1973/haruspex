@@ -58,7 +58,7 @@ export function figureHtml(row: ImageRow, alt: string): string | null {
 	//
 	// `data-action` rather than an inline handler: this HTML goes through
 	// DOMPurify, which strips `onclick`, and the CSP would block it anyway.
-	// markdown-actions.ts routes the click, the same way the code-block
+	// markdownActions.ts routes the click, the same way the code-block
 	// copy/paste/run buttons work. Save as… sits beside the zoom button, not
 	// in it, since a button can't hold another.
 	return (

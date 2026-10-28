@@ -14,7 +14,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 import { listen } from '@tauri-apps/api/event';
 
-import { getDebugLogs, setVerbosePayloads } from '#lib/debug-log.ts';
+import { getDebugLogs, setVerbosePayloads } from '#lib/debugLog.ts';
 import { currentPrompts } from '#lib/engine/prompts.svelte.ts';
 import { sessionState } from '#lib/engine/state.ts';
 import { emptyMirror, reduce, type Mirror } from '#lib/engine/reduce.ts';

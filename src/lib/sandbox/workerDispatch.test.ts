@@ -4,7 +4,7 @@ import {
 	settlePending,
 	type WorkerMessageHandlers,
 	type PendingSettler
-} from './worker-dispatch';
+} from './workerDispatch';
 import type { MainToWorker } from './protocol';
 
 function mockHandlers(): WorkerMessageHandlers {

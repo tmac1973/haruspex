@@ -19,7 +19,7 @@ import type { SearchStep } from '#lib/agent/loop.ts';
 import type { ImageRequest } from '#lib/ipc/gen/ImageRequest.ts';
 import type { ImageRow } from '#lib/ipc/gen/ImageRow.ts';
 import { getSearchProxy } from '#lib/stores/settings.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import { urlForReport } from '#lib/utils/http.ts';
 import { SvelteMap } from 'svelte/reactivity';
 import { imageSrc } from '#lib/images/url.ts';

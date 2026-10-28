@@ -297,7 +297,7 @@ trails by a few tens of milliseconds, so `differs` listing only
 - **Results** go to `e2e/drive-output/<timestamp>/` (gitignored):
   `transcript-<id>.md` (messages, reasoning, tool calls and results, diffs)
   and `session-<id>.json` for each session, `debug.log` (the agent debug log,
-  `src/lib/debug-log.ts`), `screenshot.png`, `tauri-driver.log`, and for
+  `src/lib/debugLog.ts`), `screenshot.png`, `tauri-driver.log`, and for
   `start`, `driver.log`.
 - `node scripts/drive/selftest.mjs` drives the driver against the fake model;
   CI runs it after the real-app specs.

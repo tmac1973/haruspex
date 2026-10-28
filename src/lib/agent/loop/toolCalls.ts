@@ -8,7 +8,7 @@ import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import { coerceCallArguments, executeTool } from '#lib/agent/tools/index.ts';
 import { toolUsesModel } from '#lib/agent/tools/registry.ts';
 import { isFetchFailureResult, isToolErrorResult } from '#lib/agent/tools/_helpers.ts';
-import { isVerbosePayloads, logDebug } from '#lib/debug-log.ts';
+import { isVerbosePayloads, logDebug } from '#lib/debugLog.ts';
 import { NudgeState } from '#lib/agent/loop/nudges.ts';
 import { PICTURE_TOOLS } from '#lib/images/eligible.ts';
 import {

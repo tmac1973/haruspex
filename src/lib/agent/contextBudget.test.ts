@@ -10,7 +10,7 @@ import {
 	resetTokenCalibration,
 	parseContextOverflow,
 	DROPPED_TURNS_NOTE
-} from './context-budget';
+} from './contextBudget';
 import type { ChatMessage } from '#lib/api.ts';
 
 // Calibration is module-global; keep tests isolated.

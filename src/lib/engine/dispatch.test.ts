@@ -36,8 +36,8 @@ vi.mock('#lib/engine/prompts.svelte.ts', () => ({
 	currentPrompts: mocks.currentPrompts
 }));
 vi.mock('#lib/engine/chat.svelte.ts', () => ({ dispatchChat: mocks.dispatchChat }));
-vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
+vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
 	logDebug: () => {}
 }));
 

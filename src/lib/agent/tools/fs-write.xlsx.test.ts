@@ -12,8 +12,8 @@ vi.mock('@tauri-apps/api/core', () => ({
 	invoke: mocks.invoke
 }));
 
-vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
+vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
 	logDebug: mocks.logDebug
 }));
 

@@ -14,7 +14,7 @@
  */
 
 import type { ToolDefinition } from '#lib/api.ts';
-import { estimateTokens } from '#lib/agent/context-budget.ts';
+import { estimateTokens } from '#lib/agent/contextBudget.ts';
 
 /**
  * Tool-count caps by model size.

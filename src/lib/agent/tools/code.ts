@@ -12,7 +12,7 @@ import { registerTool } from '#lib/agent/tools/registry.ts';
 import { noteCommandRan, toolError, toolResult } from '#lib/agent/tools/types.ts';
 import type { ToolContext, ToolExecOutput } from '#lib/agent/tools/types.ts';
 import { getSettings } from '#lib/stores/settings.ts';
-import { classifyShellRisk, type RiskMatch } from '#lib/shell/risky-commands.ts';
+import { classifyShellRisk, type RiskMatch } from '#lib/shell/riskyCommands.ts';
 import { checkBoundary, protectedTargets, reportBoundaryRefusal } from '#lib/shell/boundary.ts';
 import { isAutoApproveActive } from '#lib/stores/approvalOverride.ts';
 import {
@@ -29,7 +29,7 @@ import {
 	spillIfLarge
 } from '#lib/agent/tools/pty-exec.ts';
 import { registerWatch } from '#lib/shell/backgroundWatch.ts';
-import { startCodeBackground } from '#lib/agent/tools/code-bg.ts';
+import { startCodeBackground } from '#lib/agent/tools/command.ts';
 import { ttyHintFor } from '#lib/code/ttyHint.ts';
 import { isReadOnlyCommand } from '#lib/code/readOnlyCommand.ts';
 import { withLocalScopeNote } from '#lib/agent/tools/nested-session.ts';

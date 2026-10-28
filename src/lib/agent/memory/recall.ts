@@ -18,7 +18,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { MemoryHit } from '#lib/ipc/gen/MemoryHit.ts';
 import type { MemoryCursor } from '#lib/ipc/gen/MemoryCursor.ts';
 import { memoryActive } from '#lib/stores/memory.svelte.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 
 /**
  * Cosine floor for a memory to be considered at all, applied before the

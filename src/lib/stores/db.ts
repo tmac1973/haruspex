@@ -3,7 +3,7 @@ import type { ChatMessage } from '#lib/api.ts';
 import type { ConversationSummary } from '#lib/ipc/gen/ConversationSummary.ts';
 import type { ConversationWithMessages } from '#lib/ipc/gen/ConversationWithMessages.ts';
 import type { DbMessage } from '#lib/ipc/gen/DbMessage.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
 // ts-rs-generated mirrors of the Rust row types, re-exported under the

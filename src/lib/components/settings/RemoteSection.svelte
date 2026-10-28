@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { loggedFallback } from '#lib/debug-log.ts';
+	import { loggedFallback } from '#lib/debugLog.ts';
 
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import {

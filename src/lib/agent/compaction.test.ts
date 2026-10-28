@@ -21,7 +21,7 @@ import {
 	compactConversation,
 	remapIndexedRecords
 } from './compaction';
-import { estimateMessagesTokens, resetTokenCalibration } from './context-budget';
+import { estimateMessagesTokens, resetTokenCalibration } from './contextBudget';
 
 describe('remapIndexedRecords', () => {
 	const msgs = ['m0', 'm1', 'm2', 'm3', 'm4'].map((c) => ({ content: c }));

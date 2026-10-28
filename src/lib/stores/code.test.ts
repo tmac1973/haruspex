@@ -260,8 +260,8 @@ vi.mock('#lib/shell/backgroundWatch.ts', () => ({
 	}
 }));
 vi.mock('#lib/code/subtaskRun.ts', () => ({ runSubtaskSpec: mocks.runSubtaskSpec }));
-vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
+vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
 	logDebug: () => {}
 }));
 

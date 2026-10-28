@@ -259,7 +259,7 @@ registerTool({
 			);
 		}
 		try {
-			const { renderPdfPages } = await import('#lib/agent/pdf-render.ts');
+			const { renderPdfPages } = await import('#lib/agent/pdfRender.ts');
 			const pages = await renderPdfPages(fsWorkdir(ctx)!, args.path as string);
 			for (let i = 0; i < pages.length; i++) {
 				ctx.pendingImages.push({

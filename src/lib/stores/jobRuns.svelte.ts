@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import { dbMutate, dbQuery } from '#lib/stores/dbCall.ts';
 import { errMessage } from '#lib/utils/error.ts';
 

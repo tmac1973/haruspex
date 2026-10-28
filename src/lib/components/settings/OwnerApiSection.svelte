@@ -8,7 +8,7 @@
 	 * local network with no token. Explanations live in tooltips.
 	 */
 	import { onMount } from 'svelte';
-	import { loggedFallback } from '#lib/debug-log.ts';
+	import { loggedFallback } from '#lib/debugLog.ts';
 
 	import { getLinkQr, qrPath, type QrMatrix } from '#lib/remote/api.ts';
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';

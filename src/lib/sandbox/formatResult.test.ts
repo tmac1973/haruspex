@@ -3,7 +3,7 @@ import {
 	formatSandboxResult,
 	SANDBOX_OUTPUT_MAX_BYTES,
 	type SandboxRunOutput
-} from './format-result.ts';
+} from './formatResult.ts';
 
 const base: SandboxRunOutput = {
 	stdout: '',

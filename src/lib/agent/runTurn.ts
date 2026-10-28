@@ -12,7 +12,7 @@
  */
 
 import { runAgentLoop, type AgentLoopOptions, type AgentStopReason } from '#lib/agent/loop.ts';
-import { appendStreamDelta, createThinkStreamState } from '#lib/agent/think-stream.ts';
+import { appendStreamDelta, createThinkStreamState } from '#lib/agent/thinkStream.ts';
 import { ResponseCutOffError } from '#lib/api.ts';
 
 /** Loop options minus the streaming/lifecycle callbacks `runTurnCore` owns. */

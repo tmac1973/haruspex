@@ -16,7 +16,7 @@
 	import type { ImageRow } from '#lib/ipc/gen/ImageRow.ts';
 	import { captionFor } from '#lib/images/caption.ts';
 	import { imageSrc } from '#lib/images/url.ts';
-	import { VIEW_IMAGE_EVENT } from '#lib/markdown-actions.ts';
+	import { VIEW_IMAGE_EVENT } from '#lib/markdownActions.ts';
 	import ImageSaveButton from '#lib/components/ImageSaveButton.svelte';
 
 	/**

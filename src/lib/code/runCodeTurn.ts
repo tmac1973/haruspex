@@ -36,8 +36,8 @@ import {
 	type SteeringMessage,
 	type StreamChunkMeta
 } from '#lib/agent/loop.ts';
-import type { ContextManagedInfo } from '#lib/agent/context-budget.ts';
-import { appendStreamDelta, createThinkStreamState } from '#lib/agent/think-stream.ts';
+import type { ContextManagedInfo } from '#lib/agent/contextBudget.ts';
+import { appendStreamDelta, createThinkStreamState } from '#lib/agent/thinkStream.ts';
 import { withInferenceSlot, type InferenceTicket } from '#lib/agent/inferenceQueue.svelte.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { prepareTurnSkills, skillsPromptSection, type TurnSkills } from '#lib/skills/turn.ts';
@@ -49,7 +49,7 @@ import {
 	buildCodeSystemPrompt,
 	delegationHint,
 	type BuildCodePromptOpts
-} from '#lib/code/system-prompt.ts';
+} from '#lib/code/systemPrompt.ts';
 import { ioRoot } from '#lib/code/paths.ts';
 import { sessionLabel } from '#lib/code/sessionList.ts';
 import { loadShellPlatformSupported, shellPlatformSupported } from '#lib/shell/platformSupport.ts';
@@ -57,7 +57,7 @@ import { agentPowershell } from '#lib/code/powershell.ts';
 
 // Moved to api.ts for the Shell; kept here for existing importers.
 export { withNotice };
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import { compactCodeThread, compactionDue, modelThread } from '#lib/code/compaction.ts';
 import type { CodeCompaction } from '#lib/code/session.ts';
 

@@ -23,7 +23,7 @@
 
 import { extractMemories } from '#lib/agent/memory/extraction.ts';
 import { memoryActive } from '#lib/stores/memory.svelte.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
 /** How long a conversation must sit still before it is distilled. */

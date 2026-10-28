@@ -13,7 +13,7 @@ import {
 // The predicate, not the tool module — mcp.ts registers THROUGH this file, so
 // importing it here would be a cycle. Same reason as memoryActive() below.
 import { isMcpToolEnabled } from '#lib/agent/tools/mcp-names.ts';
-// The predicate, not the tool module: memoryWrite.ts registers THROUGH this
+// The predicate, not the tool module: remember.ts registers THROUGH this
 // file, so importing it here would be a cycle.
 import { memoryActive } from '#lib/stores/memory.svelte.ts';
 import { PYTHON_UNAVAILABLE, pythonRuntimeMissing } from '#lib/sandbox/availability.ts';

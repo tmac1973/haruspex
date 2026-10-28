@@ -1,7 +1,7 @@
 /**
  * The Code tab's system prompt: commands run one-shot in the session's project
  * folder, with no terminal behind them. (The Shell's Full access uses the
- * shell assistant prompt instead, `#lib/shell/system-prompt.ts`.)
+ * shell assistant prompt instead, `#lib/shell/systemPrompt.ts`.)
  */
 
 import type { ChatMessage } from '#lib/api.ts';

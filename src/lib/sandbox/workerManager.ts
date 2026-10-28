@@ -10,7 +10,7 @@ import type {
 } from '#lib/sandbox/protocol.ts';
 import { getWorkingDir } from '#lib/stores/session.svelte.ts';
 import { getSettings } from '#lib/stores/settings.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { urlForReport } from '#lib/utils/http.ts';
 

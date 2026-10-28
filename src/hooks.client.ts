@@ -11,7 +11,7 @@
  * `VITE_HARUSPEX_E2E=1` (`e2e/app/build.mjs`) carries.
  */
 import type { HandleClientError } from '@sveltejs/kit/hooks';
-import { forwardConsoleToDebugLog, startDebugLogFile } from '#lib/debug-log.ts';
+import { forwardConsoleToDebugLog, startDebugLogFile } from '#lib/debugLog.ts';
 import { loadSavedItems } from '#lib/persist.ts';
 
 /**

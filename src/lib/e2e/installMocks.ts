@@ -106,7 +106,7 @@ const TABLE: Record<string, Handler> = {
 	inference_release: none,
 
 	// Settings sections, each loading its own data.
-	cmd_detect_hardware: () => ({
+	hardware_detect: () => ({
 		gpu_available: true,
 		gpu_name: 'E2E GPU',
 		gpu_api: 'Vulkan',

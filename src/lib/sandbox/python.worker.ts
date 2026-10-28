@@ -13,7 +13,7 @@ import {
 	dispatchWorkerMessage,
 	settlePending,
 	type WorkerMessageHandlers
-} from '#lib/sandbox/worker-dispatch.ts';
+} from '#lib/sandbox/workerDispatch.ts';
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -1556,7 +1556,7 @@ async function handleInstall(id: string, packageName: string): Promise<void> {
 }
 
 // Inbound-message handlers, closing over this module's state. The routing
-// (and the pending-request settle logic) lives in ./worker-dispatch so it's
+// (and the pending-request settle logic) lives in ./workerDispatch so it's
 // unit-testable without booting Pyodide.
 const workerHandlers: WorkerMessageHandlers = {
 	setInterruptBuffer: (buffer) => applyInterruptBuffer(buffer),

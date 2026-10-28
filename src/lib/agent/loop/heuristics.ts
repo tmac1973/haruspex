@@ -5,7 +5,7 @@
  */
 
 import { messageText, type ChatMessage } from '#lib/api.ts';
-import { TOKEN_BYTES_RATIO } from '#lib/agent/context-budget.ts';
+import { TOKEN_BYTES_RATIO } from '#lib/agent/contextBudget.ts';
 import type { LoopContext } from '#lib/agent/loop/context.ts';
 import { imageHashFromUrl } from '#lib/images/url.ts';
 
@@ -49,7 +49,7 @@ function assistantTouchesPython(toolCalls: NonNullable<ChatMessage['tool_calls']
 /**
  * Recognises a request that images alone can satisfy, so the research nudge
  * does not fire on someone who only wanted a picture. Same shape as
- * `looksLikeReviewQuery` / `looksLikeFileOutputRequest` in system-prompt.ts.
+ * `looksLikeReviewQuery` / `looksLikeFileOutputRequest` in systemPrompt.ts.
  */
 const IMAGE_ONLY_PATTERNS =
 	/\b(show|find|get|give|send)\s+(me\s+)?(a\s+|some\s+|the\s+)?(pic(ture)?s?|photos?|images?|shots?)\b|\bwhat\s+do(es)?\s+.*look\s+like\b|\bpic(ture)?s?\s+of\b|\bimages?\s+of\b/i;

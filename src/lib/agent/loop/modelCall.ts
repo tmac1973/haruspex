@@ -26,7 +26,7 @@ import {
 	recordTokenCalibration,
 	parseContextOverflow,
 	getTokenCalibration
-} from '#lib/agent/context-budget.ts';
+} from '#lib/agent/contextBudget.ts';
 import {
 	getChatTemplateKwargs,
 	getSamplingParams,
@@ -34,8 +34,8 @@ import {
 	type SamplingOptions
 } from '#lib/stores/settings.ts';
 import { splitThinkChannels } from '#lib/markdown.ts';
-import { appendStreamDelta, createThinkStreamState } from '#lib/agent/think-stream.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { appendStreamDelta, createThinkStreamState } from '#lib/agent/thinkStream.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import { inLoopTrimBudget, type LoopContext } from '#lib/agent/loop/context.ts';
 import { isCodeContext } from '#lib/agent/loop/heuristics.ts';
 

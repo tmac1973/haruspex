@@ -5,7 +5,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { getDebugLogs } from '#lib/debug-log.ts';
+import { getDebugLogs } from '#lib/debugLog.ts';
 
 /** Where a report button finds its log: read when pressed, not when shown. */
 export type LogSource = () => string[] | Promise<string[]>;

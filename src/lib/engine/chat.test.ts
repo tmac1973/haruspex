@@ -12,8 +12,8 @@ vi.mock('#lib/stores/db.ts', () => ({
 	]),
 	dbLoadMessageSteps: vi.fn(async () => ({ 1: [{ id: 't1', toolName: 'web_search' }] }))
 }));
-vi.mock('#lib/debug-log.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#lib/debug-log.ts')>()),
+vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
 	logDebug: () => {}
 }));
 

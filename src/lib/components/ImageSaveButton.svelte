@@ -3,7 +3,7 @@
 	 * Save as… on a picture in Chat, over its top-right corner: the strip
 	 * under an answer and a step's thumbnails and plots. Pictures written into
 	 * an answer's markdown get the same button from `images/figure.ts`, routed
-	 * by `markdown-actions.ts`. The parent is `position: relative` and shows
+	 * by `markdownActions.ts`. The parent is `position: relative` and shows
 	 * it on hover through `.image-save`.
 	 */
 	import { saveDataUrlImageAs, saveImageAs, saveWithToast } from '#lib/images/save.ts';

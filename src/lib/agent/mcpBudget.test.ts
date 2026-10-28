@@ -6,7 +6,7 @@ import {
 	evaluateToolBudget,
 	maxToolsForModel,
 	parseParamsB
-} from './mcp-budget';
+} from './mcpBudget';
 
 function schemas(count: number): ToolDefinition[] {
 	return Array.from({ length: count }, (_, i) => ({

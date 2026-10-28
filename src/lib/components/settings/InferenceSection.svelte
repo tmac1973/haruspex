@@ -84,7 +84,7 @@
 	$effect(() => {
 		void (async () => {
 			try {
-				const hw = await invoke<{ gpu_vram_mb: number | null }>('cmd_detect_hardware');
+				const hw = await invoke<{ gpu_vram_mb: number | null }>('hardware_detect');
 				gpuVramMb = hw.gpu_vram_mb ?? null;
 			} catch {
 				gpuVramMb = null;

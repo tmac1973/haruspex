@@ -18,7 +18,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	getOpenRouterReasoningParam: () => null,
 	getSamplingParams: () => ({ temperature: 0.7 })
 }));
-vi.mock('#lib/debug-log.ts', () => ({ logDebug: () => {} }));
+vi.mock('#lib/debugLog.ts', () => ({ logDebug: () => {} }));
 
 import { cleanTitle, isSlashCommand, nameSession, titleFromMessage } from './sessionTitle';
 

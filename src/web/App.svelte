@@ -11,7 +11,7 @@
 	import SessionView from './components/SessionView.svelte';
 	import ChatView from './components/ChatView.svelte';
 	import Modal from '#lib/components/Modal.svelte';
-	import { VIEW_IMAGE_EVENT } from '#lib/markdown-actions.ts';
+	import { VIEW_IMAGE_EVENT } from '#lib/markdownActions.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
 	const store = new WebStore();

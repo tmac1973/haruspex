@@ -8,7 +8,7 @@
 	 */
 	import type { McpToolDescriptor } from '#lib/ipc/gen/McpToolDescriptor.ts';
 	import { getToolSchemas } from '#lib/agent/tools/index.ts';
-	import { evaluateToolBudget } from '#lib/agent/mcp-budget.ts';
+	import { evaluateToolBudget } from '#lib/agent/mcpBudget.ts';
 	import { getSettings } from '#lib/stores/settings.ts';
 
 	interface Props {

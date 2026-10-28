@@ -350,7 +350,7 @@ pub fn run() {
             models::download_model,
             models::cancel_download,
             models::download_status,
-            hardware::cmd_detect_hardware,
+            hardware::hardware_detect,
             models::import_model,
             models::get_models_dir,
             models::has_any_model,

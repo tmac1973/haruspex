@@ -31,8 +31,8 @@ import type { ShellContextResponse } from '#lib/ipc/gen/ShellContextResponse.ts'
 import type { InferenceTicket } from '#lib/agent/inferenceQueue.svelte.ts';
 import type { SearchStep, AgentStopReason } from '#lib/agent/loop.ts';
 import { markStepDone, markStepProgress, newRunningStep } from '#lib/agent/steps.ts';
-import { describeContextManaged } from '#lib/agent/context-budget.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { describeContextManaged } from '#lib/agent/contextBudget.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import type { ShellSelection } from '#lib/ipc/gen/ShellSelection.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
@@ -43,7 +43,7 @@ import {
 	buildShellSystemPrompt,
 	shellTerminalNote,
 	type ShellSessionContext
-} from '#lib/shell/system-prompt.ts';
+} from '#lib/shell/systemPrompt.ts';
 import { classifyNestedSession, type NestedSession } from '#lib/shell/nestedSession.ts';
 import {
 	resetSessionApproval,

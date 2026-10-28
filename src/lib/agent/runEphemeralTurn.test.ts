@@ -9,7 +9,7 @@ vi.mock('#lib/agent/loop.ts', () => ({
 	runAgentLoop: mocks.runAgentLoop
 }));
 
-vi.mock('#lib/agent/system-prompt.ts', () => ({
+vi.mock('#lib/agent/systemPrompt.ts', () => ({
 	buildSystemPrompt: (workingDir: string | null) => ({
 		role: 'system' as const,
 		content: workingDir ? `sys prompt for ${workingDir}` : 'sys prompt'

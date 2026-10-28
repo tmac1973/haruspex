@@ -68,7 +68,7 @@ async function settle(check: () => boolean) {
 describe('detectHardware', () => {
 	it('adopts the recommended model and context and loads the model list', async () => {
 		ipc({
-			cmd_detect_hardware: () => ({
+			hardware_detect: () => ({
 				gpu_available: true,
 				gpu_name: 'GPU',
 				gpu_api: 'vulkan',
@@ -93,7 +93,7 @@ describe('detectHardware', () => {
 describe('offload alternative', () => {
 	async function detectWithAlternative(spill = true) {
 		ipc({
-			cmd_detect_hardware: () => ({
+			hardware_detect: () => ({
 				gpu_available: true,
 				gpu_name: 'GPU',
 				gpu_api: 'vulkan',
@@ -294,7 +294,7 @@ describe('runTestQuery', () => {
 
 	it('uses a model already on disk without downloading it', async () => {
 		ipc({
-			cmd_detect_hardware: () => ({ recommended_quant: 'm', recommended_context_size: 32768 }),
+			hardware_detect: () => ({ recommended_quant: 'm', recommended_context_size: 32768 }),
 			list_models: () => [{ id: 'm', filename: 'm.gguf', downloaded: true }],
 			get_active_model_path: (args) =>
 				args?.preferredFilename ? `/models/${String(args.preferredFilename)}` : null,

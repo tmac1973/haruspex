@@ -28,14 +28,14 @@ import {
 	estimateTokens,
 	describeContextManaged,
 	getTokenCalibration
-} from '#lib/agent/context-budget.ts';
+} from '#lib/agent/contextBudget.ts';
 import {
 	buildSystemPrompt,
 	looksLikeFileOutputRequest,
 	injectMessageHints
-} from '#lib/agent/system-prompt.ts';
+} from '#lib/agent/systemPrompt.ts';
 import { diagnoseEmptyResponse } from '#lib/agent/diagnostics.ts';
-import { beginTurn, logDebug } from '#lib/debug-log.ts';
+import { beginTurn, logDebug } from '#lib/debugLog.ts';
 import { urlForReport } from '#lib/utils/http.ts';
 import { noteConversationLeft, noteTurnFinished } from '#lib/agent/memory/scheduler.ts';
 import {
@@ -65,10 +65,10 @@ import {
 	forgetChatSandboxApproval
 } from '#lib/stores/sandboxApproval.svelte.ts';
 import { processCitations, renderMarkdown, stripToolCallArtifacts } from '#lib/markdown.ts';
-import { appendStreamDelta, createThinkStreamState } from '#lib/agent/think-stream.ts';
+import { appendStreamDelta, createThinkStreamState } from '#lib/agent/thinkStream.ts';
 import { isFetchFailureResult } from '#lib/agent/tools/_helpers.ts';
 import { errMessage, isAbortError } from '#lib/utils/error.ts';
-import { formatSandboxResult } from '#lib/sandbox/format-result.ts';
+import { formatSandboxResult } from '#lib/sandbox/formatResult.ts';
 import {
 	runPython,
 	installPackage,

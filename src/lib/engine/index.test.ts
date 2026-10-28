@@ -22,7 +22,7 @@ vi.mock('#lib/engine/prompts.svelte.ts', () => ({ watchPrompts: mocks.watchPromp
 vi.mock('#lib/engine/watch.svelte.ts', () => ({
 	watchOpenSessions: () => ({ resync: vi.fn(), stop: mocks.stopSessions })
 }));
-vi.mock('#lib/debug-log.ts', () => ({ logDebug: vi.fn() }));
+vi.mock('#lib/debugLog.ts', () => ({ logDebug: vi.fn() }));
 
 type Handler = (e: { payload: boolean }) => void;
 

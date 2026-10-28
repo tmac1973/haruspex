@@ -8,7 +8,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { ioRoot, relativeToRoot } from '#lib/code/paths.ts';
 import { listCodeSessions, wslDistros } from '#lib/code/db.ts';
-import { logDebug } from '#lib/debug-log.ts';
+import { logDebug } from '#lib/debugLog.ts';
 import {
 	getOpenSessions,
 	newSession,
