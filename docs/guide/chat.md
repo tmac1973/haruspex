@@ -13,6 +13,7 @@ Type a question and press `Enter` (`Shift`+`Enter` for a new line). When the que
 
 - **Sources** — answers cite their sources with numbers, and numbered chips under the answer show each site. Click a chip to open the page in your browser.
 - **Deep research** — click the magnifying-glass button in the chat box ("Deep research ON — will search more sources"). Answers are slower but use more sources.
+- **Stopped early?** — a turn gets 10 steps (searches, page reads, replies), 25 with deep research. Raise it in Settings → Agent → Max steps per turn.
 
 Search can fail or be rate limited. Which search engine is used, and proxies, are covered on the `search-and-network` page. The model can be wrong even with sources, so check anything that matters.
 

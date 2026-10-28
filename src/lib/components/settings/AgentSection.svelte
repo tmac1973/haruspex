@@ -7,6 +7,8 @@
 		DEFAULT_MAX_RESPONSE_TOKENS_FILE_WRITE,
 		MIN_MAX_RESPONSE_TOKENS,
 		MAX_MAX_RESPONSE_TOKENS,
+		MIN_CHAT_MAX_ITERATIONS,
+		MAX_CHAT_MAX_ITERATIONS,
 		type SandboxNetAccess
 	} from '#lib/stores/settings.ts';
 	import { KNOWN_EFFORT_LEVELS, resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
@@ -51,6 +53,16 @@
 	let sandboxNetAccess = $state(getSettings().sandboxNetAccess);
 	let maxResponseTokens = $state(getSettings().maxResponseTokens);
 	let maxResponseTokensFileWrite = $state(getSettings().maxResponseTokensFileWrite);
+	let chatMaxIterations = $state(getSettings().chatMaxIterations);
+
+	function persistChatMaxIterations() {
+		chatMaxIterations = clampInt(
+			chatMaxIterations,
+			MIN_CHAT_MAX_ITERATIONS,
+			MAX_CHAT_MAX_ITERATIONS
+		);
+		updateSettings({ chatMaxIterations });
+	}
 
 	/**
 	 * Persist a response-token cap, clamped to the supported range. Clamping
@@ -231,6 +243,28 @@
 			step="512"
 			value={maxResponseTokensFileWrite}
 			onchange={(e) => onTokensChange('maxResponseTokensFileWrite', e.currentTarget.value)}
+		/>
+	</label>
+</section>
+
+<section class="settings-section">
+	<h2>Max steps per turn</h2>
+	<label
+		class="tokens-row"
+		title="Each tool call or model reply is a step. Raise it if answers stop before the research is done. Deep research gets at least 25. Settings → Code has its own limit. {MIN_CHAT_MAX_ITERATIONS}–{MAX_CHAT_MAX_ITERATIONS}."
+	>
+		<span class="tokens-label">
+			Chat steps
+			<span class="tokens-sub">How many steps a chat turn takes before it has to answer.</span>
+		</span>
+		<input
+			type="number"
+			min={MIN_CHAT_MAX_ITERATIONS}
+			max={MAX_CHAT_MAX_ITERATIONS}
+			step="5"
+			bind:value={chatMaxIterations}
+			onblur={persistChatMaxIterations}
+			onkeydown={(e) => e.key === 'Enter' && persistChatMaxIterations()}
 		/>
 	</label>
 </section>

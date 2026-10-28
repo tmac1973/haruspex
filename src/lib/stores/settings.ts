@@ -3,6 +3,7 @@
 
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { createSubscriber } from 'svelte/reactivity';
+import { clampInt } from '#lib/utils/clampInt.ts';
 import type { OpenRouterModel, OpenRouterKeyStatus } from '#lib/openrouter.ts';
 // Type-only import — descriptor.ts imports this module's runtime values, so
 // keeping this side type-only avoids a circular runtime dependency.
@@ -841,6 +842,11 @@ export interface AppSettings {
 	 */
 	codeMaxIterations: number;
 	/**
+	 * Max agent-loop iterations (model calls) for a chat-tab turn before it's
+	 * forced to wrap up. Deep research uses at least 25 whatever this is.
+	 */
+	chatMaxIterations: number;
+	/**
 	 * Code tab: the most a background process's log keeps, in MiB; past it
 	 * the oldest output is dropped. Clamped 1–1024 here and in Rust.
 	 */
@@ -957,6 +963,21 @@ export function clampResponseTokens(n: number): number {
 	if (!Number.isFinite(n)) return DEFAULT_MAX_RESPONSE_TOKENS;
 	return Math.min(MAX_MAX_RESPONSE_TOKENS, Math.max(MIN_MAX_RESPONSE_TOKENS, Math.trunc(n)));
 }
+export const MIN_CHAT_MAX_ITERATIONS = 5;
+export const MAX_CHAT_MAX_ITERATIONS = 200;
+/** Deep research's floor: it gets this many steps even when the setting is lower. */
+export const DEEP_RESEARCH_MIN_ITERATIONS = 25;
+/**
+ * Steps a chat-tab turn may take: the user's setting, clamped (the stored
+ * value is plain JSON and may be anything), and at least
+ * {@link DEEP_RESEARCH_MIN_ITERATIONS} for deep research.
+ */
+export function chatTurnMaxIterations(setting: number, deepResearch: boolean): number {
+	const steps = Number.isFinite(setting)
+		? clampInt(setting, MIN_CHAT_MAX_ITERATIONS, MAX_CHAT_MAX_ITERATIONS)
+		: defaults.chatMaxIterations;
+	return deepResearch ? Math.max(DEEP_RESEARCH_MIN_ITERATIONS, steps) : steps;
+}
 export const DEFAULT_SEARXNG_URL = 'http://localhost:8080';
 export const DEFAULT_TTS_VOICE = 'af_heart';
 
@@ -1036,6 +1057,7 @@ const defaults: AppSettings = {
 	codeCommandExec: 'auto',
 	commandMemoryLimitPercent: 50,
 	codeMaxIterations: 40,
+	chatMaxIterations: 10,
 	codeBgLogCapMb: 5,
 	codeSubtasks: 'read',
 	codeStorePowershell: false,
