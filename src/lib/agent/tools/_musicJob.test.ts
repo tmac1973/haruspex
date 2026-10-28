@@ -33,6 +33,7 @@ import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import {
 	hashedSong,
+	measuredSong,
 	musicAnswerText,
 	runMusicJob,
 	songUrl,
@@ -101,6 +102,26 @@ beforeEach(() => {
 });
 
 describe('runMusicJob', () => {
+	it("puts the song's measured length in a background task's result", async () => {
+		state.generate.mockResolvedValueOnce(made);
+		state.invoke.mockResolvedValue(new ArrayBuffer(8));
+		vi.stubGlobal(
+			'OfflineAudioContext',
+			class {
+				decodeAudioData = async () => ({ duration: 31.2 });
+			}
+		);
+		try {
+			const out = await runMusicJob(spec(), {});
+			expect(out.durationSec).toBe(31.2);
+			expect(out.notes).toEqual([
+				'It came out 31 s long, shorter than the 45 s asked for: tell the user.'
+			]);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
 	it('makes the song for its chat and says what it made', async () => {
 		const onHandle = vi.fn();
 		const out = await runMusicJob(spec({ notes: ['Length set to 240 s (5–240).'] }), {
@@ -154,6 +175,35 @@ describe('runMusicJob', () => {
 			dryRun: false
 		});
 		expect(out.saved).toBe('Wrote rain.mp3.');
+	});
+});
+
+describe('measuredSong', () => {
+	beforeEach(() => {
+		state.invoke.mockReset().mockResolvedValue(new ArrayBuffer(8));
+	});
+
+	it("reports the file's length, not the one the server echoed, and says when it is short", async () => {
+		const out = await measuredSong({ ...made, durationSec: 30 }, 30, async () => 22.248);
+		expect(state.invoke).toHaveBeenCalledWith('audio_read_bytes', { hash: HASH });
+		expect(out.made.durationSec).toBe(22.248);
+		expect(out.notes).toEqual([
+			'It came out 22 s long, shorter than the 30 s asked for: tell the user.'
+		]);
+		expect(
+			musicAnswerText({ made: out.made, title: 'Rain', saved: null, notes: out.notes })
+		).toMatch(/^Made "Rain" \(22 s,.*It came out 22 s long/);
+	});
+
+	it('says nothing about a song within a couple of seconds of the length asked', async () => {
+		const out = await measuredSong(made, 45, async () => 43.5);
+		expect(out).toEqual({ made: { ...made, durationSec: 43.5 }, notes: [] });
+	});
+
+	it('keeps what the server said when the song cannot be read', async () => {
+		expect(await measuredSong(made, 45, async () => null)).toEqual({ made, notes: [] });
+		state.invoke.mockRejectedValue(new Error('not in the cache'));
+		expect(await measuredSong(made, 45, async () => 10)).toEqual({ made, notes: [] });
 	});
 });
 

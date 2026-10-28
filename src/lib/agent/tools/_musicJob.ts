@@ -27,6 +27,7 @@ import type {
 	MusicResult
 } from '#lib/music/types.ts';
 import { audioSrc } from '#lib/audio/url.ts';
+import { measureSong, type MeasureSong } from '#lib/agent/tools/_musicSource.ts';
 import type { StoredAudio } from '#lib/ipc/gen/StoredAudio.ts';
 import { taskOwner } from '#lib/tasks/notices.ts';
 import { upsertTask } from '#lib/tasks/store.svelte.ts';
@@ -63,6 +64,35 @@ export interface MusicJobEnv {
 	signal?: AbortSignal;
 	onProgress?: (p: MusicProgress) => void;
 	onHandle?: (handle: MusicJobHandle) => void;
+}
+
+/** How far short of the length asked a song may come out before the answer says so. */
+export const SHORT_BY_SECONDS = 2;
+
+/**
+ * A finished song as it is: the length measured from the file Haruspex keeps,
+ * in place of the one the server reported (llama-toolchest reports the length
+ * it planned), and a note for the model when it is short of what was asked.
+ * Unchanged when the webview can't decode it.
+ */
+export async function measuredSong(
+	made: MusicResult,
+	askedSec: number,
+	measure: MeasureSong = measureSong
+): Promise<{ made: MusicResult; notes: string[] }> {
+	const seconds = await invoke<ArrayBuffer>('audio_read_bytes', { hash: made.hash })
+		.then(measure)
+		.catch(() => null);
+	if (seconds === null || !(seconds > 0)) return { made, notes: [] };
+	const short = askedSec - seconds > SHORT_BY_SECONDS;
+	return {
+		made: { ...made, durationSec: seconds },
+		notes: short
+			? [
+					`It came out ${Math.round(seconds)} s long, shorter than the ${Math.round(askedSec)} s asked for: tell the user.`
+				]
+			: []
+	};
 }
 
 /** What a song's answer says about it: its length, tempo, key and seed. */
@@ -145,6 +175,8 @@ export async function runMusicJob(
 	} else {
 		made = await resolveMusicBackend().generate(spec.request, opts);
 	}
+	const checked = await measuredSong(made, spec.request.durationSec);
+	made = checked.made;
 	return {
 		hash: made.hash,
 		mime: made.mime,
@@ -154,7 +186,7 @@ export async function runMusicJob(
 		model: made.model,
 		...(made.bpm ? { bpm: made.bpm } : {}),
 		...(made.key ? { key: made.key } : {}),
-		notes: spec.notes,
+		notes: [...spec.notes, ...checked.notes],
 		saved: spec.save ? await saveCachedAudio(spec.save, made.hash) : null
 	};
 }
