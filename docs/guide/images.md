@@ -37,7 +37,7 @@ Under **Connection**, enter the **Server address** (for example `http://127.0.0.
 
 ### Set up llama-toolchest
 
-If your chat model comes from a toolchest, its address and key are filled in; otherwise enter the **Server address** and an **API key** from Settings → Inference → API Keys. Choose one of its image instances as the **Model**; you start instances in llama-toolchest. It does not make tiling textures.
+If your chat model comes from a toolchest, its address and key are filled in; otherwise enter the **Server address** and an **API key** from Settings → Inference → API Keys. Choose one of its image instances as the **Model**; a stopped one starts when used. It does not make tiling textures.
 
 ## Pick a model and check its licence
 

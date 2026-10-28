@@ -234,7 +234,7 @@
 				Model:
 				<Tooltip
 					label="About the model"
-					text="The server's ACE-Step instances, listed by Probe. One must be running to make music; start it in llama-toolchest."
+					text="The server's ACE-Step instances, listed by Probe. A stopped one starts when it is first used."
 				/>
 			</label>
 			<select

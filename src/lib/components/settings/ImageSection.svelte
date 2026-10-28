@@ -85,7 +85,7 @@
 			key: { picker: 'imageToolchestApiKeyId' },
 			placeholder: 'http://host:3000',
 			modelTip:
-				"The server's image instances, listed by Probe. One must be running to draw; start it in llama-toolchest. It cannot make tiling textures."
+				"The server's image instances, listed by Probe. A stopped one starts when it is first used. It cannot make tiling textures."
 		}
 	};
 	const server = $derived(SERVERS[imageBackendKind] ?? null);
