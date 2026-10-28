@@ -1,5 +1,106 @@
 # Changelog
 
+## [0.2.13](https://github.com/tmac1973/haruspex/compare/v0.2.12...v0.2.13) (2026-10-28)
+
+
+### Features
+
+* **agent:** give the inference slot back while a long tool runs ([#724](https://github.com/tmac1973/haruspex/issues/724)) ([3313475](https://github.com/tmac1973/haruspex/commit/3313475559ef1d15afbff22545ebe12e3a48d55f))
+* **agent:** give the inference slot back while a tool waits on the user ([#729](https://github.com/tmac1973/haruspex/issues/729)) ([d09703c](https://github.com/tmac1973/haruspex/commit/d09703c4545ad978854f4f77b05f63ff1cfcbe20))
+* **agent:** let the model report problems with haruspex's tools ([#685](https://github.com/tmac1973/haruspex/issues/685)) ([2bc84f0](https://github.com/tmac1973/haruspex/commit/2bc84f036f13760475ba56bcc806ec55a4a5ff51))
+* **capture:** the assistant's screenshots skip the desktop dialog, behind Haruspex's own prompt ([#726](https://github.com/tmac1973/haruspex/issues/726)) ([6eb2a9f](https://github.com/tmac1973/haruspex/commit/6eb2a9f6e195d2b1ad1fdbdde60263c65cefec9e))
+* **chat:** run conversations concurrently ([#699](https://github.com/tmac1973/haruspex/issues/699)) ([e745d20](https://github.com/tmac1973/haruspex/commit/e745d20b5c2f2f85e17382c76287bc222a5294d5))
+* **chat:** set the chat tab's max steps per turn in Settings → Agent ([#763](https://github.com/tmac1973/haruspex/issues/763)) ([95c3605](https://github.com/tmac1973/haruspex/commit/95c360542eefaa65e856c9cd1e2df74699380714))
+* **chat:** steer a running turn and mark busy and unread conversations ([#701](https://github.com/tmac1973/haruspex/issues/701)) ([d88fd2d](https://github.com/tmac1973/haruspex/commit/d88fd2d738c0a70ba3dd5c72c0df54b23b88e18b))
+* **feedback:** a Report issue button on failures ([#693](https://github.com/tmac1973/haruspex/issues/693)) ([0d18f11](https://github.com/tmac1973/haruspex/commit/0d18f11d5fc4fd545d1373c537ac63335c0a5b36))
+* **feedback:** view and share the model's reports, and save every log in diagnostics ([#691](https://github.com/tmac1973/haruspex/issues/691)) ([167deb2](https://github.com/tmac1973/haruspex/commit/167deb29f2328971a9c6df6094dba22ed91bb470))
+* **images:** change only part of a picture with edit_image's area ([#702](https://github.com/tmac1973/haruspex/issues/702)) ([4a71548](https://github.com/tmac1973/haruspex/commit/4a71548182252c63c6453d6985e7020b8850fb67))
+* **images:** edit a picture in Chat with edit_image ([#672](https://github.com/tmac1973/haruspex/issues/672)) ([5609d5b](https://github.com/tmac1973/haruspex/commit/5609d5b8f3de8ccb4f92f47d6854c408e6fbdd68))
+* **images:** edit and draw with Qwen-Image-Edit-2511 on ComfyUI ([#700](https://github.com/tmac1973/haruspex/issues/700)) ([8cadd93](https://github.com/tmac1973/haruspex/commit/8cadd93573b5d0cef4bd53ef22c75e277114b9a3))
+* **images:** edit and upscale on Lemonade ([#682](https://github.com/tmac1973/haruspex/issues/682)) ([14db5bd](https://github.com/tmac1973/haruspex/commit/14db5bd5a325fbe57c68bcce2c918345a8126e43))
+* **images:** edit pictures on ComfyUI with Qwen-Image 2.1 ([#678](https://github.com/tmac1973/haruspex/issues/678)) ([485448d](https://github.com/tmac1973/haruspex/commit/485448d3c6c2ae3b85737145ec537d7b3cca2075))
+* **images:** edit pictures on the bundled engine with Qwen-Image 2.1 ([#675](https://github.com/tmac1973/haruspex/issues/675)) ([db68fb2](https://github.com/tmac1973/haruspex/commit/db68fb2e399d03d52be2934d5f059553de991f96))
+* **images:** extend a picture past its edges on ComfyUI ([#709](https://github.com/tmac1973/haruspex/issues/709)) ([c287e0f](https://github.com/tmac1973/haruspex/commit/c287e0f98f450800539768ad9bfe2b9a9a2f5584))
+* **images:** extend a picture past its edges on the bundled engine ([#706](https://github.com/tmac1973/haruspex/issues/706)) ([b75f25b](https://github.com/tmac1973/haruspex/commit/b75f25b49323d8d87ee3d638016f7ab81df85e40))
+* **images:** FLUX.2 klein 4B on ComfyUI, for drawing and editing ([#697](https://github.com/tmac1973/haruspex/issues/697)) ([3f97b48](https://github.com/tmac1973/haruspex/commit/3f97b48e3702ef50e001d8b14e1358fefba59d4f))
+* **images:** generate, edit and upscale in the background ([#711](https://github.com/tmac1973/haruspex/issues/711)) ([b22cb6c](https://github.com/tmac1973/haruspex/commit/b22cb6c1fb9a3bc2ba0700acaf839e54c876110f))
+* **images:** save as on every picture in chat, not only the viewer ([#695](https://github.com/tmac1973/haruspex/issues/695)) ([472b7b9](https://github.com/tmac1973/haruspex/commit/472b7b9fbc879e776e221d8c69fca72ba39ceace))
+* **images:** say when Lemonade drops a transparent Ming request's start ([#712](https://github.com/tmac1973/haruspex/issues/712)) ([90a471c](https://github.com/tmac1973/haruspex/commit/90a471cdc8cdfcc2be5139be8433f9dd992c7c62))
+* **images:** upscale on ComfyUI with Real-ESRGAN ([#694](https://github.com/tmac1973/haruspex/issues/694)) ([b7307ac](https://github.com/tmac1973/haruspex/commit/b7307aca4354be29680bbb84f222d8404366d5f5))
+* **images:** upscale_image, with Real-ESRGAN on the bundled engine ([#679](https://github.com/tmac1973/haruspex/issues/679)) ([25f8a13](https://github.com/tmac1973/haruspex/commit/25f8a1351fb3ae87441875ead50ac356a8da1b17))
+* **inference:** admit a returning turn first, and let a turn give its slot back ([#719](https://github.com/tmac1973/haruspex/issues/719)) ([65ed624](https://github.com/tmac1973/haruspex/commit/65ed6244748536239e7e4b0a7a62c55bfcdc16ff))
+* **mcp:** edit an existing custom server ([#749](https://github.com/tmac1973/haruspex/issues/749)) ([7d0fb66](https://github.com/tmac1973/haruspex/commit/7d0fb66185499692c5c205ed6f9f8254529ca0b1)), closes [#746](https://github.com/tmac1973/haruspex/issues/746)
+* **mcp:** say where MCP secrets live, warn against keys in args and URLs ([#736](https://github.com/tmac1973/haruspex/issues/736)) ([40266ba](https://github.com/tmac1973/haruspex/commit/40266ba5952e0bd42c0b809bee2438c0f6f54300))
+* **mcp:** secret environment variables for custom servers ([#739](https://github.com/tmac1973/haruspex/issues/739)) ([d6e8993](https://github.com/tmac1973/haruspex/commit/d6e8993a17e34a66109edd314a658ce5d233797f))
+* **music:** generate and edit songs in the background ([#713](https://github.com/tmac1973/haruspex/issues/713)) ([b46323b](https://github.com/tmac1973/haruspex/commit/b46323b8330859b810ceaa184cda870e53dd007d))
+* **music:** let the model reuse a song's seed and set its time signature ([#669](https://github.com/tmac1973/haruspex/issues/669)) ([10891ca](https://github.com/tmac1973/haruspex/commit/10891cabdbf7715a5c6a3248b91743cc45da0dc6))
+* **music:** restyle, redo, extend and change instruments in a song ([#667](https://github.com/tmac1973/haruspex/issues/667)) ([4761d0a](https://github.com/tmac1973/haruspex/commit/4761d0a4805f46218936d899be032340bd032ad6))
+* **remote:** answer the assistant's screenshot prompt from the remote page ([#730](https://github.com/tmac1973/haruspex/issues/730)) ([aa247cd](https://github.com/tmac1973/haruspex/commit/aa247cdef8a818526c76fe16d0d5fbc44e609e4e))
+* **remote:** chat, Code session and model controls on the Remote control API ([#756](https://github.com/tmac1973/haruspex/issues/756)) ([f5b8246](https://github.com/tmac1973/haruspex/commit/f5b82467f4454380308c2cec60a673bc0fb2c4ce))
+* **remote:** computers let in without a token can't change settings unless allowed ([#757](https://github.com/tmac1973/haruspex/issues/757)) ([9b20b59](https://github.com/tmac1973/haruspex/commit/9b20b5938238359aa4fefef45b0fbb1dd2bd3e0e))
+* **remote:** debug log, inference queue and background tasks on the Remote control API ([#753](https://github.com/tmac1973/haruspex/issues/753)) ([44127dd](https://github.com/tmac1973/haruspex/commit/44127ddb1171c78536eaaa035c21b540b87ce0b9))
+* **remote:** jobs and settings operations on the Remote control API ([#750](https://github.com/tmac1973/haruspex/issues/750)) ([dd1145c](https://github.com/tmac1973/haruspex/commit/dd1145c2ba9bf59489147fe1ee7623f303539392))
+* **remote:** per-chat busy state on the web client ([#704](https://github.com/tmac1973/haruspex/issues/704)) ([d110680](https://github.com/tmac1973/haruspex/commit/d110680acd528dc8a906c4ced445239ed46ef84b))
+* **remote:** pictures and /name skills on chat.send and session.send ([#751](https://github.com/tmac1973/haruspex/issues/751)) ([5c87e02](https://github.com/tmac1973/haruspex/commit/5c87e026dcf67bcce44b4ecbc5ed852e3983c816))
+* **settings:** say what Haruspex can do with the image model, and name toolchest's instances ([#681](https://github.com/tmac1973/haruspex/issues/681)) ([730a409](https://github.com/tmac1973/haruspex/commit/730a409f1991b7d49044e3fab03bc1e20ae58350))
+* **skills:** hide a skill whose backend is off, and tell an image skill what the backend can do ([#723](https://github.com/tmac1973/haruspex/issues/723)) ([ae21b45](https://github.com/tmac1973/haruspex/commit/ae21b4572c3e4366102b94ca19d8a26a870784b4))
+* **skills:** ship fix-picture, and a guide page for the media skills ([#725](https://github.com/tmac1973/haruspex/issues/725)) ([8ef8ddb](https://github.com/tmac1973/haruspex/commit/8ef8ddbaabc0f77a40db29f339a5f2e96f1b0cc1))
+* **skills:** ship game-assets, and measure make_asset textures against their sprites ([#731](https://github.com/tmac1973/haruspex/issues/731)) ([cdc6c94](https://github.com/tmac1973/haruspex/commit/cdc6c94dbda7bc2d16e0a3bb74885b59f65f6d19))
+* **skills:** ship write-song and cut-video ([#732](https://github.com/tmac1973/haruspex/issues/732)) ([21f6951](https://github.com/tmac1973/haruspex/commit/21f6951e08c4aeea10175ab885f808f00ce0a366))
+* **tasks:** a background-task registry, with video renders and uploads on it ([#707](https://github.com/tmac1973/haruspex/issues/707)) ([b78fed9](https://github.com/tmac1973/haruspex/commit/b78fed9b371112218755a5c93b09bf712c57ea88))
+* **tasks:** task cards and a Tasks chip in the tab bar ([#708](https://github.com/tmac1973/haruspex/issues/708)) ([c0be1ae](https://github.com/tmac1973/haruspex/commit/c0be1aec52faee4391d163bbbe0e00cf1c9e1084))
+* **toolchest:** end a lost job at once and delete finished jobs ([#714](https://github.com/tmac1973/haruspex/issues/714)) ([9775bb5](https://github.com/tmac1973/haruspex/commit/9775bb5ca61ab3fd2d9bd1834dedf022e508c48a))
+* **video:** a video editing settings section, with a switch for the video tools ([#671](https://github.com/tmac1973/haruspex/issues/671)) ([e6da2ca](https://github.com/tmac1973/haruspex/commit/e6da2cafb11658dcbead28b8f3127c8391a57993))
+* **video:** crossfades and loudness normalising in the Kdenlive project ([#668](https://github.com/tmac1973/haruspex/issues/668)) ([8c68e87](https://github.com/tmac1973/haruspex/commit/8c68e879e4e9ac261659d171f26caf6de06615de))
+* **video:** find ffmpeg and melt, add Settings → Video and video_probe ([#659](https://github.com/tmac1973/haruspex/issues/659)) ([58d2223](https://github.com/tmac1973/haruspex/commit/58d2223d7f3dd54c97630a098de284f9735494d6))
+* **video:** generate videos on llama-toolchest ([#718](https://github.com/tmac1973/haruspex/issues/718)) ([8814f93](https://github.com/tmac1973/haruspex/commit/8814f93624eb07538d5f9acfd0eddf48af3f3354))
+* **video:** hide the YouTube upload until Google verifies its scope ([#676](https://github.com/tmac1973/haruspex/issues/676)) ([4d52269](https://github.com/tmac1973/haruspex/commit/4d52269c7ffd2ea86d12e3276542c9363a9974af))
+* **video:** make YouTube thumbnails from frames or the image backend ([#665](https://github.com/tmac1973/haruspex/issues/665)) ([11b0bef](https://github.com/tmac1973/haruspex/commit/11b0beffe785ff629ff61ee73a7c58c576d8ae13))
+* **video:** read and edit Kdenlive projects, add video_cut and video_edit ([#660](https://github.com/tmac1973/haruspex/issues/660)) ([30d4b76](https://github.com/tmac1973/haruspex/commit/30d4b7681cb59e058593e330fd30fe5aae49fd81))
+* **video:** render projects in the background with progress and a follow-up ([#661](https://github.com/tmac1973/haruspex/issues/661)) ([8922bdf](https://github.com/tmac1973/haruspex/commit/8922bdf8531208dacac6db599c0a9fa873e2095d))
+* **video:** scene detection and frame contact sheets for vision models ([#664](https://github.com/tmac1973/haruspex/issues/664)) ([a634a9e](https://github.com/tmac1973/haruspex/commit/a634a9ea6ca2294c0d0e482612969c505867738f))
+* **video:** transcribe footage, cut silences and write chapters and captions ([#663](https://github.com/tmac1973/haruspex/issues/663)) ([567d271](https://github.com/tmac1973/haruspex/commit/567d27183daa185f1fee3eba452883864ef991f7))
+* **video:** upload renders to YouTube after the user confirms ([#666](https://github.com/tmac1973/haruspex/issues/666)) ([9aa49c6](https://github.com/tmac1973/haruspex/commit/9aa49c69bdbb54c8e42e662ab2ae102014fd7013))
+
+
+### Bug Fixes
+
+* **agent:** ask for the whole answer again after the phantom-image nudge ([#765](https://github.com/tmac1973/haruspex/issues/765)) ([d64c080](https://github.com/tmac1973/haruspex/commit/d64c0803b54d621df424c42b72f296f1f3a9dacf))
+* **agent:** tell the model a stopped turn was stopped, so it isn't re-run ([#752](https://github.com/tmac1973/haruspex/issues/752)) ([9dfb48a](https://github.com/tmac1973/haruspex/commit/9dfb48a572c801629d99dfb3207504b1189dffc8)), closes [#594](https://github.com/tmac1973/haruspex/issues/594)
+* **appimage:** start the system ffmpeg and melt without the AppImage's libraries ([#674](https://github.com/tmac1973/haruspex/issues/674)) ([67460dd](https://github.com/tmac1973/haruspex/commit/67460dd40cf977163a55098c08703b4b0835fba6))
+* **assets:** draw ground that the set's sprites show up on ([#721](https://github.com/tmac1973/haruspex/issues/721)) ([e985dae](https://github.com/tmac1973/haruspex/commit/e985dae1cf0be3ee5441a05f6159c0a1588408e4))
+* **deps:** patch zip, rustls, zstd and tokio advisories, and keep queries out of search error logs ([#733](https://github.com/tmac1973/haruspex/issues/733)) ([b88f556](https://github.com/tmac1973/haruspex/commit/b88f556c4150800536461a6091c45dde3be660fd))
+* **engine:** don't throw when the switch-on arrives before listen resolves ([#673](https://github.com/tmac1973/haruspex/issues/673)) ([b057930](https://github.com/tmac1973/haruspex/commit/b05793039c8a7a6640935677f6e45cfc504c8a60))
+* **images:** stop adding web photos to a picture the model drew ([#683](https://github.com/tmac1973/haruspex/issues/683)) ([e51a66d](https://github.com/tmac1973/haruspex/commit/e51a66da0257a17b7bc38d218250718d4c5830df))
+* **lemonade:** run Ming on the discrete GPU, and fit its transparent start ([#716](https://github.com/tmac1973/haruspex/issues/716)) ([80993e1](https://github.com/tmac1973/haruspex/commit/80993e151011abb06b76cf90811621238b911253))
+* **logs:** redact the debug log mirror and sidecar argv, and tidy error logging ([#737](https://github.com/tmac1973/haruspex/issues/737)) ([4db64c1](https://github.com/tmac1973/haruspex/commit/4db64c1f329a8c7fe2280dccd55575db57fa9612)), closes [#734](https://github.com/tmac1973/haruspex/issues/734)
+* **music:** report a song's measured length, and say when it came out short ([#760](https://github.com/tmac1973/haruspex/issues/760)) ([0745eab](https://github.com/tmac1973/haruspex/commit/0745eabcf95c9830272e9355746d9c178b9ce64c)), closes [#759](https://github.com/tmac1973/haruspex/issues/759)
+* **sandbox:** say the Python runtime is missing instead of a bare import failure ([#680](https://github.com/tmac1973/haruspex/issues/680)) ([8508fc0](https://github.com/tmac1973/haruspex/commit/8508fc0707373d64a6d57ec881d8738d5e628f6f))
+* **settings:** say a stopped toolchest instance starts on use ([#762](https://github.com/tmac1973/haruspex/issues/762)) ([2f59a44](https://github.com/tmac1973/haruspex/commit/2f59a443c5c08253c4c2a0b67fe9a45799a2892a))
+* **settings:** separate the model lists and say what each bundled model can do ([#761](https://github.com/tmac1973/haruspex/issues/761)) ([20146c6](https://github.com/tmac1973/haruspex/commit/20146c6a782202abbd60876e770f5a3d80b56adc))
+* **skills:** load a skill on the first call to a tool it covers ([#728](https://github.com/tmac1973/haruspex/issues/728)) ([fb02a9c](https://github.com/tmac1973/haruspex/commit/fb02a9c567e5986de16a9acfe091e8f11ad84723))
+* the remote API's "no chat" after a hot reload, and pictures described as asked ([#717](https://github.com/tmac1973/haruspex/issues/717)) ([f6faa11](https://github.com/tmac1973/haruspex/commit/f6faa115098eee9425a2a85ec86ac7cbc731dff5))
+* **toolchest:** use a stopped instance and let toolchest start it ([#758](https://github.com/tmac1973/haruspex/issues/758)) ([921028e](https://github.com/tmac1973/haruspex/commit/921028e4e2c25d35f2b59c29055c84da68b16314))
+* **tools:** read json and long pages, and say what to do when a tool can't help ([#688](https://github.com/tmac1973/haruspex/issues/688)) ([1ab7051](https://github.com/tmac1973/haruspex/commit/1ab70511611cf764c2f7c26ad1fb581e87937e4b))
+* **video:** ask ffmpeg before melt tests a hardware encoder ([#692](https://github.com/tmac1973/haruspex/issues/692)) ([d2af9a5](https://github.com/tmac1973/haruspex/commit/d2af9a5f4057947f28e3f523bc7b212eb154d0dc))
+* **video:** find melt under Fedora's mlt-melt and melt-7 names ([#689](https://github.com/tmac1973/haruspex/issues/689)) ([e6ecbd2](https://github.com/tmac1973/haruspex/commit/e6ecbd23e27afa9843e6d7639ecc1c6e104ec1fb))
+* **video:** play full screen through a frame, since WebKitGTK shows a fullscreen &lt;video&gt; as black ([#754](https://github.com/tmac1973/haruspex/issues/754)) ([b1c25c1](https://github.com/tmac1973/haruspex/commit/b1c25c160a9eec17ec9e730d97d2a442a6c4dd1a))
+* **video:** say when a crossfade or a gain can't be what was asked ([#677](https://github.com/tmac1973/haruspex/issues/677)) ([590eeba](https://github.com/tmac1973/haruspex/commit/590eebab9a4433355b1803d239736dd8607a50f7))
+
+
+### Code Refactoring
+
+* **image:** share sd-cpp, OpenAI-images and seed helpers across backends ([#740](https://github.com/tmac1973/haruspex/issues/740)) ([d0048ef](https://github.com/tmac1973/haruspex/commit/d0048ef1b088b2676628711f1970b779d9ac6333))
+* rename modules to the file-name conventions ([#748](https://github.com/tmac1973/haruspex/issues/748)) ([6c53efb](https://github.com/tmac1973/haruspex/commit/6c53efb1c9d13c95cae526f88f859b13a87c59b1))
+* **rust:** share cache file handling and https startup, and drop the raw-token guest cookie ([#735](https://github.com/tmac1973/haruspex/issues/735)) ([677d4e3](https://github.com/tmac1973/haruspex/commit/677d4e315443d122264914939f98742ce6a52266))
+* **toolchest:** one module for the image, music and video kinds ([#742](https://github.com/tmac1973/haruspex/issues/742)) ([87ff61d](https://github.com/tmac1973/haruspex/commit/87ff61d09d586d937790da2dc56b24478107f86b))
+
+
+### Documentation
+
+* **plan:** background tasks and concurrent chat conversations ([#698](https://github.com/tmac1973/haruspex/issues/698)) ([28de7ee](https://github.com/tmac1973/haruspex/commit/28de7ee1d463a44ebc64e5b2f8db5be869abeac6))
+* **plan:** video editing with Kdenlive projects, melt renders and YouTube upload ([#658](https://github.com/tmac1973/haruspex/issues/658)) ([b5137b2](https://github.com/tmac1973/haruspex/commit/b5137b2f062f47efaffd0df9bf9eea63818ae8ea))
+
 ## [0.2.12](https://github.com/tmac1973/haruspex/compare/v0.2.11...v0.2.12) (2026-10-25)
 
 
