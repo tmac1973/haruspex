@@ -13,7 +13,8 @@
 	import { describeMusicProgress } from '#lib/music/progress.ts';
 	import type { MusicBackendKind, MusicProgress } from '#lib/music/types.ts';
 	import type { ModelOption, ProbeResult } from '#lib/music/backend.ts';
-	import { inferenceToolchest, toolchestHint } from '#lib/toolchest/detect.ts';
+	import { toolchestHint } from '#lib/toolchest/detect.ts';
+	import { prefillFromInference, withSavedModel } from '#lib/toolchest/kind.ts';
 	import type { ToolchestInstance } from '#lib/toolchest/models.ts';
 
 	/** The shortest and longest song a request may ask for, in seconds. */
@@ -37,13 +38,7 @@
 	let probeResult = $state<ProbeResult | null>(null);
 	let serverModels = $state<ModelOption[]>([]);
 	let instances = $state<ToolchestInstance[]>([]);
-	/** The dropdown's options: the server's, plus the saved one if it is not among them. */
-	const modelOptions = $derived.by((): ModelOption[] => {
-		const current = modelId.trim();
-		if (!current || serverModels.some((m) => m.name === current)) return serverModels;
-		const why = serverModels.length > 0 ? 'not on the server' : 'probe to check';
-		return [{ name: current, label: `${current} — ${why}` }, ...serverModels];
-	});
+	const modelOptions = $derived(withSavedModel(modelId, serverModels));
 
 	/** "llama-toolchest on host has music models", while music is off. */
 	let hint = $state<{ host: string; count: number } | null>(null);
@@ -60,14 +55,8 @@
 	function persistKind(e: Event) {
 		kind = (e.currentTarget as HTMLSelectElement).value as MusicBackendKind;
 		updateSettings({ musicBackendKind: kind });
-		// A toolchest with nothing set yet starts from the inference server,
-		// when that is a toolchest: usually the same machine and key.
-		const found = kind === 'llama-toolchest' ? inferenceToolchest() : null;
-		if (found && !getSettings().musicToolchestBaseUrl.trim()) {
-			updateSettings({
-				musicToolchestBaseUrl: found.baseUrl,
-				musicToolchestApiKeyId: found.apiKeyId
-			});
+		const found = kind === 'llama-toolchest' ? prefillFromInference('music') : null;
+		if (found) {
 			baseUrl = found.baseUrl;
 			apiKeyId = found.apiKeyId;
 		}
