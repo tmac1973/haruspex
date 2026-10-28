@@ -21,10 +21,12 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 import { getSettings, setMcpServers } from './settings';
 import {
+	customEnvOf,
 	customEnvProblem,
 	forgetMcpSecrets,
 	hasMcpSecret,
 	migrateMcpSecrets,
+	replaceCustomEnv,
 	storeCustomEnv,
 	storeMcpSecret
 } from './mcpSecrets';
@@ -134,6 +136,33 @@ describe('MCP secrets', () => {
 		expect(state.stored.get('mcp:s1:env:API_KEY')).toBe('sk_1');
 		expect(c.secrets).toEqual({ 'env:API_KEY': '' });
 		expect(c.storedSecrets).toEqual(['env:API_KEY']);
+	});
+
+	it('are edited in place: removed ones deleted, blank kept ones left alone', async () => {
+		const custom = server({ source: { kind: 'custom', program: 'x', args: [] } });
+		const before = await storeCustomEnv(custom, [
+			{ name: 'KEEP', value: 'k1' },
+			{ name: 'CHANGE', value: 'c1' },
+			{ name: 'DROP', value: 'd1' }
+		]);
+		const rows = customEnvOf(before);
+		expect(rows.map((r) => r.name).sort()).toEqual(['CHANGE', 'DROP', 'KEEP']);
+		expect(rows.every((r) => r.kept && r.value === '')).toBe(true);
+
+		const after = await replaceCustomEnv(before, [
+			{ name: 'KEEP', value: '', kept: true },
+			{ name: 'CHANGE', value: 'c2', kept: true },
+			{ name: 'NEW', value: 'n1' },
+			// Removed, then added again with no value: gone.
+			{ name: 'DROP', value: '' }
+		]);
+		expect(Object.fromEntries(state.stored)).toEqual({
+			'mcp:s1:env:KEEP': 'k1',
+			'mcp:s1:env:CHANGE': 'c2',
+			'mcp:s1:env:NEW': 'n1'
+		});
+		expect(Object.keys(after.secrets).sort()).toEqual(['env:CHANGE', 'env:KEEP', 'env:NEW']);
+		expect([...(after.storedSecrets ?? [])].sort()).toEqual(['env:CHANGE', 'env:KEEP', 'env:NEW']);
 	});
 
 	it('refuse a variable name the server could not be given', () => {

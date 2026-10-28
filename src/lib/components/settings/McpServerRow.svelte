@@ -18,11 +18,17 @@
 		probeCompanion,
 		removeMcpServer,
 		startMcpServer,
-		statusLabel
+		statusLabel,
+		stopMcpServer
 	} from '#lib/stores/mcpServers.svelte.ts';
+	import { customEnvOf, replaceCustomEnv } from '#lib/stores/mcpSecrets.ts';
 	import { addonStepIndex, pickAndInstallAddon } from '#lib/stores/mcpAddon.ts';
 	import McpToolList from '#lib/components/settings/McpToolList.svelte';
 	import McpSetupWizard from '#lib/components/settings/McpSetupWizard.svelte';
+	import McpCustomServerForm, {
+		customServerLabel,
+		type CustomServerForm
+	} from '#lib/components/settings/McpCustomServerForm.svelte';
 
 	interface Props {
 		config: McpServerConfig;
@@ -35,6 +41,7 @@
 
 	let showTools = $state(false);
 	let showSetup = $state(false);
+	let showEdit = $state(false);
 	let logs = $state<string[]>([]);
 	let showLogs = $state(false);
 
@@ -141,6 +148,30 @@
 		if (finished.setupComplete && !running) void start(finished);
 	}
 
+	/**
+	 * Save an edited custom server under the same id, so its stored variables,
+	 * tool switches and always-allow decisions carry over. A running server is
+	 * restarted to pick the change up.
+	 */
+	async function saveEdit({ program, args, env }: CustomServerForm): Promise<void> {
+		if (config.source.kind !== 'custom') return;
+		// A label the user never changed follows the program.
+		const label =
+			config.label === customServerLabel(config.source.program)
+				? customServerLabel(program)
+				: config.label;
+		const next = await replaceCustomEnv(
+			{ ...config, label, source: { kind: 'custom', program, args } },
+			env
+		);
+		onchange(next);
+		showEdit = false;
+		if (running) {
+			await stopMcpServer(config.id);
+			await start(next);
+		}
+	}
+
 	async function remove(): Promise<void> {
 		await removeMcpServer(config.id);
 		onremove();
@@ -224,6 +255,11 @@
 				{showSetup ? 'Close setup' : 'Setup'}
 			</button>
 		{/if}
+		{#if config.source.kind === 'custom'}
+			<button type="button" disabled={runtime.busy} onclick={() => (showEdit = !showEdit)}>
+				{showEdit ? 'Close' : 'Edit'}
+			</button>
+		{/if}
 		<button type="button" onclick={() => (showTools = !showTools)}>
 			{showTools ? 'Hide tools' : 'Tools'}
 		</button>
@@ -243,6 +279,18 @@
 			{/if}
 			{#if addonAdded}<p class="hint">Added to {addonAdded}</p>{/if}
 			{#if addonError}<p class="error">{addonError}</p>{/if}
+		</div>
+	{/if}
+
+	{#if showEdit && config.source.kind === 'custom'}
+		<div class="edit">
+			<McpCustomServerForm
+				program={config.source.program}
+				args={config.source.args}
+				env={customEnvOf(config)}
+				saveLabel="Save"
+				onsave={saveEdit}
+			/>
 		</div>
 	{/if}
 
@@ -281,6 +329,9 @@
 </section>
 
 <style>
+	.edit {
+		margin-top: 0.75rem;
+	}
 	.addon {
 		display: flex;
 		flex-wrap: wrap;
