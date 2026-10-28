@@ -37,6 +37,7 @@ import { resolveSong } from '#lib/agent/tools/_musicSource.ts';
 import { canRunInBackground } from '#lib/agent/tools/_imageJob.ts';
 import {
 	BACKGROUND_PARAM,
+	measuredSong,
 	musicAnswerText,
 	savedLineOf,
 	startMusicTask
@@ -208,6 +209,8 @@ export async function runMusic(args: MusicArgs, ctx: ToolContext): Promise<ToolE
 		clearInterval(tick);
 	}
 
+	const checked = await measuredSong(made, args.req.durationSec);
+	made = checked.made;
 	const title = args.req.title;
 	let saved: string | null = null;
 	if (target) {
@@ -217,7 +220,7 @@ export async function runMusic(args: MusicArgs, ctx: ToolContext): Promise<ToolE
 		saved = savedLineOf(target.path, await writeSaved(target, bytes, ctx));
 	}
 	return {
-		result: musicAnswerText({ made, title, saved, notes: args.notes }),
+		result: musicAnswerText({ made, title, saved, notes: [...args.notes, ...checked.notes] }),
 		artifacts: [{ kind: 'audio', mime: made.mime, src: made.url, title }]
 	};
 }
