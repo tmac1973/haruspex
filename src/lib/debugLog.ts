@@ -58,10 +58,13 @@ export function previewPayload(s: string | null | undefined, max = 800): string 
 let nextTurnId = 1;
 let activeTurnId: number | null = null;
 interface DebugEntry {
+	/** Counts up from 1 for the window's lifetime, so a reader can ask for what came after. */
+	seq: number;
 	line: string;
 	turnId: number | null;
 }
 const buffer: DebugEntry[] = [];
+let lastSeq = 0;
 
 /**
  * Mark the start of a new agent turn. Returns an opaque turn id that
@@ -102,7 +105,7 @@ export function logDebug(category: string, message: string, data?: unknown): voi
 		line += ` ${serialized}`;
 	}
 	if (buffer.length >= RING_CAPACITY) buffer.shift();
-	buffer.push({ line, turnId: activeTurnId });
+	buffer.push({ seq: ++lastSeq, line, turnId: activeTurnId });
 	fileQueue?.push(line);
 }
 
@@ -180,6 +183,22 @@ export function getDebugLogs(): string[] {
  */
 export function getDebugLogsForTurn(turnId: number): string[] {
 	return buffer.filter((e) => e.turnId === turnId).map((e) => e.line);
+}
+
+/**
+ * The entries after `since` (a `seq`), or the last `limit` when there are
+ * more, holding `contains` if given. `next` is what to pass as `since` to
+ * read on from here; it moves past what `contains` skipped, too.
+ */
+export function debugLogsSince(
+	since: number,
+	{ contains, limit }: { contains?: string; limit: number }
+): { lines: { seq: number; line: string }[]; next: number } {
+	const after = buffer.filter((e) => e.seq > since && (!contains || e.line.includes(contains)));
+	return {
+		lines: after.slice(-limit).map((e) => ({ seq: e.seq, line: e.line })),
+		next: lastSeq
+	};
 }
 
 export function clearDebugLogs(): void {

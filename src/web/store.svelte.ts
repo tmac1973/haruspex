@@ -14,6 +14,7 @@ import {
 import {
 	isChatEvent,
 	isJobEvent,
+	isTaskEvent,
 	isSessionEvent,
 	type ChatListItem,
 	type ChatState,
@@ -368,8 +369,8 @@ export class WebStore {
 				void this.run(() => this.transport.op({ type: 'chat.resync', id: e.chatId }));
 			return;
 		}
-		// The page has no Jobs view yet; scripts follow them.
-		if (isJobEvent(e)) return;
+		// The page has no Jobs or task views yet; scripts follow them.
+		if (isJobEvent(e) || isTaskEvent(e)) return;
 		if (!isSessionEvent(e)) {
 			if (e.type === 'prompt') this.prompts[e.prompt.promptId] = e.prompt;
 			else delete this.prompts[e.promptId];

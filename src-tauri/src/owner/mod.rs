@@ -110,11 +110,34 @@ struct AppDispatch(AppHandle);
 impl Dispatch for AppDispatch {
     fn op(&self, op: Value) -> BoxFuture<Result<Value, String>> {
         let app = self.0.clone();
-        Box::pin(async move { crate::engine::request(&app, op).await })
+        Box::pin(async move {
+            let tail = op.get("type").and_then(Value::as_str) == Some("debug.tail");
+            let mut answer = crate::engine::request(&app, op).await?;
+            // The log's lines leave this computer as its file does: redacted.
+            if tail {
+                redact_tail(&mut answer, &crate::secrets::known_values());
+            }
+            Ok(answer)
+        })
     }
 
     fn subscribe(&self) -> broadcast::Receiver<Value> {
         self.0.state::<EngineHub>().subscribe()
+    }
+}
+
+/// `debug.tail`'s lines with every secret blanked, as `agent-debug.log` is
+/// (`app_log.rs`).
+fn redact_tail(answer: &mut Value, known: &[String]) {
+    let Some(lines) = answer.get_mut("lines").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for entry in lines {
+        if let Some(line) = entry.get_mut("line") {
+            if let Some(text) = line.as_str() {
+                *line = Value::String(crate::text_util::redact_secrets(text, known));
+            }
+        }
     }
 }
 
@@ -175,5 +198,35 @@ impl Images for AppImages {
             width: image.width,
             height: image.height,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn a_tail_leaves_with_its_secrets_blanked() {
+        let mut answer = json!({
+            "window": "main",
+            "lines": [
+                { "seq": 1, "line": "[api] POST with key sk-live-abcdef123456" },
+                { "seq": 2, "line": "Authorization: Bearer hsx_0123456789abcdef" },
+                { "seq": 3, "line": "[agent] nothing secret here" }
+            ],
+            "next": 3
+        });
+        redact_tail(&mut answer, &["sk-live-abcdef123456".to_string()]);
+        let lines: Vec<&str> = answer["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["line"].as_str().unwrap())
+            .collect();
+        assert!(!lines[0].contains("sk-live-abcdef123456"));
+        assert!(!lines[1].contains("hsx_0123456789abcdef"));
+        assert_eq!(lines[2], "[agent] nothing secret here");
+        assert_eq!(answer["lines"][0]["seq"], 1);
     }
 }

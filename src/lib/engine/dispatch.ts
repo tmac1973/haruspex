@@ -209,6 +209,13 @@ export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 		case 'runs.resync':
 			if (label !== MAIN_WINDOW) throw new Error('jobs run in the main window');
 			return (await import('#lib/engine/jobs.svelte.ts')).dispatchJobs(op);
+		case 'debug.tail':
+			return (await import('#lib/engine/observe.ts')).dispatchObserve(op, label);
+		case 'inference.queue':
+		case 'tasks.list':
+		case 'tasks.cancel':
+			if (label !== MAIN_WINDOW) throw new Error('the main window answers for the queue and tasks');
+			return (await import('#lib/engine/observe.ts')).dispatchObserve(op, label);
 		case 'settings.get':
 		case 'settings.patch': {
 			if (label !== MAIN_WINDOW) throw new Error('settings are changed in the main window');

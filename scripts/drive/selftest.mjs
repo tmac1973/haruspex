@@ -246,6 +246,24 @@ try {
 	check(op({ type: 'runs.current' }).queue.length === 0, 'runs.current shows an empty queue');
 	check(op({ type: 'jobs.delete', jobId }).deleted === jobId, 'jobs.delete deletes it');
 
+	// Watching the app over HTTPS: its debug log, the inference queue, the tasks.
+	const tail = op({ type: 'debug.tail', lines: 50 });
+	check(
+		tail.window === 'main' && tail.lines.length > 0 && tail.next >= tail.lines.at(-1).seq,
+		"debug.tail reads the main window's log"
+	);
+	const ran = op({ type: 'debug.tail', contains: '[engine] started', lines: 2000 });
+	check(
+		ran.lines.length > 0 && ran.lines.every((l) => l.line.includes('[engine] started')),
+		'and keeps only the lines holding `contains`'
+	);
+	check(
+		op({ type: 'debug.tail', since: tail.next + 1e9 }).lines.length === 0,
+		'and nothing after its own end'
+	);
+	check(Array.isArray(op({ type: 'inference.queue' })), 'inference.queue lists the tickets');
+	check(Array.isArray(op({ type: 'tasks.list' })), 'tasks.list lists the background tasks');
+
 	// Settings over HTTPS: read one, change it, and a secret is refused.
 	op({ type: 'settings.patch', patch: { theme: 'dark' } });
 	check(
