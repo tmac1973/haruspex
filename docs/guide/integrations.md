@@ -35,21 +35,23 @@ To find the link:
 
 ## Add an MCP server
 
-MCP lets the assistant use tools from other software. Haruspex installs and runs MCP servers itself with its own bundled Node and Python runtimes, so there is no terminal step. In Settings → Integrations → MCP integrations:
+MCP lets the assistant use tools from other software. Haruspex installs and runs MCP servers with its own bundled Node and Python, so no terminal is needed. In Settings → Integrations → MCP integrations:
 
 - **Add from the catalog** installs GitHub, Google Drive & Sheets, Browser (Playwright), Blender or Godot, then walks you through a setup wizard (tokens, files, a project folder).
 - **Add a server on this computer** runs an MCP program you already have.
 - **Add a server on your network** connects over HTTP, with an optional token. Servers that sign in through a browser are not supported yet.
 
-Each server has **Tools**, a switch per tool. Catalog servers start with a recommended set on; others start with all off. Tools marked "asks first" ask before they run. Turn off tools you don't need: every tool takes up room in the model's context. A picture a tool returns, such as a screenshot, goes to the model when it can read images.
+Each server has **Tools**, a switch per tool. Catalog servers start with a recommended set on; others start with all off. Tools marked "asks first" ask before they run. Turn off tools you don't need: every tool takes up room in the model's context. A picture a tool returns goes to the model if it can read images.
 
-**Blender and Godot** need the app itself running with its MCP addon. The server card says when the app is "not connected"; **Check again** retries.
+**Edit** changes a local server's program, arguments and secret variables; a blank secret keeps its value.
+
+**Blender and Godot** need the app running with its MCP addon. The card says when it is "not connected"; **Check again** retries.
 
 ## Test a web app in a browser
 
-**Browser (Playwright)** from the catalog lets the assistant open pages in a headless Chromium, click and type in them, and read the page's console and network requests. It reaches `localhost`, so the Code tab can check the app it is building. Setup downloads Playwright's own Chromium: about 200 MB, 400 MB once unpacked. It doesn't use your browser or its logins, and each start begins with a fresh profile.
+**Browser (Playwright)** from the catalog lets the assistant open pages in a headless Chromium, click and type in them, and read the page's console and network requests. It reaches `localhost`, so the Code tab can check the app it is building. Setup downloads Playwright's own Chromium: about 200 MB, 400 MB once unpacked. It doesn't use your browser or its logins; each start has a fresh profile.
 
-On by default: open a page, read the page as text, click, type, console messages, network requests and one request's details, screenshots, resizing the window, and running a script in the page (to measure a layout, say). Reading the page, its console and requests and taking screenshots run without asking; the rest ask first, and **Always allow** stops asking for that tool.
+On by default: open a page, read the page as text, click, type, console messages, network requests and one request's details, screenshots, resizing the window, and running a script in the page. Reading the page, its console and requests and taking screenshots run without asking; the rest ask first, and **Always allow** stops asking for that tool.
 
 ## Let the assistant see your screen
 

@@ -49,6 +49,17 @@ export const CUSTOM_ENV_PREFIX = 'env:';
 export interface EnvVar {
 	name: string;
 	value: string;
+	/** A variable the server already has. Its name is fixed, and an empty
+	 *  value keeps what is stored. */
+	kept?: boolean;
+}
+
+/** A custom server's variables as edit rows: names only, since the values
+ *  never come back to the webview. */
+export function customEnvOf(config: McpServerConfig): EnvVar[] {
+	return Object.keys(config.secrets)
+		.filter((key) => key.startsWith(CUSTOM_ENV_PREFIX))
+		.map((key) => ({ name: key.slice(CUSTOM_ENV_PREFIX.length), value: '', kept: true }));
 }
 
 /** What is wrong with a custom server's variables, or null. Rows with no
@@ -76,6 +87,32 @@ export async function storeCustomEnv(
 		config = await storeMcpSecret(config, CUSTOM_ENV_PREFIX + name.trim(), value);
 	}
 	return config;
+}
+
+/** The config with its variables replaced by `vars`: a variable no longer
+ *  listed is deleted from the store, and a kept one with no new value stays
+ *  as it is. Check `customEnvProblem` first. */
+export async function replaceCustomEnv(
+	config: McpServerConfig,
+	vars: EnvVar[]
+): Promise<McpServerConfig> {
+	const listed = new Set(
+		vars.filter((v) => v.kept || v.value).map(({ name }) => CUSTOM_ENV_PREFIX + name.trim())
+	);
+	for (const key of Object.keys(config.secrets)) {
+		if (key.startsWith(CUSTOM_ENV_PREFIX) && !listed.has(key)) {
+			config = await dropMcpSecret(config, key);
+		}
+	}
+	return storeCustomEnv(config, vars);
+}
+
+/** The config without `key`, its stored value deleted. */
+async function dropMcpSecret(config: McpServerConfig, key: string): Promise<McpServerConfig> {
+	if (config.storedSecrets?.includes(key)) await deleteSecret(mcpSecretKey(config.id, key));
+	const secrets = { ...config.secrets };
+	delete secrets[key];
+	return { ...config, secrets, storedSecrets: withStored(config, key, false) };
 }
 
 /** Whether `key` has a value, wherever it is kept. */

@@ -12,18 +12,17 @@
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { onMount, onDestroy } from 'svelte';
 	import { getSettings, setMcpServers, snapshot } from '#lib/stores/settings.ts';
-	import {
-		customEnvProblem,
-		storeCustomEnv,
-		storeMcpSecret,
-		type EnvVar
-	} from '#lib/stores/mcpSecrets.ts';
+	import { storeCustomEnv, storeMcpSecret } from '#lib/stores/mcpSecrets.ts';
 	import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 	import type { CatalogEntry } from '#lib/ipc/gen/CatalogEntry.ts';
 	import type { RuntimeAvailability } from '#lib/ipc/gen/RuntimeAvailability.ts';
 	import type { DownloadProgress } from '#lib/ipc/gen/DownloadProgress.ts';
 	import McpServerRow from '#lib/components/settings/McpServerRow.svelte';
 	import McpCatalogBrowser from '#lib/components/settings/McpCatalogBrowser.svelte';
+	import McpCustomServerForm, {
+		customServerLabel,
+		type CustomServerForm
+	} from '#lib/components/settings/McpCustomServerForm.svelte';
 	import { probeCompanion } from '#lib/stores/mcpServers.svelte.ts';
 	import { newId } from '#lib/utils/id.ts';
 
@@ -48,10 +47,6 @@
 	let error = $state<string | null>(null);
 	let showCatalog = $state(false);
 	let showCustom = $state(false);
-	let customProgram = $state('');
-	let customArgs = $state('');
-	let customEnv = $state<EnvVar[]>([]);
-	const customEnvError = $derived(customEnvProblem(customEnv));
 	let showRemote = $state(false);
 	let remoteUrl = $state('');
 	let remoteToken = $state('');
@@ -123,34 +118,21 @@
 		await invoke('mcp_cancel_install');
 	}
 
-	async function addCustom(): Promise<void> {
-		const program = customProgram.trim();
-		if (!program || customEnvError) return;
+	async function addCustom({ program, args, env }: CustomServerForm): Promise<void> {
 		let server: McpServerConfig = {
 			id: newId('mcp'),
 			addonProjects: [],
-			label: program.split(/[\\/]/).pop() || 'Custom server',
+			label: customServerLabel(program),
 			enabled: true,
-			source: {
-				kind: 'custom',
-				program,
-				args: customArgs.trim() ? customArgs.trim().split(/\s+/) : []
-			},
+			source: { kind: 'custom', program, args },
 			secrets: {},
 			toolEnabled: {},
 			proxyUse: 'auto',
 			// No catalog entry means no setup steps to complete.
 			setupComplete: true
 		};
-		// Plain copies: the rows are $state proxies.
-		server = await storeCustomEnv(
-			server,
-			customEnv.map(({ name, value }) => ({ name, value }))
-		);
+		server = await storeCustomEnv(server, env);
 		persist([...servers, server]);
-		customProgram = '';
-		customArgs = '';
-		customEnv = [];
 		showCustom = false;
 	}
 
@@ -300,49 +282,7 @@
 	{#if showCustom}
 		<div class="custom-form">
 			<p class="section-help">Run an MCP server you already have on this machine.</p>
-			<label>
-				Program
-				<input bind:value={customProgram} placeholder="/usr/local/bin/my-mcp-server" />
-			</label>
-			<label>
-				Arguments
-				<input
-					bind:value={customArgs}
-					placeholder="--stdio"
-					title="Saved in plain settings. Put keys in a secret variable instead."
-				/>
-			</label>
-			{#each customEnv as envVar, i (i)}
-				<div class="env-row">
-					<input bind:value={envVar.name} placeholder="API_KEY" aria-label="Variable name" />
-					<input
-						type="password"
-						bind:value={envVar.value}
-						placeholder="Value"
-						aria-label="Variable value"
-						title="Kept in Haruspex's secret store and passed to the server as an environment variable."
-					/>
-					<button
-						type="button"
-						aria-label="Remove variable"
-						onclick={() => (customEnv = customEnv.filter((_, j) => j !== i))}>×</button
-					>
-				</div>
-			{/each}
-			<button
-				type="button"
-				class="add-var"
-				onclick={() => (customEnv = [...customEnv, { name: '', value: '' }])}
-				>Add secret variable</button
-			>
-			{#if customEnvError}
-				<p class="error">{customEnvError}</p>
-			{/if}
-			<button
-				type="button"
-				disabled={!customProgram.trim() || !!customEnvError}
-				onclick={() => void addCustom()}>Add</button
-			>
+			<McpCustomServerForm saveLabel="Add" onsave={addCustom} />
 		</div>
 	{/if}
 </section>
@@ -376,17 +316,6 @@
 	}
 	.advanced {
 		font-size: 0.9em;
-	}
-	.add-var {
-		align-self: flex-start;
-	}
-	.env-row {
-		display: flex;
-		gap: 0.5rem;
-	}
-	.env-row input {
-		flex: 1;
-		min-width: 0;
 	}
 	.custom-form {
 		margin-top: 0.75rem;
