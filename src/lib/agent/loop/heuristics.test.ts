@@ -211,6 +211,12 @@ describe('nudge prompts', () => {
 		expect(researchNudgePrompt()).toContain('web_search');
 		expect(phantomImageNudgePrompt()).toContain('image_search');
 	});
+
+	// The rejected answer is never shown, and without this the model replied
+	// with only a paragraph about the picture it found (a 6.5 KB answer lost).
+	it('phantom-image prompt asks for the whole answer again', () => {
+		expect(phantomImageNudgePrompt()).toContain('write the whole answer again');
+	});
 });
 
 describe('outOfTokensMessage', () => {

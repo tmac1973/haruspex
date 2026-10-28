@@ -82,7 +82,9 @@ export function phantomImageNudgePrompt(): string {
 		'pictures. Your NEXT output must be a tool_calls block invoking ' +
 		'image_search — do not reply with text. When the results come back, use ' +
 		'a thumb_url exactly as it appears in them, and never write an image URL ' +
-		'from memory.'
+		'from memory. The user has not seen the answer above: once you have the ' +
+		'pictures, write the whole answer again with them in place, not just a ' +
+		'note about the pictures.'
 	);
 }
 
