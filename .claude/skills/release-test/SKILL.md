@@ -96,9 +96,13 @@ Then cover each area the release touched. What has worked:
   `agentsMd` prompt with `answer skill '{"action":"save","text":…}'`.
 - **Worktree session:** Code → **New session** on that repo; the **Work in a
   new worktree** box appears a moment after the dialog opens.
-- **Jobs:** `click "button=Jobs"`, `click "button=+ New"`, `fill` the name
-  and step fields, `click "button=Save"`, `click '[title^="Run now"]'`, then
-  `screenshot`.
+- **Jobs:** through the API with `op`: `jobs.create` a two-step research job
+  (`{"type":"jobs.create","job":{"name":"…","job_type":"research"},"steps":["…","…"]}`),
+  `jobs.run` it, poll `runs.get` until it isn't `queued` or `running`, check the
+  second step's prompt carries the first one's output, then `jobs.delete` it.
+  A guided-planning job's questions show in `approval` with their `runId`;
+  answer them with `answer question …`. One `screenshot` of the Jobs tab for
+  the nesting and the run view.
 - **Windows:** copy `remote-drive.ps1` from this folder to the repo root as
   `.remote-drive.ps1`, set the model in it, run
   `scripts/ci-runner/remote-test.sh windows drive`, then

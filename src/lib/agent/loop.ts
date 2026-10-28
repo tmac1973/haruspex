@@ -192,6 +192,8 @@ export interface AgentLoopOptions {
 	shellSessionId?: number | null;
 	/** The Code session running this turn; see ToolContext.codeSessionId. */
 	codeSessionId?: string;
+	/** The job run this turn belongs to; see ToolContext.jobRunId. */
+	jobRunId?: number;
 	/** Who is asking in an approval prompt; see ToolContext.requester. */
 	requester?: () => string;
 	/** A read-only Code session; see ToolContext.codeReadOnly. */

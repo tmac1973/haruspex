@@ -57,6 +57,8 @@ export interface EphemeralTurnOptions {
 	 * jobs don't hang on a question with no one present.
 	 */
 	interactive?: boolean;
+	/** The job run this turn belongs to; see ToolContext.jobRunId. */
+	jobRunId?: number;
 	/**
 	 * Where `ask_user_question` sends its question when the person who can
 	 * answer it is somewhere else — a remote chat guest. See
@@ -261,6 +263,7 @@ export async function runEphemeralTurn(
 			backend: options.backend,
 			slot: options.slot,
 			interactive: options.interactive,
+			jobRunId: options.jobRunId,
 			askUser: options.askUser,
 			writeRoot: options.writeRoot,
 			onUsageUpdate: options.onUsageUpdate,

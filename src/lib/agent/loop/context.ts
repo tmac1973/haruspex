@@ -131,6 +131,7 @@ export interface LoopContext {
 	shellCwd: string | null;
 	shellSessionId: number | null;
 	codeSessionId?: string;
+	jobRunId?: number;
 	requester?: ToolContext['requester'];
 	codeReadOnly: boolean;
 	codeRemote: boolean;
@@ -296,6 +297,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		shellCwd: options.shellCwd ?? null,
 		shellSessionId: options.shellSessionId ?? null,
 		codeSessionId: options.codeSessionId,
+		jobRunId: options.jobRunId,
 		requester: options.requester,
 		codeReadOnly: options.codeReadOnly ?? false,
 		codeRemote: options.codeRemote ?? false,

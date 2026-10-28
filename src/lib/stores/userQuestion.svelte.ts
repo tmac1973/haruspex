@@ -56,6 +56,8 @@ export interface UserQuestionRequest {
 	imageUrl?: string;
 	/** The Code session asking, so a client elsewhere knows whose question it is. */
 	sessionId?: string;
+	/** The job run asking, likewise. */
+	runId?: number;
 }
 
 /**

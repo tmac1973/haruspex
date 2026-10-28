@@ -250,6 +250,8 @@ export interface AnchorDeps {
 	/** Regenerations allowed. Not the per-entry budget; they are different questions. */
 	anchorAttempts: number;
 	attended: boolean;
+	/** The run asking, for a client that answers its question from elsewhere. */
+	runId?: number;
 	signal: AbortSignal;
 	/** Put the sheet and the spec summary in front of the user. */
 	present: (markdown: string) => void;
@@ -433,6 +435,7 @@ export async function establishAnchor(
 		const last = attempts >= deps.anchorAttempts;
 		const answer = await askUserQuestion(
 			{
+				runId: deps.runId,
 				// The sheet goes IN the question. It used to be shown only in the
 				// run timeline, which this modal then covered.
 				imageUrl: url ?? undefined,

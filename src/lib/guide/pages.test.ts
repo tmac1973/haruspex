@@ -40,6 +40,7 @@ const PAGES = [
 	'search-and-network',
 	'guest-chat',
 	'remote-control',
+	'remote-control-api',
 	'settings',
 	'shortcuts',
 	'model-feedback',

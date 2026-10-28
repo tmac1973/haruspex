@@ -706,6 +706,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 				profile: spec.normalize,
 				anchorAttempts: cfg.anchor_attempts ?? DEFAULT_ANCHOR_ATTEMPTS,
 				attended,
+				runId: ctx.runId,
 				signal: abort.signal,
 				present: (markdown) => ctx.patchStep(ANCHOR, { streaming: markdown }),
 				readFile: (rel) => readWorkdirFile(ctx, rel),

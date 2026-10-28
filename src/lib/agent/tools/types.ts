@@ -211,6 +211,8 @@ export interface ToolContext {
 	 * `run_command` starts without a terminal (`code_bg_*`).
 	 */
 	codeSessionId?: string;
+	/** The job run this turn belongs to, so its questions name it to a client elsewhere. */
+	jobRunId?: number;
 	/**
 	 * Who is asking, named in an approval prompt so the user can tell two
 	 * sessions' prompts apart: a Code session's title, a Shell tab's name.

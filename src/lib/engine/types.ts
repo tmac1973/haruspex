@@ -11,6 +11,8 @@ import type { FileDiff } from '#lib/code/diff.ts';
 import type { BgProcess } from '#lib/ipc/gen/BgProcess.ts';
 import type { CodeSessionStatus } from '#lib/stores/code.svelte.ts';
 import type { UserAnswer } from '#lib/stores/userQuestion.svelte.ts';
+import type { JobInput, JobType, Schedule } from '#lib/stores/jobs.svelte.ts';
+import type { PendingQueueEntry, RunStatus, StepStatus } from '#lib/agent/jobs/runner.svelte.ts';
 
 export type EngineOp =
 	| { type: 'sessions.list' }
@@ -48,7 +50,115 @@ export type EngineOp =
 	| { type: 'chat.retry'; id: string }
 	| { type: 'chat.resync'; id: string }
 	| { type: 'prompts.list' }
-	| { type: 'prompts.answer'; promptId: string; answer: PromptAnswer };
+	| { type: 'prompts.answer'; promptId: string; answer: PromptAnswer }
+	| JobOp
+	/** The settings, secrets blanked; `keys` picks top-level settings. */
+	| { type: 'settings.get'; keys?: string[] }
+	/** Lay `patch` over the settings: objects merge key by key, anything else is replaced. */
+	| { type: 'settings.patch'; patch: Record<string, unknown> };
+
+/**
+ * A job as a client writes it: the columns `jobs.get` returns, less the ones
+ * the app owns (ids, times, the schedule's columns, the inline API key).
+ */
+export type JobFields = Partial<
+	Pick<
+		JobInput,
+		| 'name'
+		| 'description'
+		| 'working_dir'
+		| 'job_type'
+		| 'model_remote_base_url'
+		| 'model_remote_api_key_id'
+		| 'model_remote_model_id'
+		| 'model_remote_context_size'
+		| 'model_remote_vision_supported'
+		| 'model_advanced'
+	>
+>;
+
+/** A step as a client writes it: its prompt, or the prompt and deep research. */
+export type JobStepWrite = string | { prompt: string; deep_research?: boolean };
+
+/**
+ * The Jobs tab (main window). `config` is the job type's own settings, laid
+ * over its defaults (`jobs.types` lists them); `schedule` only for a type
+ * that can be scheduled.
+ */
+export type JobOp =
+	| { type: 'jobs.types' }
+	| { type: 'jobs.list' }
+	| { type: 'jobs.get'; jobId: number }
+	| {
+			type: 'jobs.create';
+			job: JobFields & { name: string; job_type: JobType };
+			steps?: JobStepWrite[];
+			config?: Record<string, unknown>;
+			schedule?: Schedule;
+	  }
+	/** Only what it names changes; `steps`, when given, replaces them all. */
+	| {
+			type: 'jobs.update';
+			jobId: number;
+			job?: JobFields;
+			steps?: JobStepWrite[];
+			config?: Record<string, unknown>;
+			schedule?: Schedule;
+	  }
+	| { type: 'jobs.duplicate'; jobId: number }
+	| { type: 'jobs.delete'; jobId: number }
+	/** Run now, or queue behind the run in progress. `chained` is the run view's Resume. */
+	| { type: 'jobs.run'; jobId: number; trigger?: 'manual' | 'chained' }
+	/** Stop the run in progress, or take a queued one out of the queue. */
+	| { type: 'run.cancel'; runId: number }
+	| { type: 'runs.list'; jobId: number }
+	| { type: 'runs.get'; runId: number }
+	/** The run in progress (or the last, until another starts) and the queue. */
+	| { type: 'runs.current' }
+	| { type: 'runs.delete'; runId: number }
+	/** Send a fresh `job-run` event for the current run: the client saw a gap in `seq`. */
+	| { type: 'runs.resync'; runId: number };
+
+/** A run's step as events carry it: no streaming text, reasoning or tool steps. */
+export interface JobRunStepLive {
+	index: number;
+	/** The stage, for named-stage types; null for a prompt step. */
+	description: string | null;
+	promptAuthored: string;
+	status: StepStatus;
+	output: string;
+	error: string | null;
+	usage: { promptTokens: number; completionTokens: number } | null;
+	/** How many tool calls it has made. `runs.get` has them. */
+	toolCalls: number;
+	startedAt: number | null;
+	finishedAt: number | null;
+}
+
+/** The run in progress, as events carry it. */
+export interface JobRunLive {
+	id: number;
+	jobId: number;
+	jobName: string;
+	jobType: JobType;
+	status: RunStatus;
+	error: string | null;
+	currentStepIndex: number;
+	waitingForSlot: boolean;
+	startedAt: number;
+	finishedAt: number | null;
+	steps: JobRunStepLive[];
+}
+
+/**
+ * What the Jobs tab's runner did. `job-run` when anything but the text
+ * changes, `job-run-live` for the running step's text (coalesced), both with
+ * `seq` per run; `job-queue` when the queue changes, with its own `seq`.
+ */
+export type JobEvent =
+	| { type: 'job-run'; seq: number; runId: number; run: JobRunLive }
+	| { type: 'job-run-live'; seq: number; runId: number; stepIndex: number; streaming: string }
+	| { type: 'job-queue'; seq: number; queue: PendingQueueEntry[] };
 
 /** A step as a client draws it: the diff card worked out, as `CodeSteps.svelte` does. */
 export type StepState = SearchStep & { diff: FileDiff | null };
@@ -119,6 +229,8 @@ export interface Prompt {
 	sessionId: string | null;
 	/** The chat that asked (the sandbox and memory ask for the open chat). */
 	chatId?: string | null;
+	/** The job run that asked (guided planning's reviews, an asset job's style anchor). */
+	runId?: number | null;
 	/** Whether a client can answer it; every kind can now, so a new kind starts false. */
 	answerable: boolean;
 	/** Who is asking, as the modal says it. */
@@ -204,7 +316,7 @@ export type ChatEvent = { seq: number; chatId: string } & (
 	{ type: 'chat-snapshot'; state: ChatState } | { type: 'chat-update'; patch: Partial<ChatState> }
 );
 
-export type EngineEvent = (SessionEvent | PromptEvent | ChatEvent) & {
+export type EngineEvent = (SessionEvent | PromptEvent | ChatEvent | JobEvent) & {
 	/** Stamped by Rust: the window the event came from. */
 	window?: string;
 };
@@ -217,6 +329,12 @@ export function isSessionEvent(e: EngineEvent): e is SessionEvent & { window?: s
 
 export function isChatEvent(e: EngineEvent): e is ChatEvent & { window?: string } {
 	return e.type === 'chat-snapshot' || e.type === 'chat-update';
+}
+
+const JOB_EVENTS = new Set(['job-run', 'job-run-live', 'job-queue']);
+
+export function isJobEvent(e: EngineEvent): e is JobEvent & { window?: string } {
+	return JOB_EVENTS.has(e.type);
 }
 
 /** `session.readFile`'s answer. */

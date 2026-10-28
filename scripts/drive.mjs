@@ -52,6 +52,8 @@ A long-lived app, driven step by step:
   chat-send <id|new> <text> [--wait]
                             send in a chat through the engine (new starts one)
   chat-state <id>           a chat, as the engine reads it
+  op <json>                 any engine operation, e.g. op '{"type":"runs.current"}'
+                            (over HTTPS with --api: jobs.*, runs.*, settings.*, …)
   access tokens|trusted|lan [HOST…]
                             who may connect without a token (--api only); lan is
                             this computer's network address, to connect as another would
@@ -341,6 +343,7 @@ async function daemon(opts) {
 		chats: () => app.engine({ type: 'chats.list' }),
 		'chat-send': (a) => app.chatSend(a.id, a.text, { wait: a.wait, ...turnOpts(a) }),
 		'chat-state': (a) => app.engine({ type: 'chat.get', id: a.id }),
+		op: (a) => app.engine(a.op),
 		consistent: (a) => app.consistent(a.id),
 		state: (a) => app.state(a.id, { asTranscript: a.transcript }),
 		logs: (a) => app.logs(a.since),
@@ -460,6 +463,14 @@ async function client(cmd, values, positionals) {
 			need(2, 'a selector and an option');
 			args = { selector: positionals[0], label: positionals.slice(1).join(' '), nth: nth(values) };
 			break;
+		case 'op':
+			need(1, 'an operation as JSON');
+			try {
+				args = { op: JSON.parse(positionals.join(' ')) };
+			} catch {
+				fail('the operation must be JSON, e.g. \'{"type":"jobs.list"}\'');
+			}
+			break;
 		case 'settings':
 			need(1, 'a JSON patch');
 			try {
@@ -549,6 +560,7 @@ const CLIENT_COMMANDS = new Set([
 	'chats',
 	'chat-send',
 	'chat-state',
+	'op',
 	'stop'
 ]);
 

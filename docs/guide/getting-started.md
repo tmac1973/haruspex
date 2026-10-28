@@ -68,6 +68,7 @@ In Chat or the Shell assistant, ask things like "how do I add a calendar?" or "i
 - `search-and-network` — search providers and proxies.
 - `guest-chat` — let other people on your home network chat with Haruspex from a browser.
 - `remote-control` — use your Code sessions from your other computers.
+- `remote-control-api` — drive sessions, chats, jobs and settings from a script.
 - `settings` — a tour of every settings section.
 - `shortcuts` — keyboard shortcuts.
 - `troubleshooting` — known issues and what to do when something goes wrong.

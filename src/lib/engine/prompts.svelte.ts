@@ -65,6 +65,7 @@ export function currentPrompts(label: string): Prompt[] {
 			promptId: idFor(label, question),
 			kind: 'question',
 			sessionId: question.sessionId ?? null,
+			runId: question.runId ?? null,
 			answerable: true,
 			requester: null,
 			detail: {

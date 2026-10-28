@@ -118,6 +118,7 @@ export async function executeToolCalls(
 				shellCwd: ctx.shellCwd,
 				shellSessionId: ctx.shellSessionId,
 				codeSessionId: ctx.codeSessionId,
+				jobRunId: ctx.jobRunId,
 				requester: ctx.requester,
 				codeReadOnly: ctx.codeReadOnly,
 				codeRemote: ctx.codeRemote,

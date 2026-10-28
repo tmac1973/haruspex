@@ -113,11 +113,13 @@ async function run(label: string): Promise<void> {
 	keep(sessions.stop);
 	keep(watchPrompts(label, sink));
 	if (label === MAIN_WINDOW) {
-		// Chat lives in the main window; loaded here only, not in Code windows.
+		// Chat and jobs live in the main window; loaded here only, not in Code windows.
 		const { watchChats } = await import('#lib/engine/chat.svelte.ts');
 		const chats = watchChats(sink);
 		setChatResync(chats.resync);
 		keep(chats.stop);
+		const { watchJobs } = await import('#lib/engine/jobs.svelte.ts');
+		keep(watchJobs(sink).stop);
 	}
 
 	const unlistenOps = await listen<{ reqId: string; op: EngineOp; window: string }>(
