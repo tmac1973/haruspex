@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
 	parseSSE,
+	unansweredNotice,
+	UNANSWERED_NOTICE,
 	chatCompletion,
 	chatCompletionStream,
 	ApiError,
@@ -543,5 +545,30 @@ describe('mergeLeadingSystemMessages', () => {
 			{ role: 'system', content: 'note' }
 		]);
 		expect(merged[0].content).toBe('prompt\n\nnote');
+	});
+});
+
+describe('unansweredNotice', () => {
+	const user = (content: string): ChatMessage => ({ role: 'user', content });
+
+	it('speaks up when the turn before ended on its own request', () => {
+		expect(unansweredNotice([user('run the build'), user('what next?')])).toBe(UNANSWERED_NOTICE);
+	});
+
+	it('speaks up when the turn before ended on a tool result', () => {
+		const thread: ChatMessage[] = [
+			user('run the build'),
+			{ role: 'tool', tool_call_id: 'c1', content: 'Stopped.' },
+			user('what next?')
+		];
+		expect(unansweredNotice(thread)).toBe(UNANSWERED_NOTICE);
+	});
+
+	it('says nothing after an answer, on a first message, or when no turn opens', () => {
+		expect(
+			unansweredNotice([user('a'), { role: 'assistant', content: 'done' }, user('b')])
+		).toBeNull();
+		expect(unansweredNotice([user('a')])).toBeNull();
+		expect(unansweredNotice([user('a'), { role: 'assistant', content: 'done' }])).toBeNull();
 	});
 });

@@ -6,7 +6,9 @@ import {
 	type Usage,
 	ApiError,
 	messageText,
-	mergeLeadingSystemMessages
+	mergeLeadingSystemMessages,
+	unansweredNotice,
+	withNotice
 } from '#lib/api.ts';
 import {
 	runAgentLoop,
@@ -1112,6 +1114,9 @@ function buildApiPrompt(
 	const historyMessages = chatModelView(conversation.messages).filter(
 		(m) => m.role !== 'tool' && !m.tool_calls
 	);
+	// A turn stopped before any answer text leaves its message unanswered;
+	// the next one says so, or the model takes that request up again.
+	const unanswered = unansweredNotice(historyMessages);
 	let messagesForApi: ChatMessage[] = [
 		buildSystemPrompt(workingDir, {
 			memorySection,
@@ -1122,7 +1127,7 @@ function buildApiPrompt(
 			guide: true,
 			feedback: true
 		}),
-		...historyMessages
+		...(unanswered ? withNotice(historyMessages, unanswered) : historyMessages)
 	];
 
 	// If the user opted in, splice the previous turn's tool_calls + tool

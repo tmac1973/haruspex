@@ -13,6 +13,8 @@ While one conversation answers, open another and send there. Each has its own **
 
 You can type and send while the assistant is still answering. The message shows above the chat box as **Queued** and goes to the assistant at its next step, so it can change course without starting over. Click **×** on a queued message to take it back before it's read.
 
+After you stop an answer, the assistant is told so and doesn't take that request up again unless you ask.
+
 If the answer finishes, or you stop it, before the assistant reads a queued message, the message goes back into the chat box for you to send again. A skill (`/name`) sent while it's working goes as plain text; send it again once the answer is done to run the skill.
 
 ## See which conversations are busy

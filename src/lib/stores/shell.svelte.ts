@@ -26,7 +26,12 @@ import type { AgentsMd } from '#lib/ipc/gen/AgentsMd.ts';
 import { invoke } from '@tauri-apps/api/core';
 import { isPtyBusy } from '#lib/stores/shellPtyBusy.svelte.ts';
 
-import { mergeLeadingSystemMessages, withNotice, type ChatMessage } from '#lib/api.ts';
+import {
+	mergeLeadingSystemMessages,
+	unansweredNotice,
+	withNotice,
+	type ChatMessage
+} from '#lib/api.ts';
 import type { ShellContextResponse } from '#lib/ipc/gen/ShellContextResponse.ts';
 import type { InferenceTicket } from '#lib/agent/inferenceQueue.svelte.ts';
 import type { SearchStep, AgentStopReason } from '#lib/agent/loop.ts';
@@ -845,7 +850,8 @@ export class ShellSession {
 			nestedSession: payload.nestedSession ?? null,
 			fullAccess: this.fullAccess
 		});
-		const thread = note ? withNotice(this.messages, note) : this.messages;
+		const notice = [unansweredNotice(this.messages), note].filter(Boolean).join('\n\n');
+		const thread = notice ? withNotice(this.messages, notice) : this.messages;
 		return { messages: mergeLeadingSystemMessages([systemPrompt, ...thread]), skills };
 	}
 

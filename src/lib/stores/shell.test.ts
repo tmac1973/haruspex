@@ -91,7 +91,7 @@ import {
 	SHELL_APPROVAL_KEY
 } from '#lib/stores/codeCommandApproval.svelte.ts';
 import { setPtyBusy } from '#lib/stores/shellPtyBusy.svelte.ts';
-import type { ChatMessage } from '#lib/api.ts';
+import { UNANSWERED_NOTICE, type ChatMessage } from '#lib/api.ts';
 
 /** Append as the agent loop does: to `messages`, and reported to the caller. */
 function add(
@@ -251,6 +251,25 @@ describe('ShellSession state independence', () => {
 		expect(a.messages.map((m) => String(m.content))).not.toContain(
 			expect.stringContaining('working directory')
 		);
+	});
+
+	it('tells the next turn that the user stopped the one before', async () => {
+		const sent: ChatMessage[][] = [];
+		runShellTurn
+			.mockImplementationOnce(async () => {
+				throw new DOMException('Aborted', 'AbortError');
+			})
+			.mockImplementationOnce(async (opts: { messages: ChatMessage[] }) => {
+				sent.push(opts.messages);
+				return { finalText: 'ok', rawText: 'ok', stopReason: 'complete' };
+			});
+		const a = createShellSession();
+		const ask = (body: string) =>
+			a.submitShell({ body, sessionContext: {} as never, currentCwd: '/home', recentHistory: [] });
+		await ask('run the long build');
+		expect(a.lastError).toBe('Cancelled.');
+		await ask('what next?');
+		expect(String(sent[0].at(-1)!.content)).toContain(UNANSWERED_NOTICE);
 	});
 
 	it('retains the loop-appended tool_call/result pairs and replays them next turn', async () => {
