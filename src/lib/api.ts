@@ -114,6 +114,24 @@ export function withNotice(thread: ChatMessage[], notice: string): ChatMessage[]
 }
 
 /**
+ * Said ahead of a message when the turn before it ended without an answer. A
+ * finished turn always ends on one, so that turn was stopped (or failed), and
+ * the model otherwise takes up the request it left standing, Stop and all.
+ */
+export const UNANSWERED_NOTICE =
+	'Your previous turn ended before you answered: the user stopped it, or it failed. Do not pick up that request again unless this message asks you to.';
+
+/**
+ * `UNANSWERED_NOTICE` when the thread opens a turn (ends on a user message)
+ * and the turn before ended on a user message or a tool result; else null.
+ */
+export function unansweredNotice(thread: ChatMessage[]): string | null {
+	if (thread[thread.length - 1]?.role !== 'user') return null;
+	const before = thread[thread.length - 2]?.role;
+	return before === 'user' || before === 'tool' ? UNANSWERED_NOTICE : null;
+}
+
+/**
  * Collapse adjacent `system` messages into one.
  *
  * Every prompt builder here prepends a freshly-built system prompt to a

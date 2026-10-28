@@ -41,7 +41,13 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	getChatTemplateKwargs: () => ({})
 }));
 
-import { collectTurnMessages, runCodeTurn, type CodeTurnOptions } from '#lib/code/runCodeTurn.ts';
+import {
+	collectTurnMessages,
+	runCodeTurn,
+	STOPPED_CALL_RESULT,
+	type CodeTurnOptions
+} from '#lib/code/runCodeTurn.ts';
+import { UNANSWERED_NOTICE } from '#lib/api.ts';
 
 /** Append as the agent loop does: to `messages`, and reported to the caller. */
 function add(o: AgentLoopOptions, ...ms: ChatMessage[]): void {
@@ -333,8 +339,32 @@ describe('runCodeTurn', () => {
 		expect(res.added).toEqual([
 			call('c1'),
 			result('c1'),
+			call('c2'),
+			{ role: 'tool', tool_call_id: 'c2', content: STOPPED_CALL_RESULT },
 			{ role: 'assistant', content: 'Half an ans' }
 		]);
+	});
+
+	it('records the call a stop killed, so the next turn does not run it again', async () => {
+		const abort = new AbortController();
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
+			add(o, call('c1'));
+			abort.abort();
+			throw new DOMException('Aborted', 'AbortError');
+		});
+		const thread: ChatMessage[] = [{ role: 'user', content: "Run 'sleep 45'" }];
+		const res = await runCodeTurn(opts({ thread, signal: abort.signal }));
+		expect(res.added).toEqual([
+			call('c1'),
+			{ role: 'tool', tool_call_id: 'c1', content: STOPPED_CALL_RESULT }
+		]);
+
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => o.onComplete());
+		const next = [...thread, ...res.added, { role: 'user' as const, content: 'What next?' }];
+		await runCodeTurn(opts({ thread: next }));
+		const sent = (mocks.runAgentLoop.mock.calls[1][0] as AgentLoopOptions).messages;
+		expect(sent.slice(-3, -1)).toEqual(res.added);
+		expect(String(sent.at(-1)?.content)).toContain(UNANSWERED_NOTICE);
 	});
 
 	it('reports a failed turn in its result', async () => {
@@ -360,16 +390,26 @@ describe('runCodeTurn', () => {
 });
 
 describe('collectTurnMessages', () => {
+	const both: ChatMessage = {
+		role: 'assistant',
+		content: '',
+		tool_calls: [
+			{ id: 'a', type: 'function', function: { name: 'x', arguments: '{}' } },
+			{ id: 'b', type: 'function', function: { name: 'x', arguments: '{}' } }
+		]
+	};
+
 	it('drops a call whose results are not all in, with its partial results', () => {
-		const both: ChatMessage = {
-			role: 'assistant',
-			content: '',
-			tool_calls: [
-				{ id: 'a', type: 'function', function: { name: 'x', arguments: '{}' } },
-				{ id: 'b', type: 'function', function: { name: 'x', arguments: '{}' } }
-			]
-		};
 		expect(collectTurnMessages([both, result('a')], new Set(), null)).toEqual([]);
+	});
+
+	it('keeps a stopped call, answering what had not returned as stopped', () => {
+		expect(collectTurnMessages([both, result('a')], new Set(), 'Half', true)).toEqual([
+			both,
+			result('a'),
+			{ role: 'tool', tool_call_id: 'b', content: STOPPED_CALL_RESULT },
+			{ role: 'assistant', content: 'Half' }
+		]);
 	});
 
 	it('drops loop nudges and appends the answer', () => {
@@ -482,6 +522,29 @@ describe('runCodeTurn delegation hint', () => {
 		expect(opening).toContain('Another session edited a.ts.');
 		expect(opening).toContain('This message lists 3 separate asks');
 		expect(opening).toContain(text);
+	});
+
+	it('says the turn before ended unanswered, after a stop left a request standing', async () => {
+		mocks.runAgentLoop.mockImplementation(async (o: AgentLoopOptions) => o.onComplete());
+		const thread: ChatMessage[] = [
+			{ role: 'user', content: 'run the build' },
+			{ role: 'user', content: 'what does stats.js export?' }
+		];
+		await runCodeTurn(opts({ thread }));
+		const opening = String(loopOptions().messages.at(-1)?.content);
+		expect(opening).toContain(UNANSWERED_NOTICE);
+		expect(opening).toContain('what does stats.js export?');
+	});
+
+	it('says nothing of the turn before when it was answered', async () => {
+		mocks.runAgentLoop.mockImplementation(async (o: AgentLoopOptions) => o.onComplete());
+		const thread: ChatMessage[] = [
+			{ role: 'user', content: 'run the build' },
+			{ role: 'assistant', content: 'Done.' },
+			{ role: 'user', content: 'fix the test' }
+		];
+		await runCodeTurn(opts({ thread }));
+		expect(String(loopOptions().messages.at(-1)?.content)).toBe('fix the test');
 	});
 
 	it('says nothing for an ordinary message', async () => {

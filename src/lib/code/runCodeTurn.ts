@@ -17,6 +17,7 @@ import {
 	mergeLeadingSystemMessages,
 	withNotice,
 	messageText,
+	unansweredNotice,
 	type BackendOverride,
 	type ChatMessage,
 	type StreamChunk,
@@ -159,8 +160,9 @@ export interface CodeTurnResult {
 	/**
 	 * What the turn adds after its opening message: tool call/result pairs,
 	 * steering the model was given (with the answer it was interrupting), and
-	 * last the assistant's answer. A stopped turn keeps only complete pairs,
-	 * and its answer only when some text had arrived.
+	 * last the assistant's answer. A stopped turn keeps the calls it stopped,
+	 * answered as stopped, and its answer only when some text had arrived; a
+	 * failed one keeps only complete pairs.
 	 */
 	added: ChatMessage[];
 	stopReason: AgentStopReason;
@@ -200,7 +202,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 		return {
 			outcome,
 			...(error !== undefined ? { error } : {}),
-			added: collectTurnMessages(added, steered, final),
+			added: collectTurnMessages(added, steered, final, outcome === 'aborted'),
 			stopReason,
 			undeliveredSteering: undelivered
 		};
@@ -385,16 +387,23 @@ export type SystemPromptInput = Pick<
 	subtask?: BuildCodePromptOpts['subtask'];
 };
 
-/** What the model is told ahead of the opening message: the caller's notice, and a hint to delegate. */
+/**
+ * What the model is told ahead of the opening message: that the turn before
+ * ended unanswered, the caller's notice, and a hint to delegate.
+ */
 function turnNotice(o: CodeTurnOptions): string | null {
 	const opening = o.thread[o.thread.length - 1];
 	const hint =
 		opening?.role === 'user'
 			? delegationHint(messageText(opening.content), delegateModes(o))
 			: null;
-	const parts = [o.notice, hint].filter((p): p is string => !!p);
+	const parts = [unansweredNotice(o.thread), o.notice, hint].filter((p): p is string => !!p);
 	return parts.length ? parts.join('\n\n') : null;
 }
+
+/** What a stopped turn records for a call that had not returned. */
+export const STOPPED_CALL_RESULT =
+	'Stopped by the user before it finished. Do not run it again unless asked.';
 
 /** The subtask modes this turn's `delegate` offers; none for a subtask or with Subtasks off. */
 function delegateModes(o: SystemPromptInput): 'read' | 'write' | undefined {
@@ -473,27 +482,40 @@ async function compact(
  *
  * Kept: tool call/result pairs (so "continue" replays what the turn did),
  * steering messages, and an assistant answer that steering interrupted. A
- * call whose results are not all in (a stop mid-batch) is dropped with its
- * partial results: an unanswered call is rejected by strict chat templates.
- * Dropped: the loop's own recovery nudges, which the answer supersedes.
- * `final`, when given, is appended as the answer.
+ * call whose results are not all in is, when the user `stopped` the turn,
+ * kept with `STOPPED_CALL_RESULT` for each missing one, so the model knows
+ * not to run it again; otherwise (a failure mid-batch) dropped with its
+ * partial results. Either way no call goes unanswered, which strict chat
+ * templates reject. Dropped: the loop's own recovery nudges, which the answer
+ * supersedes. `final`, when given, is appended as the answer.
  */
 export function collectTurnMessages(
 	appended: ChatMessage[],
 	steered: Set<ChatMessage>,
-	final: string | null
+	final: string | null,
+	stopped = false
 ): ChatMessage[] {
 	const answered = new Set(
 		appended.filter((m) => m.role === 'tool' && m.tool_call_id).map((m) => m.tool_call_id)
 	);
 	const keptCalls = new Set<string>();
 	const out: ChatMessage[] = [];
+	// Stopped calls still owed a result, given after their batch's own results.
+	let owed: string[] = [];
+	const payOwed = () => {
+		for (const id of owed)
+			out.push({ role: 'tool', tool_call_id: id, content: STOPPED_CALL_RESULT });
+		owed = [];
+	};
 	appended.forEach((m, i) => {
+		if (m.role !== 'tool') payOwed();
 		if (m.role === 'tool') {
 			if (m.tool_call_id && keptCalls.has(m.tool_call_id)) out.push(m);
 		} else if (m.role === 'assistant' && m.tool_calls?.length) {
-			if (m.tool_calls.every((c) => answered.has(c.id))) {
+			const missing = m.tool_calls.filter((c) => !answered.has(c.id)).map((c) => c.id);
+			if (missing.length === 0 || stopped) {
 				for (const c of m.tool_calls) keptCalls.add(c.id);
+				owed = missing;
 				out.push(m);
 			}
 		} else if (steered.has(m)) {
@@ -502,6 +524,7 @@ export function collectTurnMessages(
 			out.push(m);
 		}
 	});
+	payOwed();
 	if (final !== null) out.push({ role: 'assistant', content: final });
 	return out;
 }
