@@ -139,7 +139,7 @@
 				Model:
 				<Tooltip
 					label="About the model"
-					text="The server's video instances, listed by Probe. One must be running to make a clip; start it in llama-toolchest."
+					text="The server's video instances, listed by Probe. A stopped one starts when it is first used."
 				/>
 			</label>
 			<select

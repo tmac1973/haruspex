@@ -13,7 +13,7 @@ This page is about making new clips. Cutting and rendering your own footage is o
 
 Open Settings → Video generation and choose **llama-toolchest** as the **Backend**.
 
-If your chat model comes from a toolchest, its address and key are filled in; otherwise enter the **Server address** (`http://host:3000`) and pick an **API key** from Settings → Inference → API Keys. Press **Probe**, then choose one of its video instances as the **Model**; with only one, it is chosen for you. **Instances on the server** lists its enabled instances. Starting an instance, or adding a model, happens in llama-toolchest; Haruspex can't start one.
+If your chat model comes from a toolchest, its address and key are filled in; otherwise enter the **Server address** (`http://host:3000`) and pick an **API key** from Settings → Inference → API Keys. Press **Probe**, then choose one of its video instances as the **Model**; with only one, it is chosen for you. **Instances on the server** lists its enabled instances. A stopped one starts when Haruspex first uses it, so the first clip takes longer. Adding a model happens in llama-toolchest.
 
 Under the model, Settings says the size and frame rate it makes, and how many frames fit at that size.
 

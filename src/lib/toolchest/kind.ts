@@ -59,6 +59,17 @@ const KINDS = {
 /** The `/v1/models` route every toolchest build serves. */
 const MODELS_ROUTE = '/v1/models';
 
+/**
+ * States an instance can make nothing in. Any other, `stopped` included, is
+ * worth calling: toolchest starts an enabled instance when a request names it.
+ */
+const UNUSABLE = new Set(['failed', 'error', 'disabled']);
+
+/** Whether a request may name this instance. */
+export function usable(i: ToolchestInstance): boolean {
+	return !UNUSABLE.has(i.state);
+}
+
 /** A model's line in a dropdown. */
 export function instanceLabel(i: ToolchestInstance): string {
 	return i.state === 'running' ? i.id : `${i.id} — ${i.state}`;
@@ -183,10 +194,10 @@ export function toolchestKind(kind: GenerationKind) {
 				`${id} is not on ${hostOf(cfg.baseUrl)} any more — ${k.section}.`
 			);
 		}
-		if (instance.state !== 'running') {
+		if (!usable(instance)) {
 			throw new ToolchestError(
 				'unconfigured',
-				`${id} is ${instance.state} — start it in llama-toolchest.`
+				`${id} is ${instance.state} — check it in llama-toolchest.`
 			);
 		}
 		return instance;
@@ -235,13 +246,14 @@ async function probeServer(
 	}
 	const pick = all.find((i) => i.id === chosenId);
 	if (!pick) return { ok: false, detail: `No model is chosen — ${section}.`, models };
-	if (pick.state !== 'running') {
+	if (!usable(pick)) {
 		return {
 			ok: false,
-			detail: `${pick.id} is ${pick.state} — start it in llama-toolchest.`,
+			detail: `${pick.id} is ${pick.state} — check it in llama-toolchest.`,
 			models
 		};
 	}
 	const extra = how ? `, ${how(pick)}` : '';
-	return { ok: true, detail: `Connected — ${pick.id} on ${host}${extra}.`, models };
+	const waking = pick.state === 'running' ? '' : ` (${pick.state}: it starts when used)`;
+	return { ok: true, detail: `Connected — ${pick.id} on ${host}${waking}${extra}.`, models };
 }

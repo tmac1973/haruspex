@@ -248,10 +248,16 @@ describe('making a clip', () => {
 		expect(upload.call.body.prompt).toBe('a red fox in the snow');
 	});
 
-	it('refuses a stopped instance before sending anything', async () => {
+	it('sends to a stopped instance, which toolchest starts, but not a failed one', async () => {
 		use(jobRoutes({ 'GET /v1/models': models('stopped') }));
-		await expect(generateVideo(request)).rejects.toThrow(/ti2v is stopped/);
-		expect(calls('toolchest_json').some((a) => a.call.method === 'POST')).toBe(false);
+		await generateVideo(request);
+		expect(calls('toolchest_json').some((a) => a.call.method === 'POST')).toBe(true);
+		use(jobRoutes({ 'GET /v1/models': models('failed') }));
+		const before = calls('toolchest_json').filter((a) => a.call.method === 'POST').length;
+		await expect(generateVideo(request)).rejects.toThrow(
+			'ti2v is failed — check it in llama-toolchest.'
+		);
+		expect(calls('toolchest_json').filter((a) => a.call.method === 'POST').length).toBe(before);
 	});
 
 	it('cancels the job on the server', async () => {
@@ -313,7 +319,15 @@ describe('probing', () => {
 	it('says when the chosen instance is ready, or why not', async () => {
 		expect(await probeVideo()).toMatchObject({ ok: true, detail: 'Connected — ti2v on box:3000.' });
 		use(jobRoutes({ 'GET /v1/models': models('stopped') }));
-		expect((await probeVideo()).detail).toBe('ti2v is stopped — start it in llama-toolchest.');
+		expect(await probeVideo()).toMatchObject({
+			ok: true,
+			detail: 'Connected — ti2v on box:3000 (stopped: it starts when used).'
+		});
+		use(jobRoutes({ 'GET /v1/models': models('failed') }));
+		expect(await probeVideo()).toMatchObject({
+			ok: false,
+			detail: 'ti2v is failed — check it in llama-toolchest.'
+		});
 		settings.videoGenToolchestBaseUrl = '';
 		expect((await probeVideo()).ok).toBe(false);
 	});

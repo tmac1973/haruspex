@@ -142,11 +142,13 @@ describe('llama-toolchest music backend', () => {
 		expect(paths).toContain(`DELETE ${JOB}`);
 	});
 
-	it('says a stopped instance is stopped, before queuing anything', async () => {
-		use({ 'GET /v1/models': musicState(compute2, 'stopped') });
+	it('queues on a stopped instance, which toolchest starts, but says a failed one is', async () => {
+		use(jobRoutes({ 'GET /v1/models': musicState(compute2, 'stopped') }));
+		await expect(toolchestMusicBackend.generate(request)).resolves.toBeTruthy();
+		use({ 'GET /v1/models': musicState(compute2, 'failed') });
 		const err = await toolchestMusicBackend.generate(request).catch((e) => e);
 		expect(err).toBeInstanceOf(MusicBackendError);
-		expect(err.message).toBe('ace-gpu2 is stopped — start it in llama-toolchest.');
+		expect(err.message).toBe('ace-gpu2 is failed — check it in llama-toolchest.');
 	});
 
 	it('passes on a failed job and toolchest’s own refusal', async () => {
@@ -174,8 +176,8 @@ describe('llama-toolchest music backend', () => {
 		settings.musicToolchestModelId = 'ace-xl';
 		use({ 'GET /v1/models': musicState(asmodean, 'stopped') });
 		expect(await toolchestMusicBackend.probe()).toEqual({
-			ok: false,
-			detail: 'ace-xl is stopped — start it in llama-toolchest.',
+			ok: true,
+			detail: 'Connected — ace-xl on box:3000 (stopped: it starts when used).',
 			models: [{ name: 'ace-xl', label: 'ace-xl — stopped' }]
 		});
 		use({ 'GET /v1/models': musicState(asmodean, 'running') });
