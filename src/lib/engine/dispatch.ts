@@ -188,6 +188,10 @@ export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 		case 'chat.stop':
 		case 'chat.continue':
 		case 'chat.retry':
+		case 'chat.delete':
+		case 'chat.rename':
+		case 'chat.memory':
+		case 'chat.folder':
 			if (label !== MAIN_WINDOW) throw new Error('chat runs in the main window');
 			return (await import('#lib/engine/chat.svelte.ts')).dispatchChat(op);
 		case 'chat.resync':
@@ -209,6 +213,18 @@ export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 		case 'runs.resync':
 			if (label !== MAIN_WINDOW) throw new Error('jobs run in the main window');
 			return (await import('#lib/engine/jobs.svelte.ts')).dispatchJobs(op);
+		case 'session.close':
+		case 'session.delete':
+		case 'session.fork':
+		case 'session.rename':
+		case 'session.effort':
+		case 'session.model':
+		case 'session.stopBackground':
+			return (await import('#lib/engine/sessions.ts')).dispatchSession(op);
+		case 'models.list':
+		case 'models.probe':
+			if (label !== MAIN_WINDOW) throw new Error('the main window answers for the models');
+			return (await import('#lib/engine/models.ts')).dispatchModels(op);
 		case 'debug.tail':
 			return (await import('#lib/engine/observe.ts')).dispatchObserve(op, label);
 		case 'inference.queue':

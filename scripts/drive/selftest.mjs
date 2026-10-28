@@ -246,6 +246,43 @@ try {
 	check(op({ type: 'runs.current' }).queue.length === 0, 'runs.current shows an empty queue');
 	check(op({ type: 'jobs.delete', jobId }).deleted === jobId, 'jobs.delete deletes it');
 
+	// A Code session's controls over HTTPS, on a fork, so the session above stays.
+	const forked = op({ type: 'session.fork', id: apiId, index: 0 });
+	check(typeof forked.id === 'string' && forked.id !== apiId, 'session.fork makes a new session');
+	op({ type: 'session.open', id: forked.id });
+	op({ type: 'session.rename', id: forked.id, title: 'Forked from afar' });
+	op({ type: 'session.effort', id: forked.id, effort: 'high' });
+	check(
+		op({ type: 'sessions.list' }).find((x) => x.id === forked.id)?.title === 'Forked from afar',
+		'session.rename renames it'
+	);
+	check(op({ type: 'session.close', id: forked.id }).closed === true, 'session.close closes it');
+	check(
+		op({ type: 'session.delete', id: forked.id }).deleted === forked.id,
+		'session.delete deletes it'
+	);
+	check(
+		!op({ type: 'sessions.list' }).some((x) => x.id === forked.id),
+		'and it is gone from the list'
+	);
+
+	// A chat's controls over HTTPS, on a chat of its own.
+	const { id: spare } = op({ type: 'chat.new' });
+	op({ type: 'chat.rename', id: spare, title: 'Renamed from afar' });
+	op({ type: 'chat.memory', id: spare, enabled: false });
+	const spareState = op({ type: 'chat.get', id: spare });
+	check(
+		spareState.title === 'Renamed from afar' && spareState.memoryEnabled === false,
+		'chat.rename and chat.memory change the chat'
+	);
+	check(op({ type: 'chat.delete', id: spare }).deleted === spare, 'chat.delete deletes it');
+	check(!op({ type: 'chats.list' }).some((c) => c.id === spare), 'and it is gone from the list');
+	const models = op({ type: 'models.list' });
+	check(
+		typeof models.settings?.model === 'string' && Array.isArray(models.apiKeys),
+		'models.list names the Settings model and the keys'
+	);
+
 	// Watching the app over HTTPS: its debug log, the inference queue, the tasks.
 	const tail = op({ type: 'debug.tail', lines: 50 });
 	check(

@@ -56,6 +56,15 @@ export type EngineOp =
 	| { type: 'chat.continue'; id: string }
 	| { type: 'chat.retry'; id: string }
 	| { type: 'chat.resync'; id: string }
+	/** Delete a chat, stopping its turn. */
+	| { type: 'chat.delete'; id: string }
+	| { type: 'chat.rename'; id: string; title: string }
+	/** Off: incognito from here on, as the chat's memory toggle. */
+	| { type: 'chat.memory'; id: string; enabled: boolean }
+	/** Chat's working folder, for every chat; null clears it. */
+	| { type: 'chat.folder'; path: string | null }
+	| SessionOp
+	| ModelsOp
 	| { type: 'prompts.list' }
 	| { type: 'prompts.answer'; promptId: string; answer: PromptAnswer }
 	| JobOp
@@ -126,6 +135,41 @@ export type JobOp =
 	| { type: 'runs.delete'; runId: number }
 	/** Send a fresh `job-run` event for the current run: the client saw a gap in `seq`. */
 	| { type: 'runs.resync'; runId: number };
+
+/** A Code session's controls beyond sending, as the Code tab has them. */
+export type SessionOp =
+	/** Close its sub-tab: stop its turn and background processes. The session stays saved. */
+	| { type: 'session.close'; id: string }
+	/** Delete a saved session; a worktree it works in stays. */
+	| { type: 'session.delete'; id: string }
+	/**
+	 * A new saved session from the message at `index` (one of yours, or an
+	 * answer), not opened. `worktree` gives it a worktree of its own.
+	 */
+	| { type: 'session.fork'; id: string; index: number; mode?: 'readOnly' | 'worktree' }
+	| { type: 'session.rename'; id: string; title: string }
+	/** From the next turn; null follows Settings. */
+	| { type: 'session.effort'; id: string; effort: string | null }
+	/** From the next turn; null follows Settings → Inference. */
+	| { type: 'session.model'; id: string; model: SessionModel | null }
+	/** One of `SessionMeta.background`, by its id. */
+	| { type: 'session.stopBackground'; id: string; processId: string };
+
+/** A session's own model: a server, a model on it, and a key by its id. */
+export interface SessionModel {
+	baseUrl: string;
+	modelId?: string;
+	apiKeyId?: string;
+	contextSize?: number;
+	visionSupported?: boolean;
+}
+
+/** The models a session can use. */
+export type ModelsOp =
+	/** What Settings → Inference has active, the saved remote options, and the API keys by name. */
+	| { type: 'models.list' }
+	/** A server's models, as the model picker's Load models finds them. */
+	| { type: 'models.probe'; baseUrl: string; apiKeyId?: string };
 
 /** Watching the app: its debug log, the inference queue, and the background tasks. */
 export type ObserveOp =

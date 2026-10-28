@@ -52,7 +52,7 @@ Scripts use the same API, for Code sessions, chats, jobs and settings: see the `
 
 ## What it doesn't do yet
 
-- The Shell can't be used remotely, and the page has no Jobs or Settings (a script can use both). In chat, the page can't start deep research, or change the working folder or incognito; do those at this computer.
+- The Shell can't be used remotely, and the page has no Jobs or Settings (a script can use both). In chat, the page can't start deep research, or change the working folder or incognito; a script can set those two (see `remote-control-api`).
 - Files open read-only; edit them at this computer.
 - A turn you start from the page can't hand a command to this computer's Shell tab (`open_in_shell`, for sudo and the like): the agent says what to run, for when you're back. A turn started here that is waiting on one shows as waiting, and the page can let it carry on without it.
 
