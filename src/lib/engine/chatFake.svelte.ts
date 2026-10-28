@@ -43,7 +43,8 @@ export const fake = $state({
 	continued: [] as string[],
 	retried: [] as string[],
 	opened: [] as string[],
-	viewed: [] as string[]
+	viewed: [] as string[],
+	workingDir: null as string | null
 });
 
 /** Set part of a chat's turn. */
@@ -82,6 +83,7 @@ export function reset(): void {
 	fake.retried = [];
 	fake.opened = [];
 	fake.viewed = [];
+	fake.workingDir = null;
 }
 
 /** The open conversation, as the store's own proxy. */
@@ -136,6 +138,21 @@ export const chatStore = {
 		if (id) setRun(id, { generating: true });
 		// The turn runs until the test ends it.
 		return new Promise<boolean>(() => {});
+	},
+	deleteConversation: async (id: string) => {
+		fake.cancelled.push(id);
+		fake.conversations = fake.conversations.filter((c) => c.id !== id);
+	},
+	renameConversation: async (id: string, title: string) => {
+		const c = fake.conversations.find((x) => x.id === id);
+		if (c) c.title = title;
+	},
+	setConversationMemoryEnabled: async (id: string, enabled: boolean) => {
+		const c = fake.conversations.find((x) => x.id === id);
+		if (c) c.memoryEnabled = enabled;
+	},
+	setWorkingDir: (path: string | null) => {
+		fake.workingDir = path;
 	},
 	cancelGeneration: (id: string) => {
 		fake.cancelled.push(id);

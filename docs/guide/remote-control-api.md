@@ -21,6 +21,10 @@ Send the token as `Authorization: Bearer <token>`, and trust the certificate: sa
 
 `{"type":"sessions.list"}`, `session.new` (`root`, and on Windows a `wslDistro` with a Linux `root`; `wsl.distros` lists them), `session.send` (`id`, `text`), `session.get`, `session.stop`, `session.compact`. Chats: `chats.list`, `chat.new`, `chat.send`, `chat.get`, `chat.stop`, `chat.continue`, `chat.retry`. Prompts waiting on you: `prompts.list` and `prompts.answer`.
 
+A session's controls, as the Code tab has them: `session.close` (stops its turn and background processes; it stays saved), `session.delete` (a worktree it works in stays), `session.fork` (`index` of a message; `mode` `worktree` for a worktree of its own), `session.rename`, `session.effort` (`low` to `xhigh`, or null for Settings), `session.model` (`{baseUrl, modelId, apiKeyId}`, or null for Settings) and `session.stopBackground` (`processId`). A chat's: `chat.delete`, `chat.rename`, `chat.memory` (`enabled`), and `chat.folder` (`path`, or null), which sets Chat's working folder for every chat.
+
+Models: `models.list` names the model Settings → Inference has active, the saved remote options and the API keys by name; `models.probe` (`baseUrl`, `apiKeyId`) lists a server's models. Keys are named by id, never sent.
+
 `session.send` and `chat.send` take `images`, a list of up to 8 hashes from `/api/v1/upload`; a message can be pictures alone. A message starting with `/name` runs as it does in the input box: a skill goes with the message, and a built-in such as `/skills` or `/new` answers `{"handled":true}` with its `note` or the new `id` instead of sending anything. Mid-turn, a send steers and a `/name` is just text.
 
 ## Jobs
@@ -53,7 +57,7 @@ A patch can't set a secret, the API keys, Settings → Integrations (accounts an
 ## What each permission allows
 
 - **Read**: list, read and follow everything above, the debug log, the queue and the tasks.
-- **Drive**: start, send, steer and stop sessions and chats; run, cancel and delete jobs and runs; duplicate a job; upload pictures; cancel a task.
+- **Drive**: start, send, steer and stop sessions and chats, and every control above; run, cancel and delete jobs and runs; duplicate a job; upload pictures; cancel a task; probe a server's models.
 - **Approve**: answer prompts, and `jobs.create` and `jobs.update`. A job's tools run without asking, so writing one approves its commands ahead.
 - **Settings**: `settings.get` and `settings.patch`. A new device doesn't get it unless you tick it; a trusted computer has it.
 

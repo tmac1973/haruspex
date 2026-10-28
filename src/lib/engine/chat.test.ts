@@ -13,6 +13,11 @@ vi.mock('#lib/stores/db.ts', () => ({
 	dbLoadMessageSteps: vi.fn(async () => ({ 1: [{ id: 't1', toolName: 'web_search' }] }))
 }));
 const slash = vi.hoisted(() => ({ result: { kind: 'send' } as Record<string, unknown> }));
+const folders = vi.hoisted(() => ({ exist: new Set(['/home/me/notes']) }));
+vi.mock('@tauri-apps/api/core', () => ({
+	invoke: async (cmd: string, args: { path: string }) =>
+		cmd === 'code_folder_exists' ? folders.exist.has(args.path) : null
+}));
 vi.mock('#lib/engine/attach.ts', () => ({
 	attachImages: async (refs?: string[]) => (refs ?? []).map((r) => `data:image/png;base64,${r}`),
 	slashFor: async () => slash.result
@@ -113,6 +118,39 @@ describe('chat operations', () => {
 		});
 		expect(fake.sent).toEqual([]);
 		slash.result = { kind: 'send' };
+	});
+
+	it('delete a chat, stopping its turn', async () => {
+		setRun('b', { generating: true });
+		expect(await dispatchChat({ type: 'chat.delete', id: 'b' })).toEqual({ deleted: 'b' });
+		expect(fake.cancelled).toEqual(['b']);
+		expect(fake.conversations.map((c) => c.id)).toEqual(['a', 'c']);
+	});
+
+	it('rename a chat, and turn its memory off', async () => {
+		await dispatchChat({ type: 'chat.rename', id: 'b', title: '  Trip plans ' });
+		expect(chat('b').title).toBe('Trip plans');
+		await expect(dispatchChat({ type: 'chat.rename', id: 'b', title: ' ' })).rejects.toThrow(
+			'needs a title'
+		);
+		await dispatchChat({ type: 'chat.memory', id: 'b', enabled: false });
+		expect(chat('b').memoryEnabled).toBe(false);
+		chat('c').isRemote = true;
+		await expect(dispatchChat({ type: 'chat.memory', id: 'c', enabled: true })).rejects.toThrow(
+			'never remembered'
+		);
+	});
+
+	it("set Chat's working folder to one that exists, or clear it", async () => {
+		expect(await dispatchChat({ type: 'chat.folder', path: '/home/me/notes' })).toEqual({
+			workingDir: '/home/me/notes'
+		});
+		expect(fake.workingDir).toBe('/home/me/notes');
+		await expect(dispatchChat({ type: 'chat.folder', path: '/nope' })).rejects.toThrow(
+			'no folder /nope'
+		);
+		await dispatchChat({ type: 'chat.folder', path: null });
+		expect(fake.workingDir).toBeNull();
 	});
 
 	it('steer a chat whose reply is being written, while another runs beside it', async () => {

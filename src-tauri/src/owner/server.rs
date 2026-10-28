@@ -1314,7 +1314,7 @@ mod tests {
         let h = serve().await;
         let token = h.token(&Scope::ALL);
         assert_eq!(
-            h.op(&token, json!({ "type": "session.delete" }))
+            h.op(&token, json!({ "type": "session.explode" }))
                 .await
                 .status(),
             400

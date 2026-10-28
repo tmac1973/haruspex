@@ -19,13 +19,18 @@ import {
 	cancelGeneration,
 	continueTurn,
 	createConversation,
+	deleteConversation,
 	getConversations,
 	getRun,
 	noteViewedOnWeb,
 	retryLastTurn,
+	renameConversation,
 	sendMessageTo,
+	setConversationMemoryEnabled,
+	setWorkingDir,
 	type Conversation
 } from '#lib/stores/chat.svelte.ts';
+import { invoke } from '@tauri-apps/api/core';
 import { dbLoadMessages, dbLoadMessageSteps } from '#lib/stores/db.ts';
 import { getActiveConversationId, getWorkingDir } from '#lib/stores/session.svelte.ts';
 import { logDebug } from '#lib/debugLog.ts';
@@ -175,6 +180,9 @@ export async function dispatchChat(op: {
 	id?: string;
 	text?: string;
 	images?: unknown;
+	title?: string;
+	enabled?: boolean;
+	path?: string | null;
 }) {
 	switch (op.type) {
 		case 'chats.list':
@@ -201,6 +209,33 @@ export async function dispatchChat(op: {
 			if (!getRun(find(op.id!).id).busy) return { stopping: false };
 			cancelGeneration(op.id!);
 			return { stopping: true };
+		case 'chat.delete':
+			// Its turn stops first, as deleting it on the desktop stops it.
+			await deleteConversation(find(op.id!).id);
+			return { deleted: op.id };
+		case 'chat.rename': {
+			const title = (op.title ?? '').trim();
+			if (!title) throw new Error('a chat needs a title');
+			await renameConversation(find(op.id!).id, title);
+			return { renamed: op.id };
+		}
+		case 'chat.memory': {
+			const conv = find(op.id!);
+			if (typeof op.enabled !== 'boolean')
+				throw new Error('chat.memory takes enabled: true or false');
+			if (conv.isRemote) throw new Error("a guest's chat is never remembered");
+			await setConversationMemoryEnabled(conv.id, op.enabled);
+			return { memoryEnabled: op.enabled };
+		}
+		case 'chat.folder': {
+			// Chat's one working folder, as the folder button sets it: for every chat.
+			const path = typeof op.path === 'string' ? op.path.trim() : null;
+			if (path && !(await invoke<boolean>('code_folder_exists', { path, wslDistro: null }))) {
+				throw new Error(`no folder ${path} on this computer`);
+			}
+			setWorkingDir(path || null);
+			return { workingDir: path || null };
+		}
 		case 'chat.continue':
 		case 'chat.retry': {
 			const id = find(op.id!).id;
