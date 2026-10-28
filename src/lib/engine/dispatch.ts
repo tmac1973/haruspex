@@ -1,8 +1,8 @@
 /**
  * The operations, run in the window that has the session. Rust's hub routes
  * each one here (`src-tauri/src/engine/`): to the session's owner, to the
- * main window for a session open nowhere, and to every window for the
- * listings. Each answers at once; `session.send` answers when the turn has
+ * main window for a session open nowhere (and for chat, jobs and settings),
+ * and to every window for the listings. Each answers at once; `session.send` answers when the turn has
  * started, and its progress arrives as events.
  */
 import { invoke } from '@tauri-apps/api/core';
@@ -163,6 +163,28 @@ export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 		case 'chat.resync':
 			if (!resyncChat?.(op.id)) throw new Error(`chat ${op.id} isn't the open chat`);
 			return { resynced: op.id };
+		case 'jobs.types':
+		case 'jobs.list':
+		case 'jobs.get':
+		case 'jobs.create':
+		case 'jobs.update':
+		case 'jobs.duplicate':
+		case 'jobs.delete':
+		case 'jobs.run':
+		case 'run.cancel':
+		case 'runs.list':
+		case 'runs.get':
+		case 'runs.current':
+		case 'runs.delete':
+		case 'runs.resync':
+			if (label !== MAIN_WINDOW) throw new Error('jobs run in the main window');
+			return (await import('#lib/engine/jobs.svelte.ts')).dispatchJobs(op);
+		case 'settings.get':
+		case 'settings.patch': {
+			if (label !== MAIN_WINDOW) throw new Error('settings are changed in the main window');
+			const { patchSettings, readSettings } = await import('#lib/engine/settings.ts');
+			return op.type === 'settings.get' ? readSettings(op.keys) : patchSettings(op.patch);
+		}
 		case 'prompts.list':
 			return currentPrompts(label);
 		case 'prompts.answer':

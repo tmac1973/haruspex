@@ -111,6 +111,28 @@ describe('ask_user_question multi-select', () => {
 	}
 	const options = [{ label: 'Saves' }, { label: 'Leaderboard, global' }, { label: 'Sound' }];
 
+	it('names the job run asking, so a client elsewhere knows whose question it is', async () => {
+		const asked: Array<{ runId?: number }> = [];
+		const askUser = async (req: { runId?: number }) => {
+			asked.push(req);
+			return { kind: 'selected' as const, labels: ['A'] };
+		};
+		const args = { question: 'Pick one', options: [{ label: 'A' }] };
+		await executeTool('ask_user_question', args, {
+			...baseCtx,
+			interactive: true,
+			askUser,
+			jobRunId: 7
+		} as ToolContext);
+		await executeTool('ask_user_question', args, {
+			...baseCtx,
+			interactive: true,
+			askUser
+		} as ToolContext);
+		expect(asked[0].runId).toBe(7);
+		expect('runId' in asked[1]).toBe(false);
+	});
+
 	it('tells the model which tool flag gives checkboxes', async () => {
 		const { getToolSchemas } = await import('./registry');
 		const schema = getToolSchemas({

@@ -29,7 +29,7 @@ The page uses HTTPS with a certificate Haruspex makes itself, so a browser warns
 
 With either of the last two, open the address shown under **Open on your other computer** on that computer. Devices with a token work in every mode.
 
-Each device with a token has its own permissions: **Read** (list and follow sessions), **Drive** (start, send, steer and stop) and **Approve** (answer **Run this command?** and the agent's questions). **New link** gives a device a fresh link and a new token; **Revoke** cuts it off at once.
+Each device with a token has its own permissions: **Read** (list and follow sessions), **Drive** (start, send, steer and stop), **Approve** (answer **Run this command?** and the agent's questions) and **Settings** (scripts only; off for a new device). **New link** gives a device a fresh link and a new token; **Revoke** cuts it off at once.
 
 ## Use it from a browser
 
@@ -48,19 +48,11 @@ The page lists your Code sessions, the open ones first. Pick one to follow it as
 
 ## Use it from a script
 
-Send the token as `Authorization: Bearer <token>`, and trust the certificate: save it with **Copy certificate** and pass it, for example `curl --cacert haruspex.pem`.
-
-- `POST /api/v1/op` with an operation as JSON, for example `{"type":"sessions.list"}` or `{"type":"session.send","id":"…","text":"Fix the failing test"}`.
-- On Windows, `session.new` takes a `wslDistro` with a Linux `root` (`{"type":"session.new","root":"~/proj","wslDistro":"Ubuntu"}`); `{"type":"wsl.distros"}` lists them.
-- `GET /api/v1/events` streams what sessions do (server-sent events).
-- `POST /api/v1/images` with `{"urls":[…]}` says which image URLs in the messages this computer has cached; `GET /api/v1/image/<hash>` returns one.
-- `GET /api/v1/health` needs no token.
-
-From a trusted computer, send `X-Haruspex: 1` instead of a token.
+Scripts use the same API, for Code sessions, chats, jobs and settings: see the `remote-control-api` page.
 
 ## What it doesn't do yet
 
-- The Shell and Settings can't be used remotely. In chat, the page can't attach images, start deep research, or change the working folder or incognito; do those at this computer.
+- The Shell can't be used remotely, and the page has no Jobs or Settings (a script can use both). In chat, the page can't attach images, start deep research, or change the working folder or incognito; do those at this computer.
 - Files open read-only; edit them at this computer.
 - A turn you start from the page can't hand a command to this computer's Shell tab (`open_in_shell`, for sudo and the like): the agent says what to run, for when you're back. A turn started here that is waiting on one shows as waiting, and the page can let it carry on without it.
 

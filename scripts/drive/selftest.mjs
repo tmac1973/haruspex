@@ -20,6 +20,18 @@ function drive(...args) {
 	return JSON.parse(out);
 }
 
+/** A command that should fail: what it said on stderr. */
+function driveFails(...args) {
+	try {
+		execFileSync(process.execPath, [DRIVE, ...args], { encoding: 'utf8', stdio: 'pipe' });
+	} catch (e) {
+		return String(e.stderr ?? e.message);
+	}
+	throw new Error(`selftest: drive ${args[0]} should have failed`);
+}
+
+const op = (o) => drive('op', JSON.stringify(o));
+
 function check(cond, msg) {
 	if (!cond) throw new Error(`selftest: ${msg}`);
 	console.log(`ok - ${msg}`);
@@ -177,6 +189,53 @@ try {
 	);
 	const chats = drive('chats');
 	check(chats.find((c) => c.id === chat.id)?.open === true, 'the chat is open on the desktop');
+
+	// The Jobs tab over HTTPS: write a job, run it, read its run, delete it.
+	drive('scenario', 'research-job');
+	const { jobId } = op({
+		type: 'jobs.create',
+		job: { name: 'Weather digest', job_type: 'research' },
+		steps: ['Find the weather in Lisbon.', 'Summarise it in one line.']
+	});
+	check(
+		op({ type: 'jobs.get', jobId }).steps.length === 2,
+		'jobs.create makes a job with its steps'
+	);
+	const { runId } = op({ type: 'jobs.run', jobId });
+	let finished = null;
+	for (const until = Date.now() + 60_000; Date.now() < until;) {
+		const r = op({ type: 'runs.get', runId });
+		if (!['queued', 'running'].includes(r.status)) {
+			finished = r;
+			break;
+		}
+		await new Promise((res) => setTimeout(res, 500));
+	}
+	check(finished?.status === 'succeeded', 'jobs.run runs it to the end');
+	check(
+		finished.steps.at(-1).output?.includes('sunny and mild'),
+		"and runs.get has the last step's output"
+	);
+	check(
+		op({ type: 'runs.list', jobId }).some((r) => r.id === runId),
+		'runs.list lists the run'
+	);
+	check(op({ type: 'runs.current' }).queue.length === 0, 'runs.current shows an empty queue');
+	check(op({ type: 'jobs.delete', jobId }).deleted === jobId, 'jobs.delete deletes it');
+
+	// Settings over HTTPS: read one, change it, and a secret is refused.
+	op({ type: 'settings.patch', patch: { theme: 'dark' } });
+	check(
+		op({ type: 'settings.get', keys: ['theme'] }).settings.theme === 'dark',
+		'settings.patch changes a setting that settings.get reads back'
+	);
+	check(
+		driveFails(
+			'op',
+			JSON.stringify({ type: 'settings.patch', patch: { braveApiKey: 'x' } })
+		).includes('is a secret'),
+		'and refuses a secret'
+	);
 
 	// Every kind of prompt, answered through the API as the web page does: a
 	// repo's instructions, an MCP tool that asks first, and a skill write.

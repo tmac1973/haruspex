@@ -135,7 +135,8 @@ registerTool({
 					...(typeof args.body === 'string' && args.body.trim() ? { body: args.body.trim() } : {}),
 					options,
 					allowMultiple: args.allow_multiple === true,
-					...(ctx.codeSessionId ? { sessionId: ctx.codeSessionId } : {})
+					...(ctx.codeSessionId ? { sessionId: ctx.codeSessionId } : {}),
+					...(ctx.jobRunId !== undefined ? { runId: ctx.jobRunId } : {})
 				},
 				ctx.signal
 			)

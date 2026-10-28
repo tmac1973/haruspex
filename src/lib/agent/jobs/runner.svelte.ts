@@ -187,6 +187,7 @@ function runJobTurn(
 						workingDir: job.working_dir ? job.working_dir : null,
 						backend,
 						signal: abort.signal,
+						jobRunId: runId,
 						slot,
 						// Offered only while Settings → Feedback has it on.
 						feedback: { source: runSource(job, runId) },

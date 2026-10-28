@@ -29,12 +29,17 @@ pub enum Scope {
     Read,
     /// Open and start sessions, send, steer and stop turns.
     Drive,
-    /// Answer command approvals and the agent's questions.
+    /// Answer command approvals and the agent's questions. Also writing a
+    /// job: a job's tools run without asking, so its steps are approved
+    /// ahead.
     Approve,
+    /// Read and change settings, secrets aside. Not offered by default for
+    /// a new device.
+    Settings,
 }
 
 impl Scope {
-    pub const ALL: [Scope; 3] = [Scope::Read, Scope::Drive, Scope::Approve];
+    pub const ALL: [Scope; 4] = [Scope::Read, Scope::Drive, Scope::Approve, Scope::Settings];
 }
 
 /// The scope an engine operation needs, or `None` for an operation that
@@ -42,7 +47,10 @@ impl Scope {
 pub fn required_scope(op_type: &str) -> Option<Scope> {
     Some(match op_type {
         "sessions.list" | "session.get" | "session.resync" | "session.readFile" | "chats.list"
-        | "chat.get" | "chat.resync" | "prompts.list" | "wsl.distros" => Scope::Read,
+        | "chat.get" | "chat.resync" | "prompts.list" | "wsl.distros" | "jobs.types"
+        | "jobs.list" | "jobs.get" | "runs.list" | "runs.get" | "runs.current" | "runs.resync" => {
+            Scope::Read
+        }
         "session.open"
         | "session.new"
         | "session.send"
@@ -53,8 +61,14 @@ pub fn required_scope(op_type: &str) -> Option<Scope> {
         | "chat.send"
         | "chat.stop"
         | "chat.continue"
-        | "chat.retry" => Scope::Drive,
-        "prompts.answer" => Scope::Approve,
+        | "chat.retry"
+        | "jobs.duplicate"
+        | "jobs.delete"
+        | "jobs.run"
+        | "run.cancel"
+        | "runs.delete" => Scope::Drive,
+        "prompts.answer" | "jobs.create" | "jobs.update" => Scope::Approve,
+        "settings.get" | "settings.patch" => Scope::Settings,
         _ => return None,
     })
 }
@@ -378,6 +392,14 @@ mod tests {
         assert_eq!(required_scope("session.send"), Some(Scope::Drive));
         assert_eq!(required_scope("session.compact"), Some(Scope::Drive));
         assert_eq!(required_scope("prompts.answer"), Some(Scope::Approve));
+        assert_eq!(required_scope("jobs.list"), Some(Scope::Read));
+        assert_eq!(required_scope("runs.current"), Some(Scope::Read));
+        assert_eq!(required_scope("jobs.run"), Some(Scope::Drive));
+        assert_eq!(required_scope("run.cancel"), Some(Scope::Drive));
+        assert_eq!(required_scope("jobs.create"), Some(Scope::Approve));
+        assert_eq!(required_scope("jobs.update"), Some(Scope::Approve));
+        assert_eq!(required_scope("settings.get"), Some(Scope::Settings));
+        assert_eq!(required_scope("settings.patch"), Some(Scope::Settings));
         assert_eq!(required_scope("session.delete"), None);
     }
 }

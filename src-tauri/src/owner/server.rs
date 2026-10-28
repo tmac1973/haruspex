@@ -351,6 +351,7 @@ fn missing(client: &OwnerClient, scope: Scope) -> Option<Response> {
         Scope::Read => "read sessions",
         Scope::Drive => "drive sessions",
         Scope::Approve => "answer prompts",
+        Scope::Settings => "change settings",
     };
     (!client.scopes.contains(&scope)).then(|| {
         refuse(

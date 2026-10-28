@@ -1906,6 +1906,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			const overviewText = (await readWorkdirFile(overviewPath))?.trim();
 			const answer = await askUserQuestion(
 				{
+					runId,
 					question:
 						`I wrote the project overview to ${overviewPath}. Review it, then approve ` +
 						`to ${cfg.overview_only ? 'finish' : 'continue'} — or type what you'd like ` +
@@ -1964,6 +1965,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 			abortIfCancelled();
 			const answer = await askUserQuestion(
 				{
+					runId,
 					question:
 						`Here's the plan outline — ${outline.length} phase(s), in dependency order. ` +
 						`Approve it, or type what you'd like changed.`,
@@ -2117,6 +2119,7 @@ export async function runGuidedPlanningPipeline(deps: JobRunContext): Promise<vo
 				const phaseFiles = await listPhaseFiles();
 				const answer = await askUserQuestion(
 					{
+						runId,
 						question:
 							`I wrote the phased implementation plan to ${outDir} (phase-NN-*.md), ` +
 							`ordered by dependency and checked for unresolved decisions. Review it, ` +

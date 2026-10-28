@@ -3,4 +3,4 @@
 /**
  * What a device may do. Checked on every operation, not only at connect.
  */
-export type Scope = "read" | "drive" | "approve";
+export type Scope = "read" | "drive" | "approve" | "settings";

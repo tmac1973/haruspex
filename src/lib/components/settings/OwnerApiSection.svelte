@@ -14,6 +14,7 @@
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import {
 		ALL_SCOPES,
+		DEFAULT_SCOPES,
 		applyOwnerApi,
 		createOwnerClient,
 		listOwnerClients,
@@ -33,11 +34,23 @@
 	import WhoCanConnect from '#lib/components/settings/WhoCanConnect.svelte';
 
 	const SCOPE_LABELS: Record<Scope, { label: string; title: string }> = {
-		read: { label: 'Read', title: 'List and read Code sessions, and follow them as they run.' },
-		drive: { label: 'Drive', title: 'Start sessions and turns, steer them and stop them.' },
+		read: {
+			label: 'Read',
+			title: 'List and read Code sessions, chats and jobs, and follow them as they run.'
+		},
+		drive: {
+			label: 'Drive',
+			title: 'Start sessions, turns and job runs, steer them and stop them.'
+		},
 		approve: {
 			label: 'Approve',
-			title: 'Answer "Run this command?" and the questions the agent asks you.'
+			title:
+				'Answer "Run this command?" and the questions the agent asks you, and write jobs, whose tools run without asking.'
+		},
+		settings: {
+			label: 'Settings',
+			title:
+				'Read and change settings. Never secrets, accounts, MCP servers, Remote control or Guest chat.'
 		}
 	};
 
@@ -77,7 +90,7 @@
 
 	let adding = $state(false);
 	let newName = $state('');
-	let newScopes = $state<Scope[]>([...ALL_SCOPES]);
+	let newScopes = $state<Scope[]>([...DEFAULT_SCOPES]);
 	/** The link and token just made, until the user says they have them. */
 	let shown = $state<{ name: string; token: string; link: string | null } | null>(null);
 	let qr = $state<QrMatrix | null>(null);
@@ -166,7 +179,7 @@
 			await show(await createOwnerClient(newName, newScopes));
 			adding = false;
 			newName = '';
-			newScopes = [...ALL_SCOPES];
+			newScopes = [...DEFAULT_SCOPES];
 			devices = await listOwnerClients();
 		} catch (e) {
 			error = errMessage(e);

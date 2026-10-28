@@ -28,7 +28,10 @@ function linkHost(base: string): string | null {
 	}
 }
 
-export const ALL_SCOPES: Scope[] = ['read', 'drive', 'approve'];
+export const ALL_SCOPES: Scope[] = ['read', 'drive', 'approve', 'settings'];
+
+/** What a new device gets unless the owner ticks more: everything but settings. */
+export const DEFAULT_SCOPES: Scope[] = ['read', 'drive', 'approve'];
 
 /** Start, restart or stop the server to match Settings. Throws what went wrong. */
 export function applyOwnerApi(): Promise<OwnerApiStatus> {
