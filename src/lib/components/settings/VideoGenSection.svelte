@@ -18,7 +18,8 @@
 	import ToolchestModels from '#lib/components/settings/ToolchestModels.svelte';
 	import { probeVideo, seenVideoInstances } from '#lib/videogen/toolchest.ts';
 	import type { ModelOption, ProbeResult } from '#lib/image/backend.ts';
-	import { inferenceToolchest, toolchestHint } from '#lib/toolchest/detect.ts';
+	import { toolchestHint } from '#lib/toolchest/detect.ts';
+	import { prefillFromInference, withSavedModel } from '#lib/toolchest/kind.ts';
 	import type { ToolchestInstance } from '#lib/toolchest/models.ts';
 
 	type Kind = 'none' | 'llama-toolchest';
@@ -34,12 +35,7 @@
 	let probeResult = $state<ProbeResult | null>(null);
 	let serverModels = $state<ModelOption[]>([]);
 	let instances = $state<ToolchestInstance[]>([]);
-	const modelOptions = $derived.by((): ModelOption[] => {
-		const current = modelId.trim();
-		if (!current || serverModels.some((m) => m.name === current)) return serverModels;
-		const why = serverModels.length > 0 ? 'not on the server' : 'probe to check';
-		return [{ name: current, label: `${current} — ${why}` }, ...serverModels];
-	});
+	const modelOptions = $derived(withSavedModel(modelId, serverModels));
 	const chosen = $derived(instances.find((i) => i.id === modelId));
 
 	let hint = $state<{ host: string; count: number } | null>(null);
@@ -48,12 +44,8 @@
 	function persistKind(e: Event) {
 		kind = (e.currentTarget as HTMLSelectElement).value as Kind;
 		updateSettings({ videoGenBackendKind: kind });
-		const found = kind === 'llama-toolchest' ? inferenceToolchest() : null;
-		if (found && !getSettings().videoGenToolchestBaseUrl.trim()) {
-			updateSettings({
-				videoGenToolchestBaseUrl: found.baseUrl,
-				videoGenToolchestApiKeyId: found.apiKeyId
-			});
+		const found = kind === 'llama-toolchest' ? prefillFromInference('video') : null;
+		if (found) {
 			baseUrl = found.baseUrl;
 			apiKeyId = found.apiKeyId;
 		}

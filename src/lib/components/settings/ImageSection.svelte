@@ -22,7 +22,8 @@
 	import ToolchestModels from '#lib/components/settings/ToolchestModels.svelte';
 	import ApiKeyPicker from '#lib/components/settings/ApiKeyPicker.svelte';
 	import { seenInstances } from '#lib/image/toolchest/backend.ts';
-	import { inferenceToolchest, toolchestHint } from '#lib/toolchest/detect.ts';
+	import { toolchestHint } from '#lib/toolchest/detect.ts';
+	import { prefillFromInference, withSavedModel } from '#lib/toolchest/kind.ts';
 	import type { ApiKeyIdField, ToolchestInstance } from '#lib/toolchest/models.ts';
 	import DownloadProgressBar from '#lib/components/settings/DownloadProgressBar.svelte';
 	import {
@@ -280,13 +281,7 @@
 	let capabilities = $state<ImageBackendCapabilities | null>(null);
 	/** What the server can run, from the last probe that could say. */
 	let serverModels = $state<ModelOption[]>([]);
-	/** The dropdown's options: the server's, plus the saved one if it is not among them. */
-	const modelOptions = $derived.by((): ModelOption[] => {
-		const current = serverModel.trim();
-		if (!current || serverModels.some((m) => m.name === current)) return serverModels;
-		const why = serverModels.length > 0 ? 'not on the server' : 'probe to check';
-		return [{ name: current, label: `${current} — ${why}` }, ...serverModels];
-	});
+	const modelOptions = $derived(withSavedModel(serverModel, serverModels));
 
 	let generating = $state(false);
 	let testError = $state('');
@@ -362,15 +357,7 @@
 		updateSettings({ imageBackendKind });
 		probeResult = null;
 		capabilities = null;
-		// A toolchest with nothing set yet starts from the inference server,
-		// when that is a toolchest: usually the same machine and key.
-		const found = imageBackendKind === 'llama-toolchest' ? inferenceToolchest() : null;
-		if (found && !getSettings().imageToolchestBaseUrl.trim()) {
-			updateSettings({
-				imageToolchestBaseUrl: found.baseUrl,
-				imageToolchestApiKeyId: found.apiKeyId
-			});
-		}
+		if (imageBackendKind === 'llama-toolchest') prefillFromInference('image');
 		// Another server's fields: its own address, key, model and list.
 		const s = getSettings();
 		serverUrl = server ? s[server.url] : '';

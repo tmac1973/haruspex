@@ -1,8 +1,8 @@
 /**
  * Calls to a llama-toolchest server, made from Rust (`toolchest_json`,
  * `toolchest_bytes`) for the reasons the ComfyUI client gives: no `Origin`,
- * no proxy, one cancel table. Shared by the image and music backends, which
- * turn a {@link ToolchestError} into their own error type.
+ * no proxy, one cancel table. Shared by the image, music and video backends;
+ * image and music turn a {@link ToolchestError} into their own error type.
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -16,7 +16,9 @@ export interface ToolchestConfig {
 	apiKey: string;
 }
 
-export type ToolchestErrorKind = 'unreachable' | 'timeout' | 'rejected' | 'cancelled';
+/** As the image and music backends' kinds, which take these over unchanged. */
+export type ToolchestErrorKind =
+	'unconfigured' | 'unreachable' | 'timeout' | 'rejected' | 'cancelled';
 
 export class ToolchestError extends Error {
 	readonly kind: ToolchestErrorKind;

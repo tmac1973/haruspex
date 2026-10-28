@@ -10,8 +10,6 @@
  * Instances are started in toolchest; a stopped one is a sentence here.
  */
 
-import { invoke } from '@tauri-apps/api/core';
-import { getSettings } from '#lib/stores/settings.ts';
 import { registerMusicBackend } from '#lib/music/registry.ts';
 import type { MusicBackend, ProbeResult } from '#lib/music/backend.ts';
 import {
@@ -24,20 +22,14 @@ import {
 } from '#lib/music/types.ts';
 import { knownTasks, uploadsOf } from '#lib/music/tasks.ts';
 import {
-	parseGenerationModels,
-	toolchestKeyFor,
-	type ToolchestInstance
-} from '#lib/toolchest/models.ts';
-import {
 	ToolchestError,
-	hostOf,
 	toolchestJson,
 	toolchestUpload,
 	type ToolchestConfig
 } from '#lib/toolchest/client.ts';
 import { followJob, removeJob } from '#lib/toolchest/jobs.ts';
+import { settleJob, storeJobFile, toolchestKind } from '#lib/toolchest/kind.ts';
 import { audioSrc } from '#lib/audio/url.ts';
-import type { StoredAudio } from '#lib/ipc/gen/StoredAudio.ts';
 import {
 	ROUTES,
 	buildJobBody,
@@ -46,35 +38,11 @@ import {
 	readMusicJob,
 	type MusicJob
 } from '#lib/music/toolchest/adapter.ts';
-import { errMessage } from '#lib/utils/error.ts';
 
-/** What the last probe saw, for Settings' table. */
-let lastInstances: ToolchestInstance[] = [];
-
-async function config(): Promise<ToolchestConfig> {
-	const s = getSettings();
-	return {
-		baseUrl: s.musicToolchestBaseUrl.trim(),
-		apiKey: await toolchestKeyFor(s.musicToolchestApiKeyId)
-	};
-}
-
-function chosenId(): string {
-	return (getSettings().musicToolchestModelId ?? '').trim();
-}
+const server = toolchestKind('music');
 
 /** Every music instance the last probe saw. */
-export function seenMusicInstances(): ToolchestInstance[] {
-	return lastInstances;
-}
-
-async function musicInstances(cfg: ToolchestConfig, signal?: AbortSignal) {
-	lastInstances = parseGenerationModels(
-		await toolchestJson(cfg, { path: ROUTES.models }, signal),
-		'music'
-	);
-	return lastInstances;
-}
+export const seenMusicInstances = server.seen;
 
 function asMusicError(e: unknown): unknown {
 	if (!(e instanceof ToolchestError)) return e;
@@ -82,56 +50,12 @@ function asMusicError(e: unknown): unknown {
 	return new MusicBackendError(e.kind, e.message, { status: e.status });
 }
 
-async function readyInstance(cfg: ToolchestConfig, signal?: AbortSignal) {
-	if (!cfg.baseUrl) {
-		throw new MusicBackendError(
-			'unconfigured',
-			'No llama-toolchest server is set — Settings → Music.'
-		);
-	}
-	const id = chosenId();
-	if (!id)
-		throw new MusicBackendError('unconfigured', 'No music model is chosen — Settings → Music.');
-	const instance = (await musicInstances(cfg, signal)).find((i) => i.id === id);
-	if (!instance) {
-		throw new MusicBackendError(
-			'unconfigured',
-			`${id} is not on ${hostOf(cfg.baseUrl)} any more — Settings → Music.`
-		);
-	}
-	if (instance.state !== 'running') {
-		throw new MusicBackendError(
-			'unconfigured',
-			`${id} is ${instance.state} — start it in llama-toolchest.`
-		);
-	}
-	return instance;
-}
-
-/** A finished job, kept in the audio cache. */
-async function keep(
-	cfg: ToolchestConfig,
-	job: MusicJob,
-	req: MusicRequest,
-	opts: MusicGenerateOptions
-): Promise<StoredAudio> {
-	if (!job.audioUrl) throw new MusicBackendError('rejected', 'llama-toolchest gave no audio.');
-	return invoke<StoredAudio>('audio_store_url', {
-		url: `${cfg.baseUrl.replace(/\/+$/, '')}${job.audioUrl}`,
-		apiKey: cfg.apiKey || null,
-		mimeHint: mimeFor(req.format),
-		title: req.title || null,
-		conversationId: opts.conversationId ?? null,
-		codeSessionId: opts.codeSessionId ?? null
-	});
-}
-
 async function run(
 	cfg: ToolchestConfig,
 	req: MusicRequest,
 	opts: MusicGenerateOptions
 ): Promise<MusicResult> {
-	const instance = await readyInstance(cfg, opts.signal);
+	const instance = await server.readyInstance(cfg, opts.signal);
 	const body = buildJobBody(req, instance.id);
 	const files = uploadsOf(req);
 	const created = readMusicJob(
@@ -145,7 +69,7 @@ async function run(
 		baseUrl: cfg.baseUrl,
 		id: created.id,
 		model: instance.id,
-		extra: { keyId: getSettings().musicToolchestApiKeyId ?? '' }
+		extra: { keyId: server.keyId() }
 	});
 	return finish(cfg, created, instance.id, req, opts);
 }
@@ -158,16 +82,19 @@ async function finish(
 	req: MusicRequest,
 	opts: MusicGenerateOptions
 ): Promise<MusicResult> {
-	const job = await followJob(cfg, created, ROUTES.job, readMusicJob, {
-		signal: opts.signal,
-		onJob: (j) => opts.onProgress?.(musicProgressOf(j))
-	});
-	if (job.status === 'cancelled') throw new MusicBackendError('cancelled', 'Cancelled.');
-	if (job.status === 'failed') {
-		throw new MusicBackendError('rejected', `llama-toolchest: ${job.error ?? 'the job failed'}`);
-	}
+	const job = settleJob(
+		await followJob(cfg, created, ROUTES.job, readMusicJob, {
+			signal: opts.signal,
+			onJob: (j) => opts.onProgress?.(musicProgressOf(j))
+		})
+	);
+	if (!job.audioUrl) throw new MusicBackendError('rejected', 'llama-toolchest gave no audio.');
 	opts.onProgress?.({ phase: 'saving' });
-	const stored = await keep(cfg, job, req, opts);
+	const stored = await storeJobFile(cfg, job.audioUrl, mimeFor(req.format), {
+		title: req.title,
+		conversationId: opts.conversationId,
+		codeSessionId: opts.codeSessionId
+	});
 	removeJob(cfg, ROUTES.job(job.id));
 	return {
 		hash: stored.hash,
@@ -184,56 +111,21 @@ async function finish(
 export const toolchestMusicBackend: MusicBackend = {
 	kind: 'llama-toolchest',
 
-	async probe(): Promise<ProbeResult> {
-		const cfg = await config();
-		if (!cfg.baseUrl) return { ok: false, detail: 'No server address — Settings → Music.' };
-		const host = hostOf(cfg.baseUrl);
-		let instances: ToolchestInstance[];
-		try {
-			instances = await musicInstances(cfg);
-		} catch (e) {
-			if (e instanceof ToolchestError && e.status === 401) {
-				return { ok: false, detail: 'Wrong or missing API key.' };
-			}
-			if (e instanceof ToolchestError && e.kind === 'unreachable') {
-				return { ok: false, detail: `Can't reach ${host}.` };
-			}
-			return { ok: false, detail: errMessage(e) };
-		}
-		const models = instances.map((i) => ({
-			name: i.id,
-			label: i.state === 'running' ? i.id : `${i.id} — ${i.state}`
-		}));
-		if (instances.length === 0) {
-			return {
-				ok: false,
-				detail: `${host} has no music models. Add one in llama-toolchest.`,
-				models
-			};
-		}
-		const chosen = instances.find((i) => i.id === chosenId());
-		if (!chosen) return { ok: false, detail: 'No model is chosen — Settings → Music.', models };
-		if (chosen.state !== 'running') {
-			return {
-				ok: false,
-				detail: `${chosen.id} is ${chosen.state} — start it in llama-toolchest.`,
-				models
-			};
-		}
-		return { ok: true, detail: `Connected — ${chosen.id} on ${host}.`, models };
+	probe(): Promise<ProbeResult> {
+		return server.probe();
 	},
 
 	async tasks(): Promise<MusicTask[]> {
-		const cfg = await config();
+		const cfg = await server.config();
 		try {
-			return knownTasks((await readyInstance(cfg)).tasks);
+			return knownTasks((await server.readyInstance(cfg)).tasks);
 		} catch (e) {
 			throw asMusicError(e);
 		}
 	},
 
 	async generate(req: MusicRequest, opts: MusicGenerateOptions = {}): Promise<MusicResult> {
-		const cfg = await config();
+		const cfg = await server.config();
 		try {
 			return await run(cfg, req, opts);
 		} catch (e) {
@@ -247,10 +139,7 @@ export const toolchestMusicBackend: MusicBackend = {
 		opts: MusicGenerateOptions = {}
 	): Promise<MusicResult> {
 		// The server it went to, whatever Settings → Music says now.
-		const cfg: ToolchestConfig = {
-			baseUrl: handle.baseUrl,
-			apiKey: await toolchestKeyFor(handle.extra?.keyId || null)
-		};
+		const cfg = await server.configFor(handle.baseUrl, handle.extra?.keyId);
 		try {
 			return await finish(cfg, readMusicJob({ id: handle.id })!, handle.model, req, opts);
 		} catch (e) {
