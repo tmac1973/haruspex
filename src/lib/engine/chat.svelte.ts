@@ -30,6 +30,7 @@ import { dbLoadMessages, dbLoadMessageSteps } from '#lib/stores/db.ts';
 import { getActiveConversationId, getWorkingDir } from '#lib/stores/session.svelte.ts';
 import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { attachImages, slashFor } from '#lib/engine/attach.ts';
 import { LIVE_MS } from '#lib/engine/watch.svelte.ts';
 import type { ChatEvent, ChatListItem, ChatState } from '#lib/engine/types.ts';
 
@@ -163,7 +164,18 @@ async function startTurn(run: () => Promise<boolean | void>): Promise<{ started:
 	return { started: true };
 }
 
-export async function dispatchChat(op: { type: string; id?: string; text?: string }) {
+/** What Chat's input box lends `/name` (`ChatView.svelte`): no project, so Settings' skills. */
+const chatSlashHost = () => ({
+	projectRoot: async () => null,
+	newConversation: async () => createConversation()
+});
+
+export async function dispatchChat(op: {
+	type: string;
+	id?: string;
+	text?: string;
+	images?: unknown;
+}) {
 	switch (op.type) {
 		case 'chats.list':
 			return listChats();
@@ -175,11 +187,15 @@ export async function dispatchChat(op: { type: string; id?: string; text?: strin
 		case 'chat.new':
 			return { id: createConversation() };
 		case 'chat.send': {
-			const text = (op.text ?? '').trim();
-			if (!text) throw new Error('nothing to send');
 			const id = find(op.id!).id;
-			// A chat whose turn runs takes it as steering, at the turn's next step.
-			return startTurn(() => sendMessageTo(id, text));
+			const images = await attachImages(op.images);
+			const text = (op.text ?? '').trim();
+			if (!text && images.length === 0) throw new Error('nothing to send');
+			// A chat whose turn runs takes it as steering, at the turn's next
+			// step, where a `/name` is only text.
+			const slash = getRun(id).busy ? null : await slashFor(text, chatSlashHost);
+			if (slash?.kind === 'handled') return { handled: true, note: slash.note, id: slash.id };
+			return startTurn(() => sendMessageTo(id, text, images, slash?.skill));
 		}
 		case 'chat.stop':
 			if (!getRun(find(op.id!).id).busy) return { stopping: false };

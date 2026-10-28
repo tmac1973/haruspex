@@ -15,7 +15,8 @@ const mocks = vi.hoisted(() => ({
 	newSession: vi.fn(),
 	dispatchChat: vi.fn(),
 	answerPrompt: vi.fn(),
-	currentPrompts: vi.fn()
+	currentPrompts: vi.fn(),
+	slashFor: vi.fn()
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
@@ -36,6 +37,10 @@ vi.mock('#lib/engine/prompts.svelte.ts', () => ({
 	currentPrompts: mocks.currentPrompts
 }));
 vi.mock('#lib/engine/chat.svelte.ts', () => ({ dispatchChat: mocks.dispatchChat }));
+vi.mock('#lib/engine/attach.ts', () => ({
+	attachImages: async (refs?: string[]) => (refs ?? []).map((r) => `data:image/png;base64,${r}`),
+	slashFor: mocks.slashFor
+}));
 vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
 	logDebug: () => {}
@@ -57,7 +62,8 @@ interface FakeSession {
 	cancelledWait: number;
 	compacted: string[];
 	compactable: boolean;
-	send(text: string, opts: { remote: boolean }): Promise<void>;
+	sentOpts: Array<{ remote?: boolean; images?: string[]; skill?: unknown }>;
+	send(text: string, opts: { remote?: boolean; images?: string[]; skill?: unknown }): Promise<void>;
 	stop(): void;
 	cancelShellWait(): void;
 	canCompact(): boolean;
@@ -79,7 +85,11 @@ function session(id: string, over: Partial<FakeSession> = {}): FakeSession {
 		cancelledWait: 0,
 		compacted: [],
 		compactable: true,
-		send: async (text) => void s.sent.push(text),
+		sentOpts: [],
+		send: async (text, opts) => {
+			s.sent.push(text);
+			s.sentOpts.push(opts);
+		},
 		stop: () => void s.stopped++,
 		cancelShellWait: () => void s.cancelledWait++,
 		canCompact: () => s.compactable,
@@ -98,6 +108,7 @@ beforeEach(() => {
 	mocks.openSession.mockReset();
 	mocks.newSession.mockReset();
 	mocks.dispatchChat.mockReset();
+	mocks.slashFor.mockReset().mockResolvedValue({ kind: 'send' });
 	mocks.answerPrompt.mockReset();
 	mocks.currentPrompts.mockReset();
 	setResync(() => false);
@@ -209,6 +220,50 @@ describe('dispatch: turns', () => {
 			steered: true
 		});
 		expect(s.sent).toEqual(['go', 'also']);
+	});
+
+	it('sends pictures and the skill a /name named with the message', async () => {
+		const s = session('a');
+		mocks.open = [s as unknown as Record<string, unknown>];
+		const skill = { name: 'fix-picture', body: 'Edit, then check.' };
+		mocks.slashFor.mockResolvedValue({ kind: 'send', skill });
+		await dispatch(
+			op({ type: 'session.send', id: 'a', text: '/fix-picture night', images: ['AA'] }),
+			'w'
+		);
+		expect(s.sentOpts[0]).toEqual({
+			remote: true,
+			images: ['data:image/png;base64,AA'],
+			skill
+		});
+	});
+
+	it('sends a picture with no text', async () => {
+		const s = session('a');
+		mocks.open = [s as unknown as Record<string, unknown>];
+		expect(
+			await dispatch(op({ type: 'session.send', id: 'a', text: '', images: ['AA'] }), 'w')
+		).toEqual({ started: true });
+	});
+
+	it('answers what a built-in said instead of sending it', async () => {
+		const s = session('a');
+		mocks.open = [s as unknown as Record<string, unknown>];
+		mocks.slashFor.mockResolvedValue({ kind: 'handled', note: 'Skills you can run…' });
+		expect(await dispatch(op({ type: 'session.send', id: 'a', text: '/skills' }), 'w')).toEqual({
+			handled: true,
+			note: 'Skills you can run…',
+			id: undefined
+		});
+		expect(s.sent).toEqual([]);
+	});
+
+	it('leaves a /name mid-turn as steering text', async () => {
+		const s = session('a', { busy: true });
+		mocks.open = [s as unknown as Record<string, unknown>];
+		await dispatch(op({ type: 'session.send', id: 'a', text: '/skills' }), 'w');
+		expect(mocks.slashFor).not.toHaveBeenCalled();
+		expect(s.sent).toEqual(['/skills']);
 	});
 
 	it('answers at once even when the turn later fails', async () => {

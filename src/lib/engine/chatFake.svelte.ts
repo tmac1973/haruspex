@@ -37,7 +37,7 @@ export const fake = $state({
 	/** What a send answers: false is a refusal (model not ready). */
 	accept: true,
 	/** Sends that started a turn, and sends that steered one. */
-	sent: [] as { id: string | null; text: string }[],
+	sent: [] as { id: string | null; text: string; images?: string[]; skill?: unknown }[],
 	steered: [] as { id: string; text: string }[],
 	cancelled: [] as string[],
 	continued: [] as string[],
@@ -116,12 +116,22 @@ export const chatStore = {
 	noteViewedOnWeb: (id: string) => {
 		fake.viewed.push(id);
 	},
-	sendMessageTo: async (id: string | null, text: string) => {
+	sendMessageTo: async (
+		id: string | null,
+		text: string,
+		images: string[] = [],
+		skill?: unknown
+	) => {
 		if (id && runOf(id).busy) {
 			fake.steered.push({ id, text });
 			return true;
 		}
-		fake.sent.push({ id, text });
+		fake.sent.push({
+			id,
+			text,
+			...(images.length && { images }),
+			...(skill !== undefined && { skill })
+		});
 		if (!fake.accept) return false;
 		if (id) setRun(id, { generating: true });
 		// The turn runs until the test ends it.

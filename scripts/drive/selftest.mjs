@@ -190,6 +190,29 @@ try {
 	const chats = drive('chats');
 	check(chats.find((c) => c.id === chat.id)?.open === true, 'the chat is open on the desktop');
 
+	// A picture, uploaded as the page does, then sent with a chat message.
+	const PNG_1PX =
+		'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+	const uploaded = await fetch(`${base}/api/v1/upload`, {
+		method: 'POST',
+		headers: { Cookie: cookie, 'X-Haruspex': '1', 'Content-Type': 'image/png' },
+		body: Buffer.from(PNG_1PX, 'base64')
+	});
+	const { hash } = await uploaded.json();
+	check(uploaded.ok && /^[0-9a-f]{64}$/.test(hash), '/api/v1/upload keeps a picture');
+	const before = drive('requests').length;
+	op({ type: 'chat.send', id: chat.id, text: 'hello, what is in this picture?', images: [hash] });
+	for (const until = Date.now() + 30_000; Date.now() < until;) {
+		if (!drive('chat-state', chat.id).busy && drive('requests').length > before) break;
+		await new Promise((res) => setTimeout(res, 300));
+	}
+	const sentPicture = drive('requests')
+		.slice(before)
+		.some((r) => JSON.stringify(r.messages ?? r).includes('data:image/png;base64,'));
+	check(sentPicture, 'chat.send hands the uploaded picture to the model');
+	const skills = op({ type: 'chat.send', id: chat.id, text: '/skills' });
+	check(skills.handled === true && typeof skills.note === 'string', '/skills answers its note');
+
 	// The Jobs tab over HTTPS: write a job, run it, read its run, delete it.
 	drive('scenario', 'research-job');
 	const { jobId } = op({

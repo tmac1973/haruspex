@@ -16,6 +16,12 @@ import { imageRefs, resetImages, wantImages } from './images.ts';
 import { clearResolvedImages } from '#lib/images/resolve.svelte.ts';
 import { VIEW_IMAGE_EVENT } from '#lib/markdownActions.ts';
 
+// jsdom can't decode a picture: an attached file stands for itself.
+vi.mock('#lib/utils/image.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/utils/image.ts')>()),
+	imageFileToDataUrl: async (f: File) => `data:${f.type};base64,${f.name}`
+}));
+
 const state = (over: Partial<SessionState> = {}): SessionState => ({
 	id: 's1',
 	root: '/p',
@@ -45,8 +51,13 @@ const state = (over: Partial<SessionState> = {}): SessionState => ({
 /** A desktop that answers ops from a table and lets the test push events. */
 function fakeDesktop(answers: Record<string, unknown> = {}) {
 	const ops: { type: string }[] = [];
+	const uploads: Blob[] = [];
 	let push: (e: StreamEvent) => void = () => {};
 	const transport: Transport = {
+		upload: async (b: Blob) => {
+			uploads.push(b);
+			return { hash: `${uploads.length}`.padStart(64, '0') };
+		},
 		op: (async (o: { type: string }) => {
 			ops.push(o);
 			return answers[o.type] ?? null;
@@ -57,7 +68,7 @@ function fakeDesktop(answers: Record<string, unknown> = {}) {
 			return () => {};
 		}
 	};
-	return { transport, ops, push: (e: StreamEvent) => push(e) };
+	return { transport, ops, uploads, push: (e: StreamEvent) => push(e) };
 }
 
 describe('the event stream', () => {
@@ -111,6 +122,43 @@ describe('the web store', () => {
 		// Anything else is a message, even one that mentions the command.
 		await store2.send('s1', 'what does /compact do?');
 		expect(short.ops.at(-1)).toMatchObject({ type: 'session.send' });
+	});
+
+	it('uploads pictures first, then sends their hashes with the message', async () => {
+		const d = fakeDesktop({ 'session.send': { started: true } });
+		const store = new WebStore(d.transport);
+		const png = 'data:image/png;base64,iVBORw==';
+		expect(await store.send('s1', 'what is wrong here?', [png, png])).toBe(true);
+		expect(d.uploads.map((b) => b.type)).toEqual(['image/png', 'image/png']);
+		expect(d.ops.at(-1)).toEqual({
+			type: 'session.send',
+			id: 's1',
+			text: 'what is wrong here?',
+			images: ['1'.padStart(64, '0'), '2'.padStart(64, '0')]
+		});
+	});
+
+	it("sends nothing when a picture doesn't upload", async () => {
+		const d = fakeDesktop();
+		d.transport.upload = async () => {
+			throw new Error('a picture can be at most 16 MB');
+		};
+		const store = new WebStore(d.transport);
+		expect(await store.sendChat('c1', 'look', ['data:image/png;base64,AA'])).toBe(false);
+		expect(store.error).toBe('a picture can be at most 16 MB');
+		expect(d.ops.some((o) => o.type === 'chat.send')).toBe(false);
+	});
+
+	it('shows what a built-in such as /skills answers, and opens the chat /new made', async () => {
+		const d = fakeDesktop({ 'chat.send': { handled: true, note: 'Skills you can run…' } });
+		const store = new WebStore(d.transport);
+		await store.sendChat('c1', '/skills');
+		expect(store.note).toBe('Skills you can run…');
+
+		const made = fakeDesktop({ 'chat.send': { handled: true, id: 'c2' }, 'chats.list': [] });
+		const store2 = new WebStore(made.transport);
+		await store2.sendChat('c1', '/new');
+		expect(store2.selectedChat).toBe('c2');
 	});
 
 	it('asks for a new session in a worktree', async () => {
@@ -317,11 +365,28 @@ describe('the composer', () => {
 		const box = screen.getByLabelText('Message') as HTMLTextAreaElement;
 		await fireEvent.input(box, { target: { value: 'fix it' } });
 		await fireEvent.keyDown(box, { key: 'Enter' });
-		await vi.waitFor(() => expect(onsend).toHaveBeenCalledWith('fix it'));
+		await vi.waitFor(() => expect(onsend).toHaveBeenCalledWith('fix it', []));
 		expect(box.value).toBe('fix it');
 		ok = true;
 		await fireEvent.keyDown(box, { key: 'Enter' });
 		await vi.waitFor(() => expect(box.value).toBe(''));
+	});
+
+	it('sends attached pictures, with or without text, and can drop one', async () => {
+		const onsend = vi.fn(async () => true);
+		const { container } = render(Composer, { busy: false, onsend, onstop: vi.fn() });
+		const input = container.querySelector('input[type=file]') as HTMLInputElement;
+		const files = [
+			new File(['a'], 'one', { type: 'image/png' }),
+			new File(['b'], 'two', { type: 'image/png' })
+		];
+		Object.defineProperty(input, 'files', { value: files, configurable: true });
+		await fireEvent.change(input);
+		await vi.waitFor(() => expect(screen.getAllByRole('img')).toHaveLength(2));
+		await fireEvent.click(screen.getByLabelText('Remove picture 1'));
+		await fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+		await vi.waitFor(() => expect(onsend).toHaveBeenCalledWith('', ['data:image/png;base64,two']));
+		await vi.waitFor(() => expect(screen.queryAllByRole('img')).toHaveLength(0));
 	});
 
 	it('offers Stop and queues while the agent works', () => {
@@ -644,7 +709,7 @@ describe('the composer', () => {
 		expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
 		await fireEvent.input(box, { target: { value: 'also this' } });
 		await fireEvent.keyDown(box, { key: 'Enter' });
-		expect(onsend).toHaveBeenCalledWith('also this');
+		expect(onsend).toHaveBeenCalledWith('also this', []);
 	});
 });
 

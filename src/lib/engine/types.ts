@@ -32,7 +32,12 @@ export type EngineOp =
 	  }
 	/** The WSL2 distros a session can be made in (Windows); empty elsewhere. */
 	| { type: 'wsl.distros' }
-	| { type: 'session.send'; id: string; text: string }
+	/**
+	 * `images`: hashes from `/api/v1/upload` (or the app's image URLs). A
+	 * `/name` at the start runs as the input box runs it: a skill goes with
+	 * the message, and a built-in answers `{handled, note, id}` instead.
+	 */
+	| { type: 'session.send'; id: string; text: string; images?: string[] }
 	| { type: 'session.stop'; id: string }
 	/** `/compact`: summarise the older turns now, keeping what `instructions` names. */
 	| { type: 'session.compact'; id: string; instructions?: string }
@@ -44,7 +49,8 @@ export type EngineOp =
 	| { type: 'chats.list' }
 	| { type: 'chat.get'; id: string }
 	| { type: 'chat.new' }
-	| { type: 'chat.send'; id: string; text: string }
+	/** As `session.send`. */
+	| { type: 'chat.send'; id: string; text: string; images?: string[] }
 	| { type: 'chat.stop'; id: string }
 	| { type: 'chat.continue'; id: string }
 	| { type: 'chat.retry'; id: string }

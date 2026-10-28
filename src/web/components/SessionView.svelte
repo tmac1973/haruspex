@@ -2,6 +2,7 @@
 	/** One session: its header, thread, what it is waiting on, and the input box. */
 	import ContextGauge from '#lib/components/ContextGauge.svelte';
 	import type { WebStore } from '../store.svelte.ts';
+	import { renderMarkdown } from '#lib/markdown.ts';
 	import Composer from './Composer.svelte';
 	import PromptCard from './PromptCard.svelte';
 	import Transcript from './Transcript.svelte';
@@ -33,6 +34,14 @@
 
 {#if store.error}
 	<p class="error-text banner" role="alert">{store.error}</p>
+{/if}
+{#if store.note}
+	<div class="banner note" role="status">
+		<!-- renderMarkdown sanitises its output. -->
+		<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+		<div class="note-text">{@html renderMarkdown(store.note)}</div>
+		<button class="btn btn-small" onclick={() => (store.note = null)}>OK</button>
+	</div>
 {/if}
 
 {#if mirror?.closed}
@@ -66,7 +75,7 @@
 	<Composer
 		busy={session.busy}
 		disabled={!!mirror?.closed || session.folderMissing}
-		onsend={(text) => store.send(id, text)}
+		onsend={(text, pictures) => store.send(id, text, pictures)}
 		onstop={() => store.stopTurn(id)}
 	/>
 {/if}
@@ -81,6 +90,13 @@
 {/if}
 
 <style>
+	.note {
+		display: flex;
+		gap: 8px;
+		align-items: flex-start;
+		justify-content: space-between;
+	}
+
 	header {
 		display: flex;
 		align-items: center;

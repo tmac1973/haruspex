@@ -35,7 +35,7 @@ Each device with a token has its own permissions: **Read** (list and follow sess
 
 The page lists your Code sessions, the open ones first. Pick one to follow it as it runs, send messages, steer or stop a turn, and answer what a turn asks: commands, the agent's questions, MCP tools, skill writes (edit the file first if you like) and whether to use a repo's instructions. **New session** starts one in a folder on this computer, in a new worktree if you tick it; on Windows, pick This PC or a WSL distro first.
 
-`/compact` and the summary divider work as in the Code tab (see `code-sessions`). File names in a session are links: click one to read the file (it can't be edited from the page). Images attached to messages show as thumbnails, and pictures the model put in an answer show as they do here; click one for full size.
+Attach pictures with 📎 or a paste, up to 8 a message. `/name` runs a skill, and `/compact`, `/skills` and `/new` work as in the Code tab (see `code-sessions`). File names in a session are links: click one to read the file (it can't be edited from the page). Images attached to messages show as thumbnails, and pictures the model put in an answer show as they do here; click one for full size.
 
 **Chat** (the switch atop the list) shows your chats, newest first. Open one to read it or carry it on; its working folder, Python sandbox and memory work as usual, and this computer stays on its chat. Chats answer at once, and sending to one that's answering steers it (see `chat-conversations`); each is marked Writing, Waiting or New. You can stop, continue or retry a reply, and answer **Run this Python?**, **Remember this?** and **Take a screenshot?** from the page.
 
@@ -52,7 +52,7 @@ Scripts use the same API, for Code sessions, chats, jobs and settings: see the `
 
 ## What it doesn't do yet
 
-- The Shell can't be used remotely, and the page has no Jobs or Settings (a script can use both). In chat, the page can't attach images, start deep research, or change the working folder or incognito; do those at this computer.
+- The Shell can't be used remotely, and the page has no Jobs or Settings (a script can use both). In chat, the page can't start deep research, or change the working folder or incognito; do those at this computer.
 - Files open read-only; edit them at this computer.
 - A turn you start from the page can't hand a command to this computer's Shell tab (`open_in_shell`, for sudo and the like): the agent says what to run, for when you're back. A turn started here that is waiting on one shows as waiting, and the page can let it carry on without it.
 
