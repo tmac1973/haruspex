@@ -288,22 +288,39 @@ export function recordTokenCalibration(
 }
 
 /**
- * Parse a llama-server context-overflow error body for the exact token
- * counts. Returns null if the message isn't a context-overflow error.
- * Used to calibrate precisely and retry after a 400 slips through.
+ * Parse a context-overflow error body for the server's token counts. Returns
+ * null if the message isn't a context-overflow error. Used to calibrate
+ * precisely and retry after a 400 slips through.
+ *
+ * llama-server reports the exact prompt size. vLLM says "your prompt contains
+ * at least N input tokens" and stops counting at the limit, so N is only a
+ * lower bound there (`lowerBound`); older vLLM gives an exact "(N in the
+ * messages, …)".
  */
 export function parseContextOverflow(
 	message: string
-): { promptTokens: number; contextSize: number } | null {
-	if (!/exceed_context_size|exceeds the available context/.test(message)) return null;
-	const prompt =
-		/"n_prompt_tokens"\s*:\s*(\d+)/.exec(message) ?? /request \((\d+)\s+tokens\)/.exec(message);
-	const ctx =
-		/"n_ctx"\s*:\s*(\d+)/.exec(message) ?? /context size \((\d+)\s+tokens\)/.exec(message);
+): { promptTokens: number; contextSize: number; lowerBound: boolean } | null {
+	if (/exceed_context_size|exceeds the available context/.test(message)) {
+		const prompt =
+			/"n_prompt_tokens"\s*:\s*(\d+)/.exec(message) ?? /request \((\d+)\s+tokens\)/.exec(message);
+		const ctx =
+			/"n_ctx"\s*:\s*(\d+)/.exec(message) ?? /context size \((\d+)\s+tokens\)/.exec(message);
+		if (!prompt) return null;
+		return {
+			promptTokens: Number(prompt[1]),
+			contextSize: ctx ? Number(ctx[1]) : 0,
+			lowerBound: false
+		};
+	}
+	const vllmCtx = /maximum context length is (\d+) tokens/.exec(message);
+	if (!vllmCtx) return null;
+	const atLeast = /prompt contains at least (\d+) input tokens/.exec(message);
+	const prompt = atLeast ?? /\((\d+) in the messages/.exec(message);
 	if (!prompt) return null;
 	return {
 		promptTokens: Number(prompt[1]),
-		contextSize: ctx ? Number(ctx[1]) : 0
+		contextSize: Number(vllmCtx[1]),
+		lowerBound: atLeast !== null
 	};
 }
 

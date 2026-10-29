@@ -6,6 +6,7 @@ const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
 
 import { executeTool, getDisplayLabel } from '#lib/agent/tools/index.ts';
+import { resetShownOutput } from '#lib/agent/tools/shell-interactive.ts';
 
 const SID = 7;
 
@@ -69,6 +70,7 @@ function typed(): unknown[] {
 
 beforeEach(() => {
 	tauri.invoke.mockReset();
+	resetShownOutput();
 	vi.useFakeTimers();
 });
 
@@ -165,6 +167,67 @@ describe('shell_read', () => {
 		);
 		const out = await run('shell_read', {});
 		expect(JSON.parse(out.result).error).toBe('shell_read failed: no such session');
+	});
+
+	it("returns only a running program's new output on a second read", async () => {
+		tauri.invoke.mockImplementation(
+			invokeRouter({
+				shell_get_recent_commands: terminal(
+					region('root@OpenWrt:~# ls\nbackups\n', { commandLine: 'ssh router' }),
+					region('root@OpenWrt:~# ls\nbackups\nroot@OpenWrt:~# uptime\nup 5 days\n', {
+						commandLine: 'ssh router'
+					})
+				)
+			})
+		);
+		await run('shell_read', {});
+		const out = await run('shell_read', {});
+		expect(out.result).toBe(
+			'`ssh router` is still running. Output since you last saw it:\nroot@OpenWrt:~# uptime\nup 5 days'
+		);
+	});
+
+	it('says when nothing is new, and gives all of it with full: true', async () => {
+		tauri.invoke.mockImplementation(
+			invokeRouter({ shell_get_recent_commands: [region('>>> 1 + 1\n2\n')] })
+		);
+		await run('shell_read', {});
+		expect((await run('shell_read', {})).result).toBe(
+			'`python3` is still running. Output since you last saw it: (none — pass full: true to see all of it again).'
+		);
+		expect((await run('shell_read', { full: true })).result).toBe(
+			'`python3` is still running. Output so far:\n>>> 1 + 1\n2'
+		);
+	});
+
+	it('counts what shell_input returned as seen', async () => {
+		tauri.invoke.mockImplementation(
+			invokeRouter({
+				shell_get_recent_commands: terminal(
+					region('>>> '),
+					region('>>> 1 + 1\n2\n>>> '),
+					region('>>> 1 + 1\n2\n>>> ')
+				),
+				shell_write: null
+			})
+		);
+		await run('shell_input', { text: '1 + 1' });
+		const out = await run('shell_read', {});
+		expect(out.result).toMatch(/Output since you last saw it: \(none/);
+	});
+
+	it('shows a finished command in full, even when it matches the last read', async () => {
+		tauri.invoke.mockImplementation(
+			invokeRouter({
+				shell_get_recent_commands: terminal(
+					region('same\n', { pending: false, exitCode: 0 }),
+					region('same\n', { pending: false, exitCode: 0 })
+				)
+			})
+		);
+		await run('shell_read', {});
+		const out = await run('shell_read', {});
+		expect(out.result).toBe('Last command finished (exit 0). Output:\nsame');
 	});
 });
 

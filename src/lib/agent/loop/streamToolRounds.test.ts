@@ -222,6 +222,24 @@ describe('streamed tool rounds', () => {
 		expect(opts.onComplete).toHaveBeenCalledTimes(1);
 	});
 
+	it("retry once on vLLM's overflow 400 too", async () => {
+		const overflow = new api.ApiError(
+			'Server error: {"error":{"message":"This model\'s maximum context length is 32768 tokens. However, you requested 4096 output tokens and your prompt contains at least 28673 input tokens, for a total of at least 32769 tokens.","type":"BadRequestError","code":400}}',
+			400
+		);
+		api.chatCompletionStream.mockImplementationOnce(() => ({
+			[Symbol.asyncIterator]: () => ({ next: () => Promise.reject(overflow) })
+		}));
+		streams.push(answerRound('Fixed.'));
+		const opts = options({ contextSize: 32768 });
+
+		await runAgentLoop(opts);
+
+		expect(api.chatCompletionStream).toHaveBeenCalledTimes(2);
+		expect(opts.onError).not.toHaveBeenCalled();
+		expect(opts.onComplete).toHaveBeenCalledTimes(1);
+	});
+
 	it('refuse a call cut off by the output limit, as the non-streaming path does', async () => {
 		streams.push(
 			[
