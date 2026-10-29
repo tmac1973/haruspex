@@ -237,6 +237,7 @@
 	.search-provider select,
 	.search-provider input,
 	.search-field textarea {
+		box-sizing: border-box;
 		width: 100%;
 		padding: 8px 12px;
 		border: 1px solid var(--border);
