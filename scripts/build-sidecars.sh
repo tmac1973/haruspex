@@ -70,9 +70,9 @@ NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "${NUMBER_OF_
 # Bundle any Homebrew/local dylibs a macOS binary depends on, recursively,
 # and rewrite their install names to @rpath/... so the bundled app can find
 # them without the user having Homebrew installed. GitHub's macOS runners
-# ship with openssl@3 in Homebrew, which cmake happily auto-detects and links
-# llama-server against; without this, end users hit "Library not loaded" for
-# /opt/homebrew/opt/openssl@3/lib/libssl.3.dylib.
+# have a wide Homebrew install that cmake happily auto-detects; this is how
+# llama-server once shipped needing /opt/homebrew/opt/openssl@3, before it was
+# built with OpenSSL off.
 #
 # Every install_name_tool call invalidates the Mach-O's code signature, so
 # each modified file must be re-signed ad-hoc or the kernel kills the
@@ -183,6 +183,24 @@ require_gpu_backend() {
     fi
 }
 
+# Refuse to ship a sidecar that links OpenSSL. We don't bundle it and Windows
+# doesn't ship one, so llama-server failed to start there with libssl-3-x64.dll
+# missing (#771). Import names are plain strings in ELF, Mach-O and PE files
+# alike, so grep finds them without objdump or dumpbin.
+require_no_openssl() {
+    local what="$1" build_dir="$2"
+    local linked
+    linked=$(find "$build_dir" -type f \( -name "*.so*" -o -name "*.dylib" -o -name "*.dll" \
+        -o -name "*.exe" -o -name "llama-server" \) \
+        -exec grep -l -a -E 'lib(ssl|crypto)(-[0-9]|\.so|\.[0-9.]*dylib)' {} + 2>/dev/null || true)
+    if [ -n "$linked" ]; then
+        echo "ERROR: $what links OpenSSL, which we don't bundle:"
+        echo "$linked" | sed 's/^/       /'
+        echo "       Configure it with OpenSSL off (e.g. -DLLAMA_OPENSSL=OFF)."
+        exit 1
+    fi
+}
+
 echo "========================================"
 echo "  Building Haruspex Sidecars"
 echo "  Target: $TARGET"
@@ -244,13 +262,16 @@ else
     # GGML_NATIVE=OFF disables -march=native so the binary is portable across
     # CPUs — otherwise CI runners with AVX-512 produce binaries that SIGILL on
     # older (e.g. Zen 3) user hardware.
+    # LLAMA_OPENSSL=OFF: llama-server only needs TLS to download models itself
+    # (-hf, --model-url) or to serve HTTPS, and Haruspex does neither. Left on,
+    # cmake links whatever OpenSSL the runner has, which we then don't ship.
     echo "   Configuring with flags: $CMAKE_GPU_FLAGS"
-    if ! cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DGGML_NATIVE=OFF $CMAKE_GPU_FLAGS 2>&1; then
+    if ! cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF -DGGML_NATIVE=OFF $CMAKE_GPU_FLAGS 2>&1; then
         echo "   WARN: cmake configure failed with GPU flags ($CMAKE_GPU_FLAGS), retrying CPU-only..."
         rm -rf "$BUILD_DIR/llama"
         mkdir -p "$BUILD_DIR/llama"
         cd "$BUILD_DIR/llama"
-        cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DGGML_NATIVE=OFF 2>&1
+        cmake "$LLAMA_SRC" -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF -DGGML_NATIVE=OFF 2>&1
     fi
 
     echo "   Building..."
@@ -268,6 +289,7 @@ else
     # llama.cpp owns the ggml core + Vulkan backend the whole app runs on, so a
     # silent CPU fallback here is fatal: abort before bundling anything.
     require_gpu_backend "llama-server" "$BUILD_DIR/llama" "$CMAKE_GPU_FLAGS"
+    require_no_openssl "llama-server" "$BUILD_DIR/llama"
 
     # Drop previously-bundled llama-owned shared libs before copying the new
     # ones, so a version bump doesn't leave orphaned, soname-shadowed copies
@@ -542,35 +564,6 @@ case "$TARGET" in
             echo "   WARN: Could not find MSVC runtime DLLs to bundle"
         fi
 
-        # Bundle OpenSSL DLLs if any sidecar links against them.
-        # llama.cpp and some transitive deps may pull in libcurl → OpenSSL.
-        # These DLLs are typically found alongside the sidecar build output
-        # or in common Windows locations.
-        echo ">> Bundling OpenSSL DLLs (if needed)..."
-        for ssl_dll in libcrypto-3-x64.dll libssl-3-x64.dll; do
-            if [ -f "$BINARIES_DIR/libs/$ssl_dll" ]; then
-                continue
-            fi
-            # Search common locations: sidecar build output, system, Git, Strawberry Perl
-            SSL_SRC=""
-            for search_dir in \
-                "$BUILD_DIR/llama/bin/Release" \
-                "$BUILD_DIR/llama/bin" \
-                "C:/Program Files/OpenSSL-Win64" \
-                "C:/Program Files/OpenSSL-Win64/bin" \
-                "C:/Program Files/Git/mingw64/bin" \
-                "C:/Strawberry/c/bin" \
-                "C:/Windows/System32"; do
-                if [ -f "$search_dir/$ssl_dll" ]; then
-                    SSL_SRC="$search_dir/$ssl_dll"
-                    break
-                fi
-            done
-            if [ -n "$SSL_SRC" ]; then
-                cp "$SSL_SRC" "$BINARIES_DIR/libs/"
-                echo "   Copied: $ssl_dll (from $SSL_SRC)"
-            fi
-        done
         echo
         ;;
 esac
