@@ -509,6 +509,8 @@
 			{/if}
 			{#if streamingMessage}
 				<ChatMessage message={streamingMessage} isStreaming />
+			{:else if session.compacting}
+				<div class="queue-hint">Summarising earlier turns…</div>
 			{:else if submitting && (!ticket || ticket.state === 'running')}
 				<ThinkingIndicator />
 			{/if}

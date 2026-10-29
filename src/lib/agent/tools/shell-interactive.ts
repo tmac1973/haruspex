@@ -72,6 +72,31 @@ function sessionOrError(ctx: ToolContext, tool: string): number | { message: str
 	return ctx.shellSessionId;
 }
 
+/**
+ * Per terminal session: the running program's output as far as the model has
+ * already been shown it, by shell_read or shell_input. A read then returns
+ * only what came after. Inside a long `ssh` session the running program is
+ * the ssh, and its output is the whole remote session: returned in full on
+ * every read, a few dozen reads filled a 256K window in one turn.
+ */
+const shownOutput = new Map<number, string>();
+
+export function resetShownOutput(): void {
+	shownOutput.clear();
+}
+
+/** What `shell_read` reports of a running program's `output`: what's new, or all of it. */
+export function unseenOutput(
+	sessionId: number,
+	output: string,
+	full: boolean
+): { body: string; onlyNew: boolean } {
+	const shown = shownOutput.get(sessionId);
+	shownOutput.set(sessionId, output);
+	if (full || !shown || !output.startsWith(shown)) return { body: output, onlyNew: false };
+	return { body: output.slice(shown.length), onlyNew: true };
+}
+
 /** New output appended after `baseline` (what was on screen before we sent
  *  input). Falls back to the whole buffer if the output ring rotated past it. */
 function sliceAfter(cur: string, baseline: string): string {
@@ -93,14 +118,17 @@ async function settleNewOutput(
 		await sleep(SETTLE_POLL_MS);
 		const region = await lastRegion(sessionId);
 		const cur = region?.output ?? '';
-		if (!region?.pending) return { text: sliceAfter(cur, baseline), stillRunning: false };
-		if (cur === prev) {
-			if (++stable >= 2) return { text: sliceAfter(cur, baseline), stillRunning: true };
-		} else {
-			stable = 0;
+		if (!region?.pending) {
+			shownOutput.delete(sessionId);
+			return { text: sliceAfter(cur, baseline), stillRunning: false };
 		}
+		stable = cur === prev ? stable + 1 : 0;
 		prev = cur;
-		if (Date.now() >= deadline) return { text: sliceAfter(cur, baseline), stillRunning: true };
+		if (stable >= 2 || Date.now() >= deadline) {
+			// The model now has everything up to here.
+			shownOutput.set(sessionId, cur);
+			return { text: sliceAfter(cur, baseline), stillRunning: true };
+		}
 	}
 }
 
@@ -124,22 +152,40 @@ registerTool({
 		function: {
 			name: 'shell_read',
 			description:
-				"Read the current terminal output: the output so far of a program that's still running (a server's logs, an interactive program's screen), or the result of the last command. Use this to observe a long-running or interactive program without sending it any input.",
-			parameters: { type: 'object', properties: {} }
+				"Read the current terminal output: the output so far of a program that's still running (a server's logs, an interactive program's screen), or the result of the last command. Use this to observe a long-running or interactive program without sending it any input. For a running program it returns only the output you haven't been shown yet (by an earlier shell_read or shell_input); pass full: true for all of it.",
+			parameters: {
+				type: 'object',
+				properties: {
+					full: {
+						type: 'boolean',
+						description:
+							"Return the running program's whole output, not just what's new. Defaults to false."
+					}
+				}
+			}
 		}
 	},
 	displayLabel: () => 'read terminal',
-	async execute(_args, ctx): Promise<ToolExecOutput> {
+	async execute(args, ctx): Promise<ToolExecOutput> {
 		const sid = sessionOrError(ctx, 'shell_read');
 		if (typeof sid !== 'number') return toolResult(sid.message);
 		try {
 			const region = await lastRegion(sid);
 			if (!region) return toolResult('The terminal is idle at a prompt; nothing has run yet.');
-			const body = region.output.replace(/\s+$/, '');
-			const header = region.pending
-				? `\`${region.commandLine || 'A command'}\` is still running. Output so far:`
-				: `Last command finished (exit ${region.exitCode ?? 'unknown'}). Output:`;
+			if (!region.pending) shownOutput.delete(sid);
+			const seen = region.pending
+				? unseenOutput(sid, region.output, args.full === true)
+				: { body: region.output, onlyNew: false };
+			const body = seen.body.replace(/\s+$/, '');
+			const header = !region.pending
+				? `Last command finished (exit ${region.exitCode ?? 'unknown'}). Output:`
+				: seen.onlyNew
+					? `\`${region.commandLine || 'A command'}\` is still running. Output since you last saw it:`
+					: `\`${region.commandLine || 'A command'}\` is still running. Output so far:`;
 			if (!body) {
+				if (seen.onlyNew) {
+					return toolResult(`${header} (none — pass full: true to see all of it again).`);
+				}
 				return toolResult(
 					region.pending
 						? `${header} (no output yet — it may be waiting for input).`

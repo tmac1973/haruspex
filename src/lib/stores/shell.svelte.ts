@@ -42,6 +42,13 @@ import { getSettings } from '#lib/stores/settings.ts';
 import type { ShellSelection } from '#lib/ipc/gen/ShellSelection.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { remapIndexedRecords } from '#lib/agent/compaction.ts';
+import { compactCodeThread, compactionDue } from '#lib/code/compaction.ts';
+import type { CodeCompaction } from '#lib/code/session.ts';
+import {
+	SHELL_SUMMARY_PROMPT,
+	compactionAfterTrim,
+	shellModelThread
+} from '#lib/shell/compaction.ts';
 import { computeMessageStats, type MessageStats } from '#lib/stores/chat.svelte.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import {
@@ -212,6 +219,15 @@ export class ShellSession {
 	// model's context window. Cleared at the start of each turn.
 	contextNotice = $state<string | null>(null);
 	/**
+	 * The summary standing in for the thread's older turns
+	 * (`shell/compaction.ts`). The thread itself keeps every message.
+	 */
+	compaction = $state.raw<CodeCompaction | null>(null);
+	/** A summary is being written before the turn starts. */
+	compacting = $state(false);
+	/** What the server counted for this thread's last call, for deciding to compact. */
+	private lastUsage: { promptTokens: number; contextSize: number } | null = null;
+	/**
 	 * The repo's AGENTS.md as the last turn carried it, or as the next will
 	 * after a turn wrote it (`/init`).
 	 */
@@ -278,6 +294,9 @@ export class ShellSession {
 		if (!json) return;
 		try {
 			this.messages = JSON.parse(json) as ChatMessage[];
+			// The summary isn't handed over: the whole thread goes, and the next
+			// turn summarises again if it's due.
+			this.compaction = null;
 		} catch {
 			// Corrupt stash — start with an empty thread rather than crashing.
 		}
@@ -296,6 +315,8 @@ export class ShellSession {
 	 */
 	adoptChatThread = (messages: ChatMessage[]): void => {
 		this.messages = messages;
+		this.compaction = null;
+		this.lastUsage = null;
 		this.messageSteps = {};
 		this.messageStats = {};
 		this.messageStops = {};
@@ -465,6 +486,8 @@ export class ShellSession {
 	newChat = (): void => {
 		if (this.isSubmitting) return;
 		this.messages = [];
+		this.compaction = null;
+		this.lastUsage = null;
 		this.streamingContent = '';
 		this.searchSteps = [];
 		this.messageSteps = {};
@@ -808,6 +831,7 @@ export class ShellSession {
 			newMessages,
 			this.messageHistorySent
 		);
+		this.compaction = compactionAfterTrim(this.compaction, cutIdx);
 		this.messages = newMessages;
 	}
 
@@ -822,9 +846,12 @@ export class ShellSession {
 	 * beginning.`). Folding happens here, on the outgoing copy only, so the
 	 * sidebar still renders those notes as their own entries.
 	 */
-	private async buildTurnMessages(
-		payload: ShellSubmission
-	): Promise<{ messages: ChatMessage[]; skills: TurnSkills | undefined }> {
+	private async buildTurnMessages(payload: ShellSubmission): Promise<{
+		messages: ChatMessage[];
+		skills: TurnSkills | undefined;
+		/** The same prompt over the thread as it stands now (after a compaction). */
+		rebuild: () => ChatMessage[];
+	}> {
 		// Both modes take AGENTS.md from the repo the shell is in — "how do I run
 		// the tests?" is a troubleshooting question too — and the first turn in a
 		// repo with AGENTS.md or project skills asks to trust it. Project skills
@@ -851,8 +878,51 @@ export class ShellSession {
 			fullAccess: this.fullAccess
 		});
 		const notice = [unansweredNotice(this.messages), note].filter(Boolean).join('\n\n');
-		const thread = notice ? withNotice(this.messages, notice) : this.messages;
-		return { messages: mergeLeadingSystemMessages([systemPrompt, ...thread]), skills };
+		const rebuild = () => {
+			const view = shellModelThread(this.messages, this.compaction);
+			const thread = notice ? withNotice(view, notice) : view;
+			return mergeLeadingSystemMessages([systemPrompt, ...thread]);
+		};
+		return { messages: rebuild(), skills, rebuild };
+	}
+
+	/**
+	 * Summarise the older turns when `prompt`, about to go out, is near the
+	 * window's edge, and return it rebuilt over the summary. Null when it isn't
+	 * due, or nothing was summarised: the turn then goes ahead on the prompt it
+	 * has, and the per-request fit keeps that inside the window.
+	 */
+	private async compactIfDue(
+		prompt: ChatMessage[],
+		rebuild: () => ChatMessage[],
+		contextSize: number,
+		signal: AbortSignal
+	): Promise<ChatMessage[] | null> {
+		const descriptor = resolveBackendDescriptor();
+		const last = this.lastUsage?.contextSize === contextSize ? this.lastUsage.promptTokens : 0;
+		if (!compactionDue(prompt, contextSize, last, descriptor.calibrationKey)) return null;
+		this.compacting = true;
+		let next: CodeCompaction | null;
+		try {
+			next = await compactCodeThread({
+				messages: this.messages,
+				compaction: this.compaction,
+				backend: null,
+				contextSize,
+				signal,
+				prompt: SHELL_SUMMARY_PROMPT
+			});
+		} catch (e) {
+			if (signal.aborted) throw e;
+			logDebug('shell', 'compaction failed', { error: errMessage(e) });
+			return null;
+		} finally {
+			this.compacting = false;
+		}
+		if (!next) return null;
+		this.compaction = next;
+		this.contextNotice = 'Earlier turns were summarised to make room.';
+		return rebuild();
 	}
 
 	/**
@@ -892,12 +962,14 @@ export class ShellSession {
 			};
 		}
 
-		const { messages: turnMessages, skills } = await this.buildTurnMessages(payload);
+		const { messages: turnMessages, skills, rebuild } = await this.buildTurnMessages(payload);
 		// What the loop appends to `turnMessages`. Not a slice of it from its
 		// pre-turn length: the context fit drops old turns from its front.
 		const added: ChatMessage[] = [];
 
 		this.abortController = new AbortController();
+		const signal = this.abortController.signal;
+		const contextSize = resolveBackendDescriptor().contextSize;
 
 		// Tok/s timing: the agent loop emits per-call stats via onCallStats; the
 		// final answer is the last call, so keep overwriting and read it back
@@ -911,7 +983,9 @@ export class ShellSession {
 		try {
 			const result = await runShellTurn({
 				messages: turnMessages,
-				contextSize: resolveBackendDescriptor().contextSize,
+				contextSize,
+				compactIfDue: () => this.compactIfDue(turnMessages, rebuild, contextSize, signal),
+				onUsage: (usage) => (this.lastUsage = { promptTokens: usage.prompt_tokens, contextSize }),
 				visionSupported: true,
 				cwd: payload.currentCwd,
 				sessionId: this.boundSessionId,
@@ -936,7 +1010,7 @@ export class ShellSession {
 				// shell heredoc, which would leave the nudge nagging about a file
 				// that is already on disk.
 				maxResponseTokens: this.fullAccess ? getSettings().maxResponseTokensFileWrite : undefined,
-				signal: this.abortController.signal,
+				signal,
 				onTicket: (t) => (this.ticket = t),
 				onAdmitted: () => (this.ticket = null),
 				onRequeue: (t) => (this.ticket = t),

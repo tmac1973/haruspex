@@ -49,20 +49,23 @@ Tried and failed: approaches that did not work, and why.
 State: where the work stands and what is left to do.
 Keep paths, names, commands and error messages exact. File contents are not kept, so name the files that matter rather than describing what is in them. Output only the summary.`;
 
-/** What the model is sent: the summary note, then the messages after it. */
-export function modelThread(s: {
-	messages: ChatMessage[];
-	compaction?: CodeCompaction | null;
-}): ChatMessage[] {
+/**
+ * What the model is sent: the summary note, then the messages after it.
+ * `header` heads the summary (the Shell tab passes its own).
+ */
+export function modelThread(
+	s: {
+		messages: ChatMessage[];
+		compaction?: CodeCompaction | null;
+	},
+	header = SUMMARY_HEADER
+): ChatMessage[] {
 	const c = s.compaction;
 	if (!c) return s.messages;
 	// A system message, merged into the system prompt by
 	// `mergeLeadingSystemMessages`: it then sits in the prompt's fixed prefix,
 	// unchanged from turn to turn until the next compaction.
-	return [
-		{ role: 'system', content: `${SUMMARY_HEADER}\n\n${c.summary}` },
-		...s.messages.slice(c.at)
-	];
+	return [{ role: 'system', content: `${header}\n\n${c.summary}` }, ...s.messages.slice(c.at)];
 }
 
 /**
@@ -196,7 +199,7 @@ export function renderForSummary(messages: ChatMessage[]): string[] {
 
 /**
  * Roll a summary forward over `turns` (`summarizeInChunks`), with the prompt
- * written for coding.
+ * written for coding unless the caller passes its own.
  */
 export function summarizeTurns(opts: {
 	previous: string | null;
@@ -206,9 +209,10 @@ export function summarizeTurns(opts: {
 	signal?: AbortSignal;
 	/** What the user asked to keep (`/compact <text>`). */
 	instructions?: string;
+	prompt?: string;
 }): Promise<string> {
-	const { turns, ...rest } = opts;
-	return summarizeInChunks({ ...rest, prompt: SUMMARY_PROMPT, parts: turns });
+	const { turns, prompt = SUMMARY_PROMPT, ...rest } = opts;
+	return summarizeInChunks({ ...rest, prompt, parts: turns });
 }
 
 /**
@@ -222,6 +226,8 @@ export async function compactCodeThread(opts: {
 	contextSize: number;
 	signal?: AbortSignal;
 	instructions?: string;
+	/** The summary prompt, when not the coding one (the Shell tab's). */
+	prompt?: string;
 }): Promise<CodeCompaction | null> {
 	const from = opts.compaction?.at ?? 0;
 	const at = chooseCut(
@@ -237,7 +243,8 @@ export async function compactCodeThread(opts: {
 		backend: opts.backend,
 		contextSize: opts.contextSize,
 		signal: opts.signal,
-		instructions: opts.instructions
+		instructions: opts.instructions,
+		prompt: opts.prompt
 	});
 	return { at, summary, summarizedAt: Date.now() };
 }
