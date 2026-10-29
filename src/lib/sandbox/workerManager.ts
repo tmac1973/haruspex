@@ -9,7 +9,7 @@ import type {
 	WorkerToMain
 } from '#lib/sandbox/protocol.ts';
 import { decodeSyncBody } from '#lib/sandbox/syncBody.ts';
-import { getWorkingDir } from '#lib/stores/session.svelte.ts';
+import { getWorkingDir, getWorkingDirFor } from '#lib/stores/session.svelte.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
@@ -134,6 +134,8 @@ export interface WorkerManagerOptions {
 	 * set, otherwise we degrade to terminate-only.
 	 */
 	isIsolated?: () => boolean;
+	/** The chat whose folder the worker syncs. Omitted: the open chat's. */
+	chatId?: string;
 }
 
 export class WorkerManager {
@@ -145,6 +147,7 @@ export class WorkerManager {
 	private pendingGlobals = new Map<string, PendingGlobals>();
 	private interruptBuffer: SharedArrayBuffer | null = null;
 	private readonly isIsolated: () => boolean;
+	private readonly chatId: string | undefined;
 	/**
 	 * Maps working-directory-relative path → mtime (seconds since epoch)
 	 * for every file we've synced into this worker's MEMFS. Passed to the
@@ -160,6 +163,11 @@ export class WorkerManager {
 		opts: WorkerManagerOptions = {}
 	) {
 		this.isIsolated = opts.isIsolated ?? defaultIsolated;
+		this.chatId = opts.chatId;
+	}
+
+	private workdir(): string | null {
+		return this.chatId === undefined ? getWorkingDir() : getWorkingDirFor(this.chatId);
 	}
 
 	private spawn(): Worker {
@@ -252,7 +260,7 @@ export class WorkerManager {
 		if (this.worker) {
 			this.worker.postMessage({
 				kind: 'runtime_config',
-				workingDirSet: !!getWorkingDir()
+				workingDirSet: !!this.workdir()
 			});
 		}
 	}
@@ -434,13 +442,13 @@ export class WorkerManager {
 	private static readonly SYNC_PER_RUN_CAP_BYTES = 200 * 1024 * 1024;
 
 	/**
-	 * Mirror the active chat's working directory into the worker's MEMFS
+	 * Mirror the chat's working directory into the worker's MEMFS
 	 * so the model's `pd.read_csv('orders.csv')` / `open('x.txt').read()`
 	 * / etc. resolve against real bytes. Change-detection via mtime keeps
 	 * subsequent runs cheap. Returns when the worker has acked the writes.
 	 */
 	private async syncWorkdir(): Promise<void> {
-		const workdir = getWorkingDir();
+		const workdir = this.workdir();
 		if (!workdir) return;
 		const knownFiles = Array.from(this.syncedFiles.entries()).map(([path, mtime]) => ({
 			path,
@@ -642,7 +650,7 @@ export class WorkerManager {
 				return;
 			}
 			const result = await invoke<{ path: string; bytes: number }>('sandbox_save', {
-				workdir: getWorkingDir(),
+				workdir: this.workdir(),
 				relPath: msg.filename,
 				content: bytes
 			});
@@ -661,7 +669,7 @@ export class WorkerManager {
 			this.respondTo(msg, 'delete_response', resp);
 		try {
 			const result = await invoke<{ path: string }>('sandbox_delete_in_workdir', {
-				workdir: getWorkingDir(),
+				workdir: this.workdir(),
 				relPath: msg.filename
 			});
 			// The file no longer exists on host; drop our cached mtime

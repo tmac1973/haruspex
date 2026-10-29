@@ -5,7 +5,10 @@ import type { MainToWorker, ToolResult, WorkerToMain } from './protocol';
 // its WorkerManagers run. getWorkingDir → null keeps the pre-run sync a no-op.
 const invokeMock = vi.hoisted(() => vi.fn());
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
-vi.mock('#lib/stores/session.svelte.ts', () => ({ getWorkingDir: () => null }));
+vi.mock('#lib/stores/session.svelte.ts', () => ({
+	getWorkingDir: () => null,
+	getWorkingDirFor: () => null
+}));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		settings: { proxy: { mode: 'none' }, sandboxNetAccess: 'internet' }

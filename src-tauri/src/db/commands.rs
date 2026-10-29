@@ -106,6 +106,25 @@ pub async fn conversation_set_unread(
 }
 
 #[tauri::command]
+pub async fn conversation_set_working_dir(
+    state: tauri::State<'_, Database>,
+    id: String,
+    path: String,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.set_conversation_working_dir(&id, &path)).await
+}
+
+#[tauri::command]
+pub async fn conversation_adopt_working_dir(
+    state: tauri::State<'_, Database>,
+    path: String,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.adopt_conversation_working_dir(&path)).await
+}
+
+#[tauri::command]
 pub async fn db_delete_conversation(
     state: tauri::State<'_, Database>,
     tasks: tauri::State<'_, crate::tasks::BackgroundTasks>,

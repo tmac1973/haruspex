@@ -4,4 +4,9 @@ export type ConversationSummary = { id: string, title: string, created_at: numbe
 /**
  * A turn finished here that the user hasn't opened the chat to see.
  */
-unread: boolean, };
+unread: boolean, 
+/**
+ * The chat's working folder; `""` for none, null for a chat saved
+ * before each had its own.
+ */
+working_dir: string | null, };

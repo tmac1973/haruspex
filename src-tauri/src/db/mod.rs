@@ -35,6 +35,9 @@ pub struct ConversationSummary {
     pub updated_at: i64,
     /// A turn finished here that the user hasn't opened the chat to see.
     pub unread: bool,
+    /// The chat's working folder; `""` for none, null for a chat saved
+    /// before each had its own.
+    pub working_dir: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, ts_rs::TS)]
@@ -845,6 +848,9 @@ impl Database {
             // A chat that finished a turn while another was open. Kept so a
             // notice turn that ran overnight still shows on the next launch.
             "ALTER TABLE conversations ADD COLUMN unread INTEGER NOT NULL DEFAULT 0",
+            // Each chat's working folder ('' for none). NULL until the
+            // frontend hands every older chat the folder they all shared.
+            "ALTER TABLE conversations ADD COLUMN working_dir TEXT",
         ] {
             if let Err(e) = conn.execute(stmt, []) {
                 let msg = e.to_string();

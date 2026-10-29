@@ -57,11 +57,16 @@ import {
 	getActiveConversationId,
 	setActiveConversationId,
 	getWorkingDir,
-	setWorkingDirState
+	getWorkingDirFor,
+	getDefaultWorkingDir,
+	setDefaultWorkingDirState,
+	setWorkingDirState,
+	forgetWorkingDir,
+	clearWorkingDirs
 } from '#lib/stores/session.svelte.ts';
 // Re-export the read accessors so existing importers of the chat store keep
 // working; the backing state now lives in the session leaf store.
-export { getActiveConversationId, getWorkingDir };
+export { getActiveConversationId, getWorkingDir, getWorkingDirFor };
 import {
 	approveChatSandbox,
 	forgetChatSandboxApproval
@@ -103,6 +108,8 @@ import {
 	dbGetConversationMemoryEnabled,
 	dbSetConversationMemoryEnabled,
 	dbSetUnread,
+	dbSetWorkingDir,
+	dbAdoptWorkingDir,
 	type DbConversationSummary
 } from '#lib/stores/db.ts';
 import { setSandboxRunControls } from '#lib/sandbox/runControls.ts';
@@ -225,6 +232,8 @@ export function computeMessageStats(
 	};
 }
 
+// The folder a new chat starts in. Before each chat had its own, the one
+// folder every chat used.
 const WORKING_DIR_KEY = 'haruspex-working-dir';
 
 function loadWorkingDir(): string | null {
@@ -255,10 +264,10 @@ function saveWorkingDir(path: string | null): void {
 }
 
 let conversations = $state<Conversation[]>([]);
-// activeConversationId + workingDir live in the session leaf store (see the
-// import at the top of this file) so the sandbox/worker layer can read them
-// without importing this module and forming a cycle.
-setWorkingDirState(loadWorkingDir());
+// activeConversationId + the working dirs live in the session leaf store (see
+// the import at the top of this file) so the sandbox/worker layer can read
+// them without importing this module and forming a cycle.
+setDefaultWorkingDirState(loadWorkingDir());
 // Each conversation's turn state, made the first time it sends. A
 // conversation with none is idle.
 const runs = new SvelteMap<string, ChatRun>();
@@ -311,6 +320,13 @@ function generateTitle(content: string): string {
 
 export async function initChatStore(): Promise<void> {
 	const db = await initDb();
+
+	// A chat saved before each had its own folder keeps the one they shared.
+	const shared = getDefaultWorkingDir();
+	for (const s of db.summaries) {
+		setWorkingDirState(s.id, s.working_dir === null ? shared : s.working_dir || null);
+	}
+	if (db.summaries.some((s) => s.working_dir === null)) void dbAdoptWorkingDir(shared);
 
 	conversations = db.summaries.map((s: DbConversationSummary) => ({
 		id: s.id,
@@ -457,6 +473,9 @@ export function isActiveConversationRemote(): boolean {
  */
 export function noteExternalConversation(id: string, title: string): void {
 	if (conversations.some((c) => c.id === id)) return;
+	// A guest never gets the host's files.
+	setWorkingDirState(id, null);
+	void dbSetWorkingDir(id, null);
 	const now = Date.now();
 	conversations = [
 		{
@@ -493,19 +512,23 @@ export function getActiveConversation(): Conversation | undefined {
 	return conversations.find((c) => c.id === getActiveConversationId());
 }
 
-export function setWorkingDir(path: string | null): void {
-	const previous = getWorkingDir();
-	setWorkingDirState(path);
+/**
+ * Set a conversation's folder (the open one's by default). It is also the
+ * folder the next new chat starts in.
+ */
+export function setWorkingDir(path: string | null, id = getActiveConversationId()): void {
+	setDefaultWorkingDirState(path);
 	saveWorkingDir(path);
+	if (!id) return;
+	const previous = getWorkingDirFor(id);
+	setWorkingDirState(id, path);
+	void dbSetWorkingDir(id, path);
 	// Switching to a different workdir means the worker's MEMFS + the
 	// manager's syncedFiles cache are pinned to the OLD workdir's
 	// absolute paths. Leaving them in place leaks ghost files and means
 	// Python's cwd doesn't follow the change. Respawning forces the next
 	// run_python to do a fresh sync against the new workdir.
-	const active = getActiveConversationId();
-	if (previous !== path && active) {
-		void resetSandbox(active);
-	}
+	if (previous !== path) void resetSandbox(id);
 }
 
 // The getters below report the open conversation's run.
@@ -769,9 +792,13 @@ export function createConversation(): string {
 		sessionRestoreSkipped: false,
 		unread: false
 	});
+	const folder = getDefaultWorkingDir();
+	setWorkingDirState(id, folder);
 	setActiveConversationId(id);
 	resetContextUsage();
-	void dbCreateConversation(id, 'New chat');
+	// Stored even when empty: a row without one would take the shared folder
+	// at the next launch.
+	void dbCreateConversation(id, 'New chat').then(() => dbSetWorkingDir(id, folder));
 	return id;
 }
 
@@ -965,6 +992,7 @@ export async function deleteConversation(id: string): Promise<void> {
 		restoreContextUsageFor(getActiveConversationId());
 	}
 	forgetChatSandboxApproval(id);
+	forgetWorkingDir(id);
 	await dbDeleteConversation(id);
 	// The delete cascades the conversation_images links away but cannot free
 	// the bytes — that is the sweep's job, and running it now rather than at
@@ -985,6 +1013,7 @@ export async function clearAllConversations(): Promise<void> {
 	runs.clear();
 	conversations = [];
 	setActiveConversationId(null);
+	clearWorkingDirs();
 	await dbClearAll();
 }
 
@@ -1614,7 +1643,7 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 	const turnStats: TurnStats = { lastCallStats: null, startedAt: Date.now() };
 
 	try {
-		const currentWorkingDir = getWorkingDir();
+		const currentWorkingDir = getWorkingDirFor(conversation.id);
 		const content = lastUserText(conversation);
 		const expectsFileOutput = !!currentWorkingDir && looksLikeFileOutputRequest(content);
 

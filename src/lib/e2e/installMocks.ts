@@ -93,6 +93,8 @@ const TABLE: Record<string, Handler> = {
 	// Chat: persistence is write-only here, and the queue admits at once.
 	db_create_conversation: none,
 	db_rename_conversation: none,
+	conversation_set_working_dir: none,
+	conversation_adopt_working_dir: none,
 	db_save_message: () => ++messageId,
 	inference_queue_snapshot: empty,
 	inference_acquire: (a) => ({

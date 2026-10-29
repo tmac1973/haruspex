@@ -44,7 +44,7 @@ export const fake = $state({
 	retried: [] as string[],
 	opened: [] as string[],
 	viewed: [] as string[],
-	workingDir: null as string | null
+	folders: {} as Record<string, string | null>
 });
 
 /** Set part of a chat's turn. */
@@ -83,7 +83,7 @@ export function reset(): void {
 	fake.retried = [];
 	fake.opened = [];
 	fake.viewed = [];
-	fake.workingDir = null;
+	fake.folders = { a: '/home/me/notes' };
 }
 
 /** The open conversation, as the store's own proxy. */
@@ -151,8 +151,8 @@ export const chatStore = {
 		const c = fake.conversations.find((x) => x.id === id);
 		if (c) c.memoryEnabled = enabled;
 	},
-	setWorkingDir: (path: string | null) => {
-		fake.workingDir = path;
+	setWorkingDir: (path: string | null, id: string | null) => {
+		if (id) fake.folders[id] = path;
 	},
 	cancelGeneration: (id: string) => {
 		fake.cancelled.push(id);
@@ -169,5 +169,5 @@ export const chatStore = {
 
 export const sessionStore = {
 	getActiveConversationId: () => fake.active,
-	getWorkingDir: () => '/home/me/notes'
+	getWorkingDirFor: (id: string) => fake.folders[id] ?? null
 };

@@ -30,13 +30,13 @@ vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
 import { openShellFromChat } from './fromChat';
 import { getShellSessions, closeShellSession, getActiveShellId } from '#lib/stores/shell.svelte.ts';
 import { getActiveTab, setActiveTab } from '#lib/stores/activeTab.svelte.ts';
-import { setWorkingDirState } from '#lib/stores/session.svelte.ts';
+import { setDefaultWorkingDirState } from '#lib/stores/session.svelte.ts';
 import type { ChatMessage } from '#lib/api.ts';
 
 beforeEach(() => {
 	for (const s of [...getShellSessions()]) closeShellSession(s.id);
 	setActiveTab('chat');
-	setWorkingDirState(null);
+	setDefaultWorkingDirState(null);
 });
 
 const thread: ChatMessage[] = [
@@ -68,7 +68,7 @@ describe('openShellFromChat', () => {
 	});
 
 	it("starts the shell in the chat's working directory", () => {
-		setWorkingDirState('/home/tim/Projects/haruspex');
+		setDefaultWorkingDirState('/home/tim/Projects/haruspex');
 		const session = openShellFromChat({ title: 'x', messages: thread });
 		expect(session.initialCwd).toBe('/home/tim/Projects/haruspex');
 	});
@@ -78,7 +78,7 @@ describe('openShellFromChat', () => {
 	});
 
 	it('lets the caller override the working directory', () => {
-		setWorkingDirState('/from/store');
+		setDefaultWorkingDirState('/from/store');
 		const session = openShellFromChat({ title: 'x', messages: thread, workingDir: '/explicit' });
 		expect(session.initialCwd).toBe('/explicit');
 	});

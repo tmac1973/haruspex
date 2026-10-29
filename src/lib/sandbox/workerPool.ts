@@ -46,7 +46,7 @@ export class WorkerPool {
 	private ensureFor(chatId: string): WorkerManager {
 		let entry = this.mgrs.get(chatId);
 		if (!entry) {
-			const mgr = this.factory ? new WorkerManager(this.factory) : new WorkerManager();
+			const mgr = new WorkerManager(this.factory, { chatId });
 			entry = { mgr, chatId };
 			this.mgrs.set(chatId, entry);
 			logDebug('sandbox', 'worker pool: spawned for chat', {

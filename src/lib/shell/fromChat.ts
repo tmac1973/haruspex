@@ -19,7 +19,7 @@ export interface ChatHandoffSource {
 	title?: string;
 	messages: ChatMessage[];
 	/**
-	 * Where the shell should start. Defaults to the Chat tab's working
+	 * Where the shell should start. Defaults to the open chat's working
 	 * directory — the commands a chat answer suggests are usually relative to
 	 * it, so landing at $HOME would make the first one fail. Read from the leaf
 	 * session store rather than the chat store to keep this off the chat
