@@ -12,6 +12,7 @@ import { formatTodayLong } from '#lib/utils/format.ts';
 import { GUIDE_PROMPT } from '#lib/guide/prompt.ts';
 import { feedbackPromptSection } from '#lib/harnessFeedback/prompt.ts';
 import { registeredMcpServerLabels } from '#lib/agent/tools/mcp.ts';
+import { typedText } from '#lib/skills/content.ts';
 
 const REVIEW_PATTERNS =
 	/\b(best|top\s+\d|recommend|review|comparison|compare|vs\.?|versus|worth|which\s+(?:one|should)|budget|premium|upgrade)\b/i;
@@ -193,9 +194,15 @@ export function injectMessageHints(
 	if (lastMsg?.role !== 'user') return messages;
 
 	const hints: string[] = [];
-	const lastText = messageText(lastMsg.content);
+	// Only what the user typed: a `/name` run carries the skill's instructions
+	// ahead of it, and their wording ("records", "best match") is not a request.
+	const fullText = messageText(lastMsg.content);
+	const lastText = typedText(fullText);
+	// The skill's own steps say how much to research, so the research hints
+	// below stay out of a skill run.
+	const runsSkill = lastText !== fullText;
 
-	if (looksLikeReviewQuery(lastText)) {
+	if (!runsSkill && looksLikeReviewQuery(lastText)) {
 		hints.push('Include Reddit as a source.');
 	}
 
@@ -214,7 +221,7 @@ export function injectMessageHints(
 		);
 	}
 
-	if (opts.exhaustiveResearch) {
+	if (opts.exhaustiveResearch && !runsSkill) {
 		hints.push(
 			'Research this thoroughly. Perform multiple searches from different angles. ' +
 				'Read at least 4-6 sources before answering. Include diverse viewpoints. ' +

@@ -30,7 +30,8 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	]
 }));
 
-import { buildSystemPrompt } from './systemPrompt';
+import { buildSystemPrompt, injectMessageHints } from './systemPrompt';
+import { renderSlashMessage } from '#lib/skills/content.ts';
 import { registerMcpTools, unregisterMcpServer } from '#lib/agent/tools/mcp.ts';
 import { getToolSchemas } from '#lib/agent/tools/registry.ts';
 import type { McpToolDescriptor } from '#lib/ipc/gen/McpToolDescriptor.ts';
@@ -245,5 +246,36 @@ describe('buildSystemPrompt — model feedback on tools', () => {
 		expect(text()).not.toContain('haruspex_feedback');
 		settingsMock.agentFeedbackEnabled = false;
 		expect(text({ feedback: true })).not.toContain('haruspex_feedback');
+	});
+});
+
+describe('injectMessageHints', () => {
+	const hinted = (content: string, exhaustiveResearch = false): string =>
+		String(
+			injectMessageHints([{ role: 'user', content }], { workingDir: null, exhaustiveResearch }).at(
+				-1
+			)?.content
+		);
+	const weather = renderSlashMessage(
+		{
+			name: 'weather',
+			body: 'Note the warmest day and any records. Takes the best geocoder match.',
+			dir: null,
+			compatibility: null,
+			files: [],
+			filesTruncated: false,
+			needs: []
+		},
+		'/weather Chicago'
+	);
+
+	it('asks for Reddit on a review question, and for depth with deep research on', () => {
+		expect(hinted('best budget headphones?')).toContain('Include Reddit as a source.');
+		expect(hinted('tell me about monkeys', true)).toContain('Research this thoroughly.');
+	});
+
+	it('leaves a skill run alone, whatever words the skill uses', () => {
+		expect(hinted(weather)).toBe(weather);
+		expect(hinted(weather, true)).toBe(weather);
 	});
 });
