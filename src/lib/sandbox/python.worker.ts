@@ -524,14 +524,39 @@ def _haruspex_install_matplotlib_hook():
     _mpl.use('agg')
     import matplotlib.pyplot as _plt
     def _show(*args, **kwargs):
-        for _num in _plt.get_fignums():
-            _fig = _plt.figure(_num)
-            _buf = _io.BytesIO()
-            _fig.savefig(_buf, format='png', bbox_inches='tight', dpi=100)
-            _haruspex_emit_image('image/png', _buf.getvalue())
-        _plt.close('all')
+        _haruspex_flush_figures()
     _plt.show = _show
     _mpl._haruspex_patched = True
+
+def _haruspex_emit_figure(fig):
+    _buf = _io.BytesIO()
+    fig.savefig(_buf, format='png', bbox_inches='tight', dpi=100)
+    _haruspex_emit_image('image/png', _buf.getvalue())
+
+def _haruspex_flush_figures():
+    """Emit every open matplotlib figure and close them, as plt.show() does.
+    Also runs at the end of each run, as a notebook does, so a figure the
+    code drew but never showed (only savefig'd, or left open) still reaches
+    the chat. Does nothing unless the code imported pyplot."""
+    _plt = _sys.modules.get('matplotlib.pyplot')
+    if _plt is None:
+        return
+    for _num in _plt.get_fignums():
+        _haruspex_emit_figure(_plt.figure(_num))
+    _plt.close('all')
+
+def _haruspex_matplotlib_figure(value):
+    """The matplotlib Figure behind a last expression that is a Figure or
+    an Axes, else None. Only when pyplot is already imported."""
+    if 'matplotlib.figure' not in _sys.modules:
+        return None
+    from matplotlib.figure import Figure as _Figure
+    from matplotlib.axes import Axes as _Axes
+    if isinstance(value, _Figure):
+        return value
+    if isinstance(value, _Axes):
+        return value.figure
+    return None
 
 def _haruspex_install_plotly_hook():
     """Hook plotly.Figure.show() to emit the figure as an interactive
@@ -628,6 +653,15 @@ def _haruspex_postprocess(value):
     """
     if value is None:
         return ''
+    try:
+        _fig = _haruspex_matplotlib_figure(value)
+        if _fig is not None:
+            _haruspex_emit_figure(_fig)
+            import matplotlib.pyplot as _plt
+            _plt.close(_fig)
+            return '(figure rendered in chat)'
+    except Exception:
+        pass
     try:
         import pandas as _pd
         if isinstance(value, _pd.DataFrame):
@@ -1521,8 +1555,16 @@ async function handleRun(id: string, code: string): Promise<void> {
 				}
 			}
 		}
+		// Figures drawn but never shown reach the chat too, as in a notebook.
+		try {
+			await pyodide.runPythonAsync('_haruspex_flush_figures()');
+		} catch (flushErr) {
+			result.stderr += '\n[haruspex] showing figures failed: ' + errMessage(flushErr) + '\n';
+		}
 		post({ kind: 'done', id, result });
 	} catch (err) {
+		// What a failed run drew still shows, and doesn't turn up in the next run.
+		await pyodide?.runPythonAsync('_haruspex_flush_figures()').catch(() => {});
 		postRunError(id, t0, err);
 	} finally {
 		currentRunId = '';

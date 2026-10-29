@@ -912,10 +912,8 @@ registerTool({
 	execute: spreadsheetWriteExecutor(IPC.fs_write_ods)
 });
 
-// Legacy hand-rolled OOXML PPTX path. Same arrangement as fs_write_pdf:
-// filtered out when the Python sandbox is on (model uses python-pptx via
-// run_python instead, which can embed matplotlib charts), available as
-// the only PPTX path when sandbox is off.
+// Hand-rolled OOXML PPTX writer. Offered whether or not the Python sandbox
+// is on; the system prompt steers the model here rather than to python-pptx.
 registerTool({
 	category: 'fs',
 	schema: {
