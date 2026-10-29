@@ -1,7 +1,10 @@
+use crate::audio_cache::MAX_AUDIO_BYTES;
+use crate::db::Database;
 use crate::sidecar_process::SidecarChild;
 use futures_util::StreamExt;
 use log::{error, info, warn};
-use std::path::PathBuf;
+use serde::Serialize;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -198,10 +201,8 @@ impl TtsEngine {
 
     /// Speak `text`, starting as soon as koko has the first sentence.
     ///
-    /// koko streams raw PCM one sentence at a time, far faster than it
-    /// plays, so the audio is queued on the player while the rest arrives.
-    /// Returns once the stream ends; playback carries on until `is_playing`
-    /// turns false.
+    /// The audio is queued on the player while the rest arrives. Returns once
+    /// the stream ends; playback carries on until `is_playing` turns false.
     pub async fn synthesize_and_play(
         &self,
         text: &str,
@@ -209,40 +210,6 @@ impl TtsEngine {
         output_device: Option<&str>,
     ) -> Result<(), String> {
         require_ready(&self.status, "TTS server not ready").await?;
-
-        if text.trim().is_empty() {
-            return Err("No text to speak".to_string());
-        }
-
-        info!("TTS request: {} chars, voice='{}'", text.len(), voice);
-
-        // No total timeout: a long answer streams for longer than any fixed
-        // limit. A stalled koko is caught between chunks instead.
-        let client = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(10))
-            .read_timeout(Duration::from_secs(60))
-            .build()
-            .map_err(|e| format!("TTS client: {}", e))?;
-
-        let body = serde_json::json!({
-            "model": "tts-1",
-            "input": text,
-            "voice": voice,
-            "response_format": "pcm",
-            "stream": true
-        });
-
-        let resp = client
-            .post(format!("{}/v1/audio/speech", base_url(TTS_PORT)))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| format!("TTS request failed: {}", e))?;
-
-        if !resp.status().is_success() {
-            let err_text = resp.text().await.unwrap_or_default();
-            return Err(format!("TTS failed: {}", err_text));
-        }
 
         self.stop_flag.store(false, Ordering::SeqCst);
         self.playing.store(true, Ordering::SeqCst);
@@ -254,41 +221,55 @@ impl TtsEngine {
         // A dedicated thread, because OutputStream is not Send on macOS.
         std::thread::spawn(move || play_queued(rx, &device_name, &playing, &stop_flag));
 
-        let mut stream = resp.bytes_stream();
-        let mut pcm = PcmDecoder::default();
-        let mut samples = 0usize;
-        let started = std::time::Instant::now();
-        while let Some(chunk) = StreamExt::next(&mut stream).await {
-            if self.stop_flag.load(Ordering::SeqCst) {
-                break;
+        // A send fails once the player has gone (stopped, or no device).
+        let streamed = stream_speech(text, voice, 1.0, |samples| {
+            !self.stop_flag.load(Ordering::SeqCst) && tx.send(samples).is_ok()
+        })
+        .await;
+        drop(tx);
+        match streamed {
+            Ok(0) if !self.stop_flag.load(Ordering::SeqCst) => {
+                Err("TTS produced no audio".to_string())
             }
-            let chunk = match chunk {
-                Ok(c) => c,
-                Err(e) => {
-                    self.stop_playback();
-                    return Err(format!("Failed to read TTS response: {}", e));
-                }
-            };
-            let decoded = pcm.push(&chunk);
-            if samples == 0 && !decoded.is_empty() {
-                info!("TTS first audio after {} ms", started.elapsed().as_millis());
-            }
-            samples += decoded.len();
-            // A send fails once the player has gone (stopped, or no device).
-            if !decoded.is_empty() && tx.send(decoded).is_err() {
-                break;
+            Ok(_) => Ok(()),
+            Err(e) => {
+                self.stop_playback();
+                Err(e)
             }
         }
+    }
 
-        info!(
-            "TTS streamed {} samples ({:.1}s)",
-            samples,
-            samples as f32 / SAMPLE_RATE.get() as f32
-        );
-        if samples == 0 && !self.stop_flag.load(Ordering::SeqCst) {
-            return Err("TTS produced no audio".to_string());
+    /// Write koko's speech for `text` to a WAV at `path`, as it streams in.
+    /// Returns its length in seconds.
+    pub async fn synthesize_to_file(
+        &self,
+        text: &str,
+        voice: &str,
+        speed: f32,
+        path: &Path,
+    ) -> Result<f64, String> {
+        require_ready(&self.status, "TTS server not ready").await?;
+        let mut wav = WavWriter::create(path, MAX_AUDIO_BYTES)?;
+        let mut failed = None;
+        let streamed = stream_speech(text, voice, speed, |samples| match wav.write(&samples) {
+            Ok(()) => true,
+            Err(e) => {
+                failed = Some(e);
+                false
+            }
+        })
+        .await;
+        let result = match (streamed, failed) {
+            (Err(e), _) | (_, Some(e)) => Err(e),
+            (Ok(0), None) => Err("TTS produced no audio".to_string()),
+            (Ok(samples), None) => wav
+                .finish()
+                .map(|()| samples as f64 / SAMPLE_RATE.get() as f64),
+        };
+        if result.is_err() {
+            let _ = std::fs::remove_file(path);
         }
-        Ok(())
+        result
     }
 
     pub fn stop_playback(&self) {
@@ -326,6 +307,159 @@ impl PcmDecoder {
             .iter()
             .map(|pair| i16::from_le_bytes(*pair) as f32 / 32768.0)
             .collect()
+    }
+}
+
+/// Ask koko to speak `text` and hand each piece of audio to `on_samples` as
+/// it arrives. koko streams raw PCM one sentence at a time, far faster than
+/// it plays. `on_samples` returns false to stop early. Returns how many
+/// samples came.
+async fn stream_speech(
+    text: &str,
+    voice: &str,
+    speed: f32,
+    mut on_samples: impl FnMut(Vec<f32>) -> bool,
+) -> Result<usize, String> {
+    if text.trim().is_empty() {
+        return Err("No text to speak".to_string());
+    }
+    info!(
+        "TTS request: {} chars, voice='{}', speed {}",
+        text.len(),
+        voice,
+        speed
+    );
+
+    // No total timeout: a long text streams for longer than any fixed limit.
+    // A stalled koko is caught between chunks instead.
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .read_timeout(Duration::from_secs(60))
+        .build()
+        .map_err(|e| format!("TTS client: {}", e))?;
+
+    let body = serde_json::json!({
+        "model": "tts-1",
+        "input": text,
+        "voice": voice,
+        "speed": speed,
+        "response_format": "pcm",
+        "stream": true
+    });
+
+    let resp = client
+        .post(format!("{}/v1/audio/speech", base_url(TTS_PORT)))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("TTS request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        let err_text = resp.text().await.unwrap_or_default();
+        return Err(format!("TTS failed: {}", err_text));
+    }
+
+    let mut stream = resp.bytes_stream();
+    let mut pcm = PcmDecoder::default();
+    let mut samples = 0usize;
+    let started = std::time::Instant::now();
+    while let Some(chunk) = StreamExt::next(&mut stream).await {
+        let chunk = chunk.map_err(|e| format!("Failed to read TTS response: {}", e))?;
+        let decoded = pcm.push(&chunk);
+        if decoded.is_empty() {
+            continue;
+        }
+        if samples == 0 {
+            info!("TTS first audio after {} ms", started.elapsed().as_millis());
+        }
+        samples += decoded.len();
+        if !on_samples(decoded) {
+            break;
+        }
+    }
+
+    info!(
+        "TTS streamed {} samples ({:.1}s)",
+        samples,
+        samples as f32 / SAMPLE_RATE.get() as f32
+    );
+    Ok(samples)
+}
+
+/// A 16-bit mono WAV written as samples arrive. The header's sizes are
+/// filled in by `finish`.
+struct WavWriter {
+    file: std::io::BufWriter<std::fs::File>,
+    data_bytes: u64,
+    max_bytes: u64,
+}
+
+const WAV_HEADER_BYTES: u64 = 44;
+
+impl WavWriter {
+    fn create(path: &Path, max_bytes: u64) -> Result<Self, String> {
+        let file =
+            std::fs::File::create(path).map_err(|e| format!("Failed to write audio: {}", e))?;
+        let mut w = Self {
+            file: std::io::BufWriter::new(file),
+            data_bytes: 0,
+            max_bytes,
+        };
+        w.header()?;
+        Ok(w)
+    }
+
+    fn header(&mut self) -> Result<(), String> {
+        use std::io::Write;
+        let rate = SAMPLE_RATE.get();
+        let data = u32::try_from(self.data_bytes).unwrap_or(u32::MAX);
+        let mut h = Vec::with_capacity(WAV_HEADER_BYTES as usize);
+        h.extend(b"RIFF");
+        h.extend((36 + data).to_le_bytes());
+        h.extend(b"WAVEfmt ");
+        h.extend(16u32.to_le_bytes()); // fmt chunk size
+        h.extend(1u16.to_le_bytes()); // PCM
+        h.extend(1u16.to_le_bytes()); // mono
+        h.extend(rate.to_le_bytes());
+        h.extend((rate * 2).to_le_bytes()); // bytes per second
+        h.extend(2u16.to_le_bytes()); // bytes per frame
+        h.extend(16u16.to_le_bytes()); // bits per sample
+        h.extend(b"data");
+        h.extend(data.to_le_bytes());
+        self.file
+            .write_all(&h)
+            .map_err(|e| format!("Failed to write audio: {}", e))
+    }
+
+    fn write(&mut self, samples: &[f32]) -> Result<(), String> {
+        use std::io::Write;
+        let add = samples.len() as u64 * 2;
+        if WAV_HEADER_BYTES + self.data_bytes + add > self.max_bytes {
+            return Err(format!(
+                "The speech is over the {} MB cache limit: make it shorter.",
+                self.max_bytes / (1024 * 1024)
+            ));
+        }
+        let bytes: Vec<u8> = samples
+            .iter()
+            .flat_map(|s| ((s.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes())
+            .collect();
+        self.file
+            .write_all(&bytes)
+            .map_err(|e| format!("Failed to write audio: {}", e))?;
+        self.data_bytes += add;
+        Ok(())
+    }
+
+    fn finish(mut self) -> Result<(), String> {
+        use std::io::{Seek, SeekFrom, Write};
+        self.file
+            .seek(SeekFrom::Start(0))
+            .map_err(|e| format!("Failed to write audio: {}", e))?;
+        self.header()?;
+        self.file
+            .flush()
+            .map_err(|e| format!("Failed to write audio: {}", e))
     }
 }
 
@@ -420,6 +554,61 @@ pub async fn tts_synthesize_and_play(
         .await
 }
 
+/// Speech made into the audio cache, for the player and `generate_speech`.
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct StoredSpeech {
+    pub hash: String,
+    pub mime: String,
+    #[ts(type = "number")]
+    pub bytes: u64,
+    pub seconds: f64,
+}
+
+/// The slowest and fastest `speed` koko is asked for.
+const SPEED_RANGE: (f32, f32) = (0.5, 2.0);
+
+/// Speak `text` into a WAV in the audio cache, linked to the chat or Code
+/// session that asked. Starts koko if it isn't running.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn tts_synthesize_to_cache(
+    app: AppHandle,
+    state: tauri::State<'_, TtsEngine>,
+    db: tauri::State<'_, Database>,
+    text: String,
+    voice: String,
+    speed: Option<f32>,
+    title: Option<String>,
+    conversation_id: Option<String>,
+    code_session_id: Option<String>,
+) -> Result<StoredSpeech, String> {
+    state.start_and_wait(&app).await?;
+    let dir = crate::audio_cache::cache_dir(&app)?;
+    let temp = dir.join(crate::audio_cache::commands::temp_name());
+    let speed = speed.unwrap_or(1.0).clamp(SPEED_RANGE.0, SPEED_RANGE.1);
+    let seconds = state
+        .synthesize_to_file(&text, &voice, speed, &temp)
+        .await?;
+    let stored = crate::audio_cache::commands::store_file(
+        &db,
+        &dir,
+        &temp,
+        "audio/wav",
+        title,
+        Some((seconds * 1000.0).round() as i64),
+        conversation_id.as_deref(),
+        code_session_id.as_deref(),
+    )
+    .await?;
+    Ok(StoredSpeech {
+        hash: stored.hash,
+        mime: stored.mime,
+        bytes: stored.bytes,
+        seconds,
+    })
+}
+
 #[tauri::command]
 pub fn tts_stop_playback(state: tauri::State<'_, TtsEngine>) -> Result<(), String> {
     state.stop_playback();
@@ -468,6 +657,34 @@ mod tests {
         assert_eq!(pcm.push(&[0xc0]), vec![-0.5]);
         assert_eq!(pcm.push(&[0x00]), Vec::<f32>::new());
         assert_eq!(pcm.push(&[0x40, 0x00, 0x40]), vec![0.5, 0.5]);
+    }
+
+    #[test]
+    fn wav_writer_fills_in_the_sizes_on_finish() {
+        let dir = temp_dir("wav");
+        let path = dir.join("s.wav");
+        let mut wav = WavWriter::create(&path, 1024).unwrap();
+        wav.write(&[0.5, -0.5]).unwrap();
+        wav.write(&[1.5]).unwrap();
+        wav.finish().unwrap();
+        let b = std::fs::read(&path).unwrap();
+        assert_eq!(b.len(), 44 + 6);
+        assert_eq!(&b[0..4], b"RIFF");
+        assert_eq!(u32::from_le_bytes(b[4..8].try_into().unwrap()), 36 + 6);
+        assert_eq!(u32::from_le_bytes(b[24..28].try_into().unwrap()), 24_000);
+        assert_eq!(&b[36..40], b"data");
+        assert_eq!(u32::from_le_bytes(b[40..44].try_into().unwrap()), 6);
+        let s = |i: usize| i16::from_le_bytes(b[44 + i * 2..46 + i * 2].try_into().unwrap());
+        assert_eq!((s(0), s(1), s(2)), (16383, -16383, 32767), "clamped");
+    }
+
+    #[test]
+    fn wav_writer_refuses_to_pass_its_limit() {
+        let dir = temp_dir("wav-limit");
+        let mut wav = WavWriter::create(&dir.join("s.wav"), 44 + 4).unwrap();
+        wav.write(&[0.0, 0.0]).unwrap();
+        let err = wav.write(&[0.0]).unwrap_err();
+        assert!(err.contains("cache limit"), "{err}");
     }
 
     #[test]

@@ -57,7 +57,7 @@ const IMAGE_TOOLS = new Set(['generate_image', 'edit_image', 'upscale_image']);
 const SONG_TOOLS = new Set(['generate_music', 'edit_music']);
 
 /** The tools that write what they make into the folder when given a `path`. */
-const SAVING_TOOLS = new Set([...IMAGE_TOOLS, ...SONG_TOOLS, 'generate_video']);
+const SAVING_TOOLS = new Set([...IMAGE_TOOLS, ...SONG_TOOLS, 'generate_video', 'generate_speech']);
 
 /**
  * Get the tool schemas to expose to the model for this request.
@@ -208,6 +208,7 @@ function shouldIncludeCodeTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	// A song for the project or the answer. The Code tab only: Shell has no
 	// saved session to keep the song in.
 	if (SONG_TOOLS.has(name)) return opts.musicGeneration && isCodeTab(opts);
+	if (reg.category === 'speech') return opts.interactive && isCodeTab(opts);
 	if (reg.category === 'video-gen') return videoGenOffered(opts) && isCodeTab(opts);
 	// Saving a picture or song made earlier into the project.
 	if (name === 'save_generated') return isCodeTab(opts) && !opts.codeReadOnly;
@@ -247,6 +248,7 @@ function shouldIncludeChatTool(reg: ToolRegistration, opts: ToolFilterOpts): boo
 	if (reg.category === 'desktop' && !opts.screenCapture) return false;
 	if (reg.category === 'image' && !opts.imageGeneration) return false;
 	if (reg.category === 'music' && !opts.musicGeneration) return false;
+	if (reg.category === 'speech' && !opts.interactive) return false;
 	if (reg.category === 'video-gen' && !videoGenOffered(opts)) return false;
 	if (reg.category === 'video' && !opts.videoTools) return false;
 	// make_asset writes into a project; Chat has no project.
@@ -276,6 +278,7 @@ function subtaskExcludes(reg: ToolRegistration): boolean {
 		name === 'delegate' ||
 		name === 'make_asset' ||
 		SONG_TOOLS.has(name) ||
+		reg.category === 'speech' ||
 		reg.category === 'video-gen' ||
 		name === 'save_generated' ||
 		CODE_TAB_ONLY.has(name) ||

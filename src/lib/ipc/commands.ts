@@ -403,6 +403,7 @@ export const IPC = {
 	tts_is_playing: 'tts_is_playing',
 	tts_stop_playback: 'tts_stop_playback',
 	tts_synthesize_and_play: 'tts_synthesize_and_play',
+	tts_synthesize_to_cache: 'tts_synthesize_to_cache',
 	video_binaries_status: 'video_binaries_status',
 	video_encoders_test: 'video_encoders_test',
 	video_frames: 'video_frames',

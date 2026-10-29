@@ -28,6 +28,7 @@ const ORDER = [
 	'images',
 	'image-editing',
 	'music',
+	'speech',
 	'video-generation',
 	'video-editing',
 	'video-render',
