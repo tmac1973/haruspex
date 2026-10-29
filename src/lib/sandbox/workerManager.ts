@@ -8,6 +8,7 @@ import type {
 	ToolResult,
 	WorkerToMain
 } from '#lib/sandbox/protocol.ts';
+import { decodeSyncBody } from '#lib/sandbox/syncBody.ts';
 import { getWorkingDir } from '#lib/stores/session.svelte.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { logDebug } from '#lib/debugLog.ts';
@@ -352,9 +353,9 @@ export class WorkerManager {
 		this.rejectAllPending(err);
 	}
 
-	private send(msg: MainToWorker): void {
+	private send(msg: MainToWorker, transfer: Transferable[] = []): void {
 		const w = this.ensureWorker();
-		w.postMessage(msg);
+		w.postMessage(msg, transfer);
 	}
 
 	private dispatch(msg: MainToWorker, id: string, opts: RunOptions): Promise<ToolResult> {
@@ -445,17 +446,15 @@ export class WorkerManager {
 			path,
 			mtime
 		}));
-		const result = await invoke<{
-			to_sync: Array<{ path: string; abs_path: string; bytes: number[]; mtime: number }>;
-			deleted: string[];
-			skipped: Array<{ path: string; reason: string }>;
-			workdir_abs: string;
-		}>('sandbox_sync_workdir', {
+		// Binary, not JSON: see syncBody.ts. The files' bytes are views of
+		// `body`, which is transferred to the worker rather than copied.
+		const body = await invoke<ArrayBuffer>('sandbox_sync_workdir', {
 			workdir,
 			knownFiles,
 			perFileCapBytes: WorkerManager.SYNC_PER_FILE_CAP_BYTES,
 			perRunCapBytes: WorkerManager.SYNC_PER_RUN_CAP_BYTES
 		});
+		const result = decodeSyncBody(body);
 		if (result.to_sync.length === 0 && result.deleted.length === 0 && result.skipped.length === 0) {
 			// Still need to chdir on first run; do a no-op sync that just
 			// posts the workdir_abs.
@@ -465,19 +464,17 @@ export class WorkerManager {
 		const ackPromise = new Promise<void>((resolve, reject) => {
 			this.pendingSyncs.set(syncId, { resolve, reject });
 		});
-		this.send({
-			kind: 'sync_workdir_files',
-			sync_id: syncId,
-			workdir_abs: result.workdir_abs,
-			to_sync: result.to_sync.map((f) => ({
-				path: f.path,
-				abs_path: f.abs_path,
-				bytes: new Uint8Array(f.bytes),
-				mtime: f.mtime
-			})),
-			deleted: result.deleted,
-			skipped: result.skipped
-		});
+		this.send(
+			{
+				kind: 'sync_workdir_files',
+				sync_id: syncId,
+				workdir_abs: result.workdir_abs,
+				to_sync: result.to_sync,
+				deleted: result.deleted,
+				skipped: result.skipped
+			},
+			[body]
+		);
 		await ackPromise;
 		for (const f of result.to_sync) {
 			this.syncedFiles.set(f.path, f.mtime);

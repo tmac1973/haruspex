@@ -20,6 +20,11 @@
 //! The worker also gets `workdir_abs` so it can chdir Python's cwd into the
 //! working dir, making the model's relative paths (`pd.read_csv('foo.csv')`)
 //! resolve to the right MEMFS entry.
+//!
+//! The result goes back as one binary body ([`encode_sync`]), not JSON: a
+//! first sync can carry thousands of files, and a `Vec<u8>` serialized as a
+//! JSON array of numbers froze the webview's main thread for seconds while it
+//! parsed.
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -33,7 +38,6 @@ pub struct KnownFile {
     pub mtime: f64,
 }
 
-#[derive(Serialize)]
 pub struct SyncFile {
     pub path: String,
     pub abs_path: String,
@@ -47,7 +51,6 @@ pub struct SyncSkipped {
     pub reason: String,
 }
 
-#[derive(Serialize)]
 pub struct SyncResult {
     pub to_sync: Vec<SyncFile>,
     pub deleted: Vec<String>,
@@ -55,8 +58,66 @@ pub struct SyncResult {
     pub workdir_abs: String,
 }
 
+/// A synced file as the header names it; its bytes follow the header.
+#[derive(Serialize)]
+struct SyncFileHeader<'a> {
+    path: &'a str,
+    abs_path: &'a str,
+    mtime: f64,
+    len: usize,
+}
+
+#[derive(Serialize)]
+struct SyncHeader<'a> {
+    to_sync: Vec<SyncFileHeader<'a>>,
+    deleted: &'a [String],
+    skipped: &'a [SyncSkipped],
+    workdir_abs: &'a str,
+}
+
+/// The body `sandbox_sync_workdir` answers with: the header's length as a
+/// little-endian u32, the header as JSON (each file without its bytes), then
+/// every file's bytes end to end, in the header's order.
+pub fn encode_sync(r: &SyncResult) -> Result<Vec<u8>, String> {
+    let header = SyncHeader {
+        to_sync: r
+            .to_sync
+            .iter()
+            .map(|f| SyncFileHeader {
+                path: &f.path,
+                abs_path: &f.abs_path,
+                mtime: f.mtime,
+                len: f.bytes.len(),
+            })
+            .collect(),
+        deleted: &r.deleted,
+        skipped: &r.skipped,
+        workdir_abs: &r.workdir_abs,
+    };
+    let json = serde_json::to_vec(&header).map_err(|e| e.to_string())?;
+    let header_len = u32::try_from(json.len()).map_err(|_| "sync header too large".to_string())?;
+    let body: usize = r.to_sync.iter().map(|f| f.bytes.len()).sum();
+    let mut out = Vec::with_capacity(4 + json.len() + body);
+    out.extend_from_slice(&header_len.to_le_bytes());
+    out.extend_from_slice(&json);
+    for f in &r.to_sync {
+        out.extend_from_slice(&f.bytes);
+    }
+    Ok(out)
+}
+
 #[tauri::command]
 pub async fn sandbox_sync_workdir(
+    workdir: String,
+    known_files: Vec<KnownFile>,
+    per_file_cap_bytes: u64,
+    per_run_cap_bytes: u64,
+) -> Result<tauri::ipc::Response, String> {
+    let r = sync_workdir(workdir, known_files, per_file_cap_bytes, per_run_cap_bytes).await?;
+    encode_sync(&r).map(tauri::ipc::Response::new)
+}
+
+async fn sync_workdir(
     workdir: String,
     known_files: Vec<KnownFile>,
     per_file_cap_bytes: u64,
@@ -185,7 +246,7 @@ mod tests {
     use crate::test_util::temp_dir;
 
     async fn sync(dir: &Path, known: Vec<KnownFile>, file_cap: u64, run_cap: u64) -> SyncResult {
-        sandbox_sync_workdir(dir.to_string_lossy().into_owned(), known, file_cap, run_cap)
+        sync_workdir(dir.to_string_lossy().into_owned(), known, file_cap, run_cap)
             .await
             .unwrap()
     }
@@ -287,10 +348,52 @@ mod tests {
     async fn a_missing_workdir_is_an_error() {
         let root = temp_dir("missing");
         let dir = root.join("missing_xyz");
-        let err = sandbox_sync_workdir(dir.to_string_lossy().into_owned(), vec![], 1, 1)
+        let err = sync_workdir(dir.to_string_lossy().into_owned(), vec![], 1, 1)
             .await
             .err()
             .unwrap();
         assert!(err.contains("Cannot resolve working directory"), "{err}");
+    }
+
+    #[test]
+    fn the_encoded_sync_is_a_header_then_each_files_bytes() {
+        let r = SyncResult {
+            to_sync: vec![
+                SyncFile {
+                    path: "a.txt".into(),
+                    abs_path: "/w/a.txt".into(),
+                    bytes: b"one".to_vec(),
+                    mtime: 1.5,
+                },
+                SyncFile {
+                    path: "b.bin".into(),
+                    abs_path: "/w/b.bin".into(),
+                    bytes: vec![0, 255],
+                    mtime: 2.0,
+                },
+            ],
+            deleted: vec!["gone.txt".into()],
+            skipped: vec![SyncSkipped {
+                path: "big.bin".into(),
+                reason: "too big".into(),
+            }],
+            workdir_abs: "/w".into(),
+        };
+        let out = encode_sync(&r).unwrap();
+        let header_len = u32::from_le_bytes(out[..4].try_into().unwrap()) as usize;
+        let header: serde_json::Value = serde_json::from_slice(&out[4..4 + header_len]).unwrap();
+        assert_eq!(
+            header,
+            serde_json::json!({
+                "to_sync": [
+                    { "path": "a.txt", "abs_path": "/w/a.txt", "mtime": 1.5, "len": 3 },
+                    { "path": "b.bin", "abs_path": "/w/b.bin", "mtime": 2.0, "len": 2 }
+                ],
+                "deleted": ["gone.txt"],
+                "skipped": [{ "path": "big.bin", "reason": "too big" }],
+                "workdir_abs": "/w"
+            })
+        );
+        assert_eq!(&out[4 + header_len..], b"one\x00\xff");
     }
 }
