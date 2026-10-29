@@ -105,9 +105,8 @@
 		return s === 'copied' ? 'Copied!' : s === 'failed' ? 'Failed' : 'Copy';
 	}
 	// Per-step user override for run_python code-block visibility. Absent
-	// entry → use the default (collapsed if the run errored, expanded
-	// otherwise) so the user doesn't have to scroll past 4 failing tries
-	// before reaching the one that worked.
+	// entry → collapsed: the answer is what most people read, and the
+	// "code" toggle is one click away for anyone who wants the script.
 	let codeCollapsed: Record<string, boolean> = $state({});
 	// Per-step accordion state for tool-result details. Click a step row
 	// to toggle just that step's log open/closed.
@@ -138,8 +137,7 @@
 	}
 
 	function isCodeCollapsed(step: SearchStep): boolean {
-		if (step.id in codeCollapsed) return codeCollapsed[step.id];
-		return stepErrored(step);
+		return codeCollapsed[step.id] ?? true;
 	}
 
 	function toggleCode(step: SearchStep, event: MouseEvent) {

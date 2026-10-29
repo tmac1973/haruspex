@@ -23,7 +23,7 @@ While one conversation answers, send in another, or send more in the same one to
 
 ## Let the assistant read and write files
 
-Click the folder icon in the chat box to pick a working directory. The assistant can then read and write files there, and only there. With no folder set, it has no file access at all. The folder belongs to that one conversation and is forgotten when you close the app.
+Click the folder icon in the chat box to pick a working directory. The assistant can then read and write files there, only there. With no folder set, it has no file access at all. The folder belongs to that conversation and is forgotten when the app closes.
 
 - **Reads:** plain text, Markdown, CSV, JSON, YAML, TOML, PDF (text, or as page images for scans), Word `.docx`, Excel `.xlsx`, and images.
 - **Writes:** text files and edits to them, Word `.docx`, OpenDocument `.odt`/`.ods`/`.odp`, Excel `.xlsx`, PowerPoint `.pptx` and PDF. Presentations are experimental.
@@ -32,11 +32,11 @@ Click the folder icon in the chat box to pick a working directory. The assistant
 
 If a file already exists, the assistant stops and asks: **Overwrite**, **Keep both** (saves under a new name) or **Cancel**.
 
-Small models often do the research and then forget to write the file, sometimes claiming they did. Ask again — "write that to a PDF" — and it usually works.
+Small models often research and then forget to write the file, sometimes claiming they did. Ask again ("write that to a PDF").
 
 ## Run Python for charts, maths and documents
 
-The assistant can write and run Python in a sandbox inside the app. It comes with numpy, pandas, matplotlib, scipy and others, installs more, shows its charts in the answer, and saves files to your working directory. It is on by default, and works best with a larger model. The assistant sees up to about 20 KB of each run's output; the middle of anything longer is cut.
+The assistant can write and run Python in a sandbox inside the app. It comes with numpy, pandas, matplotlib, scipy and others, installs more, shows its charts in the answer, and saves files to your working directory. It is on by default, and works best with a larger model. Click **code** on a run's step to see it. The assistant sees up to about 20 KB of each run's output; the middle of anything longer is cut.
 
 Before code runs you see **Allow code execution?** By default it asks once per chat. Change this in Settings → Agent → Python Sandbox → Approval prompt (Off, Once per chat, or Every run). The same section sets **Network access** (default: Internet and local network) and the timeout, and **Enable Python sandbox** turns it off.
 

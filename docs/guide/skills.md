@@ -5,7 +5,7 @@ description: Skills (SKILL.md folders) — where they live, running them with /n
 
 # Skills and repo instructions
 
-A skill is a folder holding a `SKILL.md`: a name, a description of when to use it, and instructions. Haruspex uses the open Agent Skills format (agentskills.io) that other AI tools use, so a skill written for another tool usually works unchanged.
+A skill is a folder holding a `SKILL.md`: a name, a description of when to use it, and instructions. Haruspex uses the open Agent Skills format (agentskills.io), so a skill written for another tool usually works unchanged.
 
 ## Where skills are read from
 
@@ -26,7 +26,7 @@ A skill can need an image or music backend or the video tools (`haruspex-needs: 
 
 ## Run a skill
 
-Type `/` in the Chat or Shell input box: a list of commands and skills narrows as you type; pick with the arrow keys and Enter or Tab, or Esc to close. Type `/name what you want`; a name typed in full, such as `/init`, runs on Enter. The skill's instructions go with your message, so this works on every model, whatever the setting below says.
+Type `/` in the Chat or Shell input box: commands and skills narrow as you type; pick with the arrows and Enter or Tab; Esc closes it. Type `/name what you want`; a full name, such as `/init`, runs on Enter. The skill's instructions go with your message, so this works on every model, whatever the setting below says. The assistant does only what the skill says, and searches the web only if it or you ask.
 
 `/new` starts an empty conversation and `/skills` lists the skills you can run. The Code tab adds `/compact`, which summarises a session's older turns now; text after it says what to keep (`/compact keep the API notes`). See the `code-sessions` page.
 
@@ -40,11 +40,11 @@ Settings → Skills → When the model uses skills puts your skills' names and d
 | Always | On for every model. |
 | Never | Only `/name` runs a skill. |
 
-Small local models often load a skill and then don't follow it, so Automatic leaves them out.
+Small local models often load a skill and then ignore it, so Automatic leaves them out.
 
 ## Have the model write or update a skill
 
-Ask, for example, "save what we just did as a skill called deploy-check", or ask it to improve one. Every write opens a review window with the whole file in an editor. You can edit it and **Save skill** (or **Save changes**), or **Reject** it with a reason that goes back to the model. Nothing is written until you save. The model can only change skills in your own folder or a trusted repo. Skills it wrote are labelled **Written by the model** in Settings.
+Ask, for example, "save what we just did as a skill called deploy-check", or ask it to improve one. Every write opens the whole file in a review editor. Edit it and **Save skill** (or **Save changes**), or **Reject** it with a reason that goes back to the model. Nothing is written until you save. The model can only change skills in your own folder or a trusted repo. Skills it wrote are labelled **Written by the model** in Settings.
 
 ## Skills that ship with Haruspex
 
