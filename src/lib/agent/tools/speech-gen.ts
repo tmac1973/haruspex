@@ -90,6 +90,19 @@ export function parseSpeechArgs(
 	};
 }
 
+/** Speech runs about 15 characters a second at normal speed. */
+const CHARS_PER_SECOND = 15;
+
+/**
+ * A note when the audio is far shorter than the text should take: koko
+ * without its phoneme data makes a second of noise for any text.
+ */
+export function shortNote(text: string, speed: number, seconds: number): string | null {
+	const expected = text.length / CHARS_PER_SECOND / speed;
+	if (expected < 3 || seconds >= expected * 0.3) return null;
+	return `It came out ${Math.round(seconds)} s long, far shorter than this text takes (about ${Math.round(expected)} s): it is probably broken, so tell the user.`;
+}
+
 function minutesAndSeconds(sec: number): string {
 	const s = Math.round(sec);
 	return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
@@ -131,7 +144,8 @@ export async function runSpeech(args: SpeechArgs, ctx: ToolContext): Promise<Too
 		`Made "${args.title}" (${minutesAndSeconds(made.seconds)}, voice ${args.voice}).`,
 		`Put ![${args.title}](${url}) in your answer.`,
 		...(saved ? [saved] : []),
-		...args.notes
+		...args.notes,
+		...[shortNote(args.text, args.speed, made.seconds)].filter((n) => n !== null)
 	];
 	return {
 		result: lines.join(' '),

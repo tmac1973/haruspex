@@ -5,7 +5,7 @@ const state = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
 
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
-import { MAX_CHARS, parseSpeechArgs } from './speech-gen';
+import { MAX_CHARS, parseSpeechArgs, shortNote } from './speech-gen';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 
 const HASH = 'a'.repeat(64);
@@ -115,5 +115,19 @@ describe('generate_speech', () => {
 		state.invoke.mockRejectedValueOnce('TTS failed: no model');
 		const out = await executeTool('generate_speech', { text: 'Hi.' }, chat);
 		expect(out.result).toContain('Could not make it: TTS failed: no model');
+	});
+});
+
+describe('shortNote', () => {
+	const text = 'a'.repeat(300); // about 20 s
+
+	it('flags audio far shorter than the text takes', () => {
+		expect(shortNote(text, 1, 2)).toContain('probably broken');
+		expect(shortNote(text, 2, 2)).toContain('about 10 s');
+	});
+
+	it('leaves normal audio and short lines alone', () => {
+		expect(shortNote(text, 1, 18)).toBeNull();
+		expect(shortNote('Hi.', 1, 0.4)).toBeNull();
 	});
 });
