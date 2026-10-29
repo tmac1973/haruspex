@@ -2,11 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { MainToWorker, ToolResult, WorkerToMain } from './protocol';
 
 // Worker-manager pulls in a few app singletons; stub them so the manager is
-// exercised in isolation. getWorkingDir → null keeps the pre-run workdir sync
-// a no-op (so runPython drives straight through to `send`).
+// exercised in isolation. getWorkingDir → null (unless a test sets one) keeps
+// the pre-run workdir sync a no-op (so runPython drives straight through to `send`).
 const invokeMock = vi.hoisted(() => vi.fn());
+const session = vi.hoisted(() => ({ workingDir: null as string | null }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
-vi.mock('#lib/stores/session.svelte.ts', () => ({ getWorkingDir: () => null }));
+vi.mock('#lib/stores/session.svelte.ts', () => ({ getWorkingDir: () => session.workingDir }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		settings: { proxy: { mode: 'none' }, sandboxNetAccess: 'internet' }
@@ -23,12 +24,14 @@ import { PYTHON_UNAVAILABLE, pythonRuntimeMissing } from './availability';
 /** Minimal Worker stand-in: captures postMessage and replays messages. */
 class FakeWorker {
 	posted: MainToWorker[] = [];
+	transfers: Transferable[][] = [];
 	private onMessage?: (e: MessageEvent<WorkerToMain>) => void;
 	addEventListener(type: string, cb: EventListenerOrEventListenerObject): void {
 		if (type === 'message') this.onMessage = cb as (e: MessageEvent<WorkerToMain>) => void;
 	}
-	postMessage(msg: MainToWorker): void {
+	postMessage(msg: MainToWorker, transfer: Transferable[] = []): void {
 		this.posted.push(msg);
+		this.transfers.push(transfer);
 	}
 	terminate(): void {}
 	/** Deliver a worker→main message to the manager. */
@@ -72,6 +75,7 @@ describe('WorkerManager message dispatch', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		session.workingDir = null;
 	});
 
 	it('tells the model Python is unavailable when its runtime is missing, and remembers', async () => {
@@ -180,5 +184,38 @@ describe('WorkerManager message dispatch', () => {
 			fake.emit({ kind: 'stdout', id: 'ghost', data: 'x' });
 			fake.emit({ kind: 'done', id: 'ghost', result: doneResult() });
 		}).not.toThrow();
+	});
+
+	it('hands the worker the working folder by transfer, not by copy', async () => {
+		// A first sync can carry thousands of files: parsing them on the main
+		// thread froze the window. The body arrives binary and goes on whole.
+		session.workingDir = '/w';
+		const json = new TextEncoder().encode(
+			JSON.stringify({
+				to_sync: [{ path: 'a.txt', abs_path: '/w/a.txt', mtime: 1, len: 2 }],
+				deleted: [],
+				skipped: [],
+				workdir_abs: '/w'
+			})
+		);
+		const body = new Uint8Array(4 + json.length + 2);
+		new DataView(body.buffer).setUint32(0, json.length, true);
+		body.set(json, 4);
+		body.set([7, 8], 4 + json.length);
+		invokeMock.mockImplementation(async (cmd: string) =>
+			cmd === 'sandbox_sync_workdir' ? body.buffer : undefined
+		);
+		const wm = makeManager();
+		void wm.runPython('print(1)');
+		fake.emit({ kind: 'ready' });
+		await tick();
+		const at = fake.posted.findIndex((m) => m.kind === 'sync_workdir_files');
+		const sync = fake.posted[at];
+		if (sync?.kind !== 'sync_workdir_files') throw new Error('no sync posted');
+		expect(Array.from(sync.to_sync[0].bytes)).toEqual([7, 8]);
+		expect(fake.transfers[at]).toEqual([body.buffer]);
+		fake.emit({ kind: 'sync_workdir_ack', sync_id: sync.sync_id });
+		await tick();
+		expect(fake.postedKinds()).toContain('run');
 	});
 });
