@@ -17,6 +17,7 @@ Each works in certain tabs and needs something set up first:
 | `game-assets` | the Code tab, or the Shell with Full access | nothing for textures; an image backend for sprites and icons |
 | `write-song` | Chat and the Code tab | a music backend (Settings → Music) |
 | `cut-video` | Chat and the Code tab, with a working folder | the video tools (Settings → Video editing) |
+| `narrate` | Chat and the Code tab | nothing (see the `speech` page) |
 
 Until that is set up, the skill is greyed out in Settings → Skills, with what it needs, and isn't offered. Once it is, the model can load the skill when a request matches, and a skill also loads by itself the first time the model reaches for one of its tools, such as editing a picture. That depends on Settings → Skills → When the model uses skills: by default, remote and OpenRouter models load skills and the local model doesn't. On any model you can run one yourself by typing `/` and its name, followed by what you want.
 
@@ -72,4 +73,4 @@ It never uploads. See the `video-editing`, `video-speech` and `video-render` pag
 
 ## What has been tested
 
-Each skill was run with Qwen3.8-Flash and loaded itself: `fix-picture` on Lemonade and ComfyUI, `game-assets` on a small pygame game, `cut-video` on three clips with a retake, and `write-song` with ACE-Step 1.5 XL.
+Each skill was run with Qwen3.8-Flash and loaded itself: `fix-picture` on Lemonade and ComfyUI, `game-assets` on a small pygame game, `cut-video` on three clips with a retake, `write-song` with ACE-Step 1.5 XL, and `narrate` on a voiceover and three game lines.
