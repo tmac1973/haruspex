@@ -22,7 +22,16 @@ Ask in Chat or the Code tab: "read this intro as a voiceover", "say these three 
 - **Length:** up to about 15 minutes in one file (12,000 characters). For longer, ask for it in parts.
 - **Save it:** with a working folder in Chat, or in the Code tab, ask for it to be saved ("save it as audio/intro.wav"). In Chat you are asked before a file is replaced. `save_generated` saves one made earlier.
 
-To hear a draft first, ask for the script before the audio: changing the text and making it again is quick.
+## Have it write and record: the narrate skill
+
+The `narrate` skill can load by itself the first time the assistant makes speech, or type `/narrate` and what you want. It:
+
+- writes the script for listening (short sentences, numbers as they are said, no lists), shows it with the voice it picked, and **stops** for your OK. Give the exact words ("read this: …") to skip that;
+- keeps one voice for each character, and makes game lines one file each, named for what the code calls them and saved where it loads sounds;
+- for a set length ("a 30-second voiceover"), measures what it made and records it again faster or slower to fit;
+- saves a voiceover next to the video, and leaves adding it to the Kdenlive project to you.
+
+See the `media-skills` page for how skills are offered.
 
 ## Where the files are kept
 
@@ -31,7 +40,7 @@ Spoken audio goes in the audio cache with songs. A file that belongs to a chat o
 ## What it doesn't do
 
 - Only WAV files. Convert to MP3 yourself if you need one.
-- One voice per file. Ask for each character's lines separately.
+- One voice per file: each character's lines are made separately.
 - Most voices are American English. Text in other languages is read with English sounds.
 - No copying a real person's voice.
 - Not in the Shell tab, in subtasks, or in jobs.

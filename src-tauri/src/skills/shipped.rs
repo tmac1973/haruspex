@@ -350,6 +350,7 @@ mod tests {
             "game-assets",
             "write-song",
             "cut-video",
+            "narrate",
         ] {
             assert!(skills.contains_key(name), "{name} isn't shipped");
         }
