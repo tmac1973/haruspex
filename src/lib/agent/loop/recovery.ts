@@ -291,7 +291,7 @@ function rejectedCallMessage(
 		`hit its ${ctx.maxResponseTokens}-token ceiling, which is roughly ` +
 		`${Math.round((ctx.maxResponseTokens * TOKEN_BYTES_RATIO) / 1024)} KB of ` +
 		`content before the model's reasoning is subtracted. Raise Settings → ` +
-		`Agent → Response Length → ${settingLabel}, or ask for a smaller piece of ` +
+		`Inference → Model defaults → ${settingLabel}, or ask for a smaller piece of ` +
 		`work. Note that editing an existing file (fs_edit_text) has no such limit ` +
 		`— only rewriting one whole does.`
 	);

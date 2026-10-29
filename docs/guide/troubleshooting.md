@@ -17,16 +17,16 @@ Small local models (Qwen 3.5 4B and 9B) often do only the first part of a two-pa
 
 The Code tab, the Shell's Full access, guided planning, autonomous coding, audit jobs and the Python sandbox need a bigger model. On the 4B and 9B models they often produce code that does not run. They become usable from 16 GB of VRAM, or with a bigger model on another server or OpenRouter. See the `models` page.
 
-If a long coding task stops and is told to "wrap up", raise Settings → Shell → Max steps per task (default 40).
+If a long task stops and is told to "wrap up", raise Settings → Code → Max steps per task, or Settings → Shell → Max steps per turn (both 40).
 
 ## The answer was cut off
 
-Each reply has a length limit, separate from the context size. When a reply hits it, Haruspex says so, and a file is never left half-written. Raise the limit in Settings → Agent → Response Length:
+Each reply has a length limit, separate from the context size. When a reply hits it, Haruspex says so and never leaves a file half-written. Raise it in Settings → Inference → Model defaults:
 
 - **Max response tokens** for normal chat and shell replies.
 - **Max response tokens (file writes)** for turns that write a whole file.
 
-You can also ask for a smaller piece of work, or lower Settings → Agent → Reasoning effort so less of the budget goes on thinking.
+Or ask for a smaller piece of work, or lower **Reasoning effort** there so less goes on thinking.
 
 If instead it says the model's tool call "could not be run", the reply was not cut off and raising the limit will not help. Try again, or ask for the work in smaller steps.
 
@@ -44,7 +44,7 @@ If the command really needs more, raise Settings → Shell → Memory limit (a p
 
 ## Pictures in answers are missing or wrong
 
-The picture sources are good for places, animals, landmarks and general subjects, and weak for new products and recent events. If no good picture exists, the answer comes without one. Small models may pick a loosely related one. Turn off Settings → Agent → Pictures in answers → Include images in answers to stop them being added unasked.
+The picture sources are good for places, animals, landmarks and general subjects, and weak for new products and recent events. If no good picture exists, the answer comes without one. Small models may pick a loosely related one. Turn off Settings → Chat → Pictures in answers → Include images in answers to stop them being added unasked.
 
 ## Presentations with images are unreliable
 

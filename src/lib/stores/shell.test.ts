@@ -30,7 +30,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: () => ({
 		shellFullAccessDefault: false,
-		codeMaxIterations: 40,
+		shellMaxIterations: 33,
 		maxResponseTokensFileWrite: 65536,
 		shellHistoryTurnsForPrompt: 3,
 		shellMaxBytesPerCapture: 1000,
@@ -952,7 +952,7 @@ describe('Read-only and Full access', () => {
 		const opts = runShellTurn.mock.calls.at(-1)![0];
 		// The registry's Shell code profile: the tool set Code mode had.
 		expect(opts.codeMode).toBe(true);
-		expect(opts.maxIterations).toBe(40);
+		expect(opts.maxIterations).toBe(33);
 		expect(opts.maxResponseTokens).toBe(65536);
 		expect((opts.messages as ChatMessage[])[0].content).toBe('full-sys');
 	});
@@ -962,7 +962,7 @@ describe('Read-only and Full access', () => {
 		await submit(s);
 		const opts = runShellTurn.mock.calls.at(-1)![0];
 		expect(opts.codeMode).toBe(false);
-		expect(opts.maxIterations).toBeUndefined();
+		expect(opts.maxIterations).toBe(33);
 		expect((opts.messages as ChatMessage[])[0].content).toBe('sys');
 	});
 

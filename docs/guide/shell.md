@@ -9,9 +9,9 @@ The Shell tab is a real terminal with an assistant beside it. By default the ass
 
 ## Open a terminal
 
-It works on Linux, macOS and Windows. On Windows a picker in the tab lets you choose a PowerShell version or a WSL2 distro. Click **+** for another tab; each tab has its own terminal and its own assistant. A tab can be detached into its own window. Right-click the terminal for Copy, Paste and **Restart shell**.
+It works on Linux, macOS and Windows. On Windows a picker in the tab lets you choose a PowerShell version or a WSL2 distro. Click **+** for another tab; each tab has its own terminal and assistant. A tab can be detached into its own window. Right-click the terminal for Copy, Paste and **Restart shell**.
 
-Your `$SHELL` is used unless you set Settings → Shell → Shell binary. Command capture needs shell integration: bash and zsh get Haruspex's hooks, and fish 4 sends the needed markers itself. Other shells work as terminals, but their commands are not captured: copy what you need into the assistant box. The badge in the sidebar header shows whether capture is working.
+Your `$SHELL` is used unless you set Settings → Shell → Shell binary. Command capture needs shell integration: bash and zsh get Haruspex's hooks, and fish 4 sends the needed markers itself. Other shells work as terminals, but their commands are not captured: copy what you need into the assistant box. A badge in the sidebar header shows whether capture works.
 
 ## Tabs the Code tab opens
 
@@ -37,7 +37,7 @@ Click the lock (**Read-only**) in the sidebar header to switch that tab to **Ful
 
 With Full access the assistant runs commands in your live terminal, so they share your folder, environment and venv and show in your scrollback. It can edit and write files, search the project, drive a program waiting for input, and start servers or long builds in the background. Commands that look safe run on their own. A risky one opens **Run this command?** with **Allow for this session**, **Allow once** or **Deny** (the model is told it was denied). A command that reaches outside the project always asks. In a detached Shell window the question shows in that window.
 
-Settings → Code → Auto-approve commands skips that prompt. It is off by default; only turn it on if you fully trust the model on this machine. Settings → Code also holds the command time limit (30 seconds by default) and the step limit per task (40); the Code tab uses them too.
+Settings → Code → Auto-approve commands skips that prompt. It is off by default; only turn it on if you fully trust the model on this machine. Settings → Code also holds the command time limit (30 seconds by default), shared with the Code tab. Settings → Shell → Max steps per turn (40) caps a turn in either mode.
 
 Full access needs a capable model. Small local models make mistakes and get stuck; see the `models` page. Read the AI safety disclaimer in the README before using it.
 

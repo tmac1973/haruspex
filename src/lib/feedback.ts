@@ -173,6 +173,7 @@ function buildSettingsSnapshot(): string {
 		thinkingEnabled: s.thinkingEnabled,
 		hasCustomSystemPrompt: s.customSystemPrompt.length > 0,
 		customSystemPromptLength: s.customSystemPrompt.length,
+		codeCustomSystemPromptLength: s.codeCustomSystemPrompt.length,
 		sandboxEnabled: s.sandboxEnabled,
 		sandboxApproval: s.sandboxApproval,
 		sandboxTimeoutSeconds: s.sandboxTimeoutSeconds,

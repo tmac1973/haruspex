@@ -178,7 +178,7 @@ export function outOfTokensMessage(ctx: LoopContext, postTools: boolean): string
 		`${ctx.maxResponseTokens}-token response limit — roughly ${approxKb} KB of ` +
 		`output, less whatever the model spent reasoning. This is a separate ` +
 		`setting from the context size, which is not what ran out here. Raise ` +
-		`Settings → Agent → Response Length → ${settingLabel}, ask for a smaller ` +
+		`Settings → Inference → Model defaults → ${settingLabel}, ask for a smaller ` +
 		`piece of work, or lower the reasoning effort so more of the budget goes ` +
 		`to the answer.` +
 		(postTools

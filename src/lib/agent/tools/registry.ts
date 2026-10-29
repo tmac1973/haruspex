@@ -663,7 +663,7 @@ export async function executeTool(
 	// fails to prevent code from running.
 	if (reg.category === 'sandbox' && !getSettings().sandboxEnabled) {
 		return toolResult(
-			toolError('Python sandbox is disabled. Enable it in Settings → Agent to run code.')
+			toolError('Python sandbox is disabled. Enable it in Settings → Chat to run code.')
 		);
 	}
 	if (reg.category === 'sandbox' && pythonRuntimeMissing()) {

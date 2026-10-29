@@ -28,13 +28,15 @@ const SECRETS = [
 	'email-pass',
 	'dav-pass',
 	'ghp_mcp_token',
-	'the custom system prompt'
+	'the custom system prompt',
+	'the code system prompt'
 ];
 
 function plantSecrets(): void {
 	const s = getSettings();
 	updateSettings({
 		customSystemPrompt: 'the custom system prompt',
+		codeCustomSystemPrompt: 'the code system prompt',
 		braveApiKey: 'brave-key',
 		searxngUrl: 'https://searx-user:searx-pass@search.example.com/searx?token=url-query-key',
 		inferenceBackend: {

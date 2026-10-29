@@ -134,7 +134,7 @@ describe('runShellTurn', () => {
 		expect(opts.workingDir).toBeNull();
 		expect(opts.shellMode).toBe(true);
 		expect(opts.shellCwd).toBeNull();
-		expect(opts.maxIterations).toBe(12);
+		expect(opts.maxIterations).toBe(40);
 		expect(opts.deepResearch).toBe(false);
 		expect(opts.expectsFileOutput).toBe(false);
 		expect(opts.visionSupported).toBe(true);

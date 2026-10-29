@@ -3,7 +3,7 @@
 	import { persistItem } from '#lib/persist.ts';
 	import GeneralSection from '#lib/components/settings/GeneralSection.svelte';
 	import InferenceSection from '#lib/components/settings/InferenceSection.svelte';
-	import AgentSection from '#lib/components/settings/AgentSection.svelte';
+	import ChatSection from '#lib/components/settings/ChatSection.svelte';
 	import MemorySection from '#lib/components/settings/MemorySection.svelte';
 	import SkillsSection from '#lib/components/settings/SkillsSection.svelte';
 	import AudioSection from '#lib/components/settings/AudioSection.svelte';
@@ -31,7 +31,7 @@
 	type Category =
 		| 'general'
 		| 'inference'
-		| 'agent'
+		| 'chat'
 		| 'memory'
 		| 'skills'
 		| 'audio'
@@ -75,13 +75,13 @@
 				{
 					id: 'inference',
 					label: 'Inference',
-					subtitle: 'Where inference runs, how big the context is, and response limits.',
+					subtitle: 'Where inference runs, how big the context is, and model defaults.',
 					icon: '<rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line>'
 				},
 				{
-					id: 'agent',
-					label: 'Agent',
-					subtitle: 'How the model reasons, runs code, and adds pictures to answers.',
+					id: 'chat',
+					label: 'Chat',
+					subtitle: 'How the Chat tab researches, runs code, and adds pictures to answers.',
 					icon: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>'
 				},
 				{
@@ -202,7 +202,9 @@
 
 	onMount(() => {
 		try {
-			const saved = localStorage.getItem(STORAGE_KEY) as Category | null;
+			// Settings → Agent became Settings → Chat.
+			const stored = localStorage.getItem(STORAGE_KEY);
+			const saved = (stored === 'agent' ? 'chat' : stored) as Category | null;
 			if (saved && categories.some((c) => c.id === saved)) {
 				activeCategory = saved;
 			}
@@ -266,8 +268,8 @@
 				<GeneralSection />
 			{:else if activeCategory === 'inference'}
 				<InferenceSection />
-			{:else if activeCategory === 'agent'}
-				<AgentSection />
+			{:else if activeCategory === 'chat'}
+				<ChatSection />
 			{:else if activeCategory === 'memory'}
 				<MemorySection />
 			{:else if activeCategory === 'skills'}

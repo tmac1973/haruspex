@@ -84,7 +84,7 @@ function musicLine(readOnly: boolean | undefined): string {
 
 /** Custom instructions, then the repo's AGENTS.md, then the skill list. */
 function tail(opts: { projectInstructions?: string; skillsSection?: string }): string {
-	const custom = getSettings().customSystemPrompt?.trim();
+	const custom = getSettings().codeCustomSystemPrompt?.trim();
 	const customBlock = custom ? `\n\nCUSTOM INSTRUCTIONS:\n${custom}` : '';
 	return [customBlock, opts.projectInstructions, opts.skillsSection].join('');
 }

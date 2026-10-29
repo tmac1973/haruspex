@@ -228,7 +228,7 @@ describe('outOfTokensMessage', () => {
 		const kb = Math.round((8192 * TOKEN_BYTES_RATIO) / 1024);
 		expect(msg).toContain('8192-token response limit');
 		expect(msg).toContain(`roughly ${kb} KB`);
-		expect(msg).toContain('Settings → Agent → Response Length → Max response tokens,');
+		expect(msg).toContain('Settings → Inference → Model defaults → Max response tokens,');
 		expect(msg).not.toContain('deep research');
 	});
 

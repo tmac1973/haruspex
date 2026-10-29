@@ -596,7 +596,7 @@ export async function rerunSandboxStep(stepId: string): Promise<void> {
 			s.id === stepId
 				? {
 						...s,
-						result: 'Python sandbox is disabled. Enable it in Settings → Agent to run code.'
+						result: 'Python sandbox is disabled. Enable it in Settings → Chat to run code.'
 					}
 				: s
 		);

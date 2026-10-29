@@ -412,7 +412,7 @@ export class WorkerManager {
 	}
 
 	/**
-	 * Hand Rust the network proxy and access level (Settings → Agent) before
+	 * Hand Rust the network proxy and access level (Settings → Chat) before
 	 * a run. The `haruspexfetch:` scheme behind sync `requests`/`urllib`
 	 * receives nothing from the webview, so both fetch paths read them from
 	 * there. A failure leaves the previous policy in force, never an open one:
