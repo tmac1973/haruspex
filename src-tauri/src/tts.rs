@@ -1,4 +1,5 @@
 use crate::sidecar_process::SidecarChild;
+use futures_util::StreamExt;
 use log::{error, info, warn};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -9,8 +10,8 @@ use tokio::sync::Mutex;
 use tokio::time::sleep;
 
 use crate::sidecar_util::{
-    base_url, clear_logs, http_client, kill_child, new_log_buffer, ports, require_ready,
-    snapshot_logs, start_sidecar, LogBuffer, SidecarStart, SidecarStatus, LOOPBACK,
+    base_url, clear_logs, kill_child, new_log_buffer, ports, require_ready, snapshot_logs,
+    start_sidecar, LogBuffer, SidecarStart, SidecarStatus, LOOPBACK,
 };
 
 const TTS_PORT: u16 = ports::TTS;
@@ -195,6 +196,12 @@ impl TtsEngine {
         clear_logs(&self.log_buffer).await;
     }
 
+    /// Speak `text`, starting as soon as koko has the first sentence.
+    ///
+    /// koko streams raw PCM one sentence at a time, far faster than it
+    /// plays, so the audio is queued on the player while the rest arrives.
+    /// Returns once the stream ends; playback carries on until `is_playing`
+    /// turns false.
     pub async fn synthesize_and_play(
         &self,
         text: &str,
@@ -209,13 +216,20 @@ impl TtsEngine {
 
         info!("TTS request: {} chars, voice='{}'", text.len(), voice);
 
-        let client = http_client(Duration::from_secs(120));
+        // No total timeout: a long answer streams for longer than any fixed
+        // limit. A stalled koko is caught between chunks instead.
+        let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .read_timeout(Duration::from_secs(60))
+            .build()
+            .map_err(|e| format!("TTS client: {}", e))?;
 
         let body = serde_json::json!({
             "model": "tts-1",
             "input": text,
             "voice": voice,
-            "response_format": "pcm"
+            "response_format": "pcm",
+            "stream": true
         });
 
         let resp = client
@@ -230,90 +244,50 @@ impl TtsEngine {
             return Err(format!("TTS failed: {}", err_text));
         }
 
-        let audio_bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| format!("Failed to read TTS response: {}", e))?;
-
-        info!("TTS response: {} bytes", audio_bytes.len());
-
-        if audio_bytes.len() < 100 {
-            return Err("TTS produced no audio".to_string());
-        }
-
-        // PCM format from koko: 16-bit signed integer, mono, 24kHz
-        let samples: Vec<f32> = audio_bytes
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .map(|chunk| i16::from_le_bytes(*chunk) as f32 / 32768.0)
-            .collect();
-
-        info!(
-            "Playing {} samples ({:.1}s)",
-            samples.len(),
-            samples.len() as f32 / 24000.0
-        );
-
-        // Play audio on a dedicated thread (OutputStream is not Send on macOS)
         self.stop_flag.store(false, Ordering::SeqCst);
         self.playing.store(true, Ordering::SeqCst);
 
+        let (tx, rx) = std::sync::mpsc::channel::<Vec<f32>>();
         let playing = Arc::clone(&self.playing);
         let stop_flag = Arc::clone(&self.stop_flag);
         let device_name = output_device.unwrap_or("").to_string();
+        // A dedicated thread, because OutputStream is not Send on macOS.
+        std::thread::spawn(move || play_queued(rx, &device_name, &playing, &stop_flag));
 
-        std::thread::spawn(move || {
-            use rodio::{DeviceSinkBuilder, Player};
-
-            let stream = if device_name.is_empty() || device_name == "System Default" {
-                DeviceSinkBuilder::open_default_sink()
-            } else {
-                // Use rodio's re-exported cpal to get a compatible Device type
-                use rodio::cpal::traits::HostTrait;
-                let host = rodio::cpal::default_host();
-                let found = host.output_devices().ok().and_then(|devices| {
-                    devices
-                        .into_iter()
-                        .find(|d| crate::audio::device_name(d) == device_name)
-                });
-                match found {
-                    Some(device) => {
-                        DeviceSinkBuilder::from_device(device).and_then(|b| b.open_stream())
-                    }
-                    None => {
-                        warn!("Output device '{}' not found, using default", device_name);
-                        DeviceSinkBuilder::open_default_sink()
-                    }
-                }
-            };
-
-            let stream = match stream {
-                Ok(s) => s,
+        let mut stream = resp.bytes_stream();
+        let mut pcm = PcmDecoder::default();
+        let mut samples = 0usize;
+        let started = std::time::Instant::now();
+        while let Some(chunk) = StreamExt::next(&mut stream).await {
+            if self.stop_flag.load(Ordering::SeqCst) {
+                break;
+            }
+            let chunk = match chunk {
+                Ok(c) => c,
                 Err(e) => {
-                    error!("Audio output error: {}", e);
-                    playing.store(false, Ordering::SeqCst);
-                    return;
+                    self.stop_playback();
+                    return Err(format!("Failed to read TTS response: {}", e));
                 }
             };
-
-            let sink = Player::connect_new(stream.mixer());
-            let source =
-                rodio::buffer::SamplesBuffer::new(rodio::nz!(1), rodio::nz!(24000), samples);
-            sink.append(source);
-
-            // Wait for playback to complete or stop signal
-            while !sink.empty() && !stop_flag.load(Ordering::SeqCst) {
-                std::thread::sleep(std::time::Duration::from_millis(100));
+            let decoded = pcm.push(&chunk);
+            if samples == 0 && !decoded.is_empty() {
+                info!("TTS first audio after {} ms", started.elapsed().as_millis());
             }
-
-            if stop_flag.load(Ordering::SeqCst) {
-                sink.stop();
+            samples += decoded.len();
+            // A send fails once the player has gone (stopped, or no device).
+            if !decoded.is_empty() && tx.send(decoded).is_err() {
+                break;
             }
+        }
 
-            playing.store(false, Ordering::SeqCst);
-        });
-
+        info!(
+            "TTS streamed {} samples ({:.1}s)",
+            samples,
+            samples as f32 / SAMPLE_RATE.get() as f32
+        );
+        if samples == 0 && !self.stop_flag.load(Ordering::SeqCst) {
+            return Err("TTS produced no audio".to_string());
+        }
         Ok(())
     }
 
@@ -324,6 +298,102 @@ impl TtsEngine {
     pub fn is_playing(&self) -> bool {
         self.playing.load(Ordering::SeqCst)
     }
+}
+
+/// koko's PCM: 16-bit signed little-endian, mono, 24 kHz.
+const SAMPLE_RATE: std::num::NonZeroU32 = std::num::NonZeroU32::new(24_000).unwrap();
+
+/// Turns koko's streamed PCM into samples. A network chunk can end halfway
+/// through a sample, so its odd byte waits for the next chunk.
+#[derive(Default)]
+struct PcmDecoder {
+    carry: Option<u8>,
+}
+
+impl PcmDecoder {
+    fn push(&mut self, bytes: &[u8]) -> Vec<f32> {
+        let joined;
+        let bytes = match self.carry.take() {
+            Some(first) => {
+                joined = [&[first], bytes].concat();
+                &joined[..]
+            }
+            None => bytes,
+        };
+        let (pairs, rest) = bytes.as_chunks::<2>();
+        self.carry = rest.first().copied();
+        pairs
+            .iter()
+            .map(|pair| i16::from_le_bytes(*pair) as f32 / 32768.0)
+            .collect()
+    }
+}
+
+/// Play the samples `rx` brings until the sender is dropped and the queue
+/// has drained, or until `stop_flag` is set.
+fn play_queued(
+    rx: std::sync::mpsc::Receiver<Vec<f32>>,
+    device_name: &str,
+    playing: &AtomicBool,
+    stop_flag: &AtomicBool,
+) {
+    use rodio::{DeviceSinkBuilder, Player};
+    use std::sync::mpsc::RecvTimeoutError;
+
+    let stream = if device_name.is_empty() || device_name == "System Default" {
+        DeviceSinkBuilder::open_default_sink()
+    } else {
+        // Use rodio's re-exported cpal to get a compatible Device type
+        use rodio::cpal::traits::HostTrait;
+        let host = rodio::cpal::default_host();
+        let found = host.output_devices().ok().and_then(|devices| {
+            devices
+                .into_iter()
+                .find(|d| crate::audio::device_name(d) == device_name)
+        });
+        match found {
+            Some(device) => DeviceSinkBuilder::from_device(device).and_then(|b| b.open_stream()),
+            None => {
+                warn!("Output device '{}' not found, using default", device_name);
+                DeviceSinkBuilder::open_default_sink()
+            }
+        }
+    };
+
+    let stream = match stream {
+        Ok(s) => s,
+        Err(e) => {
+            error!("Audio output error: {}", e);
+            playing.store(false, Ordering::SeqCst);
+            return;
+        }
+    };
+
+    let sink = Player::connect_new(stream.mixer());
+    let tick = Duration::from_millis(100);
+    let mut more = true;
+    while !stop_flag.load(Ordering::SeqCst) {
+        if more {
+            match rx.recv_timeout(tick) {
+                Ok(samples) => sink.append(rodio::buffer::SamplesBuffer::new(
+                    rodio::nz!(1),
+                    SAMPLE_RATE,
+                    samples,
+                )),
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => more = false,
+            }
+        } else if sink.empty() {
+            break;
+        } else {
+            std::thread::sleep(tick);
+        }
+    }
+
+    if stop_flag.load(Ordering::SeqCst) {
+        sink.stop();
+    }
+    playing.store(false, Ordering::SeqCst);
 }
 
 // Tauri commands
@@ -381,6 +451,24 @@ pub async fn clear_tts_logs(state: tauri::State<'_, TtsEngine>) -> Result<(), ()
 mod tests {
     use super::*;
     use crate::test_util::temp_dir;
+
+    #[test]
+    fn pcm_decoder_reads_little_endian_samples() {
+        let mut pcm = PcmDecoder::default();
+        let got = pcm.push(&[0x00, 0x40, 0x00, 0xc0, 0xff, 0x7f]);
+        assert_eq!(got, vec![0.5, -0.5, 32767.0 / 32768.0]);
+        assert_eq!(pcm.carry, None);
+    }
+
+    #[test]
+    fn pcm_decoder_carries_a_sample_split_across_chunks() {
+        let mut pcm = PcmDecoder::default();
+        assert_eq!(pcm.push(&[0x00, 0x40, 0x00]), vec![0.5]);
+        assert_eq!(pcm.push(&[]), Vec::<f32>::new());
+        assert_eq!(pcm.push(&[0xc0]), vec![-0.5]);
+        assert_eq!(pcm.push(&[0x00]), Vec::<f32>::new());
+        assert_eq!(pcm.push(&[0x40, 0x00, 0x40]), vec![0.5, 0.5]);
+    }
 
     #[test]
     fn resolve_koko_path_prefers_the_bundled_file() {
