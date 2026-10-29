@@ -12,7 +12,7 @@
  */
 
 import type { TurnSkills } from '#lib/skills/turn.ts';
-import type { ChatMessage } from '#lib/api.ts';
+import type { ChatMessage, Usage } from '#lib/api.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import type { Artifact } from '#lib/agent/tools/index.ts';
 import type { AgentStopReason } from '#lib/agent/loop.ts';
@@ -49,6 +49,14 @@ export interface ShellTurnOptions {
 	/** Per-call response token budget override. */
 	maxResponseTokens?: number;
 	signal?: AbortSignal;
+	/**
+	 * Run in the held slot before the loop starts: summarising is a model call,
+	 * and queueing it apart would let another consumer in between it and the
+	 * turn it makes room for. Returns the rebuilt prompt when it compacted.
+	 */
+	compactIfDue?: () => Promise<ChatMessage[] | null>;
+	/** The server's token counts for each call. */
+	onUsage?: (usage: Usage) => void;
 	onTicket?: (ticket: InferenceTicket) => void;
 	onAdmitted?: () => void;
 	/** Taking the slot back after a long tool (see `WithSlotOptions.onRequeue`). */
@@ -91,9 +99,10 @@ export async function runShellTurn(options: ShellTurnOptions): Promise<ShellTurn
 }
 
 async function drive(options: ShellTurnOptions, slot: HeldSlot): Promise<ShellTurnResult> {
+	const messages = (await options.compactIfDue?.()) ?? options.messages;
 	return runTurnCore(
 		{
-			messages: options.messages,
+			messages,
 			slot,
 			workingDir: null,
 			contextSize: options.contextSize,
@@ -122,7 +131,10 @@ async function drive(options: ShellTurnOptions, slot: HeldSlot): Promise<ShellTu
 			// are offered only when a person is there to see the result.
 			interactive: true,
 			signal: options.signal,
-			onUsageUpdate: (usage) => updateContextUsage(usage, options.contextSize),
+			onUsageUpdate: (usage) => {
+				updateContextUsage(usage, options.contextSize);
+				options.onUsage?.(usage);
+			},
 			onCallStats: (stats) => options.onCallStats?.(stats),
 			onContextManaged: (info) => options.onContextManaged?.(info),
 			onMessageAdded: (m) => options.onMessageAdded?.(m),

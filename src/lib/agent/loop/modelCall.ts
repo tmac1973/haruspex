@@ -39,6 +39,9 @@ import { logDebug } from '#lib/debugLog.ts';
 import { inLoopTrimBudget, type LoopContext } from '#lib/agent/loop/context.ts';
 import { isCodeContext } from '#lib/agent/loop/heuristics.ts';
 
+/** Headroom on a server's "at least N tokens" count before recalibrating to it. */
+const LOWER_BOUND_PADDING = 1.1;
+
 /**
  * The sampling inputs for one model call. Every `getSamplingParams` call in
  * this file goes through here: the four fields must agree across the
@@ -200,8 +203,13 @@ async function sendGuardedCompletion(
 		const overflow = e instanceof ApiError ? parseContextOverflow(e.message) : null;
 		if (!overflow) throw e;
 		// The estimate was too optimistic and we hit the wall. Learn the true
-		// ratio from the server's exact count, then refit and retry once.
-		recordTokenCalibration(sentEstimate, overflow.promptTokens, ctx.descriptor.calibrationKey);
+		// ratio from the server's exact count, then refit and retry once. vLLM
+		// only says "at least N", stopping at the limit, so pad that count:
+		// calibrating to the bare bound would refit to just under the wall.
+		const actual = overflow.lowerBound
+			? Math.ceil(overflow.promptTokens * LOWER_BOUND_PADDING)
+			: overflow.promptTokens;
+		recordTokenCalibration(sentEstimate, actual, ctx.descriptor.calibrationKey);
 		logDebug('agent', 'context overflow 400 — recalibrating and retrying', {
 			overflow,
 			calibration: getTokenCalibration(ctx.descriptor.calibrationKey)

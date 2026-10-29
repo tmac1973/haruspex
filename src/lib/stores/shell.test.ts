@@ -65,7 +65,16 @@ vi.mock('#lib/skills/turn.ts', async (importOriginal) => {
 	skillsTurn.prepareTurnSkills.mockImplementation(real.prepareTurnSkills);
 	return { ...real, prepareTurnSkills: skillsTurn.prepareTurnSkills };
 });
-vi.mock('#lib/agent/contextBudget.ts', () => ({ describeContextManaged: () => 'managed' }));
+vi.mock('#lib/agent/contextBudget.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/agent/contextBudget.ts')>()),
+	describeContextManaged: () => 'managed'
+}));
+// The summary call; compaction's cut and the prompt it builds are real.
+const summarize = vi.hoisted(() => ({ summarizeInChunks: vi.fn() }));
+vi.mock('#lib/agent/summarize.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/agent/summarize.ts')>()),
+	summarizeInChunks: summarize.summarizeInChunks
+}));
 vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
 	logDebug: vi.fn()
@@ -739,6 +748,101 @@ describe('outgoing prompt shape', () => {
 		expect(sent[0].content).toBe('sys\n\n[moved here from the Chat tab]');
 		// The sidebar still renders the note as its own entry.
 		expect(s.messages[0].role).toBe('system');
+	});
+});
+
+describe('compaction', () => {
+	/** Two finished turns, each with a tool result of `chars` characters. */
+	function longThread(chars: number): ChatMessage[] {
+		return [1, 2].flatMap((n) => [
+			{ role: 'user', content: `turn ${n}` },
+			{
+				role: 'assistant',
+				content: '',
+				tool_calls: [
+					{ id: `c${n}`, type: 'function', function: { name: 'shell_read', arguments: '{}' } }
+				]
+			} as never,
+			{ role: 'tool', tool_call_id: `c${n}`, content: `${n}`.repeat(chars) } as never,
+			{ role: 'assistant', content: `answer ${n}` }
+		]);
+	}
+
+	/** Run a turn whose loop asks to compact first; the prompt it then got. */
+	async function turnAfterCompaction(s: ShellSession): Promise<ChatMessage[] | null> {
+		let prompt: ChatMessage[] | null = null;
+		runShellTurn.mockImplementation(
+			async (opts: {
+				onAdmitted?: () => void;
+				compactIfDue: () => Promise<ChatMessage[] | null>;
+			}) => {
+				opts.onAdmitted?.();
+				prompt = await opts.compactIfDue();
+				return { finalText: 'done', rawText: 'done', stopReason: 'complete' };
+			}
+		);
+		await s.submitShell({
+			body: 'continue',
+			sessionContext: {} as never,
+			currentCwd: '/root',
+			recentHistory: []
+		});
+		return prompt;
+	}
+
+	beforeEach(() => {
+		summarize.summarizeInChunks.mockReset();
+		summarize.summarizeInChunks.mockResolvedValue('Router is OpenWrt; backups in /root/backups.');
+	});
+
+	it('summarises older turns near the window edge, and keeps the thread whole', async () => {
+		const s = createShellSession();
+		// About 7k tokens of tool output against an 8k window.
+		s.adoptChatThread(longThread(12_000));
+
+		const prompt = await turnAfterCompaction(s);
+
+		expect(summarize.summarizeInChunks).toHaveBeenCalledTimes(1);
+		expect(summarize.summarizeInChunks.mock.calls[0][0].prompt).toMatch(/terminal session/);
+		// The model gets the summary and the new message; the old tool output is gone.
+		expect(prompt).not.toBeNull();
+		const sent = prompt as unknown as ChatMessage[];
+		expect(sent[0].content).toContain('Router is OpenWrt; backups in /root/backups.');
+		expect(sent.map((m) => m.role)).toEqual(['system', 'user']);
+		expect(JSON.stringify(sent)).not.toContain('1'.repeat(100));
+		// The sidebar keeps every message.
+		expect(s.compaction?.at).toBe(8);
+		expect(s.messages).toHaveLength(10);
+		expect(s.contextNotice).toMatch(/summarised/);
+	});
+
+	it('leaves a short thread alone', async () => {
+		const s = createShellSession();
+		s.adoptChatThread(longThread(100));
+
+		expect(await turnAfterCompaction(s)).toBeNull();
+		expect(summarize.summarizeInChunks).not.toHaveBeenCalled();
+		expect(s.compaction).toBeNull();
+	});
+
+	it('goes on without a summary when the summary call fails', async () => {
+		summarize.summarizeInChunks.mockRejectedValue(new Error('server down'));
+		const s = createShellSession();
+		s.adoptChatThread(longThread(12_000));
+
+		expect(await turnAfterCompaction(s)).toBeNull();
+		expect(s.compaction).toBeNull();
+		expect(s.lastError).toBeNull();
+	});
+
+	it('a new chat drops the summary', async () => {
+		const s = createShellSession();
+		s.adoptChatThread(longThread(12_000));
+		await turnAfterCompaction(s);
+		expect(s.compaction).not.toBeNull();
+
+		s.newChat();
+		expect(s.compaction).toBeNull();
 	});
 });
 

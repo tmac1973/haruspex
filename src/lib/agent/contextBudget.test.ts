@@ -491,12 +491,36 @@ describe('parseContextOverflow', () => {
 		const body =
 			'Server error: {"error":{"code":400,"message":"request (33101 tokens) exceeds the available context size (32768 tokens), try increasing it","type":"exceed_context_size_error","n_prompt_tokens":33101,"n_ctx":32768}}';
 		const parsed = parseContextOverflow(body);
-		expect(parsed).toEqual({ promptTokens: 33101, contextSize: 32768 });
+		expect(parsed).toEqual({ promptTokens: 33101, contextSize: 32768, lowerBound: false });
 	});
 
 	it('falls back to the human-readable numbers when fields are absent', () => {
 		const body = 'request (40000 tokens) exceeds the available context size (32768 tokens)';
-		expect(parseContextOverflow(body)).toEqual({ promptTokens: 40000, contextSize: 32768 });
+		expect(parseContextOverflow(body)).toEqual({
+			promptTokens: 40000,
+			contextSize: 32768,
+			lowerBound: false
+		});
+	});
+
+	it('reads a vLLM 400 body, whose count is only a lower bound', () => {
+		const body =
+			'Server error: {"error":{"message":"This model\'s maximum context length is 262144 tokens. However, you requested 65536 output tokens and your prompt contains at least 196609 input tokens, for a total of at least 262145 tokens. Please reduce the length of the input prompt or the number of requested output tokens. (parameter=input_tokens, value=196609)","type":"BadRequestError","param":"input_tokens","code":400}}';
+		expect(parseContextOverflow(body)).toEqual({
+			promptTokens: 196609,
+			contextSize: 262144,
+			lowerBound: true
+		});
+	});
+
+	it('reads the older vLLM wording, which gives the exact count', () => {
+		const body =
+			"This model's maximum context length is 32768 tokens. However, you requested 40000 tokens (36000 in the messages, 4000 in the completion).";
+		expect(parseContextOverflow(body)).toEqual({
+			promptTokens: 36000,
+			contextSize: 32768,
+			lowerBound: false
+		});
 	});
 
 	it('returns null for unrelated errors', () => {

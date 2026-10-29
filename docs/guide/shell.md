@@ -11,11 +11,11 @@ The Shell tab is a real terminal with an assistant beside it. By default the ass
 
 It works on Linux, macOS and Windows. On Windows a picker in the tab lets you choose a PowerShell version or a WSL2 distro. Click **+** for another tab; each tab has its own terminal and assistant. A tab can be detached into its own window. Right-click the terminal for Copy, Paste and **Restart shell**.
 
-Your `$SHELL` is used unless you set Settings → Shell → Shell binary. Command capture needs shell integration: bash and zsh get Haruspex's hooks, and fish 4 sends the needed markers itself. Other shells still work as terminals, but their commands are not captured; copy the text into the assistant box instead. A badge in the sidebar header shows whether capture works.
+Your `$SHELL` is used unless you set Settings → Shell → Shell binary. Command capture needs shell integration: bash and zsh get Haruspex's hooks, and fish 4 sends the needed markers itself. Other shells work as terminals, but their commands are not captured: copy what you need into the assistant box. A badge in the sidebar header shows whether capture works.
 
 ## Tabs the Code tab opens
 
-When the Code tab needs a command run in a terminal (a `sudo`, a password prompt), or you click **Open in Shell** on a command card, a new tab opens here at the Code session's folder with the command typed in. Nothing runs until you press `Enter`, and you can change the command first. When the agent asked for it, the Code session waits for the command and reads its result; after that the tab is an ordinary terminal. See the `code` page.
+When the Code tab needs a command run in a terminal (a `sudo`, a password prompt), or you click **Open in Shell** on a command card, a new tab opens here at the Code session's folder with the command typed in. Nothing runs until you press `Enter`, and you can change the command first. When the agent asked for it, the Code session reads the result; then the tab is an ordinary terminal. See the `code` page.
 
 ## Ask about what just happened
 
@@ -43,9 +43,9 @@ Full access needs a capable model. Small local models make mistakes and get stuc
 
 ## Continue in the Code tab
 
-**Open in Code** in the sidebar header starts a Code session in the folder the terminal is in now and switches to the Code tab (from a detached Shell window, the main window comes forward). The conversation here doesn't go with it. Use it for longer coding work: Code sessions are saved and can be reopened, forked and moved. See the `code` page.
+**Open in Code** in the sidebar header starts a Code session in the folder the terminal is in now and switches to the Code tab. The conversation here doesn't go with it. Use it for longer coding work: Code sessions are saved and can be reopened, forked and moved. See the `code` page.
 
-The Shell assistant's conversation is not saved: it ends when you close the tab or quit, in both modes, and is not brought back when you return to a folder.
+The Shell assistant's conversation is not saved: it ends when you close the tab or quit, in both modes. Once it fills about three quarters of the model's context, its older turns are summarised before the next one; the sidebar still shows every message.
 
 ## Stop runaway commands (memory limit)
 
