@@ -335,6 +335,8 @@ export interface ToolRegistration {
 		| 'image'
 		/** Uses the music backend (Settings → Music). Chat and the Code tab, interactive only. */
 		| 'music'
+		/** Speaks text into a WAV with the bundled koko. Chat and the Code tab, interactive only. */
+		| 'speech'
 		/** Makes clips on llama-toolchest (Settings → Video generation), always in the
 		 *  background. Chat and the Code tab, interactive only, with a task owner. */
 		| 'video-gen'

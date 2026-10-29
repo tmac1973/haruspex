@@ -262,13 +262,55 @@ fn too_large() -> String {
 }
 
 /// A temp file name no other download in this process is using.
-fn temp_name() -> String {
+pub(crate) fn temp_name() -> String {
     static N: AtomicU64 = AtomicU64::new(0);
     format!(
         "dl-{}-{}.part",
         crate::time_util::now_ms(),
         N.fetch_add(1, Ordering::Relaxed)
     )
+}
+
+/// Commit a file written in the cache directory (`temp_name`), such as
+/// speech made here: hash it, then move, insert and link it.
+#[allow(clippy::too_many_arguments)]
+pub async fn store_file(
+    db: &Database,
+    dir: &Path,
+    temp: &Path,
+    mime: &'static str,
+    title: Option<String>,
+    duration_ms: Option<i64>,
+    conversation_id: Option<&str>,
+    code_session_id: Option<&str>,
+) -> Result<StoredAudio, String> {
+    let read = async {
+        let bytes = std::fs::metadata(temp).map_err(|e| e.to_string())?.len();
+        let hash = crate::hash_util::sha256_file(temp, |_| {})
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok::<_, String>((hash, bytes))
+    };
+    let (hash, bytes) = match read.await {
+        Ok(got) => got,
+        Err(e) => {
+            let _ = std::fs::remove_file(temp);
+            return Err(format!("Failed to read the audio: {}", e));
+        }
+    };
+    let meta = StoreMeta {
+        mime,
+        title,
+        duration_ms,
+        conversation_id,
+        code_session_id,
+    };
+    commit_file(db, dir, temp, &hash, bytes, &meta)?;
+    Ok(StoredAudio {
+        hash,
+        mime: mime.to_string(),
+        bytes,
+    })
 }
 
 /// Keep a song the webview already holds: a file from the working folder that

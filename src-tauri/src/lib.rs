@@ -500,6 +500,7 @@ pub fn run() {
             image_models::delete_image_model,
             tts::tts_initialize,
             tts::tts_synthesize_and_play,
+            tts::tts_synthesize_to_cache,
             tts::tts_stop_playback,
             tts::tts_is_playing,
             tts::tts_is_initialized,
