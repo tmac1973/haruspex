@@ -6,7 +6,7 @@ impl Database {
         let conn = self.conn();
         let mut stmt = conn
             .prepare(
-                "SELECT id, title, created_at, updated_at, unread FROM conversations \
+                "SELECT id, title, created_at, updated_at, unread, working_dir FROM conversations \
                  ORDER BY updated_at DESC",
             )
             .map_err(|e| format!("Query failed: {}", e))?;
@@ -19,6 +19,7 @@ impl Database {
                     created_at: row.get(2)?,
                     updated_at: row.get(3)?,
                     unread: row.get::<_, i64>(4)? != 0,
+                    working_dir: row.get(5)?,
                 })
             })
             .map_err(|e| format!("Query failed: {}", e))?;
@@ -150,6 +151,30 @@ impl Database {
         conn.execute(
             "UPDATE conversations SET unread = ?1 WHERE id = ?2",
             params![unread as i64, id],
+        )
+        .map_err(|e| format!("Update failed: {}", e))?;
+        Ok(())
+    }
+
+    /// `path` is the chat's folder, or `""` for none. NULL is a chat saved
+    /// before each had its own, until `adopt_conversation_working_dir`.
+    pub fn set_conversation_working_dir(&self, id: &str, path: &str) -> Result<(), String> {
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE conversations SET working_dir = ?1 WHERE id = ?2",
+            params![path, id],
+        )
+        .map_err(|e| format!("Update failed: {}", e))?;
+        Ok(())
+    }
+
+    /// Give every chat that has no folder of its own yet `path` (`""` for
+    /// none): the one folder all chats shared before each had its own.
+    pub fn adopt_conversation_working_dir(&self, path: &str) -> Result<(), String> {
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE conversations SET working_dir = ?1 WHERE working_dir IS NULL",
+            params![path],
         )
         .map_err(|e| format!("Update failed: {}", e))?;
         Ok(())

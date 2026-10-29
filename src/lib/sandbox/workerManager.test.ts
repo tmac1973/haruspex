@@ -5,9 +5,15 @@ import type { MainToWorker, ToolResult, WorkerToMain } from './protocol';
 // exercised in isolation. getWorkingDir → null (unless a test sets one) keeps
 // the pre-run workdir sync a no-op (so runPython drives straight through to `send`).
 const invokeMock = vi.hoisted(() => vi.fn());
-const session = vi.hoisted(() => ({ workingDir: null as string | null }));
+const session = vi.hoisted(() => ({
+	workingDir: null as string | null,
+	folders: {} as Record<string, string | null>
+}));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
-vi.mock('#lib/stores/session.svelte.ts', () => ({ getWorkingDir: () => session.workingDir }));
+vi.mock('#lib/stores/session.svelte.ts', () => ({
+	getWorkingDir: () => session.workingDir,
+	getWorkingDirFor: (id: string) => session.folders[id] ?? null
+}));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
 		settings: { proxy: { mode: 'none' }, sandboxNetAccess: 'internet' }
@@ -68,14 +74,18 @@ function runId(fake: FakeWorker): string {
 
 describe('WorkerManager message dispatch', () => {
 	let fake: FakeWorker;
-	function makeManager(isolated = false) {
+	function makeManager(isolated = false, chatId?: string) {
 		fake = new FakeWorker();
-		return new WorkerManager(() => fake as unknown as Worker, { isIsolated: () => isolated });
+		return new WorkerManager(() => fake as unknown as Worker, {
+			isIsolated: () => isolated,
+			chatId
+		});
 	}
 
 	beforeEach(() => {
 		vi.clearAllMocks();
 		session.workingDir = null;
+		session.folders = {};
 	});
 
 	it('tells the model Python is unavailable when its runtime is missing, and remembers', async () => {
@@ -217,5 +227,22 @@ describe('WorkerManager message dispatch', () => {
 		fake.emit({ kind: 'sync_workdir_ack', sync_id: sync.sync_id });
 		await tick();
 		expect(fake.postedKinds()).toContain('run');
+	});
+
+	it("syncs its own chat's folder, not the open chat's", async () => {
+		// A turn in a chat that isn't open runs Python against that chat's folder.
+		session.workingDir = '/open';
+		session.folders = { b: '/b' };
+		invokeMock.mockImplementation(async () => {
+			throw new Error('stop after the sync request');
+		});
+		const wm = makeManager(false, 'b');
+		void wm.runPython('print(1)').catch(() => {});
+		fake.emit({ kind: 'ready' });
+		await tick();
+		expect(invokeMock).toHaveBeenCalledWith(
+			'sandbox_sync_workdir',
+			expect.objectContaining({ workdir: '/b' })
+		);
 	});
 });

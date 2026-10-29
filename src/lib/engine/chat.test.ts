@@ -66,6 +66,7 @@ describe('chat operations', () => {
 		expect(state.messageSteps[1]).toHaveLength(1);
 		expect(fake.active).toBe('a');
 		expect(fake.opened).toEqual([]);
+		expect(state.workingDir).toBeNull();
 	});
 
 	it('read the open chat live', async () => {
@@ -141,16 +142,18 @@ describe('chat operations', () => {
 		);
 	});
 
-	it("set Chat's working folder to one that exists, or clear it", async () => {
-		expect(await dispatchChat({ type: 'chat.folder', path: '/home/me/notes' })).toEqual({
+	it("set a chat's working folder to one that exists, or clear it", async () => {
+		expect(await dispatchChat({ type: 'chat.folder', id: 'b', path: '/home/me/notes' })).toEqual({
 			workingDir: '/home/me/notes'
 		});
-		expect(fake.workingDir).toBe('/home/me/notes');
+		expect(fake.folders.b).toBe('/home/me/notes');
+		expect((await chatState('b')).workingDir).toBe('/home/me/notes');
 		await expect(dispatchChat({ type: 'chat.folder', path: '/nope' })).rejects.toThrow(
 			'no folder /nope'
 		);
 		await dispatchChat({ type: 'chat.folder', path: null });
-		expect(fake.workingDir).toBeNull();
+		expect(fake.folders.a).toBeNull();
+		expect(fake.folders.b).toBe('/home/me/notes');
 	});
 
 	it('steer a chat whose reply is being written, while another runs beside it', async () => {

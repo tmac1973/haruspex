@@ -61,8 +61,8 @@ export type EngineOp =
 	| { type: 'chat.rename'; id: string; title: string }
 	/** Off: incognito from here on, as the chat's memory toggle. */
 	| { type: 'chat.memory'; id: string; enabled: boolean }
-	/** Chat's working folder, for every chat; null clears it. */
-	| { type: 'chat.folder'; path: string | null }
+	/** A chat's working folder (the open one's without `id`); null clears it. */
+	| { type: 'chat.folder'; id?: string; path: string | null }
 	| SessionOp
 	| ModelsOp
 	| { type: 'prompts.list' }

@@ -513,6 +513,8 @@ pub fn run() {
             db::db_update_last_message_steps,
             db::db_rename_conversation,
             db::conversation_set_unread,
+            db::conversation_set_working_dir,
+            db::conversation_adopt_working_dir,
             db::db_delete_conversation,
             db::db_clear_all_conversations,
             db::code_session_list,

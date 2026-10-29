@@ -32,7 +32,7 @@ import {
 } from '#lib/stores/chat.svelte.ts';
 import { invoke } from '@tauri-apps/api/core';
 import { dbLoadMessages, dbLoadMessageSteps } from '#lib/stores/db.ts';
-import { getActiveConversationId, getWorkingDir } from '#lib/stores/session.svelte.ts';
+import { getActiveConversationId, getWorkingDirFor } from '#lib/stores/session.svelte.ts';
 import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { attachImages, slashFor } from '#lib/engine/attach.ts';
@@ -99,7 +99,7 @@ export function liveChatState(conv: Conversation): ChatState {
 		messageStops: plain(conv.messageStops),
 		...turnFields(conv),
 		contextUsage: plain(conv.contextUsage),
-		workingDir: getWorkingDir(),
+		workingDir: getWorkingDirFor(conv.id),
 		memoryEnabled: conv.memoryEnabled !== false
 	};
 }
@@ -120,7 +120,7 @@ export async function chatState(id: string): Promise<ChatState> {
 		error: getRun(id).errorMessage,
 		lastTurnFailed: getRun(id).lastTurnFailed,
 		contextUsage: plain(conv.contextUsage),
-		workingDir: null,
+		workingDir: getWorkingDirFor(id),
 		memoryEnabled: conv.memoryEnabled !== false
 	};
 }
@@ -228,12 +228,14 @@ export async function dispatchChat(op: {
 			return { memoryEnabled: op.enabled };
 		}
 		case 'chat.folder': {
-			// Chat's one working folder, as the folder button sets it: for every chat.
+			// A chat's working folder (the open one's without an id), as the
+			// folder button sets it. New chats start in it too.
+			const id = op.id === undefined ? getActiveConversationId() : find(op.id).id;
 			const path = typeof op.path === 'string' ? op.path.trim() : null;
 			if (path && !(await invoke<boolean>('code_folder_exists', { path, wslDistro: null }))) {
 				throw new Error(`no folder ${path} on this computer`);
 			}
-			setWorkingDir(path || null);
+			setWorkingDir(path || null, id);
 			return { workingDir: path || null };
 		}
 		case 'chat.continue':

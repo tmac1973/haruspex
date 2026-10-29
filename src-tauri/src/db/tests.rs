@@ -102,6 +102,31 @@ fn conversation_unread_round_trips() {
 }
 
 #[test]
+fn conversation_working_dir_is_adopted_once_then_kept() {
+    let db = test_db();
+    db.create_conversation("old", "Old").unwrap();
+    db.create_conversation("new", "New").unwrap();
+    db.set_conversation_working_dir("new", "/mine").unwrap();
+    let dir = |id: &str| {
+        db.list_conversations()
+            .unwrap()
+            .into_iter()
+            .find(|c| c.id == id)
+            .unwrap()
+            .working_dir
+    };
+    assert_eq!(dir("old"), None);
+
+    db.adopt_conversation_working_dir("/shared").unwrap();
+    assert_eq!(dir("old").as_deref(), Some("/shared"));
+    assert_eq!(dir("new").as_deref(), Some("/mine"));
+
+    db.set_conversation_working_dir("old", "").unwrap();
+    db.adopt_conversation_working_dir("/later").unwrap();
+    assert_eq!(dir("old").as_deref(), Some(""));
+}
+
+#[test]
 fn clear_all() {
     let db = test_db();
     db.create_conversation("c1", "Chat 1").unwrap();

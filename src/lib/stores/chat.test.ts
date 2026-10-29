@@ -525,6 +525,56 @@ describe('image rehydration on load', () => {
 	});
 });
 
+describe('working folder per chat', () => {
+	beforeEach(() => {
+		vi.resetModules();
+		localStorage.setItem('haruspex-working-dir', '/shared');
+	});
+
+	it('keeps each chat its own folder, and starts a new chat in the last one picked', async () => {
+		const { invoke } = await import('@tauri-apps/api/core');
+		vi.mocked(invoke).mockClear();
+		vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => {
+			if (cmd === 'db_list_conversations') {
+				return [
+					{ id: 'old', title: 'Old', created_at: 1, updated_at: 3, working_dir: null },
+					{ id: 'mine', title: 'Mine', created_at: 1, updated_at: 2, working_dir: '/mine' },
+					{ id: 'none', title: 'None', created_at: 1, updated_at: 1, working_dir: '' }
+				];
+			}
+			if (cmd === 'db_get_conversation') {
+				const { id } = args as { id: string };
+				return { id, title: id, created_at: 1, updated_at: 1, messages: [] };
+			}
+			return [];
+		});
+		const chat = await import('#lib/stores/chat.svelte.ts');
+		await chat.initChatStore();
+
+		// A chat saved before folders were per chat keeps the shared one.
+		expect(invoke).toHaveBeenCalledWith('conversation_adopt_working_dir', { path: '/shared' });
+		expect(chat.getWorkingDirFor('old')).toBe('/shared');
+		expect(chat.getWorkingDirFor('mine')).toBe('/mine');
+		expect(chat.getWorkingDirFor('none')).toBeNull();
+
+		await chat.setActiveConversation('mine');
+		expect(chat.getWorkingDir()).toBe('/mine');
+		chat.setWorkingDir('/new');
+		expect(invoke).toHaveBeenCalledWith('conversation_set_working_dir', {
+			id: 'mine',
+			path: '/new'
+		});
+		expect(chat.getWorkingDirFor('old')).toBe('/shared');
+
+		await chat.setActiveConversation('none');
+		expect(chat.getWorkingDir()).toBeNull();
+
+		chat.createConversation();
+		expect(chat.getWorkingDir()).toBe('/new');
+		localStorage.removeItem('haruspex-working-dir');
+	});
+});
+
 describe('computeMessageStats', () => {
 	it('measures the rate over the final call but reports the whole turn as elapsed', async () => {
 		const { computeMessageStats } = await import('#lib/stores/chat.svelte.ts');

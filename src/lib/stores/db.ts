@@ -210,6 +210,26 @@ export async function dbSetUnread(id: string, unread: boolean): Promise<void> {
 	}
 }
 
+/** A chat's folder; `null` (none) is stored as `''`. */
+export async function dbSetWorkingDir(id: string, path: string | null): Promise<void> {
+	if (!available) return;
+	try {
+		await invoke('conversation_set_working_dir', { id, path: path ?? '' });
+	} catch (e) {
+		logDebug('db', 'dbSetWorkingDir failed', { id, error: errMessage(e) });
+	}
+}
+
+/** Give every chat saved before each had a folder of its own `path`. */
+export async function dbAdoptWorkingDir(path: string | null): Promise<void> {
+	if (!available) return;
+	try {
+		await invoke('conversation_adopt_working_dir', { path: path ?? '' });
+	} catch (e) {
+		logDebug('db', 'dbAdoptWorkingDir failed', { error: errMessage(e) });
+	}
+}
+
 export async function dbDeleteConversation(id: string): Promise<void> {
 	if (!available) return;
 	try {
