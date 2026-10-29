@@ -6,6 +6,7 @@ import {
 	renderSkillContent,
 	renderSlashMessage,
 	skillsWithFiles,
+	turnRunsSkill,
 	typedText
 } from './content';
 
@@ -61,7 +62,7 @@ describe('renderSlashMessage / typedText', () => {
 	it('puts the skill ahead of what was typed, and gives back only the typing', () => {
 		const text = renderSlashMessage(doc(), '/pdf-tools merge a.pdf b.pdf');
 		expect(text.startsWith('<skill_content name="pdf-tools">')).toBe(true);
-		expect(text).toContain('take priority over your usual way of answering');
+		expect(text).toContain('replace your usual way of answering, including the search rules');
 		expect(text.endsWith('/pdf-tools merge a.pdf b.pdf')).toBe(true);
 		expect(holdsSkillContent(text)).toBe(true);
 		expect(typedText(text)).toBe('/pdf-tools merge a.pdf b.pdf');
@@ -89,5 +90,32 @@ describe('skillsWithFiles', () => {
 			{ role: 'tool' as const, content: renderSkillContent(doc({ name: 'plain' })) }
 		];
 		expect(skillsWithFiles(messages)).toEqual(new Set(['pdf-tools']));
+	});
+});
+
+describe('turnRunsSkill', () => {
+	const skill = renderSkillContent(doc());
+
+	it('is true for a /name run and for a skill loaded this turn', () => {
+		expect(
+			turnRunsSkill([{ role: 'user', content: renderSlashMessage(doc(), '/pdf-tools') }])
+		).toBe(true);
+		expect(
+			turnRunsSkill([
+				{ role: 'user', content: 'merge these' },
+				{ role: 'tool', tool_call_id: 'c1', content: skill }
+			])
+		).toBe(true);
+	});
+
+	it('is false for a plain turn, even after an earlier skill', () => {
+		expect(
+			turnRunsSkill([
+				{ role: 'user', content: renderSlashMessage(doc(), '/pdf-tools') },
+				{ role: 'assistant', content: 'Done.' },
+				{ role: 'user', content: 'tell me about monkeys' }
+			])
+		).toBe(false);
+		expect(turnRunsSkill([])).toBe(false);
 	});
 });

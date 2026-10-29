@@ -7,6 +7,7 @@ import { ResponseCutOffError, messageText, type ChatCompletionResponse } from '#
 import type { getChatTemplateKwargs, getSamplingParams } from '#lib/stores/settings.ts';
 import { logDebug } from '#lib/debugLog.ts';
 import { NudgeState } from '#lib/agent/loop/nudges.ts';
+import { turnRunsSkill } from '#lib/skills/content.ts';
 import type { IterationOutcome, LoopContext, LoopState } from '#lib/agent/loop/context.ts';
 import {
 	diversityNudgePrompt,
@@ -37,7 +38,7 @@ export async function finalizeNoToolCalls(
 	templateKwargs: ReturnType<typeof getChatTemplateKwargs>,
 	iteration: number
 ): Promise<IterationOutcome> {
-	const { messages, tools, options } = ctx;
+	const { tools, options } = ctx;
 
 	// Phantom-image gate. First, because a turn that invented its image URLs
 	// has produced an answer promising pictures that cannot exist, and the
@@ -49,28 +50,8 @@ export async function finalizeNoToolCalls(
 		return pushNudge(ctx, response, phantomImageNudgePrompt());
 	}
 
-	// Research gate. Checked before the diversity gate because a turn that
-	// only grabbed a picture has not researched at all, which is the more
-	// basic failure of the two.
-	const lastUserText = messageText(
-		[...messages].reverse().find((m) => m.role === 'user')?.content ?? ''
-	);
-	if (nudges.needsResearchNudge(state.usedTools, looksLikeImageOnlyRequest(lastUserText))) {
-		nudges.consumeResearchNudge();
-		logDebug('agent', `iteration ${iteration} branch=research-nudge`);
-		nudges.armNarrateRecovery();
-		return pushNudge(ctx, response, researchNudgePrompt());
-	}
-
-	// Diversity gate.
-	if (nudges.needsDiversityNudge(state.usedTools)) {
-		const fetchedCount = nudges.consumeDiversityNudge();
-		logDebug('agent', `iteration ${iteration} branch=diversity-nudge`, {
-			fetchedCount
-		});
-		nudges.armNarrateRecovery();
-		return pushNudge(ctx, response, diversityNudgePrompt(fetchedCount));
-	}
+	const researched = researchGates(ctx, nudges, response, state.usedTools, iteration);
+	if (researched) return researched;
 
 	const steered = continueForSteering(ctx, state, response, iteration);
 	if (steered) return steered;
@@ -135,4 +116,44 @@ export async function finalizeNoToolCalls(
 		options.onError(new ResponseCutOffError(outOfTokensMessage(ctx, postTools)));
 	}
 	return 'complete';
+}
+
+/**
+ * The research and source-diversity nudges, or null when neither applies.
+ * A skill's own steps say how much to research: `/weather` runs one script
+ * and needs no sources, so neither gate applies to a turn that runs one.
+ */
+function researchGates(
+	ctx: LoopContext,
+	nudges: NudgeState,
+	response: ChatCompletionResponse,
+	usedTools: boolean,
+	iteration: number
+): IterationOutcome | null {
+	const { messages } = ctx;
+	if (turnRunsSkill(messages)) return null;
+
+	// Research gate. Checked before the diversity gate because a turn that
+	// only grabbed a picture has not researched at all, which is the more
+	// basic failure of the two.
+	const lastUserText = messageText(
+		[...messages].reverse().find((m) => m.role === 'user')?.content ?? ''
+	);
+	if (nudges.needsResearchNudge(usedTools, looksLikeImageOnlyRequest(lastUserText))) {
+		nudges.consumeResearchNudge();
+		logDebug('agent', `iteration ${iteration} branch=research-nudge`);
+		nudges.armNarrateRecovery();
+		return pushNudge(ctx, response, researchNudgePrompt());
+	}
+
+	// Diversity gate.
+	if (nudges.needsDiversityNudge(usedTools)) {
+		const fetchedCount = nudges.consumeDiversityNudge();
+		logDebug('agent', `iteration ${iteration} branch=diversity-nudge`, {
+			fetchedCount
+		});
+		nudges.armNarrateRecovery();
+		return pushNudge(ctx, response, diversityNudgePrompt(fetchedCount));
+	}
+	return null;
 }

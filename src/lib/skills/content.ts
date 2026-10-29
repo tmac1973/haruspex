@@ -72,7 +72,7 @@ const CLOSE = '</skill_content>';
 
 /** The line between a skill run by `/name` and what the user typed. */
 function slashNote(name: string): string {
-	return `The user ran the "${name}" skill. Its instructions above take priority over your usual way of answering, including whether to search or cite sources. Follow them for this message:`;
+	return `The user ran the "${name}" skill. Do what its instructions above say, and only that: they replace your usual way of answering, including the search rules. Do not search the web, open pages or cite sources unless the skill or the request below asks for it. Follow them for this message:`;
 }
 /** Matches this note and the shorter one older messages were stored with. */
 const SLASH_NOTE = /^\n\nThe user ran the "[^"]*" skill\.[^\n]*:\n\n/;
@@ -84,6 +84,21 @@ const SLASH_NOTE = /^\n\nThe user ran the "[^"]*" skill\.[^\n]*:\n\n/;
  */
 export function renderSlashMessage(doc: SkillDoc, typed: string): string {
 	return `${renderSkillContent(doc)}\n\n${slashNote(doc.name)}\n\n${typed}`;
+}
+
+/**
+ * Does the current turn run a skill? True when the latest user message is a
+ * `/name` run, or when a tool result since then loaded one (`load_skill`, or
+ * a covered tool gated into its skill). The skill's own steps decide how
+ * much to research, so the loop's research nudges stand down.
+ */
+export function turnRunsSkill(messages: ChatMessage[]): boolean {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const m = messages[i];
+		if (m.role === 'user') return messageText(m.content).startsWith(OPEN);
+		if (m.role === 'tool' && messageText(m.content).startsWith(OPEN)) return true;
+	}
+	return false;
 }
 
 /**

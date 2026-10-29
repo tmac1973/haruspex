@@ -1041,6 +1041,26 @@ describe('runAgentLoop: recovery nudges', () => {
 		expect(cb.onComplete).toHaveBeenCalled();
 	});
 
+	it('lets a skill run with /name decide how much to research', async () => {
+		nonStreamQueue.push(
+			toolCallResponse([{ id: 'c1', name: 'web_search', args: '{"query":"x"}' }]),
+			textResponse('The skill says one search is enough.')
+		);
+		const { options, cb } = makeOptions({
+			messages: [
+				{
+					role: 'user',
+					content: '<skill_content name="weather">\nbody\n</skill_content>\n\n/weather Oslo'
+				}
+			]
+		});
+
+		await runAgentLoop(options);
+
+		expect(nonStreamSnapshots).toHaveLength(2);
+		expect(streamedText(cb)).toBe('The skill says one search is enough.');
+	});
+
 	it('fires narrate-recovery when the model answers a nudge with prose instead of a tool call', async () => {
 		nonStreamQueue.push(
 			toolCallResponse([{ id: 'c1', name: 'web_search', args: '{"query":"x"}' }]),
