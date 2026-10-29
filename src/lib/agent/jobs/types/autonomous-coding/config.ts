@@ -73,7 +73,7 @@ export interface AutonomousCodingConfig {
 	mute_preflight: boolean | null;
 	/**
 	 * Agent-loop turns one coding turn may spend before its result call is
-	 * FORCED. Settings → Shell's "Max steps per task" governs the chat shell
+	 * FORCED. Settings → Shell → Max steps per turn governs the chat shell
 	 * only and never reaches a job, so without this a job's budget is not
 	 * adjustable at all. null = default (200); clamped to 50–600.
 	 */

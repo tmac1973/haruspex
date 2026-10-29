@@ -5,7 +5,7 @@ description: Choosing, downloading and switching local models, context size, res
 
 # Models
 
-Haruspex runs a language model on your GPU by default. This page covers which model you get, how to change it, and how to use a model on another server instead.
+Haruspex runs a language model on your GPU by default. This page covers which model you get, how to change it, and using another server.
 
 ## Which model fits your hardware
 
@@ -28,7 +28,7 @@ Haruspex uses your GPU heavily, so games run worse while it is open.
 
 Go to Settings → Inference → Models. Each model shows its size and a **Download**, **Use** or **Delete** button. The active model is marked **active**. Only one download runs at a time.
 
-**Legacy models** are older choices kept for those who have one, not suggested for new setups.
+**Legacy models** are older choices, not suggested for new setups.
 
 To use a GGUF file you already have, run Settings → Inference → **Run Setup Wizard** and choose **Use existing GGUF file**.
 
@@ -36,7 +36,7 @@ To use a GGUF file you already have, run Settings → Inference → **Run Setup 
 
 ## Context size: how long a conversation can be
 
-Settings → Inference → Context Size sets how much of the conversation the model can see at once: 32K (the default), 64K, 128K or 256K. Bigger needs more VRAM, and changing it restarts the model once any reply in progress finishes. Sizes your GPU cannot hold are greyed out.
+Settings → Inference → Context Size sets how much of the conversation the model can see at once: 32K (the default), 64K, 128K or 256K. Bigger needs more VRAM, and changing it restarts the model once any reply finishes. Sizes your GPU cannot hold are greyed out.
 
 - **Let models use system RAM** (off by default) unlocks larger sizes. See below.
 - **Keep the vision projector in system RAM** (off by default) frees about 1 GB of VRAM, usually buying a longer conversation. Only messages with an image get slower.
@@ -49,19 +49,19 @@ Turn on Settings → Inference → **Let models use system RAM**, or pick the la
 
 ## Response length
 
-Settings → Agent → Response Length limits how much the model writes in one reply. This is separate from context size.
+Settings → Inference → Model defaults limits how much the model writes in one reply, in every tab, apart from context size.
 
-- **Max response tokens** — normal chat, shell and agent turns (default 8192).
-- **Max response tokens (file writes)** — turns that write a whole file (default 65536).
+- **Max response tokens** — Chat, the Shell's Read-only assistant and jobs (default 8192).
+- **Max response tokens (file writes)** — a chat that writes a file, the Code tab and the Shell's Full access (default 65536).
 
-If a reply hits the limit, Haruspex says so and never writes a half-finished file.
+A reply that hits the limit is reported; a file is never half-written.
 
 ## Reasoning (thinking)
 
-In Settings → Agent → Behavior:
+In Settings → Inference → Model defaults (a Shell tab's Think toggle, a Code session or a job can override):
 
-- **Reasoning mode** (on by default) lets the model think before it answers. It helps with code and multi-step tasks but uses more of the context. Turn it off for light chat.
-- **Reasoning effort** (default medium) sets how long it thinks. Models that don't accept an effort level ignore it. A high level can make a long coding task run out of room.
+- **Reasoning mode** (on by default) lets the model think before it answers. It helps with code and multi-step tasks but uses more context.
+- **Reasoning effort** (default medium) sets how long it thinks; models without effort levels ignore it. A high level can make a long coding task run out of room.
 
 ## Use your own server
 

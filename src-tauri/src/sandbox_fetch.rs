@@ -28,7 +28,7 @@ const SANDBOX_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
 /// Redirects followed per request, each one checked like the first.
 const MAX_REDIRECTS: usize = 5;
 
-/// What model-written Python may reach (Settings → Agent).
+/// What model-written Python may reach (Settings → Chat).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
@@ -131,7 +131,7 @@ fn refusal(access: SandboxNetAccess, host: &str) -> String {
     };
     format!(
         "Blocked: {host} is one of the {what}, which the Python sandbox may not reach \
-         (Settings → Agent)."
+         (Settings → Chat)."
     )
 }
 

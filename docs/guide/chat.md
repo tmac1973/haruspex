@@ -13,7 +13,7 @@ Type a question and press `Enter` (`Shift`+`Enter` for a new line). When the que
 
 - **Sources** — answers cite their sources with numbers, and numbered chips under the answer show each site. Click a chip to open the page in your browser.
 - **Deep research** — click the magnifying-glass button in the chat box ("Deep research ON — will search more sources"). Answers are slower but use more sources.
-- **Stopped early?** — a turn gets 10 steps (searches, page reads, replies), 25 with deep research. Raise it in Settings → Agent → Max steps per turn.
+- **Stopped early?** — a turn gets 10 steps (searches, page reads, replies), 25 with deep research. Raise it in Settings → Chat → Max steps per turn.
 
 Search can fail or be rate limited. Which search engine is used, and proxies, are covered on the `search-and-network` page. The model can be wrong even with sources, so check anything that matters.
 
@@ -38,11 +38,11 @@ Small models often research and then forget to write the file, sometimes claimin
 
 The assistant can write and run Python in a sandbox inside the app. It comes with numpy, pandas, matplotlib, scipy and others, installs more, shows its charts in the answer, and saves files to your working directory. It is on by default, and works best with a larger model. Click **code** on a run's step to see it. The assistant sees up to about 20 KB of each run's output; the middle of anything longer is cut.
 
-Before code runs you see **Allow code execution?** By default it asks once per chat. Change this in Settings → Agent → Python Sandbox → Approval prompt (Off, Once per chat, or Every run). The same section sets **Network access** (default: Internet and local network) and the timeout, and **Enable Python sandbox** turns it off.
+Before code runs you see **Allow code execution?** By default it asks once per chat. Change this in Settings → Chat → Python Sandbox → Approval prompt (Off, Once per chat, or Every run). The same section sets **Network access** (default: Internet and local network) and the timeout, and **Enable Python sandbox** turns it off.
 
 ## Get pictures in answers
 
-With Settings → Agent → Pictures in answers → **Include images in answers** on (the default), answers about visual things — a place, an animal, a building — can include one to three pictures from Openverse, Wikimedia Commons and Wikipedia, with credit and licence. Haruspex downloads them itself, so those sites never see your computer. Coverage is thin for new products and recent events. They aren't added to a picture the assistant drew unless you ask. Turning the setting off stops the assistant offering pictures; asking for one still works.
+With Settings → Chat → Pictures in answers → **Include images in answers** on (the default), answers about visual things — a place, an animal, a building — can include one to three pictures from Openverse, Wikimedia Commons and Wikipedia, with credit and licence. Haruspex downloads them itself, so those sites never see your computer. Coverage is thin for new products and recent events. They aren't added to a picture the assistant drew unless you ask. Turning the setting off stops the assistant offering pictures; asking for one still works.
 
 To have the assistant draw a picture instead, see the `images` page; for a song, the `music` page.
 

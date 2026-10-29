@@ -97,16 +97,9 @@ async function drive(options: ShellTurnOptions, slot: HeldSlot): Promise<ShellTu
 			slot,
 			workingDir: null,
 			contextSize: options.contextSize,
-			// Shell-tab questions like "what does this code do?" or "find the
-			// misconfig" often need 4–6 sequential file reads. With the old
-			// cap of 8 a single malformed-tool-call recovery (one iteration
-			// burned) left no headroom for finishing the investigation. 12
-			// still bounds the turn for runaway loops but actually fits real
-			// admin-troubleshooting use.
-			// Full access runs longer agentic loops (grep → read → edit → test → fix)
-			// than admin troubleshooting; give it more headroom (the store passes
-			// the user-configurable codeMaxIterations).
-			maxIterations: options.maxIterations ?? (options.codeMode ? 40 : 12),
+			// The store passes Settings → Shell → Max steps per turn, for both
+			// modes; 40 is its default.
+			maxIterations: options.maxIterations ?? 40,
 			deepResearch: false,
 			shellMode: true,
 			shellCwd: options.cwd ?? null,

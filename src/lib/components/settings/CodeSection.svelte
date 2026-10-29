@@ -16,6 +16,7 @@
 	let codeBgLogCapMb = $state(getSettings().codeBgLogCapMb);
 	let codeSubtasks = $state(getSettings().codeSubtasks);
 	let codeStorePowershell = $state(getSettings().codeStorePowershell);
+	let codeCustomSystemPrompt = $state(getSettings().codeCustomSystemPrompt);
 	/** Windows: what the agent's PowerShell is; the Store option shows only where it applies. */
 	let powershell = $state<AgentPowershell | null>(null);
 
@@ -40,6 +41,10 @@
 	}
 	function persistSubtasks() {
 		updateSettings({ codeSubtasks });
+	}
+	const customSystemPromptPlaceholder = 'e.g. "Prefer small commits. Use pnpm, not npm."';
+	function persistCustomSystemPrompt() {
+		updateSettings({ codeCustomSystemPrompt });
 	}
 	function persistLogCap() {
 		codeBgLogCapMb = clampInt(codeBgLogCapMb, 1, 1024);
@@ -145,6 +150,18 @@
 	</section>
 {/if}
 
+<section class="settings-section">
+	<h2>Additional system prompt</h2>
+	<textarea
+		aria-label="Additional system prompt"
+		rows="6"
+		title="Appended to the coding agent's built-in system prompt, before the project's AGENTS.md, for every new turn in the Code tab. Clear the box to go back to the defaults. Settings → Chat has its own."
+		bind:value={codeCustomSystemPrompt}
+		onblur={persistCustomSystemPrompt}
+		placeholder={customSystemPromptPlaceholder}></textarea>
+	<p class="help">Your own instructions for every Code session.</p>
+</section>
+
 <section class="settings-section danger" class:enabled={codeAutoApprove}>
 	<h2>Auto-approve commands</h2>
 	<label
@@ -182,6 +199,25 @@
 
 	input[type='number']:focus {
 		border-color: var(--accent);
+	}
+
+	textarea {
+		width: 100%;
+		min-height: 80px;
+		padding: 8px 12px;
+		border: 1px solid var(--border-strong);
+		border-radius: 7px;
+		background: var(--bg-input);
+		color: var(--text-primary);
+		font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+		font-size: 0.9rem;
+		resize: vertical;
+		box-sizing: border-box;
+	}
+
+	textarea:focus {
+		border-color: var(--accent);
+		outline: none;
 	}
 
 	.row {

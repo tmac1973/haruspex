@@ -57,7 +57,7 @@ export function inLoopTrimBudget(contextSize: number, promptTokens: number): num
 	return Math.floor(contextSize * IN_LOOP_TRIM_THRESHOLD);
 }
 // Last-resort per-call output cap, used only if the settings store can't be
-// read. The operative values come from Settings → Agent → Response Length,
+// read. The operative values come from Settings → Inference → Model defaults,
 // resolved per turn by `resolveMaxResponseTokens` below.
 const AGENT_LOOP_MAX_TOKENS = 8192;
 

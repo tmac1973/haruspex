@@ -338,7 +338,7 @@ describe('runAgentLoop: plain answer paths', () => {
 		// raise the context size, which is a different dial and does nothing here.
 		expect(err.message).toContain('ran out of room');
 		expect(err.message).toContain('response limit');
-		expect(err.message).toContain('Response Length');
+		expect(err.message).toContain('Model defaults');
 		expect(err.message).not.toMatch(/increase the context size/);
 		// onComplete fires before the in-band error.
 		expect(cb.onComplete.mock.invocationCallOrder[0]).toBeLessThan(
@@ -359,7 +359,7 @@ describe('runAgentLoop: plain answer paths', () => {
 describe('runAgentLoop: response-token ceiling', () => {
 	it('streams the final answer at the turn ceiling, not a hardcoded literal', async () => {
 		// The bug: final synthesis used its own FINAL_SYNTHESIS_MAX_TOKENS = 8192,
-		// so shell code mode's pinned budget (and the Response Length setting, and
+		// so shell code mode's pinned budget (and the Model defaults setting, and
 		// the file-write ceiling) applied only to the tool-check call and never to
 		// the answer the user actually reads.
 		nonStreamQueue.push(textResponse(null, 'stop'));

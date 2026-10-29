@@ -90,8 +90,8 @@ export interface EphemeralTurnOptions {
 	/** Values for `samplingSource: 'custom'`; ignored otherwise. */
 	samplingParams?: SamplingParams | null;
 	/**
-	 * Per-call output token ceiling. Omit to resolve it from Settings → Agent →
-	 * Response Length: the file-write cap when `expectsFileOutput` is set, the
+	 * Per-call output token ceiling. Omit to resolve it from Settings → Inference →
+	 * Model defaults: the file-write cap when `expectsFileOutput` is set, the
 	 * base cap otherwise. Set it only to pin a turn to an exact budget.
 	 */
 	maxResponseTokens?: number;

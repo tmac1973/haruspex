@@ -6,6 +6,7 @@
 	let shellHistoryTurnsForPrompt = $state(getSettings().shellHistoryTurnsForPrompt);
 	let shellIncludeHistoryFile = $state(getSettings().shellIncludeHistoryFile);
 	let shellMaxBytesPerCapture = $state(getSettings().shellMaxBytesPerCapture);
+	let shellMaxIterations = $state(getSettings().shellMaxIterations);
 
 	function persistBinary() {
 		updateSettings({ shellBinary: shellBinary.trim() });
@@ -25,6 +26,11 @@
 		const clamped = clampInt(shellMaxBytesPerCapture, 0, 1_048_576);
 		shellMaxBytesPerCapture = clamped;
 		updateSettings({ shellMaxBytesPerCapture: clamped });
+	}
+
+	function persistMaxIterations() {
+		shellMaxIterations = clampInt(shellMaxIterations, 5, 200);
+		updateSettings({ shellMaxIterations });
 	}
 
 	let shellFullAccessDefault = $state(getSettings().shellFullAccessDefault);
@@ -131,10 +137,28 @@
 	</p>
 </section>
 
+<section class="settings-section">
+	<h2>Max steps per turn</h2>
+	<label
+		class="row"
+		title="Each tool call or model reply is a step. Covers Read-only and Full access. Raise it if the assistant is told to wrap up before it finishes. 5–200."
+	>
+		<input
+			type="number"
+			min="5"
+			max="200"
+			step="5"
+			bind:value={shellMaxIterations}
+			onblur={persistMaxIterations}
+			onkeydown={(e) => e.key === 'Enter' && persistMaxIterations()}
+		/>
+		<span>steps</span>
+	</label>
+	<p class="help">How many steps the assistant takes before it has to answer.</p>
+</section>
+
 <h2 class="group-heading">Full access</h2>
-<p class="moved">
-	Full access also uses the timeout, step limit and auto-approve in Settings → Code.
-</p>
+<p class="moved">Full access also uses the timeout and auto-approve in Settings → Code.</p>
 
 <section class="settings-section">
 	<h2>Start new shells with Full access</h2>

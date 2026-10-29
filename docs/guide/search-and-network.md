@@ -54,7 +54,7 @@ Each MCP server can also choose its own proxy use (Use the app setting, Always, 
 
 ## Control what Python code can reach
 
-When the Python sandbox is on, Settings → Agent → Python Sandbox → **Network access** decides what code the model writes may connect to:
+When the Python sandbox is on, Settings → Chat → Python Sandbox → **Network access** decides what code the model writes may connect to:
 
 - **Internet only**: public addresses.
 - **Internet and local network** (the default): also devices on your network, and Tailscale peers (100.64.0.0/10).

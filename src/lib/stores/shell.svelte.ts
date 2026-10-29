@@ -920,11 +920,11 @@ export class ShellSession {
 				// shellMode): the same tools Code mode had.
 				codeMode: this.fullAccess,
 				skills,
-				maxIterations: this.fullAccess ? getSettings().codeMaxIterations : undefined,
+				maxIterations: getSettings().shellMaxIterations,
 				codeAutoApprove: getSettings().codeAutoApprove,
 				thinkingEnabled: this.thinkingEnabled,
 				// Full access is the "write me a whole file" path, so it gets the
-				// file-write ceiling from Settings → Agent → Response Length rather
+				// file-write ceiling from Settings → Inference → Model defaults rather
 				// than a hardcoded literal. The old 16384 could not be raised by any
 				// setting, and was additionally gated on thinking being ON — so the
 				// one case that most needs room, a heavy reasoner writing a whole

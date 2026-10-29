@@ -626,12 +626,18 @@ export interface AppSettings {
 	 */
 	maxResponseTokensFileWriteDefaulted: boolean;
 	/**
-	 * Extra instructions appended to the built-in system prompt. Empty
-	 * string means "no addition". Free-form text edited in Settings; we
-	 * append it verbatim under a CUSTOM INSTRUCTIONS heading so it sits
-	 * after the built-in rules but before the response-format directive.
+	 * Chat tab: extra instructions appended to the built-in system prompt.
+	 * Empty string means "no addition". Free-form text edited in Settings →
+	 * Chat; we append it verbatim under a CUSTOM INSTRUCTIONS heading so it
+	 * sits after the built-in rules but before the response-format directive.
 	 */
 	customSystemPrompt: string;
+	/**
+	 * Code tab: the same, for the coding agent (Settings → Code). Split from
+	 * `customSystemPrompt`, which used to cover both; `load()` copies that
+	 * value here once.
+	 */
+	codeCustomSystemPrompt: string;
 	inferenceBackend: InferenceBackendConfig;
 	/** Named API keys shared across inference backends + per-job overrides. */
 	apiKeys: StoredApiKey[];
@@ -847,6 +853,12 @@ export interface AppSettings {
 	 */
 	chatMaxIterations: number;
 	/**
+	 * Max agent-loop iterations for a Shell assistant turn, in both Read-only
+	 * and Full access. Full access used `codeMaxIterations` before this, so
+	 * `load()` seeds it from there once.
+	 */
+	shellMaxIterations: number;
+	/**
 	 * Code tab: the most a background process's log keeps, in MiB; past it
 	 * the oldest output is dropped. Clamped 1–1024 here and in Rust.
 	 */
@@ -940,7 +952,7 @@ export const DEFAULT_MAX_RESPONSE_TOKENS = 8192;
  * ~31,000-character phase file: the model spent its budget reasoning, hit the
  * ceiling mid-`content`, and the call arrived with a path and nothing to
  * write. A real project's files are large, and a user has no way to connect
- * "requires non-empty content" to a number in Settings → Agent.
+ * "requires non-empty content" to a number in Settings → Inference.
  *
  * Safe to raise on any backend: `clampToContext` caps the effective value at
  * half the context window, so a small model gets a proportionate ceiling
@@ -1040,6 +1052,7 @@ const defaults: AppSettings = {
 	reasoningEffortDefaulted: true,
 	maxResponseTokensFileWriteDefaulted: true,
 	customSystemPrompt: '',
+	codeCustomSystemPrompt: '',
 	inferenceBackend: defaultInferenceBackend,
 	apiKeys: [],
 	integrations: defaultIntegrations,
@@ -1058,6 +1071,7 @@ const defaults: AppSettings = {
 	commandMemoryLimitPercent: 50,
 	codeMaxIterations: 40,
 	chatMaxIterations: 10,
+	shellMaxIterations: 40,
 	codeBgLogCapMb: 5,
 	codeSubtasks: 'read',
 	codeStorePowershell: false,
@@ -1239,10 +1253,19 @@ function load(): AppSettings {
 				typeof rest.contextSize === 'number' && rest.contextSize < MIN_CONTEXT_SIZE
 					? MIN_CONTEXT_SIZE
 					: (rest.contextSize ?? defaults.contextSize);
+			// One additional system prompt used to cover Chat and Code; each
+			// now has its own, and both start from the old one. The Shell's
+			// step limit was Settings → Code's until it got its own.
+			const codeCustomSystemPrompt: string =
+				rest.codeCustomSystemPrompt ?? rest.customSystemPrompt ?? defaults.codeCustomSystemPrompt;
+			const shellMaxIterations: number =
+				rest.shellMaxIterations ?? rest.codeMaxIterations ?? defaults.shellMaxIterations;
 			return {
 				...defaults,
 				...rest,
 				contextSize,
+				codeCustomSystemPrompt,
+				shellMaxIterations,
 				shellFullAccessDefault,
 				reasoningEffort,
 				reasoningEffortDefaulted: true,

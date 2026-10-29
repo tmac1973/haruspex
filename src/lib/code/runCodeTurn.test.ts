@@ -36,7 +36,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 		maxResponseTokensFileWrite: 12345,
 		codeRunCommandTimeoutSecs: 30,
 		imageBackendKind: 'none',
-		customSystemPrompt: ''
+		codeCustomSystemPrompt: ''
 	}),
 	getChatTemplateKwargs: () => ({})
 }));

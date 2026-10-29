@@ -699,7 +699,7 @@ describe('load-time reasoning-effort default', () => {
  * A real project's files did not fit in the old 32768 ceiling: a planning run
  * burned three attempts and ~13 minutes on a 31,000-character phase file, and
  * surfaced it as "requires non-empty content" — which a user has no way to
- * connect to a number in Settings → Agent. Raising the default only helps if
+ * connect to a number in Settings → Inference. Raising the default only helps if
  * existing installs move too.
  */
 describe('load-time file-write ceiling migration', () => {
@@ -753,6 +753,33 @@ describe('load-time context size floor', () => {
 
 	it('leaves 32K and above alone', async () => {
 		expect((await loadWith({ contextSize: 65536 })).contextSize).toBe(65536);
+	});
+});
+
+describe('load-time Chat / Code / Shell split', () => {
+	async function loadWith(stored: Record<string, unknown>) {
+		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
+		vi.resetModules();
+		const fresh = await import('#lib/stores/settings.ts');
+		return fresh.getSettings();
+	}
+
+	it('copies the shared system prompt into Code once', async () => {
+		const s = await loadWith({ customSystemPrompt: 'Be brief.' });
+		expect(s.customSystemPrompt).toBe('Be brief.');
+		expect(s.codeCustomSystemPrompt).toBe('Be brief.');
+	});
+
+	it('keeps a Code prompt already set apart', async () => {
+		const s = await loadWith({ customSystemPrompt: 'Be brief.', codeCustomSystemPrompt: '' });
+		expect(s.codeCustomSystemPrompt).toBe('');
+	});
+
+	it("seeds the Shell's step limit from Settings → Code", async () => {
+		expect((await loadWith({ codeMaxIterations: 80 })).shellMaxIterations).toBe(80);
+		expect((await loadWith({})).shellMaxIterations).toBe(40);
+		const set = await loadWith({ codeMaxIterations: 80, shellMaxIterations: 20 });
+		expect(set.shellMaxIterations).toBe(20);
 	});
 });
 

@@ -23,7 +23,7 @@ See the `chat` page.
 
 ## Inference
 
-Where the model runs, which model, and how much context.
+Where the model runs, which model, context, and defaults for every tab.
 
 - **Inference backend**: Local (Haruspex-managed) (default), Remote server (advanced) or OpenRouter (cloud).
 - **Models**: download and switch local models.
@@ -31,19 +31,18 @@ Where the model runs, which model, and how much context.
 - **Let models use system RAM**: off.
 - **Parallel streams**: 1 (also 2 or 4). More let chats, jobs and Code subtasks run at once.
 - **Extra llama-server arguments**: empty. They override Haruspex's own after a restart.
+- **Model defaults**: reasoning on, medium effort; replies up to 8192 tokens, 65536 for a file.
 - **Server**: status, port, Restart Server; **Run Setup Wizard**.
 
 See the `models` page.
 
-## Agent
+## Chat
 
-Reasoning, reply length, steps, the sandbox and pictures.
+What only the Chat tab uses.
 
-- **Reasoning mode**: on. **Reasoning effort**: medium.
-- **Additional system prompt**: empty.
-- **Max response tokens**: 8192. **Max response tokens (file writes)**: 65536.
 - **Max steps per turn**: 10.
-- **Enable Python sandbox**: on. **Approval prompt**: Once per chat. **Network access**: Internet and local network. **Execution timeout (seconds)**: 60.
+- **Additional system prompt**: empty.
+- **Enable Python sandbox**: on. **Approval prompt**: Once per chat. **Network access**: Internet and local network. **Execution timeout**: 60 seconds.
 - **Pictures in answers** → **Include images in answers**: on.
 
 See the `chat` page.
@@ -119,12 +118,13 @@ See the `integrations` page.
 
 The Shell tab's terminal and its assistant.
 
-- **Shell binary**: blank, which uses your `$SHELL`.
+- **Shell binary**: blank, for your `$SHELL`.
 - **Recent shell commands attached to each chat message**: 3.
 - **Include your shell history file in prompts**: on.
 - **Max output bytes per captured command**: 8192.
-- **Start new shells with Full access**: off, so new tabs start Read-only.
-- **Command execution**: Auto (the terminal when capture works, else a separate process), for Full access.
+- **Max steps per turn**: 40, both modes.
+- **Start new shells with Full access**: off (new tabs start Read-only).
+- **Command execution** (Full access): Auto, the terminal when capture works, else a separate process.
 - **Memory limit**: 50 % of RAM.
 
 See the `shell` page.
@@ -137,6 +137,7 @@ How the coding agent works, in the Code tab and the Shell's Full access.
 - **Max steps per task**: 40.
 - **Subtasks**: Read only, Read and write, or Off. See the `code-subtasks` page.
 - **Background log size**: 5 MB per process.
+- **Additional system prompt**: empty.
 - **Auto-approve commands**: off.
 
 See the `code` page.
@@ -190,7 +191,7 @@ See the `remote-control` page.
 
 Report a bug or ask for a feature.
 
-- **Open feedback issue…**: a filled-in GitHub issue, API keys removed; check it before sending.
+- **Open feedback issue…**: a filled-in GitHub issue, API keys removed; check it first.
 - **Save Full Diagnostics…**: saves logs to attach to the issue.
 - **Let the model report problems with Haruspex's tools**: off. See the `model-feedback` page.
 

@@ -36,6 +36,7 @@
 	import { withRemoteOption } from '#lib/stores/remoteProfiles.ts';
 	import { OPENROUTER_BASE_URL } from '#lib/openrouter.ts';
 	import ModelsSection from '#lib/components/settings/ModelsSection.svelte';
+	import ModelDefaultsSection from '#lib/components/settings/ModelDefaultsSection.svelte';
 	import { formatContextSize } from '#lib/utils/format.ts';
 
 	const serverState = $derived(getServerState());
@@ -528,6 +529,8 @@
 		</label>
 	</section>
 
+	<ModelDefaultsSection />
+
 	<section class="settings-section">
 		<h2>Server</h2>
 		<div class="info-row">
@@ -576,6 +579,8 @@
 	</section>
 
 	<ApiKeysSection />
+{:else}
+	<ModelDefaultsSection />
 {/if}
 
 <style>

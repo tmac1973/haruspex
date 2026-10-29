@@ -121,7 +121,7 @@ describe('open_findings', () => {
 });
 
 /**
- * Settings → Shell's "Max steps per task" is read by the chat shell alone and
+ * Settings → Shell → Max steps per turn is read by the chat shell alone and
  * never reaches a job, so before this a job's turn budget was not adjustable
  * at all — the number was hard-coded in the pipeline.
  */

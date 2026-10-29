@@ -278,7 +278,7 @@ describe('handleRejectedToolCall', () => {
 		const nudges = new NudgeState();
 		for (let i = 0; i < MAX_TRUNCATION_RETRIES; i++) nudges.consumeTruncationRetry();
 		handleRejectedToolCall(ctx, nudges, res('', 'length'), 'why', 3);
-		expect((errors[0] as Error).message).toContain('Response Length → Max response tokens,');
+		expect((errors[0] as Error).message).toContain('Model defaults → Max response tokens,');
 	});
 
 	it('does not blame the token ceiling when the response was not cut off', () => {
@@ -293,7 +293,7 @@ describe('handleRejectedToolCall', () => {
 		const message = (errors[0] as Error).message;
 		expect(message).toContain(`could not be run (${reason})`);
 		expect(message).not.toContain('token ceiling');
-		expect(message).not.toContain('Response Length');
+		expect(message).not.toContain('Model defaults');
 	});
 });
 

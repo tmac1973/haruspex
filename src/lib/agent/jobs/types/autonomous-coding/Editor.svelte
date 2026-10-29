@@ -127,7 +127,7 @@
 		Max model steps per turn
 		<Tooltip
 			label="About max model steps"
-			text="Tool and model steps one coding turn may spend before its result is forced. Settings → Shell's 'Max steps per task' covers the chat shell only and never applies to a job. Raise it for phases that need many read/edit/test round-trips. Default 200. 50–600."
+			text="Tool and model steps one coding turn may spend before its result is forced. Settings → Shell → Max steps per turn covers the chat shell only and never applies to a job. Raise it for phases that need many read/edit/test round-trips. Default 200. 50–600."
 		/>
 	</span>
 	<input

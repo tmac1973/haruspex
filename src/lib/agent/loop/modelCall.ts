@@ -273,7 +273,7 @@ export function injectPendingImages(messages: ChatMessage[], pending: PendingIma
  * Uses `ctx.maxResponseTokens` — the SAME ceiling as the tool-check call.
  * This call produces the answer the user actually reads, so a second hardcoded
  * literal here silently overrode every value that resolves into the context:
- * Settings → Agent → Response Length, the larger file-write ceiling, and the
+ * Settings → Inference → Model defaults, the larger file-write ceiling, and the
  * budget shell code mode pins for itself. A one-shot "write me a whole file"
  * prompt was capped at 8192 no matter what any of them said.
  */
