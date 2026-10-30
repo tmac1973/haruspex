@@ -378,6 +378,7 @@ describe('the Lean or Full step', () => {
 		confirmMode();
 		expect(getSettings().leanMode).toBe(false);
 		expect(getSettings().leanNoticeShown).toBe(true);
+		expect(getSettings().leanHintedModels).toContain('qwen3.5-9b');
 		setLeanChoice(true);
 		confirmMode();
 		expect(getSettings().leanMode).toBe(true);

@@ -3,18 +3,13 @@
 	 * Settings → General → Lean mode: the switch, and what it turns off. The
 	 * header's Lean mode badge opens Settings here (`#lean-mode`).
 	 */
-	import { getLiveSettings, setLeanMode } from '#lib/stores/settings.ts';
-	import { getOpenSessions } from '#lib/stores/code.svelte.ts';
-	import { anyShellTurnRunning } from '#lib/stores/shell.svelte.ts';
+	import { getLiveSettings } from '#lib/stores/settings.ts';
+	import { codeOrShellBusy, LEAN_BUSY_TITLE } from '#lib/lean/busy.ts';
+	import { turnLeanMode } from '#lib/lean/nudges.ts';
 	import { pausedIntegrations } from '#lib/lean/pausedIntegrations.ts';
 
 	const on = $derived(getLiveSettings().leanMode);
-	// Turning it on hides tools a running Code or Shell turn may be using, so
-	// it waits for them. Turning it off never waits.
-	const busy = $derived(
-		getOpenSessions().some((s) => s.status !== 'idle') || anyShellTurnRunning()
-	);
-	const blocked = $derived(!on && busy);
+	const blocked = $derived(!on && codeOrShellBusy());
 	const paused = $derived(on ? pausedIntegrations() : []);
 </script>
 
@@ -23,14 +18,14 @@
 	<label
 		class="toggle-row"
 		title={blocked
-			? 'Finish or stop the Code and Shell turns first.'
+			? LEAN_BUSY_TITLE
 			: 'Sends a much smaller tool list, so replies start sooner and leave more room in the context window.'}
 	>
 		<input
 			type="checkbox"
 			checked={on}
 			disabled={blocked}
-			onchange={(e) => setLeanMode(e.currentTarget.checked)}
+			onchange={(e) => turnLeanMode(e.currentTarget.checked)}
 		/>
 		<span>Chat and research only, for small models and slow machines</span>
 	</label>

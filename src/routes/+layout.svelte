@@ -25,6 +25,8 @@
 	import LeanModeBadge from '#lib/components/LeanModeBadge.svelte';
 	import { closeSettings, getSettingsNav, toggleSettings } from '#lib/stores/settingsNav.svelte.ts';
 	import StartupNoticeDialog from '#lib/components/StartupNoticeDialog.svelte';
+	import LeanModeNotice from '#lib/components/LeanModeNotice.svelte';
+	import { shouldOfferLean } from '#lib/lean/nudges.ts';
 	import Toasts from '#lib/components/Toasts.svelte';
 	import {
 		isLogViewerOpen,
@@ -121,6 +123,8 @@
 		}
 	});
 	let showStartupNotice = $state(false);
+	// The one-time lean mode offer, for someone who never saw the wizard ask.
+	let offerLean = $state(false);
 	let version = $state('');
 	let update = $state<UpdateInfo | null>(null);
 
@@ -397,6 +401,11 @@
 
 		if (!getSettings().dismissedStartupNotice) {
 			showStartupNotice = true;
+		}
+		if (!page.url.pathname.startsWith('/setup')) {
+			void shouldOfferLean()
+				.then((offer) => (offerLean = offer))
+				.catch((e: unknown) => console.warn('lean mode offer:', e));
 		}
 	});
 
@@ -751,6 +760,10 @@
 	<LogViewer open={showLogs} onclose={closeLogViewer} />
 	<HelpModal open={showHelp} onclose={() => (showHelp = false)} />
 
+	<!-- After the safety notice, never over it. -->
+	{#if offerLean && !showStartupNotice}
+		<LeanModeNotice onclose={() => (offerLean = false)} />
+	{/if}
 	{#if showStartupNotice}
 		<StartupNoticeDialog onclose={() => (showStartupNotice = false)} />
 	{/if}
