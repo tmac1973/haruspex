@@ -35,6 +35,19 @@ export const measureSong: MeasureSong = async (bytes) => {
 const AUDIO_FILE = /\.(mp3|wav|flac|ogg)$/i;
 
 /**
+ * A cached song's file name for the server, from its first bytes: the cache
+ * keeps WAV, FLAC and OGG too (a trim, a dropped file), and a server may go
+ * by the extension.
+ */
+export function cachedSongName(bytes: ArrayBuffer): string {
+	const head = String.fromCharCode(...new Uint8Array(bytes.slice(0, 4)));
+	if (head === 'RIFF') return 'source.wav';
+	if (head === 'fLaC') return 'source.flac';
+	if (head === 'OggS') return 'source.ogg';
+	return 'source.mp3';
+}
+
+/**
  * The song `raw` names, or why it can't be used. `what` names the argument
  * in the error (`source`, `style_reference`).
  */
@@ -55,7 +68,7 @@ export async function resolveSong(
 		} catch {
 			return `${what} is no longer in the audio cache; make the song again or give a file.`;
 		}
-		input = { name: 'source.mp3', hash };
+		input = { name: cachedSongName(bytes), hash };
 	} else if (/^[a-z][a-z0-9+.-]*:/i.test(ref) && !/^[a-z]:[\\/]/i.test(ref)) {
 		return `${what} must be a haruspex-audio:// URL from this conversation or a file in the working folder.`;
 	} else {

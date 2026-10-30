@@ -35,6 +35,8 @@ import { parseEditArgs } from './music-edit';
 import { MUSIC_TASKS } from '#lib/music/types.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import { attachedAudioLine } from '#lib/audio/attached.ts';
+import { trimWindow } from './_musicTrim';
+import { cachedSongName } from './_musicSource';
 
 const SRC = 'a'.repeat(64);
 const SRC_URL = `haruspex-audio://localhost/${SRC}`;
@@ -55,7 +57,12 @@ beforeEach(() => {
 		class {
 			async decodeAudioData() {
 				if (state.seconds === null) throw new Error('not audio');
-				return { duration: state.seconds };
+				const n = Math.round(state.seconds * 100);
+				return {
+					duration: state.seconds,
+					numberOfChannels: 1,
+					getChannelData: () => new Float32Array(n)
+				};
 			}
 		}
 	);
@@ -187,6 +194,46 @@ describe('edit_music', () => {
 		);
 		expect(long.result).toMatch(/up to 600 s/);
 		expect(state.generate).not.toHaveBeenCalled();
+	});
+
+	it('trims a song here, with no server, and keeps the cut as a WAV', async () => {
+		state.invoke.mockImplementation(async (cmd: string) => {
+			if (cmd === 'audio_read_bytes') return new Uint8Array([9, 9]).buffer;
+			if (cmd === 'audio_store_bytes') return { hash: OUT, mime: 'audio/wav', bytes: 10 };
+			return null;
+		});
+		const out = await executeTool(
+			'edit_music',
+			{ source: SRC_URL, action: 'trim', start_seconds: 0, end_seconds: 12, title: 'First voice' },
+			chat
+		);
+		expect(state.tasks).not.toHaveBeenCalled();
+		expect(state.generate).not.toHaveBeenCalled();
+		const store = state.invoke.mock.calls.find((c) => c[0] === 'audio_store_bytes')!;
+		expect(store[2]).toEqual({
+			headers: { 'x-mime': 'audio/wav', 'x-conversation-id': 'chat-1' }
+		});
+		expect(out.result).toContain('0–12 s');
+		expect(out.result).toContain(`![First voice](${OUT_URL})`);
+		expect(out.artifacts).toEqual([
+			{ kind: 'audio', mime: 'audio/wav', src: OUT_URL, title: 'First voice' }
+		]);
+	});
+
+	it('names a cached song for the server by what its bytes are', () => {
+		const head = (s: string) => new TextEncoder().encode(`${s}....`).buffer;
+		expect(cachedSongName(head('RIFF'))).toBe('source.wav');
+		expect(cachedSongName(head('fLaC'))).toBe('source.flac');
+		expect(cachedSongName(head('OggS'))).toBe('source.ogg');
+		expect(cachedSongName(head('ID3\u0004'))).toBe('source.mp3');
+		expect(cachedSongName(new ArrayBuffer(0))).toBe('source.mp3');
+	});
+
+	it('refuses a trim outside the song or too long to keep', () => {
+		expect(trimWindow({ start_seconds: 40 }, 30)).toMatch(/within the song/);
+		expect(trimWindow({ start_seconds: 10, end_seconds: 10.5 }, 30)).toMatch(/at least a second/);
+		expect(trimWindow({}, 500)).toMatch(/up to 270 s/);
+		expect(trimWindow({ start_seconds: 5, end_seconds: 99 }, 30)).toEqual({ start: 5, end: 30 });
 	});
 
 	it('passes a seed on', async () => {

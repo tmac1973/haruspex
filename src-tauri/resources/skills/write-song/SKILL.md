@@ -81,6 +81,7 @@ make the whole song again to fix one part of it.
 | "Add drums" | `add_instrument` with `instrument` and a caption for what it plays |
 | "Just the vocals", "extract the voice" | `extract_instrument` with `instrument: "vocals"`. This is stem separation; it works on any song, not only one made here. |
 | "Fill in a band around it" | `complete` |
+| "Only the first half", "just 0:10 to 0:40" | `trim` with `start_seconds` and `end_seconds`. It is cut in a moment, needs no particular model, and makes a WAV whose URL works as a `source` or `style_reference`. |
 
 Each song's seed is reported with it. For "the same but faster", or any
 small change to a whole song that `generate_music` made, make it again with
@@ -103,7 +104,10 @@ voice from this, then make a blues song"), do it in two calls:
    `style_reference` set to the vocals' URL from step 1.
 
 The reference borrows the voice's timbre, not its words or melody, so
-still write lyrics and describe the voice in the caption. Passing the
+still write lyrics and describe the voice in the caption. If the vocals
+have two voices, or the user wants only part of them, `trim` them to the
+stretch they name first and use the trim's URL. You can't hear which
+stretch has one voice, so ask when the user hasn't said. Passing the
 whole song as `style_reference` skips step 1 but borrows the band's sound
 too. Use that only when the user wants the overall sound.
 
