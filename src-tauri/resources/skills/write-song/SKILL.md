@@ -21,7 +21,10 @@ The caption is comma-separated tags, not a sentence. Include:
 - two to four lead instruments;
 - the tempo feel, such as slow, mid-tempo or driving;
 - for a song with vocals, the voice: "male vocals", "female vocals" or
-  "choir".
+  "choir". Then give it more detail than the other tags: its register and
+  texture, such as "deep gravelly baritone" or "breathy falsetto", and its
+  phrasing, such as "sings behind the beat". A long genre description
+  doesn't change the singer much. A description of the voice does.
 
 For example: "lo-fi hip hop, mellow, rainy night, Rhodes piano, vinyl
 crackle, soft drums, slow". Keep to whatever the user named: their genre,
@@ -35,6 +38,11 @@ and say in your answer what you chose. Pass `bpm`, `key` or
   don't pass empty tags.
 - **Section tags** on their own lines: `[verse]`, `[chorus]`, `[bridge]`,
   and `[intro]` or `[outro]` for parts with no singing.
+- **Every line under a tag is sung.** Follow a tag with words to sing, or
+  with nothing. Never write a direction such as "slow guitar riff" or
+  "drum solo" in the lyrics: `[intro]` followed by "slow guitar riff over a
+  shuffle" gets sung. Leave the tag empty and put "guitar solo" or
+  "instrumental break" in the caption.
 - **Fit the length.** Allow about one short line per three or four seconds
   of singing. A 30-second song is one verse and a chorus. Two minutes is
   verse, chorus, verse, chorus, bridge, chorus.
@@ -74,7 +82,10 @@ the working folder. Never make the whole song again to fix one part of it.
 
 Each song's seed is reported with it. For "the same but faster", or any
 small change to a whole song that `generate_music` made, make it again with
-that song's `seed`, the same lyrics, and the changed caption or `bpm`. A
+that song's `seed`, the same lyrics, and the changed caption or `bpm`. The
+seed decides the singer more than the caption does: the same seed keeps the
+same voice. If the user dislikes the voice, try a new seed before you
+rewrite the caption. A
 song that `edit_music` changed can't be remade that way: its seed doesn't
 make the whole song. Say that remaking it from the original seed loses the
 edit, and ask whether to remake the original and redo the edit after.

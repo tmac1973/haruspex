@@ -244,7 +244,8 @@ registerTool({
 					},
 					lyrics: {
 						type: 'string',
-						description: 'Song lyrics with [verse]/[chorus] section tags. Omit for an instrumental.'
+						description:
+							'Song lyrics with [verse]/[chorus] section tags. Every line is sung, so no stage directions. Omit for an instrumental.'
 					},
 					instrumental: {
 						type: 'boolean',
