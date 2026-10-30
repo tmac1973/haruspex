@@ -57,3 +57,7 @@ No user-visible change: label the PR `no-docs`.
   - Qwen3.5-4B IQ4_NL + mmproj at 32K: 152 tok/s.
   - Qwen3.8-27B UD-IQ4_XS with MTP at 8K: 108 tok/s, draft acceptance 95%.
 - Not covered here: Gemma 12B sibling drafter (not downloaded), Windows, macOS.
+- 2026-10-29: the Windows workaround is dropped. On a Radeon 680M, Qwen3.5-4B
+  with checkpoints on ran chat turns without a crash on v0.6.0 and v0.8.0, and
+  a follow-up turn read 30 new tokens instead of the whole 3,970-token prompt.
+  The 27B on Windows is still untested.

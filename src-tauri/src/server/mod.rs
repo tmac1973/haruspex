@@ -67,7 +67,7 @@ pub struct ServerConfig {
     pub flash_attn: bool,
     /// Concurrent streams (`--parallel`). 1 is one conversation at a time.
     /// Above 1, every stream gets the full `ctx_size`: see
-    /// [`ServerConfig::build_args_for`].
+    /// [`ServerConfig::build_args`].
     pub parallel: u32,
     /// Drive the model's multi-token-prediction head as a self-speculative
     /// draft. Only ever true for a model that actually has one, and for a
@@ -114,12 +114,6 @@ impl Default for ServerConfig {
 
 impl ServerConfig {
     pub fn build_args(&self, model_path: &str) -> Vec<String> {
-        self.build_args_for(model_path, cfg!(target_os = "windows"))
-    }
-
-    /// `build_args` with the host platform injected, so both branches of the
-    /// Windows checkpoint workaround are reachable from tests on any host.
-    fn build_args_for(&self, model_path: &str, is_windows: bool) -> Vec<String> {
         let mut args = vec![
             "--model".to_string(),
             model_path.to_string(),
@@ -164,24 +158,10 @@ impl ServerConfig {
         args.push("--flash-attn".to_string());
         args.push(if self.flash_attn { "on" } else { "off" }.to_string());
 
-        if is_windows {
-            // Workaround for llama.cpp#27560: on Windows + Vulkan, llama-server
-            // takes an access violation (0xC0000005) on the FIRST
-            // /v1/chat/completions request whenever context checkpoints are
-            // enabled. Qwen3.8-27B is the reported repro and is one of the
-            // models we ship, so this would land as "the app crashes the moment
-            // you send a message". `--ctx-checkpoints 0` is the maintainers'
-            // workaround. Upstream is still open as of llama.cpp v0.6.0, though
-            // the reporter saw it stop at b11026 (v0.6.0 is b11429); drop this
-            // once a Windows run of the 27B confirms it.
-            //
-            // The cost is recomputing prefix state that a checkpoint would have
-            // restored — slower reprocessing after a cache miss, no behaviour
-            // change. Linux and macOS keep checkpoints on. Revisit when #27560
-            // closes: https://github.com/ggml-org/llama.cpp/issues/27560
-            args.push("--ctx-checkpoints".to_string());
-            args.push("0".to_string());
-        }
+        // Context checkpoints stay at llama.cpp's default on every platform.
+        // The Qwen3.5 and 3.8 models are hybrid (recurrent layers can't rewind
+        // partway), so without checkpoints every turn re-reads the whole
+        // prompt: 3,970 tokens a turn instead of 30 on a Radeon 680M.
 
         if self.mtp {
             // A bundled head needs no draft model: llama-server builds the
@@ -1569,42 +1549,12 @@ mod tests {
         assert!(!args.iter().any(|a| a == "--mmproj"));
     }
 
-    /// llama.cpp#27560: Windows + Vulkan + Qwen3.8-27B takes an access
-    /// violation on the first chat request unless checkpoints are off. Both
-    /// branches are asserted from the host-independent seam so this keeps
-    /// working on Linux CI, where the Windows job is opt-in.
+    /// Checkpoints are what let a hybrid model reuse its cached prompt; turning
+    /// them off made every Windows turn re-read the whole prompt.
     #[test]
-    fn build_args_disables_ctx_checkpoints_on_windows() {
-        let cfg = ServerConfig::default();
-        let args = cfg.build_args_for("/models/qwen.gguf", true);
-        let idx = args
-            .iter()
-            .position(|a| a == "--ctx-checkpoints")
-            .expect("windows build must disable context checkpoints");
-        assert_eq!(args[idx + 1], "0");
-    }
-
-    #[test]
-    fn build_args_keeps_ctx_checkpoints_off_windows() {
-        let cfg = ServerConfig::default();
-        let args = cfg.build_args_for("/models/qwen.gguf", false);
+    fn build_args_leave_ctx_checkpoints_on() {
+        let args = ServerConfig::default().build_args("/models/qwen.gguf");
         assert!(!args.iter().any(|a| a == "--ctx-checkpoints"));
-    }
-
-    /// The workaround must stay overridable: extra_args is appended last so a
-    /// power user can re-enable checkpoints, and llama.cpp takes the last value.
-    #[test]
-    fn build_args_extra_args_override_ctx_checkpoints() {
-        let cfg = ServerConfig {
-            extra_args: vec!["--ctx-checkpoints".to_string(), "8".to_string()],
-            ..Default::default()
-        };
-        let args = cfg.build_args_for("/models/qwen.gguf", true);
-        let last = args
-            .iter()
-            .rposition(|a| a == "--ctx-checkpoints")
-            .expect("flag present");
-        assert_eq!(args[last + 1], "8");
     }
 
     /// The value following `flag` in `args`, if the flag is there.
@@ -1619,7 +1569,7 @@ mod tests {
             cors_origin: Some("tauri://localhost".to_string()),
             ..Default::default()
         };
-        let args = cfg.build_args_for("/models/qwen.gguf", false);
+        let args = cfg.build_args("/models/qwen.gguf");
         assert_eq!(
             flag_value(&args, "--cors-origins"),
             Some("tauri://localhost")
@@ -1638,7 +1588,7 @@ mod tests {
 
     #[test]
     fn build_args_without_an_origin_still_drop_credentials() {
-        let args = ServerConfig::default().build_args_for("/models/qwen.gguf", false);
+        let args = ServerConfig::default().build_args("/models/qwen.gguf");
         assert!(!args.iter().any(|a| a == "--cors-origins"));
         assert!(args.iter().any(|a| a == "--no-cors-credentials"));
     }
@@ -1646,7 +1596,7 @@ mod tests {
     #[test]
     fn build_args_never_carry_the_api_key() {
         // It travels in the environment; argv is world-readable in /proc.
-        let args = ServerConfig::default().build_args_for("/models/qwen.gguf", false);
+        let args = ServerConfig::default().build_args("/models/qwen.gguf");
         assert!(!args.iter().any(|a| a == "--api-key" || a == api_key()));
     }
 
@@ -1657,7 +1607,7 @@ mod tests {
             extra_args: vec!["--cors-origins".to_string(), "*".to_string()],
             ..Default::default()
         };
-        let args = cfg.build_args_for("/models/qwen.gguf", false);
+        let args = cfg.build_args("/models/qwen.gguf");
         let last = args.iter().rposition(|a| a == "--cors-origins").unwrap();
         assert_eq!(args[last + 1], "*");
     }
