@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { persistItem } from '#lib/persist.ts';
 	import GeneralSection from '#lib/components/settings/GeneralSection.svelte';
 	import InferenceSection from '#lib/components/settings/InferenceSection.svelte';
@@ -22,32 +22,13 @@
 	import RemoteSection from '#lib/components/settings/RemoteSection.svelte';
 	import OwnerApiSection from '#lib/components/settings/OwnerApiSection.svelte';
 	import FeedbackSection from '#lib/components/settings/FeedbackSection.svelte';
+	import type { Category } from '#lib/components/settings/categories.ts';
+	import { getSettingsNav, settingsNavHandled } from '#lib/stores/settingsNav.svelte.ts';
 
 	// Rendered as an overlay over the main page (so the Shell tab's PTY stays
 	// mounted underneath). `onclose` dismisses the overlay; the page never
 	// navigates away.
 	let { onclose }: { onclose: () => void } = $props();
-
-	type Category =
-		| 'general'
-		| 'inference'
-		| 'chat'
-		| 'memory'
-		| 'skills'
-		| 'audio'
-		| 'search'
-		| 'network'
-		| 'integrations'
-		| 'screen'
-		| 'shell'
-		| 'code'
-		| 'image'
-		| 'music'
-		| 'videoGen'
-		| 'videoEditing'
-		| 'remote'
-		| 'remoteControl'
-		| 'feedback';
 
 	interface CategoryDef {
 		id: Category;
@@ -69,7 +50,7 @@
 				{
 					id: 'general',
 					label: 'General',
-					subtitle: 'Appearance and how replies are formatted.',
+					subtitle: 'Appearance, reply format and lean mode.',
 					icon: '<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>'
 				},
 				{
@@ -205,11 +186,23 @@
 			// Settings → Agent became Settings → Chat.
 			const stored = localStorage.getItem(STORAGE_KEY);
 			const saved = (stored === 'agent' ? 'chat' : stored) as Category | null;
-			if (saved && categories.some((c) => c.id === saved)) {
+			if (saved && !getSettingsNav().category && categories.some((c) => c.id === saved)) {
 				activeCategory = saved;
 			}
 		} catch {
 			// localStorage may be unavailable in some webviews
+		}
+	});
+
+	// A caller that opened Settings at a section (`openSettings`) wins over
+	// the one remembered from last time, and its anchor is scrolled into view.
+	$effect(() => {
+		const { category, anchor } = getSettingsNav();
+		if (!category) return;
+		selectCategory(category);
+		settingsNavHandled();
+		if (anchor) {
+			void tick().then(() => document.getElementById(anchor)?.scrollIntoView({ block: 'center' }));
 		}
 	});
 

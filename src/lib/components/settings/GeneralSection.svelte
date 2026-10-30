@@ -9,6 +9,7 @@
 		type AccentColor
 	} from '#lib/stores/settings.ts';
 	import ModeSelector from '#lib/components/ModeSelector.svelte';
+	import LeanModeSetting from '#lib/components/settings/LeanModeSetting.svelte';
 
 	let responseFormat = $state<ResponseFormat>(getSettings().responseFormat);
 	let theme = $state<ThemeMode>(getSettings().theme);
@@ -38,6 +39,8 @@
 		{ value: 'blue', label: 'Blue' }
 	];
 </script>
+
+<LeanModeSetting />
 
 <section class="settings-section">
 	<h2>Theme</h2>

@@ -1,0 +1,21 @@
+/** The Settings panel's sections, as its rail lists them. */
+export type Category =
+	| 'general'
+	| 'inference'
+	| 'chat'
+	| 'memory'
+	| 'skills'
+	| 'audio'
+	| 'search'
+	| 'network'
+	| 'integrations'
+	| 'screen'
+	| 'shell'
+	| 'code'
+	| 'image'
+	| 'music'
+	| 'videoGen'
+	| 'videoEditing'
+	| 'remote'
+	| 'remoteControl'
+	| 'feedback';

@@ -1085,6 +1085,11 @@ export function getShellSessions(): ShellSession[] {
 	return sessions;
 }
 
+/** Whether any Shell assistant turn is running (or waiting on someone). */
+export function anyShellTurnRunning(): boolean {
+	return sessions.some((s) => s.isSubmitting);
+}
+
 export function getActiveShellId(): string | null {
 	return activeShellId;
 }

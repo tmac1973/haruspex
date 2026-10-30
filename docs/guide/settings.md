@@ -5,7 +5,7 @@ description: What each Settings section holds, its main options and defaults, an
 
 # Settings reference
 
-Settings has eighteen sections. Each lists its main options, defaults and the page with more.
+Settings has eighteen sections. Each lists its main options, defaults and a page with more.
 
 ## Open Settings
 
@@ -13,11 +13,12 @@ Click the gear in the header; click it again or **← Back** to close.
 
 ## General
 
-Appearance and how replies are formatted.
+Appearance, reply format and lean mode.
 
 - **Theme**: System (default), Light or Dark.
 - **Highlight color**: the accent color. Default Teal.
 - **Response Format**: Minimal, Standard (default) or Rich.
+- **Lean mode**: off. See the `lean-mode` page.
 
 See the `chat` page.
 
@@ -53,7 +54,7 @@ What the assistant remembers between chats.
 
 - **Carry facts and preferences from one conversation into the next**: on. Needs a 65 MB embedding model.
 - **Ask before saving something you asked me to remember**: on.
-- **Find duplicates**: merges memories that say the same thing, after you approve each.
+- **Find duplicates**: merges memories that say the same thing, once you approve.
 - A list of everything remembered, to edit or delete.
 
 See the `memory` page.
@@ -82,7 +83,7 @@ See the `chat` page.
 
 Which provider answers web searches.
 
-- **Search provider**: Auto (rotates free engines), DuckDuckGo, Brave Search (API key), SearXNG or Browser-assisted.
+- **Search provider**: Auto (rotates free engines), DuckDuckGo, Brave Search (key), SearXNG or Browser-assisted.
 - **SearXNG Instance URL**: http://localhost:8080.
 - **Result recency**: Any time.
 
@@ -123,8 +124,8 @@ The Shell tab's terminal and its assistant.
 - **Include your shell history file in prompts**: on.
 - **Max output bytes per captured command**: 8192.
 - **Max steps per turn**: 40, both modes.
-- **Start new shells with Full access**: off (new tabs start Read-only).
-- **Command execution** (Full access): Auto, the terminal when capture works, else a separate process.
+- **Start new shells with Full access**: off.
+- **Command execution** (Full access): Auto: the terminal when capture works, else a process.
 - **Memory limit**: 50 % of RAM.
 
 See the `shell` page.
