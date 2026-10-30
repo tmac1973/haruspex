@@ -48,8 +48,9 @@
 	let noticeDismissed = $state(getLegacyModelNoticeDismissed());
 	let mtpEnabled = $state(getSettings().mtpEnabled);
 
+	// The backend joins with the OS separator, so a Windows path has backslashes.
 	const activeFilename = $derived(
-		activeModelPath ? activeModelPath.split('/').pop() || null : null
+		activeModelPath ? activeModelPath.split(/[\\/]/).pop() || null : null
 	);
 	const currentModels = $derived(models.filter((m) => !m.legacy));
 	const legacyModels = $derived(models.filter((m) => m.legacy));
@@ -92,7 +93,7 @@
 			);
 			await refreshModels();
 			// Auto-start server with the newly downloaded model
-			await switchModel(modelPath.split('/').pop()!);
+			await switchModel(modelPath.split(/[\\/]/).pop()!);
 		} catch (e) {
 			downloadError = String(e);
 		}
