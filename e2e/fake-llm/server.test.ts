@@ -151,4 +151,24 @@ describe('--record', () => {
 		expect(again.choices[0].message.content).toBe(first.choices[0].message.content);
 		expect(again.choices[0].message.content).toBe('Sunny.');
 	});
+
+	it('asks the upstream whole, without the streaming options', async () => {
+		// vLLM refuses `stream_options` unless `stream` is true, and the app sends
+		// both on a streamed turn.
+		const recorder = createFakeLlm({ dir, record: 'whole', upstream: `${base}/v1` });
+		const rport = await recorder.listen(0);
+		await fetch(`http://127.0.0.1:${rport}/v1/chat/completions`, {
+			method: 'POST',
+			body: JSON.stringify({
+				messages: [{ role: 'user', content: 'weather today' }],
+				stream: true,
+				stream_options: { include_usage: true }
+			})
+		});
+		await recorder.close();
+		const requests = await (await fetch(`${base}/__requests`)).json();
+		const upstream = requests[requests.length - 1];
+		expect(upstream.stream).toBe(false);
+		expect(upstream).not.toHaveProperty('stream_options');
+	});
 });
