@@ -10,6 +10,7 @@ import { fetchModelForDefault } from '#lib/stores/memory.svelte.ts';
 import { PORTS, baseUrl } from '#lib/ports.ts';
 import { localServerKey, localServerKeyReady } from '#lib/inference/localServerKey.ts';
 import { splitServerArgs } from '#lib/inference/serverArgs.ts';
+import { activeModelId, recommendLean, type LeanReason } from '#lib/lean/recommend.ts';
 import {
 	getActiveLocalModelFilename,
 	getSettings,
@@ -17,7 +18,7 @@ import {
 	updateSettings
 } from '#lib/stores/settings.ts';
 
-export type SetupStep = 'welcome' | 'hardware' | 'download' | 'test' | 'remote' | 'done';
+export type SetupStep = 'welcome' | 'hardware' | 'download' | 'test' | 'remote' | 'mode' | 'done';
 export type TestResult = 'pending' | 'running' | 'success' | 'error';
 
 export interface HardwareInfo {
@@ -62,6 +63,11 @@ let testResult = $state<TestResult>('pending');
 let testResponse = $state('');
 let testStatusMessage = $state('');
 let models = $state<ModelInfo[]>([]);
+// The Lean or Full step: what is picked, why lean was recommended, and
+// whether the step came from the remote path (which finishes differently).
+let leanChoice = $state(false);
+let leanReason = $state<LeanReason>(null);
+let modeRemote = $state(false);
 // The model and context this wizard run last started the server with. A
 // server already up when the wizard was opened from Settings holds the old
 // model and context, so the first test restarts it; later retries don't.
@@ -93,6 +99,40 @@ export function getTestStatusMessage(): string {
 }
 export function getModels(): ModelInfo[] {
 	return models;
+}
+
+export function getLeanChoice(): boolean {
+	return leanChoice;
+}
+export function setLeanChoice(lean: boolean): void {
+	leanChoice = lean;
+}
+export function getLeanReason(): LeanReason {
+	return leanReason;
+}
+export function isModeRemote(): boolean {
+	return modeRemote;
+}
+
+/**
+ * Go to the Lean or Full step, with the recommendation picked. The local
+ * path's model is active by now, and runs on this machine; the remote
+ * path's is the one in its form, and runs elsewhere, so hardware says
+ * nothing about it.
+ */
+export function enterModeStep(remote: boolean, remoteModelId: string | null = null): void {
+	const rec = remote
+		? recommendLean({ modelId: remoteModelId, hardware: null })
+		: recommendLean({ modelId: activeModelId(), hardware });
+	leanChoice = rec.lean;
+	leanReason = rec.reason;
+	modeRemote = remote;
+	step = 'mode';
+}
+
+/** Save the step's choice. The offer has been made, so no notice repeats it. */
+export function confirmMode(): void {
+	updateSettings({ leanMode: leanChoice, leanNoticeShown: true });
 }
 
 export function setStep(s: SetupStep): void {
@@ -435,4 +475,7 @@ export function resetSetup(): void {
 	testResponse = '';
 	testStatusMessage = '';
 	serverStartedWith = null;
+	leanChoice = false;
+	leanReason = null;
+	modeRemote = false;
 }

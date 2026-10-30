@@ -13,6 +13,12 @@ vi.mock('#lib/utils/async.ts', () => ({ sleep: () => Promise.resolve() }));
 import {
 	cancelDownload,
 	chooseOffloadAlternative,
+	confirmMode,
+	enterModeStep,
+	getLeanChoice,
+	getLeanReason,
+	isModeRemote,
+	setLeanChoice,
 	detectHardware,
 	getDownloadError,
 	getDownloadProgress,
@@ -310,5 +316,70 @@ describe('runTestQuery', () => {
 			'start_server',
 			expect.objectContaining({ modelPath: '/models/m.gguf' })
 		);
+	});
+});
+
+describe('the Lean or Full step', () => {
+	function hardware(over: Record<string, unknown>) {
+		ipc({
+			hardware_detect: () => ({
+				gpu_available: true,
+				gpu_integrated: false,
+				gpu_integrated_slow: false,
+				recommended_quant: 'm',
+				recommended_context_size: 32768,
+				offload_alternative: null,
+				...over
+			}),
+			list_models: () => []
+		});
+		return detectHardware();
+	}
+
+	function useLocal(filename: string) {
+		updateSettings({
+			activeLocalModelFilename: filename,
+			inferenceBackend: { ...getSettings().inferenceBackend, mode: 'local' }
+		});
+	}
+
+	it('recommends lean for the 9B on a good GPU', async () => {
+		await hardware({});
+		useLocal('Qwen3.5-9B-IQ4_NL.gguf');
+		enterModeStep(false);
+		expect(getStep()).toBe('mode');
+		expect(getLeanChoice()).toBe(true);
+		expect(getLeanReason()).toBe('small-model');
+		expect(isModeRemote()).toBe(false);
+	});
+
+	it('recommends full for a 27B on a good GPU, and lean without one', async () => {
+		useLocal('Qwen3.6-27B-Q4_K_M.gguf');
+		await hardware({});
+		enterModeStep(false);
+		expect([getLeanChoice(), getLeanReason()]).toEqual([false, null]);
+		await hardware({ gpu_available: false });
+		enterModeStep(false);
+		expect([getLeanChoice(), getLeanReason()]).toEqual([true, 'weak-hardware']);
+	});
+
+	it("judges a remote server's model by its name alone", async () => {
+		await hardware({ gpu_available: false });
+		enterModeStep(true, 'gpt-oss');
+		expect([getLeanChoice(), isModeRemote()]).toEqual([false, true]);
+		enterModeStep(true, 'qwen3.5-9b');
+		expect(getLeanChoice()).toBe(true);
+	});
+
+	it('saves the choice, and marks the offer made', () => {
+		updateSettings({ leanMode: false, leanNoticeShown: false });
+		enterModeStep(true, 'qwen3.5-9b');
+		setLeanChoice(false);
+		confirmMode();
+		expect(getSettings().leanMode).toBe(false);
+		expect(getSettings().leanNoticeShown).toBe(true);
+		setLeanChoice(true);
+		confirmMode();
+		expect(getSettings().leanMode).toBe(true);
 	});
 });

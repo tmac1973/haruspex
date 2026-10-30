@@ -24,8 +24,15 @@
 		useDownloadedModel,
 		cancelDownload,
 		importModel,
-		runTestQuery
+		runTestQuery,
+		enterModeStep,
+		confirmMode,
+		getLeanChoice,
+		setLeanChoice,
+		getLeanReason,
+		isModeRemote
 	} from '#lib/stores/setup.svelte.ts';
+	import ModeSelector from '#lib/components/ModeSelector.svelte';
 	import {
 		getSettings,
 		updateInferenceBackend,
@@ -155,6 +162,8 @@
 			remoteConfig.remoteBackendKind !== null
 	);
 
+	const leanReason = $derived(getLeanReason());
+
 	function finishRemoteSetup() {
 		// Persist the config + flip mode to remote. The layout's next
 		// startup pass will see `mode === 'remote'` and skip the local
@@ -235,8 +244,12 @@
 			<InferenceBackendForm config={remoteConfig} onConfigChange={onRemoteConfigChange} />
 			<div class="wizard-actions">
 				<button class="secondary-btn" onclick={backToWelcome}>Back</button>
-				<button class="primary-btn" disabled={!remoteReady} onclick={finishRemoteSetup}>
-					Start chatting
+				<button
+					class="primary-btn"
+					disabled={!remoteReady}
+					onclick={() => enterModeStep(true, remoteConfig.remoteModelId || null)}
+				>
+					Continue
 				</button>
 			</div>
 			<p class="hint">
@@ -419,7 +432,7 @@
 					<blockquote>{testResponse}</blockquote>
 					<p class="check">Everything is working!</p>
 				</div>
-				<button class="primary-btn" onclick={() => setStep('done')}>Continue</button>
+				<button class="primary-btn" onclick={() => enterModeStep(false)}>Continue</button>
 			{:else if testResult === 'error'}
 				<div class="error-box">
 					<p>
@@ -427,7 +440,7 @@
 					</p>
 					<div class="actions">
 						<button class="primary-btn" onclick={goToTest}>Retry</button>
-						<button class="secondary-btn" onclick={() => setStep('done')}>Skip</button>
+						<button class="secondary-btn" onclick={() => enterModeStep(false)}>Skip</button>
 						<ReportIssueButton
 							where="Setup: testing the model"
 							error={testStatusMessage || 'Something went wrong with the test.'}
@@ -437,6 +450,51 @@
 					</div>
 				</div>
 			{/if}
+		</div>
+	{:else if step === 'mode'}
+		<div class="wizard-step">
+			<h1 title="You can change this later in Settings → General → Lean mode.">
+				How much should Haruspex do?
+			</h1>
+			<ModeSelector
+				name="lean-mode"
+				value={getLeanChoice() ? 'lean' : 'full'}
+				onchange={(v) => setLeanChoice(v === 'lean')}
+				options={[
+					{
+						value: 'lean',
+						title: leanReason ? 'Lean (recommended)' : 'Lean',
+						description: 'Chat and research. Best for small models and slow machines.'
+					},
+					{
+						value: 'full',
+						title: leanReason ? 'Full' : 'Full (recommended)',
+						description: 'Everything, including the Code and Shell tabs.'
+					}
+				]}
+			/>
+			{#if leanReason}
+				<p class="hint mode-reason">
+					{leanReason === 'small-model'
+						? 'Recommended for a model of 9B or smaller.'
+						: 'Recommended for a machine without a fast GPU.'}
+				</p>
+			{/if}
+			<div class="wizard-actions">
+				<button class="secondary-btn" onclick={() => setStep(isModeRemote() ? 'remote' : 'test')}
+					>Back</button
+				>
+				<button
+					class="primary-btn"
+					onclick={() => {
+						confirmMode();
+						if (isModeRemote()) finishRemoteSetup();
+						else setStep('done');
+					}}
+				>
+					Continue
+				</button>
+			</div>
 		</div>
 	{:else if step === 'done'}
 		<div class="wizard-step">
@@ -581,6 +639,10 @@
 		font-size: 1.5rem;
 		margin: 0 0 8px 0;
 		color: var(--text-primary);
+	}
+
+	.mode-reason {
+		margin-top: 10px;
 	}
 
 	.subtitle {
