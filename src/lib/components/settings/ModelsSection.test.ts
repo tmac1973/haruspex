@@ -83,6 +83,25 @@ function deleteButtonFor(index: number) {
 	return screen.getAllByText('Delete')[index];
 }
 
+describe('ModelsSection active model', () => {
+	it('marks the active model from a Windows path', async () => {
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter(
+				{
+					list_models: models,
+					get_active_model_path: 'C:\\Users\\me\\models\\a.gguf',
+					get_models_dir: 'C:\\Users\\me\\models'
+				},
+				undefined
+			)
+		);
+		await renderSection();
+		expect(screen.getByText('active')).toBeTruthy();
+		// Only model-b offers Use; the active model-a doesn't.
+		expect(screen.getAllByText('Use')).toHaveLength(1);
+	});
+});
+
 describe('ModelsSection delete confirmation', () => {
 	it('clicking Delete opens the dialog without deleting from disk', async () => {
 		await renderSection();
