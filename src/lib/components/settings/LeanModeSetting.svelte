@@ -37,6 +37,7 @@
 	{#if on}
 		<p class="hint off-label">Off in lean mode:</p>
 		<ul class="off-list">
+			<li>The Code and Shell tabs</li>
 			<li>File writing, skill writing and speech generation</li>
 			{#each paused as name (name)}
 				<li>{name}</li>

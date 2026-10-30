@@ -18,6 +18,7 @@
 	import { progressLine } from '#lib/tasks/progress.ts';
 	import { hasEnded, type BackgroundTask } from '#lib/tasks/types.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
+	import { getSettings } from '#lib/stores/settings.ts';
 	import { errMessage } from '#lib/utils/error.ts';
 
 	/** How long the chip, and a finished task's row, stay after it ends. */
@@ -76,6 +77,9 @@
 			if (owner.startsWith('chat:')) {
 				setActiveTab('chat');
 				await setActiveConversation(id);
+			} else if (getSettings().leanMode) {
+				// Lean mode hides the Code tab; the task is still listed here.
+				showToast('Turn off lean mode in Settings → General to open the Code tab.');
 			} else {
 				setActiveTab('code');
 				await openSession(id);

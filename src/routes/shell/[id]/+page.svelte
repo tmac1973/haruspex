@@ -6,6 +6,13 @@
 	import { page } from '$app/state';
 	import ShellPane from '#lib/components/shell/ShellPane.svelte';
 	import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
+	import {
+		SETTINGS_KEY,
+		applyAccent,
+		applyTheme,
+		getLiveSettings,
+		reloadSettingsFromStorage
+	} from '#lib/stores/settings.ts';
 	import { reattachShellSession, getActiveShellSession } from '#lib/stores/shell.svelte.ts';
 	import { fullAccessFromUrl, handBackToMain } from '#lib/shell/windows.ts';
 	import { relayToMain, useCodeRelay } from '#lib/code/bridge.ts';
@@ -34,6 +41,14 @@
 	);
 
 	let closing = false;
+
+	/** Follow the main window's settings, lean mode among them. */
+	function onStorage(e: StorageEvent): void {
+		if (e.key !== SETTINGS_KEY) return;
+		reloadSettingsFromStorage();
+		applyTheme();
+		applyAccent();
+	}
 
 	async function handBack() {
 		if (closing) return;
@@ -67,6 +82,8 @@
 	});
 </script>
 
+<svelte:window onstorage={onStorage} />
+
 <div class="detached">
 	<div class="bar">
 		<span class="title">{session.name}</span>
@@ -74,12 +91,26 @@
 			⇤ Re-attach
 		</button>
 	</div>
-	<div class="pane">
+	{#if getLiveSettings().leanMode}
+		<p class="lean-note">Turn off lean mode in Settings → General to open this.</p>
+	{/if}
+	<!-- Hidden, not unmounted, in lean mode: the terminal keeps running. -->
+	<div class="pane" class:lean-hidden={getLiveSettings().leanMode}>
 		<ShellPane {session} standalone attachSessionId={ptyId} />
 	</div>
 </div>
 
 <style>
+	.lean-note {
+		margin: 24px;
+		color: var(--text-secondary);
+		font-size: 0.85rem;
+	}
+
+	.lean-hidden {
+		display: none;
+	}
+
 	.detached {
 		display: flex;
 		flex-direction: column;

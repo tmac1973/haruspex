@@ -22,7 +22,10 @@ export const SHORTCUTS: ShortcutSection[] = [
 			{ keys: 'F2 (hold)', action: 'Push-to-talk — voice input, release to send' },
 			{ keys: 'F3', action: 'Read the last reply aloud (toggle)' },
 			{ keys: 'Ctrl / ⌘ + N', action: 'New conversation (Chat tab)' },
-			{ keys: 'Ctrl / ⌘ + 1–4', action: 'Switch to the Chat, Jobs, Shell or Code tab' },
+			{
+				keys: 'Ctrl / ⌘ + 1–4',
+				action: 'Switch to the Chat, Jobs, Shell or Code tab (Chat and Jobs only in lean mode)'
+			},
 			{ keys: 'Ctrl / ⌘ + + / −', action: 'Zoom the UI in / out' },
 			{ keys: 'Ctrl / ⌘ + 0', action: 'Reset UI zoom' },
 			{ keys: 'Ctrl + Shift + I / ⌘ + ⌥ + I', action: 'Open the web inspector (devtools)' }

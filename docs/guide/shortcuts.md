@@ -15,7 +15,7 @@ Press **F1**, or click the **?** in the header, to see the shortcut list in the 
 | F2 (hold) | Push-to-talk voice input; release to send |
 | F3 | Read the last reply aloud (press again to stop) |
 | Ctrl / ⌘ + N | New conversation (Chat tab) |
-| Ctrl / ⌘ + 1–4 | Switch to the Chat, Jobs, Shell or Code tab |
+| Ctrl / ⌘ + 1–4 | Switch to the Chat, Jobs, Shell or Code tab (Chat and Jobs only in lean mode) |
 | Ctrl / ⌘ + + / − | Zoom the interface in / out |
 | Ctrl / ⌘ + 0 | Reset the zoom |
 | Ctrl + Shift + I / ⌘ + ⌥ + I | Open the web inspector (developer tools) |
