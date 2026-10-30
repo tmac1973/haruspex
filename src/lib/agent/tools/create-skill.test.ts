@@ -129,7 +129,9 @@ describe('create_skill and update_skill', () => {
 				name: 'deploy-check',
 				description: 'Check a deploy.',
 				body: 'Run the checks.',
-				project: false
+				project: false,
+				needs: null,
+				buildsOn: null
 			},
 			'/code/repo'
 		);
@@ -145,10 +147,31 @@ describe('create_skill and update_skill', () => {
 		const result = await runAnswering('update_skill', { name: 'x', body: 'b' }, async () => {
 			resolveSkillApproval({ kind: 'rejected', reason: 'too vague' });
 		});
-		expect(client.draftSkill.mock.calls[0][0]).toMatchObject({ update: true, description: null });
+		expect(client.draftSkill.mock.calls[0][0]).toMatchObject({
+			update: true,
+			description: null,
+			needs: null,
+			buildsOn: null
+		});
 		expect(client.saveSkill).not.toHaveBeenCalled();
 		expect(result).toContain('declined');
 		expect(result).toContain('too vague');
+	});
+
+	it('pass on needs and builds_on, and turn back a need that is not one', async () => {
+		await runAnswering(
+			'create_skill',
+			{ ...createArgs, needs: ['video', 'video'], builds_on: ' cut-video ' },
+			async () => resolveSkillApproval({ kind: 'rejected', reason: '' })
+		);
+		expect(client.draftSkill.mock.calls[0][0]).toMatchObject({
+			needs: ['video'],
+			buildsOn: 'cut-video'
+		});
+		client.draftSkill.mockClear();
+		const out = await executeTool('create_skill', { ...createArgs, needs: ['lasers'] }, ctx());
+		expect(out.result).toContain('needs takes image, music, video; not \\"lasers');
+		expect(client.draftSkill).not.toHaveBeenCalled();
 	});
 
 	it('save to the repo only in Code mode, and count it as a skill the repo had', async () => {

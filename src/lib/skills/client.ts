@@ -92,19 +92,54 @@ export function readSkill(name: string, projectRoot?: string | null): Promise<Sk
 }
 
 /**
- * A skill as a turn loads it: its instructions, then what its backend can
- * do now (`needsNotes`), so the model reads both together.
+ * A skill as a turn loads it: the skill it builds on first (`withBase`), its
+ * instructions, then what its backend can do now (`needsNotes`), so the
+ * model reads them all together.
  */
 export async function readSkillForTurn(
 	name: string,
 	projectRoot?: string | null
 ): Promise<SkillDoc> {
-	const doc = await readSkill(name, projectRoot);
+	const own = await readSkill(name, projectRoot);
+	const doc = own.buildsOn ? await withBase(own, own.buildsOn, projectRoot) : own;
 	const notes = await needsNotes(doc.needs);
 	if (notes.length === 0) return doc;
 	return {
 		...doc,
 		body: `${doc.body.trimEnd()}\n\nSet up now:\n${notes.map((n) => `- ${n}`).join('\n')}`
+	};
+}
+
+/**
+ * `doc` with the instructions of the skill it builds on ahead of its own, in
+ * one block, so a skill that lists only its changes works on every model and
+ * whether or not the model may load skills by itself. One level: Rust refuses
+ * to save a skill whose base builds on another. The base's own files are not
+ * listed, since `read_skill_file` reads only the skills in the conversation.
+ */
+async function withBase(
+	doc: SkillDoc,
+	baseName: string,
+	projectRoot?: string | null
+): Promise<SkillDoc> {
+	let base: SkillDoc;
+	try {
+		base = await readSkill(baseName, projectRoot);
+	} catch {
+		return {
+			...doc,
+			body: `${doc.body.trimEnd()}\n\nThis skill builds on the "${baseName}" skill, which is not installed. Follow the steps above as far as they go, and tell the user it is missing.`
+		};
+	}
+	return {
+		...doc,
+		body: [
+			`This skill builds on the "${base.name}" skill. Follow its steps, with this skill's changes, which come after them and win where the two differ.`,
+			`<base_skill name="${base.name}">\n${base.body.trim()}\n</base_skill>`,
+			`Changes for "${doc.name}":`,
+			doc.body.trim()
+		].join('\n\n'),
+		needs: [...new Set([...base.needs, ...doc.needs])]
 	};
 }
 

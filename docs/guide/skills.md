@@ -44,7 +44,7 @@ Small local models often load a skill and then ignore it, so Automatic leaves th
 
 ## Have the model write or update a skill
 
-Ask, for example, "save what we just did as a skill called deploy-check", or ask it to improve one. Every write opens the whole file in a review editor. Edit it and **Save skill** (or **Save changes**), or **Reject** it with a reason that goes back to the model. Nothing is written until you save. The model can only change skills in your own folder or a trusted repo. Skills it wrote are labelled **Written by the model** in Settings.
+Ask, for example, "save what we just did as a skill called deploy-check", or ask it to improve one. Every write opens the whole file in a review editor, and nothing is written until you save. A skill can also build on another, such as your own version of a shipped skill that lists only your changes. See the `write-skills` page.
 
 ## Skills that ship with Haruspex
 

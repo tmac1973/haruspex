@@ -17,6 +17,7 @@
  * Per the CI grep guard, nothing under `tools/` may import `stores/chat`.
  */
 
+import type { SkillNeed } from '#lib/ipc/gen/SkillNeed.ts';
 import type { SkillWriteRequest } from '#lib/ipc/gen/SkillWriteRequest.ts';
 import { ctxHostCwd, waitOnUser } from '#lib/agent/tools/_helpers.ts';
 import { draftAgentsMd, draftSkill, saveAgentsMd, saveSkill } from '#lib/skills/client.ts';
@@ -36,7 +37,46 @@ export const UPDATE_SKILL_TOOL = 'update_skill';
 export const WRITE_AGENTS_MD_TOOL = 'write_agents_md';
 
 const BODY_DESCRIPTION =
-	'The instructions, in Markdown: the steps to follow and anything to watch for, written so they work without this conversation.';
+	'The instructions, in Markdown: the steps to follow and anything to watch for, written so they work without this conversation. With builds_on, only the changes to that skill.';
+
+const NEEDS: SkillNeed[] = ['image', 'music', 'video'];
+
+/** The `needs` and `builds_on` properties both tools take. */
+function metadataProperties(update: boolean) {
+	const keep = update ? ' Leave it out to keep the current value; [] clears it.' : '';
+	const keepBase = update ? ' Leave it out to keep the current value; "" clears it.' : '';
+	return {
+		needs: {
+			type: 'array',
+			items: { type: 'string', enum: NEEDS },
+			description: `What must be on for the skill to run: an image backend, a music backend or the video tools. The skill is hidden while one is off. Give it when the skill uses those tools.${keep}`
+		},
+		builds_on: {
+			type: 'string',
+			description: `An existing skill this one adapts, such as a shipped one. Its instructions load ahead of this skill's, so the body lists only what differs: don't copy its steps. Use it when the user wants their own version of a skill.${keepBase}`
+		}
+	};
+}
+
+/**
+ * The model's `needs` and `builds_on`, as the request takes them; a string
+ * for anything it got wrong. Absent stays null, which an update keeps.
+ */
+function metadataArgs(
+	args: Record<string, unknown>
+): Pick<SkillWriteRequest, 'needs' | 'buildsOn'> | string {
+	let needs: SkillNeed[] | null = null;
+	if (args.needs !== undefined) {
+		const raw = Array.isArray(args.needs) ? args.needs : [args.needs];
+		const bad = raw.filter((n) => !NEEDS.includes(n as SkillNeed));
+		if (bad.length > 0) {
+			return `needs takes ${NEEDS.join(', ')}; not ${bad.map((b) => JSON.stringify(b)).join(', ')}.`;
+		}
+		needs = [...new Set(raw as SkillNeed[])];
+	}
+	const buildsOn = typeof args.builds_on === 'string' ? args.builds_on.trim() : null;
+	return { needs, buildsOn };
+}
 
 registerTool({
 	category: 'skills-write',
@@ -58,6 +98,7 @@ registerTool({
 						description: 'One or two sentences: what the skill does and when to use it.'
 					},
 					body: { type: 'string', description: BODY_DESCRIPTION },
+					...metadataProperties(false),
 					where: {
 						type: 'string',
 						enum: ['user', 'project'],
@@ -71,7 +112,7 @@ registerTool({
 	},
 	displayLabel: (args) => String(args.name ?? ''),
 	execute: (args, ctx) =>
-		writeSkill(ctx, {
+		writeSkill(ctx, args, {
 			update: false,
 			name: String(args.name ?? ''),
 			description: typeof args.description === 'string' ? args.description : '',
@@ -87,7 +128,7 @@ registerTool({
 		function: {
 			name: UPDATE_SKILL_TOOL,
 			description:
-				"Replace an existing skill's instructions, and optionally its description. Use only when the user asks for a skill to be changed. The user reviews the change before it is saved.",
+				"Replace an existing skill's instructions, and optionally its description, needs or the skill it builds on. Use only when the user asks for a skill to be changed. The user reviews the change before it is saved.",
 			parameters: {
 				type: 'object',
 				properties: {
@@ -99,7 +140,8 @@ registerTool({
 					body: {
 						type: 'string',
 						description: `${BODY_DESCRIPTION} Replaces the current instructions in full.`
-					}
+					},
+					...metadataProperties(true)
 				},
 				required: ['name', 'body']
 			}
@@ -107,7 +149,7 @@ registerTool({
 	},
 	displayLabel: (args) => String(args.name ?? ''),
 	execute: (args, ctx) =>
-		writeSkill(ctx, {
+		writeSkill(ctx, args, {
 			update: true,
 			name: String(args.name ?? ''),
 			description: typeof args.description === 'string' ? args.description : null,
@@ -116,7 +158,16 @@ registerTool({
 		})
 });
 
-async function writeSkill(ctx: ToolContext, request: SkillWriteRequest): Promise<ToolExecOutput> {
+async function writeSkill(
+	ctx: ToolContext,
+	args: Record<string, unknown>,
+	fields: Omit<SkillWriteRequest, 'needs' | 'buildsOn'>
+): Promise<ToolExecOutput> {
+	const metadata = metadataArgs(args);
+	if (typeof metadata === 'string') {
+		return toolResult(toolError(`Nothing was saved: ${metadata}`));
+	}
+	const request: SkillWriteRequest = { ...fields, ...metadata };
 	// A repo's skills folder is only in reach from Code mode, where the turn
 	// knows which repo it is in and the user trusts it.
 	if (request.project && !ctx.codeMode) {

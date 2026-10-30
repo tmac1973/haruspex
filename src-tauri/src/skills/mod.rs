@@ -25,7 +25,7 @@ mod write;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 use discover::{Found, Root};
@@ -57,7 +57,7 @@ pub enum SkillSource {
 /// `metadata.haruspex-needs` (`image`, `music`, `video`, separated by commas
 /// or spaces). The frontend hides a skill whose need is off, so a turn never
 /// carries one it can't run.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, ts_rs::TS)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum SkillNeed {
@@ -99,6 +99,19 @@ fn needs_of(
         }
     }
     (needs, warnings)
+}
+
+/// The skill this one builds on (`metadata.haruspex-builds-on`), whose
+/// instructions a turn loads ahead of its own. Not itself.
+fn builds_on_of(
+    name: &str,
+    metadata: &std::collections::BTreeMap<String, String>,
+) -> Option<String> {
+    metadata
+        .get("haruspex-builds-on")
+        .map(|b| b.trim())
+        .filter(|b| !b.is_empty() && *b != name)
+        .map(String::from)
 }
 
 /// The tools a skill covers (`metadata.haruspex-tools`, names separated by
@@ -177,6 +190,8 @@ pub struct SkillDoc {
     pub files_truncated: bool,
     /// What must be set up for it to run (`metadata.haruspex-needs`).
     pub needs: Vec<SkillNeed>,
+    /// The skill whose instructions come first (`metadata.haruspex-builds-on`).
+    pub builds_on: Option<String>,
 }
 
 impl From<&Found> for SkillSummary {
@@ -316,6 +331,7 @@ pub async fn skill_read(
             files,
             files_truncated,
             needs: needs_of(&skill.parsed.metadata).0,
+            builds_on: builds_on_of(&skill.parsed.name, &skill.parsed.metadata),
         })
     })
     .await
@@ -617,6 +633,20 @@ mod tests {
         assert_eq!(fix.needs, vec![SkillNeed::Image]);
         assert!(fix.warnings.is_empty(), "{:?}", fix.warnings);
         assert!(!fix.code_mode_only);
+    }
+
+    #[test]
+    fn reads_the_skill_one_builds_on_but_not_itself() {
+        let meta = |v: &str| {
+            std::collections::BTreeMap::from([("haruspex-builds-on".to_string(), v.to_string())])
+        };
+        assert_eq!(builds_on_of("mine", &Default::default()), None);
+        assert_eq!(
+            builds_on_of("mine", &meta(" cut-video ")).as_deref(),
+            Some("cut-video")
+        );
+        assert_eq!(builds_on_of("mine", &meta("mine")), None);
+        assert_eq!(builds_on_of("mine", &meta("  ")), None);
     }
 
     #[test]

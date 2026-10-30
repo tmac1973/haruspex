@@ -122,7 +122,8 @@ describe('readSkillForTurn', () => {
 		compatibility: null,
 		files: [],
 		filesTruncated: false,
-		needs
+		needs,
+		buildsOn: null
 	});
 
 	it('puts what the backend can do after an image skill', async () => {
@@ -137,6 +138,34 @@ describe('readSkillForTurn', () => {
 		vi.mocked(invoke).mockResolvedValueOnce(doc([]));
 		expect((await readSkillForTurn('fix-picture')).body).toBe(
 			'Pick edit, area, extend or upscale.\n'
+		);
+	});
+
+	it('puts the skill it builds on ahead of its own changes', async () => {
+		vi.mocked(invoke)
+			.mockResolvedValueOnce({
+				...doc([]),
+				name: 'my-episode',
+				body: 'Cut silences over 0.8 s.',
+				buildsOn: 'cut-video'
+			})
+			.mockResolvedValueOnce({ ...doc(['video']), name: 'cut-video', body: '1. Probe.\n' });
+		const got = await readSkillForTurn('my-episode');
+		expect(got.name).toBe('my-episode');
+		expect(got.needs).toEqual(['video']);
+		expect(got.body).toContain('builds on the "cut-video" skill');
+		const base = got.body.indexOf('<base_skill name="cut-video">\n1. Probe.\n</base_skill>');
+		expect(base).toBeGreaterThan(0);
+		expect(got.body.indexOf('Cut silences over 0.8 s.')).toBeGreaterThan(base);
+	});
+
+	it('says so when the skill it builds on is gone', async () => {
+		vi.mocked(invoke)
+			.mockResolvedValueOnce({ ...doc([]), body: 'Mine.', buildsOn: 'gone' })
+			.mockRejectedValueOnce('no skill named "gone"');
+		const got = await readSkillForTurn('fix-picture');
+		expect(got.body).toMatch(
+			/^Mine\.\n\nThis skill builds on the "gone" skill, which is not installed/
 		);
 	});
 });

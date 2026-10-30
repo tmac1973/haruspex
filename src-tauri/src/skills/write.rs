@@ -18,7 +18,7 @@ use serde_norway::{Mapping, Value};
 
 use super::discover::{self, Found};
 use super::parse::{parse_skill, split_frontmatter, DESCRIPTION_MAX, NAME_MAX};
-use super::SkillSource;
+use super::{SkillNeed, SkillSource};
 
 /// What the model asked for.
 #[derive(Clone, Debug, Deserialize, ts_rs::TS)]
@@ -34,6 +34,11 @@ pub struct SkillWriteRequest {
     /// Create in the trusted repo's `.agents/skills/` rather than the user's
     /// folder. Ignored when updating, which writes where the skill is.
     pub project: bool,
+    /// `metadata.haruspex-needs`. None keeps what an update has; empty clears it.
+    pub needs: Option<Vec<SkillNeed>>,
+    /// `metadata.haruspex-builds-on`: an existing skill whose instructions
+    /// load ahead of this one's. None keeps what an update has; empty clears it.
+    pub builds_on: Option<String>,
 }
 
 /// The `SKILL.md` to show the user before anything is written.
@@ -70,6 +75,7 @@ pub fn draft(
         return Err("body is empty: give the skill's instructions".into());
     }
     let target = target(all, dest, req)?;
+    check_builds_on(all, req)?;
     let text = match &target.current {
         Some(current) => updated_text(current, req)?,
         None => new_text(req)?,
@@ -206,6 +212,28 @@ fn check_name(name: &str) -> Result<(), String> {
     }
 }
 
+/// The skill named in `builds_on` must exist and must not build on another,
+/// since a turn loads only one level.
+fn check_builds_on(all: &[Found], req: &SkillWriteRequest) -> Result<(), String> {
+    let Some(base) = req.builds_on.as_deref().map(str::trim) else {
+        return Ok(());
+    };
+    if base.is_empty() {
+        return Ok(());
+    }
+    if base == req.name {
+        return Err("a skill can't build on itself".into());
+    }
+    let found = discover::find(all, base)
+        .ok_or_else(|| format!("builds_on names \"{base}\", and there is no such skill"))?;
+    if let Some(next) = super::builds_on_of(base, &found.parsed.metadata) {
+        return Err(format!(
+            "\"{base}\" builds on \"{next}\" itself; a skill can build on one that doesn't"
+        ));
+    }
+    Ok(())
+}
+
 fn check_description(description: &str) -> Result<&str, String> {
     let d = description.trim();
     if d.is_empty() {
@@ -223,6 +251,7 @@ fn new_text(req: &SkillWriteRequest) -> Result<String, String> {
     let description = check_description(req.description.as_deref().unwrap_or(""))?;
     let mut metadata = Mapping::new();
     metadata.insert("created-by".into(), "haruspex".into());
+    set_metadata(&mut metadata, req);
     let mut front = Mapping::new();
     front.insert("name".into(), req.name.as_str().into());
     front.insert("description".into(), description.into());
@@ -231,22 +260,57 @@ fn new_text(req: &SkillWriteRequest) -> Result<String, String> {
     Ok(skill_text(&yaml, &req.body))
 }
 
-/// `current` with its body replaced and, when given, its description. The
-/// rest of the frontmatter is kept; it is rewritten only when the
-/// description changes, which drops any YAML comments in it.
+/// The metadata keys `req` sets: an empty value removes the key.
+fn set_metadata(metadata: &mut Mapping, req: &SkillWriteRequest) {
+    if let Some(needs) = &req.needs {
+        let words: Vec<&str> = needs
+            .iter()
+            .map(|n| match n {
+                SkillNeed::Image => "image",
+                SkillNeed::Music => "music",
+                SkillNeed::Video => "video",
+            })
+            .collect();
+        put_or_remove(metadata, "haruspex-needs", &words.join(" "));
+    }
+    if let Some(base) = &req.builds_on {
+        put_or_remove(metadata, "haruspex-builds-on", base.trim());
+    }
+}
+
+fn put_or_remove(metadata: &mut Mapping, key: &str, value: &str) {
+    if value.is_empty() {
+        metadata.remove(key);
+    } else {
+        metadata.insert(key.into(), value.into());
+    }
+}
+
+/// `current` with its body replaced and, when given, its description and
+/// metadata. The rest of the frontmatter is kept; it is rewritten only when
+/// one of those changes, which drops any YAML comments in it.
 fn updated_text(current: &str, req: &SkillWriteRequest) -> Result<String, String> {
     let current = current.replace("\r\n", "\n");
     let (yaml, _) = split_frontmatter(current.trim_start_matches('\u{feff}'))?;
-    let yaml = match &req.description {
-        None => yaml.to_string(),
-        Some(description) => {
-            let description = check_description(description)?;
-            let mut front: Mapping = serde_norway::from_str(yaml)
-                .map_err(|e| format!("the current frontmatter can't be read: {e}"))?;
-            front.insert("description".into(), description.into());
-            serde_norway::to_string(&front).map_err(|e| e.to_string())?
+    if req.description.is_none() && req.needs.is_none() && req.builds_on.is_none() {
+        return Ok(skill_text(yaml, &req.body));
+    }
+    let mut front: Mapping = serde_norway::from_str(yaml)
+        .map_err(|e| format!("the current frontmatter can't be read: {e}"))?;
+    if let Some(description) = &req.description {
+        front.insert("description".into(), check_description(description)?.into());
+    }
+    if req.needs.is_some() || req.builds_on.is_some() {
+        let mut metadata = match front.remove("metadata") {
+            Some(Value::Mapping(m)) => m,
+            _ => Mapping::new(),
+        };
+        set_metadata(&mut metadata, req);
+        if !metadata.is_empty() {
+            front.insert("metadata".into(), Value::Mapping(metadata));
         }
-    };
+    }
+    let yaml = serde_norway::to_string(&front).map_err(|e| e.to_string())?;
     Ok(skill_text(&yaml, &req.body))
 }
 
@@ -273,6 +337,8 @@ mod tests {
             description: Some(description.into()),
             body: body.into(),
             project: false,
+            needs: None,
+            builds_on: None,
         }
     }
 
@@ -283,6 +349,8 @@ mod tests {
             description: description.map(Into::into),
             body: body.into(),
             project: false,
+            needs: None,
+            builds_on: None,
         }
     }
 
@@ -467,6 +535,78 @@ mod tests {
         std::os::unix::fs::symlink(&elsewhere, f.user.join("linked")).unwrap();
         let err = draft(&f.all(), &f.dest(), &update("linked", None, "b")).unwrap_err();
         assert!(err.contains("linked in"));
+    }
+
+    #[test]
+    fn create_sets_needs_and_the_skill_it_builds_on() {
+        let f = Fixture::new("builds_on");
+        put(
+            &f.user.join("cut-video"),
+            "name: cut-video\ndescription: d",
+            "b",
+        );
+        let mut req = create("my-episode", "d", "Only my changes.");
+        req.needs = Some(vec![SkillNeed::Video, SkillNeed::Music]);
+        req.builds_on = Some("cut-video".into());
+        let d = draft(&f.all(), &f.dest(), &req).unwrap();
+        let parsed = parse_skill(&d.text, "my-episode");
+        assert_eq!(parsed.error, None);
+        let meta = |k: &str| parsed.metadata.get(k).map(String::as_str);
+        assert_eq!(meta("haruspex-needs"), Some("video music"));
+        assert_eq!(meta("haruspex-builds-on"), Some("cut-video"));
+        assert_eq!(meta("created-by"), Some("haruspex"));
+    }
+
+    #[test]
+    fn builds_on_must_name_a_skill_that_builds_on_none() {
+        let f = Fixture::new("builds_on_bad");
+        put(
+            &f.user.join("mine"),
+            "name: mine\ndescription: d\nmetadata:\n  haruspex-builds-on: base",
+            "b",
+        );
+        put(&f.user.join("base"), "name: base\ndescription: d", "b");
+        let all = f.all();
+        let mut req = create("other", "d", "b");
+        req.builds_on = Some("nothing".into());
+        let err = draft(&all, &f.dest(), &req).unwrap_err();
+        assert!(err.contains("no such skill"), "{err}");
+        req.builds_on = Some("mine".into());
+        let err = draft(&all, &f.dest(), &req).unwrap_err();
+        assert!(err.contains("builds on \"base\" itself"), "{err}");
+        req.builds_on = Some("other".into());
+        let err = draft(&all, &f.dest(), &req).unwrap_err();
+        assert!(err.contains("can't build on itself"), "{err}");
+    }
+
+    #[test]
+    fn update_sets_or_clears_metadata_and_keeps_the_rest() {
+        let f = Fixture::new("update_meta");
+        put(&f.user.join("base"), "name: base\ndescription: d", "b");
+        put(
+            &f.user.join("mine"),
+            "name: mine\ndescription: Old.\nmetadata:\n  author: me\n  haruspex-needs: image",
+            "Old body.",
+        );
+        let all = f.all();
+        let mut req = update("mine", None, "New body.");
+        req.needs = Some(vec![]);
+        req.builds_on = Some("base".into());
+        let d = draft(&all, &f.dest(), &req).unwrap();
+        let parsed = parse_skill(&d.text, "mine");
+        assert_eq!(parsed.description, "Old.");
+        assert_eq!(parsed.metadata.get("haruspex-needs"), None);
+        assert_eq!(
+            parsed
+                .metadata
+                .get("haruspex-builds-on")
+                .map(String::as_str),
+            Some("base")
+        );
+        assert_eq!(
+            parsed.metadata.get("author").map(String::as_str),
+            Some("me")
+        );
     }
 
     #[test]
