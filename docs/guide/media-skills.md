@@ -9,7 +9,7 @@ Haruspex ships skills that chain the picture, music and video tools into whole t
 
 ## When they are offered
 
-Each works in certain tabs and needs something set up first:
+Each works in certain tabs and needs something set up:
 
 | Skill | Where | Needs |
 |---|---|---|
@@ -19,7 +19,7 @@ Each works in certain tabs and needs something set up first:
 | `cut-video` | Chat and the Code tab, with a working folder | the video tools (Settings → Video editing) |
 | `narrate` | Chat and the Code tab | nothing (see the `speech` page) |
 
-Until that is set up, the skill is greyed out in Settings → Skills, with what it needs, and isn't offered. Once it is, the model can load the skill when a request matches, and a skill also loads by itself the first time the model reaches for one of its tools, such as editing a picture. That depends on Settings → Skills → When the model uses skills: by default, remote and OpenRouter models load skills and the local model doesn't. On any model you can run one yourself by typing `/` and its name, followed by what you want.
+Until then, the skill is greyed out in Settings → Skills, with what it needs, and isn't offered. Then the model can load the skill when a request matches, and the skill also loads by itself the first time the model uses one of its tools, such as editing a picture. That depends on Settings → Skills → When the model uses skills: by default, remote and OpenRouter models load skills and the local model doesn't. On any model you can run one yourself by typing `/` and its name, followed by what you want.
 
 ## Change a picture you already have: fix-picture
 
@@ -51,7 +51,7 @@ For more than about eight assets it suggests an Asset generation job (see the `j
 `write-song` writes the style and the words before making anything, since a song takes a minute or more. The style is a few tags (genre, mood, instruments, tempo, voice): it keeps to what you named, and says what it chose for the rest. Lyrics get section tags such as `[verse]` and `[chorus]`, and as many lines as fit the length. Every lyric line is sung, so "guitar solo" goes in the style. An instrumental gets none.
 
 - **Music for a game or a video:** an instrumental loop with no intro or outro, 30 to 60 seconds. In the Code tab it's saved where the code loads its music.
-- **Changing a song:** it changes the part you name rather than making the whole song again. It can redo a stretch, restyle the song, extend it, or add or pull out an instrument, also on a file you drop on the message box (see the `music` page). For "the same but faster" it remakes a song it made from the same seed; one it has already changed can't be remade that way, and it says so.
+- **Changing a song:** it changes the part you name rather than making the whole song again. It can redo a stretch, restyle the song, extend it, or add or pull out an instrument, also on a file you drop on the message box (see the `music` page). For "the same but faster" it remakes a song it made from the same seed; it can't do that for a song it has already changed, and says so.
 - **Afterwards:** it says what it made, with the length and the seed. It doesn't claim how the song sounds, since it can't hear it.
 
 ## Finish a video: cut-video
