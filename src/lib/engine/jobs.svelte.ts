@@ -24,6 +24,7 @@ import {
 	type RunState
 } from '#lib/agent/jobs/runner.svelte.ts';
 import { getJobType, listJobTypes } from '#lib/agent/jobs/types/index.ts';
+import { pausedByLean } from '#lib/agent/jobs/types/lean.ts';
 import type { JobTypeDefinition } from '#lib/agent/jobs/types/types.ts';
 import {
 	computeNextDueAt,
@@ -186,6 +187,11 @@ function storedColumns(existing: JobWithSteps | null): StoredColumns {
 function typeAndConfig(existing: JobWithSteps | null, fields: JobFields, w: JobWrite) {
 	const jobType = fields.job_type ?? existing?.job_type;
 	if (!jobType) throw new Error('a new job needs a job_type (see jobs.types)');
+	// Lean mode makes research jobs alone. A paused job of another type can
+	// still be edited; it just can't be made, or turned into one.
+	if (pausedByLean(jobType) && existing?.job_type !== jobType) {
+		throw new Error('Lean mode is on: only research jobs can be made.');
+	}
 	const def = typeOf(jobType);
 	const keep = existing?.job_type === jobType;
 	const base = keep ? def.configFromJob(existing!.type_config) : def.configDefaults();
@@ -292,16 +298,19 @@ async function runOf(runId: number) {
 export async function dispatchJobs(op: JobOp): Promise<unknown> {
 	switch (op.type) {
 		case 'jobs.types':
+			// Lean mode offers research alone, as the desktop's picker does.
 			return Promise.all(
-				listJobTypes().map(async (t) => ({
-					id: t.id,
-					label: t.label,
-					description: t.description,
-					hasPlannedSteps: t.hasPlannedSteps,
-					schedulable: t.supportsSchedule !== false,
-					available: t.available ? await t.available() : true,
-					configDefaults: t.configDefaults()
-				}))
+				listJobTypes()
+					.filter((t) => !pausedByLean(t.id))
+					.map(async (t) => ({
+						id: t.id,
+						label: t.label,
+						description: t.description,
+						hasPlannedSteps: t.hasPlannedSteps,
+						schedulable: t.supportsSchedule !== false,
+						available: t.available ? await t.available() : true,
+						configDefaults: t.configDefaults()
+					}))
 			);
 		case 'jobs.list':
 			await loadJobs();

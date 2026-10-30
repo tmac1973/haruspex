@@ -39,6 +39,10 @@ Settings → General → Lean mode lists which of these you have set up. Their s
 
 Hidden is not closed. Code sessions keep their history, open terminals keep running, and turning lean mode off shows them as you left them.
 
+## From another computer
+
+Remote control follows lean mode too (see `remote-control`). The page shows Chat only, and a script can't start or send to a Code session or make a job other than research. `app.mode` tells a script whether lean mode is on.
+
 ## What it doesn't change
 
 - A research job keeps its own tools, file writing included.

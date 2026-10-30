@@ -56,11 +56,14 @@
 
 <div class="head">
 	<div class="segmented tabs">
-		<button
-			class:active={store.tab === 'code'}
-			title="Your Code sessions."
-			onclick={() => (store.tab = 'code')}>Code</button
-		>
+		<!-- The desktop's lean mode hides Code there, and here. -->
+		{#if !store.lean}
+			<button
+				class:active={store.tab === 'code'}
+				title="Your Code sessions."
+				onclick={() => (store.tab = 'code')}>Code</button
+			>
+		{/if}
 		<button
 			class:active={store.tab === 'chat'}
 			title="Your chats."
@@ -70,6 +73,11 @@
 			}}>Chat</button
 		>
 	</div>
+	{#if store.lean}
+		<span class="lean" title="Turn it off on the computer running Haruspex, in Settings → General."
+			>Lean mode</span
+		>
+	{/if}
 	<span class="conn {store.connection}" title="Connection to your computer">
 		{store.connection === 'open'
 			? 'Connected'
@@ -178,6 +186,15 @@
 
 	.conn.open {
 		color: var(--accent);
+	}
+
+	.lean {
+		padding: 1px 8px;
+		border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+		border-radius: 10px;
+		font-size: 0.72rem;
+		color: var(--accent);
+		white-space: nowrap;
 	}
 
 	.new-btn {

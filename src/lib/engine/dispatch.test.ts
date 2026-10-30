@@ -16,8 +16,14 @@ const mocks = vi.hoisted(() => ({
 	dispatchChat: vi.fn(),
 	answerPrompt: vi.fn(),
 	currentPrompts: vi.fn(),
-	slashFor: vi.fn()
+	slashFor: vi.fn(),
+	lean: false
 }));
+
+vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
+	return { ...actual, getSettings: () => ({ ...actual.getSettings(), leanMode: mocks.lean }) };
+});
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('#lib/stores/code.svelte.ts', () => ({
@@ -46,7 +52,14 @@ vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
 	logDebug: () => {}
 }));
 
-import { dispatch, MAX_FILE_CHARS, MAIN_WINDOW, setChatResync, setResync } from './dispatch';
+import {
+	dispatch,
+	LEAN_SESSION_REFUSAL,
+	MAX_FILE_CHARS,
+	MAIN_WINDOW,
+	setChatResync,
+	setResync
+} from './dispatch';
 
 interface FakeSession {
 	id: string;
@@ -113,6 +126,42 @@ beforeEach(() => {
 	mocks.currentPrompts.mockReset();
 	setResync(() => false);
 	setChatResync(() => false);
+	mocks.lean = false;
+});
+
+describe('dispatch: lean mode', () => {
+	it('says whether lean mode is on', async () => {
+		expect(await dispatch(op({ type: 'app.mode' }), MAIN_WINDOW)).toEqual({ lean: false });
+		mocks.lean = true;
+		expect(await dispatch(op({ type: 'app.mode' }), MAIN_WINDOW)).toEqual({ lean: true });
+	});
+
+	it('refuses to open, start or drive a Code session', async () => {
+		mocks.lean = true;
+		const s = session('a');
+		mocks.open = [s as unknown as Record<string, unknown>];
+		for (const o of [
+			op({ type: 'session.new', root: '/proj/b' }),
+			op({ type: 'session.open', id: 'a' }),
+			op({ type: 'session.send', id: 'a', text: 'go' }),
+			op({ type: 'session.compact', id: 'a' }),
+			op({ type: 'session.fork', id: 'a', index: 0 }),
+			op({ type: 'session.cancelShellWait', id: 'a' })
+		]) {
+			await expect(dispatch(o, 'w')).rejects.toThrow(LEAN_SESSION_REFUSAL);
+		}
+		expect(s.sent).toEqual([]);
+		expect(mocks.newSession).not.toHaveBeenCalled();
+		expect(mocks.openSession).not.toHaveBeenCalled();
+	});
+
+	it('still lets a client read and stop a session', async () => {
+		mocks.lean = true;
+		const s = session('a', { busy: true });
+		mocks.open = [s as unknown as Record<string, unknown>];
+		expect(await dispatch(op({ type: 'session.stop', id: 'a' }), 'w')).toEqual({ stopping: true });
+		expect(s.stopped).toBe(1);
+	});
 });
 
 describe('dispatch: sessions', () => {

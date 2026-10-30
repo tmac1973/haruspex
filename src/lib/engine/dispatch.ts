@@ -16,6 +16,7 @@ import {
 	type CodeSession
 } from '#lib/stores/code.svelte.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { getSettings } from '#lib/stores/settings.ts';
 import { newSessionBeside } from '#lib/code/windows.ts';
 import { shellProject } from '#lib/skills/project.ts';
 import { attachImages, slashFor } from '#lib/engine/attach.ts';
@@ -114,8 +115,29 @@ async function listSessions(label: string): Promise<SessionListItem[]> {
 	];
 }
 
+/** What a Code session operation answers while lean mode hides the Code tab. */
+export const LEAN_SESSION_REFUSAL =
+	'Lean mode is on: turn it off in Settings → General to use Code sessions.';
+
+/**
+ * Operations that open, start or drive a Code session. Lean mode refuses
+ * them; reading, stopping, closing and deleting a session stay allowed, so
+ * a client can still see and tidy what exists.
+ */
+const LEAN_REFUSED: ReadonlySet<EngineOp['type']> = new Set([
+	'session.new',
+	'session.open',
+	'session.send',
+	'session.compact',
+	'session.fork',
+	'session.cancelShellWait'
+]);
+
 export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
+	if (LEAN_REFUSED.has(op.type) && getSettings().leanMode) throw new Error(LEAN_SESSION_REFUSAL);
 	switch (op.type) {
+		case 'app.mode':
+			return { lean: getSettings().leanMode };
 		case 'sessions.list':
 			return listSessions(label);
 		case 'session.get':
