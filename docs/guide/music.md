@@ -45,7 +45,7 @@ Ask for a song "in the background" (or several) and the assistant starts it and 
 
 ## Change a song you already have
 
-Ask the assistant to work on a song it made in the chat, an audio file in the working folder, or one you drop on the message box in Chat or the Code tab (MP3, WAV, FLAC, OGG, WMA, M4A, AAC or Opus, up to 10 minutes). Dropping needs no working folder. The last four are converted to FLAC, which needs ffmpeg (see Settings → Video editing). The original is kept; the new version plays as a new song.
+Ask the assistant to work on a song it made in the chat, an audio file in the working folder, or one you drop on the message box in Chat or the Code tab (MP3, WAV, FLAC, OGG, WMA, M4A, AAC or Opus, up to 10 minutes). Dropping needs no working folder. The last four are converted to FLAC (MP3 if long), which needs ffmpeg (see Settings → Video editing). The original is kept; the new version plays as a new song.
 
 - **Restyle**: "the same song as smoky jazz". Give the lyrics again to keep the vocals. It can follow the original closely or loosely.
 - **Redo a stretch**: "redo 0:30 to 0:45 with a guitar solo".
@@ -67,7 +67,7 @@ In the Code tab, ask for something like "background music for the title screen a
 
 ## Where songs are kept
 
-Haruspex keeps its own copy of each song and deletes it from llama-toolchest, which would keep it for a day. A song that belongs to a chat or Code session stays until you delete it. The test clip belongs to neither and goes an hour later.
+Haruspex keeps its own copy of each song and deletes it from llama-toolchest, which would keep it for a day. A chat's or Code session's songs stay until you delete it. The test clip belongs to neither and goes an hour later.
 
 **Audio cache** shows how much space songs use. **Clear unused audio** deletes the ones no chat or session plays.
 
