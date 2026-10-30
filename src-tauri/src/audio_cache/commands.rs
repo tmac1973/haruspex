@@ -384,8 +384,8 @@ pub fn store_bytes(
 /// the webview, and is not scoped to the working folder: the user chose the
 /// file. The type comes from the extension. WMA, M4A, AAC and Opus, which
 /// neither the webviews nor the music servers all read, are converted to
-/// FLAC with the ffmpeg the video tools find (`overrides` are the paths in
-/// Settings → Video editing).
+/// FLAC (MP3 when that is too large) with the ffmpeg the video tools find
+/// (`overrides` are the paths in Settings → Video editing).
 #[tauri::command]
 pub async fn audio_store_dropped(
     app: AppHandle,
@@ -413,12 +413,12 @@ pub async fn audio_store_dropped(
                 .into(),
         );
     };
-    let bytes = convert_to_flac(&ffmpeg.path, path, &dir).await?;
+    let (bytes, mime) = convert_dropped(&ffmpeg.path, path, &dir, MAX_AUDIO_BYTES).await?;
     store_bytes(
         &db,
         &dir,
         &bytes,
-        "audio/flac",
+        mime,
         conversation_id.as_deref(),
         code_session_id.as_deref(),
     )
@@ -435,19 +435,45 @@ const CONVERTED_ON_DROP: [&str; 4] = ["wma", "m4a", "aac", "opus"];
 /// How long converting one dropped file may take.
 const CONVERT_TIMEOUT: Duration = Duration::from_secs(2 * 60);
 
-/// `path` as stereo FLAC, by way of a file in `dir`: FLAC written
-/// to a pipe lacks its length, which the player then can't show.
-pub async fn convert_to_flac(ffmpeg: &str, path: &Path, dir: &Path) -> Result<Vec<u8>, String> {
+/// The 320 kbps MP3 a dropped file becomes when its FLAC is over the cache
+/// limit: about 2.4 MB a minute, against FLAC's 5 to 9.
+const MP3_FALLBACK: [&str; 6] = ["-c:a", "libmp3lame", "-b:a", "320k", "-f", "mp3"];
+
+/// `path` as stereo FLAC, or as MP3 when the FLAC is over `limit` bytes,
+/// with the type it is in.
+pub async fn convert_dropped(
+    ffmpeg: &str,
+    path: &Path,
+    dir: &Path,
+    limit: u64,
+) -> Result<(Vec<u8>, &'static str), String> {
     if !std::fs::metadata(path).is_ok_and(|m| m.is_file()) {
         return Err("The dropped file could not be found.".into());
     }
+    let flac = run_ffmpeg(ffmpeg, path, dir, &["-c:a", "flac", "-f", "flac"]).await?;
+    if flac.len() as u64 <= limit {
+        return Ok((flac, "audio/flac"));
+    }
+    let mp3 = run_ffmpeg(ffmpeg, path, dir, &MP3_FALLBACK).await?;
+    Ok((mp3, "audio/mpeg"))
+}
+
+/// `path`'s first audio stream in stereo, encoded by `codec` (ffmpeg's
+/// arguments), by way of a file in `dir`: FLAC and MP3 written to a pipe
+/// lack their length, which the player then can't show.
+async fn run_ffmpeg(
+    ffmpeg: &str,
+    path: &Path,
+    dir: &Path,
+    codec: &[&str],
+) -> Result<Vec<u8>, String> {
     let out = dir.join(temp_name());
     let mut cmd = tokio::process::Command::new(ffmpeg);
     cmd.args(["-nostdin", "-hide_banner", "-loglevel", "error", "-i"])
         .arg(path)
-        .args([
-            "-map", "0:a:0", "-vn", "-ac", "2", "-c:a", "flac", "-f", "flac", "-y",
-        ])
+        .args(["-map", "0:a:0", "-vn", "-ac", "2"])
+        .args(codec)
+        .arg("-y")
         .arg(&out)
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);
@@ -880,7 +906,7 @@ mod tests {
 
     /// Needs an ffmpeg on PATH; skipped where there is none.
     #[tokio::test]
-    async fn a_dropped_m4a_becomes_flac() {
+    async fn a_dropped_m4a_becomes_flac_or_mp3_when_that_is_too_large() {
         let Some(ffmpeg) = binaries::resolve(&BinaryOverrides::default()).await.ffmpeg else {
             return;
         };
@@ -895,14 +921,26 @@ mod tests {
             .await
             .unwrap();
         assert!(made.success());
-        let flac = convert_to_flac(&ffmpeg.path, &m4a, &dir).await.unwrap();
-        assert_eq!(&flac[..4], b"fLaC");
+        let (flac, mime) = convert_dropped(&ffmpeg.path, &m4a, &dir, MAX_AUDIO_BYTES)
+            .await
+            .unwrap();
+        assert_eq!((&flac[..4], mime), (&b"fLaC"[..], "audio/flac"));
+        let (mp3, mime) = convert_dropped(&ffmpeg.path, &m4a, &dir, 1000)
+            .await
+            .unwrap();
+        assert_eq!(mime, "audio/mpeg");
+        assert!(mp3.starts_with(b"ID3") || mp3[0] == 0xff, "an MP3");
+        assert!(mp3.len() < flac.len());
         assert_eq!(files(&dir), 0, "no temp file left");
 
         let text = src.join("notes.wma");
         std::fs::write(&text, b"not audio").unwrap();
-        assert!(convert_to_flac(&ffmpeg.path, &text, &dir).await.is_err());
-        assert!(convert_to_flac(&ffmpeg.path, &src.join("gone.wma"), &dir)
+        let max = MAX_AUDIO_BYTES;
+        assert!(convert_dropped(&ffmpeg.path, &text, &dir, max)
+            .await
+            .is_err());
+        let gone = src.join("gone.wma");
+        assert!(convert_dropped(&ffmpeg.path, &gone, &dir, max)
             .await
             .is_err());
     }
