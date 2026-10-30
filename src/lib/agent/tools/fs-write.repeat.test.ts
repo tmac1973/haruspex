@@ -51,6 +51,20 @@ describe('repeat-write guard', () => {
 		}
 	});
 
+	it('sends a repeat binary write to a new name, not to fs_edit_text', async () => {
+		// fs_edit_text can't change a spreadsheet, document, deck or download.
+		const written = new Set<string>(['data/planets.ods', 'notes']);
+		const r = await resolveWritePathInteractive('/w', 'data/planets.ods', written, {
+			editable: false
+		});
+		expect(r.kind).toBe('rejected');
+		if (r.kind !== 'rejected') return;
+		expect(r.message).not.toContain('fs_edit_text');
+		expect(r.message).toContain('"data/planets-2.ods"');
+		const bare = await resolveWritePathInteractive('/w', 'notes', written, { editable: false });
+		if (bare.kind === 'rejected') expect(bare.message).toContain('"notes-2"');
+	});
+
 	it('refuses without consulting the filesystem', async () => {
 		// The guard must not depend on disk state — the point is that the file
 		// DOES exist, because we just wrote it.
