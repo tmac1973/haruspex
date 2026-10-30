@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.2.14](https://github.com/tmac1973/haruspex/compare/v0.2.13...v0.2.14) (2026-10-30)
+
+
+### Features
+
+* **chat:** add a lean mode tool set and prompt for small models ([#794](https://github.com/tmac1973/haruspex/issues/794)) ([834e258](https://github.com/tmac1973/haruspex/commit/834e25853e974cf37486bd26a8a2df9ddc37aec2))
+* **chat:** give each conversation its own working folder ([#778](https://github.com/tmac1973/haruspex/issues/778)) ([c256dae](https://github.com/tmac1973/haruspex/commit/c256dae4508be208a49368fa37a216973e4246a2))
+* **jobs:** offer only research jobs in lean mode ([#800](https://github.com/tmac1973/haruspex/issues/800)) ([f9a55d0](https://github.com/tmac1973/haruspex/commit/f9a55d009ae1353106b6adc49a1cf1ad9815ea05))
+* **music:** convert dropped WMA, M4A, AAC and Opus files to FLAC with ffmpeg ([#814](https://github.com/tmac1973/haruspex/issues/814)) ([f852b74](https://github.com/tmac1973/haruspex/commit/f852b7425e36e52582517fe7f2b592c51ab21f12))
+* **music:** drop an audio file on a composer to use it as a song source ([#790](https://github.com/tmac1973/haruspex/issues/790)) ([7ab2bf8](https://github.com/tmac1973/haruspex/commit/7ab2bf8421f47bee1cecb8ddbb612f30a7b79489))
+* **music:** trim a song to a stretch, to use part of it as a reference ([#809](https://github.com/tmac1973/haruspex/issues/809)) ([584474f](https://github.com/tmac1973/haruspex/commit/584474ff67e869efed45f0794f7c0bec2a0b1f56))
+* **remote:** apply lean mode to the Remote control client ([#801](https://github.com/tmac1973/haruspex/issues/801)) ([9a5828f](https://github.com/tmac1973/haruspex/commit/9a5828fca22c75b765520c0398ecfe231c315507))
+* **settings:** add the lean mode switch and header badge ([#797](https://github.com/tmac1973/haruspex/issues/797)) ([952ab15](https://github.com/tmac1973/haruspex/commit/952ab1504c97df43fd5fd793ad68b21e0975a6d9))
+* **settings:** rename settings → agent to chat, move shared defaults to inference ([#773](https://github.com/tmac1973/haruspex/issues/773)) ([f780256](https://github.com/tmac1973/haruspex/commit/f7802566141ca40c9b31873283178c2b1fa4a789))
+* **setup:** recommend lean or full mode at the end of the wizard ([#802](https://github.com/tmac1973/haruspex/issues/802)) ([6c90d29](https://github.com/tmac1973/haruspex/commit/6c90d294d84907e1d4bc20f24154ccea4a6c35ac))
+* **skills:** let a skill build on another, and let the model set its needs ([#788](https://github.com/tmac1973/haruspex/issues/788)) ([5cee6bf](https://github.com/tmac1973/haruspex/commit/5cee6bfa8573091712e92361fb91976bc2e714cc))
+* **skills:** ship a narrate skill for voiceovers and game lines ([#780](https://github.com/tmac1973/haruspex/issues/780)) ([163e613](https://github.com/tmac1973/haruspex/commit/163e613f06410fa7e399ae2a8dce9243f8005da2))
+* **speech:** a generate_speech tool that speaks text into a WAV with koko ([#776](https://github.com/tmac1973/haruspex/issues/776)) ([2c8539c](https://github.com/tmac1973/haruspex/commit/2c8539cc98b8c0ef5b1a13a44fe8ec70dc8ce527))
+* **tools:** merge the seven office writers into three by content shape ([#805](https://github.com/tmac1973/haruspex/issues/805)) ([202ed05](https://github.com/tmac1973/haruspex/commit/202ed0514d93498c8695b20d5cdf67637f009db2))
+* **ui:** hide the Code and Shell tabs in lean mode ([#798](https://github.com/tmac1973/haruspex/issues/798)) ([b3dab4e](https://github.com/tmac1973/haruspex/commit/b3dab4e154d3cc73d5e38837772693e78bc2b050))
+* **ui:** offer lean mode to existing users and hint when a model outgrows it ([#804](https://github.com/tmac1973/haruspex/issues/804)) ([b3036cf](https://github.com/tmac1973/haruspex/commit/b3036cf3c7d1600c178f8894f0b9c73f9d1f8a53))
+
+
+### Bug Fixes
+
+* **build:** build llama-server without OpenSSL, and refuse a build that links it ([#777](https://github.com/tmac1973/haruspex/issues/777)) ([57aead3](https://github.com/tmac1973/haruspex/commit/57aead3f88bdf7697521518219f2578f813fa47f)), closes [#771](https://github.com/tmac1973/haruspex/issues/771)
+* **e2e:** drop stream_options when the recorder asks the upstream whole ([#796](https://github.com/tmac1973/haruspex/issues/796)) ([bff3140](https://github.com/tmac1973/haruspex/commit/bff3140816a93dbfdc5de2eb23b0e453f60125a1))
+* **music:** say plainly that edit_music can pull out the vocals ([#803](https://github.com/tmac1973/haruspex/issues/803)) ([868b5ff](https://github.com/tmac1973/haruspex/commit/868b5ff7aff850ef2b921e0e4fa5846ab5475ef2))
+* **music:** store a long dropped WMA or M4A as MP3 when its FLAC is over the cache limit ([#815](https://github.com/tmac1973/haruspex/issues/815)) ([13e3614](https://github.com/tmac1973/haruspex/commit/13e361458bf263e66d452d6fb024a4733f303e35))
+* **sandbox:** give up on a worker that never starts, and spot a missing runtime in a built app ([#783](https://github.com/tmac1973/haruspex/issues/783)) ([9a6e0e2](https://github.com/tmac1973/haruspex/commit/9a6e0e2ca703c894de0d845108bf92cff143e37a))
+* **sandbox:** send the workdir sync as binary, so a big folder doesn't freeze the window ([#767](https://github.com/tmac1973/haruspex/issues/767)) ([14f83ee](https://github.com/tmac1973/haruspex/commit/14f83ee87eae08563118e285ae37d460d01f9e5d))
+* **sandbox:** show matplotlib figures inline without plt.show() ([#768](https://github.com/tmac1973/haruspex/issues/768)) ([0807ff3](https://github.com/tmac1973/haruspex/commit/0807ff3c764b088be85f00566322a7ee5695eab7))
+* **settings:** mark the active model on Windows ([#784](https://github.com/tmac1973/haruspex/issues/784)) ([4ad3080](https://github.com/tmac1973/haruspex/commit/4ad308067b81dfb93a5b8edaa246544d285dff90))
+* **setup:** say lean is the recommendation in the mode step's hint ([#813](https://github.com/tmac1973/haruspex/issues/813)) ([4e58f9a](https://github.com/tmac1973/haruspex/commit/4e58f9a7d7d94f82f1f5e323995d87867282ab16))
+* **shell:** summarise older turns, retry on vLLM overflow, and read only new terminal output ([#772](https://github.com/tmac1973/haruspex/issues/772)) ([a2b318f](https://github.com/tmac1973/haruspex/commit/a2b318f67133555d37333293e96ca13d6f316c94))
+* **skills:** keep stage directions out of a song's lyrics ([#789](https://github.com/tmac1973/haruspex/issues/789)) ([65be00f](https://github.com/tmac1973/haruspex/commit/65be00f8df7c7478bb9a5eecac5935b96d328adc))
+* **skills:** keep the research hints out of a skill run ([#770](https://github.com/tmac1973/haruspex/issues/770)) ([3ef3ce8](https://github.com/tmac1973/haruspex/commit/3ef3ce8dfb27f9952f02d5e1988d3c057021c36e))
+* **skills:** leave out skills lean mode can't run, and tell the model it is lean ([#810](https://github.com/tmac1973/haruspex/issues/810)) ([9b0ffd2](https://github.com/tmac1973/haruspex/commit/9b0ffd2fc7b99793a5381736e6270df094bc0fb4))
+* **skills:** let a skill run decide how much to research, and fold python code ([#769](https://github.com/tmac1973/haruspex/issues/769)) ([a99a3f3](https://github.com/tmac1973/haruspex/commit/a99a3f3168141727b5dcdafa2b8bd7cb829d0dbc))
+* **tools:** close three file-writer gaps a 9B hit in the hand test ([#808](https://github.com/tmac1973/haruspex/issues/808)) ([3cdcc56](https://github.com/tmac1973/haruspex/commit/3cdcc5691ea939d7f4342b9a6db6a26e534a00cd)), closes [#807](https://github.com/tmac1973/haruspex/issues/807)
+* **tts:** stream read-aloud from koko, so it starts after the first sentence ([#775](https://github.com/tmac1973/haruspex/issues/775)) ([62ba7d6](https://github.com/tmac1973/haruspex/commit/62ba7d6bb7ac0587fc57a0c85874f959c9fc8e4e))
+
+
+### Performance Improvements
+
+* **server:** keep context checkpoints on Windows ([#786](https://github.com/tmac1973/haruspex/issues/786)) ([7a54bf4](https://github.com/tmac1973/haruspex/commit/7a54bf4c6aa823f090d949a84d13de7e9b6d7407))
+
+
+### Documentation
+
+* **guide:** trim the media skills page under the size limit ([#795](https://github.com/tmac1973/haruspex/issues/795)) ([0de31bf](https://github.com/tmac1973/haruspex/commit/0de31bfb454b1c0d5c56b1c1c7a36ab5dfba1e18))
+* **plan:** plan lean mode for small models ([#793](https://github.com/tmac1973/haruspex/issues/793)) ([f6b6812](https://github.com/tmac1973/haruspex/commit/f6b6812ea37a3626d6af36b41f50e44795d8ef6c))
+
 ## [0.2.13](https://github.com/tmac1973/haruspex/compare/v0.2.12...v0.2.13) (2026-10-28)
 
 
