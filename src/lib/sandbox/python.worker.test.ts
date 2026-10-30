@@ -209,6 +209,16 @@ describe('python.worker boot', () => {
 		]);
 	});
 
+	it("says the runtime is missing when a built app serves its page in the file's place", async () => {
+		// tauri:// answers a missing file with the SPA's index.html and a 200.
+		origFetch.mockResolvedValue(
+			new Response('<html>', { status: 200, headers: { 'content-type': 'text/html' } })
+		);
+		await load(Promise.reject(new TypeError("'text/html' is not a valid JavaScript MIME type.")));
+		await settle();
+		expect(posted).toEqual([expect.objectContaining({ kind: 'load_error', runtimeMissing: true })]);
+	});
+
 	it('keeps the load error when the runtime is served', async () => {
 		origFetch.mockResolvedValue(new Response('', { status: 200 }));
 		await load(Promise.reject(new Error('wasm missing')));
