@@ -49,7 +49,8 @@ export const settingsState = {
 	imageComfyCheckpoint: '' as string,
 	imageLocalModelId: '' as string,
 	codeSubtasks: 'read' as 'off' | 'read' | 'write',
-	agentFeedbackEnabled: false
+	agentFeedbackEnabled: false,
+	leanMode: false
 };
 
 /**
@@ -117,8 +118,13 @@ async function imageModule() {
 }
 
 async function settingsModule(importOriginal: () => Promise<unknown>) {
+	const actual = (await importOriginal()) as Record<string, unknown> & {
+		getLiveSettings: () => Record<string, unknown>;
+	};
 	return {
-		...((await importOriginal()) as Record<string, unknown>),
+		...actual,
+		// Lean mode pauses every job type but research (`types/lean.ts`).
+		getLiveSettings: () => ({ ...actual.getLiveSettings(), leanMode: settingsState.leanMode }),
 		getSettings: () => ({
 			contextSize: 8192,
 			imageBackendKind: settingsState.imageBackendKind,
@@ -217,6 +223,7 @@ export function useRunnerFixtures() {
 	beforeEach(() => {
 		settingsState.codeSubtasks = 'read';
 		settingsState.agentFeedbackEnabled = false;
+		settingsState.leanMode = false;
 		mocks.runEphemeralTurn.mockReset();
 		mocks.getJob.mockReset();
 		mocks.createJob.mockReset().mockResolvedValue(900);

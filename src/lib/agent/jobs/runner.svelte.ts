@@ -33,6 +33,7 @@ import { jobBackendOverride } from '#lib/agent/jobs/jobBackend.ts';
 // The registration barrel, deliberately — importing it registers the built-in
 // job types before the first dispatch can happen.
 import { getJobType, type JobRunContext, type PlannedStep } from '#lib/agent/jobs/types/index.ts';
+import { pausedByLean } from '#lib/agent/jobs/types/lean.ts';
 import { markStepDone, newRunningStep } from '#lib/agent/steps.ts';
 import {
 	createJobRun,
@@ -627,6 +628,16 @@ export async function enqueue(
 	const def = getJobType(job.job_type);
 	if (!def) {
 		logDebug('jobs', 'enqueue failed: job type not registered', { jobId, type: job.job_type });
+		return null;
+	}
+	// Lean mode runs research jobs alone. A scheduled run is skipped, not
+	// queued: the scheduler has already moved the job's next due time on.
+	if (pausedByLean(job.job_type)) {
+		logDebug('jobs', 'enqueue skipped: paused by lean mode', {
+			jobId,
+			type: job.job_type,
+			trigger
+		});
 		return null;
 	}
 	// Platform-gated types (autonomous coding needs the shell plumbing) — this

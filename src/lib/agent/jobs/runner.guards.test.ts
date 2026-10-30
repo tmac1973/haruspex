@@ -11,7 +11,8 @@ const {
 	guidedTurns,
 	phaseWriteMessages,
 	routeInvoke,
-	fakeSlot
+	fakeSlot,
+	settingsState
 } = await vi.hoisted(() => import('./runner.fixtures.ts'));
 
 vi.mock('@tauri-apps/api/core', () => m.tauriCore());
@@ -34,6 +35,19 @@ describe('jobs runner — guards', () => {
 		const runId = await enqueue(42);
 		expect(runId).toBeNull();
 		expect(getCurrentRun()).toBeNull();
+	});
+
+	it('runs nothing but research in lean mode', async () => {
+		settingsState.leanMode = true;
+		mocks.getJob.mockResolvedValueOnce(makeJob({ job_type: 'audit' }));
+		const { enqueue, getCurrentRun } = await freshRunner();
+		expect(await enqueue(1, 'scheduled')).toBeNull();
+		expect(mocks.createJobRun).not.toHaveBeenCalled();
+		expect(getCurrentRun()).toBeNull();
+
+		mocks.getJob.mockResolvedValueOnce(makeJob());
+		mocks.runEphemeralTurn.mockResolvedValueOnce({ finalText: 'ok' });
+		expect(await enqueue(1)).toBe(100);
 	});
 
 	it('returns null when the job has no steps', async () => {

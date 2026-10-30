@@ -11,7 +11,9 @@ The Jobs tab runs saved prompts without you watching, on a schedule or when you 
 
 Set **Schedule** in the job editor: Manual only, Every hour, Daily, Weekly, or Every N minutes/hours. Haruspex must be open for a schedule to fire; a run that comes due while the app is closed is dropped, not run later. While a job runs, Haruspex keeps your machine from going to sleep.
 
-Guided planning, autonomous coding and asset generation can't be scheduled, because they stop to ask you things. They only run when you start them.
+Guided planning, autonomous coding and asset generation can't be scheduled, because they stop to ask you things.
+
+In lean mode only research jobs run; the rest show as paused (see the `lean-mode` page).
 
 ## Find and organize jobs
 
@@ -23,13 +25,13 @@ Audit, guided planning, autonomous coding and asset generation need a **Working 
 
 ## Give a job its own model
 
-Under **Model**, a job uses the Settings model by default. It can instead use a **Remote server** (any OpenAI-compatible server: URL, model, optional API key, context size, vision) or **OpenRouter (cloud)**, where prompts leave your device. Use this to send a heavy audit or planning job to a bigger or faster model. A job on a remote model does not block the Chat or Shell tabs from using your local model at the same time. While the job is selected, the status badge at the top of the window names its model.
+Under **Model**, a job uses the Settings model by default. It can instead use a **Remote server** (any OpenAI-compatible server: URL, model, optional API key, context size, vision) or **OpenRouter (cloud)**, where prompts leave your device. Use this to send a heavy audit or planning job to a bigger or faster model. A job on a remote model leaves your local model free for Chat and Shell. While the job is selected, the status badge at the top of the window names its model.
 
 These job types work much better with a bigger model. Audit, guided planning and autonomous coding read and write code, which is where the 4B and 9B models are weakest.
 
 ## See what a run spent
 
-Each run's **Tokens** card shows what every step used and how close it came to filling the context window. A step that ran out of room says "trimmed N×". **Export JSON** saves the figures.
+Each run's **Tokens** card shows what every step used and how close it came to filling the context. A step that ran out of room says "trimmed N×". **Export JSON** saves the figures.
 
 ## The job types
 
