@@ -84,7 +84,12 @@
 	import { stopTts, toggleTts } from '#lib/audio/ttsControl.svelte.ts';
 	import { installAudioExclusivity } from '#lib/audio/exclusive.ts';
 	import { installAudioPlayers } from '#lib/audio/mountPlayers.ts';
-	import { getActiveTab, mainTabs, setActiveTab } from '#lib/stores/activeTab.svelte.ts';
+	import {
+		getActiveTab,
+		mainTabs,
+		setActiveTab,
+		visibleTabs
+	} from '#lib/stores/activeTab.svelte.ts';
 	import { getActiveSession as getActiveCodeSession } from '#lib/stores/code.svelte.ts';
 	import { listenInMainWindow as listenForCodeWindows } from '#lib/code/windows.ts';
 	import { getActiveConversation, sendMessage } from '#lib/stores/chat.svelte.ts';
@@ -518,7 +523,8 @@
 		if (!modifier || event.altKey || event.shiftKey || (isMac && event.ctrlKey)) return;
 		if (!/^[1-4]$/.test(event.key) || detached || !isMainPage() || showSettings) return;
 		const tab = mainTabs()[Number(event.key) - 1];
-		if (!tab) return;
+		// Lean mode hides Shell and Code: their keys are left to the page.
+		if (!tab || !visibleTabs().includes(tab)) return;
 		event.preventDefault();
 		event.stopPropagation();
 		setActiveTab(tab);

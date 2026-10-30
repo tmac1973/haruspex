@@ -5,7 +5,7 @@ description: Run Haruspex as chat and research only, for a small model or a slow
 
 # Lean mode
 
-Lean mode keeps Chat to conversation, web research and reading your files. It suits a model of 9B or smaller, or a machine without a fast GPU.
+Lean mode keeps Haruspex to Chat and Jobs, and Chat to conversation, web research and reading your files. It suits a model of 9B or smaller, or a machine without a fast GPU.
 
 ## Why it helps
 
@@ -27,6 +27,7 @@ The switch can't be turned on while a Code or Shell turn is running. Finish or s
 
 ## What it turns off
 
+- The Code and Shell tabs. Ctrl / ⌘ + 3 and 4 do nothing, Chat has no open-in-Shell button, and a Code task in the tasks list says to turn lean mode off. A detached Code or Shell window shows a note instead of the session.
 - Writing files of any kind: text, documents, spreadsheets, slides and PDFs. Chat puts what you asked for in its reply instead.
 - The Python sandbox.
 - Writing or changing skills.
@@ -35,7 +36,9 @@ The switch can't be turned on while a Code or Shell turn is running. Finish or s
 
 Settings → General → Lean mode lists which of these you have set up. Their settings stay as they are; the model just isn't offered their tools, and turning lean mode off brings them all back.
 
+Hidden is not closed. Code sessions keep their history, open terminals keep running, and turning lean mode off shows them as you left them.
+
 ## What it doesn't change
 
-- Code and Shell tabs, and jobs, keep their own tools.
+- Jobs keep their own tools.
 - The model itself, its context size and its other settings.

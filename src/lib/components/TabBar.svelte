@@ -1,5 +1,10 @@
 <script lang="ts">
-	import { getActiveTab, setActiveTab, type ActiveTab } from '#lib/stores/activeTab.svelte.ts';
+	import {
+		getActiveTab,
+		setActiveTab,
+		visibleTabs,
+		type ActiveTab
+	} from '#lib/stores/activeTab.svelte.ts';
 	import { getOpenSessions } from '#lib/stores/code.svelte.ts';
 	import { getCurrentRun, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
 	import TasksChip from '#lib/components/tasks/TasksChip.svelte';
@@ -9,12 +14,15 @@
 		label: string;
 	}
 
-	const tabs: Tab[] = [
+	const allTabs: Tab[] = [
 		{ id: 'chat', label: 'Chat' },
 		{ id: 'jobs', label: 'Jobs' },
 		{ id: 'shell', label: 'Shell' },
 		{ id: 'code', label: 'Code' }
 	];
+
+	// Lean mode shows Chat and Jobs alone.
+	const tabs = $derived(allTabs.filter((t) => visibleTabs().includes(t.id)));
 
 	// A dot on Code while any session's turn runs or waits.
 	const codeBusy = $derived(getOpenSessions().some((s) => s.status !== 'idle'));

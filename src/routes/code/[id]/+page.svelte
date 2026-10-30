@@ -28,6 +28,7 @@
 		SETTINGS_KEY,
 		applyAccent,
 		applyTheme,
+		getLiveSettings,
 		reloadSettingsFromStorage
 	} from '#lib/stores/settings.ts';
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
@@ -133,7 +134,11 @@
 			⇤ Re-attach
 		</button>
 	</div>
-	<div class="pane">
+	{#if getLiveSettings().leanMode}
+		<p class="lean-note">Turn off lean mode in Settings → General to open this.</p>
+	{/if}
+	<!-- Hidden, not unmounted, in lean mode: the session stays as it was. -->
+	<div class="pane" class:lean-hidden={getLiveSettings().leanMode}>
 		{#if session}
 			<CodePane
 				{session}
@@ -220,5 +225,15 @@
 		margin: 24px;
 		color: var(--error-text);
 		font-size: 0.85rem;
+	}
+
+	.lean-note {
+		margin: 24px;
+		color: var(--text-secondary);
+		font-size: 0.85rem;
+	}
+
+	.lean-hidden {
+		display: none;
 	}
 </style>
