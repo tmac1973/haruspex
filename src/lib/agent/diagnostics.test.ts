@@ -17,7 +17,7 @@ function step(toolName: string, opts: Partial<SearchStep> = {}): SearchStep {
 
 describe('diagnoseEmptyResponse', () => {
 	it('commits a successful file write', () => {
-		const steps = [step('fs_write_pdf', { query: 'report.pdf', result: 'Wrote: report.pdf' })];
+		const steps = [step('fs_write_document', { query: 'report.pdf', result: 'Wrote: report.pdf' })];
 		expect(diagnoseEmptyResponse(steps, '')).toEqual({
 			type: 'commit',
 			content: 'Done. File written: report.pdf'
@@ -25,7 +25,7 @@ describe('diagnoseEmptyResponse', () => {
 	});
 
 	it('does not commit a failed file write whose result contains an error', () => {
-		const steps = [step('fs_write_pdf', { query: 'r.pdf', result: '{"error":"disk full"}' })];
+		const steps = [step('fs_write_document', { query: 'r.pdf', result: '{"error":"disk full"}' })];
 		expect(diagnoseEmptyResponse(steps, '').type).toBe('error');
 	});
 

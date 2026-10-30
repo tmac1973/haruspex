@@ -14,7 +14,7 @@ import { toolError } from './types';
 
 describe('isToolErrorResult', () => {
 	it('detects the toolError JSON envelope', () => {
-		expect(isToolErrorResult(toolError('fs_write_pptx failed: boom'))).toBe(true);
+		expect(isToolErrorResult(toolError('fs_write_slides failed: boom'))).toBe(true);
 		expect(isToolErrorResult('{"error":"Parent directory does not exist"}')).toBe(true);
 	});
 

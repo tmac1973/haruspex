@@ -37,6 +37,29 @@ export function registerTool(reg: ToolRegistration): void {
 	tools.set(reg.schema.function.name, reg);
 }
 
+type ArgsMap = (args: Record<string, unknown>) => Record<string, unknown>;
+
+/** Retired tool names, each routed to the tool that replaced it. Never offered. */
+const aliases = new Map<string, { target: string; args: ArgsMap }>();
+
+/**
+ * Route calls to a retired tool name to `target`, with `args` rewriting the
+ * call for it. A model keeps calling a name it saw in an old conversation or
+ * learned elsewhere, and an alias costs no schema characters.
+ */
+export function registerToolAlias(alias: string, target: string, args: ArgsMap = (a) => a): void {
+	aliases.set(alias, { target, args });
+}
+
+/** The tool a call runs and the arguments it runs with, following an alias. */
+function resolveCall(
+	name: string,
+	args: Record<string, unknown>
+): { name: string; args: Record<string, unknown> } {
+	const alias = tools.has(name) ? undefined : aliases.get(name);
+	return alias ? { name: alias.target, args: alias.args(args) } : { name, args };
+}
+
 /** Whether the tool calls the model itself (`usesModel`). False for a name not registered. */
 export function toolUsesModel(name: string): boolean {
 	return tools.get(name)?.usesModel === true;
@@ -661,9 +684,18 @@ function feedbackOn(): boolean {
 }
 
 /**
- * Execute a tool by name. Replaces the 30-arm switch statement.
+ * Execute a tool by name, following an alias. Replaces the 30-arm switch statement.
  */
 export async function executeTool(
+	name: string,
+	args: Record<string, unknown>,
+	ctx: ToolContext
+): Promise<ToolExecOutput> {
+	const call = resolveCall(name, args);
+	return runTool(call.name, call.args, ctx);
+}
+
+async function runTool(
 	name: string,
 	args: Record<string, unknown>,
 	ctx: ToolContext
@@ -832,8 +864,9 @@ export function coerceCallArguments(
 	name: string,
 	args: Record<string, unknown>
 ): Record<string, unknown> {
-	const reg = tools.get(name);
-	return reg ? coerceArgsToSchema(reg.schema.function.parameters, args) : args;
+	const call = resolveCall(name, args);
+	const reg = tools.get(call.name);
+	return reg ? coerceArgsToSchema(reg.schema.function.parameters, call.args) : args;
 }
 
 /**
@@ -851,8 +884,8 @@ function nearestToolName(name: string): string | null {
 		}
 	}
 	// Fallback: a distinctive substring match ("write_file" → fs_write_text
-	// is too far for edit distance, but "pdf" → fs_write_pdf isn't needed;
-	// keep it simple and only do edit distance plus suffix containment).
+	// is too far for edit distance; keep it simple and only do edit distance
+	// plus suffix containment).
 	if (!best) {
 		const lower = name.toLowerCase();
 		for (const candidate of tools.keys()) {
@@ -884,7 +917,8 @@ function editDistance(a: string, b: string): number {
  * step UI. Replaces the onToolStart switch in chat.svelte.ts.
  */
 export function getDisplayLabel(name: string, args: Record<string, unknown>): string {
-	const reg = tools.get(name);
+	const call = resolveCall(name, args);
+	const reg = tools.get(call.name);
 	if (!reg) return JSON.stringify(args).slice(0, 60);
-	return reg.displayLabel(args);
+	return reg.displayLabel(call.args);
 }

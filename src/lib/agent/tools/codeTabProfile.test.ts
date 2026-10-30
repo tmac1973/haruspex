@@ -131,7 +131,7 @@ describe('a read-only Code session', () => {
 	});
 
 	it('names the write tools', () => {
-		for (const t of ['fs_write_text', 'fs_write_docx', 'fs_edit_text', 'make_asset']) {
+		for (const t of ['fs_write_text', 'fs_write_document', 'fs_edit_text', 'make_asset']) {
 			expect(isCodeWriteTool(t)).toBe(true);
 		}
 		for (const t of ['fs_read_text', 'run_command', 'code_grep']) {

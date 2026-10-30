@@ -20,6 +20,10 @@ const STEP_LABEL_PREFIX: Record<string, string> = {
 	fs_read_xlsx: 'Reading xlsx',
 	fs_read_image: 'Viewing image',
 	fs_write_text: 'Writing',
+	fs_write_document: 'Writing document',
+	fs_write_spreadsheet: 'Writing spreadsheet',
+	fs_write_slides: 'Writing slides',
+	// The per-format writers they replaced, for steps in older conversations.
 	fs_write_docx: 'Writing docx',
 	fs_write_pdf: 'Writing pdf',
 	fs_write_xlsx: 'Writing xlsx',
