@@ -72,6 +72,47 @@ function runId(fake: FakeWorker): string {
 	return m.id;
 }
 
+describe('WorkerManager boot timeout', () => {
+	it('fails a run whose worker never reports ready, and starts afresh next time', async () => {
+		// A webview fetch that never settles left Pyodide loading forever, and
+		// the Chat turn with it.
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const workers: FakeWorker[] = [];
+		const wm = new WorkerManager(
+			() => {
+				const w = new FakeWorker();
+				vi.spyOn(w, 'terminate');
+				workers.push(w);
+				return w as unknown as Worker;
+			},
+			{ bootTimeoutMs: 20 }
+		);
+		await expect(wm.runPython('print(1)')).rejects.toThrow("Python didn't start within");
+		expect(workers[0].terminate).toHaveBeenCalled();
+
+		const p = wm.runPython('print(2)');
+		expect(workers).toHaveLength(2);
+		workers[1].emit({ kind: 'ready' });
+		await tick();
+		const id = runId(workers[1]);
+		workers[1].emit({ kind: 'done', id, result: doneResult({ result: '2' }) });
+		expect((await p).result).toBe('2');
+		warn.mockRestore();
+	});
+
+	it('leaves a worker that reported ready alone', async () => {
+		const fake = new FakeWorker();
+		vi.spyOn(fake, 'terminate');
+		const wm = new WorkerManager(() => fake as unknown as Worker, { bootTimeoutMs: 20 });
+		const p = wm.runPython('print(1)');
+		fake.emit({ kind: 'ready' });
+		await new Promise((r) => setTimeout(r, 40));
+		fake.emit({ kind: 'done', id: runId(fake), result: doneResult({ result: '1' }) });
+		expect((await p).result).toBe('1');
+		expect(fake.terminate).not.toHaveBeenCalled();
+	});
+});
+
 describe('WorkerManager message dispatch', () => {
 	let fake: FakeWorker;
 	function makeManager(isolated = false, chatId?: string) {

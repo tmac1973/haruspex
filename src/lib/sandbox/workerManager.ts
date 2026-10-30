@@ -72,6 +72,11 @@ const INTERRUPT_FALLBACK_MS = 2_000;
 // it needs. Only a genuinely wedged download (dead network mid-fetch)
 // trips it.
 const INSTALL_TIMEOUT_MS = 180_000;
+// How long a new worker may take to load Pyodide and the core packages
+// before we give up on it. A normal boot takes 10-15 s; one that never
+// reports ready (a webview fetch that never settles) would otherwise hold
+// the run, and the turn, forever.
+const BOOT_TIMEOUT_MS = 120_000;
 
 export type WorkerFactory = () => Worker;
 
@@ -136,6 +141,8 @@ export interface WorkerManagerOptions {
 	isIsolated?: () => boolean;
 	/** The chat whose folder the worker syncs. Omitted: the open chat's. */
 	chatId?: string;
+	/** Test seam — how long a new worker may take to report ready. */
+	bootTimeoutMs?: number;
 }
 
 export class WorkerManager {
@@ -143,6 +150,8 @@ export class WorkerManager {
 	private ready = false;
 	private readyWaiters: Array<() => void> = [];
 	private readyError: string | null = null;
+	private bootTimer: ReturnType<typeof setTimeout> | null = null;
+	private readonly bootTimeoutMs: number;
 	private pending = new Map<string, PendingRun>();
 	private pendingGlobals = new Map<string, PendingGlobals>();
 	private interruptBuffer: SharedArrayBuffer | null = null;
@@ -164,6 +173,7 @@ export class WorkerManager {
 	) {
 		this.isIsolated = opts.isIsolated ?? defaultIsolated;
 		this.chatId = opts.chatId;
+		this.bootTimeoutMs = opts.bootTimeoutMs ?? BOOT_TIMEOUT_MS;
 	}
 
 	private workdir(): string | null {
@@ -177,6 +187,8 @@ export class WorkerManager {
 		this.worker = worker;
 		this.ready = false;
 		this.readyError = null;
+		this.clearBootTimer();
+		this.bootTimer = setTimeout(() => this.onBootTimeout(), this.bootTimeoutMs);
 		// Only allocate a fresh interrupt buffer when crossOriginIsolated is
 		// actually true; otherwise SharedArrayBuffer construction throws and
 		// we fall back to terminate-only timeouts.
@@ -238,7 +250,29 @@ export class WorkerManager {
 		(this.messageHandlers[msg.kind] as (m: WorkerToMain) => void)(msg);
 	}
 
+	private clearBootTimer(): void {
+		if (this.bootTimer) clearTimeout(this.bootTimer);
+		this.bootTimer = null;
+	}
+
+	/**
+	 * The worker never reported ready or failed. Fail what is waiting with a
+	 * message the model can act on, then drop the worker so the next run
+	 * starts a fresh one rather than waiting on this one again.
+	 */
+	private onBootTimeout(): void {
+		this.bootTimer = null;
+		if (this.ready || this.readyError) return;
+		const message = `Python didn't start within ${Math.round(this.bootTimeoutMs / 1000)} s, so nothing ran. Try once more, or do this without Python.`;
+		console.warn('python sandbox: no ready from the worker', { ms: this.bootTimeoutMs });
+		this.rejectAllPending(new Error(message));
+		this.readyError = message;
+		this.readyWaiters.splice(0).forEach((fn) => fn());
+		this.respawn();
+	}
+
 	private handleReady(): void {
+		this.clearBootTimer();
 		this.ready = true;
 		if (this.interruptBuffer && this.worker) {
 			this.worker.postMessage({ kind: 'set_interrupt_buffer', buffer: this.interruptBuffer });
@@ -247,6 +281,7 @@ export class WorkerManager {
 	}
 
 	private handleLoadError(msg: Extract<WorkerToMain, { kind: 'load_error' }>): void {
+		this.clearBootTimer();
 		// The setup hint is for whoever runs this checkout, not the model.
 		if (msg.runtimeMissing) {
 			console.warn('python sandbox:', msg.error);
@@ -356,6 +391,7 @@ export class WorkerManager {
 
 	private onWorkerError(message: string): void {
 		const err = new Error(`worker error: ${message}`);
+		this.clearBootTimer();
 		this.readyError = message;
 		this.readyWaiters.splice(0).forEach((fn) => fn());
 		this.rejectAllPending(err);
@@ -601,6 +637,7 @@ export class WorkerManager {
 			this.worker.terminate();
 			this.worker = null;
 		}
+		this.clearBootTimer();
 		this.ready = false;
 		this.readyError = null;
 		this.rejectAllPending(new Error('sandbox reset'));
