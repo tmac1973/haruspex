@@ -19,6 +19,7 @@
 	import { activatable } from '#lib/actions/activatable.ts';
 	import { startDragResize } from '#lib/utils/dragResize.ts';
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
+	import { pausedByLean } from '#lib/agent/jobs/types/lean.ts';
 	import {
 		ancestorIds,
 		buildJobTree,
@@ -164,8 +165,10 @@
 				{@const job = node.job}
 				{@const def = getJobType(job.job_type)}
 				{@const hasChildren = node.children.length > 0}
+				{@const paused = pausedByLean(job.job_type)}
 				<div
 					class="row"
+					class:paused
 					class:selected={selectedId === job.id}
 					class:child={depth > 0}
 					style="padding-left: {6 + depth * 16}px"
@@ -204,6 +207,13 @@
 							{/if}
 							{job.name}
 							<span class="badge {def?.badgeTone ?? ''}">{def?.badgeLabel ?? job.job_type}</span>
+							{#if paused}
+								<span
+									class="paused-tag"
+									title="Lean mode runs research jobs alone. Turn it off in Settings → General to run this."
+									>Paused by lean mode</span
+								>
+							{/if}
 						</span>
 						<span class="meta">
 							{storedScheduleLabel(job.schedule_kind, job.schedule_config)}{def?.listMeta?.(job) ??
@@ -214,11 +224,13 @@
 						type="button"
 						class="job-run-btn"
 						data-no-activate
-						title={!isJobTypeAvailable(job.job_type)
-							? 'This job type is not available on this platform'
-							: running
-								? 'Run now, or after the current run finishes'
-								: 'Run now'}
+						title={paused
+							? 'Turn off lean mode in Settings → General to run this'
+							: !isJobTypeAvailable(job.job_type)
+								? 'This job type is not available on this platform'
+								: running
+									? 'Run now, or after the current run finishes'
+									: 'Run now'}
 						disabled={(job.step_count === 0 && def?.hasPlannedSteps !== false) ||
 							!isJobTypeAvailable(job.job_type)}
 						onclick={(e) => handleRun(e, job.id)}
@@ -464,6 +476,18 @@
 		vertical-align: middle;
 		background: color-mix(in srgb, var(--accent) 18%, transparent);
 		color: var(--accent);
+	}
+
+	/* Kept readable: the row still opens to show its past runs. */
+	.row.paused .row-main {
+		opacity: 0.6;
+	}
+
+	.paused-tag {
+		margin-left: 6px;
+		font-size: 0.7rem;
+		font-weight: 500;
+		color: var(--text-secondary);
 	}
 
 	.meta {

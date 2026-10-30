@@ -27,6 +27,7 @@ The switch can't be turned on while a Code or Shell turn is running. Finish or s
 
 ## What it turns off
 
+- Job types other than Research. Other jobs stay in the Jobs list, marked **Paused by lean mode**; they can't be run, and a scheduled run is skipped rather than saved for later.
 - The Code and Shell tabs. Ctrl / ⌘ + 3 and 4 do nothing, Chat has no open-in-Shell button, and a Code task in the tasks list says to turn lean mode off. A detached Code or Shell window shows a note instead of the session.
 - Writing files of any kind: text, documents, spreadsheets, slides and PDFs. Chat puts what you asked for in its reply instead.
 - The Python sandbox.
@@ -40,5 +41,5 @@ Hidden is not closed. Code sessions keep their history, open terminals keep runn
 
 ## What it doesn't change
 
-- Jobs keep their own tools.
+- A research job keeps its own tools, file writing included.
 - The model itself, its context size and its other settings.

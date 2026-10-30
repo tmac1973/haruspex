@@ -14,6 +14,7 @@
  */
 
 import { listJobTypes } from '#lib/agent/jobs/types/registry.ts';
+import { pausedByLean } from '#lib/agent/jobs/types/lean.ts';
 
 let availability = $state<Record<string, boolean>>({});
 let loadStarted = false;
@@ -48,11 +49,13 @@ export function invalidateTypeAvailability(): void {
 }
 
 /**
- * Whether a type is available on this platform. Ungated types are always
- * available; gated types report unavailable until their probe completes
- * (no flash of an option that then disappears).
+ * Whether a type is available on this platform, and not paused by lean mode
+ * (`lean.ts`). Ungated types are always available; gated types report
+ * unavailable until their probe completes (no flash of an option that then
+ * disappears).
  */
 export function isJobTypeAvailable(id: string): boolean {
+	if (pausedByLean(id)) return false;
 	const cached = availability[id];
 	if (cached !== undefined) return cached;
 	const def = listJobTypes().find((d) => d.id === id);
