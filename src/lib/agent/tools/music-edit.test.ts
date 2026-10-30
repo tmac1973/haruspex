@@ -34,6 +34,7 @@ import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import { parseEditArgs } from './music-edit';
 import { MUSIC_TASKS } from '#lib/music/types.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
+import { attachedAudioLine } from '#lib/audio/attached.ts';
 
 const SRC = 'a'.repeat(64);
 const SRC_URL = `haruspex-audio://localhost/${SRC}`;
@@ -161,6 +162,31 @@ describe('edit_music', () => {
 		expect(out.artifacts).toEqual([
 			{ kind: 'audio', mime: 'audio/mpeg', src: OUT_URL, title: 'Longer' }
 		]);
+	});
+
+	it('extracts the vocals from a dropped file, with no working folder', async () => {
+		// What the message carries for a file dropped on the composer.
+		const line = attachedAudioLine({ name: 'demo.mp3', hash: SRC });
+		const url = line.match(/\((haruspex-audio:[^)]+)\)/)![1];
+		await executeTool(
+			'edit_music',
+			{ source: url, action: 'extract_instrument', instrument: 'vocals' },
+			chat
+		);
+		expect(state.generate.mock.calls[0][0]).toMatchObject({
+			task: 'extract',
+			tracks: ['vocals'],
+			source: { name: 'source.mp3', hash: SRC }
+		});
+		state.generate.mockClear();
+		state.seconds = 601;
+		const long = await executeTool(
+			'edit_music',
+			{ source: url, action: 'extract_instrument', instrument: 'vocals' },
+			chat
+		);
+		expect(long.result).toMatch(/up to 600 s/);
+		expect(state.generate).not.toHaveBeenCalled();
 	});
 
 	it('passes a seed on', async () => {

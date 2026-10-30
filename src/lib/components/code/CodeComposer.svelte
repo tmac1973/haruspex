@@ -23,6 +23,9 @@
 	import { showToast } from '#lib/stores/toasts.svelte.ts';
 	import { createPendingImages } from '#lib/utils/pendingImages.svelte.ts';
 	import { imageDropTarget } from '#lib/utils/imageDrop.ts';
+	import { createPendingAudio } from '#lib/utils/pendingAudio.svelte.ts';
+	import { withAttachedAudio } from '#lib/audio/attached.ts';
+	import AudioChip from '#lib/components/AudioChip.svelte';
 	import { errMessage } from '#lib/utils/error.ts';
 
 	let { session, slashHost }: { session: CodeSession; slashHost: SlashHost } = $props();
@@ -31,6 +34,7 @@
 	let el = $state<HTMLTextAreaElement | null>(null);
 	let slashMenu = $state<SlashMenu>();
 	const images = createPendingImages();
+	const audio = createPendingAudio(() => ({ codeSessionId: session.id }));
 	let dragOver = $state(false);
 
 	const busy = $derived(session.busy);
@@ -78,14 +82,16 @@
 	async function send(raw: string) {
 		if (blocked) return;
 		const urls = images.urls;
-		if (!raw.trim() && urls.length === 0) return;
+		const songs = audio.audio;
+		if (!raw.trim() && urls.length === 0 && songs.length === 0) return;
 		if (busy) {
 			// Steering: no slash commands mid-turn.
 			text = '';
 			autosize();
 			history.reset();
 			images.clear();
-			await session.send(raw, { images: urls });
+			audio.clear();
+			await session.send(withAttachedAudio(raw, songs), { images: urls });
 			return;
 		}
 		let slash;
@@ -100,7 +106,8 @@
 		history.reset();
 		if (slash.kind === 'handled') return;
 		images.clear();
-		await session.send(raw, { images: urls, skill: slash.skill });
+		audio.clear();
+		await session.send(withAttachedAudio(raw, songs), { images: urls, skill: slash.skill });
 	}
 
 	const history = new InputHistory(() =>
@@ -133,11 +140,15 @@
 	class:drag-over={dragOver}
 	use:imageDropTarget={{
 		onImages: images.addUrls,
+		onAudio: (paths) => void audio.addPaths(paths),
 		onDragChange: (over) => (dragOver = over)
 	}}
 >
-	{#if images.length}
+	{#if images.length || audio.length}
 		<div class="attachments">
+			{#each audio.items as a (a.id)}
+				<AudioChip name={a.name} onRemove={() => audio.remove(a.id)} />
+			{/each}
 			{#each images.items as img (img.id)}
 				<div class="attachment">
 					<img src={img.url} alt="attachment" />
@@ -186,7 +197,7 @@
 		<button
 			class="send"
 			onclick={() => send(text)}
-			disabled={!!blocked || (!text.trim() && images.length === 0)}
+			disabled={!!blocked || (!text.trim() && images.length === 0 && audio.length === 0)}
 			title={blocked ?? 'Send (Enter)'}>Send</button
 		>
 	{/if}

@@ -45,7 +45,7 @@ Ask for a song "in the background" (or several) and the assistant starts it and 
 
 ## Change a song you already have
 
-Ask the assistant to work on a song it made in the chat, or an audio file in the working folder (MP3, WAV, FLAC or OGG, up to 10 minutes). The original is kept; the new version plays as a new song.
+Ask the assistant to work on a song it made in the chat, an audio file in the working folder, or one you drop on the message box in Chat or the Code tab (MP3, WAV, FLAC or OGG, up to 10 minutes). Dropping needs no working folder. The original is kept; the new version plays as a new song.
 
 - **Restyle**: "the same song as smoky jazz". Give the lyrics again to keep the vocals. It can follow the original closely or loosely.
 - **Redo a stretch**: "redo 0:30 to 0:45 with a guitar solo".
@@ -54,11 +54,11 @@ Ask the assistant to work on a song it made in the chat, or an audio file in the
 
 A new song can also borrow another's sound: "a ballad in the voice of that last song".
 
-Instrument changes need a base model, such as ACE-Step 1.5 XL base; turbo and SFT models can only restyle, redo and extend. A llama-toolchest server from before October 2026 can't change songs at all.
+Instrument changes need a base model, such as ACE-Step 1.5 XL base; turbo and SFT models can only restyle, redo and extend. A llama-toolchest from before October 2026 can't change songs.
 
 ## Save a song yourself
 
-The player's **Save as…** button (the arrow) saves the song wherever you choose. On the Remote control page it downloads the file.
+The player's **Save as…** button (the arrow) saves the song where you choose. On the Remote control page it downloads the file.
 
 ## Add music to a project
 
@@ -66,9 +66,9 @@ In the Code tab, ask for something like "background music for the title screen a
 
 ## Where songs are kept
 
-Haruspex downloads each song and keeps its own copy, then deletes it from llama-toolchest, which would otherwise keep it for a day. A song that belongs to a chat or a Code session stays until you delete that chat or session. The test clip belongs to neither and is removed an hour later.
+Haruspex downloads each song and keeps its own copy, then deletes it from llama-toolchest, which would otherwise keep it for a day. A song that belongs to a chat or a Code session stays until you delete that chat or session. The test clip belongs to neither and goes an hour later.
 
-**Audio cache** shows how much space songs use. **Clear unused audio** deletes the ones no chat or session plays; it doesn't touch the rest.
+**Audio cache** shows how much space songs use. **Clear unused audio** deletes the ones no chat or session plays.
 
 ## What it doesn't do
 
@@ -80,4 +80,4 @@ Haruspex downloads each song and keeps its own copy, then deletes it from llama-
 
 ## What has been tested
 
-On llama-toolchest with ACE-Step turbo: songs in the Code tab, saving into a project, cancelling, and keeping songs across a restart (a 30-second song took about 10 seconds). ace-server with XL SFT. Changing songs in Chat on llama-toolchest: extending and restyling with XL SFT, instruments with XL base.
+On llama-toolchest with ACE-Step turbo: songs in the Code tab, saving into a project, cancelling, and keeping songs across a restart. ace-server with XL SFT. Changing songs in Chat on llama-toolchest: extending and restyling with XL SFT, instruments with XL base.
