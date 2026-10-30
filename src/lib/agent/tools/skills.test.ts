@@ -17,7 +17,8 @@ const doc: SkillDoc = {
 	compatibility: null,
 	files: ['scripts/go.sh'],
 	filesTruncated: false,
-	needs: []
+	needs: [],
+	buildsOn: null
 };
 
 function ctx(skills?: ToolContext['skills']): ToolContext {

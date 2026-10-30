@@ -15,7 +15,8 @@ const doc: SkillDoc = {
 	compatibility: null,
 	files: [],
 	filesTruncated: false,
-	needs: ['image']
+	needs: ['image'],
+	buildsOn: null
 };
 
 function ctx(loaded: string[] = [], names = ['fix-picture']): ToolContext {

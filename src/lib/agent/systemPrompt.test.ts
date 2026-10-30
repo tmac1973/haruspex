@@ -264,7 +264,8 @@ describe('injectMessageHints', () => {
 			compatibility: null,
 			files: [],
 			filesTruncated: false,
-			needs: []
+			needs: [],
+			buildsOn: null
 		},
 		'/weather Chicago'
 	);

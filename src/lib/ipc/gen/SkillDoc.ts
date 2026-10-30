@@ -16,4 +16,8 @@ filesTruncated: boolean,
 /**
  * What must be set up for it to run (`metadata.haruspex-needs`).
  */
-needs: Array<SkillNeed>, };
+needs: Array<SkillNeed>, 
+/**
+ * The skill whose instructions come first (`metadata.haruspex-builds-on`).
+ */
+buildsOn: string | null, };

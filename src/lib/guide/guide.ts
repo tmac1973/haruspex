@@ -22,6 +22,7 @@ const ORDER = [
 	'code-subtasks',
 	'code-windows',
 	'skills',
+	'write-skills',
 	'media-skills',
 	'jobs',
 	'memory',
