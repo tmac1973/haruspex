@@ -9,6 +9,7 @@ use super::{sweep_orphans, MAX_AUDIO_BYTES};
 use crate::blob_cache::{self, hash_bytes, is_valid_hash};
 use crate::db::{AudioRow, Database};
 use crate::http_util::{stream_to_file, DownloadError};
+use crate::video::binaries::{self, BinaryOverrides, Tool};
 use log::debug;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -381,7 +382,10 @@ pub fn store_bytes(
 /// Keep an audio file the user dropped on a composer, so a music tool can
 /// name it by its `haruspex-audio://` URL. The path is read here, not in
 /// the webview, and is not scoped to the working folder: the user chose the
-/// file. The type comes from the extension.
+/// file. The type comes from the extension. WMA, M4A, AAC and Opus, which
+/// neither the webviews nor the music servers all read, are converted to
+/// FLAC with the ffmpeg the video tools find (`overrides` are the paths in
+/// Settings → Video editing).
 #[tauri::command]
 pub async fn audio_store_dropped(
     app: AppHandle,
@@ -389,14 +393,80 @@ pub async fn audio_store_dropped(
     path: String,
     conversation_id: Option<String>,
     code_session_id: Option<String>,
+    overrides: Option<BinaryOverrides>,
 ) -> Result<StoredAudio, String> {
-    store_dropped(
+    let dir = cache_dir(&app)?;
+    let path = Path::new(&path);
+    if !converts_on_drop(path) {
+        return store_dropped(
+            &db,
+            &dir,
+            path,
+            conversation_id.as_deref(),
+            code_session_id.as_deref(),
+        );
+    }
+    let found = binaries::resolve(&overrides.unwrap_or_default()).await;
+    let Some(ffmpeg) = found.get(Tool::Ffmpeg) else {
+        return Err(
+            "Converting this file needs ffmpeg, which was not found. See Settings → Video editing."
+                .into(),
+        );
+    };
+    let bytes = convert_to_flac(&ffmpeg.path, path, &dir).await?;
+    store_bytes(
         &db,
-        &cache_dir(&app)?,
-        Path::new(&path),
+        &dir,
+        &bytes,
+        "audio/flac",
         conversation_id.as_deref(),
         code_session_id.as_deref(),
     )
+}
+
+/// Whether a dropped file is one ffmpeg converts before it is stored.
+fn converts_on_drop(path: &Path) -> bool {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    CONVERTED_ON_DROP.contains(&ext.to_ascii_lowercase().as_str())
+}
+
+const CONVERTED_ON_DROP: [&str; 4] = ["wma", "m4a", "aac", "opus"];
+
+/// How long converting one dropped file may take.
+const CONVERT_TIMEOUT: Duration = Duration::from_secs(2 * 60);
+
+/// `path` as stereo FLAC, by way of a file in `dir`: FLAC written
+/// to a pipe lacks its length, which the player then can't show.
+pub async fn convert_to_flac(ffmpeg: &str, path: &Path, dir: &Path) -> Result<Vec<u8>, String> {
+    if !std::fs::metadata(path).is_ok_and(|m| m.is_file()) {
+        return Err("The dropped file could not be found.".into());
+    }
+    let out = dir.join(temp_name());
+    let mut cmd = tokio::process::Command::new(ffmpeg);
+    cmd.args(["-nostdin", "-hide_banner", "-loglevel", "error", "-i"])
+        .arg(path)
+        .args([
+            "-map", "0:a:0", "-vn", "-ac", "2", "-c:a", "flac", "-f", "flac", "-y",
+        ])
+        .arg(&out)
+        .stdin(std::process::Stdio::null())
+        .kill_on_drop(true);
+    crate::video::prepare_child(&mut cmd);
+    let run = tokio::time::timeout(CONVERT_TIMEOUT, cmd.output()).await;
+    let result = match run {
+        Err(_) => Err("Converting the file took too long.".to_string()),
+        Ok(Err(e)) => Err(format!("Could not run ffmpeg: {e}")),
+        Ok(Ok(o)) if !o.status.success() => {
+            let err = String::from_utf8_lossy(&o.stderr);
+            let line = err.lines().last().unwrap_or("").trim();
+            Err(format!("ffmpeg could not convert the file: {line}"))
+        }
+        Ok(Ok(_)) => {
+            std::fs::read(&out).map_err(|e| format!("Could not read the converted file: {e}"))
+        }
+    };
+    let _ = std::fs::remove_file(&out);
+    result
 }
 
 /// The audio type a dropped file's extension names, or None.
@@ -419,7 +489,10 @@ pub fn store_dropped(
     code_session_id: Option<&str>,
 ) -> Result<StoredAudio, String> {
     let Some(mime) = dropped_mime(path) else {
-        return Err("Only .mp3, .wav, .flac and .ogg files can be attached.".into());
+        return Err(
+            "Only .mp3, .wav, .flac, .ogg, .wma, .m4a, .aac and .opus files can be attached."
+                .into(),
+        );
     };
     let len = std::fs::metadata(path)
         .ok()
@@ -793,6 +866,45 @@ mod tests {
         let folder = src.join("album.wav");
         std::fs::create_dir(&folder).unwrap();
         assert!(store_dropped(&db, &dir, &folder, None, None).is_err());
+    }
+
+    #[test]
+    fn only_formats_the_cache_cannot_play_are_converted() {
+        for name in ["a.wma", "b.M4A", "c.aac", "d.opus"] {
+            assert!(converts_on_drop(Path::new(name)), "{name}");
+        }
+        for name in ["a.mp3", "b.flac", "c.ogg", "d.wav", "notes.txt", "wma"] {
+            assert!(!converts_on_drop(Path::new(name)), "{name}");
+        }
+    }
+
+    /// Needs an ffmpeg on PATH; skipped where there is none.
+    #[tokio::test]
+    async fn a_dropped_m4a_becomes_flac() {
+        let Some(ffmpeg) = binaries::resolve(&BinaryOverrides::default()).await.ffmpeg else {
+            return;
+        };
+        let (_db, dir) = setup("audio-convert");
+        let src = temp_dir("audio-convert-src");
+        let m4a = src.join("tone.m4a");
+        let made = tokio::process::Command::new(&ffmpeg.path)
+            .args(["-nostdin", "-loglevel", "error", "-f", "lavfi", "-i"])
+            .args(["sine=frequency=440:duration=1", "-c:a", "aac", "-y"])
+            .arg(&m4a)
+            .status()
+            .await
+            .unwrap();
+        assert!(made.success());
+        let flac = convert_to_flac(&ffmpeg.path, &m4a, &dir).await.unwrap();
+        assert_eq!(&flac[..4], b"fLaC");
+        assert_eq!(files(&dir), 0, "no temp file left");
+
+        let text = src.join("notes.wma");
+        std::fs::write(&text, b"not audio").unwrap();
+        assert!(convert_to_flac(&ffmpeg.path, &text, &dir).await.is_err());
+        assert!(convert_to_flac(&ffmpeg.path, &src.join("gone.wma"), &dir)
+            .await
+            .is_err());
     }
 
     #[tokio::test]

@@ -3,6 +3,7 @@ import type { StoredAudio } from '#lib/ipc/gen/StoredAudio.ts';
 import type { AttachedAudio } from '#lib/audio/attached.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { videoOverrides } from '#lib/video/binaries.ts';
 
 export interface PendingAudio extends AttachedAudio {
 	id: number;
@@ -17,7 +18,8 @@ export interface AudioLink {
 /**
  * Audio files dropped on a composer for its next message, already in the
  * audio cache. Shared by the chat view and the Code composer; the message
- * carries them as `withAttachedAudio` lines.
+ * carries them as `withAttachedAudio` lines. WMA, M4A, AAC and Opus are
+ * converted to FLAC with the ffmpeg Settings → Video editing finds.
  */
 export function createPendingAudio(link: () => AudioLink) {
 	let items = $state<PendingAudio[]>([]);
@@ -32,7 +34,8 @@ export function createPendingAudio(link: () => AudioLink) {
 				const stored = await invoke<StoredAudio>('audio_store_dropped', {
 					path,
 					conversationId,
-					codeSessionId
+					codeSessionId,
+					overrides: videoOverrides()
 				});
 				items = [...items, { id: seq++, name, hash: stored.hash }];
 			} catch (e) {
