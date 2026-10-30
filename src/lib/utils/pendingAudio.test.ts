@@ -18,7 +18,8 @@ describe('createPendingAudio', () => {
 		expect(ipc.invoke).toHaveBeenCalledWith('audio_store_dropped', {
 			path: '/home/someone/Music/song.mp3',
 			conversationId: 'chat-1',
-			codeSessionId: null
+			codeSessionId: null,
+			overrides: expect.objectContaining({ ffmpeg: expect.any(String) })
 		});
 		expect(audio.audio).toEqual([{ name: 'song.mp3', hash: A }]);
 		audio.remove(audio.items[0].id);

@@ -19,7 +19,7 @@ While it is off, Settings → Music says so if the llama-toolchest your chat mod
 
 ### Set up llama-toolchest
 
-If your chat model comes from a toolchest, its address and key are filled in; otherwise enter the **Server address** (`http://host:3000`) and pick an **API key** from Settings → Inference → API Keys. Press **Probe**, then choose one of its music instances as the **Model**. A stopped instance starts when Haruspex first uses it, so the first song takes longer. Adding a model happens in llama-toolchest.
+If your chat model comes from a toolchest, its address and key are filled in; otherwise enter the **Server address** (`http://host:3000`) and pick an **API key** from Settings → Inference → API Keys. Press **Probe**, then choose one of its music instances as the **Model**. A stopped instance starts on first use, so the first song takes longer. Models are added in llama-toolchest.
 
 ### Set up ace-server
 
@@ -27,15 +27,15 @@ Enter the **Server address** of ace-server itself (`http://host:8083`), not a ll
 
 ## Check it works
 
-Under **Songs**, **Make a test clip** makes a 10-second instrumental and plays it. The progress line shows your place in the server's queue (llama-toolchest only), then **Composing** and **Synthesizing**. **Stop** cancels it on the server too.
+Under **Songs**, **Make a test clip** makes a 10-second instrumental and plays it. Progress shows your place in the queue (llama-toolchest only), then **Composing** and **Synthesizing**. **Stop** cancels it on the server too.
 
 **Default length** is how long a song is when a request doesn't say: 30 seconds unless you change it, from 5 to 240.
 
 ## Make a song in Chat
 
-Ask for one: "a 45-second lo-fi track about rain", or give lyrics. The assistant writes style tags and lyrics. The step shows its progress. It plays in the answer, one player at a time, and starting it stops read-aloud. If the assistant forgets to place it, it is added under the answer. Stopping the reply cancels the song on the server.
+Ask for one: "a 45-second lo-fi track about rain", or give lyrics. The assistant writes style tags and lyrics. The step shows its progress. It plays in the answer, one player at a time, and starting it stops read-aloud. If the assistant doesn't place it, it goes under the answer. Stopping the reply cancels the song on the server.
 
-You can ask for a length (5 to 240 seconds), tempo, key, time signature, language, or WAV instead of MP3. Each song's seed is noted, so "the same, but faster" keeps the rest.
+You can ask for a length (5 to 240 seconds), tempo, key, time signature, language, or WAV instead of MP3. Each seed is noted, so "the same, but faster" keeps the rest.
 
 With a working folder set in Chat, the assistant can also save the song there: ask "save it as rain.mp3", then or later. You're asked before an existing file is replaced. Without a folder it can't save files.
 
@@ -45,7 +45,7 @@ Ask for a song "in the background" (or several) and the assistant starts it and 
 
 ## Change a song you already have
 
-Ask the assistant to work on a song it made in the chat, an audio file in the working folder, or one you drop on the message box in Chat or the Code tab (MP3, WAV, FLAC or OGG, up to 10 minutes). Dropping needs no working folder. The original is kept; the new version plays as a new song.
+Ask the assistant to work on a song it made in the chat, an audio file in the working folder, or one you drop on the message box in Chat or the Code tab (MP3, WAV, FLAC, OGG, WMA, M4A, AAC or Opus, up to 10 minutes). Dropping needs no working folder. The last four are converted to FLAC, which needs ffmpeg (see Settings → Video editing). The original is kept; the new version plays as a new song.
 
 - **Restyle**: "the same song as smoky jazz". Give the lyrics again to keep the vocals. It can follow the original closely or loosely.
 - **Redo a stretch**: "redo 0:30 to 0:45 with a guitar solo".
@@ -67,7 +67,7 @@ In the Code tab, ask for something like "background music for the title screen a
 
 ## Where songs are kept
 
-Haruspex downloads each song and keeps its own copy, then deletes it from llama-toolchest, which would otherwise keep it for a day. A song that belongs to a chat or a Code session stays until you delete that chat or session. The test clip belongs to neither and goes an hour later.
+Haruspex keeps its own copy of each song and deletes it from llama-toolchest, which would keep it for a day. A song that belongs to a chat or Code session stays until you delete it. The test clip belongs to neither and goes an hour later.
 
 **Audio cache** shows how much space songs use. **Clear unused audio** deletes the ones no chat or session plays.
 
@@ -76,7 +76,7 @@ Haruspex downloads each song and keeps its own copy, then deletes it from llama-
 - With ace-server, the server's own settings (steps, guidance) are used; Haruspex doesn't change them.
 - Players use your system's default audio output, not the device in Settings → Audio.
 - A new song can't be longer than 240 seconds; a changed one can be up to 600.
-- A short song can come out a little shorter than asked.
+- A short song can come out a little short.
 
 ## What has been tested
 

@@ -17,8 +17,8 @@ export interface AttachedAudio {
 	hash: string;
 }
 
-/** The extensions a drop takes as audio: the ones music tools read. */
-export const AUDIO_DROP_RE = /\.(mp3|wav|flac|ogg)$/i;
+/** The extensions a drop takes as audio: the ones music tools read, and the ones converted to FLAC. */
+export const AUDIO_DROP_RE = /\.(mp3|wav|flac|ogg|wma|m4a|aac|opus)$/i;
 
 const PREFIX = 'Attached audio: ';
 const LINE_RE = /^Attached audio: !\[([^\]]*)\]\(([^)\s]+)\)$/;

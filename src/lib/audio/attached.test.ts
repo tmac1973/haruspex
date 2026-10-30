@@ -41,9 +41,9 @@ describe('attached audio', () => {
 		expect(audioHashesInText([withAttachedAudio('', [{ name: 's.mp3', hash: A }])])).toEqual([A]);
 	});
 
-	it('takes the four formats music tools read', () => {
-		for (const name of ['a.mp3', 'b.WAV', 'c.flac', 'd.ogg'])
+	it('takes the formats music tools read and the ones ffmpeg converts', () => {
+		for (const name of ['a.mp3', 'b.WAV', 'c.flac', 'd.ogg', 'e.wma', 'f.M4A', 'g.aac', 'h.opus'])
 			expect(AUDIO_DROP_RE.test(name)).toBe(true);
-		for (const name of ['a.m4a', 'b.png', 'mp3']) expect(AUDIO_DROP_RE.test(name)).toBe(false);
+		for (const name of ['a.mp4', 'b.png', 'mp3']) expect(AUDIO_DROP_RE.test(name)).toBe(false);
 	});
 });
