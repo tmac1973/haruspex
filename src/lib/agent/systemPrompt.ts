@@ -65,6 +65,12 @@ export interface SystemPromptOptions {
 	 * after its run instead.
 	 */
 	feedback?: boolean;
+	/**
+	 * A lean Chat turn (Settings → General → Lean mode): the prompt names only
+	 * what `LEAN_CHAT_TOOLS` can do, so no email, integrations, sandbox,
+	 * feedback or file writing, and the working folder is for reading.
+	 */
+	lean?: boolean;
 }
 
 /** The `haruspex_docs` line, for a turn offered the tool; empty otherwise. */
@@ -78,7 +84,8 @@ export function buildSystemPrompt(
 ): ChatMessage {
 	const today = formatTodayLong();
 	const memorySection = opts.memorySection ?? '';
-	const imagesSection = opts.includeImages ? getIncludeImagesPrompt() : '';
+	const lean = opts.lean === true;
+	const imagesSection = opts.includeImages ? getIncludeImagesPrompt({ lean }) : '';
 
 	const fsSection = workingDir
 		? `
@@ -87,21 +94,26 @@ FILESYSTEM ACCESS:
 - Working directory: ${workingDir}
 - Use fs_list_dir first to see what files exist before reading specific files.
 - Only use filesystem tools when the user explicitly asks to work with files.
-- When the user asks you to create a file (PDF, docx, xlsx, etc.), do your research and call the appropriate fs_write_* tool with complete content IN THE SAME TURN. Do not dump the content as a chat message instead.`
+- ${
+				lean
+					? 'You can read files here but not create or change them. Put what the user asked for in your reply.'
+					: 'When the user asks you to create a file (PDF, docx, xlsx, etc.), do your research and call the appropriate fs_write_* tool with complete content IN THE SAME TURN. Do not dump the content as a chat message instead.'
+			}`
 		: '';
 
-	const emailSection = hasEnabledEmailAccount()
-		? `
+	const emailSection =
+		!lean && hasEnabledEmailAccount()
+			? `
 
 EMAIL INTEGRATION:
 - The user has connected email accounts. Only use email tools when explicitly asked about email.
 - Use email_list_recent first, then email_summarize_message on the 3-5 most important messages. Skip newsletters and automated notifications unless asked.
 - Use email_read_full only when the user needs verbatim text.${
-				hasSendableEmailAccount()
-					? '\n- To write or reply to mail, use email_compose. It opens a draft the user reviews and sends themselves; say it was sent only when the result says so.'
-					: ''
-			}`
-		: '';
+					hasSendableEmailAccount()
+						? '\n- To write or reply to mail, use email_compose. It opens a draft the user reviews and sends themselves; say it was sent only when the result says so.'
+						: ''
+				}`
+			: '';
 
 	// Named services beat a general instruction. "Prefer integrations" loses to
 	// a concrete run_python the model already knows how to write; "GitHub is
@@ -115,7 +127,7 @@ EMAIL INTEGRATION:
 		...registeredMcpServerLabels()
 	];
 	const integrationsSection =
-		connected.length > 0
+		!lean && connected.length > 0
 			? `
 
 CONNECTED INTEGRATIONS: ${connected.join(', ')}
@@ -133,7 +145,7 @@ CONNECTED INTEGRATIONS: ${connected.join(', ')}
 		role: 'system',
 		content: `You are Haruspex, a helpful, private AI assistant running on the user's computer.
 
-Today's date is ${today}. Your training data has a cutoff, so your memory of the world may be incomplete, wrong, or out of date.${guideSection(opts.guide)}${feedbackPromptSection(opts.feedback === true)}
+Today's date is ${today}. Your training data has a cutoff, so your memory of the world may be incomplete, wrong, or out of date.${guideSection(opts.guide)}${feedbackPromptSection(opts.feedback === true && !lean)}
 
 SEARCH RULES:
 - Search before answering any question about the world — a person, place, animal, plant, organisation, product, event, or how something works. "Tell me about X" is one of these. Your recollection is not a source; a citation is.
@@ -150,7 +162,7 @@ INLINE CITATIONS:
 - Never invent a URL. Never cite a URL from an earlier turn.
 - The UI converts your [source](URL) links into numbered references [1], [2], [3] automatically — do NOT append a Sources or References section at the end.
 - Citations are mandatory for factual claims sourced from the web.${fsSection}${emailSection}${integrationsSection}${
-			getSettings().sandboxEnabled
+			!lean && getSettings().sandboxEnabled
 				? `
 
 PYTHON SANDBOX:
@@ -188,6 +200,8 @@ export function injectMessageHints(
 	opts: {
 		workingDir: string | null;
 		exhaustiveResearch: boolean;
+		/** A lean Chat turn: it has no fs_write_* tools to be pushed toward. */
+		lean?: boolean;
 	}
 ): ChatMessage[] {
 	const lastMsg = messages[messages.length - 1];
@@ -206,7 +220,7 @@ export function injectMessageHints(
 		hints.push('Include Reddit as a source.');
 	}
 
-	if (opts.workingDir && looksLikeFileOutputRequest(lastText)) {
+	if (opts.workingDir && !opts.lean && looksLikeFileOutputRequest(lastText)) {
 		hints.push(
 			'You must create the requested file DURING THIS TURN. Do your research, ' +
 				'synthesize the content, then write the file: use the matching ' +

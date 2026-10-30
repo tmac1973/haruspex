@@ -1154,7 +1154,8 @@ function buildApiPrompt(
 			// their prompts through the same function and must not get this.
 			includeImages: getSettings().includeImages,
 			guide: true,
-			feedback: true
+			feedback: true,
+			lean: getSettings().leanMode
 		}),
 		...(unanswered ? withNotice(historyMessages, unanswered) : historyMessages)
 	];
@@ -1188,7 +1189,8 @@ function buildApiPrompt(
 
 	messagesForApi = injectMessageHints(messagesForApi, {
 		workingDir,
-		exhaustiveResearch: exhaustive
+		exhaustiveResearch: exhaustive,
+		lean: getSettings().leanMode
 	});
 	return messagesForApi;
 }
