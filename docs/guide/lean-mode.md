@@ -29,7 +29,7 @@ If you switch to a bigger model while lean mode is on (one over 9B, or a remote 
 - Read files in the working folder: text, PDF, Word, spreadsheets and pictures (pictures need a model that can see them).
 - Answer questions about Haruspex from this guide.
 - Remember something when you ask it to, if memory is on (see the `memory` page).
-- Use your installed skills (see the `skills` page).
+- Use your installed skills, except the ones for pictures, music, speech, video and game art: Settings → Skills marks them "Off in lean mode" (see the `skills` page).
 
 ## What it turns off
 

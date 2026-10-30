@@ -86,6 +86,9 @@ export async function guideStatus(override?: BackendOverride): Promise<string> {
 	return [
 		'## This Haruspex right now',
 		`- Version: ${version}`,
+		s.leanMode
+			? '- Lean mode: on (Settings → General → Lean mode). Chat has web search and pages, image search, file reading, this guide, memory and skills; the Code and Shell tabs, file writing, Python, pictures, music, speech and the integrations below are off whatever they are set to.'
+			: '- Lean mode: off',
 		`- Model: ${model}, through ${via}; context ${backend.contextSize.toLocaleString('en-US')} tokens; sees images: ${backend.vision ? 'yes' : 'no'}`,
 		...concurrency(backend, s.allowSpillToSystemRam),
 		`- Memory across chats: ${onOff(memoryActive())}`,

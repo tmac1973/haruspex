@@ -85,6 +85,16 @@ export function buildSystemPrompt(
 	const today = formatTodayLong();
 	const memorySection = opts.memorySection ?? '';
 	const lean = opts.lean === true;
+	// The guide and the skills describe the whole app; a lean turn has a few
+	// of its tools, and a small model otherwise answers from the guide.
+	const leanSection = lean
+		? `
+
+LEAN MODE:
+- Lean mode is on (Settings → General → Lean mode). Your tools are the ones you were given: web search and pages, image search, reading files in the working folder, the Haruspex guide, memory and skills.
+- The guide describes the full app. When asked what you can do, answer from the tools you have, not from the guide.
+- If a request needs anything else (writing files, Python, pictures, music, speech, email, calendar, the Code or Shell tabs), say that it needs lean mode turned off. Never say you tried a tool you don't have.`
+		: '';
 	const imagesSection = opts.includeImages ? getIncludeImagesPrompt({ lean }) : '';
 
 	const fsSection = workingDir
@@ -145,7 +155,7 @@ CONNECTED INTEGRATIONS: ${connected.join(', ')}
 		role: 'system',
 		content: `You are Haruspex, a helpful, private AI assistant running on the user's computer.
 
-Today's date is ${today}. Your training data has a cutoff, so your memory of the world may be incomplete, wrong, or out of date.${guideSection(opts.guide)}${feedbackPromptSection(opts.feedback === true && !lean)}
+Today's date is ${today}. Your training data has a cutoff, so your memory of the world may be incomplete, wrong, or out of date.${guideSection(opts.guide)}${feedbackPromptSection(opts.feedback === true && !lean)}${leanSection}
 
 SEARCH RULES:
 - Search before answering any question about the world — a person, place, animal, plant, organisation, product, event, or how something works. "Tell me about X" is one of these. Your recollection is not a source; a citation is.

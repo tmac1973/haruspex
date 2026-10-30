@@ -11,7 +11,7 @@ vi.mock('#lib/image/index.ts', () => ({
 	resolveImageBackend: () => ({ kind: image.kind, capabilities: image.capabilities })
 }));
 
-import { needsNotes, unmetNeed } from './needs';
+import { LEAN_UNMET, needsNotes, unmetFor, unmetNeed } from './needs';
 import { updateSettings } from '#lib/stores/settings.ts';
 
 const CAPS = {
@@ -25,7 +25,7 @@ const CAPS = {
 };
 
 beforeEach(() => {
-	updateSettings({ imageBackendKind: 'none', musicBackendKind: 'none' });
+	updateSettings({ imageBackendKind: 'none', musicBackendKind: 'none', leanMode: false });
 	video.on = false;
 	image.capabilities.mockReset().mockResolvedValue(CAPS);
 });
@@ -63,5 +63,28 @@ describe('needsNotes', () => {
 		updateSettings({ imageBackendKind: 'lemonade' });
 		image.capabilities.mockRejectedValue(new Error('unreachable'));
 		expect(await needsNotes(['image'])).toEqual([]);
+	});
+});
+
+describe('unmetFor in lean mode', () => {
+	it('leaves out a skill that names a tool lean mode drops, whatever is set up', () => {
+		updateSettings({ musicBackendKind: 'llama-toolchest' });
+		const song = { needs: ['music' as const], tools: ['generate_music', 'edit_music'] };
+		expect(unmetFor(song)).toBeNull();
+		updateSettings({ leanMode: true });
+		expect(unmetFor(song)).toBe(LEAN_UNMET);
+		expect(unmetFor({ needs: [], tools: ['generate_speech'] })).toBe(LEAN_UNMET);
+	});
+
+	it('keeps a skill that names no tools, or only lean ones', () => {
+		updateSettings({ leanMode: true });
+		expect(unmetFor({ needs: [], tools: [] })).toBeNull();
+		expect(unmetFor({ needs: [], tools: ['web_search', 'fs_read_text'] })).toBeNull();
+	});
+
+	it('still says what a skill needs when lean mode is off', () => {
+		expect(unmetFor({ needs: ['image'], tools: ['edit_image'] })).toBe(
+			'Needs an image backend: Settings → Image.'
+		);
 	});
 });
