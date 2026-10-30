@@ -476,8 +476,8 @@
 			{#if leanReason}
 				<p class="hint mode-reason">
 					{leanReason === 'small-model'
-						? 'Recommended for a model of 9B or smaller.'
-						: 'Recommended for a machine without a fast GPU.'}
+						? 'Lean is recommended for a model of 9B or smaller.'
+						: 'Lean is recommended for a machine without a fast GPU.'}
 				</p>
 			{/if}
 			<div class="wizard-actions">
