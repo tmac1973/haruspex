@@ -476,7 +476,7 @@ export interface AppSettings {
 	 * background job or memory pass can run beside chat. Each stream gets the
 	 * full `contextSize`, so the KV cache grows by this factor and the
 	 * Context Size picker counts it. Restarts the server. See
-	 * `ServerConfig::build_args_for`.
+	 * `ServerConfig::build_args`.
 	 */
 	localParallelSlots: number;
 	/**
