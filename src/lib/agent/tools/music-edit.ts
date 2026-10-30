@@ -178,8 +178,8 @@ registerTool({
 		function: {
 			name: 'edit_music',
 			description:
-				'Make a new version of an existing song: restyle it, redo a stretch, extend it, or add, ' +
-				'pull out or complete instruments. Uses the music generation in Settings → Music and ' +
+				'Make a new version of an existing song: restyle it, redo a stretch, extend it, add or ' +
+				'complete instruments, or pull out one part, such as the vocals (stem separation). Uses the music generation in Settings → Music and ' +
 				'takes a minute or more. The original is kept.',
 			parameters: {
 				type: 'object',
@@ -195,8 +195,9 @@ registerTool({
 						enum: Object.keys(ACTIONS),
 						description:
 							'restyle: the same song in a new style. redo: regenerate start_seconds–end_seconds. ' +
-							'extend: add seconds at the end (or the start). add_instrument / ' +
-							'extract_instrument: one instrument. complete: fill in instruments around it.'
+							'extend: add seconds at the end (or the start). add_instrument: one instrument. ' +
+							'extract_instrument: isolate one part, vocals included. complete: fill in ' +
+							'instruments around it.'
 					},
 					caption: {
 						type: 'string',
@@ -230,7 +231,7 @@ registerTool({
 					instrument: {
 						type: 'string',
 						enum: [...MUSIC_TRACKS],
-						description: 'add_instrument / extract_instrument: which.'
+						description: 'add_instrument / extract_instrument: which. "vocals" is the lead voice.'
 					},
 					instruments: {
 						type: 'array',
