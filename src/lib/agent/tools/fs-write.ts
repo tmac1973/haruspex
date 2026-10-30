@@ -71,6 +71,11 @@ interface WriteOptions {
 	rewritable?: Set<string>;
 	/** Give the turn's slot back while the overwrite prompt waits (`ToolContext.releaseSlot`). */
 	releaseSlot?: () => void;
+	/**
+	 * False for a file fs_edit_text can't change (a document, spreadsheet,
+	 * deck or download), so a refused repeat write doesn't send the model there.
+	 */
+	editable?: boolean;
 }
 
 /** A tool's write options: a Code session overwrites, and may rewrite after a command. */
@@ -115,14 +120,7 @@ export async function resolveWritePathInteractive(
 	// it: the agent tested its work and is now replacing it whole, which is a
 	// fix, not a chunk. Back-to-back writes are still refused.
 	if (filesWrittenThisTurn.has(relPath) && !opts.rewritable?.has(relPath)) {
-		return {
-			kind: 'rejected',
-			message:
-				`"${relPath}" was already written in this turn, and writing it again would ` +
-				`replace what you just wrote rather than add to it. Do not write a file in ` +
-				`pieces: emit a single fs_write_* call containing the file's complete ` +
-				`content. To change part of a file you already wrote, use fs_edit_text.`
-		};
+		return { kind: 'rejected', message: repeatWriteMessage(relPath, opts.editable !== false) };
 	}
 
 	let exists: boolean;
@@ -172,6 +170,21 @@ export async function resolveWritePathInteractive(
 	}
 }
 
+function repeatWriteMessage(relPath: string, editable: boolean): string {
+	const refused =
+		`"${relPath}" was already written in this turn, and writing it again would ` +
+		`replace what you just wrote rather than add to it. Do not write a file in ` +
+		`pieces: emit a single fs_write_* call containing the file's complete content. `;
+	if (editable) return refused + 'To change part of a file you already wrote, use fs_edit_text.';
+	const dot = relPath.lastIndexOf('.');
+	const next = dot > 0 ? `${relPath.slice(0, dot)}-2${relPath.slice(dot)}` : `${relPath}-2`;
+	return (
+		refused +
+		`This format can't be edited in place: if what you wrote is wrong, write the ` +
+		`corrected file to a new name such as "${next}" and tell the user which one to keep.`
+	);
+}
+
 export function userCanceledWriteError(relPath: string, command: string): ToolExecOutput {
 	return toolResult(
 		toolError(
@@ -192,9 +205,11 @@ async function fsWriteWithConflictCheck(
 	relPath: string,
 	payload: Record<string, unknown>,
 	filesWrittenThisTurn: Set<string>,
-	opts: WriteOptions,
+	toolOpts: WriteOptions,
 	diffAfter?: string
 ): Promise<ToolExecOutput> {
+	// Only a plain text file can be fixed with fs_edit_text after a repeat write.
+	const opts = { ...toolOpts, editable: tool === 'fs_write_text' };
 	const resolved = await resolveWritePathInteractive(workdir, relPath, filesWrittenThisTurn, opts);
 	if (resolved.kind === 'canceled') return userCanceledWriteError(relPath, tool);
 	if (resolved.kind === 'rejected') return toolResult(toolError(resolved.message));
@@ -393,6 +408,44 @@ function normalizeCell(cell: unknown): unknown {
 	return typeof cell === 'object' ? cell : String(cell);
 }
 
+/**
+ * Tool-call syntax inside a value: what a model leaves behind when it garbles
+ * a call, e.g. a cell holding `"], ["` and `</parameter> </sheets>`. Written
+ * as-is, the file looks fine to the model ("Wrote: …") and is junk to the user.
+ */
+const CALL_MARKUP_RE = /<\/?(?:(?:parameter|tool_call|function)\b|fs_write_)/i;
+
+function callMarkupError(where: string, text: unknown): string | null {
+	if (typeof text !== 'string') return null;
+	const found = CALL_MARKUP_RE.exec(text);
+	if (!found) return null;
+	return (
+		`${where} contains tool-call markup ("${found[0]}"), so the call was garbled. ` +
+		`Nothing was written. Send the call again with plain values.`
+	);
+}
+
+/** The first cell holding call markup, as an error naming its position. */
+function sheetMarkupError(rows: unknown[][], sheetNum: number): string | null {
+	for (let r = 0; r < rows.length; r++) {
+		for (let c = 0; c < rows[r].length; c++) {
+			const err = callMarkupError(`Sheet ${sheetNum} row ${r + 1} cell ${c + 1}`, rows[r][c]);
+			if (err) return err;
+		}
+	}
+	return null;
+}
+
+/** The first title, subtitle or bullet holding call markup. */
+function slideMarkupError(slide: Record<string, unknown>, num: number): string | null {
+	const bullets = Array.isArray(slide.bullets) ? slide.bullets.map(bulletText) : [];
+	for (const text of [slide.title, slide.subtitle, ...bullets]) {
+		const err = callMarkupError(`Slide ${num}`, text);
+		if (err) return err;
+	}
+	return null;
+}
+
 /** A lone `/word` cell or bullet — what a model writes when it expects the
  *  tool to fill in a template. */
 function isPlaceholderText(text: string): boolean {
@@ -450,6 +503,8 @@ function validateSheet(raw: unknown, sheetNum: number): string | null {
 	const shapeError = sheetShapeError(raw, sheetNum);
 	if (shapeError) return shapeError;
 	const rows = (raw as { rows: unknown[][] }).rows;
+	const markupError = sheetMarkupError(rows, sheetNum);
+	if (markupError) return markupError;
 
 	const header = rows[0];
 	const dataRows = rows.slice(1);
@@ -691,6 +746,21 @@ function normalizeLayout(slide: Record<string, unknown>): void {
 	else delete slide.layout;
 }
 
+/** Shape fixes that leave a slide's meaning alone, in place. */
+function normalizeSlide(slide: Record<string, unknown>): void {
+	normalizeLayout(slide);
+	// Rust reads `image` as a path: a blank one is the working folder itself,
+	// and a non-string one fails the whole deck. Either way it means no image.
+	if (typeof slide.image !== 'string' || slide.image.trim().length === 0) delete slide.image;
+	// A non-empty string bullets value is almost always one-bullet-per-line.
+	if (typeof slide.bullets === 'string') {
+		slide.bullets = slide.bullets
+			.split('\n')
+			.map((line) => line.trim())
+			.filter((line) => line.length > 0);
+	}
+}
+
 /**
  * Normalize and validate slide-deck input in one pass. Forgiving on
  * shape — `layout` is lowercased (the Rust enum is lowercase-only),
@@ -717,14 +787,10 @@ function prepareSlides(raw: unknown): { slides?: unknown[]; error?: string } {
 				error: `Slide ${num} has no title. Every slide must have a non-empty title string.`
 			};
 		}
-		normalizeLayout(slide);
-		// A non-empty string bullets value is almost always one-bullet-per-line.
-		if (typeof slide.bullets === 'string') {
-			slide.bullets = slide.bullets
-				.split('\n')
-				.map((line) => line.trim())
-				.filter((line) => line.length > 0);
-		}
+		normalizeSlide(slide);
+
+		const markupError = slideMarkupError(slide, num);
+		if (markupError) return { error: markupError };
 
 		if (onlyPlaceholderBullets(slide.bullets)) {
 			return {
@@ -735,8 +801,7 @@ function prepareSlides(raw: unknown): { slides?: unknown[]; error?: string } {
 		}
 
 		if (slide.layout !== 'section') {
-			const hasImage = typeof slide.image === 'string' && slide.image.trim().length > 0;
-			if (!hasRealBullets(slide.bullets) && !hasImage) {
+			if (!hasRealBullets(slide.bullets) && slide.image === undefined) {
 				// Title-only (optionally subtitled) slide: render it as a
 				// section divider instead of erroring.
 				slide.layout = 'section';
@@ -954,7 +1019,7 @@ registerTool({
 			fsWorkdir(ctx)!,
 			relPath,
 			ctx.filesWrittenThisTurn,
-			writeOptions(ctx)
+			{ ...writeOptions(ctx), editable: false }
 		);
 		if (resolved.kind === 'canceled') return userCanceledWriteError(relPath, 'fs_download_url');
 		if (resolved.kind === 'rejected') return toolResult(toolError(resolved.message));

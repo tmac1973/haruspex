@@ -197,6 +197,28 @@ describe('placeholder bullets', () => {
 	});
 });
 
+describe('tool-call markup', () => {
+	it('refuses it in a bullet, naming the slide', async () => {
+		const out = await pptx([
+			{ title: 'Fine', bullets: ['a'] },
+			{ title: 'Tea', bullets: ['Green tea</parameter> <parameter=slides>'] }
+		]);
+		expect(errorOf(out)).toMatch(/^Slide 2 contains tool-call markup \("<\/parameter"\)/);
+		expect(sent).toHaveLength(0);
+	});
+
+	it('refuses it in a title or subtitle', async () => {
+		expect(errorOf(await pptx([{ title: '<tool_call>' }]))).toMatch(/^Slide 1 contains/);
+		const sub = await pptx([{ title: 'T', subtitle: 'x </function>' }]);
+		expect(errorOf(sub)).toMatch(/^Slide 1 contains/);
+	});
+
+	it('finds it in a nested bullet', async () => {
+		const out = await pptx([{ title: 'T', bullets: [{ text: '</fs_write_slides>', level: 1 }] }]);
+		expect(errorOf(out)).toMatch(/tool-call markup/);
+	});
+});
+
 describe('layout', () => {
 	it('lowercases and trims a string layout', async () => {
 		await pptx([{ title: 'T', layout: '  CONTENT ', bullets: ['x'] }]);
@@ -218,14 +240,21 @@ describe('layout', () => {
 		expect(sentSlides()[0]).toEqual({ title: 'T', image: 'chart.png' });
 	});
 
-	it('does not count a blank image as an image', async () => {
-		await pptx([{ title: 'T', image: '   ' }]);
-		expect(sentSlides()[0].layout).toBe('section');
+	// Rust would read a blank path as the working folder and fail the deck
+	// ("Failed to read image : Is a directory"), which Qwen 3.5 9B hit by
+	// sending "image": "" on every slide.
+	it('drops a blank image, and does not count it as an image', async () => {
+		await pptx([
+			{ title: 'T', image: '   ' },
+			{ title: 'U', image: '', bullets: ['x'] }
+		]);
+		expect(sentSlides()[0]).toEqual({ title: 'T', layout: 'section' });
+		expect(sentSlides()[1]).toEqual({ title: 'U', bullets: ['x'] });
 	});
 
-	it('does not count a non-string image as an image', async () => {
+	it('drops a non-string image, and does not count it as an image', async () => {
 		await pptx([{ title: 'T', image: { path: 'chart.png' } }]);
-		expect(sentSlides()[0].layout).toBe('section');
+		expect(sentSlides()[0]).toEqual({ title: 'T', layout: 'section' });
 	});
 
 	// A non-string layout is not normalised, so a slide with bullets sends it

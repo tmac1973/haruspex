@@ -350,6 +350,40 @@ describe('ragged rows', () => {
 	});
 });
 
+describe('tool-call markup in a cell', () => {
+	it('refuses a garbled call instead of writing it', async () => {
+		// What Qwen 3.5 9B sent for an .ods once: the call's own syntax and an
+		// apology ended up in the cells, and no cell was blank.
+		const rows = [
+			['Planet', 'Diameter (km)'],
+			['Mercury', '], ['],
+			['Neptune', ']]}]`</parameter> </sheets> </fs_write_spreadsheet> call now. I apologize']
+		];
+		const out = await xlsx([{ name: 'Planets', rows }]);
+		expect(errorOf(out)).toBe(
+			'Sheet 1 row 3 cell 2 contains tool-call markup ("</parameter"), so the call was ' +
+				'garbled. Nothing was written. Send the call again with plain values.'
+		);
+		expect(disk.written).toHaveLength(0);
+	});
+
+	it.each(['<tool_call>', '<parameter=rows>', '<function=fs_write_spreadsheet>', '<fs_write_x'])(
+		'refuses %j',
+		async (cell) => {
+			const out = await xlsx([{ name: 'S', rows: [['A'], [`x ${cell}`]] }]);
+			expect(errorOf(out)).toMatch(/tool-call markup/);
+		}
+	);
+
+	it('accepts angle brackets that are not call markup', async () => {
+		const rows = [
+			['Expr', 'Note'],
+			['a < b', '<b>bold</b>, <params> and <functional>']
+		];
+		expect((await xlsx([{ name: 'S', rows }])).result).toBe('Wrote: out.xlsx');
+	});
+});
+
 describe('placeholder rows', () => {
 	it.each(['/data', ' /formula ', '/FILL_ME'])(
 		'rejects a lone %j cell in a multi-column sheet',
