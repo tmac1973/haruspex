@@ -59,9 +59,12 @@
 	} from '#lib/stores/settings.ts';
 	import { getDebugLogsForTurn } from '#lib/debugLog.ts';
 	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
+	import AudioChip from '#lib/components/AudioChip.svelte';
 	import { serverLog, worthReporting } from '#lib/reportLogs.ts';
 	import { createCopyAction } from '#lib/utils/clipboard.svelte.ts';
 	import { createPendingImages } from '#lib/utils/pendingImages.svelte.ts';
+	import { createPendingAudio } from '#lib/utils/pendingAudio.svelte.ts';
+	import { withAttachedAudio } from '#lib/audio/attached.ts';
 	import { openShellFromChat } from '#lib/shell/fromChat.ts';
 	import { invoke } from '@tauri-apps/api/core';
 	import { onMount, onDestroy, tick, untrack } from 'svelte';
@@ -72,6 +75,8 @@
 	let showScrollButton = $state(false);
 	// Images the user has attached (drag-drop / paste) for the next message.
 	const pendingImages = createPendingImages();
+	// Audio files dropped for the next message, already in the audio cache.
+	const pendingAudio = createPendingAudio(() => ({ conversationId: activeConversation?.id }));
 	let dragOver = $state(false);
 
 	let slashMenu = $state<SlashMenu>();
@@ -88,7 +93,8 @@
 	 *  turn runs, the store queues the message as steering for its next step. */
 	async function doSend(text: string) {
 		const images = pendingImages.urls;
-		if (!text.trim() && images.length === 0) return;
+		const audio = pendingAudio.audio;
+		if (!text.trim() && images.length === 0 && audio.length === 0) return;
 		let slash;
 		try {
 			slash = await runSlash(text, slashHost);
@@ -107,11 +113,13 @@
 		// the turn), the restore below puts the text back untouched.
 		inputText = '';
 		pendingImages.clear();
+		pendingAudio.clear();
 		autoScroll = true;
-		const accepted = await sendMessage(text, images, slash.skill);
+		const accepted = await sendMessage(withAttachedAudio(text, audio), images, slash.skill);
 		if (!accepted) {
 			inputText = text;
 			pendingImages.set(images);
+			pendingAudio.set(audio);
 		}
 	}
 
@@ -624,6 +632,7 @@
 			class:drag-over={dragOver}
 			use:imageDropTarget={{
 				onImages: pendingImages.addUrls,
+				onAudio: (paths) => void pendingAudio.addPaths(paths),
 				onDragChange: (over) => (dragOver = over)
 			}}
 		>
@@ -679,8 +688,11 @@
 					{/each}
 				</div>
 			{/if}
-			{#if pendingImages.length}
+			{#if pendingImages.length || pendingAudio.length}
 				<div class="attachments">
+					{#each pendingAudio.items as a (a.id)}
+						<AudioChip name={a.name} onRemove={() => pendingAudio.remove(a.id)} />
+					{/each}
 					{#each pendingImages.items as img (img.id)}
 						<div class="attachment">
 							<img src={img.url} alt="attachment" />
@@ -809,7 +821,7 @@
 				<button
 					class="send-btn"
 					onclick={handleSend}
-					disabled={!inputText.trim() && pendingImages.length === 0}
+					disabled={!inputText.trim() && pendingImages.length === 0 && pendingAudio.length === 0}
 					title={isGenerating || isCompacting
 						? 'Sends to the running turn, which reads it at its next step'
 						: undefined}

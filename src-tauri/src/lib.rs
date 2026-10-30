@@ -395,6 +395,7 @@ pub fn run() {
             image_cache::commands::image_save_as,
             audio_cache::commands::audio_store_url,
             audio_cache::commands::audio_store_bytes,
+            audio_cache::commands::audio_store_dropped,
             audio_cache::commands::audio_rehydrate,
             audio_cache::commands::audio_cache_size,
             audio_cache::commands::audio_cache_clear,

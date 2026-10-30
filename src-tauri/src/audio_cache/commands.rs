@@ -378,6 +378,61 @@ pub fn store_bytes(
     })
 }
 
+/// Keep an audio file the user dropped on a composer, so a music tool can
+/// name it by its `haruspex-audio://` URL. The path is read here, not in
+/// the webview, and is not scoped to the working folder: the user chose the
+/// file. The type comes from the extension.
+#[tauri::command]
+pub async fn audio_store_dropped(
+    app: AppHandle,
+    db: State<'_, Database>,
+    path: String,
+    conversation_id: Option<String>,
+    code_session_id: Option<String>,
+) -> Result<StoredAudio, String> {
+    store_dropped(
+        &db,
+        &cache_dir(&app)?,
+        Path::new(&path),
+        conversation_id.as_deref(),
+        code_session_id.as_deref(),
+    )
+}
+
+/// The audio type a dropped file's extension names, or None.
+fn dropped_mime(path: &Path) -> Option<&'static str> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    match ext.as_str() {
+        "mp3" => Some("audio/mpeg"),
+        "wav" => Some("audio/wav"),
+        "flac" => Some("audio/flac"),
+        "ogg" => Some("audio/ogg"),
+        _ => None,
+    }
+}
+
+pub fn store_dropped(
+    db: &Database,
+    dir: &Path,
+    path: &Path,
+    conversation_id: Option<&str>,
+    code_session_id: Option<&str>,
+) -> Result<StoredAudio, String> {
+    let Some(mime) = dropped_mime(path) else {
+        return Err("Only .mp3, .wav, .flac and .ogg files can be attached.".into());
+    };
+    let len = std::fs::metadata(path)
+        .ok()
+        .filter(|m| m.is_file())
+        .ok_or("The dropped file could not be found.")?
+        .len();
+    if len > MAX_AUDIO_BYTES {
+        return Err(too_large());
+    }
+    let bytes = std::fs::read(path).map_err(|e| format!("Could not read the file: {e}"))?;
+    store_bytes(db, dir, &bytes, mime, conversation_id, code_session_id)
+}
+
 /// The audio a chat's or Code session's messages show by hash, linked to it
 /// so the sweep keeps it. Unknown and malformed hashes are skipped.
 #[tauri::command]
@@ -712,6 +767,32 @@ mod tests {
         );
         assert!(store_bytes(&db, &dir, &[1u8; 8], "text/html", None, None).is_err());
         assert!(store_bytes(&db, &dir, &[], "audio/wav", None, None).is_err());
+    }
+
+    #[test]
+    fn a_dropped_file_is_stored_by_its_extension() {
+        let (db, dir) = setup("audio-dropped");
+        let src = temp_dir("audio-dropped-src");
+        let song = src.join("Song.MP3");
+        std::fs::write(&song, [5u8; 256]).unwrap();
+        let stored = store_dropped(&db, &dir, &song, Some("chat-1"), None).unwrap();
+        assert_eq!(stored.mime, "audio/mpeg");
+        assert_eq!(read_bytes(&db, &dir, &stored.hash).unwrap(), vec![5u8; 256]);
+
+        let flac = src.join("take.flac");
+        std::fs::write(&flac, [6u8; 16]).unwrap();
+        assert_eq!(
+            store_dropped(&db, &dir, &flac, None, None).unwrap().mime,
+            "audio/flac"
+        );
+
+        let text = src.join("notes.txt");
+        std::fs::write(&text, b"hi").unwrap();
+        assert!(store_dropped(&db, &dir, &text, None, None).is_err());
+        assert!(store_dropped(&db, &dir, &src.join("gone.wav"), None, None).is_err());
+        let folder = src.join("album.wav");
+        std::fs::create_dir(&folder).unwrap();
+        assert!(store_dropped(&db, &dir, &folder, None, None).is_err());
     }
 
     #[tokio::test]

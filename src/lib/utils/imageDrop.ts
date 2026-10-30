@@ -12,16 +12,23 @@
  * The native event is window-global, so each mounted composer hit-tests the
  * drop position against its own bounding rect and only the one under the cursor
  * attaches. Paths are read + resized by the `read_dropped_image` Rust command.
+ *
+ * Audio files (`AUDIO_DROP_RE`) go to `onAudio` as paths, for the composer to
+ * put in the audio cache. A composer without it says it can't take them.
  */
 
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { invoke } from '@tauri-apps/api/core';
+import { AUDIO_DROP_RE } from '#lib/audio/attached.ts';
+import { showToast } from '#lib/stores/toasts.svelte.ts';
 
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp)$/i;
 
 export interface ImageDropOptions {
 	/** Called with resized image data URLs when image files are dropped on the node. */
 	onImages: (dataUrls: string[]) => void;
+	/** Called with the paths of dropped audio files. */
+	onAudio?: (paths: string[]) => void;
 	/** Called as a file drag enters/leaves the node's bounds (drives the highlight). */
 	onDragChange?: (over: boolean) => void;
 }
@@ -41,6 +48,9 @@ export function imageDropTarget(node: HTMLElement, options: ImageDropOptions) {
 	}
 
 	async function attach(paths: string[]) {
+		const audio = paths.filter((p) => AUDIO_DROP_RE.test(p));
+		if (audio.length && opts.onAudio) opts.onAudio(audio);
+		else if (audio.length) showToast('Audio can be attached in Chat or the Code tab.');
 		const images = paths.filter((p) => IMAGE_EXT_RE.test(p));
 		if (!images.length) return;
 		const urls: string[] = [];

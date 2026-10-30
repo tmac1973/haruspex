@@ -51,7 +51,7 @@ For more than about eight assets it suggests an Asset generation job (see the `j
 `write-song` writes the style and the words before making anything, since a song takes a minute or more. The style is a few tags (genre, mood, instruments, tempo, voice): it keeps to what you named, and says what it chose for the rest. Lyrics get section tags such as `[verse]` and `[chorus]`, and as many lines as fit the length. An instrumental gets none.
 
 - **Music for a game or a video:** an instrumental loop with no intro or outro, 30 to 60 seconds. In the Code tab it's saved where the code loads its music.
-- **Changing a song:** it changes the part you name rather than making the whole song again. It can redo a stretch, restyle the song, extend it, or add or pull out an instrument (see the `music` page). For "the same but faster" it remakes a song it made from the same seed; one it has already changed can't be remade that way, and it says so.
+- **Changing a song:** it changes the part you name rather than making the whole song again. It can redo a stretch, restyle the song, extend it, or add or pull out an instrument, also on a file you drop on the message box (see the `music` page). For "the same but faster" it remakes a song it made from the same seed; one it has already changed can't be remade that way, and it says so.
 - **Afterwards:** it says what it made, with the length and the seed. It doesn't claim how the song sounds, since it can't hear it.
 
 ## Finish a video: cut-video

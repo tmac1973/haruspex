@@ -61,7 +61,8 @@ shorter than asked. If it does, say so.
 ## Changing a song already made
 
 Use `edit_music` on the song's haruspex-audio:// URL, or on an audio file in
-the working folder. Never make the whole song again to fix one part of it.
+the working folder. A file the user dropped on the message box is an
+"Attached audio:" line in their message; pass its URL as `source`. Never make the whole song again to fix one part of it.
 
 | The user wants | action |
 | --- | --- |

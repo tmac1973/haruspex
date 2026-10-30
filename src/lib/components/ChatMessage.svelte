@@ -12,6 +12,8 @@
 	import { typedText } from '#lib/skills/content.ts';
 	import type { CodePathLinker } from '#lib/code/paths.ts';
 	import BranchGlyph from '#lib/components/code/BranchGlyph.svelte';
+	import AudioPlayer from '#lib/components/AudioPlayer.svelte';
+	import { splitAttachedAudio } from '#lib/audio/attached.ts';
 
 	interface Props {
 		message: ChatMessage;
@@ -61,7 +63,9 @@
 	// Extract plain text from the message (handles both string and content array)
 	let textContent = $derived(messageText(message.content));
 	// A skill run with `/name` travels in the message; show what was typed.
-	let userText = $derived(typedText(textContent));
+	// Dropped audio travels as lines the model reads; show players instead.
+	let userParts = $derived(splitAttachedAudio(typedText(textContent)));
+	let userText = $derived(userParts.text);
 	// Extract any image URLs from multimodal content for display
 	let imageUrls = $derived(
 		typeof message.content === 'string'
@@ -144,6 +148,9 @@
 					{/each}
 				</div>
 			{/if}
+			{#each userParts.audio as a, i (i)}
+				<AudioPlayer src="haruspex-audio://localhost/{a.hash}" title={a.name} />
+			{/each}
 			{#if userText}
 				<p>{userText}</p>
 			{/if}
