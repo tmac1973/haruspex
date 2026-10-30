@@ -521,6 +521,12 @@ export interface AppSettings {
 	 */
 	legacyModelNoticeDismissed: boolean;
 	/**
+	 * Chat and research only, for small models and slow machines: Chat offers
+	 * a small fixed tool set (`leanProfile.ts`) and its prompt names nothing
+	 * else. Settings → General → Lean mode.
+	 */
+	leanMode: boolean;
+	/**
 	 * Master switch for screen capture. Off by default: an assistant that can
 	 * see the screen is a different thing from one that cannot, and that has
 	 * to be a decision the user made rather than one they inherited.
@@ -1036,6 +1042,7 @@ const defaults: AppSettings = {
 	keepRecentToolResults: true,
 	activeLocalModelFilename: '',
 	legacyModelNoticeDismissed: false,
+	leanMode: false,
 	screenCaptureEnabled: false,
 	screenCaptureConfirm: true,
 	agentFeedbackEnabled: false,
@@ -1879,6 +1886,16 @@ export function setLegacyModelNoticeDismissed(dismissed: boolean): void {
 	}
 }
 
+export function getLeanMode(): boolean {
+	return settings.leanMode;
+}
+
+export function setLeanMode(on: boolean): void {
+	if (settings.leanMode !== on) {
+		commit({ ...settings, leanMode: on });
+	}
+}
+
 export interface SamplingOptions {
 	/**
 	 * True when the next completion is expected to involve writing or
@@ -2010,10 +2027,11 @@ export function getSamplingParams(
  * even when the answer was a fox it had just drawn. The line costs nothing
  * when there is no backend, because then there is no drawing tool to confuse.
  */
-export function getIncludeImagesPrompt(): string {
+/** The IMAGES block. A lean turn draws nothing, so it gets no line about drawn pictures. */
+export function getIncludeImagesPrompt(opts: { lean?: boolean } = {}): string {
 	if (!settings.includeImages) return '';
 	const drawn =
-		settings.imageBackendKind !== 'none'
+		settings.imageBackendKind !== 'none' && !opts.lean
 			? '\n- A picture you drew, edited or upscaled is the image. Add no found ones unless the user asks.'
 			: '';
 	return `

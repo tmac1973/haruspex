@@ -25,6 +25,7 @@ import {
 	isCodeWriteTool,
 	type DescriptionOverride
 } from '#lib/agent/tools/codeTabProfile.ts';
+import { LEAN_CHAT_TOOLS } from '#lib/agent/tools/leanProfile.ts';
 import { shellPlatformSupported } from '#lib/shell/platformSupport.ts';
 import { videoAvailable, videoToolsOn } from '#lib/video/binaries.ts';
 import { getTasks } from '#lib/tasks/store.svelte.ts';
@@ -118,6 +119,18 @@ interface ToolFilterOpts {
 	sendableEmail: boolean;
 	/** The background-task owner the turn speaks for; see `getToolSchemas`. */
 	taskOwner?: string;
+	/** Settings → General → Lean mode is on; see `isLeanTurn`. */
+	lean: boolean;
+}
+
+/**
+ * A Chat turn with someone at it while lean mode is on: it offers
+ * `LEAN_CHAT_TOOLS` alone. Code and Shell have their own sets (lean mode
+ * hides those tabs instead), and a job or subtask keeps what its own work
+ * needs — a research job writes its report even on a lean machine.
+ */
+function isLeanTurn(f: ToolFilterOpts): boolean {
+	return f.lean && f.interactive && !f.subtask && !f.codeMode && !f.shellMode;
 }
 
 // Tools exposed to the Shell-tab assistant (non-Code mode). Reads only —
@@ -401,7 +414,8 @@ export function getToolSchemas(opts: {
 		sendableEmail: interactive && hasSendableEmailAccount(),
 		sandboxEnabled: getSettings().sandboxEnabled && !pythonRuntimeMissing(),
 		memoryWritable: memoryActive(),
-		taskOwner: opts.taskOwner
+		taskOwner: opts.taskOwner,
+		lean: getSettings().leanMode
 	};
 	const schemas: ToolDefinition[] = [];
 	for (const reg of tools.values()) {
@@ -421,6 +435,9 @@ function schemaFor(
 	filter: ToolFilterOpts,
 	skills: { skillNames?: string[]; skillFileNames?: string[]; hasSkills?: boolean }
 ): ToolDefinition | null {
+	// Lean mode names what may be offered; the gates below still decide
+	// whether each of those is offered this turn.
+	if (isLeanTurn(filter) && !LEAN_CHAT_TOOLS.has(reg.schema.function.name)) return null;
 	// The user guide answers the person asking, in any mode; a job has nobody
 	// asking. Remote guests get it through their allowlist.
 	if (reg.category === 'guide') return filter.interactive && !filter.subtask ? reg.schema : null;
