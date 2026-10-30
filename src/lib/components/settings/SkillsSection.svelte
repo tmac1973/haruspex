@@ -19,7 +19,7 @@
 	import type { SkillSummary } from '#lib/ipc/gen/SkillSummary.ts';
 	import type { SkillSource } from '#lib/ipc/gen/SkillSource.ts';
 	import { listSkills, readSkill, repoLabel } from '#lib/skills/client.ts';
-	import { unmetNeed } from '#lib/skills/needs.ts';
+	import { unmetFor } from '#lib/skills/needs.ts';
 	import { setRepoTrust, setRepoTrusted } from '#lib/skills/project.ts';
 	import { getSettings, updateSkills, type SkillsConfig } from '#lib/stores/settings.ts';
 	import { errMessage } from '#lib/utils/error.ts';
@@ -194,7 +194,7 @@
 		<ul class="skill-list">
 			{#each skills as skill (skill.source + ':' + (skill.dir ?? skill.name))}
 				{@const enabled = !config.disabled.includes(skill.name)}
-				{@const unmet = unmetNeed(skill.needs)}
+				{@const unmet = unmetFor(skill)}
 				<li class="skill" class:muted={!!skill.error || skill.shadowed || !!unmet}>
 					<div class="skill-head">
 						<label class="toggle">

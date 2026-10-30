@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: async () => '0.2.3' }));
 /** What Settings → Inference resolves to, for the tests that change it. */
 const settingsBackend = vi.hoisted(() => ({
+	lean: false,
 	kind: 'remote',
 	allowParallel: true,
 	parallelSlots: null as number | null
@@ -24,6 +25,7 @@ vi.mock('#lib/stores/memory.svelte.ts', () => ({ memoryActive: () => true }));
 vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: () => ({
+		leanMode: settingsBackend.lean,
 		sandboxEnabled: false,
 		imageBackendKind: 'comfyui',
 		screenCaptureEnabled: true,
@@ -63,6 +65,15 @@ describe('guideStatus', () => {
 		expect(s).toContain('Email accounts switched on: 1');
 		expect(s).toContain('Calendar and contacts accounts switched on: 1');
 		expect(s).toContain('MCP servers switched on: 1');
+		expect(s).toContain('Lean mode: off');
+	});
+
+	it('says lean mode is on, and that the features it leaves out are off', async () => {
+		settingsBackend.lean = true;
+		const s = await guideStatus();
+		settingsBackend.lean = false;
+		expect(s).toContain('Lean mode: on (Settings → General → Lean mode)');
+		expect(s).toContain('file writing, Python, pictures, music, speech');
 	});
 
 	it('says whether turns overlap on a model server, and that the local settings do nothing there', async () => {

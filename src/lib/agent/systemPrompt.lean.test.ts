@@ -102,6 +102,13 @@ describe('buildSystemPrompt — lean', () => {
 		}
 	});
 
+	it('says lean mode is on, and to answer from its tools, not the guide', () => {
+		const prompt = leanPrompt();
+		expect(prompt).toContain('LEAN MODE:');
+		expect(prompt).toContain('answer from the tools you have, not from the guide');
+		expect(buildSystemPrompt(null).content as string).not.toContain('LEAN MODE');
+	});
+
 	it('tells the model the working folder is for reading', () => {
 		expect(leanPrompt()).toContain('You can read files here but not create or change them');
 	});

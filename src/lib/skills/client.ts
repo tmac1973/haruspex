@@ -18,7 +18,7 @@ import type { SkillDraft } from '#lib/ipc/gen/SkillDraft.ts';
 import type { SkillSummary } from '#lib/ipc/gen/SkillSummary.ts';
 import type { SkillWriteRequest } from '#lib/ipc/gen/SkillWriteRequest.ts';
 import { getSettings } from '#lib/stores/settings.ts';
-import { needsNotes, unmetNeed } from '#lib/skills/needs.ts';
+import { needsNotes, unmetFor, unmetNeed } from '#lib/skills/needs.ts';
 
 /** A WSL distro's share: `\\wsl.localhost\<distro>\…`, `\\wsl$\…` or `\\?\UNC\…`. */
 const WSL_SHARE = /^(?:\\\\\?\\UNC\\|\\\\)(?:wsl\.localhost|wsl\$)\\([^\\]+)(.*)$/i;
@@ -73,7 +73,8 @@ export function codeModeOnly(skill: SkillSummary): boolean {
 
 /**
  * Skills a turn may use: parsed, not overridden, not switched off, outside
- * Code mode not one that needs it, and not one whose backend is off.
+ * Code mode not one that needs it, not one whose backend is off, and in a
+ * lean Chat turn not one that names a tool lean mode leaves out.
  */
 export function usableSkills(all: SkillSummary[], codeMode = false): SkillSummary[] {
 	const disabled = new Set(getSettings().skills.disabled);
@@ -83,7 +84,7 @@ export function usableSkills(all: SkillSummary[], codeMode = false): SkillSummar
 			!s.shadowed &&
 			!disabled.has(s.name) &&
 			(codeMode || !codeModeOnly(s)) &&
-			!unmetNeed(s.needs)
+			!(codeMode ? unmetNeed(s.needs) : unmetFor(s))
 	);
 }
 
