@@ -10,6 +10,7 @@
  * `haruspex-audio://` URL) or a file in the working folder
  * (`_musicSource.ts`). Offered wherever `generate_music` is; a model that
  * can't run the action (stem tasks on a turbo model) is a sentence here.
+ * `trim` is cut here, not by the server (`_musicTrim.ts`).
  */
 import { getSettings } from '#lib/stores/settings.ts';
 import { errMessage } from '#lib/utils/error.ts';
@@ -28,6 +29,7 @@ import {
 } from '#lib/agent/tools/_musicSource.ts';
 import { resolveMusicBackend, MUSIC_TRACKS, type MusicTask } from '#lib/music/index.ts';
 import { BACKGROUND_PARAM } from '#lib/agent/tools/_musicJob.ts';
+import { MAX_TRIM_SECONDS, trimSong } from '#lib/agent/tools/_musicTrim.ts';
 
 export const ACTIONS = {
 	restyle: 'cover',
@@ -39,6 +41,9 @@ export const ACTIONS = {
 } as const satisfies Record<string, MusicTask>;
 
 export type EditAction = keyof typeof ACTIONS;
+
+/** Every action the tool takes: the server's, and `trim`, which runs here. */
+const ALL_ACTIONS = [...Object.keys(ACTIONS), 'trim'];
 
 const MAX_EXTEND_SECONDS = 240;
 const DEFAULT_EXTEND_SECONDS = 30;
@@ -179,8 +184,9 @@ registerTool({
 			name: 'edit_music',
 			description:
 				'Make a new version of an existing song: restyle it, redo a stretch, extend it, add or ' +
-				'complete instruments, or pull out one part, such as the vocals (stem separation). Uses the music generation in Settings → Music and ' +
-				'takes a minute or more. The original is kept.',
+				'complete instruments, pull out one part, such as the vocals (stem separation), or trim ' +
+				'it to a stretch. Uses the music generation in Settings → Music and takes a minute or ' +
+				'more; trim is cut here in a moment and works with any model. The original is kept.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -192,12 +198,13 @@ registerTool({
 					},
 					action: {
 						type: 'string',
-						enum: Object.keys(ACTIONS),
+						enum: ALL_ACTIONS,
 						description:
 							'restyle: the same song in a new style. redo: regenerate start_seconds–end_seconds. ' +
 							'extend: add seconds at the end (or the start). add_instrument: one instrument. ' +
 							'extract_instrument: isolate one part, vocals included. complete: fill in ' +
-							'instruments around it.'
+							'instruments around it. trim: keep only start_seconds–end_seconds, to use part of a ' +
+							`song (up to ${MAX_TRIM_SECONDS} s) as a source or style_reference.`
 					},
 					caption: {
 						type: 'string',
@@ -217,8 +224,11 @@ registerTool({
 							'restyle only, 0–1: how closely to follow the original. 1 keeps its structure; ' +
 							'about 0.2 is a loose restyle.'
 					},
-					start_seconds: { type: 'number', description: 'redo: where to start. Default 0.' },
-					end_seconds: { type: 'number', description: 'redo: where to stop. Default the end.' },
+					start_seconds: { type: 'number', description: 'redo / trim: where to start. Default 0.' },
+					end_seconds: {
+						type: 'number',
+						description: 'redo / trim: where to stop. Default the end.'
+					},
 					seconds: {
 						type: 'number',
 						description: `extend: how much to add, 1 to ${MAX_EXTEND_SECONDS}. Default ${DEFAULT_EXTEND_SECONDS}.`
@@ -243,7 +253,8 @@ registerTool({
 					title: { type: 'string', description: 'A short title for the player and the file.' },
 					path: {
 						type: 'string',
-						description: 'Also save it here, in the working folder, ending .mp3 or .wav.'
+						description:
+							'Also save it here, in the working folder, ending .mp3 or .wav. Not for trim.'
 					},
 					overwrite: { type: 'boolean', description: 'Replace an existing file. Default false.' },
 					background: BACKGROUND_PARAM
@@ -255,11 +266,16 @@ registerTool({
 	displayLabel: (args) =>
 		`music: ${String(args.action ?? 'edit')} ${String(args.title ?? '').slice(0, 50)}`.trim(),
 	execute: async (args, ctx) => {
-		const action = str(args.action) as EditAction;
-		if (!(action in ACTIONS)) {
-			return toolResult(toolError(`action must be one of ${Object.keys(ACTIONS).join(', ')}.`));
+		const action = str(args.action);
+		if (action === 'trim') {
+			const source = await resolveSong(str(args.source), 'source', ctx);
+			if (typeof source === 'string') return toolResult(toolError(source));
+			return trimSong(args, source, ctx);
 		}
-		const refused = await unsupported(ACTIONS[action]);
+		if (!(action in ACTIONS)) {
+			return toolResult(toolError(`action must be one of ${ALL_ACTIONS.join(', ')}.`));
+		}
+		const refused = await unsupported(ACTIONS[action as EditAction]);
 		if (refused) return toolResult(toolError(refused));
 		const source = await resolveSong(str(args.source), 'source', ctx);
 		if (typeof source === 'string') return toolResult(toolError(source));
