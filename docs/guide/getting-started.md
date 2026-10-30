@@ -9,7 +9,7 @@ Haruspex is a desktop AI app for research and coding that runs on your own compu
 
 ## What Haruspex does
 
-- **Runs the model locally by default.** Haruspex downloads a model that fits your graphics card and runs it itself. You do not need a separate server such as Ollama or LM Studio.
+- **Runs the model locally by default.** Haruspex downloads a model that fits your graphics card and runs it itself. No separate server such as Ollama is needed.
 - **Can use a bigger model elsewhere.** If your computer can't run the model you want, connect Haruspex to a server you already run (LM Studio, Ollama, vLLM, llama.cpp or any OpenAI-compatible server), or use hosted models through OpenRouter. See the `models` page.
 - **Keeps your data on your device.** Conversations and the model's answers are stored locally. Web searches do go out to the internet, and the optional cloud backend (OpenRouter) is off by default.
 - **Researches the web** for current information, and can read and write files in a folder you choose.
@@ -23,15 +23,15 @@ The first time you open Haruspex, a wizard asks how you want to run the model:
 
    With a graphics card of 8 to 24 GB and at least 32 GB of RAM, the wizard also offers **Larger model using system RAM**: Qwen 3.6 35B-A3B, which is smarter but slower. **Use this instead** picks it and turns on Settings → Inference → **Let models use system RAM**.
 
-   On integrated graphics (a GPU that shares system memory), the wizard recommends Qwen 3.5 4B whatever memory it reports, as larger models run slowly there. With 32 GB of RAM it also offers **Larger model**: Qwen 3.6 35B-A3B, about as fast. AMD's Strix Halo (Radeon 8060S) counts as a graphics card.
+   On integrated graphics (a GPU that shares system memory), the wizard recommends Qwen 3.5 4B whatever memory it reports, as larger models are slow there. With 32 GB of RAM it also offers **Larger model**: Qwen 3.6 35B-A3B, about as fast. AMD's Strix Halo (Radeon 8060S) counts as a graphics card.
 
 2. **Connect to an existing server** (advanced). Enter the address of an OpenAI-compatible server. Nothing is downloaded.
 
-After a download, the wizard sends a short test question to the model. If the test fails, you can **Retry** or **Skip**; the model may still work. Then press **Start chatting**.
+After a download, the wizard sends a short test question to the model. If it fails, **Retry** or **Skip**; the model may still work. Last it asks for **Lean** or **Full** (see the `lean-mode` page), then **Start chatting**.
 
 Model files are several gigabytes. On a slow connection, **Choose a different model** lets you switch to a smaller one while the download runs.
 
-To run the wizard again later, use Settings → Inference → **Run Setup Wizard**. Your existing models and settings are kept unless you change them there.
+To run the wizard again, use Settings → Inference → **Run Setup Wizard**. Your models and settings are kept unless you change them there.
 
 ## The main tabs
 
@@ -48,7 +48,7 @@ Along the top of the window you also find the server status (click it to open th
 
 ## Check what the model tells you
 
-AI models make mistakes. They can state wrong facts with confidence, misread files, and suggest commands that are wrong or harmful. The small models Haruspex uses on modest hardware make these mistakes more often than large cloud models.
+AI models make mistakes. They can state wrong facts with confidence, misread files, and suggest commands that are wrong or harmful. Small models make them more often than large cloud models.
 
 The Shell assistant runs nothing by default. If you give it **Full access**, it runs commands in your real terminal: commands it flags as risky ask you first, but commands it thinks are safe run on their own. The Code tab works the same way in its project folder. Only use them on machines and projects you are willing to let the model change. Read every command before you run it, and keep backups.
 
@@ -59,6 +59,7 @@ In Chat or the Shell assistant, ask things like "how do I add a calendar?" or "i
 ## Where to go next
 
 - `models` — choosing and downloading models, context size, using your own server or OpenRouter.
+- `lean-mode` — chat and research only, for small models.
 - `chat` — web research, files, Python, voice, images and pictures in answers.
 - `shell` — the terminal assistant, Read-only and Full access.
 - `code` — the Code tab's coding sessions.
@@ -68,9 +69,9 @@ In Chat or the Shell assistant, ask things like "how do I add a calendar?" or "i
 - `images` — generating pictures and game art (off by default).
 - `integrations` — email, calendar and contacts, MCP servers, screen capture.
 - `search-and-network` — search providers and proxies.
-- `guest-chat` — let other people on your home network chat with Haruspex from a browser.
+- `guest-chat` — let people on your network chat with Haruspex from a browser.
 - `remote-control` — use your Code sessions from your other computers.
 - `remote-control-api` — drive sessions, chats, jobs and settings from a script.
 - `settings` — a tour of every settings section.
 - `shortcuts` — keyboard shortcuts.
-- `troubleshooting` — known issues and what to do when something goes wrong.
+- `troubleshooting` — known issues and fixes.

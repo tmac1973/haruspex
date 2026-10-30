@@ -13,7 +13,9 @@ Every tool Chat can use is described to the model at the start of each reply. Wi
 
 ## Turn it on or off
 
-Settings → General → Lean mode. While it is on, a **Lean mode** badge shows in the header; click it to come back to the switch.
+The setup wizard asks, as its last step, and recommends Lean for a model of 9B or smaller or a machine without a fast GPU (no graphics card, or slow integrated graphics). For a remote server's model it goes by the size in the model's name, and recommends Full when the name doesn't say.
+
+After that, Settings → General → Lean mode. While it is on, a **Lean mode** badge shows in the header; click it to come back to the switch.
 
 The switch can't be turned on while a Code or Shell turn is running. Finish or stop the turn first. Turning it off works at any time.
 

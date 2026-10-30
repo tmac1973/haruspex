@@ -9,7 +9,7 @@
 	import type { McpToolDescriptor } from '#lib/ipc/gen/McpToolDescriptor.ts';
 	import { getToolSchemas } from '#lib/agent/tools/index.ts';
 	import { evaluateToolBudget } from '#lib/agent/mcpBudget.ts';
-	import { getSettings } from '#lib/stores/settings.ts';
+	import { activeModelId } from '#lib/lean/recommend.ts';
 
 	interface Props {
 		tools: McpToolDescriptor[];
@@ -53,18 +53,6 @@
 			modelLabel: activeModelId() ?? undefined
 		})
 	);
-
-	/**
-	 * The model the budget is judged against: the remote model id when a remote
-	 * backend is selected, otherwise the local weights filename. Both carry the
-	 * parameter count the cap keys off.
-	 */
-	function activeModelId(): string | null {
-		const s = getSettings();
-		return s.inferenceBackend.mode === 'local'
-			? s.activeLocalModelFilename || null
-			: s.inferenceBackend.remoteModelId || null;
-	}
 
 	function badges(tool: McpToolDescriptor): string[] {
 		const a = tool.annotations;

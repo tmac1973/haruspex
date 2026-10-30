@@ -527,6 +527,11 @@ export interface AppSettings {
 	 */
 	leanMode: boolean;
 	/**
+	 * The one-time offer of lean mode has been made: by the setup wizard's
+	 * Lean or Full step, or to an existing user by the notice.
+	 */
+	leanNoticeShown: boolean;
+	/**
 	 * Master switch for screen capture. Off by default: an assistant that can
 	 * see the screen is a different thing from one that cannot, and that has
 	 * to be a decision the user made rather than one they inherited.
@@ -1043,6 +1048,7 @@ const defaults: AppSettings = {
 	activeLocalModelFilename: '',
 	legacyModelNoticeDismissed: false,
 	leanMode: false,
+	leanNoticeShown: false,
 	screenCaptureEnabled: false,
 	screenCaptureConfirm: true,
 	agentFeedbackEnabled: false,
