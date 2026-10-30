@@ -19,6 +19,10 @@ After that, Settings → General → Lean mode. While it is on, a **Lean mode** 
 
 The switch can't be turned on while a Code or Shell turn is running. Finish or stop the turn first. Turning it off works at any time.
 
+If you set Haruspex up before lean mode existed, it offers lean mode once, in a card at the bottom left, when the same rule fits your model or machine. **Not now** closes it for good.
+
+If you switch to a bigger model while lean mode is on (one over 9B, or a remote model whose name doesn't give a size), the badge shows a dot: that model can run the full app. The dot shows once for each model, and never for the model you turned lean mode on with.
+
 ## What Chat can still do
 
 - Search the web, read pages, and find images to show in an answer.

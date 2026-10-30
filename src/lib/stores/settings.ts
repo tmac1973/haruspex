@@ -532,6 +532,11 @@ export interface AppSettings {
 	 */
 	leanNoticeShown: boolean;
 	/**
+	 * Models the header badge has already suggested the full app for, or that
+	 * were in use when lean mode was switched: each gets the hint once at most.
+	 */
+	leanHintedModels: string[];
+	/**
 	 * Master switch for screen capture. Off by default: an assistant that can
 	 * see the screen is a different thing from one that cannot, and that has
 	 * to be a decision the user made rather than one they inherited.
@@ -1049,6 +1054,7 @@ const defaults: AppSettings = {
 	legacyModelNoticeDismissed: false,
 	leanMode: false,
 	leanNoticeShown: false,
+	leanHintedModels: [],
 	screenCaptureEnabled: false,
 	screenCaptureConfirm: true,
 	agentFeedbackEnabled: false,
@@ -1900,6 +1906,12 @@ export function setLeanMode(on: boolean): void {
 	if (settings.leanMode !== on) {
 		commit({ ...settings, leanMode: on });
 	}
+}
+
+/** Never suggest the full app for `modelId` again (`lean/nudges.ts`). */
+export function markLeanHinted(modelId: string | null): void {
+	if (!modelId || settings.leanHintedModels.includes(modelId)) return;
+	commit({ ...settings, leanHintedModels: [...settings.leanHintedModels, modelId] });
 }
 
 export interface SamplingOptions {

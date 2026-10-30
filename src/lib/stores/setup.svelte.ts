@@ -14,6 +14,7 @@ import { activeModelId, recommendLean, type LeanReason } from '#lib/lean/recomme
 import {
 	getActiveLocalModelFilename,
 	getSettings,
+	markLeanHinted,
 	setActiveLocalModel,
 	updateSettings
 } from '#lib/stores/settings.ts';
@@ -68,6 +69,8 @@ let models = $state<ModelInfo[]>([]);
 let leanChoice = $state(false);
 let leanReason = $state<LeanReason>(null);
 let modeRemote = $state(false);
+// The model the step judged, which lean mode is chosen (or not) for.
+let modeModelId: string | null = null;
 // The model and context this wizard run last started the server with. A
 // server already up when the wizard was opened from Settings holds the old
 // model and context, so the first test restarts it; later retries don't.
@@ -121,17 +124,20 @@ export function isModeRemote(): boolean {
  * nothing about it.
  */
 export function enterModeStep(remote: boolean, remoteModelId: string | null = null): void {
-	const rec = remote
-		? recommendLean({ modelId: remoteModelId, hardware: null })
-		: recommendLean({ modelId: activeModelId(), hardware });
+	modeModelId = remote ? remoteModelId : activeModelId();
+	const rec = recommendLean({ modelId: modeModelId, hardware: remote ? null : hardware });
 	leanChoice = rec.lean;
 	leanReason = rec.reason;
 	modeRemote = remote;
 	step = 'mode';
 }
 
-/** Save the step's choice. The offer has been made, so no notice repeats it. */
+/**
+ * Save the step's choice. The offer has been made, so no notice repeats it,
+ * and the model it was made for never gets the badge's full-app hint.
+ */
 export function confirmMode(): void {
+	markLeanHinted(modeModelId);
 	updateSettings({ leanMode: leanChoice, leanNoticeShown: true });
 }
 
@@ -478,4 +484,5 @@ export function resetSetup(): void {
 	leanChoice = false;
 	leanReason = null;
 	modeRemote = false;
+	modeModelId = null;
 }
