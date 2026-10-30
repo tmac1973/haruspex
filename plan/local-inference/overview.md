@@ -48,7 +48,7 @@ no way up.
 | Who gets RAM offload | **Opt-in.** Default stays all-in-VRAM (`-ngl 99`), as today. |
 | The switch | **Repurpose `allowSpillToSystemRam`.** On = omit `--n-gpu-layers` so llama.cpp `--fit` places layers and experts. No new setting. |
 | Wizard | **Show MoE-with-offload as an alternative** beside the VRAM-fit recommendation, not as the default. Choosing it turns the switch on. |
-| llama.cpp version | **v0.6.0**, keep tracking stable `vX.Y.Z` tags; build fails instead of falling back to master. |
+| llama.cpp version | **v0.8.0**, keep tracking stable `vX.Y.Z` tags; build fails instead of falling back to master. |
 | Parallel streams | **Default 1**, Settings choice for 2 or 4 (unified KV). Local queue lane capacity follows. |
 | Prompt cache RAM | **We set `--cache-ram`**, scaled to RAM left after offload, capped at 2 GiB. |
 | Power-user escape hatch | **Extra llama-server arguments** text field, appended last. |
