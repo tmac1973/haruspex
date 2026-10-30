@@ -201,9 +201,9 @@ describe('fs_read tools in Shell mode', () => {
 			codeMode: true
 		});
 		const names = schemas.map((s) => s.function.name);
-		expect(names).not.toContain('fs_write_pdf');
-		expect(names).not.toContain('fs_write_docx');
-		expect(names).not.toContain('fs_write_xlsx');
+		expect(names).not.toContain('fs_write_document');
+		expect(names).not.toContain('fs_write_spreadsheet');
+		expect(names).not.toContain('fs_write_slides');
 		expect(names).not.toContain('fs_download_url');
 		expect(names).not.toContain('run_python');
 	});

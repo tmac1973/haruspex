@@ -8,7 +8,7 @@ import {
 	toolInvokeError,
 	wslDistroArg
 } from '#lib/agent/tools/_helpers.ts';
-import { registerTool } from '#lib/agent/tools/registry.ts';
+import { registerTool, registerToolAlias } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult } from '#lib/agent/tools/types.ts';
 import type { ToolContext, ToolExecOutput } from '#lib/agent/tools/types.ts';
 import { IMAGE_EXT_RE } from '#lib/agent/tools/fs-read.ts';
@@ -182,9 +182,11 @@ export function userCanceledWriteError(relPath: string, command: string): ToolEx
 
 /**
  * Generic write wrapper — deduplicates the resolve/invoke/track pattern
- * shared by all fs_write_* tools.
+ * shared by all fs_write_* tools. `tool` names the write in what the model
+ * reads; `command` is the Rust command that writes the format.
  */
 async function fsWriteWithConflictCheck(
+	tool: string,
 	command: string,
 	workdir: string,
 	relPath: string,
@@ -194,7 +196,7 @@ async function fsWriteWithConflictCheck(
 	diffAfter?: string
 ): Promise<ToolExecOutput> {
 	const resolved = await resolveWritePathInteractive(workdir, relPath, filesWrittenThisTurn, opts);
-	if (resolved.kind === 'canceled') return userCanceledWriteError(relPath, command);
+	if (resolved.kind === 'canceled') return userCanceledWriteError(relPath, tool);
 	if (resolved.kind === 'rejected') return toolResult(toolError(resolved.message));
 	const before = diffAfter === undefined ? undefined : await previousContent(workdir, resolved);
 	try {
@@ -213,8 +215,76 @@ async function fsWriteWithConflictCheck(
 		}
 		return out;
 	} catch (e) {
-		return toolResult(toolInvokeError(command, e));
+		return toolResult(toolInvokeError(tool, e));
 	}
+}
+
+/** The Rust command a write runs, or why the path can't be written by this tool. */
+type CommandChoice = { command: string } | { error: string };
+
+/**
+ * The merged writers take several formats, and the path's extension picks
+ * one: `fs_write_document` writes report.pdf as a PDF and report.docx as Word.
+ * `hint` points a path the tool can't write at the tool that can.
+ */
+function byExtension(
+	tool: string,
+	formats: Record<string, string>,
+	hint = ''
+): (path: unknown) => CommandChoice {
+	return (path) => {
+		const ext = typeof path === 'string' ? (/\.([^./\\]+)$/.exec(path)?.[1] ?? '') : '';
+		const key = ext.toLowerCase();
+		if (Object.hasOwn(formats, key)) return { command: formats[key] };
+		const list = Object.keys(formats)
+			.map((e) => `.${e}`)
+			.join(', ');
+		return { error: `${tool} writes ${list} files: end the path with one of those.${hint}` };
+	};
+}
+
+const DOCUMENT_FORMATS = {
+	docx: IPC.fs_write_docx,
+	odt: IPC.fs_write_odt,
+	pdf: IPC.fs_write_pdf
+};
+const SPREADSHEET_FORMATS = { xlsx: IPC.fs_write_xlsx, ods: IPC.fs_write_ods };
+const SLIDE_FORMATS = { pptx: IPC.fs_write_pptx, odp: IPC.fs_write_odp };
+
+const documentCommand = byExtension(
+	'fs_write_document',
+	DOCUMENT_FORMATS,
+	' For .md or .txt use fs_write_text.'
+);
+const spreadsheetCommand = byExtension(
+	'fs_write_spreadsheet',
+	SPREADSHEET_FORMATS,
+	' For .csv use fs_write_text.'
+);
+const slidesCommand = byExtension('fs_write_slides', SLIDE_FORMATS);
+
+/**
+ * The tools the merged writers replaced, by name and the extension each one
+ * wrote. A model may still call them (an old conversation, a habit), so each
+ * routes to its replacement with the format it always wrote: a path with
+ * another extension gets that one added.
+ */
+export const LEGACY_WRITE_TOOLS: Record<string, { tool: string; ext: string }> = {
+	fs_write_docx: { tool: 'fs_write_document', ext: 'docx' },
+	fs_write_odt: { tool: 'fs_write_document', ext: 'odt' },
+	fs_write_pdf: { tool: 'fs_write_document', ext: 'pdf' },
+	fs_write_xlsx: { tool: 'fs_write_spreadsheet', ext: 'xlsx' },
+	fs_write_ods: { tool: 'fs_write_spreadsheet', ext: 'ods' },
+	fs_write_pptx: { tool: 'fs_write_slides', ext: 'pptx' },
+	fs_write_odp: { tool: 'fs_write_slides', ext: 'odp' }
+};
+
+function withExtension(ext: string) {
+	return (args: Record<string, unknown>): Record<string, unknown> => {
+		if (typeof args.path !== 'string') return args;
+		if (args.path.toLowerCase().endsWith(`.${ext}`)) return args;
+		return { ...args, path: `${args.path}.${ext}` };
+	};
 }
 
 /**
@@ -241,19 +311,18 @@ async function previousContent(
 // file and reported "Wrote: foo" — without them, scaffold/placeholder
 // inputs silently produce useless files.
 
-// Shared sheet schema used by both xlsx and ods.
+// Sheet schema for fs_write_spreadsheet (.xlsx and .ods).
 const SHEETS_SCHEMA = {
 	type: 'array' as const,
 	description:
-		'Array of sheet objects. Each sheet has a name and rows. rows is a 2D array of LITERAL cell values — there is no templating, no variable substitution, no server-side expansion. Pass the actual data you want written. Numeric strings (e.g. "42", "3.14") auto-convert to numbers; strings starting with "=" become spreadsheet formulas (e.g. "=SUM(B2:B10)"); everything else is plain text. Row 1 is typically your header row.',
+		'One object per sheet. Cells are literal values: numeric strings become numbers, strings starting with "=" become formulas (e.g. "=SUM(B2:B10)"), anything else is text.',
 	items: {
 		type: 'object' as const,
 		properties: {
-			name: { type: 'string' as const, description: 'Sheet name (tab label)' },
+			name: { type: 'string' as const, description: 'Sheet (tab) name.' },
 			rows: {
 				type: 'array' as const,
-				description:
-					'2D array: array of rows, each row is an array of cell values as strings. Example: [["Name","Score"],["Alice","95"],["Bob","87"]]. The first inner array is the header row; subsequent arrays are data rows. Pass every row you want in the file — the tool does not generate rows for you.',
+				description: 'Every row to write, header row first. Each row is a list of cells.',
 				items: { type: 'array' as const, items: { type: 'string' as const } }
 			}
 		},
@@ -442,15 +511,18 @@ function validateSheet(raw: unknown, sheetNum: number): string | null {
 	return null;
 }
 
-function spreadsheetWriteExecutor(command: string) {
+function spreadsheetWriteExecutor() {
 	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
+		const choice = spreadsheetCommand(args.path);
+		if ('error' in choice) return toolResult(toolError(choice.error));
 		const sheets = normalizeSheets(args.sheets);
 		const validationError = validateSheets(sheets);
 		if (validationError) {
 			return toolResult(toolError(validationError));
 		}
 		return fsWriteWithConflictCheck(
-			command,
+			'fs_write_spreadsheet',
+			choice.command,
 			fsWorkdir(ctx)!,
 			args.path as string,
 			{ sheets },
@@ -462,7 +534,7 @@ function spreadsheetWriteExecutor(command: string) {
 
 /**
  * Reject empty or whitespace-only content for the text-based writers
- * (text/docx/odt/pdf). Without this guard the tool writes a zero-byte
+ * (fs_write_text, fs_write_document). Without this guard the tool writes a zero-byte
  * file and reports success, which an unattended job has no way to
  * notice.
  */
@@ -477,25 +549,22 @@ function validateTextContent(args: Record<string, unknown>, label: string): stri
 	return null;
 }
 
-function textWriteExecutor(
-	command: string,
-	label: string,
-	payload: (args: Record<string, unknown>) => Record<string, unknown> = (args) => ({
-		content: args.content
-	})
-) {
+function textWriteExecutor(tool: string, commandFor: (path: unknown) => CommandChoice) {
 	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
-		const err = validateTextContent(args, label);
+		const choice = commandFor(args.path);
+		if ('error' in choice) return toolResult(toolError(choice.error));
+		const err = validateTextContent(args, tool);
 		if (err) return toolResult(toolError(err));
 		return fsWriteWithConflictCheck(
-			command,
+			tool,
+			choice.command,
 			fsWorkdir(ctx)!,
 			args.path as string,
-			payload(args),
+			{ content: args.content },
 			ctx.filesWrittenThisTurn,
 			writeOptions(ctx),
 			// The Code tab shows each write as a diff against what was there.
-			ctx.codeSessionId && command === IPC.fs_write_text ? (args.content as string) : undefined
+			ctx.codeSessionId && tool === 'fs_write_text' ? (args.content as string) : undefined
 		);
 	};
 }
@@ -507,7 +576,7 @@ function textWriteExecutor(
  * (the plain Shell assistant is read-only and never reaches here).
  */
 function shellAwareWriteText() {
-	const chat = textWriteExecutor(IPC.fs_write_text, 'fs_write_text');
+	const chat = textWriteExecutor('fs_write_text', () => ({ command: IPC.fs_write_text }));
 	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
 		const rootErr = writeRootError(args.path, ctx);
 		if (rootErr) return toolResult(toolError(rootErr));
@@ -678,12 +747,15 @@ function prepareSlides(raw: unknown): { slides?: unknown[]; error?: string } {
 	return { slides: prepared };
 }
 
-function slidesWriteExecutor(command: string) {
+function slidesWriteExecutor() {
 	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
+		const choice = slidesCommand(args.path);
+		if ('error' in choice) return toolResult(toolError(choice.error));
 		const { slides, error } = prepareSlides(args.slides);
 		if (error) return toolResult(toolError(error));
 		return fsWriteWithConflictCheck(
-			command,
+			'fs_write_slides',
+			choice.command,
 			fsWorkdir(ctx)!,
 			args.path as string,
 			{ slides },
@@ -693,31 +765,24 @@ function slidesWriteExecutor(command: string) {
 	};
 }
 
-// Shared slide schema used by both pptx and odp
+// Slide schema for fs_write_slides (.pptx and .odp).
 const SLIDE_SCHEMA = {
 	type: 'array' as const,
-	description: 'Array of slide objects.',
+	description: 'One object per slide.',
 	items: {
 		type: 'object' as const,
 		properties: {
-			title: {
-				type: 'string' as const,
-				description: 'Short slide title (~8 words max).'
-			},
+			title: { type: 'string' as const, description: 'Short slide title (~8 words).' },
 			layout: {
 				type: 'string' as const,
 				enum: ['content', 'section'],
 				description:
-					'"content" (default): title + bullets (+ optional image). "section": big centered title used as a divider; put the section headline in `title` and an optional short tagline in `subtitle`.'
+					'"content" (default): title and bullets. "section": a divider with a big title and an optional subtitle.'
 			},
-			subtitle: {
-				type: 'string' as const,
-				description: 'Optional short tagline shown below the main title on section slides.'
-			},
+			subtitle: { type: 'string' as const, description: 'Tagline under a section title.' },
 			bullets: {
 				type: 'array' as const,
-				description:
-					'Bullet points for content slides. Each entry is either a plain string (level 0) or an object { "text": "...", "level": 0|1|2 } for nested bullets.',
+				description: 'Strings, or {"text", "level": 0-2} for nested bullets.',
 				items: {
 					oneOf: [
 						{ type: 'string' as const },
@@ -725,12 +790,7 @@ const SLIDE_SCHEMA = {
 							type: 'object' as const,
 							properties: {
 								text: { type: 'string' as const },
-								level: {
-									type: 'integer' as const,
-									minimum: 0,
-									maximum: 2,
-									description: 'Indent depth. 0 = top level, 1 = sub-bullet, 2 = sub-sub-bullet.'
-								}
+								level: { type: 'integer' as const, minimum: 0, maximum: 2 }
 							},
 							required: ['text']
 						}
@@ -739,8 +799,7 @@ const SLIDE_SCHEMA = {
 			},
 			image: {
 				type: 'string' as const,
-				description:
-					'Optional relative path to an image file inside the working directory (png/jpg/jpeg/gif).'
+				description: 'Optional image path in the working directory (png/jpg/jpeg/gif).'
 			}
 		},
 		required: ['title']
@@ -783,22 +842,26 @@ registerTool({
 	execute: shellAwareWriteText()
 });
 
+// One tool per content shape; the path's extension picks the format. These
+// replaced seven per-format tools whose schemas were a third of Chat's tool
+// list. Offered whether or not the Python sandbox is on; the system prompt
+// steers the model here rather than to fpdf2 or python-pptx.
 registerTool({
 	category: 'fs',
 	schema: {
 		type: 'function',
 		function: {
-			name: 'fs_write_docx',
+			name: 'fs_write_document',
 			description:
-				'Create a Microsoft Word (.docx) file in the working directory from text content. The content is split into paragraphs on newlines. Lines starting with # become Heading 1, ## become Heading 2, ### become Heading 3. Embed images with `![alt](path)` on a line by itself; add an optional title to control alignment and width, e.g. `![alt](path "center 50%")`. Everything else is regular body text.',
+				"Create a Word (.docx), PDF (.pdf) or LibreOffice (.odt) document from markdown. The path's extension picks the format; use .odt only when the user asks for it.",
 			parameters: {
 				type: 'object',
 				properties: {
-					path: { type: 'string', description: 'Relative path for the new .docx file.' },
+					path: { type: 'string', description: 'Relative path ending in .docx, .pdf or .odt.' },
 					content: {
 						type: 'string',
 						description:
-							'Text content for the document. Use newlines between paragraphs. Prefix lines with # / ## / ### for headings. Embed an image with `![alt](path)` on a line by itself — the path is workdir-relative and must end in .png / .jpg / .jpeg / .gif. Optional layout: `![alt](path "center 50%")` accepts `left|center|right` and/or a width percentage 5–100% in the title; unknown tokens are ignored.'
+							'The whole document as markdown. Headings: # / ## / ###. Paragraphs separated by blank lines; prefer prose to bullet lists. Image: `![alt](path)` on its own line, a workdir-relative .png/.jpg/.jpeg/.gif; a title like `"center 50%"` sets alignment (left|center|right) and width (5–100%). PDF also renders bold, italic, code, `- ` lists and tables; .docx and .odt write other lines as plain paragraphs.'
 					}
 				},
 				required: ['path', 'content']
@@ -806,36 +869,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: textWriteExecutor(IPC.fs_write_docx, 'fs_write_docx')
-});
-
-// Markdown→PDF tool. Always exposed (the Python toggle no longer hides
-// it). Better choice than fpdf2-via-run_python for documents — see the
-// system prompt's Python sandbox section.
-registerTool({
-	category: 'fs',
-	schema: {
-		type: 'function',
-		function: {
-			name: 'fs_write_pdf',
-			description:
-				'Create a PDF report from markdown content. Use # / ## / ### for headings. Supports bold, italic, code, bullet lists, markdown tables, and embedded images via `![alt](path)` on a line by itself; add an optional title to control alignment and width, e.g. `![alt](path "center 50%")`. Write flowing prose organized by sections — prefer paragraphs over bullet lists.',
-			parameters: {
-				type: 'object',
-				properties: {
-					path: { type: 'string', description: 'Relative path for the new .pdf file.' },
-					content: {
-						type: 'string',
-						description:
-							'Report content as markdown-style text. Headings use `#`/`##`/`###` (never `**Bold**` alone). Body is flowing paragraphs separated by blank lines. `- item` bullets ONLY for lists of 3+ related items. Markdown tables render as real tables — use them for genuinely tabular data with short cell contents. Embed images with `![alt](path)` on a line by itself; the path is workdir-relative and must end in .png / .jpg / .jpeg / .gif. Optional layout: `![alt](path "center 50%")` accepts `left|center|right` and/or a width percentage 5–100% in the title; unknown tokens are ignored. Do not use `---` for page breaks; page flow is automatic.'
-					}
-				},
-				required: ['path', 'content']
-			}
-		}
-	},
-	displayLabel: labelArg('path'),
-	execute: textWriteExecutor(IPC.fs_write_pdf, 'fs_write_pdf')
+	execute: textWriteExecutor('fs_write_document', documentCommand)
 });
 
 registerTool({
@@ -843,17 +877,13 @@ registerTool({
 	schema: {
 		type: 'function',
 		function: {
-			name: 'fs_write_xlsx',
+			name: 'fs_write_spreadsheet',
 			description:
-				'Create an Excel spreadsheet (.xlsx) file in the working directory. ' +
-				'Compute your data FIRST (e.g. via run_python), then pass the actual row arrays here. ' +
-				'There is no templating or server-side expansion — every row you want in the file must be in the `rows` argument. ' +
-				'Numeric strings auto-convert to numbers, strings starting with "=" become formulas, everything else is text. ' +
-				'Example: sheets=[{name:"Data",rows:[["N","F(N)"],["1","0"],["2","1"],["3","1"]]}].',
+				'Create an Excel (.xlsx) or LibreOffice (.ods) spreadsheet. The path\'s extension picks the format; use .ods only when the user asks for it. Compute the data first (e.g. with run_python) and pass every row: the tool fills in nothing. Example: sheets=[{name:"Data",rows:[["N","F(N)"],["1","0"],["2","1"]]}].',
 			parameters: {
 				type: 'object',
 				properties: {
-					path: { type: 'string', description: 'Relative path for the new .xlsx file.' },
+					path: { type: 'string', description: 'Relative path ending in .xlsx or .ods.' },
 					sheets: SHEETS_SCHEMA
 				},
 				required: ['path', 'sheets']
@@ -861,7 +891,7 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: spreadsheetWriteExecutor(IPC.fs_write_xlsx)
+	execute: spreadsheetWriteExecutor()
 });
 
 registerTool({
@@ -869,63 +899,13 @@ registerTool({
 	schema: {
 		type: 'function',
 		function: {
-			name: 'fs_write_odt',
+			name: 'fs_write_slides',
 			description:
-				'Create an OpenDocument Text (.odt) file for LibreOffice Writer. Same API as fs_write_docx, including `![alt](path)` image embedding with optional `"center 50%"` title for alignment/width. Only use when the user asks for ODT specifically.',
+				"Create a PowerPoint (.pptx) or LibreOffice (.odp) slide deck. The path's extension picks the format; use .odp only when the user asks for it.",
 			parameters: {
 				type: 'object',
 				properties: {
-					path: { type: 'string', description: 'Relative path for the new .odt file.' },
-					content: {
-						type: 'string',
-						description:
-							'Text content. Use newlines between paragraphs. Prefix lines with # / ## / ### for headings. Embed an image with `![alt](path)` on a line by itself — the path is workdir-relative and must end in .png / .jpg / .jpeg / .gif. Optional layout: `![alt](path "center 50%")` accepts `left|center|right` and/or a width percentage 5–100% in the title; unknown tokens are ignored.'
-					}
-				},
-				required: ['path', 'content']
-			}
-		}
-	},
-	displayLabel: labelArg('path'),
-	execute: textWriteExecutor(IPC.fs_write_odt, 'fs_write_odt')
-});
-
-registerTool({
-	category: 'fs',
-	schema: {
-		type: 'function',
-		function: {
-			name: 'fs_write_ods',
-			description:
-				'Create an OpenDocument Spreadsheet (.ods) for LibreOffice Calc. Same API as fs_write_xlsx. Only use when the user asks for ODS specifically.',
-			parameters: {
-				type: 'object',
-				properties: {
-					path: { type: 'string', description: 'Relative path for the new .ods file.' },
-					sheets: SHEETS_SCHEMA
-				},
-				required: ['path', 'sheets']
-			}
-		}
-	},
-	displayLabel: labelArg('path'),
-	execute: spreadsheetWriteExecutor(IPC.fs_write_ods)
-});
-
-// Hand-rolled OOXML PPTX writer. Offered whether or not the Python sandbox
-// is on; the system prompt steers the model here rather than to python-pptx.
-registerTool({
-	category: 'fs',
-	schema: {
-		type: 'function',
-		function: {
-			name: 'fs_write_pptx',
-			description:
-				'Create a PowerPoint presentation. Each slide has a title and optional bullets (strings or {text, level} for nesting). Use layout "section" for divider slides. Optional per-slide image path from the working directory.',
-			parameters: {
-				type: 'object',
-				properties: {
-					path: { type: 'string', description: 'Relative path for the new .pptx file.' },
+					path: { type: 'string', description: 'Relative path ending in .pptx or .odp.' },
 					slides: SLIDE_SCHEMA
 				},
 				required: ['path', 'slides']
@@ -933,30 +913,12 @@ registerTool({
 		}
 	},
 	displayLabel: labelArg('path'),
-	execute: slidesWriteExecutor(IPC.fs_write_pptx)
+	execute: slidesWriteExecutor()
 });
 
-registerTool({
-	category: 'fs',
-	schema: {
-		type: 'function',
-		function: {
-			name: 'fs_write_odp',
-			description:
-				'Create an OpenDocument Presentation (.odp) for LibreOffice Impress. Same API as fs_write_pptx. Only use when the user asks for ODP specifically.',
-			parameters: {
-				type: 'object',
-				properties: {
-					path: { type: 'string', description: 'Relative path for the new .odp file.' },
-					slides: SLIDE_SCHEMA
-				},
-				required: ['path', 'slides']
-			}
-		}
-	},
-	displayLabel: labelArg('path'),
-	execute: slidesWriteExecutor(IPC.fs_write_odp)
-});
+for (const [alias, { tool, ext }] of Object.entries(LEGACY_WRITE_TOOLS)) {
+	registerToolAlias(alias, tool, withExtension(ext));
+}
 
 registerTool({
 	category: 'fs',

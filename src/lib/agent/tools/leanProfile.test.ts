@@ -116,7 +116,7 @@ describe('lean mode tool profile', () => {
 		lean.on = false;
 		const offered = names(CHAT);
 		expect(offered).toContain('run_python');
-		expect(offered).toContain('fs_write_docx');
+		expect(offered).toContain('fs_write_document');
 		expect(offered.some((n) => n.includes('list_pull_requests'))).toBe(true);
 	});
 });

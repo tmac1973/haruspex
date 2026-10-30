@@ -57,7 +57,7 @@ function executor(name: string) {
 }
 
 function pptx(slides: unknown): Promise<ToolExecOutput> {
-	return executor('fs_write_pptx')({ path: 'd.pptx', slides }, ctx);
+	return executor('fs_write_slides')({ path: 'd.pptx', slides }, ctx);
 }
 
 function errorOf(out: ToolExecOutput): string {
@@ -259,9 +259,9 @@ describe('the input is left alone', () => {
 	});
 });
 
-describe('fs_write_odp', () => {
+describe('an .odp path', () => {
 	it('runs the same preparation and writes through its own command', async () => {
-		const out = await executor('fs_write_odp')(
+		const out = await executor('fs_write_slides')(
 			{ path: 'd.odp', slides: '[{"title":"T","bullets":"a\\nb"}]' },
 			ctx
 		);
@@ -271,7 +271,7 @@ describe('fs_write_odp', () => {
 	});
 
 	it('rejects the same scaffolds', async () => {
-		const out = await executor('fs_write_odp')({ path: 'd.odp', slides: [{ title: ' ' }] }, ctx);
+		const out = await executor('fs_write_slides')({ path: 'd.odp', slides: [{ title: ' ' }] }, ctx);
 		expect(errorOf(out)).toMatch(/^Slide 1 has no title/);
 	});
 });
@@ -284,7 +284,7 @@ describe('backend failure', () => {
 			})
 		);
 		const out = await pptx([{ title: 'T', image: 'chart.png' }]);
-		expect(errorOf(out)).toBe('fs_write_pptx failed: image not found: chart.png');
+		expect(errorOf(out)).toBe('fs_write_slides failed: image not found: chart.png');
 		expect(ctx.filesWrittenThisTurn.size).toBe(0);
 	});
 });

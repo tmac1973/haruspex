@@ -32,10 +32,10 @@ beforeEach(() => {
 
 async function callXlsx(args: unknown) {
 	const { executeTool } = await import('#lib/agent/tools/index.ts');
-	return executeTool('fs_write_xlsx', args as Record<string, unknown>, ctx);
+	return executeTool('fs_write_spreadsheet', args as Record<string, unknown>, ctx);
 }
 
-describe('fs_write_xlsx input validation', () => {
+describe('fs_write_spreadsheet input validation', () => {
 	it('rejects an empty sheets array without invoking the backend', async () => {
 		const out = await callXlsx({ path: 'out.xlsx', sheets: [] });
 		expect(JSON.parse(out.result).error).toMatch(/non-empty array/i);

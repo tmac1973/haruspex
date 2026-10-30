@@ -322,8 +322,8 @@ export function tryFileWriteRecovery(
 			response,
 			'You have not emitted an fs_write_* tool call this turn, so nothing has been ' +
 				'written or changed. If the file needs writing or changing, emit that call ' +
-				'now — fs_write_text for markdown or plain text, or fs_write_pdf / ' +
-				'fs_write_docx / fs_write_xlsx for a binary document — with the complete ' +
+				'now — fs_write_text for markdown or plain text, or fs_write_document / ' +
+				'fs_write_spreadsheet / fs_write_slides for a binary document — with the complete ' +
 				'content as the `content` argument and a short relative path, as a ' +
 				'tool_calls block rather than a description of one. If the file is already ' +
 				'correct and genuinely needs no change, say so directly instead of ' +

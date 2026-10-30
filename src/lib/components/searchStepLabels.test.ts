@@ -9,6 +9,7 @@ describe('stepLabel', () => {
 
 	it('uses the per-tool prefix for the rest', () => {
 		expect(stepLabel('fetch_url', 'https://x')).toBe('Reading: https://x');
+		expect(stepLabel('fs_write_document', 'r.pdf')).toBe('Writing document: r.pdf');
 		expect(stepLabel('fs_write_pdf', 'r.pdf')).toBe('Writing pdf: r.pdf');
 		expect(stepLabel('fs_read_xlsx', 'data.xlsx')).toBe('Reading xlsx: data.xlsx');
 		expect(stepLabel('fs_edit_text', 'a.txt')).toBe('Editing: a.txt');

@@ -1,7 +1,7 @@
 /**
  * File-conflict prompt store.
  *
- * When a write tool (fs_write_pdf, fs_write_pptx, fs_download_url, etc.)
+ * When a write tool (fs_write_document, fs_write_slides, fs_download_url, etc.)
  * is about to overwrite an existing file, the frontend pauses the tool
  * call and asks the user what to do. This store is the bridge between
  * the code driving the tool call and the modal UI:

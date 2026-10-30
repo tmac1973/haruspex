@@ -91,7 +91,7 @@ function executor(name: string) {
 
 /** Call the xlsx executor directly, with the model's arguments as-is. */
 function xlsx(sheets: unknown, path = 'out.xlsx'): Promise<ToolExecOutput> {
-	return executor('fs_write_xlsx')({ path, sheets }, ctx);
+	return executor('fs_write_spreadsheet')({ path, sheets }, ctx);
 }
 
 function errorOf(out: ToolExecOutput): string {
@@ -160,7 +160,7 @@ describe('sheets sent as a JSON string', () => {
 describe('through executeTool (schema coercion first)', () => {
 	async function viaRegistry(sheets: unknown) {
 		const { executeTool } = await import('./registry');
-		return executeTool('fs_write_xlsx', { path: 'out.xlsx', sheets }, ctx);
+		return executeTool('fs_write_spreadsheet', { path: 'out.xlsx', sheets }, ctx);
 	}
 
 	it('wraps a single bare sheet object into a one-sheet array', async () => {
@@ -376,9 +376,10 @@ describe('placeholder rows', () => {
 	});
 });
 
-describe('fs_write_ods', () => {
+describe('an .ods path', () => {
 	it('runs the same validation, then writes through its own command', async () => {
-		const ods = (sheets: unknown) => executor('fs_write_ods')({ path: 'o.ods', sheets }, ctx);
+		const ods = (sheets: unknown) =>
+			executor('fs_write_spreadsheet')({ path: 'o.ods', sheets }, ctx);
 		expect(errorOf(await ods([]))).toMatch(/non-empty array/);
 		expect((await ods(GOOD)).result).toBe('Wrote: o.ods');
 		expect(disk.written[0].command).toBe('fs_write_ods');
@@ -396,14 +397,14 @@ describe('write conflicts and failures', () => {
 	it('reports a backend write failure and does not count the file as written', async () => {
 		disk.writeError = new Error('disk full');
 		const out = await xlsx(GOOD);
-		expect(errorOf(out)).toBe('fs_write_xlsx failed: disk full');
+		expect(errorOf(out)).toBe('fs_write_spreadsheet failed: disk full');
 		expect(ctx.filesWrittenThisTurn.has('out.xlsx')).toBe(false);
 	});
 
 	it('reports a non-Error rejection as text', async () => {
 		disk.writeError = 'locked by another process';
 		const out = await xlsx(GOOD);
-		expect(errorOf(out)).toBe('fs_write_xlsx failed: locked by another process');
+		expect(errorOf(out)).toBe('fs_write_spreadsheet failed: locked by another process');
 	});
 
 	it('refuses a second spreadsheet write to the same path in one turn', async () => {
@@ -433,7 +434,9 @@ describe('write conflicts and failures', () => {
 		disk.exists = true;
 		mocks.askFileConflict.mockResolvedValue('cancel');
 		const out = await xlsx(GOOD);
-		expect(errorOf(out)).toMatch(/^User canceled the fs_write_xlsx write\. The file "out\.xlsx"/);
+		expect(errorOf(out)).toMatch(
+			/^User canceled the fs_write_spreadsheet write\. The file "out\.xlsx"/
+		);
 		expect(disk.written).toHaveLength(0);
 	});
 

@@ -26,13 +26,13 @@ While one conversation answers, send in another, or send more in the same one to
 Click the folder icon in the chat box to pick a working directory. The assistant can then read and write files there, only there. With no folder set, it has no file access at all. Each chat keeps its own; a new chat starts in the last one picked.
 
 - **Reads:** plain text, Markdown, CSV, JSON, YAML, TOML, PDF (text, or as page images for scans), Word `.docx`, Excel `.xlsx`, and images.
-- **Writes:** text files and edits to them, Word `.docx`, OpenDocument `.odt`/`.ods`/`.odp`, Excel `.xlsx`, PowerPoint `.pptx` and PDF. Presentations are experimental.
+- **Writes:** text files and edits to them, PDF, Word `.docx`, Excel `.xlsx`, PowerPoint `.pptx` and OpenDocument `.odt`/`.ods`/`.odp`. The file's extension picks the format. Slides are experimental.
 - **Downloads:** files from a web address into the folder (50 MB limit, programs blocked).
 - **Cannot:** delete or move files, run scripts, or touch anything outside the folder.
 
 If a file already exists, the assistant stops and asks: **Overwrite**, **Keep both** (saves under a new name) or **Cancel**.
 
-Small models often research and then forget to write the file, sometimes claiming they did. Ask again ("write that to a PDF").
+Small models often research, then forget to write the file or claim they did. Ask again ("write that to a PDF").
 
 ## Run Python for charts, maths and documents
 

@@ -97,7 +97,7 @@ FILESYSTEM ACCESS:
 - ${
 				lean
 					? 'You can read files here but not create or change them. Put what the user asked for in your reply.'
-					: 'When the user asks you to create a file (PDF, docx, xlsx, etc.), do your research and call the appropriate fs_write_* tool with complete content IN THE SAME TURN. Do not dump the content as a chat message instead.'
+					: 'When the user asks you to create a file (PDF, docx, xlsx, etc.), do your research and call fs_write_document, fs_write_spreadsheet or fs_write_slides with complete content IN THE SAME TURN. Do not dump the content as a chat message instead.'
 			}`
 		: '';
 
@@ -170,7 +170,7 @@ PYTHON SANDBOX:
 - Variables, imports, and installed packages persist across run_python calls within this chat. Build on prior state instead of reimporting every call.
 - numpy, pandas, matplotlib, scipy, scikit-learn, sympy, pillow, beautifulsoup4, requests and plotly are bundled: just import them. Other packages install automatically on first import.
 - Charts you draw in run_python show in the chat on their own. Never link to an image file in your reply: it will not display.
-- Do NOT use run_python to create PDFs, Word docs, PowerPoint decks, or spreadsheets. The dedicated fs_write_pdf / fs_write_pptx / fs_write_docx / fs_write_xlsx / fs_write_odt / fs_write_ods / fs_write_odp tools produce much better output than fpdf2 / python-pptx scripts. Use Python for the analysis or chart generation, save any plots as PNG files in the working directory with matplotlib's savefig, and then call the appropriate fs_write_* tool with the text/structured content (referencing the saved chart paths where the format supports embedded images).
+- Do NOT use run_python to create PDFs, Word docs, PowerPoint decks, or spreadsheets. fs_write_document (.pdf/.docx/.odt), fs_write_spreadsheet (.xlsx/.ods) and fs_write_slides (.pptx/.odp) produce much better output than fpdf2 / python-pptx scripts. Use Python for the analysis or chart generation, save any plots as PNG files in the working directory with matplotlib's savefig, and then call the matching writer with the content (referencing the saved chart paths in a document or on a slide).
 - Do NOT use run_python to reach a service listed under CONNECTED INTEGRATIONS. Use that service's own tools.
 - If the sandbox state gets stuck (a hung import, a poisoned variable, an unrecoverable exception), call reset_python and start over. Don't reach for it casually — resets wipe everything in the session.
 - Tool results include stdout, stderr, the value of the final expression, and any artifacts (plots, tables) the UI rendered for the user. You see the text; the user also sees the rich artifacts.${sandboxFsSection}`
@@ -223,9 +223,9 @@ export function injectMessageHints(
 	if (opts.workingDir && !opts.lean && looksLikeFileOutputRequest(lastText)) {
 		hints.push(
 			'You must create the requested file DURING THIS TURN. Do your research, ' +
-				'synthesize the content, then write the file: use the matching ' +
-				'fs_write_* tool (fs_write_pdf / fs_write_pptx / fs_write_docx / ' +
-				'fs_write_xlsx / fs_write_odt / fs_write_ods / fs_write_odp). ' +
+				'synthesize the content, then write the file: fs_write_document for ' +
+				'.pdf/.docx/.odt, fs_write_spreadsheet for .xlsx/.ods, fs_write_slides ' +
+				'for .pptx/.odp. ' +
 				'Do NOT use run_python to generate the document — the dedicated ' +
 				'fs_write_* tools produce better output than fpdf2 / python-pptx ' +
 				'scripts. Do NOT paste the report as a chat message and expect the ' +

@@ -1087,7 +1087,7 @@ describe('runAgentLoop: recovery nudges', () => {
 	it('nudges the model to actually write the file when it hallucinates a write', async () => {
 		nonStreamQueue.push(
 			textResponse('I have written report.pdf to your folder.'),
-			toolCallResponse([{ id: 'c1', name: 'fs_write_pdf', args: '{"path":"report.pdf"}' }]),
+			toolCallResponse([{ id: 'c1', name: 'fs_write_document', args: '{"path":"report.pdf"}' }]),
 			textResponse('Saved to report.pdf.')
 		);
 		toolsMock.executeTool.mockResolvedValue({ result: 'Wrote report.pdf' });
@@ -1107,7 +1107,7 @@ describe('runAgentLoop: recovery nudges', () => {
 		// and the claim is false whenever a turn correctly has nothing to write.
 		expect(nudge?.content).not.toContain('does not exist on disk');
 		expect(toolsMock.executeTool).toHaveBeenCalledWith(
-			'fs_write_pdf',
+			'fs_write_document',
 			{ path: 'report.pdf' },
 			expect.anything()
 		);
@@ -1163,7 +1163,7 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 	describe('a file request that hits the cap without writing', () => {
 		const writeTool: ToolDefinition = {
 			type: 'function',
-			function: { name: 'fs_write_pdf', description: 'Write a PDF', parameters: {} }
+			function: { name: 'fs_write_document', description: 'Write a PDF', parameters: {} }
 		};
 
 		beforeEach(() => {
@@ -1174,7 +1174,11 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 			nonStreamQueue.push(
 				toolCallResponse([{ id: 'c1', name: 'fetch_url', args: '{"url":"https://a.dev"}' }]),
 				toolCallResponse([
-					{ id: 'c2', name: 'fs_write_pdf', args: '{"path":"ballot.pdf","content":"# Ballot"}' }
+					{
+						id: 'c2',
+						name: 'fs_write_document',
+						args: '{"path":"ballot.pdf","content":"# Ballot"}'
+					}
 				])
 			);
 			streamQueue.push([contentChunk('Wrote ballot.pdf.', 'stop')]);
@@ -1190,7 +1194,7 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 			const writeCall = api.chatCompletion.mock.calls[1][0] as { tools?: ToolDefinition[] };
 			expect(writeCall.tools).toEqual([writeTool]);
 			expect(toolsMock.executeTool).toHaveBeenCalledWith(
-				'fs_write_pdf',
+				'fs_write_document',
 				expect.anything(),
 				expect.anything()
 			);
@@ -1200,7 +1204,11 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 		it('goes straight to the answer when a file was already written', async () => {
 			nonStreamQueue.push(
 				toolCallResponse([
-					{ id: 'c1', name: 'fs_write_pdf', args: '{"path":"ballot.pdf","content":"# Ballot"}' }
+					{
+						id: 'c1',
+						name: 'fs_write_document',
+						args: '{"path":"ballot.pdf","content":"# Ballot"}'
+					}
 				])
 			);
 			toolsMock.executeTool.mockResolvedValue({ result: 'Wrote ballot.pdf' });

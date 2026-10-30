@@ -37,3 +37,25 @@ describe('isUnderWriteRoot', () => {
 		expect(isUnderWriteRoot('plan//my-feature///x.md', 'plan/my-feature')).toBe(true);
 	});
 });
+
+describe('file writer schemas', () => {
+	// Seven per-format writers were 9.4k characters of every Chat turn with a
+	// working folder; the three merged ones replace them. Keep the four
+	// fs_write_* tools a Chat turn sees under this.
+	const BUDGET_CHARS = 4500;
+
+	it('fit the budget in a Chat turn with a working folder', async () => {
+		const { getToolSchemas } = await import('#lib/agent/tools/index.ts');
+		const writers = getToolSchemas({ hasWorkingDir: true, interactive: true }).filter((s) =>
+			s.function.name.startsWith('fs_write_')
+		);
+		expect(writers.map((s) => s.function.name).sort()).toEqual([
+			'fs_write_document',
+			'fs_write_slides',
+			'fs_write_spreadsheet',
+			'fs_write_text'
+		]);
+		const chars = writers.reduce((n, s) => n + JSON.stringify(s).length, 0);
+		expect(chars).toBeLessThanOrEqual(BUDGET_CHARS);
+	});
+});
