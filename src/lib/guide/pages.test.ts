@@ -17,6 +17,7 @@ const MAX_BYTES = 6000;
 const PAGES = [
 	'getting-started',
 	'models',
+	'lean-mode',
 	'chat',
 	'chat-conversations',
 	'shell',

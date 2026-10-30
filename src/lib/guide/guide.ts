@@ -14,6 +14,7 @@ const RAW = import.meta.glob('/docs/guide/*.md', {
 const ORDER = [
 	'getting-started',
 	'models',
+	'lean-mode',
 	'chat',
 	'chat-conversations',
 	'shell',

@@ -22,6 +22,8 @@
 	import LogViewer from '#lib/components/LogViewer.svelte';
 	import HelpModal from '#lib/components/HelpModal.svelte';
 	import SettingsPanel from '#lib/components/settings/SettingsPanel.svelte';
+	import LeanModeBadge from '#lib/components/LeanModeBadge.svelte';
+	import { closeSettings, getSettingsNav, toggleSettings } from '#lib/stores/settingsNav.svelte.ts';
 	import StartupNoticeDialog from '#lib/components/StartupNoticeDialog.svelte';
 	import Toasts from '#lib/components/Toasts.svelte';
 	import {
@@ -100,7 +102,8 @@
 	let showHelp = $state(false);
 	// Settings renders as an in-page overlay rather than a route navigation, so
 	// the Shell tab's PTY (and scrollback) survives opening/closing settings.
-	let showSettings = $state(false);
+	// Its open state lives in a store so anything can open it at a section.
+	const showSettings = $derived(getSettingsNav().open);
 
 	// Settings is an overlay rendered *above* `children()` in <main>, not a
 	// route. So navigating away from inside it — Inference → Run Setup Wizard
@@ -109,7 +112,7 @@
 	// land on the wizard.
 	$effect(() => {
 		if (page.url.pathname.startsWith('/setup')) {
-			showSettings = false;
+			closeSettings();
 		}
 	});
 	let showStartupNotice = $state(false);
@@ -618,6 +621,7 @@
 			{/if}
 		</h1>
 		<div class="header-right">
+			<LeanModeBadge />
 			<ServerStatusBadge onOpenLogs={openLogViewer} />
 			<ContextIndicator jobsActive={getActiveTab() === 'jobs'} />
 			<button
@@ -708,7 +712,7 @@
 				title={showSettings ? 'Close Settings' : 'Settings'}
 				aria-label="Settings"
 				aria-pressed={showSettings}
-				onclick={() => (showSettings = !showSettings)}
+				onclick={toggleSettings}
 			>
 				<svg
 					width="18"
@@ -733,7 +737,7 @@
 		{@render children()}
 		{#if showSettings}
 			<div class="settings-overlay">
-				<SettingsPanel onclose={() => (showSettings = false)} />
+				<SettingsPanel onclose={closeSettings} />
 			</div>
 		{/if}
 	</main>
