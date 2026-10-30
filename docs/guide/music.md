@@ -52,7 +52,7 @@ Ask the assistant to work on a song it made in the chat, an audio file in the wo
 - **Extend**: "add 30 seconds at the end", or an intro at the start.
 - **Add or pull out an instrument**: "add drums", "give me just the vocals", or fill in a band around a part. It knows vocals, backing vocals, drums, bass, guitar, keyboard, percussion, strings, synth, effects, brass and woodwinds.
 
-A new song can also borrow another's sound: "a ballad in the voice of that last song".
+A new song can also borrow another's sound: "a ballad in the voice of that last song". For the singer alone, it pulls out the vocals first.
 
 Instrument changes need a base model, such as ACE-Step 1.5 XL base; turbo and SFT models can only restyle, redo and extend. A llama-toolchest from before October 2026 can't change songs.
 
@@ -72,7 +72,6 @@ Haruspex downloads each song and keeps its own copy, then deletes it from llama-
 
 ## What it doesn't do
 
-- Only llama-toolchest and ace-server can make music.
 - With ace-server, the server's own settings (steps, guidance) are used; Haruspex doesn't change them.
 - Players use your system's default audio output, not the device in Settings → Audio.
 - A new song can't be longer than 240 seconds; a changed one can be up to 600.

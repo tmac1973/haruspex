@@ -1,6 +1,6 @@
 ---
 name: write-song
-description: Write and make a song, an instrumental or a game's music loop, or change one already made, by redoing a part, restyling it, extending it, or adding or removing an instrument. Use when the user asks for music or a song, or wants a song changed.
+description: Write and make a song, an instrumental or a game's music loop, or change one already made, by redoing a part, restyling it, extending it, adding an instrument, or pulling out the vocals or an instrument. Also makes a new song in the voice of an existing one. Use when the user asks for music or a song, wants a song changed, or gives a song to work from.
 metadata:
   haruspex-needs: music
   haruspex-tools: generate_music edit_music
@@ -70,7 +70,8 @@ shorter than asked. If it does, say so.
 
 Use `edit_music` on the song's haruspex-audio:// URL, or on an audio file in
 the working folder. A file the user dropped on the message box is an
-"Attached audio:" line in their message; pass its URL as `source`. Never make the whole song again to fix one part of it.
+"Attached audio:" line in their message; pass its URL as `source`. Never
+make the whole song again to fix one part of it.
 
 | The user wants | action |
 | --- | --- |
@@ -78,7 +79,7 @@ the working folder. A file the user dropped on the message box is an
 | "The same song as jazz" | `restyle` with the new caption. Pass the original lyrics to keep the singing. `strength` near 1 keeps its structure; about 0.2 is loose. |
 | "Make it 30 seconds longer", "add an intro" | `extend` with `seconds`, and `at: "start"` for an intro |
 | "Add drums" | `add_instrument` with `instrument` and a caption for what it plays |
-| "Just the vocals" | `extract_instrument` with `instrument` |
+| "Just the vocals", "extract the voice" | `extract_instrument` with `instrument: "vocals"`. This is stem separation; it works on any song, not only one made here. |
 | "Fill in a band around it" | `complete` |
 
 Each song's seed is reported with it. For "the same but faster", or any
@@ -90,6 +91,21 @@ rewrite the caption. A
 song that `edit_music` changed can't be remade that way: its seed doesn't
 make the whole song. Say that remaking it from the original seed loses the
 edit, and ask whether to remake the original and redo the edit after.
+
+## A new song in another song's voice
+
+When the user wants a new song sung like an existing one ("extract the
+voice from this, then make a blues song"), do it in two calls:
+
+1. `edit_music` with `action: "extract_instrument"`, `instrument:
+   "vocals"` on the song. Wait for it to finish.
+2. `generate_music` with the new caption and lyrics, and
+   `style_reference` set to the vocals' URL from step 1.
+
+The reference borrows the voice's timbre, not its words or melody, so
+still write lyrics and describe the voice in the caption. Passing the
+whole song as `style_reference` skips step 1 but borrows the band's sound
+too. Use that only when the user wants the overall sound.
 
 If the tool says the model can't do a change (instrument changes need a
 base model such as ACE-Step 1.5 XL base), tell the user. Don't try a
