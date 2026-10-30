@@ -37,6 +37,8 @@ The page lists your Code sessions, the open ones first. Pick one to follow it as
 
 Attach pictures with 📎 or a paste, up to 8 a message. `/name` runs a skill, and `/compact`, `/skills` and `/new` work as in the Code tab (see `code-sessions`). File names in a session are links: click one to read the file (it can't be edited from the page). Images attached to messages show as thumbnails, and pictures the model put in an answer show as they do here; click one for full size.
 
+In lean mode (see `lean-mode`) the page shows Chat only, with a **Lean mode** label; turn it off at this computer.
+
 **Chat** (the switch atop the list) shows your chats, newest first. Open one to read it or carry it on; its working folder, Python sandbox and memory work as usual, and this computer stays on its chat. Chats answer at once, and sending to one that's answering steers it (see `chat-conversations`); each is marked Writing, Waiting or New. You can stop, continue or retry a reply, and answer **Run this Python?**, **Remember this?** and **Take a screenshot?** from the page.
 
 ## Advanced

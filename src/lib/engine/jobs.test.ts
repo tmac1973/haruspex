@@ -46,6 +46,11 @@ vi.mock('#lib/agent/jobs/types/index.ts', () => {
 	};
 });
 
+const lean = vi.hoisted(() => ({ on: false }));
+vi.mock('#lib/agent/jobs/types/lean.ts', () => ({
+	pausedByLean: (id: string) => lean.on && id !== 'research'
+}));
+
 import { flushSync } from 'svelte';
 import { dispatchJobs, watchJobs } from './jobs.svelte.ts';
 import { fake, job, reset, running, jobsStore } from './jobsFake.svelte.ts';
@@ -67,6 +72,7 @@ async function settle() {
 beforeEach(() => {
 	reset();
 	vi.clearAllMocks();
+	lean.on = false;
 });
 
 describe('reading jobs', () => {
@@ -78,6 +84,12 @@ describe('reading jobs', () => {
 			['autonomous_coding', true, false]
 		]);
 		expect(types[0].configDefaults).toEqual({ depth: 1 });
+	});
+
+	it('lists research alone in lean mode', async () => {
+		lean.on = true;
+		const types = await run({ type: 'jobs.types' });
+		expect(types.map((t: Json) => t.id)).toEqual(['research']);
 	});
 
 	it('reads a job with its config parsed and its inline key blanked', async () => {
@@ -129,6 +141,20 @@ describe('writing jobs', () => {
 			run({ type: 'jobs.create', job: { name: 'A', job_type: 'nope' as 'research' } })
 		).rejects.toThrow('no job type nope: one of research, guided_planning, autonomous_coding');
 		expect(jobsStore.createJob).not.toHaveBeenCalled();
+	});
+
+	it('makes research jobs alone in lean mode, and still edits a paused one', async () => {
+		job(1, { job_type: 'guided_planning', name: 'Plan' });
+		lean.on = true;
+		await expect(
+			run({ type: 'jobs.create', job: { name: 'P', job_type: 'guided_planning' } })
+		).rejects.toThrow('Lean mode is on: only research jobs can be made.');
+		await expect(
+			run({ type: 'jobs.update', jobId: 1, job: { name: 'Plan again' } })
+		).resolves.toEqual({ jobId: 1 });
+		await expect(
+			run({ type: 'jobs.create', job: { name: 'R', job_type: 'research' }, steps: ['x'] })
+		).resolves.toHaveProperty('jobId');
 	});
 
 	it('refuses an inline API key and a column the app owns', async () => {

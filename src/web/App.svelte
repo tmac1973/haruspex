@@ -65,7 +65,9 @@
 			{:else if store.tab === 'code' && store.selected}
 				<SessionView {store} />
 			{:else}
-				<p class="empty">Pick a session, or start one.</p>
+				<p class="empty">
+					{store.tab === 'chat' ? 'Pick a chat, or start one.' : 'Pick a session, or start one.'}
+				</p>
 			{/if}
 		</main>
 	{/if}

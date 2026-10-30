@@ -82,6 +82,21 @@ describe('the event stream', () => {
 });
 
 describe('the web store', () => {
+	it("follows the desktop's lean mode: Chat only", async () => {
+		const d = fakeDesktop({ 'app.mode': { lean: true }, 'chats.list': [] });
+		const store = new WebStore(d.transport);
+		expect(store.tab).toBe('code');
+		await store.refreshMode();
+		expect(store.lean).toBe(true);
+		expect(store.tab).toBe('chat');
+
+		// A desktop from before `app.mode` answers nothing useful: not lean.
+		const old = new WebStore(fakeDesktop().transport);
+		await old.refreshMode();
+		expect(old.lean).toBe(false);
+		expect(old.tab).toBe('code');
+	});
+
 	it('shows a session at once, then follows it from its snapshot', async () => {
 		const d = fakeDesktop({
 			'sessions.list': [{ id: 's1', title: 'T', root: '/p', status: 'idle', window: 'main' }],

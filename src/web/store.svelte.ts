@@ -49,6 +49,8 @@ export class WebStore {
 	connection = $state<Connection>('connecting');
 	/** Which list the sidebar shows. */
 	tab = $state<'code' | 'chat'>('code');
+	/** The desktop's lean mode is on: Chat only, as there (`app.mode`). */
+	lean = $state(false);
 	chats = $state<ChatListItem[]>([]);
 	chatMirrors = $state<Record<string, ChatMirror>>({});
 	selectedChat = $state<string | null>(null);
@@ -151,7 +153,22 @@ export class WebStore {
 		return this.selectedChat ? (this.chatMirrors[this.selectedChat]?.state ?? null) : null;
 	}
 
+	/**
+	 * Ask the desktop whether lean mode is on. Quietly: a desktop from before
+	 * `app.mode` answers that it doesn't know the operation, which means no.
+	 */
+	async refreshMode(): Promise<void> {
+		try {
+			const mode = await this.transport.op<{ lean: boolean }>({ type: 'app.mode' });
+			this.lean = mode.lean === true;
+		} catch {
+			this.lean = false;
+		}
+		if (this.lean) this.tab = 'chat';
+	}
+
 	async refreshChats(): Promise<void> {
+		void this.refreshMode();
 		const list = await this.run(() => this.transport.op<ChatListItem[]>({ type: 'chats.list' }));
 		if (list) this.chats = list;
 	}
@@ -210,11 +227,14 @@ export class WebStore {
 		} catch (e) {
 			if (e instanceof ApiError && e.status === 401) this.connection = 'unauthorised';
 			this.error = errMessage(e);
+			// Lean mode went on at the desktop since we last asked.
+			if (this.error.startsWith('Lean mode is on')) void this.refreshMode();
 			return undefined;
 		}
 	}
 
 	async refreshList(): Promise<void> {
+		void this.refreshMode();
 		const list = await this.run(() =>
 			this.transport.op<SessionListItem[]>({ type: 'sessions.list' })
 		);

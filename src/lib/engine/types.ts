@@ -69,6 +69,11 @@ export type EngineOp =
 	| { type: 'prompts.answer'; promptId: string; answer: PromptAnswer }
 	| JobOp
 	| ObserveOp
+	/**
+	 * What the app is set to show, for a client that can't read the settings:
+	 * `{ lean }`, whether Settings → General → Lean mode is on.
+	 */
+	| { type: 'app.mode' }
 	/** The settings, secrets blanked; `keys` picks top-level settings. */
 	| { type: 'settings.get'; keys?: string[] }
 	/** Lay `patch` over the settings: objects merge key by key, anything else is replaced. */
