@@ -179,11 +179,15 @@ function send(res, status, body) {
 async function askUpstream(upstream, body, { model, apiKey } = {}) {
 	const headers = { 'Content-Type': 'application/json' };
 	if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+	// The app asks for the fake's model; a server with several needs its own name.
+	const ask = { ...body, ...(model ? { model } : {}), stream: false };
+	// Asked whole, not streamed, so `stream_options` goes too: vLLM refuses a
+	// request that sets it without `stream: true`.
+	delete ask.stream_options;
 	const r = await fetch(`${upstream.replace(/\/$/, '')}/chat/completions`, {
 		method: 'POST',
 		headers,
-		// The app asks for the fake's model; a server with several needs its own name.
-		body: JSON.stringify({ ...body, ...(model ? { model } : {}), stream: false })
+		body: JSON.stringify(ask)
 	});
 	if (!r.ok) throw new Error(`upstream ${r.status}: ${await r.text()}`);
 	const msg = (await r.json()).choices?.[0]?.message ?? {};
