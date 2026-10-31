@@ -1,3 +1,4 @@
+import { plainText } from '#lib/slides/markdown.ts';
 import type { Slide, SlideBullet, SlideChart, SlideLayout } from '#lib/slides/types.ts';
 
 /**
@@ -83,5 +84,14 @@ export function foldForOdp(slides: Slide[]): { slides: Slide[]; dropped: string[
 	}
 	if (data.size > 0) dropped.push(`${[...data].join(' and ')} were listed as bullets`);
 	if (notes) dropped.push('speaker notes were left out');
-	return { slides: slides.map(fold), dropped };
+	return { slides: slides.map(fold).map(plainBullets), dropped };
+}
+
+/** The .odp writer has no bold runs, so bullets lose their `**` markers. */
+function plainBullets(slide: Slide): Slide {
+	if (!slide.bullets) return slide;
+	const bullets = slide.bullets.map((b) =>
+		typeof b === 'string' ? plainText(b) : { ...b, text: plainText(b.text) }
+	);
+	return { ...slide, bullets };
 }

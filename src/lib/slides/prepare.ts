@@ -1,3 +1,4 @@
+import { markdownImage, plainText } from '#lib/slides/markdown.ts';
 import { SLIDE_THEMES } from '#lib/slides/themes.ts';
 import type { SlideTheme } from '#lib/slides/themes.ts';
 import { SLIDE_LAYOUTS } from '#lib/slides/types.ts';
@@ -59,6 +60,51 @@ function splitLines(value: string): string[] {
 		.filter((line) => line.length > 0);
 }
 
+/** `list` without its Markdown picture bullets, and the first picture's path. */
+function takeImages(list: unknown[]): { rest: unknown[]; image?: string } {
+	let image: string | undefined;
+	const rest = list.filter((b) => {
+		const text = bulletText(b);
+		const path = text === undefined ? undefined : markdownImage(text);
+		if (path !== undefined) image ??= path;
+		return path === undefined;
+	});
+	return { rest, image };
+}
+
+/**
+ * A bullet that is a Markdown picture, `![alt](path)`, becomes the slide's
+ * image when it has none (a slide shows one), and is dropped either way. A
+ * picture in a column means a picture beside the bullets, so the columns
+ * become one list on a content slide.
+ */
+function liftImageBullets(slide: Record<string, unknown>): void {
+	const left = takeImages(Array.isArray(slide.bullets) ? slide.bullets : []);
+	const right = takeImages(Array.isArray(slide.right) ? slide.right : []);
+	const image = left.image ?? right.image;
+	if (image === undefined) return;
+	slide.image ??= image;
+	if (slide.layout === 'two-column' || hasRealBullets(right.rest)) {
+		slide.bullets = [...left.rest, ...right.rest];
+		delete slide.right;
+		slide.layout = 'content';
+	} else {
+		slide.bullets = left.rest;
+	}
+}
+
+/** Titles and table cells are plain text: drop `**` markers there. */
+function stripBoldMarkers(slide: Record<string, unknown>): void {
+	for (const key of ['title', 'subtitle'] as const) {
+		if (typeof slide[key] === 'string') slide[key] = plainText(slide[key]);
+	}
+	if (Array.isArray(slide.table)) {
+		slide.table = slide.table.map((row: unknown) =>
+			Array.isArray(row) ? row.map((c) => (typeof c === 'string' ? plainText(c) : c)) : row
+		);
+	}
+}
+
 /** Shape fixes that leave a slide's meaning alone, in place. */
 export function normalizeSlide(slide: Record<string, unknown>): void {
 	normalizeLayout(slide);
@@ -69,6 +115,8 @@ export function normalizeSlide(slide: Record<string, unknown>): void {
 	if (typeof slide.right === 'string') slide.right = splitLines(slide.right);
 	if (slide.right !== undefined && !Array.isArray(slide.right)) delete slide.right;
 	if (typeof slide.notes !== 'string' || slide.notes.trim().length === 0) delete slide.notes;
+	liftImageBullets(slide);
+	stripBoldMarkers(slide);
 }
 
 const hasColumns = (slide: Record<string, unknown>) =>

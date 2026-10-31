@@ -17,7 +17,9 @@ import {
 	titleBox
 } from '#lib/slides/geometry.ts';
 import type { Box } from '#lib/slides/geometry.ts';
+import { boldRuns, plainText } from '#lib/slides/markdown.ts';
 import { addChart, addTable } from '#lib/slides/pptxData.ts';
+import { dropStrayParagraphProps } from '#lib/slides/pptxRuns.ts';
 import { DeckFitError, OVERFLOW_LIMIT, fitScale } from '#lib/slides/textfit.ts';
 import type { Paragraph } from '#lib/slides/textfit.ts';
 import { THEMES } from '#lib/slides/themes.ts';
@@ -40,6 +42,8 @@ interface Build {
 	theme: Theme;
 	sizes: Sizes;
 	problems: string[];
+	/** A paragraph has more than one run, so the deck needs `dropStrayParagraphProps`. */
+	mixedRuns: boolean;
 }
 
 const at = (box: Box) => ({ x: box.x, y: box.y, w: box.w, h: box.h });
@@ -54,7 +58,11 @@ const bulletText = (b: SlideBullet) => (typeof b === 'string' ? b : b.text).trim
 function bulletParagraphs(bullets: SlideBullet[], sizes: number[]): Paragraph[] {
 	return bullets.map((b) => {
 		const level = bulletLevel(b);
-		return { text: bulletText(b), pt: sizes[level], indent: BULLET_INDENT * (level + 1) };
+		return {
+			text: plainText(bulletText(b)),
+			pt: sizes[level],
+			indent: BULLET_INDENT * (level + 1)
+		};
 	});
 }
 
@@ -98,29 +106,48 @@ function addFitted(
 	out.addText(text, { ...at(box), fontSize: Math.round(pt * scale), ...options });
 }
 
-function addBullets(
+/** The scale `bullets` fit `box` at (see `fit`). */
+function fitBullets(
 	build: Build,
-	out: PptxGenJS.Slide,
 	where: string,
 	what: string,
 	bullets: SlideBullet[],
 	box: Box
+): number {
+	const paras = bulletParagraphs(bullets, build.sizes.bullets);
+	return fit(build, where, what, paras, box, BULLET_GAP);
+}
+
+/** Bullets at `scale`, each one paragraph of plain and bold runs. */
+function addBullets(
+	build: Build,
+	out: PptxGenJS.Slide,
+	bullets: SlideBullet[],
+	box: Box,
+	scale: number
 ): void {
 	if (bullets.length === 0) return;
 	const sizes = build.sizes.bullets;
-	const scale = fit(build, where, what, bulletParagraphs(bullets, sizes), box, BULLET_GAP);
-	const runs = bullets.map((b, i) => {
+	const runs = bullets.flatMap((b, i) => {
 		const level = bulletLevel(b);
-		return {
-			text: bulletText(b),
-			options: {
-				bullet: true,
-				indentLevel: level,
-				fontSize: Math.round(sizes[level] * scale),
-				paraSpaceBefore: i === 0 ? 0 : Math.round(BULLET_GAP * scale),
-				breakLine: true
-			}
+		const parts = boldRuns(bulletText(b));
+		if (parts.length > 1) build.mixedRuns = true;
+		// PptxGenJS starts a paragraph at every run with `bullet`, so only the
+		// first run has the paragraph's settings.
+		const paragraph = {
+			bullet: true,
+			indentLevel: level,
+			paraSpaceBefore: i === 0 ? 0 : Math.round(BULLET_GAP * scale)
 		};
+		return parts.map((part, j) => ({
+			text: part.text,
+			options: {
+				...(j === 0 ? paragraph : {}),
+				bold: part.bold,
+				fontSize: Math.round(sizes[level] * scale),
+				breakLine: j === parts.length - 1
+			}
+		}));
 	});
 	out.addText(runs, {
 		...at(box),
@@ -228,15 +255,23 @@ function addContent(
 	} else if (image && box) {
 		out.addImage({ data: imageData(image), ...at(fitImage(box, image.width, image.height)) });
 	}
-	addBullets(build, out, where, 'the bullets', bullets, bulletBox);
+	const scale = fitBullets(build, where, 'the bullets', bullets, bulletBox);
+	addBullets(build, out, bullets, bulletBox, scale);
 }
 
+/** Both columns at the scale the fuller one fits at, so they match. */
 function addTwoColumn(build: Build, out: PptxGenJS.Slide, where: string, slide: Slide): void {
 	addHeading(build, out, where, slide);
 	const boxes = columnBoxes(build.orientation);
 	const [first, second] = build.orientation === 'portrait' ? ['top', 'bottom'] : ['left', 'right'];
-	addBullets(build, out, where, `the ${first} column`, slide.bullets ?? [], boxes.left);
-	addBullets(build, out, where, `the ${second} column`, slide.right ?? [], boxes.right);
+	const left = slide.bullets ?? [];
+	const right = slide.right ?? [];
+	const scale = Math.min(
+		fitBullets(build, where, `the ${first} column`, left, boxes.left),
+		fitBullets(build, where, `the ${second} column`, right, boxes.right)
+	);
+	addBullets(build, out, left, boxes.left, scale);
+	addBullets(build, out, right, boxes.right, scale);
 }
 
 function addImageSlide(
@@ -358,7 +393,14 @@ export async function buildPptx(
 		deck.layout = 'LAYOUT_WIDE';
 	}
 	const theme = THEMES[themeName];
-	const build: Build = { deck, orientation, theme, sizes: SIZES[orientation], problems: [] };
+	const build: Build = {
+		deck,
+		orientation,
+		theme,
+		sizes: SIZES[orientation],
+		problems: [],
+		mixedRuns: false
+	};
 	slides.forEach((raw, i) => {
 		const slide = {
 			...raw,
@@ -397,5 +439,6 @@ export async function buildPptx(
 		if (notes) out.addNotes(notes);
 	});
 	if (build.problems.length > 0) throw new DeckFitError(build.problems);
-	return (await deck.write({ outputType: 'uint8array' })) as Uint8Array;
+	const bytes = (await deck.write({ outputType: 'uint8array' })) as Uint8Array;
+	return build.mixedRuns ? dropStrayParagraphProps(bytes) : bytes;
 }
