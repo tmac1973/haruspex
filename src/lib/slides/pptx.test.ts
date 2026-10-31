@@ -235,10 +235,34 @@ describe('text that will not fit', () => {
 		expect(err).toBeInstanceOf(DeckFitError);
 		const { problems, message } = err as DeckFitError;
 		expect(problems).toHaveLength(2);
-		expect(problems[0]).toMatch(/^Slide 2 \("Crowded"\): the bullets need about \d+\.\d× the room/);
-		expect(problems[1]).toMatch(/^Slide 3 \("Columns"\): the right column need/);
+		expect(problems[0]).toMatch(
+			/^Slide 2 \("Crowded"\): the bullets take about \d+ lines at the smallest text size, and there is room for about \d+\.$/
+		);
+		expect(problems[1]).toMatch(/^Slide 3 \("Columns"\): the right column take/);
 		expect(message).toMatch(/^The deck was not written: /);
 		expect(message).toMatch(/Split crowded slides into two/);
+		expect(message).toMatch(/same orientation/);
+		expect(message).toMatch(/don't write trial decks/);
+	});
+
+	it('gives a budget the cut can be checked against', async () => {
+		const err = (await buildPptx(
+			[{ title: 'Crowded', bullets: many }],
+			'landscape',
+			new Map()
+		).catch((e: unknown) => e)) as DeckFitError;
+		const [, needed, room] = /about (\d+) lines.*room for about (\d+)/.exec(err.problems[0])!;
+		// 30 one-line bullets, and well under half of them fit.
+		expect(Number(needed)).toBe(30);
+		expect(Number(room)).toBeLessThan(15);
+		// Cut to the room it names, the slide is accepted.
+		await expect(
+			buildPptx(
+				[{ title: 'Crowded', bullets: many.slice(0, Number(room)) }],
+				'landscape',
+				new Map()
+			)
+		).resolves.toBeInstanceOf(Uint8Array);
 	});
 
 	it('shrinks both columns to the size the fuller one needs', async () => {
@@ -256,7 +280,7 @@ describe('text that will not fit', () => {
 			'portrait',
 			new Map()
 		).catch((e: unknown) => e)) as DeckFitError;
-		expect(err.problems[0]).toMatch(/the top column need/);
+		expect(err.problems[0]).toMatch(/the top column take/);
 	});
 });
 
@@ -463,7 +487,9 @@ describe('tables', () => {
 			(e: unknown) => e
 		)) as DeckFitError;
 		expect(err).toBeInstanceOf(DeckFitError);
-		expect(err.problems[0]).toMatch(/^Slide 1 \("Big"\): the table needs about \d+\.\d× the room/);
+		expect(err.problems[0]).toMatch(
+			/^Slide 1 \("Big"\): the table's \d+ rows need about \d+\.\d× the room there is; about \d+ fit\.$/
+		);
 
 		// Thirteen one-line rows are taller than the body at 16pt.
 		const medium = [['A', 'B', 'C'], ...Array.from({ length: 12 }, (_, i) => row(i))];

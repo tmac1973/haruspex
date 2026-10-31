@@ -55,7 +55,7 @@ Ask for speaker notes and each slide gets them on its notes page, which PowerPoi
 
 ## When a slide is too full
 
-Text and tables shrink a step or two to fit. A slide with far more than fits is refused: no file is written, and the assistant is told which slides to split. It usually splits them and tries again by itself. If it doesn't, ask it to.
+Text and tables shrink a step or two to fit. A slide with far more than fits is refused: no file is written, and the assistant is told which slides to split and how many lines fit. It usually splits them and tries again by itself. If it doesn't, ask it to.
 
 ## The assistant checks its own slides
 

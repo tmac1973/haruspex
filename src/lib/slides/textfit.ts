@@ -49,6 +49,49 @@ export function wrappedLines(text: string, pt: number, width: number): number {
 	return lines;
 }
 
+/** How many lines paragraphs wrap to at `scale` in a box `width` inches wide. */
+export function lineCount(paras: Paragraph[], width: number, scale = 1): number {
+	return paras.reduce(
+		(n, p) => n + wrappedLines(p.text, p.pt * scale, width - 2 * INSET - p.indent),
+		0
+	);
+}
+
+/**
+ * Text refused at the smallest step, in lines: how many it takes there, and
+ * about how many the box holds. A ratio alone ("3.7× the room") left a model
+ * guessing how much to cut, and it wrote a string of trial decks to find out.
+ */
+export function lineBudget(
+	paras: Paragraph[],
+	width: number,
+	ratio: number
+): { needed: number; room: number } {
+	const needed = lineCount(paras, width, SHRINK_STEPS[SHRINK_STEPS.length - 1]);
+	return { needed, room: Math.max(1, Math.floor(needed / ratio)) };
+}
+
+/** The problem a refused text reports, with its budget in lines. */
+export function textProblem(
+	where: string,
+	what: string,
+	paras: Paragraph[],
+	width: number,
+	ratio: number
+): string {
+	const { needed, room } = lineBudget(paras, width, ratio);
+	return (
+		`${where}: ${what} take about ${needed} lines at the smallest text size, ` +
+		`and there is room for about ${room}.`
+	);
+}
+
+/** The problem a refused table reports, with its budget in rows. */
+export function tableProblem(where: string, rows: number, ratio: number): string {
+	const room = Math.max(1, Math.floor(rows / ratio));
+	return `${where}: the table's ${rows} rows need about ${ratio.toFixed(1)}× the room there is; about ${room} fit.`;
+}
+
 /** The height paragraphs take at `scale`, in inches. */
 export function textHeight(
 	paras: Paragraph[],
@@ -97,7 +140,9 @@ export class DeckFitError extends Error {
 	constructor(readonly problems: string[]) {
 		super(
 			`The deck was not written: ${problems.join(' ')} Split crowded slides into two, ` +
-				`or cut words, then write the whole deck again.`
+				`or cut words until each fits its room, then write the whole deck again with the ` +
+				`same orientation. These line counts are the measure: don't write trial decks ` +
+				`to test the fit.`
 		);
 	}
 }

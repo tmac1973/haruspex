@@ -175,6 +175,27 @@ describe('bullets', () => {
 		expect(sentSlides()[0]).toEqual({ title: 'T', bullets });
 	});
 
+	it('shifts a list so its shallowest bullet is level 0, keeping its steps', async () => {
+		await pptx([
+			{
+				title: 'T',
+				bullets: [
+					{ text: 'a', level: 1 },
+					{ text: 'b', level: 2 }
+				],
+				layout: 'two-column',
+				right: [{ text: 'c', level: 2 }]
+			}
+		]);
+		expect(sentSlides()[0]).toMatchObject({
+			bullets: [
+				{ text: 'a', level: 0 },
+				{ text: 'b', level: 1 }
+			],
+			right: [{ text: 'c', level: 0 }]
+		});
+	});
+
 	it('treats bullets with no usable text as no bullets', async () => {
 		await pptx([{ title: 'T', bullets: [{ text: 5 }, { level: 1 }, null, 7, '   '] }]);
 		expect(sentSlides()[0].layout).toBe('section');
