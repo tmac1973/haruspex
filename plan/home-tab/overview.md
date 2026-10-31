@@ -20,6 +20,8 @@ right now, and what is going on?".
     attention, autonomous-coding progress. No schedule, no model.
   - **Fetched** cards call a data source on an interval without the model:
     upcoming meetings (CalDAV / Google / ICS), today's weather.
+  - **Fetched** also covers a GitHub card: issues and pull requests that need
+    you, read through the catalog's GitHub MCP server.
   - **Judged** cards are backed by a scheduled job whose model picks, ranks or
     summarises: important emails, today's news.
 - A **pinned job** card: any existing job can be pinned to Home, showing its
@@ -51,7 +53,8 @@ right now, and what is going on?".
 - No running scheduled work while the app is closed.
 - No change to the landing tab: the app still opens on the last tab used.
 - No change to the job editor layout (reworked in #834); this project only
-  adds the two new types' sections and the Home badge.
+  adds the two new types' sections, the Home badge, and a prefilled new-job
+  draft (for the GitHub card's Plan this issue).
 
 ## Users & primary flow
 Every Haruspex user outside lean mode.
@@ -109,6 +112,9 @@ Every Haruspex user outside lean mode.
 - After the app was closed past a card's interval, the card runs once after
   launch, not once per missed interval.
 - Upcoming meetings and Weather show data with no model run.
+- The GitHub card lists only issues the token can see that match its
+  filters, with no model run, and says which Settings path to use when the
+  GitHub MCP server is missing or stopped.
 - Draft reply never sends; Send goes through the email review modal.
 - The Remote control web client shows Home cards read-only.
 - `npm run check`, `npm run lint`, `npm run test`, `cargo test` and
@@ -118,7 +124,7 @@ Every Haruspex user outside lean mode.
 - **Audience** → every user, but not in lean mode.
 - **Landing tab** → unchanged: the app opens on the last tab used.
 - **Card set for the full release** → Haruspex status, Important emails,
-  Upcoming meetings, Weather and News.
+  Upcoming meetings, Weather and News; GitHub added later (below).
 - **Pin any job** → yes; a generic card shows the job's last output as
   markdown with status and Run now.
 - **Layout** → ordered responsive list; reorder; each card normal or wide.
@@ -130,4 +136,11 @@ Every Haruspex user outside lean mode.
   opening the tab does not trigger runs.
 - **Email actions** → Draft reply produces an editable draft; sending only
   through the existing review modal.
+- **GitHub card** (added after the first approval) → a fetched card fed by
+  the catalog's GitHub MCP server through `mcp_call_tool`, with no model and
+  no GitHub integration of its own. Issues come from `list_issues` filtered
+  by the app, because the server's `search_issues` is semantic on github.com;
+  pull requests from `search_pull_requests`. Presets for issues from others, reviews
+  requested and pull requests from others; Work on this opens a code session
+  or a guided-planning job in the local checkout.
 - **Tab position** → first; Ctrl+1 is Home and the other digits shift.

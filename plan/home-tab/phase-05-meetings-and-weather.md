@@ -1,6 +1,6 @@
 # Phase 05 — Upcoming meetings and weather cards
 
-**Depends on:** 01, 02 · **Enables:** 07 (Open and Ask about this on events),
+**Depends on:** 01, 02 · **Enables:** 07 (Open and Ask about this on events), 09 (the refresher),
 08 (fetched results visible to the web client)
 
 ## Goal
