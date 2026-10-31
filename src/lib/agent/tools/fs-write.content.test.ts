@@ -271,7 +271,7 @@ describe('the retired per-format tools still work', () => {
 		mocks.invoke.mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
 		const out = await call('fs_write_odp', { path: 'deck.ODP', slides: [{ title: 'T' }] });
 		expect(out.result).toBe('Wrote: deck.ODP');
-		expect(mocks.invoke).toHaveBeenLastCalledWith('fs_write_odp', expect.any(Object));
+		expect(mocks.invoke).toHaveBeenCalledWith('fs_write_odp', expect.any(Object));
 	});
 
 	it('labels a retired call as its replacement does, and never offers it', async () => {

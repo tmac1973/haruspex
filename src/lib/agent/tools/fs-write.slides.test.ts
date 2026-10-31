@@ -13,10 +13,15 @@ const mocks = vi.hoisted(() => ({
 	registered: new Map<string, unknown>(),
 	built: [] as { slides: unknown[]; orientation: string; theme: string }[],
 	/** Set to make the next build throw it. */
-	buildError: null as Error | null
+	buildError: null as Error | null,
+	/** What rendering a preview gives; LibreOffice is "missing" unless a test
+	 *  routes `slides_preview_pdf`. */
+	sheets: { sheets: ['data:image/jpeg;base64,AAAA'], shown: 3, total: 3 }
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+
+vi.mock('#lib/agent/pdfRender.ts', () => ({ renderPdfSheets: async () => mocks.sheets }));
 
 vi.mock('#lib/slides/pptx.ts', () => ({
 	buildPptx: async (slides: unknown[], orientation: string, _images: unknown, theme: string) => {
@@ -59,7 +64,10 @@ beforeEach(() => {
 			{
 				fs_path_exists: false,
 				fs_write_pptx: write('fs_write_pptx'),
-				fs_write_odp: write('fs_write_odp')
+				fs_write_odp: write('fs_write_odp'),
+				slides_preview_pdf: () => {
+					throw new Error('LibreOffice is not installed.');
+				}
 			},
 			unexpectedInvoke
 		)
@@ -574,7 +582,7 @@ describe('a .pptx path', () => {
 			{ path: 'talks/Ünïcode deck.pptx', slides: [{ title: 'T', bullets: ['a'] }] },
 			ctx
 		);
-		expect(out.result).toBe('Wrote: talks/Ünïcode deck.pptx');
+		expect(out.result).toMatch(/^Wrote: talks\/Ünïcode deck\.pptx/);
 		const write = calls.find((c) => c[0] === 'fs_write_pptx')!;
 		expect(write[1]).toEqual(new Uint8Array([0x50, 0x4b, 3, 4]));
 		expect(write[2]).toEqual({
@@ -597,5 +605,164 @@ describe('backend failure', () => {
 		const out = await pptx([{ title: 'T', image: 'chart.png' }]);
 		expect(errorOf(out)).toBe('fs_write_slides failed: image not found: chart.png');
 		expect(ctx.filesWrittenThisTurn.size).toBe(0);
+	});
+});
+
+describe('the preview', () => {
+	const deck = [
+		{ title: 'Intro', bullets: ['a'] },
+		{ title: 'Middle', bullets: ['b'] },
+		{ title: 'End', bullets: ['c'] }
+	];
+	let calls: unknown[][];
+
+	/** LibreOffice "installed": every invoke is recorded, and the preview
+	 *  command answers with a PDF. */
+	beforeEach(() => {
+		calls = [];
+		mocks.sheets = { sheets: ['data:image/jpeg;base64,AAAA'], shown: 3, total: 3 };
+		mocks.invoke.mockImplementation(async (...args: unknown[]) => {
+			calls.push(args);
+			if (args[0] === 'fs_path_exists') return false;
+			if (args[0] === 'slides_preview_pdf') return new ArrayBuffer(4);
+			return undefined;
+		});
+	});
+
+	const previews = () => calls.filter((c) => c[0] === 'slides_preview_pdf');
+
+	it('hands the model the sheets, and says what to look for', async () => {
+		mocks.sheets = { sheets: ['data:one', 'data:two'], shown: 18, total: 20 };
+		const out = await pptx(deck);
+		expect(previews()).toEqual([
+			['slides_preview_pdf', { workdir: '/tmp/work', relPath: 'd.pptx' }]
+		]);
+		expect(ctx.pendingImages).toEqual([
+			{ path: 'd.pptx#sheet1', dataUrl: 'data:one' },
+			{ path: 'd.pptx#sheet2', dataUrl: 'data:two' }
+		]);
+		expect(out.result).toMatch(/^Wrote: d\.pptx\nThe sheets show slides 1–18 of 20 as LibreOffice/);
+		expect(out.result).toMatch(/write the whole deck again to "d\.pptx"/);
+	});
+
+	it('previews an .odp deck too', async () => {
+		await executor('fs_write_slides')({ path: 'd.odp', slides: deck }, ctx);
+		expect(previews()).toEqual([
+			['slides_preview_pdf', { workdir: '/tmp/work', relPath: 'd.odp' }]
+		]);
+	});
+
+	it('is skipped for a model that can’t see images', async () => {
+		ctx.visionSupported = false;
+		const out = await pptx(deck);
+		expect(out.result).toBe('Wrote: d.pptx');
+		expect(previews()).toEqual([]);
+	});
+
+	it('is skipped while other images wait for the model', async () => {
+		ctx.pendingImages.push({ path: 'x.png', dataUrl: 'data:x' });
+		const out = await pptx(deck);
+		expect(out.result).toBe('Wrote: d.pptx');
+		expect(previews()).toEqual([]);
+	});
+
+	it('leaves the result alone without LibreOffice', async () => {
+		mocks.invoke.mockImplementation(async (cmd: string) => {
+			if (cmd === 'slides_preview_pdf') throw new Error('LibreOffice is not installed.');
+			return cmd === 'fs_path_exists' ? false : undefined;
+		});
+		const out = await pptx(deck);
+		expect(out.result).toBe('Wrote: d.pptx');
+		expect(ctx.pendingImages).toEqual([]);
+	});
+
+	it('is of the file the user chose to keep beside the old one', async () => {
+		mocks.invoke.mockImplementation(async (...args: unknown[]) => {
+			calls.push(args);
+			if (args[0] === 'fs_path_exists') return true;
+			if (args[0] === 'fs_find_available_path') return 'd-1.pptx';
+			if (args[0] === 'slides_preview_pdf') return new ArrayBuffer(4);
+			return undefined;
+		});
+		const conflict = await import('#lib/stores/fileConflict.svelte.ts');
+		const ask = vi.spyOn(conflict, 'askFileConflict').mockResolvedValue('counter');
+		try {
+			await pptx(deck);
+		} finally {
+			ask.mockRestore();
+		}
+		expect(previews()[0][1]).toEqual({ workdir: '/tmp/work', relPath: 'd-1.pptx' });
+	});
+});
+
+describe('writing a previewed deck again', () => {
+	const deck = [
+		{ title: 'Intro', bullets: ['a'] },
+		{ title: 'Middle', bullets: ['b'] },
+		{ title: 'End', bullets: ['c'] }
+	];
+	let calls: unknown[][];
+
+	// The file doesn't exist before the first write; a rewrite never asks, so
+	// what fs_path_exists says after doesn't matter.
+	beforeEach(() => {
+		calls = [];
+		mocks.invoke.mockImplementation(async (...args: unknown[]) => {
+			calls.push(args);
+			if (args[0] === 'fs_path_exists') return false;
+			if (args[0] === 'slides_preview_pdf') return new ArrayBuffer(4);
+			return undefined;
+		});
+	});
+
+	const writes = () => calls.filter((c) => c[0] === 'fs_write_pptx');
+	/** A new turn's write set, as each turn gets. */
+	const freshTurn = () => {
+		ctx.filesWrittenThisTurn = new Set();
+		ctx.pendingImages.length = 0;
+	};
+
+	it('is allowed twice, replacing the file without asking', async () => {
+		freshTurn();
+		const first = await pptx(deck);
+		expect(first.result).toMatch(/^Wrote: d\.pptx/);
+		// The model looks, then fixes a slide and writes the whole deck again.
+		ctx.pendingImages.length = 0;
+		const fixed = deck.map((s, i) => (i === 1 ? { ...s, bullets: ['b, shorter'] } : s));
+		const second = await pptx(fixed);
+		expect(second.result).toMatch(/^Wrote: d\.pptx/);
+		ctx.pendingImages.length = 0;
+		const third = await pptx(fixed);
+		expect(third.result).toMatch(/^Wrote: d\.pptx/);
+		expect(third.result).toMatch(/rewritten as many times as it can be this turn/);
+		ctx.pendingImages.length = 0;
+		const fourth = await pptx(fixed);
+		expect(errorOf(fourth)).toMatch(/was already written in this turn/);
+		expect(writes()).toHaveLength(3);
+		// Replacing its own file never asks: the header says overwrite.
+		for (const w of writes().slice(1)) {
+			expect((w[2] as { headers: Record<string, string> }).headers['x-overwrite']).toBe('true');
+		}
+	});
+
+	it('is refused when most of the slides are new: a second piece of a deck', async () => {
+		freshTurn();
+		await pptx(deck);
+		ctx.pendingImages.length = 0;
+		const out = await pptx([
+			{ title: 'Part two', bullets: ['x'] },
+			{ title: 'More', bullets: ['y'] },
+			{ title: 'End', bullets: ['z'] }
+		]);
+		expect(errorOf(out)).toMatch(/was already written in this turn/);
+		expect(writes()).toHaveLength(1);
+	});
+
+	it('is refused for a deck the model wasn’t shown', async () => {
+		freshTurn();
+		ctx.visionSupported = false;
+		await pptx(deck);
+		const out = await pptx(deck);
+		expect(errorOf(out)).toMatch(/was already written in this turn/);
 	});
 });

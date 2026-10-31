@@ -5,6 +5,8 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { base64ToBytes } from '#lib/utils/base64.ts';
+import { cellOrigin, planSheets } from '#lib/slides/sheets.ts';
+import type { SheetPlan } from '#lib/slides/sheets.ts';
 
 // PDF.js worker is bundled by Vite. We import the worker as a URL.
 import * as pdfjsLib from 'pdfjs-dist';
@@ -78,6 +80,64 @@ async function renderPages(pdf: pdfjsLib.PDFDocumentProxy): Promise<string[]> {
 		page.cleanup();
 	}
 	return pages;
+}
+
+/**
+ * Render a slide deck's PDF as contact sheets (`#lib/slides/sheets.ts`):
+ * each slide drawn small in a numbered grid, as JPEG data URLs.
+ */
+export async function renderPdfSheets(
+	bytes: Uint8Array
+): Promise<{ sheets: string[]; shown: number; total: number }> {
+	const task = pdfjsLib.getDocument({ data: bytes });
+	try {
+		const pdf = await task.promise;
+		const first = (await pdf.getPage(1)).getViewport({ scale: 1 });
+		const plan = planSheets(pdf.numPages, first.width / first.height);
+		const sheets: string[] = [];
+		for (const sheet of plan.sheets) sheets.push(await renderSheet(pdf, sheet, plan.cell));
+		return { sheets, shown: plan.shown, total: plan.total };
+	} finally {
+		await task.destroy();
+	}
+}
+
+async function renderSheet(
+	pdf: pdfjsLib.PDFDocumentProxy,
+	sheet: SheetPlan,
+	cell: { w: number; h: number }
+): Promise<string> {
+	const canvas = document.createElement('canvas');
+	canvas.width = sheet.width;
+	canvas.height = sheet.height;
+	const ctx = canvas.getContext('2d');
+	if (!ctx) throw new Error('Failed to get canvas context');
+	ctx.fillStyle = '#808080';
+	ctx.fillRect(0, 0, canvas.width, canvas.height);
+	for (let i = 0; i < sheet.count; i++) {
+		const num = sheet.first + i + 1;
+		const page = await pdf.getPage(num);
+		const unscaled = page.getViewport({ scale: 1 });
+		const viewport = page.getViewport({ scale: cell.w / unscaled.width });
+		const slide = document.createElement('canvas');
+		slide.width = cell.w;
+		slide.height = cell.h;
+		const slideCtx = slide.getContext('2d');
+		if (!slideCtx) throw new Error('Failed to get canvas context');
+		slideCtx.fillStyle = '#ffffff';
+		slideCtx.fillRect(0, 0, cell.w, cell.h);
+		await page.render({ canvasContext: slideCtx, viewport, canvas: slide }).promise;
+		page.cleanup();
+		const { x, y } = cellOrigin(sheet, cell, i);
+		ctx.drawImage(slide, x, y);
+		// The slide's number, so the model can say which one is wrong.
+		ctx.fillStyle = '#000000';
+		ctx.fillRect(x, y, 34, 24);
+		ctx.fillStyle = '#ffffff';
+		ctx.font = 'bold 16px sans-serif';
+		ctx.fillText(String(num), x + 6, y + 18);
+	}
+	return canvas.toDataURL('image/jpeg', 0.85);
 }
 
 export function pdfPageCountNotice(totalPages: number, rendered: number): string {

@@ -14,6 +14,7 @@ pub mod path;
 pub mod pdf_read;
 pub mod pdf_write;
 pub mod pptx;
+pub mod preview;
 pub mod slides;
 pub mod text;
 pub mod xlsx;

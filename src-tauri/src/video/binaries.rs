@@ -164,13 +164,13 @@ fn which_in(dirs: impl IntoIterator<Item = PathBuf>, name: &str) -> Option<PathB
 
 /// The first of `names` found in `dirs`. Every directory is searched for one
 /// name before the next name is tried.
-fn which_any(dirs: &[PathBuf], names: &[&str]) -> Option<PathBuf> {
+pub(crate) fn which_any(dirs: &[PathBuf], names: &[&str]) -> Option<PathBuf> {
     names
         .iter()
         .find_map(|name| which_in(dirs.iter().cloned(), name))
 }
 
-fn path_dirs() -> Vec<PathBuf> {
+pub(crate) fn path_dirs() -> Vec<PathBuf> {
     std::env::var_os("PATH")
         .map(|p| std::env::split_paths(&p).collect())
         .unwrap_or_default()
