@@ -4,7 +4,7 @@ import { buildPptx } from './pptx';
 import { DeckFitError } from './textfit';
 import { pngHeader } from './testImages';
 import type { SlideTheme } from './themes';
-import type { Slide, SlideImage, SlideOrientation } from './types';
+import type { Slide, SlideChart, SlideImage, SlideOrientation } from './types';
 
 // The deck PptxGenJS writes, read back as XML: order, bullet levels,
 // escaping, the page shape for each orientation, and what each layout and
@@ -193,8 +193,7 @@ describe('images', () => {
 		for (const orientation of ['landscape', 'portrait'] as const) {
 			const xml = await part(await build([slide], orientation, images), 'ppt/slides/slide1.xml');
 			const pic = boxes(xml.slice(xml.indexOf('<p:pic>')))[0];
-			const text = boxes(xml.slice(0, xml.indexOf('<p:pic>')));
-			const bullets = text[text.length - 1];
+			const bullets = boxOf(xml, 'x');
 			if (orientation === 'landscape') expect(pic.x).toBeGreaterThan(bullets.x + bullets.w);
 			else expect(pic.y + pic.h).toBeLessThan(bullets.y);
 		}
@@ -334,5 +333,126 @@ describe('speaker notes', () => {
 		const zip = await build([{ title: 'T', bullets: ['a'], notes: '  Say hello first.  ' }]);
 		const notes = await part(zip, 'ppt/notesSlides/notesSlide1.xml');
 		expect(notes).toContain('Say hello first.');
+	});
+});
+
+describe('charts', () => {
+	const sales: SlideChart = {
+		type: 'bar',
+		labels: ['Q1', 'Q2', 'Q3'],
+		series: [{ name: 'Sales', values: [3, 5, 4] }]
+	};
+
+	async function chartXml(chart: SlideChart, theme: SlideTheme = 'light'): Promise<string> {
+		const zip = await build([{ title: 'T', chart }], 'landscape', new Map(), theme);
+		const name = Object.keys(zip.files).find((n) => /^ppt\/charts\/chart\d+\.xml$/.test(n));
+		if (!name) throw new Error('no chart part');
+		return part(zip, name);
+	}
+
+	it.each([
+		['bar', 'c:barChart'],
+		['line', 'c:lineChart'],
+		['pie', 'c:pieChart'],
+		['doughnut', 'c:doughnutChart']
+	] as const)('draws a %s chart', async (type, element) => {
+		expect(await chartXml({ ...sales, type })).toContain(`<${element}>`);
+	});
+
+	it('carries the labels, series and values, so PowerPoint can edit them', async () => {
+		const xml = await chartXml(sales);
+		for (const text of ['Q1', 'Q2', 'Q3', 'Sales']) expect(xml).toContain(`<c:v>${text}</c:v>`);
+		for (const v of ['3', '5', '4']) expect(xml).toContain(`<c:v>${v}</c:v>`);
+		expect(xml).toContain('<c:barDir val="col"/>');
+	});
+
+	it('colours the series from the theme', async () => {
+		expect(await chartXml(sales, 'warm')).toContain('srgbClr val="C2410C"');
+	});
+
+	it('fills the body when the slide has no bullets, and shares it when it does', async () => {
+		const alone = await slideXml([{ title: 'T', chart: sales }]);
+		const shared = await slideXml([{ title: 'T', bullets: ['Up'], chart: sales }]);
+		const frame = (xml: string) => boxes(xml.slice(xml.indexOf('<p:graphicFrame')))[0];
+		expect(frame(alone).w).toBeGreaterThan(frame(shared).w * 1.5);
+	});
+});
+
+describe('tables', () => {
+	const people = [
+		['Name', 'Age', 'City'],
+		['Ada', '36', 'London'],
+		['Alan', '41', 'Wilmslow']
+	];
+
+	it('draws every cell, the header on the theme’s band', async () => {
+		const xml = await slideXml([{ title: 'T', table: people }]);
+		expect(xml).toContain('<a:tbl>');
+		for (const cell of people.flat()) expect(xml).toContain(`<a:t>${cell}</a:t>`);
+		const header = xml.slice(xml.indexOf('<a:tr'), xml.indexOf('</a:tr>'));
+		expect(header).toContain('srgbClr val="1E3A8A"');
+	});
+
+	it('lines a column of numbers up on the right, its header with it', async () => {
+		const table = [
+			['Name', 'Age', 'Revenue', 'City'],
+			['Ada', '36', '$4.2m', 'London'],
+			['Alan', '41', '3bn', 'Wilmslow']
+		];
+		const xml = await slideXml([{ title: 'T', table }]);
+		const cellWith = (text: string) => {
+			const at = xml.indexOf(`<a:t>${text}</a:t>`);
+			return xml.slice(xml.lastIndexOf('<a:tc', at), at);
+		};
+		for (const cell of ['Age', '36', 'Revenue', '$4.2m']) {
+			expect(cellWith(cell), cell).toContain('algn="r"');
+		}
+		for (const cell of ['Name', 'City', 'London']) {
+			expect(cellWith(cell), cell).not.toContain('algn="r"');
+		}
+	});
+
+	it('puts portrait bullets just under a short table, not under its share', async () => {
+		const xml = await slideXml(
+			[{ title: 'T', bullets: ['After the table'], table: people }],
+			'portrait'
+		);
+		const table = boxes(xml.slice(xml.indexOf('<p:graphicFrame')))[0];
+		const bullets = boxOf(xml, 'After the table');
+		const rows = 3 * ((14 * 1.2) / 72 + 0.1);
+		expect(bullets.y).toBeCloseTo(table.y + rows + 0.5, 1);
+	});
+
+	it('shrinks to fit, and refuses a table far too tall for the slide', async () => {
+		const row = (i: number) => [
+			`Row ${i}`,
+			'a longer cell that wraps onto more lines than one',
+			'1'
+		];
+		const tall = [['A', 'B', 'C'], ...Array.from({ length: 24 }, (_, i) => row(i))];
+		const err = (await buildPptx([{ title: 'Big', table: tall }], 'landscape', new Map()).catch(
+			(e: unknown) => e
+		)) as DeckFitError;
+		expect(err).toBeInstanceOf(DeckFitError);
+		expect(err.problems[0]).toMatch(/^Slide 1 \("Big"\): the table needs about \d+\.\d× the room/);
+
+		// Thirteen one-line rows are taller than the body at 16pt.
+		const medium = [['A', 'B', 'C'], ...Array.from({ length: 12 }, (_, i) => row(i))];
+		const xml = await slideXml([{ title: 'T', table: medium }]);
+		const sizes = [...xml.matchAll(/<a:rPr[^>]*sz="(\d+)"/g)].map((m) => Number(m[1]) / 100);
+		expect(Math.min(...sizes)).toBeLessThan(16);
+	});
+});
+
+describe('a picture with no bullets', () => {
+	it('gets the whole body', async () => {
+		const images = new Map([['sq.png', image(500, 500)]]);
+		const alone = await part(
+			await build([{ title: 'T', image: 'sq.png' }], 'landscape', images),
+			'ppt/slides/slide1.xml'
+		);
+		const pic = boxes(alone.slice(alone.indexOf('<p:pic>')))[0];
+		// Centred on the page, not pushed into the right half.
+		expect(pic.x + pic.w / 2).toBeCloseTo(40 / 3 / 2, 1);
 	});
 });

@@ -1,6 +1,6 @@
 ---
 title: Slide decks
-description: Making a PowerPoint or LibreOffice deck in Chat: landscape or portrait, themes, layouts, pictures, speaker notes, crowded slides, and what .odp leaves out.
+description: Making a PowerPoint or LibreOffice deck in Chat: landscape or portrait, themes, layouts, charts and tables, pictures, speaker notes, crowded slides, and what .odp leaves out.
 ---
 
 # Slide decks
@@ -39,9 +39,15 @@ Each slide has one layout, and the assistant mixes them:
 
 Asking for "a slide comparing the two plans" or "the growth figure as a big number" is usually enough. Bullets nest up to three levels.
 
+## Charts and tables
+
+A content slide can show a chart or a table, drawn by PowerPoint itself, so you can still change it there: click a chart and choose Edit Data to change its numbers. Charts are bar, line, pie or doughnut, with up to 8 series and 24 labels. Tables take up to 8 columns and 25 rows, and a column of numbers lines up on the right. Ask for the data as a chart and the assistant passes the numbers; it doesn't draw a picture of a chart.
+
+With bullets, the chart or table sits beside them (above them in portrait), and without, it fills the slide. A slide shows one picture, chart or table.
+
 ## Pictures
 
-A slide can show a PNG, JPEG or GIF from the working folder, up to 10 MB. Have the picture made or downloaded first: generate one (see the `images` page), download it, or ask for a chart drawn with Python and saved as a PNG. A picture keeps its shape. A content slide fits it in its half, and an image slide crops its edges to fill the page.
+A slide can show a PNG, JPEG or GIF from the working folder, up to 10 MB. Have the picture made or downloaded first: generate one (see the `images` page) or download it. A picture keeps its shape. A content slide fits it beside the bullets, or on the whole slide when there are none, and an image slide crops its edges to fill the page.
 
 ## Speaker notes
 
@@ -49,12 +55,12 @@ Ask for speaker notes and each slide gets them on its notes page, which PowerPoi
 
 ## When a slide is too full
 
-Text shrinks a step or two to fit. A slide with far more than fits is refused: no file is written, and the assistant is told which slides to split. It usually splits them and tries again by itself. If it doesn't, ask it to.
+Text and tables shrink a step or two to fit. A slide with far more than fits is refused: no file is written, and the assistant is told which slides to split. It usually splits them and tries again by itself. If it doesn't, ask it to.
 
 ## What an .odp deck leaves out
 
-An `.odp` deck has no themes or speaker notes. Its cover, quote and stat slides become plain divider slides, a two-column slide lists both columns as one, and an image slide shows its picture beside the caption. The assistant says when it had to do this. For the full design, ask for `.pptx`.
+An `.odp` deck has no themes, speaker notes, charts or tables. Its cover, quote and stat slides become plain divider slides, a two-column slide lists both columns as one, an image slide shows its picture beside the caption, and a chart or table becomes a list of its numbers. The assistant says when it had to do this. For the full design, ask for `.pptx`.
 
 ## What it doesn't do
 
-There are no native charts or tables yet: use a picture of a chart. There are no animations or slide transitions either.
+There are no animations or slide transitions, and no scatter, area or stacked charts.

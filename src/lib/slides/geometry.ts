@@ -72,19 +72,29 @@ function split(orientation: SlideOrientation, share: number): [Box, Box] {
 	];
 }
 
-/** The bullets' box, and the image's when the slide has one. Portrait puts
- *  the image first, above the bullets. */
+/** What a content slide shows besides its bullets: a picture, or a chart or
+ *  table (`data`, which gets the larger share). */
+export type Visual = 'image' | 'data';
+
+/**
+ * The bullets' box, and the visual's when the slide has one. With no bullets
+ * the visual has the whole body. Portrait puts the visual first, above the
+ * bullets.
+ */
 export function bodyBoxes(
 	orientation: SlideOrientation,
-	hasImage: boolean
-): { bullets: Box; image?: Box } {
-	if (!hasImage) return { bullets: body(orientation) };
+	visual?: Visual,
+	hasBullets = true
+): { bullets: Box; visual?: Box } {
+	const whole = body(orientation);
+	if (!visual) return { bullets: whole };
+	if (!hasBullets) return { bullets: whole, visual: whole };
 	if (orientation === 'portrait') {
-		const [image, bullets] = split(orientation, 0.45);
-		return { bullets, image };
+		const [box, bullets] = split(orientation, visual === 'data' ? 0.55 : 0.45);
+		return { bullets, visual: box };
 	}
-	const [bullets, image] = split(orientation, 0.5);
-	return { bullets, image };
+	const [bullets, box] = split(orientation, visual === 'data' ? 0.4 : 0.5);
+	return { bullets, visual: box };
 }
 
 /** A two-column slide's columns: left then right, or top then bottom. */

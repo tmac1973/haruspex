@@ -17,62 +17,16 @@ import {
 	titleBox
 } from '#lib/slides/geometry.ts';
 import type { Box } from '#lib/slides/geometry.ts';
+import { addChart, addTable } from '#lib/slides/pptxData.ts';
 import { DeckFitError, OVERFLOW_LIMIT, fitScale } from '#lib/slides/textfit.ts';
 import type { Paragraph } from '#lib/slides/textfit.ts';
 import { THEMES } from '#lib/slides/themes.ts';
+import { SIZES } from '#lib/slides/sizes.ts';
+import type { Sizes } from '#lib/slides/sizes.ts';
 import type { SlideTheme, Theme } from '#lib/slides/themes.ts';
 import type { Slide, SlideBullet, SlideImage, SlideOrientation } from '#lib/slides/types.ts';
 
 const PORTRAIT_LAYOUT = 'HARUSPEX_PORTRAIT';
-
-/** Font sizes in points, before any shrinking to fit. */
-interface Sizes {
-	/** By nesting level. */
-	bullets: number[];
-	title: number;
-	cover: number;
-	section: number;
-	/** A cover's or section's subtitle. */
-	tagline: number;
-	quote: number;
-	quoteMark: number;
-	speaker: number;
-	stat: number;
-	meaning: number;
-	imageTitle: number;
-	imageSubtitle: number;
-}
-
-const SIZES: Record<SlideOrientation, Sizes> = {
-	landscape: {
-		bullets: [22, 19, 17],
-		title: 34,
-		cover: 48,
-		section: 40,
-		tagline: 22,
-		quote: 30,
-		quoteMark: 120,
-		speaker: 18,
-		stat: 110,
-		meaning: 26,
-		imageTitle: 36,
-		imageSubtitle: 20
-	},
-	portrait: {
-		bullets: [20, 18, 16],
-		title: 30,
-		cover: 40,
-		section: 34,
-		tagline: 20,
-		quote: 26,
-		quoteMark: 100,
-		speaker: 16,
-		stat: 96,
-		meaning: 24,
-		imageTitle: 30,
-		imageSubtitle: 18
-	}
-};
 
 /** Space before each bullet after the first, in points. */
 const BULLET_GAP = 8;
@@ -251,14 +205,30 @@ function addContent(
 	image: SlideImage | undefined
 ): void {
 	addHeading(build, out, where, slide);
-	const boxes = bodyBoxes(build.orientation, image !== undefined);
-	addBullets(build, out, where, 'the bullets', slide.bullets ?? [], boxes.bullets);
-	if (image && boxes.image) {
-		out.addImage({
-			data: imageData(image),
-			...at(fitImage(boxes.image, image.width, image.height))
-		});
+	const bullets = slide.bullets ?? [];
+	const data = slide.chart !== undefined || slide.table !== undefined;
+	const visual = data ? 'data' : image ? 'image' : undefined;
+	const boxes = bodyBoxes(build.orientation, visual, bullets.length > 0);
+	let bulletBox = boxes.bullets;
+	const box = boxes.visual;
+	if (slide.chart && box) addChart(build.deck, out, build.theme, box, slide.chart);
+	else if (slide.table && box) {
+		const { ratio, height } = addTable(out, build.theme, box, slide.table, build.orientation);
+		if (ratio > OVERFLOW_LIMIT) {
+			build.problems.push(
+				`${where}: the table needs about ${ratio.toFixed(1)}× the room there is.`
+			);
+		}
+		// Portrait stacks the bullets under the table: under where it ends,
+		// not where its share of the body does.
+		if (build.orientation === 'portrait' && bullets.length > 0) {
+			const y = box.y + Math.min(height, box.h) + 0.5;
+			bulletBox = { ...bulletBox, y, h: bulletBox.y + bulletBox.h - y };
+		}
+	} else if (image && box) {
+		out.addImage({ data: imageData(image), ...at(fitImage(box, image.width, image.height)) });
 	}
+	addBullets(build, out, where, 'the bullets', bullets, bulletBox);
 }
 
 function addTwoColumn(build: Build, out: PptxGenJS.Slide, where: string, slide: Slide): void {

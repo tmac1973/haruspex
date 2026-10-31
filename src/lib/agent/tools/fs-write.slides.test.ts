@@ -383,6 +383,65 @@ describe('the right column and notes', () => {
 	});
 });
 
+describe('charts and tables', () => {
+	const chart = { type: 'bar', labels: ['Q1', 'Q2'], series: [{ name: 'Sales', values: [3, 5] }] };
+
+	it('reaches the builder read, on a content slide whatever the layout said', async () => {
+		await pptx([
+			{ title: 'T', layout: 'stat', chart: { ...chart, series: [{ values: ['3', '5'] }] } }
+		]);
+		expect(sentSlides()[0]).toEqual({
+			title: 'T',
+			layout: 'content',
+			chart: { type: 'bar', labels: ['Q1', 'Q2'], series: [{ name: 'Series 1', values: [3, 5] }] }
+		});
+	});
+
+	it('keeps a slide with only a table as content, not a divider', async () => {
+		await pptx([
+			{
+				title: 'T',
+				table: [
+					['a', 'b'],
+					['1', '2']
+				]
+			}
+		]);
+		expect(sentSlides()[0].layout).toBe('content');
+	});
+
+	it('refuses a chart it can’t read, naming the slide, and writes nothing', async () => {
+		const out = await pptx([
+			{ title: 'Fine', bullets: ['a'] },
+			{ title: 'T', chart: { labels: ['a', 'b'], values: [1] } }
+		]);
+		expect(errorOf(out)).toBe(
+			`Slide 2's chart can't be drawn: series "Series 1" has 1 values for 2 labels; give one value per label.`
+		);
+		expect(sent).toHaveLength(0);
+	});
+
+	it('refuses tool-call markup in a table cell or a chart label', async () => {
+		const table = await pptx([{ title: 'T', table: [['a'], ['x </function>']] }]);
+		expect(errorOf(table)).toMatch(/^Slide 1 contains tool-call markup/);
+		const labels = await pptx([{ title: 'T', chart: { labels: ['<tool_call>'], values: [1] } }]);
+		expect(errorOf(labels)).toMatch(/^Slide 1 contains tool-call markup/);
+	});
+
+	it('lists them as bullets in an .odp deck, and says so', async () => {
+		const out = await executor('fs_write_slides')(
+			{ path: 'd.odp', slides: [{ title: 'T', chart }] },
+			ctx
+		);
+		expect(sent[0].payload.slides).toStrictEqual([
+			{ title: 'T', layout: 'content', bullets: ['Q1: 3', 'Q2: 5'] }
+		]);
+		expect(out.result).toBe(
+			'Wrote: d.odp\n.odp is plainer than .pptx: charts were listed as bullets.'
+		);
+	});
+});
+
 describe('theme', () => {
 	it.each([
 		['dark', 'dark'],

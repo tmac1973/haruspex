@@ -90,16 +90,23 @@ function settleColumns(slide: Record<string, unknown>): void {
 }
 
 /**
- * The layout a slide can actually be drawn with, in place: an image slide
- * needs its image, a two-column slide both columns (`settleColumns`), and a
- * content slide with nothing in it is a title on its own, so a section
- * divider.
+ * The layout a slide can actually be drawn with, in place: a chart or table
+ * is drawn on a content slide, an image slide needs its image, a two-column
+ * slide both columns (`settleColumns`), and a content slide with nothing in
+ * it is a title on its own, so a section divider.
  */
 export function settleLayout(slide: Record<string, unknown>): void {
+	const hasData = slide.chart !== undefined || slide.table !== undefined;
+	if (hasData) slide.layout = 'content';
 	if (slide.layout === 'image' && slide.image === undefined) delete slide.layout;
 	settleColumns(slide);
 	const layout = slide.layout ?? 'content';
-	if (layout === 'content' && !hasRealBullets(slide.bullets) && slide.image === undefined) {
+	if (
+		layout === 'content' &&
+		!hasData &&
+		!hasRealBullets(slide.bullets) &&
+		slide.image === undefined
+	) {
 		slide.layout = 'section';
 	}
 }

@@ -22,6 +22,18 @@ export type SlideLayout = (typeof SLIDE_LAYOUTS)[number];
 /** A plain string is a top-level bullet; `level` nests it (0–2). */
 export type SlideBullet = string | { text: string; level?: number };
 
+export const CHART_TYPES = ['bar', 'line', 'pie', 'doughnut'] as const;
+
+export type ChartType = (typeof CHART_TYPES)[number];
+
+/** A chart drawn natively, so it stays editable in PowerPoint. Every series
+ *  has one value per label; a pie or doughnut has one series. */
+export interface SlideChart {
+	type: ChartType;
+	labels: string[];
+	series: { name: string; values: number[] }[];
+}
+
 export interface Slide {
 	/** On a quote slide the quote, on a stat slide the number. */
 	title: string;
@@ -32,8 +44,12 @@ export interface Slide {
 	bullets?: SlideBullet[];
 	/** A two-column slide's right column. */
 	right?: SlideBullet[];
-	/** A png, jpg or gif in the working directory. */
+	/** A png, jpg or gif in the working directory. A content slide shows at
+	 *  most one of `image`, `chart` and `table`. */
 	image?: string;
+	chart?: SlideChart;
+	/** Rows of cells, the header first; every row as wide as the widest. */
+	table?: string[][];
 	/** Speaker notes. */
 	notes?: string;
 }
