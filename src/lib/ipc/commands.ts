@@ -378,6 +378,7 @@ export const IPC = {
 	skills_project_root: 'skills_project_root',
 	skills_shipped: 'skills_shipped',
 	skills_user_dir: 'skills_user_dir',
+	slides_preview_pdf: 'slides_preview_pdf',
 	start_recording: 'start_recording',
 	start_server: 'start_server',
 	start_whisper: 'start_whisper',

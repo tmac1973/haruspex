@@ -1,6 +1,6 @@
 ---
 title: Slide decks
-description: Making a PowerPoint or LibreOffice deck in Chat: landscape or portrait, themes, layouts, charts and tables, pictures, speaker notes, crowded slides, and what .odp leaves out.
+description: Making a PowerPoint or LibreOffice deck in Chat: orientation, themes, layouts, charts and tables, pictures, notes, crowded slides, the LibreOffice check, and .odp limits.
 ---
 
 # Slide decks
@@ -56,6 +56,12 @@ Ask for speaker notes and each slide gets them on its notes page, which PowerPoi
 ## When a slide is too full
 
 Text and tables shrink a step or two to fit. A slide with far more than fits is refused: no file is written, and the assistant is told which slides to split. It usually splits them and tries again by itself. If it doesn't, ask it to.
+
+## The assistant checks its own slides
+
+If LibreOffice is installed and the model can see images, the assistant looks at each deck it writes: LibreOffice draws the slides, and the model gets them as numbered sheets of up to nine slides each, 18 in all. It checks for text running off a slide or over a picture, charts and tables too small to read, and colours that don't read. If it finds a problem, it writes the deck again, at most twice. Without LibreOffice, or with a model that can't see images, the deck is written all the same, unchecked. Haruspex doesn't install LibreOffice: get it from libreoffice.org or your package manager.
+
+The check uses LibreOffice's own copy of its settings, so it works while you have LibreOffice open. It adds a few seconds to each deck.
 
 ## What an .odp deck leaves out
 

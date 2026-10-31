@@ -664,6 +664,7 @@ pub fn run() {
             fs_tools::xlsx::fs_write_ods,
             fs_tools::pptx::fs_write_pptx,
             fs_tools::odp::fs_write_odp,
+            fs_tools::preview::slides_preview_pdf,
             fs_tools::download::fs_download_url,
             fs_tools::path::fs_path_exists,
             fs_tools::path::fs_find_available_path,

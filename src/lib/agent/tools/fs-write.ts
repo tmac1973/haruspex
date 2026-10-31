@@ -29,6 +29,7 @@ import {
 	settleLayout
 } from '#lib/slides/prepare.ts';
 import { SLIDE_SCHEMA } from '#lib/slides/schema.ts';
+import { attachPreview, mayRewrite, noteRewrite } from '#lib/slides/preview.ts';
 import { prepareVisuals, visualTexts } from '#lib/slides/visuals.ts';
 import { SLIDE_THEMES } from '#lib/slides/themes.ts';
 import type { Slide } from '#lib/slides/types.ts';
@@ -98,6 +99,11 @@ function writeOptions(ctx: ToolContext): WriteOptions {
 	return { askBeforeOverwrite: false, rewritable: ctx.filesRewritableThisTurn };
 }
 
+/** `opts`, letting a second write this turn replace `path` too. */
+function rewriting(opts: WriteOptions, path: string): WriteOptions {
+	return { ...opts, rewritable: new Set([...(opts.rewritable ?? []), path]) };
+}
+
 /**
  * Outcome of pre-write conflict resolution.
  *  - `ok`       proceed with the write.
@@ -133,8 +139,12 @@ export async function resolveWritePathInteractive(
 	// A Code session may rewrite a file once a command has run since it wrote
 	// it: the agent tested its work and is now replacing it whole, which is a
 	// fix, not a chunk. Back-to-back writes are still refused.
-	if (filesWrittenThisTurn.has(relPath) && !opts.rewritable?.has(relPath)) {
-		return { kind: 'rejected', message: repeatWriteMessage(relPath, opts.editable !== false) };
+	if (filesWrittenThisTurn.has(relPath)) {
+		if (!opts.rewritable?.has(relPath)) {
+			return { kind: 'rejected', message: repeatWriteMessage(relPath, opts.editable !== false) };
+		}
+		// This turn wrote the file, so replacing it is no one else's to approve.
+		return { kind: 'ok', finalPath: relPath, overwrite: true };
 	}
 
 	let exists: boolean;
@@ -807,19 +817,32 @@ function slidesWriteExecutor() {
 		const orientation = normalizeOrientation(args.orientation);
 		const theme = normalizeTheme(args.theme);
 		const workdir = fsWorkdir(ctx)!;
-		const write = (command: string | RawWrite, payload: Record<string, unknown>) =>
-			fsWriteWithConflictCheck(
+		const path = args.path as string;
+		const titles = deck.map((s) => s.title);
+		const turn = ctx.filesWrittenThisTurn;
+		// A deck the model was shown may be written again to fix it (preview.ts).
+		const rewrite = turn.has(path) && mayRewrite(turn, path, titles);
+		// The path the deck went to: the user may have kept the old file and
+		// had it written beside it.
+		let written = path;
+		const write = async (send: RawWrite) => {
+			const out = await fsWriteWithConflictCheck(
 				'fs_write_slides',
-				command,
+				(relPath, overwrite) => ((written = relPath), send(relPath, overwrite)),
 				workdir,
-				args.path as string,
-				payload,
-				ctx.filesWrittenThisTurn,
-				writeOptions(ctx)
+				path,
+				{},
+				turn,
+				rewrite ? rewriting(writeOptions(ctx), path) : writeOptions(ctx)
 			);
+			if (rewrite && out.result.startsWith('Wrote:')) noteRewrite(turn, path);
+			return attachPreview(out, ctx, workdir, written, titles);
+		};
 		if (choice.command !== IPC.fs_write_pptx) {
 			const odp = foldForOdp(deck);
-			const out = await write(choice.command, { slides: odp.slides, orientation });
+			const out = await write((relPath, overwrite) =>
+				invoke(choice.command, { workdir, relPath, slides: odp.slides, orientation, overwrite })
+			);
 			const dropped = theme === 'light' ? odp.dropped : [...odp.dropped, 'the theme was not used'];
 			if (out.result.startsWith('Wrote:') && dropped.length > 0) {
 				out.result += `\n.odp is plainer than .pptx: ${dropped.join('; ')}.`;
@@ -834,7 +857,7 @@ function slidesWriteExecutor() {
 		} catch (e) {
 			return toolResult(toolInvokeError('fs_write_slides', e));
 		}
-		return write(pptxWrite(built, workdir), {});
+		return write(pptxWrite(built, workdir));
 	};
 }
 
