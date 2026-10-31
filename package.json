@@ -78,6 +78,7 @@
 		"highlight.js": "^11.11.1",
 		"marked": "^18.1.0",
 		"pdfjs-dist": "^6.4.299",
+		"pptxgenjs": "4.0.1",
 		"pyodide": "0.29.4"
 	}
 }

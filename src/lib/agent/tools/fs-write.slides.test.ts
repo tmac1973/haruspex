@@ -4,14 +4,26 @@ import type { ToolContext, ToolExecOutput, ToolRegistration } from './types';
 // prepareSlides in fs-write.ts: shape forgiveness (JSON strings, string
 // bullets, layout case) and the scaffold checks (no title, placeholder
 // bullets). The executors are captured at registration so the model's raw
-// arguments reach them without executeTool's schema coercion.
+// arguments reach them without executeTool's schema coercion. A .pptx is
+// built by PptxGenJS (`#lib/slides/pptx.ts`, tested on its own), so here the
+// builder only records what it was given.
 
 const mocks = vi.hoisted(() => ({
 	invoke: vi.fn(),
-	registered: new Map<string, unknown>()
+	registered: new Map<string, unknown>(),
+	built: [] as { slides: unknown[]; orientation: string }[]
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+
+vi.mock('#lib/slides/pptx.ts', () => ({
+	buildPptx: async (slides: unknown[], orientation: string) => {
+		mocks.built.push({ slides, orientation });
+		return new Uint8Array([0x50, 0x4b, 3, 4]);
+	}
+}));
+
+vi.mock('#lib/slides/images.ts', () => ({ loadSlideImages: async () => new Map() }));
 
 vi.mock('./registry', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('./registry')>();
@@ -34,6 +46,7 @@ let sent: { command: string; payload: Record<string, unknown> }[];
 beforeEach(() => {
 	ctx = makeToolContext({ workingDir: '/tmp/work' });
 	sent = [];
+	mocks.built.length = 0;
 	const write = (command: string) => (payload?: Record<string, unknown>) => {
 		sent.push({ command, payload: payload! });
 		return undefined;
@@ -64,8 +77,14 @@ function errorOf(out: ToolExecOutput): string {
 	return (JSON.parse(out.result) as { error: string }).error;
 }
 
+/** The slides that reached the writer: the deck builder for .pptx, the Rust
+ *  command for .odp. */
 function sentSlides(): Record<string, unknown>[] {
 	expect(sent).toHaveLength(1);
+	if (sent[0].command === 'fs_write_pptx') {
+		expect(mocks.built).toHaveLength(1);
+		return mocks.built[0].slides as Record<string, unknown>[];
+	}
 	return sent[0].payload.slides as Record<string, unknown>[];
 }
 
@@ -297,11 +316,62 @@ describe('an .odp path', () => {
 		expect(out.result).toBe('Wrote: d.odp');
 		expect(sent[0].command).toBe('fs_write_odp');
 		expect(sent[0].payload.slides).toEqual([{ title: 'T', bullets: ['a', 'b'] }]);
+		expect(sent[0].payload.orientation).toBe('landscape');
+		expect(mocks.built).toHaveLength(0);
+	});
+
+	it('passes the orientation to Rust', async () => {
+		await executor('fs_write_slides')(
+			{ path: 'd.odp', orientation: 'portrait', slides: [{ title: 'T', bullets: ['a'] }] },
+			ctx
+		);
+		expect(sent[0].payload.orientation).toBe('portrait');
 	});
 
 	it('rejects the same scaffolds', async () => {
 		const out = await executor('fs_write_slides')({ path: 'd.odp', slides: [{ title: ' ' }] }, ctx);
 		expect(errorOf(out)).toMatch(/^Slide 1 has no title/);
+	});
+});
+
+describe('orientation', () => {
+	const slides = [{ title: 'T', bullets: ['a'] }];
+
+	it.each([
+		['portrait', 'portrait'],
+		[' Portrait ', 'portrait'],
+		['vertical', 'portrait'],
+		['landscape', 'landscape'],
+		['sideways', 'landscape'],
+		[undefined, 'landscape'],
+		[3, 'landscape']
+	])('reads %j as %s', async (orientation, expected) => {
+		await executor('fs_write_slides')({ path: 'd.pptx', orientation, slides }, ctx);
+		expect(mocks.built[0].orientation).toBe(expected);
+	});
+});
+
+describe('a .pptx path', () => {
+	it('sends the built deck as the raw body, with the path in headers', async () => {
+		const calls: unknown[][] = [];
+		mocks.invoke.mockImplementation(async (...args: unknown[]) => {
+			calls.push(args);
+			return args[0] === 'fs_path_exists' ? false : undefined;
+		});
+		const out = await executor('fs_write_slides')(
+			{ path: 'talks/Ünïcode deck.pptx', slides: [{ title: 'T', bullets: ['a'] }] },
+			ctx
+		);
+		expect(out.result).toBe('Wrote: talks/Ünïcode deck.pptx');
+		const write = calls.find((c) => c[0] === 'fs_write_pptx')!;
+		expect(write[1]).toEqual(new Uint8Array([0x50, 0x4b, 3, 4]));
+		expect(write[2]).toEqual({
+			headers: {
+				'x-workdir': encodeURIComponent('/tmp/work'),
+				'x-rel-path': encodeURIComponent('talks/Ünïcode deck.pptx'),
+				'x-overwrite': 'false'
+			}
+		});
 	});
 });
 
