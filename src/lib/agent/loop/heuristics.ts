@@ -5,6 +5,7 @@
  */
 
 import { messageText, type ChatMessage } from '#lib/api.ts';
+import { isToolImageMessage } from '#lib/agent/toolImageMessage.ts';
 import { TOKEN_BYTES_RATIO } from '#lib/agent/contextBudget.ts';
 import type { LoopContext } from '#lib/agent/loop/context.ts';
 import { imageHashFromUrl } from '#lib/images/url.ts';
@@ -126,7 +127,7 @@ export function isCodeContext(messages: ChatMessage[]): boolean {
 		if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
 			return assistantTouchesPython(msg.tool_calls);
 		}
-		if (msg.role === 'user') return false;
+		if (msg.role === 'user' && !isToolImageMessage(msg)) return false;
 	}
 	return false;
 }

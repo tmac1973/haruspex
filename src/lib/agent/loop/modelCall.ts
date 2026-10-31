@@ -18,7 +18,6 @@ import {
 } from '#lib/api.ts';
 import { StreamResponseAssembler } from '#lib/streamAssembly.ts';
 import { resolveToolCalls, type ResolvedToolCall } from '#lib/agent/parser.ts';
-import type { PendingImage } from '#lib/agent/tools/index.ts';
 import {
 	fitMessagesToBudget,
 	trimOldToolMessages,
@@ -225,34 +224,6 @@ async function sendGuardedCompletion(
 		if (res.usage)
 			recordTokenCalibration(sentEstimate, res.usage.prompt_tokens, ctx.descriptor.calibrationKey);
 		return res;
-	}
-}
-
-/**
- * Inject pending images into the most recent user message's content
- * array. Images are loaded via fs_read_image and buffered until the
- * next model request, where they become part of the user context for
- * vision analysis.
- */
-export function injectPendingImages(messages: ChatMessage[], pending: PendingImage[]): void {
-	if (pending.length === 0) return;
-	for (let i = messages.length - 1; i >= 0; i--) {
-		if (messages[i].role === 'user') {
-			const msg = messages[i];
-			const existingParts =
-				typeof msg.content === 'string'
-					? [{ type: 'text' as const, text: msg.content }]
-					: [...msg.content];
-			const imageParts = pending.map((p) => ({
-				type: 'image_url' as const,
-				image_url: { url: p.dataUrl }
-			}));
-			messages[i] = {
-				...msg,
-				content: [...existingParts, ...imageParts]
-			};
-			return;
-		}
 	}
 }
 

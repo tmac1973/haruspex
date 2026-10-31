@@ -24,11 +24,8 @@ import {
 import { logDebug } from '#lib/debugLog.ts';
 import { NudgeState } from '#lib/agent/loop/nudges.ts';
 import type { IterationOutcome, LoopContext, LoopState } from '#lib/agent/loop/context.ts';
-import {
-	injectPendingImages,
-	runModelCall,
-	samplingOptionsFor
-} from '#lib/agent/loop/modelCall.ts';
+import { runModelCall, samplingOptionsFor } from '#lib/agent/loop/modelCall.ts';
+import { appendToolImages } from '#lib/agent/loop/toolImages.ts';
 import {
 	handleRejectedToolCall,
 	tryContinueOnLength,
@@ -79,11 +76,10 @@ export async function runIteration(
 	state.allWebReadsBlocked = false;
 	state.steeringContinue = false;
 
-	// If images were loaded on the previous iteration, attach them to the
-	// most recent user message before sending. This is how multimodal
-	// requests reach the vision model.
+	// Pictures the previous iteration's tools loaded go after their results,
+	// in a message of their own (toolImages.ts).
 	if (ctx.pendingImages.length > 0) {
-		injectPendingImages(messages, ctx.pendingImages);
+		appendToolImages(messages, ctx.pendingImages);
 		ctx.pendingImages.length = 0;
 	}
 

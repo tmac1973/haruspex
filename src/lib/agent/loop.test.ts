@@ -776,7 +776,7 @@ describe('runAgentLoop: tool-call round trip', () => {
 		expect(cb.onComplete).toHaveBeenCalled();
 	});
 
-	it('injects images buffered by a tool into the next request as multimodal content', async () => {
+	it('sends images buffered by a tool after its result, in a message of their own', async () => {
 		nonStreamQueue.push(
 			toolCallResponse([{ id: 'c1', name: 'fs_read_image', args: '{"path":"cat.png"}' }]),
 			textResponse('I see a cat.')
@@ -787,17 +787,23 @@ describe('runAgentLoop: tool-call round trip', () => {
 				return { result: 'Loaded image cat.png' };
 			}
 		);
-		const { options, cb } = makeOptions({ workingDir: '/tmp/wd' });
+		const onMessageAdded = vi.fn();
+		const { options, cb } = makeOptions({ workingDir: '/tmp/wd', onMessageAdded });
 
 		await runAgentLoop(options);
 
 		const second = nonStreamSnapshots[1];
-		const userMsg = second.find((m) => m.role === 'user')!;
-		expect(Array.isArray(userMsg.content)).toBe(true);
-		expect(userMsg.content).toEqual([
-			{ type: 'text', text: 'hi' },
+		// The request stays as typed; the picture follows the tool result.
+		expect(second.find((m) => m.role === 'user')!.content).toBe('hi');
+		expect(second.slice(-2).map((m) => m.role)).toEqual(['tool', 'user']);
+		expect(second[second.length - 1].content).toEqual([
+			{ type: 'text', text: '[Images from your tool calls] In order:\n1. cat.png' },
 			{ type: 'image_url', image_url: { url: 'data:image/png;base64,AAA' } }
 		]);
+		// Not reported to the caller, so it is never saved with the thread.
+		expect(onMessageAdded).toHaveBeenCalled();
+		const added = onMessageAdded.mock.calls.map(([m]) => m as ChatMessage);
+		expect(added.some((m) => Array.isArray(m.content))).toBe(false);
 		expect(cb.onComplete).toHaveBeenCalled();
 	});
 

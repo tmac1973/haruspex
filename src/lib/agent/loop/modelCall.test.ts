@@ -2,12 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ChatMessage } from '#lib/api.ts';
 import { resetTokenCalibration, type ContextManagedInfo } from '#lib/agent/contextBudget.ts';
 import type { LoopContext } from './context';
-import {
-	applyContextGuard,
-	injectPendingImages,
-	raceWithAbort,
-	samplingOptionsFor
-} from './modelCall';
+import { applyContextGuard, raceWithAbort, samplingOptionsFor } from './modelCall';
 
 vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/debugLog.ts')>()),
@@ -172,55 +167,5 @@ describe('applyContextGuard', () => {
 		const before = JSON.stringify(messages).length;
 		applyContextGuard(ctxWith({ messages, contextSize: 4096 }), 1024);
 		expect(JSON.stringify(messages).length).toBeLessThan(before);
-	});
-});
-
-describe('injectPendingImages', () => {
-	const img = (n: number) => ({ path: `/tmp/${n}.png`, dataUrl: `data:image/png;base64,${n}` });
-
-	it('is a no-op with no pending images', () => {
-		const messages: ChatMessage[] = [{ role: 'user', content: 'look' }];
-		injectPendingImages(messages, []);
-		expect(messages).toEqual([{ role: 'user', content: 'look' }]);
-	});
-
-	it('turns the latest string user message into text plus image parts', () => {
-		const first: ChatMessage = { role: 'user', content: 'first' };
-		const messages: ChatMessage[] = [
-			first,
-			{ role: 'assistant', content: 'ok' },
-			{ role: 'user', content: 'look at these' },
-			{ role: 'tool', content: 'loaded', tool_call_id: 't' }
-		];
-		injectPendingImages(messages, [img(1), img(2)]);
-		expect(messages[2]).toEqual({
-			role: 'user',
-			content: [
-				{ type: 'text', text: 'look at these' },
-				{ type: 'image_url', image_url: { url: 'data:image/png;base64,1' } },
-				{ type: 'image_url', image_url: { url: 'data:image/png;base64,2' } }
-			]
-		});
-		expect(messages[0]).toBe(first);
-		expect(messages[3]).toEqual({ role: 'tool', content: 'loaded', tool_call_id: 't' });
-	});
-
-	it('appends to an existing content-part array without mutating it', () => {
-		const parts = [{ type: 'text' as const, text: 'hi' }];
-		const original: ChatMessage = { role: 'user', content: parts };
-		const messages: ChatMessage[] = [original];
-		injectPendingImages(messages, [img(3)]);
-		expect(messages[0]).not.toBe(original);
-		expect(messages[0].content).toEqual([
-			{ type: 'text', text: 'hi' },
-			{ type: 'image_url', image_url: { url: 'data:image/png;base64,3' } }
-		]);
-		expect(parts).toHaveLength(1);
-	});
-
-	it('leaves messages alone when there is no user message', () => {
-		const messages: ChatMessage[] = [{ role: 'system', content: 's' }];
-		injectPendingImages(messages, [img(1)]);
-		expect(messages).toEqual([{ role: 'system', content: 's' }]);
 	});
 });
