@@ -274,13 +274,21 @@ describe('text that will not fit', () => {
 		expect(sizeOf(xml, 'short')).toBe(sizeOf(xml, sentence));
 	});
 
-	it('names the column by where it sits in portrait', async () => {
-		const err = (await buildPptx(
+	it('fits portrait’s stacked columns as one list', async () => {
+		// Thirty short bullets over one: the whole body holds them at the
+		// smallest step, where half of it would not.
+		const fits = await buildPptx(
 			[{ title: 'Columns', layout: 'two-column', bullets: many, right: ['ok'] }],
 			'portrait',
 			new Map()
+		);
+		expect(fits).toBeInstanceOf(Uint8Array);
+		const err = (await buildPptx(
+			[{ title: 'Columns', layout: 'two-column', bullets: many, right: many }],
+			'portrait',
+			new Map()
 		).catch((e: unknown) => e)) as DeckFitError;
-		expect(err.problems[0]).toMatch(/the top column take/);
+		expect(err.problems[0]).toMatch(/the two columns take about \d+ lines/);
 	});
 });
 
@@ -325,15 +333,40 @@ describe('layouts', () => {
 		expect(await slideXml([{ title: 'T', bullets: ['a'] }])).toContain('type="slidenum"');
 	});
 
-	it('two-column: side by side in landscape, stacked in portrait', async () => {
-		const slide: Slide = { title: 'T', layout: 'two-column', bullets: ['left'], right: ['right'] };
-		for (const orientation of ['landscape', 'portrait'] as const) {
-			const xml = await slideXml([slide], orientation);
-			expect(runs(xml)).toEqual(['T', 'left', 'right']);
-			const [left, right] = [boxOf(xml, 'left'), boxOf(xml, 'right')];
-			if (orientation === 'landscape') expect(right.x).toBeGreaterThan(left.x + left.w);
-			else expect(right.y).toBeGreaterThan(left.y + left.h);
-		}
+	it('two-column: side by side in landscape, one stacked list in portrait', async () => {
+		const slide: Slide = {
+			title: 'T',
+			layout: 'two-column',
+			bullets: ['a', 'left'],
+			right: ['right']
+		};
+		const landscape = await slideXml([slide], 'landscape');
+		expect(runs(landscape)).toEqual(['T', 'a', 'left', 'right']);
+		expect(boxOf(landscape, 'right').x).toBeGreaterThan(
+			boxOf(landscape, 'left').x + boxOf(landscape, 'left').w
+		);
+		// Portrait: one box, the second column after a wider space.
+		const portrait = await slideXml([slide], 'portrait');
+		expect(runs(portrait)).toEqual(['T', 'a', 'left', 'right']);
+		expect(boxOf(portrait, 'right')).toEqual(boxOf(portrait, 'left'));
+		const spaces = [...portrait.matchAll(/<a:spcBef><a:spcPts val="(\d+)"/g)].map((m) =>
+			Number(m[1])
+		);
+		expect(spaces).toEqual([800, 2800]);
+	});
+
+	it('portrait: bullets alone sit a little above the middle; landscape keeps them at the top', async () => {
+		const shape = (xml: string, text: string) =>
+			xml.split('<p:sp>').find((s) => s.includes(`<a:t>${text}</a:t>`))!;
+		const short = await slideXml([{ title: 'T', bullets: ['one', 'two'] }], 'portrait');
+		expect(shape(short, 'one')).toMatch(/anchor="ctr"/);
+		// Centred in the top three quarters of the body; a list that needs
+		// more gets all of it.
+		const wraps = 'A longer bullet that wraps onto a second line on this page';
+		const long = await slideXml([{ title: 'T', bullets: Array(9).fill(wraps) }], 'portrait');
+		expect(boxOf(short, 'one').h).toBeLessThan(boxOf(long, wraps).h);
+		const landscape = await slideXml([{ title: 'T', bullets: ['one'] }], 'landscape');
+		expect(shape(landscape, 'one')).toMatch(/anchor="t"/);
 	});
 
 	it('quote: an opening mark, the quote, and a dash before the speaker', async () => {
