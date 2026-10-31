@@ -11,6 +11,10 @@
  * cancelled with `DELETE` when the turn is. Otherwise it is the blocking
  * OpenAI route, cancelled by dropping the request, which toolchest honours
  * only while the request still waits in its queue.
+ *
+ * Upscaling uses the server's upscaler instance (`meta.kind: "upscale"`), not
+ * the chosen one, as the other backends use their server's Real-ESRGAN. The
+ * route answers at once, so an upscale is never a job and can't be resumed.
  */
 
 import { registerImageBackend } from '#lib/image/registry.ts';
@@ -23,17 +27,20 @@ import type {
 import {
 	ImageBackendError,
 	type ImageBackendCapabilities,
+	type ImageInput,
 	type ImageRequest,
 	type ImageResult,
 	type SamplerSettings
 } from '#lib/image/types.ts';
 import { FAMILY_SAMPLER } from '#lib/image/local/adapter.ts';
 import { randomSeed } from '#lib/utils/random.ts';
-import { transparentStart } from '#lib/image/sdcpp.ts';
+import { base64Of, transparentStart } from '#lib/image/sdcpp.ts';
+import { fromBase64 } from '#lib/image/local/adapter.ts';
 import { editUploads, imagesFrom } from '#lib/image/openaiImages.ts';
 import { familyOfRecipe, type ToolchestInstance } from '#lib/toolchest/models.ts';
 import {
 	ToolchestError,
+	hostOf,
 	toolchestBytes,
 	toolchestJson,
 	toolchestUpload,
@@ -165,7 +172,8 @@ export const toolchestBackend: ImageBackend = {
 			loras: false,
 			maxLoras: 0,
 			edit: canEdit(instance),
-			maxEditImages: instance && canEdit(instance) ? maxEditImages(instance) : 0
+			maxEditImages: instance && canEdit(instance) ? maxEditImages(instance) : 0,
+			upscale: server.upscalers().length > 0
 		};
 	},
 
@@ -250,6 +258,51 @@ export const toolchestBackend: ImageBackend = {
 				)
 			);
 		});
+	},
+
+	async upscale(input: ImageInput, opts: GenerateOptions = {}): Promise<Uint8Array> {
+		const cfg = await server.config();
+		if (!cfg.baseUrl) {
+			throw new ImageBackendError(
+				'unconfigured',
+				'No llama-toolchest server is set — Settings → Image.'
+			);
+		}
+		let upscaler: ToolchestInstance | undefined;
+		try {
+			// Fresh, since an upscaler may have been added or stopped since the last read.
+			await server.instances(cfg, opts.signal);
+			upscaler = server.upscalers()[0];
+		} catch (e) {
+			throw asImageError(e);
+		}
+		if (!upscaler) {
+			throw new ImageBackendError(
+				'unconfigured',
+				`${hostOf(cfg.baseUrl)} has no upscaler — add one in llama-toolchest.`
+			);
+		}
+		opts.onProgress?.({ phase: 'running', detail: 'Upscaling' });
+		let payload: unknown;
+		try {
+			payload = await toolchestJson(
+				cfg,
+				{
+					method: 'POST',
+					path: ROUTES.upscale,
+					body: { model: upscaler.id, image: await base64Of(input) },
+					timeoutMs: SYNC_TIMEOUT_MS
+				},
+				opts.signal
+			);
+		} catch (e) {
+			throw asImageError(e);
+		}
+		const b64 = (payload as { images?: Array<{ b64_json?: unknown }> })?.images?.[0]?.b64_json;
+		if (typeof b64 !== 'string') {
+			throw new ImageBackendError('rejected', 'llama-toolchest returned no upscaled picture.');
+		}
+		return fromBase64(b64);
 	},
 
 	async resume(handle: ImageJobHandle, opts: GenerateOptions = {}): Promise<ImageResult> {

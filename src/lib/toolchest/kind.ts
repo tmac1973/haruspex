@@ -133,6 +133,8 @@ export function toolchestKind(kind: GenerationKind) {
 	const k = KINDS[kind];
 	/** What a probe or a generation last saw, for the sync questions asked after. */
 	let lastInstances: ToolchestInstance[] = [];
+	/** The server's upscalers, from the same read; kept for the image kind only. */
+	let lastUpscalers: ToolchestInstance[] = [];
 
 	/** The section's server and key. */
 	async function config(): Promise<ToolchestConfig> {
@@ -159,11 +161,18 @@ export function toolchestKind(kind: GenerationKind) {
 		cfg: ToolchestConfig,
 		signal?: AbortSignal
 	): Promise<ToolchestInstance[]> {
-		lastInstances = parseGenerationModels(
-			await toolchestJson(cfg, { path: MODELS_ROUTE }, signal),
-			kind
-		);
+		const json = await toolchestJson(cfg, { path: MODELS_ROUTE }, signal);
+		lastInstances = parseGenerationModels(json, kind);
+		if (kind === 'image') lastUpscalers = parseGenerationModels(json, 'upscale');
 		return lastInstances;
+	}
+
+	/**
+	 * The upscalers the last read saw that a request may name. Toolchest runs
+	 * one as a set of its own, beside the image instances.
+	 */
+	function upscalers(): ToolchestInstance[] {
+		return lastUpscalers.filter((i) => usable(i) && i.api.includes('images.upscale'));
 	}
 
 	/** Every instance the last probe or generation saw. */
@@ -211,7 +220,18 @@ export function toolchestKind(kind: GenerationKind) {
 		return probeServer(kind, await config(), instances, chosenId(), how);
 	}
 
-	return { config, configFor, keyId, chosenId, instances, seen, chosen, readyInstance, probe };
+	return {
+		config,
+		configFor,
+		keyId,
+		chosenId,
+		instances,
+		seen,
+		chosen,
+		upscalers,
+		readyInstance,
+		probe
+	};
 }
 
 async function probeServer(

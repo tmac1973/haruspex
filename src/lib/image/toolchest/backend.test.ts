@@ -384,4 +384,64 @@ describe('llama-toolchest image backend', () => {
 			});
 		});
 	});
+
+	describe('upscaling', () => {
+		/** asmodean's klein listing, plus an upscaler set's instance in `state`. */
+		function withUpscaler(state = 'stopped') {
+			const models = structuredClone(klein) as { data: unknown[] };
+			models.data.push({
+				id: 'real-esrgan',
+				object: 'model',
+				owned_by: 'llama-toolchest',
+				meta: {
+					kind: 'upscale',
+					model_set: 'real-esrgan-x4plus',
+					recipe: '',
+					capabilities: [],
+					state,
+					api: ['images.upscale'],
+					scale: 4
+				}
+			});
+			return models;
+		}
+		const picture = { name: 'p.png', bytes: [1, 2, 3] };
+
+		it('can upscale when the server runs an upscaler, whichever model is chosen', async () => {
+			settings.imageToolchestModelId = 'klein';
+			use({ 'GET /v1/models': klein });
+			await toolchestBackend.probe();
+			expect(await toolchestBackend.capabilities()).toMatchObject({ upscale: false });
+			use({ 'GET /v1/models': withUpscaler() });
+			await toolchestBackend.probe();
+			expect(await toolchestBackend.capabilities()).toMatchObject({ upscale: true });
+			use({ 'GET /v1/models': withUpscaler('failed') });
+			await toolchestBackend.probe();
+			expect(await toolchestBackend.capabilities()).toMatchObject({ upscale: false });
+		});
+
+		it('sends the picture to the upscaler instance and returns what it made', async () => {
+			use({
+				'GET /v1/models': withUpscaler(),
+				'POST /v1/images/upscale': { images: [{ b64_json: 'BwgJ' }] }
+			});
+			const out = await toolchestBackend.upscale!(picture);
+			expect([...out]).toEqual([7, 8, 9]);
+			const sent = httpCalls<Call>(tauri.invoke, 'toolchest_json').find(
+				(c) => c.path === '/v1/images/upscale'
+			)!;
+			expect(sent.body).toEqual({ model: 'real-esrgan', image: 'AQID' });
+			expect(sent.api_key).toBe('sekrit');
+		});
+
+		it('says so when the server has no upscaler, or answers with no picture', async () => {
+			use({ 'GET /v1/models': klein });
+			await expect(toolchestBackend.upscale!(picture)).rejects.toMatchObject({
+				kind: 'unconfigured',
+				message: 'box:3000 has no upscaler — add one in llama-toolchest.'
+			});
+			use({ 'GET /v1/models': withUpscaler(), 'POST /v1/images/upscale': { images: [] } });
+			await expect(toolchestBackend.upscale!(picture)).rejects.toBeInstanceOf(ImageBackendError);
+		});
+	});
 });
