@@ -72,8 +72,14 @@ export function toolchestFamily(): 'ming' | 'qwen21' | null {
 	return familyOfRecipe(toolchestInstance()?.recipe ?? '');
 }
 
-/** sd-server's reference pictures for FLUX.2 klein, the set that edits. */
-const MAX_EDIT_IMAGES = 4;
+/**
+ * How many pictures one edit on `i` takes: what the server says, or, from a
+ * build that doesn't, 3 for Qwen-Image (as the bundled engine takes) and
+ * FLUX.2 klein's 4 for any other.
+ */
+function maxEditImages(i: ToolchestInstance): number {
+	return i.maxEditImages ?? (/^qwen-image/.test(i.recipe) ? 3 : 4);
+}
 
 /** The set edits, and this build serves `/v1/images/edits` for it. */
 function canEdit(i: ToolchestInstance | undefined): boolean {
@@ -159,7 +165,7 @@ export const toolchestBackend: ImageBackend = {
 			loras: false,
 			maxLoras: 0,
 			edit: canEdit(instance),
-			maxEditImages: canEdit(instance) ? MAX_EDIT_IMAGES : 0
+			maxEditImages: instance && canEdit(instance) ? maxEditImages(instance) : 0
 		};
 	},
 
