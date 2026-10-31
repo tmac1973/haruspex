@@ -272,3 +272,40 @@ describe('job type gates', () => {
 		expect(await assets.available!()).toBe(true);
 	});
 });
+
+/**
+ * The editor badges a section from `missingRequired` before Save; a field it
+ * lists that `validate` lets through would badge a job that saves fine.
+ */
+describe('missingRequired', () => {
+	const blank = { name: 'n', workingDir: '/p', steps: [{ prompt: '', deep_research: false }] };
+
+	it('lists only what validate refuses, for every type', async () => {
+		const { listJobTypes } = await import('./index');
+		for (const def of listJobTypes()) {
+			const config = {
+				...def.configDefaults(),
+				initial_description: '',
+				plan_dir: '',
+				spec_path: ''
+			};
+			const missing = def.missingRequired?.({ ...blank, config }) ?? [];
+			expect(missing.length, def.id).toBeGreaterThan(0);
+			expect(def.validate?.({ ...blank, config }), def.id).toBeTruthy();
+		}
+	});
+
+	it('guided planning: counts a chained stage left without a model', async () => {
+		const { getJobType } = await import('./index');
+		const { emptyModelForm } = await import('#lib/agent/jobs/jobModelForm.ts');
+		const def = getJobType('guided_planning')!;
+		const config = {
+			...def.configDefaults(),
+			initial_description: 'A game',
+			run_mode: 'unattended_chain',
+			chain_coding_model: emptyModelForm('remote')
+		};
+		expect(def.missingRequired!({ ...blank, config })).toEqual(['Coding run model']);
+		expect(def.validate!({ ...blank, config })).toMatch(/coding run/);
+	});
+});

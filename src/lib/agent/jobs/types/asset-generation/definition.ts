@@ -192,6 +192,8 @@ export const assetGenerationJobType: JobTypeDefinition = {
 		}
 		return variantsProblem(s) ?? countsProblem(s);
 	},
+	missingRequired: ({ config }) =>
+		(config as unknown as AssetGenerationEditorState).spec_path.trim() ? [] : ['Spec path'],
 	planSteps: planAssetSteps,
 	runPipeline: runAssetGenerationPipeline
 };

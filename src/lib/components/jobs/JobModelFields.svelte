@@ -20,6 +20,7 @@
 	import OpenRouterModelPicker from '#lib/components/settings/OpenRouterModelPicker.svelte';
 	import ApiKeyPicker from '#lib/components/settings/ApiKeyPicker.svelte';
 	import ModeSelector from '#lib/components/ModeSelector.svelte';
+	import Disclosure from '#lib/components/Disclosure.svelte';
 	import { getSettings } from '#lib/stores/settings.ts';
 	import {
 		getOpenRouterCatalog,
@@ -373,9 +374,8 @@
 <!-- Outside the override-only fields on purpose: a job running on the
      Settings backend still wants its own reasoning choice. -->
 {#if showAdvanced}
-	<details class="advanced">
-		<summary>Advanced model behavior</summary>
-		<div class="advanced-body">
+	<div class="advanced">
+		<Disclosure label="Advanced model behavior">
 			<label class="model-field">
 				<span class="sublabel">Reasoning</span>
 				<select bind:value={form.reasoning}>
@@ -475,8 +475,8 @@
 					</p>
 				{/if}
 			{/if}
-		</div>
-	</details>
+		</Disclosure>
+	</div>
 {/if}
 
 <style>
@@ -520,22 +520,6 @@
 
 	.advanced {
 		margin-top: 10px;
-		border-top: 1px solid var(--border);
-		padding-top: 8px;
-	}
-
-	.advanced summary {
-		cursor: pointer;
-		user-select: none;
-		font-size: 0.78rem;
-		color: var(--text-secondary);
-	}
-
-	.advanced-body {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-		margin-top: 8px;
 	}
 
 	.adv-hint {

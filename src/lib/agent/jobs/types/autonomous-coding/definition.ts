@@ -139,6 +139,8 @@ export const autonomousCodingJobType: JobTypeDefinition = {
 			return `Max model steps per turn must be between ${MIN_MAX_TURNS} and ${MAX_MAX_TURNS}.`;
 		return null;
 	},
+	missingRequired: ({ config }) =>
+		(config as unknown as AutonomousCodingEditorState).plan_dir.trim() ? [] : ['Plan directory'],
 	planSteps: planCodingSteps,
 	runPipeline: runAutonomousCodingPipeline
 };

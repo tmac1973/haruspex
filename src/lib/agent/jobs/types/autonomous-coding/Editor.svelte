@@ -79,6 +79,7 @@
 		<input
 			type="text"
 			bind:value={cfg.plan_dir}
+			required
 			placeholder="plan/my-feature/"
 			list="plan-dir-suggestions"
 			aria-label="Plan directory"

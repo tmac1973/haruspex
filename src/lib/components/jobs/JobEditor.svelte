@@ -160,6 +160,9 @@
 
 	async function loadIntoForm(id: number | 'new') {
 		error = null;
+		attempted = false;
+		// A new job starts at its type and name; a saved one at what it does.
+		openSection = id === 'new' ? 'basics' : 'type';
 		if (id === 'new') {
 			name = '';
 			description = '';
@@ -243,12 +246,18 @@
 		const v = validate();
 		if (v) {
 			error = v;
-			// The offending field may be inside a folded section — unfold
-			// everything so the error is visible and fixable.
-			openSections = { basics: true, where: true, model: true, type: true };
+			// Turn the amber markers red and open the section to fix first:
+			// the first with an empty required field, else the type's own,
+			// where every other check lives.
+			attempted = true;
+			openSection =
+				(['basics', 'where', 'type'] as const).find((id) => missing[id].length > 0) ?? 'type';
+			await tick();
+			scrollEl?.querySelector<HTMLElement>(':is(input, textarea):required:invalid')?.focus();
 			return false;
 		}
 		error = null;
+		attempted = false;
 		saving = true;
 		try {
 			// `prevDue = null` on save means anchor the interval cadence on
@@ -313,19 +322,27 @@
 		}
 	}
 
-	// Collapsible editor sections (UI refresh): each group folds to a
-	// one-line summary. Local UI state only — nothing here persists.
+	// Collapsible editor sections, one open at a time: with several open the
+	// cards ran together into one long page. Each folds to a one-line
+	// summary. Local UI state only — nothing here persists.
 	type SectionId = 'basics' | 'where' | 'model' | 'type';
-	let openSections = $state<Record<SectionId, boolean>>({
-		basics: true,
-		where: false,
-		model: false,
-		type: true
-	});
+	let openSection = $state<SectionId | null>('basics');
 
 	function toggleSection(id: SectionId) {
-		openSections[id] = !openSections[id];
+		openSection = openSection === id ? null : id;
 	}
+
+	/** A save was refused; the required-field markers turn from amber to red. */
+	let attempted = $state(false);
+	let scrollEl = $state<HTMLDivElement | undefined>();
+
+	/** Each section's required fields that are still empty, by label. */
+	const missing = $derived<Record<SectionId, string[]>>({
+		basics: name.trim() ? [] : ['Name'],
+		where: typeDef.workingDirPlaceholder && !workingDir.trim() ? ['Working directory'] : [],
+		model: [],
+		type: typeDef.missingRequired?.({ name, workingDir, steps, config: typeConfig }) ?? []
+	});
 
 	// Section title for the type-specific group (mock: "Steps", "Audit
 	// setup", …). Falls back to the type's label for future job types.
@@ -393,12 +410,12 @@
 	<button
 		type="button"
 		class="collapse-head"
-		aria-expanded={openSections[id]}
+		aria-expanded={openSection === id}
 		onclick={() => toggleSection(id)}
 	>
 		<svg
 			class="chevron"
-			class:open={openSections[id]}
+			class:open={openSection === id}
 			width="12"
 			height="12"
 			viewBox="0 0 24 24"
@@ -412,22 +429,29 @@
 			<polyline points="6 9 12 15 18 9"></polyline>
 		</svg>
 		<span class="collapse-title">{title}</span>
-		{#if !openSections[id] && summary}
+		<span class="spacer"></span>
+		{#if missing[id].length > 0}
+			<span class="required-badge" class:refused={attempted} title={missing[id].join(', ')}>
+				{missing[id].length}
+				{attempted ? 'missing' : 'required'}
+			</span>
+		{/if}
+		{#if openSection !== id && summary}
 			<span class="collapse-summary" class:pill>{summary}</span>
 		{/if}
 	</button>
 {/snippet}
 
-<div class="job-editor">
+<div class="job-editor" class:attempted>
 	{#if loading}
 		<p class="hint">Loading…</p>
 	{:else}
-		<div class="editor-scroll thin-scroll">
+		<div class="editor-scroll thin-scroll" bind:this={scrollEl}>
 			<h3>{jobId === 'new' ? 'New job' : 'Edit job'}</h3>
 
 			<section class="collapse">
 				{@render collapseHead('basics', 'Basics', basicsSummary)}
-				{#if openSections.basics}
+				{#if openSection === 'basics'}
 					<div class="collapse-body">
 						<!-- A dropdown, not radio cards: the registry keeps growing job types
 						     and the picker's screen cost must not grow with it. The selected
@@ -464,8 +488,8 @@
 							class="field"
 							title="User-visible label shown in the job list. No effect on what the model sees."
 						>
-							<span class="label">Name</span>
-							<input type="text" bind:value={name} placeholder="Morning headlines" />
+							<span class="label">Name <span class="required">(required)</span></span>
+							<input type="text" bind:value={name} required placeholder="Morning headlines" />
 						</label>
 
 						<label
@@ -481,7 +505,7 @@
 
 			<section class="collapse">
 				{@render collapseHead('where', 'Where & when', whereSummary)}
-				{#if openSections.where}
+				{#if openSection === 'where'}
 					<div class="collapse-body">
 						<div
 							class="field"
@@ -498,6 +522,7 @@
 								<input
 									type="text"
 									bind:value={workingDir}
+									required={!!typeDef.workingDirPlaceholder}
 									placeholder={typeDef.workingDirPlaceholder ??
 										"Leave blank if the job doesn't touch files"}
 									class="workdir-input"
@@ -528,7 +553,7 @@
 
 			<section class="collapse">
 				{@render collapseHead('model', 'Model', modelSummary, true)}
-				{#if openSections.model}
+				{#if openSection === 'model'}
 					<div class="collapse-body">
 						<div class="field">
 							{#key modelFormVersion}
@@ -547,7 +572,7 @@
 			     the bound typeConfig/steps, so nothing is lost. -->
 			<section class="collapse">
 				{@render collapseHead('type', typeSectionTitle, typeSummary)}
-				{#if openSections.type}
+				{#if openSection === 'type'}
 					<div class="collapse-body">
 						{#key `${jobId}:${jobType}`}
 							<TypeEditor bind:config={typeConfig} bind:steps jobName={name} {workingDir} {jobId} />
@@ -655,28 +680,76 @@
 	/* Not overflow: hidden. That clipped every dropdown inside a card (the
 	   OpenRouter model list showed two rows); the header rounds its own
 	   corners instead. */
+	/* Surfaces mixed from the theme's tokens rather than new ones: in dark
+	   mode --bg-secondary is barely apart from the page, so a header on it
+	   and a body on the page read as one flat block. */
 	.collapse {
-		border: 1px solid var(--border);
-		border-radius: 9px;
-		margin-bottom: 10px;
+		border: 1px solid color-mix(in srgb, var(--border) 50%, var(--border-strong));
+		border-radius: 11px;
+		margin-bottom: 14px;
+		background: color-mix(in srgb, var(--bg-secondary) 60%, var(--bg-primary));
 	}
 
 	.collapse-head {
 		width: 100%;
+		min-height: 46px;
 		display: flex;
 		align-items: center;
-		gap: 9px;
-		padding: 11px 13px;
-		background: var(--bg-secondary);
+		gap: 10px;
+		padding: 12px 15px;
+		background: color-mix(in srgb, var(--bg-secondary), var(--text-primary) 5%);
 		border: none;
-		border-radius: 8px;
+		border-radius: 10px;
 		cursor: pointer;
 		color: var(--text-primary);
 		text-align: left;
 	}
 
 	.collapse-head[aria-expanded='true'] {
-		border-radius: 8px 8px 0 0;
+		border-radius: 10px 10px 0 0;
+		box-shadow: inset 3px 0 0 var(--accent);
+	}
+
+	.spacer {
+		flex: 1 1 0;
+	}
+
+	/* Amber before anyone presses Save, red once a save is refused. */
+	.required-badge {
+		flex: none;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 1px 9px;
+		border: 1px solid var(--warning);
+		border-radius: 999px;
+		font-size: 0.72rem;
+		font-weight: 600;
+		color: color-mix(in srgb, var(--warning) 75%, var(--text-primary));
+	}
+
+	.required-badge::before {
+		content: '';
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: currentColor;
+	}
+
+	.required-badge.refused {
+		border-color: var(--error-text);
+		color: var(--error-text);
+	}
+
+	/* Every editor's required inputs, the type sections' included: `required`
+	   on an empty input matches :invalid, so no editor has to track it. */
+	.job-editor :global(:is(input, textarea):required:invalid) {
+		border-color: var(--warning);
+	}
+
+	.job-editor.attempted :global(:is(input, textarea):required:invalid) {
+		border-color: var(--error-text);
+		box-shadow: 0 0 0 1px var(--error-text);
 	}
 
 	.chevron {
@@ -692,13 +765,13 @@
 	}
 
 	.collapse-title {
-		font-size: 0.82rem;
+		font-size: 0.88rem;
 		font-weight: 600;
 	}
 
 	.collapse-summary {
-		margin-left: auto;
-		font-size: 0.74rem;
+		min-width: 0;
+		font-size: 0.78rem;
 		color: var(--text-muted);
 		white-space: nowrap;
 		overflow: hidden;
@@ -713,11 +786,11 @@
 	}
 
 	.collapse-body {
-		padding: 13px;
-		border-top: 1px solid var(--border);
+		padding: 16px 16px 18px;
+		border-top: 1px solid color-mix(in srgb, var(--border) 50%, var(--border-strong));
 		display: flex;
 		flex-direction: column;
-		gap: 12px;
+		gap: 16px;
 	}
 
 	.label {
