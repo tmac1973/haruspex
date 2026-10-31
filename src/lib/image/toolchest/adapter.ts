@@ -11,8 +11,9 @@
  *
  * Two routes draw: `/v1/images/jobs` (a job to poll, with a phase and a
  * place in the queue) on builds whose `meta.api` lists `images.jobs`, and the
- * blocking `/v1/images/generations` on older ones. An edit is the blocking
- * `/v1/images/edits` form, on a set whose `meta.api` lists `images.edits`:
+ * blocking `/v1/images/generations` on older ones. An edit is the
+ * `/v1/images/edits` form, on a set whose `meta.api` lists `images.edits`,
+ * posted to `/v1/images/jobs` instead where it also lists `images.jobs.edits`:
  * sd-server takes each `image[]` as a reference picture and the optional
  * `mask` as where the change may go.
  */

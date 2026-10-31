@@ -6,8 +6,8 @@
  * an instance or installing a model set stays in toolchest's own UI, so a
  * stopped instance is a sentence pointing there, not a button here.
  *
- * Where the build has image jobs (`meta.api` lists `images.jobs`) a request is
- * a job: polled once a second for its phase and its place in the queue, and
+ * Where the build has image jobs (`meta.api` lists `images.jobs`, and
+ * `images.jobs.edits` for an edit) a request is a job: polled once a second for its phase and its place in the queue, and
  * cancelled with `DELETE` when the turn is. Otherwise it is the blocking
  * OpenAI route, cancelled by dropping the request, which toolchest honours
  * only while the request still waits in its queue.
@@ -86,19 +86,22 @@ function canBeTransparent(i: ToolchestInstance | undefined): boolean {
 
 const NO_TILING = 'llama-toolchest cannot make tiling textures, so the edges may not wrap.';
 
+/** This build takes an edit as a job (`/v1/images/jobs` with the edit form). */
+function editsAsJobs(i: ToolchestInstance): boolean {
+	return i.api.includes('images.jobs.edits');
+}
+
 /**
- * Run a job to its end and fetch its images. Cancelling the turn cancels the
- * job. `onJob` hears its id as soon as the server has it.
+ * Run a job to its end and fetch its images. `create` posts it. Cancelling
+ * the turn cancels the job. `onJob` hears its id as soon as the server has it.
  */
 async function runJob(
 	cfg: ToolchestConfig,
-	body: unknown,
+	create: () => Promise<unknown>,
 	opts: GenerateOptions,
 	onJob: (id: string) => void
 ): Promise<Uint8Array[]> {
-	const created = readJob(
-		await toolchestJson(cfg, { method: 'POST', path: ROUTES.jobs, body }, opts.signal)
-	);
+	const created = readJob(await create());
 	if (!created) throw new ImageBackendError('rejected', 'llama-toolchest made no job.');
 	onJob(created.id);
 	return awaitJob(cfg, created, opts);
@@ -180,6 +183,7 @@ export const toolchestBackend: ImageBackend = {
 		const sent: SamplerSettings | undefined =
 			req.sampler ?? (family ? { ...FAMILY_SAMPLER[family] } : undefined);
 		const seed = req.seed ?? randomSeed();
+		const onJob = (id: string) => opts.onHandle?.(handleOf(cfg, id, seed, instance.id, req));
 		if (req.edit) {
 			if (!canEdit(instance)) {
 				throw new ImageBackendError(
@@ -196,12 +200,18 @@ export const toolchestBackend: ImageBackend = {
 				height: req.height,
 				sampler: sent
 			});
+			const files = editUploads(req.edit);
 			return finish(req, instance, seed, sent, Date.now(), () => {
+				if (editsAsJobs(instance)) {
+					const post = () =>
+						toolchestUpload(cfg, { path: ROUTES.jobs, body: fields }, files, opts.signal, true);
+					return runJob(cfg, post, opts, onJob);
+				}
 				opts.onProgress?.({ phase: 'running' });
 				return toolchestUpload(
 					cfg,
 					{ path: ROUTES.edits, body: fields, timeoutMs: SYNC_TIMEOUT_MS },
-					editUploads(req.edit!),
+					files,
 					opts.signal,
 					true
 				).then(imagesFrom);
@@ -221,18 +231,9 @@ export const toolchestBackend: ImageBackend = {
 
 		return finish(req, instance, seed, sent, Date.now(), async () => {
 			if (instance.api.includes('images.jobs')) {
-				return runJob(cfg, body, opts, (id) =>
-					opts.onHandle?.({
-						backend: 'llama-toolchest',
-						baseUrl: cfg.baseUrl,
-						id,
-						seed,
-						model: instance.id,
-						width: req.width,
-						height: req.height,
-						extra: { keyId: server.keyId() }
-					})
-				);
+				const post = () =>
+					toolchestJson(cfg, { method: 'POST', path: ROUTES.jobs, body }, opts.signal);
+				return runJob(cfg, post, opts, onJob);
 			}
 			opts.onProgress?.({ phase: 'running' });
 			return imagesFrom(
@@ -269,6 +270,26 @@ export const toolchestBackend: ImageBackend = {
 		});
 	}
 };
+
+/** A job's handle, which lets `resume` pick it up after the app restarts. */
+function handleOf(
+	cfg: ToolchestConfig,
+	id: string,
+	seed: number,
+	model: string,
+	req: ImageRequest
+): ImageJobHandle {
+	return {
+		backend: 'llama-toolchest',
+		baseUrl: cfg.baseUrl,
+		id,
+		seed,
+		model,
+		width: req.width,
+		height: req.height,
+		extra: { keyId: server.keyId() }
+	};
+}
 
 /** Run `draw` and shape what it made into a result. */
 async function finish(

@@ -50,7 +50,7 @@ This needs Real-ESRGAN (BSD 3-Clause), on the bundled engine, ComfyUI or Lemonad
 
 Ask for a picture "in the background" (or several, "four variations in the background") and the assistant starts it and finishes its answer, so you can keep chatting. Each one gets a card with its progress and **Cancel**, and is in the **Tasks** list (see the `chat-conversations` page). When it's done, the assistant places it in that conversation.
 
-If Haruspex closes first, anything on ComfyUI, and a new picture on llama-toolchest, is picked up again when it reopens, as long as the server still has it. An edit on llama-toolchest, and anything on the bundled engine or Lemonade, is reported as failed instead. The bundled engine and Lemonade draw one picture at a time.
+If Haruspex closes first, anything on ComfyUI or llama-toolchest is picked up again when it reopens, as long as the server still has it. Anything on the bundled engine or Lemonade, and an edit on a llama-toolchest from before October 31, 2026, is reported as failed instead. The bundled engine and Lemonade draw one picture at a time.
 
 ## What it doesn't do
 
