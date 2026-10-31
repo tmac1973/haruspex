@@ -8,8 +8,8 @@
  * which is the whole reason it is a separate layer.
  */
 
-import { getSettings } from '#lib/stores/settings.ts';
-import { getImageBackend } from '#lib/image/registry.ts';
+import { backendForEntry } from '#lib/image/registry.ts';
+import { legacyImageEntry } from '#lib/image/legacy.ts';
 import { noneBackend } from '#lib/image/none.ts';
 import type {
 	ImageBackendCapabilities,
@@ -40,6 +40,8 @@ export interface GenerateOptions {
 export interface ImageJobHandle {
 	backend: ImageBackendKind;
 	baseUrl: string;
+	/** The entry it was sent for; absent from a build before entries. */
+	entryId?: string;
 	/** The server's id for the job. */
 	id: string;
 	/** What the result reports, settled when the job was sent. */
@@ -99,6 +101,6 @@ export interface ImageBackend {
  * clear "nothing configured" message rather than throwing on lookup.
  */
 export function resolveImageBackend(): ImageBackend {
-	const kind = getSettings().imageBackendKind;
-	return getImageBackend(kind) ?? noneBackend;
+	const entry = legacyImageEntry();
+	return (entry && backendForEntry(entry)) ?? noneBackend;
 }

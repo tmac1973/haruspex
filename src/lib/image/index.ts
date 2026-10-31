@@ -4,23 +4,23 @@
  * arrangement the job-type registry uses.
  */
 
-import { registerImageBackend } from '#lib/image/registry.ts';
-import { comfyUiBackend } from '#lib/image/comfyui/backend.ts';
-import { localBackend } from '#lib/image/local/backend.ts';
-import { lemonadeBackend } from '#lib/image/lemonade/backend.ts';
-import { toolchestBackend } from '#lib/image/toolchest/backend.ts';
-
-registerImageBackend(comfyUiBackend);
-registerImageBackend(localBackend);
-registerImageBackend(lemonadeBackend);
-registerImageBackend(toolchestBackend);
+// Each registers its kind's factory as it loads.
+import '#lib/image/comfyui/backend.ts';
+import '#lib/image/local/backend.ts';
+import '#lib/image/lemonade/backend.ts';
+import '#lib/image/toolchest/backend.ts';
 
 export {
 	resolveImageBackend,
 	type ImageBackend,
 	type GenerateOptions
 } from '#lib/image/backend.ts';
-export { getImageBackend, listImageBackends, registerImageBackend } from '#lib/image/registry.ts';
+export {
+	backendForEntry,
+	getImageBackend,
+	listImageBackends,
+	registerImageBackend
+} from '#lib/image/registry.ts';
 export { noneBackend } from '#lib/image/none.ts';
 export { localBackend } from '#lib/image/local/backend.ts';
 export * from '#lib/image/types.ts';

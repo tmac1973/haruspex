@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getSettings, updateSettings } from '#lib/stores/settings.ts';
+import { addApiKey, deleteApiKey, getSettings, updateSettings } from '#lib/stores/settings.ts';
 import { comfyUiBackend, DEFAULT_SAMPLER } from './backend';
 import { TEMPLATES } from './templates';
 import type { ImageRequest } from '../types';
@@ -240,6 +240,28 @@ describe('generate', () => {
 		expect(urls.some((u) => u.includes('/prompt'))).toBe(false);
 		expect(result.meta).toMatchObject({ seed: 7, model: 'sd15.safetensors' });
 		expect(result.images).toHaveLength(1);
+	});
+
+	it('follows a job with the named key it was sent with, not the one set now', async () => {
+		happyServer();
+		const keyId = addApiKey('ComfyUI', 'sent-with');
+		updateSettings({ imageBackendApiKey: 'set-now' });
+		await comfyUiBackend.resume!({
+			backend: 'comfyui',
+			baseUrl: 'http://box:8188',
+			id: 'p1',
+			seed: 7,
+			model: 'sd15.safetensors',
+			width: 512,
+			height: 512,
+			extra: { outputNode: '9', clientId: 'c', keyId }
+		});
+		const auth = fetchMock.mock.calls.map(
+			(c) => (c[1] as RequestInit | undefined)?.headers as Record<string, string> | undefined
+		);
+		expect(auth.map((h) => h?.Authorization)).toContain('Bearer sent-with');
+		expect(auth.map((h) => h?.Authorization)).not.toContain('Bearer set-now');
+		deleteApiKey(keyId);
 	});
 
 	it('says so when ComfyUI no longer has the prompt', async () => {

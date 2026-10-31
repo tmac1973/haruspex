@@ -128,18 +128,38 @@ export function storeJobFile(
 	});
 }
 
-/** One kind's view of its toolchest server; see the top of this file. */
+/** Where a toolchest view finds its server, key and chosen instance, read on every call. */
+export interface ToolchestSource {
+	baseUrl: string;
+	keyId: string | null;
+	modelId: string;
+}
+
+/** One kind's view of its toolchest server, from its section of the settings. */
 export function toolchestKind(kind: GenerationKind) {
+	const k = KINDS[kind];
+	return toolchestServer(kind, () => {
+		const s = getSettings();
+		return { baseUrl: s[k.url] ?? '', keyId: s[k.key] ?? null, modelId: s[k.model] ?? '' };
+	});
+}
+
+/**
+ * One kind's view of a toolchest server that `source` names; see the top of
+ * this file. Each view keeps what it last saw, so two views of two servers,
+ * or two instances on one, never mix theirs up.
+ */
+export function toolchestServer(kind: GenerationKind, source: () => ToolchestSource) {
 	const k = KINDS[kind];
 	/** What a probe or a generation last saw, for the sync questions asked after. */
 	let lastInstances: ToolchestInstance[] = [];
 	/** The server's upscalers, from the same read; kept for the image kind only. */
 	let lastUpscalers: ToolchestInstance[] = [];
 
-	/** The section's server and key. */
+	/** The server and key. */
 	async function config(): Promise<ToolchestConfig> {
-		const s = getSettings();
-		return { baseUrl: s[k.url].trim(), apiKey: await toolchestKeyFor(s[k.key]) };
+		const s = source();
+		return { baseUrl: s.baseUrl.trim(), apiKey: await toolchestKeyFor(s.keyId) };
 	}
 
 	/** The section's server and key as a job handle names them, whatever it says now. */
@@ -147,13 +167,13 @@ export function toolchestKind(kind: GenerationKind) {
 		return { baseUrl, apiKey: await toolchestKeyFor(keyId || null) };
 	}
 
-	/** The id of the section's named key, for a job handle. */
+	/** The id of the named key, for a job handle. */
 	function keyId(): string {
-		return getSettings()[k.key] ?? '';
+		return source().keyId ?? '';
 	}
 
 	function chosenId(): string {
-		return (getSettings()[k.model] ?? '').trim();
+		return source().modelId.trim();
 	}
 
 	/** The server's instances of this kind, remembered for {@link seen}. */

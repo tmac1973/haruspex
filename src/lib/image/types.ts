@@ -13,8 +13,20 @@
  * job that trusts it stops degrading and starts silently shipping bad output.
  */
 
+import type { GenerationEntry } from '#lib/generation/entry.ts';
+
 /** Which backend implementation a request is served by. */
 export type ImageBackendKind = 'none' | 'comfyui' | 'local' | 'lemonade' | 'llama-toolchest';
+
+/**
+ * One image model on one server: the backend is built from it (see
+ * `#lib/generation/entry.ts`). ComfyUI's custom workflow is in `options`, as
+ * `workflowPath` and `fieldMapPath`.
+ */
+export type ImageModelEntry = GenerationEntry<
+	Exclude<ImageBackendKind, 'none'>,
+	ImageBackendCapabilities
+>;
 
 /** Sampler settings, named because the anchor recipe has to store them. */
 export interface SamplerSettings {
@@ -99,6 +111,8 @@ export interface ImageResultMeta {
 	seed: number;
 	model: string;
 	backend: ImageBackendKind;
+	/** The entry that made it; absent from a backend no entry was built for. */
+	entryId?: string;
 	sampler: SamplerSettings;
 	loras: LoraRef[];
 	durationMs: number;

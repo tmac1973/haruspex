@@ -20,13 +20,14 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
-import { getSettings } from '#lib/stores/settings.ts';
-import { registerImageBackend } from '#lib/image/registry.ts';
+import { legacyBackend, registerImageBackendKind } from '#lib/image/registry.ts';
+import { entryApiKey } from '#lib/image/legacy.ts';
 import type { GenerateOptions, ImageBackend, ProbeResult } from '#lib/image/backend.ts';
 import {
 	ImageBackendError,
 	type ImageBackendCapabilities,
 	type ImageInput,
+	type ImageModelEntry,
 	type ImageRequest,
 	type ImageResult
 } from '#lib/image/types.ts';
@@ -45,7 +46,12 @@ import {
 	readServer,
 	type ServerState
 } from '#lib/image/lemonade/adapter.ts';
-import { lemonadeConfig, lemonadeJson, lemonadeUpload } from '#lib/image/lemonade/client.ts';
+import {
+	lemonadeConfig,
+	lemonadeJson,
+	lemonadeUpload,
+	type LemonadeConfig
+} from '#lib/image/lemonade/client.ts';
 import { refreshOptions } from '#lib/image/lemonade/options.ts';
 
 /**
@@ -63,13 +69,11 @@ export async function lemonadeCatalogue(): Promise<LemonadeModel[]> {
 	return catalogue;
 }
 
-function modelId(): string {
-	return (getSettings().imageLemonadeModelId ?? '').trim();
-}
-
 /** The server's state, from the three calls a probe makes. */
-export async function serverState(signal?: AbortSignal): Promise<ServerState> {
-	const cfg = lemonadeConfig();
+export async function serverState(
+	signal?: AbortSignal,
+	cfg: LemonadeConfig = lemonadeConfig()
+): Promise<ServerState> {
 	const [health, systemInfo, models] = await Promise.all([
 		lemonadeJson(cfg, { path: ROUTES.health }, signal),
 		lemonadeJson(cfg, { path: ROUTES.systemInfo }, signal),
@@ -79,13 +83,14 @@ export async function serverState(signal?: AbortSignal): Promise<ServerState> {
 }
 
 async function draw(
+	cfg: LemonadeConfig,
 	body: ReturnType<typeof buildGeneration>,
 	signal?: AbortSignal
 ): Promise<Uint8Array[]> {
 	const payload = await retryEmptyResult(
 		() =>
 			lemonadeJson(
-				lemonadeConfig(),
+				cfg,
 				{ method: 'POST', path: ROUTES.generate, body, timeoutMs: GENERATE_TIMEOUT_MS },
 				signal
 			),
@@ -95,11 +100,13 @@ async function draw(
 }
 
 /** The configured server and model, or why a generation cannot start. */
-async function chosen(): Promise<{ id: string; family: SdFamily; model: LemonadeModel }> {
-	if (!lemonadeConfig().baseUrl) {
+async function chosen(
+	cfg: LemonadeConfig,
+	id: string
+): Promise<{ id: string; family: SdFamily; model: LemonadeModel }> {
+	if (!cfg.baseUrl) {
 		throw new ImageBackendError('unconfigured', 'No Lemonade server is set — Settings → Image.');
 	}
-	const id = modelId();
 	const family = familyOfId(id);
 	const model = (await lemonadeCatalogue()).find((m) => m.id === id);
 	if (!family || !model) {
@@ -113,13 +120,14 @@ const MAX_EDIT_IMAGES = 3;
 
 /** An edit through `/api/v1/images/edits`; throws when the model can't edit. */
 async function edit(
+	cfg: LemonadeConfig,
 	req: ImageRequest,
 	model: LemonadeModel,
 	sampler: { name: string; steps: number; cfg: number },
 	seed: number,
 	signal?: AbortSignal
 ): Promise<Uint8Array[]> {
-	const state = await serverState(signal);
+	const state = await serverState(signal, cfg);
 	if (!state.edits.has(bareName(model.name))) {
 		throw new ImageBackendError(
 			'unconfigured',
@@ -136,7 +144,7 @@ async function edit(
 		sampler
 	});
 	const payload = await lemonadeUpload(
-		lemonadeConfig(),
+		cfg,
 		{ path: ROUTES.edits, fields, timeoutMs: GENERATE_TIMEOUT_MS },
 		editUploads(req.edit!),
 		signal
@@ -175,145 +183,172 @@ async function lostTransparency(png: Uint8Array): Promise<string | undefined> {
 	}
 }
 
-export const lemonadeBackend: ImageBackend = {
-	kind: 'lemonade',
+async function configOf(entry: ImageModelEntry): Promise<LemonadeConfig> {
+	return { baseUrl: entry.url.trim(), apiKey: await entryApiKey(entry) };
+}
 
-	async capabilities(): Promise<ImageBackendCapabilities> {
-		// Both families draw transparent images, as on the bundled engine.
-		// Neither tiles here, and LoRAs are not offered. Editing and upscaling
-		// depend on what is installed, so the server is asked.
-		const ok = familyOfId(modelId()) !== null;
-		const model = (await lemonadeCatalogue().catch(() => [])).find((m) => m.id === modelId());
-		const state = ok ? await serverState().catch(() => null) : null;
-		const edits = !!state && !!model && state.edits.has(bareName(model.name));
-		return {
-			transparency: ok,
-			seamlessTiling: false,
-			loras: false,
-			maxLoras: 0,
-			edit: edits,
-			maxEditImages: edits ? MAX_EDIT_IMAGES : 0,
-			upscale: !!state?.upscaler
-		};
-	},
+/** The backend for one Lemonade entry: its server, key and catalogue model. */
+function lemonadeFor(entry: ImageModelEntry): ImageBackend {
+	const modelId = () => entry.model.trim();
+	const config = () => configOf(entry);
+	return {
+		kind: 'lemonade',
 
-	async probe(): Promise<ProbeResult> {
-		if (!lemonadeConfig().baseUrl) {
-			return { ok: false, detail: 'No server address — Settings → Image.' };
-		}
-		let state: ServerState;
-		try {
-			state = await serverState();
-		} catch (e) {
-			return { ok: false, detail: errMessage(e) };
-		}
-		const where = [`Lemonade ${state.version}`, state.gpu].filter(Boolean).join(' on ');
-		if (!state.sdcpp.usable) {
-			return { ok: false, detail: `${where} cannot run stable-diffusion.cpp on this hardware.` };
-		}
-		// Listed before the model is checked, as ComfyUI's are: "no model is
-		// chosen" is exactly when the list is wanted.
-		const catalogue = await lemonadeCatalogue();
-		const models = catalogue
-			.filter((m) => state.downloaded.has(bareName(m.name)))
-			.map((m) => ({ name: m.id, label: modelLabel(m) }));
-		const model = catalogue.find((m) => m.id === modelId());
-		if (!model) {
-			return { ok: false, detail: 'No model is chosen — Settings → Image.', models };
-		}
-		if (!state.downloaded.has(bareName(model.name))) {
+		async capabilities(): Promise<ImageBackendCapabilities> {
+			// Both families draw transparent images, as on the bundled engine.
+			// Neither tiles here, and LoRAs are not offered. Editing and upscaling
+			// depend on what is installed, so the server is asked.
+			const ok = familyOfId(modelId()) !== null;
+			const model = (await lemonadeCatalogue().catch(() => [])).find((m) => m.id === modelId());
+			const state = ok ? await serverState(undefined, await config()).catch(() => null) : null;
+			const edits = !!state && !!model && state.edits.has(bareName(model.name));
 			return {
-				ok: false,
-				detail: `${modelLabel(model)} is not installed on the server — Settings → Image → Install.`,
-				models
+				transparency: ok,
+				seamlessTiling: false,
+				loras: false,
+				maxLoras: 0,
+				edit: edits,
+				maxEditImages: edits ? MAX_EDIT_IMAGES : 0,
+				upscale: !!state?.upscaler
 			};
-		}
-		return { ok: true, detail: `Connected — ${where}, ${state.sdcpp.backend}.`, models };
-	},
+		},
 
-	async generate(req: ImageRequest, opts: GenerateOptions = {}): Promise<ImageResult> {
-		const { id, family, model } = await chosen();
-
-		// Say so when the server has to load it first: that is most of a minute.
-		const state = await serverState(opts.signal).catch(() => null);
-		const name = bareName(model.name);
-		let loaded = state?.loadedImage === name;
-		if (state?.stale.has(name)) {
-			await refreshOptions(model, loaded, opts.signal);
-			loaded = false;
-		}
-		opts.onProgress?.({ phase: loaded ? 'running' : 'loading' });
-
-		const sampler = req.sampler ?? { ...FAMILY_SAMPLER[family] };
-		const seed = req.seed ?? randomSeed();
-		const started = Date.now();
-		let images: Uint8Array[];
-		let clearStart: string | undefined;
-		if (req.edit) {
-			images = await edit(req, model, sampler, seed, opts.signal);
-		} else {
-			const start = await transparentStart(family, req);
-			const prompt = start.prompt;
-			clearStart = start.clearStart;
-			const body = buildGeneration({
-				model: model.name,
-				prompt,
-				negativePrompt: req.negativePrompt,
-				seed,
-				width: req.width,
-				height: req.height,
-				sampler,
-				clearStart
-			});
-			images = await draw(body, opts.signal);
-		}
-		if (images.length === 0) {
-			throw new ImageBackendError('rejected', 'Lemonade returned no image.');
-		}
-		const transparencyFailed = clearStart ? await lostTransparency(images[0]) : undefined;
-
-		return {
-			images: images.map((bytes) => ({
-				bytes,
-				mimeType: 'image/png',
-				width: req.width,
-				height: req.height
-			})),
-			meta: {
-				seed,
-				model: id,
-				backend: 'lemonade',
-				sampler,
-				loras: [],
-				durationMs: Date.now() - started,
-				...(req.seamless ? { seamFailed: NO_TILING } : {}),
-				...(transparencyFailed ? { transparencyFailed } : {})
+		async probe(): Promise<ProbeResult> {
+			const cfg = await config();
+			if (!cfg.baseUrl) {
+				return { ok: false, detail: 'No server address — Settings → Image.' };
 			}
-		};
-	},
+			let state: ServerState;
+			try {
+				state = await serverState(undefined, cfg);
+			} catch (e) {
+				return { ok: false, detail: errMessage(e) };
+			}
+			const where = [`Lemonade ${state.version}`, state.gpu].filter(Boolean).join(' on ');
+			if (!state.sdcpp.usable) {
+				return { ok: false, detail: `${where} cannot run stable-diffusion.cpp on this hardware.` };
+			}
+			// Listed before the model is checked, as ComfyUI's are: "no model is
+			// chosen" is exactly when the list is wanted.
+			const catalogue = await lemonadeCatalogue();
+			const models = catalogue
+				.filter((m) => state.downloaded.has(bareName(m.name)))
+				.map((m) => ({ name: m.id, label: modelLabel(m) }));
+			const model = catalogue.find((m) => m.id === modelId());
+			if (!model) {
+				return { ok: false, detail: 'No model is chosen — Settings → Image.', models };
+			}
+			if (!state.downloaded.has(bareName(model.name))) {
+				return {
+					ok: false,
+					detail: `${modelLabel(model)} is not installed on the server — Settings → Image → Install.`,
+					models
+				};
+			}
+			return { ok: true, detail: `Connected — ${where}, ${state.sdcpp.backend}.`, models };
+		},
 
-	/**
-	 * Four times larger with Lemonade's Real-ESRGAN, RGB as it returns it;
-	 * `image_store_upscaled` puts the alpha back.
-	 */
-	async upscale(input: ImageInput, opts: GenerateOptions = {}): Promise<Uint8Array> {
-		opts.onProgress?.({ phase: 'running', detail: 'Upscaling' });
-		const payload = await lemonadeJson(
-			lemonadeConfig(),
-			{
-				method: 'POST',
-				path: ROUTES.upscale,
-				body: { model: UPSCALER, image: await base64Of(input) },
-				timeoutMs: GENERATE_TIMEOUT_MS
-			},
-			opts.signal
-		);
-		const out = (payload as { data?: Array<{ b64_json?: unknown }> })?.data?.[0]?.b64_json;
-		if (typeof out !== 'string') {
-			throw new ImageBackendError('rejected', 'Lemonade returned no upscaled picture.');
-		}
-		return fromBase64(out);
+		generate: (req, opts) => generateWith(entry, req, opts),
+
+		upscale: (input, opts) => upscaleWith(entry, input, opts)
+	};
+}
+
+/** One picture from `entry`'s model on its Lemonade server. */
+async function generateWith(
+	entry: ImageModelEntry,
+	req: ImageRequest,
+	opts: GenerateOptions = {}
+): Promise<ImageResult> {
+	const cfg = await configOf(entry);
+	const { id, family, model } = await chosen(cfg, entry.model.trim());
+
+	// Say so when the server has to load it first: that is most of a minute.
+	const state = await serverState(opts.signal, cfg).catch(() => null);
+	const name = bareName(model.name);
+	let loaded = state?.loadedImage === name;
+	if (state?.stale.has(name)) {
+		await refreshOptions(model, loaded, opts.signal, cfg);
+		loaded = false;
 	}
-};
+	opts.onProgress?.({ phase: loaded ? 'running' : 'loading' });
 
-registerImageBackend(lemonadeBackend);
+	const sampler = req.sampler ?? { ...FAMILY_SAMPLER[family] };
+	const seed = req.seed ?? randomSeed();
+	const started = Date.now();
+	let images: Uint8Array[];
+	let clearStart: string | undefined;
+	if (req.edit) {
+		images = await edit(cfg, req, model, sampler, seed, opts.signal);
+	} else {
+		const start = await transparentStart(family, req);
+		const prompt = start.prompt;
+		clearStart = start.clearStart;
+		const body = buildGeneration({
+			model: model.name,
+			prompt,
+			negativePrompt: req.negativePrompt,
+			seed,
+			width: req.width,
+			height: req.height,
+			sampler,
+			clearStart
+		});
+		images = await draw(cfg, body, opts.signal);
+	}
+	if (images.length === 0) {
+		throw new ImageBackendError('rejected', 'Lemonade returned no image.');
+	}
+	const transparencyFailed = clearStart ? await lostTransparency(images[0]) : undefined;
+
+	return {
+		images: images.map((bytes) => ({
+			bytes,
+			mimeType: 'image/png',
+			width: req.width,
+			height: req.height
+		})),
+		meta: {
+			seed,
+			model: id,
+			backend: 'lemonade',
+			sampler,
+			loras: [],
+			durationMs: Date.now() - started,
+			...(req.seamless ? { seamFailed: NO_TILING } : {}),
+			...(transparencyFailed ? { transparencyFailed } : {})
+		}
+	};
+}
+
+/**
+ * Four times larger with Lemonade's Real-ESRGAN, RGB as it returns it;
+ * `image_store_upscaled` puts the alpha back.
+ */
+async function upscaleWith(
+	entry: ImageModelEntry,
+	input: ImageInput,
+	opts: GenerateOptions = {}
+): Promise<Uint8Array> {
+	opts.onProgress?.({ phase: 'running', detail: 'Upscaling' });
+	const payload = await lemonadeJson(
+		await configOf(entry),
+		{
+			method: 'POST',
+			path: ROUTES.upscale,
+			body: { model: UPSCALER, image: await base64Of(input) },
+			timeoutMs: GENERATE_TIMEOUT_MS
+		},
+		opts.signal
+	);
+	const out = (payload as { data?: Array<{ b64_json?: unknown }> })?.data?.[0]?.b64_json;
+	if (typeof out !== 'string') {
+		throw new ImageBackendError('rejected', 'Lemonade returned no upscaled picture.');
+	}
+	return fromBase64(out);
+}
+
+registerImageBackendKind('lemonade', lemonadeFor);
+
+/** Settings → Image's Lemonade as a backend, for what has no entry of its own yet. */
+export const lemonadeBackend = legacyBackend('lemonade');

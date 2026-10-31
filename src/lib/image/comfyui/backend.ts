@@ -11,13 +11,13 @@
  * drop them, which is the failure this whole layer is arranged to prevent.
  */
 
-import { getSettings } from '#lib/stores/settings.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { randomSeed } from '#lib/utils/random.ts';
 import {
 	ImageBackendError,
 	type ImageBackendCapabilities,
 	type ImageInput,
+	type ImageModelEntry,
 	type ImageRequest,
 	type ImageResult,
 	type LoraRef,
@@ -46,13 +46,15 @@ import * as api from '#lib/image/comfyui/client.ts';
 import { uploadImage, uploadInpaint } from '#lib/image/comfyui/upload.ts';
 import { UPSCALE_OUTPUT, upscaleGraph, upscalerOf } from '#lib/image/comfyui/upscale.ts';
 import { resumePrompt, run } from '#lib/image/comfyui/run.ts';
+import { legacyBackend, registerImageBackendKind } from '#lib/image/registry.ts';
+import { entryApiKey } from '#lib/image/legacy.ts';
+import { toolchestKeyFor } from '#lib/toolchest/models.ts';
 
 /** What a custom workflow samples with when a request says nothing. */
 export const DEFAULT_SAMPLER: SamplerSettings = { name: 'euler_ancestral', steps: 28, cfg: 7 };
 
-function config(): api.ClientConfig {
-	const s = getSettings();
-	return { baseUrl: s.imageBackendBaseUrl, apiKey: s.imageBackendApiKey };
+async function config(entry: ImageModelEntry): Promise<api.ClientConfig> {
+	return { baseUrl: entry.url, apiKey: await entryApiKey(entry) };
 }
 
 /**
@@ -60,10 +62,12 @@ function config(): api.ClientConfig {
  * neither path is set; throws when exactly one is, because half-configured is
  * a mistake rather than a mode.
  */
-async function customTemplate(family: ModelFamily): Promise<WorkflowTemplate | null> {
-	const s = getSettings();
-	const graphPath = s.imageComfyWorkflowPath.trim();
-	const mapPath = s.imageComfyFieldMapPath.trim();
+async function customTemplate(
+	entry: ImageModelEntry,
+	family: ModelFamily
+): Promise<WorkflowTemplate | null> {
+	const graphPath = (entry.options.workflowPath ?? '').trim();
+	const mapPath = (entry.options.fieldMapPath ?? '').trim();
 	if (!graphPath && !mapPath) return null;
 	if (!graphPath || !mapPath) {
 		throw new ImageBackendError(
@@ -103,12 +107,11 @@ async function customTemplate(family: ModelFamily): Promise<WorkflowTemplate | n
 	};
 }
 
-function configuredModel(): string {
-	return getSettings().imageComfyCheckpoint.trim();
-}
-
-async function activeTemplates(family: ModelFamily): Promise<WorkflowTemplate[]> {
-	const custom = await customTemplate(family);
+async function activeTemplates(
+	entry: ImageModelEntry,
+	family: ModelFamily
+): Promise<WorkflowTemplate[]> {
+	const custom = await customTemplate(entry, family);
 	return custom ? [custom] : templatesFor(family);
 }
 
@@ -253,10 +256,15 @@ async function probeModel(
  * the model and its family, the family's workflow and companion files, the
  * sampler the workflow runs, and a real seed.
  */
-async function prepare(cfg: api.ClientConfig, req: ImageRequest, signal?: AbortSignal) {
-	const model = (req.model ?? configuredModel()).trim();
+async function prepare(
+	entry: ImageModelEntry,
+	cfg: api.ClientConfig,
+	req: ImageRequest,
+	signal?: AbortSignal
+) {
+	const model = (req.model ?? entry.model).trim();
 	const family = familyOf(model);
-	const template = templateFor(req, await activeTemplates(family));
+	const template = templateFor(req, await activeTemplates(entry, family));
 	const companions =
 		family !== 'sd' && (template.map.textEncoder || template.map.vae)
 			? await resolveCompanions(cfg, family)
@@ -289,137 +297,182 @@ async function prepare(cfg: api.ClientConfig, req: ImageRequest, signal?: AbortS
 	return { template, graph, model, sampler, loras, seed };
 }
 
-export const comfyUiBackend: ImageBackend = {
-	kind: 'comfyui',
+/** Sent with a job's handle, so `resume` asks with the key it was sent with. */
+function keyExtraOf(entry: ImageModelEntry): Record<string, string> {
+	return entry.keyId ? { keyId: entry.keyId } : {};
+}
 
-	async capabilities() {
-		const family = familyOf(configuredModel());
-		const templates = await activeTemplates(family);
-		const cfg = config();
-		const [edits, upscaler] = await Promise.all([
-			templates.some((t) => t.supports.edit) ? serverEdits(cfg, family) : false,
-			upscalerOf(cfg)
-		]);
-		return capabilitiesOf(templates, family, edits, upscaler !== null);
-	},
+/** The backend for one ComfyUI entry: its server, key, checkpoint and workflow. */
+function comfyUiFor(entry: ImageModelEntry): ImageBackend {
+	const configuredModel = () => entry.model.trim();
+	return {
+		kind: 'comfyui',
 
-	async probe() {
-		const cfg = config();
-		if (!cfg.baseUrl.trim()) {
-			return { ok: false, detail: 'No backend URL is set — Settings → Image.' };
-		}
-		const model = configuredModel();
-		const family = familyOf(model);
-		let templates: WorkflowTemplate[];
-		try {
-			templates = await activeTemplates(family);
-		} catch (e) {
-			return { ok: false, detail: errMessage(e) };
-		}
-		// Validate before reaching the network: a template out of sync with its
-		// map must fail here, not forty images into an overnight run.
-		for (const t of templates) {
-			const problems = validateFieldMap(t.graph, t.map);
-			if (problems.length > 0) {
-				return { ok: false, detail: `Workflow "${t.id}": ${problems[0]}` };
+		async capabilities() {
+			const family = familyOf(configuredModel());
+			const templates = await activeTemplates(entry, family);
+			const cfg = await config(entry);
+			const [edits, upscaler] = await Promise.all([
+				templates.some((t) => t.supports.edit) ? serverEdits(cfg, family) : false,
+				upscalerOf(cfg)
+			]);
+			return capabilitiesOf(templates, family, edits, upscaler !== null);
+		},
+
+		async probe() {
+			const cfg = await config(entry);
+			if (!cfg.baseUrl.trim()) {
+				return { ok: false, detail: 'No backend URL is set — Settings → Image.' };
 			}
-		}
-		try {
-			const stats = await api.systemStats(cfg);
-			const devices = stats.devices as Array<{ name?: string }> | undefined;
-			const device = devices?.[0]?.name ?? 'unknown device';
-			// Listed before the model is checked: "no model is set" is exactly
-			// when the user needs to see what there is to choose from.
-			const models = (await listModels(cfg)).map(({ name, label }) => ({ name, label }));
-			const bad = await probeModel(cfg, family, model);
-			if (bad) return { ok: false, detail: bad, models };
-			return { ok: true, detail: `Connected — ${device}.`, models };
-		} catch (e) {
-			return { ok: false, detail: errMessage(e) };
-		}
-	},
+			const model = configuredModel();
+			const family = familyOf(model);
+			let templates: WorkflowTemplate[];
+			try {
+				templates = await activeTemplates(entry, family);
+			} catch (e) {
+				return { ok: false, detail: errMessage(e) };
+			}
+			// Validate before reaching the network: a template out of sync with its
+			// map must fail here, not forty images into an overnight run.
+			for (const t of templates) {
+				const problems = validateFieldMap(t.graph, t.map);
+				if (problems.length > 0) {
+					return { ok: false, detail: `Workflow "${t.id}": ${problems[0]}` };
+				}
+			}
+			try {
+				const stats = await api.systemStats(cfg);
+				const devices = stats.devices as Array<{ name?: string }> | undefined;
+				const device = devices?.[0]?.name ?? 'unknown device';
+				// Listed before the model is checked: "no model is set" is exactly
+				// when the user needs to see what there is to choose from.
+				const models = (await listModels(cfg)).map(({ name, label }) => ({ name, label }));
+				const bad = await probeModel(cfg, family, model);
+				if (bad) return { ok: false, detail: bad, models };
+				return { ok: true, detail: `Connected — ${device}.`, models };
+			} catch (e) {
+				return { ok: false, detail: errMessage(e) };
+			}
+		},
 
-	async generate(req: ImageRequest, opts: GenerateOptions = {}): Promise<ImageResult> {
-		const cfg = config();
-		const started = Date.now();
-		const { template, graph, model, sampler, loras, seed } = await prepare(cfg, req, opts.signal);
-		const clientId = crypto.randomUUID();
-		// Unique per request so concurrent submissions cannot be confused for
-		// one another in /history.
-		const save = graph[template.map.outputNode];
-		if (save) save.inputs.filename_prefix = `haruspex/${clientId}`;
-		const outputNode = template.map.outputNode;
-		const bytes = await run(cfg, graph, outputNode, clientId, opts, (id) => ({
-			backend: 'comfyui',
-			baseUrl: cfg.baseUrl,
-			id,
+		generate: (req, opts) => generateWith(entry, req, opts),
+
+		upscale: (input, opts) => upscaleWith(entry, input, opts),
+
+		resume: (handle, opts) => resumeWith(entry, handle, opts)
+	};
+}
+
+/** One picture on `entry`'s server, with its model family's workflow. */
+async function generateWith(
+	entry: ImageModelEntry,
+	req: ImageRequest,
+	opts: GenerateOptions = {}
+): Promise<ImageResult> {
+	const cfg = await config(entry);
+	const started = Date.now();
+	const { template, graph, model, sampler, loras, seed } = await prepare(
+		entry,
+		cfg,
+		req,
+		opts.signal
+	);
+	const clientId = crypto.randomUUID();
+	// Unique per request so concurrent submissions cannot be confused for
+	// one another in /history.
+	const save = graph[template.map.outputNode];
+	if (save) save.inputs.filename_prefix = `haruspex/${clientId}`;
+	const outputNode = template.map.outputNode;
+	const bytes = await run(cfg, graph, outputNode, clientId, opts, (id) => ({
+		backend: 'comfyui',
+		baseUrl: cfg.baseUrl,
+		id,
+		seed,
+		model,
+		width: req.width,
+		height: req.height,
+		extra: { clientId, outputNode, ...keyExtraOf(entry) }
+	}));
+	return {
+		// An edit is sized from its first picture, so read what came back.
+		images: bytes.map((b) => ({
+			bytes: b,
+			mimeType: 'image/png',
+			...(pngSize(b) ?? { width: req.width, height: req.height })
+		})),
+		meta: {
 			seed,
 			model,
-			width: req.width,
-			height: req.height,
-			extra: { clientId, outputNode }
-		}));
-		return {
-			// An edit is sized from its first picture, so read what came back.
-			images: bytes.map((b) => ({
-				bytes: b,
-				mimeType: 'image/png',
-				...(pngSize(b) ?? { width: req.width, height: req.height })
-			})),
-			meta: {
-				seed,
-				model,
-				backend: 'comfyui',
-				sampler,
-				loras,
-				durationMs: Date.now() - started
-			}
-		};
-	},
-
-	async upscale(input: ImageInput, opts: GenerateOptions = {}): Promise<Uint8Array> {
-		const cfg = config();
-		const model = await upscalerOf(cfg);
-		if (!model) {
-			throw new ImageBackendError(
-				'unconfigured',
-				'ComfyUI has no Real-ESRGAN x4plus in models/upscale_models — Settings → Image → Install.'
-			);
-		}
-		const clientId = crypto.randomUUID();
-		const image = await uploadImage(cfg, input, `haruspex-upscale-${clientId}.png`, opts.signal);
-		const graph = upscaleGraph(image, model, `haruspex/${clientId}`);
-		const [bytes] = await run(cfg, graph, UPSCALE_OUTPUT, clientId, opts, (id) => ({
 			backend: 'comfyui',
-			baseUrl: cfg.baseUrl,
-			id,
-			seed: 0,
-			model,
-			width: 0,
-			height: 0,
-			extra: { clientId, outputNode: UPSCALE_OUTPUT }
-		}));
-		if (!bytes) throw new ImageBackendError('rejected', 'ComfyUI returned no upscaled picture.');
-		return bytes;
-	},
+			sampler,
+			loras,
+			durationMs: Date.now() - started
+		}
+	};
+}
 
-	async resume(handle: ImageJobHandle, opts: GenerateOptions = {}): Promise<ImageResult> {
-		const started = Date.now();
-		const bytes = await resumePrompt(config(), handle, opts);
-		return {
-			images: bytes.map((b) => ({
-				bytes: b,
-				mimeType: 'image/png',
-				...(pngSize(b) ?? { width: handle.width, height: handle.height })
-			})),
-			meta: {
-				seed: handle.seed,
-				model: handle.model,
-				backend: 'comfyui',
-				sampler: { name: 'as sent', steps: 0, cfg: 0 },
-				loras: [],
-				durationMs: Date.now() - started
-			}
-		};
+/** `entry`'s server's Real-ESRGAN, run as a graph like any other. */
+async function upscaleWith(
+	entry: ImageModelEntry,
+	input: ImageInput,
+	opts: GenerateOptions = {}
+): Promise<Uint8Array> {
+	const cfg = await config(entry);
+	const model = await upscalerOf(cfg);
+	if (!model) {
+		throw new ImageBackendError(
+			'unconfigured',
+			'ComfyUI has no Real-ESRGAN x4plus in models/upscale_models — Settings → Image → Install.'
+		);
 	}
-};
+	const clientId = crypto.randomUUID();
+	const image = await uploadImage(cfg, input, `haruspex-upscale-${clientId}.png`, opts.signal);
+	const graph = upscaleGraph(image, model, `haruspex/${clientId}`);
+	const [bytes] = await run(cfg, graph, UPSCALE_OUTPUT, clientId, opts, (id) => ({
+		backend: 'comfyui',
+		baseUrl: cfg.baseUrl,
+		id,
+		seed: 0,
+		model,
+		width: 0,
+		height: 0,
+		extra: { clientId, outputNode: UPSCALE_OUTPUT, ...keyExtraOf(entry) }
+	}));
+	if (!bytes) throw new ImageBackendError('rejected', 'ComfyUI returned no upscaled picture.');
+	return bytes;
+}
+
+/** A prompt an earlier run sent, followed to its end. */
+async function resumeWith(
+	entry: ImageModelEntry,
+	handle: ImageJobHandle,
+	opts: GenerateOptions = {}
+): Promise<ImageResult> {
+	const started = Date.now();
+	// The key the job was sent with, whatever the entry says now.
+	const keyId = handle.extra?.keyId;
+	const base = keyId
+		? { baseUrl: handle.baseUrl, apiKey: await toolchestKeyFor(keyId) }
+		: await config(entry);
+	const bytes = await resumePrompt(base, handle, opts);
+	return {
+		images: bytes.map((b) => ({
+			bytes: b,
+			mimeType: 'image/png',
+			...(pngSize(b) ?? { width: handle.width, height: handle.height })
+		})),
+		meta: {
+			seed: handle.seed,
+			model: handle.model,
+			backend: 'comfyui',
+			sampler: { name: 'as sent', steps: 0, cfg: 0 },
+			loras: [],
+			durationMs: Date.now() - started
+		}
+	};
+}
+
+registerImageBackendKind('comfyui', comfyUiFor);
+
+/** Settings → Image's ComfyUI as a backend, for what has no entry of its own yet. */
+export const comfyUiBackend = legacyBackend('comfyui');
