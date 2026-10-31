@@ -105,6 +105,24 @@ function stripBoldMarkers(slide: Record<string, unknown>): void {
 	}
 }
 
+/**
+ * Nesting is relative: a list whose every bullet is level 1 is a plain list
+ * one step in. Shifting it so its shallowest bullet is level 0 draws it at
+ * the full size; a model squeezing an over-full slide nested every bullet
+ * for the smaller font. Real hierarchy keeps its steps.
+ */
+function flattenNesting(list: unknown[]): unknown[] {
+	const levelOf = (b: unknown) =>
+		b && typeof b === 'object' && typeof (b as { level?: unknown }).level === 'number'
+			? Math.max(0, Math.trunc((b as { level: number }).level))
+			: 0;
+	const top = Math.min(...list.map(levelOf));
+	if (!Number.isFinite(top) || top === 0) return list;
+	return list.map((b) =>
+		b && typeof b === 'object' ? { ...(b as object), level: levelOf(b) - top } : b
+	);
+}
+
 /** Shape fixes that leave a slide's meaning alone, in place. */
 export function normalizeSlide(slide: Record<string, unknown>): void {
 	normalizeLayout(slide);
@@ -117,6 +135,8 @@ export function normalizeSlide(slide: Record<string, unknown>): void {
 	if (typeof slide.notes !== 'string' || slide.notes.trim().length === 0) delete slide.notes;
 	liftImageBullets(slide);
 	stripBoldMarkers(slide);
+	if (Array.isArray(slide.bullets)) slide.bullets = flattenNesting(slide.bullets);
+	if (Array.isArray(slide.right)) slide.right = flattenNesting(slide.right);
 }
 
 const hasColumns = (slide: Record<string, unknown>) =>

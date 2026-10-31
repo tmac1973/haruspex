@@ -20,7 +20,13 @@ import type { Box } from '#lib/slides/geometry.ts';
 import { boldRuns, plainText } from '#lib/slides/markdown.ts';
 import { addChart, addTable } from '#lib/slides/pptxData.ts';
 import { dropStrayParagraphProps } from '#lib/slides/pptxRuns.ts';
-import { DeckFitError, OVERFLOW_LIMIT, fitScale } from '#lib/slides/textfit.ts';
+import {
+	DeckFitError,
+	OVERFLOW_LIMIT,
+	fitScale,
+	tableProblem,
+	textProblem
+} from '#lib/slides/textfit.ts';
 import type { Paragraph } from '#lib/slides/textfit.ts';
 import { THEMES } from '#lib/slides/themes.ts';
 import { SIZES } from '#lib/slides/sizes.ts';
@@ -77,9 +83,7 @@ function fit(
 	gap = 0
 ): number {
 	const { scale, ratio } = fitScale(paras, box, gap);
-	if (ratio > OVERFLOW_LIMIT) {
-		build.problems.push(`${where}: ${what} need about ${ratio.toFixed(1)}× the room there is.`);
-	}
+	if (ratio > OVERFLOW_LIMIT) build.problems.push(textProblem(where, what, paras, box.w, ratio));
 	return scale;
 }
 
@@ -241,11 +245,7 @@ function addContent(
 	if (slide.chart && box) addChart(build.deck, out, build.theme, box, slide.chart);
 	else if (slide.table && box) {
 		const { ratio, height } = addTable(out, build.theme, box, slide.table, build.orientation);
-		if (ratio > OVERFLOW_LIMIT) {
-			build.problems.push(
-				`${where}: the table needs about ${ratio.toFixed(1)}× the room there is.`
-			);
-		}
+		if (ratio > OVERFLOW_LIMIT) build.problems.push(tableProblem(where, slide.table.length, ratio));
 		// Portrait stacks the bullets under the table: under where it ends,
 		// not where its share of the body does.
 		if (build.orientation === 'portrait' && bullets.length > 0) {
