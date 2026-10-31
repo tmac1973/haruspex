@@ -27,6 +27,7 @@ const settings = vi.hoisted(() => ({
 	imageToolchestBaseUrl: '',
 	imageToolchestApiKeyId: null as string | null,
 	imageToolchestModelId: '',
+	generationServers: [] as { kind: string; url: string; keyId: string | null }[],
 	inferenceBackend: {
 		mode: 'remote',
 		remoteBaseUrl: 'http://box:3000',
@@ -137,6 +138,7 @@ describe('ImageSection with llama-toolchest', () => {
 		settings.imageToolchestBaseUrl = '';
 		settings.imageToolchestApiKeyId = null;
 		settings.imageToolchestModelId = '';
+		settings.generationServers = [];
 	});
 
 	it('says when the inference toolchest has image models, while the backend is off', async () => {
@@ -169,6 +171,24 @@ describe('ImageSection with llama-toolchest', () => {
 		const backend = screen.getByLabelText('Backend:') as HTMLSelectElement;
 		await fireEvent.change(backend, { target: { value: 'llama-toolchest' } });
 		expect(settings.imageToolchestBaseUrl).toBe('http://other:3000');
+	});
+
+	it('lists the toolchests saved in Music or Video, and takes the key saved with one', async () => {
+		settings.imageBackendKind = 'llama-toolchest';
+		settings.imageToolchestBaseUrl = 'http://box:3000';
+		settings.generationServers = [
+			{ kind: 'comfyui', url: 'http://comfy:8188', keyId: null },
+			{ kind: 'llama-toolchest', url: 'http://other:3000', keyId: 'k2' }
+		];
+		render(ImageSection);
+		const saved = screen.getByLabelText('Saved servers:') as HTMLSelectElement;
+		await waitFor(() =>
+			expect([...saved.options].map((o) => o.value)).toContain('http://box:3000')
+		);
+		expect([...saved.options].map((o) => o.value)).not.toContain('http://comfy:8188');
+		await fireEvent.change(saved, { target: { value: 'http://other:3000' } });
+		expect(settings.imageToolchestBaseUrl).toBe('http://other:3000');
+		expect(settings.imageToolchestApiKeyId).toBe('k2');
 	});
 });
 

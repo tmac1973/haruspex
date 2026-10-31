@@ -21,6 +21,9 @@
 	import LemonadeModels from '#lib/components/settings/LemonadeModels.svelte';
 	import ToolchestModels from '#lib/components/settings/ToolchestModels.svelte';
 	import ApiKeyPicker from '#lib/components/settings/ApiKeyPicker.svelte';
+	import ServerAddress from '#lib/components/settings/ServerAddress.svelte';
+	import { rememberServer } from '#lib/stores/generationServers.svelte.ts';
+	import type { GenerationServer } from '#lib/stores/settings.ts';
 	import { seenInstances } from '#lib/image/toolchest/backend.ts';
 	import { toolchestHint } from '#lib/toolchest/detect.ts';
 	import { prefillFromInference, withSavedModel } from '#lib/toolchest/kind.ts';
@@ -90,6 +93,14 @@
 		}
 	};
 	const server = $derived(SERVERS[imageBackendKind] ?? null);
+	/** The saved-list kind of the chosen server backend. */
+	const serverKind = $derived(
+		imageBackendKind === 'comfyui' ||
+			imageBackendKind === 'lemonade' ||
+			imageBackendKind === 'llama-toolchest'
+			? imageBackendKind
+			: null
+	);
 
 	const initial = SERVERS[getSettings().imageBackendKind];
 	let serverUrl = $state(initial ? getSettings()[initial.url] : '');
@@ -383,6 +394,10 @@
 				probeCount++;
 			}
 			if (isToolchest) toolchestInstances = seenInstances();
+			// It answered, so it is worth keeping in the saved list.
+			if (serverKind && (probeResult.ok || probeResult.models?.length)) {
+				rememberServer(serverKind, serverUrl, apiKeyId);
+			}
 			capabilities = probeResult.ok ? await backend.capabilities() : null;
 		} catch (e) {
 			probeResult = { ok: false, detail: errMessage(e) };
@@ -398,6 +413,18 @@
 		// Re-checked at once: a DiT model also needs its text encoder and VAE
 		// on the server, and that is the probe's job to say.
 		void probe();
+	}
+
+	function pickServer(saved: GenerationServer | null) {
+		if (!server) return;
+		serverUrl = saved?.url ?? '';
+		if (saved && 'picker' in server.key) {
+			apiKeyId = saved.keyId;
+			persist({ [server.key.picker]: saved.keyId } as Partial<AppSettings>);
+		}
+		persist({ [server.url]: serverUrl } as Partial<AppSettings>);
+		probeResult = null;
+		if (serverUrl) void probe();
 	}
 
 	function saveUrl() {
@@ -586,14 +613,17 @@
 	<section class="settings-section">
 		<h2>Connection</h2>
 		<div class="fields">
-			<label for="image-url">Server address:</label>
-			<input
-				id="image-url"
-				type="text"
-				placeholder={server.placeholder}
-				bind:value={serverUrl}
-				onblur={saveUrl}
-			/>
+			{#if serverKind}
+				<ServerAddress
+					kind={serverKind}
+					id="image-url"
+					placeholder={server.placeholder}
+					keyId={apiKeyId}
+					bind:value={serverUrl}
+					onCommit={saveUrl}
+					onPick={pickServer}
+				/>
+			{/if}
 
 			<label for="image-key">API key:</label>
 			{#if 'picker' in server.key}

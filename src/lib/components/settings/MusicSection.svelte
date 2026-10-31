@@ -6,6 +6,9 @@
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import Tooltip from '#lib/components/Tooltip.svelte';
 	import ApiKeyPicker from '#lib/components/settings/ApiKeyPicker.svelte';
+	import ServerAddress from '#lib/components/settings/ServerAddress.svelte';
+	import { rememberServer } from '#lib/stores/generationServers.svelte.ts';
+	import type { GenerationServer } from '#lib/stores/settings.ts';
 	import ToolchestModels from '#lib/components/settings/ToolchestModels.svelte';
 	import AudioPlayer from '#lib/components/AudioPlayer.svelte';
 	import { resolveMusicBackend } from '#lib/music/index.ts';
@@ -72,11 +75,31 @@
 			probeResult = await resolveMusicBackend().probe();
 			if (probeResult.models) serverModels = probeResult.models;
 			instances = seenMusicInstances();
+			// It answered, so it is worth keeping in the saved list.
+			if (configuredUrl && (probeResult.ok || probeResult.models?.length)) {
+				if (isAce) rememberServer('ace-server', aceUrl);
+				else if (isToolchest) rememberServer('llama-toolchest', baseUrl, apiKeyId);
+			}
 		} catch (e) {
 			probeResult = { ok: false, detail: errMessage(e) };
 		} finally {
 			probing = false;
 		}
+	}
+
+	function pickServer(saved: GenerationServer | null) {
+		baseUrl = saved?.url ?? '';
+		apiKeyId = saved?.keyId ?? apiKeyId;
+		updateSettings({ musicToolchestBaseUrl: baseUrl, musicToolchestApiKeyId: apiKeyId });
+		probeResult = null;
+		if (baseUrl) void probe();
+	}
+
+	function pickAceServer(saved: GenerationServer | null) {
+		aceUrl = saved?.url ?? '';
+		updateSettings({ musicAceBaseUrl: aceUrl });
+		probeResult = null;
+		if (aceUrl) void probe();
 	}
 
 	function saveUrl() {
@@ -216,13 +239,14 @@
 	<section class="settings-section">
 		<h2>Connection</h2>
 		<div class="fields">
-			<label for="music-url">Server address:</label>
-			<input
+			<ServerAddress
+				kind="llama-toolchest"
 				id="music-url"
-				type="text"
 				placeholder="http://host:3000"
+				keyId={apiKeyId}
 				bind:value={baseUrl}
-				onblur={saveUrl}
+				onCommit={saveUrl}
+				onPick={pickServer}
 			/>
 
 			<label for="music-key">API key:</label>
@@ -268,14 +292,14 @@
 	<section class="settings-section">
 		<h2>Connection</h2>
 		<div class="fields">
-			<label for="music-ace-url">Server address:</label>
-			<input
+			<ServerAddress
+				kind="ace-server"
 				id="music-ace-url"
-				type="text"
 				placeholder="http://host:8083"
-				bind:value={aceUrl}
-				onblur={saveAceUrl}
 				title="acestep.cpp's ace-server, not a llama-toolchest in front of it."
+				bind:value={aceUrl}
+				onCommit={saveAceUrl}
+				onPick={pickAceServer}
 			/>
 
 			<label for="music-ace-model">

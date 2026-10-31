@@ -15,6 +15,9 @@
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import Tooltip from '#lib/components/Tooltip.svelte';
 	import ApiKeyPicker from '#lib/components/settings/ApiKeyPicker.svelte';
+	import ServerAddress from '#lib/components/settings/ServerAddress.svelte';
+	import { rememberServer } from '#lib/stores/generationServers.svelte.ts';
+	import type { GenerationServer } from '#lib/stores/settings.ts';
 	import ToolchestModels from '#lib/components/settings/ToolchestModels.svelte';
 	import { probeVideo, seenVideoInstances } from '#lib/videogen/toolchest.ts';
 	import type { ModelOption, ProbeResult } from '#lib/image/backend.ts';
@@ -61,6 +64,10 @@
 			probeResult = await probeVideo();
 			if (probeResult.models) serverModels = probeResult.models;
 			instances = seenVideoInstances();
+			// It answered, so it is worth keeping in the saved list.
+			if (probeResult.ok || probeResult.models?.length) {
+				rememberServer('llama-toolchest', baseUrl, apiKeyId);
+			}
 			// With one instance there is nothing to choose.
 			if (!modelId && instances.length === 1) {
 				modelId = instances[0].id;
@@ -72,6 +79,14 @@
 		} finally {
 			probing = false;
 		}
+	}
+
+	function pickServer(saved: GenerationServer | null) {
+		baseUrl = saved?.url ?? '';
+		apiKeyId = saved?.keyId ?? apiKeyId;
+		updateSettings({ videoGenToolchestBaseUrl: baseUrl, videoGenToolchestApiKeyId: apiKeyId });
+		probeResult = null;
+		if (baseUrl) void probe();
 	}
 
 	function saveUrl() {
@@ -121,13 +136,14 @@
 	<section class="settings-section">
 		<h2>Connection</h2>
 		<div class="fields">
-			<label for="videogen-url">Server address:</label>
-			<input
+			<ServerAddress
+				kind="llama-toolchest"
 				id="videogen-url"
-				type="text"
 				placeholder="http://host:3000"
+				keyId={apiKeyId}
 				bind:value={baseUrl}
-				onblur={saveUrl}
+				onCommit={saveUrl}
+				onPick={pickServer}
 			/>
 
 			<label for="videogen-key">API key:</label>
@@ -191,7 +207,6 @@
 		margin-top: 8px;
 	}
 
-	.fields input,
 	.fields select {
 		width: 100%;
 		min-width: 0;

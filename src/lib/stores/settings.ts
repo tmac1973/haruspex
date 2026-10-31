@@ -359,6 +359,57 @@ export const defaultSkills: SkillsConfig = {
 	trustedRepos: {}
 };
 
+/** A backend a generation server runs, for the saved list. */
+export type GenerationServerKind = 'comfyui' | 'lemonade' | 'llama-toolchest' | 'ace-server';
+
+/**
+ * A saved generation server. `keyId` is a named key from Settings → Inference
+ * → API Keys; ComfyUI and Lemonade keep their own secret, so theirs is null.
+ */
+export interface GenerationServer {
+	kind: GenerationServerKind;
+	url: string;
+	keyId: string | null;
+}
+
+/**
+ * The saved list for an install from before it existed: every address the
+ * generation settings hold, so the dropdowns are not empty after the update.
+ */
+export function seedGenerationServers(s: Partial<AppSettings>): GenerationServer[] {
+	const found: GenerationServer[] = [
+		{ kind: 'comfyui', url: s.imageBackendBaseUrl ?? '', keyId: null },
+		{ kind: 'lemonade', url: s.imageLemonadeBaseUrl ?? '', keyId: null },
+		{
+			kind: 'llama-toolchest',
+			url: s.imageToolchestBaseUrl ?? '',
+			keyId: s.imageToolchestApiKeyId ?? null
+		},
+		{
+			kind: 'llama-toolchest',
+			url: s.musicToolchestBaseUrl ?? '',
+			keyId: s.musicToolchestApiKeyId ?? null
+		},
+		{
+			kind: 'llama-toolchest',
+			url: s.videoGenToolchestBaseUrl ?? '',
+			keyId: s.videoGenToolchestApiKeyId ?? null
+		},
+		{ kind: 'ace-server', url: s.musicAceBaseUrl ?? '', keyId: null }
+	];
+	const out: GenerationServer[] = [];
+	for (const f of found) {
+		const url = normalizeServerUrl(f.url);
+		if (url && !out.some((o) => o.kind === f.kind && o.url === url)) out.push({ ...f, url });
+	}
+	return out;
+}
+
+/** An address as the saved list compares it: trimmed, without a trailing slash. */
+export function normalizeServerUrl(url: string): string {
+	return url.trim().replace(/\/+$/, '');
+}
+
 export interface AppSettings {
 	responseFormat: ResponseFormat;
 	/**
@@ -837,6 +888,12 @@ export interface AppSettings {
 	videoGenToolchestBaseUrl: string;
 	videoGenToolchestApiKeyId: string | null;
 	videoGenToolchestModelId: string;
+	/**
+	 * Generation servers saved in Settings → Image, Music and Video, to switch
+	 * between without typing the address again. A llama-toolchest is listed in
+	 * all three; the others only where their backend is.
+	 */
+	generationServers: GenerationServer[];
 	/** Settings → Video editing's switch: the video tools are offered only while it is on. */
 	videoEditingEnabled: boolean;
 	/**
@@ -1135,6 +1192,7 @@ const defaults: AppSettings = {
 	videoGenToolchestBaseUrl: '',
 	videoGenToolchestApiKeyId: null,
 	videoGenToolchestModelId: '',
+	generationServers: [],
 	videoEditingEnabled: false,
 	videoFfmpegPath: '',
 	videoFfprobePath: '',
@@ -1298,6 +1356,9 @@ function load(): AppSettings {
 				integrations: mergedIntegrations,
 				proxy: mergedProxy,
 				searchProxy: mergedSearchProxy,
+				generationServers: Array.isArray(rest.generationServers)
+					? rest.generationServers
+					: seedGenerationServers(rest),
 				skills: {
 					...defaultSkills,
 					...(parsed.skills ?? {}),

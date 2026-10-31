@@ -17,13 +17,15 @@ Open Settings → Music → **Music backend** and choose a **Backend**:
 
 While it is off, Settings → Music says so if the llama-toolchest your chat model comes from has music models.
 
+A server you probe or **Add** is kept under **Saved servers**; a llama-toolchest is listed in Settings → Image and Video too.
+
 ### Set up llama-toolchest
 
-If your chat model comes from a toolchest, its address and key are filled in; otherwise enter the **Server address** (`http://host:3000`) and pick an **API key** from Settings → Inference → API Keys. Press **Probe**, then choose one of its music instances as the **Model**. A stopped instance starts on first use, so the first song takes longer. Models are added in llama-toolchest.
+If your chat model comes from a toolchest, its address and key are filled in; otherwise enter the **Server address** (`http://host:3000`) and an **API key** from Settings → Inference → API Keys. Press **Probe**, then choose a music instance as the **Model**. A stopped instance starts on first use. Models are added in llama-toolchest.
 
 ### Set up ace-server
 
-Enter the **Server address** of ace-server itself (`http://host:8083`), not a llama-toolchest in front of it. Press **Probe**. **Model** lists the synthesis models the server loaded; **Server default** uses its first. ace-server has no API key and makes one song at a time; a second request waits without showing its place.
+Enter the **Server address** of ace-server itself (`http://host:8083`), not a llama-toolchest in front of it. Press **Probe**. **Model** lists the synthesis models the server loaded; **Server default** uses its first. ace-server has no API key and makes one song at a time.
 
 ## Check it works
 
@@ -33,7 +35,7 @@ Under **Songs**, **Make a test clip** makes a 10-second instrumental and plays i
 
 ## Make a song in Chat
 
-Ask for one: "a 45-second lo-fi track about rain", or give lyrics. The assistant writes style tags and lyrics. The step shows its progress. It plays in the answer, one player at a time, and starting it stops read-aloud. If the assistant doesn't place it, it goes under the answer. Stopping the reply cancels the song on the server.
+Ask for one: "a 45-second lo-fi track about rain", or give lyrics. The assistant writes style tags and lyrics. It plays in the answer, one player at a time, and starting it stops read-aloud. If the assistant doesn't place it, it goes under the answer. Stopping the reply cancels the song on the server.
 
 You can ask for a length (5 to 240 seconds), tempo, key, time signature, language, or WAV instead of MP3. Each seed is noted, so "the same, but faster" keeps the rest.
 
@@ -50,7 +52,7 @@ Ask the assistant to work on a song it made in the chat, an audio file in the wo
 - **Restyle**: "the same song as smoky jazz". Give the lyrics again to keep the vocals. It can follow the original closely or loosely.
 - **Redo a stretch**: "redo 0:30 to 0:45 with a guitar solo".
 - **Extend**: "add 30 seconds at the end", or an intro at the start.
-- **Trim**: "keep only 0:10 to 1:20". It is cut on your computer, with any model, and works like any song.
+- **Trim**: "keep only 0:10 to 1:20". It is cut on your computer, with any model.
 - **Add or pull out an instrument**: "add drums", "give me just the vocals", or fill in a band around a part. It knows vocals, backing vocals, drums, bass, guitar, keyboard, percussion, strings, synth, effects, brass and woodwinds.
 
 A new song can also borrow another's sound: "a ballad in the voice of that last song". For the singer alone, it pulls out the vocals first.
