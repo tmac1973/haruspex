@@ -258,16 +258,10 @@ function loadSharedWorkingDir(): string | null {
 	return null;
 }
 
-/** Settings → Chat's default folder, or null for none. */
-function settingsWorkingDir(): string | null {
-	return getSettings().chatDefaultWorkingDir || null;
-}
-
 let conversations = $state<Conversation[]>([]);
 // activeConversationId + the working dirs live in the session leaf store (see
 // the import at the top of this file) so the sandbox/worker layer can read
 // them without importing this module and forming a cycle.
-setDefaultWorkingDirState(settingsWorkingDir());
 // Each conversation's turn state, made the first time it sends. A
 // conversation with none is idle.
 const runs = new SvelteMap<string, ChatRun>();
@@ -536,7 +530,7 @@ export function setWorkingDir(path: string | null, id = getActiveConversationId(
 /** Set Settings → Chat's default folder: the one each new chat starts in. */
 export function setDefaultWorkingDir(path: string | null): void {
 	updateSettings({ chatDefaultWorkingDir: path ?? '' });
-	setDefaultWorkingDirState(path);
+	setDefaultWorkingDirState(undefined);
 }
 
 // The getters below report the open conversation's run.
@@ -803,7 +797,7 @@ export function createConversation(): string {
 	const folder = getDefaultWorkingDir();
 	setWorkingDirState(id, folder);
 	// A folder picked with no chat open was for this one only.
-	setDefaultWorkingDirState(settingsWorkingDir());
+	setDefaultWorkingDirState(undefined);
 	setActiveConversationId(id);
 	resetContextUsage();
 	// Stored even when empty: a row without one would take the shared folder

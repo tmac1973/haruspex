@@ -598,6 +598,12 @@ describe('working folder per chat', () => {
 		chat.setDefaultWorkingDir(null);
 		chat.createConversation();
 		expect(chat.getWorkingDir()).toBeNull();
+
+		// Set by another way in, such as the Remote control API's settings.patch.
+		const { updateSettings } = await import('#lib/stores/settings.ts');
+		updateSettings({ chatDefaultWorkingDir: '/elsewhere' });
+		chat.createConversation();
+		expect(chat.getWorkingDir()).toBe('/elsewhere');
 	});
 
 	it('gives a folder picked with no chat open to the next new chat only', async () => {

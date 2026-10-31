@@ -9,11 +9,12 @@
 // module only holds the values it broadcasts.
 
 import { SvelteMap } from 'svelte/reactivity';
+import { getSettings } from '#lib/stores/settings.ts';
 
 let activeConversationId = $state<string | null>(null);
-// The folder the next new chat starts in: Settings → Chat's default, or the
-// one picked while no chat was open.
-let defaultWorkingDir = $state<string | null>(null);
+// A folder picked while no chat was open, for the next new chat in place of
+// Settings → Chat's default; undefined for none picked.
+let pickedWorkingDir = $state<string | null | undefined>(undefined);
 // Each conversation's folder; null for none.
 const workingDirs = new SvelteMap<string, string | null>();
 
@@ -33,11 +34,14 @@ export function getWorkingDir(): string | null {
 /** A conversation's folder; one the store doesn't know gets a new chat's. */
 export function getWorkingDirFor(id: string | null): string | null {
 	if (id !== null && workingDirs.has(id)) return workingDirs.get(id) ?? null;
-	return defaultWorkingDir;
+	return getDefaultWorkingDir();
 }
 
+/** The folder the next new chat starts in. */
 export function getDefaultWorkingDir(): string | null {
-	return defaultWorkingDir;
+	return pickedWorkingDir !== undefined
+		? pickedWorkingDir
+		: getSettings().chatDefaultWorkingDir || null;
 }
 
 /**
@@ -45,8 +49,9 @@ export function getDefaultWorkingDir(): string | null {
  * persistence + sandbox-reset side effects. Call that, not these, from app
  * code.
  */
-export function setDefaultWorkingDirState(path: string | null): void {
-	defaultWorkingDir = path;
+/** Undefined goes back to Settings → Chat's default. */
+export function setDefaultWorkingDirState(path: string | null | undefined): void {
+	pickedWorkingDir = path;
 }
 
 export function setWorkingDirState(id: string, path: string | null): void {
