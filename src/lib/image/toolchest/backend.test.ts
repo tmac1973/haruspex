@@ -324,8 +324,33 @@ describe('llama-toolchest image backend', () => {
 					bytes: null
 				}
 			]);
-			// Edits are the blocking form; there is no edit job.
+			// This build doesn't list images.jobs.edits, so the edit blocks.
 			expect(calls()).not.toContain('POST /v1/images/jobs');
+		});
+
+		it('sends the edit form as a job where the build lists images.jobs.edits', async () => {
+			settings.imageToolchestModelId = 'klein';
+			const models = structuredClone(klein);
+			for (const m of models.data) {
+				if (m.meta.api.includes('images.edits')) m.meta.api.push('images.jobs.edits');
+			}
+			use(jobRoutes({ 'GET /v1/models': models }));
+			const seen: ImageProgress[] = [];
+			const handles: string[] = [];
+			const result = await toolchestBackend.generate(edit, {
+				onProgress: (p) => seen.push(p),
+				onHandle: (h) => handles.push(h.id)
+			});
+			expect(result.images[0]).toMatchObject({ width: 1024, height: 768 });
+			const [, args] = tauri.invoke.mock.calls.find(([c]) => c === 'toolchest_upload')!;
+			expect(args.call.path).toBe('/v1/images/jobs');
+			expect(args.fields).toBe(true);
+			expect(args.call.body).toMatchObject({ model: 'klein', size: '1024x768', n: '1' });
+			expect(args.files).toHaveLength(1);
+			expect(seen).toContainEqual({ phase: 'queued', ahead: 1 });
+			expect(handles).toEqual(['j1']);
+			expect(calls()).not.toContain('POST /v1/images/edits');
+			expect(calls().at(-1)).toBe('DELETE /v1/images/jobs/j1');
 		});
 
 		it('refuses an edit on a set that can’t', async () => {
