@@ -63,11 +63,20 @@ vi.mock('#lib/stores/jobs.svelte.ts', async (importOriginal) => {
 
 import JobsTab from './JobsTab.svelte';
 
+/**
+ * A saved job opens at its type's section, one section at a time; open
+ * Basics and find the name field.
+ */
+async function showName(name: string) {
+	await fireEvent.click(await screen.findByText('Basics'));
+	return screen.findByDisplayValue(name);
+}
+
 /** Open job 7 in the editor and type into its name field, leaving it dirty. */
 async function openAndEdit() {
 	render(JobsTab);
 	await fireEvent.click(screen.getByText('Hangman plan'));
-	const nameInput = await screen.findByDisplayValue('Hangman plan');
+	const nameInput = await showName('Hangman plan');
 	// The baseline is captured a tick after load; edit once it exists.
 	await waitFor(() => expect(nameInput).toBeTruthy());
 	await fireEvent.input(nameInput, { target: { value: 'Hangman plan v2' } });
@@ -134,7 +143,7 @@ describe('JobsTab — running a job with unsaved edits', () => {
 	it('runs straight away when there is nothing unsaved', async () => {
 		render(JobsTab);
 		await fireEvent.click(screen.getByText('Hangman plan'));
-		await screen.findByDisplayValue('Hangman plan');
+		await showName('Hangman plan');
 
 		await fireEvent.click(screen.getAllByTitle('Run now')[0]);
 
@@ -213,7 +222,7 @@ describe('JobsTab — browsing while a run is live', () => {
 		mocks.currentRun = liveRun();
 		render(JobsTab);
 		await fireEvent.click(screen.getByText('Hangman plan'));
-		expect(await screen.findByDisplayValue('Hangman plan')).toBeTruthy();
+		expect(await showName('Hangman plan')).toBeTruthy();
 		expect(screen.getByText(/Running:/)).toBeTruthy();
 		expect(mocks.cancel).not.toHaveBeenCalled();
 
@@ -251,11 +260,33 @@ describe('JobsTab — browsing while a run is live', () => {
 		// The bar names the job too; click its row in the list.
 		const list = document.querySelector('.job-list') as HTMLElement;
 		await fireEvent.click(within(list).getByText('Hangman plan'));
-		await screen.findByDisplayValue('Hangman plan');
+		await screen.findByText('Basics');
 		expect(screen.getByText('This job is running. Changes apply to its next run.')).toBeTruthy();
 		expect((screen.getByRole('button', { name: 'Delete' }) as HTMLButtonElement).disabled).toBe(
 			true
 		);
+	});
+});
+
+/**
+ * One section is open at a time, so a required field can sit in a folded
+ * one. Its header says so before Save, and a refused Save says it again.
+ */
+describe('JobsTab — required fields', () => {
+	it('badges the sections that still need something, then opens the first on Save', async () => {
+		render(JobsTab);
+		await fireEvent.click(screen.getByRole('button', { name: '+ New' }));
+		// A new research job: no name (Basics) and no step prompt (Steps).
+		expect(await screen.findAllByText('1 required')).toHaveLength(2);
+
+		await fireEvent.click(screen.getByText('Steps'));
+		expect(screen.queryByRole('combobox', { name: /job type/i })).toBeNull();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+		expect(await screen.findAllByText('1 missing')).toHaveLength(2);
+		expect(screen.getByRole('combobox', { name: /job type/i })).toBeTruthy();
+		expect(screen.getByText('Name is required.')).toBeTruthy();
 	});
 });
 
@@ -273,7 +304,6 @@ describe('JobsTab — schedules on types that interview the user', () => {
 	it('offers a schedule for a research job', async () => {
 		render(JobsTab);
 		await fireEvent.click(screen.getByText('Hangman plan'));
-		await screen.findByDisplayValue('Hangman plan');
 		await openWhereSection();
 
 		expect(screen.getByText('Schedule')).toBeTruthy();
@@ -285,8 +315,11 @@ describe('JobsTab — schedules on types that interview the user', () => {
 		await openWhereSection();
 		expect(screen.getByText('Schedule')).toBeTruthy();
 
+		// One section open at a time: back to Basics for the type, then here.
+		await fireEvent.click(screen.getByText('Basics'));
 		const typeSelect = screen.getByRole('combobox', { name: /job type/i });
 		await fireEvent.change(typeSelect, { target: { value: 'guided_planning' } });
+		await openWhereSection();
 
 		await waitFor(() => expect(screen.queryByText('Schedule')).toBeNull());
 		expect(screen.getByText(/only run when you start them/)).toBeTruthy();

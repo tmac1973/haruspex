@@ -4,7 +4,8 @@ import { runGuidedPlanningPipeline } from '#lib/agent/jobs/types/guided-planning
 import {
 	type GuidedPlanningRunMode,
 	type GuidedPlanningVerification,
-	parseGuidedPlanningConfig
+	parseGuidedPlanningConfig,
+	stageModelProblem
 } from '#lib/agent/jobs/types/guided-planning/config.ts';
 import { DEFAULT_MAX_TURNS } from '#lib/agent/jobs/types/autonomous-coding/config.ts';
 import {
@@ -39,15 +40,6 @@ export interface GuidedPlanningEditorState {
 /** A stage's form as stored, or undefined for "same as this job". */
 function stageModelJson(form: JobModelForm | null): ChainModel | undefined {
 	return form ? modelColumnsFromForm(form) : undefined;
-}
-
-/** Why a chosen stage model can't be saved, or null. */
-function stageModelProblem(label: string, form: JobModelForm | null): string | null {
-	if (!form || form.source === 'settings') return null;
-	if (!form.baseUrl.trim() || !form.modelId.trim()) {
-		return `Pick a server and a model for the ${label}, or set it back to "Same as this job".`;
-	}
-	return null;
 }
 
 /**
@@ -207,6 +199,19 @@ export const guidedPlanningJobType: JobTypeDefinition = {
 			);
 		}
 		return null;
+	},
+	missingRequired: ({ config }) => {
+		const s = config as unknown as GuidedPlanningEditorState;
+		const chain = s.run_mode === 'unattended_chain' && !s.overview_only;
+		return [
+			...(s.initial_description.trim() ? [] : ['What do you want to build?']),
+			...(chain && s.generate_assets && stageModelProblem('asset run', s.chain_assets_model)
+				? ['Asset run model']
+				: []),
+			...(chain && stageModelProblem('coding run', s.chain_coding_model)
+				? ['Coding run model']
+				: [])
+		];
 	},
 	planSteps: planGuidedSteps,
 	runPipeline: runGuidedPlanningPipeline

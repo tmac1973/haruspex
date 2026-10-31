@@ -1,6 +1,7 @@
 <script lang="ts">
 	import PromptCatalog from '#lib/components/jobs/PromptCatalog.svelte';
 	import Tooltip from '#lib/components/Tooltip.svelte';
+	import Disclosure from '#lib/components/Disclosure.svelte';
 	import type { JobStepInput } from '#lib/stores/jobs.svelte.ts';
 	import {
 		DEFAULT_SAMPLE_INSTRUCTIONS,
@@ -45,6 +46,7 @@
 	<textarea
 		value={steps[0]?.prompt ?? ''}
 		oninput={(e) => updatePrompt((e.currentTarget as HTMLTextAreaElement).value)}
+		required
 		placeholder="e.g. Find every instance of duplicated logic in this codebase. Anchor each finding to a file and line range, with a short explanation."
 		rows="4"></textarea>
 </div>
@@ -106,8 +108,7 @@
 	<span class="hint inline">(recommended)</span>
 </div>
 
-<details class="advanced-prompts">
-	<summary>Advanced: edit the exact prompts sent to the model</summary>
+<Disclosure label="Advanced: edit the exact prompts sent to the model">
 	<p class="hint">
 		Both are sent verbatim to the model. A poor prompt can hurt result quality; use
 		<strong>Reset</strong> to restore the default.
@@ -154,7 +155,7 @@
 		</span>
 		<textarea bind:value={cfg.verify_instructions} rows="8"></textarea>
 	</div>
-</details>
+</Disclosure>
 
 <style>
 	.label {
@@ -207,23 +208,6 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 8px;
-	}
-
-	.advanced-prompts {
-		border: 1px solid var(--border);
-		border-radius: 4px;
-		padding: 8px 10px;
-	}
-
-	.advanced-prompts > summary {
-		cursor: pointer;
-		font-size: 0.82rem;
-		color: var(--text-secondary);
-		user-select: none;
-	}
-
-	.advanced-prompts .field {
-		margin-top: 10px;
 	}
 
 	.label-row {

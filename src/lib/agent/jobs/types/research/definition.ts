@@ -16,6 +16,8 @@ export const researchJobType: JobTypeDefinition = {
 	configToJson: () => null,
 	validate: ({ steps }) =>
 		steps.some((s) => s.prompt.trim().length > 0) ? null : 'At least one step prompt is required.',
+	missingRequired: ({ steps }) =>
+		steps.some((s) => s.prompt.trim().length > 0) ? [] : ['Step prompt'],
 	planSteps: planResearchSteps,
 	runPipeline: runResearchPipeline
 };

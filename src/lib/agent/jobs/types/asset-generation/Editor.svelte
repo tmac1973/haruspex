@@ -33,7 +33,7 @@
 			text="A JSON file in your project listing every image to make. If it does not exist yet, the run writes one from the description below."
 		/>
 	</span>
-	<input type="text" bind:value={cfg.spec_path} aria-label="Asset spec path" />
+	<input type="text" bind:value={cfg.spec_path} required aria-label="Asset spec path" />
 	{#if typeof jobId === 'number' && workingDir.trim()}
 		<div class="review">
 			<button type="button" onclick={() => (reviewing = true)}>Review assets</button>

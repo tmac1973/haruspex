@@ -23,6 +23,8 @@ describe('a tool call that writes to disk', () => {
 		const workdir = await $('input.workdir-input');
 		if (!(await workdir.isDisplayed())) await (await byText('Where & when')).click();
 		await workdir.setValue(dir);
+		// One editor section is open at a time.
+		await (await byText('Steps')).click();
 		await (
 			await $('textarea[placeholder="What should this step do?"]')
 		).setValue('Please write the notes file.');

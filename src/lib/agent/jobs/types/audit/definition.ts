@@ -72,6 +72,7 @@ export const auditJobType: JobTypeDefinition = {
 			return 'Max turns per run must be between 1 and 400.';
 		return null;
 	},
+	missingRequired: ({ steps }) => (steps[0]?.prompt.trim() ? [] : ['Audit prompt']),
 	// Audit jobs persist exactly one step: the audit prompt.
 	persistSteps: (steps) =>
 		steps

@@ -16,6 +16,9 @@
 	} = $props();
 	void config; // declared only because JobEditor binds it on every type's editor
 
+	// One filled step is enough, so every step is required until one is.
+	const noPrompt = $derived(!steps.some((s) => s.prompt.trim()));
+
 	function addStep() {
 		steps = [...steps, { prompt: '', deep_research: false }];
 	}
@@ -131,6 +134,7 @@
 			<textarea
 				value={step.prompt}
 				oninput={(e) => updateStepPrompt(i, (e.currentTarget as HTMLTextAreaElement).value)}
+				required={noPrompt}
 				placeholder={i === 0
 					? 'What should this step do?'
 					: 'Will receive the previous step’s output as context.'}

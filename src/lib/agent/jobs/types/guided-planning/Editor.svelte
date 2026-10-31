@@ -3,7 +3,14 @@
 	import { resolveImageBackend } from '#lib/image/index.ts';
 	import type { GuidedPlanningEditorState } from '#lib/agent/jobs/types/guided-planning/definition.ts';
 	import JobModelFields from '#lib/components/jobs/JobModelFields.svelte';
-	import { emptyModelForm } from '#lib/agent/jobs/jobModelForm.ts';
+	import Disclosure from '#lib/components/Disclosure.svelte';
+	import Modal from '#lib/components/Modal.svelte';
+	import {
+		emptyModelForm,
+		modelFormSummary,
+		type JobModelForm
+	} from '#lib/agent/jobs/jobModelForm.ts';
+	import { stageModelProblem } from '#lib/agent/jobs/types/guided-planning/config.ts';
 	import type { SkillSummary } from '#lib/ipc/gen/SkillSummary.ts';
 	import { listSkills, usableSkills } from '#lib/skills/client.ts';
 	import { knownTrustedRoot } from '#lib/skills/project.ts';
@@ -43,6 +50,14 @@
 
 	function setStageModel(key: StageKey, choice: string) {
 		cfg[key] = choice === 'choose' ? (cfg[key] ?? emptyModelForm('remote')) : null;
+	}
+
+	/** The stage whose model dialog is open. */
+	let editingStage = $state<{ key: StageKey; label: string } | null>(null);
+
+	function stageSummary(form: JobModelForm | null): string {
+		if (!form) return 'Same as this job';
+		return form.source === 'settings' ? STAGE_SETTINGS.title : modelFormSummary(form);
 	}
 
 	// "Same as this job" is the planning job's model. The Settings model is a
@@ -89,6 +104,7 @@
 	</span>
 	<textarea
 		bind:value={cfg.initial_description}
+		required
 		rows="5"
 		placeholder="e.g. A guided-planning job type that interviews me one question at a time and writes a dependency-ordered, phased implementation plan."
 	></textarea>
@@ -234,22 +250,24 @@
 			{/if}
 		</div>
 
-		{#if cfg.generate_assets && imageBackendReady}
-			{@render stageModel(
-				'chain_assets_model',
-				'Asset run model',
-				'The model the asset run uses to write prompts and judge the art. The image backend itself is set in Settings → Image.'
+		<div class="stages">
+			<span class="group-label">Later stages</span>
+			{#if cfg.generate_assets && imageBackendReady}
+				{@render stageRow(
+					'chain_assets_model',
+					'Asset run model',
+					'The model the asset run uses to write prompts and judge the art. The image backend itself is set in Settings → Image.'
+				)}
+			{/if}
+			{@render stageRow(
+				'chain_coding_model',
+				'Coding run model',
+				'The model that writes the code. A fast model here and a strong one for planning is the usual reason to change it.'
 			)}
-		{/if}
-		{@render stageModel(
-			'chain_coding_model',
-			'Coding run model',
-			'The model that writes the code. A fast model here and a strong one for planning is the usual reason to change it.'
-		)}
+		</div>
 
-		<details class="coding-run">
-			<summary>Coding run settings</summary>
-			<p class="hint">
+		<Disclosure label="Coding run settings">
+			<p class="hint flush">
 				The coding job is created and started without stopping, so this is the only chance to set
 				it. Leave anything blank to let the coding run's own preflight settle it.
 			</p>
@@ -265,49 +283,66 @@
 					aria-label="Max model steps per turn"
 				/>
 			</label>
-		</details>
+		</Disclosure>
 	{/if}
 {/if}
 
-{#snippet stageModel(key: StageKey, label: string, tip: string)}
-	<div class="field stage-model">
-		<span class="label">
+<!-- A stage's model is one row; its full model form opens in a dialog. Inline,
+     two more model forms (each with its own advanced fold) sat inside this
+     section, three levels deep. -->
+{#snippet stageRow(key: StageKey, label: string, tip: string)}
+	{@const problem = stageModelProblem(label.toLowerCase(), cfg[key])}
+	<div class="stage-row" class:missing={problem !== null}>
+		<span class="label stage-name">
 			{label}
 			<Tooltip label={`About the ${label.toLowerCase()}`} text={tip} />
 		</span>
-		<select
-			value={cfg[key] ? 'choose' : 'same'}
-			onchange={(e) => setStageModel(key, e.currentTarget.value)}
-			aria-label={label}
+		<span class="stage-value" title={problem ?? undefined}>{stageSummary(cfg[key])}</span>
+		<button
+			type="button"
+			class="btn btn-small"
+			aria-label={`Change the ${label.toLowerCase()}`}
+			onclick={() => (editingStage = { key, label })}
 		>
-			<option value="same">Same as this job</option>
-			<option value="choose">Choose…</option>
-		</select>
-		{#if cfg[key]}
-			<div class="stage-fields">
+			Change…
+		</button>
+	</div>
+{/snippet}
+
+<Modal
+	open={editingStage !== null}
+	title={editingStage?.label ?? ''}
+	dismissable
+	onclose={() => (editingStage = null)}
+>
+	{#if editingStage}
+		{@const key = editingStage.key}
+		<div class="stage-dialog">
+			<select
+				value={cfg[key] ? 'choose' : 'same'}
+				onchange={(e) => setStageModel(key, e.currentTarget.value)}
+				aria-label={editingStage.label}
+			>
+				<option value="same">Same as this job</option>
+				<option value="choose">Choose…</option>
+			</select>
+			{#if cfg[key]}
 				<JobModelFields
 					bind:form={cfg[key]}
 					name={`${key}-source`}
 					settingsLabel={STAGE_SETTINGS}
 				/>
+			{/if}
+			<div class="dialog-actions">
+				<button type="button" class="btn btn-primary" onclick={() => (editingStage = null)}>
+					Done
+				</button>
 			</div>
-		{/if}
-	</div>
-{/snippet}
+		</div>
+	{/if}
+</Modal>
 
 <style>
-	.stage-model {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-	}
-
-	.stage-fields {
-		margin-left: 1rem;
-		padding-left: 0.75rem;
-		border-left: 2px solid var(--border);
-	}
-
 	.field.run-mode {
 		display: flex;
 		flex-direction: column;
@@ -318,20 +353,10 @@
 		width: 100%;
 	}
 
-	.coding-run {
-		margin-top: 0.25rem;
-	}
-
-	.coding-run summary {
-		cursor: pointer;
-		font-weight: 500;
-	}
-
-	.coding-run .sub {
+	.sub {
 		display: flex;
 		flex-direction: column;
 		gap: 0.2rem;
-		margin-top: 0.5rem;
 		font-size: 0.9em;
 	}
 
@@ -339,6 +364,69 @@
 		margin: 0.15rem 0 0 1.6rem;
 		font-size: 0.85em;
 		opacity: 0.7;
+	}
+
+	.hint.flush {
+		margin: 0;
+	}
+
+	.stages {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.group-label {
+		font-size: 0.72rem;
+		font-weight: 600;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--text-muted);
+	}
+
+	.stage-row {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 6px 6px 6px 12px;
+		border: 1px solid var(--border-strong);
+		border-radius: 8px;
+		background: var(--bg-input);
+	}
+
+	/* Amber until a save is refused, then red: the editor marks its root. */
+	.stage-row.missing {
+		border-color: var(--warning);
+	}
+
+	:global(.job-editor.attempted) .stage-row.missing {
+		border-color: var(--error-text);
+	}
+
+	.stage-name {
+		flex: none;
+		min-width: 140px;
+	}
+
+	.stage-value {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 0.82rem;
+		color: var(--text-secondary);
+	}
+
+	.stage-dialog {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+
+	.dialog-actions {
+		display: flex;
+		justify-content: flex-end;
 	}
 
 	.toggle-row label {

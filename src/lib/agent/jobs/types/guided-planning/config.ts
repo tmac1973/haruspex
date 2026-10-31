@@ -12,6 +12,7 @@
  * Phase 05 widens this with `unattended_chain`.
  */
 import { parseChainModel, type ChainModel } from '#lib/agent/jobs/chainModel.ts';
+import type { JobModelForm } from '#lib/agent/jobs/jobModelForm.ts';
 
 /**
  * The model each chained stage runs on. Null means "same as this job", the
@@ -216,4 +217,13 @@ export function defaultPlanDir(jobName: string): string {
 		.replace(/[^a-z0-9]+/g, '-')
 		.replace(/^-+|-+$/g, '');
 	return slug ? `plan/${slug}/` : '';
+}
+
+/** Why a chosen stage model can't be saved, or null. */
+export function stageModelProblem(label: string, form: JobModelForm | null): string | null {
+	if (!form || form.source === 'settings') return null;
+	if (!form.baseUrl.trim() || !form.modelId.trim()) {
+		return `Pick a server and a model for the ${label}, or set it back to "Same as this job".`;
+	}
+	return null;
 }

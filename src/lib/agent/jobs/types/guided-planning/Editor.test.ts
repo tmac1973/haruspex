@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), imageKind: 'none' }));
 
@@ -80,11 +80,11 @@ describe('guided-planning Editor', () => {
 	describe('stage models', () => {
 		it('offers a coding-run model only in the chain mode, defaulting to this job’s', () => {
 			mount({ run_mode: 'unattended_plan' });
-			expect(screen.queryByLabelText('Coding run model')).toBeNull();
+			expect(screen.queryByLabelText('Change the coding run model')).toBeNull();
 			document.body.innerHTML = '';
 			mount({ run_mode: 'unattended_chain' });
-			const picker = screen.getByLabelText('Coding run model') as HTMLSelectElement;
-			expect(picker.value).toBe('same');
+			expect(screen.getByLabelText('Change the coding run model')).toBeTruthy();
+			expect(screen.getByText('Same as this job')).toBeTruthy();
 			expect(screen.queryByText('Remote server')).toBeNull();
 		});
 
@@ -92,17 +92,25 @@ describe('guided-planning Editor', () => {
 			mocks.imageKind = 'comfyui';
 			try {
 				mount({ run_mode: 'unattended_chain', generate_assets: false });
-				expect(screen.queryByLabelText('Asset run model')).toBeNull();
+				expect(screen.queryByLabelText('Change the asset run model')).toBeNull();
 				document.body.innerHTML = '';
 				mount({ run_mode: 'unattended_chain', generate_assets: true });
-				expect(screen.getByLabelText('Asset run model')).toBeTruthy();
+				expect(screen.getByLabelText('Change the asset run model')).toBeTruthy();
 			} finally {
 				mocks.imageKind = 'none';
 			}
 		});
 
-		it('shows the model fields for a chosen stage, with the Settings model as a choice', () => {
+		it('summarises a chosen stage on its row, and marks one with no model', () => {
 			mount({ run_mode: 'unattended_chain', chain_coding_model: emptyModelForm('remote') });
+			expect(screen.getByText('Remote · no model picked')).toBeTruthy();
+			expect(document.querySelector('.stage-row.missing')).toBeTruthy();
+		});
+
+		it('opens the model fields in a dialog, with the Settings model as a choice', async () => {
+			mount({ run_mode: 'unattended_chain', chain_coding_model: emptyModelForm('remote') });
+			expect(screen.queryByText('Remote server')).toBeNull();
+			await fireEvent.click(screen.getByLabelText('Change the coding run model'));
 			expect((screen.getByLabelText('Coding run model') as HTMLSelectElement).value).toBe('choose');
 			expect(screen.getByText('Remote server')).toBeTruthy();
 			// The local model while planning runs remotely: not the same as

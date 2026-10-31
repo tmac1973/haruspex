@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import JobModelFields from '#lib/components/jobs/JobModelFields.svelte';
 import { emptyModelForm } from '#lib/agent/jobs/jobModelForm.ts';
 import type { OpenRouterModel } from '#lib/openrouter.ts';
@@ -31,7 +31,12 @@ describe('JobModelFields OpenRouter picker', () => {
 		render(JobModelFields, { form, name: 'src' });
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Load models' }));
-		const trigger = await screen.findByRole('button', { expanded: false });
+		// The picker's trigger, not the advanced fold's (also aria-expanded).
+		const trigger = await waitFor(() => {
+			const el = document.querySelector<HTMLButtonElement>('.picker-trigger');
+			if (!el) throw new Error('no model picker yet');
+			return el;
+		});
 		await fireEvent.click(trigger);
 		expect(screen.getByPlaceholderText('Search models…')).toBeTruthy();
 

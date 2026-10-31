@@ -170,6 +170,13 @@ export interface JobTypeDefinition {
 	/** Save-time validation; return the error message or null when valid. */
 	validate?: (input: JobValidateInput) => string | null;
 	/**
+	 * The type section's required fields that are still empty, by label. The
+	 * editor badges its section header with the count before anyone presses
+	 * Save. Name and working directory are the editor's own, so leave them
+	 * out. Every field listed here must also fail `validate`.
+	 */
+	missingRequired?: (input: JobValidateInput) => string[];
+	/**
 	 * Authored steps to persist on save. Default: prompts trimmed, empties
 	 * dropped. Audit overrides to persist exactly one step (its prompt).
 	 */
