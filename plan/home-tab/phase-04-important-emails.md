@@ -19,8 +19,10 @@ never from model text.
 - `src/lib/agent/jobs/types/email-digest/pipeline.ts` (new).
 - `src/lib/agent/jobs/types/email-digest/Editor.svelte` (new).
 - `src/lib/agent/jobs/types/index.ts` — register after `research`.
+- `src/lib/components/jobs/JobEditor.svelte` — `typeSectionTitles` entry
+  `email_digest: 'Email digest'`.
 - `src/lib/home/cardTypes.ts` — `important_emails` (kind `judged`,
-  `addable` when an email account is enabled; fields in step 7).
+  `addable` when an email account is enabled; fields in step 8).
 - `src/lib/components/home/cards/ImportantEmailsCard.svelte` (new).
 - `src/lib/components/home/forms/ImportantEmailsForm.svelte` (new) — Add card
   form.
@@ -51,10 +53,16 @@ never from model text.
    `pickWithRetry` throws, the step fails with its message.
 5. The step's markdown `output` is a short bullet list ("subject — why") so
    the run view in the Jobs tab is readable.
-6. Editor: account multi-select, rule (one line), hours, max. The registry
+6. Required fields, per the #834 contract: `validate` refuses an empty
+   `accountIds` ("Choose an email account.") and an empty `rule` ("Say what
+   counts as important."); `missingRequired` returns `['Email account',
+   'Rule']` for the same cases. `configDefaults()` leaves both empty, so the
+   registry test's blank-config check holds. The Editor sets `required` on
+   the account picker and the rule input while they are empty.
+7. Editor: account multi-select, rule (one line), hours, max. The registry
    entry's `defaultSchedule` is `{ kind: 'interval', minutes: 30 }`; the Add
    card form starts with it.
-7. Registry entry: `jobType: 'email_digest'`, `notifies: true`,
+8. Registry entry: `jobType: 'email_digest'`, `notifies: true`,
    `itemLabel: (i) => i.source.subject`. Card: reads the latest succeeded
    run's `result_json` (`latestSucceeded` from `getLatestRun`); a failed
    `latest` shows its error above it and renders each item's `source`
@@ -62,9 +70,9 @@ never from model text.
    mail." for an empty list, the error for a failed run, and "waiting" or
    "running" while a run is live. Row click: nothing yet (actions come in
    phase 07).
-8. Add card form: account(s), rule (placeholder "From my manager, or about
+9. Add card form: account(s), rule (placeholder "From my manager, or about
    invoices"), interval. Submit calls `createCardJob('important_emails', typeConfig, schedule)`.
-9. Docs: `home.md` section; `jobs.md` lists the new job type;
+10. Docs: `home.md` section; `jobs.md` lists the new job type;
    `integrations.md` notes the card under email.
 
 ## Build gate
@@ -74,6 +82,8 @@ never from model text.
 - `node scripts/guide-check.mjs` passes
 
 ## Test plan
+- Unit: `registry.test.ts`'s `missingRequired` check passes for
+  `email_digest` with its blank defaults.
 - Rust: listing carries `seen`; `unseen_only` filters.
 - Unit: pipeline with a fake `runJobTurn` — empty inbox skips the model;
   invented id is dropped; malformed JSON retries once then fails; `source`

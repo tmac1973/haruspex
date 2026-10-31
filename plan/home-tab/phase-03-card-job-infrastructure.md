@@ -30,7 +30,8 @@ type is only a job type, a card component and a registry entry.
 - `src/lib/agent/jobs/cardResult.ts` (new) — `ResultSchema`, `validate`,
   `parseModelJson`, `keepKnownIds`, `pickWithRetry`.
 - `src/lib/stores/jobRuns.svelte.ts` — `result_json` on run types.
-- `src/lib/components/jobs/JobScheduleField.svelte` — launch catch-up copy.
+- `src/lib/components/jobs/JobScheduleField.svelte` — launch catch-up copy in
+  the tooltip and the warning.
 - `src/lib/agent/jobs/scheduler.svelte.ts` — header comment.
 - `src/lib/home/cardTypes.ts` — registry fields `notifies?: boolean`,
   `jobType?: JobType`, `itemLabel?(item): string`, `defaultSchedule?:
@@ -91,9 +92,12 @@ type is only a job type, a card component and a registry entry.
    `pickWithRetry`, before the pipeline enriches it.
 7. Freshness: the scheduler already fires an overdue job once at launch
    (`list_due_jobs` returns `next_due_at <= now`; `computeNextDueAt` skips
-   ahead). Add a scheduler test that holds this. Change `JobScheduleField`
-   copy to "Runs once at launch if a run was missed while the app was
-   closed." Update the scheduler header comment to match.
+   ahead). Add a scheduler test that holds this. In `JobScheduleField`,
+   replace the warning ("Missed runs while the app is closed are dropped…")
+   with "Runs once at launch if a run was missed while the app was closed.",
+   and change the tooltip's "dropped, not retro-run on next launch" sentence
+   to say a missed run fires once at the next launch. Update the scheduler
+   header comment to match.
 8. `createCardJob(cardType, typeConfig, schedule)`: reads the card type's
    `jobType`, creates the job with that type's `configDefaults()` merged with
    `typeConfig`, the job name from the card title, the given schedule, and
