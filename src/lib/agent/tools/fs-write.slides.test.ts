@@ -265,6 +265,33 @@ describe('layout', () => {
 		expect(sentSlides()[0]).toEqual({ title: 'Part 2', subtitle: 'Results', layout: 'section' });
 	});
 
+	it('draws a cover with a picture as an image slide', async () => {
+		await pptx([{ title: 'Gorillas', layout: 'cover', subtitle: 'Tag', image: 'g.jpg' }]);
+		expect(sentSlides()[0]).toEqual({
+			title: 'Gorillas',
+			layout: 'image',
+			subtitle: 'Tag',
+			image: 'g.jpg'
+		});
+	});
+
+	it('makes a content or two-column slide’s subtitle its first bullet', async () => {
+		await pptx([
+			{ title: 'A', subtitle: ' From 620 to 1,063 ', bullets: ['x'] },
+			{ title: 'B', layout: 'two-column', subtitle: 'Lead', bullets: ['l'], right: ['r'] },
+			{
+				title: 'C',
+				subtitle: 'Beside the chart',
+				chart: { type: 'bar', labels: ['a'], series: [{ name: 's', values: [1] }] }
+			}
+		]);
+		const [a, b, c] = sentSlides();
+		expect(a).toEqual({ title: 'A', bullets: ['From 620 to 1,063', 'x'] });
+		expect(b).toMatchObject({ bullets: ['Lead', 'l'], right: ['r'] });
+		expect(b).not.toHaveProperty('subtitle');
+		expect(c.bullets).toEqual(['Beside the chart']);
+	});
+
 	it('leaves a content slide with only an image as content', async () => {
 		await pptx([{ title: 'T', image: 'chart.png' }]);
 		expect(sentSlides()[0]).toEqual({ title: 'T', image: 'chart.png' });
@@ -428,7 +455,8 @@ describe('markdown a model writes into slides', () => {
 
 	it('drops ** from titles, subtitles and table cells, and keeps it in bullets', async () => {
 		await pptx([
-			{ title: '**Big** news', subtitle: 'a **b**', bullets: ['**Habitat loss** - clearing'] },
+			{ title: '**Big** news', subtitle: 'a **b**', layout: 'cover' },
+			{ title: 'Threats', bullets: ['**Habitat loss** - clearing'] },
 			{
 				title: 'Data',
 				table: [
@@ -437,13 +465,10 @@ describe('markdown a model writes into slides', () => {
 				]
 			}
 		]);
-		const [first, second] = sentSlides();
-		expect(first).toMatchObject({
-			title: 'Big news',
-			subtitle: 'a b',
-			bullets: ['**Habitat loss** - clearing']
-		});
-		expect(second.table).toEqual([
+		const [first, second, third] = sentSlides();
+		expect(first).toMatchObject({ title: 'Big news', subtitle: 'a b' });
+		expect(second.bullets).toEqual(['**Habitat loss** - clearing']);
+		expect(third.table).toEqual([
 			['Year', 'Event'],
 			['1847', 'First']
 		]);
