@@ -29,6 +29,8 @@ export interface ToolchestInstance {
 	api: string[];
 	/** A music model's `task_type`s; empty from a build that lists none. */
 	tasks: string[];
+	/** How many pictures one edit takes; null when the build doesn't say. */
+	maxEditImages: number | null;
 	/** A video instance's defaults and limits; null for any other kind. */
 	video: VideoLimits | null;
 	licence: string;
@@ -121,6 +123,7 @@ export function parseGenerationModels(json: unknown, kind: GenerationKind): Tool
 				state: str(meta.state) || 'unknown',
 				api: Array.isArray(meta.api) ? strings(meta.api) : OLD_API[kind],
 				tasks: strings(meta.tasks),
+				maxEditImages: num(meta.max_edit_images),
 				video: kind === 'video' ? videoLimits(meta.video) : null,
 				licence: known?.licence ?? 'unknown',
 				commercialUse: known ? known.commercial : null

@@ -299,6 +299,28 @@ describe('llama-toolchest image backend', () => {
 			});
 		});
 
+		it('takes as many pictures as the server says the set does', async () => {
+			settings.imageToolchestModelId = 'klein';
+			const models = structuredClone(klein);
+			for (const m of models.data) {
+				if (m.id === 'klein') Object.assign(m.meta, { max_edit_images: 10 });
+			}
+			use({ 'GET /v1/models': models });
+			await toolchestBackend.probe();
+			expect(await toolchestBackend.capabilities()).toMatchObject({ maxEditImages: 10 });
+		});
+
+		it('takes 3 for a Qwen-Image set from a build that doesn’t say', async () => {
+			settings.imageToolchestModelId = 'klein';
+			const models = structuredClone(klein);
+			for (const m of models.data) {
+				if (m.id === 'klein') m.meta.recipe = 'qwen-image-edit-2511';
+			}
+			use({ 'GET /v1/models': models });
+			await toolchestBackend.probe();
+			expect(await toolchestBackend.capabilities()).toMatchObject({ maxEditImages: 3 });
+		});
+
 		it('sends the edit form with each field as a part and the picture from the cache', async () => {
 			settings.imageToolchestModelId = 'klein';
 			use({ 'GET /v1/models': klein, 'POST /v1/images/edits': { data: [{ b64_json: b64 }] } });
