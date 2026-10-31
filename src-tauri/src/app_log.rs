@@ -45,9 +45,24 @@ fn is_sidecar_passthrough(message: &str) -> bool {
         .any(|prefix| message.starts_with(prefix))
 }
 
+/// Dependencies whose warnings say nothing the user can act on, so only
+/// their errors are logged. html5ever warns once per misplaced node when a
+/// fetched page or email has a malformed table ("foster parenting not
+/// implemented"), which floods the log with hundreds of identical lines.
+const QUIET_TARGETS: &[&str] = &["html5ever"];
+
+fn is_quiet_dependency(target: &str, level: Level) -> bool {
+    level > Level::Error
+        && QUIET_TARGETS.iter().any(|quiet| {
+            target
+                .strip_prefix(quiet)
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with("::"))
+        })
+}
+
 impl Log for AppLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= self.level
+        metadata.level() <= self.level && !is_quiet_dependency(metadata.target(), metadata.level())
     }
 
     fn log(&self, record: &Record) {
@@ -266,6 +281,21 @@ mod tests {
         // Edge case: a message that mentions a sidecar name but isn't passthrough
         assert!(!is_sidecar_passthrough(
             "Spawning llama-server child process"
+        ));
+    }
+
+    #[test]
+    fn quiet_dependencies_log_only_errors() {
+        assert!(is_quiet_dependency("html5ever::tree_builder", Level::Warn));
+        assert!(is_quiet_dependency("html5ever", Level::Info));
+        assert!(!is_quiet_dependency(
+            "html5ever::tree_builder",
+            Level::Error
+        ));
+        assert!(!is_quiet_dependency("html5everything", Level::Warn));
+        assert!(!is_quiet_dependency(
+            "haruspex::proxy::extract",
+            Level::Warn
         ));
     }
 
