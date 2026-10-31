@@ -37,7 +37,7 @@ Each slide has one layout, and the assistant mixes them:
 - **quote**: a quotation and who said it.
 - **stat**: one big number and what it means.
 
-Asking for "a slide comparing the two plans" or "the growth figure as a big number" is usually enough. Bullets nest up to three levels.
+Asking for "a slide comparing the two plans" or "the growth figure as a big number" is usually enough. Bullets nest up to three levels, and can start with a few words in bold. Both columns of a two-column slide use the same text size.
 
 ## Charts and tables
 

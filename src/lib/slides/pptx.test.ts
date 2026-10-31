@@ -129,6 +129,19 @@ describe('bullets', () => {
 		expect(size).toBeGreaterThanOrEqual(22 * 0.7 - 0.5);
 	});
 
+	it('draw **bold** as a bold run in the same paragraph', async () => {
+		const xml = await slideXml([
+			{ title: 'T', bullets: ['**Habitat loss** - clearing', { text: 'x **y**', level: 1 }, 'z'] }
+		]);
+		expect(runs(xml)).toEqual(['T', 'Habitat loss', ' - clearing', 'x ', 'y', 'z']);
+		expect(levels(xml)).toEqual(['0', '1', '0']);
+		// One set of paragraph properties, before the first run: one after a
+		// run would turn the bullet off.
+		expect(xml).not.toMatch(/<\/a:r><a:pPr/);
+		expect(xml).toMatch(/<a:rPr[^>]*\bb="1"[^>]*>(?:(?!<\/a:r>).)*<a:t>Habitat loss</);
+		expect(xml).not.toMatch(/<a:rPr[^>]*\bb="1"[^>]*>(?:(?!<\/a:r>).)*<a:t> - clearing</);
+	});
+
 	it('are left out when there are none', async () => {
 		const xml = await part(await build([{ title: 'Empty', bullets: [] }]), 'ppt/slides/slide1.xml');
 		expect(runs(xml)).toEqual(['Empty']);
@@ -226,6 +239,15 @@ describe('text that will not fit', () => {
 		expect(problems[1]).toMatch(/^Slide 3 \("Columns"\): the right column need/);
 		expect(message).toMatch(/^The deck was not written: /);
 		expect(message).toMatch(/Split crowded slides into two/);
+	});
+
+	it('shrinks both columns to the size the fuller one needs', async () => {
+		const sentence = 'A bullet of about seventy characters, which is one line or two here';
+		const xml = await slideXml([
+			{ title: 'T', layout: 'two-column', bullets: Array(7).fill(sentence), right: ['short'] }
+		]);
+		expect(sizeOf(xml, sentence)).toBeLessThan(22);
+		expect(sizeOf(xml, 'short')).toBe(sizeOf(xml, sentence));
 	});
 
 	it('names the column by where it sits in portrait', async () => {
@@ -364,6 +386,13 @@ describe('charts', () => {
 		for (const text of ['Q1', 'Q2', 'Q3', 'Sales']) expect(xml).toContain(`<c:v>${text}</c:v>`);
 		for (const v of ['3', '5', '4']) expect(xml).toContain(`<c:v>${v}</c:v>`);
 		expect(xml).toContain('<c:barDir val="col"/>');
+	});
+
+	it('writes the value axis with thousands separators from 1,000 up', async () => {
+		const axis = (xml: string) => /<c:valAx>.*?<c:numFmt formatCode="([^"]*)"/s.exec(xml)?.[1];
+		const big = { ...sales, series: [{ name: 'Gorillas', values: [320000, 6800, 300] }] };
+		expect(axis(await chartXml(big))).toBe('#,##0');
+		expect(axis(await chartXml(sales))).toBe('General');
 	});
 
 	it('colours the series from the theme', async () => {

@@ -391,6 +391,76 @@ describe('the right column and notes', () => {
 	});
 });
 
+describe('markdown a model writes into slides', () => {
+	it('moves a picture bullet into the image, dropping any after the first', async () => {
+		await pptx([
+			{ title: 'T', bullets: ['a', '![A gorilla](pics/g.jpg)', '![Another](pics/h.jpg)', 'b'] }
+		]);
+		expect(sentSlides()[0]).toEqual({ title: 'T', bullets: ['a', 'b'], image: 'pics/g.jpg' });
+	});
+
+	it('keeps an image the slide already has', async () => {
+		await pptx([{ title: 'T', image: 'own.png', bullets: ['a', '![x](other.png)'] }]);
+		expect(sentSlides()[0]).toEqual({ title: 'T', image: 'own.png', bullets: ['a'] });
+	});
+
+	it('makes a two-column slide with a picture in a column one list beside the picture', async () => {
+		await pptx([
+			{
+				title: 'T',
+				layout: 'two-column',
+				bullets: ['a', 'b'],
+				right: ['![Family](family.jpg)', 'c']
+			}
+		]);
+		expect(sentSlides()[0]).toEqual({
+			title: 'T',
+			layout: 'content',
+			bullets: ['a', 'b', 'c'],
+			image: 'family.jpg'
+		});
+	});
+
+	it('takes a picture bullet given as {text, level}', async () => {
+		await pptx([{ title: 'T', bullets: ['a', { text: '![x](p.png)', level: 1 }] }]);
+		expect(sentSlides()[0]).toEqual({ title: 'T', bullets: ['a'], image: 'p.png' });
+	});
+
+	it('drops ** from titles, subtitles and table cells, and keeps it in bullets', async () => {
+		await pptx([
+			{ title: '**Big** news', subtitle: 'a **b**', bullets: ['**Habitat loss** - clearing'] },
+			{
+				title: 'Data',
+				table: [
+					['**Year**', 'Event'],
+					['1847', '**First**']
+				]
+			}
+		]);
+		const [first, second] = sentSlides();
+		expect(first).toMatchObject({
+			title: 'Big news',
+			subtitle: 'a b',
+			bullets: ['**Habitat loss** - clearing']
+		});
+		expect(second.table).toEqual([
+			['Year', 'Event'],
+			['1847', 'First']
+		]);
+	});
+
+	it('drops ** from an .odp deck’s bullets', async () => {
+		await executor('fs_write_slides')(
+			{
+				path: 'd.odp',
+				slides: [{ title: 'T', bullets: ['**a** b', { text: 'c **d**', level: 1 }] }]
+			},
+			ctx
+		);
+		expect(sentSlides()[0].bullets).toEqual(['a b', { text: 'c d', level: 1 }]);
+	});
+});
+
 describe('charts and tables', () => {
 	const chart = { type: 'bar', labels: ['Q1', 'Q2'], series: [{ name: 'Sales', values: [3, 5] }] };
 

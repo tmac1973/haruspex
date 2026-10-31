@@ -36,6 +36,7 @@ export function addChart(
 	const data = chart.series.map((s) => ({ name: s.name, labels: chart.labels, values: s.values }));
 	const single = chart.series.length === 1;
 	const text = { color: theme.muted, fontFace: theme.bodyFont };
+	const big = chart.series.some((s) => s.values.some((v) => Math.abs(v) >= 1000));
 	out.addChart(types[chart.type], data, {
 		...at(box),
 		chartColors: palette(theme, round ? chart.labels.length : chart.series.length),
@@ -53,6 +54,9 @@ export function addChart(
 		valAxisLabelColor: text.color,
 		valAxisLabelFontFace: text.fontFace,
 		valAxisLabelFontSize: 12,
+		// Thousands separators from 1,000 up. Below, the axis may step in
+		// fractions, which a whole-number format would round.
+		valAxisLabelFormatCode: big ? '#,##0' : 'General',
 		valAxisLineShow: false,
 		valGridLine: { color: theme.line, size: 0.5 },
 		barDir: 'col',

@@ -22,7 +22,8 @@ export const SLIDE_SCHEMA = {
 			},
 			bullets: {
 				type: 'array' as const,
-				description: 'Strings, or {"text", "level": 0-2} for nested bullets.',
+				description:
+					'Phrases of a few words, not sentences. Strings, or {"text", "level": 0-2} for nested bullets.',
 				items: {
 					oneOf: [
 						{ type: 'string' as const },
