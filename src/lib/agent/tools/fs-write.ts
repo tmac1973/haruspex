@@ -20,7 +20,17 @@ import { errMessage } from '#lib/utils/error.ts';
 import { buildWriteDiff } from '#lib/code/diff.ts';
 import { buildPptx } from '#lib/slides/pptx.ts';
 import { loadSlideImages } from '#lib/slides/images.ts';
-import type { Slide, SlideOrientation } from '#lib/slides/types.ts';
+import { foldForOdp } from '#lib/slides/odp.ts';
+import {
+	bulletText,
+	normalizeOrientation,
+	normalizeSlide,
+	normalizeTheme,
+	settleLayout
+} from '#lib/slides/prepare.ts';
+import { SLIDE_THEMES } from '#lib/slides/themes.ts';
+import { SLIDE_LAYOUTS } from '#lib/slides/types.ts';
+import type { Slide } from '#lib/slides/types.ts';
 
 /**
  * True when a relative write path stays inside `root` (a relative dir prefix).
@@ -447,10 +457,12 @@ function sheetMarkupError(rows: unknown[][], sheetNum: number): string | null {
 	return null;
 }
 
-/** The first title, subtitle or bullet holding call markup. */
+/** The first title, subtitle, bullet or note holding call markup. */
 function slideMarkupError(slide: Record<string, unknown>, num: number): string | null {
-	const bullets = Array.isArray(slide.bullets) ? slide.bullets.map(bulletText) : [];
-	for (const text of [slide.title, slide.subtitle, ...bullets]) {
+	const bullets = [slide.bullets, slide.right].flatMap((b) =>
+		Array.isArray(b) ? b.map(bulletText) : []
+	);
+	for (const text of [slide.title, slide.subtitle, slide.notes, ...bullets]) {
 		const err = callMarkupError(`Slide ${num}`, text);
 		if (err) return err;
 	}
@@ -714,26 +726,6 @@ function shellAwareEditText() {
 	};
 }
 
-/** Bullet entries are plain strings or { text, level } objects. */
-function bulletText(b: unknown): string | undefined {
-	if (typeof b === 'string') return b;
-	if (b && typeof b === 'object' && 'text' in b) {
-		const text = (b as { text: unknown }).text;
-		if (typeof text === 'string') return text;
-	}
-	return undefined;
-}
-
-function hasRealBullets(bullets: unknown): boolean {
-	return (
-		Array.isArray(bullets) &&
-		bullets.some((b) => {
-			const text = bulletText(b);
-			return typeof text === 'string' && text.trim().length > 0;
-		})
-	);
-}
-
 /** Every bullet with text is a placeholder. A "/help" among real bullets is
  *  just a bullet about a command. */
 function onlyPlaceholderBullets(bullets: unknown): boolean {
@@ -744,41 +736,12 @@ function onlyPlaceholderBullets(bullets: unknown): boolean {
 	return texts.length > 0 && texts.every(isPlaceholderText);
 }
 
-const SLIDE_LAYOUTS = new Set(['content', 'section']);
-
-/**
- * The Rust layout enum is rename_all = "lowercase": accept "Section" or
- * "CONTENT" by lowercasing. Anything the enum wouldn't take ("two-column",
- * 1) is dropped, so the slide gets the default instead of failing the deck.
- */
-function normalizeLayout(slide: Record<string, unknown>): void {
-	const layout = typeof slide.layout === 'string' ? slide.layout.trim().toLowerCase() : '';
-	if (SLIDE_LAYOUTS.has(layout)) slide.layout = layout;
-	else delete slide.layout;
-}
-
-/** Shape fixes that leave a slide's meaning alone, in place. */
-function normalizeSlide(slide: Record<string, unknown>): void {
-	normalizeLayout(slide);
-	// Rust reads `image` as a path: a blank one is the working folder itself,
-	// and a non-string one fails the whole deck. Either way it means no image.
-	if (typeof slide.image !== 'string' || slide.image.trim().length === 0) delete slide.image;
-	// A non-empty string bullets value is almost always one-bullet-per-line.
-	if (typeof slide.bullets === 'string') {
-		slide.bullets = slide.bullets
-			.split('\n')
-			.map((line) => line.trim())
-			.filter((line) => line.length > 0);
-	}
-}
-
 /**
  * Normalize and validate slide-deck input in one pass. Forgiving on
- * shape — `layout` is lowercased (the Rust enum is lowercase-only),
- * string `bullets` are split on newlines into an array, and a slide
- * with a title but no bullets/image is silently treated as a section
- * divider. Still rejects obvious scaffolds: zero slides, empty titles,
- * and placeholder-style bullets.
+ * shape — `layout` is lowercased and its aliases mapped, string `bullets`
+ * are split on newlines into an array, and a slide a layout can't draw
+ * falls back to one that can (`settleLayout`). Still rejects obvious
+ * scaffolds: zero slides, empty titles, and placeholder-style bullets.
  */
 function prepareSlides(raw: unknown): { slides?: unknown[]; error?: string } {
 	const slides = parseIfJsonArray(raw);
@@ -803,7 +766,7 @@ function prepareSlides(raw: unknown): { slides?: unknown[]; error?: string } {
 		const markupError = slideMarkupError(slide, num);
 		if (markupError) return { error: markupError };
 
-		if (onlyPlaceholderBullets(slide.bullets)) {
+		if (onlyPlaceholderBullets(slide.bullets) || onlyPlaceholderBullets(slide.right)) {
 			return {
 				error:
 					`Slide ${num} contains a placeholder-style bullet like "/content" or "/data". ` +
@@ -811,23 +774,10 @@ function prepareSlides(raw: unknown): { slides?: unknown[]; error?: string } {
 			};
 		}
 
-		if (slide.layout !== 'section') {
-			if (!hasRealBullets(slide.bullets) && slide.image === undefined) {
-				// Title-only (optionally subtitled) slide: render it as a
-				// section divider instead of erroring.
-				slide.layout = 'section';
-			}
-		}
+		settleLayout(slide);
 		prepared.push(slide);
 	}
 	return { slides: prepared };
-}
-
-/** Portrait when the model asks for it by either name; landscape otherwise,
- *  as before the choice existed. */
-function normalizeOrientation(raw: unknown): SlideOrientation {
-	const value = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
-	return value === 'portrait' || value === 'vertical' ? 'portrait' : 'landscape';
 }
 
 /** Write a built .pptx: the deck is the raw body, and the rest go as headers. */
@@ -848,30 +798,38 @@ function slidesWriteExecutor() {
 		if ('error' in choice) return toolResult(toolError(choice.error));
 		const { slides, error } = prepareSlides(args.slides);
 		if (error) return toolResult(toolError(error));
+		const deck = slides as Slide[];
 		const orientation = normalizeOrientation(args.orientation);
+		const theme = normalizeTheme(args.theme);
 		const workdir = fsWorkdir(ctx)!;
-		let command: string | RawWrite = choice.command;
-		let payload: Record<string, unknown> = { slides, orientation };
-		if (choice.command === IPC.fs_write_pptx) {
-			// The .pptx is built here with PptxGenJS; Rust only writes it.
-			try {
-				const deck = slides as Slide[];
-				const built = await buildPptx(deck, orientation, await loadSlideImages(workdir, deck));
-				command = pptxWrite(built, workdir);
-				payload = {};
-			} catch (e) {
-				return toolResult(toolInvokeError('fs_write_slides', e));
+		const write = (command: string | RawWrite, payload: Record<string, unknown>) =>
+			fsWriteWithConflictCheck(
+				'fs_write_slides',
+				command,
+				workdir,
+				args.path as string,
+				payload,
+				ctx.filesWrittenThisTurn,
+				writeOptions(ctx)
+			);
+		if (choice.command !== IPC.fs_write_pptx) {
+			const odp = foldForOdp(deck);
+			const out = await write(choice.command, { slides: odp.slides, orientation });
+			const dropped = theme === 'light' ? odp.dropped : [...odp.dropped, 'the theme was not used'];
+			if (out.result.startsWith('Wrote:') && dropped.length > 0) {
+				out.result += `\n.odp is plainer than .pptx: ${dropped.join('; ')}.`;
 			}
+			return out;
 		}
-		return fsWriteWithConflictCheck(
-			'fs_write_slides',
-			command,
-			workdir,
-			args.path as string,
-			payload,
-			ctx.filesWrittenThisTurn,
-			writeOptions(ctx)
-		);
+		// The .pptx is built here with PptxGenJS; Rust only writes it. A deck
+		// whose text won't fit is refused here, before anything is written.
+		let built: Uint8Array;
+		try {
+			built = await buildPptx(deck, orientation, await loadSlideImages(workdir, deck), theme);
+		} catch (e) {
+			return toolResult(toolInvokeError('fs_write_slides', e));
+		}
+		return write(pptxWrite(built, workdir), {});
 	};
 }
 
@@ -882,14 +840,17 @@ const SLIDE_SCHEMA = {
 	items: {
 		type: 'object' as const,
 		properties: {
-			title: { type: 'string' as const, description: 'Short slide title (~8 words).' },
+			title: { type: 'string' as const, description: 'Short title (~8 words).' },
 			layout: {
 				type: 'string' as const,
-				enum: ['content', 'section'],
+				enum: [...SLIDE_LAYOUTS],
 				description:
-					'"content" (default): title and bullets. "section": a divider with a big title and an optional subtitle.'
+					'content (default): bullets, optional image. cover: the opening slide. section: a divider. two-column: bullets left, right on the right. image: the image fills the slide. quote: title is the quote, subtitle who said it. stat: title is a number, subtitle what it means.'
 			},
-			subtitle: { type: 'string' as const, description: 'Tagline under a section title.' },
+			subtitle: {
+				type: 'string' as const,
+				description: 'Line under a cover, section or image title.'
+			},
 			bullets: {
 				type: 'array' as const,
 				description: 'Strings, or {"text", "level": 0-2} for nested bullets.',
@@ -907,10 +868,16 @@ const SLIDE_SCHEMA = {
 					]
 				}
 			},
+			right: {
+				type: 'array' as const,
+				description: 'two-column: the right column.',
+				items: { type: 'string' as const }
+			},
 			image: {
 				type: 'string' as const,
-				description: 'Optional image path in the working directory (png/jpg/jpeg/gif).'
-			}
+				description: 'Image path in the working directory (png/jpg/gif).'
+			},
+			notes: { type: 'string' as const, description: 'Speaker notes.' }
 		},
 		required: ['title']
 	}
@@ -1011,7 +978,7 @@ registerTool({
 		function: {
 			name: 'fs_write_slides',
 			description:
-				"Create a PowerPoint (.pptx) or LibreOffice (.odp) slide deck. The path's extension picks the format; use .odp only when the user asks for it.",
+				"Create a PowerPoint (.pptx) or LibreOffice (.odp) slide deck. The path's extension picks the format; use .odp only when the user asks for it. Open with a cover, vary the layouts, and keep each slide to 3–6 short bullets.",
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1021,6 +988,12 @@ registerTool({
 						enum: ['landscape', 'portrait'],
 						description:
 							'Pick from where the deck will be seen. "landscape" (16:9, default): a screen, projector or call. "portrait" (9:16): a phone, vertical screen or story; keep bullets short, and an image goes above them.'
+					},
+					theme: {
+						type: 'string',
+						enum: [...SLIDE_THEMES],
+						description:
+							'light (default), dark, bold (black, red), warm (cream, serif) or calm (green).'
 					},
 					slides: SLIDE_SCHEMA
 				},

@@ -11,14 +11,17 @@ import type { ToolContext, ToolExecOutput, ToolRegistration } from './types';
 const mocks = vi.hoisted(() => ({
 	invoke: vi.fn(),
 	registered: new Map<string, unknown>(),
-	built: [] as { slides: unknown[]; orientation: string }[]
+	built: [] as { slides: unknown[]; orientation: string; theme: string }[],
+	/** Set to make the next build throw it. */
+	buildError: null as Error | null
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 
 vi.mock('#lib/slides/pptx.ts', () => ({
-	buildPptx: async (slides: unknown[], orientation: string) => {
-		mocks.built.push({ slides, orientation });
+	buildPptx: async (slides: unknown[], orientation: string, _images: unknown, theme: string) => {
+		if (mocks.buildError) throw mocks.buildError;
+		mocks.built.push({ slides, orientation, theme });
 		return new Uint8Array([0x50, 0x4b, 3, 4]);
 	}
 }));
@@ -284,13 +287,133 @@ describe('layout', () => {
 	});
 
 	it('drops an unknown layout string when the slide has bullets', async () => {
-		await pptx([{ title: 'T', layout: 'Two-Column', bullets: ['x'] }]);
+		await pptx([{ title: 'T', layout: 'Timeline', bullets: ['x'] }]);
 		expect(sentSlides()[0]).not.toHaveProperty('layout');
 	});
 
 	it('replaces an unknown layout with section on a slide with no content', async () => {
-		await pptx([{ title: 'T', layout: 'Two-Column' }]);
+		await pptx([{ title: 'T', layout: 'Timeline' }]);
 		expect(sentSlides()[0].layout).toBe('section');
+	});
+
+	it.each([
+		['title', 'cover'],
+		['Two-Column', 'two-column'],
+		['two_column', 'two-column'],
+		['columns', 'two-column'],
+		['STAT', 'stat']
+	])('reads %s as %s', async (layout, expected) => {
+		await pptx([{ title: 'T', layout, bullets: ['a'], right: ['b'] }]);
+		expect(sentSlides()[0].layout).toBe(expected);
+	});
+
+	it.each(['cover', 'quote', 'stat'])('keeps a %s slide that has no bullets', async (layout) => {
+		await pptx([{ title: 'T', layout, subtitle: 'S' }]);
+		expect(sentSlides()[0]).toEqual({ title: 'T', layout, subtitle: 'S' });
+	});
+
+	it('draws an image slide with no image as content, or as a section when it is empty', async () => {
+		await pptx([
+			{ title: 'A', layout: 'image', bullets: ['x'] },
+			{ title: 'B', layout: 'image', image: ' ' }
+		]);
+		expect(sentSlides()[0]).toEqual({ title: 'A', bullets: ['x'] });
+		expect(sentSlides()[1]).toEqual({ title: 'B', layout: 'section' });
+	});
+
+	it('draws a two-column slide with one column as content', async () => {
+		await pptx([
+			{ title: 'A', layout: 'two-column', bullets: ['x'] },
+			{ title: 'B', layout: 'two-column', right: ['y'] }
+		]);
+		expect(sentSlides()[0]).toEqual({ title: 'A', bullets: ['x'] });
+		expect(sentSlides()[1]).toEqual({ title: 'B', bullets: ['y'] });
+	});
+});
+
+describe('the right column and notes', () => {
+	it('splits a string right column on newlines', async () => {
+		await pptx([{ title: 'T', layout: 'two-column', bullets: ['a'], right: 'b\n c \n' }]);
+		expect(sentSlides()[0].right).toEqual(['b', 'c']);
+	});
+
+	it('makes a slide with both columns and no layout two-column', async () => {
+		await pptx([{ title: 'T', bullets: ['a'], right: ['b'] }]);
+		expect(sentSlides()[0]).toEqual({
+			title: 'T',
+			layout: 'two-column',
+			bullets: ['a'],
+			right: ['b']
+		});
+	});
+
+	it('drops the right column from any other layout', async () => {
+		await pptx([{ title: 'T', layout: 'content', bullets: ['a'], right: ['b'] }]);
+		expect(sentSlides()[0]).toEqual({ title: 'T', layout: 'content', bullets: ['a'] });
+	});
+
+	it('drops a right column that is not a list', async () => {
+		await pptx([{ title: 'T', bullets: ['a'], right: 3 }]);
+		expect(sentSlides()[0]).not.toHaveProperty('right');
+	});
+
+	it('refuses placeholder bullets in the right column', async () => {
+		const out = await pptx([
+			{ title: 'T', layout: 'two-column', bullets: ['a'], right: ['/data'] }
+		]);
+		expect(errorOf(out)).toMatch(/placeholder-style bullet/);
+	});
+
+	it('refuses tool-call markup in the right column or the notes', async () => {
+		const right = await pptx([{ title: 'T', bullets: ['a'], right: ['x </function>'] }]);
+		expect(errorOf(right)).toMatch(/^Slide 1 contains tool-call markup/);
+		const notes = await pptx([{ title: 'T', bullets: ['a'], notes: '<tool_call>' }]);
+		expect(errorOf(notes)).toMatch(/^Slide 1 contains tool-call markup/);
+	});
+
+	it('drops blank or non-string notes', async () => {
+		await pptx([
+			{ title: 'A', bullets: ['a'], notes: '   ' },
+			{ title: 'B', bullets: ['b'], notes: 7 },
+			{ title: 'C', bullets: ['c'], notes: 'Pause here.' }
+		]);
+		expect(sentSlides()[0]).not.toHaveProperty('notes');
+		expect(sentSlides()[1]).not.toHaveProperty('notes');
+		expect(sentSlides()[2].notes).toBe('Pause here.');
+	});
+});
+
+describe('theme', () => {
+	it.each([
+		['dark', 'dark'],
+		[' Warm ', 'warm'],
+		['neon', 'light'],
+		[undefined, 'light'],
+		[2, 'light']
+	])('reads %j as %s', async (theme, expected) => {
+		await executor('fs_write_slides')(
+			{ path: 'd.pptx', theme, slides: [{ title: 'T', bullets: ['a'] }] },
+			ctx
+		);
+		expect(mocks.built[0].theme).toBe(expected);
+	});
+});
+
+describe('a deck whose text will not fit', () => {
+	it('is refused with the builder’s list, and nothing is written', async () => {
+		mocks.buildError = new Error(
+			'The deck was not written: Slide 2 ("X"): the bullets need about 2.0× the room there is.'
+		);
+		try {
+			const out = await pptx([{ title: 'T', bullets: ['a'] }]);
+			expect(errorOf(out)).toBe(
+				'fs_write_slides failed: The deck was not written: Slide 2 ("X"): the bullets need about 2.0× the room there is.'
+			);
+			expect(sent).toHaveLength(0);
+			expect(ctx.filesWrittenThisTurn.size).toBe(0);
+		} finally {
+			mocks.buildError = null;
+		}
 	});
 });
 
@@ -331,6 +454,36 @@ describe('an .odp path', () => {
 	it('rejects the same scaffolds', async () => {
 		const out = await executor('fs_write_slides')({ path: 'd.odp', slides: [{ title: ' ' }] }, ctx);
 		expect(errorOf(out)).toMatch(/^Slide 1 has no title/);
+	});
+
+	it('sends layouts it can draw, and says what it simplified', async () => {
+		const out = await executor('fs_write_slides')(
+			{
+				path: 'd.odp',
+				theme: 'dark',
+				slides: [
+					{ title: 'Deck', layout: 'cover', subtitle: 'Q3' },
+					{ title: 'T', layout: 'two-column', bullets: ['a'], right: ['b'], notes: 'hi' }
+				]
+			},
+			ctx
+		);
+		expect(sent[0].payload.slides).toStrictEqual([
+			{ title: 'Deck', subtitle: 'Q3', layout: 'section' },
+			{ title: 'T', bullets: ['a', 'b'], layout: 'content' }
+		]);
+		expect(out.result).toBe(
+			'Wrote: d.odp\n.odp is plainer than .pptx: cover, two-column slides were drawn as plain ' +
+				'title or bullet slides; speaker notes were left out; the theme was not used.'
+		);
+	});
+
+	it('adds nothing to the result for a deck it drew in full', async () => {
+		const out = await executor('fs_write_slides')(
+			{ path: 'd.odp', slides: [{ title: 'T', bullets: ['a'] }] },
+			ctx
+		);
+		expect(out.result).toBe('Wrote: d.odp');
 	});
 });
 
