@@ -11,7 +11,7 @@ The assistant writes the whole deck in one go. It can't open and change a deck t
 
 ## Landscape or portrait
 
-Decks are landscape (16:9) unless you say otherwise. Portrait (9:16) suits a deck read on a phone, shown on a vertical screen, or posted as a story. Say where the deck will be shown and the assistant picks. A portrait slide holds less text, and its picture goes above the bullets instead of beside them.
+Decks are landscape (16:9) unless you say otherwise. Portrait (9:16) suits a deck read on a phone, shown on a vertical screen, or posted as a story. Say where the deck will be shown and the assistant picks. Portrait uses larger text, sized for a phone, so a slide holds fewer words. Bullets on their own sit a little above the middle of the page, and a picture goes above the bullets instead of beside them.
 
 ## Choose a look
 
@@ -32,7 +32,7 @@ Each slide has one layout, and the assistant mixes them:
 - **cover**: the opening slide, with the title and a tagline on a coloured background. Given a picture, it becomes an image slide.
 - **section**: a divider between parts of the talk.
 - **content**: a title and bullets, with a picture beside them if there is one.
-- **two-column**: two lists, for a comparison. Portrait stacks them.
+- **two-column**: two lists, for a comparison. Portrait stacks them, one under the other.
 - **image**: a picture filling the slide, with the title on a strip across its foot.
 - **quote**: a quotation and who said it.
 - **stat**: one big number and what it means.

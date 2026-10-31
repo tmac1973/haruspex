@@ -1,7 +1,8 @@
 import type { SlideOrientation } from '#lib/slides/types.ts';
 
 /** The deck's type scale: every text size a layout uses, by orientation.
- *  Portrait's are smaller, as its page is narrower. */
+ *  Portrait's are larger: a portrait deck is read on a phone, its whole
+ *  page a few inches wide, so a slide holds fewer, bigger words. */
 
 /** Font sizes in points, before any shrinking to fit. */
 export interface Sizes {
@@ -37,17 +38,17 @@ export const SIZES: Record<SlideOrientation, Sizes> = {
 		imageSubtitle: 20
 	},
 	portrait: {
-		bullets: [20, 18, 16],
-		title: 30,
-		cover: 40,
-		section: 34,
-		tagline: 20,
-		quote: 26,
-		quoteMark: 100,
-		speaker: 16,
-		stat: 96,
-		meaning: 24,
-		imageTitle: 30,
-		imageSubtitle: 18
+		bullets: [26, 23, 20],
+		title: 34,
+		cover: 46,
+		section: 40,
+		tagline: 24,
+		quote: 32,
+		quoteMark: 110,
+		speaker: 18,
+		stat: 104,
+		meaning: 28,
+		imageTitle: 34,
+		imageSubtitle: 22
 	}
 };
