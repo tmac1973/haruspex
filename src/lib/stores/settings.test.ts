@@ -848,6 +848,56 @@ describe('load-time remoteServerUrls seeding', () => {
 	});
 });
 
+describe('load-time generationServers seeding', () => {
+	let priorRaw: string | null;
+
+	beforeEach(() => {
+		priorRaw = localStorage.getItem(SETTINGS_KEY);
+	});
+
+	afterEach(() => {
+		if (priorRaw === null) {
+			localStorage.removeItem(SETTINGS_KEY);
+		} else {
+			localStorage.setItem(SETTINGS_KEY, priorRaw);
+		}
+		vi.resetModules();
+	});
+
+	async function loadWith(stored: Record<string, unknown>) {
+		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
+		vi.resetModules();
+		const fresh = await import('#lib/stores/settings.ts');
+		return fresh.getSettings().generationServers;
+	}
+
+	it('saves every address the generation settings hold, once each', async () => {
+		const servers = await loadWith({
+			imageBackendBaseUrl: 'http://comfy:8188/',
+			imageToolchestBaseUrl: 'http://box:3000',
+			imageToolchestApiKeyId: 'k1',
+			musicToolchestBaseUrl: ' http://box:3000 ',
+			musicToolchestApiKeyId: 'k1',
+			videoGenToolchestBaseUrl: 'http://other:3000',
+			musicAceBaseUrl: 'http://ace:8083'
+		});
+		expect(servers).toEqual([
+			{ kind: 'comfyui', url: 'http://comfy:8188', keyId: null },
+			{ kind: 'llama-toolchest', url: 'http://box:3000', keyId: 'k1' },
+			{ kind: 'llama-toolchest', url: 'http://other:3000', keyId: null },
+			{ kind: 'ace-server', url: 'http://ace:8083', keyId: null }
+		]);
+	});
+
+	it('keeps a saved list as it is, even an emptied one', async () => {
+		const servers = await loadWith({
+			imageToolchestBaseUrl: 'http://box:3000',
+			generationServers: []
+		});
+		expect(servers).toEqual([]);
+	});
+});
+
 describe('legacy OpenRouter catalog', () => {
 	const model = {
 		id: 'openai/o3',

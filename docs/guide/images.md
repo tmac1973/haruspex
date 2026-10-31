@@ -15,11 +15,13 @@ Open Settings → Image → **Image backend** and choose a **Backend**:
 
 - **None** — the default. No process and no download.
 - **ComfyUI** — a [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server you run, on this computer or another.
-- **Bundled engine** — stable-diffusion.cpp, shipped with Haruspex. Nothing else to install. It runs on Linux, Windows and Apple Silicon Macs.
+- **Bundled engine** — stable-diffusion.cpp, shipped with Haruspex. It runs on Linux, Windows and Apple Silicon Macs.
 - **Lemonade** — a [Lemonade](https://lemonade-server.ai) server you run, which draws with the bundled engine's models.
 - **llama-toolchest** — a llama-toolchest server you run with generation on.
 
 **Test generation → Generate a test image** checks that a backend works.
+
+A server you probe or **Add** is kept under **Saved servers**; a llama-toolchest is listed in Settings → Music and Video too.
 
 ### Set up the bundled engine
 
@@ -27,13 +29,13 @@ Under **Bundled engine**, press **Download** on a model (about 17 GB for Ming-Im
 
 ### Set up ComfyUI
 
-Under **Connection**, enter the **Server address** (for example `http://127.0.0.1:8188`) and an **API key** if your server needs one, then press **Probe**. **Models on the server** shows what each model lacks. **Install** downloads the files into ComfyUI when it runs on this computer, or queues them with ComfyUI-Manager elsewhere. Without either, **Copy file list** gives you the files to place by hand. Then choose the **Model**.
+Under **Connection**, enter the **Server address** (`http://127.0.0.1:8188`) and an **API key** if your server needs one, then press **Probe**. **Models on the server** shows what each model lacks. **Install** downloads the files into ComfyUI when it runs on this computer, or queues them with ComfyUI-Manager elsewhere. Without either, **Copy file list** gives you the files to place by hand. Then choose the **Model**.
 
 The first picture after ComfyUI starts waits for the model to load.
 
 ### Set up Lemonade
 
-Under **Connection**, enter the **Server address** (for example `http://127.0.0.1:13305`) and an **API key** if your server needs one, then press **Probe**. Under **Models on the server**, **Install** downloads a model onto the server and **Remove** deletes it. Then choose the **Model**. The download continues if you close Settings. Lemonade keeps one image model loaded, so the first picture after switching waits for it to load. It does not make tiling textures.
+Under **Connection**, enter the **Server address** (`http://127.0.0.1:13305`) and an **API key** if your server needs one, then press **Probe**. Under **Models on the server**, **Install** downloads a model onto the server and **Remove** deletes it. Then choose the **Model**. The download continues if you close Settings. Lemonade keeps one image model loaded, so a switch waits for it to load. It does not make tiling textures.
 
 ### Set up llama-toolchest
 
@@ -53,7 +55,7 @@ Settings → Image marks Qwen-Image "Not licensed for commercial use." and asks 
 
 ## Draw a picture in Chat
 
-Ask Chat to draw, paint or illustrate something. It takes 30 seconds to a few minutes, or ask for it in the background (see the `image-editing` page). It appears in the answer and is kept with the conversation; click it for full size, or hover for **Save as…**. Ask for another shape or a transparent background. With a working folder set, it can save it there, asking before replacing a file. A model that sees images is shown it.
+Ask Chat to draw something. It takes 30 seconds to a few minutes, or ask for it in the background (see the `image-editing` page). It appears in the answer and is kept with the conversation; click it for full size, or hover for **Save as…**. Ask for another shape or a transparent background. With a working folder set, it can save it there, asking before replacing a file. A model that sees images is shown it.
 
 ## Make art for a project
 
@@ -67,7 +69,7 @@ The **Asset generation** job draws all of a project's sprites, icons and tiling 
 
 ## What it costs your computer
 
-The bundled engine holds most of a 16 GB card, so your chat model and games may slow or not fit. Stop it in Settings → Image when done.
+The bundled engine holds most of a 16 GB card, so your chat model and games may not fit. Stop it in Settings → Image when done.
 
 ## What has been tested
 

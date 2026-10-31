@@ -16,6 +16,7 @@ const settings = vi.hoisted(() => ({
 	musicAceBaseUrl: '',
 	musicAceModel: '',
 	musicDefaultDurationSec: 30,
+	generationServers: [] as { kind: string; url: string; keyId: string | null }[],
 	inferenceBackend: {
 		mode: 'remote',
 		remoteBaseUrl: 'http://box:3000',
@@ -49,7 +50,8 @@ beforeEach(() => {
 		musicToolchestModelId: '',
 		musicAceBaseUrl: '',
 		musicAceModel: '',
-		musicDefaultDurationSec: 30
+		musicDefaultDurationSec: 30,
+		generationServers: []
 	});
 	vi.mocked(invoke).mockImplementation(
 		invokeRouter({
@@ -101,6 +103,52 @@ describe('Settings → Music', () => {
 		await waitFor(() => expect([...select.options].map((o) => o.value)).toContain('ace-xl'));
 		const heading = await screen.findByRole('heading', { name: /Instances on the server/ });
 		expect(within(heading.closest('section')!).getByText('ace-xl')).toBeTruthy();
+	});
+
+	it('saves a server it reached, and switches to another saved one with its key', async () => {
+		settings.generationServers = [
+			{ kind: 'llama-toolchest', url: 'http://other:3000', keyId: 'k2' },
+			{ kind: 'ace-server', url: 'http://ace:8083', keyId: null }
+		];
+		render(MusicSection);
+		await chooseToolchest();
+		await waitFor(() =>
+			expect(settings.generationServers).toContainEqual({
+				kind: 'llama-toolchest',
+				url: 'http://box:3000',
+				keyId: 'k1'
+			})
+		);
+		const saved = screen.getByLabelText('Saved servers:') as HTMLSelectElement;
+		// Only the toolchests: an ace-server is not one.
+		await waitFor(() =>
+			expect([...saved.options].map((o) => o.value)).toEqual([
+				'http://other:3000',
+				'http://box:3000'
+			])
+		);
+		await fireEvent.change(saved, { target: { value: 'http://other:3000' } });
+		expect(settings.musicToolchestBaseUrl).toBe('http://other:3000');
+		expect(settings.musicToolchestApiKeyId).toBe('k2');
+		expect((screen.getByLabelText('Server address:') as HTMLInputElement).value).toBe(
+			'http://other:3000'
+		);
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+		expect(settings.generationServers.map((s) => s.url)).not.toContain('http://other:3000');
+		expect(settings.musicToolchestBaseUrl).toBe('http://box:3000');
+	});
+
+	it('adds a typed address to the saved list', async () => {
+		settings.musicBackendKind = 'llama-toolchest';
+		render(MusicSection);
+		const input = screen.getByLabelText('Server address:') as HTMLInputElement;
+		await fireEvent.input(input, { target: { value: 'http://new:3000/' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+		expect(settings.generationServers).toEqual([
+			{ kind: 'llama-toolchest', url: 'http://new:3000', keyId: null }
+		]);
+		expect(screen.getByRole('button', { name: 'Add' })).toHaveProperty('disabled', true);
 	});
 
 	it('keeps the default length between 5 and 240 seconds', async () => {
