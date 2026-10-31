@@ -840,6 +840,23 @@ describe('writing a previewed deck again', () => {
 		}
 	});
 
+	it('keeps the deck’s theme and orientation when the rewrite leaves them out', async () => {
+		freshTurn();
+		const write = executor('fs_write_slides');
+		await write({ path: 'd.pptx', slides: deck, theme: 'dark', orientation: 'portrait' }, ctx);
+		ctx.pendingImages.length = 0;
+		const out = await write({ path: 'd.pptx', slides: deck }, ctx);
+		expect(out.result).toMatch(/^Wrote: d\.pptx/);
+		expect(mocks.built.map((b) => [b.theme, b.orientation])).toEqual([
+			['dark', 'portrait'],
+			['dark', 'portrait']
+		]);
+		// A rewrite that names a theme gets it.
+		ctx.pendingImages.length = 0;
+		await write({ path: 'd.pptx', slides: deck, theme: 'warm' }, ctx);
+		expect(mocks.built[2]).toMatchObject({ theme: 'warm', orientation: 'portrait' });
+	});
+
 	it('is refused when most of the slides are new: a second piece of a deck', async () => {
 		freshTurn();
 		await pptx(deck);

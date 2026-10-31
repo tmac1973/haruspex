@@ -21,15 +21,15 @@ import { buildWriteDiff } from '#lib/code/diff.ts';
 import { buildPptx } from '#lib/slides/pptx.ts';
 import { loadSlideImages } from '#lib/slides/images.ts';
 import { foldForOdp } from '#lib/slides/odp.ts';
-import {
-	bulletText,
-	normalizeOrientation,
-	normalizeSlide,
-	normalizeTheme,
-	settleLayout
-} from '#lib/slides/prepare.ts';
+import { bulletText, normalizeSlide, settleLayout } from '#lib/slides/prepare.ts';
 import { SLIDE_SCHEMA } from '#lib/slides/schema.ts';
-import { attachPreview, mayRewrite, noteRewrite } from '#lib/slides/preview.ts';
+import {
+	attachPreview,
+	deckLook,
+	mayRewrite,
+	noteRewrite,
+	previewedLook
+} from '#lib/slides/preview.ts';
 import { prepareVisuals, visualTexts } from '#lib/slides/visuals.ts';
 import { SLIDE_THEMES } from '#lib/slides/themes.ts';
 import type { Slide } from '#lib/slides/types.ts';
@@ -814,14 +814,15 @@ function slidesWriteExecutor() {
 		const { slides, error } = prepareSlides(args.slides);
 		if (error) return toolResult(toolError(error));
 		const deck = slides as Slide[];
-		const orientation = normalizeOrientation(args.orientation);
-		const theme = normalizeTheme(args.theme);
 		const workdir = fsWorkdir(ctx)!;
 		const path = args.path as string;
 		const titles = deck.map((s) => s.title);
 		const turn = ctx.filesWrittenThisTurn;
-		// A deck the model was shown may be written again to fix it (preview.ts).
+		// A deck the model was shown may be written again to fix it, keeping
+		// its look unless it names another (preview.ts).
 		const rewrite = turn.has(path) && mayRewrite(turn, path, titles);
+		const look = deckLook(args, rewrite ? previewedLook(turn, path) : undefined);
+		const { theme, orientation } = look;
 		// The path the deck went to: the user may have kept the old file and
 		// had it written beside it.
 		let written = path;
@@ -836,7 +837,7 @@ function slidesWriteExecutor() {
 				rewrite ? rewriting(writeOptions(ctx), path) : writeOptions(ctx)
 			);
 			if (rewrite && out.result.startsWith('Wrote:')) noteRewrite(turn, path);
-			return attachPreview(out, ctx, workdir, written, titles);
+			return attachPreview(out, ctx, workdir, written, titles, look);
 		};
 		if (choice.command !== IPC.fs_write_pptx) {
 			const odp = foldForOdp(deck);
