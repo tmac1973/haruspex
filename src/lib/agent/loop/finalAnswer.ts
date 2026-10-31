@@ -4,6 +4,7 @@
  */
 
 import { ResponseCutOffError, messageText, type ChatCompletionResponse } from '#lib/api.ts';
+import { isToolImageMessage } from '#lib/agent/toolImageMessage.ts';
 import type { getChatTemplateKwargs, getSamplingParams } from '#lib/stores/settings.ts';
 import { logDebug } from '#lib/debugLog.ts';
 import { NudgeState } from '#lib/agent/loop/nudges.ts';
@@ -137,7 +138,7 @@ function researchGates(
 	// only grabbed a picture has not researched at all, which is the more
 	// basic failure of the two.
 	const lastUserText = messageText(
-		[...messages].reverse().find((m) => m.role === 'user')?.content ?? ''
+		[...messages].reverse().find((m) => m.role === 'user' && !isToolImageMessage(m))?.content ?? ''
 	);
 	if (nudges.needsResearchNudge(usedTools, looksLikeImageOnlyRequest(lastUserText))) {
 		nudges.consumeResearchNudge();

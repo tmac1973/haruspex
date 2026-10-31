@@ -10,6 +10,7 @@
 
 import type { ChatMessage } from '#lib/api.ts';
 import { messageText } from '#lib/api.ts';
+import { isToolImageMessage } from '#lib/agent/toolImageMessage.ts';
 import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
 
 const OPEN = '<skill_content name="';
@@ -95,7 +96,7 @@ export function renderSlashMessage(doc: SkillDoc, typed: string): string {
 export function turnRunsSkill(messages: ChatMessage[]): boolean {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const m = messages[i];
-		if (m.role === 'user') return messageText(m.content).startsWith(OPEN);
+		if (m.role === 'user' && !isToolImageMessage(m)) return messageText(m.content).startsWith(OPEN);
 		if (m.role === 'tool' && messageText(m.content).startsWith(OPEN)) return true;
 	}
 	return false;
