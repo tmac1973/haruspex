@@ -133,7 +133,7 @@
 	</p>
 	<div class="folder-row">
 		{#if defaultWorkingDir}
-			<code>{defaultWorkingDir}</code>
+			<code title={defaultWorkingDir}>{defaultWorkingDir}</code>
 			<button class="btn btn-small" onclick={pickDefaultWorkingDir}>Change…</button>
 			<button class="btn btn-small" onclick={clearDefaultWorkingDir}>Clear</button>
 		{:else}
