@@ -11,7 +11,8 @@
 import { SvelteMap } from 'svelte/reactivity';
 
 let activeConversationId = $state<string | null>(null);
-// The folder a new chat starts in: the last one picked.
+// The folder the next new chat starts in: Settings → Chat's default, or the
+// one picked while no chat was open.
 let defaultWorkingDir = $state<string | null>(null);
 // Each conversation's folder; null for none.
 const workingDirs = new SvelteMap<string, string | null>();

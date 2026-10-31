@@ -50,8 +50,12 @@ import { rehydrateImages, resolveReplyImages, sweepImages } from '#lib/images/re
 import { placeGeneratedImages } from '#lib/images/eligible.ts';
 import { placeGeneratedAudio } from '#lib/audio/eligible.ts';
 import { rehydrateAudio } from '#lib/audio/rehydrate.ts';
-import { chatTurnMaxIterations, getSettings, SETTINGS_KEY } from '#lib/stores/settings.ts';
-import { persistItem } from '#lib/persist.ts';
+import {
+	chatTurnMaxIterations,
+	getSettings,
+	updateSettings,
+	SETTINGS_KEY
+} from '#lib/stores/settings.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import {
 	getActiveConversationId,
@@ -232,20 +236,19 @@ export function computeMessageStats(
 	};
 }
 
-// The folder a new chat starts in. Before each chat had its own, the one
-// folder every chat used.
+// The one folder every chat used before each had its own. Only chats saved
+// then, which have no folder stored, take it; nothing writes it now.
 const WORKING_DIR_KEY = 'haruspex-working-dir';
 
-function loadWorkingDir(): string | null {
+function loadSharedWorkingDir(): string | null {
 	try {
 		const raw = localStorage.getItem(WORKING_DIR_KEY);
 		if (raw !== null) return raw || null;
-		// One-time migration from the legacy per-settings defaultWorkingDir.
+		// The settings field it replaced.
 		const legacy = localStorage.getItem(SETTINGS_KEY);
 		if (legacy) {
 			const parsed = JSON.parse(legacy);
 			if (typeof parsed.defaultWorkingDir === 'string' && parsed.defaultWorkingDir) {
-				persistItem(WORKING_DIR_KEY, parsed.defaultWorkingDir);
 				return parsed.defaultWorkingDir;
 			}
 		}
@@ -255,19 +258,16 @@ function loadWorkingDir(): string | null {
 	return null;
 }
 
-function saveWorkingDir(path: string | null): void {
-	try {
-		persistItem(WORKING_DIR_KEY, path ?? '');
-	} catch {
-		// ignore
-	}
+/** Settings → Chat's default folder, or null for none. */
+function settingsWorkingDir(): string | null {
+	return getSettings().chatDefaultWorkingDir || null;
 }
 
 let conversations = $state<Conversation[]>([]);
 // activeConversationId + the working dirs live in the session leaf store (see
 // the import at the top of this file) so the sandbox/worker layer can read
 // them without importing this module and forming a cycle.
-setDefaultWorkingDirState(loadWorkingDir());
+setDefaultWorkingDirState(settingsWorkingDir());
 // Each conversation's turn state, made the first time it sends. A
 // conversation with none is idle.
 const runs = new SvelteMap<string, ChatRun>();
@@ -322,7 +322,7 @@ export async function initChatStore(): Promise<void> {
 	const db = await initDb();
 
 	// A chat saved before each had its own folder keeps the one they shared.
-	const shared = getDefaultWorkingDir();
+	const shared = loadSharedWorkingDir();
 	for (const s of db.summaries) {
 		setWorkingDirState(s.id, s.working_dir === null ? shared : s.working_dir || null);
 	}
@@ -513,13 +513,15 @@ export function getActiveConversation(): Conversation | undefined {
 }
 
 /**
- * Set a conversation's folder (the open one's by default). It is also the
- * folder the next new chat starts in.
+ * Set a conversation's folder (the open one's by default). With no chat open,
+ * it is the folder the next new chat starts in. Settings → Chat's default is
+ * left alone.
  */
 export function setWorkingDir(path: string | null, id = getActiveConversationId()): void {
-	setDefaultWorkingDirState(path);
-	saveWorkingDir(path);
-	if (!id) return;
+	if (!id) {
+		setDefaultWorkingDirState(path);
+		return;
+	}
 	const previous = getWorkingDirFor(id);
 	setWorkingDirState(id, path);
 	void dbSetWorkingDir(id, path);
@@ -529,6 +531,12 @@ export function setWorkingDir(path: string | null, id = getActiveConversationId(
 	// Python's cwd doesn't follow the change. Respawning forces the next
 	// run_python to do a fresh sync against the new workdir.
 	if (previous !== path) void resetSandbox(id);
+}
+
+/** Set Settings → Chat's default folder: the one each new chat starts in. */
+export function setDefaultWorkingDir(path: string | null): void {
+	updateSettings({ chatDefaultWorkingDir: path ?? '' });
+	setDefaultWorkingDirState(path);
 }
 
 // The getters below report the open conversation's run.
@@ -794,6 +802,8 @@ export function createConversation(): string {
 	});
 	const folder = getDefaultWorkingDir();
 	setWorkingDirState(id, folder);
+	// A folder picked with no chat open was for this one only.
+	setDefaultWorkingDirState(settingsWorkingDir());
 	setActiveConversationId(id);
 	resetContextUsage();
 	// Stored even when empty: a row without one would take the shared folder

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('#lib/agent/loop.ts', () => ({
 	runAgentLoop: vi.fn()
@@ -532,17 +532,16 @@ describe('working folder per chat', () => {
 		localStorage.setItem('haruspex-working-dir', '/shared');
 	});
 
-	it('keeps each chat its own folder, and starts a new chat in the last one picked', async () => {
+	afterEach(() => {
+		localStorage.removeItem('haruspex-working-dir');
+		localStorage.removeItem('haruspex-settings');
+	});
+
+	async function initWith(summaries: unknown[]) {
 		const { invoke } = await import('@tauri-apps/api/core');
 		vi.mocked(invoke).mockClear();
 		vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => {
-			if (cmd === 'db_list_conversations') {
-				return [
-					{ id: 'old', title: 'Old', created_at: 1, updated_at: 3, working_dir: null },
-					{ id: 'mine', title: 'Mine', created_at: 1, updated_at: 2, working_dir: '/mine' },
-					{ id: 'none', title: 'None', created_at: 1, updated_at: 1, working_dir: '' }
-				];
-			}
+			if (cmd === 'db_list_conversations') return summaries;
 			if (cmd === 'db_get_conversation') {
 				const { id } = args as { id: string };
 				return { id, title: id, created_at: 1, updated_at: 1, messages: [] };
@@ -551,6 +550,15 @@ describe('working folder per chat', () => {
 		});
 		const chat = await import('#lib/stores/chat.svelte.ts');
 		await chat.initChatStore();
+		return { chat, invoke };
+	}
+
+	it('keeps each chat its own folder, and starts a new chat with none by default', async () => {
+		const { chat, invoke } = await initWith([
+			{ id: 'old', title: 'Old', created_at: 1, updated_at: 3, working_dir: null },
+			{ id: 'mine', title: 'Mine', created_at: 1, updated_at: 2, working_dir: '/mine' },
+			{ id: 'none', title: 'None', created_at: 1, updated_at: 1, working_dir: '' }
+		]);
 
 		// A chat saved before folders were per chat keeps the shared one.
 		expect(invoke).toHaveBeenCalledWith('conversation_adopt_working_dir', { path: '/shared' });
@@ -560,19 +568,47 @@ describe('working folder per chat', () => {
 
 		await chat.setActiveConversation('mine');
 		expect(chat.getWorkingDir()).toBe('/mine');
-		chat.setWorkingDir('/new');
+		chat.setWorkingDir('/videos');
 		expect(invoke).toHaveBeenCalledWith('conversation_set_working_dir', {
 			id: 'mine',
-			path: '/new'
+			path: '/videos'
 		});
 		expect(chat.getWorkingDirFor('old')).toBe('/shared');
 
-		await chat.setActiveConversation('none');
-		expect(chat.getWorkingDir()).toBeNull();
-
+		// Picking one in a chat is not a default for the next.
 		chat.createConversation();
-		expect(chat.getWorkingDir()).toBe('/new');
-		localStorage.removeItem('haruspex-working-dir');
+		expect(chat.getWorkingDir()).toBeNull();
+	});
+
+	it("starts a new chat in Settings → Chat's default folder", async () => {
+		const { chat } = await initWith([]);
+		const { getSettings } = await import('#lib/stores/settings.ts');
+
+		chat.setDefaultWorkingDir('/projects');
+		expect(getSettings().chatDefaultWorkingDir).toBe('/projects');
+		const first = chat.createConversation();
+		expect(chat.getWorkingDir()).toBe('/projects');
+
+		chat.setWorkingDir('/videos');
+		expect(chat.getWorkingDirFor(first)).toBe('/videos');
+		chat.createConversation();
+		expect(chat.getWorkingDir()).toBe('/projects');
+		expect(getSettings().chatDefaultWorkingDir).toBe('/projects');
+
+		chat.setDefaultWorkingDir(null);
+		chat.createConversation();
+		expect(chat.getWorkingDir()).toBeNull();
+	});
+
+	it('gives a folder picked with no chat open to the next new chat only', async () => {
+		const { chat } = await initWith([]);
+		chat.setDefaultWorkingDir('/projects');
+
+		chat.setWorkingDir('/once');
+		chat.createConversation();
+		expect(chat.getWorkingDir()).toBe('/once');
+		chat.createConversation();
+		expect(chat.getWorkingDir()).toBe('/projects');
 	});
 });
 
