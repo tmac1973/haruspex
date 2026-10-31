@@ -664,6 +664,35 @@ mod tests {
     }
 
     #[test]
+    fn githubs_default_tools_match_the_pinned_server() {
+        // Names from github-mcp-server v1.12.0's README, all read-only. A
+        // version bump that renames a tool (get_issue became issue_read)
+        // otherwise hides it from the model without any error.
+        let entry = companion_entry("github");
+        let Acquisition::Binary { version, .. } = &entry.acquisition else {
+            panic!("github is a binary acquisition");
+        };
+        assert_eq!(
+            version, "v1.12.0",
+            "re-check these names against the new README"
+        );
+        assert_eq!(
+            entry.default_tools,
+            [
+                "search_repositories",
+                "search_code",
+                "search_issues",
+                "get_file_contents",
+                "list_issues",
+                "issue_read",
+                "search_pull_requests",
+                "list_pull_requests",
+                "pull_request_read",
+            ]
+        );
+    }
+
+    #[test]
     fn blenders_optional_keys_are_marked_optional() {
         // Asset-service keys are useful to have and useless to require; a
         // required-but-blank secret would make the server unstartable.
