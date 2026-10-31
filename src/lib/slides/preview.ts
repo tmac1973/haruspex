@@ -2,6 +2,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { logDebug } from '#lib/debugLog.ts';
 import type { ToolContext, ToolExecOutput } from '#lib/agent/tools/types.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { normalizeOrientation, normalizeTheme } from '#lib/slides/prepare.ts';
+import type { SlideTheme } from '#lib/slides/themes.ts';
+import type { SlideOrientation } from '#lib/slides/types.ts';
 
 /**
  * The preview `fs_write_slides` shows a model that can see images: the deck
@@ -14,6 +17,8 @@ import { errMessage } from '#lib/utils/error.ts';
  * file in pieces would lose all but the last. A deck the model has seen may
  * be written again, a couple of times, if the new one keeps most of its
  * slides: a fix keeps their titles, and a second piece of a deck doesn't.
+ * A rewrite keeps the deck's theme and orientation unless it names others:
+ * a model fixing a slide left `theme` out and turned a dark deck light.
  */
 
 /** Rewrites a previewed deck may have in one turn. */
@@ -60,9 +65,16 @@ export function previewText(preview: DeckPreview, relPath: string, canRewrite: b
 	);
 }
 
+/** How a deck looks: what a rewrite keeps unless it names another. */
+export interface DeckLook {
+	theme: SlideTheme;
+	orientation: SlideOrientation;
+}
+
 interface Previewed {
 	titles: string[];
 	rewrites: number;
+	look: DeckLook;
 }
 
 /** Decks previewed this turn, by path, keyed on the turn's own write set. */
@@ -79,11 +91,38 @@ function turnMap(turn: Set<string>): Map<string, Previewed> {
 
 const norm = (title: string) => title.trim().toLowerCase();
 
-/** Note that the deck at `path`, with these slide titles, was shown to the model. */
-export function notePreview(turn: Set<string>, path: string, titles: string[]): void {
+/** Note that the deck at `path`, with these slide titles and this look, was
+ *  shown to the model. */
+export function notePreview(
+	turn: Set<string>,
+	path: string,
+	titles: string[],
+	look: DeckLook
+): void {
 	const map = turnMap(turn);
 	const rewrites = map.get(path)?.rewrites ?? 0;
-	map.set(path, { titles: titles.map(norm), rewrites });
+	map.set(path, { titles: titles.map(norm), rewrites, look });
+}
+
+const named = (value: unknown) => typeof value === 'string' && value.trim().length > 0;
+
+/**
+ * The look a write asks for. A rewrite of a previewed deck (`previous`)
+ * keeps its theme and orientation where the arguments leave them out.
+ */
+export function deckLook(args: Record<string, unknown>, previous?: DeckLook): DeckLook {
+	return {
+		theme: previous && !named(args.theme) ? previous.theme : normalizeTheme(args.theme),
+		orientation:
+			previous && !named(args.orientation)
+				? previous.orientation
+				: normalizeOrientation(args.orientation)
+	};
+}
+
+/** The look of the deck previewed at `path` this turn, if there was one. */
+export function previewedLook(turn: Set<string>, path: string): DeckLook | undefined {
+	return previewed.get(turn)?.get(path)?.look;
 }
 
 /** Whether a deck previewed at `path` may be written again with these titles:
@@ -117,7 +156,8 @@ export async function attachPreview(
 	ctx: ToolContext,
 	workdir: string,
 	path: string,
-	titles: string[]
+	titles: string[],
+	look: DeckLook
 ): Promise<ToolExecOutput> {
 	if (!out.result.startsWith('Wrote:')) return out;
 	// One batch of images at a time: more crashes the inference server
@@ -128,7 +168,7 @@ export async function attachPreview(
 	preview.sheets.forEach((dataUrl, i) => {
 		ctx.pendingImages.push({ path: `${path}#sheet${i + 1}`, dataUrl });
 	});
-	notePreview(ctx.filesWrittenThisTurn, path, titles);
+	notePreview(ctx.filesWrittenThisTurn, path, titles, look);
 	out.result += previewText(preview, path, rewritesLeft(ctx.filesWrittenThisTurn, path) > 0);
 	return out;
 }

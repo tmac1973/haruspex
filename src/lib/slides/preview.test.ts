@@ -1,12 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import {
 	MAX_REWRITES,
+	deckLook,
 	mayRewrite,
 	notePreview,
 	noteRewrite,
 	previewText,
-	rewritesLeft
+	previewedLook,
+	rewritesLeft,
+	type DeckLook
 } from './preview';
+
+const look: DeckLook = { theme: 'dark', orientation: 'portrait' };
 
 describe('mayRewrite', () => {
 	const titles = ['Intro', 'Numbers', 'Plan', 'End'];
@@ -17,7 +22,7 @@ describe('mayRewrite', () => {
 
 	it('allows a deck that keeps at least half its titles, ignoring case and spaces', () => {
 		const turn = new Set<string>();
-		notePreview(turn, 'd.pptx', titles);
+		notePreview(turn, 'd.pptx', titles, look);
 		expect(mayRewrite(turn, 'd.pptx', [' intro ', 'NUMBERS', 'New one', 'Another'])).toBe(true);
 		expect(mayRewrite(turn, 'd.pptx', ['Intro', 'Something', 'Else', 'Entirely'])).toBe(false);
 		expect(mayRewrite(turn, 'other.pptx', titles)).toBe(false);
@@ -25,20 +30,47 @@ describe('mayRewrite', () => {
 
 	it('keeps each turn apart', () => {
 		const turn = new Set<string>();
-		notePreview(turn, 'd.pptx', titles);
+		notePreview(turn, 'd.pptx', titles, look);
 		expect(mayRewrite(new Set(), 'd.pptx', titles)).toBe(false);
 	});
 
 	it('stops after the last rewrite, and a new preview doesn’t reset the count', () => {
 		const turn = new Set<string>();
-		notePreview(turn, 'd.pptx', titles);
+		notePreview(turn, 'd.pptx', titles, look);
 		for (let i = 0; i < MAX_REWRITES; i++) {
 			expect(mayRewrite(turn, 'd.pptx', titles)).toBe(true);
 			noteRewrite(turn, 'd.pptx');
-			notePreview(turn, 'd.pptx', titles);
+			notePreview(turn, 'd.pptx', titles, look);
 		}
 		expect(rewritesLeft(turn, 'd.pptx')).toBe(0);
 		expect(mayRewrite(turn, 'd.pptx', titles)).toBe(false);
+	});
+});
+
+describe('deckLook', () => {
+	it('takes what the arguments name, light and landscape when they name nothing', () => {
+		expect(deckLook({ theme: 'Warm', orientation: 'portrait' })).toEqual({
+			theme: 'warm',
+			orientation: 'portrait'
+		});
+		expect(deckLook({})).toEqual({ theme: 'light', orientation: 'landscape' });
+	});
+
+	it('keeps a previewed deck’s look where a rewrite leaves it out', () => {
+		expect(deckLook({}, look)).toEqual(look);
+		expect(deckLook({ theme: ' ' }, look)).toEqual(look);
+		expect(deckLook({ theme: 'bold' }, look)).toEqual({ theme: 'bold', orientation: 'portrait' });
+		expect(deckLook({ orientation: 'landscape' }, look)).toEqual({
+			theme: 'dark',
+			orientation: 'landscape'
+		});
+	});
+
+	it('remembers the look of the deck previewed at a path', () => {
+		const turn = new Set<string>();
+		expect(previewedLook(turn, 'd.pptx')).toBeUndefined();
+		notePreview(turn, 'd.pptx', ['A'], look);
+		expect(previewedLook(turn, 'd.pptx')).toEqual(look);
 	});
 });
 
