@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.2.15](https://github.com/tmac1973/haruspex/compare/v0.2.14...v0.2.15) (2026-10-31)
+
+
+### Features
+
+* **chat:** set the folder new chats start in from Settings → Chat ([#822](https://github.com/tmac1973/haruspex/issues/822)) ([a31022d](https://github.com/tmac1973/haruspex/commit/a31022dc3c590e803c2b31e5b947fd77f4c0e84c))
+* **slides:** build .pptx decks with PptxGenJS, in landscape or portrait ([#818](https://github.com/tmac1973/haruspex/issues/818)) ([8d35927](https://github.com/tmac1973/haruspex/commit/8d3592732705b9eec2bce2ea6a3055dad47589a3))
+* **slides:** native charts and tables ([#820](https://github.com/tmac1973/haruspex/issues/820)) ([fad193e](https://github.com/tmac1973/haruspex/commit/fad193e7388a3b71ca879bbd70ff62b2a790ee35))
+* **slides:** show the model its deck, rendered by LibreOffice, so it can fix it ([#821](https://github.com/tmac1973/haruspex/issues/821)) ([55545a0](https://github.com/tmac1973/haruspex/commit/55545a0f4fb6d3f199447c95a55a9d25f18653f3))
+* **slides:** themes, seven layouts, speaker notes, and refusing decks that won't fit ([#819](https://github.com/tmac1973/haruspex/issues/819)) ([2154fff](https://github.com/tmac1973/haruspex/commit/2154fff80f4f53c7d736b945ddc18e9154f23d62))
+
+
+### Bug Fixes
+
+* **agent:** send a tool's pictures after its result, not on the user's message ([#825](https://github.com/tmac1973/haruspex/issues/825)) ([e603868](https://github.com/tmac1973/haruspex/commit/e603868af2447bd336f8f284a14339d4a75b299a))
+* **slides:** a rewrite of a previewed deck keeps its theme and orientation ([#826](https://github.com/tmac1973/haruspex/issues/826)) ([62455d5](https://github.com/tmac1973/haruspex/commit/62455d5267052baa42b59b64ffd35c69e0614717))
+* **slides:** an over-full slide's refusal says how many lines fit ([#827](https://github.com/tmac1973/haruspex/issues/827)) ([3fd2130](https://github.com/tmac1973/haruspex/commit/3fd213074c36f89a8b51dac1223740d893964bc3))
+* **slides:** bold and pictures written as Markdown, matching column sizes, and axis separators ([#823](https://github.com/tmac1973/haruspex/issues/823)) ([5dda589](https://github.com/tmac1973/haruspex/commit/5dda5897c01d012dd6227e096c17cb6a5b4988bf))
+* **slides:** draw a cover's picture, and keep a content slide's subtitle ([#824](https://github.com/tmac1973/haruspex/issues/824)) ([75fdc25](https://github.com/tmac1973/haruspex/commit/75fdc25c8628fc92106f32a4bc09795426178301))
+* **slides:** portrait decks read on a phone: larger type, raised lists, stacked columns as one ([#829](https://github.com/tmac1973/haruspex/issues/829)) ([6f37ca0](https://github.com/tmac1973/haruspex/commit/6f37ca05e50871ad6ed8f447d85c0a681fa2d861))
+
 ## [0.2.14](https://github.com/tmac1973/haruspex/compare/v0.2.13...v0.2.14) (2026-10-30)
 
 
