@@ -28,8 +28,9 @@ import {
 	normalizeTheme,
 	settleLayout
 } from '#lib/slides/prepare.ts';
+import { SLIDE_SCHEMA } from '#lib/slides/schema.ts';
+import { prepareVisuals, visualTexts } from '#lib/slides/visuals.ts';
 import { SLIDE_THEMES } from '#lib/slides/themes.ts';
-import { SLIDE_LAYOUTS } from '#lib/slides/types.ts';
 import type { Slide } from '#lib/slides/types.ts';
 
 /**
@@ -457,12 +458,14 @@ function sheetMarkupError(rows: unknown[][], sheetNum: number): string | null {
 	return null;
 }
 
-/** The first title, subtitle, bullet or note holding call markup. */
+/** The first title, subtitle, bullet, note, or chart or table text holding
+ *  call markup. */
 function slideMarkupError(slide: Record<string, unknown>, num: number): string | null {
 	const bullets = [slide.bullets, slide.right].flatMap((b) =>
 		Array.isArray(b) ? b.map(bulletText) : []
 	);
-	for (const text of [slide.title, slide.subtitle, slide.notes, ...bullets]) {
+	const texts = [slide.title, slide.subtitle, slide.notes, ...bullets, ...visualTexts(slide)];
+	for (const text of texts) {
 		const err = callMarkupError(`Slide ${num}`, text);
 		if (err) return err;
 	}
@@ -762,6 +765,8 @@ function prepareSlides(raw: unknown): { slides?: unknown[]; error?: string } {
 			};
 		}
 		normalizeSlide(slide);
+		const visualError = prepareVisuals(slide, num);
+		if (visualError) return { error: visualError };
 
 		const markupError = slideMarkupError(slide, num);
 		if (markupError) return { error: markupError };
@@ -832,56 +837,6 @@ function slidesWriteExecutor() {
 		return write(pptxWrite(built, workdir), {});
 	};
 }
-
-// Slide schema for fs_write_slides (.pptx and .odp).
-const SLIDE_SCHEMA = {
-	type: 'array' as const,
-	description: 'One object per slide.',
-	items: {
-		type: 'object' as const,
-		properties: {
-			title: { type: 'string' as const, description: 'Short title (~8 words).' },
-			layout: {
-				type: 'string' as const,
-				enum: [...SLIDE_LAYOUTS],
-				description:
-					'content (default): bullets, optional image. cover: the opening slide. section: a divider. two-column: bullets left, right on the right. image: the image fills the slide. quote: title is the quote, subtitle who said it. stat: title is a number, subtitle what it means.'
-			},
-			subtitle: {
-				type: 'string' as const,
-				description: 'Line under a cover, section or image title.'
-			},
-			bullets: {
-				type: 'array' as const,
-				description: 'Strings, or {"text", "level": 0-2} for nested bullets.',
-				items: {
-					oneOf: [
-						{ type: 'string' as const },
-						{
-							type: 'object' as const,
-							properties: {
-								text: { type: 'string' as const },
-								level: { type: 'integer' as const, minimum: 0, maximum: 2 }
-							},
-							required: ['text']
-						}
-					]
-				}
-			},
-			right: {
-				type: 'array' as const,
-				description: 'two-column: the right column.',
-				items: { type: 'string' as const }
-			},
-			image: {
-				type: 'string' as const,
-				description: 'Image path in the working directory (png/jpg/gif).'
-			},
-			notes: { type: 'string' as const, description: 'Speaker notes.' }
-		},
-		required: ['title']
-	}
-};
 
 // --- Registration ---
 
@@ -978,7 +933,7 @@ registerTool({
 		function: {
 			name: 'fs_write_slides',
 			description:
-				"Create a PowerPoint (.pptx) or LibreOffice (.odp) slide deck. The path's extension picks the format; use .odp only when the user asks for it. Open with a cover, vary the layouts, and keep each slide to 3–6 short bullets.",
+				"Create a PowerPoint (.pptx) or LibreOffice (.odp) slide deck. The path's extension picks the format; use .odp only when the user asks for it. Open with a cover, vary the layouts, and keep each slide to 3–6 short bullets. Pass numbers as a chart or table, not a picture of one.",
 			parameters: {
 				type: 'object',
 				properties: {

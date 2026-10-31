@@ -33,7 +33,8 @@ describe.each(['landscape', 'portrait'] as const)('%s', (orientation) => {
 	const page = pageSize(orientation);
 
 	it('keeps every box on the page', () => {
-		const withImage = bodyBoxes(orientation, true);
+		const withImage = bodyBoxes(orientation, 'image');
+		const withData = bodyBoxes(orientation, 'data');
 		const columns = columnBoxes(orientation);
 		for (const box of [
 			...Object.values(sectionBoxes(orientation)),
@@ -44,9 +45,11 @@ describe.each(['landscape', 'portrait'] as const)('%s', (orientation) => {
 			titleBox(orientation),
 			ruleBox(orientation),
 			numberBox(orientation),
-			bodyBoxes(orientation, false).bullets,
+			bodyBoxes(orientation).bullets,
 			withImage.bullets,
-			withImage.image!,
+			withImage.visual!,
+			withData.bullets,
+			withData.visual!,
 			columns.left,
 			columns.right
 		]) {
@@ -57,7 +60,7 @@ describe.each(['landscape', 'portrait'] as const)('%s', (orientation) => {
 	it('puts the body under the title and its rule, and above the slide number', () => {
 		const rule = ruleBox(orientation);
 		expect(rule.y).toBeGreaterThan(titleBox(orientation).y + titleBox(orientation).h);
-		const body = bodyBoxes(orientation, false).bullets;
+		const body = bodyBoxes(orientation).bullets;
 		expect(body.y).toBeGreaterThan(rule.y + rule.h);
 		expect(body.y + body.h).toBeLessThanOrEqual(numberBox(orientation).y);
 	});
@@ -82,18 +85,33 @@ describe.each(['landscape', 'portrait'] as const)('%s', (orientation) => {
 	});
 });
 
-describe('a slide with an image', () => {
+describe('a slide with an image, chart or table', () => {
 	it('puts it beside the bullets in landscape', () => {
-		const { bullets, image } = bodyBoxes('landscape', true);
-		expect(image!.x).toBeGreaterThan(bullets.x + bullets.w);
-		expect(image!.y).toBe(bullets.y);
+		const { bullets, visual } = bodyBoxes('landscape', 'image');
+		expect(visual!.x).toBeGreaterThan(bullets.x + bullets.w);
+		expect(visual!.y).toBe(bullets.y);
 	});
 
 	it('puts it above the bullets in portrait, at the body’s full width', () => {
-		const { bullets, image } = bodyBoxes('portrait', true);
-		expect(image!.y + image!.h).toBeLessThan(bullets.y);
-		expect(image!.w).toBe(bullets.w);
-		expect(image!.w).toBe(bodyBoxes('portrait', false).bullets.w);
+		const { bullets, visual } = bodyBoxes('portrait', 'image');
+		expect(visual!.y + visual!.h).toBeLessThan(bullets.y);
+		expect(visual!.w).toBe(bullets.w);
+		expect(visual!.w).toBe(bodyBoxes('portrait').bullets.w);
+	});
+
+	it('gives a chart or table more room than a picture', () => {
+		for (const orientation of ['landscape', 'portrait'] as const) {
+			const area = (b: { w: number; h: number }) => b.w * b.h;
+			expect(area(bodyBoxes(orientation, 'data').visual!)).toBeGreaterThan(
+				area(bodyBoxes(orientation, 'image').visual!)
+			);
+		}
+	});
+
+	it('gives it the whole body when there are no bullets', () => {
+		const whole = bodyBoxes('landscape').bullets;
+		expect(bodyBoxes('landscape', 'data', false).visual).toEqual(whole);
+		expect(bodyBoxes('portrait', 'image', false).visual).toEqual(bodyBoxes('portrait').bullets);
 	});
 });
 

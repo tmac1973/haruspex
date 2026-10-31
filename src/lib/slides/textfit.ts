@@ -66,20 +66,29 @@ export function textHeight(
 }
 
 /**
- * The first step at which the paragraphs fit `box`, and how full the box is
- * there (`ratio` over 1 means they still don't fit at the smallest step).
+ * The first step at which something `height(scale)` inches tall fits in
+ * `room` inches, and how full the room is there (`ratio` over 1 means it
+ * still doesn't fit at the smallest step).
  */
+export function fitHeight(
+	height: (scale: number) => number,
+	room: number
+): { scale: number; ratio: number } {
+	let ratio = Infinity;
+	for (const scale of SHRINK_STEPS) {
+		ratio = height(scale) / room;
+		if (ratio <= 1) return { scale, ratio };
+	}
+	return { scale: SHRINK_STEPS[SHRINK_STEPS.length - 1], ratio };
+}
+
+/** The first step at which the paragraphs fit `box` (see `fitHeight`). */
 export function fitScale(
 	paras: Paragraph[],
 	box: Box,
 	spaceBeforePt = 0
 ): { scale: number; ratio: number } {
-	let ratio = Infinity;
-	for (const scale of SHRINK_STEPS) {
-		ratio = textHeight(paras, box.w, scale, spaceBeforePt) / box.h;
-		if (ratio <= 1) return { scale, ratio };
-	}
-	return { scale: SHRINK_STEPS[SHRINK_STEPS.length - 1], ratio };
+	return fitHeight((scale) => textHeight(paras, box.w, scale, spaceBeforePt), box.h);
 }
 
 /** Text that won't fit, found while a deck was built. Its message is the

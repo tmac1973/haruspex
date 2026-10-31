@@ -39,6 +39,51 @@ describe('foldForOdp', () => {
 		});
 	});
 
+	it('lists a chart’s numbers as bullets after the slide’s own', () => {
+		const { slides } = foldForOdp([
+			{
+				title: 'T',
+				layout: 'content',
+				bullets: ['Up again'],
+				chart: { type: 'bar', labels: ['Q1', 'Q2'], series: [{ name: 'Sales', values: [3, 5] }] }
+			},
+			{
+				title: 'U',
+				layout: 'content',
+				chart: {
+					type: 'line',
+					labels: ['Q1'],
+					series: [
+						{ name: 'Sales', values: [3] },
+						{ name: 'Costs', values: [2] }
+					]
+				}
+			}
+		]);
+		expect(slides[0]).toStrictEqual({
+			title: 'T',
+			layout: 'content',
+			bullets: ['Up again', 'Q1: 3', 'Q2: 5']
+		});
+		expect(slides[1].bullets).toEqual(['Q1: Sales 3, Costs 2']);
+	});
+
+	it('lists a table as its header, then its rows under it', () => {
+		const { slides, dropped } = foldForOdp([
+			{
+				title: 'T',
+				layout: 'content',
+				table: [
+					['Name', 'Age'],
+					['Ada', '36']
+				]
+			}
+		]);
+		expect(slides[0].bullets).toEqual(['Name · Age', { text: 'Ada · 36', level: 1 }]);
+		expect(slides[0]).not.toHaveProperty('table');
+		expect(dropped).toEqual(['tables were listed as bullets']);
+	});
+
 	it('names the layouts it simplified, once each, and dropped notes', () => {
 		const { slides, dropped } = foldForOdp([
 			{ title: 'A', layout: 'cover' },
