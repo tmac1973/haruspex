@@ -29,7 +29,7 @@ Ask for one by name, or describe the feel you want. You can't give it your own t
 
 Each slide has one layout, and the assistant mixes them:
 
-- **cover**: the opening slide, with the title and a tagline on a coloured background.
+- **cover**: the opening slide, with the title and a tagline on a coloured background. Given a picture, it becomes an image slide.
 - **section**: a divider between parts of the talk.
 - **content**: a title and bullets, with a picture beside them if there is one.
 - **two-column**: two lists, for a comparison. Portrait stacks them.

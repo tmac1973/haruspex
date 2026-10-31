@@ -147,6 +147,9 @@ export function settleLayout(slide: Record<string, unknown>): void {
 	const hasData = slide.chart !== undefined || slide.table !== undefined;
 	if (hasData) slide.layout = 'content';
 	if (slide.layout === 'image' && slide.image === undefined) delete slide.layout;
+	// A cover draws no picture: one with a picture is an image slide, its
+	// title on the strip.
+	if (slide.layout === 'cover' && slide.image !== undefined) slide.layout = 'image';
 	settleColumns(slide);
 	const layout = slide.layout ?? 'content';
 	if (
@@ -157,6 +160,19 @@ export function settleLayout(slide: Record<string, unknown>): void {
 	) {
 		slide.layout = 'section';
 	}
+	keepSubtitle(slide);
+}
+
+/** A content or two-column slide draws no subtitle, so a model's line there
+ *  becomes the first bullet instead of vanishing. */
+function keepSubtitle(slide: Record<string, unknown>): void {
+	const layout = slide.layout ?? 'content';
+	if (layout !== 'content' && layout !== 'two-column') return;
+	if (typeof slide.subtitle === 'string' && slide.subtitle.trim().length > 0) {
+		const bullets = Array.isArray(slide.bullets) ? slide.bullets : [];
+		slide.bullets = [slide.subtitle.trim(), ...bullets];
+	}
+	delete slide.subtitle;
 }
 
 /** Portrait when the model asks for it by either name; landscape otherwise,
