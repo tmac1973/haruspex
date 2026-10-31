@@ -59,7 +59,10 @@ function stripComments(src: string): string {
 }
 
 const FORBIDDEN_TYPES = ['AssetSpec', 'AssetEntry', 'AnchorRef', 'AnchorRecipe'];
-const FORBIDDEN_WORDS = ['spec', 'anchor', 'entry', 'asset'];
+// Not `entry`: an image model entry (`ImageModelEntry`, one model on one
+// server) is this layer's own word. `AssetEntry` above still keeps the asset
+// one out.
+const FORBIDDEN_WORDS = ['spec', 'anchor', 'asset'];
 
 describe('the image layer knows nothing about assets', () => {
 	const files = sourceFiles(ROOT);

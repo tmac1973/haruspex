@@ -12,7 +12,8 @@
  * pass the asset job's requests through unchanged (phase 08).
  */
 import { resolveImageBackend, type ImageJobHandle } from '#lib/image/backend.ts';
-import { getImageBackend } from '#lib/image/registry.ts';
+import { backendForEntry } from '#lib/image/registry.ts';
+import { entryForHandle } from '#lib/image/legacy.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import {
 	ImageBackendError,
@@ -206,7 +207,8 @@ export async function resumeForTool(
 	handle: ImageJobHandle,
 	opts: ForToolOptions = {}
 ): Promise<ToolImage> {
-	const backend = getImageBackend(handle.backend);
+	const entry = entryForHandle(handle);
+	const backend = entry ? backendForEntry(entry) : undefined;
 	if (!backend?.resume) {
 		throw new ImageBackendError('unconfigured', `${handle.backend} can't pick a job up again.`);
 	}

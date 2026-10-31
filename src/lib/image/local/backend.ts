@@ -13,13 +13,13 @@
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
 import type { ImageEngineStatus } from '#lib/ipc/gen/ImageEngineStatus.ts';
-import { getSettings } from '#lib/stores/settings.ts';
-import { registerImageBackend } from '#lib/image/registry.ts';
+import { legacyBackend, registerImageBackendKind } from '#lib/image/registry.ts';
 import type { ImageBackend, GenerateOptions } from '#lib/image/backend.ts';
 import {
 	ImageBackendError,
 	type ImageBackendCapabilities,
 	type ImageInput,
+	type ImageModelEntry,
 	type ImageRequest,
 	type ImageResult
 } from '#lib/image/types.ts';
@@ -76,10 +76,11 @@ async function canUpscale(): Promise<boolean> {
 /** An edit's pictures as base64, or undefined for a drawing; throws when it can't edit. */
 async function editReferences(
 	req: ImageRequest,
-	family: LocalFamily
+	family: LocalFamily,
+	id: string
 ): Promise<string[] | undefined> {
 	if (!req.edit) return undefined;
-	if (family !== 'qwen21' || !(await canEdit(modelId()))) {
+	if (family !== 'qwen21' || !(await canEdit(id))) {
 		throw new ImageBackendError(
 			'unconfigured',
 			'The bundled engine edits only with Qwen-Image 2.1 and its editing weights — ' +
@@ -87,10 +88,6 @@ async function editReferences(
 		);
 	}
 	return Promise.all(req.edit.images.map(base64Of));
-}
-
-function modelId(): string {
-	return (getSettings().imageLocalModelId ?? '').trim();
 }
 
 /**
@@ -122,8 +119,7 @@ export function engineSetupMessage(kind: string | undefined, detail: string): st
 	}
 }
 
-async function ensureRunning(): Promise<LocalFamily> {
-	const id = modelId();
+async function ensureRunning(id: string): Promise<LocalFamily> {
 	const family = familyOfId(id);
 	if (!family) {
 		throw new ImageBackendError('unconfigured', 'No image model is configured — Settings → Image.');
@@ -194,123 +190,140 @@ async function tile(
 	});
 }
 
-export const localBackend: ImageBackend = {
-	kind: 'local',
+/**
+ * The backend for one bundled-engine entry: its catalogue model. The engine is
+ * one process, so two entries take turns, restarting it between them.
+ */
+function localFor(entry: ImageModelEntry): ImageBackend {
+	const modelId = () => entry.model.trim();
+	return {
+		kind: 'local',
 
-	async capabilities(): Promise<ImageBackendCapabilities> {
-		const id = modelId();
-		return declaredCapabilities(familyOfId(id), await canEdit(id), await canUpscale());
-	},
+		async capabilities(): Promise<ImageBackendCapabilities> {
+			const id = modelId();
+			return declaredCapabilities(familyOfId(id), await canEdit(id), await canUpscale());
+		},
 
-	async probe() {
-		const st = await engineStatus();
-		if (!st.available) {
-			return {
-				ok: false,
-				detail: 'No image engine is bundled for this platform.'
-			};
-		}
-		const id = modelId();
-		if (!familyOfId(id)) {
-			return { ok: false, detail: 'No model is selected — Settings → Image.' };
-		}
-		if (st.status.type === 'Ready') {
-			return { ok: true, detail: `Running, ${st.model ?? id}.` };
-		}
-		if (st.status.type === 'Error') {
-			return { ok: false, detail: st.status.message ?? 'The engine reported an error.' };
-		}
-		// Not an error: the engine starts on demand, and saying so is more
-		// useful than a red cross for a thing that has not been asked to run.
-		return { ok: true, detail: `Ready to start (${FIXTURE.version}).` };
-	},
+		async probe() {
+			const st = await engineStatus();
+			if (!st.available) {
+				return {
+					ok: false,
+					detail: 'No image engine is bundled for this platform.'
+				};
+			}
+			const id = modelId();
+			if (!familyOfId(id)) {
+				return { ok: false, detail: 'No model is selected — Settings → Image.' };
+			}
+			if (st.status.type === 'Ready') {
+				return { ok: true, detail: `Running, ${st.model ?? id}.` };
+			}
+			if (st.status.type === 'Error') {
+				return { ok: false, detail: st.status.message ?? 'The engine reported an error.' };
+			}
+			// Not an error: the engine starts on demand, and saying so is more
+			// useful than a red cross for a thing that has not been asked to run.
+			return { ok: true, detail: `Ready to start (${FIXTURE.version}).` };
+		},
 
-	async generate(req: ImageRequest, opts: GenerateOptions = {}): Promise<ImageResult> {
-		const family = await ensureRunning();
-		opts.onProgress?.({ phase: 'running' });
+		generate: (req, opts) => generateWith(entry, req, opts),
+		upscale: (input, opts) => upscale(modelId(), input, opts)
+	};
+}
 
-		const sampler = req.sampler ?? { ...FAMILY_SAMPLER[family] };
-		const seamless = Boolean(req.seamless);
-		const references = await editReferences(req, family);
-		const repaint = req.inpaint
-			? {
-					image: await base64Of(req.inpaint.image),
-					mask: await base64Of(req.inpaint.mask),
-					strength: INPAINT_STRENGTH
-				}
-			: undefined;
-		// An edit or inpaint draws from its pictures, so no clear start or RGBA phrase.
-		const { prompt, clearStart } =
-			references || repaint
-				? { prompt: req.prompt, clearStart: undefined }
-				: await transparentStart(family, req);
-		const { route, body } = buildRequest({
-			...req,
-			prompt,
+/** One picture from the bundled engine, started on `entry`'s model. */
+async function generateWith(
+	entry: ImageModelEntry,
+	req: ImageRequest,
+	opts: GenerateOptions = {}
+): Promise<ImageResult> {
+	const family = await ensureRunning(entry.model.trim());
+	opts.onProgress?.({ phase: 'running' });
+
+	const sampler = req.sampler ?? { ...FAMILY_SAMPLER[family] };
+	const seamless = Boolean(req.seamless);
+	const references = await editReferences(req, family, entry.model.trim());
+	const repaint = req.inpaint
+		? {
+				image: await base64Of(req.inpaint.image),
+				mask: await base64Of(req.inpaint.mask),
+				strength: INPAINT_STRENGTH
+			}
+		: undefined;
+	// An edit or inpaint draws from its pictures, so no clear start or RGBA phrase.
+	const { prompt, clearStart } =
+		references || repaint
+			? { prompt: req.prompt, clearStart: undefined }
+			: await transparentStart(family, req);
+	const { route, body } = buildRequest({
+		...req,
+		prompt,
+		sampler,
+		clearStart,
+		references,
+		repaint
+	});
+	const started = Date.now();
+	const payload = await call(route, body, opts.signal);
+
+	let images = imagesFrom(payload);
+	if (images.length === 0) {
+		throw new ImageBackendError('rejected', `The image engine returned no image from ${route}.`);
+	}
+	const seed = seedFrom(payload, req.seed ?? -1);
+	let seamFailed: string | undefined;
+	if (seamless) {
+		opts.onProgress?.({ phase: 'running', detail: 'Repainting the seams' });
+		try {
+			images = [await tile(images[0], { ...req, prompt, sampler, seed }, opts.signal)];
+		} catch (e) {
+			if (opts.signal?.aborted) throw e;
+			// Keep the texture the engine did draw. Losing it over the seam
+			// pass cost a run all nine of its textures.
+			seamFailed = errMessage(e);
+		}
+	}
+
+	return {
+		images: images.map((bytes) => ({
+			bytes,
+			mimeType: 'image/png',
+			width: req.width,
+			height: req.height
+		})),
+		meta: {
+			seed,
+			model: entry.model.trim(),
+			backend: 'local',
 			sampler,
-			clearStart,
-			references,
-			repaint
-		});
-		const started = Date.now();
-		const payload = await call(route, body, opts.signal);
-
-		let images = imagesFrom(payload);
-		if (images.length === 0) {
-			throw new ImageBackendError('rejected', `The image engine returned no image from ${route}.`);
+			// Echoed as RESOLVED: this build takes LoRAs from a directory
+			// rather than per request, so nothing was applied here and
+			// saying otherwise would put a lie in the anchor recipe.
+			loras: [],
+			durationMs: Date.now() - started,
+			...(seamFailed ? { seamFailed } : {})
 		}
-		const seed = seedFrom(payload, req.seed ?? -1);
-		let seamFailed: string | undefined;
-		if (seamless) {
-			opts.onProgress?.({ phase: 'running', detail: 'Repainting the seams' });
-			try {
-				images = [await tile(images[0], { ...req, prompt, sampler, seed }, opts.signal)];
-			} catch (e) {
-				if (opts.signal?.aborted) throw e;
-				// Keep the texture the engine did draw. Losing it over the seam
-				// pass cost a run all nine of its textures.
-				seamFailed = errMessage(e);
-			}
-		}
-
-		return {
-			images: images.map((bytes) => ({
-				bytes,
-				mimeType: 'image/png',
-				width: req.width,
-				height: req.height
-			})),
-			meta: {
-				seed,
-				model: modelId(),
-				backend: 'local',
-				sampler,
-				// Echoed as RESOLVED: this build takes LoRAs from a directory
-				// rather than per request, so nothing was applied here and
-				// saying otherwise would put a lie in the anchor recipe.
-				loras: [],
-				durationMs: Date.now() - started,
-				...(seamFailed ? { seamFailed } : {})
-			}
-		};
-	},
-
-	upscale
-};
+	};
+}
 
 /**
  * `/sdcpp/v1/upscale`, with the Real-ESRGAN model the engine was started with
  * (`--hires-upscalers-dir`). The engine starts on the chosen model first, as
  * the server needs one loaded, and restarts if the upscaler came after it.
  */
-async function upscale(input: ImageInput, opts: GenerateOptions = {}): Promise<Uint8Array> {
+async function upscale(
+	id: string,
+	input: ImageInput,
+	opts: GenerateOptions = {}
+): Promise<Uint8Array> {
 	if (!(await canUpscale())) {
 		throw new ImageBackendError(
 			'unconfigured',
 			'The upscaler is not downloaded — Settings → Image → Bundled engine.'
 		);
 	}
-	await ensureRunning();
+	await ensureRunning(id);
 	opts.onProgress?.({ phase: 'running', detail: 'Upscaling' });
 	const payload = (await call(ROUTES.upscale, { image: await base64Of(input) }, opts.signal)) as {
 		images?: Array<{ b64_json?: unknown }>;
@@ -323,4 +336,7 @@ async function upscale(input: ImageInput, opts: GenerateOptions = {}): Promise<U
 }
 
 export { ROUTES };
-registerImageBackend(localBackend);
+registerImageBackendKind('local', localFor);
+
+/** Settings → Image's bundled engine as a backend, for what has no entry of its own yet. */
+export const localBackend = legacyBackend('local');
