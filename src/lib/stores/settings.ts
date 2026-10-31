@@ -868,6 +868,8 @@ export interface AppSettings {
 	 * forced to wrap up. Deep research uses at least 25 whatever this is.
 	 */
 	chatMaxIterations: number;
+	/** Chat tab: the folder a new chat starts in; '' for none. */
+	chatDefaultWorkingDir: string;
 	/**
 	 * Max agent-loop iterations for a Shell assistant turn, in both Read-only
 	 * and Full access. Full access used `codeMaxIterations` before this, so
@@ -1090,6 +1092,7 @@ const defaults: AppSettings = {
 	commandMemoryLimitPercent: 50,
 	codeMaxIterations: 40,
 	chatMaxIterations: 10,
+	chatDefaultWorkingDir: '',
 	shellMaxIterations: 40,
 	codeBgLogCapMb: 5,
 	codeSubtasks: 'read',

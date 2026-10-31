@@ -5,7 +5,7 @@ description: What each Settings section holds, its main options and defaults, an
 
 # Settings reference
 
-Settings has eighteen sections. Each lists its main options, defaults and a page with more.
+Each of the 18 sections lists its main options, defaults and a page with more.
 
 ## Open Settings
 
@@ -24,7 +24,7 @@ See the `chat` page.
 
 ## Inference
 
-Where the model runs, which model, context, and defaults for every tab.
+Where the model runs, which model, and defaults for every tab.
 
 - **Inference backend**: Local (Haruspex-managed) (default), Remote server (advanced) or OpenRouter (cloud).
 - **Models**: download and switch local models.
@@ -42,6 +42,7 @@ See the `models` page.
 What only the Chat tab uses.
 
 - **Max steps per turn**: 10.
+- **Default working directory**: none.
 - **Additional system prompt**: empty.
 - **Enable Python sandbox**: on. **Approval prompt**: Once per chat. **Network access**: Internet and local network. **Execution timeout**: 60 seconds.
 - **Pictures in answers** → **Include images in answers**: on.
@@ -61,7 +62,7 @@ See the `memory` page.
 
 ## Skills
 
-Instructions the assistant can load for specific tasks.
+Instructions the assistant loads for specific tasks.
 
 - **When the model uses skills**: Automatic (remote models only).
 - **Skills**: turn single skills on or off; **Open skills folder**.
@@ -91,7 +92,7 @@ See the `search-and-network` page.
 
 ## Network
 
-Proxy settings. Proxies never apply to this computer's own services.
+Proxies. They never apply to this computer's own services.
 
 - **Network Proxy**: None (default) or Manual.
 - **Web Search Proxy**: Network proxy (default), None or Manual.
@@ -184,7 +185,7 @@ See the `guest-chat` page.
 
 ## Remote control
 
-Use your Code sessions from your other computers. Off; port 8788.
+Use your Code sessions from other computers. Off; port 8788.
 
 See the `remote-control` page.
 

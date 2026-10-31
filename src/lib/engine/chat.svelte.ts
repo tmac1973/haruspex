@@ -229,7 +229,7 @@ export async function dispatchChat(op: {
 		}
 		case 'chat.folder': {
 			// A chat's working folder (the open one's without an id), as the
-			// folder button sets it. New chats start in it too.
+			// folder button sets it. New chats start in Settings → Chat's.
 			const id = op.id === undefined ? getActiveConversationId() : find(op.id).id;
 			const path = typeof op.path === 'string' ? op.path.trim() : null;
 			if (path && !(await invoke<boolean>('code_folder_exists', { path, wslDistro: null }))) {

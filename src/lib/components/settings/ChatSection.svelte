@@ -10,7 +10,9 @@
 		MAX_CHAT_MAX_ITERATIONS,
 		type SandboxNetAccess
 	} from '#lib/stores/settings.ts';
+	import { open as openFolderDialog } from '@tauri-apps/plugin-dialog';
 	import { clampInt } from '#lib/utils/clampInt.ts';
+	import { setDefaultWorkingDir } from '#lib/stores/chat.svelte.ts';
 
 	let includeImages = $state(getSettings().includeImages);
 	let keepRecentToolResults = $state(getSettings().keepRecentToolResults);
@@ -20,6 +22,27 @@
 	let sandboxTimeoutSeconds = $state(getSettings().sandboxTimeoutSeconds);
 	let sandboxNetAccess = $state(getSettings().sandboxNetAccess);
 	let chatMaxIterations = $state(getSettings().chatMaxIterations);
+	let defaultWorkingDir = $state(getSettings().chatDefaultWorkingDir);
+
+	async function pickDefaultWorkingDir() {
+		try {
+			const chosen = await openFolderDialog({
+				directory: true,
+				multiple: false,
+				title: 'Default working directory'
+			});
+			if (typeof chosen !== 'string') return;
+			defaultWorkingDir = chosen;
+			setDefaultWorkingDir(chosen);
+		} catch (e) {
+			console.error('Failed to pick directory:', e);
+		}
+	}
+
+	function clearDefaultWorkingDir() {
+		defaultWorkingDir = '';
+		setDefaultWorkingDir(null);
+	}
 
 	function persistChatMaxIterations() {
 		chatMaxIterations = clampInt(
@@ -98,6 +121,26 @@
 			<span>Follow-ups can use what the last turn found, at the cost of more context.</span>
 		</div>
 	</label>
+</section>
+
+<section class="settings-section">
+	<h2>Default working directory</h2>
+	<p
+		class="hint"
+		title="Picking a folder in a chat changes only that chat. With none set here, a new chat has no file access until you pick one."
+	>
+		The folder each new chat starts in.
+	</p>
+	<div class="folder-row">
+		{#if defaultWorkingDir}
+			<code title={defaultWorkingDir}>{defaultWorkingDir}</code>
+			<button class="btn btn-small" onclick={pickDefaultWorkingDir}>Change…</button>
+			<button class="btn btn-small" onclick={clearDefaultWorkingDir}>Clear</button>
+		{:else}
+			<span class="none">None</span>
+			<button class="btn btn-small" onclick={pickDefaultWorkingDir}>Choose folder…</button>
+		{/if}
+	</div>
 </section>
 
 <section class="settings-section">
@@ -216,6 +259,25 @@
 <style>
 	.hint {
 		margin: 0 0 16px 0;
+	}
+
+	.folder-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.folder-row code,
+	.folder-row .none {
+		flex: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.folder-row .none {
+		color: var(--text-secondary);
+		font-size: 0.85rem;
 	}
 
 	/* Global .toggle-row supplies the base style; sections add row padding. */
