@@ -17,6 +17,7 @@ const ORDER = [
 	'lean-mode',
 	'chat',
 	'chat-conversations',
+	'slides',
 	'shell',
 	'code',
 	'code-sessions',

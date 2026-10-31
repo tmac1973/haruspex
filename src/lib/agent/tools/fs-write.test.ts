@@ -41,8 +41,9 @@ describe('isUnderWriteRoot', () => {
 describe('file writer schemas', () => {
 	// Seven per-format writers were 9.4k characters of every Chat turn with a
 	// working folder; the three merged ones replace them. Keep the four
-	// fs_write_* tools a Chat turn sees under this.
-	const BUDGET_CHARS = 4500;
+	// fs_write_* tools a Chat turn sees under this. Raised from 4500 for the
+	// slide deck's themes and layouts.
+	const BUDGET_CHARS = 5100;
 
 	it('fit the budget in a Chat turn with a working folder', async () => {
 		const { getToolSchemas } = await import('#lib/agent/tools/index.ts');
