@@ -48,7 +48,7 @@ The picture sources are good for places, animals, landmarks and general subjects
 
 ## Presentations with images are unreliable
 
-Asking for research and a slide deck with images in one message often fails. Do it in two or three messages: research first, then the presentation. Slides support a title, bullet points and one image.
+Research plus a deck with images in one message often fails. Do it in two or three messages: research first, then the deck. A slide has a title, bullets and one image. Decks are landscape, or portrait for a phone.
 
 ## Image generation problems
 

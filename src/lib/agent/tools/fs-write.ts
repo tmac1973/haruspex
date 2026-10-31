@@ -18,6 +18,9 @@ import { localWriteBlocked } from '#lib/agent/tools/nested-session.ts';
 import type { EditResult } from '#lib/ipc/gen/EditResult.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { buildWriteDiff } from '#lib/code/diff.ts';
+import { buildPptx } from '#lib/slides/pptx.ts';
+import { loadSlideImages } from '#lib/slides/images.ts';
+import type { Slide, SlideOrientation } from '#lib/slides/types.ts';
 
 /**
  * True when a relative write path stays inside `root` (a relative dir prefix).
@@ -198,9 +201,13 @@ export function userCanceledWriteError(relPath: string, command: string): ToolEx
  * shared by all fs_write_* tools. `tool` names the write in what the model
  * reads; `command` is the Rust command that writes the format.
  */
+/** A write that can't be `invoke(command, args)` with JSON args: a slide deck
+ *  goes to Rust as the raw body. Called with the path the user settled on. */
+type RawWrite = (relPath: string, overwrite: boolean) => Promise<unknown>;
+
 async function fsWriteWithConflictCheck(
 	tool: string,
-	command: string,
+	command: string | RawWrite,
 	workdir: string,
 	relPath: string,
 	payload: Record<string, unknown>,
@@ -215,12 +222,16 @@ async function fsWriteWithConflictCheck(
 	if (resolved.kind === 'rejected') return toolResult(toolError(resolved.message));
 	const before = diffAfter === undefined ? undefined : await previousContent(workdir, resolved);
 	try {
-		await invoke(command, {
-			workdir,
-			relPath: resolved.finalPath,
-			...payload,
-			overwrite: resolved.overwrite
-		});
+		if (typeof command === 'string') {
+			await invoke(command, {
+				workdir,
+				relPath: resolved.finalPath,
+				...payload,
+				overwrite: resolved.overwrite
+			});
+		} else {
+			await command(resolved.finalPath, resolved.overwrite);
+		}
 		filesWrittenThisTurn.add(resolved.finalPath);
 		opts.rewritable?.delete(resolved.finalPath);
 		const diag = await lintPythonIfApplicable(workdir, resolved.finalPath);
@@ -812,18 +823,52 @@ function prepareSlides(raw: unknown): { slides?: unknown[]; error?: string } {
 	return { slides: prepared };
 }
 
+/** Portrait when the model asks for it by either name; landscape otherwise,
+ *  as before the choice existed. */
+function normalizeOrientation(raw: unknown): SlideOrientation {
+	const value = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+	return value === 'portrait' || value === 'vertical' ? 'portrait' : 'landscape';
+}
+
+/** Write a built .pptx: the deck is the raw body, and the rest go as headers. */
+function pptxWrite(deck: Uint8Array, workdir: string): RawWrite {
+	return (relPath, overwrite) =>
+		invoke('fs_write_pptx', deck, {
+			headers: {
+				'x-workdir': encodeURIComponent(workdir),
+				'x-rel-path': encodeURIComponent(relPath),
+				'x-overwrite': String(overwrite)
+			}
+		});
+}
+
 function slidesWriteExecutor() {
 	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
 		const choice = slidesCommand(args.path);
 		if ('error' in choice) return toolResult(toolError(choice.error));
 		const { slides, error } = prepareSlides(args.slides);
 		if (error) return toolResult(toolError(error));
+		const orientation = normalizeOrientation(args.orientation);
+		const workdir = fsWorkdir(ctx)!;
+		let command: string | RawWrite = choice.command;
+		let payload: Record<string, unknown> = { slides, orientation };
+		if (choice.command === IPC.fs_write_pptx) {
+			// The .pptx is built here with PptxGenJS; Rust only writes it.
+			try {
+				const deck = slides as Slide[];
+				const built = await buildPptx(deck, orientation, await loadSlideImages(workdir, deck));
+				command = pptxWrite(built, workdir);
+				payload = {};
+			} catch (e) {
+				return toolResult(toolInvokeError('fs_write_slides', e));
+			}
+		}
 		return fsWriteWithConflictCheck(
 			'fs_write_slides',
-			choice.command,
-			fsWorkdir(ctx)!,
+			command,
+			workdir,
 			args.path as string,
-			{ slides },
+			payload,
 			ctx.filesWrittenThisTurn,
 			writeOptions(ctx)
 		);
@@ -971,6 +1016,12 @@ registerTool({
 				type: 'object',
 				properties: {
 					path: { type: 'string', description: 'Relative path ending in .pptx or .odp.' },
+					orientation: {
+						type: 'string',
+						enum: ['landscape', 'portrait'],
+						description:
+							'Pick from where the deck will be seen. "landscape" (16:9, default): a screen, projector or call. "portrait" (9:16): a phone, vertical screen or story; keep bullets short, and an image goes above them.'
+					},
 					slides: SLIDE_SCHEMA
 				},
 				required: ['path', 'slides']

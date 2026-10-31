@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
+import { pngHeader } from '#lib/slides/testImages.ts';
 
 const mocks = vi.hoisted(() => ({
 	invoke: vi.fn(),
@@ -70,7 +72,42 @@ describe('fs_write_slides slide validation', () => {
 		['d.odp', 'fs_write_odp']
 	];
 
+	// A .pptx is built here and reads its pictures before the path check, so
+	// answer by command rather than by call order.
+	beforeEach(() => {
+		mocks.invoke.mockImplementation(
+			invokeRouter(
+				{ fs_path_exists: false, fs_read_bytes: Array.from(pngHeader(40, 30)) },
+				undefined
+			)
+		);
+	});
+
+	/** The slides Rust was sent. Only .odp sends them: a .pptx goes as the
+	 *  built deck, and fs-write.slides.test.ts checks what reaches its builder. */
+	function odpSlides(): { layout?: string; bullets?: unknown }[] {
+		const call = mocks.invoke.mock.calls.find((c) => c[0] === 'fs_write_odp');
+		return (call![1] as { slides: { layout?: string; bullets?: unknown }[] }).slides;
+	}
+
+	it('d.pptx sends a built PowerPoint package with its image', async () => {
+		const out = await call('fs_write_slides', {
+			path: 'd.pptx',
+			orientation: 'portrait',
+			slides: [{ title: 'Chart', bullets: ['a point'], image: 'plot.png' }]
+		});
+		expect(out.result).toBe('Wrote: d.pptx');
+		const write = mocks.invoke.mock.calls.find((c) => c[0] === 'fs_write_pptx')!;
+		const deck = write[1] as Uint8Array;
+		expect(Array.from(deck.subarray(0, 4))).toEqual([0x50, 0x4b, 3, 4]);
+		expect(mocks.invoke).toHaveBeenCalledWith('fs_read_bytes', {
+			workdir: '/tmp/work',
+			relPath: 'plot.png'
+		});
+	});
+
 	for (const [path, command] of decks) {
+		const sendsSlides = command === 'fs_write_odp';
 		it(`${path} rejects an empty slides array`, async () => {
 			const out = await call('fs_write_slides', { path, slides: [] });
 			expect(JSON.parse(out.result).error).toMatch(/non-empty array/i);
@@ -87,29 +124,21 @@ describe('fs_write_slides slide validation', () => {
 		});
 
 		it(`${path} treats a title-only slide as a section divider instead of erroring`, async () => {
-			mocks.invoke.mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
 			const out = await call('fs_write_slides', {
 				path,
 				slides: [{ title: 'Topic' }]
 			});
 			expect(out.result).toMatch(/Wrote/);
-			const payload = mocks.invoke.mock.calls.find((c) => c[0] === command)?.[1] as {
-				slides: { layout?: string }[];
-			};
-			expect(payload.slides[0].layout).toBe('section');
+			if (sendsSlides) expect(odpSlides()[0].layout).toBe('section');
 		});
 
 		it(`${path} treats a title+subtitle slide with no bullets as a section divider`, async () => {
-			mocks.invoke.mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
 			const out = await call('fs_write_slides', {
 				path,
 				slides: [{ title: 'Part One', subtitle: 'the beginning' }]
 			});
 			expect(out.result).toMatch(/Wrote/);
-			const payload = mocks.invoke.mock.calls.find((c) => c[0] === command)?.[1] as {
-				slides: { layout?: string }[];
-			};
-			expect(payload.slides[0].layout).toBe('section');
+			if (sendsSlides) expect(odpSlides()[0].layout).toBe('section');
 		});
 
 		it(`${path} still rejects a totally empty slide object`, async () => {
@@ -131,7 +160,6 @@ describe('fs_write_slides slide validation', () => {
 		});
 
 		it(`${path} allows a section slide without bullets`, async () => {
-			mocks.invoke.mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
 			const out = await call('fs_write_slides', {
 				path,
 				slides: [{ title: 'Part Two', layout: 'section', subtitle: 'a divider' }]
@@ -140,7 +168,6 @@ describe('fs_write_slides slide validation', () => {
 		});
 
 		it(`${path} lowercases a capitalized layout before sending it to Rust`, async () => {
-			mocks.invoke.mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
 			const out = await call('fs_write_slides', {
 				path,
 				slides: [
@@ -149,29 +176,25 @@ describe('fs_write_slides slide validation', () => {
 				]
 			});
 			expect(out.result).toMatch(/Wrote/);
-			const payload = mocks.invoke.mock.calls.find((c) => c[0] === command)?.[1] as {
-				slides: { layout?: string }[];
-			};
-			expect(payload.slides[0].layout).toBe('section');
-			expect(payload.slides[1].layout).toBe('content');
+			if (sendsSlides) {
+				expect(odpSlides()[0].layout).toBe('section');
+				expect(odpSlides()[1].layout).toBe('content');
+			}
 		});
 
 		it(`${path} splits string bullets on newlines into an array`, async () => {
-			mocks.invoke.mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
 			const out = await call('fs_write_slides', {
 				path,
 				slides: [{ title: 'Topic', bullets: 'First point\n  Second point  \n\nThird point\n' }]
 			});
 			expect(out.result).toMatch(/Wrote/);
-			const payload = mocks.invoke.mock.calls.find((c) => c[0] === command)?.[1] as {
-				slides: { bullets?: unknown; layout?: string }[];
-			};
-			expect(payload.slides[0].bullets).toEqual(['First point', 'Second point', 'Third point']);
-			expect(payload.slides[0].layout).not.toBe('section');
+			if (sendsSlides) {
+				expect(odpSlides()[0].bullets).toEqual(['First point', 'Second point', 'Third point']);
+				expect(odpSlides()[0].layout).not.toBe('section');
+			}
 		});
 
 		it(`${path} allows a content slide with just an image (no bullets)`, async () => {
-			mocks.invoke.mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
 			const out = await call('fs_write_slides', {
 				path,
 				slides: [{ title: 'Chart', image: 'plot.png' }]
@@ -180,7 +203,6 @@ describe('fs_write_slides slide validation', () => {
 		});
 
 		it(`${path} accepts a real deck`, async () => {
-			mocks.invoke.mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
 			const out = await call('fs_write_slides', {
 				path,
 				slides: [

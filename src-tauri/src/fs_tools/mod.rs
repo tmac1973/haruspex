@@ -14,6 +14,7 @@ pub mod path;
 pub mod pdf_read;
 pub mod pdf_write;
 pub mod pptx;
+pub mod slides;
 pub mod text;
 pub mod xlsx;
 
@@ -135,7 +136,7 @@ mod tests {
     use super::odp::build_odp;
     use super::odt::build_odt;
     use super::pdf_write::build_pdf;
-    use super::pptx::{build_pptx, PptxBullet, PptxLayout, PptxSlide};
+    use super::slides::{Slide, SlideBullet, SlideLayout, SlideOrientation};
 
     #[test]
     fn parse_inline_markdown_bold_italic() {
@@ -561,25 +562,25 @@ mod tests {
         assert!(!content.contains("< and >"));
     }
 
-    /// Build a PptxBullet at level 0 (the default). Shorthand used in
+    /// Build a SlideBullet at level 0 (the default). Shorthand used in
     /// tests that just want a flat bullet list without nesting.
-    fn b(text: &str) -> PptxBullet {
-        PptxBullet {
+    fn b(text: &str) -> SlideBullet {
+        SlideBullet {
             text: text.to_string(),
             level: 0,
         }
     }
 
-    /// Build a PptxSlide with only title + bullets populated; everything
+    /// Build a Slide with only title + bullets populated; everything
     /// else defaults. Matches the original pre-extension ergonomics so
     /// existing tests stay focused on what they're checking.
-    fn content_slide(title: &str, bullets: Vec<PptxBullet>) -> PptxSlide {
-        PptxSlide {
+    fn content_slide(title: &str, bullets: Vec<SlideBullet>) -> Slide {
+        Slide {
             title: title.to_string(),
             bullets,
             subtitle: None,
             image: None,
-            layout: PptxLayout::Content,
+            layout: SlideLayout::Content,
         }
     }
 
@@ -590,278 +591,15 @@ mod tests {
     }
 
     #[test]
-    fn build_pptx_produces_required_package_parts() {
-        let slides = vec![
-            content_slide(
-                "Introduction",
-                vec![b("First point"), b("Second point"), b("Third point")],
-            ),
-            content_slide("Conclusion", vec![b("Wrap it up")]),
-        ];
-        let bytes = build_pptx(&slides, &no_images()).unwrap();
-
-        // Every part PowerPoint needs to open the file must be present.
-        let required = [
-            "[Content_Types].xml",
-            "_rels/.rels",
-            "ppt/presentation.xml",
-            "ppt/_rels/presentation.xml.rels",
-            "ppt/slideMasters/slideMaster1.xml",
-            "ppt/slideMasters/_rels/slideMaster1.xml.rels",
-            "ppt/slideLayouts/slideLayout1.xml",
-            "ppt/slideLayouts/_rels/slideLayout1.xml.rels",
-            "ppt/theme/theme1.xml",
-            "ppt/slides/slide1.xml",
-            "ppt/slides/slide2.xml",
-            "ppt/slides/_rels/slide1.xml.rels",
-            "ppt/slides/_rels/slide2.xml.rels",
-        ];
-        for name in required {
-            read_zip_entry(&bytes, name);
-        }
-
-        // Slide 1 should contain the title and all three bullets.
-        let slide1 = read_zip_entry(&bytes, "ppt/slides/slide1.xml");
-        assert!(slide1.contains("Introduction"));
-        assert!(slide1.contains("First point"));
-        assert!(slide1.contains("Second point"));
-        assert!(slide1.contains("Third point"));
-        // And title is rendered at 32pt bold.
-        assert!(slide1.contains(r#"sz="3200""#));
-        assert!(slide1.contains(r#"b="1""#));
-        // Bullets at 18pt.
-        assert!(slide1.contains(r#"sz="1800""#));
-
-        // Slide 2 gets its own content.
-        let slide2 = read_zip_entry(&bytes, "ppt/slides/slide2.xml");
-        assert!(slide2.contains("Conclusion"));
-        assert!(slide2.contains("Wrap it up"));
-
-        // Content Types enumerates both slide parts.
-        let ct = read_zip_entry(&bytes, "[Content_Types].xml");
-        assert!(ct.contains("slide1.xml"));
-        assert!(ct.contains("slide2.xml"));
-
-        // Presentation rels has master + both slide rels.
-        let rels = read_zip_entry(&bytes, "ppt/_rels/presentation.xml.rels");
-        assert!(rels.contains("slideMaster1.xml"));
-        assert!(rels.contains("slides/slide1.xml"));
-        assert!(rels.contains("slides/slide2.xml"));
-    }
-
-    #[test]
-    fn build_pptx_section_layout_emits_centered_title_without_body() {
-        let slides = vec![PptxSlide {
-            title: "Part One".to_string(),
-            subtitle: Some("Foundations".to_string()),
-            bullets: vec![],
-            image: None,
-            layout: PptxLayout::Section,
-        }];
-        let bytes = build_pptx(&slides, &no_images()).unwrap();
-        let slide1 = read_zip_entry(&bytes, "ppt/slides/slide1.xml");
-
-        // Section title uses the 44pt font and centered alignment.
-        assert!(slide1.contains(r#"sz="4400""#));
-        assert!(slide1.contains(r#"algn="ctr""#));
-        // No 32pt content-slide title in a section slide.
-        assert!(!slide1.contains(r#"sz="3200""#));
-        // Title text and subtitle both present.
-        assert!(slide1.contains("Part One"));
-        assert!(slide1.contains("Foundations"));
-        // No content shape named "Content" — section slides skip the body.
-        assert!(!slide1.contains(r#"name="Content""#));
-    }
-
-    #[test]
-    fn build_pptx_nested_bullets_emit_lvl_attribute() {
-        let slides = vec![PptxSlide {
-            title: "Nested".to_string(),
-            subtitle: None,
-            bullets: vec![
-                PptxBullet {
-                    text: "Top level".to_string(),
-                    level: 0,
-                },
-                PptxBullet {
-                    text: "Child A".to_string(),
-                    level: 1,
-                },
-                PptxBullet {
-                    text: "Grandchild".to_string(),
-                    level: 2,
-                },
-            ],
-            image: None,
-            layout: PptxLayout::Content,
-        }];
-        let bytes = build_pptx(&slides, &no_images()).unwrap();
-        let slide1 = read_zip_entry(&bytes, "ppt/slides/slide1.xml");
-
-        // Each level maps to a distinct lvl / font-size / margin.
-        assert!(slide1.contains(r#"lvl="0""#));
-        assert!(slide1.contains(r#"lvl="1""#));
-        assert!(slide1.contains(r#"lvl="2""#));
-        assert!(slide1.contains(r#"sz="1800""#)); // level 0 → 18pt
-        assert!(slide1.contains(r#"sz="1600""#)); // level 1 → 16pt
-        assert!(slide1.contains(r#"sz="1400""#)); // level 2 → 14pt
-                                                  // Per-level left margin increases.
-        assert!(slide1.contains(r#"marL="457200""#));
-        assert!(slide1.contains(r#"marL="914400""#));
-        assert!(slide1.contains(r#"marL="1371600""#));
-    }
-
-    #[test]
-    fn build_pptx_deserializes_plain_string_bullets() {
-        // Round-trip via JSON to confirm the untagged enum accepts the
-        // old shape: bullets as an array of plain strings. This is how
-        // existing model-generated tool calls look.
-        let json = r#"{
-            "title": "Plain",
-            "bullets": ["first", "second", "third"]
-        }"#;
-        let slide: PptxSlide = serde_json::from_str(json).unwrap();
-        assert_eq!(slide.title, "Plain");
-        assert_eq!(slide.bullets.len(), 3);
-        for bullet in &slide.bullets {
-            assert_eq!(bullet.level, 0);
-        }
-        assert_eq!(slide.bullets[0].text, "first");
-    }
-
-    #[test]
-    fn build_pptx_deserializes_structured_bullets_with_level() {
-        let json = r#"{
-            "title": "Mixed",
-            "bullets": [
-                "flat string",
-                { "text": "nested", "level": 1 },
-                { "text": "deep", "level": 2 }
-            ],
-            "layout": "content"
-        }"#;
-        let slide: PptxSlide = serde_json::from_str(json).unwrap();
-        assert_eq!(slide.bullets.len(), 3);
-        assert_eq!(slide.bullets[0].level, 0);
-        assert_eq!(slide.bullets[1].level, 1);
-        assert_eq!(slide.bullets[1].text, "nested");
-        assert_eq!(slide.bullets[2].level, 2);
-        assert_eq!(slide.layout, PptxLayout::Content);
-    }
-
-    #[test]
-    fn build_pptx_deserializes_section_layout() {
-        let json = r#"{
-            "title": "Part Two",
-            "bullets": [],
-            "layout": "section",
-            "subtitle": "Deep Dive"
-        }"#;
-        let slide: PptxSlide = serde_json::from_str(json).unwrap();
-        assert_eq!(slide.layout, PptxLayout::Section);
-        assert_eq!(slide.subtitle.as_deref(), Some("Deep Dive"));
-    }
-
-    #[test]
-    fn build_pptx_embeds_referenced_images() {
-        let fake_png = b"\x89PNG\r\n\x1a\nfake-png-bytes-for-test".to_vec();
-        let mut images = std::collections::HashMap::new();
-        images.insert(
-            "hero.png".to_string(),
-            LoadedImage {
-                bytes: fake_png.clone(),
-                extension: "png".to_string(),
-            },
-        );
-
-        let slides = vec![PptxSlide {
-            title: "With Image".to_string(),
-            subtitle: None,
-            bullets: vec![b("context line")],
-            image: Some("hero.png".to_string()),
-            layout: PptxLayout::Content,
-        }];
-        let bytes = build_pptx(&slides, &images).unwrap();
-
-        // Media file was written under the expected deterministic name.
-        let media = read_zip_entry_bytes(&bytes, "ppt/media/image1.png");
-        assert_eq!(media, fake_png);
-
-        // Content_Types gets a Default for the png extension.
-        let ct = read_zip_entry(&bytes, "[Content_Types].xml");
-        assert!(ct.contains(r#"<Default Extension="png" ContentType="image/png"/>"#));
-
-        // Slide XML has a p:pic referencing rId2 (rId1 is the layout).
-        let slide1 = read_zip_entry(&bytes, "ppt/slides/slide1.xml");
-        assert!(slide1.contains("<p:pic>"));
-        assert!(slide1.contains(r#"r:embed="rId2""#));
-
-        // Slide rels has both the layout and image relationships.
-        let rels = read_zip_entry(&bytes, "ppt/slides/_rels/slide1.xml.rels");
-        assert!(rels.contains(r#"Id="rId1""#));
-        assert!(rels.contains(r#"Id="rId2""#));
-        assert!(rels.contains("image1.png"));
-    }
-
-    #[test]
-    fn build_pptx_deduplicates_shared_image_across_slides() {
-        // Two slides referencing the same image path should share a
-        // single ppt/media/image1.png file, not generate two copies.
-        let fake_png = b"\x89PNGdedup".to_vec();
-        let mut images = std::collections::HashMap::new();
-        images.insert(
-            "logo.png".to_string(),
-            LoadedImage {
-                bytes: fake_png.clone(),
-                extension: "png".to_string(),
-            },
-        );
-        let slides = vec![
-            PptxSlide {
-                title: "A".to_string(),
-                subtitle: None,
-                bullets: vec![b("one")],
-                image: Some("logo.png".to_string()),
-                layout: PptxLayout::Content,
-            },
-            PptxSlide {
-                title: "B".to_string(),
-                subtitle: None,
-                bullets: vec![b("two")],
-                image: Some("logo.png".to_string()),
-                layout: PptxLayout::Content,
-            },
-        ];
-        let bytes = build_pptx(&slides, &images).unwrap();
-
-        // Only one media file, with the first-appearance index.
-        let _ = read_zip_entry_bytes(&bytes, "ppt/media/image1.png");
-        let cursor = std::io::Cursor::new(&bytes);
-        let zip = zip::ZipArchive::new(cursor).unwrap();
-        let media_entries: Vec<_> = zip
-            .file_names()
-            .map(|n| n.expect("utf-8 entry name").into_owned())
-            .filter(|n| n.starts_with("ppt/media/"))
-            .collect();
-        assert_eq!(media_entries.len(), 1);
-
-        // Both slide rels point at the same image1.png.
-        let rels1 = read_zip_entry(&bytes, "ppt/slides/_rels/slide1.xml.rels");
-        let rels2 = read_zip_entry(&bytes, "ppt/slides/_rels/slide2.xml.rels");
-        assert!(rels1.contains("image1.png"));
-        assert!(rels2.contains("image1.png"));
-    }
-
-    #[test]
     fn build_odp_section_layout_uses_section_title_style() {
-        let slides = vec![PptxSlide {
+        let slides = vec![Slide {
             title: "Part Two".to_string(),
             subtitle: Some("Applications".to_string()),
             bullets: vec![],
             image: None,
-            layout: PptxLayout::Section,
+            layout: SlideLayout::Section,
         }];
-        let bytes = build_odp(&slides, &no_images()).unwrap();
+        let bytes = build_odp(&slides, &no_images(), SlideOrientation::Landscape).unwrap();
         let content = read_zip_entry(&bytes, "content.xml");
 
         // SectionTitle paragraph style is referenced (bigger + centered).
@@ -875,27 +613,27 @@ mod tests {
 
     #[test]
     fn build_odp_nested_bullets_use_level_styles() {
-        let slides = vec![PptxSlide {
+        let slides = vec![Slide {
             title: "Nested".to_string(),
             subtitle: None,
             bullets: vec![
-                PptxBullet {
+                SlideBullet {
                     text: "Parent".to_string(),
                     level: 0,
                 },
-                PptxBullet {
+                SlideBullet {
                     text: "Child".to_string(),
                     level: 1,
                 },
-                PptxBullet {
+                SlideBullet {
                     text: "Grandchild".to_string(),
                     level: 2,
                 },
             ],
             image: None,
-            layout: PptxLayout::Content,
+            layout: SlideLayout::Content,
         }];
-        let bytes = build_odp(&slides, &no_images()).unwrap();
+        let bytes = build_odp(&slides, &no_images(), SlideOrientation::Landscape).unwrap();
         let content = read_zip_entry(&bytes, "content.xml");
         assert!(content.contains(r#"text:style-name="BulletText0""#));
         assert!(content.contains(r#"text:style-name="BulletText1""#));
@@ -913,14 +651,14 @@ mod tests {
                 extension: "jpeg".to_string(),
             },
         );
-        let slides = vec![PptxSlide {
+        let slides = vec![Slide {
             title: "Architecture".to_string(),
             subtitle: None,
             bullets: vec![b("overview")],
             image: Some("diagram.jpg".to_string()),
-            layout: PptxLayout::Content,
+            layout: SlideLayout::Content,
         }];
-        let bytes = build_odp(&slides, &images).unwrap();
+        let bytes = build_odp(&slides, &images, SlideOrientation::Landscape).unwrap();
         assert_odf_mimetype(&bytes, "application/vnd.oasis.opendocument.presentation");
 
         // Image lives under Pictures/ and was written verbatim.
@@ -938,35 +676,12 @@ mod tests {
     }
 
     #[test]
-    fn build_pptx_empty_slides_returns_error() {
-        let slides: Vec<PptxSlide> = Vec::new();
-        assert!(build_pptx(&slides, &no_images()).is_err());
-    }
-
-    #[test]
-    fn build_pptx_escapes_xml_in_title_and_bullets() {
-        let slides = vec![content_slide(
-            "A & B <vs> C",
-            vec![b("1 < 2"), b(r#"He said "hi""#)],
-        )];
-        let bytes = build_pptx(&slides, &no_images()).unwrap();
-        let slide1 = read_zip_entry(&bytes, "ppt/slides/slide1.xml");
-        assert!(slide1.contains("&amp;"));
-        assert!(slide1.contains("&lt;"));
-        assert!(slide1.contains("&gt;"));
-        assert!(slide1.contains("&quot;"));
-        // Raw angle brackets in the user text should not appear as part
-        // of the run text (the structural XML itself still has <a:t> etc).
-        assert!(!slide1.contains("A & B <vs>"));
-    }
-
-    #[test]
     fn build_odp_produces_valid_odf_zip_with_slides() {
         let slides = vec![
             content_slide("Overview", vec![b("Item one"), b("Item two")]),
             content_slide("Details", vec![b("Only item")]),
         ];
-        let bytes = build_odp(&slides, &no_images()).unwrap();
+        let bytes = build_odp(&slides, &no_images(), SlideOrientation::Landscape).unwrap();
         assert_odf_mimetype(&bytes, "application/vnd.oasis.opendocument.presentation");
 
         let content = read_zip_entry(&bytes, "content.xml");
@@ -983,9 +698,44 @@ mod tests {
     }
 
     #[test]
+    fn build_odp_portrait_turns_the_page_and_stacks_the_image() {
+        let mut images = std::collections::HashMap::new();
+        images.insert(
+            "a.png".to_string(),
+            LoadedImage {
+                bytes: b"png".to_vec(),
+                extension: "png".to_string(),
+            },
+        );
+        let mut slide = content_slide("Tall", vec![b("point")]);
+        slide.image = Some("a.png".to_string());
+        let bytes = build_odp(&[slide], &images, SlideOrientation::Portrait).unwrap();
+        let styles = read_zip_entry(&bytes, "styles.xml");
+        assert!(styles.contains(r#"fo:page-width="14.288cm" fo:page-height="25.4cm""#));
+        assert!(styles.contains(r#"style:print-orientation="portrait""#));
+        // The image spans the body's width above the bullets, not beside them.
+        let content = read_zip_entry(&bytes, "content.xml");
+        let image = content
+            .split("<draw:frame ")
+            .find(|f| f.contains("<draw:image"))
+            .unwrap();
+        assert!(image.contains(r#"svg:x="1cm" svg:y="4.2cm" svg:width="11.888cm""#));
+    }
+
+    #[test]
+    fn build_odp_landscape_keeps_the_widescreen_page() {
+        let slides = vec![content_slide("Wide", vec![b("point")])];
+        let bytes = build_odp(&slides, &no_images(), SlideOrientation::Landscape).unwrap();
+        let styles = read_zip_entry(&bytes, "styles.xml");
+        assert!(styles.contains(r#"fo:page-width="25.4cm" fo:page-height="14.288cm""#));
+        let content = read_zip_entry(&bytes, "content.xml");
+        assert!(content.contains(r#"svg:x="1cm" svg:y="3.2cm" svg:width="23cm" svg:height="10cm""#));
+    }
+
+    #[test]
     fn build_odp_empty_slides_returns_error() {
-        let slides: Vec<PptxSlide> = Vec::new();
-        assert!(build_odp(&slides, &no_images()).is_err());
+        let slides: Vec<Slide> = Vec::new();
+        assert!(build_odp(&slides, &no_images(), SlideOrientation::Landscape).is_err());
     }
 
     #[test]

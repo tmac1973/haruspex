@@ -1,6 +1,6 @@
-//! OpenDocument Presentation (.odp) generation. Same input shape as
-//! .pptx — reuses `PptxSlide`/`PptxBullet`/`PptxLayout` from `super::pptx`
-//! — but writes ODF zip packaging with the first-entry-stored-mimetype
+//! OpenDocument Presentation (.odp) generation, from the slide shape in
+//! `super::slides` (the .pptx deck is built in the frontend from the same
+//! one). Writes ODF zip packaging with the first-entry-stored-mimetype
 //! convention LibreOffice Impress expects.
 
 use super::images::{build_image_index, load_image_set, ImageIndex, LoadedImage};
@@ -8,14 +8,124 @@ use super::markdown_inline::escape_xml;
 use super::path::{
     refuse_if_exists, resolve_in_workdir, workdir_path_for_write, write_bytes_to_workdir,
 };
-use super::pptx::{PptxLayout, PptxSlide};
+use super::slides::{Slide, SlideLayout, SlideOrientation};
 
-/// and a layout choice (content or section). Reuses the ODF zip
+/// A length in centimetres as ODF writes it, to the nearest 0.01 mm.
+fn cm(v: f64) -> String {
+    format!("{}cm", (v * 1000.0).round() / 1000.0)
+}
+
+/// Where each frame goes on a page of one orientation, in centimetres.
+/// Landscape is 25.4 × 14.288 (16:9); portrait turns it on its side, and
+/// stacks a slide's image under its title instead of beside its bullets.
+struct Page {
+    w: f64,
+    h: f64,
+    orientation: SlideOrientation,
+}
+
+/// A frame's position and size, in centimetres.
+struct Frame {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+}
+
+impl Frame {
+    fn attrs(&self) -> String {
+        format!(
+            r#"svg:x="{}" svg:y="{}" svg:width="{}" svg:height="{}""#,
+            cm(self.x),
+            cm(self.y),
+            cm(self.w),
+            cm(self.h)
+        )
+    }
+}
+
+impl Page {
+    fn new(orientation: SlideOrientation) -> Self {
+        let (w, h) = match orientation {
+            SlideOrientation::Landscape => (25.4, 14.288),
+            SlideOrientation::Portrait => (14.288, 25.4),
+        };
+        Page { w, h, orientation }
+    }
+
+    fn portrait(&self) -> bool {
+        self.orientation == SlideOrientation::Portrait
+    }
+
+    /// A section slide's title, centred, and its subtitle under it.
+    fn section(&self) -> (Frame, Frame) {
+        let y = self.h / 2.0 - 2.144;
+        let title = Frame {
+            x: 1.2,
+            y,
+            w: self.w - 2.4,
+            h: 2.5,
+        };
+        let subtitle = Frame {
+            y: y + 3.0,
+            h: 1.5,
+            ..title
+        };
+        (title, subtitle)
+    }
+
+    /// A content slide's title, full width at the top. Portrait gives it
+    /// room for a second line, since the page is narrow.
+    fn title(&self) -> Frame {
+        Frame {
+            x: 1.0,
+            y: 0.8,
+            w: self.w - 2.4,
+            h: if self.portrait() { 3.0 } else { 2.0 },
+        }
+    }
+
+    /// The bullets' frame, and the image's when the slide has one.
+    fn body(&self, has_image: bool) -> (Frame, Option<Frame>) {
+        let top = if self.portrait() { 4.2 } else { 3.2 };
+        let full = Frame {
+            x: 1.0,
+            y: top,
+            w: self.w - 2.4,
+            h: self.h - top - 1.088,
+        };
+        if !has_image {
+            return (full, None);
+        }
+        if self.portrait() {
+            let image_h = full.h * 0.45;
+            let image = Frame { h: image_h, ..full };
+            let bullets = Frame {
+                y: top + image_h + 0.5,
+                h: full.h - image_h - 0.5,
+                ..full
+            };
+            return (bullets, Some(image));
+        }
+        let bullets = Frame { w: 11.0, ..full };
+        let image = Frame {
+            x: 13.0,
+            y: top,
+            w: 11.0,
+            h: 9.0,
+        };
+        (bullets, Some(image))
+    }
+}
+
+/// Build an .odp deck: one page per slide, each a title with bullets and an
+/// optional image, or a section divider. Reuses the ODF zip
 /// scaffolding from `build_odt` (STORED mimetype first, manifest, meta,
 /// styles, content).
 pub(super) fn build_odp(
-    slides: &[PptxSlide],
+    slides: &[Slide],
     images: &std::collections::HashMap<String, LoadedImage>,
+    orientation: SlideOrientation,
 ) -> Result<Vec<u8>, String> {
     use std::io::Write;
 
@@ -32,6 +142,7 @@ pub(super) fn build_odp(
         ..
     } = build_image_index(slides.iter().filter_map(|s| s.image.as_ref()), images);
 
+    let page = Page::new(orientation);
     let mut buf = Vec::new();
     {
         let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
@@ -71,28 +182,36 @@ pub(super) fn build_odp(
         zip.write_all(super::odf::ODF_META_XML)
             .map_err(|e| e.to_string())?;
 
-        // 4) styles.xml — widescreen page layout + master page. Body
+        // 4) styles.xml — the page layout + master page. Body
         //    paragraph styles are defined in content.xml's automatic
         //    style section so they can be tweaked per-deck if needed.
         zip.start_file("styles.xml", deflated)
             .map_err(|e| e.to_string())?;
-        zip.write_all(
-            br##"<?xml version="1.0" encoding="UTF-8"?>
+        let styles = format!(
+            r##"<?xml version="1.0" encoding="UTF-8"?>
 <office:document-styles xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:version="1.2">
 <office:styles>
 <style:default-style style:family="paragraph"><style:text-properties fo:font-size="18pt"/></style:default-style>
 </office:styles>
 <office:automatic-styles>
 <style:page-layout style:name="PageLayout1">
-<style:page-layout-properties fo:page-width="25.4cm" fo:page-height="14.288cm" fo:margin-top="0cm" fo:margin-bottom="0cm" fo:margin-left="0cm" fo:margin-right="0cm" style:print-orientation="landscape"/>
+<style:page-layout-properties fo:page-width="{}" fo:page-height="{}" fo:margin-top="0cm" fo:margin-bottom="0cm" fo:margin-left="0cm" fo:margin-right="0cm" style:print-orientation="{}"/>
 </style:page-layout>
 </office:automatic-styles>
 <office:master-styles>
 <style:master-page style:name="Default" style:page-layout-name="PageLayout1"/>
 </office:master-styles>
 </office:document-styles>"##,
-        )
-        .map_err(|e| e.to_string())?;
+            cm(page.w),
+            cm(page.h),
+            if page.portrait() {
+                "portrait"
+            } else {
+                "landscape"
+            }
+        );
+        zip.write_all(styles.as_bytes())
+            .map_err(|e| e.to_string())?;
 
         // 5) content.xml — one <draw:page> per slide.
         //    Automatic styles declare:
@@ -122,13 +241,14 @@ pub(super) fn build_odp(
             ));
 
             match slide.layout {
-                PptxLayout::Section => {
+                SlideLayout::Section => {
                     // Centered title frame in the vertical middle of the
-                    // slide. 25.4cm wide slide → title frame 23cm wide at
-                    // x=1.2cm is effectively centered.
+                    // slide, the subtitle under it.
+                    let (title, sub) = page.section();
                     body.push_str(&format!(
-                        r#"<draw:frame svg:x="1.2cm" svg:y="5cm" svg:width="23cm" svg:height="2.5cm"><draw:text-box><text:p text:style-name="SectionTitle">{}</text:p></draw:text-box></draw:frame>
+                        r#"<draw:frame {}><draw:text-box><text:p text:style-name="SectionTitle">{}</text:p></draw:text-box></draw:frame>
 "#,
+                        title.attrs(),
                         escape_xml(slide.title.trim())
                     ));
                     if let Some(subtitle) = slide
@@ -138,29 +258,29 @@ pub(super) fn build_odp(
                         .filter(|s| !s.is_empty())
                     {
                         body.push_str(&format!(
-                            r#"<draw:frame svg:x="1.2cm" svg:y="8cm" svg:width="23cm" svg:height="1.5cm"><draw:text-box><text:p text:style-name="SectionSubtitle">{}</text:p></draw:text-box></draw:frame>
+                            r#"<draw:frame {}><draw:text-box><text:p text:style-name="SectionSubtitle">{}</text:p></draw:text-box></draw:frame>
 "#,
+                            sub.attrs(),
                             escape_xml(subtitle)
                         ));
                     }
                 }
-                PptxLayout::Content => {
+                SlideLayout::Content => {
                     // Title frame — full width at the top.
                     body.push_str(&format!(
-                        r#"<draw:frame svg:x="1cm" svg:y="0.8cm" svg:width="23cm" svg:height="2cm"><draw:text-box><text:p text:style-name="TitleText">{}</text:p></draw:text-box></draw:frame>
+                        r#"<draw:frame {}><draw:text-box><text:p text:style-name="TitleText">{}</text:p></draw:text-box></draw:frame>
 "#,
+                        page.title().attrs(),
                         escape_xml(slide.title.trim())
                     ));
 
-                    // Bullet frame width shrinks to the left half when
-                    // an image is attached. Full width: 23cm. Split
-                    // width: 11cm left, 11cm right with 1cm gap.
-                    let has_image = slide.image.is_some();
-                    let bullet_width = if has_image { "11cm" } else { "23cm" };
+                    // An image takes the right half of the body in
+                    // landscape, and the top of it in portrait.
+                    let (bullets, image_frame) = page.body(slide.image.is_some());
                     body.push_str(&format!(
-                        r#"<draw:frame svg:x="1cm" svg:y="3.2cm" svg:width="{}" svg:height="10cm"><draw:text-box>
+                        r#"<draw:frame {}><draw:text-box>
 "#,
-                        bullet_width
+                        bullets.attrs()
                     ));
                     if slide.bullets.is_empty() {
                         body.push_str("<text:p/>");
@@ -177,8 +297,7 @@ pub(super) fn build_odp(
                     }
                     body.push_str("</draw:text-box></draw:frame>\n");
 
-                    // Image frame on the right half.
-                    if let Some(image_path) = &slide.image {
+                    if let (Some(image_path), Some(frame)) = (&slide.image, image_frame) {
                         let idx = image_index
                             .get(image_path)
                             .copied()
@@ -188,9 +307,11 @@ pub(super) fn build_odp(
                             .map(|i| i.extension.as_str())
                             .ok_or_else(|| format!("Image not loaded: {}", image_path))?;
                         body.push_str(&format!(
-                            r#"<draw:frame svg:x="13cm" svg:y="3.2cm" svg:width="11cm" svg:height="9cm"><draw:image xlink:href="Pictures/image{}.{}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"/></draw:frame>
+                            r#"<draw:frame {}><draw:image xlink:href="Pictures/image{}.{}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"/></draw:frame>
 "#,
-                            idx, ext
+                            frame.attrs(),
+                            idx,
+                            ext
                         ));
                     }
                 }
@@ -227,7 +348,8 @@ pub(super) fn build_odp(
 pub async fn fs_write_odp(
     workdir: String,
     rel_path: String,
-    slides: Vec<PptxSlide>,
+    slides: Vec<Slide>,
+    orientation: Option<SlideOrientation>,
     overwrite: Option<bool>,
 ) -> Result<(), String> {
     let workdir = workdir_path_for_write(&workdir)?;
@@ -239,13 +361,10 @@ pub async fn fs_write_odp(
 
     refuse_if_exists(&resolved, overwrite, &rel_path)?;
 
-    // ODP reuses the same PptxSlide struct since the data shape (title
-    // + bullet list + optional image) is format-agnostic. Hand-rolled
-    // ODF packaging in build_odp.
     let images = load_image_set(&workdir, slides.iter().filter_map(|s| s.image.clone()))?;
 
     let bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
-        build_odp(&slides, &images)
+        build_odp(&slides, &images, orientation.unwrap_or_default())
     })
     .await
     .map_err(|e| format!("odp build task failed: {}", e))??;
