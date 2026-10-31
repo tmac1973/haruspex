@@ -27,6 +27,8 @@ export const ROUTES = {
 	generate: '/v1/images/generations',
 	edits: '/v1/images/edits',
 	jobs: '/v1/images/jobs',
+	/** Synchronous: toolchest hands it to an upscaler instance's `/sdcpp/v1/upscale`. */
+	upscale: '/v1/images/upscale',
 	job: (id: string) => `/v1/images/jobs/${encodeURIComponent(id)}`
 } as const;
 

@@ -16,7 +16,9 @@ describe('capabilityLine', () => {
 		expect(line.cannot).toBe(
 			'upscale pictures, extend pictures, transparent backgrounds, tiling textures'
 		);
-		expect(line.howTo).toContain('Only the bundled engine, ComfyUI and Lemonade upscale.');
+		expect(line.howTo).toContain(
+			'Upscaling needs an upscaler instance (Real-ESRGAN) in llama-toolchest.'
+		);
 		expect(line.howTo).not.toContain('Editing needs');
 		expect(line.text).toBe(
 			"Can: draw pictures, edit pictures (up to 4 together). Can't: upscale pictures, extend pictures, transparent backgrounds, tiling textures."

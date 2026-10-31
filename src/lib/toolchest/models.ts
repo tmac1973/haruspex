@@ -11,6 +11,9 @@ import { apiKeysReady } from '#lib/stores/apiKeySecrets.ts';
 
 export type GenerationKind = 'image' | 'music' | 'video';
 
+/** What `/v1/models` lists: the kinds above, and upscalers, which serve the image backend. */
+export type ListedKind = GenerationKind | 'upscale';
+
 /** The settings fields that hold a toolchest server's named key. */
 export type ApiKeyIdField =
 	'imageToolchestApiKeyId' | 'musicToolchestApiKeyId' | 'videoGenToolchestApiKeyId';
@@ -31,6 +34,8 @@ export interface ToolchestInstance {
 	tasks: string[];
 	/** How many pictures one edit takes; null when the build doesn't say. */
 	maxEditImages: number | null;
+	/** How many times larger an upscaler makes a picture; null when the set doesn't say. */
+	scale: number | null;
 	/** A video instance's defaults and limits; null for any other kind. */
 	video: VideoLimits | null;
 	licence: string;
@@ -98,14 +103,16 @@ function videoLimits(v: unknown): VideoLimits | null {
 }
 
 /** Builds before `meta.api` existed had these routes and no others. */
-const OLD_API: Record<GenerationKind, string[]> = {
+const OLD_API: Record<ListedKind, string[]> = {
 	image: ['images.sync'],
 	music: ['music.jobs'],
-	video: ['video.jobs']
+	video: ['video.jobs'],
+	// Upscalers came after `meta.api`, so a build always lists their route.
+	upscale: []
 };
 
 /** A toolchest's generation instances of one kind, in the order it lists them. */
-export function parseGenerationModels(json: unknown, kind: GenerationKind): ToolchestInstance[] {
+export function parseGenerationModels(json: unknown, kind: ListedKind): ToolchestInstance[] {
 	const data = obj(json).data;
 	if (!Array.isArray(data)) return [];
 	return data
@@ -124,6 +131,7 @@ export function parseGenerationModels(json: unknown, kind: GenerationKind): Tool
 				api: Array.isArray(meta.api) ? strings(meta.api) : OLD_API[kind],
 				tasks: strings(meta.tasks),
 				maxEditImages: num(meta.max_edit_images),
+				scale: num(meta.scale),
 				video: kind === 'video' ? videoLimits(meta.video) : null,
 				licence: known?.licence ?? 'unknown',
 				commercialUse: known ? known.commercial : null

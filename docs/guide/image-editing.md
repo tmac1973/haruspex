@@ -42,9 +42,9 @@ With Ming-Image, another ComfyUI model, or an older ComfyUI, the assistant says 
 
 ## Make a picture larger
 
-Ask the assistant to upscale a picture, two or four times: "make it four times bigger for printing". It sharpens as it enlarges, and a transparent background stays transparent. The result is at most 4096 pixels on its longest side, so pictures up to 2048 pixels can be upscaled. A 1024-pixel picture takes about 12 seconds.
+Ask the assistant to upscale a picture, two or four times: "make it four times bigger". It sharpens as it enlarges, and a transparent background stays transparent. The result is at most 4096 pixels on its longest side, so pictures up to 2048 pixels can be upscaled. A 1024-pixel picture takes about 12 seconds.
 
-This needs Real-ESRGAN (BSD 3-Clause), on the bundled engine, ComfyUI or Lemonade: press **Download** under Settings → Image → Bundled engine → **Upscaler** (67 MB), or **Install** on the **Upscaler** under **Models on the server** for ComfyUI (67 MB, into `models/upscale_models`; a ComfyUI on another machine may give you the file to copy instead) or Lemonade (62 MB). It works with whichever model is chosen.
+This needs Real-ESRGAN (BSD 3-Clause), on the bundled engine, ComfyUI, Lemonade or llama-toolchest: press **Download** under Settings → Image → Bundled engine → **Upscaler** (67 MB), or **Install** on the **Upscaler** under **Models on the server** for ComfyUI (67 MB, into `models/upscale_models`; a ComfyUI on another machine may give you the file to copy) or Lemonade (62 MB). On llama-toolchest, add an upscaler instance there. It works with any chosen model.
 
 ## Draw, edit or upscale in the background
 
@@ -56,7 +56,6 @@ If Haruspex closes first, anything on ComfyUI or llama-toolchest is picked up ag
 
 - You can't mark a region by hand; name the part in words.
 - An edit doesn't make a transparent background or tile.
-- llama-toolchest doesn't upscale yet.
 - A picture pasted into Chat is shrunk to 1024 pixels on its longest side, so edits of it are at most that size.
 
 ## What has been tested

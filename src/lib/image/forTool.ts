@@ -62,7 +62,8 @@ export const NO_EXTEND_SENTENCE =
 
 export const NO_UPSCALE_SENTENCE =
 	"The image generation in Settings → Image can't upscale pictures. The bundled engine, " +
-	'ComfyUI and Lemonade can, once their upscaler is installed in Settings → Image.';
+	'ComfyUI and Lemonade can, once their upscaler is installed in Settings → Image, and ' +
+	'llama-toolchest can with an upscaler instance.';
 
 /**
  * A picture four times larger, from the configured backend, or a sentence the

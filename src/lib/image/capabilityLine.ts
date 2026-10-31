@@ -37,7 +37,7 @@ const UPSCALE_HOW: Record<ImageBackendKind, string> = {
 	none: '',
 	local: 'Upscaling needs the upscaler, under Bundled engine.',
 	comfyui: 'Upscaling needs the upscaler, under Models on the server.',
-	'llama-toolchest': 'Only the bundled engine, ComfyUI and Lemonade upscale.',
+	'llama-toolchest': 'Upscaling needs an upscaler instance (Real-ESRGAN) in llama-toolchest.',
 	lemonade: 'Upscaling needs the upscaler, under Models on the server.'
 };
 
