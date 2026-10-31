@@ -3,9 +3,9 @@
 **Depends on:** nothing · **Enables:** every later phase (the tab, the
 `home_cards` table, the card frame and the Add card menu)
 
-**External prerequisite:** the job editor rework in another session is merged
-to `main` before this phase starts, because step 8 adds a small hook to
-`JobsTab.svelte`.
+The job editor rework (#834) is merged. `JobsTab.svelte` still keeps its
+selection in local `selectedId`, `selectedRunId` and `runViewOpen` state, so
+step 8's `$effect` sets those three.
 
 ## Goal
 Ship a Home tab, first in the tab bar, with the two live cards that need no

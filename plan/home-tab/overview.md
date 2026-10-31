@@ -50,8 +50,8 @@ right now, and what is going on?".
   project.
 - No running scheduled work while the app is closed.
 - No change to the landing tab: the app still opens on the last tab used.
-- No new job editor layout; that is another session's work, and this project
-  only adds what card-owned jobs need on top of it.
+- No change to the job editor layout (reworked in #834); this project only
+  adds the two new types' sections and the Home badge.
 
 ## Users & primary flow
 Every Haruspex user outside lean mode.
@@ -88,8 +88,9 @@ Every Haruspex user outside lean mode.
   updates the `shortcuts` guide page and its test.
 - UI copy: one short sentence per section, details in tooltips, full Settings
   paths.
-- Another session is reworking `JobEditor.svelte` / `JobsTab.svelte`; changes
-  here to those files stay small and land after that work.
+- The job editor rework (#834) is merged. New job types follow its contract:
+  a `missingRequired` hook that agrees with `validate`, `required` on the
+  inputs it names, and an entry in `JobEditor.svelte`'s `typeSectionTitles`.
 
 ## Success criteria
 - Home is the first tab; Ctrl+1 opens it; the other tab shortcuts shift by one

@@ -17,6 +17,8 @@ Headlines, sources and links come from the feeds.
   parsing with `DOMParser`, and the preset list.
 - `src/lib/agent/jobs/types/news-digest/Editor.svelte` (new).
 - `src/lib/agent/jobs/types/index.ts` — register after `email_digest`.
+- `src/lib/components/jobs/JobEditor.svelte` — `typeSectionTitles` entry
+  `news_digest: 'News digest'`.
 - `src/lib/home/cardTypes.ts` — `news` (kind `judged`; fields in step 5).
 - `src/lib/components/home/cards/NewsCard.svelte` (new).
 - `src/lib/components/home/forms/NewsForm.svelte` (new).
@@ -28,6 +30,13 @@ Headlines, sources and links come from the feeds.
    (default 24); max: number (default 6) }`. `background: true`,
    `supportsSchedule: true`. Stages: Fetch, Pick. The registry entry's
    `defaultSchedule` is `{ kind: 'daily', time: '07:00' }`.
+   Required fields, per the #834 contract: `validate` refuses an empty
+   `feeds` ("Add at least one feed.") and an empty `interests` ("Say what
+   news you want."); `missingRequired` returns `['Feed', 'Interests']` for
+   the same cases. `configDefaults()` leaves both empty (presets are only
+   offered by the form), so the registry test's blank-config check holds.
+   The Editor sets `required` on the feed list and interests input while they
+   are empty.
 2. Presets in `feeds.ts`: a short list of general and tech feeds with
    published RSS URLs (BBC News world, The Guardian world, NPR News, Ars
    Technica, Hacker News front page). Each URL is checked by hand to return a
@@ -66,6 +75,8 @@ Headlines, sources and links come from the feeds.
 - `node scripts/guide-check.mjs` passes
 
 ## Test plan
+- Unit: `registry.test.ts`'s `missingRequired` check passes for
+  `news_digest` with its blank defaults.
 - Unit: `feeds.ts` with recorded RSS 2.0 and Atom samples, a feed with no
   guid, and HTML in descriptions.
 - Unit: pipeline with a fake turn — invented id dropped, links come from the
