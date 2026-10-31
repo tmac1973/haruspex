@@ -10,6 +10,8 @@ test('a research job is created, run, and shows each step’s output', async ({ 
 	await app.getByRole('button', { name: '+ New' }).click();
 
 	await app.getByPlaceholder('Morning headlines').fill('Weather digest');
+	// One editor section is open at a time; a new job opens at Basics.
+	await app.getByRole('button', { name: /^Steps/ }).click();
 	await app.getByPlaceholder('What should this step do?').fill('Find the weather in Lisbon.');
 	await app.getByRole('button', { name: '+ Add step' }).click();
 	await app.getByPlaceholder(/previous step’s output/).fill('Summarise it in one line.');

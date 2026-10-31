@@ -24,6 +24,8 @@ describe('an audit run', () => {
 		const workdir = await $('input.workdir-input');
 		if (!(await workdir.isDisplayed())) await (await byText('Where & when')).click();
 		await workdir.setValue(dir);
+		// One editor section is open at a time.
+		await (await byText('Audit setup')).click();
 		await (
 			await $('textarea[placeholder^="e.g. Find every instance"]')
 		).setValue('Find duplicated logic.');
