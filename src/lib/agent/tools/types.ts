@@ -14,6 +14,11 @@ export interface DeferredFamily {
 	id: string;
 	line: string;
 	schemas: ToolDefinition[];
+	/**
+	 * How to use the family: the prompt text that serves only these tools,
+	 * moved out of the system prompt into the `load_tools` result.
+	 */
+	notes?: string;
 }
 
 export interface PendingImage {

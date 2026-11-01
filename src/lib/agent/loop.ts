@@ -178,6 +178,11 @@ export interface SearchStep {
 
 export interface AgentLoopOptions {
 	messages: import('#lib/api.ts').ChatMessage[];
+	/**
+	 * The turn's tools, when the caller decided them to build its prompt
+	 * (`resolveTurnTools`). Otherwise the loop decides them from these options.
+	 */
+	turnTools?: import('#lib/agent/loop/turnTools.ts').TurnTools;
 	workingDir?: string | null;
 	onToolStart: (call: ResolvedToolCall) => void;
 	/**

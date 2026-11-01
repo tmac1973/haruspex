@@ -16,6 +16,12 @@ import {
 	type AgentLoopOptions,
 	type AgentStopReason
 } from '#lib/agent/loop.ts';
+import {
+	resolveTurnTools,
+	type TurnTools,
+	type TurnToolsInput
+} from '#lib/agent/loop/turnTools.ts';
+import type { DeferredFamily } from '#lib/agent/tools/types.ts';
 import { withInferenceSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 import { markStepDone, markStepProgress, newRunningStep } from '#lib/agent/steps.ts';
 import {
@@ -678,6 +684,28 @@ export function setExhaustiveResearch(value: boolean): void {
 	exhaustiveResearch = value;
 }
 
+/**
+ * A Chat turn's tools, decided before its prompt: the prompt lists the
+ * families the loop defers, and the loop gets the same split.
+ */
+function chatTurnTools(
+	conversation: Conversation,
+	workingDir: string | null,
+	skills: TurnToolsInput['skills'],
+	deepResearch: boolean
+): TurnTools {
+	return resolveTurnTools({
+		messages: conversation.messages,
+		workingDir,
+		deepResearch,
+		// As the loop gets it: Chat talks to the Settings backend.
+		visionSupported: resolveBackendDescriptor().vision,
+		interactive: true,
+		conversationId: conversation.id,
+		skills
+	});
+}
+
 /** `pending`: the message about to be sent, not yet in the conversation. */
 async function compactIfNeeded(
 	conversation: Conversation,
@@ -1140,7 +1168,8 @@ function buildApiPrompt(
 	keepRecentTools: boolean,
 	exhaustive: boolean,
 	memorySection: string,
-	skillsSection = ''
+	skillsSection = '',
+	deferred?: DeferredFamily[]
 ): ChatMessage[] {
 	// From the latest summary on (`chatModelView`): what came before it is
 	// in the summary, and stays in the chat only for the reader.
@@ -1159,7 +1188,8 @@ function buildApiPrompt(
 			imageModels: true,
 			guide: true,
 			feedback: true,
-			lean: getSettings().leanMode
+			lean: getSettings().leanMode,
+			deferred
 		}),
 		...(unanswered ? withNotice(historyMessages, unanswered) : historyMessages)
 	];
@@ -1677,6 +1707,9 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 		// Chat always uses the Settings backend, and has no project.
 		const skills = await prepareTurnSkills({});
 
+		const visionSupported = backendDescriptor.vision;
+		const turnTools = chatTurnTools(conversation, currentWorkingDir, skills, exhaustive);
+
 		// What the loop appends, for `lastTurnTools`. Not a slice of
 		// `messagesForApi`: the context fit drops old turns from its front.
 		const appended: ChatMessage[] = [];
@@ -1686,9 +1719,9 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 			keepRecentTools,
 			exhaustive,
 			renderMemorySection(recalled),
-			skillsPromptSection(skills)
+			skillsPromptSection(skills),
+			turnTools.deferredTools
 		);
-		const visionSupported = backendDescriptor.vision;
 
 		run.waitingForSlot = true;
 		await withInferenceSlot(
@@ -1706,6 +1739,7 @@ async function runCurrentTurn(conversation: Conversation): Promise<void> {
 			(slot) =>
 				runAgentLoop({
 					messages: messagesForApi,
+					turnTools,
 					workingDir: currentWorkingDir,
 					maxIterations: chatTurnMaxIterations(getSettings().chatMaxIterations, exhaustive),
 					contextSize: activeCtxSize,

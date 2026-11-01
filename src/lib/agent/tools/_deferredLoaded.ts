@@ -31,14 +31,26 @@ export function loadedFamilies(messages: ChatMessage[]): Set<string> {
 	return ids;
 }
 
-/** What `load_tools` returns for a family: the marker, then its schemas. */
+/** What `load_tools` returns for a family: the marker, its notes, then its schemas. */
 export function familyResult(family: DeferredFamily): string {
 	const fns = family.schemas.map((s) => s.function);
 	return [
 		loadedMarker(family.id),
+		...(family.notes ? [family.notes.trim()] : []),
 		'Call these tools through use_tool, with name and arguments:',
 		JSON.stringify(fns)
 	].join('\n');
+}
+
+/**
+ * The system prompt's list of families. It does not change while a
+ * conversation runs: a loaded family stays listed, and the `load_tools`
+ * result at the tail says it is loaded.
+ */
+export function toolIndexSection(deferred: DeferredFamily[] | undefined): string {
+	if (!deferred?.length) return '';
+	const lines = deferred.map((f) => `- ${f.line}`).join('\n');
+	return `\n\nMORE TOOLS (call load_tools with the family first, then use_tool):\n${lines}`;
 }
 
 /** The deferred family a tool belongs to, when this turn defers it. */

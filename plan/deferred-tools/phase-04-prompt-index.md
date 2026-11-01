@@ -38,8 +38,11 @@ but no reason to call it.
    The list does change when the user turns an integration on or off. That
    costs one full prompt process, as it does today.
 
-2. **Sections that describe deferred tools.** When a family is deferred and
-   not loaded, `buildSystemPrompt` leaves out the text that only serves it:
+2. **Sections that describe deferred tools.** When a family is deferred,
+   `buildSystemPrompt` leaves out the text that only serves it, loaded or not
+   (the prompt must not change when a family loads). The text goes in the
+   family's `load_tools` result (`familyNotes`, carried as
+   `DeferredFamily.notes`):
    - EMAIL INTEGRATION's tool-by-tool steps move into the `load_tools` result
      for `email`. The CONNECTED INTEGRATIONS line stays, so the model knows
      email exists.
@@ -47,8 +50,14 @@ but no reason to call it.
      / `_slides`, and the PYTHON SANDBOX bullet about them, move into the
      `documents` result.
    - IMAGE MODELS moves into the `images` result.
-   - In the Code prompt, the TOOLS lines for `make_asset` and
-     `generate_speech` move into their results.
+   - In the Code prompt, the TOOLS lines for `make_asset`, the music tools
+     and `generate_speech` move into their results.
+
+   The prompt needs the turn's families before the loop starts, so Chat and
+   the Code tab decide the turn's tools first (`resolveTurnTools` in
+   `agent/loop/turnTools.ts`) and hand the same result to the prompt builder
+   and to the loop (`AgentLoopOptions.turnTools`). The index and the
+   `load_tools` enum cannot disagree.
 
    A test asserts that no deferred tool name appears in the system text
    except in the index.
@@ -58,8 +67,10 @@ but no reason to call it.
    the model had called `load_tools`. The existing file-output hint then names
    tools the model has.
 4. **Tests.**
-   - With everything on, the Chat system prompt plus `tools` is under 20 KB,
-     and the Code tab's under 16 KB.
+   - With everything on, the schemas sent plus the index are under 20 KB in
+     Chat and 16 KB in the Code tab (the overview's measure). Measured
+     2026-11-01: 19,526 and 15,303 characters; the Chat system prompt itself
+     is 6,218.
    - The index lists exactly the deferred families of the turn.
    - The guard test from step 2.
    - A file-output request starts with the documents family loaded.

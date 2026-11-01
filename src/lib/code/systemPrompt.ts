@@ -10,6 +10,8 @@ import { imageEntries } from '#lib/image/entries.ts';
 import { formatTodayLong } from '#lib/utils/format.ts';
 import { GUIDE_PROMPT } from '#lib/guide/prompt.ts';
 import { feedbackPromptSection } from '#lib/harnessFeedback/prompt.ts';
+import { toolIndexSection } from '#lib/agent/tools/_deferredLoaded.ts';
+import type { DeferredFamily } from '#lib/agent/tools/types.ts';
 
 const SEARCH_AND_FILE_TOOLS = `- code_grep — search file CONTENTS (gitignore-aware); returns file:line locations, not bodies. Find where something is defined/used, then read those lines.
 - code_glob — find files by path glob (e.g. "src/**/*.ts").
@@ -68,14 +70,14 @@ export function isMacOS(
 }
 
 /** Textures need no image backend; the other kinds are named only with one. */
-function assetLine(): string {
+export function assetLine(): string {
 	return imageEntries().length > 0
 		? '\n- make_asset — make art for the project: a sprite, icon or tiling texture (or a plain picture), written as a PNG at the size the project uses. Pass palette_from with an existing asset to keep a set consistent. A texture, or a transition set where two textures meet (pass the recipes you used), is drawn by code from recipes you write, in a second; the rest take a minute or more. For a painted material that must tile, pass seamless: true with kind image. Check the result before moving on.'
 		: '\n- make_asset — make a tiling texture for the project, or a transition set where two textures meet, drawn by code from recipes you write, as PNGs at the size the project uses. Sprites and icons need image generation in Settings → Image. Check the result before moving on.';
 }
 
 /** generate_music and edit_music, when Settings → Music has a backend. */
-function musicLine(readOnly: boolean | undefined): string {
+export function musicLine(readOnly: boolean | undefined): string {
 	if (getSettings().musicBackendKind === 'none') return '';
 	const save = readOnly
 		? ''
@@ -84,9 +86,19 @@ function musicLine(readOnly: boolean | undefined): string {
 }
 
 /** generate_speech: koko is bundled, so it is always there. */
-function speechLine(readOnly: boolean | undefined): string {
+export function speechLine(readOnly: boolean | undefined): string {
 	const save = readOnly ? '' : ' Pass path (ending .wav) to also save it into the project.';
 	return `\n- generate_speech — speak text into an audio file with a voice on this computer: a voiceover or a game's lines. It takes seconds and plays in your answer.${save}`;
+}
+
+/** The TOOLS lines for the media tools, less those of families the turn defers. */
+function mediaLines(opts: BuildCodePromptOpts): string {
+	const deferred = new Set(opts.deferred?.map((f) => f.id));
+	return [
+		deferred.has('assets') ? '' : assetLine(),
+		deferred.has('music') ? '' : musicLine(opts.readOnly),
+		deferred.has('speech') ? '' : speechLine(opts.readOnly)
+	].join('');
 }
 
 /** Custom instructions, then the repo's AGENTS.md, then the skill list. */
@@ -126,6 +138,11 @@ export interface BuildCodePromptOpts {
 	 * `linked` dependency folders with it.
 	 */
 	subtask?: { task: string; worktree?: { root: string; linked: string[] } };
+	/**
+	 * The families this turn lists but does not send (`resolveTurnTools`): the
+	 * prompt lists them, and their TOOLS lines go in the `load_tools` result.
+	 */
+	deferred?: DeferredFamily[];
 }
 
 const WRITE_TOOL_LINE = /^- fs_(write|edit)_text /;
@@ -306,7 +323,7 @@ ${fileTools(opts.readOnly)}
 - command_output — the latest output of a background command, by the id run_command returned, and whether it is still running.
 - command_stop — stop a background command, and everything it started.
 ${handoffToolLine(opts)}- open_in_editor — open files in an editor window for the user to look at. It returns at once and does not report their edits.
-${WEB_TOOLS}${assetLine()}${musicLine(opts.readOnly)}${speechLine(opts.readOnly)}${delegateSection(opts.delegate)}
+${WEB_TOOLS}${mediaLines(opts)}${delegateSection(opts.delegate)}${toolIndexSection(opts.deferred)}
 
 RUNNING PROCESSES:
 - Servers / watchers / GUIs (anything that does not exit on its own): start them with run_command background:true. Check on one with command_output and stop it with command_stop when you are done with it. Do NOT run these in the foreground — they will just time out.

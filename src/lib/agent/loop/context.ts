@@ -5,13 +5,15 @@
  */
 
 import type { BackendOverride, ChatMessage, ToolDefinition } from '#lib/api.ts';
-import { getToolSchemas, type PendingImage, type ToolContext } from '#lib/agent/tools/index.ts';
-import { getDeferTools, getSettings, type SamplingParams } from '#lib/stores/settings.ts';
-import { deferOn, splitTurnTools } from '#lib/agent/tools/deferred.ts';
+import type { PendingImage, ToolContext } from '#lib/agent/tools/index.ts';
+import { getSettings, type SamplingParams } from '#lib/stores/settings.ts';
+import { LOAD_TOOLS } from '#lib/agent/tools/deferred.ts';
+import { readableSkills, resolveTurnTools } from '#lib/agent/loop/turnTools.ts';
+import { familyResult, loadedFamilies } from '#lib/agent/tools/_deferredLoaded.ts';
 import type { DeferredFamily } from '#lib/agent/tools/types.ts';
 import { resolveBackendDescriptor, type BackendDescriptor } from '#lib/inference/descriptor.ts';
-import { loadedSkillNames, skillsWithFiles } from '#lib/skills/content.ts';
-import { coveredTools, type TurnSkills } from '#lib/skills/turn.ts';
+import { loadedSkillNames } from '#lib/skills/content.ts';
+import { coveredTools } from '#lib/skills/turn.ts';
 import type { AgentLoopOptions } from '#lib/agent/loop.ts';
 import type { HeldSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 
@@ -20,11 +22,6 @@ import type { HeldSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 // act before a single deep-research turn can blow context.
 const IN_LOOP_TRIM_THRESHOLD = 0.7;
 
-/**
- * Skills whose files the model may read this turn: those it may load, and
- * any already in the conversation with files — a skill the user ran with
- * `/name` is readable whether or not autonomous use is on.
- */
 /** The data URLs of the pictures in the newest user message that has any. */
 export function latestUserImages(messages: ChatMessage[]): string[] {
 	for (let i = messages.length - 1; i >= 0; i--) {
@@ -34,12 +31,6 @@ export function latestUserImages(messages: ChatMessage[]): string[] {
 		if (urls.length) return urls;
 	}
 	return [];
-}
-
-function readableSkills(skills: TurnSkills, messages: ChatMessage[]): string[] {
-	const names = new Set(skills.catalog.map((s) => s.name));
-	for (const name of skillsWithFiles(messages)) names.add(name);
-	return [...names];
 }
 
 /**
@@ -235,63 +226,6 @@ function clampToContext(requested: number, contextSize: number): number {
 }
 
 /**
- * The turn's tool list, filtered by working-dir presence, deep-research mode,
- * vision support and the rest, then split when deferred loading is on.
- */
-function turnTools(
-	options: AgentLoopOptions,
-	descriptor: BackendDescriptor
-): { tools: ToolDefinition[]; deferredTools?: DeferredFamily[] } {
-	const workingDir = options.workingDir ?? null;
-	const shellMode = options.shellMode ?? false;
-	const codeMode = options.codeMode ?? false;
-	const offered = getToolSchemas({
-		hasWorkingDir: workingDir !== null,
-		deepResearch: options.deepResearch ?? false,
-		visionSupported: options.visionSupported ?? true,
-		shellMode,
-		codeMode,
-		codeReadOnly: options.codeReadOnly ?? false,
-		codeRemote: options.codeRemote ?? false,
-		interactive: options.interactive ?? false,
-		subtask: options.subtask !== undefined,
-		// The forced final tool is always offered. A stage once listed its
-		// read tools but not its submit tool: the model, correctly, never
-		// called a tool it was not given, and the forced call then named a
-		// tool missing from the request, which vLLM refuses with a 400 — so
-		// the turn ended empty and a chain lost its art.
-		toolAllowlist:
-			options.toolAllowlist && options.forceFinalTool
-				? [...options.toolAllowlist, options.forceFinalTool]
-				: options.toolAllowlist,
-		harnessFeedback: options.feedback !== undefined,
-		skillNames: options.skills?.catalog.map((s) => s.name),
-		skillFileNames: options.skills && readableSkills(options.skills, options.messages),
-		hasSkills: options.skills !== undefined,
-		taskOwner: options.codeSessionId
-			? `code:${options.codeSessionId}`
-			: options.conversationId
-				? `chat:${options.conversationId}`
-				: undefined
-	});
-	const split = deferOn({
-		setting: getDeferTools(),
-		modelId: descriptor.modelId,
-		interactive: options.interactive ?? false,
-		codeMode,
-		shellMode,
-		subtask: options.subtask !== undefined,
-		// A forced final tool must be in the request (see toolAllowlist above).
-		allowlisted: options.toolAllowlist !== undefined || options.forceFinalTool !== undefined,
-		lean: getSettings().leanMode
-	})
-		? splitTurnTools(offered, codeMode)
-		: null;
-	if (!split?.deferred.length) return { tools: split?.sent ?? offered };
-	return { tools: split.sent, deferredTools: split.deferred };
-}
-
-/**
  * Build the per-turn LoopContext from the public `AgentLoopOptions`.
  * Applies defaults for optional fields and asks the tool registry for
  * the schema list filtered by working-dir presence, deep-research
@@ -304,8 +238,8 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 	const codeAutoApprove = options.codeAutoApprove ?? false;
 	const expectsFileOutput = options.expectsFileOutput ?? false;
 	const descriptor = resolveBackendDescriptor(options.backend);
-	const { tools, deferredTools } = turnTools(options, descriptor);
-	return {
+	const { tools, deferredTools } = options.turnTools ?? resolveTurnTools(options);
+	const ctx: LoopContext = {
 		messages: options.messages,
 		tools,
 		deferredTools,
@@ -357,4 +291,31 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		descriptor,
 		options
 	};
+	preloadDocuments(ctx);
+	return ctx;
+}
+
+/**
+ * A request for a document file starts with the documents family loaded, as
+ * if the model had called load_tools: the file-output hint on the message
+ * names those tools.
+ */
+function preloadDocuments(ctx: LoopContext): void {
+	const documents = ctx.deferredTools?.find((f) => f.id === 'documents');
+	if (!ctx.expectsFileOutput || !documents || loadedFamilies(ctx.messages).has('documents')) {
+		return;
+	}
+	const id = 'preload_documents';
+	appendMessage(ctx, {
+		role: 'assistant',
+		content: '',
+		tool_calls: [
+			{
+				id,
+				type: 'function',
+				function: { name: LOAD_TOOLS, arguments: JSON.stringify({ family: 'documents' }) }
+			}
+		]
+	});
+	appendMessage(ctx, { role: 'tool', tool_call_id: id, content: familyResult(documents) });
 }

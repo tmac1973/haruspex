@@ -13,6 +13,7 @@ import type { ToolDefinition } from '#lib/api.ts';
 import type { DeferredFamily } from '#lib/agent/tools/types.ts';
 import { allFamilies, isCore } from '#lib/agent/tools/families.ts';
 import { toolCategory } from '#lib/agent/tools/registry.ts';
+import { familyNotes } from '#lib/agent/tools/familyNotes.ts';
 import { parseParamsB } from '#lib/agent/mcpBudget.ts';
 import type { DeferTools } from '#lib/stores/settings.ts';
 
@@ -20,7 +21,8 @@ export {
 	deferredFamilyOf,
 	familyResult,
 	loadedFamilies,
-	loadedMarker
+	loadedMarker,
+	toolIndexSection
 } from '#lib/agent/tools/_deferredLoaded.ts';
 
 export const LOAD_TOOLS = 'load_tools';
@@ -97,7 +99,11 @@ export interface ToolSplit {
  * `load_tools` and `use_tool` after them, and the families. A turn with no
  * family to defer sends what it was offered.
  */
-export function splitTurnTools(offered: ToolDefinition[], codeTab: boolean): ToolSplit {
+export function splitTurnTools(
+	offered: ToolDefinition[],
+	codeTab: boolean,
+	readOnly = false
+): ToolSplit {
 	const families = allFamilies();
 	const sent: ToolDefinition[] = [];
 	const byId = new Map<string, DeferredFamily>();
@@ -110,7 +116,12 @@ export function splitTurnTools(offered: ToolDefinition[], codeTab: boolean): Too
 			sent.push(schema);
 			continue;
 		}
-		const entry = byId.get(family.id) ?? { id: family.id, line: family.line, schemas: [] };
+		const entry = byId.get(family.id) ?? {
+			id: family.id,
+			line: family.line,
+			schemas: [],
+			notes: familyNotes(family.id, codeTab, readOnly)
+		};
 		entry.schemas.push(schema);
 		byId.set(family.id, entry);
 	}
