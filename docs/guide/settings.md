@@ -18,7 +18,7 @@ Appearance, reply format and lean mode.
 - **Theme**: System (default), Light or Dark.
 - **Highlight color**: the accent color. Default Teal.
 - **Response Format**: Minimal, Standard (default) or Rich.
-- **Lean mode**: off. See the `lean-mode` page.
+- **Lean mode**: Off (default), Lean or Lean + files (see `lean-mode`).
 
 See the `chat` page.
 
@@ -76,7 +76,7 @@ See the `skills` page.
 Voice input and spoken replies.
 
 - **Text-to-speech voice**: Heart (Female). **Read tables by subject**: on.
-- **Audio output (TTS playback)** and **Audio input (microphone)**: pick a device; **Refresh** rescans.
+- **Audio output (TTS playback)** and **Audio input (microphone)**: pick a device.
 
 See the `chat` page.
 

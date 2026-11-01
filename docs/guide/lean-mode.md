@@ -15,9 +15,15 @@ Every tool Chat can use is described to the model at the start of each reply. Wi
 
 The setup wizard asks, as its last step, and recommends Lean for a model of 9B or smaller or a machine without a fast GPU (no graphics card, or slow integrated graphics). For a remote server's model it goes by the size in the model's name, and recommends Full when the name doesn't say.
 
-After that, Settings → General → Lean mode. While it is on, a **Lean mode** badge shows in the header; click it to come back to the switch.
+After that, Settings → General → Lean mode has three choices:
 
-The switch can't be turned on while a Code or Shell turn is running. Finish or stop the turn first. Turning it off works at any time.
+- **Off**: the full app.
+- **Lean**: everything on this page.
+- **Lean + files**: Lean, and Chat can also save text files and documents to the working folder (see below).
+
+While lean mode is on, a **Lean mode** badge shows in the header; click it to come back to these choices.
+
+Lean mode can't be turned on while a Code or Shell turn is running. Finish or stop the turn first. Turning it off works at any time.
 
 If you set Haruspex up before lean mode existed, it offers lean mode once, in a card at the bottom left, when the same rule fits your model or machine. **Not now** closes it for good.
 
@@ -27,6 +33,7 @@ If you switch to a bigger model while lean mode is on (one over 9B, or a remote 
 
 - Search the web, read pages, and find images to show in an answer.
 - Read files in the working folder: text, PDF, Word, spreadsheets and pictures (pictures need a model that can see them).
+- With **Lean + files**: save text files (.md, .txt, .csv and the like) and documents (Word, PDF, .odt) to the working folder, so a research answer can end as a report. Ask for the file by name or type ("save it as report.docx").
 - Answer questions about Haruspex from this guide.
 - Remember something when you ask it to, if memory is on (see the `memory` page).
 - Use your installed skills, except the ones for pictures, music, speech, video and game art: Settings → Skills marks them "Off in lean mode" (see the `skills` page).
@@ -35,7 +42,7 @@ If you switch to a bigger model while lean mode is on (one over 9B, or a remote 
 
 - Job types other than Research. Other jobs stay in the Jobs list, marked **Paused by lean mode**; they can't be run, and a scheduled run is skipped rather than saved for later.
 - The Code and Shell tabs. Ctrl / ⌘ + 3 and 4 do nothing, Chat has no open-in-Shell button, and a Code task in the tasks list says to turn lean mode off. A detached Code or Shell window shows a note instead of the session.
-- Writing files of any kind: text, documents, spreadsheets, slides and PDFs. Chat puts what you asked for in its reply instead.
+- Writing files of any kind: text, documents, spreadsheets, slides and PDFs. Chat puts what you asked for in its reply instead. **Lean + files** turns text and documents back on; spreadsheets and slides stay off, since their tools are the largest of all.
 - The Python sandbox.
 - Writing or changing skills.
 - Speech, image, music and video generation.
@@ -51,5 +58,5 @@ Remote control follows lean mode too (see `remote-control`). The page shows Chat
 
 ## What it doesn't change
 
-- A research job keeps its own tools, file writing included.
+- A research job keeps its own tools, file writing included, whichever lean choice is set.
 - The model itself, its context size and its other settings.

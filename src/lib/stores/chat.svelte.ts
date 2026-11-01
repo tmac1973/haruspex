@@ -1189,6 +1189,7 @@ function buildApiPrompt(
 			guide: true,
 			feedback: true,
 			lean: getSettings().leanMode,
+			leanFileWrites: getSettings().leanFileWrites,
 			deferred
 		}),
 		...(unanswered ? withNotice(historyMessages, unanswered) : historyMessages)
@@ -1225,6 +1226,7 @@ function buildApiPrompt(
 		workingDir,
 		exhaustiveResearch: exhaustive,
 		lean: getSettings().leanMode,
+		leanFileWrites: getSettings().leanFileWrites,
 		// On the latest user message, not the system prompt: it changes from
 		// turn to turn, and the system prompt has to stay a cacheable prefix.
 		memorySection

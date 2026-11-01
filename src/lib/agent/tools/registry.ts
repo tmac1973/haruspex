@@ -26,7 +26,7 @@ import {
 	isCodeWriteTool,
 	type DescriptionOverride
 } from '#lib/agent/tools/codeTabProfile.ts';
-import { LEAN_CHAT_TOOLS } from '#lib/agent/tools/leanProfile.ts';
+import { leanOffers } from '#lib/agent/tools/leanProfile.ts';
 import { shellPlatformSupported } from '#lib/shell/platformSupport.ts';
 import { videoAvailable, videoToolsOn } from '#lib/video/binaries.ts';
 import { getTasks } from '#lib/tasks/store.svelte.ts';
@@ -155,13 +155,15 @@ interface ToolFilterOpts {
 	taskOwner?: string;
 	/** Settings → General → Lean mode is on; see `isLeanTurn`. */
 	lean: boolean;
+	/** Settings → General → Lean mode is Lean + files; read only when `lean`. */
+	leanFileWrites: boolean;
 }
 
 /**
  * A Chat turn with someone at it while lean mode is on: it offers
- * `LEAN_CHAT_TOOLS` alone. Code and Shell have their own sets (lean mode
- * hides those tabs instead), and a job or subtask keeps what its own work
- * needs — a research job writes its report even on a lean machine.
+ * `LEAN_CHAT_TOOLS` alone, and `LEAN_WRITE_TOOLS` with Lean + files. Code
+ * and Shell have their own sets (lean mode hides those tabs instead), and a
+ * job or subtask keeps what its own work needs — a research job writes its report even on a lean machine.
  */
 function isLeanTurn(f: ToolFilterOpts): boolean {
 	return f.lean && f.interactive && !f.subtask && !f.codeMode && !f.shellMode;
@@ -465,7 +467,8 @@ export function offeredSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
 		sandboxEnabled: getSettings().sandboxEnabled && !pythonRuntimeMissing(),
 		memoryWritable: memoryActive(),
 		taskOwner: opts.taskOwner,
-		lean: getSettings().leanMode
+		lean: getSettings().leanMode,
+		leanFileWrites: getSettings().leanFileWrites
 	};
 	const schemas: ToolDefinition[] = [];
 	for (const reg of tools.values()) {
@@ -487,7 +490,9 @@ function schemaFor(
 ): ToolDefinition | null {
 	// Lean mode names what may be offered; the gates below still decide
 	// whether each of those is offered this turn.
-	if (isLeanTurn(filter) && !LEAN_CHAT_TOOLS.has(reg.schema.function.name)) return null;
+	if (isLeanTurn(filter) && !leanOffers(reg.schema.function.name, filter.leanFileWrites)) {
+		return null;
+	}
 	// Deferred loading adds these itself (`splitTurnTools`).
 	if (reg.category === 'tools-load') return null;
 	// The user guide answers the person asking, in any mode; a job has nobody

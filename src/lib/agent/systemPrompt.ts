@@ -71,6 +71,11 @@ export interface SystemPromptOptions {
 	 */
 	lean?: boolean;
 	/**
+	 * Lean + files: a lean turn that also has `fs_write_text` and
+	 * `fs_write_document` (`LEAN_WRITE_TOOLS`). Ignored unless `lean`.
+	 */
+	leanFileWrites?: boolean;
+	/**
 	 * The families this turn lists but does not send (`resolveTurnTools`). The
 	 * prompt lists them, and leaves out the text that only serves them: it
 	 * goes in their `load_tools` result (`familyNotes`).
@@ -92,6 +97,9 @@ export function emailNotes(): string {
 const WRITE_FILE_RULE =
 	'When the user asks you to create a file (PDF, docx, xlsx, etc.), do your research and call fs_write_document, fs_write_spreadsheet or fs_write_slides with complete content IN THE SAME TURN. Do not dump the content as a chat message instead.';
 
+const LEAN_WRITE_FILE_RULE =
+	'When the user asks you to save or create a file, do your research and call fs_write_document (.pdf, .docx, .odt) or fs_write_text (.md, .txt, .csv and other text) with complete content IN THE SAME TURN. Do not dump the content as a chat message instead. You cannot write spreadsheets or slides.';
+
 const NO_PYTHON_DOCUMENTS =
 	"Do NOT use run_python to create PDFs, Word docs, PowerPoint decks, or spreadsheets. fs_write_document (.pdf/.docx/.odt), fs_write_spreadsheet (.xlsx/.ods) and fs_write_slides (.pptx/.odp) produce much better output than fpdf2 / python-pptx scripts. Use Python for the analysis. For a slide deck, pass the numbers to fs_write_slides as a chart or table, which stays editable in PowerPoint. For a document, save any plots as PNG files in the working directory with matplotlib's savefig and reference them in the content.";
 
@@ -111,6 +119,7 @@ export function buildSystemPrompt(
 ): ChatMessage {
 	const today = formatTodayLong();
 	const lean = opts.lean === true;
+	const leanWrites = lean && opts.leanFileWrites === true;
 	const deferred = new Set(opts.deferred?.map((f) => f.id));
 	// The guide and the skills describe the whole app; a lean turn has a few
 	// of its tools, and a small model otherwise answers from the guide.
@@ -118,9 +127,9 @@ export function buildSystemPrompt(
 		? `
 
 LEAN MODE:
-- Lean mode is on (Settings → General → Lean mode). Your tools are the ones you were given: web search and pages, image search, reading files in the working folder, the Haruspex guide, memory and skills.
+- Lean mode is on (Settings → General → Lean mode). Your tools are the ones you were given: web search and pages, image search, reading ${leanWrites ? 'and writing text and document files' : 'files'} in the working folder, the Haruspex guide, memory and skills.
 - The guide describes the full app. When asked what you can do, answer from the tools you have, not from the guide.
-- If a request needs anything else (writing files, Python, pictures, music, speech, email, calendar, the Code or Shell tabs), say that it needs lean mode turned off. Never say you tried a tool you don't have.`
+- If a request needs anything else (${leanWrites ? 'spreadsheets, slides' : 'writing files'}, Python, pictures, music, speech, email, calendar, the Code or Shell tabs), say that it needs lean mode turned off. Never say you tried a tool you don't have.`
 		: '';
 	const imagesSection = opts.includeImages ? getIncludeImagesPrompt({ lean }) : '';
 	const imageModelsSection =
@@ -134,11 +143,13 @@ FILESYSTEM ACCESS:
 - Use fs_list_dir first to see what files exist before reading specific files.
 - Only use filesystem tools when the user explicitly asks to work with files.
 - ${
-				lean
-					? 'You can read files here but not create or change them. Put what the user asked for in your reply.'
-					: deferred.has('documents')
-						? 'When the user asks you to create a PDF, Word, OpenDocument, spreadsheet or slide file, load the documents tools, do your research and write the file with complete content IN THE SAME TURN. Do not dump the content as a chat message instead.'
-						: WRITE_FILE_RULE
+				leanWrites
+					? LEAN_WRITE_FILE_RULE
+					: lean
+						? 'You can read files here but not create or change them. Put what the user asked for in your reply.'
+						: deferred.has('documents')
+							? 'When the user asks you to create a PDF, Word, OpenDocument, spreadsheet or slide file, load the documents tools, do your research and write the file with complete content IN THE SAME TURN. Do not dump the content as a chat message instead.'
+							: WRITE_FILE_RULE
 			}`
 		: '';
 
@@ -243,6 +254,8 @@ export function injectMessageHints(
 		exhaustiveResearch: boolean;
 		/** A lean Chat turn: it has no fs_write_* tools to be pushed toward. */
 		lean?: boolean;
+		/** Lean + files: the lean turn has fs_write_text and fs_write_document. */
+		leanFileWrites?: boolean;
 		/**
 		 * Recalled memories for this turn (`renderMemorySection`), added after
 		 * the hints so they stay the freshest context. A PARAMETER rather than
@@ -269,7 +282,15 @@ export function injectMessageHints(
 		hints.push('Include Reddit as a source.');
 	}
 
-	if (opts.workingDir && !opts.lean && looksLikeFileOutputRequest(lastText)) {
+	if (opts.workingDir && opts.lean && opts.leanFileWrites && looksLikeFileOutputRequest(lastText)) {
+		hints.push(
+			'You must create the requested file DURING THIS TURN. Do your research, ' +
+				'synthesize the content, then write the file: fs_write_document for ' +
+				'.pdf/.docx/.odt, fs_write_text for .md/.txt/.csv. Do NOT paste the ' +
+				'report as a chat message instead. After the write succeeds, respond ' +
+				'with a brief confirmation and the file path.'
+		);
+	} else if (opts.workingDir && !opts.lean && looksLikeFileOutputRequest(lastText)) {
 		hints.push(
 			'You must create the requested file DURING THIS TURN. Do your research, ' +
 				'synthesize the content, then write the file: fs_write_document for ' +
