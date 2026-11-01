@@ -17,6 +17,9 @@
  *   4. The wrapper proceeds based on the choice — overwrite, auto-
  *      append counter, or abort with a "user canceled" error.
  *
+ * The remote page (Settings → Remote control) answers it too, through
+ * `engine/prompts`, as a `file-conflict` prompt.
+ *
  * Only one pending conflict can exist at a time. In practice the agent
  * loop runs tool calls sequentially, so there's no contention — if a
  * second conflict arrives before the first resolves, that's a bug we
@@ -28,6 +31,8 @@ export type FileConflictChoice = 'overwrite' | 'counter' | 'cancel';
 
 interface PendingConflict {
 	path: string;
+	/** The chat whose turn asks, so the remote page shows it there. */
+	chatId: string | null;
 	resolve: (choice: FileConflictChoice) => void;
 }
 
@@ -40,7 +45,10 @@ let pending = $state<PendingConflict | null>(null);
  * pending (shouldn't happen in practice — the agent loop serializes
  * tool calls).
  */
-export function askFileConflict(path: string): Promise<FileConflictChoice> {
+export function askFileConflict(
+	path: string,
+	chatId: string | null = null
+): Promise<FileConflictChoice> {
 	if (pending !== null) {
 		return Promise.reject(
 			new Error(
@@ -50,7 +58,7 @@ export function askFileConflict(path: string): Promise<FileConflictChoice> {
 		);
 	}
 	return new Promise<FileConflictChoice>((resolve) => {
-		pending = { path, resolve };
+		pending = { path, chatId, resolve };
 	});
 }
 

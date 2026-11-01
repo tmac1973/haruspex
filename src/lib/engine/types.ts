@@ -292,7 +292,15 @@ export interface SessionListItem {
 }
 
 export type PromptKind =
-	'command' | 'question' | 'sandbox' | 'memory' | 'mcp' | 'skill' | 'repo-trust' | 'screen-capture';
+	| 'command'
+	| 'question'
+	| 'sandbox'
+	| 'memory'
+	| 'mcp'
+	| 'skill'
+	| 'repo-trust'
+	| 'screen-capture'
+	| 'file-conflict';
 
 /** Something a turn is waiting on a person for. */
 export interface Prompt {
@@ -323,7 +331,9 @@ export type PromptAnswer =
 	| { kind: 'skill'; action: 'save'; text?: string }
 	| { kind: 'skill'; action: 'reject'; reason: string }
 	| { kind: 'repo-trust'; trust: boolean }
-	| { kind: 'screen-capture'; choice: 'allow' | 'deny' };
+	| { kind: 'screen-capture'; choice: 'allow' | 'deny' }
+	/** Replace the file, save under a free name next to it (`counter`), or don't write. */
+	| { kind: 'file-conflict'; choice: 'overwrite' | 'counter' | 'cancel' };
 
 /**
  * What a session did. `seq` counts per session, so a client that sees a gap

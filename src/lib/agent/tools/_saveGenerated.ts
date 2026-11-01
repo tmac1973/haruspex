@@ -78,7 +78,8 @@ export async function prepareSave(
 	const workdir = fsWorkdir(ctx)!;
 	const resolved = await resolveWritePathInteractive(workdir, rawPath, ctx.filesWrittenThisTurn, {
 		askBeforeOverwrite: true,
-		releaseSlot: ctx.releaseSlot
+		releaseSlot: ctx.releaseSlot,
+		chatId: ctx.conversationId
 	});
 	if (resolved.kind === 'canceled') return userCanceledWriteError(rawPath, tool);
 	if (resolved.kind === 'rejected') return toolResult(toolError(resolved.message));

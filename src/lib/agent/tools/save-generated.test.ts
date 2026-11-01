@@ -84,7 +84,7 @@ describe('save_generated in Chat', () => {
 			{ url: SONG, path: 'rain.mp3', overwrite: true },
 			chat()
 		);
-		expect(state.ask).toHaveBeenCalledWith('rain.mp3');
+		expect(state.ask).toHaveBeenCalledWith('rain.mp3', 'c1');
 		expect(out.result).toMatch(/User canceled/);
 		expect(writes()).toEqual([]);
 
