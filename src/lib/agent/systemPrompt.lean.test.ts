@@ -46,10 +46,10 @@ vi.mock('#lib/sandbox/availability.ts', async (importOriginal) => ({
 import { buildSystemPrompt, injectMessageHints } from './systemPrompt';
 import { getToolSchemas } from '#lib/agent/tools/index.ts';
 import { registerMcpTools, unregisterMcpServer } from '#lib/agent/tools/mcp.ts';
-import { LEAN_CHAT_TOOLS } from '#lib/agent/tools/leanProfile.ts';
+import { leanOffers } from '#lib/agent/tools/leanProfile.ts';
 import { skillsPromptSection } from '#lib/skills/turn.ts';
 
-function leanPrompt(): string {
+function leanPrompt(leanFileWrites = false): string {
 	return buildSystemPrompt('/home/u/notes', {
 		skillsSection: skillsPromptSection({
 			catalog: [{ name: 'notes', description: 'Tidy meeting notes', tools: [] }],
@@ -58,7 +58,8 @@ function leanPrompt(): string {
 		includeImages: true,
 		guide: true,
 		feedback: true,
-		lean: true
+		lean: true,
+		leanFileWrites
 	}).content as string;
 }
 
@@ -112,7 +113,7 @@ describe('buildSystemPrompt — lean', () => {
 		expect(leanPrompt()).toContain('You can read files here but not create or change them');
 	});
 
-	it('names no tool a lean turn is not offered', () => {
+	it('names no tool a lean turn is not offered, with or without files', () => {
 		// Every tool any surface offers, with lean mode off in the registry
 		// (this file does not turn it on): the prompt may name only lean ones.
 		const all = new Set(
@@ -122,9 +123,30 @@ describe('buildSystemPrompt — lean', () => {
 				{ hasWorkingDir: true, interactive: true, shellMode: true }
 			].flatMap((o) => getToolSchemas(o).map((s) => s.function.name))
 		);
-		const prompt = leanPrompt();
-		const named = [...all].filter((n) => new RegExp(`\\b${n}\\b`).test(prompt));
-		expect(named.filter((n) => !LEAN_CHAT_TOOLS.has(n))).toEqual([]);
+		for (const files of [false, true]) {
+			const prompt = leanPrompt(files);
+			const named = [...all].filter((n) => new RegExp(`\\b${n}\\b`).test(prompt));
+			expect(named.filter((n) => !leanOffers(n, files))).toEqual([]);
+		}
+	});
+
+	it('tells a Lean + files turn to write text and documents, not slides', () => {
+		const prompt = leanPrompt(true);
+		expect(prompt).toContain('fs_write_document');
+		expect(prompt).toContain('fs_write_text');
+		expect(prompt).toContain('You cannot write spreadsheets or slides');
+		expect(prompt).not.toContain('You can read files here but not create');
+	});
+
+	it('pushes a Lean + files turn to write the file it was asked for', () => {
+		const [msg] = injectMessageHints([{ role: 'user', content: 'Make me a PDF of this' }], {
+			workingDir: '/home/u/notes',
+			exhaustiveResearch: false,
+			lean: true,
+			leanFileWrites: true
+		});
+		expect(msg.content).toContain('fs_write_document');
+		expect(msg.content).not.toContain('fs_write_slides');
 	});
 
 	it('does not push a lean turn to write a file', () => {

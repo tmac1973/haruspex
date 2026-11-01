@@ -16,10 +16,10 @@ Click the gear in the header; click it again or **← Back** to close.
 Appearance, reply format, lean mode and tool loading.
 
 - **Theme**: System (default), Light or Dark.
-- **Highlight color**: the accent color. Default Teal.
+- **Highlight color**: Teal (default).
 - **Response Format**: Minimal, Standard (default) or Rich.
-- **Lean mode**: off. See the `lean-mode` page.
-- **Load tools when needed**: Auto. See the `tool-loading` page.
+- **Lean mode**: Off (default), Lean or Lean + files (see `lean-mode`).
+- **Load tools when needed**: Auto (see `tool-loading`).
 
 See the `chat` page.
 

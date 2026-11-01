@@ -4,6 +4,7 @@ vi.mock('@tauri-apps/api/app', () => ({ getVersion: async () => '0.2.3' }));
 /** What Settings → Inference resolves to, for the tests that change it. */
 const settingsBackend = vi.hoisted(() => ({
 	lean: false,
+	files: false,
 	kind: 'remote',
 	allowParallel: true,
 	parallelSlots: null as number | null
@@ -26,6 +27,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: () => ({
 		leanMode: settingsBackend.lean,
+		leanFileWrites: settingsBackend.files,
 		sandboxEnabled: false,
 		imageBackendKind: 'comfyui',
 		screenCaptureEnabled: true,
@@ -74,6 +76,15 @@ describe('guideStatus', () => {
 		settingsBackend.lean = false;
 		expect(s).toContain('Lean mode: on (Settings → General → Lean mode)');
 		expect(s).toContain('file writing, Python, pictures, music, speech');
+	});
+
+	it('says when lean mode can write text and documents', async () => {
+		Object.assign(settingsBackend, { lean: true, files: true });
+		const s = await guideStatus();
+		Object.assign(settingsBackend, { lean: false, files: false });
+		expect(s).toContain('Lean mode: Lean + files');
+		expect(s).toContain('text and document writing');
+		expect(s).toContain('spreadsheets, slides, Python');
 	});
 
 	it('says whether turns overlap on a model server, and that the local settings do nothing there', async () => {

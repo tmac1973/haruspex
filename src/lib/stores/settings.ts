@@ -579,6 +579,12 @@ export interface AppSettings {
 	 */
 	leanMode: boolean;
 	/**
+	 * Lean mode also offers Chat `fs_write_text` and `fs_write_document`
+	 * (`LEAN_WRITE_TOOLS`), so research can end in a file. Read only while
+	 * `leanMode` is on. Settings → General → Lean mode → Lean + files.
+	 */
+	leanFileWrites: boolean;
+	/**
 	 * Interactive Chat and the Code tab send the core tools in full and list
 	 * the rest by family; the model loads a family with `load_tools`
 	 * (`agent/tools/deferred.ts`). `auto` follows the model's size.
@@ -1134,6 +1140,7 @@ const defaults: AppSettings = {
 	activeLocalModelFilename: '',
 	legacyModelNoticeDismissed: false,
 	leanMode: false,
+	leanFileWrites: false,
 	deferTools: 'auto',
 	leanNoticeShown: false,
 	leanHintedModels: [],
@@ -2004,6 +2011,12 @@ export function getLeanMode(): boolean {
 export function setLeanMode(on: boolean): void {
 	if (settings.leanMode !== on) {
 		commit({ ...settings, leanMode: on });
+	}
+}
+
+export function setLeanFileWrites(on: boolean): void {
+	if (settings.leanFileWrites !== on) {
+		commit({ ...settings, leanFileWrites: on });
 	}
 }
 

@@ -34,5 +34,23 @@ export const LEAN_CHAT_TOOLS: ReadonlySet<string> = new Set([
 	'fs_read_image'
 ]);
 
+/**
+ * What Lean + files adds (Settings → General → Lean mode), so research can
+ * end in a note or a report. Slides and spreadsheets stay out: their nested
+ * schemas cost more than the rest of the lean list together.
+ */
+export const LEAN_WRITE_TOOLS: ReadonlySet<string> = new Set([
+	'fs_write_text',
+	'fs_write_document'
+]);
+
+/** Whether a lean Chat turn may offer `name`; `fileWrites` is Lean + files. */
+export function leanOffers(name: string, fileWrites: boolean): boolean {
+	return LEAN_CHAT_TOOLS.has(name) || (fileWrites && LEAN_WRITE_TOOLS.has(name));
+}
+
 /** The most a lean Chat turn's schemas may add up to, in JSON characters. */
 export const LEAN_SCHEMA_BUDGET_CHARS = 9500;
+
+/** The same for Lean + files. */
+export const LEAN_WRITE_SCHEMA_BUDGET_CHARS = 12000;
