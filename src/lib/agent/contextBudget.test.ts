@@ -352,6 +352,26 @@ describe('fitMessagesToBudget', () => {
 		expect(msgs.filter((m) => m.role === 'system').length).toBe(1);
 	});
 
+	it("keeps a long agent turn's question, which is its only user message", () => {
+		// One research turn: the question, then nothing but tool rounds.
+		const question = 'Research how heat pumps work and make a PDF of it.';
+		const msgs: ChatMessage[] = [sys('system prompt'), user(question)];
+		for (let i = 0; i < 20; i++) {
+			msgs.push({
+				role: 'assistant',
+				content: 'b'.repeat(2000),
+				tool_calls: [
+					{ id: `c${i}`, type: 'function', function: { name: 'fetch_url', arguments: '{}' } }
+				]
+			});
+			msgs.push(tool('page ' + 'c'.repeat(3000), `c${i}`));
+		}
+		const info = fitMessagesToBudget(msgs, 32768, { reserveOutput: 16384 });
+		expect(info!.droppedTurns).toBeGreaterThan(0);
+		expect(msgs.filter((m) => m.role === 'user').map((m) => m.content)).toEqual([question]);
+		expect(msgs[1].content).toBe(question);
+	});
+
 	it('folds the drop note into the first message as user when there is no system message', () => {
 		const msgs: ChatMessage[] = [];
 		for (let i = 0; i < 30; i++) {

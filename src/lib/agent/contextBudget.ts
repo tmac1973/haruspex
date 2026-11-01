@@ -475,8 +475,8 @@ function truncateOversized(
 
 /**
  * Drop the oldest non-system messages (preserving all leading system
- * messages and the last PROTECTED_TURNS pairs) until the estimate is under
- * `target`, noting the drop once in the leading system message (never adding
+ * messages, the last PROTECTED_TURNS pairs and the latest user message) until
+ * the estimate is under `target`, noting the drop once in the leading system message (never adding
  * a new one). Orphaned tool results left behind are sanitized away. Returns
  * the count dropped.
  */
@@ -496,7 +496,16 @@ function dropOldestTurns(
 	}
 	if (nonSystemIdx.length <= protectedCount) return 0;
 
-	const droppable = nonSystemIdx.slice(0, nonSystemIdx.length - protectedCount);
+	// The latest user message is the question the turn is answering. One long
+	// agent turn is that message and then nothing but tool rounds, so it can
+	// be the oldest message here; dropped, it left a prompt with no user
+	// message at all, which the Qwen template refuses (a 500 on every retry).
+	const latestUser = messages.findLastIndex(
+		(m) => m.role === 'user' && m.content !== DROPPED_TURNS_NOTE
+	);
+	const droppable = nonSystemIdx
+		.slice(0, nonSystemIdx.length - protectedCount)
+		.filter((i) => i !== latestUser);
 	const toRemove = new Set<number>();
 	let dropped = 0;
 	// The estimate is a plain sum of per-message costs (plus a constant
