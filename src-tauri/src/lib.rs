@@ -163,9 +163,7 @@ pub fn run() {
 
             // Initialize PDFium for high-quality PDF text extraction.
             // Falls back to pdf-extract if the bundled libpdfium is missing.
-            if let Ok(resource_dir) = app.path().resource_dir() {
-                fs_tools::init_pdfium(&resource_dir);
-            }
+            fs_tools::init_pdfium(&sidecar_util::resource_roots(app.handle()));
 
             // The skills Haruspex ships, copied into the user's skills folder
             // before any window lists skills. See skills::shipped.
