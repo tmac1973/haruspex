@@ -9,7 +9,8 @@ import {
 	getTokenCalibration,
 	resetTokenCalibration,
 	parseContextOverflow,
-	DROPPED_TURNS_NOTE
+	DROPPED_TURNS_NOTE,
+	OVERSIZED_MESSAGE_MAX_TOKENS
 } from './contextBudget';
 import type { ChatMessage } from '#lib/api.ts';
 
@@ -286,6 +287,30 @@ describe('fitMessagesToBudget', () => {
 		expect(String(msgs[2].content)).toContain('search result one');
 		expect(String(msgs[3].content)).toContain('search result two');
 		expect(fits(msgs, 262144, 8192)).toBe(true);
+	});
+
+	it('keeps at most a fixed size of one huge message on a large window', () => {
+		// A large MCP result on a 256K window: a quarter of the budget would
+		// keep ~60k tokens of it.
+		const msgs = [sys('p'), user('q'), tool('{"row":1}\n'.repeat(200_000), 'mcp')];
+		const info = fitMessagesToBudget(msgs, 262144, { reserveOutput: 8192 });
+		expect(info!.truncatedMessages).toBe(1);
+		const kept = estimateTokens(String(msgs[2].content));
+		expect(kept).toBeLessThanOrEqual(OVERSIZED_MESSAGE_MAX_TOKENS + 100);
+		expect(kept).toBeGreaterThan(OVERSIZED_MESSAGE_MAX_TOKENS / 2);
+		expect(String(msgs[2].content)).toContain('Call the tool again for a narrower part');
+		expect(String(msgs[2].content)).not.toContain('narrow the command');
+	});
+
+	it('keeps a quarter of a small window, and tells the model to ask the user about a paste', () => {
+		const msgs = [sys('p'), user('q'), tool('{"row":1}\n'.repeat(200_000), 'mcp')];
+		fitMessagesToBudget(msgs, 32768, { reserveOutput: 8192 });
+		expect(estimateTokens(String(msgs[2].content))).toBeLessThanOrEqual(
+			Math.floor((32768 - 8192) * 0.25) + 100
+		);
+		const pasted = [sys('p'), user('x\n'.repeat(500_000))];
+		fitMessagesToBudget(pasted, 32768, { reserveOutput: 8192 });
+		expect(String(pasted[1].content)).toContain('Ask the user for the part you need');
 	});
 
 	it('still stubs after cutting when the cut alone does not fit', () => {

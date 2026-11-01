@@ -40,6 +40,17 @@ const PROTECTED_TURNS = 4;
 // A single message bigger than this fraction of the budget is a
 // head/tail-truncation candidate (catches a giant pasted log / dmesg).
 const OVERSIZED_MESSAGE_FRACTION = 0.25;
+// And never kept bigger than this, however large the window: a quarter of
+// 262k is ~65k tokens of one tool result, riding along in every later call
+// of the turn. On a 32k window the quarter is the smaller.
+export const OVERSIZED_MESSAGE_MAX_TOKENS = 16_000;
+// What the cut marker tells the model it can do about the dropped middle.
+// The shell's own hint (narrow the command) is for output it captured itself.
+const CUT_HINTS: Record<string, string> = {
+	tool: 'Call the tool again for a narrower part (a range, a filter, a page) if you need the dropped region',
+	user: 'Ask the user for the part you need if it was in the dropped region',
+	assistant: 'This is your own earlier reply, cut to fit the context'
+};
 // Dropping turns aims this far under the budget, not at it. Aimed at the
 // budget, every later call in the turn was over again and dropped one more
 // message, so the prompt changed near its start on every call and the
@@ -431,7 +442,10 @@ function truncateOversized(
 	effectiveBudget: number,
 	fits: () => boolean
 ): number {
-	const oversizedTokenCap = Math.max(1, Math.floor(effectiveBudget * OVERSIZED_MESSAGE_FRACTION));
+	const oversizedTokenCap = Math.max(
+		1,
+		Math.min(OVERSIZED_MESSAGE_MAX_TOKENS, Math.floor(effectiveBudget * OVERSIZED_MESSAGE_FRACTION))
+	);
 	const candidates = messages
 		.map((m, i) => ({ i, m, tokens: messageTokens(m) }))
 		.filter(
@@ -446,7 +460,11 @@ function truncateOversized(
 	let truncated = 0;
 	for (const c of candidates) {
 		if (fits()) break;
-		const result = truncateCapturedOutput(c.m.content as string, maxBytes);
+		const result = truncateCapturedOutput(
+			c.m.content as string,
+			maxBytes,
+			CUT_HINTS[c.m.role] ?? CUT_HINTS.tool
+		);
 		if (result.truncated) {
 			messages[c.i] = { ...c.m, content: result.text };
 			truncated++;
