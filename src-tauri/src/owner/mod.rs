@@ -127,7 +127,8 @@ impl Dispatch for AppDispatch {
 }
 
 /// `debug.tail`'s lines with every secret blanked, as `agent-debug.log` is
-/// (`app_log.rs`).
+/// (`app_log.rs`), and each URL's query dropped, as a report's are
+/// (`feedback.rs`): a signed link's token can go by any name.
 fn redact_tail(answer: &mut Value, known: &[String]) {
     let Some(lines) = answer.get_mut("lines").and_then(Value::as_array_mut) else {
         return;
@@ -135,7 +136,8 @@ fn redact_tail(answer: &mut Value, known: &[String]) {
     for entry in lines {
         if let Some(line) = entry.get_mut("line") {
             if let Some(text) = line.as_str() {
-                *line = Value::String(crate::text_util::redact_secrets(text, known));
+                let text = crate::text_util::redact_secrets(text, known);
+                *line = Value::String(crate::text_util::strip_url_queries(&text));
             }
         }
     }
@@ -205,6 +207,25 @@ impl Images for AppImages {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_tail_drops_each_urls_query_whatever_its_token_is_called() {
+        let mut answer = json!({
+            "lines": [
+                { "seq": 1, "line": "GET https://cdn.example.com/a.png?X-Amz-Signature=deadbeef ok" },
+                { "seq": 2, "line": "(\"http://gpu.lan:8188/view?filename=x&sig=1\") done" }
+            ]
+        });
+        redact_tail(&mut answer, &[]);
+        assert_eq!(
+            answer["lines"][0]["line"],
+            "GET https://cdn.example.com/a.png ok"
+        );
+        assert_eq!(
+            answer["lines"][1]["line"],
+            "(\"http://gpu.lan:8188/view\") done"
+        );
+    }
 
     #[test]
     fn a_tail_leaves_with_its_secrets_blanked() {

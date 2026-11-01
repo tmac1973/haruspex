@@ -41,7 +41,7 @@ Events: `job-run` when a run's status or steps change, `job-run-live` with the r
 
 ## Watching the app
 
-- `debug.tail`: the debug log's newest lines (`lines`, default 200, at most 2000), or those after `since`; pass back the `next` it answers to read on. `contains` keeps only lines holding that text. `window` picks a window's log (`main` by default). Secrets are blanked as in the log file.
+- `debug.tail`: the debug log's newest lines (`lines`, default 200, at most 2000), or those after `since`; pass back the `next` it answers to read on. `contains` keeps only lines holding that text. `window` picks a window's log (`main` by default). Secrets and URL queries are blanked.
 - `inference.queue`: who holds a model slot and who is waiting, on which lane.
 - `tasks.list`: the background tasks (renders, uploads, pictures and songs made in the background), or one owner's (`chat:<id>`, `code:<id>`). `tasks.cancel` (`taskId`) stops one.
 
