@@ -51,11 +51,18 @@ try {
 		'start reports the fake model'
 	);
 
+	// Settings' nav has a Code entry too, and its overlay covers the tabs.
+	drive('click', 'button[aria-label="Settings"]');
 	const { id } = drive('new-session');
-	check(typeof id === 'string', 'new-session opens a session');
+	check(typeof id === 'string', 'new-session opens a session, even from Settings');
 
-	const fixed = drive('send', id, 'fix the readme typo', '--wait', '--timeout', '60');
+	const twoLines = 'fix the readme typo\nonly that line';
+	const fixed = drive('send', id, twoLines, '--wait', '--timeout', '60');
 	check(fixed.state === 'done', 'send --wait returns when the turn ends');
+	check(
+		drive('state', id).messages.some((m) => m.role === 'user' && m.content === twoLines),
+		'send keeps a message on its lines'
+	);
 	check(
 		readFileSync(join(folder, 'README.md'), 'utf8') === '# Hello\n',
 		'the turn edited the file'
