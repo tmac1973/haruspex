@@ -33,6 +33,7 @@
 		"e2e:app": "wdio run e2e/app/wdio.conf.mjs",
 		"e2e:fake-llm": "node e2e/fake-llm/server.mjs",
 		"drive": "node scripts/drive.mjs",
+		"model-eval": "node scripts/model-eval.mjs",
 		"tauri": "tauri"
 	},
 	"devDependencies": {
