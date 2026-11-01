@@ -494,6 +494,27 @@ async fn tools(settings: &VideoSettings) -> Result<(String, String, String), Str
     ))
 }
 
+/// Item `n`'s `index` (from 1) as a main-track position, when the cut has
+/// that many clips. Checked here because the loudness pass reads the clip
+/// before the edit itself would refuse it.
+fn existing_index(n: usize, index: u32, count: usize) -> Result<usize, String> {
+    let i = index as usize - 1;
+    if i < count {
+        return Ok(i);
+    }
+    Err(if count == 0 {
+        format!(
+            "Item {} names clip {index}, but the cut has no clips yet. Give its path instead.",
+            n + 1
+        )
+    } else {
+        format!(
+            "Item {} names clip {index}, but the cut has {count}. video_project_read lists them.",
+            n + 1
+        )
+    })
+}
+
 /// Make the main track hold the cut, creating the project when needed.
 pub async fn cut(
     working_dir: &str,
@@ -579,7 +600,7 @@ pub async fn cut(
     }
     for (n, item) in spec.items.iter().enumerate() {
         let source = match (&item.index, &item.path) {
-            (Some(i), None) if *i >= 1 => Source::Existing(*i as usize - 1),
+            (Some(i), None) if *i >= 1 => Source::Existing(existing_index(n, *i, resources.len())?),
             (None, Some(p)) => Source::New(media(&doc, working_dir, p, settings, &ffprobe).await?),
             _ => {
                 return Err(format!(
@@ -946,6 +967,18 @@ mod tests {
         assert!(resource_for(&root, &outside.join("i.mp4")).starts_with('/') || cfg!(windows));
     }
 
+    #[test]
+    fn a_clip_number_past_the_cut_is_refused() {
+        assert_eq!(existing_index(0, 2, 2), Ok(1));
+        let none = existing_index(0, 2, 0).unwrap_err();
+        assert!(none.contains("no clips yet"), "{none}");
+        let past = existing_index(1, 3, 2).unwrap_err();
+        assert!(
+            past.starts_with("Item 2 names clip 3, but the cut has 2."),
+            "{past}"
+        );
+    }
+
     /// A cut from generated clips into a new project, then an op, end to end
     /// with the real ffprobe and melt.
     #[tokio::test]
@@ -974,6 +1007,17 @@ mod tests {
             preset: "1080p60".into(),
             ..Default::default()
         };
+        // Clip numbers before there is a cut: refused, where the loudness
+        // pass once panicked on them and left the tool call waiting forever.
+        let by_number = CutSpec {
+            items: vec![CutItemSpec {
+                index: Some(1),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let err = cut(&wd, "ep010", by_number, &settings).await.unwrap_err();
+        assert!(err.contains("no clips yet"), "{err}");
         let spec = CutSpec {
             intro: Some(EndClip::Path("intro001/intro.mp4".into())),
             items: vec![
