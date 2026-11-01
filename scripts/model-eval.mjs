@@ -223,15 +223,31 @@ async function turn(kind, id, text) {
 	};
 }
 
-async function modelId() {
+/**
+ * The model and the settings that change how a run goes, recorded with each
+ * run: comparing models only means something when these match.
+ */
+async function conditions() {
 	const { settings } = await op({
 		type: 'settings.get',
-		keys: ['inferenceBackend', 'activeLocalModelFilename']
+		keys: [
+			'inferenceBackend',
+			'activeLocalModelFilename',
+			'contextSize',
+			'chatMaxIterations',
+			'codeMaxIterations'
+		]
 	});
 	const b = settings.inferenceBackend ?? {};
-	return b.mode === 'local'
-		? settings.activeLocalModelFilename
-		: (b.remoteModelId ?? b.openrouterModelId ?? b.mode);
+	return {
+		model:
+			b.mode === 'local'
+				? settings.activeLocalModelFilename
+				: (b.remoteModelId ?? b.openrouterModelId ?? b.mode),
+		contextSize: b.mode === 'local' ? settings.contextSize : b.remoteContextSize,
+		chatMaxSteps: settings.chatMaxIterations,
+		codeMaxSteps: settings.codeMaxIterations
+	};
 }
 
 /** Set Load tools when needed for the runs, and give back what it was after. */
@@ -257,7 +273,7 @@ async function newChat() {
 async function run() {
 	if (!o.label) throw new Error('--label is required');
 	const ids = o.prompts === 'all' ? Object.keys(PROMPTS) : o.prompts.split(',');
-	const model = await modelId();
+	const setup = await conditions();
 	await withSetting(async (setting) => {
 		for (const pid of ids) {
 			const p = PROMPTS[pid];
@@ -274,7 +290,7 @@ async function run() {
 				const pass = !r.askedUser && !r.timedOut && p.check(r);
 				const rec = {
 					label: o.label,
-					model,
+					...setup,
 					setting,
 					prompt: pid,
 					family: p.family,
@@ -297,7 +313,7 @@ async function run() {
 
 async function conversation() {
 	if (!o.label) throw new Error('--label is required');
-	const model = await modelId();
+	const setup = await conditions();
 	await withSetting(async (setting) => {
 		clean();
 		const id = await newChat();
@@ -305,7 +321,7 @@ async function conversation() {
 			const r = await turn('chat', id, text);
 			const rec = {
 				label: o.label,
-				model,
+				...setup,
 				setting,
 				prompt: `conversation-${n + 1}`,
 				id,
@@ -345,8 +361,10 @@ function summary() {
 		const [label, setting] = key.split('\t');
 		const need = rs.filter((r) => r.family);
 		const none = rs.filter((r) => !r.family);
+		const r0 = rs[0];
 		console.log(
-			`\n${label} (${rs[0].model}), setting ${setting}: ` +
+			`\n${label} (${r0.model}; context ${r0.contextSize ?? '?'}, max steps ` +
+				`${r0.chatMaxSteps ?? '?'} Chat / ${r0.codeMaxSteps ?? '?'} Code), setting ${setting}: ` +
 				`${need.filter((r) => r.pass).length}/${need.length} right where a group is needed, ` +
 				`${none.filter((r) => r.pass).length}/${none.length} where none is; ` +
 				`${none.filter((r) => r.loads > 0).length} needless loads`
