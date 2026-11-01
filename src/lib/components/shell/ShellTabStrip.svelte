@@ -176,7 +176,8 @@
 	   themes rather than the theme surface. */
 	.tab.active {
 		background: var(--code-bg);
-		color: var(--text-primary);
+		/* The dark theme's --text-primary, fixed, since the surface is. */
+		color: #ece7dd;
 		border-color: var(--border);
 	}
 
