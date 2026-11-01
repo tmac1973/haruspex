@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import { invokeRouter } from '#lib/testing/invoke.ts';
-import { MAX_DOCUMENT_REWRITES } from '#lib/agent/tools/_documentDrafts.ts';
+import { MAX_DRAFT_REWRITES } from '#lib/agent/tools/_drafts.ts';
 
 const mocks = vi.hoisted(() => ({
 	invoke: vi.fn(),
@@ -108,9 +108,9 @@ describe('rewriting a document in the same turn', () => {
 		expect(writes()).toHaveLength(1);
 	});
 
-	it(`allows ${MAX_DOCUMENT_REWRITES} rewrites, then refuses`, async () => {
+	it(`allows ${MAX_DRAFT_REWRITES} rewrites, then refuses`, async () => {
 		await write({ path: 'r.pdf', content: DRAFT });
-		for (let i = 0; i < MAX_DOCUMENT_REWRITES; i++) {
+		for (let i = 0; i < MAX_DRAFT_REWRITES; i++) {
 			const out = await write({ path: 'r.pdf', content: `${SHORTER} ${i}` });
 			expect(out.result).toBe('Wrote: r.pdf');
 		}

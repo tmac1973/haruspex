@@ -30,7 +30,7 @@ Click the folder icon in the chat box to pick a working directory. The assistant
 - **Downloads:** files from a web address into the folder (50 MB limit, programs blocked).
 - **Cannot:** delete or move files, run scripts, or touch anything outside the folder.
 
-If the file exists, the assistant asks: **Overwrite**, **Keep both** (saves under a new name) or **Cancel**. It rewrites a document it made in the same answer without asking.
+If the file exists, the assistant asks: **Overwrite**, **Keep both** (saves under a new name) or **Cancel**. It rewrites a document or sheet it made in the same answer without asking.
 
 Small models may forget to write the file, or claim they did: ask again.
 
