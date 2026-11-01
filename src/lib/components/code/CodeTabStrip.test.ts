@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
+import { tick } from 'svelte';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 const store = vi.hoisted(() => ({
@@ -42,5 +43,40 @@ describe('CodeTabStrip', () => {
 		expect(store.closeSession).not.toHaveBeenCalled();
 		screen.getByRole('button', { name: 'Close Idle one' }).click();
 		expect(store.closeSession).toHaveBeenCalledWith('s1');
+	});
+
+	it('keeps the active tab of many in view, and walks them with the arrow keys', async () => {
+		const many = Array.from({ length: 40 }, (_, i) => ({
+			id: `m${i}`,
+			title: `Session ${i}`,
+			root: '/p',
+			status: 'idle',
+			background: []
+		}));
+		store.getOpenSessions.mockReturnValue(many);
+		store.getActiveSessionId.mockReturnValue('m39');
+		const scrolled: string[] = [];
+		Element.prototype.scrollIntoView = vi.fn(function (this: Element) {
+			scrolled.push(this.getAttribute('data-session-id') ?? '');
+		});
+
+		render(CodeTabStrip, { onNew: vi.fn() });
+		await tick();
+		const tabs = screen.getAllByRole('tab');
+		expect(tabs).toHaveLength(40);
+		expect(scrolled.at(-1)).toBe('m39');
+		// New session sits outside the scrolling list, so it never scrolls away.
+		const list = screen.getByRole('tablist', { name: 'Code sessions' });
+		expect(list.contains(screen.getByRole('button', { name: 'New session' }))).toBe(false);
+
+		tabs[0].focus();
+		await fireEvent.keyDown(tabs[0], { key: 'ArrowRight' });
+		expect(document.activeElement).toBe(tabs[1]);
+		await fireEvent.keyDown(tabs[1], { key: 'End' });
+		expect(document.activeElement).toBe(tabs[39]);
+		await fireEvent.keyDown(tabs[39], { key: 'Home' });
+		expect(document.activeElement).toBe(tabs[0]);
+		await fireEvent.keyDown(tabs[0], { key: 'Enter' });
+		expect(store.setActiveSession).toHaveBeenCalledWith('m0');
 	});
 });

@@ -4,6 +4,8 @@
 	 * Modelled on ShellTabStrip. Closing a session with background processes
 	 * running asks first, since closing stops them. Detaching moves an idle
 	 * session to a window of its own, its background processes still running.
+	 * Many tabs shrink, then scroll; the active one is kept in view, and New
+	 * session stays outside the scroll.
 	 */
 	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
 	import {
@@ -33,6 +35,46 @@
 	}
 
 	let confirming = $state<CodeSession | null>(null);
+	let scroller = $state<HTMLDivElement>();
+
+	// Keep the active tab in view when it changes or a session opens.
+	$effect(() => {
+		const id = activeId;
+		void sessions.length;
+		const tab = scroller?.querySelector<HTMLElement>(`[data-session-id="${CSS.escape(id ?? '')}"]`);
+		tab?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+	});
+
+	// A plain mouse wheel scrolls the strip sideways. Not passive, so it can
+	// keep the page from taking the wheel too.
+	$effect(() => {
+		const el = scroller;
+		if (!el) return;
+		const onWheel = (event: WheelEvent) => {
+			if (event.deltaX !== 0 || event.deltaY === 0) return;
+			if (el.scrollWidth <= el.clientWidth) return;
+			event.preventDefault();
+			el.scrollLeft += event.deltaY;
+		};
+		el.addEventListener('wheel', onWheel, { passive: false });
+		return () => el.removeEventListener('wheel', onWheel);
+	});
+
+	/** ← → Home End move focus along the tabs, as in a tablist; Enter opens one. */
+	function moveFocus(event: KeyboardEvent) {
+		const tabs = [...(scroller?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [])];
+		const at = tabs.indexOf(event.currentTarget as HTMLElement);
+		const to =
+			event.key === 'ArrowRight'
+				? Math.min(at + 1, tabs.length - 1)
+				: event.key === 'ArrowLeft'
+					? Math.max(at - 1, 0)
+					: event.key === 'Home'
+						? 0
+						: tabs.length - 1;
+		event.preventDefault();
+		tabs[to]?.focus();
+	}
 
 	function detach(event: MouseEvent, session: CodeSession) {
 		event.stopPropagation();
@@ -49,49 +91,54 @@
 	}
 </script>
 
-<div class="strip" role="tablist" aria-label="Code sessions">
-	{#each sessions as session (session.id)}
-		{@const blocked = moveBlockedReason(session)}
-		<div
-			class="tab"
-			class:active={session.id === activeId}
-			role="tab"
-			aria-selected={session.id === activeId}
-			tabindex="0"
-			title="{sessionLabel(session)} — {session.root}"
-			onclick={() => setActiveSession(session.id)}
-			onkeydown={(e) => {
-				if (e.key === 'Enter' || e.key === ' ') {
-					e.preventDefault();
-					setActiveSession(session.id);
-				}
-			}}
-		>
-			{#if session.status !== 'idle'}
-				<span
-					class="dot {session.status}"
-					data-status={session.status}
-					title={statusTitle(session.status)}
-					aria-label={statusTitle(session.status)}
-				></span>
-			{/if}
-			<span class="label">{sessionLabel(session)}</span>
-			<button
-				class="detach"
-				class:blocked={!!blocked}
-				aria-disabled={!!blocked}
-				title={blocked ?? 'Detach to its own window'}
-				aria-label="Detach {sessionLabel(session)}"
-				onclick={(e) => detach(e, session)}>⤢</button
+<div class="strip">
+	<div class="tabs thin-scroll" role="tablist" aria-label="Code sessions" bind:this={scroller}>
+		{#each sessions as session (session.id)}
+			{@const blocked = moveBlockedReason(session)}
+			<div
+				class="tab"
+				data-session-id={session.id}
+				class:active={session.id === activeId}
+				role="tab"
+				aria-selected={session.id === activeId}
+				tabindex="0"
+				title="{sessionLabel(session)} — {session.root}"
+				onclick={() => setActiveSession(session.id)}
+				onkeydown={(e) => {
+					if (e.key === 'Enter' || e.key === ' ') {
+						e.preventDefault();
+						setActiveSession(session.id);
+					} else if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+						moveFocus(e);
+					}
+				}}
 			>
-			<button
-				class="close"
-				title="Close session (it stays in the list)"
-				aria-label="Close {sessionLabel(session)}"
-				onclick={(e) => close(e, session)}>×</button
-			>
-		</div>
-	{/each}
+				{#if session.status !== 'idle'}
+					<span
+						class="dot {session.status}"
+						data-status={session.status}
+						title={statusTitle(session.status)}
+						aria-label={statusTitle(session.status)}
+					></span>
+				{/if}
+				<span class="label">{sessionLabel(session)}</span>
+				<button
+					class="detach"
+					class:blocked={!!blocked}
+					aria-disabled={!!blocked}
+					title={blocked ?? 'Detach to its own window'}
+					aria-label="Detach {sessionLabel(session)}"
+					onclick={(e) => detach(e, session)}>⤢</button
+				>
+				<button
+					class="close"
+					title="Close session (it stays in the list)"
+					aria-label="Close {sessionLabel(session)}"
+					onclick={(e) => close(e, session)}>×</button
+				>
+			</div>
+		{/each}
+	</div>
 	<button class="add" title="New session" aria-label="New session" onclick={onNew}>+</button>
 </div>
 
@@ -117,15 +164,32 @@
 		padding: 4px 6px 0 6px;
 		background: var(--bg-secondary);
 		border-bottom: 1px solid var(--border);
-		overflow-x: auto;
 		flex: 0 0 auto;
+		min-width: 0;
 		min-height: 30px;
+	}
+
+	.tabs {
+		display: flex;
+		align-items: stretch;
+		gap: 2px;
+		flex: 0 1 auto;
+		min-width: 0;
+		overflow-x: auto;
+		overflow-y: hidden;
+	}
+
+	/* Thinner than thin-scroll, since it sits under the tabs. */
+	.tabs::-webkit-scrollbar {
+		height: 6px;
 	}
 
 	.tab {
 		display: flex;
 		align-items: center;
 		gap: 6px;
+		flex: 0 1 auto;
+		min-width: 110px;
 		max-width: 220px;
 		padding: 5px 10px;
 		font-size: 0.78rem;
@@ -151,6 +215,8 @@
 	}
 
 	.label {
+		flex: 1 1 auto;
+		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
@@ -188,6 +254,7 @@
 		line-height: 1;
 		padding: 0 2px;
 		border-radius: 3px;
+		flex-shrink: 0;
 	}
 
 	.detach {
@@ -219,6 +286,7 @@
 		line-height: 1;
 		padding: 0 8px;
 		border-radius: 6px;
+		flex-shrink: 0;
 	}
 
 	.add:hover {
