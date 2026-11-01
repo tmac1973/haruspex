@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { invoke } from '@tauri-apps/api/core';
 import FileEditorModal from './FileEditorModal.svelte';
 import { editWorkdirFiles, getPendingEdit } from '#lib/stores/fileEditor.svelte.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 
@@ -31,11 +32,9 @@ const files: Record<string, string> = {
 
 beforeEach(() => {
 	vi.mocked(invoke).mockReset();
-	vi.mocked(invoke).mockImplementation((cmd: string, args?: unknown) => {
-		const a = args as { relPath: string };
-		if (cmd === 'fs_read_text_full') return Promise.resolve(files[a.relPath]);
-		return Promise.resolve(undefined);
-	});
+	vi.mocked(invoke).mockImplementation(
+		invokeRouter({ fs_read_text_full: (args) => files[args!.relPath as string] }, undefined)
+	);
 });
 
 async function type(text: string) {
@@ -102,12 +101,17 @@ describe('FileEditorModal', () => {
 	});
 
 	it('shows a save failure and stays open', async () => {
-		vi.mocked(invoke).mockImplementation((cmd: string, args?: unknown) => {
-			if (cmd === 'fs_read_text_full')
-				return Promise.resolve(files[(args as { relPath: string }).relPath]);
-			if (cmd === 'fs_write_text') return Promise.reject('disk full');
-			return Promise.resolve(undefined);
-		});
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter(
+				{
+					fs_read_text_full: (args) => files[args!.relPath as string],
+					fs_write_text: () => {
+						throw 'disk full';
+					}
+				},
+				undefined
+			)
+		);
 		render(FileEditorModal);
 		void editWorkdirFiles({ workdir: '/proj', files: ['plan/x/phase-01-setup.md'], title: 'P' });
 		await type('changed\n');

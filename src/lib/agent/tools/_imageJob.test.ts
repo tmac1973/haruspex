@@ -31,6 +31,7 @@ import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import { runImageJob, type ImageTaskSpec } from './_imageJob.ts';
 import { _resetTasksForTests, getTask } from '#lib/tasks/store.svelte.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const drawn = {
 	bytes: new Uint8Array([1, 2, 3]),
@@ -62,25 +63,24 @@ beforeEach(() => {
 	state.register.mockClear();
 	state.generate.mockResolvedValue(drawn);
 	state.resume.mockResolvedValue(drawn);
-	state.invoke.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
-		if (cmd === 'image_store_bytes') return 'stored';
-		if (cmd === 'image_mask_finish') return new Uint8Array([9]).buffer;
-		if (cmd === 'image_store_upscaled') return { hash: 'big', width: 4096, height: 3072 };
-		if (cmd === 'task_create') {
-			return {
+	state.invoke.mockImplementation(
+		invokeRouter({
+			image_store_bytes: 'stored',
+			image_mask_finish: () => new Uint8Array([9]).buffer,
+			image_store_upscaled: { hash: 'big', width: 4096, height: 3072 },
+			task_create: (args) => ({
 				id: 'image-1',
 				kind: 'image',
-				owner: args.owner,
-				label: args.label,
+				owner: args!.owner,
+				label: args!.label,
 				state: 'pending',
 				follower: 'frontend',
-				spec: args.spec,
+				spec: args!.spec,
 				startedMs: 1,
 				noticeDelivered: false
-			};
-		}
-		return null;
-	});
+			})
+		})
+	);
 });
 
 describe('runImageJob', () => {

@@ -42,6 +42,7 @@ import {
 	REMOTE_TOOLS
 } from '#lib/remote/driver.ts';
 import type { EphemeralTurnOptions } from '#lib/agent/runEphemeralTurn.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const prompt = { sessionId: 'guest1', turnId: 'guest1#0', message: 'what is a haruspex?' };
 
@@ -175,9 +176,16 @@ describe('the remote turn driver', () => {
 	});
 
 	it('survives a client that vanished mid-stream', async () => {
-		mocks.invoke.mockImplementation(async (command: string) => {
-			if (command === 'remote_turn_delta') throw new Error('gone');
-		});
+		mocks.invoke.mockImplementation(
+			invokeRouter(
+				{
+					remote_turn_delta: () => {
+						throw new Error('gone');
+					}
+				},
+				undefined
+			)
+		);
 		mocks.runEphemeralTurn.mockImplementationOnce(async (options: EphemeralTurnOptions) => {
 			options.onAssistantDelta?.('text');
 			await new Promise((resolve) => setTimeout(resolve, 0));

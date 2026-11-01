@@ -7,20 +7,26 @@ const state = vi.hoisted(() => ({
 	failSet: false
 }));
 
+const { invokeRouter, unexpectedInvoke } = await vi.hoisted(() => import('#lib/testing/invoke.ts'));
+
 vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn(async (cmd: string, args?: { key: string; value?: string }) => {
-		if (cmd === 'secret_available') return state.available;
-		if (cmd === 'secret_set') {
-			if (state.failSet) throw new Error('locked');
-			state.stored.set(args!.key, args!.value!);
-			return null;
-		}
-		if (cmd === 'secret_delete') {
-			state.stored.delete(args!.key);
-			return null;
-		}
-		throw new Error(`unexpected invoke: ${cmd}`);
-	})
+	invoke: vi.fn(
+		invokeRouter(
+			{
+				secret_available: () => state.available,
+				secret_set: (a) => {
+					if (state.failSet) throw new Error('locked');
+					state.stored.set(a!.key as string, a!.value as string);
+					return null;
+				},
+				secret_delete: (a) => {
+					state.stored.delete(a!.key as string);
+					return null;
+				}
+			},
+			unexpectedInvoke
+		)
+	)
 }));
 
 import { getSettings, setDavAccounts } from './settings';

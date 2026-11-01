@@ -18,6 +18,7 @@ import {
 	adoptCodeWatches,
 	_resetForTests
 } from '#lib/shell/backgroundWatch.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 beforeEach(() => {
 	_resetForTests();
@@ -32,11 +33,17 @@ afterEach(() => {
 describe('backgroundWatch', () => {
 	it('polls the .done sentinel and fires the handler with the exit code', async () => {
 		let finished = false;
-		invokeMock.mockImplementation(async (cmd: string, args: { path: string }) => {
-			if (cmd !== 'fs_read_text_absolute') return undefined;
-			if (args.path === '/tmp/x.done' && finished) return '0';
-			throw new Error('ENOENT'); // sentinel not written yet
-		});
+		invokeMock.mockImplementation(
+			invokeRouter(
+				{
+					fs_read_text_absolute: (args) => {
+						if (args!.path === '/tmp/x.done' && finished) return '0';
+						throw new Error('ENOENT'); // sentinel not written yet
+					}
+				},
+				undefined
+			)
+		);
 		const fired: number[] = [];
 		setWatchCompletionHandler((pty) => fired.push(pty));
 
@@ -67,10 +74,7 @@ describe('backgroundWatch', () => {
 	});
 
 	it('captures a non-zero exit code', async () => {
-		invokeMock.mockImplementation(async (cmd: string) => {
-			if (cmd === 'fs_read_text_absolute') return '17\n';
-			return undefined;
-		});
+		invokeMock.mockImplementation(invokeRouter({ fs_read_text_absolute: '17\n' }, undefined));
 		setWatchCompletionHandler(() => {});
 		registerWatch({
 			ptySessionId: 1,
@@ -130,9 +134,7 @@ describe('backgroundWatch with a code_bg source', () => {
 
 	it('polls code_bg_status and fires only the owner’s handler', async () => {
 		let status = [proc('bg-1', true)];
-		invokeMock.mockImplementation(async (cmd: string) =>
-			cmd === 'code_bg_status' ? status : undefined
-		);
+		invokeMock.mockImplementation(invokeRouter({ code_bg_status: () => status }, undefined));
 		let fired = 0;
 		let otherFired = 0;
 		let ptyFired = 0;
@@ -212,9 +214,7 @@ describe('backgroundWatch with a code_bg source', () => {
 	});
 	it('hands a session’s watches to another window, which then gets the completion', async () => {
 		let status = [proc('bg-8', true), { ...proc('bg-9', true), owner: 'sess-b' }];
-		invokeMock.mockImplementation(async (cmd: string) =>
-			cmd === 'code_bg_status' ? status : undefined
-		);
+		invokeMock.mockImplementation(invokeRouter({ code_bg_status: () => status }, undefined));
 		let here = 0;
 		setCodeWatchCompletionHandler('sess-a', () => here++);
 		register('bg-8');

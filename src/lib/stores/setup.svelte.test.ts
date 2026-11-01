@@ -35,14 +35,11 @@ import {
 	useDownloadedModel
 } from './setup.svelte';
 import { getSettings, updateSettings } from '#lib/stores/settings.ts';
+import { invokeRouter, unexpectedInvoke } from '#lib/testing/invoke.ts';
 
 /** Route each IPC command to a handler; anything unlisted is a test bug. */
 function ipc(handlers: Record<string, (args?: Record<string, unknown>) => unknown>) {
-	mocks.invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
-		const h = handlers[cmd];
-		if (!h) throw new Error(`unexpected invoke: ${cmd}`);
-		return h(args);
-	});
+	mocks.invoke.mockImplementation(invokeRouter(handlers, unexpectedInvoke));
 }
 
 /** An OpenAI-style SSE stream of the given deltas. */

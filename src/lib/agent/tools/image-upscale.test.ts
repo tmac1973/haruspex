@@ -23,6 +23,7 @@ import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import { targetSize } from './image-upscale';
 import { ImageBackendError } from '#lib/image/types.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const SRC = 'a'.repeat(64);
 const SRC_URL = `haruspex-img://localhost/${SRC}`;
@@ -35,17 +36,26 @@ beforeEach(() => {
 	state.backend = 'local';
 	state.size = { width: 512, height: 384 };
 	vi.stubGlobal('createImageBitmap', async () => ({ ...state.size, close: () => {} }));
-	state.invoke.mockReset().mockImplementation(async (cmd: string, args: unknown) => {
-		if (cmd === 'image_read_bytes') return new Uint8Array([1, 2, 3]).buffer;
-		if (cmd === 'fs_read_bytes') return [4, 5, 6];
-		if (cmd === 'image_store_bytes') return SRC;
-		if (cmd === 'image_store_upscaled') {
-			const headers = (state.invoke.mock.calls.at(-1)?.[2] as { headers: Record<string, string> })
-				.headers;
-			return { hash: OUT, width: Number(headers['x-width']), height: Number(headers['x-height']) };
-		}
-		return args ?? null;
-	});
+	state.invoke.mockReset().mockImplementation(
+		invokeRouter(
+			{
+				image_read_bytes: () => new Uint8Array([1, 2, 3]).buffer,
+				fs_read_bytes: [4, 5, 6],
+				image_store_bytes: SRC,
+				image_store_upscaled: () => {
+					const headers = (
+						state.invoke.mock.calls.at(-1)?.[2] as { headers: Record<string, string> }
+					).headers;
+					return {
+						hash: OUT,
+						width: Number(headers['x-width']),
+						height: Number(headers['x-height'])
+					};
+				}
+			},
+			(_cmd: string, args: unknown) => args ?? null
+		)
+	);
 	state.upscale.mockReset().mockResolvedValue(new Uint8Array([9, 9, 9]));
 });
 

@@ -14,6 +14,7 @@ vi.mock('#lib/image/index.ts', () => ({ resolveImageBackend: () => ({ kind: mock
 import Editor from './Editor.svelte';
 import { emptyModelForm } from '../../jobModelForm';
 import { guidedPlanningJobType } from './definition';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 /**
  * Render coverage for the guided-planning editor. The pure config logic is
@@ -140,8 +141,10 @@ describe('guided-planning Editor', () => {
 		});
 
 		it('lists planning skills first, then the rest', async () => {
-			mocks.invoke.mockImplementation(async (cmd: string) =>
-				cmd === 'skills_list' ? [summary('deploy', false), summary('plan-web-app', true)] : null
+			mocks.invoke.mockImplementation(
+				invokeRouter({
+					skills_list: () => [summary('deploy', false), summary('plan-web-app', true)]
+				})
 			);
 			mount();
 			const select = screen.getByLabelText('Planning skill') as HTMLSelectElement;
@@ -154,8 +157,8 @@ describe('guided-planning Editor', () => {
 		});
 
 		it('says when the chosen skill is gone', async () => {
-			mocks.invoke.mockImplementation(async (cmd: string) =>
-				cmd === 'skills_list' ? [summary('plan-web-app', true)] : null
+			mocks.invoke.mockImplementation(
+				invokeRouter({ skills_list: () => [summary('plan-web-app', true)] })
 			);
 			mount({ planning_skill: 'plan-old' });
 			expect(await screen.findByText(/Not in your skills any more/)).toBeTruthy();

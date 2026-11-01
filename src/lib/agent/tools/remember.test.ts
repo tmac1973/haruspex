@@ -38,6 +38,7 @@ import { executeTool, getToolSchemas } from './registry';
 import './remember';
 import { REMEMBER_TOOL } from './remember';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const ctx = makeToolContext();
 
@@ -49,9 +50,7 @@ beforeEach(() => {
 	mocks.settings.memoryConfirmWrites = false;
 	mocks.memoryActive.mockReturnValue(true);
 	// No near-duplicate by default.
-	mocks.invoke.mockImplementation(async (cmd: string) =>
-		cmd === 'memory_find_similar' ? null : undefined
-	);
+	mocks.invoke.mockImplementation(invokeRouter({ memory_find_similar: null }, undefined));
 });
 
 describe('remember_this exposure', () => {
@@ -104,8 +103,11 @@ describe('remember_this writing', () => {
 	});
 
 	it('bumps a near-duplicate instead of storing it twice', async () => {
-		mocks.invoke.mockImplementation(async (cmd: string) =>
-			cmd === 'memory_find_similar' ? { id: 'mem-1', content: 'Ships on Fridays.' } : undefined
+		mocks.invoke.mockImplementation(
+			invokeRouter(
+				{ memory_find_similar: { id: 'mem-1', content: 'Ships on Fridays.' } },
+				undefined
+			)
 		);
 		const out = await executeTool(REMEMBER_TOOL, { content: FACT, category: 'fact' }, ctx);
 		expect(mocks.invoke).toHaveBeenCalledWith('memory_touch', { id: 'mem-1' });
@@ -134,10 +136,11 @@ describe('remember_this writing', () => {
 	});
 
 	it('reports a storage failure instead of claiming it saved', async () => {
-		mocks.invoke.mockImplementation(async (cmd: string) => {
-			if (cmd === 'memory_find_similar') return null;
-			throw new Error('db is locked');
-		});
+		mocks.invoke.mockImplementation(
+			invokeRouter({ memory_find_similar: null }, () => {
+				throw new Error('db is locked');
+			})
+		);
 		const out = await executeTool(REMEMBER_TOOL, { content: FACT, category: 'fact' }, ctx);
 		expect(out.result).toContain('Could not save');
 		expect(mocks.showToast).not.toHaveBeenCalled();

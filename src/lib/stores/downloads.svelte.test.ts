@@ -19,6 +19,7 @@ import {
 	runDownload,
 	syncDownloads
 } from './downloads.svelte';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const progress = (stage: string, downloaded: number) => ({
 	stage,
@@ -64,9 +65,7 @@ describe('syncDownloads', () => {
 	it('picks up a download a closed screen started, and drops it when Rust says it ended', async () => {
 		vi.useFakeTimers();
 		let running: string | null = 'image:ming';
-		tauri.invoke.mockImplementation(async (cmd: string) =>
-			cmd === 'download_status' ? running : undefined
-		);
+		tauri.invoke.mockImplementation(invokeRouter({ download_status: () => running }, undefined));
 		await syncDownloads();
 		expect(getActiveDownload()).toEqual({ key: 'image:ming', progress: null });
 		tauri.handler!({ payload: progress('Verifying 4 of 4: tokenizer.json', 100) });

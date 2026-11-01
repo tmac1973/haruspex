@@ -27,6 +27,7 @@ import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import { parseMusicArgs } from './music-gen';
 import { MusicBackendError } from '#lib/music/types.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const HASH = 'e'.repeat(64);
 const URL = `haruspex-audio://localhost/${HASH}`;
@@ -45,10 +46,9 @@ const paramsOf = (o: Parameters<typeof getToolSchemas>[0]) =>
 
 beforeEach(() => {
 	state.backend = 'llama-toolchest';
-	state.invoke.mockReset().mockImplementation(async (cmd: string) => {
-		if (cmd === 'audio_read_bytes') return new Uint8Array([9, 9]).buffer;
-		return null;
-	});
+	state.invoke
+		.mockReset()
+		.mockImplementation(invokeRouter({ audio_read_bytes: () => new Uint8Array([9, 9]).buffer }));
 	state.generate.mockReset().mockResolvedValue({
 		hash: HASH,
 		url: URL,

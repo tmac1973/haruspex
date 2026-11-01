@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 vi.mock('#lib/agent/loop.ts', () => ({
 	runAgentLoop: vi.fn()
@@ -464,33 +465,33 @@ describe('image rehydration on load', () => {
 
 	it('rehydrates the conversation restored at startup', async () => {
 		const { invoke } = await import('@tauri-apps/api/core');
-		vi.mocked(invoke).mockImplementation(async (cmd: string) => {
-			if (cmd === 'db_list_conversations') {
-				return [{ id: 'c1', title: 'Red pandas', created_at: 1, updated_at: 1 }];
-			}
-			if (cmd === 'db_get_conversation') {
-				return {
-					id: 'c1',
-					title: 'Red pandas',
-					created_at: 1,
-					updated_at: 1,
-					messages: [
-						{
-							id: 1,
-							conversation_id: 'c1',
-							role: 'assistant',
-							content: '![panda](https://upload.wikimedia.org/x.jpg)',
-							tool_calls: null,
-							tool_call_id: null,
-							created_at: 1,
-							sort_order: 0,
-							steps: null
-						}
-					]
-				};
-			}
-			return [];
-		});
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter(
+				{
+					db_list_conversations: [{ id: 'c1', title: 'Red pandas', created_at: 1, updated_at: 1 }],
+					db_get_conversation: {
+						id: 'c1',
+						title: 'Red pandas',
+						created_at: 1,
+						updated_at: 1,
+						messages: [
+							{
+								id: 1,
+								conversation_id: 'c1',
+								role: 'assistant',
+								content: '![panda](https://upload.wikimedia.org/x.jpg)',
+								tool_calls: null,
+								tool_call_id: null,
+								created_at: 1,
+								sort_order: 0,
+								steps: null
+							}
+						]
+					}
+				},
+				[]
+			)
+		);
 
 		const { initChatStore } = await import('#lib/stores/chat.svelte.ts');
 		await initChatStore();
@@ -516,14 +517,18 @@ describe('working folder per chat', () => {
 	async function initWith(summaries: unknown[]) {
 		const { invoke } = await import('@tauri-apps/api/core');
 		vi.mocked(invoke).mockClear();
-		vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => {
-			if (cmd === 'db_list_conversations') return summaries;
-			if (cmd === 'db_get_conversation') {
-				const { id } = args as { id: string };
-				return { id, title: id, created_at: 1, updated_at: 1, messages: [] };
-			}
-			return [];
-		});
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter(
+				{
+					db_list_conversations: summaries,
+					db_get_conversation: (args) => {
+						const { id } = args as { id: string };
+						return { id, title: id, created_at: 1, updated_at: 1, messages: [] };
+					}
+				},
+				[]
+			)
+		);
 		const chat = await import('#lib/stores/chat.svelte.ts');
 		await chat.initChatStore();
 		return { chat, invoke };

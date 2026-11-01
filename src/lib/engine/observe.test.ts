@@ -23,6 +23,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 import { clearDebugLogs, logDebug } from '#lib/debugLog.ts';
 import { dispatchObserve, MAX_TAIL, watchTasks } from './observe.ts';
 import type { TaskEvent } from './types.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const task = (id: string, owner: string, spec: unknown = {}) => ({
 	id,
@@ -119,9 +120,7 @@ describe('the queue and the tasks', () => {
 	});
 
 	it('cancels a task it knows, and says when there is none', async () => {
-		mocks.invoke.mockImplementation(async (cmd: string) =>
-			cmd === 'task_list' ? [task('a', 'chat:1')] : true
-		);
+		mocks.invoke.mockImplementation(invokeRouter({ task_list: () => [task('a', 'chat:1')] }, true));
 		expect(await dispatchObserve({ type: 'tasks.cancel', taskId: 'a' }, 'main')).toEqual({
 			cancelling: true
 		});
