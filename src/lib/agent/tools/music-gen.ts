@@ -13,7 +13,7 @@
  * Chat asks the user before replacing a file). `save_generated` saves a song
  * made earlier.
  */
-import { randomSeed } from '#lib/utils/random.ts';
+import { parseSeed, randomSeed } from '#lib/utils/random.ts';
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
 import { getSettings } from '#lib/stores/settings.ts';
@@ -108,19 +108,6 @@ export const SEED_PARAM = {
 		'Reuse the seed of an earlier song to change one thing and keep the rest. Omit for a new one.'
 };
 
-/** ACE-Step's seeds run from 0 to 2^32 − 1 (acestep.cpp's Philox noise). */
-const MAX_SEED = 2 ** 32 - 1;
-
-/** The seed asked for, undefined for none, or what is wrong with it. */
-function seedOf(raw: unknown): number | undefined | string {
-	if (raw === undefined || raw === null || raw === '') return undefined;
-	const n = typeof raw === 'string' ? Number(raw.trim()) : raw;
-	if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > MAX_SEED) {
-		return `seed must be a whole number from 0 to ${MAX_SEED}.`;
-	}
-	return n;
-}
-
 /** The beats in a bar ACE takes ("2", "3", "4" or "6"), from "3" or "3/4". */
 const METERS = ['2', '3', '4', '6'];
 function meterOf(raw: unknown): string | undefined | null {
@@ -144,7 +131,7 @@ export function parseMusicArgs(
 	const format = formatOf(args.format, path, notes);
 	if (!format) return 'path must end in .mp3 or .wav.';
 	const bpm = typeof args.bpm === 'number' ? Math.round(args.bpm) : undefined;
-	const seed = seedOf(args.seed);
+	const seed = parseSeed(args.seed);
 	if (typeof seed === 'string') return seed;
 	const timeSignature = meterOf(args.time_signature);
 	if (timeSignature === null) return 'time_signature must be 2/4, 3/4, 4/4 or 6/8.';

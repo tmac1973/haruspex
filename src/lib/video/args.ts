@@ -31,6 +31,11 @@ export function str(v: unknown): string | null {
 	return typeof v === 'string' && v.trim() ? v.trim() : null;
 }
 
+/** The `episode` argument, or '' when there is none. */
+export function episodeArg(args: Record<string, unknown>): string {
+	return typeof args.episode === 'string' ? args.episode : '';
+}
+
 /** `intro` / `outro`: "settings" (or true) for the one in Settings → Video editing, else a path. */
 export function endClip(v: unknown): EndClip | null {
 	if (v === true) return true;

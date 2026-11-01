@@ -77,8 +77,7 @@ pub fn wsl_exec(distro: &str, argv: &[&str]) -> tokio::process::Command {
     c.args(["-d", distro, "--exec"]).args(argv);
     c.env("WSL_UTF8", "1");
     c.stdin(std::process::Stdio::null());
-    #[cfg(windows)]
-    c.creation_flags(crate::shell::platform::CREATE_NO_WINDOW);
+    crate::shell::platform::apply_no_window(c.as_std_mut());
     c
 }
 

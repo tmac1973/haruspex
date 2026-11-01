@@ -10,7 +10,7 @@ import { imageEntries } from '#lib/image/entries.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
-import { parseTime, str, videoSettings } from '#lib/video/args.ts';
+import { parseTime, str, videoSettings, episodeArg } from '#lib/video/args.ts';
 import { generateOneImage } from '#lib/image/generateOne.ts';
 import { bytesToBase64 } from '#lib/utils/base64.ts';
 import type { ThumbnailWritten } from '#lib/ipc/gen/ThumbnailWritten.ts';
@@ -18,10 +18,6 @@ import type { ThumbnailWritten } from '#lib/ipc/gen/ThumbnailWritten.ts';
 /** A 16:9 size the supported image models draw well; fitted to 1280×720 after. */
 const DRAW_WIDTH = 1344;
 const DRAW_HEIGHT = 768;
-
-function episodeArg(args: Record<string, unknown>): string {
-	return typeof args.episode === 'string' ? args.episode : '';
-}
 
 async function fromFrame(
 	args: Record<string, unknown>,

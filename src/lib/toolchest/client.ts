@@ -5,9 +5,7 @@
  * image and music turn a {@link ToolchestError} into their own error type.
  */
 
-import { invoke } from '@tauri-apps/api/core';
-import { errMessage } from '#lib/utils/error.ts';
-import type { ComfyError } from '#lib/ipc/gen/ComfyError.ts';
+import { BACKEND_UPLOAD_TIMEOUT_MS, invokeBackend, type Backend } from '#lib/utils/backendCall.ts';
 import type { UploadFile } from '#lib/ipc/gen/UploadFile.ts';
 import { toolchestCall } from '#lib/toolchest/models.ts';
 
@@ -73,30 +71,15 @@ function fromRefusal(status: number, body: string, path: string): ToolchestError
 	);
 }
 
-function fromRust(e: unknown, path: string, signal?: AbortSignal): ToolchestError {
-	const err = (e !== null && typeof e === 'object' && 'kind' in e ? e : null) as ComfyError | null;
-	switch (err?.kind) {
-		case 'cancelled':
-			return new ToolchestError('cancelled', 'Cancelled.');
-		case 'timeout':
-		case 'unreachable':
-			return new ToolchestError(err.kind, err.message);
-		case 'rejected':
-			return fromRefusal(err.status, err.body, path);
-		case 'invalid':
-			return new ToolchestError('rejected', err.message);
-		default:
-			if (signal?.aborted) return new ToolchestError('cancelled', 'Cancelled.');
-			return new ToolchestError(
-				'unreachable',
-				`The request to llama-toolchest failed — ${errMessage(e)}`
-			);
-	}
-}
+const toolchest: Backend<ToolchestError> = {
+	prefix: 'toolchest',
+	server: 'llama-toolchest',
+	cancelled: () => new ToolchestError('cancelled', 'Cancelled.'),
+	error: (kind, message) => new ToolchestError(kind, message),
+	rejected: fromRefusal
+};
 
-let nextId = 0;
-
-async function call<T>(
+function call<T>(
 	command: 'toolchest_json' | 'toolchest_bytes' | 'toolchest_upload',
 	cfg: ToolchestConfig,
 	req: { method?: 'GET' | 'POST' | 'DELETE'; path: string; body?: unknown; timeoutMs?: number },
@@ -104,13 +87,11 @@ async function call<T>(
 	files?: UploadFile[],
 	fields?: boolean
 ): Promise<T> {
-	if (signal?.aborted) throw new ToolchestError('cancelled', 'Cancelled.');
-	const id = `toolchest-${++nextId}`;
-	// The cancel table is shared with ComfyUI's and Lemonade's calls.
-	const onAbort = () => void invoke('comfy_cancel', { id }).catch(() => {});
-	signal?.addEventListener('abort', onAbort, { once: true });
-	try {
-		return await invoke<T>(command, {
+	return invokeBackend<T, ToolchestError>(
+		toolchest,
+		command,
+		req.path,
+		(id) => ({
 			call: toolchestCall(
 				cfg.baseUrl,
 				cfg.apiKey,
@@ -122,12 +103,9 @@ async function call<T>(
 			),
 			...(files ? { files } : {}),
 			...(fields ? { fields } : {})
-		});
-	} catch (e) {
-		throw fromRust(e, req.path, signal);
-	} finally {
-		signal?.removeEventListener('abort', onAbort);
-	}
+		}),
+		signal
+	);
 }
 
 export function toolchestJson(
@@ -150,8 +128,7 @@ export function toolchestUpload(
 	signal?: AbortSignal,
 	fields = false
 ): Promise<unknown> {
-	// A song can be tens of megabytes; the job itself is only queued.
-	const timeoutMs = req.timeoutMs ?? 120_000;
+	const timeoutMs = req.timeoutMs ?? BACKEND_UPLOAD_TIMEOUT_MS;
 	return call<unknown>(
 		'toolchest_upload',
 		cfg,

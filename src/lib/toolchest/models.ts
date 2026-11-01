@@ -8,6 +8,7 @@
 
 import { getApiKeyValue } from '#lib/stores/settings.ts';
 import { apiKeysReady } from '#lib/stores/apiKeySecrets.ts';
+import { BACKEND_TIMEOUT_MS } from '#lib/utils/backendCall.ts';
 
 export type GenerationKind = 'image' | 'music' | 'video';
 
@@ -167,7 +168,7 @@ export function toolchestCall(
 	method: 'GET' | 'POST' | 'DELETE',
 	path: string,
 	body?: unknown,
-	timeoutMs = 30_000,
+	timeoutMs = BACKEND_TIMEOUT_MS,
 	id?: string
 ): ToolchestCall {
 	return {

@@ -9,7 +9,7 @@ import { errMessage } from '#lib/utils/error.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
-import { num, parseTime, str, videoSettings } from '#lib/video/args.ts';
+import { num, parseTime, str, videoSettings, episodeArg } from '#lib/video/args.ts';
 import { formatTime } from '#lib/video/report.ts';
 import type { SceneCuts } from '#lib/ipc/gen/SceneCuts.ts';
 import type { ContactSheet } from '#lib/ipc/gen/ContactSheet.ts';
@@ -47,10 +47,6 @@ export function parseFrames(args: Record<string, unknown>): FrameRequest | strin
 		};
 	}
 	return 'Give path with times or every_secs, or timeline_times for the cut (and only one of those).';
-}
-
-function episodeArg(args: Record<string, unknown>): string {
-	return typeof args.episode === 'string' ? args.episode : '';
 }
 
 async function scenes(args: Record<string, unknown>, ctx: ToolContext) {
