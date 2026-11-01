@@ -133,7 +133,7 @@ describe('CodeComposer with the folder gone', () => {
 describe('CodeComposer camera button', () => {
 	it('attaches the captured window to the next message without sending it', async () => {
 		tauri.invoke.mockImplementation(async (cmd: string) =>
-			cmd === 'list_capture_windows'
+			cmd === 'capture_windows_list'
 				? []
 				: { kind: 'captured', capture: { dataUrl: 'data:image/jpeg;base64,AA' } }
 		);
@@ -158,7 +158,7 @@ describe('CodeComposer camera button', () => {
 
 	it('lists the windows to pick from where the platform has no picker', async () => {
 		tauri.invoke.mockImplementation(async (cmd: string) =>
-			cmd === 'list_capture_windows'
+			cmd === 'capture_windows_list'
 				? [{ id: 7, title: 'Dark Times', app: 'darktimes' }]
 				: { dataUrl: 'data:x' }
 		);

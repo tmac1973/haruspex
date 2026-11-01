@@ -69,7 +69,7 @@ describe('reportIssue', () => {
 				feedback_redact: (a) =>
 					(a as { lines: string[] }).lines.map((l) => l.replace('sk-123', '[redacted]')),
 				feedback_save_download: '/home/me/Downloads/haruspex-diagnostics-x.md',
-				open_folder: undefined,
+				folder_open: undefined,
 				open_url: undefined
 			})(cmd, args);
 		});
@@ -82,7 +82,7 @@ describe('reportIssue', () => {
 		expect(calls.indexOf('feedback_save_download')).toBeLessThan(calls.indexOf('open_url'));
 		const save = mocks.invoke.mock.calls.find((c) => c[0] === 'feedback_save_download')![1];
 		expect(save).toMatchObject({ extension: 'md' });
-		expect(mocks.invoke.mock.calls.find((c) => c[0] === 'open_folder')![1]).toEqual({
+		expect(mocks.invoke.mock.calls.find((c) => c[0] === 'folder_open')![1]).toEqual({
 			path: '/home/me/Downloads'
 		});
 		const url = new URL(mocks.invoke.mock.calls.find((c) => c[0] === 'open_url')![1].url);

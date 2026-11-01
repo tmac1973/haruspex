@@ -1796,7 +1796,7 @@ const WHISPER_VIDEO_SHA256: &str =
 
 /// large-v3-turbo's path, when it has been downloaded.
 #[tauri::command]
-pub async fn get_whisper_video_model_path(
+pub async fn whisper_video_model_path(
     state: tauri::State<'_, ModelManager>,
 ) -> Result<Option<String>, ()> {
     let path = state.models_dir().join("whisper").join(WHISPER_VIDEO_MODEL);
@@ -1804,7 +1804,7 @@ pub async fn get_whisper_video_model_path(
 }
 
 #[tauri::command]
-pub async fn download_whisper_video_model(
+pub async fn whisper_video_model_download(
     app: AppHandle,
     state: tauri::State<'_, ModelManager>,
 ) -> Result<String, String> {
@@ -1840,7 +1840,7 @@ pub async fn download_whisper_video_model(
 
 /// Delete large-v3-turbo, stopping the video whisper-server first.
 #[tauri::command]
-pub async fn delete_whisper_video_model(
+pub async fn whisper_video_model_delete(
     state: tauri::State<'_, ModelManager>,
     video: tauri::State<'_, crate::whisper::VideoWhisper>,
 ) -> Result<(), String> {

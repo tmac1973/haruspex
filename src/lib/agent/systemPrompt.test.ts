@@ -14,7 +14,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	hasEnabledEmailAccount: () => false,
 	hasEnabledCalendarAccount: () => false,
 	hasEnabledContactsAccount: () => false,
-	// registry.ts reads this through the mcp-names predicate when filtering
+	// registry.ts reads this through the mcpNames predicate when filtering
 	// schemas; the tool-description assertion below goes through getToolSchemas.
 	startableMcpServers: () => [
 		{

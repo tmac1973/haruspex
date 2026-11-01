@@ -75,7 +75,7 @@
 	let turbo = $state<string | null>(null);
 	let downloading = $state(false);
 	let download = $state<DownloadProgress | null>(null);
-	void invoke<string | null>('get_whisper_video_model_path')
+	void invoke<string | null>('whisper_video_model_path')
 		.then((p) => (turbo = p))
 		.catch(() => {});
 
@@ -88,7 +88,7 @@
 			(e) => (download = e.payload)
 		);
 		try {
-			turbo = await invoke<string>('download_whisper_video_model');
+			turbo = await invoke<string>('whisper_video_model_download');
 		} catch (e) {
 			error = errMessage(e);
 		} finally {
@@ -100,7 +100,7 @@
 	async function deleteTurbo() {
 		error = '';
 		try {
-			await invoke('delete_whisper_video_model');
+			await invoke('whisper_video_model_delete');
 			turbo = null;
 		} catch (e) {
 			error = errMessage(e);

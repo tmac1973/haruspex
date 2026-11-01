@@ -142,11 +142,11 @@ pub(super) fn worth_listing(title: &str, app: &str, width: u32, height: u32) -> 
 /// The windows to offer in a pick list. Empty on Linux, where the user clicks
 /// the window instead ([`capture_window_click`]).
 #[tauri::command]
-pub async fn list_capture_windows() -> Result<Vec<CaptureWindow>, String> {
+pub async fn capture_windows_list() -> Result<Vec<CaptureWindow>, String> {
     list_windows().await
 }
 
-/// Capture one window the user picked from [`list_capture_windows`].
+/// Capture one window the user picked from [`capture_windows_list`].
 ///
 /// Like [`capture_screen`], only ever called from a button the user pressed:
 /// the composer's camera button, with the window they chose.

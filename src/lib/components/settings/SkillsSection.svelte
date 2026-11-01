@@ -83,7 +83,7 @@
 
 	async function openFolder(path: string) {
 		try {
-			await invoke('open_folder', { path });
+			await invoke('folder_open', { path });
 		} catch (e) {
 			loadError = errMessage(e);
 		}

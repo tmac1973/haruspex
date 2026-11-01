@@ -16,7 +16,7 @@
 	async function openReports() {
 		folderError = '';
 		try {
-			await invoke('open_folder', { path: await invoke<string>('agent_feedback_dir') });
+			await invoke('folder_open', { path: await invoke<string>('agent_feedback_dir') });
 		} catch (e) {
 			folderError = errMessage(e);
 		}

@@ -31,6 +31,7 @@
 //! on battery, and on Linux it takes a logind "block" inhibitor, so while a
 //! job runs a lid close will not suspend the machine either.
 
+use crate::sync_util::LockExt;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Mutex;
 use std::thread::JoinHandle;
@@ -103,10 +104,7 @@ impl PowerInhibitor {
     /// A worker that has gone away (only possible if it panicked) is cleared
     /// so the next call starts a fresh one rather than failing forever.
     fn send(&self, cmd: Cmd) -> Result<(), String> {
-        let mut slot = self
-            .worker
-            .lock()
-            .map_err(|_| "power inhibitor state is poisoned".to_string())?;
+        let mut slot = self.worker.lock_or_recover();
 
         if slot.is_none() {
             let (tx, rx) = mpsc::channel::<Cmd>();
@@ -136,9 +134,7 @@ impl PowerInhibitor {
     /// and the Windows thread state die with the process), so joining would
     /// only add a way for a wedged D-Bus call to hang the exit path.
     pub fn shutdown(&self) {
-        if let Ok(mut slot) = self.worker.lock() {
-            *slot = None;
-        }
+        *self.worker.lock_or_recover() = None;
     }
 }
 

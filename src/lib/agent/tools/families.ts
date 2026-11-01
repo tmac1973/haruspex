@@ -8,7 +8,7 @@
 
 import { toolCategory } from '#lib/agent/tools/registry.ts';
 import { registeredMcpServers } from '#lib/agent/tools/mcp.ts';
-import { parseMcpToolName } from '#lib/agent/tools/mcp-names.ts';
+import { parseMcpToolName } from '#lib/agent/tools/mcpNames.ts';
 
 export interface ToolFamily {
 	id: string;

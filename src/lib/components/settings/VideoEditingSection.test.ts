@@ -61,11 +61,11 @@ beforeEach(() => {
 	vi.mocked(invoke).mockImplementation(
 		invokeRouter({
 			video_binaries_status: () => status,
-			get_whisper_video_model_path: () => null,
+			whisper_video_model_path: () => null,
 			google_sign_in_available: () => true,
 			youtube_account: () => null,
 			youtube_sign_in: () => ({ email: 'tim@example.com' }),
-			download_whisper_video_model: () => '/models/whisper/ggml-large-v3-turbo.bin',
+			whisper_video_model_download: () => '/models/whisper/ggml-large-v3-turbo.bin',
 			video_encoders_test: () => [
 				{ id: 'libx264', label: 'x264 (software)' },
 				{ id: 'h264_vaapi', label: 'VA-API (AMD, Intel)' }

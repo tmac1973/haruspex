@@ -15,7 +15,7 @@ describe('a test image from ComfyUI', () => {
 	after(() => comfy.close());
 
 	/**
-	 * A detail line's text from inside the Test generation section, or a marker
+	 * A detail line's text from beside the Generate a test image button, or a marker
 	 * when it is not rendered.
 	 *
 	 * Scoped to that section deliberately. The backend-probe section above it
@@ -24,7 +24,10 @@ describe('a test image from ComfyUI', () => {
 	 * same kind of misleading diagnostic this helper exists to replace.
 	 */
 	const detail = async (selector) => {
-		const section = await (await $('h2=Test generation')).parentElement();
+		// The row that holds the button: it says "Stop" while generating.
+		const section = await $(
+			'//div[contains(@class,"actions")][button[.="Generate a test image" or .="Stop"]]'
+		);
 		const el = await section.$(selector);
 		return (await el.isExisting()) ? await el.getText() : '(not shown)';
 	};

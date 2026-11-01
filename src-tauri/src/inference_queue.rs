@@ -41,6 +41,7 @@
 //!     period too), so a legitimately long multi-tool turn is never falsely
 //!     reclaimed.
 
+use crate::sync_util::LockExt;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -224,7 +225,7 @@ impl InferenceQueue {
         window_label: String,
         front: bool,
     ) -> Result<oneshot::Receiver<()>, String> {
-        let mut inner = self.inner.lock().map_err(|e| e.to_string())?;
+        let mut inner = self.inner.lock_or_recover();
         if inner.tickets.iter().any(|t| t.id == req_id) {
             return Err("duplicate inference request id".into());
         }
@@ -270,7 +271,8 @@ impl InferenceQueue {
     /// Cancel a still-waiting ticket (abort-before-grant). No-op once the
     /// ticket is running — that path goes through `release`.
     fn cancel(&self, req_id: &str) -> bool {
-        if let Ok(mut inner) = self.inner.lock() {
+        {
+            let mut inner = self.inner.lock_or_recover();
             if !inner.tickets.iter().any(|t| t.id == req_id) {
                 // Not here yet: refuse it when it comes.
                 inner.cancelled_early.push(req_id.to_string());
@@ -293,10 +295,7 @@ impl InferenceQueue {
     /// sender (if it was still waiting, its receiver errors → "cancelled"),
     /// and pump the freed lane. Returns whether a ticket was removed.
     fn remove_ticket_where(&self, pred: impl Fn(&Ticket) -> bool) -> bool {
-        let mut inner = match self.inner.lock() {
-            Ok(i) => i,
-            Err(_) => return false,
-        };
+        let mut inner = self.inner.lock_or_recover();
         let pos = inner.tickets.iter().position(pred);
         match pos {
             Some(pos) => {
@@ -312,11 +311,10 @@ impl InferenceQueue {
     /// Refresh a ticket's lease. Cheap, no snapshot/emit (lease isn't part
     /// of the broadcast).
     fn heartbeat(&self, req_id: &str) {
-        if let Ok(mut inner) = self.inner.lock() {
-            let now = now_ms();
-            if let Some(t) = inner.tickets.iter_mut().find(|t| t.id == req_id) {
-                t.lease_expires_at = now + LEASE_TTL_MS;
-            }
+        let mut inner = self.inner.lock_or_recover();
+        let now = now_ms();
+        if let Some(t) = inner.tickets.iter_mut().find(|t| t.id == req_id) {
+            t.lease_expires_at = now + LEASE_TTL_MS;
         }
     }
 
@@ -335,10 +333,7 @@ impl InferenceQueue {
     /// freed lane's next waiter. Dropping the senders of waiting victims
     /// resolves their receivers with an error.
     fn reclaim(&self, pred: impl Fn(&Ticket) -> bool) -> bool {
-        let mut inner = match self.inner.lock() {
-            Ok(i) => i,
-            Err(_) => return false,
-        };
+        let mut inner = self.inner.lock_or_recover();
         let victims: Vec<String> = inner
             .tickets
             .iter()
@@ -357,15 +352,12 @@ impl InferenceQueue {
     }
 
     fn snapshot(&self) -> Vec<TicketDto> {
-        self.inner
-            .lock()
-            .map(|inner| inner.snapshot())
-            .unwrap_or_default()
+        self.inner.lock_or_recover().snapshot()
     }
 
     /// DTO for a single (presumably just-admitted) ticket.
     fn ticket_dto(&self, req_id: &str) -> Option<TicketDto> {
-        let inner = self.inner.lock().ok()?;
+        let inner = self.inner.lock_or_recover();
         inner
             .tickets
             .iter()

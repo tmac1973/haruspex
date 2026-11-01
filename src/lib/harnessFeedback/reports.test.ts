@@ -90,7 +90,7 @@ describe('shareReports', () => {
 		});
 		expect(mocks.invoke.mock.calls.map((c) => c[0])).toEqual([
 			'agent_feedback_export',
-			'open_folder',
+			'folder_open',
 			'feedback_redact',
 			'open_url'
 		]);

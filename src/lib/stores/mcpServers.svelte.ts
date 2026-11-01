@@ -21,7 +21,7 @@ import type { CompanionStatus } from '#lib/ipc/gen/CompanionStatus.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import type { CatalogEntry } from '#lib/ipc/gen/CatalogEntry.ts';
 import { registerMcpTools, setToolFailureHook, unregisterMcpServer } from '#lib/agent/tools/mcp.ts';
-import { mcpDefaultTools } from '#lib/agent/tools/mcp-names.ts';
+import { mcpDefaultTools } from '#lib/agent/tools/mcpNames.ts';
 import { forgetServerApprovals } from '#lib/stores/mcpApproval.svelte.ts';
 import { getSettings, startableMcpServers } from '#lib/stores/settings.ts';
 import { forgetMcpSecrets } from '#lib/stores/mcpSecrets.ts';
@@ -327,7 +327,7 @@ const TOOLS_CHANGED_EVENT = 'mcp-tools-changed';
  * which is useless if the tools it just exposed stay invisible until a
  * restart.
  *
- * The catalog defaults are re-read from `mcp-names` rather than passed in: the
+ * The catalog defaults are re-read from `mcpNames` rather than passed in: the
  * notification arrives with nothing but an id, and the defaults were already
  * recorded when the server first registered.
  */
