@@ -81,13 +81,16 @@ anyway: the result gives the schema and asks it to call again.
   gated only by the schema filter (for example `email_compose` for a
   non-interactive turn), so `load_tools` must compute what it may load from
   this turn's filter. It must not use the registry.
-- llama-server reuses the cache only up to the first token that differs. In
-  Qwen's chat template the tool block comes after the system text, so a change
-  to `tools` makes llama-server process everything after it again, the whole
-  history included. Phase 01 checks this for the default model.
-- llama-server with `--jinja` may build a grammar from `tools` that limits
-  tool-call names to the listed tools. If it does, the model cannot call a tool
-  that is not in `tools`. Hosted APIs (OpenRouter) may refuse such calls too.
+- In the Qwen 3.5 chat template the tool block comes first, before the system
+  text (measured in phase 01). Qwen 3.5 and 3.8 are hybrid models: their
+  recurrent layers rewind only to a checkpoint near the end of the prompt. So
+  on llama-server, a change anywhere but the tail makes it process the
+  **whole** prompt again: a change to `tools`, to the system text, or to an
+  early message. Only text added at the end is cheap.
+- llama-server with `--jinja` builds a grammar from `tools` that limits
+  tool-call names to the listed tools (measured in phase 01). The model cannot
+  call a tool that is not in `tools`: the grammar turns the call into a call
+  to a listed tool. vLLM has no such limit.
 - Chat sends the model only the messages from the latest summary on
   (`chatModelView`). A record of what is loaded must survive compaction.
 - `load_skill` already does something similar: a catalog in the prompt, and
@@ -109,9 +112,8 @@ anyway: the result gives the schema and asks it to call again.
   deferring can never widen or narrow a turn.
 - `load_tools` with a family not offered this turn returns an error that names
   the setting or integration to turn on. It loads nothing.
-- After a load, later turns in the conversation send the same `tools` array in
-  the same order. A test asserts that the array from turn N is a prefix of the
-  array from turn N+1.
+- A load changes neither `tools` nor the system text. A test asserts that both
+  are byte-for-byte the same on every turn of a conversation, across a load.
 - After compaction, the loaded families are still loaded.
 - A live run against the default model and a larger one (phase 05) shows that
   the model loads the right family for each test prompt. The rate is recorded
@@ -134,14 +136,43 @@ anyway: the result gives the schema and asks it to call again.
   `fs_write_spreadsheet`, `fs_write_slides`), email, calendar, contacts,
   images, music, speech, video generation, video editing, screen, skill
   writing, assets (`make_asset`), and each MCP server.
-- **How a loaded schema reaches the model** → decided in phase 01. The options:
-  - _A. Add to `tools`._ Loaded families go at the end of the array. Each load
-    costs one cache miss. Works with every backend.
-  - _B. Schema in the result only._ `tools` never changes. The model calls a
-    tool that is not in `tools`. This needs the backend to accept that.
-  - _C. A `use_tool` proxy._ `tools` holds `load_tools` and
-    `use_tool({ name, arguments })`. `tools` never changes and every backend
-    accepts it. Models may be worse at nested arguments.
+- **How a loaded schema reaches the model** → **C, a `use_tool` proxy**
+  (phase 01, 2026-11-01). `tools` holds the core, `load_tools` and
+  `use_tool({ name, arguments })`, and never changes. The `load_tools` result
+  carries the family's schemas as text. When the backend lets the model call
+  a loaded tool directly instead (vLLM does), Haruspex accepts that call as
+  well. The options and what was measured:
+  - _A. Add to `tools`._ Rejected. It works, but on llama-server every load
+    makes the whole prompt process again (22,269 tokens, 5.7 s on this
+    machine; much longer on the 680M, not measured).
+  - _B. Schema in the result only._ Rejected. It is impossible on llama-server,
+    because the tool grammar turns the call into a call to a listed tool
+    (0 of 20 runs). The same prompt without the grammar calls `video_probe` in
+    10 of 10. It works on vLLM (10 of 10, and a past unlisted call in the
+    history is accepted).
+  - _C. The proxy._ Chosen. The 9B on llama-server gave correct arguments in
+    every run that used it: `video_probe` 10/10, and `video_cut` after a probe
+    10/10. That is better than A and the control, which both passed an
+    invalid `index` there. Qwen3.8-Flash on vLLM built the nested arguments
+    correctly every time. In 5–7 of 10 runs it put the crossfade on the wrong
+    clip, against 0 of 10 with A, so a schema given as text is followed less
+    closely than one in `tools` by that model.
+- **Phase 01 findings that change the rest of the plan:**
+  - Anything that changes mid-conversation must go at the end of the prompt.
+    That includes the index in phase 04: its lines never change after the
+    conversation starts. A loaded family stays listed as it was; the
+    `load_tools` result at the tail is what says it is loaded.
+  - The 9B does not load a family on its own when the request does not name
+    it. "What clips are in ep012?" loaded the family in 0 of 15 runs, with
+    thinking on or off. It listed the folder instead. With every tool listed
+    it called `video_probe` in 10 of 10. "Use the video tools to list the
+    clips in ep012" loaded the family in 15 of 15. Qwen3.8-Flash loaded the
+    family in 10 of 10 for the implicit request.
+  - So Auto stays off for the 9B, as the default already says. Phase 05
+    should test a stronger index line for the 9B before giving up on it.
+  - Not tested: OpenRouter and other hosted APIs (C needs nothing from them
+    but a listed tool), the 680M's prefill time, and ThinkingCap-3.8-27B
+    (compute:3000 served Qwen3.8-Flash on the day).
 - **Preload from hints** → when `looksLikeFileOutputRequest` matches, the
   documents family is loaded before the turn starts, as the file-output hint
   already says to use those tools.
@@ -152,18 +183,17 @@ anyway: the result gives the schema and asks it to call again.
 
 ## Open questions
 
-- Is 12B the right boundary for the default? Phase 05 measures the 9B. If the
-  9B loads the right family reliably, the default could be on for every size.
+- Is 12B the right boundary for the default? Phase 01 found the 9B does not
+  load a family for a request that does not name it. Phase 05 tests whether a
+  stronger index line changes that.
 - Should the documents family be core when a working folder is set? It is
   4.6 KB, and "make me a PDF" is common.
 
 ## Related
 
-- **Per-turn memory and the KV cache.** `recallForTurn` output goes at the end
-  of the system message, before the tool block. When the recalled memories
-  change between turns, llama-server may process all the tools and the history
-  again. The fix (memories in the latest user message) is independent of this
-  plan and smaller. File it as its own issue.
+- **Per-turn memory and the KV cache.** Fixed in #852: recalled memories now
+  go on the latest user message, so the system text no longer changes from
+  turn to turn (turn 2 of a test chat: 83 prompt tokens instead of 20,957).
 - **Description trims found by the same audit.** Repeated parameter text
   (~3.7 KB, mostly the video tools' `episode` and `project`), the `fs_write_*`
   rule repeated in four places, `run_python`'s list of fpdf2 and python-pptx

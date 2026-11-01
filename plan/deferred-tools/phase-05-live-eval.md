@@ -16,7 +16,24 @@ skill, with settings written to `webview-store.json`. Run every prompt with
 the setting Off and On, on two models:
 
 - Qwen 3.5 9B (the default), bundled llama-server
-- ThinkingCap-3.8-27B on compute:3000
+- the larger model on compute:3000 (ThinkingCap-3.8-27B, or whatever it
+  serves that day; the spike had Qwen3.8-Flash)
+
+Phase 01 found the 9B loads a family only when the request names it (0 of 15
+for "What clips are in ep012?", 15 of 15 for "Use the video tools…"). Before
+the full run, try for the 9B:
+
+- an index line that names the user's words, not the tools' ("video — the
+  episodes and clips in the working folder: …");
+- one rule above the index: "If a request is about one of these, call
+  load_tools first, even for a simple question."
+
+Keep whichever gets the implicit prompt to 8 of 10 or more. If neither
+does, the 9B stays Off under Auto.
+
+The spike script is not in the repo. It drives llama-server and vLLM
+directly with the real schemas, and is easy to rebuild from phase 01's
+method.
 
 Everything is on: email (a test account), calendar, contacts, two image
 models, music, video editing with a test episode folder, screen capture.
@@ -45,8 +62,11 @@ For each run:
 
 ## Pass
 
-- The 27B: the right family in at least 95% of the "needs a family" runs, and
-  no loads in the "needs no family" runs.
+- The larger model: the right family in at least 95% of the "needs a family"
+  runs, and no loads in the "needs no family" runs.
+- The larger model's arguments through `use_tool` as correct as with the
+  setting Off. Phase 01 saw it follow a schema given as text less closely
+  (crossfade on the wrong clip in 5–7 of 10); check that on several tools.
 - The 9B: record the rate. At 90% or more, the default becomes On for every
   size. Below that, Auto keeps the 9B on Off.
 - An index line that leads to missed loads gets rewritten and the prompts run
