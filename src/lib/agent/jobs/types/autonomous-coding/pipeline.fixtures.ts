@@ -117,9 +117,9 @@ const exec = (out: Partial<ExecResult> = {}): ExecResult => ({
 });
 
 /**
- * The working directory: files in memory, and a git that knows only whether
- * anything changed since the last commit (and whether that was outside the
- * plan dir). Any command that is not git is the verification command.
+ * The working directory: files in memory, and a git that knows which paths
+ * changed since the last commit, and which since a `write-tree` snapshot. Any
+ * command that is not git is the verification command.
  */
 function fakeWorkdir(opts: FakeRunOptions) {
 	const files = new Map(Object.entries(opts.files ?? {}));
@@ -127,18 +127,29 @@ function fakeWorkdir(opts: FakeRunOptions) {
 	const commands: string[] = [];
 	const checks: string[] = [];
 	const verifyExits = [...(opts.verifyExits ?? [0])];
-	const git = { head: 1, dirty: false, dirtyOutsidePlan: false, staged: false };
+	const git = { head: 1, dirty: new Set<string>(), staged: false };
+	// Each write bumps its path's version; a tree is a copy of the versions.
+	const versions = new Map<string, number>();
+	const trees: Map<string, number>[] = [];
+	const excludedBy = (command: string) =>
+		[...command.matchAll(/":\(exclude\)([^"]+)"/g)].map((m) => m[1]);
+	const isExcluded = (path: string, excluded: string[]) =>
+		excluded.some((x) => path === x || path.startsWith(`${x.replace(/\/+$/, '')}/`));
 
 	const exact: Record<string, () => ExecResult> = {
 		'git rev-parse --is-inside-work-tree': () => exec({ stdout: 'true' }),
 		'git rev-parse HEAD': () => exec({ stdout: `head${git.head}\n` }),
 		'git branch --show-current': () => exec({ stdout: 'main\n' }),
-		'git status --porcelain': () => exec({ stdout: git.dirty ? ' M a\n' : '' }),
+		'git status --porcelain': () => exec({ stdout: git.dirty.size ? ' M a\n' : '' }),
 		'git add -A': () => {
-			git.staged = git.dirty;
+			git.staged = git.dirty.size > 0;
 			return exec();
 		},
 		'git diff --cached --quiet': () => exec({ exit_code: git.staged ? 1 : 0 }),
+		'git write-tree': () => {
+			trees.push(new Map(versions));
+			return exec({ stdout: `tree${trees.length - 1}\n` });
+		},
 		'git reset --soft HEAD~1': () => {
 			commits.pop();
 			git.head--;
@@ -152,7 +163,8 @@ function fakeWorkdir(opts: FakeRunOptions) {
 		}
 		commits.push(/-m "(.*)"$/.exec(command)?.[1] ?? command);
 		git.head++;
-		git.dirty = git.dirtyOutsidePlan = git.staged = false;
+		git.dirty.clear();
+		git.staged = false;
 		return exec();
 	};
 
@@ -169,7 +181,16 @@ function fakeWorkdir(opts: FakeRunOptions) {
 		if (exact[command]) return exact[command]();
 		if (command.startsWith('git checkout -b ')) return exec();
 		if (command.startsWith('git status --porcelain -- .')) {
-			return exec({ stdout: git.dirtyOutsidePlan ? ' M src/lib.rs\n' : '' });
+			const excluded = excludedBy(command);
+			const outside = [...git.dirty].filter((p) => !isExcluded(p, excluded));
+			return exec({ stdout: outside.map((p) => ` M ${p}\n`).join('') });
+		}
+		const sinceTree = /^git diff --cached --quiet tree(\d+) /.exec(command);
+		if (sinceTree) {
+			const tree = trees[Number(sinceTree[1])];
+			const excluded = excludedBy(command);
+			const changed = [...versions].some(([p, v]) => !isExcluded(p, excluded) && tree.get(p) !== v);
+			return exec({ exit_code: changed ? 1 : 0 });
 		}
 		if (command.startsWith('git ') && command.includes(' commit')) return commit(command);
 		return check(command);
@@ -177,8 +198,8 @@ function fakeWorkdir(opts: FakeRunOptions) {
 
 	const write = (path: string, content: string) => {
 		files.set(path, content);
-		git.dirty = true;
-		if (!path.startsWith(PLAN_DIR)) git.dirtyOutsidePlan = true;
+		git.dirty.add(path);
+		versions.set(path, (versions.get(path) ?? 0) + 1);
 	};
 
 	return { files, commits, commands, checks, run, write };
