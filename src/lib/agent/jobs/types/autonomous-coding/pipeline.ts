@@ -593,6 +593,9 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 			// and `git rev-parse HEAD` in a directory that is not a repo is a git
 			// call this run promised not to make.
 			const headBefore = git.enabled ? await gitHead(ctx) : null;
+			// The tree as the turn found it: a failed phase's build work is still
+			// uncommitted here, so a dirty tree after the turn proves nothing.
+			const treeBefore = git.enabled ? await stagedTree(ctx) : null;
 			const result = await runIterationTurn(
 				ctx,
 				planDir,
@@ -606,7 +609,11 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 
 			let { status, note } = checkAssignedItem(result, target.id);
 			if (status === 'done') {
-				const commit = await commitStepWork(ctx, target, plan.items.length, headBefore, git);
+				const commit = await commitStepWork(ctx, target, plan.items.length, git, {
+					headBefore,
+					treeBefore,
+					bookkeeping: [todoPath, progressPath]
+				});
 				({ status, note } = applyStepCommit(note, commit));
 			}
 			if (status === 'done') {
@@ -1333,6 +1340,29 @@ async function changedOutsidePlanDir(
 	return r.stdout.trim().length > 0;
 }
 
+/** Stage everything and return the index's tree id: a snapshot of the work. */
+async function stagedTree(ctx: JobRunContext): Promise<string | null> {
+	await stagePending(ctx);
+	const r = await execInWorkdir(ctx, 'git write-tree');
+	return r.exit_code === 0 ? r.stdout.trim() : null;
+}
+
+/**
+ * Does the (freshly staged) index differ from `tree` outside `excluded`?
+ * Null when there is no snapshot or git cannot say.
+ */
+async function changedSinceTree(
+	ctx: JobRunContext,
+	tree: string | null,
+	excluded: string[]
+): Promise<boolean | null> {
+	if (!tree) return null;
+	const specs = excluded.map((p) => ` ":(exclude)${p}"`).join('');
+	const r = await execInWorkdir(ctx, `git diff --cached --quiet ${tree} -- .${specs}`);
+	if (r.exit_code === 0) return false;
+	return r.exit_code === 1 ? true : null;
+}
+
 async function gitHead(ctx: JobRunContext): Promise<string | null> {
 	const r = await execInWorkdir(ctx, 'git rev-parse HEAD');
 	return r.exit_code === 0 ? r.stdout.trim() : null;
@@ -1611,13 +1641,19 @@ export function commitTitle(title: string): string {
  * the model made itself (against instructions) still counts as changed: the
  * work exists, and the runner's bookkeeping commit simply has nothing left
  * to stage.
+ *
+ * "Changed" is measured against `treeBefore`, the tree staged right before
+ * the turn, not against HEAD: a failed phase's build work is still
+ * uncommitted while its repair runs, and the runner rewrites `bookkeeping`
+ * (TODO and PROGRESS) before every repair turn. Both are committed along
+ * with real work, but neither counts as the step's work.
  */
 async function commitStepWork(
 	ctx: JobRunContext,
 	target: TaskItem,
 	totalItems: number,
-	headBefore: string | null,
-	git: GitPolicy
+	git: GitPolicy,
+	before: { headBefore: string | null; treeBefore: string | null; bookkeeping: string[] }
 ): Promise<{ changed: boolean; unsigned: boolean; commitSkipped: boolean }> {
 	// Without git there is no diff and no HEAD to compare, so the no-op
 	// detection this function exists for is unavailable. Report `changed: true`
@@ -1629,8 +1665,10 @@ async function commitStepWork(
 	// directory that had no package.json at baseline).
 	const staged = await stagePending(ctx);
 	const headNow = await gitHead(ctx);
-	if (!staged && headNow === headBefore) {
-		return { changed: false, unsigned: false, commitSkipped: false };
+	if (headNow === before.headBefore) {
+		const changed = await changedSinceTree(ctx, before.treeBefore, before.bookkeeping);
+		// Unknown (no snapshot): fall back to "anything staged at all".
+		if (!(changed ?? staged)) return { changed: false, unsigned: false, commitSkipped: false };
 	}
 	if (staged) {
 		const total = String(totalItems).padStart(2, '0');

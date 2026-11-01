@@ -180,6 +180,29 @@ describe('repair cycles', () => {
 		expect(r.commits.filter((c) => c.includes('[ralph'))).toEqual([]);
 	});
 
+	it('fails a repair that reports done but changed nothing', async () => {
+		const r = await run({
+			verifyExits: [1, 0],
+			turns: { 'loop.repair': reports('done', 'Looked at it; all fine.') }
+		});
+		expect(todo(r)?.items.find((i) => i.id === '03')).toMatchObject({
+			status: 'blocked',
+			attempts: 1
+		});
+		expect(r.files.get('plan/x/PROGRESS-coding.md')).toContain(
+			'BLOCKED after 1 failed attempt(s). Claimed done but changed nothing'
+		);
+		// The runner's own TODO/PROGRESS rewrites are not committed as the repair.
+		expect(r.commits.filter((c) => c.includes('[ralph'))).toEqual([]);
+	});
+
+	it('commits a repair that changed a file, with the bookkeeping alongside', async () => {
+		const r = await run({ verifyExits: [1, 0], turns: { 'loop.repair': repairsIt } });
+		expect(todo(r)?.items.find((i) => i.id === '03')).toMatchObject({ status: 'done' });
+		expect(r.commits).toContain('feat: Repair phase 01 (cycle 1/5) [ralph 03/03]');
+		expect(todo(r)?.phases[0].verify).toBe('passed');
+	});
+
 	it('fails a repair that never submits a result', async () => {
 		const r = await run({ verifyExits: [1, 0], turns: { 'loop.repair': () => {} } });
 		expect(r.files.get('plan/x/PROGRESS-coding.md')).toContain(
