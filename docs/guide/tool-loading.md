@@ -25,7 +25,7 @@ Documents (PDF, Word, OpenDocument, spreadsheets, slides), email, calendar, cont
 
 ## What you see
 
-The first time a request needs a group, the steps under the answer show **Loaded video tools** (or the group's name) before the tool itself. That is one extra step. The tools then show as usual, for example **Looking at clips in ep012**.
+The first time a request needs a group, the steps under the answer usually show **Loaded video tools** (or the group's name) before the tool itself. That is one extra step. The tools then show as usual, for example **Looking at clips in ep012**. When the model calls a tool of the group straight away with the right details, the tool runs and the group loads with it, without the extra step.
 
 - A request for a file (a PDF, a spreadsheet, slides) starts with the documents tools already loaded.
 - In Chat, a group stays loaded for the rest of the turn. A later message loads it again when it needs it, unless Settings → Chat → Keep tool results from the previous turn in context keeps the last turn's tools in view.

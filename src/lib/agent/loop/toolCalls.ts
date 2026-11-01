@@ -8,7 +8,9 @@ import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import { coerceCallArguments, executeTool } from '#lib/agent/tools/index.ts';
 import { toolUsesModel } from '#lib/agent/tools/registry.ts';
 import {
+	argumentsFit,
 	deferredFamilyOf,
+	deferredToolName,
 	familyResult,
 	loadedFamilies
 } from '#lib/agent/tools/_deferredLoaded.ts';
@@ -27,6 +29,43 @@ import { appendMessage, type LoopContext } from '#lib/agent/loop/context.ts';
 import { raceWithAbort } from '#lib/agent/loop/modelCall.ts';
 import { runReleasingSlot } from '#lib/agent/loop/slotRelease.ts';
 
+/** The family `name` belongs to, when this turn defers it and it is not loaded. */
+function unloadedFamily(ctx: LoopContext, name: string): DeferredFamily | undefined {
+	const family = deferredFamilyOf(name, ctx.deferredTools);
+	return family && !loadedFamilies(ctx.messages).has(family.id) ? family : undefined;
+}
+
+/**
+ * A call to a tool this turn lists but has not loaded. When the model's
+ * arguments fit its schema, it runs and `family` loads with its result; when
+ * they don't, they were a guess, and `answer` gives only the schemas.
+ */
+function unloadedCall(
+	ctx: LoopContext,
+	call: ResolvedToolCall,
+	args: Record<string, unknown>
+): { family?: DeferredFamily; answer?: string } {
+	const family = unloadedFamily(ctx, call.name);
+	if (!family) return {};
+	const schema = family.schemas.find((s) => s.function.name === call.name);
+	if (argumentsFit(schema, args)) return { family };
+	return { answer: `${familyResult(family)}\nCall ${call.name} again with these parameters.` };
+}
+
+/**
+ * A call to a deferred tool by a hyphenated name (`video-probe`), renamed to
+ * the tool. The history keeps the name the model wrote.
+ */
+function withDeferredName(call: ResolvedToolCall, ctx: LoopContext): ResolvedToolCall {
+	const name = deferredToolName(call.name, ctx.deferredTools);
+	if (!name || name === call.name) return call;
+	return {
+		...call,
+		name,
+		wire: call.wire ?? { name: call.name, arguments: call.arguments }
+	};
+}
+
 /**
  * Execute the model's tool calls: append the assistant tool_calls message,
  * then run each tool (raced against the abort signal), stream its result back
@@ -42,12 +81,6 @@ import { runReleasingSlot } from '#lib/agent/loop/slotRelease.ts';
  * not have avoided failing on shouldn't consume the turn budget and force an
  * incomplete answer.
  */
-/** The family `name` belongs to, when this turn defers it and it is not loaded. */
-function unloadedFamily(ctx: LoopContext, name: string): DeferredFamily | undefined {
-	const family = deferredFamilyOf(name, ctx.deferredTools);
-	return family && !loadedFamilies(ctx.messages).has(family.id) ? family : undefined;
-}
-
 export async function executeToolCalls(
 	ctx: LoopContext,
 	nudges: NudgeState,
@@ -55,6 +88,7 @@ export async function executeToolCalls(
 	response?: ChatCompletionResponse
 ): Promise<{ allWebReadsBlocked: boolean }> {
 	const { signal, options } = ctx;
+	toolCalls = toolCalls.map((call) => withDeferredName(call, ctx));
 	// Count calls that were web reads blocked by an external resource. When
 	// this equals toolCalls.length, the whole iteration was wasted on blocks.
 	let blockedWebReads = 0;
@@ -104,16 +138,12 @@ export async function executeToolCalls(
 		// structured answer here read the model's raw arguments: an `entries`
 		// array sent as a JSON string was walked character by character, and
 		// a night's asset spec was rejected as dozens of "entries with no id".
-		options.onToolStart({ ...call, arguments: coerceCallArguments(call.name, call.arguments) });
-		// A tool this turn lists but has not loaded: its schemas come back, and
-		// it does not run, because the arguments were a guess.
-		const unloaded = unloadedFamily(ctx, call.name);
-		if (unloaded) {
-			const output = toolResult(
-				`${familyResult(unloaded)}\nCall ${call.name} again with these parameters.`
-			);
-			options.onToolEnd(call, output.result);
-			return output;
+		const coerced = coerceCallArguments(call.name, call.arguments);
+		options.onToolStart({ ...call, arguments: coerced });
+		const unloaded = unloadedCall(ctx, call, coerced);
+		if (unloaded.answer !== undefined) {
+			options.onToolEnd(call, unloaded.answer);
+			return toolResult(unloaded.answer);
 		}
 		// Race the tool call against the abort signal. Most tools dispatch
 		// to Tauri commands or fetch and don't honor signal themselves, so
@@ -184,7 +214,12 @@ export async function executeToolCalls(
 			output.heroImage,
 			output.fileDiff
 		);
-		return output;
+		// It ran before its family loaded: the result carries the family, so
+		// the model has the schemas from here on.
+		const loads = unloaded.family;
+		return loads
+			? { ...output, result: `${familyResult(loads)}\n\n${call.name} result:\n${output.result}` }
+			: output;
 	};
 
 	// In call order, whatever order the calls finished in.

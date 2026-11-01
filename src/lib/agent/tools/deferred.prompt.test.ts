@@ -184,3 +184,11 @@ describe('preloading the documents family', () => {
 		expect(run(first.messages, true).added).toEqual([]);
 	});
 });
+
+describe('the fs_list_dir rule', () => {
+	it('points a deferring turn at load_tools, and leaves the others as they were', () => {
+		expect(chatPrompt()).toContain('call load_tools first instead');
+		expect(chatPrompt([])).toContain('Use fs_list_dir first to see what files exist');
+		expect(chatPrompt([])).not.toContain('load_tools');
+	});
+});

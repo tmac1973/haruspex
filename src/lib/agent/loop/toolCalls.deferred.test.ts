@@ -111,3 +111,54 @@ describe('executeToolCalls with deferred tools', () => {
 		expect(tools.executeTool.mock.calls[0][2].deferredTools).toEqual([VIDEO]);
 	});
 });
+
+describe('a deferred call made before its family loads', () => {
+	const PROBE: DeferredFamily = {
+		id: 'video',
+		line: 'video — edit the episodes',
+		schemas: [
+			{
+				type: 'function',
+				function: {
+					name: 'video_probe',
+					description: 'Probe.',
+					parameters: {
+						type: 'object',
+						properties: { episode: { type: 'string' } },
+						required: ['episode']
+					}
+				}
+			}
+		]
+	};
+	const ctxWith = () => ({ ...makeCtx(), deferredTools: [PROBE] }) as LoopContext;
+
+	it('runs when its arguments fit, and loads the family with its result', async () => {
+		const ctx = ctxWith();
+		await executeToolCalls(ctx, new NudgeState(), [probe(true)]);
+		expect(tools.executeTool).toHaveBeenCalledTimes(1);
+		expect(lastTool(ctx).startsWith(familyResult(PROBE))).toBe(true);
+		expect(lastTool(ctx)).toContain('video_probe result:\nep012/a.mp4 12 s');
+		// The step shows the tool's own result.
+		expect(ended).toEqual([['video_probe', 'ep012/a.mp4 12 s']]);
+	});
+
+	it('only sends the schemas back when they do not', async () => {
+		const ctx = ctxWith();
+		await executeToolCalls(ctx, new NudgeState(), [
+			{ id: 'c1', name: 'video_probe', arguments: { clip: 'a.mp4' } }
+		]);
+		expect(tools.executeTool).not.toHaveBeenCalled();
+		expect(lastTool(ctx)).toContain('Call video_probe again');
+	});
+
+	it('takes a hyphenated name for the tool, and keeps the name in the history', async () => {
+		const ctx = ctxWith();
+		await executeToolCalls(ctx, new NudgeState(), [
+			{ id: 'c1', name: 'video-probe', arguments: { episode: 'ep012' } }
+		]);
+		expect(tools.executeTool.mock.calls[0][0]).toBe('video_probe');
+		const asst = ctx.messages[0] as { tool_calls: { function: { name: string } }[] };
+		expect(asst.tool_calls[0].function.name).toBe('video-probe');
+	});
+});

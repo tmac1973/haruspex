@@ -131,7 +131,11 @@ LEAN MODE:
 
 FILESYSTEM ACCESS:
 - Working directory: ${workingDir}
-- Use fs_list_dir first to see what files exist before reading specific files.
+- ${
+				deferred.size
+					? 'Use fs_list_dir to see what files exist before reading specific files. When a request is about something a MORE TOOLS group covers, call load_tools first instead: those tools read their own files.'
+					: 'Use fs_list_dir first to see what files exist before reading specific files.'
+			}
 - Only use filesystem tools when the user explicitly asks to work with files.
 - ${
 				lean
