@@ -13,8 +13,8 @@ use tokio::sync::Mutex;
 use tokio::time::sleep;
 
 use crate::sidecar_util::{
-    base_url, clear_logs, kill_child, new_log_buffer, ports, require_ready, snapshot_logs,
-    start_sidecar, LogBuffer, SidecarStart, SidecarStatus, LOOPBACK,
+    base_url, clear_logs, kill_child, new_log_buffer, ports, require_ready, resource_roots,
+    snapshot_logs, start_sidecar, LogBuffer, SidecarStart, SidecarStatus, LOOPBACK,
 };
 
 const TTS_PORT: u16 = ports::TTS;
@@ -53,16 +53,17 @@ pub struct TtsEngine {
 /// Returns None only if neither directory could be resolved (extremely
 /// unusual — would indicate a Tauri config problem).
 fn resolve_koko_path(
-    resource_dir: &Option<PathBuf>,
+    roots: &[PathBuf],
     app_data_dir: &Option<PathBuf>,
     subdir: &str,
     filename: &str,
 ) -> Option<PathBuf> {
-    if let Some(rd) = resource_dir {
-        let bundled = rd.join(subdir).join(filename);
-        if bundled.exists() {
-            return Some(bundled);
-        }
+    if let Some(bundled) = roots
+        .iter()
+        .map(|r| r.join(subdir).join(filename))
+        .find(|p| p.exists())
+    {
+        return Some(bundled);
     }
     if let Some(ad) = app_data_dir {
         let writable_dir = ad.join("tts").join(subdir);
@@ -98,22 +99,18 @@ impl TtsEngine {
 
         info!("Starting Kokoro TTS server on port {}", TTS_PORT);
 
-        // Resolve model + voices paths. Preferred location is the bundled
-        // resource_dir (works in dev where the files live under
-        // src-tauri/{checkpoints,data}/, and in prod when tauri.conf.json's
-        // bundle.resources ships them). Falls back to a writable path under
+        // Resolve model + voices paths. Preferred location is a resource
+        // root (the source tree's src-tauri/{checkpoints,data}/ in dev, the
+        // resource dir in prod when tauri.conf.json's bundle.resources ships
+        // them). Falls back to a writable path under
         // app_data_dir/tts/ so koko's built-in download won't hit a
         // read-only AppImage mount if the bundle was built without the
         // models.
-        let resource_dir = app.path().resource_dir().ok();
+        let roots = resource_roots(app);
         let app_data_dir = app.path().app_data_dir().ok();
-        let model_path = resolve_koko_path(
-            &resource_dir,
-            &app_data_dir,
-            "checkpoints",
-            "kokoro-v1.0.onnx",
-        );
-        let data_path = resolve_koko_path(&resource_dir, &app_data_dir, "data", "voices-v1.0.bin");
+        let model_path =
+            resolve_koko_path(&roots, &app_data_dir, "checkpoints", "kokoro-v1.0.onnx");
+        let data_path = resolve_koko_path(&roots, &app_data_dir, "data", "voices-v1.0.bin");
 
         let mut args: Vec<String> = Vec::new();
         if let Some(p) = &model_path {
@@ -135,14 +132,15 @@ impl TtsEngine {
         // espeak-rs-sys bakes the build-time path into the binary for espeak-ng-data.
         // Set ESPEAK_DATA_PATH to our bundled copy so phonemization works.
         let mut env = Vec::new();
-        if let Some(resource_dir) = &resource_dir {
-            let espeak_data = resource_dir.join("binaries").join("espeak-ng-data");
-            if espeak_data.exists() {
-                env.push((
-                    "ESPEAK_DATA_PATH",
-                    espeak_data.to_string_lossy().to_string(),
-                ));
-            }
+        if let Some(espeak_data) = roots
+            .iter()
+            .map(|r| r.join("binaries").join("espeak-ng-data"))
+            .find(|p| p.exists())
+        {
+            env.push((
+                "ESPEAK_DATA_PATH",
+                espeak_data.to_string_lossy().to_string(),
+            ));
         }
 
         // A stdout line containing "listening" flips status Starting → Ready
@@ -695,7 +693,7 @@ mod tests {
         std::fs::write(res.join("checkpoints").join("model.onnx"), b"x").unwrap();
         let data = root.join("data");
         let got = resolve_koko_path(
-            &Some(res.clone()),
+            &[root.join("absent"), res.clone()],
             &Some(data.clone()),
             "checkpoints",
             "model.onnx",
@@ -712,7 +710,7 @@ mod tests {
         let root = temp_dir("fallback");
         let res = root.join("res");
         let data = root.join("data");
-        let got = resolve_koko_path(&Some(res), &Some(data.clone()), "data", "voices.bin");
+        let got = resolve_koko_path(&[res], &Some(data.clone()), "data", "voices.bin");
         let want = data.join("tts").join("data").join("voices.bin");
         assert_eq!(got, Some(want.clone()));
         assert!(want.parent().unwrap().is_dir());
@@ -721,7 +719,7 @@ mod tests {
             "the file itself is left for koko to download"
         );
 
-        let got = resolve_koko_path(&None, &Some(data.clone()), "data", "voices.bin");
+        let got = resolve_koko_path(&[], &Some(data.clone()), "data", "voices.bin");
         assert_eq!(got, Some(want));
     }
 
@@ -729,14 +727,14 @@ mod tests {
     fn resolve_koko_path_is_none_without_a_usable_dir() {
         let root = temp_dir("none");
         let res = root.join("res");
-        assert_eq!(resolve_koko_path(&Some(res), &None, "data", "v.bin"), None);
-        assert_eq!(resolve_koko_path(&None, &None, "data", "v.bin"), None);
+        assert_eq!(resolve_koko_path(&[res], &None, "data", "v.bin"), None);
+        assert_eq!(resolve_koko_path(&[], &None, "data", "v.bin"), None);
 
         // An app data "dir" that is really a file cannot hold the model dir.
         let blocker = root.join("file");
         std::fs::write(&blocker, b"x").unwrap();
         assert_eq!(
-            resolve_koko_path(&None, &Some(blocker), "data", "v.bin"),
+            resolve_koko_path(&[], &Some(blocker), "data", "v.bin"),
             None
         );
     }

@@ -50,18 +50,27 @@ function wroteSomething(steps: SearchStep[]): boolean {
 	);
 }
 
+/** A task that says to leave the files alone: "Do not touch any files." */
+const LEAVE_FILES =
+	/\b(?:do not|don't|never|without)\s+(?:touch|chang|modif|edit|writ)\w*\s+(?:any\s+|the\s+)?files?\b/i;
+
 /**
  * What to tell a child that ended before finishing, or null when it
  * finished. A writer that changed no files usually announced the change and
- * stopped ("Let me write the module…"); any child can end with no report.
+ * stopped ("Let me write the module…"), unless its task said to change none;
+ * any child can end with no report. Only the reply after the nudge is passed
+ * on, so the nudge asks for the whole report again: told only to try again,
+ * a child answers "I already ran it", which reads to the parent as a turn it
+ * never saw.
  */
 export function stoppedShort(
 	mode: 'read' | 'write',
 	steps: SearchStep[],
-	finalText: string
+	finalText: string,
+	task = ''
 ): string | null {
-	if (mode === 'write' && !wroteSomething(steps)) {
-		return "You stopped before doing the task: you haven't changed any files yet. Make the change now with fs_write_text / fs_edit_text — don't describe it, do it — run the project's tests for what you changed, then give your report. If the task truly needs no change, say why in the report.";
+	if (mode === 'write' && !wroteSomething(steps) && !LEAVE_FILES.test(task)) {
+		return "You stopped before doing the task: you haven't changed any files yet. Make the change now with fs_write_text / fs_edit_text — don't describe it, do it — run the project's tests for what you changed, then give your report. If the task truly needs no change, give your whole report again and say why. Only your next reply is passed on.";
 	}
 	if (finalText.trim().length < MIN_REPORT_CHARS) {
 		return 'Your last reply had no report. Give it now: what you found or changed, with file paths and line numbers, and anything you could not settle.';
@@ -232,8 +241,8 @@ export async function runSubtask(o: SubtaskOptions): Promise<SubtaskResult> {
 				const first = await pass(SUBTASK_MAX_ROUNDS, slot);
 				// One more go for a child that stopped short: it said what it
 				// would do instead of doing it, or ended without a report.
-				const nudge = o.signal?.aborted ? null : stoppedShort(o.mode, steps, first.finalText);
-				if (!nudge) return first;
+				const nudge = stoppedShort(o.mode, steps, first.finalText, o.task);
+				if (!nudge || o.signal?.aborted) return first;
 				messages.push(
 					{ role: 'assistant', content: first.finalText },
 					{ role: 'user', content: nudge }

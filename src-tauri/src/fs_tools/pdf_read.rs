@@ -9,7 +9,7 @@
 
 use super::path::{resolve_in_workdir, stat_within_limit, workdir_path, MAX_DOC_READ_BYTES};
 use pdfium_render::prelude::{PdfPageText, Pdfium};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use tokio::fs;
 
@@ -22,12 +22,20 @@ use tokio::fs;
 /// serialises every call into the library.
 static PDFIUM: OnceLock<Option<Pdfium>> = OnceLock::new();
 
-/// Initialize pdfium by loading libpdfium from the resource dir. Should be
-/// called once at app startup. Safe to call multiple times.
-pub fn init_pdfium(resource_dir: &Path) {
+/// Initialize pdfium by loading libpdfium from the first of `roots` whose
+/// `binaries/libs` has it (see [`crate::sidecar_util::resource_roots`]).
+/// Should be called once at app startup. Safe to call multiple times.
+pub fn init_pdfium(roots: &[PathBuf]) {
     PDFIUM.get_or_init(|| {
-        let libs_dir = resource_dir.join("binaries").join("libs");
-        let lib_name = Pdfium::pdfium_platform_library_name_at_path(&libs_dir);
+        let at = |root: &PathBuf| {
+            Pdfium::pdfium_platform_library_name_at_path(&root.join("binaries").join("libs"))
+        };
+        // None has it: bind the last, so the warning names a path.
+        let lib_name = roots
+            .iter()
+            .map(at)
+            .find(|lib| lib.exists())
+            .or_else(|| roots.last().map(at))?;
         match Pdfium::bind_to_library(&lib_name) {
             Ok(bindings) => {
                 log::info!("PDFium initialized from {}", lib_name.display());
@@ -282,8 +290,8 @@ mod tests {
     #[test]
     fn missing_library_leaves_pdfium_unset_and_reports_fallback() {
         let dir = std::env::temp_dir().join(format!("haruspex-no-pdfium-{}", std::process::id()));
-        init_pdfium(&dir);
-        init_pdfium(&dir);
+        init_pdfium(std::slice::from_ref(&dir));
+        init_pdfium(&[]);
         assert!(pdfium().is_none());
         let err = extract_pdf_with_pdfium(&dir.join("a.pdf")).unwrap_err();
         assert_eq!(err, "pdfium unavailable");
