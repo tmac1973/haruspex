@@ -131,6 +131,8 @@ async function answerPrompts(log) {
 			await choose({ kind: p.kind, choice: 'deny' });
 		} else if (p.kind === 'screen-capture') {
 			await choose({ kind: p.kind, choice: 'deny' });
+		} else if (p.kind === 'file-conflict') {
+			await choose({ kind: p.kind, choice: 'counter' });
 		} else if (p.kind === 'repo-trust') {
 			await choose({ kind: p.kind, trust: false });
 		} else if (p.kind === 'skill') {

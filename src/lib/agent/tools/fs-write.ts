@@ -98,6 +98,8 @@ interface WriteOptions {
 	rewritable?: Set<string>;
 	/** Give the turn's slot back while the overwrite prompt waits (`ToolContext.releaseSlot`). */
 	releaseSlot?: () => void;
+	/** The chat whose turn writes, named on the overwrite prompt (`ToolContext.conversationId`). */
+	chatId?: string;
 	/**
 	 * False for a file fs_edit_text can't change (a document, spreadsheet,
 	 * deck or download), so a refused repeat write doesn't send the model there.
@@ -109,7 +111,9 @@ interface WriteOptions {
 
 /** A tool's write options: a Code session overwrites, and may rewrite after a command. */
 function writeOptions(ctx: ToolContext): WriteOptions {
-	if (!ctx.codeSessionId) return { askBeforeOverwrite: true, releaseSlot: ctx.releaseSlot };
+	if (!ctx.codeSessionId) {
+		return { askBeforeOverwrite: true, releaseSlot: ctx.releaseSlot, chatId: ctx.conversationId };
+	}
 	return { askBeforeOverwrite: false, rewritable: ctx.filesRewritableThisTurn };
 }
 
@@ -186,7 +190,7 @@ export async function resolveWritePathInteractive(
 
 	const { askFileConflict } = await import('#lib/stores/fileConflict.svelte.ts');
 	opts.releaseSlot?.();
-	const choice = await askFileConflict(relPath);
+	const choice = await askFileConflict(relPath, opts.chatId ?? null);
 	if (choice === 'cancel') {
 		return { kind: 'canceled' };
 	}

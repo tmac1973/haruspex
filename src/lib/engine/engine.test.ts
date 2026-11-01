@@ -132,6 +132,7 @@ import { askMcpApproval } from '#lib/stores/mcpApproval.svelte.ts';
 import { askRepoTrust } from '#lib/stores/repoTrust.svelte.ts';
 import { askSkillApproval } from '#lib/stores/skillApproval.svelte.ts';
 import { askScreenCapture } from '#lib/stores/screenCaptureApproval.svelte.ts';
+import { askFileConflict, resolveConflict } from '#lib/stores/fileConflict.svelte.ts';
 import { dispatch, setResync } from './dispatch.ts';
 import { emptyMirror, reduce, type Mirror } from './reduce.ts';
 import { answerPrompt, currentPrompts, watchPrompts } from './prompts.svelte.ts';
@@ -458,6 +459,42 @@ describe('prompts', () => {
 		});
 		await answerPrompt('main', p.promptId, { kind: 'screen-capture', choice: 'allow' });
 		expect(await shot).toBe('allow');
+	});
+
+	it('answers the file-exists question, in the chat that asked', async () => {
+		const write = askFileConflict('report.docx', 'c1');
+		const [p] = currentPrompts('main');
+		expect(p).toMatchObject({
+			kind: 'file-conflict',
+			sessionId: null,
+			chatId: 'c1',
+			answerable: true,
+			detail: { path: 'report.docx', choices: ['overwrite', 'counter', 'cancel'] }
+		});
+		await expect(
+			answerPrompt('main', p.promptId, { kind: 'file-conflict', choice: 'yes' as never })
+		).rejects.toThrow('overwrite, counter or cancel');
+		await answerPrompt('main', p.promptId, { kind: 'file-conflict', choice: 'counter' });
+		expect(await write).toBe('counter');
+		expect(currentPrompts('main')).toEqual([]);
+	});
+
+	it('clears the file-exists prompt when the desktop answers it', async () => {
+		const events: PromptEvent[] = [];
+		const stop = watchPrompts('main', (e) => events.push(e));
+		const write = askFileConflict('notes.md');
+		flushSync();
+		const shown = events.find((e) => e.type === 'prompt');
+		expect(shown).toMatchObject({ prompt: { kind: 'file-conflict', chatId: null } });
+		const id = shown?.type === 'prompt' ? shown.prompt.promptId : '';
+		resolveConflict('overwrite');
+		flushSync();
+		expect(await write).toBe('overwrite');
+		expect(events.at(-1)).toMatchObject({ type: 'prompt-cleared', promptId: id });
+		await expect(
+			answerPrompt('main', id, { kind: 'file-conflict', choice: 'cancel' })
+		).rejects.toThrow('is not showing');
+		stop();
 	});
 
 	it('saves a skill as edited, or rejects it, and keeps it when saving fails', async () => {

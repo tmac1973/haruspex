@@ -14,6 +14,7 @@ import {
 	getQueuedCommandApprovals,
 	resolveCommandApproval
 } from '#lib/stores/codeCommandApproval.svelte.ts';
+import { getPendingConflict, resolveConflict } from '#lib/stores/fileConflict.svelte.ts';
 import { getPendingMcpApproval, resolveMcpApproval } from '#lib/stores/mcpApproval.svelte.ts';
 import {
 	getPendingMemoryApproval,
@@ -165,6 +166,18 @@ export function currentPrompts(label: string): Prompt[] {
 			detail: { target: screen.target }
 		});
 	}
+	const conflict = getPendingConflict();
+	if (conflict) {
+		out.push({
+			promptId: idFor(label, conflict),
+			kind: 'file-conflict',
+			sessionId: null,
+			chatId: conflict.chatId,
+			answerable: true,
+			requester: null,
+			detail: { path: conflict.path, choices: ['overwrite', 'counter', 'cancel'] }
+		});
+	}
 	return JSON.parse(JSON.stringify(out)) as Prompt[];
 }
 
@@ -199,6 +212,12 @@ export async function answerPrompt(
 			return resolveRepoTrust(answer.trust);
 		case 'screen-capture':
 			return resolveScreenCapture(answer.choice);
+		case 'file-conflict':
+			// Anything but these three would fall through to "keep both" and write.
+			if (!['overwrite', 'counter', 'cancel'].includes(answer.choice)) {
+				throw new Error(`a file-conflict choice is overwrite, counter or cancel`);
+			}
+			return resolveConflict(answer.choice);
 		case 'skill':
 			return answerSkill(answer);
 	}
