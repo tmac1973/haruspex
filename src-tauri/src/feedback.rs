@@ -271,16 +271,7 @@ fn scrub_line(line: &str) -> String {
 
 fn scrub_word(word: &str) -> String {
     if word.contains("://") {
-        // A URL: everything from `?` or `#` to the end of the URL.
-        let start = word.find("://").unwrap();
-        let end = word[start..]
-            .find(['"', '\'', ')', ']', '>', ','])
-            .map_or(word.len(), |i| start + i);
-        if let Some(q) = word[start..end].find(['?', '#']) {
-            let q = start + q;
-            return format!("{}{}", &word[..q], &word[end..]);
-        }
-        return word.to_string();
+        return crate::text_util::url_without_query(word);
     }
     let bare = word.trim_matches(|c: char| "\"'`,;:()[]{}<>".contains(c));
     if looks_like_email(bare) {

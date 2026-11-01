@@ -102,6 +102,15 @@ describe('settings.get', () => {
 		expect(redacted).toEqual(['source.args[0]', 'source.args[1]']);
 	});
 
+	it('hands back the values it blanked whole, but not a URL it trimmed', () => {
+		const { secrets } = redactSecrets({
+			braveApiKey: 'brave-1',
+			mcp: { secrets: { token: 'ghp_x' } },
+			comfyBaseUrl: 'http://u:p@gpu.lan'
+		});
+		expect(secrets.sort()).toEqual(['brave-1', 'ghp_x']);
+	});
+
 	it('blanks only set strings', () => {
 		expect(redactSecrets({ remoteAccessToken: '' }).redacted).toEqual([]);
 	});

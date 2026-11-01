@@ -57,16 +57,23 @@ function redactString(v: string, key: string, inApiKeys: boolean): string {
 }
 
 /**
- * A plain copy with every secret blanked, and the paths that were blanked.
- * Only strings that are set count: an empty one hides nothing. A URL that
- * could carry a credential keeps its scheme, host and path.
+ * A plain copy with every secret blanked, the paths that were blanked, and
+ * the values that were blanked whole (`secrets`; a URL's credential isn't
+ * one of them). Only strings that are set count: an empty one hides nothing.
+ * A URL that could carry a credential keeps its scheme, host and path.
  */
-export function redactSecrets(value: unknown): { value: Json; redacted: string[] } {
+export function redactSecrets(value: unknown): {
+	value: Json;
+	redacted: string[];
+	secrets: string[];
+} {
 	const redacted: string[] = [];
+	const secrets: string[] = [];
 	const walk = (v: Json, path: string, key: string, inApiKeys: boolean): Json => {
 		if (typeof v === 'string') {
 			const out = redactString(v, key, inApiKeys);
 			if (out !== v) redacted.push(path);
+			if (out === '' && v !== '') secrets.push(v);
 			return out;
 		}
 		if (Array.isArray(v)) return v.map((x, i) => walk(x, `${path}[${i}]`, key, inApiKeys));
@@ -79,6 +86,7 @@ export function redactSecrets(value: unknown): { value: Json; redacted: string[]
 						Object.entries(x).map(([name, s]) => {
 							if (typeof s === 'string' && s !== '') {
 								redacted.push(`${at}.${name}`);
+								secrets.push(s);
 								return [name, ''];
 							}
 							return [name, s];
@@ -93,7 +101,16 @@ export function redactSecrets(value: unknown): { value: Json; redacted: string[]
 		return v;
 	};
 	const plain = JSON.parse(JSON.stringify(value ?? null)) as Json;
-	return { value: walk(plain, '', '', false), redacted };
+	return { value: walk(plain, '', '', false), redacted, secrets };
+}
+
+/**
+ * Every secret the settings hold inline: on a computer with no keychain or
+ * secret file, passwords and keys stay in the settings, where the Rust side
+ * that redacts the log by value never sees them.
+ */
+export function inlineSecrets(): string[] {
+	return redactSecrets(getSettings()).secrets;
 }
 
 /** The settings, secrets blanked; `keys` picks top-level settings. */

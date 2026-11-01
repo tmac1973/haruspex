@@ -12,7 +12,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { debugLogsSince } from '#lib/debugLog.ts';
 import type { BackgroundTask } from '#lib/tasks/types.ts';
-import { redactSecrets } from '#lib/engine/settings.ts';
+import { inlineSecrets, redactSecrets } from '#lib/engine/settings.ts';
 import type { ObserveOp, TaskEvent } from '#lib/engine/types.ts';
 
 /** Lines `debug.tail` sends when it isn't told how many, and the most it sends. */
@@ -24,11 +24,25 @@ function taskOut(t: BackgroundTask): BackgroundTask {
 	return redactSecrets(t).value as unknown as BackgroundTask;
 }
 
+/**
+ * A line with each inline secret blanked, before Rust redacts the rest
+ * (`owner::redact_tail`). As in Rust, a value under 6 characters is left: it
+ * would blank ordinary words.
+ */
+function blankInline(secrets: string[]) {
+	const long = secrets.filter((s) => s.length >= 6);
+	return (l: { seq: number; line: string }) => ({
+		...l,
+		line: long.reduce((line, s) => line.replaceAll(s, '[redacted]'), l.line)
+	});
+}
+
 export async function dispatchObserve(op: ObserveOp, label: string): Promise<unknown> {
 	switch (op.type) {
 		case 'debug.tail': {
 			const limit = Math.min(Math.max(1, Math.floor(op.lines ?? DEFAULT_TAIL)), MAX_TAIL);
-			return { window: label, ...debugLogsSince(op.since ?? 0, { contains: op.contains, limit }) };
+			const tail = debugLogsSince(op.since ?? 0, { contains: op.contains, limit });
+			return { window: label, ...tail, lines: tail.lines.map(blankInline(inlineSecrets())) };
 		}
 		case 'inference.queue':
 			return invoke('inference_queue_snapshot');

@@ -203,6 +203,34 @@ pub fn upstream_message(text: &str, max_chars: usize) -> String {
     truncate_chars(redact_secrets(&flat, &[]), max_chars, "…")
 }
 
+/// `text` with each URL's query and fragment dropped: they carry signed
+/// links and tokens under any name, which no list of shapes can know.
+pub fn strip_url_queries(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for piece in text.split_inclusive(char::is_whitespace) {
+        let word = piece.trim_end_matches(char::is_whitespace);
+        out.push_str(&url_without_query(word));
+        out.push_str(&piece[word.len()..]);
+    }
+    out
+}
+
+/// One word, its URL's `?…` or `#…` dropped up to where the URL ends (a
+/// closing quote, bracket or comma). Anything that isn't a URL comes back
+/// as it was.
+pub(crate) fn url_without_query(word: &str) -> String {
+    let Some(start) = word.find("://") else {
+        return word.to_string();
+    };
+    let end = word[start..]
+        .find(['"', '\'', ')', ']', '>', ','])
+        .map_or(word.len(), |i| start + i);
+    match word[start..end].find(['?', '#']) {
+        Some(q) => format!("{}{}", &word[..start + q], &word[end..]),
+        None => word.to_string(),
+    }
+}
+
 /// `scheme://user:pass@host` → `scheme://[redacted]@host`.
 fn redact_userinfo(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
@@ -237,6 +265,16 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn strip_url_queries_keeps_the_url_and_what_follows_it() {
+        assert_eq!(
+            strip_url_queries("see https://a.io/x?token=1#frag, then"),
+            "see https://a.io/x, then"
+        );
+        assert_eq!(strip_url_queries("no url ?here"), "no url ?here");
+        assert_eq!(strip_url_queries("[https://a.io/y]"), "[https://a.io/y]");
+    }
 
     #[test]
     fn shorter_input_is_untouched() {
