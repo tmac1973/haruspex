@@ -231,14 +231,14 @@ interface PreflightOutcome {
 /** Persisted step outputs are capped from the FRONT (keep the summary line). */
 const STEP_OUTPUT_MAX_CHARS = 30_000;
 
-function capOutput(text: string): string {
+export function capOutput(text: string): string {
 	return text.length <= STEP_OUTPUT_MAX_CHARS
 		? text
 		: `${text.slice(0, STEP_OUTPUT_MAX_CHARS)}\n\n[… output truncated — the full log lives in PROGRESS-coding.md]`;
 }
 
 /** The loop stage's live sub-checklist (attempt badges, blocked styling). */
-function toChecklist(
+export function toChecklist(
 	items: TaskItem[],
 	runningId: string | null,
 	maxAttempts: number
@@ -569,11 +569,9 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 						},
 						record,
 						git,
-						maxIterations: Math.min(
-							PHASE_TURN_CEILING_MULT * maxTurns,
-							40 +
-								plan.items.filter((i) => i.phase === target.phase && i.status === 'todo').length *
-									20
+						maxIterations: phaseTurnBudget(
+							maxTurns,
+							plan.items.filter((i) => i.phase === target.phase && i.status === 'todo').length
 						)
 					},
 					target.phase
@@ -606,26 +604,10 @@ async function runPipeline(ctx: JobRunContext, refusals: BoundaryRefusal[]): Pro
 			);
 			abortIfCancelled();
 
-			let { status, note } = result;
-			if (result.itemId !== target.id) {
-				// The model must work the assigned item; anything else is a failed
-				// attempt (never let it mark some other item done).
-				status = 'failed';
-				note =
-					`Reported a result for "${result.itemId}" instead of the assigned ` +
-					`item ${target.id} — counted as a failed attempt. Original note: ${note}`;
-			}
+			let { status, note } = checkAssignedItem(result, target.id);
 			if (status === 'done') {
 				const commit = await commitStepWork(ctx, target, plan.items.length, headBefore, git);
-				if (!commit.changed) {
-					// The minimal guard against checking items off on faith.
-					status = 'failed';
-					note = `Claimed done but changed nothing (no diff, no new commit). Original note: ${note}`;
-				} else if (commit.unsigned) {
-					note = `${note}\n\nNOTE: commit made UNSIGNED — the signing authorization (e.g. 1Password) was unavailable. Re-sign before pushing (e.g. git rebase --exec 'git commit --amend --no-edit -S').`;
-				} else if (commit.commitSkipped) {
-					note = `${note}\n\nNOTE: commit SKIPPED — the signing authorization was unavailable and this job never commits unsigned. The work remains uncommitted in the working tree.`;
-				}
+				({ status, note } = applyStepCommit(note, commit));
 			}
 			if (status === 'done') {
 				plan = { ...plan, items: markDone(plan.items, target.id) };
@@ -833,8 +815,66 @@ async function obtainTaskList(
 	);
 }
 
+/**
+ * An iteration's verdict, held to the item it was given: the model must work
+ * the assigned item, and a result for any other is a failed attempt (never let
+ * it mark some other item done).
+ */
+export function checkAssignedItem(
+	result: IterationOutcome & { itemId: string },
+	targetId: string
+): IterationOutcome {
+	if (result.itemId === targetId) return { status: result.status, note: result.note };
+	return {
+		status: 'failed',
+		note:
+			`Reported a result for "${result.itemId}" instead of the assigned ` +
+			`item ${targetId} — counted as a failed attempt. Original note: ${result.note}`
+	};
+}
+
+/**
+ * A "done" iteration's verdict once its work is committed: a step that
+ * changed nothing is the minimal guard against checking items off on faith,
+ * and a commit made unsigned or skipped is said in the note.
+ */
+export function applyStepCommit(
+	note: string,
+	commit: { changed: boolean; unsigned: boolean; commitSkipped: boolean }
+): IterationOutcome {
+	if (!commit.changed) {
+		return {
+			status: 'failed',
+			note: `Claimed done but changed nothing (no diff, no new commit). Original note: ${note}`
+		};
+	}
+	if (commit.unsigned) {
+		return {
+			status: 'done',
+			note: `${note}\n\nNOTE: commit made UNSIGNED — the signing authorization (e.g. 1Password) was unavailable. Re-sign before pushing (e.g. git rebase --exec 'git commit --amend --no-edit -S').`
+		};
+	}
+	if (commit.commitSkipped) {
+		return {
+			status: 'done',
+			note: `${note}\n\nNOTE: commit SKIPPED — the signing authorization was unavailable and this job never commits unsigned. The work remains uncommitted in the working tree.`
+		};
+	}
+	return { status: 'done', note };
+}
+
+interface IterationOutcome {
+	status: 'done' | 'failed';
+	note: string;
+}
+
+/** A phase build turn's agent-loop budget: 40 + 20 per item still to do, capped. */
+export function phaseTurnBudget(maxTurns: number, todoItems: number): number {
+	return Math.min(PHASE_TURN_CEILING_MULT * maxTurns, 40 + todoItems * 20);
+}
+
 /** Human-readable diff of the verification command, or null when unchanged. */
-function formatCommandChange(prev: string | null, next: string | null): string | null {
+export function formatCommandChange(prev: string | null, next: string | null): string | null {
 	return prev === next
 		? null
 		: `- phase verification: \`${prev ?? '(none)'}\` → \`${next ?? '(none)'}\``;
@@ -985,18 +1025,12 @@ async function runPhaseContextTurn(deps: PhaseTurnDeps, phaseId: string): Promis
 	});
 
 	const note = phaseNote.trim();
-	const declaredFailure = SELF_REPORTED_FAILURE.test(note);
 	const dirty = await changedOutsidePlanDir(deps.ctx, deps.planDir, deps.git);
-	// `dirty` is null with git off — then the turn's own write calls are the
-	// only evidence there is.
-	const built = wrote > 0 || dirty === true;
+	const why = phaseBuildShortfall(note, wrote, dirty, deps.planDir);
 
-	if (!built || declaredFailure) {
+	if (why) {
 		const r = recordPhaseBuildFailure(deps.getPlan(), phaseId);
 		deps.setPlan(r.plan);
-		const why = !built
-			? `the turn changed nothing outside ${deps.planDir}`
-			: 'the turn reported that it did not implement the phase';
 		await deps.record(
 			`## Phase ${phaseId} — ${phase?.title ?? ''}: build turn produced NO WORK ` +
 				`(attempt ${r.builds}/${MAX_PHASE_BUILD_ATTEMPTS}) — ${why}\n\n` +
@@ -1015,6 +1049,26 @@ async function runPhaseContextTurn(deps: PhaseTurnDeps, phaseId: string): Promis
 			note || '(no summary given)'
 		)}\n`
 	);
+}
+
+/**
+ * Why a phase build turn does not count as having built the phase, or null
+ * when it does. `dirty` is null with git off — then the turn's own write calls
+ * (outside the plan dir) are the only evidence there is.
+ */
+export function phaseBuildShortfall(
+	note: string,
+	writesOutsidePlanDir: number,
+	dirty: boolean | null,
+	planDir: string
+): string | null {
+	if (writesOutsidePlanDir === 0 && dirty !== true) {
+		return `the turn changed nothing outside ${planDir}`;
+	}
+	if (SELF_REPORTED_FAILURE.test(note)) {
+		return 'the turn reported that it did not implement the phase';
+	}
+	return null;
 }
 
 /** One fresh-context coding iteration; the result is forced + captured. */
@@ -1541,7 +1595,7 @@ async function gitCommit(
 }
 
 /** Commit-safe title: no quotes/backticks/dollars/newlines, bounded length. */
-function commitTitle(title: string): string {
+export function commitTitle(title: string): string {
 	return (
 		title
 			.replace(/["'`$\\\r\n]/g, '')
