@@ -22,7 +22,7 @@ import { registerLocalImage } from '#lib/images/resolve.svelte.ts';
 import { extractPalette, paletteSpread, splitSheet } from '#lib/assets/normalize.ts';
 import type { PaletteSpread } from '#lib/ipc/gen/PaletteSpread.ts';
 import type { AssetSpec, AnchorRecipe } from '#lib/assets/spec/types.ts';
-import { resolveImageBackend } from '#lib/image/index.ts';
+import { routedImageBackend } from '#lib/image/index.ts';
 import type { ImageBackendCapabilities, ImageRequest, ImageResult } from '#lib/image/types.ts';
 import type { NormalizeProfile } from '#lib/ipc/gen/NormalizeProfile.ts';
 import { fitStyle } from '#lib/agent/jobs/types/asset-generation/promptBudget.ts';
@@ -299,7 +299,7 @@ async function shoot(
 	seed: number | null,
 	edge: number
 ): Promise<AnchorShot> {
-	const backend = resolveImageBackend();
+	const backend = routedImageBackend();
 	if (plan) {
 		const request = { ...sheetRequest(plan.entries, spec), seed };
 		const result = await backend.generate(request, { signal: deps.signal });

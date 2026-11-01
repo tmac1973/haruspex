@@ -21,6 +21,7 @@ export {
 	listImageBackends,
 	registerImageBackend
 } from '#lib/image/registry.ts';
+export { routedImageBackend } from '#lib/image/route.ts';
 export { noneBackend } from '#lib/image/none.ts';
 export { localBackend } from '#lib/image/local/backend.ts';
 export * from '#lib/image/types.ts';
