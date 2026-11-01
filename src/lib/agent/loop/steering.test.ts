@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ChatCompletionResponse, ChatMessage, StreamChunk, ToolDefinition } from '#lib/api.ts';
 import { runAgentLoop, type AgentLoopOptions, type SteeringMessage } from '#lib/agent/loop.ts';
+import { steeringNote } from '#lib/agent/loop/steeringQueue.ts';
 
 const api = vi.hoisted(() => ({
 	chatCompletion: vi.fn(),
@@ -128,8 +129,11 @@ describe('steering', () => {
 		await runAgentLoop(opts);
 
 		const second = sent[1];
-		expect(second.at(-2)).toMatchObject({ role: 'tool', tool_call_id: 'a' });
-		expect(second.at(-1)).toEqual({ role: 'user', content: 'also check the tests' });
+		expect(second.at(-3)).toMatchObject({ role: 'tool', tool_call_id: 'a' });
+		expect(second.slice(-2)).toEqual([
+			{ role: 'user', content: 'also check the tests' },
+			{ role: 'user', content: steeringNote(1) }
+		]);
 		expect(onSteering).toHaveBeenCalledWith([{ text: 'also check the tests' }]);
 		expect(opts.onComplete).toHaveBeenCalledWith(undefined);
 	});
@@ -146,9 +150,10 @@ describe('steering', () => {
 		await runAgentLoop(options({ takeSteering: q.take }));
 
 		const image = { type: 'image_url', image_url: { url: shot } };
-		expect(sent[1].slice(-2)).toEqual([
+		expect(sent[1].slice(-3)).toEqual([
 			{ role: 'user', content: [{ type: 'text', text: 'it looks like this' }, image] },
-			{ role: 'user', content: [image] }
+			{ role: 'user', content: [image] },
+			{ role: 'user', content: steeringNote(2) }
 		]);
 	});
 
@@ -160,7 +165,7 @@ describe('steering', () => {
 		await runAgentLoop(options({ takeSteering: q.take }));
 
 		expect(sent[0].map((m) => m.content)).not.toContain('early');
-		expect(sent[1].at(-1)).toEqual({ role: 'user', content: 'early' });
+		expect(sent[1].at(-2)).toEqual({ role: 'user', content: 'early' });
 	});
 
 	it('runs one more iteration when the model finishes with input queued', async () => {
@@ -180,9 +185,10 @@ describe('steering', () => {
 		// The second call saw the first answer and the steering after it — and
 		// ran even with a budget of one, since the user's message must not wait.
 		expect(sent).toHaveLength(2);
-		expect(sent[1].slice(-2)).toEqual([
+		expect(sent[1].slice(-3)).toEqual([
 			{ role: 'assistant', content: 'Fixed it.' },
-			{ role: 'user', content: 'and rename it too' }
+			{ role: 'user', content: 'and rename it too' },
+			{ role: 'user', content: steeringNote(1) }
 		]);
 		expect(onSteering).toHaveBeenCalledWith([{ text: 'and rename it too' }]);
 		// Both answers reach the transcript; only the last one finishes.
@@ -193,6 +199,66 @@ describe('steering', () => {
 		]);
 		expect(opts.onComplete).toHaveBeenCalledTimes(1);
 		expect(opts.onComplete).toHaveBeenCalledWith(undefined);
+	});
+
+	it('shows the reply to steering written beside the next calls', async () => {
+		const q = steeringQueue();
+		toolsMock.executeTool.mockImplementationOnce(async () => {
+			q.pending.push('use pnpm');
+			return { result: 'file body' };
+		});
+		const reply = { ...toolCall('b'), content: 'Switching to pnpm.' };
+		const later = { ...toolCall('c'), content: 'Still reading.' };
+		queue.push(toolCall('a'), reply, later, text('Done.'));
+		const opts = options({ takeSteering: q.take });
+
+		await runAgentLoop(opts);
+
+		// Streamed as answer text, since this caller doesn't stream rounds, and
+		// kept on the calls' message so the model knows it said it. Only once:
+		// the round after says nothing the user sees.
+		const chunks = vi.mocked(opts.onStreamChunk).mock.calls.map((c) => c[0] as StreamChunk);
+		expect(chunks[0]).toEqual({
+			delta: { content: 'Switching to pnpm.\n\n' },
+			finish_reason: null
+		});
+		expect(chunks.map((c) => c.delta.content)).not.toContain('Still reading.\n\n');
+		expect(sent[2].find((m) => m.tool_calls?.[0].id === 'b')?.content).toBe('Switching to pnpm.');
+		expect(sent[3].find((m) => m.tool_calls?.[0].id === 'c')?.content).toBe('');
+	});
+
+	it('leaves the reply to a caller that streams rounds', async () => {
+		const q = steeringQueue();
+		toolsMock.executeTool.mockImplementationOnce(async () => {
+			q.pending.push('use pnpm');
+			return { result: 'file body' };
+		});
+		queue.push(toolCall('a'), { ...toolCall('b'), content: 'Switching to pnpm.' }, text('Done.'));
+		const opts = options({ takeSteering: q.take, streamToolRounds: true });
+		api.chatCompletionStream.mockImplementation((o: { messages: ChatMessage[] }) =>
+			(async function* () {
+				sent.push(structuredClone(o.messages));
+				const next = queue.shift()!;
+				yield {
+					delta: {
+						content: next.content ?? undefined,
+						tool_calls: next.tool_calls?.map((c, index) => ({ index, ...c }))
+					},
+					finish_reason: next.finish_reason
+				};
+			})()
+		);
+
+		await runAgentLoop(opts);
+
+		const unprovisional = vi
+			.mocked(opts.onStreamChunk)
+			.mock.calls.filter((c) => !c[1]?.provisional)
+			.map((c) => (c[0] as StreamChunk).delta.content);
+		expect(opts.onError).not.toHaveBeenCalled();
+		expect(queue).toEqual([]);
+		expect(sent[2].find((m) => m.tool_calls?.[0].id === 'b')?.content).toBe('Switching to pnpm.');
+		expect(unprovisional).not.toContain('Switching to pnpm.\n\n');
 	});
 
 	it('hands queued input back when the turn is aborted', async () => {

@@ -67,6 +67,27 @@ function withDeferredName(call: ResolvedToolCall, ctx: LoopContext): ResolvedToo
 }
 
 /**
+ * The text kept on a round's calls message. It is dropped (the model
+ * regenerates its answer after seeing tool results) unless the caller streamed
+ * the round: then the user has read it, and it stays, minus reasoning and any
+ * calls written as text. The sentence answering steering is the exception: a
+ * caller that doesn't stream rounds gets it as answer text, so the user sees
+ * it now.
+ */
+function toolRoundContent(
+	options: LoopContext['options'],
+	response: ChatCompletionResponse | undefined,
+	steeringReply: boolean
+): string {
+	if (!options.streamToolRounds && !steeringReply) return '';
+	const text = toolRoundText(response?.content);
+	if (steeringReply && !options.streamToolRounds && text) {
+		options.onStreamChunk({ delta: { content: `${text}\n\n` }, finish_reason: null });
+	}
+	return text;
+}
+
+/**
  * Execute the model's tool calls: append the assistant tool_calls message,
  * then run each tool (raced against the abort signal), stream its result back
  * through the callbacks, update nudge bookkeeping, and append the tool result
@@ -85,7 +106,9 @@ export async function executeToolCalls(
 	ctx: LoopContext,
 	nudges: NudgeState,
 	toolCalls: ResolvedToolCall[],
-	response?: ChatCompletionResponse
+	response?: ChatCompletionResponse,
+	/** The response answers steering (see `steeringNote`): show its text. */
+	steeringReply = false
 ): Promise<{ allWebReadsBlocked: boolean }> {
 	const { signal, options } = ctx;
 	toolCalls = toolCalls.map((call) => withDeferredName(call, ctx));
@@ -93,16 +116,14 @@ export async function executeToolCalls(
 	// this equals toolCalls.length, the whole iteration was wasted on blocks.
 	let blockedWebReads = 0;
 
-	// Append assistant message with tool calls. Its text is dropped (the model
-	// regenerates its answer after seeing tool results) unless the caller
-	// streamed the round: then the user has read it, and it stays part of the
-	// conversation, minus reasoning and any calls written as text.
+	// Append assistant message with tool calls, with `toolRoundContent`.
 	// For OpenRouter reasoning models, echo `reasoning_details` back
 	// unmodified so multi-turn reasoning quality is preserved across the
 	// tool loop (OpenRouter docs: reasoning_details must be threaded verbatim).
+	const roundText = toolRoundContent(options, response, steeringReply);
 	appendMessage(ctx, {
 		role: 'assistant',
-		content: options.streamToolRounds ? toolRoundText(response?.content) : '',
+		content: roundText,
 		tool_calls: toolCalls.map((tc) => ({
 			id: tc.id,
 			type: 'function' as const,

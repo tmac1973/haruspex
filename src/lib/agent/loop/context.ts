@@ -142,6 +142,11 @@ export interface LoopContext {
 	wslDistro: string | null;
 	expectsFileOutput: boolean;
 	pendingImages: PendingImage[];
+	/**
+	 * Steering went in before the next model call, which was asked to answer
+	 * it in a sentence (see `steeringNote`). Taken by that call's iteration.
+	 */
+	steeringReplyDue?: boolean;
 	/** See `ToolContext.userImages`. */
 	userImages: string[];
 	filesWrittenThisTurn: Set<string>;

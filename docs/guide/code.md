@@ -36,13 +36,13 @@ The conversation shows **Waiting for you in Shell N — press Enter there**, wit
 
 ## Edit files
 
-Files open in an editor window, one per folder, a tab per file. **⤢** on a tab moves the file to its own window. Code is highlighted in over 100 languages, chosen by file name. For keys, see the `shortcuts` page. The agent can open files there but doesn't see your edits.
+Files open in an editor window, one per folder, a tab per file. **⤢** on a tab moves the file to its own window. For keys, see the `shortcuts` page. The agent can open files there but doesn't see your edits.
 
 An outside edit reloads the file and keeps your place. With unsaved edits it shows **Changed on disk** (**Reload** / **Keep mine**), and saving over a change you haven't seen asks **Overwrite** or **Reload first**. A deleted file shows **Deleted on disk**; saving recreates it. **Live reload unavailable** means outside changes won't show. Closing a window with unsaved edits asks first; closing the main window closes the editors.
 
 ## Steer or stop the agent
 
-While the agent works, `Enter` queues your message and its images (**Queued**); the agent reads them at its next step (**Delivered**). **×** drops a queued message. **Stop** (`Esc`) ends the turn; the agent won't redo it unasked. Unread messages return to the input box. `/` opens the commands and skills list, as in Chat.
+While the agent works, `Enter` queues your message and its images (**Queued**); the agent reads them once its running tools finish (**Delivered**) and says what it will do. **×** drops a queued message. **Stop** (`Esc`) ends the turn, which the agent won't redo unasked; unread messages return to the input box. `/` opens the commands and skills list, as in Chat.
 
 A dot on a session's tab shows it working (filled) or waiting for the model (hollow), which one turn uses at a time; a turn lets go of it while a tool runs over a few seconds or waits for you. **Stop** on a waiting session gives your message back.
 

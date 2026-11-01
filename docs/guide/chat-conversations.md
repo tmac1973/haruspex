@@ -11,7 +11,7 @@ While one conversation answers, open another and send there. Each has its own **
 
 ## Send while it's working
 
-You can type and send while the assistant is still answering. The message shows above the chat box as **Queued** and goes to the assistant at its next step, so it can change course without starting over. Click **×** on a queued message to take it back before it's read.
+You can type and send while the assistant is still answering. The message shows above the chat box as **Queued** and goes to the assistant once its running tools finish, so it can change course without starting over. It answers with a line saying what it will do, then carries on. Click **×** on a queued message to take it back before it's read.
 
 After you stop an answer, the assistant is told so and doesn't take that request up again unless you ask.
 

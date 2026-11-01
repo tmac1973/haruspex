@@ -45,7 +45,27 @@ function steeringMessage({ text, images = [] }: SteeringMessage): ChatMessage {
 	};
 }
 
-/** Append steering as `user` messages and tell the caller it went. */
+/**
+ * Told to the model after the steering itself. A bare `user` message in the
+ * middle of tool work reads as more context, and models went on calling
+ * tools without a word while the user waited for one (observed with
+ * Qwen3.8-Flash: two steering messages, eleven silent tool rounds).
+ */
+export function steeringNote(count: number): string {
+	const what = count === 1 ? 'message above' : 'messages above';
+	return (
+		`(Haruspex: the user sent the ${what} while you were working. If it changes ` +
+		'the task, change course. Begin your next response with one short sentence to ' +
+		'the user that says what you will do about it, then carry on.)'
+	);
+}
+
+/**
+ * Append steering as `user` messages, tell the caller it went, then add the
+ * note. The note comes after `onSteering`, which marks the last messages
+ * appended as the steering, and no caller keeps it: it is the loop's own, as
+ * its nudges are.
+ */
 function appendSteering(ctx: LoopContext, steers: SteeringMessage[], iteration: number): void {
 	for (const m of steers) appendMessage(ctx, steeringMessage(m));
 	logDebug('agent', `iteration ${iteration} steering delivered`, {
@@ -53,6 +73,8 @@ function appendSteering(ctx: LoopContext, steers: SteeringMessage[], iteration: 
 		images: steers.reduce((n, m) => n + (m.images?.length ?? 0), 0)
 	});
 	ctx.options.onSteering?.(steers);
+	appendMessage(ctx, { role: 'user', content: steeringNote(steers.length) });
+	ctx.steeringReplyDue = true;
 }
 
 /** Deliver whatever steering is queued, at the iteration boundary. */
