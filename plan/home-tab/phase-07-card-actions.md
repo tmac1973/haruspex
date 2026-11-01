@@ -1,7 +1,7 @@
 # Phase 07 — Card actions: open, ask about this, draft reply
 
-**Depends on:** 01, 03, 04, 05, 06 · **Enables:** nothing further (08 stays
-read-only and does not use these actions)
+**Depends on:** 01, 03, 04, 05, 06 · **Enables:** 09 (its item menu and drafts); 08 stays read-only and does
+not use these actions
 
 ## Goal
 Make card items actionable. Every item card gets Ask about this, which opens a

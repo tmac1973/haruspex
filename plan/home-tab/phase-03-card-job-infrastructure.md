@@ -1,6 +1,6 @@
 # Phase 03 — Card job infrastructure
 
-**Depends on:** 01, 02 · **Enables:** 04, 06 (judged card types), 07
+**Depends on:** 01, 02 · **Enables:** 04, 06 (judged card types), 07, 09 (notifications)
 (actions on judged items)
 
 ## Goal

@@ -1,6 +1,6 @@
 # Phase 08 — Home in the Remote control web client
 
-**Depends on:** 01, 02, 03, 04, 05, 06 · **Enables:** nothing further
+**Depends on:** 01, 02, 03, 04, 05, 06 · **Enables:** 09 (its payload and web renderer)
 
 ## Goal
 Show Home in the Remote control web client, read-only. A phone sees the same
@@ -27,7 +27,10 @@ arranging.
   answers (cards are app-wide in SQLite).
 - `src/web/store.svelte.ts` — `tab` gains `'home'`; load and reduce cards.
 - `src/web/App.svelte`, `src/web/SessionList.svelte` — Home entry and view.
-- `src/web/home/*.svelte` (new) — read-only renderers per card type; they
+- `src/web/home/HomeView.svelte` (new) — lists the cards and picks each
+  one's renderer with a `{#if card.type === …}` chain; an unknown type shows
+  its title only.
+- `src/web/home/*Card.svelte` (new) — read-only renderers per card type; they
   render the payload, not the desktop components.
 - `docs/guide/remote-control.md`, `docs/guide/remote-control-api.md`,
   `docs/guide/home.md`.
