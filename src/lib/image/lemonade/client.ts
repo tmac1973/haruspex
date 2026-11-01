@@ -18,7 +18,20 @@ export interface LemonadeConfig {
 	apiKey: string;
 }
 
+/** The server Settings → Image is working with; see {@link useLemonadeServer}. */
+let working: LemonadeConfig | null = null;
+
+/**
+ * Point Settings' Lemonade panels (install, remove, the model list) at the
+ * open image model's server. A generation is sent to its own entry's.
+ */
+export function useLemonadeServer(cfg: LemonadeConfig): void {
+	working = { baseUrl: cfg.baseUrl.trim(), apiKey: cfg.apiKey };
+}
+
+/** The Lemonade server Settings is working with, or the old field's before one was opened. */
 export function lemonadeConfig(): LemonadeConfig {
+	if (working) return working;
 	const s = getSettings();
 	return { baseUrl: s.imageLemonadeBaseUrl.trim(), apiKey: s.imageLemonadeApiKey };
 }

@@ -12,7 +12,7 @@
  * somebody's tileset.
  */
 
-import { resolveImageBackend } from '#lib/image/backend.ts';
+import { resolveImageBackend, type ImageBackend } from '#lib/image/backend.ts';
 import type { ImageProgress, ImageResult, SamplerSettings } from '#lib/image/types.ts';
 
 export interface GenerateOneOptions {
@@ -25,6 +25,8 @@ export interface GenerateOneOptions {
 	sampler?: SamplerSettings;
 	signal?: AbortSignal;
 	onProgress?: (p: ImageProgress) => void;
+	/** Draw with this one (Settings' open image model) rather than the first. */
+	backend?: ImageBackend;
 }
 
 /**
@@ -34,7 +36,7 @@ export interface GenerateOneOptions {
 export const DEFAULT_EDGE = 1024;
 
 export async function generateOneImage(opts: GenerateOneOptions): Promise<ImageResult> {
-	const backend = resolveImageBackend();
+	const backend = opts.backend ?? resolveImageBackend();
 	return backend.generate(
 		{
 			prompt: opts.prompt,

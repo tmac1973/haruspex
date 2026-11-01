@@ -1,7 +1,7 @@
 /**
- * Settings → Image's single-backend fields as image model entries: how the
- * saved list (`imageModels`) is seeded from them, and kept in step while the
- * Settings screen still edits them. Reads no settings itself, so the settings
+ * Settings → Image's old single-backend fields as image model entries: how
+ * the saved list (`imageModels`) is seeded from them, once, and what settings
+ * from before the list read as. Reads no settings itself, so the settings
  * store can use it.
  */
 

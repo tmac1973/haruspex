@@ -51,7 +51,9 @@ async function fromPrompt(
 	const prompt = str(args.prompt);
 	if (!prompt) throw new Error('A generated thumbnail needs "prompt".');
 	if (imageEntries().length === 0) {
-		throw new Error('Image generation is off. The user can choose a backend in Settings → Image.');
+		throw new Error(
+			'Image generation is off. The user can add an image model in Settings → Image.'
+		);
 	}
 	const result = await generateOneImage({
 		prompt,

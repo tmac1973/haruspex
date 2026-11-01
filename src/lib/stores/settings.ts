@@ -12,7 +12,7 @@ import type { BackendDescriptor, EffortCaps } from '#lib/inference/descriptor.ts
 import type { EmailAccount } from '#lib/ipc/gen/EmailAccount.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import type { ImageBackendKind, ImageModelEntry } from '#lib/image/types.ts';
-import { LEGACY_IMAGE_FIELDS, imageModelsFromFields } from '#lib/image/fields.ts';
+import { imageModelsFromFields } from '#lib/image/fields.ts';
 import type { MusicBackendKind } from '#lib/music/types.ts';
 import type { VideoPreset } from '#lib/video/types.ts';
 import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
@@ -852,6 +852,12 @@ export interface AppSettings {
 	imageLemonadeBaseUrl: string;
 	imageLemonadeApiKey: string;
 	imageLemonadeApiKeySaved: boolean;
+	/**
+	 * The ComfyUI and Lemonade keys above were made named keys and given to the
+	 * image models that use them (`#lib/image/keys.ts`). Once only: a model added
+	 * later without a key keeps none.
+	 */
+	imageKeysMigrated: boolean;
 	/** The bundled engine's catalogue id it runs, installed on the server. */
 	imageLemonadeModelId: string;
 	/**
@@ -897,10 +903,12 @@ export interface AppSettings {
 	generationServers: GenerationServer[];
 	/**
 	 * The image models the image tools use, in the order they are tried (see
-	 * `#lib/image/entries.ts`). Settings → Image still edits the fields above,
-	 * and changing one of them rewrites this list to match.
+	 * `#lib/image/entries.ts`), edited in Settings → Image. Seeded once from the
+	 * single-backend fields above, which are no longer written; a downgrade
+	 * reads them as they were before the list. Absent from a fresh install
+	 * until the first model is added, and then read through those fields.
 	 */
-	imageModels: ImageModelEntry[];
+	imageModels?: ImageModelEntry[];
 	/** Settings → Video editing's switch: the video tools are offered only while it is on. */
 	videoEditingEnabled: boolean;
 	/**
@@ -1184,6 +1192,7 @@ const defaults: AppSettings = {
 	imageLemonadeBaseUrl: '',
 	imageLemonadeApiKey: '',
 	imageLemonadeApiKeySaved: false,
+	imageKeysMigrated: false,
 	imageLemonadeModelId: '',
 	imageToolchestBaseUrl: '',
 	imageToolchestApiKeyId: null,
@@ -1200,7 +1209,6 @@ const defaults: AppSettings = {
 	videoGenToolchestApiKeyId: null,
 	videoGenToolchestModelId: '',
 	generationServers: [],
-	imageModels: [],
 	videoEditingEnabled: false,
 	videoFfmpegPath: '',
 	videoFfprobePath: '',
@@ -1453,12 +1461,7 @@ export function reloadSettingsFromStorage(): void {
 }
 
 export function updateSettings(partial: Partial<AppSettings>): void {
-	const next = { ...settings, ...partial };
-	// Settings → Image still edits its single-backend fields; the list follows.
-	if (!('imageModels' in partial) && LEGACY_IMAGE_FIELDS.some((f) => f in partial)) {
-		next.imageModels = imageModelsFromFields(next, settings.imageModels);
-	}
-	commit(next);
+	commit({ ...settings, ...partial });
 }
 
 /**
@@ -2129,7 +2132,7 @@ export function getSamplingParams(
 export function getIncludeImagesPrompt(opts: { lean?: boolean } = {}): string {
 	if (!settings.includeImages) return '';
 	const drawn =
-		settings.imageModels.length > 0 && !opts.lean
+		(settings.imageModels ?? imageModelsFromFields(settings)).length > 0 && !opts.lean
 			? '\n- A picture you drew, edited or upscaled is the image. Add no found ones unless the user asks.'
 			: '';
 	return `
