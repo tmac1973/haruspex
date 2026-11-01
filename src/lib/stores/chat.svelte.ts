@@ -1152,7 +1152,6 @@ function buildApiPrompt(
 	const unanswered = unansweredNotice(historyMessages);
 	let messagesForApi: ChatMessage[] = [
 		buildSystemPrompt(workingDir, {
-			memorySection,
 			skillsSection,
 			// Chat tab only. Jobs, remote guests and the shell assistant build
 			// their prompts through the same function and must not get this.
@@ -1195,7 +1194,10 @@ function buildApiPrompt(
 	messagesForApi = injectMessageHints(messagesForApi, {
 		workingDir,
 		exhaustiveResearch: exhaustive,
-		lean: getSettings().leanMode
+		lean: getSettings().leanMode,
+		// On the latest user message, not the system prompt: it changes from
+		// turn to turn, and the system prompt has to stay a cacheable prefix.
+		memorySection
 	});
 	return messagesForApi;
 }

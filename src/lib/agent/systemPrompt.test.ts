@@ -35,38 +35,100 @@ import { renderSlashMessage } from '#lib/skills/content.ts';
 import { registerMcpTools, unregisterMcpServer } from '#lib/agent/tools/mcp.ts';
 import { getToolSchemas } from '#lib/agent/tools/registry.ts';
 import type { McpToolDescriptor } from '#lib/ipc/gen/McpToolDescriptor.ts';
+import type { ChatMessage } from '#lib/api.ts';
 
 /**
  * Memory is a PARAMETER, not something this module fetches. Job runs, remote
  * guests and the shell assistant all build their prompts through here, and
  * the plan's "chat only" scope is enforced by that signature — a caller that
  * does not pass memories cannot receive them by accident.
+ *
+ * It rides the latest user message rather than the system prompt. Recall
+ * changes from turn to turn, and llama-server reuses its cache only up to the
+ * first token that differs: memory in the system message made a seven-turn
+ * chat cost 20,957 prompt tokens instead of 83 on Qwen 3.5 9B.
  */
-describe('buildSystemPrompt — memory section', () => {
-	it('omits the section entirely when no memories are passed', () => {
-		const prompt = buildSystemPrompt(null).content as string;
-		expect(prompt).not.toContain('MEMORY');
+describe('injectMessageHints — memory section', () => {
+	const section = '\n\nMEMORY — things you learned:\n- Prefers tabs.';
+	const last = (messages: ChatMessage[]): string => String(messages.at(-1)?.content);
+	const history: ChatMessage[] = [
+		{ role: 'user', content: 'first question' },
+		{ role: 'assistant', content: 'first answer' },
+		{ role: 'user', content: 'second question' }
+	];
+
+	it('adds nothing when no memories are passed', () => {
+		const out = injectMessageHints(history, { workingDir: null, exhaustiveResearch: false });
+		expect(out).toBe(history);
 	});
 
-	it('omits it for a caller that passes an empty section', () => {
-		const prompt = buildSystemPrompt(null, { memorySection: '' }).content as string;
-		expect(prompt).not.toContain('MEMORY');
+	it('adds nothing for a caller that passes an empty section', () => {
+		const out = injectMessageHints(history, {
+			workingDir: null,
+			exhaustiveResearch: false,
+			memorySection: ''
+		});
+		expect(out).toBe(history);
 	});
 
-	it('appends the section when one is supplied', () => {
-		const section = '\n\nMEMORY — things you learned:\n- Prefers tabs.';
-		const prompt = buildSystemPrompt(null, { memorySection: section }).content as string;
-		expect(prompt).toContain('- Prefers tabs.');
-		// At the end, after the custom instructions and format rules, so it is
-		// the freshest context rather than something buried mid-prompt.
-		expect(prompt.trimEnd().endsWith('- Prefers tabs.')).toBe(true);
+	it('appends the section to the latest user message only', () => {
+		const out = injectMessageHints(history, {
+			workingDir: null,
+			exhaustiveResearch: false,
+			memorySection: section
+		});
+		expect(last(out)).toBe('second question' + section);
+		expect(out.slice(0, -1)).toEqual(history.slice(0, -1));
+		// A copy: the stored conversation never keeps a turn's memories.
+		expect(history.at(-1)?.content).toBe('second question');
 	});
 
-	it('still builds a single system message', () => {
-		// Strict chat templates reject a non-first system message, so memory
-		// has to ride the one leading system message.
-		const msg = buildSystemPrompt(null, { memorySection: '\n\nMEMORY — x' });
-		expect(msg.role).toBe('system');
+	it('puts memory after the hints, so it stays the freshest context', () => {
+		const out = injectMessageHints([{ role: 'user', content: 'best budget headphones?' }], {
+			workingDir: null,
+			exhaustiveResearch: false,
+			memorySection: section
+		});
+		expect(last(out)).toContain('Include Reddit as a source.');
+		expect(last(out).endsWith('- Prefers tabs.')).toBe(true);
+	});
+
+	it('reaches the text part of a message with an image', () => {
+		const out = injectMessageHints(
+			[
+				{
+					role: 'user',
+					content: [
+						{ type: 'image_url', image_url: { url: 'data:image/png;base64,AA==' } },
+						{ type: 'text', text: 'what is this?' }
+					]
+				}
+			],
+			{ workingDir: null, exhaustiveResearch: false, memorySection: section }
+		);
+		expect(out.at(-1)?.content).toContainEqual({ type: 'text', text: 'what is this?' + section });
+	});
+
+	it('never puts memory in the system prompt', () => {
+		expect(buildSystemPrompt(null).content as string).not.toContain('MEMORY');
+	});
+
+	it('leaves the system message the same when recalled memories change', () => {
+		const turn = (memorySection: string): ChatMessage[] => {
+			const messages = [buildSystemPrompt(null), ...history];
+			return injectMessageHints(messages, {
+				workingDir: null,
+				exhaustiveResearch: false,
+				memorySection
+			});
+		};
+		const a = turn('\n\nMEMORY — things you learned:\n- Has a dog named Biscuit.');
+		const b = turn('\n\nMEMORY — things you learned:\n- Prefers metric units.');
+		const none = turn('');
+		// Everything up to the latest user message is a stable prefix.
+		expect(b.slice(0, -1)).toEqual(a.slice(0, -1));
+		expect(none.slice(0, -1)).toEqual(a.slice(0, -1));
+		expect(last(a)).not.toBe(last(b));
 	});
 });
 
@@ -138,17 +200,6 @@ describe('buildSystemPrompt — images section', () => {
 		const off = buildSystemPrompt(null, { includeImages: false }).content as string;
 		const unset = buildSystemPrompt(null).content as string;
 		expect(off).toBe(unset);
-	});
-
-	it('composes with memory without either clobbering the other', () => {
-		const prompt = buildSystemPrompt(null, {
-			includeImages: true,
-			memorySection: '\n\nMEMORY — things you learned:\n- Prefers tabs.'
-		}).content as string;
-		expect(prompt).toContain('IMAGES:');
-		expect(prompt).toContain('- Prefers tabs.');
-		// Memory stays last so it remains the freshest context.
-		expect(prompt.trimEnd().endsWith('- Prefers tabs.')).toBe(true);
 	});
 });
 
