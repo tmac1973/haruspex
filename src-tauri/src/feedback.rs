@@ -90,21 +90,172 @@ pub fn feedback_redact(lines: Vec<String>) -> Vec<String> {
     for_report(lines)
 }
 
-/// Log lines made fit for a public issue: anything credential-shaped and
-/// every secret read this session ([`crate::text_util::redact_secrets`]),
-/// URL query strings, which carry signed links and tokens under any name,
-/// and email addresses.
 /// One piece of text as [`for_report`] leaves it.
 pub(crate) fn redact_for_report(text: &str) -> String {
     for_report(vec![text.to_string()]).remove(0)
 }
 
+/// Log lines made fit for a public issue: anything credential-shaped and
+/// every secret read this session ([`crate::text_util::redact_secrets`]),
+/// the home folder, which names the user, phone numbers, URL query strings,
+/// which carry signed links and tokens under any name, and email addresses.
 fn for_report(lines: Vec<String>) -> Vec<String> {
     let known = crate::secrets::known_values();
+    let home = home_dir();
     lines
         .into_iter()
-        .map(|line| scrub_line(&crate::text_util::redact_secrets(&line, &known)))
+        .map(|line| {
+            let line = crate::text_util::redact_secrets(&line, &known);
+            let line = replace_home(&line, home.as_deref());
+            scrub_line(&redact_phones(&line))
+        })
         .collect()
+}
+
+/// The user's home directory: $HOME on Unix, %USERPROFILE% on Windows.
+fn home_dir() -> Option<String> {
+    #[cfg(windows)]
+    let key = "USERPROFILE";
+    #[cfg(not(windows))]
+    let key = "HOME";
+    std::env::var(key).ok()
+}
+
+/// `line` with the home folder written as `~`, in every spelling a log or a
+/// JSON string gives it: as is, with forward slashes, and with `\\` escapes.
+/// Only where the path ends, so `/home/tim` leaves `/home/timothy` alone.
+fn replace_home(line: &str, home: Option<&str>) -> String {
+    let Some(home) = home.map(|h| h.trim_end_matches(['/', '\\'])) else {
+        return line.to_string();
+    };
+    if home.len() < 3 {
+        return line.to_string();
+    }
+    let mut out = line.to_string();
+    for form in [
+        home.to_string(),
+        home.replace('\\', "/"),
+        home.replace('\\', "\\\\"),
+    ] {
+        out = replace_path_prefix(&out, &form);
+    }
+    out
+}
+
+fn replace_path_prefix(line: &str, prefix: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some(i) = rest.find(prefix) {
+        let after = &rest[i + prefix.len()..];
+        let ends = after
+            .chars()
+            .next()
+            .is_none_or(|c| !(c.is_alphanumeric() || "_-.".contains(c)));
+        out.push_str(&rest[..i]);
+        out.push_str(if ends { "~" } else { prefix });
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
+/// `line` with each phone number written as `<phone>`. Three shapes, kept
+/// narrow so dates, times, IP addresses and sizes pass: an international
+/// number (`+` and 8 to 15 digits), a North American one (`555-123-4567`,
+/// `(555) 123 4567`, an optional leading `1`), and a national one that
+/// starts with a 0 (`020 7946 0958`, `0412 345 678`).
+fn redact_phones(line: &str) -> String {
+    let bytes = line.as_bytes();
+    let mut out = String::with_capacity(line.len());
+    let mut copied = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        let starts = matches!(bytes[i], b'+' | b'(' | b'0'..=b'9')
+            && (i == 0 || {
+                // A `+` may follow `tel:`; a bare figure may not follow
+                // anything that joins it to a word, a path or a time.
+                let prev = bytes[i - 1];
+                let joins: &[u8] = if bytes[i] == b'+' {
+                    b""
+                } else {
+                    b"._-/\\:+@#$%&="
+                };
+                !(prev.is_ascii_alphanumeric() || joins.contains(&prev))
+            });
+        if let Some(end) = starts.then(|| phone_at(bytes, i)).flatten() {
+            out.push_str(&line[copied..i]);
+            out.push_str("<phone>");
+            copied = end;
+            i = end;
+        } else {
+            i += 1;
+        }
+    }
+    out.push_str(&line[copied..]);
+    out
+}
+
+/// Where a phone number that begins at `start` ends, if one does.
+fn phone_at(bytes: &[u8], start: usize) -> Option<usize> {
+    let plus = bytes[start] == b'+';
+    let mut i = start + usize::from(plus);
+    // Digit groups, each with the offset just past it. One group may be an
+    // area code in brackets: `(555) 123-4567`, `+44 (20) 7946 0958`.
+    let mut groups: Vec<(usize, usize)> = Vec::new();
+    let mut bracketed = false;
+    loop {
+        let open = bytes.get(i) == Some(&b'(');
+        if open && bracketed {
+            break;
+        }
+        let from = i + usize::from(open);
+        let len = bytes[from..]
+            .iter()
+            .take_while(|b| b.is_ascii_digit())
+            .count();
+        let mut end = from + len;
+        if open {
+            if bytes.get(end) != Some(&b')') || !(2..=4).contains(&len) {
+                break;
+            }
+            bracketed = true;
+            end += 1;
+        } else if len == 0 {
+            break;
+        }
+        groups.push((len, end));
+        i = end;
+        match (bytes.get(i), bytes.get(i + 1)) {
+            (Some(b' ' | b'-' | b'.'), Some(d)) if d.is_ascii_digit() || *d == b'(' => i += 1,
+            _ if open && bytes.get(i).is_some_and(u8::is_ascii_digit) => {}
+            _ => break,
+        }
+    }
+    if groups.is_empty() {
+        return None;
+    }
+    // The longest run of groups that makes a number, so one followed by
+    // another figure ("555 123 4567 3 times") is still found.
+    for k in (1..=groups.len()).rev() {
+        let (_, end) = groups[k - 1];
+        if bytes.get(end).is_some_and(|b| b.is_ascii_alphanumeric()) {
+            continue;
+        }
+        let lens: Vec<usize> = groups[..k].iter().map(|g| g.0).collect();
+        let digits: usize = lens.iter().sum();
+        let national = bytes[start] == b'0' && lens[0] >= 3 && (10..=11).contains(&digits);
+        let american = matches!(lens.as_slice(), [3, 3, 4])
+            || (matches!(lens.as_slice(), [1, 3, 3, 4]) && bytes[start] == b'1');
+        let found = if plus {
+            (8..=15).contains(&digits)
+        } else {
+            american || national
+        };
+        if found {
+            return Some(end);
+        }
+    }
+    None
 }
 
 fn scrub_line(line: &str) -> String {
@@ -240,6 +391,65 @@ mod tests {
         for (input, want) in cases {
             assert_eq!(for_report(vec![input.to_string()]), vec![want.to_string()]);
         }
+    }
+
+    #[test]
+    fn a_phone_number_is_removed_and_other_figures_are_not() {
+        let cases = [
+            ("call +1 555 123 4567 now", "call <phone> now"),
+            ("tel:+447700900123", "tel:<phone>"),
+            ("+44 (20) 7946 0958", "<phone>"),
+            ("ring 555-123-4567.", "ring <phone>."),
+            ("ring (555) 123-4567,", "ring <phone>,"),
+            ("1 555 123 4567 or 555.123.4567", "<phone> or <phone>"),
+            ("mobile 0412 345 678", "mobile <phone>"),
+            ("office 020 7946 0958", "office <phone>"),
+            ("555 123 4567 3 times", "<phone> 3 times"),
+            (
+                "2026-10-26 12:34:56 run 01-02-2026 12 ok",
+                "2026-10-26 12:34:56 run 01-02-2026 12 ok",
+            ),
+            (
+                "127.0.0.1:8765 and 192.168.100.200",
+                "127.0.0.1:8765 and 192.168.100.200",
+            ),
+            (
+                "took (12 ms), 1 234 567 bytes",
+                "took (12 ms), 1 234 567 bytes",
+            ),
+            ("at 12:00 +0100, v1.2.3", "at 12:00 +0100, v1.2.3"),
+            (
+                "id-555-123-4567 abc5551234567",
+                "id-555-123-4567 abc5551234567",
+            ),
+            ("1700000000123 ms", "1700000000123 ms"),
+        ];
+        for (input, want) in cases {
+            assert_eq!(redact_phones(input), want, "{input}");
+        }
+    }
+
+    #[test]
+    fn the_home_folder_becomes_a_tilde_in_every_spelling() {
+        let unix = Some("/home/tim");
+        assert_eq!(
+            replace_home("read /home/tim/notes.md and /home/tim", unix),
+            "read ~/notes.md and ~"
+        );
+        assert_eq!(
+            replace_home("/home/timothy/x and \"/home/tim\"", unix),
+            "/home/timothy/x and \"~\""
+        );
+        let windows = Some(r"C:\Users\tim");
+        assert_eq!(
+            replace_home(
+                r#"C:\Users\tim\a, C:/Users/tim/b, "C:\\Users\\tim\\c""#,
+                windows
+            ),
+            r#"~\a, ~/b, "~\\c""#
+        );
+        assert_eq!(replace_home("/ stays", Some("/")), "/ stays");
+        assert_eq!(replace_home("no home", None), "no home");
     }
 
     #[test]
