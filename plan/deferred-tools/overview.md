@@ -127,11 +127,12 @@ anyway: the result gives the schema and asks it to call again.
   Each MCP server is one family.
 - **Core set (Chat)** → web and fetch tools, file reads, `fs_write_text`,
   `fs_edit_text`, the sandbox tools, `ask_user_question`, `haruspex_docs`,
-  `remember_this`, the skill-loading tools and the task tools. 17.3 KB with
-  everything on.
+  `remember_this`, `save_generated`, the skill-loading tools and the task
+  tools. 17.6 KB with everything on. `save_generated` saves pictures, songs
+  and clips alike, so it is core rather than in one of their families.
 - **Core set (Code tab)** → `CODE_TOOLS`, `delegate`, the background-command
   tools, `open_in_shell`, `open_in_editor`, `ask_user_question`,
-  `haruspex_docs` and the skill-loading tools. 13.8 KB.
+  `haruspex_docs`, `save_generated` and the skill-loading tools. 14.1 KB.
 - **Deferred families** → documents (`fs_write_document`,
   `fs_write_spreadsheet`, `fs_write_slides`), email, calendar, contacts,
   images, music, speech, video generation, video editing, screen, skill

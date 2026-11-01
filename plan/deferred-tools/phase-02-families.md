@@ -33,7 +33,8 @@ data and tests. Nothing reads it yet, so no request changes.
    `calendar`, `contacts`, `music`, `speech`, `video`, `video-gen`, `desktop`,
    `skills-write`). Match on name for the rest (`fs_write_document`,
    `fs_write_spreadsheet`, `fs_write_slides`; `generate_image`, `edit_image`,
-   `upscale_image`, `save_generated`; `make_asset`).
+   `upscale_image`; `make_asset`). `save_generated` is core: it saves the
+   output of three families.
 2. **MCP families.** `mcpFamilies()` returns one family per server in
    `registeredMcpServerLabels()`, with id `mcp:<server id>` and the server's
    label as the line. A server's tools are found through the same name prefix
