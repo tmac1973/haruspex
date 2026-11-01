@@ -198,9 +198,11 @@ function ensureSnapshotListener(): void {
 	void listen<RawTicket[]>(QUEUE_EVENT, (event) => {
 		gotEvent = true;
 		applySnapshot(event.payload);
-	}).then((un) => {
-		unlisten = un;
-	});
+	})
+		.then((un) => {
+			unlisten = un;
+		})
+		.catch((e) => console.warn('Inference queue events are not reaching this window:', e));
 	void invoke<RawTicket[]>('inference_queue_snapshot')
 		.then((tickets) => {
 			if (!gotEvent) applySnapshot(tickets);

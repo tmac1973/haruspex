@@ -9,6 +9,7 @@ import { ApiError, type ChatCompletionResponse } from '#lib/api.ts';
 import { TOKEN_BYTES_RATIO } from '#lib/agent/contextBudget.ts';
 import { stripThinkBlocks, stripToolCallArtifacts } from '#lib/markdown.ts';
 import { logDebug, previewPayload } from '#lib/debugLog.ts';
+import { urlForReport } from '#lib/utils/http.ts';
 import { MAX_TRUNCATION_RETRIES, NudgeState, automaticCheck } from '#lib/agent/loop/nudges.ts';
 import {
 	appendMessage,
@@ -172,7 +173,7 @@ export function tryDegradedOutput(
 	);
 	if (raw.length > 0 && (isBareUrl || looksLikeNakedToolCall)) {
 		logDebug('agent', `iteration ${iteration} branch=degraded-output break`, {
-			raw,
+			raw: isBareUrl ? urlForReport(raw) : previewPayload(raw, 200),
 			isBareUrl,
 			looksLikeNakedToolCall
 		});

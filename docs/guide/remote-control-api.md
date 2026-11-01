@@ -5,7 +5,7 @@ description: Drive Code sessions, chats, jobs and settings from a script through
 
 # Remote control from a script
 
-Remote control (see the `remote-control` page) also takes requests from a script, through the API the web page uses. Turns run on this computer.
+Remote control (see the `remote-control` page) also takes requests from a script, through the web page's API. Turns run on this computer.
 
 ## Connect
 
@@ -49,10 +49,10 @@ Events: `task` when a background task starts, moves on or ends.
 
 ## Settings
 
-- `settings.get`: every setting, or `keys` for a few. Secrets come back blank, and `redacted` lists where.
+- `settings.get`: every setting, or `keys` for a few. Secrets and MCP args come back blank, URLs without login or query; `redacted` lists where.
 - `settings.patch` with `patch`: objects merge key by key, so `{"patch":{"inferenceBackend":{"mode":"remote"}}}` keeps the rest of `inferenceBackend`. A misspelt name or a value of the wrong type is refused.
 
-A patch can't set a secret, the API keys, Settings → Integrations (accounts and MCP servers), Settings → Remote control or Settings → Guest chat. Change those on this computer. Most changes apply at the next turn; one that Settings applies by starting something, such as the model server, isn't started by a patch.
+A patch can't set a secret, the API keys, Settings → Integrations (accounts and MCP servers), Settings → Remote control or Settings → Guest chat. Change those on this computer. Most changes apply at the next turn; a patch doesn't start what Settings would, such as the model server.
 
 ## Lean mode
 
@@ -62,7 +62,7 @@ A patch can't set a secret, the API keys, Settings → Integrations (accounts an
 
 - **Read**: list, read and follow everything above, the debug log, the queue and the tasks.
 - **Drive**: start, send, steer and stop sessions and chats, and every control above; run, cancel and delete jobs and runs; duplicate a job; upload pictures; cancel a task; probe a server's models.
-- **Approve**: answer prompts, and `jobs.create` and `jobs.update`. A job's tools run without asking, so writing one approves its commands ahead.
+- **Approve**: answer prompts, and `jobs.create` and `jobs.update`. A job's tools run without asking, so writing one approves its commands.
 - **Settings**: `settings.get` and `settings.patch`. Off for a new device unless you tick it, and for a computer let in without a token unless Settings → Remote control → **Let them change settings** is ticked.
 
 ## What it doesn't do
