@@ -51,7 +51,6 @@ import { skillsPromptSection } from '#lib/skills/turn.ts';
 
 function leanPrompt(): string {
 	return buildSystemPrompt('/home/u/notes', {
-		memorySection: '\n\nMEMORY — things you learned:\n- Prefers metric units.',
 		skillsSection: skillsPromptSection({
 			catalog: [{ name: 'notes', description: 'Tidy meeting notes', tools: [] }],
 			projectRoot: null
@@ -97,7 +96,7 @@ describe('buildSystemPrompt — lean', () => {
 
 	it('keeps search, citations, images, memory and skills', () => {
 		const prompt = leanPrompt();
-		for (const kept of ['SEARCH RULES', 'INLINE CITATIONS', 'IMAGES', 'Prefers metric', 'SKILLS']) {
+		for (const kept of ['SEARCH RULES', 'INLINE CITATIONS', 'IMAGES', 'SKILLS']) {
 			expect(prompt).toContain(kept);
 		}
 	});

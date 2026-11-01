@@ -29,29 +29,20 @@ export function looksLikeFileOutputRequest(content: string): boolean {
 	return FILE_OUTPUT_PATTERNS.test(content);
 }
 
-/**
- * Recalled memories for this turn, rendered into the prompt by the caller
- * that has them. A PARAMETER rather than something this module fetches: chat
- * is the only surface memory applies to, and job runs, remote guests and the
- * shell assistant all build their prompts through here too. Passing it in
- * means they cannot receive the user's memories by accident — the plan's
- * "chat only" scope is enforced by the shape of this signature.
- */
 export interface SystemPromptOptions {
-	memorySection?: string;
 	/**
 	 * The turn's skill list (`skillsPromptSection`). Passed in rather than
-	 * looked up, for the same reason as `memorySection`: only Chat builds one,
-	 * so jobs and remote guests can't get it by accident.
+	 * looked up: only Chat builds one, so jobs and remote guests can't get it
+	 * by accident.
 	 */
 	skillsSection?: string;
 	/**
-	 * Whether to add the IMAGES block. A PARAMETER for the same reason
-	 * `memorySection` is one: chat is the only surface images apply to, and
-	 * job runs, remote guests and the shell assistant all build their prompts
-	 * through here too. Passing it in means they cannot get it by accident —
-	 * the "local Chat tab only" scope is enforced by the shape of this
-	 * signature rather than by a check someone has to remember.
+	 * Whether to add the IMAGES block. A PARAMETER rather than a setting read
+	 * here: chat is the only surface images apply to, and job runs, remote
+	 * guests and the shell assistant all build their prompts through here too.
+	 * Passing it in means they cannot get it by accident — the "local Chat tab
+	 * only" scope is enforced by the shape of this signature rather than by a
+	 * check someone has to remember.
 	 */
 	includeImages?: boolean;
 	/**
@@ -89,7 +80,6 @@ export function buildSystemPrompt(
 	opts: SystemPromptOptions = {}
 ): ChatMessage {
 	const today = formatTodayLong();
-	const memorySection = opts.memorySection ?? '';
 	const lean = opts.lean === true;
 	// The guide and the skills describe the whole app; a lean turn has a few
 	// of its tools, and a small model otherwise answers from the guide.
@@ -203,13 +193,7 @@ ${getSettings().customSystemPrompt.trim()}
 `
 		: ''
 }
-${[
-	getResponseFormatPrompt(),
-	imagesSection,
-	imageModelsSection,
-	memorySection,
-	opts.skillsSection
-].join('')}`
+${[getResponseFormatPrompt(), imagesSection, imageModelsSection, opts.skillsSection].join('')}`
 	};
 }
 
@@ -217,6 +201,11 @@ ${[
  * Augment the messages array with per-turn hints based on the user's
  * message content and current settings. Appends hint text to the last
  * user message. Returns the modified array.
+ *
+ * What changes from turn to turn goes here, not in the system prompt.
+ * llama-server reuses its cache only up to the first token that differs, and
+ * on a hybrid model (Qwen 3.5) a change in the system message made it read
+ * the whole prompt again: 20,957 tokens instead of 83 on a seven-turn chat.
  */
 export function injectMessageHints(
 	messages: ChatMessage[],
@@ -225,6 +214,14 @@ export function injectMessageHints(
 		exhaustiveResearch: boolean;
 		/** A lean Chat turn: it has no fs_write_* tools to be pushed toward. */
 		lean?: boolean;
+		/**
+		 * Recalled memories for this turn (`renderMemorySection`), added after
+		 * the hints so they stay the freshest context. A PARAMETER rather than
+		 * something this module fetches: chat is the only surface memory
+		 * applies to, and a caller that does not pass memories cannot give
+		 * them to a job, a remote guest or the shell assistant by accident.
+		 */
+		memorySection?: string;
 	}
 ): ChatMessage[] {
 	const lastMsg = messages[messages.length - 1];
@@ -270,9 +267,10 @@ export function injectMessageHints(
 		);
 	}
 
-	if (hints.length === 0) return messages;
+	const memory = opts.memorySection ?? '';
+	if (hints.length === 0 && !memory) return messages;
 
-	const suffix = '\n\n(' + hints.join(' ') + ')';
+	const suffix = (hints.length > 0 ? '\n\n(' + hints.join(' ') + ')' : '') + memory;
 	const result = [...messages];
 	if (typeof lastMsg.content === 'string') {
 		result[result.length - 1] = { ...lastMsg, content: lastMsg.content + suffix };
