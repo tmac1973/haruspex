@@ -13,6 +13,7 @@ import { GUIDE_PROMPT } from '#lib/guide/prompt.ts';
 import { feedbackPromptSection } from '#lib/harnessFeedback/prompt.ts';
 import { registeredMcpServerLabels } from '#lib/agent/tools/mcp.ts';
 import { typedText } from '#lib/skills/content.ts';
+import { imageModelsPrompt } from '#lib/image/modelsPrompt.ts';
 
 const REVIEW_PATTERNS =
 	/\b(best|top\s+\d|recommend|review|comparison|compare|vs\.?|versus|worth|which\s+(?:one|should)|budget|premium|upgrade)\b/i;
@@ -53,6 +54,11 @@ export interface SystemPromptOptions {
 	 * signature rather than by a check someone has to remember.
 	 */
 	includeImages?: boolean;
+	/**
+	 * List the image models the image tools choose from (`imageModelsPrompt`).
+	 * Chat only, for the same reason: no other turn is offered those tools.
+	 */
+	imageModels?: boolean;
 	/**
 	 * Tell the model about `haruspex_docs`. Only for turns that are offered it:
 	 * Chat and remote guests. A job builds its prompt here too, and gets
@@ -96,6 +102,7 @@ LEAN MODE:
 - If a request needs anything else (writing files, Python, pictures, music, speech, email, calendar, the Code or Shell tabs), say that it needs lean mode turned off. Never say you tried a tool you don't have.`
 		: '';
 	const imagesSection = opts.includeImages ? getIncludeImagesPrompt({ lean }) : '';
+	const imageModelsSection = opts.imageModels && !lean ? imageModelsPrompt() : '';
 
 	const fsSection = workingDir
 		? `
@@ -196,7 +203,13 @@ ${getSettings().customSystemPrompt.trim()}
 `
 		: ''
 }
-${[getResponseFormatPrompt(), imagesSection, memorySection, opts.skillsSection].join('')}`
+${[
+	getResponseFormatPrompt(),
+	imagesSection,
+	imageModelsSection,
+	memorySection,
+	opts.skillsSection
+].join('')}`
 	};
 }
 

@@ -132,6 +132,14 @@ describe('routeImage', () => {
 		);
 	});
 
+	it('says who can when only the probe finds a named entry can’t', async () => {
+		state.entries = [entry('A', null), entry('B', EDITS_4), entry('C', EDITS_3)];
+		await expect(ranOn(edit(2), 'A')).rejects.toMatchObject({
+			kind: 'rejected',
+			message: "A can't edit pictures. B, C can."
+		});
+	});
+
 	it('doesn’t move a named entry that doesn’t answer onto another', async () => {
 		state.backends.B = backend(EDITS_4, 'down');
 		await expect(ranOn(edit(2), 'B')).rejects.toMatchObject({ kind: 'unreachable' });

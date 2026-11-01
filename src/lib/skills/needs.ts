@@ -9,7 +9,8 @@
  * An image skill also gets a note, when it loads, of what the image backend
  * can do now: the same line Settings → Image shows, so a skill that branches
  * on it ("only the bundled engine and ComfyUI extend") need not spend a tool
- * call finding out.
+ * call finding out. With several image models, a line for each (`entryLine`),
+ * in the order the tools use them.
  */
 
 import type { SkillNeed } from '#lib/ipc/gen/SkillNeed.ts';
@@ -71,6 +72,11 @@ export function unmetFor(skill: {
 	return leanBlocks(skill.tools) ? LEAN_UNMET : unmetNeed(skill.needs);
 }
 
+/** What a list of image models is told to do with it, after its lines. */
+export const MODELS_NOTE =
+	'These are the image models in Settings → Image, in the order the tools use them; the user ' +
+	'can add another there. Pass `model` only when the user names one.';
+
 /**
  * Lines to put after a loaded skill's instructions: what the image backend
  * can do now. Empty for a skill that needs no image backend, or when the
@@ -78,6 +84,11 @@ export function unmetFor(skill: {
  */
 export async function needsNotes(needs: readonly SkillNeed[]): Promise<string[]> {
 	if (!needs.includes('image') || !met('image')) return [];
+	const entries = imageEntries();
+	if (entries.length > 1) {
+		const { entryLine } = await import('#lib/image/capabilityLine.ts');
+		return [...entries.map(entryLine), MODELS_NOTE];
+	}
 	try {
 		// Loaded here, not at the top: the skills client is imported by every
 		// tab, and the image backends are only wanted when an image skill loads.

@@ -21,6 +21,7 @@ import { generateForTool, resumeForTool, upscaleForTool } from '#lib/image/forTo
 import type { ImageJobHandle } from '#lib/image/backend.ts';
 import type { ImageInput, ImageModelEntry, ImageProgress, ImageRequest } from '#lib/image/types.ts';
 import { capableEntries, needOf, upscaleNeed } from '#lib/image/route.ts';
+import { imageEntries } from '#lib/image/entries.ts';
 import { registerLocalImage } from '#lib/images/resolve.svelte.ts';
 import type { PreparedEdit } from '#lib/ipc/gen/PreparedEdit.ts';
 import type { StoredUpscale } from '#lib/ipc/gen/StoredUpscale.ts';
@@ -207,10 +208,12 @@ export function canRunInBackground(args: Record<string, unknown>, ctx: ToolConte
 }
 
 /**
- * The image model a job would go to now, without asking any server: the first
- * that can do it, by what each keeps. The task tries it first when it runs.
+ * The image model a job would go to now, without asking any server: the one
+ * the call named, else the first that can do it, by what each keeps. The task
+ * tries it first when it runs.
  */
-function entryFor(job: ImageJob): ImageModelEntry | undefined {
+function entryFor(job: ImageJob, named?: string): ImageModelEntry | undefined {
+	if (named) return imageEntries().find((e) => e.name === named);
 	return capableEntries(job.op === 'draw' ? needOf(job.request) : upscaleNeed())[0];
 }
 
@@ -222,7 +225,7 @@ export async function startImageTask(
 	ctx: ToolContext,
 	named?: string
 ): Promise<ToolExecOutput> {
-	const entry = entryFor(job);
+	const entry = entryFor(job, named);
 	const spec: ImageTaskSpec = {
 		job,
 		save: save && detachedTarget(save, ctx),

@@ -18,7 +18,7 @@ In Settings → Image, press **Add model**, then choose its **Backend**:
 - **Lemonade** — a [Lemonade](https://lemonade-server.ai) server you run, with the bundled engine's models.
 - **llama-toolchest** — a llama-toolchest server you run with generation on.
 
-Each model says what it can do. The image tools use the first one in the list that can do the job: one that edits for an edit, one with transparency when you ask for it. Use ↑ and ↓ to change the order. A model that doesn't answer is skipped for the next one that can. Click a model to change it; **Generate a test image** checks it works.
+Each model says what it can do. The image tools use the first in the list that can do the job: an editing one for an edit, one with transparency if you ask. Use ↑ and ↓ to change the order. A model that doesn't answer is skipped. To use a certain one, name it ("draw it with klein"). Click a model to change it; **Generate a test image** checks it works.
 
 Every model's **API key** is a named key from Settings → Inference → API Keys; a ComfyUI or Lemonade key set before was moved there. A server you probe is kept under **Saved servers**; a llama-toolchest is listed in Settings → Music and Video too.
 

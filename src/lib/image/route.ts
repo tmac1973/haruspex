@@ -229,18 +229,32 @@ async function routeNamed<T>(name: string, need: ImageNeed, run: Run<T>): Promis
 			`There is no image model called "${name}". The models are: ${entries.map((e) => e.name).join(', ')}.`
 		);
 	}
-	if (entry.caps && !meetsNeed(entry.caps, need)) {
-		const can = capableEntries(need, entries)
-			.filter((e) => e.caps)
-			.map((e) => e.name);
-		throw new ImageBackendError(
-			'rejected',
-			`${entry.name} ${cannot(need, entry.caps)}.` +
-				(can.length ? ` ${can.join(', ')} can.` : ` ${noneCanSay(need, savedCaps(entries))}`)
-		);
+	if (entry.caps && !meetsNeed(entry.caps, need)) throw namedCannot(entry, entry.caps, need);
+	let got: { backend: ImageBackend; caps: ImageBackendCapabilities };
+	try {
+		got = await ready(entry, need);
+	} catch (e) {
+		// Only the probe said so: refuse as when it was known.
+		throw e instanceof CannotDo ? namedCannot(entry, e.caps, need) : e;
 	}
-	const { backend, caps } = await ready(entry, need);
-	return { entry, backend, caps, value: await run(entry, backend, caps) };
+	return { entry, ...got, value: await run(entry, got.backend, got.caps) };
+}
+
+/** The named `entry` can't do `need`: say so, and which models can. */
+function namedCannot(
+	entry: ImageModelEntry,
+	caps: ImageBackendCapabilities,
+	need: ImageNeed
+): ImageBackendError {
+	const entries = imageEntries();
+	const can = capableEntries(need, entries)
+		.filter((e) => e.caps && e.id !== entry.id)
+		.map((e) => e.name);
+	return new ImageBackendError(
+		'rejected',
+		`${entry.name} ${cannot(need, caps)}.` +
+			(can.length ? ` ${can.join(', ')} can.` : ` ${noneCanSay(need, savedCaps(entries))}`)
+	);
 }
 
 /**

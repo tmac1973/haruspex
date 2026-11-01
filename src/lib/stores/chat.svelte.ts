@@ -1157,6 +1157,7 @@ function buildApiPrompt(
 			// Chat tab only. Jobs, remote guests and the shell assistant build
 			// their prompts through the same function and must not get this.
 			includeImages: getSettings().includeImages,
+			imageModels: true,
 			guide: true,
 			feedback: true,
 			lean: getSettings().leanMode

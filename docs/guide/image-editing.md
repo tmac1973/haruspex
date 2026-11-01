@@ -27,11 +27,11 @@ Ask for it wider or taller: "extend it by half on the right, continuing the road
 
 ## Combine pictures
 
-Name up to four pictures in one request, such as "put the cat from my second picture on the sofa in the first". The edit goes to a model that takes that many.
+Name several pictures in one request, such as "put the cat from my second picture on the sofa in the first". Settings → Image shows how many each model takes (FLUX.2 klein takes four); the edit goes to one that takes that many.
 
 ## Which backends can edit
 
-Settings → Image says what each model can do (draw, edit, upscale, transparent backgrounds, tiling textures); hover over that line for how to get the rest. An edit goes to the first model in the list that can make it. Editing needs a model made for it:
+Settings → Image says what each model can do (draw, edit, upscale, transparent backgrounds, tiling textures); hover over that line for how to get the rest. An edit goes to the first model in the list that can make it. If no model edits or upscales, the assistant can't offer to. Editing needs a model made for it:
 
 - **Bundled engine with Qwen-Image 2.1.** It edits once it has its vision weights, 1.2 GB more. A new download includes them; for one made earlier, press **Add editing** in the bundled-engine model in Settings → Image. Qwen-Image may not be used commercially. Ming-Image can't edit.
 - **ComfyUI with Qwen-Image 2.1** (or its Turbo), on ComfyUI 0.39 or later, **FLUX.2 klein 4B** (12.4 GB) **or Qwen-Image-Edit-2511** (31 GB, about 24 GB of VRAM). Both are Apache 2.0, commercial use allowed; **Install** them under **Models on the server**. The files a model draws with are enough. Pictures are uploaded to the server's input folder.
