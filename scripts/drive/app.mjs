@@ -562,7 +562,13 @@ export class App {
 		// The dialog offers the last folder used.
 		await this.call('updateSettings', { codeLastRoot: folder });
 		await this.exclusive(async (browser) => {
-			const code = await this.#find(browser, 'button=Code');
+			// Settings is an overlay over the main view: back out of it first.
+			const back = await browser.$('.settings-overlay .back-btn');
+			if (await back.isExisting()) await back.click();
+			// The main view's tab: Settings' nav has a Code entry too.
+			const tabs = await browser.$('[role="tablist"][aria-label="Main view"]');
+			const code = await tabs.$('button*=Code');
+			await code.waitForClickable({ timeout: 10_000 });
 			await code.click();
 			// The empty pane's button when nothing is open, else the tab strip's +.
 			// Looked up in two steps: chaining onto a pane that isn't there throws.
@@ -602,7 +608,17 @@ export class App {
 	async type(id, text) {
 		const input = await this.input(id);
 		await this.exclusive(async (browser) => {
-			await input.setValue(text);
+			// Set, not typed: setValue presses Enter for each newline, which
+			// sends the first line alone.
+			await browser.execute(
+				(el, value) => {
+					el.focus();
+					el.value = value;
+					el.dispatchEvent(new Event('input', { bubbles: true }));
+				},
+				input,
+				text
+			);
 			await browser.keys('Enter');
 		});
 	}
@@ -784,7 +800,10 @@ export class App {
 	async detach(id) {
 		await this.call('activateSession', id);
 		await this.exclusive(async (browser) => {
-			const button = await browser.$('.tab.active button.detach');
+			// The Shell's tab strip has an active tab with a ⤢ too, hidden.
+			const button = await browser.$(
+				'[role="tablist"][aria-label="Code sessions"] .tab.active button.detach'
+			);
 			await button.waitForClickable({ timeout: 10_000 });
 			await button.click();
 		});
