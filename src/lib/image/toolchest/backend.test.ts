@@ -95,6 +95,12 @@ describe('llama-toolchest image backend', () => {
 		settings.imageToolchestModelId = '';
 		expect((await toolchestBackend.probe()).detail).toBe('No model is chosen — Settings → Image.');
 
+		// Gone from the server, or not an image model (an upscaler's id).
+		settings.imageToolchestModelId = 'real-esrgan';
+		expect((await toolchestBackend.probe()).detail).toBe(
+			'box:3000 has no image model called real-esrgan — Settings → Image.'
+		);
+
 		settings.imageToolchestBaseUrl = '';
 		expect((await toolchestBackend.probe()).detail).toBe('No server address — Settings → Image.');
 

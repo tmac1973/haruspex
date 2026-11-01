@@ -134,5 +134,12 @@ export function patchSettings(patch: unknown): { changed: string[] } {
 	if (changed.length) {
 		updateSettings(Object.fromEntries(changed.map((k) => [k, merged[k]])) as Partial<AppSettings>);
 	}
+	// Settings → Image asks a model it adds what it can do; one added here
+	// would otherwise stay unknown to the tools and the prompt until a restart.
+	if (changed.includes('imageModels')) {
+		void import('#lib/image/refreshCaps.ts')
+			.then((m) => m.refreshMissingImageCaps())
+			.catch((e) => console.warn('Image models were not asked what they can do:', e));
+	}
 	return { changed };
 }

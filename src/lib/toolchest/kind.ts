@@ -285,7 +285,13 @@ async function probeServer(
 		};
 	}
 	const pick = all.find((i) => i.id === chosenId);
-	if (!pick) return { ok: false, detail: `No model is chosen — ${section}.`, models };
+	if (!pick) {
+		// A saved model the server no longer runs, or one of another kind.
+		const detail = chosenId
+			? `${host} has no ${kind} model called ${chosenId} — ${section}.`
+			: `No model is chosen — ${section}.`;
+		return { ok: false, detail, models };
+	}
 	if (!usable(pick)) {
 		return {
 			ok: false,
