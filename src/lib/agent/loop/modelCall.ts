@@ -242,12 +242,16 @@ async function sendGuardedCompletion(
  * session. llama.cpp and vLLM both render the tools under 'none', so the
  * prompt stays a cached prefix.
  *
- * vLLM (0.29) renders them and then discards a tool call the model writes
- * anyway, so a model that still wants to search ends the call with no text
- * at all: the "research completed but the final answer did not arrive"
- * error after an iteration cap. An answer-only call that streams no content
- * is sent once more with the tools dropped — one uncached prompt, and an
- * answer instead of none.
+ * An answer-only call can still stream no content. Qwen 3.5 9B on llama.cpp
+ * often reasons and then stops without writing anything; vLLM (0.29) renders
+ * the tools and then discards a tool call the model writes anyway. Either
+ * way the turn ends with "the final answer did not arrive". So an empty
+ * answer-only call is sent again, first with the same tools and reasoning
+ * off: the template only changes after the last message, so the server
+ * processes a few tokens, and the 9B answers. Only if that is empty too (or
+ * reasoning was already off) are the tools dropped — one uncached prompt,
+ * and an answer instead of none. Dropping them first cost the whole prompt
+ * (5,517 of ~10k tokens on a 9B turn) where a few tokens would do.
  *
  * Uses `ctx.maxResponseTokens` — the SAME ceiling as the tool-check call.
  * This call produces the answer the user actually reads, so a second hardcoded
@@ -274,20 +278,38 @@ export async function streamFinalSynthesis(
 		thinking,
 		answerOnly
 	);
-	if (
-		!answerOnly ||
-		!tools?.length ||
-		result.totalContent > 0 ||
-		result.lastFinish === 'length' ||
-		ctx.signal?.aborted
-	) {
-		return result;
+	if (answered(result, ctx) || !answerOnly || !tools?.length) return result;
+	if (thinking !== false) {
+		logDebug('agent', 'answer-only synthesis streamed no content; retrying with reasoning off', {
+			chunks: result.totalChunks,
+			lastFinish: result.lastFinish
+		});
+		const retry = await streamSynthesisOnce(
+			ctx,
+			tools,
+			getSamplingParams(ctx.descriptor, {
+				...samplingOptionsFor(ctx, ctx.messages),
+				thinkingEnabled: false
+			}),
+			getChatTemplateKwargs(ctx.descriptor, false, ctx.reasoningEffort),
+			false,
+			true
+		);
+		if (answered(retry, ctx)) return retry;
 	}
 	logDebug('agent', 'answer-only synthesis streamed no content; retrying without tools', {
 		chunks: result.totalChunks,
 		lastFinish: result.lastFinish
 	});
 	return streamSynthesisOnce(ctx, undefined, sampling, templateKwargs, thinking, false);
+}
+
+/** Whether a synthesis call ended in a way that a retry can't improve on. */
+function answered(
+	result: { lastFinish: string | null; totalContent: number },
+	ctx: LoopContext
+): boolean {
+	return result.totalContent > 0 || result.lastFinish === 'length' || !!ctx.signal?.aborted;
 }
 
 async function streamSynthesisOnce(
