@@ -35,7 +35,7 @@ if [ -z "$PYTHON_BIN" ]; then
     exit 1
 fi
 
-PYODIDE_VERSION="0.29.4"
+PYODIDE_VERSION="314.0.7"
 
 # PyPI wheels we install by explicit local URL (deps=False), NOT via the
 # Pyodide lockfile — either because they're not in the lockfile at all
@@ -64,31 +64,31 @@ WHEELS=(
 # resolves them via the lockfile when indexURL='/pyodide/'. Re-derive
 # whenever PYODIDE_VERSION changes — wheel filenames are version-
 # specific.
-WORKSPACE_WHEELS_VERSION="2"
+WORKSPACE_WHEELS_VERSION="3"
 WORKSPACE_WHEELS=(
     "altair-6.0.0-py3-none-any.whl"
-    "attrs-25.2.0-py3-none-any.whl"
-    "bokeh-3.6.3-py3-none-any.whl"
-    "contourpy-1.3.1-cp313-cp313-pyemscripten_2025_0_wasm32.whl"
+    "attrs-26.1.0-py3-none-any.whl"
+    "bokeh-3.9.0-py3-none-any.whl"
+    "contourpy-1.3.3-cp314-cp314-pyemscripten_2026_0_wasm32.whl"
     "jinja2-3.1.6-py3-none-any.whl"
-    "jsonschema-4.23.0-py3-none-any.whl"
-    "jsonschema_specifications-2024.10.1-py3-none-any.whl"
-    "markupsafe-3.0.2-cp313-cp313-pyemscripten_2025_0_wasm32.whl"
+    "jsonschema-4.26.0-py3-none-any.whl"
+    "jsonschema_specifications-2025.9.1-py3-none-any.whl"
+    "markupsafe-3.0.3-cp314-cp314-pyemscripten_2026_0_wasm32.whl"
     "micropip-0.11.1-py3-none-any.whl"
-    "narwhals-2.15.0-py3-none-any.whl"
-    "numpy-2.2.5-cp313-cp313-pyemscripten_2025_0_wasm32.whl"
-    "packaging-26.2-py3-none-any.whl"
-    "pandas-2.3.3-cp313-cp313-pyemscripten_2025_0_wasm32.whl"
-    "pillow-11.3.0-cp313-cp313-pyemscripten_2025_0_wasm32.whl"
-    "pyrsistent-0.20.0-cp313-cp313-pyemscripten_2025_0_wasm32.whl"
+    "narwhals-2.18.1-py3-none-any.whl"
+    "numpy-2.4.6-cp314-cp314-pyemscripten_2026_0_wasm32.whl"
+    "packaging-26.1-py3-none-any.whl"
+    "pandas-3.0.2-cp314-cp314-pyemscripten_2026_0_wasm32.whl"
+    "pillow-12.2.0-cp314-cp314-pyemscripten_2026_0_wasm32.whl"
+    "pyrsistent-0.20.0-cp314-cp314-pyemscripten_2026_0_wasm32.whl"
     "python_dateutil-2.9.0.post0-py2.py3-none-any.whl"
-    "pytz-2025.2-py2.py3-none-any.whl"
-    "pyyaml-6.0.2-cp313-cp313-pyemscripten_2025_0_wasm32.whl"
-    "referencing-0.36.2-py3-none-any.whl"
-    "rpds_py-0.30.0-cp313-cp313-pyemscripten_2025_0_wasm32.whl"
+    "pytz-2026.1.post1-py2.py3-none-any.whl"
+    "pyyaml-6.0.3-cp314-cp314-pyemscripten_2026_0_wasm32.whl"
+    "referencing-0.37.0-py3-none-any.whl"
+    "rpds_py-0.30.0-cp314-cp314-pyemscripten_2026_0_wasm32.whl"
     "six-1.17.0-py2.py3-none-any.whl"
     "typing_extensions-4.15.0-py3-none-any.whl"
-    "xyzservices-2025.1.0-py3-none-any.whl"
+    "xyzservices-2026.3.0-py3-none-any.whl"
 )
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -139,15 +139,10 @@ else
     fi
 
     mkdir -p "$DEST_DIR"
-    # Preserve any bundled wheels from a previous run:
-    #   wheels/             → chat-sandbox doc wheels (subdir)
-    #   *.whl at root       → workspace wheels (loaded by indexURL)
-    #   .haruspex-*         → version markers
-    find "$DEST_DIR" -mindepth 1 -maxdepth 1 \
-        ! -name 'wheels' \
-        ! -name '*.whl' \
-        ! -name '.haruspex-*' \
-        -exec rm -rf {} +
+    # Keep only wheels/ (pure-Python doc wheels, independent of the Pyodide
+    # version). Root wheels and their markers are built for one Pyodide ABI,
+    # so a new core drops them and the sections below fetch the new set.
+    find "$DEST_DIR" -mindepth 1 -maxdepth 1 ! -name 'wheels' -exec rm -rf {} +
     # Move new core files in, but never overwrite a wheel we deliberately
     # bundled (the tarball includes a stock set; ours is curated).
     for src in "$TMP_DIR/pyodide"/*; do
@@ -268,7 +263,7 @@ fi
 # it stays correct across PYODIDE_VERSION bumps — bump CHAT_STACK_VERSION
 # (or the top-level list) to force a re-resolve. Only wheels not already on
 # disk (e.g. numpy/pandas pulled by the workspace set) are downloaded.
-CHAT_STACK_VERSION="3"
+CHAT_STACK_VERSION="4"
 # pyodide-http is installed at boot by HARUSPEX_INIT_PY (micropip.install
 # 'pyodide-http') to bridge urllib/requests/httpx → pyfetch. It lives in the
 # Pyodide lockfile, so micropip fetches its wheel from the local indexURL

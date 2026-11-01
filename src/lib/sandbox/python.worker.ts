@@ -818,7 +818,7 @@ function postInstallProgress(packageName: string, phase: InstallPhase): void {
 
 // Pyodide distribution version — must match the npm `pyodide` package
 // (see package.json) and the version vendored by scripts/fetch-pyodide.sh.
-const PYODIDE_VERSION = '0.29.4';
+const PYODIDE_VERSION = '314.0.7';
 const PYODIDE_CDN = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
 
 /**
@@ -915,7 +915,7 @@ function setPackageGlobals(py: PyodideInterface): void {
 		py.toPy({
 			plotly: [
 				new URL('/pyodide/wheels/plotly-6.8.0-py3-none-any.whl', self.location.origin).href,
-				new URL('/pyodide/narwhals-2.15.0-py3-none-any.whl', self.location.origin).href
+				new URL('/pyodide/narwhals-2.18.1-py3-none-any.whl', self.location.origin).href
 			]
 		})
 	);
@@ -1178,7 +1178,7 @@ function installSandboxFetchProxy(): void {
 
 /**
  * static/pyodide/ is gitignored and filled by scripts/fetch-pyodide.sh, so a
- * fresh dev checkout has none. loadPyodide then imports pyodide.asm.js from a
+ * fresh dev checkout has none. loadPyodide then imports pyodide.asm.mjs from a
  * 404 page, and WebKit reports only "Importing a module script failed." When
  * loading fails, check for that file so the error names what is missing. A
  * built app answers a missing file with the SPA's index.html and a 200, so an
@@ -1186,7 +1186,7 @@ function installSandboxFetchProxy(): void {
  */
 async function runtimeMissing(fetchFn: typeof fetch, indexURL: string): Promise<boolean> {
 	try {
-		const resp = await fetchFn(indexURL + 'pyodide.asm.js', { method: 'HEAD' });
+		const resp = await fetchFn(indexURL + 'pyodide.asm.mjs', { method: 'HEAD' });
 		return !resp.ok || (resp.headers.get('content-type') ?? '').includes('text/html');
 	} catch {
 		return false;
