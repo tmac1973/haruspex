@@ -94,7 +94,7 @@ export async function worktreeForSubtask(
 	} catch (e) {
 		const why = errMessage(e);
 		return /not in a git repository|git is not installed/i.test(why)
-			? `Write subtasks need a git repository (${why}) Use mode "read", or make the change yourself.`
+			? `Write subtasks need a git repository (${why}). Use mode "read", or make the change yourself.`
 			: `Couldn't make a copy of the folder for the subtask: ${why}`;
 	}
 }
@@ -117,7 +117,7 @@ async function applyText(outcome: SubtaskApplyOutcome | null): Promise<string> {
 			return (
 				'\n\n' +
 				(await spillIfLarge(
-					`Its changes were NOT applied: they conflict with changes made in the folder meanwhile (${files}). ${state.message ?? ''}\nIts copy is kept at ${state.worktree}. Make the change yourself; its patch:`,
+					`Its changes were NOT applied: they conflict with changes made in the folder meanwhile (${files}).${state.message ? ` ${state.message}` : ''}\nIts copy is kept at ${state.worktree}. Make the change yourself; its patch:`,
 					patch ?? ''
 				))
 			);

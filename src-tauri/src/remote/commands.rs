@@ -246,3 +246,58 @@ pub async fn remote_turn_error(
     let _ = state.relay().fail(&turn_id, message);
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // The webview listens for these payloads by field name, so their shape is
+    // the contract with `src/lib/remote/`.
+
+    #[test]
+    fn a_cancel_event_names_its_turn_in_camel_case() {
+        let ev = CancelEvent {
+            turn_id: "t1".to_string(),
+        };
+        assert_eq!(serde_json::to_value(ev).unwrap(), json!({ "turnId": "t1" }));
+    }
+
+    #[test]
+    fn an_answer_event_flattens_the_answer_beside_the_turn_id() {
+        let answer = Answer {
+            question_id: "q1".to_string(),
+            labels: vec!["Yes".to_string()],
+            text: Some("and more".to_string()),
+        };
+        let ev = AnswerEvent {
+            turn_id: "t1",
+            answer: &answer,
+        };
+        assert_eq!(
+            serde_json::to_value(ev).unwrap(),
+            json!({
+                "turnId": "t1",
+                "questionId": "q1",
+                "labels": ["Yes"],
+                "text": "and more"
+            })
+        );
+    }
+
+    #[test]
+    fn an_answer_event_without_free_text_sends_null_text() {
+        let answer = Answer {
+            question_id: "q1".to_string(),
+            labels: Vec::new(),
+            text: None,
+        };
+        let ev = AnswerEvent {
+            turn_id: "t1",
+            answer: &answer,
+        };
+        let v = serde_json::to_value(ev).unwrap();
+        assert_eq!(v["text"], serde_json::Value::Null);
+        assert_eq!(v["labels"], json!([]));
+    }
+}

@@ -22,35 +22,19 @@ const toolsMock = vi.hoisted(() => ({
 	coerceCallArguments: vi.fn((_name: string, args: Record<string, unknown>) => args)
 }));
 
-vi.mock('#lib/api.ts', () => ({
-	ApiError: class ApiError extends Error {
-		statusCode?: number;
-		constructor(message: string, statusCode?: number) {
-			super(message);
-			this.name = 'ApiError';
-			this.statusCode = statusCode;
-		}
-	},
-	// A cut-off answer; extends Error here, ApiError in the real module.
-	ResponseCutOffError: class ResponseCutOffError extends Error {
-		constructor(message: string) {
-			super(message);
-			this.name = 'ResponseCutOffError';
-		}
-	},
-	chatCompletion: api.chatCompletion,
-	chatCompletionStream: api.chatCompletionStream,
-	messageText: (content: unknown): string => {
-		if (typeof content === 'string') return content;
-		if (Array.isArray(content)) {
-			return content
-				.filter((p: { type: string }) => p.type === 'text')
-				.map((p: { text: string }) => p.text)
-				.join('\n');
-		}
-		return '';
-	}
-}));
+vi.mock('#lib/api.ts', async (importOriginal) => {
+	// The real error classes and messageText: pure, and a copy here could
+	// drift from what the loop really sees. Only the network calls are faked.
+	const { ApiError, ResponseCutOffError, messageText } =
+		await importOriginal<typeof import('#lib/api.ts')>();
+	return {
+		ApiError,
+		ResponseCutOffError,
+		messageText,
+		chatCompletion: api.chatCompletion,
+		chatCompletionStream: api.chatCompletionStream
+	};
+});
 
 vi.mock('#lib/agent/tools/index.ts', () => ({
 	executeTool: toolsMock.executeTool,
@@ -83,12 +67,7 @@ vi.mock('#lib/markdown.ts', async (importOriginal) => ({
 	// Keep the real reasoning splitter: it is pure, it defines the
 	// reasoning/answer contract the loop reports against, and faking it here
 	// would let the two drift without any test noticing.
-	...(await importOriginal<typeof import('#lib/markdown.ts')>()),
-	stripToolCallArtifacts: (text: string) =>
-		text
-			.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
-			.replace(/<\/?tool_call>/g, '')
-			.trim()
+	...(await importOriginal<typeof import('#lib/markdown.ts')>())
 }));
 
 vi.mock('#lib/debugLog.ts', async (importOriginal) => ({

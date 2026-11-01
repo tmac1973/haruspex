@@ -361,3 +361,90 @@ pub async fn proxy_fetch(
     state.cache_fetch(&url, &content);
     Ok(content)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use stats::{EngineStatDelta, LifetimeStatsSnapshot, SearchFailureKind};
+    use std::sync::Mutex;
+
+    /// Records which engines the lifetime store was told about.
+    #[derive(Default)]
+    struct RecordingSink {
+        engines: Mutex<Vec<String>>,
+    }
+
+    impl StatSink for RecordingSink {
+        fn record_engine(&self, engine: &str, _delta: &EngineStatDelta) {
+            self.engines.lock().unwrap().push(engine.to_string());
+        }
+        fn record_global(&self, _counter: &str) {}
+        fn lifetime_snapshot(&self) -> Result<LifetimeStatsSnapshot, String> {
+            Err("not used".to_string())
+        }
+        fn reset_lifetime(&self) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    fn hit() -> SearchResult {
+        SearchResult {
+            title: "t".to_string(),
+            url: "https://example.com".to_string(),
+            snippet: "s".to_string(),
+        }
+    }
+
+    fn engine_stats(stats: &SearchStats, engine: &str) -> stats::EngineSessionStats {
+        stats
+            .snapshot()
+            .engines
+            .into_iter()
+            .find(|e| e.core.engine == engine)
+            .expect("engine was recorded")
+    }
+
+    #[tokio::test]
+    async fn a_timed_search_with_results_counts_as_a_success_on_both_stores() {
+        let stats = SearchStats::new();
+        let sink = RecordingSink::default();
+        let out = timed_search(&stats, &sink, "brave", async { Ok(vec![hit()]) }).await;
+        assert_eq!(out.unwrap().len(), 1);
+        let e = engine_stats(&stats, "brave");
+        assert_eq!(e.core.attempts, 1);
+        assert_eq!(e.core.successes, 1);
+        assert_eq!(*sink.engines.lock().unwrap(), vec!["brave".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn a_timed_search_with_no_results_returns_ok_but_records_an_empty_failure() {
+        let stats = SearchStats::new();
+        let sink = RecordingSink::default();
+        let out = timed_search(&stats, &sink, "searxng", async { Ok(Vec::new()) }).await;
+        assert!(out.unwrap().is_empty());
+        let e = engine_stats(&stats, "searxng");
+        assert_eq!(e.core.successes, 0);
+        assert_eq!(e.failures_by_kind.get(&SearchFailureKind::Empty), Some(&1));
+    }
+
+    #[tokio::test]
+    async fn a_timed_search_failure_returns_its_message_and_records_its_kind() {
+        let stats = SearchStats::new();
+        let sink = RecordingSink::default();
+        let out = timed_search(&stats, &sink, "duckduckgo", async {
+            Err(SearchFailure::new(
+                SearchFailureKind::RateLimited,
+                "captcha wall",
+            ))
+        })
+        .await;
+        assert_eq!(out.unwrap_err(), "captcha wall");
+        let e = engine_stats(&stats, "duckduckgo");
+        assert_eq!(e.core.attempts, 1);
+        assert_eq!(
+            e.failures_by_kind.get(&SearchFailureKind::RateLimited),
+            Some(&1)
+        );
+        assert_eq!(sink.engines.lock().unwrap().len(), 1);
+    }
+}

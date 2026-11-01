@@ -381,7 +381,6 @@ describe('parseSSE — OpenRouter behaviors', () => {
 		const chunks = [];
 		for await (const chunk of parseSSE(response)) chunks.push(chunk);
 		expect(chunks).toHaveLength(2);
-		expect(chunks[1].error).toBeDefined();
 		expect(chunks[1].error?.code).toBe(429);
 		expect(chunks[1].finish_reason).toBe('error');
 	});
@@ -418,7 +417,7 @@ describe('chatCompletion — OpenRouter', () => {
 		expect(url).toBe('https://openrouter.ai/api/v1/chat/completions');
 		const headers = init.headers as Record<string, string>;
 		expect(headers['Authorization']).toBe('Bearer sk-or-v1-test');
-		expect(headers['HTTP-Referer']).toBeDefined();
+		expect(headers['HTTP-Referer']).toBe('https://github.com/tmac1973/haruspex');
 		expect(headers['X-Title']).toBe('Haruspex');
 		expect(JSON.parse(init.body as string).model).toBe('anthropic/claude-sonnet-4.5');
 		// top_k / min_p / chat_template_kwargs should NOT be in the body.
