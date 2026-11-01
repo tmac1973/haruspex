@@ -581,7 +581,8 @@ export interface AppSettings {
 	/**
 	 * Interactive Chat and the Code tab send the core tools in full and list
 	 * the rest by family; the model loads a family with `load_tools`
-	 * (`agent/tools/deferred.ts`). `auto` follows the model's size. No UI yet.
+	 * (`agent/tools/deferred.ts`). `auto` follows the model's size.
+	 * Settings → General → Load tools when needed.
 	 */
 	deferTools: DeferTools;
 	/**
@@ -1133,7 +1134,7 @@ const defaults: AppSettings = {
 	activeLocalModelFilename: '',
 	legacyModelNoticeDismissed: false,
 	leanMode: false,
-	deferTools: 'off',
+	deferTools: 'auto',
 	leanNoticeShown: false,
 	leanHintedModels: [],
 	screenCaptureEnabled: false,
@@ -1990,10 +1991,10 @@ export function setLegacyModelNoticeDismissed(dismissed: boolean): void {
 
 export type DeferTools = 'auto' | 'on' | 'off';
 
-/** Settings → General → Load tools when needed; an unknown value reads as off. */
+/** Settings → General → Load tools when needed; an unknown value reads as Auto. */
 export function getDeferTools(): DeferTools {
 	const v = settings.deferTools;
-	return v === 'auto' || v === 'on' ? v : 'off';
+	return v === 'on' || v === 'off' ? v : 'auto';
 }
 
 export function getLeanMode(): boolean {

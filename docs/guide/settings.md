@@ -1,11 +1,11 @@
 ---
 title: Settings reference
-description: What each Settings section holds, its main options and defaults, and which guide page explains it.
+description: What each Settings section holds, its defaults, and which guide page explains it.
 ---
 
 # Settings reference
 
-Each of the 18 sections lists its main options, defaults and a page with more.
+Each section lists its main options, defaults and a page with more.
 
 ## Open Settings
 
@@ -13,12 +13,13 @@ Click the gear in the header; click it again or **← Back** to close.
 
 ## General
 
-Appearance, reply format and lean mode.
+Appearance, reply format, lean mode and tool loading.
 
 - **Theme**: System (default), Light or Dark.
 - **Highlight color**: the accent color. Default Teal.
 - **Response Format**: Minimal, Standard (default) or Rich.
 - **Lean mode**: off. See the `lean-mode` page.
+- **Load tools when needed**: Auto. See the `tool-loading` page.
 
 See the `chat` page.
 
@@ -76,7 +77,7 @@ See the `skills` page.
 Voice input and spoken replies.
 
 - **Text-to-speech voice**: Heart (Female). **Read tables by subject**: on.
-- **Audio output (TTS playback)** and **Audio input (microphone)**: pick a device; **Refresh** rescans.
+- **Audio output (TTS playback)** and **Audio input (microphone)**: pick a device.
 
 See the `chat` page.
 
@@ -105,7 +106,7 @@ Email, calendar and contacts, and MCP servers.
 
 - **Email**: **Add email account**. Any IMAP account; most need an app password.
 - **Calendar & Contacts**: **Add a calendar link** or **Add a server account** (CalDAV/CardDAV).
-- **MCP integrations**: **Add from the catalog**, **Add a server on this computer** or **Add a server on your network**.
+- **MCP integrations**: add a server from the catalog, on this computer or on your network.
 
 See the `integrations` page.
 
