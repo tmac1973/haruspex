@@ -3,6 +3,15 @@
 **Depends on:** 02 · **Enables:** 04 (routing reads the saved list), 05 (the list
 UI edits it).
 
+> **As built (PR for this phase):** the Settings screen, the key migration
+> and the Rust secret change moved to Phase 05, which rewrites that screen
+> anyway. Settings → Image still edits its single-backend fields;
+> `updateSettings` rewrites `imageModels` from them (`image/fields.ts`), and
+> `imageEntries()` builds the list from the fields plus what the saved list
+> learned (name, capabilities). The seeded entry's id is `legacy`, the id
+> Phase 02's handles carry. The old fields are written as before, so a
+> downgrade sees the latest setup. Everything else below landed as written.
+
 ## Goal
 Settings hold `imageModels: ImageModelEntry[]`. On load, a user's single
 backend becomes entry 1, and the ComfyUI and Lemonade key secrets become named

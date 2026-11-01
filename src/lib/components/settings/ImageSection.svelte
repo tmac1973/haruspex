@@ -36,6 +36,7 @@
 		syncDownloads
 	} from '#lib/stores/downloads.svelte.ts';
 	import { resolveImageBackend } from '#lib/image/index.ts';
+	import { firstImageEntry, saveImageCaps } from '#lib/image/entries.ts';
 	import { capabilityLine, type CapabilityLine } from '#lib/image/capabilityLine.ts';
 	import { declaredCapabilities, familyOfId } from '#lib/image/local/adapter.ts';
 	import { invalidateTypeAvailability } from '#lib/agent/jobs/types/availability.svelte.ts';
@@ -398,7 +399,11 @@
 			if (serverKind && (probeResult.ok || probeResult.models?.length)) {
 				rememberServer(serverKind, serverUrl, apiKeyId);
 			}
-			capabilities = probeResult.ok ? await backend.capabilities() : null;
+			const caps = probeResult.ok ? await backend.capabilities() : null;
+			// Kept with the entry, so the tools know without asking the server.
+			const first = firstImageEntry();
+			if (caps && first) saveImageCaps(first.id, caps);
+			capabilities = caps;
 		} catch (e) {
 			probeResult = { ok: false, detail: errMessage(e) };
 		} finally {

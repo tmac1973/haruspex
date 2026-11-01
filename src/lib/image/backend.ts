@@ -9,7 +9,7 @@
  */
 
 import { backendForEntry } from '#lib/image/registry.ts';
-import { legacyImageEntry } from '#lib/image/legacy.ts';
+import { firstImageEntry } from '#lib/image/entries.ts';
 import { noneBackend } from '#lib/image/none.ts';
 import type {
 	ImageBackendCapabilities,
@@ -101,6 +101,6 @@ export interface ImageBackend {
  * clear "nothing configured" message rather than throwing on lookup.
  */
 export function resolveImageBackend(): ImageBackend {
-	const entry = legacyImageEntry();
+	const entry = firstImageEntry();
 	return (entry && backendForEntry(entry)) ?? noneBackend;
 }

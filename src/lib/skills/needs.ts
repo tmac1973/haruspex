@@ -15,6 +15,7 @@
 import type { SkillNeed } from '#lib/ipc/gen/SkillNeed.ts';
 import type { ImageBackendKind } from '#lib/image/types.ts';
 import { getSettings } from '#lib/stores/settings.ts';
+import { imageEntries } from '#lib/image/entries.ts';
 import { videoToolsOn } from '#lib/video/binaries.ts';
 import { LEAN_CHAT_TOOLS } from '#lib/agent/tools/leanProfile.ts';
 
@@ -36,7 +37,7 @@ const BACKEND_NAME: Record<ImageBackendKind, string> = {
 
 function met(need: SkillNeed): boolean {
 	const s = getSettings();
-	if (need === 'image') return s.imageBackendKind !== 'none';
+	if (need === 'image') return imageEntries().length > 0;
 	if (need === 'music') return s.musicBackendKind !== 'none';
 	return videoToolsOn();
 }

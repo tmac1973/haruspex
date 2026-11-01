@@ -15,6 +15,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { ProtectedTargets } from '#lib/ipc/gen/ProtectedTargets.ts';
 import type { ProtectedPort } from '#lib/ipc/gen/ProtectedPort.ts';
 import { getSettings } from '#lib/stores/settings.ts';
+import { imageEntries } from '#lib/image/entries.ts';
 
 export interface BoundaryCheck {
 	matched: boolean;
@@ -122,18 +123,29 @@ function escape(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** The image backend's port when it runs on this machine: it's Haruspex's to guard. */
-function imageBackendPort(): ProtectedPort[] {
-	const url = getSettings().imageBackendBaseUrl?.trim();
-	if (!url) return [];
+/** A ComfyUI address's port when it runs on this machine: it's Haruspex's to guard. */
+function localPort(url: string): ProtectedPort[] {
+	if (!url.trim()) return [];
 	try {
-		const u = new URL(url);
+		const u = new URL(url.trim());
 		if (!['localhost', '127.0.0.1', '[::1]', '0.0.0.0'].includes(u.hostname)) return [];
 		const port = Number(u.port || (u.protocol === 'https:' ? 443 : 80));
 		return [{ port, label: 'image backend' }];
 	} catch {
 		return [];
 	}
+}
+
+/** The ports of the ComfyUI servers Settings → Image names that run on this machine. */
+function imageBackendPort(): ProtectedPort[] {
+	const urls = new Set([
+		getSettings().imageBackendBaseUrl ?? '',
+		...imageEntries()
+			.filter((e) => e.backend === 'comfyui')
+			.map((e) => e.url)
+	]);
+	const ports = [...urls].flatMap(localPort);
+	return ports.filter((p, i) => ports.findIndex((q) => q.port === p.port) === i);
 }
 
 let memo: { key: string; targets: Promise<ProtectedTargets | null> } | null = null;

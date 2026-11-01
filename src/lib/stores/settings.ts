@@ -11,7 +11,8 @@ import type { BackendDescriptor, EffortCaps } from '#lib/inference/descriptor.ts
 
 import type { EmailAccount } from '#lib/ipc/gen/EmailAccount.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
-import type { ImageBackendKind } from '#lib/image/types.ts';
+import type { ImageBackendKind, ImageModelEntry } from '#lib/image/types.ts';
+import { LEGACY_IMAGE_FIELDS, imageModelsFromFields } from '#lib/image/fields.ts';
 import type { MusicBackendKind } from '#lib/music/types.ts';
 import type { VideoPreset } from '#lib/video/types.ts';
 import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
@@ -894,6 +895,12 @@ export interface AppSettings {
 	 * all three; the others only where their backend is.
 	 */
 	generationServers: GenerationServer[];
+	/**
+	 * The image models the image tools use, in the order they are tried (see
+	 * `#lib/image/entries.ts`). Settings → Image still edits the fields above,
+	 * and changing one of them rewrites this list to match.
+	 */
+	imageModels: ImageModelEntry[];
 	/** Settings → Video editing's switch: the video tools are offered only while it is on. */
 	videoEditingEnabled: boolean;
 	/**
@@ -1193,6 +1200,7 @@ const defaults: AppSettings = {
 	videoGenToolchestApiKeyId: null,
 	videoGenToolchestModelId: '',
 	generationServers: [],
+	imageModels: [],
 	videoEditingEnabled: false,
 	videoFfmpegPath: '',
 	videoFfprobePath: '',
@@ -1359,6 +1367,9 @@ function load(): AppSettings {
 				generationServers: Array.isArray(rest.generationServers)
 					? rest.generationServers
 					: seedGenerationServers(rest),
+				imageModels: Array.isArray(rest.imageModels)
+					? rest.imageModels
+					: imageModelsFromFields({ ...defaults, ...rest }),
 				skills: {
 					...defaultSkills,
 					...(parsed.skills ?? {}),
@@ -1442,7 +1453,12 @@ export function reloadSettingsFromStorage(): void {
 }
 
 export function updateSettings(partial: Partial<AppSettings>): void {
-	commit({ ...settings, ...partial });
+	const next = { ...settings, ...partial };
+	// Settings → Image still edits its single-backend fields; the list follows.
+	if (!('imageModels' in partial) && LEGACY_IMAGE_FIELDS.some((f) => f in partial)) {
+		next.imageModels = imageModelsFromFields(next, settings.imageModels);
+	}
+	commit(next);
 }
 
 /**
@@ -2113,7 +2129,7 @@ export function getSamplingParams(
 export function getIncludeImagesPrompt(opts: { lean?: boolean } = {}): string {
 	if (!settings.includeImages) return '';
 	const drawn =
-		settings.imageBackendKind !== 'none' && !opts.lean
+		settings.imageModels.length > 0 && !opts.lean
 			? '\n- A picture you drew, edited or upscaled is the image. Add no found ones unless the user asks.'
 			: '';
 	return `

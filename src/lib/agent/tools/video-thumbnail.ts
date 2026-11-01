@@ -6,7 +6,7 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage, isAbortError } from '#lib/utils/error.ts';
-import { getSettings } from '#lib/stores/settings.ts';
+import { imageEntries } from '#lib/image/entries.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
@@ -50,7 +50,7 @@ async function fromPrompt(
 ): Promise<ThumbnailWritten> {
 	const prompt = str(args.prompt);
 	if (!prompt) throw new Error('A generated thumbnail needs "prompt".');
-	if (getSettings().imageBackendKind === 'none') {
+	if (imageEntries().length === 0) {
 		throw new Error('Image generation is off. The user can choose a backend in Settings → Image.');
 	}
 	const result = await generateOneImage({

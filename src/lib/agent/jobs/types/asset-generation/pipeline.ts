@@ -54,6 +54,7 @@ import {
 } from '#lib/agent/jobs/types/asset-generation/transitions.ts';
 import { resolveImageBackend } from '#lib/image/index.ts';
 import { getSettings } from '#lib/stores/settings.ts';
+import { firstImageEntry } from '#lib/image/entries.ts';
 import { SUBMIT_ASSET_SPEC_TOOL } from '#lib/agent/tools/coding.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import { deriveSpec, type DerivePayload } from '#lib/agent/jobs/types/asset-generation/derive.ts';
@@ -171,14 +172,13 @@ async function resolveLicensing(spec: AssetSpec): Promise<Licensing> {
 	};
 }
 
-/** The model the configured backend uses when a spec names none. */
+/** The model the first saved image model runs when a spec names none. */
 function configuredModelName(): string {
-	const s = getSettings();
-	if (s.imageBackendKind === 'comfyui') return s.imageComfyCheckpoint.trim();
-	if (s.imageBackendKind === 'local') return (s.imageLocalModelId || s.imageLocalModelPath).trim();
-	if (s.imageBackendKind === 'lemonade') return s.imageLemonadeModelId.trim();
-	if (s.imageBackendKind === 'llama-toolchest') return s.imageToolchestModelId.trim();
-	return '';
+	const entry = firstImageEntry();
+	if (!entry) return '';
+	// A bundled-engine setup from before catalogue ids named a file.
+	if (entry.backend === 'local' && !entry.model) return getSettings().imageLocalModelPath.trim();
+	return entry.model;
 }
 
 /**

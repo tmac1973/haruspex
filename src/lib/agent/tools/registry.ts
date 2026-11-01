@@ -3,6 +3,7 @@ import type { ToolDefinition } from '#lib/api.ts';
 import type { ToolRegistration, ToolExecOutput, ToolContext } from '#lib/agent/tools/types.ts';
 import { toolResult, toolError } from '#lib/agent/tools/types.ts';
 import { coerceArgsToSchema } from '#lib/agent/tools/coerce.ts';
+import { imageEntries } from '#lib/image/entries.ts';
 import {
 	hasEnabledEmailAccount,
 	hasSendableEmailAccount,
@@ -430,7 +431,7 @@ export function getToolSchemas(opts: {
 		hasCalendar: hasEnabledCalendarAccount(),
 		hasContacts: hasEnabledContactsAccount(),
 		screenCapture: getSettings().screenCaptureEnabled,
-		imageGeneration: interactive && getSettings().imageBackendKind !== 'none',
+		imageGeneration: interactive && imageEntries().length > 0,
 		musicGeneration: interactive && getSettings().musicBackendKind !== 'none',
 		videoGeneration: interactive && getSettings().videoGenBackendKind !== 'none',
 		videoTools: interactive && opts.hasWorkingDir && videoToolsOn(),
@@ -567,7 +568,7 @@ function withDescription(schema: ToolDefinition, override: DescriptionOverride):
 function generationRefusal(reg: ToolRegistration, ctx: ToolContext): string | null {
 	const s = getSettings();
 	if (reg.category === 'image') {
-		if (s.imageBackendKind === 'none' && reg.schema.function.name !== 'make_asset') {
+		if (imageEntries().length === 0 && reg.schema.function.name !== 'make_asset') {
 			return 'Image generation is not set up. The user can choose a backend in Settings → Image.';
 		}
 		if (!ctx.interactive)

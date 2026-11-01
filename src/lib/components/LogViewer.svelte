@@ -7,6 +7,7 @@
 	import { clearDebugLogs, getDebugLogs } from '#lib/debugLog.ts';
 	import { createCopyAction } from '#lib/utils/clipboard.svelte.ts';
 	import { getSettings } from '#lib/stores/settings.ts';
+	import { firstImageEntry } from '#lib/image/entries.ts';
 	import type { CombinedSearchStats } from '#lib/ipc/gen/CombinedSearchStats.ts';
 	import type { EngineLifetimeStats } from '#lib/ipc/gen/EngineLifetimeStats.ts';
 	import type { EngineSessionStats } from '#lib/ipc/gen/EngineSessionStats.ts';
@@ -70,7 +71,7 @@
 	let activeTab = $state<LogTab>('app');
 	// Opens on the backend Settings → Image has chosen.
 	let imageSource = $state<ImageLogSource>(
-		getSettings().imageBackendKind === 'comfyui' ? 'comfyui' : 'engine'
+		firstImageEntry()?.backend === 'comfyui' ? 'comfyui' : 'engine'
 	);
 	let logLines = $state<string[]>([]);
 	let statsData = $state<CombinedStats | null>(null);
