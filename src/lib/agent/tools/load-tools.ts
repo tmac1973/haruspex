@@ -6,6 +6,7 @@
 
 import { registerTool, getDisplayLabel } from '#lib/agent/tools/registry.ts';
 import { toolResult, toolError } from '#lib/agent/tools/types.ts';
+import { registeredMcpServers } from '#lib/agent/tools/mcp.ts';
 import {
 	LOAD_TOOLS_SCHEMA,
 	USE_TOOL,
@@ -40,7 +41,7 @@ registerTool({
 			)
 		);
 	},
-	displayLabel: (args) => `Loading the ${String(args.family ?? '')} tools`
+	displayLabel: (args) => `Loaded ${familyName(String(args.family ?? ''))} tools`
 });
 
 // Reached only when the parser could not unwrap the call (`unwrapUseTool`):
@@ -59,6 +60,12 @@ registerTool({
 			? getDisplayLabel(args.name, unwrapArgs(args.arguments))
 			: 'Calling a loaded tool'
 });
+
+/** A family as the step list names it: an MCP server by its label. */
+function familyName(id: string): string {
+	if (!id.startsWith('mcp:')) return id;
+	return registeredMcpServers().find((s) => `mcp:${s.id}` === id)?.label ?? 'MCP';
+}
 
 function unwrapArgs(raw: unknown): Record<string, unknown> {
 	if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;

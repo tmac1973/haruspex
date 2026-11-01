@@ -328,7 +328,11 @@ export class App {
 		const settings = {
 			dismissedStartupNotice: true,
 			inferenceBackend: inference,
-			codeAutoApprove: o.autoApprove
+			codeAutoApprove: o.autoApprove,
+			// A scenario scripts each tool call by name, and is recorded the same
+			// way: with tools loaded on demand (Settings → General → Load tools
+			// when needed) a direct call gets the schema back instead of running.
+			...(o.fake || o.record ? { deferTools: 'off' } : {})
 		};
 		await seedSavedItems(this.browser, {
 			'haruspex-settings': JSON.stringify(settings),

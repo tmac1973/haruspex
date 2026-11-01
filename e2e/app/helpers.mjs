@@ -5,9 +5,13 @@ import { seedSavedItems } from './storage.mjs';
 
 export const FAKE_LLM = `http://127.0.0.1:${DEFAULT_PORT}`;
 
-/** Remote mode at the fake LLM: no local server, no first-run wizard. */
+/**
+ * Remote mode at the fake LLM: no local server, no first-run wizard. Tools
+ * are all sent, as the scenarios call them by name without loading them.
+ */
 export const REMOTE = {
 	dismissedStartupNotice: true,
+	deferTools: 'off',
 	inferenceBackend: {
 		mode: 'remote',
 		remoteBaseUrl: FAKE_LLM,
