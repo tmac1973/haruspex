@@ -21,7 +21,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
 import { legacyBackend, registerImageBackendKind } from '#lib/image/registry.ts';
-import { entryApiKey } from '#lib/image/legacy.ts';
+import { entryApiKey } from '#lib/image/entries.ts';
 import type { GenerateOptions, ImageBackend, ProbeResult } from '#lib/image/backend.ts';
 import {
 	ImageBackendError,

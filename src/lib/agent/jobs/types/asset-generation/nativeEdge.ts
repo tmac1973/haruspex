@@ -13,7 +13,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { getSettings } from '#lib/stores/settings.ts';
+import { firstImageEntry } from '#lib/image/entries.ts';
 import { toolchestFamily } from '#lib/image/toolchest/backend.ts';
 import type { AssetSpec } from '#lib/assets/spec/types.ts';
 import { MAX_GENERATION_EDGE } from '#lib/agent/jobs/types/asset-generation/config.ts';
@@ -35,17 +35,16 @@ interface CatalogueEntry {
  * made, which is honest in a way that a heuristic is not.
  */
 export async function nativeEdgeFor(specModel: string | undefined): Promise<number | null> {
-	const s = getSettings();
-	// The spec pins the model for the whole set; the backend's configured
-	// default is what it falls back to. Same precedence the request uses.
-	const name = (specModel ?? '').trim() || (s.imageComfyCheckpoint ?? '').trim();
-	const id = (
-		s.imageBackendKind === 'lemonade'
-			? s.imageLemonadeModelId
-			: s.imageBackendKind === 'llama-toolchest'
-				? (toolchestFamily() ?? '')
-				: s.imageLocalModelId
-	).trim();
+	const entry = firstImageEntry();
+	// The spec pins the model for the whole set; the first saved image model's
+	// is what it falls back to. Same precedence the request uses.
+	const name = (specModel ?? '').trim() || (entry?.backend === 'comfyui' ? entry.model : '');
+	const id =
+		entry?.backend === 'llama-toolchest'
+			? (toolchestFamily(entry) ?? '')
+			: entry?.backend === 'local' || entry?.backend === 'lemonade'
+				? entry.model
+				: '';
 
 	try {
 		const catalogue = await invoke<CatalogueEntry[]>('image_models');

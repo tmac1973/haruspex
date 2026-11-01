@@ -18,7 +18,7 @@
  */
 
 import { legacyBackend, registerImageBackendKind } from '#lib/image/registry.ts';
-import { legacyEntryFor } from '#lib/image/legacy.ts';
+import { legacyEntryFor } from '#lib/image/entries.ts';
 import { entryConfigKey } from '#lib/generation/entry.ts';
 import type {
 	GenerateOptions,

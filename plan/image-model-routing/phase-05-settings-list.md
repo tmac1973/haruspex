@@ -10,6 +10,15 @@ priority. One row's editor is open at a time and is today's Connection editor
 entry. **Add model** appends an entry. The bundled engine's catalogue section
 and the ComfyUI, Lemonade and toolchest install panels show for the open entry.
 
+> **Moved here from Phase 03:** migrating the `comfy:key` and `lemonade:key`
+> secrets into named keys (`migrateImageKeys()` beside `migrateJobApiKeys()`,
+> with `imageKeysReady()` awaited before a ComfyUI or Lemonade call); the
+> `ApiKeyPicker` for every backend; `secret: ""` for `COMFYUI` and Lemonade in
+> Rust; and the filed issue to drop the single-backend fields one release
+> later. `imageEntries()` switches to reading `imageModels` as it is, and the
+> editor writes entries instead of the old fields (`updateSettings` stops
+> rewriting the list from them).
+
 ## Files touched
 - `src/lib/components/settings/ImageSection.svelte` — split: the list and its
   rows stay here; the per-entry editor moves out.

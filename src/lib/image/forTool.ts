@@ -11,9 +11,9 @@
  * It takes a whole `ImageRequest`, so the Shell assistant's asset tool can
  * pass the asset job's requests through unchanged (phase 08).
  */
-import { resolveImageBackend, type ImageJobHandle } from '#lib/image/backend.ts';
+import { resolveImageBackend, type ImageBackend, type ImageJobHandle } from '#lib/image/backend.ts';
 import { backendForEntry } from '#lib/image/registry.ts';
-import { entryForHandle } from '#lib/image/legacy.ts';
+import { entryForHandle, firstImageEntry, saveImageCaps } from '#lib/image/entries.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import {
 	ImageBackendError,
@@ -23,7 +23,6 @@ import {
 	type ImageProgress,
 	type ImageRequest
 } from '#lib/image/types.ts';
-import { getSettings } from '#lib/stores/settings.ts';
 import { familyOf } from '#lib/image/comfyui/families.ts';
 import { toolchestInstance } from '#lib/image/toolchest/backend.ts';
 
@@ -81,7 +80,7 @@ export async function upscaleForTool(
 			'Image generation is not set up. The user can choose a backend in Settings → Image.'
 		);
 	}
-	const caps = await backend.capabilities();
+	const caps = await capabilitiesKept(backend);
 	if (!caps.upscale || !backend.upscale) {
 		throw new ImageBackendError('unconfigured', NO_UPSCALE_SENTENCE);
 	}
@@ -100,18 +99,27 @@ export async function upscaleForTool(
 	}
 }
 
-/** The configured model can't be used commercially. */
-export function nonCommercialModel(): boolean {
-	const s = getSettings();
-	if (s.imageBackendKind === 'local') return s.imageLocalModelId === 'qwen21';
-	if (s.imageBackendKind === 'lemonade') return s.imageLemonadeModelId === 'qwen21';
+/**
+ * What the first saved image model's backend can do now, kept with the entry
+ * when it differs from what the last probe saw.
+ */
+async function capabilitiesKept(backend: ImageBackend): Promise<ImageBackendCapabilities> {
+	const caps = await backend.capabilities();
+	const first = firstImageEntry();
+	if (first) saveImageCaps(first.id, caps);
+	return caps;
+}
+
+/** `entry`'s model (the first saved one by default) can't be used commercially. */
+export function nonCommercialModel(entry = firstImageEntry()): boolean {
+	if (!entry) return false;
+	if (entry.backend === 'local' || entry.backend === 'lemonade') return entry.model === 'qwen21';
 	// As the last probe or generation saw it; an unknown recipe isn't flagged.
-	if (s.imageBackendKind === 'llama-toolchest') return toolchestInstance()?.commercialUse === false;
-	if (s.imageBackendKind === 'comfyui') {
-		const family = familyOf(s.imageComfyCheckpoint ?? '');
-		return family === 'qwen21' || family === 'qwen21_turbo';
+	if (entry.backend === 'llama-toolchest') {
+		return toolchestInstance(entry)?.commercialUse === false;
 	}
-	return false;
+	const family = familyOf(entry.model);
+	return family === 'qwen21' || family === 'qwen21_turbo';
 }
 
 /** Throws when the backend can't make this edit. */
@@ -166,7 +174,7 @@ export async function generateForTool(
 	if (!probe.ok) throw new ImageBackendError('unreachable', probe.detail);
 
 	const notes: string[] = [];
-	const request = fitRequest(req, await backend.capabilities(), notes);
+	const request = fitRequest(req, await capabilitiesKept(backend), notes);
 
 	let result;
 	try {

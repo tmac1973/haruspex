@@ -47,7 +47,7 @@ import { uploadImage, uploadInpaint } from '#lib/image/comfyui/upload.ts';
 import { UPSCALE_OUTPUT, upscaleGraph, upscalerOf } from '#lib/image/comfyui/upscale.ts';
 import { resumePrompt, run } from '#lib/image/comfyui/run.ts';
 import { legacyBackend, registerImageBackendKind } from '#lib/image/registry.ts';
-import { entryApiKey } from '#lib/image/legacy.ts';
+import { entryApiKey } from '#lib/image/entries.ts';
 import { toolchestKeyFor } from '#lib/toolchest/models.ts';
 
 /** What a custom workflow samples with when a request says nothing. */

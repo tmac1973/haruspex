@@ -1143,6 +1143,60 @@ describe('image backend settings', () => {
 		expect(getSettings().imageBackendBaseUrl).toBe('http://box:8188');
 		updateSettings({ imageBackendKind: 'none', imageBackendBaseUrl: '' });
 	});
+
+	it('keeps the image model list in step with the backend fields', () => {
+		updateSettings({ imageBackendKind: 'llama-toolchest', imageToolchestModelId: 'klein' });
+		expect(getSettings().imageModels).toMatchObject([
+			{ id: 'legacy', backend: 'llama-toolchest', model: 'klein' }
+		]);
+		const caps = { transparency: false, seamlessTiling: false, loras: false, maxLoras: 0 };
+		updateSettings({ imageModels: [{ ...getSettings().imageModels[0], caps }] });
+		// A field that doesn't describe the entry leaves what was learned alone.
+		updateSettings({ imageBackendApiKeySaved: true });
+		expect(getSettings().imageModels[0].caps).toEqual(caps);
+		updateSettings({ imageToolchestModelId: 'ming' });
+		expect(getSettings().imageModels[0]).toMatchObject({ model: 'ming', caps: null });
+		updateSettings({ imageBackendKind: 'none', imageToolchestModelId: '' });
+		expect(getSettings().imageModels).toEqual([]);
+		updateSettings({ imageBackendApiKeySaved: false });
+	});
+});
+
+describe('load-time imageModels seeding', () => {
+	let priorRaw: string | null;
+
+	beforeEach(() => {
+		priorRaw = localStorage.getItem(SETTINGS_KEY);
+	});
+
+	afterEach(() => {
+		if (priorRaw === null) {
+			localStorage.removeItem(SETTINGS_KEY);
+		} else {
+			localStorage.setItem(SETTINGS_KEY, priorRaw);
+		}
+		vi.resetModules();
+	});
+
+	async function loadWith(stored: Record<string, unknown>) {
+		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
+		vi.resetModules();
+		const fresh = await import('#lib/stores/settings.ts');
+		return fresh.getSettings().imageModels;
+	}
+
+	it('makes the chosen backend the first entry, and None no entry', async () => {
+		expect(
+			await loadWith({ imageBackendKind: 'lemonade', imageLemonadeBaseUrl: 'http://l:13305' })
+		).toMatchObject([{ id: 'legacy', backend: 'lemonade', url: 'http://l:13305', caps: null }]);
+		expect(await loadWith({ imageBackendKind: 'none' })).toEqual([]);
+		expect(await loadWith({})).toEqual([]);
+	});
+
+	it('keeps a saved list as it is', async () => {
+		const saved = [{ id: 'x', backend: 'local', model: 'ming' }];
+		expect(await loadWith({ imageBackendKind: 'comfyui', imageModels: saved })).toEqual(saved);
+	});
 });
 
 /**

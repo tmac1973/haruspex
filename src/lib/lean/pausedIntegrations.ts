@@ -11,6 +11,7 @@ import {
 	hasEnabledEmailAccount,
 	startableMcpServers
 } from '#lib/stores/settings.ts';
+import { imageEntries } from '#lib/image/entries.ts';
 
 export function pausedIntegrations(): string[] {
 	const s = getSettings();
@@ -19,7 +20,7 @@ export function pausedIntegrations(): string[] {
 		...(hasEnabledCalendarAccount() ? ['Calendar'] : []),
 		...(hasEnabledContactsAccount() ? ['Contacts'] : []),
 		...(s.screenCaptureEnabled ? ['Screen capture'] : []),
-		...(s.imageBackendKind !== 'none' ? ['Image generation'] : []),
+		...(imageEntries().length > 0 ? ['Image generation'] : []),
 		...(s.musicBackendKind !== 'none' ? ['Music generation'] : []),
 		...(s.videoGenBackendKind !== 'none' ? ['Video generation'] : []),
 		...(s.sandboxEnabled ? ['Python sandbox'] : []),

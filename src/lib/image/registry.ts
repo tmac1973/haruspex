@@ -11,7 +11,7 @@
 import type { GenerateOptions, ImageBackend } from '#lib/image/backend.ts';
 import type { ImageBackendKind, ImageModelEntry, ImageResult } from '#lib/image/types.ts';
 import { entryConfigKey } from '#lib/generation/entry.ts';
-import { legacyEntryFor } from '#lib/image/legacy.ts';
+import { legacyEntryFor } from '#lib/image/entries.ts';
 
 type Factory = (entry: ImageModelEntry) => ImageBackend;
 
