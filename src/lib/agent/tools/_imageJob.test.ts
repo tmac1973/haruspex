@@ -84,6 +84,15 @@ beforeEach(() => {
 });
 
 describe('runImageJob', () => {
+	it('tries the model it was meant for first, and only the one the chat model named', async () => {
+		const entry = { id: 'e1', name: 'klein' } as ImageTaskSpec['entry'];
+		await runImageJob(spec({ entry, named: 'klein' }), {});
+		expect(state.generate).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ prefer: entry, named: 'klein' })
+		);
+	});
+
 	it('draws, keeps the picture with its chat, and says what it made', async () => {
 		const onHandle = vi.fn();
 		const out = await runImageJob(spec(), { onHandle });
@@ -176,7 +185,9 @@ describe('background: true', () => {
 				label: 'Drawing a red fox in the snow',
 				spec: expect.objectContaining({
 					conversationId: 'c1',
-					job: expect.objectContaining({ op: 'draw', verb: 'Image ready' })
+					job: expect.objectContaining({ op: 'draw', verb: 'Image ready' }),
+					// The model it goes to now, tried first when it runs.
+					entry: expect.objectContaining({ id: 'legacy', backend: 'comfyui' })
 				})
 			})
 		);

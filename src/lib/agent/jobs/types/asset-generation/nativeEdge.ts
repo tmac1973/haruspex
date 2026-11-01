@@ -13,7 +13,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { firstImageEntry } from '#lib/image/entries.ts';
+import { drawingEntry } from '#lib/image/route.ts';
 import { toolchestFamily } from '#lib/image/toolchest/backend.ts';
 import type { AssetSpec } from '#lib/assets/spec/types.ts';
 import { MAX_GENERATION_EDGE } from '#lib/agent/jobs/types/asset-generation/config.ts';
@@ -35,8 +35,8 @@ interface CatalogueEntry {
  * made, which is honest in a way that a heuristic is not.
  */
 export async function nativeEdgeFor(specModel: string | undefined): Promise<number | null> {
-	const entry = firstImageEntry();
-	// The spec pins the model for the whole set; the first saved image model's
+	const entry = drawingEntry();
+	// The spec pins the model for the whole set; the model a drawing goes to
 	// is what it falls back to. Same precedence the request uses.
 	const name = (specModel ?? '').trim() || (entry?.backend === 'comfyui' ? entry.model : '');
 	const id =

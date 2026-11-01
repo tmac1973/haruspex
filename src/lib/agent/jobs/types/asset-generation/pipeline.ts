@@ -52,9 +52,9 @@ import {
 	runTransition,
 	type TransitionOutcome
 } from '#lib/agent/jobs/types/asset-generation/transitions.ts';
-import { resolveImageBackend } from '#lib/image/index.ts';
+import { resolveImageBackend, routedImageBackend } from '#lib/image/index.ts';
 import { getSettings } from '#lib/stores/settings.ts';
-import { firstImageEntry } from '#lib/image/entries.ts';
+import { drawingEntry } from '#lib/image/route.ts';
 import { SUBMIT_ASSET_SPEC_TOOL } from '#lib/agent/tools/coding.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import { deriveSpec, type DerivePayload } from '#lib/agent/jobs/types/asset-generation/derive.ts';
@@ -172,9 +172,9 @@ async function resolveLicensing(spec: AssetSpec): Promise<Licensing> {
 	};
 }
 
-/** The model the first saved image model runs when a spec names none. */
+/** The model a drawing goes to when a spec names none. */
 function configuredModelName(): string {
-	const entry = firstImageEntry();
+	const entry = drawingEntry();
 	if (!entry) return '';
 	// A bundled-engine setup from before catalogue ids named a file.
 	if (entry.backend === 'local' && !entry.model) return getSettings().imageLocalModelPath.trim();
@@ -694,7 +694,7 @@ export async function runAssetGenerationPipeline(ctx: JobRunContext): Promise<vo
 		// mid-run would degrade half the set and not the other half, and the
 		// report would be unable to say why they do not match. Asked before
 		// the anchor, because whether the anchor is a real sheet depends on it.
-		const backend = resolveImageBackend();
+		const backend = routedImageBackend();
 		const caps = await backend.capabilities();
 
 		startStep(ANCHOR);

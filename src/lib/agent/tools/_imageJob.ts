@@ -19,7 +19,8 @@ import type { SaveTarget } from '#lib/agent/tools/_saveGenerated.ts';
 import { detachedTarget } from '#lib/agent/tools/_helpers.ts';
 import { generateForTool, resumeForTool, upscaleForTool } from '#lib/image/forTool.ts';
 import type { ImageJobHandle } from '#lib/image/backend.ts';
-import type { ImageInput, ImageProgress, ImageRequest } from '#lib/image/types.ts';
+import type { ImageInput, ImageModelEntry, ImageProgress, ImageRequest } from '#lib/image/types.ts';
+import { capableEntries, needOf, upscaleNeed } from '#lib/image/route.ts';
 import { registerLocalImage } from '#lib/images/resolve.svelte.ts';
 import type { PreparedEdit } from '#lib/ipc/gen/PreparedEdit.ts';
 import type { StoredUpscale } from '#lib/ipc/gen/StoredUpscale.ts';
@@ -55,6 +56,13 @@ export interface ImageTaskSpec {
 	conversationId: string | null;
 	/** The chat's model could see pictures when it asked: the notice attaches it. */
 	visionSupported: boolean;
+	/**
+	 * The image model it was meant for when it was asked, tried first however
+	 * the list changes before it runs; absent from a build before the list.
+	 */
+	entry?: ImageModelEntry;
+	/** The image model the chat model named, which alone may make it. */
+	named?: string;
 }
 
 /** An `image` task's result, from which its notice and its card are made. */
@@ -141,7 +149,7 @@ export async function runImageJob(
 	if (job.op === 'draw') {
 		const image = handle
 			? await resumeForTool(handle, env)
-			: await generateForTool(job.request, env);
+			: await generateForTool(job.request, { ...env, prefer: spec.entry, named: spec.named });
 		let { bytes, width, height } = image;
 		if (job.masked) {
 			bytes = await finishMasked(bytes, job.masked);
@@ -161,7 +169,10 @@ export async function runImageJob(
 	} else {
 		const upscaled = handle
 			? (await resumeForTool(handle, env)).bytes
-			: await upscaleForTool({ name: 'image.png', hash: job.sourceHash }, env);
+			: await upscaleForTool(
+					{ name: 'image.png', hash: job.sourceHash },
+					{ ...env, prefer: spec.entry, named: spec.named }
+				);
 		const stored = await invoke<StoredUpscale>('image_store_upscaled', upscaled, {
 			headers: {
 				'x-width': String(job.width),
@@ -195,18 +206,30 @@ export function canRunInBackground(args: Record<string, unknown>, ctx: ToolConte
 	return args.background === true && !!taskOwner(ctx) && !ctx.shellMode;
 }
 
+/**
+ * The image model a job would go to now, without asking any server: the first
+ * that can do it, by what each keeps. The task tries it first when it runs.
+ */
+function entryFor(job: ImageJob): ImageModelEntry | undefined {
+	return capableEntries(job.op === 'draw' ? needOf(job.request) : upscaleNeed())[0];
+}
+
 /** Record the job as a task for the runner, and answer for the turn. */
 export async function startImageTask(
 	label: string,
 	job: ImageJob,
 	save: SaveTarget | null,
-	ctx: ToolContext
+	ctx: ToolContext,
+	named?: string
 ): Promise<ToolExecOutput> {
+	const entry = entryFor(job);
 	const spec: ImageTaskSpec = {
 		job,
 		save: save && detachedTarget(save, ctx),
 		conversationId: ctx.conversationId ?? null,
-		visionSupported: ctx.visionSupported !== false
+		visionSupported: ctx.visionSupported !== false,
+		...(entry ? { entry } : {}),
+		...(named ? { named } : {})
 	};
 	const task = await invoke<BackgroundTask>('task_create', {
 		kind: 'image',

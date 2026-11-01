@@ -19,7 +19,7 @@ import { buildEntryRequest } from '#lib/agent/jobs/types/asset-generation/reques
 import { sheetRequest } from '#lib/agent/jobs/types/asset-generation/sheets.ts';
 import { FALLBACK_STYLE } from '#lib/agent/jobs/types/asset-generation/derive.ts';
 import { generateForTool } from '#lib/image/forTool.ts';
-import { resolveImageBackend } from '#lib/image/backend.ts';
+import { routedImageBackend } from '#lib/image/route.ts';
 import type { ImageProgress } from '#lib/image/types.ts';
 
 /** What `makeSingleAsset` draws. Textures are drawn by code (`assets/texture.ts`). */
@@ -66,7 +66,7 @@ export async function makeSingleAsset(
 
 	if (input.kind === 'image') return plainPicture(input.prompt, size, input.seamless, opts);
 
-	const caps = await resolveImageBackend().capabilities();
+	const caps = await routedImageBackend().capabilities();
 	const kind = input.kind;
 	const profile = await profileFor(kind, size, input.palette, caps.transparency);
 
