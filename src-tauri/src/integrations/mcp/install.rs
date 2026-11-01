@@ -25,6 +25,7 @@
 //! only on success, so a cancelled or failed install leaves nothing that looks
 //! like a working server.
 
+use crate::runtimes::exe_name;
 use log::info;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -773,14 +774,6 @@ pub fn host_triple() -> String {
         "macos" => format!("{arch}-apple-darwin"),
         "windows" => format!("{arch}-pc-windows-msvc"),
         other => format!("{arch}-unknown-{other}"),
-    }
-}
-
-fn exe_name(stem: &str) -> String {
-    if cfg!(windows) {
-        format!("{stem}.exe")
-    } else {
-        stem.to_string()
     }
 }
 

@@ -20,7 +20,7 @@ import {
 	timelineTranscriptReport
 } from '#lib/video/report.ts';
 import type { TimelineTranscript } from '#lib/ipc/gen/TimelineTranscript.ts';
-import { parseCut, parseOp, str, videoSettings } from '#lib/video/args.ts';
+import { parseCut, parseOp, str, videoSettings, episodeArg } from '#lib/video/args.ts';
 import { VIDEO_PRESETS } from '#lib/video/types.ts';
 import type { EpisodeProbe } from '#lib/ipc/gen/EpisodeProbe.ts';
 import type { ProjectSummary } from '#lib/ipc/gen/ProjectSummary.ts';
@@ -29,10 +29,6 @@ import type { BackgroundTask } from '#lib/tasks/types.ts';
 import { upsertTask } from '#lib/tasks/store.svelte.ts';
 import { taskOwner } from '#lib/tasks/notices.ts';
 import { getSettings } from '#lib/stores/settings.ts';
-
-function episodeArg(args: Record<string, unknown>): string {
-	return typeof args.episode === 'string' ? args.episode : '';
-}
 
 async function probe(args: Record<string, unknown>, ctx: ToolContext) {
 	const episode = episodeArg(args);

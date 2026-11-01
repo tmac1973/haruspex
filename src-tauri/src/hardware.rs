@@ -708,18 +708,14 @@ fn get_windows_gpu_info() -> (Option<String>, Option<u64>) {
     (gpu_name, vram_mb)
 }
 
-/// Run a PowerShell script without flashing a console window.
-/// CREATE_NO_WINDOW (0x08000000) suppresses the brief powershell.exe popup
-/// that would otherwise appear during GPU detection.
+/// Run a PowerShell script without flashing a console window, which would
+/// otherwise pop up briefly during GPU detection.
 #[cfg(target_os = "windows")]
 fn run_powershell(script: &str) -> Option<std::process::Output> {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
-        .ok()
+    let mut cmd = std::process::Command::new("powershell");
+    cmd.args(["-NoProfile", "-NonInteractive", "-Command", script]);
+    crate::shell::platform::apply_no_window(&mut cmd);
+    cmd.output().ok()
 }
 
 #[cfg(target_os = "windows")]

@@ -19,7 +19,7 @@
 
 import { Channel, invoke, isTauri } from '@tauri-apps/api/core';
 import { errMessage } from '#lib/utils/error.ts';
-import type { ComfyError } from '#lib/ipc/gen/ComfyError.ts';
+import { invokeBackend, type Backend } from '#lib/utils/backendCall.ts';
 import type { ComfySocketEvent } from '#lib/ipc/gen/ComfySocketEvent.ts';
 import { ImageBackendError, type ImageProgress } from '#lib/image/types.ts';
 import type { ComfyGraph } from '#lib/image/comfyui/fieldMap.ts';
@@ -94,49 +94,30 @@ export function trimUrl(base: string): string {
 
 // ---- Through Rust (the app) -------------------------------------------------
 
-let nextId = 0;
+/** ComfyUI's calls through Rust, and `upload.ts`'s. */
+export const comfyBackend: Backend<ImageBackendError> = {
+	prefix: 'comfy',
+	server: 'the image backend',
+	cancelled: () => new ImageBackendError('cancelled', 'Generation cancelled.'),
+	error: (kind, message) => new ImageBackendError(kind, message),
+	rejected: (status, body, path) =>
+		new ImageBackendError('rejected', rejectionMessage(path, body), {
+			status,
+			body: body.slice(0, 200)
+		})
+};
 
-/** An id for a call `comfy_cancel` can stop; shared with `upload.ts`. */
-export function nextCallId(): string {
-	return `comfy-${++nextId}`;
-}
-
-/** Map a `ComfyError` from Rust onto the kinds callers branch on. */
-export function fromRust(e: unknown, path: string, signal?: AbortSignal): ImageBackendError {
-	const err = (e !== null && typeof e === 'object' && 'kind' in e ? e : null) as ComfyError | null;
-	switch (err?.kind) {
-		case 'cancelled':
-			return new ImageBackendError('cancelled', 'Generation cancelled.');
-		case 'timeout':
-		case 'unreachable':
-			return new ImageBackendError(err.kind, err.message);
-		case 'rejected':
-			return new ImageBackendError('rejected', rejectionMessage(path, err.body), {
-				status: err.status,
-				body: err.body.slice(0, 200)
-			});
-		default:
-			// Not ours: an IPC failure, or a cancel that raced the answer.
-			if (signal?.aborted) return new ImageBackendError('cancelled', 'Generation cancelled.');
-			return new ImageBackendError(
-				'unreachable',
-				`The request to the image backend failed — ${errMessage(e)}`
-			);
-	}
-}
-
-async function viaRust<T>(
+function viaRust<T>(
 	command: 'comfy_json' | 'comfy_bytes',
 	cfg: ClientConfig,
 	call: Call,
 	signal?: AbortSignal
 ): Promise<T> {
-	if (signal?.aborted) throw new ImageBackendError('cancelled', 'Generation cancelled.');
-	const id = `comfy-${++nextId}`;
-	const onAbort = () => void invoke('comfy_cancel', { id }).catch(() => {});
-	signal?.addEventListener('abort', onAbort, { once: true });
-	try {
-		return await invoke<T>(command, {
+	return invokeBackend<T, ImageBackendError>(
+		comfyBackend,
+		command,
+		call.path,
+		(id) => ({
 			call: {
 				base_url: cfg.baseUrl,
 				api_key: cfg.apiKey,
@@ -146,12 +127,9 @@ async function viaRust<T>(
 				timeout_ms: HTTP_TIMEOUT_MS,
 				id
 			}
-		});
-	} catch (e) {
-		throw fromRust(e, call.path, signal);
-	} finally {
-		signal?.removeEventListener('abort', onAbort);
-	}
+		}),
+		signal
+	);
 }
 
 // ---- Through fetch (tests, Node) --------------------------------------------
@@ -421,6 +399,8 @@ export function subscribe(
 		: subscribeViaSocket(cfg, clientId, onProgress, onFailure, bump, stop, nodeClass);
 }
 
+let nextSocketId = 0;
+
 function subscribeViaRust(
 	cfg: ClientConfig,
 	clientId: string,
@@ -430,7 +410,7 @@ function subscribeViaRust(
 	stopIdle: () => void,
 	nodeClass?: NodeClassOf
 ): () => void {
-	const id = `comfy-ws-${++nextId}`;
+	const id = `comfy-ws-${++nextSocketId}`;
 	const channel = new Channel<ComfySocketEvent>();
 	channel.onmessage = (ev) => {
 		if (ev.kind === 'closed') {

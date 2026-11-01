@@ -14,6 +14,7 @@ import { getSettings } from '#lib/stores/settings.ts';
 import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { urlForReport } from '#lib/utils/http.ts';
+import { bytesToBase64 } from '#lib/utils/base64.ts';
 
 export interface RunOptions {
 	timeoutMs?: number;
@@ -100,7 +101,7 @@ const defaultWorkerFactory: WorkerFactory = () =>
  */
 function toArtifact(msg: ArtifactMessage): Artifact {
 	if (msg.payload.kind === 'bytes') {
-		const b64 = base64Encode(msg.payload.bytes);
+		const b64 = bytesToBase64(msg.payload.bytes);
 		return {
 			kind: 'image',
 			mime: msg.mime,
@@ -114,15 +115,6 @@ function toArtifact(msg: ArtifactMessage): Artifact {
 		truncated: msg.truncated,
 		interactive: msg.interactive
 	};
-}
-
-function base64Encode(bytes: Uint8Array): string {
-	let bin = '';
-	const chunk = 0x8000;
-	for (let i = 0; i < bytes.length; i += chunk) {
-		bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
-	}
-	return btoa(bin);
 }
 
 const defaultIsolated = (): boolean =>
