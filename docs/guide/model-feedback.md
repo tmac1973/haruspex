@@ -33,6 +33,7 @@ Nothing is sent anywhere unless you share it (below).
 
 - The model does not mention reports in its answers, and you are not shown them in the chat.
 - It is not for problems with your task, a website or a file; only Haruspex's tools.
+- It is asked to describe your data rather than quote it ("an email from a contact", not the name or the text). The tool calls saved with a report are kept as they were, though.
 - A report is the model's opinion. The calls saved with it show whether the tool or the model was at fault.
 
 ## Read the reports
@@ -42,9 +43,9 @@ Settings → Feedback → **View reports…** lists them, newest first. Pick a t
 ## Send them to the developers
 
 1. In **View reports…**, narrow the list if you only want to send some, then press **Share**.
-2. The zip is saved in your Downloads folder, which opens. It holds a readable summary and the reports, with secrets, URL query strings and email addresses removed.
+2. The zip is saved in your Downloads folder, which opens. It holds a readable summary and the reports, with secrets, URL query strings, email addresses and phone numbers removed, and your home folder written as `~`.
 3. A GitHub issue opens in your browser with a short summary filled in. Drag the zip onto it, read what it says, and submit.
 
-The calls in a report can still hold file contents, page text and command output, so look through the summary before you submit.
+The calls in a report can still hold names, file contents, page text and command output, so look through the summary before you submit.
 
 From a Haruspex checkout, `node scripts/agent-feedback.mjs` prints the same reports in a terminal.

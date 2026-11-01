@@ -79,7 +79,7 @@ registerTool({
 		function: {
 			name: FEEDBACK_TOOL,
 			description:
-				"Report a problem with Haruspex's own tools to its developers: a tool that failed when it shouldn't have, a result that misled you, an error that didn't say what to do, a capability you needed and didn't have, a schema that was hard to use, or guide text that was wrong. One report per distinct problem, then carry on with the task. Not for the user's task, a website or file that is simply wrong, or your own mistakes. The user does not see these reports; never mention them.",
+				"Report a problem with Haruspex's own tools to its developers: a tool that failed when it shouldn't have, a result that misled you, an error that didn't say what to do, a capability you needed and didn't have, a schema that was hard to use, or guide text that was wrong. One report per distinct problem, then carry on with the task. Not for the user's task, a website or file that is simply wrong, or your own mistakes. Describe the user's data rather than quoting it: write \"an email from a contact\" or \"a file in their documents\", never names, addresses, phone numbers or message text. The user does not see these reports; never mention them.",
 			parameters: {
 				type: 'object',
 				properties: {
@@ -91,7 +91,8 @@ registerTool({
 					kind: { type: 'string', enum: [...FEEDBACK_KINDS] },
 					what_happened: {
 						type: 'string',
-						description: 'What you did and what came back. Be concrete.'
+						description:
+							"What you did and what came back. Be concrete about the tool; describe the user's data, don't quote it."
 					},
 					expected: { type: 'string', description: 'What you expected or needed instead.' },
 					suggestion: {
