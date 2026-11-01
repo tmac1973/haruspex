@@ -7,6 +7,12 @@ import { toolRoundText } from '#lib/agent/textToolCalls.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import { coerceCallArguments, executeTool } from '#lib/agent/tools/index.ts';
 import { toolUsesModel } from '#lib/agent/tools/registry.ts';
+import {
+	deferredFamilyOf,
+	familyResult,
+	loadedFamilies
+} from '#lib/agent/tools/_deferredLoaded.ts';
+import { toolResult, type DeferredFamily } from '#lib/agent/tools/types.ts';
 import { isFetchFailureResult, isToolErrorResult } from '#lib/agent/tools/_helpers.ts';
 import { isVerbosePayloads, logDebug } from '#lib/debugLog.ts';
 import { NudgeState } from '#lib/agent/loop/nudges.ts';
@@ -36,6 +42,12 @@ import { runReleasingSlot } from '#lib/agent/loop/slotRelease.ts';
  * not have avoided failing on shouldn't consume the turn budget and force an
  * incomplete answer.
  */
+/** The family `name` belongs to, when this turn defers it and it is not loaded. */
+function unloadedFamily(ctx: LoopContext, name: string): DeferredFamily | undefined {
+	const family = deferredFamilyOf(name, ctx.deferredTools);
+	return family && !loadedFamilies(ctx.messages).has(family.id) ? family : undefined;
+}
+
 export async function executeToolCalls(
 	ctx: LoopContext,
 	nudges: NudgeState,
@@ -60,7 +72,10 @@ export async function executeToolCalls(
 		tool_calls: toolCalls.map((tc) => ({
 			id: tc.id,
 			type: 'function' as const,
-			function: { name: tc.name, arguments: JSON.stringify(tc.arguments) }
+			function: {
+				name: tc.wire?.name ?? tc.name,
+				arguments: JSON.stringify(tc.wire?.arguments ?? tc.arguments)
+			}
 		})),
 		...(response?.reasoning_details?.length
 			? { reasoning_details: response.reasoning_details }
@@ -90,6 +105,16 @@ export async function executeToolCalls(
 		// array sent as a JSON string was walked character by character, and
 		// a night's asset spec was rejected as dozens of "entries with no id".
 		options.onToolStart({ ...call, arguments: coerceCallArguments(call.name, call.arguments) });
+		// A tool this turn lists but has not loaded: its schemas come back, and
+		// it does not run, because the arguments were a guess.
+		const unloaded = unloadedFamily(ctx, call.name);
+		if (unloaded) {
+			const output = toolResult(
+				`${familyResult(unloaded)}\nCall ${call.name} again with these parameters.`
+			);
+			options.onToolEnd(call, output.result);
+			return output;
+		}
 		// Race the tool call against the abort signal. Most tools dispatch
 		// to Tauri commands or fetch and don't honor signal themselves, so
 		// without this race a cancel mid-tool waits for the tool to finish
@@ -113,6 +138,7 @@ export async function executeToolCalls(
 				runInSlot,
 				releaseSlot: ctx.slot && !batchUsesModel ? releaseSlot : undefined,
 				askUser: ctx.askUser,
+				deferredTools: ctx.deferredTools,
 				skills: ctx.skills,
 				writeRoot: ctx.writeRoot,
 				shellCwd: ctx.shellCwd,

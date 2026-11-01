@@ -28,8 +28,13 @@ comes from tool families that are always sent and rarely used.
 - A turn sends full schemas only for a **core** set of tools. Every other tool
   family is listed in the system prompt with one line, and the model loads a
   family with a `load_tools` call when the request needs it.
-- After a family is loaded, it stays loaded for the rest of the conversation,
-  compaction included.
+- A family stays loaded while its schemas are in what the model is sent. The
+  Code tab keeps tool results in its thread, so there that is until
+  compaction. Chat drops tool results between turns (only the last turn's
+  come back, with Settings → Chat → Keep tool results from the previous turn
+  in context), so there it is
+  usually one turn, and the model loads the family again when it needs it
+  (decided in phase 03).
 - What a turn can do does not change. Deferred loading divides this turn's
   offered set into "sent now" and "sent on request", and never adds a tool
   that `getToolSchemas` would not offer.
@@ -92,7 +97,8 @@ anyway: the result gives the schema and asks it to call again.
   call a tool that is not in `tools`: the grammar turns the call into a call
   to a listed tool. vLLM has no such limit.
 - Chat sends the model only the messages from the latest summary on
-  (`chatModelView`). A record of what is loaded must survive compaction.
+  (`chatModelView`), and leaves out tool calls and results from earlier
+  turns. Whatever records a load must go when the schemas go.
 - `load_skill` already does something similar: a catalog in the prompt, and
   `loadedSkillNames` reads `<skill_content name="…">` markers back out of the
   history. Reuse that pattern.
@@ -114,7 +120,8 @@ anyway: the result gives the schema and asks it to call again.
   the setting or integration to turn on. It loads nothing.
 - A load changes neither `tools` nor the system text. A test asserts that both
   are byte-for-byte the same on every turn of a conversation, across a load.
-- After compaction, the loaded families are still loaded.
+- A family whose schemas were dropped, trimmed or summarised counts as not
+  loaded, so the next call gets them back instead of running on a guess.
 - A live run against the default model and a larger one (phase 05) shows that
   the model loads the right family for each test prompt. The rate is recorded
   and is no worse than an agreed threshold.

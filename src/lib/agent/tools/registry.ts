@@ -429,7 +429,12 @@ export function offeredSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
 			// Sending, and writing a skill, are reviewed by a person at the
 			// keyboard, and an allowlisted turn is a job's: no allowlist can
 			// grant them.
-			if (allow.has(name) && name !== 'email_compose' && reg.category !== 'skills-write') {
+			if (
+				allow.has(name) &&
+				name !== 'email_compose' &&
+				reg.category !== 'skills-write' &&
+				reg.category !== 'tools-load'
+			) {
 				schemas.push(reg.schema);
 			} else if (reg.category === 'harness-feedback' && opts.harnessFeedback && feedbackOn()) {
 				schemas.push(reg.schema);
@@ -483,6 +488,8 @@ function schemaFor(
 	// Lean mode names what may be offered; the gates below still decide
 	// whether each of those is offered this turn.
 	if (isLeanTurn(filter) && !LEAN_CHAT_TOOLS.has(reg.schema.function.name)) return null;
+	// Deferred loading adds these itself (`splitTurnTools`).
+	if (reg.category === 'tools-load') return null;
 	// The user guide answers the person asking, in any mode; a job has nobody
 	// asking. Remote guests get it through their allowlist.
 	if (reg.category === 'guide') return filter.interactive && !filter.subtask ? reg.schema : null;

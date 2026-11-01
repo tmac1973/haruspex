@@ -9,6 +9,13 @@ import type { HeldSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 
 export type { Artifact, LintIssue };
 
+/** A family a turn may load: its index line and its offered schemas. */
+export interface DeferredFamily {
+	id: string;
+	line: string;
+	schemas: ToolDefinition[];
+}
+
 export interface PendingImage {
 	path: string;
 	dataUrl: string;
@@ -149,6 +156,11 @@ export interface ToolContext {
 	 * with a tool that calls the model, whose slot is in use.
 	 */
 	releaseSlot?: () => void;
+	/**
+	 * The tool families this turn lists but does not send, for `load_tools`.
+	 * Absent when deferred loading is off for the turn.
+	 */
+	deferredTools?: DeferredFamily[];
 	/**
 	 * The skills this turn may load: Chat and Shell turns with autonomous use
 	 * on (see `#lib/skills/turn.ts`). Absent everywhere else, and the skills
@@ -343,6 +355,8 @@ export interface ToolRegistration {
 		/** Runs ffmpeg and melt on the working folder (Settings → Video editing). Chat and
 		 *  the Code tab, interactive only. */
 		| 'video'
+		/** `load_tools` and `use_tool`: offered only by `splitTurnTools`, never by the filters. */
+		| 'tools-load'
 		/** Loading skills. Only for a turn that carries `ToolContext.skills`. */
 		| 'skills'
 		/** Writing skills, each one approved by the user. Interactive Chat and
