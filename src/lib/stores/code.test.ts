@@ -205,6 +205,7 @@ vi.mock('@tauri-apps/api/webviewWindow', () => ({
 	}
 }));
 vi.mock('#lib/agent/loop.ts', () => ({ runAgentLoop: mocks.runAgentLoop }));
+vi.mock('#lib/agent/loop/turnTools.ts', () => ({ resolveTurnTools: () => ({ tools: [] }) }));
 vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => ({
 	withInferenceSlot: mocks.withInferenceSlot
 }));

@@ -14,6 +14,8 @@ import { feedbackPromptSection } from '#lib/harnessFeedback/prompt.ts';
 import { registeredMcpServerLabels } from '#lib/agent/tools/mcp.ts';
 import { typedText } from '#lib/skills/content.ts';
 import { imageModelsPrompt } from '#lib/image/modelsPrompt.ts';
+import { toolIndexSection } from '#lib/agent/tools/_deferredLoaded.ts';
+import type { DeferredFamily } from '#lib/agent/tools/types.ts';
 
 const REVIEW_PATTERNS =
 	/\b(best|top\s+\d|recommend|review|comparison|compare|vs\.?|versus|worth|which\s+(?:one|should)|budget|premium|upgrade)\b/i;
@@ -68,6 +70,34 @@ export interface SystemPromptOptions {
 	 * feedback or file writing, and the working folder is for reading.
 	 */
 	lean?: boolean;
+	/**
+	 * The families this turn lists but does not send (`resolveTurnTools`). The
+	 * prompt lists them, and leaves out the text that only serves them: it
+	 * goes in their `load_tools` result (`familyNotes`).
+	 */
+	deferred?: DeferredFamily[];
+}
+
+/** How to use the email tools: the EMAIL INTEGRATION rules. */
+export function emailNotes(): string {
+	return `- The user has connected email accounts. Only use email tools when explicitly asked about email.
+- Use email_list_recent first, then email_summarize_message on the 3-5 most important messages. Skip newsletters and automated notifications unless asked.
+- Use email_read_full only when the user needs verbatim text.${
+		hasSendableEmailAccount()
+			? '\n- To write or reply to mail, use email_compose. It opens a draft the user reviews and sends themselves; say it was sent only when the result says so.'
+			: ''
+	}`;
+}
+
+const WRITE_FILE_RULE =
+	'When the user asks you to create a file (PDF, docx, xlsx, etc.), do your research and call fs_write_document, fs_write_spreadsheet or fs_write_slides with complete content IN THE SAME TURN. Do not dump the content as a chat message instead.';
+
+const NO_PYTHON_DOCUMENTS =
+	"Do NOT use run_python to create PDFs, Word docs, PowerPoint decks, or spreadsheets. fs_write_document (.pdf/.docx/.odt), fs_write_spreadsheet (.xlsx/.ods) and fs_write_slides (.pptx/.odp) produce much better output than fpdf2 / python-pptx scripts. Use Python for the analysis. For a slide deck, pass the numbers to fs_write_slides as a chart or table, which stays editable in PowerPoint. For a document, save any plots as PNG files in the working directory with matplotlib's savefig and reference them in the content.";
+
+/** How to use the document tools: the rules the prompt gives when they are sent. */
+export function documentsNotes(): string {
+	return `- ${WRITE_FILE_RULE}\n- ${NO_PYTHON_DOCUMENTS}`;
 }
 
 /** The `haruspex_docs` line, for a turn offered the tool; empty otherwise. */
@@ -81,6 +111,7 @@ export function buildSystemPrompt(
 ): ChatMessage {
 	const today = formatTodayLong();
 	const lean = opts.lean === true;
+	const deferred = new Set(opts.deferred?.map((f) => f.id));
 	// The guide and the skills describe the whole app; a lean turn has a few
 	// of its tools, and a small model otherwise answers from the guide.
 	const leanSection = lean
@@ -92,7 +123,8 @@ LEAN MODE:
 - If a request needs anything else (writing files, Python, pictures, music, speech, email, calendar, the Code or Shell tabs), say that it needs lean mode turned off. Never say you tried a tool you don't have.`
 		: '';
 	const imagesSection = opts.includeImages ? getIncludeImagesPrompt({ lean }) : '';
-	const imageModelsSection = opts.imageModels && !lean ? imageModelsPrompt() : '';
+	const imageModelsSection =
+		opts.imageModels && !lean && !deferred.has('images') ? imageModelsPrompt() : '';
 
 	const fsSection = workingDir
 		? `
@@ -104,22 +136,15 @@ FILESYSTEM ACCESS:
 - ${
 				lean
 					? 'You can read files here but not create or change them. Put what the user asked for in your reply.'
-					: 'When the user asks you to create a file (PDF, docx, xlsx, etc.), do your research and call fs_write_document, fs_write_spreadsheet or fs_write_slides with complete content IN THE SAME TURN. Do not dump the content as a chat message instead.'
+					: deferred.has('documents')
+						? 'When the user asks you to create a PDF, Word, OpenDocument, spreadsheet or slide file, load the documents tools, do your research and write the file with complete content IN THE SAME TURN. Do not dump the content as a chat message instead.'
+						: WRITE_FILE_RULE
 			}`
 		: '';
 
 	const emailSection =
-		!lean && hasEnabledEmailAccount()
-			? `
-
-EMAIL INTEGRATION:
-- The user has connected email accounts. Only use email tools when explicitly asked about email.
-- Use email_list_recent first, then email_summarize_message on the 3-5 most important messages. Skip newsletters and automated notifications unless asked.
-- Use email_read_full only when the user needs verbatim text.${
-					hasSendableEmailAccount()
-						? '\n- To write or reply to mail, use email_compose. It opens a draft the user reviews and sends themselves; say it was sent only when the result says so.'
-						: ''
-				}`
+		!lean && hasEnabledEmailAccount() && !deferred.has('email')
+			? `\n\nEMAIL INTEGRATION:\n${emailNotes()}`
 			: '';
 
 	// Named services beat a general instruction. "Prefer integrations" loses to
@@ -177,12 +202,16 @@ PYTHON SANDBOX:
 - Variables, imports, and installed packages persist across run_python calls within this chat. Build on prior state instead of reimporting every call.
 - numpy, pandas, matplotlib, scipy, scikit-learn, sympy, pillow, beautifulsoup4, requests and plotly are bundled: just import them. Other packages install automatically on first import.
 - Charts you draw in run_python show in the chat on their own. Never link to an image file in your reply: it will not display.
-- Do NOT use run_python to create PDFs, Word docs, PowerPoint decks, or spreadsheets. fs_write_document (.pdf/.docx/.odt), fs_write_spreadsheet (.xlsx/.ods) and fs_write_slides (.pptx/.odp) produce much better output than fpdf2 / python-pptx scripts. Use Python for the analysis. For a slide deck, pass the numbers to fs_write_slides as a chart or table, which stays editable in PowerPoint. For a document, save any plots as PNG files in the working directory with matplotlib's savefig and reference them in the content.
+- ${
+						deferred.has('documents')
+							? 'Do NOT use run_python to create PDFs, Word docs, PowerPoint decks, or spreadsheets: the documents tools produce much better output. Use Python for the analysis.'
+							: NO_PYTHON_DOCUMENTS
+					}
 - Do NOT use run_python to reach a service listed under CONNECTED INTEGRATIONS. Use that service's own tools.
 - If the sandbox state gets stuck (a hung import, a poisoned variable, an unrecoverable exception), call reset_python and start over. Don't reach for it casually — resets wipe everything in the session.
 - Tool results include stdout, stderr, the value of the final expression, and any artifacts (plots, tables) the UI rendered for the user. You see the text; the user also sees the rich artifacts.${sandboxFsSection}`
 				: ''
-		}
+		}${toolIndexSection(opts.deferred)}
 
 Be concise, accurate, and helpful. When in doubt, search.
 ${

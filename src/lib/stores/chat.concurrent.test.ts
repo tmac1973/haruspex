@@ -15,6 +15,7 @@ const slots = vi.hoisted(() => ({
 	onRequeue: [] as ((ticket: unknown) => void)[]
 }));
 
+vi.mock('#lib/agent/loop/turnTools.ts', () => ({ resolveTurnTools: () => ({ tools: [] }) }));
 vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => ({
 	withInferenceSlot: async <T>(
 		opts: { onAdmitted?: () => void; onRequeue?: (ticket: unknown) => void },

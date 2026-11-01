@@ -41,6 +41,11 @@ import type { ContextManagedInfo } from '#lib/agent/contextBudget.ts';
 import { appendStreamDelta, createThinkStreamState } from '#lib/agent/thinkStream.ts';
 import { withInferenceSlot, type InferenceTicket } from '#lib/agent/inferenceQueue.svelte.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
+import {
+	resolveTurnTools,
+	type TurnTools,
+	type TurnToolsInput
+} from '#lib/agent/loop/turnTools.ts';
 import { prepareTurnSkills, skillsPromptSection, type TurnSkills } from '#lib/skills/turn.ts';
 import { shellProject } from '#lib/skills/project.ts';
 import { agentsMdPromptSection } from '#lib/skills/agentsMd.ts';
@@ -211,7 +216,18 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 	try {
 		// The tool list reads it synchronously (open_in_shell's gate).
 		await loadShellPlatformSupported();
-		const { system, skills } = await prepareSystem(o, backend);
+		const { system, skills, turnTools } = await prepareSystem(o, backend, {
+			messages: o.thread,
+			workingDir: o.root,
+			codeMode: true,
+			shellMode: false,
+			codeReadOnly: o.readOnly ?? false,
+			codeRemote: o.remote ?? false,
+			codeSessionId: o.sessionId,
+			visionSupported: descriptor.vision,
+			interactive: true,
+			backend
+		});
 		let compaction = o.compaction ?? null;
 		const prompt = () =>
 			assemble(system, modelThread({ messages: o.thread, compaction }), turnNotice(o));
@@ -241,6 +257,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 				}
 				return runAgentLoop({
 					messages,
+					turnTools,
 					// The folder is the write boundary as the working directory: the
 					// fs commands resolve every path inside it. Not `writeRoot`, which
 					// is a folder *relative* to it and refused every write when given
@@ -412,15 +429,21 @@ function delegateModes(o: SystemPromptInput): 'read' | 'write' | undefined {
 	return setting === 'write' && !o.readOnly ? 'write' : 'read';
 }
 
-/** The coding prompt for the folder, with the trusted repo's AGENTS.md and skills. */
+/**
+ * The coding prompt for the folder, with the trusted repo's AGENTS.md and
+ * skills. Given the turn's loop options, it also decides the turn's tools,
+ * since the prompt lists the families the loop defers.
+ */
 export async function prepareSystem(
 	o: SystemPromptInput,
-	backend: BackendOverride | undefined
-): Promise<{ system: ChatMessage; skills: TurnSkills }> {
+	backend: BackendOverride | undefined,
+	tools?: Omit<TurnToolsInput, 'skills'>
+): Promise<{ system: ChatMessage; skills: TurnSkills; turnTools?: TurnTools }> {
 	// A WSL session's repo is read through its distro's share.
 	const project = await shellProject(ioRoot(o.root, o.wslDistro));
 	o.onProject?.(project);
 	const skills = await prepareTurnSkills({ backend, projectRoot: project.root, codeMode: true });
+	const turnTools = tools && resolveTurnTools({ ...tools, skills });
 	const system = buildCodeSystemPrompt({
 		root: o.root,
 		skillsSection: skillsPromptSection(skills),
@@ -431,9 +454,10 @@ export async function prepareSystem(
 		wslDistro: o.wslDistro,
 		powershell: o.wslDistro ? null : await agentPowershell(),
 		delegate: delegateModes(o),
-		subtask: o.subtask
+		subtask: o.subtask,
+		deferred: turnTools?.deferredTools
 	});
-	return { system, skills };
+	return { system, skills, turnTools };
 }
 
 /**
