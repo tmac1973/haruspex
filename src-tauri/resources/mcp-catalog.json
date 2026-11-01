@@ -39,9 +39,10 @@
         "search_issues",
         "get_file_contents",
         "list_issues",
-        "get_issue",
+        "issue_read",
+        "search_pull_requests",
         "list_pull_requests",
-        "get_pull_request"
+        "pull_request_read"
       ],
       "setup": [
         {
