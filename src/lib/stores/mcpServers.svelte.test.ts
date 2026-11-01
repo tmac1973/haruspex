@@ -20,6 +20,7 @@ import { registeredMcpToolNames } from '#lib/agent/tools/mcp.ts';
 import { mcpDefaultTools } from '#lib/agent/tools/mcpNames.ts';
 import { setMcpServers } from './settings';
 import { isAlwaysAllowed, rememberAlwaysAllow } from './mcpApproval.svelte';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock('@tauri-apps/api/core', () => ({ invoke }));
@@ -67,26 +68,19 @@ const TOOLS: McpToolDescriptor[] = [
 	}
 ];
 
+const CONNECTION = {
+	era: 'modern',
+	protocolVersion: '2026-07-28',
+	serverName: 'github',
+	serverVersion: '1.0.0',
+	instructions: null
+};
+
 /** Wire up the happy path: spawn config, start, connection info, tool list. */
 function mockHappyStart(): void {
-	invoke.mockImplementation((cmd: string) => {
-		switch (cmd) {
-			case IPC.mcp_start_server:
-				return Promise.resolve(null);
-			case IPC.mcp_connection_info:
-				return Promise.resolve({
-					era: 'modern',
-					protocolVersion: '2026-07-28',
-					serverName: 'github',
-					serverVersion: '1.0.0',
-					instructions: null
-				});
-			case IPC.mcp_list_tools:
-				return Promise.resolve(TOOLS);
-			default:
-				return Promise.resolve(null);
-		}
-	});
+	invoke.mockImplementation(
+		invokeRouter({ mcp_connection_info: CONNECTION, mcp_list_tools: TOOLS })
+	);
 }
 
 beforeEach(async () => {
@@ -128,10 +122,13 @@ describe('starting a server', () => {
 	it('registers no tools when a later step fails', async () => {
 		// A partial success is a server that looks running with no tools, which
 		// is the worst of both: the row says fine and the model has nothing.
-		invoke.mockImplementation((cmd: string) => {
-			if (cmd === IPC.mcp_list_tools) return Promise.reject('tools/list failed');
-			return Promise.resolve(null);
-		});
+		invoke.mockImplementation(
+			invokeRouter({
+				mcp_list_tools: () => {
+					throw 'tools/list failed';
+				}
+			})
+		);
 		await startMcpServer(config(), entry());
 
 		expect(mcpState(ID).status.type).toBe('Error');
@@ -144,24 +141,13 @@ describe('a backend that outlived the frontend', () => {
 		// `make dev` reloads the frontend and leaves the Rust supervisor running.
 		// Without this the card read "Failed: already running" next to a server
 		// that was working, and — worse — no tools were registered at all.
-		invoke.mockImplementation((cmd: string) => {
-			switch (cmd) {
-				case IPC.mcp_server_status:
-					return Promise.resolve({ type: 'Ready' });
-				case IPC.mcp_connection_info:
-					return Promise.resolve({
-						era: 'modern',
-						protocolVersion: '2026-07-28',
-						serverName: 'github',
-						serverVersion: '1.0.0',
-						instructions: null
-					});
-				case IPC.mcp_list_tools:
-					return Promise.resolve(TOOLS);
-				default:
-					return Promise.resolve(null);
-			}
-		});
+		invoke.mockImplementation(
+			invokeRouter({
+				mcp_server_status: { type: 'Ready' },
+				mcp_connection_info: CONNECTION,
+				mcp_list_tools: TOOLS
+			})
+		);
 
 		await startMcpServer(config(), entry());
 
@@ -174,12 +160,9 @@ describe('a backend that outlived the frontend', () => {
 	});
 
 	it('starts normally when the backend has nothing running', async () => {
-		invoke.mockImplementation((cmd: string) => {
-			if (cmd === IPC.mcp_server_status) return Promise.resolve({ type: 'Stopped' });
-			if (cmd === IPC.mcp_list_tools) return Promise.resolve(TOOLS);
-			if (cmd === IPC.mcp_connection_info) return Promise.resolve(null);
-			return Promise.resolve(null);
-		});
+		invoke.mockImplementation(
+			invokeRouter({ mcp_server_status: { type: 'Stopped' }, mcp_list_tools: TOOLS })
+		);
 
 		await startMcpServer(config(), entry());
 		expect(invoke.mock.calls.map((c) => c[0])).toContain(IPC.mcp_start_server);
@@ -189,12 +172,14 @@ describe('a backend that outlived the frontend', () => {
 	it('does not adopt a server the backend reports as failed', async () => {
 		// Ready is the only state worth taking over. Adopting an Error would
 		// hide the failure behind a card that claims to be running.
-		invoke.mockImplementation((cmd: string) => {
-			if (cmd === IPC.mcp_server_status)
-				return Promise.resolve({ type: 'Error', message: 'it died' });
-			if (cmd === IPC.mcp_start_server) return Promise.reject('still broken');
-			return Promise.resolve(null);
-		});
+		invoke.mockImplementation(
+			invokeRouter({
+				mcp_server_status: { type: 'Error', message: 'it died' },
+				mcp_start_server: () => {
+					throw 'still broken';
+				}
+			})
+		);
 
 		await startMcpServer(config(), entry());
 		expect(mcpState(ID).status.type).toBe('Error');
@@ -221,9 +206,7 @@ describe('a server that changes its toolset while running', () => {
 		await startMcpServer(config(), entry());
 		expect(registeredMcpToolNames()).not.toContain('mcp__srv-1__create_node');
 
-		invoke.mockImplementation((cmd: string) =>
-			cmd === IPC.mcp_list_tools ? Promise.resolve(MORE) : Promise.resolve(null)
-		);
+		invoke.mockImplementation(invokeRouter({ mcp_list_tools: MORE }));
 		await refreshMcpTools(ID);
 
 		expect(mcpState(ID).tools).toHaveLength(2);
@@ -239,9 +222,7 @@ describe('a server that changes its toolset while running', () => {
 		await startMcpServer(config(), entry());
 		expect(mcpDefaultTools(ID)).toEqual(['search']);
 
-		invoke.mockImplementation((cmd: string) =>
-			cmd === IPC.mcp_list_tools ? Promise.resolve(MORE) : Promise.resolve(null)
-		);
+		invoke.mockImplementation(invokeRouter({ mcp_list_tools: MORE }));
 		await refreshMcpTools(ID);
 
 		expect(mcpDefaultTools(ID)).toEqual(['search']);
@@ -254,9 +235,7 @@ describe('a server that changes its toolset while running', () => {
 		await startMcpServer(config(), entry());
 		expect(registeredMcpToolNames()).toContain('mcp__srv-1__search');
 
-		invoke.mockImplementation((cmd: string) =>
-			cmd === IPC.mcp_list_tools ? Promise.resolve([]) : Promise.resolve(null)
-		);
+		invoke.mockImplementation(invokeRouter({ mcp_list_tools: [] }));
 		await refreshMcpTools(ID);
 
 		expect(registeredMcpToolNames()).not.toContain('mcp__srv-1__search');
@@ -354,11 +333,7 @@ describe('remote servers', () => {
 		// A remote server has no program, arguments or environment. Threading an
 		// empty spawn config through the stdio path would mean every caller
 		// carrying a shape that means nothing for half its cases.
-		invoke.mockImplementation((cmd: string) => {
-			if (cmd === IPC.mcp_list_tools) return Promise.resolve([]);
-			if (cmd === IPC.mcp_connection_info) return Promise.resolve(null);
-			return Promise.resolve(null);
-		});
+		invoke.mockImplementation(invokeRouter({ mcp_list_tools: [] }));
 		await startMcpServer(remote(), null);
 
 		const called = invoke.mock.calls.map((c) => c[0]);
@@ -400,15 +375,15 @@ describe('starting everything on launch', () => {
 	it('carries on past a failure so one broken server does not hide the rest', async () => {
 		const first = config({ id: 'a', label: 'A' });
 		const second = config({ id: 'b', label: 'B' });
-		invoke.mockImplementation((cmd: string, args?: Record<string, unknown>) => {
-			const cfg = args?.config as { id?: string } | undefined;
-			if (cmd === IPC.mcp_start_server) {
-				return cfg?.id === 'a' ? Promise.reject('a is broken') : Promise.resolve(null);
-			}
-			if (cmd === IPC.mcp_list_tools) return Promise.resolve([]);
-			if (cmd === IPC.mcp_connection_info) return Promise.resolve(null);
-			return Promise.resolve(null);
-		});
+		invoke.mockImplementation(
+			invokeRouter({
+				mcp_start_server: (args) => {
+					if ((args?.config as { id?: string } | undefined)?.id === 'a') throw 'a is broken';
+					return null;
+				},
+				mcp_list_tools: []
+			})
+		);
 
 		await startEnabledMcpServers([first, second], [entry()]);
 
@@ -425,12 +400,7 @@ describe('starting at app launch', () => {
 		// server runs, and nothing was starting them, so the model never saw a
 		// single MCP tool however carefully the user had set one up.
 		setMcpServers([config({ id: 'boot-1' })]);
-		invoke.mockImplementation((cmd: string) => {
-			if (cmd === IPC.mcp_catalog) return Promise.resolve([entry()]);
-			if (cmd === IPC.mcp_list_tools) return Promise.resolve([]);
-			if (cmd === IPC.mcp_connection_info) return Promise.resolve(null);
-			return Promise.resolve(null);
-		});
+		invoke.mockImplementation(invokeRouter({ mcp_catalog: [entry()], mcp_list_tools: [] }));
 
 		await startConfiguredMcpServers();
 		expect(mcpState('boot-1').status.type).toBe('Ready');
@@ -451,8 +421,12 @@ describe('starting at app launch', () => {
 		// tools would resolve as disabled — a server running with an invisible
 		// toolset is worse than one that did not start.
 		setMcpServers([config({ id: 'boot-3' })]);
-		invoke.mockImplementation((cmd: string) =>
-			cmd === IPC.mcp_catalog ? Promise.reject('no catalog') : Promise.resolve(null)
+		invoke.mockImplementation(
+			invokeRouter({
+				mcp_catalog: () => {
+					throw 'no catalog';
+				}
+			})
 		);
 		await startConfiguredMcpServers();
 		expect(mcpState('boot-3').status.type).toBe('Stopped');

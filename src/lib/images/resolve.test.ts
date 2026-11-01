@@ -5,6 +5,7 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke }));
 
 import { clearResolvedImages, getResolvedImages, rehydrateImages } from './resolve.svelte';
 import { imageSrc } from './url';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const H = 'c'.repeat(64);
 const row = {
@@ -27,7 +28,7 @@ beforeEach(() => {
 	clearResolvedImages();
 	invoke
 		.mockReset()
-		.mockImplementation(async (cmd: string) => (cmd === 'image_rehydrate_local' ? [row] : []));
+		.mockImplementation(invokeRouter({ image_rehydrate_local: () => [row] }, () => []));
 });
 
 describe('rehydrating a chat', () => {

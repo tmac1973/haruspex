@@ -11,16 +11,21 @@ const state = vi.hoisted(() => ({
 	refs: [] as { id: number; keyId: string }[]
 }));
 
+const { invokeRouter, unexpectedInvoke } = await vi.hoisted(() => import('#lib/testing/invoke.ts'));
+
 vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn(async (cmd: string, args?: Record<string, unknown>) => {
-		if (cmd === 'secret_available') return true;
-		if (cmd === 'secret_set')
-			return void state.stored.set(args!.key as string, args!.value as string);
-		if (cmd === 'secret_get') return state.stored.get(args!.key as string) ?? null;
-		if (cmd === 'secret_delete') return void state.stored.delete(args!.key as string);
-		if (cmd === 'db_set_job_api_key_ref') return void state.refs.push(args as never);
-		throw new Error(`unexpected invoke: ${cmd}`);
-	})
+	invoke: vi.fn(
+		invokeRouter(
+			{
+				secret_available: true,
+				secret_set: (a) => void state.stored.set(a!.key as string, a!.value as string),
+				secret_get: (a) => state.stored.get(a!.key as string) ?? null,
+				secret_delete: (a) => void state.stored.delete(a!.key as string),
+				db_set_job_api_key_ref: (a) => void state.refs.push(a as never)
+			},
+			unexpectedInvoke
+		)
+	)
 }));
 
 vi.mock('./jobs.svelte', () => ({

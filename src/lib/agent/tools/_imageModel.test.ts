@@ -22,6 +22,7 @@ vi.mock('#lib/image/forTool.ts', () => ({
 
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const DRAWS: ImageBackendCapabilities = {
 	transparency: true,
@@ -66,11 +67,12 @@ function params(tool: string) {
 beforeEach(() => {
 	state.models = [];
 	vi.stubGlobal('createImageBitmap', async () => ({ width: 1024, height: 1024, close: () => {} }));
-	state.invoke.mockReset().mockImplementation(async (cmd: string) => {
-		if (cmd === 'image_read_bytes') return new Uint8Array([1, 2, 3]).buffer;
-		if (cmd === 'image_store_bytes') return 'b'.repeat(64);
-		return null;
-	});
+	state.invoke.mockReset().mockImplementation(
+		invokeRouter({
+			image_read_bytes: () => new Uint8Array([1, 2, 3]).buffer,
+			image_store_bytes: () => 'b'.repeat(64)
+		})
+	);
 	state.generate.mockReset().mockResolvedValue({
 		bytes: new Uint8Array([9]),
 		width: 1024,
@@ -125,10 +127,15 @@ describe('the model argument', () => {
 
 	it('sends a background task to the model named, not the first that can', async () => {
 		state.models = [ming, klein];
-		state.invoke.mockImplementation(async (cmd: string, args: { label: string }) =>
-			cmd === 'task_create'
-				? { id: 'image-1', kind: 'image', owner: 'chat:chat-1', label: args.label }
-				: null
+		state.invoke.mockImplementation(
+			invokeRouter({
+				task_create: (args) => ({
+					id: 'image-1',
+					kind: 'image',
+					owner: 'chat:chat-1',
+					label: args!.label
+				})
+			})
 		);
 		await executeTool(
 			'generate_image',

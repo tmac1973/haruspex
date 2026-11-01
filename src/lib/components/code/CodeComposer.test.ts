@@ -10,6 +10,7 @@ vi.mock('@tauri-apps/api/window', () => ({
 import CodeComposer from './CodeComposer.svelte';
 import type { CodeSession } from '#lib/stores/code.svelte.ts';
 import type { SlashHost } from '#lib/slash/slash.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const host: SlashHost = {
 	projectRoot: async () => null,
@@ -132,10 +133,11 @@ describe('CodeComposer with the folder gone', () => {
 
 describe('CodeComposer camera button', () => {
 	it('attaches the captured window to the next message without sending it', async () => {
-		tauri.invoke.mockImplementation(async (cmd: string) =>
-			cmd === 'capture_windows_list'
-				? []
-				: { kind: 'captured', capture: { dataUrl: 'data:image/jpeg;base64,AA' } }
+		tauri.invoke.mockImplementation(
+			invokeRouter(
+				{ capture_windows_list: [] },
+				{ kind: 'captured', capture: { dataUrl: 'data:image/jpeg;base64,AA' } }
+			)
 		);
 		const session = fakeSession({ busy: false });
 		render(CodeComposer, { session, slashHost: host });
@@ -157,10 +159,11 @@ describe('CodeComposer camera button', () => {
 	});
 
 	it('lists the windows to pick from where the platform has no picker', async () => {
-		tauri.invoke.mockImplementation(async (cmd: string) =>
-			cmd === 'capture_windows_list'
-				? [{ id: 7, title: 'Dark Times', app: 'darktimes' }]
-				: { dataUrl: 'data:x' }
+		tauri.invoke.mockImplementation(
+			invokeRouter(
+				{ capture_windows_list: [{ id: 7, title: 'Dark Times', app: 'darktimes' }] },
+				{ dataUrl: 'data:x' }
+			)
 		);
 		render(CodeComposer, { session: fakeSession({ busy: false }), slashHost: host });
 		await fireEvent.click(screen.getByRole('button', { name: 'Attach a screenshot' }));

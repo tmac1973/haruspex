@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const mocks = vi.hoisted(() => ({
 	invoke: vi.fn(),
@@ -42,10 +43,9 @@ beforeEach(() => {
 	mocks.unlisten.mockReset();
 	mocks.watchPrompts.mockReset();
 	mocks.stopSessions.mockReset();
-	mocks.invoke.mockReset().mockImplementation(async (cmd: string) => {
-		if (cmd === 'engine_enabled') return mocks.enabled;
-		return null;
-	});
+	mocks.invoke
+		.mockReset()
+		.mockImplementation(invokeRouter({ engine_enabled: () => mocks.enabled }));
 	mocks.listen.mockReset().mockImplementation(async () => mocks.unlisten);
 });
 

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RunCommandResult } from '#lib/ipc/gen/RunCommandResult.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
+import { invokeRouter, type InvokeRoute } from '#lib/testing/invoke.ts';
 
 const mocks = vi.hoisted(() => ({
 	invoke: vi.fn(),
@@ -39,6 +40,11 @@ const okResult: RunCommandResult = {
 	memory_limit_mb: 32768
 };
 
+/** Answer `invoke` by command; any other command resolves to undefined. */
+function routeInvoke(routes: Record<string, InvokeRoute>): void {
+	mocks.invoke.mockImplementation(invokeRouter(routes, undefined));
+}
+
 function runResultDefaults(over: Partial<RunCommandResult> = {}): RunCommandResult {
 	return { ...okResult, ...over };
 }
@@ -50,10 +56,9 @@ beforeEach(() => {
 	mocks.approveSession.mockReset();
 	mocks.registerWatch.mockReset().mockReturnValue('watch-1');
 	mocks.registerCodeBgWatch.mockReset().mockReturnValue('watch-2');
-	mocks.invoke.mockImplementation((cmd: string) => {
-		if (cmd === 'run_command_capture') return Promise.resolve(runResultDefaults());
-		if (cmd === 'code_write_overflow') return Promise.resolve('/tmp/overflow.txt');
-		return Promise.resolve();
+	routeInvoke({
+		run_command_capture: () => runResultDefaults(),
+		code_write_overflow: '/tmp/overflow.txt'
 	});
 });
 
@@ -74,13 +79,10 @@ describe('run_command risk gate', () => {
 		// A coding run's go test hit a loop that never ended, filled RAM and
 		// swap, and took the app down with it. Killed under a ceiling, the
 		// model has to hear why, or it re-runs the same command.
-		mocks.invoke.mockImplementation((cmd: string) =>
-			cmd === 'run_command_capture'
-				? Promise.resolve(
-						runResultDefaults({ exit_code: 1, stdout: 'signal: killed', out_of_memory: true })
-					)
-				: Promise.resolve()
-		);
+		routeInvoke({
+			run_command_capture: () =>
+				runResultDefaults({ exit_code: 1, stdout: 'signal: killed', out_of_memory: true })
+		});
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'go test ./...' }, codeCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith(
@@ -189,10 +191,8 @@ describe('run_command risk gate', () => {
 
 describe('run_command output handling', () => {
 	it('states success explicitly when exit 0 produces no output', async () => {
-		mocks.invoke.mockImplementation((cmd: string) => {
-			if (cmd === 'run_command_capture')
-				return Promise.resolve(runResultDefaults({ stdout: '', stderr: '', exit_code: 0 }));
-			return Promise.resolve();
+		routeInvoke({
+			run_command_capture: () => runResultDefaults({ stdout: '', stderr: '', exit_code: 0 })
 		});
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: './my-gui' }, codeCtx);
@@ -200,10 +200,8 @@ describe('run_command output handling', () => {
 	});
 
 	it('leads with the exit code and reports a killed command', async () => {
-		mocks.invoke.mockImplementation((cmd: string) => {
-			if (cmd === 'run_command_capture')
-				return Promise.resolve(runResultDefaults({ killed: true, exit_code: null }));
-			return Promise.resolve();
+		routeInvoke({
+			run_command_capture: () => runResultDefaults({ killed: true, exit_code: null })
 		});
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'sleep 99' }, codeCtx);
@@ -212,10 +210,9 @@ describe('run_command output handling', () => {
 
 	it('spills oversized output to a temp file', async () => {
 		const big = 'x'.repeat(40 * 1024);
-		mocks.invoke.mockImplementation((cmd: string) => {
-			if (cmd === 'run_command_capture') return Promise.resolve(runResultDefaults({ stdout: big }));
-			if (cmd === 'code_write_overflow') return Promise.resolve('/tmp/overflow.txt');
-			return Promise.resolve();
+		routeInvoke({
+			run_command_capture: () => runResultDefaults({ stdout: big }),
+			code_write_overflow: '/tmp/overflow.txt'
 		});
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'cat big' }, codeCtx);
@@ -242,10 +239,7 @@ describe('run_command output handling', () => {
 	it('cancels the host process when the signal aborts mid-run', async () => {
 		const controller = new AbortController();
 		let resolveRun: (v: unknown) => void = () => {};
-		mocks.invoke.mockImplementation((cmd: string) => {
-			if (cmd === 'run_command_capture') return new Promise((r) => (resolveRun = r));
-			return Promise.resolve();
-		});
+		routeInvoke({ run_command_capture: () => new Promise((r) => (resolveRun = r)) });
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const p = executeTool(
 			'run_command',
@@ -520,21 +514,19 @@ describe('run_command PTY driving', () => {
 	it('drives the live PTY and reports the captured exit code', async () => {
 		// The command completes once it has been written to the terminal.
 		let written = false;
-		mocks.invoke.mockImplementation((cmd: string) => {
-			if (cmd === 'shell_write') written = true;
-			if (cmd === 'shell_platform_supported') return Promise.resolve(true);
-			if (cmd === 'shell_get_context') {
-				return Promise.resolve({
-					completed_total: written ? 1 : 0,
-					marker_count: 2,
-					current_cwd: '/proj'
-				});
-			}
-			if (cmd === 'shell_get_recent_commands')
-				return Promise.resolve([
-					{ commandLine: 'ls', output: 'a.txt\n', exitCode: 0, cwd: '/proj', truncated: false }
-				]);
-			return Promise.resolve();
+		routeInvoke({
+			shell_write: () => {
+				written = true;
+			},
+			shell_platform_supported: true,
+			shell_get_context: () => ({
+				completed_total: written ? 1 : 0,
+				marker_count: 2,
+				current_cwd: '/proj'
+			}),
+			shell_get_recent_commands: [
+				{ commandLine: 'ls', output: 'a.txt\n', exitCode: 0, cwd: '/proj', truncated: false }
+			]
 		});
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'ls' }, ptyCtx);
@@ -550,10 +542,7 @@ describe('run_command PTY driving', () => {
 	it('falls back to one-shot when codeCommandExec is "oneshot"', async () => {
 		const { updateSettings } = await import('#lib/stores/settings.ts');
 		updateSettings({ codeCommandExec: 'oneshot' });
-		mocks.invoke.mockImplementation((cmd: string) => {
-			if (cmd === 'run_command_capture') return Promise.resolve(runResultDefaults());
-			return Promise.resolve();
-		});
+		routeInvoke({ run_command_capture: () => runResultDefaults() });
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('run_command', { command: 'ls' }, ptyCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith(
@@ -564,13 +553,12 @@ describe('run_command PTY driving', () => {
 	});
 
 	it('refuses to inject when the terminal is already busy', async () => {
-		mocks.invoke.mockImplementation((cmd: string) => {
-			if (cmd === 'shell_platform_supported') return Promise.resolve(true);
+		routeInvoke({
+			shell_platform_supported: true,
 			// The busy check reads just the command line — asking for the recent
 			// commands would serialize the in-flight command's whole output.
-			if (cmd === 'shell_pending_command') return Promise.resolve('go run main.go');
-			if (cmd === 'shell_get_context') return Promise.resolve({ marker_count: 2 });
-			return Promise.resolve();
+			shell_pending_command: 'go run main.go',
+			shell_get_context: { marker_count: 2 }
 		});
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'kill %1' }, ptyCtx);
@@ -581,10 +569,9 @@ describe('run_command PTY driving', () => {
 	});
 
 	it('falls back to one-shot when the platform is unsupported', async () => {
-		mocks.invoke.mockImplementation((cmd: string) => {
-			if (cmd === 'shell_platform_supported') return Promise.resolve(false);
-			if (cmd === 'run_command_capture') return Promise.resolve(runResultDefaults());
-			return Promise.resolve();
+		routeInvoke({
+			shell_platform_supported: false,
+			run_command_capture: () => runResultDefaults()
 		});
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('run_command', { command: 'ls' }, ptyCtx);
@@ -593,13 +580,11 @@ describe('run_command PTY driving', () => {
 
 	it('sends Ctrl-C to the PTY on abort', async () => {
 		const controller = new AbortController();
-		mocks.invoke.mockImplementation((cmd: string) => {
-			if (cmd === 'shell_platform_supported') return Promise.resolve(true);
-			if (cmd === 'shell_get_context')
-				return Promise.resolve({ completed_total: 0, marker_count: 2, current_cwd: '/proj' });
+		routeInvoke({
+			shell_platform_supported: true,
+			shell_get_context: { completed_total: 0, marker_count: 2, current_cwd: '/proj' },
 			// Idle terminal (no pending command) so the busy-guard lets us inject.
-			if (cmd === 'shell_get_recent_commands') return Promise.resolve([]);
-			return Promise.resolve();
+			shell_get_recent_commands: []
 		});
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const p = executeTool(
@@ -635,28 +620,26 @@ describe('run_command background / watch', () => {
 	function mockBackgroundPty(context?: { shellPath: string; shellName: string }) {
 		// The command completes once it has been written to the terminal.
 		let written = false;
-		mocks.invoke.mockImplementation((cmd: string) => {
-			if (cmd === 'shell_write') written = true;
-			if (cmd === 'shell_platform_supported') return Promise.resolve(true);
-			if (cmd === 'shell_get_context') {
-				return Promise.resolve({
-					completed_total: written ? 1 : 0,
-					marker_count: 2,
-					current_cwd: '/proj',
-					context
-				});
-			}
-			if (cmd === 'shell_get_recent_commands')
-				return Promise.resolve([
-					{
-						commandLine: 'bg',
-						output: 'HSP_BG pid=12345 log=/tmp/hsp-bg-AAA done=/tmp/hsp-bg-AAA.done\n',
-						exitCode: 0,
-						cwd: '/proj',
-						truncated: false
-					}
-				]);
-			return Promise.resolve();
+		routeInvoke({
+			shell_write: () => {
+				written = true;
+			},
+			shell_platform_supported: true,
+			shell_get_context: () => ({
+				completed_total: written ? 1 : 0,
+				marker_count: 2,
+				current_cwd: '/proj',
+				context
+			}),
+			shell_get_recent_commands: [
+				{
+					commandLine: 'bg',
+					output: 'HSP_BG pid=12345 log=/tmp/hsp-bg-AAA done=/tmp/hsp-bg-AAA.done\n',
+					exitCode: 0,
+					cwd: '/proj',
+					truncated: false
+				}
+			]
 		});
 	}
 
@@ -700,23 +683,21 @@ describe('run_command background / watch', () => {
 		// Fish refusing bash syntax: the prompt is redrawn (new markers) but
 		// nothing starts and nothing finishes.
 		let written = false;
-		mocks.invoke.mockImplementation((cmd: string) => {
-			if (cmd === 'shell_write') written = true;
-			if (cmd === 'shell_platform_supported') return Promise.resolve(true);
-			if (cmd === 'shell_pending_command') return Promise.resolve(null);
-			if (cmd === 'shell_get_context') {
-				return Promise.resolve({
-					completed_total: 0,
-					marker_count: 2,
-					marker_total: written ? 4 : 2,
-					output_total: 100,
-					current_cwd: '/proj',
-					context: { shellPath: '/usr/bin/fish', shellName: 'fish' }
-				});
-			}
-			if (cmd === 'shell_output_since')
-				return Promise.resolve("fish: Unsupported use of '='. In fish, please use 'set x 1'.");
-			return Promise.resolve();
+		routeInvoke({
+			shell_write: () => {
+				written = true;
+			},
+			shell_platform_supported: true,
+			shell_pending_command: null,
+			shell_get_context: () => ({
+				completed_total: 0,
+				marker_count: 2,
+				marker_total: written ? 4 : 2,
+				output_total: 100,
+				current_cwd: '/proj',
+				context: { shellPath: '/usr/bin/fish', shellName: 'fish' }
+			}),
+			shell_output_since: "fish: Unsupported use of '='. In fish, please use 'set x 1'."
 		});
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const started = Date.now();
@@ -733,25 +714,25 @@ describe('run_command background / watch', () => {
 		// marker, not a refusal.
 		let written = false;
 		let polls = 0;
-		mocks.invoke.mockImplementation((cmd: string) => {
-			if (cmd === 'shell_write') written = true;
-			if (cmd === 'shell_platform_supported') return Promise.resolve(true);
-			if (cmd === 'shell_pending_command') return Promise.resolve(written ? 'sleep 1' : null);
-			if (cmd === 'shell_get_context') {
+		routeInvoke({
+			shell_write: () => {
+				written = true;
+			},
+			shell_platform_supported: true,
+			shell_pending_command: () => (written ? 'sleep 1' : null),
+			shell_get_context: () => {
 				polls++;
-				return Promise.resolve({
+				return {
 					completed_total: polls >= 6 ? 1 : 0,
 					marker_count: 2,
 					marker_total: polls > 1 ? 3 : 2,
 					output_total: 0,
 					current_cwd: '/proj'
-				});
-			}
-			if (cmd === 'shell_get_recent_commands')
-				return Promise.resolve([
-					{ commandLine: 'sleep 1', output: '', exitCode: 0, cwd: '/proj', truncated: false }
-				]);
-			return Promise.resolve();
+				};
+			},
+			shell_get_recent_commands: [
+				{ commandLine: 'sleep 1', output: '', exitCode: 0, cwd: '/proj', truncated: false }
+			]
 		});
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'sleep 1' }, ptyCtx);
@@ -760,12 +741,10 @@ describe('run_command background / watch', () => {
 	});
 
 	it('falls back to one-shot in auto mode when the shell never sent a marker', async () => {
-		mocks.invoke.mockImplementation((cmd: string) => {
-			if (cmd === 'shell_platform_supported') return Promise.resolve(true);
-			if (cmd === 'shell_get_context')
-				return Promise.resolve({ completed_total: 0, marker_count: 0, marker_total: 0 });
-			if (cmd === 'run_command_capture') return Promise.resolve(runResultDefaults());
-			return Promise.resolve();
+		routeInvoke({
+			shell_platform_supported: true,
+			shell_get_context: { completed_total: 0, marker_count: 0, marker_total: 0 },
+			run_command_capture: () => runResultDefaults()
 		});
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('run_command', { command: 'ls' }, ptyCtx);
@@ -875,10 +854,9 @@ describe('run_command boundary', () => {
 
 	beforeEach(async () => {
 		(await import('#lib/shell/boundary.ts'))._resetBoundary();
-		mocks.invoke.mockImplementation((cmd: string) => {
-			if (cmd === 'app_protected_targets') return Promise.resolve(targets);
-			if (cmd === 'run_command_capture') return Promise.resolve(runResultDefaults());
-			return Promise.resolve();
+		routeInvoke({
+			app_protected_targets: () => targets,
+			run_command_capture: () => runResultDefaults()
 		});
 	});
 
@@ -956,13 +934,11 @@ describe('run_command without a terminal (Code session)', () => {
 	};
 
 	beforeEach(() => {
-		mocks.invoke.mockImplementation((cmd: string) => {
-			if (cmd === 'code_bg_start')
-				return Promise.resolve({ id: 'bg-1', pid: 4242, log_path: '/cache/code-bg/bg-1.log' });
-			if (cmd === 'code_bg_status') return Promise.resolve([bgProc]);
-			if (cmd === 'code_bg_tail') return Promise.resolve('listening on :5173\n');
-			if (cmd === 'run_command_capture') return Promise.resolve(runResultDefaults());
-			return Promise.resolve();
+		routeInvoke({
+			code_bg_start: { id: 'bg-1', pid: 4242, log_path: '/cache/code-bg/bg-1.log' },
+			code_bg_status: () => [bgProc],
+			code_bg_tail: 'listening on :5173\n',
+			run_command_capture: () => runResultDefaults()
 		});
 	});
 
@@ -1029,18 +1005,15 @@ describe('run_command without a terminal (Code session)', () => {
 	});
 
 	it('appends the terminal hint when a one-shot sudo fails for want of a TTY', async () => {
-		mocks.invoke.mockImplementation((cmd: string) =>
-			cmd === 'run_command_capture'
-				? Promise.resolve(
-						runResultDefaults({
-							stdout: '',
-							stderr:
-								'sudo: a terminal is required to read the password; either use the -S option to read from standard input or configure an askpass helper\nsudo: a password is required\n',
-							exit_code: 1
-						})
-					)
-				: Promise.resolve()
-		);
+		routeInvoke({
+			run_command_capture: () =>
+				runResultDefaults({
+					stdout: '',
+					stderr:
+						'sudo: a terminal is required to read the password; either use the -S option to read from standard input or configure an askpass helper\nsudo: a password is required\n',
+					exit_code: 1
+				})
+		});
 		mocks.askCommandApproval.mockResolvedValue('allow_once');
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'sudo dnf install foo' }, sessionCtx);
@@ -1049,11 +1022,9 @@ describe('run_command without a terminal (Code session)', () => {
 	});
 
 	it('adds no terminal hint for an ordinary failure', async () => {
-		mocks.invoke.mockImplementation((cmd: string) =>
-			cmd === 'run_command_capture'
-				? Promise.resolve(runResultDefaults({ stderr: 'boom\n', exit_code: 2 }))
-				: Promise.resolve()
-		);
+		routeInvoke({
+			run_command_capture: () => runResultDefaults({ stderr: 'boom\n', exit_code: 2 })
+		});
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'make' }, sessionCtx);
 		expect(out.result).not.toContain('Shell tab');
@@ -1070,11 +1041,9 @@ describe('run_command without a terminal (Code session)', () => {
 	});
 
 	it('command_output reports how a finished process ended', async () => {
-		mocks.invoke.mockImplementation((cmd: string) => {
-			if (cmd === 'code_bg_status')
-				return Promise.resolve([{ ...bgProc, running: false, exit_code: 3 }]);
-			if (cmd === 'code_bg_tail') return Promise.resolve('');
-			return Promise.resolve();
+		routeInvoke({
+			code_bg_status: () => [{ ...bgProc, running: false, exit_code: 3 }],
+			code_bg_tail: ''
 		});
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('command_output', { id: 'bg-1' }, sessionCtx);
@@ -1083,9 +1052,7 @@ describe('run_command without a terminal (Code session)', () => {
 	});
 
 	it('command_output refuses another session’s process', async () => {
-		mocks.invoke.mockImplementation((cmd: string) =>
-			cmd === 'code_bg_status' ? Promise.resolve([]) : Promise.resolve()
-		);
+		routeInvoke({ code_bg_status: [] });
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('command_output', { id: 'bg-9' }, sessionCtx);
 		expect(out.result).toContain('No background command with id bg-9');
@@ -1205,11 +1172,7 @@ describe('one writer per folder', () => {
 	});
 
 	it('an edit takes the folder and reports the file it changed', async () => {
-		mocks.invoke.mockImplementation((cmd: string) =>
-			cmd === 'fs_edit_text'
-				? Promise.resolve({ first_changed_line: 3, used_fuzzy: false })
-				: Promise.resolve()
-		);
+		routeInvoke({ fs_edit_text: { first_changed_line: 3, used_fuzzy: false } });
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const g = guard();
 		const out = await executeTool(
@@ -1236,9 +1199,11 @@ describe('one writer per folder', () => {
 	});
 
 	it('a failed edit reports nothing changed', async () => {
-		mocks.invoke.mockImplementation((cmd: string) =>
-			cmd === 'fs_edit_text' ? Promise.reject('no match') : Promise.resolve()
-		);
+		routeInvoke({
+			fs_edit_text: () => {
+				throw 'no match';
+			}
+		});
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const g = guard();
 		await executeTool(

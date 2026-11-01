@@ -26,6 +26,7 @@ vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
 
 import { WorkerManager } from './workerManager';
 import { PYTHON_UNAVAILABLE, pythonRuntimeMissing } from './availability';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 /** Minimal Worker stand-in: captures postMessage and replays messages. */
 class FakeWorker {
@@ -253,8 +254,8 @@ describe('WorkerManager message dispatch', () => {
 		new DataView(body.buffer).setUint32(0, json.length, true);
 		body.set(json, 4);
 		body.set([7, 8], 4 + json.length);
-		invokeMock.mockImplementation(async (cmd: string) =>
-			cmd === 'sandbox_sync_workdir' ? body.buffer : undefined
+		invokeMock.mockImplementation(
+			invokeRouter({ sandbox_sync_workdir: () => body.buffer }, undefined)
 		);
 		const wm = makeManager();
 		void wm.runPython('print(1)');

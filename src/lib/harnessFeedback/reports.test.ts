@@ -11,6 +11,7 @@ import {
 	shareReports,
 	type StoredReport
 } from '#lib/harnessFeedback/reports.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 function report(over: Partial<StoredReport> = {}): StoredReport {
 	return {
@@ -76,13 +77,19 @@ describe('summaries', () => {
 
 describe('shareReports', () => {
 	it('saves the shown reports, opens their folder, then the issue', async () => {
-		mocks.invoke.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
-			if (cmd === 'feedback_redact')
-				return (args.lines as string[]).map((l) => l.replace('GitHub', '[r]'));
-			if (cmd === 'agent_feedback_export')
-				return { path: '/home/me/Downloads/haruspex-model-feedback-2026-10-26.zip', count: 1 };
-			return undefined;
-		});
+		mocks.invoke.mockImplementation(
+			invokeRouter(
+				{
+					feedback_redact: (args) =>
+						(args!.lines as string[]).map((l) => l.replace('GitHub', '[r]')),
+					agent_feedback_export: {
+						path: '/home/me/Downloads/haruspex-model-feedback-2026-10-26.zip',
+						count: 1
+					}
+				},
+				undefined
+			)
+		);
 		const r = await shareReports([report()]);
 		expect(r).toEqual({
 			path: '/home/me/Downloads/haruspex-model-feedback-2026-10-26.zip',
