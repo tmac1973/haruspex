@@ -9,7 +9,7 @@ Lean mode keeps Haruspex to Chat and Jobs, and Chat to conversation, web researc
 
 ## Why it helps
 
-Every tool Chat can use is described to the model at the start of each reply. With a working folder and a few integrations, that is over 30 tools and several thousand tokens before you have typed anything. On a slow machine that is minutes of waiting, a small context window fills up early, and a small model picks tools worse when it has many to choose from. Lean mode sends about 15.
+Every tool Chat can use is described to the model at the start of each reply. With a working folder and a few integrations, that is over 30 tools and several thousand tokens before you have typed anything. On a slow machine that is minutes of waiting, a small context window fills up early, and a small model picks tools worse when it has many to choose from. Lean mode sends about 15. Settings → General → Load tools when needed does the same for larger models without turning anything off; it can't be changed while lean mode is on (see the `tool-loading` page).
 
 ## Turn it on or off
 
