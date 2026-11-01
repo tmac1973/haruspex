@@ -11,7 +11,7 @@ vi.mock('#lib/image/index.ts', () => ({
 	resolveImageBackend: () => ({ kind: image.kind, capabilities: image.capabilities })
 }));
 
-import { LEAN_UNMET, needsNotes, unmetFor, unmetNeed } from './needs';
+import { LEAN_UNMET, MODELS_NOTE, needsNotes, unmetFor, unmetNeed } from './needs';
 import { updateSettings } from '#lib/stores/settings.ts';
 
 const CAPS = {
@@ -25,7 +25,12 @@ const CAPS = {
 };
 
 beforeEach(() => {
-	updateSettings({ imageBackendKind: 'none', musicBackendKind: 'none', leanMode: false });
+	updateSettings({
+		imageBackendKind: 'none',
+		imageModels: undefined,
+		musicBackendKind: 'none',
+		leanMode: false
+	});
 	video.on = false;
 	image.capabilities.mockReset().mockResolvedValue(CAPS);
 });
@@ -48,6 +53,30 @@ describe('unmetNeed', () => {
 });
 
 describe('needsNotes', () => {
+	it('lists each image model in the order used, when there are several', async () => {
+		const entry = (id: string, caps: object | null) => ({
+			id,
+			name: id,
+			backend: 'llama-toolchest' as const,
+			url: 'http://box:3000',
+			keyId: null,
+			model: id,
+			options: {},
+			caps: caps && { ...CAPS, inpaint: false, ...caps },
+			capsAt: null,
+			renamed: false
+		});
+		updateSettings({
+			imageModels: [entry('klein', { transparency: false, maxEditImages: 4 }), entry('new', null)]
+		});
+		expect(await needsNotes(['image'])).toEqual([
+			'klein: draws, edits up to 4 pictures, upscales.',
+			expect.stringMatching(/^new: draws; not probed yet/),
+			MODELS_NOTE
+		]);
+		expect(image.capabilities).not.toHaveBeenCalled();
+	});
+
 	it('says what the image backend can do, and how to get the rest', async () => {
 		updateSettings({ imageBackendKind: 'lemonade' });
 		const [note] = await needsNotes(['image']);

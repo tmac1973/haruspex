@@ -37,6 +37,31 @@ export function firstImageEntry(): ImageModelEntry | null {
 	return imageEntries()[0] ?? null;
 }
 
+/** The image models' names, in order: what the tools' `model` may be. */
+export function entryNames(): string[] {
+	return imageEntries().map((e) => e.name);
+}
+
+/** The pictures one edit took before models said: what an unprobed one is assumed to take. */
+export const UNPROBED_EDIT_PICTURES = 4;
+
+/**
+ * The most pictures one edit can combine on any image model; 0 when none can
+ * edit. A model no probe has answered for counts as taking
+ * `UNPROBED_EDIT_PICTURES`, so a list nobody has probed still offers editing.
+ */
+export function maxEditPictures(): number {
+	const each = imageEntries().map((e) =>
+		!e.caps ? UNPROBED_EDIT_PICTURES : e.caps.edit ? (e.caps.maxEditImages ?? 1) : 0
+	);
+	return Math.max(0, ...each);
+}
+
+/** Some image model can `op`, or may: one no probe has answered for counts. */
+export function anyEntryCan(op: 'edit' | 'upscale'): boolean {
+	return imageEntries().some((e) => !e.caps || !!e.caps[op]);
+}
+
 /** The image model with this id, or undefined. */
 export function entryById(id: string): ImageModelEntry | undefined {
 	return imageEntries().find((e) => e.id === id);

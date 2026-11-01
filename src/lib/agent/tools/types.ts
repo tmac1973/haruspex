@@ -357,6 +357,12 @@ export interface ToolRegistration {
 		 *  whose owner has started one. */
 		| 'tasks';
 	requiresVision?: boolean;
+	/**
+	 * The schema as settings shape it for this turn, or null to leave the tool
+	 * out: the image tools' `model` choices and picture limit follow the image
+	 * models in Settings → Image. Asked only once every other gate has passed.
+	 */
+	liveSchema?: (schema: ToolDefinition) => ToolDefinition | null;
 	/** Calls the model while it runs, in the turn's slot; the turn keeps its
 	 *  slot for it. */
 	usesModel?: true;

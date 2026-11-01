@@ -29,11 +29,14 @@ vi.mock('#lib/stores/apiKeySecrets.ts', () => ({ apiKeysReady: () => Promise.res
 
 import {
 	addImageModel,
+	anyEntryCan,
 	entryApiKey,
+	entryNames,
 	entryForHandle,
 	firstImageEntry,
 	imageEntries,
 	legacyEntryFor,
+	maxEditPictures,
 	moveImageModel,
 	removeImageModel,
 	renameImageModel,
@@ -147,5 +150,32 @@ describe('entryForHandle', () => {
 			keyId: 'k2',
 			model: 'qwen-image-edit-2511'
 		});
+	});
+});
+
+describe('what the image models can do, together', () => {
+	const entry = (name: string, c: object | null): ImageModelEntry => ({
+		...legacyEntryFor('llama-toolchest'),
+		id: name,
+		name,
+		caps: c && { ...caps, ...c }
+	});
+
+	it('takes as many pictures as the most able model, or 4 for one not probed', () => {
+		settings.imageModels = [entry('a', {}), entry('b', { edit: true, maxEditImages: 10 })];
+		expect(maxEditPictures()).toBe(10);
+		expect(entryNames()).toEqual(['a', 'b']);
+		settings.imageModels = [entry('a', {}), entry('c', null)];
+		expect(maxEditPictures()).toBe(4);
+		settings.imageModels = [entry('a', {})];
+		expect(maxEditPictures()).toBe(0);
+	});
+
+	it('can edit or upscale when one model can, or may', () => {
+		settings.imageModels = [entry('a', {}), entry('b', { upscale: true })];
+		expect(anyEntryCan('upscale')).toBe(true);
+		expect(anyEntryCan('edit')).toBe(false);
+		settings.imageModels = [entry('a', {}), entry('c', null)];
+		expect(anyEntryCan('edit')).toBe(true);
 	});
 });

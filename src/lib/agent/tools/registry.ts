@@ -488,7 +488,9 @@ function schemaFor(
 	// project, or Chat's working folder.
 	const canSave = filter.codeMode ? !filter.codeReadOnly : filter.hasWorkingDir;
 	const name = reg.schema.function.name;
-	let schema = reg.schema;
+	const live = reg.liveSchema ? reg.liveSchema(reg.schema) : reg.schema;
+	if (!live) return null;
+	let schema = live;
 	if (SAVING_TOOLS.has(name) && !canSave) {
 		schema = withoutProjectWrite(schema);
 	}
