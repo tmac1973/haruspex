@@ -22,12 +22,15 @@
 	} from '#lib/image/comfyui/provision.ts';
 
 	interface Props {
+		/** The server, and the key to send it: the open image model's. */
+		baseUrl: string;
+		apiKey: string;
 		/** Bumped by the parent after each probe, so the rows re-check. */
 		probeCount: number;
 		/** Ask the parent to probe again: a new model shows up in its list. */
 		onInstalled: () => void;
 	}
-	let { probeCount, onInstalled }: Props = $props();
+	let { baseUrl, apiKey, probeCount, onInstalled }: Props = $props();
 
 	interface Row {
 		set: ComfyModelSet;
@@ -43,10 +46,7 @@
 	/** The family whose file list was just copied, for a brief confirmation. */
 	let copied = $state<string | null>(null);
 
-	const cfg = () => ({
-		baseUrl: getSettings().imageBackendBaseUrl,
-		apiKey: getSettings().imageBackendApiKey
-	});
+	const cfg = () => ({ baseUrl, apiKey });
 
 	async function refresh() {
 		error = '';

@@ -1,17 +1,17 @@
 /**
- * The image models Settings keeps (`imageModels`), each one model on one
- * server, and what callers ask of them: the list, the first, the one a job
- * was sent for, and the key a call to one sends. A backend is built from an
- * entry (`#lib/image/registry.ts`).
- *
- * Settings → Image still edits its single-backend fields, which keep the list
- * in step (`#lib/image/fields.ts`), so for now it holds one entry at most.
+ * The image models Settings → Image keeps (`imageModels`), each one model on
+ * one server, in the order the image tools try them: the list, and editing
+ * it; the one a job was sent for; the key a call to one sends. A backend is
+ * built from an entry (`#lib/image/registry.ts`).
  */
 
 import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 import type { ImageBackendCapabilities, ImageModelEntry } from '#lib/image/types.ts';
 import type { ImageJobHandle } from '#lib/image/backend.ts';
 import { toolchestKeyFor } from '#lib/toolchest/models.ts';
+import { hostOf } from '#lib/toolchest/client.ts';
+import { uniqueName } from '#lib/generation/entry.ts';
+import { imageKeysReady } from '#lib/image/keys.ts';
 import {
 	LEGACY_ENTRY_ID,
 	defaultImageName,
@@ -21,27 +21,126 @@ import {
 
 export { IMAGE_BACKEND_LABEL, LEGACY_ENTRY_ID, defaultImageName } from '#lib/image/fields.ts';
 
+type EntryKind = ImageModelEntry['backend'];
+
 /**
- * The image models, in the order they are tried. While Settings → Image edits
- * its single-backend fields, those say what the list holds, and the saved list
- * adds what was learned of each entry since (its name, what a probe saw).
+ * The image models, in the order they are tried. Settings from before the
+ * list (as some tests still hand in) are read through their old fields.
  */
 export function imageEntries(): ImageModelEntry[] {
 	const s = getSettings();
-	return imageModelsFromFields(s, Array.isArray(s.imageModels) ? s.imageModels : []);
+	return Array.isArray(s.imageModels) ? s.imageModels : imageModelsFromFields(s);
 }
 
-/** The first saved image model, or null when there is none. */
+/** The first image model, or null when there is none. */
 export function firstImageEntry(): ImageModelEntry | null {
 	return imageEntries()[0] ?? null;
 }
 
+/** The image model with this id, or undefined. */
+export function entryById(id: string): ImageModelEntry | undefined {
+	return imageEntries().find((e) => e.id === id);
+}
+
 /**
- * The entry `kind`'s Settings → Image fields describe, whether or not it is
- * the chosen kind: what the Settings screen probes and installs into.
+ * The entry `kind`'s old single-backend fields describe: for a job handle
+ * from before the list, and the one-backend-per-kind exports tests use.
  */
-export function legacyEntryFor(kind: ImageModelEntry['backend']): ImageModelEntry {
+export function legacyEntryFor(kind: EntryKind): ImageModelEntry {
 	return entryFromFields(getSettings(), kind);
+}
+
+function save(list: ImageModelEntry[]): void {
+	updateSettings({ imageModels: list });
+}
+
+/** `e`'s server's host, for telling two entries with one name apart. */
+function hostOfEntry(e: Pick<ImageModelEntry, 'url'>): string {
+	return e.url.trim() ? hostOf(e.url) : '';
+}
+
+/** `name`, made different from every other entry's. */
+function freeName(name: string, e: Pick<ImageModelEntry, 'id' | 'url'>): string {
+	const taken = imageEntries()
+		.filter((o) => o.id !== e.id)
+		.map((o) => o.name);
+	return uniqueName(name, hostOfEntry(e), taken);
+}
+
+/** A new entry for `backend` at the end of the list, with `fill`; its id. */
+export function addImageModel(
+	backend: EntryKind,
+	fill: Partial<Pick<ImageModelEntry, 'url' | 'keyId'>> = {}
+): string {
+	const id = crypto.randomUUID();
+	const draft = { id, url: fill.url ?? '' };
+	const entry: ImageModelEntry = {
+		id,
+		name: freeName(defaultImageName({ backend, model: '' }), draft),
+		backend,
+		url: fill.url ?? '',
+		keyId: fill.keyId ?? null,
+		model: '',
+		options: {},
+		caps: null,
+		capsAt: null,
+		renamed: false
+	};
+	save([...imageEntries(), entry]);
+	return id;
+}
+
+/**
+ * Change entry `id`. A change to its backend, address, key, model or options
+ * forgets what a probe saw; a new model or backend renames it, unless the
+ * user named it.
+ */
+export function updateImageModel(id: string, patch: Partial<Omit<ImageModelEntry, 'id'>>): void {
+	save(
+		imageEntries().map((e) => {
+			if (e.id !== id) return e;
+			const next = { ...e, ...patch };
+			const config =
+				next.backend !== e.backend ||
+				next.url !== e.url ||
+				next.keyId !== e.keyId ||
+				next.model !== e.model ||
+				JSON.stringify(next.options) !== JSON.stringify(e.options);
+			if (config && !('caps' in patch)) {
+				next.caps = null;
+				next.capsAt = null;
+			}
+			if (!next.renamed && (next.model !== e.model || next.backend !== e.backend)) {
+				next.name = freeName(defaultImageName(next), next);
+			}
+			return next;
+		})
+	);
+}
+
+/** Name entry `id`; an empty name gives it back its model's. */
+export function renameImageModel(id: string, name: string): void {
+	const e = entryById(id);
+	if (!e) return;
+	const own = name.trim();
+	updateImageModel(id, {
+		name: freeName(own || defaultImageName(e), e),
+		renamed: own !== ''
+	});
+}
+
+/** Move entry `id` up (-1) or down (+1) the list. */
+export function moveImageModel(id: string, delta: -1 | 1): void {
+	const list = [...imageEntries()];
+	const at = list.findIndex((e) => e.id === id);
+	const to = at + delta;
+	if (at < 0 || to < 0 || to >= list.length) return;
+	[list[at], list[to]] = [list[to], list[at]];
+	save(list);
+}
+
+export function removeImageModel(id: string): void {
+	save(imageEntries().filter((e) => e.id !== id));
 }
 
 /**
@@ -57,30 +156,27 @@ export function saveImageCaps(id: string, caps: ImageBackendCapabilities): void 
 	const next = list.map((e, i) =>
 		i === at ? { ...e, caps: structuredClone(caps), capsAt: Date.now() } : e
 	);
-	updateSettings({ imageModels: next });
+	save(next);
 }
 
 /**
- * The key a ComfyUI or Lemonade entry without a named key sends: the one
- * Settings keeps inline where no secret store works, else empty, and Rust
- * falls back to the stored secret.
+ * The key a call for `e` sends: its named key's value, or none. A ComfyUI or
+ * Lemonade entry waits for its old key to become a named one first.
  */
-export function inlineKeyFor(backend: 'comfyui' | 'lemonade'): string {
-	const s = getSettings();
-	return (backend === 'comfyui' ? s.imageBackendApiKey : s.imageLemonadeApiKey) ?? '';
-}
-
-/** The key a call for `e` sends: its named key's value, else the inline one above. */
 export async function entryApiKey(e: ImageModelEntry): Promise<string> {
-	if (e.keyId) return toolchestKeyFor(e.keyId);
-	return e.backend === 'comfyui' || e.backend === 'lemonade' ? inlineKeyFor(e.backend) : '';
+	if (!e.keyId && (e.backend === 'comfyui' || e.backend === 'lemonade')) {
+		await imageKeysReady();
+		// A backend built before the migration holds the entry as it was.
+		e = entryById(e.id) ?? e;
+	}
+	return e.keyId ? toolchestKeyFor(e.keyId) : '';
 }
 
 /**
  * The entry a job `handle` was sent for, for `resume`: the saved one with its
- * id; for a handle from before entries, the one Settings → Image's fields for
- * its backend describe; else one made from the handle alone. Either way
- * `resume` asks the server and key the handle names.
+ * id; for a handle from before the list, the one the old fields for its
+ * backend describe; else one made from the handle alone. Either way `resume`
+ * asks the server and key the handle names.
  */
 export function entryForHandle(handle: ImageJobHandle): ImageModelEntry | null {
 	if (handle.backend === 'none') return null;

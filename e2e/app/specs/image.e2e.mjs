@@ -38,6 +38,8 @@ describe('a test image from ComfyUI', () => {
 		});
 		await (await $('button[aria-label="Settings"]')).click();
 		await (await $('button=Image')).click();
+		// The backend seeded above is the first image model; open it.
+		await (await $('button.entry-name')).click();
 		await (await $('button=Generate a test image')).click();
 
 		// Checked before the preview, because from the outside two different

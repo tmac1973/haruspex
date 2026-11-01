@@ -138,6 +138,8 @@ const TABLE: Record<string, Handler> = {
 	get_app_logs: empty,
 	image_engine_logs: empty,
 	comfy_logs: empty,
+	// Settings → Image asks whether to offer the bundled engine.
+	image_engine_status: () => ({ status: { type: 'Stopped' }, model: null, available: true }),
 	// Not in a repo: the guided-planning skill picker lists only user skills.
 	skills_project_root: none,
 	secret_get: none,

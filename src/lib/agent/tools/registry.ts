@@ -569,7 +569,7 @@ function generationRefusal(reg: ToolRegistration, ctx: ToolContext): string | nu
 	const s = getSettings();
 	if (reg.category === 'image') {
 		if (imageEntries().length === 0 && reg.schema.function.name !== 'make_asset') {
-			return 'Image generation is not set up. The user can choose a backend in Settings → Image.';
+			return 'Image generation is not set up. The user can add an image model in Settings → Image.';
 		}
 		if (!ctx.interactive)
 			return 'Image generation is only available in a conversation with the user.';

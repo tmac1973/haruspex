@@ -36,7 +36,8 @@ use crate::proxy::ProxyConfig;
 static GENERATING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 pub(crate) const LEMONADE: ImageServer = ImageServer {
-    secret: "lemonade:key",
+    // As ComfyUI's: a named key the webview sends, never the old secret.
+    secret: "",
     name: "Lemonade",
     one_at_a_time: Some((&GENERATING, &["/api/v1/images/"])),
 };

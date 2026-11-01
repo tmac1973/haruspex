@@ -40,7 +40,7 @@ export interface ImageNeed {
 }
 
 export const NOT_SET_UP =
-	'Image generation is not set up. The user can choose a backend in Settings → Image.';
+	'Image generation is not set up. The user can add an image model in Settings → Image.';
 
 export const NO_EDIT_SENTENCE =
 	"The image generation in Settings → Image can't edit pictures. Qwen-Image 2.1 can, on the " +

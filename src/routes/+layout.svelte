@@ -327,6 +327,8 @@
 		void migrateApiKeys().then(apiKeysReady).then(migrateJobApiKeys);
 		// After the keys: a probe sends the entry's named key.
 		void apiKeysReady()
+			.then(() => import('#lib/image/keys.ts'))
+			.then((m) => m.imageKeysReady())
 			.then(() => import('#lib/image/refreshCaps.ts'))
 			.then((m) => m.refreshMissingImageCaps())
 			.catch((e) => console.warn('Image models were not asked what they can do:', e));

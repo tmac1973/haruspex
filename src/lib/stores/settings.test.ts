@@ -1144,21 +1144,25 @@ describe('image backend settings', () => {
 		updateSettings({ imageBackendKind: 'none', imageBackendBaseUrl: '' });
 	});
 
-	it('keeps the image model list in step with the backend fields', () => {
-		updateSettings({ imageBackendKind: 'llama-toolchest', imageToolchestModelId: 'klein' });
-		expect(getSettings().imageModels).toMatchObject([
-			{ id: 'legacy', backend: 'llama-toolchest', model: 'klein' }
-		]);
-		const caps = { transparency: false, seamlessTiling: false, loras: false, maxLoras: 0 };
-		updateSettings({ imageModels: [{ ...getSettings().imageModels[0], caps }] });
-		// A field that doesn't describe the entry leaves what was learned alone.
-		updateSettings({ imageBackendApiKeySaved: true });
-		expect(getSettings().imageModels[0].caps).toEqual(caps);
-		updateSettings({ imageToolchestModelId: 'ming' });
-		expect(getSettings().imageModels[0]).toMatchObject({ model: 'ming', caps: null });
-		updateSettings({ imageBackendKind: 'none', imageToolchestModelId: '' });
-		expect(getSettings().imageModels).toEqual([]);
-		updateSettings({ imageBackendApiKeySaved: false });
+	it('leaves a saved image model list alone when an old backend field changes', () => {
+		const list = [
+			{
+				id: 'x',
+				name: 'klein',
+				backend: 'llama-toolchest' as const,
+				url: 'http://box:3000',
+				keyId: null,
+				model: 'klein',
+				options: {},
+				caps: null,
+				capsAt: null,
+				renamed: false
+			}
+		];
+		updateSettings({ imageModels: list });
+		updateSettings({ imageBackendKind: 'comfyui', imageBackendBaseUrl: 'http://c:8188' });
+		expect(getSettings().imageModels).toEqual(list);
+		updateSettings({ imageModels: undefined, imageBackendKind: 'none', imageBackendBaseUrl: '' });
 	});
 });
 

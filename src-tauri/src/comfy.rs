@@ -172,7 +172,9 @@ pub(crate) struct ImageServer {
 }
 
 pub(crate) const COMFYUI: ImageServer = ImageServer {
-    secret: "comfy:key",
+    // Each image model sends its own named key, resolved by the webview; the
+    // old `comfy:key` secret is read only to migrate it (`image/keys.ts`).
+    secret: "",
     name: "ComfyUI",
     one_at_a_time: None,
 };
