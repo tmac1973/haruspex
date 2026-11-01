@@ -10,6 +10,9 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	})
 );
 
+const refresh = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('#lib/image/refreshCaps.ts', () => ({ refreshMissingImageCaps: refresh }));
+
 import { mergePatch, patchSettings, readSettings, redactSecrets } from './settings.ts';
 
 beforeEach(() => {
@@ -19,6 +22,7 @@ beforeEach(() => {
 		braveApiKey: 'brave-secret',
 		braveApiKeySaved: false,
 		imageBackend: 'none',
+		imageModels: [],
 		inferenceBackend: {
 			mode: 'local',
 			remoteBaseUrl: '',
@@ -82,6 +86,13 @@ describe('settings.patch', () => {
 		expect(patchSettings({ theme: 'dark', imageBackend: 'none' })).toEqual({ changed: ['theme'] });
 		expect(store.settings.theme).toBe('dark');
 		expect(store.settings.braveApiKey).toBe('brave-secret');
+	});
+
+	it('asks the image models what they can do when it changes them', async () => {
+		refresh.mockClear();
+		patchSettings({ theme: 'dark' });
+		patchSettings({ imageModels: [{ id: 'a', caps: null }] });
+		await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
 	});
 
 	it('merges an object key by key, keeping what it does not name', () => {
