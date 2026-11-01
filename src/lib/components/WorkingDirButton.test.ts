@@ -32,7 +32,7 @@ describe('WorkingDirButton right-click menu', () => {
 		const event = rightClick(chip);
 		expect(event.defaultPrevented).toBe(true);
 		await fireEvent.click(await screen.findByRole('menuitem', { name: 'Open in file manager' }));
-		expect(invoke).toHaveBeenCalledWith('open_folder', { path: '/home/me/proj' });
+		expect(invoke).toHaveBeenCalledWith('folder_open', { path: '/home/me/proj' });
 		expect(screen.queryByRole('menu')).toBeNull();
 	});
 

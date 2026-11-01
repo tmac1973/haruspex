@@ -20,6 +20,7 @@
 //! scrollback. The cgroup's `oom_kill` count, read before and after a command,
 //! says whether that command was the one killed.
 
+use crate::sync_util::LockExt;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -150,7 +151,7 @@ impl TerminalScope {
     /// How many processes the kernel has killed in this terminal for going
     /// over the limit; None when that can't be read.
     pub fn oom_kills(&self) -> Option<u64> {
-        let mut cgroup = self.cgroup.lock().ok()?;
+        let mut cgroup = self.cgroup.lock_or_recover();
         if cgroup.is_none() {
             let out = std::process::Command::new("systemctl")
                 .args([

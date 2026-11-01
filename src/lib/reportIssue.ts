@@ -89,7 +89,7 @@ export async function reportIssue(r: IssueReport): Promise<string> {
 		contents: buildFullBundle(d)
 	});
 	const folder = path.replace(/[\\/][^\\/]*$/, '');
-	await invoke('open_folder', { path: folder });
+	await invoke('folder_open', { path: folder });
 	const report = { ...r, error, log };
 	const url = buildFeedbackUrl(d, {
 		title: issueTitle(report),

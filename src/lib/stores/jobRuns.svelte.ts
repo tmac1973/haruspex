@@ -1,7 +1,5 @@
-import { invoke } from '@tauri-apps/api/core';
 import { logDebug } from '#lib/debugLog.ts';
 import { dbMutate, dbQuery } from '#lib/stores/dbCall.ts';
-import { errMessage } from '#lib/utils/error.ts';
 
 export type JobRunStatus =
 	| 'queued'
@@ -248,16 +246,13 @@ export async function markRunStepStarted(
  * left behind by a hard close or crash. Idempotent.
  */
 export async function recoverOrphanRuns(): Promise<number> {
-	try {
-		const swept = await invoke<number>('db_recover_orphan_runs');
-		if (swept > 0) {
-			logDebug('jobs', 'recoverOrphanRuns swept stale rows', { swept });
-		}
-		return swept;
-	} catch (e) {
-		logDebug('jobs', 'recoverOrphanRuns failed', { error: errMessage(e) });
-		return 0;
-	}
+	const swept = await dbQuery<number>({
+		cmd: 'db_recover_orphan_runs',
+		onError: 'recoverOrphanRuns failed',
+		fallback: 0
+	});
+	if (swept > 0) logDebug('jobs', 'recoverOrphanRuns swept stale rows', { swept });
+	return swept;
 }
 
 /**

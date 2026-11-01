@@ -34,7 +34,7 @@ import {
 	clearMcpDefaultTools,
 	mcpToolName,
 	setMcpDefaultTools
-} from '#lib/agent/tools/mcp-names.ts';
+} from '#lib/agent/tools/mcpNames.ts';
 import {
 	toolResult,
 	toolError,
