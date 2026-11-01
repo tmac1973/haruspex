@@ -12,7 +12,7 @@
 //!
 //! Both types round-trip cleanly through serde into the frontend.
 
-use mail_parser::{Address, Message, MessageParser, MimeHeaders, PartType};
+use mail_parser::{AddressList, Message, MessageParser, PartKind, TextList};
 use serde::{Deserialize, Serialize};
 
 use super::text::html_to_text;
@@ -114,9 +114,8 @@ struct Headers {
 fn headers_of(parsed: &Message<'_>) -> Headers {
     let (from_name, from_email) = parsed.from().map(extract_from).unwrap_or_default();
     let timestamp = parsed.date().map(|d| d.to_timestamp());
-    let ids = |v: &mail_parser::HeaderValue<'_>| -> Vec<String> {
-        v.as_text_list()
-            .map(|l| l.iter().map(|s| s.to_string()).collect())
+    let ids = |v: Option<TextList<'_>>| -> Vec<String> {
+        v.map(|l| l.iter().map(|s| s.to_string()).collect())
             .unwrap_or_default()
     };
     Headers {
@@ -146,10 +145,10 @@ pub fn utc_rfc3339(ts: i64) -> String {
     mail_parser::DateTime::from_timestamp(ts).to_rfc3339()
 }
 
-/// Pull a "Name" + "addr@host" pair out of a mail-parser `Address`.
-/// Address can be a single mailbox or a group — we only care about
+/// Pull a "Name" + "addr@host" pair out of a mail-parser `AddressList`.
+/// The list can mix mailboxes and groups — we only care about
 /// the first usable mailbox in either case.
-fn extract_from(addr: &Address<'_>) -> (String, String) {
+fn extract_from(addr: AddressList<'_>) -> (String, String) {
     if let Some(first) = addr.first() {
         let email = first.address().unwrap_or("").to_string();
         let name = first.name().unwrap_or("").to_string();
@@ -160,8 +159,8 @@ fn extract_from(addr: &Address<'_>) -> (String, String) {
 
 /// Pull every addr@host out of an Address header (To, Cc, …).
 /// Works for both single-mailbox and group-shaped addresses.
-fn extract_address_list(addr: &Address<'_>) -> Vec<String> {
-    addr.iter()
+fn extract_address_list(addr: AddressList<'_>) -> Vec<String> {
+    addr.mailboxes()
         .filter_map(|a| a.address().map(|s| s.to_string()))
         .collect()
 }
@@ -223,8 +222,10 @@ pub fn parse_rfc5322(
     }
 
     // Attachment detection: any non-text part counts.
-    let has_attachments = parsed.parts.iter().any(|p| {
-        matches!(p.body, PartType::Binary(_) | PartType::InlineBinary(_))
+    // The root message's own parts: a forwarded message's attachments
+    // aren't this one's.
+    let has_attachments = parsed.root().parts().any(|p| {
+        matches!(p.kind(), PartKind::Binary | PartKind::InlineBinary)
             || p.content_disposition()
                 .map(|cd| cd.attribute("filename").is_some())
                 .unwrap_or(false)
