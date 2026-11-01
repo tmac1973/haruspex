@@ -161,3 +161,73 @@ pub async fn power_inhibit_acquire(state: State<'_, PowerInhibitor>) -> Result<(
 pub async fn power_inhibit_release(state: State<'_, PowerInhibitor>) -> Result<(), String> {
     state.send(Cmd::Release)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Only Release is sent here: it never reaches keepawake, so these run
+    // without logind, a session bus or any other OS service.
+
+    fn has_worker(p: &PowerInhibitor) -> bool {
+        p.worker.lock().unwrap().is_some()
+    }
+
+    #[test]
+    fn release_with_nothing_held_succeeds_and_starts_the_worker() {
+        let p = PowerInhibitor::new();
+        assert!(!has_worker(&p));
+        assert_eq!(p.send(Cmd::Release), Ok(()));
+        assert!(has_worker(&p));
+        p.shutdown();
+    }
+
+    #[test]
+    fn repeated_sends_reuse_one_worker_thread() {
+        let p = PowerInhibitor::new();
+        p.send(Cmd::Release).unwrap();
+        let first = p.worker.lock().unwrap().as_ref().unwrap().1.thread().id();
+        p.send(Cmd::Release).unwrap();
+        let second = p.worker.lock().unwrap().as_ref().unwrap().1.thread().id();
+        assert_eq!(first, second);
+        p.shutdown();
+    }
+
+    #[test]
+    fn shutdown_clears_the_worker_and_the_next_send_starts_a_fresh_one() {
+        let p = PowerInhibitor::new();
+        p.send(Cmd::Release).unwrap();
+        let first = p.worker.lock().unwrap().as_ref().unwrap().1.thread().id();
+        p.shutdown();
+        assert!(!has_worker(&p));
+        p.send(Cmd::Release).unwrap();
+        let second = p.worker.lock().unwrap().as_ref().unwrap().1.thread().id();
+        assert_ne!(first, second);
+        p.shutdown();
+    }
+
+    #[test]
+    fn shutdown_before_any_use_is_harmless() {
+        let p = PowerInhibitor::new();
+        p.shutdown();
+        assert!(!has_worker(&p));
+    }
+
+    #[test]
+    fn the_worker_thread_carries_a_recognisable_name() {
+        let p = PowerInhibitor::new();
+        p.send(Cmd::Release).unwrap();
+        let name = p
+            .worker
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .1
+            .thread()
+            .name()
+            .map(String::from);
+        assert_eq!(name.as_deref(), Some("power-inhibit"));
+        p.shutdown();
+    }
+}

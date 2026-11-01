@@ -570,3 +570,56 @@ pub async fn code_session_fork(
     }
     made
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+    use std::sync::{Arc, Mutex};
+
+    fn test_db() -> Database {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        let db = Database {
+            conn: Arc::new(Mutex::new(conn)),
+        };
+        db.migrate().unwrap();
+        db
+    }
+
+    #[test]
+    fn on_pool_runs_the_work_against_the_shared_connection() {
+        let db = test_db();
+        tauri::async_runtime::block_on(async {
+            on_pool(db.clone(), |db| db.create_conversation("c1", "Hello"))
+                .await
+                .unwrap();
+            let list = on_pool(db.clone(), |db| db.list_conversations())
+                .await
+                .unwrap();
+            assert_eq!(list.len(), 1);
+            assert_eq!(list[0].id, "c1");
+            assert_eq!(list[0].title, "Hello");
+        });
+        // The clone wrote through to the original handle.
+        assert_eq!(db.list_conversations().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn on_pool_passes_the_work_error_through_unchanged() {
+        let db = test_db();
+        let out = tauri::async_runtime::block_on(on_pool(db, |_db| {
+            Err::<(), _>("no such conversation".to_string())
+        }));
+        assert_eq!(out, Err("no such conversation".to_string()));
+    }
+
+    #[test]
+    fn on_pool_turns_a_panic_into_an_error_instead_of_unwinding() {
+        let db = test_db();
+        let out: Result<(), String> =
+            tauri::async_runtime::block_on(on_pool(db, |_db| panic!("boom")));
+        let err = out.unwrap_err();
+        assert!(err.starts_with("db task panicked"), "{err}");
+    }
+}

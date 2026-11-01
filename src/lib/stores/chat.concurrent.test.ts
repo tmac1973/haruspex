@@ -29,38 +29,23 @@ vi.mock('#lib/agent/inferenceQueue.svelte.ts', () => ({
 }));
 
 vi.mock('#lib/api.ts', async (importOriginal) => {
-	const { unansweredNotice, withNotice } = await importOriginal<typeof import('#lib/api.ts')>();
+	// The pure helpers and error classes are the real ones; a copy here could
+	// drift. The network calls are left out: nothing here should reach them.
+	const {
+		unansweredNotice,
+		withNotice,
+		mergeLeadingSystemMessages,
+		ApiError,
+		ResponseCutOffError,
+		messageText
+	} = await importOriginal<typeof import('#lib/api.ts')>();
 	return {
 		unansweredNotice,
 		withNotice,
-		mergeLeadingSystemMessages: (messages: { role: string; content: unknown }[]) => {
-			const merged: { role: string; content: unknown }[] = [];
-			for (const m of messages) {
-				const prev = merged[merged.length - 1];
-				if (m.role === 'system' && prev && prev.role === 'system') {
-					merged[merged.length - 1] = { ...prev, content: `${prev.content}\n\n${m.content}` };
-				} else {
-					merged.push(m);
-				}
-			}
-			return merged;
-		},
-		ApiError: class ApiError extends Error {
-			statusCode?: number;
-			constructor(message: string, statusCode?: number) {
-				super(message);
-				this.name = 'ApiError';
-				this.statusCode = statusCode;
-			}
-		},
-		// A cut-off answer; extends Error here, ApiError in the real module.
-		ResponseCutOffError: class ResponseCutOffError extends Error {
-			constructor(message: string) {
-				super(message);
-				this.name = 'ResponseCutOffError';
-			}
-		},
-		messageText: (content: unknown) => (typeof content === 'string' ? content : '')
+		mergeLeadingSystemMessages,
+		ApiError,
+		ResponseCutOffError,
+		messageText
 	};
 });
 

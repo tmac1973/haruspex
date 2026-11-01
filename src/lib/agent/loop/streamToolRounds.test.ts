@@ -20,13 +20,18 @@ const toolsMock = vi.hoisted(() => ({
 	coerceCallArguments: vi.fn((_name: string, args: Record<string, unknown>) => args)
 }));
 
-vi.mock('#lib/api.ts', () => ({
-	ApiError: api.ApiError,
-	ResponseCutOffError: class ResponseCutOffError extends Error {},
-	chatCompletion: api.chatCompletion,
-	chatCompletionStream: api.chatCompletionStream,
-	messageText: (content: unknown): string => (typeof content === 'string' ? content : '')
-}));
+vi.mock('#lib/api.ts', async (importOriginal) => {
+	// The real error classes and messageText: pure, and a copy here could
+	// drift from what the loop really sees. Only the network calls are faked.
+	const { ResponseCutOffError, messageText } = await importOriginal<typeof import('#lib/api.ts')>();
+	return {
+		ApiError: api.ApiError,
+		ResponseCutOffError,
+		messageText,
+		chatCompletion: api.chatCompletion,
+		chatCompletionStream: api.chatCompletionStream
+	};
+});
 
 vi.mock('#lib/agent/tools/index.ts', () => ({
 	executeTool: toolsMock.executeTool,
