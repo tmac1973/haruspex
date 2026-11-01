@@ -716,7 +716,8 @@
 	/* Label, then its control, one per line. */
 	.fields {
 		display: grid;
-		grid-template-columns: max-content minmax(0, 1fr);
+		/* One label width for every grid here, so they line up. */
+		grid-template-columns: 8.5em minmax(0, 1fr);
 		align-items: center;
 		gap: 8px 12px;
 		margin-top: 8px;
