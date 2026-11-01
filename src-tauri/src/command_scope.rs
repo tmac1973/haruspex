@@ -31,9 +31,7 @@ pub fn limit_bytes(percent: u8) -> Option<u64> {
     if percent == 0 {
         return None;
     }
-    let mut sys = sysinfo::System::new();
-    sys.refresh_memory();
-    limit_from_total(sys.total_memory(), percent)
+    limit_from_total(crate::hardware::total_ram_bytes(), percent)
 }
 
 fn limit_from_total(total: u64, percent: u8) -> Option<u64> {

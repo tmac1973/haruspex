@@ -47,7 +47,7 @@ qrcode = { version = "0.14.1", default-features = false }
 sha2 = "0.11.0"
 md-5 = "0.11.0"
 uuid = { version = "1.28", features = ["v4"] }
-sysinfo = "0.39.6"
+sysinfo = "0.40.1"
 tauri-plugin-dialog = "2.6.0"
 futures-util = "0.3.32"
 # Browser-assisted search speaks CDP, which is JSON-RPC over one WebSocket.
@@ -60,7 +60,7 @@ libc = "0.2.183"
 # Waiting on a sidecar from one thread while another may kill it
 # (`sidecar_process`). The shell plugin uses the same crate for the same reason.
 shared_child = "1.1"
-rusqlite = { version = "0.40.2", features = ["bundled"] }
+rusqlite = { version = "0.41.1", features = ["bundled"] }
 cpal = "0.18.2"
 rodio = "0.23.0"
 hound = "3.5.1"
@@ -74,7 +74,7 @@ calamine = "0.37"
 zip = "9.0"
 image = "0.25"
 base64 = "0.23"
-rust_xlsxwriter = "0.101"
+rust_xlsxwriter = "0.102"
 portable-pty = "0.9"
 # Editor windows reload a file when something else changes it: inotify on
 # Linux, FSEvents on macOS. See fs_tools/editor.rs.

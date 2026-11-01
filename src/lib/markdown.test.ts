@@ -313,7 +313,9 @@ describe('renderMarkdown generated audio', () => {
 		expect(html).toContain('class="chat-audio"');
 		expect(html).toContain(`data-audio-hash="${hash}"`);
 		// Inside an attribute, so < and > are harmless and come back as they were.
-		expect(html).toContain('data-audio-title="Rain <lo-fi>"');
+		// (How they are serialised depends on the HTML parser's version.)
+		const host = new DOMParser().parseFromString(html, 'text/html').querySelector('.chat-audio');
+		expect((host as HTMLElement | null)?.dataset.audioTitle).toBe('Rain <lo-fi>');
 		// No source of its own: the scheme won't play in the webview.
 		expect(html).not.toContain('haruspex-audio://');
 		expect(html).not.toContain('<img');

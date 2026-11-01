@@ -82,5 +82,12 @@
 		"pdfjs-dist": "^6.4.299",
 		"pptxgenjs": "4.0.1",
 		"pyodide": "0.29.4"
+	},
+	"overrides": {
+		"pptxgenjs": {
+			"image-size": "^2.0.4"
+		},
+		"minimatch": "^11.0.3",
+		"glob": "^14.0.3"
 	}
 }
