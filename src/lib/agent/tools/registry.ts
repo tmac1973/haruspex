@@ -66,6 +66,16 @@ export function toolUsesModel(name: string): boolean {
 	return tools.get(name)?.usesModel === true;
 }
 
+/** The category of a registered tool, or undefined for an unknown name. */
+export function toolCategory(name: string): ToolRegistration['category'] | undefined {
+	return tools.get(name)?.category;
+}
+
+/** Every registered tool's name, in registration order. */
+export function registeredToolNames(): string[] {
+	return [...tools.keys()];
+}
+
 /**
  * Remove a tool. Only MCP tools are ever withdrawn — built-ins register once at
  * module load and stay — but the registry does not need to know that, so this
@@ -355,7 +365,7 @@ function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean
 	return shouldIncludeChatTool(reg, opts);
 }
 
-export function getToolSchemas(opts: {
+export interface ToolSchemaOpts {
 	hasWorkingDir: boolean;
 	deepResearch?: boolean;
 	visionSupported?: boolean;
@@ -399,7 +409,18 @@ export function getToolSchemas(opts: {
 	 * The `tasks` tools are offered only when it has started a task.
 	 */
 	taskOwner?: string;
-}): ToolDefinition[] {
+}
+
+/** The schemas this turn sends: today, every tool it is offered. */
+export function getToolSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
+	return offeredSchemas(opts);
+}
+
+/**
+ * Every tool this turn may use, after the mode, settings and allowlist
+ * filters. Deferred loading divides this set and never widens it.
+ */
+export function offeredSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
 	if (opts.toolAllowlist) {
 		const allow = new Set(opts.toolAllowlist);
 		const schemas: ToolDefinition[] = [];
