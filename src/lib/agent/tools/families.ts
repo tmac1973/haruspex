@@ -71,7 +71,7 @@ export const TOOL_FAMILIES: readonly ToolFamily[] = [
 	},
 	{
 		id: 'video',
-		line: 'video — edit the episodes in the working folder with Kdenlive: probe, cut, captions, render',
+		line: "video — the episodes and clips in the working folder: what's in them, cutting, captions, render",
 		has: byCategory('video')
 	},
 	{

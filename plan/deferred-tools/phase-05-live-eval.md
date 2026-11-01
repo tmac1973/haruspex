@@ -1,6 +1,6 @@
 # Phase 05 — Live evaluation
 
-**Depends on:** phase 04 · **Enables:** phase 06 (the default)
+**Depends on:** phase 04 · **Enables:** phase 06 (the default) · **Status:** done 2026-11-01, see `phase-05-results.md`
 
 ## Goal
 
