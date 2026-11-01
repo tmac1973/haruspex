@@ -32,9 +32,8 @@ comes from tool families that are always sent and rarely used.
   Code tab keeps tool results in its thread, so there that is until
   compaction. Chat drops tool results between turns (only the last turn's
   come back, with Settings → Chat → Keep tool results from the previous turn
-  in context), so there it is
-  usually one turn, and the model loads the family again when it needs it
-  (decided in phase 03).
+  in context), so there it is usually one turn, and the model loads the
+  family again when it needs it (decided in phase 03).
 - What a turn can do does not change. Deferred loading divides this turn's
   offered set into "sent now" and "sent on request", and never adds a tool
   that `getToolSchemas` would not offer.
