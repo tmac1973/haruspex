@@ -343,17 +343,23 @@ const USE_TOOL = 'use_tool';
 /**
  * A `use_tool({ name, arguments })` call as a call to `name`, so steps,
  * labels, approvals and argument coercion all see the real tool. `arguments`
- * sent as a JSON string is accepted too. A call without a usable name stays
- * as it is, and `use_tool`'s own answer says what it needs.
+ * sent as a JSON string is accepted too. A parameter written beside
+ * `arguments` rather than in it (`{ name, arguments: { content }, path }`) is
+ * the tool's too: dropping it left a document write with no path. A call
+ * without a usable name stays as it is, and `use_tool`'s own answer says what
+ * it needs.
  */
 export function unwrapUseTool(call: ResolvedToolCall): ResolvedToolCall {
 	if (call.name !== USE_TOOL) return call;
 	const name = typeof call.arguments.name === 'string' ? call.arguments.name.trim() : '';
 	if (!name || name === USE_TOOL) return call;
+	const beside = Object.fromEntries(
+		Object.entries(call.arguments).filter(([key]) => key !== 'name' && key !== 'arguments')
+	);
 	return {
 		id: call.id,
 		name,
-		arguments: innerArguments(call.arguments.arguments),
+		arguments: { ...beside, ...innerArguments(call.arguments.arguments) },
 		wire: { name: call.name, arguments: call.arguments }
 	};
 }

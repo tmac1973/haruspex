@@ -33,6 +33,11 @@ import {
 import { prepareVisuals, visualTexts } from '#lib/slides/visuals.ts';
 import { SLIDE_THEMES } from '#lib/slides/themes.ts';
 import type { Slide } from '#lib/slides/types.ts';
+import {
+	documentRewriteHint,
+	mayRewriteDocument,
+	noteDocument
+} from '#lib/agent/tools/_documentDrafts.ts';
 
 /**
  * True when a relative write path stays inside `root` (a relative dir prefix).
@@ -91,6 +96,8 @@ interface WriteOptions {
 	 * deck or download), so a refused repeat write doesn't send the model there.
 	 */
 	editable?: boolean;
+	/** Said after a refused repeat write, before the advice to use a new name. */
+	repeatHint?: string;
 }
 
 /** A tool's write options: a Code session overwrites, and may rewrite after a command. */
@@ -141,7 +148,8 @@ export async function resolveWritePathInteractive(
 	// fix, not a chunk. Back-to-back writes are still refused.
 	if (filesWrittenThisTurn.has(relPath)) {
 		if (!opts.rewritable?.has(relPath)) {
-			return { kind: 'rejected', message: repeatWriteMessage(relPath, opts.editable !== false) };
+			const message = repeatWriteMessage(relPath, opts.editable !== false, opts.repeatHint);
+			return { kind: 'rejected', message };
 		}
 		// This turn wrote the file, so replacing it is no one else's to approve.
 		return { kind: 'ok', finalPath: relPath, overwrite: true };
@@ -194,7 +202,7 @@ export async function resolveWritePathInteractive(
 	}
 }
 
-function repeatWriteMessage(relPath: string, editable: boolean): string {
+function repeatWriteMessage(relPath: string, editable: boolean, hint = ''): string {
 	const refused =
 		`"${relPath}" was already written in this turn, and writing it again would ` +
 		`replace what you just wrote rather than add to it. Do not write a file in ` +
@@ -204,6 +212,7 @@ function repeatWriteMessage(relPath: string, editable: boolean): string {
 	const next = dot > 0 ? `${relPath.slice(0, dot)}-2${relPath.slice(dot)}` : `${relPath}-2`;
 	return (
 		refused +
+		hint +
 		`This format can't be edited in place: if what you wrote is wrong, write the ` +
 		`corrected file to a new name such as "${next}" and tell the user which one to keep.`
 	);
@@ -266,8 +275,11 @@ async function fsWriteWithConflictCheck(
 	}
 }
 
-/** The Rust command a write runs, or why the path can't be written by this tool. */
-type CommandChoice = { command: string } | { error: string };
+/**
+ * The Rust command a write runs and the path it writes (trimmed), or why the
+ * path can't be written by this tool.
+ */
+type CommandChoice = { command: string; path: string } | { error: string };
 
 /**
  * The merged writers take several formats, and the path's extension picks
@@ -279,13 +291,15 @@ function byExtension(
 	formats: Record<string, string>,
 	hint = ''
 ): (path: unknown) => CommandChoice {
-	return (path) => {
-		const ext = typeof path === 'string' ? (/\.([^./\\]+)$/.exec(path)?.[1] ?? '') : '';
-		const key = ext.toLowerCase();
-		if (Object.hasOwn(formats, key)) return { command: formats[key] };
-		const list = Object.keys(formats)
-			.map((e) => `.${e}`)
-			.join(', ');
+	const list = Object.keys(formats)
+		.map((e) => `.${e}`)
+		.join(', ');
+	return (raw) => {
+		const path = typeof raw === 'string' ? raw.trim() : '';
+		if (!path) return { error: `${tool} needs a path ending in ${list}.` };
+		const lower = path.toLowerCase();
+		const ext = Object.keys(formats).find((e) => lower.endsWith(`.${e}`));
+		if (ext) return { command: formats[ext], path };
 		return { error: `${tool} writes ${list} files: end the path with one of those.${hint}` };
 	};
 }
@@ -615,7 +629,7 @@ function spreadsheetWriteExecutor() {
 			'fs_write_spreadsheet',
 			choice.command,
 			fsWorkdir(ctx)!,
-			args.path as string,
+			choice.path,
 			{ sheets },
 			ctx.filesWrittenThisTurn,
 			writeOptions(ctx)
@@ -646,11 +660,12 @@ function textWriteExecutor(tool: string, commandFor: (path: unknown) => CommandC
 		if ('error' in choice) return toolResult(toolError(choice.error));
 		const err = validateTextContent(args, tool);
 		if (err) return toolResult(toolError(err));
+		if (tool === 'fs_write_document') return documentWrite(choice, args.content as string, ctx);
 		return fsWriteWithConflictCheck(
 			tool,
 			choice.command,
 			fsWorkdir(ctx)!,
-			args.path as string,
+			choice.path,
 			{ content: args.content },
 			ctx.filesWrittenThisTurn,
 			writeOptions(ctx),
@@ -661,13 +676,54 @@ function textWriteExecutor(tool: string, commandFor: (path: unknown) => CommandC
 }
 
 /**
+ * Write a document. One this turn created may be written again under the
+ * same title, to revise it (`_documentDrafts.ts`).
+ */
+async function documentWrite(
+	choice: { command: string; path: string },
+	content: string,
+	ctx: ToolContext
+): Promise<ToolExecOutput> {
+	const workdir = fsWorkdir(ctx)!;
+	const turn = ctx.filesWrittenThisTurn;
+	const rewrite = turn.has(choice.path) && mayRewriteDocument(turn, choice.path, content);
+	const send: RawWrite = async (relPath, overwrite) => {
+		await invoke(choice.command, { workdir, relPath, content, overwrite });
+		noteDocument(turn, relPath, content, overwrite);
+	};
+	return fsWriteWithConflictCheck(
+		'fs_write_document',
+		send,
+		workdir,
+		choice.path,
+		{},
+		turn,
+		documentOptions(writeOptions(ctx), turn, choice.path, rewrite)
+	);
+}
+
+/** A document write's options: a rewrite may replace it, a refusal says how to revise. */
+function documentOptions(
+	opts: WriteOptions,
+	turn: Set<string>,
+	path: string,
+	rewrite: boolean
+): WriteOptions {
+	if (rewrite) return rewriting(opts, path);
+	return { ...opts, repeatHint: documentRewriteHint(turn, path) };
+}
+
+/**
  * Shell-mode dispatch for fs_write_text. When the agent is running in
  * the Shell tab in Code mode, route to fs_write_text_absolute (no workdir,
  * accepts an absolute path). Falls back to the chat-mode executor otherwise
  * (the plain Shell assistant is read-only and never reaches here).
  */
 function shellAwareWriteText() {
-	const chat = textWriteExecutor('fs_write_text', () => ({ command: IPC.fs_write_text }));
+	const chat = textWriteExecutor('fs_write_text', (path) => ({
+		command: IPC.fs_write_text,
+		path: path as string
+	}));
 	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
 		const rootErr = writeRootError(args.path, ctx);
 		if (rootErr) return toolResult(toolError(rootErr));
@@ -815,7 +871,7 @@ function slidesWriteExecutor() {
 		if (error) return toolResult(toolError(error));
 		const deck = slides as Slide[];
 		const workdir = fsWorkdir(ctx)!;
-		const path = args.path as string;
+		const path = choice.path;
 		const titles = deck.map((s) => s.title);
 		const turn = ctx.filesWrittenThisTurn;
 		// A deck the model was shown may be written again to fix it, keeping

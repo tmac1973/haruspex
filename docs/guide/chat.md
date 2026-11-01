@@ -23,16 +23,16 @@ While one conversation answers, send in another, or send more in the same one to
 
 ## Let the assistant read and write files
 
-Click the folder icon in the chat box to pick a working directory. The assistant can then read and write files there, only there. With no folder, it has no file access. Each chat keeps its own. A new chat starts in Settings → Chat → Default working directory, or with none.
+Click the folder icon in the chat box to pick a working directory. The assistant can then read and write files there and nowhere else. Each chat keeps its own. A new chat starts in Settings → Chat → Default working directory, or with none.
 
 - **Reads:** plain text, Markdown, CSV, JSON, YAML, TOML, PDF (text, or as page images for scans), Word `.docx`, Excel `.xlsx`, and images.
 - **Writes:** text files and edits to them, PDF, Word `.docx`, Excel `.xlsx`, PowerPoint `.pptx` and OpenDocument `.odt`/`.ods`/`.odp`. The extension picks the format. See the `slides` page.
 - **Downloads:** files from a web address into the folder (50 MB limit, programs blocked).
 - **Cannot:** delete or move files, run scripts, or touch anything outside the folder.
 
-If the file exists, the assistant asks: **Overwrite**, **Keep both** (saves under a new name) or **Cancel**.
+If the file exists, the assistant asks: **Overwrite**, **Keep both** (saves under a new name) or **Cancel**. It rewrites a document it made in the same answer without asking.
 
-Small models often forget to write the file, or claim they did. Ask again ("write that to a PDF").
+Small models may forget to write the file, or claim they did: ask again.
 
 ## Run Python for charts, maths and documents
 
@@ -55,7 +55,7 @@ Drop or paste an image into the chat box to ask about it. The camera button atta
 - **Speak:** hold the microphone button, or hold `F2`, and release to send. The first time, a speech model is downloaded.
 - **Listen:** click the speaker icon on an answer, or press `F3`, to have it read aloud.
 
-Pick the voice and the microphone and speaker in Settings → Audio. Speech is processed on your computer.
+Pick the voice, microphone and speaker in Settings → Audio. Speech is processed on your computer.
 
 ## Run the commands from an answer
 

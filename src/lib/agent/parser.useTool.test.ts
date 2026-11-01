@@ -60,6 +60,31 @@ describe('use_tool unwrapping', () => {
 		}
 	});
 
+	it('keeps a parameter written beside arguments', () => {
+		// Seen from Qwen3.8-Flash: the path went beside `arguments`, the
+		// document write saw none, and it was refused as a wrong extension.
+		const r = resolveToolCalls(
+			response('use_tool', {
+				name: 'fs_write_document',
+				arguments: { content: '# Heat pumps' },
+				path: 'hp-research-final.pdf'
+			}),
+			WITH_PROXY
+		);
+		expect(r.kind === 'calls' && r.calls[0].arguments).toEqual({
+			content: '# Heat pumps',
+			path: 'hp-research-final.pdf'
+		});
+	});
+
+	it('prefers what arguments says over a parameter beside it', () => {
+		const r = resolveToolCalls(
+			response('use_tool', { name: 'web_search', arguments: { query: 'in' }, query: 'out' }),
+			WITH_PROXY
+		);
+		expect(r.kind === 'calls' && r.calls[0].arguments).toEqual({ query: 'in' });
+	});
+
 	it('leaves a use_tool call with no usable name to use_tool', () => {
 		for (const name of [undefined, '', 'use_tool']) {
 			const r = resolveToolCalls(response('use_tool', { name, arguments: {} }), WITH_PROXY);
