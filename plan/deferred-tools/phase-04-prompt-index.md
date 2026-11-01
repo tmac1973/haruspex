@@ -30,14 +30,13 @@ but no reason to call it.
    ```
 
    One line per family in this turn's `deferred`. The section must not change
-   from turn to turn, or it invalidates the cache like a change to `tools`:
-   - With option A, a load changes `tools` anyway, so a loaded family leaves
-     the list at the same time. That adds no cost.
-   - With option B or C, `tools` never changes, so the list must not change
-     either. A loaded family stays in the list, with "(loaded)" after it.
+   during a conversation. Phase 01 showed that on llama-server, with the
+   hybrid Qwen models, any change before the tail makes it process the whole
+   prompt again. So a loaded family stays in the list as it was. The
+   `load_tools` result, at the tail, is what tells the model it is loaded.
 
-   The list also changes when the user turns an integration on or off. That
-   costs one cache miss, as it does today.
+   The list does change when the user turns an integration on or off. That
+   costs one full prompt process, as it does today.
 
 2. **Sections that describe deferred tools.** When a family is deferred and
    not loaded, `buildSystemPrompt` leaves out the text that only serves it:

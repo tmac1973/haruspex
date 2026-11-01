@@ -1,6 +1,6 @@
 # Phase 01 — Spike: how a loaded schema reaches the model
 
-**Depends on:** nothing · **Enables:** phase 03 (picks option A, B or C)
+**Depends on:** nothing · **Enables:** phase 03 · **Status:** done 2026-11-01, chose C (see the overview)
 
 ## Goal
 
