@@ -441,10 +441,47 @@ describe('write conflicts and failures', () => {
 		expect(errorOf(out)).toBe('fs_write_spreadsheet failed: locked by another process');
 	});
 
-	it('refuses a second spreadsheet write to the same path in one turn', async () => {
+	it('rewrites a spreadsheet the turn created when it keeps its header and first record', async () => {
+		expect((await xlsx(GOOD)).result).toBe('Wrote: out.xlsx');
+		const fixed = [
+			{
+				name: 'S',
+				rows: [
+					['Name', 'Score'],
+					['Alice', '97'],
+					['Bob', '88']
+				]
+			}
+		];
+		const second = await xlsx(fixed);
+		expect(second.result).toBe('Wrote: out.xlsx');
+		expect(disk.written[1].payload.overwrite).toBe(true);
+	});
+
+	it('refuses a second write that starts at a later record, as a chunk', async () => {
+		expect((await xlsx(GOOD)).result).toBe('Wrote: out.xlsx');
+		const more = [
+			{
+				name: 'S',
+				rows: [
+					['Name', 'Score'],
+					['Bob', '88']
+				]
+			}
+		];
+		const second = await xlsx(more);
+		expect(errorOf(second)).toMatch(/already written in this turn/);
+		expect(errorOf(second)).toMatch(/same header row and first data row/);
+		expect(disk.written).toHaveLength(1);
+	});
+
+	it('refuses a second write to a spreadsheet that was there before the turn', async () => {
+		disk.exists = true;
+		ctx = makeCtx({ codeSessionId: 'sess-1' } as Partial<ToolContext>);
 		expect((await xlsx(GOOD)).result).toBe('Wrote: out.xlsx');
 		const second = await xlsx(GOOD);
 		expect(errorOf(second)).toMatch(/already written in this turn/);
+		expect(errorOf(second)).not.toMatch(/same header row/);
 		expect(disk.written).toHaveLength(1);
 	});
 

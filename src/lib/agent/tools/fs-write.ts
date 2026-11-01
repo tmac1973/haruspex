@@ -26,18 +26,25 @@ import { SLIDE_SCHEMA } from '#lib/slides/schema.ts';
 import {
 	attachPreview,
 	deckLook,
+	deckRewriteHint,
 	mayRewrite,
+	noteDeck,
 	noteRewrite,
-	previewedLook
+	writtenLook
 } from '#lib/slides/preview.ts';
 import { prepareVisuals, visualTexts } from '#lib/slides/visuals.ts';
 import { SLIDE_THEMES } from '#lib/slides/themes.ts';
 import type { Slide } from '#lib/slides/types.ts';
 import {
-	documentRewriteHint,
-	mayRewriteDocument,
-	noteDocument
-} from '#lib/agent/tools/_documentDrafts.ts';
+	DOCUMENT,
+	SPREADSHEET,
+	draftRewriteHint,
+	firstLine,
+	mayRewriteDraft,
+	normText,
+	noteDraft,
+	type DraftKind
+} from '#lib/agent/tools/_drafts.ts';
 
 /**
  * True when a relative write path stays inside `root` (a relative dir prefix).
@@ -625,16 +632,26 @@ function spreadsheetWriteExecutor() {
 		if (validationError) {
 			return toolResult(toolError(validationError));
 		}
-		return fsWriteWithConflictCheck(
+		const workdir = fsWorkdir(ctx)!;
+		return draftWrite(
 			'fs_write_spreadsheet',
-			choice.command,
-			fsWorkdir(ctx)!,
+			SPREADSHEET,
+			sheetSignature(sheets),
 			choice.path,
-			{ sheets },
-			ctx.filesWrittenThisTurn,
-			writeOptions(ctx)
+			(relPath, overwrite) => invoke(choice.command, { workdir, relPath, sheets, overwrite }),
+			ctx
 		);
 	};
+}
+
+/** What a revised spreadsheet keeps: its first sheet's header row and first record. */
+function sheetSignature(sheets: unknown): string[] {
+	const first: unknown = Array.isArray(sheets) ? sheets[0] : undefined;
+	const rows = first && typeof first === 'object' ? (first as { rows?: unknown }).rows : undefined;
+	if (!Array.isArray(rows)) return [];
+	const header = Array.isArray(rows[0]) ? rows[0].map(normText).join('\t') : '';
+	const record = Array.isArray(rows[1]) ? normText(rows[1][0]) : '';
+	return [header, record];
 }
 
 /**
@@ -677,40 +694,61 @@ function textWriteExecutor(tool: string, commandFor: (path: unknown) => CommandC
 
 /**
  * Write a document. One this turn created may be written again under the
- * same title, to revise it (`_documentDrafts.ts`).
+ * same title, to revise it (`_drafts.ts`).
  */
-async function documentWrite(
+function documentWrite(
 	choice: { command: string; path: string },
 	content: string,
 	ctx: ToolContext
 ): Promise<ToolExecOutput> {
 	const workdir = fsWorkdir(ctx)!;
-	const turn = ctx.filesWrittenThisTurn;
-	const rewrite = turn.has(choice.path) && mayRewriteDocument(turn, choice.path, content);
-	const send: RawWrite = async (relPath, overwrite) => {
-		await invoke(choice.command, { workdir, relPath, content, overwrite });
-		noteDocument(turn, relPath, content, overwrite);
-	};
-	return fsWriteWithConflictCheck(
+	return draftWrite(
 		'fs_write_document',
-		send,
-		workdir,
+		DOCUMENT,
+		[firstLine(content)],
 		choice.path,
-		{},
-		turn,
-		documentOptions(writeOptions(ctx), turn, choice.path, rewrite)
+		(relPath, overwrite) => invoke(choice.command, { workdir, relPath, content, overwrite }),
+		ctx
 	);
 }
 
-/** A document write's options: a rewrite may replace it, a refusal says how to revise. */
-function documentOptions(
-	opts: WriteOptions,
-	turn: Set<string>,
+/**
+ * A write `_drafts.ts` keeps track of: when the turn wrote `path` already,
+ * a revision (`kind`, by `signature`) may replace it.
+ */
+async function draftWrite(
+	tool: string,
+	kind: DraftKind,
+	signature: string[],
 	path: string,
-	rewrite: boolean
+	write: RawWrite,
+	ctx: ToolContext
+): Promise<ToolExecOutput> {
+	const turn = ctx.filesWrittenThisTurn;
+	const rewrite = turn.has(path) && mayRewriteDraft(turn, path, signature, kind);
+	const send: RawWrite = async (relPath, overwrite) => {
+		await write(relPath, overwrite);
+		noteDraft(turn, relPath, signature, overwrite);
+	};
+	return fsWriteWithConflictCheck(
+		tool,
+		send,
+		fsWorkdir(ctx)!,
+		path,
+		{},
+		turn,
+		draftOptions(writeOptions(ctx), path, rewrite, draftRewriteHint(turn, path, kind))
+	);
+}
+
+/** A tracked write's options: a rewrite may replace the file, a refusal says how to revise. */
+function draftOptions(
+	opts: WriteOptions,
+	path: string,
+	rewrite: boolean,
+	hint: string
 ): WriteOptions {
-	if (rewrite) return rewriting(opts, path);
-	return { ...opts, repeatHint: documentRewriteHint(turn, path) };
+	return rewrite ? rewriting(opts, path) : { ...opts, repeatHint: hint };
 }
 
 /**
@@ -874,23 +912,28 @@ function slidesWriteExecutor() {
 		const path = choice.path;
 		const titles = deck.map((s) => s.title);
 		const turn = ctx.filesWrittenThisTurn;
-		// A deck the model was shown may be written again to fix it, keeping
-		// its look unless it names another (preview.ts).
+		// A deck the model was shown, or one the turn created, may be written
+		// again to fix it, keeping its look unless it names another (preview.ts).
 		const rewrite = turn.has(path) && mayRewrite(turn, path, titles);
-		const look = deckLook(args, rewrite ? previewedLook(turn, path) : undefined);
+		const look = deckLook(args, rewrite ? writtenLook(turn, path) : undefined);
 		const { theme, orientation } = look;
 		// The path the deck went to: the user may have kept the old file and
 		// had it written beside it.
 		let written = path;
 		const write = async (send: RawWrite) => {
+			const noted: RawWrite = async (relPath, overwrite) => {
+				written = relPath;
+				await send(relPath, overwrite);
+				noteDeck(turn, relPath, titles, look, overwrite);
+			};
 			const out = await fsWriteWithConflictCheck(
 				'fs_write_slides',
-				(relPath, overwrite) => ((written = relPath), send(relPath, overwrite)),
+				noted,
 				workdir,
 				path,
 				{},
 				turn,
-				rewrite ? rewriting(writeOptions(ctx), path) : writeOptions(ctx)
+				draftOptions(writeOptions(ctx), path, rewrite, deckRewriteHint(turn, path))
 			);
 			if (rewrite && out.result.startsWith('Wrote:')) noteRewrite(turn, path);
 			return attachPreview(out, ctx, workdir, written, titles, look);
