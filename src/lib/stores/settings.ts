@@ -579,6 +579,12 @@ export interface AppSettings {
 	 */
 	leanMode: boolean;
 	/**
+	 * Interactive Chat and the Code tab send the core tools in full and list
+	 * the rest by family; the model loads a family with `load_tools`
+	 * (`agent/tools/deferred.ts`). `auto` follows the model's size. No UI yet.
+	 */
+	deferTools: DeferTools;
+	/**
 	 * The one-time offer of lean mode has been made: by the setup wizard's
 	 * Lean or Full step, or to an existing user by the notice.
 	 */
@@ -1127,6 +1133,7 @@ const defaults: AppSettings = {
 	activeLocalModelFilename: '',
 	legacyModelNoticeDismissed: false,
 	leanMode: false,
+	deferTools: 'off',
 	leanNoticeShown: false,
 	leanHintedModels: [],
 	screenCaptureEnabled: false,
@@ -1979,6 +1986,14 @@ export function setLegacyModelNoticeDismissed(dismissed: boolean): void {
 	if (settings.legacyModelNoticeDismissed !== dismissed) {
 		commit({ ...settings, legacyModelNoticeDismissed: dismissed });
 	}
+}
+
+export type DeferTools = 'auto' | 'on' | 'off';
+
+/** Settings → General → Load tools when needed; an unknown value reads as off. */
+export function getDeferTools(): DeferTools {
+	const v = settings.deferTools;
+	return v === 'auto' || v === 'on' ? v : 'off';
 }
 
 export function getLeanMode(): boolean {

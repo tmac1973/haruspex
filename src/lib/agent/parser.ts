@@ -9,6 +9,11 @@ export interface ResolvedToolCall {
 	id: string;
 	name: string;
 	arguments: Record<string, unknown>;
+	/**
+	 * The call as the model wrote it, when that was a `use_tool` call the
+	 * parser unwrapped. The history keeps this form: it is what the backend saw.
+	 */
+	wire?: { name: string; arguments: Record<string, unknown> };
 }
 
 /**
@@ -323,6 +328,51 @@ function resolveStructuredCalls(
 }
 
 export function resolveToolCalls(
+	response: ChatCompletionResponse,
+	tools?: ToolDefinition[]
+): ToolCallResolution {
+	const resolution = resolveRawToolCalls(response, tools);
+	if (resolution.kind !== 'calls' || !tools?.some((t) => t.function.name === USE_TOOL)) {
+		return resolution;
+	}
+	return { kind: 'calls', calls: resolution.calls.map(unwrapUseTool) };
+}
+
+const USE_TOOL = 'use_tool';
+
+/**
+ * A `use_tool({ name, arguments })` call as a call to `name`, so steps,
+ * labels, approvals and argument coercion all see the real tool. `arguments`
+ * sent as a JSON string is accepted too. A call without a usable name stays
+ * as it is, and `use_tool`'s own answer says what it needs.
+ */
+export function unwrapUseTool(call: ResolvedToolCall): ResolvedToolCall {
+	if (call.name !== USE_TOOL) return call;
+	const name = typeof call.arguments.name === 'string' ? call.arguments.name.trim() : '';
+	if (!name || name === USE_TOOL) return call;
+	return {
+		id: call.id,
+		name,
+		arguments: innerArguments(call.arguments.arguments),
+		wire: { name: call.name, arguments: call.arguments }
+	};
+}
+
+function innerArguments(raw: unknown): Record<string, unknown> {
+	let value = raw;
+	if (typeof value === 'string') {
+		try {
+			value = value.trim() === '' ? {} : JSON.parse(value);
+		} catch {
+			return {};
+		}
+	}
+	return value && typeof value === 'object' && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: {};
+}
+
+function resolveRawToolCalls(
 	response: ChatCompletionResponse,
 	tools?: ToolDefinition[]
 ): ToolCallResolution {

@@ -21,13 +21,11 @@ and it is off by default, so nothing a user sees changes.
 - `src/lib/agent/tools/deferred.ts` (new): `splitTurnTools`,
   `loadedFamilies`, and the loaded-marker format.
 - `src/lib/agent/loop/context.ts`: build `ctx.tools` from the split, and keep
-  the full offered set on the context as `ctx.offeredTools`.
+  the deferred families on the context as `ctx.deferredTools`.
 - `src/lib/agent/parser.ts`: unwrap a `use_tool` call into a call to the
   real tool.
 - `src/lib/agent/loop/toolCalls.ts`: answer a call to a tool that is offered
   but not loaded.
-- `src/lib/agent/summaryMessage.ts` / `compaction.ts`: carry the loaded
-  families into the summary.
 - Tests next to each.
 
 ## Steps
@@ -69,16 +67,21 @@ and it is off by default, so nothing a user sees changes.
 
    A backend without a tool grammar (vLLM) lets the model call a loaded tool
    by its own name. In phase 01 Qwen3.8-Flash did this in 2 of 10 runs.
-   `resolveToolCalls` gets `ctx.offeredTools`, so such a call resolves too.
+   It runs like any other call, through `runTool`.
 
 6. **A call to a tool that is not loaded.** A `use_tool` call, or a direct
-   call, naming a tool that is in `ctx.offeredTools` but whose family is not
+   call, naming a tool that is in `ctx.deferredTools` but whose family is not
    loaded: load the family (add the marker), return its schemas and "Call
    video_probe again with these parameters." It does not run the tool,
    because the arguments were a guess. A name that is not offered at all goes
    to `runTool` as today, and its hard gates and "Unknown tool" answer apply.
-7. **Compaction.** When a summary replaces old messages, put the loaded
-   markers in the summary message, so `loadedFamilies` still finds them.
+7. **Compaction.** Nothing to carry. `loadedFamilies` reads the markers in
+   the messages the model is sent, so a load goes when its schemas go: a Chat
+   turn that ends (Chat leaves earlier tool results out), the in-loop trim, a
+   context fit or a compaction. Carrying the marker on would let a later
+   `use_tool` call run with arguments the model no longer has a schema for.
+   (Done 2026-11-01. The plan first said to carry the markers into the
+   summary; the code showed Chat never keeps them past a turn.)
 8. **Tests.**
    - For each profile in the audit (Chat without a folder, with a folder,
      everything on, and the Code tab with and without everything), the core
@@ -86,7 +89,7 @@ and it is off by default, so nothing a user sees changes.
      off.
    - `load_tools` for a family that is not offered loads nothing.
    - `tools` is byte-for-byte the same on every turn, across a load.
-   - The loaded families survive a compaction.
+   - A trimmed `load_tools` result does not count as a load.
    - A `use_tool` call is unwrapped: the step, label and executed tool are the
      real tool's, and `arguments` as a JSON string works.
    - A call to a deferred tool before a load returns its schema and does not

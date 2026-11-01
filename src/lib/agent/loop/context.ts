@@ -6,7 +6,9 @@
 
 import type { BackendOverride, ChatMessage, ToolDefinition } from '#lib/api.ts';
 import { getToolSchemas, type PendingImage, type ToolContext } from '#lib/agent/tools/index.ts';
-import { getSettings, type SamplingParams } from '#lib/stores/settings.ts';
+import { getDeferTools, getSettings, type SamplingParams } from '#lib/stores/settings.ts';
+import { deferOn, splitTurnTools } from '#lib/agent/tools/deferred.ts';
+import type { DeferredFamily } from '#lib/agent/tools/types.ts';
 import { resolveBackendDescriptor, type BackendDescriptor } from '#lib/inference/descriptor.ts';
 import { loadedSkillNames, skillsWithFiles } from '#lib/skills/content.ts';
 import { coveredTools, type TurnSkills } from '#lib/skills/turn.ts';
@@ -100,6 +102,11 @@ export class LoopState {
 export interface LoopContext {
 	messages: ChatMessage[];
 	tools: ToolDefinition[];
+	/**
+	 * The families this turn lists but does not send (`splitTurnTools`);
+	 * undefined when deferred loading is off for it.
+	 */
+	deferredTools?: DeferredFamily[];
 	signal?: AbortSignal;
 	/** The turn's inference slot, given back while long tools run (`executeToolCalls`). */
 	slot?: HeldSlot;
@@ -228,6 +235,63 @@ function clampToContext(requested: number, contextSize: number): number {
 }
 
 /**
+ * The turn's tool list, filtered by working-dir presence, deep-research mode,
+ * vision support and the rest, then split when deferred loading is on.
+ */
+function turnTools(
+	options: AgentLoopOptions,
+	descriptor: BackendDescriptor
+): { tools: ToolDefinition[]; deferredTools?: DeferredFamily[] } {
+	const workingDir = options.workingDir ?? null;
+	const shellMode = options.shellMode ?? false;
+	const codeMode = options.codeMode ?? false;
+	const offered = getToolSchemas({
+		hasWorkingDir: workingDir !== null,
+		deepResearch: options.deepResearch ?? false,
+		visionSupported: options.visionSupported ?? true,
+		shellMode,
+		codeMode,
+		codeReadOnly: options.codeReadOnly ?? false,
+		codeRemote: options.codeRemote ?? false,
+		interactive: options.interactive ?? false,
+		subtask: options.subtask !== undefined,
+		// The forced final tool is always offered. A stage once listed its
+		// read tools but not its submit tool: the model, correctly, never
+		// called a tool it was not given, and the forced call then named a
+		// tool missing from the request, which vLLM refuses with a 400 — so
+		// the turn ended empty and a chain lost its art.
+		toolAllowlist:
+			options.toolAllowlist && options.forceFinalTool
+				? [...options.toolAllowlist, options.forceFinalTool]
+				: options.toolAllowlist,
+		harnessFeedback: options.feedback !== undefined,
+		skillNames: options.skills?.catalog.map((s) => s.name),
+		skillFileNames: options.skills && readableSkills(options.skills, options.messages),
+		hasSkills: options.skills !== undefined,
+		taskOwner: options.codeSessionId
+			? `code:${options.codeSessionId}`
+			: options.conversationId
+				? `chat:${options.conversationId}`
+				: undefined
+	});
+	const split = deferOn({
+		setting: getDeferTools(),
+		modelId: descriptor.modelId,
+		interactive: options.interactive ?? false,
+		codeMode,
+		shellMode,
+		subtask: options.subtask !== undefined,
+		// A forced final tool must be in the request (see toolAllowlist above).
+		allowlisted: options.toolAllowlist !== undefined || options.forceFinalTool !== undefined,
+		lean: getSettings().leanMode
+	})
+		? splitTurnTools(offered, codeMode)
+		: null;
+	if (!split?.deferred.length) return { tools: split?.sent ?? offered };
+	return { tools: split.sent, deferredTools: split.deferred };
+}
+
+/**
  * Build the per-turn LoopContext from the public `AgentLoopOptions`.
  * Applies defaults for optional fields and asks the tool registry for
  * the schema list filtered by working-dir presence, deep-research
@@ -239,37 +303,12 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 	const codeMode = options.codeMode ?? false;
 	const codeAutoApprove = options.codeAutoApprove ?? false;
 	const expectsFileOutput = options.expectsFileOutput ?? false;
+	const descriptor = resolveBackendDescriptor(options.backend);
+	const { tools, deferredTools } = turnTools(options, descriptor);
 	return {
 		messages: options.messages,
-		tools: getToolSchemas({
-			hasWorkingDir: workingDir !== null,
-			deepResearch: options.deepResearch ?? false,
-			visionSupported: options.visionSupported ?? true,
-			shellMode,
-			codeMode,
-			codeReadOnly: options.codeReadOnly ?? false,
-			codeRemote: options.codeRemote ?? false,
-			interactive: options.interactive ?? false,
-			subtask: options.subtask !== undefined,
-			// The forced final tool is always offered. A stage once listed its
-			// read tools but not its submit tool: the model, correctly, never
-			// called a tool it was not given, and the forced call then named a
-			// tool missing from the request, which vLLM refuses with a 400 — so
-			// the turn ended empty and a chain lost its art.
-			toolAllowlist:
-				options.toolAllowlist && options.forceFinalTool
-					? [...options.toolAllowlist, options.forceFinalTool]
-					: options.toolAllowlist,
-			harnessFeedback: options.feedback !== undefined,
-			skillNames: options.skills?.catalog.map((s) => s.name),
-			skillFileNames: options.skills && readableSkills(options.skills, options.messages),
-			hasSkills: options.skills !== undefined,
-			taskOwner: options.codeSessionId
-				? `code:${options.codeSessionId}`
-				: options.conversationId
-					? `chat:${options.conversationId}`
-					: undefined
-		}),
+		tools,
+		deferredTools,
 		signal: options.signal,
 		slot: options.slot,
 		workingDir,
@@ -315,7 +354,7 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		maxIterations: options.maxIterations ?? 8,
 		forceFinalTool: options.forceFinalTool ?? null,
 		backend: options.backend ?? null,
-		descriptor: resolveBackendDescriptor(options.backend),
+		descriptor,
 		options
 	};
 }
