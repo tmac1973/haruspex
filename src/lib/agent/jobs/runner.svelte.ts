@@ -663,7 +663,7 @@ export async function enqueue(
 		planSteps(job).map((s) => s.authored)
 	);
 	if (runId === null) {
-		logDebug('jobs', 'enqueue failed: could not persist run row', { jobId, trigger });
+		console.warn(`Job ${jobId} did not run: its run could not be saved (${trigger})`);
 		return null;
 	}
 

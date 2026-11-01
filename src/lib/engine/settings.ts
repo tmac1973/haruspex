@@ -14,12 +14,22 @@
  * server, the bundled image engine) isn't applied by this.
  */
 import { getSettings, updateSettings, type AppSettings } from '#lib/stores/settings.ts';
+import { urlForReport } from '#lib/utils/http.ts';
 
 /** A field holding a secret, wherever it sits: `braveApiKey`, `remoteAccessToken`, a password. */
 const SECRET_KEY = /(api_?key|token|password)$/i;
 
 /** Objects whose every value is a secret: an MCP server's `secrets`. */
 const SECRET_MAPS = new Set(['secrets']);
+
+/**
+ * Arrays whose every item may be a secret: a custom MCP server's `args`
+ * (`--api-key=…`), which stay in the settings blob.
+ */
+const SECRET_LISTS = new Set(['args']);
+
+/** A URL with a part that can carry a credential: `user:pw@`, `?token=…`, `#…`. */
+const URL_WITH_CREDENTIAL = /^[a-z][a-z0-9+.-]*:\/\/([^/?#]*@|[^?#]*[?#])/i;
 
 /**
  * Top-level settings a patch may not touch. The API-key store and the
@@ -37,20 +47,27 @@ type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 const isObject = (v: unknown): v is Record<string, Json> =>
 	typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/** `v` as `settings.get` shows it, given the key it sits under. */
+function redactString(v: string, key: string, inApiKeys: boolean): string {
+	if (v === '') return v;
+	if (SECRET_KEY.test(key) || SECRET_LISTS.has(key) || (inApiKeys && key === 'value')) return '';
+	// A base URL, a remote MCP server or a proxy can hold its credential in
+	// the URL: keep where it points, drop the rest.
+	return URL_WITH_CREDENTIAL.test(v) ? urlForReport(v) : v;
+}
+
 /**
  * A plain copy with every secret blanked, and the paths that were blanked.
- * Only strings that are set count: an empty one hides nothing.
+ * Only strings that are set count: an empty one hides nothing. A URL that
+ * could carry a credential keeps its scheme, host and path.
  */
 export function redactSecrets(value: unknown): { value: Json; redacted: string[] } {
 	const redacted: string[] = [];
 	const walk = (v: Json, path: string, key: string, inApiKeys: boolean): Json => {
 		if (typeof v === 'string') {
-			const secret = SECRET_KEY.test(key) || (inApiKeys && key === 'value');
-			if (secret && v !== '') {
-				redacted.push(path);
-				return '';
-			}
-			return v;
+			const out = redactString(v, key, inApiKeys);
+			if (out !== v) redacted.push(path);
+			return out;
 		}
 		if (Array.isArray(v)) return v.map((x, i) => walk(x, `${path}[${i}]`, key, inApiKeys));
 		if (isObject(v)) {

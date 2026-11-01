@@ -76,6 +76,32 @@ describe('settings.get', () => {
 		expect(() => readSettings(['nope'])).toThrow('no such setting: nope');
 	});
 
+	it('keeps where a URL points and drops what can carry a credential', () => {
+		const { value, redacted } = redactSecrets({
+			comfyBaseUrl: 'http://user:secret@gpu.lan:8188',
+			proxy: { url: 'http://me:pw@proxy.lan:3128' },
+			calendarUrl: 'https://dav.example.com/cal/?token=abc',
+			plain: 'http://gpu.lan:8188/api',
+			note: 'see https://example.com?x=1 for more'
+		});
+		expect(value).toEqual({
+			comfyBaseUrl: 'http://gpu.lan:8188',
+			proxy: { url: 'http://proxy.lan:3128' },
+			calendarUrl: 'https://dav.example.com/cal/',
+			plain: 'http://gpu.lan:8188/api',
+			note: 'see https://example.com?x=1 for more'
+		});
+		expect(redacted.sort()).toEqual(['calendarUrl', 'comfyBaseUrl', 'proxy.url']);
+	});
+
+	it("blanks a custom MCP server's args", () => {
+		const { value, redacted } = redactSecrets({
+			source: { kind: 'custom', program: 'npx', args: ['-y', '--api-key=sk-1', ''] }
+		});
+		expect(value).toEqual({ source: { kind: 'custom', program: 'npx', args: ['', '', ''] } });
+		expect(redacted).toEqual(['source.args[0]', 'source.args[1]']);
+	});
+
 	it('blanks only set strings', () => {
 		expect(redactSecrets({ remoteAccessToken: '' }).redacted).toEqual([]);
 	});

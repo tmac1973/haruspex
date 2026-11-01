@@ -52,6 +52,12 @@ id_rsa*
 id_ed25519*
 id_ecdsa*
 
+# Local databases and backups (chats, memories, job runs)
+*.sqlite
+*.sqlite3
+*.db
+*.bak
+
 # OS files
 .DS_Store
 Thumbs.db

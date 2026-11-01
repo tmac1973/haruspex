@@ -174,7 +174,7 @@ pub async fn lint_python_source(
 ) -> Result<Vec<LintDiagnostic>, String> {
     let tmp = temp_python_path();
     if let Err(e) = tokio::fs::write(&tmp, code.as_bytes()).await {
-        log::debug!("lint_python_source: tempfile write failed: {}", e);
+        log::warn!("lint_python_source: tempfile write failed: {}", e);
         return Ok(Vec::new());
     }
 
