@@ -24,6 +24,7 @@
 	import FeedbackSection from '#lib/components/settings/FeedbackSection.svelte';
 	import type { Category } from '#lib/components/settings/categories.ts';
 	import { getSettingsNav, settingsNavHandled } from '#lib/stores/settingsNav.svelte.ts';
+	import { mcpAttentionCount } from '#lib/stores/mcpUpdate.svelte.ts';
 
 	// Rendered as an overlay over the main page (so the Shell tab's PTY stays
 	// mounted underneath). `onclose` dismisses the overlay; the page never
@@ -36,6 +37,8 @@
 		subtitle: string;
 		/** 15×15 feather-style icon, stroke = currentColor. */
 		icon: string;
+		/** Things in the section that need the user; a count beside the label. */
+		badge?: () => number;
 	}
 
 	interface CategoryGroup {
@@ -110,6 +113,7 @@
 					id: 'mcp',
 					label: 'MCP servers',
 					subtitle: 'Tools from MCP servers, on this computer or your network.',
+					badge: mcpAttentionCount,
 					icon: '<rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line>'
 				},
 				{
@@ -234,9 +238,11 @@
 		{#each groups as group (group.label)}
 			<span class="group-label">{group.label}</span>
 			{#each group.items as cat (cat.id)}
+				{@const badge = cat.badge?.() ?? 0}
 				<button
 					class="rail-item"
 					class:active={activeCategory === cat.id}
+					title={badge > 0 ? `${badge} need attention` : undefined}
 					onclick={() => selectCategory(cat.id)}
 				>
 					<svg
@@ -254,6 +260,11 @@
 						{@html cat.icon}
 					</svg>
 					{cat.label}
+					{#if badge > 0}
+						<!-- Hidden from the button's name, which stays the label; the
+						     count is in its title. -->
+						<span class="rail-badge" aria-hidden="true">{badge}</span>
+					{/if}
 				</button>
 			{/each}
 		{/each}
@@ -387,6 +398,19 @@
 
 	.rail-item svg {
 		flex: none;
+	}
+
+	.rail-badge {
+		margin-left: auto;
+		min-width: 1.25rem;
+		padding: 0 0.35rem;
+		border-radius: 999px;
+		background: var(--accent);
+		color: var(--accent-contrast);
+		font-size: 0.72rem;
+		font-weight: 600;
+		line-height: 1.25rem;
+		text-align: center;
 	}
 
 	.rail-item:hover {

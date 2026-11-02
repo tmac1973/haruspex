@@ -11,9 +11,9 @@ Email, calendars and contacts, MCP servers, and screen capture. All are off unti
 
 Go to Settings → Integrations → Email and click **Add email account**. Pick a provider (Gmail, Fastmail, iCloud, Yahoo, or Custom), enter your address and an **app password**, then click **Save password**. It tests the connection before saving. Switch the account on with **Enabled**.
 
-An app password is a code your provider creates for Haruspex; it needs 2-factor authentication. Microsoft 365 and Outlook.com are not supported, because Microsoft turned off app-password access. Passwords go in the system keychain, or Haruspex's encrypted secrets file where there is no keychain (see the `search-and-network` page for what that file protects).
+An app password is a code your provider creates for Haruspex; it needs 2-factor authentication. Microsoft 365 and Outlook.com are not supported, because Microsoft turned off app-password access. Passwords go in the system keychain, or Haruspex's encrypted secrets file where there is no keychain (see the `search-and-network` page).
 
-With an account on, the assistant can list recent mail, summarise one message, or read one in full. Reading a message never marks it as read.
+With an account on, the assistant can list recent mail, summarise a message, or read it in full. Reading a message never marks it as read.
 
 ## Let the assistant draft emails
 
@@ -49,7 +49,7 @@ Each server has **Tools**, a switch per tool. Catalog servers start with a recom
 
 ## Update an MCP server
 
-When a release brings a newer version of a catalog server, its card shows **Update**. The old version works until you click it. Update keeps setup files, sign-ins and tool switches, and resets **Always allow**. Playwright downloads its browser again (about 200 MB); Godot's addon is replaced in each project. If the new version won't start, the old one comes back. It waits for a running tool to finish.
+When a release brings a newer version of a catalog server, its card shows **Update**. The old version works until you click it. It keeps setup files, sign-ins and tool switches, and resets **Always allow**. Playwright downloads its browser again (about 200 MB); Godot's addon is replaced in each project. If the new version won't start, the old one comes back. It waits for a running tool. A version Haruspex knows is unsafe won't start; its card says why, and Update fixes it.
 
 ## Test a web app in a browser
 
@@ -63,4 +63,4 @@ The camera button in the chat box attaches a screenshot of the screen, one windo
 
 Haruspex asks first (**Ask before each screenshot**, beside it) and hides while it captures. Asked for a window, the assistant gets the one you were using; on Linux outside KDE Plasma, the whole screen.
 
-On Linux your desktop asks once whether Haruspex may take screenshots. On KDE Plasma, **Window…** turns the cursor into a crosshair: click the window, or press Escape. Other Linux desktops don't let apps pick a window, so **Window…** works like **Region…** there, as it does in the AppImage. On macOS and Windows, **Window…** lists your windows. On macOS, grant Screen Recording in System Settings first.
+On Linux your desktop asks once whether Haruspex may take screenshots. On KDE Plasma, **Window…** turns the cursor into a crosshair: click the window, or press Escape. Elsewhere on Linux, and in the AppImage, **Window…** works like **Region…**. On macOS and Windows, **Window…** lists your windows. On macOS, grant Screen Recording in System Settings first.
