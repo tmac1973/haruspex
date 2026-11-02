@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// Loaded once while the file is collected, where no timeout applies. The
+// store pulls in a large module graph whose first load takes seconds; left to
+// the first test's `await import`, it counts against that test's 5 s timeout,
+// which a busy machine overruns (#409). Later imports after resetModules
+// re-run the cached modules and take milliseconds.
+import '#lib/stores/chat.svelte.ts';
+
 // Error-recovery behavior of the chat store: retryLastTurn, the
 // queue-and-auto-send-while-starting path, and the send gate for a
 // stopped/errored backend. Mock setup mirrors chat.test.ts.
