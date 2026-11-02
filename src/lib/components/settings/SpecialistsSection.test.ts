@@ -69,7 +69,7 @@ describe('Settings → Code → Specialists', () => {
 		const kinds = within(select)
 			.getAllByRole('option')
 			.map((o) => o.textContent);
-		expect(kinds).toEqual(['Add specialist…', 'Text', '3D asset (GLB)']);
+		expect(kinds).toEqual(['Add specialist…', 'Text', '3D asset (GLB)', 'Three.js scene']);
 		expect(screen.getByText('None yet.')).toBeTruthy();
 	});
 

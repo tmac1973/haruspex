@@ -6,3 +6,4 @@
  */
 import '#lib/specialists/kinds/text.ts';
 import '#lib/specialists/kinds/glb.ts';
+import '#lib/specialists/kinds/threejs.ts';
