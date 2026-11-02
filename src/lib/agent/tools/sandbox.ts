@@ -1,9 +1,8 @@
-import { runPython, installPackage, resetSandbox } from '#lib/sandbox/sandbox.ts';
+import { runPython, installPackage, resetSandbox, jobSandboxId } from '#lib/sandbox/sandbox.ts';
 import { lintSandboxCode, formatLintFailure } from '#lib/sandbox/lint.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolResult, toolError, type ToolContext } from '#lib/agent/tools/types.ts';
 import { getSettings } from '#lib/stores/settings.ts';
-import { getActiveConversationId } from '#lib/stores/session.svelte.ts';
 import {
 	askApproval,
 	isChatSandboxApproved,
@@ -15,14 +14,16 @@ import { formatSandboxResult } from '#lib/sandbox/formatResult.ts';
 import { waitOnUser } from '#lib/agent/tools/_helpers.ts';
 
 /**
- * The chat whose sandbox the call uses: the turn's own. Outside a chat turn
- * (nothing else offers these tools today) it falls back to the open chat.
+ * The sandbox the call uses: a job run's own, or the chat turn's. Never the
+ * open chat's: a job's Python would share that chat's globals and files, and
+ * ride on its "Allow for chat" approval.
  */
-function chatIdFor(ctx: ToolContext): string | null {
-	return ctx.conversationId ?? getActiveConversationId();
+function sandboxIdFor(ctx: ToolContext): string | null {
+	if (ctx.jobRunId !== undefined) return jobSandboxId(ctx.jobRunId);
+	return ctx.conversationId ?? null;
 }
 
-const NO_CHAT = 'The Python sandbox needs a chat to run in.';
+const NO_CHAT = 'The Python sandbox runs only in a chat or a job.';
 
 function firstLine(code: string, max = 60): string {
 	const line = code.split('\n')[0]?.trim() ?? '';
@@ -62,12 +63,14 @@ registerTool({
 		if (typeof code !== 'string' || !code.trim()) {
 			return toolResult(toolError('Missing or empty `code` argument'));
 		}
-		const chatId = chatIdFor(ctx);
+		const chatId = sandboxIdFor(ctx);
 		if (!chatId) return toolResult(toolError(NO_CHAT));
 		const mode = getSettings().sandboxApproval;
 		// 'off' bypasses; 'once-per-chat' bypasses if the user has already
-		// approved this chat. 'every-run' always prompts.
+		// approved this chat. 'every-run' always prompts. A job's tools run
+		// without asking: writing the job approved them.
 		const needsPrompt =
+			ctx.jobRunId === undefined &&
 			!isAutoApproveActive() &&
 			(mode === 'every-run' || (mode === 'once-per-chat' && !isChatSandboxApproved(chatId)));
 		if (needsPrompt) {
@@ -128,7 +131,7 @@ registerTool({
 	},
 	displayLabel: () => 'reset',
 	async execute(_args, ctx) {
-		const chatId = chatIdFor(ctx);
+		const chatId = sandboxIdFor(ctx);
 		if (!chatId) return toolResult(toolError(NO_CHAT));
 		try {
 			await resetSandbox(chatId);
@@ -165,7 +168,7 @@ registerTool({
 		if (typeof pkg !== 'string' || !pkg.trim()) {
 			return toolResult(toolError('Missing or empty `package` argument'));
 		}
-		const chatId = chatIdFor(ctx);
+		const chatId = sandboxIdFor(ctx);
 		if (!chatId) return toolResult(toolError(NO_CHAT));
 		try {
 			const timeoutMs = Math.round((getSettings().sandboxTimeoutSeconds ?? 60) * 1000);

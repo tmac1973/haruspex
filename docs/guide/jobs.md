@@ -9,7 +9,7 @@ The Jobs tab runs saved prompts without you watching, on a schedule or when you 
 
 ## Run a job by hand or on a schedule
 
-Set **Schedule** in the job editor: Manual only, Every hour, Daily, Weekly, or Every N minutes/hours. Haruspex must be open for a schedule to fire; a run that comes due while the app is closed is dropped, not run later. While a job runs, Haruspex keeps your machine from going to sleep.
+Set **Schedule** in the job editor: Manual only, Every hour, Daily, Weekly, or Every N minutes/hours. Haruspex must be open for a schedule to fire; a run due while it is closed is dropped, not run later. While a job runs, Haruspex keeps your machine from going to sleep.
 
 Guided planning, autonomous coding and asset generation can't be scheduled, because they stop to ask you things.
 
@@ -29,7 +29,7 @@ Audit, guided planning, autonomous coding and asset generation need a **Working 
 
 Under **Model**, a job uses the Settings model by default. It can instead use a **Remote server** (any OpenAI-compatible server) or **OpenRouter (cloud)**, where prompts leave your device. A job on a remote model leaves your local model free for Chat and Shell. While the job is selected, the status badge at the top of the window names its model.
 
-Audit, guided planning and autonomous coding work much better with a bigger model: reading and writing code is where the 4B and 9B models are weakest.
+Audit, guided planning and autonomous coding work much better with a bigger model (see the `models` page).
 
 ## See what a run spent
 
@@ -37,7 +37,7 @@ Each run's **Tokens** card shows what every step used and how close it came to f
 
 ## The job types
 
-**Research.** A list of steps run in order. Each step is a fresh conversation that gets the previous step's output, so you can chain "search, summarise, write a report". Each step can turn on **Deep research**.
+**Research.** A list of steps run in order. Each step is a fresh conversation that gets the previous step's output, so you can chain "search, summarise, write a report". Each step can turn on **Deep research**. Python runs without asking, in a sandbox of the run's own that sees none of your chats.
 
 **Audit.** Runs one prompt many times independently (1–20 runs), groups the findings, checks each group against the source, and writes one report sorted into confirmed, refuted and uncertain. Options: number of runs, max turns per run, **Read-only runs** (recommended), your own instructions, and an optional output file.
 
@@ -52,6 +52,6 @@ Each run's **Tokens** card shows what every step used and how close it came to f
 - **Also generate assets** (_Unattended plan + code_ only, needs Settings → Image) writes an asset spec and runs asset generation before coding. Under **Later stages**, **Change…** gives the asset or coding run its own model.
 - **Planning skill**: pick the kind of project. Haruspex ships `plan-2d-game`, `plan-3d-game`, `plan-web-app`, `plan-cli-tool` and `plan-api-service`. The interview adds that kind's questions and the reviewer checks the plan against the skill's requirements. Edit them or add your own in Settings → Skills (see the `skills` page).
 
-**Autonomous coding.** Takes a **Plan directory** (usually a guided planning output folder; hand-written plans work too). It first asks you about every open decision, or settles them itself with **Settle decisions without asking**. Then it codes unattended, one plan phase at a time. At the end of each phase it runs the verification command settled in that interview and commits the phase. A phase that keeps failing verification gets a few repair attempts, then is committed marked unverified, and the run moves on. **Create a working branch for this run** (recommended) puts the work on its own git branch; **Use git** off makes no commits at all. It ends with `REPORT-coding.md` (what was built, what is blocked and why, next steps) and a project `README.md`. It can hand lookups to subtasks: see the `code-subtasks` page.
+**Autonomous coding.** Takes a **Plan directory** (usually a guided planning output folder). It first asks you about every open decision, or settles them itself with **Settle decisions without asking**. Then it codes unattended, one plan phase at a time. At the end of each phase it runs the verification command settled in that interview and commits the phase. A phase that keeps failing verification gets a few repair attempts, then is committed marked unverified, and the run moves on. **Create a working branch for this run** (recommended) puts the work on its own git branch; **Use git** off makes no commits at all. It ends with `REPORT-coding.md` (what was built, what is blocked and why, next steps) and a project `README.md`. It can hand lookups to subtasks: see the `code-subtasks` page.
 
 **Asset generation.** Makes the images a project needs from a JSON asset spec: sprites and icons in sheets, tiling textures. If the spec doesn't exist, it writes one from your **What to make** description. It first makes a style anchor that every asset follows; _Attended_ stops once to show you the anchor. It needs an image backend in Settings → Image; see the `images` page.

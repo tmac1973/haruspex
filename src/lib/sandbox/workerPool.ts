@@ -120,6 +120,16 @@ export class WorkerPool {
 		// existing PerChat slot and the WorkerManager re-spawns.
 	}
 
+	/**
+	 * Terminate this sandbox's Worker and forget it, for an owner that is gone
+	 * (a finished job run). A later call would boot a fresh one.
+	 */
+	release(chatId: string): void {
+		const i = this.order.indexOf(chatId);
+		if (i >= 0) this.order.splice(i, 1);
+		this.evict(chatId);
+	}
+
 	hasWorkerFor(chatId: string): boolean {
 		return this.mgrs.get(chatId)?.mgr.hasWorker ?? false;
 	}

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ToolResult } from '#lib/sandbox/sandbox.ts';
 import { updateSettings } from '#lib/stores/settings.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
+import { setActiveConversationId } from '#lib/stores/session.svelte.ts';
 
 const mocks = vi.hoisted(() => ({
 	runPython: vi.fn(),
@@ -13,7 +14,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#lib/sandbox/sandbox.ts', () => ({
 	runPython: mocks.runPython,
 	installPackage: mocks.installPackage,
-	resetSandbox: mocks.resetSandbox
+	resetSandbox: mocks.resetSandbox,
+	jobSandboxId: (runId: number) => `job:${runId}`
 }));
 
 vi.mock('#lib/stores/sandboxApproval.svelte.ts', () => ({
@@ -163,6 +165,61 @@ describe('sandbox tools', () => {
 		} finally {
 			updateSettings({ sandboxApproval: 'once-per-chat' });
 		}
+	});
+
+	describe('which sandbox a call uses', () => {
+		const jobCtx = makeToolContext({ jobRunId: 7 });
+
+		afterEach(() => {
+			setActiveConversationId(null);
+			updateSettings({ sandboxApproval: 'once-per-chat' });
+		});
+
+		it("runs a job turn's Python in the run's own sandbox, not the open chat's", async () => {
+			setActiveConversationId('open-chat');
+			mocks.runPython.mockResolvedValue(ok({ result: 'job ok' }));
+			const { executeTool } = await import('#lib/agent/tools/index.ts');
+			const out = await executeTool('run_python', { code: '1+1' }, jobCtx);
+			expect(mocks.runPython).toHaveBeenCalledWith('job:7', '1+1', expect.anything());
+			expect(out.result).toContain('job ok');
+		});
+
+		it('runs a job turn with no chat open, without asking', async () => {
+			setActiveConversationId(null);
+			// Every-run would prompt a chat each time; writing the job approved it.
+			updateSettings({ sandboxApproval: 'every-run' });
+			mocks.runPython.mockResolvedValue(ok());
+			mocks.installPackage.mockResolvedValue(ok());
+			mocks.resetSandbox.mockResolvedValue(undefined);
+			const { executeTool } = await import('#lib/agent/tools/index.ts');
+			await executeTool('run_python', { code: '1+1' }, jobCtx);
+			await executeTool('install_package', { package: 'numpy' }, jobCtx);
+			await executeTool('reset_python', {}, jobCtx);
+			expect(mocks.askApproval).not.toHaveBeenCalled();
+			expect(mocks.runPython).toHaveBeenCalledWith('job:7', '1+1', expect.anything());
+			expect(mocks.installPackage).toHaveBeenCalledWith('job:7', 'numpy', expect.anything());
+			expect(mocks.resetSandbox).toHaveBeenCalledWith('job:7');
+		});
+
+		it('runs a chat turn in its own chat, whichever chat is open, and still asks', async () => {
+			setActiveConversationId('open-chat');
+			mocks.runPython.mockResolvedValue(ok());
+			const { executeTool } = await import('#lib/agent/tools/index.ts');
+			await executeTool('run_python', { code: '1+1' }, ctx);
+			expect(mocks.askApproval).toHaveBeenCalledWith(
+				expect.objectContaining({ chatId: 'c1' }),
+				undefined
+			);
+			expect(mocks.runPython).toHaveBeenCalledWith('c1', '1+1', expect.anything());
+		});
+
+		it('refuses a turn that is neither a chat nor a job rather than borrow the open chat', async () => {
+			setActiveConversationId('open-chat');
+			const { executeTool } = await import('#lib/agent/tools/index.ts');
+			const out = await executeTool('run_python', { code: '1+1' }, makeToolContext());
+			expect(JSON.parse(out.result).error).toMatch(/only in a chat or a job/);
+			expect(mocks.runPython).not.toHaveBeenCalled();
+		});
 	});
 
 	it('exposes sandbox tool schemas via getToolSchemas regardless of working dir', async () => {
