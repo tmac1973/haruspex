@@ -569,6 +569,7 @@ pub fn run() {
             db::db_home_cards_list,
             db::db_home_cards_create,
             db::db_home_cards_update,
+            db::db_home_cards_set_result,
             db::db_home_cards_delete,
             db::db_home_cards_reorder,
             db::db_set_job_next_due_at,

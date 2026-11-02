@@ -126,6 +126,23 @@ impl Database {
         Ok(())
     }
 
+    /// Store a fetched card's latest result (meetings, weather) and when it
+    /// was fetched, so the card shows it at once on the next launch.
+    pub fn set_home_card_result(
+        &self,
+        id: &str,
+        last_result: &str,
+        updated_at: i64,
+    ) -> Result<(), String> {
+        self.conn()
+            .execute(
+                "UPDATE home_cards SET last_result = ?2, updated_at = ?3 WHERE id = ?1",
+                params![id, last_result, updated_at],
+            )
+            .map_err(|e| format!("Home card result update failed: {e}"))?;
+        Ok(())
+    }
+
     pub fn delete_home_card(&self, id: &str) -> Result<(), String> {
         self.conn()
             .execute("DELETE FROM home_cards WHERE id = ?1", params![id])

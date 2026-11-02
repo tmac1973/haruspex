@@ -48,6 +48,7 @@
 	import { recoverOrphanRuns } from '#lib/stores/jobRuns.svelte.ts';
 	import { startScheduler } from '#lib/agent/jobs/scheduler.svelte.ts';
 	import { startCardWatch } from '#lib/home/cardWatch.svelte.ts';
+	import { startFetchedCards } from '#lib/home/fetchedCards.svelte.ts';
 	import { releaseStaleInhibit } from '#lib/agent/jobs/keepAwake.ts';
 	import {
 		enterRemoteMode,
@@ -354,6 +355,8 @@
 		// Home cards' Notify on new items. Main window only, like the scheduler
 		// whose runs it watches.
 		startCardWatch();
+		// Home's meetings and weather cards, read on their interval.
+		startFetchedCards();
 		// Remote web chat, if Settings has it on. Only the main window does
 		// this: the driver answers a process-wide event, so a second listener
 		// in a detached shell would race it for every guest prompt.

@@ -129,6 +129,18 @@ export async function setCardSize(id: string, size: CardSize): Promise<void> {
 	});
 }
 
+/** Store a fetched card's latest result and when it was fetched. */
+export async function setCardResult(id: string, result: unknown, updatedAt: number): Promise<void> {
+	await dbMutate({
+		cmd: 'db_home_cards_set_result',
+		category: 'home',
+		args: { id, lastResult: JSON.stringify(result), updatedAt },
+		onError: 'saving a Home card result failed',
+		ctx: { id },
+		onSuccess: reload
+	});
+}
+
 /** Turn Notify on new items on or off for a card. */
 export async function setCardNotify(id: string, notify: boolean): Promise<void> {
 	await dbMutate({

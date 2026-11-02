@@ -683,6 +683,20 @@ pub async fn db_home_cards_update(
 }
 
 #[tauri::command]
+pub async fn db_home_cards_set_result(
+    state: tauri::State<'_, Database>,
+    id: String,
+    last_result: String,
+    updated_at: i64,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| {
+        db.set_home_card_result(&id, &last_result, updated_at)
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn db_home_cards_delete(
     state: tauri::State<'_, Database>,
     id: String,
