@@ -19,6 +19,7 @@ const PAGES = [
 	'models',
 	'lean-mode',
 	'tool-loading',
+	'home',
 	'chat',
 	'chat-conversations',
 	'slides',

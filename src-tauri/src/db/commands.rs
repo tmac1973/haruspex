@@ -623,3 +623,69 @@ mod tests {
         assert!(err.starts_with("db task panicked"), "{err}");
     }
 }
+
+#[tauri::command]
+pub async fn db_job_runs_list_recent(
+    state: tauri::State<'_, Database>,
+    limit: i64,
+) -> Result<Vec<RecentRun>, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.list_recent_runs(limit)).await
+}
+
+#[tauri::command]
+pub async fn db_home_cards_list(
+    state: tauri::State<'_, Database>,
+) -> Result<Vec<HomeCard>, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.list_home_cards()).await
+}
+
+#[tauri::command]
+pub async fn db_home_cards_create(
+    state: tauri::State<'_, Database>,
+    id: String,
+    card_type: String,
+    job_id: Option<i64>,
+    size: String,
+    config: String,
+) -> Result<HomeCard, String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| {
+        db.create_home_card(&id, &card_type, job_id, &size, &config)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn db_home_cards_update(
+    state: tauri::State<'_, Database>,
+    id: String,
+    size: Option<String>,
+    config: Option<String>,
+    notify: Option<bool>,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| {
+        db.update_home_card(&id, size.as_deref(), config.as_deref(), notify)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn db_home_cards_delete(
+    state: tauri::State<'_, Database>,
+    id: String,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.delete_home_card(&id)).await
+}
+
+#[tauri::command]
+pub async fn db_home_cards_reorder(
+    state: tauri::State<'_, Database>,
+    ids: Vec<String>,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.reorder_home_cards(&ids)).await
+}

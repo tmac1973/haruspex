@@ -41,7 +41,7 @@ If you switch to a bigger model while lean mode is on (one over 9B, or a remote 
 ## What it turns off
 
 - Job types other than Research. Other jobs stay in the Jobs list, marked **Paused by lean mode**; they can't be run, and a scheduled run is skipped rather than saved for later.
-- The Code and Shell tabs. Ctrl / ⌘ + 3 and 4 do nothing, Chat has no open-in-Shell button, and a Code task in the tasks list says to turn lean mode off. A detached Code or Shell window shows a note instead of the session.
+- The Home, Code and Shell tabs. Ctrl / ⌘ + 1, 4 and 5 do nothing, Chat has no open-in-Shell button, and a Code task in the tasks list says to turn lean mode off. A detached Code or Shell window shows a note instead of the session.
 - Writing files of any kind: text, documents, spreadsheets, slides and PDFs. Chat puts what you asked for in its reply instead. **Lean + files** turns text and documents back on; spreadsheets and slides stay off, since their tools are the largest of all.
 - The Python sandbox.
 - Writing or changing skills.

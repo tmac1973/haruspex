@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import JobList from '#lib/components/jobs/JobList.svelte';
 	import JobEditor from '#lib/components/jobs/JobEditor.svelte';
 	import JobRunView from '#lib/components/jobs/JobRunView.svelte';
@@ -11,6 +11,10 @@
 	import { enqueue, getCurrentRun } from '#lib/agent/jobs/runner.svelte.ts';
 	import { jobBackendOverride } from '#lib/agent/jobs/jobBackend.ts';
 	import { setJobModelInView } from '#lib/stores/modelInView.svelte.ts';
+	import {
+		getPendingSelection,
+		takePendingSelection
+	} from '#lib/stores/jobsTabSelection.svelte.ts';
 
 	let selectedId = $state<number | 'new' | null>(null);
 	let selectedRunId = $state<number | null>(null);
@@ -36,7 +40,8 @@
 	let editor = $state<EditorApi | null>(null);
 
 	/** An action deferred behind the unsaved-changes prompt. */
-	type PendingAction = { kind: 'select'; id: number | 'new' } | { kind: 'run'; jobId: number };
+	type PendingAction =
+		{ kind: 'select'; id: number | 'new'; runId?: number | null } | { kind: 'run'; jobId: number };
 	let pending = $state<PendingAction | null>(null);
 	let savingPending = $state(false);
 
@@ -95,11 +100,28 @@
 		applySelect(id);
 	}
 
-	function applySelect(id: number | 'new') {
+	function applySelect(id: number | 'new', runId: number | null = null) {
 		selectedId = id;
 		selectedRunId = null;
 		runViewOpen = false;
+		if (runId === null) return;
+		// The run view shows only the live run; any other run opens in detail.
+		if (runId === getCurrentRun()?.id) runViewOpen = true;
+		else selectedRunId = runId;
 	}
+
+	// A job (and run) picked on a Home card. Taken on mount and whenever a new
+	// one arrives; unsaved editor changes still ask first.
+	$effect(() => {
+		if (!getPendingSelection()) return;
+		untrack(() => {
+			const picked = takePendingSelection();
+			if (!picked) return;
+			const action: PendingAction = { kind: 'select', id: picked.jobId, runId: picked.runId };
+			if (picked.jobId !== selectedId && guard(action)) return;
+			applySelect(picked.jobId, picked.runId);
+		});
+	});
 
 	function clearSelection() {
 		selectedId = null;
@@ -126,7 +148,7 @@
 		const action = pending;
 		pending = null;
 		if (!action) return;
-		if (action.kind === 'select') applySelect(action.id);
+		if (action.kind === 'select') applySelect(action.id, action.runId ?? null);
 		else void startRun(action.jobId);
 	}
 

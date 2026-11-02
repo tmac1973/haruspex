@@ -62,6 +62,10 @@ vi.mock('#lib/stores/jobs.svelte.ts', async (importOriginal) => {
 });
 
 import JobsTab from './JobsTab.svelte';
+import {
+	_resetForTests as resetSelection,
+	selectJob
+} from '#lib/stores/jobsTabSelection.svelte.ts';
 
 /**
  * A saved job opens at its type's section, one section at a time; open
@@ -85,6 +89,7 @@ async function openAndEdit() {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	resetSelection();
 	mocks.currentRun = null;
 	mocks.enqueue.mockResolvedValue(1);
 });
@@ -323,5 +328,38 @@ describe('JobsTab — schedules on types that interview the user', () => {
 
 		await waitFor(() => expect(screen.queryByText('Schedule')).toBeNull());
 		expect(screen.getByText(/only run when you start them/)).toBeTruthy();
+	});
+});
+
+/** A Home card picks a job or run, then switches to this tab. */
+describe('JobsTab — a selection made from Home', () => {
+	it('opens a past run in its detail view', async () => {
+		selectJob(7, 31);
+		render(JobsTab);
+		expect(await screen.findByText('Run #31')).toBeTruthy();
+	});
+
+	it('opens the live run in the run view', async () => {
+		mocks.currentRun = { ...liveRun(), id: 50 };
+		render(JobsTab);
+		await fireEvent.click(screen.getByRole('button', { name: 'Hide' }));
+		selectJob(8, 50);
+		expect(await screen.findByRole('button', { name: 'Hide' })).toBeTruthy();
+	});
+
+	it('opens the job alone when no run is given', async () => {
+		render(JobsTab);
+		selectJob(7);
+		expect(await showName('Hangman plan')).toBeTruthy();
+	});
+
+	it('asks first when the editor has unsaved changes', async () => {
+		await openAndEdit();
+		selectJob(8, 12);
+		expect(await screen.findByText('Unsaved changes')).toBeTruthy();
+		expect(screen.queryByText('Run #12')).toBeNull();
+
+		await fireEvent.click(screen.getByText('Switch without saving'));
+		expect(await screen.findByText('Run #12')).toBeTruthy();
 	});
 });

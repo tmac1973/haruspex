@@ -1,6 +1,6 @@
 ---
 title: Getting started
-description: What Haruspex is, the first-run setup wizard, the Chat, Jobs, Shell and Code tabs, and which guide page to read next.
+description: What Haruspex is, the first-run setup wizard, the Home, Chat, Jobs, Shell and Code tabs, and which guide page to read next.
 ---
 
 # Getting started
@@ -37,10 +37,11 @@ To run the wizard again, use Settings → Inference → **Run Setup Wizard**. Yo
 
 | Tab | What it is for |
 |---|---|
+| **Home** | Cards at a glance: running jobs, and Code sessions that need you (see the `home` page). |
 | **Chat** | Ask questions. The assistant can search the web, read and write files in a working folder, run Python, look at images, and use your email, calendar or other connected services if you turn them on. |
-| **Jobs** | Save a task and run it later, by hand or on a schedule: research, audit, guided planning, autonomous coding and asset generation. A badge shows when jobs are running or queued. |
-| **Shell** | A real terminal with an assistant beside it. Read-only by default: it suggests commands for you to run. You can open several shell tabs. |
-| **Code** | A coding agent that works in one project folder: it edits files and runs commands, showing diffs and command output. Sessions are saved. On Windows, inside WSL. |
+| **Jobs** | Save a task and run it later, by hand or on a schedule: research, audit, guided planning, autonomous coding and asset generation. |
+| **Shell** | A real terminal with an assistant beside it. Read-only by default: it suggests commands for you to run. |
+| **Code** | A coding agent that works in one project folder: it edits files and runs commands, showing diffs and command output. On Windows, inside WSL. |
 
 Lean mode shows Chat and Jobs only (see the `lean-mode` page).
 
