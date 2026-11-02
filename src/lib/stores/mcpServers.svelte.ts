@@ -227,17 +227,35 @@ export async function startMcpServer(
 }
 
 /**
- * Whether the backend already has this server up.
+ * How long to wait for a start the backend already has under way, as after a
+ * reload that lands while a server is still negotiating. Longer than the
+ * supervisor's own negotiation deadline (20 s, `timing::NEGOTIATION_DEADLINE`
+ * in process.rs), so a start that will settle always has.
+ */
+const SETTLE_WAIT_MS = 25_000;
+const SETTLE_POLL_MS = 250;
+
+/**
+ * Whether the backend already has this server up, waiting out a start in
+ * progress rather than starting it a second time — which the supervisor
+ * refuses, and which left the row Failed beside a server that came up.
  *
  * A probe rather than an inference from an error message: "already running" is
  * prose, and matching on it would break the first time someone reworded it.
  */
 async function isAlreadyRunning(serverId: string): Promise<boolean> {
-	try {
-		const status = await invoke<SidecarStatus>('mcp_server_status', { id: serverId });
-		return status.type === 'Ready';
-	} catch {
-		return false;
+	const deadline = Date.now() + SETTLE_WAIT_MS;
+	for (;;) {
+		let status: SidecarStatus | null;
+		try {
+			status = await invoke<SidecarStatus | null>('mcp_server_status', { id: serverId });
+		} catch {
+			return false;
+		}
+		if (!status) return false;
+		// Stopped or failed: the supervisor takes a new start from either.
+		if (status.type !== 'Starting' || Date.now() >= deadline) return status.type === 'Ready';
+		await new Promise((resolve) => setTimeout(resolve, SETTLE_POLL_MS));
 	}
 }
 
