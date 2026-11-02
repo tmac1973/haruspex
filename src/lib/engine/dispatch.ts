@@ -260,6 +260,9 @@ export async function dispatch(op: EngineOp, label: string): Promise<unknown> {
 			const { patchSettings, readSettings } = await import('#lib/engine/settings.ts');
 			return op.type === 'settings.get' ? readSettings(op.keys) : patchSettings(op.patch);
 		}
+		case 'home.cards':
+			if (label !== MAIN_WINDOW) throw new Error('the main window answers for Home');
+			return (await import('#lib/engine/home.ts')).homeCards();
 		case 'prompts.list':
 			return currentPrompts(label);
 		case 'prompts.answer':

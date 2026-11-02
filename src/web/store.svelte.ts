@@ -13,12 +13,14 @@ import {
 } from '#lib/engine/reduce.ts';
 import {
 	isChatEvent,
+	isHomeEvent,
 	isJobEvent,
 	isTaskEvent,
 	isSessionEvent,
 	type ChatListItem,
 	type ChatState,
 	type FileContent,
+	type HomeCardView,
 	type Prompt,
 	type PromptAnswer,
 	type SessionListItem,
@@ -47,10 +49,12 @@ interface Handled {
 
 export class WebStore {
 	connection = $state<Connection>('connecting');
-	/** Which list the sidebar shows. */
-	tab = $state<'code' | 'chat'>('code');
+	/** What the page shows: Home, or the Code or Chat list. */
+	tab = $state<'home' | 'code' | 'chat'>('home');
 	/** The desktop's lean mode is on: Chat only, as there (`app.mode`). */
 	lean = $state(false);
+	/** Home's cards, read-only; null until first read. */
+	homeCards = $state<HomeCardView[] | null>(null);
 	chats = $state<ChatListItem[]>([]);
 	chatMirrors = $state<Record<string, ChatMirror>>({});
 	selectedChat = $state<string | null>(null);
@@ -127,6 +131,28 @@ export class WebStore {
 		this.stopStream?.();
 		if (this.listTimer) clearTimeout(this.listTimer);
 		if (this.chatTimer) clearTimeout(this.chatTimer);
+		if (this.homeTimer) clearTimeout(this.homeTimer);
+	}
+
+	/** Show Home, read fresh. */
+	showHome(): void {
+		this.tab = 'home';
+		void this.refreshHome();
+	}
+
+	async refreshHome(): Promise<void> {
+		const cards = await this.run(() => this.transport.op<HomeCardView[]>({ type: 'home.cards' }));
+		if (cards) this.homeCards = cards;
+	}
+
+	private homeTimer: ReturnType<typeof setTimeout> | null = null;
+	/** Read Home again soon, once for a burst of changes; only while it shows. */
+	private refreshHomeSoon(): void {
+		if (this.tab !== 'home') return;
+		this.homeTimer ??= setTimeout(() => {
+			this.homeTimer = null;
+			if (this.tab === 'home') void this.refreshHome();
+		}, LIST_REFRESH_MS);
 	}
 
 	/** The session on screen, as its events have built it. */
@@ -369,6 +395,7 @@ export class WebStore {
 			void this.refreshList();
 			void this.refreshChats();
 			void this.refreshPrompts();
+			if (this.tab === 'home') void this.refreshHome();
 			if (this.selectedChat) void this.selectChat(this.selectedChat);
 			for (const id of Object.keys(this.mirrors)) this.resync(id);
 			return;
@@ -376,6 +403,11 @@ export class WebStore {
 		if (e.type === 'resync-all') {
 			for (const id of Object.keys(this.mirrors)) this.resync(id);
 			void this.refreshPrompts();
+			this.refreshHomeSoon();
+			return;
+		}
+		if (isHomeEvent(e)) {
+			this.refreshHomeSoon();
 			return;
 		}
 		if (isChatEvent(e)) {
@@ -389,8 +421,13 @@ export class WebStore {
 				void this.run(() => this.transport.op({ type: 'chat.resync', id: e.chatId }));
 			return;
 		}
-		// The page has no Jobs or task views yet; scripts follow them.
-		if (isJobEvent(e) || isTaskEvent(e)) return;
+		// The page has no Jobs or task views; scripts follow them. A run
+		// starting or ending, or the queue changing, can change a Home card.
+		if (isJobEvent(e)) {
+			if (e.type !== 'job-run-live') this.refreshHomeSoon();
+			return;
+		}
+		if (isTaskEvent(e)) return;
 		if (!isSessionEvent(e)) {
 			if (e.type === 'prompt') this.prompts[e.prompt.promptId] = e.prompt;
 			else delete this.prompts[e.promptId];

@@ -1,7 +1,11 @@
 <script lang="ts">
-	/** The desktop's Code sessions: open ones first, then saved ones; and New session. */
+	/**
+	 * Home, Code or Chat. Code: the desktop's sessions, open ones first, then
+	 * saved ones; and New session.
+	 */
 	import type { WebStore } from '../store.svelte.ts';
 	import ChatList from './ChatList.svelte';
+	import HomeView from './home/HomeView.svelte';
 
 	let { store }: { store: WebStore } = $props();
 
@@ -56,8 +60,13 @@
 
 <div class="head">
 	<div class="segmented tabs">
-		<!-- The desktop's lean mode hides Code there, and here. -->
+		<!-- The desktop's lean mode hides Home and Code there, and here. -->
 		{#if !store.lean}
+			<button
+				class:active={store.tab === 'home'}
+				title="Your computer's Home cards, read-only."
+				onclick={() => store.showHome()}>Home</button
+			>
 			<button
 				class:active={store.tab === 'code'}
 				title="Your Code sessions."
@@ -89,6 +98,8 @@
 
 {#if store.tab === 'chat'}
 	<ChatList {store} />
+{:else if store.tab === 'home'}
+	<HomeView {store} />
 {:else}
 	{#if creating}
 		<form

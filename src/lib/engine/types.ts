@@ -69,6 +69,8 @@ export type EngineOp =
 	| { type: 'prompts.answer'; promptId: string; answer: PromptAnswer }
 	| JobOp
 	| ObserveOp
+	/** Home's cards in order, each with what it shows (`HomeCardView`). Read-only. */
+	| { type: 'home.cards' }
 	/**
 	 * What the app is set to show, for a client that can't read the settings:
 	 * `{ lean }`, whether Settings → General → Lean mode is on.
@@ -400,7 +402,110 @@ export type ChatEvent = { seq: number; chatId: string } & (
 	{ type: 'chat-snapshot'; state: ChatState } | { type: 'chat-update'; patch: Partial<ChatState> }
 );
 
-export type EngineEvent = (SessionEvent | PromptEvent | ChatEvent | JobEvent | TaskEvent) & {
+/**
+ * A Home card was added, removed, moved, resized or given a new fetched
+ * result. A new run of a card's job sends `job-run`, not this. `seq` counts
+ * these alone.
+ */
+export type HomeEvent = { type: 'home-card'; seq: number; cardId: string };
+
+/** A run as a Home card names it. */
+export interface HomeRunLine {
+	jobName: string;
+	/** "Done", "Failed", … */
+	status: string;
+	/** When it finished, or started; null for a queued run. */
+	at: number | null;
+}
+
+/** What a judged or pinned card's job is doing now. */
+export interface HomeJobState {
+	running: boolean;
+	/** Running, but waiting for chat or the model. */
+	waiting: boolean;
+	queued: boolean;
+	/** The latest run's error, when it failed. */
+	failed: string | null;
+	/** When the shown result was made. */
+	updatedAt: number | null;
+}
+
+export interface HomeEmailItem {
+	from: string;
+	subject: string;
+	date: string;
+	why: string;
+}
+
+export interface HomeNewsItem {
+	title: string;
+	link: string;
+	source: string;
+	published: number | null;
+	summary: string;
+}
+
+export interface HomeMeetingGroup {
+	/** "Now", "Later today", … as of when the card was read. */
+	name: string;
+	events: { summary: string; time: string; location: string | null; joinUrl: string | null }[];
+}
+
+/** What one card shows, by its type: render-ready, so a client needs no other call. */
+export type HomeCardPayload =
+	| {
+			type: 'jobs';
+			/** The run going now, as a line ("Step 2 of 4 · Plan"). */
+			current: { jobName: string; line: string } | null;
+			queued: number;
+			recent: HomeRunLine[];
+	  }
+	/** Built by the client from `sessions.list` and `prompts.list`. */
+	| { type: 'code_sessions' }
+	| (HomeJobState & {
+			type: 'pinned_job';
+			/** False once the job was deleted. */
+			exists: boolean;
+			/** The latest successful run's output, markdown, cut to 4 KB. */
+			output: string | null;
+			truncated: boolean;
+	  })
+	/** `items` is null before the first successful run. */
+	| (HomeJobState & { type: 'important_emails'; items: HomeEmailItem[] | null })
+	| (HomeJobState & { type: 'news'; items: HomeNewsItem[] | null })
+	| {
+			type: 'upcoming_meetings';
+			/** Null before the first read. */
+			groups: HomeMeetingGroup[] | null;
+			problems: string[];
+			/** Why the last read failed; the last good result still shows. */
+			error: string | null;
+			updatedAt: number | null;
+	  }
+	| {
+			type: 'weather';
+			place: string;
+			/** Null before the first read. */
+			now: { temp: string; label: string; icon: string; wind: string } | null;
+			today: string | null;
+			tomorrow: string | null;
+			error: string | null;
+			updatedAt: number | null;
+	  }
+	/** A card type this app doesn't know: its title only. */
+	| { type: 'unknown' };
+
+/** One row of `home.cards`. */
+export interface HomeCardView {
+	id: string;
+	size: 'normal' | 'wide';
+	title: string;
+	payload: HomeCardPayload;
+}
+
+export type EngineEvent = (
+	SessionEvent | PromptEvent | ChatEvent | JobEvent | TaskEvent | HomeEvent
+) & {
 	/** Stamped by Rust: the window the event came from. */
 	window?: string;
 };
@@ -423,6 +528,10 @@ export function isJobEvent(e: EngineEvent): e is JobEvent & { window?: string } 
 
 export function isTaskEvent(e: EngineEvent): e is TaskEvent & { window?: string } {
 	return e.type === 'task';
+}
+
+export function isHomeEvent(e: EngineEvent): e is HomeEvent & { window?: string } {
+	return e.type === 'home-card';
 }
 
 /** `session.readFile`'s answer. */

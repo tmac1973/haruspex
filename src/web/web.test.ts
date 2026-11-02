@@ -12,6 +12,7 @@ import Message from './components/Message.svelte';
 import Transcript from './components/Transcript.svelte';
 import ChatTranscript from './components/ChatTranscript.svelte';
 import ChatList from './components/ChatList.svelte';
+import HomeView from './components/home/HomeView.svelte';
 import { imageRefs, resetImages, wantImages } from './images.ts';
 import { clearResolvedImages } from '#lib/images/resolve.svelte.ts';
 import { VIEW_IMAGE_EVENT } from '#lib/markdownActions.ts';
@@ -85,7 +86,7 @@ describe('the web store', () => {
 	it("follows the desktop's lean mode: Chat only", async () => {
 		const d = fakeDesktop({ 'app.mode': { lean: true }, 'chats.list': [] });
 		const store = new WebStore(d.transport);
-		expect(store.tab).toBe('code');
+		expect(store.tab).toBe('home');
 		await store.refreshMode();
 		expect(store.lean).toBe(true);
 		expect(store.tab).toBe('chat');
@@ -94,7 +95,86 @@ describe('the web store', () => {
 		const old = new WebStore(fakeDesktop().transport);
 		await old.refreshMode();
 		expect(old.lean).toBe(false);
-		expect(old.tab).toBe('code');
+		expect(old.tab).toBe('home');
+	});
+
+	it('reads Home again on a home-card event, and leaves the prompts alone', async () => {
+		vi.useFakeTimers();
+		const card = { id: 'k1', size: 'normal', title: 'Jobs', payload: { type: 'code_sessions' } };
+		const d = fakeDesktop({ 'home.cards': [card] });
+		const store = new WebStore(d.transport);
+		store.start();
+		store.prompts = { 'main:1': { promptId: 'main:1' } as Prompt };
+		d.push({ type: 'home-card', seq: 1, cardId: 'k1' });
+		d.push({ type: 'home-card', seq: 2, cardId: 'k2' });
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(d.ops.filter((o) => o.type === 'home.cards')).toHaveLength(1);
+		expect(store.homeCards).toEqual([card]);
+		expect(Object.keys(store.prompts)).toEqual(['main:1']);
+		store.stop();
+		vi.useRealTimers();
+	});
+
+	it('shows a session waiting on you on Home, and opens it on a tap', async () => {
+		const d = fakeDesktop({ 'session.get': state() });
+		const store = new WebStore(d.transport);
+		store.sessions = [
+			{
+				id: 's1',
+				title: 'Fix the build',
+				root: '/p',
+				wslDistro: null,
+				status: 'idle',
+				window: 'main'
+			},
+			{ id: 's2', title: 'Idle one', root: '/q', wslDistro: null, status: 'idle', window: 'main' }
+		];
+		store.prompts = { 'main:1': { promptId: 'main:1', sessionId: 's1' } as Prompt };
+		store.homeCards = [
+			{ id: 'k', size: 'normal', title: 'Code sessions', payload: { type: 'code_sessions' } },
+			{
+				id: 'n',
+				size: 'normal',
+				title: 'News',
+				payload: {
+					type: 'news',
+					running: false,
+					waiting: false,
+					queued: false,
+					failed: null,
+					updatedAt: 1,
+					items: [
+						{ title: 'Launch', link: 'https://x/l', source: 'S', published: null, summary: 's' }
+					]
+				}
+			}
+		];
+		render(HomeView, { store });
+		expect(screen.queryByText('Idle one')).toBeNull();
+		expect(screen.getByText('Needs attention')).toBeTruthy();
+		expect(screen.getByRole('link', { name: 'Launch' }).getAttribute('target')).toBe('_blank');
+		await fireEvent.click(screen.getByRole('button', { name: /Fix the build/ }));
+		expect(store.tab).toBe('code');
+		expect(store.selected).toBe('s1');
+	});
+
+	it('reads Home again when a job run changes, only while Home shows', async () => {
+		vi.useFakeTimers();
+		const d = fakeDesktop({ 'home.cards': [] });
+		const store = new WebStore(d.transport);
+		store.start();
+		const run = { type: 'job-run', seq: 1, runId: 1, run: {} } as unknown as StreamEvent;
+		d.push(run);
+		d.push({ type: 'job-run-live', seq: 2, runId: 1, stepIndex: 0, streaming: 'x' });
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(d.ops.filter((o) => o.type === 'home.cards')).toHaveLength(1);
+
+		store.tab = 'code';
+		d.push(run);
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(d.ops.filter((o) => o.type === 'home.cards')).toHaveLength(1);
+		store.stop();
+		vi.useRealTimers();
 	});
 
 	it('shows a session at once, then follows it from its snapshot', async () => {
