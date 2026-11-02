@@ -54,7 +54,10 @@ const ENTRY: CatalogEntry = {
 	blockedVersions: []
 };
 
-async function withStatus(updateAvailable: boolean): Promise<void> {
+async function withStatus(
+	updateAvailable: boolean,
+	blockedReason: string | null = null
+): Promise<void> {
 	invoke.mockImplementation(
 		invokeRouter({
 			mcp_update_status: [
@@ -63,7 +66,7 @@ async function withStatus(updateAvailable: boolean): Promise<void> {
 					installedVersion: '2026.9.2',
 					pinnedVersion: '2026.10.1',
 					updateAvailable,
-					blockedReason: null
+					blockedReason
 				}
 			],
 			mcp_existing_dirs: ['/games/one']
@@ -115,5 +118,25 @@ describe('the Update button', () => {
 		);
 		// Nothing is downloaded until the user says yes.
 		expect(invoke).not.toHaveBeenCalledWith('mcp_update_stage', expect.anything());
+	});
+});
+
+describe('what the card says', () => {
+	const props = () => ({ config: config(), entry: ENTRY, onchange: () => {}, onremove: () => {} });
+
+	it('marks a server with an update next to its name', async () => {
+		await withStatus(true);
+		render(McpServerRow, { props: props() });
+		expect(screen.getByRole('heading', { name: /Godot/ }).textContent).toContain('Update');
+	});
+
+	it('shows a blocked version’s reason, offers Update, and will not start it', async () => {
+		await withStatus(true, 'Leaks tokens.');
+		render(McpServerRow, { props: props() });
+		expect(screen.getByText('Stopped for a security problem: Leaks tokens.')).toBeTruthy();
+		expect(screen.getByRole('button', { name: 'Update' })).toBeTruthy();
+		const start = screen.getByRole('button', { name: 'Start' }) as HTMLButtonElement;
+		expect(start.disabled).toBe(true);
+		expect(start.title).toBe('Update to start it.');
 	});
 });

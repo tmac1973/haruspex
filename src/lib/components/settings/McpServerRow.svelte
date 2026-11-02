@@ -25,6 +25,7 @@
 	import { customEnvOf, replaceCustomEnv } from '#lib/stores/mcpSecrets.ts';
 	import {
 		existingAddonProjects,
+		forgetUpdateNotice,
 		mcpUpdateResult,
 		mcpUpdateStatus,
 		runningMcpUpdate,
@@ -186,6 +187,9 @@
 	const runningUpdate = $derived(runningMcpUpdate());
 	const updatingThis = $derived(runningUpdate?.serverId === config.id);
 	const updateResult = $derived(mcpUpdateResult(config.id));
+	// Known from the status before the server is ever started, and from the
+	// refusal once it has been.
+	const blockedReason = $derived(runtime.blockedReason ?? updateStatus?.blockedReason ?? null);
 	// The addon projects an update will overwrite, waiting for a yes.
 	let confirmProjects = $state<string[] | null>(null);
 	let pendingUpdate = $state<McpServerConfig | null>(null);
@@ -221,6 +225,7 @@
 
 	async function remove(): Promise<void> {
 		await removeMcpServer(config.id);
+		forgetUpdateNotice(config.id);
 		onremove();
 	}
 </script>
@@ -228,6 +233,7 @@
 <section class="settings-section" class:failed>
 	<h2 title={updateStatus ? `Version ${updateStatus.installedVersion}` : undefined}>
 		{config.label}
+		{#if updateStatus?.updateAvailable}<span class="update-pill">Update</span>{/if}
 	</h2>
 	<div class="header">
 		<label class="toggle-row">
@@ -268,8 +274,8 @@
 		</p>
 	{/if}
 
-	{#if runtime.blockedReason}
-		<p class="error">Stopped for a security problem: {runtime.blockedReason}</p>
+	{#if blockedReason}
+		<p class="error">Stopped for a security problem: {blockedReason}</p>
 	{/if}
 
 	{#if runtime.error}
@@ -349,7 +355,8 @@
 	<div class="actions">
 		<button
 			type="button"
-			disabled={runtime.busy || running || !config.setupComplete}
+			disabled={runtime.busy || running || !config.setupComplete || blockedReason !== null}
+			title={blockedReason !== null ? 'Update to start it.' : undefined}
 			onclick={() => start()}
 		>
 			Start
@@ -448,6 +455,16 @@
 	}
 	.failed {
 		border-color: var(--danger, #ef4444);
+	}
+	.update-pill {
+		margin-left: 0.5rem;
+		padding: 0.05rem 0.45rem;
+		border-radius: 999px;
+		background: var(--accent-soft);
+		color: var(--accent);
+		font-size: 0.7rem;
+		font-weight: 600;
+		vertical-align: middle;
 	}
 	.update {
 		display: flex;

@@ -5,7 +5,10 @@ import type { McpToolDescriptor } from '#lib/ipc/gen/McpToolDescriptor.ts';
 import type { SetupStep } from '#lib/ipc/gen/SetupStep.ts';
 import {
 	existingAddonProjects,
+	forgetUpdateNotice,
+	mcpAttentionCount,
 	mcpUpdateResult,
+	notifyUpdates,
 	refreshUpdateStatuses,
 	recoverInterruptedUpdates,
 	updatedText,
@@ -13,7 +16,7 @@ import {
 } from './mcpUpdate.svelte';
 import { mcpState, removeMcpServer, startMcpServer } from './mcpServers.svelte';
 import { isAlwaysAllowed, rememberAlwaysAllow } from './mcpApproval.svelte';
-import { getToasts } from './toasts.svelte';
+import { dismissToast, getToasts } from './toasts.svelte';
 import { invokeCalls, invokeRouter, type InvokeRoute } from '#lib/testing/invoke.ts';
 
 const invoke = vi.hoisted(() => vi.fn());
@@ -357,5 +360,90 @@ describe('around an update', () => {
 		expect(getToasts().map((t) => t.message)).toContain(
 			'An MCP server update was interrupted and has been undone.'
 		);
+	});
+});
+
+describe('telling the user', () => {
+	type Status = {
+		serverId: string;
+		installedVersion: string;
+		pinnedVersion: string;
+		updateAvailable: boolean;
+		blockedReason: string | null;
+	};
+	const status = (serverId: string, over: Partial<Status> = {}): Status => ({
+		serverId,
+		installedVersion: '1',
+		pinnedVersion: '2',
+		updateAvailable: true,
+		blockedReason: null,
+		...over
+	});
+	const servers = [config({ id: 'a', label: 'GitHub' }), config({ id: 'b', label: 'Browser' })];
+
+	async function launchWith(...found: Status[]): Promise<string[]> {
+		for (const t of getToasts()) dismissToast(t.id);
+		backend({ mcp_update_status: found });
+		await refreshUpdateStatuses(servers);
+		notifyUpdates(servers);
+		return getToasts().map((t) => t.message);
+	}
+
+	beforeEach(() => {
+		localStorage.clear();
+	});
+
+	it('toasts a new pin once, then leaves it to the badge', async () => {
+		expect(await launchWith(status('a'), status('b'))).toEqual([
+			'2 MCP servers have updates. Settings → MCP servers.'
+		]);
+		expect(mcpAttentionCount()).toBe(2);
+		expect(await launchWith(status('a'), status('b'))).toEqual([]);
+	});
+
+	it('toasts again for a newer pin', async () => {
+		await launchWith(status('a'));
+		expect(await launchWith(status('a', { pinnedVersion: '3' }))).toEqual([
+			'1 MCP server has an update. Settings → MCP servers.'
+		]);
+	});
+
+	it('toasts a blocked version on every launch, naming it', async () => {
+		const blocked = status('b', { blockedReason: 'Leaks tokens.' });
+		const message = 'Browser was stopped for a security problem: Leaks tokens.';
+		expect(await launchWith(blocked)).toEqual([message]);
+		expect(await launchWith(blocked)).toEqual([message]);
+	});
+
+	it('counts several blocked servers in one toast', async () => {
+		expect(
+			await launchWith(status('a', { blockedReason: 'x' }), status('b', { blockedReason: 'y' }))
+		).toEqual(['2 MCP servers were stopped for security problems. Settings → MCP servers.']);
+	});
+
+	it('says nothing, and shows no badge, when everything is current', async () => {
+		expect(await launchWith(status('a', { updateAvailable: false }))).toEqual([]);
+		expect(mcpAttentionCount()).toBe(0);
+	});
+
+	it('still toasts when storage cannot be read or written', async () => {
+		const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+			throw new Error('denied');
+		});
+		const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+			throw new Error('denied');
+		});
+		try {
+			expect(await launchWith(status('a'))).toHaveLength(1);
+		} finally {
+			get.mockRestore();
+			set.mockRestore();
+		}
+	});
+
+	it('forgets a removed server, so a reinstall is told again', async () => {
+		await launchWith(status('a'));
+		forgetUpdateNotice('a');
+		expect(await launchWith(status('a'))).toHaveLength(1);
 	});
 });

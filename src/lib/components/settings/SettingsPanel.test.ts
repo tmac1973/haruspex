@@ -131,4 +131,41 @@ describe('settings navigation', () => {
 		expect(document.body.textContent).toContain('MCP integrations');
 		expect(document.body.textContent).not.toContain('Calendar & Contacts');
 	});
+
+	it('counts MCP servers that need the user on the rail', async () => {
+		const { invoke } = await import('@tauri-apps/api/core');
+		const { refreshUpdateStatuses } = await import('#lib/stores/mcpUpdate.svelte.ts');
+		vi.mocked(invoke).mockImplementationOnce(async () => [
+			{
+				serverId: 's',
+				installedVersion: '1',
+				pinnedVersion: '2',
+				updateAvailable: true,
+				blockedReason: null
+			}
+		]);
+		await refreshUpdateStatuses([
+			{
+				id: 's',
+				label: 'S',
+				enabled: true,
+				source: { kind: 'catalog', entryId: 'e' },
+				secrets: {},
+				toolEnabled: {},
+				proxyUse: 'auto',
+				setupComplete: true,
+				addonProjects: []
+			}
+		]);
+		render(SettingsPanel, { props: { onclose: () => {} } });
+
+		// The count sits beside the label without changing the button's name.
+		const mcp = screen.getByRole('button', { name: 'MCP servers' });
+		expect(mcp.title).toBe('1 need attention');
+		expect(mcp.textContent).toContain('1');
+
+		await refreshUpdateStatuses([]);
+		await settle();
+		expect(rail('MCP servers').title).toBe('');
+	});
 });

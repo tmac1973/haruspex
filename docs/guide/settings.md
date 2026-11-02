@@ -1,6 +1,6 @@
 ---
 title: Settings reference
-description: What each Settings section holds, its defaults, and which guide page explains it.
+description: What each Settings section holds, its defaults, and where to read more.
 ---
 
 # Settings reference
@@ -93,7 +93,7 @@ See the `search-and-network` page.
 
 ## Network
 
-Proxies. They never apply to this computer's own services.
+Proxies, never used for this computer's own services.
 
 - **Network Proxy**: None (default) or Manual.
 - **Web Search Proxy**: Network proxy (default), None or Manual.
@@ -109,7 +109,7 @@ See the `integrations` page.
 
 ## MCP servers
 
-Add a server (catalog, this computer or your network), pick its tools, and **Update** a catalog server.
+Add a server (catalog, local or network), pick its tools, or **Update** it. A count on its rail entry means one needs you.
 
 See the `integrations` page.
 
@@ -124,7 +124,7 @@ See the `integrations` page.
 
 The Shell tab's terminal and its assistant.
 
-- **Shell binary**: blank, for your `$SHELL`.
+- **Shell binary**: blank, for `$SHELL`.
 - **Recent shell commands attached to each chat message**: 3.
 - **Include your shell history file in prompts**: on.
 - **Max output bytes per captured command**: 8192.

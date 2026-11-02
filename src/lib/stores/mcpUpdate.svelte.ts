@@ -26,6 +26,7 @@ import {
 	stopMcpServer
 } from '#lib/stores/mcpServers.svelte.ts';
 import { getSettings } from '#lib/stores/settings.ts';
+import { openSettings } from '#lib/stores/settingsNav.svelte.ts';
 import { showToast } from '#lib/stores/toasts.svelte.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
@@ -91,6 +92,81 @@ export async function recoverInterruptedUpdates(): Promise<void> {
 	}
 }
 
+/** The pin each server was last told about, so a new pin toasts once. */
+const NOTIFIED_KEY = 'haruspex.mcp.updateNotified';
+
+function loadNotified(): Record<string, string> {
+	try {
+		const parsed: unknown = JSON.parse(localStorage.getItem(NOTIFIED_KEY) ?? '{}');
+		return parsed && typeof parsed === 'object' ? (parsed as Record<string, string>) : {};
+	} catch {
+		// Unreadable means the toast may show again, never that it is lost.
+		return {};
+	}
+}
+
+function saveNotified(notified: Record<string, string>): void {
+	try {
+		localStorage.setItem(NOTIFIED_KEY, JSON.stringify(notified));
+	} catch {
+		// As above: at worst, one more toast.
+	}
+}
+
+/** Forget what a removed server was told, so a reinstall starts fresh. */
+export function forgetUpdateNotice(serverId: string): void {
+	const notified = loadNotified();
+	if (!(serverId in notified)) return;
+	delete notified[serverId];
+	saveNotified(notified);
+}
+
+/** Servers with an update or a blocked version: the Settings rail's badge. */
+export function mcpAttentionCount(): number {
+	return Object.values(statuses).filter((s) => s.updateAvailable || s.blockedReason !== null)
+		.length;
+}
+
+const openMcpSettings = (): void => openSettings('mcp');
+
+/**
+ * Tell the user what the statuses say. A blocked version on every launch,
+ * because it stays stopped until updated; a new pin once, because the badge
+ * carries it from there.
+ */
+export function notifyUpdates(servers: McpServerConfig[]): void {
+	const all = Object.values(statuses);
+
+	const blocked = all.filter((s) => s.blockedReason !== null);
+	if (blocked.length === 1) {
+		const name = servers.find((s) => s.id === blocked[0].serverId)?.label ?? 'An MCP server';
+		showToast(`${name} was stopped for a security problem: ${blocked[0].blockedReason}`, {
+			kind: 'error',
+			actionLabel: 'Open',
+			onAction: openMcpSettings
+		});
+	} else if (blocked.length > 1) {
+		showToast(
+			`${blocked.length} MCP servers were stopped for security problems. Settings → MCP servers.`,
+			{ kind: 'error', actionLabel: 'Open', onAction: openMcpSettings }
+		);
+	}
+
+	const notified = loadNotified();
+	const fresh = all.filter(
+		(s) => s.updateAvailable && s.blockedReason === null && notified[s.serverId] !== s.pinnedVersion
+	);
+	if (fresh.length === 0) return;
+	showToast(
+		fresh.length === 1
+			? '1 MCP server has an update. Settings → MCP servers.'
+			: `${fresh.length} MCP servers have updates. Settings → MCP servers.`,
+		{ actionLabel: 'Open', onAction: openMcpSettings }
+	);
+	for (const s of fresh) notified[s.serverId] = s.pinnedVersion;
+	saveNotified(notified);
+}
+
 /**
  * Launch: put interrupted updates right, learn what has an update, then start
  * the servers that should be running. Skipped entirely when no MCP server is
@@ -101,6 +177,7 @@ export async function startMcpAtLaunch(): Promise<void> {
 	if (servers.length > 0) {
 		await recoverInterruptedUpdates();
 		await refreshUpdateStatuses(servers);
+		notifyUpdates(servers);
 	}
 	await startConfiguredMcpServers();
 }
