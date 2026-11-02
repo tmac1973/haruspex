@@ -40,7 +40,7 @@ Three.js comes with the app, so the 3D helper needs no network. The agent sees t
 ## What it doesn't do
 
 - No model: a helper can't make anything on its own; the agent writes the code.
-- It shows a still pose. Animation clips are saved and listed, not played.
+- The agent sees a still pose: clips are saved and listed, not played to it. You can play them in the file's 3D view (**Animation**).
 - It doesn't check a Three.js app with its own renderer; for that, see the `specialists` page.
 - It doesn't fix problems, rig a character, unwrap UVs or make lower-detail copies.
 - Not in Chat, the Shell, jobs or subtasks.

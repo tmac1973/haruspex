@@ -13,6 +13,8 @@
 	let view: GlbView | null = $state.raw(null);
 	let error = $state('');
 	let loading = $state(true);
+	/** The playing clip's index, as the select's value; '' is the rest pose. */
+	let clip = $state('');
 
 	async function load(): Promise<void> {
 		if (!canvas) return;
@@ -23,6 +25,7 @@
 		try {
 			const bytes = await invoke<number[]>('fs_read_bytes', { workdir, relPath });
 			view = await mountGlbView(canvas, new Uint8Array(bytes));
+			clip = view.clips.length ? '0' : '';
 		} catch (e) {
 			error = `Could not show ${relPath}: ${e instanceof Error ? e.message : String(e)}`;
 		}
@@ -43,10 +46,13 @@
 			`${s.triangles.toLocaleString()} triangles`,
 			`${s.size.map(fmt).join(' × ')} units`
 		];
-		if (s.animations > 0)
-			parts.push(`${s.animations} ${s.animations === 1 ? 'animation' : 'animations'}`);
 		return parts.join(' · ');
 	});
+
+	function pick(value: string): void {
+		clip = value;
+		view?.playClip(value === '' ? null : Number(value));
+	}
 </script>
 
 <div class="glb-viewer" data-testid="glb-viewer">
@@ -57,6 +63,19 @@
 	</div>
 	<div class="bar">
 		<span class="summary" title="Drag to orbit, scroll to zoom, right-drag to pan">{summary}</span>
+		{#if view && view.clips.length}
+			<select
+				aria-label="Animation"
+				title="Which animation plays"
+				value={clip}
+				onchange={(e) => pick(e.currentTarget.value)}
+			>
+				<option value="">Rest pose</option>
+				{#each view.clips as name, i (i)}
+					<option value={String(i)}>{name}</option>
+				{/each}
+			</select>
+		{/if}
 		<button disabled={!view} onclick={() => view?.resetCamera()}>Reset view</button>
 		<button disabled={loading} onclick={() => void load()}>Reload</button>
 	</div>
