@@ -84,4 +84,5 @@ For the `threejs` kind the flow is the same, except that the output is the HTML 
 - **Where are a session's specialist toggles?** → A Specialists menu in the Code session header, one checkbox per specialist.
 - **How do the phases land?** → One PR per phase.
 - **How are specialist endpoints called?** → Through `src/lib/api.ts` with a `BackendOverride`, like remote chat backends; asmodean's toolchest answers the CORS preflight, so no Rust proxy is needed.
+- **Who controls a specialist's thinking?** → The kind sets a default (off for `threejs`, the server's default for `glb` and `text`) and an entry can override it; sent as `enable_thinking`. Added after the 2026-11-02 spike, where the 3D-Coder model reasoned through 48k tokens without writing code.
 - **Is `ask_specialist` deferred?** → No: it is in `CODE_CORE`, because it is offered only after the user turns a specialist on for the session.
