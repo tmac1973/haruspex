@@ -62,10 +62,12 @@ export function byText(text) {
 	);
 }
 
-/** The pid a stub sidecar recorded, or null if it has not started. */
+/** The pid a stub sidecar recorded, or null if it has not (yet, or fully) written one. */
 export function stubPid(dir, name) {
 	const file = `${dir}/${name}.pid`;
-	return existsSync(file) ? Number(readFileSync(file, 'utf8')) : null;
+	if (!existsSync(file)) return null;
+	const pid = Number(readFileSync(file, 'utf8'));
+	return Number.isInteger(pid) && pid > 0 ? pid : null;
 }
 
 /** Is a process alive? (Signal 0 tests without signalling, on Windows too.) */

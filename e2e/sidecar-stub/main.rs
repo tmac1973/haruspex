@@ -3,8 +3,8 @@
 //! every request `200 {"status":"ok"}` (enough for the app's health checks),
 //! and runs until it is killed.
 //!
-//! When `E2E_STUB_PIDS` names a directory, it writes `<its name>.pid` there, so
-//! a test can check that it died with the app.
+//! When `E2E_STUB_PIDS` names a directory, it writes `<its name>.pid` there once
+//! it is listening, so a test can check that it died with the app.
 //!
 //! Standard library only, so `rustc -O main.rs` builds it anywhere CI does.
 
@@ -24,6 +24,15 @@ fn main() {
         .find(|w| w[0] == "--port" || w[0] == "--listen-port")
         .and_then(|w| w[1].parse::<u16>().ok())
         .unwrap_or(0);
+    let listener = match TcpListener::bind(("127.0.0.1", port)) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("sidecar stub: cannot listen on {port}: {e}");
+            std::process::exit(1);
+        }
+    };
+    // Recorded once the port is ours: a stub that could not take it (an
+    // earlier one still holds it) exits, and must not pass for the server.
     if let Ok(dir) = std::env::var("E2E_STUB_PIDS") {
         let name = std::path::Path::new(&args[0])
             .file_stem()
@@ -35,13 +44,6 @@ fn main() {
             std::process::id().to_string(),
         );
     }
-    let listener = match TcpListener::bind(("127.0.0.1", port)) {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!("sidecar stub: cannot listen on {port}: {e}");
-            std::process::exit(1);
-        }
-    };
     eprintln!("sidecar stub listening on {}", listener.local_addr().unwrap());
     for stream in listener.incoming().flatten() {
         let mut stream = stream;
