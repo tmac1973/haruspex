@@ -21,6 +21,8 @@ import {
 import type { Usage } from '#lib/api.ts';
 import { withInferenceSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 import { runWithAutoApprove } from '#lib/stores/approvalOverride.ts';
+import { jobSandboxId, releaseSandbox } from '#lib/sandbox/sandbox.ts';
+import { forgetWorkingDir, setWorkingDirState } from '#lib/stores/session.svelte.ts';
 import { getJob, type JobWithSteps, type JobType } from '#lib/stores/jobs.svelte.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import {
@@ -697,6 +699,8 @@ function startRun(queued: QueuedRun): void {
 	const { runId, job } = queued;
 	const abort = new AbortController();
 	activeAbort = abort;
+	// The run's Python sandbox saves into the job's folder, not a chat's.
+	setWorkingDirState(jobSandboxId(runId), job.working_dir ? job.working_dir : null);
 
 	const planned = planSteps(job);
 	const environment = runEnvironment(job);
@@ -885,6 +889,8 @@ function buildRunContext(
 		},
 		onSettled: () => {
 			if (activeAbort === abort) activeAbort = null;
+			releaseSandbox(jobSandboxId(runId));
+			forgetWorkingDir(jobSandboxId(runId));
 			if (pending.length > 0) queueMicrotask(drainNext);
 		},
 		startChainedRun: (jobId) => enqueue(jobId, 'chained')

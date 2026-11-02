@@ -1,6 +1,7 @@
 // Public surface for the python sandbox. Dispatches through the
 // per-chat WorkerPool (one Web Worker per chat, LRU cap 3). Every call
-// names its chat: turns in several chats can run Python at once.
+// names its chat: turns in several chats can run Python at once. A job
+// run is a "chat" here too, under `jobSandboxId`.
 
 import { getWorkerPool } from '#lib/sandbox/workerPool.ts';
 import type { RunOptions } from '#lib/sandbox/workerManager.ts';
@@ -39,6 +40,16 @@ export async function resetSandbox(chatId: string): Promise<void> {
  */
 export function cancelRun(chatId: string): void {
 	getWorkerPool().cancel(chatId);
+}
+
+/** The sandbox a job run's turns share, apart from every chat's. */
+export function jobSandboxId(runId: number): string {
+	return `job:${runId}`;
+}
+
+/** Drop the sandbox's Worker for good: its job run has ended. */
+export function releaseSandbox(chatId: string): void {
+	getWorkerPool().release(chatId);
 }
 
 /** True if the chat has a live Worker (Python state intact). Used by

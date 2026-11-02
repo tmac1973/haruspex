@@ -13,7 +13,6 @@ import { toolError, toolResult } from '#lib/agent/tools/types.ts';
 import type { ToolContext, ToolExecOutput } from '#lib/agent/tools/types.ts';
 import { IMAGE_EXT_RE } from '#lib/agent/tools/fs-read.ts';
 import { lintPythonIfApplicable } from '#lib/agent/tools/python-lint.ts';
-import { isAutoApproveActive } from '#lib/stores/approvalOverride.ts';
 import { localWriteBlocked } from '#lib/agent/tools/nested-session.ts';
 import type { EditResult } from '#lib/ipc/gen/EditResult.ts';
 import { errMessage } from '#lib/utils/error.ts';
@@ -109,10 +108,17 @@ interface WriteOptions {
 	repeatHint?: string;
 }
 
-/** A tool's write options: a Code session overwrites, and may rewrite after a command. */
+/**
+ * A tool's write options: a Code session overwrites, and may rewrite after a
+ * command; a job run overwrites; a chat asks.
+ */
 function writeOptions(ctx: ToolContext): WriteOptions {
 	if (!ctx.codeSessionId) {
-		return { askBeforeOverwrite: true, releaseSlot: ctx.releaseSlot, chatId: ctx.conversationId };
+		return {
+			askBeforeOverwrite: ctx.jobRunId === undefined,
+			releaseSlot: ctx.releaseSlot,
+			chatId: ctx.conversationId
+		};
 	}
 	return { askBeforeOverwrite: false, rewritable: ctx.filesRewritableThisTurn };
 }
@@ -176,14 +182,11 @@ export async function resolveWritePathInteractive(
 		return { kind: 'ok', finalPath: relPath, overwrite: false };
 	}
 
-	// Unattended runs (jobs) can't show a modal, so we treat existing-file
-	// conflicts as "overwrite". The job authoring UI surfaces this so the
-	// user knows what they're opting into.
-	if (isAutoApproveActive()) {
-		return { kind: 'ok', finalPath: relPath, overwrite: true };
-	}
 	// A Code session edits a project: rewriting a file is the job, and the
 	// write shows as a diff card against what was there, so it doesn't ask.
+	// A job run can't show a modal either: its writes overwrite (the job
+	// authoring UI says so). Decided per turn, never from the global
+	// auto-approve scope, which a chat running beside the job would see too.
 	if (opts.askBeforeOverwrite === false) {
 		return { kind: 'ok', finalPath: relPath, overwrite: true };
 	}
