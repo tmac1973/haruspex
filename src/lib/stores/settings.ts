@@ -12,6 +12,7 @@ import type { BackendDescriptor, EffortCaps } from '#lib/inference/descriptor.ts
 import type { EmailAccount } from '#lib/ipc/gen/EmailAccount.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import type { ImageBackendKind, ImageModelEntry } from '#lib/image/types.ts';
+import type { SpecialistEntry } from '#lib/specialists/types.ts';
 import { imageModelsFromFields } from '#lib/image/fields.ts';
 import type { MusicBackendKind } from '#lib/music/types.ts';
 import type { VideoPreset } from '#lib/video/types.ts';
@@ -922,6 +923,11 @@ export interface AppSettings {
 	 * until the first model is added, and then read through those fields.
 	 */
 	imageModels?: ImageModelEntry[];
+	/**
+	 * The specialist models the Code tab's model can hand a job to, edited in
+	 * Settings → Code → Specialists (see `#lib/specialists/entries.ts`).
+	 */
+	specialists: SpecialistEntry[];
 	/** Settings → Video editing's switch: the video tools are offered only while it is on. */
 	videoEditingEnabled: boolean;
 	/**
@@ -1227,6 +1233,7 @@ const defaults: AppSettings = {
 	videoGenToolchestApiKeyId: null,
 	videoGenToolchestModelId: '',
 	generationServers: [],
+	specialists: [],
 	videoEditingEnabled: false,
 	videoFfmpegPath: '',
 	videoFfprobePath: '',
@@ -1396,6 +1403,12 @@ function load(): AppSettings {
 				imageModels: Array.isArray(rest.imageModels)
 					? rest.imageModels
 					: imageModelsFromFields({ ...defaults, ...rest }),
+				specialists: Array.isArray(rest.specialists)
+					? rest.specialists.map((e: SpecialistEntry) => ({
+							...e,
+							acceptsImages: e.acceptsImages ?? false
+						}))
+					: [],
 				skills: {
 					...defaultSkills,
 					...(parsed.skills ?? {}),
@@ -1480,6 +1493,11 @@ export function reloadSettingsFromStorage(): void {
 
 export function updateSettings(partial: Partial<AppSettings>): void {
 	commit({ ...settings, ...partial });
+}
+
+/** Replace the specialist list (Settings → Code → Specialists). */
+export function setSpecialistEntries(list: SpecialistEntry[]): void {
+	commit({ ...settings, specialists: list });
 }
 
 /**
