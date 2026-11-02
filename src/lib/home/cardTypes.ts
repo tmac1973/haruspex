@@ -7,7 +7,10 @@ import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 import JobsCard from '#lib/components/home/cards/JobsCard.svelte';
 import CodeSessionsCard from '#lib/components/home/cards/CodeSessionsCard.svelte';
 import PinnedJobCard from '#lib/components/home/cards/PinnedJobCard.svelte';
+import ImportantEmailsCard from '#lib/components/home/cards/ImportantEmailsCard.svelte';
+import ImportantEmailsForm from '#lib/components/home/forms/ImportantEmailsForm.svelte';
 import { getJobs, type JobType, type Schedule } from '#lib/stores/jobs.svelte.ts';
+import { getSettings } from '#lib/stores/settings.ts';
 
 export type CardSize = 'normal' | 'wide';
 
@@ -18,6 +21,15 @@ export type CardSize = 'normal' | 'wide';
  * - `pinned`: an existing job's latest output.
  */
 export type CardKind = 'live' | 'fetched' | 'judged' | 'pinned';
+
+/** What an Add card form is given; `onadd` makes the card's job and the card. */
+export interface CardFormProps {
+	open: boolean;
+	defaultSchedule: Schedule;
+	/** Resolves true once the card is added. */
+	onadd: (typeConfig: Record<string, unknown>, schedule: Schedule) => Promise<boolean>;
+	ondone: () => void;
+}
 
 export interface CardType {
 	id: string;
@@ -42,6 +54,8 @@ export interface CardType {
 	itemLabel?: (item: Record<string, unknown>) => string;
 	/** The schedule the Add card form starts from. */
 	defaultSchedule?: Schedule;
+	/** The Add card form, for a card that needs settings before it is added. */
+	form?: Component<CardFormProps>;
 }
 
 const CARD_TYPES: CardType[] = [
@@ -70,6 +84,19 @@ const CARD_TYPES: CardType[] = [
 		component: PinnedJobCard,
 		defaultSize: 'normal',
 		addable: () => getJobs().length > 0
+	},
+	{
+		id: 'important_emails',
+		label: 'Important emails',
+		kind: 'judged',
+		component: ImportantEmailsCard,
+		form: ImportantEmailsForm,
+		defaultSize: 'normal',
+		addable: () => getSettings().integrations.email.accounts.some((a) => a.enabled),
+		jobType: 'email_digest',
+		notifies: true,
+		itemLabel: (item) => String((item.source as { subject?: string } | undefined)?.subject ?? ''),
+		defaultSchedule: { kind: 'interval', minutes: 30 }
 	}
 ];
 

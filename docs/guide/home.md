@@ -1,6 +1,6 @@
 ---
 title: Home
-description: The Home tab — cards showing what Haruspex is doing: running and recent jobs, Code sessions that need you, and pinned jobs' latest results. Adding, arranging and removing cards.
+description: The Home tab — cards for running and recent jobs, Code sessions that need you, pinned jobs, and important unread email. Adding, arranging and removing cards.
 ---
 
 # Home
@@ -24,6 +24,14 @@ A new Home has two cards. Both read what Haruspex is doing right now, so they ne
 - **Open** shows the job and its latest run in the Jobs tab.
 
 The card updates when a run finishes, scheduled runs included. If you delete the job in the Jobs tab, the card says so and can only be removed.
+
+## See the email that matters
+
+**Add card → Important emails…** needs an email account (see the `integrations` page). Pick the accounts, say what counts as important ("from my manager, or about invoices"), how far back to look and how many to show, and how often to check (every 30 minutes to start).
+
+Each check lists your unread inbox mail and asks the model which messages fit your rule. The card shows each one's subject, sender and age, read straight from your mail, with the model's short reason under it. The model only picks; it can't change what the card says a message is. Mail you have read drops off at the next check, and checking never marks anything as read. **Refresh** checks now.
+
+A check waits while a chat or Code turn is using the model, and the card says "Waiting for chat". It reads only the sender, subject and first lines of each message, not the whole message. Like every job but research, it doesn't run in lean mode.
 
 ## Add, arrange and remove cards
 

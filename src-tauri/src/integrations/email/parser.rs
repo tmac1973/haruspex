@@ -66,6 +66,10 @@ pub struct EmailListing {
     /// tells it there is more than the text.
     pub has_attachments: bool,
 
+    /// Whether the message has been read (IMAP `\Seen`). Listing does not
+    /// change it.
+    pub seen: bool,
+
     /// Seconds since the epoch, for sorting and the `hours` filter.
     #[serde(skip)]
     pub timestamp: Option<i64>,
@@ -325,6 +329,8 @@ pub fn listing_from_header(
         date: timestamp.map(utc_rfc3339).unwrap_or_default(),
         snippet: make_snippet(preview),
         has_attachments,
+        // The FLAGS fetch, not the header block, says this; the lister sets it.
+        seen: false,
         timestamp,
     })
 }
