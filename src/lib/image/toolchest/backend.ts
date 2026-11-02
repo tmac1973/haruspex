@@ -81,6 +81,15 @@ function serverFor(entry: ImageModelEntry): Server {
 	return server;
 }
 
+/**
+ * Test-only: forget every server's instances, as a restart would. Registering
+ * again drops the registry's built backends, which hold the old servers.
+ */
+export function _resetForTests(): void {
+	servers.clear();
+	registerImageBackendKind('llama-toolchest', toolchestFor);
+}
+
 /** Settings → Image's toolchest, which the exports below default to. */
 const settingsEntry = () => legacyEntryFor('llama-toolchest');
 

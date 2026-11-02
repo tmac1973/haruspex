@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 
@@ -23,6 +23,17 @@ const store = vi.hoisted(() => ({
 vi.mock('#lib/stores/code.svelte.ts', () => store);
 
 import CodeTabStrip from './CodeTabStrip.svelte';
+
+const scrollIntoView = Element.prototype.scrollIntoView;
+
+beforeEach(() => {
+	// mockReset puts back the four sessions a test swapped for its own.
+	for (const f of Object.values(store)) f.mockReset();
+});
+
+afterEach(() => {
+	Element.prototype.scrollIntoView = scrollIntoView;
+});
 
 describe('CodeTabStrip', () => {
 	it('shows a status dot for each session that is doing something', () => {

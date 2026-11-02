@@ -1008,8 +1008,16 @@ describe('response token ceilings', () => {
 });
 
 describe('include images setting', () => {
+	let prior: Pick<ReturnType<typeof getSettings>, 'includeImages' | 'imageBackendKind'>;
+
 	beforeEach(() => {
 		localStorage.clear();
+		const { includeImages, imageBackendKind } = getSettings();
+		prior = { includeImages, imageBackendKind };
+	});
+
+	afterEach(() => {
+		updateSettings(prior);
 	});
 
 	it('is on by default', () => {

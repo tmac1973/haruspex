@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { invoke } from '@tauri-apps/api/core';
 import FileEditorModal from './FileEditorModal.svelte';
@@ -35,6 +35,12 @@ beforeEach(() => {
 	vi.mocked(invoke).mockImplementation(
 		invokeRouter({ fs_read_text_full: (args) => files[args!.relPath as string] }, undefined)
 	);
+});
+
+// A test that leaves the editor open would make the next one's
+// editWorkdirFiles reject with "already open".
+afterEach(() => {
+	getPendingEdit()?.finish({ saved: [] });
 });
 
 async function type(text: string) {
@@ -123,7 +129,6 @@ describe('FileEditorModal', () => {
 	});
 
 	it('stays a plain modal for the Jobs checkpoint: no watching, no conflict check', async () => {
-		getPendingEdit()?.finish({ saved: [] }); // the previous test left it open
 		render(FileEditorModal);
 		let settled = false;
 		const done = editWorkdirFiles({

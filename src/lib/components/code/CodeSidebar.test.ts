@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 
 const ipc = vi.hoisted(() => ({
@@ -46,6 +46,13 @@ vi.mock('#lib/stores/toasts.svelte.ts', () => toasts);
 vi.mock('#lib/stores/code.svelte.ts', () => store);
 
 import CodeSidebar from './CodeSidebar.svelte';
+
+beforeEach(() => {
+	vi.clearAllMocks();
+	store.getOpenSessions.mockReturnValue([]);
+	ipc.openIds = [];
+	ipc.claimsChanged = null;
+});
 
 describe('CodeSidebar', () => {
 	it('lists lone sessions flat and groups a folder that has several', async () => {
@@ -140,7 +147,6 @@ describe('deleting a session', () => {
 	});
 
 	it('leaves the worktree when the box is unticked, and offers none for other sessions', async () => {
-		store.deleteSession.mockClear();
 		const { unmount } = render(CodeSidebar, { onNew: vi.fn() });
 		await deleteFromMenu('Try it');
 		await fireEvent.click(screen.getByRole('checkbox'));
@@ -185,7 +191,5 @@ describe('deleting a session', () => {
 		const post = await waitFor(() => screen.getByRole('button', { name: 'New post' }));
 		await new Promise((r) => setTimeout(r, 0));
 		expect(post.querySelector('[data-testid="window-mark"]')).toBeNull();
-		store.getOpenSessions.mockReturnValue([]);
-		ipc.openIds = [];
 	});
 });

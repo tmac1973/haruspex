@@ -20,7 +20,7 @@ vi.mock('#lib/utils/async.ts', () => ({ sleep: () => Promise.resolve() }));
 import asmodean from '#lib/toolchest/fixtures/models-asmodean.json';
 import compute2 from '#lib/toolchest/fixtures/models-compute2.json';
 import klein from '#lib/toolchest/fixtures/models-asmodean-klein.json';
-import { toolchestBackend, toolchestInstance } from './backend';
+import { _resetForTests, toolchestBackend, toolchestInstance } from './backend';
 import { backendForEntry } from '#lib/image/registry.ts';
 import {
 	httpCalls,
@@ -78,6 +78,7 @@ describe('llama-toolchest image backend', () => {
 		settings.imageToolchestApiKeyId = 'k1';
 		settings.imageToolchestModelId = 'qwen-turbo-local';
 		use(jobRoutes());
+		_resetForTests();
 	});
 
 	it('probes into a sentence and the Model list, sending the named key', async () => {

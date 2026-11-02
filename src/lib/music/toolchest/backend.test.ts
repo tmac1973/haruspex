@@ -83,6 +83,7 @@ const request: MusicRequest = {
 describe('llama-toolchest music backend', () => {
 	beforeEach(() => {
 		settings.musicToolchestBaseUrl = 'http://box:3000/';
+		settings.musicToolchestApiKeyId = 'k1';
 		settings.musicToolchestModelId = 'ace-gpu2';
 		use(jobRoutes());
 	});

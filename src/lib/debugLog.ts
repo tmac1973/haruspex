@@ -126,6 +126,7 @@ export function loggedFallback<T>(
 
 /** Lines waiting for the next file flush; null while mirroring is off. */
 let fileQueue: string[] | null = null;
+let fileTimer: ReturnType<typeof setInterval> | null = null;
 const FILE_FLUSH_MS = 1000;
 
 /**
@@ -153,10 +154,11 @@ export async function startDebugLogFile(
 		void invoke('debug_log_append', { lines }).catch(() => {
 			// A failing write would fail again every second: stop mirroring.
 			fileQueue = null;
-			clearInterval(timer);
+			if (fileTimer !== null) clearInterval(fileTimer);
+			fileTimer = null;
 		});
 	};
-	const timer = setInterval(flush, FILE_FLUSH_MS);
+	fileTimer = setInterval(flush, FILE_FLUSH_MS);
 	return path;
 }
 
@@ -229,6 +231,19 @@ export function forwardConsoleToDebugLog(): void {
 }
 
 let consoleForwarded = false;
+
+/**
+ * Test-only: stop the file mirror and forget that the console was forwarded,
+ * so each case starts from a fresh module. Restoring `console` itself is the
+ * caller's job (`vi.restoreAllMocks`).
+ */
+export function _resetForTests(): void {
+	if (fileTimer !== null) clearInterval(fileTimer);
+	fileTimer = null;
+	fileQueue = null;
+	consoleForwarded = false;
+	clearDebugLogs();
+}
 
 function consoleArg(a: unknown): string {
 	if (typeof a === 'string') return a;
