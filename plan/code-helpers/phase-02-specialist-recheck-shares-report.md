@@ -27,7 +27,7 @@ unchanged. `previewGlb` and its single render go away.
 1. In `glb.ts` `finish`: `loadGlb(result.glb)`; on `{ error }` return
    `{ ok: false, problems: [error] }`. `inspectGlb`; if `report.problems` is
    non-empty, return them as today. Write the GLB as today.
-2. Render the sheet with `renderSheet(gltf.scene, report)`; push it to
+2. Render the sheet with `renderSheet(THREE, gltf.scene, report.bounds)`; push it to
    `ctx.pendingImages` under the same conditions as now (`png !== null`,
    vision not false, under `MAX_PENDING_IMAGES`).
 3. The result lines: `Saved <target> (source: <source>).`, then
