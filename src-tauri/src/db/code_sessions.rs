@@ -92,6 +92,9 @@ pub struct CodeSessionRow {
     /// The checked-out branch the agent was last told or saw. `null`: never
     /// told; `''`: told there was none (not a repo).
     pub agent_branch: Option<String>,
+    /// JSON array of the specialist entry ids this session offers; `null`
+    /// means the entries marked on by default.
+    pub specialists: Option<String>,
 }
 
 /// A header edit. Each field is three-state: absent leaves the column alone,
@@ -106,6 +109,8 @@ pub struct CodeSessionMetaPatch {
     pub backend: Option<Option<String>>,
     #[serde(default, deserialize_with = "present")]
     pub effort: Option<Option<String>>,
+    #[serde(default, deserialize_with = "present")]
+    pub specialists: Option<Option<String>>,
 }
 
 /// Marks a field that was present in the payload, `null` included, so
@@ -120,7 +125,7 @@ where
 
 const ROW_COLUMNS: &str = "id, title, root, backend, reasoning_effort, thread, \
      forked_from, forked_at, created_at, updated_at, read_only, worktree, \
-     notices_seen_at, agent_branch, wsl_distro";
+     notices_seen_at, agent_branch, wsl_distro, specialists";
 
 fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CodeSessionRow> {
     Ok(CodeSessionRow {
@@ -139,6 +144,7 @@ fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CodeSessionRow> {
         notices_seen_at: row.get(12)?,
         agent_branch: row.get(13)?,
         wsl_distro: row.get(14)?,
+        specialists: row.get(15)?,
     })
 }
 
@@ -354,6 +360,7 @@ impl Database {
             worktree: worktree.map(str::to_string),
             notices_seen_at: None,
             agent_branch: None,
+            specialists: None,
         };
         self.insert_code_session(&row)?;
         Ok(row)
@@ -364,7 +371,7 @@ impl Database {
         conn.execute(
             &format!(
                 "INSERT INTO code_sessions ({ROW_COLUMNS})
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)"
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)"
             ),
             params![
                 row.id,
@@ -381,7 +388,8 @@ impl Database {
                 row.worktree,
                 row.notices_seen_at,
                 row.agent_branch,
-                row.wsl_distro
+                row.wsl_distro,
+                row.specialists
             ],
         )
         .map_err(|e| format!("Code session create failed: {e}"))?;
@@ -437,7 +445,8 @@ impl Database {
                 "UPDATE code_sessions SET
                     title = COALESCE(?2, title),
                     backend = CASE WHEN ?3 THEN ?4 ELSE backend END,
-                    reasoning_effort = CASE WHEN ?5 THEN ?6 ELSE reasoning_effort END
+                    reasoning_effort = CASE WHEN ?5 THEN ?6 ELSE reasoning_effort END,
+                    specialists = CASE WHEN ?7 THEN ?8 ELSE specialists END
                  WHERE id = ?1",
                 params![
                     id,
@@ -445,7 +454,9 @@ impl Database {
                     patch.backend.is_some(),
                     patch.backend.clone().flatten(),
                     patch.effort.is_some(),
-                    patch.effort.clone().flatten()
+                    patch.effort.clone().flatten(),
+                    patch.specialists.is_some(),
+                    patch.specialists.clone().flatten()
                 ],
             )
             .map_err(|e| format!("Code session update failed: {e}"))?;
@@ -563,6 +574,7 @@ impl Database {
             // its agent is told the branch afresh.
             notices_seen_at: None,
             agent_branch: None,
+            specialists: source.specialists,
         };
         self.insert_code_session(&row)?;
         Ok(row)

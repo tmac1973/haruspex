@@ -149,6 +149,8 @@ export class CodeSession {
 	backend = $state<BackendOverride | null>(null);
 	/** Null follows the global reasoning effort. */
 	effort = $state<string | null>(null);
+	/** The specialist entry ids it offers; null: the ones on by default. */
+	specialists = $state<string[] | null>(null);
 
 	messages = $state<ChatMessage[]>([]);
 	/** Index-keyed sidecars, as the shell store keeps them. */
@@ -255,6 +257,7 @@ export class CodeSession {
 		this.title = isUnsetTitle(record.title) ? '' : record.title;
 		this.backend = record.backend;
 		this.effort = record.reasoning_effort;
+		this.specialists = record.specialists;
 		// A new session, or a fork at its first message, stores an empty thread,
 		// which decodes as null: that is an empty session, not a broken one.
 		const thread = decodeCodeSession(record.thread);
@@ -637,6 +640,18 @@ export class CodeSession {
 			await updateCodeSessionMeta(this.id, { effort });
 		} catch (e) {
 			this.effort = prev;
+			throw e;
+		}
+	};
+
+	/** Null puts the session back on the defaults. Applies from the next turn. */
+	setSessionSpecialists = async (ids: string[] | null): Promise<void> => {
+		const prev = this.specialists;
+		this.specialists = ids;
+		try {
+			await updateCodeSessionMeta(this.id, { specialists: ids });
+		} catch (e) {
+			this.specialists = prev;
 			throw e;
 		}
 	};

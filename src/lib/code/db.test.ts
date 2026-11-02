@@ -72,6 +72,20 @@ describe('code session wrappers', () => {
 		expect(rec.backend).toBeNull();
 	});
 
+	it('decodes the specialist list, and treats a broken one as the defaults', async () => {
+		mocks.invoke.mockResolvedValueOnce(row({ specialists: '["a","b"]' }));
+		expect((await loadCodeSession('s1')).specialists).toEqual(['a', 'b']);
+		mocks.invoke.mockResolvedValueOnce(row({ specialists: null }));
+		expect((await loadCodeSession('s1')).specialists).toBeNull();
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		for (const bad of ['not json', '{"a":1}', '[1,2]']) {
+			mocks.invoke.mockResolvedValueOnce(row({ specialists: bad }));
+			expect((await loadCodeSession('s1')).specialists).toBeNull();
+		}
+		expect(warn).toHaveBeenCalledTimes(3);
+		warn.mockRestore();
+	});
+
 	it('loads by id, treating an unparseable backend as the global one', async () => {
 		mocks.invoke.mockResolvedValueOnce(row({ backend: 'not json' }));
 		const rec = await loadCodeSession('s1');
@@ -148,6 +162,16 @@ describe('code session wrappers', () => {
 		expect(mocks.invoke).toHaveBeenLastCalledWith('code_session_update_meta', {
 			id: 's1',
 			patch: { backend: JSON.stringify(backend) }
+		});
+		await updateCodeSessionMeta('s1', { specialists: ['a', 'b'] });
+		expect(mocks.invoke).toHaveBeenLastCalledWith('code_session_update_meta', {
+			id: 's1',
+			patch: { specialists: '["a","b"]' }
+		});
+		await updateCodeSessionMeta('s1', { specialists: null });
+		expect(mocks.invoke).toHaveBeenLastCalledWith('code_session_update_meta', {
+			id: 's1',
+			patch: { specialists: null }
 		});
 	});
 
