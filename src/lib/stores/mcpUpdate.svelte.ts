@@ -16,6 +16,7 @@ import type { DownloadProgress } from '#lib/ipc/gen/DownloadProgress.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import type { McpUpdateStatus } from '#lib/ipc/gen/McpUpdateStatus.ts';
 import { unregisterMcpServer } from '#lib/agent/tools/mcp.ts';
+import { persistItem } from '#lib/persist.ts';
 import { forgetServerApprovals } from '#lib/stores/mcpApproval.svelte.ts';
 import {
 	loadInstalledManifests,
@@ -107,7 +108,7 @@ function loadNotified(): Record<string, string> {
 
 function saveNotified(notified: Record<string, string>): void {
 	try {
-		localStorage.setItem(NOTIFIED_KEY, JSON.stringify(notified));
+		persistItem(NOTIFIED_KEY, JSON.stringify(notified));
 	} catch {
 		// As above: at worst, one more toast.
 	}
