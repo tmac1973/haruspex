@@ -4,6 +4,7 @@
 	import { cardTypes, type CardType } from '#lib/home/cardTypes.ts';
 	import { addCard } from '#lib/stores/homeCards.svelte.ts';
 	import { createCardJob } from '#lib/home/cardJobs.ts';
+	import { refreshCard } from '#lib/home/fetchedCards.svelte.ts';
 	import type { Schedule } from '#lib/stores/jobs.svelte.ts';
 
 	const addable = $derived(cardTypes().filter((t) => t.addable()));
@@ -20,12 +21,16 @@
 		else void addCard(type.id, {}, null, type.defaultSize);
 	}
 
-	async function addWithJob(
+	/** A judged card makes its job; a fetched card keeps its settings and reads its source now. */
+	async function addFromForm(
 		type: CardType,
-		typeConfig: Record<string, unknown>,
+		config: Record<string, unknown>,
 		schedule: Schedule
 	): Promise<boolean> {
-		return (await createCardJob(type.id, typeConfig, schedule)) !== null;
+		if (type.jobType) return (await createCardJob(type.id, config, schedule)) !== null;
+		const card = await addCard(type.id, config, null, type.defaultSize);
+		if (card) void refreshCard(card);
+		return card !== null;
 	}
 
 	function pick(jobId: number) {
@@ -62,7 +67,7 @@
 	<type.form
 		open
 		defaultSchedule={type.defaultSchedule ?? { kind: 'interval', minutes: 30 }}
-		onadd={(config, schedule) => addWithJob(type, config, schedule)}
+		onadd={(config, schedule) => addFromForm(type, config, schedule)}
 		ondone={() => (filling = null)}
 	/>
 {/if}

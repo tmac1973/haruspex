@@ -118,6 +118,7 @@ export const IPC = {
 	db_home_cards_delete: 'db_home_cards_delete',
 	db_home_cards_list: 'db_home_cards_list',
 	db_home_cards_reorder: 'db_home_cards_reorder',
+	db_home_cards_set_result: 'db_home_cards_set_result',
 	db_home_cards_update: 'db_home_cards_update',
 	db_job_runs_list_recent: 'db_job_runs_list_recent',
 	db_job_runs_set_result: 'db_job_runs_set_result',

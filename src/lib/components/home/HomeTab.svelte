@@ -14,6 +14,7 @@
 		setCardSize
 	} from '#lib/stores/homeCards.svelte.ts';
 	import { ownsJob } from '#lib/home/cardJobs.ts';
+	import { isRefreshing, refreshCard } from '#lib/home/fetchedCards.svelte.ts';
 	import { selectJob } from '#lib/stores/jobsTabSelection.svelte.ts';
 	import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
 	import { isJobsLoaded, loadJobs } from '#lib/stores/jobs.svelte.ts';
@@ -81,6 +82,9 @@
 				arrangeable={type !== undefined && !orphan}
 				onmove={(dir) => void moveCard(card.id, dir)}
 				onresize={(size) => void setCardSize(card.id, size)}
+				onrefresh={type?.fetch ? () => void refreshCard(card) : undefined}
+				refreshing={isRefreshing(card.id)}
+				updatedAt={type?.fetch ? card.updated_at : null}
 				onedit={card.job_id === null ? undefined : () => editJob(card.job_id as number)}
 				notify={type?.notifies ? card.notify : null}
 				onnotify={(on) => void setCardNotify(card.id, on)}

@@ -3230,3 +3230,15 @@ fn a_run_result_is_stored_and_read_back() {
         Some(r#"{"items":[]}"#)
     );
 }
+
+#[test]
+fn a_fetched_card_keeps_its_result_and_when_it_was_fetched() {
+    let db = test_db();
+    db.create_home_card("w", "weather", None, "normal", "{}")
+        .unwrap();
+    assert_eq!(db.list_home_cards().unwrap()[0].last_result, None);
+    db.set_home_card_result("w", r#"{"now":{}}"#, 1234).unwrap();
+    let card = &db.list_home_cards().unwrap()[0];
+    assert_eq!(card.last_result.as_deref(), Some(r#"{"now":{}}"#));
+    assert_eq!(card.updated_at, Some(1234));
+}

@@ -43,7 +43,7 @@ Pages, images and downloads the assistant fetches must be on the internet. An ad
 
 Settings → Network has two proxies.
 
-- **Network Proxy** covers everything except web search: model downloads, MCP servers, calendar and contacts, ComfyUI installs and the Python sandbox. Choose **None** (the default) or **Manual** and enter a **Proxy URL**.
+- **Network Proxy** covers everything except web search: model downloads, MCP servers, calendar and contacts, ComfyUI installs, the Python sandbox, and the Home Weather card's calls to open-meteo.com. Choose **None** (the default) or **Manual** and enter a **Proxy URL**.
 - **Web Search Proxy** covers web search, the pages it opens and image search. Choose **None**, **Network proxy** (the default: use the same proxy as above) or **Manual** with its own URL.
 
 The URL looks like `http://host:port`. Add `user:pass@` if the proxy needs a login; the password is moved to the system keychain and hidden from the field.

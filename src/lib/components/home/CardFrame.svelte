@@ -20,6 +20,10 @@
 		arrangeable?: boolean;
 		onmove?: (dir: -1 | 1) => void;
 		onresize?: (size: CardSize) => void;
+		/** Read the card's source now (a fetched card); absent for other cards. */
+		onrefresh?: () => void;
+		/** A refresh is going: the button spins and does nothing. */
+		refreshing?: boolean;
 		/** Open the card's job in the Jobs tab; absent for a card with no job. */
 		onedit?: () => void;
 		/** Notify on new items, on or off; null for a card type that never notifies. */
@@ -39,6 +43,8 @@
 		arrangeable = true,
 		onmove,
 		onresize,
+		onrefresh,
+		refreshing = false,
 		onedit,
 		notify = null,
 		onnotify,
@@ -73,6 +79,16 @@
 			{/if}
 		</div>
 		<div class="menu-host">
+			{#if onrefresh}
+				<button
+					class="menu-btn"
+					class:spinning={refreshing}
+					onclick={onrefresh}
+					disabled={refreshing}
+					aria-label="Refresh"
+					title="Refresh">↻</button
+				>
+			{/if}
 			<button
 				class="menu-btn"
 				onclick={() => (menuOpen = !menuOpen)}
@@ -167,6 +183,7 @@
 
 	.menu-host {
 		position: relative;
+		display: flex;
 		flex-shrink: 0;
 	}
 
@@ -179,6 +196,20 @@
 		line-height: 1;
 		padding: 2px 6px;
 		border-radius: 4px;
+	}
+
+	.menu-btn:disabled {
+		cursor: default;
+	}
+
+	.menu-btn.spinning {
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 
 	.menu-btn:hover {

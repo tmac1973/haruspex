@@ -9,8 +9,14 @@ import CodeSessionsCard from '#lib/components/home/cards/CodeSessionsCard.svelte
 import PinnedJobCard from '#lib/components/home/cards/PinnedJobCard.svelte';
 import ImportantEmailsCard from '#lib/components/home/cards/ImportantEmailsCard.svelte';
 import ImportantEmailsForm from '#lib/components/home/forms/ImportantEmailsForm.svelte';
+import MeetingsCard from '#lib/components/home/cards/MeetingsCard.svelte';
+import MeetingsForm from '#lib/components/home/forms/MeetingsForm.svelte';
+import WeatherCard from '#lib/components/home/cards/WeatherCard.svelte';
+import WeatherForm from '#lib/components/home/forms/WeatherForm.svelte';
+import { DEFAULT_MEETING_HOURS, fetchMeetings, type MeetingsConfig } from '#lib/home/meetings.ts';
+import { fetchWeather, type WeatherConfig } from '#lib/home/weather.ts';
 import { getJobs, type JobType, type Schedule } from '#lib/stores/jobs.svelte.ts';
-import { getSettings } from '#lib/stores/settings.ts';
+import { getSettings, hasEnabledCalendarAccount } from '#lib/stores/settings.ts';
 
 export type CardSize = 'normal' | 'wide';
 
@@ -26,8 +32,12 @@ export type CardKind = 'live' | 'fetched' | 'judged' | 'pinned';
 export interface CardFormProps {
 	open: boolean;
 	defaultSchedule: Schedule;
-	/** Resolves true once the card is added. */
-	onadd: (typeConfig: Record<string, unknown>, schedule: Schedule) => Promise<boolean>;
+	/**
+	 * Resolves true once the card is added. A card with a job gets `config`
+	 * as its job's settings and the schedule; a fetched card keeps `config`
+	 * itself and has no schedule.
+	 */
+	onadd: (config: Record<string, unknown>, schedule: Schedule) => Promise<boolean>;
 	ondone: () => void;
 }
 
@@ -56,6 +66,13 @@ export interface CardType {
 	defaultSchedule?: Schedule;
 	/** The Add card form, for a card that needs settings before it is added. */
 	form?: Component<CardFormProps>;
+	/**
+	 * A fetched card's source, read with no model; the result is stored on
+	 * the card (`last_result`) and is what its component shows.
+	 */
+	fetch?: (config: Record<string, unknown>) => Promise<unknown>;
+	/** How often a fetched card reads its source. */
+	intervalMinutes?: (config: Record<string, unknown>) => number;
 }
 
 const CARD_TYPES: CardType[] = [
@@ -97,6 +114,33 @@ const CARD_TYPES: CardType[] = [
 		notifies: true,
 		itemLabel: (item) => String((item.source as { subject?: string } | undefined)?.subject ?? ''),
 		defaultSchedule: { kind: 'interval', minutes: 30 }
+	},
+	{
+		id: 'upcoming_meetings',
+		label: 'Upcoming meetings',
+		kind: 'fetched',
+		component: MeetingsCard,
+		form: MeetingsForm,
+		defaultSize: 'normal',
+		addable: hasEnabledCalendarAccount,
+		fetch: (config) =>
+			fetchMeetings({
+				hours: DEFAULT_MEETING_HOURS,
+				accountIds: [],
+				...(config as Partial<MeetingsConfig>)
+			}),
+		intervalMinutes: () => 10
+	},
+	{
+		id: 'weather',
+		label: 'Weather',
+		kind: 'fetched',
+		component: WeatherCard,
+		form: WeatherForm,
+		defaultSize: 'normal',
+		addable: () => true,
+		fetch: (config) => fetchWeather(config as unknown as WeatherConfig),
+		intervalMinutes: () => 30
 	}
 ];
 

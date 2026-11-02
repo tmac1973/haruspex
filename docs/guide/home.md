@@ -1,6 +1,6 @@
 ---
 title: Home
-description: The Home tab — cards for running and recent jobs, Code sessions that need you, pinned jobs, and important unread email. Adding, arranging and removing cards.
+description: The Home tab — cards for jobs, Code sessions, pinned jobs, important email, meetings and weather. Adding, arranging and removing cards.
 ---
 
 # Home
@@ -32,6 +32,16 @@ The card updates when a run finishes, scheduled runs included. If you delete the
 Each check lists your unread inbox mail and asks the model which messages fit your rule. The card shows each one's subject, sender and age, read straight from your mail, with the model's short reason under it. The model only picks; it can't change what the card says a message is. Mail you have read drops off at the next check, and checking never marks anything as read. **Refresh** checks now.
 
 A check waits while a chat or Code turn is using the model, and the card says "Waiting for chat". It reads only the sender, subject and first lines of each message, not the whole message. Like every job but research, it doesn't run in lean mode.
+
+## See your next meetings
+
+**Add card → Upcoming meetings…** needs a calendar account (see the `integrations` page). Tick the calendars to read, or none for all of them, and say how far ahead to look (12 hours to start). The card lists what's on under Now, Later today and Tomorrow, with a **Join** button for Google Meet, Zoom, Teams, Webex, Whereby and Jitsi links found in an event's location or description. It reads your calendars every 10 minutes, with no model. A calendar that can't be read is named on the card.
+
+## See the weather
+
+**Add card → Weather…** asks for a town or city, looks it up, and lets you pick the right one, in °C or °F. The forecast comes from Open-Meteo, which needs no account, through Settings → Network → Network Proxy; Haruspex sends it only the place's coordinates. The card shows the weather now, and today's and tomorrow's highs, lows and chance of rain. It updates every 30 minutes.
+
+Both cards keep their last result, so they show it straight away when Haruspex starts, with the time it was read. **↻** reads it again now (a weather reading under 10 minutes old comes back unchanged). If a reading fails, the card keeps the last one and says what went wrong.
 
 ## Add, arrange and remove cards
 

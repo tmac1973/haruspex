@@ -40,6 +40,14 @@ export const HOME_DB: Record<string, (a: Args) => unknown> = {
 		);
 		return null;
 	},
+	db_home_cards_set_result: (a) => {
+		cards = cards.map((c) =>
+			c.id === a?.id
+				? { ...c, last_result: a?.lastResult as string, updated_at: a?.updatedAt as number }
+				: c
+		);
+		return null;
+	},
 	db_home_cards_delete: (a) => {
 		cards = cards.filter((c) => c.id !== a?.id);
 		return null;
