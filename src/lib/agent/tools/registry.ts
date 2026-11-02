@@ -32,6 +32,7 @@ import { videoAvailable, videoToolsOn } from '#lib/video/binaries.ts';
 import { getTasks } from '#lib/tasks/store.svelte.ts';
 import { skillGate } from '#lib/agent/tools/_skillGate.ts';
 import { sessionSpecialists } from '#lib/specialists/session.ts';
+import { helperForTool, helperOn } from '#lib/helpers/registry.ts';
 
 const tools = new Map<string, ToolRegistration>();
 
@@ -330,6 +331,7 @@ function subtaskExcludes(reg: ToolRegistration): boolean {
 		name === 'delegate' ||
 		name === 'make_asset' ||
 		reg.category === 'specialist' ||
+		helperForTool(name) !== undefined ||
 		SONG_TOOLS.has(name) ||
 		reg.category === 'speech' ||
 		reg.category === 'video-gen' ||
@@ -349,6 +351,12 @@ function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean
 	}
 	// A session's specialists are the user's to turn on (the Code tab header).
 	if (reg.category === 'specialist' && !opts.specialists) return false;
+	// A helper's tools: the Code tab only, while its switch in Settings → Code →
+	// Helpers is on, and not the writing ones in a read-only session.
+	const helper = helperForTool(reg.schema.function.name);
+	if (helper) {
+		return isCodeTab(opts) && helperOn(helper.id) && !(helper.writes && opts.codeReadOnly);
+	}
 	// Subtasks are the user's to switch off (Settings → Code → Subtasks).
 	if (reg.schema.function.name === 'delegate' && getSettings().codeSubtasks === 'off') {
 		return false;
