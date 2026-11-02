@@ -50,7 +50,7 @@ The URL looks like `http://host:port`. Add `user:pass@` if the proxy needs a log
 
 **Proxy Bypass List** holds addresses reached directly: one per line, as a hostname, IP or CIDR subnet. A hostname also matches its subdomains. `localhost` is always bypassed.
 
-Each MCP server can also choose its own proxy use (Use the app setting, Always, Never) on its card in Settings → Integrations. See the `integrations` page.
+Each MCP server can also choose its own proxy use (Use the app setting, Always, Never) on its card in Settings → MCP servers. See the `integrations` page.
 
 ## Control what Python code can reach
 

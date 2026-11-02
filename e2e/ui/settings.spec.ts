@@ -10,6 +10,7 @@ const SECTIONS = [
 	'Search',
 	'Network',
 	'Integrations',
+	'MCP servers',
 	'Screen',
 	'Shell',
 	'Image',

@@ -102,11 +102,14 @@ See the `search-and-network` page.
 
 ## Integrations
 
-Email, calendar and contacts, and MCP servers.
-
 - **Email**: **Add email account**. Any IMAP account; most need an app password.
 - **Calendar & Contacts**: **Add a calendar link** or **Add a server account** (CalDAV/CardDAV).
-- **MCP integrations**: add a server from the catalog, on this computer or on your network.
+
+See the `integrations` page.
+
+## MCP servers
+
+Add a server from the catalog, on this computer or on your network, and pick its tools.
 
 See the `integrations` page.
 

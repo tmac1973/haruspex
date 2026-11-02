@@ -109,11 +109,26 @@ describe('settings navigation', () => {
 			['Network', 'Network'],
 			['Screen', 'Screen capture'],
 			['Integrations', 'with Allow sending drafts messages'],
+			['MCP servers', 'MCP integrations'],
 			['General', 'General']
 		] as const) {
 			rail(label).click();
 			await settle();
 			expect(document.body.textContent, `after clicking ${label}`).toContain(marker);
 		}
+	});
+
+	it('keeps MCP servers out of Integrations', async () => {
+		render(SettingsPanel, { props: { onclose: () => {} } });
+
+		rail('Integrations').click();
+		await settle();
+		expect(document.body.textContent).toContain('Calendar & Contacts');
+		expect(document.body.textContent).not.toContain('MCP integrations');
+
+		rail('MCP servers').click();
+		await settle();
+		expect(document.body.textContent).toContain('MCP integrations');
+		expect(document.body.textContent).not.toContain('Calendar & Contacts');
 	});
 });

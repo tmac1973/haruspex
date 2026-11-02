@@ -52,7 +52,7 @@ Events: `task` when a background task starts, moves on or ends.
 - `settings.get`: every setting, or `keys` for a few. Secrets and MCP args come back blank, URLs without login or query; `redacted` lists where.
 - `settings.patch` with `patch`: objects merge key by key, so `{"patch":{"inferenceBackend":{"mode":"remote"}}}` keeps the rest of `inferenceBackend`. A misspelt name or a value of the wrong type is refused.
 
-A patch can't set a secret, the API keys, Settings → Integrations (accounts and MCP servers), Settings → Remote control or Settings → Guest chat. Change those on this computer. Most changes apply at the next turn; a patch doesn't start what Settings would, such as the model server.
+A patch can't set a secret, the API keys, Settings → Integrations (accounts), Settings → MCP servers, Settings → Remote control or Settings → Guest chat. Change those on this computer. Most changes apply at the next turn; a patch doesn't start what Settings would, such as the model server.
 
 ## Lean mode
 

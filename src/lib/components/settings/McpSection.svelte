@@ -1,6 +1,6 @@
 <script lang="ts">
 	/**
-	 * Integrations card: the configured MCP servers, the catalog to add more,
+	 * The MCP servers section: the configured servers, the catalog to add more,
 	 * and the tier-3 escape hatch for a server the user supplies themselves.
 	 *
 	 * Owns the CRUD around `settings.integrations.mcp.servers`, the same way
