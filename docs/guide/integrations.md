@@ -1,6 +1,6 @@
 ---
 title: Integrations
-description: Connect email (IMAP, optional sending), calendars and contacts, MCP servers like GitHub or Blender, and screen capture. All off by default.
+description: Connect email, calendars and contacts, MCP servers like GitHub or Blender, and screen capture. All off by default.
 ---
 
 # Integrations
@@ -35,15 +35,15 @@ To find the link:
 
 ## Add an MCP server
 
-MCP servers give the assistant tools from other software. Haruspex runs them with its own Node and Python, so no terminal is needed. In Settings → MCP servers:
+MCP servers give the assistant tools from other software. Haruspex runs them with its own Node and Python. In Settings → MCP servers:
 
 - **Add from the catalog** installs GitHub, Google Drive & Sheets, Browser (Playwright), Blender or Godot, then walks you through its setup.
 - **Add a server on this computer** runs an MCP program you already have.
-- **Add a server on your network** connects over HTTP, with an optional token. Servers that sign in through a browser are not supported yet.
+- **Add a server on your network** connects over HTTP, with an optional token. Browser sign-in is not supported yet.
 
 Each server has **Tools**, a switch per tool. Catalog servers start with a recommended set on; others start with all off. Tools marked "asks first" ask before they run. Turn off tools you don't need; each takes room in the model's context. Pictures a tool returns reach models that read images.
 
-**Edit** changes a local server's program, arguments and secret variables; a blank secret keeps its value.
+**Edit** changes a local server's program, arguments and secrets; a blank secret keeps its value. Home's GitHub card uses the GitHub server and its token's access (`home` page).
 
 **Blender and Godot** need the app running with its MCP addon. The card says when it is "not connected"; **Check again** retries.
 

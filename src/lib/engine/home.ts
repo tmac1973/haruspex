@@ -11,7 +11,8 @@ import type { NewsItem } from '#lib/agent/jobs/types/news-digest/pipeline.ts';
 import { getCurrentRun, getPendingQueue, getQueueDepth } from '#lib/agent/jobs/runner.svelte.ts';
 import { getJobType } from '#lib/agent/jobs/types/index.ts';
 import { getCardType } from '#lib/home/cardTypes.ts';
-import { getCardError } from '#lib/home/fetchedCards.svelte.ts';
+import { getCardError, getCardNotice } from '#lib/home/fetchedCards.svelte.ts';
+import { GITHUB_EMPTY, githubConfigOf, scopeLine, type GitHubResult } from '#lib/home/github.ts';
 import { currentRunLine, runStatusLabel } from '#lib/home/jobsCard.ts';
 import { finalOutput } from '#lib/home/latestRun.svelte.ts';
 import { groupOf, type MeetingGroup, type MeetingsResult } from '#lib/home/meetings.ts';
@@ -218,6 +219,31 @@ function weatherPayload(card: HomeCard): HomeCardPayload {
 	};
 }
 
+function githubPayload(card: HomeCard): HomeCardPayload {
+	const config = githubConfigOf(card.config);
+	const result = parse<GitHubResult>(card.last_result);
+	return {
+		type: 'github',
+		scope: scopeLine(config),
+		items:
+			result?.items.map((i) => ({
+				repo: i.repo,
+				number: i.number,
+				title: i.title,
+				url: i.url,
+				author: i.author,
+				labels: i.labels,
+				comments: i.comments,
+				updatedAt: i.updatedAt,
+				isPr: i.isPr
+			})) ?? null,
+		empty: GITHUB_EMPTY[config.preset],
+		notice: getCardNotice(card.id),
+		error: getCardError(card.id),
+		updatedAt: card.updated_at
+	};
+}
+
 async function payloadOf(card: HomeCard, now: Date): Promise<HomeCardPayload> {
 	switch (card.card_type) {
 		case 'jobs':
@@ -233,6 +259,8 @@ async function payloadOf(card: HomeCard, now: Date): Promise<HomeCardPayload> {
 			return meetingsPayload(card, now);
 		case 'weather':
 			return weatherPayload(card);
+		case 'github':
+			return githubPayload(card);
 		default:
 			return { type: 'unknown' };
 	}

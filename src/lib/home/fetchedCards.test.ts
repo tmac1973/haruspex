@@ -7,9 +7,20 @@ const m = vi.hoisted(() => ({
 	setCardResult: vi.fn(async () => {})
 }));
 
+const notify = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('#lib/notify.ts', () => ({ notify }));
 vi.mock('#lib/home/cardTypes.ts', () => ({
 	getCardType: (id: string) =>
-		id === 'weather' ? { fetch: m.fetch, intervalMinutes: () => 30 } : { label: 'Jobs' }
+		id === 'weather'
+			? { fetch: m.fetch, intervalMinutes: () => 30, label: 'Weather' }
+			: id === 'github'
+				? {
+						fetch: m.fetch,
+						label: 'GitHub',
+						title: () => 'Issues from others',
+						itemLabel: (i: { title: string }) => i.title
+					}
+				: { label: 'Jobs' }
 }));
 vi.mock('#lib/stores/homeCards.svelte.ts', () => ({
 	getHomeCards: () => m.cards,
@@ -21,6 +32,7 @@ vi.mock('#lib/stores/settings.ts', () => ({ getLiveSettings: () => ({ leanMode: 
 import {
 	_resetForTests,
 	getCardError,
+	getCardNotice,
 	isRefreshing,
 	isStale,
 	refreshCard,
@@ -38,6 +50,7 @@ beforeEach(() => {
 	m.cards = [];
 	m.fetch.mockReset();
 	m.setCardResult.mockClear();
+	notify.mockClear();
 });
 
 describe('fetched cards', () => {
@@ -67,6 +80,38 @@ describe('fetched cards', () => {
 		m.fetch.mockResolvedValueOnce({ now: 2 });
 		await refreshCard(c);
 		expect(getCardError('w')).toBeNull();
+	});
+
+	it('keeps the last result and its time when the source is not ready, and says why', async () => {
+		const c = { ...card('g', 'github', 5), last_result: '{"items":[]}' };
+		m.fetch.mockResolvedValueOnce({ skip: 'Start GitHub in Settings → MCP servers.' });
+		await refreshCard(c);
+		expect(m.setCardResult).not.toHaveBeenCalled();
+		expect(getCardNotice('g')).toBe('Start GitHub in Settings → MCP servers.');
+		expect(getCardError('g')).toBeNull();
+
+		m.fetch.mockResolvedValueOnce({ items: [] });
+		await refreshCard(c);
+		expect(getCardNotice('g')).toBeNull();
+		expect(m.setCardResult).toHaveBeenCalledTimes(1);
+	});
+
+	it('names new items when Notify on new items is on, and not on the first result', async () => {
+		const items = (...ids: string[]) => ({ items: ids.map((id) => ({ id, title: `T${id}` })) });
+		const first = { ...card('g', 'github', null), notify: true, last_result: null };
+		m.fetch.mockResolvedValueOnce(items('1'));
+		await refreshCard(first);
+		expect(notify).not.toHaveBeenCalled();
+
+		const next = { ...first, last_result: JSON.stringify(items('1')) };
+		m.fetch.mockResolvedValueOnce(items('1', '2', '3'));
+		await refreshCard(next);
+		expect(notify).toHaveBeenCalledWith('Issues from others', 'T2 and 1 more');
+
+		notify.mockClear();
+		m.fetch.mockResolvedValueOnce(items('4'));
+		await refreshCard({ ...next, notify: false });
+		expect(notify).not.toHaveBeenCalled();
 	});
 
 	it('runs one read per card at a time', async () => {

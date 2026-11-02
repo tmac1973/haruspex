@@ -17,7 +17,7 @@
 
 mod agents_md;
 mod discover;
-mod origin;
+pub(crate) mod origin;
 mod parse;
 mod shipped;
 mod write;

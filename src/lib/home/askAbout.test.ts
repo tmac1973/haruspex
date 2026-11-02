@@ -82,6 +82,30 @@ describe('askAboutText', () => {
 	});
 });
 
+describe('askAboutText for GitHub', () => {
+	it('quotes the issue by repo and number, with its link', () => {
+		const text = askAboutText('Issues from others', {
+			kind: 'github',
+			item: {
+				id: 'o/r#4',
+				repo: 'o/r',
+				number: 4,
+				title: 'Crash',
+				url: 'https://github.com/o/r/issues/4',
+				author: 'alice',
+				labels: ['bug', 'p1'],
+				comments: 1,
+				updatedAt: '',
+				isPr: false
+			}
+		});
+		expect(text).toBe(
+			'From my Issues from others card on Home:\n\n' +
+				'> o/r#4 Crash\n> Issue by alice\n> Labels: bug, p1\n> https://github.com/o/r/issues/4\n\n'
+		);
+	});
+});
+
 describe('askAbout', () => {
 	it('opens a chat with the text in the box and sends nothing', () => {
 		askAbout('News', {

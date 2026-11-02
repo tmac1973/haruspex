@@ -492,8 +492,33 @@ export type HomeCardPayload =
 			error: string | null;
 			updatedAt: number | null;
 	  }
+	| {
+			type: 'github';
+			/** Who it covers: owners and repos, or "My repos". */
+			scope: string;
+			/** Null before the first read. */
+			items: HomeGitHubItem[] | null;
+			/** What an empty list says, by preset. */
+			empty: string;
+			/** Why it can't read GitHub now ("Start GitHub in …"); the last result still shows. */
+			notice: string | null;
+			error: string | null;
+			updatedAt: number | null;
+	  }
 	/** A card type this app doesn't know: its title only. */
 	| { type: 'unknown' };
+
+export interface HomeGitHubItem {
+	repo: string;
+	number: number;
+	title: string;
+	url: string;
+	author: string;
+	labels: string[];
+	comments: number;
+	updatedAt: string;
+	isPr: boolean;
+}
 
 /** One row of `home.cards`. */
 export interface HomeCardView {

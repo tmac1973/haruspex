@@ -15,6 +15,9 @@ import MeetingsCard from '#lib/components/home/cards/MeetingsCard.svelte';
 import MeetingsForm from '#lib/components/home/forms/MeetingsForm.svelte';
 import WeatherCard from '#lib/components/home/cards/WeatherCard.svelte';
 import WeatherForm from '#lib/components/home/forms/WeatherForm.svelte';
+import GitHubCard from '#lib/components/home/cards/GitHubCard.svelte';
+import GitHubForm from '#lib/components/home/forms/GitHubForm.svelte';
+import { GITHUB_PRESETS, fetchGitHub, githubConfigOf, githubServer } from '#lib/home/github.ts';
 import { DEFAULT_MEETING_HOURS, fetchMeetings, type MeetingsConfig } from '#lib/home/meetings.ts';
 import { fetchWeather, type WeatherConfig } from '#lib/home/weather.ts';
 import { getJobs, type JobType, type Schedule } from '#lib/stores/jobs.svelte.ts';
@@ -156,6 +159,21 @@ const CARD_TYPES: CardType[] = [
 		addable: () => true,
 		fetch: (config) => fetchWeather(config as unknown as WeatherConfig),
 		intervalMinutes: () => 30
+	},
+	{
+		// Read through the catalog's GitHub MCP server; a card's preset is its title.
+		id: 'github',
+		label: 'GitHub',
+		title: (card) => GITHUB_PRESETS[githubConfigOf(card.config).preset],
+		kind: 'fetched',
+		component: GitHubCard,
+		form: GitHubForm,
+		defaultSize: 'normal',
+		addable: () => githubServer() !== null,
+		notifies: true,
+		itemLabel: (item) => `${String(item.repo)}#${String(item.number)} ${String(item.title)}`,
+		fetch: (config) => fetchGitHub(config),
+		intervalMinutes: () => 15
 	}
 ];
 

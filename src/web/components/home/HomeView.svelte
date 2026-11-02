@@ -6,6 +6,7 @@
 	import type { WebStore } from '../../store.svelte.ts';
 	import CodeSessionsCard from './CodeSessionsCard.svelte';
 	import EmailsCard from './EmailsCard.svelte';
+	import GitHubCard from './GitHubCard.svelte';
 	import JobsCard from './JobsCard.svelte';
 	import MeetingsCard from './MeetingsCard.svelte';
 	import NewsCard from './NewsCard.svelte';
@@ -40,6 +41,8 @@
 					<MeetingsCard payload={p} />
 				{:else if p.type === 'weather'}
 					<WeatherCard payload={p} />
+				{:else if p.type === 'github'}
+					<GitHubCard payload={p} />
 				{/if}
 			</section>
 		{:else}

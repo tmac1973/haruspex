@@ -8,6 +8,8 @@
 import { getCardType } from '#lib/home/cardTypes.ts';
 import { getHomeCards, loadHomeCards, setCardResult } from '#lib/stores/homeCards.svelte.ts';
 import { getLiveSettings } from '#lib/stores/settings.ts';
+import { newItemsMessage } from '#lib/home/notifyNewItems.ts';
+import { notify } from '#lib/notify.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 
@@ -15,6 +17,8 @@ const TICK_MS = 60_000;
 
 /** Why each card's last fetch failed, by card id; not kept across restarts. */
 const errors = $state<Record<string, string>>({});
+/** Why each card's last fetch was skipped (its source isn't ready), by card id. */
+const notices = $state<Record<string, string>>({});
 /** Cards with a fetch going. */
 const busy = $state<Record<string, boolean>>({});
 
@@ -27,6 +31,54 @@ export function getCardError(id: string): string | null {
 
 export function isRefreshing(id: string): boolean {
 	return busy[id] === true;
+}
+
+/** What the card says over its last result when its source isn't ready ("Start GitHub in …"). */
+export function getCardNotice(id: string): string | null {
+	return notices[id] ?? null;
+}
+
+/**
+ * What a fetch answers when its source isn't ready to read (an MCP server
+ * stopped): neither a result nor a failure. The card keeps its last result
+ * and shows `skip` over it.
+ */
+export interface FetchSkip {
+	skip: string;
+}
+
+function isSkip(result: unknown): result is FetchSkip {
+	return (
+		typeof result === 'object' &&
+		result !== null &&
+		typeof (result as { skip?: unknown }).skip === 'string'
+	);
+}
+
+type Item = Record<string, unknown>;
+
+function itemsOf(result: unknown): Item[] | undefined {
+	const items = (result as { items?: unknown } | null)?.items;
+	return Array.isArray(items) ? (items as Item[]) : undefined;
+}
+
+/** A notification naming what's new, for a card with Notify on new items on. */
+function notifyNew(card: HomeCard, result: unknown): void {
+	const type = getCardType(card.card_type);
+	if (!card.notify || !type?.itemLabel || card.last_result === null) return;
+	const prev = itemsOf(parseResult(card.last_result));
+	const next = itemsOf(result);
+	if (!next) return;
+	const message = newItemsMessage(prev, next, 'id', type.itemLabel);
+	if (message) void notify(type.title?.(card) ?? type.label, message);
+}
+
+function parseResult(json: string): unknown {
+	try {
+		return JSON.parse(json);
+	} catch {
+		return null;
+	}
 }
 
 function configOf(card: HomeCard): Record<string, unknown> {
@@ -44,8 +96,14 @@ export async function refreshCard(card: HomeCard): Promise<void> {
 	busy[card.id] = true;
 	try {
 		const result = await type.fetch(configOf(card));
-		await setCardResult(card.id, result, Date.now());
 		delete errors[card.id];
+		if (isSkip(result)) {
+			notices[card.id] = result.skip;
+			return;
+		}
+		delete notices[card.id];
+		notifyNew(card, result);
+		await setCardResult(card.id, result, Date.now());
 	} catch (e) {
 		errors[card.id] = errMessage(e);
 	} finally {
@@ -99,5 +157,6 @@ export function _resetForTests(): void {
 	stopWatch = null;
 	stopTimer();
 	for (const id of Object.keys(errors)) delete errors[id];
+	for (const id of Object.keys(notices)) delete notices[id];
 	for (const id of Object.keys(busy)) delete busy[id];
 }

@@ -8,7 +8,8 @@ const mocks = vi.hoisted(() => ({
 	// Signatures matter here: a bare `vi.fn()` types its calls as [], and the
 	// assertions read back the job input the editor saved.
 	updateJob: vi.fn<(id: number, input: { name: string }) => Promise<boolean>>(async () => true),
-	replaceJobSteps: vi.fn<(jobId: number, steps: unknown[]) => Promise<boolean>>(async () => true)
+	replaceJobSteps: vi.fn<(jobId: number, steps: unknown[]) => Promise<boolean>>(async () => true),
+	createJob: vi.fn(async () => 9)
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue(null) }));
@@ -56,7 +57,7 @@ vi.mock('#lib/stores/jobs.svelte.ts', async (importOriginal) => {
 		getJob: vi.fn(async () => savedJob),
 		updateJob: mocks.updateJob,
 		replaceJobSteps: mocks.replaceJobSteps,
-		createJob: vi.fn(async () => 9),
+		createJob: mocks.createJob,
 		deleteJob: vi.fn(async () => true)
 	};
 });
@@ -64,6 +65,8 @@ vi.mock('#lib/stores/jobs.svelte.ts', async (importOriginal) => {
 import JobsTab from './JobsTab.svelte';
 import {
 	_resetForTests as resetSelection,
+	getPendingSelection,
+	newJobDraft,
 	selectJob
 } from '#lib/stores/jobsTabSelection.svelte.ts';
 
@@ -351,6 +354,33 @@ describe('JobsTab — a selection made from Home', () => {
 		render(JobsTab);
 		selectJob(7);
 		expect(await showName('Hangman plan')).toBeTruthy();
+	});
+
+	it('opens a drafted new job filled in and unsaved', async () => {
+		render(JobsTab);
+		newJobDraft({
+			jobType: 'guided_planning',
+			name: 'octocat/app#42',
+			workingDir: '/home/me/app',
+			config: { initial_description: 'Crash on start\n\nIt crashes.' }
+		});
+		expect(await screen.findByDisplayValue(/^Crash on start\s+It crashes\.$/)).toBeTruthy();
+		expect(await showName('octocat/app#42')).toBeTruthy();
+		expect(screen.getByRole('combobox', { name: /job type/i })).toHaveProperty(
+			'value',
+			'guided_planning'
+		);
+		expect(mocks.createJob).not.toHaveBeenCalled();
+
+		// Nothing is saved, so leaving asks first.
+		await fireEvent.click(screen.getByText('Hangman plan'));
+		expect(await screen.findByText('Unsaved changes')).toBeTruthy();
+	});
+
+	it('keeps only the last thing asked for', () => {
+		newJobDraft({ jobType: 'research', name: 'x', workingDir: '', config: {} });
+		selectJob(7);
+		expect(getPendingSelection()).toEqual({ kind: 'job', jobId: 7, runId: null });
 	});
 
 	it('asks first when the editor has unsaved changes', async () => {

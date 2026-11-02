@@ -47,6 +47,7 @@ export const IPC = {
 	code_bg_stop: 'code_bg_stop',
 	code_bg_stop_owner: 'code_bg_stop_owner',
 	code_bg_tail: 'code_bg_tail',
+	code_checkout_find: 'code_checkout_find',
 	code_folder_exists: 'code_folder_exists',
 	code_git_branches: 'code_git_branches',
 	code_git_create_branch: 'code_git_create_branch',

@@ -13,10 +13,15 @@
 	import { setJobModelInView } from '#lib/stores/modelInView.svelte.ts';
 	import {
 		getPendingSelection,
-		takePendingSelection
+		takePendingSelection,
+		type JobDraft
 	} from '#lib/stores/jobsTabSelection.svelte.ts';
 
 	let selectedId = $state<number | 'new' | null>(null);
+	/** What a new job starts from when a Home card asked for one; null for a blank one. */
+	let draft = $state.raw<JobDraft | null>(null);
+	/** Bumped per draft, so a second draft while New is open fills the editor again. */
+	let draftSeq = $state(0);
 	let selectedRunId = $state<number | null>(null);
 	const currentRun = $derived(getCurrentRun());
 	/**
@@ -41,7 +46,8 @@
 
 	/** An action deferred behind the unsaved-changes prompt. */
 	type PendingAction =
-		{ kind: 'select'; id: number | 'new'; runId?: number | null } | { kind: 'run'; jobId: number };
+		| { kind: 'select'; id: number | 'new'; runId?: number | null; draft?: JobDraft }
+		| { kind: 'run'; jobId: number };
 	let pending = $state<PendingAction | null>(null);
 	let savingPending = $state(false);
 
@@ -100,7 +106,11 @@
 		applySelect(id);
 	}
 
-	function applySelect(id: number | 'new', runId: number | null = null) {
+	function applySelect(id: number | 'new', runId: number | null = null, from?: JobDraft) {
+		if (from) {
+			draft = from;
+			draftSeq++;
+		} else if (selectedId !== id) draft = null;
 		selectedId = id;
 		selectedRunId = null;
 		runViewOpen = false;
@@ -110,13 +120,19 @@
 		else selectedRunId = runId;
 	}
 
-	// A job (and run) picked on a Home card. Taken on mount and whenever a new
-	// one arrives; unsaved editor changes still ask first.
+	// A job (and run) picked on a Home card, or a new job drafted there. Taken
+	// on mount and whenever a new one arrives; unsaved editor changes still
+	// ask first.
 	$effect(() => {
 		if (!getPendingSelection()) return;
 		untrack(() => {
 			const picked = takePendingSelection();
 			if (!picked) return;
+			if (picked.kind === 'draft') {
+				if (guard({ kind: 'select', id: 'new', draft: picked.draft })) return;
+				applySelect('new', null, picked.draft);
+				return;
+			}
 			const action: PendingAction = { kind: 'select', id: picked.jobId, runId: picked.runId };
 			if (picked.jobId !== selectedId && guard(action)) return;
 			applySelect(picked.jobId, picked.runId);
@@ -148,7 +164,7 @@
 		const action = pending;
 		pending = null;
 		if (!action) return;
-		if (action.kind === 'select') applySelect(action.id, action.runId ?? null);
+		if (action.kind === 'select') applySelect(action.id, action.runId ?? null, action.draft);
 		else void startRun(action.jobId);
 	}
 
@@ -206,10 +222,11 @@
 				</p>
 			</div>
 		{:else}
-			{#key selectedId}
+			{#key `${selectedId}:${draftSeq}`}
 				<JobEditor
 					bind:this={editor}
 					jobId={selectedId}
+					{draft}
 					onsaved={(id) => (selectedId = id)}
 					ondeleted={clearSelection}
 					oncancel={clearSelection}
