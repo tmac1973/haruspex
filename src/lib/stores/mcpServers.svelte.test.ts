@@ -56,6 +56,7 @@ function entry(over: Partial<CatalogEntry> = {}): CatalogEntry {
 		setup: [],
 		companion: null,
 		provenance: null,
+		blockedVersions: [],
 		...over
 	};
 }
@@ -119,6 +120,22 @@ describe('starting a server', () => {
 		expect(state.status.type).toBe('Error');
 		expect(state.error).toContain('has not finished its setup');
 		expect(state.busy).toBe(false);
+	});
+
+	it('stops with the reason, not a failure, when its version is blocked', async () => {
+		invoke.mockRejectedValue("BLOCKED_VERSION:Runs any page's script.");
+		await startMcpServer(config(), entry());
+
+		const state = mcpState(ID);
+		expect(state.blockedReason).toBe("Runs any page's script.");
+		expect(state.error).toBeNull();
+		expect(statusLabel(state)).toBe('Stopped');
+		expect(registeredMcpToolNames()).not.toContain('mcp__srv-1__search');
+
+		// The next start clears it, so an update that fixed it leaves no trace.
+		mockHappyStart();
+		await startMcpServer(config(), entry());
+		expect(mcpState(ID).blockedReason).toBeNull();
 	});
 
 	it('registers no tools when a later step fails', async () => {
@@ -504,6 +521,7 @@ describe('status labels', () => {
 		tools: [],
 		companion: { kind: 'unknown' },
 		error: null,
+		blockedReason: null,
 		busy: false,
 		...over
 	});
@@ -528,6 +546,7 @@ describe('companion applications', () => {
 		tools: [],
 		companion: { kind: 'unknown' },
 		error: null,
+		blockedReason: null,
 		busy: false,
 		...over
 	});

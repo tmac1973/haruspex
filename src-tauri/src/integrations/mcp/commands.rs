@@ -13,7 +13,7 @@ use super::catalog::{self, CatalogEntry, CompanionProbe};
 use super::companion::{self, CompanionStatus};
 use super::http;
 use super::install::{self, McpInstaller};
-use super::manifest::{self, InstallManifest};
+use super::manifest::{self, InstallManifest, McpUpdateStatus};
 use super::process::{McpSupervisor, SpawnConfig};
 use super::server_config::McpServerConfig;
 use super::server_config::McpServerSource;
@@ -190,6 +190,36 @@ pub async fn mcp_installed_manifests(
                 out.insert(server.id, m);
             }
             Err(e) => log::warn!("mcp: no install manifest for {}: {e}", server.id),
+        }
+    }
+    Ok(out)
+}
+
+/// For each catalog server, whether a newer pin is available and whether the
+/// installed version is blocked.
+///
+/// Left out: custom and remote servers, servers whose directory is missing,
+/// and servers whose entry has left the catalog — there is nothing to update
+/// any of them to.
+#[tauri::command]
+pub async fn mcp_update_status(
+    app: AppHandle,
+    servers: Vec<McpServerConfig>,
+) -> Result<Vec<McpUpdateStatus>, String> {
+    let catalog = catalog::load()?;
+    let mut out = Vec::new();
+    for server in servers {
+        let McpServerSource::Catalog { entry_id } = &server.source else {
+            continue;
+        };
+        let dir = install::server_dir(&app, &server.id)?;
+        if !dir.is_dir() {
+            continue;
+        }
+        let current = catalog.entry(entry_id);
+        match manifest::load_or_backfill(&dir, entry_id, current) {
+            Ok(m) => out.extend(manifest::update_status(&server.id, &m, current)),
+            Err(e) => log::warn!("mcp: no update status for {}: {e}", server.id),
         }
     }
     Ok(out)

@@ -220,6 +220,10 @@
 		</p>
 	{/if}
 
+	{#if runtime.blockedReason}
+		<p class="error">Stopped for a security problem: {runtime.blockedReason}</p>
+	{/if}
+
 	{#if runtime.error}
 		<p class="error">
 			{runtime.error}

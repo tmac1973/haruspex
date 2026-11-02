@@ -43,6 +43,11 @@ pub struct InstallManifest {
 }
 
 impl InstallManifest {
+    /// The installed version, as the catalog spells it.
+    pub fn version(&self) -> &str {
+        self.entry.acquisition.version()
+    }
+
     /// A manifest for a freshly installed package in `dir`, taking every
     /// top-level name in it as the package's.
     pub fn for_install(dir: &Path, entry: &CatalogEntry) -> Result<Self, String> {
@@ -121,6 +126,44 @@ pub fn load_or_backfill(
         warn!("mcp: {e}");
     }
     Ok(manifest)
+}
+
+/// Whether a catalog server is behind its pin, and whether what it has must not
+/// start.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct McpUpdateStatus {
+    pub server_id: String,
+    pub installed_version: String,
+    pub pinned_version: String,
+    pub update_available: bool,
+    pub blocked_reason: Option<String>,
+}
+
+/// `installed` measured against the current catalog entry. `None` when the
+/// entry has left the catalog: there is nothing to update to, and the server
+/// keeps launching from its manifest.
+pub fn update_status(
+    server_id: &str,
+    installed: &InstallManifest,
+    current: Option<&CatalogEntry>,
+) -> Option<McpUpdateStatus> {
+    let current = current?;
+    let installed_version = installed.version();
+    let pinned_version = current.acquisition.version();
+    Some(McpUpdateStatus {
+        server_id: server_id.to_string(),
+        installed_version: installed_version.to_string(),
+        pinned_version: pinned_version.to_string(),
+        // String equality, not ordering: the catalog only ever moves a pin to
+        // the version it wants installed, and npm, PyPI and GitHub tags order
+        // versions three different ways.
+        update_available: installed_version != pinned_version,
+        blocked_reason: current
+            .blocked_reason(installed_version)
+            .map(str::to_string),
+    })
 }
 
 fn set_version(acquisition: &mut Acquisition, to: String) {
@@ -245,7 +288,7 @@ fn top_level_names(dir: &Path) -> Result<Vec<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::integrations::mcp::catalog::{self, CommandSpec};
+    use crate::integrations::mcp::catalog::{self, BlockedVersion, CommandSpec};
     use std::collections::BTreeMap;
 
     fn entry(acquisition: Acquisition) -> CatalogEntry {
@@ -260,6 +303,7 @@ mod tests {
             setup: Vec::new(),
             companion: None,
             provenance: None,
+            blocked_versions: Vec::new(),
         }
     }
 
@@ -286,20 +330,6 @@ mod tests {
             assets: BTreeMap::new(),
             sha256: BTreeMap::new(),
             executable: "r".into(),
-        }
-    }
-
-    trait Version {
-        fn version(&self) -> &str;
-    }
-
-    impl Version for InstallManifest {
-        fn version(&self) -> &str {
-            match &self.entry.acquisition {
-                Acquisition::Npm { version, .. }
-                | Acquisition::Pypi { version, .. }
-                | Acquisition::Binary { version, .. } => version,
-            }
         }
     }
 
@@ -423,6 +453,39 @@ mod tests {
         );
         manifest.write(dir.path()).unwrap();
         assert_eq!(InstallManifest::read(dir.path()).unwrap(), Some(manifest));
+    }
+
+    #[test]
+    fn update_status_compares_the_install_with_the_pin() {
+        let installed = InstallManifest::new(entry(npm("0.0.83")), Vec::new());
+
+        let same = update_status("s", &installed, Some(&entry(npm("0.0.83")))).unwrap();
+        assert!(!same.update_available);
+        assert_eq!(same.blocked_reason, None);
+
+        let mut current = entry(npm("0.0.90"));
+        let newer = update_status("s", &installed, Some(&current)).unwrap();
+        assert!(newer.update_available);
+        assert_eq!(
+            (
+                newer.installed_version.as_str(),
+                newer.pinned_version.as_str()
+            ),
+            ("0.0.83", "0.0.90")
+        );
+
+        current.blocked_versions = vec![BlockedVersion {
+            version: "0.0.83".into(),
+            reason: "Runs any page's script.".into(),
+        }];
+        let blocked = update_status("s", &installed, Some(&current)).unwrap();
+        assert_eq!(
+            blocked.blocked_reason.as_deref(),
+            Some("Runs any page's script.")
+        );
+
+        // An entry that left the catalog has nothing to update to.
+        assert_eq!(update_status("s", &installed, None), None);
     }
 
     #[test]
