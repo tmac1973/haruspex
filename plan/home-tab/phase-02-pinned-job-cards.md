@@ -18,8 +18,8 @@ phase 03.
 - `src/lib/components/home/JobPicker.svelte` (new) — list from `getJobs()`.
 - `src/lib/components/home/CardFrame.svelte` — Refresh slot and an "updated"
   time.
-- `src/lib/home/latestRun.svelte.ts` (new) — latest run per job id, kept fresh
-  from `job-run` events.
+- `src/lib/home/latestRun.svelte.ts` (new) — latest run per job id, derived
+  from `getRunsForJob` (`stores/jobRuns.svelte.ts`).
 - `src/lib/stores/homeCards.svelte.ts` — `removeCard` asks, for a card with a
   `job_id`, whether to delete the job too.
 - `docs/guide/home.md`, `docs/guide/jobs.md`.
@@ -29,9 +29,12 @@ phase 03.
    `home_cards.job_id`.
 2. `latestRun.svelte.ts`: `getLatestRun(jobId)` returns `{ latest,
    latestSucceeded }` — the newest run of any status and the newest
-   succeeded run, each with its steps (via `getJobRun`), from
-   `loadRunsForJob`, cached per job and
-   invalidated on a `job-run` event for that job.
+   succeeded run, each with its steps (via `getJobRun`). It calls
+   `loadRunsForJob(jobId)` once, then reads the reactive `getRunsForJob`,
+   which `createJobRun` and `markRunFinished` already reload. Steps are
+   cached per run id and refetched when that run's status changes. The
+   engine's `job-run` events are not used: they run only with Remote control
+   on and do not reach desktop listeners.
 3. `PinnedJobCard`: header is the job name. Body is `latestSucceeded`'s last
    step `output`
    rendered with `ChatMessage` (assistant role), clamped to 12 lines with a
@@ -43,10 +46,13 @@ phase 03.
    Refresh button is Run now for this card.
 4. When `job_id` is null (the job was deleted), the body says "This job was
    deleted." and the menu offers Remove only.
-5. Remove dialog for a card with a job: "Remove card" and "Remove card and
-   delete job", using `ConfirmDialog`. Pinned jobs default to Remove card.
-6. Update `home.md` (pinning a job) and `jobs.md` (one line: a job can be
-   pinned from Home → Add card → Pinned job).
+5. Remove dialog for a card with a job: `ConfirmDialog` (confirm label
+   "Remove card") with a `children` snippet holding an "Also delete the job"
+   checkbox. Pinned jobs leave it unchecked. The dialog has one confirm, so
+   the checkbox carries the second choice.
+6. Update `home.md` (pinning a job). `jobs.md` is 16 bytes under the 6 KB
+   page limit (`guide/pages.test.ts`), so it gets no new line here; phase 03
+   trims it before adding to it.
 
 ## Build gate
 - `npm run check`, `npm run lint`, `npm run format:check`, `npm run test`
@@ -54,7 +60,9 @@ phase 03.
 - `node scripts/guide-check.mjs` passes
 
 ## Test plan
-- Unit: `latestRun` picks the newest run and refreshes on a `job-run` event.
+- Unit: `latestRun` picks the newest run and the newest succeeded run, and
+  updates when `getRunsForJob` changes. Its step cache has a
+  `_resetForTests()` (Vitest runs shuffled).
 - Component: `PinnedJobCard` renders output, error and deleted states; Run now
   is disabled while a run for the job is queued.
 - Hand: pin a scheduled research job; wait for it to fire; the card updates

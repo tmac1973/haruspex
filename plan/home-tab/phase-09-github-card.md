@@ -49,21 +49,19 @@ Upstream facts this design rests on, from the v1.12.0 source:
 - `src/lib/components/home/cards/GitHubCard.svelte` (new).
 - `src/lib/components/home/forms/GitHubForm.svelte` (new).
 - `src/lib/home/workOnIssue.ts` (new).
-- `src/lib/stores/code.svelte.ts` — a pending input draft per code session.
-- `src/lib/components/code/CodeComposer.svelte` — takes the session's
-  pending draft into its input (step 13) and focuses it.
 - `src/lib/stores/jobsTabSelection.svelte.ts` — `newJobDraft(draft)`.
 - `src/lib/components/jobs/JobsTab.svelte`, `JobEditor.svelte` — optional
   `draft` prop for a new job (step 13).
-- `src-tauri/src/code_tools/checkout.rs` (new) — `code_find_checkout`.
+- `src-tauri/src/code_tools/checkout.rs` (new) — `code_checkout_find`.
 - `src-tauri/src/code_tools/mod.rs` — declare `checkout`.
 - `src-tauri/src/skills/mod.rs` — `mod origin;` becomes `pub(crate) mod
   origin;` so `origin_url` can be reused; no behaviour change.
-- `src-tauri/src/lib.rs` — register `code_find_checkout`.
+- `src-tauri/src/lib.rs` — register `code_checkout_find`.
 - `src/lib/ipc/gen/*` — regenerated.
 - `src/lib/engine/home.ts` — the `github` payload.
-- `src/web/home/GitHubCard.svelte` (new), and `src/web/home/HomeView.svelte`
-  from phase 08 — add the `github` case.
+- `src/web/components/home/GitHubCard.svelte` (new), and
+  `src/web/components/home/HomeView.svelte` from phase 08 — add the `github`
+  case.
 - `docs/guide/home.md`, `docs/guide/integrations.md`,
   `docs/guide/remote-control.md`.
 
@@ -126,7 +124,9 @@ Upstream facts this design rests on, from the v1.12.0 source:
    `repository_url` (or the repo the call was made for). The parsers live
    in `github.ts` and are tested against the fixtures. A tool reply whose
    outcome is not `complete` (the server asking for input) is a fetch error:
-   "GitHub asked for input; open it from a chat instead."
+   "GitHub asked for input; open it from a chat instead." A `complete`
+   outcome with `isError: true` is a fetch error too, with the tool's text as
+   the message.
 9. Registry entry: `kind: 'fetched'`, `notifies: true`,
    `fetch: fetchGitHub`, `intervalMinutes: () => 15`, `itemLabel: (i) =>
    i.repo + '#' + i.number + ' ' + i.title`, `title: (config) =>` the
@@ -144,8 +144,10 @@ Upstream facts this design rests on, from the v1.12.0 source:
     comment count and age. Empty state per preset: "No open issues from
     others.", "No reviews requested.", "No open pull requests from others."
     Ask about this formats `repo#number`, title, author, labels and `url`
-    (the body is not fetched; the chat can read it with the GitHub tools).
-12. `code_find_checkout(repo: String, roots: Vec<String>) -> Option<String>`:
+    (the body is not fetched; the chat can read it with the GitHub tools,
+    which it loads itself when Settings loads tool groups only when needed).
+    Title links open with `openInBrowser`.
+12. `code_checkout_find(repo: String, roots: Vec<String>) -> Option<String>`:
     for each root, read `skills::origin::origin_url`, normalise it
     (`git@github.com:o/n.git`, `https://github.com/o/n(.git)`,
     `ssh://git@github.com/o/n` → `o/n`, compared case-insensitively) and
@@ -160,11 +162,14 @@ Upstream facts this design rests on, from the v1.12.0 source:
       owner/name#N from GitHub." and stop.
     - **Open code session**: `openCodeSessionAt(root)` from
       `stores/code.svelte.ts` creates a new session there, switches to the
-      Code tab and returns the `CodeSession`; set that session's pending
-      draft (by its `id`) to "Work on owner/name#N: <title>\n\n<body>\n\n
-      <url>". `CodeComposer` takes a pending draft for its session on mount
-      and whenever the pending draft for its session changes, so an already
-      mounted composer picks it up too; the draft is unsent.
+      Code tab and returns the `CodeSession`. It also writes `codeLastRoot`,
+      so the Code tab's next new session starts in that checkout; that is
+      accepted. Set `session.prefill = { text: "Work on owner/name#N:
+      <title>\n\n<body>\n\n<url>", images: [] }`. This is the existing
+      fork prefill (`CodeSession.prefill`, `Prefill` in `code/fork.ts`):
+      `CodeComposer`'s `$effect` takes it through `takePrefill()` on mount and
+      when it changes, and focuses the input, so no Code tab change is
+      needed. The text is unsent.
     - **Plan this issue**: `newJobDraft({ jobType: 'guided_planning', name:
       'owner/name#N', workingDir: root, config: {
       ...getJobType('guided_planning').configDefaults(),
@@ -189,7 +194,9 @@ Upstream facts this design rests on, from the v1.12.0 source:
     Work on this from the phone.
 16. Docs: `home.md` (the card, presets, filters, the MCP server it needs,
     Work on this); `integrations.md` (the GitHub MCP server also feeds the
-    Home card, and the token's repo access limits what it sees);
+    Home card, and the token's repo access limits what it sees; the page
+    is 11 bytes under the 6 KB limit, so this replaces a sentence of the
+    same length rather than adding one);
     `remote-control.md` (read-only on the phone).
 
 ## Build gate
@@ -216,7 +223,10 @@ Upstream facts this design rests on, from the v1.12.0 source:
 - Component: `JobEditor` with a `draft` shows the type, name, working
   directory and description, unsaved; `jobsTabSelection` keeps only the last
   pending item.
-- Rust: `code_find_checkout` with SSH, HTTPS, `.git`-suffixed and
+- Unit: `fetchGitHub` treats `isError: true` as an error; the one-hour repo
+  cache resets through `_resetForTests()` (Vitest runs shuffled).
+- Unit: Open code session sets `prefill` on the returned session.
+- Rust: `code_checkout_find` with SSH, HTTPS, `.git`-suffixed and
   mixed-case remotes, a worktree root, and no match.
 - Hand: with the catalog GitHub server set up, add the card; file an issue on
   one of your repos from a second account; Refresh; it appears; comment on

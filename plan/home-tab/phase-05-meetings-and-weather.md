@@ -31,8 +31,10 @@ CardFrame slot from phase 02.
 - `docs/guide/home.md`, `docs/guide/search-and-network.md`.
 
 ## Steps
-1. Refresher: started from `+layout.svelte` next to `startScheduler()`, only
-   outside lean mode. It runs fetches one at a time, skips a card already
+1. Refresher: started from `+layout.svelte` next to `startScheduler()`
+   (inside the same `Promise.all([...]).then(...)`, so the main window only),
+   only outside lean mode. An `$effect` on `getLiveSettings().leanMode`
+   stops it when lean mode turns on and starts it when it turns off. It runs fetches one at a time, skips a card already
    fetching, and writes `{ last_result, updated_at }` on success. A failure
    keeps the old result and stores `{ error }` in memory for the card to
    show under it.
@@ -48,8 +50,8 @@ CardFrame slot from phase 02.
    whose host matches `meet.google.com`, `*.zoom.us`, `teams.microsoft.com`,
    `teams.live.com`, `*.webex.com`, `whereby.com` or `meet.jit.si`.
 3. Meetings card: next events grouped Now / Later today / Tomorrow, each with
-   time, title and a Join button when `joinUrl` is set (opens with the
-   system opener). "Nothing in the next N hours." (N from config) when empty. `addable` when
+   time, title and a Join button when `joinUrl` is set (opens with
+   `openInBrowser`, `utils/openInBrowser.ts`). "Nothing in the next N hours." (N from config) when empty. `addable` when
    `hasEnabledCalendarAccount()`.
 4. Weather: config `{ place: string; lat: number; lon: number; units:
    'metric' | 'imperial' }`. The Add card form geocodes `place` with
@@ -62,7 +64,10 @@ CardFrame slot from phase 02.
    &forecast_days=2`; imperial adds `&temperature_unit=fahrenheit&wind_speed_unit=mph`,
    metric adds nothing (Open-Meteo defaults to °C and km/h). Both go through `invoke('proxy_fetch',
    { url, caller: 'home-weather', proxy: getSettings().proxy })`; parse the
-   JSON text.
+   reply's `.text` (`proxy_fetch` returns `FetchedPage { text, full_length,
+   hero_image }`) as JSON. `proxy_fetch` caches a URL for 10 minutes, so
+   Refresh within that time shows the same forecast; that is accepted for a
+   30-minute card, and `home.md` does not promise a fresher one.
 5. Weather card: now (temperature, WMO code label and icon, wind), today's
    high/low and rain chance, tomorrow's in one line. WMO codes map to labels
    in `weather.ts`.
@@ -78,7 +83,8 @@ CardFrame slot from phase 02.
 
 ## Test plan
 - Unit: refresher — refreshes only stale cards; failure keeps the old result;
-  no overlap for one card.
+  no overlap for one card. Its timer and in-memory errors reset through
+  `_resetForTests()` (Vitest runs shuffled).
 - Unit: join-link extraction for each listed host, a non-https link, and a
   plain location.
 - Unit: weather parsing with a recorded Open-Meteo response; WMO mapping.
