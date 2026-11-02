@@ -10,6 +10,7 @@
 	import { getCurrentWindow } from '@tauri-apps/api/window';
 	import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 	import CodeEditor from '#lib/components/CodeEditor.svelte';
+	import GlbViewer from '#lib/components/GlbViewer.svelte';
 	import { EditorWorkspace } from '#lib/editor/workspace.svelte.ts';
 	import { watchedIO } from '#lib/editor/io.ts';
 	import {
@@ -222,7 +223,11 @@
 			<p class="error">{active.error}</p>
 		{/if}
 		<div class="pane">
-			{#if active.loaded && !active.failed}
+			{#if active.viewer === 'glb'}
+				{#key active.relPath}
+					<GlbViewer workdir={root} relPath={active.relPath} />
+				{/key}
+			{:else if active.loaded && !active.failed}
 				{#key active.relPath}
 					<CodeEditor
 						value={active.draft}
@@ -236,18 +241,20 @@
 		</div>
 		<div class="status">
 			<span class="path" title={root}>{active.relPath}</span>
-			{#if !active.live}
+			{#if !active.live && !active.viewer}
 				<span
 					class="unwatched"
 					title="Changes made outside this window won't show until the file is reopened. Saving still checks for them."
 					>Live reload unavailable</span
 				>
 			{/if}
-			<button
-				disabled={!active.canSave}
-				onclick={() => void active.save()}
-				title={isMac ? '⌘+S' : 'Ctrl+S'}>Save</button
-			>
+			{#if !active.viewer}
+				<button
+					disabled={!active.canSave}
+					onclick={() => void active.save()}
+					title={isMac ? '⌘+S' : 'Ctrl+S'}>Save</button
+				>
+			{/if}
 		</div>
 	{:else}
 		<p class="empty">Opening…</p>
@@ -339,7 +346,8 @@
 		flex-direction: column;
 		padding: 6px;
 	}
-	.pane :global(.code-editor) {
+	.pane :global(.code-editor),
+	.pane :global(.glb-viewer) {
 		flex: 1;
 	}
 	.unwatched {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { EditorDocument, type EditorIO } from './document.svelte.ts';
+import { EditorDocument, viewerFor, type EditorIO } from './document.svelte.ts';
 
 /** A disk of one file, hashed by its content. */
 function fakeDisk(initial: string | null) {
@@ -146,5 +146,26 @@ describe('EditorDocument', () => {
 		const { doc, io } = await open('one');
 		doc.close();
 		expect(io.release).toHaveBeenCalledWith('/proj/a.ts');
+	});
+
+	it('shows a GLB in the viewer without reading it as text', async () => {
+		const f = fakeDisk('glTF');
+		const doc = new EditorDocument('/proj', 'assets/potion.GLB', f.io);
+		await doc.load();
+		expect(doc.viewer).toBe('glb');
+		expect(doc.loaded).toBe(true);
+		expect(doc.failed).toBe(false);
+		expect(f.io.read).not.toHaveBeenCalled();
+		expect(doc.canSave).toBe(false);
+		await doc.diskChanged('h:other');
+		expect(doc.disk).toBe('same');
+	});
+});
+
+describe('viewerFor', () => {
+	it('picks the viewer by extension', () => {
+		expect(viewerFor('a/b.glb')).toBe('glb');
+		expect(viewerFor('a/b.glb.html')).toBeNull();
+		expect(viewerFor('a.ts')).toBeNull();
 	});
 });

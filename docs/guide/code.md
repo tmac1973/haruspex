@@ -9,11 +9,11 @@ The Code tab is a coding agent that works in one project folder: it reads and ed
 
 ## Start a session
 
-Click **New session** (or **+** by the tabs) and pick the project folder; **Work in a new worktree** gives it its own branch (see the `code-sessions` page). **Open in Code** in a Shell tab's assistant starts one in its folder. The session's folder is fixed: the agent can't work outside it.
+Click **New session** (or **+** by the tabs) and pick the project folder; **Work in a new worktree** gives it its own branch (see the `code-sessions` page). **Open in Code** in a Shell tab's assistant starts one in its folder. The folder is fixed: the agent can't work outside it.
 
-Type what you want and press `Enter`. After the first reply the model names the session; a name you gave it is never replaced. Sessions save after every reply.
+Type what you want and press `Enter`. After the first reply the model names the session, never replacing a name you gave it. Sessions save after every reply.
 
-To show the agent a UI bug, the camera button takes the screen, a window or a region for your next message.
+To show a UI bug, the camera button takes the screen, a window or a region for your next message.
 
 ## Look things up on the web
 
@@ -22,9 +22,9 @@ The agent can search the web and read pages, with Chat's search and proxy setup;
 ## Read what the agent did
 
 - **Edits** show as a diff with line numbers; past 40 lines **Show all … lines** expands it. Unlike Chat, rewrites don't ask first. A second whole rewrite in one turn needs a command (a test, say) run first.
-- **Commands** show as a card: command, exit code, time taken and output (the last 20 lines until **Show all**). **Open in Shell** types it into a new Shell tab at the folder, not run.
+- **Commands** show as a card: command, exit code, time taken and output (the last 20 lines until **Show all**). **Open in Shell** types it into a new Shell tab, not run.
 - Searches and reads show as a step list.
-- **Reasoning** sits above its step, collapsed (live: **Thinking…**); what the agent **says** before a step sits above it in grey.
+- **Reasoning** sits above its step, collapsed (live: **Thinking…**); what the agent **says** before a step is above it in grey.
 - A call still being written shows as a row: **Writing**, **Editing** or **Preparing command…**.
 - **File names** inside the folder (`src/app.ts:42`), anywhere in the session, open the file in an editor window, at its top.
 
@@ -32,13 +32,13 @@ The agent can search the web and read pages, with Chat's search and proxy setup;
 
 Commands that need a password (`sudo`) or a terminal can't run here, so the agent hands them to you: a new Shell tab opens at the folder with the command typed in, not run. Check it, then press `Enter`.
 
-The conversation shows **Waiting for you in Shell N — press Enter there**, with **Go to shell** and **Cancel**. Then the agent gets the exit code, output and command as run. **Cancel** stops the wait (the agent goes on without it); **Stop** ends the turn; either way the Shell tab stays. Closing the Shell tab first gives no result. If the shell doesn't report finished commands (an old fish), the agent asks you.
+The conversation shows **Waiting for you in Shell N — press Enter there**, with **Go to shell** and **Cancel**. Then the agent gets the exit code, output and command as run. **Cancel** stops the wait (the agent goes on without it); **Stop** ends the turn; either way the Shell tab stays. Closing the Shell tab first gives no result. If the shell doesn't report finished commands (old fish), the agent asks you.
 
 ## Edit files
 
-Files open in an editor window, one per folder, a tab per file. **⤢** on a tab moves the file to its own window. For keys, see the `shortcuts` page. The agent can open files there but doesn't see your edits.
+Files open in an editor window, one per folder, a tab per file. **⤢** on a tab moves the file to its own window. For keys, see the `shortcuts` page. The agent can open files there but doesn't see your edits. A `.glb` opens in a 3D view (drag to orbit, scroll to zoom).
 
-An outside edit reloads the file and keeps your place. With unsaved edits it shows **Changed on disk** (**Reload** / **Keep mine**), and saving over a change you haven't seen asks **Overwrite** or **Reload first**. A deleted file shows **Deleted on disk**; saving recreates it. **Live reload unavailable** means outside changes won't show. Closing a window with unsaved edits asks first; closing the main window closes the editors.
+An outside edit reloads the file, keeping your place. With unsaved edits it shows **Changed on disk** (**Reload** / **Keep mine**), and saving over a change you haven't seen asks **Overwrite** or **Reload first**. A deleted file shows **Deleted on disk**; saving recreates it. **Live reload unavailable** means outside changes won't show. Closing a window with unsaved edits asks first; closing the main window closes them.
 
 ## Steer or stop the agent
 
@@ -51,7 +51,7 @@ A dot on a session's tab shows it working (filled) or waiting for the model (hol
 The header above the conversation holds:
 
 - the **folder** — click to open it in your file manager;
-- the **git branch**, with **●** for uncommitted changes. Click it to switch branch, or to start one with **Branch from current…** or **Branch from main…** (shown when another branch is checked out). Switching waits until the agent is idle and changes are committed or stashed; it warns when another open session uses the repo;
+- the **git branch**, with **●** for uncommitted changes. Click it to switch branch, or to start one with **Branch from current…** or **Branch from main…** (shown when another branch is checked out). Switching waits for an idle agent and committed or stashed changes; it warns when another open session uses the repo;
 - the **model** — click it to pick **Settings model** (follows Settings → Inference), **Remote server** (one saved in Settings → Inference: **Probe**, then pick a model) or **OpenRouter (cloud)** (**Load models**, then pick one), then **Save**. The local model is only reachable through **Settings model**; picking one never starts it;
 - **Effort** — how hard the model thinks, where it has levels;
 - **Specialists** — see the `specialists` page;
