@@ -30,6 +30,9 @@ static/pyodide/
 # plotly.min.js (extracted from the plotly wheel by scripts/fetch-pyodide.sh)
 static/plotly/
 
+# three + the modelling kit for check_3d (built by scripts/build-three-kit.mjs)
+static/helpers/
+
 # Environment files
 .env
 .env.*
