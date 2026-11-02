@@ -306,6 +306,17 @@ The page side is `src/lib/e2e/driveHooks.ts`, on `window.__haruspexDrive`.
 Only a build with `VITE_HARUSPEX_E2E=1`, which `e2e/app/build.mjs` sets,
 carries it; CI checks the production build has none of it.
 
+### Judging 3D output
+
+`scripts/drive/judge3d.mjs` renders GLBs an agent made side by side, one row
+each, from the front, three-quarter, side and back, in one lit scene
+(Playwright's Chromium and the repo's `three`). Use it to compare runs, such
+as the same prompt with and without the 3D helper (Settings → Code → Helpers).
+
+```bash
+node scripts/drive/judge3d.mjs comparison.png run-a/assets/potion.glb run-b/assets/potion.glb
+```
+
 ## Evaluating a model
 
 `scripts/model-eval.mjs` puts a running Haruspex through a fixed set of Chat and
