@@ -16,7 +16,7 @@ import {
 } from '#lib/agent/tools/_deferredLoaded.ts';
 import { toolResult, type DeferredFamily } from '#lib/agent/tools/types.ts';
 import { isFetchFailureResult, isToolErrorResult } from '#lib/agent/tools/_helpers.ts';
-import { isVerbosePayloads, logDebug } from '#lib/debugLog.ts';
+import { argumentShape, isVerbosePayloads, logDebug } from '#lib/debugLog.ts';
 import { NudgeState } from '#lib/agent/loop/nudges.ts';
 import { PICTURE_TOOLS } from '#lib/images/eligible.ts';
 import {
@@ -151,9 +151,10 @@ export async function executeToolCalls(
 		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
 		// Arguments carry email bodies, file contents and shell commands, and this
-		// buffer goes into the feedback bundle: the keys are enough by default.
+		// buffer goes into the feedback bundle: by default each value's type and
+		// size, which still shows a model sending an empty `target` or `path`.
 		logDebug('agent', `tool start: ${call.name}`, {
-			args: isVerbosePayloads() ? call.arguments : Object.keys(call.arguments ?? {})
+			args: isVerbosePayloads() ? call.arguments : argumentShape(call.arguments)
 		});
 		// Coerced, as the executor will see them. A stage that captures a
 		// structured answer here read the model's raw arguments: an `entries`
