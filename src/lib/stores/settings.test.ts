@@ -1211,6 +1211,41 @@ describe('load-time imageModels seeding', () => {
 	});
 });
 
+describe('load-time specialists', () => {
+	let priorRaw: string | null;
+
+	beforeEach(() => {
+		priorRaw = localStorage.getItem(SETTINGS_KEY);
+	});
+
+	afterEach(() => {
+		if (priorRaw === null) {
+			localStorage.removeItem(SETTINGS_KEY);
+		} else {
+			localStorage.setItem(SETTINGS_KEY, priorRaw);
+		}
+		vi.resetModules();
+	});
+
+	async function loadWith(stored: Record<string, unknown>) {
+		localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
+		vi.resetModules();
+		const fresh = await import('#lib/stores/settings.ts');
+		return fresh.getSettings().specialists;
+	}
+
+	it('starts empty', async () => {
+		expect(await loadWith({})).toEqual([]);
+	});
+
+	it('gives an entry saved before Accepts images existed the setting off', async () => {
+		const saved = [{ id: 'x', name: 'GLB', kind: 'glb', url: 'http://a:3000', model: 'm' }];
+		expect(await loadWith({ specialists: saved })).toEqual([{ ...saved[0], acceptsImages: false }]);
+		const withImages = [{ ...saved[0], acceptsImages: true }];
+		expect(await loadWith({ specialists: withImages })).toEqual(withImages);
+	});
+});
+
 /**
  * One proxy used to cover everything, though it was meant for search. The
  * split moves an existing proxy to the search side and leaves the network
