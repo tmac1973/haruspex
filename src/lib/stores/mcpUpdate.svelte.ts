@@ -19,6 +19,7 @@ import { unregisterMcpServer } from '#lib/agent/tools/mcp.ts';
 import { persistItem } from '#lib/persist.ts';
 import { forgetServerApprovals } from '#lib/stores/mcpApproval.svelte.ts';
 import {
+	installedManifest,
 	loadInstalledManifests,
 	mcpState,
 	refreshMcpTools,
@@ -240,6 +241,13 @@ interface Attempt {
 	wasBlocked: boolean;
 	toolsBefore: string[] | null;
 	oldVersion: string;
+	/**
+	 * A setup step that belongs to the package version has started. It may
+	 * have replaced what the old version relied on — Playwright's browser
+	 * download deletes the browser no install links to any more — so a
+	 * rollback after it runs the old version's steps again.
+	 */
+	setupStarted: boolean;
 }
 
 function setStage(id: string, stage: string): void {
@@ -278,6 +286,7 @@ async function rerunSetup(a: Attempt): Promise<void> {
 	for (const step of a.entry.setup) {
 		if (step.kind !== 'command' || !step.onUpdate) continue;
 		setStage(a.id, `${step.label}…`);
+		a.setupStarted = true;
 		await invoke('mcp_run_setup_command', { config: a.config, args: step.args, proxy: a.proxy });
 	}
 	for (const [stepIndex, step] of a.entry.setup.entries()) {
@@ -330,11 +339,38 @@ async function swapIn(a: Attempt): Promise<void> {
 	}
 }
 
+/**
+ * Run the restored version's own package-version steps again, from its
+ * manifest: the update's ran for the new version and may have taken away
+ * what the old one needs. Returns why it could not, or null.
+ */
+async function redoSetup(a: Attempt): Promise<string | null> {
+	const steps = installedManifest(a.id)?.entry.setup ?? [];
+	for (const step of steps) {
+		if (step.kind !== 'command' || !step.onUpdate) continue;
+		setStage(a.id, `${step.label}…`);
+		try {
+			await invoke('mcp_run_setup_command', { config: a.config, args: step.args, proxy: a.proxy });
+		} catch (e) {
+			return errMessage(e);
+		}
+	}
+	return null;
+}
+
 async function putBack(a: Attempt, cause: unknown): Promise<void> {
 	try {
 		await stopMcpServer(a.id);
 		await invoke('mcp_update_rollback', { serverId: a.id });
 		await loadInstalledManifests([a.config]);
+		const redoFailed = a.setupStarted ? await redoSetup(a) : null;
+		if (redoFailed !== null) {
+			results[a.id] = {
+				ok: false,
+				text: `Update failed; version ${a.oldVersion} is back, but its setup needs running again (Setup).`,
+				detail: `${errMessage(cause)}\n${redoFailed}`
+			};
+		}
 		if (a.wasRunning) await startMcpServer(a.config, a.entry);
 	} catch (undo) {
 		results[a.id] = {
@@ -365,7 +401,8 @@ export async function updateMcpServer(config: McpServerConfig, entry: CatalogEnt
 		wasRunning: before.status.type === 'Ready',
 		wasBlocked: before.blockedReason !== null,
 		toolsBefore: before.status.type === 'Ready' ? before.tools.map((t) => t.name) : null,
-		oldVersion: statuses[config.id]?.installedVersion ?? 'the old version'
+		oldVersion: statuses[config.id]?.installedVersion ?? 'the old version',
+		setupStarted: false
 	};
 
 	delete results[a.id];

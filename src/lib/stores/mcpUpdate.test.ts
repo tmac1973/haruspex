@@ -49,6 +49,8 @@ const BROWSER_STEP: SetupStep = {
 	onUpdate: true
 };
 
+const OLD_BROWSER_STEP: SetupStep = { ...BROWSER_STEP, args: ['install-browser', '--old'] };
+
 const SIGN_IN_STEP: SetupStep = { ...BROWSER_STEP, label: 'Sign in', args: [], onUpdate: false };
 
 function entry(over: Partial<CatalogEntry> = {}): CatalogEntry {
@@ -116,6 +118,16 @@ function backend(
 			},
 			mcp_connection_info: CONNECTION,
 			mcp_list_tools: () => tools(...(swapped ? after : before)),
+			// What is on disk: the old version's own browser step, told apart
+			// from the new one's by its arguments.
+			mcp_installed_manifests: () => ({
+				[ID]: {
+					schema: 1,
+					entry: swapped ? entry() : entry({ setup: [OLD_BROWSER_STEP] }),
+					packageFiles: [],
+					installedAt: '2026-11-02T00:00:00Z'
+				}
+			}),
 			...over
 		})
 	);
@@ -245,16 +257,26 @@ describe('an update that cannot go ahead', () => {
 describe('an update that fails after the swap', () => {
 	it('rolls back and restarts the old version when a setup step fails', async () => {
 		await runningServer();
+		let runs = 0;
 		backend({
 			mcp_run_setup_command: () => {
-				throw 'download failed';
+				runs += 1;
+				if (runs === 1) throw 'download failed';
 			}
 		});
 		await updateMcpServer(config(), entry());
 
 		const seq = sequence();
 		expect(seq).not.toContain('mcp_update_commit');
-		expect(seq.slice(seq.indexOf('mcp_update_rollback'))).toContain('mcp_start_server');
+		// The old version's own browser step runs again before it restarts.
+		expect(seq.slice(seq.indexOf('mcp_update_rollback'))).toEqual([
+			'mcp_update_rollback',
+			'mcp_run_setup_command',
+			'mcp_start_server'
+		]);
+		expect(invokeCalls(invoke, 'mcp_run_setup_command').at(-1)).toMatchObject({
+			args: ['install-browser', '--old']
+		});
 		expect(mcpState(ID).status.type).toBe('Ready');
 		expect(mcpState(ID).tools.map((t) => t.name)).toEqual(['navigate', 'click']);
 		expect(mcpUpdateResult(ID)).toMatchObject({
@@ -278,6 +300,47 @@ describe('an update that fails after the swap', () => {
 		expect(sequence()).not.toContain('mcp_update_commit');
 		expect(mcpState(ID).status.type).toBe('Ready');
 		expect(mcpUpdateResult(ID)?.detail).toContain('crashed on launch');
+		// The new version's browser step succeeded and may have removed the old
+		// browser, so the old version's step runs again.
+		expect(invokeCalls(invoke, 'mcp_run_setup_command').map((c) => c?.args)).toEqual([
+			['install-browser'],
+			['install-browser', '--old']
+		]);
+	});
+
+	it('says so when the old version’s setup cannot be redone, and still restarts it', async () => {
+		await runningServer();
+		let starts = 0;
+		let runs = 0;
+		backend({
+			mcp_start_server: () => {
+				starts += 1;
+				if (starts === 1) throw 'crashed on launch';
+			},
+			mcp_run_setup_command: () => {
+				runs += 1;
+				if (runs === 2) throw 'offline';
+			}
+		});
+		await updateMcpServer(config(), entry());
+
+		expect(mcpState(ID).status.type).toBe('Ready');
+		expect(mcpUpdateResult(ID)).toEqual({
+			ok: false,
+			text: 'Update failed; version 0.0.83 is back, but its setup needs running again (Setup).',
+			detail: 'crashed on launch\noffline'
+		});
+	});
+
+	it('does not redo setup when the update failed before any ran', async () => {
+		await runningServer();
+		backend({
+			mcp_update_swap: () => {
+				throw 'disk full';
+			}
+		});
+		await updateMcpServer(config(), entry());
+		expect(sequence()).not.toContain('mcp_run_setup_command');
 	});
 
 	it('keeps the approvals when the update did not happen', async () => {
