@@ -295,7 +295,31 @@ async function runOf(runId: number) {
 	return run;
 }
 
+/** The id each op needs, refused here when it is missing so a misspelt field never reaches Rust. */
+const NEEDS_ID: Partial<Record<JobOp['type'], 'jobId' | 'runId'>> = {
+	'jobs.get': 'jobId',
+	'jobs.update': 'jobId',
+	'jobs.duplicate': 'jobId',
+	'jobs.delete': 'jobId',
+	'jobs.run': 'jobId',
+	'run.cancel': 'runId',
+	'runs.list': 'jobId',
+	'runs.get': 'runId',
+	'runs.delete': 'runId',
+	'runs.resync': 'runId'
+};
+
+function requireId(op: JobOp): void {
+	const key = NEEDS_ID[op.type];
+	if (!key) return;
+	const id = (op as Record<string, unknown>)[key];
+	if (typeof id !== 'number' || !Number.isSafeInteger(id)) {
+		throw new Error(`${op.type} needs a numeric ${key}`);
+	}
+}
+
 export async function dispatchJobs(op: JobOp): Promise<unknown> {
+	requireId(op);
 	switch (op.type) {
 		case 'jobs.types':
 			// Lean mode offers research alone, as the desktop's picker does.

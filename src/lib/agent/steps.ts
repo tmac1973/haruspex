@@ -2,6 +2,7 @@ import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import type { SearchStep } from '#lib/agent/loop.ts';
 import { getDisplayLabel, type Artifact, type LintIssue } from '#lib/agent/tools/index.ts';
 import { gatedSkill } from '#lib/skills/content.ts';
+import { STOPPED_STEP_RESULT } from '#lib/code/commandResult.ts';
 
 /**
  * Build the `SearchStep` for a tool call that just started. Shared by every
@@ -16,6 +17,18 @@ export function newRunningStep(call: ResolvedToolCall): SearchStep {
 		status: 'running',
 		args: call.arguments
 	};
+}
+
+/**
+ * The steps of a turn the user stopped: any still running is done, with
+ * `STOPPED_STEP_RESULT` as its result, so its card no longer says it runs.
+ */
+export function markStepsStopped(steps: SearchStep[]): SearchStep[] {
+	return steps.map((s) =>
+		s.status === 'running'
+			? { ...s, status: 'done' as const, result: STOPPED_STEP_RESULT, installStatus: undefined }
+			: s
+	);
 }
 
 /**

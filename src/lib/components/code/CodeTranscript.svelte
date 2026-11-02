@@ -248,6 +248,13 @@
 					/>
 				{/if}
 			{/if}
+		{:else if session.messageSteps[i]?.length}
+			<!-- A turn stopped before it answered keeps its steps on its last call. -->
+			<CodeSteps
+				steps={session.messageSteps[i]}
+				root={session.root}
+				wslDistro={session.wslDistro}
+			/>
 		{/if}
 	{/each}
 	{#each trailingNotes as note, k (k)}

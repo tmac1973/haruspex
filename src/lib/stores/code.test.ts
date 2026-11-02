@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AgentLoopOptions } from '#lib/agent/loop.ts';
 import type { ChatMessage } from '#lib/api.ts';
+import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
 
 // The Tauri boundary is an in-memory `code_sessions` table, so a session can
 // be saved, closed and loaded back by id as the app would.
@@ -279,6 +280,7 @@ import {
 	setActiveSession
 } from '#lib/stores/code.svelte.ts';
 import { decodeCodeSession } from '#lib/code/session.ts';
+import { STOPPED_STEP_RESULT } from '#lib/code/commandResult.ts';
 import { reportShellWait } from '#lib/code/shellBridge.ts';
 import { finishedSubtask, newSubtaskState, type SubtaskState } from '#lib/code/subtask.ts';
 import type { SubtaskEnv, SubtaskSpec } from '#lib/code/subtaskRun.ts';
@@ -420,7 +422,30 @@ describe('a Code session', () => {
 		expect(s.title).toBe('Find where x lives');
 	});
 
-	it('stays unnamed while it has only had slash commands', async () => {
+	it('names itself from the skill when its first turn runs one', async () => {
+		const skill = (name: string) =>
+			({
+				name,
+				body: 'Do it.',
+				dir: null,
+				compatibility: null,
+				files: [],
+				filesTruncated: false,
+				needs: [],
+				buildsOn: null
+			}) as SkillDoc;
+		const s = await newSession('/proj');
+		await s.send('/init', { skill: skill('init') });
+		expect(mocks.nameSession).toHaveBeenCalledExactlyOnceWith('Run the init skill', null);
+		expect(s.title).toBe('Find where x lives');
+		expect(db.rows.get(s.id)!.title).toBe('Find where x lives');
+
+		const t = await newSession('/proj');
+		await t.send('/review the diff', { skill: skill('review') });
+		expect(mocks.nameSession).toHaveBeenLastCalledWith('Run the review skill: the diff', null);
+	});
+
+	it('stays unnamed while it has only had slash commands that ran no skill', async () => {
 		const s = await newSession('/proj');
 		await s.send('/init');
 		await s.send('  /review the diff');
@@ -528,6 +553,64 @@ describe('a Code session', () => {
 		const saved = storedThread(s.id)!.messages;
 		expect(saved.map((m) => m.role)).toEqual(['user', 'assistant', 'tool', 'assistant']);
 		expect(saved[3].content).toBe('Now I will');
+	});
+
+	it('keeps the steps of a turn stopped mid-command, the running one marked stopped', async () => {
+		const s = await newSession('/proj');
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
+			const grep = { id: 'c1', name: 'code_grep', arguments: {} };
+			const cmd = { id: 'c2', name: 'run_command', arguments: { command: 'sleep 60' } };
+			o.onToolStart(grep);
+			add(
+				o,
+				{
+					role: 'assistant',
+					content: '',
+					tool_calls: [
+						{ id: 'c1', type: 'function', function: { name: 'code_grep', arguments: '{}' } }
+					]
+				},
+				{ role: 'tool', tool_call_id: 'c1', content: 'src/a.ts:1: x' }
+			);
+			o.onToolEnd(grep, 'src/a.ts:1: x');
+			add(o, {
+				role: 'assistant',
+				content: '',
+				tool_calls: [
+					{
+						id: 'c2',
+						type: 'function',
+						function: { name: 'run_command', arguments: '{"command":"sleep 60"}' }
+					}
+				]
+			});
+			o.onToolStart(cmd);
+			await new Promise<void>((resolve) =>
+				o.signal!.addEventListener('abort', () => resolve(), { once: true })
+			);
+			throw new DOMException('Aborted', 'AbortError');
+		});
+		const sending = s.send('wait a minute');
+		await vi.waitFor(() => expect(mocks.runAgentLoop).toHaveBeenCalled());
+		await vi.waitFor(() => expect(s.searchSteps).toHaveLength(2));
+		s.stop();
+		await sending;
+		expect(s.lastError).toBe('Stopped.');
+		const saved = storedThread(s.id)!;
+		expect(saved.messages.map((m) => m.role)).toEqual([
+			'user',
+			'assistant',
+			'tool',
+			'assistant',
+			'tool'
+		]);
+		const steps = saved.messageSteps[4];
+		expect(steps.map((st) => [st.toolName, st.status])).toEqual([
+			['code_grep', 'done'],
+			['run_command', 'done']
+		]);
+		expect(steps[0].result).toBe('src/a.ts:1: x');
+		expect(steps[1].result).toBe(STOPPED_STEP_RESULT);
 	});
 
 	it('shows queued while waiting for an inference slot', async () => {

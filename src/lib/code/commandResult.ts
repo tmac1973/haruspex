@@ -9,6 +9,8 @@ export interface CommandView {
 	durationMs: number | null;
 	/** Timed out or cancelled. */
 	killed: boolean;
+	/** Still running when the user stopped the turn (`STOPPED_STEP_RESULT`). */
+	stopped: boolean;
 	/** Started detached (`background` / `watch`). */
 	background: boolean;
 	/** The tool refused or failed before running anything. */
@@ -16,6 +18,9 @@ export interface CommandView {
 	/** stdout then `[stderr]`, ANSI codes removed. */
 	output: string;
 }
+
+/** What a step still running when the user stopped its turn keeps as its result. */
+export const STOPPED_STEP_RESULT = 'Stopped by the user before it finished.';
 
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g;
@@ -30,11 +35,16 @@ export function parseCommandResult(result: string | undefined): CommandView {
 		exitCode: null,
 		durationMs: null,
 		killed: false,
+		stopped: false,
 		background: false,
 		error: null,
 		output: ''
 	};
 	if (!result) return view;
+	if (result === STOPPED_STEP_RESULT) {
+		view.stopped = true;
+		return view;
+	}
 	const trimmed = result.trimStart();
 	if (trimmed.startsWith('{')) {
 		try {
