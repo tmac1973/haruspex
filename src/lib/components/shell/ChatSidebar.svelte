@@ -2,6 +2,7 @@
 	import ReportIssueButton from '#lib/components/ReportIssueButton.svelte';
 	import { debugLog, worthReporting } from '#lib/reportLogs.ts';
 	import { startDragResize } from '#lib/utils/dragResize.ts';
+	import { autosizeTextarea } from '#lib/utils/autosize.ts';
 	import { isWatchNotification, watchNotificationCommands } from '#lib/shell/backgroundWatch.ts';
 	import AgentsMdBadge from '#lib/components/shell/AgentsMdBadge.svelte';
 	import { onDestroy, onMount, untrack } from 'svelte';
@@ -289,9 +290,7 @@
 	);
 
 	function autosize() {
-		if (!composerEl) return;
-		composerEl.style.height = 'auto';
-		composerEl.style.height = Math.min(composerEl.scrollHeight, 160) + 'px';
+		if (composerEl) autosizeTextarea(composerEl);
 	}
 
 	function onComposerInput() {

@@ -106,6 +106,12 @@ import { errMessage } from '#lib/utils/error.ts';
  */
 export type CodeSessionStatus = 'idle' | 'queued' | 'running' | 'waiting-shell';
 
+/** A steering message the model was given, after the first `at` of the turn's steps. */
+export interface DeliveredSteering {
+	steer: SteeringMessage;
+	at: number;
+}
+
 /** How often the background-process list is refreshed while any runs. */
 const BG_POLL_MS = 3000;
 /** Tools whose end can start or stop a background process. */
@@ -172,8 +178,12 @@ export class CodeSession {
 	ticket = $state<InferenceTicket | null>(null);
 	/** Messages typed while a turn runs, not yet given to the model. */
 	steering = $state<SteeringMessage[]>([]);
-	/** Steering the running turn has given the model. Cleared when it ends. */
-	steeringDelivered = $state<SteeringMessage[]>([]);
+	/**
+	 * Steering the running turn has given the model, each with how many of
+	 * `searchSteps` had run by then, so it is drawn where it went in rather
+	 * than below every later step. Cleared when the turn ends.
+	 */
+	steeringDelivered = $state<DeliveredSteering[]>([]);
 	/**
 	 * Steering the turn ended without delivering (stopped, or out of
 	 * iterations), for the input box to take back. See `takeReturnedSteering`.
@@ -881,7 +891,11 @@ export class CodeSession {
 					return steers;
 				},
 				onSteering: (steers) => {
-					this.steeringDelivered = [...this.steeringDelivered, ...steers];
+					const at = this.searchSteps.length;
+					this.steeringDelivered = [
+						...this.steeringDelivered,
+						...steers.map((steer) => ({ steer, at }))
+					];
 				},
 				onProject: (project) => {
 					this.projectRoot = project.root;

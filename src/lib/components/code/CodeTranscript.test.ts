@@ -56,7 +56,7 @@ describe('CodeTranscript steering', () => {
 		const session = fakeSession({
 			status: 'running',
 			busy: true,
-			steeringDelivered: [{ text: 'use the other API' }],
+			steeringDelivered: [{ steer: { text: 'use the other API' }, at: 0 }],
 			steering: [{ text: 'and add a test', images: ['data:image/png;base64,x'] }]
 		});
 		render(CodeTranscript, { session });
@@ -68,6 +68,27 @@ describe('CodeTranscript steering', () => {
 		expect(queued.querySelector('img')!.getAttribute('src')).toBe('data:image/png;base64,x');
 		await fireEvent.click(screen.getByRole('button', { name: 'Remove queued message' }));
 		expect(session.steering).toEqual([]);
+	});
+
+	it('keeps delivered steering where it went in, above later steps', () => {
+		const step = (id: string, query: string) => ({
+			id,
+			toolName: 'fs_read_text',
+			query,
+			status: 'done'
+		});
+		render(CodeTranscript, {
+			session: fakeSession({
+				status: 'running',
+				busy: true,
+				searchSteps: [step('a', 'before.ts'), step('b', 'after.ts')],
+				steeringDelivered: [{ steer: { text: 'use the other API' }, at: 1 }]
+			})
+		});
+		const thread = screen.getByTestId('code-transcript');
+		const text = thread.textContent!;
+		expect(text.indexOf('before.ts')).toBeLessThan(text.indexOf('use the other API'));
+		expect(text.indexOf('use the other API')).toBeLessThan(text.indexOf('after.ts'));
 	});
 
 	it('says when the turn is queued behind another', () => {

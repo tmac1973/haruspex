@@ -89,6 +89,22 @@
 
 	const ticket = $derived(session.ticket);
 
+	// The running turn's steps, split where steering went in, so a delivered
+	// message stays put while later steps go on below it.
+	const liveSegments = $derived.by(() => {
+		const steps = session.searchSteps;
+		const out: { steps: typeof steps; steers: SteeringMessage[] }[] = [];
+		let from = 0;
+		for (const { steer, at } of session.steeringDelivered) {
+			const to = Math.min(at, steps.length);
+			if (out.length > 0 && to === from) out[out.length - 1].steers.push(steer);
+			else out.push({ steps: steps.slice(from, to), steers: [steer] });
+			from = Math.max(from, to);
+		}
+		if (from < steps.length) out.push({ steps: steps.slice(from), steers: [] });
+		return out;
+	});
+
 	// The slash commands' notes, and what other sessions changed in the folder.
 	const allNotes = $derived([...notes, ...(session.fileNotes ?? [])]);
 	const notesAt = (i: number) => allNotes.filter((n) => n.at === i);
@@ -260,14 +276,6 @@
 	{#each trailingNotes as note, k (k)}
 		<div class="note">{note.text}</div>
 	{/each}
-	{#if session.searchSteps.length > 0}
-		<CodeSteps
-			steps={session.searchSteps}
-			root={session.root}
-			wslDistro={session.wslDistro}
-			onStopSubtask={session.stopSubtask}
-		/>
-	{/if}
 	{#snippet steerBody(steer: SteeringMessage)}
 		<span class="text">
 			{#if steer.text}{steer.text}{/if}
@@ -278,11 +286,21 @@
 			{/if}
 		</span>
 	{/snippet}
-	{#each session.steeringDelivered as steer, k (k)}
-		<div class="steer delivered" title="The agent has read this.">
-			<span class="tag">Delivered</span>
-			{@render steerBody(steer)}
-		</div>
+	{#each liveSegments as segment, k (k)}
+		{#if segment.steps.length > 0}
+			<CodeSteps
+				steps={segment.steps}
+				root={session.root}
+				wslDistro={session.wslDistro}
+				onStopSubtask={session.stopSubtask}
+			/>
+		{/if}
+		{#each segment.steers as steer, j (j)}
+			<div class="steer delivered" title="The agent has read this.">
+				<span class="tag">Delivered</span>
+				{@render steerBody(steer)}
+			</div>
+		{/each}
 	{/each}
 	{#if streamText}
 		<ChatMessage message={{ role: 'assistant', content: streamText }} isStreaming {codePaths} />
