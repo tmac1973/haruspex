@@ -9,6 +9,7 @@ export type Category =
 	| 'search'
 	| 'network'
 	| 'integrations'
+	| 'mcp'
 	| 'screen'
 	| 'shell'
 	| 'code'

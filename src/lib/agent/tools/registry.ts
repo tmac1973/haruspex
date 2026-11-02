@@ -829,7 +829,7 @@ async function runTool(
 	// because a small model guessed its name from the ones it *was* offered.
 	if (reg.category === 'mcp' && !isMcpToolEnabled(name)) {
 		return toolResult(
-			toolError(`${name} is switched off. The user can enable it in Settings → Integrations.`)
+			toolError(`${name} is switched off. The user can enable it in Settings → MCP servers.`)
 		);
 	}
 

@@ -108,7 +108,7 @@ interface RustDiagnostics {
 	};
 }
 
-/** One MCP server's log, under the name it has in Settings → Integrations. */
+/** One MCP server's log, under the name it has in Settings → MCP servers. */
 export interface McpServerLog {
 	label: string;
 	lines: string[];

@@ -5,7 +5,7 @@ description: Connect email (IMAP, optional sending), calendars and contacts, MCP
 
 # Integrations
 
-Haruspex can read your email, calendars and contacts, connect to other software through MCP servers, and look at your screen. Everything here is off until you set it up. Email, calendar and MCP live in Settings → Integrations; screen capture is in Settings → Screen.
+Haruspex can read your email, calendars and contacts, connect to other software through MCP servers, and look at your screen. Everything here is off until you set it up. Email and calendar are in Settings → Integrations, MCP in Settings → MCP servers, screen capture in Settings → Screen.
 
 ## Connect an email account
 
@@ -35,7 +35,7 @@ To find the link:
 
 ## Add an MCP server
 
-MCP lets the assistant use tools from other software. Haruspex installs and runs MCP servers with its own bundled Node and Python, so no terminal is needed. In Settings → Integrations → MCP integrations:
+MCP lets the assistant use tools from other software. Haruspex installs and runs MCP servers with its own bundled Node and Python, so no terminal is needed. In Settings → MCP servers:
 
 - **Add from the catalog** installs GitHub, Google Drive & Sheets, Browser (Playwright), Blender or Godot, then walks you through a setup wizard (tokens, files, a project folder).
 - **Add a server on this computer** runs an MCP program you already have.

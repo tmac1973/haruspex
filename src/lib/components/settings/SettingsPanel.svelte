@@ -103,8 +103,14 @@
 				{
 					id: 'integrations',
 					label: 'Integrations',
-					subtitle: 'Email, calendar, and MCP servers for everything else.',
+					subtitle: 'Email and calendar.',
 					icon: '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline>'
+				},
+				{
+					id: 'mcp',
+					label: 'MCP servers',
+					subtitle: 'Tools from MCP servers, on this computer or your network.',
+					icon: '<rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line>'
 				},
 				{
 					id: 'screen',
@@ -276,6 +282,7 @@
 			{:else if activeCategory === 'integrations'}
 				<EmailSection />
 				<CalendarSection />
+			{:else if activeCategory === 'mcp'}
 				<McpSection />
 			{:else if activeCategory === 'screen'}
 				<DesktopSection />
