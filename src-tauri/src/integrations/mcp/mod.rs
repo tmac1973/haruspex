@@ -11,7 +11,8 @@
 //!   the narrow projection of rmcp's model the frontend consumes.
 //! - [`catalog`] is the bundled list of vetted servers, [`install`] puts one on
 //!   the machine, [`manifest`] records what it put there, and [`server_config`]
-//!   is what the user's settings remember about it afterwards.
+//!   is what the user's settings remember about it afterwards. [`update`]
+//!   replaces an install with the current pin in place.
 //! - [`companion`] handles the servers that bridge to an application we neither
 //!   bundle nor install, which are healthy as processes and useless until that
 //!   application is running.
@@ -28,6 +29,7 @@ pub(crate) use crate::orphans;
 pub mod process;
 pub mod server_config;
 pub mod types;
+pub mod update;
 
 pub use install::McpInstaller;
 pub use process::McpSupervisor;
