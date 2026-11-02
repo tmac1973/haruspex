@@ -269,6 +269,10 @@ describe('a kind added with one module', () => {
 			expect(withGlb.properties[p].description).toMatch(/^\(3D asset \(GLB\) only\)/);
 		}
 		expect(withGlb.required).toEqual(['name']);
+		// A second kind with the same fields: one schema, marked with both.
+		setSpecialistEntries([textOne, entry('glb', 'Assets'), entry('threejs', 'Scenes')]);
+		const both = props({ ...codeTab, codeSpecialists: ['Assets', 'Scenes'] });
+		expect(both.properties.path.description).toMatch(/^\(3D asset \(GLB\), Three\.js scene only\)/);
 		const textOnly = props({ ...codeTab, codeSpecialists: ['Regex'] });
 		for (const p of ['path', 'recheck', 'overwrite'])
 			expect(textOnly.properties[p]).toBeUndefined();
