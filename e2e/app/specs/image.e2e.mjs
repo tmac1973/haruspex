@@ -32,6 +32,27 @@ describe('a test image from ComfyUI', () => {
 		return (await el.isExisting()) ? await el.getText() : '(not shown)';
 	};
 
+	/**
+	 * Click `el` once it stops moving. Opening an image model probes its
+	 * server, and the answer adds lines (what it can do, its models) above the
+	 * Generate button; a click that lands while they arrive hits whatever has
+	 * moved under it, and nothing is generated (seen in CI as a panel with
+	 * neither progress nor error).
+	 */
+	const clickWhenStill = async (el) => {
+		await browser.waitUntil(
+			async () => {
+				await el.scrollIntoView({ block: 'center' });
+				const before = await el.getLocation();
+				await browser.pause(400);
+				const after = await el.getLocation();
+				return before.x === after.x && before.y === after.y;
+			},
+			{ timeout: 30_000, timeoutMsg: 'the Generate a test image button never stopped moving' }
+		);
+		await el.click();
+	};
+
 	it('generates, stores and shows the picture', async () => {
 		await seed({
 			...REMOTE,
@@ -43,7 +64,7 @@ describe('a test image from ComfyUI', () => {
 		await (await $('button=Image')).click();
 		// The backend seeded above is the first image model; open it.
 		await (await $('button.entry-name')).click();
-		await (await $('button=Generate a test image')).click();
+		await clickWhenStill(await $('button=Generate a test image'));
 
 		// Checked before the preview, because from the outside two different
 		// failures look identical: the app never asking ComfyUI at all, and the
