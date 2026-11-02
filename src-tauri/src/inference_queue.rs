@@ -29,6 +29,14 @@
 //!   - A ticket acquired with `front` (a turn taking its slot back after a
 //!     long tool gave it up) goes ahead of its lane's waiting tickets, after
 //!     any earlier `front` ones. It never displaces a running ticket.
+//!   - A `background` ticket (a Home card's job) gives way to everything
+//!     else on its lane: it is admitted only when no foreground ticket on the
+//!     lane is running or waiting and the lane holds no reservation. A turn
+//!     that gives its slot back while a long tool runs leaves a reservation
+//!     (keyed by the released request id) until it takes the slot back or
+//!     finishes, so a chat or Code turn keeps card jobs out for its whole
+//!     life, not only while it holds the slot. A running background ticket
+//!     is never pre-empted.
 //!   - State changes broadcast a full `inference://queue` snapshot to every
 //!     window so each can render who is waiting / running.
 //!
@@ -77,6 +85,51 @@ impl TicketState {
     }
 }
 
+/// Whether a ticket gives way to the rest of its lane.
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub enum Priority {
+    #[default]
+    Foreground,
+    /// Admitted only when its lane has no foreground ticket and no reservation.
+    Background,
+}
+
+impl Priority {
+    fn parse(s: Option<&str>) -> Priority {
+        match s {
+            Some("background") => Priority::Background,
+            _ => Priority::Foreground,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Priority::Foreground => "foreground",
+            Priority::Background => "background",
+        }
+    }
+}
+
+/// How a ticket joins its lane; see `enqueue_with`.
+#[derive(Default)]
+struct Admission {
+    /// A turn taking back a slot it gave up while a tool ran.
+    front: bool,
+    priority: Priority,
+    /// The request id that turn released; its reservation ends now.
+    replaces: Option<String>,
+}
+
+/// A slot a turn gave back while a long tool ran, held against background
+/// tickets until the turn takes it back or ends.
+struct Reservation {
+    /// The released request id.
+    id: String,
+    lane: String,
+    owner_window: String,
+    lease_expires_at: u64,
+}
+
 struct Ticket {
     id: String,
     /// Opaque consumer descriptor from the frontend (`"chat"`, `"shell"`,
@@ -90,6 +143,7 @@ struct Ticket {
     state: TicketState,
     /// Queued ahead of the lane's ordinary waiters; see `enqueue_with`.
     front: bool,
+    priority: Priority,
     owner_window: String,
     enqueued_at: u64,
     lease_expires_at: u64,
@@ -103,7 +157,20 @@ pub struct TicketDto {
     pub id: String,
     pub consumer: Value,
     pub state: &'static str,
+    pub priority: &'static str,
     pub enqueued_at: u64,
+}
+
+impl TicketDto {
+    fn of(t: &Ticket) -> TicketDto {
+        TicketDto {
+            id: t.id.clone(),
+            consumer: t.consumer.clone(),
+            state: t.state.as_str(),
+            priority: t.priority.as_str(),
+            enqueued_at: t.enqueued_at,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -127,6 +194,8 @@ struct Inner {
     /// ticket would wait (and show as queued) with nobody left to want it.
     /// Bounded by [`EARLY_CANCEL_CAP`]: ids are never reused.
     cancelled_early: Vec<String>,
+    /// Slots turns gave back while a tool ran; they keep background tickets out.
+    reservations: Vec<Reservation>,
 }
 
 /// How many early cancellations are remembered.
@@ -150,9 +219,19 @@ impl Inner {
         counts
     }
 
+    /// Whether a background ticket on `lane` must keep waiting: a foreground
+    /// ticket there is running or waiting, or a turn holds a reservation.
+    fn lane_busy_for_background(&self, lane: &str) -> bool {
+        self.tickets
+            .iter()
+            .any(|t| t.lane == lane && t.priority == Priority::Foreground)
+            || self.reservations.iter().any(|r| r.lane == lane)
+    }
+
     /// Admit waiting tickets in FIFO order while their lane has capacity,
     /// waking each via its oneshot sender. Lanes are independent: a full local
-    /// lane never blocks a waiting remote ticket and vice versa.
+    /// lane never blocks a waiting remote ticket and vice versa. A background
+    /// ticket is passed over while its lane is busy for it.
     fn pump(&mut self) {
         let mut running = self.running_by_lane();
         for i in 0..self.tickets.len() {
@@ -162,6 +241,11 @@ impl Inner {
             let lane = self.tickets[i].lane.clone();
             let cap = self.capacity(&lane);
             if running.get(&lane).copied().unwrap_or(0) >= cap {
+                continue;
+            }
+            if self.tickets[i].priority == Priority::Background
+                && self.lane_busy_for_background(&lane)
+            {
                 continue;
             }
             let id = self.tickets[i].id.clone();
@@ -174,15 +258,7 @@ impl Inner {
     }
 
     fn snapshot(&self) -> Vec<TicketDto> {
-        self.tickets
-            .iter()
-            .map(|t| TicketDto {
-                id: t.id.clone(),
-                consumer: t.consumer.clone(),
-                state: t.state.as_str(),
-                enqueued_at: t.enqueued_at,
-            })
-            .collect()
+        self.tickets.iter().map(TicketDto::of).collect()
     }
 }
 
@@ -206,7 +282,14 @@ impl InferenceQueue {
         max_parallel: Option<u32>,
         window_label: String,
     ) -> Result<oneshot::Receiver<()>, String> {
-        self.enqueue_with(req_id, consumer, lane, max_parallel, window_label, false)
+        self.enqueue_with(
+            req_id,
+            consumer,
+            lane,
+            max_parallel,
+            window_label,
+            Admission::default(),
+        )
     }
 
     /// Register a waiting ticket and return its wakeup receiver. The caller
@@ -215,7 +298,8 @@ impl InferenceQueue {
     ///
     /// A `front` ticket is a turn coming back for a slot it gave up while a
     /// tool ran: it goes before the lane's first ordinary waiter, so turns
-    /// coming back keep their own order and all go ahead of new turns.
+    /// coming back keep their own order and all go ahead of new turns. Its
+    /// `replaces` names the request it released, whose reservation ends here.
     fn enqueue_with(
         &self,
         req_id: String,
@@ -223,8 +307,13 @@ impl InferenceQueue {
         lane: String,
         max_parallel: Option<u32>,
         window_label: String,
-        front: bool,
+        admission: Admission,
     ) -> Result<oneshot::Receiver<()>, String> {
+        let Admission {
+            front,
+            priority,
+            replaces,
+        } = admission;
         let mut inner = self.inner.lock_or_recover();
         if inner.tickets.iter().any(|t| t.id == req_id) {
             return Err("duplicate inference request id".into());
@@ -240,6 +329,9 @@ impl InferenceQueue {
             lane.clone(),
             max_parallel.map_or(usize::MAX, |n| (n as usize).max(1)),
         );
+        if let Some(old) = &replaces {
+            inner.reservations.retain(|r| r.id != *old);
+        }
         let (tx, rx) = oneshot::channel();
         inner.senders.insert(req_id.clone(), tx);
         let at = if front {
@@ -256,6 +348,7 @@ impl InferenceQueue {
             lane,
             state: TicketState::Waiting,
             front,
+            priority,
             owner_window: window_label,
             enqueued_at: now,
             lease_expires_at: now + LEASE_TTL_MS,
@@ -285,9 +378,40 @@ impl InferenceQueue {
     }
 
     /// Release a held (or still-waiting) slot and admit the next waiter in the
-    /// freed lane.
+    /// freed lane; see `release_with`.
+    #[cfg(test)]
     fn release(&self, req_id: &str) -> bool {
-        self.remove_ticket_where(|t| t.id == req_id)
+        self.release_with(req_id, false)
+    }
+
+    /// Release a slot. With `reserve`, a turn is giving its slot back while a
+    /// tool runs: its lane keeps a reservation under this id against
+    /// background tickets. Without it, a reservation under this id ends too,
+    /// as when a turn finishes without taking its slot back.
+    fn release_with(&self, req_id: &str, reserve: bool) -> bool {
+        let mut inner = self.inner.lock_or_recover();
+        let had_reservation = inner.reservations.iter().any(|r| r.id == req_id);
+        inner.reservations.retain(|r| r.id != req_id);
+        let removed = match inner.tickets.iter().position(|t| t.id == req_id) {
+            Some(pos) => {
+                let t = inner.tickets.remove(pos);
+                inner.senders.remove(&t.id);
+                if reserve {
+                    inner.reservations.push(Reservation {
+                        id: t.id,
+                        lane: t.lane,
+                        owner_window: t.owner_window,
+                        lease_expires_at: now_ms() + LEASE_TTL_MS,
+                    });
+                }
+                true
+            }
+            None => false,
+        };
+        if removed || had_reservation {
+            inner.pump();
+        }
+        removed || had_reservation
     }
 
     /// Shared removal core for `cancel` / `release`: drop the first ticket
@@ -308,42 +432,59 @@ impl InferenceQueue {
         }
     }
 
-    /// Refresh a ticket's lease. Cheap, no snapshot/emit (lease isn't part
-    /// of the broadcast).
+    /// Refresh a ticket's lease, or a reservation's: a turn keeps
+    /// heartbeating the id it released while its tool runs. Cheap, no
+    /// snapshot/emit (lease isn't part of the broadcast).
     fn heartbeat(&self, req_id: &str) {
         let mut inner = self.inner.lock_or_recover();
         let now = now_ms();
         if let Some(t) = inner.tickets.iter_mut().find(|t| t.id == req_id) {
             t.lease_expires_at = now + LEASE_TTL_MS;
         }
+        if let Some(r) = inner.reservations.iter_mut().find(|r| r.id == req_id) {
+            r.lease_expires_at = now + LEASE_TTL_MS;
+        }
     }
 
-    /// Drop every ticket owned by a window (primary orphan cleanup, called
-    /// from the window-destroyed listener). Returns whether anything changed.
+    /// Drop every ticket and reservation owned by a window (primary orphan
+    /// cleanup, called from the window-destroyed listener). Returns whether
+    /// anything changed.
     fn release_window(&self, label: &str) -> bool {
-        self.reclaim(|t| t.owner_window == label)
+        self.reclaim(|owner, _| owner == label)
     }
 
-    /// Reclaim tickets whose lease has expired as of `now` (backstop).
+    /// Reclaim tickets and reservations whose lease has expired as of `now`
+    /// (backstop).
     fn sweep_expired_at(&self, now: u64) -> bool {
-        self.reclaim(|t| t.lease_expires_at < now)
+        self.reclaim(|_, lease| lease < now)
     }
 
-    /// Shared removal core: drop every ticket matching `pred`, then pump each
-    /// freed lane's next waiter. Dropping the senders of waiting victims
-    /// resolves their receivers with an error.
-    fn reclaim(&self, pred: impl Fn(&Ticket) -> bool) -> bool {
+    /// Shared removal core: drop every ticket and reservation matching
+    /// `pred(owner_window, lease_expires_at)`, then pump each freed lane's
+    /// next waiter. Dropping the senders of waiting victims resolves their
+    /// receivers with an error.
+    fn reclaim(&self, pred: impl Fn(&str, u64) -> bool) -> bool {
         let mut inner = self.inner.lock_or_recover();
+        let reservations_before = inner.reservations.len();
+        inner
+            .reservations
+            .retain(|r| !pred(&r.owner_window, r.lease_expires_at));
+        let freed_reservation = inner.reservations.len() != reservations_before;
         let victims: Vec<String> = inner
             .tickets
             .iter()
-            .filter(|t| pred(t))
+            .filter(|t| pred(&t.owner_window, t.lease_expires_at))
             .map(|t| t.id.clone())
             .collect();
         if victims.is_empty() {
-            return false;
+            if freed_reservation {
+                inner.pump();
+            }
+            return freed_reservation;
         }
-        inner.tickets.retain(|t| !pred(t));
+        inner
+            .tickets
+            .retain(|t| !pred(&t.owner_window, t.lease_expires_at));
         for id in &victims {
             inner.senders.remove(id);
         }
@@ -362,12 +503,7 @@ impl InferenceQueue {
             .tickets
             .iter()
             .find(|t| t.id == req_id)
-            .map(|t| TicketDto {
-                id: t.id.clone(),
-                consumer: t.consumer.clone(),
-                state: t.state.as_str(),
-                enqueued_at: t.enqueued_at,
-            })
+            .map(TicketDto::of)
     }
 
     fn emit_snapshot(&self, app: &AppHandle) {
@@ -399,7 +535,10 @@ pub fn spawn_lease_sweeper(app: AppHandle) {
 // ---- Tauri commands -------------------------------------------------------
 
 /// Wait for a slot in `lane`. `front` is for a turn taking back a slot it
-/// gave up while a long tool ran: it goes ahead of the lane's waiting turns.
+/// gave up while a long tool ran: it goes ahead of the lane's waiting turns,
+/// and `replaces` names the request it released. `priority` is
+/// `"background"` for a Home card's job, which waits while the lane has any
+/// other work.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn inference_acquire(
@@ -411,6 +550,8 @@ pub async fn inference_acquire(
     max_parallel: Option<u32>,
     window_label: String,
     front: Option<bool>,
+    priority: Option<String>,
+    replaces: Option<String>,
 ) -> Result<TicketDto, String> {
     let rx = state.enqueue_with(
         req_id.clone(),
@@ -418,7 +559,11 @@ pub async fn inference_acquire(
         lane,
         max_parallel,
         window_label,
-        front.unwrap_or(false),
+        Admission {
+            front: front.unwrap_or(false),
+            priority: Priority::parse(priority.as_deref()),
+            replaces,
+        },
     )?;
     state.emit_snapshot(&app);
 
@@ -439,9 +584,16 @@ pub fn inference_cancel(app: AppHandle, state: tauri::State<'_, InferenceQueue>,
     }
 }
 
+/// Release a slot. `reserve` is for a turn giving its slot back while a long
+/// tool runs: background tickets stay out until it takes it back or ends.
 #[tauri::command]
-pub fn inference_release(app: AppHandle, state: tauri::State<'_, InferenceQueue>, req_id: String) {
-    if state.release(&req_id) {
+pub fn inference_release(
+    app: AppHandle,
+    state: tauri::State<'_, InferenceQueue>,
+    req_id: String,
+    reserve: Option<bool>,
+) {
+    if state.release_with(&req_id, reserve.unwrap_or(false)) {
         state.emit_snapshot(&app);
     }
 }
@@ -501,7 +653,10 @@ mod tests {
             "local".into(),
             Some(1),
             "main".into(),
-            true,
+            Admission {
+                front: true,
+                ..Default::default()
+            },
         )
         .unwrap()
     }
@@ -880,7 +1035,10 @@ mod tests {
                 "remote:x".into(),
                 Some(1),
                 "main".into(),
-                true,
+                Admission {
+                    front: true,
+                    ..Default::default()
+                },
             )
             .unwrap();
         assert!(admitted(&mut a));
@@ -899,5 +1057,159 @@ mod tests {
         let q = InferenceQueue::new();
         let mut d = enqueue_local_front(&q, "d");
         assert!(admitted(&mut d));
+    }
+    /// A Home card's job on a lane.
+    fn enqueue_background(q: &InferenceQueue, id: &str, lane: &str) -> oneshot::Receiver<()> {
+        q.enqueue_with(
+            id.into(),
+            json!({"kind": "job", "jobName": "Important emails"}),
+            lane.into(),
+            Some(1),
+            "main".into(),
+            Admission {
+                priority: Priority::Background,
+                ..Default::default()
+            },
+        )
+        .unwrap()
+    }
+
+    /// A turn taking back the slot it released as `old`.
+    fn take_back(q: &InferenceQueue, id: &str, old: &str) -> oneshot::Receiver<()> {
+        q.enqueue_with(
+            id.into(),
+            json!("chat"),
+            "local".into(),
+            Some(1),
+            "main".into(),
+            Admission {
+                front: true,
+                replaces: Some(old.into()),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn background_waits_for_a_running_or_waiting_foreground_ticket() {
+        let q = InferenceQueue::new();
+        let mut chat = enqueue_local(&q, "chat", json!("chat"));
+        let mut job = enqueue_background(&q, "job", "local");
+        assert!(admitted(&mut chat));
+        assert!(!admitted(&mut job));
+
+        // A foreground turn that arrives after the job still goes first.
+        let mut shell = enqueue_local(&q, "shell", json!("shell"));
+        q.release("chat");
+        assert!(admitted(&mut shell));
+        assert!(!admitted(&mut job));
+
+        q.release("shell");
+        assert!(admitted(&mut job));
+        assert_eq!(q.snapshot()[0].priority, "background");
+    }
+
+    #[test]
+    fn a_running_background_ticket_is_not_pre_empted() {
+        let q = InferenceQueue::new();
+        let mut job = enqueue_background(&q, "job", "local");
+        assert!(admitted(&mut job));
+        let mut chat = enqueue_local(&q, "chat", json!("chat"));
+        assert!(!admitted(&mut chat));
+        q.release("job");
+        assert!(admitted(&mut chat));
+    }
+
+    #[test]
+    fn background_on_another_lane_is_not_blocked() {
+        let q = InferenceQueue::new();
+        let mut chat = enqueue_local(&q, "chat", json!("chat"));
+        let mut job = enqueue_background(&q, "job", "remote:x");
+        assert!(admitted(&mut chat));
+        assert!(admitted(&mut job));
+    }
+
+    #[test]
+    fn a_reservation_holds_background_until_the_turn_takes_its_slot_back_and_ends() {
+        let q = InferenceQueue::new();
+        let mut chat = enqueue_local(&q, "c1", json!("chat"));
+        assert!(admitted(&mut chat));
+        let mut job = enqueue_background(&q, "job", "local");
+
+        // A long tool: the turn gives its slot back but keeps the lane.
+        assert!(q.release_with("c1", true));
+        assert!(!admitted(&mut job));
+
+        // It takes the slot back under a new id; the reservation ends then.
+        let mut again = take_back(&q, "c2", "c1");
+        assert!(admitted(&mut again));
+        assert!(!admitted(&mut job));
+
+        q.release("c2");
+        assert!(admitted(&mut job));
+    }
+
+    #[test]
+    fn a_final_release_of_the_reserved_id_ends_the_reservation() {
+        let q = InferenceQueue::new();
+        let mut chat = enqueue_local(&q, "c1", json!("chat"));
+        assert!(admitted(&mut chat));
+        let mut job = enqueue_background(&q, "job", "local");
+        q.release_with("c1", true);
+        assert!(!admitted(&mut job));
+
+        // The turn ends while its tool was still the last thing it did.
+        assert!(q.release("c1"));
+        assert!(admitted(&mut job));
+    }
+
+    #[test]
+    fn a_reservation_ends_with_its_window_and_with_its_lease() {
+        let q = InferenceQueue::new();
+        let mut chat = enqueue_local(&q, "c1", json!("chat"));
+        assert!(admitted(&mut chat));
+        let mut job = q
+            .enqueue_with(
+                "job".into(),
+                json!("job"),
+                "local".into(),
+                Some(1),
+                "other-window".into(),
+                Admission {
+                    priority: Priority::Background,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        q.release_with("c1", true);
+        assert!(q.release_window("main"));
+        assert!(admitted(&mut job));
+        q.release("job");
+
+        let mut chat = enqueue_local(&q, "c3", json!("chat"));
+        assert!(admitted(&mut chat));
+        let mut job = enqueue_background(&q, "job2", "local");
+        q.release_with("c3", true);
+        // A heartbeat keeps the reservation past the first lease.
+        q.heartbeat("c3");
+        assert!(!q.sweep_expired_at(now_ms()));
+        assert!(!admitted(&mut job));
+        // Past every lease the reservation goes (with the waiting job, whose
+        // lease runs out too); a new background ticket then gets the lane.
+        assert!(q.sweep_expired_at(now_ms() + LEASE_TTL_MS + 1));
+        assert!(cancelled(&mut job));
+        let mut next = enqueue_background(&q, "job3", "local");
+        assert!(admitted(&mut next));
+    }
+
+    #[test]
+    fn a_reservation_does_not_hold_foreground_tickets() {
+        let q = InferenceQueue::new();
+        let mut a = enqueue_local(&q, "a", json!("code"));
+        assert!(admitted(&mut a));
+        q.release_with("a", true);
+        let mut chat = enqueue_local(&q, "chat", json!("chat"));
+        assert!(admitted(&mut chat));
     }
 }

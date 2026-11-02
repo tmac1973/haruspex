@@ -10,8 +10,12 @@
 		loadHomeCards,
 		moveCard,
 		removeCard,
+		setCardNotify,
 		setCardSize
 	} from '#lib/stores/homeCards.svelte.ts';
+	import { ownsJob } from '#lib/home/cardJobs.ts';
+	import { selectJob } from '#lib/stores/jobsTabSelection.svelte.ts';
+	import { setActiveTab } from '#lib/stores/activeTab.svelte.ts';
 	import { isJobsLoaded, loadJobs } from '#lib/stores/jobs.svelte.ts';
 	import { getCurrentRun } from '#lib/agent/jobs/runner.svelte.ts';
 	import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
@@ -38,8 +42,14 @@
 			void removeCard(card.id);
 			return;
 		}
-		alsoDeleteJob = false;
+		// A card's own job goes with it by default; a pinned job stays.
+		alsoDeleteJob = ownsJob(card);
 		removing = card;
+	}
+
+	function editJob(jobId: number) {
+		selectJob(jobId);
+		setActiveTab('jobs');
 	}
 
 	function confirmRemove() {
@@ -71,6 +81,9 @@
 				arrangeable={type !== undefined && !orphan}
 				onmove={(dir) => void moveCard(card.id, dir)}
 				onresize={(size) => void setCardSize(card.id, size)}
+				onedit={card.job_id === null ? undefined : () => editJob(card.job_id as number)}
+				notify={type?.notifies ? card.notify : null}
+				onnotify={(on) => void setCardNotify(card.id, on)}
 				onremove={() => askRemove(card)}
 			>
 				{#if type}
@@ -90,7 +103,11 @@
 	onconfirm={confirmRemove}
 	oncancel={() => (removing = null)}
 >
-	<p>The job stays in the Jobs tab unless you delete it too.</p>
+	<p>
+		{removing && ownsJob(removing)
+			? 'This card made its job; it goes with the card unless you untick the box.'
+			: 'The job stays in the Jobs tab unless you delete it too.'}
+	</p>
 	<label class="also" title={removingJobRuns ? 'The job is running' : undefined}>
 		<input type="checkbox" bind:checked={alsoDeleteJob} disabled={removingJobRuns} />
 		Also delete the job

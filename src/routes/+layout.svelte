@@ -47,6 +47,7 @@
 	import { reclaimOwnWindowSlots } from '#lib/agent/inferenceQueue.svelte.ts';
 	import { recoverOrphanRuns } from '#lib/stores/jobRuns.svelte.ts';
 	import { startScheduler } from '#lib/agent/jobs/scheduler.svelte.ts';
+	import { startCardWatch } from '#lib/home/cardWatch.svelte.ts';
 	import { releaseStaleInhibit } from '#lib/agent/jobs/keepAwake.ts';
 	import {
 		enterRemoteMode,
@@ -350,6 +351,9 @@
 		// as it would enqueue while the runner thinks the DB has a stale
 		// 'running' row.
 		void Promise.all([recoverOrphanRuns(), releaseStaleInhibit()]).then(() => startScheduler());
+		// Home cards' Notify on new items. Main window only, like the scheduler
+		// whose runs it watches.
+		startCardWatch();
 		// Remote web chat, if Settings has it on. Only the main window does
 		// this: the driver answers a process-wide event, so a second listener
 		// in a detached shell would race it for every guest prompt.

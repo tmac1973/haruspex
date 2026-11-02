@@ -19,7 +19,9 @@
  *
  * Between 1 and 4 a turn may give its slot back (`HeldSlot.release`) while a
  * long tool runs, and take one again (`HeldSlot.reacquire`) under a new
- * request id acquired with `front`, ahead of the lane's waiting turns.
+ * request id acquired with `front`, ahead of the lane's waiting turns. The
+ * release leaves a reservation (`reserve`) that keeps background turns (Home
+ * card jobs) off the lane until the take-back (`replaces`) or step 4 ends it.
  *
  * Rust broadcasts a full `inference://queue` snapshot on every change; we
  * mirror it into `$state` so `getQueueSnapshot()`/`getRunningCount()` reflect
@@ -79,6 +81,12 @@ export interface WithSlotOptions {
 	 * slot or stops waiting. The counterpart of `onTicket` / `onAdmitted`.
 	 */
 	onRequeue?: (ticket: InferenceTicket | null) => void;
+	/**
+	 * `'background'` for a Home card's job: it waits while its lane has any
+	 * other turn running or waiting, or a turn that gave its slot back for a
+	 * long tool. Foreground otherwise.
+	 */
+	priority?: 'foreground' | 'background';
 }
 
 /** The slot a turn holds, which it can give back while a long tool runs. */
@@ -293,7 +301,8 @@ export async function withInferenceSlot<T>(
 			consumer,
 			lane,
 			maxParallel,
-			windowLabel: getWindowLabel()
+			windowLabel: getWindowLabel(),
+			priority: options.priority ?? 'foreground'
 		});
 		// Abort could have raced in between the grant and here.
 		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
@@ -337,6 +346,8 @@ function heldSlot(turn: TurnRequest, options: WithSlotOptions): HeldSlot {
 	let returning: Promise<void> | null = null;
 
 	const takeBack = async (): Promise<void> => {
+		// The id the slot was given back under: its reservation ends with this acquire.
+		const released = turn.reqId;
 		turn.reqId = nextReqId();
 		const ticket: InferenceTicket = {
 			id: turn.reqId,
@@ -359,7 +370,9 @@ function heldSlot(turn: TurnRequest, options: WithSlotOptions): HeldSlot {
 				lane,
 				maxParallel,
 				windowLabel: getWindowLabel(),
-				front: true
+				front: true,
+				replaces: released,
+				priority: options.priority ?? 'foreground'
 			});
 			if (turn.aborted() || turn.finished) throw new DOMException('Aborted', 'AbortError');
 			turn.held = true;
@@ -380,7 +393,8 @@ function heldSlot(turn: TurnRequest, options: WithSlotOptions): HeldSlot {
 		release() {
 			if (!turn.held || turn.finished) return;
 			turn.held = false;
-			void invoke('inference_release', { reqId: turn.reqId }).catch(() => {});
+			// Keep the lane from card jobs while the tool runs.
+			void invoke('inference_release', { reqId: turn.reqId, reserve: true }).catch(() => {});
 			logDebug('inference', 'slot released', { consumer });
 		},
 		reacquire() {

@@ -363,6 +363,16 @@ pub async fn db_list_job_runs(
 }
 
 #[tauri::command]
+pub async fn db_job_runs_set_result(
+    state: tauri::State<'_, Database>,
+    run_id: i64,
+    json: String,
+) -> Result<(), String> {
+    let db = state.inner().clone();
+    on_pool(db, move |db| db.set_run_result(run_id, &json)).await
+}
+
+#[tauri::command]
 pub async fn db_get_job_run(
     state: tauri::State<'_, Database>,
     run_id: i64,

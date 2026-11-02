@@ -1,7 +1,11 @@
 import type { RunState } from '#lib/agent/jobs/runner.svelte.ts';
 
-/** The Jobs card's line for the run going now: "Step 2 of 4 · Plan · 3/7". */
-export function currentRunLine(run: RunState): string {
+/**
+ * The Jobs card's line for the run going now: "Step 2 of 4 · Plan · 3/7".
+ * A `background` run (a Home card's job) waits for chat and Code, not only
+ * for the model.
+ */
+export function currentRunLine(run: RunState, background = false): string {
 	if (run.status === 'needs_input') return 'Needs your answer';
 	const step = run.steps[run.currentStepIndex];
 	const parts: string[] = [];
@@ -10,7 +14,7 @@ export function currentRunLine(run: RunState): string {
 	if (step?.description) parts.push(step.promptAuthored);
 	const list = step?.checklist;
 	if (list?.length) parts.push(`${list.filter((e) => e.status === 'done').length}/${list.length}`);
-	if (run.waitingForSlot) parts.push('Waiting for model');
+	if (run.waitingForSlot) parts.push(background ? 'Waiting for chat' : 'Waiting for model');
 	return parts.join(' · ') || 'Running';
 }
 

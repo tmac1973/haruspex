@@ -22,6 +22,8 @@
 		isJobTypeAvailable
 	} from '#lib/agent/jobs/types/index.ts';
 	import { activatable } from '#lib/actions/activatable.ts';
+	import { ownedJobIds } from '#lib/home/cardJobs.ts';
+	import { isHomeCardsLoaded, loadHomeCards } from '#lib/stores/homeCards.svelte.ts';
 	import { startDragResize } from '#lib/utils/dragResize.ts';
 	import { getSettings, updateSettings } from '#lib/stores/settings.ts';
 	import { pausedByLean } from '#lib/agent/jobs/types/lean.ts';
@@ -65,6 +67,11 @@
 	}
 
 	const jobs = $derived(getJobs());
+	// Jobs a Home card made, badged so they aren't mistaken for the user's own.
+	const homeJobs = $derived(ownedJobIds());
+	$effect(() => {
+		if (!isHomeCardsLoaded()) void loadHomeCards();
+	});
 
 	let query = $state('');
 	const typeLabel = (job: JobSummary) => {
@@ -212,6 +219,11 @@
 							{/if}
 							{job.name}
 							<span class="badge {def?.badgeTone ?? ''}">{def?.badgeLabel ?? job.job_type}</span>
+							{#if homeJobs.has(job.id)}
+								<span class="badge" title="A Home card made this job and shows its results"
+									>Home</span
+								>
+							{/if}
 							{#if paused}
 								<span
 									class="paused-tag"

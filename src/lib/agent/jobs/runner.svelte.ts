@@ -40,6 +40,7 @@ import { markStepDone, newRunningStep } from '#lib/agent/steps.ts';
 import {
 	createJobRun,
 	markRunFinished,
+	setRunResult,
 	setRunEnvironment,
 	setStepStatsProvider,
 	type JobRunStatus,
@@ -163,6 +164,7 @@ function runJobTurn(
 		{
 			consumer: { kind: 'job', jobName: current?.jobName ?? `Job ${job.id}` },
 			backend,
+			priority: slotPriority(job),
 			signal: abort.signal,
 			onAdmitted: () => {
 				if (current && current.id === runId) current = { ...current, waitingForSlot: false };
@@ -893,7 +895,10 @@ function buildRunContext(
 			forgetWorkingDir(jobSandboxId(runId));
 			if (pending.length > 0) queueMicrotask(drainNext);
 		},
-		startChainedRun: (jobId) => enqueue(jobId, 'chained')
+		startChainedRun: (jobId) => enqueue(jobId, 'chained'),
+		setResult: async (value) => {
+			await setRunResult(runId, value);
+		}
 	};
 }
 
@@ -914,6 +919,11 @@ function finalizeRun(runId: number, jobId: number, status: RunStatus, error: str
 		current = { ...current, status, error, finishedAt };
 	}
 	void markRunFinished(runId, jobId, status as JobRunStatus, finishedAt, error);
+}
+
+/** A Home card's job gives way to chat and Code on its lane; every other job doesn't. */
+function slotPriority(job: JobWithSteps): 'foreground' | 'background' {
+	return getJobType(job.job_type)?.background ? 'background' : 'foreground';
 }
 
 function runSource(job: JobWithSteps, runId: number): string {
@@ -948,7 +958,11 @@ async function reflectOnRun(
 	);
 	try {
 		await withInferenceSlot(
-			{ consumer: { kind: 'job', jobName: `${job.name} (tool feedback)` }, backend },
+			{
+				consumer: { kind: 'job', jobName: `${job.name} (tool feedback)` },
+				backend,
+				priority: slotPriority(job)
+			},
 			(slot) =>
 				runEphemeralTurn({
 					...jobTurnPolicy(job),

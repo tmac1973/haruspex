@@ -565,6 +565,7 @@ pub fn run() {
             db::db_delete_job_run,
             db::db_delete_all_job_runs,
             db::db_job_runs_list_recent,
+            db::db_job_runs_set_result,
             db::db_home_cards_list,
             db::db_home_cards_create,
             db::db_home_cards_update,

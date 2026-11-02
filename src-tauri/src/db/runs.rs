@@ -196,7 +196,8 @@ impl Database {
         let mut stmt = conn
             .prepare(
                 "SELECT id, job_id, status, trigger, queued_at, started_at, finished_at, error,
-                        planning_state, model_id, model_thinking, model_effort, context_size
+                        planning_state, model_id, model_thinking, model_effort, context_size,
+                        result_json
                  FROM job_runs WHERE job_id = ?1
                  ORDER BY queued_at DESC",
             )
@@ -218,6 +219,7 @@ impl Database {
                     model_thinking: row.get(10)?,
                     model_effort: row.get(11)?,
                     context_size: row.get(12)?,
+                    result_json: row.get(13)?,
                 })
             })
             .map_err(|e| format!("Runs query failed: {}", e))?;
@@ -241,10 +243,12 @@ impl Database {
             model_thinking,
             model_effort,
             context_size,
+            result_json,
         ) = conn
             .query_row(
                 "SELECT job_id, status, trigger, queued_at, started_at, finished_at, error,
-                        planning_state, model_id, model_thinking, model_effort, context_size
+                        planning_state, model_id, model_thinking, model_effort, context_size,
+                        result_json
                  FROM job_runs WHERE id = ?1",
                 params![run_id],
                 |row| {
@@ -261,6 +265,7 @@ impl Database {
                         row.get::<_, Option<bool>>(9)?,
                         row.get::<_, Option<String>>(10)?,
                         row.get::<_, Option<i64>>(11)?,
+                        row.get::<_, Option<String>>(12)?,
                     ))
                 },
             )
@@ -329,8 +334,21 @@ impl Database {
             model_thinking,
             model_effort,
             context_size,
+            result_json,
             steps,
         })
+    }
+
+    /// Store a run's validated result. Written before the run is marked
+    /// finished, so whoever reloads on finish sees it.
+    pub fn set_run_result(&self, run_id: i64, json: &str) -> Result<(), String> {
+        self.conn()
+            .execute(
+                "UPDATE job_runs SET result_json = ?2 WHERE id = ?1",
+                params![run_id, json],
+            )
+            .map_err(|e| format!("Run result update failed: {e}"))?;
+        Ok(())
     }
 
     pub fn delete_job_run(&self, run_id: i64) -> Result<(), String> {

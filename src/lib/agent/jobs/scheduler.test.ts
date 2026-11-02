@@ -94,6 +94,18 @@ describe('scheduler tick', () => {
 		expect(mocks.enqueue).toHaveBeenCalledWith(1, 'scheduled');
 	});
 
+	it('runs a job missed while the app was closed once, then schedules ahead of now', async () => {
+		// Due three intervals ago: the app was closed through all three.
+		const now = Date.now();
+		const fiveMin = 5 * 60_000;
+		mocks.listDueJobs.mockResolvedValueOnce([dueJob({ id: 4, next_due_at: now - 3 * fiveMin })]);
+		await tick();
+		expect(mocks.enqueue).toHaveBeenCalledTimes(1);
+		expect(mocks.enqueue).toHaveBeenCalledWith(4, 'scheduled');
+		const next = mocks.setJobNextDueAt.mock.calls[0][1] as number;
+		expect(next).toBeGreaterThan(now);
+	});
+
 	it('is a no-op when no jobs are due', async () => {
 		mocks.listDueJobs.mockResolvedValueOnce([]);
 		await tick();

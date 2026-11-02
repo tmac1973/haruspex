@@ -20,6 +20,11 @@
 		arrangeable?: boolean;
 		onmove?: (dir: -1 | 1) => void;
 		onresize?: (size: CardSize) => void;
+		/** Open the card's job in the Jobs tab; absent for a card with no job. */
+		onedit?: () => void;
+		/** Notify on new items, on or off; null for a card type that never notifies. */
+		notify?: boolean | null;
+		onnotify?: (on: boolean) => void;
 		onremove: () => void;
 		children: Snippet;
 	}
@@ -34,6 +39,9 @@
 		arrangeable = true,
 		onmove,
 		onresize,
+		onedit,
+		notify = null,
+		onnotify,
 		onremove,
 		children
 	}: Props = $props();
@@ -86,6 +94,17 @@
 							onclick={() => pick(() => onresize?.(size === 'wide' ? 'normal' : 'wide'))}
 							>{size === 'wide' ? 'Normal width' : 'Wide'}</button
 						>
+					{/if}
+					{#if arrangeable && notify !== null}
+						<button
+							role="menuitemcheckbox"
+							aria-checked={notify}
+							onclick={() => pick(() => onnotify?.(!notify))}
+							>{notify ? '✓ ' : ''}Notify on new items</button
+						>
+					{/if}
+					{#if arrangeable && onedit}
+						<button role="menuitem" onclick={() => pick(onedit)}>Edit job</button>
 					{/if}
 					<button role="menuitem" onclick={() => pick(onremove)}>Remove</button>
 				</div>

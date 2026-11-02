@@ -28,7 +28,9 @@ The card updates when a run finishes, scheduled runs included. If you delete the
 ## Add, arrange and remove cards
 
 - **Add card**, top right, adds a card at the end. A card you removed can be added back from here.
-- Each card's **⋯** menu has **Move up**, **Move down**, **Wide** (the card spans two columns) or **Normal width**, and **Remove**. Removing a pinned job's card asks first; the job stays in the Jobs tab unless you tick **Also delete the job**.
+- Each card's **⋯** menu has **Move up**, **Move down**, **Wide** (the card spans two columns) or **Normal width**, **Edit job** for a card with a job (it opens the job in the Jobs tab, where you change its schedule), and **Remove**. Removing a pinned job's card asks first; the job stays in the Jobs tab unless you tick **Also delete the job**.
+
+Cards that make their own job have a **Home** badge on it in the Jobs tab, and their job runs only when no chat or Code turn is using the model, so a card never makes you wait. Removing such a card deletes its job too unless you untick **Also delete the job**. Some of them can tell you when they find something: **⋯ → Notify on new items** sends a desktop notification naming what is new. It is off until you turn it on.
 
 On a narrow window the cards stack in one column.
 

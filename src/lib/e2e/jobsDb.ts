@@ -115,6 +115,7 @@ export const JOBS_DB: Record<string, (a: Args) => unknown> = {
 			model_thinking: null,
 			model_effort: null,
 			context_size: null,
+			result_json: null,
 			steps: prompts.map((prompt_authored, ordering) => ({
 				id: nextId++,
 				run_id: id,

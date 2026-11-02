@@ -242,6 +242,9 @@ pub struct JobRunSummary {
     pub model_thinking: Option<bool>,
     pub model_effort: Option<String>,
     pub context_size: Option<i64>,
+    /// A Home card job's validated result (`{ items: [...] }`), as JSON; null
+    /// for every other run.
+    pub result_json: Option<String>,
 }
 
 /// Token and timing totals for one finished step, summed across every model
@@ -311,6 +314,9 @@ pub struct JobRunWithSteps {
     pub model_thinking: Option<bool>,
     pub model_effort: Option<String>,
     pub context_size: Option<i64>,
+    /// A Home card job's validated result (`{ items: [...] }`), as JSON; null
+    /// for every other run.
+    pub result_json: Option<String>,
     pub steps: Vec<JobRunStep>,
 }
 
@@ -809,6 +815,7 @@ impl Database {
             "ALTER TABLE job_runs ADD COLUMN model_thinking INTEGER",
             "ALTER TABLE job_runs ADD COLUMN model_effort TEXT",
             "ALTER TABLE job_runs ADD COLUMN context_size INTEGER",
+            "ALTER TABLE job_runs ADD COLUMN result_json TEXT",
             // Agentic memory, per conversation. Both land now so phases 03-05
             // need no further migration.
             //
