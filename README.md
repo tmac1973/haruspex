@@ -1,8 +1,13 @@
 # Haruspex
 
-Click this screenshot to watch the explainer video:
+|                                                                                                                           |                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| [![Chat: a researched answer with its searches and sources](docs/screenshots/chat.png)](docs/screenshots/chat.png)        | [![Code: a bug found, fixed and checked](docs/screenshots/code.png)](docs/screenshots/code.png)       |
+| **Chat** searches the web, reads the pages and answers with sources and pictures.                                         | **Code** reads the project, edits it and runs it to check the fix.                                    |
+| [![Shell: the assistant explaining an error beside the terminal](docs/screenshots/shell.png)](docs/screenshots/shell.png) | [![Jobs: a scheduled research job and its run](docs/screenshots/jobs.png)](docs/screenshots/jobs.png) |
+| **Shell** puts an assistant beside a real terminal. It reads your output and suggests commands you run with a click.      | **Jobs** save a chain of prompts and run them on demand or on a schedule.                             |
 
-[![Watch the video](https://img.youtube.com/vi/VT-gGdOAonA/maxresdefault.jpg)](https://youtu.be/VT-gGdOAonA)
+<sub>Gorilla photo in the Chat screenshot: Ad Meskens, CC BY-SA 3.0, via Wikimedia Commons.</sub>
 
 Haruspex is a desktop AI researcher and coding tool that runs entirely local by default. It works on Linux, Windows and macOS. There is no account to create and no telemetry. Your conversations and the model's answers stay on your device. You do not need a separate inference server (ollama, LMStudio, Lemonade, vLLM, etc...) as Haruspex will default to automatically downloading an appropriate model for your system and will run it locally. If you prefer to manage your own llms you can turn this off and use a remote model instead.
 
