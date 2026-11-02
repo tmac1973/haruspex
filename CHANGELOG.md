@@ -1,5 +1,83 @@
 # Changelog
 
+## [0.2.15](https://github.com/tmac1973/haruspex/compare/v0.2.14...v0.2.15) (2026-11-02)
+
+
+### Features
+
+* **chat:** set the folder new chats start in from Settings → Chat ([#822](https://github.com/tmac1973/haruspex/issues/822)) ([a31022d](https://github.com/tmac1973/haruspex/commit/a31022dc3c590e803c2b31e5b947fd77f4c0e84c))
+* **image:** keep the image models as a saved list ([#845](https://github.com/tmac1973/haruspex/issues/845)) ([42fd3b5](https://github.com/tmac1973/haruspex/commit/42fd3b5a206e82fa0d7f714980b59c978eb93e6d))
+* **image:** let the chat model see and pick the image models ([#849](https://github.com/tmac1973/haruspex/issues/849)) ([78063f8](https://github.com/tmac1973/haruspex/commit/78063f8d0503d9025d3803895215f83160175a58))
+* **image:** list several image models in Settings → Image ([#847](https://github.com/tmac1973/haruspex/issues/847)) ([644853c](https://github.com/tmac1973/haruspex/commit/644853c255a27e20303c74c183dfea724c82fecd))
+* **image:** route each image call to a saved model that can do it ([#846](https://github.com/tmac1973/haruspex/issues/846)) ([f2ebdbe](https://github.com/tmac1973/haruspex/commit/f2ebdbe0b6b42cb5c6c0f18e33ccb183640f805d))
+* **image:** send llama-toolchest edits as jobs where the build takes them ([#830](https://github.com/tmac1973/haruspex/issues/830)) ([af1e249](https://github.com/tmac1973/haruspex/commit/af1e249bf26fdb78fc21d770396e2b2afbda7199))
+* **image:** upscale with a llama-toolchest server's upscaler ([#841](https://github.com/tmac1973/haruspex/issues/841)) ([d8530d0](https://github.com/tmac1973/haruspex/commit/d8530d09a473b32b31c693215f8556e248c64d58))
+* **jobs:** one editor section open at a time, with required-field markers ([#834](https://github.com/tmac1973/haruspex/issues/834)) ([1d55857](https://github.com/tmac1973/haruspex/commit/1d55857ce3cf6005640358e7e250c854d27a339d))
+* **lean:** a lean + files choice that lets chat write text and documents ([#864](https://github.com/tmac1973/haruspex/issues/864)) ([58ecb4f](https://github.com/tmac1973/haruspex/commit/58ecb4f6cf51f7baecd97d77c776134ad73567d2))
+* **prompt:** list deferred tool families in the system prompt ([#860](https://github.com/tmac1973/haruspex/issues/860)) ([8b9fd8d](https://github.com/tmac1973/haruspex/commit/8b9fd8dcce4287202d65b2a4e1ae60abd94125fa))
+* **settings:** load tool groups when needed, on by default for larger models ([#863](https://github.com/tmac1973/haruspex/issues/863)) ([6cb8670](https://github.com/tmac1973/haruspex/commit/6cb867090213efb68081a3e8bd991f8d75a60bfd))
+* **settings:** save generation servers and switch between them in Image, Music and Video ([#837](https://github.com/tmac1973/haruspex/issues/837)) ([feddc6a](https://github.com/tmac1973/haruspex/commit/feddc6a0ed52d6d902ac3016fd5154f1d0dcd70a))
+* **slides:** build .pptx decks with PptxGenJS, in landscape or portrait ([#818](https://github.com/tmac1973/haruspex/issues/818)) ([8d35927](https://github.com/tmac1973/haruspex/commit/8d3592732705b9eec2bce2ea6a3055dad47589a3))
+* **slides:** native charts and tables ([#820](https://github.com/tmac1973/haruspex/issues/820)) ([fad193e](https://github.com/tmac1973/haruspex/commit/fad193e7388a3b71ca879bbd70ff62b2a790ee35))
+* **slides:** show the model its deck, rendered by LibreOffice, so it can fix it ([#821](https://github.com/tmac1973/haruspex/issues/821)) ([55545a0](https://github.com/tmac1973/haruspex/commit/55545a0f4fb6d3f199447c95a55a9d25f18653f3))
+* **slides:** themes, seven layouts, speaker notes, and refusing decks that won't fit ([#819](https://github.com/tmac1973/haruspex/issues/819)) ([2154fff](https://github.com/tmac1973/haruspex/commit/2154fff80f4f53c7d736b945ddc18e9154f23d62))
+* **tools:** load tool families when the model asks for them ([#857](https://github.com/tmac1973/haruspex/issues/857)) ([7754d42](https://github.com/tmac1973/haruspex/commit/7754d42e7a5080465a64b250a7457e2ae84cde4c))
+
+
+### Bug Fixes
+
+* **agent:** ask the model to answer steering, and show its answer in chats ([#883](https://github.com/tmac1973/haruspex/issues/883)) ([9e14655](https://github.com/tmac1973/haruspex/commit/9e14655128014513f21871a182313df253296d28))
+* **agent:** keep the tools when retrying an empty final answer ([#859](https://github.com/tmac1973/haruspex/issues/859)) ([cf67ce9](https://github.com/tmac1973/haruspex/commit/cf67ce92c0d3d68b62313382d2962124402b13fc))
+* **agent:** send a tool's pictures after its result, not on the user's message ([#825](https://github.com/tmac1973/haruspex/issues/825)) ([e603868](https://github.com/tmac1973/haruspex/commit/e603868af2447bd336f8f284a14339d4a75b299a))
+* **code:** keep every session tab reachable when many are open ([#872](https://github.com/tmac1973/haruspex/issues/872)) ([7514e90](https://github.com/tmac1973/haruspex/commit/7514e9085c6ea4777df6e5f7049c52a2f7070621))
+* **coding:** a repair that changes nothing no longer counts as done ([#890](https://github.com/tmac1973/haruspex/issues/890)) ([4453e37](https://github.com/tmac1973/haruspex/commit/4453e376e13db29267a25a4c9441f9efde77e775))
+* **context:** cap a cut message at 16k tokens, with a hint that fits who wrote it ([#858](https://github.com/tmac1973/haruspex/issues/858)) ([6f1e5d1](https://github.com/tmac1973/haruspex/commit/6f1e5d1fc68f41f550637f1280a700b24df6a1a7))
+* **context:** never drop the turn's own question when fitting the window ([#866](https://github.com/tmac1973/haruspex/issues/866)) ([80fa3df](https://github.com/tmac1973/haruspex/commit/80fa3df71d0c7b227e66a45222238bf6e9efb44a))
+* **drive:** multi-line send, new-session from Settings, and detach's selector ([#856](https://github.com/tmac1973/haruspex/issues/856)) ([ccdd957](https://github.com/tmac1973/haruspex/commit/ccdd957afeb5d439711b77df2d53127a898b6e59))
+* **feedback:** keep personal data out of model feedback reports ([#880](https://github.com/tmac1973/haruspex/issues/880)) ([6f7f129](https://github.com/tmac1973/haruspex/commit/6f7f129602b1ed552efe511de89b8c93e8f67052))
+* four app items from the 0.2.6 release test ([#855](https://github.com/tmac1973/haruspex/issues/855)) ([ec4a71b](https://github.com/tmac1973/haruspex/commit/ec4a71be9496efed40552103aabe261d3e48fe67))
+* **image:** name a missing toolchest model, and probe models a patch adds ([#850](https://github.com/tmac1973/haruspex/issues/850)) ([69dc30a](https://github.com/tmac1973/haruspex/commit/69dc30ad4a4f0f9ee26feb02b4feabdd9b880955))
+* **image:** take as many edit pictures as each llama-toolchest model does ([#838](https://github.com/tmac1973/haruspex/issues/838)) ([4bd6027](https://github.com/tmac1973/haruspex/commit/4bd6027afac60db977b36c2da0c2d5ced3f065d5))
+* **jobs:** give a job run its own Python sandbox ([#898](https://github.com/tmac1973/haruspex/issues/898)) ([06d9651](https://github.com/tmac1973/haruspex/commit/06d965180b35a8f36f5a38fdab88c68235c507b0))
+* **log:** drop html5ever's warnings from the app log ([#836](https://github.com/tmac1973/haruspex/issues/836)) ([7d88cf6](https://github.com/tmac1973/haruspex/commit/7d88cf60b527b9d7b081b970c515e3d8d474c92f))
+* **mcp:** GitHub catalog tools match github-mcp-server v1.12.0 ([#844](https://github.com/tmac1973/haruspex/issues/844)) ([893f6a4](https://github.com/tmac1973/haruspex/commit/893f6a4ceeaeb581cf528b924e0ea5152a428fc2))
+* **memory:** put recalled memories on the latest user message, not the system prompt ([#852](https://github.com/tmac1973/haruspex/issues/852)) ([7a31d06](https://github.com/tmac1973/haruspex/commit/7a31d069365f9302188aa454c1c1c8fa0e2dd0c9))
+* **remote:** answer a refused upload before Windows resets the connection ([#899](https://github.com/tmac1973/haruspex/issues/899)) ([8881a7d](https://github.com/tmac1973/haruspex/commit/8881a7dc4e4b4e473451f3160734572fe51cc086))
+* **remote:** debug.tail drops URL queries and inline settings secrets ([#889](https://github.com/tmac1973/haruspex/issues/889)) ([4e2592f](https://github.com/tmac1973/haruspex/commit/4e2592fae4cafed4ac17844fd96f7e5a9150ae27))
+* **remote:** keep credentials in URLs and MCP args out of settings.get ([#879](https://github.com/tmac1973/haruspex/issues/879)) ([59edd19](https://github.com/tmac1973/haruspex/commit/59edd19a92b6e7d64a249be42d27a590746d1518))
+* **remote:** keep the quote or backtick that closes a URL in debug.tail ([#897](https://github.com/tmac1973/haruspex/issues/897)) ([a1030fb](https://github.com/tmac1973/haruspex/commit/a1030fb65f0d5a751065fca53cdb63a8574ed895))
+* **remote:** list the file-exists question as a prompt the API and web page answer ([#871](https://github.com/tmac1973/haruspex/issues/871)) ([328c103](https://github.com/tmac1973/haruspex/commit/328c10331dff712d0a4d9f76a8176e3600f7c32e))
+* **shell:** keep every shell tab reachable when many are open ([#873](https://github.com/tmac1973/haruspex/issues/873)) ([f52f08b](https://github.com/tmac1973/haruspex/commit/f52f08b3a58f1cbfbd09ca14ed009aafa9e81405))
+* **slides:** a rewrite of a previewed deck keeps its theme and orientation ([#826](https://github.com/tmac1973/haruspex/issues/826)) ([62455d5](https://github.com/tmac1973/haruspex/commit/62455d5267052baa42b59b64ffd35c69e0614717))
+* **slides:** an over-full slide's refusal says how many lines fit ([#827](https://github.com/tmac1973/haruspex/issues/827)) ([3fd2130](https://github.com/tmac1973/haruspex/commit/3fd213074c36f89a8b51dac1223740d893964bc3))
+* **slides:** bold and pictures written as Markdown, matching column sizes, and axis separators ([#823](https://github.com/tmac1973/haruspex/issues/823)) ([5dda589](https://github.com/tmac1973/haruspex/commit/5dda5897c01d012dd6227e096c17cb6a5b4988bf))
+* **slides:** draw a cover's picture, and keep a content slide's subtitle ([#824](https://github.com/tmac1973/haruspex/issues/824)) ([75fdc25](https://github.com/tmac1973/haruspex/commit/75fdc25c8628fc92106f32a4bc09795426178301))
+* **slides:** portrait decks read on a phone: larger type, raised lists, stacked columns as one ([#829](https://github.com/tmac1973/haruspex/issues/829)) ([6f37ca0](https://github.com/tmac1973/haruspex/commit/6f37ca05e50871ad6ed8f447d85c0a681fa2d861))
+* three app items from the 0.2.15 release test ([#900](https://github.com/tmac1973/haruspex/issues/900)) ([8b2f078](https://github.com/tmac1973/haruspex/commit/8b2f07893fefd507aa23efa4185efd5614ae8ab5))
+* **tools:** let a turn revise its own document, and keep a use_tool path beside arguments ([#868](https://github.com/tmac1973/haruspex/issues/868)) ([e3c0cdc](https://github.com/tmac1973/haruspex/commit/e3c0cdcc430556ad4c491e5414a6f6b216653f6a))
+* **tools:** let a turn revise its own spreadsheet or deck, as documents can ([#869](https://github.com/tmac1973/haruspex/issues/869)) ([02923ed](https://github.com/tmac1973/haruspex/commit/02923ed48b88a23fdde9014cb2e7554602a81d15))
+* **tools:** run a deferred call whose arguments fit, and take hyphenated names ([#865](https://github.com/tmac1973/haruspex/issues/865)) ([025b54e](https://github.com/tmac1973/haruspex/commit/025b54e3b55ef134034b73378b9c886e630636eb))
+* **video:** refuse a clip number past the cut instead of hanging video_cut ([#870](https://github.com/tmac1973/haruspex/issues/870)) ([d72e4b0](https://github.com/tmac1973/haruspex/commit/d72e4b0fdc9a62ac653911b5081103c549224824))
+
+
+### Code Refactoring
+
+* follow the project's conventions where the audit found drift ([#882](https://github.com/tmac1973/haruspex/issues/882)) ([551323c](https://github.com/tmac1973/haruspex/commit/551323c5102b0c2250143fd343232ab0c636eb9e))
+* **image:** bind each image backend to an entry instead of the settings ([#843](https://github.com/tmac1973/haruspex/issues/843)) ([4d5eefe](https://github.com/tmac1973/haruspex/commit/4d5eefebe4e576fb66f590cd405f43ebc99b3f9f))
+* share the backend call, seed check and small helpers ([#881](https://github.com/tmac1973/haruspex/issues/881)) ([1da811f](https://github.com/tmac1973/haruspex/commit/1da811f103b21c46970ee2440525420a3d9b3bc6))
+* **tools:** group the tools into families for deferred loading ([#854](https://github.com/tmac1973/haruspex/issues/854)) ([17a0b94](https://github.com/tmac1973/haruspex/commit/17a0b943b9ab9c88c633db6fab6a501832dee629))
+
+
+### Documentation
+
+* **plan:** add a GitHub card phase to the home tab plan ([#842](https://github.com/tmac1973/haruspex/issues/842)) ([3205314](https://github.com/tmac1973/haruspex/commit/32053147585f2cdc5e18d490f187f58dc65740c9))
+* **plan:** fit the home tab plan to the reworked job editor ([#835](https://github.com/tmac1973/haruspex/issues/835)) ([748da37](https://github.com/tmac1973/haruspex/commit/748da373a49d69ce1e3138ea6cd5e97545361aa9))
+* **plan:** home tab of at-a-glance cards ([#832](https://github.com/tmac1973/haruspex/issues/832)) ([b698c15](https://github.com/tmac1973/haruspex/commit/b698c157877d25a90bad359fe23c756dd50cf88f))
+* **plan:** plan deferred tool loading ([#851](https://github.com/tmac1973/haruspex/issues/851)) ([1c74a02](https://github.com/tmac1973/haruspex/commit/1c74a02f4eab740680b04b45cf03590540ff6386))
+* **plan:** plan image model routing across several backends ([#840](https://github.com/tmac1973/haruspex/issues/840)) ([f877d31](https://github.com/tmac1973/haruspex/commit/f877d312d0ad0f88c13a5270f0e7ffbf71aa4f16))
+* **plan:** record the deferred-tools delivery spike ([#853](https://github.com/tmac1973/haruspex/issues/853)) ([702dcf8](https://github.com/tmac1973/haruspex/commit/702dcf866a85184dba5f97ea37d1a3117d846aba))
+* **plan:** record the deferred-tools live evaluation ([#861](https://github.com/tmac1973/haruspex/issues/861)) ([7572507](https://github.com/tmac1973/haruspex/commit/757250768eb1f7dedfa7973645461f0702148942))
+
 ## [0.2.14](https://github.com/tmac1973/haruspex/compare/v0.2.13...v0.2.14) (2026-10-30)
 
 
