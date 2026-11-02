@@ -102,7 +102,7 @@
 		<textarea
 			bind:value={moduleSource}
 			spellcheck="false"
-			placeholder="export default function build(THREE, kit) {'{'} … {'}'}"></textarea>
+			placeholder="export default function build(THREE, kit) … "></textarea>
 		{#if moduleResult}
 			<ul class="errors">
 				{#each moduleResult.errors as e, i (i)}
