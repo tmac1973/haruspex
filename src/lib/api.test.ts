@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
 	parseSSE,
 	unansweredNotice,
@@ -26,6 +26,17 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	getApiKeyValue: getApiKeyValueMock,
 	getActiveLocalModelFilename: () => ''
 }));
+
+// restoreAllMocks leaves vi.fn() mocks alone: put back the local backend and
+// the missing key the OpenRouter cases swap in.
+beforeEach(() => {
+	getSettingsMock.mockReset();
+	getApiKeyValueMock.mockReset();
+});
+
+afterEach(() => {
+	vi.unstubAllGlobals();
+});
 
 // Helper to create a ReadableStream from SSE text
 function createSSEStream(chunks: string[]): ReadableStream<Uint8Array> {

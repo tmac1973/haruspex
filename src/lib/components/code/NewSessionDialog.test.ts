@@ -23,6 +23,8 @@ import NewSessionDialog from './NewSessionDialog.svelte';
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	// clearAllMocks keeps the repository a worktree test set up.
+	git.gitStatus.mockResolvedValue(null);
 	settings.values = { codeLastRoot: '/work', codeLastWslDistro: '', codeNewWorktree: false };
 });
 

@@ -14,6 +14,8 @@ export default defineConfig({
 		globals: true,
 		// Repairs `localStorage` when Node's own inert Web Storage global
 		// shadows jsdom's (Node >= 24). No-op on CI's Node 22 — see the file.
-		setupFiles: ['./vitest.setup.ts']
+		setupFiles: ['./vitest.setup.ts'],
+		// Replay a failing order with --sequence.seed=<the seed Vitest prints>.
+		sequence: { shuffle: true }
 	}
 });

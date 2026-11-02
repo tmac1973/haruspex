@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import {
+	_resetForTests,
 	clearDebugLogs,
 	forwardConsoleToDebugLog,
 	getDebugLogs,
@@ -7,12 +8,17 @@ import {
 	startDebugLogFile
 } from './debugLog';
 
-describe('forwardConsoleToDebugLog', () => {
-	afterEach(() => {
-		vi.restoreAllMocks();
-		clearDebugLogs();
-	});
+beforeEach(() => {
+	_resetForTests();
+});
 
+afterEach(() => {
+	vi.restoreAllMocks();
+	vi.useRealTimers();
+	_resetForTests();
+});
+
+describe('forwardConsoleToDebugLog', () => {
 	it('copies warnings and errors into the debug log, errors by message', () => {
 		vi.spyOn(console, 'warn').mockImplementation(() => {});
 		vi.spyOn(console, 'error').mockImplementation(() => {});

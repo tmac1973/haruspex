@@ -91,6 +91,11 @@ export function inDetachedCodeWindow(): boolean {
 	return detached;
 }
 
+/** Test-only: back to being the main window. */
+export function _resetForTests(): void {
+	detached = false;
+}
+
 /**
  * Move a session from this window's tab strip into a window of its own.
  * False, doing nothing, while it isn't idle. If the window can't be made,
