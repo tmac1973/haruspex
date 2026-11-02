@@ -9,6 +9,7 @@
 	import { agentPowershell } from '#lib/code/powershell.ts';
 	import type { AgentPowershell } from '#lib/ipc/gen/AgentPowershell.ts';
 	import { onMount } from 'svelte';
+	import SpecialistsSection from '#lib/components/settings/SpecialistsSection.svelte';
 
 	let codeRunCommandTimeoutSecs = $state(getSettings().codeRunCommandTimeoutSecs);
 	let codeMaxIterations = $state(getSettings().codeMaxIterations);
@@ -106,6 +107,8 @@
 	</label>
 	<p class="help">Let the agent hand parts of a task to helper agents.</p>
 </section>
+
+<SpecialistsSection />
 
 <section class="settings-section">
 	<h2>Background log size</h2>

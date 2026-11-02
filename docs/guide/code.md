@@ -23,10 +23,10 @@ The agent can search the web and read pages, with Chat's search and proxy setup;
 
 - **Edits** show as a diff with line numbers; past 40 lines **Show all … lines** expands it. Unlike Chat, rewrites don't ask first. A second whole rewrite in one turn needs a command (a test, say) run first.
 - **Commands** show as a card: command, exit code, time taken and output (the last 20 lines until **Show all**). **Open in Shell** types it into a new Shell tab at the folder, not run.
-- Searches and file reads show as a step list.
+- Searches and reads show as a step list.
 - **Reasoning** sits above its step, collapsed (live: **Thinking…**); what the agent **says** before a step sits above it in grey.
 - A call still being written shows as a row: **Writing**, **Editing** or **Preparing command…**.
-- **File names** inside the folder (`src/app.ts:42`), in diffs, reads, results and answers, open the file in an editor window, at its top.
+- **File names** inside the folder (`src/app.ts:42`), anywhere in the session, open the file in an editor window, at its top.
 
 ## Commands that need a terminal
 
@@ -54,9 +54,10 @@ The header above the conversation holds:
 - the **git branch**, with **●** for uncommitted changes. Click it to switch branch, or to start one with **Branch from current…** or **Branch from main…** (shown when another branch is checked out). Switching waits until the agent is idle and changes are committed or stashed; it warns when another open session uses the repo;
 - the **model** — click it to pick **Settings model** (follows Settings → Inference), **Remote server** (one saved in Settings → Inference: **Probe**, then pick a model) or **OpenRouter (cloud)** (**Load models**, then pick one), then **Save**. The local model is only reachable through **Settings model**; picking one never starts it;
 - **Effort** — how hard the model thinks, where it has levels;
+- **Specialists** — see the `specialists` page;
 - the **AGENTS.md** badge when the repo's instructions are in use (see the `skills` page), and how full the context is.
 
-Model and effort apply from the next message.
+Model, effort and specialists apply from the next message.
 
 ## Background processes
 
@@ -64,7 +65,7 @@ Servers, watchers and long builds run in the background. **Running: N** in the h
 
 ## Command approval and limits
 
-Safe-looking commands run on their own. A risky one (`sudo`, `rm -rf`, a pipe to a shell) opens **Run this command?** first; one that reaches outside the folder always asks. Prompts from several sessions queue. **Allow for this session** lasts until its tab closes. Settings → Code holds the command time limit, the step limit, the background log size and **Auto-approve commands**. See the `settings` page.
+Safe-looking commands just run. A risky one (`sudo`, `rm -rf`, a pipe to a shell) opens **Run this command?** first; one that reaches outside the folder always asks. Prompts from several sessions queue. **Allow for this session** lasts until its tab closes. Settings → Code holds the time, step and log limits and **Auto-approve commands**; see the `settings` page.
 
 ## What it doesn't do yet
 
