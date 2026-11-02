@@ -24,6 +24,7 @@
 		type CustomServerForm
 	} from '#lib/components/settings/McpCustomServerForm.svelte';
 	import { loadInstalledManifests, probeCompanion } from '#lib/stores/mcpServers.svelte.ts';
+	import { refreshUpdateStatuses } from '#lib/stores/mcpUpdate.svelte.ts';
 	import { newId } from '#lib/utils/id.ts';
 
 	const INSTALL_PROGRESS_EVENT = 'mcp-install-progress';
@@ -184,6 +185,7 @@
 		// The row's tool defaults come from what was installed, including for
 		// servers that are not running.
 		void loadInstalledManifests(servers);
+		void refreshUpdateStatuses(servers);
 		try {
 			runtimes = await invoke<RuntimeAvailability>('mcp_runtimes_available');
 		} catch {

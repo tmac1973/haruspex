@@ -23,6 +23,15 @@
 		stopMcpServer
 	} from '#lib/stores/mcpServers.svelte.ts';
 	import { customEnvOf, replaceCustomEnv } from '#lib/stores/mcpSecrets.ts';
+	import {
+		existingAddonProjects,
+		mcpUpdateResult,
+		mcpUpdateStatus,
+		runningMcpUpdate,
+		updateMcpServer
+	} from '#lib/stores/mcpUpdate.svelte.ts';
+	import { invoke } from '@tauri-apps/api/core';
+	import DownloadProgressBar from '#lib/components/settings/DownloadProgressBar.svelte';
 	import { addonStepIndex, pickAndInstallAddon } from '#lib/stores/mcpAddon.ts';
 	import McpToolList from '#lib/components/settings/McpToolList.svelte';
 	import McpSetupWizard from '#lib/components/settings/McpSetupWizard.svelte';
@@ -173,6 +182,43 @@
 		}
 	}
 
+	const updateStatus = $derived(mcpUpdateStatus(config.id));
+	const runningUpdate = $derived(runningMcpUpdate());
+	const updatingThis = $derived(runningUpdate?.serverId === config.id);
+	const updateResult = $derived(mcpUpdateResult(config.id));
+	// The addon projects an update will overwrite, waiting for a yes.
+	let confirmProjects = $state<string[] | null>(null);
+	let pendingUpdate = $state<McpServerConfig | null>(null);
+
+	/**
+	 * An update replaces the addon in every project it was added to, so those
+	 * are listed first. Projects that have gone are dropped before asking.
+	 */
+	async function beginUpdate(): Promise<void> {
+		if (!entry) return;
+		let next = config;
+		if (addonStep !== null && addonProjects.length > 0) {
+			const existing = await existingAddonProjects(config);
+			if (existing.length !== addonProjects.length) {
+				next = { ...config, addonProjects: existing };
+				onchange(next);
+			}
+			if (existing.length > 0) {
+				pendingUpdate = next;
+				confirmProjects = existing;
+				return;
+			}
+		}
+		await updateMcpServer(next, entry);
+	}
+
+	async function confirmUpdate(): Promise<void> {
+		const next = pendingUpdate;
+		confirmProjects = null;
+		pendingUpdate = null;
+		if (next && entry) await updateMcpServer(next, entry);
+	}
+
 	async function remove(): Promise<void> {
 		await removeMcpServer(config.id);
 		onremove();
@@ -180,7 +226,9 @@
 </script>
 
 <section class="settings-section" class:failed>
-	<h2>{config.label}</h2>
+	<h2 title={updateStatus ? `Version ${updateStatus.installedVersion}` : undefined}>
+		{config.label}
+	</h2>
 	<div class="header">
 		<label class="toggle-row">
 			<input
@@ -234,6 +282,57 @@
 				log={mcpLog(config.id)}
 				logTitle="The server's output"
 			/>
+		</p>
+	{/if}
+
+	{#if updateStatus?.updateAvailable && entry}
+		<div class="update">
+			<span class="hint">Version {updateStatus.pinnedVersion} is available.</span>
+			<button
+				type="button"
+				disabled={runningUpdate !== null || runtime.busy || confirmProjects !== null}
+				onclick={beginUpdate}
+			>
+				{updatingThis ? 'Updating…' : 'Update'}
+			</button>
+		</div>
+	{/if}
+
+	{#if confirmProjects}
+		<div class="confirm">
+			<p>Update replaces the {entry?.companion?.app ?? ''} addon in these projects:</p>
+			<ul>
+				{#each confirmProjects as project (project)}<li>{project}</li>{/each}
+			</ul>
+			<button type="button" onclick={confirmUpdate}>Update</button>
+			<button
+				type="button"
+				onclick={() => {
+					confirmProjects = null;
+					pendingUpdate = null;
+				}}>Cancel</button
+			>
+		</div>
+	{/if}
+
+	{#if updatingThis && runningUpdate}
+		<p class="update-note ok">{runningUpdate.stage}</p>
+		{#if runningUpdate.progress}
+			<DownloadProgressBar
+				progress={runningUpdate.progress}
+				oncancel={() => void invoke('mcp_cancel_install')}
+			/>
+		{/if}
+	{/if}
+
+	{#if updateResult}
+		<p
+			class="update-note"
+			class:ok={updateResult.ok}
+			class:error={!updateResult.ok}
+			title={updateResult.detail ?? undefined}
+		>
+			{updateResult.text}
 		</p>
 	{/if}
 
@@ -349,6 +448,26 @@
 	}
 	.failed {
 		border-color: var(--danger, #ef4444);
+	}
+	.update {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin: 0.5rem 0;
+	}
+	.update .hint,
+	.confirm,
+	.update-note {
+		font-size: 0.9em;
+	}
+	.update-note.ok {
+		color: var(--text-secondary, #a8a29e);
+	}
+	.confirm ul {
+		margin: 0.25rem 0 0.5rem;
+		padding-left: 1.25rem;
+		font-family: var(--font-mono, monospace);
+		font-size: 0.85em;
 	}
 	.header {
 		display: flex;
