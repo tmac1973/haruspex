@@ -6,6 +6,8 @@ import type { Component } from 'svelte';
 import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 import JobsCard from '#lib/components/home/cards/JobsCard.svelte';
 import CodeSessionsCard from '#lib/components/home/cards/CodeSessionsCard.svelte';
+import PinnedJobCard from '#lib/components/home/cards/PinnedJobCard.svelte';
+import { getJobs } from '#lib/stores/jobs.svelte.ts';
 
 export type CardSize = 'normal' | 'wide';
 
@@ -19,8 +21,10 @@ export type CardKind = 'live' | 'fetched' | 'judged' | 'pinned';
 
 export interface CardType {
 	id: string;
-	/** The card's title and its name in Add card. */
+	/** The card's name in Add card, and its title unless `title` gives one. */
 	label: string;
+	/** The title for one card of this type (a pinned job's name). */
+	title?: (card: HomeCard) => string;
 	kind: CardKind;
 	/** Rendered inside the card's frame; given the card's row, which a live card may ignore. */
 	component: Component<{ card: HomeCard }>;
@@ -45,6 +49,16 @@ const CARD_TYPES: CardType[] = [
 		component: CodeSessionsCard,
 		defaultSize: 'normal',
 		addable: () => true
+	},
+	{
+		// The job is the card's `job_id`; Add card asks which one.
+		id: 'pinned_job',
+		label: 'Pinned job',
+		title: (card) => getJobs().find((j) => j.id === card.job_id)?.name ?? 'Pinned job',
+		kind: 'pinned',
+		component: PinnedJobCard,
+		defaultSize: 'normal',
+		addable: () => getJobs().length > 0
 	}
 ];
 

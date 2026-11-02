@@ -5,6 +5,7 @@
  */
 import { dbMutate, dbQuery } from '#lib/stores/dbCall.ts';
 import { getSettings, updateSettings } from '#lib/stores/settings.ts';
+import { deleteJob } from '#lib/stores/jobs.svelte.ts';
 import { newId } from '#lib/utils/id.ts';
 import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 import type { CardSize } from '#lib/home/cardTypes.ts';
@@ -83,8 +84,13 @@ export async function addCard(
 	return card;
 }
 
-export async function removeCard(id: string): Promise<void> {
-	await dbMutate({
+/**
+ * Remove a card. With `deleteJob`, the job behind it goes too; the card is
+ * removed first, so a failed job delete leaves the job, not a broken card.
+ */
+export async function removeCard(id: string, opts: { deleteJob?: boolean } = {}): Promise<void> {
+	const jobId = cards.find((c) => c.id === id)?.job_id ?? null;
+	const removed = await dbMutate({
 		cmd: 'db_home_cards_delete',
 		category: 'home',
 		args: { id },
@@ -92,6 +98,7 @@ export async function removeCard(id: string): Promise<void> {
 		ctx: { id },
 		onSuccess: reload
 	});
+	if (removed && opts.deleteJob && jobId !== null) await deleteJob(jobId);
 }
 
 /** Move a card one place up (-1) or down (1). Nothing happens at either end. */

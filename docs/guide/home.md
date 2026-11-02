@@ -1,6 +1,6 @@
 ---
 title: Home
-description: The Home tab — cards that show at a glance what Haruspex is doing: the job running now and recent runs, and Code sessions that are working or waiting on you. Adding, arranging and removing cards.
+description: The Home tab — cards showing what Haruspex is doing: running and recent jobs, Code sessions that need you, and pinned jobs' latest results. Adding, arranging and removing cards.
 ---
 
 # Home
@@ -16,10 +16,19 @@ A new Home has two cards. Both read what Haruspex is doing right now, so they ne
 - **Jobs** — the job running now, with its step and progress (for example "Step 2 of 4 · 3/7"), how many runs are queued, and the five latest runs of any job. Click a run to open it in the Jobs tab. See the `jobs` page.
 - **Code sessions** — Code sessions that are running, queued, waiting on a shell command, or waiting on you. **Needs attention** means the session is asking you something: a command to approve or a question to answer. Click a session to open it in the Code tab. Idle sessions aren't listed. Sessions in a Code window you detached aren't listed either; look in that window. See the `code-sessions` page.
 
+## Pin a job
+
+**Add card → Pinned job…** asks which job, then shows a card with that job's latest result: the last step's output from its newest successful run. Long output is cut short, with **Show more**. If the newest run failed, its error shows above the result. While the job runs, the card says so and names the step.
+
+- **Run now** starts a run, the same as Run in the Jobs tab. It is greyed out while the job is running or queued.
+- **Open** shows the job and its latest run in the Jobs tab.
+
+The card updates when a run finishes, scheduled runs included. If you delete the job in the Jobs tab, the card says so and can only be removed.
+
 ## Add, arrange and remove cards
 
 - **Add card**, top right, adds a card at the end. A card you removed can be added back from here.
-- Each card's **⋯** menu has **Move up**, **Move down**, **Wide** (the card spans two columns) or **Normal width**, and **Remove**.
+- Each card's **⋯** menu has **Move up**, **Move down**, **Wide** (the card spans two columns) or **Normal width**, and **Remove**. Removing a pinned job's card asks first; the job stays in the Jobs tab unless you tick **Also delete the job**.
 
 On a narrow window the cards stack in one column.
 

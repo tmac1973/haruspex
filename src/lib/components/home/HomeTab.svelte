@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import AddCardMenu from '#lib/components/home/AddCardMenu.svelte';
 	import CardFrame from '#lib/components/home/CardFrame.svelte';
-	import { cardTypes, getCardType, type CardSize } from '#lib/home/cardTypes.ts';
+	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
+	import { getCardType } from '#lib/home/cardTypes.ts';
 	import {
-		addCard,
 		getHomeCards,
 		isHomeCardsLoaded,
 		loadHomeCards,
@@ -11,46 +12,46 @@
 		removeCard,
 		setCardSize
 	} from '#lib/stores/homeCards.svelte.ts';
+	import { isJobsLoaded, loadJobs } from '#lib/stores/jobs.svelte.ts';
+	import { getCurrentRun } from '#lib/agent/jobs/runner.svelte.ts';
+	import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 
 	const cards = $derived(getHomeCards());
-	const addable = $derived(cardTypes().filter((t) => t.addable()));
-	let addOpen = $state(false);
+
+	/** The card whose Remove asks first, because a job comes with it. */
+	let removing = $state<HomeCard | null>(null);
+	let alsoDeleteJob = $state(false);
+	const removingJobRuns = $derived(
+		removing !== null &&
+			getCurrentRun()?.status === 'running' &&
+			getCurrentRun()?.jobId === removing.job_id
+	);
 
 	onMount(() => {
 		void loadHomeCards();
+		// Pinned cards are titled by their job's name.
+		if (!isJobsLoaded()) void loadJobs();
 	});
 
-	function add(typeId: string, size: CardSize) {
-		addOpen = false;
-		void addCard(typeId, {}, null, size);
+	function askRemove(card: HomeCard) {
+		if (card.job_id === null) {
+			void removeCard(card.id);
+			return;
+		}
+		alsoDeleteJob = false;
+		removing = card;
+	}
+
+	function confirmRemove() {
+		const card = removing;
+		removing = null;
+		if (card) void removeCard(card.id, { deleteJob: alsoDeleteJob && !removingJobRuns });
 	}
 </script>
 
-<svelte:window
-	onkeydown={(e) => {
-		if (addOpen && e.key === 'Escape') addOpen = false;
-	}}
-/>
-
 <div class="home">
 	<div class="toolbar">
-		<div class="add-host">
-			<button
-				class="add-btn"
-				onclick={() => (addOpen = !addOpen)}
-				aria-haspopup="menu"
-				aria-expanded={addOpen}>Add card</button
-			>
-			{#if addOpen}
-				<div class="menu" role="menu" aria-label="Add card">
-					{#each addable as type (type.id)}
-						<button role="menuitem" onclick={() => add(type.id, type.defaultSize)}
-							>{type.label}</button
-						>
-					{/each}
-				</div>
-			{/if}
-		</div>
+		<AddCardMenu />
 	</div>
 
 	{#if isHomeCardsLoaded() && cards.length === 0}
@@ -60,15 +61,17 @@
 	<div class="grid">
 		{#each cards as card, i (card.id)}
 			{@const type = getCardType(card.card_type)}
+			<!-- A pinned card whose job was deleted can only be removed. -->
+			{@const orphan = type?.kind === 'pinned' && card.job_id === null}
 			<CardFrame
-				title={type?.label ?? 'Unknown card'}
+				title={type ? (type.title?.(card) ?? type.label) : 'Unknown card'}
 				size={card.size === 'wide' ? 'wide' : 'normal'}
 				canMoveUp={i > 0}
 				canMoveDown={i < cards.length - 1}
-				arrangeable={type !== undefined}
+				arrangeable={type !== undefined && !orphan}
 				onmove={(dir) => void moveCard(card.id, dir)}
 				onresize={(size) => void setCardSize(card.id, size)}
-				onremove={() => void removeCard(card.id)}
+				onremove={() => askRemove(card)}
 			>
 				{#if type}
 					<type.component {card} />
@@ -79,6 +82,20 @@
 		{/each}
 	</div>
 </div>
+
+<ConfirmDialog
+	open={removing !== null}
+	title="Remove card"
+	confirmLabel="Remove card"
+	onconfirm={confirmRemove}
+	oncancel={() => (removing = null)}
+>
+	<p>The job stays in the Jobs tab unless you delete it too.</p>
+	<label class="also" title={removingJobRuns ? 'The job is running' : undefined}>
+		<input type="checkbox" bind:checked={alsoDeleteJob} disabled={removingJobRuns} />
+		Also delete the job
+	</label>
+</ConfirmDialog>
 
 <style>
 	.home {
@@ -92,56 +109,6 @@
 		display: flex;
 		justify-content: flex-end;
 		margin-bottom: 12px;
-	}
-
-	.add-host {
-		position: relative;
-	}
-
-	.add-btn {
-		padding: 6px 12px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-secondary);
-		color: var(--text-primary);
-		cursor: pointer;
-		font-size: 0.85rem;
-	}
-
-	.add-btn:hover {
-		border-color: var(--text-secondary);
-	}
-
-	.menu {
-		position: absolute;
-		top: calc(100% + 4px);
-		right: 0;
-		z-index: 10;
-		display: flex;
-		flex-direction: column;
-		min-width: 160px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-secondary);
-		overflow: hidden;
-	}
-
-	.menu button {
-		text-align: left;
-		padding: 6px 10px;
-		border: none;
-		background: none;
-		color: var(--text-primary);
-		cursor: pointer;
-		font-size: 0.85rem;
-	}
-
-	.menu button + button {
-		border-top: 1px solid var(--border);
-	}
-
-	.menu button:hover {
-		background: var(--bg-primary);
 	}
 
 	.grid {
@@ -160,5 +127,11 @@
 	.empty,
 	.muted {
 		color: var(--text-secondary);
+	}
+
+	.also {
+		display: flex;
+		align-items: center;
+		gap: 6px;
 	}
 </style>
