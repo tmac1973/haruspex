@@ -27,6 +27,7 @@
 	import { withAttachedAudio } from '#lib/audio/attached.ts';
 	import AudioChip from '#lib/components/AudioChip.svelte';
 	import { errMessage } from '#lib/utils/error.ts';
+	import { autosizeTextarea } from '#lib/utils/autosize.ts';
 
 	let { session, slashHost }: { session: CodeSession; slashHost: SlashHost } = $props();
 
@@ -74,9 +75,7 @@
 	});
 
 	function autosize() {
-		if (!el) return;
-		el.style.height = 'auto';
-		el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+		if (el) autosizeTextarea(el);
 	}
 
 	async function send(raw: string) {
