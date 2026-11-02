@@ -8,6 +8,7 @@
 	import { snapshotProblems } from '#lib/specialists/three/snapshot.ts';
 	import { checkGlb, type GlbCheck } from '#lib/glb/check.ts';
 	import { extractHtml } from '#lib/specialists/three/extract.ts';
+	import { runBuildModule, type ModuleRunResult } from '#lib/helpers/three/runModule.ts';
 
 	const dev = import.meta.env.DEV;
 
@@ -20,6 +21,25 @@
 	let checked = $state<GlbCheck | { problems: string[] } | null>(null);
 	let failure = $state<string | null>(null);
 	let controller: AbortController | null = null;
+
+	let moduleSource = $state('');
+	let moduleRunning = $state(false);
+	let moduleResult = $state<ModuleRunResult | null>(null);
+	let moduleChecked = $state<GlbCheck | { problems: string[] } | null>(null);
+
+	async function runModule() {
+		moduleRunning = true;
+		moduleResult = null;
+		moduleChecked = null;
+		try {
+			moduleResult = await runBuildModule(moduleSource);
+			if (moduleResult.glb) moduleChecked = await checkGlb(moduleResult.glb);
+		} catch (e) {
+			failure = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+		} finally {
+			moduleRunning = false;
+		}
+	}
 
 	async function loadFile(e: Event) {
 		const file = (e.currentTarget as HTMLInputElement).files?.[0];
@@ -68,6 +88,41 @@
 		<textarea bind:value={html} spellcheck="false" placeholder="Paste the HTML here"></textarea>
 
 		{#if failure}<p class="failure">{failure}</p>{/if}
+
+		<h2>Build module</h2>
+		<div class="row">
+			<button
+				type="button"
+				class="run"
+				onclick={runModule}
+				disabled={moduleRunning || !moduleSource.trim()}>Run module</button
+			>
+			{#if moduleRunning}<span>Running…</span>{/if}
+		</div>
+		<textarea
+			bind:value={moduleSource}
+			spellcheck="false"
+			placeholder="export default function build(THREE, kit) {'{'} … {'}'}"></textarea>
+		{#if moduleResult}
+			<ul class="errors">
+				{#each moduleResult.errors as e, i (i)}
+					<li>[{e.kind}] {e.line !== null ? `line ${e.line}: ` : ''}{e.message}</li>
+				{/each}
+			</ul>
+			{#if moduleResult.glb}<p>GLB: {moduleResult.glb.byteLength} bytes</p>{/if}
+			{#if moduleChecked && 'problems' in moduleChecked}
+				<ul class="errors">
+					{#each moduleChecked.problems as p, i (i)}<li>{p}</li>{/each}
+				</ul>
+			{:else if moduleChecked}
+				<pre class="stats">{moduleChecked.text}</pre>
+				{#if moduleChecked.png}<img
+						class="render"
+						src={moduleChecked.png}
+						alt="Module render sheet"
+					/>{/if}
+			{/if}
+		{/if}
 
 		{#if result}
 			<h2>Errors ({result.errors.length})</h2>

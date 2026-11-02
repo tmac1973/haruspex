@@ -1,5 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
-import { artifactUrl } from '#lib/sandbox/artifactUrl.ts';
+import { runHiddenFrame, type FrameControl } from '#lib/sandbox/hiddenFrame.ts';
 import { injectShim } from '#lib/specialists/three/shim.ts';
 
 export interface RunError {
@@ -41,138 +40,80 @@ const WAITING_FOR: Record<Stage, string> = {
 };
 
 /**
- * Run a 3D specialist's HTML in a sandboxed, off-screen iframe on the
- * `haruspex-artifact:` scheme, the way `ArtifactFrame.svelte` shows a plot:
- * an opaque origin that reaches neither the app nor IPC. The injected shim
- * (`shim.ts`) reports errors, a snapshot of the canvas and, with `export`,
- * the GLB the page's export button downloads.
+ * Run a 3D specialist's HTML in the hidden sandboxed frame
+ * (`#lib/sandbox/hiddenFrame.ts`). The injected shim (`shim.ts`) reports
+ * errors, a snapshot of the canvas and, with `export`, the GLB the page's
+ * export button downloads.
  */
 export async function runAssetHtml(html: string, opts: RunOptions = {}): Promise<AssetRunResult> {
 	const { signal, timeoutMs = 45_000 } = opts;
-	signal?.throwIfAborted();
-	const id = await invoke<string>('artifact_register', { html: injectShim(html) });
-	signal?.throwIfAborted();
-	return new Promise((resolve, reject) => {
-		new Run(opts.export ?? true, resolve, reject, signal).start(artifactUrl(id), timeoutMs);
-	});
-}
-
-/** One page's run: the iframe, its timers and listeners, and what came back. */
-class Run {
-	private readonly result: AssetRunResult = { glb: null, png: null, errors: [] };
-	private readonly timers = new Set<ReturnType<typeof setTimeout>>();
-	private readonly iframe = document.createElement('iframe');
-	private stage: Stage = 'load';
-	private deadline: ReturnType<typeof setTimeout> | undefined;
-
-	constructor(
-		private readonly wantExport: boolean,
-		private readonly resolve: (r: AssetRunResult) => void,
-		private readonly reject: (e: unknown) => void,
-		private readonly signal: AbortSignal | undefined
-	) {}
-
-	start(src: string, timeoutMs: number) {
-		this.deadline = this.later(timeoutMs, () => {
-			this.result.errors.push({
+	const run = new Run(opts.export ?? true);
+	await runHiddenFrame(injectShim(html), {
+		signal,
+		timeoutMs,
+		onTimeout: (ctl) => {
+			run.result.errors.push({
 				kind: 'timeout',
-				message: `Timed out after ${Math.round(timeoutMs / 1000)} s waiting for ${WAITING_FOR[this.stage]}.`,
+				message: `Timed out after ${Math.round(timeoutMs / 1000)} s waiting for ${WAITING_FOR[run.stage]}.`,
 				line: null
 			});
-			this.done();
-		});
-		window.addEventListener('message', this.onMessage);
-		this.signal?.addEventListener('abort', this.onAbort, { once: true });
+			ctl.done();
+		},
+		onMessage: (data, ctl) => run.onMessage(data, ctl)
+	});
+	return run.result;
+}
 
-		const f = this.iframe;
-		f.setAttribute('sandbox', 'allow-scripts');
-		f.setAttribute('aria-hidden', 'true');
-		f.tabIndex = -1;
-		f.style.cssText =
-			'position: fixed; left: -10000px; top: 0; width: 1024px; height: 768px; border: 0';
-		f.src = src;
-		document.body.appendChild(f);
-	}
+/** One page's protocol: what stage it is at, and what came back. */
+class Run {
+	readonly result: AssetRunResult = { glb: null, png: null, errors: [] };
+	stage: Stage = 'load';
 
-	private later(ms: number, fn: () => void) {
-		const t = setTimeout(() => {
-			this.timers.delete(t);
-			fn();
-		}, ms);
-		this.timers.add(t);
-		return t;
-	}
+	constructor(private readonly wantExport: boolean) {}
 
-	private cleanup() {
-		this.stage = 'done';
-		for (const t of this.timers) clearTimeout(t);
-		this.timers.clear();
-		window.removeEventListener('message', this.onMessage);
-		this.signal?.removeEventListener('abort', this.onAbort);
-		this.iframe.remove();
-	}
-
-	private done() {
-		this.cleanup();
-		this.resolve(this.result);
-	}
-
-	private post(t: string) {
-		this.iframe.contentWindow?.postMessage({ t }, '*');
-	}
-
-	/** Every awaited message is in: wait a little for late errors, then resolve. */
-	private awaited() {
-		clearTimeout(this.deadline);
-		if (this.deadline !== undefined) this.timers.delete(this.deadline);
+	/** Every awaited message is in: wait a little for late errors, then end. */
+	private awaited(ctl: FrameControl) {
+		ctl.clearDeadline();
 		this.stage = 'late';
-		this.later(LATE_MS, () => this.done());
+		ctl.later(LATE_MS, () => ctl.done());
 	}
 
-	private readonly onAbort = () => {
-		this.cleanup();
-		this.reject(new DOMException('The run was aborted.', 'AbortError'));
-	};
+	onMessage(data: Record<string, unknown>, ctl: FrameControl) {
+		if (data.t === 'hx-err') this.onError(data, ctl);
+		else if (data.t === 'hx-ready') this.onReady(ctl);
+		else if (data.t === 'hx-png') this.onPng(data.dataUrl, ctl);
+		else if (data.t === 'hx-glb') this.onGlb(data.bytes, ctl);
+	}
 
-	private readonly onMessage = (event: MessageEvent) => {
-		if (event.source !== this.iframe.contentWindow || this.stage === 'done') return;
-		const data = event.data as Record<string, unknown> | null;
-		if (!data || typeof data !== 'object') return;
-		if (data.t === 'hx-err') this.onError(data);
-		else if (data.t === 'hx-ready') this.onReady();
-		else if (data.t === 'hx-png') this.onPng(data.dataUrl);
-		else if (data.t === 'hx-glb') this.onGlb(data.bytes);
-	};
-
-	private onError(e: Record<string, unknown>) {
+	private onError(e: Record<string, unknown>, ctl: FrameControl) {
 		const kind = ERROR_KINDS.has(e.kind as RunError['kind'])
 			? (e.kind as RunError['kind'])
 			: 'error';
 		const line = typeof e.line === 'number' && e.line > 0 ? e.line : null;
 		this.result.errors.push({ kind, message: String(e.message ?? ''), line });
-		if (kind === 'no-export' && this.stage === 'export') this.done();
+		if (kind === 'no-export' && this.stage === 'export') ctl.done();
 	}
 
-	private onReady() {
+	private onReady(ctl: FrameControl) {
 		if (this.stage !== 'load') return;
 		this.stage = 'settle';
-		this.later(SETTLE_MS, () => {
+		ctl.later(SETTLE_MS, () => {
 			this.stage = 'snapshot';
-			this.post('hx-snapshot');
+			ctl.post({ t: 'hx-snapshot' });
 		});
 	}
 
-	private onPng(dataUrl: unknown) {
+	private onPng(dataUrl: unknown, ctl: FrameControl) {
 		if (this.stage !== 'snapshot') return;
 		this.result.png = typeof dataUrl === 'string' ? dataUrl : null;
-		if (!this.wantExport) return this.awaited();
+		if (!this.wantExport) return this.awaited(ctl);
 		this.stage = 'export';
-		this.post('hx-export');
+		ctl.post({ t: 'hx-export' });
 	}
 
-	private onGlb(bytes: unknown) {
+	private onGlb(bytes: unknown, ctl: FrameControl) {
 		if (!(bytes instanceof ArrayBuffer)) return;
 		this.result.glb = new Uint8Array(bytes);
-		if (this.stage === 'export') this.awaited();
+		if (this.stage === 'export') this.awaited(ctl);
 	}
 }
