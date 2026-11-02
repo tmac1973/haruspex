@@ -13,7 +13,7 @@ Click the gear in the header; again or **← Back** closes it.
 
 ## General
 
-Appearance, reply format, lean mode and tool loading.
+Appearance, replies, lean mode and tool loading.
 
 - **Theme**: System (default), Light or Dark.
 - **Highlight color**: Teal (default).
@@ -25,13 +25,13 @@ See the `chat` page.
 
 ## Inference
 
-Where the model runs, which model, and defaults for every tab.
+Where the model runs, which model, and defaults.
 
 - **Inference backend**: Local (Haruspex-managed) (default), Remote server (advanced) or OpenRouter (cloud).
 - **Models**: download and switch local models.
 - **Context Size**: 32K (up to 256K).
 - **Let models use system RAM**: off.
-- **Parallel streams**: 1 (also 2 or 4). More let chats, jobs and Code subtasks run at once.
+- **Parallel streams**: 1 (also 2 or 4). More let chats, jobs and subtasks run at once.
 - **Extra llama-server arguments**: empty. They override Haruspex's own after a restart.
 - **Model defaults**: reasoning on, medium effort; replies up to 8192 tokens, 65536 for a file.
 - **Server**: status, port, Restart Server; **Run Setup Wizard**.
@@ -85,7 +85,7 @@ See the `chat` page.
 
 Which provider answers web searches.
 
-- **Search provider**: Auto (rotates free engines), DuckDuckGo, Brave Search (key), SearXNG or Browser-assisted.
+- **Search provider**: Auto (rotates engines), DuckDuckGo, Brave Search (key), SearXNG or Browser-assisted.
 - **SearXNG Instance URL**: http://localhost:8080.
 - **Result recency**: Any time.
 
@@ -137,7 +137,7 @@ See the `shell` page.
 
 ## Code
 
-How the coding agent works, in the Code tab and the Shell's Full access.
+The coding agent in the Code tab and the Shell's Full access.
 
 - **run_command timeout**: 30 seconds.
 - **Max steps per task**: 40.
@@ -145,6 +145,7 @@ How the coding agent works, in the Code tab and the Shell's Full access.
 - **Background log size**: 5 MB per process.
 - **Additional system prompt**: empty.
 - **Auto-approve commands**: off.
+- **Helpers**: all off (see `helpers`).
 
 See the `code` page.
 

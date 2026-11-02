@@ -10,6 +10,7 @@ import '#lib/agent/tools/command.ts';
 import '#lib/agent/tools/code-handoff.ts';
 import '#lib/agent/tools/delegate.ts';
 import '#lib/agent/tools/ask-specialist.ts';
+import '#lib/agent/tools/check-3d.ts';
 import '#lib/helpers/index.ts';
 import '#lib/agent/tools/shell-interactive.ts';
 import '#lib/agent/tools/audit.ts';
