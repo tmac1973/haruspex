@@ -25,6 +25,20 @@ import { invokeRouter, type InvokeRoute } from '#lib/testing/invoke.ts';
 /** The slot the stand-in `withInferenceSlot` hands each turn. */
 export const fakeSlot = { held: true, release: () => {}, reacquire: async () => {} };
 
+/**
+ * A pass-through stand-in for `withInferenceSlot`. Tests for the queue itself
+ * live in inferenceQueue.test.ts; here the runner's pipeline scheduling stays
+ * observable without the queue's await-ready microtask in the middle, and the
+ * calls record what each turn asked for (its priority).
+ */
+async function passThroughSlot<T>(
+	opts: { onAdmitted?: () => void },
+	fn: (slot: typeof fakeSlot) => Promise<T>
+): Promise<T> {
+	opts.onAdmitted?.();
+	return fn(fakeSlot);
+}
+
 export const mocks = {
 	runEphemeralTurn: vi.fn(),
 	getJob: vi.fn(),
@@ -36,6 +50,8 @@ export const mocks = {
 	markRunStepFinished: vi.fn(),
 	setRunEnvironment: vi.fn(),
 	setStepStatsProvider: vi.fn(),
+	setRunResult: vi.fn(),
+	withInferenceSlot: vi.fn(passThroughSlot),
 	askUserQuestion: vi.fn(),
 	invoke: vi.fn()
 };
@@ -164,6 +180,7 @@ export const mockModules = {
 		markRunStepStarted: mocks.markRunStepStarted,
 		markRunStepFinished: mocks.markRunStepFinished,
 		setRunEnvironment: mocks.setRunEnvironment,
+		setRunResult: mocks.setRunResult,
 		// The runner registers its stats provider at module load; capturing it
 		// here is what lets the persistence test call it directly.
 		setStepStatsProvider: mocks.setStepStatsProvider
@@ -175,18 +192,7 @@ export const mockModules = {
 		runWithAutoApprove: async <T>(fn: () => Promise<T>): Promise<T> => fn(),
 		isAutoApproveActive: () => false
 	}),
-	inferenceQueue: () => ({
-		// Tests for the queue itself live in inferenceQueue.test.ts; here we
-		// just want a pass-through so the runner's pipeline scheduling stays
-		// observable without the queue's await-ready microtask in the middle.
-		withInferenceSlot: async <T>(
-			opts: { onAdmitted?: () => void },
-			fn: (slot: typeof fakeSlot) => Promise<T>
-		): Promise<T> => {
-			opts.onAdmitted?.();
-			return fn(fakeSlot);
-		}
-	})
+	inferenceQueue: () => ({ withInferenceSlot: mocks.withInferenceSlot })
 };
 
 /** Answer `invoke` by command name from `routes`; anything else gets null. */
@@ -233,6 +239,8 @@ export function useRunnerFixtures() {
 		mocks.markRunFinished.mockReset().mockResolvedValue(undefined);
 		mocks.markRunStepStarted.mockReset().mockResolvedValue(undefined);
 		mocks.markRunStepFinished.mockReset().mockResolvedValue(undefined);
+		mocks.setRunResult.mockReset().mockResolvedValue(true);
+		mocks.withInferenceSlot.mockClear();
 		// Default: the guided_planning review checkpoint is approved immediately.
 		mocks.askUserQuestion.mockReset().mockResolvedValue({ kind: 'selected', labels: ['Approve'] });
 		mocks.invoke.mockReset();

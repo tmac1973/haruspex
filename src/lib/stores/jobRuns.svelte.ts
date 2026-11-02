@@ -40,6 +40,8 @@ export interface JobRunSummary {
 	model_thinking: boolean | null;
 	model_effort: string | null;
 	context_size: number | null;
+	/** A Home card job's validated result (`{ items: [...] }`) as JSON; null for other runs. */
+	result_json: string | null;
 }
 
 /**
@@ -203,6 +205,19 @@ export async function setRunEnvironment(
 			contextSize: env.contextSize
 		},
 		onError: 'setRunEnvironment failed',
+		ctx: { runId }
+	});
+}
+
+/**
+ * Store a run's result. Awaited before the run is marked finished, whose
+ * reload of the run list is what Home reads.
+ */
+export function setRunResult(runId: number, value: unknown): Promise<boolean> {
+	return dbMutate({
+		cmd: 'db_job_runs_set_result',
+		args: { runId, json: JSON.stringify(value) },
+		onError: 'setRunResult failed',
 		ctx: { runId }
 	});
 }

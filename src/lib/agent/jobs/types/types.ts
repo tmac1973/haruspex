@@ -16,6 +16,7 @@ import type { Component } from 'svelte';
 import type { EphemeralTurnOptions, EphemeralTurnResult } from '#lib/agent/runEphemeralTurn.ts';
 import type { JobStepInput, JobSummary, JobType, JobWithSteps } from '#lib/stores/jobs.svelte.ts';
 import type { RunStatus, RunStepState, RunTrigger } from '#lib/agent/jobs/runner.svelte.ts';
+import type { ResultSchema } from '#lib/agent/jobs/cardResult.ts';
 
 /** One planned display/execution step of a run (see the runner's planSteps). */
 export interface PlannedStep {
@@ -83,6 +84,11 @@ export interface JobRunContext {
 	 * surfaces when something imports a job definition directly.
 	 */
 	startChainedRun: (jobId: number) => Promise<number | null>;
+	/**
+	 * Store the run's structured result (a Home card job's `{ items }`). Await
+	 * it before `finalizeRun`, so the finished run carries it.
+	 */
+	setResult: (value: unknown) => Promise<void>;
 }
 
 /**
@@ -148,6 +154,13 @@ export interface JobTypeDefinition {
 	 * editor and makes the scheduler skip the job. Absent = schedulable.
 	 */
 	supportsSchedule?: boolean;
+	/**
+	 * A Home card's job: its model turns wait while the lane has any chat,
+	 * Code or other foreground turn, so a card never holds up the user.
+	 */
+	background?: boolean;
+	/** What one item of the run's `{ items }` result holds (see `cardResult.ts`). */
+	resultSchema?: ResultSchema;
 	/**
 	 * Platform gate. When it resolves false the type is hidden from the
 	 * picker (types/availability caches the answer for sync UI reads) and

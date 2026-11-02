@@ -7,7 +7,7 @@ import type { HomeCard } from '#lib/ipc/gen/HomeCard.ts';
 import JobsCard from '#lib/components/home/cards/JobsCard.svelte';
 import CodeSessionsCard from '#lib/components/home/cards/CodeSessionsCard.svelte';
 import PinnedJobCard from '#lib/components/home/cards/PinnedJobCard.svelte';
-import { getJobs } from '#lib/stores/jobs.svelte.ts';
+import { getJobs, type JobType, type Schedule } from '#lib/stores/jobs.svelte.ts';
 
 export type CardSize = 'normal' | 'wide';
 
@@ -31,6 +31,17 @@ export interface CardType {
 	defaultSize: CardSize;
 	/** Whether Add card offers it now (an email card needs an account, say). */
 	addable: () => boolean;
+	/**
+	 * The job type of the job this card owns (a judged card), made by
+	 * `createCardJob` when the card is added. Absent for live and pinned cards.
+	 */
+	jobType?: JobType;
+	/** Whether the card's menu offers Notify on new items. */
+	notifies?: boolean;
+	/** One result item as a notification names it (an email's subject). */
+	itemLabel?: (item: Record<string, unknown>) => string;
+	/** The schedule the Add card form starts from. */
+	defaultSchedule?: Schedule;
 }
 
 const CARD_TYPES: CardType[] = [

@@ -44,6 +44,7 @@ describe('currentRunLine', () => {
 
 	it('says when the run waits for the model or for the user', () => {
 		expect(currentRunLine(run({ waitingForSlot: true }))).toBe('Waiting for model');
+		expect(currentRunLine(run({ waitingForSlot: true }), true)).toBe('Waiting for chat');
 		expect(currentRunLine(run({ status: 'needs_input' }))).toBe('Needs your answer');
 	});
 });

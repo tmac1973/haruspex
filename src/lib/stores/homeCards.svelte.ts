@@ -26,12 +26,13 @@ export function isHomeCardsLoaded(): boolean {
 }
 
 async function reload(): Promise<void> {
-	cards = await dbQuery<HomeCard[]>({
+	const listed = await dbQuery<HomeCard[] | null>({
 		cmd: 'db_home_cards_list',
 		category: 'home',
 		fallback: cards,
 		onError: 'loading Home cards failed'
 	});
+	cards = listed ?? [];
 }
 
 /**
@@ -123,6 +124,18 @@ export async function setCardSize(id: string, size: CardSize): Promise<void> {
 		category: 'home',
 		args: { id, size },
 		onError: 'resizing a Home card failed',
+		ctx: { id },
+		onSuccess: reload
+	});
+}
+
+/** Turn Notify on new items on or off for a card. */
+export async function setCardNotify(id: string, notify: boolean): Promise<void> {
+	await dbMutate({
+		cmd: 'db_home_cards_update',
+		category: 'home',
+		args: { id, notify },
+		onError: 'changing a Home card notification failed',
 		ctx: { id },
 		onSuccess: reload
 	});

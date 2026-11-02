@@ -328,7 +328,8 @@ export function fakeRun(invoke: Mock, opts: FakeRunOptions = {}): FakeRun {
 				run.result = { status, error };
 			},
 			onSettled: vi.fn(),
-			startChainedRun: vi.fn(async () => null)
+			startChainedRun: vi.fn(async () => null),
+			setResult: vi.fn(async () => {})
 		}
 	};
 	return run;

@@ -49,7 +49,8 @@ function run(id: number, status: JobRunSummary['status']): JobRunSummary {
 		model_id: null,
 		model_thinking: null,
 		model_effort: null,
-		context_size: null
+		context_size: null,
+		result_json: null
 	};
 }
 

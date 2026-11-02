@@ -134,13 +134,20 @@ describe('inferenceQueue client — giving the slot back', () => {
 		const { slot, finish, p } = await heldTurn();
 		slot.release();
 		slot.release();
-		expect(calls('inference_release')).toEqual([{ reqId: 'main:1' }]);
+		// The lane stays reserved against card jobs while the tool runs.
+		expect(calls('inference_release')).toEqual([{ reqId: 'main:1', reserve: true }]);
 		expect(slot.held).toBe(false);
 
 		const back = slot.reacquire();
 		await tick();
 		expect(calls('inference_acquire')[1]).toEqual(
-			expect.objectContaining({ reqId: 'main:2', consumer: 'code', lane: 'local', front: true })
+			expect.objectContaining({
+				reqId: 'main:2',
+				consumer: 'code',
+				lane: 'local',
+				front: true,
+				replaces: 'main:1'
+			})
 		);
 		admit('main:2');
 		await back;
@@ -149,6 +156,32 @@ describe('inferenceQueue client — giving the slot back', () => {
 		finish();
 		await p;
 		expect(calls('inference_release').at(-1)).toEqual({ reqId: 'main:2' });
+	});
+
+	it('asks for a background slot for a card job, and keeps it when taking one back', async () => {
+		const { slot, finish, p } = await heldTurn({ priority: 'background' });
+		expect(calls('inference_acquire')[0]).toEqual(
+			expect.objectContaining({ priority: 'background' })
+		);
+		slot.release();
+		const back = slot.reacquire();
+		await tick();
+		expect(calls('inference_acquire')[1]).toEqual(
+			expect.objectContaining({ priority: 'background', replaces: 'main:1' })
+		);
+		admit('main:2');
+		await back;
+		finish();
+		await p;
+	});
+
+	it('asks for a foreground slot by default', async () => {
+		const { finish, p } = await heldTurn();
+		expect(calls('inference_acquire')[0]).toEqual(
+			expect.objectContaining({ priority: 'foreground' })
+		);
+		finish();
+		await p;
 	});
 
 	it('does nothing to take back a slot it holds', async () => {

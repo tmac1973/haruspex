@@ -9,7 +9,7 @@ The Jobs tab runs saved prompts without you watching, on a schedule or when you 
 
 ## Run a job by hand or on a schedule
 
-Set **Schedule** in the job editor: Manual only, Every hour, Daily, Weekly, or Every N minutes/hours. Haruspex must be open for a schedule to fire; a run due while it is closed is dropped, not run later. While a job runs, Haruspex keeps your machine from going to sleep.
+Set **Schedule** in the job editor: Manual only, Every hour, Daily, Weekly, or Every N minutes/hours. Haruspex must be open for a schedule to fire; a run missed while it is closed runs once at the next launch. While a job runs, Haruspex keeps your machine from going to sleep.
 
 Guided planning, autonomous coding and asset generation can't be scheduled, because they stop to ask you things.
 
@@ -17,7 +17,7 @@ In lean mode only research jobs run; the rest show as paused (see the `lean-mode
 
 ## Find and organize jobs
 
-A job started by another job's run, such as the asset and coding jobs from guided planning, sits under that job; click its arrow to show them. **Filter jobs** matches names, descriptions and types. Drag the list's right edge to resize it. Deleting a job keeps the jobs it started.
+A job started by another job's run sits under that job; its arrow shows them. **Filter jobs** matches names, descriptions and types. Drag the list's right edge to resize it. Deleting a job keeps the jobs it started. A job a Home card made has a **Home** badge (see the `home` page).
 
 ## Fill in the job editor
 

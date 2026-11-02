@@ -54,7 +54,7 @@
 	}
 
 	const SCHEDULE_TOOLTIP =
-		"When to run the job automatically. IMPORTANT: Haruspex must be open and running for the scheduler to fire — there's no background service. Schedules that come due while the app is closed are dropped, not retro-run on next launch. Use 'Manual only' if you only want to kick the job off yourself.";
+		"When to run the job automatically. IMPORTANT: Haruspex must be open and running for the scheduler to fire — there's no background service. A schedule that comes due while the app is closed runs once at the next launch, however many runs it missed. Use 'Manual only' if you only want to kick the job off yourself.";
 </script>
 
 <div class="schedule-field">
@@ -75,8 +75,7 @@
 
 	{#if schedule.kind !== 'manual'}
 		<p class="schedule-warning">
-			⚠ Haruspex must be open and running for the scheduler to fire. Missed runs while the app is
-			closed are dropped — they don't catch up on next launch.
+			Runs once at launch if a run was missed while the app was closed.
 		</p>
 	{/if}
 

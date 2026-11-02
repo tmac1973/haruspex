@@ -216,7 +216,8 @@ function harness(opts: {
 		startChainedRun: async (jobId) => {
 			h.chained.push(jobId);
 			return opts.startChainedRun ? opts.startChainedRun(jobId) : 501;
-		}
+		},
+		setResult: async () => {}
 	};
 	return h;
 }

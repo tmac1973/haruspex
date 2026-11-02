@@ -3185,3 +3185,21 @@ fn recent_runs_are_newest_first_across_jobs() {
     assert_eq!(keys, [("A".into(), 10), ("A".into(), 50), ("B".into(), 30)]);
     assert_eq!(runs[0].job_type, "research");
 }
+
+#[test]
+fn a_run_result_is_stored_and_read_back() {
+    let db = test_db();
+    let job = db.create_job(&sample_job_input("Carded")).unwrap();
+    let run = db.create_job_run(job, "manual", &["p".into()]).unwrap();
+    assert_eq!(db.get_job_run(run).unwrap().result_json, None);
+
+    db.set_run_result(run, r#"{"items":[]}"#).unwrap();
+    assert_eq!(
+        db.get_job_run(run).unwrap().result_json.as_deref(),
+        Some(r#"{"items":[]}"#)
+    );
+    assert_eq!(
+        db.list_job_runs(job).unwrap()[0].result_json.as_deref(),
+        Some(r#"{"items":[]}"#)
+    );
+}

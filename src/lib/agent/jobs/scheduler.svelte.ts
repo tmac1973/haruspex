@@ -6,10 +6,10 @@
  * After enqueue we recompute and persist the next due time, so cadence
  * stays steady even if the runner queues the work behind other runs.
  *
- * Scope per phase plan: the app must be open for this to fire. If the
- * app is closed when a schedule comes due, that fire is dropped — not
- * retro-run on next launch. The job editor surfaces this constraint in
- * its schedule field.
+ * The app must be open for this to fire. A job that came due while the
+ * app was closed is due at the first tick after launch, so it runs once
+ * then, however many runs it missed: `computeNextDueAt` steps the next
+ * due time past now. The job editor's schedule field says so.
  *
  * The 30-second tick interval is loose on purpose. Sub-minute precision
  * would add cost (queries + clock work) for no real-world benefit — the
