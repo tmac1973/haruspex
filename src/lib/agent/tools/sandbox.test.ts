@@ -148,20 +148,19 @@ describe('sandbox tools', () => {
 		expect(mocks.runPython).not.toHaveBeenCalled();
 	});
 
-	it('skips the approval prompt and runs Python when auto-approve is active', async () => {
-		mocks.runPython.mockResolvedValue(ok({ result: 'job ok' }));
+	it("still asks in a chat while a job's auto-approve scope is active", async () => {
+		// A job running beside the chat must not approve the chat's Python.
+		mocks.runPython.mockResolvedValue(ok({ result: 'chat ok' }));
 		const { runWithAutoApprove } = await import('#lib/stores/approvalOverride.ts');
 		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const { updateSettings } = await import('#lib/stores/settings.ts');
-		// Force the every-run mode so we'd normally prompt every time.
 		updateSettings({ sandboxApproval: 'every-run' });
 		try {
 			const out = await runWithAutoApprove(() =>
 				executeTool('run_python', { code: 'print("hi")' }, ctx)
 			);
-			expect(mocks.askApproval).not.toHaveBeenCalled();
-			expect(mocks.runPython).toHaveBeenCalled();
-			expect(out.result).toContain('job ok');
+			expect(mocks.askApproval).toHaveBeenCalled();
+			expect(out.result).toContain('chat ok');
 		} finally {
 			updateSettings({ sandboxApproval: 'once-per-chat' });
 		}

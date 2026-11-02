@@ -77,7 +77,8 @@ export async function prepareSave(
 	}
 	const workdir = fsWorkdir(ctx)!;
 	const resolved = await resolveWritePathInteractive(workdir, rawPath, ctx.filesWrittenThisTurn, {
-		askBeforeOverwrite: true,
+		// A job run can't answer the prompt: it overwrites, as its writes do.
+		askBeforeOverwrite: ctx.jobRunId === undefined,
 		releaseSlot: ctx.releaseSlot,
 		chatId: ctx.conversationId
 	});

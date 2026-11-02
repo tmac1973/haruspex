@@ -487,7 +487,7 @@ describe('write conflicts and failures', () => {
 
 	it('overwrites an existing file in an unattended run', async () => {
 		disk.exists = true;
-		mocks.isAutoApproveActive.mockReturnValue(true);
+		ctx = makeCtx({ jobRunId: 3 });
 		const out = await xlsx(GOOD);
 		expect(out.result).toBe('Wrote: out.xlsx');
 		expect(disk.written[0].payload.overwrite).toBe(true);

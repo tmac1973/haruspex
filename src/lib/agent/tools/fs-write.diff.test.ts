@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
-vi.mock('#lib/stores/approvalOverride.ts', () => ({ isAutoApproveActive: () => true }));
 
 import { executeTool } from '#lib/agent/tools/index.ts';
 import type { ToolContext } from './types';
@@ -29,11 +28,14 @@ beforeEach(() => {
 	);
 });
 
+// Outside a Code session, a job run's: it overwrites an existing file without
+// a prompt, so these tests never wait on one.
 const ctx = (codeSessionId?: string): ToolContext =>
 	makeToolContext({
 		workingDir: '/proj',
 		codeMode: true,
-		codeSessionId
+		codeSessionId,
+		jobRunId: codeSessionId ? undefined : 1
 	}) as ToolContext;
 
 describe('fs_write_text in a Code session', () => {

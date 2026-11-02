@@ -8,7 +8,6 @@ import {
 	isChatSandboxApproved,
 	approveChatSandbox
 } from '#lib/stores/sandboxApproval.svelte.ts';
-import { isAutoApproveActive } from '#lib/stores/approvalOverride.ts';
 import { errMessage } from '#lib/utils/error.ts';
 import { formatSandboxResult } from '#lib/sandbox/formatResult.ts';
 import { waitOnUser } from '#lib/agent/tools/_helpers.ts';
@@ -71,7 +70,6 @@ registerTool({
 		// without asking: writing the job approved them.
 		const needsPrompt =
 			ctx.jobRunId === undefined &&
-			!isAutoApproveActive() &&
 			(mode === 'every-run' || (mode === 'once-per-chat' && !isChatSandboxApproved(chatId)));
 		if (needsPrompt) {
 			try {

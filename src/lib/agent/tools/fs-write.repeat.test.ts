@@ -84,16 +84,20 @@ describe('repeat-write guard', () => {
 	it('allows a repeat write in a later turn', async () => {
 		// filesWrittenThisTurn is per-turn state; a fresh set is a fresh turn.
 		existsReturns(true);
-		const r = await resolveWritePathInteractive('/w', 'plan/phase-02.md', new Set<string>());
+		const r = await resolveWritePathInteractive('/w', 'plan/phase-02.md', new Set<string>(), {
+			askBeforeOverwrite: false
+		});
 		expect(r.kind).toBe('ok');
 		if (r.kind === 'ok') expect(r.overwrite).toBe(true);
 	});
 
 	it('still overwrites a pre-existing file not written this turn', async () => {
-		// Auto-approve behaviour for ordinary job writes must be unchanged: the
-		// defect was the silent REPEAT, not overwriting as such.
+		// A job's ordinary writes still overwrite (its write options say so):
+		// the defect was the silent REPEAT, not overwriting as such.
 		existsReturns(true);
-		const r = await resolveWritePathInteractive('/w', 'existing.md', new Set<string>());
+		const r = await resolveWritePathInteractive('/w', 'existing.md', new Set<string>(), {
+			askBeforeOverwrite: false
+		});
 		expect(r.kind).toBe('ok');
 		if (r.kind === 'ok') {
 			expect(r.overwrite).toBe(true);
