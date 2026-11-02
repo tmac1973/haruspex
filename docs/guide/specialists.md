@@ -1,6 +1,6 @@
 ---
 title: Specialists
-description: Specialist models in the Code tab — small models tuned for one job that the coding agent hands work to, how to add one, turn it on for a session, and send it images.
+description: Specialist models in the Code tab — small models tuned for one job (text, 3D assets as GLB) that the coding agent hands work to, how to add one and turn it on.
 ---
 
 # Specialists
@@ -37,6 +37,7 @@ When a specialist has **Accepts images** on, the agent can send up to three imag
 ## Kinds
 
 - **Text**: sends the request and hands the answer back to the agent as text, cut at 24,000 characters. Use it for any model that answers in text.
+- **3D asset (GLB)**: for a model that writes a Three.js page with an Export GLB button, such as `ccore/Qwen3.5-4B-GLB-3D-Coder`. The agent gives a path ending in `.glb`; the page is saved beside it as `<name>.glb.html`, run hidden in the app, and its export checked: the GLB has to load, have meshes and no broken geometry. When that passes, the GLB is written and, if the agent's model can see images, it gets a render to judge. When it fails, the agent gets every error with its line, fixes the `.glb.html` and asks for a recheck, which runs the page again without a new request. The page loads Three.js from a CDN, so it needs the network.
 
 New kinds come with the app; Settings can't define one.
 
