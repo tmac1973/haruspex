@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Low-Poly Patrol Robot</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #0b1018;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    #app {
+      position: fixed;
+      inset: 0;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    #ui {
+      position: fixed;
+      z-index: 10;
+      top: 18px;
+      left: 18px;
+      width: min(360px, calc(100vw - 36px));
+      padding: 18px 18px 16px;
+      color: #e9f2ff;
+      background: rgba(12, 18, 28, 0.84);
+      border: 1px solid rgba(117, 190, 255, 0.28);
+      border-radius: 16px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.32);
+      backdrop-filter: blur(12px);
+    }
+
+    .title {
+      margin: 0 0 6px;
+      font-size: 20px;
+      letter-spacing: 0.02em;
+    }
+
+    .subtitle {
+      margin: 0 0 16px;
+      color: #91a3bd;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    button {
+      appearance: none;
+      border: 0;
+      border-radius: 9px;
+      padding: 10px 13px;
+      color: white;
+      background: #1f63a8;
+      box-shadow: 0 5px 15px rgba(23, 99, 168, 0.3);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.15s ease, filter 0.15s ease, opacity 0.15s ease;
+    }
+
+    button:hover {
+      filter: brightness(1.12);
+      transform: translateY(-1px);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    button:disabled {
+      cursor: wait;
+      opacity: 0.6;
+      transform: none;
+    }
+
+    #export {
+      color: #07111d;
+      background: linear-gradient(135deg, #72e7ff, #3db8ff);
+      box-shadow: 0 5px 18px rgba(45, 184, 255, 0.25);
+    }
+
+    #status {
+      margin-top: 12px;
+      color: #91a3bd;
+      font-size: 12px;
+    }
+
+    .hint {
+      position: fixed;
+      z-index: 10;
+      right: 18px;
+      bottom: 16px;
+      color: rgba(218, 235, 255, 0.72);
+      font-size: 12px;
+      pointer-events: none;
+    }
+  </style>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+
+<body>
+  <div id="app"></div>
+
+  <section id="ui">
+    <h1 class="title">Patrol Robot</h1>
+    <p class="subtitle">
+      A compact, stylized bipedal robot with a cyan visor, articulated limbs,
+      and a looping walk animation.
+    </p>
+
+    <div class="buttons">
+      <button id="export" type="button">Export GLB</button>
+      <button id="play" type="button">Play / Pause</button>
+      <button id="reset" type="button">Reset View</button>
+    </div>
+
+    <div id="status">Ready · 2.4-second walk cycle</div>
+  </section>
+
+  <div class="hint">Drag to orbit · Scroll to zoom</div>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
+
+    // -------------------------------------------------------------------------
+    // Scene
+    // -------------------------------------------------------------------------
+
+    const app = document.getElementById("app");
+    const status = document.getElementById("status");
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0b1018);
+
+    const camera = new THREE.PerspectiveCamera(
+      38,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      100
+    );
+    camera.position.set(3.4, 2.35, 4.7);
+
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: false,
+      preserveDrawingBuffer: true
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    app.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 1.0, 0);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.07;
+    controls.minDistance = 2.8;
+    controls.maxDistance = 8;
+    controls.maxPolarAngle = Math.PI * 0.49;
+
+    const hemisphere = new THREE.HemisphereLight(0xa8d8ff, 0x182032, 2.1);
+    scene.add(hemisphere);
+
+    const keyLight = new THREE.DirectionalLight(0xffffff, 3.2);
+    keyLight.position.set(3.5, 6, 4);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(1024, 1024);
+    keyLight.shadow.camera.left = -4;
+    keyLight.shadow.camera.right = 4;
+    keyLight.shadow.camera.top = 4;
+    keyLight.shadow.camera.bottom = -4;
+    keyLight.shadow.bias = -0.0005;
+    scene.add(keyLight);
+
+    const rimLight = new THREE.DirectionalLight(0x42c9ff, 2.1);
+    rimLight.position.set(-4, 2.5, -3);
+    scene.add(rimLight);
+
+    const warmLight = new THREE.PointLight(0xff8a4c, 10, 8, 2);
+    warmLight.position.set(1.8, 1.6, 2.8);
+    scene.add(warmLight);
+
+    const platform = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.12, 1.22, 0.12, 12),
+      new THREE.MeshStandardMaterial({
+        color: 0x172231,
+        metalness: 0.4,
+        roughness: 0.62
+      })
+    );
+    platform.position.y = -0.08;
+    platform.receiveShadow = true;
+    scene.add(platform);
+
+    const platformRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.92, 0.025, 6, 32),
+      new THREE.MeshBasicMaterial({ color: 0x2e79b5 })
+    );
+    platformRing.rotation.x = Math.PI / 2;
+    platformRing.position.y = -0.018;
+    scene.add(platformRing);
+
+    // -------------------------------------------------------------------------
+    // Robot
+    // -------------------------------------------------------------------------
+
+    const robot = new THREE.Group();
+    robot.name = "Robot";
+    robot.rotation.y = -0.1;
+    scene.add(robot);
+
+    const body = new THREE.Group();
+    body.name = "Body";
+    body.position.y = 0.92;
+    robot.add(body);
+
+    const head = new THREE.Group();
+    head.name = "Head";
+    head.position.set(0, 0.62, 0.03);
+    body.add(head);
+
+    const material = {
+      shell: new THREE.MeshStandardMaterial({
+        color: 0x68768a,
+        metalness: 0.72,
+        roughness: 0.34,
+        flatShading: true
+      }),
+      dark: new THREE.MeshStandardMaterial({
+        color: 0x1c2632,
+        metalness: 0.58,
+        roughness: 0.42,
+        flatShading: true
+      }),
+      cyan: new THREE.MeshStandardMaterial({
+        color: 0x36d6ff,
+        emissive: 0x0bcfff,
+        emissiveIntensity: 2.5,
+        metalness: 0.25,
+        roughness: 0.25,
+        flatShading: true
+      }),
+      orange: new THREE.MeshStandardMaterial({
+        color: 0xff8d45,
+        metalness: 0.3,
+        roughness: 0.38,
+        flatShading: true
+      }),
+      rubber: new THREE.MeshStandardMaterial({
+        color: 0x0b1017,
+        metalness: 0.05,
+        roughness: 0.78,
+        flatShading: true
+      })
+    };
+
+    function addMesh(parent, geometry, mat, x = 0, y = 0, z = 0) {
+      const mesh = new THREE.Mesh(geometry, mat);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      parent.add(mesh);
+      return mesh;
+    }
+
+    // Main torso
+    addMesh(
+      body,
+      new THREE.BoxGeometry(0.88, 0.55, 0.48),
+      material.shell,
+      0,
+      0.17,
+      0
+    );
+
+    // Chest panel
+    addMesh(
+      body,
+      new THREE.BoxGeometry(0.56, 0.22, 0.08),
+      material.dark,
+      0,
+      0.2,
+      0.27
+    );
+
+    // Chest status light
+    addMesh(
+      body,
+      new THREE.BoxGeometry(0.16, 0.07, 0.03),
+      material.cyan,
+      0,
+      0.2,
+      0.325
+    );
+
+    // Head
+    addMesh(
+      head,
+      new THREE.BoxGeometry(0.64, 0.42, 0.48),
+      material.shell,
+      0,
+      0,
+      0
+    );
+
+    // Dark visor
+    addMesh(
+      head,
+      new THREE.BoxGeometry(0.45, 0.17, 0.09),
+      material.dark,
+      0,
+      0.015,
+      0.27
+    );
+
+    // Eyes
+    addMesh(
+      head,
+      new THREE.BoxGeometry(0.11, 0.075, 0.035),
+      material.cyan,
+      -0.11,
+      0.015,
+      0.325
+    );
+
+    addMesh(
+      head,
+      new THREE.BoxGeometry(0.11, 0.075, 0.035),
+      material.cyan,
+      0.11,
+      0.015,
+      0.325
+    );
+
+    // Antenna
+    addMesh(
+      head,
+      new THREE.CylinderGeometry(0.035, 0.05, 0.28, 6),
+      material.dark,
+      0.22,
+      0.35,
+      -0.03
+    );
+
+    addMesh(
+      head,
+      new THREE.SphereGeometry(0.06, 8, 5),
+      material.orange,
+      0.22,
+      0.5,
+      -0.03
+    );
+
+    // Side accent blocks
+    addMesh(
+      head,
+      new THREE.BoxGeometry(0.12, 0.13, 0.18),
+      material.orange,
+      -0.31,
+      -0.07,
+      0.02
+    );
+
+    addMesh(
+      head,
+      new THREE.BoxGeometry(0.12, 0.13, 0.18),
+      material.orange,
+      0.31,
+      -0.07,
+      0.02
+    );
+
+    // Backpack
+    addMesh(
+      body,
+      new THREE.BoxGeometry(0.54, 0.38, 0.28),
+      material.dark,
+      0,
+      0.14,
+      -0.34
+    );
+
+    // Backpack vents
+    for (let i = 0; i < 3; i++) {
+      addMesh(
+        body,
+        new THREE.BoxGeometry(0.38, 0.055, 0.04),
+        material.dark,
+        0,
+        0.08 + i * 0.12,
+        -0.505
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // Legs
+    // -------------------------------------------------------------------------
+
+    function createLeg(side) {
+      const pivot = new THREE.Group();
+      pivot.name = side === "Left" ? "LeftLeg" : "RightLeg";
+      pivot.position.set(side === "Left" ? -0.26 : 0.26, 0.78, 0);
+      body.add(pivot);
+
+      // Upper leg
+      addMesh(
+        pivot,
+        new THREE.CylinderGeometry(0.16, 0.19, 0.43, 6),
+        material.shell,
+        0,
+        -0.19,
+        0
+      );
+
+      // Knee joint
+      addMesh(
+        pivot,
+        new THREE.SphereGeometry(0.18, 8, 5),
+        material.dark,
+        0,
+        -0.42,
+        0
+      );
+
+      // Lower leg
+      addMesh(
+        pivot,
+        new THREE.BoxGeometry(0.23, 0.35, 0.23),
+        material.shell,
+        0,
+        -0.62,
+        0
+      );
+
+      // Foot
+      addMesh(
+        pivot,
+        new THREE.BoxGeometry(0.29, 0.14, 0.43),
+        material.rubber,
+        0,
+        -0.84,
+        0.06
+      );
+
+      // Foot pad
+      addMesh(
+        pivot,
+        new THREE.BoxGeometry(0.25, 0.06, 0.27),
+        material.dark,
+        0,
+        -0.94,
+        0.06
+      );
+
+      // Accent on lower leg
+      addMesh(
+        pivot,
+        new THREE.BoxGeometry(0.245, 0.08, 0.245),
+        material.orange,
+        0,
+        -0.62,
+        0.13
+      );
+
+      return pivot;
+    }
+
+    createLeg("Left");
+    createLeg("Right");
+
+    // -------------------------------------------------------------------------
+    // Arms
+    // -------------------------------------------------------------------------
+
+    function createArm(side) {
+      const pivot = new THREE.Group();
+      pivot.name = side === "Left" ? "LeftArm" : "RightArm";
+      pivot.position.set(side === "Left" ? -0.5 : 0.5, 0.35, 0.03);
+      body.add(pivot);
+
+      // Shoulder joint
+      addMesh(
+        pivot,
+        new THREE.SphereGeometry(0.19, 8, 5),
+        material.dark,
+        0,
+        0,
+        0
+      );
+
+      // Upper arm
+      addMesh(
+        pivot,
+        new THREE.CylinderGeometry(0.14, 0.17, 0.34, 6),
+        material.shell,
+        0,
+        -0.2,
+        0
+      );
+
+      // Elbow joint
+      addMesh(
+        pivot,
+        new THREE.SphereGeometry(0.16, 8, 5),
+        material.dark,
+        0,
+        -0.4,
+        0
+      );
+
+      // Forearm
+      addMesh(
+        pivot,
+        new THREE.BoxGeometry(0.23, 0.31, 0.23),
+        material.shell,
+        0,
+        -0.61,
+        0
+      );
+
+      // Hand
+      addMesh(
+        pivot,
+        new THREE.BoxGeometry(0.27, 0.2, 0.28),
+        material.rubber,
+        0,
+        -0.83,
+        0.01
+      );
+
+      // Fingers
+      for (let i = 0; i < 3; i++) {
+        addMesh(
+          pivot,
+          new THREE.BoxGeometry(0.045, 0.08, 0.06),
+          material.dark,
+          -0.08 + i * 0.08,
+          -0.96,
+          0.01
+        );
+      }
+
+      // Accent on forearm
+      addMesh(
+        pivot,
+        new THREE.BoxGeometry(0.245, 0.08, 0.245),
+        material.orange,
+        0,
+        -0.61,
+        0.13
+      );
+
+      return pivot;
+    }
+
+    createArm("Left");
+    createArm("Right");
+
+    // -------------------------------------------------------------------------
+    // Walk animation
+    // -------------------------------------------------------------------------
+
+    const duration = 2.4;
+    const times = [0, 0.6, 1.2, 1.8, 2.4];
+
+    const leftLegAngles = [0, 0.48, 0, -0.48, 0];
+    const rightLegAngles = [0, -0.48, 0, 0.48, 0];
+
+    const leftArmAngles = [0.12, 0.38, 0.12, 0.38, 0.12];
+    const rightArmAngles = [-0.12, -0.38, -0.12, -0.38, -0.12];
+
+    const bodyPositions = [
+      [0, 0, 0],
+      [0, 0.045, 0],
+      [0, 0, 0],
+      [0, 0.045, 0],
+      [0, 0, 0]
+    ];
+
+    const quaternion = (x, y, z) => {
+      const euler = new THREE.Euler(x, y, z);
+      const quaternion = new THREE.Quaternion();
+      quaternion.setFromEuler(euler);
+      return quaternion.toArray();
+    };
+
+    const leftLegTracks = times.map(
+      (time, index) =>
+        quaternion(0, 0, leftLegAngles[index])
+    );
+
+    const rightLegTracks = times.map(
+      (time, index) =>
+        quaternion(0, 0, rightLegAngles[index])
+    );
+
+    const leftArmTracks = times.map(
+      (time, index) =>
+        quaternion(0, 0, leftArmAngles[index])
+    );
+
+    const rightArmTracks = times.map(
+      (time, index) =>
+        quaternion(0, 0, rightArmAngles[index])
+    );
+
+    const walkClip = new THREE.AnimationClip("Walk", duration, [
+      new THREE.VectorKeyframeTrack(
+        "Robot/Body.position",
+        times,
+        bodyPositions.flat()
+      ),
+      new THREE.QuaternionKeyframeTrack(
+        "Robot/LeftLeg.quaternion",
+        times,
+        leftLegTracks.flat()
+      ),
+      new THREE.QuaternionKeyframeTrack(
+        "Robot/RightLeg.quaternion",
+        times,
+        rightLegTracks.flat()
+      ),
+      new THREE.QuaternionKeyframeTrack(
+        "Robot/LeftArm.quaternion",
+        times,
+        leftArmTracks.flat()
+      ),
+      new THREE.QuaternionKeyframeTrack(
+        "Robot/RightArm.quaternion",
+        times,
+        rightArmTracks.flat()
+      )
+    ]);
+
+    const mixer = new THREE.AnimationMixer(robot);
+    const walkAction = mixer.clipAction(walkClip);
+    walkAction.play();
+
+    // -------------------------------------------------------------------------
+    // UI
+    // -------------------------------------------------------------------------
+
+    const playButton = document.getElementById("play");
+    const exportButton = document.getElementById("export");
+
+    let playing = true;
+
+    playButton.addEventListener("click", () => {
+      playing = !playing;
+
+      if (playing) {
+        walkAction.play();
+        playButton.textContent = "Pause";
+        status.textContent = "Playing walk cycle";
+      } else {
+        walkAction.paused = true;
+        playButton.textContent = "Play";
+        status.textContent = "Pause walk cycle";
+      }
+    });
+
+    document.getElementById("reset").addEventListener("click", () => {
+      camera.position.set(3.4, 2.35, 4.7);
+      controls.target.set(0, 1.0, 0);
+      controls.update();
+    });
+
+    exportButton.addEventListener("click", () => {
+      exportButton.disabled = true;
+      status.textContent = "Building GLB…";
+
+      // Update the robot before exporting so the exported animation starts
+      // from the same pose as the preview.
+      mixer.update(0);
+
+      const exporter = new GLTFExporter();
+
+      exporter.parse(
+        robot,
+        (result) => {
+          const blob = new Blob([result], {
+            type: "model/gltf-binary"
+          });
+
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = "patrol-robot.glb";
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+          status.textContent = "GLB downloaded successfully";
+          exportButton.disabled = false;
+        },
+        (error) => {
+          console.error(error);
+          status.textContent = "Export failed — see console";
+          exportButton.disabled = false;
+        },
+        {
+          animations: [walkClip],
+          binary: true,
+          onlyVisible: true
+        }
+      );
+    });
+
+    // -------------------------------------------------------------------------
+    // Render loop
+    // -------------------------------------------------------------------------
+
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const delta = Math.min(clock.getDelta(), 0.05);
+      mixer.update(delta);
+      controls.update();
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    });
+  </script>
+</body>
+</html>

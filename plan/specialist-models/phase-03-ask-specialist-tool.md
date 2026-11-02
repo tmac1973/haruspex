@@ -21,14 +21,16 @@ Register one tool, `ask_specialist`, offered only in the Code tab and only when 
 1. Base schema: `{ name: string, request: string }`, both described for the model. `request` is "what to make or answer, in plain English; keep it short and specific".
 2. `liveSchema(schema, opts)` for the turn:
    - Let `offered = sessionSpecialists(opts.codeSpecialists ?? null)`. In a read-only session (`opts.codeReadOnly`) drop entries whose kind has `writes: true`. Return `null` (tool hidden) when nothing is left.
+   - When any offered entry has `acceptsImages`, add `images`: an array (max 3 items) of strings, "Reference images in the session folder (PNG, JPEG or WebP) to send with the request", described as "(only <names>)" listing those entries. Otherwise the schema has no `images`.
    - `name` becomes an enum of the offered names. The tool description lists each as `- <name>: <effectiveDescription(entry)>`.
    - Merge the `params` of every offered entry's kind into `properties` (phase 01's registry guarantees a shared name has one schema). A kind param is never in the schema's top-level `required`; its description starts with "(<kind label> only)", or "(<label A>, <label B> only)" when several offered kinds declare it. `request` is in `required` only when every offered kind has `requestRequired: true`.
 3. `execute(args, ctx)`:
    - Resolve `name` against `sessionSpecialists(ctx.codeSpecialists ?? null)`; unknown → `toolError` listing the valid names.
-   - A param belongs to every kind that declares it. Refuse any argument other than `name` and `request` that the named entry's kind does not declare: "`<param>` doesn't apply to <name>."
+   - `images`: refused for an entry without `acceptsImages` ("<name> doesn't take images. Turn on Accepts images in Settings → Code → Specialists if its server can."); more than 3, a path outside the session folder, a missing file, an extension other than `.png`, `.jpg`, `.jpeg` or `.webp`, or a file over 8 MB are refused one line each. Accepted images are read with `assetIo(ctx).read` and turned into data URLs as `data:<mime>;base64,<bytesToBase64(bytes)>` (`bytesToBase64` from `src/lib/utils/base64.ts`; MIME from the extension) as `SpecialistImage`s for `run.images`.
+   - A param belongs to every kind that declares it. Refuse any argument other than `name`, `request` and `images` that the named entry's kind does not declare: "`<param>` doesn't apply to <name>."
    - Check the named kind's required params and `request` (when `requestRequired`), each with a one-line `toolError`.
    - A `writes: true` kind in a read-only session → `toolError('This session is read-only.')`. For a write kind, take the writer lease through `ctx.codeWriteGuard.acquire()` for the length of the run and release it in `finally` (the central lease in `executeTool` is name-based and `ask_specialist` is not in `isCodeWriteTool`, because the `text` kind does not write).
-   - Call `kind.run({ entry, request, args, ctx })` and return its output. An `AbortError` rethrows; any other error becomes `toolError("<name> failed: <message>")`.
+   - Call `kind.run({ entry, request, images, args, ctx })` and return its output. `request` is the trimmed string when the call passed a non-empty one, else `undefined`; `images` is the list built above (empty when none were sent). An `AbortError` rethrows; any other error becomes `toolError("<name> failed: <message>")`.
 4. `displayLabel(args)`: the named kind's `callLabel(entry, args)` when it exists and returns a string; otherwise `"<name>: <first 60 chars of request>"`.
 5. Set `usesModel: false` (the specialist runs on its own lane or through `ctx.runInSlot`, as phase 01's `callSpecialist` decides) and `category: 'specialist'`.
 
@@ -39,7 +41,8 @@ Register one tool, `ask_specialist`, offered only in the Code tab and only when 
 - Registry: offered in the Code tab with one session specialist; not offered in Chat, Shell (code mode included), jobs, subtasks, or a Code session with none on; not deferred when offered; existing `liveSchema` tools (the image tools) unchanged.
 - `liveSchema` with two fake kinds registered in the test: enum and description list the session's names; kind params merged and marked with their kind labels; read-only drops write kinds; `request` required only when all kinds require it.
 - `execute` with the fake kinds: unknown name; a param the named kind doesn't declare; missing required param; read-only refusal for a write kind; the lease is taken and released (also when `run` throws); errors wrapped, `AbortError` rethrown; `displayLabel` uses `callLabel` and falls back.
-- With the real `text` kind and a mocked call: the answer comes back as the tool result.
+- `images`: in the schema only when an offered entry accepts images; refused for an entry that doesn't; path, count, type and size refusals; accepted files reach `run.images` as data URLs.
+- With the real `text` kind and a mocked call: the answer comes back as the tool result, and images reach the call.
 - `runCodeTurn.test.ts`: the session's list reaches both `ToolContext.codeSpecialists` and `ToolSchemaOpts.codeSpecialists`.
 
 ## Commit
