@@ -2,7 +2,7 @@
 	import { ioRoot } from '#lib/code/paths.ts';
 	/**
 	 * One session's header: its folder and git branch, whether it is
-	 * read-only, its model (see CodeModelPicker) and reasoning effort, the
+	 * read-only, its model (see CodeModelPicker), reasoning effort and specialists, the
 	 * repo's AGENTS.md, how full the context is, and its background processes.
 	 */
 	import { invoke } from '@tauri-apps/api/core';
@@ -11,6 +11,7 @@
 	import BackgroundChip from '#lib/components/code/BackgroundChip.svelte';
 	import CodeModelPicker from '#lib/components/code/CodeModelPicker.svelte';
 	import CodeBranchControl from '#lib/components/code/CodeBranchControl.svelte';
+	import SpecialistsMenu from '#lib/components/code/SpecialistsMenu.svelte';
 	import { folderName } from '#lib/code/sessionList.ts';
 	import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 	import type { CodeSession } from '#lib/stores/code.svelte.ts';
@@ -104,6 +105,8 @@
 			<option value={level}>Effort: {level}</option>
 		{/each}
 	</select>
+
+	<SpecialistsMenu {session} />
 
 	<span class="spacer"></span>
 

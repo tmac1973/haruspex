@@ -7,6 +7,7 @@ import { chatCompletionStream, type BackendOverride, type ChatMessage } from '#l
 import { withInferenceSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 import type { SlotLender, ToolContext } from '#lib/agent/tools/types.ts';
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
+import { probeInferenceServer } from '#lib/inferenceProbe.ts';
 import {
 	effectiveSampling,
 	effectiveSystemPrompt,
@@ -131,4 +132,15 @@ export async function callSpecialist(
 		return opts.runInSlot ? opts.runInSlot(() => stream(), { signal: opts.signal }) : stream();
 	}
 	return withInferenceSlot({ consumer: 'subagent', backend, signal: opts.signal }, () => stream());
+}
+
+/**
+ * The model ids `entry`'s server lists, for the editor's Fetch button. Asked
+ * through the probe Settings → Inference uses, in Rust: a server that answers
+ * a chat request's CORS check may still send none for its model list
+ * (llama-toolchest's `/v1/models`).
+ */
+export async function listSpecialistModels(entry: SpecialistEntry): Promise<string[]> {
+	const probe = await probeInferenceServer(entryBackend(entry).baseUrl, entry.keyId);
+	return probe.models.map((m) => m.id);
 }

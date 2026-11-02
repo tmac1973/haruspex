@@ -11,13 +11,15 @@ const descriptor = vi.hoisted(() => ({
 	resolveBackendDescriptor: vi.fn(() => ({ baseUrl: 'http://compute:3000' }))
 }));
 vi.mock('#lib/inference/descriptor.ts', () => descriptor);
+const probe = vi.hoisted(() => ({ probeInferenceServer: vi.fn() }));
+vi.mock('#lib/inferenceProbe.ts', () => probe);
 vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: () => ({ specialists: [] })
 }));
 
 import '#lib/specialists/kinds/index.ts';
-import { callOptionsFrom, callSpecialist } from './call';
+import { callOptionsFrom, callSpecialist, listSpecialistModels } from './call';
 import { newSpecialistEntry } from './entries';
 
 function entry(over: Partial<SpecialistEntry> = {}): SpecialistEntry {
@@ -147,6 +149,15 @@ describe('callSpecialist', () => {
 			throw new DOMException('Aborted', 'AbortError');
 		});
 		await expect(callSpecialist(entry(), 'Hi')).rejects.toThrow('Aborted');
+	});
+});
+
+describe('listSpecialistModels', () => {
+	it("lists the probed server's model ids, with the entry's key", async () => {
+		probe.probeInferenceServer.mockResolvedValueOnce({ models: [{ id: 'a' }, { id: 'b' }] });
+		const e = entry({ url: 'http://box:8080/v1/', keyId: 'k1' });
+		expect(await listSpecialistModels(e)).toEqual(['a', 'b']);
+		expect(probe.probeInferenceServer).toHaveBeenCalledWith('http://box:8080', 'k1');
 	});
 });
 

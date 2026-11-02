@@ -28,6 +28,7 @@ const PAGES = [
 	'code-sessions',
 	'code-subtasks',
 	'code-windows',
+	'specialists',
 	'skills',
 	'write-skills',
 	'media-skills',
