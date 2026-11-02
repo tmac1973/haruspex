@@ -1,10 +1,11 @@
 /**
  * `glb`: a model that writes a Three.js page with an Export GLB button (such
  * as ccore/Qwen3.5-4B-GLB-3D-Coder) makes a 3D asset for a game engine. The
- * page is run headless, its export clicked, and the GLB checked and rendered
- * before it is written; the page stays beside it as `<name>.glb.html`.
+ * page is run headless, its export clicked, and the GLB checked and drawn as a
+ * render sheet (`#lib/glb/`) before it is written; the page stays beside it as `<name>.glb.html`.
  */
 import { assetIo, writeAsset } from '#lib/agent/tools/_assetIo.ts';
+import { checkGlb } from '#lib/glb/check.ts';
 import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
 import { toolResult } from '#lib/agent/tools/types.ts';
 import { registerSpecialistKind } from '#lib/specialists/kinds.ts';
@@ -14,7 +15,6 @@ import {
 	runHtmlKind,
 	type HtmlKindSpec
 } from '#lib/specialists/three/htmlKind.ts';
-import { previewGlb, type GlbPreview } from '#lib/specialists/three/preview.ts';
 
 /** The model card's system prompt (2026-11-01). */
 export const GLB_SYSTEM_PROMPT =
@@ -24,13 +24,9 @@ export const GLB_SYSTEM_PROMPT =
 export const GLB_REQUEST_SUFFIX =
 	' Export only the asset itself, with no ground, floor, backdrop or wall unless the request asks for one.';
 
-function stats(p: GlbPreview): string {
-	const anim = p.animations.length
-		? p.animations.map((a) => `${a.name} (${a.tracks} tracks)`).join(', ')
-		: 'no animation';
-	const size = p.size.map((v) => v.toFixed(2)).join(' × ');
-	return `${p.meshes} meshes, ${p.triangles} triangles; ${anim}; ${size} m`;
-}
+/** What the model is told when the render sheet came with the result. */
+export const SHEET_NOTE =
+	"The render sheet is attached (front, right, back, left, top, three-quarter, over a floor grid): if it doesn't look like the request, fix the page or call again with a clearer request.";
 
 const spec: HtmlKindSpec = {
 	sourcePath(args) {
@@ -49,26 +45,22 @@ const spec: HtmlKindSpec = {
 		// No GLB: the runner's errors (no button, a timeout) already say why.
 		if (!result.glb) return { ok: false, problems: [] };
 		ctx.onProgress?.('Checking');
-		const preview = await previewGlb(result.glb);
-		if (!preview.ok) return { ok: false, problems: preview.problems };
+		const checked = await checkGlb(result.glb);
+		if ('problems' in checked) return { ok: false, problems: checked.problems };
 		// A recheck replaces the GLB this source made; a new one was checked before generating.
 		const refused = await writeAsset(paths.targetAbs, result.glb, true, false, assetIo(ctx));
 		if (refused) return { ok: false, problems: [refused] };
 		const sees =
-			preview.png !== null &&
+			checked.png !== null &&
 			ctx.visionSupported !== false &&
 			ctx.pendingImages.length < MAX_PENDING_IMAGES;
-		if (sees) ctx.pendingImages.push({ path: paths.target, dataUrl: preview.png! });
+		if (sees) ctx.pendingImages.push({ path: paths.target, dataUrl: checked.png! });
 		const lines = [
 			`Saved ${paths.target} (source: ${paths.source}).`,
-			stats(preview),
-			...(sees
-				? [
-						"Check the render: if it doesn't look like the request, call again with a clearer request."
-					]
-				: [])
+			checked.text,
+			...(sees ? [SHEET_NOTE] : [])
 		];
-		return { ok: true, output: toolResult(lines.join('\n'), preview.png ?? undefined) };
+		return { ok: true, output: toolResult(lines.join('\n'), checked.png ?? undefined) };
 	}
 };
 

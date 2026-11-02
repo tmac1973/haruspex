@@ -5,7 +5,7 @@
  */
 
 import type { Mesh, Object3D } from 'three';
-import { disposeTree } from '#lib/specialists/three/preview.ts';
+import { disposeTree } from '#lib/glb/load.ts';
 
 export interface GlbStats {
 	meshes: number;

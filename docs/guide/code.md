@@ -13,7 +13,7 @@ Click **New session** (or **+** by the tabs) and pick the project folder; **Work
 
 Type what you want and press `Enter`. After the first reply the model names the session, never replacing a name you gave it. Sessions save after every reply.
 
-To show a UI bug, the camera button takes the screen, a window or a region for your next message.
+The camera button attaches the screen, a window or a region to your next message.
 
 ## Look things up on the web
 
@@ -54,7 +54,7 @@ The header above the conversation holds:
 - the **git branch**, with **●** for uncommitted changes. Click it to switch branch, or to start one with **Branch from current…** or **Branch from main…** (shown when another branch is checked out). Switching waits for an idle agent and committed or stashed changes; it warns when another open session uses the repo;
 - the **model** — click it to pick **Settings model** (follows Settings → Inference), **Remote server** (one saved in Settings → Inference: **Probe**, then pick a model) or **OpenRouter (cloud)** (**Load models**, then pick one), then **Save**. The local model is only reachable through **Settings model**; picking one never starts it;
 - **Effort** — how hard the model thinks, where it has levels;
-- **Specialists** — see the `specialists` page;
+- **Specialists** — see the `specialists` page (for model-free tools, `helpers`);
 - the **AGENTS.md** badge when the repo's instructions are in use (see the `skills` page), and how full the context is.
 
 Model, effort and specialists apply from the next message.
@@ -71,4 +71,4 @@ Safe-looking commands just run. A risky one (`sudo`, `rm -rf`, a pipe to a shell
 
 - Each command runs on its own, so `cd` and environment changes don't carry over.
 - No undo or checkpoints; use git.
-- Small local models make mistakes and get stuck; see the `models` page.
+- Small local models get stuck; see the `models` page.

@@ -1,0 +1,46 @@
+---
+title: Helpers
+description: Helpers in the Code tab — tools the coding agent runs without a model, such as the 3D helper that builds a model, renders six views and reports size and problems. How to turn one on and what it does.
+---
+
+# Helpers
+
+A helper is a tool the Code tab's agent runs with no model behind it. It does one job the agent can't do well by itself, such as looking at a 3D model it made, and hands back what it found. For small models that do a narrow job, see the `specialists` page.
+
+## Turn a helper on
+
+Settings → Code → Helpers has a switch for each helper, all off. A helper's tool reaches the agent from the next message after you turn it on. Hover a helper for what it does.
+
+Helpers work in the Code tab only, not in a read-only session.
+
+## The 3D helper
+
+Ask for a 3D asset as usual ("make a low-poly mana potion for my Godot game"). The agent writes a short Three.js file that builds the model and calls the helper's `check_3d` tool on it. The helper builds it hidden in the app, saves it as a `.glb` beside the file, and gives the agent:
+
+- **a render sheet**: front, right, back, left, top and three-quarter views over a floor grid, with the height marked;
+- **size**: width, height and depth in metres, and where the feet sit;
+- **parts**: each named part, with parts that float free or hide inside others;
+- **problems**: faces that vanish from behind or point inward, missing normals, big textures;
+- **materials** and **animation clips**.
+
+If the file has an error, the agent gets it with its line number and fixes it. It usually checks a few times before it's done.
+
+The agent can also check a `.glb` made another way, for example with a Blender script. That writes nothing, unless it asks for a resized copy.
+
+The agent can ask the helper to:
+
+| Ask | What it does |
+|---|---|
+| `height` | scales the model to that many metres tall |
+| `ground` | puts the feet on the floor, centred |
+| `max_triangles` | warns when the model is over a triangle budget |
+
+Three.js comes with the app, so the 3D helper needs no network. The agent sees the render sheet only if its model can read images; the text report comes either way.
+
+## What it doesn't do
+
+- No model: a helper can't make anything on its own; the agent writes the code.
+- It shows a still pose. Animation clips are saved and listed, not played.
+- It doesn't check a Three.js app with its own renderer; for that, see the `specialists` page.
+- It doesn't fix problems, rig a character, unwrap UVs or make lower-detail copies.
+- Not in Chat, the Shell, jobs or subtasks.

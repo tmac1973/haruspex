@@ -1385,3 +1385,43 @@ describe('chatTurnMaxIterations', () => {
 		expect(chatTurnMaxIterations(Number.NaN, false)).toBe(10);
 	});
 });
+
+describe('code helpers setting', () => {
+	let priorRaw: string | null;
+
+	beforeEach(() => {
+		priorRaw = localStorage.getItem(SETTINGS_KEY);
+	});
+
+	afterEach(() => {
+		if (priorRaw === null) localStorage.removeItem(SETTINGS_KEY);
+		else localStorage.setItem(SETTINGS_KEY, priorRaw);
+		vi.resetModules();
+	});
+
+	async function loadWith(stored: Record<string, unknown> | null) {
+		if (stored) localStorage.setItem(SETTINGS_KEY, JSON.stringify(stored));
+		else localStorage.removeItem(SETTINGS_KEY);
+		vi.resetModules();
+		return import('#lib/stores/settings.ts');
+	}
+
+	it('starts with every helper off', async () => {
+		expect((await loadWith(null)).getSettings().codeHelpers).toEqual({});
+	});
+
+	it('keeps only true/false switches from storage', async () => {
+		expect((await loadWith({ codeHelpers: 'x' })).getSettings().codeHelpers).toEqual({});
+		expect(
+			(await loadWith({ codeHelpers: { '3d': true, off: false, bad: 1 } })).getSettings()
+				.codeHelpers
+		).toEqual({ '3d': true, off: false });
+	});
+
+	it('turns one helper on without touching the others', async () => {
+		const fresh = await loadWith({ codeHelpers: { a: true } });
+		fresh.setCodeHelper('b', true);
+		fresh.setCodeHelper('a', false);
+		expect(fresh.getSettings().codeHelpers).toEqual({ a: false, b: true });
+	});
+});

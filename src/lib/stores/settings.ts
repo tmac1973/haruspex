@@ -345,6 +345,14 @@ export interface RepoTrust {
 }
 
 /** Answers were plain booleans before the repo's identity was recorded. */
+/** A stored map of switches, keeping only its true/false values; anything else is `{}`. */
+function booleanRecord(value: unknown): Record<string, boolean> {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+	return Object.fromEntries(
+		Object.entries(value).filter((e): e is [string, boolean] => typeof e[1] === 'boolean')
+	);
+}
+
 function migrateTrustedRepos(repos: Record<string, unknown>): Record<string, RepoTrust> {
 	return Object.fromEntries(
 		Object.entries(repos).map(([root, v]) => [
@@ -928,6 +936,11 @@ export interface AppSettings {
 	 * Settings → Code → Specialists (see `#lib/specialists/entries.ts`).
 	 */
 	specialists: SpecialistEntry[];
+	/**
+	 * Which helpers are on (Settings → Code → Helpers), by helper id; absent
+	 * or false is off. See `#lib/helpers/registry.ts`.
+	 */
+	codeHelpers: Record<string, boolean>;
 	/** Settings → Video editing's switch: the video tools are offered only while it is on. */
 	videoEditingEnabled: boolean;
 	/**
@@ -1234,6 +1247,7 @@ const defaults: AppSettings = {
 	videoGenToolchestModelId: '',
 	generationServers: [],
 	specialists: [],
+	codeHelpers: {},
 	videoEditingEnabled: false,
 	videoFfmpegPath: '',
 	videoFfprobePath: '',
@@ -1409,6 +1423,7 @@ function load(): AppSettings {
 							acceptsImages: e.acceptsImages ?? false
 						}))
 					: [],
+				codeHelpers: booleanRecord(rest.codeHelpers),
 				skills: {
 					...defaultSkills,
 					...(parsed.skills ?? {}),
@@ -1493,6 +1508,11 @@ export function reloadSettingsFromStorage(): void {
 
 export function updateSettings(partial: Partial<AppSettings>): void {
 	commit({ ...settings, ...partial });
+}
+
+/** Turn a helper on or off (Settings → Code → Helpers). */
+export function setCodeHelper(id: string, on: boolean): void {
+	commit({ ...settings, codeHelpers: { ...settings.codeHelpers, [id]: on } });
 }
 
 /** Replace the specialist list (Settings → Code → Specialists). */

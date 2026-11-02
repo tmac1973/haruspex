@@ -10,6 +10,7 @@
 	import type { AgentPowershell } from '#lib/ipc/gen/AgentPowershell.ts';
 	import { onMount } from 'svelte';
 	import SpecialistsSection from '#lib/components/settings/SpecialistsSection.svelte';
+	import HelpersSection from '#lib/components/settings/HelpersSection.svelte';
 
 	let codeRunCommandTimeoutSecs = $state(getSettings().codeRunCommandTimeoutSecs);
 	let codeMaxIterations = $state(getSettings().codeMaxIterations);
@@ -109,6 +110,8 @@
 </section>
 
 <SpecialistsSection />
+
+<HelpersSection />
 
 <section class="settings-section">
 	<h2>Background log size</h2>

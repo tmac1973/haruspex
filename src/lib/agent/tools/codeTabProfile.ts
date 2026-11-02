@@ -3,9 +3,11 @@
  * toolset as Shell Code mode, but with no terminal behind it — commands run
  * one-shot, and long-running ones go to background processes the tab owns.
  *
- * Only constants live here, so the registry can import it without the cycle a
- * tool module would make (tool modules register through the registry).
+ * Constants live here, plus the helper registry lookup (which imports only the
+ * settings store), so the registry can import it without the cycle a tool
+ * module would make (tool modules register through the registry).
  */
+import { helperForTool } from '#lib/helpers/registry.ts';
 
 /**
  * Tools offered only in the Code tab (`codeMode && !shellMode`), never in
@@ -30,7 +32,8 @@ export function isCodeWriteTool(name: string): boolean {
 		name.startsWith('fs_write_') ||
 		name === 'fs_edit_text' ||
 		name === 'make_asset' ||
-		name === 'save_generated'
+		name === 'save_generated' ||
+		helperForTool(name)?.writes === true
 	);
 }
 

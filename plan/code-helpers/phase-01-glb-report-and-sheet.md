@@ -18,9 +18,9 @@ phase uses it unchanged.
 - `src/lib/glb/load.ts` — new: `loadGlb(bytes)` parses with the bundled
   `three`'s `GLTFLoader` (dynamic import, as `preview.ts` does now) and returns
   `{ gltf } | { error }`; owns `disposeTree` (moved from `preview.ts`).
-- `src/lib/glb/report.ts` — new: `inspectGlb(gltf, opts)` → `GlbReport`; the
+- `src/lib/glb/report.ts` — new: `inspectGlb(THREE, gltf, opts)` → `GlbReport`; the
   pure measurements and checks.
-- `src/lib/glb/sheet.ts` — new: `renderSheet(root, report)` → PNG data URL,
+- `src/lib/glb/sheet.ts` — new: `renderSheet(THREE, root, bounds)` → PNG data URL,
   and the pure `sheetLayout(bounds)` (each cell's rectangle, camera position,
   orthographic extent and grid spacings) it is built on.
 - `src/lib/glb/sheet.test.ts` — new: tests `sheetLayout`.
@@ -48,11 +48,14 @@ phase uses it unchanged.
    - `floating: string[]`: parts whose world box, grown by 1 % of the asset's
      largest dimension, overlaps no other part's box. Skipped when there is
      one part.
-   - `buried: { part: string; inside: string }[]`: parts whose world box lies
-     wholly inside another part's box.
-   - `outliers: string[]`: parts whose largest dimension is under 0.5 % or over
-     90 % of the asset's (the over-90 % rule ignores a part that is the only
-     one).
+   - `buried: { part: string; inside: string }[]`: parts wholly inside another
+     part's volume. The host's box must contain the part's box, the host must
+     be closed and not all-transparent, and every one of up to 24 sampled
+     vertices of the part must be inside the host by ray parity (an odd number
+     of surface crossings).
+   - `outliers: string[]`: parts whose largest dimension is under 0.5 % of
+     the asset's. (A main body is often over 90 % of it, so there is no upper
+     rule.)
    - `heaviest`: the five parts with the most triangles.
    - `problems: string[]` (these fail the check): no meshes; zero or
      non-finite size; NaN positions (as `preview.ts` does today).

@@ -33,7 +33,8 @@ const STEP_LABEL_PREFIX: Record<string, string> = {
 	fs_write_odp: 'Writing odp',
 	fs_edit_text: 'Editing',
 	fetch_url_images: 'Scanning page for images',
-	fs_download_url: 'Downloading'
+	fs_download_url: 'Downloading',
+	check_3d: 'Checking 3D'
 };
 
 /** Human-readable label for a running/done tool step. */
