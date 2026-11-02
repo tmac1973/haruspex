@@ -26,6 +26,7 @@
 	import MemoryRecallStep from '#lib/components/MemoryRecallStep.svelte';
 	import { MEMORY_RECALL_STEP } from '#lib/agent/memory/stepName.ts';
 	import { splitGrepLine } from '#lib/code/paths.ts';
+	import { check3dFile } from '#lib/helpers/three/output.ts';
 	import SubtaskCard from '#lib/components/code/SubtaskCard.svelte';
 	import type { SubtaskState } from '#lib/code/subtask.ts';
 	// A subtask's card lists the child's steps with this same component.
@@ -64,8 +65,14 @@
 
 	/** The step's file, relative to the folder, when it can be a link. */
 	function stepFile(step: SearchStep): string | null {
-		if (!pathLinks || !FILE_TOOLS.has(step.toolName)) return null;
-		const path = step.args?.path;
+		if (!pathLinks) return null;
+		// check_3d links the model it wrote or checked, not the module it ran.
+		const path =
+			step.toolName === 'check_3d'
+				? check3dFile(step.args)
+				: FILE_TOOLS.has(step.toolName)
+					? step.args?.path
+					: null;
 		return typeof path === 'string' ? pathLinks.link(path) : null;
 	}
 

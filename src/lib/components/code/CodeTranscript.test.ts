@@ -353,6 +353,32 @@ describe('CodeTranscript paths', () => {
 		expect(openWindows).toHaveBeenLastCalledWith('/p/app', ['src/b.ts']);
 	});
 
+	it('links the model a check_3d step wrote, not the module it ran', async () => {
+		openWindows.mockClear();
+		render(CodeTranscript, {
+			session: fakeSession({
+				messages: [
+					{ role: 'user', content: 'go' },
+					{ role: 'assistant', content: 'done' }
+				],
+				messageSteps: {
+					1: [
+						{
+							id: 'c1',
+							toolName: 'check_3d',
+							query: 'imp.glb',
+							status: 'done',
+							args: { path: 'imp.js', ground: true },
+							result: 'Wrote imp.glb.'
+						}
+					]
+				}
+			})
+		});
+		await fireEvent.click(screen.getByTitle('Open imp.glb'));
+		expect(openWindows).toHaveBeenLastCalledWith('/p/app', ['imp.glb']);
+	});
+
 	it('links grep hits inside the folder', async () => {
 		openWindows.mockClear();
 		const { container } = render(CodeTranscript, {

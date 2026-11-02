@@ -11,11 +11,14 @@ import { MAX_PENDING_IMAGES } from '#lib/agent/tools/fs-read.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
 import { checkGlb, type CheckOptions } from '#lib/glb/check.ts';
+import {
+	check3dFile,
+	defaultGlbPath,
+	MODEL_FILE as MODEL,
+	MODULE_FILE as MODULE
+} from '#lib/helpers/three/output.ts';
 import { runBuildModule } from '#lib/helpers/three/runModule.ts';
 import { errMessage } from '#lib/utils/error.ts';
-
-const MODULE = /\.m?js$/i;
-const MODEL = /\.(glb|gltf)$/i;
 
 export const SHEET_NOTE =
 	'The render sheet is attached (front, right, back, left, top, three-quarter, over a floor grid): compare it with what you meant to make before you finish.';
@@ -63,7 +66,7 @@ function outPath(
 	const out = typeof raw === 'string' && raw.trim() ? raw.trim() : undefined;
 	if (out !== undefined && !/\.glb$/i.test(out)) return 'out must end in .glb.';
 	if (out !== undefined && out === path) return 'out must not be the file you are checking.';
-	if (MODULE.test(path)) return { out: out ?? path.replace(MODULE, '.glb') };
+	if (MODULE.test(path)) return { out: out ?? defaultGlbPath(path) };
 	if (normalise && out === undefined) {
 		return 'Pass out: normalising a .glb writes a copy there and leaves the original alone.';
 	}
@@ -222,8 +225,6 @@ registerTool({
 		}
 	},
 	execute: executeCheck3d,
-	displayLabel: (args) =>
-		`Check ${String(args.path ?? '')
-			.split(/[\\/]/)
-			.pop()}`
+	// The model file: the step card links it (`SearchStep.svelte`).
+	displayLabel: (args) => check3dFile(args) ?? String(args.path ?? '')
 });
