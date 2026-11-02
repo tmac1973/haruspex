@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arcane Elixir — Mana Potion Asset</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #080914;
+      color: #e9e4ff;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+    }
+
+    #viewport {
+      position: fixed;
+      inset: 0;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    .hud {
+      position: fixed;
+      z-index: 10;
+      top: 24px;
+      left: 24px;
+      right: 24px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      pointer-events: none;
+    }
+
+    .title-card {
+      padding: 16px 18px;
+      border: 1px solid rgba(157, 125, 255, 0.25);
+      border-radius: 14px;
+      background: rgba(12, 12, 27, 0.68);
+      box-shadow: 0 14px 50px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(12px);
+    }
+
+    .eyebrow {
+      margin-bottom: 5px;
+      color: #8e71ff;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(20px, 3vw, 30px);
+      font-weight: 750;
+      letter-spacing: -0.035em;
+    }
+
+    .subtitle {
+      margin-top: 6px;
+      color: #aaa9c4;
+      font-size: 12px;
+    }
+
+    .export-card {
+      pointer-events: auto;
+      min-width: 210px;
+      padding: 12px;
+      border: 1px solid rgba(157, 125, 255, 0.25);
+      border-radius: 14px;
+      background: rgba(12, 12, 27, 0.72);
+      box-shadow: 0 14px 50px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(12px);
+    }
+
+    #exportButton {
+      width: 100%;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 9px;
+      padding: 11px 15px;
+      color: white;
+      background: linear-gradient(135deg, #7656ff, #3d49e8);
+      box-shadow: 0 7px 24px rgba(91, 62, 219, 0.32);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 750;
+      cursor: pointer;
+      transition: transform 150ms ease, filter 150ms ease, opacity 150ms ease;
+    }
+
+    #exportButton:hover {
+      filter: brightness(1.12);
+      transform: translateY(-1px);
+    }
+
+    #exportButton:active {
+      transform: translateY(0);
+    }
+
+    #exportButton:disabled {
+      cursor: wait;
+      opacity: 0.55;
+      transform: none;
+    }
+
+    #status {
+      min-height: 15px;
+      margin-top: 8px;
+      color: #8f8daa;
+      font-size: 10px;
+      text-align: center;
+    }
+
+    .hint {
+      position: fixed;
+      z-index: 10;
+      bottom: 22px;
+      left: 50%;
+      padding: 8px 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 999px;
+      color: rgba(220, 218, 242, 0.58);
+      background: rgba(8, 8, 18, 0.48);
+      font-size: 10px;
+      letter-spacing: 0.04em;
+      pointer-events: none;
+      transform: translateX(-50%);
+      backdrop-filter: blur(8px);
+    }
+
+    @media (max-width: 650px) {
+      .hud {
+        top: 14px;
+        left: 14px;
+        right: 14px;
+        flex-direction: column;
+      }
+
+      .title-card {
+        width: 100%;
+        padding: 13px 14px;
+      }
+
+      .export-card {
+        width: 100%;
+        min-width: 0;
+      }
+
+      .hint {
+        bottom: 12px;
+      }
+    }
+  </style>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.166.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.166.1/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+
+<body>
+  <div id="viewport"></div>
+
+  <div class="hud">
+    <div class="title-card">
+      <div class="eyebrow">Low-poly magical prop</div>
+      <h1>Arcane Elixir</h1>
+      <div class="subtitle">Glowing cyan and violet mana · emissive materials · static asset</div>
+    </div>
+
+    <div class="export-card">
+      <button id="exportButton" type="button">Export GLB</button>
+      <div id="status">Ready to export</div>
+    </div>
+  </div>
+
+  <div class="hint">Drag to orbit · Scroll to zoom</div>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
+
+    const viewport = document.getElementById("viewport");
+    const exportButton = document.getElementById("exportButton");
+    const status = document.getElementById("status");
+
+    // -------------------------------------------------------------------------
+    // Renderer and scene
+    // -------------------------------------------------------------------------
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x080914);
+    scene.fog = new THREE.Fog(0x080914, 7, 14);
+
+    const camera = new THREE.PerspectiveCamera(
+      32,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      100
+    );
+    camera.position.set(3.2, 2.45, 4.5);
+
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: false,
+      powerPreference: "high-performance"
+    });
+
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.12;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    viewport.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 0.75, 0);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.minDistance = 2.7;
+    controls.maxDistance = 8;
+    controls.maxPolarAngle = Math.PI * 0.49;
+
+    // The exported asset is kept separate from the display pedestal and lights.
+    const asset = new THREE.Group();
+    asset.name = "ManaPotion";
+    scene.add(asset);
+
+    const stage = new THREE.Group();
+    stage.name = "DisplayStage";
+    scene.add(stage);
+
+    // -------------------------------------------------------------------------
+    // Materials
+    // -------------------------------------------------------------------------
+
+    const glassMaterial = new THREE.MeshPhysicalMaterial({
+      color: 0x9acfff,
+      transparent: true,
+      opacity: 0.23,
+      roughness: 0.16,
+      metalness: 0.08,
+      clearcoat: 1,
+      clearcoatRoughness: 0.08,
+      depthWrite: false,
+      flatShading: true
+    });
+
+    const glassEdgeMaterial = new THREE.MeshPhysicalMaterial({
+      color: 0xb8e5ff,
+      transparent: true,
+      opacity: 0.42,
+      roughness: 0.12,
+      metalness: 0.12,
+      clearcoat: 0.8,
+      flatShading: true
+    });
+
+    const cyanGlowMaterial = new THREE.MeshStandardMaterial({
+      color: 0x53efff,
+      emissive: 0x29dfff,
+      emissiveIntensity: 3.2,
+      roughness: 0.25,
+      metalness: 0.05,
+      flatShading: true
+    });
+
+    const violetGlowMaterial = new THREE.MeshStandardMaterial({
+      color: 0xba6cff,
+      emissive: 0x7a26ff,
+      emissiveIntensity: 3.1,
+      roughness: 0.28,
+      metalness: 0.04,
+      flatShading: true
+    });
+
+    const goldMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffd166,
+      emissive: 0x7a4200,
+      emissiveIntensity: 0.3,
+      roughness: 0.28,
+      metalness: 0.82,
+      flatShading: true
+    });
+
+    const bronzeMaterial = new THREE.MeshStandardMaterial({
+      color: 0x7b5525,
+      emissive: 0x2a1200,
+      emissiveIntensity: 0.25,
+      roughness: 0.38,
+      metalness: 0.72,
+      flatShading: true
+    });
+
+    const corkMaterial = new THREE.MeshStandardMaterial({
+      color: 0xc49a63,
+      roughness: 0.95,
+      metalness: 0,
+      flatShading: true
+    });
+
+    const rubberMaterial = new THREE.MeshStandardMaterial({
+      color: 0x201b2c,
+      roughness: 0.78,
+      metalness: 0.08,
+      flatShading: true
+    });
+
+    // -------------------------------------------------------------------------
+    // Mesh helper
+    // -------------------------------------------------------------------------
+
+    function addMesh(
+      geometry,
+      material,
+      position = [0, 0, 0],
+      rotation = [0, 0, 0],
+      parent = asset
+    ) {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(...position);
+      mesh.rotation.set(...rotation);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      parent.add(mesh);
+      return mesh;
+    }
+
+    function addSphere(
+      radius,
+      material,
+      position,
+      scale = [1, 1, 1],
+      parent = asset
+    ) {
+      const mesh = addMesh(
+        new THREE.SphereGeometry(radius, 10, 7),
+        material,
+        position,
+        [0, 0, 0],
+        parent
+      );
+      mesh.scale.set(...scale);
+      return mesh;
+    }
+
+    // -------------------------------------------------------------------------
+    // Bottle body
+    // -------------------------------------------------------------------------
+
+    const bodyProfile = [
+      new THREE.Vector2(0.34, 0.02),
+      new THREE.Vector2(0.56, 0.055),
+      new THREE.Vector2(0.74, 0.16),
+      new THREE.Vector2(0.82, 0.35),
+      new THREE.Vector2(0.78, 0.55),
+      new THREE.Vector2(0.69, 0.68),
+      new THREE.Vector2(0.57, 0.84)
+    ];
+
+    addMesh(
+      new THREE.LatheGeometry(bodyProfile, 10),
+      glassMaterial,
+      [0, 0, 0],
+      [0, 0, 0],
+      asset
+    );
+
+    const bottomCap = addMesh(
+      new THREE.CylinderGeometry(0.34, 0.34, 0.045, 10),
+      glassEdgeMaterial,
+      [0, 0.025, 0],
+      [0, 0, 0],
+      asset
+    );
+    bottomCap.castShadow = false;
+
+    const liquidProfile = [
+      new THREE.Vector2(0.37, 0.055),
+      new THREE.Vector2(0.49, 0.08),
+      new THREE.Vector2(0.55, 0.18),
+      new THREE.Vector2(0.56, 0.38),
+      new THREE.Vector2(0.54, 0.57),
+      new THREE.Vector2(0.47, 0.74),
+      new THREE.Vector2(0.37, 0.84)
+    ];
+
+    const liquid = addMesh(
+      new THREE.LatheGeometry(liquidProfile, 10),
+      violetGlowMaterial,
+      [0, 0, 0],
+      [0, 0, 0],
+      asset
+    );
+    liquid.castShadow = false;
+    liquid.renderOrder = 2;
+
+    // A faceted magical core inside the liquid.
+    const core = addMesh(
+      new THREE.OctahedronGeometry(0.13, 0),
+      cyanGlowMaterial,
+      [0, 0.46, 0],
+      [0, Math.PI / 4, 0],
+      asset
+    );
+    core.scale.set(0.8, 1.3, 0.8);
+    core.castShadow = false;
+
+    // -------------------------------------------------------------------------
+    // Bottle neck and cork
+    // -------------------------------------------------------------------------
+
+    addMesh(
+      new THREE.CylinderGeometry(0.27, 0.32, 0.2, 10),
+      glassEdgeMaterial,
+      [0, 1.03, 0],
+      [0, 0, 0],
+      asset
+    );
+
+    addMesh(
+      new THREE.CylinderGeometry(0.22, 0.24, 0.18, 10),
+      corkMaterial,
+      [0, 1.22, 0],
+      [0, 0, 0],
+      asset
+    );
+
+    addMesh(
+      new THREE.CylinderGeometry(0.27, 0.25, 0.1, 10),
+      goldMaterial,
+      [0, 1.43, 0],
+      [0, 0, 0],
+      asset
+    );
+
+    // Decorative neck band.
+    addMesh(
+      new THREE.TorusGeometry(0.29, 0.025, 5, 12),
+      goldMaterial,
+      [0, 1.03, 0],
+      [Math.PI / 2, 0, 0],
+      asset
+    );
+
+    // -------------------------------------------------------------------------
+    // Side jewels
+    // -------------------------------------------------------------------------
+
+    addSphere(0.07, violetGlowMaterial, [0.67, 0.58, 0], [0.8, 1.1, 0.8], asset);
+    addSphere(0.07, violetGlowMaterial, [0.67, 0.19, 0], [0.8, 1.1, 0.8], asset);
+
+    // -------------------------------------------------------------------------
+    // Glowing rune sigil
+    // -------------------------------------------------------------------------
+
+    addMesh(
+      new THREE.TorusGeometry(0.145, 0.019, 5, 16),
+      cyanGlowMaterial,
+      [0, 0.47, 0.695],
+      [0, 0, 0],
+      asset
+    );
+
+    const runeDiamond = addMesh(
+      new THREE.OctahedronGeometry(0.065, 0),
+      cyanGlowMaterial,
+      [0, 0.47, 0.75],
+      [0, Math.PI / 4, 0],
+      asset
+    );
+    runeDiamond.scale.z = 0.35;
+    runeDiamond.castShadow = false;
+
+    addMesh(
+      new THREE.TorusGeometry(0.17, 0.012, 4, 16),
+      goldMaterial,
+      [0, 0.47, 0.702],
+      [0, 0, 0],
+      asset
+    );
+
+    addSphere(0.018, goldMaterial, [-0.22, 0.61, 0.59], [1, 1, 1], asset);
+    addSphere(0.018, goldMaterial, [0.22, 0.61, 0.59], [1, 1, 1], asset);
+    addSphere(0.018, goldMaterial, [-0.22, 0.33, 0.59], [1, 1, 1], asset);
+    addSphere(0.018, goldMaterial, [0.22, 0.33, 0.59], [1, 1, 1], asset);
+
+    // Small ornamental side prongs.
+    const prongLeft = addMesh(
+      new THREE.ConeGeometry(0.055, 0.22, 4),
+      goldMaterial,
+      [-0.34, 1.54, 0],
+      [0, 0, -0.22],
+      asset
+    );
+    prongLeft.castShadow = true;
+
+    const prongRight = addMesh(
+      new THREE.ConeGeometry(0.055, 0.22, 4),
+      goldMaterial,
+      [0.34, 1.54, 0],
+      [0, 0, 0.22],
+      asset
+    );
+    prongRight.castShadow = true;
+
+    // -------------------------------------------------------------------------
+    // Handle
+    // -------------------------------------------------------------------------
+
+    const handleCurve = new THREE.CatmullRomCurve3(
+      [
+        new THREE.Vector3(0.23, 1.4, 0.015),
+        new THREE.Vector3(0.43, 1.43, 0.015),
+        new THREE.Vector3(0.61, 1.34, 0.035),
+        new THREE.Vector3(0.66, 1.18, 0.065),
+        new THREE.Vector3(0.57, 1.06, 0.08)
+      ],
+      false,
+      "catmullrom",
+      0.35
+    );
+
+    addMesh(
+      new THREE.TubeGeometry(handleCurve, 14, 0.035, 6, false),
+      goldMaterial,
+      [0, 0, 0],
+      [0, 0, 0],
+      asset
+    );
+
+    addSphere(0.065, goldMaterial, [0.23, 1.4, 0.015], [1, 1, 1], asset);
+
+    // -------------------------------------------------------------------------
+    // Display pedestal and floor — not included in the GLB export
+    // -------------------------------------------------------------------------
+
+    const floorMaterial = new THREE.MeshStandardMaterial({
+      color: 0x10111d,
+      roughness: 0.88,
+      metalness: 0.12
+    });
+
+    const floor = new THREE.Mesh(
+      new THREE.CircleGeometry(8, 64),
+      floorMaterial
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -0.13;
+    floor.receiveShadow = true;
+    stage.add(floor);
+
+    const pedestalMaterial = new THREE.MeshStandardMaterial({
+      color: 0x1a172b,
+      roughness: 0.48,
+      metalness: 0.48
+    });
+
+    const pedestal = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.48, 1.65, 0.2, 32),
+      pedestalMaterial
+    );
+    pedestal.position.y = -0.04;
+    pedestal.castShadow = true;
+    pedestal.receiveShadow = true;
+    stage.add(pedestal);
+
+    const pedestalRing = new THREE.Mesh(
+      new THREE.TorusGeometry(1.48, 0.018, 6, 64),
+      new THREE.MeshStandardMaterial({
+        color: 0x5c4cc7,
+        emissive: 0x342078,
+        emissiveIntensity: 1.3,
+        roughness: 0.35,
+        metalness: 0.65
+      })
+    );
+    pedestalRing.rotation.x = Math.PI / 2;
+    pedestalRing.position.y = 0.065;
+    stage.add(pedestalRing);
+
+    const stageLight = new THREE.PointLight(0x5b35ff, 24, 7, 2);
+    stageLight.position.set(0, 0.8, 1.5);
+    stage.add(stageLight);
+
+    const stageLight2 = new THREE.PointLight(0x35dfff, 13, 5, 2);
+    stageLight2.position.set(-1.2, 1.2, -1.5);
+    stage.add(stageLight2);
+
+    // -------------------------------------------------------------------------
+    // Animation loop
+    // -------------------------------------------------------------------------
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    });
+
+    // -------------------------------------------------------------------------
+    // GLB export
+    // -------------------------------------------------------------------------
+
+    exportButton.addEventListener("click", () => {
+      exportButton.disabled = true;
+      status.textContent = "Building GLB…";
+
+      asset.updateMatrixWorld(true);
+
+      const exporter = new GLTFExporter();
+
+      exporter.parse(
+        asset,
+        (result) => {
+          const blob = new Blob([result], {
+            type: "model/gltf-binary"
+          });
+
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = "mana-potion.glb";
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+          exportButton.disabled = false;
+          status.textContent = "Exported mana-potion.glb";
+        },
+        (error) => {
+          console.error(error);
+          exportButton.disabled = false;
+          status.textContent = "Export failed — see console";
+        },
+        {
+          binary: true,
+          onlyVisible: true,
+          trs: false
+        }
+      );
+    });
+  </script>
+</body>
+</html>

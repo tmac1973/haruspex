@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Animated Wooden Treasure Chest</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #d8c8a3;
+    }
+
+    #app {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .panel {
+      position: absolute;
+      z-index: 2;
+      top: 18px;
+      left: 18px;
+      width: min(340px, calc(100vw - 36px));
+      padding: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      border-radius: 16px;
+      color: #fffaf0;
+      background: linear-gradient(145deg, rgba(49, 31, 19, 0.9), rgba(78, 48, 27, 0.88));
+      box-shadow: 0 12px 35px rgba(50, 31, 16, 0.22);
+      backdrop-filter: blur(10px);
+      user-select: none;
+    }
+
+    h1 {
+      margin: 0 0 7px;
+      font-size: 20px;
+      letter-spacing: 0.02em;
+    }
+
+    p {
+      margin: 0 0 15px;
+      color: rgba(255, 250, 240, 0.72);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    button {
+      width: 100%;
+      padding: 12px 16px;
+      border: 0;
+      border-radius: 10px;
+      color: #2d180c;
+      background: linear-gradient(135deg, #f4ca68, #d49a28);
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.25);
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform 0.15s ease, filter 0.15s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.07);
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    #status {
+      min-height: 18px;
+      margin-top: 10px;
+      color: rgba(255, 250, 240, 0.68);
+      font-size: 12px;
+    }
+
+    .hint {
+      position: absolute;
+      z-index: 2;
+      right: 18px;
+      bottom: 16px;
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 12px;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+      pointer-events: none;
+    }
+
+    @media (max-width: 600px) {
+      .panel {
+        top: 10px;
+        left: 10px;
+        width: calc(100vw - 20px);
+      }
+
+      .hint {
+        right: 10px;
+        bottom: 10px;
+      }
+    }
+  </style>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+
+<body>
+  <div id="app">
+    <div class="panel">
+      <h1>Wooden Treasure Chest</h1>
+      <p>
+        A low-poly wooden chest with iron bands, a gold lock plate,
+        interior gold coins, and a looping lid animation.
+      </p>
+      <button id="exportButton" type="button">Export GLB</button>
+      <div id="status">Ready to export.</div>
+    </div>
+
+    <div class="hint">Drag to orbit · Scroll to zoom</div>
+  </div>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
+
+    const app = document.getElementById("app");
+    const exportButton = document.getElementById("exportButton");
+    const status = document.getElementById("status");
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xd8c8a3);
+    scene.fog = new THREE.Fog(0xd8c8a3, 12, 25);
+
+    const camera = new THREE.PerspectiveCamera(
+      42,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      100
+    );
+    camera.position.set(5.8, 4.3, 7.2);
+
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: false
+    });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    app.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 0.75, 0);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.minDistance = 4.5;
+    controls.maxDistance = 13;
+    controls.maxPolarAngle = Math.PI * 0.49;
+
+    // Lighting
+    scene.add(new THREE.HemisphereLight(0xffe9c7, 0x60432d, 2.2));
+
+    const keyLight = new THREE.DirectionalLight(0xfff1cf, 3.2);
+    keyLight.position.set(4, 8, 5);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(2048, 2048);
+    keyLight.shadow.camera.left = -7;
+    keyLight.shadow.camera.right = 7;
+    keyLight.shadow.camera.top = 7;
+    keyLight.shadow.camera.bottom = -7;
+    keyLight.shadow.camera.near = 0.5;
+    keyLight.shadow.camera.far = 22;
+    keyLight.shadow.bias = -0.0004;
+    scene.add(keyLight);
+
+    const rimLight = new THREE.DirectionalLight(0xffc77d, 1.5);
+    rimLight.position.set(-5, 4, -4);
+    scene.add(rimLight);
+
+    // Ground plane
+    const ground = new THREE.Mesh(
+      new THREE.CircleGeometry(20, 64),
+      new THREE.MeshStandardMaterial({
+        color: 0xcdb88e,
+        roughness: 1,
+        metalness: 0
+      })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.015;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // Materials
+    const wood = new THREE.MeshStandardMaterial({
+      color: 0x744123,
+      roughness: 0.82,
+      metalness: 0,
+      flatShading: true
+    });
+
+    const woodLight = new THREE.MeshStandardMaterial({
+      color: 0x9a5b2d,
+      roughness: 0.84,
+      metalness: 0,
+      flatShading: true
+    });
+
+    const woodDark = new THREE.MeshStandardMaterial({
+      color: 0x4e2919,
+      roughness: 0.9,
+      metalness: 0,
+      flatShading: true
+    });
+
+    const iron = new THREE.MeshStandardMaterial({
+      color: 0x30363a,
+      roughness: 0.38,
+      metalness: 0.72,
+      flatShading: true
+    });
+
+    const darkIron = new THREE.MeshStandardMaterial({
+      color: 0x20272b,
+      roughness: 0.48,
+      metalness: 0.68,
+      flatShading: true
+    });
+
+    const gold = new THREE.MeshStandardMaterial({
+      color: 0xd9a332,
+      roughness: 0.28,
+      metalness: 0.82,
+      flatShading: true
+    });
+
+    const interiorWood = new THREE.MeshStandardMaterial({
+      color: 0x2b1810,
+      roughness: 0.95,
+      metalness: 0,
+      flatShading: true
+    });
+
+    const holeMaterial = new THREE.MeshStandardMaterial({
+      color: 0x120e09,
+      roughness: 1,
+      metalness: 0,
+      flatShading: true
+    });
+
+    // Exportable asset
+    const assetGroup = new THREE.Group();
+    assetGroup.name = "TreasureChest";
+    scene.add(assetGroup);
+
+    function addBox(parent, size, position, material, name = "") {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(size[0], size[1], size[2]),
+        material
+      );
+      mesh.position.set(position[0], position[1], position[2]);
+      if (name) {
+        mesh.name = name;
+      }
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      parent.add(mesh);
+      return mesh;
+    }
+
+    // Chest body
+    addBox(
+      assetGroup,
+      [3.2, 0.14, 2.2],
+      [0, 0.12, 0],
+      woodDark,
+      "Chest_Bottom"
+    );
+
+    // Open side and front walls
+    addBox(
+      assetGroup,
+      [3.2, 0.82, 0.12],
+      [0, 0.49, 1.05],
+      wood,
+      "Chest_FrontWall"
+    );
+
+    addBox(
+      assetGroup,
+      [3.2, 0.82, 0.12],
+      [0, 0.49, -1.05],
+      woodDark,
+      "Chest_BackWall"
+    );
+
+    addBox(
+      assetGroup,
+      [0.12, 0.82, 2.0],
+      [-1.57, 0.49, 0],
+      wood,
+      "Chest_LeftWall"
+    );
+
+    addBox(
+      assetGroup,
+      [0.12, 0.82, 2.0],
+      [1.57, 0.49, 0],
+      wood,
+      "Chest_RightWall"
+    );
+
+    // Front plank details
+    const plankColors = [
+      0x9a5b2d,
+      0x814523,
+      0xa06030,
+      0x704021,
+      0x8d4d25,
+      0x6e3b20
+    ];
+
+    for (let i = 0; i < 6; i++) {
+      const x = -1.3 + i * 0.5;
+      addBox(
+        assetGroup,
+        [0.47, 0.69, 0.07],
+        [x, 0.49, 1.125],
+        new THREE.MeshStandardMaterial({ color: plankColors[i], flatShading: true }),
+        `Chest_FrontPlank_${i + 1}`
+      );
+    }
+
+    // Iron front bands
+    addBox(
+      assetGroup,
+      [3.28, 0.13, 0.07],
+      [0, 0.22, 1.16],
+      iron,
+      "Chest_LowerIronBand"
+    );
+
+    addBox(
+      assetGroup,
+      [3.28, 0.13, 0.07],
+      [0, 0.72, 1.16],
+      iron,
+      "Chest_UpperIronBand"
+    );
+
+    // Side iron bands
+    for (const side of [-1, 1]) {
+      addBox(
+        assetGroup,
+        [0.07, 0.13, 2.22],
+        [side * 1.62, 0.22, 0],
+        iron,
+        side < 0 ? "Chest_LeftIronBand" : "Chest_RightIronBand"
+      );
+    }
+
+    // Corner posts
+    for (const x of [-1.58, 1.58]) {
+      for (const z of [-1.12, 1.12]) {
+        addBox(
+          assetGroup,
+          [0.13, 0.9, 0.13],
+          [x, 0.49, z],
+          iron,
+          "Chest_CornerPost"
+        );
+      }
+    }
+
+    // Front lock plate
+    addBox(
+      assetGroup,
+      [0.72, 0.34, 0.08],
+      [0, 0.49, 1.18],
+      woodLight,
+      "Chest_FrontLockPlate"
+    );
+
+    addBox(
+      assetGroup,
+      [0.13, 0.16, 0.04],
+      [0, 0.49, 1.235],
+      iron,
+      "Chest_LockPlateInset"
+    );
+
+    const frontKeyhole = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.065, 0.065, 0.025, 12),
+      holeMaterial
+    );
+    frontKeyhole.rotation.x = Math.PI / 2;
+    frontKeyhole.position.set(0, 0.5, 1.27);
+    assetGroup.add(frontKeyhole);
+
+    // Hinge cylinder
+    const hinge = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.115, 0.115, 3.2, 12),
+      iron
+    );
+    hinge.rotation.z = Math.PI / 2;
+    hinge.position.set(0, 1.0, -1.05);
+    hinge.castShadow = true;
+    assetGroup.add(hinge);
+
+    for (const x of [-1.12, 1.12]) {
+      addBox(
+        assetGroup,
+        [0.24, 0.3, 0.34],
+        [x, 1.0, -1.05],
+        iron,
+        "Chest_HingeStrap"
+      );
+    }
+
+    // Animated lid hinge
+    const lidPivot = new THREE.Group();
+    lidPivot.name = "Chest_LidHinge";
+    lidPivot.position.set(0, 1.0, -1.05);
+    assetGroup.add(lidPivot);
+
+    // Chamfered lid shape
+    function createChamferedShape(width, depth, chamfer) {
+      const x = width / 2;
+      const z = depth / 2;
+      const c = chamfer;
+
+      const shape = new THREE.Shape();
+      shape.moveTo(-x + c, -z);
+      shape.lineTo(x - c, -z);
+      shape.lineTo(x, -z + c);
+      shape.lineTo(x, z - c);
+      shape.lineTo(x - c, z);
+      shape.lineTo(-x + c, z);
+      shape.lineTo(-x, z - c);
+      shape.lineTo(-x, -z + c);
+      shape.closePath();
+      return shape;
+    }
+
+    const lidGeometry = new THREE.ExtrudeGeometry(
+      createChamferedShape(3.55, 2.25, 0.12),
+      {
+        depth: 0.16,
+        steps: 1,
+        bevelEnabled: true,
+        bevelSegments: 1,
+        bevelSize: 0.03,
+        bevelThickness: 0.03
+      }
+    );
+    lidGeometry.translate(0, 0, -0.08);
+    lidGeometry.rotateX(-Math.PI / 2);
+    lidGeometry.computeVertexNormals();
+
+    const lid = new THREE.Mesh(lidGeometry, woodLight);
+    lid.castShadow = true;
+    lid.receiveShadow = true;
+    lidPivot.add(lid);
+
+    // Lid planks
+    for (let i = 0; i < 5; i++) {
+      const z = 0.42 + i * 0.58;
+      addBox(
+        lidPivot,
+        [0.53, 0.035, 0.54],
+        [0, 0.115, z],
+        i % 2 === 0 ? woodLight : wood,
+        `Chest_LidPlank_${i + 1}`
+      );
+    }
+
+    // Lid iron straps
+    addBox(
+      lidPivot,
+      [3.36, 0.045, 0.13],
+      [0, 0.145, 0.33],
+      iron,
+      "Chest_LidLowerIronStrap"
+    );
+
+    addBox(
+      lidPivot,
+      [3.36, 0.045, 0.13],
+      [0, 0.145, 1.78],
+      iron,
+      "Chest_LidUpperIronStrap"
+    );
+
+    // Lock plate on the lid
+    addBox(
+      lidPivot,
+      [0.4, 0.34, 0.065],
+      [0, -0.035, 2.31],
+      iron,
+      "Chest_LidLockPlate"
+    );
+
+    addBox(
+      lidPivot,
+      [0.12, 0.15, 0.04],
+      [0, -0.035, 2.355],
+      darkIron,
+      "Chest_LockPlateInset"
+    );
+
+    const lockKeyhole = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.065, 0.065, 0.025, 12),
+      holeMaterial
+    );
+    lockKeyhole.rotation.x = Math.PI / 2;
+    lockKeyhole.position.set(0, -0.035, 2.385);
+    lidPivot.add(lockKeyhole);
+
+    // Interior floor and side liners
+    addBox(
+      assetGroup,
+      [3.02, 0.08, 1.93],
+      [0, 0.205, 0],
+      interiorWood,
+      "Chest_InteriorFloor"
+    );
+
+    for (const side of [-1, 1]) {
+      addBox(
+        assetGroup,
+        [0.07, 0.46, 1.93],
+        [side * 1.5, 0.48, 0],
+        interiorWood,
+        "Chest_InteriorSide"
+      );
+    }
+
+    addBox(
+      assetGroup,
+      [3.02, 0.46, 0.07],
+      [0, 0.48, -0.98],
+      interiorWood,
+      "Chest_InteriorBack"
+    );
+
+    // Gold coins
+    const coinData = [
+      [-1.05, 0.285, -0.55, 0.16],
+      [-0.68, 0.285, -0.28, 0.13],
+      [-0.3, 0.285, -0.48, 0.17],
+      [0.16, 0.285, -0.35, 0.14],
+      [0.62, 0.285, -0.58, 0.16],
+      [1.03, 0.285, -0.3, 0.13],
+      [-1.25, 0.285, 0.38, 0.15],
+      [0.95, 0.285, 0.46, 0.14],
+      [0.08, 0.285, 0.58, 0.16]
+    ];
+
+    for (const [x, y, z, radius] of coinData) {
+      const coin = new THREE.Mesh(
+        new THREE.CylinderGeometry(radius, radius * 0.96, 0.045, 12),
+        gold
+      );
+      coin.position.set(x, y, z);
+      coin.rotation.y = Math.random() * Math.PI;
+      coin.castShadow = true;
+      assetGroup.add(coin);
+    }
+
+    // Animation clip
+    const closedQuaternion = new THREE.Quaternion();
+    const openQuaternion = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(-1.35, 0, 0)
+    );
+
+    const animationTimes = [0, 0.65, 1.8, 3.0, 4.2];
+    const animationValues = [
+      closedQuaternion,
+      openQuaternion,
+      closedQuaternion,
+      openQuaternion,
+      closedQuaternion
+    ].flatMap((quaternion) => [
+      quaternion.x,
+      quaternion.y,
+      quaternion.z,
+      quaternion.w
+    ]);
+
+    const lidTrack = new THREE.QuaternionKeyframeTrack(
+      "Chest_LidHinge.quaternion",
+      animationTimes,
+      animationValues
+    );
+
+    const chestClip = new THREE.AnimationClip("Chest_Open_Close", 4.2, [
+      lidTrack
+    ]);
+
+    const mixer = new THREE.AnimationMixer(assetGroup);
+    const lidAction = mixer.clipAction(chestClip);
+    lidAction.setLoop(THREE.LoopRepeat, Infinity);
+    lidAction.play();
+
+    // Resize handling
+    function resize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    }
+
+    window.addEventListener("resize", resize);
+
+    // Render loop
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = Math.min(clock.getDelta(), 0.05);
+      mixer.update(delta);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // Export only the treasure chest, including the lid animation.
+    exportButton.addEventListener("click", () => {
+      exportButton.disabled = true;
+      status.textContent = "Building GLB...";
+
+      const exporter = new GLTFExporter();
+
+      exporter.parse(
+        assetGroup,
+        (result) => {
+          const blob = new Blob([result], {
+            type: "model/gltf-binary"
+          });
+
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = "treasure-chest.glb";
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+          status.textContent = "GLB exported with lid animation.";
+          exportButton.disabled = false;
+        },
+        (error) => {
+          console.error(error);
+          status.textContent = "Export failed. See the browser console.";
+          exportButton.disabled = false;
+        },
+        {
+          binary: true,
+          animations: [chestClip]
+        }
+      );
+    });
+  </script>
+</body>
+</html>

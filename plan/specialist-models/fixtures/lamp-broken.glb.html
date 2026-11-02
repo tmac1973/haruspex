@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Low-Poly Street Lamp</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+      background: #d9e1e4;
+    }
+
+    #viewport {
+      position: fixed;
+      inset: 0;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+
+    .panel {
+      position: fixed;
+      z-index: 10;
+      top: 22px;
+      left: 22px;
+      padding: 16px 18px;
+      color: #182127;
+      background: rgba(250, 252, 252, 0.88);
+      border: 1px solid rgba(30, 45, 54, 0.16);
+      border-radius: 14px;
+      box-shadow: 0 12px 35px rgba(26, 36, 42, 0.14);
+      backdrop-filter: blur(12px);
+      pointer-events: none;
+    }
+
+    h1 {
+      margin: 0 0 5px;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: #607078;
+      font-size: 12px;
+    }
+
+    #exportButton {
+      position: fixed;
+      z-index: 10;
+      right: 22px;
+      bottom: 22px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 48px;
+      padding: 0 18px;
+      color: white;
+      background: #235769;
+      border: 0;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(20, 49, 61, 0.25);
+      font: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 120ms ease, background 120ms ease, box-shadow 120ms ease;
+    }
+
+    #exportButton:hover {
+      background: #194757;
+      box-shadow: 0 12px 30px rgba(20, 49, 61, 0.3);
+      transform: translateY(-2px);
+    }
+
+    #exportButton:active {
+      transform: translateY(0);
+    }
+
+    #exportButton:disabled {
+      opacity: 0.65;
+      cursor: wait;
+      transform: none;
+    }
+
+    #exportButton svg {
+      width: 18px;
+      height: 18px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    #status {
+      position: fixed;
+      z-index: 10;
+      right: 22px;
+      bottom: 78px;
+      max-width: 260px;
+      padding: 8px 12px;
+      color: #34454e;
+      background: rgba(250, 252, 252, 0.88);
+      border-radius: 9px;
+      box-shadow: 0 8px 22px rgba(26, 36, 42, 0.12);
+      font-size: 12px;
+      text-align: right;
+      opacity: 0;
+      transform: translateY(5px);
+      transition: opacity 180ms ease, transform 180ms ease;
+      pointer-events: none;
+    }
+
+    #status.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (max-width: 600px) {
+      .panel {
+        top: 14px;
+        left: 14px;
+        padding: 13px 15px;
+      }
+
+      #exportButton {
+        right: 14px;
+        bottom: 14px;
+      }
+    }
+  </style>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+
+<body>
+  <div id="viewport"></div>
+
+  <div class="panel">
+    <h1>Street Lamp</h1>
+    <p class="subtitle">Low-poly urban lighting asset · Static GLB</p>
+  </div>
+
+  <button id="exportButton" type="button">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3v12"></path>
+      <path d="m7 10 5 5 5-5"></path>
+      <path d="M5 21h14"></path>
+    </svg>
+    <span>Export GLB</span>
+  </button>
+
+  <div id="status" role="status" aria-live="polite"></div>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
+
+    const viewport = document.getElementById("viewport");
+    const exportButton = document.getElementById("exportButton");
+    const status = document.getElementById("status");
+
+    // Scene setup
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xd9e1e4);
+    scene.fog = new THREE.Fog(0xd9e1e4, 15, 35);
+
+    const camera = new THREE.PerspectiveCamera(
+      38,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      100
+    );
+    camera.position.set(8.2, 5.4, 9.5);
+
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: false,
+      preserveDrawingBuffer: true
+    });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    viewport.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(2.25, 2.45, 0);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.07;
+    controls.minDistance = 5;
+    controls.maxDistance = 18;
+    controls.maxPolarAngle = Math.PI * 0.49;
+
+    const hemisphere = new THREE.HemisphereLight(0xe9f3ff, 0x65716d, 2.0);
+    scene.add(hemisphere);
+
+    const keyLight = new THREE.DirectionalLight(0xfff4df, 3.2);
+    keyLight.position.set(6, 10, 7);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(2048, 2048);
+    keyLight.shadow.camera.left = -8;
+    keyLight.shadow.camera.right = 8;
+    keyLight.shadow.camera.top = 9;
+    keyLight.shadow.camera.bottom = -3;
+    keyLight.shadow.camera.near = 1;
+    keyLight.shadow.camera.far = 25;
+    keyLight.shadow.bias = -0.00035;
+    scene.add(keyLight);
+
+    const fillLight = new THREE.DirectionalLight(0xc6eaff, 1.0);
+    fillLight.position.set(-7, 5, 3);
+    scene.add(fillLight);
+
+    // Ground and grid
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(40, 40),
+      new THREE.MeshStandardMaterial({
+        color: 0xcbd4d6,
+        roughness: 0.94,
+        metalness: 0.0
+      })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.015;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const grid = new THREE.GridHelper(24, 48, 0x87989d, 0xa8b5b8);
+    grid.position.y = 0.002;
+    grid.material.transparent = true;
+    grid.material.opacity = 0.28;
+    scene.add(grid);
+
+    // Materials
+    const concrete = new THREE.MeshStandardMaterial({
+      color: 0xb9b5ab,
+      roughness: 0.94,
+      metalness: 0.0,
+      flatShading: true
+    });
+
+    const pole = new THREE.MeshStandardMaterial({
+      color: 0x303a41,
+      roughness: 0.46,
+      metalness: 0.58,
+      flatShading: true
+    });
+
+    const poleDark = new THREE.MeshStandardMaterial({
+      color: 0x171d21,
+      roughness: 0.4,
+      metalness: 0.62,
+      flatShading: true
+    });
+
+    const housing = new THREE.MeshStandardMaterial({
+      color: 0x11171b,
+      roughness: 0.34,
+      metalness: 0.72,
+      flatShading: true
+    });
+
+    const trim = new THREE.MeshStandardMaterial({
+      color: 0x727f88,
+      roughness: 0.3,
+      metalness: 0.78,
+      flatShading: true
+    });
+
+    const light = new THREE.MeshStandardMaterial({
+      color: 0xffe6b3,
+      emissive: 0xffc65c,
+      emissiveIntensity: 2.4,
+      roughness: 0.35,
+      metalness: 0.0
+    });
+
+    // Only this group is included in the exported GLB.
+    const lamp = new THREE.Group();
+    lamp.name = "StreetLamp";
+    scene.add(lamp);
+
+    // Concrete base
+    const base = new THREE.Mesh(
+      new THREE.BoxGeometry(1.05, 0.2, 0.88),
+      concrete
+    );
+    base.position.y = 0.1;
+    base.castShadow = true;
+    base.receiveShadow = true;
+    lamp.add(base);
+
+    // Small dark base inset
+    const baseInset = new THREE.Mesh(
+      new THREE.BoxGeometry(0.86, 0.035, 0.7),
+      poleDark
+    );
+    baseInset.position.y = 0.215;
+    baseInset.castShadow = true;
+    lamp.add(baseInset);
+
+    // Four anchor bolts
+    const boltGeometry = new THREE.CylinderGeometry(
+      0.032,
+      0.032,
+      0.026,
+      6
+    );
+
+    for (const x of [-0.35, 0.35]) {
+      for (const z of [-0.29, 0.29]) {
+        const bolt = new THREE.Mesh(boltGeometry, poleDark);
+        bolt.position.set(x, 0.235, z);
+        bolt.castShadow = true;
+        lamp.add(bolt);
+      }
+    }
+
+    // Main tapered pole
+    const pole = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.115, 0.16, 4.6, 8, 1, false),
+      pole
+    );
+    pole.position.y = 2.55;
+    pole.castShadow = true;
+    pole.receiveShadow = true;
+    lamp.add(pole);
+
+    // Pole collars
+    const lowerCollar = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.145, 0.145, 0.11, 8),
+      poleDark
+    );
+    lowerCollar.position.y = 0.3;
+    lowerCollar.castShadow = true;
+    lamp.add(lowerCollar);
+
+    const upperCollar = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.13, 0.13, 0.11, 8),
+      poleDark
+    );
+    upperCollar.position.y = 4.82;
+    upperCollar.castShadow = true;
+    lamp.add(upperCollar);
+
+    // Curved overhead arm
+    const armCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0.0, 4.85, 0.0),
+      new THREE.Vector3(0.9, 5.12, 0.0),
+      new THREE.Vector3(2.3, 5.16, 0.0),
+      new THREE.Vector3(3.55, 4.96, 0.0),
+      new THREE.Vector3(4.55, 4.65, 0.0),
+      new THREE.Vector3(4.8, 4.35, 0.0)
+    ]);
+
+    const arm = new THREE.Mesh(
+      new THREE.TubeGeometry(armCurve, 24, 0.065, 6, false),
+      pole
+    );
+    arm.castShadow = true;
+    arm.receiveShadow = true;
+    lamp.add(arm);
+
+    // Low-poly joint spheres
+    const jointGeometry = new THREE.IcosahedronGeometry(0.105, 1);
+
+    for (const position of [
+      new THREE.Vector3(0.9, 5.12, 0),
+      new THREE.Vector3(2.3, 5.16, 0)
+    ]) {
+      const joint = new THREE.Mesh(jointGeometry, poleDark);
+      joint.position.copy(position);
+      joint.castShadow = true;
+      lamp.add(joint);
+    }
+
+    // Lamp head, aligned with the end of the arm.
+    const lampPosition = new THREE.Vector3(4.8, 4.35, 0);
+    const lampQuaternion = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 0, -1),
+      armCurve.getTangent(1).normalize()
+    );
+
+    const lampHead = new THREE.Group();
+    lampHead.name = "LampHead";
+    lampHead.position.copy(lampPosition);
+    lampHead.quaternion.copy(lampQuaternion);
+    lamp.add(lampHead);
+
+    // Outer lantern shade
+    const shade = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.45, 0.31, 0.3, 12, 1, true),
+      housing
+    );
+    shade.rotation.x = Math.PI / 2;
+    shade.position.z = -0.08;
+    shade.castShadow = true;
+    lampHead.add(shade);
+
+    // Top cap of the shade
+    const shadeCap = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.45, 0.45, 0.055, 12),
+      trim
+    );
+    shadeCap.rotation.x = Math.PI / 2;
+    shadeCap.position.z = 0.09;
+    shadeCap.castShadow = true;
+    lampHead.add(shadeCap);
+
+    // Inner light bulb
+    const lightBulb = new THREE.Mesh(
+      new THREE.SphereGeometry(0.105, 8, 6),
+      light
+    );
+    lightBulb.position.z = -0.26;
+    lampHead.add(lightBulb);
+
+    // Lamp face
+    const face = new THREE.Mesh(
+      new THREE.CircleGeometry(0.285, 12),
+      light
+    );
+    face.rotation.x = -Math.PI / 2;
+    face.position.z = -0.225;
+    lampHead.add(face);
+
+    // Lamp trim
+    const trim = new THREE.Mesh(
+      new THREE.TorusGeometry(0.292, 0.018, 6, 12),
+      trim
+    );
+    trim.position.z = -0.225;
+    lampHead.add(trim);
+
+    // Point light for the preview only
+    const lampLight = new THREE.PointLight(0xffcf75, 24, 8, 2);
+    lampLight.position.copy(lampPosition).addScaledVector(armCurve.getTangent(1), 0.35);
+    scene.add(lampLight);
+
+    // Export controls
+    const exporter = new GLTFExporter();
+
+    exportButton.addEventListener("click", () => {
+      exportButton.disabled = true;
+      status.textContent = "Preparing GLB…";
+      status.classList.add("visible");
+
+      exporter.parse(
+        lamp,
+        (result) => {
+          const blob = new Blob([result], {
+            type: "model/gltf-binary"
+          });
+
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = "street-lamp.glb";
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+
+          setTimeout(() => {
+            URL.revokeObjectURL(url);
+          }, 1000);
+
+          exportButton.disabled = false;
+          status.textContent = "street-lamp.glb downloaded";
+          setTimeout(() => {
+            status.classList.remove("visible");
+          }, 2600);
+        },
+        (error) => {
+          console.error(error);
+          exportButton.disabled = false;
+          status.textContent = "Export failed — see console";
+          status.classList.add("visible");
+        },
+        {
+          binary: true,
+          onlyVisible: true
+        }
+      );
+    });
+
+    // Resize handling
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    });
+
+    // Render loop
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    animate();
+  </script>
+</body>
+</html>
