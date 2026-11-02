@@ -9,7 +9,7 @@ Each section lists its main options, defaults and a page with more.
 
 ## Open Settings
 
-Click the gear in the header; click it again or **← Back** to close.
+Click the gear in the header; again or **← Back** closes it.
 
 ## General
 
@@ -109,7 +109,7 @@ See the `integrations` page.
 
 ## MCP servers
 
-Add a server from the catalog, on this computer or on your network, and pick its tools.
+Add a server (catalog, this computer or your network), pick its tools, and **Update** a catalog server.
 
 See the `integrations` page.
 

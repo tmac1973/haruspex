@@ -97,10 +97,8 @@
 	import { getActiveConversation, sendMessage } from '#lib/stores/chat.svelte.ts';
 	import { getActiveShellSession } from '#lib/stores/shell.svelte.ts';
 	import { isDetachedRoute, rendersAgentModals } from '#lib/windowRoutes.ts';
-	import {
-		listenForMcpToolChanges,
-		startConfiguredMcpServers
-	} from '#lib/stores/mcpServers.svelte.ts';
+	import { listenForMcpToolChanges } from '#lib/stores/mcpServers.svelte.ts';
+	import { startMcpAtLaunch } from '#lib/stores/mcpUpdate.svelte.ts';
 
 	let { children } = $props();
 	// Log Viewer visibility lives in the logViewer store (not local state)
@@ -173,7 +171,8 @@
 		// An editor window has no agent, so no use for the servers, and a Code
 		// session's tools don't include them.
 		if (page.route.id === '/editor' || page.route.id === '/code/[id]') return;
-		void startConfiguredMcpServers();
+		// Interrupted updates are put right before anything starts.
+		void startMcpAtLaunch();
 		// A running server can change what it publishes — Godot reveals a whole
 		// toolset when the model enables one — and the registry has to hear
 		// about it or the new tools stay invisible until a restart.
