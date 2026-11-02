@@ -33,6 +33,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Mutex;
 
 use super::catalog::{resolve_env, Acquisition, CatalogEntry};
+use super::manifest::{self, InstallManifest};
 use super::process::SpawnConfig;
 use super::server_config::{McpServerConfig, McpServerSource};
 use crate::http_util::{stream_to_file, DownloadError};
@@ -45,8 +46,8 @@ use crate::runtimes;
 /// progress bars fighting.
 pub const INSTALL_PROGRESS_EVENT: &str = "mcp-install-progress";
 
-/// Suffix for the staging directory. Never a valid server id, because ids come
-/// from the catalog and are plain slugs.
+/// Suffix for the staging directory. Never a valid server id, because ids are
+/// UUIDs the frontend makes.
 const STAGING_SUFFIX: &str = ".installing";
 
 /// Placeholder an entry's `env` can use for the server's own directory.
@@ -97,7 +98,13 @@ impl McpInstaller {
             .await
             .map_err(|e| format!("could not create {}: {e}", staging.display()))?;
 
-        let result = self.install_into(app, entry, &staging, proxy).await;
+        let result = match self.install_into(app, entry, &staging, proxy).await {
+            // Written before the rename, so a directory that exists under the
+            // server's id always says what is in it.
+            Ok(()) => InstallManifest::for_install(&staging, entry)
+                .and_then(|manifest| manifest.write(&staging)),
+            Err(e) => Err(e),
+        };
 
         match result {
             Ok(()) => {
@@ -628,7 +635,7 @@ fn setup_command_in(
     proxy: Option<&ProxyConfig>,
 ) -> Result<SpawnConfig, String> {
     let mut spawn = build_spawn_config(dir, config, proxy)?;
-    let entry_args = catalog_command_args(config);
+    let entry_args = catalog_command_args(dir, config);
     spawn
         .args
         .truncate(spawn.args.len().saturating_sub(entry_args.len()));
@@ -636,15 +643,22 @@ fn setup_command_in(
     Ok(spawn)
 }
 
-/// The trailing arguments `build_spawn_config` appended from the catalog entry.
-fn catalog_command_args(config: &McpServerConfig) -> Vec<String> {
+/// The trailing arguments `build_spawn_config` appended from the installed
+/// entry.
+fn catalog_command_args(dir: &Path, config: &McpServerConfig) -> Vec<String> {
     let McpServerSource::Catalog { entry_id } = &config.source else {
         return Vec::new();
     };
-    super::catalog::load()
-        .ok()
-        .and_then(|c| c.entry(entry_id).map(|e| e.command.args.clone()))
+    installed_manifest(dir, entry_id)
+        .map(|m| m.entry.command.args)
         .unwrap_or_default()
+}
+
+/// The manifest of the server installed in `dir`, backfilled from the current
+/// catalog entry when the install predates manifests.
+fn installed_manifest(dir: &Path, entry_id: &str) -> Result<InstallManifest, String> {
+    let catalog = super::catalog::load()?;
+    manifest::load_or_backfill(dir, entry_id, catalog.entry(entry_id))
 }
 
 /// Compose a spawn configuration.
@@ -689,11 +703,13 @@ fn build_spawn_config(
             })
         }
         McpServerSource::Catalog { entry_id } => {
-            let catalog = super::catalog::load()?;
-            let entry = catalog
-                .entry(entry_id)
-                .ok_or_else(|| format!("no catalog entry named '{entry_id}'"))?;
-            let mut spawn = catalog_spawn_config(dir, entry, &config.id, &config.secrets)?;
+            // Launched from what was installed, not from the current entry: a
+            // release that bumps the pin must not hand the old package a new
+            // entry's arguments, and an entry that has left the catalog still
+            // launches.
+            let manifest = installed_manifest(dir, entry_id)?;
+            let mut spawn =
+                catalog_spawn_config(dir, &manifest.entry, &config.id, &config.secrets)?;
             // Appended after the entry's own environment so a catalog entry
             // that deliberately sets one of these keeps its value.
             for (key, value) in proxy_vars {
@@ -1194,6 +1210,46 @@ mod tests {
             .unwrap_err();
         assert!(err.contains("not a plain file name"), "{err}");
         assert!(!root.join("servers").join("escaped.json").exists());
+    }
+
+    #[test]
+    fn a_catalog_server_launches_from_what_was_installed() {
+        // The installed entry differs from every current one: a release bumped
+        // the pin and moved the entry point, or dropped the entry entirely.
+        let dir = tempfile::tempdir().unwrap();
+        let mut entry = super::super::catalog::load()
+            .unwrap()
+            .entry("playwright")
+            .unwrap()
+            .clone();
+        entry.acquisition = Acquisition::Npm {
+            package: "@playwright/mcp".into(),
+            version: "0.0.1".into(),
+            bin: "@playwright/mcp/old-cli.js".into(),
+        };
+        entry.command.args = vec!["--old-flag".into()];
+        InstallManifest::for_install(dir.path(), &entry)
+            .unwrap()
+            .write(dir.path())
+            .unwrap();
+
+        for entry_id in ["playwright", "no-longer-in-the-catalog"] {
+            let mut config = custom_server(ProxyUse::Never);
+            config.source = McpServerSource::Catalog {
+                entry_id: entry_id.into(),
+            };
+            let spawn = build_spawn_config(dir.path(), &config, None).unwrap();
+            assert!(
+                spawn.args[0].ends_with("old-cli.js"),
+                "{entry_id}: {:?}",
+                spawn.args
+            );
+            assert_eq!(spawn.args[1..], ["--old-flag".to_string()], "{entry_id}");
+            assert_eq!(
+                catalog_command_args(dir.path(), &config),
+                ["--old-flag".to_string()]
+            );
+        }
     }
 
     #[test]

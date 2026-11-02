@@ -13,6 +13,7 @@
 	import type { CatalogEntry } from '#lib/ipc/gen/CatalogEntry.ts';
 	import {
 		companionWarning,
+		installedDefaultTools,
 		mcpServerLogs,
 		mcpState,
 		probeCompanion,
@@ -322,7 +323,7 @@
 		<McpToolList
 			tools={runtime.tools}
 			toolEnabled={config.toolEnabled as Record<string, boolean>}
-			defaultTools={entry?.defaultTools ?? []}
+			defaultTools={installedDefaultTools(config.id, entry)}
 			onchange={(toolEnabled) => onchange({ ...config, toolEnabled })}
 		/>
 	{/if}

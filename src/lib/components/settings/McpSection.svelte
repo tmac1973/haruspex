@@ -23,7 +23,7 @@
 		customServerLabel,
 		type CustomServerForm
 	} from '#lib/components/settings/McpCustomServerForm.svelte';
-	import { probeCompanion } from '#lib/stores/mcpServers.svelte.ts';
+	import { loadInstalledManifests, probeCompanion } from '#lib/stores/mcpServers.svelte.ts';
 	import { newId } from '#lib/utils/id.ts';
 
 	const INSTALL_PROGRESS_EVENT = 'mcp-install-progress';
@@ -89,22 +89,21 @@
 				serverId: id,
 				proxy: getSettings().proxy
 			});
-			persist([
-				...servers,
-				{
-					id,
-					label: entry.name,
-					enabled: true,
-					addonProjects: [],
-					source: { kind: 'catalog', entryId: entry.id },
-					secrets: {},
-					toolEnabled: {},
-					proxyUse: 'auto',
-					// An entry with no setup steps is ready immediately; one with
-					// steps is not startable until the wizard says so.
-					setupComplete: entry.setup.length === 0
-				}
-			]);
+			const server: McpServerConfig = {
+				id,
+				label: entry.name,
+				enabled: true,
+				addonProjects: [],
+				source: { kind: 'catalog', entryId: entry.id },
+				secrets: {},
+				toolEnabled: {},
+				proxyUse: 'auto',
+				// An entry with no setup steps is ready immediately; one with
+				// steps is not startable until the wizard says so.
+				setupComplete: entry.setup.length === 0
+			};
+			persist([...servers, server]);
+			void loadInstalledManifests([server]);
 			showCatalog = false;
 		} catch (e) {
 			error = String(e);
@@ -182,6 +181,9 @@
 		} catch (e) {
 			error = String(e);
 		}
+		// The row's tool defaults come from what was installed, including for
+		// servers that are not running.
+		void loadInstalledManifests(servers);
 		try {
 			runtimes = await invoke<RuntimeAvailability>('mcp_runtimes_available');
 		} catch {
