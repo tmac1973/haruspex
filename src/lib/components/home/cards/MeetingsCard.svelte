@@ -10,6 +10,8 @@
 	} from '#lib/home/meetings.ts';
 	import { getCardError } from '#lib/home/fetchedCards.svelte.ts';
 	import { openInBrowser } from '#lib/utils/openInBrowser.ts';
+	import { askAbout } from '#lib/home/askAbout.ts';
+	import ItemActions from '#lib/components/home/ItemActions.svelte';
 
 	let { card }: { card: HomeCard } = $props();
 
@@ -69,6 +71,15 @@
 							>Join</button
 						>
 					{/if}
+					<ItemActions
+						label={m.summary}
+						actions={[
+							{
+								label: 'Ask about this',
+								run: () => askAbout('Upcoming meetings', { kind: 'meeting', item: m })
+							}
+						]}
+					/>
 				</li>
 			{/each}
 		</ul>

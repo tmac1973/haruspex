@@ -8,7 +8,10 @@ import {
 	getErrorTurnId,
 	getIsGenerating,
 	getLastTurnFailed,
-	retryLastTurn
+	hasConversationDraft,
+	retryLastTurn,
+	sendMessage,
+	takeConversationDraft
 } from '#lib/stores/chat.svelte.ts';
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -51,6 +54,8 @@ vi.mock('#lib/stores/chat.svelte.ts', () => ({
 		takeReturned: () => ({ text: [], images: [] })
 	})),
 	dropSteering: vi.fn(),
+	hasConversationDraft: vi.fn(() => false),
+	takeConversationDraft: vi.fn(() => null),
 	// ConversationSidebar
 	getRun: vi.fn(() => ({ generating: false, waitingForSlot: false, queuedForStartup: false })),
 	clearAllConversations: vi.fn(),
@@ -188,5 +193,23 @@ describe('ChatView input history', () => {
 		await fireEvent.keyDown(box, { key: 'ArrowDown' });
 		await fireEvent.keyDown(box, { key: 'ArrowDown' });
 		expect(box.value).toBe('draft');
+	});
+});
+
+describe('ChatView — a chat started from Home', () => {
+	it('opens with the draft in the box, unsent', async () => {
+		vi.clearAllMocks();
+		vi.mocked(getActiveConversation).mockReturnValue(conversation);
+		vi.mocked(getConversations).mockReturnValue([]);
+		vi.mocked(getErrorMessage).mockReturnValue(null as unknown as string);
+		vi.mocked(getIsGenerating).mockReturnValue(false);
+		vi.mocked(hasConversationDraft).mockReturnValue(true);
+		vi.mocked(takeConversationDraft).mockReturnValue('From my News card on Home:\n\n> Launch\n\n');
+
+		render(ChatView);
+		const box = screen.getByRole('textbox') as HTMLTextAreaElement;
+		await vi.waitFor(() => expect(box.value).toContain('> Launch'));
+		expect(takeConversationDraft).toHaveBeenCalledWith(conversation!.id);
+		expect(sendMessage).not.toHaveBeenCalled();
 	});
 });

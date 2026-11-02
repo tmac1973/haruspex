@@ -27,7 +27,7 @@ export interface EmailListing {
 	seen: boolean;
 }
 
-interface NormalizedEmailMessage {
+export interface NormalizedEmailMessage {
 	accountId: string;
 	accountLabel: string;
 	messageId: string;

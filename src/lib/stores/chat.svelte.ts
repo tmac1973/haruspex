@@ -834,6 +834,32 @@ export function createConversation(): string {
 	return id;
 }
 
+/** Text waiting to go into a new chat's input box, unsent (Home's Ask about this). */
+let pendingDraft = $state<{ conversationId: string; text: string } | null>(null);
+
+/**
+ * Start a new chat with `text` in its input box, for the user to edit and
+ * send. Nothing is sent.
+ */
+export function newConversationWithDraft(text: string): string {
+	const id = createConversation();
+	pendingDraft = { conversationId: id, text };
+	return id;
+}
+
+/** The draft waiting for a conversation's input box, taken: it is handed out once. */
+export function takeConversationDraft(conversationId: string): string | null {
+	if (pendingDraft?.conversationId !== conversationId) return null;
+	const { text } = pendingDraft;
+	pendingDraft = null;
+	return text;
+}
+
+/** Whether a draft is waiting for the conversation, to take on the next read. */
+export function hasConversationDraft(conversationId: string | undefined): boolean {
+	return conversationId !== undefined && pendingDraft?.conversationId === conversationId;
+}
+
 function restoreContextUsageFor(id: string | null): void {
 	const conv = conversations.find((c) => c.id === id);
 	if (conv?.contextUsage) {
