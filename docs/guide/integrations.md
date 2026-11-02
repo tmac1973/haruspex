@@ -13,7 +13,7 @@ Go to Settings → Integrations → Email and click **Add email account**. Pick 
 
 An app password is a code your provider creates for Haruspex; it needs 2-factor authentication. Microsoft 365 and Outlook.com are not supported, because Microsoft turned off app-password access. Passwords go in the system keychain, or Haruspex's encrypted secrets file where there is no keychain (see the `search-and-network` page).
 
-With an account on, the assistant can list recent mail, summarise a message, or read it in full. Reading a message never marks it as read. Home's Important emails card watches unread mail (see the `home` page).
+With an account on, the assistant can list recent mail, summarise a message, or read it in full. Reading a message never marks it as read. Home's Important emails card watches unread mail and drafts replies (`home` page).
 
 ## Let the assistant draft emails
 

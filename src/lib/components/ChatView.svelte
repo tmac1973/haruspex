@@ -40,7 +40,9 @@
 		setConversationMemoryEnabled,
 		addLocalNote,
 		getActiveRun,
-		dropSteering
+		dropSteering,
+		hasConversationDraft,
+		takeConversationDraft
 	} from '#lib/stores/chat.svelte.ts';
 	import type { SteeringMessage } from '#lib/agent/loop.ts';
 	import SlashMenu from '#lib/components/SlashMenu.svelte';
@@ -161,6 +163,19 @@
 	const run = $derived(getActiveRun());
 	/** Messages sent while the turn runs, waiting for its next step. */
 	const steering = $derived<SteeringMessage[]>(run.steering);
+
+	// A chat started from Home (Ask about this) opens with its text in the
+	// box, unsent and focused.
+	$effect(() => {
+		const id = activeConversation?.id;
+		if (!hasConversationDraft(id)) return;
+		untrack(() => {
+			const text = takeConversationDraft(id!);
+			if (text === null) return;
+			inputText = text;
+			void tick().then(() => inputEl?.focus());
+		});
+	});
 
 	// Steering the turn ended without delivering comes back into the box,
 	// ahead of anything typed since.

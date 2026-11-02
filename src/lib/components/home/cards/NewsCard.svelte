@@ -9,6 +9,8 @@
 	import { getLatestRun } from '#lib/home/latestRun.svelte.ts';
 	import { lastActive } from '#lib/code/sessionList.ts';
 	import { openInBrowser } from '#lib/utils/openInBrowser.ts';
+	import { askAbout } from '#lib/home/askAbout.ts';
+	import ItemActions from '#lib/components/home/ItemActions.svelte';
 
 	let { card }: { card: HomeCard } = $props();
 
@@ -59,9 +61,17 @@
 						<span class="headline">{item.source.title}</span>
 					{/if}
 					<div class="meta">
-						{item.source.source}{item.source.published
-							? ` · ${lastActive(item.source.published)}`
-							: ''}
+						<span
+							>{item.source.source}{item.source.published
+								? ` · ${lastActive(item.source.published)}`
+								: ''}</span
+						>
+						<ItemActions
+							label={item.source.title}
+							actions={[
+								{ label: 'Ask about this', run: () => askAbout('News', { kind: 'news', item }) }
+							]}
+						/>
 					</div>
 					<div class="summary">{item.summary}</div>
 				</li>
@@ -114,6 +124,12 @@
 	.meta,
 	.muted {
 		color: var(--text-secondary);
+	}
+
+	.meta {
+		display: flex;
+		justify-content: space-between;
+		gap: 8px;
 	}
 
 	.meta,

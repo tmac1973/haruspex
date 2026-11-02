@@ -9,6 +9,11 @@
 	import { enqueue, getCurrentRun, getPendingQueue } from '#lib/agent/jobs/runner.svelte.ts';
 	import { getLatestRun } from '#lib/home/latestRun.svelte.ts';
 	import { lastActive } from '#lib/code/sessionList.ts';
+	import { getSettings } from '#lib/stores/settings.ts';
+	import { askAbout } from '#lib/home/askAbout.ts';
+	import ItemActions, { type ItemAction } from '#lib/components/home/ItemActions.svelte';
+	import EmailReader from '#lib/components/home/EmailReader.svelte';
+	import DraftReply from '#lib/components/home/DraftReply.svelte';
 
 	let { card }: { card: HomeCard } = $props();
 
@@ -30,6 +35,33 @@
 			return null;
 		}
 	});
+
+	/** The message open in the reader, and the one with a draft panel under it. */
+	let reading = $state<ImportantEmail | null>(null);
+	let drafting = $state<string | null>(null);
+
+	function accountOf(item: ImportantEmail) {
+		return getSettings().integrations.email.accounts.find((a) => a.id === item.source.accountId);
+	}
+
+	function actions(item: ImportantEmail): ItemAction[] {
+		const account = accountOf(item);
+		const noSend = !account?.sendEnabled
+			? 'Turn on Allow sending in Settings → Integrations → Email'
+			: undefined;
+		return [
+			{
+				label: 'Open',
+				run: () => (reading = item),
+				disabledReason: account ? undefined : 'This account was removed from Settings'
+			},
+			{
+				label: 'Ask about this',
+				run: () => askAbout('Important emails', { kind: 'email', item })
+			},
+			{ label: 'Draft reply', run: () => (drafting = item.id), disabledReason: noSend }
+		];
+	}
 
 	function when(date: string): string {
 		const at = Date.parse(date);
@@ -57,9 +89,17 @@
 					<div class="head">
 						<span class="subject">{item.source.subject || '(no subject)'}</span>
 						<span class="date">{when(item.source.date)}</span>
+						<ItemActions label={item.source.subject} actions={actions(item)} />
 					</div>
 					<div class="from">{item.source.from}</div>
 					<div class="why">{item.why}</div>
+					{#if drafting === item.id && accountOf(item)}
+						<DraftReply
+							account={accountOf(item)!}
+							messageId={item.source.messageId}
+							onclose={() => (drafting = null)}
+						/>
+					{/if}
 				</li>
 			{/each}
 		</ul>
@@ -67,6 +107,20 @@
 		<p class="muted">No important mail.</p>
 	{:else if !running && !queued && !failed}
 		<p class="muted">Not checked yet.</p>
+	{/if}
+	{#if reading && accountOf(reading)}
+		{@const item = reading}
+		<EmailReader
+			account={accountOf(item)!}
+			messageId={item.source.messageId}
+			ondraft={accountOf(item)?.sendEnabled
+				? () => {
+						reading = null;
+						drafting = item.id;
+					}
+				: undefined}
+			onclose={() => (reading = null)}
+		/>
 	{/if}
 	<div class="actions">
 		<button

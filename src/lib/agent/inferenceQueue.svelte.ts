@@ -42,6 +42,8 @@ export type InferenceConsumer =
 	/** A Code-tab session's turn. */
 	| 'code'
 	| { kind: 'job'; jobName: string }
+	/** Something a Home card does for the user while they wait (Draft reply). */
+	| { kind: 'home'; label: string }
 	/** A remote web-chat guest; `client` is their session id. See `remote/`. */
 	| { kind: 'remote'; client: string }
 	/**

@@ -121,7 +121,9 @@
 		if (consumer === 'code') return 'a Code session';
 		if (consumer === 'memory') return 'a memory extraction pass';
 		if (consumer === 'subagent') return 'a research sub-agent';
-		return consumer.kind === 'job' ? `job "${consumer.jobName}"` : 'a remote guest';
+		if (consumer.kind === 'job') return `job "${consumer.jobName}"`;
+		if (consumer.kind === 'home') return `Home's ${consumer.label}`;
+		return 'a remote guest';
 	}
 	const lastError = $derived(session.lastError);
 	const contextNotice = $derived(session.contextNotice);
