@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use async_imap::imap_proto::SectionPath;
-use async_imap::types::Fetch;
+use async_imap::types::{Fetch, Flag};
 use futures_util::stream::StreamExt;
 use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, RootCertStore};
@@ -54,6 +54,8 @@ pub struct ListFilters {
     /// Upper bound on results: [`DEFAULT_MAX_RESULTS`] when zero, at most
     /// [`MAX_RESULTS`].
     pub max_results: u32,
+    /// Unread messages only (`UNSEEN`), for the Important emails card.
+    pub unseen_only: bool,
 }
 
 /// Results when the caller names no number. The tool's schema and its
@@ -354,6 +356,10 @@ fn build_search_query(filters: &ListFilters) -> String {
         parts.push(format!("SUBJECT \"{}\"", sanitize_search_value(s)));
     }
 
+    if filters.unseen_only {
+        parts.push("UNSEEN".to_string());
+    }
+
     if parts.is_empty() {
         "ALL".to_string()
     } else {
@@ -423,9 +429,10 @@ fn unix_to_imap_date(secs: i64) -> String {
 }
 
 /// The query that lists a message without downloading it: the headers a
-/// listing shows, the structure (to find the text part), and the server's
-/// date for a message with no Date header.
-const LIST_QUERY: &str = "(UID INTERNALDATE RFC822.SIZE BODYSTRUCTURE \
+/// listing shows, the structure (to find the text part), the server's date
+/// for a message with no Date header, and the flags (read or not). PEEK
+/// leaves a listed message unread.
+const LIST_QUERY: &str = "(UID FLAGS INTERNALDATE RFC822.SIZE BODYSTRUCTURE \
      BODY.PEEK[HEADER.FIELDS (DATE FROM SUBJECT MESSAGE-ID)])";
 
 /// The fetch of the first `len` bytes of one part.
@@ -467,6 +474,7 @@ struct Listed {
     internal: Option<i64>,
     text: Option<Part>,
     attachments: bool,
+    seen: bool,
 }
 
 /// Fetch listings for the `max_results` most recent messages matching the
@@ -521,6 +529,7 @@ async fn list_in(
                 internal: f.internal_date().map(|d| d.timestamp()),
                 text: structure::text_part(&parts).cloned(),
                 attachments: structure::has_attachments(&parts),
+                seen: f.flags().any(|flag| matches!(flag, Flag::Seen)),
             })
         })
         .collect();
@@ -571,6 +580,10 @@ async fn list_in(
                 account.label.clone(),
                 handle(validity, l.uid),
             )
+            .map(|listing| EmailListing {
+                seen: l.seen,
+                ..listing
+            })
             .map_err(|e| log::warn!("Could not read the headers of UID {}: {e}", l.uid))
             .ok()
         })
@@ -784,10 +797,23 @@ mod tests {
             from: Some("alice".into()),
             subject_contains: Some("report".into()),
             max_results: 10,
+            unseen_only: false,
         });
         assert!(q.contains("SINCE 01-Jan-2026"));
         assert!(q.contains("FROM \"alice\""));
         assert!(q.contains("SUBJECT \"report\""));
+    }
+
+    #[test]
+    fn search_query_asks_for_unread_mail_only_when_told() {
+        let q = build_search_query(&ListFilters {
+            hours: Some(24),
+            unseen_only: true,
+            ..Default::default()
+        });
+        assert!(q.starts_with("SINCE "));
+        assert!(q.ends_with(" UNSEEN"));
+        assert!(!build_search_query(&ListFilters::default()).contains("UNSEEN"));
     }
 
     #[test]
@@ -871,6 +897,7 @@ mod tests {
     #[test]
     fn a_list_asks_for_headers_and_structure_never_the_body() {
         assert!(LIST_QUERY.contains("BODYSTRUCTURE"));
+        assert!(LIST_QUERY.contains("FLAGS"));
         assert!(LIST_QUERY.contains("BODY.PEEK[HEADER.FIELDS (DATE FROM SUBJECT MESSAGE-ID)]"));
         assert!(!LIST_QUERY.contains("BODY.PEEK[]"));
         assert_eq!(part_query("1.2", 4096), "(UID BODY.PEEK[1.2]<0.4096>)");

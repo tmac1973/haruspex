@@ -59,6 +59,7 @@ describe('registration barrel', () => {
 		const { listJobTypes } = await import('./index');
 		expect(listJobTypes().map((d) => d.id)).toEqual([
 			'research',
+			'email_digest',
 			'audit',
 			'guided_planning',
 			'autonomous_coding',

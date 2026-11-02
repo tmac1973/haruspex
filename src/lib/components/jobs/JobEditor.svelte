@@ -348,6 +348,7 @@
 	// setup", …). Falls back to the type's label for future job types.
 	const typeSectionTitles: Partial<Record<JobType, string>> = {
 		research: 'Steps',
+		email_digest: 'Email digest',
 		audit: 'Audit setup',
 		guided_planning: 'Guided planning',
 		autonomous_coding: 'Autonomous coding'

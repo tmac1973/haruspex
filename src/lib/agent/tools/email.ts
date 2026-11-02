@@ -13,7 +13,7 @@ const EMAIL_SUMMARY_MAX_TOKENS = 400;
 const DEFAULT_MAX_RESULTS = 25;
 
 // Hand-written: the Rust structs are serde, not ts-exported.
-interface EmailListing {
+export interface EmailListing {
 	accountId: string;
 	accountLabel: string;
 	messageId: string;
@@ -23,6 +23,8 @@ interface EmailListing {
 	date: string;
 	snippet: string;
 	hasAttachments: boolean;
+	/** Read already (IMAP \Seen). */
+	seen: boolean;
 }
 
 interface NormalizedEmailMessage {

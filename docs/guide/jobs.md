@@ -37,9 +37,11 @@ Each run's **Tokens** card shows what every step used and how close it came to f
 
 ## The job types
 
+**Email digest.** What Home's Important emails card runs (see the `home` page).
+
 **Research.** A list of steps run in order. Each step is a fresh conversation that gets the previous step's output, so you can chain "search, summarise, write a report". Each step can turn on **Deep research**. Python runs without asking, in a sandbox of the run's own that sees none of your chats.
 
-**Audit.** Runs one prompt many times independently (1–20 runs), groups the findings, checks each group against the source, and writes one report sorted into confirmed, refuted and uncertain. Options: number of runs, max turns per run, **Read-only runs** (recommended), your own instructions, and an optional output file.
+**Audit.** Runs one prompt many times independently (1–20), groups the findings, checks each group against the source, and writes one report sorted into confirmed, refuted and uncertain. Options: number of runs, max turns per run, **Read-only runs**, your own instructions, and an optional output file.
 
 **Guided planning.** Turns a rough idea into an `overview.md` and phase files (`phase-NN-*.md`) in dependency order. It plans only and never writes code.
 
@@ -52,6 +54,6 @@ Each run's **Tokens** card shows what every step used and how close it came to f
 - **Also generate assets** (_Unattended plan + code_ only, needs Settings → Image) writes an asset spec and runs asset generation before coding. Under **Later stages**, **Change…** gives the asset or coding run its own model.
 - **Planning skill**: pick the kind of project. Haruspex ships `plan-2d-game`, `plan-3d-game`, `plan-web-app`, `plan-cli-tool` and `plan-api-service`. The interview adds that kind's questions and the reviewer checks the plan against the skill's requirements. Edit them or add your own in Settings → Skills (see the `skills` page).
 
-**Autonomous coding.** Takes a **Plan directory** (usually a guided planning output folder). It first asks you about every open decision, or settles them itself with **Settle decisions without asking**. Then it codes unattended, one plan phase at a time. At the end of each phase it runs the verification command settled in that interview and commits the phase. A phase that keeps failing verification gets a few repair attempts, then is committed marked unverified, and the run moves on. **Create a working branch for this run** (recommended) puts the work on its own git branch; **Use git** off makes no commits at all. It ends with `REPORT-coding.md` (what was built, what is blocked and why, next steps) and a project `README.md`. It can hand lookups to subtasks: see the `code-subtasks` page.
+**Autonomous coding.** Takes a **Plan directory**, such as a guided planning folder. It first asks you about every open decision, or settles them itself with **Settle decisions without asking**. Then it codes unattended, one plan phase at a time. At the end of each phase it runs the verification command settled in that interview and commits the phase. A phase that keeps failing verification gets a few repair attempts, then is committed marked unverified, and the run moves on. **Create a working branch for this run** (recommended) puts the work on its own git branch; **Use git** off makes no commits at all. It ends with `REPORT-coding.md` and a project `README.md`. It can hand lookups to subtasks: see the `code-subtasks` page.
 
 **Asset generation.** Makes the images a project needs from a JSON asset spec: sprites and icons in sheets, tiling textures. If the spec doesn't exist, it writes one from your **What to make** description. It first makes a style anchor that every asset follows; _Attended_ stops once to show you the anchor. It needs an image backend in Settings → Image; see the `images` page.

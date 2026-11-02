@@ -9,11 +9,11 @@ Email, calendars and contacts, MCP servers, and screen capture. All are off unti
 
 ## Connect an email account
 
-Go to Settings → Integrations → Email and click **Add email account**. Pick a provider (Gmail, Fastmail, iCloud, Yahoo, or Custom), enter your address and an **app password**, then click **Save password**. It tests the connection before saving. Switch the account on with **Enabled**.
+Go to Settings → Integrations → Email and click **Add email account**. Pick a provider, enter your address and an **app password**, then click **Save password**. Switch the account on with **Enabled**.
 
 An app password is a code your provider creates for Haruspex; it needs 2-factor authentication. Microsoft 365 and Outlook.com are not supported, because Microsoft turned off app-password access. Passwords go in the system keychain, or Haruspex's encrypted secrets file where there is no keychain (see the `search-and-network` page).
 
-With an account on, the assistant can list recent mail, summarise a message, or read it in full. Reading a message never marks it as read.
+With an account on, the assistant can list recent mail, summarise a message, or read it in full. Reading a message never marks it as read. Home's Important emails card watches unread mail (see the `home` page).
 
 ## Let the assistant draft emails
 
