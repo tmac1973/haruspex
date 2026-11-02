@@ -1,12 +1,12 @@
 <script lang="ts">
 	/**
 	 * Dev builds only: run a 3D specialist's HTML through the headless runner
-	 * and the GLB preview by hand, for the per-OS test of
+	 * and the GLB check (report and render sheet) by hand, for the per-OS test of
 	 * `#lib/specialists/three/`. Renders nothing in a release build.
 	 */
 	import { runAssetHtml, type AssetRunResult } from '#lib/specialists/three/runHtml.ts';
 	import { snapshotProblems } from '#lib/specialists/three/snapshot.ts';
-	import { previewGlb, type GlbPreview } from '#lib/specialists/three/preview.ts';
+	import { checkGlb, type GlbCheck } from '#lib/glb/check.ts';
 	import { extractHtml } from '#lib/specialists/three/extract.ts';
 
 	const dev = import.meta.env.DEV;
@@ -17,7 +17,7 @@
 	let elapsed = $state<number | null>(null);
 	let result = $state<AssetRunResult | null>(null);
 	let snapProblems = $state<string[]>([]);
-	let preview = $state<GlbPreview | null>(null);
+	let checked = $state<GlbCheck | { problems: string[] } | null>(null);
 	let failure = $state<string | null>(null);
 	let controller: AbortController | null = null;
 
@@ -29,7 +29,7 @@
 	async function run() {
 		running = true;
 		result = null;
-		preview = null;
+		checked = null;
 		snapProblems = [];
 		failure = null;
 		elapsed = null;
@@ -43,7 +43,7 @@
 			elapsed = Math.round(performance.now() - t0);
 			result = r;
 			if (r.png) snapProblems = await snapshotProblems(r.png);
-			if (r.glb) preview = await previewGlb(r.glb);
+			if (r.glb) checked = await checkGlb(r.glb);
 		} catch (e) {
 			failure = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
 		} finally {
@@ -89,20 +89,13 @@
 
 			{#if result.glb}
 				<h2>GLB ({result.glb.byteLength} bytes)</h2>
-				{#if preview}
-					<pre class="stats">{JSON.stringify(
-							{
-								ok: preview.ok,
-								problems: preview.problems,
-								meshes: preview.meshes,
-								triangles: preview.triangles,
-								animations: preview.animations,
-								size: preview.size.map((n) => +n.toFixed(3))
-							},
-							null,
-							2
-						)}</pre>
-					{#if preview.png}<img class="render" src={preview.png} alt="GLB render" />{/if}
+				{#if checked && 'problems' in checked}
+					<ul class="errors">
+						{#each checked.problems as p, i (i)}<li>{p}</li>{/each}
+					</ul>
+				{:else if checked}
+					<pre class="stats">{checked.text}</pre>
+					{#if checked.png}<img class="render" src={checked.png} alt="GLB render sheet" />{/if}
 				{/if}
 			{:else if doExport}
 				<p>No GLB.</p>
@@ -137,7 +130,7 @@
 	}
 	.snapshot,
 	.render {
-		max-width: 640px;
+		max-width: 1200px;
 		border: 1px solid var(--border);
 	}
 </style>

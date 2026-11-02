@@ -29,8 +29,8 @@ vi.mock('#lib/specialists/call.ts', async (importOriginal) => ({
 }));
 const runner = vi.hoisted(() => ({ runAssetHtml: vi.fn() }));
 vi.mock('#lib/specialists/three/runHtml.ts', () => runner);
-const preview = vi.hoisted(() => ({ previewGlb: vi.fn() }));
-vi.mock('#lib/specialists/three/preview.ts', () => preview);
+const glb = vi.hoisted(() => ({ checkGlb: vi.fn() }));
+vi.mock('#lib/glb/check.ts', () => glb);
 vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('#lib/stores/settings.ts')>()),
 	getSettings: () => ({ specialists: [] })
@@ -40,7 +40,7 @@ import { specialistKind } from '#lib/specialists/kinds.ts';
 import '#lib/specialists/kinds/index.ts';
 import { newSpecialistEntry } from '#lib/specialists/entries.ts';
 import type { SpecialistRun } from '#lib/specialists/types.ts';
-import { GLB_REQUEST_SUFFIX } from './glb';
+import { GLB_REQUEST_SUFFIX, SHEET_NOTE } from './glb';
 
 const PAGE = '<!DOCTYPE html><html><body>potion</body></html>';
 const GLB = new Uint8Array([103, 108, 84, 70]);
@@ -67,15 +67,8 @@ function run(
 	return specialistKind('glb')!.run(r);
 }
 
-const good = {
-	ok: true,
-	problems: [],
-	meshes: 21,
-	triangles: 1856,
-	animations: [{ name: 'Walk', tracks: 5 }],
-	size: [1.56, 1.66, 1.64],
-	png: PNG
-};
+const REPORT = 'Size: 1.56 × 1.66 × 1.64 m (x × y × z).\n21 meshes, 1856 triangles.';
+const good = { bytes: GLB, report: {}, text: REPORT, png: PNG };
 
 beforeEach(() => {
 	files.clear();
@@ -86,7 +79,7 @@ beforeEach(() => {
 		finishReason: 'stop'
 	});
 	runner.runAssetHtml.mockReset().mockResolvedValue({ glb: GLB, png: PNG, errors: [] });
-	preview.previewGlb.mockReset().mockResolvedValue(good);
+	glb.checkGlb.mockReset().mockResolvedValue(good);
 });
 
 describe('the glb kind', () => {
@@ -100,10 +93,8 @@ describe('the glb kind', () => {
 		expect(runner.runAssetHtml.mock.calls[0][1]).toMatchObject({ export: true });
 		expect(files.get('/proj/assets/potion.glb')).toEqual([...GLB]);
 		expect(out.result).toContain('Saved assets/potion.glb (source: assets/potion.glb.html).');
-		expect(out.result).toContain(
-			'21 meshes, 1856 triangles; Walk (5 tracks); 1.56 × 1.66 × 1.64 m'
-		);
-		expect(out.result).toContain('Check the render');
+		expect(out.result).toContain(REPORT);
+		expect(out.result).toContain(SHEET_NOTE);
 		expect(out.thumbDataUrl).toBe(PNG);
 		expect(c.pendingImages).toEqual([{ path: 'assets/potion.glb', dataUrl: PNG }]);
 	});
@@ -112,7 +103,7 @@ describe('the glb kind', () => {
 		const c = ctx({ visionSupported: false });
 		const out = await run({ path: 'a.glb' }, 'A crate.', c);
 		expect(c.pendingImages).toEqual([]);
-		expect(out.result).not.toContain('Check the render');
+		expect(out.result).not.toContain(SHEET_NOTE);
 	});
 
 	it('refuses a bad path or an existing GLB before generating', async () => {
@@ -161,17 +152,13 @@ describe('the glb kind', () => {
 				"The source is at lamp.glb.html. Fix it with your edit tools, then call ask_specialist with name 'GLB Coder' and recheck 'lamp.glb.html'."
 			].join('\n')
 		);
-		expect(preview.previewGlb).not.toHaveBeenCalled();
+		expect(glb.checkGlb).not.toHaveBeenCalled();
 		expect(files.has('/proj/lamp.glb')).toBe(false);
 		expect(files.has('/proj/lamp.glb.html')).toBe(true);
 	});
 
-	it("fails on a GLB the preview finds broken, or that the page didn't export", async () => {
-		preview.previewGlb.mockResolvedValueOnce({
-			...good,
-			ok: false,
-			problems: ["Mesh 'rock' has NaN vertex positions."]
-		});
+	it("fails on a GLB the check finds broken, or that the page didn't export", async () => {
+		glb.checkGlb.mockResolvedValueOnce({ problems: ["Mesh 'rock' has NaN vertex positions."] });
 		const out = await run({ path: 'rock.glb' }, 'Rocks.');
 		expect(out.result).toContain("- Mesh 'rock' has NaN vertex positions.");
 		expect(files.has('/proj/rock.glb')).toBe(false);
