@@ -11,6 +11,9 @@ vi.mock('#lib/stores/settings.ts', () => ({
 	updateSettings: (partial: Partial<typeof settings>) => Object.assign(settings, partial)
 }));
 
+const jobs = vi.hoisted(() => ({ deleteJob: vi.fn(async () => true) }));
+vi.mock('#lib/stores/jobs.svelte.ts', () => ({ deleteJob: jobs.deleteJob }));
+
 import {
 	_resetForTests,
 	addCard,
@@ -24,11 +27,11 @@ import {
 /** A table in memory, behind the same commands the store calls. */
 let rows: HomeCard[] = [];
 
-function row(id: string, cardType: string, size = 'normal'): HomeCard {
+function row(id: string, cardType: string, size = 'normal', jobId: number | null = null): HomeCard {
 	return {
 		id,
 		card_type: cardType,
-		job_id: null,
+		job_id: jobId,
 		position: rows.length,
 		size,
 		config: '{}',
@@ -48,11 +51,17 @@ beforeEach(() => {
 	settings.homeSeeded = false;
 	rows = [];
 	tauri.invoke.mockReset();
+	jobs.deleteJob.mockClear();
 	tauri.invoke.mockImplementation(
 		invokeRouter({
 			db_home_cards_list: () => rows.map((r) => ({ ...r })),
 			db_home_cards_create: (a) => {
-				const r = row(String(a!.id), String(a!.cardType), String(a!.size));
+				const r = row(
+					String(a!.id),
+					String(a!.cardType),
+					String(a!.size),
+					(a!.jobId as number | null) ?? null
+				);
 				rows.push(r);
 				return r;
 			},
@@ -116,5 +125,18 @@ describe('homeCards', () => {
 		expect(getHomeCards()[0].size).toBe('wide');
 		await setCardSize(card!.id, 'normal');
 		expect(getHomeCards()[0].size).toBe('normal');
+	});
+
+	it('removes a pinned card and keeps its job, unless asked to delete it too', async () => {
+		settings.homeSeeded = true;
+		const kept = await addCard('pinned_job', {}, 7);
+		const gone = await addCard('pinned_job', {}, 8);
+
+		await removeCard(kept!.id);
+		expect(jobs.deleteJob).not.toHaveBeenCalled();
+
+		await removeCard(gone!.id, { deleteJob: true });
+		expect(jobs.deleteJob).toHaveBeenCalledWith(8);
+		expect(getHomeCards()).toEqual([]);
 	});
 });
