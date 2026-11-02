@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { formatCommandDuration, parseCommandResult, stripAnsi, tailLines } from './commandResult';
+import {
+	formatCommandDuration,
+	parseCommandResult,
+	STOPPED_STEP_RESULT,
+	stripAnsi,
+	tailLines
+} from './commandResult';
 
 describe('parseCommandResult', () => {
 	it('reads the exit code, duration and output', () => {
@@ -23,6 +29,7 @@ describe('parseCommandResult', () => {
 	it('reads a refusal and a background start', () => {
 		expect(parseCommandResult('{"error":"Denied by the user."}').error).toBe('Denied by the user.');
 		expect(parseCommandResult('Started in the background (id bg-1, PID 4).').background).toBe(true);
+		expect(parseCommandResult(STOPPED_STEP_RESULT)).toMatchObject({ stopped: true, output: '' });
 	});
 
 	it('strips terminal colours from the output', () => {

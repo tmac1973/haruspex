@@ -36,13 +36,20 @@
 		if (target) onopenfile(target.path, target.line);
 	}
 
-	/** Only what a person reads: tool-call rounds show as their steps instead. */
+	const steps = (i: number) => (session.messageSteps[i] ?? []) as SearchStep[];
+	/**
+	 * Only what a person reads: tool-call rounds show as their steps instead.
+	 * A turn stopped before it answered keeps its steps on its last call.
+	 */
 	const shown = $derived(
 		session.messages
 			.map((msg, i) => ({ msg, i }))
-			.filter(({ msg }) => msg.role !== 'tool' && msg.role !== 'system' && !msg.tool_calls)
+			.filter(
+				({ msg, i }) =>
+					(msg.role !== 'tool' && msg.role !== 'system' && !msg.tool_calls) ||
+					(msg.role === 'tool' && steps(i).length > 0)
+			)
 	);
-	const steps = (i: number) => (session.messageSteps[i] ?? []) as SearchStep[];
 	/** The first message shown whole to the agent: the summary's divider goes above it. */
 	const cutAt = $derived(
 		session.compaction ? shown.find(({ i }) => i >= session.compaction!.at)?.i : undefined
@@ -65,10 +72,12 @@
 				<pre>{session.compaction.summary}</pre>
 			</details>
 		{/if}
-		{#if msg.role === 'assistant' && steps(i).length}
+		{#if (msg.role === 'assistant' || msg.role === 'tool') && steps(i).length}
 			<CodeSteps steps={steps(i)} root={session.root} {openFile} compact />
 		{/if}
-		<Message message={msg} root={session.root} />
+		{#if msg.role !== 'tool'}
+			<Message message={msg} root={session.root} />
+		{/if}
 		{#if stopAt(i)}
 			<StopIndicator reason={stopAt(i) as never} disabled={session.busy} onContinue={oncontinue} />
 		{/if}

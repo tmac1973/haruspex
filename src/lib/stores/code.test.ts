@@ -279,6 +279,7 @@ import {
 	setActiveSession
 } from '#lib/stores/code.svelte.ts';
 import { decodeCodeSession } from '#lib/code/session.ts';
+import { STOPPED_STEP_RESULT } from '#lib/code/commandResult.ts';
 import { reportShellWait } from '#lib/code/shellBridge.ts';
 import { finishedSubtask, newSubtaskState, type SubtaskState } from '#lib/code/subtask.ts';
 import type { SubtaskEnv, SubtaskSpec } from '#lib/code/subtaskRun.ts';
@@ -528,6 +529,64 @@ describe('a Code session', () => {
 		const saved = storedThread(s.id)!.messages;
 		expect(saved.map((m) => m.role)).toEqual(['user', 'assistant', 'tool', 'assistant']);
 		expect(saved[3].content).toBe('Now I will');
+	});
+
+	it('keeps the steps of a turn stopped mid-command, the running one marked stopped', async () => {
+		const s = await newSession('/proj');
+		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => {
+			const grep = { id: 'c1', name: 'code_grep', arguments: {} };
+			const cmd = { id: 'c2', name: 'run_command', arguments: { command: 'sleep 60' } };
+			o.onToolStart(grep);
+			add(
+				o,
+				{
+					role: 'assistant',
+					content: '',
+					tool_calls: [
+						{ id: 'c1', type: 'function', function: { name: 'code_grep', arguments: '{}' } }
+					]
+				},
+				{ role: 'tool', tool_call_id: 'c1', content: 'src/a.ts:1: x' }
+			);
+			o.onToolEnd(grep, 'src/a.ts:1: x');
+			add(o, {
+				role: 'assistant',
+				content: '',
+				tool_calls: [
+					{
+						id: 'c2',
+						type: 'function',
+						function: { name: 'run_command', arguments: '{"command":"sleep 60"}' }
+					}
+				]
+			});
+			o.onToolStart(cmd);
+			await new Promise<void>((resolve) =>
+				o.signal!.addEventListener('abort', () => resolve(), { once: true })
+			);
+			throw new DOMException('Aborted', 'AbortError');
+		});
+		const sending = s.send('wait a minute');
+		await vi.waitFor(() => expect(mocks.runAgentLoop).toHaveBeenCalled());
+		await vi.waitFor(() => expect(s.searchSteps).toHaveLength(2));
+		s.stop();
+		await sending;
+		expect(s.lastError).toBe('Stopped.');
+		const saved = storedThread(s.id)!;
+		expect(saved.messages.map((m) => m.role)).toEqual([
+			'user',
+			'assistant',
+			'tool',
+			'assistant',
+			'tool'
+		]);
+		const steps = saved.messageSteps[4];
+		expect(steps.map((st) => [st.toolName, st.status])).toEqual([
+			['code_grep', 'done'],
+			['run_command', 'done']
+		]);
+		expect(steps[0].result).toBe('src/a.ts:1: x');
+		expect(steps[1].result).toBe(STOPPED_STEP_RESULT);
 	});
 
 	it('shows queued while waiting for an inference slot', async () => {

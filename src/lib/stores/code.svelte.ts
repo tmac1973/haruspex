@@ -21,7 +21,7 @@ import { withInferenceSlot, type InferenceTicket } from '#lib/agent/inferenceQue
 import { resolveBackendDescriptor } from '#lib/inference/descriptor.ts';
 import { chooseCut, compactCodeThread } from '#lib/code/compaction.ts';
 import type { AgentStopReason, SearchStep, SteeringMessage } from '#lib/agent/loop.ts';
-import { markStepDone, markStepProgress } from '#lib/agent/steps.ts';
+import { markStepDone, markStepProgress, markStepsStopped } from '#lib/agent/steps.ts';
 import { SubtaskStops, subtaskActive, type SubtaskState } from '#lib/code/subtask.ts';
 import {
 	BackgroundSubtasks,
@@ -1030,10 +1030,8 @@ export class CodeSession {
 		const last = result.added[result.added.length - 1];
 		const answerIndex =
 			last && last.role === 'assistant' && !last.tool_calls ? start + result.added.length - 1 : -1;
+		this.keepSteps(result, answerIndex);
 		if (answerIndex >= 0) {
-			if (this.searchSteps.length > 0) {
-				this.messageSteps = { ...this.messageSteps, [answerIndex]: this.searchSteps };
-			}
 			const stats =
 				result.outcome === 'complete'
 					? computeMessageStats(lastCallStats, Date.now() - startedAt)
@@ -1052,6 +1050,19 @@ export class CodeSession {
 		// typed after the loop's last look at the queue.
 		this.handBack([...result.undeliveredSteering, ...this.steering]);
 		this.steering = [];
+	}
+
+	/**
+	 * Put the turn's steps above its answer. A turn stopped before it answered
+	 * ends on its stopped calls' results: its steps go on the last of them, any
+	 * still running marked stopped, so what ran still shows.
+	 */
+	private keepSteps(result: CodeTurnResult, answerIndex: number): void {
+		const stopped = result.outcome === 'aborted';
+		const at = answerIndex >= 0 ? answerIndex : stopped ? this.messages.length - 1 : -1;
+		if (at < 0 || result.added.length === 0 || this.searchSteps.length === 0) return;
+		const steps = stopped ? markStepsStopped(this.searchSteps) : this.searchSteps;
+		this.messageSteps = { ...this.messageSteps, [at]: steps };
 	}
 
 	/**

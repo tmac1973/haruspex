@@ -42,7 +42,7 @@ An outside edit reloads the file and keeps your place. With unsaved edits it sho
 
 ## Steer or stop the agent
 
-While the agent works, `Enter` queues your message and its images (**Queued**); the agent reads them once its running tools finish (**Delivered**) and says what it will do. **×** drops a queued message. **Stop** (`Esc`) ends the turn, which the agent won't redo unasked; unread messages return to the input box. `/` opens the commands and skills list, as in Chat.
+While the agent works, `Enter` queues your message and its images (**Queued**); the agent reads them after its running tools (**Delivered**). **×** drops a queued message. **Stop** (`Esc`) ends the turn, which the agent won't redo unasked; a command it cut short shows **stopped**; unread messages return to the input box. `/` opens the commands and skills list, as in Chat.
 
 A dot on a session's tab shows it working (filled) or waiting for the model (hollow), which one turn uses at a time; a turn lets go of it while a tool runs over a few seconds or waits for you. **Stop** on a waiting session gives your message back.
 
