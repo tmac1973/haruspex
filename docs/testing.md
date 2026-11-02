@@ -305,3 +305,40 @@ trails by a few tens of milliseconds, so `differs` listing only
 The page side is `src/lib/e2e/driveHooks.ts`, on `window.__haruspexDrive`.
 Only a build with `VITE_HARUSPEX_E2E=1`, which `e2e/app/build.mjs` sets,
 carries it; CI checks the production build has none of it.
+
+## Evaluating a model
+
+`scripts/model-eval.mjs` puts a running Haruspex through a fixed set of Chat and
+Code prompts, each in a new chat or session, through the Remote control API, and
+checks each run from what it left: the answer, the tools that ran and the files
+written. It was written for the deferred-tools evaluation
+(`plan/deferred-tools/phase-05-results.md`) and is how to compare models, or
+Settings → General → Load tools when needed on and off, on the same tasks.
+
+The app under test is any build with Settings → Remote control on (on this
+computer, `https://localhost:8788` needs nothing more), set to the model to
+evaluate. The script changes only Load tools when needed, and puts it back.
+
+```bash
+npm run model-eval -- setup                     # the test folder and project (ffmpeg, git)
+npm run model-eval -- prompts                   # each prompt, its tool group and what it needs
+npm run model-eval -- run --label qwen9b --setting on [--prompts video-implicit,docs-pdf] [--runs 10]
+npm run model-eval -- conversation --label qwen9b --setting off
+npm run model-eval -- summary                   # pass rates, requests, first prompt size, per label
+```
+
+- **What a run needs:** the GitHub prompt needs a GitHub MCP server, music a
+  music backend, the picture an image model; the video prompts need Settings →
+  Video editing. A prompt whose feature is off fails, so leave it out with
+  `--prompts`.
+- **Prompts that ask:** read-only MCP tools are allowed, everything else is
+  denied. A question from the model (`ask_user_question`) ends the run as a miss.
+- **Records** go to `results.jsonl` in `--dir` (default the system temp folder),
+  one line per run: the answer, steps, tools run, files, requests, prompt sizes
+  and errors. `summary` reads them; `--label` keeps models apart.
+- **One at a time:** the script reads the app's debug log by position, so don't
+  run two at once against the same app, or chat in it while it runs.
+- **The conversation** is 12 turns in one chat across every tool group, for how
+  a small context window holds up; it has no pass checks, so read its answers.
+- Chats and sessions it makes stay in the app (memory off) until
+  `npm run model-eval -- cleanup` deletes the ones `--out` names.

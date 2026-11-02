@@ -163,9 +163,7 @@ pub fn run() {
 
             // Initialize PDFium for high-quality PDF text extraction.
             // Falls back to pdf-extract if the bundled libpdfium is missing.
-            if let Ok(resource_dir) = app.path().resource_dir() {
-                fs_tools::init_pdfium(&resource_dir);
-            }
+            fs_tools::init_pdfium(&sidecar_util::resource_roots(app.handle()));
 
             // The skills Haruspex ships, copied into the user's skills folder
             // before any window lists skills. See skills::shipped.
@@ -358,9 +356,9 @@ pub fn run() {
             models::delete_model,
             models::get_whisper_model_path,
             models::download_whisper_model,
-            models::get_whisper_video_model_path,
-            models::download_whisper_video_model,
-            models::delete_whisper_video_model,
+            models::whisper_video_model_path,
+            models::whisper_video_model_download,
+            models::whisper_video_model_delete,
             proxy::proxy_search,
             proxy::proxy_fetch,
             proxy::get_search_stats,
@@ -651,7 +649,7 @@ pub fn run() {
             fs_tools::images::fs_read_image,
             fs_tools::images::read_dropped_image,
             desktop::screenshot::capture_screen,
-            desktop::screenshot::list_capture_windows,
+            desktop::screenshot::capture_windows_list,
             desktop::screenshot::capture_window,
             desktop::screenshot::capture_window_click,
             desktop::screenshot::capture_region_start,
@@ -696,7 +694,7 @@ pub fn run() {
             app_log::debug_log_file_path,
             app_log::debug_log_append,
             links::open_url,
-            links::open_folder,
+            links::folder_open,
             app_windows::app_window_open,
             agent_feedback::agent_feedback_append,
             agent_feedback::agent_feedback_dir,

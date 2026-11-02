@@ -9,9 +9,10 @@
  * `area` changes only a rectangle of the picture and `extend` grows it past its
  * edges (`_imageMask.ts`): everything outside the mask stays the original's.
  *
- * Only a backend whose `capabilities().edit` says so can do it (a
- * llama-toolchest model with the `edit` capability, FLUX.2 klein); any other
- * is a sentence saying what can.
+ * Only an image model whose `capabilities().edit` says so can do it (a
+ * llama-toolchest model with the `edit` capability, FLUX.2 klein); with none,
+ * the tool isn't offered, and a call anyway is a sentence saying what can. It
+ * takes as many pictures as the most able model does (`maxEditPictures`).
  */
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import {
@@ -42,11 +43,23 @@ import {
 } from '#lib/agent/tools/_imageJob.ts';
 import type { ImageRequest } from '#lib/image/types.ts';
 import type { PreparedEdit } from '#lib/ipc/gen/PreparedEdit.ts';
-
-/** The most pictures one call combines; the backend may allow fewer. */
-const MAX_IMAGES = 4;
+import { imageToolSchema, MODEL_PARAM, namedModel } from '#lib/agent/tools/_imageModel.ts';
+import { maxEditPictures } from '#lib/image/entries.ts';
 
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+
+/**
+ * Why `count` pictures are more than any image model combines, or null. With
+ * none able to edit, the router says what can.
+ */
+function tooManyPictures(count: number): string | null {
+	const most = maxEditPictures();
+	if (most === 0 || count <= most) return null;
+	return (
+		`edit_image combines at most ${most} picture${most === 1 ? '' : 's'} with the image models ` +
+		'in Settings → Image.'
+	);
+}
 
 /** The picture references asked for: `image`, then `also`. */
 function refsOf(args: Record<string, unknown>): string[] {
@@ -84,7 +97,8 @@ async function editMasked(
 	mask: MaskRequest,
 	save: SaveTarget | null,
 	ctx: ToolContext,
-	background: boolean
+	background: boolean,
+	named: string | undefined
 ): Promise<ToolExecOutput> {
 	let prepared;
 	try {
@@ -101,7 +115,8 @@ async function editMasked(
 			`Editing: ${alt}`,
 			{ op: 'draw', request, alt, verb: 'Edited', masked: prepared },
 			save,
-			ctx
+			ctx,
+			named
 		);
 	}
 	const image = await drawForTool(
@@ -111,7 +126,8 @@ async function editMasked(
 			mask,
 			prepared
 		),
-		ctx
+		ctx,
+		named
 	);
 	if (!('bytes' in image)) return image;
 	let bytes;
@@ -164,7 +180,7 @@ registerTool({
 					also: {
 						type: 'array',
 						items: { type: 'string' },
-						description: `Up to ${MAX_IMAGES - 1} more pictures to combine with it, named the same way.`
+						description: 'More pictures to combine with it, named the same way.'
 					},
 					area: {
 						type: 'object',
@@ -205,21 +221,35 @@ registerTool({
 						description:
 							'Replace an existing file. Default false. In Chat the user is asked instead.'
 					},
-					background: BACKGROUND_PARAM
+					background: BACKGROUND_PARAM,
+					model: MODEL_PARAM
 				},
 				required: ['image', 'prompt']
 			}
 		}
 	},
+	liveSchema: (schema) =>
+		imageToolSchema(schema, (properties) => {
+			const most = maxEditPictures();
+			if (most === 0) return false;
+			if (most === 1) delete properties.also;
+			else {
+				properties.also = {
+					...properties.also,
+					maxItems: most - 1,
+					description: `Up to ${most - 1} more pictures to combine with it, named the same way.`
+				};
+			}
+			return true;
+		}),
 	displayLabel: (args) => `edit: ${String(args.prompt ?? '').slice(0, 60)}`,
 	execute: async (args, ctx) => {
 		const prompt = str(args.prompt);
 		if (!prompt) return toolResult(toolError('edit_image needs a "prompt" saying what to change.'));
 		const refs = refsOf(args);
 		if (refs.length === 0) return toolResult(toolError('edit_image needs an "image".'));
-		if (refs.length > MAX_IMAGES) {
-			return toolResult(toolError(`edit_image combines at most ${MAX_IMAGES} pictures.`));
-		}
+		const tooMany = tooManyPictures(refs.length);
+		if (tooMany) return toolResult(toolError(tooMany));
 		const mask = maskRequest(args);
 		if (typeof mask === 'string') return toolResult(toolError(mask));
 		const save = await saveTarget(args, ctx, 'edit_image');
@@ -232,6 +262,7 @@ registerTool({
 			sources.push(got);
 		}
 		const background = canRunInBackground(args, ctx);
+		const named = namedModel(args);
 		if (!mask.area && !mask.extend) {
 			const { width, height } = editSize(sources[0].width, sources[0].height);
 			if (background) {
@@ -246,17 +277,19 @@ registerTool({
 						verb: 'Edited'
 					},
 					save,
-					ctx
+					ctx,
+					named
 				);
 			}
 			const image = await drawForTool(
 				{ prompt, width, height, seed: null, edit: { images: sources.map((s) => s.input) } },
-				ctx
+				ctx,
+				named
 			);
 			if (!('bytes' in image)) return image;
 			return answerWithImage(image, prompt.slice(0, 60), save, ctx, 'Edited');
 		}
 
-		return editMasked(prompt, sources, mask, save, ctx, background);
+		return editMasked(prompt, sources, mask, save, ctx, background, named);
 	}
 });

@@ -5,6 +5,7 @@ import type { ConversationWithMessages } from '#lib/ipc/gen/ConversationWithMess
 import type { DbMessage } from '#lib/ipc/gen/DbMessage.ts';
 import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import { dbMutate, dbQuery } from '#lib/stores/dbCall.ts';
 
 // ts-rs-generated mirrors of the Rust row types, re-exported under the
 // names this module historically used.
@@ -79,18 +80,20 @@ export async function dbSaveMessage(
 	stepsJson?: string | null
 ): Promise<void> {
 	if (!available) return;
-	try {
-		await invoke('db_save_message', {
+	await dbMutate({
+		cmd: 'db_save_message',
+		args: {
 			conversationId,
 			role: msg.role,
 			content: serializeContent(msg.content),
 			toolCalls: msg.tool_calls ? JSON.stringify(msg.tool_calls) : null,
 			toolCallId: msg.tool_call_id || null,
 			steps: stepsJson ?? null
-		});
-	} catch (e) {
-		logDebug('db', 'dbSaveMessage failed', { conversationId, error: errMessage(e) });
-	}
+		},
+		category: 'db',
+		onError: 'dbSaveMessage failed',
+		ctx: { conversationId }
+	});
 }
 
 /** Update the `steps` JSON on the most recently inserted message in
@@ -102,14 +105,16 @@ export async function dbUpdateLastMessageSteps(
 	stepsJson: string | null
 ): Promise<void> {
 	if (!available) return;
-	try {
-		await invoke('db_update_last_message_steps', {
+	await dbMutate({
+		cmd: 'db_update_last_message_steps',
+		args: {
 			conversationId,
 			steps: stepsJson
-		});
-	} catch (e) {
-		logDebug('db', 'dbUpdateLastMessageSteps failed', { conversationId, error: errMessage(e) });
-	}
+		},
+		category: 'db',
+		onError: 'dbUpdateLastMessageSteps failed',
+		ctx: { conversationId }
+	});
 }
 
 /** Load the conversation's persisted messageSteps map. Returns
@@ -117,33 +122,37 @@ export async function dbUpdateLastMessageSteps(
  *  Conversation.messageSteps. */
 export async function dbLoadMessageSteps(id: string): Promise<Record<number, unknown[]>> {
 	if (!available) return {};
-	try {
-		const full = await invoke<DbConversation>('db_get_conversation', { id });
-		const out: Record<number, unknown[]> = {};
-		full.messages.forEach((m, i) => {
-			if (m.steps) {
-				try {
-					const parsed = JSON.parse(m.steps);
-					if (Array.isArray(parsed)) out[i] = parsed;
-				} catch {
-					// ignore corrupt rows
-				}
+	const full = await dbQuery<DbConversation | null>({
+		cmd: 'db_get_conversation',
+		args: { id },
+		category: 'db',
+		onError: 'dbLoadMessageSteps failed',
+		ctx: { id },
+		fallback: null
+	});
+	const out: Record<number, unknown[]> = {};
+	full?.messages.forEach((m, i) => {
+		if (m.steps) {
+			try {
+				const parsed = JSON.parse(m.steps);
+				if (Array.isArray(parsed)) out[i] = parsed;
+			} catch {
+				// ignore corrupt rows
 			}
-		});
-		return out;
-	} catch (e) {
-		logDebug('db', 'dbLoadMessageSteps failed', { id, error: errMessage(e) });
-		return {};
-	}
+		}
+	});
+	return out;
 }
 
 export async function dbCreateConversation(id: string, title: string): Promise<void> {
 	if (!available) return;
-	try {
-		await invoke('db_create_conversation', { id, title });
-	} catch (e) {
-		logDebug('db', 'dbCreateConversation failed', { id, error: errMessage(e) });
-	}
+	await dbMutate({
+		cmd: 'db_create_conversation',
+		args: { id, title },
+		category: 'db',
+		onError: 'dbCreateConversation failed',
+		ctx: { id }
+	});
 }
 
 /**
@@ -163,18 +172,15 @@ export async function dbCreateConversation(id: string, title: string): Promise<v
  */
 export async function dbGetConversationMemoryEnabled(conversationId: string): Promise<boolean> {
 	if (!available) return true;
-	try {
-		const cursor = await invoke<{ memory_enabled: boolean }>('conversation_memory_cursor', {
-			conversationId
-		});
-		return cursor.memory_enabled;
-	} catch (e) {
-		logDebug('db', 'dbGetConversationMemoryEnabled failed', {
-			conversationId,
-			error: errMessage(e)
-		});
-		return true;
-	}
+	const cursor = await dbQuery<{ memory_enabled: boolean } | null>({
+		cmd: 'conversation_memory_cursor',
+		args: { conversationId },
+		category: 'db',
+		onError: 'dbGetConversationMemoryEnabled failed',
+		ctx: { conversationId },
+		fallback: null
+	});
+	return cursor?.memory_enabled ?? true;
 }
 
 export async function dbSetConversationMemoryEnabled(
@@ -182,81 +188,91 @@ export async function dbSetConversationMemoryEnabled(
 	enabled: boolean
 ): Promise<void> {
 	if (!available) return;
-	try {
-		await invoke('conversation_set_memory_enabled', { conversationId, enabled });
-	} catch (e) {
-		logDebug('db', 'dbSetConversationMemoryEnabled failed', {
-			conversationId,
-			error: errMessage(e)
-		});
-	}
+	await dbMutate({
+		cmd: 'conversation_set_memory_enabled',
+		args: { conversationId, enabled },
+		category: 'db',
+		onError: 'dbSetConversationMemoryEnabled failed',
+		ctx: { conversationId }
+	});
 }
 
 export async function dbRenameConversation(id: string, title: string): Promise<void> {
 	if (!available) return;
-	try {
-		await invoke('db_rename_conversation', { id, title });
-	} catch (e) {
-		logDebug('db', 'dbRenameConversation failed', { id, error: errMessage(e) });
-	}
+	await dbMutate({
+		cmd: 'db_rename_conversation',
+		args: { id, title },
+		category: 'db',
+		onError: 'dbRenameConversation failed',
+		ctx: { id }
+	});
 }
 
 export async function dbSetUnread(id: string, unread: boolean): Promise<void> {
 	if (!available) return;
-	try {
-		await invoke('conversation_set_unread', { id, unread });
-	} catch (e) {
-		logDebug('db', 'dbSetUnread failed', { id, error: errMessage(e) });
-	}
+	await dbMutate({
+		cmd: 'conversation_set_unread',
+		args: { id, unread },
+		category: 'db',
+		onError: 'dbSetUnread failed',
+		ctx: { id }
+	});
 }
 
 /** A chat's folder; `null` (none) is stored as `''`. */
 export async function dbSetWorkingDir(id: string, path: string | null): Promise<void> {
 	if (!available) return;
-	try {
-		await invoke('conversation_set_working_dir', { id, path: path ?? '' });
-	} catch (e) {
-		logDebug('db', 'dbSetWorkingDir failed', { id, error: errMessage(e) });
-	}
+	await dbMutate({
+		cmd: 'conversation_set_working_dir',
+		args: { id, path: path ?? '' },
+		category: 'db',
+		onError: 'dbSetWorkingDir failed',
+		ctx: { id }
+	});
 }
 
 /** Give every chat saved before each had a folder of its own `path`. */
 export async function dbAdoptWorkingDir(path: string | null): Promise<void> {
 	if (!available) return;
-	try {
-		await invoke('conversation_adopt_working_dir', { path: path ?? '' });
-	} catch (e) {
-		logDebug('db', 'dbAdoptWorkingDir failed', { error: errMessage(e) });
-	}
+	await dbMutate({
+		cmd: 'conversation_adopt_working_dir',
+		args: { path: path ?? '' },
+		category: 'db',
+		onError: 'dbAdoptWorkingDir failed'
+	});
 }
 
 export async function dbDeleteConversation(id: string): Promise<void> {
 	if (!available) return;
-	try {
-		await invoke('db_delete_conversation', { id });
-	} catch (e) {
-		logDebug('db', 'dbDeleteConversation failed', { id, error: errMessage(e) });
-	}
+	await dbMutate({
+		cmd: 'db_delete_conversation',
+		args: { id },
+		category: 'db',
+		onError: 'dbDeleteConversation failed',
+		ctx: { id }
+	});
 }
 
 export async function dbClearAll(): Promise<void> {
 	if (!available) return;
-	try {
-		await invoke('db_clear_all_conversations');
-	} catch (e) {
-		logDebug('db', 'dbClearAll failed', { error: errMessage(e) });
-	}
+	await dbMutate({
+		cmd: 'db_clear_all_conversations',
+		category: 'db',
+		onError: 'dbClearAll failed'
+	});
 }
 
 export async function dbLoadMessages(id: string): Promise<ChatMessage[]> {
 	if (!available) return [];
-	try {
-		const full = await invoke<DbConversation>('db_get_conversation', { id });
-		return full.messages.map(dbMessageToChatMessage);
-	} catch (e) {
-		logDebug('db', 'dbLoadMessages failed', { id, error: errMessage(e) });
-		return [];
-	}
+	const full = await dbQuery<DbConversation | null>({
+		cmd: 'db_get_conversation',
+		args: { id },
+		category: 'db',
+		onError: 'dbLoadMessages failed',
+		ctx: { id },
+		fallback: null
+	});
+	return full ? full.messages.map(dbMessageToChatMessage) : [];
 }
 
 export async function dbReplaceMessages(
@@ -265,8 +281,9 @@ export async function dbReplaceMessages(
 	stepsByIndex?: Record<number, unknown[]>
 ): Promise<void> {
 	if (!available) return;
-	try {
-		await invoke('db_replace_messages', {
+	await dbMutate({
+		cmd: 'db_replace_messages',
+		args: {
 			conversationId,
 			messages: messages.map((m, i) => ({
 				role: m.role,
@@ -277,8 +294,9 @@ export async function dbReplaceMessages(
 				// wiped every persisted per-message artifact.
 				steps: stepsByIndex?.[i] ? JSON.stringify(stepsByIndex[i]) : null
 			}))
-		});
-	} catch (e) {
-		logDebug('db', 'dbReplaceMessages failed', { conversationId, error: errMessage(e) });
-	}
+		},
+		category: 'db',
+		onError: 'dbReplaceMessages failed',
+		ctx: { conversationId }
+	});
 }

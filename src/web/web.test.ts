@@ -370,6 +370,36 @@ describe('the prompt card', () => {
 		await fireEvent.click(screen.getByText("Don't"));
 		expect(onanswer).toHaveBeenCalledWith('main:6', { kind: 'screen-capture', choice: 'deny' });
 	});
+
+	it('answers the file-exists question', async () => {
+		const onanswer = vi.fn();
+		render(PromptCard, {
+			prompt: {
+				promptId: 'main:7',
+				kind: 'file-conflict',
+				sessionId: null,
+				chatId: 'c1',
+				answerable: true,
+				requester: null,
+				detail: { path: 'report.docx', choices: ['overwrite', 'counter', 'cancel'] }
+			},
+			onanswer
+		});
+		expect(screen.getByText('File already exists')).toBeTruthy();
+		expect(screen.getByText('report.docx')).toBeTruthy();
+		await fireEvent.click(screen.getByText('Keep both'));
+		expect(onanswer).toHaveBeenCalledWith('main:7', { kind: 'file-conflict', choice: 'counter' });
+		await fireEvent.click(screen.getByText('Overwrite'));
+		expect(onanswer).toHaveBeenLastCalledWith('main:7', {
+			kind: 'file-conflict',
+			choice: 'overwrite'
+		});
+		await fireEvent.click(screen.getByText('Cancel'));
+		expect(onanswer).toHaveBeenLastCalledWith('main:7', {
+			kind: 'file-conflict',
+			choice: 'cancel'
+		});
+	});
 });
 
 describe('the composer', () => {

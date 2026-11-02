@@ -36,6 +36,16 @@ export async function replaceSavedItems(items) {
  */
 export async function seedSavedItems(browser, items, { attempts = 5 } = {}) {
 	for (let attempt = 1; ; attempt++) {
+		// WebView2 can report the page complete before Tauri has injected its
+		// IPC bridge, and replaceSavedItems needs it.
+		await browser.waitUntil(
+			async () =>
+				await browser.execute(() => typeof window.__TAURI_INTERNALS__?.invoke === 'function'),
+			{
+				timeout: 30_000,
+				timeoutMsg: 'the app window never had window.__TAURI_INTERNALS__, so it cannot be seeded'
+			}
+		);
 		await browser.execute(replaceSavedItems, items);
 		await browser.pause(500);
 		// What the app started from, before it changed anything itself. Read in

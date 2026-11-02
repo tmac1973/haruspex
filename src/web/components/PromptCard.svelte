@@ -81,6 +81,10 @@
 		onanswer(prompt.promptId, { kind: 'memory', choice });
 	}
 
+	function conflict(choice: 'overwrite' | 'counter' | 'cancel'): void {
+		onanswer(prompt.promptId, { kind: 'file-conflict', choice });
+	}
+
 	function toggle(label: string): void {
 		if (!d.allowMultiple) picked = [label];
 		else picked = picked.includes(label) ? picked.filter((l) => l !== label) : [...picked, label];
@@ -246,6 +250,24 @@
 				title="Nothing is captured; the model is told you declined."
 				onclick={() => onanswer(prompt.promptId, { kind: 'screen-capture', choice: 'deny' })}
 				>Don't</button
+			>
+		</div>
+	{:else if prompt.kind === 'file-conflict'}
+		<p class="title">File already exists</p>
+		<p class="why path">{d.path as string}</p>
+		<div class="buttons">
+			<button class="btn btn-small btn-danger" onclick={() => conflict('overwrite')}
+				>Overwrite</button
+			>
+			<button
+				class="btn btn-small"
+				title="Save as a new name (e.g. -2)."
+				onclick={() => conflict('counter')}>Keep both</button
+			>
+			<button
+				class="btn btn-small"
+				title="Nothing is written; the model is told you stopped it."
+				onclick={() => conflict('cancel')}>Cancel</button
 			>
 		</div>
 	{:else}

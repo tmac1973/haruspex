@@ -27,6 +27,5 @@ pub mod youtube;
 /// console window it would open on Windows.
 pub(crate) fn prepare_child(cmd: &mut tokio::process::Command) {
     crate::env_util::sanitize_appimage_env(cmd.as_std_mut());
-    #[cfg(windows)]
-    cmd.creation_flags(crate::shell::platform::CREATE_NO_WINDOW);
+    crate::shell::platform::apply_no_window(cmd.as_std_mut());
 }

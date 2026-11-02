@@ -19,6 +19,7 @@ import {
 	getSettings,
 	startableMcpServers
 } from '#lib/stores/settings.ts';
+import { imageEntries } from '#lib/image/entries.ts';
 
 const BACKEND: Record<string, string> = {
 	local: 'the local model, on this computer',
@@ -41,6 +42,14 @@ const IMAGE: Record<string, string> = {
 	'llama-toolchest': 'on, through a llama-toolchest server',
 	'ace-server': 'on, through an acestep.cpp ace-server'
 };
+
+/** What the image models are: off, the one backend, or how many and through what. */
+function imageLine(): string {
+	const kinds = [...new Set(imageEntries().map((e) => e.backend))];
+	if (kinds.length === 0) return IMAGE.none;
+	if (kinds.length === 1 && imageEntries().length === 1) return IMAGE[kinds[0]] ?? kinds[0];
+	return `on, ${imageEntries().length} models, through ${kinds.join(', ')}`;
+}
 
 const MUSIC: Record<string, string> = {
 	none: 'off',
@@ -86,14 +95,16 @@ export async function guideStatus(override?: BackendOverride): Promise<string> {
 	return [
 		'## This Haruspex right now',
 		`- Version: ${version}`,
-		s.leanMode
-			? '- Lean mode: on (Settings → General → Lean mode). Chat has web search and pages, image search, file reading, this guide, memory and skills; the Code and Shell tabs, file writing, Python, pictures, music, speech and the integrations below are off whatever they are set to.'
-			: '- Lean mode: off',
+		s.leanMode && s.leanFileWrites
+			? '- Lean mode: Lean + files (Settings → General → Lean mode). Chat has web search and pages, image search, file reading, text and document writing, this guide, memory and skills; the Code and Shell tabs, spreadsheets, slides, Python, pictures, music, speech and the integrations below are off whatever they are set to.'
+			: s.leanMode
+				? '- Lean mode: on (Settings → General → Lean mode). Chat has web search and pages, image search, file reading, this guide, memory and skills; the Code and Shell tabs, file writing, Python, pictures, music, speech and the integrations below are off whatever they are set to.'
+				: '- Lean mode: off',
 		`- Model: ${model}, through ${via}; context ${backend.contextSize.toLocaleString('en-US')} tokens; sees images: ${backend.vision ? 'yes' : 'no'}`,
 		...concurrency(backend, s.allowSpillToSystemRam),
 		`- Memory across chats: ${onOff(memoryActive())}`,
 		`- Python sandbox: ${onOff(s.sandboxEnabled)}`,
-		`- Image generation: ${IMAGE[s.imageBackendKind] ?? s.imageBackendKind}`,
+		`- Image generation: ${imageLine()}`,
 		`- Music generation: ${MUSIC[s.musicBackendKind] ?? s.musicBackendKind}`,
 		`- Screen capture: ${onOff(s.screenCaptureEnabled)}${s.screenCaptureEnabled ? `, asks before each: ${s.screenCaptureConfirm ? 'yes' : 'no'}` : ''}`,
 		`- Model uses skills by itself: ${skillsAutonomous() ? 'yes' : 'no'} (setting: ${s.skills.autonomous})`,

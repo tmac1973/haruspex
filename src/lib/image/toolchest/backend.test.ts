@@ -20,7 +20,8 @@ vi.mock('#lib/utils/async.ts', () => ({ sleep: () => Promise.resolve() }));
 import asmodean from '#lib/toolchest/fixtures/models-asmodean.json';
 import compute2 from '#lib/toolchest/fixtures/models-compute2.json';
 import klein from '#lib/toolchest/fixtures/models-asmodean-klein.json';
-import { toolchestBackend } from './backend';
+import { _resetForTests, toolchestBackend, toolchestInstance } from './backend';
+import { backendForEntry } from '#lib/image/registry.ts';
 import {
 	httpCalls,
 	httpRouter,
@@ -28,7 +29,7 @@ import {
 	type HttpAnswer,
 	type HttpCall
 } from '#lib/testing/invoke.ts';
-import { ImageBackendError, type ImageProgress } from '#lib/image/types.ts';
+import { ImageBackendError, type ImageModelEntry, type ImageProgress } from '#lib/image/types.ts';
 
 interface Call extends HttpCall {
 	api_key: string;
@@ -77,6 +78,7 @@ describe('llama-toolchest image backend', () => {
 		settings.imageToolchestApiKeyId = 'k1';
 		settings.imageToolchestModelId = 'qwen-turbo-local';
 		use(jobRoutes());
+		_resetForTests();
 	});
 
 	it('probes into a sentence and the Model list, sending the named key', async () => {
@@ -93,6 +95,12 @@ describe('llama-toolchest image backend', () => {
 	it('says what is wrong rather than failing quietly', async () => {
 		settings.imageToolchestModelId = '';
 		expect((await toolchestBackend.probe()).detail).toBe('No model is chosen — Settings → Image.');
+
+		// Gone from the server, or not an image model (an upscaler's id).
+		settings.imageToolchestModelId = 'real-esrgan';
+		expect((await toolchestBackend.probe()).detail).toBe(
+			'box:3000 has no image model called real-esrgan — Settings → Image.'
+		);
 
 		settings.imageToolchestBaseUrl = '';
 		expect((await toolchestBackend.probe()).detail).toBe('No server address — Settings → Image.');
@@ -236,6 +244,7 @@ describe('llama-toolchest image backend', () => {
 		expect(onHandle).toHaveBeenCalledWith({
 			backend: 'llama-toolchest',
 			baseUrl: 'http://box:3000',
+			entryId: 'legacy',
 			id: 'j1',
 			seed: 5,
 			model: 'qwen-turbo-local',
@@ -383,6 +392,29 @@ describe('llama-toolchest image backend', () => {
 				message: expect.stringContaining("can't edit pictures")
 			});
 		});
+	});
+
+	it('keeps two entries on one server apart, each with its own instance', async () => {
+		const entry = (id: string, model: string): ImageModelEntry => ({
+			id,
+			name: model,
+			backend: 'llama-toolchest',
+			url: 'http://box:3000',
+			keyId: 'k1',
+			model,
+			options: {},
+			caps: null,
+			capsAt: null,
+			renamed: false
+		});
+		use({ 'GET /v1/models': klein });
+		const editor = backendForEntry(entry('a', 'klein'))!;
+		const drawer = backendForEntry(entry('b', 'ming-image'))!;
+		await Promise.all([editor.probe(), drawer.probe()]);
+		expect(await editor.capabilities()).toMatchObject({ edit: true, maxEditImages: 4 });
+		expect(await drawer.capabilities()).toMatchObject({ edit: false, transparency: true });
+		expect(toolchestInstance(entry('a', 'klein'))?.id).toBe('klein');
+		expect(toolchestInstance(entry('b', 'ming-image'))?.id).toBe('ming-image');
 	});
 
 	describe('upscaling', () => {

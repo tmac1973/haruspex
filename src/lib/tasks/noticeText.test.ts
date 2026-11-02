@@ -21,6 +21,7 @@ import {
 	upsertTask
 } from './store.svelte.ts';
 import type { BackgroundTask } from './types.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const base: BackgroundTask = {
 	id: 'render-1',
@@ -235,8 +236,11 @@ describe('a background picture’s notice', () => {
 	});
 
 	it('reaches the model as a data URL', async () => {
-		tauri.invoke.mockImplementation(async (cmd: string) =>
-			cmd === 'task_take_notices' ? [picture(true)] : new Uint8Array([1, 2]).buffer
+		tauri.invoke.mockImplementation(
+			invokeRouter(
+				{ task_take_notices: () => [picture(true)] },
+				() => new Uint8Array([1, 2]).buffer
+			)
 		);
 		const notice = await takeNotices('chat:c1');
 		expect(tauri.invoke).toHaveBeenCalledWith('image_read_bytes', { hash });

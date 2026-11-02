@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { capabilityLine } from './capabilityLine';
+import { capabilityLine, entryLine } from './capabilityLine';
 
 const base = { transparency: false, seamlessTiling: false, loras: false, maxLoras: 0 };
 
@@ -49,5 +49,24 @@ describe('capabilityLine', () => {
 		expect(capabilityLine({ ...base, edit: true, maxEditImages: 1 }, 'comfyui').can).toBe(
 			'draw pictures, edit pictures'
 		);
+	});
+});
+
+describe('entryLine', () => {
+	it('says in a few words what one model can do', () => {
+		const caps = { ...base, edit: true, maxEditImages: 4, upscale: true };
+		expect(entryLine({ name: 'klein', caps })).toBe(
+			'klein: draws, edits up to 4 pictures, upscales.'
+		);
+		expect(entryLine({ name: 'Ming', caps: { ...base, transparency: true } })).toBe(
+			'Ming: draws, transparent backgrounds.'
+		);
+		expect(entryLine({ name: 'one', caps: { ...base, edit: true } })).toBe(
+			'one: draws, edits one picture.'
+		);
+	});
+
+	it('says when no probe has answered', () => {
+		expect(entryLine({ name: 'new', caps: null })).toMatch(/^new: draws; not probed yet/);
 	});
 });

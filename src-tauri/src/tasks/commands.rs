@@ -74,7 +74,7 @@ pub async fn task_open(
         .ok_or("That task hasn't finished, or made no file.")?;
     if folder {
         let dir = file.parent().ok_or("The file has no folder.")?;
-        return crate::links::open_folder(dir.to_string_lossy().into_owned()).await;
+        return crate::links::folder_open(dir.to_string_lossy().into_owned()).await;
     }
     crate::links::open_render(&file)
 }

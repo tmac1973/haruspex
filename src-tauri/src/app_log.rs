@@ -10,6 +10,8 @@ use log::{Level, LevelFilter, Log, Metadata, Record};
 use std::collections::VecDeque;
 use std::sync::{Mutex, OnceLock};
 
+use crate::sync_util::LockExt;
+
 const RING_CAPACITY: usize = 2000;
 
 static BUFFER: OnceLock<Mutex<VecDeque<String>>> = OnceLock::new();
@@ -152,16 +154,13 @@ pub fn get_logs() -> Vec<String> {
 }
 
 #[tauri::command]
-pub async fn get_app_logs() -> Result<Vec<String>, ()> {
-    Ok(get_logs())
+pub async fn get_app_logs() -> Vec<String> {
+    get_logs()
 }
 
 #[tauri::command]
-pub async fn clear_app_logs() -> Result<(), ()> {
-    if let Ok(mut b) = buffer().lock() {
-        b.clear();
-    }
-    Ok(())
+pub async fn clear_app_logs() {
+    buffer().lock_or_recover().clear();
 }
 
 /// Where dev builds mirror the webview's agent debug log (`debugLog.ts`),

@@ -3,6 +3,7 @@ import type { ToolDefinition } from '#lib/api.ts';
 import type { ToolRegistration, ToolExecOutput, ToolContext } from '#lib/agent/tools/types.ts';
 import { toolResult, toolError } from '#lib/agent/tools/types.ts';
 import { coerceArgsToSchema } from '#lib/agent/tools/coerce.ts';
+import { imageEntries } from '#lib/image/entries.ts';
 import {
 	hasEnabledEmailAccount,
 	hasSendableEmailAccount,
@@ -12,7 +13,7 @@ import {
 } from '#lib/stores/settings.ts';
 // The predicate, not the tool module — mcp.ts registers THROUGH this file, so
 // importing it here would be a cycle. Same reason as memoryActive() below.
-import { isMcpToolEnabled } from '#lib/agent/tools/mcp-names.ts';
+import { isMcpToolEnabled } from '#lib/agent/tools/mcpNames.ts';
 // The predicate, not the tool module: remember.ts registers THROUGH this
 // file, so importing it here would be a cycle.
 import { memoryActive } from '#lib/stores/memory.svelte.ts';
@@ -25,7 +26,7 @@ import {
 	isCodeWriteTool,
 	type DescriptionOverride
 } from '#lib/agent/tools/codeTabProfile.ts';
-import { LEAN_CHAT_TOOLS } from '#lib/agent/tools/leanProfile.ts';
+import { leanOffers } from '#lib/agent/tools/leanProfile.ts';
 import { shellPlatformSupported } from '#lib/shell/platformSupport.ts';
 import { videoAvailable, videoToolsOn } from '#lib/video/binaries.ts';
 import { getTasks } from '#lib/tasks/store.svelte.ts';
@@ -63,6 +64,16 @@ function resolveCall(
 /** Whether the tool calls the model itself (`usesModel`). False for a name not registered. */
 export function toolUsesModel(name: string): boolean {
 	return tools.get(name)?.usesModel === true;
+}
+
+/** The category of a registered tool, or undefined for an unknown name. */
+export function toolCategory(name: string): ToolRegistration['category'] | undefined {
+	return tools.get(name)?.category;
+}
+
+/** Every registered tool's name, in registration order. */
+export function registeredToolNames(): string[] {
+	return [...tools.keys()];
 }
 
 /**
@@ -144,13 +155,15 @@ interface ToolFilterOpts {
 	taskOwner?: string;
 	/** Settings → General → Lean mode is on; see `isLeanTurn`. */
 	lean: boolean;
+	/** Settings → General → Lean mode is Lean + files; read only when `lean`. */
+	leanFileWrites: boolean;
 }
 
 /**
  * A Chat turn with someone at it while lean mode is on: it offers
- * `LEAN_CHAT_TOOLS` alone. Code and Shell have their own sets (lean mode
- * hides those tabs instead), and a job or subtask keeps what its own work
- * needs — a research job writes its report even on a lean machine.
+ * `LEAN_CHAT_TOOLS` alone, and `LEAN_WRITE_TOOLS` with Lean + files. Code
+ * and Shell have their own sets (lean mode hides those tabs instead), and a
+ * job or subtask keeps what its own work needs — a research job writes its report even on a lean machine.
  */
 function isLeanTurn(f: ToolFilterOpts): boolean {
 	return f.lean && f.interactive && !f.subtask && !f.codeMode && !f.shellMode;
@@ -354,7 +367,7 @@ function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean
 	return shouldIncludeChatTool(reg, opts);
 }
 
-export function getToolSchemas(opts: {
+export interface ToolSchemaOpts {
 	hasWorkingDir: boolean;
 	deepResearch?: boolean;
 	visionSupported?: boolean;
@@ -398,7 +411,18 @@ export function getToolSchemas(opts: {
 	 * The `tasks` tools are offered only when it has started a task.
 	 */
 	taskOwner?: string;
-}): ToolDefinition[] {
+}
+
+/** The schemas this turn sends: today, every tool it is offered. */
+export function getToolSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
+	return offeredSchemas(opts);
+}
+
+/**
+ * Every tool this turn may use, after the mode, settings and allowlist
+ * filters. Deferred loading divides this set and never widens it.
+ */
+export function offeredSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
 	if (opts.toolAllowlist) {
 		const allow = new Set(opts.toolAllowlist);
 		const schemas: ToolDefinition[] = [];
@@ -407,7 +431,12 @@ export function getToolSchemas(opts: {
 			// Sending, and writing a skill, are reviewed by a person at the
 			// keyboard, and an allowlisted turn is a job's: no allowlist can
 			// grant them.
-			if (allow.has(name) && name !== 'email_compose' && reg.category !== 'skills-write') {
+			if (
+				allow.has(name) &&
+				name !== 'email_compose' &&
+				reg.category !== 'skills-write' &&
+				reg.category !== 'tools-load'
+			) {
 				schemas.push(reg.schema);
 			} else if (reg.category === 'harness-feedback' && opts.harnessFeedback && feedbackOn()) {
 				schemas.push(reg.schema);
@@ -430,7 +459,7 @@ export function getToolSchemas(opts: {
 		hasCalendar: hasEnabledCalendarAccount(),
 		hasContacts: hasEnabledContactsAccount(),
 		screenCapture: getSettings().screenCaptureEnabled,
-		imageGeneration: interactive && getSettings().imageBackendKind !== 'none',
+		imageGeneration: interactive && imageEntries().length > 0,
 		musicGeneration: interactive && getSettings().musicBackendKind !== 'none',
 		videoGeneration: interactive && getSettings().videoGenBackendKind !== 'none',
 		videoTools: interactive && opts.hasWorkingDir && videoToolsOn(),
@@ -438,7 +467,8 @@ export function getToolSchemas(opts: {
 		sandboxEnabled: getSettings().sandboxEnabled && !pythonRuntimeMissing(),
 		memoryWritable: memoryActive(),
 		taskOwner: opts.taskOwner,
-		lean: getSettings().leanMode
+		lean: getSettings().leanMode,
+		leanFileWrites: getSettings().leanFileWrites
 	};
 	const schemas: ToolDefinition[] = [];
 	for (const reg of tools.values()) {
@@ -460,7 +490,11 @@ function schemaFor(
 ): ToolDefinition | null {
 	// Lean mode names what may be offered; the gates below still decide
 	// whether each of those is offered this turn.
-	if (isLeanTurn(filter) && !LEAN_CHAT_TOOLS.has(reg.schema.function.name)) return null;
+	if (isLeanTurn(filter) && !leanOffers(reg.schema.function.name, filter.leanFileWrites)) {
+		return null;
+	}
+	// Deferred loading adds these itself (`splitTurnTools`).
+	if (reg.category === 'tools-load') return null;
 	// The user guide answers the person asking, in any mode; a job has nobody
 	// asking. Remote guests get it through their allowlist.
 	if (reg.category === 'guide') return filter.interactive && !filter.subtask ? reg.schema : null;
@@ -487,7 +521,9 @@ function schemaFor(
 	// project, or Chat's working folder.
 	const canSave = filter.codeMode ? !filter.codeReadOnly : filter.hasWorkingDir;
 	const name = reg.schema.function.name;
-	let schema = reg.schema;
+	const live = reg.liveSchema ? reg.liveSchema(reg.schema) : reg.schema;
+	if (!live) return null;
+	let schema = live;
 	if (SAVING_TOOLS.has(name) && !canSave) {
 		schema = withoutProjectWrite(schema);
 	}
@@ -567,8 +603,8 @@ function withDescription(schema: ToolDefinition, override: DescriptionOverride):
 function generationRefusal(reg: ToolRegistration, ctx: ToolContext): string | null {
 	const s = getSettings();
 	if (reg.category === 'image') {
-		if (s.imageBackendKind === 'none' && reg.schema.function.name !== 'make_asset') {
-			return 'Image generation is not set up. The user can choose a backend in Settings → Image.';
+		if (imageEntries().length === 0 && reg.schema.function.name !== 'make_asset') {
+			return 'Image generation is not set up. The user can add an image model in Settings → Image.';
 		}
 		if (!ctx.interactive)
 			return 'Image generation is only available in a conversation with the user.';

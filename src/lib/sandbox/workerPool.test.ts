@@ -98,6 +98,19 @@ describe('WorkerPool', () => {
 		expect(pool.hasWorkerFor('c')).toBe(false);
 	});
 
+	it('release terminates a sandbox and forgets it, leaving the others', async () => {
+		const pool = makePool();
+		await runIn(pool, 'a');
+		await runIn(pool, 'job:7');
+		pool.release('job:7');
+		expect(workers[1].terminated).toBe(true);
+		expect(pool.hasWorkerFor('job:7')).toBe(false);
+		expect(pool.size).toBe(1);
+		expect(await runIn(pool, 'a')).toBe('worker 0');
+		pool.release('never-ran');
+		expect(pool.size).toBe(1);
+	});
+
 	it('defaults to three chats before evicting', async () => {
 		const pool = makePool();
 		for (const c of ['a', 'b', 'c']) await runIn(pool, c);

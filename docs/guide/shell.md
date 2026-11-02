@@ -9,13 +9,13 @@ The Shell tab is a real terminal with an assistant beside it. By default the ass
 
 ## Open a terminal
 
-It works on Linux, macOS and Windows. On Windows a picker in the tab lets you choose a PowerShell version or a WSL2 distro. Click **+** for another tab; each tab has its own terminal and assistant. A tab can be detached into its own window. Right-click the terminal for Copy, Paste and **Restart shell**.
+It works on Linux, macOS and Windows. On Windows a picker in the tab chooses a PowerShell version or a WSL2 distro. Click **+** for another tab; each tab has its own terminal and assistant. Tabs that don't fit scroll sideways, also by mouse wheel; **←** **→** move between them. A tab can be detached into its own window. Right-click the terminal for Copy, Paste and **Restart shell**.
 
 Your `$SHELL` is used unless you set Settings → Shell → Shell binary. Command capture needs shell integration: bash and zsh get Haruspex's hooks, and fish 4 sends the needed markers itself. Other shells work as terminals, but their commands are not captured: copy what you need into the assistant box. A badge in the sidebar header shows whether capture works.
 
 ## Tabs the Code tab opens
 
-When the Code tab needs a command run in a terminal (a `sudo`, a password prompt), or you click **Open in Shell** on a command card, a new tab opens here at the Code session's folder with the command typed in. Nothing runs until you press `Enter`, and you can change the command first. When the agent asked for it, the Code session reads the result; then the tab is an ordinary terminal. See the `code` page.
+When the Code tab needs a command run in a terminal (a `sudo`, a password prompt), or you click **Open in Shell** on a command card, a new tab opens here at the Code session's folder with the command typed in. Nothing runs until you press `Enter`, and you can edit it first. When the agent asked for it, the Code session reads the result; then the tab is an ordinary terminal. See the `code` page.
 
 ## Ask about what just happened
 
@@ -33,23 +33,23 @@ The lock in the sidebar header reads **Read-only**. The assistant can read confi
 
 ## Full access: let the assistant edit files and run commands
 
-Click the lock (**Read-only**) in the sidebar header to switch that tab to **Full access**; click it again to go back. Each tab has its own. New tabs start Read-only unless you turn on Settings → Shell → Start new shells with Full access. A tab moved to its own window keeps its setting.
+Click the lock (**Read-only**) in the sidebar header to switch that tab to **Full access**, and again to go back. Each tab has its own. New tabs start Read-only unless you turn on Settings → Shell → Start new shells with Full access. A tab moved to its own window keeps its setting.
 
 With Full access the assistant runs commands in your live terminal, so they share your folder, environment and venv and show in your scrollback. It can edit and write files, search the project, drive a program waiting for input, and start servers or long builds in the background. Commands that look safe run on their own. A risky one opens **Run this command?** with **Allow for this session**, **Allow once** or **Deny** (the model is told it was denied). A command that reaches outside the project always asks. In a detached Shell window the question shows in that window.
 
-Settings → Code → Auto-approve commands skips that prompt. It is off by default; only turn it on if you fully trust the model on this machine. Settings → Code also holds the command time limit (30 seconds by default), shared with the Code tab. Settings → Shell → Max steps per turn (40) caps a turn in either mode.
+Settings → Code → Auto-approve commands skips that prompt. It is off by default; turn it on only if you fully trust the model. Settings → Code also holds the command time limit (30 seconds by default), shared with the Code tab. Settings → Shell → Max steps per turn (40) caps a turn in either mode.
 
 Full access needs a capable model. Small local models make mistakes and get stuck; see the `models` page. Read the AI safety disclaimer in the README before using it.
 
 ## Continue in the Code tab
 
-**Open in Code** in the sidebar header starts a Code session in the folder the terminal is in now and switches to the Code tab. The conversation here doesn't go with it. Use it for longer coding work: Code sessions are saved and can be reopened, forked and moved. See the `code` page.
+**Open in Code** in the sidebar header starts a Code session in the folder the terminal is in now and switches to the Code tab. This conversation stays here. Use it for longer coding work: Code sessions are saved and can be reopened, forked and moved. See the `code` page.
 
-The Shell assistant's conversation is not saved: it ends when you close the tab or quit, in both modes. Once it fills about three quarters of the model's context, its older turns are summarised before the next one; the sidebar still shows every message.
+The Shell assistant's conversation is not saved: it ends when you close the tab or quit, in both modes. At about three quarters of the model's context, its older turns are summarised before the next one; the sidebar still shows every message.
 
 ## Stop runaway commands (memory limit)
 
-Settings → Shell → Memory limit caps each command the assistant runs on its own, and each tab's terminal as a whole (your own commands too), at a share of your RAM: 50% by default, `0` turns it off. Over the limit, only the process using the memory is killed; the shell and its scrollback stay. The assistant is told why, so it fixes the bug. It needs Linux with a systemd user session (in WSL, lingering too); in PowerShell, the assistant's commands only. Tabs opened after a change use the new limit.
+Settings → Shell → Memory limit caps each command the assistant runs on its own, and each tab's terminal as a whole (your own commands too), at a share of your RAM: 50% by default, `0` turns it off. Over the limit, only the offending process is killed; the shell and its scrollback stay. The assistant is told why. It needs Linux with a systemd user session (in WSL, lingering too); in PowerShell, the assistant's commands only. Tabs opened after a change use the new limit.
 
 ## Repo instructions (AGENTS.md)
 

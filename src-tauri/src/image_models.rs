@@ -408,8 +408,8 @@ pub async fn image_models(
 }
 
 #[tauri::command]
-pub async fn image_model_recommended(vram_mb: u32) -> Result<String, ()> {
-    Ok(recommended_id(vram_mb).to_string())
+pub async fn image_model_recommended(vram_mb: u32) -> String {
+    recommended_id(vram_mb).to_string()
 }
 
 /// Download every file of one entry that is not already on disk, each

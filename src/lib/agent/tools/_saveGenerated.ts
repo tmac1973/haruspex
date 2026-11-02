@@ -77,8 +77,10 @@ export async function prepareSave(
 	}
 	const workdir = fsWorkdir(ctx)!;
 	const resolved = await resolveWritePathInteractive(workdir, rawPath, ctx.filesWrittenThisTurn, {
-		askBeforeOverwrite: true,
-		releaseSlot: ctx.releaseSlot
+		// A job run can't answer the prompt: it overwrites, as its writes do.
+		askBeforeOverwrite: ctx.jobRunId === undefined,
+		releaseSlot: ctx.releaseSlot,
+		chatId: ctx.conversationId
 	});
 	if (resolved.kind === 'canceled') return userCanceledWriteError(rawPath, tool);
 	if (resolved.kind === 'rejected') return toolResult(toolError(resolved.message));

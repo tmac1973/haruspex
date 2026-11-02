@@ -33,7 +33,7 @@ Until then, the skill is greyed out in Settings → Skills, with what it needs, 
 
 Several changes go in that order, upscaling last, each on the last result. A change that didn't take is tried once more, then reported.
 
-It knows what the image backend can do, so for something it can't (extending on Lemonade, editing with Ming-Image) it says where to set it up rather than trying. See the `image-editing` page.
+It knows what the image models can do, so for something it can't (extending on Lemonade, editing with Ming-Image) it says where to set it up rather than trying. See the `image-editing` page.
 
 ## Make art for a game: game-assets
 

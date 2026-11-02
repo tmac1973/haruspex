@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
-import JobList from './JobList.svelte';
+import JobList, { _resetForTests } from './JobList.svelte';
 
 vi.mock('@tauri-apps/api/core', () => ({
 	invoke: vi.fn().mockRejectedValue(new Error('not available'))
@@ -74,6 +74,7 @@ beforeEach(() => {
 	runner.current = null;
 	runner.queue = [];
 	store.jobs = [job];
+	_resetForTests();
 });
 
 describe('JobList', () => {
@@ -176,7 +177,6 @@ describe('JobList', () => {
 
 		it('marks a closed parent when a job below it is running', () => {
 			runner.current = { jobId: 9, jobName: 'Hangman plan — coding', status: 'running' };
-			// A fresh parent id: open state is shared across mounts.
 			store.jobs = [
 				{ ...job, id: 70 },
 				{ ...assets, id: 80, parent_job_id: 70 },

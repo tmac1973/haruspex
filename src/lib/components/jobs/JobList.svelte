@@ -6,6 +6,11 @@
 	 * trip to another tab; not saved, so a restart starts tidy.
 	 */
 	const openIds = new SvelteSet<number>();
+
+	/** Test-only: close every parent again. */
+	export function _resetForTests(): void {
+		openIds.clear();
+	}
 </script>
 
 <script lang="ts">

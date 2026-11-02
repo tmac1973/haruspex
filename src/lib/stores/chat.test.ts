@@ -1,4 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { invokeRouter } from '#lib/testing/invoke.ts';
+
+// Loaded once while the file is collected, where no timeout applies. The
+// store pulls in a large module graph whose first load takes seconds; left to
+// the first test's `await import`, it counts against that test's 5 s timeout,
+// which a busy machine overruns (#409). Later imports after resetModules
+// re-run the cached modules and take milliseconds.
+import '#lib/stores/chat.svelte.ts';
 
 vi.mock('#lib/agent/loop.ts', () => ({
 	runAgentLoop: vi.fn()
@@ -31,47 +39,23 @@ async function setServerReady(): Promise<void> {
 }
 
 vi.mock('#lib/api.ts', async (importOriginal) => {
-	const { unansweredNotice, withNotice } = await importOriginal<typeof import('#lib/api.ts')>();
+	// The pure helpers and error classes are the real ones; a copy here could
+	// drift. The network calls are left out: nothing here should reach them.
+	const {
+		unansweredNotice,
+		withNotice,
+		mergeLeadingSystemMessages,
+		ApiError,
+		ResponseCutOffError,
+		messageText
+	} = await importOriginal<typeof import('#lib/api.ts')>();
 	return {
 		unansweredNotice,
 		withNotice,
-		mergeLeadingSystemMessages: (messages: { role: string; content: unknown }[]) => {
-			const merged: { role: string; content: unknown }[] = [];
-			for (const m of messages) {
-				const prev = merged[merged.length - 1];
-				if (m.role === 'system' && prev && prev.role === 'system') {
-					merged[merged.length - 1] = { ...prev, content: `${prev.content}\n\n${m.content}` };
-				} else {
-					merged.push(m);
-				}
-			}
-			return merged;
-		},
-		ApiError: class ApiError extends Error {
-			statusCode?: number;
-			constructor(message: string, statusCode?: number) {
-				super(message);
-				this.name = 'ApiError';
-				this.statusCode = statusCode;
-			}
-		},
-		// A cut-off answer; extends Error here, ApiError in the real module.
-		ResponseCutOffError: class ResponseCutOffError extends Error {
-			constructor(message: string) {
-				super(message);
-				this.name = 'ResponseCutOffError';
-			}
-		},
-		messageText: (content: unknown) => {
-			if (typeof content === 'string') return content;
-			if (Array.isArray(content)) {
-				return content
-					.filter((p: { type: string }) => p.type === 'text')
-					.map((p: { text: string }) => p.text)
-					.join('\n');
-			}
-			return '';
-		}
+		mergeLeadingSystemMessages,
+		ApiError,
+		ResponseCutOffError,
+		messageText
 	};
 });
 
@@ -488,33 +472,33 @@ describe('image rehydration on load', () => {
 
 	it('rehydrates the conversation restored at startup', async () => {
 		const { invoke } = await import('@tauri-apps/api/core');
-		vi.mocked(invoke).mockImplementation(async (cmd: string) => {
-			if (cmd === 'db_list_conversations') {
-				return [{ id: 'c1', title: 'Red pandas', created_at: 1, updated_at: 1 }];
-			}
-			if (cmd === 'db_get_conversation') {
-				return {
-					id: 'c1',
-					title: 'Red pandas',
-					created_at: 1,
-					updated_at: 1,
-					messages: [
-						{
-							id: 1,
-							conversation_id: 'c1',
-							role: 'assistant',
-							content: '![panda](https://upload.wikimedia.org/x.jpg)',
-							tool_calls: null,
-							tool_call_id: null,
-							created_at: 1,
-							sort_order: 0,
-							steps: null
-						}
-					]
-				};
-			}
-			return [];
-		});
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter(
+				{
+					db_list_conversations: [{ id: 'c1', title: 'Red pandas', created_at: 1, updated_at: 1 }],
+					db_get_conversation: {
+						id: 'c1',
+						title: 'Red pandas',
+						created_at: 1,
+						updated_at: 1,
+						messages: [
+							{
+								id: 1,
+								conversation_id: 'c1',
+								role: 'assistant',
+								content: '![panda](https://upload.wikimedia.org/x.jpg)',
+								tool_calls: null,
+								tool_call_id: null,
+								created_at: 1,
+								sort_order: 0,
+								steps: null
+							}
+						]
+					}
+				},
+				[]
+			)
+		);
 
 		const { initChatStore } = await import('#lib/stores/chat.svelte.ts');
 		await initChatStore();
@@ -540,14 +524,18 @@ describe('working folder per chat', () => {
 	async function initWith(summaries: unknown[]) {
 		const { invoke } = await import('@tauri-apps/api/core');
 		vi.mocked(invoke).mockClear();
-		vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => {
-			if (cmd === 'db_list_conversations') return summaries;
-			if (cmd === 'db_get_conversation') {
-				const { id } = args as { id: string };
-				return { id, title: id, created_at: 1, updated_at: 1, messages: [] };
-			}
-			return [];
-		});
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter(
+				{
+					db_list_conversations: summaries,
+					db_get_conversation: (args) => {
+						const { id } = args as { id: string };
+						return { id, title: id, created_at: 1, updated_at: 1, messages: [] };
+					}
+				},
+				[]
+			)
+		);
 		const chat = await import('#lib/stores/chat.svelte.ts');
 		await chat.initChatStore();
 		return { chat, invoke };

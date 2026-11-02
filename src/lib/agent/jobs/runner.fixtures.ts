@@ -81,40 +81,41 @@ async function imageModule() {
 	// Imported per call: after `resetModules` the runner checks errors against
 	// the fresh module's class.
 	const { ImageBackendError } = await import('#lib/image/types.ts');
-	return {
-		resolveImageBackend: () => ({
-			kind: imageState.kind,
-			capabilities: async () => imageState.caps,
-			probe: async () => ({ ok: true, detail: 'stub' }),
-			generate: async (req: Record<string, unknown>) => {
-				imageState.generated.push(req);
-				if (imageState.fail) throw imageState.fail;
-				if (imageState.generated.length === imageState.failNth) {
-					throw new ImageBackendError('rejected', 'the backend refused this prompt');
-				}
-				return {
-					images: [
-						{
-							bytes: new Uint8Array([137, 80, 78, 71]),
-							mimeType: 'image/png',
-							width: req.width,
-							height: req.height
-						}
-					],
-					meta: {
-						// The RESOLVED seed, as a real backend reports it — the recipe
-						// must never record the null we may have sent.
-						seed: req.seed ?? 4242,
-						model: req.model ?? 'stub.safetensors',
-						backend: 'comfyui',
-						sampler: { name: 'euler_ancestral', steps: 28, cfg: 7 },
-						loras: req.loras ?? [],
-						durationMs: 1
-					}
-				};
+	const backend = {
+		get kind() {
+			return imageState.kind;
+		},
+		capabilities: async () => imageState.caps,
+		probe: async () => ({ ok: true, detail: 'stub' }),
+		generate: async (req: Record<string, unknown>) => {
+			imageState.generated.push(req);
+			if (imageState.fail) throw imageState.fail;
+			if (imageState.generated.length === imageState.failNth) {
+				throw new ImageBackendError('rejected', 'the backend refused this prompt');
 			}
-		})
+			return {
+				images: [
+					{
+						bytes: new Uint8Array([137, 80, 78, 71]),
+						mimeType: 'image/png',
+						width: req.width,
+						height: req.height
+					}
+				],
+				meta: {
+					// The RESOLVED seed, as a real backend reports it — the recipe
+					// must never record the null we may have sent.
+					seed: req.seed ?? 4242,
+					model: req.model ?? 'stub.safetensors',
+					backend: 'comfyui',
+					sampler: { name: 'euler_ancestral', steps: 28, cfg: 7 },
+					loras: req.loras ?? [],
+					durationMs: 1
+				}
+			};
+		}
 	};
+	return { resolveImageBackend: () => backend, routedImageBackend: () => backend };
 }
 
 async function settingsModule(importOriginal: () => Promise<unknown>) {

@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { LOCAL, seed, stubPid, alive, appPid } from '../helpers.mjs';
 import { e2eDataDirs } from '../wdio.conf.mjs';
@@ -15,17 +15,27 @@ describe('sidecars die with the app', () => {
 		const models = join(e2eDataDirs()[0], 'models');
 		mkdirSync(models, { recursive: true });
 		writeFileSync(join(models, 'e2e-stub.gguf'), 'not a real model');
+		// Only a server started from here on counts.
+		rmSync(join(STUB_PIDS, 'haruspex-llama-server.pid'), { force: true });
 		await seed(LOCAL);
 
+		// The recorded pid can belong to a server that is already gone: one the
+		// app stopped and started again (a reload while seeding, a health check
+		// a busy machine timed out), or one that could not take the port. Wait
+		// for one that is running and is this app's child.
 		let server = null;
-		await browser.waitUntil(() => (server = stubPid(STUB_PIDS, 'haruspex-llama-server')) !== null, {
-			timeout: 30_000,
-			timeoutMsg: 'the app never started its model server'
-		});
-		expect(alive(server)).toBe(true);
-
-		const app = await appPid(appBinary(), server);
-		expect(app).not.toBeNull();
+		let app = null;
+		await browser.waitUntil(
+			async () => {
+				server = stubPid(STUB_PIDS, 'haruspex-llama-server');
+				app = server !== null && alive(server) ? await appPid(appBinary(), server) : null;
+				return app !== null;
+			},
+			{
+				timeout: 30_000,
+				timeoutMsg: 'the app never had a model server of its own running'
+			}
+		);
 		process.kill(app, 'SIGKILL');
 
 		const deadline = Date.now() + 2_000;

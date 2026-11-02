@@ -13,7 +13,6 @@ import { toolError, toolResult } from '#lib/agent/tools/types.ts';
 import type { ToolContext, ToolExecOutput } from '#lib/agent/tools/types.ts';
 import { IMAGE_EXT_RE } from '#lib/agent/tools/fs-read.ts';
 import { lintPythonIfApplicable } from '#lib/agent/tools/python-lint.ts';
-import { isAutoApproveActive } from '#lib/stores/approvalOverride.ts';
 import { localWriteBlocked } from '#lib/agent/tools/nested-session.ts';
 import type { EditResult } from '#lib/ipc/gen/EditResult.ts';
 import { errMessage } from '#lib/utils/error.ts';
@@ -26,13 +25,25 @@ import { SLIDE_SCHEMA } from '#lib/slides/schema.ts';
 import {
 	attachPreview,
 	deckLook,
+	deckRewriteHint,
 	mayRewrite,
+	noteDeck,
 	noteRewrite,
-	previewedLook
+	writtenLook
 } from '#lib/slides/preview.ts';
 import { prepareVisuals, visualTexts } from '#lib/slides/visuals.ts';
 import { SLIDE_THEMES } from '#lib/slides/themes.ts';
 import type { Slide } from '#lib/slides/types.ts';
+import {
+	DOCUMENT,
+	SPREADSHEET,
+	draftRewriteHint,
+	firstLine,
+	mayRewriteDraft,
+	normText,
+	noteDraft,
+	type DraftKind
+} from '#lib/agent/tools/_drafts.ts';
 
 /**
  * True when a relative write path stays inside `root` (a relative dir prefix).
@@ -86,16 +97,29 @@ interface WriteOptions {
 	rewritable?: Set<string>;
 	/** Give the turn's slot back while the overwrite prompt waits (`ToolContext.releaseSlot`). */
 	releaseSlot?: () => void;
+	/** The chat whose turn writes, named on the overwrite prompt (`ToolContext.conversationId`). */
+	chatId?: string;
 	/**
 	 * False for a file fs_edit_text can't change (a document, spreadsheet,
 	 * deck or download), so a refused repeat write doesn't send the model there.
 	 */
 	editable?: boolean;
+	/** Said after a refused repeat write, before the advice to use a new name. */
+	repeatHint?: string;
 }
 
-/** A tool's write options: a Code session overwrites, and may rewrite after a command. */
+/**
+ * A tool's write options: a Code session overwrites, and may rewrite after a
+ * command; a job run overwrites; a chat asks.
+ */
 function writeOptions(ctx: ToolContext): WriteOptions {
-	if (!ctx.codeSessionId) return { askBeforeOverwrite: true, releaseSlot: ctx.releaseSlot };
+	if (!ctx.codeSessionId) {
+		return {
+			askBeforeOverwrite: ctx.jobRunId === undefined,
+			releaseSlot: ctx.releaseSlot,
+			chatId: ctx.conversationId
+		};
+	}
 	return { askBeforeOverwrite: false, rewritable: ctx.filesRewritableThisTurn };
 }
 
@@ -141,7 +165,8 @@ export async function resolveWritePathInteractive(
 	// fix, not a chunk. Back-to-back writes are still refused.
 	if (filesWrittenThisTurn.has(relPath)) {
 		if (!opts.rewritable?.has(relPath)) {
-			return { kind: 'rejected', message: repeatWriteMessage(relPath, opts.editable !== false) };
+			const message = repeatWriteMessage(relPath, opts.editable !== false, opts.repeatHint);
+			return { kind: 'rejected', message };
 		}
 		// This turn wrote the file, so replacing it is no one else's to approve.
 		return { kind: 'ok', finalPath: relPath, overwrite: true };
@@ -157,21 +182,18 @@ export async function resolveWritePathInteractive(
 		return { kind: 'ok', finalPath: relPath, overwrite: false };
 	}
 
-	// Unattended runs (jobs) can't show a modal, so we treat existing-file
-	// conflicts as "overwrite". The job authoring UI surfaces this so the
-	// user knows what they're opting into.
-	if (isAutoApproveActive()) {
-		return { kind: 'ok', finalPath: relPath, overwrite: true };
-	}
 	// A Code session edits a project: rewriting a file is the job, and the
 	// write shows as a diff card against what was there, so it doesn't ask.
+	// A job run can't show a modal either: its writes overwrite (the job
+	// authoring UI says so). Decided per turn, never from the global
+	// auto-approve scope, which a chat running beside the job would see too.
 	if (opts.askBeforeOverwrite === false) {
 		return { kind: 'ok', finalPath: relPath, overwrite: true };
 	}
 
 	const { askFileConflict } = await import('#lib/stores/fileConflict.svelte.ts');
 	opts.releaseSlot?.();
-	const choice = await askFileConflict(relPath);
+	const choice = await askFileConflict(relPath, opts.chatId ?? null);
 	if (choice === 'cancel') {
 		return { kind: 'canceled' };
 	}
@@ -194,7 +216,7 @@ export async function resolveWritePathInteractive(
 	}
 }
 
-function repeatWriteMessage(relPath: string, editable: boolean): string {
+function repeatWriteMessage(relPath: string, editable: boolean, hint = ''): string {
 	const refused =
 		`"${relPath}" was already written in this turn, and writing it again would ` +
 		`replace what you just wrote rather than add to it. Do not write a file in ` +
@@ -204,6 +226,7 @@ function repeatWriteMessage(relPath: string, editable: boolean): string {
 	const next = dot > 0 ? `${relPath.slice(0, dot)}-2${relPath.slice(dot)}` : `${relPath}-2`;
 	return (
 		refused +
+		hint +
 		`This format can't be edited in place: if what you wrote is wrong, write the ` +
 		`corrected file to a new name such as "${next}" and tell the user which one to keep.`
 	);
@@ -266,8 +289,11 @@ async function fsWriteWithConflictCheck(
 	}
 }
 
-/** The Rust command a write runs, or why the path can't be written by this tool. */
-type CommandChoice = { command: string } | { error: string };
+/**
+ * The Rust command a write runs and the path it writes (trimmed), or why the
+ * path can't be written by this tool.
+ */
+type CommandChoice = { command: string; path: string } | { error: string };
 
 /**
  * The merged writers take several formats, and the path's extension picks
@@ -279,13 +305,15 @@ function byExtension(
 	formats: Record<string, string>,
 	hint = ''
 ): (path: unknown) => CommandChoice {
-	return (path) => {
-		const ext = typeof path === 'string' ? (/\.([^./\\]+)$/.exec(path)?.[1] ?? '') : '';
-		const key = ext.toLowerCase();
-		if (Object.hasOwn(formats, key)) return { command: formats[key] };
-		const list = Object.keys(formats)
-			.map((e) => `.${e}`)
-			.join(', ');
+	const list = Object.keys(formats)
+		.map((e) => `.${e}`)
+		.join(', ');
+	return (raw) => {
+		const path = typeof raw === 'string' ? raw.trim() : '';
+		if (!path) return { error: `${tool} needs a path ending in ${list}.` };
+		const lower = path.toLowerCase();
+		const ext = Object.keys(formats).find((e) => lower.endsWith(`.${e}`));
+		if (ext) return { command: formats[ext], path };
 		return { error: `${tool} writes ${list} files: end the path with one of those.${hint}` };
 	};
 }
@@ -611,16 +639,26 @@ function spreadsheetWriteExecutor() {
 		if (validationError) {
 			return toolResult(toolError(validationError));
 		}
-		return fsWriteWithConflictCheck(
+		const workdir = fsWorkdir(ctx)!;
+		return draftWrite(
 			'fs_write_spreadsheet',
-			choice.command,
-			fsWorkdir(ctx)!,
-			args.path as string,
-			{ sheets },
-			ctx.filesWrittenThisTurn,
-			writeOptions(ctx)
+			SPREADSHEET,
+			sheetSignature(sheets),
+			choice.path,
+			(relPath, overwrite) => invoke(choice.command, { workdir, relPath, sheets, overwrite }),
+			ctx
 		);
 	};
+}
+
+/** What a revised spreadsheet keeps: its first sheet's header row and first record. */
+function sheetSignature(sheets: unknown): string[] {
+	const first: unknown = Array.isArray(sheets) ? sheets[0] : undefined;
+	const rows = first && typeof first === 'object' ? (first as { rows?: unknown }).rows : undefined;
+	if (!Array.isArray(rows)) return [];
+	const header = Array.isArray(rows[0]) ? rows[0].map(normText).join('\t') : '';
+	const record = Array.isArray(rows[1]) ? normText(rows[1][0]) : '';
+	return [header, record];
 }
 
 /**
@@ -646,11 +684,12 @@ function textWriteExecutor(tool: string, commandFor: (path: unknown) => CommandC
 		if ('error' in choice) return toolResult(toolError(choice.error));
 		const err = validateTextContent(args, tool);
 		if (err) return toolResult(toolError(err));
+		if (tool === 'fs_write_document') return documentWrite(choice, args.content as string, ctx);
 		return fsWriteWithConflictCheck(
 			tool,
 			choice.command,
 			fsWorkdir(ctx)!,
-			args.path as string,
+			choice.path,
 			{ content: args.content },
 			ctx.filesWrittenThisTurn,
 			writeOptions(ctx),
@@ -661,13 +700,75 @@ function textWriteExecutor(tool: string, commandFor: (path: unknown) => CommandC
 }
 
 /**
+ * Write a document. One this turn created may be written again under the
+ * same title, to revise it (`_drafts.ts`).
+ */
+function documentWrite(
+	choice: { command: string; path: string },
+	content: string,
+	ctx: ToolContext
+): Promise<ToolExecOutput> {
+	const workdir = fsWorkdir(ctx)!;
+	return draftWrite(
+		'fs_write_document',
+		DOCUMENT,
+		[firstLine(content)],
+		choice.path,
+		(relPath, overwrite) => invoke(choice.command, { workdir, relPath, content, overwrite }),
+		ctx
+	);
+}
+
+/**
+ * A write `_drafts.ts` keeps track of: when the turn wrote `path` already,
+ * a revision (`kind`, by `signature`) may replace it.
+ */
+async function draftWrite(
+	tool: string,
+	kind: DraftKind,
+	signature: string[],
+	path: string,
+	write: RawWrite,
+	ctx: ToolContext
+): Promise<ToolExecOutput> {
+	const turn = ctx.filesWrittenThisTurn;
+	const rewrite = turn.has(path) && mayRewriteDraft(turn, path, signature, kind);
+	const send: RawWrite = async (relPath, overwrite) => {
+		await write(relPath, overwrite);
+		noteDraft(turn, relPath, signature, overwrite);
+	};
+	return fsWriteWithConflictCheck(
+		tool,
+		send,
+		fsWorkdir(ctx)!,
+		path,
+		{},
+		turn,
+		draftOptions(writeOptions(ctx), path, rewrite, draftRewriteHint(turn, path, kind))
+	);
+}
+
+/** A tracked write's options: a rewrite may replace the file, a refusal says how to revise. */
+function draftOptions(
+	opts: WriteOptions,
+	path: string,
+	rewrite: boolean,
+	hint: string
+): WriteOptions {
+	return rewrite ? rewriting(opts, path) : { ...opts, repeatHint: hint };
+}
+
+/**
  * Shell-mode dispatch for fs_write_text. When the agent is running in
  * the Shell tab in Code mode, route to fs_write_text_absolute (no workdir,
  * accepts an absolute path). Falls back to the chat-mode executor otherwise
  * (the plain Shell assistant is read-only and never reaches here).
  */
 function shellAwareWriteText() {
-	const chat = textWriteExecutor('fs_write_text', () => ({ command: IPC.fs_write_text }));
+	const chat = textWriteExecutor('fs_write_text', (path) => ({
+		command: IPC.fs_write_text,
+		path: path as string
+	}));
 	return async (args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecOutput> => {
 		const rootErr = writeRootError(args.path, ctx);
 		if (rootErr) return toolResult(toolError(rootErr));
@@ -815,26 +916,31 @@ function slidesWriteExecutor() {
 		if (error) return toolResult(toolError(error));
 		const deck = slides as Slide[];
 		const workdir = fsWorkdir(ctx)!;
-		const path = args.path as string;
+		const path = choice.path;
 		const titles = deck.map((s) => s.title);
 		const turn = ctx.filesWrittenThisTurn;
-		// A deck the model was shown may be written again to fix it, keeping
-		// its look unless it names another (preview.ts).
+		// A deck the model was shown, or one the turn created, may be written
+		// again to fix it, keeping its look unless it names another (preview.ts).
 		const rewrite = turn.has(path) && mayRewrite(turn, path, titles);
-		const look = deckLook(args, rewrite ? previewedLook(turn, path) : undefined);
+		const look = deckLook(args, rewrite ? writtenLook(turn, path) : undefined);
 		const { theme, orientation } = look;
 		// The path the deck went to: the user may have kept the old file and
 		// had it written beside it.
 		let written = path;
 		const write = async (send: RawWrite) => {
+			const noted: RawWrite = async (relPath, overwrite) => {
+				written = relPath;
+				await send(relPath, overwrite);
+				noteDeck(turn, relPath, titles, look, overwrite);
+			};
 			const out = await fsWriteWithConflictCheck(
 				'fs_write_slides',
-				(relPath, overwrite) => ((written = relPath), send(relPath, overwrite)),
+				noted,
 				workdir,
 				path,
 				{},
 				turn,
-				rewrite ? rewriting(writeOptions(ctx), path) : writeOptions(ctx)
+				draftOptions(writeOptions(ctx), path, rewrite, deckRewriteHint(turn, path))
 			);
 			if (rewrite && out.result.startsWith('Wrote:')) noteRewrite(turn, path);
 			return attachPreview(out, ctx, workdir, written, titles, look);

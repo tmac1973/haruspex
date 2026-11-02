@@ -15,7 +15,7 @@ describe('a test image from ComfyUI', () => {
 	after(() => comfy.close());
 
 	/**
-	 * A detail line's text from inside the Test generation section, or a marker
+	 * A detail line's text from beside the Generate a test image button, or a marker
 	 * when it is not rendered.
 	 *
 	 * Scoped to that section deliberately. The backend-probe section above it
@@ -24,9 +24,33 @@ describe('a test image from ComfyUI', () => {
 	 * same kind of misleading diagnostic this helper exists to replace.
 	 */
 	const detail = async (selector) => {
-		const section = await (await $('h2=Test generation')).parentElement();
+		// The row that holds the button: it says "Stop" while generating.
+		const section = await $(
+			'//div[contains(@class,"actions")][button[.="Generate a test image" or .="Stop"]]'
+		);
 		const el = await section.$(selector);
 		return (await el.isExisting()) ? await el.getText() : '(not shown)';
+	};
+
+	/**
+	 * Click `el` once it stops moving. Opening an image model probes its
+	 * server, and the answer adds lines (what it can do, its models) above the
+	 * Generate button; a click that lands while they arrive hits whatever has
+	 * moved under it, and nothing is generated (seen in CI as a panel with
+	 * neither progress nor error).
+	 */
+	const clickWhenStill = async (el) => {
+		await browser.waitUntil(
+			async () => {
+				await el.scrollIntoView({ block: 'center' });
+				const before = await el.getLocation();
+				await browser.pause(400);
+				const after = await el.getLocation();
+				return before.x === after.x && before.y === after.y;
+			},
+			{ timeout: 30_000, timeoutMsg: 'the Generate a test image button never stopped moving' }
+		);
+		await el.click();
 	};
 
 	it('generates, stores and shows the picture', async () => {
@@ -38,7 +62,9 @@ describe('a test image from ComfyUI', () => {
 		});
 		await (await $('button[aria-label="Settings"]')).click();
 		await (await $('button=Image')).click();
-		await (await $('button=Generate a test image')).click();
+		// The backend seeded above is the first image model; open it.
+		await (await $('button.entry-name')).click();
+		await clickWhenStill(await $('button=Generate a test image'));
 
 		// Checked before the preview, because from the outside two different
 		// failures look identical: the app never asking ComfyUI at all, and the

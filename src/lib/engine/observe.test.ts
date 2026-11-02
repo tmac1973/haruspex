@@ -13,9 +13,17 @@ vi.mock('@tauri-apps/api/event', () => ({
 	}
 }));
 
+const settings = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
+vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
+	(await import('#lib/testing/settings.ts')).mockSettingsModule(importOriginal, {
+		settings: () => settings.value
+	})
+);
+
 import { clearDebugLogs, logDebug } from '#lib/debugLog.ts';
 import { dispatchObserve, MAX_TAIL, watchTasks } from './observe.ts';
 import type { TaskEvent } from './types.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const task = (id: string, owner: string, spec: unknown = {}) => ({
 	id,
@@ -29,6 +37,7 @@ const task = (id: string, owner: string, spec: unknown = {}) => ({
 beforeEach(() => {
 	clearDebugLogs();
 	mocks.invoke.mockReset();
+	settings.value = {};
 });
 
 describe('debug.tail', () => {
@@ -60,6 +69,19 @@ describe('debug.tail', () => {
 			'main'
 		)) as { lines: { line: string }[] };
 		expect(out.lines.map((l) => l.line.match(/turn (\d)/)?.[1])).toEqual(['3', '4']);
+	});
+
+	it('blanks a secret the settings hold inline, which Rust never sees', async () => {
+		settings.value = {
+			braveApiKey: 'BSA-inline-key-123',
+			integrations: { email: { accounts: [{ password: 'hunter22' }] } },
+			theme: 'dark'
+		};
+		logDebug('search', 'GET with BSA-inline-key-123 as hunter22 in dark mode');
+		const out = (await dispatchObserve({ type: 'debug.tail' }, 'main')) as {
+			lines: { line: string }[];
+		};
+		expect(out.lines[0].line).toContain('with [redacted] as [redacted] in dark mode');
 	});
 
 	it('caps how many it sends', async () => {
@@ -98,9 +120,7 @@ describe('the queue and the tasks', () => {
 	});
 
 	it('cancels a task it knows, and says when there is none', async () => {
-		mocks.invoke.mockImplementation(async (cmd: string) =>
-			cmd === 'task_list' ? [task('a', 'chat:1')] : true
-		);
+		mocks.invoke.mockImplementation(invokeRouter({ task_list: () => [task('a', 'chat:1')] }, true));
 		expect(await dispatchObserve({ type: 'tasks.cancel', taskId: 'a' }, 'main')).toEqual({
 			cancelling: true
 		});

@@ -23,6 +23,7 @@ vi.mock('@tauri-apps/api/webviewWindow', () => ({ WebviewWindow: vi.fn() }));
 import type { CodeSession, CodeSessionStatus } from '#lib/stores/code.svelte.ts';
 import {
 	REATTACH_EVENT,
+	_resetForTests,
 	codeWindowLabel,
 	codeWindowUrl,
 	detachSession,
@@ -57,6 +58,9 @@ function api(): CodeWindowApi & { [K in keyof CodeWindowApi]: ReturnType<typeof 
 
 beforeEach(() => {
 	for (const f of Object.values(store)) f.mockClear();
+	toasts.showToast.mockClear();
+	createCodeSession.mockClear();
+	_resetForTests();
 });
 
 describe('code windows', () => {
@@ -154,6 +158,7 @@ describe('code windows', () => {
 
 	it('starts /new from a detached window in the main window', async () => {
 		const a = api();
+		markDetachedCodeWindow();
 		await newSessionBeside(session(), a);
 		expect(store.newSession).not.toHaveBeenCalled();
 		expect(createCodeSession).toHaveBeenCalledWith('/p/app', { wslDistro: null });

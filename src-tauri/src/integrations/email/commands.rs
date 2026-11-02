@@ -228,3 +228,81 @@ pub async fn email_reply_context(
     .await?;
     Ok(smtp_client::reply_context(&msg, &own))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn is_registered(id: &str) -> bool {
+        running().lock().unwrap().contains_key(id)
+    }
+
+    #[tokio::test]
+    async fn a_finished_call_returns_its_result_and_unregisters() {
+        let id = "email-test-finished".to_string();
+        let out = cancellable(Some(id.clone()), async { Ok::<_, String>(7) }).await;
+        assert_eq!(out, Ok(7));
+        assert!(!is_registered(&id));
+    }
+
+    #[tokio::test]
+    async fn a_failed_call_keeps_its_own_error() {
+        let out = cancellable(None, async { Err::<(), _>("login refused".to_string()) }).await;
+        assert_eq!(out, Err("login refused".to_string()));
+    }
+
+    #[tokio::test]
+    async fn email_cancel_stops_a_running_call_and_reports_cancelled() {
+        let id = "email-test-cancel".to_string();
+        let call = tokio::spawn(cancellable(Some(id.clone()), async {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            Ok::<_, String>(())
+        }));
+        // Wait for the call to register itself before cancelling it.
+        for _ in 0..200 {
+            if is_registered(&id) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert!(is_registered(&id));
+        email_cancel(id.clone());
+        let out = tokio::time::timeout(Duration::from_secs(5), call)
+            .await
+            .expect("the call stopped")
+            .unwrap();
+        assert_eq!(out, Err("Cancelled".to_string()));
+        assert!(!is_registered(&id));
+    }
+
+    #[test]
+    fn cancelling_an_unknown_call_is_a_no_op() {
+        email_cancel("email-test-never-started".to_string());
+        assert!(!is_registered("email-test-never-started"));
+    }
+
+    #[tokio::test]
+    async fn a_panicking_call_becomes_an_error_and_unregisters() {
+        let id = "email-test-panic".to_string();
+        let out: Result<(), String> =
+            cancellable(Some(id.clone()), async { panic!("parser blew up") }).await;
+        assert!(out.unwrap_err().starts_with("The email call failed"));
+        assert!(!is_registered(&id));
+    }
+
+    #[test]
+    fn summarizer_input_json_uses_camel_case_field_names() {
+        let v = serde_json::to_value(SummarizerInputJson {
+            subject: "s".to_string(),
+            from_name: "Ann".to_string(),
+            from_email: "ann@example.com".to_string(),
+            date: "d".to_string(),
+            body: "b".to_string(),
+        })
+        .unwrap();
+        assert_eq!(v["fromName"], "Ann");
+        assert_eq!(v["fromEmail"], "ann@example.com");
+        assert!(v.get("from_name").is_none());
+    }
+}

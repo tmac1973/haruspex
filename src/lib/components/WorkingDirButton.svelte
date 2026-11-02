@@ -59,7 +59,7 @@
 		closeMenu();
 		if (!workingDir) return;
 		try {
-			await invoke('open_folder', { path: workingDir });
+			await invoke('folder_open', { path: workingDir });
 		} catch (e) {
 			console.error('Failed to open folder:', e);
 		}

@@ -30,9 +30,18 @@ const SYSTEM_PROMPT =
 	'You name coding sessions. Reply with a title of 3 to 6 plain words saying what the ' +
 	'request is about. No quotes, no trailing period, no preamble: only the title.';
 
-/** True when a message is a slash command (`/init`), which never names a session. */
+/** True when a message is a slash command (`/init`), which never names a session as typed. */
 export function isSlashCommand(text: string): boolean {
 	return text.trim().startsWith('/');
+}
+
+/**
+ * What a session is named from when its first turn runs a skill (`/init`,
+ * `/review the diff`): the skill, and whatever was typed after the command.
+ */
+export function skillNamingText(skill: string, typed: string): string {
+	const rest = typed.trim().replace(/^\/\S*\s*/, '');
+	return rest ? `Run the ${skill} skill: ${rest}` : `Run the ${skill} skill`;
 }
 
 /** A title from the first message: one line, at most 60 characters. */

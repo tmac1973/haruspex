@@ -41,6 +41,7 @@ import {
 } from './_musicJob.ts';
 import { _resetTasksForTests, getTask } from '#lib/tasks/store.svelte.ts';
 import type { MusicJobHandle, MusicRequest } from '#lib/music/types.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const HASH = 'e'.repeat(64);
 const URL = `haruspex-audio://localhost/${HASH}`;
@@ -81,24 +82,23 @@ beforeEach(() => {
 	for (const f of [state.invoke, state.generate, state.resume]) f.mockReset();
 	state.generate.mockResolvedValue(made);
 	state.resume.mockResolvedValue(made);
-	state.invoke.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
-		if (cmd === 'audio_read_bytes') return new Uint8Array([9, 9]).buffer;
-		if (cmd === 'audio_store_bytes') return { hash: 'f'.repeat(64), mime: 'audio/wav', bytes: 3 };
-		if (cmd === 'task_create') {
-			return {
+	state.invoke.mockImplementation(
+		invokeRouter({
+			audio_read_bytes: () => new Uint8Array([9, 9]).buffer,
+			audio_store_bytes: { hash: 'f'.repeat(64), mime: 'audio/wav', bytes: 3 },
+			task_create: (args) => ({
 				id: 'music-1',
 				kind: 'music',
-				owner: args.owner,
-				label: args.label,
+				owner: args!.owner,
+				label: args!.label,
 				state: 'pending',
 				follower: 'frontend',
-				spec: args.spec,
+				spec: args!.spec,
 				startedMs: 1,
 				noticeDelivered: false
-			};
-		}
-		return null;
-	});
+			})
+		})
+	);
 });
 
 describe('runMusicJob', () => {

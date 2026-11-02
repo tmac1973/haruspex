@@ -52,7 +52,6 @@ describe('parseOpenRouterCatalog', () => {
 			]
 		};
 		const models = parseOpenRouterCatalog(data);
-		expect(models[0].reasoning).toBeDefined();
 		expect(models[0].reasoning?.mandatory).toBe(true);
 		expect(models[0].reasoning?.default_effort).toBe('medium');
 	});

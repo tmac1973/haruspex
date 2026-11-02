@@ -276,6 +276,8 @@ describe('runCodeTurn', () => {
 			const steers = o.takeSteering!();
 			for (const m of steers) add(o, { role: 'user', content: m.text });
 			o.onSteering!(steers);
+			// The loop's note asking for a reply, which the thread doesn't keep.
+			add(o, { role: 'user', content: '(Haruspex: reply to it.)' });
 			o.onToolRoundStart!();
 			o.onStreamChunk({ delta: { content: 'Switched.' }, finish_reason: null }, live);
 			o.onStreamChunk(chunk('Switched to pnpm.'));

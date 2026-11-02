@@ -58,7 +58,7 @@ pub async fn video_project_cut(
     spec: super::project::CutSpec,
     settings: super::project::VideoSettings,
 ) -> Result<super::project::CutResult, String> {
-    super::project::cut(&working_dir, &episode, spec, &settings).await
+    unpanicked(super::project::cut(&working_dir, &episode, spec, &settings)).await
 }
 
 /// Trim, remove or move one clip.
@@ -70,7 +70,35 @@ pub async fn video_project_op(
     op: super::project::ProjectOp,
     settings: super::project::VideoSettings,
 ) -> Result<super::project::CutResult, String> {
-    super::project::op(&working_dir, &episode, project.as_deref(), op, &settings).await
+    unpanicked(super::project::op(
+        &working_dir,
+        &episode,
+        project.as_deref(),
+        op,
+        &settings,
+    ))
+    .await
+}
+
+/// `edit`, with a panic turned into an error. Tauri runs an async command as
+/// a spawned task and answers when it ends, so one that panics never answers
+/// and the tool call waits until the turn is stopped.
+async fn unpanicked<T>(
+    edit: impl std::future::Future<Output = Result<T, String>>,
+) -> Result<T, String> {
+    use futures_util::FutureExt;
+    std::panic::AssertUnwindSafe(edit)
+        .catch_unwind()
+        .await
+        .unwrap_or_else(|panic| {
+            let why = panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| panic.downcast_ref::<String>().cloned())
+                .unwrap_or_default();
+            log::error!("video project edit panicked: {why}");
+            Err(format!("The edit failed inside Haruspex: {why}"))
+        })
 }
 
 /// Start rendering a project in the background.
@@ -773,6 +801,17 @@ mod tests {
         let project = ep.join("cut.kdenlive");
         fs::write(&project, "").unwrap();
         (dir, ep, project)
+    }
+
+    #[tokio::test]
+    async fn a_panicking_edit_answers_with_an_error() {
+        let items: Vec<u32> = Vec::new();
+        let n = items.len() + 1;
+        let err = unpanicked(async move { Ok::<u32, String>(items[n]) })
+            .await
+            .unwrap_err();
+        assert!(err.contains("index out of bounds"), "{err}");
+        assert_eq!(unpanicked(async { Ok::<_, String>(7) }).await, Ok(7));
     }
 
     /// Write `path` with its modified time `secs` after `base`.

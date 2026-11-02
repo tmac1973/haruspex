@@ -192,11 +192,11 @@ describe('python.worker boot', () => {
 		expect(posted).toEqual([{ kind: 'load_error', error: 'wasm missing' }]);
 	});
 
-	it('says the runtime is missing when pyodide.asm.js is not served', async () => {
+	it('says the runtime is missing when pyodide.asm.mjs is not served', async () => {
 		origFetch.mockResolvedValue(new Response('<html>', { status: 404 }));
 		await load(Promise.reject(new TypeError('Importing a module script failed.')));
 		await settle();
-		expect(origFetch).toHaveBeenCalledWith(`${ORIGIN}/pyodide/pyodide.asm.js`, {
+		expect(origFetch).toHaveBeenCalledWith(`${ORIGIN}/pyodide/pyodide.asm.mjs`, {
 			method: 'HEAD'
 		});
 		expect(posted).toEqual([
@@ -643,7 +643,7 @@ describe('python.worker network shims', () => {
 		const resp = await fakeSelf.fetch(`${ORIGIN}/pyodide/rare-1.0-py3-none-any.whl`);
 		expect(resp).toBe(cdn);
 		expect(origFetch.mock.calls.at(-1)?.[0]).toBe(
-			'https://cdn.jsdelivr.net/pyodide/v0.29.4/full/rare-1.0-py3-none-any.whl'
+			'https://cdn.jsdelivr.net/pyodide/v314.0.7/full/rare-1.0-py3-none-any.whl'
 		);
 	});
 

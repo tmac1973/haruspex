@@ -17,6 +17,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 import * as api from './client';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const cfg = { baseUrl: 'http://box:8188', apiKey: 'sekrit' };
 
@@ -62,8 +63,8 @@ describe('requests through Rust', () => {
 	it('cancels the Rust call when the caller aborts', async () => {
 		const c = new AbortController();
 		let reject: (e: unknown) => void = () => {};
-		tauri.invoke.mockImplementation((cmd: string) =>
-			cmd === 'comfy_json' ? new Promise((_, r) => (reject = r)) : Promise.resolve(undefined)
+		tauri.invoke.mockImplementation(
+			invokeRouter({ comfy_json: () => new Promise((_, r) => (reject = r)) }, undefined)
 		);
 		const pending = api.history(cfg, 'p1', '9', c.signal);
 		c.abort();

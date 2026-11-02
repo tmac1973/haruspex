@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
 	parseSSE,
 	unansweredNotice,
@@ -26,6 +26,17 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 	getApiKeyValue: getApiKeyValueMock,
 	getActiveLocalModelFilename: () => ''
 }));
+
+// restoreAllMocks leaves vi.fn() mocks alone: put back the local backend and
+// the missing key the OpenRouter cases swap in.
+beforeEach(() => {
+	getSettingsMock.mockReset();
+	getApiKeyValueMock.mockReset();
+});
+
+afterEach(() => {
+	vi.unstubAllGlobals();
+});
 
 // Helper to create a ReadableStream from SSE text
 function createSSEStream(chunks: string[]): ReadableStream<Uint8Array> {
@@ -381,7 +392,6 @@ describe('parseSSE — OpenRouter behaviors', () => {
 		const chunks = [];
 		for await (const chunk of parseSSE(response)) chunks.push(chunk);
 		expect(chunks).toHaveLength(2);
-		expect(chunks[1].error).toBeDefined();
 		expect(chunks[1].error?.code).toBe(429);
 		expect(chunks[1].finish_reason).toBe('error');
 	});
@@ -418,7 +428,7 @@ describe('chatCompletion — OpenRouter', () => {
 		expect(url).toBe('https://openrouter.ai/api/v1/chat/completions');
 		const headers = init.headers as Record<string, string>;
 		expect(headers['Authorization']).toBe('Bearer sk-or-v1-test');
-		expect(headers['HTTP-Referer']).toBeDefined();
+		expect(headers['HTTP-Referer']).toBe('https://github.com/tmac1973/haruspex');
 		expect(headers['X-Title']).toBe('Haruspex');
 		expect(JSON.parse(init.body as string).model).toBe('anthropic/claude-sonnet-4.5');
 		// top_k / min_p / chat_template_kwargs should NOT be in the body.

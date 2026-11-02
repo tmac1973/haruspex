@@ -29,35 +29,19 @@ const toolsMock = vi.hoisted(() => ({
 	coerceCallArguments: vi.fn((_name: string, args: Record<string, unknown>) => args)
 }));
 
-vi.mock('#lib/api.ts', () => ({
-	ApiError: class ApiError extends Error {
-		statusCode?: number;
-		constructor(message: string, statusCode?: number) {
-			super(message);
-			this.name = 'ApiError';
-			this.statusCode = statusCode;
-		}
-	},
-	// A cut-off answer; extends Error here, ApiError in the real module.
-	ResponseCutOffError: class ResponseCutOffError extends Error {
-		constructor(message: string) {
-			super(message);
-			this.name = 'ResponseCutOffError';
-		}
-	},
-	chatCompletion: api.chatCompletion,
-	chatCompletionStream: api.chatCompletionStream,
-	messageText: (content: unknown): string => {
-		if (typeof content === 'string') return content;
-		if (Array.isArray(content)) {
-			return content
-				.filter((p: { type: string }) => p.type === 'text')
-				.map((p: { text: string }) => p.text)
-				.join('\n');
-		}
-		return '';
-	}
-}));
+vi.mock('#lib/api.ts', async (importOriginal) => {
+	// The real error classes and messageText: pure, and a copy here could
+	// drift from what the loop really sees. Only the network calls are faked.
+	const { ApiError, ResponseCutOffError, messageText } =
+		await importOriginal<typeof import('#lib/api.ts')>();
+	return {
+		ApiError,
+		ResponseCutOffError,
+		messageText,
+		chatCompletion: api.chatCompletion,
+		chatCompletionStream: api.chatCompletionStream
+	};
+});
 
 vi.mock('#lib/agent/tools/index.ts', () => ({
 	executeTool: toolsMock.executeTool,
@@ -90,12 +74,7 @@ vi.mock('#lib/markdown.ts', async (importOriginal) => ({
 	// Keep the real reasoning splitter: it is pure, it defines the
 	// reasoning/answer contract the loop reports against, and faking it here
 	// would let the two drift without any test noticing.
-	...(await importOriginal<typeof import('#lib/markdown.ts')>()),
-	stripToolCallArtifacts: (text: string) =>
-		text
-			.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
-			.replace(/<\/?tool_call>/g, '')
-			.trim()
+	...(await importOriginal<typeof import('#lib/markdown.ts')>())
 }));
 
 vi.mock('#lib/debugLog.ts', async (importOriginal) => ({
@@ -203,6 +182,7 @@ let streamQueue: StreamChunk[][];
 let streamSnapshots: ChatMessage[][];
 let streamTools: Array<ToolDefinition[] | undefined>;
 let streamToolChoice: unknown[];
+let streamKwargs: unknown[];
 let streamMaxTokens: Array<number | undefined>;
 let nonStreamMaxTokens: Array<number | undefined>;
 
@@ -214,6 +194,7 @@ beforeEach(() => {
 	streamSnapshots = [];
 	streamTools = [];
 	streamToolChoice = [];
+	streamKwargs = [];
 	streamMaxTokens = [];
 	nonStreamMaxTokens = [];
 
@@ -236,10 +217,12 @@ beforeEach(() => {
 			tools?: ToolDefinition[];
 			tool_choice?: unknown;
 			max_tokens?: number;
+			chat_template_kwargs?: unknown;
 		}) => {
 			streamSnapshots.push(structuredClone(opts.messages));
 			streamTools.push(opts.tools);
 			streamToolChoice.push(opts.tool_choice);
+			streamKwargs.push(opts.chat_template_kwargs);
 			streamMaxTokens.push(opts.max_tokens);
 			const chunks = streamQueue.shift() ?? [];
 			return (async function* () {
@@ -1292,6 +1275,55 @@ describe('runAgentLoop: max iterations and degraded output', () => {
 		expect(streamToolChoice[0]).toBe('none');
 		expect(streamedText(cb)).toBe('Here is the real answer.');
 		expect(cb.onComplete).toHaveBeenCalled();
+	});
+
+	describe('a post-tools re-stream that streams no content', () => {
+		beforeEach(async () => {
+			const settings = await import('#lib/stores/settings.ts');
+			vi.mocked(settings.getChatTemplateKwargs).mockImplementation((_d, thinking) => ({
+				enable_thinking: thinking ?? true
+			}));
+		});
+
+		function emptyAnswerTurn(): void {
+			nonStreamQueue.push(
+				toolCallResponse([{ id: 'c1', name: 'run_python', args: '{"code":"print(1)"}' }]),
+				textResponse('<think>I now have enough to answer.</think>', 'stop')
+			);
+			// Qwen 3.5 9B on llama.cpp: reasoning, then a stop with no text.
+			streamQueue.push([{ delta: { reasoning_content: 'Let me answer.' }, finish_reason: 'stop' }]);
+		}
+
+		it('retries with the same tools and reasoning off, so the prompt stays cached', async () => {
+			emptyAnswerTurn();
+			streamQueue.push([contentChunk('Here is the real answer.', 'stop')]);
+			const { options, cb } = makeOptions({ maxIterations: 5, thinkingEnabled: true });
+
+			await runAgentLoop(options);
+
+			// The tools come before the system text in the Qwen template, so
+			// dropping them would make llama-server process the whole prompt again.
+			expect(streamTools).toEqual([TOOL_SCHEMAS, TOOL_SCHEMAS]);
+			expect(streamToolChoice).toEqual(['none', 'none']);
+			expect(streamKwargs).toEqual([{ enable_thinking: true }, { enable_thinking: false }]);
+			expect(streamSnapshots[1]).toEqual(streamSnapshots[0]);
+			expect(streamedText(cb)).toBe('Here is the real answer.');
+			expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		});
+
+		it('drops the tools only when the reasoning-off retry is empty too', async () => {
+			emptyAnswerTurn();
+			streamQueue.push([{ delta: {}, finish_reason: 'stop' }]);
+			streamQueue.push([contentChunk('Here is the real answer.', 'stop')]);
+			const { options, cb } = makeOptions({ maxIterations: 5, thinkingEnabled: true });
+
+			await runAgentLoop(options);
+
+			expect(streamTools).toEqual([TOOL_SCHEMAS, TOOL_SCHEMAS, undefined]);
+			expect(streamToolChoice[2]).toBeUndefined();
+			expect(streamedText(cb)).toBe('Here is the real answer.');
+			expect(cb.onComplete).toHaveBeenCalledTimes(1);
+		});
 	});
 
 	it('uses the gentler wrap-up prompt for shell-mode max-iterations synthesis', async () => {

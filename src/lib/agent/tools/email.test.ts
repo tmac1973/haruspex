@@ -20,6 +20,7 @@ import { executeTool } from '#lib/agent/tools/registry.ts';
 import { setEmailAccounts, type EmailAccount } from '#lib/stores/settings.ts';
 import type { ToolContext } from '#lib/agent/tools/types.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const ctx: ToolContext = makeToolContext();
 
@@ -213,10 +214,11 @@ describe('email_list_recent', () => {
 		setEmailAccounts([account()]);
 		const ctrl = new AbortController();
 		let rejectList: (e: unknown) => void = () => {};
-		mocks.invoke.mockImplementation((cmd: string) =>
-			cmd === 'email_list_recent'
-				? new Promise((_, reject) => (rejectList = reject))
-				: Promise.resolve()
+		mocks.invoke.mockImplementation(
+			invokeRouter(
+				{ email_list_recent: () => new Promise((_, reject) => (rejectList = reject)) },
+				undefined
+			)
 		);
 
 		const run = executeTool('email_list_recent', {}, { ...ctx, signal: ctrl.signal });

@@ -289,4 +289,12 @@ describe('runSubtask when a child stops short', () => {
 		expect(stoppedShort('write', failed, report)).toContain("haven't changed any files");
 		expect(stoppedShort('read', [], report)).toBeNull();
 	});
+
+	it('doesn’t nudge a writer whose task said to leave the files alone', () => {
+		expect(stoppedShort('write', [], report, 'Run npm test. Do not touch any files.')).toBeNull();
+		expect(stoppedShort('write', [], report, 'Run it without changing the files.')).toBeNull();
+		expect(stoppedShort('write', [], report, 'Add a high-score table.')).toContain(
+			'Only your next reply is passed on'
+		);
+	});
 });

@@ -9,10 +9,11 @@ metadata:
 # Fixing a picture
 
 Four tools change a picture, and the request decides which. Read "Set up
-now" at the end of these instructions first: it says what the image backend
-can do. If the user asks for something it can't do, say so in one sentence,
-with the Settings path it gives, and offer what it can do instead. Never
-call a tool the backend can't run.
+now" at the end of these instructions first: it says what the image models
+can do. If the user asks for something none can do, say so in one sentence,
+with the Settings path it gives, and offer what they can do instead. Never
+call a tool no model can run. The tools pick a model that can do the job;
+pass `model` only when the user names one.
 
 ## Choose the tool
 
@@ -38,7 +39,7 @@ call a tool the backend can't run.
   under 1024 pixels.
 - **Combining pictures**: "put the cat from the second picture on the
   sofa". Use `edit_image` with `also`, saying in the prompt which picture
-  is which. "Set up now" says how many pictures the backend takes at once.
+  is which. "Set up now" says how many pictures each model takes at once.
 
 Name the picture by where it came from. Use `attached` only for a picture
 the user attached to their message. A picture drawn or edited earlier in the

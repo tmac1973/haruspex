@@ -39,14 +39,15 @@
 	let googleAvailable = $state(false);
 	let youtube = $state<YoutubeAccount | null>(null);
 	let signingIn = $state(false);
-	if (YOUTUBE_UPLOAD) {
-		void invoke<boolean>('google_sign_in_available')
-			.then((ok) => {
-				googleAvailable = ok;
-				if (ok) return invoke<YoutubeAccount | null>('youtube_account').then((a) => (youtube = a));
-			})
-			.catch(() => {});
+	async function loadYoutube() {
+		try {
+			googleAvailable = await invoke<boolean>('google_sign_in_available');
+			if (googleAvailable) youtube = await invoke<YoutubeAccount | null>('youtube_account');
+		} catch (e) {
+			error = errMessage(e);
+		}
 	}
+	if (YOUTUBE_UPLOAD) void loadYoutube();
 
 	async function youtubeSignIn() {
 		error = '';
@@ -74,7 +75,7 @@
 	let turbo = $state<string | null>(null);
 	let downloading = $state(false);
 	let download = $state<DownloadProgress | null>(null);
-	void invoke<string | null>('get_whisper_video_model_path')
+	void invoke<string | null>('whisper_video_model_path')
 		.then((p) => (turbo = p))
 		.catch(() => {});
 
@@ -87,7 +88,7 @@
 			(e) => (download = e.payload)
 		);
 		try {
-			turbo = await invoke<string>('download_whisper_video_model');
+			turbo = await invoke<string>('whisper_video_model_download');
 		} catch (e) {
 			error = errMessage(e);
 		} finally {
@@ -99,7 +100,7 @@
 	async function deleteTurbo() {
 		error = '';
 		try {
-			await invoke('delete_whisper_video_model');
+			await invoke('whisper_video_model_delete');
 			turbo = null;
 		} catch (e) {
 			error = errMessage(e);

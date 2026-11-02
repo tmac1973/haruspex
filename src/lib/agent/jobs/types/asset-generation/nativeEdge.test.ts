@@ -6,6 +6,7 @@ const invoke = vi.hoisted(() => vi.fn());
 vi.mock('@tauri-apps/api/core', () => ({ invoke }));
 
 const settings = vi.hoisted(() => ({
+	imageBackendKind: 'comfyui',
 	imageComfyCheckpoint: '',
 	imageLocalModelId: ''
 }));
@@ -21,6 +22,7 @@ const CATALOGUE = [
 ];
 
 beforeEach(() => {
+	settings.imageBackendKind = 'comfyui';
 	settings.imageComfyCheckpoint = '';
 	settings.imageLocalModelId = '';
 	invoke.mockReset().mockResolvedValue(CATALOGUE);
@@ -67,6 +69,7 @@ describe('nativeEdgeFor', () => {
 	});
 
 	it('matches a bundled model by catalogue id', async () => {
+		settings.imageBackendKind = 'local';
 		settings.imageLocalModelId = 'sdxl';
 		await expect(nativeEdgeFor(undefined)).resolves.toBe(1024);
 	});

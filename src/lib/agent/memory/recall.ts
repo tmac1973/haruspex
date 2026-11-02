@@ -148,7 +148,9 @@ export async function recallForTurn(opts: {
 }
 
 /**
- * The MEMORY section of the system prompt, or '' when there is nothing.
+ * The MEMORY section added to the latest user message (`injectMessageHints`),
+ * or '' when there is nothing. Not in the system prompt: memories change from
+ * turn to turn, and a change there costs llama-server its whole prompt cache.
  *
  * The framing is the load-bearing part. These are notes from previous
  * conversations, not instructions, and they can be out of date — a stored

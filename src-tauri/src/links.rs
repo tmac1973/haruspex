@@ -44,14 +44,14 @@ pub async fn open_url(url: String) -> Result<(), String> {
 /// accepted — never a file, which the handler would execute or open with
 /// whatever app claims it.
 #[tauri::command]
-pub async fn open_folder(path: String) -> Result<(), String> {
+pub async fn folder_open(path: String) -> Result<(), String> {
     let dir = std::fs::canonicalize(&path).map_err(|e| format!("{path}: {e}"))?;
     if !dir.is_dir() {
         return Err(format!("not a folder: {}", dir.display()));
     }
-    info!("open_folder: {}", dir.display());
+    info!("folder_open: {}", dir.display());
     spawn_folder_handler(&dir).map_err(|e| {
-        error!("open_folder failed for {}: {}", dir.display(), e);
+        error!("folder_open failed for {}: {}", dir.display(), e);
         e
     })
 }
@@ -161,11 +161,11 @@ mod tests {
 
     #[tokio::test]
     async fn only_existing_folders_are_opened() {
-        let dir = crate::test_util::temp_dir("open_folder");
+        let dir = crate::test_util::temp_dir("folder_open");
         let file = dir.join("run.sh");
         std::fs::write(&file, "#!/bin/sh\n").unwrap();
-        let err = open_folder(file.display().to_string()).await.unwrap_err();
-        let missing = open_folder(dir.join("nope").display().to_string()).await;
+        let err = folder_open(file.display().to_string()).await.unwrap_err();
+        let missing = folder_open(dir.join("nope").display().to_string()).await;
         assert!(err.contains("not a folder"), "{err}");
         assert!(missing.is_err());
     }

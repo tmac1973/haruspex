@@ -3,28 +3,26 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { invoke } from '@tauri-apps/api/core';
 import CalendarSection from './CalendarSection.svelte';
 import { getSettings, setDavAccounts } from '#lib/stores/settings.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 
 function answer(signIn: () => Promise<unknown>) {
-	vi.mocked(invoke).mockImplementation((cmd: string) => {
-		switch (cmd) {
-			case 'google_sign_in_available':
-				return Promise.resolve(true);
-			case 'secret_store_kind':
-				return Promise.resolve('keychain');
-			case 'google_sign_in':
-				return signIn();
-			case 'dav_discover_collections':
-				return Promise.resolve({
+	vi.mocked(invoke).mockImplementation(
+		invokeRouter(
+			{
+				google_sign_in_available: true,
+				secret_store_kind: 'keychain',
+				google_sign_in: signIn,
+				dav_discover_collections: {
 					calendars: [{ url: '', name: 'Personal', color: null }],
 					addressBooks: [{ url: 'https://x/', name: 'Address Book' }],
 					problems: []
-				});
-			default:
-				return Promise.resolve(undefined);
-		}
-	});
+				}
+			},
+			undefined
+		)
+	);
 }
 
 beforeEach(() => {
@@ -68,8 +66,8 @@ describe('Sign in with Google', () => {
 	});
 
 	it('is not offered by a build without the OAuth client', async () => {
-		vi.mocked(invoke).mockImplementation((cmd: string) =>
-			Promise.resolve(cmd === 'google_sign_in_available' ? false : undefined)
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter({ google_sign_in_available: false }, undefined)
 		);
 		render(CalendarSection);
 		await screen.findByText('Add a calendar link');

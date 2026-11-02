@@ -7,6 +7,7 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
 import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import { MAX_CHARS, parseSpeechArgs, shortNote } from './speech-gen';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const HASH = 'a'.repeat(64);
 const URL = `haruspex-audio://localhost/${HASH}`;
@@ -24,13 +25,17 @@ const paramsOf = (o: Parameters<typeof getToolSchemas>[0]) =>
 	);
 
 beforeEach(() => {
-	state.invoke.mockReset().mockImplementation(async (cmd: string) => {
-		if (cmd === 'tts_synthesize_to_cache') {
-			return { hash: HASH, mime: 'audio/wav', bytes: 4800044, seconds: 100.4 };
-		}
-		if (cmd === 'audio_read_bytes') return new Uint8Array([1, 2]).buffer;
-		return null;
-	});
+	state.invoke.mockReset().mockImplementation(
+		invokeRouter({
+			tts_synthesize_to_cache: () => ({
+				hash: HASH,
+				mime: 'audio/wav',
+				bytes: 4800044,
+				seconds: 100.4
+			}),
+			audio_read_bytes: () => new Uint8Array([1, 2]).buffer
+		})
+	);
 });
 
 describe('generate_speech is offered', () => {

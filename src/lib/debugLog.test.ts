@@ -1,5 +1,7 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import {
+	_resetForTests,
+	argumentShape,
 	clearDebugLogs,
 	forwardConsoleToDebugLog,
 	getDebugLogs,
@@ -7,12 +9,17 @@ import {
 	startDebugLogFile
 } from './debugLog';
 
-describe('forwardConsoleToDebugLog', () => {
-	afterEach(() => {
-		vi.restoreAllMocks();
-		clearDebugLogs();
-	});
+beforeEach(() => {
+	_resetForTests();
+});
 
+afterEach(() => {
+	vi.restoreAllMocks();
+	vi.useRealTimers();
+	_resetForTests();
+});
+
+describe('forwardConsoleToDebugLog', () => {
 	it('copies warnings and errors into the debug log, errors by message', () => {
 		vi.spyOn(console, 'warn').mockImplementation(() => {});
 		vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -62,5 +69,32 @@ describe('startDebugLogFile', () => {
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+});
+
+describe('argumentShape', () => {
+	it('keeps types and sizes, blank strings and scalars, and drops content', () => {
+		expect(
+			argumentShape({
+				target: '',
+				element: 'Submit button',
+				items: [1, 2, 3],
+				options: { a: 1, b: 2 },
+				depth: 2,
+				headless: true,
+				parent: null,
+				missing: undefined
+			})
+		).toEqual({
+			target: '',
+			element: 'string(13)',
+			items: 'array(3)',
+			options: 'object(2)',
+			depth: 2,
+			headless: true,
+			parent: null,
+			missing: 'undefined'
+		});
+		expect(argumentShape(undefined)).toEqual({});
 	});
 });

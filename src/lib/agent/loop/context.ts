@@ -5,11 +5,15 @@
  */
 
 import type { BackendOverride, ChatMessage, ToolDefinition } from '#lib/api.ts';
-import { getToolSchemas, type PendingImage, type ToolContext } from '#lib/agent/tools/index.ts';
+import type { PendingImage, ToolContext } from '#lib/agent/tools/index.ts';
 import { getSettings, type SamplingParams } from '#lib/stores/settings.ts';
+import { LOAD_TOOLS } from '#lib/agent/tools/deferred.ts';
+import { readableSkills, resolveTurnTools } from '#lib/agent/loop/turnTools.ts';
+import { familyResult, loadedFamilies } from '#lib/agent/tools/_deferredLoaded.ts';
+import type { DeferredFamily } from '#lib/agent/tools/types.ts';
 import { resolveBackendDescriptor, type BackendDescriptor } from '#lib/inference/descriptor.ts';
-import { loadedSkillNames, skillsWithFiles } from '#lib/skills/content.ts';
-import { coveredTools, type TurnSkills } from '#lib/skills/turn.ts';
+import { loadedSkillNames } from '#lib/skills/content.ts';
+import { coveredTools } from '#lib/skills/turn.ts';
 import type { AgentLoopOptions } from '#lib/agent/loop.ts';
 import type { HeldSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 
@@ -18,11 +22,6 @@ import type { HeldSlot } from '#lib/agent/inferenceQueue.svelte.ts';
 // act before a single deep-research turn can blow context.
 const IN_LOOP_TRIM_THRESHOLD = 0.7;
 
-/**
- * Skills whose files the model may read this turn: those it may load, and
- * any already in the conversation with files — a skill the user ran with
- * `/name` is readable whether or not autonomous use is on.
- */
 /** The data URLs of the pictures in the newest user message that has any. */
 export function latestUserImages(messages: ChatMessage[]): string[] {
 	for (let i = messages.length - 1; i >= 0; i--) {
@@ -32,12 +31,6 @@ export function latestUserImages(messages: ChatMessage[]): string[] {
 		if (urls.length) return urls;
 	}
 	return [];
-}
-
-function readableSkills(skills: TurnSkills, messages: ChatMessage[]): string[] {
-	const names = new Set(skills.catalog.map((s) => s.name));
-	for (const name of skillsWithFiles(messages)) names.add(name);
-	return [...names];
 }
 
 /**
@@ -100,6 +93,11 @@ export class LoopState {
 export interface LoopContext {
 	messages: ChatMessage[];
 	tools: ToolDefinition[];
+	/**
+	 * The families this turn lists but does not send (`splitTurnTools`);
+	 * undefined when deferred loading is off for it.
+	 */
+	deferredTools?: DeferredFamily[];
 	signal?: AbortSignal;
 	/** The turn's inference slot, given back while long tools run (`executeToolCalls`). */
 	slot?: HeldSlot;
@@ -144,6 +142,11 @@ export interface LoopContext {
 	wslDistro: string | null;
 	expectsFileOutput: boolean;
 	pendingImages: PendingImage[];
+	/**
+	 * Steering went in before the next model call, which was asked to answer
+	 * it in a sentence (see `steeringNote`). Taken by that call's iteration.
+	 */
+	steeringReplyDue?: boolean;
 	/** See `ToolContext.userImages`. */
 	userImages: string[];
 	filesWrittenThisTurn: Set<string>;
@@ -239,37 +242,12 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 	const codeMode = options.codeMode ?? false;
 	const codeAutoApprove = options.codeAutoApprove ?? false;
 	const expectsFileOutput = options.expectsFileOutput ?? false;
-	return {
+	const descriptor = resolveBackendDescriptor(options.backend);
+	const { tools, deferredTools } = options.turnTools ?? resolveTurnTools(options);
+	const ctx: LoopContext = {
 		messages: options.messages,
-		tools: getToolSchemas({
-			hasWorkingDir: workingDir !== null,
-			deepResearch: options.deepResearch ?? false,
-			visionSupported: options.visionSupported ?? true,
-			shellMode,
-			codeMode,
-			codeReadOnly: options.codeReadOnly ?? false,
-			codeRemote: options.codeRemote ?? false,
-			interactive: options.interactive ?? false,
-			subtask: options.subtask !== undefined,
-			// The forced final tool is always offered. A stage once listed its
-			// read tools but not its submit tool: the model, correctly, never
-			// called a tool it was not given, and the forced call then named a
-			// tool missing from the request, which vLLM refuses with a 400 — so
-			// the turn ended empty and a chain lost its art.
-			toolAllowlist:
-				options.toolAllowlist && options.forceFinalTool
-					? [...options.toolAllowlist, options.forceFinalTool]
-					: options.toolAllowlist,
-			harnessFeedback: options.feedback !== undefined,
-			skillNames: options.skills?.catalog.map((s) => s.name),
-			skillFileNames: options.skills && readableSkills(options.skills, options.messages),
-			hasSkills: options.skills !== undefined,
-			taskOwner: options.codeSessionId
-				? `code:${options.codeSessionId}`
-				: options.conversationId
-					? `chat:${options.conversationId}`
-					: undefined
-		}),
+		tools,
+		deferredTools,
 		signal: options.signal,
 		slot: options.slot,
 		workingDir,
@@ -315,7 +293,34 @@ export function buildLoopContext(options: AgentLoopOptions): LoopContext {
 		maxIterations: options.maxIterations ?? 8,
 		forceFinalTool: options.forceFinalTool ?? null,
 		backend: options.backend ?? null,
-		descriptor: resolveBackendDescriptor(options.backend),
+		descriptor,
 		options
 	};
+	preloadDocuments(ctx);
+	return ctx;
+}
+
+/**
+ * A request for a document file starts with the documents family loaded, as
+ * if the model had called load_tools: the file-output hint on the message
+ * names those tools.
+ */
+function preloadDocuments(ctx: LoopContext): void {
+	const documents = ctx.deferredTools?.find((f) => f.id === 'documents');
+	if (!ctx.expectsFileOutput || !documents || loadedFamilies(ctx.messages).has('documents')) {
+		return;
+	}
+	const id = 'preload_documents';
+	appendMessage(ctx, {
+		role: 'assistant',
+		content: '',
+		tool_calls: [
+			{
+				id,
+				type: 'function',
+				function: { name: LOAD_TOOLS, arguments: JSON.stringify({ family: 'documents' }) }
+			}
+		]
+	});
+	appendMessage(ctx, { role: 'tool', tool_call_id: id, content: familyResult(documents) });
 }

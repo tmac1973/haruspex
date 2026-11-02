@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const mocks = vi.hoisted(() => ({
 	invoke: vi.fn()
@@ -20,11 +21,7 @@ const shellCodeCtx = makeToolContext({
 
 /** Route invokes by command name; `pending` is what the PTY is running. */
 function mockShell(pending: string | null, results: Record<string, unknown> = {}) {
-	mocks.invoke.mockImplementation(async (cmd: string) => {
-		if (cmd === 'shell_pending_command') return pending;
-		if (cmd in results) return results[cmd];
-		return null;
-	});
+	mocks.invoke.mockImplementation(invokeRouter({ ...results, shell_pending_command: pending }));
 }
 
 beforeEach(() => {

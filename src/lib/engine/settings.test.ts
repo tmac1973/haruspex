@@ -10,6 +10,9 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) =>
 	})
 );
 
+const refresh = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('#lib/image/refreshCaps.ts', () => ({ refreshMissingImageCaps: refresh }));
+
 import { mergePatch, patchSettings, readSettings, redactSecrets } from './settings.ts';
 
 beforeEach(() => {
@@ -19,6 +22,7 @@ beforeEach(() => {
 		braveApiKey: 'brave-secret',
 		braveApiKeySaved: false,
 		imageBackend: 'none',
+		imageModels: [],
 		inferenceBackend: {
 			mode: 'local',
 			remoteBaseUrl: '',
@@ -72,6 +76,41 @@ describe('settings.get', () => {
 		expect(() => readSettings(['nope'])).toThrow('no such setting: nope');
 	});
 
+	it('keeps where a URL points and drops what can carry a credential', () => {
+		const { value, redacted } = redactSecrets({
+			comfyBaseUrl: 'http://user:secret@gpu.lan:8188',
+			proxy: { url: 'http://me:pw@proxy.lan:3128' },
+			calendarUrl: 'https://dav.example.com/cal/?token=abc',
+			plain: 'http://gpu.lan:8188/api',
+			note: 'see https://example.com?x=1 for more'
+		});
+		expect(value).toEqual({
+			comfyBaseUrl: 'http://gpu.lan:8188',
+			proxy: { url: 'http://proxy.lan:3128' },
+			calendarUrl: 'https://dav.example.com/cal/',
+			plain: 'http://gpu.lan:8188/api',
+			note: 'see https://example.com?x=1 for more'
+		});
+		expect(redacted.sort()).toEqual(['calendarUrl', 'comfyBaseUrl', 'proxy.url']);
+	});
+
+	it("blanks a custom MCP server's args", () => {
+		const { value, redacted } = redactSecrets({
+			source: { kind: 'custom', program: 'npx', args: ['-y', '--api-key=sk-1', ''] }
+		});
+		expect(value).toEqual({ source: { kind: 'custom', program: 'npx', args: ['', '', ''] } });
+		expect(redacted).toEqual(['source.args[0]', 'source.args[1]']);
+	});
+
+	it('hands back the values it blanked whole, but not a URL it trimmed', () => {
+		const { secrets } = redactSecrets({
+			braveApiKey: 'brave-1',
+			mcp: { secrets: { token: 'ghp_x' } },
+			comfyBaseUrl: 'http://u:p@gpu.lan'
+		});
+		expect(secrets.sort()).toEqual(['brave-1', 'ghp_x']);
+	});
+
 	it('blanks only set strings', () => {
 		expect(redactSecrets({ remoteAccessToken: '' }).redacted).toEqual([]);
 	});
@@ -82,6 +121,13 @@ describe('settings.patch', () => {
 		expect(patchSettings({ theme: 'dark', imageBackend: 'none' })).toEqual({ changed: ['theme'] });
 		expect(store.settings.theme).toBe('dark');
 		expect(store.settings.braveApiKey).toBe('brave-secret');
+	});
+
+	it('asks the image models what they can do when it changes them', async () => {
+		refresh.mockClear();
+		patchSettings({ theme: 'dark' });
+		patchSettings({ imageModels: [{ id: 'a', caps: null }] });
+		await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
 	});
 
 	it('merges an object key by key, keeping what it does not name', () => {

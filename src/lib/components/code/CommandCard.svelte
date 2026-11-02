@@ -50,6 +50,7 @@
 		if (step.status === 'running') {
 			return step.toolName === 'open_in_shell' ? 'in Shell…' : 'running…';
 		}
+		if (view.stopped) return 'stopped';
 		if (view.error !== null) return 'not run';
 		if (view.background) return 'in background';
 		if (view.killed) return 'killed';

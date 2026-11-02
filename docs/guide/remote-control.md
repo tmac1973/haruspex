@@ -39,7 +39,7 @@ Attach pictures with 📎 or a paste, up to 8 a message. `/name` runs a skill, a
 
 In lean mode (see `lean-mode`) the page shows Chat only, with a **Lean mode** label; turn it off at this computer.
 
-**Chat** (the switch atop the list) shows your chats, newest first. Open one to read it or carry it on; its working folder, Python sandbox and memory work as usual, and this computer stays on its chat. Chats answer at once, and sending to one that's answering steers it (see `chat-conversations`); each is marked Writing, Waiting or New. You can stop, continue or retry a reply, and answer **Run this Python?**, **Remember this?** and **Take a screenshot?** from the page.
+**Chat** (the switch atop the list) shows your chats, newest first. Open one to read it or carry it on; its working folder, Python sandbox and memory work as usual, and this computer stays on its chat. Chats answer at once, and sending to one that's answering steers it (see `chat-conversations`); each is marked Writing, Waiting or New. You can stop, continue or retry a reply, and answer **Run this Python?**, **Remember this?**, **Take a screenshot?** and **File already exists** from the page.
 
 ## Advanced
 

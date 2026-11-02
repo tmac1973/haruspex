@@ -186,3 +186,39 @@ test('a session whose folder is gone says so, and can be pointed at another', as
 		)
 	).toMatchObject({ root: '/e2e/elsewhere' });
 });
+
+test('many sessions stay inside the window, and each can be reached', async ({ app }) => {
+	await app.getByRole('tab', { name: 'Code' }).click();
+	for (let i = 0; i < 24; i++) {
+		await app.getByRole('button', { name: 'New session' }).first().click();
+		await app.getByRole('button', { name: 'Start session' }).click();
+	}
+	const strip = app.getByRole('tablist', { name: 'Code sessions' });
+	const tabs = strip.getByRole('tab');
+	await expect(tabs).toHaveCount(24);
+
+	// The strip and its New session button fit the window.
+	const width = await app.evaluate(() => window.innerWidth);
+	const box = await strip.boundingBox();
+	expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+	const add = await app.getByRole('button', { name: 'New session' }).last().boundingBox();
+	expect(add!.x + add!.width).toBeLessThanOrEqual(width);
+
+	// The newest tab is active and scrolled into view.
+	await expect(tabs.last()).toHaveAttribute('aria-selected', 'true');
+	await expect(tabs.last()).toBeInViewport();
+
+	// The first is reached with the mouse, and comes back into view.
+	await tabs.first().click();
+	await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
+	await expect(tabs.first()).toBeInViewport();
+
+	// And with the keyboard: → walks the tabs, End jumps to the last, Enter opens it.
+	await app.keyboard.press('ArrowRight');
+	await expect(tabs.nth(1)).toBeFocused();
+	await app.keyboard.press('End');
+	await expect(tabs.last()).toBeFocused();
+	await app.keyboard.press('Enter');
+	await expect(tabs.last()).toHaveAttribute('aria-selected', 'true');
+	await expect(tabs.last()).toBeInViewport();
+});

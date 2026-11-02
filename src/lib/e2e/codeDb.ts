@@ -202,7 +202,7 @@ export const CODE_DB: Record<string, Handler> = {
 
 	code_bg_status: () => [],
 	code_bg_stop_owner: () => 0,
-	open_folder: () => null,
+	folder_open: () => null,
 	'plugin:dialog|open': () => '/e2e/project',
 
 	// The scripted agent's tools, in the project above. Nothing of the

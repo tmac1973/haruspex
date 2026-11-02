@@ -273,6 +273,17 @@ describe('running jobs', () => {
 		expect((await run({ type: 'runs.get', runId: 49 })).live).toBeNull();
 	});
 
+	it('refuses an op that names no job or run before it looks the id up', async () => {
+		const misspelt = { type: 'jobs.run', id: 1 } as unknown as JobOp;
+		await expect(run(misspelt)).rejects.toThrow('jobs.run needs a numeric jobId');
+		await expect(run({ type: 'runs.get', runId: '7' } as unknown as JobOp)).rejects.toThrow(
+			'runs.get needs a numeric runId'
+		);
+		await expect(run({ type: 'runs.list' } as unknown as JobOp)).rejects.toThrow(
+			'runs.list needs a numeric jobId'
+		);
+	});
+
 	it("won't delete a running run", async () => {
 		job(1);
 		running(50, 1);

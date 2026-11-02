@@ -12,6 +12,7 @@ use crate::sidecar_process::{sidecar_registry, spawn_sidecar, SidecarChild};
 use log::{error, info, warn};
 use serde::Serialize;
 use std::collections::VecDeque;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
@@ -158,10 +159,35 @@ pub fn health_url(port: u16) -> String {
     format!("{}/health", base_url(port))
 }
 
+/// Where bundled resources (`binaries/libs`, `binaries/espeak-ng-data`,
+/// koko's model) are looked for, in order: in a debug build the source tree's
+/// `src-tauri/` first, then the resource dir.
+///
+/// The source tree comes first because an unbundled build (`tauri build
+/// --debug --no-bundle`, the e2e build) on a machine with the package
+/// installed gets a `resource_dir` of `/usr/lib/Haruspex`, whose files belong
+/// to another version. A release build never looks in the source tree, as
+/// [`crate::runtimes::npm_cli_path`] doesn't.
+pub fn resource_roots(app: &AppHandle) -> Vec<PathBuf> {
+    roots_from(app.path().resource_dir().ok())
+}
+
+fn roots_from(resource_dir: Option<PathBuf>) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    #[cfg(debug_assertions)]
+    roots.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")));
+    if let Some(dir) = resource_dir {
+        if !roots.contains(&dir) {
+            roots.push(dir);
+        }
+    }
+    roots
+}
+
 /// Directories a bundled sidecar must search for its shared libraries:
 /// the executable's own dir (dev: target/debug; prod: install bin dir)
-/// plus the packaged `binaries/libs` and the resource dir. Order matters —
-/// the exe dir wins so a dev symlink shadows a stale packaged copy.
+/// plus each resource root's `binaries/libs`, and the resource dir. Order
+/// matters — the exe dir wins so a dev symlink shadows a stale packaged copy.
 pub fn library_paths(app: &AppHandle) -> Vec<String> {
     let mut paths = Vec::new();
     if let Ok(exe_path) = std::env::current_exe() {
@@ -169,18 +195,20 @@ pub fn library_paths(app: &AppHandle) -> Vec<String> {
             paths.push(exe_dir.to_string_lossy().to_string());
         }
     }
-    if let Ok(resource_dir) = app.path().resource_dir() {
-        let libs_dir = resource_dir.join("binaries").join("libs");
+    let mut push = |dir: &std::path::Path| {
+        let s = dir.to_string_lossy().to_string();
+        if !paths.contains(&s) {
+            paths.push(s);
+        }
+    };
+    for root in resource_roots(app) {
+        let libs_dir = root.join("binaries").join("libs");
         if libs_dir.exists() {
-            let libs_str = libs_dir.to_string_lossy().to_string();
-            if !paths.contains(&libs_str) {
-                paths.push(libs_str);
-            }
+            push(&libs_dir);
         }
-        let resource_str = resource_dir.to_string_lossy().to_string();
-        if !paths.contains(&resource_str) {
-            paths.push(resource_str);
-        }
+    }
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        push(&resource_dir);
     }
     paths
 }
@@ -562,6 +590,19 @@ mod tests {
             started_at: 0,
             program: program.into(),
         }
+    }
+
+    // Tests build with debug assertions, so the source tree is a root.
+    #[test]
+    fn the_source_tree_comes_before_an_installed_package() {
+        let tree = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let installed = PathBuf::from("/usr/lib/Haruspex");
+        assert_eq!(
+            roots_from(Some(installed.clone())),
+            vec![tree.clone(), installed]
+        );
+        assert_eq!(roots_from(Some(tree.clone())), vec![tree.clone()]);
+        assert_eq!(roots_from(None), vec![tree]);
     }
 
     #[test]

@@ -259,10 +259,7 @@ pub async fn probe_inference_server(
     api_key: Option<String>,
 ) -> Result<ProbeResult, String> {
     let normalized = normalize_base_url(&base_url)?;
-    let client = reqwest::Client::builder()
-        .timeout(PROBE_TIMEOUT)
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    let client = crate::sidecar_util::http_client(PROBE_TIMEOUT);
     let api_key_ref = api_key.as_deref();
 
     if let Some(result) = try_llama_toolchest(&client, &normalized, api_key_ref).await {

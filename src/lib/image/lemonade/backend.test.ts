@@ -44,10 +44,16 @@ const generations = () =>
 const extrasOf = (call: Call) =>
 	JSON.parse(/^<sd_cpp_extra_args>(.*?)<\/sd_cpp_extra_args>/.exec(String(call.body!.prompt))![1]);
 
+// Every block starts from the same server and model: some tests clear them,
+// and the suite runs in a shuffled order.
+beforeEach(() => {
+	settings.imageLemonadeBaseUrl = 'http://box:13305';
+	settings.imageLemonadeApiKey = '';
+	settings.imageLemonadeModelId = 'ming';
+});
+
 describe('lemonade backend', () => {
 	beforeEach(() => {
-		settings.imageLemonadeBaseUrl = 'http://box:13305';
-		settings.imageLemonadeModelId = 'ming';
 		tauri.invoke.mockReset().mockImplementation(
 			invokeRouter({
 				lemonade_catalogue: catalogue,
@@ -224,8 +230,6 @@ describe('lemonade backend', () => {
 
 describe('lemonade options from an older Haruspex', () => {
 	it('rewrites stale arguments and unloads the model before drawing with it', async () => {
-		settings.imageLemonadeBaseUrl = 'http://box:13305';
-		settings.imageLemonadeModelId = 'ming';
 		const data = (models as { data: Array<Record<string, unknown>> }).data.map((m) =>
 			String(m.id).includes('Ming')
 				? { ...m, recipe_options: { sdcpp_args: '--tokenizer /t.json --backend te=cpu' } }

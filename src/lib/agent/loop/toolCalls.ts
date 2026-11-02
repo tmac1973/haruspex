@@ -7,8 +7,16 @@ import { toolRoundText } from '#lib/agent/textToolCalls.ts';
 import type { ResolvedToolCall } from '#lib/agent/parser.ts';
 import { coerceCallArguments, executeTool } from '#lib/agent/tools/index.ts';
 import { toolUsesModel } from '#lib/agent/tools/registry.ts';
+import {
+	argumentsFit,
+	deferredFamilyOf,
+	deferredToolName,
+	familyResult,
+	loadedFamilies
+} from '#lib/agent/tools/_deferredLoaded.ts';
+import { toolResult, type DeferredFamily } from '#lib/agent/tools/types.ts';
 import { isFetchFailureResult, isToolErrorResult } from '#lib/agent/tools/_helpers.ts';
-import { isVerbosePayloads, logDebug } from '#lib/debugLog.ts';
+import { argumentShape, isVerbosePayloads, logDebug } from '#lib/debugLog.ts';
 import { NudgeState } from '#lib/agent/loop/nudges.ts';
 import { PICTURE_TOOLS } from '#lib/images/eligible.ts';
 import {
@@ -20,6 +28,64 @@ import { createSlotLender, laneConcurrency } from '#lib/agent/inferenceQueue.sve
 import { appendMessage, type LoopContext } from '#lib/agent/loop/context.ts';
 import { raceWithAbort } from '#lib/agent/loop/modelCall.ts';
 import { runReleasingSlot } from '#lib/agent/loop/slotRelease.ts';
+
+/** The family `name` belongs to, when this turn defers it and it is not loaded. */
+function unloadedFamily(ctx: LoopContext, name: string): DeferredFamily | undefined {
+	const family = deferredFamilyOf(name, ctx.deferredTools);
+	return family && !loadedFamilies(ctx.messages).has(family.id) ? family : undefined;
+}
+
+/**
+ * A call to a tool this turn lists but has not loaded. When the model's
+ * arguments fit its schema, it runs and `family` loads with its result; when
+ * they don't, they were a guess, and `answer` gives only the schemas.
+ */
+function unloadedCall(
+	ctx: LoopContext,
+	call: ResolvedToolCall,
+	args: Record<string, unknown>
+): { family?: DeferredFamily; answer?: string } {
+	const family = unloadedFamily(ctx, call.name);
+	if (!family) return {};
+	const schema = family.schemas.find((s) => s.function.name === call.name);
+	if (argumentsFit(schema, args)) return { family };
+	return { answer: `${familyResult(family)}\nCall ${call.name} again with these parameters.` };
+}
+
+/**
+ * A call to a deferred tool by a hyphenated name (`video-probe`), renamed to
+ * the tool. The history keeps the name the model wrote.
+ */
+function withDeferredName(call: ResolvedToolCall, ctx: LoopContext): ResolvedToolCall {
+	const name = deferredToolName(call.name, ctx.deferredTools);
+	if (!name || name === call.name) return call;
+	return {
+		...call,
+		name,
+		wire: call.wire ?? { name: call.name, arguments: call.arguments }
+	};
+}
+
+/**
+ * The text kept on a round's calls message. It is dropped (the model
+ * regenerates its answer after seeing tool results) unless the caller streamed
+ * the round: then the user has read it, and it stays, minus reasoning and any
+ * calls written as text. The sentence answering steering is the exception: a
+ * caller that doesn't stream rounds gets it as answer text, so the user sees
+ * it now.
+ */
+function toolRoundContent(
+	options: LoopContext['options'],
+	response: ChatCompletionResponse | undefined,
+	steeringReply: boolean
+): string {
+	if (!options.streamToolRounds && !steeringReply) return '';
+	const text = toolRoundText(response?.content);
+	if (steeringReply && !options.streamToolRounds && text) {
+		options.onStreamChunk({ delta: { content: `${text}\n\n` }, finish_reason: null });
+	}
+	return text;
+}
 
 /**
  * Execute the model's tool calls: append the assistant tool_calls message,
@@ -40,27 +106,31 @@ export async function executeToolCalls(
 	ctx: LoopContext,
 	nudges: NudgeState,
 	toolCalls: ResolvedToolCall[],
-	response?: ChatCompletionResponse
+	response?: ChatCompletionResponse,
+	/** The response answers steering (see `steeringNote`): show its text. */
+	steeringReply = false
 ): Promise<{ allWebReadsBlocked: boolean }> {
 	const { signal, options } = ctx;
+	toolCalls = toolCalls.map((call) => withDeferredName(call, ctx));
 	// Count calls that were web reads blocked by an external resource. When
 	// this equals toolCalls.length, the whole iteration was wasted on blocks.
 	let blockedWebReads = 0;
 
-	// Append assistant message with tool calls. Its text is dropped (the model
-	// regenerates its answer after seeing tool results) unless the caller
-	// streamed the round: then the user has read it, and it stays part of the
-	// conversation, minus reasoning and any calls written as text.
+	// Append assistant message with tool calls, with `toolRoundContent`.
 	// For OpenRouter reasoning models, echo `reasoning_details` back
 	// unmodified so multi-turn reasoning quality is preserved across the
 	// tool loop (OpenRouter docs: reasoning_details must be threaded verbatim).
+	const roundText = toolRoundContent(options, response, steeringReply);
 	appendMessage(ctx, {
 		role: 'assistant',
-		content: options.streamToolRounds ? toolRoundText(response?.content) : '',
+		content: roundText,
 		tool_calls: toolCalls.map((tc) => ({
 			id: tc.id,
 			type: 'function' as const,
-			function: { name: tc.name, arguments: JSON.stringify(tc.arguments) }
+			function: {
+				name: tc.wire?.name ?? tc.name,
+				arguments: JSON.stringify(tc.wire?.arguments ?? tc.arguments)
+			}
 		})),
 		...(response?.reasoning_details?.length
 			? { reasoning_details: response.reasoning_details }
@@ -81,15 +151,22 @@ export async function executeToolCalls(
 		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
 		// Arguments carry email bodies, file contents and shell commands, and this
-		// buffer goes into the feedback bundle: the keys are enough by default.
+		// buffer goes into the feedback bundle: by default each value's type and
+		// size, which still shows a model sending an empty `target` or `path`.
 		logDebug('agent', `tool start: ${call.name}`, {
-			args: isVerbosePayloads() ? call.arguments : Object.keys(call.arguments ?? {})
+			args: isVerbosePayloads() ? call.arguments : argumentShape(call.arguments)
 		});
 		// Coerced, as the executor will see them. A stage that captures a
 		// structured answer here read the model's raw arguments: an `entries`
 		// array sent as a JSON string was walked character by character, and
 		// a night's asset spec was rejected as dozens of "entries with no id".
-		options.onToolStart({ ...call, arguments: coerceCallArguments(call.name, call.arguments) });
+		const coerced = coerceCallArguments(call.name, call.arguments);
+		options.onToolStart({ ...call, arguments: coerced });
+		const unloaded = unloadedCall(ctx, call, coerced);
+		if (unloaded.answer !== undefined) {
+			options.onToolEnd(call, unloaded.answer);
+			return toolResult(unloaded.answer);
+		}
 		// Race the tool call against the abort signal. Most tools dispatch
 		// to Tauri commands or fetch and don't honor signal themselves, so
 		// without this race a cancel mid-tool waits for the tool to finish
@@ -113,6 +190,7 @@ export async function executeToolCalls(
 				runInSlot,
 				releaseSlot: ctx.slot && !batchUsesModel ? releaseSlot : undefined,
 				askUser: ctx.askUser,
+				deferredTools: ctx.deferredTools,
 				skills: ctx.skills,
 				writeRoot: ctx.writeRoot,
 				shellCwd: ctx.shellCwd,
@@ -158,7 +236,12 @@ export async function executeToolCalls(
 			output.heroImage,
 			output.fileDiff
 		);
-		return output;
+		// It ran before its family loaded: the result carries the family, so
+		// the model has the schemas from here on.
+		const loads = unloaded.family;
+		return loads
+			? { ...output, result: `${familyResult(loads)}\n\n${call.name} result:\n${output.result}` }
+			: output;
 	};
 
 	// In call order, whatever order the calls finished in.

@@ -2,13 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state = vi.hoisted(() => ({ stored: new Map<string, string>() }));
 
+const { invokeRouter, unexpectedInvoke } = await vi.hoisted(() => import('#lib/testing/invoke.ts'));
+
 vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn(async (cmd: string, args?: { key: string; value?: string }) => {
-		if (cmd === 'secret_available') return true;
-		if (cmd === 'secret_set') return void state.stored.set(args!.key, args!.value!);
-		if (cmd === 'secret_delete') return void state.stored.delete(args!.key);
-		throw new Error(`unexpected invoke: ${cmd}`);
-	})
+	invoke: vi.fn(
+		invokeRouter(
+			{
+				secret_available: true,
+				secret_set: (a) => void state.stored.set(a!.key as string, a!.value as string),
+				secret_delete: (a) => void state.stored.delete(a!.key as string)
+			},
+			unexpectedInvoke
+		)
+	)
 }));
 
 import { getSettings, updateSettings } from './settings';

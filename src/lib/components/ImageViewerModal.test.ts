@@ -6,6 +6,7 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ save: tauri.save }));
 
 import ImageViewerModal from './ImageViewerModal.svelte';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const HASH = 'b'.repeat(64);
 
@@ -13,8 +14,8 @@ beforeEach(() => {
 	tauri.save.mockReset();
 	tauri.invoke
 		.mockReset()
-		.mockImplementation(async (cmd: string) =>
-			cmd === 'image_read_bytes' ? new Uint8Array([0xff, 0xd8, 0xff]).buffer : null
+		.mockImplementation(
+			invokeRouter({ image_read_bytes: () => new Uint8Array([0xff, 0xd8, 0xff]).buffer })
 		);
 });
 

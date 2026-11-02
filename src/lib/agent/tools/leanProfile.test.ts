@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // Every integration on, so a lean turn has every reason to offer more than it
 // should: email that can send, calendar, contacts, screen, image, music and
 // video backends, the sandbox, writable memory and an enabled MCP server.
-const lean = vi.hoisted(() => ({ on: true }));
+const lean = vi.hoisted(() => ({ on: true, files: false }));
 
 vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('#lib/stores/settings.ts')>();
@@ -12,6 +12,7 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => {
 		getSettings: () => ({
 			...actual.getSettings(),
 			leanMode: lean.on,
+			leanFileWrites: lean.files,
 			screenCaptureEnabled: true,
 			imageBackendKind: 'comfyui',
 			musicBackendKind: 'toolchest',
@@ -48,7 +49,12 @@ vi.mock('#lib/sandbox/availability.ts', async (importOriginal) => ({
 
 import { getToolSchemas } from '#lib/agent/tools/index.ts';
 import { registerMcpTools, unregisterMcpServer } from '#lib/agent/tools/mcp.ts';
-import { LEAN_CHAT_TOOLS, LEAN_SCHEMA_BUDGET_CHARS } from './leanProfile';
+import {
+	LEAN_CHAT_TOOLS,
+	LEAN_SCHEMA_BUDGET_CHARS,
+	LEAN_WRITE_SCHEMA_BUDGET_CHARS,
+	LEAN_WRITE_TOOLS
+} from './leanProfile';
 
 /** A Chat turn with a working folder and everything a lean tool could need. */
 const CHAT = {
@@ -68,6 +74,7 @@ const names = (opts: Parameters<typeof getToolSchemas>[0]) =>
 describe('lean mode tool profile', () => {
 	beforeEach(() => {
 		lean.on = true;
+		lean.files = false;
 		registerMcpTools(
 			'lean-srv',
 			'GitHub',
@@ -92,6 +99,20 @@ describe('lean mode tool profile', () => {
 	it('keeps the lean schemas within the budget', () => {
 		const chars = getToolSchemas(CHAT).reduce((n, s) => n + JSON.stringify(s).length, 0);
 		expect(chars).toBeLessThanOrEqual(LEAN_SCHEMA_BUDGET_CHARS);
+	});
+
+	it('adds the text and document writers with Lean + files, within its budget', () => {
+		lean.files = true;
+		expect(names(CHAT).sort()).toEqual([...LEAN_CHAT_TOOLS, ...LEAN_WRITE_TOOLS].sort());
+		const chars = getToolSchemas(CHAT).reduce((n, s) => n + JSON.stringify(s).length, 0);
+		expect(chars).toBeLessThanOrEqual(LEAN_WRITE_SCHEMA_BUDGET_CHARS);
+	});
+
+	it('ignores Lean + files while lean mode is off', () => {
+		lean.on = false;
+		const full = names(CHAT).sort();
+		lean.files = true;
+		expect(names(CHAT).sort()).toEqual(full);
 	});
 
 	it('still drops what the turn cannot use', () => {

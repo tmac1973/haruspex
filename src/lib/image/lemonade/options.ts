@@ -8,11 +8,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { getSettings } from '#lib/stores/settings.ts';
 import type { LemonadeModel } from '#lib/ipc/gen/LemonadeModel.ts';
 import { ROUTES } from '#lib/image/lemonade/adapter.ts';
-import { lemonadeConfig, lemonadeJson } from '#lib/image/lemonade/client.ts';
+import { lemonadeConfig, lemonadeJson, type LemonadeConfig } from '#lib/image/lemonade/client.ts';
 
 /** Save the `sdcpp_args` this build runs `m` with on the server. */
-export async function saveOptions(m: LemonadeModel, signal?: AbortSignal): Promise<void> {
-	const cfg = lemonadeConfig();
+export async function saveOptions(
+	m: LemonadeModel,
+	signal?: AbortSignal,
+	cfg: LemonadeConfig = lemonadeConfig()
+): Promise<void> {
 	const info = (await lemonadeJson(cfg, { path: ROUTES.systemInfo }, signal)) as {
 		model_storage?: { path?: string };
 	};
@@ -37,12 +40,13 @@ export async function saveOptions(m: LemonadeModel, signal?: AbortSignal): Promi
 export async function refreshOptions(
 	m: LemonadeModel,
 	loaded: boolean,
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	cfg: LemonadeConfig = lemonadeConfig()
 ): Promise<void> {
-	await saveOptions(m, signal);
+	await saveOptions(m, signal, cfg);
 	if (loaded) {
 		await lemonadeJson(
-			lemonadeConfig(),
+			cfg,
 			{ method: 'POST', path: ROUTES.unload, body: { model_name: m.name } },
 			signal
 		);

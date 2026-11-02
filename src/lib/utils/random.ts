@@ -11,3 +11,16 @@
 export function randomSeed(): number {
 	return Math.floor(Math.random() * 2 ** 31);
 }
+
+/** The largest seed every engine here takes (acestep.cpp's Philox noise is the tightest). */
+export const MAX_SEED = 2 ** 32 - 1;
+
+/** A tool's `seed` argument: undefined for none, the seed, or what is wrong with it. */
+export function parseSeed(raw: unknown): number | undefined | string {
+	if (raw === undefined || raw === null || raw === '') return undefined;
+	const n = typeof raw === 'string' ? Number(raw.trim()) : raw;
+	if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > MAX_SEED) {
+		return `seed must be a whole number from 0 to ${MAX_SEED}.`;
+	}
+	return n;
+}

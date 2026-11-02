@@ -67,7 +67,7 @@ describe('capturing a window for the Shell assistant', () => {
 	it('lists the windows through Rust', async () => {
 		tauri.invoke.mockResolvedValue([]);
 		expect(await windowsToPick()).toEqual([]);
-		expect(tauri.invoke).toHaveBeenCalledWith('list_capture_windows');
+		expect(tauri.invoke).toHaveBeenCalledWith('capture_windows_list');
 	});
 
 	it('sends what was typed, else a default ask', () => {

@@ -45,12 +45,7 @@ pub async fn toolchest_upload(
     files: Vec<crate::comfy::UploadFile>,
     fields: Option<bool>,
 ) -> Result<serde_json::Value, ComfyError> {
-    let parts = crate::comfy::resolve_uploads(
-        &db,
-        &crate::audio_cache::cache_dir(&app).map_err(|message| ComfyError::Invalid { message })?,
-        &crate::image_cache::cache_dir(&app).map_err(|message| ComfyError::Invalid { message })?,
-        files,
-    )?;
+    let parts = crate::comfy::resolve_app_uploads(&app, &db, files)?;
     let shape = if fields == Some(true) {
         crate::comfy::FormShape::Fields
     } else {

@@ -46,7 +46,7 @@ import {
 import { recipeGuide } from '#lib/agent/jobs/types/asset-generation/prompts.ts';
 import type { TextureRecipe } from '#lib/ipc/gen/TextureRecipe.ts';
 import { ImageBackendError } from '#lib/image/types.ts';
-import { getSettings } from '#lib/stores/settings.ts';
+import { imageEntries } from '#lib/image/entries.ts';
 import { pngDataUrl as dataUrl } from '#lib/utils/base64.ts';
 
 /** What make_asset makes: the image backend's kinds, and what code draws. */
@@ -122,7 +122,7 @@ function recipeArg(r: unknown): ParsedInput['recipe'] {
 /** A sprite, icon or picture, drawn by the image backend. */
 async function paintAsset(asset: PaintInput, input: ParsedInput, target: Target, ctx: ToolContext) {
 	const { path, overwrite, io } = target;
-	if (getSettings().imageBackendKind === 'none') {
+	if (imageEntries().length === 0) {
 		return toolResult(
 			toolError(
 				`A ${asset.kind} needs image generation: set one up in Settings → Image. ` +

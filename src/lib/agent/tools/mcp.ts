@@ -34,7 +34,7 @@ import {
 	clearMcpDefaultTools,
 	mcpToolName,
 	setMcpDefaultTools
-} from '#lib/agent/tools/mcp-names.ts';
+} from '#lib/agent/tools/mcpNames.ts';
 import {
 	toolResult,
 	toolError,
@@ -163,6 +163,14 @@ export function registeredMcpToolNames(): string[] {
  */
 export function registeredMcpServerLabels(): string[] {
 	return [...new Set([...entries.values()].map((e) => e.serverLabel))].sort();
+}
+
+/** The servers that have tools registered, by id, sorted by label. */
+export function registeredMcpServers(): { id: string; label: string }[] {
+	const byId = new Map([...entries.values()].map((e) => [e.serverId, e.serverLabel]));
+	return [...byId]
+		.map(([id, label]) => ({ id, label }))
+		.sort((a, b) => a.label.localeCompare(b.label));
 }
 
 /**

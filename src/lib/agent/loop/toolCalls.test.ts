@@ -176,12 +176,14 @@ describe('executeToolCalls: messages', () => {
 describe('executeToolCalls: debug log', () => {
 	const logged = (msg: string) => dbg.lines.find(([m]) => m === msg)?.[1];
 
-	it('logs argument names and the result length, never the content, by default', async () => {
+	it('logs argument shapes and the result length, never the content, by default', async () => {
 		toolsAnswer(() => ({ result: 'Dear Sam, the password is hunter2' }));
 		await executeToolCalls(makeCtx(), new NudgeState(), [
-			call('email_send', { body: 'secret body' })
+			call('email_send', { body: 'secret body', to: [], subject: ' ' })
 		]);
-		expect(logged('tool start: email_send')).toEqual({ args: ['body'] });
+		expect(logged('tool start: email_send')).toEqual({
+			args: { body: 'string(11)', to: 'array(0)', subject: ' ' }
+		});
 		const end = logged('tool end: email_send');
 		expect(end?.resultLen).toBe(33);
 		expect(JSON.stringify(end)).not.toContain('hunter2');

@@ -7,7 +7,11 @@
  * and what `edit_image` or `upscale_image` will do can't disagree.
  */
 
-import type { ImageBackendCapabilities, ImageBackendKind } from '#lib/image/types.ts';
+import type {
+	ImageBackendCapabilities,
+	ImageBackendKind,
+	ImageModelEntry
+} from '#lib/image/types.ts';
 
 export interface CapabilityLine {
 	/** What it can do, joined: "draw pictures, edit pictures (up to 4 together)". */
@@ -78,4 +82,25 @@ export function capabilityLine(
 	const line = { can: can.join(', '), cannot: cannot.join(', '), howTo: howTo.join(' ') };
 	const text = `Can: ${line.can}.` + (line.cannot ? ` Can't: ${line.cannot}.` : '');
 	return { ...line, text };
+}
+
+/**
+ * One image model in a few words, for the chat model's prompt and a loaded
+ * image skill: "klein: draws, edits up to 4 pictures, upscales." Only what it
+ * can do, so the prompt grows by one short line per model. LoRAs are left
+ * out: only the asset job uses them, and it asks the model itself.
+ */
+export function entryLine(entry: Pick<ImageModelEntry, 'name' | 'caps'>): string {
+	const caps = entry.caps;
+	if (!caps) return `${entry.name}: draws; not probed yet, so what else it can do is unknown.`;
+	const most = caps.maxEditImages ?? 1;
+	const can = [
+		'draws',
+		...(caps.edit ? [most > 1 ? `edits up to ${most} pictures` : 'edits one picture'] : []),
+		...(caps.upscale ? ['upscales'] : []),
+		...(caps.inpaint ? ['extends pictures'] : []),
+		...(caps.transparency ? ['transparent backgrounds'] : []),
+		...(caps.seamlessTiling ? ['tiling textures'] : [])
+	];
+	return `${entry.name}: ${can.join(', ')}.`;
 }

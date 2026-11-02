@@ -85,8 +85,8 @@ impl RuntimeAvailability {
     }
 }
 
-/// A bundled executable's on-disk name for this platform.
-fn exe_name(stem: &str) -> String {
+/// An executable's file name on this platform.
+pub(crate) fn exe_name(stem: &str) -> String {
     if cfg!(windows) {
         format!("{stem}.exe")
     } else {

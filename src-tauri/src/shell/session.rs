@@ -1,3 +1,4 @@
+use crate::sync_util::LockExt;
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -248,24 +249,23 @@ impl Session {
     /// path. Flushes any output buffered during the spawn→attach gap, then
     /// switches the reader thread to live emission. Idempotent.
     pub fn mark_ready(&self, app: &AppHandle, id: SessionId) {
-        if let Ok(mut r) = self.replay.lock() {
-            if r.ready {
-                return;
-            }
-            if !r.buffer.is_empty() {
-                let evt = OutputEvent {
-                    session_id: id,
-                    base64: general_purpose::STANDARD.encode(&r.buffer),
-                };
-                let _ = app.emit("shell://output", evt);
-                r.buffer.clear();
-            }
-            r.ready = true;
+        let mut r = self.replay.lock_or_recover();
+        if r.ready {
+            return;
         }
+        if !r.buffer.is_empty() {
+            let evt = OutputEvent {
+                session_id: id,
+                base64: general_purpose::STANDARD.encode(&r.buffer),
+            };
+            let _ = app.emit("shell://output", evt);
+            r.buffer.clear();
+        }
+        r.ready = true;
     }
 
     pub fn write(&self, bytes: &[u8]) -> Result<(), String> {
-        let mut w = self.writer.lock().map_err(|e| e.to_string())?;
+        let mut w = self.writer.lock_or_recover();
         w.write_all(bytes)
             .map_err(|e| format!("write failed: {e}"))?;
         w.flush().map_err(|e| format!("flush failed: {e}"))?;
@@ -273,7 +273,7 @@ impl Session {
     }
 
     pub fn resize(&self, cols: u16, rows: u16) -> Result<(), String> {
-        let master = self.master.lock().map_err(|e| e.to_string())?;
+        let master = self.master.lock_or_recover();
         master
             .resize(PtySize {
                 rows,
@@ -301,17 +301,13 @@ impl Session {
                 move || prompt_seen(&integration),
                 WSL_BOOT_WAIT,
                 move || {
-                    if let Ok(mut child) = child.lock() {
-                        let _ = child.kill();
-                    }
+                    let _ = child.lock_or_recover().kill();
                     drop(master);
                 },
             );
             return;
         }
-        if let Ok(mut child) = self.child.lock() {
-            let _ = child.kill();
-        }
+        let _ = self.child.lock_or_recover().kill();
     }
 
     /// The shell has drawn a prompt: for a WSL tab, its distro is up.
@@ -329,82 +325,58 @@ impl Session {
         pending_from: u64,
     ) -> Vec<CapturedRegion> {
         self.integration
-            .lock()
-            .map(|i| i.capture_recent_commands_with_pending(limit, pending_from))
-            .unwrap_or_default()
+            .lock_or_recover()
+            .capture_recent_commands_with_pending(limit, pending_from)
     }
 
     /// Command line of the in-flight command, or None at the prompt.
     pub fn pending_command_line(&self) -> Option<String> {
-        self.integration
-            .lock()
-            .ok()
-            .and_then(|i| i.pending_command_line())
+        self.integration.lock_or_recover().pending_command_line()
     }
 
     pub fn output_bytes_total(&self) -> u64 {
-        self.integration
-            .lock()
-            .map(|i| i.output_bytes_total())
-            .unwrap_or(0)
+        self.integration.lock_or_recover().output_bytes_total()
     }
 
     pub fn output_text_since(&self, from: u64, max_bytes: usize) -> String {
         self.integration
-            .lock()
-            .map(|i| i.output_text_since(from, max_bytes))
-            .unwrap_or_default()
+            .lock_or_recover()
+            .output_text_since(from, max_bytes)
     }
 
     pub fn marker_count(&self) -> usize {
-        self.integration
-            .lock()
-            .map(|i| i.markers().count())
-            .unwrap_or(0)
+        self.integration.lock_or_recover().markers().count()
     }
 
     pub fn completed_command_count(&self) -> usize {
-        self.integration
-            .lock()
-            .map(|i| i.completed_command_count())
-            .unwrap_or(0)
+        self.integration.lock_or_recover().completed_command_count()
     }
 
     /// Monotonic count of completed commands over the session's lifetime
     /// (never caps when the marker ring saturates). Used by the Run
     /// auto-submit to detect that the command it ran has finished.
     pub fn completed_command_total(&self) -> u64 {
-        self.integration
-            .lock()
-            .map(|i| i.output_end_total())
-            .unwrap_or(0)
+        self.integration.lock_or_recover().output_end_total()
     }
 
     /// Monotonic count of every OSC 133 marker over the session's lifetime
     /// (never caps when the ring saturates). run_command polls this to tell
     /// whether a hook it sourced into a nested shell actually took.
     pub fn marker_total(&self) -> u64 {
-        self.integration
-            .lock()
-            .map(|i| i.marker_total())
-            .unwrap_or(0)
+        self.integration.lock_or_recover().marker_total()
     }
 
     pub fn current_cwd(&self) -> Option<String> {
         self.integration
-            .lock()
-            .ok()
-            .and_then(|i| i.current_cwd().map(|s| s.to_string()))
+            .lock_or_recover()
+            .current_cwd()
+            .map(|s| s.to_string())
     }
 
     /// Recent raw terminal output (base64) for repainting a detached window's
     /// fresh xterm before it goes live.
     pub fn scrollback_base64(&self) -> String {
-        let bytes = self
-            .scrollback
-            .lock()
-            .map(|s| s.snapshot())
-            .unwrap_or_default();
+        let bytes = self.scrollback.lock_or_recover().snapshot();
         general_purpose::STANDARD.encode(&bytes)
     }
 }
@@ -435,7 +407,7 @@ fn when_started(
 }
 
 fn prompt_seen(integration: &Mutex<Integration>) -> bool {
-    integration.lock().is_ok_and(|i| i.marker_total() > 0)
+    integration.lock_or_recover().marker_total() > 0
 }
 
 fn spawn_reader_thread(
@@ -452,20 +424,17 @@ fn spawn_reader_thread(
             match reader.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
-                    if let Ok(mut integ) = integration.lock() {
-                        integ.ingest(&buf[..n]);
-                    }
+                    integration.lock_or_recover().ingest(&buf[..n]);
                     // Retain raw output for detach/re-attach scrollback,
                     // regardless of ready state — a new window replays the
                     // full ring, not the spawn-gap replay buffer.
-                    if let Ok(mut sb) = scrollback.lock() {
-                        sb.push(&buf[..n]);
-                    }
+                    scrollback.lock_or_recover().push(&buf[..n]);
                     // Until the frontend marks itself ready, buffer output
                     // instead of emitting it to a listener that doesn't exist
                     // yet (which would silently drop it).
                     let mut emit_live = true;
-                    if let Ok(mut r) = replay.lock() {
+                    {
+                        let mut r = replay.lock_or_recover();
                         if !r.ready {
                             r.buffer.extend_from_slice(&buf[..n]);
                             emit_live = false;

@@ -8,10 +8,10 @@ import { getSettings, updateSettings, type AppSettings } from '#lib/stores/setti
 import { deleteSecret, keepSecret, secretStoreAvailable, setSecret } from '#lib/stores/secrets.ts';
 
 type StringKey = {
-	[K in keyof AppSettings]: AppSettings[K] extends string ? K : never;
+	[K in keyof AppSettings]-?: AppSettings[K] extends string ? K : never;
 }[keyof AppSettings];
 type BoolKey = {
-	[K in keyof AppSettings]: AppSettings[K] extends boolean ? K : never;
+	[K in keyof AppSettings]-?: AppSettings[K] extends boolean ? K : never;
 }[keyof AppSettings];
 
 export interface SettingSecret {

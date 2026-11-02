@@ -27,6 +27,7 @@ import './web';
 import { executeTool } from './registry';
 import { DEFAULT_SEARXNG_URL } from '#lib/stores/settings.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
+import { invokeRouter, unexpectedInvoke, type InvokeRoute } from '#lib/testing/invoke.ts';
 
 const ctx = makeToolContext({
 	deepResearch: true
@@ -48,11 +49,9 @@ function errorOf(out: { result: string }): string {
 
 /** Answer each command from a table; anything else is a test failure. */
 function backend(table: Record<string, (args: Record<string, unknown>) => unknown>) {
-	mocks.invoke.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
-		const fn = table[cmd];
-		if (!fn) throw new Error(`unexpected invoke: ${cmd}`);
-		return fn(args);
-	});
+	mocks.invoke.mockImplementation(
+		invokeRouter(table as Record<string, InvokeRoute>, unexpectedInvoke)
+	);
 }
 
 function page(text: string, hero: string | null = null) {

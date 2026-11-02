@@ -20,7 +20,8 @@
 		type SearchProxyConfig
 	} from '#lib/stores/settings.ts';
 	import ModeSelector from '#lib/components/ModeSelector.svelte';
-	import { saveProxyUrl } from '#lib/stores/proxySecrets.ts';
+	import { saveProxyUrl, type WhichProxy } from '#lib/stores/proxySecrets.ts';
+	import { errMessage } from '#lib/utils/error.ts';
 
 	let proxyMode = $state<ProxyMode>(getSettings().proxy.mode);
 	let proxyUrl = $state(getSettings().proxy.url);
@@ -29,6 +30,21 @@
 	let searchMode = $state<SearchProxyConfig['mode']>(getSettings().searchProxy.mode);
 	let searchUrl = $state(getSettings().searchProxy.url);
 	let searchBypass = $state(getSettings().searchProxy.bypass);
+
+	/** Why a proxy URL wasn't saved: the secret store can refuse its password. */
+	let urlError = $state<Record<WhichProxy, string>>({ network: '', search: '' });
+
+	async function saveUrl(which: WhichProxy, raw: string): Promise<void> {
+		urlError[which] = '';
+		try {
+			await saveProxyUrl(which, raw);
+		} catch (e) {
+			urlError[which] = `Not saved: ${errMessage(e)}`;
+			return;
+		}
+		if (which === 'network') proxyUrl = getSettings().proxy.url;
+		else searchUrl = getSettings().searchProxy.url;
+	}
 
 	function setProxyMode(mode: ProxyMode): void {
 		proxyMode = mode;
@@ -50,7 +66,8 @@
 	setUrl: (v: string) => void,
 	setBypass: (v: string) => void,
 	saveUrl: () => void,
-	saveBypass: () => void
+	saveBypass: () => void,
+	error: string
 )}
 	<div class="field">
 		<label for="{id}-url">Proxy URL:</label>
@@ -62,6 +79,9 @@
 			onblur={saveUrl}
 			placeholder="http://host:port or http://user:pass@host:port"
 		/>
+		{#if error}
+			<p class="error">{error}</p>
+		{/if}
 		<p
 			class="hint"
 			title="The password is kept in the system keychain, or Haruspex's encrypted secrets file, and removed from the URL shown here."
@@ -113,8 +133,9 @@
 			proxyBypass,
 			(v) => (proxyUrl = v),
 			(v) => (proxyBypass = v),
-			() => void saveProxyUrl('network', proxyUrl).then(() => (proxyUrl = getSettings().proxy.url)),
-			() => updateProxy({ bypass: proxyBypass })
+			() => void saveUrl('network', proxyUrl),
+			() => updateProxy({ bypass: proxyBypass }),
+			urlError.network
 		)}
 	{/if}
 </section>
@@ -144,11 +165,9 @@
 			searchBypass,
 			(v) => (searchUrl = v),
 			(v) => (searchBypass = v),
-			() =>
-				void saveProxyUrl('search', searchUrl).then(
-					() => (searchUrl = getSettings().searchProxy.url)
-				),
-			() => updateSearchProxy({ bypass: searchBypass })
+			() => void saveUrl('search', searchUrl),
+			() => updateSearchProxy({ bypass: searchBypass }),
+			urlError.search
 		)}
 	{/if}
 </section>
@@ -167,6 +186,10 @@
 	.field input,
 	.field textarea {
 		width: 100%;
+	}
+	.error {
+		color: var(--danger, #ef4444);
+		font-size: 0.9em;
 	}
 	.hint {
 		font-size: 0.85em;

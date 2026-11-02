@@ -33,6 +33,7 @@ import {
 	refreshMemoryCount,
 	refreshModelStatus
 } from './memory.svelte';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 beforeEach(() => {
 	vi.clearAllMocks();
@@ -200,9 +201,7 @@ describe('memory count', () => {
 describe('fetching the model for the on-by-default setting', () => {
 	it('downloads the model when memory is on and the model is missing', async () => {
 		mocks.settings.memoryEnabled = true;
-		mocks.invoke.mockImplementation((cmd: string) =>
-			Promise.resolve(cmd === 'memory_model_present' ? false : undefined)
-		);
+		mocks.invoke.mockImplementation(invokeRouter({ memory_model_present: false }, undefined));
 		await fetchModelForDefault();
 		expect(mocks.invoke).toHaveBeenCalledWith('memory_download_model');
 		expect(getModelStatus()).toBe('ready');

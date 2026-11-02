@@ -17,7 +17,7 @@ vi.mock('#lib/images/resolve.svelte.ts', () => ({ registerLocalImage: () => 'har
 
 const backend = vi.hoisted(() => ({ requests: [] as ImageRequest[] }));
 vi.mock('#lib/image/index.ts', () => ({
-	resolveImageBackend: () => ({
+	routedImageBackend: () => ({
 		generate: async (req: ImageRequest) => {
 			backend.requests.push(req);
 			return {

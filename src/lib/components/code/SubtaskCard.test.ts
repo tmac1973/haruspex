@@ -41,6 +41,19 @@ describe('SubtaskCard', () => {
 		expect(screen.getByRole('button', { name: 'Show 1 step' })).toBeTruthy();
 	});
 
+	it('renders the report’s markdown', () => {
+		const { container } = render(SubtaskCard, {
+			subtask: finishedSubtask(base, {
+				status: 'done',
+				report: 'The file `index.js` has **9 lines**.',
+				steps: []
+			}),
+			compact: true
+		});
+		expect(container.querySelector('.report-text code')?.textContent).toBe('index.js');
+		expect(container.querySelector('.report-text strong')?.textContent).toBe('9 lines');
+	});
+
 	it('shows what a stopped subtask had, and why one failed', () => {
 		const { unmount } = render(SubtaskCard, {
 			subtask: finishedSubtask(base, { status: 'stopped', report: 'half', steps: [] })

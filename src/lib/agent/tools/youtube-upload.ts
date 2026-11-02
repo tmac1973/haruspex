@@ -11,7 +11,7 @@ import { errMessage } from '#lib/utils/error.ts';
 import { getSettings } from '#lib/stores/settings.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
-import { str, videoSettings } from '#lib/video/args.ts';
+import { str, videoSettings, episodeArg } from '#lib/video/args.ts';
 import { askYoutubeUpload } from '#lib/stores/youtubeUploadApproval.svelte.ts';
 import { upsertTask } from '#lib/tasks/store.svelte.ts';
 import { taskOwner } from '#lib/tasks/notices.ts';
@@ -55,10 +55,6 @@ export function changes(
 	if (proposed.tags.join(',') !== meta.tags.join(',')) out.push('tags');
 	if (proposed.categoryId !== meta.categoryId) out.push('category');
 	return out;
-}
-
-function episodeArg(args: Record<string, unknown>): string {
-	return typeof args.episode === 'string' ? args.episode : '';
 }
 
 async function upload(args: Record<string, unknown>, ctx: ToolContext) {

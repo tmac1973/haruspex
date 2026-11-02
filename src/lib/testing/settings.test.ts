@@ -23,7 +23,8 @@ describe('mockSettingsModule', () => {
 	});
 
 	it('keeps the rest of the module real', () => {
-		expect(typeof clampResponseTokens).toBe('function');
+		// The real clamp, not a stub: NaN falls back to a default, not to itself.
+		expect(clampResponseTokens(NaN)).toBeGreaterThan(0);
 	});
 });
 

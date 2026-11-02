@@ -155,9 +155,22 @@ fn tier_lookup<T: Copy>(table: &[(u64, T)], vram_mb: u64) -> T {
 /// Installed system RAM in bytes. Cheap: reads memory counters only, unlike
 /// [`detect_hardware`], which also probes the GPU.
 pub fn total_ram_bytes() -> u64 {
-    let mut sys = sysinfo::System::new();
-    sys.refresh_memory();
-    sys.total_memory()
+    memory_bytes().0
+}
+
+/// Installed and available RAM in bytes; zeros, as on a platform sysinfo
+/// can't read, when it can't be asked.
+fn memory_bytes() -> (u64, u64) {
+    match sysinfo::System::new() {
+        Ok(mut sys) => {
+            sys.refresh_memory();
+            (sys.total_memory(), sys.available_memory())
+        }
+        Err(e) => {
+            log::warn!("could not read system memory: {e}");
+            (0, 0)
+        }
+    }
 }
 
 /// What the hardware step recommends for one GPU.
@@ -240,13 +253,9 @@ pub fn detect_hardware() -> HardwareInfo {
 /// `devices`: what llama.cpp's Vulkan backend reports ([`probe_vulkan`]),
 /// which settles whether the GPU is integrated better than its name does.
 fn detect_hardware_with(devices: Option<&[VulkanDevice]>) -> HardwareInfo {
-    use sysinfo::System;
-
-    let mut sys = System::new_all();
-    sys.refresh_memory();
-
-    let total_ram_mb = sys.total_memory() / 1_048_576;
-    let available_ram_mb = sys.available_memory() / 1_048_576;
+    let (total, available) = memory_bytes();
+    let total_ram_mb = total / 1_048_576;
+    let available_ram_mb = available / 1_048_576;
 
     let gpu = match devices {
         Some(d) => with_vulkan_devices(detect_gpu(), d),
@@ -708,18 +717,14 @@ fn get_windows_gpu_info() -> (Option<String>, Option<u64>) {
     (gpu_name, vram_mb)
 }
 
-/// Run a PowerShell script without flashing a console window.
-/// CREATE_NO_WINDOW (0x08000000) suppresses the brief powershell.exe popup
-/// that would otherwise appear during GPU detection.
+/// Run a PowerShell script without flashing a console window, which would
+/// otherwise pop up briefly during GPU detection.
 #[cfg(target_os = "windows")]
 fn run_powershell(script: &str) -> Option<std::process::Output> {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
-        .ok()
+    let mut cmd = std::process::Command::new("powershell");
+    cmd.args(["-NoProfile", "-NonInteractive", "-Command", script]);
+    crate::shell::platform::apply_no_window(&mut cmd);
+    cmd.output().ok()
 }
 
 #[cfg(target_os = "windows")]

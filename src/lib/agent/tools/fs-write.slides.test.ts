@@ -891,11 +891,35 @@ describe('writing a previewed deck again', () => {
 		expect(writes()).toHaveLength(1);
 	});
 
-	it('is refused for a deck the model wasn’t shown', async () => {
+	it('is allowed for a deck the turn created, without a preview', async () => {
 		freshTurn();
 		ctx.visionSupported = false;
 		await pptx(deck);
+		const out = await pptx(deck.map((s, i) => (i === 2 ? { ...s, title: 'Questions' } : s)));
+		expect(out.result).toMatch(/^Wrote: d\.pptx/);
+		expect(writes()).toHaveLength(2);
+	});
+
+	it('is refused for a deck the model wasn’t shown that was there before the turn', async () => {
+		freshTurn();
+		ctx.visionSupported = false;
+		ctx.codeSessionId = 'sess-1';
+		mocks.invoke.mockImplementation(async (...args: unknown[]) => {
+			calls.push(args);
+			return args[0] === 'fs_path_exists' ? true : undefined;
+		});
+		await pptx(deck);
 		const out = await pptx(deck);
 		expect(errorOf(out)).toMatch(/was already written in this turn/);
+		expect(errorOf(out)).not.toMatch(/keeping most of its slide titles/);
+	});
+
+	it('refuses a created deck that keeps too few of its slides, saying how to revise it', async () => {
+		freshTurn();
+		ctx.visionSupported = false;
+		await pptx(deck);
+		const out = await pptx([{ title: 'Part two', bullets: ['d'] }]);
+		expect(errorOf(out)).toMatch(/was already written in this turn/);
+		expect(errorOf(out)).toMatch(/keeping most of its slide titles/);
 	});
 });

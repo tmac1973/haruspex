@@ -14,6 +14,7 @@
 //! exists but does not run (a wrong architecture, a broken symlink) is
 //! reported as not found, with a hint, rather than failing on first use.
 
+use crate::runtimes::exe_name;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -123,15 +124,6 @@ impl VideoBinariesStatus {
                 tool.name()
             )
         })
-    }
-}
-
-/// `name` as an executable file name on this platform.
-fn exe_name(name: &str) -> String {
-    if cfg!(windows) {
-        format!("{name}.exe")
-    } else {
-        name.to_string()
     }
 }
 

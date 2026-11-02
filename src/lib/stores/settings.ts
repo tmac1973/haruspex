@@ -11,7 +11,8 @@ import type { BackendDescriptor, EffortCaps } from '#lib/inference/descriptor.ts
 
 import type { EmailAccount } from '#lib/ipc/gen/EmailAccount.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
-import type { ImageBackendKind } from '#lib/image/types.ts';
+import type { ImageBackendKind, ImageModelEntry } from '#lib/image/types.ts';
+import { imageModelsFromFields } from '#lib/image/fields.ts';
 import type { MusicBackendKind } from '#lib/music/types.ts';
 import type { VideoPreset } from '#lib/video/types.ts';
 import type { DavAccount } from '#lib/ipc/gen/DavAccount.ts';
@@ -578,6 +579,19 @@ export interface AppSettings {
 	 */
 	leanMode: boolean;
 	/**
+	 * Lean mode also offers Chat `fs_write_text` and `fs_write_document`
+	 * (`LEAN_WRITE_TOOLS`), so research can end in a file. Read only while
+	 * `leanMode` is on. Settings → General → Lean mode → Lean + files.
+	 */
+	leanFileWrites: boolean;
+	/**
+	 * Interactive Chat and the Code tab send the core tools in full and list
+	 * the rest by family; the model loads a family with `load_tools`
+	 * (`agent/tools/deferred.ts`). `auto` follows the model's size.
+	 * Settings → General → Load tools when needed.
+	 */
+	deferTools: DeferTools;
+	/**
 	 * The one-time offer of lean mode has been made: by the setup wizard's
 	 * Lean or Full step, or to an existing user by the notice.
 	 */
@@ -851,6 +865,12 @@ export interface AppSettings {
 	imageLemonadeBaseUrl: string;
 	imageLemonadeApiKey: string;
 	imageLemonadeApiKeySaved: boolean;
+	/**
+	 * The ComfyUI and Lemonade keys above were made named keys and given to the
+	 * image models that use them (`#lib/image/keys.ts`). Once only: a model added
+	 * later without a key keeps none.
+	 */
+	imageKeysMigrated: boolean;
 	/** The bundled engine's catalogue id it runs, installed on the server. */
 	imageLemonadeModelId: string;
 	/**
@@ -894,6 +914,14 @@ export interface AppSettings {
 	 * all three; the others only where their backend is.
 	 */
 	generationServers: GenerationServer[];
+	/**
+	 * The image models the image tools use, in the order they are tried (see
+	 * `#lib/image/entries.ts`), edited in Settings → Image. Seeded once from the
+	 * single-backend fields above, which are no longer written; a downgrade
+	 * reads them as they were before the list. Absent from a fresh install
+	 * until the first model is added, and then read through those fields.
+	 */
+	imageModels?: ImageModelEntry[];
 	/** Settings → Video editing's switch: the video tools are offered only while it is on. */
 	videoEditingEnabled: boolean;
 	/**
@@ -1112,6 +1140,8 @@ const defaults: AppSettings = {
 	activeLocalModelFilename: '',
 	legacyModelNoticeDismissed: false,
 	leanMode: false,
+	leanFileWrites: false,
+	deferTools: 'auto',
 	leanNoticeShown: false,
 	leanHintedModels: [],
 	screenCaptureEnabled: false,
@@ -1177,6 +1207,7 @@ const defaults: AppSettings = {
 	imageLemonadeBaseUrl: '',
 	imageLemonadeApiKey: '',
 	imageLemonadeApiKeySaved: false,
+	imageKeysMigrated: false,
 	imageLemonadeModelId: '',
 	imageToolchestBaseUrl: '',
 	imageToolchestApiKeyId: null,
@@ -1359,6 +1390,9 @@ function load(): AppSettings {
 				generationServers: Array.isArray(rest.generationServers)
 					? rest.generationServers
 					: seedGenerationServers(rest),
+				imageModels: Array.isArray(rest.imageModels)
+					? rest.imageModels
+					: imageModelsFromFields({ ...defaults, ...rest }),
 				skills: {
 					...defaultSkills,
 					...(parsed.skills ?? {}),
@@ -1962,6 +1996,14 @@ export function setLegacyModelNoticeDismissed(dismissed: boolean): void {
 	}
 }
 
+export type DeferTools = 'auto' | 'on' | 'off';
+
+/** Settings → General → Load tools when needed; an unknown value reads as Auto. */
+export function getDeferTools(): DeferTools {
+	const v = settings.deferTools;
+	return v === 'on' || v === 'off' ? v : 'auto';
+}
+
 export function getLeanMode(): boolean {
 	return settings.leanMode;
 }
@@ -1969,6 +2011,12 @@ export function getLeanMode(): boolean {
 export function setLeanMode(on: boolean): void {
 	if (settings.leanMode !== on) {
 		commit({ ...settings, leanMode: on });
+	}
+}
+
+export function setLeanFileWrites(on: boolean): void {
+	if (settings.leanFileWrites !== on) {
+		commit({ ...settings, leanFileWrites: on });
 	}
 }
 
@@ -2113,7 +2161,7 @@ export function getSamplingParams(
 export function getIncludeImagesPrompt(opts: { lean?: boolean } = {}): string {
 	if (!settings.includeImages) return '';
 	const drawn =
-		settings.imageBackendKind !== 'none' && !opts.lean
+		(settings.imageModels ?? imageModelsFromFields(settings)).length > 0 && !opts.lean
 			? '\n- A picture you drew, edited or upscaled is the image. Add no found ones unless the user asks.'
 			: '';
 	return `

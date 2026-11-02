@@ -22,7 +22,7 @@ export const CAPTURE_PROMPT =
 
 /** Windows to choose from, or none where the user clicks one instead (Linux). */
 export function windowsToPick(): Promise<CaptureWindow[]> {
-	return invoke<CaptureWindow[]>('list_capture_windows');
+	return invoke<CaptureWindow[]>('capture_windows_list');
 }
 
 /** A screenshot of the window picked from the list, as a JPEG data URL. */

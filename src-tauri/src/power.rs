@@ -31,6 +31,7 @@
 //! on battery, and on Linux it takes a logind "block" inhibitor, so while a
 //! job runs a lid close will not suspend the machine either.
 
+use crate::sync_util::LockExt;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Mutex;
 use std::thread::JoinHandle;
@@ -103,10 +104,7 @@ impl PowerInhibitor {
     /// A worker that has gone away (only possible if it panicked) is cleared
     /// so the next call starts a fresh one rather than failing forever.
     fn send(&self, cmd: Cmd) -> Result<(), String> {
-        let mut slot = self
-            .worker
-            .lock()
-            .map_err(|_| "power inhibitor state is poisoned".to_string())?;
+        let mut slot = self.worker.lock_or_recover();
 
         if slot.is_none() {
             let (tx, rx) = mpsc::channel::<Cmd>();
@@ -136,9 +134,7 @@ impl PowerInhibitor {
     /// and the Windows thread state die with the process), so joining would
     /// only add a way for a wedged D-Bus call to hang the exit path.
     pub fn shutdown(&self) {
-        if let Ok(mut slot) = self.worker.lock() {
-            *slot = None;
-        }
+        *self.worker.lock_or_recover() = None;
     }
 }
 
@@ -160,4 +156,74 @@ pub async fn power_inhibit_acquire(state: State<'_, PowerInhibitor>) -> Result<(
 #[tauri::command]
 pub async fn power_inhibit_release(state: State<'_, PowerInhibitor>) -> Result<(), String> {
     state.send(Cmd::Release)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Only Release is sent here: it never reaches keepawake, so these run
+    // without logind, a session bus or any other OS service.
+
+    fn has_worker(p: &PowerInhibitor) -> bool {
+        p.worker.lock().unwrap().is_some()
+    }
+
+    #[test]
+    fn release_with_nothing_held_succeeds_and_starts_the_worker() {
+        let p = PowerInhibitor::new();
+        assert!(!has_worker(&p));
+        assert_eq!(p.send(Cmd::Release), Ok(()));
+        assert!(has_worker(&p));
+        p.shutdown();
+    }
+
+    #[test]
+    fn repeated_sends_reuse_one_worker_thread() {
+        let p = PowerInhibitor::new();
+        p.send(Cmd::Release).unwrap();
+        let first = p.worker.lock().unwrap().as_ref().unwrap().1.thread().id();
+        p.send(Cmd::Release).unwrap();
+        let second = p.worker.lock().unwrap().as_ref().unwrap().1.thread().id();
+        assert_eq!(first, second);
+        p.shutdown();
+    }
+
+    #[test]
+    fn shutdown_clears_the_worker_and_the_next_send_starts_a_fresh_one() {
+        let p = PowerInhibitor::new();
+        p.send(Cmd::Release).unwrap();
+        let first = p.worker.lock().unwrap().as_ref().unwrap().1.thread().id();
+        p.shutdown();
+        assert!(!has_worker(&p));
+        p.send(Cmd::Release).unwrap();
+        let second = p.worker.lock().unwrap().as_ref().unwrap().1.thread().id();
+        assert_ne!(first, second);
+        p.shutdown();
+    }
+
+    #[test]
+    fn shutdown_before_any_use_is_harmless() {
+        let p = PowerInhibitor::new();
+        p.shutdown();
+        assert!(!has_worker(&p));
+    }
+
+    #[test]
+    fn the_worker_thread_carries_a_recognisable_name() {
+        let p = PowerInhibitor::new();
+        p.send(Cmd::Release).unwrap();
+        let name = p
+            .worker
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .1
+            .thread()
+            .name()
+            .map(String::from);
+        assert_eq!(name.as_deref(), Some("power-inhibit"));
+        p.shutdown();
+    }
 }

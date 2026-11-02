@@ -9,7 +9,7 @@ The Code tab is a coding agent that works in one project folder: it reads and ed
 
 ## Start a session
 
-Click **New session** (or **+** by the tabs) and pick the project folder; **Work in a new worktree** gives it its own branch (see the `code-sessions` page). **Open in Code** in a Shell tab's assistant starts one in its folder. The folder is fixed for the session: the agent can't read or write outside it.
+Click **New session** (or **+** by the tabs) and pick the project folder; **Work in a new worktree** gives it its own branch (see the `code-sessions` page). **Open in Code** in a Shell tab's assistant starts one in its folder. The session's folder is fixed: the agent can't work outside it.
 
 Type what you want and press `Enter`. After the first reply the model names the session; a name you gave it is never replaced. Sessions save after every reply.
 
@@ -36,13 +36,13 @@ The conversation shows **Waiting for you in Shell N — press Enter there**, wit
 
 ## Edit files
 
-Files open in an editor window, one per folder, a tab per file. **⤢** on a tab moves the file to its own window. Code is highlighted in over 100 languages, chosen by file name. For keys, see the `shortcuts` page. The agent can open files there but doesn't see your edits.
+Files open in an editor window, one per folder, a tab per file. **⤢** on a tab moves the file to its own window. For keys, see the `shortcuts` page. The agent can open files there but doesn't see your edits.
 
 An outside edit reloads the file and keeps your place. With unsaved edits it shows **Changed on disk** (**Reload** / **Keep mine**), and saving over a change you haven't seen asks **Overwrite** or **Reload first**. A deleted file shows **Deleted on disk**; saving recreates it. **Live reload unavailable** means outside changes won't show. Closing a window with unsaved edits asks first; closing the main window closes the editors.
 
 ## Steer or stop the agent
 
-While the agent works, `Enter` queues your message and its images (**Queued**); the agent reads them at its next step (**Delivered**). **×** drops a queued message. **Stop** (`Esc`) ends the turn; the agent won't redo it unasked. Unread messages return to the input box. `/` opens the commands and skills list, as in Chat.
+While the agent works, `Enter` queues your message and its images (**Queued**); the agent reads them after its running tools (**Delivered**) and says what it will do. **×** drops a queued message. **Stop** (`Esc`) ends the turn, which the agent won't redo unasked; a cut-short command shows **stopped**; unread messages return to the input box. `/` opens the commands and skills list, as in Chat.
 
 A dot on a session's tab shows it working (filled) or waiting for the model (hollow), which one turn uses at a time; a turn lets go of it while a tool runs over a few seconds or waits for you. **Stop** on a waiting session gives your message back.
 

@@ -20,6 +20,7 @@ import { editSize, resolveImage } from './_imageSource';
 import { latestUserImages } from '#lib/agent/loop/context.ts';
 import { ImageBackendError } from '#lib/image/types.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const SRC = 'a'.repeat(64);
 const SRC_URL = `haruspex-img://localhost/${SRC}`;
@@ -40,12 +41,13 @@ beforeEach(() => {
 	state.backend = 'llama-toolchest';
 	// The webview measures a picture by decoding it; jsdom can't.
 	vi.stubGlobal('createImageBitmap', async () => ({ ...sizes, close: () => {} }));
-	state.invoke.mockReset().mockImplementation(async (cmd: string) => {
-		if (cmd === 'image_read_bytes') return new Uint8Array([1, 2, 3]).buffer;
-		if (cmd === 'fs_read_bytes') return [4, 5, 6];
-		if (cmd === 'image_store_bytes') return OUT;
-		return null;
-	});
+	state.invoke.mockReset().mockImplementation(
+		invokeRouter({
+			image_read_bytes: () => new Uint8Array([1, 2, 3]).buffer,
+			fs_read_bytes: [4, 5, 6],
+			image_store_bytes: OUT
+		})
+	);
 	state.generate.mockReset().mockResolvedValue({
 		bytes: new Uint8Array([9]),
 		width: 1184,
@@ -158,21 +160,21 @@ describe('edit_image with an area', () => {
 
 	beforeEach(() => {
 		const plain = state.invoke.getMockImplementation()!;
-		state.invoke.mockImplementation(async (cmd: string, args: unknown) => {
-			if (cmd === 'image_mask_prepare') {
-				return { canvas: CANVAS, mask: MASK, width: 2400, height: 1200 };
-			}
-			if (cmd === 'image_mask_finish') return new Uint8Array([7, 7]).buffer;
-			return plain(cmd, args);
-		});
+		state.invoke.mockImplementation(
+			invokeRouter(
+				{
+					image_mask_prepare: { canvas: CANVAS, mask: MASK, width: 2400, height: 1200 },
+					image_mask_finish: () => new Uint8Array([7, 7]).buffer
+				},
+				plain
+			)
+		);
 	});
 
 	it('says when the part that was to change came back nearly as it was', async () => {
 		const plain = state.invoke.getMockImplementation()!;
 		const measured = (change: number) =>
-			state.invoke.mockImplementation(async (cmd: string, args: unknown) =>
-				cmd === 'image_mask_change' ? change : plain(cmd, args)
-			);
+			state.invoke.mockImplementation(invokeRouter({ image_mask_change: change }, plain));
 		const args = { image: SRC_URL, prompt: 'red sky', area: { x: 0, y: 0, width: 1, height: 0.4 } };
 		measured(2.5);
 		const flat = await executeTool('edit_image', args, chat);

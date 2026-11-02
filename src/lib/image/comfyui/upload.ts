@@ -8,13 +8,13 @@
  * Node) through `fetch`, which can only send bytes it was given.
  */
 
-import { invoke, isTauri } from '@tauri-apps/api/core';
+import { isTauri } from '@tauri-apps/api/core';
 import { ImageBackendError, type ImageInput } from '#lib/image/types.ts';
+import { invokeBackend } from '#lib/utils/backendCall.ts';
 import {
 	HTTP_TIMEOUT_MS,
 	authHeaders,
-	fromRust,
-	nextCallId,
+	comfyBackend,
 	rejectionMessage,
 	trimUrl,
 	type ClientConfig
@@ -22,18 +22,17 @@ import {
 
 const PATH = '/upload/image';
 
-async function viaRust(
+function viaRust(
 	cfg: ClientConfig,
 	input: ImageInput,
 	name: string,
 	signal?: AbortSignal
 ): Promise<unknown> {
-	if (signal?.aborted) throw new ImageBackendError('cancelled', 'Generation cancelled.');
-	const id = nextCallId();
-	const onAbort = () => void invoke('comfy_cancel', { id }).catch(() => {});
-	signal?.addEventListener('abort', onAbort, { once: true });
-	try {
-		return await invoke('comfy_upload', {
+	return invokeBackend<unknown, ImageBackendError>(
+		comfyBackend,
+		'comfy_upload',
+		PATH,
+		(id) => ({
 			call: {
 				base_url: cfg.baseUrl,
 				api_key: cfg.apiKey,
@@ -52,12 +51,9 @@ async function viaRust(
 					bytes: 'bytes' in input ? input.bytes : null
 				}
 			]
-		});
-	} catch (e) {
-		throw fromRust(e, PATH, signal);
-	} finally {
-		signal?.removeEventListener('abort', onAbort);
-	}
+		}),
+		signal
+	);
 }
 
 async function viaFetch(

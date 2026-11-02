@@ -201,10 +201,7 @@ fn build_shell_command(
 
 /// No console window for a command the agent runs (Windows).
 fn hide_window(cmd: &mut tokio::process::Command) {
-    #[cfg(windows)]
-    cmd.creation_flags(crate::shell::platform::CREATE_NO_WINDOW);
-    #[cfg(not(windows))]
-    let _ = cmd;
+    crate::shell::platform::apply_no_window(cmd.as_std_mut());
 }
 
 /// Kill a process and its descendants. Unix: the child is a process-group

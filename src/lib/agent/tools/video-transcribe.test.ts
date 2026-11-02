@@ -28,6 +28,7 @@ import { parseChapters, parseOp, parseTime } from '#lib/video/args.ts';
 import { _setVideoBinariesForTests } from '#lib/video/binaries.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import type { Transcript } from '#lib/ipc/gen/Transcript.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const found = { path: '/usr/bin/x', version: 'x', source: 'path' as const };
 const transcript: Transcript = {
@@ -121,10 +122,9 @@ describe('video_transcribe', () => {
 		const controller = new AbortController();
 		const progress = vi.fn();
 		let finish: (v: unknown) => void = () => {};
-		state.invoke.mockImplementation((cmd: string) => {
-			if (cmd === 'video_transcribe') return new Promise((r) => (finish = r));
-			return Promise.resolve(true);
-		});
+		state.invoke.mockImplementation(
+			invokeRouter({ video_transcribe: () => new Promise((r) => (finish = r)) }, true)
+		);
 		const ctx = makeToolContext({
 			interactive: true,
 			workingDir: '/videos',

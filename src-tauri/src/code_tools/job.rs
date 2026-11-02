@@ -287,10 +287,7 @@ mod imp {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use std::os::windows::process::CommandExt;
         use std::time::{Duration, Instant};
-
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
         fn powershell(script: &str) -> std::process::Command {
             let mut c = std::process::Command::new("powershell.exe");
@@ -301,7 +298,7 @@ mod imp {
                 "-Command",
                 script,
             ]);
-            c.creation_flags(CREATE_NO_WINDOW);
+            crate::shell::platform::apply_no_window(&mut c);
             c
         }
 

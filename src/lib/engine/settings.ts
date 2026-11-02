@@ -14,12 +14,22 @@
  * server, the bundled image engine) isn't applied by this.
  */
 import { getSettings, updateSettings, type AppSettings } from '#lib/stores/settings.ts';
+import { urlForReport } from '#lib/utils/http.ts';
 
 /** A field holding a secret, wherever it sits: `braveApiKey`, `remoteAccessToken`, a password. */
 const SECRET_KEY = /(api_?key|token|password)$/i;
 
 /** Objects whose every value is a secret: an MCP server's `secrets`. */
 const SECRET_MAPS = new Set(['secrets']);
+
+/**
+ * Arrays whose every item may be a secret: a custom MCP server's `args`
+ * (`--api-key=…`), which stay in the settings blob.
+ */
+const SECRET_LISTS = new Set(['args']);
+
+/** A URL with a part that can carry a credential: `user:pw@`, `?token=…`, `#…`. */
+const URL_WITH_CREDENTIAL = /^[a-z][a-z0-9+.-]*:\/\/([^/?#]*@|[^?#]*[?#])/i;
 
 /**
  * Top-level settings a patch may not touch. The API-key store and the
@@ -37,20 +47,34 @@ type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 const isObject = (v: unknown): v is Record<string, Json> =>
 	typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/** `v` as `settings.get` shows it, given the key it sits under. */
+function redactString(v: string, key: string, inApiKeys: boolean): string {
+	if (v === '') return v;
+	if (SECRET_KEY.test(key) || SECRET_LISTS.has(key) || (inApiKeys && key === 'value')) return '';
+	// A base URL, a remote MCP server or a proxy can hold its credential in
+	// the URL: keep where it points, drop the rest.
+	return URL_WITH_CREDENTIAL.test(v) ? urlForReport(v) : v;
+}
+
 /**
- * A plain copy with every secret blanked, and the paths that were blanked.
- * Only strings that are set count: an empty one hides nothing.
+ * A plain copy with every secret blanked, the paths that were blanked, and
+ * the values that were blanked whole (`secrets`; a URL's credential isn't
+ * one of them). Only strings that are set count: an empty one hides nothing.
+ * A URL that could carry a credential keeps its scheme, host and path.
  */
-export function redactSecrets(value: unknown): { value: Json; redacted: string[] } {
+export function redactSecrets(value: unknown): {
+	value: Json;
+	redacted: string[];
+	secrets: string[];
+} {
 	const redacted: string[] = [];
+	const secrets: string[] = [];
 	const walk = (v: Json, path: string, key: string, inApiKeys: boolean): Json => {
 		if (typeof v === 'string') {
-			const secret = SECRET_KEY.test(key) || (inApiKeys && key === 'value');
-			if (secret && v !== '') {
-				redacted.push(path);
-				return '';
-			}
-			return v;
+			const out = redactString(v, key, inApiKeys);
+			if (out !== v) redacted.push(path);
+			if (out === '' && v !== '') secrets.push(v);
+			return out;
 		}
 		if (Array.isArray(v)) return v.map((x, i) => walk(x, `${path}[${i}]`, key, inApiKeys));
 		if (isObject(v)) {
@@ -62,6 +86,7 @@ export function redactSecrets(value: unknown): { value: Json; redacted: string[]
 						Object.entries(x).map(([name, s]) => {
 							if (typeof s === 'string' && s !== '') {
 								redacted.push(`${at}.${name}`);
+								secrets.push(s);
 								return [name, ''];
 							}
 							return [name, s];
@@ -76,7 +101,16 @@ export function redactSecrets(value: unknown): { value: Json; redacted: string[]
 		return v;
 	};
 	const plain = JSON.parse(JSON.stringify(value ?? null)) as Json;
-	return { value: walk(plain, '', '', false), redacted };
+	return { value: walk(plain, '', '', false), redacted, secrets };
+}
+
+/**
+ * Every secret the settings hold inline: on a computer with no keychain or
+ * secret file, passwords and keys stay in the settings, where the Rust side
+ * that redacts the log by value never sees them.
+ */
+export function inlineSecrets(): string[] {
+	return redactSecrets(getSettings()).secrets;
 }
 
 /** The settings, secrets blanked; `keys` picks top-level settings. */
@@ -133,6 +167,13 @@ export function patchSettings(patch: unknown): { changed: string[] } {
 	);
 	if (changed.length) {
 		updateSettings(Object.fromEntries(changed.map((k) => [k, merged[k]])) as Partial<AppSettings>);
+	}
+	// Settings → Image asks a model it adds what it can do; one added here
+	// would otherwise stay unknown to the tools and the prompt until a restart.
+	if (changed.includes('imageModels')) {
+		void import('#lib/image/refreshCaps.ts')
+			.then((m) => m.refreshMissingImageCaps())
+			.catch((e) => console.warn('Image models were not asked what they can do:', e));
 	}
 	return { changed };
 }

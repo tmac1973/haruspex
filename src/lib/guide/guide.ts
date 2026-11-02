@@ -15,6 +15,7 @@ const ORDER = [
 	'getting-started',
 	'models',
 	'lean-mode',
+	'tool-loading',
 	'chat',
 	'chat-conversations',
 	'slides',

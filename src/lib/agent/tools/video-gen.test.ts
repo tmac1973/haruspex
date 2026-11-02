@@ -26,6 +26,7 @@ import { noticeFor } from '#lib/tasks/noticeText.ts';
 import { _resetTasksForTests, getTask } from '#lib/tasks/store.svelte.ts';
 import type { VideoLimits } from '#lib/toolchest/models.ts';
 import type { BackgroundTask } from '#lib/tasks/types.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const limits: VideoLimits = {
 	defaultFps: 24,
@@ -49,24 +50,21 @@ beforeEach(() => {
 	_resetTasksForTests();
 	state.backend = 'llama-toolchest';
 	state.ready.mockReset().mockResolvedValue(ti2v);
-	state.invoke
-		.mockReset()
-		.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
-			if (cmd === 'task_create') {
-				return {
-					id: 'video-1',
-					kind: 'video',
-					owner: args.owner,
-					label: args.label,
-					state: 'pending',
-					follower: 'frontend',
-					spec: args.spec,
-					startedMs: 1,
-					noticeDelivered: false
-				};
-			}
-			return null;
-		});
+	state.invoke.mockReset().mockImplementation(
+		invokeRouter({
+			task_create: (args) => ({
+				id: 'video-1',
+				kind: 'video',
+				owner: args!.owner,
+				label: args!.label,
+				state: 'pending',
+				follower: 'frontend',
+				spec: args!.spec,
+				startedMs: 1,
+				noticeDelivered: false
+			})
+		})
+	);
 });
 
 describe('fitting a clip to the instance', () => {

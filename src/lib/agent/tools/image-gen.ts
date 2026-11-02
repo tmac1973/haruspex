@@ -32,6 +32,7 @@ import { describeImageProgress } from '#lib/image/progress.ts';
 import { ImageBackendError, type ImageProgress, type ImageRequest } from '#lib/image/types.ts';
 import { registerLocalImage } from '#lib/images/resolve.svelte.ts';
 import { imageAnswerText, placeLine, savedLineOf } from '#lib/agent/tools/_imageAnswer.ts';
+import { imageToolSchema, MODEL_PARAM, namedModel } from '#lib/agent/tools/_imageModel.ts';
 import {
 	BACKGROUND_PARAM,
 	canRunInBackground,
@@ -84,12 +85,14 @@ export async function saveTarget(
 }
 
 /**
- * Draw `req` with the step showing progress; the picture, or the tool's
- * answer saying why not. `edit_image` shares it.
+ * Draw `req` with the step showing progress, on the image model `named` if
+ * the call named one; the picture, or the tool's answer saying why not.
+ * `edit_image` shares it.
  */
 export async function drawForTool(
 	req: ImageRequest,
-	ctx: ToolContext
+	ctx: ToolContext,
+	named?: string
 ): Promise<ToolImage | ToolExecOutput> {
 	const started = Date.now();
 	let latest: ImageProgress | null = null;
@@ -99,6 +102,7 @@ export async function drawForTool(
 	try {
 		show();
 		return await generateForTool(req, {
+			named,
 			signal: ctx.signal,
 			onProgress: (p) => {
 				latest = p;
@@ -198,12 +202,14 @@ registerTool({
 						description:
 							'Replace an existing file. Default false. In Chat the user is asked instead.'
 					},
-					background: BACKGROUND_PARAM
+					background: BACKGROUND_PARAM,
+					model: MODEL_PARAM
 				},
 				required: ['prompt']
 			}
 		}
 	},
+	liveSchema: (schema) => imageToolSchema(schema),
 	displayLabel: (args) => `draw: ${String(args.prompt ?? '').slice(0, 60)}`,
 	execute: async (args, ctx) => {
 		const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : '';
@@ -213,16 +219,18 @@ registerTool({
 		if (save && !isSaveTarget(save)) return save;
 
 		const request = { prompt, width, height, seed: null, transparent: args.transparent === true };
+		const named = namedModel(args);
 		if (canRunInBackground(args, ctx)) {
 			const alt = altOf(prompt);
 			return startImageTask(
 				`Drawing ${alt}`,
 				{ op: 'draw', request, alt, verb: 'Image ready' },
 				save,
-				ctx
+				ctx,
+				named
 			);
 		}
-		const image = await drawForTool(request, ctx);
+		const image = await drawForTool(request, ctx, named);
 		if (!('bytes' in image)) return image;
 		return answerWithImage(image, altOf(prompt), save, ctx);
 	}

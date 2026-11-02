@@ -1,7 +1,7 @@
 {
 	"name": "haruspex",
 	"private": true,
-	"version": "0.2.14",
+	"version": "0.2.15",
 	"license": "GPL-3.0-or-later",
 	"author": "Tim MacDonald <tbaxmacdonald@gmail.com>",
 	"repository": {
@@ -33,6 +33,7 @@
 		"e2e:app": "wdio run e2e/app/wdio.conf.mjs",
 		"e2e:fake-llm": "node e2e/fake-llm/server.mjs",
 		"drive": "node scripts/drive.mjs",
+		"model-eval": "node scripts/model-eval.mjs",
 		"tauri": "tauri"
 	},
 	"devDependencies": {
@@ -80,6 +81,13 @@
 		"marked": "^18.1.0",
 		"pdfjs-dist": "^6.4.299",
 		"pptxgenjs": "4.0.1",
-		"pyodide": "0.29.4"
+		"pyodide": "314.0.7"
+	},
+	"overrides": {
+		"pptxgenjs": {
+			"image-size": "^2.0.4"
+		},
+		"minimatch": "^11.0.3",
+		"glob": "^14.0.3"
 	}
 }

@@ -32,6 +32,8 @@ import { upscaleForTool } from '#lib/image/forTool.ts';
 import { ImageBackendError } from '#lib/image/types.ts';
 import { registerLocalImage } from '#lib/images/resolve.svelte.ts';
 import type { StoredUpscale } from '#lib/ipc/gen/StoredUpscale.ts';
+import { imageToolSchema, MODEL_PARAM, namedModel } from '#lib/agent/tools/_imageModel.ts';
+import { anyEntryCan } from '#lib/image/entries.ts';
 
 /** The longest edge a result may have: a 16 MP picture stays inside the cache. */
 export const MAX_EDGE = 4096;
@@ -69,15 +71,22 @@ async function cachedHash(source: ImageSource, ctx: ToolContext): Promise<string
 	});
 }
 
-/** Upscale the source, finish it at `size` and keep it; or the tool's answer saying why not. */
+/**
+ * Upscale the source on the image model `named` if the call named one, finish
+ * it at `size` and keep it; or the tool's answer saying why not.
+ */
 async function upscaleAndStore(
 	source: ImageSource,
 	size: { width: number; height: number },
-	ctx: ToolContext
+	ctx: ToolContext,
+	named: string | undefined
 ): Promise<StoredUpscale | ToolExecOutput> {
 	try {
 		const hash = await cachedHash(source, ctx);
-		const upscaled = await upscaleForTool({ name: 'image.png', hash }, { signal: ctx.signal });
+		const upscaled = await upscaleForTool(
+			{ name: 'image.png', hash },
+			{ signal: ctx.signal, named }
+		);
 		return await invoke<StoredUpscale>('image_store_upscaled', upscaled, {
 			headers: {
 				'x-width': String(size.width),
@@ -125,12 +134,14 @@ registerTool({
 						description:
 							'Replace an existing file. Default false. In Chat the user is asked instead.'
 					},
-					background: BACKGROUND_PARAM
+					background: BACKGROUND_PARAM,
+					model: MODEL_PARAM
 				},
 				required: ['image']
 			}
 		}
 	},
+	liveSchema: (schema) => imageToolSchema(schema, () => anyEntryCan('upscale')),
 	displayLabel: (args) => `upscale: ${String(args.image ?? '').slice(0, 60)}`,
 	execute: async (args, ctx) => {
 		const scale = args.scale === 2 ? 2 : 4;
@@ -141,6 +152,7 @@ registerTool({
 		const save = await saveTarget(args, ctx, 'upscale_image');
 		if (save && !isSaveTarget(save)) return save;
 
+		const named = namedModel(args);
 		if (canRunInBackground(args, ctx)) {
 			const sourceHash = await cachedHash(source, ctx);
 			return startImageTask(
@@ -153,11 +165,12 @@ registerTool({
 					note: size.note
 				},
 				save,
-				ctx
+				ctx,
+				named
 			);
 		}
 		ctx.onProgress?.('Upscaling');
-		const stored = await upscaleAndStore(source, size, ctx);
+		const stored = await upscaleAndStore(source, size, ctx, named);
 		if (!('hash' in stored)) return stored;
 		const url = registerLocalImage(stored.hash, {
 			mime: 'image/png',

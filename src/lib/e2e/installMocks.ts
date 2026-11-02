@@ -138,6 +138,8 @@ const TABLE: Record<string, Handler> = {
 	get_app_logs: empty,
 	image_engine_logs: empty,
 	comfy_logs: empty,
+	// Settings → Image asks whether to offer the bundled engine.
+	image_engine_status: () => ({ status: { type: 'Stopped' }, model: null, available: true }),
 	// Not in a repo: the guided-planning skill picker lists only user skills.
 	skills_project_root: none,
 	secret_get: none,
@@ -147,7 +149,7 @@ const TABLE: Record<string, Handler> = {
 	video_binaries_status: () => ({ ffmpeg: null, ffprobe: null, melt: null, hints: [] }),
 	task_list: empty,
 	task_take_notices: empty,
-	get_whisper_video_model_path: none,
+	whisper_video_model_path: none,
 	youtube_account: none,
 	download_status: none,
 	remote_status: () => ({

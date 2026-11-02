@@ -1,23 +1,23 @@
 /**
- * Thin wrappers around the `db_*` Tauri IPC commands used by the job-domain
- * stores (jobs / jobRuns / promptCatalog). They centralize the otherwise
- * copy-pasted `try { invoke } catch { logDebug('jobs', …) }` skeleton so the
- * error-logging convention and the "refresh the cached list after a mutation"
- * step can't drift between stores.
- *
- * All three stores log under the `'jobs'` debug category; that's hardcoded
- * here on purpose.
+ * Thin wrappers around the database's Tauri IPC commands, used by the chat
+ * store (`db.ts`) and the job-domain stores (jobs / jobRuns / promptCatalog).
+ * They centralize the otherwise copy-pasted `try { invoke } catch { logDebug }`
+ * skeleton so the error-logging convention and the "refresh the cached list
+ * after a mutation" step can't drift between stores.
  */
 import { invoke } from '@tauri-apps/api/core';
 import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
+import type { IpcCommand } from '#lib/ipc/commands.ts';
 
 interface DbCallBase {
-	/** Tauri command name, e.g. `'db_list_jobs'`. */
-	cmd: string;
+	/** Tauri command name, e.g. `'db_list_jobs'`; typed so a rename fails the build. */
+	cmd: IpcCommand;
+	/** Debug-log category for a failure; `'jobs'` unless given. */
+	category?: string;
 	/** Command arguments (omit for no-arg commands). */
 	args?: Record<string, unknown>;
-	/** debug-log message recorded (under `'jobs'`) when the command throws. */
+	/** Debug-log message recorded when the command throws. */
 	onError: string;
 	/** Extra fields merged into the failure log (e.g. the relevant ids). */
 	ctx?: Record<string, unknown>;
@@ -38,7 +38,7 @@ export async function dbQuery<T>(
 		await opts.onSuccess?.();
 		return result;
 	} catch (e) {
-		logDebug('jobs', opts.onError, { ...opts.ctx, error: errMessage(e) });
+		logDebug(opts.category ?? 'jobs', opts.onError, { ...opts.ctx, error: errMessage(e) });
 		return opts.fallback;
 	}
 }
@@ -57,7 +57,7 @@ export async function dbMutate(
 		await opts.onSuccess?.();
 		return true;
 	} catch (e) {
-		logDebug('jobs', opts.onError, { ...opts.ctx, error: errMessage(e) });
+		logDebug(opts.category ?? 'jobs', opts.onError, { ...opts.ctx, error: errMessage(e) });
 		return false;
 	}
 }

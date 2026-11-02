@@ -6,7 +6,7 @@ import {
 	notePreview,
 	noteRewrite,
 	previewText,
-	previewedLook,
+	writtenLook,
 	rewritesLeft,
 	type DeckLook
 } from './preview';
@@ -68,9 +68,9 @@ describe('deckLook', () => {
 
 	it('remembers the look of the deck previewed at a path', () => {
 		const turn = new Set<string>();
-		expect(previewedLook(turn, 'd.pptx')).toBeUndefined();
+		expect(writtenLook(turn, 'd.pptx')).toBeUndefined();
 		notePreview(turn, 'd.pptx', ['A'], look);
-		expect(previewedLook(turn, 'd.pptx')).toEqual(look);
+		expect(writtenLook(turn, 'd.pptx')).toEqual(look);
 	});
 });
 

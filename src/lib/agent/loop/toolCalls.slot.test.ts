@@ -13,7 +13,8 @@ const tools = vi.hoisted(() => ({
 	coerceCallArguments: vi.fn((_name: string, args: Record<string, unknown>) => args)
 }));
 vi.mock('#lib/agent/tools/index.ts', () => tools);
-vi.mock('#lib/agent/tools/registry.ts', () => ({
+vi.mock('#lib/agent/tools/registry.ts', async (orig) => ({
+	...(await orig<object>()),
 	toolUsesModel: (name: string) => MODEL_TOOLS.has(name)
 }));
 

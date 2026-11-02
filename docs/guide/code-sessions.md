@@ -9,7 +9,7 @@ How to find, fork and move sessions in the Code tab. For what a session does, se
 
 ## Find and reopen sessions
 
-The list on the left holds every saved session, newest first, with its folder and when it was last active. Two or more sessions in one folder sit under a folder row; click it to fold them. Click a session to open it as a tab above the conversation. Right-click a session to **Rename** or **Delete** it; deleting removes the conversation, not any files (but see worktrees below). Closing a tab (**×**) keeps the session in the list. The **‹** button hides the list.
+The list on the left holds every saved session, newest first, with its folder and last activity. Sessions sharing a folder sit under a folder row; click it to fold them. Click a session to open it as a tab. Right-click a session to **Rename** or **Delete** it; deleting removes the conversation, not files (but see worktrees below). Closing a tab (**×**) keeps the session in the list. The **‹** button hides the list. Tabs that don't fit scroll sideways, also by mouse wheel; **←** **→** move between them.
 
 Long sessions show their last 20 turns; **Show earlier** loads more.
 
@@ -49,7 +49,7 @@ When a session's turn changes files, the other sessions in that folder are told 
 
 ## When a session's folder is gone
 
-If a session's folder was deleted, moved, or is on a drive that isn't mounted, the session shows **Folder not found** with the path. You can still read it, but the input box is disabled and nothing runs. Haruspex checks when you open or switch to the session or its window comes to the front; if the folder goes mid-turn, the banner shows when the turn ends.
+If a session's folder was deleted, moved, or is on an unmounted drive, the session shows **Folder not found** with the path. You can still read it, but the input box is disabled and nothing runs. Haruspex checks when you open or switch to the session or its window comes to the front; if the folder goes mid-turn, the banner shows when the turn ends.
 
 - **Choose folder…** points the session at another folder, after asking. The conversation stays, but paths in it still name the old folder.
 - **Delete session** deletes it.

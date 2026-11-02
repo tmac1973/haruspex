@@ -99,6 +99,9 @@ export async function runIteration(
 		reasoning,
 		iteration
 	);
+	// Owed by this response only, whichever path it takes below.
+	const steeringReply = ctx.steeringReplyDue === true;
+	ctx.steeringReplyDue = false;
 
 	// A refused call is handled before the no-tool-calls chain: the model DID
 	// attempt a call, so treating this as prose would let a truncated write
@@ -135,7 +138,13 @@ export async function runIteration(
 	// Model emitted real tool_calls — clear any pending narrate-recovery
 	// so we don't fire it spuriously on a later no-tool-calls iteration.
 	nudges.consumeNarrateRecovery();
-	const { allWebReadsBlocked } = await executeToolCalls(ctx, nudges, toolCalls, response);
+	const { allWebReadsBlocked } = await executeToolCalls(
+		ctx,
+		nudges,
+		toolCalls,
+		response,
+		steeringReply
+	);
 	state.allWebReadsBlocked = allWebReadsBlocked;
 	// The forced-final tool IS the turn's terminus: its arguments are the
 	// result, and the contract every caller states is "call it exactly once,

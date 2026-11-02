@@ -18,8 +18,8 @@
  * `HARUSPEX_DEBUG_LOG_FILE` set) — and it is copied into the diagnostics
  * bundle — so user content (prompts, model output) goes through
  * `previewPayload` and stays clipped unless verbose payloads are on, and tool
- * arguments and results, which carry email bodies and files, are left out
- * unless verbose payloads are on.
+ * arguments and results, which carry email bodies and files, are reduced to
+ * their shape (`argumentShape`) and length unless verbose payloads are on.
  */
 
 import { errMessage } from '#lib/utils/error.ts';
@@ -53,6 +53,25 @@ export function previewPayload(s: string | null | undefined, max = 800): string 
 	if (s == null) return null;
 	if (verbosePayloads || s.length <= max) return s;
 	return `${s.slice(0, max)}… (+${s.length - max} more chars)`;
+}
+
+/**
+ * Tool arguments for the log without their content: each value's type and
+ * size (`string(2431)`, `array(3)`, `object(2)`). A blank string is shown as
+ * it is, since it holds nothing and an empty argument is a common model
+ * mistake. Numbers, booleans and null are shown whole.
+ */
+export function argumentShape(
+	args: Record<string, unknown> | null | undefined
+): Record<string, unknown> {
+	return Object.fromEntries(Object.entries(args ?? {}).map(([k, v]) => [k, valueShape(v)]));
+}
+
+function valueShape(v: unknown): unknown {
+	if (typeof v === 'string') return v.trim() === '' ? v : `string(${v.length})`;
+	if (Array.isArray(v)) return `array(${v.length})`;
+	if (v && typeof v === 'object') return `object(${Object.keys(v).length})`;
+	return v === undefined ? 'undefined' : v;
 }
 
 let nextTurnId = 1;
@@ -126,6 +145,7 @@ export function loggedFallback<T>(
 
 /** Lines waiting for the next file flush; null while mirroring is off. */
 let fileQueue: string[] | null = null;
+let fileTimer: ReturnType<typeof setInterval> | null = null;
 const FILE_FLUSH_MS = 1000;
 
 /**
@@ -153,10 +173,11 @@ export async function startDebugLogFile(
 		void invoke('debug_log_append', { lines }).catch(() => {
 			// A failing write would fail again every second: stop mirroring.
 			fileQueue = null;
-			clearInterval(timer);
+			if (fileTimer !== null) clearInterval(fileTimer);
+			fileTimer = null;
 		});
 	};
-	const timer = setInterval(flush, FILE_FLUSH_MS);
+	fileTimer = setInterval(flush, FILE_FLUSH_MS);
 	return path;
 }
 
@@ -229,6 +250,19 @@ export function forwardConsoleToDebugLog(): void {
 }
 
 let consoleForwarded = false;
+
+/**
+ * Test-only: stop the file mirror and forget that the console was forwarded,
+ * so each case starts from a fresh module. Restoring `console` itself is the
+ * caller's job (`vi.restoreAllMocks`).
+ */
+export function _resetForTests(): void {
+	if (fileTimer !== null) clearInterval(fileTimer);
+	fileTimer = null;
+	fileQueue = null;
+	consoleForwarded = false;
+	clearDebugLogs();
+}
 
 function consoleArg(a: unknown): string {
 	if (typeof a === 'string') return a;

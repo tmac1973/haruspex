@@ -10,8 +10,8 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock('#lib/image/forTool.ts', () => ({ generateForTool: state.generate }));
-vi.mock('#lib/image/backend.ts', () => ({
-	resolveImageBackend: () => ({ capabilities: async () => state.caps })
+vi.mock('#lib/image/route.ts', () => ({
+	routedImageBackend: () => ({ capabilities: async () => state.caps })
 }));
 vi.mock('./normalize', () => ({
 	defaultProfile: async () => PROFILE,

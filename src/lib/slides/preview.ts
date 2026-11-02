@@ -14,14 +14,16 @@ import type { SlideOrientation } from '#lib/slides/types.ts';
  * doesn't read) and may write the deck again to fix it.
  *
  * Writing a file twice in a turn is refused (fs-write.ts): a model writing a
- * file in pieces would lose all but the last. A deck the model has seen may
- * be written again, a couple of times, if the new one keeps most of its
- * slides: a fix keeps their titles, and a second piece of a deck doesn't.
+ * file in pieces would lose all but the last. A deck the model has seen, or
+ * one the turn created, may be written again, a couple of times, if the new
+ * one keeps most of its slides: a fix keeps their titles, and a second piece
+ * of a deck doesn't. A deck that was there before the turn and wasn't shown
+ * to the model is still refused.
  * A rewrite keeps the deck's theme and orientation unless it names others:
  * a model fixing a slide left `theme` out and turned a dark deck light.
  */
 
-/** Rewrites a previewed deck may have in one turn. */
+/** Rewrites a deck may have in one turn. */
 export const MAX_REWRITES = 2;
 
 /** Rust's message when LibreOffice isn't installed (`fs_tools/preview.rs`). */
@@ -71,20 +73,24 @@ export interface DeckLook {
 	orientation: SlideOrientation;
 }
 
-interface Previewed {
+interface Deck {
 	titles: string[];
 	rewrites: number;
 	look: DeckLook;
+	/** The file did not exist before the turn wrote it. */
+	created: boolean;
+	/** The model was shown it. */
+	previewed: boolean;
 }
 
-/** Decks previewed this turn, by path, keyed on the turn's own write set. */
-const previewed = new WeakMap<Set<string>, Map<string, Previewed>>();
+/** Decks written this turn, by path, keyed on the turn's own write set. */
+const decks = new WeakMap<Set<string>, Map<string, Deck>>();
 
-function turnMap(turn: Set<string>): Map<string, Previewed> {
-	let map = previewed.get(turn);
+function turnMap(turn: Set<string>): Map<string, Deck> {
+	let map = decks.get(turn);
 	if (!map) {
 		map = new Map();
-		previewed.set(turn, map);
+		decks.set(turn, map);
 	}
 	return map;
 }
@@ -100,14 +106,43 @@ export function notePreview(
 	look: DeckLook
 ): void {
 	const map = turnMap(turn);
-	const rewrites = map.get(path)?.rewrites ?? 0;
-	map.set(path, { titles: titles.map(norm), rewrites, look });
+	const seen = map.get(path);
+	map.set(path, {
+		titles: titles.map(norm),
+		rewrites: seen?.rewrites ?? 0,
+		look,
+		created: seen?.created ?? false,
+		previewed: true
+	});
+}
+
+/**
+ * Note that the deck at `path` was written with these titles and this look.
+ * `overwrite` is whether the write replaced a file; on a rewrite the turn's
+ * own earlier write is what it replaced.
+ */
+export function noteDeck(
+	turn: Set<string>,
+	path: string,
+	titles: string[],
+	look: DeckLook,
+	overwrite: boolean
+): void {
+	const map = turnMap(turn);
+	const seen = map.get(path);
+	map.set(path, {
+		titles: titles.map(norm),
+		rewrites: seen?.rewrites ?? 0,
+		look,
+		created: seen ? seen.created : !overwrite,
+		previewed: seen?.previewed ?? false
+	});
 }
 
 const named = (value: unknown) => typeof value === 'string' && value.trim().length > 0;
 
 /**
- * The look a write asks for. A rewrite of a previewed deck (`previous`)
+ * The look a write asks for. A rewrite of a deck (`previous`)
  * keeps its theme and orientation where the arguments leave them out.
  */
 export function deckLook(args: Record<string, unknown>, previous?: DeckLook): DeckLook {
@@ -120,16 +155,25 @@ export function deckLook(args: Record<string, unknown>, previous?: DeckLook): De
 	};
 }
 
-/** The look of the deck previewed at `path` this turn, if there was one. */
-export function previewedLook(turn: Set<string>, path: string): DeckLook | undefined {
-	return previewed.get(turn)?.get(path)?.look;
+/** The look of the deck written at `path` this turn, if there was one. */
+export function writtenLook(turn: Set<string>, path: string): DeckLook | undefined {
+	return decks.get(turn)?.get(path)?.look;
 }
 
-/** Whether a deck previewed at `path` may be written again with these titles:
- *  rewrites left, and at least half its slides still there. */
+/** The deck at `path`, when it was shown to the model or the turn created it,
+ *  and it has rewrites left. */
+function revisable(turn: Set<string>, path: string): Deck | undefined {
+	const seen = decks.get(turn)?.get(path);
+	if (!seen || !(seen.previewed || seen.created)) return undefined;
+	return seen.rewrites < MAX_REWRITES ? seen : undefined;
+}
+
+/** Whether the deck at `path` may be written again with these titles: it was
+ *  previewed or created this turn, has rewrites left, and keeps at least half
+ *  its slides. */
 export function mayRewrite(turn: Set<string>, path: string, titles: string[]): boolean {
-	const seen = previewed.get(turn)?.get(path);
-	if (!seen || seen.rewrites >= MAX_REWRITES) return false;
+	const seen = revisable(turn, path);
+	if (!seen) return false;
 	const now = new Set(titles.map(norm));
 	const kept = seen.titles.filter((t) => now.has(t)).length;
 	return kept * 2 >= seen.titles.length;
@@ -137,13 +181,19 @@ export function mayRewrite(turn: Set<string>, path: string, titles: string[]): b
 
 /** Count a rewrite of the deck at `path`. */
 export function noteRewrite(turn: Set<string>, path: string): void {
-	const seen = previewed.get(turn)?.get(path);
+	const seen = decks.get(turn)?.get(path);
 	if (seen) seen.rewrites += 1;
+}
+
+/** What a refused repeat write of the deck at `path` adds, while it may be rewritten. */
+export function deckRewriteHint(turn: Set<string>, path: string): string {
+	if (!revisable(turn, path)) return '';
+	return 'To revise a deck you created this turn, write the whole deck again, keeping most of its slide titles. ';
 }
 
 /** Rewrites the deck at `path` has left this turn. */
 export function rewritesLeft(turn: Set<string>, path: string): number {
-	return MAX_REWRITES - (previewed.get(turn)?.get(path)?.rewrites ?? 0);
+	return MAX_REWRITES - (decks.get(turn)?.get(path)?.rewrites ?? 0);
 }
 
 /**

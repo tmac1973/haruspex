@@ -5,7 +5,7 @@
  * Built by the Chat and Shell stores and handed to the agent loop as
  * `AgentLoopOptions.skills`. Jobs and remote guests never build one, so they
  * get neither the section nor the tools — the scope is set by who calls
- * this, the same way `memorySection` is.
+ * this.
  */
 
 import type { BackendOverride } from '#lib/api.ts';

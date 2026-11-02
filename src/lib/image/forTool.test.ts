@@ -15,8 +15,9 @@ const state = vi.hoisted(() => ({
 	generate: vi.fn()
 }));
 
-vi.mock('./backend', () => ({
-	resolveImageBackend: () => ({
+vi.mock('./registry', async (importOriginal) => ({
+	...(await importOriginal<typeof import('./registry')>()),
+	backendForEntry: () => ({
 		kind: state.kind,
 		probe: async () => state.probe,
 		capabilities: async () => state.caps,

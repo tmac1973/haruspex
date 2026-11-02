@@ -20,6 +20,7 @@
 //! scrollback. The cgroup's `oom_kill` count, read before and after a command,
 //! says whether that command was the one killed.
 
+use crate::sync_util::LockExt;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -30,9 +31,7 @@ pub fn limit_bytes(percent: u8) -> Option<u64> {
     if percent == 0 {
         return None;
     }
-    let mut sys = sysinfo::System::new();
-    sys.refresh_memory();
-    limit_from_total(sys.total_memory(), percent)
+    limit_from_total(crate::hardware::total_ram_bytes(), percent)
 }
 
 fn limit_from_total(total: u64, percent: u8) -> Option<u64> {
@@ -150,7 +149,7 @@ impl TerminalScope {
     /// How many processes the kernel has killed in this terminal for going
     /// over the limit; None when that can't be read.
     pub fn oom_kills(&self) -> Option<u64> {
-        let mut cgroup = self.cgroup.lock().ok()?;
+        let mut cgroup = self.cgroup.lock_or_recover();
         if cgroup.is_none() {
             let out = std::process::Command::new("systemctl")
                 .args([

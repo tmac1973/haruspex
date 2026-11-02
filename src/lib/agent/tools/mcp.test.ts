@@ -3,7 +3,7 @@ import type { McpToolDescriptor } from '#lib/ipc/gen/McpToolDescriptor.ts';
 import type { McpCallOutcome } from '#lib/ipc/gen/McpCallOutcome.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import { setMcpServers } from '#lib/stores/settings.ts';
-import { mcpToolName, parseMcpToolName } from './mcp-names';
+import { mcpToolName, parseMcpToolName } from './mcpNames';
 import {
 	registerMcpTools,
 	unregisterMcpServer,

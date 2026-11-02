@@ -101,6 +101,7 @@ import {
 } from '#lib/stores/codeCommandApproval.svelte.ts';
 import { setPtyBusy } from '#lib/stores/shellPtyBusy.svelte.ts';
 import { UNANSWERED_NOTICE, type ChatMessage } from '#lib/api.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 /** Append as the agent loop does: to `messages`, and reported to the caller. */
 function add(
@@ -423,56 +424,53 @@ describe('command auto-attach de-duplication', () => {
 		pending?: string;
 		pendingFroms?: number[];
 	}) {
-		vi.mocked(invoke).mockImplementation((async (
-			cmd: string,
-			args?: { limit: number; pendingFrom?: number }
-		) => {
-			switch (cmd) {
-				case 'shell_get_context':
-					return {
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter(
+				{
+					shell_get_context: () => ({
 						context: {},
 						current_cwd: '/home/tim',
 						marker_count: 9,
 						completed_commands: 2,
 						completed_total: state.completedTotal
-					};
-				case 'shell_get_recent_history':
-					return [];
-				case 'shell_get_recent_commands': {
-					state.recentLimits.push(args!.limit);
-					const regions = Array.from({ length: args!.limit }, () => ({
-						commandLine: 'cat hangman.py',
-						output: 'print("x")',
-						exitCode: 0 as number | null,
-						cwd: '/home/tim',
-						truncated: false,
-						pending: false,
-						outputStart: 0,
-						outputEnd: 0
-					}));
-					if (state.pending !== undefined) {
-						// Stand in for the Rust watermark slice: offsets are string
-						// indices here, and the backend returns only what has arrived
-						// since `pendingFrom`.
-						const from = args?.pendingFrom ?? 0;
-						state.pendingFroms?.push(from);
-						regions.push({
-							commandLine: 'ssh server',
-							output: state.pending.slice(from),
-							exitCode: null,
+					}),
+					shell_get_recent_history: [],
+					shell_get_recent_commands: (a) => {
+						const args = a as { limit: number; pendingFrom?: number };
+						state.recentLimits.push(args.limit);
+						const regions = Array.from({ length: args.limit }, () => ({
+							commandLine: 'cat hangman.py',
+							output: 'print("x")',
+							exitCode: 0 as number | null,
 							cwd: '/home/tim',
 							truncated: false,
-							pending: true,
-							outputStart: from,
-							outputEnd: state.pending.length
-						});
+							pending: false,
+							outputStart: 0,
+							outputEnd: 0
+						}));
+						if (state.pending !== undefined) {
+							// Stand in for the Rust watermark slice: offsets are string
+							// indices here, and the backend returns only what has arrived
+							// since `pendingFrom`.
+							const from = args?.pendingFrom ?? 0;
+							state.pendingFroms?.push(from);
+							regions.push({
+								commandLine: 'ssh server',
+								output: state.pending.slice(from),
+								exitCode: null,
+								cwd: '/home/tim',
+								truncated: false,
+								pending: true,
+								outputStart: from,
+								outputEnd: state.pending.length
+							});
+						}
+						return regions;
 					}
-					return regions;
-				}
-				default:
-					return undefined;
-			}
-		}) as never);
+				},
+				undefined
+			)
+		);
 	}
 
 	afterEach(() => {
@@ -999,10 +997,11 @@ describe('Open in Code', () => {
 	it('opens a Code session at the folder the terminal is in now', async () => {
 		const s = createShellSession();
 		s.bindSession({ sessionId: 5 } as never);
-		vi.mocked(invoke).mockImplementation(async (cmd: string) =>
-			cmd === 'shell_get_context'
-				? ({ current_cwd: '/home/tim/app', completed_total: 0 } as never)
-				: (undefined as never)
+		vi.mocked(invoke).mockImplementation(
+			invokeRouter(
+				{ shell_get_context: { current_cwd: '/home/tim/app', completed_total: 0 } },
+				undefined
+			)
 		);
 		await s.openInCode();
 		expect(bridge.openCodeAt).toHaveBeenCalledWith('/home/tim/app', null);

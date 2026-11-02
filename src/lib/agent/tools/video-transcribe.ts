@@ -8,7 +8,7 @@ import { Channel, invoke } from '@tauri-apps/api/core';
 import { errMessage, isAbortError } from '#lib/utils/error.ts';
 import { registerTool } from '#lib/agent/tools/registry.ts';
 import { toolError, toolResult, type ToolContext } from '#lib/agent/tools/types.ts';
-import { parseChapters, str, num, videoSettings } from '#lib/video/args.ts';
+import { parseChapters, str, num, videoSettings, episodeArg } from '#lib/video/args.ts';
 import { formatDuration } from '#lib/video/report.ts';
 import type { Transcript } from '#lib/ipc/gen/Transcript.ts';
 import type { TranscribeProgress } from '#lib/ipc/gen/TranscribeProgress.ts';
@@ -54,10 +54,6 @@ export function transcriptReport(list: Transcript[], cap = TRANSCRIPT_CAP): stri
 		);
 	}
 	return parts.join('\n').trim();
-}
-
-function episodeArg(args: Record<string, unknown>): string {
-	return typeof args.episode === 'string' ? args.episode : '';
 }
 
 let jobs = 0;

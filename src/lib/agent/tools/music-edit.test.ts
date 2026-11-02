@@ -37,6 +37,7 @@ import { makeToolContext } from '#lib/testing/toolContext.ts';
 import { attachedAudioLine } from '#lib/audio/attached.ts';
 import { trimWindow } from './_musicTrim';
 import { cachedSongName } from './_musicSource';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const SRC = 'a'.repeat(64);
 const SRC_URL = `haruspex-audio://localhost/${SRC}`;
@@ -66,11 +67,12 @@ beforeEach(() => {
 			}
 		}
 	);
-	state.invoke.mockReset().mockImplementation(async (cmd: string) => {
-		if (cmd === 'audio_read_bytes') return new Uint8Array([9, 9]).buffer;
-		if (cmd === 'fs_read_bytes') return [7, 7, 7];
-		return null;
-	});
+	state.invoke.mockReset().mockImplementation(
+		invokeRouter({
+			audio_read_bytes: () => new Uint8Array([9, 9]).buffer,
+			fs_read_bytes: [7, 7, 7]
+		})
+	);
 	state.tasks.mockReset().mockResolvedValue(MUSIC_TASKS);
 	state.generate.mockReset().mockResolvedValue({
 		hash: OUT,
@@ -197,11 +199,12 @@ describe('edit_music', () => {
 	});
 
 	it('trims a song here, with no server, and keeps the cut as a WAV', async () => {
-		state.invoke.mockImplementation(async (cmd: string) => {
-			if (cmd === 'audio_read_bytes') return new Uint8Array([9, 9]).buffer;
-			if (cmd === 'audio_store_bytes') return { hash: OUT, mime: 'audio/wav', bytes: 10 };
-			return null;
-		});
+		state.invoke.mockImplementation(
+			invokeRouter({
+				audio_read_bytes: () => new Uint8Array([9, 9]).buffer,
+				audio_store_bytes: { hash: OUT, mime: 'audio/wav', bytes: 10 }
+			})
+		);
 		const out = await executeTool(
 			'edit_music',
 			{ source: SRC_URL, action: 'trim', start_seconds: 0, end_seconds: 12, title: 'First voice' },

@@ -20,7 +20,13 @@ vi.mock('#lib/stores/settings.ts', async (importOriginal) => ({
 }));
 vi.mock('#lib/debugLog.ts', () => ({ logDebug: () => {} }));
 
-import { cleanTitle, isSlashCommand, nameSession, titleFromMessage } from './sessionTitle';
+import {
+	cleanTitle,
+	isSlashCommand,
+	nameSession,
+	skillNamingText,
+	titleFromMessage
+} from './sessionTitle';
 
 beforeEach(() => {
 	mocks.chatCompletion.mockReset().mockResolvedValue({ content: 'Fix the build' });
@@ -75,6 +81,15 @@ describe('cleanTitle', () => {
 
 	it('keeps at most 60 characters', () => {
 		expect(cleanTitle('word '.repeat(30))).toHaveLength(59);
+	});
+});
+
+describe('skillNamingText', () => {
+	it('names the skill and what followed the command', () => {
+		expect(skillNamingText('init', '/init')).toBe('Run the init skill');
+		expect(skillNamingText('review', '  /review  the diff ')).toBe(
+			'Run the review skill: the diff'
+		);
 	});
 });
 

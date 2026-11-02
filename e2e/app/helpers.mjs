@@ -5,9 +5,13 @@ import { seedSavedItems } from './storage.mjs';
 
 export const FAKE_LLM = `http://127.0.0.1:${DEFAULT_PORT}`;
 
-/** Remote mode at the fake LLM: no local server, no first-run wizard. */
+/**
+ * Remote mode at the fake LLM: no local server, no first-run wizard. Tools
+ * are all sent, as the scenarios call them by name without loading them.
+ */
 export const REMOTE = {
 	dismissedStartupNotice: true,
+	deferTools: 'off',
 	inferenceBackend: {
 		mode: 'remote',
 		remoteBaseUrl: FAKE_LLM,
@@ -58,10 +62,12 @@ export function byText(text) {
 	);
 }
 
-/** The pid a stub sidecar recorded, or null if it has not started. */
+/** The pid a stub sidecar recorded, or null if it has not (yet, or fully) written one. */
 export function stubPid(dir, name) {
 	const file = `${dir}/${name}.pid`;
-	return existsSync(file) ? Number(readFileSync(file, 'utf8')) : null;
+	if (!existsSync(file)) return null;
+	const pid = Number(readFileSync(file, 'utf8'));
+	return Number.isInteger(pid) && pid > 0 ? pid : null;
 }
 
 /** Is a process alive? (Signal 0 tests without signalling, on Windows too.) */

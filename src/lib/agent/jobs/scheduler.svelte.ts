@@ -68,7 +68,7 @@ export async function tick(): Promise<void> {
 			await processDueJob(job, now);
 		}
 	} catch (e) {
-		logDebug('jobs', 'scheduler tick failed', { error: errMessage(e) });
+		console.warn('Scheduled jobs were not checked this tick:', errMessage(e));
 	} finally {
 		ticking = false;
 	}
@@ -100,10 +100,9 @@ async function processDueJob(job: JobSummary, now: number): Promise<void> {
 	} else {
 		// Schedule config didn't deserialize — clear next_due_at so we don't
 		// busy-loop on a broken job. The user will see "Manual" in the list.
-		logDebug('jobs', 'scheduler: failed to parse schedule, clearing', {
-			jobId: job.id,
-			schedule_kind: job.schedule_kind
-		});
+		console.warn(
+			`Job ${job.id} has a ${job.schedule_kind} schedule that could not be read; it is now manual`
+		);
 		await setJobNextDueAt(job.id, null);
 	}
 

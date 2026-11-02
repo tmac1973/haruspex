@@ -160,7 +160,7 @@ export async function shareReports(reports: readonly StoredReport[]): Promise<Sh
 	});
 	const folder = saved.path.replace(/[\\/][^\\/]*$/, '');
 	const zipName = saved.path.slice(folder.length + 1);
-	await invoke('open_folder', { path: folder });
+	await invoke('folder_open', { path: folder });
 	const body = await redact(issueSummary(reports, zipName));
 	await invoke('open_url', { url: issueUrl(reports, body, reports[0]?.os ?? '') });
 	return saved;

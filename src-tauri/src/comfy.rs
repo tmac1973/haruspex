@@ -172,7 +172,9 @@ pub(crate) struct ImageServer {
 }
 
 pub(crate) const COMFYUI: ImageServer = ImageServer {
-    secret: "comfy:key",
+    // Each image model sends its own named key, resolved by the webview; the
+    // old `comfy:key` secret is read only to migrate it (`image/keys.ts`).
+    secret: "",
     name: "ComfyUI",
     one_at_a_time: None,
 };
@@ -231,6 +233,22 @@ pub enum UploadCache {
 pub(crate) enum FormShape {
     RequestPart,
     Fields,
+}
+
+/// [`resolve_uploads`] with the app's own cache folders: what every upload
+/// command does first.
+pub(crate) fn resolve_app_uploads(
+    app: &tauri::AppHandle,
+    db: &crate::db::Database,
+    files: Vec<UploadFile>,
+) -> Result<Vec<FilePart>, ComfyError> {
+    let invalid = |message| ComfyError::Invalid { message };
+    resolve_uploads(
+        db,
+        &crate::audio_cache::cache_dir(app).map_err(invalid)?,
+        &crate::image_cache::cache_dir(app).map_err(invalid)?,
+        files,
+    )
 }
 
 /// The files to send, read from the audio cache where they are named by hash.
@@ -529,12 +547,7 @@ pub async fn comfy_upload(
     call: ComfyCall,
     files: Vec<UploadFile>,
 ) -> Result<serde_json::Value, ComfyError> {
-    let parts = resolve_uploads(
-        &db,
-        &crate::audio_cache::cache_dir(&app).map_err(|message| ComfyError::Invalid { message })?,
-        &crate::image_cache::cache_dir(&app).map_err(|message| ComfyError::Invalid { message })?,
-        files,
-    )?;
+    let parts = resolve_app_uploads(&app, &db, files)?;
     upload_json(call, COMFYUI, parts, FormShape::Fields).await
 }
 

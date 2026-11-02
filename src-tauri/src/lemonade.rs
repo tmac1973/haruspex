@@ -36,7 +36,8 @@ use crate::proxy::ProxyConfig;
 static GENERATING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 pub(crate) const LEMONADE: ImageServer = ImageServer {
-    secret: "lemonade:key",
+    // As ComfyUI's: a named key the webview sends, never the old secret.
+    secret: "",
     name: "Lemonade",
     one_at_a_time: Some((&GENERATING, &["/api/v1/images/"])),
 };
@@ -87,12 +88,7 @@ pub async fn lemonade_upload(
     call: ComfyCall,
     files: Vec<crate::comfy::UploadFile>,
 ) -> Result<serde_json::Value, ComfyError> {
-    let parts = crate::comfy::resolve_uploads(
-        &db,
-        &crate::audio_cache::cache_dir(&app).map_err(|message| ComfyError::Invalid { message })?,
-        &crate::image_cache::cache_dir(&app).map_err(|message| ComfyError::Invalid { message })?,
-        files,
-    )?;
+    let parts = crate::comfy::resolve_app_uploads(&app, &db, files)?;
     crate::comfy::upload_json(call, LEMONADE, parts, crate::comfy::FormShape::Fields).await
 }
 

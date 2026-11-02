@@ -9,6 +9,7 @@
 	import { subtaskActive, type SubtaskState } from '#lib/code/subtask.ts';
 	import { formatCommandDuration } from '#lib/code/commandResult.ts';
 	import { copyText } from '#lib/utils/copyText.ts';
+	import { renderMarkdown } from '#lib/markdown.ts';
 
 	let {
 		subtask,
@@ -140,7 +141,8 @@
 	{#if subtask.report}
 		<details class="report" open={subtask.status === 'done' && compact}>
 			<summary>{subtask.status === 'stopped' ? 'What it had so far' : 'Report'}</summary>
-			<div class="report-text">{subtask.report}</div>
+			<!-- Sanitised by renderMarkdown, as chat answers are. -->
+			<div class="report-text markdown">{@html renderMarkdown(subtask.report)}</div>
 		</details>
 	{/if}
 </div>
@@ -268,7 +270,6 @@
 
 	.report-text {
 		margin: 4px 0;
-		white-space: pre-wrap;
 		overflow-wrap: break-word;
 		color: var(--text-primary);
 		line-height: 1.45;

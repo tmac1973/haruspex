@@ -19,6 +19,7 @@ import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 import type { ToolContext } from './types';
 import { ImageBackendError } from '#lib/image/types.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
+import { invokeRouter } from '#lib/testing/invoke.ts';
 
 const HASH = 'b'.repeat(64);
 const ctx: ToolContext = makeToolContext({
@@ -135,8 +136,8 @@ describe('generate_image with a path', () => {
 	});
 
 	it('saves the picture into the working folder too', async () => {
-		state.invoke.mockImplementation(async (cmd: string) =>
-			cmd === 'fs_path_exists' ? false : cmd === 'image_store_bytes' ? HASH : null
+		state.invoke.mockImplementation(
+			invokeRouter({ fs_path_exists: false, image_store_bytes: HASH })
 		);
 		const withFolder = makeToolContext({
 			interactive: true,

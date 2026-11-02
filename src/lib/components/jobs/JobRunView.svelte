@@ -9,7 +9,7 @@
 	import { hasStreamingAnswer } from '#lib/agent/thinkStream.ts';
 	import JobRunStats from '#lib/components/jobs/JobRunStats.svelte';
 	import ThinkingPanel from '#lib/components/ThinkingPanel.svelte';
-	import { splitThinkChannels } from '#lib/markdown.ts';
+	import { stepReasoning } from '#lib/components/jobs/stepReasoning.ts';
 	import { formatDuration, formatTokens } from '#lib/utils/format.ts';
 	import {
 		cancel,
@@ -81,18 +81,6 @@
 	 * by character ratio (no server reports either per channel), so they are
 	 * labelled as estimates rather than presented as counts.
 	 */
-	/**
-	 * Reasoning already banked for the step, plus whatever is in flight.
-	 * `onReasoning` only fires when a model call completes, so on a streaming
-	 * turn the tail is the difference between watching and waiting; on a
-	 * tool-driven one there is no tail and this is just the banked text.
-	 */
-	function stepReasoning(step: RunStepState): string {
-		const live = splitThinkChannels(step.streaming).reasoning.trim();
-		if (!live) return step.reasoning;
-		return step.reasoning ? `${step.reasoning}\n\n---\n\n${live}` : live;
-	}
-
 	function thinkingSummary(t: StepThinkingStats): string {
 		const pct = t.totalMs > 0 ? Math.round((t.reasoningMs / t.totalMs) * 100) : 0;
 		return `~${formatDuration(t.reasoningMs)} · ~${formatTokens(t.reasoningTokens)} tokens · ${pct}% of generation`;

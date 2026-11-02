@@ -614,16 +614,7 @@ async fn speak(
             .into_response();
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(120))
-        .build();
-    let Ok(client) = client else {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "could not build a client",
-        )
-            .into_response();
-    };
+    let client = crate::sidecar_util::http_client(Duration::from_secs(120));
 
     let response = client
         .post(format!(
