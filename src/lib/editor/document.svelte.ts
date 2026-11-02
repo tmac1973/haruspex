@@ -47,6 +47,13 @@ export interface EditorIO {
  */
 export type DiskState = 'same' | 'changed' | 'deleted' | 'new';
 
+/** Files a tab shows in a viewer rather than as text, by extension. */
+export type FileViewer = 'glb';
+
+export function viewerFor(relPath: string): FileViewer | null {
+	return /\.glb$/i.test(relPath) ? 'glb' : null;
+}
+
 export class EditorDocument {
 	readonly workdir: string;
 	readonly relPath: string;
@@ -78,6 +85,11 @@ export class EditorDocument {
 		this.io = io;
 	}
 
+	/** Shown in a viewer: never read as text, never dirty, never saved. */
+	get viewer(): FileViewer | null {
+		return viewerFor(this.relPath);
+	}
+
 	get dirty(): boolean {
 		return this.loaded && this.draft !== this.baseline;
 	}
@@ -96,6 +108,10 @@ export class EditorDocument {
 	}
 
 	async load(): Promise<void> {
+		if (this.viewer) {
+			this.loaded = true;
+			return;
+		}
 		try {
 			const file = await this.io.read(this.workdir, this.relPath);
 			this.path = file.path;
@@ -149,7 +165,7 @@ export class EditorDocument {
 	 * clean file reloads silently; a dirty one keeps its edits and says so.
 	 */
 	async diskChanged(hash: string | null): Promise<void> {
-		if (!this.loaded || this.failed) return;
+		if (!this.loaded || this.failed || this.viewer) return;
 		if (hash === this.hash && !this.missing) return;
 		this.diskHash = hash;
 		if (hash === null) {

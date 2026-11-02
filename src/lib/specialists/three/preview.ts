@@ -119,7 +119,8 @@ function render(
 	}
 }
 
-function disposeTree(root: Object3D): void {
+/** Free a loaded scene's geometry, materials and textures. */
+export function disposeTree(root: Object3D): void {
 	root.traverse((o) => {
 		const mesh = o as Mesh;
 		if (!mesh.isMesh) return;
