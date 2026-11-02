@@ -53,4 +53,9 @@ notices_seen_at: number | null,
  * The checked-out branch the agent was last told or saw. `null`: never
  * told; `''`: told there was none (not a repo).
  */
-agent_branch: string | null, };
+agent_branch: string | null, 
+/**
+ * JSON array of the specialist entry ids this session offers; `null`
+ * means the entries marked on by default.
+ */
+specialists: string | null, };

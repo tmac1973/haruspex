@@ -874,6 +874,10 @@ impl Database {
             // Each chat's working folder ('' for none). NULL until the
             // frontend hands every older chat the folder they all shared.
             "ALTER TABLE conversations ADD COLUMN working_dir TEXT",
+            // The specialist entry ids a Code session offers, as a JSON array;
+            // NULL means the ones marked on by default (every session before
+            // specialists existed).
+            "ALTER TABLE code_sessions ADD COLUMN specialists TEXT",
         ] {
             if let Err(e) = conn.execute(stmt, []) {
                 let msg = e.to_string();

@@ -5,8 +5,9 @@
  * session store has to tell "no sessions" from "the save did not happen",
  * since the thread is written after every turn to survive a power cut.
  *
- * The one translation done here is the backend: Rust stores it as opaque
- * JSON, callers deal in `BackendOverride`. The thread stays a string; it is
+ * The translations done here are the backend and the specialists: Rust
+ * stores them as opaque JSON, callers deal in `BackendOverride` and a list
+ * of ids. The thread stays a string; it is
  * `#lib/code/session.ts`'s to encode and decode.
  */
 import { invoke } from '@tauri-apps/api/core';
@@ -18,9 +19,11 @@ import type { CodeLocation } from '#lib/ipc/gen/CodeLocation.ts';
 
 export type { CodeSessionSummary, CodeLocation };
 
-/** A session row with its backend decoded. */
-export type CodeSessionRecord = Omit<CodeSessionRow, 'backend'> & {
+/** A session row with its backend and specialists decoded. */
+export type CodeSessionRecord = Omit<CodeSessionRow, 'backend' | 'specialists'> & {
 	backend: BackendOverride | null;
+	/** The specialist entry ids it offers; null: the ones on by default. */
+	specialists: string[] | null;
 };
 
 /**
@@ -31,6 +34,8 @@ export interface CodeSessionMetaPatch {
 	title?: string;
 	backend?: BackendOverride | null;
 	effort?: string | null;
+	/** Null puts the session back on the specialists marked on by default. */
+	specialists?: string[] | null;
 }
 
 /** A stored backend that no longer parses falls back to the global one. */
@@ -44,8 +49,25 @@ function decodeBackend(json: string | null): BackendOverride | null {
 	}
 }
 
+/** A stored list that no longer parses falls back to the defaults. */
+function decodeSpecialists(json: string | null | undefined): string[] | null {
+	if (!json) return null;
+	try {
+		const parsed: unknown = JSON.parse(json);
+		if (Array.isArray(parsed) && parsed.every((id) => typeof id === 'string')) return parsed;
+	} catch {
+		// Falls through to the warning.
+	}
+	console.warn('A Code session has a specialist list that does not parse; using the defaults.');
+	return null;
+}
+
 function toRecord(row: CodeSessionRow): CodeSessionRecord {
-	return { ...row, backend: decodeBackend(row.backend) };
+	return {
+		...row,
+		backend: decodeBackend(row.backend),
+		specialists: decodeSpecialists(row.specialists)
+	};
 }
 
 /** Summaries for the sidebar, newest first. Never includes threads. */
@@ -177,6 +199,9 @@ export function updateCodeSessionMeta(id: string, patch: CodeSessionMetaPatch): 
 		wire.backend = patch.backend === null ? null : JSON.stringify(patch.backend);
 	}
 	if (patch.effort !== undefined) wire.effort = patch.effort;
+	if (patch.specialists !== undefined) {
+		wire.specialists = patch.specialists === null ? null : JSON.stringify(patch.specialists);
+	}
 	return invoke<void>('code_session_update_meta', { id, patch: wire });
 }
 

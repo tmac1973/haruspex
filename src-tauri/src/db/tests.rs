@@ -2549,6 +2549,33 @@ fn code_session_meta_patch_sets_clears_and_leaves_alone() {
 }
 
 #[test]
+fn code_session_specialists_start_unset_are_patched_and_follow_a_fork() {
+    let db = test_db();
+    let dir = TempDir::new("specialists");
+    let s = db.create_code_session(dir.path(), None, None).unwrap();
+    // Unset: the entries marked on by default.
+    assert_eq!(s.specialists, None);
+
+    let patch: CodeSessionMetaPatch =
+        serde_json::from_str(r#"{"specialists":"[\"a\",\"b\"]"}"#).unwrap();
+    db.update_code_session_meta(&s.id, &patch).unwrap();
+    let row = db.load_code_session(&s.id).unwrap();
+    assert_eq!(row.specialists.as_deref(), Some(r#"["a","b"]"#));
+
+    // A rename leaves the list alone.
+    let patch: CodeSessionMetaPatch = serde_json::from_str(r#"{"title":"Assets"}"#).unwrap();
+    db.update_code_session_meta(&s.id, &patch).unwrap();
+    assert!(db.load_code_session(&s.id).unwrap().specialists.is_some());
+
+    let fork = db.fork_code_session(&s.id, 0).unwrap();
+    assert_eq!(fork.specialists.as_deref(), Some(r#"["a","b"]"#));
+
+    let patch: CodeSessionMetaPatch = serde_json::from_str(r#"{"specialists":null}"#).unwrap();
+    db.update_code_session_meta(&s.id, &patch).unwrap();
+    assert_eq!(db.load_code_session(&s.id).unwrap().specialists, None);
+}
+
+#[test]
 fn code_session_fork_cuts_messages_and_sidecars_at_the_fork_point() {
     let db = test_db();
     let dir = TempDir::new("fork");
