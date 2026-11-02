@@ -203,6 +203,67 @@ describe('a backend that outlived the frontend', () => {
 		await startMcpServer(config(), entry());
 		expect(mcpState(ID).status.type).toBe('Error');
 	});
+
+	/** The backend answers `mcp_server_status` with each of these in turn. */
+	function statusesInTurn(...types: string[]): () => { type: string } {
+		let i = 0;
+		return () => ({ type: types[Math.min(i++, types.length - 1)] });
+	}
+
+	it('waits out a start the backend has under way, then adopts it', async () => {
+		// A reload that lands while the server is still negotiating: starting
+		// it again is refused, and the card read "Failed: already running".
+		invoke.mockImplementation(
+			invokeRouter({
+				mcp_server_status: statusesInTurn('Starting', 'Starting', 'Ready'),
+				mcp_connection_info: CONNECTION,
+				mcp_list_tools: TOOLS
+			})
+		);
+
+		await startMcpServer(config(), entry());
+
+		expect(invoke.mock.calls.map((c) => c[0])).not.toContain(IPC.mcp_start_server);
+		expect(mcpState(ID).status.type).toBe('Ready');
+		expect(registeredMcpToolNames()).toContain('mcp__srv-1__search');
+		await stopMcpServer(ID);
+	});
+
+	it('starts it afresh when the start under way fails', async () => {
+		invoke.mockImplementation(
+			invokeRouter({
+				mcp_server_status: statusesInTurn('Starting', 'Error'),
+				mcp_connection_info: CONNECTION,
+				mcp_list_tools: TOOLS
+			})
+		);
+
+		await startMcpServer(config(), entry());
+
+		expect(invoke.mock.calls.map((c) => c[0])).toContain(IPC.mcp_start_server);
+		expect(mcpState(ID).status.type).toBe('Ready');
+		await stopMcpServer(ID);
+	});
+
+	it('stops waiting after the backend’s own deadline has passed', async () => {
+		vi.useFakeTimers();
+		try {
+			invoke.mockImplementation(
+				invokeRouter({
+					mcp_server_status: { type: 'Starting' },
+					mcp_start_server: () => {
+						throw 'server srv-1 is already running';
+					}
+				})
+			);
+			const started = startMcpServer(config(), entry());
+			await vi.advanceTimersByTimeAsync(26_000);
+			await started;
+			expect(mcpState(ID).status.type).toBe('Error');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 });
 
 describe('a server that changes its toolset while running', () => {
