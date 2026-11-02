@@ -28,7 +28,8 @@ Headlines, sources and links come from the feeds.
 ## Steps
 1. Type config: `{ feeds: string[]; interests: string; hours: number
    (default 24); max: number (default 6) }`. `background: true`,
-   `supportsSchedule: true`. Stages: Fetch, Pick. The registry entry's
+   `supportsSchedule: true`. Stages: Fetch, Pick. Like every type but
+   research, it is paused in Lean and Lean + files (`types/lean.ts`). The registry entry's
    `defaultSchedule` is `{ kind: 'daily', time: '07:00' }`.
    Required fields, per the #834 contract: `validate` refuses an empty
    `feeds` ("Add at least one feed.") and an empty `interests` ("Say what
@@ -40,9 +41,16 @@ Headlines, sources and links come from the feeds.
 2. Presets in `feeds.ts`: a short list of general and tech feeds with
    published RSS URLs (BBC News world, The Guardian world, NPR News, Ars
    Technica, Hacker News front page). Each URL is checked by hand to return a
-   feed before it goes in the list. The form shows them
+   feed with an XML content type before it goes in the list. The form shows them
    as checkboxes plus a custom URL field.
-3. Fetch stage: `proxy_fetch` each feed with the network proxy; parse items
+3. Fetch stage: `proxy_fetch` each feed with the network proxy and parse its
+   reply's `.text` (it returns `FetchedPage { text, full_length,
+   hero_image }`). A feed served as `application/rss+xml` or another `+xml`
+   type comes back raw. One served as `text/html` or with no type goes
+   through the HTML extractor and loses its XML, so the step fails that feed
+   with "Not a feed." and the preset list holds only feeds checked to send
+   an XML type. Replies are cached for 10 minutes per URL, so Refresh within
+   that time sees the same items; that is accepted. Parse items
    to `{ id, title, link, source, published, summary }`. `id` is the first 16
    hex characters of SHA-256 (`crypto.subtle.digest`) over the feed URL, a
    newline, and the item's guid (or its link when there is no guid), so an
@@ -66,8 +74,10 @@ Headlines, sources and links come from the feeds.
    URL list, the interests line (placeholder "Local politics, Rust, space"),
    hours, max, and the schedule starting at `defaultSchedule`. Submit calls
    `createCardJob('news', typeConfig, schedule)`.
-7. Docs: `home.md` section; `jobs.md` new type; `search-and-network.md` notes
-   that feeds are fetched through the network proxy.
+7. Docs: `home.md` section; `jobs.md` names the new type in the existing
+   list of types without growing the page (it sits at the 6 KB limit);
+   `search-and-network.md` notes that feeds are fetched through the network
+   proxy.
 
 ## Build gate
 - `npm run check`, `npm run lint`, `npm run format:check`, `npm run test`
@@ -78,7 +88,8 @@ Headlines, sources and links come from the feeds.
 - Unit: `registry.test.ts`'s `missingRequired` check passes for
   `news_digest` with its blank defaults.
 - Unit: `feeds.ts` with recorded RSS 2.0 and Atom samples, a feed with no
-  guid, and HTML in descriptions.
+  guid, HTML in descriptions, and an HTML page in place of a feed (fails
+  with "Not a feed.").
 - Unit: pipeline with a fake turn — invented id dropped, links come from the
   feed, one failing feed does not fail the run.
 - Hand (9B): add the card with two presets and an interests line; check every

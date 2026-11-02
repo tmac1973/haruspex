@@ -41,10 +41,12 @@ link.
    `setActiveTab('chat')`. Nothing is sent until the user presses Enter.
    For email, the full body is not fetched; the user can ask the chat to
    read it with the email tools.
-2. Email Open: `EmailReader` calls `email_read_full(account, message_id)` and
-   shows headers and body; a Draft reply button inside it does step 3.
+2. Email Open: `EmailReader` calls `emailCall('email_read_full', { account,
+   messageId }, signal)` (`agent/tools/email.ts`; `account` is the full
+   `EmailAccount`, found by id in settings) and shows headers and body; a Draft reply button inside it does step 3.
 3. `draftReply(accountId, messageId, instruction?)`:
-   `email_reply_context` gives recipients, subject, threading headers and the
+   `emailCall('email_reply_context', { account, messageId }, signal)` gives
+   recipients, subject, threading headers and the
    quoted original. `withInferenceSlot({ consumer: { kind: 'home', label:
    'Draft reply' } }, () => runEphemeralTurn({ userMessage, systemPrompt,
    toolAllowlist: [], interactive: false, workingDir: null, contextSize:
@@ -59,9 +61,10 @@ link.
    tooltip naming Settings → Integrations → Email.
 5. Meetings: row click opens the event's join link if present, otherwise
    nothing; Ask about this on every row. News: headline opens the link; Ask
-   about this on every row.
+   about this on every row. Links open with `openInBrowser`.
 6. Docs: `home.md` actions section, stating Draft reply never sends on its
-   own; `integrations.md` one line on Draft reply from Home.
+   own. `integrations.md` sits at the 6 KB page limit, so its line on Draft
+   reply from Home replaces the phase 04 pointer rather than adding one.
 
 ## Build gate
 - `npm run check`, `npm run lint`, `npm run format:check`, `npm run test`

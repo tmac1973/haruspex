@@ -44,7 +44,8 @@ right now, and what is going on?".
 - `docs/guide/` gets a `home` page and updates to the pages it touches.
 
 ## Non-goals
-- Not available in lean mode; Home is hidden there like Shell and Code.
+- Not available in Lean or Lean + files; Home is hidden there like Shell and
+  Code, and the card jobs are paused there like every non-research job.
 - No free-form dashboard grid (no x/y/w/h placement or resize handles).
 - No user-defined output schemas for pinned jobs; they render markdown.
 - No email is ever sent without the user's click in the review modal.
@@ -99,6 +100,7 @@ Every Haruspex user outside lean mode.
 - Home is the first tab; Ctrl+1 opens it; the other tab shortcuts shift by one
   and the `shortcuts` page matches.
 - In lean mode, Home is not shown and a stored `home` tab falls back to Chat.
+  Digits keep their fixed order there: Ctrl+2 and 3 are Chat and Jobs.
 - A code session waiting on an approval or question shows as "needs
   attention" on Home within a second, and clicking it opens that session.
 - Adding Important emails creates one job visible in the Jobs tab; editing its
@@ -144,3 +146,10 @@ Every Haruspex user outside lean mode.
   requested and pull requests from others; Work on this opens a code session
   or a guided-planning job in the local checkout.
 - **Tab position** → first; Ctrl+1 is Home and the other digits shift.
+- **Lean-mode digits** (after main moved on, 2026-11-01) → keep the fixed
+  order, as `visibleTabs()` already promises: in lean mode Ctrl+1, 4 and 5
+  do nothing.
+- **Desktop data sources** (after main moved on, 2026-11-01) → Home reads the
+  desktop stores (`getRunsForJob`, `getCurrentRun`, `getOpenSessions`), not
+  the engine, because the engine runs only with Remote control on. The web
+  client's Home (phase 08) uses the engine.

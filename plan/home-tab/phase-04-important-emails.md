@@ -10,8 +10,10 @@ with a one-line reason. The card renders subject, sender and date from IMAP,
 never from model text.
 
 ## Files touched
-- `src-tauri/src/integrations/email/*` — `EmailListing` gains `seen: bool`
-  (IMAP `\Seen` in the existing FLAGS fetch); `email_list_recent` gains
+- `src-tauri/src/integrations/email/imap_client.rs` — `LIST_QUERY` gains
+  `FLAGS`; `EmailListing` gains `seen: bool`; the listing search adds
+  `UNSEEN` when asked.
+- `src-tauri/src/integrations/email/commands.rs` — `email_list_recent` gains
   `unseen_only: Option<bool>`.
 - `src/lib/ipc/gen/EmailListing.ts` — regenerated.
 - `src/lib/stores/jobs.svelte.ts` — add `'email_digest'` to `JobType`.
@@ -29,17 +31,26 @@ never from model text.
 - `docs/guide/home.md`, `docs/guide/jobs.md`, `docs/guide/integrations.md`.
 
 ## Steps
-1. Rust: read the `\Seen` flag where flags are already fetched for listings;
-   add the field and the `unseen_only` filter; add a test with a fixture
-   listing. Regenerate IPC types.
+1. Rust: the listing fetch has no FLAGS today. Add `FLAGS` to `LIST_QUERY`
+   (`imap_client.rs`) and read `\Seen` into `seen`; update the
+   `LIST_QUERY` test that checks the query's parts. With `unseen_only`,
+   the `uid_search` query gains `UNSEEN`, so the server filters. Add a test
+   with a fixture listing. Parsing follows mail-parser 1.0 (`AddressList`,
+   `PartKind` in `parser.rs`). Regenerate IPC types.
 2. Type config: `{ accountIds: string[]; rule: string; hours: number
    (default 24); max: number (default 8) }`. `background: true`,
    `supportsSchedule: true`, `hasPlannedSteps: false`. Stages: Fetch, Pick.
-3. Pipeline, Fetch stage (no model): resolve each id in `accountIds` to its
-   `EmailAccount` with `resolveEmailAccounts` (skipping disabled or missing
-   accounts, and naming them in the step output), then call
-   `invoke('email_list_recent', { account, hours, maxResults: 50,
-   unseenOnly: true })` per account. The command lists INBOX only.
+   `pausedByLean` (`types/lean.ts`) pauses every type but research, so this
+   job is paused in Lean and Lean + files and its scheduled runs are
+   skipped. That matches Home being hidden in lean mode.
+3. Pipeline, Fetch stage (no model): resolve each id in `accountIds` by
+   filtering `getSettings().integrations.email.accounts` on `id` and
+   `enabled`. `resolveEmailAccounts` is not used: it takes one selector and
+   returns every account for an empty one. Disabled or missing accounts are
+   skipped and named in the step output. Then call
+   `emailCall('email_list_recent', { account, hours, maxResults: 50,
+   unseenOnly: true }, ctx.signal)` (`agent/tools/email.ts`) per account, so
+   a cancelled run stops the IMAP call. The command lists INBOX only.
    Candidates are `{ id: accountId + '|' + message_id, accountId, messageId,
    from, subject, date, snippet }`. With no candidates, `setResult({ items:
    [] })` and finish without a model turn.
@@ -63,17 +74,18 @@ never from model text.
    entry's `defaultSchedule` is `{ kind: 'interval', minutes: 30 }`; the Add
    card form starts with it.
 8. Registry entry: `jobType: 'email_digest'`, `notifies: true`,
-   `itemLabel: (i) => i.source.subject`. Card: reads the latest succeeded
-   run's `result_json` (`latestSucceeded` from `getLatestRun`); a failed
-   `latest` shows its error above it and renders each item's `source`
-   fields (from IMAP, not the model) with `why` under them. Shows "No important
-   mail." for an empty list, the error for a failed run, and "waiting" or
-   "running" while a run is live. Row click: nothing yet (actions come in
-   phase 07).
+   `itemLabel: (i) => i.source.subject`. Card: renders the latest succeeded
+   run's `result_json` (`latestSucceeded` from `getLatestRun`), each item's
+   `source` fields (from IMAP, not the model) with `why` under them. When
+   `latest` failed, its error shows above those items. "No important mail."
+   for an empty list; "waiting" or "running" while a run is live. Row click:
+   nothing yet (actions come in phase 07).
 9. Add card form: account(s), rule (placeholder "From my manager, or about
    invoices"), interval. Submit calls `createCardJob('important_emails', typeConfig, schedule)`.
-10. Docs: `home.md` section; `jobs.md` lists the new job type;
-   `integrations.md` notes the card under email.
+10. Docs: `home.md` section, with the card's detail. `jobs.md` and
+   `integrations.md` are within a few bytes of the 6 KB page limit, so each
+   gets a one-line pointer to the `home` page and loses a sentence of the
+   same length elsewhere.
 
 ## Build gate
 - `npm run check`, `npm run lint`, `npm run format:check`, `npm run test`
@@ -85,7 +97,8 @@ never from model text.
 - Unit: `registry.test.ts`'s `missingRequired` check passes for
   `email_digest` with its blank defaults.
 - Rust: listing carries `seen`; `unseen_only` filters.
-- Unit: pipeline with a fake `runJobTurn` — empty inbox skips the model;
+- Unit: pipeline with a fake `runJobTurn` and `emailCall` routed through
+  `invokeRouter` — empty inbox skips the model;
   invented id is dropped; malformed JSON retries once then fails; `source`
   fields come from Fetch data even when the model echoes a different subject
   (validation removes the extra field); a disabled account is skipped.
