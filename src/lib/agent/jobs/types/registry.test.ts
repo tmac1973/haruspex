@@ -60,6 +60,7 @@ describe('registration barrel', () => {
 		expect(listJobTypes().map((d) => d.id)).toEqual([
 			'research',
 			'email_digest',
+			'news_digest',
 			'audit',
 			'guided_planning',
 			'autonomous_coding',

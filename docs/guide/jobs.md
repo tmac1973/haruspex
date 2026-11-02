@@ -37,9 +37,9 @@ Each run's **Tokens** card shows what every step used and how close it came to f
 
 ## The job types
 
-**Email digest.** What Home's Important emails card runs (see the `home` page).
+**Email and news digests.** What two Home cards run (see the `home` page).
 
-**Research.** A list of steps run in order. Each step is a fresh conversation that gets the previous step's output, so you can chain "search, summarise, write a report". Each step can turn on **Deep research**. Python runs without asking, in a sandbox of the run's own that sees none of your chats.
+**Research.** A list of steps run in order. Each step is a fresh conversation given the previous step's output, so you can chain "search, summarise, write a report". Each step can turn on **Deep research**. Python runs without asking, in a sandbox of the run's own that sees none of your chats.
 
 **Audit.** Runs one prompt many times independently (1–20), groups the findings, checks each group against the source, and writes one report sorted into confirmed, refuted and uncertain. Options: number of runs, max turns per run, **Read-only runs**, your own instructions, and an optional output file.
 

@@ -15,6 +15,7 @@ export type ScheduleKind = 'manual' | 'hourly' | 'daily' | 'weekly' | 'interval'
 export type JobType =
 	| 'research'
 	| 'email_digest'
+	| 'news_digest'
 	| 'audit'
 	| 'guided_planning'
 	| 'autonomous_coding'
