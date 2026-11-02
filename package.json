@@ -45,6 +45,7 @@
 		"@tauri-apps/cli": "^2.10.1",
 		"@testing-library/svelte": "^5.0.0",
 		"@types/marked": "^5.0.2",
+		"@types/three": "0.187.0",
 		"@wdio/cli": "^10.0.0",
 		"@wdio/local-runner": "^10.0.0",
 		"@wdio/mocha-framework": "^10.0.0",
@@ -81,7 +82,8 @@
 		"marked": "^18.1.0",
 		"pdfjs-dist": "^6.4.299",
 		"pptxgenjs": "4.0.1",
-		"pyodide": "314.0.7"
+		"pyodide": "314.0.7",
+		"three": "0.187.0"
 	},
 	"overrides": {
 		"pptxgenjs": {
