@@ -1,5 +1,6 @@
 <script lang="ts">
 	import TabBar from '#lib/components/TabBar.svelte';
+	import HomeTab from '#lib/components/home/HomeTab.svelte';
 	import ChatView from '#lib/components/ChatView.svelte';
 	import JobsTab from '#lib/components/jobs/JobsTab.svelte';
 	import ShellWorkspace from '#lib/components/shell/ShellWorkspace.svelte';
@@ -9,7 +10,7 @@
 	const activeTab = $derived(getActiveTab());
 
 	// Lazy-mount the Shell workspace once, then keep it alive across tab
-	// switches so the PTYs survive. Chat and Jobs use the regular
+	// switches so the PTYs survive. Home, Chat and Jobs use the regular
 	// unmount-on-switch model — they own no live process the user expects to
 	// persist.
 	let shellEverOpened = $state(false);
@@ -26,7 +27,9 @@
 
 <div class="page-layout">
 	<TabBar />
-	{#if activeTab === 'chat'}
+	{#if activeTab === 'home'}
+		<HomeTab />
+	{:else if activeTab === 'chat'}
 		<ChatView />
 	{:else if activeTab === 'jobs'}
 		<JobsTab />

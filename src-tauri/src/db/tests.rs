@@ -3088,3 +3088,100 @@ fn a_failed_delete_rolls_the_whole_merge_back() {
         ["drinks tea", "likes tea", "tea person"]
     );
 }
+
+fn card_ids(db: &Database) -> Vec<String> {
+    db.list_home_cards()
+        .unwrap()
+        .into_iter()
+        .map(|c| c.id)
+        .collect()
+}
+
+#[test]
+fn home_cards_are_added_at_the_end_and_reordered() {
+    let db = test_db();
+    for id in ["a", "b", "c"] {
+        db.create_home_card(id, "jobs", None, "normal", "{}")
+            .unwrap();
+    }
+    assert_eq!(card_ids(&db), ["a", "b", "c"]);
+
+    db.reorder_home_cards(&["c".into(), "a".into(), "b".into()])
+        .unwrap();
+    assert_eq!(card_ids(&db), ["c", "a", "b"]);
+
+    // A card left out keeps its place after the listed ones.
+    db.reorder_home_cards(&["b".into()]).unwrap();
+    assert_eq!(card_ids(&db), ["b", "c", "a"]);
+
+    db.delete_home_card("c").unwrap();
+    assert_eq!(card_ids(&db), ["b", "a"]);
+    let d = db
+        .create_home_card("d", "jobs", None, "wide", "{}")
+        .unwrap();
+    assert_eq!(d.size, "wide");
+    assert_eq!(card_ids(&db), ["b", "a", "d"]);
+}
+
+#[test]
+fn home_card_update_changes_only_the_fields_given() {
+    let db = test_db();
+    db.create_home_card("a", "jobs", None, "normal", "{\"x\":1}")
+        .unwrap();
+    db.update_home_card("a", Some("wide"), None, None).unwrap();
+    db.update_home_card("a", None, None, Some(true)).unwrap();
+    let card = &db.list_home_cards().unwrap()[0];
+    assert_eq!(card.size, "wide");
+    assert_eq!(card.config, "{\"x\":1}");
+    assert!(card.notify);
+    db.update_home_card("a", None, Some("{}"), Some(false))
+        .unwrap();
+    let card = &db.list_home_cards().unwrap()[0];
+    assert_eq!(card.size, "wide");
+    assert_eq!(card.config, "{}");
+    assert!(!card.notify);
+}
+
+#[test]
+fn deleting_a_job_clears_its_home_card_job_id() {
+    let db = test_db();
+    let job = db.create_job(&sample_job_input("Carded")).unwrap();
+    db.create_home_card("a", "pinned_job", Some(job), "normal", "{}")
+        .unwrap();
+    assert_eq!(db.list_home_cards().unwrap()[0].job_id, Some(job));
+    db.delete_job(job).unwrap();
+    let cards = db.list_home_cards().unwrap();
+    assert_eq!(cards.len(), 1);
+    assert_eq!(cards[0].job_id, None);
+}
+
+#[test]
+fn recent_runs_are_newest_first_across_jobs() {
+    let db = test_db();
+    let a = db.create_job(&sample_job_input("A")).unwrap();
+    let b = db.create_job(&sample_job_input("B")).unwrap();
+    {
+        let conn = db.conn.lock().unwrap();
+        // (job, queued, started, finished): ordered by the latest of the three.
+        for (job, q, s, f) in [
+            (a, 10, Some(20), Some(100)),
+            (b, 30, Some(40), None),
+            (a, 50, None, None),
+            (b, 5, Some(6), Some(7)),
+        ] {
+            conn.execute(
+                "INSERT INTO job_runs (job_id, status, trigger, queued_at, started_at, finished_at)
+                 VALUES (?1, 'succeeded', 'manual', ?2, ?3, ?4)",
+                params![job, q, s, f],
+            )
+            .unwrap();
+        }
+    }
+    let runs = db.list_recent_runs(3).unwrap();
+    let keys: Vec<(String, i64)> = runs
+        .iter()
+        .map(|r| (r.job_name.clone(), r.queued_at))
+        .collect();
+    assert_eq!(keys, [("A".into(), 10), ("A".into(), 50), ("B".into(), 30)]);
+    assert_eq!(runs[0].job_type, "research");
+}

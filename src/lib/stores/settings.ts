@@ -979,6 +979,8 @@ export interface AppSettings {
 	 * there is no memory limit (`shell::catalog::agent_powershell`).
 	 */
 	codeStorePowershell: boolean;
+	/** Home tab: the default Jobs and Code sessions cards were added once. */
+	homeSeeded: boolean;
 	/** Code tab: the folder the last new session used, offered for the next. */
 	codeLastRoot: string;
 	/** Code tab on Windows: the WSL distro `codeLastRoot` is in; '' for none. */
@@ -1184,6 +1186,7 @@ const defaults: AppSettings = {
 	codeBgLogCapMb: 5,
 	codeSubtasks: 'read',
 	codeStorePowershell: false,
+	homeSeeded: false,
 	codeLastRoot: '',
 	codeLastWslDistro: '',
 	codeNewWorktree: false,

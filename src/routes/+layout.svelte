@@ -531,15 +531,15 @@
 	}
 
 	/**
-	 * Ctrl / ⌘ + 1–4 picks a main tab. In the capture phase, so it works while
+	 * Ctrl / ⌘ + 1–5 picks a main tab. In the capture phase, so it works while
 	 * a terminal has focus: xterm takes Ctrl+3 and Ctrl+4 as control codes.
 	 */
 	function onTabSwitchKeydown(event: KeyboardEvent) {
 		const modifier = isMac ? event.metaKey : event.ctrlKey;
 		if (!modifier || event.altKey || event.shiftKey || (isMac && event.ctrlKey)) return;
-		if (!/^[1-4]$/.test(event.key) || detached || !isMainPage() || showSettings) return;
+		if (!/^[1-5]$/.test(event.key) || detached || !isMainPage() || showSettings) return;
 		const tab = mainTabs()[Number(event.key) - 1];
-		// Lean mode hides Shell and Code: their keys are left to the page.
+		// Lean mode hides Home, Shell and Code: their keys are left to the page.
 		if (!tab || !visibleTabs().includes(tab)) return;
 		event.preventDefault();
 		event.stopPropagation();

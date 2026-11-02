@@ -15,17 +15,19 @@ describe('active tab in lean mode', () => {
 	});
 
 	it('shows every tab with lean mode off', () => {
-		expect(visibleTabs()).toEqual(['chat', 'jobs', 'shell', 'code']);
+		expect(visibleTabs()).toEqual(['home', 'chat', 'jobs', 'shell', 'code']);
 	});
 
 	it('shows Chat and Jobs with lean mode on, and keeps the shortcut order', () => {
 		lean.on = true;
 		expect(visibleTabs()).toEqual(['chat', 'jobs']);
-		expect(mainTabs()).toEqual(['chat', 'jobs', 'shell', 'code']);
+		expect(mainTabs()).toEqual(['home', 'chat', 'jobs', 'shell', 'code']);
 	});
 
-	it('lands on Chat when something asks for Code or Shell', () => {
+	it('lands on Chat when something asks for Home, Code or Shell', () => {
 		lean.on = true;
+		setActiveTab('home');
+		expect(getActiveTab()).toBe('chat');
 		setActiveTab('code');
 		expect(getActiveTab()).toBe('chat');
 		setActiveTab('shell');

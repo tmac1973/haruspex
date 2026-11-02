@@ -746,7 +746,23 @@ impl Database {
             );
 
             CREATE INDEX IF NOT EXISTS idx_background_tasks_owner
-                ON background_tasks(owner);",
+                ON background_tasks(owner);
+
+            -- The Home tab's cards (home_cards::), in display order. A card
+            -- backed by a job keeps it in job_id; deleting the job leaves the
+            -- card, which then says so.
+            CREATE TABLE IF NOT EXISTS home_cards (
+                id TEXT PRIMARY KEY,
+                card_type TEXT NOT NULL,
+                job_id INTEGER NULL REFERENCES jobs(id) ON DELETE SET NULL,
+                position INTEGER NOT NULL,
+                size TEXT NOT NULL DEFAULT 'normal',
+                config TEXT NOT NULL DEFAULT '{}',
+                notify INTEGER NOT NULL DEFAULT 0,
+                last_result TEXT NULL,
+                updated_at INTEGER NULL,
+                created_at INTEGER NOT NULL
+            );",
         )
         .map_err(|e| format!("Migration failed: {}", e))?;
 
@@ -929,6 +945,7 @@ mod code_notices;
 mod code_sessions;
 mod commands;
 mod conversations;
+mod home_cards;
 mod images;
 mod jobs;
 mod memories;
@@ -942,6 +959,7 @@ pub use audio::AudioRow;
 pub use code_notices::StoredNotice;
 pub use code_sessions::{CodeSessionMetaPatch, CodeSessionRow, CodeSessionSummary};
 pub use commands::*;
+pub use home_cards::{HomeCard, RecentRun};
 pub use images::ImageRow;
 pub use memory_commands::*;
 
