@@ -37,9 +37,11 @@ The page lists your Code sessions, the open ones first. Pick one to follow it as
 
 Attach pictures with 📎 or a paste, up to 8 a message. `/name` runs a skill, and `/compact`, `/skills` and `/new` work as in the Code tab (see `code-sessions`). File names in a session are links: click one to read the file (it can't be edited from the page). Images attached to messages show as thumbnails, and pictures the model put in an answer show as they do here; click one for full size.
 
+**Home**, first in the switch atop the list, shows this computer's Home cards, read-only (see `home`): tap a Code session to open it; headlines and **Join** open in your browser.
+
 In lean mode (see `lean-mode`) the page shows Chat only, with a **Lean mode** label; turn it off at this computer.
 
-**Chat** (the switch atop the list) shows your chats, newest first. Open one to read it or carry it on; its working folder, Python sandbox and memory work as usual, and this computer stays on its chat. Chats answer at once, and sending to one that's answering steers it (see `chat-conversations`); each is marked Writing, Waiting or New. You can stop, continue or retry a reply, and answer **Run this Python?**, **Remember this?**, **Take a screenshot?** and **File already exists** from the page.
+**Chat** shows your chats, newest first. Open one to read it or carry it on; its working folder, Python sandbox and memory work as usual, and this computer stays on its chat. Chats answer at once, and sending to one that's answering steers it (see `chat-conversations`); each is marked Writing, Waiting or New. You can stop, continue or retry a reply, and answer **Run this Python?**, **Remember this?**, **Take a screenshot?** and **File already exists** from the page.
 
 ## Advanced
 
@@ -54,7 +56,7 @@ Scripts use the same API, for Code sessions, chats, jobs and settings: see the `
 
 ## What it doesn't do yet
 
-- The Shell can't be used remotely, and the page has no Jobs or Settings (a script can use both). In chat, the page can't start deep research, or change the working folder or incognito; a script can set those two (see `remote-control-api`).
+- The Shell can't be used remotely, and the page has no Jobs or Settings (a script can use both). Home is read-only. In chat, the page can't start deep research, or change the working folder or incognito; a script can set those two (see `remote-control-api`).
 - Files open read-only; edit them at this computer.
 - A turn you start from the page can't hand a command to this computer's Shell tab (`open_in_shell`, for sudo and the like): the agent says what to run, for when you're back. A turn started here that is waiting on one shows as waiting, and the page can let it carry on without it.
 

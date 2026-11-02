@@ -52,7 +52,13 @@
 	onDestroy(() => store.stop());
 </script>
 
-<div class="web" class:has-session={store.tab === 'code' ? !!store.selected : !!store.selectedChat}>
+<div
+	class="web"
+	class:home={store.tab === 'home'}
+	class:has-session={store.tab === 'code'
+		? !!store.selected
+		: store.tab === 'chat' && !!store.selectedChat}
+>
 	{#if store.connection === 'unauthorised'}
 		<PairScreen error={pairError} onpair={pairWith} />
 	{:else}
@@ -124,6 +130,18 @@
 	.empty {
 		margin: auto;
 		color: var(--text-secondary);
+	}
+
+	/* Home is one column, the whole width. */
+	.web.home {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.web.home .session {
+		display: none;
+	}
+	.web.home .list {
+		border-right: none;
+		background: var(--bg-primary);
 	}
 
 	/* A phone: the list, or the session, not both. */

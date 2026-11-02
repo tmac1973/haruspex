@@ -49,3 +49,5 @@ Each email, story and meeting has a **⋯** menu.
 The email and news cards make their own job, which has a **Home** badge in the Jobs tab. It waits while a chat or Code turn is using the model (the card says "Waiting for chat"), and like every job but research it doesn't run in lean mode. **⋯ → Notify on new items** sends a desktop notification naming what's new; it is off until you turn it on. Removing such a card deletes its job unless you untick **Also delete the job**; removing a pinned job's card keeps the job unless you tick it.
 
 Cards and their order are kept across restarts, and stack in one column on a narrow window. Removing every card leaves Home empty. A card from a newer version of Haruspex shows as **Unknown card** and can only be removed.
+
+Remote control's page shows Home too, read-only, from your phone or another computer (see the `remote-control` page).

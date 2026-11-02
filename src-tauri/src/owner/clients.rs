@@ -49,9 +49,8 @@ pub fn required_scope(op_type: &str) -> Option<Scope> {
         "sessions.list" | "session.get" | "session.resync" | "session.readFile" | "chats.list"
         | "chat.get" | "chat.resync" | "prompts.list" | "wsl.distros" | "jobs.types"
         | "jobs.list" | "jobs.get" | "runs.list" | "runs.get" | "runs.current" | "runs.resync"
-        | "debug.tail" | "inference.queue" | "tasks.list" | "models.list" | "app.mode" => {
-            Scope::Read
-        }
+        | "debug.tail" | "inference.queue" | "tasks.list" | "models.list" | "app.mode"
+        | "home.cards" => Scope::Read,
         "session.open"
         | "session.new"
         | "session.send"
@@ -419,6 +418,7 @@ mod tests {
         assert_eq!(required_scope("tasks.cancel"), Some(Scope::Drive));
         assert_eq!(required_scope("models.list"), Some(Scope::Read));
         assert_eq!(required_scope("app.mode"), Some(Scope::Read));
+        assert_eq!(required_scope("home.cards"), Some(Scope::Read));
         assert_eq!(required_scope("models.probe"), Some(Scope::Drive));
         assert_eq!(required_scope("session.delete"), Some(Scope::Drive));
         assert_eq!(required_scope("chat.folder"), Some(Scope::Drive));
