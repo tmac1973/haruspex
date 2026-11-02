@@ -100,6 +100,15 @@ beforeEach(() => {
 });
 
 describe('runCodeTurn', () => {
+	it("hands the session's specialists to the loop and its tool list", async () => {
+		mocks.runAgentLoop.mockImplementation(async (o: AgentLoopOptions) => o.onComplete());
+		await runCodeTurn(opts({ specialists: ['glb-1'] }));
+		expect(loopOptions().codeSpecialists).toEqual(['glb-1']);
+		await runCodeTurn(opts());
+		// Unset: the ones on by default, which is not "none".
+		expect((mocks.runAgentLoop.mock.calls[1][0] as AgentLoopOptions).codeSpecialists).toBeNull();
+	});
+
 	it('runs the code profile in the project folder', async () => {
 		mocks.runAgentLoop.mockImplementationOnce(async (o: AgentLoopOptions) => o.onComplete());
 		const backend = { baseUrl: 'http://remote', modelId: 'm' };

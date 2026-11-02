@@ -6,6 +6,7 @@ import type { LintIssue } from '#lib/sandbox/lint.ts';
 import type { FileDiff } from '#lib/code/diff.ts';
 import type { FeedbackTurn } from '#lib/harnessFeedback/report.ts';
 import type { HeldSlot } from '#lib/agent/inferenceQueue.svelte.ts';
+import type { ToolSchemaOpts } from '#lib/agent/tools/registry.ts';
 
 export type { Artifact, LintIssue };
 
@@ -259,6 +260,11 @@ export interface ToolContext {
 	/** The Code session's reasoning effort, for the subtasks it starts. Null follows Settings. */
 	codeEffort?: string | null;
 	/**
+	 * The Code tab session's specialist entry ids (`ask_specialist`). Null:
+	 * the ones on by default. Undefined outside the Code tab.
+	 */
+	codeSpecialists?: string[] | null;
+	/**
 	 * Set on the tools of a subtask (`delegate`'s child agent): it may not
 	 * start subtasks of its own, ask the user anything, or leave anything
 	 * running.
@@ -374,14 +380,16 @@ export interface ToolRegistration {
 		| 'harness-feedback'
 		/** Checking and cancelling background tasks. Only for a Chat or Code turn
 		 *  whose owner has started one. */
-		| 'tasks';
+		| 'tasks'
+		/** `ask_specialist`: the Code tab, when the session has a specialist on. */
+		| 'specialist';
 	requiresVision?: boolean;
 	/**
 	 * The schema as settings shape it for this turn, or null to leave the tool
 	 * out: the image tools' `model` choices and picture limit follow the image
 	 * models in Settings → Image. Asked only once every other gate has passed.
 	 */
-	liveSchema?: (schema: ToolDefinition) => ToolDefinition | null;
+	liveSchema?: (schema: ToolDefinition, opts: ToolSchemaOpts) => ToolDefinition | null;
 	/** Calls the model while it runs, in the turn's slot; the turn keeps its
 	 *  slot for it. */
 	usesModel?: true;

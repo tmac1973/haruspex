@@ -867,6 +867,7 @@ export class CodeSession {
 				},
 				backend: this.backend ? ($state.snapshot(this.backend) as BackendOverride) : null,
 				effort: this.effort,
+				specialists: this.specialists ? [...this.specialists] : null,
 				readOnly: this.readOnly,
 				remote: this.remote,
 				wslDistro: this.wslDistro,

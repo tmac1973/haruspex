@@ -202,6 +202,7 @@ export async function executeToolCalls(
 				codeRemote: ctx.codeRemote,
 				codeWriteGuard: ctx.codeWriteGuard,
 				codeEffort: ctx.codeEffort,
+				codeSpecialists: ctx.codeSpecialists,
 				subtask: ctx.subtask,
 				subtasksStartedThisTurn: ctx.subtasksStartedThisTurn,
 				transcript: () => ctx.messages,
