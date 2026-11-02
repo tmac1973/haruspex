@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RunCommandResult } from '#lib/ipc/gen/RunCommandResult.ts';
 import { makeToolContext } from '#lib/testing/toolContext.ts';
 import { invokeRouter, type InvokeRoute } from '#lib/testing/invoke.ts';
+// Imported once, statically: the tool registry pulls in a large module graph
+// whose first load takes seconds, and inside a test that load counts against
+// the 5 s test timeout, which a busy machine overruns (#409).
+import { executeTool, getToolSchemas } from '#lib/agent/tools/index.ts';
 
 const mocks = vi.hoisted(() => ({
 	invoke: vi.fn(),
@@ -64,7 +68,6 @@ beforeEach(() => {
 
 describe('run_command risk gate', () => {
 	it('runs a safe command without prompting', async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'ls -la' }, codeCtx);
 		expect(mocks.askCommandApproval).not.toHaveBeenCalled();
 		expect(mocks.invoke).toHaveBeenCalledWith(
@@ -83,7 +86,6 @@ describe('run_command risk gate', () => {
 			run_command_capture: () =>
 				runResultDefaults({ exit_code: 1, stdout: 'signal: killed', out_of_memory: true })
 		});
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'go test ./...' }, codeCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith(
 			'run_command_capture',
@@ -100,7 +102,6 @@ describe('run_command risk gate', () => {
 		// deny-with-guidance, never open a modal — and never auto-run: shell
 		// commands are not sandboxed to the working dir the way fs writes are.
 		const { runWithAutoApprove } = await import('#lib/stores/approvalOverride.ts');
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await runWithAutoApprove(() =>
 			executeTool('run_command', { command: 'rm -rf build' }, codeCtx)
 		);
@@ -112,7 +113,6 @@ describe('run_command risk gate', () => {
 
 	it('still runs SAFE commands in an unattended run', async () => {
 		const { runWithAutoApprove } = await import('#lib/stores/approvalOverride.ts');
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await runWithAutoApprove(() =>
 			executeTool('run_command', { command: 'ls -la' }, codeCtx)
 		);
@@ -126,7 +126,6 @@ describe('run_command risk gate', () => {
 		// approve" while the user sat at the keyboard.
 		mocks.askCommandApproval.mockResolvedValue('deny');
 		const { runWithAutoApprove } = await import('#lib/stores/approvalOverride.ts');
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await runWithAutoApprove(() =>
 			executeTool('run_command', { command: 'rm -rf build' }, { ...codeCtx, interactive: true })
 		);
@@ -135,7 +134,6 @@ describe('run_command risk gate', () => {
 
 	it('prompts on a risky command and aborts on deny', async () => {
 		mocks.askCommandApproval.mockResolvedValue('deny');
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'rm -rf /' }, codeCtx);
 		expect(mocks.askCommandApproval).toHaveBeenCalled();
 		expect(mocks.invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
@@ -144,7 +142,6 @@ describe('run_command risk gate', () => {
 
 	it('runs after allow_once without flipping session approval', async () => {
 		mocks.askCommandApproval.mockResolvedValue('allow_once');
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('run_command', { command: 'sudo reboot' }, codeCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
 		expect(mocks.approveSession).not.toHaveBeenCalled();
@@ -152,14 +149,12 @@ describe('run_command risk gate', () => {
 
 	it('flips session approval on allow_session', async () => {
 		mocks.askCommandApproval.mockResolvedValue('allow_session');
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('run_command', { command: 'sudo reboot' }, codeCtx);
 		expect(mocks.approveSession).toHaveBeenCalledWith('shell');
 	});
 
 	it("keys a Code session's approval by its id", async () => {
 		mocks.askCommandApproval.mockResolvedValue('allow_session');
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool(
 			'run_command',
 			{ command: 'sudo reboot' },
@@ -170,7 +165,6 @@ describe('run_command risk gate', () => {
 	});
 
 	it('skips the prompt when codeAutoApprove is on', async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool(
 			'run_command',
 			{ command: 'rm -rf /' },
@@ -182,7 +176,6 @@ describe('run_command risk gate', () => {
 
 	it('skips the prompt when the session is already approved', async () => {
 		mocks.isSessionApproved.mockReturnValue(true);
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('run_command', { command: 'rm -rf /' }, codeCtx);
 		expect(mocks.askCommandApproval).not.toHaveBeenCalled();
 		expect(mocks.invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
@@ -194,7 +187,6 @@ describe('run_command output handling', () => {
 		routeInvoke({
 			run_command_capture: () => runResultDefaults({ stdout: '', stderr: '', exit_code: 0 })
 		});
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: './my-gui' }, codeCtx);
 		expect(out.result).toContain('succeeded with no output');
 	});
@@ -203,7 +195,6 @@ describe('run_command output handling', () => {
 		routeInvoke({
 			run_command_capture: () => runResultDefaults({ killed: true, exit_code: null })
 		});
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'sleep 99' }, codeCtx);
 		expect(out.result).toContain('killed');
 	});
@@ -214,7 +205,6 @@ describe('run_command output handling', () => {
 			run_command_capture: () => runResultDefaults({ stdout: big }),
 			code_write_overflow: '/tmp/overflow.txt'
 		});
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'cat big' }, codeCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith('code_write_overflow', expect.anything());
 		expect(out.result).toContain('/tmp/overflow.txt');
@@ -240,7 +230,6 @@ describe('run_command output handling', () => {
 		const controller = new AbortController();
 		let resolveRun: (v: unknown) => void = () => {};
 		routeInvoke({ run_command_capture: () => new Promise((r) => (resolveRun = r)) });
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const p = executeTool(
 			'run_command',
 			{ command: 'sleep 99' },
@@ -265,7 +254,6 @@ describe('code_grep / code_glob formatting', () => {
 			total: 0,
 			files: []
 		});
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('code_grep', { pattern: 'needle' }, codeCtx);
 		expect(out.result).toBe('src/a.rs:12: fn needle()');
 	});
@@ -281,7 +269,6 @@ describe('code_grep / code_glob formatting', () => {
 			total: 3,
 			files: []
 		});
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('code_grep', { pattern: 'x', count: true }, codeCtx);
 		expect(out.result).toBe('src/a.rs: 2\nsrc/b.rs: 1\nTotal: 3 in 2 files');
 	});
@@ -294,7 +281,6 @@ describe('code_grep / code_glob formatting', () => {
 			total: 0,
 			files: ['src/a.rs', 'src/b.rs']
 		});
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('code_grep', { pattern: 'x', files_only: true }, codeCtx);
 		expect(out.result).toBe('src/a.rs\nsrc/b.rs');
 	});
@@ -311,14 +297,12 @@ describe('code_grep / code_glob formatting', () => {
 			total: 0,
 			files: []
 		});
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('code_grep', { pattern: 'needle', context: 1 }, codeCtx);
 		expect(out.result).toBe('a.rs-1: fn main() {\na.rs:2: needle();\na.rs-3: }');
 	});
 
 	it('reports no grep matches', async () => {
 		mocks.invoke.mockResolvedValueOnce({ matches: [], truncated: false });
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('code_grep', { pattern: 'zzz' }, codeCtx);
 		expect(out.result).toBe('No matches.');
 	});
@@ -328,14 +312,12 @@ describe('code_grep / code_glob formatting', () => {
 			matches: [{ path: 'a', line: 1, text: 'x' }],
 			truncated: true
 		});
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('code_grep', { pattern: 'x' }, codeCtx);
 		expect(out.result).toContain('truncated');
 	});
 
 	it('formats glob paths and the empty case', async () => {
 		mocks.invoke.mockResolvedValueOnce({ paths: ['src/a.ts', 'src/b.ts'], truncated: false });
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('code_glob', { pattern: '**/*.ts' }, codeCtx);
 		expect(out.result).toBe('src/a.ts\nsrc/b.ts');
 
@@ -359,7 +341,6 @@ describe('Shell + Code combined mode', () => {
 
 	it('code_grep roots at the live shell CWD', async () => {
 		mocks.invoke.mockResolvedValueOnce({ matches: [], truncated: false });
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('code_grep', { pattern: 'x' }, shellCodeCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith(
 			'code_grep',
@@ -371,7 +352,6 @@ describe('Shell + Code combined mode', () => {
 		const { updateSettings } = await import('#lib/stores/settings.ts');
 		updateSettings({ shellSelection: { kind: 'wsl', distro: 'Ubuntu-24.04' } });
 		try {
-			const { executeTool } = await import('#lib/agent/tools/index.ts');
 			mocks.invoke.mockResolvedValue({ matches: [], truncated: false });
 			await executeTool('code_grep', { pattern: 'x' }, shellCodeCtx);
 			expect(mocks.invoke).toHaveBeenCalledWith(
@@ -398,7 +378,6 @@ describe('Shell + Code combined mode', () => {
 	});
 
 	it("reads a WSL Code session's files through its distro's share", async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		mocks.invoke.mockResolvedValueOnce('text');
 		await executeTool(
 			'fs_read_text',
@@ -418,7 +397,6 @@ describe('Shell + Code combined mode', () => {
 		const { updateSettings } = await import('#lib/stores/settings.ts');
 		updateSettings({ shellSelection: { kind: 'wsl', distro: 'Ubuntu-24.04' } });
 		try {
-			const { executeTool } = await import('#lib/agent/tools/index.ts');
 			await executeTool('run_command', { command: 'ls' }, codeCtx);
 			expect(mocks.invoke).toHaveBeenCalledWith(
 				'run_command_capture',
@@ -457,7 +435,6 @@ describe('Shell + Code combined mode', () => {
 			line_after: 'b',
 			used_fuzzy: false
 		});
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('fs_edit_text', { path: 'foo.ts', old_str: 'a', new_str: 'b' }, shellCodeCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith('fs_edit_text_absolute', {
 			path: '/proj/foo.ts',
@@ -473,7 +450,6 @@ describe('the Code tab root (codeMode without shellMode)', () => {
 	const tabCtx = { ...codeCtx, shellCwd: '/elsewhere' };
 
 	it('code_grep and code_glob root at the working directory, not the shell cwd', async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		mocks.invoke.mockResolvedValueOnce({ matches: [], truncated: false });
 		await executeTool('code_grep', { pattern: 'x' }, tabCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith(
@@ -489,7 +465,6 @@ describe('the Code tab root (codeMode without shellMode)', () => {
 	});
 
 	it('run_command runs in the working directory', async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('run_command', { command: 'pwd' }, tabCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith(
 			'run_command_capture',
@@ -528,7 +503,6 @@ describe('run_command PTY driving', () => {
 				{ commandLine: 'ls', output: 'a.txt\n', exitCode: 0, cwd: '/proj', truncated: false }
 			]
 		});
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'ls' }, ptyCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith(
 			'shell_write',
@@ -543,7 +517,6 @@ describe('run_command PTY driving', () => {
 		const { updateSettings } = await import('#lib/stores/settings.ts');
 		updateSettings({ codeCommandExec: 'oneshot' });
 		routeInvoke({ run_command_capture: () => runResultDefaults() });
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('run_command', { command: 'ls' }, ptyCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith(
 			'run_command_capture',
@@ -560,7 +533,6 @@ describe('run_command PTY driving', () => {
 			shell_pending_command: 'go run main.go',
 			shell_get_context: { marker_count: 2 }
 		});
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'kill %1' }, ptyCtx);
 		expect(out.result).toContain('busy running');
 		expect(out.result).toContain('go run main.go');
@@ -573,7 +545,6 @@ describe('run_command PTY driving', () => {
 			shell_platform_supported: false,
 			run_command_capture: () => runResultDefaults()
 		});
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('run_command', { command: 'ls' }, ptyCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
 	});
@@ -586,7 +557,6 @@ describe('run_command PTY driving', () => {
 			// Idle terminal (no pending command) so the busy-guard lets us inject.
 			shell_get_recent_commands: []
 		});
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const p = executeTool(
 			'run_command',
 			{ command: 'sleep 99', timeout_secs: 2 },
@@ -645,7 +615,6 @@ describe('run_command background / watch', () => {
 
 	it('background:true detaches and returns the pid + log path, without watching', async () => {
 		mockBackgroundPty();
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool(
 			'run_command',
 			{ command: 'npm run dev', background: true },
@@ -664,7 +633,6 @@ describe('run_command background / watch', () => {
 
 	it('watch:true also registers a watch for the owning session', async () => {
 		mockBackgroundPty();
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'pytest -q', watch: true }, ptyCtx);
 		expect(out.result).toContain('watch on');
 		expect(out.result).toContain('12345');
@@ -699,7 +667,6 @@ describe('run_command background / watch', () => {
 			}),
 			shell_output_since: "fish: Unsupported use of '='. In fish, please use 'set x 1'."
 		});
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const started = Date.now();
 		const out = await executeTool('run_command', { command: 'x=1', timeout_secs: 30 }, ptyCtx);
 		expect(Date.now() - started).toBeLessThan(5000);
@@ -734,7 +701,6 @@ describe('run_command background / watch', () => {
 				{ commandLine: 'sleep 1', output: '', exitCode: 0, cwd: '/proj', truncated: false }
 			]
 		});
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'sleep 1' }, ptyCtx);
 		expect(out.result).toContain('Exit code: 0');
 		expect(mocks.invoke).not.toHaveBeenCalledWith('shell_output_since', expect.anything());
@@ -746,7 +712,6 @@ describe('run_command background / watch', () => {
 			shell_get_context: { completed_total: 0, marker_count: 0, marker_total: 0 },
 			run_command_capture: () => runResultDefaults()
 		});
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('run_command', { command: 'ls' }, ptyCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
 		expect(mocks.invoke).not.toHaveBeenCalledWith('shell_write', expect.anything());
@@ -754,7 +719,6 @@ describe('run_command background / watch', () => {
 
 	it('hands the background wrapper to bash under fish', async () => {
 		mockBackgroundPty({ shellPath: '/usr/bin/fish', shellName: 'fish' });
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool(
 			'run_command',
 			{ command: 'npm run dev', background: true },
@@ -769,7 +733,6 @@ describe('run_command background / watch', () => {
 	});
 
 	it('rejects background without a live terminal session', async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool(
 			'run_command',
 			{ command: 'npm run dev', background: true },
@@ -795,7 +758,6 @@ describe('Code-mode tool filtering', () => {
 	].sort();
 
 	it('the Code tab exposes the CODE_TOOLS allowlist plus its own tools', async () => {
-		const { getToolSchemas } = await import('#lib/agent/tools/index.ts');
 		const names = getToolSchemas({ hasWorkingDir: true, codeMode: true })
 			.map((s) => s.function.name)
 			.sort();
@@ -813,7 +775,6 @@ describe('Code-mode tool filtering', () => {
 	});
 
 	it('codeMode wins over shellMode and exposes the code toolset plus interactive PTY tools', async () => {
-		const { getToolSchemas } = await import('#lib/agent/tools/index.ts');
 		const names = getToolSchemas({ hasWorkingDir: false, shellMode: true, codeMode: true }).map(
 			(s) => s.function.name
 		);
@@ -831,7 +792,6 @@ describe('Code-mode tool filtering', () => {
 	});
 
 	it('run_command (exec) never leaks into Chat or Shell schemas', async () => {
-		const { getToolSchemas } = await import('#lib/agent/tools/index.ts');
 		const chat = getToolSchemas({ hasWorkingDir: true }).map((s) => s.function.name);
 		const shell = getToolSchemas({ hasWorkingDir: false, shellMode: true }).map(
 			(s) => s.function.name
@@ -862,7 +822,6 @@ describe('run_command boundary', () => {
 
 	it('refuses an unattended command that reaches Haruspex, even with auto-approve on', async () => {
 		const { runWithAutoApprove } = await import('#lib/stores/approvalOverride.ts');
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const { onBoundaryRefusal } = await import('#lib/shell/boundary.ts');
 		const refused: string[] = [];
 		const stop = onBoundaryRefusal((r) => refused.push(r.command));
@@ -881,7 +840,6 @@ describe('run_command boundary', () => {
 	it('asks when someone is there, and "allow for this session" does not cover it', async () => {
 		mocks.isSessionApproved.mockReturnValue(true);
 		mocks.askCommandApproval.mockResolvedValue('allow_session');
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool(
 			'run_command',
 			{ command: 'curl localhost:8767/sdapi/v1/sd-models' },
@@ -899,7 +857,6 @@ describe('run_command boundary', () => {
 
 	it('leaves the project’s own commands to the usual rules', async () => {
 		const { runWithAutoApprove } = await import('#lib/stores/approvalOverride.ts');
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await runWithAutoApprove(() =>
 			executeTool('run_command', { command: 'npm test' }, codeCtx)
 		);
@@ -908,7 +865,6 @@ describe('run_command boundary', () => {
 
 	it('names the risk in words, not "[object Object]"', async () => {
 		const { runWithAutoApprove } = await import('#lib/stores/approvalOverride.ts');
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await runWithAutoApprove(() =>
 			executeTool('run_command', { command: 'rm -rf build' }, codeCtx)
 		);
@@ -943,7 +899,6 @@ describe('run_command without a terminal (Code session)', () => {
 	});
 
 	it('background:true starts a code_bg process owned by the session', async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool(
 			'run_command',
 			{ command: 'npm run dev', background: true },
@@ -960,7 +915,6 @@ describe('run_command without a terminal (Code session)', () => {
 	});
 
 	it("names a WSL process by its Linux group, never the Windows relay's PID", async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const wslCtx = { ...sessionCtx, workingDir: '/home/tim/p', wslDistro: 'Ubuntu' };
 		const started = await executeTool(
 			'run_command',
@@ -985,7 +939,6 @@ describe('run_command without a terminal (Code session)', () => {
 	});
 
 	it('watch:true also registers a code_bg watch for the session', async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'npm test', watch: true }, sessionCtx);
 		expect(mocks.registerCodeBgWatch).toHaveBeenCalledWith(
 			expect.objectContaining({ owner: 'sess-1', processId: 'bg-1', command: 'npm test' })
@@ -994,7 +947,6 @@ describe('run_command without a terminal (Code session)', () => {
 	});
 
 	it('still refuses background with neither a terminal nor a session', async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool(
 			'run_command',
 			{ command: 'npm run dev', background: true },
@@ -1015,7 +967,6 @@ describe('run_command without a terminal (Code session)', () => {
 				})
 		});
 		mocks.askCommandApproval.mockResolvedValue('allow_once');
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'sudo dnf install foo' }, sessionCtx);
 		expect(out.result).toContain('Exit code: 1');
 		expect(out.result).toContain('Shell tab');
@@ -1025,13 +976,11 @@ describe('run_command without a terminal (Code session)', () => {
 		routeInvoke({
 			run_command_capture: () => runResultDefaults({ stderr: 'boom\n', exit_code: 2 })
 		});
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'make' }, sessionCtx);
 		expect(out.result).not.toContain('Shell tab');
 	});
 
 	it('command_output tails the log with a status line', async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('command_output', { id: 'bg-1' }, sessionCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith('code_bg_status', { owner: 'sess-1' });
 		expect(mocks.invoke).toHaveBeenCalledWith('code_bg_tail', { id: 'bg-1', bytes: 8192 });
@@ -1045,7 +994,6 @@ describe('run_command without a terminal (Code session)', () => {
 			code_bg_status: () => [{ ...bgProc, running: false, exit_code: 3 }],
 			code_bg_tail: ''
 		});
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('command_output', { id: 'bg-1' }, sessionCtx);
 		expect(out.result).toContain('exit code 3');
 		expect(out.result).toContain('(no output yet)');
@@ -1053,21 +1001,18 @@ describe('run_command without a terminal (Code session)', () => {
 
 	it('command_output refuses another session’s process', async () => {
 		routeInvoke({ code_bg_status: [] });
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('command_output', { id: 'bg-9' }, sessionCtx);
 		expect(out.result).toContain('No background command with id bg-9');
 		expect(mocks.invoke).not.toHaveBeenCalledWith('code_bg_tail', expect.anything());
 	});
 
 	it('command_stop stops the process', async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('command_stop', { id: 'bg-1' }, sessionCtx);
 		expect(mocks.invoke).toHaveBeenCalledWith('code_bg_stop', { id: 'bg-1' });
 		expect(out.result).toContain('Stopped bg-1');
 	});
 
 	it('command_stop needs a Code session', async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('command_stop', { id: 'bg-1' }, codeCtx);
 		expect(out.result).toContain('Code session');
 		expect(mocks.invoke).not.toHaveBeenCalledWith('code_bg_stop', expect.anything());
@@ -1078,7 +1023,6 @@ describe('run_command approval prompt', () => {
 	it('names the asking session and passes the turn signal', async () => {
 		mocks.askCommandApproval.mockResolvedValue('allow_once');
 		const stop = new AbortController();
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool(
 			'run_command',
 			{ command: 'rm -rf build' },
@@ -1096,7 +1040,6 @@ describe('run_command in a read-only session', () => {
 	it('asks about every command, even with auto-approve and a session approval', async () => {
 		mocks.isSessionApproved.mockReturnValue(true);
 		mocks.askCommandApproval.mockResolvedValue('allow_session');
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('run_command', { command: 'ls' }, { ...readOnly, codeAutoApprove: true });
 		expect(mocks.askCommandApproval).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -1111,14 +1054,12 @@ describe('run_command in a read-only session', () => {
 
 	it('runs nothing the user denies', async () => {
 		mocks.askCommandApproval.mockResolvedValue('deny');
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'ls' }, readOnly);
 		expect(out.result).toContain('denied');
 		expect(mocks.invoke).not.toHaveBeenCalledWith('run_command_capture', expect.anything());
 	});
 
 	it('refuses background commands without asking', async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool(
 			'run_command',
 			{ command: 'npm run dev', background: true },
@@ -1129,7 +1070,6 @@ describe('run_command in a read-only session', () => {
 	});
 
 	it('refuses writes and edits, offered or not', async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		for (const [name, args] of [
 			['fs_write_text', { path: 'a.txt', content: 'x' }],
 			['fs_edit_text', { path: 'a.txt', old_str: 'a', new_str: 'b' }]
@@ -1147,7 +1087,6 @@ describe('one writer per folder', () => {
 	}
 
 	it('a command that may write takes the folder first; a reading one does not', async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const g = guard();
 		await executeTool(
 			'run_command',
@@ -1160,7 +1099,6 @@ describe('one writer per folder', () => {
 	});
 
 	it('a command is refused while another session writes there', async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const g = guard('Another session (X) is editing this folder right now.');
 		const out = await executeTool(
 			'run_command',
@@ -1173,7 +1111,6 @@ describe('one writer per folder', () => {
 
 	it('an edit takes the folder and reports the file it changed', async () => {
 		routeInvoke({ fs_edit_text: { first_changed_line: 3, used_fuzzy: false } });
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const g = guard();
 		const out = await executeTool(
 			'fs_edit_text',
@@ -1186,7 +1123,6 @@ describe('one writer per folder', () => {
 	});
 
 	it('a refused write never reaches the disk', async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const g = guard('busy');
 		const out = await executeTool(
 			'fs_write_text',
@@ -1204,7 +1140,6 @@ describe('one writer per folder', () => {
 				throw 'no match';
 			}
 		});
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const g = guard();
 		await executeTool(
 			'fs_edit_text',
@@ -1225,14 +1160,12 @@ describe('run_command in a read-only subtask', () => {
 	};
 
 	it('runs a command that only reads, without asking', async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('run_command', { command: 'git log --oneline -5' }, child);
 		expect(mocks.askCommandApproval).not.toHaveBeenCalled();
 		expect(mocks.invoke).toHaveBeenCalledWith('run_command_capture', expect.anything());
 	});
 
 	it('refuses any other command, without asking', async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		const out = await executeTool('run_command', { command: 'npm install' }, child);
 		expect(out.result).toContain('read-only subtask');
 		expect(mocks.askCommandApproval).not.toHaveBeenCalled();
@@ -1241,7 +1174,6 @@ describe('run_command in a read-only subtask', () => {
 
 	it('leaves a read-only session asking about reads as before', async () => {
 		mocks.askCommandApproval.mockResolvedValue('allow_once');
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('run_command', { command: 'git log' }, { ...child, subtask: undefined });
 		expect(mocks.askCommandApproval).toHaveBeenCalled();
 	});
@@ -1256,7 +1188,6 @@ describe('run_command in a writing subtask', () => {
 	};
 
 	it('refuses background and watch', async () => {
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		for (const flag of ['background', 'watch']) {
 			const out = await executeTool('run_command', { command: 'npm run dev', [flag]: true }, child);
 			expect(out.result).toContain("Subtasks can't leave processes running");
@@ -1271,7 +1202,6 @@ describe('run_command in a writing subtask', () => {
 			return 'allow_once';
 		});
 		const onApprovalWait = vi.fn();
-		const { executeTool } = await import('#lib/agent/tools/index.ts');
 		await executeTool('run_command', { command: 'rm -rf build' }, { ...child, onApprovalWait });
 		expect(onApprovalWait.mock.calls).toEqual([[true], [false]]);
 	});
