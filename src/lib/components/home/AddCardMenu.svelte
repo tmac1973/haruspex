@@ -1,13 +1,22 @@
 <script lang="ts">
-	/** Home's Add card button: the card types on offer, and a job picker for a pinned job. */
+	/**
+	 * Home's Add card button: every card type, those that need something set
+	 * up first greyed out with what to set up; and a job picker for a pinned job.
+	 */
 	import JobPicker from '#lib/components/home/JobPicker.svelte';
 	import { cardTypes, type CardType } from '#lib/home/cardTypes.ts';
 	import { addCard } from '#lib/stores/homeCards.svelte.ts';
 	import { createCardJob } from '#lib/home/cardJobs.ts';
 	import { refreshCard } from '#lib/home/fetchedCards.svelte.ts';
+	import { getLiveSettings } from '#lib/stores/settings.ts';
 	import type { Schedule } from '#lib/stores/jobs.svelte.ts';
 
-	const addable = $derived(cardTypes().filter((t) => t.addable()));
+	// Home stays mounted, so this follows the settings: an account added in
+	// Settings is offered without a restart.
+	const options = $derived.by(() => {
+		void getLiveSettings();
+		return cardTypes().map((type) => ({ type, reason: type.unavailable?.() ?? null }));
+	});
 	let open = $state(false);
 	/** The pinned-job type, while its job picker shows. */
 	let picking = $state<CardType | null>(null);
@@ -52,9 +61,15 @@
 	>
 	{#if open}
 		<div class="menu" role="menu" aria-label="Add card">
-			{#each addable as type (type.id)}
-				<button role="menuitem" onclick={() => choose(type)}
-					>{type.label}{type.kind === 'pinned' || type.form ? '…' : ''}</button
+			{#each options as { type, reason } (type.id)}
+				<!-- aria-disabled, not disabled: the reason's tooltip needs the hover. -->
+				<button
+					role="menuitem"
+					aria-disabled={reason !== null}
+					title={reason ?? undefined}
+					onclick={() => {
+						if (reason === null) choose(type);
+					}}>{type.label}{type.kind === 'pinned' || type.form ? '…' : ''}</button
 				>
 			{/each}
 		</div>
@@ -121,5 +136,15 @@
 
 	.menu button:hover {
 		background: var(--bg-primary);
+	}
+
+	.menu button[aria-disabled='true'] {
+		color: var(--text-secondary);
+		opacity: 0.6;
+		cursor: default;
+	}
+
+	.menu button[aria-disabled='true']:hover {
+		background: none;
 	}
 </style>

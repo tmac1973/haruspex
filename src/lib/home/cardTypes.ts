@@ -21,7 +21,7 @@ import { GITHUB_PRESETS, fetchGitHub, githubConfigOf, githubServer } from '#lib/
 import { DEFAULT_MEETING_HOURS, fetchMeetings, type MeetingsConfig } from '#lib/home/meetings.ts';
 import { fetchWeather, type WeatherConfig } from '#lib/home/weather.ts';
 import { getJobs, type JobType, type Schedule } from '#lib/stores/jobs.svelte.ts';
-import { getSettings, hasEnabledCalendarAccount } from '#lib/stores/settings.ts';
+import { hasEnabledCalendarAccount, hasEnabledEmailAccount } from '#lib/stores/settings.ts';
 
 export type CardSize = 'normal' | 'wide';
 
@@ -56,8 +56,11 @@ export interface CardType {
 	/** Rendered inside the card's frame; given the card's row, which a live card may ignore. */
 	component: Component<{ card: HomeCard }>;
 	defaultSize: CardSize;
-	/** Whether Add card offers it now (an email card needs an account, say). */
-	addable: () => boolean;
+	/**
+	 * Why Add card can't add it now ("Add an email account in …"), or null
+	 * when it can. Add card lists it either way, greyed out with the reason.
+	 */
+	unavailable?: () => string | null;
 	/**
 	 * The job type of the job this card owns (a judged card), made by
 	 * `createCardJob` when the card is added. Absent for live and pinned cards.
@@ -86,16 +89,14 @@ const CARD_TYPES: CardType[] = [
 		label: 'Jobs',
 		kind: 'live',
 		component: JobsCard,
-		defaultSize: 'normal',
-		addable: () => true
+		defaultSize: 'normal'
 	},
 	{
 		id: 'code_sessions',
 		label: 'Code sessions',
 		kind: 'live',
 		component: CodeSessionsCard,
-		defaultSize: 'normal',
-		addable: () => true
+		defaultSize: 'normal'
 	},
 	{
 		// The job is the card's `job_id`; Add card asks which one.
@@ -105,7 +106,7 @@ const CARD_TYPES: CardType[] = [
 		kind: 'pinned',
 		component: PinnedJobCard,
 		defaultSize: 'normal',
-		addable: () => getJobs().length > 0
+		unavailable: () => (getJobs().length > 0 ? null : 'Make a job in the Jobs tab first.')
 	},
 	{
 		id: 'important_emails',
@@ -114,7 +115,8 @@ const CARD_TYPES: CardType[] = [
 		component: ImportantEmailsCard,
 		form: ImportantEmailsForm,
 		defaultSize: 'normal',
-		addable: () => getSettings().integrations.email.accounts.some((a) => a.enabled),
+		unavailable: () =>
+			hasEnabledEmailAccount() ? null : 'Add an email account in Settings → Integrations → Email.',
 		jobType: 'email_digest',
 		notifies: true,
 		itemLabel: (item) => String((item.source as { subject?: string } | undefined)?.subject ?? ''),
@@ -127,7 +129,6 @@ const CARD_TYPES: CardType[] = [
 		component: NewsCard,
 		form: NewsForm,
 		defaultSize: 'normal',
-		addable: () => true,
 		jobType: 'news_digest',
 		notifies: true,
 		itemLabel: (item) => String((item.source as { title?: string } | undefined)?.title ?? ''),
@@ -140,7 +141,10 @@ const CARD_TYPES: CardType[] = [
 		component: MeetingsCard,
 		form: MeetingsForm,
 		defaultSize: 'normal',
-		addable: hasEnabledCalendarAccount,
+		unavailable: () =>
+			hasEnabledCalendarAccount()
+				? null
+				: 'Add a calendar account in Settings → Integrations → Calendar & Contacts.',
 		fetch: (config) =>
 			fetchMeetings({
 				hours: DEFAULT_MEETING_HOURS,
@@ -156,7 +160,6 @@ const CARD_TYPES: CardType[] = [
 		component: WeatherCard,
 		form: WeatherForm,
 		defaultSize: 'normal',
-		addable: () => true,
 		fetch: (config) => fetchWeather(config as unknown as WeatherConfig),
 		intervalMinutes: () => 30
 	},
@@ -169,7 +172,7 @@ const CARD_TYPES: CardType[] = [
 		component: GitHubCard,
 		form: GitHubForm,
 		defaultSize: 'normal',
-		addable: () => githubServer() !== null,
+		unavailable: () => (githubServer() ? null : 'Add GitHub in Settings → MCP servers.'),
 		notifies: true,
 		itemLabel: (item) => `${String(item.repo)}#${String(item.number)} ${String(item.title)}`,
 		fetch: (config) => fetchGitHub(config),
