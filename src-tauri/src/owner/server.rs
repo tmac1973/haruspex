@@ -109,6 +109,9 @@ const MAX_IMAGE_LOOKUP: usize = 500;
 /// The largest picture `/api/v1/upload` takes: a phone photo, with room.
 const MAX_UPLOAD_BYTES: usize = 16 * 1024 * 1024;
 
+/// How long a refused upload's body is read and thrown away (see [`discard`]).
+const DISCARD_TIME: Duration = Duration::from_secs(10);
+
 /// What the server serves from.
 pub struct Services {
     pub dispatch: Arc<dyn Dispatch>,
@@ -637,9 +640,13 @@ async fn upload(
 ) -> Response {
     let client = match authorise(&state, peer.ip(), &headers).await {
         Ok(c) => c,
-        Err((status, why)) => return refuse(status, why),
+        Err((status, why)) => {
+            discard(body).await;
+            return refuse(status, why);
+        }
     };
     if let Some(r) = missing(&client, Scope::Drive) {
+        discard(body).await;
         return r;
     }
     let Ok(bytes) = axum::body::to_bytes(body, MAX_UPLOAD_BYTES).await else {
@@ -656,6 +663,31 @@ async fn upload(
         Ok(image) => Json(image).into_response(),
         Err(why) => refuse(StatusCode::UNPROCESSABLE_ENTITY, &why),
     }
+}
+
+/// Read a refused upload's body and drop it, up to [`MAX_UPLOAD_BYTES`] or
+/// [`DISCARD_TIME`], whichever comes first.
+///
+/// Answered with its body unread, hyper closes the connection with the rest
+/// of the photo still in the socket, and closing a socket that holds unread
+/// data sends a reset. Windows then drops the refusal the client had not yet
+/// read and reports `WSAECONNABORTED` (10053) instead, so a stale token looks
+/// like a network error. Reading the body first lets the answer arrive. The
+/// bytes are never looked at, and the caps keep a client without a token
+/// from holding the connection open with an endless body.
+async fn discard(body: axum::body::Body) {
+    use futures_util::StreamExt;
+    let mut frames = body.into_data_stream();
+    let drain = async {
+        let mut read = 0;
+        while let Some(Ok(chunk)) = frames.next().await {
+            read += chunk.len();
+            if read > MAX_UPLOAD_BYTES {
+                break;
+            }
+        }
+    };
+    let _ = tokio::time::timeout(DISCARD_TIME, drain).await;
 }
 
 /// One cached image.
@@ -1201,6 +1233,26 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(r.status(), 413);
+        h.running.stop();
+    }
+
+    #[tokio::test]
+    async fn a_refused_upload_at_the_cap_still_gets_its_answer() {
+        let h = serve().await;
+        let url = format!("{}/api/v1/upload", h.base);
+        let photo = vec![0u8; MAX_UPLOAD_BYTES];
+        let r = h.http.post(&url).body(photo.clone()).send().await.unwrap();
+        assert_eq!(r.status(), 401);
+        let reader = h.token(&[Scope::Read]);
+        let r = h
+            .http
+            .post(&url)
+            .bearer_auth(&reader)
+            .body(photo)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 403);
         h.running.stop();
     }
 
