@@ -95,7 +95,7 @@ import {
 	type TurnWriteGuard
 } from '#lib/code/folders.ts';
 import type { CodeWriteGuard } from '#lib/agent/tools/types.ts';
-import { isSlashCommand, nameSession } from '#lib/code/sessionTitle.ts';
+import { isSlashCommand, nameSession, skillNamingText } from '#lib/code/sessionTitle.ts';
 import { logDebug } from '#lib/debugLog.ts';
 import { errMessage } from '#lib/utils/error.ts';
 
@@ -355,11 +355,16 @@ export class CodeSession {
 			return;
 		}
 		const body = opts.skill ? renderSlashMessage(opts.skill, trimmed) : trimmed;
-		// The first real message names the session, once its turn is over.
+		// The first message names the session, once its turn is over: a skill
+		// run (`/init`) by its skill and what followed the command.
 		const namesFrom =
-			!this.named && !this.title && trimmed && !opts.skill && !isSlashCommand(trimmed)
-				? trimmed
-				: null;
+			this.named || this.title
+				? null
+				: opts.skill
+					? skillNamingText(opts.skill.name, trimmed)
+					: trimmed && !isSlashCommand(trimmed)
+						? trimmed
+						: null;
 		if (namesFrom) this.named = true;
 		const sent = await this.runTurn(userMessage(body, images), { typed: true });
 		if (namesFrom && sent) await this.name(namesFrom);
@@ -651,7 +656,7 @@ export class CodeSession {
 	};
 
 	/**
-	 * Name the session from its first real message: a short model call, or
+	 * Name the session from its first message: a short model call, or
 	 * the message itself when that fails. A title the user gave meanwhile wins.
 	 */
 	private async name(message: string): Promise<void> {

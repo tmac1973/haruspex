@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AgentLoopOptions } from '#lib/agent/loop.ts';
 import type { ChatMessage } from '#lib/api.ts';
+import type { SkillDoc } from '#lib/ipc/gen/SkillDoc.ts';
 
 // The Tauri boundary is an in-memory `code_sessions` table, so a session can
 // be saved, closed and loaded back by id as the app would.
@@ -421,7 +422,30 @@ describe('a Code session', () => {
 		expect(s.title).toBe('Find where x lives');
 	});
 
-	it('stays unnamed while it has only had slash commands', async () => {
+	it('names itself from the skill when its first turn runs one', async () => {
+		const skill = (name: string) =>
+			({
+				name,
+				body: 'Do it.',
+				dir: null,
+				compatibility: null,
+				files: [],
+				filesTruncated: false,
+				needs: [],
+				buildsOn: null
+			}) as SkillDoc;
+		const s = await newSession('/proj');
+		await s.send('/init', { skill: skill('init') });
+		expect(mocks.nameSession).toHaveBeenCalledExactlyOnceWith('Run the init skill', null);
+		expect(s.title).toBe('Find where x lives');
+		expect(db.rows.get(s.id)!.title).toBe('Find where x lives');
+
+		const t = await newSession('/proj');
+		await t.send('/review the diff', { skill: skill('review') });
+		expect(mocks.nameSession).toHaveBeenLastCalledWith('Run the review skill: the diff', null);
+	});
+
+	it('stays unnamed while it has only had slash commands that ran no skill', async () => {
 		const s = await newSession('/proj');
 		await s.send('/init');
 		await s.send('  /review the diff');
