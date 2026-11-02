@@ -20,6 +20,7 @@ import type { McpToolDescriptor } from '#lib/ipc/gen/McpToolDescriptor.ts';
 import type { CompanionStatus } from '#lib/ipc/gen/CompanionStatus.ts';
 import type { McpServerConfig } from '#lib/ipc/gen/McpServerConfig.ts';
 import type { CatalogEntry } from '#lib/ipc/gen/CatalogEntry.ts';
+import type { InstallManifest } from '#lib/ipc/gen/InstallManifest.ts';
 import { registerMcpTools, setToolFailureHook, unregisterMcpServer } from '#lib/agent/tools/mcp.ts';
 import { mcpDefaultTools } from '#lib/agent/tools/mcpNames.ts';
 import { forgetServerApprovals } from '#lib/stores/mcpApproval.svelte.ts';
@@ -58,6 +59,45 @@ function blank(): McpRuntimeState {
 }
 
 const states = $state<Record<string, McpRuntimeState>>({});
+
+/**
+ * What is installed for each catalog server, by server id.
+ *
+ * A release can change a catalog entry under an existing install, so the
+ * tested `defaultTools` come from the entry as it was installed, not from the
+ * current catalog. Rust launches from the same copy.
+ */
+const manifests = $state<Record<string, InstallManifest>>({});
+
+export function installedManifest(serverId: string): InstallManifest | null {
+	return manifests[serverId] ?? null;
+}
+
+/**
+ * Read the install manifests for these servers. Merged in rather than replaced,
+ * so loading one server's after its install keeps the rest. A failure leaves
+ * what was known, and the catalog entry stands in for what wasn't.
+ */
+export async function loadInstalledManifests(servers: McpServerConfig[]): Promise<void> {
+	const catalogServers = servers.filter((s) => s.source.kind === 'catalog');
+	if (catalogServers.length === 0) return;
+	try {
+		const found = await invoke<Record<string, InstallManifest>>('mcp_installed_manifests', {
+			servers: catalogServers
+		});
+		Object.assign(manifests, found);
+	} catch (e) {
+		console.warn('mcp: could not read install manifests:', errMessage(e));
+	}
+}
+
+/** The tools a server starts with on: the installed entry's, else the catalog's. */
+export function installedDefaultTools(
+	serverId: string,
+	catalogEntry: CatalogEntry | null
+): string[] {
+	return manifests[serverId]?.entry.defaultTools ?? catalogEntry?.defaultTools ?? [];
+}
 
 /** Current state for a server, never null — an unknown server reads as stopped. */
 export function mcpState(serverId: string): McpRuntimeState {
@@ -123,7 +163,15 @@ export async function startMcpServer(
 			invoke<McpToolDescriptor[]>('mcp_list_tools', { id: config.id })
 		]);
 
-		registerMcpTools(config.id, config.label, tools, catalogEntry?.defaultTools ?? []);
+		if (config.source.kind === 'catalog' && !manifests[config.id]) {
+			await loadInstalledManifests([config]);
+		}
+		registerMcpTools(
+			config.id,
+			config.label,
+			tools,
+			installedDefaultTools(config.id, catalogEntry)
+		);
 		patch(config.id, {
 			status: { type: 'Ready' },
 			connection,
@@ -179,7 +227,10 @@ async function adopt(config: McpServerConfig, catalogEntry: CatalogEntry | null)
 		invoke<McpConnectionInfo | null>('mcp_connection_info', { id: config.id }),
 		invoke<McpToolDescriptor[]>('mcp_list_tools', { id: config.id })
 	]);
-	registerMcpTools(config.id, config.label, tools, catalogEntry?.defaultTools ?? []);
+	if (config.source.kind === 'catalog' && !manifests[config.id]) {
+		await loadInstalledManifests([config]);
+	}
+	registerMcpTools(config.id, config.label, tools, installedDefaultTools(config.id, catalogEntry));
 	patch(config.id, {
 		status: { type: 'Ready' },
 		connection,
@@ -255,6 +306,7 @@ export async function removeMcpServer(serverId: string): Promise<void> {
 	if (config) void forgetMcpSecrets(config);
 	delete configs[serverId];
 	delete states[serverId];
+	delete manifests[serverId];
 }
 
 /** The tail of a server's stderr, for the inline diagnostic in an error row. */

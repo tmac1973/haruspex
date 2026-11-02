@@ -5,6 +5,8 @@ import type { McpToolDescriptor } from '#lib/ipc/gen/McpToolDescriptor.ts';
 import { IPC } from '#lib/ipc/commands.ts';
 import {
 	companionWarning,
+	installedDefaultTools,
+	loadInstalledManifests,
 	startConfiguredMcpServers,
 	mcpState,
 	probeCompanion,
@@ -260,6 +262,57 @@ describe('a server that changes its toolset while running', () => {
 
 		expect(mcpState(ID).status.type).toBe('Ready');
 		expect(mcpState(ID).error).toBeNull();
+	});
+});
+
+describe('what was installed', () => {
+	const INSTALLED_ID = 'srv-installed';
+	const installed = config({ id: INSTALLED_ID });
+
+	beforeEach(async () => {
+		// A removed server's manifest goes with it, so each test starts clean.
+		invoke.mockResolvedValue(null);
+		await removeMcpServer(INSTALLED_ID);
+	});
+
+	it("registers the installed entry's default tools, not the current catalog's", async () => {
+		// The release bumped the pin and changed the defaults; the old package
+		// is still what runs.
+		invoke.mockImplementation(
+			invokeRouter({
+				mcp_connection_info: CONNECTION,
+				mcp_list_tools: TOOLS,
+				mcp_installed_manifests: {
+					[INSTALLED_ID]: {
+						schema: 1,
+						entry: entry({ defaultTools: [] }),
+						packageFiles: [],
+						installedAt: '2026-11-02T00:00:00Z'
+					}
+				}
+			})
+		);
+		await startMcpServer(installed, entry({ defaultTools: ['search'] }));
+
+		expect(mcpDefaultTools(INSTALLED_ID)).toEqual([]);
+		expect(installedDefaultTools(INSTALLED_ID, entry())).toEqual([]);
+	});
+
+	it('falls back to the catalog when nothing is known about the install', async () => {
+		mockHappyStart();
+		await startMcpServer(installed, entry({ defaultTools: ['search'] }));
+
+		expect(mcpDefaultTools(INSTALLED_ID)).toEqual(['search']);
+	});
+
+	it('asks only about catalog servers', async () => {
+		await loadInstalledManifests([
+			config({ id: 'c', source: { kind: 'custom', program: 'x', args: [] } })
+		]);
+		expect(invoke).not.toHaveBeenCalledWith('mcp_installed_manifests', expect.anything());
+
+		await loadInstalledManifests([installed]);
+		expect(invoke).toHaveBeenCalledWith('mcp_installed_manifests', { servers: [installed] });
 	});
 });
 

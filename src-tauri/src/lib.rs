@@ -739,6 +739,7 @@ pub fn run() {
             integrations::mcp::commands::mcp_clear_server_logs,
             integrations::mcp::commands::mcp_catalog,
             integrations::mcp::commands::mcp_install_server,
+            integrations::mcp::commands::mcp_installed_manifests,
             integrations::mcp::commands::mcp_cancel_install,
             integrations::mcp::commands::mcp_uninstall_server,
             integrations::mcp::commands::mcp_server_dir,

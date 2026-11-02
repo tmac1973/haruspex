@@ -271,6 +271,7 @@ export const IPC = {
 	mcp_connection_info: 'mcp_connection_info',
 	mcp_install_addon: 'mcp_install_addon',
 	mcp_install_server: 'mcp_install_server',
+	mcp_installed_manifests: 'mcp_installed_manifests',
 	mcp_list_tools: 'mcp_list_tools',
 	mcp_place_setup_file: 'mcp_place_setup_file',
 	mcp_probe_companion: 'mcp_probe_companion',

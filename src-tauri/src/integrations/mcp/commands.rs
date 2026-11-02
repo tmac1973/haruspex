@@ -13,8 +13,10 @@ use super::catalog::{self, CatalogEntry, CompanionProbe};
 use super::companion::{self, CompanionStatus};
 use super::http;
 use super::install::{self, McpInstaller};
+use super::manifest::{self, InstallManifest};
 use super::process::{McpSupervisor, SpawnConfig};
 use super::server_config::McpServerConfig;
+use super::server_config::McpServerSource;
 use super::types::{McpCallOutcome, McpConnectionInfo, McpToolDescriptor};
 use crate::proxy::ProxyConfig;
 use crate::sidecar_util::SidecarStatus;
@@ -161,6 +163,36 @@ pub async fn mcp_install_server(
         .install(&app, entry, &server_id, proxy.as_ref())
         .await?;
     Ok(())
+}
+
+/// What is installed for each catalog server, by server id.
+///
+/// Servers whose directory is missing, and custom and remote servers, are left
+/// out: there is no install to describe. An install that predates manifests
+/// gets one here, from what is on disk.
+#[tauri::command]
+pub async fn mcp_installed_manifests(
+    app: AppHandle,
+    servers: Vec<McpServerConfig>,
+) -> Result<BTreeMap<String, InstallManifest>, String> {
+    let catalog = catalog::load()?;
+    let mut out = BTreeMap::new();
+    for server in servers {
+        let McpServerSource::Catalog { entry_id } = &server.source else {
+            continue;
+        };
+        let dir = install::server_dir(&app, &server.id)?;
+        if !dir.is_dir() {
+            continue;
+        }
+        match manifest::load_or_backfill(&dir, entry_id, catalog.entry(entry_id)) {
+            Ok(m) => {
+                out.insert(server.id, m);
+            }
+            Err(e) => log::warn!("mcp: no install manifest for {}: {e}", server.id),
+        }
+    }
+    Ok(out)
 }
 
 /// Stop an install in flight. The staging directory goes with it, so a retry
