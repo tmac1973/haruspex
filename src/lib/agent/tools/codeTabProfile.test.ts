@@ -1,6 +1,9 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { getToolSchemas } from '#lib/agent/tools/index.ts';
 import { CODE_TAB_ONLY, CODE_TAB_DESCRIPTIONS, isCodeWriteTool } from './codeTabProfile';
+
+/** The tab's own tools every turn gets: ask_specialist also needs a specialist on (ask-specialist.test.ts). */
+const ALWAYS_TAB_ONLY = [...CODE_TAB_ONLY].filter((t) => t !== 'ask_specialist');
 import type { ToolDefinition } from '#lib/api.ts';
 import { resetShellPlatformSupported } from '#lib/shell/platformSupport.ts';
 import { invoke } from '@tauri-apps/api/core';
@@ -39,7 +42,9 @@ function runCommand(codeMode: boolean, shellMode: boolean) {
 describe('tool profiles over (codeMode, shellMode)', () => {
 	it('(code, no shell) — the Code tab: code tools plus its own, no terminal tools', () => {
 		// save_generated too: the Code tab saves pictures and songs into the project.
-		expect(names(true, false)).toEqual([...CODE_TOOLS, ...CODE_TAB_ONLY, 'save_generated'].sort());
+		expect(names(true, false)).toEqual(
+			[...CODE_TOOLS, ...ALWAYS_TAB_ONLY, 'save_generated'].sort()
+		);
 	});
 
 	it('(code, shell) — Shell Code mode: code tools plus the terminal tools, none of the tab’s', () => {
@@ -124,7 +129,9 @@ describe('a read-only Code session', () => {
 		const n = getToolSchemas({ hasWorkingDir: true, codeMode: true, codeReadOnly: true })
 			.map((s) => s.function.name)
 			.sort();
-		expect(n).toEqual([...CODE_TOOLS, ...CODE_TAB_ONLY].filter((t) => !isCodeWriteTool(t)).sort());
+		expect(n).toEqual(
+			[...CODE_TOOLS, ...ALWAYS_TAB_ONLY].filter((t) => !isCodeWriteTool(t)).sort()
+		);
 		expect(n).toContain('run_command');
 		expect(n).not.toContain('fs_write_text');
 		expect(n).not.toContain('fs_edit_text');

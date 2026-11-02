@@ -31,6 +31,7 @@ import { shellPlatformSupported } from '#lib/shell/platformSupport.ts';
 import { videoAvailable, videoToolsOn } from '#lib/video/binaries.ts';
 import { getTasks } from '#lib/tasks/store.svelte.ts';
 import { skillGate } from '#lib/agent/tools/_skillGate.ts';
+import { sessionSpecialists } from '#lib/specialists/session.ts';
 
 const tools = new Map<string, ToolRegistration>();
 
@@ -115,6 +116,8 @@ interface ToolFilterOpts {
 	codeReadOnly: boolean;
 	/** A Code turn started from another computer: no hand-off to a Shell tab. */
 	codeRemote: boolean;
+	/** A Code tab session with at least one specialist on: `ask_specialist`. */
+	specialists: boolean;
 	/** A subtask's turn (`delegate`'s child): see `SUBTASK_EXCLUDED`. */
 	subtask: boolean;
 	hasEmail: boolean;
@@ -326,6 +329,7 @@ function subtaskExcludes(reg: ToolRegistration): boolean {
 	return (
 		name === 'delegate' ||
 		name === 'make_asset' ||
+		reg.category === 'specialist' ||
 		SONG_TOOLS.has(name) ||
 		reg.category === 'speech' ||
 		reg.category === 'video-gen' ||
@@ -343,6 +347,8 @@ function shouldIncludeTool(reg: ToolRegistration, opts: ToolFilterOpts): boolean
 	if (reg.category === 'tasks') {
 		return !!opts.taskOwner && opts.interactive && getTasks(opts.taskOwner).length > 0;
 	}
+	// A session's specialists are the user's to turn on (the Code tab header).
+	if (reg.category === 'specialist' && !opts.specialists) return false;
 	// Subtasks are the user's to switch off (Settings → Code → Subtasks).
 	if (reg.schema.function.name === 'delegate' && getSettings().codeSubtasks === 'off') {
 		return false;
@@ -377,6 +383,11 @@ export interface ToolSchemaOpts {
 	codeReadOnly?: boolean;
 	/** A Code turn started from another computer: `open_in_shell` is left out. */
 	codeRemote?: boolean;
+	/**
+	 * The Code tab session's specialist entry ids; null: the ones on by
+	 * default. Undefined outside the Code tab, which offers none.
+	 */
+	codeSpecialists?: string[] | null;
 	/** A subtask's turn: no `delegate`, and nothing that needs the user. */
 	subtask?: boolean;
 	/** A live user is present. Gates tools that only make sense for one. */
@@ -454,6 +465,8 @@ export function offeredSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
 		codeMode: opts.codeMode ?? false,
 		codeReadOnly: opts.codeReadOnly ?? false,
 		codeRemote: opts.codeRemote ?? false,
+		specialists:
+			opts.codeSpecialists !== undefined && sessionSpecialists(opts.codeSpecialists).length > 0,
 		subtask: opts.subtask ?? false,
 		hasEmail: hasEnabledEmailAccount(),
 		hasCalendar: hasEnabledCalendarAccount(),
@@ -486,8 +499,9 @@ export function offeredSchemas(opts: ToolSchemaOpts): ToolDefinition[] {
 function schemaFor(
 	reg: ToolRegistration,
 	filter: ToolFilterOpts,
-	skills: { skillNames?: string[]; skillFileNames?: string[]; hasSkills?: boolean }
+	opts: ToolSchemaOpts
 ): ToolDefinition | null {
+	const skills = opts;
 	// Lean mode names what may be offered; the gates below still decide
 	// whether each of those is offered this turn.
 	if (isLeanTurn(filter) && !leanOffers(reg.schema.function.name, filter.leanFileWrites)) {
@@ -521,7 +535,7 @@ function schemaFor(
 	// project, or Chat's working folder.
 	const canSave = filter.codeMode ? !filter.codeReadOnly : filter.hasWorkingDir;
 	const name = reg.schema.function.name;
-	const live = reg.liveSchema ? reg.liveSchema(reg.schema) : reg.schema;
+	const live = reg.liveSchema ? reg.liveSchema(reg.schema, opts) : reg.schema;
 	if (!live) return null;
 	let schema = live;
 	if (SAVING_TOOLS.has(name) && !canSave) {

@@ -90,6 +90,8 @@ export interface CodeTurnOptions {
 	backend: BackendOverride | null;
 	/** Null follows the global setting. */
 	effort: string | null;
+	/** The specialist entry ids the session offers; null: the ones on by default. */
+	specialists?: string[] | null;
 	/** May read, not write (`ToolContext.codeReadOnly`). */
 	readOnly?: boolean;
 	/** Started from another computer (Settings → Remote control): nothing that needs a person at this one, so no `open_in_shell`. */
@@ -224,6 +226,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 			codeReadOnly: o.readOnly ?? false,
 			codeRemote: o.remote ?? false,
 			codeSessionId: o.sessionId,
+			codeSpecialists: o.specialists ?? null,
 			visionSupported: descriptor.vision,
 			interactive: true,
 			backend
@@ -270,6 +273,7 @@ export async function runCodeTurn(o: CodeTurnOptions): Promise<CodeTurnResult> {
 					codeRemote: o.remote ?? false,
 					codeWriteGuard: o.writeGuard,
 					codeEffort: o.effort,
+					codeSpecialists: o.specialists ?? null,
 					onSubtaskUpdate: o.onSubtaskUpdate,
 					subtaskStops: o.subtaskStops,
 					startBackgroundSubtask: o.startBackgroundSubtask,
