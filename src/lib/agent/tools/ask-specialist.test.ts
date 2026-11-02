@@ -261,6 +261,20 @@ describe("ask_specialist's images", () => {
 	});
 });
 
+describe('a kind added with one module', () => {
+	it('adds its fields to the schema only when a specialist of it is on', () => {
+		setSpecialistEntries([textOne, entry('glb', 'Assets')]);
+		const withGlb = props({ ...codeTab, codeSpecialists: ['Regex', 'Assets'] });
+		for (const p of ['path', 'recheck', 'overwrite']) {
+			expect(withGlb.properties[p].description).toMatch(/^\(3D asset \(GLB\) only\)/);
+		}
+		expect(withGlb.required).toEqual(['name']);
+		const textOnly = props({ ...codeTab, codeSpecialists: ['Regex'] });
+		for (const p of ['path', 'recheck', 'overwrite'])
+			expect(textOnly.properties[p]).toBeUndefined();
+	});
+});
+
 describe("ask_specialist's label", () => {
 	it("is the kind's own when it has one, else the name and request", () => {
 		expect(askSpecialistLabel({ name: 'Builder', path: 'a.glb' })).toBe('Writer: a.glb');

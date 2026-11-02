@@ -5,3 +5,4 @@
  * cycle).
  */
 import '#lib/specialists/kinds/text.ts';
+import '#lib/specialists/kinds/glb.ts';
